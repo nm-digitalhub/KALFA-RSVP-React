@@ -3,6 +3,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 // campaigns.ts begins with `import 'server-only'`; computeCeiling is pure.
 vi.mock('server-only', () => ({}));
 vi.mock('@/lib/supabase/admin', () => ({ createAdminClient: vi.fn() }));
+// Lifecycle transitions verify ownership; stub it as a no-op.
+vi.mock('@/lib/data/events', () => ({ requireOwnedEvent: vi.fn() }));
 
 import { createMockSupabase, type QueryResult } from '@/test/supabase-mock';
 import { createAdminClient } from '@/lib/supabase/admin';
@@ -12,6 +14,9 @@ import {
   lockCampaignForHold,
   recordCampaignHold,
   markCampaignHoldFailed,
+  activateCampaign,
+  pauseCampaign,
+  closeCampaign,
 } from '@/lib/data/campaigns';
 
 function adminWith<T>(result: QueryResult<T>) {
@@ -114,5 +119,62 @@ describe('markCampaignHoldFailed', () => {
 
     expect(builder.update).toHaveBeenCalledWith({ capture_status: 'hold_review' });
     expect(builder.eq).toHaveBeenCalledWith('id', 'c1');
+  });
+});
+
+describe('campaign lifecycle transitions', () => {
+  it('activateCampaign requires an approved+held campaign → status active', async () => {
+    const { builder } = adminWith({
+      data: { id: 'c1', event_id: 'e1' },
+      error: null,
+    });
+
+    await activateCampaign('c1');
+
+    expect(builder.update).toHaveBeenCalledWith({ status: 'active' });
+    expect(builder.in).toHaveBeenCalledWith('status', [
+      'approved',
+      'scheduled',
+      'paused',
+    ]);
+    expect(builder.eq).toHaveBeenCalledWith('capture_status', 'authorized');
+  });
+
+  it('pauseCampaign: active → paused', async () => {
+    const { builder } = adminWith({
+      data: { id: 'c1', event_id: 'e1' },
+      error: null,
+    });
+
+    await pauseCampaign('c1');
+
+    expect(builder.update).toHaveBeenCalledWith({ status: 'paused' });
+    expect(builder.in).toHaveBeenCalledWith('status', ['active']);
+  });
+
+  it('closeCampaign: active/paused/approved/scheduled → closed', async () => {
+    const { builder } = adminWith({
+      data: { id: 'c1', event_id: 'e1' },
+      error: null,
+    });
+
+    await closeCampaign('c1');
+
+    expect(builder.update).toHaveBeenCalledWith({ status: 'closed' });
+  });
+
+  it('throws when the campaign is not in a transitionable state (0 rows updated)', async () => {
+    const { builder } = adminWith({
+      data: { id: 'c1', event_id: 'e1' },
+      error: null,
+    });
+    // First await (load campaign) → exists; second await (guarded update) → no row.
+    vi.spyOn(builder, 'then')
+      .mockImplementationOnce((f) => f({ data: { id: 'c1', event_id: 'e1' }, error: null }))
+      .mockImplementationOnce((f) => f({ data: null, error: null }));
+
+    await expect(closeCampaign('c1')).rejects.toThrow(
+      'לא ניתן לשנות את מצב הקמפיין',
+    );
   });
 });

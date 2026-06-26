@@ -295,3 +295,75 @@ export async function markCampaignHoldFailed(
     .eq('id', campaignId);
   if (error) throw new Error('עדכון מצב התפיסה נכשל');
 }
+
+// --- Campaign lifecycle (B4 foundation; no money) ---------------------------
+// Status transitions. The actual close-CHARGE (capturing the held card for the
+// final reached-contact total) is intentionally NOT here — it depends on
+// billed_results (B2) and is a separate, gated step.
+
+type CampaignStatus = Database['public']['Enums']['campaign_status'];
+
+// Race-safe guarded transition: the UPDATE only matches a row in one of `from`
+// (plus any extra column guard), so concurrent calls can't double-transition.
+// Ownership is verified first. Throws if no row matched its current state.
+async function transitionCampaignStatus(
+  campaignId: string,
+  from: CampaignStatus[],
+  to: CampaignStatus,
+  extraGuard?: { column: 'capture_status'; value: string },
+): Promise<void> {
+  const admin = createAdminClient();
+  const { data: campaign, error } = await admin
+    .from('campaigns')
+    .select('id, event_id')
+    .eq('id', campaignId)
+    .maybeSingle();
+  if (error) throw new Error('טעינת הקמפיין נכשלה');
+  if (!campaign) {
+    const { notFound } = await import('next/navigation');
+    return notFound();
+  }
+  await requireOwnedEvent(campaign.event_id);
+
+  let query = admin
+    .from('campaigns')
+    .update({ status: to })
+    .eq('id', campaignId)
+    .in('status', from);
+  if (extraGuard) {
+    query = query.eq(extraGuard.column, extraGuard.value);
+  }
+  const { data: updated, error: upErr } = await query
+    .select('id')
+    .maybeSingle();
+  if (upErr) throw new Error('עדכון מצב הקמפיין נכשל');
+  if (!updated) {
+    throw new Error('לא ניתן לשנות את מצב הקמפיין במצבו הנוכחי');
+  }
+}
+
+// Activate (begin outreach). Requires an approved/scheduled/paused campaign that
+// already has a card hold (capture_status='authorized') — no outreach without a
+// secured payment method.
+export async function activateCampaign(campaignId: string): Promise<void> {
+  return transitionCampaignStatus(
+    campaignId,
+    ['approved', 'scheduled', 'paused'],
+    'active',
+    { column: 'capture_status', value: 'authorized' },
+  );
+}
+
+export async function pauseCampaign(campaignId: string): Promise<void> {
+  return transitionCampaignStatus(campaignId, ['active'], 'paused');
+}
+
+// Close the campaign (no new outreach/billing after this). Computing the final
+// charge and capturing the held card is a separate B4 step (needs billed_results).
+export async function closeCampaign(campaignId: string): Promise<void> {
+  return transitionCampaignStatus(
+    campaignId,
+    ['active', 'paused', 'approved', 'scheduled'],
+    'closed',
+  );
+}
