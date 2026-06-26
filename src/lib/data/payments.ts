@@ -48,6 +48,24 @@ export async function getCampaignHoldsEnabled(): Promise<boolean> {
   }
 }
 
+// Master switch for the final close-CHARGE (capturing the held card for the
+// accrued reached-contact total). Forward-compatible — false until the migration
+// adds the column. Real money: charge only runs when this AND payments are on.
+export async function getCloseChargeEnabled(): Promise<boolean> {
+  try {
+    const admin = createAdminClient();
+    const { data, error } = await admin
+      .from('app_settings')
+      .select('*')
+      .eq('id', true)
+      .maybeSingle();
+    if (error || !data) return false;
+    return (data as Record<string, unknown>).close_charge_enabled === true;
+  } catch {
+    return false;
+  }
+}
+
 // Non-secret fields the browser legitimately needs for tokenization. Returned
 // to the pay page and passed as props to the client PaymentForm.
 export async function getSumitPublicConfig(): Promise<SumitPublicConfig | null> {
