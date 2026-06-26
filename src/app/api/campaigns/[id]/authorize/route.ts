@@ -69,11 +69,16 @@ export async function POST(
     return new NextResponse('Forbidden', { status: 403 });
   }
 
+  // Build redirects against the PUBLIC origin, not request.url — behind the nginx
+  // proxy request.url reflects the internal host (127.0.0.1:3002), which would
+  // send the browser to localhost. APP_ORIGIN is validated in isAllowedOrigin above.
+  const origin = process.env.APP_ORIGIN as string;
+
   let user: Awaited<ReturnType<typeof requireUser>>;
   try {
     user = await requireUser();
   } catch {
-    return r303(new URL('/auth/login', request.url));
+    return r303(new URL('/auth/login', origin));
   }
 
   const formData = await request.formData();
@@ -84,12 +89,12 @@ export async function POST(
   // Load the campaign + verify ownership before anything else.
   const campaign = await getCampaignForHold(campaignId);
   if (!campaign) {
-    return r303(new URL('/app', request.url));
+    return r303(new URL('/app', origin));
   }
   try {
     await requireOwnedEvent(campaign.event_id);
   } catch {
-    return r303(new URL('/app', request.url));
+    return r303(new URL('/app', origin));
   }
 
   const payUrl = (error?: string) =>
@@ -97,7 +102,7 @@ export async function POST(
       `/app/events/${campaign.event_id}/campaign/${campaignId}/payment${
         error ? `?error=${error}` : '?held=1'
       }`,
-      request.url,
+      origin,
     );
 
   if (!parsed.success) {
