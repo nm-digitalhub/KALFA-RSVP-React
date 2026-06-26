@@ -1,5 +1,7 @@
 import 'server-only';
 
+import type { SupabaseClient } from '@supabase/supabase-js';
+
 import { requireUser } from '@/lib/auth/dal';
 import { requireOwnedEvent } from '@/lib/data/events';
 import { countUniqueContactsForEvent } from '@/lib/data/contacts';
@@ -294,6 +296,98 @@ export async function markCampaignHoldFailed(
     .update({ capture_status: status })
     .eq('id', campaignId);
   if (error) throw new Error('עדכון מצב התפיסה נכשל');
+}
+
+// --- B4 close-charge data layer ---------------------------------------------
+// The charge columns (sumit_customer_ref / charge_status / charged_at /
+// sumit_charge_document_id) are added by a pending migration and not in the
+// generated types yet → queried via an un-generic client cast. Only ever reached
+// behind getCloseChargeEnabled() (false until the migration), so never hits
+// missing columns at runtime.
+
+export type CampaignChargeState = {
+  id: string;
+  event_id: string;
+  status: string;
+  capture_status: string | null;
+  charge_status: string | null;
+  sumit_customer_ref: string | null;
+  max_charge_ceiling: string | null;
+};
+
+export async function getCampaignForCharge(
+  campaignId: string,
+): Promise<CampaignChargeState | null> {
+  const admin = createAdminClient() as unknown as SupabaseClient;
+  const { data, error } = await admin
+    .from('campaigns')
+    .select('*')
+    .eq('id', campaignId)
+    .maybeSingle();
+  if (error) throw new Error('טעינת הקמפיין נכשלה');
+  if (!data) return null;
+  const row = data as Record<string, unknown>;
+  return {
+    id: String(row.id),
+    event_id: String(row.event_id),
+    status: String(row.status),
+    capture_status: (row.capture_status as string | null) ?? null,
+    charge_status: (row.charge_status as string | null) ?? null,
+    sumit_customer_ref: (row.sumit_customer_ref as string | null) ?? null,
+    max_charge_ceiling: (row.max_charge_ceiling as string | null) ?? null,
+  };
+}
+
+// Atomically claim the charge slot (idempotency for the final charge). Matches
+// only when no charge yet (null) or a prior attempt is retryable
+// (charge_failed/charge_review) — a 'charged' campaign can never be re-charged.
+export async function lockCampaignForCharge(
+  campaignId: string,
+): Promise<boolean> {
+  const admin = createAdminClient() as unknown as SupabaseClient;
+  const { data, error } = await admin
+    .from('campaigns')
+    .update({ charge_status: 'pending' })
+    .eq('id', campaignId)
+    .or('charge_status.is.null,charge_status.in.(charge_failed,charge_review)')
+    .select('id')
+    .maybeSingle();
+  if (error) throw new Error('נעילת הקמפיין לחיוב הסופי נכשלה');
+  return data !== null;
+}
+
+export async function recordCampaignCharge(
+  campaignId: string,
+  charge: { amount: number; documentId: number },
+): Promise<void> {
+  const admin = createAdminClient() as unknown as SupabaseClient;
+  const { error } = await admin
+    .from('campaigns')
+    .update({
+      charge_status: 'charged',
+      final_charge_amount: charge.amount,
+      sumit_charge_document_id: charge.documentId,
+      charged_at: new Date().toISOString(),
+    })
+    .eq('id', campaignId);
+  if (error) throw new Error('שמירת החיוב הסופי נכשלה');
+}
+
+export async function markCampaignChargeOutcome(
+  campaignId: string,
+  outcome: 'charge_failed' | 'charge_review' | 'nothing_to_charge',
+): Promise<void> {
+  const admin = createAdminClient() as unknown as SupabaseClient;
+  const payload: Record<string, unknown> = { charge_status: outcome };
+  if (outcome === 'nothing_to_charge') {
+    payload.final_charge_amount = 0;
+    payload.charged_at = new Date().toISOString();
+  }
+  const { error } = await admin
+    .from('campaigns')
+    .update(payload)
+    .eq('id', campaignId);
+  if (error) throw new Error('עדכון מצב החיוב נכשל');
 }
 
 // --- Campaign lifecycle (B4 foundation; no money) ---------------------------

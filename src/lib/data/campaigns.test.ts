@@ -17,6 +17,10 @@ import {
   activateCampaign,
   pauseCampaign,
   closeCampaign,
+  getCampaignForCharge,
+  lockCampaignForCharge,
+  recordCampaignCharge,
+  markCampaignChargeOutcome,
 } from '@/lib/data/campaigns';
 
 function adminWith<T>(result: QueryResult<T>) {
@@ -176,5 +180,82 @@ describe('campaign lifecycle transitions', () => {
     await expect(closeCampaign('c1')).rejects.toThrow(
       'לא ניתן לשנות את מצב הקמפיין',
     );
+  });
+});
+
+describe('B4 close-charge data layer', () => {
+  it('getCampaignForCharge maps the charge state (incl. new columns)', async () => {
+    adminWith({
+      data: {
+        id: 'c1',
+        event_id: 'e1',
+        status: 'closed',
+        capture_status: 'authorized',
+        charge_status: null,
+        sumit_customer_ref: 'kalfa-campaign-c1',
+        max_charge_ceiling: '88',
+      },
+      error: null,
+    });
+    await expect(getCampaignForCharge('c1')).resolves.toEqual({
+      id: 'c1',
+      event_id: 'e1',
+      status: 'closed',
+      capture_status: 'authorized',
+      charge_status: null,
+      sumit_customer_ref: 'kalfa-campaign-c1',
+      max_charge_ceiling: '88',
+    });
+  });
+
+  it('lockCampaignForCharge wins (true) via the guarded update, idempotency guard', async () => {
+    const { builder } = adminWith({ data: { id: 'c1' }, error: null });
+    const won = await lockCampaignForCharge('c1');
+    expect(builder.update).toHaveBeenCalledWith({ charge_status: 'pending' });
+    expect(builder.or).toHaveBeenCalledWith(
+      'charge_status.is.null,charge_status.in.(charge_failed,charge_review)',
+    );
+    expect(won).toBe(true);
+  });
+
+  it('lockCampaignForCharge loses (false) when already charging/charged', async () => {
+    adminWith({ data: null, error: null });
+    expect(await lockCampaignForCharge('c1')).toBe(false);
+  });
+
+  it('recordCampaignCharge persists the charged outcome + document id', async () => {
+    const { builder } = adminWith({ data: null, error: null });
+    await recordCampaignCharge('c1', { amount: 12, documentId: 555 });
+    const payload = vi.mocked(builder.update).mock.calls[0][0] as Record<
+      string,
+      unknown
+    >;
+    expect(payload.charge_status).toBe('charged');
+    expect(payload.final_charge_amount).toBe(12);
+    expect(payload.sumit_charge_document_id).toBe(555);
+    expect(payload.charged_at).toBeTruthy();
+  });
+
+  it('markCampaignChargeOutcome(nothing_to_charge) zeroes the amount + stamps charged_at', async () => {
+    const { builder } = adminWith({ data: null, error: null });
+    await markCampaignChargeOutcome('c1', 'nothing_to_charge');
+    const payload = vi.mocked(builder.update).mock.calls[0][0] as Record<
+      string,
+      unknown
+    >;
+    expect(payload.charge_status).toBe('nothing_to_charge');
+    expect(payload.final_charge_amount).toBe(0);
+    expect(payload.charged_at).toBeTruthy();
+  });
+
+  it('markCampaignChargeOutcome(charge_failed) only sets the status', async () => {
+    const { builder } = adminWith({ data: null, error: null });
+    await markCampaignChargeOutcome('c1', 'charge_failed');
+    const payload = vi.mocked(builder.update).mock.calls[0][0] as Record<
+      string,
+      unknown
+    >;
+    expect(payload.charge_status).toBe('charge_failed');
+    expect(payload.final_charge_amount).toBeUndefined();
   });
 });
