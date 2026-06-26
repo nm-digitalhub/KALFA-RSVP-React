@@ -29,11 +29,12 @@ export type OwnerCampaign = Pick<
   | 'close_at'
   | 'approved_at'
   | 'final_charge_amount'
+  | 'capture_status'
   | 'created_at'
 >;
 
 const CAMPAIGN_COLUMNS =
-  'id, event_id, status, price_per_reached, max_contacts, max_charge_ceiling, allowed_channels, start_at, close_at, approved_at, final_charge_amount, created_at';
+  'id, event_id, status, price_per_reached, max_contacts, max_charge_ceiling, allowed_channels, start_at, close_at, approved_at, final_charge_amount, capture_status, created_at';
 
 // Pure: the approved charge ceiling = price-per-reached × max contacts, rounded
 // to agorot. The ceiling is the maximum the system may ever bill (§7); it is
