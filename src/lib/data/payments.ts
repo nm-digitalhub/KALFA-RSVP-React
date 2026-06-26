@@ -28,6 +28,26 @@ export async function getPaymentsEnabled(): Promise<boolean> {
   }
 }
 
+// Independent kill-switch for the route-A J5 campaign hold path (separate from
+// the orders payments_enabled switch). Fail-safe AND forward-compatible: the
+// `campaign_holds_enabled` column is added by a pending migration, so until it
+// exists `select('*')` simply omits it and this returns false (fail-closed — the
+// hold form/route stay off). False unless the column exists AND is explicitly on.
+export async function getCampaignHoldsEnabled(): Promise<boolean> {
+  try {
+    const admin = createAdminClient();
+    const { data, error } = await admin
+      .from('app_settings')
+      .select('*')
+      .eq('id', true)
+      .maybeSingle();
+    if (error || !data) return false;
+    return (data as Record<string, unknown>).campaign_holds_enabled === true;
+  } catch {
+    return false;
+  }
+}
+
 // Non-secret fields the browser legitimately needs for tokenization. Returned
 // to the pay page and passed as props to the client PaymentForm.
 export async function getSumitPublicConfig(): Promise<SumitPublicConfig | null> {

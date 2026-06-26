@@ -4,6 +4,7 @@ import { createMockSupabase } from '@/test/supabase-mock';
 import { createAdminClient } from '@/lib/supabase/admin';
 import {
   getPaymentsEnabled,
+  getCampaignHoldsEnabled,
   getSumitPublicConfig,
   getSumitServerConfig,
 } from '@/lib/data/payments';
@@ -103,5 +104,32 @@ describe('getSumitPublicConfig', () => {
       error: null,
     });
     await expect(getSumitPublicConfig()).resolves.toBeNull();
+  });
+});
+
+describe('getCampaignHoldsEnabled', () => {
+  it('returns true only when the flag column is present and on', async () => {
+    mockAdmin({ data: { campaign_holds_enabled: true }, error: null });
+    await expect(getCampaignHoldsEnabled()).resolves.toBe(true);
+  });
+
+  it('returns false when the flag is off', async () => {
+    mockAdmin({ data: { campaign_holds_enabled: false }, error: null });
+    await expect(getCampaignHoldsEnabled()).resolves.toBe(false);
+  });
+
+  it('returns false (fail-closed) when the column is absent (pre-migration)', async () => {
+    mockAdmin({ data: { payments_enabled: true }, error: null });
+    await expect(getCampaignHoldsEnabled()).resolves.toBe(false);
+  });
+
+  it('returns false on a read error', async () => {
+    mockAdmin({ data: null, error: { message: 'boom' } });
+    await expect(getCampaignHoldsEnabled()).resolves.toBe(false);
+  });
+
+  it('returns false when the admin client cannot be created', async () => {
+    mockAdminThrows();
+    await expect(getCampaignHoldsEnabled()).resolves.toBe(false);
   });
 });
