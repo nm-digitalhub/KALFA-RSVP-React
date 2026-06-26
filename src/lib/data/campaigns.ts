@@ -215,3 +215,82 @@ export async function approveCampaign(
     .eq('status', 'pending_approval'); // race-safe optimistic guard
   if (upErr) throw new Error('אישור הקמפיין נכשל');
 }
+
+// --- Route A: J5 authorization hold (card capture at approval) ---------------
+// capture_status is a free-text column; the working vocabulary is:
+//   null         no hold yet
+//   pending      a hold attempt is in flight (the atomic lock below)
+//   authorized   a hold succeeded (auth_number/card_token_ref stored)
+//   hold_failed  a definitive decline — retryable
+//   hold_review  an ambiguous provider outcome — retryable / needs reconciliation
+
+export type CampaignHoldState = Pick<
+  CampaignRow,
+  'id' | 'event_id' | 'status' | 'max_charge_ceiling' | 'capture_status'
+>;
+
+// Read the hold-relevant fields. Service-role (the hold writes bypass RLS); the
+// caller (the Route Handler) has already verified ownership.
+export async function getCampaignForHold(
+  campaignId: string,
+): Promise<CampaignHoldState | null> {
+  const admin = createAdminClient();
+  const { data, error } = await admin
+    .from('campaigns')
+    .select('id, event_id, status, max_charge_ceiling, capture_status')
+    .eq('id', campaignId)
+    .maybeSingle();
+  if (error) throw new Error('טעינת הקמפיין נכשלה');
+  return data;
+}
+
+// Atomically claim the hold slot. The guarded UPDATE only matches when there is
+// no hold yet (null) or a prior attempt is retryable (hold_failed/hold_review),
+// so two concurrent submits can never both place a hold (§13 anti-double-charge
+// in spirit). Returns true only for the caller that won the slot.
+export async function lockCampaignForHold(campaignId: string): Promise<boolean> {
+  const admin = createAdminClient();
+  const { data, error } = await admin
+    .from('campaigns')
+    .update({ capture_status: 'pending' })
+    .eq('id', campaignId)
+    .or('capture_status.is.null,capture_status.in.(hold_failed,hold_review)')
+    .select('id')
+    .maybeSingle();
+  if (error) throw new Error('נעילת הקמפיין לחיוב נכשלה');
+  return data !== null;
+}
+
+// Persist a successful hold. auth_amount is the server-derived ceiling (numeric),
+// never client input. Card token + auth number are evidence for the later capture.
+export async function recordCampaignHold(
+  campaignId: string,
+  hold: { authNumber: string; authAmount: number; cardToken: string | null },
+): Promise<void> {
+  const admin = createAdminClient();
+  const { error } = await admin
+    .from('campaigns')
+    .update({
+      capture_status: 'authorized',
+      auth_number: hold.authNumber,
+      auth_amount: hold.authAmount,
+      card_token_ref: hold.cardToken,
+      authorized_at: new Date().toISOString(),
+    })
+    .eq('id', campaignId);
+  if (error) throw new Error('שמירת תפיסת המסגרת נכשלה');
+}
+
+// Release the lock to a retryable state after a failed/ambiguous hold. Never
+// touches status — the agreement stays signed and the campaign stays approved.
+export async function markCampaignHoldFailed(
+  campaignId: string,
+  status: 'hold_failed' | 'hold_review',
+): Promise<void> {
+  const admin = createAdminClient();
+  const { error } = await admin
+    .from('campaigns')
+    .update({ capture_status: status })
+    .eq('id', campaignId);
+  if (error) throw new Error('עדכון מצב התפיסה נכשל');
+}
