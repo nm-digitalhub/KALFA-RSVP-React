@@ -1,0 +1,82 @@
+import { type NextRequest, NextResponse } from 'next/server';
+
+import { requireUser } from '@/lib/auth/dal';
+import { requireOwnedEvent } from '@/lib/data/events';
+import { getCampaignForCharge } from '@/lib/data/campaigns';
+import {
+  getPaymentsEnabled,
+  getCloseChargeEnabled,
+  getSumitServerConfig,
+} from '@/lib/data/payments';
+import { closeCampaignAndCharge } from '@/lib/data/close-charge';
+
+// Owner-triggered campaign close + final charge of the held card. CSRF + auth +
+// ownership + fail-closed gate; the amount is server-derived in the orchestrator
+// (never read from the client). Redirects via APP_ORIGIN (proxy-safe).
+
+function isAllowedOrigin(request: NextRequest): boolean {
+  const appOrigin = process.env.APP_ORIGIN;
+  if (!appOrigin) throw new Error('APP_ORIGIN env var is not configured');
+  const allowed = new Set([appOrigin]);
+  if (process.env.NODE_ENV === 'development') {
+    allowed.add('http://localhost:3002');
+  }
+  const origin = request.headers.get('origin');
+  if (origin) return allowed.has(origin);
+  const referer = request.headers.get('referer');
+  if (referer) {
+    try {
+      return allowed.has(new URL(referer).origin);
+    } catch {
+      return false;
+    }
+  }
+  return false;
+}
+
+function r303(url: URL) {
+  return NextResponse.redirect(url, 303);
+}
+
+export async function POST(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  const { id: campaignId } = await params;
+
+  if (!isAllowedOrigin(request)) {
+    return new NextResponse('Forbidden', { status: 403 });
+  }
+  const origin = process.env.APP_ORIGIN as string;
+
+  try {
+    await requireUser();
+  } catch {
+    return r303(new URL('/auth/login', origin));
+  }
+
+  const campaign = await getCampaignForCharge(campaignId);
+  if (!campaign) return r303(new URL('/app', origin));
+  try {
+    await requireOwnedEvent(campaign.event_id);
+  } catch {
+    return r303(new URL('/app', origin));
+  }
+
+  const eventUrl = (query: string) =>
+    new URL(`/app/events/${campaign.event_id}?${query}`, origin);
+
+  // Fail-closed gate (the orchestrator re-checks; gate here so a disabled feature
+  // never reaches the charge path).
+  const [paymentsOn, closeOn, sumit] = await Promise.all([
+    getPaymentsEnabled(),
+    getCloseChargeEnabled(),
+    getSumitServerConfig(),
+  ]);
+  if (!paymentsOn || !closeOn || !sumit) {
+    return r303(eventUrl('charge=disabled'));
+  }
+
+  const { outcome, amount } = await closeCampaignAndCharge(campaignId);
+  return r303(eventUrl(`charge=${outcome}&amount=${amount}`));
+}
