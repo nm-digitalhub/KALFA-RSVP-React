@@ -48,15 +48,28 @@ export function createExtraSmsSender(config: {
       } catch {
         throw new SmsSendError('שליחת ההודעה נכשלה (תקשורת)');
       }
-      if (!res.ok) throw new SmsSendError('שליחת ההודעה נכשלה');
+      // Carry the provider's HTTP status / error detail in the thrown message so
+      // the server can LOG why a send failed (the message is for server logs, not
+      // shown to the user — callers map it to a generic notice). No token (it is
+      // request-only) or PII destination is included here.
+      if (!res.ok) {
+        throw new SmsSendError(`שליחת ההודעה נכשלה (HTTP ${res.status})`);
+      }
 
-      let json: { success?: boolean; id?: string };
+      let json: { success?: boolean; id?: string; errors?: unknown };
       try {
-        json = (await res.json()) as { success?: boolean; id?: string };
+        json = (await res.json()) as {
+          success?: boolean;
+          id?: string;
+          errors?: unknown;
+        };
       } catch {
         throw new SmsSendError('תגובה לא תקינה מספק ה-SMS');
       }
-      if (!json.success || !json.id) throw new SmsSendError('שליחת ההודעה נדחתה');
+      if (!json.success || !json.id) {
+        const detail = json.errors ? ` (${JSON.stringify(json.errors)})` : '';
+        throw new SmsSendError(`שליחת ההודעה נדחתה${detail}`);
+      }
       return { id: json.id };
     },
   };

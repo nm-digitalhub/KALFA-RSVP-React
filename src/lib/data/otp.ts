@@ -58,7 +58,15 @@ export async function requestOtp(
   try {
     const sender = await getSmsSender();
     await sender.send({ to: phone, text: `קוד האימות שלך ל-KALFA: ${code}` });
-  } catch {
+  } catch (err) {
+    // Surface a generic message to the user, but LOG the provider reason so a
+    // real failure (bad token, unapproved sender, no balance, gateway down) is
+    // diagnosable from server logs. Never log the code or the full phone number.
+    console.error(
+      `[otp] SMS send failed (purpose=${purpose}): ${
+        err instanceof Error ? err.message : 'unknown error'
+      }`,
+    );
     return { ok: false, error: 'שליחת קוד האימות נכשלה' };
   }
   return { ok: true };
