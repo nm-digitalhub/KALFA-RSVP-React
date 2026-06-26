@@ -68,12 +68,25 @@ export async function authorizeHoldSumit(
     throw new SumitNetworkError('לא התקבל אישור חד משמעי ממערכת התשלום');
   }
 
+  // SUMIT response envelope (Response_OfficeGuy). Per the official swagger:
+  //   Status = Teva.Common.ResponseStatus enum: Success (0) / BusinessError (1) /
+  //   TechnicalError (2). Data.Payment.ValidPayment is the validity flag, AuthNumber
+  //   the auth code, and the reusable token lives on Payment.PaymentMethod.
+  //   CreditCard_Token. We accept the wire Status as a number, the enum string, or
+  //   the legacy { IsError } object so the adapter is robust to all three forms.
+  type PaymentMethod = { CreditCard_Token?: string | null } | null;
+  type Payment = {
+    AuthNumber?: string | null;
+    ValidPayment?: boolean | null;
+    PaymentMethod?: PaymentMethod;
+  } | null;
   type Resp = {
-    Status?: number | { IsError?: boolean };
+    Status?: number | string | { IsError?: boolean } | null;
     Data?: {
-      Payment?: { AuthNumber?: string | null };
+      Payment?: Payment;
+      PaymentMethod?: PaymentMethod;
       CreditCard_Token?: string | null;
-    };
+    } | null;
   };
   let json: Resp;
   try {
@@ -82,16 +95,35 @@ export async function authorizeHoldSumit(
     throw new SumitNetworkError('תגובה לא תקינה ממערכת התשלום');
   }
 
-  // Definite decline: numeric Status===1 OR { IsError:true } (handle both shapes
-  // until the live shape is pinned in the go-live verification).
-  const isError =
-    json.Status === 1 ||
-    (typeof json.Status === 'object' && json.Status?.IsError === true);
-  if (isError) throw new SumitDeclinedError();
+  const status = json.Status;
+  // BusinessError (1) = a definitive decline (safe to surface as declined/retry).
+  const businessError =
+    status === 1 ||
+    (typeof status === 'string' && /business|\(1\)/i.test(status)) ||
+    (typeof status === 'object' && status?.IsError === true);
+  if (businessError) throw new SumitDeclinedError();
 
-  const authNumber = json.Data?.Payment?.AuthNumber;
-  if (!authNumber) {
+  const success =
+    status === 0 ||
+    (typeof status === 'string' && /success|\(0\)/i.test(status)) ||
+    (typeof status === 'object' && status?.IsError === false);
+
+  const payment = json.Data?.Payment;
+  const authNumber = payment?.AuthNumber;
+  // Treat as authorized ONLY on a clear Success status AND an AuthNumber, with
+  // ValidPayment never explicitly false. A TechnicalError (2) or any unrecognized
+  // status — even with ValidPayment true — is ambiguous and becomes a review,
+  // never a silent authorization.
+  const authorized =
+    success && !!authNumber && payment?.ValidPayment !== false;
+  if (!authorized || !authNumber) {
     throw new SumitNetworkError('אישור התפיסה לא התקבל ממערכת');
   }
-  return { authNumber, cardToken: json.Data?.CreditCard_Token ?? null };
+
+  const cardToken =
+    payment?.PaymentMethod?.CreditCard_Token ??
+    json.Data?.PaymentMethod?.CreditCard_Token ??
+    json.Data?.CreditCard_Token ??
+    null;
+  return { authNumber, cardToken };
 }
