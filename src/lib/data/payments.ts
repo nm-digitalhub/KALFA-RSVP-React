@@ -1,0 +1,71 @@
+import 'server-only';
+
+import { createAdminClient } from '@/lib/supabase/admin';
+
+// Server-side readers of the admin-managed clearing config (app_settings, a
+// singleton row with ADMIN-ONLY RLS). All reads go through the service-role
+// client, so they NEVER run in the browser and the secret API key is never
+// exposed to it. Every reader is fail-safe: on any error (including a missing /
+// placeholder service-role key) it resolves to "off / not configured" rather
+// than throwing — a customer page must never crash because clearing is unset.
+
+export type SumitPublicConfig = { companyId: number; apiPublicKey: string };
+export type SumitServerConfig = { companyId: number; apiKey: string };
+
+// Master switch. False unless explicitly enabled.
+export async function getPaymentsEnabled(): Promise<boolean> {
+  try {
+    const admin = createAdminClient();
+    const { data, error } = await admin
+      .from('app_settings')
+      .select('payments_enabled')
+      .eq('id', true)
+      .maybeSingle();
+    if (error || !data) return false;
+    return data.payments_enabled;
+  } catch {
+    return false;
+  }
+}
+
+// Non-secret fields the browser legitimately needs for tokenization. Returned
+// to the pay page and passed as props to the client PaymentForm.
+export async function getSumitPublicConfig(): Promise<SumitPublicConfig | null> {
+  try {
+    const admin = createAdminClient();
+    const { data, error } = await admin
+      .from('app_settings')
+      .select('sumit_company_id, sumit_api_public_key')
+      .eq('id', true)
+      .maybeSingle();
+    if (error || !data) return null;
+    const companyId = Number(data.sumit_company_id);
+    if (!Number.isFinite(companyId) || companyId <= 0 || !data.sumit_api_public_key) {
+      return null;
+    }
+    return { companyId, apiPublicKey: data.sumit_api_public_key };
+  } catch {
+    return null;
+  }
+}
+
+// Secret server config for charging. Read only in the Route Handler, on the
+// server, immediately before calling SUMIT. The api key never leaves the server.
+export async function getSumitServerConfig(): Promise<SumitServerConfig | null> {
+  try {
+    const admin = createAdminClient();
+    const { data, error } = await admin
+      .from('app_settings')
+      .select('sumit_company_id, sumit_api_key')
+      .eq('id', true)
+      .maybeSingle();
+    if (error || !data) return null;
+    const companyId = Number(data.sumit_company_id);
+    if (!Number.isFinite(companyId) || companyId <= 0 || !data.sumit_api_key) {
+      return null;
+    }
+    return { companyId, apiKey: data.sumit_api_key };
+  } catch {
+    return null;
+  }
+}

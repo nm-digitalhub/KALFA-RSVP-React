@@ -1,0 +1,33 @@
+{
+  "version": 1,
+  "skills": {
+    "israeli-ai-compliance-kit": {
+      "source": "skills-il/security-compliance",
+      "sourceType": "github",
+      "computedHash": "396dd919940bc643898b298dc08cc2e8d825c213f1ad557d04fb0341c33766d9"
+    },
+    "israeli-ecommerce-compliance": {
+      "source": "skills-il/security-compliance",
+      "sourceType": "github",
+      "computedHash": "0bc84cb6891ceb9547ee58db2d6b6926624610586b4456a119d97f1222999c5a"
+    },
+    "nextjs-react-typescript": {
+      "source": "mindrally/skills",
+      "sourceType": "github",
+      "skillPath": "nextjs-react-typescript/SKILL.md",
+      "computedHash": "eb995cc826bf48498e0e90969fc7dadfa2ec634002c26cfcfde565134cefa738"
+    },
+    "react-nextjs-development": {
+      "source": "sickn33/antigravity-awesome-skills",
+      "sourceType": "github",
+      "skillPath": "skills/react-nextjs-development/SKILL.md",
+      "computedHash": "f6fccc099580762dc1ffe48d8462c9183f14225a6dd28679cb56a0e5b011669a"
+    },
+    "supabase-postgres-best-practices": {
+      "source": "supabase/agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/supabase-postgres-best-practices/SKILL.md",
+      "computedHash": "0d2c4857a7d6fdcd3fbc46e458fa4c497f029cab89a01548b3defce203003932"
+    }
+  }
+}
