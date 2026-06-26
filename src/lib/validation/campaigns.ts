@@ -24,3 +24,11 @@ export const approveCampaignSchema = z.object({
   }),
 });
 export type ApproveCampaignInput = z.infer<typeof approveCampaignSchema>;
+
+// Route A J5 hold: the browser submits ONLY the single-use card token (payments.js
+// injects the `og-token` hidden field). The campaign id is the route param and the
+// hold amount is the server-derived ceiling — neither is trusted from the form.
+export const authorizeHoldSchema = z.object({
+  'og-token': z.string().trim().min(1, { error: 'פרטי תשלום חסרים' }),
+});
+export type AuthorizeHoldInput = z.infer<typeof authorizeHoldSchema>;
