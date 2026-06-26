@@ -91,11 +91,12 @@ export async function buildContactsForEvent(
   // Link each guest to its contact (or null when the phone is invalid/missing).
   for (const [guestId, e164] of derived.guestToPhone) {
     const contactId = e164 ? (phoneToContactId.get(e164) ?? null) : null;
-    await admin
+    const { error: linkErr } = await admin
       .from('guests')
       .update({ contact_id: contactId })
       .eq('id', guestId)
       .eq('event_id', eventId);
+    if (linkErr) throw new Error('קישור המוזמנים לאנשי הקשר נכשל');
   }
 
   return {
@@ -106,13 +107,53 @@ export async function buildContactsForEvent(
   };
 }
 
+// Surgically (re)link ONE guest to its contact after a single create/update —
+// O(1), versus buildContactsForEvent's whole-event rebuild. Upserts the guest's
+// normalized phone into contacts (UNIQUE event_id+normalized_phone → idempotent,
+// §13) and sets guests.contact_id (null when the phone is invalid/missing, so it
+// is not billable, §4/§5.4). All writes are scoped by event_id. Verifies
+// ownership server-side — this writes the billing source-of-truth via the
+// service-role client (RLS-bypassing), so it must not rely on the caller alone.
+export async function linkGuestContact(
+  eventId: string,
+  guestId: string,
+  phone: string | null,
+): Promise<void> {
+  await requireOwnedEvent(eventId);
+  const admin = createAdminClient();
+  const e164 = normalizePhone(phone);
+
+  let contactId: string | null = null;
+  if (e164) {
+    const { data: row, error: upErr } = await admin
+      .from('contacts')
+      .upsert(
+        { event_id: eventId, normalized_phone: e164 },
+        { onConflict: 'event_id,normalized_phone' },
+      )
+      .select('id')
+      .single();
+    if (upErr || !row) throw new Error('יצירת איש הקשר נכשלה');
+    contactId = row.id;
+  }
+
+  const { error: linkErr } = await admin
+    .from('guests')
+    .update({ contact_id: contactId })
+    .eq('id', guestId)
+    .eq('event_id', eventId);
+  if (linkErr) throw new Error('עדכון קישור איש הקשר נכשל');
+}
+
 // Count of unique reachable contacts for an event, derived from the current
 // guest list (dedup by E.164). This is a DATA fact — it drives max_contacts and
-// the ceiling (§7), and is never entered by the owner. Caller must have already
-// verified ownership.
+// the ceiling (§7), and is never entered by the owner. Verifies ownership
+// server-side: it derives a billing input via the RLS-bypassing service-role
+// client, so it must not rely on the caller alone.
 export async function countUniqueContactsForEvent(
   eventId: string,
 ): Promise<number> {
+  await requireOwnedEvent(eventId);
   const admin = createAdminClient();
   const { data: guests, error } = await admin
     .from('guests')

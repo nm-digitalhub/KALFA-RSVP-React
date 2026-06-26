@@ -3,8 +3,14 @@ import { describe, expect, it, vi } from 'vitest';
 // contacts.ts begins with `import 'server-only'` (and pulls in server-only deps);
 // that throws outside Next's RSC context. deriveContacts itself is pure.
 vi.mock('server-only', () => ({}));
+vi.mock('@/lib/supabase/admin', () => ({ createAdminClient: vi.fn() }));
+// linkGuestContact verifies ownership server-side; stub it as a no-op so the
+// unit tests exercise only the contact upsert/link logic.
+vi.mock('@/lib/data/events', () => ({ requireOwnedEvent: vi.fn() }));
 
-import { deriveContacts } from '@/lib/data/contacts';
+import { createMockSupabase } from '@/test/supabase-mock';
+import { createAdminClient } from '@/lib/supabase/admin';
+import { deriveContacts, linkGuestContact } from '@/lib/data/contacts';
 
 describe('deriveContacts', () => {
   it('de-duplicates guests sharing one phone into a single contact (§13)', () => {
@@ -47,5 +53,60 @@ describe('deriveContacts', () => {
     expect(r.uniquePhones).toEqual([]);
     expect(r.withValidPhone).toBe(0);
     expect(r.invalid).toBe(0);
+  });
+});
+
+describe('linkGuestContact', () => {
+  it('upserts the contact (idempotent) and links the guest for a valid phone', async () => {
+    const { client, builder } = createMockSupabase<{ id: string }>({
+      data: { id: 'c1' },
+      error: null,
+    });
+    vi.mocked(createAdminClient).mockReturnValue(
+      client as unknown as ReturnType<typeof createAdminClient>,
+    );
+
+    await linkGuestContact('e1', 'g1', '050-123-4567');
+
+    expect(client.from).toHaveBeenCalledWith('contacts');
+    expect(builder.upsert).toHaveBeenCalledWith(
+      { event_id: 'e1', normalized_phone: '+972501234567' },
+      { onConflict: 'event_id,normalized_phone' },
+    );
+    expect(client.from).toHaveBeenCalledWith('guests');
+    expect(builder.update).toHaveBeenCalledWith({ contact_id: 'c1' });
+    expect(builder.eq).toHaveBeenCalledWith('id', 'g1');
+    expect(builder.eq).toHaveBeenCalledWith('event_id', 'e1');
+  });
+
+  it('sets contact_id to null for an invalid phone (no contact upsert, §5.4)', async () => {
+    const { client, builder } = createMockSupabase<{ id: string }>({
+      data: null,
+      error: null,
+    });
+    vi.mocked(createAdminClient).mockReturnValue(
+      client as unknown as ReturnType<typeof createAdminClient>,
+    );
+
+    await linkGuestContact('e1', 'g2', '123');
+
+    expect(builder.upsert).not.toHaveBeenCalled();
+    expect(builder.update).toHaveBeenCalledWith({ contact_id: null });
+    expect(builder.eq).toHaveBeenCalledWith('id', 'g2');
+  });
+
+  it('treats a missing (null) phone as not billable', async () => {
+    const { client, builder } = createMockSupabase<{ id: string }>({
+      data: null,
+      error: null,
+    });
+    vi.mocked(createAdminClient).mockReturnValue(
+      client as unknown as ReturnType<typeof createAdminClient>,
+    );
+
+    await linkGuestContact('e1', 'g3', null);
+
+    expect(builder.upsert).not.toHaveBeenCalled();
+    expect(builder.update).toHaveBeenCalledWith({ contact_id: null });
   });
 });

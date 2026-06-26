@@ -11,6 +11,7 @@ import {
   bulkInsertGuests,
   type BulkGuestInput,
 } from '@/lib/data/guests';
+import { buildContactsForEvent } from '@/lib/data/contacts';
 import { CSV_MAX_ROWS, CSV_MAX_BYTES } from '@/lib/constants';
 
 // A single row that failed validation, reported back to the user in Hebrew.
@@ -206,6 +207,23 @@ export async function importGuestsAction(
   } catch (err) {
     if (isNextControlFlow(err)) throw err;
     return { error: 'ייבוא המוזמנים נכשל.', failed };
+  }
+
+  // Materialize the contacts table (billing source-of-truth) from the imported
+  // guests — the bulk path, so a one-time whole-event rebuild is appropriate.
+  // Best-effort: the guests are already committed; a failure must not report the
+  // import as failed (contacts reconcile on the next mutation / campaign build).
+  try {
+    await buildContactsForEvent(eventId);
+  } catch (err) {
+    if (isNextControlFlow(err)) throw err;
+    // Derived secondary effect — never blocks a completed import, but log (no
+    // PII) so a failed contacts rebuild is auditable and reconcilable.
+    console.error(
+      `[contacts] post-import contacts rebuild failed (event=${eventId}): ${
+        err instanceof Error ? err.message : 'unknown error'
+      }`,
+    );
   }
 
   await logActivity({

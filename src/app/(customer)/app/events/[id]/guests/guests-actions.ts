@@ -11,6 +11,7 @@ import {
   createGroup,
   deleteGroup,
 } from '@/lib/data/guests';
+import { linkGuestContact } from '@/lib/data/contacts';
 import {
   createGuestSchema,
   updateGuestSchema,
@@ -59,8 +60,9 @@ export async function createGuestAction(
   }
 
   const d = parsed.data;
+  let createdId: string;
   try {
-    await createGuest(eventId, {
+    const created = await createGuest(eventId, {
       full_name: d.full_name,
       phone: d.phone ? d.phone : null,
       status: d.status,
@@ -69,13 +71,43 @@ export async function createGuestAction(
       expected_count: d.expected_count ?? null,
       note: d.note ? d.note : null,
     });
+    createdId = created.id;
   } catch (err) {
     if (isNextControlFlow(err)) throw err;
     return { error: 'הוספת המוזמן נכשלה. נסו שוב.' };
   }
 
+  // Best-effort: keep the contacts table (the billing source-of-truth) in sync.
+  // The guest is already created and committed — a failure here must NOT fail the
+  // action (a retry would create a duplicate guest); contacts reconcile on the
+  // next mutation or campaign build.
+  await syncGuestContact(eventId, createdId, d.phone ? d.phone : null);
+
   revalidatePath(`/app/events/${eventId}/guests`);
   redirect(`/app/events/${eventId}/guests`);
+}
+
+// Best-effort contact linking shared by create/update. Swallows failures by
+// design: the preceding guest mutation is already committed, and the contacts
+// table is derivable/idempotent (linkGuestContact upserts on a UNIQUE key).
+async function syncGuestContact(
+  eventId: string,
+  guestId: string,
+  phone: string | null,
+): Promise<void> {
+  try {
+    await linkGuestContact(eventId, guestId, phone);
+  } catch (err) {
+    // Next control-flow signals must propagate, never be swallowed.
+    if (isNextControlFlow(err)) throw err;
+    // Derived secondary effect — never blocks the completed guest mutation, but
+    // log (no phone PII) so a dropped link is auditable and reconcilable.
+    console.error(
+      `[contacts] guest contact sync failed (event=${eventId} guest=${guestId}): ${
+        err instanceof Error ? err.message : 'unknown error'
+      }`,
+    );
+  }
 }
 
 export async function updateGuestAction(
@@ -113,6 +145,12 @@ export async function updateGuestAction(
   } catch (err) {
     if (isNextControlFlow(err)) throw err;
     return { error: 'עדכון המוזמן נכשל. נסו שוב.' };
+  }
+
+  // Re-link the contact only when the phone was part of this update (the only
+  // field that changes the contact mapping). Best-effort, same rationale as create.
+  if (d.phone !== undefined) {
+    await syncGuestContact(eventId, guestId, d.phone ? d.phone : null);
   }
 
   revalidatePath(`/app/events/${eventId}/guests`);
