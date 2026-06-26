@@ -22,6 +22,7 @@ export interface PackageFormInitial {
   price_with_vat: number | '';
   includes: string[];
   active: boolean;
+  sort_order: number | '';
 }
 
 const EMPTY: PackageFormInitial = {
@@ -32,6 +33,7 @@ const EMPTY: PackageFormInitial = {
   price_with_vat: '',
   includes: [],
   active: true,
+  sort_order: '',
 };
 
 type FormAction = (state: FormState, formData: FormData) => Promise<FormState>;
@@ -148,6 +150,27 @@ export function PackageForm({
           className={inputClass}
         />
         <FieldError errors={state?.fieldErrors?.includes} />
+      </div>
+
+      <div className="space-y-1">
+        <label htmlFor="sort_order" className={labelClass}>
+          סדר תצוגה
+        </label>
+        <input
+          id="sort_order"
+          name="sort_order"
+          type="number"
+          min="0"
+          step="1"
+          inputMode="numeric"
+          dir="ltr"
+          defaultValue={initial.sort_order}
+          className={inputClass}
+        />
+        <p className="text-xs text-muted-foreground">
+          מספר נמוך מוצג קודם בקטלוג הלקוחות. ברירת מחדל: 0.
+        </p>
+        <FieldError errors={state?.fieldErrors?.sort_order} />
       </div>
 
       <div className="flex items-center gap-2">

@@ -24,6 +24,10 @@ type SearchParams = {
   q?: string | string[];
   from?: string | string[];
   to?: string | string[];
+  eventId?: string | string[];
+  guestId?: string | string[];
+  groupId?: string | string[];
+  packageId?: string | string[];
 };
 
 interface CurrentFilters {
@@ -33,7 +37,21 @@ interface CurrentFilters {
   q?: string;
   from?: string;
   to?: string;
+  eventId?: string;
+  guestId?: string;
+  groupId?: string;
+  packageId?: string;
 }
+
+// Active instance filters (deep-linked from an event/guest/group/package).
+// Rendered as a removable chip; the "show all" link drops the instance params
+// while preserving the other filters.
+const INSTANCE_FILTER_LABELS: Record<string, string> = {
+  eventId: 'אירוע',
+  guestId: 'מוזמן',
+  groupId: 'קבוצה',
+  packageId: 'חבילה',
+};
 
 function firstParam(raw: string | string[] | undefined): string | undefined {
   const value = Array.isArray(raw) ? raw[0] : raw;
@@ -175,7 +193,29 @@ export default async function AdminActivityPage({
     q: firstParam(sp.q),
     from: firstParam(sp.from),
     to: firstParam(sp.to),
+    eventId: firstParam(sp.eventId),
+    guestId: firstParam(sp.guestId),
+    groupId: firstParam(sp.groupId),
+    packageId: firstParam(sp.packageId),
   };
+
+  // Build the chip + the "show all" href that preserves non-instance filters.
+  const activeInstance = (
+    ['eventId', 'guestId', 'groupId', 'packageId'] as const
+  )
+    .map((key) => ({ key, value: current[key] }))
+    .find((entry) => entry.value);
+  const nonInstanceParams = Object.entries({
+    action: current.action,
+    actor: current.actor,
+    entity: current.entity,
+    q: current.q,
+    from: current.from,
+    to: current.to,
+  }).filter(([, value]) => value) as Array<[string, string]>;
+  const clearInstanceHref = nonInstanceParams.length
+    ? `/admin/activity?${new URLSearchParams(nonInstanceParams).toString()}`
+    : '/admin/activity';
 
   const [result, actorOptions, selectedActorMap] = await Promise.all([
     listActivity({
@@ -186,6 +226,10 @@ export default async function AdminActivityPage({
       search: current.q,
       from: current.from,
       to: current.to,
+      eventId: current.eventId,
+      guestId: current.guestId,
+      groupId: current.groupId,
+      packageId: current.packageId,
     }),
     listActivityActorOptions(50),
     current.actor
@@ -209,6 +253,22 @@ export default async function AdminActivityPage({
         actorOptions={actorOptions}
         selectedActorLabel={selectedActorLabel}
       />
+
+      {activeInstance ? (
+        <div className="flex flex-wrap items-center gap-2 rounded-lg border border-border bg-muted/40 px-4 py-2 text-sm">
+          <span className="text-muted-foreground">מסונן לפי</span>
+          <span className="rounded-full border border-border bg-card px-2.5 py-1 text-xs font-medium">
+            {INSTANCE_FILTER_LABELS[activeInstance.key]}:{' '}
+            <span dir="ltr">{activeInstance.value!.slice(0, 8)}</span>
+          </span>
+          <Link
+            href={clearInstanceHref}
+            className="text-xs text-muted-foreground underline-offset-2 hover:underline"
+          >
+            הצג הכל
+          </Link>
+        </div>
+      ) : null}
 
       {items.length === 0 ? (
         <EmptyState>אין רשומות ביומן התואמות לסינון שבחרת.</EmptyState>
@@ -274,6 +334,10 @@ export default async function AdminActivityPage({
           q: current.q,
           from: current.from,
           to: current.to,
+          eventId: current.eventId,
+          guestId: current.guestId,
+          groupId: current.groupId,
+          packageId: current.packageId,
         }}
       />
     </div>

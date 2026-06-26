@@ -179,6 +179,56 @@ describe('listActivity entity facet', () => {
   });
 });
 
+describe('listActivity instance filters', () => {
+  it('filters by a specific event_id column', async () => {
+    const { client, builder } = createMockSupabase<ActivityEntry[]>({
+      data: [row()],
+      error: null,
+      count: 1,
+    });
+    vi.mocked(createClient).mockResolvedValue(
+      client as unknown as Awaited<ReturnType<typeof createClient>>,
+    );
+
+    await listActivity({ eventId: 'e-42' });
+
+    expect(builder.eq).toHaveBeenCalledWith('event_id', 'e-42');
+  });
+
+  it('filters by guest/group/package ids stored in the meta json', async () => {
+    const { client, builder } = createMockSupabase<ActivityEntry[]>({
+      data: [row()],
+      error: null,
+      count: 1,
+    });
+    vi.mocked(createClient).mockResolvedValue(
+      client as unknown as Awaited<ReturnType<typeof createClient>>,
+    );
+
+    await listActivity({ guestId: 'g-7', groupId: 'grp-3', packageId: 'pkg-9' });
+
+    expect(builder.eq).toHaveBeenCalledWith('meta->>guestId', 'g-7');
+    expect(builder.eq).toHaveBeenCalledWith('meta->>groupId', 'grp-3');
+    expect(builder.eq).toHaveBeenCalledWith('meta->>packageId', 'pkg-9');
+  });
+
+  it('ignores blank instance ids', async () => {
+    const { client, builder } = createMockSupabase<ActivityEntry[]>({
+      data: [row()],
+      error: null,
+      count: 1,
+    });
+    vi.mocked(createClient).mockResolvedValue(
+      client as unknown as Awaited<ReturnType<typeof createClient>>,
+    );
+
+    await listActivity({ eventId: '   ', guestId: '' });
+
+    expect(builder.eq).not.toHaveBeenCalledWith('event_id', expect.anything());
+    expect(builder.eq).not.toHaveBeenCalledWith('meta->>guestId', expect.anything());
+  });
+});
+
 describe('listActivity search', () => {
   it('builds a sanitised or() filter across action and meta keys', async () => {
     const { client, builder } = createMockSupabase<ActivityEntry[]>({

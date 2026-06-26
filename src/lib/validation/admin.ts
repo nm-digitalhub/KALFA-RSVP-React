@@ -102,6 +102,15 @@ export const packageBaseSchema = z.object({
   price_with_vat: priceWithVat,
   includes: includesFromTextarea,
   active: activeCheckbox,
+  // Display order in the customer catalogue (lower = shown first). Submitted as a
+  // string; absent/blank → 0 so the field is optional in the form.
+  sort_order: z.preprocess(
+    (value) => (value === undefined || value === null || value === '' ? 0 : value),
+    z.coerce
+      .number({ error: 'נא להזין מספר סדר תקין' })
+      .int({ error: 'מספר הסדר חייב להיות מספר שלם' })
+      .nonnegative({ error: 'מספר הסדר לא יכול להיות שלילי' }),
+  ),
 });
 
 export type PackageInput = z.infer<typeof packageBaseSchema>;

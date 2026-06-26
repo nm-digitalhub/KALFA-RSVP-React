@@ -55,6 +55,7 @@ const input: PackageInput = {
   price_with_vat: 250,
   includes: ['פריט 1', 'פריט 2'],
   active: true,
+  sort_order: 0,
 };
 
 beforeEach(() => {

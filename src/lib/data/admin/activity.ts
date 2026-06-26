@@ -47,7 +47,23 @@ export interface ActivityFilterState {
   search?: string;
   from?: string;
   to?: string;
+  // Instance filters: narrow to a single target record. `eventId` matches the
+  // activity_log.event_id column; the others match ids stored inside the `meta`
+  // jsonb (deep-linkable, e.g. "show all activity for this guest").
+  eventId?: string;
+  guestId?: string;
+  groupId?: string;
+  packageId?: string;
 }
+
+// meta-jsonb instance filters: param name → json key. Driven by a single map so
+// the filter stays a text `->>'key'` comparison (cannot error like a uuid column
+// and cannot inject — both column path and operator are fixed).
+const INSTANCE_META_KEYS = {
+  guestId: 'guestId',
+  groupId: 'groupId',
+  packageId: 'packageId',
+} as const;
 
 export interface ActivityActorOption {
   id: string;
@@ -400,8 +416,19 @@ function buildActivitySearchFilter(search: string): string | null {
 
 // List activity entries, newest first, with exact total for pagination.
 export async function listActivity(
-  { page, action, userId, entity, search, from, to }: PageParams &
-    ActivityFilterState = {},
+  {
+    page,
+    action,
+    userId,
+    entity,
+    search,
+    from,
+    to,
+    eventId,
+    guestId,
+    groupId,
+    packageId,
+  }: PageParams & ActivityFilterState = {},
 ): Promise<PageResult<ActivityEntry>> {
   await requireAdmin();
 
@@ -424,6 +451,21 @@ export async function listActivity(
   // ignored so a tampered param can never widen or break the result set.
   if (entity && ENTITY_ACTIONS[entity]) {
     query = query.in('action', ENTITY_ACTIONS[entity]);
+  }
+  // Instance filters narrow to one target record (deep-linkable). event_id is a
+  // real column; guest/group/package ids live in the meta jsonb.
+  if (eventId && eventId.trim() !== '') {
+    query = query.eq('event_id', eventId.trim());
+  }
+  const metaInstanceValues: Record<
+    keyof typeof INSTANCE_META_KEYS,
+    string | undefined
+  > = { guestId, groupId, packageId };
+  for (const [param, jsonKey] of Object.entries(INSTANCE_META_KEYS)) {
+    const value = metaInstanceValues[param as keyof typeof INSTANCE_META_KEYS];
+    if (value && value.trim() !== '') {
+      query = query.eq(`meta->>${jsonKey}`, value.trim());
+    }
   }
   if (search && search.trim() !== '') {
     const filter = buildActivitySearchFilter(search);

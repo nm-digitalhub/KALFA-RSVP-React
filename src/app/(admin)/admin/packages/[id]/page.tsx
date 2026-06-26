@@ -32,6 +32,7 @@ export default async function EditPackagePage({
     price_with_vat: pkg.price_with_vat,
     includes,
     active: pkg.active,
+    sort_order: pkg.sort_order ?? 0,
   };
 
   // Bind the id so the client form receives the (prevState, formData) signature.

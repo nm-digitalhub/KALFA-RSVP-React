@@ -36,6 +36,7 @@ function readPackageForm(formData: FormData) {
     price_with_vat: formData.get('price_with_vat'),
     includes: formData.get('includes'),
     active: formData.get('active'),
+    sort_order: formData.get('sort_order'),
   };
 }
 

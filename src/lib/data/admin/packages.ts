@@ -92,6 +92,7 @@ function toWritable(input: PackageInput): {
   price_with_vat: number;
   includes: PackageInsert['includes'];
   active: boolean;
+  sort_order: number;
 } {
   return {
     name: input.name,
@@ -101,13 +102,21 @@ function toWritable(input: PackageInput): {
     price_with_vat: input.price_with_vat,
     includes: includesJson(input.includes),
     active: input.active,
+    sort_order: input.sort_order,
   };
 }
 
 function packageChangedFields(
   previous: Pick<
     AdminPackage,
-    'name' | 'tier' | 'category' | 'description' | 'price_with_vat' | 'includes' | 'active'
+    | 'name'
+    | 'tier'
+    | 'category'
+    | 'description'
+    | 'price_with_vat'
+    | 'includes'
+    | 'active'
+    | 'sort_order'
   >,
   next: ReturnType<typeof toWritable>,
 ): string[] {
@@ -121,6 +130,7 @@ function packageChangedFields(
       ? 'includes'
       : null,
     previous.active !== next.active ? 'active' : null,
+    previous.sort_order !== next.sort_order ? 'sort_order' : null,
   ].filter((value): value is string => value !== null);
 }
 

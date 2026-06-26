@@ -100,6 +100,32 @@ describe('packageBaseSchema', () => {
     });
     expect(result.success).toBe(false);
   });
+
+  it('coerces sort_order to an integer', () => {
+    const result = packageBaseSchema.safeParse({ ...base, sort_order: '5' });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.sort_order).toBe(5);
+    }
+  });
+
+  it('defaults sort_order to 0 when absent or blank', () => {
+    const absent = packageBaseSchema.safeParse(base);
+    const blank = packageBaseSchema.safeParse({ ...base, sort_order: '' });
+    expect(absent.success).toBe(true);
+    expect(blank.success).toBe(true);
+    if (absent.success) expect(absent.data.sort_order).toBe(0);
+    if (blank.success) expect(blank.data.sort_order).toBe(0);
+  });
+
+  it('rejects a negative or non-integer sort_order', () => {
+    expect(packageBaseSchema.safeParse({ ...base, sort_order: '-1' }).success).toBe(
+      false,
+    );
+    expect(packageBaseSchema.safeParse({ ...base, sort_order: '2.5' }).success).toBe(
+      false,
+    );
+  });
 });
 
 describe('appRoleEnum', () => {
