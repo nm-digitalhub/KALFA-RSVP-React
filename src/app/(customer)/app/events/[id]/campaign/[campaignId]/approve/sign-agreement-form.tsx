@@ -31,18 +31,21 @@ function SignButton({ disabled }: { disabled: boolean }) {
 
 // Send/resend OTP button: disabled while sending (pending) and during the
 // post-send cooldown countdown (anti-flood; the server rate-limit is the hard cap).
+// The cooldown start is DEFERRED (setTimeout) so it does not disable this submit
+// button within the same click event — disabling it synchronously there cancels
+// the form submission, and the Server Action would never run.
 function ResendButton({
   cooldown,
-  onSend,
+  onSent,
 }: {
   cooldown: number;
-  onSend: () => void;
+  onSent: () => void;
 }) {
   const { pending } = useFormStatus();
   return (
     <button
       type="submit"
-      onClick={onSend}
+      onClick={() => setTimeout(onSent, 0)}
       disabled={pending || cooldown > 0}
       className="rounded-md border border-border px-4 py-2 text-sm font-medium transition hover:bg-muted disabled:opacity-60"
     >
@@ -73,8 +76,9 @@ export function SignAgreementForm({
     null,
   );
 
-  // Anti-flood cooldown on the OTP send button — started on click (below),
-  // counts down to 0. (The server rate-limit in requestOtp is the hard cap.)
+  // Anti-flood cooldown on the OTP send button (the server rate-limit is the
+  // hard cap). Started from the button's onClick but DEFERRED (see ResendButton)
+  // so it never disables the button during the submit click.
   const [cooldown, setCooldown] = useState(0);
   useEffect(() => {
     if (cooldown <= 0) return;
@@ -140,7 +144,7 @@ export function SignAgreementForm({
         <FormError message={otpState?.error} />
         <ResendButton
           cooldown={cooldown}
-          onSend={() => setCooldown(OTP_COOLDOWN_SECONDS)}
+          onSent={() => setCooldown(OTP_COOLDOWN_SECONDS)}
         />
         <p className="text-xs text-muted-foreground">
           הקוד נשלח למספר הטלפון שבפרופיל. הזינו אותו בטופס למטה.
