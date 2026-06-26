@@ -143,5 +143,6 @@ export async function signAgreementAction(
   }
 
   revalidatePath(`/app/events/${eventId}/campaign`);
-  redirect(`/app/events/${eventId}/campaign/${campaignId}/approve`);
+  // Route A: after signing, proceed to the card-capture (payment-method) step.
+  redirect(`/app/events/${eventId}/campaign/${campaignId}/payment`);
 }

@@ -60,9 +60,17 @@ export default async function ApproveCampaignPage({
         </div>
         <p className="rounded-md bg-green-50 px-3 py-2 text-sm text-green-700">
           {campaign.status === 'approved'
-            ? 'הקמפיין כבר אושר ונחתם. אין צורך בפעולה נוספת.'
+            ? 'ההסכם נחתם והקמפיין אושר.'
             : 'הקמפיין אינו ממתין לאישור ולכן לא ניתן לחתום עליו כעת.'}
         </p>
+        {campaign.status === 'approved' ? (
+          <Link
+            href={`/app/events/${id}/campaign/${campaignId}/payment`}
+            className="inline-block rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:opacity-90"
+          >
+            המשך לאמצעי התשלום
+          </Link>
+        ) : null}
       </div>
     );
   }
