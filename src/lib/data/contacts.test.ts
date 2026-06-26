@@ -10,7 +10,12 @@ vi.mock('@/lib/data/events', () => ({ requireOwnedEvent: vi.fn() }));
 
 import { createMockSupabase } from '@/test/supabase-mock';
 import { createAdminClient } from '@/lib/supabase/admin';
-import { deriveContacts, linkGuestContact } from '@/lib/data/contacts';
+import {
+  deriveContacts,
+  linkGuestContact,
+  recordWhatsAppConsent,
+  listSendableContacts,
+} from '@/lib/data/contacts';
 
 describe('deriveContacts', () => {
   it('de-duplicates guests sharing one phone into a single contact (§13)', () => {
@@ -108,5 +113,48 @@ describe('linkGuestContact', () => {
 
     expect(builder.upsert).not.toHaveBeenCalled();
     expect(builder.update).toHaveBeenCalledWith({ contact_id: null });
+  });
+});
+
+describe('recordWhatsAppConsent', () => {
+  it('stamps whatsapp_consent_at scoped by id + event', async () => {
+    const { client, builder } = createMockSupabase<{ id: string }>({
+      data: null,
+      error: null,
+    });
+    vi.mocked(createAdminClient).mockReturnValue(
+      client as unknown as ReturnType<typeof createAdminClient>,
+    );
+
+    await recordWhatsAppConsent('e1', 'c1');
+
+    const payload = vi.mocked(builder.update).mock.calls[0][0] as Record<
+      string,
+      unknown
+    >;
+    expect(payload.whatsapp_consent_at).toBeTruthy();
+    expect(builder.eq).toHaveBeenCalledWith('id', 'c1');
+    expect(builder.eq).toHaveBeenCalledWith('event_id', 'e1');
+  });
+});
+
+describe('listSendableContacts', () => {
+  it('returns non-removed, consented contacts for the event', async () => {
+    const { client, builder } = createMockSupabase<
+      Array<{ id: string; normalized_phone: string }>
+    >({
+      data: [{ id: 'c1', normalized_phone: '+972501234567' }],
+      error: null,
+    });
+    vi.mocked(createAdminClient).mockReturnValue(
+      client as unknown as ReturnType<typeof createAdminClient>,
+    );
+
+    const r = await listSendableContacts('e1');
+
+    expect(builder.eq).toHaveBeenCalledWith('event_id', 'e1');
+    expect(builder.eq).toHaveBeenCalledWith('removal_requested', false);
+    expect(builder.not).toHaveBeenCalledWith('whatsapp_consent_at', 'is', null);
+    expect(r).toEqual([{ id: 'c1', normalized_phone: '+972501234567' }]);
   });
 });
