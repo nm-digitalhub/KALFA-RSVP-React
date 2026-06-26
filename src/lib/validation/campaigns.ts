@@ -32,3 +32,10 @@ export const authorizeHoldSchema = z.object({
   'og-token': z.string().trim().min(1, { error: 'פרטי תשלום חסרים' }),
 });
 export type AuthorizeHoldInput = z.infer<typeof authorizeHoldSchema>;
+
+// B3 manual WhatsApp-send trigger: the form supplies the outreach message_key
+// (which template to send). The campaign id is the route param.
+export const whatsappSendSchema = z.object({
+  message_key: z.string().trim().min(1, { error: 'נא לבחור תבנית הודעה' }),
+});
+export type WhatsappSendInput = z.infer<typeof whatsappSendSchema>;
