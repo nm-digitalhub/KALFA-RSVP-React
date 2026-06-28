@@ -188,3 +188,24 @@ export const updatePlanSchema = z.object({
   package_id: z.string().uuid({ error: 'מזהה חבילה לא תקין' }),
 });
 export type UpdatePlanInput = z.infer<typeof updatePlanSchema>;
+
+// --- agreement (contract) document management ---
+export const agreementEditSchema = z.object({
+  version: z
+    .string()
+    .trim()
+    .min(1, { error: 'נא להזין גרסה' })
+    .max(80, { error: 'הגרסה ארוכה מדי' }),
+  // The full custom body (HTML with {{tokens}}); empty → use the in-code default.
+  body_html: z.string().optional(),
+});
+export type AgreementEditInput = z.infer<typeof agreementEditSchema>;
+
+export const agreementApproveSchema = z.object({
+  version: z
+    .string()
+    .trim()
+    .min(1, { error: 'נא להזין גרסה' })
+    .max(80, { error: 'הגרסה ארוכה מדי' }),
+});
+export type AgreementApproveInput = z.infer<typeof agreementApproveSchema>;

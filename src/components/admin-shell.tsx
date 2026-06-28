@@ -6,6 +6,7 @@ import { DirectionProvider } from '@base-ui/react/direction-provider';
 import {
   Building2,
   ChevronDown,
+  FileText,
   FlaskConical,
   LayoutDashboard,
   ListChecks,
@@ -61,6 +62,7 @@ const NAV: NavItem[] = [
   { href: '/admin/packages', label: 'חבילות', icon: Package },
   { href: '/admin/activity', label: 'יומן פעילות', icon: ListChecks },
   { href: '/admin/company', label: 'פרטי חברה', icon: Building2 },
+  { href: '/admin/agreement', label: 'חוזה', icon: FileText },
   { href: '/admin/sumit-test', label: 'בדיקת SUMIT', icon: FlaskConical },
   { href: '/admin/settings', label: 'הגדרות', icon: Settings },
 ];

@@ -10,10 +10,8 @@ import { getProfile } from '@/lib/data/profiles';
 import { verifyOtp } from '@/lib/data/otp';
 import { normalizePhone } from '@/lib/phone';
 import { createAdminClient } from '@/lib/supabase/admin';
-import {
-  renderAgreementDocument,
-  AGREEMENT_VERSION,
-} from '@/lib/agreements/template';
+import { renderAgreementDocument } from '@/lib/agreements/template';
+import { getActiveAgreementDoc } from '@/lib/data/agreements-doc';
 import { renderAgreementPdf, sha256Hex } from '@/lib/agreements/pdf';
 import { uploadLegalDoc } from '@/lib/storage/legal-docs';
 import { getEmailSender } from '@/lib/email/sender';
@@ -107,8 +105,11 @@ export async function recordSignedAgreement(
   }
   const otpVerifiedAt = new Date().toISOString();
 
-  // Build the exact document → PDF → hash.
+  // Build the exact document → PDF → hash. The active agreement document
+  // (version/status/optional custom body) is read server-side — never trusted
+  // from the client — so the recorded version matches what is actually rendered.
   const company = await getCompanyLegal();
+  const agreementDoc = await getActiveAgreementDoc();
   const html = renderAgreementDocument(
     {
       company: {
@@ -135,6 +136,7 @@ export async function recordSignedAgreement(
       ip: input.ip,
       signatureDataUrl: input.signatureDataUrl,
     },
+    agreementDoc,
   );
   const pdfBytes = await renderAgreementPdf(html);
   const contentHash = sha256Hex(pdfBytes);
@@ -152,7 +154,7 @@ export async function recordSignedAgreement(
     campaign_id: campaign.id,
     event_id: campaign.event_id,
     signer_user_id: user.id,
-    agreement_version: AGREEMENT_VERSION,
+    agreement_version: agreementDoc.version,
     ip: input.ip,
     user_agent: input.userAgent,
     signature_ref: sigPath,
@@ -163,8 +165,9 @@ export async function recordSignedAgreement(
   });
   if (insErr) return { ok: false, error: 'שמירת ההסכם החתום נכשלה' };
 
-  // Lock the campaign as approved (status-guarded, race-safe).
-  await approveCampaign(campaign.id, input.tosVersion);
+  // Lock the campaign as approved (status-guarded, race-safe). The version is
+  // the server-read active document's version (not the client-supplied one).
+  await approveCampaign(campaign.id, agreementDoc.version);
 
   // §14ג(ב): email the signed PDF to the customer. Best-effort — the agreement
   // is already stored and approved; a transient SMTP failure must not void a

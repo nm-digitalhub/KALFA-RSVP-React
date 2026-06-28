@@ -9,6 +9,7 @@ import {
   renderAgreementBody,
   AGREEMENT_CSS,
 } from '@/lib/agreements/template';
+import { getActiveAgreementDoc } from '@/lib/data/agreements-doc';
 import { SignAgreementForm } from './sign-agreement-form';
 import { AgreementSheet } from './agreement-sheet';
 
@@ -35,10 +36,11 @@ export default async function ApproveCampaignPage({
   const campaign = await getCampaign(campaignId);
   if (campaign.event_id !== id) notFound();
 
-  const [event, company, profile] = await Promise.all([
+  const [event, company, profile, agreementDoc] = await Promise.all([
     requireOwnedEvent(id),
     getCompanyLegal(),
     getProfile(),
+    getActiveAgreementDoc(),
   ]);
 
   const backLink = (
@@ -83,7 +85,7 @@ export default async function ApproveCampaignPage({
     ceiling: campaign.max_charge_ceiling ?? 0,
     channels: campaign.allowed_channels,
     windowText: `${fmtDate(campaign.start_at)} – ${fmtDate(campaign.close_at)}`,
-  });
+  }, agreementDoc);
 
   return (
     <div className="mx-auto max-w-2xl space-y-6">

@@ -74,6 +74,42 @@ export type Database = {
           },
         ]
       }
+      agreement_documents: {
+        Row: {
+          approved_at: string | null
+          approved_by: string | null
+          body_html: string | null
+          created_at: string
+          id: string
+          is_active: boolean
+          status: Database["public"]["Enums"]["agreement_status"]
+          updated_at: string
+          version: string
+        }
+        Insert: {
+          approved_at?: string | null
+          approved_by?: string | null
+          body_html?: string | null
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          status?: Database["public"]["Enums"]["agreement_status"]
+          updated_at?: string
+          version: string
+        }
+        Update: {
+          approved_at?: string | null
+          approved_by?: string | null
+          body_html?: string | null
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          status?: Database["public"]["Enums"]["agreement_status"]
+          updated_at?: string
+          version?: string
+        }
+        Relationships: []
+      }
       app_settings: {
         Row: {
           campaign_holds_enabled: boolean
@@ -1446,6 +1482,7 @@ export type Database = {
       }
     }
     Enums: {
+      agreement_status: "draft" | "approved"
       app_role: "admin" | "user"
       billing_route: "saved_token" | "hold_j5"
       campaign_channel: "whatsapp" | "call"
@@ -1634,6 +1671,7 @@ export const Constants = {
   },
   public: {
     Enums: {
+      agreement_status: ["draft", "approved"],
       app_role: ["admin", "user"],
       billing_route: ["saved_token", "hold_j5"],
       campaign_channel: ["whatsapp", "call"],

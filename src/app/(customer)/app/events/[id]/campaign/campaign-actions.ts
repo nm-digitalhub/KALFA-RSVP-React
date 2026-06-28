@@ -9,7 +9,7 @@ import { createCampaign } from '@/lib/data/campaigns';
 import { recordSignedAgreement } from '@/lib/data/agreements';
 import { getProfile } from '@/lib/data/profiles';
 import { requestOtp } from '@/lib/data/otp';
-import { AGREEMENT_VERSION } from '@/lib/agreements/template';
+import { getActiveAgreementDoc } from '@/lib/data/agreements-doc';
 import {
   campaignTermsSchema,
   approveCampaignSchema,
@@ -95,11 +95,14 @@ export async function signAgreementAction(
   _prevState: FormState,
   formData: FormData,
 ): Promise<FormState> {
-  // Consents (the three explicit affirmations). tos_version is set server-side
-  // to the rendered agreement version — never trusted from the client.
+  // tos_version is set server-side to the ACTIVE agreement document's version
+  // (DB-managed) — never trusted from the client.
+  const { version: agreementVersion } = await getActiveAgreementDoc();
+
+  // Consents (the three explicit affirmations).
   const consents = approveCampaignSchema.safeParse({
     campaign_id: campaignId,
-    tos_version: AGREEMENT_VERSION,
+    tos_version: agreementVersion,
     terms_accepted: formData.get('terms_accepted') === 'on',
     privacy_accepted: formData.get('privacy_accepted') === 'on',
     authorization_accepted: formData.get('authorization_accepted') === 'on',
@@ -130,7 +133,7 @@ export async function signAgreementAction(
       campaignId,
       otpCode,
       signatureDataUrl: signature,
-      tosVersion: AGREEMENT_VERSION,
+      tosVersion: agreementVersion,
       ip,
       userAgent,
     });

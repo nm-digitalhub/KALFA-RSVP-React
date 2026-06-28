@@ -19,6 +19,21 @@ const eslintConfig = defineConfig([
     // Harness session data (not application source).
     ".remember/**",
   ]),
+  // Honor the codebase-wide `_`-prefix convention for intentionally-unused
+  // bindings (e.g. the (prevState, formData) args that useActionState requires
+  // even when an action ignores them). Non-underscore unused vars still report.
+  {
+    rules: {
+      "@typescript-eslint/no-unused-vars": [
+        "warn",
+        {
+          argsIgnorePattern: "^_",
+          varsIgnorePattern: "^_",
+          caughtErrorsIgnorePattern: "^_",
+        },
+      ],
+    },
+  },
 ]);
 
 export default eslintConfig;

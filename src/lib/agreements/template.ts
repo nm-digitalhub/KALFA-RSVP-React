@@ -2,17 +2,42 @@
 // so the exact bytes rendered to PDF (and hashed) are deterministic, and the
 // SAME body is shown to the customer before signing (no drift).
 //
+// The contract is now DB-managed (table agreement_documents, /admin/agreement):
+// version + status (draft/approved) + an OPTIONAL custom body. This module stays
+// PURE — the active document is passed in as `doc`. When `doc.bodyHtml` is null
+// the vetted in-code default below is used; when set, the custom HTML is rendered
+// with safe {{token}} substitution. The draft marker is appended here based on
+// `doc.status`, so approving the contract removes it regardless of the body.
+//
 // Legal basis (Israeli Consumer Protection Law §14ג distance-selling
 // disclosures, Privacy Protection Law §11 + Amendment 13, Communications Law
-// §30א, Electronic Signature Law). ⚠️ DRAFT — a licensed Israeli consumer-
-// protection lawyer must approve the final wording before go-live.
+// §30א, Electronic Signature Law). ⚠️ The default wording is a DRAFT — a
+// licensed Israeli consumer-protection lawyer must approve it before go-live.
 
+// Fallback version when no active DB document is available (e.g. pre-migration).
 export const AGREEMENT_VERSION = 'draft-2026-06-v2';
 
 // VAT is 18% in Israel (since 2025-01-01). Consumer-facing prices MUST be shown
 // VAT-inclusive (§ price-display). The admin-set price is treated as the
 // consumer (VAT-inclusive) price; SUMIT charges with VATIncluded=true to match.
 export const VAT_RATE_PERCENT = 18;
+
+export type AgreementStatus = 'draft' | 'approved';
+
+// The active agreement document (from the DB) injected into the renderers.
+export type AgreementDoc = {
+  version: string;
+  status: AgreementStatus;
+  /** null → use the vetted in-code default body; set → custom HTML w/ {{tokens}}. */
+  bodyHtml: string | null;
+};
+
+// Convenience default (in-code template, draft) for callers without a DB row.
+export const DEFAULT_AGREEMENT_DOC: AgreementDoc = {
+  version: AGREEMENT_VERSION,
+  status: 'draft',
+  bodyHtml: null,
+};
 
 export type CompanyInfo = {
   name: string;
@@ -66,6 +91,11 @@ function orTodo(v: string): string {
   return v.trim() ? esc(v.trim()) : '<span class="todo">[יושלם]</span>';
 }
 
+// The draft marker. Appended by the renderer ONLY for a draft document, so the
+// Approve action (status → approved) removes it without touching the body.
+const DRAFT_MARKER =
+  '\n\n  <div class="draft">טיוטה — נוסח משפטי לאישור עו"ד (דיני הגנת הצרכן) טרם הפעלה מסחרית.</div>';
+
 // Shared CSS — injected into the PDF document AND the on-page preview so the
 // customer sees exactly what is signed.
 export const AGREEMENT_CSS = `
@@ -85,9 +115,43 @@ export const AGREEMENT_CSS = `
   .agreement-doc .draft { color: #b45309; font-size: 11px; margin-top: 22px; }
 `;
 
-// The agreement body (all clauses) — shown to the customer before signing AND
-// embedded in the PDF. No signature here.
-export function renderAgreementBody(c: AgreementContent): string {
+// The fixed, safe placeholder set available to a custom (admin-edited) body.
+// Values are pre-escaped/formatted; substitution is a literal token replace
+// (no eval). Unknown tokens are left as-is.
+function tokenMap(c: AgreementContent, version: string): Record<string, string> {
+  const channelList = c.channels.map((ch) => CHANNEL_LABELS[ch] ?? ch).join(', ');
+  const privacyLink = `<a href="${esc(c.company.privacyUrl.trim() || '/privacy')}">מדיניות הפרטיות</a>`;
+  const termsLink = `<a href="${esc(c.company.termsUrl.trim() || '/terms')}">תנאי השירות</a>`;
+  return {
+    version: esc(version),
+    eventName: esc(c.eventName),
+    pricePerReached: ils(c.pricePerReached),
+    maxContacts: c.maxContacts.toLocaleString('he-IL'),
+    ceiling: ils(c.ceiling),
+    channels: esc(channelList),
+    windowText: esc(c.windowText),
+    vatRate: String(VAT_RATE_PERCENT),
+    'company.name': orTodo(c.company.name),
+    'company.id': orTodo(c.company.id),
+    'company.address': orTodo(c.company.address),
+    'company.contactPhone': orTodo(c.company.contactPhone),
+    'company.contactEmail': orTodo(c.company.contactEmail),
+    'company.warrantyText': orTodo(c.company.warrantyText),
+    privacyLink,
+    termsLink,
+  };
+}
+
+function substituteTokens(html: string, c: AgreementContent, version: string): string {
+  const tokens = tokenMap(c, version);
+  return html.replace(/\{\{\s*([\w.]+)\s*\}\}/g, (whole, key: string) =>
+    Object.prototype.hasOwnProperty.call(tokens, key) ? tokens[key] : whole,
+  );
+}
+
+// The vetted in-code default body (used when the active document has no custom
+// body). NO draft marker here — the renderer appends it based on status.
+function defaultBody(c: AgreementContent, version: string): string {
   const channelList = c.channels
     .map((ch) => CHANNEL_LABELS[ch] ?? ch)
     .join(', ');
@@ -98,7 +162,7 @@ export function renderAgreementBody(c: AgreementContent): string {
 
   return `
   <h1>הסכם אישור קמפיין ושירות — KALFA</h1>
-  <div class="sub">חיוב לפי תוצאה — איש קשר ייחודי שהושג · גרסה ${esc(AGREEMENT_VERSION)}</div>
+  <div class="sub">חיוב לפי תוצאה — איש קשר ייחודי שהושג · גרסה ${esc(version)}</div>
 
   <h2>1. הצדדים</h2>
   <p>הסכם זה בין <strong>${orTodo(c.company.name)}</strong> (ח.פ./ע.מ. ${orTodo(c.company.id)}), מרחוב ${orTodo(c.company.address)} ("נותנת השירות" / "KALFA"), לבין הלקוח החתום מטה ("הלקוח"), עבור האירוע <strong>${esc(c.eventName)}</strong>.</p>
@@ -146,26 +210,39 @@ export function renderAgreementBody(c: AgreementContent): string {
 
   <div class="intent">
     10. הצהרת כוונה: הלקוח מצהיר כי קרא והבין הסכם זה, מסכים לתנאיו, ומתחייב באופן מחייב לתשלום כמפורט. החתימה האלקטרונית להלן, יחד עם אימות הטלפון, מהוות הסכמה מחייבת.
-  </div>
+  </div>`;
+}
 
-  <div class="draft">טיוטה — נוסח משפטי לאישור עו"ד (דיני הגנת הצרכן) טרם הפעלה מסחרית.</div>`;
+// The agreement body (all clauses) — shown to the customer before signing AND
+// embedded in the PDF. No signature here. `doc` selects custom vs default body,
+// its version, and whether the draft marker is appended (status='draft').
+export function renderAgreementBody(
+  c: AgreementContent,
+  doc: AgreementDoc = DEFAULT_AGREEMENT_DOC,
+): string {
+  const inner =
+    doc.bodyHtml != null && doc.bodyHtml.trim() !== ''
+      ? substituteTokens(doc.bodyHtml, c, doc.version)
+      : defaultBody(c, doc.version);
+  return doc.status === 'draft' ? inner + DRAFT_MARKER : inner;
 }
 
 // Full self-contained HTML document for the PDF: CSS + body + signature block.
 export function renderAgreementDocument(
   c: AgreementContent,
   sig: AgreementSignature,
+  doc: AgreementDoc = DEFAULT_AGREEMENT_DOC,
 ): string {
   const signatureBlock = `
   <div class="sig">
     <h2>חתימה וזיהוי</h2>
     <img src="${sig.signatureDataUrl}" alt="חתימה">
-    <div class="meta">חתם/ה: ${esc(sig.signerName)} · טלפון מאומת: ${esc(sig.verifiedPhone)} · תאריך: ${esc(sig.signedDateText)}${sig.ip ? ` · IP: ${esc(sig.ip)}` : ''} · גרסה: ${esc(AGREEMENT_VERSION)}</div>
+    <div class="meta">חתם/ה: ${esc(sig.signerName)} · טלפון מאומת: ${esc(sig.verifiedPhone)} · תאריך: ${esc(sig.signedDateText)}${sig.ip ? ` · IP: ${esc(sig.ip)}` : ''} · גרסה: ${esc(doc.version)}</div>
   </div>`;
 
   return `<!doctype html>
 <html lang="he" dir="rtl">
 <head><meta charset="utf-8"><style>* { box-sizing: border-box; } body { margin: 40px; }${AGREEMENT_CSS}</style></head>
-<body><div class="agreement-doc">${renderAgreementBody(c)}${signatureBlock}</div></body>
+<body><div class="agreement-doc">${renderAgreementBody(c, doc)}${signatureBlock}</div></body>
 </html>`;
 }
