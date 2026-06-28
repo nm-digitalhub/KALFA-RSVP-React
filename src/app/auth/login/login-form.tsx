@@ -4,6 +4,7 @@ import { useActionState } from 'react';
 
 import { login } from '../actions';
 import { FieldError, FormError, SubmitButton } from '@/components/forms';
+import { PasswordInput } from '@/components/password-input';
 
 export function LoginForm() {
   const [state, action] = useActionState(login, null);
@@ -31,13 +32,11 @@ export function LoginForm() {
         <label htmlFor="password" className="mb-1 block text-sm font-medium">
           סיסמה
         </label>
-        <input
+        <PasswordInput
           id="password"
           name="password"
-          type="password"
           autoComplete="current-password"
           required
-          className="w-full rounded-md border border-border bg-transparent px-3 py-2"
         />
         <FieldError errors={state?.fieldErrors?.password} />
       </div>

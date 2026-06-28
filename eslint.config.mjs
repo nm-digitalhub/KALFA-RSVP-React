@@ -9,6 +9,10 @@ const eslintConfig = defineConfig([
   globalIgnores([
     // Default ignores of eslint-config-next:
     ".next/**",
+    // Isolated verification/staging build dirs (see package.json build/deploy).
+    ".next-verify/**",
+    ".next-stage/**",
+    ".next.old/**",
     "out/**",
     "build/**",
     "next-env.d.ts",

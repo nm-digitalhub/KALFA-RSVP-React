@@ -76,6 +76,7 @@ export type Database = {
       }
       app_settings: {
         Row: {
+          campaign_holds_enabled: boolean
           company_contact_email: string | null
           company_contact_phone: string | null
           company_legal_address: string | null
@@ -105,6 +106,7 @@ export type Database = {
           warranty_text: string | null
         }
         Insert: {
+          campaign_holds_enabled?: boolean
           company_contact_email?: string | null
           company_contact_phone?: string | null
           company_legal_address?: string | null
@@ -134,6 +136,7 @@ export type Database = {
           warranty_text?: string | null
         }
         Update: {
+          campaign_holds_enabled?: boolean
           company_contact_email?: string | null
           company_contact_phone?: string | null
           company_legal_address?: string | null
@@ -607,6 +610,7 @@ export type Database = {
           id: string
           name: string
           notes: string | null
+          org_id: string | null
           owner_id: string
           package_id: string | null
           rsvp_deadline: string | null
@@ -624,6 +628,7 @@ export type Database = {
           id?: string
           name: string
           notes?: string | null
+          org_id?: string | null
           owner_id: string
           package_id?: string | null
           rsvp_deadline?: string | null
@@ -641,6 +646,7 @@ export type Database = {
           id?: string
           name?: string
           notes?: string | null
+          org_id?: string | null
           owner_id?: string
           package_id?: string | null
           rsvp_deadline?: string | null
@@ -652,6 +658,13 @@ export type Database = {
           with_ai_calls?: boolean
         }
         Relationships: [
+          {
+            foreignKeyName: "events_org_id_fkey"
+            columns: ["org_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "events_package_id_fkey"
             columns: ["package_id"]
@@ -853,6 +866,207 @@ export type Database = {
           },
         ]
       }
+      org_roles: {
+        Row: {
+          created_at: string
+          description: string | null
+          id: string
+          is_owner_role: boolean
+          label: string
+          name: string
+          rank: number
+          sort_order: number
+        }
+        Insert: {
+          created_at?: string
+          description?: string | null
+          id?: string
+          is_owner_role?: boolean
+          label: string
+          name: string
+          rank?: number
+          sort_order?: number
+        }
+        Update: {
+          created_at?: string
+          description?: string | null
+          id?: string
+          is_owner_role?: boolean
+          label?: string
+          name?: string
+          rank?: number
+          sort_order?: number
+        }
+        Relationships: []
+      }
+      organization_audit_log: {
+        Row: {
+          action: string
+          actor_id: string
+          created_at: string
+          details: Json | null
+          id: string
+          organization_id: string
+          target_role_id: string | null
+          target_user_id: string | null
+        }
+        Insert: {
+          action: string
+          actor_id: string
+          created_at?: string
+          details?: Json | null
+          id?: string
+          organization_id: string
+          target_role_id?: string | null
+          target_user_id?: string | null
+        }
+        Update: {
+          action?: string
+          actor_id?: string
+          created_at?: string
+          details?: Json | null
+          id?: string
+          organization_id?: string
+          target_role_id?: string | null
+          target_user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "organization_audit_log_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "organization_audit_log_target_role_id_fkey"
+            columns: ["target_role_id"]
+            isOneToOne: false
+            referencedRelation: "org_roles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      organization_invitations: {
+        Row: {
+          accepted_at: string | null
+          accepted_by: string | null
+          created_at: string
+          email: string
+          expires_at: string
+          id: string
+          invited_by: string
+          organization_id: string
+          revoked_at: string | null
+          role_id: string
+          token: string
+        }
+        Insert: {
+          accepted_at?: string | null
+          accepted_by?: string | null
+          created_at?: string
+          email: string
+          expires_at: string
+          id?: string
+          invited_by: string
+          organization_id: string
+          revoked_at?: string | null
+          role_id: string
+          token: string
+        }
+        Update: {
+          accepted_at?: string | null
+          accepted_by?: string | null
+          created_at?: string
+          email?: string
+          expires_at?: string
+          id?: string
+          invited_by?: string
+          organization_id?: string
+          revoked_at?: string | null
+          role_id?: string
+          token?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "organization_invitations_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "organization_invitations_role_id_fkey"
+            columns: ["role_id"]
+            isOneToOne: false
+            referencedRelation: "org_roles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      organization_members: {
+        Row: {
+          created_at: string
+          id: string
+          organization_id: string
+          role_id: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          organization_id: string
+          role_id: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          organization_id?: string
+          role_id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "organization_members_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "organization_members_role_id_fkey"
+            columns: ["role_id"]
+            isOneToOne: false
+            referencedRelation: "org_roles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      organizations: {
+        Row: {
+          created_at: string
+          created_by: string
+          id: string
+          name: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          created_by: string
+          id?: string
+          name: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string
+          id?: string
+          name?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       otp_challenges: {
         Row: {
           attempts: number
@@ -934,6 +1148,33 @@ export type Database = {
         }
         Relationships: []
       }
+      permission_definitions: {
+        Row: {
+          action: string
+          created_at: string
+          id: string
+          label: string
+          resource: string
+          sort_order: number
+        }
+        Insert: {
+          action: string
+          created_at?: string
+          id?: string
+          label: string
+          resource: string
+          sort_order?: number
+        }
+        Update: {
+          action?: string
+          created_at?: string
+          id?: string
+          label?: string
+          resource?: string
+          sort_order?: number
+        }
+        Relationships: []
+      }
       profiles: {
         Row: {
           created_at: string
@@ -957,6 +1198,42 @@ export type Database = {
           updated_at?: string
         }
         Relationships: []
+      }
+      role_permissions: {
+        Row: {
+          created_at: string
+          id: string
+          permission_id: string
+          role_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          permission_id: string
+          role_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          permission_id?: string
+          role_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "role_permissions_permission_id_fkey"
+            columns: ["permission_id"]
+            isOneToOne: false
+            referencedRelation: "permission_definitions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "role_permissions_role_id_fkey"
+            columns: ["role_id"]
+            isOneToOne: false
+            referencedRelation: "org_roles"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       rsvp_responses: {
         Row: {
@@ -1134,8 +1411,18 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      accept_invitation: { Args: { _token: string }; Returns: string }
+      can_access_event: {
+        Args: { _action?: string; _event_id: string; _resource?: string }
+        Returns: boolean
+      }
       claim_first_admin: { Args: never; Returns: boolean }
+      create_organization: { Args: { _name: string }; Returns: string }
       get_rsvp_by_token: { Args: { _token: string }; Returns: Json }
+      has_org_permission: {
+        Args: { _action: string; _org_id: string; _resource: string }
+        Returns: boolean
+      }
       has_role: {
         Args: {
           _role: Database["public"]["Enums"]["app_role"]
@@ -1143,6 +1430,8 @@ export type Database = {
         }
         Returns: boolean
       }
+      is_org_member: { Args: { _org_id: string }; Returns: boolean }
+      org_role_rank: { Args: { _role_id: string }; Returns: number }
       owns_event: { Args: { _event_id: string }; Returns: boolean }
       submit_rsvp: {
         Args: {

@@ -13,6 +13,7 @@ import {
   Search,
   Settings,
   Shield,
+  Users,
   type LucideIcon,
 } from 'lucide-react';
 
@@ -41,6 +42,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
+import { OrgSwitcher, type OrgOption } from '@/components/org-switcher';
 
 // Customer app shell: a fixed right-side sidebar (RTL) plus a top bar. The
 // customer layout stays a Server Component and renders this client shell so
@@ -110,21 +112,37 @@ function LogoutMenuItem() {
 export function AppShell({
   userEmail,
   isAdmin = false,
+  orgs = [],
+  activeOrgId = null,
+  showTeam = false,
   children,
 }: {
   userEmail: string | undefined;
   // Whether to reveal the admin nav link. Determined server-side by the layout;
   // this is a convenience link only — the /admin layout enforces authorization.
   isAdmin?: boolean;
+  // Organizations the user belongs to + the active one (for the switcher) and
+  // whether to reveal the user-management nav link (members.view). All resolved
+  // server-side in the layout; the /app/team route re-checks the permission.
+  orgs?: OrgOption[];
+  activeOrgId?: string | null;
+  showTeam?: boolean;
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
   const initial = userEmail?.[0]?.toUpperCase() ?? '?';
 
-  // Admin link appended only for admins; the route itself re-checks the role.
-  const nav: NavItem[] = isAdmin
-    ? [...NAV, { href: '/admin', label: 'ניהול', icon: Shield }]
-    : NAV;
+  // dashboard/events/orders, then the team link (if permitted), then settings,
+  // then the admin link (admins only). The /app/team and /admin routes re-check
+  // their own authorization server-side.
+  const nav: NavItem[] = [
+    ...NAV.slice(0, 3),
+    ...(showTeam
+      ? [{ href: '/app/team', label: 'ניהול משתמשים', icon: Users }]
+      : []),
+    ...NAV.slice(3),
+    ...(isAdmin ? [{ href: '/admin', label: 'ניהול', icon: Shield }] : []),
+  ];
 
   return (
     <DirectionProvider direction="rtl">
@@ -188,6 +206,8 @@ export function AppShell({
                 className="ps-8"
               />
             </div>
+
+            <OrgSwitcher orgs={orgs} activeOrgId={activeOrgId} />
 
             <DropdownMenu>
               <DropdownMenuTrigger

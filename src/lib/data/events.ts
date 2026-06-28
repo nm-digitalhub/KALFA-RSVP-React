@@ -5,6 +5,7 @@ import { notFound } from 'next/navigation';
 import { createClient } from '@/lib/supabase/server';
 import { requireUser } from '@/lib/auth/dal';
 import { logActivity } from '@/lib/data/activity';
+import { ensurePersonalOrg } from '@/lib/data/orgs';
 import type { Database } from '@/lib/supabase/types';
 
 type EventRow = Database['public']['Tables']['events']['Row'];
@@ -34,6 +35,41 @@ export async function requireOwnedEvent(eventId: string): Promise<OwnedEvent> {
     throw new Error('טעינת האירוע נכשלה');
   }
   if (!data) {
+    notFound();
+  }
+  return data;
+}
+
+// Org-aware access gate: verify the current user may perform `action` on
+// `resource` for `eventId` — owner OR an org member holding the permission —
+// via the can_access_event() DB function (single source of truth). notFound()
+// (404) otherwise. requireOwnedEvent remains for strictly owner-only paths;
+// this gate enables shared, org-scoped access once the event-table RLS is
+// widened to org membership (Phase 3).
+export async function requireEventAccess(
+  eventId: string,
+  resource: string = 'events',
+  action: string = 'view',
+): Promise<OwnedEvent> {
+  await requireUser();
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from('events')
+    .select(OWNED_EVENT_COLUMNS)
+    .eq('id', eventId)
+    .maybeSingle();
+  if (error) {
+    throw new Error('טעינת האירוע נכשלה');
+  }
+  if (!data) {
+    notFound();
+  }
+  const { data: allowed } = await supabase.rpc('can_access_event', {
+    _event_id: eventId,
+    _resource: resource,
+    _action: action,
+  });
+  if (allowed !== true) {
     notFound();
   }
   return data;
@@ -83,11 +119,14 @@ export interface CreateEventInput {
 // Create an event owned by the current user.
 export async function createEvent(input: CreateEventInput): Promise<EventListItem> {
   const user = await requireUser();
+  // Anchor the event to the user's active org (creating a personal org on first
+  // use). owner_id is kept for backward compatibility and as the legacy owner.
+  const orgId = await ensurePersonalOrg();
   const supabase = await createClient();
 
   const { data, error } = await supabase
     .from('events')
-    .insert({ ...input, owner_id: user.id })
+    .insert({ ...input, owner_id: user.id, org_id: orgId })
     .select(LIST_COLUMNS)
     .single();
 

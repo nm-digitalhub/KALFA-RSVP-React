@@ -37,14 +37,24 @@ export async function signup(
   const parsed = signupSchema.safeParse({
     email: formData.get('email'),
     password: formData.get('password'),
+    full_name: formData.get('full_name'),
+    phone: formData.get('phone'),
   });
 
   if (!parsed.success) {
     return { fieldErrors: parsed.error.flatten().fieldErrors };
   }
 
+  const { email, password, full_name, phone } = parsed.data;
+
   const supabase = await createClient();
-  const { data, error } = await supabase.auth.signUp(parsed.data);
+  // full_name/phone go into auth user_metadata; the handle_new_user() trigger
+  // copies them into the profiles row on insert (no separate write needed).
+  const { data, error } = await supabase.auth.signUp({
+    email,
+    password,
+    options: { data: { full_name, phone: phone ?? '' } },
+  });
 
   if (error) {
     return { error: 'ההרשמה נכשלה. נסו שוב מאוחר יותר.' };
@@ -59,12 +69,10 @@ export async function signup(
   }
 
   // Genuine new signup: email confirmation is required, so there is no session
-  // yet. Tell the user to confirm rather than redirecting into a protected area
-  // (which the proxy would bounce back to login with no feedback).
+  // yet. Send the user to a dedicated success page (rather than an inline
+  // notice) that explains the email-confirmation step.
   if (!data.session) {
-    return {
-      notice: 'נשלח אליכם אימייל לאישור החשבון. אנא אשרו ולאחר מכן התחברו.',
-    };
+    redirect('/auth/signup/success');
   }
 
   redirect('/app');

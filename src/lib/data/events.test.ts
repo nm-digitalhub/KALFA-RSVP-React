@@ -7,6 +7,7 @@ import { requireUser } from '@/lib/auth/dal';
 import { logActivity } from '@/lib/data/activity';
 import type { EventDetail, EventListItem } from '@/lib/data/events';
 import { createEvent, getEvent, listEvents, updateEvent } from '@/lib/data/events';
+import { ensurePersonalOrg } from '@/lib/data/orgs';
 
 // `events.ts` and `dal.ts` begin with `import 'server-only'`, which throws
 // outside Next's React Server Component context. Vitest does not set that
@@ -18,6 +19,9 @@ vi.mock('server-only', () => ({}));
 vi.mock('@/lib/supabase/server', () => ({ createClient: vi.fn() }));
 vi.mock('@/lib/auth/dal', () => ({ requireUser: vi.fn() }));
 vi.mock('@/lib/data/activity', () => ({ logActivity: vi.fn() }));
+// createEvent now anchors the event to the caller's active org; stub the
+// org-resolution helper so these tests stay focused on event ownership.
+vi.mock('@/lib/data/orgs', () => ({ ensurePersonalOrg: vi.fn() }));
 
 // notFound() (used by getEvent and the requireOwnedEvent gate) throws in real
 // Next; outside an RSC request we stub it to a tagged error we can assert on.
@@ -73,6 +77,7 @@ function detailRow(overrides: Partial<EventDetail> = {}): EventDetail {
 beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(requireUser).mockResolvedValue(mockUser());
+  vi.mocked(ensurePersonalOrg).mockResolvedValue('org-1');
 });
 
 describe('listEvents', () => {

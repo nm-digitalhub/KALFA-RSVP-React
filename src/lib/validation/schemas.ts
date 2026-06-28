@@ -15,6 +15,22 @@ export const signupSchema = z.object({
     .string()
     .min(8, { error: 'הסיסמה חייבת לכלול לפחות 8 תווים' })
     .max(72, { error: 'הסיסמה ארוכה מדי' }),
+  // Collected at signup and written to the profile by the handle_new_user()
+  // trigger (via auth metadata). full_name is required; phone is optional and,
+  // when present, validated against the Israeli numbering plan.
+  full_name: z
+    .string()
+    .trim()
+    .min(1, { error: 'נא להזין שם מלא' })
+    .max(PROFILE_NAME_MAX, { error: 'השם ארוך מדי' }),
+  phone: z
+    .string()
+    .trim()
+    .refine((v) => v === '' || ISRAELI_PHONE_RE.test(v), {
+      error: 'מספר טלפון לא תקין',
+    })
+    .optional()
+    .or(z.literal('')),
 });
 
 // Events — event_type matches the public.event_type enum in the live schema.
@@ -130,3 +146,43 @@ export const emailChangeSchema = z.object({
   email: z.string().trim().pipe(z.email({ error: 'כתובת אימייל לא תקינה' })),
 });
 export type EmailChangeInput = z.infer<typeof emailChangeSchema>;
+
+// Organizations & members (multi-tenant layer). role_id is a uuid into
+// public.org_roles — the actual role/permission set is validated server-side
+// against the DB (never trusted from the browser), so these schemas only check
+// shape. Hebrew messages match the project's form conventions.
+export const orgNameSchema = z.object({
+  name: z
+    .string()
+    .trim()
+    .min(1, { error: 'נא להזין שם ארגון' })
+    .max(120, { error: 'שם הארגון ארוך מדי' }),
+});
+export type OrgNameInput = z.infer<typeof orgNameSchema>;
+
+export const inviteMemberSchema = z.object({
+  email: z.string().trim().pipe(z.email({ error: 'כתובת אימייל לא תקינה' })),
+  role_id: z.string().uuid({ error: 'תפקיד לא תקין' }),
+});
+export type InviteMemberInput = z.infer<typeof inviteMemberSchema>;
+
+export const changeMemberRoleSchema = z.object({
+  member_id: z.string().uuid({ error: 'מזהה חבר לא תקין' }),
+  role_id: z.string().uuid({ error: 'תפקיד לא תקין' }),
+});
+export type ChangeMemberRoleInput = z.infer<typeof changeMemberRoleSchema>;
+
+export const memberIdSchema = z.object({
+  member_id: z.string().uuid({ error: 'מזהה חבר לא תקין' }),
+});
+export type MemberIdInput = z.infer<typeof memberIdSchema>;
+
+export const invitationIdSchema = z.object({
+  invitation_id: z.string().uuid({ error: 'מזהה הזמנה לא תקין' }),
+});
+export type InvitationIdInput = z.infer<typeof invitationIdSchema>;
+
+export const activeOrgSchema = z.object({
+  org_id: z.string().uuid({ error: 'מזהה ארגון לא תקין' }),
+});
+export type ActiveOrgInput = z.infer<typeof activeOrgSchema>;

@@ -42,10 +42,11 @@ describe('loginSchema', () => {
 });
 
 describe('signupSchema', () => {
-  it('accepts an 8+ character password', () => {
+  it('accepts an 8+ character password with a full name', () => {
     const result = signupSchema.safeParse({
       email: 'user@example.com',
       password: '12345678',
+      full_name: 'ישראל ישראלי',
     });
     expect(result.success).toBe(true);
   });
@@ -54,6 +55,7 @@ describe('signupSchema', () => {
     const result = signupSchema.safeParse({
       email: 'user@example.com',
       password: '1234567',
+      full_name: 'ישראל ישראלי',
     });
     expect(result.success).toBe(false);
   });
@@ -62,6 +64,46 @@ describe('signupSchema', () => {
     const result = signupSchema.safeParse({
       email: 'user@example.com',
       password: 'a'.repeat(73),
+      full_name: 'ישראל ישראלי',
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('requires a full name', () => {
+    const result = signupSchema.safeParse({
+      email: 'user@example.com',
+      password: '12345678',
+      full_name: '',
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('accepts a valid Israeli phone', () => {
+    const result = signupSchema.safeParse({
+      email: 'user@example.com',
+      password: '12345678',
+      full_name: 'ישראל ישראלי',
+      phone: '050-123-4567',
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('accepts an empty phone (optional)', () => {
+    const result = signupSchema.safeParse({
+      email: 'user@example.com',
+      password: '12345678',
+      full_name: 'ישראל ישראלי',
+      phone: '',
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('rejects an invalid phone', () => {
+    const result = signupSchema.safeParse({
+      email: 'user@example.com',
+      password: '12345678',
+      full_name: 'ישראל ישראלי',
+      phone: '123',
     });
     expect(result.success).toBe(false);
   });

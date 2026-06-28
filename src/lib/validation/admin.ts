@@ -163,3 +163,28 @@ export const companySettingsSchema = z.object({
   warranty_text: z.string().trim(),
 });
 export type CompanySettingsInput = z.infer<typeof companySettingsSchema>;
+
+// --- admin user management (platform staff) ---
+export const adminUserIdSchema = z.object({
+  user_id: z.string().uuid({ error: 'מזהה משתמש לא תקין' }),
+});
+export type AdminUserIdInput = z.infer<typeof adminUserIdSchema>;
+
+// Grant a benefit (billing credit) on one of the user's events.
+export const grantCreditSchema = z.object({
+  event_id: z.string().uuid({ error: 'מזהה אירוע לא תקין' }),
+  amount: z.coerce.number().positive({ error: 'הסכום חייב להיות חיובי' }),
+  reason: z
+    .string()
+    .trim()
+    .min(1, { error: 'נא להזין סיבה' })
+    .max(300, { error: 'הסיבה ארוכה מדי' }),
+});
+export type GrantCreditInput = z.infer<typeof grantCreditSchema>;
+
+// Update the plan: switch the package on a not-yet-paid order.
+export const updatePlanSchema = z.object({
+  order_id: z.string().uuid({ error: 'מזהה הזמנה לא תקין' }),
+  package_id: z.string().uuid({ error: 'מזהה חבילה לא תקין' }),
+});
+export type UpdatePlanInput = z.infer<typeof updatePlanSchema>;
