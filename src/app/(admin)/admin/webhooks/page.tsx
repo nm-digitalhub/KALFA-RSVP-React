@@ -1,6 +1,7 @@
 import Link from 'next/link';
 
 import {
+  getWebhookInboxItem,
   listWebhookInbox,
   resolveWebhookAssociations,
 } from '@/lib/data/admin/webhook-inbox';
@@ -21,6 +22,8 @@ import {
   formatDateTime,
   parsePageParam,
 } from '../_components';
+import { WebhookDetail } from './webhook-detail';
+import { InspectorDrawer } from './webhook-inspector-client';
 
 export const metadata = { title: 'בדיקת Webhooks' };
 
@@ -31,6 +34,7 @@ type SearchParams = {
   from?: string | string[];
   to?: string | string[];
   q?: string | string[];
+  inspect?: string | string[];
 };
 
 interface CurrentFilters {
@@ -177,6 +181,17 @@ export default async function AdminWebhooksPage({
 
   const queryParams = { ...current };
 
+  // Detail drawer (server-rendered body) when ?inspect is present.
+  const inspectId = firstParam(sp.inspect);
+  const detail = inspectId ? await getWebhookInboxItem(inspectId) : null;
+
+  function listHref(): string {
+    const params = new URLSearchParams();
+    for (const [k, v] of Object.entries(current)) if (v) params.set(k, v);
+    const qs = params.toString();
+    return qs ? `/admin/webhooks?${qs}` : '/admin/webhooks';
+  }
+
   // Href to open a row's detail drawer (rendered in Stage 1c) while preserving
   // the active filters.
   function inspectHref(id: string): string {
@@ -268,6 +283,15 @@ export default async function AdminWebhooksPage({
         total={result.total}
         queryParams={queryParams}
       />
+
+      {detail ? (
+        <InspectorDrawer
+          closeHref={listHref()}
+          title={`אירוע webhook · ${webhookKindLabel(detail.event_kind)}`}
+        >
+          <WebhookDetail item={detail} />
+        </InspectorDrawer>
+      ) : null}
     </div>
   );
 }
