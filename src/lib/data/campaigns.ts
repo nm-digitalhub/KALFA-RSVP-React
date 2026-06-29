@@ -2,7 +2,10 @@ import 'server-only';
 
 import { requireUser } from '@/lib/auth/dal';
 import { requireOwnedEvent } from '@/lib/data/events';
-import { countUniqueContactsForEvent } from '@/lib/data/contacts';
+import {
+  countUniqueContactsForEvent,
+  snapshotAuthorizedSet,
+} from '@/lib/data/contacts';
 import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 import type { Database } from '@/lib/supabase/types';
@@ -41,6 +44,34 @@ const CAMPAIGN_COLUMNS =
 // derived server-side and never accepted from the client.
 export function computeCeiling(pricePerReached: number, maxContacts: number): number {
   return Math.round(pricePerReached * maxContacts * 100) / 100;
+}
+
+// Pure: the COVERED contact count = min(full_unique, reasonable_coverage). It is
+// the binding cap the frozen authorized SET is snapshotted to (Phase 2) and the
+// basis for the J5 hold. The CHARGE CEILING (full×price) is NOT lowered to this.
+export function computeCovered(
+  fullUnique: number,
+  reasonableCoverage: number,
+): number {
+  return Math.max(0, Math.min(fullUnique, reasonableCoverage));
+}
+
+// Pure: the J5 hold (authorization) amount = covered × price × (1 + buffer),
+// rounded to agorot, but never below the package's min_hold_floor. The hold is
+// SECURITY only and is sized to `covered` (NOT the full ceiling) — safe ONLY
+// because the frozen authorized SET caps `reached` at `covered` by construction
+// (the Phase-2 money-leak guard). `holdBufferPct` is a FRACTION, not a percent
+// number (0.1 = +10%); it stays 0 while pricing is uniform. The floor never
+// raises the final charge — that settles from contacts actually reached (≤ ceiling).
+export function computeHoldAmount(
+  covered: number,
+  pricePerReached: number,
+  minHoldFloor: number,
+  holdBufferPct: number,
+): number {
+  const sized =
+    Math.round(covered * pricePerReached * (1 + holdBufferPct) * 100) / 100;
+  return Math.max(minHoldFloor, sized);
 }
 
 // A single touchpoint in the event-anchored outreach schedule (§10) — a friendly
@@ -310,6 +341,142 @@ export async function markCampaignHoldFailed(
     .update({ capture_status: status })
     .eq('id', campaignId);
   if (error) throw new Error('עדכון מצב התפיסה נכשל');
+}
+
+// --- Phase 2: frozen authorized SET + hold sizing (the money-leak guard) ------
+// The hold (J5 auth amount) is sized to the COVERED contacts, NOT the full
+// ceiling — this is safe ONLY because the snapshotted authorized SET is the
+// binding cap on `reached` (sole outreach + billing path), so reached ⊆ covered
+// by construction. See supabase/migrations/202606290024_billing_authorized_set.sql
+// and plans/verification-corrections.md §A (SAFETY INVARIANT).
+
+// Resolve the admin-managed hold-sizing knobs, each falling back FAIL-SAFE
+// (toward the highest / safest hold): a missing global coverage falls back to
+// `fullUnique` (covered = full → hold = ceiling), and missing per-package
+// economics fall back to 0 (no artificial floor, no buffer). Reads go through the
+// service-role client (app_settings + packages are admin-only under RLS).
+async function getHoldSizingKnobs(
+  templateId: string | null,
+  fullUnique: number,
+): Promise<{
+  reasonableCoverage: number;
+  minHoldFloor: number;
+  holdBufferPct: number;
+}> {
+  const admin = createAdminClient();
+
+  let reasonableCoverage = fullUnique; // fail-safe: never silently lower the hold
+  try {
+    const { data } = await admin
+      .from('app_settings')
+      .select('reasonable_coverage_contacts')
+      .eq('id', true)
+      .maybeSingle();
+    const r = Number(data?.reasonable_coverage_contacts);
+    if (Number.isFinite(r) && r > 0) reasonableCoverage = r;
+  } catch {
+    // keep the fail-safe default (covered = full → hold = ceiling)
+  }
+
+  let minHoldFloor = 0;
+  let holdBufferPct = 0;
+  if (templateId) {
+    try {
+      const { data } = await admin
+        .from('packages')
+        .select('min_hold_floor, hold_buffer_pct')
+        .eq('id', templateId)
+        .maybeSingle();
+      const f = Number(data?.min_hold_floor);
+      const b = Number(data?.hold_buffer_pct);
+      if (Number.isFinite(f) && f >= 0) minHoldFloor = f;
+      if (Number.isFinite(b) && b >= 0) holdBufferPct = b;
+    } catch {
+      // keep 0 / 0
+    }
+  }
+
+  return { reasonableCoverage, minHoldFloor, holdBufferPct };
+}
+
+export type CampaignHoldSizing = {
+  holdAmount: number; // J5 auth amount = max(floor, covered × price × (1+buffer))
+  ceiling: number; // charge ceiling = full × price (the binding max on the charge)
+  full: number; // current unique-contact count
+  covered: number; // min(full, reasonable_coverage) — the set + hold basis
+};
+
+// Phase-2 hold preparation. Run at the J5 step AFTER the hold slot is locked and
+// BEFORE the card hold is placed. In one coherent step it:
+//   1. recomputes `full` = the CURRENT unique-contact count (the guest list may
+//      have grown since create) and resolves the admin knobs,
+//   2. FREEZES the authorized SET to the COVERED contacts (min(full, reasonable))
+//      — reached ⊆ set by construction (the money-leak guard); the set MUST exist
+//      before any billing, so this precedes the hold,
+//   3. recomputes + persists max_contacts = full (NON-NULL — closes the nullable-
+//      uncapped flag) and max_charge_ceiling = full × price (D1=No — closes the
+//      create→approval growth gap; the ceiling is NEVER lowered to covered),
+//   4. returns holdAmount = max(min_hold_floor, covered × price × (1 + buffer)).
+// The hold may be < ceiling — safe ONLY because the SET caps reached at covered.
+// CROSS-AGENT CONTRACT: snapshotAuthorizedSet MUST yield set == the current
+// top-`covered` contacts (REPLACE semantics), so a retry after the list / coverage
+// shrinks cannot leave a stale, larger set above the lowered hold.
+export async function prepareCampaignHold(
+  campaignId: string,
+): Promise<CampaignHoldSizing> {
+  const admin = createAdminClient();
+
+  const { data: campaign, error } = await admin
+    .from('campaigns')
+    .select('event_id, price_per_reached, template_id')
+    .eq('id', campaignId)
+    .maybeSingle();
+  if (error) throw new Error('טעינת הקמפיין נכשלה');
+  if (!campaign) throw new Error('הקמפיין לא נמצא');
+
+  const price = Number(campaign.price_per_reached);
+  if (!Number.isFinite(price) || price <= 0) {
+    throw new Error('מחיר לאיש קשר אינו תקין');
+  }
+
+  // full = the CURRENT unique-contact count (verifies ownership server-side).
+  const full = await countUniqueContactsForEvent(campaign.event_id);
+  if (full < 1) throw new Error('אין אנשי קשר תקינים לפניה');
+
+  const { reasonableCoverage, minHoldFloor, holdBufferPct } =
+    await getHoldSizingKnobs(campaign.template_id, full);
+  const covered = computeCovered(full, reasonableCoverage);
+
+  // FREEZE the authorized set BEFORE any billing — the binding cap on `reached`.
+  // snapshotAuthorizedSet has REPLACE semantics (set == current top-`covered`
+  // contacts; stale/orphan members pruned), and returns the RESULTING set size —
+  // on the happy path == `covered`. We STILL size the hold to
+  // max(covered, frozenSetSize) as belt-and-suspenders: the hold always covers the
+  // actual frozen set even if they ever diverge. reached ⊆ set ⇒
+  // charge ≤ frozenSetSize × price ≤ hold — the SAFETY INVARIANT holds.
+  const frozenSetSize = await snapshotAuthorizedSet(
+    campaign.event_id,
+    campaignId,
+    covered,
+  );
+  const holdBasis = Math.max(covered, frozenSetSize);
+
+  // Recompute + persist the ceiling (full × price) and max_contacts (= full,
+  // NON-NULL). The ceiling stays full × price; it is never lowered to covered.
+  const ceiling = computeCeiling(price, full);
+  const { error: upErr } = await admin
+    .from('campaigns')
+    .update({ max_contacts: full, max_charge_ceiling: ceiling })
+    .eq('id', campaignId);
+  if (upErr) throw new Error('עדכון תקרת החיוב נכשל');
+
+  const holdAmount = computeHoldAmount(
+    holdBasis,
+    price,
+    minHoldFloor,
+    holdBufferPct,
+  );
+  return { holdAmount, ceiling, full, covered };
 }
 
 // --- B4 close-charge data layer ---------------------------------------------

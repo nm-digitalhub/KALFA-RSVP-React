@@ -132,10 +132,12 @@ export type Database = {
           email_enabled: boolean
           extra_sms_sender: string | null
           extra_sms_token: string | null
+          extreme_threshold_contacts: number
           id: boolean
           outreach_enabled: boolean
           payments_enabled: boolean
           privacy_url: string | null
+          reasonable_coverage_contacts: number
           sms_enabled: boolean
           smtp_from: string | null
           smtp_host: string | null
@@ -175,10 +177,12 @@ export type Database = {
           email_enabled?: boolean
           extra_sms_sender?: string | null
           extra_sms_token?: string | null
+          extreme_threshold_contacts?: number
           id?: boolean
           outreach_enabled?: boolean
           payments_enabled?: boolean
           privacy_url?: string | null
+          reasonable_coverage_contacts?: number
           sms_enabled?: boolean
           smtp_from?: string | null
           smtp_host?: string | null
@@ -218,10 +222,12 @@ export type Database = {
           email_enabled?: boolean
           extra_sms_sender?: string | null
           extra_sms_token?: string | null
+          extreme_threshold_contacts?: number
           id?: boolean
           outreach_enabled?: boolean
           payments_enabled?: boolean
           privacy_url?: string | null
+          reasonable_coverage_contacts?: number
           sms_enabled?: boolean
           smtp_from?: string | null
           smtp_host?: string | null
@@ -389,6 +395,52 @@ export type Database = {
           updated_at?: string
         }
         Relationships: []
+      }
+      campaign_authorized_contacts: {
+        Row: {
+          campaign_id: string
+          contact_id: string
+          created_at: string
+          event_id: string
+          id: string
+        }
+        Insert: {
+          campaign_id: string
+          contact_id: string
+          created_at?: string
+          event_id: string
+          id?: string
+        }
+        Update: {
+          campaign_id?: string
+          contact_id?: string
+          created_at?: string
+          event_id?: string
+          id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "campaign_authorized_contacts_campaign_id_fkey"
+            columns: ["campaign_id"]
+            isOneToOne: false
+            referencedRelation: "campaigns"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "campaign_authorized_contacts_contact_id_fkey"
+            columns: ["contact_id"]
+            isOneToOne: false
+            referencedRelation: "contacts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "campaign_authorized_contacts_event_id_fkey"
+            columns: ["event_id"]
+            isOneToOne: false
+            referencedRelation: "events"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       campaigns: {
         Row: {
@@ -1218,8 +1270,10 @@ export type Database = {
           channels: Database["public"]["Enums"]["campaign_channel"][] | null
           created_at: string
           description: string | null
+          hold_buffer_pct: number
           id: string
           includes: Json
+          min_hold_floor: number
           name: string
           outreach_schedule: Json | null
           price_per_reached: number | null
@@ -1233,8 +1287,10 @@ export type Database = {
           channels?: Database["public"]["Enums"]["campaign_channel"][] | null
           created_at?: string
           description?: string | null
+          hold_buffer_pct?: number
           id?: string
           includes?: Json
+          min_hold_floor?: number
           name: string
           outreach_schedule?: Json | null
           price_per_reached?: number | null
@@ -1248,8 +1304,10 @@ export type Database = {
           channels?: Database["public"]["Enums"]["campaign_channel"][] | null
           created_at?: string
           description?: string | null
+          hold_buffer_pct?: number
           id?: string
           includes?: Json
+          min_hold_floor?: number
           name?: string
           outreach_schedule?: Json | null
           price_per_reached?: number | null

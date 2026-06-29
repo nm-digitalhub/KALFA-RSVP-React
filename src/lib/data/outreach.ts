@@ -37,7 +37,10 @@ export async function sendCampaignWhatsApp(
   const template = await getTemplateByKey(messageKey);
   if (!template || template.channel !== 'whatsapp') return { sent: 0, skipped: 0 };
 
-  const contacts = await listSendableContacts(campaign.event_id);
+  // Bind outreach to the campaign's FROZEN authorized set: passing campaign.id
+  // makes listSendableContacts INNER JOIN campaign_authorized_contacts, so a
+  // send can never target a contact outside the set (reached ⊆ authorized).
+  const contacts = await listSendableContacts(campaign.event_id, campaign.id);
   let sent = 0;
   let skipped = 0;
   for (const contact of contacts) {

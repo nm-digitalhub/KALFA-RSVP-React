@@ -22,7 +22,9 @@ export type ReachedArgs = {
 
 // Returns the RPC outcome: 'billed' | 'already_billed' | 'ceiling_reached' |
 // 'not_active' | 'closed_window' | 'before_window' | 'removal_requested' |
-// 'no_campaign'. On 'billed' the contact is moved to reached_billed.
+// 'not_authorized' | 'no_campaign'. On 'billed' the contact is moved to
+// reached_billed. 'not_authorized' = contact is not in the frozen authorized SET
+// (the binding cap on reached; fail-closed — an empty set bills nobody).
 export async function recordReached(args: ReachedArgs): Promise<string> {
   const admin = createAdminClient();
   const { data, error } = await admin.rpc('try_record_billed_result', {

@@ -5,11 +5,24 @@ vi.mock('server-only', () => ({}));
 vi.mock('@/lib/supabase/admin', () => ({ createAdminClient: vi.fn() }));
 // Lifecycle transitions verify ownership; stub it as a no-op.
 vi.mock('@/lib/data/events', () => ({ requireOwnedEvent: vi.fn() }));
+// contacts.ts is owned by another module; stub the two functions prepareCampaignHold
+// consumes so this suite runs independently of that module's wiring.
+vi.mock('@/lib/data/contacts', () => ({
+  countUniqueContactsForEvent: vi.fn(),
+  snapshotAuthorizedSet: vi.fn(),
+}));
 
 import { createMockSupabase, type QueryResult } from '@/test/supabase-mock';
 import { createAdminClient } from '@/lib/supabase/admin';
 import {
+  countUniqueContactsForEvent,
+  snapshotAuthorizedSet,
+} from '@/lib/data/contacts';
+import {
   computeCeiling,
+  computeCovered,
+  computeHoldAmount,
+  prepareCampaignHold,
   getCampaignForHold,
   lockCampaignForHold,
   recordCampaignHold,
@@ -43,6 +56,135 @@ describe('computeCeiling', () => {
     expect(computeCeiling(0.1, 3)).toBe(0.3); // not 0.30000000000000004
     expect(computeCeiling(1.234, 1)).toBe(1.23); // rounds down
     expect(computeCeiling(1.236, 1)).toBe(1.24); // rounds up
+  });
+});
+
+describe('computeCovered (the set + hold basis)', () => {
+  it('is min(full, reasonable_coverage)', () => {
+    expect(computeCovered(350, 300)).toBe(300); // capped by coverage
+    expect(computeCovered(250, 300)).toBe(250); // full ≤ coverage → all covered
+    expect(computeCovered(300, 300)).toBe(300); // exactly at the cap
+  });
+
+  it('never goes below 0 (degenerate coverage)', () => {
+    expect(computeCovered(0, 300)).toBe(0);
+    expect(computeCovered(350, 0)).toBe(0);
+  });
+});
+
+describe('computeHoldAmount (J5 hold = security only)', () => {
+  it('is covered × price when above the floor (NOT full × price)', () => {
+    // covered=300 → 300×4 = 1200, while the ceiling (full=350) would be 1400.
+    expect(computeHoldAmount(300, 4, 0, 0)).toBe(1200);
+  });
+
+  it('is floored by min_hold_floor when covered × price is smaller', () => {
+    expect(computeHoldAmount(10, 4, 100, 0)).toBe(100); // 40 < 100 → 100
+    expect(computeHoldAmount(40, 4, 100, 0)).toBe(160); // 160 > 100 → 160
+  });
+
+  it('applies hold_buffer_pct as a FRACTION (0.1 = +10%)', () => {
+    expect(computeHoldAmount(300, 4, 0, 0.1)).toBe(1320); // 300×4×1.1
+  });
+
+  it('rounds to agorot (2 decimals), no float drift', () => {
+    expect(computeHoldAmount(3, 0.1, 0, 0)).toBe(0.3); // not 0.30000000000000004
+  });
+});
+
+describe('prepareCampaignHold (freeze set + size hold + recompute ceiling)', () => {
+  it('snapshots to covered, sizes the hold to covered×price, keeps the ceiling at full×price', async () => {
+    const { builder } = adminWith<Record<string, unknown>>({
+      data: null,
+      error: null,
+    });
+    // full grew to 350 since create; reasonable coverage is 300, price ₪4.
+    vi.mocked(countUniqueContactsForEvent).mockResolvedValue(350);
+    vi.mocked(snapshotAuthorizedSet).mockResolvedValue(300); // set size == covered
+    vi.spyOn(builder, 'then')
+      // 1. load the campaign (event_id, price, template_id)
+      .mockImplementationOnce((f) =>
+        f({
+          data: { event_id: 'e1', price_per_reached: 4, template_id: 'pkg1' },
+          error: null,
+        }),
+      )
+      // 2. app_settings.reasonable_coverage_contacts
+      .mockImplementationOnce((f) =>
+        f({ data: { reasonable_coverage_contacts: 300 }, error: null }),
+      )
+      // 3. packages.min_hold_floor / hold_buffer_pct
+      .mockImplementationOnce((f) =>
+        f({ data: { min_hold_floor: 0, hold_buffer_pct: 0 }, error: null }),
+      )
+      // 4. the campaigns update (recompute ceiling + max_contacts)
+      .mockImplementationOnce((f) => f({ data: null, error: null }));
+
+    const r = await prepareCampaignHold('c1');
+
+    expect(r.full).toBe(350);
+    expect(r.covered).toBe(300);
+    expect(r.ceiling).toBe(1400); // full × price = 350 × 4 — NOT lowered to covered
+    expect(r.holdAmount).toBe(1200); // covered × price = 300 × 4 — the hold < ceiling
+
+    // The set is frozen to `covered`, BEFORE the hold is sized/placed.
+    expect(snapshotAuthorizedSet).toHaveBeenCalledWith('e1', 'c1', 300);
+
+    // The ceiling (full×price) + max_contacts (= full, NON-NULL) are persisted.
+    const persisted = vi.mocked(builder.update).mock.calls[0][0] as Record<
+      string,
+      unknown
+    >;
+    expect(persisted).toEqual({ max_contacts: 350, max_charge_ceiling: 1400 });
+  });
+
+  it('sizes the hold to the actual frozen-set size when it exceeds covered (leak guard)', async () => {
+    const { builder } = adminWith<Record<string, unknown>>({
+      data: null,
+      error: null,
+    });
+    vi.mocked(countUniqueContactsForEvent).mockResolvedValue(350);
+    // A stale/larger set survived a prior attempt (insert-on-conflict): 320 > covered 300.
+    vi.mocked(snapshotAuthorizedSet).mockResolvedValue(320);
+    vi.spyOn(builder, 'then')
+      .mockImplementationOnce((f) =>
+        f({
+          data: { event_id: 'e1', price_per_reached: 4, template_id: 'pkg1' },
+          error: null,
+        }),
+      )
+      .mockImplementationOnce((f) =>
+        f({ data: { reasonable_coverage_contacts: 300 }, error: null }),
+      )
+      .mockImplementationOnce((f) =>
+        f({ data: { min_hold_floor: 0, hold_buffer_pct: 0 }, error: null }),
+      )
+      .mockImplementationOnce((f) => f({ data: null, error: null }));
+
+    const r = await prepareCampaignHold('c1');
+
+    expect(r.holdAmount).toBe(1280); // max(300, 320) × 4 — the hold covers the set
+    expect(r.ceiling).toBe(1400); // ceiling still full × price
+  });
+
+  it('throws (and snapshots nothing) when the event has no valid contacts', async () => {
+    const { builder } = adminWith<Record<string, unknown>>({
+      data: null,
+      error: null,
+    });
+    // The campaign loads fine, but the current unique-contact count is 0.
+    vi.spyOn(builder, 'then').mockImplementationOnce((f) =>
+      f({
+        data: { event_id: 'e1', price_per_reached: 4, template_id: null },
+        error: null,
+      }),
+    );
+    vi.mocked(countUniqueContactsForEvent).mockResolvedValue(0);
+
+    await expect(prepareCampaignHold('c1')).rejects.toThrow(
+      'אין אנשי קשר תקינים',
+    );
+    expect(snapshotAuthorizedSet).not.toHaveBeenCalled();
   });
 });
 

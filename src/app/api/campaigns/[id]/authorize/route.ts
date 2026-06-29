@@ -5,6 +5,7 @@ import { requireOwnedEvent } from '@/lib/data/events';
 import {
   getCampaignForHold,
   lockCampaignForHold,
+  prepareCampaignHold,
   recordCampaignHold,
   markCampaignHoldFailed,
 } from '@/lib/data/campaigns';
@@ -124,20 +125,39 @@ export async function POST(
     return r303(payUrl(ERROR.DISABLED));
   }
 
-  // Must be a signed/approved campaign with a valid server-derived ceiling.
+  // Must be a signed/approved campaign before any hold.
   if (campaign.status !== 'approved') {
     return r303(payUrl(ERROR.BAD_STATE));
   }
-  const ceiling = campaign.max_charge_ceiling;
-  if (ceiling == null || !Number.isFinite(ceiling) || ceiling <= 0) {
-    console.error('[hold] invalid ceiling on campaign', { campaignId });
-    return r303(payUrl(ERROR.BAD_STATE));
-  }
 
-  // Idempotency: claim the hold slot atomically. A loser (already pending or
-  // authorized) must not place a second hold.
+  // Idempotency: claim the hold slot atomically BEFORE the snapshot + sizing, so
+  // ONLY the winner freezes the authorized set and sizes the hold. A loser
+  // (already pending or authorized) must not place a second hold.
   if (!(await lockCampaignForHold(campaignId))) {
     return r303(payUrl(ERROR.ALREADY));
+  }
+
+  // Phase-2 money-leak guard. Freeze the authorized contact SET and size the hold
+  // to the COVERED contacts (min(full, reasonable_coverage)) — NOT the full
+  // ceiling. Also recomputes + persists max_contacts = full and the ceiling
+  // (= full × price), closing the create→approval growth gap. Must run before the
+  // card hold: the set is the binding cap that makes a hold < ceiling safe
+  // (reached ⊆ set by construction). On failure, release the slot to a retryable
+  // state and leave the campaign otherwise untouched.
+  let holdAmount: number;
+  try {
+    ({ holdAmount } = await prepareCampaignHold(campaignId));
+  } catch {
+    console.error('[hold] failed to freeze the authorized set / size the hold', {
+      campaignId,
+    });
+    await markCampaignHoldFailed(campaignId, 'hold_review');
+    return r303(payUrl(ERROR.BAD_STATE));
+  }
+  if (!Number.isFinite(holdAmount) || holdAmount <= 0) {
+    console.error('[hold] invalid hold amount', { campaignId });
+    await markCampaignHoldFailed(campaignId, 'hold_review');
+    return r303(payUrl(ERROR.BAD_STATE));
   }
 
   const authRef = crypto.randomUUID();
@@ -147,14 +167,15 @@ export async function POST(
         companyId: sumitConfig.companyId,
         apiKey: sumitConfig.apiKey,
         ogToken: parsed.data['og-token'],
-        ceiling: String(ceiling), // numeric → string only at the SUMIT boundary
+        // The J5 hold amount (security) — covered-sized, NOT the full ceiling.
+        ceiling: String(holdAmount), // numeric → string only at the SUMIT boundary
         vatRate: String(VAT_RATE_PERCENT),
         authRef,
         customerEmail: user.email ?? '',
       });
     await recordCampaignHold(campaignId, {
       authNumber,
-      authAmount: ceiling,
+      authAmount: holdAmount,
       cardToken, // saved card token + expiry + CitizenID, used at the capture
       expMonth,
       expYear,
