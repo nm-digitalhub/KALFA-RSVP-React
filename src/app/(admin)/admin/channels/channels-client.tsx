@@ -30,6 +30,7 @@ import {
 type WhatsAppConfig = {
   outreach_enabled: boolean;
   whatsapp_phone_number_id: string;
+  whatsapp_waba_id: string;
   whatsapp_access_token: string;
   whatsapp_app_secret: string;
   whatsapp_verify_token: string;
@@ -231,6 +232,14 @@ export function ChannelsClient({
                     defaultValue={whatsapp.whatsapp_phone_number_id}
                     placeholder="מזהה מספר העסק ב-WhatsApp"
                     errors={e?.whatsapp_phone_number_id}
+                  />
+                  <Field
+                    name="whatsapp_waba_id"
+                    label="WhatsApp Business Account ID"
+                    defaultValue={whatsapp.whatsapp_waba_id}
+                    placeholder="מזהה חשבון ה-WABA"
+                    help="מזהה חשבון ה-WhatsApp Business (WABA) — היעד לניהול תבניות ההודעה ושליחתן לאישור Meta. נמצא ב-WhatsApp Manager › Account tools, או ב-Meta App › WhatsApp › API Setup."
+                    errors={e?.whatsapp_waba_id}
                   />
                   <SecretField
                     name="whatsapp_access_token"

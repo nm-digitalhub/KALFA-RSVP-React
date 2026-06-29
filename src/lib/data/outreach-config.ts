@@ -11,6 +11,7 @@ import { createAdminClient } from '@/lib/supabase/admin';
 
 export type WhatsAppConfig = {
   phoneNumberId: string;
+  wabaId: string | null; // WhatsApp Business Account id — template CRUD node
   accessToken: string;
   appSecret: string | null; // only needed to verify inbound webhooks (B2)
   verifyToken: string | null; // webhook GET challenge (B2)
@@ -55,6 +56,8 @@ export async function getWhatsAppConfig(): Promise<WhatsAppConfig | null> {
     if (!phoneNumberId || !accessToken) return null;
     return {
       phoneNumberId,
+      wabaId:
+        typeof row.whatsapp_waba_id === 'string' ? row.whatsapp_waba_id : null,
       accessToken,
       appSecret:
         typeof row.whatsapp_app_secret === 'string'

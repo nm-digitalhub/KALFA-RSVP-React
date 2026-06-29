@@ -24,6 +24,7 @@ function isNextControlFlow(err: unknown): boolean {
 // checkbox. Trimmed; '' is an intentional unset (mapped to null in the DAL).
 const whatsappChannelSchema = z.object({
   whatsapp_phone_number_id: z.string().trim().max(64).default(''),
+  whatsapp_waba_id: z.string().trim().max(64).default(''),
   whatsapp_access_token: z.string().trim().max(512).default(''),
   whatsapp_app_secret: z.string().trim().max(256).default(''),
   whatsapp_verify_token: z.string().trim().max(256).default(''),
@@ -35,6 +36,7 @@ export async function updateWhatsAppChannelAction(
 ): Promise<FormState> {
   const parsed = whatsappChannelSchema.safeParse({
     whatsapp_phone_number_id: formData.get('whatsapp_phone_number_id') ?? '',
+    whatsapp_waba_id: formData.get('whatsapp_waba_id') ?? '',
     whatsapp_access_token: formData.get('whatsapp_access_token') ?? '',
     whatsapp_app_secret: formData.get('whatsapp_app_secret') ?? '',
     whatsapp_verify_token: formData.get('whatsapp_verify_token') ?? '',

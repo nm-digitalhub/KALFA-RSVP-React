@@ -64,6 +64,7 @@ beforeEach(() => {
   vi.mocked(getOutreachEnabled).mockResolvedValue(true);
   vi.mocked(getWhatsAppConfig).mockResolvedValue({
     phoneNumberId: 'p1',
+    wabaId: null,
     accessToken: 't1',
     appSecret: APP_SECRET,
     verifyToken: null,

@@ -155,6 +155,7 @@ export type Database = {
           whatsapp_app_secret: string | null
           whatsapp_phone_number_id: string | null
           whatsapp_verify_token: string | null
+          whatsapp_waba_id: string | null
         }
         Insert: {
           agr_charge_window_days?: string | null
@@ -200,6 +201,7 @@ export type Database = {
           whatsapp_app_secret?: string | null
           whatsapp_phone_number_id?: string | null
           whatsapp_verify_token?: string | null
+          whatsapp_waba_id?: string | null
         }
         Update: {
           agr_charge_window_days?: string | null
@@ -245,6 +247,7 @@ export type Database = {
           whatsapp_app_secret?: string | null
           whatsapp_phone_number_id?: string | null
           whatsapp_verify_token?: string | null
+          whatsapp_waba_id?: string | null
         }
         Relationships: []
       }

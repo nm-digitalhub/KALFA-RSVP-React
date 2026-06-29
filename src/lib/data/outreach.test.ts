@@ -23,6 +23,7 @@ import { sendCampaignWhatsApp } from '@/lib/data/outreach';
 
 const config = {
   phoneNumberId: 'PNID',
+  wabaId: null,
   accessToken: 'TKN',
   appSecret: null,
   verifyToken: null,

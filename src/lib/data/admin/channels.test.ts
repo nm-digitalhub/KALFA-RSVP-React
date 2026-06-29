@@ -71,6 +71,7 @@ describe('updateWhatsAppChannelConfig', () => {
     await updateWhatsAppChannelConfig({
       outreach_enabled: true,
       whatsapp_phone_number_id: 'PNID',
+      whatsapp_waba_id: 'WABA123',
       whatsapp_access_token: 'TOK',
       whatsapp_app_secret: '',
       whatsapp_verify_token: '',
@@ -81,6 +82,7 @@ describe('updateWhatsAppChannelConfig', () => {
     >;
     expect(payload.outreach_enabled).toBe(true);
     expect(payload.whatsapp_phone_number_id).toBe('PNID');
+    expect(payload.whatsapp_waba_id).toBe('WABA123');
     expect(payload.whatsapp_app_secret).toBeNull();
     expect(payload.whatsapp_verify_token).toBeNull();
   });

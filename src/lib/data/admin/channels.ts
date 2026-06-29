@@ -13,6 +13,7 @@ import { requireAdmin } from '@/lib/auth/dal';
 export type WhatsAppChannelConfig = {
   outreach_enabled: boolean;
   whatsapp_phone_number_id: string; // '' when unset (form-friendly)
+  whatsapp_waba_id: string; // '' when unset — WABA id (template CRUD node, not secret)
   whatsapp_access_token: string; // '' when unset — permanent System-User token
   whatsapp_app_secret: string; // '' when unset — webhook X-Hub-Signature-256
   whatsapp_verify_token: string; // '' when unset — webhook GET challenge
@@ -27,7 +28,7 @@ export async function getWhatsAppChannelConfig(): Promise<WhatsAppChannelConfig>
   const { data, error } = await supabase
     .from('app_settings')
     .select(
-      'outreach_enabled, whatsapp_phone_number_id, whatsapp_access_token, whatsapp_app_secret, whatsapp_verify_token',
+      'outreach_enabled, whatsapp_phone_number_id, whatsapp_waba_id, whatsapp_access_token, whatsapp_app_secret, whatsapp_verify_token',
     )
     .eq('id', SETTINGS_ID)
     .maybeSingle();
@@ -38,6 +39,7 @@ export async function getWhatsAppChannelConfig(): Promise<WhatsAppChannelConfig>
   return {
     outreach_enabled: data?.outreach_enabled ?? false,
     whatsapp_phone_number_id: phoneNumberId,
+    whatsapp_waba_id: data?.whatsapp_waba_id ?? '',
     whatsapp_access_token: accessToken,
     whatsapp_app_secret: data?.whatsapp_app_secret ?? '',
     whatsapp_verify_token: data?.whatsapp_verify_token ?? '',
@@ -48,6 +50,7 @@ export async function getWhatsAppChannelConfig(): Promise<WhatsAppChannelConfig>
 export type UpdateWhatsAppChannelInput = {
   outreach_enabled: boolean;
   whatsapp_phone_number_id: string;
+  whatsapp_waba_id: string;
   whatsapp_access_token: string;
   whatsapp_app_secret: string;
   whatsapp_verify_token: string;
@@ -63,6 +66,7 @@ export async function updateWhatsAppChannelConfig(
     .update({
       outreach_enabled: input.outreach_enabled,
       whatsapp_phone_number_id: input.whatsapp_phone_number_id || null,
+      whatsapp_waba_id: input.whatsapp_waba_id || null,
       whatsapp_access_token: input.whatsapp_access_token || null,
       whatsapp_app_secret: input.whatsapp_app_secret || null,
       whatsapp_verify_token: input.whatsapp_verify_token || null,

@@ -10,7 +10,9 @@ import {
   activateCampaign,
   pauseCampaign,
   closeCampaign,
+  getCampaignForHold,
 } from '@/lib/data/campaigns';
+import { requireOwnedEvent } from '@/lib/data/events';
 import { closeCampaignAndCharge } from '@/lib/data/close-charge';
 import { recordSignedAgreement } from '@/lib/data/agreements';
 import { getProfile } from '@/lib/data/profiles';
@@ -217,6 +219,21 @@ export async function settleCampaignAction(
   _prevState: FormState,
   _formData: FormData,
 ): Promise<FormState> {
+  // CAMP-1: enforce ownership at this edge. The other lifecycle transitions gate
+  // inside their data-layer call, but closeCampaignAndCharge tolerates an
+  // already-closed campaign and skips closeCampaign — the one ownership gate — on
+  // that path. So settle must gate itself. Derive event_id from the campaign
+  // (DB-sourced via the admin client), never the browser-bound `eventId` arg.
+  // Mirrors the sibling close-charge/route.ts.
+  const owned = await getCampaignForHold(campaignId);
+  if (!owned) return { error: 'גמר החשבון נכשל. נסו שוב או פנו לתמיכה.' };
+  try {
+    await requireOwnedEvent(owned.event_id);
+  } catch (err) {
+    if (isNextSignal(err)) throw err;
+    return { error: 'גמר החשבון נכשל. נסו שוב או פנו לתמיכה.' };
+  }
+
   let r: Awaited<ReturnType<typeof closeCampaignAndCharge>>;
   try {
     r = await closeCampaignAndCharge(campaignId);

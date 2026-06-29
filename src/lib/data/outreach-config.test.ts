@@ -59,6 +59,7 @@ describe('getWhatsAppConfig', () => {
     });
     await expect(getWhatsAppConfig()).resolves.toEqual({
       phoneNumberId: 'PNID',
+      wabaId: null,
       accessToken: 'TKN',
       appSecret: 'SEC',
       verifyToken: 'VT',
