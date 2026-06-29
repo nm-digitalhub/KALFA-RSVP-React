@@ -1,5 +1,6 @@
 import Link from 'next/link';
 
+import { buttonVariants } from '@/components/ui/button';
 import { getEvent } from '@/lib/data/events';
 import { getCampaignForEvent } from '@/lib/data/campaigns';
 import { EVENT_TYPES, EVENT_STATUSES } from '@/lib/validation/schemas';
@@ -51,7 +52,7 @@ export default async function EventPage({
         href="/app/events"
         className="text-sm text-muted-foreground hover:underline"
       >
-        ← האירועים שלי
+        → האירועים שלי
       </Link>
 
       <div className="flex flex-wrap items-center justify-between gap-4">
@@ -69,7 +70,7 @@ export default async function EventPage({
       <div className="flex flex-wrap gap-2">
         <Link
           href={`/app/events/${event.id}/guests`}
-          className="inline-block rounded-md border border-border px-4 py-2 text-sm font-medium hover:bg-muted"
+          className={buttonVariants({ variant: 'outline' })}
         >
           ניהול מוזמנים
         </Link>

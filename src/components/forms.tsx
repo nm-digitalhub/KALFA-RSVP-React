@@ -2,22 +2,23 @@
 
 import { useFormStatus } from 'react-dom';
 
+import { Button } from '@/components/ui/button';
+
+// Unified submit control: renders via the shared Button (Base UI defaults to
+// type="button", so type="submit" is required) and keeps the same
+// useFormStatus pending behavior.
 export function SubmitButton({ children }: { children: React.ReactNode }) {
   const { pending } = useFormStatus();
   return (
-    <button
-      type="submit"
-      disabled={pending}
-      className="w-full rounded-md bg-primary px-4 py-2 font-medium text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-60"
-    >
+    <Button type="submit" disabled={pending} className="w-full">
       {pending ? 'רגע…' : children}
-    </button>
+    </Button>
   );
 }
 
 export function FieldError({ errors }: { errors?: string[] }) {
   if (!errors || errors.length === 0) return null;
-  return <p className="mt-1 text-sm text-red-600">{errors[0]}</p>;
+  return <p className="mt-1 text-sm text-destructive">{errors[0]}</p>;
 }
 
 export function FormError({ message }: { message?: string }) {
@@ -25,7 +26,7 @@ export function FormError({ message }: { message?: string }) {
   return (
     <p
       role="alert"
-      className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700"
+      className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive"
     >
       {message}
     </p>
@@ -37,7 +38,7 @@ export function FormNotice({ message }: { message?: string }) {
   return (
     <p
       role="status"
-      className="rounded-md bg-green-50 px-3 py-2 text-sm text-green-700"
+      className="rounded-md bg-success/10 px-3 py-2 text-sm text-success"
     >
       {message}
     </p>

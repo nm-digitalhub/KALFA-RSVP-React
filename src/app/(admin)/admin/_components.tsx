@@ -1,4 +1,7 @@
 import Link from 'next/link';
+import { cva, type VariantProps } from 'class-variance-authority';
+
+import { cn } from '@/lib/utils';
 
 // Shared, server-rendered presentational helpers for the admin pages. Kept in
 // the route group (leading underscore = not a route) so they live next to their
@@ -37,12 +40,40 @@ export function EmptyState({ children }: { children: React.ReactNode }) {
   );
 }
 
-// Status pill used across lists.
-export function Badge({ children }: { children: React.ReactNode }) {
+// Status pill used across lists. `neutral` (default) reproduces the original
+// classes exactly so existing call-sites are visually unchanged; the semantic
+// variants tint background + text from the status tokens (matching the
+// `bg-<token>/10 text-<token>` pattern used by ui/button.tsx's destructive).
+const badgeVariants = cva('rounded-full border px-3 py-1 text-xs', {
+  variants: {
+    variant: {
+      neutral: 'border-border text-muted-foreground',
+      success: 'border-success/20 bg-success/10 text-success',
+      warning: 'border-warning/20 bg-warning/10 text-warning',
+      info: 'border-info/20 bg-info/10 text-info',
+      destructive: 'border-destructive/20 bg-destructive/10 text-destructive',
+    },
+  },
+  defaultVariants: {
+    variant: 'neutral',
+  },
+});
+
+export type BadgeVariant = NonNullable<
+  VariantProps<typeof badgeVariants>['variant']
+>;
+
+export function Badge({
+  children,
+  variant,
+  className,
+}: {
+  children: React.ReactNode;
+  variant?: BadgeVariant;
+  className?: string;
+}) {
   return (
-    <span className="rounded-full border border-border px-3 py-1 text-xs text-muted-foreground">
-      {children}
-    </span>
+    <span className={cn(badgeVariants({ variant }), className)}>{children}</span>
   );
 }
 

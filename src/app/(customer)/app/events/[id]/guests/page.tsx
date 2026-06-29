@@ -1,8 +1,21 @@
 import Link from 'next/link';
 
+import { Badge, type BadgeVariant } from '@/app/(admin)/admin/_components';
+import { buttonVariants } from '@/components/ui/button';
 import { requireOwnedEvent } from '@/lib/data/events';
 import { listGuests, listGroups } from '@/lib/data/guests';
+import type { Database } from '@/lib/supabase/types';
 import { GUEST_STATUS_LABELS } from './labels';
+
+type GuestStatus = Database['public']['Enums']['guest_status'];
+
+// Guest status → Badge variant. Exhaustive so a new enum value is a compile error.
+const GUEST_STATUS_VARIANTS: Record<GuestStatus, BadgeVariant> = {
+  pending: 'warning',
+  attending: 'success',
+  declined: 'destructive',
+  maybe: 'warning',
+};
 import { GuestListControls } from './guest-list-controls';
 import { GuestRowActions } from './guest-row-actions';
 import { ContactStatusCell } from './contact-status-cell';
@@ -76,13 +89,13 @@ export default async function GuestsPage({ params, searchParams }: PageProps) {
         <div className="flex gap-2">
           <Link
             href={`/app/events/${eventId}/guests/import`}
-            className="rounded-md border border-border px-4 py-2 text-sm font-medium hover:bg-accent"
+            className={buttonVariants({ variant: 'outline' })}
           >
             ייבוא מקובץ
           </Link>
           <Link
             href={`/app/events/${eventId}/guests/new`}
-            className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:opacity-90"
+            className={buttonVariants()}
           >
             מוזמן חדש
           </Link>
@@ -132,9 +145,9 @@ export default async function GuestsPage({ params, searchParams }: PageProps) {
                     {g.group_id ? groupName.get(g.group_id) ?? '—' : '—'}
                   </td>
                   <td className="px-4 py-2">
-                    <span className="rounded-full border border-border px-2 py-0.5 text-xs">
+                    <Badge variant={GUEST_STATUS_VARIANTS[g.status]}>
                       {GUEST_STATUS_LABELS[g.status]}
-                    </span>
+                    </Badge>
                   </td>
                   <td className="px-4 py-2">
                     <ContactStatusCell

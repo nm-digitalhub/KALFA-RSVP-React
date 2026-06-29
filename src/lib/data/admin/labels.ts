@@ -1,5 +1,6 @@
 import type { Database } from '@/lib/supabase/types';
 import type { CallbackStatus } from '@/lib/validation/admin';
+import type { BadgeVariant } from '@/app/(admin)/admin/_components';
 
 // Pure label maps — safe to import from both Server and Client Components, so
 // this module must NOT import `server-only` (the admin status form is a client
@@ -19,6 +20,16 @@ export const ORDER_STATUS_LABELS: Record<OrderStatus, string> = {
   failed: 'נכשל',
   demo: 'הדגמה',
   payment_review: 'לבירור',
+};
+
+// Status → Badge variant. Exhaustive (a new enum value becomes a compile error).
+export const ORDER_STATUS_VARIANTS: Record<OrderStatus, BadgeVariant> = {
+  pending: 'warning',
+  processing: 'info',
+  paid: 'success',
+  failed: 'destructive',
+  demo: 'info',
+  payment_review: 'warning',
 };
 
 export const APP_ROLE_LABELS: Record<AppRole, string> = {

@@ -170,7 +170,7 @@ export function SignAgreementForm({
               נקה חתימה
             </button>
             {signature ? (
-              <span className="text-sm text-green-700">✓ נחתם</span>
+              <span className="text-sm text-success">✓ נחתם</span>
             ) : (
               <span className="text-sm text-muted-foreground">חתמו בתיבה</span>
             )}

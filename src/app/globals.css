@@ -21,7 +21,19 @@
   --muted-foreground: oklch(0.556 0 0);
   --accent: oklch(0.97 0 0);
   --accent-foreground: oklch(0.205 0 0);
-  --destructive: oklch(0.577 0.245 27.325);
+  /* Darkened to clear WCAG 1.4.3 AA (>=4.5:1) as `text-<token>` on a white
+     surface and on the `bg-<token>/10` tint — the badge/notice pattern. Used
+     only as text/border/tint (no solid `bg-<token>` fill in light mode), so
+     darkening is monotonically safe. Dark-mode values (below) are left as-is:
+     they are bright-on-dark text and already pass; darkening would regress them. */
+  --destructive: oklch(0.53 0.245 27.325);
+  /* Semantic status tokens (OKLCH, hue-consistent with --primary indigo). */
+  --success: oklch(0.51 0.15 152.5);
+  --success-foreground: oklch(0.985 0 0);
+  --warning: oklch(0.52 0.12 75.8);
+  --warning-foreground: oklch(0.205 0 0);
+  --info: oklch(0.546 0.215 262.9);
+  --info-foreground: oklch(0.985 0 0);
   --input: oklch(0.922 0 0);
   --ring: oklch(0.511 0.262 276.97);
   --chart-1: oklch(0.87 0 0);
@@ -65,6 +77,12 @@
   --color-ring: var(--ring);
   --color-input: var(--input);
   --color-destructive: var(--destructive);
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
+  --color-info: var(--info);
+  --color-info-foreground: var(--info-foreground);
   --color-accent-foreground: var(--accent-foreground);
   --color-accent: var(--accent);
   --color-muted-foreground: var(--muted-foreground);
@@ -103,6 +121,13 @@ body {
   --accent: oklch(0.269 0 0);
   --accent-foreground: oklch(0.985 0 0);
   --destructive: oklch(0.704 0.191 22.216);
+  /* Semantic status tokens — lighter in dark for contrast (mirrors --destructive). */
+  --success: oklch(0.704 0.15 152.5);
+  --success-foreground: oklch(0.205 0 0);
+  --warning: oklch(0.79 0.155 78);
+  --warning-foreground: oklch(0.205 0 0);
+  --info: oklch(0.696 0.17 262.9);
+  --info-foreground: oklch(0.205 0 0);
   --border: oklch(1 0 0 / 10%);
   --input: oklch(1 0 0 / 15%);
   --ring: oklch(0.556 0 0);

@@ -63,7 +63,7 @@ export default async function ApproveCampaignPage({
           <h1 className="text-2xl font-bold">אישור קמפיין</h1>
           {backLink}
         </div>
-        <p className="rounded-md bg-green-50 px-3 py-2 text-sm text-green-700">
+        <p className="rounded-md bg-success/10 px-3 py-2 text-sm text-success">
           {campaign.status === 'approved'
             ? 'ההסכם נחתם והקמפיין אושר.'
             : 'הקמפיין אינו ממתין לאישור ולכן לא ניתן לחתום עליו כעת.'}
@@ -142,7 +142,7 @@ export default async function ApproveCampaignPage({
           phone={profile.phone}
         />
       ) : (
-        <p className="rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-800">
+        <p className="rounded-md bg-warning/10 px-3 py-2 text-sm text-warning">
           כדי לחתום נדרש מספר טלפון בפרופיל (לאימות בקוד חד‑פעמי). הוסיפו טלפון
           ב{' '}
           <a href="/app/settings" className="underline">

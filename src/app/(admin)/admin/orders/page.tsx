@@ -1,5 +1,5 @@
 import { listAllOrders } from '@/lib/data/admin/orders';
-import { ORDER_STATUS_LABELS } from '@/lib/data/admin/labels';
+import { ORDER_STATUS_LABELS, ORDER_STATUS_VARIANTS } from '@/lib/data/admin/labels';
 import {
   PageHeading,
   EmptyState,
@@ -44,9 +44,13 @@ export default async function AdminOrdersPage({
                   <p className="font-medium">
                     {order.package?.name ?? 'חבילה לא ידועה'}
                   </p>
-                  <Badge>{ORDER_STATUS_LABELS[order.status]}</Badge>
-                  {order.isStuckProcessing && <Badge>תקוע</Badge>}
-                  {order.with_ai_addon && <Badge>תוספת AI</Badge>}
+                  <Badge variant={ORDER_STATUS_VARIANTS[order.status]}>
+                    {ORDER_STATUS_LABELS[order.status]}
+                  </Badge>
+                  {order.isStuckProcessing && (
+                    <Badge variant="warning">תקוע</Badge>
+                  )}
+                  {order.with_ai_addon && <Badge variant="info">תוספת AI</Badge>}
                 </div>
                 <p className="text-sm text-muted-foreground">
                   {[order.event?.name, order.package?.tier]

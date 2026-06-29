@@ -1,5 +1,7 @@
 import Link from 'next/link';
 
+import { Badge, type BadgeVariant } from '@/app/(admin)/admin/_components';
+import { buttonVariants } from '@/components/ui/button';
 import type { OwnerCampaign } from '@/lib/data/campaigns';
 
 import { setupCampaignAction } from './campaign/campaign-actions';
@@ -19,6 +21,22 @@ const STATUS_LABELS: Record<string, string> = {
   billed: 'חויב',
   paid: 'שולם',
   cancelled: 'בוטל',
+};
+
+// Campaign status → Badge variant (loose map matching STATUS_LABELS above;
+// unknown statuses fall back to neutral at the call site).
+const STATUS_VARIANTS: Record<string, BadgeVariant> = {
+  draft: 'neutral',
+  pending_approval: 'warning',
+  approved: 'success',
+  scheduled: 'info',
+  active: 'success',
+  paused: 'warning',
+  closed: 'neutral',
+  awaiting_invoice: 'warning',
+  billed: 'info',
+  paid: 'success',
+  cancelled: 'destructive',
 };
 
 // The next step the owner should take, by lifecycle state — so the single CTA
@@ -66,9 +84,9 @@ export function CampaignSection({
     <section className="space-y-3 rounded-lg border border-border bg-card p-6">
       <div className="flex items-center justify-between gap-4">
         <h2 className="text-lg font-semibold">אישורי הגעה</h2>
-        <span className="rounded-full border border-border px-2.5 py-0.5 text-xs text-muted-foreground">
+        <Badge variant={STATUS_VARIANTS[campaign.status] ?? 'neutral'}>
           {STATUS_LABELS[campaign.status] ?? campaign.status}
-        </span>
+        </Badge>
       </div>
       {campaign.max_charge_ceiling != null ? (
         <p className="text-sm text-muted-foreground">
@@ -76,10 +94,7 @@ export function CampaignSection({
           {Number(campaign.max_charge_ceiling).toLocaleString('he-IL')}
         </p>
       ) : null}
-      <Link
-        href={step.href}
-        className="inline-block rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:opacity-90"
-      >
+      <Link href={step.href} className={buttonVariants()}>
         {step.label}
       </Link>
     </section>
