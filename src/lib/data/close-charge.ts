@@ -5,7 +5,6 @@ import {
   getCloseChargeEnabled,
   getSumitServerConfig,
 } from '@/lib/data/payments';
-import { VAT_RATE_PERCENT } from '@/lib/agreements/template';
 import {
   closeCampaign,
   getCampaignForCharge,
@@ -13,9 +12,13 @@ import {
   recordCampaignCharge,
   markCampaignChargeOutcome,
 } from '@/lib/data/campaigns';
-import { getCampaignBillingSummary } from '@/lib/data/billing';
+import {
+  getCampaignBillingSummary,
+  getCampaignCreditTotal,
+} from '@/lib/data/billing';
 import { captureHeldCardSumit } from '@/lib/sumit/capture';
 import { SumitDeclinedError } from '@/lib/sumit/charge';
+import { createAdminClient } from '@/lib/supabase/admin';
 
 export type CloseChargeOutcome = {
   outcome:
@@ -57,18 +60,39 @@ export async function closeCampaignAndCharge(
     return { outcome: 'bad_state', amount: 0 };
   }
 
-  // A charge needs a held card saved against a recoverable Customer.
-  if (campaign.capture_status !== 'authorized' || !campaign.sumit_customer_ref) {
+  // A charge needs the saved card token AND its expiry — SUMIT validates the
+  // expiry structurally alongside the token (both captured at the J5 hold).
+  if (
+    campaign.capture_status !== 'authorized' ||
+    !campaign.card_token_ref ||
+    campaign.card_exp_month == null ||
+    campaign.card_exp_year == null ||
+    !campaign.card_citizen_id
+  ) {
     return { outcome: 'bad_state', amount: 0 };
   }
 
-  const summary = await getCampaignBillingSummary(campaignId);
+  // Read the accrued total + credits. A real RPC/DB error here MUST route to
+  // review — never to a 0 that would permanently settle the campaign at ₪0.
+  let summary;
+  let credits: number;
+  try {
+    summary = await getCampaignBillingSummary(campaignId);
+    credits = await getCampaignCreditTotal(campaignId);
+  } catch {
+    await markCampaignChargeOutcome(campaignId, 'charge_review');
+    return { outcome: 'review', amount: 0 };
+  }
+
   const accrued = summary?.accrued ?? 0;
   const ceiling = campaign.max_charge_ceiling
     ? parseFloat(campaign.max_charge_ceiling)
     : (summary?.ceiling ?? 0);
-  const amount = Math.min(accrued, ceiling);
+  // final = max(0, min(accrued, ceiling) − credits), rounded to agorot (§14/D5/G4).
+  const capped = Math.min(accrued, ceiling);
+  const amount = Math.max(0, Math.round((capped - credits) * 100) / 100);
 
+  // 0 reached OR credits ≥ the capped total → settle at ₪0, no SUMIT call.
   if (amount <= 0) {
     await markCampaignChargeOutcome(campaignId, 'nothing_to_charge');
     return { outcome: 'nothing_to_charge', amount: 0 };
@@ -78,16 +102,41 @@ export async function closeCampaignAndCharge(
   const locked = await lockCampaignForCharge(campaignId);
   if (!locked) return { outcome: 'bad_state', amount };
 
+  // The final charge emails a receipt to the billed party (the event owner).
+  const adminCli = createAdminClient();
+  let ownerEmail = '';
+  const { data: ev } = await adminCli
+    .from('events')
+    .select('owner_id')
+    .eq('id', campaign.event_id)
+    .maybeSingle();
+  if (ev?.owner_id) {
+    const { data: u } = await adminCli.auth.admin.getUserById(
+      ev.owner_id as string,
+    );
+    ownerEmail = u?.user?.email ?? '';
+  }
+
   try {
-    const { documentId } = await captureHeldCardSumit({
+    const result = await captureHeldCardSumit({
       companyId: sumit.companyId,
       apiKey: sumit.apiKey,
-      customerRef: campaign.sumit_customer_ref,
+      cardToken: campaign.card_token_ref,
+      expMonth: campaign.card_exp_month,
+      expYear: campaign.card_exp_year,
+      citizenId: campaign.card_citizen_id,
+      externalRef: campaign.auth_external_ref ?? '',
       amount: amount.toString(),
-      vatRate: String(VAT_RATE_PERCENT),
-      customerEmail: '',
+      customerEmail: ownerEmail, // non-empty → SendDocumentByEmail:true (receipt)
     });
-    await recordCampaignCharge(campaignId, { amount, documentId });
+    await recordCampaignCharge(campaignId, {
+      amount,
+      documentId: result.documentId,
+      documentNumber: result.documentNumber,
+      documentUrl: result.documentUrl,
+      authNumber: result.authNumber,
+      paymentId: result.paymentId,
+    });
     return { outcome: 'charged', amount };
   } catch (e) {
     if (e instanceof SumitDeclinedError) {

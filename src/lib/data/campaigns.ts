@@ -268,16 +268,34 @@ export async function lockCampaignForHold(campaignId: string): Promise<boolean> 
 // never client input. Card token + auth number are evidence for the later capture.
 export async function recordCampaignHold(
   campaignId: string,
-  hold: { authNumber: string; authAmount: number; cardToken: string | null },
+  hold: {
+    authNumber: string;
+    authAmount: number;
+    // The reusable CreditCard_Token + its expiry + the holder CitizenID — all
+    // REQUIRED at capture (SUMIT validates the token's expiry + CitizenID).
+    cardToken: string | null;
+    expMonth: number | null;
+    expYear: number | null;
+    citizenId: string | null;
+    // SUMIT Customer.ExternalIdentifier — reconciliation anchor on the charge.
+    authExternalRef: string;
+  },
 ): Promise<void> {
-  const admin = createAdminClient();
+  // Un-generic cast: auth_external_ref / card_exp_month / card_exp_year are added
+  // by pending migrations not yet in the generated types (matches the
+  // getCampaignForCharge pattern). Only reached behind the payments config gate.
+  const admin = createAdminClient() as unknown as SupabaseClient;
   const { error } = await admin
     .from('campaigns')
     .update({
       capture_status: 'authorized',
       auth_number: hold.authNumber,
       auth_amount: hold.authAmount,
-      card_token_ref: hold.cardToken,
+      card_token_ref: hold.cardToken, // the saved card token, used at capture
+      card_exp_month: hold.expMonth, // card expiry month — required at capture
+      card_exp_year: hold.expYear, // card expiry year — required at capture
+      card_citizen_id: hold.citizenId, // holder CitizenID — required at capture (PII)
+      auth_external_ref: hold.authExternalRef, // reconciliation anchor
       authorized_at: new Date().toISOString(),
     })
     .eq('id', campaignId);
@@ -299,11 +317,13 @@ export async function markCampaignHoldFailed(
 }
 
 // --- B4 close-charge data layer ---------------------------------------------
-// The charge columns (sumit_customer_ref / charge_status / charged_at /
+// auth_external_ref is the SUMIT Customer.ExternalIdentifier persisted at the J5
+// hold (recordCampaignHold); it is the ONLY anchor a later capture can reference
+// (capture.ts). Some charge columns (charge_status / charged_at /
 // sumit_charge_document_id) are added by a pending migration and not in the
 // generated types yet → queried via an un-generic client cast. Only ever reached
-// behind getCloseChargeEnabled() (false until the migration), so never hits
-// missing columns at runtime.
+// behind getCloseChargeEnabled() (false until enabled), so never hits missing
+// columns at runtime.
 
 export type CampaignChargeState = {
   id: string;
@@ -311,7 +331,11 @@ export type CampaignChargeState = {
   status: string;
   capture_status: string | null;
   charge_status: string | null;
-  sumit_customer_ref: string | null;
+  card_token_ref: string | null;
+  card_exp_month: number | null;
+  card_exp_year: number | null;
+  card_citizen_id: string | null;
+  auth_external_ref: string | null;
   max_charge_ceiling: string | null;
 };
 
@@ -333,7 +357,11 @@ export async function getCampaignForCharge(
     status: String(row.status),
     capture_status: (row.capture_status as string | null) ?? null,
     charge_status: (row.charge_status as string | null) ?? null,
-    sumit_customer_ref: (row.sumit_customer_ref as string | null) ?? null,
+    card_token_ref: (row.card_token_ref as string | null) ?? null,
+    card_exp_month: (row.card_exp_month as number | null) ?? null,
+    card_exp_year: (row.card_exp_year as number | null) ?? null,
+    card_citizen_id: (row.card_citizen_id as string | null) ?? null,
+    auth_external_ref: (row.auth_external_ref as string | null) ?? null,
     max_charge_ceiling: (row.max_charge_ceiling as string | null) ?? null,
   };
 }
@@ -358,7 +386,14 @@ export async function lockCampaignForCharge(
 
 export async function recordCampaignCharge(
   campaignId: string,
-  charge: { amount: number; documentId: number },
+  charge: {
+    amount: number;
+    documentId: number;
+    documentNumber: number | null;
+    documentUrl: string | null; // the receipt download link
+    authNumber: string | null;
+    paymentId: number | null;
+  },
 ): Promise<void> {
   const admin = createAdminClient() as unknown as SupabaseClient;
   const { error } = await admin
@@ -367,6 +402,10 @@ export async function recordCampaignCharge(
       charge_status: 'charged',
       final_charge_amount: charge.amount,
       sumit_charge_document_id: charge.documentId,
+      charge_document_number: charge.documentNumber,
+      charge_document_url: charge.documentUrl,
+      charge_auth_number: charge.authNumber,
+      charge_payment_id: charge.paymentId,
       charged_at: new Date().toISOString(),
     })
     .eq('id', campaignId);

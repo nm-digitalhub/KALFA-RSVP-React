@@ -101,6 +101,13 @@ describe('authorizeHoldSumit', () => {
     );
   });
 
+  it('throws SumitNetworkError when ValidPayment is undefined (Status 0 + AuthNumber) — ambiguous, never silent-authorized', async () => {
+    mockFetch(200, { Status: 0, Data: { Payment: { AuthNumber: 'A1' } } });
+    await expect(authorizeHoldSumit(base)).rejects.toBeInstanceOf(
+      SumitNetworkError,
+    );
+  });
+
   it('throws SumitNetworkError when AuthNumber is missing in a success response', async () => {
     mockFetch(200, { Status: 0, Data: { Payment: { ValidPayment: true } } });
     await expect(authorizeHoldSumit(base)).rejects.toBeInstanceOf(

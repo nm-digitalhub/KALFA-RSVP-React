@@ -15,6 +15,7 @@ import {
   linkGuestContact,
   recordWhatsAppConsent,
   listSendableContacts,
+  pruneOrphanContact,
 } from '@/lib/data/contacts';
 
 describe('deriveContacts', () => {
@@ -113,6 +114,69 @@ describe('linkGuestContact', () => {
 
     expect(builder.upsert).not.toHaveBeenCalled();
     expect(builder.update).toHaveBeenCalledWith({ contact_id: null });
+  });
+});
+
+describe('pruneOrphanContact', () => {
+  // Per-table builders so each count query (guests/billed_results/
+  // contact_interactions) resolves to a DIFFERENT count, and contacts.delete is
+  // observable. (The shared createMockSupabase returns one count for all awaits.)
+  function mockPrune(counts: {
+    guests: number;
+    billed: number;
+    interactions: number;
+  }) {
+    const mkCount = (count: number) => {
+      const b: Record<string, unknown> = {};
+      for (const m of ['select', 'eq', 'delete']) b[m] = vi.fn(() => b);
+      (b as { then: unknown }).then = (f: (v: unknown) => unknown) =>
+        f({ data: null, error: null, count });
+      return b;
+    };
+    const del: Record<string, unknown> = {};
+    for (const m of ['delete', 'eq']) del[m] = vi.fn(() => del);
+    (del as { then: unknown }).then = (f: (v: unknown) => unknown) =>
+      f({ data: null, error: null });
+    const from = vi.fn((table: string) => {
+      if (table === 'guests') return mkCount(counts.guests);
+      if (table === 'billed_results') return mkCount(counts.billed);
+      if (table === 'contact_interactions') return mkCount(counts.interactions);
+      return del; // contacts
+    });
+    vi.mocked(createAdminClient).mockReturnValue({
+      from,
+      rpc: vi.fn(),
+    } as unknown as ReturnType<typeof createAdminClient>);
+    return { from, del };
+  }
+
+  it('deletes a fresh orphan (no guest ref, no billing/outreach history)', async () => {
+    const { from, del } = mockPrune({ guests: 0, billed: 0, interactions: 0 });
+    const deleted = await pruneOrphanContact('e1', 'c1');
+    expect(deleted).toBe(true);
+    expect(from).toHaveBeenCalledWith('contacts');
+    expect(del.delete).toHaveBeenCalled();
+  });
+
+  it('KEEPS a contact still referenced by another guest (no delete)', async () => {
+    const { del } = mockPrune({ guests: 1, billed: 0, interactions: 0 });
+    const deleted = await pruneOrphanContact('e1', 'c1');
+    expect(deleted).toBe(false);
+    expect(del.delete).not.toHaveBeenCalled();
+  });
+
+  it('KEEPS an orphan that has billing history (audit trail)', async () => {
+    const { del } = mockPrune({ guests: 0, billed: 1, interactions: 0 });
+    const deleted = await pruneOrphanContact('e1', 'c1');
+    expect(deleted).toBe(false);
+    expect(del.delete).not.toHaveBeenCalled();
+  });
+
+  it('KEEPS an orphan that has outreach interactions (audit trail)', async () => {
+    const { del } = mockPrune({ guests: 0, billed: 0, interactions: 1 });
+    const deleted = await pruneOrphanContact('e1', 'c1');
+    expect(deleted).toBe(false);
+    expect(del.delete).not.toHaveBeenCalled();
   });
 });
 

@@ -6,7 +6,11 @@ vi.mock('@/lib/data/interactions', () => ({ setContactOpStatus: vi.fn() }));
 
 import { createAdminClient } from '@/lib/supabase/admin';
 import { setContactOpStatus } from '@/lib/data/interactions';
-import { recordReached, getCampaignBillingSummary } from '@/lib/data/billing';
+import {
+  recordReached,
+  getCampaignBillingSummary,
+  getCampaignCreditTotal,
+} from '@/lib/data/billing';
 
 type RpcResult = { data: unknown; error: { message: string } | null };
 
@@ -84,8 +88,46 @@ describe('getCampaignBillingSummary', () => {
     });
   });
 
-  it('returns null on error', async () => {
+  it('THROWS on a real RPC error (so close-charge routes to review, never zero-bills)', async () => {
     mockRpc({ data: null, error: { message: 'x' } });
+    await expect(getCampaignBillingSummary('c1')).rejects.toThrow();
+  });
+
+  it('returns null on an empty result (nonexistent campaign — benign)', async () => {
+    mockRpc({ data: null, error: null });
     await expect(getCampaignBillingSummary('c1')).resolves.toBeNull();
+  });
+});
+
+describe('getCampaignCreditTotal', () => {
+  function mockCredits(result: { data: unknown; error: unknown }) {
+    const eq = vi.fn(async () => result);
+    const select = vi.fn(() => ({ eq }));
+    const from = vi.fn(() => ({ select }));
+    vi.mocked(createAdminClient).mockReturnValue({
+      rpc: vi.fn(),
+      from,
+    } as unknown as ReturnType<typeof createAdminClient>);
+    return { from, select, eq };
+  }
+
+  it('sums the campaign-scoped credit amounts', async () => {
+    const { from, select } = mockCredits({
+      data: [{ amount: 5 }, { amount: 2.5 }],
+      error: null,
+    });
+    await expect(getCampaignCreditTotal('c1')).resolves.toBe(7.5);
+    expect(from).toHaveBeenCalledWith('billing_credits');
+    expect(select).toHaveBeenCalledWith('amount');
+  });
+
+  it('returns 0 when there are no credits', async () => {
+    mockCredits({ data: [], error: null });
+    await expect(getCampaignCreditTotal('c1')).resolves.toBe(0);
+  });
+
+  it('THROWS on a real error (routes close-charge to review)', async () => {
+    mockCredits({ data: null, error: { message: 'x' } });
+    await expect(getCampaignCreditTotal('c1')).rejects.toThrow();
   });
 });

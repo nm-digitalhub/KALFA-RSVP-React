@@ -2,6 +2,7 @@ import 'server-only';
 
 import { createClient } from '@/lib/supabase/server';
 import { requireOwnedEvent } from '@/lib/data/events';
+import { pruneOrphanContact } from '@/lib/data/contacts';
 import { logActivity } from '@/lib/data/activity';
 import { getGuestsPageSize } from '@/lib/constants';
 import type { Database } from '@/lib/supabase/types';
@@ -347,6 +348,18 @@ export async function deleteGuest(
   const supabase = await createClient();
   const previous = await getGuest(eventId, guestId);
 
+  // Capture the guest's contact link before deleting — its contact may be left
+  // orphaned (no other guest shares the phone) and must be pruned for billing
+  // integrity.
+  const { data: link } = await supabase
+    .from('guests')
+    .select('contact_id')
+    .eq('event_id', eventId)
+    .eq('id', guestId)
+    .maybeSingle();
+  const contactId =
+    (link as { contact_id: string | null } | null)?.contact_id ?? null;
+
   const { error } = await supabase
     .from('guests')
     .delete()
@@ -355,6 +368,11 @@ export async function deleteGuest(
 
   if (error) {
     throw new Error('מחיקת המוזמן נכשלה');
+  }
+
+  // Prune the now-possibly-orphaned contact (safe: keeps any with history).
+  if (contactId) {
+    await pruneOrphanContact(eventId, contactId);
   }
 
   await logActivity({

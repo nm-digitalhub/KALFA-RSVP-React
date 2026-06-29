@@ -55,6 +55,12 @@ export type BillingSummary = {
 
 // What B4 close-charge consumes: how many reached (billable) and the accrued sum
 // (Σ locked_price), against the ceiling.
+//
+// THROWS on a real RPC error (transient DB/RPC failure) so close-charge can route
+// to `review` — NEVER swallow it to a 0 that would permanently settle the campaign
+// at ₪0 (the zero-bill bug). An EMPTY result (no row) is benign: it only happens
+// for a nonexistent campaign, which close-charge already pre-validates via
+// getCampaignForCharge → return null (treated as nothing reached, not an error).
 export async function getCampaignBillingSummary(
   campaignId: string,
 ): Promise<BillingSummary | null> {
@@ -62,7 +68,8 @@ export async function getCampaignBillingSummary(
   const { data, error } = await admin.rpc('campaign_billing_summary', {
     p_campaign: campaignId,
   });
-  if (error || !data) return null;
+  if (error) throw new Error('שליפת סיכום החיוב נכשלה');
+  if (!data) return null;
   const row = (Array.isArray(data) ? data[0] : data) as
     | Record<string, unknown>
     | undefined;
@@ -73,4 +80,21 @@ export async function getCampaignBillingSummary(
     ceiling: Number(row.ceiling ?? 0),
     maxContacts: Number(row.max_contacts ?? 0),
   };
+}
+
+// Σ of approved credits scoped to THIS campaign (§14/§16/D5). Gross (VAT-inclusive),
+// to match the price basis. Event-level credits (null campaign_id) are NOT applied
+// here — they belong to the event account / next campaign. THROWS on a real error
+// (routes close-charge to review, like the summary), never silently 0.
+export async function getCampaignCreditTotal(campaignId: string): Promise<number> {
+  const admin = createAdminClient();
+  const { data, error } = await admin
+    .from('billing_credits')
+    .select('amount')
+    .eq('campaign_id', campaignId);
+  if (error) throw new Error('שליפת הזיכויים נכשלה');
+  return (data ?? []).reduce(
+    (sum, r) => sum + Number((r as { amount: number | string }).amount ?? 0),
+    0,
+  );
 }

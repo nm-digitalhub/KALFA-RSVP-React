@@ -125,6 +125,17 @@ export async function linkGuestContact(
   const admin = createAdminClient();
   const e164 = normalizePhone(phone);
 
+  // Capture the guest's CURRENT contact link first — if the phone change repoints
+  // it, the previous contact may be left orphaned and must be pruned.
+  const { data: cur } = await admin
+    .from('guests')
+    .select('contact_id')
+    .eq('id', guestId)
+    .eq('event_id', eventId)
+    .maybeSingle();
+  const prevContactId =
+    (cur as { contact_id: string | null } | null)?.contact_id ?? null;
+
   let contactId: string | null = null;
   if (e164) {
     const { data: row, error: upErr } = await admin
@@ -145,6 +156,56 @@ export async function linkGuestContact(
     .eq('id', guestId)
     .eq('event_id', eventId);
   if (linkErr) throw new Error('עדכון קישור איש הקשר נכשל');
+
+  // Phone changed away from a previous contact → prune it if now orphaned.
+  if (prevContactId && prevContactId !== contactId) {
+    await pruneOrphanContact(eventId, prevContactId);
+  }
+}
+
+// Prune a contact that is no longer referenced by ANY current guest of the event
+// (a billing-integrity hygiene step — an orphaned contact would otherwise stay
+// reachable + billable; the root bound is the Phase-2 frozen set). SAFE by design:
+// it deletes ONLY a contact with (a) zero current guest references AND (b) no
+// billing/outreach history (billed_results + contact_interactions), so it never
+// drops an audit trail or violates a FK. Returns true iff a row was deleted.
+// Admin client: contacts are admin-write under RLS. Caller must have verified
+// event ownership.
+export async function pruneOrphanContact(
+  eventId: string,
+  contactId: string,
+): Promise<boolean> {
+  const admin = createAdminClient();
+
+  // Still referenced by a current guest? keep.
+  const { count: refs } = await admin
+    .from('guests')
+    .select('contact_id', { count: 'exact', head: true })
+    .eq('event_id', eventId)
+    .eq('contact_id', contactId);
+  if ((refs ?? 0) > 0) return false;
+
+  // Has any billing or outreach history? keep for audit.
+  const { count: billed } = await admin
+    .from('billed_results')
+    .select('contact_id', { count: 'exact', head: true })
+    .eq('contact_id', contactId);
+  if ((billed ?? 0) > 0) return false;
+
+  const { count: interactions } = await admin
+    .from('contact_interactions')
+    .select('contact_id', { count: 'exact', head: true })
+    .eq('contact_id', contactId);
+  if ((interactions ?? 0) > 0) return false;
+
+  // Truly orphaned + history-free → safe to delete.
+  const { error } = await admin
+    .from('contacts')
+    .delete()
+    .eq('id', contactId)
+    .eq('event_id', eventId);
+  if (error) throw new Error('מחיקת איש קשר יתום נכשלה');
+  return true;
 }
 
 // Count of unique reachable contacts for an event, derived from the current

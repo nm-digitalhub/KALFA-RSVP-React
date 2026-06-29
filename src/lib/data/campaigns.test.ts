@@ -98,6 +98,10 @@ describe('recordCampaignHold', () => {
       authNumber: 'A1',
       authAmount: 1400,
       cardToken: 'tok',
+      expMonth: 7,
+      expYear: 2031,
+      citizenId: '316125434',
+      authExternalRef: 'ext-1',
     });
 
     const payload = vi.mocked(builder.update).mock.calls[0][0] as Record<
@@ -192,7 +196,11 @@ describe('B4 close-charge data layer', () => {
         status: 'closed',
         capture_status: 'authorized',
         charge_status: null,
-        sumit_customer_ref: 'kalfa-campaign-c1',
+        card_token_ref: 'tok-abc',
+        card_exp_month: 7,
+        card_exp_year: 2031,
+        card_citizen_id: '316125434',
+        auth_external_ref: 'ext-1',
         max_charge_ceiling: '88',
       },
       error: null,
@@ -203,7 +211,11 @@ describe('B4 close-charge data layer', () => {
       status: 'closed',
       capture_status: 'authorized',
       charge_status: null,
-      sumit_customer_ref: 'kalfa-campaign-c1',
+      card_token_ref: 'tok-abc',
+      card_exp_month: 7,
+      card_exp_year: 2031,
+      card_citizen_id: '316125434',
+      auth_external_ref: 'ext-1',
       max_charge_ceiling: '88',
     });
   });
@@ -225,7 +237,14 @@ describe('B4 close-charge data layer', () => {
 
   it('recordCampaignCharge persists the charged outcome + document id', async () => {
     const { builder } = adminWith({ data: null, error: null });
-    await recordCampaignCharge('c1', { amount: 12, documentId: 555 });
+    await recordCampaignCharge('c1', {
+      amount: 12,
+      documentId: 555,
+      documentNumber: 40103,
+      documentUrl: 'https://pay.sumit.co.il/x?download=555',
+      authNumber: '0692601',
+      paymentId: 777,
+    });
     const payload = vi.mocked(builder.update).mock.calls[0][0] as Record<
       string,
       unknown

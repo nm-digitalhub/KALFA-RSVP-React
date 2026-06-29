@@ -112,6 +112,13 @@ export type Database = {
       }
       app_settings: {
         Row: {
+          agr_charge_window_days: string | null
+          agr_hold_release_days: string | null
+          agr_liability_cap: string | null
+          agr_offer_validity_days: string | null
+          agr_record_retention_months: string | null
+          agr_retention_days: string | null
+          agr_service_activation_window: string | null
           campaign_holds_enabled: boolean
           company_contact_email: string | null
           company_contact_phone: string | null
@@ -142,6 +149,13 @@ export type Database = {
           warranty_text: string | null
         }
         Insert: {
+          agr_charge_window_days?: string | null
+          agr_hold_release_days?: string | null
+          agr_liability_cap?: string | null
+          agr_offer_validity_days?: string | null
+          agr_record_retention_months?: string | null
+          agr_retention_days?: string | null
+          agr_service_activation_window?: string | null
           campaign_holds_enabled?: boolean
           company_contact_email?: string | null
           company_contact_phone?: string | null
@@ -172,6 +186,13 @@ export type Database = {
           warranty_text?: string | null
         }
         Update: {
+          agr_charge_window_days?: string | null
+          agr_hold_release_days?: string | null
+          agr_liability_cap?: string | null
+          agr_offer_validity_days?: string | null
+          agr_record_retention_months?: string | null
+          agr_retention_days?: string | null
+          agr_service_activation_window?: string | null
           campaign_holds_enabled?: boolean
           company_contact_email?: string | null
           company_contact_phone?: string | null

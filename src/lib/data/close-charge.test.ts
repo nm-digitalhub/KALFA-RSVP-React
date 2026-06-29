@@ -14,8 +14,12 @@ vi.mock('@/lib/data/campaigns', () => ({
   recordCampaignCharge: vi.fn(),
   markCampaignChargeOutcome: vi.fn(),
 }));
-vi.mock('@/lib/data/billing', () => ({ getCampaignBillingSummary: vi.fn() }));
+vi.mock('@/lib/data/billing', () => ({
+  getCampaignBillingSummary: vi.fn(),
+  getCampaignCreditTotal: vi.fn(),
+}));
 vi.mock('@/lib/sumit/capture', () => ({ captureHeldCardSumit: vi.fn() }));
+vi.mock('@/lib/supabase/admin', () => ({ createAdminClient: vi.fn() }));
 
 import {
   getPaymentsEnabled,
@@ -29,10 +33,33 @@ import {
   recordCampaignCharge,
   markCampaignChargeOutcome,
 } from '@/lib/data/campaigns';
-import { getCampaignBillingSummary } from '@/lib/data/billing';
+import {
+  getCampaignBillingSummary,
+  getCampaignCreditTotal,
+} from '@/lib/data/billing';
 import { captureHeldCardSumit } from '@/lib/sumit/capture';
 import { SumitDeclinedError } from '@/lib/sumit/charge';
+import { createAdminClient } from '@/lib/supabase/admin';
 import { closeCampaignAndCharge } from '@/lib/data/close-charge';
+
+// Mock admin client for the owner-email lookup (events.owner_id → auth user email).
+const adminClientMock = {
+  from: () => ({
+    select: () => ({
+      eq: () => ({
+        maybeSingle: async () => ({ data: { owner_id: 'u1' }, error: null }),
+      }),
+    }),
+  }),
+  auth: {
+    admin: {
+      getUserById: async () => ({
+        data: { user: { email: 'owner@example.com' } },
+        error: null,
+      }),
+    },
+  },
+};
 
 type Mock = ReturnType<typeof vi.fn>;
 const m = {
@@ -42,6 +69,7 @@ const m = {
   forCharge: getCampaignForCharge as unknown as Mock,
   lock: lockCampaignForCharge as unknown as Mock,
   summary: getCampaignBillingSummary as unknown as Mock,
+  credits: getCampaignCreditTotal as unknown as Mock,
   capture: captureHeldCardSumit as unknown as Mock,
 };
 
@@ -55,7 +83,11 @@ function happy() {
     status: 'active',
     capture_status: 'authorized',
     charge_status: null,
-    sumit_customer_ref: 'kalfa-campaign-c1',
+    card_token_ref: 'tok-abc',
+    card_exp_month: 7,
+    card_exp_year: 2031,
+    card_citizen_id: '316125434',
+    auth_external_ref: 'ext-1',
     max_charge_ceiling: '88',
   });
   m.summary.mockResolvedValue({
@@ -64,8 +96,16 @@ function happy() {
     ceiling: 88,
     maxContacts: 22,
   });
+  m.credits.mockResolvedValue(0);
   m.lock.mockResolvedValue(true);
-  m.capture.mockResolvedValue({ documentId: 555 });
+  (createAdminClient as unknown as Mock).mockReturnValue(adminClientMock);
+  m.capture.mockResolvedValue({
+    documentId: 555,
+    documentNumber: 40103,
+    documentUrl: 'https://pay.sumit.co.il/x?download=555',
+    authNumber: '0692601',
+    paymentId: 777,
+  });
 }
 
 beforeEach(() => vi.clearAllMocks());
@@ -96,7 +136,7 @@ describe('closeCampaignAndCharge', () => {
     expect(captureHeldCardSumit).not.toHaveBeenCalled();
   });
 
-  it('bad_state when the hold has no recoverable Customer ref (pre-fix hold)', async () => {
+  it('bad_state when the hold has no saved card token/expiry/citizenID (pre-fix hold)', async () => {
     happy();
     m.forCharge.mockResolvedValue({
       id: 'c1',
@@ -104,7 +144,11 @@ describe('closeCampaignAndCharge', () => {
       status: 'closed',
       capture_status: 'authorized',
       charge_status: null,
-      sumit_customer_ref: null,
+      card_token_ref: null,
+      card_exp_month: null,
+      card_exp_year: null,
+      card_citizen_id: null,
+      auth_external_ref: null,
       max_charge_ceiling: '88',
     });
     const r = await closeCampaignAndCharge('c1');
@@ -135,13 +179,20 @@ describe('closeCampaignAndCharge', () => {
     expect(closeCampaign).toHaveBeenCalledWith('c1');
     expect(captureHeldCardSumit).toHaveBeenCalledWith(
       expect.objectContaining({
-        customerRef: 'kalfa-campaign-c1',
+        cardToken: 'tok-abc',
+        expMonth: 7,
+        expYear: 2031,
+        citizenId: '316125434',
         amount: '12',
       }),
     );
     expect(recordCampaignCharge).toHaveBeenCalledWith('c1', {
       amount: 12,
       documentId: 555,
+      documentNumber: 40103,
+      documentUrl: 'https://pay.sumit.co.il/x?download=555',
+      authNumber: '0692601',
+      paymentId: 777,
     });
     expect(r).toEqual({ outcome: 'charged', amount: 12 });
   });
@@ -159,6 +210,51 @@ describe('closeCampaignAndCharge', () => {
     expect(captureHeldCardSumit).toHaveBeenCalledWith(
       expect.objectContaining({ amount: '88' }),
     );
+  });
+
+  it('subtracts approved credits from the charged amount (G1/D5)', async () => {
+    happy();
+    // accrued 12, ceiling 88, credit ₪5 → charge 7.
+    m.credits.mockResolvedValue(5);
+    const r = await closeCampaignAndCharge('c1');
+    expect(r).toEqual({ outcome: 'charged', amount: 7 });
+    expect(captureHeldCardSumit).toHaveBeenCalledWith(
+      expect.objectContaining({ amount: '7' }),
+    );
+  });
+
+  it('nothing_to_charge when credits ≥ the capped total (no SUMIT call)', async () => {
+    happy();
+    m.credits.mockResolvedValue(20); // ≥ accrued 12
+    const r = await closeCampaignAndCharge('c1');
+    expect(r).toEqual({ outcome: 'nothing_to_charge', amount: 0 });
+    expect(markCampaignChargeOutcome).toHaveBeenCalledWith(
+      'c1',
+      'nothing_to_charge',
+    );
+    expect(captureHeldCardSumit).not.toHaveBeenCalled();
+  });
+
+  it('review (NOT nothing_to_charge) when the summary RPC errors — the zero-bill guard', async () => {
+    happy();
+    m.summary.mockRejectedValue(new Error('rpc down'));
+    const r = await closeCampaignAndCharge('c1');
+    expect(r).toEqual({ outcome: 'review', amount: 0 });
+    expect(markCampaignChargeOutcome).toHaveBeenCalledWith('c1', 'charge_review');
+    expect(markCampaignChargeOutcome).not.toHaveBeenCalledWith(
+      'c1',
+      'nothing_to_charge',
+    );
+    expect(captureHeldCardSumit).not.toHaveBeenCalled();
+  });
+
+  it('review when the credit lookup errors (also a zero-bill guard)', async () => {
+    happy();
+    m.credits.mockRejectedValue(new Error('rpc down'));
+    const r = await closeCampaignAndCharge('c1');
+    expect(r).toEqual({ outcome: 'review', amount: 0 });
+    expect(markCampaignChargeOutcome).toHaveBeenCalledWith('c1', 'charge_review');
+    expect(captureHeldCardSumit).not.toHaveBeenCalled();
   });
 
   it('bad_state (idempotent) when the charge guard is already taken', async () => {

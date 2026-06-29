@@ -142,19 +142,24 @@ export async function POST(
 
   const authRef = crypto.randomUUID();
   try {
-    const { authNumber, cardToken } = await authorizeHoldSumit({
-      companyId: sumitConfig.companyId,
-      apiKey: sumitConfig.apiKey,
-      ogToken: parsed.data['og-token'],
-      ceiling: String(ceiling), // numeric → string only at the SUMIT boundary
-      vatRate: String(VAT_RATE_PERCENT),
-      authRef,
-      customerEmail: user.email ?? '',
-    });
+    const { authNumber, cardToken, expMonth, expYear, citizenId } =
+      await authorizeHoldSumit({
+        companyId: sumitConfig.companyId,
+        apiKey: sumitConfig.apiKey,
+        ogToken: parsed.data['og-token'],
+        ceiling: String(ceiling), // numeric → string only at the SUMIT boundary
+        vatRate: String(VAT_RATE_PERCENT),
+        authRef,
+        customerEmail: user.email ?? '',
+      });
     await recordCampaignHold(campaignId, {
       authNumber,
       authAmount: ceiling,
-      cardToken,
+      cardToken, // saved card token + expiry + CitizenID, used at the capture
+      expMonth,
+      expYear,
+      citizenId,
+      authExternalRef: authRef, // reconciliation anchor on the charge
     });
   } catch (err) {
     if (err instanceof SumitDeclinedError) {

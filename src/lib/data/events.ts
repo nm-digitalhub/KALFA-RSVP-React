@@ -109,6 +109,37 @@ export async function listEvents(
   return data ?? [];
 }
 
+export interface EventCounts {
+  total: number;
+  active: number;
+}
+
+// Owner-scoped event counts via head queries (count only, no rows loaded) — the
+// dashboard cards must reflect ALL events, independent of the recent-events page
+// size (which previously capped both counts at the list limit).
+export async function getEventCounts(): Promise<EventCounts> {
+  const user = await requireUser();
+  const supabase = await createClient();
+
+  const [totalRes, activeRes] = await Promise.all([
+    supabase
+      .from('events')
+      .select('id', { count: 'exact', head: true })
+      .eq('owner_id', user.id),
+    supabase
+      .from('events')
+      .select('id', { count: 'exact', head: true })
+      .eq('owner_id', user.id)
+      .eq('status', 'active'),
+  ]);
+
+  if (totalRes.error || activeRes.error) {
+    throw new Error('טעינת מונה האירועים נכשלה');
+  }
+
+  return { total: totalRes.count ?? 0, active: activeRes.count ?? 0 };
+}
+
 export interface CreateEventInput {
   name: string;
   event_type: EventType;

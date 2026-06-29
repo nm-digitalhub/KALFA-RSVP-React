@@ -17,6 +17,14 @@ export interface SumitAuthorizeParams {
 export interface SumitAuthorizeResult {
   authNumber: string;
   cardToken: string | null; // reusable CreditCard_Token for the final capture
+  // Card expiry from the response — REQUIRED alongside the token at capture
+  // (SUMIT validates CreditCard_ExpirationMonth/Year structurally). Month/year
+  // only; never the PAN/CVV.
+  expMonth: number | null;
+  expYear: number | null;
+  // Card-holder CitizenID — SUMIT requires it on the saved-token charge. PII;
+  // retention is anchored in the signed agreement.
+  citizenId: string | null;
 }
 
 // J5 authorization HOLD (no capture, no document). Mirrors charge.ts error
@@ -74,7 +82,12 @@ export async function authorizeHoldSumit(
   //   the auth code, and the reusable token lives on Payment.PaymentMethod.
   //   CreditCard_Token. We accept the wire Status as a number, the enum string, or
   //   the legacy { IsError } object so the adapter is robust to all three forms.
-  type PaymentMethod = { CreditCard_Token?: string | null } | null;
+  type PaymentMethod = {
+    CreditCard_Token?: string | null;
+    CreditCard_ExpirationMonth?: number | string | null;
+    CreditCard_ExpirationYear?: number | string | null;
+    CreditCard_CitizenID?: string | null;
+  } | null;
   type Payment = {
     AuthNumber?: string | null;
     ValidPayment?: boolean | null;
@@ -110,20 +123,29 @@ export async function authorizeHoldSumit(
 
   const payment = json.Data?.Payment;
   const authNumber = payment?.AuthNumber;
-  // Treat as authorized ONLY on a clear Success status AND an AuthNumber, with
-  // ValidPayment never explicitly false. A TechnicalError (2) or any unrecognized
-  // status — even with ValidPayment true — is ambiguous and becomes a review,
-  // never a silent authorization.
+  // Treat as authorized ONLY on a clear Success status AND an AuthNumber AND
+  // ValidPayment EXPLICITLY true — symmetric with capture.ts. An undefined/null
+  // ValidPayment, a TechnicalError (2), or any unrecognized status is ambiguous
+  // and becomes a review (SumitNetworkError), never a silent authorization.
   const authorized =
-    success && !!authNumber && payment?.ValidPayment !== false;
+    success && !!authNumber && payment?.ValidPayment === true;
   if (!authorized || !authNumber) {
     throw new SumitNetworkError('אישור התפיסה לא התקבל ממערכת');
   }
 
+  const pm = payment?.PaymentMethod ?? json.Data?.PaymentMethod ?? null;
   const cardToken =
-    payment?.PaymentMethod?.CreditCard_Token ??
-    json.Data?.PaymentMethod?.CreditCard_Token ??
-    json.Data?.CreditCard_Token ??
-    null;
-  return { authNumber, cardToken };
+    pm?.CreditCard_Token ?? json.Data?.CreditCard_Token ?? null;
+  const toInt = (v: number | string | null | undefined): number | null => {
+    if (v == null) return null;
+    const n = typeof v === 'number' ? v : parseInt(v, 10);
+    return Number.isFinite(n) ? n : null;
+  };
+  return {
+    authNumber,
+    cardToken,
+    expMonth: toInt(pm?.CreditCard_ExpirationMonth),
+    expYear: toInt(pm?.CreditCard_ExpirationYear),
+    citizenId: pm?.CreditCard_CitizenID ?? null,
+  };
 }

@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import { CalendarDays, Plus } from 'lucide-react';
 
-import { listEvents } from '@/lib/data/events';
+import { listEvents, getEventCounts } from '@/lib/data/events';
 
 const EVENT_TYPE_LABELS: Record<string, string> = {
   wedding: 'חתונה',
@@ -22,11 +22,14 @@ const STATUS_LABELS: Record<string, string> = {
 };
 
 export default async function DashboardPage() {
-  // A single fetch powers both the count cards and the recent-events preview.
-  const events = await listEvents();
-  const totalEvents = events.length;
-  const activeEvents = events.filter((event) => event.status === 'active').length;
-  const recentEvents = events.slice(0, 5);
+  // Counts come from head queries (ALL events), independent of the recent-events
+  // preview page size; the preview loads just the 5 most recent.
+  const [counts, recentEvents] = await Promise.all([
+    getEventCounts(),
+    listEvents({ limit: 5 }),
+  ]);
+  const totalEvents = counts.total;
+  const activeEvents = counts.active;
 
   return (
     <div className="space-y-8">
@@ -79,12 +82,13 @@ export default async function DashboardPage() {
           <ul className="divide-y divide-border rounded-lg border border-border">
             {recentEvents.map((event) => (
               <li key={event.id} className="flex items-center justify-between gap-4 px-4 py-3">
-                <Link href="/app/events" className="min-w-0">
+                <Link href={`/app/events/${event.id}`} className="min-w-0">
                   <p className="truncate font-medium">{event.name}</p>
                   <p className="truncate text-sm text-muted-foreground">
                     {[
                       EVENT_TYPE_LABELS[event.event_type] ?? event.event_type,
-                      event.event_date,
+                      // event_date is timestamptz → show the date part only.
+                      event.event_date ? event.event_date.slice(0, 10) : null,
                       event.venue_name,
                     ]
                       .filter(Boolean)
