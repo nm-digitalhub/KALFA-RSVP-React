@@ -888,6 +888,7 @@ export type Database = {
           note: string | null
           phone: string | null
           rsvp_token: string
+          rsvp_token_revoked_at: string | null
           status: Database["public"]["Enums"]["guest_status"]
           updated_at: string
         }
@@ -909,6 +910,7 @@ export type Database = {
           note?: string | null
           phone?: string | null
           rsvp_token?: string
+          rsvp_token_revoked_at?: string | null
           status?: Database["public"]["Enums"]["guest_status"]
           updated_at?: string
         }
@@ -930,6 +932,7 @@ export type Database = {
           note?: string | null
           phone?: string | null
           rsvp_token?: string
+          rsvp_token_revoked_at?: string | null
           status?: Database["public"]["Enums"]["guest_status"]
           updated_at?: string
         }
@@ -1731,14 +1734,15 @@ export type Database = {
       owns_event: { Args: { _event_id: string }; Returns: boolean }
       submit_rsvp: {
         Args: {
-          _adults: number
-          _attending: boolean
-          _kids: number
-          _meal: string
-          _note: string
           _token: string
+          _status: string
+          _adults: number
+          _kids: number
+          _meal: string | null
+          _note: string | null
+          _answers?: Json
         }
-        Returns: boolean
+        Returns: Json
       }
       try_record_billed_result: {
         Args: {

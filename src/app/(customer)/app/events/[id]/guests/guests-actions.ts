@@ -12,6 +12,7 @@ import {
   deleteGroup,
 } from '@/lib/data/guests';
 import { linkGuestContact } from '@/lib/data/contacts';
+import { regenerateRsvpToken, revokeRsvpToken } from '@/lib/data/rsvp';
 import {
   createGuestSchema,
   updateGuestSchema,
@@ -233,4 +234,39 @@ export async function deleteGroupAction(
     throw new Error('מחיקת הקבוצה נכשלה');
   }
   revalidatePath(`/app/events/${eventId}/guests`);
+}
+
+// RSVP-link management on the guest detail page. The data layer re-verifies
+// event ownership (requireOwnedEvent) before touching the bearer token, which
+// is otherwise excluded from every owner-facing guest projection.
+export async function revokeRsvpTokenAction(
+  eventId: string,
+  guestId: string,
+  _prevState: FormState,
+  _formData: FormData,
+): Promise<FormState> {
+  try {
+    await revokeRsvpToken(eventId, guestId);
+  } catch (err) {
+    if (isNextControlFlow(err)) throw err;
+    return { error: 'ביטול קישור ההזמנה נכשל. נסו שוב.' };
+  }
+  revalidatePath(`/app/events/${eventId}/guests/${guestId}`);
+  return { notice: 'הקישור בוטל' };
+}
+
+export async function regenerateRsvpTokenAction(
+  eventId: string,
+  guestId: string,
+  _prevState: FormState,
+  _formData: FormData,
+): Promise<FormState> {
+  try {
+    await regenerateRsvpToken(eventId, guestId);
+  } catch (err) {
+    if (isNextControlFlow(err)) throw err;
+    return { error: 'יצירת קישור חדש נכשלה. נסו שוב.' };
+  }
+  revalidatePath(`/app/events/${eventId}/guests/${guestId}`);
+  return { notice: 'נוצר קישור חדש' };
 }
