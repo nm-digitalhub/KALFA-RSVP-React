@@ -119,9 +119,9 @@ export function Pagination({
   const hasPrev = page > 1;
   const hasNext = page < totalPages;
   const linkClass =
-    'rounded-md border border-border px-3 py-1.5 text-sm hover:bg-muted';
+    'inline-flex items-center rounded-md border border-border px-3 py-2 text-sm hover:bg-muted';
   const disabledClass =
-    'rounded-md border border-border px-3 py-1.5 text-sm text-muted-foreground opacity-50';
+    'inline-flex items-center rounded-md border border-border px-3 py-2 text-sm text-muted-foreground opacity-50';
 
   return (
     <nav

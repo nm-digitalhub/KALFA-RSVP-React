@@ -12,7 +12,7 @@ export default async function AdminPackagesPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between gap-4">
+      <div className="flex flex-wrap items-center justify-between gap-4">
         <PageHeading>חבילות</PageHeading>
         <Link
           href="/admin/packages/new"

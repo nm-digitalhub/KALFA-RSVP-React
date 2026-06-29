@@ -89,7 +89,7 @@ function MobileMenuTrigger() {
       size="icon-sm"
       onClick={toggleSidebar}
       aria-label="פתיחת תפריט"
-      className="md:hidden"
+      className="size-11 md:hidden"
     >
       <Menu />
     </Button>

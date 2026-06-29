@@ -43,7 +43,7 @@ export function ContactStatusCell({
         value={value}
         disabled={pending}
         onChange={(e) => onChange(e.target.value)}
-        className="rounded-md border border-border bg-transparent px-2 py-1 text-xs disabled:opacity-50"
+        className="min-h-8 rounded-md border border-border bg-transparent px-2 py-1.5 text-xs disabled:opacity-50"
       >
         {Constants.public.Enums.contact_status.map((s) => (
           <option key={s} value={s}>
@@ -52,7 +52,7 @@ export function ContactStatusCell({
         ))}
       </select>
       {failed ? (
-        <span role="alert" className="text-xs text-red-600">
+        <span role="alert" className="text-xs text-destructive">
           נכשל
         </span>
       ) : null}

@@ -120,7 +120,7 @@ export default async function GuestsPage({ params, searchParams }: PageProps) {
         </div>
       ) : (
         <div className="overflow-x-auto rounded-lg border border-border">
-          <table className="w-full text-right text-sm">
+          <table className="w-full min-w-[44rem] text-start text-sm whitespace-nowrap">
             <thead className="border-b border-border bg-muted/40 text-muted-foreground">
               <tr>
                 <th className="px-4 py-2 font-medium">שם</th>
@@ -179,7 +179,7 @@ export default async function GuestsPage({ params, searchParams }: PageProps) {
           {page > 1 ? (
             <Link
               href={pageHref(page - 1)}
-              className="rounded-md border border-border px-3 py-1 text-sm hover:bg-accent"
+              className="rounded-md border border-border px-3 py-2 text-sm hover:bg-accent"
             >
               הקודם
             </Link>
@@ -190,7 +190,7 @@ export default async function GuestsPage({ params, searchParams }: PageProps) {
           {page < totalPages ? (
             <Link
               href={pageHref(page + 1)}
-              className="rounded-md border border-border px-3 py-1 text-sm hover:bg-accent"
+              className="rounded-md border border-border px-3 py-2 text-sm hover:bg-accent"
             >
               הבא
             </Link>

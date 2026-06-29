@@ -8,7 +8,7 @@ import { GUEST_STATUS_LABELS, CONTACT_STATUS_LABELS } from './labels';
 import type { GuestGroup } from '@/lib/data/guests';
 
 const inputClass =
-  'rounded-md border border-border bg-transparent px-3 py-2 text-sm';
+  'w-full rounded-md border border-border bg-transparent px-3 py-2 text-sm sm:w-auto';
 
 interface Current {
   search: string;
@@ -48,7 +48,7 @@ export function GuestListControls({
 
   return (
     <form
-      className="flex flex-wrap items-end gap-3"
+      className="grid grid-cols-1 gap-3 sm:flex sm:flex-wrap sm:items-end"
       onSubmit={(e) => {
         e.preventDefault();
         navigate({ search });
@@ -147,7 +147,7 @@ export function GuestListControls({
 
       <button
         type="submit"
-        className="rounded-md border border-border px-4 py-2 text-sm font-medium hover:bg-accent"
+        className="w-full rounded-md border border-border px-4 py-2 text-sm font-medium hover:bg-accent sm:w-auto"
       >
         חיפוש
       </button>

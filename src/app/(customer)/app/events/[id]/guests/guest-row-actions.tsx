@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useState, useTransition } from 'react';
 
+import { Button, buttonVariants } from '@/components/ui/button';
 import { deleteGuestAction } from './guests-actions';
 
 // Per-row edit link + delete button. Delete confirms first, then calls the
@@ -31,23 +32,24 @@ export function GuestRowActions({
   }
 
   return (
-    <div className="flex items-center justify-end gap-2">
+    <div className="flex items-center justify-end gap-1">
       <Link
         href={`/app/events/${eventId}/guests/${guestId}`}
-        className="text-sm text-muted-foreground hover:underline"
+        className={buttonVariants({ variant: 'ghost', size: 'sm' })}
       >
         עריכה
       </Link>
-      <button
+      <Button
         type="button"
+        variant="destructive"
+        size="sm"
         onClick={onDelete}
         disabled={pending}
-        className="text-sm text-red-600 hover:underline disabled:opacity-50"
       >
         {pending ? 'מוחק…' : 'מחיקה'}
-      </button>
+      </Button>
       {failed ? (
-        <span role="alert" className="text-xs text-red-600">
+        <span role="alert" className="text-xs text-destructive">
           נכשל
         </span>
       ) : null}

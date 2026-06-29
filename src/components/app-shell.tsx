@@ -79,7 +79,7 @@ function MobileMenuTrigger() {
       size="icon-sm"
       onClick={toggleSidebar}
       aria-label="פתיחת תפריט"
-      className="md:hidden"
+      className="size-11 md:hidden"
     >
       <Menu />
     </Button>
@@ -193,8 +193,10 @@ export function AppShell({
           <header className="sticky top-0 z-10 flex items-center gap-3 border-b border-border bg-background px-4 py-3">
             <MobileMenuTrigger />
 
-            {/* Search — visual placeholder for now (no behavior yet). */}
-            <div className="relative max-w-md flex-1">
+            {/* Search — visual placeholder (no behavior yet); hidden on mobile
+                until it works. A spacer keeps the controls at the inline-end. */}
+            <div className="flex-1 sm:hidden" aria-hidden />
+            <div className="relative hidden max-w-md flex-1 sm:block">
               <Search
                 className="pointer-events-none absolute top-1/2 start-2.5 size-4 -translate-y-1/2 text-muted-foreground"
                 aria-hidden
