@@ -1,10 +1,15 @@
 import { requireAdmin } from '@/lib/auth/dal';
 import { getCompanyLegal } from '@/lib/data/company';
 import { getAgreementForAdmin } from '@/lib/data/admin/agreements';
+import {
+  getAgreementConfigTokens,
+  getAgreementConfigForAdmin,
+} from '@/lib/data/agreement-config';
 import { renderAgreementBody, AGREEMENT_CSS } from '@/lib/agreements/template';
 
 import { PageHeading, Badge } from '../_components';
 import { AgreementEditor } from './agreement-client';
+import { AgreementConfigForm } from './agreement-config-form';
 
 export const metadata = { title: 'חוזה' };
 
@@ -13,9 +18,11 @@ export const metadata = { title: 'חוזה' };
 // but reflects the saved version/status/custom body.
 export default async function AdminAgreementPage() {
   await requireAdmin();
-  const [doc, company] = await Promise.all([
+  const [doc, company, configTokens, configValues] = await Promise.all([
     getAgreementForAdmin(),
     getCompanyLegal(),
+    getAgreementConfigTokens(),
+    getAgreementConfigForAdmin(),
   ]);
 
   const previewHtml = renderAgreementBody(
@@ -38,6 +45,7 @@ export default async function AdminAgreementPage() {
       windowText: '01/07/2026 – 15/07/2026',
     },
     { version: doc.version, status: doc.status, bodyHtml: doc.bodyHtml },
+    configTokens,
   );
 
   return (
@@ -56,6 +64,18 @@ export default async function AdminAgreementPage() {
         bodyHtml={doc.bodyHtml}
         status={doc.status}
       />
+
+      <section className="space-y-4 rounded-lg border border-border bg-card p-5">
+        <div>
+          <h2 className="text-lg font-semibold">פרמטרים של ההסכם</h2>
+          <p className="text-sm text-muted-foreground">
+            ערכים אלה משובצים בהסכם שהלקוח חותם עליו (חלונות הפעלה וגבייה, תוקף
+            הצעה, תקרת אחריות ושמירת מידע). כל עדכון משתקף בהסכמים חדשים באופן
+            מיידי. מומלץ שעו״ד יאשר את הנוסח לפני הפעלה מסחרית.
+          </p>
+        </div>
+        <AgreementConfigForm values={configValues} />
+      </section>
 
       <section className="space-y-2">
         <h2 className="text-lg font-semibold">תצוגה מקדימה</h2>

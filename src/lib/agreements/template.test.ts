@@ -92,6 +92,54 @@ describe('renderAgreementBody', () => {
   });
 });
 
+describe('renderAgreementBody custom body + injected config tokens', () => {
+  const customDoc = {
+    version: 'custom-v1',
+    status: 'approved' as const,
+    bodyHtml:
+      '<p>תקרת אחריות: {{liabilityCap}} · תוקף הצעה: {{offerValidityDays}} ימים</p>',
+  };
+
+  it('substitutes injected admin-config tokens into a custom body', () => {
+    const html = renderAgreementBody(content, customDoc, {
+      liabilityCap: '₪10,000',
+      offerValidityDays: '14',
+    });
+    expect(html).toContain('₪10,000');
+    expect(html).toContain('14 ימים');
+  });
+
+  it('escapes injected config values (no HTML/entity injection)', () => {
+    const html = renderAgreementBody(
+      content,
+      { ...customDoc, bodyHtml: '<p>{{liabilityCap}}</p>' },
+      { liabilityCap: '<script>&"x"' },
+    );
+    expect(html).not.toContain('<script>&"x"');
+    expect(html).toContain('&lt;script&gt;');
+    expect(html).toContain('&amp;');
+  });
+
+  it('built-in tokens win over a same-named injected token (precedence)', () => {
+    const html = renderAgreementBody(
+      content,
+      { ...customDoc, bodyHtml: '<p>{{eventName}}</p>' },
+      { eventName: 'HACKED' },
+    );
+    expect(html).toContain(content.eventName);
+    expect(html).not.toContain('HACKED');
+  });
+
+  it('leaves unknown tokens literal', () => {
+    const html = renderAgreementBody(
+      content,
+      { ...customDoc, bodyHtml: '<p>{{nope}}</p>' },
+      {},
+    );
+    expect(html).toContain('{{nope}}');
+  });
+});
+
 describe('renderAgreementDocument', () => {
   const doc = renderAgreementDocument(content, sig);
 

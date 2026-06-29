@@ -142,8 +142,28 @@ function tokenMap(c: AgreementContent, version: string): Record<string, string> 
   };
 }
 
-function substituteTokens(html: string, c: AgreementContent, version: string): string {
-  const tokens = tokenMap(c, version);
+// `extraTokens` lets render callers inject ADDITIONAL placeholders (e.g. the
+// admin-config tokens serviceActivationWindow / offerValidityDays / chargeWindowDays
+// / holdReleaseDays / liabilityCap / retentionDays / recordRetentionMonths) so a
+// custom body may reference them. They are treated as plain text and run through
+// esc() here — therefore the caller (and the data layer it reads from) MUST pass
+// RAW, un-escaped strings; escaping is owned by this module to avoid double-escape.
+//
+// Precedence: built-in tokens WIN on key collision (extraTokens are spread first,
+// the built-in map last), so config can never shadow a vetted built-in value. The
+// 7 config tokens above don't collide with any built-in name, so this is purely a
+// defensive guarantee. Unknown tokens (in neither map) are left literal, as before.
+function substituteTokens(
+  html: string,
+  c: AgreementContent,
+  version: string,
+  extraTokens: Record<string, string> = {},
+): string {
+  const escapedExtra: Record<string, string> = {};
+  for (const [key, value] of Object.entries(extraTokens)) {
+    escapedExtra[key] = esc(value);
+  }
+  const tokens = { ...escapedExtra, ...tokenMap(c, version) };
   return html.replace(/\{\{\s*([\w.]+)\s*\}\}/g, (whole, key: string) =>
     Object.prototype.hasOwnProperty.call(tokens, key) ? tokens[key] : whole,
   );
@@ -216,22 +236,29 @@ function defaultBody(c: AgreementContent, version: string): string {
 // The agreement body (all clauses) — shown to the customer before signing AND
 // embedded in the PDF. No signature here. `doc` selects custom vs default body,
 // its version, and whether the draft marker is appended (status='draft').
+//
+// `extraTokens` are injected only into a CUSTOM body (the in-code default body
+// does not use {{tokens}}); see substituteTokens for escaping + precedence. Pass
+// RAW (un-escaped) admin-config values — this module escapes them.
 export function renderAgreementBody(
   c: AgreementContent,
   doc: AgreementDoc = DEFAULT_AGREEMENT_DOC,
+  extraTokens: Record<string, string> = {},
 ): string {
   const inner =
     doc.bodyHtml != null && doc.bodyHtml.trim() !== ''
-      ? substituteTokens(doc.bodyHtml, c, doc.version)
+      ? substituteTokens(doc.bodyHtml, c, doc.version, extraTokens)
       : defaultBody(c, doc.version);
   return doc.status === 'draft' ? inner + DRAFT_MARKER : inner;
 }
 
 // Full self-contained HTML document for the PDF: CSS + body + signature block.
+// `extraTokens` are forwarded to the body (custom bodies only); pass RAW values.
 export function renderAgreementDocument(
   c: AgreementContent,
   sig: AgreementSignature,
   doc: AgreementDoc = DEFAULT_AGREEMENT_DOC,
+  extraTokens: Record<string, string> = {},
 ): string {
   const signatureBlock = `
   <div class="sig">
@@ -243,6 +270,6 @@ export function renderAgreementDocument(
   return `<!doctype html>
 <html lang="he" dir="rtl">
 <head><meta charset="utf-8"><style>* { box-sizing: border-box; } body { margin: 40px; }${AGREEMENT_CSS}</style></head>
-<body><div class="agreement-doc">${renderAgreementBody(c, doc)}${signatureBlock}</div></body>
+<body><div class="agreement-doc">${renderAgreementBody(c, doc, extraTokens)}${signatureBlock}</div></body>
 </html>`;
 }

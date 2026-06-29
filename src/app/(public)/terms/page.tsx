@@ -5,6 +5,10 @@ export const metadata = {
   title: 'תקנון ותנאי שירות — KALFA',
 };
 
+// Render per-request so the page always reflects the current company/legal config
+// (e.g. the warranty wording) edited in /admin — instead of being baked at build.
+export const dynamic = 'force-dynamic';
+
 // Public terms of service (beta.kalfa.me/terms). Hebrew, RTL, reads company
 // identity from config. DRAFT per Consumer Protection Law §14ג; lawyer review
 // required before go-live.

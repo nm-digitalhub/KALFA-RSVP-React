@@ -12,6 +12,7 @@ import { normalizePhone } from '@/lib/phone';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { renderAgreementDocument } from '@/lib/agreements/template';
 import { getActiveAgreementDoc } from '@/lib/data/agreements-doc';
+import { getAgreementConfigTokens } from '@/lib/data/agreement-config';
 import { renderAgreementPdf, sha256Hex } from '@/lib/agreements/pdf';
 import { uploadLegalDoc } from '@/lib/storage/legal-docs';
 import { getEmailSender } from '@/lib/email/sender';
@@ -108,8 +109,14 @@ export async function recordSignedAgreement(
   // Build the exact document → PDF → hash. The active agreement document
   // (version/status/optional custom body) is read server-side — never trusted
   // from the client — so the recorded version matches what is actually rendered.
-  const company = await getCompanyLegal();
-  const agreementDoc = await getActiveAgreementDoc();
+  // Admin-config tokens (raw strings) let a custom agreement body reference the
+  // configured service/charge/hold/liability/retention values; rendered version
+  // must match what is signed, so all three are read server-side together.
+  const [company, agreementDoc, configTokens] = await Promise.all([
+    getCompanyLegal(),
+    getActiveAgreementDoc(),
+    getAgreementConfigTokens(),
+  ]);
   const html = renderAgreementDocument(
     {
       company: {
@@ -137,6 +144,7 @@ export async function recordSignedAgreement(
       signatureDataUrl: input.signatureDataUrl,
     },
     agreementDoc,
+    configTokens,
   );
   const pdfBytes = await renderAgreementPdf(html);
   const contentHash = sha256Hex(pdfBytes);

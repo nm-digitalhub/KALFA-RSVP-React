@@ -10,6 +10,7 @@ import {
   approveAgreementAction,
   revertAgreementAction,
 } from './actions';
+import { HelpTip } from './help-tip';
 
 const inputClass =
   'w-full rounded-md border border-border bg-background px-3 py-2 text-sm';
@@ -87,9 +88,12 @@ export function AgreementEditor({
           <FormError message={saveState?.error} />
           <FormNotice message={saveState?.notice} />
           <div className="max-w-xs">
-            <label htmlFor="version" className="mb-1 block text-sm font-medium">
-              גרסה
-            </label>
+            <div className="mb-1 flex items-center gap-1.5">
+              <label htmlFor="version" className="text-sm font-medium">
+                גרסה
+              </label>
+              <HelpTip text="מזהה הגרסה של נוסח החוזה (למשל draft-2026-06-v2). כל שמירה מחזירה את החוזה לטיוטה. הסכמים שכבר נחתמו שומרים את הגרסה שעליה חתמו ואינם משתנים." />
+            </div>
             <input
               id="version"
               name="version"
@@ -102,9 +106,12 @@ export function AgreementEditor({
             <FieldError errors={saveState?.fieldErrors?.version} />
           </div>
           <div>
-            <label htmlFor="body_html" className="mb-1 block text-sm font-medium">
-              נוסח מותאם (HTML) — ריק = תבנית ברירת מחדל
-            </label>
+            <div className="mb-1 flex items-center gap-1.5">
+              <label htmlFor="body_html" className="text-sm font-medium">
+                נוסח מותאם (HTML) — ריק = תבנית ברירת מחדל
+              </label>
+              <HelpTip text="נוסח HTML מלא שמחליף את תבנית ברירת המחדל המבוקרת. השאר/י ריק כדי להשתמש בתבנית שבקוד. ניתן לשבץ תחליפים כמו {{eventName}} או {{company.name}} שמוחלפים אוטומטית בערכים אמיתיים בעת ההצגה והחתימה (ראו רשימת התחליפים למטה)." />
+            </div>
             <textarea
               id="body_html"
               name="body_html"
@@ -140,9 +147,12 @@ export function AgreementEditor({
           <FormError message={approveState?.error} />
           <FormNotice message={approveState?.notice} />
           <div className="max-w-xs">
-            <label htmlFor="approve-version" className="mb-1 block text-sm font-medium">
-              גרסת האישור
-            </label>
+            <div className="mb-1 flex items-center gap-1.5">
+              <label htmlFor="approve-version" className="text-sm font-medium">
+                גרסת האישור
+              </label>
+              <HelpTip text="הגרסה שתסומן כמאושרת. האישור מסיר את תג ה״טיוטה״ מהחוזה שהלקוחות רואים וחותמים עליו. מומלץ להזין גרסה ללא הקידומת draft-." />
+            </div>
             <input
               id="approve-version"
               name="version"

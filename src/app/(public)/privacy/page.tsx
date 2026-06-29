@@ -5,6 +5,10 @@ export const metadata = {
   title: 'מדיניות פרטיות — KALFA',
 };
 
+// Render per-request so the page always reflects the current company/legal config
+// edited in /admin — instead of being baked at build.
+export const dynamic = 'force-dynamic';
+
 // Public privacy policy (beta.kalfa.me/privacy). Hebrew, RTL, reads company
 // identity from config. DRAFT per Privacy Protection Law §11 + Amendment 13;
 // lawyer review required before go-live.
