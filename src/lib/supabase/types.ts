@@ -472,7 +472,7 @@ export type Database = {
           final_invoice_document_id: number | null
           id: string
           max_charge_ceiling: number | null
-          max_contacts: number | null
+          max_contacts: number
           outreach_schedule: Json | null
           price_per_reached: number | null
           release_status: string | null
@@ -514,7 +514,7 @@ export type Database = {
           final_invoice_document_id?: number | null
           id?: string
           max_charge_ceiling?: number | null
-          max_contacts?: number | null
+          max_contacts: number
           outreach_schedule?: Json | null
           price_per_reached?: number | null
           release_status?: string | null
@@ -556,7 +556,7 @@ export type Database = {
           final_invoice_document_id?: number | null
           id?: string
           max_charge_ceiling?: number | null
-          max_contacts?: number | null
+          max_contacts?: number
           outreach_schedule?: Json | null
           price_per_reached?: number | null
           release_status?: string | null
@@ -956,6 +956,45 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      message_templates: {
+        Row: {
+          active: boolean
+          body: string | null
+          channel: Database["public"]["Enums"]["campaign_channel"]
+          created_at: string
+          id: string
+          label: string | null
+          language: string
+          message_key: string
+          name: string
+          updated_at: string
+        }
+        Insert: {
+          active?: boolean
+          body?: string | null
+          channel: Database["public"]["Enums"]["campaign_channel"]
+          created_at?: string
+          id?: string
+          label?: string | null
+          language?: string
+          message_key: string
+          name?: string
+          updated_at?: string
+        }
+        Update: {
+          active?: boolean
+          body?: string | null
+          channel?: Database["public"]["Enums"]["campaign_channel"]
+          created_at?: string
+          id?: string
+          label?: string | null
+          language?: string
+          message_key?: string
+          name?: string
+          updated_at?: string
+        }
+        Relationships: []
       }
       orders: {
         Row: {

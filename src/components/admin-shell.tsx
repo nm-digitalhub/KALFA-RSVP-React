@@ -12,6 +12,7 @@ import {
   ListChecks,
   LogOut,
   MailOpen,
+  Megaphone,
   Menu,
   MessagesSquare,
   Package,
@@ -65,6 +66,7 @@ const NAV: NavItem[] = [
   { href: '/admin/company', label: 'פרטי חברה', icon: Building2 },
   { href: '/admin/agreement', label: 'חוזה', icon: FileText },
   { href: '/admin/channels', label: 'ערוצי תקשורת', icon: MessagesSquare },
+  { href: '/admin/templates', label: 'תבניות פנייה', icon: Megaphone },
   { href: '/admin/sumit-test', label: 'בדיקת SUMIT', icon: FlaskConical },
   { href: '/admin/settings', label: 'הגדרות', icon: Settings },
 ];

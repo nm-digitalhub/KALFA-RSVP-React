@@ -1,23 +1,21 @@
 import 'server-only';
 
-import type { SupabaseClient } from '@supabase/supabase-js';
-
 import { createAdminClient } from '@/lib/supabase/admin';
+import { createClient } from '@/lib/supabase/server';
+import { requireAdmin } from '@/lib/auth/dal';
 
-// Resolve a campaign outreach_schedule `message_key` to the Meta-approved
-// WhatsApp template (name + language). Admin-managed (message_templates is
-// admin-only RLS). Only ACTIVE templates resolve; unknown/inactive → null.
+// Resolve a campaign outreach_schedule `message_key` to the send-content the
+// engine uses (WhatsApp: the Meta-approved template name + language; call: the
+// script). Admin-managed (message_templates is admin-only RLS); the outreach
+// reader uses the service-role client (RLS-bypassing). Only ACTIVE templates
+// resolve — fail-closed, so a not-yet-configured key sends nothing.
 
 export type ResolvedTemplate = { name: string; language: string; channel: string };
 
 export async function getTemplateByKey(
   messageKey: string,
 ): Promise<ResolvedTemplate | null> {
-  // message_templates is created by a pending migration and is not in the
-  // generated Database types yet. Cast to the un-generic client to query it. This
-  // path is only reached behind getOutreachEnabled() (false until the migration
-  // is applied), so it never runs against a missing table at runtime.
-  const admin = createAdminClient() as unknown as SupabaseClient;
+  const admin = createAdminClient();
   const { data, error } = await admin
     .from('message_templates')
     .select('name, language, channel')
@@ -25,13 +23,61 @@ export async function getTemplateByKey(
     .eq('active', true)
     .maybeSingle();
   if (error || !data) return null;
-  const row = data as Record<string, unknown>;
-  if (
-    typeof row.name !== 'string' ||
-    typeof row.language !== 'string' ||
-    typeof row.channel !== 'string'
-  ) {
-    return null;
-  }
-  return { name: row.name, language: row.language, channel: row.channel };
+  if (!data.name || !data.language || !data.channel) return null;
+  return { name: data.name, language: data.language, channel: data.channel };
+}
+
+// --- Admin management (/admin/templates) -----------------------------------
+
+export type MessageTemplate = {
+  id: string;
+  message_key: string;
+  channel: string;
+  label: string | null;
+  name: string;
+  language: string;
+  body: string | null;
+  active: boolean;
+};
+
+const TEMPLATE_COLUMNS =
+  'id, message_key, channel, label, name, language, body, active';
+
+export async function listMessageTemplates(): Promise<MessageTemplate[]> {
+  await requireAdmin();
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from('message_templates')
+    .select(TEMPLATE_COLUMNS)
+    .order('channel', { ascending: true })
+    .order('message_key', { ascending: true });
+  if (error) throw new Error('טעינת התבניות נכשלה');
+  return (data ?? []) as MessageTemplate[];
+}
+
+export type UpdateMessageTemplateInput = {
+  name: string;
+  language: string;
+  body: string;
+  active: boolean;
+};
+
+// Admin edits the send-content + activation for one key (message_key/channel are
+// fixed — they are referenced by the outreach schedule). Empty body → null.
+export async function updateMessageTemplate(
+  id: string,
+  input: UpdateMessageTemplateInput,
+): Promise<void> {
+  await requireAdmin();
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from('message_templates')
+    .update({
+      name: input.name,
+      language: input.language,
+      body: input.body || null,
+      active: input.active,
+    })
+    .eq('id', id);
+  if (error) throw new Error('עדכון התבנית נכשל');
 }
