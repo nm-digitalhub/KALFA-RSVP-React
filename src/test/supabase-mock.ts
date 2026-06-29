@@ -36,6 +36,7 @@ const CHAIN_METHODS = [
   'lte',
   'or',
   'not',
+  'is',
   'ilike',
   'in',
   'order',

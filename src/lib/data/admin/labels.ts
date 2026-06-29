@@ -50,3 +50,67 @@ export const CALLBACK_STATUS_LABELS: Record<CallbackStatus, string> = {
 export function callbackStatusLabel(status: string): string {
   return (CALLBACK_STATUS_LABELS as Record<string, string>)[status] ?? status;
 }
+
+// --- Webhook inspector (free-text columns → partial map + fallback) ---
+
+// Derived processing state of a webhook_inbox row. `processed_at` wins (terminal);
+// a `last_error` without it means errored-and-retrying; otherwise pending.
+export type WebhookState = 'pending' | 'processed' | 'error';
+
+export function webhookProcessState(row: {
+  processed_at: string | null;
+  last_error: string | null;
+}): WebhookState {
+  if (row.processed_at) return 'processed';
+  if (row.last_error) return 'error';
+  return 'pending';
+}
+
+export const WEBHOOK_PROCESS_LABELS: Record<WebhookState, string> = {
+  pending: 'ממתין',
+  processed: 'עובד',
+  error: 'שגיאה',
+};
+
+export const WEBHOOK_PROCESS_VARIANTS: Record<WebhookState, BadgeVariant> = {
+  pending: 'warning',
+  processed: 'success',
+  error: 'destructive',
+};
+
+export const WEBHOOK_KIND_LABELS: Record<string, string> = {
+  message: 'הודעה',
+  status: 'סטטוס',
+};
+
+export function webhookKindLabel(kind: string): string {
+  return WEBHOOK_KIND_LABELS[kind] ?? kind;
+}
+
+export const WEBHOOK_KIND_VARIANTS: Record<string, BadgeVariant> = {
+  message: 'info',
+  status: 'neutral',
+};
+
+// contact_interactions.delivery_status holds Meta's status values (free text).
+export const DELIVERY_STATUS_LABELS: Record<string, string> = {
+  sent: 'נשלח',
+  delivered: 'נמסר',
+  read: 'נקרא',
+  failed: 'נכשל',
+};
+
+export function deliveryStatusLabel(status: string): string {
+  return DELIVERY_STATUS_LABELS[status] ?? status;
+}
+
+export const DELIVERY_STATUS_VARIANTS: Record<string, BadgeVariant> = {
+  sent: 'neutral',
+  delivered: 'info',
+  read: 'success',
+  failed: 'destructive',
+};
+
+export function deliveryStatusVariant(status: string | null): BadgeVariant {
+  return status ? DELIVERY_STATUS_VARIANTS[status] ?? 'neutral' : 'neutral';
+}

@@ -20,6 +20,7 @@ import {
   Receipt,
   Settings,
   Users,
+  Webhook,
   type LucideIcon,
 } from 'lucide-react';
 
@@ -67,6 +68,7 @@ const NAV: NavItem[] = [
   { href: '/admin/agreement', label: 'חוזה', icon: FileText },
   { href: '/admin/channels', label: 'ערוצי תקשורת', icon: MessagesSquare },
   { href: '/admin/templates', label: 'תבניות פנייה', icon: Megaphone },
+  { href: '/admin/webhooks', label: 'בדיקת Webhooks', icon: Webhook },
   { href: '/admin/sumit-test', label: 'בדיקת SUMIT', icon: FlaskConical },
   { href: '/admin/settings', label: 'הגדרות', icon: Settings },
 ];
