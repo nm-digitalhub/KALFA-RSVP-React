@@ -16,6 +16,8 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // The bundled pg-boss worker artifact (esbuild output, not source).
+    "dist/**",
     // Harness session data (not application source).
     ".remember/**",
   ]),

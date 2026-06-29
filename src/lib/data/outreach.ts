@@ -1,10 +1,63 @@
 import 'server-only';
 
 import { createAdminClient } from '@/lib/supabase/admin';
-import { getOutreachEnabled, getWhatsAppConfig } from '@/lib/data/outreach-config';
-import { getTemplateByKey } from '@/lib/data/message-templates';
+import {
+  getOutreachEnabled,
+  getWhatsAppConfig,
+  type WhatsAppConfig,
+} from '@/lib/data/outreach-config';
+import {
+  getTemplateByKey,
+  type ResolvedTemplate,
+} from '@/lib/data/message-templates';
 import { listSendableContacts } from '@/lib/data/contacts';
 import { sendWhatsAppTemplate } from '@/lib/whatsapp/client';
+
+type AdminClient = ReturnType<typeof createAdminClient>;
+
+// Send ONE approved WhatsApp template to ONE contact + log the outbound,
+// non-billable interaction (idempotent on UNIQUE(channel, provider_id)). Returns
+// whether it was sent. Never logs the token/phone/body. Shared by the batch
+// send below AND the per-contact outreach engine (C1).
+export async function sendOneWhatsApp(
+  admin: AdminClient,
+  campaign: { id: string; event_id: string },
+  contact: { id: string; normalized_phone: string },
+  template: ResolvedTemplate,
+  config: WhatsAppConfig,
+): Promise<boolean> {
+  try {
+    const { providerId } = await sendWhatsAppTemplate(
+      {
+        phoneNumberId: config.phoneNumberId,
+        accessToken: config.accessToken,
+        appSecret: config.appSecret,
+      },
+      {
+        to: contact.normalized_phone,
+        templateName: template.name,
+        language: template.language,
+      },
+    );
+    const { error } = await admin.from('contact_interactions').upsert(
+      {
+        event_id: campaign.event_id,
+        campaign_id: campaign.id,
+        contact_id: contact.id,
+        channel: 'whatsapp',
+        direction: 'out',
+        kind: 'template',
+        provider_id: providerId,
+        billable: false,
+      },
+      { onConflict: 'channel,provider_id', ignoreDuplicates: true },
+    );
+    return !error;
+  } catch {
+    // A single send/log failure must not abort the batch. No PII logged.
+    return false;
+  }
+}
 
 // Send an approved WhatsApp template to a campaign's eligible contacts. Every
 // §8.3 precondition is re-checked server-side BEFORE any provider call:
@@ -44,41 +97,9 @@ export async function sendCampaignWhatsApp(
   let sent = 0;
   let skipped = 0;
   for (const contact of contacts) {
-    try {
-      const { providerId } = await sendWhatsAppTemplate(
-        {
-          phoneNumberId: config.phoneNumberId,
-          accessToken: config.accessToken,
-          appSecret: config.appSecret,
-        },
-        {
-          to: contact.normalized_phone,
-          templateName: template.name,
-          language: template.language,
-        },
-      );
-      const { error: insErr } = await admin.from('contact_interactions').upsert(
-        {
-          event_id: campaign.event_id,
-          campaign_id: campaign.id,
-          contact_id: contact.id,
-          channel: 'whatsapp',
-          direction: 'out',
-          kind: 'template',
-          provider_id: providerId,
-          billable: false,
-        },
-        { onConflict: 'channel,provider_id', ignoreDuplicates: true },
-      );
-      if (insErr) {
-        skipped++;
-        continue;
-      }
-      sent++;
-    } catch {
-      // A single send/log failure must not abort the batch. No PII logged.
-      skipped++;
-    }
+    const ok = await sendOneWhatsApp(admin, campaign, contact, template, config);
+    if (ok) sent++;
+    else skipped++;
   }
   return { sent, skipped };
 }
