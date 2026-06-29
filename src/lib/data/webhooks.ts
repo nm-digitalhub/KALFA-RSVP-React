@@ -29,22 +29,21 @@ export async function insertWebhookEvents(
   if (error) throw new Error('שמירת אירועי הוובהוק נכשלה');
 }
 
-// The worker's claim query: the oldest unprocessed rows that have not exhausted
-// their retry budget. attempts<5 dead-letters a poison row so one bad event can't
-// stall the queue forever (it stays for the admin inspector with its last_error).
+// The worker's claim: oldest unprocessed rows that have not exhausted their retry
+// budget (attempts<5 dead-letters a poison row so one bad event can't stall the
+// queue forever — it stays for the admin inspector with its last_error). Goes
+// through the claim_webhook_events RPC, which adds `FOR UPDATE SKIP LOCKED` so two
+// overlapping worker drains (cron every minute, max:4) receive DISJOINT sets and
+// never double-process. The RPC is SECURITY DEFINER + service_role-only.
 export async function claimUnprocessedWebhookEvents(
   limit: number,
 ): Promise<WebhookInboxRow[]> {
   const admin = createAdminClient();
-  const { data, error } = await admin
-    .from('webhook_inbox')
-    .select('*')
-    .is('processed_at', null)
-    .lt('attempts', 5)
-    .order('received_at', { ascending: true })
-    .limit(limit);
+  const { data, error } = await admin.rpc('claim_webhook_events', {
+    _limit: limit,
+  });
   if (error) throw new Error('טעינת אירועי הוובהוק נכשלה');
-  return data ?? [];
+  return (data ?? []) as WebhookInboxRow[];
 }
 
 // Mark a row done (terminal — never reclaimed).

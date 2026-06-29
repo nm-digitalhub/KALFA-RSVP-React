@@ -1786,6 +1786,30 @@ export type Database = {
         Returns: boolean
       }
       claim_first_admin: { Args: never; Returns: boolean }
+      claim_webhook_events: {
+        Args: { _limit: number }
+        Returns: {
+          attempts: number
+          context_message_id: string | null
+          dedupe_key: string
+          event_at: string | null
+          event_kind: string
+          id: string
+          last_error: string | null
+          message_id: string | null
+          payload: Json
+          phone_number_id: string | null
+          processed_at: string | null
+          provider: string
+          received_at: string
+        }[]
+        SetofOptions: {
+          from: "*"
+          to: "webhook_inbox"
+          isOneToOne: false
+          isSetofReturn: true
+        }
+      }
       create_organization: { Args: { _name: string }; Returns: string }
       get_rsvp_by_token: { Args: { _token: string }; Returns: Json }
       has_org_permission: {
