@@ -1,6 +1,7 @@
 import Link from 'next/link';
 
 import {
+  getWebhookHealth,
   getWebhookInboxItem,
   listWebhookInbox,
   resolveWebhookAssociations,
@@ -58,6 +59,29 @@ const STATE_OPTIONS = [
 function firstParam(raw: string | string[] | undefined): string | undefined {
   const value = Array.isArray(raw) ? raw[0] : raw;
   return value && value.trim() !== '' ? value.trim() : undefined;
+}
+
+function HealthStat({
+  label,
+  value,
+  tone,
+}: {
+  label: string;
+  value: string;
+  tone?: 'warning' | 'destructive';
+}) {
+  const toneClass =
+    tone === 'warning'
+      ? 'text-warning'
+      : tone === 'destructive'
+        ? 'text-destructive'
+        : 'text-foreground';
+  return (
+    <div className="rounded-lg border border-border bg-card px-4 py-2">
+      <div className="text-xs text-muted-foreground">{label}</div>
+      <div className={`text-lg font-semibold ${toneClass}`}>{value}</div>
+    </div>
+  );
 }
 
 function WebhookFilters({
@@ -176,7 +200,10 @@ export default async function AdminWebhooksPage({
     q: firstParam(sp.q),
   };
 
-  const result = await listWebhookInbox({ page, ...current });
+  const [result, health] = await Promise.all([
+    listWebhookInbox({ page, ...current }),
+    getWebhookHealth(),
+  ]);
   const associations = await resolveWebhookAssociations(result.items);
 
   const queryParams = { ...current };
@@ -204,6 +231,23 @@ export default async function AdminWebhooksPage({
   return (
     <div className="space-y-6">
       <PageHeading>בדיקת Webhooks</PageHeading>
+
+      <div className="flex flex-wrap gap-3">
+        <HealthStat
+          label="התקבל לאחרונה"
+          value={health.receivedLast ? formatDateTime(health.receivedLast) : '—'}
+        />
+        <HealthStat
+          label="ממתינים לעיבוד"
+          value={String(health.unprocessedCount)}
+          tone={health.unprocessedCount > 0 ? 'warning' : undefined}
+        />
+        <HealthStat
+          label="נכשלו"
+          value={String(health.failedCount)}
+          tone={health.failedCount > 0 ? 'destructive' : undefined}
+        />
+      </div>
 
       <WebhookFilters basePath="/admin/webhooks" current={current} />
 

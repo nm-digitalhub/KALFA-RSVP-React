@@ -2,7 +2,8 @@
 
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
-import { Check, Copy, Eye, EyeOff } from 'lucide-react';
+import { useFormStatus } from 'react-dom';
+import { Check, Copy, Eye, EyeOff, RotateCw } from 'lucide-react';
 
 import {
   Sheet,
@@ -10,6 +11,7 @@ import {
   SheetHeader,
   SheetTitle,
 } from '@/components/ui/sheet';
+import { reprocessWebhookEventAction } from './actions';
 
 // Detail drawer for the webhook inspector. Open state is driven by the URL
 // (?inspect=<id>): the page renders this only when inspect is present, so it
@@ -115,6 +117,34 @@ export function PayloadViewer({ json }: { json: string }) {
         </pre>
       ) : null}
     </div>
+  );
+}
+
+function ReprocessSubmit() {
+  const { pending } = useFormStatus();
+  return (
+    <button
+      type="submit"
+      disabled={pending}
+      onClick={(e) => {
+        if (!window.confirm('לעבד את האירוע מחדש?')) e.preventDefault();
+      }}
+      className="inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-2 text-sm font-medium hover:bg-muted disabled:opacity-50"
+    >
+      <RotateCw className="size-3.5" />
+      {pending ? 'מעבד…' : 'עיבוד מחדש'}
+    </button>
+  );
+}
+
+// Re-queue a webhook_inbox row for the worker (admin). Confirms first; the server
+// action resets the row so the next drain reclaims it.
+export function ReprocessButton({ id }: { id: string }) {
+  return (
+    <form action={reprocessWebhookEventAction}>
+      <input type="hidden" name="id" value={id} />
+      <ReprocessSubmit />
+    </form>
   );
 }
 

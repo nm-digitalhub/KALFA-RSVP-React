@@ -13,6 +13,7 @@ import {
   CopyButton,
   PayloadViewer,
   PhoneReveal,
+  ReprocessButton,
 } from './webhook-inspector-client';
 
 // Definitive WhatsApp error code for an invalid/non-existent number. Anything
@@ -176,6 +177,10 @@ export function WebhookDetail({ item }: { item: AdminWebhookDetail }) {
       <Section title="payload גולמי">
         <PayloadViewer json={payloadJson} />
       </Section>
+
+      <div className="flex justify-end pt-1">
+        <ReprocessButton id={item.id} />
+      </div>
     </div>
   );
 }
