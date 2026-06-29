@@ -26,6 +26,12 @@ import {
   touchpointTime,
   detId,
 } from '@/lib/outreach/schedule';
+import {
+  claimUnprocessedWebhookEvents,
+  markWebhookEventProcessed,
+  markWebhookEventFailed,
+} from '@/lib/data/webhooks';
+import { processWebhookEvent } from '@/lib/data/webhook-processing';
 
 // Standalone process — load .env.local ourselves (Next is not running here).
 function loadEnv(): void {
@@ -103,6 +109,23 @@ async function handleStep(boss: PgBoss, data: StepData): Promise<void> {
   }
 }
 
+// Drain webhook_inbox: claim the oldest unprocessed rows and run the economic
+// logic out-of-band. Each row is independent — a failure on one bumps its attempt
+// counter (and keeps last_error) without blocking the rest; the DB-level dedupe
+// + recordReached gating make re-processing safe. Never log a payload.
+async function handleWebhook(): Promise<void> {
+  const rows = await claimUnprocessedWebhookEvents(50);
+  for (const row of rows) {
+    try {
+      await processWebhookEvent(row);
+      await markWebhookEventProcessed(row.id);
+    } catch (e) {
+      const message = e instanceof Error ? e.message : 'unknown error';
+      await markWebhookEventFailed(row.id, row.attempts + 1, message);
+    }
+  }
+}
+
 // Arm/sweep: enqueue each active contact's CURRENT step (idempotent via det id —
 // already-scheduled steps no-op on conflict). Kickstarts step 0 and self-heals.
 async function handleArm(boss: PgBoss): Promise<void> {
@@ -161,9 +184,13 @@ async function main(): Promise<void> {
   await boss.work(QUEUES.sweeper, async () => {
     await handleArm(boss);
   });
+  await boss.work(QUEUES.webhook, async () => {
+    await handleWebhook();
+  });
 
   await boss.schedule(QUEUES.arm, '* * * * *');
   await boss.schedule(QUEUES.sweeper, '*/5 * * * *');
+  await boss.schedule(QUEUES.webhook, '* * * * *');
 
   console.log('[kalfa-worker] started — queues + schedules up');
 

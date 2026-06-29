@@ -87,6 +87,36 @@ describe('resolveInboundContact', () => {
     expect(r).toEqual({ eventId: 'e1', campaignId: 'c1', contactId: 'k1' });
     expect(builder.eq).toHaveBeenCalledWith('direction', 'out');
   });
+
+  it("accepts Meta's bare wa_id format (e.g. '972501234567', no +) — the webhook fallback input", async () => {
+    // Guards the phone-fallback billing path: Meta sends `from` as a wa_id with
+    // no leading '+'. If normalizePhone rejected it, the fallback would silently
+    // no-op and every context-less reply would drop. It must resolve.
+    const { client, builder } = createMockSupabase<Row | Row[]>({
+      data: null,
+      error: null,
+    });
+    let call = 0;
+    builder.then = (onFulfilled) => {
+      call += 1;
+      if (call === 1) {
+        return onFulfilled({ data: [{ id: 'k1' }], error: null });
+      }
+      return onFulfilled({
+        data: { event_id: 'e1', campaign_id: 'c1', contact_id: 'k1' },
+        error: null,
+      });
+    };
+    vi.mocked(createAdminClient).mockReturnValue(
+      client as unknown as ReturnType<typeof createAdminClient>,
+    );
+
+    const r = await resolveInboundContact('972501234567');
+
+    expect(r).toEqual({ eventId: 'e1', campaignId: 'c1', contactId: 'k1' });
+    // Reached the contacts lookup → the wa_id was parsed, not rejected.
+    expect(builder.eq).toHaveBeenCalledWith('normalized_phone', '+972501234567');
+  });
 });
 
 describe('setContactOpStatus', () => {

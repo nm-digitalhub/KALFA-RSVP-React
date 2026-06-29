@@ -1,88 +1,74 @@
 import { describe, expect, it } from 'vitest';
 
-import { classifyInbound, isRemovalIntent } from './inbound';
+import {
+  classifyMessagePayload,
+  isBillableMessageType,
+  isRemovalIntent,
+} from './inbound';
 
-describe('classifyInbound', () => {
+describe('classifyMessagePayload', () => {
   it('treats an inbound text message as billable (one reached signal)', () => {
-    const r = classifyInbound({
-      messages: [{ id: 'wamid.1', from: '972501234567', type: 'text' }],
+    expect(classifyMessagePayload({ type: 'text' })).toEqual({
+      billable: true,
+      removal: false,
     });
-    expect(r.billableMessages).toEqual([
-      { providerId: 'wamid.1', from: '972501234567', removal: false },
-    ]);
-    expect(r.statuses).toEqual([]);
-  });
-
-  it('does NOT bill on a delivered/read status (op-status only)', () => {
-    const r = classifyInbound({
-      statuses: [{ id: 'wamid.1', status: 'delivered' }],
-    });
-    expect(r.billableMessages).toEqual([]);
-    expect(r.statuses).toEqual([{ providerId: 'wamid.1', status: 'delivered' }]);
   });
 
   it('does NOT bill a system/unsupported message', () => {
-    const r = classifyInbound({
-      messages: [{ id: 'wamid.2', from: '972500000000', type: 'system' }],
+    expect(classifyMessagePayload({ type: 'system' })).toEqual({
+      billable: false,
+      removal: false,
     });
-    expect(r.billableMessages).toEqual([]);
   });
 
   it('bills button/interactive replies (RSVP button taps)', () => {
-    const r = classifyInbound({
-      messages: [{ id: 'wamid.3', from: '972501111111', type: 'button' }],
-    });
-    expect(r.billableMessages).toHaveLength(1);
-  });
-
-  it('returns empty arrays for an empty value', () => {
-    expect(classifyInbound({})).toEqual({ billableMessages: [], statuses: [] });
+    expect(classifyMessagePayload({ type: 'button' }).billable).toBe(true);
+    expect(classifyMessagePayload({ type: 'interactive' }).billable).toBe(true);
   });
 
   it('flags a removal/opt-out text body as removal (still billable)', () => {
-    const r = classifyInbound({
-      messages: [
-        {
-          id: 'wamid.r',
-          from: '972501234567',
-          type: 'text',
-          text: { body: 'אנא הסירו אותי מהרשימה' },
-        },
-      ],
-    });
-    expect(r.billableMessages).toEqual([
-      { providerId: 'wamid.r', from: '972501234567', removal: true },
-    ]);
+    expect(
+      classifyMessagePayload({
+        type: 'text',
+        text: { body: 'אנא הסירו אותי מהרשימה' },
+      }),
+    ).toEqual({ billable: true, removal: true });
   });
 
   it('flags removal from an interactive button reply title', () => {
-    const r = classifyInbound({
-      messages: [
-        {
-          id: 'wamid.i',
-          from: '972501234567',
-          type: 'interactive',
-          interactive: { button_reply: { title: 'STOP' } },
-        },
-      ],
-    });
-    expect(r.billableMessages[0].removal).toBe(true);
+    expect(
+      classifyMessagePayload({
+        type: 'interactive',
+        interactive: { button_reply: { title: 'STOP' } },
+      }).removal,
+    ).toBe(true);
   });
 
   it('does NOT flag a normal RSVP reply as removal (billable, removal=false)', () => {
-    const r = classifyInbound({
-      messages: [
-        {
-          id: 'wamid.y',
-          from: '972501234567',
-          type: 'text',
-          text: { body: 'אני מגיע, תודה רבה!' },
-        },
-      ],
-    });
-    expect(r.billableMessages).toEqual([
-      { providerId: 'wamid.y', from: '972501234567', removal: false },
-    ]);
+    expect(
+      classifyMessagePayload({
+        type: 'text',
+        text: { body: 'אני מגיע, תודה רבה!' },
+      }),
+    ).toEqual({ billable: true, removal: false });
+  });
+
+  it('never flags removal on a non-billable type even if text matches', () => {
+    // removal is only inspected when billable — a system message can't bill or opt out.
+    expect(
+      classifyMessagePayload({ type: 'system', text: { body: 'הסר' } }),
+    ).toEqual({ billable: false, removal: false });
+  });
+});
+
+describe('isBillableMessageType', () => {
+  it('accepts the four human reply types and rejects the rest', () => {
+    for (const t of ['text', 'button', 'interactive', 'reaction']) {
+      expect(isBillableMessageType(t)).toBe(true);
+    }
+    for (const t of ['system', 'unsupported', undefined, null, '']) {
+      expect(isBillableMessageType(t)).toBe(false);
+    }
   });
 });
 

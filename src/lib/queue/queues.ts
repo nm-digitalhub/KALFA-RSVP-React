@@ -6,6 +6,8 @@ export const QUEUES = {
   callRequest: 'outreach-call-request',
   sweeper: 'outreach-sweeper',
   dead: 'outreach-dead',
+  // Persist-then-process intake: drains webhook_inbox out-of-band (B2).
+  webhook: 'webhook-process',
 } as const;
 
 // outreach-step retry policy: a few backed-off retries, then dead-letter. The
