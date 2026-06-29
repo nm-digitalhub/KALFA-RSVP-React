@@ -105,8 +105,8 @@ export async function submitRsvp(
     _status: input.status,
     _adults: input.adults,
     _kids: input.kids,
-    _meal: input.meal_pref ?? null,
-    _note: input.note ?? null,
+    _meal: input.meal_pref ?? '',
+    _note: input.note ?? '',
     _answers: (input.answers ?? {}) as Json,
   });
   if (error) {

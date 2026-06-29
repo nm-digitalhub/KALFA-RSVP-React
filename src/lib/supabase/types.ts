@@ -595,9 +595,13 @@ export type Database = {
           campaign_id: string | null
           channel: Database["public"]["Enums"]["campaign_channel"]
           contact_id: string | null
+          context_message_id: string | null
           created_at: string
+          delivery_error_code: string | null
+          delivery_status: string | null
           direction: string
           event_id: string | null
+          guest_id: string | null
           id: string
           kind: string
           payload_meta: Json | null
@@ -608,9 +612,13 @@ export type Database = {
           campaign_id?: string | null
           channel: Database["public"]["Enums"]["campaign_channel"]
           contact_id?: string | null
+          context_message_id?: string | null
           created_at?: string
+          delivery_error_code?: string | null
+          delivery_status?: string | null
           direction: string
           event_id?: string | null
+          guest_id?: string | null
           id?: string
           kind: string
           payload_meta?: Json | null
@@ -621,9 +629,13 @@ export type Database = {
           campaign_id?: string | null
           channel?: Database["public"]["Enums"]["campaign_channel"]
           contact_id?: string | null
+          context_message_id?: string | null
           created_at?: string
+          delivery_error_code?: string | null
+          delivery_status?: string | null
           direction?: string
           event_id?: string | null
+          guest_id?: string | null
           id?: string
           kind?: string
           payload_meta?: Json | null
@@ -649,6 +661,13 @@ export type Database = {
             columns: ["event_id"]
             isOneToOne: false
             referencedRelation: "events"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "contact_interactions_guest_id_fkey"
+            columns: ["guest_id"]
+            isOneToOne: false
+            referencedRelation: "guests"
             referencedColumns: ["id"]
           },
         ]
@@ -1699,6 +1718,54 @@ export type Database = {
         }
         Relationships: []
       }
+      webhook_inbox: {
+        Row: {
+          attempts: number
+          context_message_id: string | null
+          dedupe_key: string
+          event_at: string | null
+          event_kind: string
+          id: string
+          last_error: string | null
+          message_id: string | null
+          payload: Json
+          phone_number_id: string | null
+          processed_at: string | null
+          provider: string
+          received_at: string
+        }
+        Insert: {
+          attempts?: number
+          context_message_id?: string | null
+          dedupe_key: string
+          event_at?: string | null
+          event_kind: string
+          id?: string
+          last_error?: string | null
+          message_id?: string | null
+          payload: Json
+          phone_number_id?: string | null
+          processed_at?: string | null
+          provider?: string
+          received_at?: string
+        }
+        Update: {
+          attempts?: number
+          context_message_id?: string | null
+          dedupe_key?: string
+          event_at?: string | null
+          event_kind?: string
+          id?: string
+          last_error?: string | null
+          message_id?: string | null
+          payload?: Json
+          phone_number_id?: string | null
+          processed_at?: string | null
+          provider?: string
+          received_at?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
@@ -1737,13 +1804,13 @@ export type Database = {
       owns_event: { Args: { _event_id: string }; Returns: boolean }
       submit_rsvp: {
         Args: {
-          _token: string
-          _status: string
           _adults: number
-          _kids: number
-          _meal: string | null
-          _note: string | null
           _answers?: Json
+          _kids: number
+          _meal: string
+          _note: string
+          _status: string
+          _token: string
         }
         Returns: Json
       }
