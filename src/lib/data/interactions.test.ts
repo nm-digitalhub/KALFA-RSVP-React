@@ -7,6 +7,7 @@ import { createMockSupabase, type QueryResult } from '@/test/supabase-mock';
 import { createAdminClient } from '@/lib/supabase/admin';
 import {
   insertInteraction,
+  markContactRemovalRequested,
   resolveInboundContact,
   setContactOpStatus,
   type InteractionRow,
@@ -94,5 +95,21 @@ describe('setContactOpStatus', () => {
     await setContactOpStatus('k1', 'reached_billed');
     expect(builder.update).toHaveBeenCalledWith({ op_status: 'reached_billed' });
     expect(builder.eq).toHaveBeenCalledWith('id', 'k1');
+  });
+});
+
+describe('markContactRemovalRequested', () => {
+  it('sets removal_requested=true for the contact (leaves op_status alone)', async () => {
+    const { builder } = mockAdmin({ data: null, error: null });
+    await markContactRemovalRequested('k1');
+    expect(builder.update).toHaveBeenCalledWith({ removal_requested: true });
+    expect(builder.eq).toHaveBeenCalledWith('id', 'k1');
+  });
+
+  it('throws a safe error when the update fails', async () => {
+    mockAdmin({ data: null, error: { message: 'boom' } });
+    await expect(markContactRemovalRequested('k1')).rejects.toThrow(
+      'עדכון בקשת ההסרה נכשל',
+    );
   });
 });

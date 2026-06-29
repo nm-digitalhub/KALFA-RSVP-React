@@ -120,6 +120,7 @@ export type Database = {
           agr_retention_days: string | null
           agr_service_activation_window: string | null
           campaign_holds_enabled: boolean
+          close_charge_enabled: boolean
           company_contact_email: string | null
           company_contact_phone: string | null
           company_legal_address: string | null
@@ -132,6 +133,7 @@ export type Database = {
           extra_sms_sender: string | null
           extra_sms_token: string | null
           id: boolean
+          outreach_enabled: boolean
           payments_enabled: boolean
           privacy_url: string | null
           sms_enabled: boolean
@@ -147,6 +149,10 @@ export type Database = {
           terms_url: string | null
           updated_at: string
           warranty_text: string | null
+          whatsapp_access_token: string | null
+          whatsapp_app_secret: string | null
+          whatsapp_phone_number_id: string | null
+          whatsapp_verify_token: string | null
         }
         Insert: {
           agr_charge_window_days?: string | null
@@ -157,6 +163,7 @@ export type Database = {
           agr_retention_days?: string | null
           agr_service_activation_window?: string | null
           campaign_holds_enabled?: boolean
+          close_charge_enabled?: boolean
           company_contact_email?: string | null
           company_contact_phone?: string | null
           company_legal_address?: string | null
@@ -169,6 +176,7 @@ export type Database = {
           extra_sms_sender?: string | null
           extra_sms_token?: string | null
           id?: boolean
+          outreach_enabled?: boolean
           payments_enabled?: boolean
           privacy_url?: string | null
           sms_enabled?: boolean
@@ -184,6 +192,10 @@ export type Database = {
           terms_url?: string | null
           updated_at?: string
           warranty_text?: string | null
+          whatsapp_access_token?: string | null
+          whatsapp_app_secret?: string | null
+          whatsapp_phone_number_id?: string | null
+          whatsapp_verify_token?: string | null
         }
         Update: {
           agr_charge_window_days?: string | null
@@ -194,6 +206,7 @@ export type Database = {
           agr_retention_days?: string | null
           agr_service_activation_window?: string | null
           campaign_holds_enabled?: boolean
+          close_charge_enabled?: boolean
           company_contact_email?: string | null
           company_contact_phone?: string | null
           company_legal_address?: string | null
@@ -206,6 +219,7 @@ export type Database = {
           extra_sms_sender?: string | null
           extra_sms_token?: string | null
           id?: boolean
+          outreach_enabled?: boolean
           payments_enabled?: boolean
           privacy_url?: string | null
           sms_enabled?: boolean
@@ -221,6 +235,10 @@ export type Database = {
           terms_url?: string | null
           updated_at?: string
           warranty_text?: string | null
+          whatsapp_access_token?: string | null
+          whatsapp_app_secret?: string | null
+          whatsapp_phone_number_id?: string | null
+          whatsapp_verify_token?: string | null
         }
         Relationships: []
       }
@@ -379,11 +397,21 @@ export type Database = {
           approved_by: string | null
           auth_amount: number | null
           auth_expires_at: string | null
+          auth_external_ref: string | null
           auth_number: string | null
           authorized_at: string | null
           billing_route: Database["public"]["Enums"]["billing_route"] | null
           capture_status: string | null
+          card_citizen_id: string | null
+          card_exp_month: number | null
+          card_exp_year: number | null
           card_token_ref: string | null
+          charge_auth_number: string | null
+          charge_document_number: number | null
+          charge_document_url: string | null
+          charge_payment_id: number | null
+          charge_status: string | null
+          charged_at: string | null
           close_at: string | null
           created_at: string
           enabled: boolean
@@ -399,6 +427,7 @@ export type Database = {
           start_at: string | null
           status: Database["public"]["Enums"]["campaign_status"]
           steps: Json
+          sumit_charge_document_id: number | null
           sumit_order_document_id: number | null
           template_id: string | null
           tos_version: string | null
@@ -410,11 +439,21 @@ export type Database = {
           approved_by?: string | null
           auth_amount?: number | null
           auth_expires_at?: string | null
+          auth_external_ref?: string | null
           auth_number?: string | null
           authorized_at?: string | null
           billing_route?: Database["public"]["Enums"]["billing_route"] | null
           capture_status?: string | null
+          card_citizen_id?: string | null
+          card_exp_month?: number | null
+          card_exp_year?: number | null
           card_token_ref?: string | null
+          charge_auth_number?: string | null
+          charge_document_number?: number | null
+          charge_document_url?: string | null
+          charge_payment_id?: number | null
+          charge_status?: string | null
+          charged_at?: string | null
           close_at?: string | null
           created_at?: string
           enabled?: boolean
@@ -430,6 +469,7 @@ export type Database = {
           start_at?: string | null
           status?: Database["public"]["Enums"]["campaign_status"]
           steps?: Json
+          sumit_charge_document_id?: number | null
           sumit_order_document_id?: number | null
           template_id?: string | null
           tos_version?: string | null
@@ -441,11 +481,21 @@ export type Database = {
           approved_by?: string | null
           auth_amount?: number | null
           auth_expires_at?: string | null
+          auth_external_ref?: string | null
           auth_number?: string | null
           authorized_at?: string | null
           billing_route?: Database["public"]["Enums"]["billing_route"] | null
           capture_status?: string | null
+          card_citizen_id?: string | null
+          card_exp_month?: number | null
+          card_exp_year?: number | null
           card_token_ref?: string | null
+          charge_auth_number?: string | null
+          charge_document_number?: number | null
+          charge_document_url?: string | null
+          charge_payment_id?: number | null
+          charge_status?: string | null
+          charged_at?: string | null
           close_at?: string | null
           created_at?: string
           enabled?: boolean
@@ -461,6 +511,7 @@ export type Database = {
           start_at?: string | null
           status?: Database["public"]["Enums"]["campaign_status"]
           steps?: Json
+          sumit_charge_document_id?: number | null
           sumit_order_document_id?: number | null
           template_id?: string | null
           tos_version?: string | null
@@ -583,6 +634,7 @@ export type Database = {
           op_status: Database["public"]["Enums"]["contact_op_status"]
           removal_requested: boolean
           updated_at: string
+          whatsapp_consent_at: string | null
         }
         Insert: {
           created_at?: string
@@ -592,6 +644,7 @@ export type Database = {
           op_status?: Database["public"]["Enums"]["contact_op_status"]
           removal_requested?: boolean
           updated_at?: string
+          whatsapp_consent_at?: string | null
         }
         Update: {
           created_at?: string
@@ -601,6 +654,7 @@ export type Database = {
           op_status?: Database["public"]["Enums"]["contact_op_status"]
           removal_requested?: boolean
           updated_at?: string
+          whatsapp_consent_at?: string | null
         }
         Relationships: [
           {
@@ -1469,6 +1523,15 @@ export type Database = {
     }
     Functions: {
       accept_invitation: { Args: { _token: string }; Returns: string }
+      campaign_billing_summary: {
+        Args: { p_campaign: string }
+        Returns: {
+          accrued: number
+          ceiling: number
+          max_contacts: number
+          reached_count: number
+        }[]
+      }
       can_access_event: {
         Args: { _action?: string; _event_id: string; _resource?: string }
         Returns: boolean
@@ -1500,6 +1563,18 @@ export type Database = {
           _token: string
         }
         Returns: boolean
+      }
+      try_record_billed_result: {
+        Args: {
+          p_attempt: string
+          p_campaign: string
+          p_channel: Database["public"]["Enums"]["campaign_channel"]
+          p_contact: string
+          p_event: string
+          p_evidence: string
+          p_provider_ref: string
+        }
+        Returns: string
       }
     }
     Enums: {

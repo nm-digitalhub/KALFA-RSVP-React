@@ -6,6 +6,7 @@ import { getOutreachEnabled, getWhatsAppConfig } from '@/lib/data/outreach-confi
 import { classifyInbound, type WhatsAppWebhookValue } from '@/lib/whatsapp/inbound';
 import {
   insertInteraction,
+  markContactRemovalRequested,
   resolveInboundContact,
 } from '@/lib/data/interactions';
 import { recordReached } from '@/lib/data/billing';
@@ -58,8 +59,11 @@ export async function GET(request: NextRequest) {
 }
 
 // POST: a signed inbound event. For each fresh billable human message →
-// resolve → dedupe-insert → recordReached (the locked-txn RPC). Statuses
-// (delivered/read) are non-billable and not yet mapped to op_status here.
+// resolve → dedupe-insert → recordReached (the locked-txn RPC). A removal/opt-out
+// reply (D4) bills FIRST (it IS a human reach), THEN sets removal_requested to
+// stop future outreach — never the reverse, or the RPC's removal guard would
+// block the reach that carries the removal. Statuses (delivered/read) are
+// non-billable and not yet mapped to op_status here.
 export async function POST(request: NextRequest) {
   const [enabled, config] = await Promise.all([
     getOutreachEnabled(),
@@ -103,16 +107,26 @@ export async function POST(request: NextRequest) {
           provider_id: msg.providerId,
           billable: true,
         });
-        if (!fresh) continue;
-        await recordReached({
-          eventId: resolved.eventId,
-          campaignId: resolved.campaignId,
-          contactId: resolved.contactId,
-          channel: 'whatsapp',
-          attemptId: msg.providerId,
-          evidence: 'whatsapp_inbound_message',
-          providerRef: msg.providerId,
-        });
+        // recordReached stays gated by `fresh` so a Meta retry can't double-bill.
+        if (fresh) {
+          await recordReached({
+            eventId: resolved.eventId,
+            campaignId: resolved.campaignId,
+            contactId: resolved.contactId,
+            channel: 'whatsapp',
+            attemptId: msg.providerId,
+            evidence: msg.removal
+              ? 'whatsapp_inbound_removal'
+              : 'whatsapp_inbound_message',
+            providerRef: msg.providerId,
+          });
+        }
+        // D4: stop FUTURE outreach. Run even on a deduped retry (it's idempotent)
+        // so an opt-out is never lost if a prior attempt billed but died before
+        // recording the removal.
+        if (msg.removal) {
+          await markContactRemovalRequested(resolved.contactId);
+        }
       }
     }
   }

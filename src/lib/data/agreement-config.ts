@@ -5,6 +5,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { createClient } from '@/lib/supabase/server';
 import { requireAdmin } from '@/lib/auth/dal';
+import type { Database } from '@/lib/supabase/types';
 
 // Agreement-document configuration tokens: the numeric/textual legal parameters
 // injected into the signed agreement template (service-activation window, offer
@@ -32,12 +33,8 @@ import { requireAdmin } from '@/lib/auth/dal';
 //   retentionDays           → agr_retention_days
 //   recordRetentionMonths   → agr_record_retention_months
 //
-// TYPING NOTE: the migration above is NOT YET APPLIED, so the generated Database
-// type does not contain these columns. We read through an un-generic Supabase
-// client cast — the codebase-blessed escape for reads/RPCs not yet in the
-// generated types (see src/lib/data/billing.ts). On integration the lead applies
-// the migration + regenerates types; the explicit-column select then becomes
-// type-checked against the schema and the cast can be dropped.
+// (Migration 202606290023 is applied + types regenerated, so the agr_* columns
+// are type-checked against the schema.)
 
 // The seven config values keyed by their camelCase token names. All strings
 // ('' when unset). Structurally identical to the AgreementConfigForm `values`
@@ -74,7 +71,7 @@ const AGREEMENT_CONFIG_COLUMNS =
 // session client behind requireAdmin for the admin form). Returns null when the
 // singleton row is missing; the mapper coalesces each field to ''.
 async function readAgreementConfigRow(
-  client: SupabaseClient,
+  client: SupabaseClient<Database>,
 ): Promise<AgreementConfigRow | null> {
   const { data, error } = await client
     .from('app_settings')
@@ -110,7 +107,7 @@ function toAgreementConfigValues(
 // freely. The keys ARE the contract — do not rename without updating every
 // consumer.
 export async function getAgreementConfigTokens(): Promise<Record<string, string>> {
-  const admin = createAdminClient() as unknown as SupabaseClient;
+  const admin = createAdminClient();
   return toAgreementConfigValues(await readAgreementConfigRow(admin));
 }
 
@@ -120,6 +117,6 @@ export async function getAgreementConfigTokens(): Promise<Record<string, string>
 // admin reads go through the cookie client + RLS), mirroring getCompanySettings.
 export async function getAgreementConfigForAdmin(): Promise<AgreementConfigValues> {
   await requireAdmin();
-  const supabase = (await createClient()) as unknown as SupabaseClient;
+  const supabase = await createClient();
   return toAgreementConfigValues(await readAgreementConfigRow(supabase));
 }

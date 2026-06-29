@@ -1,7 +1,5 @@
 import 'server-only';
 
-import type { SupabaseClient } from '@supabase/supabase-js';
-
 import { requireOwnedEvent } from '@/lib/data/events';
 import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
@@ -241,17 +239,14 @@ export async function listContacts(eventId: string): Promise<EventContact[]> {
 }
 
 // --- Outreach (B3) consent + send-eligibility -------------------------------
-// whatsapp_consent_at is added by a pending migration and not in the generated
-// types yet → cast to the un-generic client. These run only behind
-// getOutreachEnabled() (false until the migration is applied), so they never hit
-// a missing column at runtime.
+// These run only behind getOutreachEnabled() (false until outreach is enabled).
 
 // Record channel-specific WhatsApp consent for one contact (caller authorized).
 export async function recordWhatsAppConsent(
   eventId: string,
   contactId: string,
 ): Promise<void> {
-  const admin = createAdminClient() as unknown as SupabaseClient;
+  const admin = createAdminClient();
   const { error } = await admin
     .from('contacts')
     .update({ whatsapp_consent_at: new Date().toISOString() })
@@ -267,7 +262,7 @@ export async function listSendableContacts(
   eventId: string,
 ): Promise<Array<{ id: string; normalized_phone: string }>> {
   await requireOwnedEvent(eventId);
-  const admin = createAdminClient() as unknown as SupabaseClient;
+  const admin = createAdminClient();
   const { data, error } = await admin
     .from('contacts')
     .select('id, normalized_phone')

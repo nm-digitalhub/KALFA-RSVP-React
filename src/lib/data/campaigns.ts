@@ -1,7 +1,5 @@
 import 'server-only';
 
-import type { SupabaseClient } from '@supabase/supabase-js';
-
 import { requireUser } from '@/lib/auth/dal';
 import { requireOwnedEvent } from '@/lib/data/events';
 import { countUniqueContactsForEvent } from '@/lib/data/contacts';
@@ -281,10 +279,8 @@ export async function recordCampaignHold(
     authExternalRef: string;
   },
 ): Promise<void> {
-  // Un-generic cast: auth_external_ref / card_exp_month / card_exp_year are added
-  // by pending migrations not yet in the generated types (matches the
-  // getCampaignForCharge pattern). Only reached behind the payments config gate.
-  const admin = createAdminClient() as unknown as SupabaseClient;
+  // Only reached behind the payments config gate.
+  const admin = createAdminClient();
   const { error } = await admin
     .from('campaigns')
     .update({
@@ -319,11 +315,8 @@ export async function markCampaignHoldFailed(
 // --- B4 close-charge data layer ---------------------------------------------
 // auth_external_ref is the SUMIT Customer.ExternalIdentifier persisted at the J5
 // hold (recordCampaignHold); it is the ONLY anchor a later capture can reference
-// (capture.ts). Some charge columns (charge_status / charged_at /
-// sumit_charge_document_id) are added by a pending migration and not in the
-// generated types yet → queried via an un-generic client cast. Only ever reached
-// behind getCloseChargeEnabled() (false until enabled), so never hits missing
-// columns at runtime.
+// (capture.ts). Only ever reached behind getCloseChargeEnabled() (false until
+// enabled).
 
 export type CampaignChargeState = {
   id: string;
@@ -342,7 +335,7 @@ export type CampaignChargeState = {
 export async function getCampaignForCharge(
   campaignId: string,
 ): Promise<CampaignChargeState | null> {
-  const admin = createAdminClient() as unknown as SupabaseClient;
+  const admin = createAdminClient();
   const { data, error } = await admin
     .from('campaigns')
     .select('*')
@@ -372,7 +365,7 @@ export async function getCampaignForCharge(
 export async function lockCampaignForCharge(
   campaignId: string,
 ): Promise<boolean> {
-  const admin = createAdminClient() as unknown as SupabaseClient;
+  const admin = createAdminClient();
   const { data, error } = await admin
     .from('campaigns')
     .update({ charge_status: 'pending' })
@@ -395,7 +388,7 @@ export async function recordCampaignCharge(
     paymentId: number | null;
   },
 ): Promise<void> {
-  const admin = createAdminClient() as unknown as SupabaseClient;
+  const admin = createAdminClient();
   const { error } = await admin
     .from('campaigns')
     .update({
@@ -416,8 +409,10 @@ export async function markCampaignChargeOutcome(
   campaignId: string,
   outcome: 'charge_failed' | 'charge_review' | 'nothing_to_charge',
 ): Promise<void> {
-  const admin = createAdminClient() as unknown as SupabaseClient;
-  const payload: Record<string, unknown> = { charge_status: outcome };
+  const admin = createAdminClient();
+  const payload: Database['public']['Tables']['campaigns']['Update'] = {
+    charge_status: outcome,
+  };
   if (outcome === 'nothing_to_charge') {
     payload.final_charge_amount = 0;
     payload.charged_at = new Date().toISOString();

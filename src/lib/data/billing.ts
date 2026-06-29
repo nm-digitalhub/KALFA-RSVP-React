@@ -1,7 +1,5 @@
 import 'server-only';
 
-import type { SupabaseClient } from '@supabase/supabase-js';
-
 import { createAdminClient } from '@/lib/supabase/admin';
 import { setContactOpStatus } from '@/lib/data/interactions';
 import type { Database } from '@/lib/supabase/types';
@@ -10,9 +8,7 @@ type Channel = Database['public']['Enums']['campaign_channel'];
 
 // All billing writes go through the try_record_billed_result RPC — the cap +
 // window + one-per-(event,contact) dedup live in that locked txn, never in JS.
-// The RPCs are created by a pending migration → not in the generated types yet,
-// so we call them via an un-generic client cast (only reached behind the gated,
-// signature-verified webhook).
+// (Only ever reached behind the gated, signature-verified webhook.)
 
 export type ReachedArgs = {
   eventId: string;
@@ -28,7 +24,7 @@ export type ReachedArgs = {
 // 'not_active' | 'closed_window' | 'before_window' | 'removal_requested' |
 // 'no_campaign'. On 'billed' the contact is moved to reached_billed.
 export async function recordReached(args: ReachedArgs): Promise<string> {
-  const admin = createAdminClient() as unknown as SupabaseClient;
+  const admin = createAdminClient();
   const { data, error } = await admin.rpc('try_record_billed_result', {
     p_event: args.eventId,
     p_campaign: args.campaignId,
@@ -64,7 +60,7 @@ export type BillingSummary = {
 export async function getCampaignBillingSummary(
   campaignId: string,
 ): Promise<BillingSummary | null> {
-  const admin = createAdminClient() as unknown as SupabaseClient;
+  const admin = createAdminClient();
   const { data, error } = await admin.rpc('campaign_billing_summary', {
     p_campaign: campaignId,
   });
