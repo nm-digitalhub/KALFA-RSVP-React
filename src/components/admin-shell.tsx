@@ -13,6 +13,7 @@ import {
   LogOut,
   MailOpen,
   Menu,
+  MessagesSquare,
   Package,
   PhoneCall,
   Receipt,
@@ -63,6 +64,7 @@ const NAV: NavItem[] = [
   { href: '/admin/activity', label: 'יומן פעילות', icon: ListChecks },
   { href: '/admin/company', label: 'פרטי חברה', icon: Building2 },
   { href: '/admin/agreement', label: 'חוזה', icon: FileText },
+  { href: '/admin/channels', label: 'ערוצי תקשורת', icon: MessagesSquare },
   { href: '/admin/sumit-test', label: 'בדיקת SUMIT', icon: FlaskConical },
   { href: '/admin/settings', label: 'הגדרות', icon: Settings },
 ];
