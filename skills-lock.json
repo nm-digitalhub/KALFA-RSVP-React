@@ -23,6 +23,12 @@
       "skillPath": "skills/react-nextjs-development/SKILL.md",
       "computedHash": "f6fccc099580762dc1ffe48d8462c9183f14225a6dd28679cb56a0e5b011669a"
     },
+    "supabase": {
+      "source": "supabase/agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/supabase/SKILL.md",
+      "computedHash": "d414d598b9428b3e851c4ce61898649906b19e55aa7415bb42a286bd9ca2ab32"
+    },
     "supabase-postgres-best-practices": {
       "source": "supabase/agent-skills",
       "sourceType": "github",

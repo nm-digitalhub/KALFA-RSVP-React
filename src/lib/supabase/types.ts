@@ -1302,6 +1302,85 @@ export type Database = {
         }
         Relationships: []
       }
+      outreach_state: {
+        Row: {
+          call_request_count: number
+          campaign_id: string
+          contact_id: string
+          created_at: string
+          current_step_index: number
+          event_id: string
+          id: string
+          next_run_at: string | null
+          reached_at: string | null
+          reached_channel:
+            | Database["public"]["Enums"]["campaign_channel"]
+            | null
+          status: string
+          stop_reason: string | null
+          updated_at: string
+          whatsapp_sent_count: number
+        }
+        Insert: {
+          call_request_count?: number
+          campaign_id: string
+          contact_id: string
+          created_at?: string
+          current_step_index?: number
+          event_id: string
+          id?: string
+          next_run_at?: string | null
+          reached_at?: string | null
+          reached_channel?:
+            | Database["public"]["Enums"]["campaign_channel"]
+            | null
+          status?: string
+          stop_reason?: string | null
+          updated_at?: string
+          whatsapp_sent_count?: number
+        }
+        Update: {
+          call_request_count?: number
+          campaign_id?: string
+          contact_id?: string
+          created_at?: string
+          current_step_index?: number
+          event_id?: string
+          id?: string
+          next_run_at?: string | null
+          reached_at?: string | null
+          reached_channel?:
+            | Database["public"]["Enums"]["campaign_channel"]
+            | null
+          status?: string
+          stop_reason?: string | null
+          updated_at?: string
+          whatsapp_sent_count?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "outreach_state_campaign_id_fkey"
+            columns: ["campaign_id"]
+            isOneToOne: false
+            referencedRelation: "campaigns"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "outreach_state_contact_id_fkey"
+            columns: ["contact_id"]
+            isOneToOne: false
+            referencedRelation: "contacts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "outreach_state_event_id_fkey"
+            columns: ["event_id"]
+            isOneToOne: false
+            referencedRelation: "events"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       packages: {
         Row: {
           active: boolean
