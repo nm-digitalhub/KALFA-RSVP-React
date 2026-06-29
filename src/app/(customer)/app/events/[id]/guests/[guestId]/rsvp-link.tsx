@@ -10,10 +10,10 @@ type BoundAction = (
   formData: FormData,
 ) => Promise<FormState>;
 
-// Owner-facing RSVP link controls on the guest detail page. The link is built
-// server-side from APP_ORIGIN + the guest token; this component only copies it
-// and submits the revoke/regenerate actions (which re-verify ownership and
-// revalidate this page, refreshing `url`/`revokedAt`).
+// Owner-facing RSVP link controls on the guest detail page. The absolute link
+// is built server-side (see getAppUrl) and passed in; this component only
+// copies it and submits the revoke/regenerate actions (which re-verify
+// ownership and revalidate this page, refreshing `url`/`revokedAt`).
 export function RsvpLink({
   url,
   revokedAt,

@@ -1,9 +1,10 @@
 'use server';
 
 import { revalidatePath } from 'next/cache';
-import { cookies, headers } from 'next/headers';
+import { cookies } from 'next/headers';
 
 import { ACTIVE_ORG_COOKIE, getOrgContext, requireActiveOrg } from '@/lib/auth/dal';
+import { getAppUrl } from '@/lib/url';
 import {
   inviteMember,
   resendInvitation,
@@ -38,10 +39,7 @@ function safeMessage(err: unknown, fallback: string): string {
 }
 
 async function buildJoinLink(token: string): Promise<string> {
-  const h = await headers();
-  const host = h.get('host') ?? '';
-  const proto = h.get('x-forwarded-proto') ?? 'https';
-  return `${proto}://${host}/join/${token}`;
+  return getAppUrl(`/join/${token}`);
 }
 
 // Switch the active organization. Plain form action (not useActionState): the
