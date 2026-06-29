@@ -1,17 +1,9 @@
 import { z } from 'zod';
 
-// Validation for campaign creation (outcome-billing). Almost everything is
-// server-authoritative, NOT owner input: the price comes from the template
-// (§18.7/§18.8), max_contacts is derived from the unique-contact count (§7), the
-// channels and the attempt/escalation policy come from the template (§17/§8.2).
-// The owner only chooses the template and the activity window.
-
-export const campaignTermsSchema = z.object({
-  template_id: z.string().uuid({ error: 'יש לבחור מסלול שירות' }),
-  start_at: z.string().trim().min(1).optional(),
-  close_at: z.string().trim().min(1).optional(),
-});
-export type CampaignTermsInput = z.infer<typeof campaignTermsSchema>;
+// Campaign CREATION takes no owner input: the canonical template, the derived
+// activity window, price, max_contacts and channels are all resolved
+// server-side (§17/§18.7/§7) — so there is no create-terms schema. The schemas
+// below cover the approval + outreach actions only.
 
 // Approval requires the three consents (§18) + the ToS version that was shown.
 export const approveCampaignSchema = z.object({

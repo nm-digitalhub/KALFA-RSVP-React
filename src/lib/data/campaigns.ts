@@ -8,8 +8,7 @@ import {
 } from '@/lib/data/contacts';
 import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
-import type { Database } from '@/lib/supabase/types';
-import type { CampaignTermsInput } from '@/lib/validation/campaigns';
+import type { Database, Json } from '@/lib/supabase/types';
 
 // Campaign = "campaign approval for an event" (outcome-billing). Owner sets the
 // commercial terms; the charge ceiling is computed server-side. Reads are
@@ -118,14 +117,20 @@ export async function listCampaignTemplates(): Promise<CampaignTemplate[]> {
     }));
 }
 
-// Create a campaign in `pending_approval`. The price-per-reached is read from
-// the selected template SERVER-SIDE and copied+locked onto the campaign (§17,
-// §354) — the client only chooses the template, never the price (§18.7/§18.8).
-export async function createCampaign(
-  eventId: string,
-  terms: CampaignTermsInput,
-): Promise<{ id: string }> {
-  await requireOwnedEvent(eventId);
+// Create-or-continue the event's SINGLE "RSVP confirmations" campaign in
+// `pending_approval`. Idempotent: if a non-cancelled campaign already exists for
+// the event it is returned unchanged (one campaign per event — entered via the
+// "הפעלת אישורי הגעה" CTA, never a repeatable "new campaign"). Price, channels
+// and the outreach schedule are copied+locked from the CANONICAL template
+// (§17/§18.7) — the owner chooses nothing. The activity window is derived from
+// the event date: outreach closes at the event; the post-event charge is a
+// separate settle step.
+export async function createCampaign(eventId: string): Promise<{ id: string }> {
+  const event = await requireOwnedEvent(eventId);
+
+  // Create-or-continue: never a second campaign for the same event.
+  const existing = await getCampaignForEvent(eventId);
+  if (existing) return { id: existing.id };
 
   // max_contacts is DERIVED from the unique-contact count, not owner input (§7).
   const maxContacts = await countUniqueContactsForEvent(eventId);
@@ -133,41 +138,28 @@ export async function createCampaign(
     throw new Error('אין אנשי קשר תקינים ברשימת המוזמנים — הוסיפו מוזמנים עם מספר טלפון תקין');
   }
 
-  const admin = createAdminClient();
-
-  // Authoritative price from the template (reject unknown/inactive/priceless).
-  const { data: template, error: tplErr } = await admin
-    .from('packages')
-    .select('id, price_per_reached, active, channels, outreach_schedule')
-    .eq('id', terms.template_id)
-    .maybeSingle();
-  if (tplErr) throw new Error('טעינת מסלול השירות נכשלה');
-  if (!template || !template.active || template.price_per_reached == null) {
-    throw new Error('מסלול השירות שנבחר אינו תקין');
-  }
-  const price = Number(template.price_per_reached);
-
-  // The campaign uses the template's channels (§1/§17) — both channels are part
-  // of the service; the owner does not choose channels.
-  const templateChannels = template.channels ?? [];
-  if (templateChannels.length === 0) {
+  // The single active commercial template (the owner does not choose).
+  const template = await resolveCanonicalTemplate();
+  if (template.channels.length === 0) {
     throw new Error('למסלול השירות לא הוגדרו ערוצי פנייה');
   }
+  const price = template.price_per_reached;
 
+  const admin = createAdminClient();
   const { data, error } = await admin
     .from('campaigns')
     .insert({
       event_id: eventId,
       status: 'pending_approval',
       template_id: template.id,
-      price_per_reached: price, // locked copy from the template
+      price_per_reached: price, // locked copy from the canonical template
       max_contacts: maxContacts, // derived from the unique-contact count (§7)
       max_charge_ceiling: computeCeiling(price, maxContacts),
-      allowed_channels: templateChannels, // from the template, not owner choice
-      start_at: terms.start_at ?? null,
-      close_at: terms.close_at ?? null,
+      allowed_channels: template.channels, // from the template, not owner choice
+      start_at: null,
+      close_at: event.event_date, // window closes at the event date
       // Outreach schedule copied + locked from the template (§10/§17).
-      outreach_schedule: template.outreach_schedule,
+      outreach_schedule: template.outreach_schedule as unknown as Json,
       // steps ('[]') and enabled (false) use their column defaults.
     })
     .select('id')
@@ -204,6 +196,39 @@ export async function listCampaignsForEvent(
     .order('created_at', { ascending: false });
   if (error) throw new Error('טעינת הקמפיינים נכשלה');
   return (data ?? []) as OwnerCampaign[];
+}
+
+// The event's SINGLE "RSVP confirmations" campaign (one-per-event). Returns the
+// most-recent NON-cancelled campaign, or null if none exists yet. Owner-scoped
+// via RLS (owns_event). `cancelled` is excluded so a future campaign can replace
+// a retired one (mirrors the partial UNIQUE(event_id) WHERE status <> 'cancelled').
+export async function getCampaignForEvent(
+  eventId: string,
+): Promise<OwnerCampaign | null> {
+  await requireOwnedEvent(eventId);
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from('campaigns')
+    .select(CAMPAIGN_COLUMNS)
+    .eq('event_id', eventId)
+    .neq('status', 'cancelled')
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) throw new Error('טעינת הקמפיין נכשלה');
+  return (data ?? null) as OwnerCampaign | null;
+}
+
+// The single active commercial template ("canonical") — the owner no longer
+// chooses one. Reuses listCampaignTemplates' filter (active + priced); takes the
+// first by sort_order. Throws a safe error when none is configured.
+export async function resolveCanonicalTemplate(): Promise<CampaignTemplate> {
+  const templates = await listCampaignTemplates();
+  const template = templates[0];
+  if (!template) {
+    throw new Error('שירות אישורי ההגעה אינו מוגדר כעת — פנו לתמיכה');
+  }
+  return template;
 }
 
 // Transition a campaign pending_approval → approved. Guarded so a campaign can

@@ -18,10 +18,7 @@ import { recordSignedAgreement } from '@/lib/data/agreements';
 import { getProfile } from '@/lib/data/profiles';
 import { requestOtp } from '@/lib/data/otp';
 import { getActiveAgreementDoc } from '@/lib/data/agreements-doc';
-import {
-  campaignTermsSchema,
-  approveCampaignSchema,
-} from '@/lib/validation/campaigns';
+import { approveCampaignSchema } from '@/lib/validation/campaigns';
 import type { FormState } from '@/lib/validation/result';
 
 const OTP_PURPOSE = 'agreement_signing';
@@ -39,28 +36,28 @@ function isNextSignal(err: unknown): boolean {
   );
 }
 
-// eventId is bound on the client (createCampaignAction.bind(null, eventId)).
-export async function createCampaignAction(
+// "הפעלת אישורי הגעה" — the single entry that creates-or-continues the event's
+// campaign. eventId is bound on the client (setupCampaignAction.bind(null,
+// eventId)); there is NO form input — the canonical template and the derived
+// window are resolved server-side. On success → straight to approval/signing.
+// createCampaign throws only our own safe Hebrew messages (e.g. "add guests
+// first"), so surfacing err.message is safe and useful.
+export async function setupCampaignAction(
   eventId: string,
   _prevState: FormState,
-  formData: FormData,
+  _formData: FormData,
 ): Promise<FormState> {
-  const parsed = campaignTermsSchema.safeParse({
-    template_id: formData.get('template_id'),
-    start_at: formData.get('start_at') || undefined,
-    close_at: formData.get('close_at') || undefined,
-  });
-
-  if (!parsed.success) {
-    return { fieldErrors: parsed.error.flatten().fieldErrors };
-  }
-
   let created: Awaited<ReturnType<typeof createCampaign>>;
   try {
-    created = await createCampaign(eventId, parsed.data);
+    created = await createCampaign(eventId);
   } catch (err) {
     if (isNextSignal(err)) throw err;
-    return { error: 'יצירת הקמפיין נכשלה. נסו שוב.' };
+    return {
+      error:
+        err instanceof Error
+          ? err.message
+          : 'הפעלת אישורי ההגעה נכשלה. נסו שוב.',
+    };
   }
 
   revalidatePath(`/app/events/${eventId}/campaign`);
