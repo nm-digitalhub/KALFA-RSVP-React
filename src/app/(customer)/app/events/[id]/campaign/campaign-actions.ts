@@ -5,7 +5,13 @@ import { revalidatePath } from 'next/cache';
 import { headers } from 'next/headers';
 
 import { requireUser } from '@/lib/auth/dal';
-import { createCampaign } from '@/lib/data/campaigns';
+import {
+  createCampaign,
+  activateCampaign,
+  pauseCampaign,
+  closeCampaign,
+} from '@/lib/data/campaigns';
+import { closeCampaignAndCharge } from '@/lib/data/close-charge';
 import { recordSignedAgreement } from '@/lib/data/agreements';
 import { getProfile } from '@/lib/data/profiles';
 import { requestOtp } from '@/lib/data/otp';
@@ -148,4 +154,89 @@ export async function signAgreementAction(
   revalidatePath(`/app/events/${eventId}/campaign`);
   // Route A: after signing, proceed to the card-capture (payment-method) step.
   redirect(`/app/events/${eventId}/campaign/${campaignId}/payment`);
+}
+
+// --- Campaign lifecycle (§9) — wires the previously-orphaned transitions. ------
+// Each binds (eventId, campaignId) on the client; ownership is enforced inside
+// the data-layer transition (requireOwnedEvent). All revalidate the manage page.
+
+export async function activateCampaignAction(
+  eventId: string,
+  campaignId: string,
+  _prevState: FormState,
+  _formData: FormData,
+): Promise<FormState> {
+  try {
+    await activateCampaign(campaignId);
+  } catch (err) {
+    if (isNextSignal(err)) throw err;
+    return { error: 'הפעלת הקמפיין נכשלה — נדרשת תפיסת מסגרת מאושרת.' };
+  }
+  revalidatePath(`/app/events/${eventId}/campaign/${campaignId}`);
+  return { notice: 'הקמפיין הופעל — הפניות יחלו לפי לוח הזמנים.' };
+}
+
+export async function pauseCampaignAction(
+  eventId: string,
+  campaignId: string,
+  _prevState: FormState,
+  _formData: FormData,
+): Promise<FormState> {
+  try {
+    await pauseCampaign(campaignId);
+  } catch (err) {
+    if (isNextSignal(err)) throw err;
+    return { error: 'השהיית הקמפיין נכשלה.' };
+  }
+  revalidatePath(`/app/events/${eventId}/campaign/${campaignId}`);
+  return { notice: 'הקמפיין הושהה — לא יישלחו פניות חדשות.' };
+}
+
+export async function closeCampaignAction(
+  eventId: string,
+  campaignId: string,
+  _prevState: FormState,
+  _formData: FormData,
+): Promise<FormState> {
+  try {
+    await closeCampaign(campaignId);
+  } catch (err) {
+    if (isNextSignal(err)) throw err;
+    return { error: 'סגירת הקמפיין נכשלה.' };
+  }
+  revalidatePath(`/app/events/${eventId}/campaign/${campaignId}`);
+  return { notice: 'הקמפיין נסגר — אפשר לבצע גמר חשבון.' };
+}
+
+// Final settlement: close (if open) + charge the held card for the accrued total
+// (gated by getCloseChargeEnabled inside the orchestrator). Ownership enforced
+// via the close transition.
+export async function settleCampaignAction(
+  eventId: string,
+  campaignId: string,
+  _prevState: FormState,
+  _formData: FormData,
+): Promise<FormState> {
+  let r: Awaited<ReturnType<typeof closeCampaignAndCharge>>;
+  try {
+    r = await closeCampaignAndCharge(campaignId);
+  } catch (err) {
+    if (isNextSignal(err)) throw err;
+    return { error: 'גמר החשבון נכשל. נסו שוב או פנו לתמיכה.' };
+  }
+  revalidatePath(`/app/events/${eventId}/campaign/${campaignId}`);
+  switch (r.outcome) {
+    case 'charged':
+      return { notice: `גמר חשבון הושלם — חויב ₪${r.amount}.` };
+    case 'nothing_to_charge':
+      return { notice: 'גמר חשבון הושלם — אין אנשי קשר שהושגו, אין חיוב.' };
+    case 'disabled':
+      return { error: 'החיוב הסופי אינו מופעל עדיין במערכת.' };
+    case 'declined':
+      return { error: 'החיוב נדחה על ידי חברת האשראי. עדכנו אמצעי תשלום.' };
+    case 'review':
+      return { error: 'החיוב בבדיקה — נציג ייצור קשר. אין צורך לנסות שוב.' };
+    default:
+      return { error: 'לא ניתן לבצע גמר חשבון במצב הנוכחי.' };
+  }
 }
