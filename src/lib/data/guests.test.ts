@@ -106,14 +106,98 @@ describe('listGuests', () => {
     expect(builder.eq).toHaveBeenCalledWith('event_id', EVENT_ID);
   });
 
-  it('returns items, total, page and pageSize', async () => {
-    const rows = [{ id: GUEST_ID } as GuestListItem];
-    wire(rows, 42);
+  it('returns mapped items, total, page and pageSize', async () => {
+    // A guest with no contact: op_status/removal/delivery flatten to null and
+    // NO batched delivery query runs (contactIds is empty).
+    const rows = [{ id: GUEST_ID, contact_id: null, contacts: null }];
+    const { builder } = createMockSupabase({
+      data: rows,
+      error: null,
+      count: 42,
+    });
+    passGate(builder);
+    vi.mocked(createClient).mockResolvedValue({
+      from: vi.fn(() => builder),
+      rpc: vi.fn(),
+    } as unknown as Awaited<ReturnType<typeof createClient>>);
+
     const result = await listGuests(EVENT_ID, { page: 2 });
-    expect(result.items).toEqual(rows);
+    expect(result.items).toEqual([
+      {
+        id: GUEST_ID,
+        contact_id: null,
+        op_status: null,
+        removal_requested: null,
+        delivery_status: null,
+      },
+    ]);
+    // No delivery lookup for a page with no linked contacts.
+    expect(builder.in).not.toHaveBeenCalled();
     expect(result.total).toBe(42);
     expect(result.page).toBe(2);
     expect(result.pageSize).toBeGreaterThan(0);
+  });
+
+  // B6: op_status/removal flatten from the embed; delivery_status is the LATEST
+  // per-CONTACT outbound state, fetched in ONE batched query (no N+1). Two guests
+  // sharing a contact get the same delivery; a contactless guest gets null.
+  it('merges the latest delivery status per contact in a single batched query', async () => {
+    const guestRows = [
+      {
+        id: 'g1',
+        contact_id: 'c1',
+        contacts: { op_status: 'reached_billed', removal_requested: false },
+      },
+      {
+        id: 'g2',
+        contact_id: 'c1',
+        contacts: { op_status: 'reached_billed', removal_requested: false },
+      },
+      { id: 'g3', contact_id: null, contacts: null },
+    ];
+    // c1 has two deliveries; the newer ('read') must win over the older ('sent').
+    const interactionRows = [
+      { contact_id: 'c1', delivery_status: 'read', created_at: '2026-06-30T10:00:00Z' },
+      { contact_id: 'c1', delivery_status: 'sent', created_at: '2026-06-30T09:00:00Z' },
+    ];
+
+    const guests = createMockSupabase({
+      data: guestRows,
+      error: null,
+      count: guestRows.length,
+    });
+    const interactions = createMockSupabase({
+      data: interactionRows,
+      error: null,
+      count: interactionRows.length,
+    });
+    passGate(guests.builder);
+
+    // Dispatch by table: the ownership gate + guest list hit the guests builder;
+    // the delivery lookup hits the contact_interactions builder.
+    guests.client.from.mockImplementation((table: string) =>
+      table === 'contact_interactions' ? interactions.builder : guests.builder,
+    );
+    vi.mocked(createClient).mockResolvedValue(
+      guests.client as unknown as Awaited<ReturnType<typeof createClient>>,
+    );
+
+    const result = await listGuests(EVENT_ID, {});
+
+    // ONE batched query keyed on the DEDUPED contact_ids — never per-guest.
+    expect(interactions.builder.in).toHaveBeenCalledTimes(1);
+    expect(interactions.builder.in).toHaveBeenCalledWith('contact_id', ['c1']);
+
+    const byId = new Map(result.items.map((i) => [i.id, i]));
+    // Latest delivery ('read') applies to both guests sharing c1.
+    expect(byId.get('g1')?.delivery_status).toBe('read');
+    expect(byId.get('g2')?.delivery_status).toBe('read');
+    // op_status/removal flattened from the embed.
+    expect(byId.get('g1')?.op_status).toBe('reached_billed');
+    expect(byId.get('g1')?.removal_requested).toBe(false);
+    // Contactless guest: no delivery, no op_status.
+    expect(byId.get('g3')?.delivery_status).toBeNull();
+    expect(byId.get('g3')?.op_status).toBeNull();
   });
 
   // SECURITY: off-whitelist sort columns must never be passed raw.

@@ -46,10 +46,14 @@ export type InboundMessagePayload = {
   type?: string;
   from?: string;
   text?: { body?: string };
-  button?: { text?: string };
+  // A template quick-reply tap arrives as type:"button" with `payload` carrying
+  // the OPAQUE action id we set on the outbound template (`text` is its label).
+  button?: { text?: string; payload?: string };
+  // An interactive reply carries both the human label (`title`, matched for
+  // opt-out) and the OPAQUE action id (`id`) we set on the button/list row.
   interactive?: {
-    button_reply?: { title?: string };
-    list_reply?: { title?: string };
+    button_reply?: { id?: string; title?: string };
+    list_reply?: { id?: string; title?: string };
   };
 };
 
@@ -63,6 +67,21 @@ function extractText(m: InboundMessagePayload): string {
     m.interactive?.button_reply?.title ??
     m.interactive?.list_reply?.title ??
     ''
+  );
+}
+
+// Pull the OPAQUE action id of a quick-reply tap, when present. Template
+// quick-reply buttons echo it as button.payload; interactive replies as
+// interactive.button_reply.id / list_reply.id. Returns null for shapes that
+// carry no reply id (plain text, reactions). This id is the value WE set on the
+// outbound template — never free text the guest typed — so it is safe to surface
+// and route on; it is the only field exposed from a reply (the labels stay in).
+export function extractReplyId(m: InboundMessagePayload): string | null {
+  return (
+    m.button?.payload ??
+    m.interactive?.button_reply?.id ??
+    m.interactive?.list_reply?.id ??
+    null
   );
 }
 
@@ -82,16 +101,19 @@ export function isBillableMessageType(type: string | undefined | null): boolean 
   return !!type && BILLABLE_MESSAGE_TYPES.has(type);
 }
 
-// Classify ONE persisted inbound message into the two billing-relevant signals:
-// whether it is a billable reach, and whether it carries an explicit opt-out.
-// The raw text is matched here and discarded — only the booleans leave this
-// module (PII-safe). This is the single inbound classifier (the worker's only
-// path); there is no parallel batch classifier.
+// Classify ONE persisted inbound message into the billing-/routing-relevant
+// signals: whether it is a billable reach, whether it carries an explicit
+// opt-out, and the opaque reply id of a quick-reply tap (used to route an RSVP
+// from a button). The raw text is matched here and discarded — only the booleans
+// and the opaque id leave this module (PII-safe). This is the single inbound
+// classifier (the worker's only path); there is no parallel batch classifier.
 export function classifyMessagePayload(message: InboundMessagePayload): {
   billable: boolean;
   removal: boolean;
+  replyId: string | null;
 } {
   const billable = isBillableMessageType(message.type);
   const removal = billable ? isRemovalIntent(extractText(message)) : false;
-  return { billable, removal };
+  const replyId = billable ? extractReplyId(message) : null;
+  return { billable, removal, replyId };
 }

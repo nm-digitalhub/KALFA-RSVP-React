@@ -8,20 +8,26 @@ vi.mock('@/lib/data/interactions', () => ({
   markContactRemovalRequested: vi.fn(),
   setContactOpStatus: vi.fn(),
   setDeliveryStatus: vi.fn(),
+  resolveGuestByContact: vi.fn(),
+  recordRsvpFromWhatsapp: vi.fn(),
 }));
 vi.mock('@/lib/data/billing', () => ({ recordReached: vi.fn() }));
+vi.mock('@/lib/data/rsvp', () => ({ submitRsvp: vi.fn() }));
 
 import { processWebhookEvent } from '@/lib/data/webhook-processing';
 import type { WebhookInboxRow } from '@/lib/data/webhooks';
 import {
   insertInteraction,
   markContactRemovalRequested,
+  recordRsvpFromWhatsapp,
   resolveByContextId,
+  resolveGuestByContact,
   resolveInboundContact,
   setContactOpStatus,
   setDeliveryStatus,
 } from '@/lib/data/interactions';
 import { recordReached } from '@/lib/data/billing';
+import { submitRsvp } from '@/lib/data/rsvp';
 
 function messageRow(overrides: Partial<WebhookInboxRow> = {}): WebhookInboxRow {
   return {
@@ -75,6 +81,16 @@ beforeEach(() => {
   vi.mocked(markContactRemovalRequested).mockResolvedValue();
   vi.mocked(setContactOpStatus).mockResolvedValue();
   vi.mocked(setDeliveryStatus).mockResolvedValue({ contactId: 'k1' });
+  vi.mocked(resolveGuestByContact).mockResolvedValue({
+    guestId: 'g1',
+    token: 'tok-1',
+  });
+  vi.mocked(recordRsvpFromWhatsapp).mockResolvedValue();
+  vi.mocked(submitRsvp).mockResolvedValue({
+    ok: true,
+    status: 'attending',
+    unchanged: false,
+  });
 });
 
 describe('processWebhookEvent — message', () => {
@@ -101,6 +117,9 @@ describe('processWebhookEvent — message', () => {
     // Context resolved → the phone fallback is never consulted.
     expect(resolveInboundContact).not.toHaveBeenCalled();
     expect(markContactRemovalRequested).not.toHaveBeenCalled();
+    // A plain typed reply carries no button id → it never records an RSVP.
+    expect(submitRsvp).not.toHaveBeenCalled();
+    expect(resolveGuestByContact).not.toHaveBeenCalled();
   });
 
   it('a removal reply bills FIRST, then sets removal_requested', async () => {
@@ -219,6 +238,113 @@ describe('processWebhookEvent — message', () => {
 
     expect(insertInteraction).not.toHaveBeenCalled();
     expect(recordReached).not.toHaveBeenCalled();
+  });
+});
+
+// A template/interactive quick-reply tap. context resolves to {e1,c1,k1} by
+// default; resolveGuestByContact → {g1, tok-1}; submitRsvp → ok by default.
+function buttonRow(payload: Record<string, unknown>): WebhookInboxRow {
+  return messageRow({ payload: payload as WebhookInboxRow['payload'] });
+}
+
+describe('processWebhookEvent — RSVP from a quick-reply button (C9)', () => {
+  it('records an attending RSVP from the attending button — defaults to 1 adult', async () => {
+    await processWebhookEvent(
+      buttonRow({ type: 'button', button: { payload: 'rsvp_attending' } }),
+    );
+
+    // Still a billable reach (a button tap is a human reply).
+    expect(recordReached).toHaveBeenCalledTimes(1);
+    // Guest resolved from the contact within the same event, then submitted via
+    // the shared atomic RPC. attending => 1 adult (the RPC rejects 0).
+    expect(resolveGuestByContact).toHaveBeenCalledWith('k1', 'e1');
+    expect(submitRsvp).toHaveBeenCalledWith('tok-1', {
+      status: 'attending',
+      adults: 1,
+      kids: 0,
+    });
+    expect(recordRsvpFromWhatsapp).toHaveBeenCalledWith('e1', 'g1', 'attending');
+  });
+
+  it('records a declined RSVP from an interactive button reply — 0 counts', async () => {
+    await processWebhookEvent(
+      buttonRow({
+        type: 'interactive',
+        interactive: { button_reply: { id: 'rsvp_declined', title: 'לא מגיע' } },
+      }),
+    );
+
+    expect(submitRsvp).toHaveBeenCalledWith('tok-1', {
+      status: 'declined',
+      adults: 0,
+      kids: 0,
+    });
+    expect(recordRsvpFromWhatsapp).toHaveBeenCalledWith('e1', 'g1', 'declined');
+  });
+
+  it('records a maybe RSVP from an interactive list reply — 0 counts', async () => {
+    await processWebhookEvent(
+      buttonRow({
+        type: 'interactive',
+        interactive: { list_reply: { id: 'rsvp_maybe', title: 'אולי' } },
+      }),
+    );
+
+    expect(submitRsvp).toHaveBeenCalledWith('tok-1', {
+      status: 'maybe',
+      adults: 0,
+      kids: 0,
+    });
+    expect(recordRsvpFromWhatsapp).toHaveBeenCalledWith('e1', 'g1', 'maybe');
+  });
+
+  it('does NOT record an RSVP for an unrecognized button id (still bills the reach)', async () => {
+    await processWebhookEvent(
+      buttonRow({ type: 'button', button: { payload: 'menu_directions' } }),
+    );
+
+    expect(recordReached).toHaveBeenCalledTimes(1);
+    expect(resolveGuestByContact).not.toHaveBeenCalled();
+    expect(submitRsvp).not.toHaveBeenCalled();
+    expect(recordRsvpFromWhatsapp).not.toHaveBeenCalled();
+  });
+
+  it('does NOT record an RSVP when the contact has no resolvable guest', async () => {
+    vi.mocked(resolveGuestByContact).mockResolvedValue(null);
+
+    await processWebhookEvent(
+      buttonRow({ type: 'button', button: { payload: 'rsvp_attending' } }),
+    );
+
+    expect(resolveGuestByContact).toHaveBeenCalledWith('k1', 'e1');
+    expect(submitRsvp).not.toHaveBeenCalled();
+    expect(recordRsvpFromWhatsapp).not.toHaveBeenCalled();
+  });
+
+  it('skips the RSVP submit on a deduped re-process (no duplicate audit rows)', async () => {
+    // fresh === false: the reach was already billed; the RSVP block must not
+    // re-run submit_rsvp/marker, or a Meta retry would double the audit rows.
+    vi.mocked(insertInteraction).mockResolvedValue(false);
+
+    await processWebhookEvent(
+      buttonRow({ type: 'button', button: { payload: 'rsvp_attending' } }),
+    );
+
+    expect(recordReached).not.toHaveBeenCalled();
+    expect(resolveGuestByContact).not.toHaveBeenCalled();
+    expect(submitRsvp).not.toHaveBeenCalled();
+    expect(recordRsvpFromWhatsapp).not.toHaveBeenCalled();
+  });
+
+  it('does NOT write the source marker when submit_rsvp rejects (e.g. revoked/closed)', async () => {
+    vi.mocked(submitRsvp).mockResolvedValue({ ok: false, reason: 'closed' });
+
+    await processWebhookEvent(
+      buttonRow({ type: 'button', button: { payload: 'rsvp_attending' } }),
+    );
+
+    expect(submitRsvp).toHaveBeenCalled();
+    expect(recordRsvpFromWhatsapp).not.toHaveBeenCalled();
   });
 });
 

@@ -12,6 +12,7 @@ type GuestRow = Database['public']['Tables']['guests']['Row'];
 type GuestGroupRow = Database['public']['Tables']['guest_groups']['Row'];
 export type GuestStatus = Database['public']['Enums']['guest_status'];
 export type ContactStatus = Database['public']['Enums']['contact_status'];
+export type ContactOpStatus = Database['public']['Enums']['contact_op_status'];
 
 // ---------------------------------------------------------------------------
 // Column projections (DTO contracts).
@@ -22,9 +23,13 @@ export type ContactStatus = Database['public']['Enums']['contact_status'];
 // both. Any column added here must be reviewed against that rule.
 // ---------------------------------------------------------------------------
 
-// Columns for the paginated guest list.
+// Columns for the paginated guest list. `contact_id` links a guest to its
+// outreach contact; `contacts(op_status, removal_requested)` is an EMBEDDED
+// select via the `guests_contact_id_fkey` FK (forward, to-one → object|null)
+// that surfaces the webhook-driven outreach state + opt-out flag for the list
+// badges (B6). Neither rsvp_token nor extras appears here (asserted by a test).
 export const GUEST_LIST_COLUMNS =
-  'id, full_name, phone, status, contact_status, group_id, expected_count, confirmed_adults, confirmed_kids, callback_requested, created_at';
+  'id, full_name, phone, status, contact_status, group_id, expected_count, confirmed_adults, confirmed_kids, callback_requested, created_at, contact_id, contacts(op_status, removal_requested)';
 
 // Columns for a single guest (edit form). Adds note/meal_pref but still
 // excludes rsvp_token and extras.
@@ -46,7 +51,17 @@ export type GuestListItem = Pick<
   | 'confirmed_kids'
   | 'callback_requested'
   | 'created_at'
->;
+  | 'contact_id'
+> & {
+  // Webhook-driven outreach state, surfaced as list badges (B6).
+  // `op_status` / `removal_requested` come from the linked contact (embedded via
+  // the guests.contact_id FK) and are null when the guest has no contact yet.
+  // `delivery_status` is the LATEST per-contact OUTBOUND delivery state from
+  // contact_interactions (free text; null when there is no delivery callback).
+  op_status: ContactOpStatus | null;
+  removal_requested: boolean | null;
+  delivery_status: string | null;
+};
 
 export type GuestDetail = Pick<
   GuestRow,
@@ -196,8 +211,76 @@ export async function listGuests(
     throw new Error('טעינת המוזמנים נכשלה');
   }
 
+  const rows = data ?? [];
+
+  // Batched latest-delivery lookup (B6). delivery_status lives on OUTBOUND
+  // contact_interactions keyed by `contact_id` (NOT guest_id — that column is
+  // only populated by inbound RSVP replies, a disjoint set of rows). Sends are
+  // per-contact, so per-contact delivery is the correct granularity (two guests
+  // sharing a phone correctly show the same state). ONE query for the whole page
+  // (no N+1): fetch this event's outbound interactions for the page's contacts,
+  // newest first, and keep the first (latest) seen per contact.
+  const contactIds = Array.from(
+    new Set(
+      rows
+        .map((r) => r.contact_id)
+        .filter((id): id is string => id !== null),
+    ),
+  );
+
+  const deliveryByContact = new Map<string, string>();
+  if (contactIds.length > 0) {
+    const { data: interactions, error: iErr } = await supabase
+      .from('contact_interactions')
+      .select('contact_id, delivery_status, created_at')
+      .eq('event_id', eventId)
+      .eq('direction', 'out')
+      .in('contact_id', contactIds)
+      .not('delivery_status', 'is', null)
+      .order('created_at', { ascending: false });
+    // A delivery-badge lookup failure must not break the guest list; degrade to
+    // no delivery badges rather than throwing.
+    if (!iErr && interactions) {
+      for (const row of interactions) {
+        if (
+          row.contact_id &&
+          row.delivery_status &&
+          !deliveryByContact.has(row.contact_id)
+        ) {
+          deliveryByContact.set(row.contact_id, row.delivery_status);
+        }
+      }
+    }
+  }
+
+  // Flatten the embedded contact (op_status/removal_requested) and attach the
+  // per-contact delivery status. Keeps the nested embed object out of the DTO.
+  const items: GuestListItem[] = rows.map((r) => {
+    const contact = r.contacts; // { op_status, removal_requested } | null (FK embed)
+    const contactId = r.contact_id;
+    return {
+      id: r.id,
+      full_name: r.full_name,
+      phone: r.phone,
+      status: r.status,
+      contact_status: r.contact_status,
+      group_id: r.group_id,
+      expected_count: r.expected_count,
+      confirmed_adults: r.confirmed_adults,
+      confirmed_kids: r.confirmed_kids,
+      callback_requested: r.callback_requested,
+      created_at: r.created_at,
+      contact_id: contactId,
+      op_status: contact?.op_status ?? null,
+      removal_requested: contact?.removal_requested ?? null,
+      delivery_status: contactId
+        ? deliveryByContact.get(contactId) ?? null
+        : null,
+    };
+  });
+
   return {
-    items: data ?? [],
+    items,
     total: count ?? 0,
     page,
     pageSize,
@@ -280,7 +363,17 @@ export async function createGuest(
     },
   });
 
-  return data;
+  // Flatten the embedded contact into the same DTO shape listGuests returns. A
+  // freshly-created guest has no contact link or outbound send yet, so the
+  // webhook-driven fields are null; the mapping stays robust if a contact embed
+  // is ever present.
+  const { contacts, ...rest } = data;
+  return {
+    ...rest,
+    op_status: contacts?.op_status ?? null,
+    removal_requested: contacts?.removal_requested ?? null,
+    delivery_status: null,
+  };
 }
 
 /**

@@ -4,6 +4,11 @@ import { useActionState } from 'react';
 
 import { FormError, FormNotice } from '@/components/forms';
 import type { FormState } from '@/lib/validation/result';
+import {
+  OP_STATUS_LABELS,
+  REMOVAL_REQUESTED_LABEL,
+  deliveryStatusLabel,
+} from '@/app/(customer)/app/events/[id]/guests/labels';
 
 type BoundAction = (
   prevState: FormState,
@@ -25,6 +30,14 @@ type Summary = {
   accrued: number;
   ceiling: number;
   maxContacts: number;
+} | null;
+
+// Shape mirrors CampaignDeliveryBreakdown from '@/lib/data/campaign-delivery'
+// (kept inline so this client component doesn't import the server-only module).
+type Delivery = {
+  totalContacts: number;
+  delivery: { sent: number; delivered: number; read: number; failed: number };
+  outcome: { reached: number; wrongNumber: number; optedOut: number };
 } | null;
 
 const STATUS_LABELS: Record<string, string> = {
@@ -93,13 +106,82 @@ function ActionButton({
   );
 }
 
+// A compact, RTL-safe horizontal bar — a logical-property width fill, no chart
+// dependency (deliberate: the recharts wrapper is unverified at runtime here).
+function DeliveryBar({
+  label,
+  value,
+  total,
+  tone,
+}: {
+  label: string;
+  value: number;
+  total: number;
+  tone: string;
+}) {
+  const pct = total > 0 ? Math.round((value / total) * 100) : 0;
+  return (
+    <div className="space-y-1">
+      <div className="flex items-center justify-between text-xs">
+        <span className="text-muted-foreground">{label}</span>
+        <span className="font-medium tabular-nums">{value}</span>
+      </div>
+      <div className="h-2 overflow-hidden rounded-full bg-muted" aria-hidden>
+        <div className={`h-full rounded-full ${tone}`} style={{ inlineSize: `${pct}%` }} />
+      </div>
+    </div>
+  );
+}
+
+// §B8 — the WhatsApp/Meta webhook breakdown. Shown BESIDE the billing summary
+// (never replacing it): message delivery (sent/delivered/read/failed, latest per
+// contact) + contact outcomes (reached/wrong-number/opt-out), all from inbound
+// Meta signals. Hidden until the campaign has contacts (deliberate empty state).
+function DeliveryBreakdown({ delivery }: { delivery: NonNullable<Delivery> }) {
+  const { totalContacts, delivery: d, outcome } = delivery;
+  return (
+    <section className="space-y-4 border-t border-border pt-4">
+      <div>
+        <h2 className="text-sm font-semibold">פעילות WhatsApp</h2>
+        <p className="text-xs text-muted-foreground">
+          לפי אותות מ-Meta (נפרד מסיכום החיוב).
+        </p>
+      </div>
+
+      <div className="grid gap-5 lg:grid-cols-2">
+        {/* Message delivery — latest state per contact. */}
+        <div className="space-y-3 rounded-lg border border-border bg-card p-4">
+          <p className="text-xs font-medium text-muted-foreground">מסירת הודעות</p>
+          <DeliveryBar label={deliveryStatusLabel('sent')} value={d.sent} total={totalContacts} tone="bg-muted-foreground/40" />
+          <DeliveryBar label={deliveryStatusLabel('delivered')} value={d.delivered} total={totalContacts} tone="bg-primary/60" />
+          <DeliveryBar label={deliveryStatusLabel('read')} value={d.read} total={totalContacts} tone="bg-primary" />
+          <DeliveryBar label={deliveryStatusLabel('failed')} value={d.failed} total={totalContacts} tone="bg-destructive/70" />
+        </div>
+
+        {/* Contact outcomes — from the contact record (op_status + opt-out). */}
+        <div className="space-y-3">
+          <p className="text-xs font-medium text-muted-foreground">תוצאות אנשי קשר</p>
+          <div className="grid grid-cols-2 gap-3">
+            <Stat label={OP_STATUS_LABELS.reached_billed} value={String(outcome.reached)} />
+            <Stat label={OP_STATUS_LABELS.wrong_number} value={String(outcome.wrongNumber)} />
+            <Stat label={REMOVAL_REQUESTED_LABEL} value={String(outcome.optedOut)} />
+            <Stat label="סך אנשי קשר" value={String(totalContacts)} />
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
 export function ManageClient({
   campaign,
   summary,
+  delivery,
   actions,
 }: {
   campaign: Campaign;
   summary: Summary;
+  delivery: Delivery;
   actions: {
     activate: BoundAction;
     pause: BoundAction;
@@ -150,6 +232,12 @@ export function ManageClient({
         לא מחויבים: הודעות שנקראו בלבד · ניסיונות ללא מענה · תאים קוליים · מספרים
         שגויים · תגובות כפולות. החיוב הוא לכל איש קשר ייחודי שהשיב בפועל, פעם אחת.
       </p>
+
+      {/* §B8 webhook breakdown — beside the billing board; hidden until there are
+          contacts so a not-yet-started campaign doesn't show a wall of zeros. */}
+      {delivery && delivery.totalContacts > 0 ? (
+        <DeliveryBreakdown delivery={delivery} />
+      ) : null}
 
       {/* Lifecycle controls */}
       <div className="flex flex-wrap gap-3 border-t border-border pt-4">

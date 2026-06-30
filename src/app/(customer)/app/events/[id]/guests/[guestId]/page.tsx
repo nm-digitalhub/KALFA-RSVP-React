@@ -3,7 +3,12 @@ import { notFound } from 'next/navigation';
 
 import { requireOwnedEvent } from '@/lib/data/events';
 import { getGuest, listGroups } from '@/lib/data/guests';
+import {
+  getGuestOutreachSummary,
+  listInteractionsForContact,
+} from '@/lib/data/interactions';
 import { getRsvpLinkInfo } from '@/lib/data/rsvp';
+import { Badge, formatDateTime } from '@/app/(admin)/admin/_components';
 import { getAppUrl } from '@/lib/url';
 import {
   regenerateRsvpTokenAction,
@@ -11,6 +16,14 @@ import {
   updateGuestAction,
 } from '../guests-actions';
 import { GuestForm } from '../guest-form';
+import {
+  DELIVERY_STATUS_LABELS,
+  OP_STATUS_LABELS,
+  OP_STATUS_VARIANTS,
+  REMOVAL_REQUESTED_LABEL,
+  REMOVAL_REQUESTED_VARIANT,
+  deliveryStatusVariant,
+} from '../labels';
 import { RsvpLink } from './rsvp-link';
 
 interface PageProps {
@@ -21,15 +34,23 @@ export default async function EditGuestPage({ params }: PageProps) {
   const { id: eventId, guestId } = await params;
   await requireOwnedEvent(eventId);
 
-  const [guest, groups, linkInfo] = await Promise.all([
+  const [guest, groups, linkInfo, outreach] = await Promise.all([
     getGuest(eventId, guestId),
     listGroups(eventId),
     getRsvpLinkInfo(eventId, guestId),
+    getGuestOutreachSummary(eventId, guestId),
   ]);
 
   if (!guest) {
     notFound();
   }
+
+  // WhatsApp message timeline for this guest's contact (event-based: each row is
+  // a message with its current delivery state, oldest-first). Empty when the
+  // guest has no linked contact (invalid/missing phone) or no history yet.
+  const interactions = outreach
+    ? await listInteractionsForContact(eventId, outreach.contactId)
+    : [];
 
   // Bind event + guest ids server-side; the action re-verifies ownership.
   const action = updateGuestAction.bind(null, eventId, guestId);
@@ -77,6 +98,74 @@ export default async function EditGuestPage({ params }: PageProps) {
           </p>
         </section>
       ) : null}
+
+      <section className="rounded-lg border border-input p-4 text-sm">
+        <h2 className="mb-3 font-semibold">היסטוריית WhatsApp</h2>
+
+        {outreach ? (
+          <div className="mb-4 flex flex-wrap items-center gap-2">
+            <span className="text-muted-foreground">מצב פנייה:</span>
+            <Badge variant={OP_STATUS_VARIANTS[outreach.opStatus]}>
+              {OP_STATUS_LABELS[outreach.opStatus]}
+            </Badge>
+            {outreach.removalRequested ? (
+              <Badge variant={REMOVAL_REQUESTED_VARIANT}>
+                {REMOVAL_REQUESTED_LABEL}
+              </Badge>
+            ) : null}
+          </div>
+        ) : null}
+
+        {interactions.length > 0 ? (
+          <ol className="space-y-3">
+            {interactions.map((it) => {
+              const inbound = it.direction === 'in';
+              return (
+                <li key={it.id} className="rounded-md border border-input p-3">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="font-medium">
+                      {inbound ? 'תשובה התקבלה' : 'הודעה נשלחה'}
+                    </span>
+                    {inbound ? (
+                      <Badge variant="info">נכנסת</Badge>
+                    ) : it.delivery_status ? (
+                      <Badge variant={deliveryStatusVariant(it.delivery_status)}>
+                        {DELIVERY_STATUS_LABELS[it.delivery_status] ??
+                          it.delivery_status}
+                      </Badge>
+                    ) : (
+                      <Badge variant="neutral">ממתין</Badge>
+                    )}
+                  </div>
+                  <time
+                    dateTime={it.created_at}
+                    className="mt-1 block text-xs text-muted-foreground"
+                  >
+                    {formatDateTime(it.created_at)}
+                  </time>
+                  {it.provider_id ? (
+                    <p
+                      dir="ltr"
+                      className="mt-1 truncate text-left font-mono text-[11px] text-muted-foreground"
+                    >
+                      {it.provider_id}
+                    </p>
+                  ) : null}
+                  {it.delivery_error_code ? (
+                    <p className="mt-1 text-xs text-destructive">
+                      קוד שגיאה: {it.delivery_error_code}
+                    </p>
+                  ) : null}
+                </li>
+              );
+            })}
+          </ol>
+        ) : (
+          <p className="text-muted-foreground">
+            אין עדיין היסטוריית WhatsApp עבור מוזמן זה.
+          </p>
+        )}
+      </section>
 
       <GuestForm
         action={action}

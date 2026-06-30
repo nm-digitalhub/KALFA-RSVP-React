@@ -5,6 +5,7 @@ import { ChevronRight } from 'lucide-react';
 import { requireOwnedEvent } from '@/lib/data/events';
 import { getCampaign } from '@/lib/data/campaigns';
 import { getCampaignBillingSummary } from '@/lib/data/billing';
+import { getCampaignDeliveryBreakdown } from '@/lib/data/campaign-delivery';
 import {
   activateCampaignAction,
   pauseCampaignAction,
@@ -33,6 +34,16 @@ export default async function CampaignManagePage({
     summary = await getCampaignBillingSummary(campaignId);
   } catch {
     summary = null;
+  }
+
+  // The webhook delivery/outcome breakdown (B8) — shown BESIDE the billing
+  // summary, not replacing it. Tolerate failure: the board degrades to hiding the
+  // block rather than crashing the page.
+  let delivery = null;
+  try {
+    delivery = await getCampaignDeliveryBreakdown(campaignId);
+  } catch {
+    delivery = null;
   }
 
   const activate = activateCampaignAction.bind(null, eventId, campaignId);
@@ -65,6 +76,7 @@ export default async function CampaignManagePage({
             capture_status: campaign.capture_status,
           }}
           summary={summary}
+          delivery={delivery}
           actions={{ activate, pause, close, settle }}
         />
       </section>

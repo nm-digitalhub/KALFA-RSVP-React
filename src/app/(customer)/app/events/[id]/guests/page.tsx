@@ -5,9 +5,18 @@ import { buttonVariants } from '@/components/ui/button';
 import { requireOwnedEvent } from '@/lib/data/events';
 import { listGuests, listGroups } from '@/lib/data/guests';
 import type { Database } from '@/lib/supabase/types';
-import { GUEST_STATUS_LABELS } from './labels';
+import {
+  GUEST_STATUS_LABELS,
+  OP_STATUS_LABELS,
+  OP_STATUS_VARIANTS,
+  deliveryStatusLabel,
+  deliveryStatusVariant,
+  REMOVAL_REQUESTED_LABEL,
+  REMOVAL_REQUESTED_VARIANT,
+} from './labels';
 
 type GuestStatus = Database['public']['Enums']['guest_status'];
+type ContactOpStatus = Database['public']['Enums']['contact_op_status'];
 
 // Guest status → Badge variant. Exhaustive so a new enum value is a compile error.
 const GUEST_STATUS_VARIANTS: Record<GuestStatus, BadgeVariant> = {
@@ -16,6 +25,15 @@ const GUEST_STATUS_VARIANTS: Record<GuestStatus, BadgeVariant> = {
   declined: 'destructive',
   maybe: 'warning',
 };
+
+// op_status values that are pre-outreach DEFAULTS, not webhook OUTCOMES — they'd
+// add noise on every linked guest, so the "מצב הודעות" column suppresses them
+// (folds into "—"). All other states (sent/delivered/read/responded, the call
+// states, wrong_number, reached_billed, not_reached) still render.
+const HIDDEN_OP_STATUS: ReadonlySet<ContactOpStatus> = new Set<ContactOpStatus>([
+  'pending_contact',
+  'not_eligible',
+]);
 import { GuestListControls } from './guest-list-controls';
 import { GuestRowActions } from './guest-row-actions';
 import { ContactStatusCell } from './contact-status-cell';
@@ -128,6 +146,7 @@ export default async function GuestsPage({ params, searchParams }: PageProps) {
                 <th className="px-4 py-2 font-medium">קבוצה</th>
                 <th className="px-4 py-2 font-medium">סטטוס</th>
                 <th className="px-4 py-2 font-medium">יצירת קשר</th>
+                <th className="px-4 py-2 font-medium">מצב הודעות</th>
                 <th className="px-4 py-2 font-medium">אישרו</th>
                 <th className="px-4 py-2 font-medium">
                   <span className="sr-only">פעולות</span>
@@ -155,6 +174,37 @@ export default async function GuestsPage({ params, searchParams }: PageProps) {
                       guestId={g.id}
                       value={g.contact_status}
                     />
+                  </td>
+                  {/* Webhook-driven state (Meta WhatsApp): outreach op_status
+                      (meaningful OUTCOMES only — see HIDDEN_OP_STATUS), latest
+                      delivery, and opt-out. Distinct from the CRM contact status
+                      to its right. "—" when there is no webhook state to show. */}
+                  <td className="px-4 py-2">
+                    {(g.op_status && !HIDDEN_OP_STATUS.has(g.op_status)) ||
+                    g.delivery_status ||
+                    g.removal_requested ? (
+                      <div className="flex flex-wrap items-center gap-1">
+                        {g.op_status && !HIDDEN_OP_STATUS.has(g.op_status) ? (
+                          <Badge variant={OP_STATUS_VARIANTS[g.op_status]}>
+                            {OP_STATUS_LABELS[g.op_status]}
+                          </Badge>
+                        ) : null}
+                        {g.delivery_status ? (
+                          <Badge
+                            variant={deliveryStatusVariant(g.delivery_status)}
+                          >
+                            {deliveryStatusLabel(g.delivery_status)}
+                          </Badge>
+                        ) : null}
+                        {g.removal_requested ? (
+                          <Badge variant={REMOVAL_REQUESTED_VARIANT}>
+                            {REMOVAL_REQUESTED_LABEL}
+                          </Badge>
+                        ) : null}
+                      </div>
+                    ) : (
+                      <span className="text-muted-foreground">—</span>
+                    )}
                   </td>
                   <td className="px-4 py-2 text-muted-foreground">
                     {g.status === 'attending'

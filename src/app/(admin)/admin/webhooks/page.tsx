@@ -219,13 +219,14 @@ export default async function AdminWebhooksPage({
     return qs ? `/admin/webhooks?${qs}` : '/admin/webhooks';
   }
 
-  // Href to open a row's detail drawer (rendered in Stage 1c) while preserving
-  // the active filters.
-  function inspectHref(id: string): string {
-    const params = new URLSearchParams();
-    for (const [k, v] of Object.entries(current)) if (v) params.set(k, v);
-    params.set('inspect', id);
-    return `?${params.toString()}`;
+  // Href to open a row's detail drawer while preserving the active filters.
+  // Built as a Next.js URL object (pathname + query) — the documented way to
+  // compose links with query params (Next serializes/encodes it), not manual
+  // string concatenation.
+  function inspectHref(id: string) {
+    const query: Record<string, string> = { inspect: id };
+    for (const [k, v] of Object.entries(current)) if (v) query[k] = v;
+    return { pathname: '/admin/webhooks', query };
   }
 
   return (

@@ -51,5 +51,11 @@ export async function getAppOrigin(): Promise<string> {
 /** Build an absolute URL for an app-relative `path` (leading slash optional). */
 export async function getAppUrl(path: string): Promise<string> {
   const origin = await getAppOrigin();
-  return `${origin}${path.startsWith('/') ? path : `/${path}`}`;
+  // Resolve with the WHATWG URL API (Node `new URL(input, base)`) — it
+  // normalizes and percent-encodes correctly, unlike raw string concatenation,
+  // and round-trips via toString(). Leading slashes are collapsed to exactly one
+  // so an absolute or protocol-relative `path` can't override the origin's
+  // host/scheme (per the URL(input, base) spec, an absolute input replaces the
+  // base).
+  return new URL(`/${path.replace(/^\/+/, '')}`, origin).toString();
 }

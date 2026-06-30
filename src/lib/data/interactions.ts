@@ -1,6 +1,8 @@
 import 'server-only';
 
 import { createAdminClient } from '@/lib/supabase/admin';
+import { createClient } from '@/lib/supabase/server';
+import { requireOwnedEvent } from '@/lib/data/events';
 import { normalizePhone } from '@/lib/phone';
 import type { Database } from '@/lib/supabase/types';
 
@@ -156,4 +158,156 @@ export async function markContactRemovalRequested(
     .update({ removal_requested: true })
     .eq('id', contactId);
   if (error) throw new Error('עדכון בקשת ההסרה נכשל');
+}
+
+// Resolve the guest behind a resolved contact, returning the id + public RSVP
+// bearer token needed to record an RSVP captured from a WhatsApp quick-reply
+// button. Scoped by BOTH contact_id and event_id (a contact is unique per event,
+// but guests.contact_id carries no uniqueness constraint, so `limit(1)` keeps a
+// stray duplicate from throwing). The token is returned as stored — submit_rsvp
+// is the single gate that rejects a revoked/closed/expired one, so revocation is
+// deliberately NOT re-checked here.
+export async function resolveGuestByContact(
+  contactId: string,
+  eventId: string,
+): Promise<{ guestId: string; token: string } | null> {
+  const admin = createAdminClient();
+  const { data, error } = await admin
+    .from('guests')
+    .select('id, rsvp_token')
+    .eq('contact_id', contactId)
+    .eq('event_id', eventId)
+    .limit(1)
+    .maybeSingle();
+  if (error) throw new Error('טעינת האורח נכשלה');
+  if (!data) return null;
+  return { guestId: data.id, token: data.rsvp_token };
+}
+
+// Best-effort, PII-free source marker: record that an RSVP was captured from a
+// WhatsApp quick-reply button. Mirrors rsvp.ts recordRsvpAudit (direct
+// service-role insert, user_id null, identifiers + status only — never names,
+// notes, phone, or the token); logActivity is intentionally NOT reused because it
+// calls requireUser(), and the webhook worker has no session. Fully swallowed: a
+// marker failure must never fail the RSVP it annotates.
+export async function recordRsvpFromWhatsapp(
+  eventId: string,
+  guestId: string,
+  status: string,
+): Promise<void> {
+  type ActivityLogInsert =
+    Database['public']['Tables']['activity_log']['Insert'];
+  try {
+    const admin = createAdminClient();
+    const meta = { guest_id: guestId, status };
+    const row: ActivityLogInsert = {
+      event_id: eventId,
+      user_id: null,
+      action: 'rsvp.from_whatsapp',
+      meta: meta as unknown as ActivityLogInsert['meta'],
+    };
+    await admin.from('activity_log').insert(row);
+  } catch {
+    // Deliberately swallowed: the marker is non-fatal and never logs PII.
+  }
+}
+
+// ---------------------------------------------------------------------------
+// B7: owner-facing reads for the guest-detail WhatsApp timeline.
+//
+// Everything ABOVE is webhook write-plumbing (service-role, signature-verified,
+// no session). The two readers BELOW are different: they run on the OWNER's
+// cookie client so RLS scopes every row to the owner's own events
+// (`contact_interactions_owner_select` = event_id IS NOT NULL AND owns_event;
+// `contacts_owner_select` = owns_event), and they re-verify ownership
+// (requireOwnedEvent) as defense-in-depth — matching the data-layer idiom. Both
+// are read-only and never select/return a message body or log PII.
+// ---------------------------------------------------------------------------
+
+// One timeline entry = one WhatsApp message. delivery_status is updated IN PLACE
+// by setDeliveryStatus (last-write-wins), so an outbound row carries its CURRENT
+// state (sent/delivered/read/failed), not a per-event stream. `payload_meta` is
+// deliberately NOT selected — only PII-safe metadata reaches the UI.
+export type ContactInteraction = {
+  id: string;
+  direction: 'in' | 'out';
+  kind: string;
+  delivery_status: string | null;
+  delivery_error_code: string | null;
+  provider_id: string;
+  context_message_id: string | null;
+  created_at: string;
+};
+
+// Timeline of WhatsApp interactions for one contact within an owned event,
+// oldest-first (conversational order). Scoped by event_id (the owner RLS policy
+// requires event_id IS NOT NULL) AND contact_id.
+export async function listInteractionsForContact(
+  eventId: string,
+  contactId: string,
+): Promise<ContactInteraction[]> {
+  await requireOwnedEvent(eventId);
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from('contact_interactions')
+    .select(
+      'id, direction, kind, delivery_status, delivery_error_code, provider_id, context_message_id, created_at',
+    )
+    .eq('event_id', eventId)
+    .eq('contact_id', contactId)
+    .order('created_at', { ascending: true });
+  if (error) throw new Error('טעינת היסטוריית האינטראקציות נכשלה');
+  return (data ?? []).map((r) => ({
+    id: r.id,
+    direction: r.direction === 'in' ? 'in' : 'out',
+    kind: r.kind,
+    delivery_status: r.delivery_status,
+    delivery_error_code: r.delivery_error_code,
+    provider_id: r.provider_id,
+    context_message_id: r.context_message_id,
+    created_at: r.created_at,
+  }));
+}
+
+export type GuestOutreachSummary = {
+  contactId: string;
+  opStatus: OpStatus;
+  removalRequested: boolean;
+};
+
+// The guest's outreach state (op_status + opt-out) via its linked contact, plus
+// the contact_id that drives listInteractionsForContact. Returns null when the
+// guest has no contact (invalid/missing phone → not reachable, not billable).
+// Two owner-scoped reads on the cookie client (RLS-gated).
+export async function getGuestOutreachSummary(
+  eventId: string,
+  guestId: string,
+): Promise<GuestOutreachSummary | null> {
+  await requireOwnedEvent(eventId);
+  const supabase = await createClient();
+
+  const { data: guest, error: gErr } = await supabase
+    .from('guests')
+    .select('contact_id')
+    .eq('event_id', eventId)
+    .eq('id', guestId)
+    .maybeSingle();
+  if (gErr) throw new Error('טעינת המוזמן נכשלה');
+  const contactId = guest?.contact_id ?? null;
+  if (!contactId) return null;
+
+  const { data: contact, error: cErr } = await supabase
+    .from('contacts')
+    .select('op_status, removal_requested')
+    .eq('event_id', eventId)
+    .eq('id', contactId)
+    .maybeSingle();
+  if (cErr) throw new Error('טעינת איש הקשר נכשלה');
+  if (!contact) return null;
+
+  return {
+    contactId,
+    opStatus: contact.op_status,
+    removalRequested: contact.removal_requested,
+  };
 }

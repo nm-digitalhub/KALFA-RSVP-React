@@ -7,13 +7,28 @@ import {
 import {
   insertInteraction,
   markContactRemovalRequested,
+  recordRsvpFromWhatsapp,
   resolveByContextId,
+  resolveGuestByContact,
   resolveInboundContact,
   setContactOpStatus,
   setDeliveryStatus,
 } from '@/lib/data/interactions';
 import { recordReached } from '@/lib/data/billing';
+import { submitRsvp } from '@/lib/data/rsvp';
+import type { RsvpStatus } from '@/lib/validation/rsvp';
 import type { WebhookInboxRow } from '@/lib/data/webhooks';
+
+// Maps the OPAQUE action id of an RSVP quick-reply button (set by us on the
+// outbound template, echoed back as button.payload / interactive.*.id) to the
+// RSVP status it records. Only these three ids capture an RSVP; any other reply
+// id is a normal billable reach that records none. The single inbound side of
+// the button-id convention.
+const RSVP_BUTTON_MAP: Record<string, RsvpStatus> = {
+  rsvp_attending: 'attending',
+  rsvp_declined: 'declined',
+  rsvp_maybe: 'maybe',
+};
 
 // Out-of-band processor for ONE persisted webhook_inbox row (run by the worker,
 // not the HTTP request). The intake route only verifies + persists; ALL economic
@@ -66,7 +81,7 @@ async function processMessage(row: WebhookInboxRow): Promise<void> {
   if (!messageId) return;
 
   const payload = (row.payload ?? {}) as InboundMessagePayload;
-  const { billable, removal } = classifyMessagePayload(payload);
+  const { billable, removal, replyId } = classifyMessagePayload(payload);
   if (!billable) return;
 
   const contextId = row.context_message_id;
@@ -109,6 +124,33 @@ async function processMessage(row: WebhookInboxRow): Promise<void> {
   // (idempotent) so an opt-out is never lost.
   if (removal) {
     await markContactRemovalRequested(resolved.contactId);
+  }
+
+  // C9: a recognized RSVP quick-reply BUTTON records the RSVP through the same
+  // atomic submit_rsvp gate the public form uses — no RSVP rule is reimplemented
+  // here. Gated on `fresh` (NOT just the RPC's data-idempotency) so a Meta retry
+  // of the same inbound wamid cannot append duplicate audit rows. attending needs
+  // >= 1 attendee (submit_rsvp rejects 0), so it defaults to a single adult and
+  // the guest refines exact counts via the link; declined/maybe carry no counts
+  // (the RPC zeroes them). A non-RSVP reply id leaves rsvpStatus undefined → no
+  // submit. The token is resolved fresh from the guest; submit_rsvp gates a
+  // revoked/closed/expired one (outcome.ok === false → no source marker).
+  const rsvpStatus = replyId ? RSVP_BUTTON_MAP[replyId] : undefined;
+  if (fresh && rsvpStatus) {
+    const guest = await resolveGuestByContact(
+      resolved.contactId,
+      resolved.eventId,
+    );
+    if (guest) {
+      const outcome = await submitRsvp(guest.token, {
+        status: rsvpStatus,
+        adults: rsvpStatus === 'attending' ? 1 : 0,
+        kids: 0,
+      });
+      if (outcome.ok) {
+        await recordRsvpFromWhatsapp(resolved.eventId, guest.guestId, rsvpStatus);
+      }
+    }
   }
 }
 
