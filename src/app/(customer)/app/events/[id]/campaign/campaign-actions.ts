@@ -169,7 +169,14 @@ export async function activateCampaignAction(
     await activateCampaign(campaignId);
   } catch (err) {
     if (isNextSignal(err)) throw err;
-    return { error: 'הפעלת הקמפיין נכשלה — נדרשת תפיסת מסגרת מאושרת.' };
+    // Surface our own safe Hebrew message (e.g. "האירוע כבר חלף") instead of a
+    // fixed string, so the real reason reaches the user (mirrors setupCampaignAction).
+    return {
+      error:
+        err instanceof Error
+          ? err.message
+          : 'הפעלת הקמפיין נכשלה — נדרשת תפיסת מסגרת מאושרת.',
+    };
   }
   revalidatePath(`/app/events/${eventId}/campaign/${campaignId}`);
   return { notice: 'הקמפיין הופעל — הפניות יחלו לפי לוח הזמנים.' };

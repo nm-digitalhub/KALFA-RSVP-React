@@ -128,6 +128,10 @@ export async function listCampaignTemplates(): Promise<CampaignTemplate[]> {
 // separate settle step.
 export async function createCampaign(eventId: string): Promise<{ id: string }> {
   const event = await requireOwnedEvent(eventId);
+  // L1: block the entry point — never create OR continue a campaign for an event
+  // whose day has already passed (the downstream sign/activate/hold guards would
+  // block it anyway; this stops the flow before it starts).
+  assertEventNotPast(event.event_date);
 
   // Create-or-continue: never a second campaign for the same event.
   const existing = await getCampaignForEvent(eventId);

@@ -59,12 +59,24 @@ function nextStep(
 
 // The event's single "RSVP confirmations" campaign, embedded in the event page.
 // No campaign yet → an inline setup CTA. Exists → status + the context CTA.
+// Shown for a past event: RSVP confirmations can no longer be started or
+// advanced (the createCampaign / sign / activate / hold guards all reject it).
+function PastEventNotice() {
+  return (
+    <p className="rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-sm text-warning">
+      מועד האירוע כבר חלף — לא ניתן להפעיל או להמשיך אישורי הגעה לאירוע שעבר.
+    </p>
+  );
+}
+
 export function CampaignSection({
   eventId,
   campaign,
+  isPast = false,
 }: {
   eventId: string;
   campaign: OwnerCampaign | null;
+  isPast?: boolean;
 }) {
   if (!campaign) {
     return (
@@ -74,12 +86,17 @@ export function CampaignSection({
           הפעילו פנייה אוטומטית לאורחים לאיסוף אישורי הגעה. משלמים רק על רשומות
           מוצלחות — אורחים שמהם התקבלה תשובה.
         </p>
-        <CampaignSetupForm action={setupCampaignAction.bind(null, eventId)} />
+        {isPast ? (
+          <PastEventNotice />
+        ) : (
+          <CampaignSetupForm action={setupCampaignAction.bind(null, eventId)} />
+        )}
       </section>
     );
   }
 
   const step = nextStep(eventId, campaign);
+  const base = `/app/events/${eventId}/campaign/${campaign.id}`;
   return (
     <section className="space-y-3 rounded-lg border border-border bg-card p-6">
       <div className="flex items-center justify-between gap-4">
@@ -94,9 +111,20 @@ export function CampaignSection({
           {Number(campaign.max_charge_ceiling).toLocaleString('he-IL')}
         </p>
       ) : null}
-      <Link href={step.href} className={buttonVariants()}>
-        {step.label}
-      </Link>
+      {isPast ? (
+        <>
+          <PastEventNotice />
+          {/* View-only: the lifecycle actions are blocked, but the owner may
+              still open the campaign to inspect it. */}
+          <Link href={base} className={buttonVariants({ variant: 'outline' })}>
+            ניהול הקמפיין
+          </Link>
+        </>
+      ) : (
+        <Link href={step.href} className={buttonVariants()}>
+          {step.label}
+        </Link>
+      )}
     </section>
   );
 }

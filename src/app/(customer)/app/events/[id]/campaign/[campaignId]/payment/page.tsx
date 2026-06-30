@@ -3,6 +3,7 @@ import { notFound, redirect } from 'next/navigation';
 
 import { getCampaign } from '@/lib/data/campaigns';
 import { requireOwnedEvent } from '@/lib/data/events';
+import { isPastEventDay } from '@/lib/data/event-date';
 import {
   getPaymentsEnabled,
   getCampaignHoldsEnabled,
@@ -43,7 +44,8 @@ export default async function CampaignPaymentPage({
   const { error } = await searchParams;
   const campaign = await getCampaign(campaignId);
   if (campaign.event_id !== id) notFound();
-  await requireOwnedEvent(id);
+  const event = await requireOwnedEvent(id);
+  const isPast = isPastEventDay(event.event_date);
 
   // The agreement must be signed (campaign approved) before the payment step.
   if (campaign.status === 'pending_approval') {
@@ -66,6 +68,19 @@ export default async function CampaignPaymentPage({
       {backLink}
     </div>
   );
+
+  // L1: a past event can no longer take a card hold (the J5 route rejects it too).
+  // An already-placed hold (handled below) is left intact so it can be settled.
+  if (isPast && campaign.capture_status !== 'authorized') {
+    return (
+      <div className="mx-auto max-w-2xl space-y-4">
+        {header}
+        <p className="rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-sm text-warning">
+          מועד האירוע כבר חלף — לא ניתן לתפוס מסגרת אשראי עבור אירוע שעבר.
+        </p>
+      </div>
+    );
+  }
 
   // Already held → done, no form.
   if (campaign.capture_status === 'authorized') {

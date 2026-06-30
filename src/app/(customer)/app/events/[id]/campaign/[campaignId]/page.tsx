@@ -3,6 +3,7 @@ import { notFound } from 'next/navigation';
 import { ChevronRight } from 'lucide-react';
 
 import { requireOwnedEvent } from '@/lib/data/events';
+import { isPastEventDay } from '@/lib/data/event-date';
 import { getCampaign } from '@/lib/data/campaigns';
 import { getCampaignBillingSummary } from '@/lib/data/billing';
 import { getCampaignDeliveryBreakdown } from '@/lib/data/campaign-delivery';
@@ -22,7 +23,8 @@ export default async function CampaignManagePage({
   params: Promise<{ id: string; campaignId: string }>;
 }) {
   const { id: eventId, campaignId } = await params;
-  await requireOwnedEvent(eventId);
+  const event = await requireOwnedEvent(eventId);
+  const isPast = isPastEventDay(event.event_date);
 
   const campaign = await getCampaign(campaignId);
   if (campaign.event_id !== eventId) notFound();
@@ -78,6 +80,7 @@ export default async function CampaignManagePage({
           summary={summary}
           delivery={delivery}
           actions={{ activate, pause, close, settle }}
+          isPast={isPast}
         />
       </section>
     </div>

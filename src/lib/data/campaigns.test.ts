@@ -43,6 +43,7 @@ import {
   lockCampaignForHold,
   recordCampaignHold,
   markCampaignHoldFailed,
+  createCampaign,
   approveCampaign,
   activateCampaign,
   pauseCampaign,
@@ -306,6 +307,15 @@ describe('campaign lifecycle transitions', () => {
       'paused',
     ]);
     expect(builder.eq).toHaveBeenCalledWith('capture_status', 'authorized');
+  });
+
+  it('createCampaign rejects a past event at the entry point (L1)', async () => {
+    vi.mocked(requireOwnedEvent).mockResolvedValue(
+      ownedEvent('2020-01-01T00:00:00+00:00'),
+    );
+    // No admin/contacts wiring needed: the guard fires right after the
+    // ownership read, before create-or-continue.
+    await expect(createCampaign('e1')).rejects.toThrow('האירוע כבר חלף');
   });
 
   it('approveCampaign rejects a past event (L1)', async () => {

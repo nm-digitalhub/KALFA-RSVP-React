@@ -178,6 +178,7 @@ export function ManageClient({
   summary,
   delivery,
   actions,
+  isPast = false,
 }: {
   campaign: Campaign;
   summary: Summary;
@@ -188,6 +189,7 @@ export function ManageClient({
     close: BoundAction;
     settle: BoundAction;
   };
+  isPast?: boolean;
 }) {
   const s = campaign.status;
   const reached = summary?.reachedCount ?? 0;
@@ -195,7 +197,10 @@ export function ManageClient({
   const ceiling = Number(campaign.max_charge_ceiling ?? summary?.ceiling ?? 0);
   const balance = Math.max(0, ceiling - accrued);
 
-  const canActivate = ['approved', 'scheduled', 'paused'].includes(s);
+  // A past event can no longer BEGIN outreach (activate), but pause/close/settle
+  // remain so the owner can wind the campaign down and settle what was reached.
+  const activatableState = ['approved', 'scheduled', 'paused'].includes(s);
+  const canActivate = !isPast && activatableState;
   const canPause = s === 'active';
   const canClose = ['active', 'paused', 'approved', 'scheduled'].includes(s);
   const canSettle = s === 'closed' && campaign.capture_status === 'authorized';
@@ -241,6 +246,12 @@ export function ManageClient({
 
       {/* Lifecycle controls */}
       <div className="flex flex-wrap gap-3 border-t border-border pt-4">
+        {isPast && activatableState ? (
+          <p className="w-full rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-sm text-warning">
+            מועד האירוע חלף — לא ניתן להפעיל את הקמפיין. ניתן לסגור ולבצע גמר חשבון
+            על אנשי הקשר שכבר הושגו.
+          </p>
+        ) : null}
         {canActivate ? (
           <ActionButton action={actions.activate} label="הפעלת קמפיין" variant="primary" />
         ) : null}

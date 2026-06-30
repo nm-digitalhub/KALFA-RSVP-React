@@ -4,6 +4,7 @@ import { notFound } from 'next/navigation';
 import { getCampaign } from '@/lib/data/campaigns';
 import { getCompanyLegal } from '@/lib/data/company';
 import { requireOwnedEvent } from '@/lib/data/events';
+import { isPastEventDay } from '@/lib/data/event-date';
 import { getProfile } from '@/lib/data/profiles';
 import {
   renderAgreementBody,
@@ -45,6 +46,8 @@ export default async function ApproveCampaignPage({
       getActiveAgreementDoc(),
       getAgreementConfigTokens(),
     ]);
+
+  const isPast = isPastEventDay(event.event_date);
 
   const backLink = (
     <Link
@@ -134,7 +137,12 @@ export default async function ApproveCampaignPage({
         <AgreementSheet html={agreementHtml} />
       </section>
 
-      {profile?.phone ? (
+      {isPast ? (
+        <p className="rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-sm text-warning">
+          מועד האירוע כבר חלף — לא ניתן לחתום על ההסכם ולהפעיל אישורי הגעה לאירוע
+          שעבר.
+        </p>
+      ) : profile?.phone ? (
         <SignAgreementForm
           eventId={id}
           campaignId={campaignId}

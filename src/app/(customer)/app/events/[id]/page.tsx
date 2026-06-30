@@ -2,6 +2,7 @@ import Link from 'next/link';
 
 import { buttonVariants } from '@/components/ui/button';
 import { getEvent } from '@/lib/data/events';
+import { isPastEventDay } from '@/lib/data/event-date';
 import { getCampaignForEvent } from '@/lib/data/campaigns';
 import { EVENT_TYPES, EVENT_STATUSES } from '@/lib/validation/schemas';
 import { EditEventForm } from './edit-event-form';
@@ -37,6 +38,7 @@ export default async function EventPage({
   const { id } = await params;
   const event = await getEvent(id);
   const campaign = await getCampaignForEvent(id);
+  const isPast = isPastEventDay(event.event_date);
 
   const summary = [
     EVENT_TYPE_LABELS[event.event_type] ?? event.event_type,
@@ -62,9 +64,16 @@ export default async function EventPage({
             <p className="text-sm text-muted-foreground">{summary}</p>
           ) : null}
         </div>
-        <span className="rounded-full border border-border px-3 py-1 text-xs text-muted-foreground">
-          {EVENT_STATUS_LABELS[event.status] ?? event.status}
-        </span>
+        <div className="flex items-center gap-2">
+          {isPast ? (
+            <span className="rounded-full border border-warning/40 bg-warning/10 px-3 py-1 text-xs font-medium text-warning">
+              האירוע חלף
+            </span>
+          ) : null}
+          <span className="rounded-full border border-border px-3 py-1 text-xs text-muted-foreground">
+            {EVENT_STATUS_LABELS[event.status] ?? event.status}
+          </span>
+        </div>
       </div>
 
       <div className="flex flex-wrap gap-2">
@@ -76,7 +85,7 @@ export default async function EventPage({
         </Link>
       </div>
 
-      <CampaignSection eventId={event.id} campaign={campaign} />
+      <CampaignSection eventId={event.id} campaign={campaign} isPast={isPast} />
 
       <section className="space-y-4 rounded-lg border border-border bg-card p-6">
         <h2 className="text-lg font-semibold">עריכת פרטי האירוע</h2>
