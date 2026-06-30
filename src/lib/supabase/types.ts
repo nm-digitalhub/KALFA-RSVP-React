@@ -987,6 +987,7 @@ export type Database = {
           active: boolean
           body: string | null
           channel: Database["public"]["Enums"]["campaign_channel"]
+          components: Json | null
           created_at: string
           id: string
           label: string | null
@@ -999,6 +1000,7 @@ export type Database = {
           active?: boolean
           body?: string | null
           channel: Database["public"]["Enums"]["campaign_channel"]
+          components?: Json | null
           created_at?: string
           id?: string
           label?: string | null
@@ -1011,6 +1013,7 @@ export type Database = {
           active?: boolean
           body?: string | null
           channel?: Database["public"]["Enums"]["campaign_channel"]
+          components?: Json | null
           created_at?: string
           id?: string
           label?: string | null
