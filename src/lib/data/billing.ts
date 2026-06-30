@@ -22,7 +22,9 @@ export type ReachedArgs = {
 
 // Returns the RPC outcome: 'billed' | 'already_billed' | 'ceiling_reached' |
 // 'not_active' | 'closed_window' | 'before_window' | 'removal_requested' |
-// 'not_authorized' | 'no_campaign'. On 'billed' the contact is moved to
+// 'not_authorized' | 'no_campaign' | 'event_passed' | 'event_mismatch' (the last
+// two added by L2: the past-event guard — independent of close_at — and the
+// campaign/event integrity check). On 'billed' the contact is moved to
 // reached_billed. 'not_authorized' = contact is not in the frozen authorized SET
 // (the binding cap on reached; fail-closed — an empty set bills nobody).
 export async function recordReached(args: ReachedArgs): Promise<string> {
