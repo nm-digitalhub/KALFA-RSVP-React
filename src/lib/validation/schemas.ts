@@ -92,7 +92,27 @@ export const updateEventSchema = z.object({
     .or(z.literal('')),
   rsvp_deadline: z.string().trim().optional().or(z.literal('')),
   status: z.enum(EVENT_STATUSES, { error: 'נא לבחור סטטוס' }),
-});
+})
+  // A deadline without an event date is meaningless. Mirrors the DB invariant
+  // (events_rsvp_deadline_within_event: a deadline requires an event_date).
+  .refine((v) => !v.rsvp_deadline || Boolean(v.event_date), {
+    error: 'יש להזין תאריך אירוע כדי לקבוע מועד אחרון לאישור הגעה',
+    path: ['rsvp_deadline'],
+  })
+  // The last RSVP date cannot fall after the event itself. Both inputs are
+  // <input type="date"> → 'YYYY-MM-DD', so a lexical compare is chronological;
+  // slice(0,10) defends against a full ISO event_date. Mirrors the DB CHECK
+  // rsvp_deadline <= event_day (Asia/Jerusalem) so the UX message lands first.
+  .refine(
+    (v) =>
+      !v.rsvp_deadline ||
+      !v.event_date ||
+      v.rsvp_deadline <= v.event_date.slice(0, 10),
+    {
+      error: 'המועד האחרון לאישור הגעה חייב לחול עד יום האירוע',
+      path: ['rsvp_deadline'],
+    },
+  );
 
 export type UpdateEventInput = z.infer<typeof updateEventSchema>;
 

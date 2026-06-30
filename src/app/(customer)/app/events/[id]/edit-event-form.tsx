@@ -1,6 +1,6 @@
 'use client';
 
-import { useActionState } from 'react';
+import { useActionState, useState } from 'react';
 
 import { updateEventAction } from './actions';
 import { EVENT_TYPES, EVENT_STATUSES } from '@/lib/validation/schemas';
@@ -38,6 +38,14 @@ function dateInputValue(value: string | null): string {
 export function EditEventForm({ event }: { event: EventDetail }) {
   const action = updateEventAction.bind(null, event.id);
   const [state, formAction] = useActionState(action, null);
+
+  // Keep the two date fields coupled so the picker itself prevents the illogical
+  // case (deadline after the event). The server (Zod refine + DB CHECK
+  // events_rsvp_deadline_within_event) stays authoritative; this is UX only.
+  const [eventDate, setEventDate] = useState(dateInputValue(event.event_date));
+  const [rsvpDeadline, setRsvpDeadline] = useState(
+    dateInputValue(event.rsvp_deadline),
+  );
 
   return (
     <form action={formAction} className="space-y-4">
@@ -107,7 +115,9 @@ export function EditEventForm({ event }: { event: EventDetail }) {
           id="event_date"
           name="event_date"
           type="date"
-          defaultValue={dateInputValue(event.event_date)}
+          value={eventDate}
+          min={rsvpDeadline || undefined}
+          onChange={(e) => setEventDate(e.target.value)}
           className={inputClass}
         />
         <FieldError errors={state?.fieldErrors?.event_date} />
@@ -121,7 +131,9 @@ export function EditEventForm({ event }: { event: EventDetail }) {
           id="rsvp_deadline"
           name="rsvp_deadline"
           type="date"
-          defaultValue={dateInputValue(event.rsvp_deadline)}
+          value={rsvpDeadline}
+          max={eventDate || undefined}
+          onChange={(e) => setRsvpDeadline(e.target.value)}
           className={inputClass}
         />
         <FieldError errors={state?.fieldErrors?.rsvp_deadline} />

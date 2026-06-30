@@ -7,6 +7,7 @@ import {
   ORDER_STATUSES,
   payPendingOrderSchema,
   signupSchema,
+  updateEventSchema,
   updateProfileSchema,
   updateSettingsSchema,
 } from './schemas';
@@ -143,6 +144,74 @@ describe('createEventSchema', () => {
       venue_name: '',
     });
     expect(result.success).toBe(true);
+  });
+});
+
+describe('updateEventSchema — rsvp_deadline vs event_date', () => {
+  const base = {
+    name: 'חתונה של דנה ויוסי',
+    event_type: 'wedding' as const,
+    status: 'draft' as const,
+  };
+
+  it('accepts a deadline on/before the event date', () => {
+    const result = updateEventSchema.safeParse({
+      ...base,
+      event_date: '2026-08-15',
+      rsvp_deadline: '2026-08-01',
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('accepts a deadline equal to the event date (boundary)', () => {
+    const result = updateEventSchema.safeParse({
+      ...base,
+      event_date: '2026-08-15',
+      rsvp_deadline: '2026-08-15',
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('accepts an event date with no deadline', () => {
+    const result = updateEventSchema.safeParse({
+      ...base,
+      event_date: '2026-08-15',
+      rsvp_deadline: '',
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('accepts neither date set (both optional)', () => {
+    const result = updateEventSchema.safeParse({
+      ...base,
+      event_date: '',
+      rsvp_deadline: '',
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('rejects a deadline after the event date, with the error on rsvp_deadline', () => {
+    const result = updateEventSchema.safeParse({
+      ...base,
+      event_date: '2026-08-15',
+      rsvp_deadline: '2026-08-20',
+    });
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.flatten().fieldErrors.rsvp_deadline).toBeDefined();
+    }
+  });
+
+  it('rejects a deadline with no event date, with the error on rsvp_deadline', () => {
+    const result = updateEventSchema.safeParse({
+      ...base,
+      event_date: '',
+      rsvp_deadline: '2026-08-20',
+    });
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.flatten().fieldErrors.rsvp_deadline).toBeDefined();
+    }
   });
 });
 
