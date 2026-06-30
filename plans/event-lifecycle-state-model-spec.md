@@ -147,16 +147,20 @@ through its own day until end-of-day (Israel).**
   query `campaigns`; a CHECK may not). **App:** `closeEvent` guard. **UI:** **Close**
   disabled with "close or cancel the campaign first" until satisfied.
 
-### R8 — Campaign cancel transition (`pending_approval` / `approved` → `cancelled`)
+### R8 — Campaign cancel transition (`draft` / `pending_approval` / `approved` → `cancelled`)
 - **Rationale:** R7 requires winding a campaign down before the event can close. An
   owner with no UI path would be **stuck** behind a campaign — so a **minimal
-  "cancel campaign" button SHIPS in this phase**.
+  "cancel campaign" button SHIPS in this phase**. **`draft → cancelled` is included**
+  because R7's blocking set contains `campaign.status='draft'`: without a
+  `draft→cancelled` path a `draft` campaign would block event-close with **no
+  self-service exit**. (A `draft` campaign has no hold/charge by construction, so it
+  always satisfies the no-financial-commitment predicate below.)
 - **Self-service cancel is allowed ONLY for a campaign with NO financial commitment.**
   The exact predicate, **fully NULL-safe** (a new campaign's `capture_status` and
   `charge_status` are NULL, so a bare `<>` / `NOT IN` would evaluate to NULL =
   not-true and wrongly reject — use `IS DISTINCT FROM` per value / `IS NULL`):
   ```sql
-  status IN ('pending_approval', 'approved')
+  status IN ('draft', 'pending_approval', 'approved')
   AND capture_status IS DISTINCT FROM 'authorized'
   AND capture_status IS DISTINCT FROM 'pending'
   AND capture_status IS DISTINCT FROM 'hold_review'
@@ -211,7 +215,7 @@ through its own day until end-of-day (Israel).**
 | R5 lock date+deadline after draft | ✅ UPDATE | ✅ updateEvent | — | inputs disabled |
 | R6 one-way transitions + no-op | ✅ UPDATE | ✅ publish/close only | — | Publish/Close |
 | R7 no close under live campaign | ✅ UPDATE cross-table | ✅ closeEvent | — | Close disabled |
-| R8 cancel (pending/approved→cancelled, no $ commitment) | ✅ cancel_campaign RPC + BEFORE UPDATE trigger (null-safe predicate) | ✅ cancelCampaign→RPC | — | ✅ minimal Cancel button |
+| R8 cancel (draft/pending/approved→cancelled, no $ commitment) | ✅ cancel_campaign RPC + BEFORE UPDATE trigger (null-safe predicate) | ✅ cancelCampaign→RPC | — | ✅ minimal Cancel button |
 | R9 commercial needs active event | ✅ campaigns + RPC | ✅ all commercial paths | — | entry gated |
 
 ---
@@ -230,7 +234,12 @@ data stays coherent. Live snapshot (2026-06-30):
 
 S0 deliverable: a **read-only preflight query set** that lists every event/campaign
 violating R1–R9, plus a short runbook that **records an explicit human decision per
-exception** (esp. `ec7c68d1`). **S0 does NOT execute any fix** — the cancel/publish
+exception** (esp. `ec7c68d1`). The preflight enumerates **any** campaign in R7's
+blocking set (`draft`/`pending_approval`/`approved`/`scheduled`/`active`/`paused`)
+that would block an event-close; each such campaign with **no financial commitment**
+is cleared in S2.5 via R8 `…→cancelled` (**including `draft→cancelled`** — no live row
+currently has a `draft` campaign, but the path must exist so a `draft` campaign can
+never deadlock a close). **S0 does NOT execute any fix** — the cancel/publish
 mechanisms don't exist until S1/S2. The recorded decisions are carried out in
 **S2.5**, through the tested R8/publish paths (never ad-hoc SQL). S0 is reviewed and
 signed off **before** S1 is applied.
@@ -275,7 +284,10 @@ signed off **before** S1 is applied.
   tomorrow→ok, null→ok; date/deadline edit when active→reject, when draft→ok;
   active→draft→reject, closed→active→reject, draft→active without date→reject,
   no-op→ok; close with operational campaign→reject, with cancelled→ok;
-  campaign insert on draft event→reject; `pending_approval→cancelled`→ok.
+  campaign insert on draft event→reject; `pending_approval→cancelled`→ok;
+  **`draft→cancelled` (no hold/charge)→ok**, and a `draft` campaign blocking a
+  close→reject until cancelled then close→ok; cancel with `capture_status='authorized'`
+  →reject (RPC `not_cancellable` + trigger blocks the direct UPDATE).
 - **App/Zod:** vitest, TDD (mirror the existing events/campaigns suites).
 - **UI:** `next build` + reasoning; pure logic via `isPastEventDay`-style helpers.
 
@@ -310,8 +322,9 @@ lint/tsc/vitest/build green; isolated-PG trigger tests green; spec + plan commit
    the campaign if it's test/no-commitment data, or explicitly publish to `active`
    after verifying the real date/details. Never auto-publish or auto-cancel.
 3. **R8 — RESOLVED:** ship a minimal "cancel campaign" button this phase (data-layer
-   only would strand owners). Cancel covers `pending_approval→cancelled` **and**
-   `approved→cancelled`, only with **no financial commitment**, enforced by the
+   only would strand owners). Cancel covers `draft→cancelled`, `pending_approval→cancelled`
+   **and** `approved→cancelled` (`draft` added so R7's `draft` blocker can never
+   deadlock a close), only with **no financial commitment**, enforced by the
    **NULL-safe predicate** in R8 (`IS DISTINCT FROM` per value + `charge_status IS
    NULL` + no `billed_results`) and made **DB-authoritative** (a `cancel_campaign`
    SECURITY DEFINER RPC + a `→cancelled` BEFORE UPDATE trigger), not just App/UI.
