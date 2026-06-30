@@ -2,6 +2,7 @@ import { type NextRequest, NextResponse } from 'next/server';
 
 import { requireUser } from '@/lib/auth/dal';
 import { requireOwnedEvent } from '@/lib/data/events';
+import { isPastEventDay } from '@/lib/data/event-date';
 import {
   getCampaignForHold,
   lockCampaignForHold,
@@ -32,6 +33,7 @@ const ERROR = {
   ALREADY: 'already_held',
   DECLINED: 'hold_declined',
   REVIEW: 'hold_review',
+  EVENT_PAST: 'event_past',
 } as const;
 
 // CSRF: only our own origin may POST here. Fail-closed — no valid Origin/Referer
@@ -92,8 +94,9 @@ export async function POST(
   if (!campaign) {
     return r303(new URL('/app', origin));
   }
+  let event: Awaited<ReturnType<typeof requireOwnedEvent>>;
   try {
-    await requireOwnedEvent(campaign.event_id);
+    event = await requireOwnedEvent(campaign.event_id);
   } catch {
     return r303(new URL('/app', origin));
   }
@@ -105,6 +108,12 @@ export async function POST(
       }`,
       origin,
     );
+
+  // L1: no card hold for a past event (Israel calendar) — the campaign would
+  // never legitimately activate, so don't reserve a frame on the card.
+  if (isPastEventDay(event.event_date)) {
+    return r303(payUrl(ERROR.EVENT_PAST));
+  }
 
   if (!parsed.success) {
     return r303(payUrl(ERROR.TOKEN_MISSING));

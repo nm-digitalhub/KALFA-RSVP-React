@@ -5,6 +5,8 @@ vi.mock('server-only', () => ({}));
 vi.mock('@/lib/supabase/admin', () => ({ createAdminClient: vi.fn() }));
 // Lifecycle transitions verify ownership; stub it as a no-op.
 vi.mock('@/lib/data/events', () => ({ requireOwnedEvent: vi.fn() }));
+// approveCampaign reads the session user; stub it.
+vi.mock('@/lib/auth/dal', () => ({ requireUser: vi.fn() }));
 // contacts.ts is owned by another module; stub the two functions prepareCampaignHold
 // consumes so this suite runs independently of that module's wiring.
 vi.mock('@/lib/data/contacts', () => ({
@@ -14,6 +16,20 @@ vi.mock('@/lib/data/contacts', () => ({
 
 import { createMockSupabase, type QueryResult } from '@/test/supabase-mock';
 import { createAdminClient } from '@/lib/supabase/admin';
+import { requireOwnedEvent } from '@/lib/data/events';
+import { requireUser } from '@/lib/auth/dal';
+
+// A future-dated owned event so the L1 past-event guard never trips for the
+// generic lifecycle tests (only the dedicated past-event test supplies a past date).
+function ownedEvent(eventDate: string | null = '2999-01-01T00:00:00+00:00') {
+  return {
+    id: 'e1',
+    name: 'Test',
+    status: 'active' as const,
+    event_date: eventDate,
+    rsvp_deadline: null,
+  };
+}
 import {
   countUniqueContactsForEvent,
   snapshotAuthorizedSet,
@@ -27,6 +43,7 @@ import {
   lockCampaignForHold,
   recordCampaignHold,
   markCampaignHoldFailed,
+  approveCampaign,
   activateCampaign,
   pauseCampaign,
   closeCampaign,
@@ -278,6 +295,7 @@ describe('campaign lifecycle transitions', () => {
       data: { id: 'c1', event_id: 'e1' },
       error: null,
     });
+    vi.mocked(requireOwnedEvent).mockResolvedValue(ownedEvent());
 
     await activateCampaign('c1');
 
@@ -288,6 +306,34 @@ describe('campaign lifecycle transitions', () => {
       'paused',
     ]);
     expect(builder.eq).toHaveBeenCalledWith('capture_status', 'authorized');
+  });
+
+  it('approveCampaign rejects a past event (L1)', async () => {
+    adminWith({
+      data: { id: 'c1', event_id: 'e1', status: 'pending_approval' },
+      error: null,
+    });
+    vi.mocked(requireUser).mockResolvedValue(
+      { id: 'u1' } as unknown as Awaited<ReturnType<typeof requireUser>>,
+    );
+    vi.mocked(requireOwnedEvent).mockResolvedValue(
+      ownedEvent('2020-01-01T00:00:00+00:00'),
+    );
+
+    await expect(approveCampaign('c1', 'v1')).rejects.toThrow('האירוע כבר חלף');
+  });
+
+  it('activateCampaign rejects a past event (L1) — no status write', async () => {
+    const { builder } = adminWith({
+      data: { id: 'c1', event_id: 'e1' },
+      error: null,
+    });
+    vi.mocked(requireOwnedEvent).mockResolvedValue(
+      ownedEvent('2020-01-01T00:00:00+00:00'),
+    );
+
+    await expect(activateCampaign('c1')).rejects.toThrow('האירוע כבר חלף');
+    expect(builder.update).not.toHaveBeenCalled();
   });
 
   it('pauseCampaign: active → paused', async () => {

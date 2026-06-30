@@ -6,6 +6,7 @@ import { requireUser } from '@/lib/auth/dal';
 import { approveCampaign } from '@/lib/data/campaigns';
 import { getCompanyLegal } from '@/lib/data/company';
 import { requireOwnedEvent } from '@/lib/data/events';
+import { isPastEventDay } from '@/lib/data/event-date';
 import { getProfile } from '@/lib/data/profiles';
 import { verifyOtp } from '@/lib/data/otp';
 import { normalizePhone } from '@/lib/phone';
@@ -99,6 +100,16 @@ export async function recordSignedAgreement(
 
   // Ownership (also yields the event name) + identity (OTP).
   const event = await requireOwnedEvent(campaign.event_id);
+
+  // L1: reject a past event BEFORE burning the OTP / rendering the PDF / writing a
+  // signed_agreements row (the later approveCampaign would also reject it, but
+  // only after all that side-effecting work).
+  if (isPastEventDay(event.event_date)) {
+    return {
+      ok: false,
+      error: 'האירוע כבר חלף — לא ניתן לחתום על הסכם לאירוע שמועדו עבר',
+    };
+  }
 
   const otpOk = await verifyOtp(e164, OTP_PURPOSE, input.otpCode);
   if (!otpOk) {

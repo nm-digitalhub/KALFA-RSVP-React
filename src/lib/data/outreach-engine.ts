@@ -6,6 +6,7 @@ import { getTemplateByKey } from '@/lib/data/message-templates';
 import { sendOneWhatsApp } from '@/lib/data/outreach';
 import { recordReached, type ReachedArgs } from '@/lib/data/billing';
 import { setContactOpStatus } from '@/lib/data/interactions';
+import { isPastEventDay } from '@/lib/data/event-date';
 import type { Touchpoint } from '@/lib/outreach/schedule';
 import type { OutreachCallRequest } from '@/lib/queue/queues';
 
@@ -141,6 +142,9 @@ export async function stepGate(
   if (ctx.close_at && nowMs > new Date(ctx.close_at).getTime()) {
     return { reason: 'stopped' };
   }
+  // L1: stop on the LIVE event_date (not just the close_at snapshot, which can go
+  // stale if the date is edited) — never send/bill for an event whose day has passed.
+  if (isPastEventDay(ctx.eventDate, nowMs)) return { reason: 'stopped' };
   if (await isContactReached(eventId, contactId)) return { reason: 'reached' };
   return { reason: 'ok', ctx };
 }

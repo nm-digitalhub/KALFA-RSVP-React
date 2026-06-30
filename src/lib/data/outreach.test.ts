@@ -73,6 +73,32 @@ describe('sendCampaignWhatsApp', () => {
     expect(sendWhatsAppTemplate).not.toHaveBeenCalled();
   });
 
+  it('skips a past event — sent:0, no provider call, even with a valid template + contacts (L1)', async () => {
+    vi.mocked(getOutreachEnabled).mockResolvedValue(true);
+    vi.mocked(getWhatsAppConfig).mockResolvedValue(config);
+    vi.mocked(getTemplateByKey).mockResolvedValue({
+      name: 'rsvp_invite',
+      language: 'he',
+      channel: 'whatsapp',
+    });
+    vi.mocked(sendWhatsAppTemplate).mockResolvedValue({ providerId: 'wamid.x' });
+    vi.mocked(listSendableContacts).mockResolvedValue([
+      { id: 'k1', normalized_phone: '+972501111111' },
+    ]);
+    mockAdmin({
+      id: 'c1',
+      event_id: 'e1',
+      status: 'active',
+      allowed_channels: ['whatsapp'],
+      event_date: '2020-01-01T00:00:00+00:00', // 6 years past
+    });
+
+    const r = await sendCampaignWhatsApp('c1', 'rsvp_invite');
+
+    expect(r).toEqual({ sent: 0, skipped: 0 });
+    expect(sendWhatsAppTemplate).not.toHaveBeenCalled();
+  });
+
   it('sends the template to each eligible contact and logs an outbound interaction', async () => {
     vi.mocked(getOutreachEnabled).mockResolvedValue(true);
     vi.mocked(getWhatsAppConfig).mockResolvedValue(config);

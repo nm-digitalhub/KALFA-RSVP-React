@@ -20,6 +20,11 @@ export type OwnedEvent = Pick<
 >;
 const OWNED_EVENT_COLUMNS = 'id, name, status, event_date, rsvp_deadline';
 
+// L1 — the single shared "past event" rule lives in a dependency-free leaf
+// (./event-date) so the worker and client can import it without `server-only`.
+// Re-exported here as the documented home for the events domain.
+export { isPastEventDay, assertEventNotPast } from '@/lib/data/event-date';
+
 // Verify the current user owns `eventId`; notFound() (404) otherwise. Use this
 // as the ownership gate at the top of every event-scoped data function.
 export async function requireOwnedEvent(eventId: string): Promise<OwnedEvent> {

@@ -11,6 +11,7 @@ import {
   type ResolvedTemplate,
 } from '@/lib/data/message-templates';
 import { listSendableContacts } from '@/lib/data/contacts';
+import { isPastEventDay } from '@/lib/data/event-date';
 import { sendWhatsAppTemplate } from '@/lib/whatsapp/client';
 
 type AdminClient = ReturnType<typeof createAdminClient>;
@@ -86,6 +87,15 @@ export async function sendCampaignWhatsApp(
   if (!(campaign.allowed_channels ?? []).includes('whatsapp')) {
     return { sent: 0, skipped: 0 };
   }
+
+  // L1: never send for an event whose day has already passed (Israel calendar).
+  // event_date is read separately (the campaign projection above omits it).
+  const { data: ev } = await admin
+    .from('events')
+    .select('event_date')
+    .eq('id', campaign.event_id)
+    .maybeSingle();
+  if (isPastEventDay(ev?.event_date ?? null)) return { sent: 0, skipped: 0 };
 
   const template = await getTemplateByKey(messageKey);
   if (!template || template.channel !== 'whatsapp') return { sent: 0, skipped: 0 };

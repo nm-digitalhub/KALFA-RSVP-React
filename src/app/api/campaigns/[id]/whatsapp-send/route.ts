@@ -2,6 +2,7 @@ import { type NextRequest, NextResponse } from 'next/server';
 
 import { requireUser } from '@/lib/auth/dal';
 import { requireOwnedEvent } from '@/lib/data/events';
+import { isPastEventDay } from '@/lib/data/event-date';
 import { getCampaignForHold } from '@/lib/data/campaigns';
 import { getOutreachEnabled, getWhatsAppConfig } from '@/lib/data/outreach-config';
 import { sendCampaignWhatsApp } from '@/lib/data/outreach';
@@ -56,14 +57,21 @@ export async function POST(
 
   const campaign = await getCampaignForHold(campaignId);
   if (!campaign) return r303(new URL('/app', origin));
+  let event: Awaited<ReturnType<typeof requireOwnedEvent>>;
   try {
-    await requireOwnedEvent(campaign.event_id);
+    event = await requireOwnedEvent(campaign.event_id);
   } catch {
     return r303(new URL('/app', origin));
   }
 
   const eventUrl = (query: string) =>
     new URL(`/app/events/${campaign.event_id}?${query}`, origin);
+
+  // L1: don't dispatch a manual send for a past event (the orchestrator also
+  // returns sent:0, but surface a clear reason instead of a silent "0 sent").
+  if (isPastEventDay(event.event_date)) {
+    return r303(eventUrl('wa=event_past'));
+  }
 
   const formData = await request.formData();
   const parsed = whatsappSendSchema.safeParse({

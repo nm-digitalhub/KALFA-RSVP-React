@@ -6,7 +6,14 @@ import { createClient } from '@/lib/supabase/server';
 import { requireUser } from '@/lib/auth/dal';
 import { logActivity } from '@/lib/data/activity';
 import type { EventDetail, EventListItem } from '@/lib/data/events';
-import { createEvent, getEvent, listEvents, updateEvent } from '@/lib/data/events';
+import {
+  assertEventNotPast,
+  createEvent,
+  getEvent,
+  isPastEventDay,
+  listEvents,
+  updateEvent,
+} from '@/lib/data/events';
 import { ensurePersonalOrg } from '@/lib/data/orgs';
 
 // `events.ts` and `dal.ts` begin with `import 'server-only'`, which throws
@@ -299,5 +306,55 @@ describe('updateEvent', () => {
     await expect(updateEvent('event-x', input)).rejects.toThrow('NEXT_NOT_FOUND');
     expect(builder.update).not.toHaveBeenCalled();
     expect(logActivity).not.toHaveBeenCalled();
+  });
+});
+
+// L1 — the single shared "past event" definition (calendar day in Asia/Jerusalem,
+// matching the DB guard `(now() AT TIME ZONE 'Asia/Jerusalem')::date >
+// (event_date AT TIME ZONE 'Asia/Jerusalem')::date`). An event is past ONLY after
+// the end of its Israel calendar day; an event TODAY is still valid.
+describe('isPastEventDay', () => {
+  // 2026-06-23T08:00:00Z = 11:00 in Israel (UTC+3, summer) → today_IL = 2026-06-23.
+  const NOW = Date.parse('2026-06-23T08:00:00Z');
+
+  it('is false for an event later today (Israel)', () => {
+    expect(isPastEventDay('2026-06-23T00:00:00+00:00', NOW)).toBe(false);
+  });
+
+  it('is true for an event whose Israel day is before today', () => {
+    expect(isPastEventDay('2026-06-22T00:00:00+00:00', NOW)).toBe(true);
+  });
+
+  it('is false for a future event', () => {
+    expect(isPastEventDay('2026-07-01T00:00:00+00:00', NOW)).toBe(false);
+  });
+
+  it('is false for a null event_date (matches the DB NULL semantics)', () => {
+    expect(isPastEventDay(null, NOW)).toBe(false);
+  });
+
+  it('uses the Israel calendar boundary, not UTC: 22:00Z on the 22nd is the 23rd in Israel', () => {
+    // 2026-06-22T22:00:00Z = 2026-06-23 01:00 in Israel → event day = 23rd =
+    // today → NOT past. A naive UTC compare (event = 22nd < today 23rd) would
+    // wrongly report past.
+    expect(isPastEventDay('2026-06-22T22:00:00+00:00', NOW)).toBe(false);
+  });
+});
+
+describe('assertEventNotPast', () => {
+  const NOW = Date.parse('2026-06-23T08:00:00Z');
+
+  it('throws a Hebrew error for a past event', () => {
+    expect(() => assertEventNotPast('2026-06-22T00:00:00+00:00', NOW)).toThrow(
+      'האירוע כבר חלף',
+    );
+  });
+
+  it('does not throw for an event today', () => {
+    expect(() => assertEventNotPast('2026-06-23T00:00:00+00:00', NOW)).not.toThrow();
+  });
+
+  it('does not throw for a null event_date', () => {
+    expect(() => assertEventNotPast(null, NOW)).not.toThrow();
   });
 });

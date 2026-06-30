@@ -29,6 +29,7 @@ const ERROR_MESSAGES: Record<string, string> = {
   hold_declined: 'תפיסת המסגרת נדחתה. בדקו את פרטי הכרטיס ונסו שוב.',
   hold_review:
     'התקבלה תשובה לא חד-משמעית מחברת האשראי. בדקו מול חברת האשראי או נסו שוב.',
+  event_past: 'מועד האירוע כבר חלף — לא ניתן לתפוס מסגרת אשראי עבור אירוע שעבר.',
 };
 
 export default async function CampaignPaymentPage({

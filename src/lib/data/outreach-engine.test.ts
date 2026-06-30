@@ -38,6 +38,33 @@ describe('stepGate (fail-closed)', () => {
   });
 });
 
+describe('stepGate — L1 past-event stop (live event_date)', () => {
+  it('stops an active campaign once the event day is past in Israel', async () => {
+    vi.mocked(getOutreachEnabled).mockResolvedValue(true);
+    // One combined row serves both getCampaignContext reads (campaigns + events);
+    // the mock ignores the table name and returns the same result per await.
+    const ctxRow = {
+      status: 'active',
+      event_id: 'e1',
+      allowed_channels: ['whatsapp'],
+      start_at: null,
+      close_at: null, // close_at gate must NOT be what stops it — event_date does
+      outreach_schedule: [],
+      event_date: '2026-06-22T00:00:00+00:00', // 8 days before NOW
+    };
+    const { client } = createMockSupabase<typeof ctxRow>({
+      data: ctxRow,
+      error: null,
+    });
+    vi.mocked(createAdminClient).mockReturnValue(
+      client as unknown as ReturnType<typeof createAdminClient>,
+    );
+    const NOW = Date.parse('2026-06-30T08:00:00Z');
+    const r = await stepGate('c1', 'k1', 'e1', NOW);
+    expect(r.reason).toBe('stopped');
+  });
+});
+
 describe('claimStep (compare-and-advance)', () => {
   it('wins (true) when the guarded update advances the cursor', async () => {
     const { client, builder } = createMockSupabase<{ id: string }>({

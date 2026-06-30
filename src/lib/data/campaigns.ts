@@ -2,6 +2,7 @@ import 'server-only';
 
 import { requireUser } from '@/lib/auth/dal';
 import { requireOwnedEvent } from '@/lib/data/events';
+import { assertEventNotPast } from '@/lib/data/event-date';
 import {
   countUniqueContactsForEvent,
   snapshotAuthorizedSet,
@@ -254,7 +255,8 @@ export async function approveCampaign(
     return notFound();
   }
 
-  await requireOwnedEvent(campaign.event_id); // ownership
+  const event = await requireOwnedEvent(campaign.event_id); // ownership
+  assertEventNotPast(event.event_date); // L1: no approval for a past event
 
   if (campaign.status !== 'pending_approval') {
     throw new Error('ניתן לאשר רק קמפיין הממתין לאישור');
@@ -631,6 +633,9 @@ async function transitionCampaignStatus(
   from: CampaignStatus[],
   to: CampaignStatus,
   extraGuard?: { column: 'capture_status'; value: string },
+  // L1: only forward transitions that BEGIN outreach/billing (activate) reject a
+  // past event. pause/close must stay allowed for past events (cleanup paths).
+  opts?: { rejectPastEvent?: boolean },
 ): Promise<void> {
   const admin = createAdminClient();
   const { data: campaign, error } = await admin
@@ -643,7 +648,8 @@ async function transitionCampaignStatus(
     const { notFound } = await import('next/navigation');
     return notFound();
   }
-  await requireOwnedEvent(campaign.event_id);
+  const event = await requireOwnedEvent(campaign.event_id);
+  if (opts?.rejectPastEvent) assertEventNotPast(event.event_date);
 
   let query = admin
     .from('campaigns')
@@ -671,6 +677,7 @@ export async function activateCampaign(campaignId: string): Promise<void> {
     ['approved', 'scheduled', 'paused'],
     'active',
     { column: 'capture_status', value: 'authorized' },
+    { rejectPastEvent: true }, // L1: never begin outreach for a past event
   );
 }
 
