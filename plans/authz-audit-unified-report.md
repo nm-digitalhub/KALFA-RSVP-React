@@ -21,15 +21,31 @@
 > it is a recommended independent check (P0.3). A clean finding in an examined area
 > does **not** imply none exist in an unexamined one.
 
-> ## ✅ STATUS — P0 REMEDIATED (2026-06-30)
-> The two billing-RPC holes in §4 have been **fixed and verified — they are NOT a
-> current open exposure.** Migration `202606300038` revoked anon/authenticated/PUBLIC
-> `EXECUTE` on `try_record_billed_result` and `campaign_billing_summary` (live: anon
-> REST → **401**; `service_role` retained), and the official **Security Advisor
-> confirms** both no longer appear under lints `0028`/`0029`. The §4/§5 wording below
-> is preserved **as the audit found it** (present tense = the pre-fix state); see the
-> inline ✅ markers and §6 for current status. **Still open:** the lifecycle items
-> LC‑1…LC‑5 (§7), remediated by L0–L2.
+> ## ✅ STATUS (2026-06-30) — fixes recorded in production
+>
+> **P0 — RESOLVED.** Migration `202606300038` applied, recorded, and ACL-verified.
+> (The two billing-RPC holes in §4 are NOT a current open exposure: live anon REST →
+> 401; `service_role` retained; Security Advisor no longer lists them under 0028/0029.)
+>
+> **L0a — APPLIED.** Migration `20260630072729_events_date_guards_l0a` applied via
+> `supabase db push --linked`, recorded in `schema_migrations`, and live schema verified.
+> **DB-level enforcement applied and live-schema verified** (the UI error-handling path
+> is separate and not yet covered).
+>
+> *Resolved by L0a:*
+> - past `event_date` rejected on INSERT and on changed-`event_date` updates;
+> - `rsvp_deadline` cannot exceed the Israel-calendar event day;
+> - `rsvp_deadline` requires `event_date`;
+> - edits unrelated to `event_date` remain allowed for existing past events.
+>
+> *Still open:*
+> - LC‑3 date locking after a non-draft / non-cancelled campaign;
+> - campaign / hold / activation / manual-send / worker guards (L1);
+> - public RSVP event-date guard;
+> - `try_record_billed_result` referential integrity.
+>
+> The §4/§5 wording below is preserved **as the audit found it** (present tense = the
+> pre-fix state); see the inline ✅ markers and §6/§7 for current status.
 
 ## 0. The systemic frame (the key to the whole picture)
 
@@ -321,7 +337,8 @@ control of LC‑3**: see note.
 - **Execution-identity / data-integrity:** LC‑3 close_at desync (frozen snapshot vs live event_date); the worker's stale-snapshot gating.
 
 **Phased lifecycle remediation (minimal, evidence-based):**
-- **L0 — DB enforcement (closes the direct REST bypass):** **CHECK** for LC‑2 only (a static, same-row, immutable relation — the one case CHECK is valid for) + its companion CHECK; **TWO triggers** for LC‑1 (`BEFORE INSERT` + `BEFORE UPDATE OF event_date` — an INSERT trigger has no `OLD`; `now()` is non-immutable so a CHECK is wrong) and a **`BEFORE UPDATE` trigger** for LC‑3 (cross-table — CHECK may not reference other tables, per PG docs). All triggers `RAISE EXCEPTION`. (Forward migration, approval-gated.)
+- **L0a — ✅ APPLIED** (`20260630072729_events_date_guards_l0a`, via `supabase db push --linked`, recorded in `schema_migrations`, live-schema verified): the **CHECK** for LC‑2 (static, same-row, immutable) + **TWO triggers** for LC‑1 (`BEFORE INSERT` + `BEFORE UPDATE OF event_date` — an INSERT trigger has no `OLD`; `now()` is non-immutable so a CHECK is wrong). All `RAISE EXCEPTION`.
+- **L0b — DEFERRED** (after the product reschedule decision): the LC‑2 **companion CHECK** (`status='draft' OR event_date IS NOT NULL`) + a **`BEFORE UPDATE` trigger** for LC‑3 (cross-table — CHECK may not reference other tables, per PG docs). LC‑3 must wait for the app reschedule path / error handling — otherwise it raises on the current event-edit form.
 - **L1 — app shared guard:** one `assertEventNotPast(eventId)` (the shared **calendar-day-in-Israel** definition) called at activate / approve / sign / J5 hold / manual send; add the live-event_date stop in `stepGate`.
 - **L2 — RPC guards + billing integrity:** (i) event_date gate inside `submit_rsvp` + `get_rsvp_by_token` (calendar-day); (ii) lock `try_record_billed_result` to service_role + add its event_date guard; (iii) **integrity hardening of `try_record_billed_result`** — derive `event_id` from the **locked campaign row** (`campaign.event_id`) instead of the caller-supplied `p_event`; **reject `event_mismatch`** when `p_event ≠ campaign.event_id`; verify `p_contact` belongs to that campaign's event; insert the **campaign-derived** event_id. (Today it trusts `p_event` and inserts it verbatim — verified live; with `UNIQUE(event_id, contact_id)` a wrong `p_event` writes a charge under the wrong event.)
 - **L3 — DEFERRED design decision (no schema change in this remediation):** define whether `close_at` is an **independent commercial deadline** or a **derived event-schedule boundary**. The close_at↔event_date divergence was NOT a proven live defect (see LC‑3 control note), so `NOT NULL` / derive-live changes stay a documented design question, not a mandatory migration.
