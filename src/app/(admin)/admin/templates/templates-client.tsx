@@ -130,7 +130,7 @@ function TemplateForm({ template }: { template: Template }) {
           />
           פעיל (זמין לשליחה)
         </label>
-        <SubmitButton>שמירה</SubmitButton>
+        <SubmitButton className="w-auto min-w-28 shrink-0">שמירה</SubmitButton>
       </div>
     </form>
   );
