@@ -8,7 +8,7 @@ vi.mock('@/lib/data/interactions', () => ({
   markContactRemovalRequested: vi.fn(),
   setContactOpStatus: vi.fn(),
   setDeliveryStatus: vi.fn(),
-  resolveGuestByContact: vi.fn(),
+  getGuestsForContact: vi.fn(),
   recordRsvpFromWhatsapp: vi.fn(),
 }));
 vi.mock('@/lib/data/billing', () => ({ recordReached: vi.fn() }));
@@ -17,11 +17,11 @@ vi.mock('@/lib/data/rsvp', () => ({ submitRsvp: vi.fn() }));
 import { processWebhookEvent } from '@/lib/data/webhook-processing';
 import type { WebhookInboxRow } from '@/lib/data/webhooks';
 import {
+  getGuestsForContact,
   insertInteraction,
   markContactRemovalRequested,
   recordRsvpFromWhatsapp,
   resolveByContextId,
-  resolveGuestByContact,
   resolveInboundContact,
   setContactOpStatus,
   setDeliveryStatus,
@@ -81,10 +81,10 @@ beforeEach(() => {
   vi.mocked(markContactRemovalRequested).mockResolvedValue();
   vi.mocked(setContactOpStatus).mockResolvedValue();
   vi.mocked(setDeliveryStatus).mockResolvedValue({ contactId: 'k1' });
-  vi.mocked(resolveGuestByContact).mockResolvedValue({
-    guestId: 'g1',
-    token: 'tok-1',
-  });
+  // Default: exactly one guest behind the contact → the auto-record path runs.
+  vi.mocked(getGuestsForContact).mockResolvedValue([
+    { id: 'g1', full_name: 'אורח א', rsvp_token: 'tok-1' },
+  ]);
   vi.mocked(recordRsvpFromWhatsapp).mockResolvedValue();
   vi.mocked(submitRsvp).mockResolvedValue({
     ok: true,
@@ -119,7 +119,7 @@ describe('processWebhookEvent — message', () => {
     expect(markContactRemovalRequested).not.toHaveBeenCalled();
     // A plain typed reply carries no button id → it never records an RSVP.
     expect(submitRsvp).not.toHaveBeenCalled();
-    expect(resolveGuestByContact).not.toHaveBeenCalled();
+    expect(getGuestsForContact).not.toHaveBeenCalled();
   });
 
   it('a removal reply bills FIRST, then sets removal_requested', async () => {
@@ -242,7 +242,8 @@ describe('processWebhookEvent — message', () => {
 });
 
 // A template/interactive quick-reply tap. context resolves to {e1,c1,k1} by
-// default; resolveGuestByContact → {g1, tok-1}; submitRsvp → ok by default.
+// default; getGuestsForContact → [{ id: g1, rsvp_token: tok-1 }] (one guest);
+// submitRsvp → ok by default.
 function buttonRow(payload: Record<string, unknown>): WebhookInboxRow {
   return messageRow({ payload: payload as WebhookInboxRow['payload'] });
 }
@@ -255,9 +256,9 @@ describe('processWebhookEvent — RSVP from a quick-reply button (C9)', () => {
 
     // Still a billable reach (a button tap is a human reply).
     expect(recordReached).toHaveBeenCalledTimes(1);
-    // Guest resolved from the contact within the same event, then submitted via
-    // the shared atomic RPC. attending => 1 adult (the RPC rejects 0).
-    expect(resolveGuestByContact).toHaveBeenCalledWith('k1', 'e1');
+    // Exactly one guest behind the contact (within the same event) → submitted
+    // via the shared atomic RPC. attending => 1 adult (the RPC rejects 0).
+    expect(getGuestsForContact).toHaveBeenCalledWith('e1', 'k1');
     expect(submitRsvp).toHaveBeenCalledWith('tok-1', {
       status: 'attending',
       adults: 1,
@@ -304,19 +305,40 @@ describe('processWebhookEvent — RSVP from a quick-reply button (C9)', () => {
     );
 
     expect(recordReached).toHaveBeenCalledTimes(1);
-    expect(resolveGuestByContact).not.toHaveBeenCalled();
+    expect(getGuestsForContact).not.toHaveBeenCalled();
     expect(submitRsvp).not.toHaveBeenCalled();
     expect(recordRsvpFromWhatsapp).not.toHaveBeenCalled();
   });
 
-  it('does NOT record an RSVP when the contact has no resolvable guest', async () => {
-    vi.mocked(resolveGuestByContact).mockResolvedValue(null);
+  it('does NOT record an RSVP when no guest is behind the contact (still bills the reach)', async () => {
+    vi.mocked(getGuestsForContact).mockResolvedValue([]);
 
     await processWebhookEvent(
       buttonRow({ type: 'button', button: { payload: 'rsvp_attending' } }),
     );
 
-    expect(resolveGuestByContact).toHaveBeenCalledWith('k1', 'e1');
+    expect(recordReached).toHaveBeenCalledTimes(1);
+    expect(getGuestsForContact).toHaveBeenCalledWith('e1', 'k1');
+    expect(submitRsvp).not.toHaveBeenCalled();
+    expect(recordRsvpFromWhatsapp).not.toHaveBeenCalled();
+  });
+
+  it('does NOT record an RSVP when MULTIPLE guests share the contact — never guesses one', async () => {
+    // One phone (contact) can back several guests (guests.contact_id is not
+    // unique). A "מגיע" tap is then ambiguous about which guest is meant, so the
+    // RSVP is deliberately skipped — picking an arbitrary guest would corrupt the
+    // wrong person's response. The reach still bills (it is a human reply).
+    vi.mocked(getGuestsForContact).mockResolvedValue([
+      { id: 'g1', full_name: 'אורח א', rsvp_token: 'tok-1' },
+      { id: 'g2', full_name: 'אורח ב', rsvp_token: 'tok-2' },
+    ]);
+
+    await processWebhookEvent(
+      buttonRow({ type: 'button', button: { payload: 'rsvp_attending' } }),
+    );
+
+    expect(recordReached).toHaveBeenCalledTimes(1);
+    expect(getGuestsForContact).toHaveBeenCalledWith('e1', 'k1');
     expect(submitRsvp).not.toHaveBeenCalled();
     expect(recordRsvpFromWhatsapp).not.toHaveBeenCalled();
   });
@@ -331,7 +353,7 @@ describe('processWebhookEvent — RSVP from a quick-reply button (C9)', () => {
     );
 
     expect(recordReached).not.toHaveBeenCalled();
-    expect(resolveGuestByContact).not.toHaveBeenCalled();
+    expect(getGuestsForContact).not.toHaveBeenCalled();
     expect(submitRsvp).not.toHaveBeenCalled();
     expect(recordRsvpFromWhatsapp).not.toHaveBeenCalled();
   });

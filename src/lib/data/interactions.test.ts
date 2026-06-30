@@ -15,7 +15,6 @@ import {
   listInteractionsForContact,
   markContactRemovalRequested,
   recordRsvpFromWhatsapp,
-  resolveGuestByContact,
   resolveInboundContact,
   setContactOpStatus,
   type InteractionRow,
@@ -255,35 +254,6 @@ describe('getGuestOutreachSummary', () => {
     mockCookie({ data: null, error: { message: 'boom' } });
     await expect(getGuestOutreachSummary('e1', 'g1')).rejects.toThrow(
       'טעינת המוזמן נכשלה',
-    );
-  });
-});
-
-describe('resolveGuestByContact', () => {
-  it('returns the guest id + token scoped by BOTH contact_id and event_id', async () => {
-    const { builder } = mockAdmin({
-      data: { id: 'g1', rsvp_token: 'tok-1' },
-      error: null,
-    });
-
-    const r = await resolveGuestByContact('k1', 'e1');
-
-    expect(r).toEqual({ guestId: 'g1', token: 'tok-1' });
-    expect(builder.eq).toHaveBeenCalledWith('contact_id', 'k1');
-    expect(builder.eq).toHaveBeenCalledWith('event_id', 'e1');
-    // limit(1) keeps a stray duplicate (no uniqueness on guests.contact_id) from throwing.
-    expect(builder.limit).toHaveBeenCalledWith(1);
-  });
-
-  it('returns null when the contact maps to no guest in that event', async () => {
-    mockAdmin({ data: null, error: null });
-    await expect(resolveGuestByContact('k1', 'e1')).resolves.toBeNull();
-  });
-
-  it('throws a safe error when the lookup fails', async () => {
-    mockAdmin({ data: null, error: { message: 'boom' } });
-    await expect(resolveGuestByContact('k1', 'e1')).rejects.toThrow(
-      'טעינת האורח נכשלה',
     );
   });
 });

@@ -5,11 +5,11 @@ import {
   type InboundMessagePayload,
 } from '@/lib/whatsapp/inbound';
 import {
+  getGuestsForContact,
   insertInteraction,
   markContactRemovalRequested,
   recordRsvpFromWhatsapp,
   resolveByContextId,
-  resolveGuestByContact,
   resolveInboundContact,
   setContactOpStatus,
   setDeliveryStatus,
@@ -133,22 +133,31 @@ async function processMessage(row: WebhookInboxRow): Promise<void> {
   // >= 1 attendee (submit_rsvp rejects 0), so it defaults to a single adult and
   // the guest refines exact counts via the link; declined/maybe carry no counts
   // (the RPC zeroes them). A non-RSVP reply id leaves rsvpStatus undefined → no
-  // submit. The token is resolved fresh from the guest; submit_rsvp gates a
-  // revoked/closed/expired one (outcome.ok === false → no source marker).
+  // submit. The token is resolved fresh from the single matched guest;
+  // submit_rsvp gates a revoked/closed/expired one (outcome.ok === false → no
+  // source marker).
   const rsvpStatus = replyId ? RSVP_BUTTON_MAP[replyId] : undefined;
   if (fresh && rsvpStatus) {
-    const guest = await resolveGuestByContact(
-      resolved.contactId,
+    // ריבוי-אורחים: contact אחד (טלפון) יכול לגבות כמה guests — ל-guests.contact_id
+    // אין ייחודיות, ו-contacts ייחודי רק לפי (event_id, normalized_phone). לכן
+    // לחיצת "מגיע" מטלפון משותף דו-משמעית לגבי איזה אורח התכוון. רושמים RSVP רק
+    // כשיש בדיוק אורח אחד מאחורי ה-contact — לעולם לא מנחשים אורח שרירותי. אפס או
+    // יותר מאחד → מדלגים על רישום ה-RSVP (ה-billing/opt-out למעלה הם ברמת contact
+    // וממשיכים לרוץ). הפתרון העתידי לריבוי-אורחים הוא עמוד-RSVP ברמת ה-contact
+    // שנותן לבחור את האורח הנכון.
+    const guests = await getGuestsForContact(
       resolved.eventId,
+      resolved.contactId,
     );
-    if (guest) {
-      const outcome = await submitRsvp(guest.token, {
+    if (guests.length === 1) {
+      const guest = guests[0];
+      const outcome = await submitRsvp(guest.rsvp_token, {
         status: rsvpStatus,
         adults: rsvpStatus === 'attending' ? 1 : 0,
         kids: 0,
       });
       if (outcome.ok) {
-        await recordRsvpFromWhatsapp(resolved.eventId, guest.guestId, rsvpStatus);
+        await recordRsvpFromWhatsapp(resolved.eventId, guest.id, rsvpStatus);
       }
     }
   }

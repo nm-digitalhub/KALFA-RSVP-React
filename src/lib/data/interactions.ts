@@ -160,28 +160,35 @@ export async function markContactRemovalRequested(
   if (error) throw new Error('עדכון בקשת ההסרה נכשל');
 }
 
-// Resolve the guest behind a resolved contact, returning the id + public RSVP
-// bearer token needed to record an RSVP captured from a WhatsApp quick-reply
-// button. Scoped by BOTH contact_id and event_id (a contact is unique per event,
-// but guests.contact_id carries no uniqueness constraint, so `limit(1)` keeps a
-// stray duplicate from throwing). The token is returned as stored — submit_rsvp
-// is the single gate that rejects a revoked/closed/expired one, so revocation is
-// deliberately NOT re-checked here.
-export async function resolveGuestByContact(
-  contactId: string,
+// Return ALL guests linked to a contact within an event (id + name + RSVP
+// token), oldest-first. A contact (one phone, deduped per event via
+// contacts_event_phone_unique) can back MULTIPLE guests — guests.contact_id has
+// NO uniqueness — so callers MUST handle the multi-guest case explicitly rather
+// than assume one: the inbound RSVP path only auto-records when exactly one
+// guest is behind the contact (never guesses an arbitrary one). Service-role
+// (worker/admin context, no session). Never logs PII.
+// GuestForContact is derived from the generated table type — never
+// hand-maintained (the columns must track the real `guests` schema).
+type GuestRow = Database['public']['Tables']['guests']['Row'];
+export type GuestForContact = Pick<GuestRow, 'id' | 'full_name' | 'rsvp_token'>;
+
+export async function getGuestsForContact(
   eventId: string,
-): Promise<{ guestId: string; token: string } | null> {
+  contactId: string,
+): Promise<GuestForContact[]> {
   const admin = createAdminClient();
   const { data, error } = await admin
     .from('guests')
-    .select('id, rsvp_token')
-    .eq('contact_id', contactId)
+    .select('id, full_name, rsvp_token')
     .eq('event_id', eventId)
-    .limit(1)
-    .maybeSingle();
-  if (error) throw new Error('טעינת האורח נכשלה');
-  if (!data) return null;
-  return { guestId: data.id, token: data.rsvp_token };
+    .eq('contact_id', contactId)
+    .order('created_at', { ascending: true });
+  if (error) throw new Error('טעינת האורחים נכשלה');
+  return (data ?? []).map((g) => ({
+    id: g.id,
+    full_name: g.full_name,
+    rsvp_token: g.rsvp_token,
+  }));
 }
 
 // Best-effort, PII-free source marker: record that an RSVP was captured from a
