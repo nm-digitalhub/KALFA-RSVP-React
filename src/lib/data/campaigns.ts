@@ -132,6 +132,12 @@ export async function createCampaign(eventId: string): Promise<{ id: string }> {
   // whose day has already passed (the downstream sign/activate/hold guards would
   // block it anyway; this stops the flow before it starts).
   assertEventNotPast(event.event_date);
+  // R9: every commercial campaign action requires event.status='active'. App
+  // defense-in-depth — the DB trigger (campaigns_require_active_event) is the
+  // REST-proof authority.
+  if (event.status !== 'active') {
+    throw new Error('יש לפרסם את האירוע לפני אישורי הגעה');
+  }
 
   // Create-or-continue: never a second campaign for the same event.
   const existing = await getCampaignForEvent(eventId);
@@ -261,6 +267,10 @@ export async function approveCampaign(
 
   const event = await requireOwnedEvent(campaign.event_id); // ownership
   assertEventNotPast(event.event_date); // L1: no approval for a past event
+  // R9: every commercial campaign action requires event.status='active'.
+  if (event.status !== 'active') {
+    throw new Error('יש לפרסם את האירוע לפני אישורי הגעה');
+  }
 
   if (campaign.status !== 'pending_approval') {
     throw new Error('ניתן לאשר רק קמפיין הממתין לאישור');
@@ -637,9 +647,11 @@ async function transitionCampaignStatus(
   from: CampaignStatus[],
   to: CampaignStatus,
   extraGuard?: { column: 'capture_status'; value: string },
-  // L1: only forward transitions that BEGIN outreach/billing (activate) reject a
-  // past event. pause/close must stay allowed for past events (cleanup paths).
-  opts?: { rejectPastEvent?: boolean },
+  // L1/R9: only forward transitions that BEGIN outreach/billing (activate)
+  // reject a past event AND require an active event. pause/close must stay
+  // allowed for a past/non-active event (cleanup + wind-down paths, per R9's
+  // explicit carve-out — cancel/close/settle are not commercial-forward).
+  opts?: { rejectPastEvent?: boolean; requireActiveEvent?: boolean },
 ): Promise<void> {
   const admin = createAdminClient();
   const { data: campaign, error } = await admin
@@ -654,6 +666,9 @@ async function transitionCampaignStatus(
   }
   const event = await requireOwnedEvent(campaign.event_id);
   if (opts?.rejectPastEvent) assertEventNotPast(event.event_date);
+  if (opts?.requireActiveEvent && event.status !== 'active') {
+    throw new Error('יש לפרסם את האירוע לפני אישורי הגעה');
+  }
 
   let query = admin
     .from('campaigns')
@@ -681,7 +696,8 @@ export async function activateCampaign(campaignId: string): Promise<void> {
     ['approved', 'scheduled', 'paused'],
     'active',
     { column: 'capture_status', value: 'authorized' },
-    { rejectPastEvent: true }, // L1: never begin outreach for a past event
+    // L1: never begin outreach for a past event. R9: requires an active event.
+    { rejectPastEvent: true, requireActiveEvent: true },
   );
 }
 
@@ -697,4 +713,31 @@ export async function closeCampaign(campaignId: string): Promise<void> {
     ['active', 'paused', 'approved', 'scheduled'],
     'closed',
   );
+}
+
+// R8 — cancel a campaign with no financial commitment (draft/pending_approval/
+// approved → cancelled). Explicit ownership contract (round-3): the RPC itself
+// is service_role-only with NO caller-identity check, so authorization is
+// entirely this function's job, BEFORE the RPC is ever called. Mirrors the
+// EXISTING pattern already used by authorize/route.ts (J5 hold) and
+// whatsapp-send/route.ts: load via getCampaignForHold → requireOwnedEvent →
+// only then call the RPC. campaignId/event_id are NEVER trusted from the
+// browser to imply authorization — both are re-derived and re-checked here.
+export async function cancelCampaign(campaignId: string): Promise<void> {
+  const campaign = await getCampaignForHold(campaignId);
+  if (!campaign) {
+    const { notFound } = await import('next/navigation');
+    return notFound();
+  }
+  await requireOwnedEvent(campaign.event_id); // throws/404s if not owned
+
+  const admin = createAdminClient();
+  const { data, error } = await admin.rpc('cancel_campaign', {
+    p_campaign: campaignId,
+  });
+  if (error) throw new Error('ביטול הקמפיין נכשל');
+  if (data === 'no_campaign' || data === 'not_cancellable') {
+    throw new Error('לא ניתן לבטל קמפיין זה');
+  }
+  // 'cancelled' and 'already_cancelled' are both idempotent success.
 }

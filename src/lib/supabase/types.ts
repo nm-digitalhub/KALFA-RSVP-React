@@ -1788,6 +1788,7 @@ export type Database = {
         Args: { _action?: string; _event_id: string; _resource?: string }
         Returns: boolean
       }
+      cancel_campaign: { Args: { p_campaign: string }; Returns: string }
       claim_first_admin: { Args: never; Returns: boolean }
       claim_webhook_events: {
         Args: { _limit: number }

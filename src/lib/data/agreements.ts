@@ -110,6 +110,16 @@ export async function recordSignedAgreement(
       error: 'האירוע כבר חלף — לא ניתן לחתום על הסכם לאירוע שמועדו עבר',
     };
   }
+  // R9: every commercial campaign action requires event.status='active'. Same
+  // early-reject placement as the past-event guard above (approveCampaign at
+  // the end of this function would also reject it, but only after the OTP/PDF
+  // work already ran).
+  if (event.status !== 'active') {
+    return {
+      ok: false,
+      error: 'האירוע טרם פורסם — לא ניתן לחתום על הסכם לפני פרסום האירוע',
+    };
+  }
 
   const otpOk = await verifyOtp(e164, OTP_PURPOSE, input.otpCode);
   if (!otpOk) {

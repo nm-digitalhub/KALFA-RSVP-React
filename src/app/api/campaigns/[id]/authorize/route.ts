@@ -34,6 +34,7 @@ const ERROR = {
   DECLINED: 'hold_declined',
   REVIEW: 'hold_review',
   EVENT_PAST: 'event_past',
+  EVENT_NOT_ACTIVE: 'event_not_active',
 } as const;
 
 // CSRF: only our own origin may POST here. Fail-closed — no valid Origin/Referer
@@ -113,6 +114,12 @@ export async function POST(
   // never legitimately activate, so don't reserve a frame on the card.
   if (isPastEventDay(event.event_date)) {
     return r303(payUrl(ERROR.EVENT_PAST));
+  }
+  // R9: every commercial campaign action requires event.status='active'. App
+  // defense-in-depth — the DB trigger (campaigns_require_active_event) is the
+  // REST-proof authority for the campaign-status side of this same rule.
+  if (event.status !== 'active') {
+    return r303(payUrl(ERROR.EVENT_NOT_ACTIVE));
   }
 
   if (!parsed.success) {

@@ -73,6 +73,48 @@ describe('sendCampaignWhatsApp', () => {
     expect(sendWhatsAppTemplate).not.toHaveBeenCalled();
   });
 
+  // S2.4 — R9: defense-in-depth on top of the DB trigger (campaigns_require_
+  // active_event); campaign.status='active' structurally implies event.status
+  // was 'active' at SOME point (R9's DB trigger), but R7 also guarantees the
+  // event can't have moved to 'closed' while this campaign stayed 'active' — so
+  // this check is genuinely redundant under normal DB operation. It exists
+  // anyway, explicitly, per the plan's "ALL commercial paths" requirement.
+  it('skips when the event itself is not active, even with an active campaign', async () => {
+    vi.mocked(getOutreachEnabled).mockResolvedValue(true);
+    vi.mocked(getWhatsAppConfig).mockResolvedValue(config);
+    // Wire the SAME happy-path deps as "sends the template..." below, so this
+    // test fails for the right reason (the new event-status guard) and not
+    // because of an unrelated earlier guard (no template/contacts mocked).
+    vi.mocked(getTemplateByKey).mockResolvedValue({
+      name: 'rsvp_invite',
+      language: 'he',
+      channel: 'whatsapp',
+    });
+    vi.mocked(listSendableContacts).mockResolvedValue([
+      { id: 'k1', normalized_phone: '+972501111111' },
+    ]);
+    const { client, builder } = mockAdmin(null);
+    void client;
+    vi.spyOn(builder, 'then')
+      .mockImplementationOnce((f) =>
+        (f as (v: unknown) => unknown)({
+          data: { id: 'c1', event_id: 'e1', status: 'active', allowed_channels: ['whatsapp'] },
+          error: null,
+        }),
+      )
+      .mockImplementationOnce((f) =>
+        (f as (v: unknown) => unknown)({
+          data: { event_date: '2999-01-01T00:00:00+00:00', status: 'closed' },
+          error: null,
+        }),
+      );
+
+    const r = await sendCampaignWhatsApp('c1', 'rsvp_invite');
+
+    expect(r).toEqual({ sent: 0, skipped: 0 });
+    expect(sendWhatsAppTemplate).not.toHaveBeenCalled();
+  });
+
   it('skips a past event — sent:0, no provider call, even with a valid template + contacts (L1)', async () => {
     vi.mocked(getOutreachEnabled).mockResolvedValue(true);
     vi.mocked(getWhatsAppConfig).mockResolvedValue(config);

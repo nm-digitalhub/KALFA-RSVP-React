@@ -9,44 +9,61 @@ import type { FormState } from '@/lib/validation/result';
 // `eventId` is bound from the route segment (server-side), NOT submitted by the
 // browser. Authorization is enforced again inside updateEvent via the ownership
 // gate, so a tampered id can never edit another owner's event.
+//
+// '' (rendered-but-empty, a draft owner explicitly clearing the field) → null.
+// Only ever called for a key that IS present in FormData.
+function trimmedOrNull(value: FormDataEntryValue | null): string | null {
+  const trimmed = String(value ?? '').trim();
+  return trimmed === '' ? null : trimmed;
+}
+
 export async function updateEventAction(
   eventId: string,
   _prevState: FormState,
   formData: FormData,
 ): Promise<FormState> {
-  const parsed = updateEventSchema.safeParse({
+  // Key PRESENCE in FormData carries the meaning, not the (possibly empty)
+  // value — a disabled <input> (locked, non-draft) is never POSTed at all, so
+  // formData.has(...) is false and the key is omitted entirely from `raw`
+  // (NOT passed as `null` — Zod's `.optional()` only treats a missing key as
+  // absent, not a `null` value, and formData.get() of a truly-missing key
+  // returns `null`, which would otherwise fail validation outright). A
+  // rendered-but-empty draft input IS posted (value ''), so the key is present
+  // with an empty-string value. The SAME `formData.has(...)` checks drive both
+  // the parse input here and the updateEvent input below — one source of truth.
+  const raw = {
     name: formData.get('name'),
     event_type: formData.get('event_type'),
-    event_date: formData.get('event_date'),
     venue_name: formData.get('venue_name'),
     venue_address: formData.get('venue_address'),
-    rsvp_deadline: formData.get('rsvp_deadline'),
-    status: formData.get('status'),
-  });
+    ...(formData.has('event_date')
+      ? { event_date: formData.get('event_date') }
+      : {}),
+    ...(formData.has('rsvp_deadline')
+      ? { rsvp_deadline: formData.get('rsvp_deadline') }
+      : {}),
+  };
+
+  const parsed = updateEventSchema.safeParse(raw);
 
   if (!parsed.success) {
     return { fieldErrors: parsed.error.flatten().fieldErrors };
   }
 
-  const {
-    name,
-    event_type,
-    event_date,
-    venue_name,
-    venue_address,
-    rsvp_deadline,
-    status,
-  } = parsed.data;
+  const { name, event_type, venue_name, venue_address } = parsed.data;
 
   try {
     await updateEvent(eventId, {
       name,
       event_type,
-      event_date: event_date ? event_date : null,
       venue_name: venue_name ? venue_name : null,
       venue_address: venue_address ? venue_address : null,
-      rsvp_deadline: rsvp_deadline ? rsvp_deadline : null,
-      status,
+      ...(formData.has('event_date')
+        ? { event_date: trimmedOrNull(formData.get('event_date')) }
+        : {}),
+      ...(formData.has('rsvp_deadline')
+        ? { rsvp_deadline: trimmedOrNull(formData.get('rsvp_deadline')) }
+        : {}),
     });
   } catch (err) {
     // Re-throw Next.js control-flow signals (redirect / notFound from the

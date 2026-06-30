@@ -89,13 +89,18 @@ export async function sendCampaignWhatsApp(
   }
 
   // L1: never send for an event whose day has already passed (Israel calendar).
-  // event_date is read separately (the campaign projection above omits it).
+  // R9: every commercial campaign action requires event.status='active' — app
+  // defense-in-depth (campaign.status='active' here already structurally
+  // implies it via the DB trigger + R7, but this is explicit per the plan's
+  // "ALL commercial paths" requirement). event fields are read separately (the
+  // campaign projection above omits them).
   const { data: ev } = await admin
     .from('events')
-    .select('event_date')
+    .select('event_date, status')
     .eq('id', campaign.event_id)
     .maybeSingle();
   if (isPastEventDay(ev?.event_date ?? null)) return { sent: 0, skipped: 0 };
+  if (ev?.status !== 'active') return { sent: 0, skipped: 0 };
 
   const template = await getTemplateByKey(messageKey);
   if (!template || template.channel !== 'whatsapp') return { sent: 0, skipped: 0 };

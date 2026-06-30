@@ -19,13 +19,17 @@ import { createAdminClient } from '@/lib/supabase/admin';
 import { requireOwnedEvent } from '@/lib/data/events';
 import { requireUser } from '@/lib/auth/dal';
 
-// A future-dated owned event so the L1 past-event guard never trips for the
-// generic lifecycle tests (only the dedicated past-event test supplies a past date).
-function ownedEvent(eventDate: string | null = '2999-01-01T00:00:00+00:00') {
+// A future-dated, active owned event so the L1 past-event guard and the R9
+// active-event guard never trip for the generic lifecycle tests (only the
+// dedicated past-event/R9 tests supply a different date/status).
+function ownedEvent(
+  eventDate: string | null = '2999-01-01T00:00:00+00:00',
+  status: 'draft' | 'active' | 'closed' = 'active',
+) {
   return {
     id: 'e1',
     name: 'Test',
-    status: 'active' as const,
+    status,
     event_date: eventDate,
     rsvp_deadline: null,
   };
@@ -48,6 +52,7 @@ import {
   activateCampaign,
   pauseCampaign,
   closeCampaign,
+  cancelCampaign,
   getCampaignForCharge,
   lockCampaignForCharge,
   recordCampaignCharge,
@@ -382,6 +387,96 @@ describe('campaign lifecycle transitions', () => {
     await expect(closeCampaign('c1')).rejects.toThrow(
       'לא ניתן לשנות את מצב הקמפיין',
     );
+  });
+
+  // S2.4 — R9: every commercial (forward) campaign action requires
+  // event.status='active'. App-level defense-in-depth on top of the DB trigger
+  // (campaigns_require_active_event); cancel/pause/close are explicitly NOT R9
+  // paths (wind-down stays allowed regardless of event status).
+  it('createCampaign rejects when the event is not active (R9)', async () => {
+    vi.mocked(requireOwnedEvent).mockResolvedValue(ownedEvent(undefined, 'draft'));
+
+    await expect(createCampaign('e1')).rejects.toThrow(
+      'יש לפרסם את האירוע לפני אישורי הגעה',
+    );
+  });
+
+  it('approveCampaign rejects when the event is not active (R9)', async () => {
+    adminWith({
+      data: { id: 'c1', event_id: 'e1', status: 'pending_approval' },
+      error: null,
+    });
+    vi.mocked(requireUser).mockResolvedValue(
+      { id: 'u1' } as unknown as Awaited<ReturnType<typeof requireUser>>,
+    );
+    vi.mocked(requireOwnedEvent).mockResolvedValue(ownedEvent(undefined, 'draft'));
+
+    await expect(approveCampaign('c1', 'v1')).rejects.toThrow(
+      'יש לפרסם את האירוע לפני אישורי הגעה',
+    );
+  });
+
+  it('activateCampaign rejects when the event is not active (R9) — no status write', async () => {
+    const { builder } = adminWith({
+      data: { id: 'c1', event_id: 'e1' },
+      error: null,
+    });
+    vi.mocked(requireOwnedEvent).mockResolvedValue(ownedEvent(undefined, 'draft'));
+
+    await expect(activateCampaign('c1')).rejects.toThrow(
+      'יש לפרסם את האירוע לפני אישורי הגעה',
+    );
+    expect(builder.update).not.toHaveBeenCalled();
+  });
+});
+
+describe('cancelCampaign (R8 — explicit ownership contract, round-3)', () => {
+  it('does NOT call the RPC when the calling user does not own the campaign\'s event', async () => {
+    const { client } = adminWith<{ id: string; event_id: string }>({
+      data: { id: 'c1', event_id: 'e1' },
+      error: null,
+    });
+    const notOwned = Object.assign(new Error('NEXT_NOT_FOUND'), { digest: 'NEXT_NOT_FOUND' });
+    vi.mocked(requireOwnedEvent).mockRejectedValue(notOwned);
+
+    await expect(cancelCampaign('c1')).rejects.toThrow('NEXT_NOT_FOUND');
+    expect(client.rpc).not.toHaveBeenCalled();
+  });
+
+  it('calls cancel_campaign with the correct id once ownership is verified', async () => {
+    const { client } = adminWith<{ id: string; event_id: string }>({
+      data: { id: 'c1', event_id: 'e1' },
+      error: null,
+    });
+    vi.mocked(requireOwnedEvent).mockResolvedValue(ownedEvent());
+    client.rpc.mockResolvedValue({ data: 'cancelled', error: null });
+
+    await cancelCampaign('c1');
+
+    expect(requireOwnedEvent).toHaveBeenCalledWith('e1');
+    expect(client.rpc).toHaveBeenCalledWith('cancel_campaign', { p_campaign: 'c1' });
+  });
+
+  it('resolves (idempotent success) on already_cancelled', async () => {
+    const { client } = adminWith<{ id: string; event_id: string }>({
+      data: { id: 'c1', event_id: 'e1' },
+      error: null,
+    });
+    vi.mocked(requireOwnedEvent).mockResolvedValue(ownedEvent());
+    client.rpc.mockResolvedValue({ data: 'already_cancelled', error: null });
+
+    await expect(cancelCampaign('c1')).resolves.toBeUndefined();
+  });
+
+  it('throws a safe Hebrew message on not_cancellable', async () => {
+    const { client } = adminWith<{ id: string; event_id: string }>({
+      data: { id: 'c1', event_id: 'e1' },
+      error: null,
+    });
+    vi.mocked(requireOwnedEvent).mockResolvedValue(ownedEvent());
+    client.rpc.mockResolvedValue({ data: 'not_cancellable', error: null });
+
+    await expect(cancelCampaign('c1')).rejects.toThrow('לא ניתן לבטל קמפיין זה');
   });
 });
 

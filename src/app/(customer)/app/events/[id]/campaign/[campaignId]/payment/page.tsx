@@ -31,6 +31,7 @@ const ERROR_MESSAGES: Record<string, string> = {
   hold_review:
     'התקבלה תשובה לא חד-משמעית מחברת האשראי. בדקו מול חברת האשראי או נסו שוב.',
   event_past: 'מועד האירוע כבר חלף — לא ניתן לתפוס מסגרת אשראי עבור אירוע שעבר.',
+  event_not_active: 'האירוע אינו פעיל כעת — לא ניתן לתפוס מסגרת אשראי לפני פרסום האירוע.',
 };
 
 export default async function CampaignPaymentPage({

@@ -65,6 +65,47 @@ describe('stepGate — L1 past-event stop (live event_date)', () => {
   });
 });
 
+// S2.4 — R9: defense-in-depth on top of the DB trigger
+// (campaigns_require_active_event) + R7's structural guarantee. Genuinely
+// redundant under normal DB operation but required explicitly per the plan's
+// "ALL commercial paths" list.
+describe('stepGate — R9 active-event stop', () => {
+  it('stops an active campaign whose event is not active', async () => {
+    vi.mocked(getOutreachEnabled).mockResolvedValue(true);
+    const { client, builder } = createMockSupabase<Record<string, unknown>>({
+      data: null,
+      error: null,
+    });
+    vi.mocked(createAdminClient).mockReturnValue(
+      client as unknown as ReturnType<typeof createAdminClient>,
+    );
+    vi.spyOn(builder, 'then')
+      .mockImplementationOnce((f) =>
+        (f as (v: unknown) => unknown)({
+          data: {
+            status: 'active',
+            event_id: 'e1',
+            allowed_channels: ['whatsapp'],
+            start_at: null,
+            close_at: null,
+            outreach_schedule: [],
+          },
+          error: null,
+        }),
+      )
+      .mockImplementationOnce((f) =>
+        (f as (v: unknown) => unknown)({
+          data: { event_date: '2999-01-01T00:00:00+00:00', status: 'closed' },
+          error: null,
+        }),
+      );
+
+    const r = await stepGate('c1', 'k1', 'e1');
+
+    expect(r.reason).toBe('stopped');
+  });
+});
+
 describe('claimStep (compare-and-advance)', () => {
   it('wins (true) when the guarded update advances the cursor', async () => {
     const { client, builder } = createMockSupabase<{ id: string }>({

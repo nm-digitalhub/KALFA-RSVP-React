@@ -10,9 +10,10 @@ import {
   activateCampaign,
   pauseCampaign,
   closeCampaign,
+  cancelCampaign,
   getCampaignForHold,
 } from '@/lib/data/campaigns';
-import { requireOwnedEvent } from '@/lib/data/events';
+import { requireOwnedEvent, publishEvent, closeEvent } from '@/lib/data/events';
 import { closeCampaignAndCharge } from '@/lib/data/close-charge';
 import { recordSignedAgreement } from '@/lib/data/agreements';
 import { getProfile } from '@/lib/data/profiles';
@@ -260,4 +261,65 @@ export async function settleCampaignAction(
     default:
       return { error: 'לא ניתן לבצע גמר חשבון במצב הנוכחי.' };
   }
+}
+
+// --- Event lifecycle (R3/R6/R7) — Publish/Close, S2.5a -----------------------
+// Ownership + every R1–R9 rule is enforced inside publishEvent/closeEvent
+// (events.ts) and the DB triggers; these are thin wrappers surfacing the
+// data layer's own safe Hebrew error message.
+
+export async function publishEventAction(
+  eventId: string,
+  _prevState: FormState,
+  _formData: FormData,
+): Promise<FormState> {
+  try {
+    await publishEvent(eventId);
+  } catch (err) {
+    if (isNextSignal(err)) throw err;
+    return {
+      error: err instanceof Error ? err.message : 'פרסום האירוע נכשל. נסו שוב.',
+    };
+  }
+  revalidatePath(`/app/events/${eventId}`);
+  return { notice: 'האירוע פורסם' };
+}
+
+export async function closeEventAction(
+  eventId: string,
+  _prevState: FormState,
+  _formData: FormData,
+): Promise<FormState> {
+  try {
+    await closeEvent(eventId);
+  } catch (err) {
+    if (isNextSignal(err)) throw err;
+    return {
+      error: err instanceof Error ? err.message : 'סגירת האירוע נכשלה. נסו שוב.',
+    };
+  }
+  revalidatePath(`/app/events/${eventId}`);
+  return { notice: 'האירוע נסגר' };
+}
+
+// R8 — minimal Cancel-campaign action. Ownership is enforced inside
+// cancelCampaign (campaigns.ts) via getCampaignForHold → requireOwnedEvent,
+// BEFORE the RPC is ever called — campaignId is never trusted from the browser
+// to imply authorization.
+export async function cancelCampaignAction(
+  eventId: string,
+  campaignId: string,
+  _prevState: FormState,
+  _formData: FormData,
+): Promise<FormState> {
+  try {
+    await cancelCampaign(campaignId);
+  } catch (err) {
+    if (isNextSignal(err)) throw err;
+    return {
+      error: err instanceof Error ? err.message : 'ביטול הקמפיין נכשל. נסו שוב.',
+    };
+  }
+  revalidatePath(`/app/events/${eventId}/campaign/${campaignId}`);
+  return { notice: 'הקמפיין בוטל' };
 }

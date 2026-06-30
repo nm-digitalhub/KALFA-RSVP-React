@@ -6,6 +6,7 @@ import { createClient } from '@/lib/supabase/server';
 import { requireUser } from '@/lib/auth/dal';
 import { logActivity } from '@/lib/data/activity';
 import { ensurePersonalOrg } from '@/lib/data/orgs';
+import { isBeforeTomorrowIL, todayIL } from '@/lib/data/event-date';
 import type { Database } from '@/lib/supabase/types';
 
 type EventRow = Database['public']['Tables']['events']['Row'];
@@ -23,7 +24,7 @@ const OWNED_EVENT_COLUMNS = 'id, name, status, event_date, rsvp_deadline';
 // L1 — the single shared "past event" rule lives in a dependency-free leaf
 // (./event-date) so the worker and client can import it without `server-only`.
 // Re-exported here as the documented home for the events domain.
-export { isPastEventDay, assertEventNotPast } from '@/lib/data/event-date';
+export { isPastEventDay, assertEventNotPast, isBeforeTomorrowIL, todayIL } from '@/lib/data/event-date';
 
 // Verify the current user owns `eventId`; notFound() (404) otherwise. Use this
 // as the ownership gate at the top of every event-scoped data function.
@@ -152,9 +153,16 @@ export interface CreateEventInput {
   venue_name: string | null;
 }
 
-// Create an event owned by the current user.
+// Create an event owned by the current user. R1 (status forced to 'draft') is
+// structurally guaranteed: CreateEventInput has no status field, and the DB
+// trigger (events_before_insert) is the REST-proof authority regardless.
 export async function createEvent(input: CreateEventInput): Promise<EventListItem> {
   const user = await requireUser();
+  // R2 (defense-in-depth — the DB trigger + Zod refine are the other two
+  // layers): event_date is NULL (a date-less draft, legal) or >= tomorrow.
+  if (input.event_date && isBeforeTomorrowIL(input.event_date)) {
+    throw new Error('מועד האירוע חייב להיות החל ממחר');
+  }
   // Anchor the event to the user's active org (creating a personal org on first
   // use). owner_id is kept for backward compatibility and as the legacy owner.
   const orgId = await ensurePersonalOrg();
@@ -229,37 +237,71 @@ export async function getEvent(eventId: string): Promise<EventDetail> {
 
 // Fields an owner may edit. Deliberately omits id/owner_id/timestamps and the
 // billing/feature columns (package_id, with_ai_calls, template) — those are not
-// settable through this owner path.
+// settable through this owner path. `status` is NOT here at all — publishEvent
+// and closeEvent are the only legitimate writers of status (R6).
+//
+// event_date/rsvp_deadline are OPTIONAL keys, and KEY PRESENCE carries meaning,
+// not just the value (round-2 design): omitting the key entirely means "do not
+// touch this field" — the only legal shape when the event is not draft (a
+// disabled <input> is never POSTed by the browser, so the key never reaches
+// here for a locked event under normal UI use). Including the key (value:
+// string | null) means "set/clear it" — legal only while draft. NEVER collapse
+// "absent" and "null" into the same thing.
 export interface UpdateEventInput {
   name: string;
   event_type: EventType;
-  event_date: string | null;
   venue_name: string | null;
   venue_address: string | null;
-  rsvp_deadline: string | null;
-  status: EventStatus;
+  event_date?: string | null;
+  rsvp_deadline?: string | null;
 }
 
 // Update an event the current user owns. The ownership gate runs first (404 if
 // not owned); the update is additionally scoped by owner_id, and the patch is
 // built from an explicit allow-list so id/owner_id can never be changed here.
+//
+// R5 lock + R2/R2b mirror (defense-in-depth — the DB triggers are the REST-proof
+// authority): on a non-draft event, an explicit event_date/rsvp_deadline KEY is
+// a forged-request bypass of the disabled UI and is REJECTED outright (not
+// silently dropped) — only the absence of both keys is legal. On a draft event,
+// a present key is validated (R2 for event_date, R2b lower-bound mirror for
+// rsvp_deadline) and included in the patch.
 export async function updateEvent(
   eventId: string,
   input: UpdateEventInput,
 ): Promise<EventDetail> {
-  await requireOwnedEvent(eventId);
+  const cur = await requireOwnedEvent(eventId);
   const user = await requireUser();
   const supabase = await createClient();
+
+  const datesPresent = 'event_date' in input || 'rsvp_deadline' in input;
 
   const update: Database['public']['Tables']['events']['Update'] = {
     name: input.name,
     event_type: input.event_type,
-    event_date: input.event_date,
     venue_name: input.venue_name,
     venue_address: input.venue_address,
-    rsvp_deadline: input.rsvp_deadline,
-    status: input.status,
   };
+
+  if (cur.status !== 'draft') {
+    if (datesPresent) {
+      throw new Error('לא ניתן לשנות מועד לאחר פרסום האירוע');
+    }
+    // Neither key present — omit them from the patch entirely (never null).
+  } else {
+    if ('event_date' in input) {
+      if (input.event_date && isBeforeTomorrowIL(input.event_date)) {
+        throw new Error('מועד האירוע חייב להיות החל ממחר');
+      }
+      update.event_date = input.event_date;
+    }
+    if ('rsvp_deadline' in input) {
+      if (input.rsvp_deadline && input.rsvp_deadline < todayIL()) {
+        throw new Error('המועד האחרון לאישור הגעה לא יכול להיות בעבר');
+      }
+      update.rsvp_deadline = input.rsvp_deadline;
+    }
+  }
 
   const { data, error } = await supabase
     .from('events')
@@ -279,9 +321,60 @@ export async function updateEvent(
     meta: {
       fields: Object.keys(input),
       eventType: input.event_type,
-      status: input.status,
     },
   });
 
   return data;
+}
+
+// Publish a draft event (R3 — status-only; date fields must already be valid
+// and are not touched here). The app-level pre-checks here are defense-in-depth
+// UX (the DB trigger re-validates the same conditions authoritatively).
+export async function publishEvent(eventId: string): Promise<void> {
+  const cur = await requireOwnedEvent(eventId);
+  if (!cur.event_date || isBeforeTomorrowIL(cur.event_date)) {
+    throw new Error('יש להגדיר מועד עתידי לפני פרסום');
+  }
+  // R2b mirror: today_IL may have moved forward since the deadline was saved
+  // while draft, even though the date values themselves are unchanged here.
+  if (cur.rsvp_deadline && cur.rsvp_deadline < todayIL()) {
+    throw new Error('המועד האחרון לאישור הגעה כבר חלף — קבעו מועד חדש לפני הפרסום');
+  }
+  const user = await requireUser();
+  const supabase = await createClient();
+
+  const { error } = await supabase
+    .from('events')
+    .update({ status: 'active' })
+    .eq('id', eventId)
+    .eq('owner_id', user.id)
+    .eq('status', 'draft');
+
+  if (error) {
+    throw new Error('פרסום האירוע נכשל');
+  }
+
+  await logActivity({ eventId, action: 'event.published', meta: {} });
+}
+
+// Close an event (R6: draft→closed or active→closed). The DB trigger (R7)
+// rejects the close while a campaign is still operational; that raise is
+// mapped to a single safe Hebrew message — the only realistic failure mode
+// under normal ownership-scoped use.
+export async function closeEvent(eventId: string): Promise<void> {
+  await requireOwnedEvent(eventId);
+  const user = await requireUser();
+  const supabase = await createClient();
+
+  const { error } = await supabase
+    .from('events')
+    .update({ status: 'closed' })
+    .eq('id', eventId)
+    .eq('owner_id', user.id);
+
+  if (error) {
+    throw new Error('יש לסגור או לבטל את הקמפיין לפני סגירת האירוע');
+  }
+
+  await logActivity({ eventId, action: 'event.closed', meta: {} });
 }

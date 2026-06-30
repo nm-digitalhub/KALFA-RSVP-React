@@ -1,6 +1,9 @@
 import { z } from 'zod';
 
 import { ISRAELI_PHONE_RE, PROFILE_NAME_MAX } from '@/lib/constants';
+// Dependency-free leaf (no `server-only`) — safe to import from this
+// client-reachable validation module (edit-event-form.tsx is 'use client').
+import { isBeforeTomorrowIL, todayIL } from '@/lib/data/event-date';
 
 // Auth
 export const loginSchema = z.object({
@@ -46,21 +49,28 @@ export const EVENT_TYPES = [
   'other',
 ] as const;
 
-export const createEventSchema = z.object({
-  name: z
-    .string()
-    .trim()
-    .min(1, { error: 'נא להזין שם אירוע' })
-    .max(200, { error: 'שם האירוע ארוך מדי' }),
-  event_type: z.enum(EVENT_TYPES, { error: 'נא לבחור סוג אירוע' }),
-  event_date: z.string().trim().optional().or(z.literal('')),
-  venue_name: z
-    .string()
-    .trim()
-    .max(200, { error: 'שם המקום ארוך מדי' })
-    .optional()
-    .or(z.literal('')),
-});
+export const createEventSchema = z
+  .object({
+    name: z
+      .string()
+      .trim()
+      .min(1, { error: 'נא להזין שם אירוע' })
+      .max(200, { error: 'שם האירוע ארוך מדי' }),
+    event_type: z.enum(EVENT_TYPES, { error: 'נא לבחור סוג אירוע' }),
+    event_date: z.string().trim().optional().or(z.literal('')),
+    venue_name: z
+      .string()
+      .trim()
+      .max(200, { error: 'שם המקום ארוך מדי' })
+      .optional()
+      .or(z.literal('')),
+  })
+  // R2: event_date is NULL/'' (legal, a date-less draft) or >= tomorrow
+  // (Israel calendar day) — mirrors the DB trigger events_before_insert.
+  .refine((v) => !v.event_date || !isBeforeTomorrowIL(v.event_date), {
+    error: 'מועד האירוע חייב להיות החל ממחר',
+    path: ['event_date'],
+  });
 
 export type CreateEventInput = z.infer<typeof createEventSchema>;
 
@@ -91,7 +101,6 @@ export const updateEventSchema = z.object({
     .optional()
     .or(z.literal('')),
   rsvp_deadline: z.string().trim().optional().or(z.literal('')),
-  status: z.enum(EVENT_STATUSES, { error: 'נא לבחור סטטוס' }),
 })
   // A deadline without an event date is meaningless. Mirrors the DB invariant
   // (events_rsvp_deadline_within_event: a deadline requires an event_date).
@@ -99,20 +108,37 @@ export const updateEventSchema = z.object({
     error: 'יש להזין תאריך אירוע כדי לקבוע מועד אחרון לאישור הגעה',
     path: ['rsvp_deadline'],
   })
-  // The last RSVP date cannot fall after the event itself. Both inputs are
-  // <input type="date"> → 'YYYY-MM-DD', so a lexical compare is chronological;
-  // slice(0,10) defends against a full ISO event_date. Mirrors the DB CHECK
-  // rsvp_deadline <= event_day (Asia/Jerusalem) so the UX message lands first.
+  // The last RSVP date cannot fall after the event itself (boundary inclusive
+  // — same-day is legal). Both inputs are <input type="date"> → 'YYYY-MM-DD',
+  // so a lexical compare is chronological; slice(0,10) defends against a full
+  // ISO event_date. Mirrors the DB CHECK rsvp_deadline <= event_day
+  // (Asia/Jerusalem) so the UX message lands first.
   .refine(
     (v) =>
       !v.rsvp_deadline ||
       !v.event_date ||
       v.rsvp_deadline <= v.event_date.slice(0, 10),
     {
-      error: 'המועד האחרון לאישור הגעה חייב לחול עד יום האירוע',
+      error: 'המועד האחרון לאישור הגעה חייב לחול עד יום האירוע, כולל.',
       path: ['rsvp_deadline'],
     },
-  );
+  )
+  // R2: event_date is NULL/'' (legal while draft) or >= tomorrow (Israel).
+  // Locked once non-draft (R5) — enforced at the DB/data layer, not here (this
+  // schema has no `status` field to branch on; see events.ts's key-presence
+  // guard for the non-draft reject path).
+  .refine((v) => !v.event_date || !isBeforeTomorrowIL(v.event_date), {
+    error: 'מועד האירוע חייב להיות החל ממחר',
+    path: ['event_date'],
+  })
+  // R2b (NEW — found live on ec7c68d1, 2026-07-01): rsvp_deadline must not
+  // already be in the past. Lower bound is >= TODAY (Israel), NOT >= tomorrow
+  // — same-day is legal. The CHECK events_rsvp_deadline_within_event (the
+  // upper-bound refine above) is untouched; this is purely additive.
+  .refine((v) => !v.rsvp_deadline || v.rsvp_deadline >= todayIL(), {
+    error: 'המועד האחרון לאישור הגעה לא יכול להיות בעבר.',
+    path: ['rsvp_deadline'],
+  });
 
 export type UpdateEventInput = z.infer<typeof updateEventSchema>;
 

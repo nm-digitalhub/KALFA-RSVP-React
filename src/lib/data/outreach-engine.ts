@@ -26,6 +26,7 @@ export type CampaignContext = {
   close_at: string | null;
   schedule: Touchpoint[];
   eventDate: string;
+  eventStatus: string;
 };
 
 // Seed one outreach_state row per FROZEN-set contact at activation (idempotent).
@@ -96,7 +97,7 @@ export async function getCampaignContext(
   if (error || !c) return null;
   const { data: ev } = await admin
     .from('events')
-    .select('event_date')
+    .select('event_date, status')
     .eq('id', c.event_id)
     .maybeSingle();
   if (!ev?.event_date) return null;
@@ -108,6 +109,7 @@ export async function getCampaignContext(
     close_at: c.close_at,
     schedule: (c.outreach_schedule as Touchpoint[] | null) ?? [],
     eventDate: ev.event_date,
+    eventStatus: ev.status,
   };
 }
 
@@ -145,6 +147,11 @@ export async function stepGate(
   // L1: stop on the LIVE event_date (not just the close_at snapshot, which can go
   // stale if the date is edited) — never send/bill for an event whose day has passed.
   if (isPastEventDay(ctx.eventDate, nowMs)) return { reason: 'stopped' };
+  // R9: every commercial campaign action requires event.status='active' — app
+  // defense-in-depth (campaign.status='active' here already structurally
+  // implies it via the DB trigger + R7), explicit per the plan's "ALL
+  // commercial paths" requirement.
+  if (ctx.eventStatus !== 'active') return { reason: 'stopped' };
   if (await isContactReached(eventId, contactId)) return { reason: 'reached' };
   return { reason: 'ok', ctx };
 }

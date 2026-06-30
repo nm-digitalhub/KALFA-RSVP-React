@@ -41,3 +41,23 @@ export function assertEventNotPast(
     throw new Error('האירוע כבר חלף — לא ניתן לבצע פעולה זו עבור אירוע שמועדו עבר');
   }
 }
+
+// Lifecycle R2/R3 — today's Israel calendar day as 'YYYY-MM-DD'. Direct compare
+// basis for rsvp_deadline (a `date` column, no time component) against "today".
+export function todayIL(nowMs: number = Date.now()): string {
+  return israelCalendarDay(nowMs);
+}
+
+// Lifecycle R2/R3 — "event_date must be at least tomorrow (Israel)". Unlike
+// isPastEventDay (today is still valid — R4, an active event rides through its
+// own day), this boundary REJECTS today too: only event_day_IL > today_IL is
+// legal. Mirrors the DB trigger's `event_date <= today_il` reject condition.
+export function isBeforeTomorrowIL(
+  eventDate: string | null,
+  nowMs: number = Date.now(),
+): boolean {
+  if (!eventDate) return false;
+  const eventMs = Date.parse(eventDate);
+  if (Number.isNaN(eventMs)) return false;
+  return israelCalendarDay(eventMs) <= israelCalendarDay(nowMs);
+}

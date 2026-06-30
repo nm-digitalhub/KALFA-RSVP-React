@@ -8,12 +8,22 @@ import { logActivity } from '@/lib/data/activity';
 import type { EventDetail, EventListItem } from '@/lib/data/events';
 import {
   assertEventNotPast,
+  closeEvent,
   createEvent,
   getEvent,
+  isBeforeTomorrowIL,
   isPastEventDay,
   listEvents,
+  publishEvent,
+  todayIL,
   updateEvent,
 } from '@/lib/data/events';
+
+// S2.3 — relative-to-real-time date strings (Israel calendar day), reusing the
+// SAME production helper the data-layer guards call (todayIL).
+function ilDate(offsetDays: number): string {
+  return todayIL(Date.now() + offsetDays * 24 * 60 * 60 * 1000);
+}
 import { ensurePersonalOrg } from '@/lib/data/orgs';
 
 // `events.ts` and `dal.ts` begin with `import 'server-only'`, which throws
@@ -207,6 +217,66 @@ describe('createEvent', () => {
 
     await expect(createEvent(input)).rejects.toThrow('יצירת האירוע נכשלה');
   });
+
+  // S2.3 (round-3) — createEvent's own data-layer guard, mirroring R2 the same
+  // way updateEvent's draft path does (isBeforeTomorrowIL). Defense-in-depth on
+  // top of the DB trigger (events_before_insert) and the Zod refine (S2.2).
+  it('allows event_date: null (a date-less draft)', async () => {
+    const { client } = createMockSupabase<EventListItem>({
+      data: sampleRow({ event_date: null }),
+      error: null,
+    });
+    vi.mocked(createClient).mockResolvedValue(
+      client as unknown as Awaited<ReturnType<typeof createClient>>,
+    );
+
+    await expect(
+      createEvent({ ...input, event_date: null }),
+    ).resolves.toBeDefined();
+  });
+
+  it('rejects event_date: today, before touching the DB', async () => {
+    const { client, builder } = createMockSupabase<EventListItem>({
+      data: sampleRow(),
+      error: null,
+    });
+    vi.mocked(createClient).mockResolvedValue(
+      client as unknown as Awaited<ReturnType<typeof createClient>>,
+    );
+
+    await expect(
+      createEvent({ ...input, event_date: ilDate(0) }),
+    ).rejects.toThrow('מועד האירוע חייב להיות החל ממחר');
+    expect(builder.insert).not.toHaveBeenCalled();
+  });
+
+  it('rejects event_date: yesterday', async () => {
+    const { client } = createMockSupabase<EventListItem>({
+      data: sampleRow(),
+      error: null,
+    });
+    vi.mocked(createClient).mockResolvedValue(
+      client as unknown as Awaited<ReturnType<typeof createClient>>,
+    );
+
+    await expect(
+      createEvent({ ...input, event_date: ilDate(-1) }),
+    ).rejects.toThrow('מועד האירוע חייב להיות החל ממחר');
+  });
+
+  it('allows event_date: tomorrow (the earliest legal date)', async () => {
+    const { client } = createMockSupabase<EventListItem>({
+      data: sampleRow(),
+      error: null,
+    });
+    vi.mocked(createClient).mockResolvedValue(
+      client as unknown as Awaited<ReturnType<typeof createClient>>,
+    );
+
+    await expect(
+      createEvent({ ...input, event_date: ilDate(1) }),
+    ).resolves.toBeDefined();
+  });
 });
 
 describe('getEvent', () => {
@@ -255,18 +325,26 @@ describe('getEvent', () => {
 });
 
 describe('updateEvent', () => {
-  const input = {
+  // S2.3 (round-2 design): event_date/rsvp_deadline are OPTIONAL keys — key
+  // ABSENCE means "don't touch" (the only legal shape on a non-draft event);
+  // key PRESENCE (even null) means "set/clear it" (legal only while draft).
+  // `status` is no longer part of the input at all (publishEvent/closeEvent own
+  // status transitions exclusively).
+  const baseInput = {
     name: 'Renamed',
     event_type: 'birthday' as const,
-    event_date: '2026-12-01',
     venue_name: 'Hall',
     venue_address: 'Haifa',
-    rsvp_deadline: '2026-11-20',
-    status: 'active' as const,
   };
 
-  it('updates only the allow-listed fields, scoped to owner + id, and logs', async () => {
-    const row = detailRow({ name: input.name, status: 'active' });
+  function mockTwoReads<Row>(builder: ReturnType<typeof createMockSupabase<Row>>['builder'], first: unknown, second: unknown) {
+    vi.spyOn(builder, 'then')
+      .mockImplementationOnce((f) => (f as (v: unknown) => unknown)(first))
+      .mockImplementationOnce((f) => (f as (v: unknown) => unknown)(second));
+  }
+
+  it('never writes a status key (status is owned exclusively by publishEvent/closeEvent)', async () => {
+    const row = detailRow({ name: baseInput.name });
     const { client, builder } = createMockSupabase<EventDetail>({
       data: row,
       error: null,
@@ -274,22 +352,91 @@ describe('updateEvent', () => {
     vi.mocked(createClient).mockResolvedValue(
       client as unknown as Awaited<ReturnType<typeof createClient>>,
     );
+    mockTwoReads(builder, { data: detailRow({ status: 'draft' }), error: null }, { data: row, error: null });
 
-    const result = await updateEvent('event-1', input);
+    await updateEvent('event-1', baseInput);
 
-    // The patch carries exactly the editable fields — never id/owner_id.
-    expect(builder.update).toHaveBeenCalledWith(input);
     const patch = vi.mocked(builder.update).mock.calls[0][0] as Record<string, unknown>;
+    expect(patch).not.toHaveProperty('status');
+  });
+
+  it('on a non-draft event, with NEITHER date key present, omits both keys from the patch (not null)', async () => {
+    const row = detailRow({ name: baseInput.name, status: 'active' });
+    const { client, builder } = createMockSupabase<EventDetail>({
+      data: row,
+      error: null,
+    });
+    vi.mocked(createClient).mockResolvedValue(
+      client as unknown as Awaited<ReturnType<typeof createClient>>,
+    );
+    mockTwoReads(builder, { data: detailRow({ status: 'active' }), error: null }, { data: row, error: null });
+
+    await updateEvent('event-1', baseInput); // no event_date/rsvp_deadline key at all
+
+    const patch = vi.mocked(builder.update).mock.calls[0][0] as Record<string, unknown>;
+    expect('event_date' in patch).toBe(false);
+    expect('rsvp_deadline' in patch).toBe(false);
     expect(patch).not.toHaveProperty('id');
     expect(patch).not.toHaveProperty('owner_id');
-    // Update is scoped by the verified owner and the event id.
     expect(builder.eq).toHaveBeenCalledWith('owner_id', USER_ID);
     expect(builder.eq).toHaveBeenCalledWith('id', 'event-1');
     expect(builder.select).toHaveBeenCalledWith(DETAIL_COLUMNS);
     expect(logActivity).toHaveBeenCalledWith(
       expect.objectContaining({ eventId: 'event-1', action: 'event.updated' }),
     );
-    expect(result).toEqual(row);
+  });
+
+  it('on a non-draft event, an explicit date key present is a forged-request REJECT (no DB write)', async () => {
+    const { client, builder } = createMockSupabase<EventDetail>({
+      data: detailRow({ status: 'active' }),
+      error: null,
+    });
+    vi.mocked(createClient).mockResolvedValue(
+      client as unknown as Awaited<ReturnType<typeof createClient>>,
+    );
+    vi.spyOn(builder, 'then').mockImplementationOnce((f) =>
+      (f as (v: unknown) => unknown)({ data: detailRow({ status: 'active' }), error: null }),
+    );
+
+    await expect(
+      updateEvent('event-1', { ...baseInput, event_date: '2026-12-01' }),
+    ).rejects.toThrow('לא ניתן לשנות מועד לאחר פרסום האירוע');
+    expect(builder.update).not.toHaveBeenCalled();
+  });
+
+  it('on a draft event, a past/today event_date is rejected (R2 mirror)', async () => {
+    const { client, builder } = createMockSupabase<EventDetail>({
+      data: detailRow({ status: 'draft' }),
+      error: null,
+    });
+    vi.mocked(createClient).mockResolvedValue(
+      client as unknown as Awaited<ReturnType<typeof createClient>>,
+    );
+    vi.spyOn(builder, 'then').mockImplementationOnce((f) =>
+      (f as (v: unknown) => unknown)({ data: detailRow({ status: 'draft' }), error: null }),
+    );
+
+    await expect(
+      updateEvent('event-1', { ...baseInput, event_date: ilDate(0) }),
+    ).rejects.toThrow('מועד האירוע חייב להיות החל ממחר');
+    expect(builder.update).not.toHaveBeenCalled();
+  });
+
+  it('on a draft event, a present date key within bounds is included in the patch', async () => {
+    const row = detailRow({ name: baseInput.name, event_date: ilDate(5) });
+    const { client, builder } = createMockSupabase<EventDetail>({
+      data: row,
+      error: null,
+    });
+    vi.mocked(createClient).mockResolvedValue(
+      client as unknown as Awaited<ReturnType<typeof createClient>>,
+    );
+    mockTwoReads(builder, { data: detailRow({ status: 'draft' }), error: null }, { data: row, error: null });
+
+    await updateEvent('event-1', { ...baseInput, event_date: ilDate(5) });
+
+    const patch = vi.mocked(builder.update).mock.calls[0][0] as Record<string, unknown>;
+    expect(patch.event_date).toBe(ilDate(5));
   });
 
   it('refuses (via the ownership gate) and does not write when not owned', async () => {
@@ -303,9 +450,110 @@ describe('updateEvent', () => {
       client as unknown as Awaited<ReturnType<typeof createClient>>,
     );
 
-    await expect(updateEvent('event-x', input)).rejects.toThrow('NEXT_NOT_FOUND');
+    await expect(updateEvent('event-x', baseInput)).rejects.toThrow('NEXT_NOT_FOUND');
     expect(builder.update).not.toHaveBeenCalled();
     expect(logActivity).not.toHaveBeenCalled();
+  });
+});
+
+describe('publishEvent', () => {
+  it('updates status only (no date keys in the patch)', async () => {
+    const { client, builder } = createMockSupabase<EventDetail>({
+      data: null,
+      error: null,
+    });
+    vi.mocked(createClient).mockResolvedValue(
+      client as unknown as Awaited<ReturnType<typeof createClient>>,
+    );
+    vi.spyOn(builder, 'then')
+      .mockImplementationOnce((f) =>
+        (f as (v: unknown) => unknown)({
+          data: detailRow({ status: 'draft', event_date: ilDate(5) }),
+          error: null,
+        }),
+      )
+      .mockImplementationOnce((f) => (f as (v: unknown) => unknown)({ data: null, error: null }));
+
+    await publishEvent('event-1');
+
+    expect(builder.update).toHaveBeenCalledWith({ status: 'active' });
+    expect(builder.eq).toHaveBeenCalledWith('status', 'draft');
+  });
+
+  it('throws when event_date is null, before any update', async () => {
+    const { client, builder } = createMockSupabase<EventDetail>({
+      data: detailRow({ status: 'draft', event_date: null }),
+      error: null,
+    });
+    vi.mocked(createClient).mockResolvedValue(
+      client as unknown as Awaited<ReturnType<typeof createClient>>,
+    );
+
+    await expect(publishEvent('event-1')).rejects.toThrow(
+      'יש להגדיר מועד עתידי לפני פרסום',
+    );
+    expect(builder.update).not.toHaveBeenCalled();
+  });
+
+  it('throws when rsvp_deadline has elapsed (R2b re-check at publish time)', async () => {
+    const { client, builder } = createMockSupabase<EventDetail>({
+      data: detailRow({
+        status: 'draft',
+        event_date: ilDate(5),
+        rsvp_deadline: ilDate(-1),
+      }),
+      error: null,
+    });
+    vi.mocked(createClient).mockResolvedValue(
+      client as unknown as Awaited<ReturnType<typeof createClient>>,
+    );
+
+    await expect(publishEvent('event-1')).rejects.toThrow(
+      'המועד האחרון לאישור הגעה כבר חלף',
+    );
+    expect(builder.update).not.toHaveBeenCalled();
+  });
+});
+
+describe('closeEvent', () => {
+  it('updates status to closed', async () => {
+    const { client, builder } = createMockSupabase<EventDetail>({
+      data: null,
+      error: null,
+    });
+    vi.mocked(createClient).mockResolvedValue(
+      client as unknown as Awaited<ReturnType<typeof createClient>>,
+    );
+    vi.spyOn(builder, 'then')
+      .mockImplementationOnce((f) =>
+        (f as (v: unknown) => unknown)({ data: detailRow({ status: 'active' }), error: null }),
+      )
+      .mockImplementationOnce((f) => (f as (v: unknown) => unknown)({ data: null, error: null }));
+
+    await closeEvent('event-1');
+
+    expect(builder.update).toHaveBeenCalledWith({ status: 'closed' });
+  });
+
+  it('maps a DB raise (blocking campaign) to the Hebrew R7 message', async () => {
+    const { client, builder } = createMockSupabase<EventDetail>({
+      data: null,
+      error: null,
+    });
+    vi.mocked(createClient).mockResolvedValue(
+      client as unknown as Awaited<ReturnType<typeof createClient>>,
+    );
+    vi.spyOn(builder, 'then')
+      .mockImplementationOnce((f) =>
+        (f as (v: unknown) => unknown)({ data: detailRow({ status: 'active' }), error: null }),
+      )
+      .mockImplementationOnce((f) =>
+        (f as (v: unknown) => unknown)({ data: null, error: { message: 'operational campaign(s)' } }),
+      );
+
+    await expect(closeEvent('event-1')).rejects.toThrow(
+      'יש לסגור או לבטל את הקמפיין לפני סגירת האירוע',
+    );
   });
 });
 
@@ -356,5 +604,30 @@ describe('assertEventNotPast', () => {
 
   it('does not throw for a null event_date', () => {
     expect(() => assertEventNotPast(null, NOW)).not.toThrow();
+  });
+});
+
+// S2.1 — R2/R3's "event_date must be at least tomorrow" boundary. Reuses the
+// same Israel-calendar-day rule as isPastEventDay, but the boundary is
+// inclusive of TODAY (today is rejected, not just the past) — distinct from
+// isPastEventDay, where today is still valid (an active event rides through
+// its own day, R4).
+describe('isBeforeTomorrowIL', () => {
+  const NOW = Date.parse('2026-06-23T08:00:00Z'); // today_IL = 2026-06-23
+
+  it('is true for an event today (must be rejected by R2/R3)', () => {
+    expect(isBeforeTomorrowIL('2026-06-23T00:00:00+00:00', NOW)).toBe(true);
+  });
+
+  it('is true for an event in the past', () => {
+    expect(isBeforeTomorrowIL('2026-06-22T00:00:00+00:00', NOW)).toBe(true);
+  });
+
+  it('is false for an event tomorrow (the earliest legal date)', () => {
+    expect(isBeforeTomorrowIL('2026-06-24T00:00:00+00:00', NOW)).toBe(false);
+  });
+
+  it('is false for a null event_date (NULL never gates)', () => {
+    expect(isBeforeTomorrowIL(null, NOW)).toBe(false);
   });
 });

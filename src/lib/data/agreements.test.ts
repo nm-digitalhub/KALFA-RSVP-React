@@ -92,3 +92,23 @@ describe('recordSignedAgreement — L1 past-event guard', () => {
     expect(verifyOtp).not.toHaveBeenCalled();
   });
 });
+
+// S2.4 — R9: every commercial campaign action requires event.status='active'.
+describe('recordSignedAgreement — R9 active-event guard', () => {
+  it('rejects a draft event BEFORE OTP/PDF (no otp verification)', async () => {
+    wireCampaign();
+    vi.mocked(requireOwnedEvent).mockResolvedValue({
+      id: 'e1',
+      name: 'Draft Event',
+      status: 'draft',
+      event_date: '2999-01-01T00:00:00+00:00',
+      rsvp_deadline: null,
+    });
+
+    const result = await recordSignedAgreement(input);
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toContain('טרם פורסם');
+    expect(verifyOtp).not.toHaveBeenCalled();
+  });
+});
