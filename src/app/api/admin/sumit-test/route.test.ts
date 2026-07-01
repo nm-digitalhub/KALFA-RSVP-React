@@ -93,7 +93,51 @@ describe('POST /api/admin/sumit-test — route B (saved-token) mandatory fields'
         savedCardExpMonth: 7,
         savedCardExpYear: 2031,
         savedCardCitizenId: '316125434',
+        // Route B IS J4 by design (its form has no auto_capture field at all).
+        // Verified live 2026-07-02: omitting this defaulted to AutoCapture:false
+        // (a hold) while SUMIT still tried to create a real document, producing
+        // "mismatch between items sold and payments received" on every attempt.
+        autoCapture: true,
       }),
+    );
+  });
+
+  it('defaults AutoCapture to true for route B even though its form sends no auto_capture field at all', async () => {
+    vi.mocked(chargeRaw).mockResolvedValue({
+      httpStatus: 200,
+      ok: true,
+      sentBody: {},
+      raw: { Status: 0, Data: {} },
+    });
+
+    await POST(
+      request({
+        saved_token: 'saved-abc',
+        route_b_exp_month: '7',
+        route_b_exp_year: '2031',
+        route_b_citizen_id: '316125434',
+        amount: '3',
+        // auto_capture intentionally NOT sent — matches the real route-B form.
+      }),
+    );
+
+    expect(chargeRaw).toHaveBeenCalledWith(
+      expect.objectContaining({ autoCapture: true }),
+    );
+  });
+
+  it('still defaults AutoCapture to false for a new-card charge when the field is absent (unchanged J5-by-default behavior)', async () => {
+    vi.mocked(chargeRaw).mockResolvedValue({
+      httpStatus: 200,
+      ok: true,
+      sentBody: {},
+      raw: { Status: 0, Data: {} },
+    });
+
+    await POST(request({ 'og-token': 'og-123', amount: '1' }));
+
+    expect(chargeRaw).toHaveBeenCalledWith(
+      expect.objectContaining({ autoCapture: false }),
     );
   });
 
@@ -113,5 +157,65 @@ describe('POST /api/admin/sumit-test — route B (saved-token) mandatory fields'
     );
 
     expect(chargeRaw).toHaveBeenCalled();
+  });
+});
+
+describe('POST /api/admin/sumit-test — success/failure banner', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    process.env.APP_ORIGIN = APP_ORIGIN;
+    vi.mocked(requireAdmin).mockResolvedValue(undefined as never);
+    vi.mocked(getSumitServerConfig).mockResolvedValue({
+      companyId: 1,
+      apiKey: 'k',
+    });
+  });
+
+  // The page's outer NextResponse is always HTTP 200 (the diagnostic page
+  // itself rendered fine), and SUMIT's own httpStatus is ALSO 200 even for a
+  // declined/failed business outcome (verified live 2026-07-02 — SUMIT signals
+  // outcome via the JSON body's Status/ValidPayment, not the HTTP status). A
+  // reader could mistake "HTTP status: 200" for success; the banner makes the
+  // real outcome unambiguous, mirroring the same Status===0 && ValidPayment
+  // check authorize.ts/capture.ts already use.
+  it('shows a success banner when Status is 0 and ValidPayment is true', async () => {
+    vi.mocked(chargeRaw).mockResolvedValue({
+      httpStatus: 200,
+      ok: true,
+      sentBody: {},
+      raw: { Status: 0, Data: { Payment: { ValidPayment: true } } },
+    });
+
+    const res = await POST(request({ 'og-token': 'og-123', amount: '1' }));
+    const html = await res.text();
+    expect(html).toContain('אושרה');
+    expect(html).not.toContain('נדחתה');
+  });
+
+  it('shows a failure banner when ValidPayment is false (business decline, HTTP 200)', async () => {
+    vi.mocked(chargeRaw).mockResolvedValue({
+      httpStatus: 200,
+      ok: true,
+      sentBody: {},
+      raw: { Status: 0, Data: { Payment: { ValidPayment: false } } },
+    });
+
+    const res = await POST(request({ 'og-token': 'og-123', amount: '1' }));
+    const html = await res.text();
+    expect(html).toContain('נדחתה');
+    expect(html).not.toContain('>✅');
+  });
+
+  it('shows a failure banner when Status is a business error (Data null, HTTP 200)', async () => {
+    vi.mocked(chargeRaw).mockResolvedValue({
+      httpStatus: 200,
+      ok: true,
+      sentBody: {},
+      raw: { Status: 1, Data: null, UserErrorMessage: 'declined' },
+    });
+
+    const res = await POST(request({ 'og-token': 'og-123', amount: '1' }));
+    const html = await res.text();
+    expect(html).toContain('נדחתה');
   });
 });
