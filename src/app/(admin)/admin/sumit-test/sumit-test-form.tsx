@@ -369,6 +369,18 @@ export function SumitTestForm({
             className={inputClass}
           />
         </div>
+        <div>
+          <label htmlFor="route_b_email" className={labelClass}>
+            אימייל לקוח (לשליחת המסמך — SendDocumentByEmail:true)
+          </label>
+          <input
+            id="route_b_email"
+            name="email"
+            type="email"
+            dir="ltr"
+            className={inputClass}
+          />
+        </div>
         <button
           type="submit"
           className="w-full rounded-md bg-primary px-4 py-2 font-medium text-primary-foreground transition-opacity hover:opacity-90"

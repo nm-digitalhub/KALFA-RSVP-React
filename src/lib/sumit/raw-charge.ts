@@ -65,7 +65,7 @@ export async function chargeRaw(p: SumitRawChargeParams): Promise<SumitRawResult
       },
     ],
     AutoCapture: p.autoCapture,
-    SendDocumentByEmail: false,
+    SendDocumentByEmail: true,
     DraftDocument: false,
   };
   // Saved reusable token (route B) → PaymentMethod.CreditCard_Token; otherwise the

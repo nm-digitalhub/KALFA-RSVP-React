@@ -209,6 +209,28 @@ describe('chargeRaw', () => {
     expect(body.VATRate).toBe(18);
   });
 
+  it('sends SendDocumentByEmail:true (was hardcoded false — changed per explicit request 2026-07-02)', async () => {
+    const f = vi.fn(
+      async () =>
+        new Response(JSON.stringify({ Data: { DocumentID: 6 } }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+    );
+    vi.stubGlobal('fetch', f);
+    await chargeRaw({
+      companyId: 1,
+      apiKey: 'k',
+      ogToken: 'og-123',
+      amount: '1',
+      vatRate: '18',
+      autoCapture: false,
+      externalId: 'p',
+    });
+    const body = sentBodyOf(f);
+    expect(body.SendDocumentByEmail).toBe(true);
+  });
+
   it('returns raw text (not JSON) and ok=false on a non-JSON error response', async () => {
     const f = vi.fn(async () => new Response('plain error', { status: 500 }));
     vi.stubGlobal('fetch', f);
