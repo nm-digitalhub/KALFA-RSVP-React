@@ -3,11 +3,17 @@ import { type NextRequest, NextResponse } from 'next/server';
 import { requireAdmin } from '@/lib/auth/dal';
 import { getSumitServerConfig } from '@/lib/data/payments';
 import { chargeRaw } from '@/lib/sumit/raw-charge';
+import {
+  summarizeSumitRequest,
+  summarizeSumitResponse,
+} from '@/lib/sumit/safe-preview';
 
 // Admin-only SUMIT POC: tokenize a card (payments.js, client) → POST a charge
 // with admin-chosen params (J4/J5, AuthorizeAmount, CardTokenNotNeeded) → render
-// the FULL raw response so we can verify live behavior before building the
-// production J5 / saved-token flow. Never log the raw response (AuthNumber/token).
+// a REDACTED safe preview of the request/response (allow-list projection via
+// safe-preview.ts) so we can verify live behavior before building the production
+// J5 / saved-token flow. The raw gateway body (token/CitizenID/AuthNumber) never
+// reaches the browser DOM and is never logged.
 
 function isNextRedirect(err: unknown): boolean {
   return (
@@ -63,8 +69,8 @@ function resultPage(opts: {
 <h1 style="font-size:20px">תוצאת בדיקת SUMIT</h1>
 ${opts.error ? `<p style="color:#b00020;font-weight:600">${esc(opts.error)}</p>` : ''}
 ${opts.httpStatus != null ? `<p>HTTP status: <strong>${opts.httpStatus}</strong></p>` : ''}
-${opts.sent != null ? block('הבקשה שנשלחה (ללא מפתח)', opts.sent) : ''}
-${opts.response != null ? block('התגובה הגולמית מ-SUMIT', opts.response) : ''}
+${opts.sent != null ? block('הבקשה שנשלחה (תצוגה בטוחה — טוקנים מוסתרים)', opts.sent) : ''}
+${opts.response != null ? block('תגובת SUMIT (תצוגה בטוחה — טוקן/ת״ז/AuthNumber מוסתרים)', opts.response) : ''}
 <p style="margin-top:24px"><a href="/admin/sumit-test" style="color:#4338ca">← חזרה לטופס</a></p>
 </body></html>`;
   return new NextResponse(html, {
@@ -128,11 +134,14 @@ export async function POST(request: NextRequest) {
       customerEmail: email || undefined,
       externalId: `poc-${Date.now()}`,
     });
+    // Allow-list projection: the raw gateway request/response never reach the
+    // browser DOM — only explicitly-approved fields, with token/CitizenID/
+    // AuthNumber reduced to booleans (see safe-preview.ts).
     return resultPage({
       title: 'ok',
       httpStatus: result.httpStatus,
-      sent: result.sentBody,
-      response: result.raw,
+      sent: summarizeSumitRequest(result.sentBody),
+      response: summarizeSumitResponse(result.raw),
     });
   } catch {
     return resultPage({ title: 'error', error: 'הקריאה ל-SUMIT נכשלה (שגיאת תקשורת).' });
