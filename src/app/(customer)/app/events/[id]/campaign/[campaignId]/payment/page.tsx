@@ -34,6 +34,13 @@ const ERROR_MESSAGES: Record<string, string> = {
   event_not_active: 'האירוע אינו פעיל כעת — לא ניתן לתפוס מסגרת אשראי לפני פרסום האירוע.',
 };
 
+// R9/whitelist: the live card form may render ONLY for a campaign in this exact
+// state. Any other status (cancelled/closed/draft/scheduled/…) — the server
+// (authorize/route.ts) would reject it anyway via BAD_STATE, but showing the
+// full card form first and only failing on submit is a bad UX; short-circuit
+// here instead of falling through.
+const HOLDABLE_CAMPAIGN_STATUSES = new Set(['approved']);
+
 export default async function CampaignPaymentPage({
   params,
   searchParams,
@@ -83,6 +90,20 @@ export default async function CampaignPaymentPage({
     );
   }
 
+  // R9: the event itself must be active — the DB trigger + the authorize route
+  // both enforce this, but the UI should say so up front rather than let the
+  // owner fill in card details that will only fail on submit.
+  if (event.status !== 'active' && campaign.capture_status !== 'authorized') {
+    return (
+      <div className="mx-auto max-w-2xl space-y-4">
+        {header}
+        <p className="rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-sm text-warning">
+          {ERROR_MESSAGES.event_not_active}
+        </p>
+      </div>
+    );
+  }
+
   // Already held → done, no form.
   if (campaign.capture_status === 'authorized') {
     return (
@@ -91,6 +112,21 @@ export default async function CampaignPaymentPage({
         <p className="rounded-md bg-green-50 px-3 py-2 text-sm text-green-700">
           ✓ נתפסה מסגרת אשראי עד {ils(campaign.max_charge_ceiling)}. החיוב בפועל
           ייעשה בסגירת הקמפיין, לפי מספר אנשי הקשר שהושגו.
+        </p>
+      </div>
+    );
+  }
+
+  // Whitelist: only an 'approved' campaign may see the live card form. Any
+  // other status the redirect/authorized checks above didn't already handle
+  // (cancelled, closed, draft, scheduled, …) gets a safe generic message
+  // instead of a form that would only fail server-side on submit.
+  if (!HOLDABLE_CAMPAIGN_STATUSES.has(campaign.status)) {
+    return (
+      <div className="mx-auto max-w-2xl space-y-4">
+        {header}
+        <p className="rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-sm text-warning">
+          {ERROR_MESSAGES.bad_state}
         </p>
       </div>
     );

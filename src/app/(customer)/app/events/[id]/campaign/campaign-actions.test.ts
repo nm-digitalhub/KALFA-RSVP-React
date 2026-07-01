@@ -52,7 +52,7 @@ describe('publishEventAction', () => {
     const result = await publishEventAction('e1', null, new FormData());
 
     expect(publishEvent).toHaveBeenCalledWith('e1');
-    expect(result.notice).toBeDefined();
+    expect(result?.notice).toBeDefined();
   });
 
   it('surfaces the data layer\'s Hebrew error message', async () => {
@@ -62,7 +62,7 @@ describe('publishEventAction', () => {
 
     const result = await publishEventAction('e1', null, new FormData());
 
-    expect(result.error).toBe('יש להגדיר מועד עתידי לפני פרסום');
+    expect(result?.error).toBe('יש להגדיר מועד עתידי לפני פרסום');
   });
 
   it('re-throws a Next.js control-flow signal instead of swallowing it', async () => {
@@ -81,7 +81,7 @@ describe('closeEventAction', () => {
     const result = await closeEventAction('e1', null, new FormData());
 
     expect(closeEvent).toHaveBeenCalledWith('e1');
-    expect(result.notice).toBeDefined();
+    expect(result?.notice).toBeDefined();
   });
 
   it('surfaces the R7 blocking-campaign message', async () => {
@@ -91,7 +91,7 @@ describe('closeEventAction', () => {
 
     const result = await closeEventAction('e1', null, new FormData());
 
-    expect(result.error).toBe('יש לסגור או לבטל את הקמפיין לפני סגירת האירוע');
+    expect(result?.error).toBe('יש לסגור או לבטל את הקמפיין לפני סגירת האירוע');
   });
 });
 
@@ -102,7 +102,7 @@ describe('cancelCampaignAction', () => {
     const result = await cancelCampaignAction('e1', 'c1', null, new FormData());
 
     expect(cancelCampaign).toHaveBeenCalledWith('c1');
-    expect(result.notice).toBeDefined();
+    expect(result?.notice).toBeDefined();
   });
 
   it('re-throws a Next.js control-flow signal (the ownership gate) instead of swallowing it', async () => {
@@ -118,6 +118,6 @@ describe('cancelCampaignAction', () => {
 
     const result = await cancelCampaignAction('e1', 'c1', null, new FormData());
 
-    expect(result.error).toBe('לא ניתן לבטל קמפיין זה');
+    expect(result?.error).toBe('לא ניתן לבטל קמפיין זה');
   });
 });

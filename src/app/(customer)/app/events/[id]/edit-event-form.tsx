@@ -3,12 +3,13 @@
 import { useActionState, useState } from 'react';
 
 import { updateEventAction } from './actions';
-import { EVENT_TYPES, EVENT_STATUSES } from '@/lib/validation/schemas';
+import { EVENT_TYPES } from '@/lib/validation/schemas';
 import type { EventDetail } from '@/lib/data/events';
+import { todayIL } from '@/lib/data/event-date';
 import { FieldError, FormError, FormNotice, SubmitButton } from '@/components/forms';
 
 const inputClass =
-  'w-full rounded-md border border-border bg-transparent px-3 py-2';
+  'w-full rounded-md border border-border bg-transparent px-3 py-2 disabled:cursor-not-allowed disabled:opacity-60';
 
 const EVENT_TYPE_LABELS: Record<(typeof EVENT_TYPES)[number], string> = {
   wedding: 'חתונה',
@@ -22,12 +23,6 @@ const EVENT_TYPE_LABELS: Record<(typeof EVENT_TYPES)[number], string> = {
   other: 'אחר',
 };
 
-const EVENT_STATUS_LABELS: Record<(typeof EVENT_STATUSES)[number], string> = {
-  draft: 'טיוטה',
-  active: 'פעיל',
-  closed: 'סגור',
-};
-
 // event_date is a timestamptz in the DB, so the value arrives as a full ISO
 // string; a <input type="date"> needs YYYY-MM-DD. Slice the date portion for
 // both date fields (rsvp_deadline is already a date, so the slice is a no-op).
@@ -39,13 +34,28 @@ export function EditEventForm({ event }: { event: EventDetail }) {
   const action = updateEventAction.bind(null, event.id);
   const [state, formAction] = useActionState(action, null);
 
+  // R5: date fields are editable only while draft. Status itself is no longer
+  // editable here at all (R6) — Publish/Close (EventStatusActions) are the only
+  // legitimate transitions; a free dropdown would let the owner "choose" a
+  // status the server silently ignores (updateEvent no longer accepts it).
+  const isDraft = event.status === 'draft';
+
   // Keep the two date fields coupled so the picker itself prevents the illogical
-  // case (deadline after the event). The server (Zod refine + DB CHECK
-  // events_rsvp_deadline_within_event) stays authoritative; this is UX only.
+  // case (deadline after the event). The server (Zod refine + DB triggers) stays
+  // authoritative; this is UX only.
   const [eventDate, setEventDate] = useState(dateInputValue(event.event_date));
   const [rsvpDeadline, setRsvpDeadline] = useState(
     dateInputValue(event.rsvp_deadline),
   );
+
+  // R2: event_date >= tomorrow. R2b: rsvp_deadline >= today. Both combined with
+  // the existing mutual coupling (deadline <= event date). Computed once via a
+  // lazy useState initializer (Date.now() is impure — calling it directly
+  // during render is disallowed; the lazy initializer runs once at mount).
+  const [tomorrowIL] = useState(() => todayIL(Date.now() + 24 * 60 * 60 * 1000));
+  const [todayILValue] = useState(() => todayIL());
+  const eventDateMin =
+    rsvpDeadline && rsvpDeadline > tomorrowIL ? rsvpDeadline : tomorrowIL;
 
   return (
     <form action={formAction} className="space-y-4">
@@ -88,38 +98,22 @@ export function EditEventForm({ event }: { event: EventDetail }) {
       </div>
 
       <div>
-        <label htmlFor="status" className="mb-1 block text-sm font-medium">
-          סטטוס
-        </label>
-        <select
-          id="status"
-          name="status"
-          required
-          defaultValue={event.status}
-          className={inputClass}
-        >
-          {EVENT_STATUSES.map((status) => (
-            <option key={status} value={status}>
-              {EVENT_STATUS_LABELS[status]}
-            </option>
-          ))}
-        </select>
-        <FieldError errors={state?.fieldErrors?.status} />
-      </div>
-
-      <div>
         <label htmlFor="event_date" className="mb-1 block text-sm font-medium">
           תאריך האירוע
         </label>
         <input
           id="event_date"
-          name="event_date"
+          name={isDraft ? 'event_date' : undefined}
           type="date"
           value={eventDate}
-          min={rsvpDeadline || undefined}
+          min={isDraft ? eventDateMin : undefined}
+          disabled={!isDraft}
           onChange={(e) => setEventDate(e.target.value)}
           className={inputClass}
         />
+        {!isDraft ? (
+          <p className="mt-1 text-xs text-muted-foreground">נעול לאחר פרסום</p>
+        ) : null}
         <FieldError errors={state?.fieldErrors?.event_date} />
       </div>
 
@@ -129,13 +123,18 @@ export function EditEventForm({ event }: { event: EventDetail }) {
         </label>
         <input
           id="rsvp_deadline"
-          name="rsvp_deadline"
+          name={isDraft ? 'rsvp_deadline' : undefined}
           type="date"
           value={rsvpDeadline}
-          max={eventDate || undefined}
+          min={isDraft ? todayILValue : undefined}
+          max={isDraft ? eventDate || undefined : undefined}
+          disabled={!isDraft}
           onChange={(e) => setRsvpDeadline(e.target.value)}
           className={inputClass}
         />
+        {!isDraft ? (
+          <p className="mt-1 text-xs text-muted-foreground">נעול לאחר פרסום</p>
+        ) : null}
         <FieldError errors={state?.fieldErrors?.rsvp_deadline} />
       </div>
 

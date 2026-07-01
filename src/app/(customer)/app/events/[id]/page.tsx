@@ -2,11 +2,24 @@ import Link from 'next/link';
 
 import { buttonVariants } from '@/components/ui/button';
 import { getEvent } from '@/lib/data/events';
-import { isPastEventDay } from '@/lib/data/event-date';
-import { getCampaignForEvent } from '@/lib/data/campaigns';
+import { isPastEventDay, isBeforeTomorrowIL } from '@/lib/data/event-date';
+import { getCampaignForEvent, listCampaignsForEvent } from '@/lib/data/campaigns';
 import { EVENT_TYPES, EVENT_STATUSES } from '@/lib/validation/schemas';
 import { EditEventForm } from './edit-event-form';
+import { EventStatusActions } from './event-status-actions';
+import { publishEventAction, closeEventAction } from './campaign/campaign-actions';
 import { CampaignSection } from './campaign-section';
+
+// R7: a non-terminal campaign blocks closing the event. Mirrors the DB
+// trigger's (events_guard_update) blocking set exactly.
+const BLOCKING_CAMPAIGN_STATUSES = new Set([
+  'draft',
+  'pending_approval',
+  'approved',
+  'scheduled',
+  'active',
+  'paused',
+]);
 
 const EVENT_TYPE_LABELS: Record<(typeof EVENT_TYPES)[number], string> = {
   wedding: 'חתונה',
@@ -39,6 +52,16 @@ export default async function EventPage({
   const event = await getEvent(id);
   const campaign = await getCampaignForEvent(id);
   const isPast = isPastEventDay(event.event_date);
+
+  const allCampaigns = await listCampaignsForEvent(id);
+  const hasBlockingCampaign = allCampaigns.some((c) =>
+    BLOCKING_CAMPAIGN_STATUSES.has(c.status),
+  );
+  const canPublish = Boolean(
+    event.event_date && !isBeforeTomorrowIL(event.event_date),
+  );
+  const publishAction = publishEventAction.bind(null, event.id);
+  const closeAction = closeEventAction.bind(null, event.id);
 
   const summary = [
     EVENT_TYPE_LABELS[event.event_type] ?? event.event_type,
@@ -84,6 +107,14 @@ export default async function EventPage({
           ניהול מוזמנים
         </Link>
       </div>
+
+      <EventStatusActions
+        status={event.status}
+        canPublish={canPublish}
+        hasBlockingCampaign={hasBlockingCampaign}
+        publishAction={publishAction}
+        closeAction={closeAction}
+      />
 
       <CampaignSection eventId={event.id} campaign={campaign} isPast={isPast} />
 
