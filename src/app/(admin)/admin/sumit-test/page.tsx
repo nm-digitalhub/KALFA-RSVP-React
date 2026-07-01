@@ -24,93 +24,17 @@ export default async function SumitTestPage() {
       </div>
 
       {config ? (
-        <>
-          <SumitTestForm
-            companyId={config.companyId}
-            apiPublicKey={config.apiPublicKey}
-          />
-
-          {/* J4 on a saved token (route B close): no card tokenization needed —
-              just the reusable CreditCard_Token from a prior J5. A plain form. */}
-          <form
-            action="/api/admin/sumit-test"
-            method="post"
-            className="max-w-xl space-y-4 rounded-lg border border-dashed border-border p-4"
-          >
-            <div>
-              <h2 className="font-semibold">חיוב טוקן שמור (J4 — מסלול B)</h2>
-              <p className="mt-1 text-sm text-muted-foreground">
-                הדביקו <code>CreditCard_Token</code> שהתקבל מ-J5 כדי לחייב אותו
-                כעסקה חדשה (יוצר חשבונית). ⚠️ <strong>גבייה אמיתית.</strong>
-              </p>
-            </div>
-            <div>
-              <label htmlFor="saved_token" className="mb-1 block text-sm font-medium">
-                CreditCard_Token
-              </label>
-              <input
-                id="saved_token"
-                name="saved_token"
-                type="text"
-                required
-                dir="ltr"
-                placeholder="beb90f6f-…"
-                className="w-full rounded-md border border-border bg-transparent px-3 py-2"
-              />
-            </div>
-            <div className="grid grid-cols-3 gap-3">
-              <div>
-                <label htmlFor="amount2" className="mb-1 block text-sm font-medium">
-                  סכום (₪)
-                </label>
-                <input
-                  id="amount2"
-                  name="amount"
-                  type="text"
-                  inputMode="decimal"
-                  defaultValue="1"
-                  dir="ltr"
-                  className="w-full rounded-md border border-border bg-transparent px-3 py-2"
-                />
-              </div>
-              <div>
-                <label htmlFor="vat_rate2" className="mb-1 block text-sm font-medium">
-                  VATRate
-                </label>
-                <input
-                  id="vat_rate2"
-                  name="vat_rate"
-                  type="text"
-                  inputMode="decimal"
-                  defaultValue="18"
-                  dir="ltr"
-                  className="w-full rounded-md border border-border bg-transparent px-3 py-2"
-                />
-              </div>
-              <div>
-                <label htmlFor="auto_capture2" className="mb-1 block text-sm font-medium">
-                  סוג
-                </label>
-                <select
-                  id="auto_capture2"
-                  name="auto_capture"
-                  defaultValue="true"
-                  className="w-full rounded-md border border-border bg-transparent px-3 py-2"
-                >
-                  <option value="true">J4 — חיוב</option>
-                  <option value="false">J5 — אישור</option>
-                </select>
-              </div>
-            </div>
-            {/* No prevent_document_creation → J4 creates the invoice document. */}
-            <button
-              type="submit"
-              className="rounded-md bg-primary px-4 py-2 font-medium text-primary-foreground transition-opacity hover:opacity-90"
-            >
-              חייב טוקן שמור
-            </button>
-          </form>
-        </>
+        // The route-B (saved-token J4) form lives inside SumitTestForm itself —
+        // a second, genuinely separate <form> with no data-og="form" so
+        // payments.js never touches it (verified against its live source).
+        // It collects the mandatory expiry + CitizenID that route.ts now
+        // requires; an earlier, separate copy of this form lived here and was
+        // removed for being redundant AND broken (missing those fields, so it
+        // always failed the new mandatory-field check).
+        <SumitTestForm
+          companyId={config.companyId}
+          apiPublicKey={config.apiPublicKey}
+        />
       ) : (
         <p className="rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-800">
           הגדרות SUMIT (company id / public key) חסרות. עדכנו ב-

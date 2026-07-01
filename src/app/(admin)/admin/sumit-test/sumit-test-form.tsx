@@ -167,77 +167,6 @@ export function SumitTestForm({
           </span>
         </label>
 
-        {/* ---- Route B: charge an EXISTING saved token, no new card entry ----
-            These fields carry a `name` (unlike the citizenid data-og field below)
-            because this is an admin-only diagnostic path re-testing a PAST,
-            already-completed transaction — the server has no live SUMIT response
-            to pull them from server-side (unlike the production flow, which
-            reads CitizenID/expiry back from SUMIT's own authorize response, never
-            from the browser). Filling these bypasses the card-entry fields below;
-            leave them empty to tokenize a new card instead. */}
-        <div className="space-y-3 rounded-md border border-dashed border-border p-3">
-          <p className="text-sm font-medium">
-            מסלול B — חיוב על טוקן שמור קיים (ללא כרטיס חדש)
-          </p>
-          <div>
-            <label htmlFor="saved_token" className={labelClass}>
-              Saved CreditCard_Token
-            </label>
-            <input
-              id="saved_token"
-              name="saved_token"
-              type="text"
-              dir="ltr"
-              className={inputClass}
-            />
-          </div>
-          <div className="grid grid-cols-3 gap-4">
-            <div>
-              <label htmlFor="route_b_exp_month" className={labelClass}>
-                חודש תפוגה (חובה)
-              </label>
-              <input
-                id="route_b_exp_month"
-                name="route_b_exp_month"
-                type="text"
-                inputMode="numeric"
-                placeholder="MM"
-                maxLength={2}
-                dir="ltr"
-                className={inputClass}
-              />
-            </div>
-            <div>
-              <label htmlFor="route_b_exp_year" className={labelClass}>
-                שנת תפוגה (חובה)
-              </label>
-              <input
-                id="route_b_exp_year"
-                name="route_b_exp_year"
-                type="text"
-                inputMode="numeric"
-                placeholder="YYYY"
-                maxLength={4}
-                dir="ltr"
-                className={inputClass}
-              />
-            </div>
-            <div>
-              <label htmlFor="route_b_citizen_id" className={labelClass}>
-                ת״ז בעל הכרטיס (חובה — נדרש בישראל)
-              </label>
-              <input
-                id="route_b_citizen_id"
-                name="route_b_citizen_id"
-                type="text"
-                inputMode="numeric"
-                dir="ltr"
-                className={inputClass}
-              />
-            </div>
-          </div>
-        </div>
-
         <label className="flex items-center gap-2 text-sm">
           <input
             type="checkbox"
@@ -353,6 +282,98 @@ export function SumitTestForm({
           className="w-full rounded-md bg-primary px-4 py-2 font-medium text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-60"
         >
           {!ready ? 'טוען…' : submitting ? 'שולח…' : 'שלח ל-SUMIT והצג תגובה'}
+        </button>
+      </form>
+
+      {/* Genuinely separate form — deliberately NO data-og="form". payments.js's
+          own BindFormSubmit binds its submit-intercepting handler via jQuery to
+          `form[data-og=form]` only (verified against the live payments.js
+          source, not assumed); a form without that attribute is never selected
+          by it, so this submits as a plain native POST — no tokenization step,
+          because charging an EXISTING saved token needs no card entry at all. */}
+      <form
+        action="/api/admin/sumit-test"
+        method="post"
+        className="mt-6 max-w-xl space-y-4 rounded-lg border border-border p-4"
+      >
+        <h2 className="text-sm font-semibold">
+          חיוב טוקן שמור (J4 — מסלול B)
+        </h2>
+        <div>
+          <label htmlFor="saved_token" className={labelClass}>
+            Saved CreditCard_Token
+          </label>
+          <input
+            id="saved_token"
+            name="saved_token"
+            type="text"
+            dir="ltr"
+            className={inputClass}
+          />
+        </div>
+        <div className="grid grid-cols-3 gap-4">
+          <div>
+            <label htmlFor="route_b_exp_month" className={labelClass}>
+              חודש תפוגה
+            </label>
+            <input
+              id="route_b_exp_month"
+              name="route_b_exp_month"
+              type="text"
+              inputMode="numeric"
+              placeholder="MM"
+              maxLength={2}
+              dir="ltr"
+              className={inputClass}
+            />
+          </div>
+          <div>
+            <label htmlFor="route_b_exp_year" className={labelClass}>
+              שנת תפוגה
+            </label>
+            <input
+              id="route_b_exp_year"
+              name="route_b_exp_year"
+              type="text"
+              inputMode="numeric"
+              placeholder="YYYY"
+              maxLength={4}
+              dir="ltr"
+              className={inputClass}
+            />
+          </div>
+          <div>
+            <label htmlFor="route_b_citizen_id" className={labelClass}>
+              ת״ז בעל הכרטיס
+            </label>
+            <input
+              id="route_b_citizen_id"
+              name="route_b_citizen_id"
+              type="text"
+              inputMode="numeric"
+              dir="ltr"
+              className={inputClass}
+            />
+          </div>
+        </div>
+        <div>
+          <label htmlFor="route_b_amount" className={labelClass}>
+            סכום לחיוב (₪, כולל מע״מ)
+          </label>
+          <input
+            id="route_b_amount"
+            name="amount"
+            type="text"
+            inputMode="decimal"
+            dir="ltr"
+            className={inputClass}
+          />
+        </div>
+        <button
+          type="submit"
+          className="w-full rounded-md bg-primary px-4 py-2 font-medium text-primary-foreground transition-opacity hover:opacity-90"
+        >
+          חייב טוקן שמור
         </button>
       </form>
     </>
