@@ -115,7 +115,13 @@ describe('chargeRaw', () => {
       externalId: 'p',
     });
     const body = sentBodyOf(f);
-    expect(body.PaymentMethod).toEqual({ CreditCard_Token: 'saved-abc' });
+    // SUMIT rejects a saved-token charge without Type ("Type should be set to
+    // CreditCard or DirectDebit", Status 1 — verified live 2026-07-01), so the
+    // PaymentMethod must carry Type:1 (CreditCard), mirroring capture.ts.
+    expect(body.PaymentMethod).toEqual({
+      CreditCard_Token: 'saved-abc',
+      Type: 1,
+    });
     expect('SingleUseToken' in body).toBe(false);
   });
 

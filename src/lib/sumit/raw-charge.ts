@@ -61,7 +61,14 @@ export async function chargeRaw(p: SumitRawChargeParams): Promise<SumitRawResult
   // single-use token from payments.js. PaymentMethod and SingleUseToken are
   // mutually exclusive per the SUMIT spec.
   if (p.savedCardToken) {
-    body.PaymentMethod = { CreditCard_Token: p.savedCardToken };
+    // Type:1 (CreditCard) is REQUIRED — a saved-token charge without it returns
+    // Status 1 "Type should be set to CreditCard or DirectDebit" (verified live
+    // 2026-07-01). Mirrors the production capture.ts PaymentMethod. NOTE: SUMIT
+    // also needs CreditCard_ExpirationMonth/Year (+ CitizenID when the issuer
+    // requires it) alongside the token; this POC path does not collect them, so
+    // a saved-token charge here will next fail on the missing expiry — the full
+    // saved-token flow lives in capture.ts, which supplies all of them.
+    body.PaymentMethod = { CreditCard_Token: p.savedCardToken, Type: 1 };
   } else {
     body.SingleUseToken = p.ogToken;
   }
