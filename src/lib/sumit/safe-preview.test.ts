@@ -5,183 +5,184 @@ vi.mock('server-only', () => ({}));
 import { summarizeSumitRequest, summarizeSumitResponse } from '@/lib/sumit/safe-preview';
 
 // The admin SUMIT POC must NEVER surface secrets/PII to the browser. These tests
-// pin the allow-list PROJECTION contract: approved fields pass through; secret/PII
-// fields become booleans or are omitted; and — crucially — any field NOT on the
-// allow-list (including a hypothetical future provider field) is dropped.
+// pin the STRICT explicit-projection contract: the output is a flat object with a
+// fixed, known set of keys. Every secret/identifier is either reduced to a boolean
+// or never emitted. Sentinel values are planted in every forbidden field and must
+// not appear anywhere in the serialized output. Any unknown/future key is dropped
+// (enforced by an exact allow-list key-set assertion).
 
-// Narrow an unknown projection node to an indexable record (no `any`).
 function obj(v: unknown): Record<string, unknown> {
   return v as Record<string, unknown>;
 }
-function flatten(v: unknown): string {
+function flat(v: unknown): string {
   return JSON.stringify(v);
 }
 
-// A full, realistic charge response (shape per docs/sumit-response-capture-and-audit.md §7a),
-// deliberately including every forbidden field with a real-looking value.
-const FULL_RESPONSE = {
+// Sentinels that must NEVER appear in any projected output.
+const SENTINELS = [
+  'EXTERNAL-ID-MUST-NOT-LEAK',
+  'COMPANY-ID-MUST-NOT-LEAK',
+  'EMAIL-MUST-NOT-LEAK',
+  'STATUS-DESCRIPTION-MUST-NOT-LEAK',
+  'APIKEY-MUST-NOT-LEAK',
+  'TOKEN-MUST-NOT-LEAK',
+  'OGTOKEN-MUST-NOT-LEAK',
+  'CITIZENID-MUST-NOT-LEAK',
+  'PAN-MUST-NOT-LEAK',
+  'CVV-MUST-NOT-LEAK',
+  'TRACK2-MUST-NOT-LEAK',
+  'AUTHNUMBER-MUST-NOT-LEAK',
+  'UNKNOWN-MUST-NOT-LEAK',
+];
+
+const RESPONSE_ALLOWED_KEYS = [
+  'status',
+  'valid_payment',
+  'amount',
+  'currency',
+  'document_id',
+  'document_number',
+  'payment_id',
+  'provider_error_code',
+  'card_last_digits',
+  'card_mask',
+  'has_auth_number',
+  'has_card_token',
+].sort();
+
+const REQUEST_ALLOWED_KEYS = [
+  'company_id_present',
+  'amount',
+  'vat_rate',
+  'auto_capture',
+  'authorize_amount',
+  'prevent_document_creation',
+  'card_token_present',
+  'og_token_present',
+  'customer_email_present',
+  'external_id_present',
+  'payment_method_type',
+].sort();
+
+const RESPONSE = {
   Data: {
     Payment: {
-      ID: 0,
-      CustomerID: 0,
+      ID: 55,
+      CustomerID: 999,
       Date: '2026-07-01T05:35:04+03:00',
       ValidPayment: true,
       Status: '000',
-      StatusDescription: 'מאושר (קוד 000)',
-      Amount: 1,
+      StatusDescription: 'STATUS-DESCRIPTION-MUST-NOT-LEAK',
+      Amount: 12.5,
       Currency: 0,
       PaymentMethod: {
         ID: 2078931957,
-        CreditCard_Number: '4580000000000000', // PAN — must never surface
-        CreditCard_CVV: '123', // SAD — must never surface
-        CreditCard_Track2: 'trackdata', // SAD — must never surface
+        CreditCard_Number: 'PAN-MUST-NOT-LEAK',
+        CreditCard_CVV: 'CVV-MUST-NOT-LEAK',
+        CreditCard_Track2: 'TRACK2-MUST-NOT-LEAK',
         CreditCard_LastDigits: '9183',
         CreditCard_CardMask: 'XXXXXXXXXXXX9183',
         CreditCard_ExpirationMonth: 7,
         CreditCard_ExpirationYear: 2031,
-        CreditCard_CitizenID: '312345678', // PII — must never surface
-        CreditCard_Token: 'reusable-secret-token', // secret — must never surface
+        CreditCard_CitizenID: 'CITIZENID-MUST-NOT-LEAK',
+        CreditCard_Token: 'TOKEN-MUST-NOT-LEAK',
         Type: 1,
-        SecretFutureField: 'leaked?', // unknown field — must be dropped by allow-list
+        SecretFutureField: 'UNKNOWN-MUST-NOT-LEAK',
       },
-      AuthNumber: '0012345', // must never surface (value)
+      AuthNumber: 'AUTHNUMBER-MUST-NOT-LEAK',
     },
-    DocumentID: null,
-    DocumentNumber: null,
-    CustomerID: 2078931956,
-    DocumentDownloadURL: null,
-    SecretFutureDataField: 'leaked?', // unknown — must be dropped
+    DocumentID: 4001,
+    DocumentNumber: 27,
+    CustomerID: 999,
+    DocumentDownloadURL: 'https://example/doc',
+    ExternalIdentifier: 'EXTERNAL-ID-MUST-NOT-LEAK',
+    SecretFutureDataField: 'UNKNOWN-MUST-NOT-LEAK',
   },
   Status: 0,
   UserErrorMessage: null,
   TechnicalErrorDetails: null,
-  SecretFutureTopField: 'leaked?', // unknown — must be dropped
+  SecretFutureTopField: 'UNKNOWN-MUST-NOT-LEAK',
 };
 
 describe('summarizeSumitResponse', () => {
-  it('never surfaces the raw secret/PII VALUES anywhere in the output', () => {
-    const s = flatten(summarizeSumitResponse(FULL_RESPONSE));
-    for (const secret of [
-      '4580000000000000',
-      '312345678',
-      'reusable-secret-token',
-      '0012345',
-      'trackdata',
-    ]) {
-      expect(s).not.toContain(secret);
-    }
+  it('emits EXACTLY the allow-listed keys (no unknown/future keys)', () => {
+    const out = summarizeSumitResponse(RESPONSE);
+    expect(Object.keys(out).sort()).toEqual(RESPONSE_ALLOWED_KEYS);
   });
 
-  it('reduces AuthNumber to a boolean has_auth_number (never the value, never partial)', () => {
-    const payment = obj(obj(obj(summarizeSumitResponse(FULL_RESPONSE)).Data).Payment);
-    expect(payment.has_auth_number).toBe(true);
-    expect('AuthNumber' in payment).toBe(false);
-    // absent AuthNumber → false
-    const noAuth = obj(
-      obj(obj(summarizeSumitResponse({ Data: { Payment: {} }, Status: 0 })).Data).Payment,
-    );
-    expect(noAuth.has_auth_number).toBe(false);
+  it('never leaks any sentinel value', () => {
+    const s = flat(summarizeSumitResponse(RESPONSE));
+    for (const sentinel of SENTINELS) expect(s).not.toContain(sentinel);
   });
 
-  it('reduces token + citizenID to booleans and drops PAN/CVV/Track2 entirely', () => {
-    const pm = obj(
-      obj(obj(obj(summarizeSumitResponse(FULL_RESPONSE)).Data).Payment).PaymentMethod,
-    );
-    expect(pm.has_card_token).toBe(true);
-    expect(pm.has_citizen_id).toBe(true);
-    expect('CreditCard_Token' in pm).toBe(false);
-    expect('CreditCard_CitizenID' in pm).toBe(false);
-    expect('CreditCard_Number' in pm).toBe(false);
-    expect('CreditCard_CVV' in pm).toBe(false);
-    expect('CreditCard_Track2' in pm).toBe(false);
+  it('keeps the approved safe values, and AuthNumber/token only as booleans', () => {
+    const out = obj(summarizeSumitResponse(RESPONSE));
+    expect(out.status).toBe(0);
+    expect(out.valid_payment).toBe(true);
+    expect(out.amount).toBe(12.5);
+    expect(out.currency).toBe(0);
+    expect(out.document_id).toBe(4001);
+    expect(out.document_number).toBe(27);
+    expect(out.payment_id).toBe(55);
+    expect(out.provider_error_code).toBe('000');
+    expect(out.card_last_digits).toBe('9183');
+    expect(out.card_mask).toBe('XXXXXXXXXXXX9183');
+    expect(out.has_auth_number).toBe(true);
+    expect(out.has_card_token).toBe(true);
   });
 
-  it('keeps the approved safe fields', () => {
-    const out = obj(summarizeSumitResponse(FULL_RESPONSE));
-    expect(out.Status).toBe(0);
-    const data = obj(out.Data);
-    expect(data.CustomerID).toBe(2078931956);
-    const p = obj(data.Payment);
-    expect(p.ValidPayment).toBe(true);
-    expect(p.Status).toBe('000');
-    expect(p.Amount).toBe(1);
-    expect(p.Currency).toBe(0);
-    const pm = obj(p.PaymentMethod);
-    expect(pm.CreditCard_LastDigits).toBe('9183');
-    expect(pm.CreditCard_CardMask).toBe('XXXXXXXXXXXX9183');
-    expect(pm.CreditCard_ExpirationMonth).toBe(7);
-    expect(pm.CreditCard_ExpirationYear).toBe(2031);
-    expect(pm.Type).toBe(1);
+  it('has_auth_number/has_card_token are false when absent', () => {
+    const out = obj(summarizeSumitResponse({ Data: { Payment: { PaymentMethod: {} } }, Status: 0 }));
+    expect(out.has_auth_number).toBe(false);
+    expect(out.has_card_token).toBe(false);
   });
 
-  it('drops ANY field not on the allow-list (future provider fields cannot leak)', () => {
-    const s = flatten(summarizeSumitResponse(FULL_RESPONSE));
-    expect(s).not.toContain('SecretFutureField');
-    expect(s).not.toContain('SecretFutureDataField');
-    expect(s).not.toContain('SecretFutureTopField');
-    expect(s).not.toContain('leaked?');
-  });
-
-  it('handles a business-error body (Data: null) and a non-object body safely', () => {
-    const err = obj(
-      summarizeSumitResponse({ Data: null, Status: 1, UserErrorMessage: 'declined' }),
-    );
-    expect(err.Status).toBe(1);
-    expect(err.UserErrorMessage).toBe('declined');
-    expect(err.Data).toBeNull();
-    // non-object (e.g. plain-text error body) is not echoed verbatim
+  it('handles a non-object body without echoing it', () => {
     expect(summarizeSumitResponse('unexpected raw text')).toEqual({ non_object_response: true });
     expect(summarizeSumitResponse(null)).toEqual({ non_object_response: true });
   });
 });
 
+const REQUEST = {
+  Credentials: { CompanyID: 'COMPANY-ID-MUST-NOT-LEAK', APIKey: 'APIKEY-MUST-NOT-LEAK' },
+  Customer: { EmailAddress: 'EMAIL-MUST-NOT-LEAK', ExternalIdentifier: 'EXTERNAL-ID-MUST-NOT-LEAK' },
+  VATIncluded: true,
+  VATRate: 18,
+  Items: [{ Quantity: 1, UnitPrice: 12.5, Item: { Name: 'POC' }, Description: 'POC' }],
+  AutoCapture: false,
+  AuthorizeAmount: 50,
+  PreventDocumentCreation: true,
+  SendDocumentByEmail: false,
+  DraftDocument: false,
+  SingleUseToken: 'OGTOKEN-MUST-NOT-LEAK',
+  PaymentMethod: { CreditCard_Token: 'TOKEN-MUST-NOT-LEAK', Type: 1 },
+  SecretFutureField: 'UNKNOWN-MUST-NOT-LEAK',
+};
+
 describe('summarizeSumitRequest', () => {
-  const FULL_REQUEST = {
-    Credentials: { CompanyID: 7, APIKey: '***' },
-    Customer: { EmailAddress: 'owner@example.com', ExternalIdentifier: 'poc-123' },
-    VATIncluded: true,
-    VATRate: 18,
-    Items: [{ Quantity: 1, UnitPrice: 1, Item: { Name: 'POC' }, Description: 'POC' }],
-    AutoCapture: false,
-    AuthorizeAmount: 50,
-    PreventDocumentCreation: true,
-    SendDocumentByEmail: false,
-    DraftDocument: false,
-    SingleUseToken: 'og-single-use-secret',
-    PaymentMethod: { CreditCard_Token: 'saved-secret-token', Type: 1 },
-    SecretFutureField: 'leaked?',
-  };
-
-  it('never surfaces token values or the customer email value', () => {
-    const s = flatten(summarizeSumitRequest(FULL_REQUEST));
-    expect(s).not.toContain('og-single-use-secret');
-    expect(s).not.toContain('saved-secret-token');
-    expect(s).not.toContain('owner@example.com');
-    expect(s).not.toContain('leaked?');
+  it('emits EXACTLY the allow-listed keys (no unknown/future keys)', () => {
+    const out = summarizeSumitRequest(REQUEST);
+    expect(Object.keys(out).sort()).toEqual(REQUEST_ALLOWED_KEYS);
   });
 
-  it('reduces tokens to booleans, email to has_email, and keeps only CompanyID from Credentials', () => {
-    const out = obj(summarizeSumitRequest(FULL_REQUEST));
-    expect(out.has_single_use_token).toBe(true);
-    const pm = obj(out.PaymentMethod);
-    expect(pm.has_card_token).toBe(true);
-    expect(pm.Type).toBe(1);
-    const cust = obj(out.Customer);
-    expect(cust.has_email).toBe(true);
-    expect(cust.ExternalIdentifier).toBe('poc-123');
-    expect(out.Credentials).toEqual({ CompanyID: 7 });
-    expect('APIKey' in obj(out.Credentials)).toBe(false);
+  it('never leaks any sentinel value (CompanyID, email, external id, API key, tokens)', () => {
+    const s = flat(summarizeSumitRequest(REQUEST));
+    for (const sentinel of SENTINELS) expect(s).not.toContain(sentinel);
   });
 
-  it('keeps the parameters-under-test and item amounts', () => {
-    const out = obj(summarizeSumitRequest(FULL_REQUEST));
-    expect(out.AutoCapture).toBe(false);
-    expect(out.AuthorizeAmount).toBe(50);
-    expect(out.PreventDocumentCreation).toBe(true);
-    expect(out.VATRate).toBe(18);
-    expect(obj(out).Items).toEqual([
-      { Quantity: 1, UnitPrice: 1, Item: { Name: 'POC' }, Description: 'POC' },
-    ]);
+  it('projects the approved values, identifiers only as booleans', () => {
+    const out = obj(summarizeSumitRequest(REQUEST));
+    expect(out.company_id_present).toBe(true);
+    expect(out.amount).toBe(12.5);
+    expect(out.vat_rate).toBe(18);
+    expect(out.auto_capture).toBe(false);
+    expect(out.authorize_amount).toBe(50);
+    expect(out.prevent_document_creation).toBe(true);
+    expect(out.card_token_present).toBe(true);
+    expect(out.og_token_present).toBe(true);
+    expect(out.customer_email_present).toBe(true);
+    expect(out.external_id_present).toBe(true);
+    expect(out.payment_method_type).toBe(1);
   });
 
   it('handles a non-object input safely', () => {
