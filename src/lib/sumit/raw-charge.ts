@@ -15,6 +15,13 @@ export interface SumitRawChargeParams {
   apiKey: string;
   ogToken?: string; // single-use token (new card). Mutually exclusive with savedCardToken.
   savedCardToken?: string; // reusable CreditCard_Token (route B / J4 on saved card)
+  // Required alongside savedCardToken (verified live 2026-07-01; swagger.json's
+  // own field descriptions confirm expiry + CitizenID accompany a CreditCard
+  // PaymentMethod — CitizenID is conditional per-issuer in the spec, and IS
+  // required for Israeli-issued cards). Mirrors capture.ts's PaymentMethod exactly.
+  savedCardExpMonth?: number;
+  savedCardExpYear?: number;
+  savedCardCitizenId?: string;
   amount: string; // Items[0].UnitPrice — numeric string, no float distortion
   vatRate: string;
   autoCapture: boolean; // false = J5 (authorize/hold), true = J4 (charge)
@@ -63,12 +70,16 @@ export async function chargeRaw(p: SumitRawChargeParams): Promise<SumitRawResult
   if (p.savedCardToken) {
     // Type:1 (CreditCard) is REQUIRED — a saved-token charge without it returns
     // Status 1 "Type should be set to CreditCard or DirectDebit" (verified live
-    // 2026-07-01). Mirrors the production capture.ts PaymentMethod. NOTE: SUMIT
-    // also needs CreditCard_ExpirationMonth/Year (+ CitizenID when the issuer
-    // requires it) alongside the token; this POC path does not collect them, so
-    // a saved-token charge here will next fail on the missing expiry — the full
-    // saved-token flow lives in capture.ts, which supplies all of them.
-    body.PaymentMethod = { CreditCard_Token: p.savedCardToken, Type: 1 };
+    // 2026-07-01). Expiry + CitizenID accompany the token, mirroring the
+    // production capture.ts PaymentMethod exactly (route.ts enforces these as
+    // mandatory before calling chargeRaw — see its route-B validation).
+    body.PaymentMethod = {
+      CreditCard_Token: p.savedCardToken,
+      CreditCard_ExpirationMonth: p.savedCardExpMonth,
+      CreditCard_ExpirationYear: p.savedCardExpYear,
+      CreditCard_CitizenID: p.savedCardCitizenId,
+      Type: 1,
+    };
   } else {
     body.SingleUseToken = p.ogToken;
   }

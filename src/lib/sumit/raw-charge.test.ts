@@ -117,12 +117,47 @@ describe('chargeRaw', () => {
     const body = sentBodyOf(f);
     // SUMIT rejects a saved-token charge without Type ("Type should be set to
     // CreditCard or DirectDebit", Status 1 — verified live 2026-07-01), so the
-    // PaymentMethod must carry Type:1 (CreditCard), mirroring capture.ts.
+    // PaymentMethod must carry Type:1 (CreditCard), mirroring capture.ts. Expiry
+    // and CitizenID are omitted here (not passed) — dropped by JSON.stringify.
     expect(body.PaymentMethod).toEqual({
       CreditCard_Token: 'saved-abc',
       Type: 1,
     });
     expect('SingleUseToken' in body).toBe(false);
+  });
+
+  it('sends expiry + CitizenID alongside the saved token (route B — mirrors capture.ts)', async () => {
+    const f = vi.fn(
+      async () =>
+        new Response(JSON.stringify({ Data: { DocumentID: 3 } }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+    );
+    vi.stubGlobal('fetch', f);
+    await chargeRaw({
+      companyId: 1,
+      apiKey: 'k',
+      savedCardToken: 'saved-abc',
+      savedCardExpMonth: 7,
+      savedCardExpYear: 2031,
+      savedCardCitizenId: '316125434',
+      amount: '5',
+      vatRate: '18',
+      autoCapture: true,
+      externalId: 'p',
+    });
+    const body = sentBodyOf(f);
+    // SUMIT validates the expiry/CitizenID structurally alongside the token
+    // (verified live); omitting them fails on missing expiry. This is the exact
+    // PaymentMethod shape captureHeldCardSumit() sends in production.
+    expect(body.PaymentMethod).toEqual({
+      CreditCard_Token: 'saved-abc',
+      CreditCard_ExpirationMonth: 7,
+      CreditCard_ExpirationYear: 2031,
+      CreditCard_CitizenID: '316125434',
+      Type: 1,
+    });
   });
 
   it('returns raw text (not JSON) and ok=false on a non-JSON error response', async () => {

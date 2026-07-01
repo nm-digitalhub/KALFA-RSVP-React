@@ -94,6 +94,9 @@ export async function POST(request: NextRequest) {
   const form = await request.formData();
   const ogToken = String(form.get('og-token') ?? '');
   const savedToken = String(form.get('saved_token') ?? '').trim();
+  const routeBExpMonth = String(form.get('route_b_exp_month') ?? '').trim();
+  const routeBExpYear = String(form.get('route_b_exp_year') ?? '').trim();
+  const routeBCitizenId = String(form.get('route_b_citizen_id') ?? '').trim();
   const amount = String(form.get('amount') ?? '').trim();
   const vatRate = String(form.get('vat_rate') ?? '18').trim();
   const autoCapture = String(form.get('auto_capture') ?? 'false') === 'true';
@@ -106,6 +109,23 @@ export async function POST(request: NextRequest) {
     return resultPage({
       title: 'error',
       error: 'חסר טוקן: הזינו פרטי כרטיס (og-token) או טוקן שמור.',
+    });
+  }
+  // Route B (saved-token charge): CitizenID is mandatory for Israeli-issued
+  // cards (verified live; swagger.json's own field description confirms it's
+  // required per-issuer — true for Israel), and expiry accompanies the token
+  // the same way capture.ts sends it. Reject BEFORE calling SUMIT with an
+  // incomplete PaymentMethod, rather than surface its rejection.
+  if (savedToken && !routeBCitizenId) {
+    return resultPage({
+      title: 'error',
+      error: 'חיוב על טוקן שמור (מסלול B) דורש ת״ז בעל הכרטיס — שדה חובה בישראל.',
+    });
+  }
+  if (savedToken && (!routeBExpMonth || !routeBExpYear)) {
+    return resultPage({
+      title: 'error',
+      error: 'חיוב על טוקן שמור (מסלול B) דורש תוקף כרטיס (חודש ושנה) — שדה חובה.',
     });
   }
   const amt = parseFloat(amount);
@@ -124,6 +144,9 @@ export async function POST(request: NextRequest) {
       apiKey: config.apiKey,
       ogToken: ogToken || undefined,
       savedCardToken: savedToken || undefined,
+      savedCardExpMonth: routeBExpMonth ? parseInt(routeBExpMonth, 10) : undefined,
+      savedCardExpYear: routeBExpYear ? parseInt(routeBExpYear, 10) : undefined,
+      savedCardCitizenId: routeBCitizenId || undefined,
       amount,
       vatRate,
       autoCapture,

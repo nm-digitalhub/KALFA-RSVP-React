@@ -167,6 +167,77 @@ export function SumitTestForm({
           </span>
         </label>
 
+        {/* ---- Route B: charge an EXISTING saved token, no new card entry ----
+            These fields carry a `name` (unlike the citizenid data-og field below)
+            because this is an admin-only diagnostic path re-testing a PAST,
+            already-completed transaction — the server has no live SUMIT response
+            to pull them from server-side (unlike the production flow, which
+            reads CitizenID/expiry back from SUMIT's own authorize response, never
+            from the browser). Filling these bypasses the card-entry fields below;
+            leave them empty to tokenize a new card instead. */}
+        <div className="space-y-3 rounded-md border border-dashed border-border p-3">
+          <p className="text-sm font-medium">
+            מסלול B — חיוב על טוקן שמור קיים (ללא כרטיס חדש)
+          </p>
+          <div>
+            <label htmlFor="saved_token" className={labelClass}>
+              Saved CreditCard_Token
+            </label>
+            <input
+              id="saved_token"
+              name="saved_token"
+              type="text"
+              dir="ltr"
+              className={inputClass}
+            />
+          </div>
+          <div className="grid grid-cols-3 gap-4">
+            <div>
+              <label htmlFor="route_b_exp_month" className={labelClass}>
+                חודש תפוגה (חובה)
+              </label>
+              <input
+                id="route_b_exp_month"
+                name="route_b_exp_month"
+                type="text"
+                inputMode="numeric"
+                placeholder="MM"
+                maxLength={2}
+                dir="ltr"
+                className={inputClass}
+              />
+            </div>
+            <div>
+              <label htmlFor="route_b_exp_year" className={labelClass}>
+                שנת תפוגה (חובה)
+              </label>
+              <input
+                id="route_b_exp_year"
+                name="route_b_exp_year"
+                type="text"
+                inputMode="numeric"
+                placeholder="YYYY"
+                maxLength={4}
+                dir="ltr"
+                className={inputClass}
+              />
+            </div>
+            <div>
+              <label htmlFor="route_b_citizen_id" className={labelClass}>
+                ת״ז בעל הכרטיס (חובה — נדרש בישראל)
+              </label>
+              <input
+                id="route_b_citizen_id"
+                name="route_b_citizen_id"
+                type="text"
+                inputMode="numeric"
+                dir="ltr"
+                className={inputClass}
+              />
+            </div>
+          </div>
+        </div>
+
         <label className="flex items-center gap-2 text-sm">
           <input
             type="checkbox"
