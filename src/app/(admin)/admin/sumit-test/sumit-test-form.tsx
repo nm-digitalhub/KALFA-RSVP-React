@@ -1,20 +1,30 @@
 'use client';
 
-import { useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import Script from 'next/script';
 
+// Admin SUMIT POC form. Same payments.js loading/binding pattern as the
+// production forms: jQuery first, payments.js binds form[data-og=form],
+// tokenizes the card fields, injects og-token, and (with our ResponseCallback)
+// hands control back so we submit natively. The extra POC parameter inputs keep
+// their `name` (the library only blanks `[data-og]` fields), so they POST as-is.
+type OgSettings = {
+  CompanyID: number;
+  APIPublicKey?: string;
+  ResponseLanguage?: string;
+  ResponseCallback?: (resp: { Status?: number | string }) => void;
+};
 declare global {
   interface Window {
+    jQuery?: unknown;
     OfficeGuy?: {
-      Payments?: {
-        BindFormSubmit: (settings: {
-          CompanyID: number;
-          APIPublicKey?: string;
-        }) => void;
-      };
+      Payments?: { BindFormSubmit: (settings: OgSettings) => void };
     };
   }
 }
+
+const JQUERY_SRC = 'https://code.jquery.com/jquery-3.7.1.min.js';
+const PAYMENTS_SRC = 'https://app.sumit.co.il/scripts/payments.js';
 
 const inputClass =
   'w-full rounded-md border border-border bg-transparent px-3 py-2';
@@ -28,39 +38,68 @@ export function SumitTestForm({
   apiPublicKey: string;
 }) {
   const [ready, setReady] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
   const [loadError, setLoadError] = useState(false);
+  const formRef = useRef<HTMLFormElement>(null);
+
+  // onReady (not onLoad) so a re-mount re-binds; poll until jQuery + payments.js
+  // both exist; BindFormSubmit is idempotent (og-initialized guard). See the
+  // production hold-form for the full rationale.
+  const bind = useCallback(() => {
+    let attempts = 0;
+    function poll() {
+      const bindFormSubmit = window.OfficeGuy?.Payments?.BindFormSubmit;
+      if (window.jQuery && bindFormSubmit) {
+        bindFormSubmit({
+          CompanyID: companyId,
+          APIPublicKey: apiPublicKey,
+          ResponseLanguage: 'he-IL',
+          ResponseCallback: (resp) => {
+            if (resp?.Status != 0) {
+              setSubmitting(false);
+            } else {
+              formRef.current?.submit();
+            }
+          },
+        });
+        setReady(true);
+        return;
+      }
+      if (++attempts >= 50) {
+        setLoadError(true);
+        return;
+      }
+      window.setTimeout(poll, 100);
+    }
+    poll();
+  }, [companyId, apiPublicKey]);
 
   return (
     <>
-      {/* jQuery first, then payments.js (same load order as the production
-          PaymentForm). On submit payments.js tokenizes the data-og card fields,
-          injects a hidden og-token, and submits the whole form (incl. params). */}
       <Script
-        src="https://code.jquery.com/jquery-3.7.1.min.js"
+        src={JQUERY_SRC}
         strategy="afterInteractive"
-        onLoad={() => {
-          const s = document.createElement('script');
-          s.src = 'https://app.sumit.co.il/scripts/payments.js';
-          s.onload = () => {
-            window.OfficeGuy?.Payments?.BindFormSubmit({
-              CompanyID: companyId,
-              APIPublicKey: apiPublicKey,
-            });
-            setReady(true);
-          };
-          s.onerror = () => setLoadError(true);
-          document.head.appendChild(s);
-        }}
+        onError={() => setLoadError(true)}
+      />
+      <Script
+        src={PAYMENTS_SRC}
+        strategy="afterInteractive"
+        onReady={() => bind()}
         onError={() => setLoadError(true)}
       />
 
       <form
+        ref={formRef}
         action="/api/admin/sumit-test"
         method="post"
         data-og="form"
+        onSubmitCapture={() => setSubmitting(true)}
         className="max-w-xl space-y-5 rounded-lg border border-border p-4"
       >
-        {/* ---- Parameters under test ---- */}
+        {/* payments.js writes tokenization errors here (.og-errors). */}
+        <div className="og-errors text-sm text-red-600" />
+
+        {/* ---- Parameters under test (keep their name → they POST) ---- */}
         <div className="grid grid-cols-2 gap-4">
           <div>
             <label htmlFor="auto_capture" className={labelClass}>
@@ -166,6 +205,7 @@ export function SumitTestForm({
             type="text"
             inputMode="numeric"
             autoComplete="cc-number"
+            maxLength={20}
             className={inputClass}
           />
         </div>
@@ -180,6 +220,7 @@ export function SumitTestForm({
               type="text"
               inputMode="numeric"
               placeholder="MM"
+              maxLength={2}
               className={inputClass}
             />
           </div>
@@ -193,6 +234,7 @@ export function SumitTestForm({
               type="text"
               inputMode="numeric"
               placeholder="YYYY"
+              maxLength={4}
               className={inputClass}
             />
           </div>
@@ -206,6 +248,7 @@ export function SumitTestForm({
               type="text"
               inputMode="numeric"
               autoComplete="cc-csc"
+              maxLength={4}
               className={inputClass}
             />
           </div>
@@ -214,6 +257,7 @@ export function SumitTestForm({
           <label htmlFor="citizenid" className={labelClass}>
             תעודת זהות
           </label>
+          {/* NO `name` — reaches SUMIT via the tokenize AJAX only, never our POST. */}
           <input
             id="citizenid"
             data-og="citizenid"
@@ -223,7 +267,6 @@ export function SumitTestForm({
           />
         </div>
 
-        <div className="og-errors text-sm text-red-600" />
         {loadError ? (
           <p
             role="alert"
@@ -235,10 +278,10 @@ export function SumitTestForm({
 
         <button
           type="submit"
-          disabled={!ready}
+          disabled={!ready || submitting}
           className="w-full rounded-md bg-primary px-4 py-2 font-medium text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-60"
         >
-          {ready ? 'שלח ל-SUMIT והצג תגובה' : 'טוען…'}
+          {!ready ? 'טוען…' : submitting ? 'שולח…' : 'שלח ל-SUMIT והצג תגובה'}
         </button>
       </form>
     </>
