@@ -160,6 +160,55 @@ describe('chargeRaw', () => {
     });
   });
 
+  it('sends VATRate:null explicitly for a saved-token charge (mirrors capture.ts — an explicit rate produced "products vs payments mismatch", verified live)', async () => {
+    const f = vi.fn(
+      async () =>
+        new Response(JSON.stringify({ Data: { DocumentID: 4 } }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+    );
+    vi.stubGlobal('fetch', f);
+    await chargeRaw({
+      companyId: 1,
+      apiKey: 'k',
+      savedCardToken: 'saved-abc',
+      savedCardExpMonth: 7,
+      savedCardExpYear: 2031,
+      savedCardCitizenId: '316125434',
+      amount: '5',
+      vatRate: '18',
+      autoCapture: true,
+      externalId: 'p',
+    });
+    const body = sentBodyOf(f);
+    expect('VATRate' in body).toBe(true);
+    expect(body.VATRate).toBeNull();
+    expect(body.VATIncluded).toBe(true); // company-default VAT still applies
+  });
+
+  it('still sends VATRate for a new-card (SingleUseToken) charge — unchanged', async () => {
+    const f = vi.fn(
+      async () =>
+        new Response(JSON.stringify({ Data: { DocumentID: 5 } }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+    );
+    vi.stubGlobal('fetch', f);
+    await chargeRaw({
+      companyId: 1,
+      apiKey: 'k',
+      ogToken: 'og-123',
+      amount: '1',
+      vatRate: '18',
+      autoCapture: false,
+      externalId: 'p',
+    });
+    const body = sentBodyOf(f);
+    expect(body.VATRate).toBe(18);
+  });
+
   it('returns raw text (not JSON) and ok=false on a non-JSON error response', async () => {
     const f = vi.fn(async () => new Response('plain error', { status: 500 }));
     vi.stubGlobal('fetch', f);

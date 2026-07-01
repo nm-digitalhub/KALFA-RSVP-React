@@ -48,7 +48,11 @@ export async function chargeRaw(p: SumitRawChargeParams): Promise<SumitRawResult
       ExternalIdentifier: p.externalId,
     },
     VATIncluded: true,
-    VATRate: parseFloat(p.vatRate),
+    // VATRate: null (explicit, not omitted) for a saved-token charge — mirrors
+    // capture.ts exactly (a numeric rate there produced "products vs payments
+    // mismatch", verified live; the company-default VAT balances the document
+    // instead). The new-card (SingleUseToken) path is unaffected.
+    VATRate: p.savedCardToken ? null : parseFloat(p.vatRate),
     Items: [
       {
         Quantity: 1,
