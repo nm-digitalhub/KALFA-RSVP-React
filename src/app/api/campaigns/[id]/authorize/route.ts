@@ -110,6 +110,13 @@ export async function POST(
       origin,
     );
 
+  // Check the submitted input itself first — a missing token is a client-side
+  // form/tokenization problem, distinct from (and more actionable than) any
+  // event/campaign-state error below.
+  if (!parsed.success) {
+    return r303(payUrl(ERROR.TOKEN_MISSING));
+  }
+
   // L1: no card hold for a past event (Israel calendar) — the campaign would
   // never legitimately activate, so don't reserve a frame on the card.
   if (isPastEventDay(event.event_date)) {
@@ -120,10 +127,6 @@ export async function POST(
   // REST-proof authority for the campaign-status side of this same rule.
   if (event.status !== 'active') {
     return r303(payUrl(ERROR.EVENT_NOT_ACTIVE));
-  }
-
-  if (!parsed.success) {
-    return r303(payUrl(ERROR.TOKEN_MISSING));
   }
 
   // Fail-closed gate: master switch + hold switch + provider config, all
@@ -177,26 +180,17 @@ export async function POST(
   }
 
   const authRef = crypto.randomUUID();
+  let holdResult: Awaited<ReturnType<typeof authorizeHoldSumit>>;
   try {
-    const { authNumber, cardToken, expMonth, expYear, citizenId } =
-      await authorizeHoldSumit({
-        companyId: sumitConfig.companyId,
-        apiKey: sumitConfig.apiKey,
-        ogToken: parsed.data['og-token'],
-        // The J5 hold amount (security) — covered-sized, NOT the full ceiling.
-        ceiling: String(holdAmount), // numeric → string only at the SUMIT boundary
-        vatRate: String(VAT_RATE_PERCENT),
-        authRef,
-        customerEmail: user.email ?? '',
-      });
-    await recordCampaignHold(campaignId, {
-      authNumber,
-      authAmount: holdAmount,
-      cardToken, // saved card token + expiry + CitizenID, used at the capture
-      expMonth,
-      expYear,
-      citizenId,
-      authExternalRef: authRef, // reconciliation anchor on the charge
+    holdResult = await authorizeHoldSumit({
+      companyId: sumitConfig.companyId,
+      apiKey: sumitConfig.apiKey,
+      ogToken: parsed.data['og-token'],
+      // The J5 hold amount (security) — covered-sized, NOT the full ceiling.
+      ceiling: String(holdAmount), // numeric → string only at the SUMIT boundary
+      vatRate: String(VAT_RATE_PERCENT),
+      authRef,
+      customerEmail: user.email ?? '',
     });
   } catch (err) {
     if (err instanceof SumitDeclinedError) {
@@ -204,8 +198,35 @@ export async function POST(
       await markCampaignHoldFailed(campaignId, 'hold_failed');
       return r303(payUrl(ERROR.DECLINED));
     }
-    // Ambiguous outcome (network/technical/parse) — never assume a hold exists.
+    // Ambiguous outcome from SUMIT itself (network/technical/parse) — never
+    // assume a hold exists.
     console.error('[hold] ambiguous authorization outcome', { campaignId, authRef });
+    await markCampaignHoldFailed(campaignId, 'hold_review');
+    return r303(payUrl(ERROR.REVIEW));
+  }
+
+  // SUMIT confirmed the hold (authNumber in hand) — this is now a CONFIRMED,
+  // real authorization on the card, distinct from the "ambiguous SUMIT
+  // response" case above. If persisting it fails, the hold is NOT lost or
+  // ambiguous at the provider — it is real and undocumented on our side, and
+  // needs operator follow-up (not a routine retry). Log loudly with the
+  // reconciliation anchors only (authNumber/authRef) — never the card token,
+  // expiry, or CitizenID.
+  try {
+    await recordCampaignHold(campaignId, {
+      authNumber: holdResult.authNumber,
+      authAmount: holdAmount,
+      cardToken: holdResult.cardToken,
+      expMonth: holdResult.expMonth,
+      expYear: holdResult.expYear,
+      citizenId: holdResult.citizenId,
+      authExternalRef: authRef, // reconciliation anchor on the charge
+    });
+  } catch (err) {
+    console.error(
+      '[hold] CONFIRMED SUMIT hold could not be persisted — manual reconciliation required',
+      { campaignId, authRef, authNumber: holdResult.authNumber, err },
+    );
     await markCampaignHoldFailed(campaignId, 'hold_review');
     return r303(payUrl(ERROR.REVIEW));
   }
