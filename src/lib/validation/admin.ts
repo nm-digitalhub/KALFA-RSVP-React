@@ -161,6 +161,14 @@ const holdBufferPctPercent = z.coerce
   .nonnegative({ error: 'האחוז לא יכול להיות שלילי' });
 const holdBufferPctField = holdBufferPctPercent.transform((percent) => percent / 100);
 
+// Inverse of holdBufferPctField, for the edit form: stored fraction → percent
+// for display. Naive `fraction * 100` leaks IEEE-754 noise for common values
+// (0.07 * 100 === 7.000000000000001), so round to 6 decimals — far finer than
+// the form's step (0.1) while restoring exactly the percent the admin entered.
+export function holdBufferFractionToPercent(fraction: number): number {
+  return Math.round(fraction * 100 * 1e6) / 1e6;
+}
+
 const minHoldFloorField = z.coerce
   .number({ error: 'נא להזין רצפת hold תקינה' })
   .nonnegative({ error: 'רצפת ה-hold לא יכולה להיות שלילית' });

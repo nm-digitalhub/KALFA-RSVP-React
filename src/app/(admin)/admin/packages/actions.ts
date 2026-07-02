@@ -2,7 +2,6 @@
 
 import { redirect, unstable_rethrow } from 'next/navigation';
 import { revalidatePath } from 'next/cache';
-import type { ZodIssue } from 'zod';
 
 import {
   createPackage,
@@ -11,6 +10,7 @@ import {
   validateOutreachScheduleForPackage,
 } from '@/lib/data/admin/packages';
 import { packageBaseSchema, operationalFieldsSchema } from '@/lib/validation/admin';
+import { issuesToFieldErrors, mergeFieldErrors } from '@/lib/validation/result';
 import type { FormState } from '@/lib/validation/result';
 
 // Read the package fields from the form into the shape packageBaseSchema parses.
@@ -57,32 +57,6 @@ function readOperationalForm(formData: FormData) {
   };
 }
 
-// Build FormState.fieldErrors from raw Zod issues, keyed by the dotted path
-// (e.g. "outreach_schedule.0.message_key") so the form can attach an error to
-// the exact row. .flatten() only produces top-level keys — it cannot express
-// this, so it is deliberately not used for the operational schema.
-function issuesToFieldErrors(issues: ZodIssue[]): Record<string, string[]> {
-  const out: Record<string, string[]> = {};
-  for (const issue of issues) {
-    const key = issue.path.join('.') || '_root';
-    (out[key] ??= []).push(issue.message);
-  }
-  return out;
-}
-
-function mergeFieldErrors(
-  ...groups: (Record<string, string[]> | undefined)[]
-): Record<string, string[]> {
-  const out: Record<string, string[]> = {};
-  for (const group of groups) {
-    if (!group) continue;
-    for (const [key, messages] of Object.entries(group)) {
-      (out[key] ??= []).push(...messages);
-    }
-  }
-  return out;
-}
-
 export async function createPackageAction(
   _prevState: FormState,
   formData: FormData,
@@ -98,9 +72,14 @@ export async function createPackageAction(
     };
   }
 
-  const templateErrors = await validateOutreachScheduleForPackage(
-    operationalParsed.data.outreach_schedule,
-  );
+  // Template validation runs only for a campaign-enabled package
+  // (price_per_reached !== null) — campaign-field requirements are never
+  // enforced on a non-campaign package (plan §5.3/§2), e.g. a future package
+  // drafted with touchpoints whose templates don't exist yet.
+  const templateErrors =
+    operationalParsed.data.price_per_reached !== null
+      ? await validateOutreachScheduleForPackage(operationalParsed.data.outreach_schedule)
+      : [];
   if (templateErrors.length > 0) {
     const fieldErrors: Record<string, string[]> = {};
     for (const { index, message } of templateErrors) {
@@ -136,9 +115,11 @@ export async function updatePackageAction(
     };
   }
 
-  const templateErrors = await validateOutreachScheduleForPackage(
-    operationalParsed.data.outreach_schedule,
-  );
+  // Same campaign-enabled gate as createPackageAction (plan §5.3/§2).
+  const templateErrors =
+    operationalParsed.data.price_per_reached !== null
+      ? await validateOutreachScheduleForPackage(operationalParsed.data.outreach_schedule)
+      : [];
   if (templateErrors.length > 0) {
     const fieldErrors: Record<string, string[]> = {};
     for (const { index, message } of templateErrors) {

@@ -4,8 +4,28 @@ import { redirect, unstable_rethrow } from 'next/navigation';
 import { revalidatePath } from 'next/cache';
 
 import { createEvent } from '@/lib/data/events';
-import { createEventSchema } from '@/lib/validation/schemas';
-import type { FormState } from '@/lib/validation/result';
+import {
+  celebrantsSchemaFor,
+  createEventSchema,
+  parseCelebrantsForm,
+} from '@/lib/validation/schemas';
+import { issuesToFieldErrors, type FormState } from '@/lib/validation/result';
+
+// All six possible celebrant inputs across the four kinds (plain named inputs,
+// e.g. `celebrants.groom`). The submitted event_type's schema keeps only its
+// own kind's fields (z.object strips unknown keys). A missing key maps to
+// undefined (accepted by the optional fields) — defensive only; the celebrant
+// group is always rendered, so the current kind's inputs are always posted.
+function readCelebrantsForm(formData: FormData) {
+  return {
+    groom: formData.get('celebrants.groom') ?? undefined,
+    bride: formData.get('celebrants.bride') ?? undefined,
+    name: formData.get('celebrants.name') ?? undefined,
+    parents: formData.get('celebrants.parents') ?? undefined,
+    child: formData.get('celebrants.child') ?? undefined,
+    names: formData.get('celebrants.names') ?? undefined,
+  };
+}
 
 export async function createEventAction(
   _prevState: FormState,
@@ -22,6 +42,25 @@ export async function createEventAction(
     return { fieldErrors: parsed.error.flatten().fieldErrors };
   }
 
+  // The celebrant schema is keyed on event_type, so celebrant inputs are
+  // validated only once the base parse (which owns event_type) succeeds.
+  // Errors use dotted keys ('celebrants.groom') via issuesToFieldErrors —
+  // flatten() cannot express nested paths — and would merge with any base
+  // fieldErrors, which are necessarily empty here.
+  const celebrantsParsed = celebrantsSchemaFor(parsed.data.event_type).safeParse(
+    readCelebrantsForm(formData),
+  );
+  if (!celebrantsParsed.success) {
+    return {
+      fieldErrors: issuesToFieldErrors(
+        celebrantsParsed.error.issues.map((issue) => ({
+          ...issue,
+          path: ['celebrants', ...issue.path],
+        })),
+      ),
+    };
+  }
+
   const { name, event_type, event_date, venue_name } = parsed.data;
 
   let newEvent: Awaited<ReturnType<typeof createEvent>>;
@@ -31,6 +70,8 @@ export async function createEventAction(
       event_type,
       event_date: event_date ? event_date : null,
       venue_name: venue_name ? venue_name : null,
+      // Only the submitted type's fields survive; all-empty → null (SQL NULL).
+      celebrants: parseCelebrantsForm(event_type, celebrantsParsed.data),
     });
   } catch (err) {
     unstable_rethrow(err);

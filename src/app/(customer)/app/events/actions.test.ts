@@ -24,6 +24,69 @@ const FIELDS = { name: 'חתונה', event_type: 'wedding', event_date: '', venu
 
 beforeEach(() => vi.clearAllMocks());
 
+describe('createEventAction — celebrants (בעלי שמחה)', () => {
+  beforeEach(() => {
+    // Success paths reach `redirect(...)` (mocked), which needs the new id.
+    vi.mocked(createEvent).mockResolvedValue(
+      { id: 'event-1' } as unknown as Awaited<ReturnType<typeof createEvent>>,
+    );
+  });
+
+  it('passes the parsed celebrants of the submitted event type to createEvent', async () => {
+    await createEventAction(
+      null,
+      fd({
+        ...FIELDS,
+        'celebrants.groom': 'יוסי',
+        'celebrants.bride': 'דנה',
+      }),
+    );
+
+    expect(createEvent).toHaveBeenCalledWith(
+      expect.objectContaining({ celebrants: { groom: 'יוסי', bride: 'דנה' } }),
+    );
+  });
+
+  it('maps an all-empty celebrant group to celebrants: null (never {})', async () => {
+    await createEventAction(
+      null,
+      fd({ ...FIELDS, 'celebrants.groom': '', 'celebrants.bride': '' }),
+    );
+
+    expect(createEvent).toHaveBeenCalledWith(
+      expect.objectContaining({ celebrants: null }),
+    );
+  });
+
+  it('returns a DOTTED fieldErrors key for an invalid celebrant name and does not create', async () => {
+    const result = await createEventAction(
+      null,
+      fd({ ...FIELDS, 'celebrants.groom': 'א'.repeat(121) }),
+    );
+
+    expect(result?.fieldErrors?.['celebrants.groom']).toEqual(['השם ארוך מדי']);
+    expect(createEvent).not.toHaveBeenCalled();
+  });
+
+  it("keeps only the submitted event type's fields — a stale other-kind value never leaks", async () => {
+    // A user picked wedding, typed a groom, then switched to birthday: the
+    // browser may still post the stale wedding inputs alongside the new ones.
+    await createEventAction(
+      null,
+      fd({
+        ...FIELDS,
+        event_type: 'birthday',
+        'celebrants.groom': 'יוסי',
+        'celebrants.name': 'איתי',
+      }),
+    );
+
+    expect(createEvent).toHaveBeenCalledWith(
+      expect.objectContaining({ celebrants: { name: 'איתי' } }),
+    );
+  });
+});
+
 describe('createEventAction — Next.js control-flow signals', () => {
   it('propagates a NEXT_REDIRECT from createEvent (requireUser) instead of returning { error }', async () => {
     vi.mocked(createEvent).mockRejectedValue(NEXT_REDIRECT);

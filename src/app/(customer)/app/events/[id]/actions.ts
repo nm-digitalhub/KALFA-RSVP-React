@@ -4,8 +4,28 @@ import { revalidatePath } from 'next/cache';
 import { unstable_rethrow } from 'next/navigation';
 
 import { updateEvent } from '@/lib/data/events';
-import { updateEventSchema } from '@/lib/validation/schemas';
-import type { FormState } from '@/lib/validation/result';
+import {
+  celebrantsSchemaFor,
+  parseCelebrantsForm,
+  updateEventSchema,
+} from '@/lib/validation/schemas';
+import { issuesToFieldErrors, type FormState } from '@/lib/validation/result';
+
+// All six possible celebrant inputs across the four kinds (plain named inputs,
+// e.g. `celebrants.groom`). The submitted event_type's schema keeps only its
+// own kind's fields (z.object strips unknown keys). A missing key maps to
+// undefined (accepted by the optional fields) — defensive only; the celebrant
+// group is always rendered, so the current kind's inputs are always posted.
+function readCelebrantsForm(formData: FormData) {
+  return {
+    groom: formData.get('celebrants.groom') ?? undefined,
+    bride: formData.get('celebrants.bride') ?? undefined,
+    name: formData.get('celebrants.name') ?? undefined,
+    parents: formData.get('celebrants.parents') ?? undefined,
+    child: formData.get('celebrants.child') ?? undefined,
+    names: formData.get('celebrants.names') ?? undefined,
+  };
+}
 
 // `eventId` is bound from the route segment (server-side), NOT submitted by the
 // browser. Authorization is enforced again inside updateEvent via the ownership
@@ -51,6 +71,25 @@ export async function updateEventAction(
     return { fieldErrors: parsed.error.flatten().fieldErrors };
   }
 
+  // The celebrant schema is keyed on event_type, so celebrant inputs are
+  // validated only once the base parse (which owns event_type) succeeds.
+  // Errors use dotted keys ('celebrants.groom') via issuesToFieldErrors —
+  // flatten() cannot express nested paths — and would merge with any base
+  // fieldErrors, which are necessarily empty here.
+  const celebrantsParsed = celebrantsSchemaFor(parsed.data.event_type).safeParse(
+    readCelebrantsForm(formData),
+  );
+  if (!celebrantsParsed.success) {
+    return {
+      fieldErrors: issuesToFieldErrors(
+        celebrantsParsed.error.issues.map((issue) => ({
+          ...issue,
+          path: ['celebrants', ...issue.path],
+        })),
+      ),
+    };
+  }
+
   const { name, event_type, venue_name, venue_address } = parsed.data;
 
   try {
@@ -59,6 +98,11 @@ export async function updateEventAction(
       event_type,
       venue_name: venue_name ? venue_name : null,
       venue_address: venue_address ? venue_address : null,
+      // No formData.has() dance here: the celebrant group is always rendered,
+      // so its inputs are always posted. Only the SUBMITTED type's fields
+      // survive (an event_type change replaces the old shape); all-empty →
+      // null clears the column.
+      celebrants: parseCelebrantsForm(event_type, celebrantsParsed.data),
       ...(formData.has('event_date')
         ? { event_date: trimmedOrNull(formData.get('event_date')) }
         : {}),

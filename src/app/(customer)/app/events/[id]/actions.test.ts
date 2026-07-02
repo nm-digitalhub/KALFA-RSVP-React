@@ -91,6 +91,59 @@ describe('updateEventAction — FormData.has() presence mapping', () => {
   });
 });
 
+describe('updateEventAction — celebrants (בעלי שמחה)', () => {
+  it('passes the parsed celebrants of the submitted event type to updateEvent', async () => {
+    await updateEventAction(
+      'e-1',
+      null,
+      fd({ ...BASE, 'celebrants.groom': 'יוסי', 'celebrants.bride': 'דנה' }),
+    );
+
+    const input = vi.mocked(updateEvent).mock.calls[0][1];
+    expect(input.celebrants).toEqual({ groom: 'יוסי', bride: 'דנה' });
+  });
+
+  it('maps an all-empty celebrant group to celebrants: null (clears the column)', async () => {
+    await updateEventAction(
+      'e-1',
+      null,
+      fd({ ...BASE, 'celebrants.groom': '', 'celebrants.bride': '' }),
+    );
+
+    const input = vi.mocked(updateEvent).mock.calls[0][1];
+    expect(input.celebrants).toBeNull();
+  });
+
+  it('returns a DOTTED fieldErrors key for an invalid celebrant name and does not update', async () => {
+    const result = await updateEventAction(
+      'e-1',
+      null,
+      fd({ ...BASE, 'celebrants.bride': 'א'.repeat(121) }),
+    );
+
+    expect(result?.fieldErrors?.['celebrants.bride']).toEqual(['השם ארוך מדי']);
+    expect(updateEvent).not.toHaveBeenCalled();
+  });
+
+  it("an event_type change takes the NEW type's fields — the old kind's inputs never leak", async () => {
+    // The event was a wedding (stale groom input still posted); the owner
+    // switched the type to birthday and filled the new kind's field.
+    await updateEventAction(
+      'e-1',
+      null,
+      fd({
+        ...BASE,
+        event_type: 'birthday',
+        'celebrants.groom': 'יוסי',
+        'celebrants.name': 'איתי',
+      }),
+    );
+
+    const input = vi.mocked(updateEvent).mock.calls[0][1];
+    expect(input.celebrants).toEqual({ name: 'איתי' });
+  });
+});
+
 describe('updateEventAction — Next.js control-flow signals from the ownership gate', () => {
   it('propagates a NEXT_REDIRECT from updateEvent instead of returning { error }', async () => {
     vi.mocked(updateEvent).mockRejectedValue(NEXT_REDIRECT);

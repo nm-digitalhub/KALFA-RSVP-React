@@ -4,10 +4,12 @@ import { useActionState, useState } from 'react';
 
 import { updateEventAction } from './actions';
 import { EVENT_TYPES } from '@/lib/validation/schemas';
-import { EVENT_TYPE_LABELS } from '@/lib/data/event-labels';
+import { CELEBRANT_FIELD_LABELS, EVENT_TYPE_LABELS } from '@/lib/data/event-labels';
 import type { EventDetail } from '@/lib/data/events';
 import { todayIL } from '@/lib/data/event-date';
 import { FieldError, FormError, FormNotice, SubmitButton } from '@/components/forms';
+
+type EventType = (typeof EVENT_TYPES)[number];
 
 const inputClass =
   'w-full rounded-md border border-border bg-transparent px-3 py-2 disabled:cursor-not-allowed disabled:opacity-60';
@@ -19,6 +21,65 @@ function dateInputValue(value: string | null): string {
   return value ? value.slice(0, 10) : '';
 }
 
+// events.celebrants is schemaless jsonb (Json | null), so narrow defensively:
+// prefill only from a plain object's string values — no cast of the stored
+// value to a celebrant shape. CelebrantFields renders (and therefore reads)
+// only the CURRENTLY selected type's fields, so a stored shape left over from
+// a different kind simply yields empty inputs, never a wrong prefill.
+function celebrantDefaults(value: EventDetail['celebrants']): Record<string, string> {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+    return {};
+  }
+  const defaults: Record<string, string> = {};
+  for (const [key, entry] of Object.entries(value)) {
+    if (typeof entry === 'string') defaults[key] = entry;
+  }
+  return defaults;
+}
+
+// Celebrant (בעלי שמחה) inputs for the selected event type: plain named
+// inputs (celebrants.groom, celebrants.bride, ...) that the server action
+// reads per the submitted event_type's kind. Uncontrolled — the parent
+// remounts the group via key={eventType} whenever the type changes, so no
+// stale value from another kind ever lingers. Every field is optional here:
+// completeness is enforced only at campaign enablement.
+function CelebrantFields({
+  eventType,
+  defaults,
+  errors,
+}: {
+  eventType: EventType;
+  defaults: Record<string, string>;
+  errors?: Record<string, string[] | undefined>;
+}) {
+  return (
+    <fieldset className="space-y-4">
+      <legend className="mb-2 text-sm font-medium">בעלי השמחה</legend>
+      <p className="text-xs text-muted-foreground">
+        יש למלא לפני הפעלת אישורי הגעה
+      </p>
+      {Object.entries(CELEBRANT_FIELD_LABELS[eventType]).map(([field, label]) => (
+        <div key={field}>
+          <label
+            htmlFor={`celebrants.${field}`}
+            className="mb-1 block text-sm font-medium"
+          >
+            {label}
+          </label>
+          <input
+            id={`celebrants.${field}`}
+            name={`celebrants.${field}`}
+            type="text"
+            defaultValue={defaults[field] ?? ''}
+            className={inputClass}
+          />
+          <FieldError errors={errors?.[`celebrants.${field}`]} />
+        </div>
+      ))}
+    </fieldset>
+  );
+}
+
 export function EditEventForm({ event }: { event: EventDetail }) {
   const action = updateEventAction.bind(null, event.id);
   const [state, formAction] = useActionState(action, null);
@@ -28,6 +89,9 @@ export function EditEventForm({ event }: { event: EventDetail }) {
   // legitimate transitions; a free dropdown would let the owner "choose" a
   // status the server silently ignores (updateEvent no longer accepts it).
   const isDraft = event.status === 'draft';
+
+  // Controlled so the celebrant field group below follows the selected type.
+  const [eventType, setEventType] = useState<EventType>(event.event_type);
 
   // Keep the two date fields coupled so the picker itself prevents the illogical
   // case (deadline after the event). The server (Zod refine + DB triggers) stays
@@ -74,7 +138,10 @@ export function EditEventForm({ event }: { event: EventDetail }) {
           id="event_type"
           name="event_type"
           required
-          defaultValue={event.event_type}
+          value={eventType}
+          // The options are rendered from EVENT_TYPES, so the emitted value
+          // is always a valid EventType.
+          onChange={(e) => setEventType(e.target.value as EventType)}
           className={inputClass}
         >
           {EVENT_TYPES.map((type) => (
@@ -85,6 +152,15 @@ export function EditEventForm({ event }: { event: EventDetail }) {
         </select>
         <FieldError errors={state?.fieldErrors?.event_type} />
       </div>
+
+      {/* key={eventType}: remount the uncontrolled group on type change, so
+          the stored defaults prefill only while the selected kind matches. */}
+      <CelebrantFields
+        key={eventType}
+        eventType={eventType}
+        defaults={celebrantDefaults(event.celebrants)}
+        errors={state?.fieldErrors}
+      />
 
       <div>
         <label htmlFor="event_date" className="mb-1 block text-sm font-medium">

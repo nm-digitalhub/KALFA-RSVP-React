@@ -7,7 +7,8 @@ import { requireUser } from '@/lib/auth/dal';
 import { logActivity } from '@/lib/data/activity';
 import { ensurePersonalOrg } from '@/lib/data/orgs';
 import { isBeforeTomorrowIL, todayIL } from '@/lib/data/event-date';
-import type { Database } from '@/lib/supabase/types';
+import type { Database, Json } from '@/lib/supabase/types';
+import type { CelebrantsInput } from '@/lib/validation/schemas';
 
 type EventRow = Database['public']['Tables']['events']['Row'];
 export type EventType = Database['public']['Enums']['event_type'];
@@ -151,6 +152,17 @@ export interface CreateEventInput {
   event_type: EventType;
   event_date: string | null;
   venue_name: string | null;
+  // Per-event-type celebrant names (בעלי שמחה) — optional at create (partial
+  // is legal too); null means "none given" and stores SQL NULL, never {}.
+  celebrants: CelebrantsInput | null;
+}
+
+// `celebrants` is a jsonb column typed `Json`. The CelebrantsInput shapes are
+// structurally compatible at runtime but not directly assignable in TS, so we
+// narrow through unknown — documented per the project's casting rule (same
+// pattern as src/lib/data/campaigns.ts:173).
+function celebrantsJson(celebrants: CelebrantsInput | null): Json | null {
+  return celebrants as unknown as Json | null;
 }
 
 // Create an event owned by the current user. R1 (status forced to 'draft') is
@@ -170,7 +182,12 @@ export async function createEvent(input: CreateEventInput): Promise<EventListIte
 
   const { data, error } = await supabase
     .from('events')
-    .insert({ ...input, owner_id: user.id, org_id: orgId })
+    .insert({
+      ...input,
+      celebrants: celebrantsJson(input.celebrants),
+      owner_id: user.id,
+      org_id: orgId,
+    })
     .select(LIST_COLUMNS)
     .single();
 
@@ -206,12 +223,13 @@ export type EventDetail = Pick<
   | 'venue_name'
   | 'venue_address'
   | 'rsvp_deadline'
+  | 'celebrants'
   | 'status'
   | 'created_at'
 >;
 
 const EVENT_DETAIL_COLUMNS =
-  'id, name, event_type, event_date, venue_name, venue_address, rsvp_deadline, status, created_at';
+  'id, name, event_type, event_date, venue_name, venue_address, rsvp_deadline, celebrants, status, created_at';
 
 // Fetch one of the current owner's events for the detail/edit page. Scoped by
 // owner_id in addition to RLS; notFound() (404) if missing or not owned.
@@ -252,6 +270,12 @@ export interface UpdateEventInput {
   event_type: EventType;
   venue_name: string | null;
   venue_address: string | null;
+  // Always present (the celebrant field group is always rendered, so its
+  // inputs are always posted): the submitted value replaces the stored one on
+  // every save — all-empty → null clears the column. NOT date-locked: an
+  // active event's owner must be able to fill these before enabling a
+  // campaign (the campaign gate points them at this edit form).
+  celebrants: CelebrantsInput | null;
   event_date?: string | null;
   rsvp_deadline?: string | null;
 }
@@ -281,6 +305,9 @@ export async function updateEvent(
     event_type: input.event_type,
     venue_name: input.venue_name,
     venue_address: input.venue_address,
+    // On an event_type change the action already parsed the NEW type's fields
+    // only (parseCelebrantsForm), so the new shape replaces the old outright.
+    celebrants: celebrantsJson(input.celebrants),
   };
 
   if (cur.status !== 'draft') {

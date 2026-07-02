@@ -1,6 +1,7 @@
 import Link from 'next/link';
 
 import { getPackage } from '@/lib/data/admin/packages';
+import { holdBufferFractionToPercent } from '@/lib/validation/admin';
 import { PageHeading } from '../../_components';
 import { PackageForm, type PackageFormInitial } from '../package-form';
 import { updatePackageAction } from '../actions';
@@ -48,7 +49,7 @@ export default async function EditPackagePage({
     outreach_schedule: outreachSchedule,
     min_hold_floor: pkg.min_hold_floor,
     // Stored as a fraction (0.1); the form displays/accepts a percent (10).
-    hold_buffer_pct_percent: pkg.hold_buffer_pct * 100,
+    hold_buffer_pct_percent: holdBufferFractionToPercent(pkg.hold_buffer_pct),
   };
 
   // Bind the id so the client form receives the (prevState, formData) signature.

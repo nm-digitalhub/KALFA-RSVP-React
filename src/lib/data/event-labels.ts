@@ -1,4 +1,5 @@
 import type { Database } from '@/lib/supabase/types';
+import type { CelebrantFieldLabels } from '@/lib/validation/schemas';
 
 // Hebrew labels for the events-domain enums. Defined as EXHAUSTIVE
 // `Record<enum, string>` maps so that adding or removing a value in the DB
@@ -27,4 +28,22 @@ export const EVENT_STATUS_LABELS: Record<EventStatus, string> = {
   draft: 'טיוטה',
   active: 'פעיל',
   closed: 'סגור',
+};
+
+// Hebrew labels for the celebrant (בעלי שמחה) inputs, per event type — used
+// as the form labels AND the field-error vocabulary. CelebrantFieldLabels is
+// a mapped type over the event_type enum (keyed through each type's celebrant
+// kind — see CELEBRANT_KIND_BY_EVENT_TYPE), so a missing event type OR a
+// wrong/missing/extra field here is a compile error. Type-only import keeps
+// this module isomorphic.
+export const CELEBRANT_FIELD_LABELS: CelebrantFieldLabels = {
+  wedding: { groom: 'שם מלא של החתן', bride: 'שם מלא של הכלה' },
+  bar_mitzvah: { name: 'שם מלא של חתן הבר־מצווה' },
+  bat_mitzvah: { name: 'שם מלא של כלת הבת־מצווה' },
+  brit: { parents: 'שמות ההורים', child: 'שם התינוק (אופציונלי)' },
+  britah: { parents: 'שמות ההורים', child: 'שם התינוקת (אופציונלי)' },
+  henna: { groom: 'שם מלא של החתן', bride: 'שם מלא של הכלה' },
+  engagement: { groom: 'שם מלא של הארוס', bride: 'שם מלא של הארוסה' },
+  birthday: { name: 'שם מלא של בעל/ת השמחה' },
+  other: { names: 'שמות בעלי השמחה' },
 };

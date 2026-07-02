@@ -1,10 +1,14 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  CELEBRANT_KIND_BY_EVENT_TYPE,
+  celebrantsCompleteFor,
+  celebrantsSchemaFor,
   createEventSchema,
   EVENT_TYPES,
   loginSchema,
   ORDER_STATUSES,
+  parseCelebrantsForm,
   payPendingOrderSchema,
   signupSchema,
   updateEventSchema,
@@ -13,6 +17,7 @@ import {
 } from './schemas';
 import { PROFILE_NAME_MAX } from '@/lib/constants';
 import { todayIL } from '@/lib/data/event-date';
+import { CELEBRANT_FIELD_LABELS } from '@/lib/data/event-labels';
 
 // S2.2 — relative-to-real-time date strings (Israel calendar day), so these
 // tests never go stale. Reuses the SAME production helper the refines call
@@ -458,5 +463,196 @@ describe('updateSettingsSchema', () => {
         billing_updates: false,
       });
     }
+  });
+});
+
+describe('CELEBRANT_KIND_BY_EVENT_TYPE', () => {
+  it('matches the approved product matrix', () => {
+    expect(CELEBRANT_KIND_BY_EVENT_TYPE).toEqual({
+      wedding: 'couple',
+      henna: 'couple',
+      engagement: 'couple',
+      bar_mitzvah: 'single',
+      bat_mitzvah: 'single',
+      birthday: 'single',
+      brit: 'parents',
+      britah: 'parents',
+      other: 'free',
+    });
+  });
+
+  // The Record<EventType, ...> / CelebrantFieldLabels typing already makes
+  // enum drift a COMPILE error; this runtime loop asserts the same invariant
+  // (every event type has a kind, a form schema and matching field labels) so
+  // a drift also fails loudly in the test output.
+  it('covers every event type, with a form schema and field labels to match', () => {
+    for (const type of EVENT_TYPES) {
+      expect(CELEBRANT_KIND_BY_EVENT_TYPE[type]).toBeDefined();
+      const schema = celebrantsSchemaFor(type);
+      expect(Object.keys(schema.shape).sort()).toEqual(
+        Object.keys(CELEBRANT_FIELD_LABELS[type]).sort(),
+      );
+    }
+  });
+});
+
+describe('CELEBRANT_FIELD_LABELS', () => {
+  it('matches the approved Hebrew label matrix', () => {
+    expect(CELEBRANT_FIELD_LABELS).toEqual({
+      wedding: { groom: 'שם מלא של החתן', bride: 'שם מלא של הכלה' },
+      henna: { groom: 'שם מלא של החתן', bride: 'שם מלא של הכלה' },
+      engagement: { groom: 'שם מלא של הארוס', bride: 'שם מלא של הארוסה' },
+      bar_mitzvah: { name: 'שם מלא של חתן הבר־מצווה' },
+      bat_mitzvah: { name: 'שם מלא של כלת הבת־מצווה' },
+      birthday: { name: 'שם מלא של בעל/ת השמחה' },
+      brit: { parents: 'שמות ההורים', child: 'שם התינוק (אופציונלי)' },
+      britah: { parents: 'שמות ההורים', child: 'שם התינוקת (אופציונלי)' },
+      other: { names: 'שמות בעלי השמחה' },
+    });
+  });
+});
+
+describe('celebrantsSchemaFor — form validation', () => {
+  it('accepts a full couple (wedding) and trims the names', () => {
+    const result = celebrantsSchemaFor('wedding').safeParse({
+      groom: '  יוסי כהן  ',
+      bride: 'דנה לוי',
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data).toEqual({ groom: 'יוסי כהן', bride: 'דנה לוי' });
+    }
+  });
+
+  it('accepts empty strings for every field (optional at save)', () => {
+    const result = celebrantsSchemaFor('brit').safeParse({ parents: '', child: '' });
+    expect(result.success).toBe(true);
+  });
+
+  it('accepts missing fields entirely (nothing posted)', () => {
+    const result = celebrantsSchemaFor('birthday').safeParse({});
+    expect(result.success).toBe(true);
+  });
+
+  it('rejects a name longer than 120 characters, with the error on the field', () => {
+    const result = celebrantsSchemaFor('wedding').safeParse({
+      groom: 'א'.repeat(121),
+      bride: '',
+    });
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.flatten().fieldErrors.groom).toBeDefined();
+    }
+  });
+
+  it('accepts a name of exactly 120 characters', () => {
+    const result = celebrantsSchemaFor('other').safeParse({ names: 'א'.repeat(120) });
+    expect(result.success).toBe(true);
+  });
+
+  it('strips fields that belong to another kind', () => {
+    const result = celebrantsSchemaFor('wedding').safeParse({
+      groom: 'יוסי',
+      bride: 'דנה',
+      name: 'זליגה',
+      names: 'זליגה',
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(Object.keys(result.data).sort()).toEqual(['bride', 'groom']);
+    }
+  });
+});
+
+describe('parseCelebrantsForm', () => {
+  it('returns the couple shape for a wedding', () => {
+    expect(parseCelebrantsForm('wedding', { groom: 'יוסי', bride: 'דנה' })).toEqual({
+      groom: 'יוסי',
+      bride: 'דנה',
+    });
+  });
+
+  it('returns the single shape for a bar mitzvah', () => {
+    expect(parseCelebrantsForm('bar_mitzvah', { name: 'איתי' })).toEqual({ name: 'איתי' });
+  });
+
+  it('returns the parents shape for a brit, omitting an empty optional child', () => {
+    expect(parseCelebrantsForm('brit', { parents: 'דנה ויוסי', child: '' })).toEqual({
+      parents: 'דנה ויוסי',
+    });
+  });
+
+  it('keeps the child when filled (britah)', () => {
+    expect(parseCelebrantsForm('britah', { parents: 'דנה ויוסי', child: 'תמר' })).toEqual({
+      parents: 'דנה ויוסי',
+      child: 'תמר',
+    });
+  });
+
+  it('returns the free shape for other', () => {
+    expect(parseCelebrantsForm('other', { names: 'משפחת כהן' })).toEqual({
+      names: 'משפחת כהן',
+    });
+  });
+
+  it('allows a partial save (only groom) — completeness is the campaign gate, not the form', () => {
+    expect(parseCelebrantsForm('wedding', { groom: 'יוסי', bride: '' })).toEqual({
+      groom: 'יוסי',
+    });
+  });
+
+  it('returns null when every field is empty (store NULL, not {})', () => {
+    expect(parseCelebrantsForm('wedding', { groom: '', bride: '' })).toBeNull();
+    expect(parseCelebrantsForm('birthday', {})).toBeNull();
+  });
+
+  it('returns null for whitespace-only values (defensive re-trim)', () => {
+    expect(parseCelebrantsForm('other', { names: '   ' })).toBeNull();
+  });
+
+  it('reads only the submitted event type kind fields — another kind leftover cannot leak', () => {
+    expect(parseCelebrantsForm('bar_mitzvah', { groom: 'יוסי', bride: 'דנה' })).toBeNull();
+  });
+});
+
+describe('celebrantsCompleteFor — campaign-gate completeness', () => {
+  it('couple: requires BOTH groom and bride', () => {
+    expect(celebrantsCompleteFor('wedding', { groom: 'יוסי', bride: 'דנה' })).toBe(true);
+    expect(celebrantsCompleteFor('wedding', { groom: 'יוסי' })).toBe(false);
+    expect(celebrantsCompleteFor('wedding', { groom: 'יוסי', bride: '' })).toBe(false);
+    expect(celebrantsCompleteFor('henna', { groom: 'יוסי', bride: 'דנה' })).toBe(true);
+    expect(celebrantsCompleteFor('engagement', { groom: 'יוסי', bride: '   ' })).toBe(false);
+  });
+
+  it('single: requires name', () => {
+    expect(celebrantsCompleteFor('bar_mitzvah', { name: 'איתי' })).toBe(true);
+    expect(celebrantsCompleteFor('bat_mitzvah', {})).toBe(false);
+    expect(celebrantsCompleteFor('birthday', { name: '' })).toBe(false);
+  });
+
+  it('parents: requires parents; child stays optional', () => {
+    expect(celebrantsCompleteFor('brit', { parents: 'דנה ויוסי' })).toBe(true);
+    expect(celebrantsCompleteFor('brit', { parents: 'דנה ויוסי', child: 'ארי' })).toBe(true);
+    expect(celebrantsCompleteFor('britah', { child: 'תמר' })).toBe(false);
+  });
+
+  it('free: requires names', () => {
+    expect(celebrantsCompleteFor('other', { names: 'משפחת כהן' })).toBe(true);
+    expect(celebrantsCompleteFor('other', {})).toBe(false);
+  });
+
+  it('treats NULL / wrong-shape stored jsonb as incomplete, never throws', () => {
+    expect(celebrantsCompleteFor('wedding', null)).toBe(false);
+    expect(celebrantsCompleteFor('wedding', undefined)).toBe(false);
+    expect(celebrantsCompleteFor('wedding', 'יוסי ודנה')).toBe(false);
+    expect(celebrantsCompleteFor('wedding', 42)).toBe(false);
+    expect(celebrantsCompleteFor('wedding', ['יוסי', 'דנה'])).toBe(false);
+    expect(celebrantsCompleteFor('wedding', { groom: 5, bride: 'דנה' })).toBe(false);
+  });
+
+  it('a leftover shape from a previous event_type is incomplete for the new type', () => {
+    // Saved as a wedding couple, then the event became a bar mitzvah: the
+    // stored couple shape must NOT satisfy the single kind.
+    expect(celebrantsCompleteFor('bar_mitzvah', { groom: 'יוסי', bride: 'דנה' })).toBe(false);
   });
 });

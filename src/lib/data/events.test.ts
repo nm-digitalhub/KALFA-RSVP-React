@@ -55,7 +55,7 @@ const LIST_COLUMNS =
   'id, name, event_type, event_date, status, venue_name, created_at';
 
 const DETAIL_COLUMNS =
-  'id, name, event_type, event_date, venue_name, venue_address, rsvp_deadline, status, created_at';
+  'id, name, event_type, event_date, venue_name, venue_address, rsvp_deadline, celebrants, status, created_at';
 
 const USER_ID = 'user-123';
 
@@ -85,6 +85,7 @@ function detailRow(overrides: Partial<EventDetail> = {}): EventDetail {
     venue_name: 'Test Venue',
     venue_address: 'Tel Aviv',
     rsvp_deadline: '2026-08-15',
+    celebrants: null,
     status: 'draft',
     created_at: '2026-06-23T00:00:00.000Z',
     ...overrides,
@@ -166,6 +167,7 @@ describe('createEvent', () => {
     event_type: 'birthday' as const,
     event_date: '2026-12-01',
     venue_name: 'Somewhere',
+    celebrants: null,
   };
 
   it('sets owner_id to the current user on insert', async () => {
@@ -277,6 +279,41 @@ describe('createEvent', () => {
       createEvent({ ...input, event_date: ilDate(1) }),
     ).resolves.toBeDefined();
   });
+
+  // Celebrants (בעלי שמחה) — pass-through of the caller's already-validated
+  // shape (the action parsed it per event_type); the data layer never
+  // reshapes it, it only writes the jsonb value (or SQL NULL) as given.
+  it('passes celebrants through to the insert as-is', async () => {
+    const { client, builder } = createMockSupabase<EventListItem>({
+      data: sampleRow(),
+      error: null,
+    });
+    vi.mocked(createClient).mockResolvedValue(
+      client as unknown as Awaited<ReturnType<typeof createClient>>,
+    );
+
+    await createEvent({ ...input, celebrants: { name: 'איתי' } });
+
+    expect(builder.insert).toHaveBeenCalledWith(
+      expect.objectContaining({ celebrants: { name: 'איתי' } }),
+    );
+  });
+
+  it('writes celebrants: null (SQL NULL, never {}) when none were given', async () => {
+    const { client, builder } = createMockSupabase<EventListItem>({
+      data: sampleRow(),
+      error: null,
+    });
+    vi.mocked(createClient).mockResolvedValue(
+      client as unknown as Awaited<ReturnType<typeof createClient>>,
+    );
+
+    await createEvent({ ...input, celebrants: null });
+
+    expect(builder.insert).toHaveBeenCalledWith(
+      expect.objectContaining({ celebrants: null }),
+    );
+  });
 });
 
 describe('getEvent', () => {
@@ -335,6 +372,7 @@ describe('updateEvent', () => {
     event_type: 'birthday' as const,
     venue_name: 'Hall',
     venue_address: 'Haifa',
+    celebrants: null,
   };
 
   function mockTwoReads<Row>(builder: ReturnType<typeof createMockSupabase<Row>>['builder'], first: unknown, second: unknown) {
@@ -437,6 +475,48 @@ describe('updateEvent', () => {
 
     const patch = vi.mocked(builder.update).mock.calls[0][0] as Record<string, unknown>;
     expect(patch.event_date).toBe(ilDate(5));
+  });
+
+  // Celebrants are ALWAYS in the patch (the field group is always rendered and
+  // posted) and are NOT date-locked — an active event's owner fills them here
+  // before enabling a campaign. The action already reduced the submission to
+  // the submitted type's shape (or null); the data layer writes it as-is.
+  it('writes the given celebrants shape into the patch (any status)', async () => {
+    const row = detailRow({ celebrants: { groom: 'יוסי', bride: 'דנה' } });
+    const { client, builder } = createMockSupabase<EventDetail>({
+      data: row,
+      error: null,
+    });
+    vi.mocked(createClient).mockResolvedValue(
+      client as unknown as Awaited<ReturnType<typeof createClient>>,
+    );
+    mockTwoReads(builder, { data: detailRow({ status: 'active' }), error: null }, { data: row, error: null });
+
+    await updateEvent('event-1', {
+      ...baseInput,
+      celebrants: { groom: 'יוסי', bride: 'דנה' },
+    });
+
+    const patch = vi.mocked(builder.update).mock.calls[0][0] as Record<string, unknown>;
+    expect(patch.celebrants).toEqual({ groom: 'יוסי', bride: 'דנה' });
+  });
+
+  it('writes celebrants: null (clearing the column) when the group was all-empty', async () => {
+    const row = detailRow({ celebrants: null });
+    const { client, builder } = createMockSupabase<EventDetail>({
+      data: row,
+      error: null,
+    });
+    vi.mocked(createClient).mockResolvedValue(
+      client as unknown as Awaited<ReturnType<typeof createClient>>,
+    );
+    mockTwoReads(builder, { data: detailRow({ status: 'draft' }), error: null }, { data: row, error: null });
+
+    await updateEvent('event-1', { ...baseInput, celebrants: null });
+
+    const patch = vi.mocked(builder.update).mock.calls[0][0] as Record<string, unknown>;
+    expect('celebrants' in patch).toBe(true);
+    expect(patch.celebrants).toBeNull();
   });
 
   it('refuses (via the ownership gate) and does not write when not owned', async () => {

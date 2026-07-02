@@ -764,6 +764,7 @@ export type Database = {
       }
       events: {
         Row: {
+          celebrants: Json | null
           created_at: string
           event_date: string | null
           event_type: Database["public"]["Enums"]["event_type"]
@@ -782,6 +783,7 @@ export type Database = {
           with_ai_calls: boolean
         }
         Insert: {
+          celebrants?: Json | null
           created_at?: string
           event_date?: string | null
           event_type?: Database["public"]["Enums"]["event_type"]
@@ -800,6 +802,7 @@ export type Database = {
           with_ai_calls?: boolean
         }
         Update: {
+          celebrants?: Json | null
           created_at?: string
           event_date?: string | null
           event_type?: Database["public"]["Enums"]["event_type"]

@@ -3,6 +3,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 // campaigns.ts begins with `import 'server-only'`; computeCeiling is pure.
 vi.mock('server-only', () => ({}));
 vi.mock('@/lib/supabase/admin', () => ({ createAdminClient: vi.fn() }));
+// createCampaign's create-or-continue check (getCampaignForEvent) reads via the
+// cookie-scoped server client; stub the module so tests wire it explicitly.
+vi.mock('@/lib/supabase/server', () => ({ createClient: vi.fn() }));
 // Lifecycle transitions verify ownership; stub it as a no-op.
 vi.mock('@/lib/data/events', () => ({ requireOwnedEvent: vi.fn() }));
 // approveCampaign reads the session user; stub it.
@@ -16,6 +19,7 @@ vi.mock('@/lib/data/contacts', () => ({
 
 import { createMockSupabase, type QueryResult } from '@/test/supabase-mock';
 import { createAdminClient } from '@/lib/supabase/admin';
+import { createClient } from '@/lib/supabase/server';
 import { requireOwnedEvent } from '@/lib/data/events';
 import { requireUser } from '@/lib/auth/dal';
 
@@ -67,6 +71,16 @@ function adminWith<T>(result: QueryResult<T>) {
   return { client, builder };
 }
 
+// Wire the cookie-scoped server client (the celebrants-gate read +
+// getCampaignForEvent go through it); mirror of adminWith.
+function serverWith<T>(result: QueryResult<T>) {
+  const { client, builder } = createMockSupabase<T>(result);
+  vi.mocked(createClient).mockResolvedValue(
+    client as unknown as Awaited<ReturnType<typeof createClient>>,
+  );
+  return { client, builder };
+}
+
 beforeEach(() => vi.clearAllMocks());
 
 describe('computeCeiling', () => {
@@ -108,6 +122,13 @@ describe('computeHoldAmount (J5 hold = security only)', () => {
 
   it('applies hold_buffer_pct as a FRACTION (0.1 = +10%)', () => {
     expect(computeHoldAmount(300, 4, 0, 0.1)).toBe(1320); // 300×4×1.1
+  });
+
+  it('compares the floor against the ALREADY-buffered amount (floor + buffer together, §5.5#4)', () => {
+    // sized = 10×4×1.1 = 44 < floor 50 → the floor wins over the buffered amount.
+    expect(computeHoldAmount(10, 4, 50, 0.1)).toBe(50);
+    // sized = 300×4×1.1 = 1320 > floor 50 → the buffered amount wins unchanged.
+    expect(computeHoldAmount(300, 4, 50, 0.1)).toBe(1320);
   });
 
   it('rounds to agorot (2 decimals), no float drift', () => {
@@ -208,6 +229,201 @@ describe('prepareCampaignHold (freeze set + size hold + recompute ceiling)', () 
       'אין אנשי קשר תקינים',
     );
     expect(snapshotAuthorizedSet).not.toHaveBeenCalled();
+  });
+
+  it('live-reads min_hold_floor/hold_buffer_pct on EVERY attempt — a retry reflects the NEW package values (§5.5#5ב)', async () => {
+    const { builder } = adminWith<Record<string, unknown>>({
+      data: null,
+      error: null,
+    });
+    vi.mocked(countUniqueContactsForEvent).mockResolvedValue(350);
+    vi.mocked(snapshotAuthorizedSet).mockResolvedValue(300);
+    // One attempt = 4 awaited chains: campaign load → app_settings coverage →
+    // packages knobs (the live-read under test) → the campaigns update.
+    const sequenceAttempt = (knobs: {
+      min_hold_floor: number;
+      hold_buffer_pct: number;
+    }) =>
+      vi.spyOn(builder, 'then')
+        .mockImplementationOnce((f) =>
+          f({
+            data: { event_id: 'e1', price_per_reached: 4, template_id: 'pkg1' },
+            error: null,
+          }),
+        )
+        .mockImplementationOnce((f) =>
+          f({ data: { reasonable_coverage_contacts: 300 }, error: null }),
+        )
+        .mockImplementationOnce((f) => f({ data: knobs, error: null }))
+        .mockImplementationOnce((f) => f({ data: null, error: null }));
+
+    sequenceAttempt({ min_hold_floor: 0, hold_buffer_pct: 0 });
+    const first = await prepareCampaignHold('c1');
+
+    // The admin raises the package buffer between attempts; the retry (after
+    // hold_failed/hold_review, §1.5) must size the hold from the NEW live-read
+    // values — the knobs are NOT snapshotted on the campaign.
+    sequenceAttempt({ min_hold_floor: 0, hold_buffer_pct: 0.1 });
+    const second = await prepareCampaignHold('c1');
+
+    expect(first.holdAmount).toBe(1200); // 300 × 4 × 1.0
+    expect(second.holdAmount).toBe(1320); // 300 × 4 × 1.1 — the NEW buffer
+    expect(second.holdAmount).not.toBe(first.holdAmount);
+  });
+});
+
+describe('createCampaign (§5.5#5א — snapshot locked from the canonical template)', () => {
+  it('inserts price/channels/outreach_schedule copied+locked from the template (and the derived ceiling)', async () => {
+    // The mock-level equivalent of the plan's "direct campaigns select": the
+    // INSERT payload is asserted directly, explicitly NOT via getCampaign/
+    // getCampaignForHold (neither returns these snapshot fields).
+    vi.mocked(requireOwnedEvent).mockResolvedValue(ownedEvent());
+    vi.mocked(countUniqueContactsForEvent).mockResolvedValue(100);
+
+    // The cookie-scoped server client serves (1) the celebrants-gate read
+    // (complete for a wedding), (2) getCampaignForEvent (create-or-continue)
+    // resolving to "no existing campaign".
+    const server = serverWith<Record<string, unknown>>({
+      data: null,
+      error: null,
+    });
+    vi.spyOn(server.builder, 'then')
+      .mockImplementationOnce((f) =>
+        f({
+          data: { event_type: 'wedding', celebrants: { groom: 'דוד לוי', bride: 'שרה כהן' } },
+          error: null,
+        }),
+      )
+      .mockImplementationOnce((f) => f({ data: null, error: null }));
+
+    // The admin client serves (1) the packages template list, (2) the insert.
+    const { builder } = adminWith<unknown>({ data: null, error: null });
+    const templateSchedule = [
+      { days_before: 7, channel: 'whatsapp', message_key: 'rsvp_1' },
+    ];
+    vi.spyOn(builder, 'then')
+      .mockImplementationOnce((f) =>
+        f({
+          data: [
+            {
+              id: 'pkg1',
+              name: 'x',
+              price_per_reached: 4,
+              description: null,
+              channels: ['whatsapp'],
+              outreach_schedule: templateSchedule,
+            },
+          ],
+          error: null,
+        }),
+      )
+      .mockImplementationOnce((f) => f({ data: { id: 'c-new' }, error: null }));
+
+    const r = await createCampaign('e1');
+
+    expect(r.id).toBe('c-new');
+    const inserted = vi.mocked(builder.insert).mock.calls[0][0] as Record<
+      string,
+      unknown
+    >;
+    expect(inserted.status).toBe('pending_approval');
+    expect(inserted.template_id).toBe('pkg1');
+    // The locked snapshot copies — the owner chooses nothing (§17/§18.7).
+    expect(inserted.price_per_reached).toBe(4);
+    expect(inserted.allowed_channels).toEqual(['whatsapp']);
+    // Exact shape survives the `as unknown as Json` cast (campaigns.ts insert).
+    expect(inserted.outreach_schedule).toEqual(templateSchedule);
+    // Derived server-side, never client input: 100 contacts × ₪4.
+    expect(inserted.max_contacts).toBe(100);
+    expect(inserted.max_charge_ceiling).toBe(400);
+  });
+});
+
+describe('createCampaign — celebrants gate (בעלי השמחה)', () => {
+  // The per-kind completeness matrix (all nine event types × shapes) is
+  // covered by celebrantsCompleteFor's own tests in schemas.test.ts; here we
+  // verify the GATE wiring only — one couple case and one parents case.
+  beforeEach(() => {
+    vi.mocked(requireOwnedEvent).mockResolvedValue(ownedEvent());
+  });
+
+  it('blocks creation when celebrants are missing (null) — Hebrew error, nothing inserted', async () => {
+    const { builder } = serverWith<Record<string, unknown>>({
+      data: null,
+      error: null,
+    });
+    vi.spyOn(builder, 'then').mockImplementationOnce((f) =>
+      f({ data: { event_type: 'wedding', celebrants: null }, error: null }),
+    );
+    const admin = adminWith({ data: null, error: null });
+
+    await expect(createCampaign('e1')).rejects.toThrow(
+      'יש למלא את פרטי בעלי השמחה בעריכת האירוע לפני הפעלת אישורי הגעה',
+    );
+    // The flow never reaches the template read / insert.
+    expect(admin.client.from).not.toHaveBeenCalled();
+  });
+
+  it('blocks CONTINUING an existing campaign too — the gate precedes the create-or-continue early return', async () => {
+    const { builder } = serverWith<Record<string, unknown>>({
+      data: null,
+      error: null,
+    });
+    vi.spyOn(builder, 'then')
+      // 1. the celebrants-gate read — incomplete couple (bride missing)
+      .mockImplementationOnce((f) =>
+        f({
+          data: { event_type: 'wedding', celebrants: { groom: 'דוד לוי' } },
+          error: null,
+        }),
+      )
+      // 2. WOULD be getCampaignForEvent returning the EXISTING campaign — the
+      //    gate must throw before this early return can ever hand it back.
+      .mockImplementationOnce((f) => f({ data: { id: 'c-existing' }, error: null }));
+
+    await expect(createCampaign('e1')).rejects.toThrow(
+      'יש למלא את פרטי בעלי השמחה בעריכת האירוע לפני הפעלת אישורי הגעה',
+    );
+  });
+
+  it('complete couple celebrants pass the gate — the flow proceeds to the NEXT validation (contacts)', async () => {
+    const { builder } = serverWith<Record<string, unknown>>({
+      data: null,
+      error: null,
+    });
+    vi.spyOn(builder, 'then')
+      .mockImplementationOnce((f) =>
+        f({
+          data: { event_type: 'wedding', celebrants: { groom: 'דוד לוי', bride: 'שרה כהן' } },
+          error: null,
+        }),
+      )
+      // getCampaignForEvent → no existing campaign
+      .mockImplementationOnce((f) => f({ data: null, error: null }));
+    adminWith({ data: null, error: null });
+    vi.mocked(countUniqueContactsForEvent).mockResolvedValue(0);
+
+    // Rejects on the next gate (no valid contacts) — the celebrants gate passed.
+    await expect(createCampaign('e1')).rejects.toThrow('אין אנשי קשר תקינים');
+  });
+
+  it('parents kind: `parents` alone is complete (child optional) — the gate passes', async () => {
+    const { builder } = serverWith<Record<string, unknown>>({
+      data: null,
+      error: null,
+    });
+    vi.spyOn(builder, 'then')
+      .mockImplementationOnce((f) =>
+        f({
+          data: { event_type: 'brit', celebrants: { parents: 'משה ורות כהן' } },
+          error: null,
+        }),
+      )
+      .mockImplementationOnce((f) => f({ data: null, error: null }));
+    adminWith({ data: null, error: null });
+    vi.mocked(countUniqueContactsForEvent).mockResolvedValue(0);
+
+    await expect(createCampaign('e1')).rejects.toThrow('אין אנשי קשר תקינים');
   });
 });
 

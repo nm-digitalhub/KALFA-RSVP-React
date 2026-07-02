@@ -4,6 +4,9 @@ import { ISRAELI_PHONE_RE, PROFILE_NAME_MAX } from '@/lib/constants';
 // Dependency-free leaf (no `server-only`) — safe to import from this
 // client-reachable validation module (edit-event-form.tsx is 'use client').
 import { isBeforeTomorrowIL, todayIL } from '@/lib/data/event-date';
+import type { Database } from '@/lib/supabase/types';
+
+type EventType = Database['public']['Enums']['event_type'];
 
 // Auth
 export const loginSchema = z.object({
@@ -141,6 +144,140 @@ export const updateEventSchema = z.object({
   });
 
 export type UpdateEventInput = z.infer<typeof updateEventSchema>;
+
+// --- Celebrants (בעלי שמחה) ---
+// Per-event-type celebrant names stored in events.celebrants (schemaless
+// jsonb; see the column comment). Storage has NO kind discriminator —
+// event_type IS the key: four shape kinds cover the nine event types.
+// Form-level, every field is OPTIONAL (an event saves fine without/with
+// partial celebrants); completeness is enforced ONLY by the campaign
+// enablement gate via celebrantsCompleteFor().
+
+export type CelebrantKind = 'couple' | 'single' | 'parents' | 'free';
+
+// EXHAUSTIVE over the event_type enum — adding/removing an enum value is a
+// compile error here (same guarantee as EVENT_TYPE_LABELS). `as const
+// satisfies` keeps each per-type literal kind so CelebrantFieldLabels below
+// can map every event type to exactly its kind's field set.
+export const CELEBRANT_KIND_BY_EVENT_TYPE = {
+  wedding: 'couple',
+  bar_mitzvah: 'single',
+  bat_mitzvah: 'single',
+  brit: 'parents',
+  britah: 'parents',
+  henna: 'couple',
+  engagement: 'couple',
+  birthday: 'single',
+  other: 'free',
+} as const satisfies Record<EventType, CelebrantKind>;
+
+// One celebrant name input: trimmed, bounded, and optional at create/edit —
+// '' (an input left empty) is legal; parseCelebrantsForm maps it away.
+const celebrantNameField = z
+  .string()
+  .trim()
+  .max(120, { error: 'השם ארוך מדי' })
+  .optional()
+  .or(z.literal(''));
+
+// Per-kind FORM schemas — what the event forms submit as plain named inputs
+// (celebrants.groom, celebrants.bride, ...). Unknown keys are stripped by
+// z.object, so a caller may pass all six possible field names and only the
+// kind's own fields survive.
+const CELEBRANT_FORM_SCHEMA_BY_KIND = {
+  couple: z.object({ groom: celebrantNameField, bride: celebrantNameField }),
+  single: z.object({ name: celebrantNameField }),
+  parents: z.object({ parents: celebrantNameField, child: celebrantNameField }),
+  free: z.object({ names: celebrantNameField }),
+} as const;
+
+// The celebrant form schema for an event type (the name is promised by the
+// events.celebrants column comment). Generic so a LITERAL event type resolves
+// to its kind's exact schema (precise .shape/.safeParse typing); a plain
+// EventType still yields the union of the four.
+export function celebrantsSchemaFor<T extends EventType>(eventType: T) {
+  return CELEBRANT_FORM_SCHEMA_BY_KIND[CELEBRANT_KIND_BY_EVENT_TYPE[eventType]];
+}
+
+// Every field name across the four kinds.
+export type CelebrantFieldKey = 'groom' | 'bride' | 'name' | 'parents' | 'child' | 'names';
+
+const CELEBRANT_FIELD_KEYS_BY_KIND: Record<CelebrantKind, readonly CelebrantFieldKey[]> = {
+  couple: ['groom', 'bride'],
+  single: ['name'],
+  parents: ['parents', 'child'],
+  free: ['names'],
+};
+
+// What createEvent/updateEvent accept and what is stored in the jsonb column.
+// Partial is legal at save (e.g. only groom) — completeness is the campaign
+// gate's concern, not the form's.
+export type CelebrantsInput =
+  | { groom?: string; bride?: string }
+  | { name?: string }
+  | { parents?: string; child?: string }
+  | { names?: string };
+
+// The validated output of celebrantsSchemaFor(...).safeParse — fields
+// trimmed, possibly '' (input left empty) or undefined (not posted).
+export type CelebrantsFormValues = z.infer<
+  (typeof CELEBRANT_FORM_SCHEMA_BY_KIND)[CelebrantKind]
+>;
+
+// Normalise VALIDATED form values into the stored shape: reads ONLY the
+// submitted event type's fields (a stale other-kind value can never leak into
+// storage on an event_type change), maps '' → key omitted, and returns null
+// when every field is empty — the column stores NULL, never {}.
+export function parseCelebrantsForm(
+  eventType: EventType,
+  values: CelebrantsFormValues,
+): CelebrantsInput | null {
+  const source = values as Partial<Record<CelebrantFieldKey, string>>;
+  const out: Partial<Record<CelebrantFieldKey, string>> = {};
+  for (const key of CELEBRANT_FIELD_KEYS_BY_KIND[CELEBRANT_KIND_BY_EVENT_TYPE[eventType]]) {
+    // Defensive re-trim (values normally arrive trimmed from the schema) so a
+    // whitespace-only value can never count as "filled".
+    const value = source[key]?.trim();
+    if (value) out[key] = value;
+  }
+  return Object.keys(out).length > 0 ? (out as CelebrantsInput) : null;
+}
+
+// Campaign-gate completeness per kind: couple → groom+bride, single → name,
+// parents → parents (child stays optional), free → names. These schemas
+// validate the RAW stored jsonb defensively — null, a string, a different
+// kind's shape left over from an event_type change: all simply "incomplete".
+const completeCelebrantName = z.string().trim().min(1);
+
+const CELEBRANT_COMPLETE_SCHEMA_BY_KIND: Record<CelebrantKind, z.ZodType> = {
+  couple: z.object({ groom: completeCelebrantName, bride: completeCelebrantName }),
+  single: z.object({ name: completeCelebrantName }),
+  parents: z.object({ parents: completeCelebrantName }),
+  free: z.object({ names: completeCelebrantName }),
+};
+
+// True when the stored celebrants value satisfies the event type's kind —
+// the ONLY place celebrants become required (campaign enablement).
+export function celebrantsCompleteFor(eventType: EventType, value: unknown): boolean {
+  return CELEBRANT_COMPLETE_SCHEMA_BY_KIND[CELEBRANT_KIND_BY_EVENT_TYPE[eventType]].safeParse(
+    value,
+  ).success;
+}
+
+// Field-label SHAPE per event type (the Hebrew labels themselves live in
+// src/lib/data/event-labels.ts — CELEBRANT_FIELD_LABELS). Mapped through the
+// literal kinds above so a wrong, missing, or extra field label is a compile
+// error, not a silently-broken form.
+type CelebrantLabelFieldsByKind = {
+  couple: { groom: string; bride: string };
+  single: { name: string };
+  parents: { parents: string; child: string };
+  free: { names: string };
+};
+
+export type CelebrantFieldLabels = {
+  [T in EventType]: CelebrantLabelFieldsByKind[(typeof CELEBRANT_KIND_BY_EVENT_TYPE)[T]];
+};
 
 // Orders — order_status matches the public.order_status enum in the live schema.
 // This const is the vocabulary; ORDER_STATUS_LABELS (in src/lib/data/orders.ts)

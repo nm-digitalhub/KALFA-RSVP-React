@@ -9,6 +9,7 @@ import {
 } from '@/lib/data/contacts';
 import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
+import { celebrantsCompleteFor } from '@/lib/validation/schemas';
 import type { Database, Json } from '@/lib/supabase/types';
 
 // Campaign = "campaign approval for an event" (outcome-billing). Owner sets the
@@ -137,6 +138,24 @@ export async function createCampaign(eventId: string): Promise<{ id: string }> {
   // REST-proof authority.
   if (event.status !== 'active') {
     throw new Error('יש לפרסם את האירוע לפני אישורי הגעה');
+  }
+
+  // Celebrants gate: the outreach sends bind the celebrant names (בעלי השמחה)
+  // into the message templates, so they must be COMPLETE for the event's type
+  // before RSVP confirmations are enabled. The gate sits BEFORE the
+  // create-or-continue early return on purpose — the sends depend on these
+  // values, so CONTINUING an existing campaign without them must be blocked
+  // exactly like creating a new one. requireOwnedEvent's slim column set does
+  // not carry these two fields; this owner-scoped (RLS) read fetches just them.
+  const supabase = await createClient();
+  const { data: celebrantsRow, error: celebrantsErr } = await supabase
+    .from('events')
+    .select('event_type, celebrants')
+    .eq('id', eventId)
+    .maybeSingle();
+  if (celebrantsErr || !celebrantsRow) throw new Error('טעינת האירוע נכשלה');
+  if (!celebrantsCompleteFor(celebrantsRow.event_type, celebrantsRow.celebrants)) {
+    throw new Error('יש למלא את פרטי בעלי השמחה בעריכת האירוע לפני הפעלת אישורי הגעה');
   }
 
   // Create-or-continue: never a second campaign for the same event.

@@ -373,7 +373,15 @@ export function PackageForm({
             value={tp}
             onChange={(next) => updateTouchpoint(i, next)}
             onRemove={() => removeTouchpoint(i)}
-            errors={state?.fieldErrors?.[`outreach_schedule.${i}.message_key`]}
+            errors={[
+              // All per-row error keys the server can emit (§5.4 convention):
+              // days_before (structural), channel (§2#5 subset enforcement in
+              // superRefine) and message_key (template validation). An empty
+              // merged array renders nothing (FieldError returns null).
+              ...(state?.fieldErrors?.[`outreach_schedule.${i}.days_before`] ?? []),
+              ...(state?.fieldErrors?.[`outreach_schedule.${i}.channel`] ?? []),
+              ...(state?.fieldErrors?.[`outreach_schedule.${i}.message_key`] ?? []),
+            ]}
           />
         ))}
         <button
