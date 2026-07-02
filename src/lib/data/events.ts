@@ -8,6 +8,7 @@ import { logActivity } from '@/lib/data/activity';
 import { ensurePersonalOrg } from '@/lib/data/orgs';
 import { isBeforeTomorrowIL, todayIL } from '@/lib/data/event-date';
 import type { Database, Json } from '@/lib/supabase/types';
+import { celebrantsCompleteFor } from '@/lib/validation/schemas';
 import type { CelebrantsInput } from '@/lib/validation/schemas';
 
 type EventRow = Database['public']['Tables']['events']['Row'];
@@ -280,6 +281,12 @@ export interface UpdateEventInput {
   rsvp_deadline?: string | null;
 }
 
+// The one updateEvent guard a user can hit through ENABLED UI (the edit form
+// renders the celebrant fields freely) — exported so the action can surface
+// exactly this message instead of the generic failure text.
+export const CELEBRANTS_LOCKED_ERROR =
+  'לא ניתן למחוק את פרטי בעלי השמחה כשקיים קמפיין אישורי הגעה פעיל';
+
 // Update an event the current user owns. The ownership gate runs first (404 if
 // not owned); the update is additionally scoped by owner_id, and the patch is
 // built from an explicit allow-list so id/owner_id can never be changed here.
@@ -327,6 +334,25 @@ export async function updateEvent(
         throw new Error('המועד האחרון לאישור הגעה לא יכול להיות בעבר');
       }
       update.rsvp_deadline = input.rsvp_deadline;
+    }
+  }
+
+  // Celebrants lock while a campaign lives: createCampaign gates enablement on
+  // a COMPLETE celebrants shape, and the outreach sends keep binding these
+  // values afterwards — so once a non-cancelled campaign exists, the group may
+  // change but never become incomplete for the event's (possibly new) type.
+  // The campaign lookup runs only on the incomplete branch, so the common
+  // complete-save path costs nothing extra (owner-scoped read under RLS).
+  if (!celebrantsCompleteFor(input.event_type, input.celebrants)) {
+    const { data: liveCampaign } = await supabase
+      .from('campaigns')
+      .select('id')
+      .eq('event_id', eventId)
+      .neq('status', 'cancelled')
+      .limit(1)
+      .maybeSingle();
+    if (liveCampaign) {
+      throw new Error(CELEBRANTS_LOCKED_ERROR);
     }
   }
 

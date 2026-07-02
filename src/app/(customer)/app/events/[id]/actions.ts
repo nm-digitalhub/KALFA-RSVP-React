@@ -3,7 +3,7 @@
 import { revalidatePath } from 'next/cache';
 import { unstable_rethrow } from 'next/navigation';
 
-import { updateEvent } from '@/lib/data/events';
+import { CELEBRANTS_LOCKED_ERROR, updateEvent } from '@/lib/data/events';
 import {
   celebrantsSchemaFor,
   parseCelebrantsForm,
@@ -114,6 +114,12 @@ export async function updateEventAction(
     // Re-throw Next.js control-flow signals (redirect / notFound from the
     // ownership gate); catching them would silently break that flow.
     unstable_rethrow(err);
+    // The celebrants lock is the one guard reachable through ENABLED UI — the
+    // user must see the actionable message, not the generic one. Matched by
+    // the shared const (never a raw err.message pass-through).
+    if (err instanceof Error && err.message === CELEBRANTS_LOCKED_ERROR) {
+      return { error: err.message };
+    }
     return { error: 'עדכון האירוע נכשל. נסו שוב.' };
   }
 

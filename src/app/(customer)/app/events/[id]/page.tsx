@@ -1,10 +1,11 @@
 import Link from 'next/link';
 
 import { buttonVariants } from '@/components/ui/button';
-import { getEvent } from '@/lib/data/events';
+import { getEvent, type EventDetail } from '@/lib/data/events';
 import { isPastEventDay, isBeforeTomorrowIL } from '@/lib/data/event-date';
 import { getCampaignForEvent, listCampaignsForEvent } from '@/lib/data/campaigns';
 import { EVENT_TYPE_LABELS, EVENT_STATUS_LABELS } from '@/lib/data/event-labels';
+import { CELEBRANT_KIND_BY_EVENT_TYPE } from '@/lib/validation/schemas';
 import { EditEventForm } from './edit-event-form';
 import { EventStatusActions } from './event-status-actions';
 import { publishEventAction, closeEventAction } from './campaign/campaign-actions';
@@ -23,6 +24,39 @@ const BLOCKING_CAMPAIGN_STATUSES = new Set([
 
 function formatDate(value: string | null): string | null {
   return value ? value.slice(0, 10) : null;
+}
+
+// Display-only join of the celebrants jsonb. The shapes are Zod-validated on
+// write, but the column is schemaless at the DB level — read defensively and
+// render whatever partial data exists (the campaign gate owns completeness).
+function celebrantsSummary(
+  eventType: EventDetail['event_type'],
+  celebrants: EventDetail['celebrants'],
+): string | null {
+  if (!celebrants || typeof celebrants !== 'object' || Array.isArray(celebrants)) {
+    return null;
+  }
+  const values = celebrants as Record<string, unknown>;
+  const field = (key: string): string | null => {
+    const v = values[key];
+    return typeof v === 'string' && v.trim() !== '' ? v.trim() : null;
+  };
+  switch (CELEBRANT_KIND_BY_EVENT_TYPE[eventType]) {
+    case 'couple': {
+      const groom = field('groom');
+      const bride = field('bride');
+      return groom && bride ? `${groom} ו${bride}` : (groom ?? bride);
+    }
+    case 'single':
+      return field('name');
+    case 'parents': {
+      const parents = field('parents');
+      const child = field('child');
+      return parents && child ? `${parents} — לכבוד ${child}` : parents;
+    }
+    case 'free':
+      return field('names');
+  }
 }
 
 export default async function EventPage({
@@ -52,6 +86,7 @@ export default async function EventPage({
   ]
     .filter(Boolean)
     .join(' · ');
+  const celebrantsText = celebrantsSummary(event.event_type, event.celebrants);
 
   return (
     <div className="space-y-6">
@@ -67,6 +102,11 @@ export default async function EventPage({
           <h1 className="text-2xl font-bold">{event.name}</h1>
           {summary ? (
             <p className="text-sm text-muted-foreground">{summary}</p>
+          ) : null}
+          {celebrantsText ? (
+            <p className="text-sm text-muted-foreground">
+              בעלי השמחה: {celebrantsText}
+            </p>
           ) : null}
         </div>
         <div className="flex items-center gap-2">

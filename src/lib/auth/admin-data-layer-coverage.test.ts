@@ -33,11 +33,13 @@ const EXEMPT: Record<string, string[]> = {
   'src/lib/data/admin/settings.ts': [],
   'src/lib/data/admin/users.ts': [],
   'src/lib/data/admin/webhook-inbox.ts': [],
-  // getTemplateByKey is the campaign outreach engine's internal template
-  // reader (service-role, read-only, active-only) -- not an admin-facing
-  // entry point. listMessageTemplates/updateMessageTemplate (the actual
-  // /admin/templates surface) are both gated and NOT exempt.
-  'src/lib/data/message-templates.ts': ['getTemplateByKey'],
+  // getTemplateByKey and resolveTemplateForEvent (the event-type-aware
+  // variant resolver layered on the same active-only query) are the campaign
+  // outreach engine's internal template readers (service-role, read-only,
+  // active-only), also used by the worker -- not admin-facing entry points.
+  // listMessageTemplates/updateMessageTemplate (the actual /admin/templates
+  // surface) are both gated and NOT exempt.
+  'src/lib/data/message-templates.ts': ['getTemplateByKey', 'resolveTemplateForEvent'],
 };
 
 function splitIntoFunctionBlocks(source: string): { name: string; body: string }[] {

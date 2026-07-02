@@ -11,6 +11,7 @@ import { createClient } from '@/lib/supabase/server';
 import {
   getTemplateByKey,
   listMessageTemplates,
+  resolveTemplateForEvent,
   updateMessageTemplate,
 } from '@/lib/data/message-templates';
 
@@ -44,6 +45,95 @@ describe('getTemplateByKey', () => {
   it('returns null when no active template matches', async () => {
     mockAdmin({ data: null, error: null });
     await expect(getTemplateByKey('missing')).resolves.toBeNull();
+  });
+});
+
+describe('resolveTemplateForEvent', () => {
+  const genericRow = {
+    name: 'kalfa_event_invite_v2',
+    language: 'he',
+    channel: 'whatsapp',
+  };
+
+  it('swaps the name when components.variants has the event type', async () => {
+    const { client, builder } = mockAdmin({
+      data: {
+        ...genericRow,
+        components: { variants: { wedding: 'kalfa_wedding_invite_v1' } },
+      },
+      error: null,
+    });
+
+    const r = await resolveTemplateForEvent('invite', 'wedding');
+
+    expect(client.from).toHaveBeenCalledWith('message_templates');
+    expect(builder.select).toHaveBeenCalledWith('name, language, channel, components');
+    expect(builder.eq).toHaveBeenCalledWith('message_key', 'invite');
+    expect(builder.eq).toHaveBeenCalledWith('active', true);
+    expect(r).toEqual({
+      name: 'kalfa_wedding_invite_v1',
+      language: 'he',
+      channel: 'whatsapp',
+    });
+  });
+
+  it('falls through to the generic name when no variant matches', async () => {
+    // No components at all.
+    mockAdmin({ data: { ...genericRow, components: null }, error: null });
+    await expect(resolveTemplateForEvent('invite', 'wedding')).resolves.toEqual(
+      genericRow,
+    );
+
+    // Variants exist but not for this event type.
+    mockAdmin({
+      data: {
+        ...genericRow,
+        components: { variants: { wedding: 'kalfa_wedding_invite_v1' } },
+      },
+      error: null,
+    });
+    await expect(resolveTemplateForEvent('invite', 'birthday')).resolves.toEqual(
+      genericRow,
+    );
+  });
+
+  it('treats malformed components as no variant, without throwing', async () => {
+    const malformed: unknown[] = [
+      'not-an-object',
+      42,
+      ['array'],
+      { variants: 'not-an-object' },
+      { variants: ['array'] },
+      { variants: { wedding: 123 } },
+      { variants: { wedding: '' } },
+      { variants: { wedding: '   ' } },
+      { variants: null },
+    ];
+    for (const components of malformed) {
+      mockAdmin({ data: { ...genericRow, components }, error: null });
+      await expect(resolveTemplateForEvent('invite', 'wedding')).resolves.toEqual(
+        genericRow,
+      );
+    }
+  });
+
+  it('returns null when no active row matches (inactive stays fail-closed)', async () => {
+    // active=false rows never reach the resolver — the query filters on
+    // active=true, so an inactive-only key resolves to no data.
+    const { builder } = mockAdmin({ data: null, error: null });
+    await expect(resolveTemplateForEvent('invite', 'wedding')).resolves.toBeNull();
+    expect(builder.eq).toHaveBeenCalledWith('active', true);
+  });
+
+  it('returns null on query error or null required fields', async () => {
+    mockAdmin({ data: null, error: { message: 'boom' } });
+    await expect(resolveTemplateForEvent('invite', 'wedding')).resolves.toBeNull();
+
+    mockAdmin({
+      data: { ...genericRow, name: null, components: null },
+      error: null,
+    });
+    await expect(resolveTemplateForEvent('invite', 'wedding')).resolves.toBeNull();
   });
 });
 

@@ -290,7 +290,11 @@ describe('createCampaign (§5.5#5א — snapshot locked from the canonical templ
     vi.spyOn(server.builder, 'then')
       .mockImplementationOnce((f) =>
         f({
-          data: { event_type: 'wedding', celebrants: { groom: 'דוד לוי', bride: 'שרה כהן' } },
+          data: {
+            event_type: 'wedding',
+            celebrants: { groom: 'דוד לוי', bride: 'שרה כהן' },
+            venue_name: 'אולמי הגן',
+          },
           error: null,
         }),
       )
@@ -394,7 +398,11 @@ describe('createCampaign — celebrants gate (בעלי השמחה)', () => {
     vi.spyOn(builder, 'then')
       .mockImplementationOnce((f) =>
         f({
-          data: { event_type: 'wedding', celebrants: { groom: 'דוד לוי', bride: 'שרה כהן' } },
+          data: {
+            event_type: 'wedding',
+            celebrants: { groom: 'דוד לוי', bride: 'שרה כהן' },
+            venue_name: 'אולמי הגן',
+          },
           error: null,
         }),
       )
@@ -415,7 +423,11 @@ describe('createCampaign — celebrants gate (בעלי השמחה)', () => {
     vi.spyOn(builder, 'then')
       .mockImplementationOnce((f) =>
         f({
-          data: { event_type: 'brit', celebrants: { parents: 'משה ורות כהן' } },
+          data: {
+            event_type: 'brit',
+            celebrants: { parents: 'משה ורות כהן' },
+            venue_name: 'אולמי הגן',
+          },
           error: null,
         }),
       )
@@ -424,6 +436,49 @@ describe('createCampaign — celebrants gate (בעלי השמחה)', () => {
     vi.mocked(countUniqueContactsForEvent).mockResolvedValue(0);
 
     await expect(createCampaign('e1')).rejects.toThrow('אין אנשי קשר תקינים');
+  });
+
+  it('blocks enablement when the event has no event_date — sends could never derive day/date/time', async () => {
+    vi.mocked(requireOwnedEvent).mockResolvedValue(ownedEvent(null));
+    const { builder } = serverWith<Record<string, unknown>>({
+      data: null,
+      error: null,
+    });
+    vi.spyOn(builder, 'then').mockImplementationOnce((f) =>
+      f({
+        data: {
+          event_type: 'wedding',
+          celebrants: { groom: 'דוד לוי', bride: 'שרה כהן' },
+          venue_name: 'אולמי הגן',
+        },
+        error: null,
+      }),
+    );
+
+    await expect(createCampaign('e1')).rejects.toThrow(
+      'יש לקבוע תאריך אירוע לפני הפעלת אישורי הגעה',
+    );
+  });
+
+  it('blocks enablement when venue_name is empty — the location param would be missing on every send', async () => {
+    const { builder } = serverWith<Record<string, unknown>>({
+      data: null,
+      error: null,
+    });
+    vi.spyOn(builder, 'then').mockImplementationOnce((f) =>
+      f({
+        data: {
+          event_type: 'wedding',
+          celebrants: { groom: 'דוד לוי', bride: 'שרה כהן' },
+          venue_name: '   ',
+        },
+        error: null,
+      }),
+    );
+
+    await expect(createCampaign('e1')).rejects.toThrow(
+      'יש למלא את מקום האירוע בעריכת האירוע לפני הפעלת אישורי הגעה',
+    );
   });
 });
 

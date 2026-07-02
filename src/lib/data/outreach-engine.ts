@@ -2,14 +2,17 @@ import 'server-only';
 
 import { createAdminClient } from '@/lib/supabase/admin';
 import { getOutreachEnabled, getWhatsAppConfig } from '@/lib/data/outreach-config';
-import { getTemplateByKey } from '@/lib/data/message-templates';
-import { sendOneWhatsApp } from '@/lib/data/outreach';
+import { resolveTemplateForEvent } from '@/lib/data/message-templates';
+import { recordTemplateFailure, sendOneWhatsApp } from '@/lib/data/outreach';
+import {
+  buildTemplateParams,
+  type TemplateParamsContext,
+} from '@/lib/whatsapp/template-spec';
 import { recordReached, type ReachedArgs } from '@/lib/data/billing';
 import { setContactOpStatus } from '@/lib/data/interactions';
 import { isPastEventDay } from '@/lib/data/event-date';
 import type { Touchpoint } from '@/lib/outreach/schedule';
 import type { OutreachCallRequest } from '@/lib/queue/queues';
-import type { Database } from '@/lib/supabase/types';
 
 // The C1 outreach-engine data layer. REQUEST-FREE (no cookies / requireUser) —
 // it runs from the pg-boss worker (a long-lived process), scoping by loading the
@@ -28,6 +31,10 @@ export type CampaignContext = {
   schedule: Touchpoint[];
   eventDate: string;
   eventStatus: string;
+  // The template-binding slice of the event row (event_date repeats eventDate —
+  // kept flat above for the worker's scheduling math, nested here in exactly
+  // the shape buildTemplateParams consumes).
+  event: TemplateParamsContext['event'];
 };
 
 // Seed one outreach_state row per FROZEN-set contact at activation (idempotent).
@@ -98,7 +105,7 @@ export async function getCampaignContext(
   if (error || !c) return null;
   const { data: ev } = await admin
     .from('events')
-    .select('event_date, status')
+    .select('event_date, status, name, event_type, venue_name, venue_address, celebrants')
     .eq('id', c.event_id)
     .maybeSingle();
   if (!ev?.event_date) return null;
@@ -111,6 +118,14 @@ export async function getCampaignContext(
     schedule: (c.outreach_schedule as Touchpoint[] | null) ?? [],
     eventDate: ev.event_date,
     eventStatus: ev.status,
+    event: {
+      name: ev.name,
+      event_type: ev.event_type,
+      event_date: ev.event_date,
+      venue_name: ev.venue_name,
+      venue_address: ev.venue_address,
+      celebrants: ev.celebrants,
+    },
   };
 }
 
@@ -221,37 +236,6 @@ async function bumpCount(
     .eq('contact_id', contactId);
 }
 
-// Runtime template integrity (plan §5.6): a broken outreach_schedule
-// touchpoint (missing/inactive template, or channel mismatch) currently
-// fails silently. This records it durably, deduplicated per
-// (campaign, touchpoint, reason) via an atomic upsert — NOT select-then-
-// insert, since claimStep advances a per-recipient cursor, so concurrent
-// workers can hit the same broken touchpoint for different contacts at once.
-async function recordTemplateFailure(
-  admin: AdminClient,
-  campaignId: string,
-  touchpointIndex: number,
-  reason: 'template_missing' | 'channel_mismatch',
-  messageKey: string,
-  channel: string,
-): Promise<void> {
-  // Touchpoint.channel (schedule.ts) is plain `string`, not the DB enum — the
-  // schedule is validated upstream (packages admin form / campaigns snapshot)
-  // to only ever contain real campaign_channel values, so this is a boundary
-  // cast, not an unchecked one (same pattern as `as unknown as Json` elsewhere).
-  const channelEnum = channel as Database['public']['Enums']['campaign_channel'];
-  await admin.from('outreach_template_failures').upsert(
-    {
-      campaign_id: campaignId,
-      touchpoint_index: touchpointIndex,
-      reason,
-      message_key: messageKey,
-      channel: channelEnum,
-    },
-    { onConflict: 'campaign_id,touchpoint_index,reason', ignoreDuplicates: true },
-  );
-}
-
 export type StepAction =
   | { action: 'whatsapp_sent' }
   | { action: 'call_request'; callRequest: OutreachCallRequest }
@@ -298,7 +282,9 @@ export async function executeStep(
       // that hasn't configured WhatsApp yet floods the sink for no reason.
       return { action: 'skipped' };
     }
-    const template = await getTemplateByKey(tp.message_key);
+    // Event-type-aware resolution: the generic row's components.variants may
+    // swap in the wedding-family template name for this event type.
+    const template = await resolveTemplateForEvent(tp.message_key, ctx.event.event_type);
     if (!template) {
       await recordTemplateFailure(admin, campaignId, stepIndex, 'template_missing', tp.message_key, tp.channel);
       return { action: 'skipped' };
@@ -307,12 +293,37 @@ export async function executeStep(
       await recordTemplateFailure(admin, campaignId, stepIndex, 'channel_mismatch', tp.message_key, tp.channel);
       return { action: 'skipped' };
     }
+    // {{1}} source: the recipient's linked guest name, oldest guest first
+    // (deterministic when a family shares one phone → several guests per
+    // contact). No linked guest → null; buildTemplateParams falls back to the
+    // generic greeting rather than dropping the touchpoint.
+    const { data: guest } = await admin
+      .from('guests')
+      .select('full_name')
+      .eq('event_id', eventId)
+      .eq('contact_id', contactId)
+      .order('created_at', { ascending: true })
+      .limit(1)
+      .maybeSingle();
+    const guestFirstName = guest?.full_name?.trim().split(/\s+/)[0] || null;
+    // Which side of the Meta positional contract to bind — the wedding family
+    // renders groom/bride in {{2}}/{{3}} (docs/whatsapp-templates-meta-submission.md).
+    const family = template.name.startsWith('kalfa_wedding_') ? 'wedding' : 'generic';
+    const built = buildTemplateParams(family, { event: ctx.event, guestFirstName });
+    if ('missing' in built) {
+      // Fail-closed: never send a template with an empty positional parameter.
+      // Recorded like the other integrity failures (missing-key list is
+      // event-level data, not PII — guest name never blocks).
+      await recordTemplateFailure(admin, campaignId, stepIndex, 'params_incomplete', tp.message_key, tp.channel);
+      return { action: 'skipped' };
+    }
     const ok = await sendOneWhatsApp(
       admin,
       { id: campaignId, event_id: eventId },
       { id: contactId, normalized_phone: contact.normalized_phone },
       template,
       config,
+      built.params,
     );
     if (!ok) return { action: 'skipped' };
     await bumpCount(admin, campaignId, contactId, 'whatsapp_sent_count');

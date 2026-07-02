@@ -150,12 +150,25 @@ export async function createCampaign(eventId: string): Promise<{ id: string }> {
   const supabase = await createClient();
   const { data: celebrantsRow, error: celebrantsErr } = await supabase
     .from('events')
-    .select('event_type, celebrants')
+    .select('event_type, celebrants, venue_name')
     .eq('id', eventId)
     .maybeSingle();
   if (celebrantsErr || !celebrantsRow) throw new Error('טעינת האירוע נכשלה');
   if (!celebrantsCompleteFor(celebrantsRow.event_type, celebrantsRow.celebrants)) {
     throw new Error('יש למלא את פרטי בעלי השמחה בעריכת האירוע לפני הפעלת אישורי הגעה');
+  }
+  // The sends also derive day/date/time from event_date and the location from
+  // venue_name (WhatsApp params {{4}}..{{7}}): without them EVERY touchpoint
+  // would skip as params_incomplete at send time, so enablement is blocked
+  // upfront — same before-the-early-return rationale as the celebrants gate.
+  if (!event.event_date) {
+    throw new Error('יש לקבוע תאריך אירוע לפני הפעלת אישורי הגעה');
+  }
+  if (
+    typeof celebrantsRow.venue_name !== 'string' ||
+    celebrantsRow.venue_name.trim() === ''
+  ) {
+    throw new Error('יש למלא את מקום האירוע בעריכת האירוע לפני הפעלת אישורי הגעה');
   }
 
   // Create-or-continue: never a second campaign for the same event.

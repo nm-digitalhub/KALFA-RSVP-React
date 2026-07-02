@@ -375,11 +375,17 @@ describe('updateEvent', () => {
     celebrants: null,
   };
 
-  function mockTwoReads<Row>(builder: ReturnType<typeof createMockSupabase<Row>>['builder'], first: unknown, second: unknown) {
-    vi.spyOn(builder, 'then')
-      .mockImplementationOnce((f) => (f as (v: unknown) => unknown)(first))
-      .mockImplementationOnce((f) => (f as (v: unknown) => unknown)(second));
+  // Sequences every awaited builder read in order. With baseInput's INCOMPLETE
+  // celebrants (birthday + null) the celebrants lock adds a campaigns lookup
+  // between the ownership read and the final update-select, so most tests pass
+  // three results: ownership → campaigns (null = no live campaign) → update.
+  function mockReads<Row>(builder: ReturnType<typeof createMockSupabase<Row>>['builder'], ...results: unknown[]) {
+    const spy = vi.spyOn(builder, 'then');
+    for (const r of results) {
+      spy.mockImplementationOnce((f) => (f as (v: unknown) => unknown)(r));
+    }
   }
+  const NO_LIVE_CAMPAIGN = { data: null, error: null };
 
   it('never writes a status key (status is owned exclusively by publishEvent/closeEvent)', async () => {
     const row = detailRow({ name: baseInput.name });
@@ -390,7 +396,7 @@ describe('updateEvent', () => {
     vi.mocked(createClient).mockResolvedValue(
       client as unknown as Awaited<ReturnType<typeof createClient>>,
     );
-    mockTwoReads(builder, { data: detailRow({ status: 'draft' }), error: null }, { data: row, error: null });
+    mockReads(builder, { data: detailRow({ status: 'draft' }), error: null }, NO_LIVE_CAMPAIGN, { data: row, error: null });
 
     await updateEvent('event-1', baseInput);
 
@@ -407,7 +413,7 @@ describe('updateEvent', () => {
     vi.mocked(createClient).mockResolvedValue(
       client as unknown as Awaited<ReturnType<typeof createClient>>,
     );
-    mockTwoReads(builder, { data: detailRow({ status: 'active' }), error: null }, { data: row, error: null });
+    mockReads(builder, { data: detailRow({ status: 'active' }), error: null }, NO_LIVE_CAMPAIGN, { data: row, error: null });
 
     await updateEvent('event-1', baseInput); // no event_date/rsvp_deadline key at all
 
@@ -469,7 +475,7 @@ describe('updateEvent', () => {
     vi.mocked(createClient).mockResolvedValue(
       client as unknown as Awaited<ReturnType<typeof createClient>>,
     );
-    mockTwoReads(builder, { data: detailRow({ status: 'draft' }), error: null }, { data: row, error: null });
+    mockReads(builder, { data: detailRow({ status: 'draft' }), error: null }, NO_LIVE_CAMPAIGN, { data: row, error: null });
 
     await updateEvent('event-1', { ...baseInput, event_date: ilDate(5) });
 
@@ -490,7 +496,7 @@ describe('updateEvent', () => {
     vi.mocked(createClient).mockResolvedValue(
       client as unknown as Awaited<ReturnType<typeof createClient>>,
     );
-    mockTwoReads(builder, { data: detailRow({ status: 'active' }), error: null }, { data: row, error: null });
+    mockReads(builder, { data: detailRow({ status: 'active' }), error: null }, NO_LIVE_CAMPAIGN, { data: row, error: null });
 
     await updateEvent('event-1', {
       ...baseInput,
@@ -510,7 +516,7 @@ describe('updateEvent', () => {
     vi.mocked(createClient).mockResolvedValue(
       client as unknown as Awaited<ReturnType<typeof createClient>>,
     );
-    mockTwoReads(builder, { data: detailRow({ status: 'draft' }), error: null }, { data: row, error: null });
+    mockReads(builder, { data: detailRow({ status: 'draft' }), error: null }, NO_LIVE_CAMPAIGN, { data: row, error: null });
 
     await updateEvent('event-1', { ...baseInput, celebrants: null });
 
@@ -533,6 +539,54 @@ describe('updateEvent', () => {
     await expect(updateEvent('event-x', baseInput)).rejects.toThrow('NEXT_NOT_FOUND');
     expect(builder.update).not.toHaveBeenCalled();
     expect(logActivity).not.toHaveBeenCalled();
+  });
+
+  it('celebrants lock: incomplete celebrants are REJECTED while a non-cancelled campaign exists', async () => {
+    const { client, builder } = createMockSupabase<EventDetail>({
+      data: detailRow(),
+      error: null,
+    });
+    vi.mocked(createClient).mockResolvedValue(
+      client as unknown as Awaited<ReturnType<typeof createClient>>,
+    );
+    mockReads(
+      builder,
+      { data: detailRow({ status: 'active' }), error: null },
+      // the campaigns lookup finds a live campaign
+      { data: { id: 'c-live' }, error: null },
+    );
+
+    await expect(
+      updateEvent('event-1', { ...baseInput, celebrants: null }),
+    ).rejects.toThrow('לא ניתן למחוק את פרטי בעלי השמחה כשקיים קמפיין אישורי הגעה פעיל');
+    expect(builder.update).not.toHaveBeenCalled();
+  });
+
+  it('celebrants lock: a COMPLETE shape saves without ever querying campaigns', async () => {
+    const row = detailRow({ celebrants: { name: 'איתי לוי' } });
+    const { client, builder } = createMockSupabase<EventDetail>({
+      data: row,
+      error: null,
+    });
+    vi.mocked(createClient).mockResolvedValue(
+      client as unknown as Awaited<ReturnType<typeof createClient>>,
+    );
+    // Only TWO reads: ownership → update-select. The complete branch skips the
+    // campaigns lookup entirely (baseInput.event_type=birthday, single kind).
+    mockReads(
+      builder,
+      { data: detailRow({ status: 'active' }), error: null },
+      { data: row, error: null },
+    );
+
+    await updateEvent('event-1', {
+      ...baseInput,
+      celebrants: { name: 'איתי לוי' },
+    });
+
+    expect(vi.mocked(client.from).mock.calls.flat()).not.toContain('campaigns');
+    const patch = vi.mocked(builder.update).mock.calls[0][0] as Record<string, unknown>;
+    expect(patch.celebrants).toEqual({ name: 'איתי לוי' });
   });
 });
 

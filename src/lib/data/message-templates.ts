@@ -3,7 +3,7 @@ import 'server-only';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { createClient } from '@/lib/supabase/server';
 import { requireAdmin } from '@/lib/auth/dal';
-import type { Database } from '@/lib/supabase/types';
+import type { Database, Json } from '@/lib/supabase/types';
 
 // Resolve a campaign outreach_schedule `message_key` to the send-content the
 // engine uses (WhatsApp: the Meta-approved template name + language; call: the
@@ -28,6 +28,53 @@ export async function getTemplateByKey(
   if (error || !data) return null;
   if (!data.name || !data.language || !data.channel) return null;
   return { name: data.name, language: data.language, channel: data.channel };
+}
+
+// --- Event-type variant resolution ------------------------------------------
+
+type EventType = Database['public']['Enums']['event_type'];
+
+// The `components` jsonb may carry a data-driven variant mapping (set by an
+// admin, e.g. `{"variants": {"wedding": "kalfa_wedding_invite_v1"}}`) that
+// swaps the Meta template NAME per event type — same language/channel, same
+// positional-parameter contract (docs/whatsapp-templates-meta-submission.md).
+// `components` is untyped Json, so walk it defensively: anything malformed or
+// missing simply means "no variant" and the generic row is used — never throw.
+function variantNameFor(components: Json | null, eventType: EventType): string | null {
+  if (!components || typeof components !== 'object' || Array.isArray(components)) {
+    return null;
+  }
+  const variants = (components as { [key: string]: Json | undefined }).variants;
+  if (!variants || typeof variants !== 'object' || Array.isArray(variants)) {
+    return null;
+  }
+  const name = (variants as { [key: string]: Json | undefined })[eventType];
+  return typeof name === 'string' && name.trim() !== '' ? name : null;
+}
+
+// getTemplateByKey + per-event-type variant selection. Resolution of the row
+// itself is identical (active-only, fail-closed → null); the variant mapping
+// only ever replaces the template NAME, so a missing/malformed mapping
+// degrades to the generic family, not to a send failure.
+export async function resolveTemplateForEvent(
+  messageKey: string,
+  eventType: EventType,
+): Promise<ResolvedTemplate | null> {
+  const admin = createAdminClient();
+  const { data, error } = await admin
+    .from('message_templates')
+    .select('name, language, channel, components')
+    .eq('message_key', messageKey)
+    .eq('active', true)
+    .maybeSingle();
+  if (error || !data) return null;
+  if (!data.name || !data.language || !data.channel) return null;
+  const variant = variantNameFor(data.components, eventType);
+  return {
+    name: variant ?? data.name,
+    language: data.language,
+    channel: data.channel,
+  };
 }
 
 // --- Admin management (/admin/templates) -----------------------------------

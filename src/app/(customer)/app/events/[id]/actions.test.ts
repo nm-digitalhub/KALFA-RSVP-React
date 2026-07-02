@@ -15,9 +15,15 @@ vi.mock('next/navigation', async (importOriginal) => {
   const actual = await importOriginal<typeof import('next/navigation')>();
   return { ...actual };
 });
-vi.mock('@/lib/data/events', () => ({ updateEvent: vi.fn() }));
+vi.mock('@/lib/data/events', () => ({
+  updateEvent: vi.fn(),
+  // Real value re-declared in the factory (hoisted above imports, so it cannot
+  // reference the actual module): the action compares err.message against it.
+  CELEBRANTS_LOCKED_ERROR:
+    'לא ניתן למחוק את פרטי בעלי השמחה כשקיים קמפיין אישורי הגעה פעיל',
+}));
 
-import { updateEvent } from '@/lib/data/events';
+import { CELEBRANTS_LOCKED_ERROR, updateEvent } from '@/lib/data/events';
 import { updateEventAction } from './actions';
 
 const NEXT_REDIRECT = Object.assign(new Error('NEXT_REDIRECT'), {
@@ -167,5 +173,13 @@ describe('updateEventAction — Next.js control-flow signals from the ownership 
     const result = await updateEventAction('e-1', null, fd({ ...BASE }));
 
     expect(result).toEqual({ error: 'עדכון האירוע נכשל. נסו שוב.' });
+  });
+
+  it('surfaces the celebrants-lock guard message verbatim (the one guard reachable via enabled UI)', async () => {
+    vi.mocked(updateEvent).mockRejectedValue(new Error(CELEBRANTS_LOCKED_ERROR));
+
+    const result = await updateEventAction('e-1', null, fd({ ...BASE }));
+
+    expect(result).toEqual({ error: CELEBRANTS_LOCKED_ERROR });
   });
 });
