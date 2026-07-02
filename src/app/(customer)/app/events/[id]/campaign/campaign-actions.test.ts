@@ -39,8 +39,14 @@ import {
   cancelCampaignAction,
 } from './campaign-actions';
 
+// Real notFound() digest format (verified against node_modules/next/dist/client/
+// components/not-found.js): 'NEXT_HTTP_ERROR_FALLBACK;404', not the literal
+// string 'NEXT_NOT_FOUND'.
 const NEXT_NOT_FOUND = Object.assign(new Error('NEXT_NOT_FOUND'), {
-  digest: 'NEXT_NOT_FOUND',
+  digest: 'NEXT_HTTP_ERROR_FALLBACK;404',
+});
+const NEXT_REDIRECT = Object.assign(new Error('NEXT_REDIRECT'), {
+  digest: 'NEXT_REDIRECT;replace;/auth/login;307;',
 });
 
 beforeEach(() => vi.clearAllMocks());
@@ -72,6 +78,14 @@ describe('publishEventAction', () => {
       'NEXT_NOT_FOUND',
     );
   });
+
+  it('re-throws a NEXT_REDIRECT (e.g. session expired) instead of returning { error }', async () => {
+    vi.mocked(publishEvent).mockRejectedValue(NEXT_REDIRECT);
+
+    await expect(publishEventAction('e1', null, new FormData())).rejects.toThrow(
+      'NEXT_REDIRECT',
+    );
+  });
 });
 
 describe('closeEventAction', () => {
@@ -82,6 +96,14 @@ describe('closeEventAction', () => {
 
     expect(closeEvent).toHaveBeenCalledWith('e1');
     expect(result?.notice).toBeDefined();
+  });
+
+  it('re-throws a Next.js control-flow signal (the ownership gate) instead of swallowing it', async () => {
+    vi.mocked(closeEvent).mockRejectedValue(NEXT_NOT_FOUND);
+
+    await expect(closeEventAction('e1', null, new FormData())).rejects.toThrow(
+      'NEXT_NOT_FOUND',
+    );
   });
 
   it('surfaces the R7 blocking-campaign message', async () => {

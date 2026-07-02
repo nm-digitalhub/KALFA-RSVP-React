@@ -9,6 +9,14 @@ import type { Database } from './types';
 // silently attempting calls with an invalid key.
 const PLACEHOLDER_SERVICE_ROLE_KEY = 'placeholder-service-role-key';
 
+// Shared by createAdminClient() and getInfraConfigStatus() so the "is this a
+// real key" definition lives in exactly one place.
+export function isConfiguredServiceRoleKey(
+  key: string | undefined,
+): key is string {
+  return !!key && key !== PLACEHOLDER_SERVICE_ROLE_KEY;
+}
+
 /**
  * Supabase client authenticated with the SERVICE ROLE key.
  *
@@ -30,7 +38,7 @@ export function createAdminClient() {
   }
 
   // Reject a missing key and the known placeholder value. Never log the key.
-  if (!serviceRoleKey || serviceRoleKey === PLACEHOLDER_SERVICE_ROLE_KEY) {
+  if (!isConfiguredServiceRoleKey(serviceRoleKey)) {
     throw new Error('SUPABASE_SERVICE_ROLE_KEY is not configured');
   }
 

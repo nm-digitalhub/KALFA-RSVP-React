@@ -20,6 +20,7 @@ import {
   EmptyState,
   PageHeading,
   Pagination,
+  firstParam,
   formatDateTime,
   parsePageParam,
 } from '../_components';
@@ -55,11 +56,6 @@ const STATE_OPTIONS = [
   { value: 'processed', label: 'עובד' },
   { value: 'error', label: 'שגיאה' },
 ];
-
-function firstParam(raw: string | string[] | undefined): string | undefined {
-  const value = Array.isArray(raw) ? raw[0] : raw;
-  return value && value.trim() !== '' ? value.trim() : undefined;
-}
 
 function HealthStat({
   label,

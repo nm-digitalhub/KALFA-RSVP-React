@@ -3,6 +3,7 @@ import 'server-only';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { createClient } from '@/lib/supabase/server';
 import { requireAdmin } from '@/lib/auth/dal';
+import type { Database } from '@/lib/supabase/types';
 
 // Resolve a campaign outreach_schedule `message_key` to the send-content the
 // engine uses (WhatsApp: the Meta-approved template name + language; call: the
@@ -10,7 +11,9 @@ import { requireAdmin } from '@/lib/auth/dal';
 // reader uses the service-role client (RLS-bypassing). Only ACTIVE templates
 // resolve — fail-closed, so a not-yet-configured key sends nothing.
 
-export type ResolvedTemplate = { name: string; language: string; channel: string };
+type MessageTemplateRow = Database['public']['Tables']['message_templates']['Row'];
+
+export type ResolvedTemplate = Pick<MessageTemplateRow, 'name' | 'language' | 'channel'>;
 
 export async function getTemplateByKey(
   messageKey: string,
@@ -29,16 +32,10 @@ export async function getTemplateByKey(
 
 // --- Admin management (/admin/templates) -----------------------------------
 
-export type MessageTemplate = {
-  id: string;
-  message_key: string;
-  channel: string;
-  label: string | null;
-  name: string;
-  language: string;
-  body: string | null;
-  active: boolean;
-};
+export type MessageTemplate = Pick<
+  MessageTemplateRow,
+  'id' | 'message_key' | 'channel' | 'label' | 'name' | 'language' | 'body' | 'active'
+>;
 
 const TEMPLATE_COLUMNS =
   'id, message_key, channel, label, name, language, body, active';

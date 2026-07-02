@@ -1,23 +1,11 @@
 'use server';
 
 import { revalidatePath } from 'next/cache';
+import { unstable_rethrow } from 'next/navigation';
 
 import { updateAppSettings } from '@/lib/data/admin/settings';
 import { appSettingsSchema } from '@/lib/validation/admin';
 import type { FormState } from '@/lib/validation/result';
-
-// Re-throw Next.js control-flow signals (redirect from requireAdmin) so they are
-// not swallowed by the catch.
-function isNextControlFlow(err: unknown): boolean {
-  return (
-    !!err &&
-    typeof err === 'object' &&
-    'digest' in err &&
-    typeof (err as { digest?: unknown }).digest === 'string' &&
-    ((err as { digest: string }).digest.startsWith('NEXT_REDIRECT') ||
-      (err as { digest: string }).digest === 'NEXT_NOT_FOUND')
-  );
-}
 
 export async function updateSettingsAction(
   _prevState: FormState,
@@ -48,7 +36,7 @@ export async function updateSettingsAction(
   try {
     await updateAppSettings(parsed.data);
   } catch (err) {
-    if (isNextControlFlow(err)) throw err;
+    unstable_rethrow(err);
     return { error: 'עדכון ההגדרות נכשל. נסו שוב.' };
   }
 

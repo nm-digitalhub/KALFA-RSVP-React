@@ -1,6 +1,7 @@
 'use server';
 
 import { revalidatePath } from 'next/cache';
+import { unstable_rethrow } from 'next/navigation';
 
 import { parseCsv } from '@/lib/csv';
 import { logActivity } from '@/lib/data/activity';
@@ -30,16 +31,6 @@ export type ImportState =
       done?: boolean;
     }
   | null;
-
-function isNextControlFlow(err: unknown): boolean {
-  if (!err || typeof err !== 'object' || !('digest' in err)) return false;
-  const digest = (err as { digest?: unknown }).digest;
-  return (
-    typeof digest === 'string' &&
-    (digest.startsWith('NEXT_REDIRECT') ||
-      digest.startsWith('NEXT_HTTP_ERROR_FALLBACK'))
-  );
-}
 
 // Map a header cell to a known column key. Accepts a small set of Hebrew and
 // English aliases so common spreadsheet exports work without configuration.
@@ -134,7 +125,7 @@ export async function importGuestsAction(
       groups.map((g) => [g.name.trim().toLowerCase(), g.id]),
     );
   } catch (err) {
-    if (isNextControlFlow(err)) throw err;
+    unstable_rethrow(err);
     return { error: 'טעינת הקבוצות נכשלה.' };
   }
 
@@ -185,7 +176,7 @@ export async function importGuestsAction(
       groupByName.set(name.toLowerCase(), created.id);
     }
   } catch (err) {
-    if (isNextControlFlow(err)) throw err;
+    unstable_rethrow(err);
     return { error: 'יצירת קבוצות מהקובץ נכשלה.' };
   }
 
@@ -205,7 +196,7 @@ export async function importGuestsAction(
   try {
     imported = await bulkInsertGuests(eventId, valid);
   } catch (err) {
-    if (isNextControlFlow(err)) throw err;
+    unstable_rethrow(err);
     return { error: 'ייבוא המוזמנים נכשל.', failed };
   }
 
@@ -216,7 +207,7 @@ export async function importGuestsAction(
   try {
     await buildContactsForEvent(eventId);
   } catch (err) {
-    if (isNextControlFlow(err)) throw err;
+    unstable_rethrow(err);
     // Derived secondary effect — never blocks a completed import, but log (no
     // PII) so a failed contacts rebuild is auditable and reconcilable.
     console.error(

@@ -7,7 +7,10 @@ vi.mock('@/lib/auth/dal', () => ({ requireAdmin: vi.fn() }));
 import { createMockSupabase } from '@/test/supabase-mock';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { requireAdmin } from '@/lib/auth/dal';
-import { listWebhookInbox } from '@/lib/data/admin/webhook-inbox';
+import {
+  listWebhookInbox,
+  resolveWebhookAssociations,
+} from '@/lib/data/admin/webhook-inbox';
 import {
   webhookProcessState,
   deliveryStatusVariant,
@@ -88,5 +91,41 @@ describe('listWebhookInbox', () => {
     await listWebhookInbox({ state: 'pending' });
     expect(builder.is).toHaveBeenCalledWith('processed_at', null);
     expect(builder.is).toHaveBeenCalledWith('last_error', null);
+  });
+
+  // SECURITY: the search term must produce exactly three ilike clauses with no
+  // injected condition, even when it contains PostgREST metacharacters.
+  it('sanitises a search term into exactly three ilike clauses (no injection)', async () => {
+    const { builder } = mock([], 0);
+    await listWebhookInbox({ q: 'a,b)c*%"d' });
+
+    expect(builder.or).toHaveBeenCalledTimes(1);
+    const filter = builder.or.mock.calls[0][0] as string;
+    // Metacharacters stripped -> "abcd"; wrapped in * for contains-match.
+    expect(filter).toBe(
+      'message_id.ilike.*abcd*,context_message_id.ilike.*abcd*,phone_number_id.ilike.*abcd*',
+    );
+    // No extra clause was injected: the three known clauses account for the
+    // only commas in the string.
+    expect(filter.split(',')).toHaveLength(3);
+  });
+
+  it('does not call .or when the sanitised search is empty', async () => {
+    const { builder } = mock([], 0);
+    await listWebhookInbox({ q: '(),*%' });
+    expect(builder.or).not.toHaveBeenCalled();
+  });
+});
+
+describe('resolveWebhookAssociations', () => {
+  // Regression guard: this function queries contact_interactions/events via the
+  // service-role (RLS-bypassing) client. It was previously missing its own
+  // requireAdmin() gate, relying entirely on its one caller (an admin-layout
+  // page) already having checked -- a latent risk for any future caller that
+  // doesn't go through that page first.
+  it('gates on requireAdmin even when there is nothing to resolve', async () => {
+    const result = await resolveWebhookAssociations([]);
+    expect(requireAdmin).toHaveBeenCalledTimes(1);
+    expect(result.size).toBe(0);
   });
 });

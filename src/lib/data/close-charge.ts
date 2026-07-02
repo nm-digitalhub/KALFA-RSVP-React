@@ -86,7 +86,7 @@ export async function closeCampaignAndCharge(
 
   const accrued = summary?.accrued ?? 0;
   const ceiling = campaign.max_charge_ceiling
-    ? parseFloat(campaign.max_charge_ceiling)
+    ? campaign.max_charge_ceiling
     : (summary?.ceiling ?? 0);
   // final = max(0, min(accrued, ceiling) − credits), rounded to agorot (§14/D5/G4).
   const capped = Math.min(accrued, ceiling);

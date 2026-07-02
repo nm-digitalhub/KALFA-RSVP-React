@@ -1,6 +1,7 @@
 'use server';
 
 import { revalidatePath } from 'next/cache';
+import { unstable_rethrow } from 'next/navigation';
 import { z } from 'zod';
 
 import {
@@ -8,17 +9,6 @@ import {
   testWhatsAppConnection,
 } from '@/lib/data/admin/channels';
 import type { FormState } from '@/lib/validation/result';
-
-function isNextControlFlow(err: unknown): boolean {
-  return (
-    !!err &&
-    typeof err === 'object' &&
-    'digest' in err &&
-    typeof (err as { digest?: unknown }).digest === 'string' &&
-    ((err as { digest: string }).digest.startsWith('NEXT_REDIRECT') ||
-      (err as { digest: string }).digest === 'NEXT_NOT_FOUND')
-  );
-}
 
 // Form-friendly: every field is an optional string; the master toggle is a
 // checkbox. Trimmed; '' is an intentional unset (mapped to null in the DAL).
@@ -64,7 +54,7 @@ export async function updateWhatsAppChannelAction(
       ...parsed.data,
     });
   } catch (err) {
-    if (isNextControlFlow(err)) throw err;
+    unstable_rethrow(err);
     return { error: 'עדכון הגדרות הערוץ נכשל. נסו שוב.' };
   }
 
@@ -80,7 +70,7 @@ export async function testWhatsAppConnectionAction(
     const r = await testWhatsAppConnection();
     return r.ok ? { notice: r.message } : { error: r.message };
   } catch (err) {
-    if (isNextControlFlow(err)) throw err;
+    unstable_rethrow(err);
     return { error: 'בדיקת החיבור נכשלה' };
   }
 }

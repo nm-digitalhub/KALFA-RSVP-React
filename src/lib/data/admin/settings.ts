@@ -1,6 +1,7 @@
 import 'server-only';
 
 import { createClient } from '@/lib/supabase/server';
+import { isConfiguredServiceRoleKey } from '@/lib/supabase/admin';
 import { requireAdmin } from '@/lib/auth/dal';
 
 // Admin: the singleton app/system settings (operational toggle + admin-managed
@@ -182,8 +183,6 @@ export async function updateCompanySettings(
 // DB it secures) and APP_ORIGIN (deploy infra). Presence only, never values.
 export type InfraConfigItem = { key: string; label: string; configured: boolean };
 
-const PLACEHOLDER_SERVICE_ROLE_KEY = 'placeholder-service-role-key';
-
 export async function getInfraConfigStatus(): Promise<InfraConfigItem[]> {
   await requireAdmin();
 
@@ -194,7 +193,7 @@ export async function getInfraConfigStatus(): Promise<InfraConfigItem[]> {
     {
       key: 'SUPABASE_SERVICE_ROLE_KEY',
       label: 'מפתח שרת Supabase (נדרש לחיוב מהשרת)',
-      configured: !!serviceKey && serviceKey !== PLACEHOLDER_SERVICE_ROLE_KEY,
+      configured: isConfiguredServiceRoleKey(serviceKey),
     },
     {
       key: 'APP_ORIGIN',

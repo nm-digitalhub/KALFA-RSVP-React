@@ -4,24 +4,13 @@ import { useActionState, useState } from 'react';
 
 import { updateEventAction } from './actions';
 import { EVENT_TYPES } from '@/lib/validation/schemas';
+import { EVENT_TYPE_LABELS } from '@/lib/data/event-labels';
 import type { EventDetail } from '@/lib/data/events';
 import { todayIL } from '@/lib/data/event-date';
 import { FieldError, FormError, FormNotice, SubmitButton } from '@/components/forms';
 
 const inputClass =
   'w-full rounded-md border border-border bg-transparent px-3 py-2 disabled:cursor-not-allowed disabled:opacity-60';
-
-const EVENT_TYPE_LABELS: Record<(typeof EVENT_TYPES)[number], string> = {
-  wedding: 'חתונה',
-  bar_mitzvah: 'בר מצווה',
-  bat_mitzvah: 'בת מצווה',
-  brit: 'ברית',
-  britah: 'בריתה',
-  henna: 'חינה',
-  engagement: 'אירוסין',
-  birthday: 'יום הולדת',
-  other: 'אחר',
-};
 
 // event_date is a timestamptz in the DB, so the value arrives as a full ISO
 // string; a <input type="date"> needs YYYY-MM-DD. Slice the date portion for

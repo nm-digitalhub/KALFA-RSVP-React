@@ -48,14 +48,11 @@ export const isAdmin = cache(async (): Promise<boolean> => {
 
 // Require an administrator. Role is checked server-side via the trusted
 // has_role() RPC against the user_roles table (not browser-supplied data).
+// Delegates to isAdmin() rather than issuing its own RPC call so the two stay
+// in sync and a shared render pass reuses one round-trip via cache().
 export const requireAdmin = cache(async () => {
   const user = await requireUser();
-  const supabase = await createClient();
-  const { data: isAdminResult } = await supabase.rpc('has_role', {
-    _role: 'admin',
-    _user_id: user.id,
-  });
-  if (!isAdminResult) {
+  if (!(await isAdmin())) {
     redirect('/app');
   }
   return user;

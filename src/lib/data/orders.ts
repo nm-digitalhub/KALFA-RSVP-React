@@ -10,17 +10,9 @@ import type { Database } from '@/lib/supabase/types';
 type OrderRow = Database['public']['Tables']['orders']['Row'];
 export type OrderStatus = Database['public']['Enums']['order_status'];
 
-// Hebrew labels for every order status. Keyed on the Database enum so adding a
-// status to the schema without a label here is a compile error (Rule: enum
-// labels come from a single typed source, no magic strings).
-export const ORDER_STATUS_LABELS: Record<OrderStatus, string> = {
-  pending: 'ממתין לתשלום',
-  processing: 'בעיבוד',
-  paid: 'שולם',
-  failed: 'נכשל',
-  demo: 'הדגמה',
-  payment_review: 'לבירור',
-};
+// Label map now lives in src/lib/constants.ts (no `server-only`) so client
+// components can import it directly; re-exported here for existing callers.
+export { ORDER_STATUS_LABELS } from '@/lib/constants';
 
 // DTO: only the columns the orders list needs. The orders table has no
 // updated_at / paid_at column, so those are intentionally absent.

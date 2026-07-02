@@ -4,22 +4,11 @@ import { useActionState } from 'react';
 
 import { createEventAction } from '../actions';
 import { EVENT_TYPES } from '@/lib/validation/schemas';
+import { EVENT_TYPE_LABELS } from '@/lib/data/event-labels';
 import { FieldError, FormError, SubmitButton } from '@/components/forms';
 
 const inputClass =
   'w-full rounded-md border border-border bg-transparent px-3 py-2';
-
-const EVENT_TYPE_LABELS: Record<(typeof EVENT_TYPES)[number], string> = {
-  wedding: 'חתונה',
-  bar_mitzvah: 'בר מצווה',
-  bat_mitzvah: 'בת מצווה',
-  brit: 'ברית',
-  britah: 'בריתה',
-  henna: 'חינה',
-  engagement: 'אירוסין',
-  birthday: 'יום הולדת',
-  other: 'אחר',
-};
 
 function RequiredMark() {
   return (

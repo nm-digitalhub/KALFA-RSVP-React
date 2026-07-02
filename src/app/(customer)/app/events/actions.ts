@@ -1,6 +1,6 @@
 'use server';
 
-import { redirect } from 'next/navigation';
+import { redirect, unstable_rethrow } from 'next/navigation';
 import { revalidatePath } from 'next/cache';
 
 import { createEvent } from '@/lib/data/events';
@@ -33,17 +33,7 @@ export async function createEventAction(
       venue_name: venue_name ? venue_name : null,
     });
   } catch (err) {
-    // Re-throw Next.js control-flow signals (e.g. redirect from requireUser);
-    // catching them would silently break the redirect.
-    if (
-      err &&
-      typeof err === 'object' &&
-      'digest' in err &&
-      typeof (err as { digest?: unknown }).digest === 'string' &&
-      (err as { digest: string }).digest.startsWith('NEXT_REDIRECT')
-    ) {
-      throw err;
-    }
+    unstable_rethrow(err);
     return { error: 'יצירת האירוע נכשלה. נסו שוב.' };
   }
 

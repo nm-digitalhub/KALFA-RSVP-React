@@ -9,24 +9,8 @@ import {
   FormNotice,
   SubmitButton,
 } from '@/components/forms';
+import type { AppSettings } from '@/lib/data/admin/settings';
 import { updateSettingsAction } from './actions';
-
-type Settings = {
-  payments_enabled: boolean;
-  sumit_company_id: string;
-  sumit_api_public_key: string;
-  sumit_api_key: string;
-  sms_enabled: boolean;
-  extra_sms_sender: string;
-  extra_sms_token: string;
-  email_enabled: boolean;
-  smtp_host: string;
-  smtp_port: string;
-  smtp_secure: boolean;
-  smtp_user: string;
-  smtp_password: string;
-  smtp_from: string;
-};
 
 const inputClass =
   'w-full rounded-md border border-border bg-background px-3 py-2 text-sm outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/15 read-only:bg-muted read-only:text-muted-foreground';
@@ -108,7 +92,7 @@ function EditableField({
   );
 }
 
-export function SettingsForm({ settings }: { settings: Settings }) {
+export function SettingsForm({ settings }: { settings: AppSettings }) {
   const [state, action] = useActionState(updateSettingsAction, null);
   const fieldErrors = state?.fieldErrors;
 

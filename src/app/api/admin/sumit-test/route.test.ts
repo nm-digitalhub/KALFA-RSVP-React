@@ -13,17 +13,57 @@ import { chargeRaw } from '@/lib/sumit/raw-charge';
 
 const APP_ORIGIN = 'https://kalfa.test';
 
-function request(fields: Record<string, string>): NextRequest {
+function request(
+  fields: Record<string, string>,
+  headers: Record<string, string> = { Origin: APP_ORIGIN },
+): NextRequest {
   const form = new URLSearchParams(fields);
   return new Request(`${APP_ORIGIN}/api/admin/sumit-test`, {
     method: 'POST',
     headers: {
-      Origin: APP_ORIGIN,
       'Content-Type': 'application/x-www-form-urlencoded',
+      ...headers,
     },
     body: form.toString(),
   }) as unknown as NextRequest;
 }
+
+describe('POST /api/admin/sumit-test — CSRF origin gate', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    process.env.APP_ORIGIN = APP_ORIGIN;
+    vi.mocked(requireAdmin).mockResolvedValue(undefined as never);
+    vi.mocked(getSumitServerConfig).mockResolvedValue({
+      companyId: 1,
+      apiKey: 'k',
+    });
+    vi.mocked(chargeRaw).mockResolvedValue({
+      httpStatus: 200,
+      ok: true,
+      sentBody: {},
+      raw: { Status: 0, Data: {} },
+    });
+  });
+
+  it('reaches chargeRaw for a same-origin POST', async () => {
+    await POST(request({ 'og-token': 'og-123', amount: '1' }, { Origin: APP_ORIGIN }));
+    expect(chargeRaw).toHaveBeenCalled();
+  });
+
+  it('rejects a cross-origin POST with 403, without calling chargeRaw', async () => {
+    const res = await POST(
+      request({ 'og-token': 'og-123', amount: '1' }, { Origin: 'https://evil.test' }),
+    );
+    expect(res.status).toBe(403);
+    expect(chargeRaw).not.toHaveBeenCalled();
+  });
+
+  it('rejects a POST with no Origin and no Referer with 403, without calling chargeRaw', async () => {
+    const res = await POST(request({ 'og-token': 'og-123', amount: '1' }, {}));
+    expect(res.status).toBe(403);
+    expect(chargeRaw).not.toHaveBeenCalled();
+  });
+});
 
 describe('POST /api/admin/sumit-test — route B (saved-token) mandatory fields', () => {
   beforeEach(() => {

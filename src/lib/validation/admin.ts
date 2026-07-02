@@ -115,6 +115,100 @@ export const packageBaseSchema = z.object({
 
 export type PackageInput = z.infer<typeof packageBaseSchema>;
 
+// --- packages: operational (campaign) fields ---
+// `price_per_reached IS NOT NULL` defines a package as "campaign-enabled"
+// (plans/admin-packages-operational-fields-plan.md §2). A package with
+// price_per_reached=null is a valid, non-campaign package — never forced
+// through the campaign-only requirements below.
+
+const MESSAGE_KEY_MAX = 100;
+const OUTREACH_SCHEDULE_MAX_ITEMS = 50;
+
+const pricePerReachedField = z.preprocess(
+  (v) => (v === undefined || v === null || v === '' ? null : v),
+  z.union([
+    z.null(),
+    z.coerce.number({ error: 'נא להזין מחיר לאיש קשר תקין' }),
+  ]),
+);
+
+const channelsField = z.array(z.enum(Constants.public.Enums.campaign_channel));
+
+export const outreachTouchpointSchema = z.object({
+  days_before: z.coerce
+    .number({ error: 'נא להזין מספר ימים תקין' })
+    .int({ error: 'מספר הימים חייב להיות מספר שלם' })
+    .nonnegative({ error: 'מספר הימים לא יכול להיות שלילי' }),
+  channel: z.enum(Constants.public.Enums.campaign_channel, { error: 'ערוץ לא תקין' }),
+  message_key: z
+    .string()
+    .trim()
+    .min(1, { error: 'נא לבחור תבנית הודעה' })
+    .max(MESSAGE_KEY_MAX, { error: 'מזהה התבנית ארוך מדי' }),
+});
+export type OutreachTouchpointInput = z.infer<typeof outreachTouchpointSchema>;
+
+const outreachScheduleField = z
+  .array(outreachTouchpointSchema)
+  .max(OUTREACH_SCHEDULE_MAX_ITEMS, { error: 'יותר מדי שלבים בלוח הפניות' });
+
+// Form input is a percent ("10" = +10%); stored value is the fraction (0.1)
+// that computeHoldAmount (campaigns.ts) multiplies by directly. The
+// conversion happens here, once, so nothing downstream needs to know about
+// the percent representation.
+const holdBufferPctPercent = z.coerce
+  .number({ error: 'נא להזין אחוז buffer תקין (לדוגמה: 10 = תוספת 10%)' })
+  .nonnegative({ error: 'האחוז לא יכול להיות שלילי' });
+const holdBufferPctField = holdBufferPctPercent.transform((percent) => percent / 100);
+
+const minHoldFloorField = z.coerce
+  .number({ error: 'נא להזין רצפת hold תקינה' })
+  .nonnegative({ error: 'רצפת ה-hold לא יכולה להיות שלילית' });
+
+export const operationalFieldsSchema = z
+  .object({
+    price_per_reached: pricePerReachedField,
+    channels: channelsField,
+    outreach_schedule: outreachScheduleField,
+    min_hold_floor: minHoldFloorField,
+    hold_buffer_pct: holdBufferPctField,
+  })
+  .superRefine((val, ctx) => {
+    const campaignEnabled = val.price_per_reached !== null;
+    if (!campaignEnabled) return;
+    if (val.price_per_reached !== null && val.price_per_reached <= 0) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['price_per_reached'],
+        message: 'המחיר לאיש קשר חייב להיות חיובי',
+      });
+    }
+    if (val.channels.length === 0) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['channels'],
+        message: 'יש לבחור לפחות ערוץ אחד למסלול קמפיין',
+      });
+    }
+    if (val.outreach_schedule.length === 0) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['outreach_schedule'],
+        message: 'יש להוסיף לפחות שלב אחד ללוח הפניות',
+      });
+    }
+    val.outreach_schedule.forEach((tp, i) => {
+      if (!val.channels.includes(tp.channel)) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['outreach_schedule', i, 'channel'],
+          message: 'הערוץ אינו נכלל בערוצי החבילה',
+        });
+      }
+    });
+  });
+export type OperationalFieldsInput = z.infer<typeof operationalFieldsSchema>;
+
 // --- app_role (for reference / future role management) ---
 export const appRoleEnum = z.enum(Constants.public.Enums.app_role, {
   error: 'תפקיד לא תקין',

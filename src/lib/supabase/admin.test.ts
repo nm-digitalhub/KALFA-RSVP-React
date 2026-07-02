@@ -56,3 +56,44 @@ describe('createAdminClient', () => {
     expect(() => createAdminClient()).not.toThrow();
   });
 });
+
+describe('isConfiguredServiceRoleKey', () => {
+  const ORIGINAL_ENV = { ...process.env };
+
+  beforeEach(() => {
+    vi.resetModules();
+    process.env = { ...ORIGINAL_ENV };
+  });
+
+  afterEach(() => {
+    process.env = { ...ORIGINAL_ENV };
+  });
+
+  it('returns false for undefined', async () => {
+    const { isConfiguredServiceRoleKey } = await import('./admin');
+    expect(isConfiguredServiceRoleKey(undefined)).toBe(false);
+  });
+
+  it('returns false for an empty string', async () => {
+    const { isConfiguredServiceRoleKey } = await import('./admin');
+    expect(isConfiguredServiceRoleKey('')).toBe(false);
+  });
+
+  it('returns false for the placeholder value', async () => {
+    const { isConfiguredServiceRoleKey } = await import('./admin');
+    expect(isConfiguredServiceRoleKey('placeholder-service-role-key')).toBe(
+      false,
+    );
+  });
+
+  it('returns true for a real-looking key (type guard narrows to string)', async () => {
+    const { isConfiguredServiceRoleKey } = await import('./admin');
+    const key: string | undefined = 'a-real-looking-service-role-key';
+    expect(isConfiguredServiceRoleKey(key)).toBe(true);
+    if (isConfiguredServiceRoleKey(key)) {
+      // Narrowed to `string` — this line only type-checks if the guard works.
+      const narrowed: string = key;
+      expect(narrowed).toBe(key);
+    }
+  });
+});

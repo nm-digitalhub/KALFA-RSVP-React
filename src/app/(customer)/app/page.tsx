@@ -2,24 +2,7 @@ import Link from 'next/link';
 import { CalendarDays, Plus } from 'lucide-react';
 
 import { listEvents, getEventCounts } from '@/lib/data/events';
-
-const EVENT_TYPE_LABELS: Record<string, string> = {
-  wedding: 'חתונה',
-  bar_mitzvah: 'בר מצווה',
-  bat_mitzvah: 'בת מצווה',
-  brit: 'ברית',
-  britah: 'בריתה',
-  henna: 'חינה',
-  engagement: 'אירוסין',
-  birthday: 'יום הולדת',
-  other: 'אחר',
-};
-
-const STATUS_LABELS: Record<string, string> = {
-  draft: 'טיוטה',
-  active: 'פעיל',
-  closed: 'סגור',
-};
+import { EVENT_TYPE_LABELS, EVENT_STATUS_LABELS } from '@/lib/data/event-labels';
 
 export default async function DashboardPage() {
   // Counts come from head queries (ALL events), independent of the recent-events
@@ -96,7 +79,7 @@ export default async function DashboardPage() {
                   </p>
                 </Link>
                 <span className="shrink-0 rounded-full border border-border px-3 py-1 text-xs text-muted-foreground">
-                  {STATUS_LABELS[event.status] ?? event.status}
+                  {EVENT_STATUS_LABELS[event.status] ?? event.status}
                 </span>
               </li>
             ))}

@@ -1,15 +1,13 @@
 import Link from 'next/link';
+import { unstable_rethrow } from 'next/navigation';
 import { Receipt } from 'lucide-react';
 
 import { listOrders, ORDER_STATUS_LABELS } from '@/lib/data/orders';
 import type { OrderListItem } from '@/lib/data/orders';
 import { getPaymentsEnabled } from '@/lib/data/payments';
+import { formatCurrency } from '@/lib/format';
 
-// Hebrew currency + date formatters (he-IL, ILS).
-const currencyFmt = new Intl.NumberFormat('he-IL', {
-  style: 'currency',
-  currency: 'ILS',
-});
+// Hebrew date formatter (he-IL).
 const dateFmt = new Intl.DateTimeFormat('he-IL', { dateStyle: 'medium' });
 
 const statusBadgeBaseClass =
@@ -41,7 +39,7 @@ function OrderCard({
   return (
     <li className="flex items-start justify-between gap-4 rounded-lg border border-border bg-card p-5">
       <div className="space-y-1">
-        <p className="font-semibold">{currencyFmt.format(order.total_with_vat)}</p>
+        <p className="font-semibold">{formatCurrency(order.total_with_vat)}</p>
         <p className="text-sm text-muted-foreground">
           {dateFmt.format(new Date(order.created_at))}
         </p>
@@ -82,15 +80,7 @@ export default async function OrdersPage({
     // requireUser() inside listOrders enforces auth by THROWING a NEXT_REDIRECT
     // signal; it must propagate so the unauthenticated user reaches login.
     // Only a genuine load failure becomes the on-page error state.
-    if (
-      err &&
-      typeof err === 'object' &&
-      'digest' in err &&
-      typeof (err as { digest?: unknown }).digest === 'string' &&
-      (err as { digest: string }).digest.startsWith('NEXT_REDIRECT')
-    ) {
-      throw err;
-    }
+    unstable_rethrow(err);
     loadError = true;
   }
 

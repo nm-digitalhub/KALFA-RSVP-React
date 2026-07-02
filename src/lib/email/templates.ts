@@ -1,13 +1,7 @@
 // Pure Hebrew (RTL) HTML email templates. Inline styles for email-client
 // compatibility. No I/O — unit-testable.
 
-function esc(s: string): string {
-  return s
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
-}
+import { escapeHtml as esc } from '@/lib/html';
 
 // Email notifying the customer their agreement is signed, with a SECURE LINK to
 // view/download the PDF (not an attachment — avoids recipient attachment

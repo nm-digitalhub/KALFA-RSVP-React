@@ -49,3 +49,5 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 dist/
+voxi_auth.json
+storage_state.json

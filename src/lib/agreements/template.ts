@@ -14,6 +14,8 @@
 // §30א, Electronic Signature Law). ⚠️ The default wording is a DRAFT — a
 // licensed Israeli consumer-protection lawyer must approve it before go-live.
 
+import { escapeHtml as esc } from '@/lib/html';
+
 // Fallback version when no active DB document is available (e.g. pre-migration).
 export const AGREEMENT_VERSION = 'draft-2026-06-v2';
 
@@ -75,14 +77,6 @@ const CHANNEL_LABELS: Record<string, string> = {
 
 function ils(n: number): string {
   return `₪${n.toLocaleString('he-IL', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-}
-
-function esc(s: string): string {
-  return s
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
 }
 
 // Either the configured value or a clearly-marked placeholder, so a missing

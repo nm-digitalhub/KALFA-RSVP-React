@@ -24,6 +24,16 @@ export default async function EditPackagePage({
     ? pkg.includes.filter((x): x is string => typeof x === 'string')
     : [];
 
+  // outreach_schedule is stored as Json; the column holds an array of
+  // touchpoint objects by contract (locked to what packages.ts writes).
+  const outreachSchedule = Array.isArray(pkg.outreach_schedule)
+    ? (pkg.outreach_schedule as unknown as {
+        days_before: number;
+        channel: 'whatsapp' | 'call';
+        message_key: string;
+      }[])
+    : [];
+
   const initial: PackageFormInitial = {
     name: pkg.name,
     tier: pkg.tier,
@@ -33,6 +43,12 @@ export default async function EditPackagePage({
     includes,
     active: pkg.active,
     sort_order: pkg.sort_order ?? 0,
+    price_per_reached: pkg.price_per_reached ?? '',
+    channels: pkg.channels ?? [],
+    outreach_schedule: outreachSchedule,
+    min_hold_floor: pkg.min_hold_floor,
+    // Stored as a fraction (0.1); the form displays/accepts a percent (10).
+    hold_buffer_pct_percent: pkg.hold_buffer_pct * 100,
   };
 
   // Bind the id so the client form receives the (prevState, formData) signature.

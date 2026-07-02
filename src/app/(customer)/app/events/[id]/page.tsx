@@ -4,7 +4,7 @@ import { buttonVariants } from '@/components/ui/button';
 import { getEvent } from '@/lib/data/events';
 import { isPastEventDay, isBeforeTomorrowIL } from '@/lib/data/event-date';
 import { getCampaignForEvent, listCampaignsForEvent } from '@/lib/data/campaigns';
-import { EVENT_TYPES, EVENT_STATUSES } from '@/lib/validation/schemas';
+import { EVENT_TYPE_LABELS, EVENT_STATUS_LABELS } from '@/lib/data/event-labels';
 import { EditEventForm } from './edit-event-form';
 import { EventStatusActions } from './event-status-actions';
 import { publishEventAction, closeEventAction } from './campaign/campaign-actions';
@@ -20,24 +20,6 @@ const BLOCKING_CAMPAIGN_STATUSES = new Set([
   'active',
   'paused',
 ]);
-
-const EVENT_TYPE_LABELS: Record<(typeof EVENT_TYPES)[number], string> = {
-  wedding: 'חתונה',
-  bar_mitzvah: 'בר מצווה',
-  bat_mitzvah: 'בת מצווה',
-  brit: 'ברית',
-  britah: 'בריתה',
-  henna: 'חינה',
-  engagement: 'אירוסין',
-  birthday: 'יום הולדת',
-  other: 'אחר',
-};
-
-const EVENT_STATUS_LABELS: Record<(typeof EVENT_STATUSES)[number], string> = {
-  draft: 'טיוטה',
-  active: 'פעיל',
-  closed: 'סגור',
-};
 
 function formatDate(value: string | null): string | null {
   return value ? value.slice(0, 10) : null;

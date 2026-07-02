@@ -1,6 +1,7 @@
 'use server';
 
 import { revalidatePath } from 'next/cache';
+import { unstable_rethrow } from 'next/navigation';
 
 import { requireUser } from '@/lib/auth/dal';
 import { logActivity } from '@/lib/data/activity';
@@ -13,16 +14,6 @@ import {
   updateSettingsSchema,
 } from '@/lib/validation/schemas';
 import type { FormState } from '@/lib/validation/result';
-
-function isNextRedirect(err: unknown): boolean {
-  return (
-    err !== null &&
-    typeof err === 'object' &&
-    'digest' in err &&
-    typeof (err as { digest?: unknown }).digest === 'string' &&
-    (err as { digest: string }).digest.startsWith('NEXT_REDIRECT')
-  );
-}
 
 export async function updateProfileAction(
   _prevState: FormState,
@@ -45,7 +36,7 @@ export async function updateProfileAction(
       phone: phone ? phone : null,
     });
   } catch (err) {
-    if (isNextRedirect(err)) throw err;
+    unstable_rethrow(err);
     return { error: 'שמירת הפרטים נכשלה. נסו שוב.' };
   }
 
@@ -70,7 +61,7 @@ export async function updateSettingsAction(
   try {
     await updateUserSettings(parsed.data);
   } catch (err) {
-    if (isNextRedirect(err)) throw err;
+    unstable_rethrow(err);
     return { error: 'שמירת ההעדפות נכשלה. נסו שוב.' };
   }
 
@@ -108,7 +99,7 @@ export async function requestEmailChangeAction(
       return { error: 'שליחת אישור המייל נכשלה. נסו שוב מאוחר יותר.' };
     }
   } catch (err) {
-    if (isNextRedirect(err)) throw err;
+    unstable_rethrow(err);
     return { error: 'שליחת אישור המייל נכשלה. נסו שוב.' };
   }
 
@@ -149,7 +140,7 @@ export async function sendPasswordResetAction(
       },
     });
   } catch (err) {
-    if (isNextRedirect(err)) throw err;
+    unstable_rethrow(err);
     return { error: 'שליחת קישור איפוס הסיסמה נכשלה. נסו שוב.' };
   }
 

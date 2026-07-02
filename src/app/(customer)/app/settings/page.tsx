@@ -1,3 +1,4 @@
+import { unstable_rethrow } from 'next/navigation';
 import { requireUser } from '@/lib/auth/dal';
 import { getProfile, type ProfileDTO } from '@/lib/data/profiles';
 import { listOrders, type OrderListItem } from '@/lib/data/orders';
@@ -7,16 +8,6 @@ import {
   type UserSettingsDTO,
 } from '@/lib/data/user-settings';
 import { SettingsPageClient } from './settings-client';
-
-function isNextRedirect(err: unknown): boolean {
-  return (
-    err !== null &&
-    typeof err === 'object' &&
-    'digest' in err &&
-    typeof (err as { digest?: unknown }).digest === 'string' &&
-    (err as { digest: string }).digest.startsWith('NEXT_REDIRECT')
-  );
-}
 
 function settingsWithDefaults(settings: UserSettingsDTO | null): UserSettingsDTO {
   return {
@@ -45,7 +36,7 @@ export default async function SettingsPage() {
       listOrders({ limit: 3 }),
     ]);
   } catch (err) {
-    if (isNextRedirect(err)) throw err;
+    unstable_rethrow(err);
     loadError = true;
   }
 

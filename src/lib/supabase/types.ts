@@ -12,31 +12,6 @@ export type Database = {
   __InternalSupabase: {
     PostgrestVersion: "14.5"
   }
-  graphql_public: {
-    Tables: {
-      [_ in never]: never
-    }
-    Views: {
-      [_ in never]: never
-    }
-    Functions: {
-      graphql: {
-        Args: {
-          extensions?: Json
-          operationName?: string
-          query?: string
-          variables?: Json
-        }
-        Returns: Json
-      }
-    }
-    Enums: {
-      [_ in never]: never
-    }
-    CompositeTypes: {
-      [_ in never]: never
-    }
-  }
   public: {
     Tables: {
       activity_log: {
@@ -1409,6 +1384,44 @@ export type Database = {
           },
         ]
       }
+      outreach_template_failures: {
+        Row: {
+          campaign_id: string
+          channel: Database["public"]["Enums"]["campaign_channel"]
+          created_at: string
+          id: string
+          message_key: string
+          reason: string
+          touchpoint_index: number
+        }
+        Insert: {
+          campaign_id: string
+          channel: Database["public"]["Enums"]["campaign_channel"]
+          created_at?: string
+          id?: string
+          message_key: string
+          reason: string
+          touchpoint_index: number
+        }
+        Update: {
+          campaign_id?: string
+          channel?: Database["public"]["Enums"]["campaign_channel"]
+          created_at?: string
+          id?: string
+          message_key?: string
+          reason?: string
+          touchpoint_index?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "outreach_template_failures_campaign_id_fkey"
+            columns: ["campaign_id"]
+            isOneToOne: false
+            referencedRelation: "campaigns"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       packages: {
         Row: {
           active: boolean
@@ -2040,9 +2053,6 @@ export type CompositeTypes<
     : never
 
 export const Constants = {
-  graphql_public: {
-    Enums: {},
-  },
   public: {
     Enums: {
       agreement_status: ["draft", "approved"],

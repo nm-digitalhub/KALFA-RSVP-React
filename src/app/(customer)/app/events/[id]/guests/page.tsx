@@ -1,6 +1,6 @@
 import Link from 'next/link';
 
-import { Badge, type BadgeVariant } from '@/app/(admin)/admin/_components';
+import { Badge, Pagination, type BadgeVariant } from '@/app/(admin)/admin/_components';
 import { buttonVariants } from '@/components/ui/button';
 import { requireOwnedEvent } from '@/lib/data/events';
 import { listGuests, listGroups } from '@/lib/data/guests';
@@ -77,21 +77,7 @@ export default async function GuestsPage({ params, searchParams }: PageProps) {
   ]);
 
   const { items, total, pageSize } = result;
-  const totalPages = Math.max(1, Math.ceil(total / pageSize));
   const groupName = new Map(groups.map((g) => [g.id, g.name]));
-
-  // Preserve current filters when building pagination links.
-  function pageHref(targetPage: number): string {
-    const q = new URLSearchParams();
-    if (search) q.set('search', search);
-    if (sort) q.set('sort', sort);
-    if (dir) q.set('dir', dir);
-    if (status) q.set('status', status);
-    if (contactStatus) q.set('contact', contactStatus);
-    if (groupId) q.set('group', groupId);
-    q.set('page', String(targetPage));
-    return `/app/events/${eventId}/guests?${q.toString()}`;
-  }
 
   const hasActiveFilters = Boolean(
     search || status || contactStatus || groupId,
@@ -221,32 +207,20 @@ export default async function GuestsPage({ params, searchParams }: PageProps) {
         </div>
       )}
 
-      {totalPages > 1 ? (
-        <nav
-          className="flex items-center justify-center gap-2"
-          aria-label="עימוד"
-        >
-          {page > 1 ? (
-            <Link
-              href={pageHref(page - 1)}
-              className="rounded-md border border-border px-3 py-2 text-sm hover:bg-accent"
-            >
-              הקודם
-            </Link>
-          ) : null}
-          <span className="text-sm text-muted-foreground">
-            עמוד {page} מתוך {totalPages}
-          </span>
-          {page < totalPages ? (
-            <Link
-              href={pageHref(page + 1)}
-              className="rounded-md border border-border px-3 py-2 text-sm hover:bg-accent"
-            >
-              הבא
-            </Link>
-          ) : null}
-        </nav>
-      ) : null}
+      <Pagination
+        basePath={`/app/events/${eventId}/guests`}
+        page={page}
+        pageSize={pageSize}
+        total={total}
+        queryParams={{
+          search,
+          sort,
+          dir,
+          status,
+          contact: contactStatus,
+          group: groupId,
+        }}
+      />
     </div>
   );
 }

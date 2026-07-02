@@ -1,4 +1,5 @@
 import { getWhatsAppChannelConfig } from '@/lib/data/admin/channels';
+import { getAppUrl } from '@/lib/url';
 import { PageHeading } from '../_components';
 import { ChannelsClient } from './channels-client';
 
@@ -9,8 +10,7 @@ const sectionClass = 'space-y-4 rounded-lg border border-border bg-card p-5';
 // channel turns on live, paid sends — the master switch is `outreach_enabled`.
 export default async function AdminChannelsPage() {
   const whatsapp = await getWhatsAppChannelConfig();
-  const origin = process.env.APP_ORIGIN ?? '';
-  const callbackUrl = `${origin}/api/webhooks/whatsapp`;
+  const callbackUrl = await getAppUrl('/api/webhooks/whatsapp');
 
   return (
     <div className="space-y-6">

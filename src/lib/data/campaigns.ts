@@ -526,45 +526,37 @@ export async function prepareCampaignHold(
 // (capture.ts). Only ever reached behind getCloseChargeEnabled() (false until
 // enabled).
 
-export type CampaignChargeState = {
-  id: string;
-  event_id: string;
-  status: string;
-  capture_status: string | null;
-  charge_status: string | null;
-  card_token_ref: string | null;
-  card_exp_month: number | null;
-  card_exp_year: number | null;
-  card_citizen_id: string | null;
-  auth_external_ref: string | null;
-  max_charge_ceiling: string | null;
-};
+export type CampaignChargeState = Pick<
+  CampaignRow,
+  | 'id'
+  | 'event_id'
+  | 'status'
+  | 'capture_status'
+  | 'charge_status'
+  | 'card_token_ref'
+  | 'card_exp_month'
+  | 'card_exp_year'
+  | 'card_citizen_id'
+  | 'auth_external_ref'
+  | 'max_charge_ceiling'
+>;
 
+const CHARGE_COLUMNS =
+  'id, event_id, status, capture_status, charge_status, card_token_ref, card_exp_month, card_exp_year, card_citizen_id, auth_external_ref, max_charge_ceiling';
+
+// Read the charge-relevant fields. Service-role (the charge writes bypass RLS);
+// the caller (the Route Handler) has already verified ownership.
 export async function getCampaignForCharge(
   campaignId: string,
 ): Promise<CampaignChargeState | null> {
   const admin = createAdminClient();
   const { data, error } = await admin
     .from('campaigns')
-    .select('*')
+    .select(CHARGE_COLUMNS)
     .eq('id', campaignId)
     .maybeSingle();
   if (error) throw new Error('טעינת הקמפיין נכשלה');
-  if (!data) return null;
-  const row = data as Record<string, unknown>;
-  return {
-    id: String(row.id),
-    event_id: String(row.event_id),
-    status: String(row.status),
-    capture_status: (row.capture_status as string | null) ?? null,
-    charge_status: (row.charge_status as string | null) ?? null,
-    card_token_ref: (row.card_token_ref as string | null) ?? null,
-    card_exp_month: (row.card_exp_month as number | null) ?? null,
-    card_exp_year: (row.card_exp_year as number | null) ?? null,
-    card_citizen_id: (row.card_citizen_id as string | null) ?? null,
-    auth_external_ref: (row.auth_external_ref as string | null) ?? null,
-    max_charge_ceiling: (row.max_charge_ceiling as string | null) ?? null,
-  };
+  return data;
 }
 
 // Atomically claim the charge slot (idempotency for the final charge). Matches

@@ -1,24 +1,7 @@
 import Link from 'next/link';
 
 import { listEvents } from '@/lib/data/events';
-
-const STATUS_LABELS: Record<string, string> = {
-  draft: 'טיוטה',
-  active: 'פעיל',
-  closed: 'סגור',
-};
-
-const EVENT_TYPE_LABELS: Record<string, string> = {
-  wedding: 'חתונה',
-  bar_mitzvah: 'בר מצווה',
-  bat_mitzvah: 'בת מצווה',
-  brit: 'ברית',
-  britah: 'בריתה',
-  henna: 'חינה',
-  engagement: 'אירוסין',
-  birthday: 'יום הולדת',
-  other: 'אחר',
-};
+import { EVENT_TYPE_LABELS, EVENT_STATUS_LABELS } from '@/lib/data/event-labels';
 
 export default async function EventsPage() {
   const events = await listEvents();
@@ -60,7 +43,7 @@ export default async function EventsPage() {
               </Link>
               <div className="flex shrink-0 items-center gap-3">
                 <span className="rounded-full border border-border px-3 py-1 text-xs text-muted-foreground">
-                  {STATUS_LABELS[event.status] ?? event.status}
+                  {EVENT_STATUS_LABELS[event.status] ?? event.status}
                 </span>
                 <Link
                   href={`/app/events/${event.id}`}

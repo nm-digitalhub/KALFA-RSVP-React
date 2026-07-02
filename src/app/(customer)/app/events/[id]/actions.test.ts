@@ -8,10 +8,26 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 // prevent. FormData.has(...) is the only reliable signal.
 
 vi.mock('next/cache', () => ({ revalidatePath: vi.fn() }));
+// Keep the real unstable_rethrow (via importOriginal) so it genuinely
+// recognizes NEXT_REDIRECT/NEXT_HTTP_ERROR_FALLACK digests exactly as it
+// would in production.
+vi.mock('next/navigation', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('next/navigation')>();
+  return { ...actual };
+});
 vi.mock('@/lib/data/events', () => ({ updateEvent: vi.fn() }));
 
 import { updateEvent } from '@/lib/data/events';
 import { updateEventAction } from './actions';
+
+const NEXT_REDIRECT = Object.assign(new Error('NEXT_REDIRECT'), {
+  digest: 'NEXT_REDIRECT;replace;/auth/login;307;',
+});
+// Real notFound() digest format (verified against node_modules/next/dist/
+// client/components/not-found.js): 'NEXT_HTTP_ERROR_FALLBACK;404'.
+const NEXT_NOT_FOUND = Object.assign(new Error('NEXT_NOT_FOUND'), {
+  digest: 'NEXT_HTTP_ERROR_FALLBACK;404',
+});
 
 function fd(entries: Record<string, string>): FormData {
   const f = new FormData();
@@ -72,5 +88,31 @@ describe('updateEventAction — FormData.has() presence mapping', () => {
 
     const input = vi.mocked(updateEvent).mock.calls[0][1];
     expect(Object.hasOwn(input, 'status')).toBe(false);
+  });
+});
+
+describe('updateEventAction — Next.js control-flow signals from the ownership gate', () => {
+  it('propagates a NEXT_REDIRECT from updateEvent instead of returning { error }', async () => {
+    vi.mocked(updateEvent).mockRejectedValue(NEXT_REDIRECT);
+
+    await expect(
+      updateEventAction('e-1', null, fd({ ...BASE })),
+    ).rejects.toThrow('NEXT_REDIRECT');
+  });
+
+  it('propagates a NEXT_NOT_FOUND from the ownership gate instead of returning { error }', async () => {
+    vi.mocked(updateEvent).mockRejectedValue(NEXT_NOT_FOUND);
+
+    await expect(
+      updateEventAction('e-1', null, fd({ ...BASE })),
+    ).rejects.toThrow('NEXT_NOT_FOUND');
+  });
+
+  it('converts a genuine (non-framework) error into the existing friendly message, not a thrown error', async () => {
+    vi.mocked(updateEvent).mockRejectedValue(new Error('db down'));
+
+    const result = await updateEventAction('e-1', null, fd({ ...BASE }));
+
+    expect(result).toEqual({ error: 'עדכון האירוע נכשל. נסו שוב.' });
   });
 });

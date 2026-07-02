@@ -2,6 +2,7 @@ import { type NextRequest, NextResponse } from 'next/server';
 import { requireUser } from '@/lib/auth/dal';
 import { getOrder } from '@/lib/data/orders';
 import { getPaymentsEnabled, getSumitServerConfig } from '@/lib/data/payments';
+import { isAllowedOrigin } from '@/lib/http/allowed-origin';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { chargeSumit, SumitDeclinedError } from '@/lib/sumit/charge';
 import { payPendingOrderSchema } from '@/lib/validation/schemas';
@@ -15,30 +16,6 @@ const ERROR = {
   PAYMENT_REVIEW:     'payment_review',
   PAYMENTS_DISABLED:  'payments_disabled',
 } as const;
-
-// APP_ORIGIN is a server-only env var — never NEXT_PUBLIC_.
-// No silent fallback: a missing security variable must be a hard error.
-// localhost:3002 is added ONLY in development — never in production.
-function isAllowedOrigin(request: NextRequest): boolean {
-  const appOrigin = process.env.APP_ORIGIN;
-  if (!appOrigin) throw new Error('APP_ORIGIN env var is not configured');
-  const allowed = new Set([appOrigin]);
-  if (process.env.NODE_ENV === 'development') allowed.add('http://localhost:3002');
-
-  const origin = request.headers.get('origin');
-  if (origin) return allowed.has(origin);
-
-  // Fallback: extract origin from Referer (browser sends this even without Origin).
-  const referer = request.headers.get('referer');
-  if (referer) {
-    try {
-      return allowed.has(new URL(referer).origin);
-    } catch { return false; }
-  }
-
-  // Both absent — deny. OWASP recommends fail-closed.
-  return false;
-}
 
 function r303(url: URL) {
   return NextResponse.redirect(url, 303);

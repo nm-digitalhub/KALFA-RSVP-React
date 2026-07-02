@@ -169,3 +169,10 @@ export function parsePageParam(raw: string | string[] | undefined): number {
   const n = value ? Number(value) : 1;
   return Number.isInteger(n) && n > 0 ? n : 1;
 }
+
+// Take the first value of a possibly-array search param and trim it,
+// returning undefined for empty/whitespace-only input.
+export function firstParam(raw: string | string[] | undefined): string | undefined {
+  const value = Array.isArray(raw) ? raw[0] : raw;
+  return value && value.trim() !== '' ? value.trim() : undefined;
+}

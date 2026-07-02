@@ -1,7 +1,7 @@
 'use server';
 
 import { revalidatePath } from 'next/cache';
-import { redirect } from 'next/navigation';
+import { redirect, unstable_rethrow } from 'next/navigation';
 
 import {
   createGuest,
@@ -21,19 +21,6 @@ import {
 import { Constants } from '@/lib/supabase/types';
 import type { ContactStatus } from '@/lib/data/guests';
 import type { FormState } from '@/lib/validation/result';
-
-// Next.js signals control flow (redirect, notFound) by throwing a sentinel
-// error carrying a `digest`. Those MUST propagate — catching them would break
-// the redirect/404. Everything else becomes a safe, generic message.
-function isNextControlFlow(err: unknown): boolean {
-  if (!err || typeof err !== 'object' || !('digest' in err)) return false;
-  const digest = (err as { digest?: unknown }).digest;
-  return (
-    typeof digest === 'string' &&
-    (digest.startsWith('NEXT_REDIRECT') ||
-      digest.startsWith('NEXT_HTTP_ERROR_FALLBACK'))
-  );
-}
 
 // Normalise an optional text field: '' -> null (clear), otherwise the value.
 function orNull(v: FormDataEntryValue | null): string | null {
@@ -74,7 +61,7 @@ export async function createGuestAction(
     });
     createdId = created.id;
   } catch (err) {
-    if (isNextControlFlow(err)) throw err;
+    unstable_rethrow(err);
     return { error: 'הוספת המוזמן נכשלה. נסו שוב.' };
   }
 
@@ -100,7 +87,7 @@ async function syncGuestContact(
     await linkGuestContact(eventId, guestId, phone);
   } catch (err) {
     // Next control-flow signals must propagate, never be swallowed.
-    if (isNextControlFlow(err)) throw err;
+    unstable_rethrow(err);
     // Derived secondary effect — never blocks the completed guest mutation, but
     // log (no phone PII) so a dropped link is auditable and reconcilable.
     console.error(
@@ -144,7 +131,7 @@ export async function updateGuestAction(
       note: d.note !== undefined ? (d.note ? d.note : null) : undefined,
     });
   } catch (err) {
-    if (isNextControlFlow(err)) throw err;
+    unstable_rethrow(err);
     return { error: 'עדכון המוזמן נכשל. נסו שוב.' };
   }
 
@@ -165,7 +152,7 @@ export async function deleteGuestAction(
   try {
     await deleteGuest(eventId, guestId);
   } catch (err) {
-    if (isNextControlFlow(err)) throw err;
+    unstable_rethrow(err);
     // Surface a generic failure by re-throwing so the nearest error boundary
     // handles it; there is no form state to return to for this action.
     throw new Error('מחיקת המוזמן נכשלה');
@@ -189,7 +176,7 @@ export async function setContactStatusAction(
   try {
     await updateContactStatus(eventId, guestId, value as ContactStatus);
   } catch (err) {
-    if (isNextControlFlow(err)) throw err;
+    unstable_rethrow(err);
     throw new Error('עדכון סטטוס יצירת הקשר נכשל');
   }
   revalidatePath(`/app/events/${eventId}/guests`);
@@ -215,7 +202,7 @@ export async function createGroupAction(
       color: parsed.data.color ? parsed.data.color : null,
     });
   } catch (err) {
-    if (isNextControlFlow(err)) throw err;
+    unstable_rethrow(err);
     return { error: 'יצירת הקבוצה נכשלה. נסו שוב.' };
   }
 
@@ -230,7 +217,7 @@ export async function deleteGroupAction(
   try {
     await deleteGroup(eventId, groupId);
   } catch (err) {
-    if (isNextControlFlow(err)) throw err;
+    unstable_rethrow(err);
     throw new Error('מחיקת הקבוצה נכשלה');
   }
   revalidatePath(`/app/events/${eventId}/guests`);
@@ -248,7 +235,7 @@ export async function revokeRsvpTokenAction(
   try {
     await revokeRsvpToken(eventId, guestId);
   } catch (err) {
-    if (isNextControlFlow(err)) throw err;
+    unstable_rethrow(err);
     return { error: 'ביטול קישור ההזמנה נכשל. נסו שוב.' };
   }
   revalidatePath(`/app/events/${eventId}/guests/${guestId}`);
@@ -264,7 +251,7 @@ export async function regenerateRsvpTokenAction(
   try {
     await regenerateRsvpToken(eventId, guestId);
   } catch (err) {
-    if (isNextControlFlow(err)) throw err;
+    unstable_rethrow(err);
     return { error: 'יצירת קישור חדש נכשלה. נסו שוב.' };
   }
   revalidatePath(`/app/events/${eventId}/guests/${guestId}`);

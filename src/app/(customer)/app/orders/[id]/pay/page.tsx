@@ -1,12 +1,7 @@
 import { getOrder } from '@/lib/data/orders';
 import { getPaymentsEnabled, getSumitPublicConfig } from '@/lib/data/payments';
+import { formatCurrency } from '@/lib/format';
 import { PaymentForm } from './payment-form';
-
-// Hebrew currency formatter (he-IL, ILS).
-const currencyFmt = new Intl.NumberFormat('he-IL', {
-  style: 'currency',
-  currency: 'ILS',
-});
 
 // Fixed, privacy-safe messages for the known error codes the Route Handler may
 // redirect back with. Raw SUMIT error text is never surfaced here. Unknown
@@ -95,7 +90,7 @@ export default async function PayPage({ params, searchParams }: PageProps) {
         <h1 className="text-2xl font-bold">תשלום</h1>
 
         <p className="text-lg font-semibold">
-          {currencyFmt.format(order.total_with_vat)}
+          {formatCurrency(order.total_with_vat)}
         </p>
 
         {errorMessage ? (

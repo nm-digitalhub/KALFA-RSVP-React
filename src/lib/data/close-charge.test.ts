@@ -88,7 +88,7 @@ function happy() {
     card_exp_year: 2031,
     card_citizen_id: '316125434',
     auth_external_ref: 'ext-1',
-    max_charge_ceiling: '88',
+    max_charge_ceiling: 88,
   });
   m.summary.mockResolvedValue({
     reachedCount: 3,
@@ -129,7 +129,7 @@ describe('closeCampaignAndCharge', () => {
       capture_status: null,
       charge_status: null,
       sumit_customer_ref: 'kalfa-campaign-c1',
-      max_charge_ceiling: '88',
+      max_charge_ceiling: 88,
     });
     const r = await closeCampaignAndCharge('c1');
     expect(r.outcome).toBe('bad_state');
@@ -149,7 +149,7 @@ describe('closeCampaignAndCharge', () => {
       card_exp_year: null,
       card_citizen_id: null,
       auth_external_ref: null,
-      max_charge_ceiling: '88',
+      max_charge_ceiling: 88,
     });
     const r = await closeCampaignAndCharge('c1');
     expect(r.outcome).toBe('bad_state');
@@ -197,8 +197,23 @@ describe('closeCampaignAndCharge', () => {
     expect(r).toEqual({ outcome: 'charged', amount: 12 });
   });
 
-  it('caps the amount at the ceiling', async () => {
+  it('caps the amount at the CAMPAIGN ceiling, not the summary ceiling', async () => {
     happy();
+    // Deliberately different values so the assertion can tell which one the
+    // code actually used — the campaign's max_charge_ceiling must win.
+    m.forCharge.mockResolvedValue({
+      id: 'c1',
+      event_id: 'e1',
+      status: 'active',
+      capture_status: 'authorized',
+      charge_status: null,
+      card_token_ref: 'tok-abc',
+      card_exp_month: 7,
+      card_exp_year: 2031,
+      card_citizen_id: '316125434',
+      auth_external_ref: 'ext-1',
+      max_charge_ceiling: 60,
+    });
     m.summary.mockResolvedValue({
       reachedCount: 99,
       accrued: 100,
@@ -206,9 +221,37 @@ describe('closeCampaignAndCharge', () => {
       maxContacts: 22,
     });
     const r = await closeCampaignAndCharge('c1');
-    expect(r).toEqual({ outcome: 'charged', amount: 88 });
+    expect(r).toEqual({ outcome: 'charged', amount: 60 });
     expect(captureHeldCardSumit).toHaveBeenCalledWith(
-      expect.objectContaining({ amount: '88' }),
+      expect.objectContaining({ amount: '60' }),
+    );
+  });
+
+  it('falls back to summary.ceiling when the campaign has no max_charge_ceiling yet (null)', async () => {
+    happy();
+    m.forCharge.mockResolvedValue({
+      id: 'c1',
+      event_id: 'e1',
+      status: 'active',
+      capture_status: 'authorized',
+      charge_status: null,
+      card_token_ref: 'tok-abc',
+      card_exp_month: 7,
+      card_exp_year: 2031,
+      card_citizen_id: '316125434',
+      auth_external_ref: 'ext-1',
+      max_charge_ceiling: null,
+    });
+    m.summary.mockResolvedValue({
+      reachedCount: 99,
+      accrued: 100,
+      ceiling: 45,
+      maxContacts: 22,
+    });
+    const r = await closeCampaignAndCharge('c1');
+    expect(r).toEqual({ outcome: 'charged', amount: 45 });
+    expect(captureHeldCardSumit).toHaveBeenCalledWith(
+      expect.objectContaining({ amount: '45' }),
     );
   });
 

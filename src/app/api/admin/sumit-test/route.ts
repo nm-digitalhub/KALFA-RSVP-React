@@ -2,6 +2,8 @@ import { type NextRequest, NextResponse } from 'next/server';
 
 import { requireAdmin } from '@/lib/auth/dal';
 import { getSumitServerConfig } from '@/lib/data/payments';
+import { escapeHtml as esc } from '@/lib/html';
+import { isAllowedOrigin } from '@/lib/http/allowed-origin';
 import { chargeRaw } from '@/lib/sumit/raw-charge';
 import {
   summarizeSumitRequest,
@@ -23,31 +25,6 @@ function isNextRedirect(err: unknown): boolean {
     typeof (err as { digest?: unknown }).digest === 'string' &&
     (err as { digest: string }).digest.startsWith('NEXT_REDIRECT')
   );
-}
-
-function isAllowedOrigin(request: NextRequest): boolean {
-  const appOrigin = process.env.APP_ORIGIN;
-  if (!appOrigin) throw new Error('APP_ORIGIN env var is not configured');
-  const allowed = new Set([appOrigin]);
-  if (process.env.NODE_ENV === 'development') allowed.add('http://localhost:3002');
-  const origin = request.headers.get('origin');
-  if (origin) return allowed.has(origin);
-  const referer = request.headers.get('referer');
-  if (referer) {
-    try {
-      return allowed.has(new URL(referer).origin);
-    } catch {
-      return false;
-    }
-  }
-  return false;
-}
-
-function esc(s: string): string {
-  return s
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;');
 }
 
 // SUMIT's own HTTP status is 200 even for a declined/failed business outcome

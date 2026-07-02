@@ -12,6 +12,7 @@ import {
   EmptyState,
   PageHeading,
   Pagination,
+  firstParam,
   formatDateTime,
   parsePageParam,
 } from '../_components';
@@ -52,11 +53,6 @@ const INSTANCE_FILTER_LABELS: Record<string, string> = {
   groupId: 'קבוצה',
   packageId: 'חבילה',
 };
-
-function firstParam(raw: string | string[] | undefined): string | undefined {
-  const value = Array.isArray(raw) ? raw[0] : raw;
-  return value && value.trim() !== '' ? value.trim() : undefined;
-}
 
 function ActivityFilters({
   basePath,

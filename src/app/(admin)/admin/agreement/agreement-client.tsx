@@ -1,9 +1,8 @@
 'use client';
 
 import { useActionState } from 'react';
-import { useFormStatus } from 'react-dom';
 
-import { FieldError, FormError, FormNotice } from '@/components/forms';
+import { FieldError, FormError, FormNotice, SubmitButton } from '@/components/forms';
 
 import {
   saveAgreementAction,
@@ -35,31 +34,6 @@ const TOKENS = [
   'privacyLink',
   'termsLink',
 ];
-
-function RowSubmit({
-  children,
-  variant,
-}: {
-  children: React.ReactNode;
-  variant?: 'primary' | 'danger';
-}) {
-  const { pending } = useFormStatus();
-  const style =
-    variant === 'danger'
-      ? 'bg-red-50 text-red-700 hover:bg-red-100'
-      : variant === 'primary'
-        ? 'bg-primary text-primary-foreground hover:opacity-90'
-        : 'border border-border hover:bg-muted';
-  return (
-    <button
-      type="submit"
-      disabled={pending}
-      className={`rounded-md px-3 py-1.5 text-sm font-medium transition-opacity disabled:opacity-60 ${style}`}
-    >
-      {pending ? 'רגע…' : children}
-    </button>
-  );
-}
 
 export function AgreementEditor({
   version,
@@ -129,7 +103,7 @@ export function AgreementEditor({
               <code key={t} className="me-1 rounded bg-muted px-1">{`{{${t}}}`}</code>
             ))}
           </p>
-          <RowSubmit variant="primary">שמירה</RowSubmit>
+          <SubmitButton>שמירה</SubmitButton>
         </form>
       </section>
 
@@ -164,9 +138,9 @@ export function AgreementEditor({
             />
             <FieldError errors={approveState?.fieldErrors?.version} />
           </div>
-          <RowSubmit variant="primary">
+          <SubmitButton className="w-auto">
             {status === 'approved' ? 'עדכון אישור' : 'אישור והסרת טיוטה'}
-          </RowSubmit>
+          </SubmitButton>
         </form>
       </section>
 
@@ -179,7 +153,9 @@ export function AgreementEditor({
           <form action={revertAction}>
             <FormError message={revertState?.error} />
             <FormNotice message={revertState?.notice} />
-            <RowSubmit variant="danger">שחזור לתבנית</RowSubmit>
+            <SubmitButton className="bg-destructive/10 text-destructive hover:bg-destructive/20">
+              שחזור לתבנית
+            </SubmitButton>
           </form>
         </section>
       ) : null}

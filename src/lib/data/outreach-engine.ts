@@ -9,6 +9,7 @@ import { setContactOpStatus } from '@/lib/data/interactions';
 import { isPastEventDay } from '@/lib/data/event-date';
 import type { Touchpoint } from '@/lib/outreach/schedule';
 import type { OutreachCallRequest } from '@/lib/queue/queues';
+import type { Database } from '@/lib/supabase/types';
 
 // The C1 outreach-engine data layer. REQUEST-FREE (no cookies / requireUser) —
 // it runs from the pg-boss worker (a long-lived process), scoping by loading the
@@ -220,6 +221,37 @@ async function bumpCount(
     .eq('contact_id', contactId);
 }
 
+// Runtime template integrity (plan §5.6): a broken outreach_schedule
+// touchpoint (missing/inactive template, or channel mismatch) currently
+// fails silently. This records it durably, deduplicated per
+// (campaign, touchpoint, reason) via an atomic upsert — NOT select-then-
+// insert, since claimStep advances a per-recipient cursor, so concurrent
+// workers can hit the same broken touchpoint for different contacts at once.
+async function recordTemplateFailure(
+  admin: AdminClient,
+  campaignId: string,
+  touchpointIndex: number,
+  reason: 'template_missing' | 'channel_mismatch',
+  messageKey: string,
+  channel: string,
+): Promise<void> {
+  // Touchpoint.channel (schedule.ts) is plain `string`, not the DB enum — the
+  // schedule is validated upstream (packages admin form / campaigns snapshot)
+  // to only ever contain real campaign_channel values, so this is a boundary
+  // cast, not an unchecked one (same pattern as `as unknown as Json` elsewhere).
+  const channelEnum = channel as Database['public']['Enums']['campaign_channel'];
+  await admin.from('outreach_template_failures').upsert(
+    {
+      campaign_id: campaignId,
+      touchpoint_index: touchpointIndex,
+      reason,
+      message_key: messageKey,
+      channel: channelEnum,
+    },
+    { onConflict: 'campaign_id,touchpoint_index,reason', ignoreDuplicates: true },
+  );
+}
+
 export type StepAction =
   | { action: 'whatsapp_sent' }
   | { action: 'call_request'; callRequest: OutreachCallRequest }
@@ -260,8 +292,19 @@ export async function executeStep(
 
   if (tp.channel === 'whatsapp') {
     const config = await getWhatsAppConfig();
+    if (!config) {
+      // Expected fail-closed state (WhatsApp not yet configured) — NOT a
+      // template-integrity failure. Do not log here, or every environment
+      // that hasn't configured WhatsApp yet floods the sink for no reason.
+      return { action: 'skipped' };
+    }
     const template = await getTemplateByKey(tp.message_key);
-    if (!config || !template || template.channel !== 'whatsapp') {
+    if (!template) {
+      await recordTemplateFailure(admin, campaignId, stepIndex, 'template_missing', tp.message_key, tp.channel);
+      return { action: 'skipped' };
+    }
+    if (template.channel !== 'whatsapp') {
+      await recordTemplateFailure(admin, campaignId, stepIndex, 'channel_mismatch', tp.message_key, tp.channel);
       return { action: 'skipped' };
     }
     const ok = await sendOneWhatsApp(

@@ -14,7 +14,7 @@ import {
   PACKAGE_COLUMNS,
   type AdminPackage,
 } from './packages';
-import type { PackageInput } from '@/lib/validation/admin';
+import type { PackageInput, OperationalFieldsInput } from '@/lib/validation/admin';
 
 vi.mock('server-only', () => ({}));
 vi.mock('@/lib/supabase/server', () => ({ createClient: vi.fn() }));
@@ -43,6 +43,11 @@ function row(overrides: Partial<AdminPackage> = {}): AdminPackage {
     active: true,
     sort_order: 0,
     created_at: '2026-06-20T10:00:00.000Z',
+    price_per_reached: null,
+    channels: [],
+    outreach_schedule: [],
+    min_hold_floor: 0,
+    hold_buffer_pct: 0,
     ...overrides,
   };
 }
@@ -56,6 +61,16 @@ const input: PackageInput = {
   includes: ['פריט 1', 'פריט 2'],
   active: true,
   sort_order: 0,
+};
+
+// Non-campaign-enabled by default (price_per_reached: null) — the common
+// case for §1.6's "package that isn't a campaign template" state.
+const operational: OperationalFieldsInput = {
+  price_per_reached: null,
+  channels: [],
+  outreach_schedule: [],
+  min_hold_floor: 0,
+  hold_buffer_pct: 0,
 };
 
 beforeEach(() => {
@@ -136,7 +151,7 @@ describe('createPackage', () => {
       client as unknown as Awaited<ReturnType<typeof createClient>>,
     );
 
-    const result = await createPackage(input);
+    const result = await createPackage(input, operational);
 
     expect(client.from).toHaveBeenCalledWith('packages');
     expect(builder.insert).toHaveBeenCalledWith(
@@ -167,7 +182,7 @@ describe('createPackage', () => {
       client as unknown as Awaited<ReturnType<typeof createClient>>,
     );
 
-    await expect(createPackage(input)).rejects.toThrow('יצירת החבילה נכשלה');
+    await expect(createPackage(input, operational)).rejects.toThrow('יצירת החבילה נכשלה');
   });
 });
 
@@ -181,7 +196,7 @@ describe('updatePackage', () => {
       client as unknown as Awaited<ReturnType<typeof createClient>>,
     );
 
-    await updatePackage('p-1', input);
+    await updatePackage('p-1', input, operational);
 
     expect(builder.update).toHaveBeenCalledWith(
       expect.objectContaining({ name: 'חבילה', price_with_vat: 250 }),

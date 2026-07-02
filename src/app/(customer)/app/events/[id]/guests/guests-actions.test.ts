@@ -6,13 +6,19 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('next/cache', () => ({ revalidatePath: vi.fn() }));
 // redirect() throws a NEXT_REDIRECT control-flow signal in real Next; model it.
-vi.mock('next/navigation', () => ({
-  redirect: vi.fn(() => {
-    throw Object.assign(new Error('NEXT_REDIRECT'), {
-      digest: 'NEXT_REDIRECT;replace;/x;307;',
-    });
-  }),
-}));
+// Keep the real `unstable_rethrow` (via importOriginal) so it still recognizes
+// this fake NEXT_REDIRECT digest exactly as it would a real one.
+vi.mock('next/navigation', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('next/navigation')>();
+  return {
+    ...actual,
+    redirect: vi.fn(() => {
+      throw Object.assign(new Error('NEXT_REDIRECT'), {
+        digest: 'NEXT_REDIRECT;replace;/x;307;',
+      });
+    }),
+  };
+});
 vi.mock('@/lib/data/guests', () => ({
   createGuest: vi.fn(),
   updateGuest: vi.fn(),
@@ -96,5 +102,40 @@ describe('updateGuestAction → contact sync', () => {
       'e-1',
       'g-9',
     ]);
+  });
+});
+
+// Real notFound() digest format (verified against node_modules/next/dist/
+// client/components/not-found.js): 'NEXT_HTTP_ERROR_FALLBACK;404'.
+const NEXT_NOT_FOUND = Object.assign(new Error('NEXT_NOT_FOUND'), {
+  digest: 'NEXT_HTTP_ERROR_FALLBACK;404',
+});
+
+describe('createGuestAction — Next.js control-flow signals from the ownership gate', () => {
+  it('propagates a NEXT_NOT_FOUND from createGuest (requireOwnedEvent) instead of returning { error }', async () => {
+    vi.mocked(createGuest).mockRejectedValue(NEXT_NOT_FOUND);
+
+    await expect(
+      createGuestAction(
+        'e-1',
+        null,
+        fd({ full_name: 'דנה', phone: '0501234567', group_id: '', note: '' }),
+      ),
+    ).rejects.toThrow('NEXT_NOT_FOUND');
+
+    expect(linkGuestContact).not.toHaveBeenCalled();
+  });
+
+  it('converts a genuine (non-framework) error from createGuest into the existing friendly message, not a thrown error', async () => {
+    vi.mocked(createGuest).mockRejectedValue(new Error('db down'));
+
+    const result = await createGuestAction(
+      'e-1',
+      null,
+      fd({ full_name: 'דנה', phone: '0501234567', group_id: '', note: '' }),
+    );
+
+    expect(result).toEqual({ error: 'הוספת המוזמן נכשלה. נסו שוב.' });
+    expect(linkGuestContact).not.toHaveBeenCalled();
   });
 });

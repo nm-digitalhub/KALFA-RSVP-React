@@ -481,7 +481,47 @@ describe('cancelCampaign (R8 — explicit ownership contract, round-3)', () => {
 });
 
 describe('B4 close-charge data layer', () => {
-  it('getCampaignForCharge maps the charge state (incl. new columns)', async () => {
+  it('getCampaignForCharge selects the charge columns via the admin client', async () => {
+    const { client, builder } = adminWith({
+      data: {
+        id: 'c1',
+        event_id: 'e1',
+        status: 'closed',
+        capture_status: 'authorized',
+        charge_status: null,
+        card_token_ref: 'tok-abc',
+        card_exp_month: 7,
+        card_exp_year: 2031,
+        card_citizen_id: '316125434',
+        auth_external_ref: 'ext-1',
+        max_charge_ceiling: 88,
+      },
+      error: null,
+    });
+
+    const r = await getCampaignForCharge('c1');
+
+    expect(client.from).toHaveBeenCalledWith('campaigns');
+    expect(builder.select).toHaveBeenCalledWith(
+      'id, event_id, status, capture_status, charge_status, card_token_ref, card_exp_month, card_exp_year, card_citizen_id, auth_external_ref, max_charge_ceiling',
+    );
+    expect(builder.eq).toHaveBeenCalledWith('id', 'c1');
+    expect(r).toEqual({
+      id: 'c1',
+      event_id: 'e1',
+      status: 'closed',
+      capture_status: 'authorized',
+      charge_status: null,
+      card_token_ref: 'tok-abc',
+      card_exp_month: 7,
+      card_exp_year: 2031,
+      card_citizen_id: '316125434',
+      auth_external_ref: 'ext-1',
+      max_charge_ceiling: 88,
+    });
+  });
+
+  it('getCampaignForCharge maps max_charge_ceiling: null (not-yet-set ceiling)', async () => {
     adminWith({
       data: {
         id: 'c1',
@@ -494,23 +534,14 @@ describe('B4 close-charge data layer', () => {
         card_exp_year: 2031,
         card_citizen_id: '316125434',
         auth_external_ref: 'ext-1',
-        max_charge_ceiling: '88',
+        max_charge_ceiling: null,
       },
       error: null,
     });
-    await expect(getCampaignForCharge('c1')).resolves.toEqual({
-      id: 'c1',
-      event_id: 'e1',
-      status: 'closed',
-      capture_status: 'authorized',
-      charge_status: null,
-      card_token_ref: 'tok-abc',
-      card_exp_month: 7,
-      card_exp_year: 2031,
-      card_citizen_id: '316125434',
-      auth_external_ref: 'ext-1',
-      max_charge_ceiling: '88',
-    });
+
+    const r = await getCampaignForCharge('c1');
+
+    expect(r?.max_charge_ceiling).toBeNull();
   });
 
   it('lockCampaignForCharge wins (true) via the guarded update, idempotency guard', async () => {

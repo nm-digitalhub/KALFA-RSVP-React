@@ -1,6 +1,6 @@
 'use server';
 
-import { redirect } from 'next/navigation';
+import { redirect, unstable_rethrow } from 'next/navigation';
 import { revalidatePath } from 'next/cache';
 import { headers } from 'next/headers';
 
@@ -24,19 +24,6 @@ import type { FormState } from '@/lib/validation/result';
 
 const OTP_PURPOSE = 'agreement_signing';
 
-// Re-throw Next.js control-flow signals (redirect/notFound) so catching domain
-// errors does not swallow them.
-function isNextSignal(err: unknown): boolean {
-  return (
-    !!err &&
-    typeof err === 'object' &&
-    'digest' in err &&
-    typeof (err as { digest?: unknown }).digest === 'string' &&
-    ((err as { digest: string }).digest.startsWith('NEXT_REDIRECT') ||
-      (err as { digest: string }).digest === 'NEXT_NOT_FOUND')
-  );
-}
-
 // "הפעלת אישורי הגעה" — the single entry that creates-or-continues the event's
 // campaign. eventId is bound on the client (setupCampaignAction.bind(null,
 // eventId)); there is NO form input — the canonical template and the derived
@@ -52,7 +39,7 @@ export async function setupCampaignAction(
   try {
     created = await createCampaign(eventId);
   } catch (err) {
-    if (isNextSignal(err)) throw err;
+    unstable_rethrow(err);
     return {
       error:
         err instanceof Error
@@ -78,7 +65,7 @@ export async function requestSigningOtpAction(
     const profile = await getProfile();
     phone = profile?.phone ?? null;
   } catch (err) {
-    if (isNextSignal(err)) throw err;
+    unstable_rethrow(err);
     return { error: 'נדרשת התחברות.' };
   }
 
@@ -144,7 +131,7 @@ export async function signAgreementAction(
       userAgent,
     });
   } catch (err) {
-    if (isNextSignal(err)) throw err;
+    unstable_rethrow(err);
     return { error: 'שמירת ההסכם נכשלה. נסו שוב.' };
   }
   if (!result.ok) {
@@ -169,7 +156,7 @@ export async function activateCampaignAction(
   try {
     await activateCampaign(campaignId);
   } catch (err) {
-    if (isNextSignal(err)) throw err;
+    unstable_rethrow(err);
     // Surface our own safe Hebrew message (e.g. "האירוע כבר חלף") instead of a
     // fixed string, so the real reason reaches the user (mirrors setupCampaignAction).
     return {
@@ -192,7 +179,7 @@ export async function pauseCampaignAction(
   try {
     await pauseCampaign(campaignId);
   } catch (err) {
-    if (isNextSignal(err)) throw err;
+    unstable_rethrow(err);
     return { error: 'השהיית הקמפיין נכשלה.' };
   }
   revalidatePath(`/app/events/${eventId}/campaign/${campaignId}`);
@@ -208,7 +195,7 @@ export async function closeCampaignAction(
   try {
     await closeCampaign(campaignId);
   } catch (err) {
-    if (isNextSignal(err)) throw err;
+    unstable_rethrow(err);
     return { error: 'סגירת הקמפיין נכשלה.' };
   }
   revalidatePath(`/app/events/${eventId}/campaign/${campaignId}`);
@@ -235,7 +222,7 @@ export async function settleCampaignAction(
   try {
     await requireOwnedEvent(owned.event_id);
   } catch (err) {
-    if (isNextSignal(err)) throw err;
+    unstable_rethrow(err);
     return { error: 'גמר החשבון נכשל. נסו שוב או פנו לתמיכה.' };
   }
 
@@ -243,7 +230,7 @@ export async function settleCampaignAction(
   try {
     r = await closeCampaignAndCharge(campaignId);
   } catch (err) {
-    if (isNextSignal(err)) throw err;
+    unstable_rethrow(err);
     return { error: 'גמר החשבון נכשל. נסו שוב או פנו לתמיכה.' };
   }
   revalidatePath(`/app/events/${eventId}/campaign/${campaignId}`);
@@ -276,7 +263,7 @@ export async function publishEventAction(
   try {
     await publishEvent(eventId);
   } catch (err) {
-    if (isNextSignal(err)) throw err;
+    unstable_rethrow(err);
     return {
       error: err instanceof Error ? err.message : 'פרסום האירוע נכשל. נסו שוב.',
     };
@@ -293,7 +280,7 @@ export async function closeEventAction(
   try {
     await closeEvent(eventId);
   } catch (err) {
-    if (isNextSignal(err)) throw err;
+    unstable_rethrow(err);
     return {
       error: err instanceof Error ? err.message : 'סגירת האירוע נכשלה. נסו שוב.',
     };
@@ -315,7 +302,7 @@ export async function cancelCampaignAction(
   try {
     await cancelCampaign(campaignId);
   } catch (err) {
-    if (isNextSignal(err)) throw err;
+    unstable_rethrow(err);
     return {
       error: err instanceof Error ? err.message : 'ביטול הקמפיין נכשל. נסו שוב.',
     };

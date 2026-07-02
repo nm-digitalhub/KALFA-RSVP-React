@@ -34,8 +34,6 @@ export type AdminWebhookRow = Pick<
 
 export type AdminWebhookDetail = WebhookInboxRow;
 
-export type WebhookState = 'pending' | 'processed' | 'error';
-
 export interface WebhookFilter extends PageParams {
   kind?: string; // event_kind: 'message' | 'status'
   state?: string; // pending | processed | error
@@ -71,10 +69,14 @@ export async function listWebhookInbox(
   if (filter.from) query = query.gte('received_at', filter.from);
   if (filter.to) query = query.lte('received_at', filter.to);
   if (filter.q) {
-    const term = filter.q.trim().replace(/[%,]/g, '');
-    if (term) {
+    // Strip every char with meaning in a raw PostgREST `.or()` filter string
+    // (`, ( ) * % "` plus backslash) before wrapping in `*…*` — same sanitiser
+    // as guests.ts/activity.ts, so no injected clause is possible.
+    const cleaned = filter.q.replace(/[,()*%"\\]/g, '').trim();
+    if (cleaned) {
+      const pattern = `*${cleaned}*`;
       query = query.or(
-        `message_id.ilike.%${term}%,context_message_id.ilike.%${term}%,phone_number_id.ilike.%${term}%`,
+        `message_id.ilike.${pattern},context_message_id.ilike.${pattern},phone_number_id.ilike.${pattern}`,
       );
     }
   }
@@ -157,6 +159,8 @@ export interface WebhookAssociation {
 export async function resolveWebhookAssociations(
   rows: AdminWebhookRow[],
 ): Promise<Map<string, WebhookAssociation>> {
+  await requireAdmin();
+
   const wamidByRow = new Map<string, string>();
   const wamids = new Set<string>();
   for (const r of rows) {

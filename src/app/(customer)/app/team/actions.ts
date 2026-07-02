@@ -2,6 +2,7 @@
 
 import { revalidatePath } from 'next/cache';
 import { cookies } from 'next/headers';
+import { unstable_rethrow } from 'next/navigation';
 
 import { ACTIVE_ORG_COOKIE, getOrgContext, requireActiveOrg } from '@/lib/auth/dal';
 import { getAppUrl } from '@/lib/url';
@@ -20,16 +21,6 @@ import {
   activeOrgSchema,
 } from '@/lib/validation/schemas';
 import type { FormState } from '@/lib/validation/result';
-
-function isNextRedirect(err: unknown): boolean {
-  return (
-    err !== null &&
-    typeof err === 'object' &&
-    'digest' in err &&
-    typeof (err as { digest?: unknown }).digest === 'string' &&
-    (err as { digest: string }).digest.startsWith('NEXT_REDIRECT')
-  );
-}
 
 // Safe message for a thrown error. orgs.ts mutations only ever throw Error with
 // our own Hebrew, user-facing messages (never raw DB/provider detail), so it is
@@ -80,7 +71,7 @@ export async function inviteMemberAction(
     token = res.token;
     email = res.email;
   } catch (err) {
-    if (isNextRedirect(err)) throw err;
+    unstable_rethrow(err);
     return { error: safeMessage(err, 'שליחת ההזמנה נכשלה') };
   }
   revalidatePath('/app/team');
@@ -106,7 +97,7 @@ export async function changeMemberRoleAction(
   try {
     await changeMemberRole(orgId, parsed.data);
   } catch (err) {
-    if (isNextRedirect(err)) throw err;
+    unstable_rethrow(err);
     return { error: safeMessage(err, 'שינוי התפקיד נכשל') };
   }
   revalidatePath('/app/team');
@@ -125,7 +116,7 @@ export async function removeMemberAction(
   try {
     await removeMember(orgId, parsed.data.member_id);
   } catch (err) {
-    if (isNextRedirect(err)) throw err;
+    unstable_rethrow(err);
     return { error: safeMessage(err, 'הסרת החבר נכשלה') };
   }
   revalidatePath('/app/team');
@@ -148,7 +139,7 @@ export async function resendInvitationAction(
     const res = await resendInvitation(orgId, parsed.data.invitation_id);
     token = res.token;
   } catch (err) {
-    if (isNextRedirect(err)) throw err;
+    unstable_rethrow(err);
     return { error: safeMessage(err, 'חידוש ההזמנה נכשל') };
   }
   revalidatePath('/app/team');
@@ -169,7 +160,7 @@ export async function revokeInvitationAction(
   try {
     await revokeInvitation(orgId, parsed.data.invitation_id);
   } catch (err) {
-    if (isNextRedirect(err)) throw err;
+    unstable_rethrow(err);
     return { error: safeMessage(err, 'ביטול ההזמנה נכשל') };
   }
   revalidatePath('/app/team');

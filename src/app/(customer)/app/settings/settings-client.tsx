@@ -15,12 +15,14 @@ import {
 import type { ProfileDTO } from '@/lib/data/profiles';
 import type { OrderListItem } from '@/lib/data/orders';
 import type { UserSettingsDTO } from '@/lib/data/user-settings';
+import { ORDER_STATUS_LABELS } from '@/lib/constants';
 import {
   FieldError,
   FormError,
   FormNotice,
   SubmitButton,
 } from '@/components/forms';
+import { formatCurrency } from '@/lib/format';
 import {
   requestEmailChangeAction,
   sendPasswordResetAction,
@@ -33,20 +35,7 @@ const inputClass =
 const sectionClass = 'scroll-mt-24 space-y-5 rounded-lg border border-border bg-card p-5';
 const sectionHeaderClass = 'flex items-start gap-3';
 
-const currencyFmt = new Intl.NumberFormat('he-IL', {
-  style: 'currency',
-  currency: 'ILS',
-});
 const dateFmt = new Intl.DateTimeFormat('he-IL', { dateStyle: 'medium' });
-
-const ORDER_STATUS_LABELS: Record<OrderListItem['status'], string> = {
-  pending: 'ממתין לתשלום',
-  processing: 'בעיבוד',
-  paid: 'שולם',
-  failed: 'נכשל',
-  demo: 'הדגמה',
-  payment_review: 'לבירור',
-};
 
 interface SettingsPageClientProps {
   userEmail: string | undefined;
@@ -226,7 +215,7 @@ function BillingSection({ orders }: { orders: OrderListItem[] }) {
           {recent.map((order) => (
             <li key={order.id} className="flex items-center justify-between gap-4 px-4 py-3">
               <div className="space-y-1">
-                <p className="font-medium">{currencyFmt.format(order.total_with_vat)}</p>
+                <p className="font-medium">{formatCurrency(order.total_with_vat)}</p>
                 <p className="text-xs text-muted-foreground">
                   {dateFmt.format(new Date(order.created_at))}
                 </p>

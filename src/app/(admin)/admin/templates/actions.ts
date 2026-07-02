@@ -1,21 +1,11 @@
 'use server';
 
 import { revalidatePath } from 'next/cache';
+import { unstable_rethrow } from 'next/navigation';
 import { z } from 'zod';
 
 import { updateMessageTemplate } from '@/lib/data/message-templates';
 import type { FormState } from '@/lib/validation/result';
-
-function isNextControlFlow(err: unknown): boolean {
-  return (
-    !!err &&
-    typeof err === 'object' &&
-    'digest' in err &&
-    typeof (err as { digest?: unknown }).digest === 'string' &&
-    ((err as { digest: string }).digest.startsWith('NEXT_REDIRECT') ||
-      (err as { digest: string }).digest === 'NEXT_NOT_FOUND')
-  );
-}
 
 const schema = z.object({
   id: z.string().uuid(),
@@ -55,7 +45,7 @@ export async function updateTemplateAction(
       active,
     });
   } catch (err) {
-    if (isNextControlFlow(err)) throw err;
+    unstable_rethrow(err);
     return { error: 'עדכון התבנית נכשל. נסו שוב.' };
   }
 

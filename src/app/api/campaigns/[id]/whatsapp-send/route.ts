@@ -7,31 +7,12 @@ import { getCampaignForHold } from '@/lib/data/campaigns';
 import { getOutreachEnabled, getWhatsAppConfig } from '@/lib/data/outreach-config';
 import { sendCampaignWhatsApp } from '@/lib/data/outreach';
 import { whatsappSendSchema } from '@/lib/validation/campaigns';
+import { isAllowedOrigin } from '@/lib/http/allowed-origin';
 
 // Manual owner-triggered WhatsApp send for a campaign (interim, until the
 // pg-boss scheduler ships). Mirrors the J5 authorize route: CSRF + auth +
 // ownership + fail-closed gate. The orchestrator re-checks every §8.3
 // precondition; this route only gates + dispatches. Never log token/PII.
-
-function isAllowedOrigin(request: NextRequest): boolean {
-  const appOrigin = process.env.APP_ORIGIN;
-  if (!appOrigin) throw new Error('APP_ORIGIN env var is not configured');
-  const allowed = new Set([appOrigin]);
-  if (process.env.NODE_ENV === 'development') {
-    allowed.add('http://localhost:3002');
-  }
-  const origin = request.headers.get('origin');
-  if (origin) return allowed.has(origin);
-  const referer = request.headers.get('referer');
-  if (referer) {
-    try {
-      return allowed.has(new URL(referer).origin);
-    } catch {
-      return false;
-    }
-  }
-  return false;
-}
 
 function r303(url: URL) {
   return NextResponse.redirect(url, 303);

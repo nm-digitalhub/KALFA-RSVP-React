@@ -18,6 +18,7 @@ import { renderAgreementPdf, sha256Hex } from '@/lib/agreements/pdf';
 import { uploadLegalDoc } from '@/lib/storage/legal-docs';
 import { getEmailSender } from '@/lib/email/sender';
 import { agreementEmail } from '@/lib/email/templates';
+import { getAppUrl } from '@/lib/url';
 
 // Orchestrates the signed-agreement step of campaign approval: verify the phone
 // OTP (identity), render the full Hebrew PDF, hash it, store the PDF + signature
@@ -203,8 +204,9 @@ export async function recordSignedAgreement(
   // completed signing. (A retry/queue can be added later.)
   if (user.email) {
     try {
-      const origin = process.env.APP_ORIGIN ?? '';
-      const downloadUrl = `${origin}/app/events/${campaign.event_id}/campaign/${campaign.id}/agreement`;
+      const downloadUrl = await getAppUrl(
+        `/app/events/${campaign.event_id}/campaign/${campaign.id}/agreement`,
+      );
       const sender = await getEmailSender();
       const { subject, html, text } = agreementEmail({
         signerName,

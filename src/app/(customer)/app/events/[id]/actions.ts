@@ -1,6 +1,7 @@
 'use server';
 
 import { revalidatePath } from 'next/cache';
+import { unstable_rethrow } from 'next/navigation';
 
 import { updateEvent } from '@/lib/data/events';
 import { updateEventSchema } from '@/lib/validation/schemas';
@@ -68,16 +69,7 @@ export async function updateEventAction(
   } catch (err) {
     // Re-throw Next.js control-flow signals (redirect / notFound from the
     // ownership gate); catching them would silently break that flow.
-    if (
-      err &&
-      typeof err === 'object' &&
-      'digest' in err &&
-      typeof (err as { digest?: unknown }).digest === 'string' &&
-      ((err as { digest: string }).digest.startsWith('NEXT_REDIRECT') ||
-        (err as { digest: string }).digest === 'NEXT_NOT_FOUND')
-    ) {
-      throw err;
-    }
+    unstable_rethrow(err);
     return { error: 'עדכון האירוע נכשל. נסו שוב.' };
   }
 

@@ -1,6 +1,7 @@
 'use server';
 
 import { revalidatePath } from 'next/cache';
+import { unstable_rethrow } from 'next/navigation';
 
 import {
   updateAgreement,
@@ -9,16 +10,6 @@ import {
 } from '@/lib/data/admin/agreements';
 import { agreementEditSchema, agreementApproveSchema } from '@/lib/validation/admin';
 import type { FormState } from '@/lib/validation/result';
-
-function isNextRedirect(err: unknown): boolean {
-  return (
-    err !== null &&
-    typeof err === 'object' &&
-    'digest' in err &&
-    typeof (err as { digest?: unknown }).digest === 'string' &&
-    (err as { digest: string }).digest.startsWith('NEXT_REDIRECT')
-  );
-}
 
 function safeMessage(err: unknown, fallback: string): string {
   return err instanceof Error && err.message ? err.message : fallback;
@@ -41,7 +32,7 @@ export async function saveAgreementAction(
       bodyHtml: parsed.data.body_html ?? null,
     });
   } catch (err) {
-    if (isNextRedirect(err)) throw err;
+    unstable_rethrow(err);
     return { error: safeMessage(err, 'שמירת החוזה נכשלה') };
   }
   revalidatePath('/admin/agreement');
@@ -61,7 +52,7 @@ export async function approveAgreementAction(
   try {
     await approveAgreement(parsed.data.version);
   } catch (err) {
-    if (isNextRedirect(err)) throw err;
+    unstable_rethrow(err);
     return { error: safeMessage(err, 'אישור החוזה נכשל') };
   }
   revalidatePath('/admin/agreement');
@@ -75,7 +66,7 @@ export async function revertAgreementAction(
   try {
     await revertAgreementToTemplate();
   } catch (err) {
-    if (isNextRedirect(err)) throw err;
+    unstable_rethrow(err);
     return { error: safeMessage(err, 'שחזור התבנית נכשל') };
   }
   revalidatePath('/admin/agreement');
