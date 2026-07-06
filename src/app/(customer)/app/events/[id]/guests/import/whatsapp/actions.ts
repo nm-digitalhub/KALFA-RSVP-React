@@ -7,10 +7,13 @@ import { requireEventAccess } from '@/lib/data/events';
 import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 import {
+  applyGuestMerge,
   bulkInsertGuests,
   createGroup,
+  findImportMatches,
   listGroups,
   type BulkGuestInput,
+  type ImportMatch,
 } from '@/lib/data/guests';
 import { buildContactsForEvent } from '@/lib/data/contacts';
 import { logActivity } from '@/lib/data/activity';
@@ -52,7 +55,7 @@ export async function confirmWhatsappImportAction(
   eventId: string,
   stagingId: string,
   _prev: FormState,
-  _formData: FormData,
+  formData: FormData,
 ): Promise<FormState> {
   try {
     await requireEventAccess(eventId, 'guests', 'create');
@@ -78,16 +81,72 @@ export async function confirmWhatsappImportAction(
       }
     }
 
-    const inserts: BulkGuestInput[] = rows.map((r) => ({
-      full_name: r.full_name,
-      phone: r.phone,
-      expected_count: r.expected_count,
-      group_id:
-        r.group.trim() === ''
-          ? null
-          : groupByName.get(normalizeGroupName(r.group).toLowerCase()) ?? null,
-    }));
-    const imported = await bulkInsertGuests(eventId, inserts);
+    // Merge detection on the review screen — the owner confirms every merge and
+    // picks PER FIELD what to apply (never automatic). A merged/duplicate row is
+    // SKIPPED from the insert. See docs/guest-name-merge-plan-2026-07-07.md §9.
+    //  • name-match: `merge_<id>` (default on) → add the phone; unticked ⇒ import
+    //    as a new guest. • phone-match: the row can't be inserted (unique index),
+    //    so it's always dropped; ticked fields enrich the existing guest.
+    // Field checkboxes: `field_<id>_<full_name|group|expected_count>`.
+    const matches = await findImportMatches(eventId, rows);
+    const groupIdFor = (group: string) =>
+      group.trim() === ''
+        ? null
+        : groupByName.get(normalizeGroupName(group).toLowerCase()) ?? null;
+
+    // The patch built from the field checkboxes the owner ticked for a match.
+    const patchFrom = (m: ImportMatch) => {
+      const row = rows[m.rowIndex];
+      const p: {
+        full_name?: string;
+        group_id?: string | null;
+        expected_count?: number | null;
+      } = {};
+      for (const f of m.fields) {
+        if (formData.get(`field_${m.existingGuestId}_${f.field}`) == null) continue;
+        if (f.field === 'full_name') p.full_name = row.full_name;
+        else if (f.field === 'group') p.group_id = groupIdFor(row.group);
+        else if (f.field === 'expected_count') p.expected_count = row.expected_count;
+      }
+      return p;
+    };
+
+    const skipRowIndex = new Set<number>();
+    let mergedCount = 0; // name-match merged (phone added)
+    let updatedCount = 0; // phone-match with ≥1 field update
+    let skippedCount = 0; // phone-match dropped, no update
+
+    for (const m of matches) {
+      if (m.direction === 'name') {
+        if (formData.get(`merge_${m.existingGuestId}`) == null) continue; // import as new
+        await applyGuestMerge(eventId, m.existingGuestId, {
+          phone: m.addsPhone ?? undefined,
+          ...patchFrom(m),
+        });
+        skipRowIndex.add(m.rowIndex);
+        mergedCount += 1;
+      } else {
+        skipRowIndex.add(m.rowIndex); // dup phone → never inserted
+        const patch = patchFrom(m);
+        if (Object.keys(patch).length > 0) {
+          await applyGuestMerge(eventId, m.existingGuestId, patch);
+          updatedCount += 1;
+        } else {
+          skippedCount += 1;
+        }
+      }
+    }
+
+    const inserts: BulkGuestInput[] = rows
+      .map((r, i) => ({ r, i }))
+      .filter(({ i }) => !skipRowIndex.has(i))
+      .map(({ r }) => ({
+        full_name: r.full_name,
+        phone: r.phone,
+        expected_count: r.expected_count,
+        group_id: groupIdFor(r.group),
+      }));
+    const imported = inserts.length ? await bulkInsertGuests(eventId, inserts) : 0;
 
     try {
       await buildContactsForEvent(eventId);
@@ -98,11 +157,21 @@ export async function confirmWhatsappImportAction(
     await logActivity({
       eventId,
       action: 'guests.imported',
-      meta: { importedCount: imported, source: 'whatsapp' },
+      meta: {
+        importedCount: imported,
+        mergedCount,
+        updatedCount,
+        skippedCount,
+        source: 'whatsapp',
+      },
     });
     revalidatePath(`/app/events/${eventId}/guests`);
     revalidatePath(`/app/events/${eventId}/guests/import/whatsapp`);
-    return { notice: `יובאו ${imported} מוזמנים בהצלחה.` };
+    const parts = [`יובאו ${imported} מוזמנים`];
+    if (mergedCount) parts.push(`אוחדו ${mergedCount} לפי שם`);
+    if (updatedCount) parts.push(`עודכנו ${updatedCount} לפי טלפון`);
+    if (skippedCount) parts.push(`דולגו ${skippedCount} כפולים`);
+    return { notice: `${parts.join(' · ')}.` };
   } catch (err) {
     unstable_rethrow(err);
     // Duplicate phones vs existing guests surface here with the friendly text.

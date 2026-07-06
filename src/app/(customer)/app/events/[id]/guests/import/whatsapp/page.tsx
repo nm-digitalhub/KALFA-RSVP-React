@@ -2,6 +2,7 @@ import Link from 'next/link';
 
 import { requireEventAccess } from '@/lib/data/events';
 import { createClient } from '@/lib/supabase/server';
+import { findImportMatches, type ImportMatch } from '@/lib/data/guests';
 import type { StagedRow } from '@/lib/data/whatsapp-import';
 import {
   confirmWhatsappImportAction,
@@ -28,6 +29,18 @@ export default async function WhatsappImportPage({ params }: PageProps) {
     .eq('status', 'pending')
     .order('created_at', { ascending: false });
 
+  // Per staging list, detect incoming rows that are the SAME person as an
+  // existing guest (by phone, or by name when the existing one is phone-less) —
+  // surfaced on the review screen as per-field merge choices.
+  const pendingList = pending ?? [];
+  const matchesByStaging = new Map<string, ImportMatch[]>();
+  await Promise.all(
+    pendingList.map(async (s) => {
+      const rows = (s.rows ?? []) as StagedRow[];
+      matchesByStaging.set(s.id, await findImportMatches(eventId, rows));
+    }),
+  );
+
   return (
     <div className="mx-auto max-w-2xl space-y-6">
       <div className="flex items-center justify-between">
@@ -40,14 +53,14 @@ export default async function WhatsappImportPage({ params }: PageProps) {
         </Link>
       </div>
 
-      {(pending ?? []).length === 0 ? (
+      {pendingList.length === 0 ? (
         <p className="rounded-lg border border-border p-6 text-sm text-muted-foreground">
           אין רשימות ממתינות. שלחו קובץ CSV או שתפו אנשי קשר לוואטסאפ העסקי —
           והרשימה תופיע כאן לאישור.
         </p>
       ) : null}
 
-      {(pending ?? []).map((s) => {
+      {pendingList.map((s) => {
         const rows = (s.rows ?? []) as StagedRow[];
         const errorCount = Array.isArray(s.error_rows) ? s.error_rows.length : 0;
         return (
@@ -64,22 +77,28 @@ export default async function WhatsappImportPage({ params }: PageProps) {
             </div>
 
             <div className="overflow-x-auto">
-              <table className="w-full text-sm">
+              {/* px (not pe) on every cell: the phone cell is dir="ltr", which
+                  FLIPS its inline end — one-sided padding left its digits flush
+                  against the quantity column, visually fusing "1" + "05…" into
+                  one number. Symmetric padding + nowrap keeps columns apart. */}
+              <table className="w-full text-sm whitespace-nowrap">
                 <thead>
                   <tr className="border-b border-border text-right text-muted-foreground">
-                    <th className="py-1 pe-3 font-medium">שם</th>
-                    <th className="py-1 pe-3 font-medium">טלפון</th>
-                    <th className="py-1 pe-3 font-medium">כמות</th>
-                    <th className="py-1 font-medium">קבוצה</th>
+                    <th className="px-3 py-1 font-medium">שם</th>
+                    <th className="px-3 py-1 font-medium">טלפון</th>
+                    <th className="px-3 py-1 font-medium">כמות</th>
+                    <th className="px-3 py-1 font-medium">קבוצה</th>
                   </tr>
                 </thead>
                 <tbody>
                   {rows.slice(0, 50).map((r, i) => (
                     <tr key={i} className="border-b border-border/50">
-                      <td className="py-1 pe-3">{r.full_name}</td>
-                      <td className="py-1 pe-3" dir="ltr">{r.phone ?? '—'}</td>
-                      <td className="py-1 pe-3">{r.expected_count ?? '—'}</td>
-                      <td className="py-1">{r.group || '—'}</td>
+                      <td className="px-3 py-1">{r.full_name}</td>
+                      {/* text-end (right, in this LTR cell) keeps the digits
+                          aligned under the right-aligned RTL header. */}
+                      <td className="px-3 py-1 text-end" dir="ltr">{r.phone ?? '—'}</td>
+                      <td className="px-3 py-1">{r.expected_count ?? '—'}</td>
+                      <td className="px-3 py-1">{r.group || '—'}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -94,6 +113,7 @@ export default async function WhatsappImportPage({ params }: PageProps) {
             <StagingActions
               confirm={confirmWhatsappImportAction.bind(null, eventId, s.id)}
               discard={discardWhatsappImportAction.bind(null, eventId, s.id)}
+              matches={matchesByStaging.get(s.id) ?? []}
             />
           </section>
         );

@@ -2,7 +2,7 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { ChevronRight } from 'lucide-react';
 
-import { requireEventAccess, requireOwnedEvent } from '@/lib/data/events';
+import { requireEventAccess } from '@/lib/data/events';
 import { isPastEventDay } from '@/lib/data/event-date';
 import { getCampaign } from '@/lib/data/campaigns';
 import { getCampaignBillingSummary } from '@/lib/data/billing';

@@ -19,6 +19,7 @@ import {
   createGroup,
   updateGroup,
   deleteGroup,
+  computeImportMatches,
   type GuestListItem,
 } from '@/lib/data/guests';
 
@@ -331,6 +332,42 @@ describe('createGuest', () => {
     expect(payload).not.toHaveProperty('extras');
     expect(payload).not.toHaveProperty('id');
   });
+
+  it('maps a 23505 on guests_event_phone_key to the friendly phone-taken error', async () => {
+    const { client, builder } = createMockSupabase({
+      data: null,
+      error: {
+        code: '23505',
+        message:
+          'duplicate key value violates unique constraint "guests_event_phone_key"',
+      },
+    });
+    passGate(builder);
+    vi.mocked(createClient).mockResolvedValue(
+      client as unknown as Awaited<ReturnType<typeof createClient>>,
+    );
+    client.rpc.mockResolvedValue({ data: true, error: null });
+
+    await expect(
+      createGuest(EVENT_ID, { full_name: 'דנה', phone: '0501234567' }),
+    ).rejects.toThrow('מספר הטלפון כבר קיים אצל מוזמן אחר באירוע');
+  });
+
+  it('keeps the generic failure message for non-unique-violation errors', async () => {
+    const { client, builder } = createMockSupabase({
+      data: null,
+      error: { message: 'connection reset' },
+    });
+    passGate(builder);
+    vi.mocked(createClient).mockResolvedValue(
+      client as unknown as Awaited<ReturnType<typeof createClient>>,
+    );
+    client.rpc.mockResolvedValue({ data: true, error: null });
+
+    await expect(
+      createGuest(EVENT_ID, { full_name: 'דנה' }),
+    ).rejects.toThrow('יצירת המוזמן נכשלה');
+  });
 });
 
 describe('updateGuest', () => {
@@ -530,5 +567,78 @@ describe('ownership gate', () => {
     // `from` was called for the events ownership check, but never for guests.
     expect(client.from).toHaveBeenCalledWith('events');
     expect(client.from).not.toHaveBeenCalledWith('guests');
+  });
+});
+
+describe('computeImportMatches', () => {
+  const existing = [
+    // phone-less, ASCII apostrophe name → a name-merge target
+    {
+      id: 'g1',
+      full_name: "ג'קלין ושלמה טויטו",
+      phone: null,
+      expected_count: null,
+      group_name: null,
+    },
+    // has a phone, short name, in a group → a phone-merge target
+    {
+      id: 'g2',
+      full_name: 'זהבה',
+      phone: '0501112222',
+      expected_count: null,
+      group_name: 'משפחה',
+    },
+  ];
+
+  it('name-match: a phoned row ↔ a phone-less existing guest (geresh vs apostrophe)', () => {
+    const rows = [
+      { full_name: 'ג׳קלין ושלמה טויטו', phone: '0529466618', group: '', expected_count: null },
+    ];
+    const m = computeImportMatches(existing, rows);
+    expect(m).toHaveLength(1);
+    expect(m[0]).toMatchObject({
+      direction: 'name',
+      rowIndex: 0,
+      existingGuestId: 'g1',
+      addsPhone: '0529466618',
+    });
+    // names normalize-equal → no full_name field diff offered
+    expect(m[0].fields).toEqual([]);
+  });
+
+  it('phone-match: same phone, fuller name + new count → phone direction with field diffs', () => {
+    const rows = [
+      { full_name: 'זהבה טויטו', phone: '050-111-2222', group: '', expected_count: 4 },
+    ];
+    const m = computeImportMatches(existing, rows);
+    expect(m).toHaveLength(1);
+    expect(m[0]).toMatchObject({ direction: 'phone', existingGuestId: 'g2', addsPhone: null });
+    const byField = Object.fromEntries(m[0].fields.map((f) => [f.field, f]));
+    // existing name non-empty & differs → overwrite (default OFF)
+    expect(byField.full_name).toMatchObject({ incoming: 'זהבה טויטו', existing: 'זהבה', fill: false });
+    // existing count empty → fill (default ON)
+    expect(byField.expected_count).toMatchObject({ incoming: '4', existing: '', fill: true });
+    // incoming group empty → hidden
+    expect(byField.group).toBeUndefined();
+  });
+
+  it('hides fields that are equal or whose incoming value is empty', () => {
+    const rows = [
+      { full_name: 'זהבה', phone: '0501112222', group: 'משפחה', expected_count: null },
+    ];
+    const m = computeImportMatches(existing, rows);
+    expect(m[0].direction).toBe('phone');
+    expect(m[0].fields).toEqual([]);
+  });
+
+  it('phone identity beats name, and each existing guest is claimed once', () => {
+    const rows = [
+      { full_name: 'זהבה', phone: '0501112222', group: '', expected_count: null },
+      { full_name: 'זהבה', phone: '0501112222', group: '', expected_count: null },
+    ];
+    const m = computeImportMatches(existing, rows);
+    expect(m).toHaveLength(1);
+    expect(m[0].existingGuestId).toBe('g2');
+    expect(m[0].rowIndex).toBe(0);
   });
 });

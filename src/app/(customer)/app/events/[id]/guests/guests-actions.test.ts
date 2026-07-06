@@ -38,7 +38,7 @@ vi.mock('@/lib/data/rsvp', () => ({
   regenerateRsvpToken: vi.fn(),
 }));
 
-import { createGuest, updateGuest } from '@/lib/data/guests';
+import { createGuest, updateGuest, PHONE_TAKEN_ERROR } from '@/lib/data/guests';
 import { linkGuestContact } from '@/lib/data/contacts';
 import { createGuestAction, updateGuestAction, createGroupAction, updateGroupAction } from './guests-actions';
 import { createGroup, updateGroup } from '@/lib/data/guests';
@@ -229,15 +229,12 @@ describe('friendly duplicate errors surface as field errors', () => {
   });
 
   it('createGuestAction maps a taken phone to fieldErrors.phone', async () => {
-    vi.mocked(createGuest).mockRejectedValue(
-      new Error('מספר הטלפון כבר קיים אצל מוזמן אחר באירוע'),
-    );
+    vi.mocked(createGuest).mockRejectedValue(new Error(PHONE_TAKEN_ERROR));
     const state = await createGuestAction(
       EVENT_ID,
       null,
       fd({ full_name: 'סיון קלפה', phone: '0501234567', group_id: '', note: '' }),
     );
-    expect(state?.fieldErrors?.phone?.[0]).toContain('כבר קיים');
-    expect(state?.error).toBeUndefined();
+    expect(state).toEqual({ fieldErrors: { phone: [PHONE_TAKEN_ERROR] } });
   });
 });

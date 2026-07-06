@@ -17,9 +17,11 @@ import { vi } from 'vitest';
 
 // Generic result shape returned when a builder is awaited. `count` mirrors
 // PostgREST's `{ count: 'exact' }` option used by list/report queries.
+// `code`/`details` mirror PostgrestError for tests of SQLSTATE-based mapping
+// (e.g. 23505 unique violations).
 export interface QueryResult<Row> {
   data: Row | null;
-  error: { message: string } | null;
+  error: { message: string; code?: string; details?: string } | null;
   count?: number | null;
 }
 

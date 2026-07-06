@@ -22,13 +22,16 @@ function isUniqueViolation(
   );
 }
 
-function throwFriendlyGuestError(error: { code?: string; message?: string; details?: string }, fallback: string): never {
-  if (isUniqueViolation(error, 'guests_event_phone_key')) {
+// `error` may be null (e.g. a `.single()` that yields no row and no error);
+// the fallback is thrown in that case.
+function throwFriendlyGuestError(error: { code?: string; message?: string; details?: string } | null, fallback: string): never {
+  if (error && isUniqueViolation(error, 'guests_event_phone_key')) {
     throw new Error(PHONE_TAKEN_ERROR);
   }
   throw new Error(fallback);
 }
-import { normalizeGroupName } from '@/lib/data/guest-import-shared';
+import { normalizeGroupName, normalizeGuestName } from '@/lib/data/guest-import-shared';
+import { normalizePhone } from '@/lib/phone';
 import { pruneOrphanContact } from '@/lib/data/contacts';
 import { logActivity } from '@/lib/data/activity';
 import { getGuestsPageSize } from '@/lib/constants';
@@ -414,7 +417,7 @@ export async function createGuest(
     .single();
 
   if (error || !data) {
-    throw new Error('יצירת המוזמן נכשלה');
+    throwFriendlyGuestError(error, 'יצירת המוזמן נכשלה');
   }
   // Same boundary cast as listGuests (over_invited computed field).
   const row = data as unknown as GuestListQueryRow;
@@ -786,4 +789,224 @@ export async function bulkInsertGuests(
   const inserted = data?.length ?? 0;
 
   return inserted;
+}
+
+// ---------------------------------------------------------------------------
+// Import merge suggestions (review screen): recognize an incoming row as the
+// SAME person as an existing guest and let the owner choose, PER FIELD, what to
+// merge. Never automatic; never a DB constraint (names are non-unique).
+// ---------------------------------------------------------------------------
+
+// The guest fields an import row may merge into an existing guest. NEVER
+// id / rsvp_token / status / RSVP-headcount state / contact_id.
+export type MergeFieldKey = 'full_name' | 'group' | 'expected_count';
+
+// One differing, mergeable field inside a match. `fill` = the existing value is
+// empty (default: take incoming); otherwise it is an overwrite (default: keep
+// existing). Values are display strings ('' when absent).
+export interface MergeFieldDiff {
+  field: MergeFieldKey;
+  existing: string;
+  incoming: string;
+  fill: boolean;
+}
+
+// One incoming row recognized as an existing guest.
+//  • 'name'  — incoming HAS a phone, existing is PHONE-LESS, names match. The
+//    phone is ADDED on merge (anchor); merge is opt-OUT (default on) — unmerge
+//    ⇒ import as a new guest.
+//  • 'phone' — incoming phone already belongs to the existing guest; the row can
+//    never be inserted (unique index) so it is always dropped. Field updates are
+//    opt-IN; no field chosen ⇒ the row is simply skipped.
+export interface ImportMatch {
+  direction: 'name' | 'phone';
+  rowIndex: number;
+  existingGuestId: string;
+  existingName: string;
+  incomingName: string;
+  /** name-match: the phone added to the existing guest; phone-match: null. */
+  addsPhone: string | null;
+  /** differing mergeable fields (equal / empty-incoming fields are omitted). */
+  fields: MergeFieldDiff[];
+}
+
+export interface ExistingGuestForMatch {
+  id: string;
+  full_name: string;
+  phone: string | null;
+  expected_count: number | null;
+  group_name: string | null;
+}
+export interface IncomingRowForMatch {
+  full_name: string;
+  phone: string | null;
+  group: string;
+  expected_count: number | null;
+}
+
+function diffField(
+  field: MergeFieldKey,
+  existing: string,
+  incoming: string,
+  equal: boolean,
+): MergeFieldDiff | null {
+  if (incoming.trim() === '') return null; // nothing to add
+  if (equal) return null; // no choice to make
+  return { field, existing, incoming, fill: existing.trim() === '' };
+}
+
+function fieldDiffs(
+  existing: ExistingGuestForMatch,
+  row: IncomingRowForMatch,
+): MergeFieldDiff[] {
+  const out: MergeFieldDiff[] = [];
+  const name = diffField(
+    'full_name',
+    existing.full_name ?? '',
+    row.full_name ?? '',
+    normalizeGuestName(existing.full_name ?? '') ===
+      normalizeGuestName(row.full_name ?? ''),
+  );
+  if (name) out.push(name);
+  const group = diffField(
+    'group',
+    existing.group_name ?? '',
+    row.group ?? '',
+    normalizeGroupName(existing.group_name ?? '').toLowerCase() ===
+      normalizeGroupName(row.group ?? '').toLowerCase(),
+  );
+  if (group) out.push(group);
+  const count = diffField(
+    'expected_count',
+    existing.expected_count == null ? '' : String(existing.expected_count),
+    row.expected_count == null ? '' : String(row.expected_count),
+    existing.expected_count === row.expected_count,
+  );
+  if (count) out.push(count);
+  return out;
+}
+
+// Pure matcher (unit-tested). Phone identity beats name identity: a row whose
+// phone matches an existing guest is a 'phone' match and is NOT also offered as
+// a 'name' match. Each existing guest is claimed by at most one row.
+export function computeImportMatches(
+  existing: ExistingGuestForMatch[],
+  rows: IncomingRowForMatch[],
+): ImportMatch[] {
+  const byPhone = new Map<string, ExistingGuestForMatch>();
+  const byNamePhoneless = new Map<string, ExistingGuestForMatch>();
+  for (const g of existing) {
+    const np = g.phone ? normalizePhone(g.phone) : null;
+    if (np) {
+      if (!byPhone.has(np)) byPhone.set(np, g);
+    } else {
+      const key = normalizeGuestName(g.full_name);
+      if (key && !byNamePhoneless.has(key)) byNamePhoneless.set(key, g);
+    }
+  }
+  const out: ImportMatch[] = [];
+  const claimed = new Set<string>();
+  rows.forEach((r, rowIndex) => {
+    const np = r.phone ? normalizePhone(r.phone) : null;
+    if (np) {
+      const g = byPhone.get(np);
+      if (g && !claimed.has(g.id)) {
+        claimed.add(g.id);
+        out.push({
+          direction: 'phone',
+          rowIndex,
+          existingGuestId: g.id,
+          existingName: g.full_name,
+          incomingName: r.full_name,
+          addsPhone: null,
+          fields: fieldDiffs(g, r),
+        });
+        return;
+      }
+    }
+    if (r.phone) {
+      const key = normalizeGuestName(r.full_name);
+      const g = key ? byNamePhoneless.get(key) : undefined;
+      if (g && !claimed.has(g.id)) {
+        claimed.add(g.id);
+        out.push({
+          direction: 'name',
+          rowIndex,
+          existingGuestId: g.id,
+          existingName: g.full_name,
+          incomingName: r.full_name,
+          addsPhone: r.phone,
+          fields: fieldDiffs(g, r),
+        });
+      }
+    }
+  });
+  return out;
+}
+
+// Fetch the event's guests (with group name) and compute the review matches.
+export async function findImportMatches(
+  eventId: string,
+  rows: IncomingRowForMatch[],
+): Promise<ImportMatch[]> {
+  await requireEventAccess(eventId, 'guests', 'create');
+  const supabase = await createClient();
+  const { data } = await supabase
+    .from('guests')
+    .select('id, full_name, phone, expected_count, group_id, guest_groups(name)')
+    .eq('event_id', eventId);
+  type Raw = {
+    id: string;
+    full_name: string;
+    phone: string | null;
+    expected_count: number | null;
+    guest_groups: { name: string } | { name: string }[] | null;
+  };
+  const existing: ExistingGuestForMatch[] = ((data ?? []) as unknown as Raw[]).map(
+    (g) => {
+      const gg = g.guest_groups;
+      const group_name = Array.isArray(gg)
+        ? (gg[0]?.name ?? null)
+        : (gg?.name ?? null);
+      return {
+        id: g.id,
+        full_name: g.full_name,
+        phone: g.phone,
+        expected_count: g.expected_count,
+        group_name,
+      };
+    },
+  );
+  return computeImportMatches(existing, rows);
+}
+
+// Apply a chosen merge patch onto an existing guest (id + event scoped). Only
+// provided, non-empty fields are written; the guest keeps its id, rsvp_token
+// and RSVP state. A 23505 (a chosen phone would collide with a THIRD guest) →
+// the friendly "phone taken" error.
+export async function applyGuestMerge(
+  eventId: string,
+  guestId: string,
+  patch: {
+    phone?: string;
+    full_name?: string | null;
+    group_id?: string | null;
+    expected_count?: number | null;
+  },
+): Promise<void> {
+  await requireEventAccess(eventId, 'guests', 'create');
+  const update: Database['public']['Tables']['guests']['Update'] = {};
+  if (patch.phone && patch.phone.trim() !== '') update.phone = patch.phone;
+  if (patch.full_name && patch.full_name.trim() !== '')
+    update.full_name = patch.full_name.trim();
+  if ('group_id' in patch) update.group_id = patch.group_id ?? null;
+  if (patch.expected_count != null) update.expected_count = patch.expected_count;
+  if (Object.keys(update).length === 0) return;
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from('guests')
+    .update(update)
+    .eq('id', guestId)
+    .eq('event_id', eventId);
+  if (error) throwFriendlyGuestError(error, 'עדכון המוזמן נכשל');
 }
