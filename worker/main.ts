@@ -167,6 +167,11 @@ async function main(): Promise<void> {
     schema: 'pgboss',
     application_name: 'kalfa-worker',
     max: 4,
+    // Both off by default in pg-boss; required for the ops dashboard's
+    // metrics-history/sparklines (queue_stats, 7-day retention) and
+    // Warning History tabs to populate.
+    persistQueueStats: true,
+    persistWarnings: true,
   });
   boss.on('error', (e: Error) => console.error('[pgboss]', e.message));
   await boss.start();

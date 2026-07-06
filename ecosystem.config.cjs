@@ -30,5 +30,18 @@ module.exports = {
       script: 'dist/worker.cjs',
       env: { NODE_ENV: 'production' },
     },
+    // pg-boss ops dashboard (https://beta.kalfa.me:8444 via nginx → 127.0.0.1:3010).
+    // Secrets/bind config live in .env.pgboss-dashboard (600, not committed),
+    // injected via --env-file — HOST=127.0.0.1 there is mandatory (the CLI
+    // defaults to 0.0.0.0 and the host has no local firewall).
+    {
+      name: 'kalfa-pgboss-dashboard',
+      script: './node_modules/@pg-boss/dashboard/bin/cli.js',
+      cwd: '/var/www/vhosts/kalfa.me/beta',
+      node_args: '--env-file=/var/www/vhosts/kalfa.me/beta/.env.pgboss-dashboard',
+      time: true,
+      autorestart: true,
+      env: { NODE_ENV: 'production' },
+    },
   ],
 };

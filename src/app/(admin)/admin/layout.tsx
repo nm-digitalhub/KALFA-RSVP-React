@@ -12,5 +12,12 @@ export default async function AdminLayout({
 }) {
   const user = await requireAdmin();
 
-  return <AdminShell userEmail={user.email}>{children}</AdminShell>;
+  return (
+    <AdminShell
+      userEmail={user.email}
+      jobsDashboardUrl={process.env.PGBOSS_DASHBOARD_URL}
+    >
+      {children}
+    </AdminShell>
+  );
 }

@@ -5,6 +5,7 @@ import { usePathname } from 'next/navigation';
 import { DirectionProvider } from '@base-ui/react/direction-provider';
 import {
   Building2,
+  CalendarClock,
   ChevronDown,
   FileText,
   FlaskConical,
@@ -123,9 +124,13 @@ function LogoutMenuItem() {
 
 export function AdminShell({
   userEmail,
+  jobsDashboardUrl,
   children,
 }: {
   userEmail: string | undefined;
+  // External pg-boss ops dashboard (separate process behind its own Basic Auth,
+  // served on a dedicated port) — rendered only when configured via env.
+  jobsDashboardUrl?: string;
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
@@ -165,6 +170,23 @@ export function AdminShell({
                       </SidebarMenuItem>
                     );
                   })}
+                  {jobsDashboardUrl ? (
+                    <SidebarMenuItem>
+                      <SidebarMenuButton
+                        tooltip="משימות מתוזמנות"
+                        render={
+                          <a
+                            href={jobsDashboardUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                          >
+                            <CalendarClock />
+                            <span>משימות מתוזמנות</span>
+                          </a>
+                        }
+                      />
+                    </SidebarMenuItem>
+                  ) : null}
                 </SidebarMenu>
               </SidebarGroupContent>
             </SidebarGroup>
