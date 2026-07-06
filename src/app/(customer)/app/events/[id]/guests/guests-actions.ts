@@ -9,6 +9,7 @@ import {
   deleteGuest,
   updateContactStatus,
   createGroup,
+  updateGroup,
   deleteGroup,
 } from '@/lib/data/guests';
 import { linkGuestContact } from '@/lib/data/contacts';
@@ -189,7 +190,9 @@ export async function createGroupAction(
 ): Promise<FormState> {
   const parsed = groupSchema.safeParse({
     name: formData.get('name'),
-    color: formData.get('color'),
+    // A form without a color field posts NOTHING for it → null, which
+    // z.string().optional() rejects. Normalize to '' (the "no color" value).
+    color: formData.get('color') ?? '',
   });
 
   if (!parsed.success) {
@@ -208,6 +211,33 @@ export async function createGroupAction(
 
   revalidatePath(`/app/events/${eventId}/guests`);
   return { notice: 'הקבוצה נוצרה' };
+}
+
+// Rename only — color stays whatever it was (the groups manager exposes just
+// the name; groupSchema keeps validating both so a future color UI reuses it).
+export async function updateGroupAction(
+  eventId: string,
+  groupId: string,
+  _prevState: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  const parsed = groupSchema.safeParse({
+    name: formData.get('name'),
+  });
+
+  if (!parsed.success) {
+    return { fieldErrors: parsed.error.flatten().fieldErrors };
+  }
+
+  try {
+    await updateGroup(eventId, groupId, { name: parsed.data.name });
+  } catch (err) {
+    unstable_rethrow(err);
+    return { error: 'עדכון הקבוצה נכשל. נסו שוב.' };
+  }
+
+  revalidatePath(`/app/events/${eventId}/guests`);
+  return { notice: 'שם הקבוצה עודכן' };
 }
 
 export async function deleteGroupAction(

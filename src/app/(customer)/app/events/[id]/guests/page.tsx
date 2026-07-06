@@ -35,6 +35,7 @@ const HIDDEN_OP_STATUS: ReadonlySet<ContactOpStatus> = new Set<ContactOpStatus>(
   'not_eligible',
 ]);
 import { GuestListControls } from './guest-list-controls';
+import { GroupsManager } from './groups-manager';
 import { GuestRowActions } from './guest-row-actions';
 import { ContactStatusCell } from './contact-status-cell';
 
@@ -111,6 +112,8 @@ export default async function GuestsPage({ params, searchParams }: PageProps) {
         groups={groups}
         current={{ search, sort, dir, status, contact: contactStatus, group: groupId }}
       />
+
+      <GroupsManager eventId={eventId} groups={groups} />
 
       <p className="text-sm text-muted-foreground">
         {total > 0 ? `${total} מוזמנים` : null}

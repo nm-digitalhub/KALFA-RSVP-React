@@ -25,6 +25,7 @@ vi.mock('@/lib/data/guests', () => ({
   deleteGuest: vi.fn(),
   updateContactStatus: vi.fn(),
   createGroup: vi.fn(),
+  updateGroup: vi.fn(),
   deleteGroup: vi.fn(),
 }));
 vi.mock('@/lib/data/contacts', () => ({ linkGuestContact: vi.fn() }));
@@ -37,7 +38,8 @@ vi.mock('@/lib/data/rsvp', () => ({
 
 import { createGuest, updateGuest } from '@/lib/data/guests';
 import { linkGuestContact } from '@/lib/data/contacts';
-import { createGuestAction, updateGuestAction } from './guests-actions';
+import { createGuestAction, updateGuestAction, createGroupAction, updateGroupAction } from './guests-actions';
+import { createGroup, updateGroup } from '@/lib/data/guests';
 
 function fd(entries: Record<string, string>): FormData {
   const f = new FormData();
@@ -137,5 +139,64 @@ describe('createGuestAction — Next.js control-flow signals from the ownership 
 
     expect(result).toEqual({ error: 'הוספת המוזמן נכשלה. נסו שוב.' });
     expect(linkGuestContact).not.toHaveBeenCalled();
+  });
+});
+
+describe('updateGroupAction', () => {
+  const EVENT_ID = '7b0c2d64-9f1e-4a7b-8c3d-2e5f6a7b8c9d';
+  const GROUP_ID = '3f2a1b0c-8d7e-4f6a-9b5c-1d2e3f4a5b6c';
+
+  function fd(name: string): FormData {
+    const data = new FormData();
+    data.set('name', name);
+    return data;
+  }
+
+  it('renames the group and reports success', async () => {
+    vi.mocked(updateGroup).mockResolvedValue({
+      id: GROUP_ID,
+      event_id: EVENT_ID,
+      name: 'משפחה',
+      color: null,
+      created_at: '2026-07-06T00:00:00Z',
+    });
+    const state = await updateGroupAction(EVENT_ID, GROUP_ID, null, fd('משפחה'));
+    expect(updateGroup).toHaveBeenCalledWith(EVENT_ID, GROUP_ID, { name: 'משפחה' });
+    expect(state?.notice).toBeDefined();
+  });
+
+  it('rejects an empty name with a field error and never hits the data layer', async () => {
+    vi.mocked(updateGroup).mockClear();
+    const state = await updateGroupAction(EVENT_ID, GROUP_ID, null, fd('   '));
+    expect(state?.fieldErrors?.name).toBeDefined();
+    expect(updateGroup).not.toHaveBeenCalled();
+  });
+
+  it('maps a data-layer failure to a safe Hebrew error', async () => {
+    vi.mocked(updateGroup).mockRejectedValue(new Error('boom'));
+    const state = await updateGroupAction(EVENT_ID, GROUP_ID, null, fd('חברים'));
+    expect(state?.error).toBeDefined();
+  });
+});
+
+describe('createGroupAction', () => {
+  const EVENT_ID = '7b0c2d64-9f1e-4a7b-8c3d-2e5f6a7b8c9d';
+
+  it('creates a group from a name-only form (no color field posted)', async () => {
+    // Regression: the groups-manager form has no color input, so
+    // formData.get('color') is null — the action must not fail validation.
+    vi.mocked(createGroup).mockResolvedValue({
+      id: '3f2a1b0c-8d7e-4f6a-9b5c-1d2e3f4a5b6c',
+      event_id: EVENT_ID,
+      name: 'משפחה',
+      color: null,
+      created_at: '2026-07-06T00:00:00Z',
+    });
+    const data = new FormData();
+    data.set('name', 'משפחה');
+    const state = await createGroupAction(EVENT_ID, null, data);
+    expect(state?.fieldErrors).toBeUndefined();
+    expect(state?.notice).toBeDefined();
+    expect(createGroup).toHaveBeenCalledWith(EVENT_ID, { name: 'משפחה', color: null });
   });
 });
