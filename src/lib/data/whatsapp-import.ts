@@ -8,7 +8,14 @@ import { normalizePhone, repairIsraeliLocalPhone } from '@/lib/phone';
 import { importRowSchema } from '@/lib/validation/guests';
 import { guestImportHeaderKey } from '@/lib/data/guest-import-shared';
 import { ISRAELI_PHONE_RE } from '@/lib/constants';
-import type { Json } from '@/lib/supabase/types';
+import { EVENT_TYPE_LABELS } from '@/lib/data/event-labels';
+import type { Database, Json } from '@/lib/supabase/types';
+
+type EventType = Database['public']['Enums']['event_type'];
+
+// The minimum an owner's active event needs for import routing + the reply
+// label. `name` is the owner's free-text title (may be empty → type label).
+export type ImportEvent = { id: string; name: string | null; event_type: EventType };
 
 // WhatsApp guest-import channel: a VERIFIED owner sends the business number a
 // CSV document or shared contact cards → the worker parses them into PENDING
@@ -29,13 +36,26 @@ export type StagedRow = {
 
 const MAX_DOC_BYTES = 1_000_000; // same cap as the screen upload
 
-// profiles.phone (verified) → user → the single ACTIVE event that user may
-// MANAGE: their own, or a shared-org event where their role holds
-// guests.create (phase-3 model — so an org member like a co-managing brother
-// can send lists too). Newest active event wins when several qualify.
-async function resolveOwnerActiveEvent(
+type EventRow = {
+  id: string;
+  name: string | null;
+  event_type: EventType;
+  created_at: string;
+};
+
+// profiles.phone (verified) → user → EVERY ACTIVE event that user may MANAGE:
+// their own, or a shared-org event where their role holds guests.create
+// (phase-3 model — so an org member like a co-managing brother can send lists
+// too). Returned newest-first, de-duplicated by id.
+//
+// Historically this returned only the NEWEST active event and the caller
+// staged there blindly. That silently misrouted a file to the wrong event when
+// the sender managed more than one active event (incident 2026-07-06: a brit
+// guest list landed on a newer wedding event). The caller now decides: exactly
+// one → stage; more than one → ask which, never guess.
+async function resolveOwnerActiveEvents(
   senderE164: string,
-): Promise<{ eventId: string } | null> {
+): Promise<ImportEvent[]> {
   const admin = createAdminClient();
   const { data: profiles } = await admin
     .from('profiles')
@@ -44,21 +64,19 @@ async function resolveOwnerActiveEvent(
   const sender = (profiles ?? []).find(
     (p) => normalizePhone(p.phone) === senderE164,
   );
-  if (!sender) return null;
+  if (!sender) return [];
 
   const { data: owned } = await admin
     .from('events')
-    .select('id, created_at')
+    .select('id, name, event_type, created_at')
     .eq('owner_id', sender.id)
-    .eq('status', 'active')
-    .order('created_at', { ascending: false })
-    .limit(1);
+    .eq('status', 'active');
 
   const { data: memberships } = await admin
     .from('organization_members')
     .select('organization_id, role_id')
     .eq('user_id', sender.id);
-  let shared: Array<{ id: string; created_at: string }> = [];
+  let shared: EventRow[] = [];
   if (memberships && memberships.length > 0) {
     const { data: allowedRoles } = await admin
       .from('role_permissions')
@@ -73,19 +91,70 @@ async function resolveOwnerActiveEvent(
     if (orgIds.length > 0) {
       const { data } = await admin
         .from('events')
-        .select('id, created_at')
+        .select('id, name, event_type, created_at')
         .in('org_id', orgIds)
-        .eq('status', 'active')
-        .order('created_at', { ascending: false })
-        .limit(1);
-      shared = data ?? [];
+        .eq('status', 'active');
+      shared = (data ?? []) as EventRow[];
     }
   }
 
-  const candidates = [...(owned ?? []), ...shared].sort((a, b) =>
-    a.created_at < b.created_at ? 1 : -1,
+  // De-dupe (an org event the sender also owns appears in both lists), then
+  // sort newest-first for a stable, predictable order in the reply.
+  const byId = new Map<string, EventRow>();
+  for (const e of [...((owned ?? []) as EventRow[]), ...shared]) byId.set(e.id, e);
+  return [...byId.values()]
+    .sort((a, b) => (a.created_at < b.created_at ? 1 : -1))
+    .map(({ id, name, event_type }) => ({ id, name, event_type }));
+}
+
+// Human-readable event label for a WhatsApp reply: the owner's title when set,
+// otherwise the Hebrew type label ("ברית"/"חתונה"/…).
+export function eventImportLabel(e: ImportEvent): string {
+  const named = e.name?.trim();
+  return named && named.length > 0 ? named : EVENT_TYPE_LABELS[e.event_type];
+}
+
+function importScreenUrl(
+  origin: string,
+  eventId: string,
+  screen: 'whatsapp' | 'csv',
+): string {
+  const base = `${origin}/app/events/${eventId}/guests/import`;
+  return screen === 'whatsapp' ? `${base}/whatsapp` : base;
+}
+
+// Reply for the unambiguous case: the list was staged under the single active
+// event — NAME it (so a wrong routing is visible immediately) and link to its
+// review screen.
+export function buildSingleEventReply(
+  e: ImportEvent,
+  rowCount: number,
+  errorCount: number,
+  origin: string,
+): string {
+  const errs = errorCount ? ` (${errorCount} עם שגיאות)` : '';
+  return (
+    `נקלטו ${rowCount} שורות${errs} לאירוע «${eventImportLabel(e)}».\n` +
+    `לסקירה ואישור הייבוא:\n${importScreenUrl(origin, e.id, 'whatsapp')}`
   );
-  return candidates.length > 0 ? { eventId: candidates[0].id } : null;
+}
+
+// Reply for the ambiguous case: the sender manages more than one active event,
+// so we NEVER guess. Nothing is staged; we list each active event with its own
+// import screen and ask the owner to upload the file on the correct one.
+export function buildAmbiguousEventReply(
+  events: ImportEvent[],
+  origin: string,
+): string {
+  const lines = events
+    .map((e) => `• ${eventImportLabel(e)}: ${importScreenUrl(origin, e.id, 'csv')}`)
+    .join('\n');
+  return (
+    'קיבלנו קובץ עם רשימת מוזמנים 📄\n' +
+    'יש לך כמה אירועים פעילים, אז לא ברור לאיזה לשייך את הרשימה. ' +
+    'פתחו את מסך הייבוא באירוע הנכון והעלו שם את הקובץ:\n' +
+    lines
+  );
 }
 
 // Parse CSV bytes into staged rows using the SAME rules as the screen import
@@ -196,11 +265,29 @@ export async function stageWhatsAppImport(row: InboxRow): Promise<boolean> {
 
   const sender = typeof p.from === 'string' ? normalizePhone(p.from) : null;
   if (!sender) return false;
-  const ownerEvent = await resolveOwnerActiveEvent(sender);
-  if (!ownerEvent) return false; // stranger → silently not-an-import
+  const events = await resolveOwnerActiveEvents(sender);
+  if (events.length === 0) return false; // stranger → silently not-an-import
 
   const config = await getWhatsAppConfig();
   if (!config) return true; // consumed (owner intent) but channel off
+
+  // Worker context has no request — getAppUrl's header path throws there (live
+  // incident 2026-07-05: 'Invalid URL' left the inbox row retrying). Defensive:
+  // tolerate an inline comment/whitespace in the env value (live incident: the
+  // reply carried the comment inside the link).
+  const origin =
+    process.env.APP_ORIGIN?.split(/[\s#]/)[0]?.trim() || 'https://beta.kalfa.me';
+
+  // More than one active event the sender may manage: NEVER guess which one
+  // (misroute incident 2026-07-06 — a brit guest list landed on a newer active
+  // event because "newest wins"). Stage nothing; ask the owner to upload the
+  // file on the correct event's import screen.
+  if (events.length > 1) {
+    await safeReply(config, sender, buildAmbiguousEventReply(events, origin));
+    return true;
+  }
+
+  const ownerEvent = events[0];
 
   let staged: StagedRow[] = [];
   let errors: Array<{ row: number; message: string }> = [];
@@ -232,7 +319,7 @@ export async function stageWhatsAppImport(row: InboxRow): Promise<boolean> {
   const { data: dupes } = await admin
     .from('guest_import_staging')
     .select('id, rows')
-    .eq('event_id', ownerEvent.eventId)
+    .eq('event_id', ownerEvent.id)
     .eq('sender_phone', sender)
     .eq('status', 'pending');
   const stagedJson = JSON.stringify(staged);
@@ -240,7 +327,7 @@ export async function stageWhatsAppImport(row: InboxRow): Promise<boolean> {
   const { error } = isDupe
     ? { error: null }
     : await admin.from('guest_import_staging').insert({
-    event_id: ownerEvent.eventId,
+    event_id: ownerEvent.id,
     source: p.type === 'document' ? 'whatsapp_document' : 'whatsapp_contacts',
     sender_phone: sender,
     file_name: fileName,
@@ -253,17 +340,10 @@ export async function stageWhatsAppImport(row: InboxRow): Promise<boolean> {
     return true;
   }
 
-  // Worker context has no request — getAppUrl's header path throws there
-  // (live incident 2026-07-05: 'Invalid URL' left the inbox row retrying).
-  // Defensive: tolerate an inline comment/whitespace in the env value
-  // (live incident: the reply carried the comment inside the link).
-  const origin =
-    process.env.APP_ORIGIN?.split(/[\s#]/)[0]?.trim() || 'https://beta.kalfa.me';
-  const link = `${origin}/app/events/${ownerEvent.eventId}/guests/import/whatsapp`;
   await safeReply(
     config,
     sender,
-    `נקלטו ${staged.length} שורות${errors.length ? ` (${errors.length} עם שגיאות)` : ''}.\nלסקירה ואישור הייבוא:\n${link}`,
+    buildSingleEventReply(ownerEvent, staged.length, errors.length, origin),
   );
   return true;
 }
