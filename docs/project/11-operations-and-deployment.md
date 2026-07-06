@@ -190,6 +190,14 @@ npx tsc --noEmit && npm run lint && npm run test && npm run deploy
 `next.config.ts` מכבד `NEXT_DIST_DIR` (`distDir: process.env.NEXT_DIST_DIR || '.next'`),
 וזה מה שמאפשר את הפרדת `.next-verify` / `.next-stage` / `.next`.
 
+**מודל סביבת הריצה (ecosystem.config.cjs, ‏2026-07-06):** שני התהליכים
+מוגדרים בקובץ ecosystem עם env מינימלי ומפורש (`NODE_ENV` בלבד); את הסודות
+והתצורה כל תהליך טוען בעצמו מ-`.env.local` בעלייה. הדיפלוי משתמש ב-`pm2
+restart` **רגיל (בלי `--update-env`)** — הדגל הזה מעתיק את סביבת ה-shell של
+המריץ לתוך הייצור (כך דלפו בעבר משתני סשן, PATH של plugins ו-FORCE_COLOR).
+אחרי `pm2 delete`/reboot: להפעיל מחדש דרך `env -i` כמתועד בראש הקובץ, ואז
+`pm2 save`.
+
 **הגנת version-skew (`.deploy-id`):** סקריפט ה-deploy כותב מזהה חדש לקובץ
 `.deploy-id` **לפני** הבנייה; `next.config.ts` קורא אותו גם בבנייה וגם ב-runtime
 (`deploymentId`). קצה תפעולי: אם deploy נכשל אחרי כתיבת המזהה אך לפני ה-restart,
