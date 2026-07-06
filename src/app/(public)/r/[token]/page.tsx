@@ -3,6 +3,7 @@ import { headers } from 'next/headers';
 
 import { RSVP_READ_RATE, RSVP_TOKEN_MIN_LENGTH } from '@/lib/constants';
 import { getRsvpByToken } from '@/lib/data/rsvp';
+import { signedInviteImageUrl } from '@/lib/storage/event-media';
 import { getClientIp, rateLimit } from '@/lib/security/rate-limit';
 
 import { RsvpForm } from './rsvp-form';
@@ -76,9 +77,26 @@ export default async function RsvpPage({
     );
   }
 
+  // Invitation-image hero: sign a short-lived URL AFTER the token resolved to
+  // a valid view (the bucket is private; the token holder is exactly the guest
+  // this invitation was sent to). Fail-open — the page renders without the
+  // image on any signing hiccup.
+  let inviteImageUrl: string | null = null;
+  if (view.event.invite_image_path) {
+    try {
+      inviteImageUrl = await signedInviteImageUrl(view.event.invite_image_path, 600);
+    } catch (err) {
+      console.error(
+        `[event-media] rsvp invite image signing failed (event=${view.event.id}): ${
+          err instanceof Error ? err.message : 'unknown error'
+        }`,
+      );
+    }
+  }
+
   return (
     <Shell>
-      <RsvpForm token={token} view={view} />
+      <RsvpForm token={token} view={view} inviteImageUrl={inviteImageUrl} />
     </Shell>
   );
 }

@@ -30,6 +30,14 @@ export interface RsvpEventInfo {
   event_date: string | null;
   venue_name: string | null;
   venue_address: string | null;
+  /** Schemaless celebrants jsonb — rendered per type by celebrant-display.ts. */
+  celebrants: Json | null;
+  /** Storage path of the uploaded invitation image; the page signs a URL. */
+  invite_image_path: string | null;
+  /** Gift CTA token — the RPC returns it ONLY when a payment link is set. */
+  gift_link_token: string | null;
+  /** 'bit' | 'paybox' | 'other' — icon selection only; never the URL itself. */
+  gift_provider: string | null;
 }
 
 export interface RsvpGuestInfo {
