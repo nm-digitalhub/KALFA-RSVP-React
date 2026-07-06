@@ -57,7 +57,7 @@ const LIST_COLUMNS =
   'id, name, event_type, event_date, status, venue_name, created_at';
 
 const DETAIL_COLUMNS =
-  'id, name, event_type, event_date, venue_name, venue_address, gift_payment_url, invite_image_path, rsvp_deadline, celebrants, status, created_at';
+  'id, name, event_type, event_date, venue_name, venue_address, gift_payment_url, invite_image_path, rsvp_deadline, celebrants, show_meal_pref, status, created_at';
 
 const USER_ID = 'user-123';
 
@@ -90,6 +90,7 @@ function detailRow(overrides: Partial<EventDetail> = {}): EventDetail {
     celebrants: null,
     gift_payment_url: null,
     invite_image_path: null,
+    show_meal_pref: true,
     status: 'draft',
     created_at: '2026-06-23T00:00:00.000Z',
     ...overrides,

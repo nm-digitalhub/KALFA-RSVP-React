@@ -104,7 +104,7 @@ export interface ListEventsParams {
 export async function listEvents(
   { limit = 20, offset = 0 }: ListEventsParams = {},
 ): Promise<EventListItem[]> {
-  const user = await requireUser();
+  await requireUser();
   const supabase = await createClient();
 
   const { data, error } = await supabase
@@ -125,11 +125,12 @@ export interface EventCounts {
   active: number;
 }
 
-// Owner-scoped event counts via head queries (count only, no rows loaded) — the
-// dashboard cards must reflect ALL events, independent of the recent-events page
-// size (which previously capped both counts at the list limit).
+// RLS-scoped event counts (owner + shared-org, like listEvents) via head queries
+// (count only, no rows loaded) — the dashboard cards must reflect ALL visible
+// events, independent of the recent-events page size (which previously capped
+// both counts at the list limit).
 export async function getEventCounts(): Promise<EventCounts> {
-  const user = await requireUser();
+  await requireUser();
   const supabase = await createClient();
 
   const [totalRes, activeRes] = await Promise.all([
@@ -228,18 +229,19 @@ export type EventDetail = Pick<
   | 'venue_address'
   | 'rsvp_deadline'
   | 'celebrants'
+  | 'show_meal_pref'
   | 'status'
   | 'created_at'
 >;
 
 const EVENT_DETAIL_COLUMNS =
-  'id, name, event_type, event_date, venue_name, venue_address, gift_payment_url, invite_image_path, rsvp_deadline, celebrants, status, created_at';
+  'id, name, event_type, event_date, venue_name, venue_address, gift_payment_url, invite_image_path, rsvp_deadline, celebrants, show_meal_pref, status, created_at';
 
 // Fetch one of the current owner's events for the detail/edit page. Scoped by
 // RLS-scoped read (owner or shared-org member with events.view); notFound()
 // when invisible. Mutations stay separately gated (events.edit / owner-only).
 export async function getEvent(eventId: string): Promise<EventDetail> {
-  const user = await requireUser();
+  await requireUser();
   const supabase = await createClient();
 
   const { data, error } = await supabase
@@ -278,6 +280,10 @@ export interface UpdateEventInput {
   // absent = don't touch; present (string | null) = set/clear (same presence
   // semantics as the date keys below).
   gift_payment_url?: string | null;
+  // Public-RSVP meal-preference toggle. OPTIONAL KEY: absent = don't touch;
+  // present = set. The edit form always renders the checkbox, so the action
+  // always sends it (unchecked posts nothing → the action derives false).
+  show_meal_pref?: boolean;
   // Storage path set by the SERVER after a verified upload — never a raw form
   // value (optional key, same presence semantics).
   invite_image_path?: string | null;
@@ -323,6 +329,7 @@ export async function updateEvent(
     venue_name: input.venue_name,
     ...('gift_payment_url' in input ? { gift_payment_url: input.gift_payment_url ?? null } : {}),
     ...('invite_image_path' in input ? { invite_image_path: input.invite_image_path ?? null } : {}),
+    ...('show_meal_pref' in input ? { show_meal_pref: input.show_meal_pref } : {}),
     venue_address: input.venue_address,
     // On an event_type change the action already parsed the NEW type's fields
     // only (parseCelebrantsForm), so the new shape replaces the old outright.

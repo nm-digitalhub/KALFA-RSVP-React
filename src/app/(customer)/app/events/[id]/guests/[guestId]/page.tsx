@@ -96,6 +96,11 @@ export default async function EditGuestPage({ params }: PageProps) {
           <p className="text-muted-foreground">
             {confirmedAdults} מבוגרים, {confirmedKids} ילדים
           </p>
+          {guest.meal_pref ? (
+            <p className="mt-1 text-muted-foreground">
+              העדפת תפריט: {guest.meal_pref}
+            </p>
+          ) : null}
         </section>
       ) : null}
 

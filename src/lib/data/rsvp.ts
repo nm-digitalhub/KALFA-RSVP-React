@@ -38,6 +38,9 @@ export interface RsvpEventInfo {
   gift_link_token: string | null;
   /** 'bit' | 'paybox' | 'other' — icon selection only; never the URL itself. */
   gift_provider: string | null;
+  /** Owner toggle (events.show_meal_pref): when false the form hides the
+      meal-preference field and submit_rsvp ignores any submitted value. */
+  show_meal_pref: boolean;
 }
 
 export interface RsvpGuestInfo {
@@ -49,7 +52,11 @@ export interface RsvpGuestInfo {
   confirmed_adults: number | null;
   confirmed_kids: number | null;
   meal_pref: string | null;
-  note: string | null;
+  /**
+   * Guest-supplied RSVP note (guests.rsvp_note), written by submit_rsvp. The
+   * owner-internal guests.note is never present in this payload.
+   */
+  rsvp_note: string | null;
   /** Prior answers, already filtered to the currently-enabled questions. */
   answers: Record<string, string>;
 }

@@ -270,20 +270,25 @@ export function RsvpForm({
               </div>
               <FieldError errors={state?.fieldErrors?.adults} />
 
-              <div>
-                <label htmlFor="meal_pref" className="mb-1 block text-sm font-medium">
-                  העדפת תפריט (לא חובה)
-                </label>
-                <input
-                  id="meal_pref"
-                  name="meal_pref"
-                  type="text"
-                  maxLength={120}
-                  defaultValue={guest.meal_pref ?? ''}
-                  className="w-full rounded-md border border-input bg-background px-3 py-2"
-                />
-                <FieldError errors={state?.fieldErrors?.meal_pref} />
-              </div>
+              {/* Owner toggle (events.show_meal_pref). `!== false` so a stale
+                  payload missing the key (old DB, new code) fails OPEN — the
+                  field keeps showing rather than silently vanishing. */}
+              {event.show_meal_pref !== false ? (
+                <div>
+                  <label htmlFor="meal_pref" className="mb-1 block text-sm font-medium">
+                    העדפת תפריט (לא חובה)
+                  </label>
+                  <input
+                    id="meal_pref"
+                    name="meal_pref"
+                    type="text"
+                    maxLength={120}
+                    defaultValue={guest.meal_pref ?? ''}
+                    className="w-full rounded-md border border-input bg-background px-3 py-2"
+                  />
+                  <FieldError errors={state?.fieldErrors?.meal_pref} />
+                </div>
+              ) : null}
             </div>
           ) : null}
 
@@ -342,7 +347,7 @@ export function RsvpForm({
               name="note"
               rows={3}
               maxLength={500}
-              defaultValue={guest.note ?? ''}
+              defaultValue={guest.rsvp_note ?? ''}
               className="w-full rounded-md border border-input bg-background px-3 py-2"
             />
             <FieldError errors={state?.fieldErrors?.note} />

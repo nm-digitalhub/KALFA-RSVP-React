@@ -65,6 +65,9 @@ export async function updateEventAction(
     gift_payment_url: formData.get('gift_payment_url') ?? '',
     venue_address: formData.get('venue_address'),
     event_time: formData.get('event_time') ?? '',
+    // Checkbox semantics: the input is ALWAYS rendered, so key presence IS the
+    // checked state (an unchecked checkbox posts nothing).
+    show_meal_pref: formData.has('show_meal_pref'),
     ...(formData.has('event_date')
       ? { event_date: formData.get('event_date') }
       : {}),
@@ -98,7 +101,7 @@ export async function updateEventAction(
     };
   }
 
-  const { name, event_type, venue_name, venue_address, gift_payment_url } = parsed.data;
+  const { name, event_type, venue_name, venue_address, gift_payment_url, show_meal_pref } = parsed.data;
 
   // Invitation image (optional). Validated and uploaded BEFORE updateEvent,
   // behind the same org-aware edit gate; the stored PATH is server-derived —
@@ -131,6 +134,7 @@ export async function updateEventAction(
       event_type,
       venue_name: venue_name ? venue_name : null,
       gift_payment_url: gift_payment_url ? gift_payment_url : null,
+      show_meal_pref,
       ...(inviteImagePath ? { invite_image_path: inviteImagePath } : {}),
       venue_address: venue_address ? venue_address : null,
       // No formData.has() dance here: the celebrant group is always rendered,

@@ -129,6 +129,10 @@ export const updateEventSchema = z.object({
     })
     .optional()
     .or(z.literal('')),
+  // Public-RSVP meal-preference toggle. The action derives the boolean from
+  // checkbox PRESENCE (formData.has); default true keeps the field collected
+  // when the key is absent (older callers/tests).
+  show_meal_pref: z.boolean().default(true),
 })
   // A deadline without an event date is meaningless. Mirrors the DB invariant
   // (events_rsvp_deadline_within_event: a deadline requires an event_date).

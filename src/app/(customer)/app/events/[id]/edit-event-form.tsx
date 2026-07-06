@@ -259,6 +259,24 @@ export function EditEventForm({
       </div>
 
       <div>
+        <label className="flex items-start gap-2 text-sm font-medium">
+          <input
+            type="checkbox"
+            name="show_meal_pref"
+            defaultChecked={event.show_meal_pref}
+            className="mt-0.5 size-4 accent-primary"
+          />
+          <span>
+            איסוף העדפת תפריט מהאורחים
+            <span className="mt-0.5 block text-xs font-normal text-muted-foreground">
+              כשמופעל, טופס אישור ההגעה יציג לאורחים שמאשרים הגעה שדה חופשי
+              להעדפת תפריט (כשר, צמחוני וכדומה). ניתן לשינוי בכל שלב.
+            </span>
+          </span>
+        </label>
+      </div>
+
+      <div>
         <label htmlFor="invite_image" className="mb-1 block text-sm font-medium">
           תמונת הזמנה (רשות)
         </label>

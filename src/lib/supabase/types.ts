@@ -803,6 +803,7 @@ export type Database = {
           owner_id: string
           package_id: string | null
           rsvp_deadline: string | null
+          show_meal_pref: boolean
           status: Database["public"]["Enums"]["event_status"]
           template: string | null
           updated_at: string
@@ -825,6 +826,7 @@ export type Database = {
           owner_id: string
           package_id?: string | null
           rsvp_deadline?: string | null
+          show_meal_pref?: boolean
           status?: Database["public"]["Enums"]["event_status"]
           template?: string | null
           updated_at?: string
@@ -847,6 +849,7 @@ export type Database = {
           owner_id?: string
           package_id?: string | null
           rsvp_deadline?: string | null
+          show_meal_pref?: boolean
           status?: Database["public"]["Enums"]["event_status"]
           template?: string | null
           updated_at?: string
@@ -975,6 +978,7 @@ export type Database = {
           meal_pref: string | null
           note: string | null
           phone: string | null
+          rsvp_note: string | null
           rsvp_token: string
           rsvp_token_revoked_at: string | null
           status: Database["public"]["Enums"]["guest_status"]
@@ -1001,6 +1005,7 @@ export type Database = {
           meal_pref?: string | null
           note?: string | null
           phone?: string | null
+          rsvp_note?: string | null
           rsvp_token?: string
           rsvp_token_revoked_at?: string | null
           status?: Database["public"]["Enums"]["guest_status"]
@@ -1027,6 +1032,7 @@ export type Database = {
           meal_pref?: string | null
           note?: string | null
           phone?: string | null
+          rsvp_note?: string | null
           rsvp_token?: string
           rsvp_token_revoked_at?: string | null
           status?: Database["public"]["Enums"]["guest_status"]
