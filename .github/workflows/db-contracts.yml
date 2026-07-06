@@ -1,0 +1,28 @@
+# Manual live-DB contract verification (scripts/verify-db-contracts.mjs):
+# confirms constraint names still arrive in PostgREST errors, CHECKs reject
+# negatives, freshest-answer-wins holds, and guest_totals shape — against the
+# LIVE database. Requires repo secrets:
+#   SUPABASE_URL               (the project URL)
+#   SUPABASE_SERVICE_ROLE_KEY  (service key — Settings > Secrets, never echoed)
+# Run manually after infrastructure upgrades (PostgREST/CLI/Postgres).
+name: DB contracts
+
+on:
+  workflow_dispatch:
+
+jobs:
+  contracts:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: Verify live DB contracts
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: node scripts/verify-db-contracts.mjs
