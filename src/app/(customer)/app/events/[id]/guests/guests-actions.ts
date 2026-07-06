@@ -4,6 +4,8 @@ import { revalidatePath } from 'next/cache';
 import { redirect, unstable_rethrow } from 'next/navigation';
 
 import {
+  PHONE_TAKEN_ERROR,
+  GROUP_NAME_TAKEN_ERROR,
   createGuest,
   updateGuest,
   deleteGuest,
@@ -63,6 +65,9 @@ export async function createGuestAction(
     createdId = created.id;
   } catch (err) {
     unstable_rethrow(err);
+    if (err instanceof Error && err.message === PHONE_TAKEN_ERROR) {
+      return { fieldErrors: { phone: [PHONE_TAKEN_ERROR] } };
+    }
     return { error: 'הוספת המוזמן נכשלה. נסו שוב.' };
   }
 
@@ -133,6 +138,9 @@ export async function updateGuestAction(
     });
   } catch (err) {
     unstable_rethrow(err);
+    if (err instanceof Error && err.message === PHONE_TAKEN_ERROR) {
+      return { fieldErrors: { phone: [PHONE_TAKEN_ERROR] } };
+    }
     return { error: 'עדכון המוזמן נכשל. נסו שוב.' };
   }
 
@@ -206,6 +214,9 @@ export async function createGroupAction(
     });
   } catch (err) {
     unstable_rethrow(err);
+    if (err instanceof Error && err.message === GROUP_NAME_TAKEN_ERROR) {
+      return { fieldErrors: { name: [GROUP_NAME_TAKEN_ERROR] } };
+    }
     return { error: 'יצירת הקבוצה נכשלה. נסו שוב.' };
   }
 
@@ -233,6 +244,9 @@ export async function updateGroupAction(
     await updateGroup(eventId, groupId, { name: parsed.data.name });
   } catch (err) {
     unstable_rethrow(err);
+    if (err instanceof Error && err.message === GROUP_NAME_TAKEN_ERROR) {
+      return { fieldErrors: { name: [GROUP_NAME_TAKEN_ERROR] } };
+    }
     return { error: 'עדכון הקבוצה נכשל. נסו שוב.' };
   }
 

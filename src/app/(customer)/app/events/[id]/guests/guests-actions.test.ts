@@ -20,6 +20,8 @@ vi.mock('next/navigation', async (importOriginal) => {
   };
 });
 vi.mock('@/lib/data/guests', () => ({
+  PHONE_TAKEN_ERROR: 'מספר הטלפון כבר קיים אצל מוזמן אחר באירוע',
+  GROUP_NAME_TAKEN_ERROR: 'קבוצה בשם זה כבר קיימת באירוע',
   createGuest: vi.fn(),
   updateGuest: vi.fn(),
   deleteGuest: vi.fn(),
@@ -198,5 +200,44 @@ describe('createGroupAction', () => {
     expect(state?.fieldErrors).toBeUndefined();
     expect(state?.notice).toBeDefined();
     expect(createGroup).toHaveBeenCalledWith(EVENT_ID, { name: 'משפחה', color: null });
+  });
+});
+
+describe('friendly duplicate errors surface as field errors', () => {
+  const EVENT_ID = '7b0c2d64-9f1e-4a7b-8c3d-2e5f6a7b8c9d';
+  const GROUP_ID = '3f2a1b0c-8d7e-4f6a-9b5c-1d2e3f4a5b6c';
+
+  it('createGroupAction maps a taken name to fieldErrors.name', async () => {
+    vi.mocked(createGroup).mockRejectedValue(
+      new Error('קבוצה בשם זה כבר קיימת באירוע'),
+    );
+    const data = new FormData();
+    data.set('name', 'משפחת קלפה');
+    const state = await createGroupAction(EVENT_ID, null, data);
+    expect(state?.fieldErrors?.name?.[0]).toContain('כבר קיימת');
+    expect(state?.error).toBeUndefined();
+  });
+
+  it('updateGroupAction maps a taken name to fieldErrors.name', async () => {
+    vi.mocked(updateGroup).mockRejectedValue(
+      new Error('קבוצה בשם זה כבר קיימת באירוע'),
+    );
+    const data = new FormData();
+    data.set('name', 'משפחת קלפה');
+    const state = await updateGroupAction(EVENT_ID, GROUP_ID, null, data);
+    expect(state?.fieldErrors?.name?.[0]).toContain('כבר קיימת');
+  });
+
+  it('createGuestAction maps a taken phone to fieldErrors.phone', async () => {
+    vi.mocked(createGuest).mockRejectedValue(
+      new Error('מספר הטלפון כבר קיים אצל מוזמן אחר באירוע'),
+    );
+    const state = await createGuestAction(
+      EVENT_ID,
+      null,
+      fd({ full_name: 'סיון קלפה', phone: '0501234567', group_id: '', note: '' }),
+    );
+    expect(state?.fieldErrors?.phone?.[0]).toContain('כבר קיים');
+    expect(state?.error).toBeUndefined();
   });
 });

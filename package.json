@@ -16,7 +16,8 @@
     "pm2:logs": "pm2 logs kalfa-beta --lines 100",
     "lint": "eslint",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "verify:db": "node --env-file=.env.local scripts/verify-db-contracts.mjs"
   },
   "dependencies": {
     "@base-ui/react": "^1.6.0",
@@ -57,7 +58,7 @@
     "esbuild": "^0.28.1",
     "eslint": "^9",
     "eslint-config-next": "16.2.9",
-    "supabase": "^2.107.0",
+    "supabase": "^2.109.0",
     "tailwindcss": "^4",
     "typescript": "^5",
     "vitest": "^4.1.9"

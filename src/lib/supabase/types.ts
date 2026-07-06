@@ -1928,6 +1928,7 @@ export type Database = {
       }
       create_organization: { Args: { _name: string }; Returns: string }
       get_rsvp_by_token: { Args: { _token: string }; Returns: Json }
+      guest_totals: { Args: { _event_id: string }; Returns: Json }
       has_org_permission: {
         Args: { _action: string; _org_id: string; _resource: string }
         Returns: boolean

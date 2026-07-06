@@ -14,6 +14,7 @@ import {
 } from '@/lib/data/guests';
 import { buildContactsForEvent } from '@/lib/data/contacts';
 import { logActivity } from '@/lib/data/activity';
+import { normalizeGroupName } from '@/lib/data/guest-import-shared';
 import type { StagedRow } from '@/lib/data/whatsapp-import';
 import type { FormState } from '@/lib/validation/result';
 
@@ -66,14 +67,14 @@ export async function confirmWhatsappImportAction(
 
     const groups = await listGroups(eventId);
     const groupByName = new Map(
-      groups.map((g) => [g.name.trim().toLowerCase(), g.id]),
+      groups.map((g) => [normalizeGroupName(g.name).toLowerCase(), g.id]),
     );
     for (const name of new Set(
       rows.map((r) => r.group.trim()).filter((n) => n !== ''),
     )) {
-      if (!groupByName.has(name.toLowerCase())) {
+      if (!groupByName.has(normalizeGroupName(name).toLowerCase())) {
         const created = await createGroup(eventId, { name });
-        groupByName.set(name.toLowerCase(), created.id);
+        groupByName.set(normalizeGroupName(name).toLowerCase(), created.id);
       }
     }
 
@@ -84,7 +85,7 @@ export async function confirmWhatsappImportAction(
       group_id:
         r.group.trim() === ''
           ? null
-          : groupByName.get(r.group.trim().toLowerCase()) ?? null,
+          : groupByName.get(normalizeGroupName(r.group).toLowerCase()) ?? null,
     }));
     const imported = await bulkInsertGuests(eventId, inserts);
 

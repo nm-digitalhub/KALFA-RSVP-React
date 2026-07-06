@@ -3,7 +3,7 @@ import Link from 'next/link';
 import { Badge, Pagination, type BadgeVariant } from '@/app/(admin)/admin/_components';
 import { buttonVariants } from '@/components/ui/button';
 import { requireEventAccess } from '@/lib/data/events';
-import { listGuests, listGroups } from '@/lib/data/guests';
+import { listGuests, listGroups, getGuestTotals } from '@/lib/data/guests';
 import type { Database } from '@/lib/supabase/types';
 import {
   GUEST_STATUS_LABELS,
@@ -64,7 +64,7 @@ export default async function GuestsPage({ params, searchParams }: PageProps) {
   const contactStatus = first(sp.contact);
   const groupId = first(sp.group);
 
-  const [result, groups] = await Promise.all([
+  const [result, groups, totals] = await Promise.all([
     listGuests(eventId, {
       page,
       search,
@@ -75,6 +75,7 @@ export default async function GuestsPage({ params, searchParams }: PageProps) {
       groupId,
     }),
     listGroups(eventId),
+    getGuestTotals(eventId),
   ]);
 
   const { items, total, pageSize } = result;
@@ -115,8 +116,38 @@ export default async function GuestsPage({ params, searchParams }: PageProps) {
 
       <GroupsManager eventId={eventId} groups={groups} />
 
+      {/* People-level truth for the WHOLE event (unaffected by filters):
+          a household row invited as 4 counts as 4 people; "אישרו" prefers the
+          WhatsApp-confirmed headcount over adults+kids. */}
+      {totals.rows > 0 ? (
+        <dl className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <div className="rounded-lg border border-border bg-card px-4 py-3">
+            <dt className="text-xs text-muted-foreground">מוזמנים (אנשים)</dt>
+            <dd className="text-xl font-bold">{totals.invited_people}</dd>
+            <p className="text-xs text-muted-foreground">{totals.rows} רשומות</p>
+          </div>
+          <div className="rounded-lg border border-border bg-card px-4 py-3">
+            <dt className="text-xs text-muted-foreground">אישרו הגעה</dt>
+            <dd className="text-xl font-bold text-primary">{totals.attending_people}</dd>
+            <p className="text-xs text-muted-foreground">{totals.attending_rows} רשומות</p>
+          </div>
+          <div className="rounded-lg border border-border bg-card px-4 py-3">
+            <dt className="text-xs text-muted-foreground">לא מגיעים</dt>
+            <dd className="text-xl font-bold">{totals.declined_rows}</dd>
+            <p className="text-xs text-muted-foreground">רשומות</p>
+          </div>
+          <div className="rounded-lg border border-border bg-card px-4 py-3">
+            <dt className="text-xs text-muted-foreground">טרם השיבו</dt>
+            <dd className="text-xl font-bold">{totals.pending_rows + totals.maybe_rows}</dd>
+            <p className="text-xs text-muted-foreground">
+              {totals.maybe_rows > 0 ? `מתוכם ${totals.maybe_rows} אולי` : 'רשומות'}
+            </p>
+          </div>
+        </dl>
+      ) : null}
+
       <p className="text-sm text-muted-foreground">
-        {total > 0 ? `${total} מוזמנים` : null}
+        {total > 0 ? `${total} רשומות ברשימה` : null}
       </p>
 
       {items.length === 0 ? (

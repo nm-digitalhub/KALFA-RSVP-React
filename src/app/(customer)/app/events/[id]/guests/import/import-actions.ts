@@ -8,7 +8,7 @@ import { ISRAELI_PHONE_RE } from '@/lib/constants';
 import { logActivity } from '@/lib/data/activity';
 import { normalizePhone, repairIsraeliLocalPhone } from '@/lib/phone';
 import { importRowSchema } from '@/lib/validation/guests';
-import { guestImportHeaderKey as headerKey } from '@/lib/data/guest-import-shared';
+import { guestImportHeaderKey as headerKey, normalizeGroupName } from '@/lib/data/guest-import-shared';
 import {
   listGroups,
   createGroup,
@@ -134,7 +134,7 @@ export async function importGuestsAction(
   try {
     const groups = await listGroups(eventId);
     groupByName = new Map(
-      groups.map((g) => [g.name.trim().toLowerCase(), g.id]),
+      groups.map((g) => [normalizeGroupName(g.name).toLowerCase(), g.id]),
     );
   } catch (err) {
     unstable_rethrow(err);
@@ -222,7 +222,7 @@ export async function importGuestsAction(
     }
 
     const groupName = parsed.data.group?.trim() ?? '';
-    if (groupName !== '' && !groupByName.has(groupName.toLowerCase())) {
+    if (groupName !== '' && !groupByName.has(normalizeGroupName(groupName).toLowerCase())) {
       newGroupNames.add(groupName);
     }
 
@@ -242,7 +242,7 @@ export async function importGuestsAction(
   try {
     for (const name of newGroupNames) {
       const created = await createGroup(eventId, { name });
-      groupByName.set(name.toLowerCase(), created.id);
+      groupByName.set(normalizeGroupName(name).toLowerCase(), created.id);
     }
   } catch (err) {
     unstable_rethrow(err);
@@ -254,7 +254,7 @@ export async function importGuestsAction(
   const valid: BulkGuestInput[] = pending.map(({ guest, groupName }) => ({
     ...guest,
     group_id:
-      groupName === '' ? null : groupByName.get(groupName.toLowerCase()) ?? null,
+      groupName === '' ? null : groupByName.get(normalizeGroupName(groupName).toLowerCase()) ?? null,
   }));
 
   if (valid.length === 0) {

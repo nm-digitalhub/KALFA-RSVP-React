@@ -6,12 +6,29 @@ import { requireOwnedEvent, requireEventAccess } from '@/lib/data/events';
 // unique index guests_event_phone_key (one guest per phone per event)
 export const PHONE_TAKEN_ERROR =
   'מספר הטלפון כבר קיים אצל מוזמן אחר באירוע';
-function throwFriendlyGuestError(error: { code?: string; message?: string }, fallback: string): never {
-  if (error.code === '23505' && (error.message ?? '').includes('guests_event_phone_key')) {
+// unique index guest_groups_event_name_key (one group name per event)
+export const GROUP_NAME_TAKEN_ERROR = 'קבוצה בשם זה כבר קיימת באירוע';
+// Mapping rule: SQLSTATE 23505 + the CONSTRAINT NAME (the stable identifier;
+// PostgREST surfaces it only inside the message/details strings, so the name
+// is searched there — never free-text words that could change between
+// versions or providers).
+function isUniqueViolation(
+  error: { code?: string; message?: string; details?: string },
+  constraintName: string,
+): boolean {
+  return (
+    error.code === '23505' &&
+    `${error.message ?? ''}\n${error.details ?? ''}`.includes(constraintName)
+  );
+}
+
+function throwFriendlyGuestError(error: { code?: string; message?: string; details?: string }, fallback: string): never {
+  if (isUniqueViolation(error, 'guests_event_phone_key')) {
     throw new Error(PHONE_TAKEN_ERROR);
   }
   throw new Error(fallback);
 }
+import { normalizeGroupName } from '@/lib/data/guest-import-shared';
 import { pruneOrphanContact } from '@/lib/data/contacts';
 import { logActivity } from '@/lib/data/activity';
 import { getGuestsPageSize } from '@/lib/constants';
@@ -541,6 +558,33 @@ export async function listGroups(eventId: string): Promise<GuestGroup[]> {
   return data ?? [];
 }
 
+// People-level totals (guest_totals RPC, SECURITY INVOKER — RLS scopes it):
+// counts PEOPLE, not rows — a household row invited as 4 counts 4; attending
+// prefers the WhatsApp-confirmed headcount, else adults+kids (min 1 per row).
+export interface GuestTotals {
+  rows: number;
+  invited_people: number;
+  attending_rows: number;
+  attending_people: number;
+  declined_rows: number;
+  maybe_rows: number;
+  pending_rows: number;
+}
+
+export async function getGuestTotals(eventId: string): Promise<GuestTotals> {
+  await requireEventAccess(eventId, 'guests', 'view');
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc('guest_totals', {
+    _event_id: eventId,
+  });
+  if (error || data == null) {
+    throw new Error('טעינת סיכום המוזמנים נכשלה');
+  }
+  // Documented boundary cast: the RPC returns Json; its shape is fixed by the
+  // function definition and modelled by GuestTotals above.
+  return data as unknown as GuestTotals;
+}
+
 export interface GroupWriteInput {
   name: string;
   color?: string | null;
@@ -558,13 +602,16 @@ export async function createGroup(
     .from('guest_groups')
     .insert({
       event_id: eventId,
-      name: input.name,
+      name: normalizeGroupName(input.name),
       color: input.color ?? null,
     })
     .select(GROUP_COLUMNS)
     .single();
 
   if (error || !data) {
+    if (error && isUniqueViolation(error, 'guest_groups_event_name_key')) {
+      throw new Error(GROUP_NAME_TAKEN_ERROR);
+    }
     throw new Error('יצירת הקבוצה נכשלה');
   }
 
@@ -590,7 +637,7 @@ export async function updateGroup(
   const supabase = await createClient();
 
   const update: Database['public']['Tables']['guest_groups']['Update'] = {};
-  if (patch.name !== undefined) update.name = patch.name;
+  if (patch.name !== undefined) update.name = normalizeGroupName(patch.name);
   if (patch.color !== undefined) update.color = patch.color;
 
   const { data, error } = await supabase
@@ -602,6 +649,9 @@ export async function updateGroup(
     .single();
 
   if (error || !data) {
+    if (error && isUniqueViolation(error, 'guest_groups_event_name_key')) {
+      throw new Error(GROUP_NAME_TAKEN_ERROR);
+    }
     throw new Error('עדכון הקבוצה נכשל');
   }
 
