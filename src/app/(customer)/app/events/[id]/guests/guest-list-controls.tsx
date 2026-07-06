@@ -17,6 +17,7 @@ interface Current {
   status?: string;
   contact?: string;
   group?: string;
+  over?: string;
 }
 
 // URL-driven filters: changing a control pushes a new querystring, so the
@@ -42,6 +43,7 @@ export function GuestListControls({
     if (merged.status) q.set('status', merged.status);
     if (merged.contact) q.set('contact', merged.contact);
     if (merged.group) q.set('group', merged.group);
+    if (merged.over) q.set('over', merged.over);
     // Any control change returns to the first page.
     router.push(`/app/events/${eventId}/guests?${q.toString()}`);
   }
@@ -127,6 +129,21 @@ export function GuestListControls({
           </select>
         </div>
       ) : null}
+
+      <div className="flex flex-col gap-1">
+        <label htmlFor="over" className="text-xs text-muted-foreground">
+          חריגת כמות
+        </label>
+        <select
+          id="over"
+          className={inputClass}
+          value={current.over ?? ''}
+          onChange={(e) => navigate({ over: e.target.value || undefined })}
+        >
+          <option value="">הכל</option>
+          <option value="1">מעל הכמות שהוזמנה</option>
+        </select>
+      </div>
 
       <div className="flex flex-col gap-1">
         <label htmlFor="sort" className="text-xs text-muted-foreground">

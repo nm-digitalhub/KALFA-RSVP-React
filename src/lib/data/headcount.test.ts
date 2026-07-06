@@ -12,6 +12,7 @@ import {
   handleHeadcountReply,
   requestHeadcount,
   HEADCOUNT_QUESTION,
+  headcountQuestionFor,
   HEADCOUNT_ACK,
 } from './headcount';
 
@@ -161,5 +162,39 @@ describe('requestHeadcount — no double ask', () => {
 
     expect(sendWhatsAppText).not.toHaveBeenCalled();
     expect(calls.update).toHaveLength(0);
+  });
+});
+
+describe('headcountQuestionFor', () => {
+  it('mentions the invited size when present — informational, never a cap', () => {
+    const q = headcountQuestionFor(4);
+    expect(q).toContain('כ־4 אנשים');
+    expect(q).toContain('(1–10)');
+  });
+
+  it('falls back to the base question without an invited size', () => {
+    expect(headcountQuestionFor(null)).toBe(HEADCOUNT_QUESTION);
+    expect(headcountQuestionFor(0)).toBe(HEADCOUNT_QUESTION);
+  });
+});
+
+describe('personalized re-ask', () => {
+  it('"0" re-asks WITH the invited size when the guest has one', async () => {
+    const awaiting = {
+      data: [{ id: 'g1', headcount_attempts: 1, expected_count: 4 }],
+      error: null,
+    };
+    const phone = { data: { normalized_phone: '+972501111111' }, error: null };
+    const { client } = makeAdmin({ guests: [awaiting, {}], contacts: [phone] });
+    vi.mocked(createAdminClient).mockReturnValue(client as never);
+    vi.mocked(getWhatsAppConfig).mockResolvedValue(CONFIG as never);
+    vi.mocked(sendWhatsAppText).mockResolvedValue({ providerId: 'w9' });
+
+    await handleHeadcountReply('e1', 'c1', '0');
+
+    expect(sendWhatsAppText).toHaveBeenCalledWith(CONFIG, {
+      to: '+972501111111',
+      body: headcountQuestionFor(4),
+    });
   });
 });

@@ -11,6 +11,8 @@
 //   3. Business rule: a headcount counts ONLY while the answer that produced
 //      it is current — a new submit_rsvp answer resets the WhatsApp headcount.
 //   4. guest_totals returns exactly one zero row for an event with no guests.
+//   5. over_invited (computed field) flags the business overage per the exact
+//      4-condition rule, and guest_totals exposes the derived overage fields.
 //
 // Uses the service key from .env.local (server-side only). All synthetic rows
 // are created under a throwaway guest in the given event and deleted at the
@@ -43,7 +45,7 @@ try {
   // --- setup: throwaway guest (unique fake phone) -------------------------
   const g = await db
     .from('guests')
-    .insert({ event_id: EVENT_ID, full_name: 'בדיקת חוזי DB — למחיקה', phone, rsvp_token: token })
+    .insert({ event_id: EVENT_ID, full_name: 'בדיקת חוזי DB — למחיקה', phone, rsvp_token: token, expected_count: 2 })
     .select('id')
     .single();
   if (g.error) throw new Error(`setup guest failed: ${g.error.message}`);
@@ -126,6 +128,40 @@ try {
     !t.error && typeof t.data?.attending_people === 'number' && t.data.attending_people === 0,
     `attending_people=${t.data?.attending_people}`,
   );
+
+  // --- 5. over_invited: the 4-condition business rule ----------------------
+  const s3 = await db.rpc('submit_rsvp', {
+    _token: token, _status: 'attending', _adults: 1, _kids: 0, _meal: null, _note: null,
+  });
+  if (s3.error || s3.data?.ok !== true) throw new Error(`re-attend failed: ${s3.error?.message ?? JSON.stringify(s3.data)}`);
+  // attending within the invited size (1 <= 2) → NOT flagged
+  const notOver = await db.from('guests').select('over_invited').eq('id', guestId).single();
+  check(
+    'attending within the invited size is NOT flagged',
+    notOver.data?.over_invited === false,
+    JSON.stringify(notOver.data),
+  );
+  // WhatsApp answers 5 (> expected 2) → flagged; totals expose rows+people
+  const wa2 = await db
+    .from('guests')
+    .update({ confirmed_headcount: 5, confirmed_adults: 5, headcount_answered_at: new Date().toISOString() })
+    .eq('id', guestId);
+  if (wa2.error) throw new Error(`overage simulate failed: ${wa2.error.message}`);
+  const over = await db.from('guests').select('over_invited').eq('id', guestId).single();
+  check('a real answer above the invited size IS flagged', over.data?.over_invited === true, JSON.stringify(over.data));
+  const t2 = await db.rpc('guest_totals', { _event_id: EVENT_ID });
+  check(
+    'guest_totals derives over_invited_rows and surplus people (5 vs 2 → +3)',
+    !t2.error && t2.data?.over_invited_rows >= 1 && t2.data?.over_invited_people >= 3,
+    `rows=${t2.data?.over_invited_rows} people=${t2.data?.over_invited_people}`,
+  );
+  // declining removes the flag together with the stale headcount
+  const s4 = await db.rpc('submit_rsvp', {
+    _token: token, _status: 'declined', _adults: 0, _kids: 0, _meal: null, _note: null,
+  });
+  if (s4.error || s4.data?.ok !== true) throw new Error(`re-decline failed: ${s4.error?.message ?? JSON.stringify(s4.data)}`);
+  const cleared = await db.from('guests').select('over_invited').eq('id', guestId).single();
+  check('declining clears the overage flag', cleared.data?.over_invited === false, JSON.stringify(cleared.data));
 
   // --- 4. empty event → exactly one zero row ------------------------------
   const empty = await db.rpc('guest_totals', { _event_id: '00000000-0000-4000-8000-000000000000' });

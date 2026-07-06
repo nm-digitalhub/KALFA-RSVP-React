@@ -15,6 +15,16 @@ import { sendWhatsAppText } from '@/lib/whatsapp/client';
 export const HEADCOUNT_MAX_ATTEMPTS = 3;
 export const HEADCOUNT_QUESTION =
   'תודה על האישור! 🎉\nכמה תגיעו בסך הכול? השיבו במספר (1–10).';
+
+// Personalized variant: when the owner recorded an invited size, remind the
+// guest of it — informational only, NEVER a cap (an answer above it is a
+// legitimate business overage, flagged to the OWNER via over_invited).
+export function headcountQuestionFor(expectedCount: number | null): string {
+  if (expectedCount && expectedCount > 0) {
+    return `תודה על האישור! 🎉\nלפי הרישום שלנו הוזמנתם כ־${expectedCount} אנשים. כמה תגיעו בסך הכול? השיבו במספר (1–10).`;
+  }
+  return HEADCOUNT_QUESTION;
+}
 export const HEADCOUNT_ACK = 'נרשם! מחכים לכם בשמחה 🎉';
 
 type AdminClient = ReturnType<typeof createAdminClient>;
@@ -43,14 +53,17 @@ export async function requestHeadcount(
   // Already answered (web RSVP page or a previous WhatsApp round) → no ask.
   const { data: g } = await admin
     .from('guests')
-    .select('headcount_answered_at')
+    .select('headcount_answered_at, expected_count')
     .eq('id', guestId)
     .maybeSingle();
   if (g?.headcount_answered_at) return;
   const phone = await contactPhone(admin, contactId);
   if (!phone) return;
   try {
-    await sendWhatsAppText(config, { to: phone, body: HEADCOUNT_QUESTION });
+    await sendWhatsAppText(config, {
+      to: phone,
+      body: headcountQuestionFor(g?.expected_count ?? null),
+    });
   } catch {
     return; // fail-soft: no request marker when nothing was sent
   }
@@ -71,13 +84,17 @@ export async function handleHeadcountReply(
   rawText: string,
 ): Promise<boolean> {
   const text = rawText.trim();
+  // PRODUCT DEBT (docs/product-debt.md): the global 1-10 answer range is
+  // inconsistent with expected_count > 10 — a 12-person household cannot give
+  // its true size over WhatsApp and must use the web link. Future: raise the
+  // cap to max(10, expected_count) or offer the RSVP link in the question.
   if (!/^(10|[0-9])$/.test(text)) return false;
   const n = Number(text);
 
   const admin = createAdminClient();
   const { data: guests } = await admin
     .from('guests')
-    .select('id, headcount_attempts')
+    .select('id, headcount_attempts, expected_count')
     .eq('event_id', eventId)
     .eq('contact_id', contactId)
     .not('headcount_requested_at', 'is', null)
@@ -97,7 +114,10 @@ export async function handleHeadcountReply(
       const phone = await contactPhone(admin, contactId);
       if (phone) {
         try {
-          await sendWhatsAppText(config, { to: phone, body: HEADCOUNT_QUESTION });
+          await sendWhatsAppText(config, {
+            to: phone,
+            body: headcountQuestionFor(guest.expected_count),
+          });
         } catch {
           return true; // consumed; count the attempt anyway
         }

@@ -1928,6 +1928,10 @@ export type Database = {
       }
       create_organization: { Args: { _name: string }; Returns: string }
       get_rsvp_by_token: { Args: { _token: string }; Returns: Json }
+      guest_effective_attending: {
+        Args: { g: Database["public"]["Tables"]["guests"]["Row"] }
+        Returns: number
+      }
       guest_totals: { Args: { _event_id: string }; Returns: Json }
       has_org_permission: {
         Args: { _action: string; _org_id: string; _resource: string }
@@ -1942,6 +1946,10 @@ export type Database = {
       }
       is_org_member: { Args: { _org_id: string }; Returns: boolean }
       org_role_rank: { Args: { _role_id: string }; Returns: number }
+      over_invited: {
+        Args: { g: Database["public"]["Tables"]["guests"]["Row"] }
+        Returns: boolean
+      }
       owns_event: { Args: { _event_id: string }; Returns: boolean }
       submit_rsvp: {
         Args: {

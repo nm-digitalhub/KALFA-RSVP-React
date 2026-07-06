@@ -63,6 +63,7 @@ export default async function GuestsPage({ params, searchParams }: PageProps) {
   const status = first(sp.status);
   const contactStatus = first(sp.contact);
   const groupId = first(sp.group);
+  const overInvited = first(sp.over) === '1';
 
   const [result, groups, totals] = await Promise.all([
     listGuests(eventId, {
@@ -73,6 +74,7 @@ export default async function GuestsPage({ params, searchParams }: PageProps) {
       status,
       contactStatus,
       groupId,
+      overInvited,
     }),
     listGroups(eventId),
     getGuestTotals(eventId),
@@ -82,7 +84,7 @@ export default async function GuestsPage({ params, searchParams }: PageProps) {
   const groupName = new Map(groups.map((g) => [g.id, g.name]));
 
   const hasActiveFilters = Boolean(
-    search || status || contactStatus || groupId,
+    search || status || contactStatus || groupId || overInvited,
   );
 
   return (
@@ -111,7 +113,7 @@ export default async function GuestsPage({ params, searchParams }: PageProps) {
       <GuestListControls
         eventId={eventId}
         groups={groups}
-        current={{ search, sort, dir, status, contact: contactStatus, group: groupId }}
+        current={{ search, sort, dir, status, contact: contactStatus, group: groupId, over: overInvited ? '1' : undefined }}
       />
 
       <GroupsManager eventId={eventId} groups={groups} />
@@ -130,6 +132,14 @@ export default async function GuestsPage({ params, searchParams }: PageProps) {
             <dt className="text-xs text-muted-foreground">אישרו הגעה</dt>
             <dd className="text-xl font-bold text-primary">{totals.attending_people}</dd>
             <p className="text-xs text-muted-foreground">{totals.attending_rows} רשומות</p>
+            {totals.over_invited_rows > 0 ? (
+              /* Business overage, deliberately NOT styled as an error: the
+                 owner's estimate differed from the guests' real answers. */
+              <p className="text-xs text-warning">
+                מתוכם {totals.over_invited_rows} חריגות · תוספת של{' '}
+                {totals.over_invited_people} אנשים
+              </p>
+            ) : null}
           </div>
           <div className="rounded-lg border border-border bg-card px-4 py-3">
             <dt className="text-xs text-muted-foreground">לא מגיעים</dt>
@@ -227,9 +237,16 @@ export default async function GuestsPage({ params, searchParams }: PageProps) {
                     )}
                   </td>
                   <td className="px-4 py-2 text-muted-foreground">
-                    {g.status === 'attending'
-                      ? `${(g.confirmed_adults ?? 0) + (g.confirmed_kids ?? 0)}`
-                      : '—'}
+                    {g.status === 'attending' ? (
+                      <span className="inline-flex items-center gap-1.5">
+                        {(g.confirmed_adults ?? 0) + (g.confirmed_kids ?? 0)}
+                        {g.over_invited ? (
+                          <Badge variant="warning">מעל הכמות שהוזמנה</Badge>
+                        ) : null}
+                      </span>
+                    ) : (
+                      '—'
+                    )}
                   </td>
                   <td className="px-4 py-2">
                     <GuestRowActions eventId={eventId} guestId={g.id} />

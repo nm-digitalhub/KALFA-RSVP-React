@@ -65,6 +65,30 @@ export const GUEST_DETAIL_COLUMNS =
 
 export const GROUP_COLUMNS = 'id, event_id, name, color, created_at';
 
+// Raw shape of one list-query row (columns + FK embed + computed field) —
+// see the .returns override in listGuests.
+type GuestListQueryRow = Pick<
+  GuestRow,
+  | 'id'
+  | 'full_name'
+  | 'phone'
+  | 'status'
+  | 'contact_status'
+  | 'group_id'
+  | 'expected_count'
+  | 'confirmed_adults'
+  | 'confirmed_kids'
+  | 'callback_requested'
+  | 'created_at'
+  | 'contact_id'
+> & {
+  over_invited: boolean | null;
+  contacts: {
+    op_status: ContactOpStatus | null;
+    removal_requested: boolean | null;
+  } | null;
+};
+
 export type GuestListItem = Pick<
   GuestRow,
   | 'id'
@@ -80,6 +104,9 @@ export type GuestListItem = Pick<
   | 'created_at'
   | 'contact_id'
 > & {
+  // DB-computed business flag (over_invited computed field): attending, has an
+  // invited size, gave a REAL answer, and that answer exceeds the invited size.
+  over_invited: boolean;
   // Webhook-driven outreach state, surfaced as list badges (B6).
   // `op_status` / `removal_requested` come from the linked contact (embedded via
   // the guests.contact_id FK) and are null when the guest has no contact yet.
@@ -177,6 +204,8 @@ export interface ListGuestsParams {
   status?: string;
   contactStatus?: string;
   groupId?: string;
+  /** Only rows whose real answer exceeds the invited size. */
+  overInvited?: boolean;
 }
 
 export interface GuestListResult {
@@ -227,6 +256,11 @@ export async function listGuests(
   if (params.groupId) {
     query = query.eq('group_id', params.groupId);
   }
+  // Business-overage filter — the computed field is filterable server-side
+  // (PostgREST computed fields participate in horizontal filtering).
+  if (params.overInvited) {
+    query = query.filter('over_invited', 'eq', true);
+  }
 
   const { data, error, count } = await query
     .order(column, { ascending: dir === 'asc' })
@@ -238,7 +272,11 @@ export async function listGuests(
     throw new Error('טעינת המוזמנים נכשלה');
   }
 
-  const rows = data ?? [];
+  // Documented boundary cast (repo pattern, same as the RPC casts): the select
+  // includes the `over_invited` computed field, which generated types cannot
+  // express — the row shape is asserted here, kept in sync with
+  // GUEST_LIST_COLUMNS.
+  const rows = (data ?? []) as unknown as GuestListQueryRow[];
 
   // Batched latest-delivery lookup (B6). delivery_status lives on OUTBOUND
   // contact_interactions keyed by `contact_id` (NOT guest_id — that column is
@@ -298,6 +336,7 @@ export async function listGuests(
       callback_requested: r.callback_requested,
       created_at: r.created_at,
       contact_id: contactId,
+      over_invited: r.over_invited === true,
       op_status: contact?.op_status ?? null,
       removal_requested: contact?.removal_requested ?? null,
       delivery_status: contactId
@@ -377,6 +416,8 @@ export async function createGuest(
   if (error || !data) {
     throw new Error('יצירת המוזמן נכשלה');
   }
+  // Same boundary cast as listGuests (over_invited computed field).
+  const row = data as unknown as GuestListQueryRow;
 
   await logActivity({
     eventId,
@@ -394,9 +435,10 @@ export async function createGuest(
   // freshly-created guest has no contact link or outbound send yet, so the
   // webhook-driven fields are null; the mapping stays robust if a contact embed
   // is ever present.
-  const { contacts, ...rest } = data;
+  const { contacts, over_invited, ...rest } = row;
   return {
     ...rest,
+    over_invited: over_invited === true,
     op_status: contacts?.op_status ?? null,
     removal_requested: contacts?.removal_requested ?? null,
     delivery_status: null,
@@ -569,6 +611,10 @@ export interface GuestTotals {
   declined_rows: number;
   maybe_rows: number;
   pending_rows: number;
+  /** Attending rows whose real answer exceeds the invited size (business overage, not an error). */
+  over_invited_rows: number;
+  /** Surplus people across those rows (effective minus invited). */
+  over_invited_people: number;
 }
 
 export async function getGuestTotals(eventId: string): Promise<GuestTotals> {

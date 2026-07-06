@@ -127,6 +127,7 @@ describe('listGuests', () => {
       {
         id: GUEST_ID,
         contact_id: null,
+        over_invited: false,
         op_status: null,
         removal_requested: null,
         delivery_status: null,
