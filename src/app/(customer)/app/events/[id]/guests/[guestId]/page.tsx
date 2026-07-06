@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 
-import { requireOwnedEvent } from '@/lib/data/events';
+import { requireEventAccess } from '@/lib/data/events';
 import { getGuest, listGroups } from '@/lib/data/guests';
 import {
   getGuestOutreachSummary,
@@ -32,7 +32,7 @@ interface PageProps {
 
 export default async function EditGuestPage({ params }: PageProps) {
   const { id: eventId, guestId } = await params;
-  await requireOwnedEvent(eventId);
+  await requireEventAccess(eventId, 'guests', 'view');
 
   const [guest, groups, linkInfo, outreach] = await Promise.all([
     getGuest(eventId, guestId),

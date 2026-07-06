@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { normalizePhone, isValidPhone } from '@/lib/phone';
+import { normalizePhone, isValidPhone, repairIsraeliLocalPhone } from '@/lib/phone';
 
 describe('normalizePhone', () => {
   it('normalizes an Israeli local mobile to E.164', () => {
@@ -35,5 +35,26 @@ describe('isValidPhone', () => {
     expect(isValidPhone('0501234567')).toBe(true);
     expect(isValidPhone('123')).toBe(false);
     expect(isValidPhone(null)).toBe(false);
+  });
+});
+
+describe('repairIsraeliLocalPhone', () => {
+  it('restores the leading 0 Excel strips from a mobile number', () => {
+    expect(repairIsraeliLocalPhone('501234567')).toBe('0501234567');
+  });
+
+  it('converts a 972-prefixed export to the local 0-form', () => {
+    expect(repairIsraeliLocalPhone('972501234567')).toBe('0501234567');
+    expect(repairIsraeliLocalPhone('+972-50-123-4567')).toBe('0501234567');
+  });
+
+  it('repairs a zero-less geographic (landline) number', () => {
+    expect(repairIsraeliLocalPhone('31234567')).toBe('031234567');
+  });
+
+  it('returns null for garbage and for non-Israeli numbers', () => {
+    expect(repairIsraeliLocalPhone('5.01E+08')).toBe(null);
+    expect(repairIsraeliLocalPhone('abc')).toBe(null);
+    expect(repairIsraeliLocalPhone('+14155552671')).toBe(null);
   });
 });

@@ -1,6 +1,6 @@
 import Link from 'next/link';
 
-import { requireOwnedEvent } from '@/lib/data/events';
+import { requireEventAccess } from '@/lib/data/events';
 import { listGroups } from '@/lib/data/guests';
 import { createGuestAction } from '../guests-actions';
 import { GuestForm } from '../guest-form';
@@ -12,7 +12,7 @@ interface PageProps {
 export default async function NewGuestPage({ params }: PageProps) {
   const { id: eventId } = await params;
   // Ownership gate before loading the form's groups.
-  await requireOwnedEvent(eventId);
+  await requireEventAccess(eventId, 'guests', 'create');
   const groups = await listGroups(eventId);
 
   // Bind the event id server-side; the action re-verifies ownership.

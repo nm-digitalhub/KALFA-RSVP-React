@@ -7,6 +7,12 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 // exactly the ambiguity updateEvent's key-presence contract (S2.3) exists to
 // prevent. FormData.has(...) is the only reliable signal.
 
+vi.mock('server-only', () => ({}));
+vi.mock('@/lib/storage/event-media', () => ({
+  INVITE_IMAGE_MAX_BYTES: 5 * 1024 * 1024,
+  INVITE_IMAGE_TYPES: { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp' },
+  uploadInviteImage: vi.fn(),
+}));
 vi.mock('next/cache', () => ({ revalidatePath: vi.fn() }));
 // Keep the real unstable_rethrow (via importOriginal) so it genuinely
 // recognizes NEXT_REDIRECT/NEXT_HTTP_ERROR_FALLACK digests exactly as it

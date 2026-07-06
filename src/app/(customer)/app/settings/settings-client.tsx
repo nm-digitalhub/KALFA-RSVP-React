@@ -29,13 +29,12 @@ import {
   updateProfileAction,
   updateSettingsAction,
 } from './actions';
+import { formatIsraelDate } from '@/lib/date';
 
 const inputClass =
   'w-full rounded-md border border-border bg-background px-3 py-2 text-sm outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/15';
 const sectionClass = 'scroll-mt-24 space-y-5 rounded-lg border border-border bg-card p-5';
 const sectionHeaderClass = 'flex items-start gap-3';
-
-const dateFmt = new Intl.DateTimeFormat('he-IL', { dateStyle: 'medium' });
 
 interface SettingsPageClientProps {
   userEmail: string | undefined;
@@ -217,7 +216,7 @@ function BillingSection({ orders }: { orders: OrderListItem[] }) {
               <div className="space-y-1">
                 <p className="font-medium">{formatCurrency(order.total_with_vat)}</p>
                 <p className="text-xs text-muted-foreground">
-                  {dateFmt.format(new Date(order.created_at))}
+                  {formatIsraelDate(order.created_at)}
                 </p>
               </div>
               <span className="rounded-full border border-border px-3 py-1 text-xs text-muted-foreground">
@@ -335,7 +334,7 @@ function AccountSection({
           <dt className="text-muted-foreground">עדכון פרופיל אחרון</dt>
           <dd className="mt-1 font-medium">
             {profile?.updated_at
-              ? dateFmt.format(new Date(profile.updated_at))
+              ? formatIsraelDate(profile.updated_at)
               : 'עדיין לא נשמר'}
           </dd>
         </div>
@@ -343,7 +342,7 @@ function AccountSection({
           <dt className="text-muted-foreground">עדכון הגדרות אחרון</dt>
           <dd className="mt-1 font-medium">
             {settings.updated_at
-              ? dateFmt.format(new Date(settings.updated_at))
+              ? formatIsraelDate(settings.updated_at)
               : 'ברירות מחדל פעילות'}
           </dd>
         </div>

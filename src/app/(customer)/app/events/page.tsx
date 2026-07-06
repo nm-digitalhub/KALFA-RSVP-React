@@ -2,6 +2,7 @@ import Link from 'next/link';
 
 import { listEvents } from '@/lib/data/events';
 import { EVENT_TYPE_LABELS, EVENT_STATUS_LABELS } from '@/lib/data/event-labels';
+import { formatIsraelDate } from '@/lib/date';
 
 export default async function EventsPage() {
   const events = await listEvents();
@@ -34,7 +35,8 @@ export default async function EventsPage() {
                 <p className="text-sm text-muted-foreground">
                   {[
                     EVENT_TYPE_LABELS[event.event_type] ?? event.event_type,
-                    event.event_date?.slice(0, 10),
+                    // Israel calendar date — timeZone-pinned, never a UTC slice.
+                    event.event_date ? formatIsraelDate(event.event_date) : null,
                     event.venue_name,
                   ]
                     .filter(Boolean)

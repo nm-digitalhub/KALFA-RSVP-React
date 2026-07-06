@@ -12,8 +12,13 @@ import {
 } from '@/lib/data/message-templates';
 import { listSendableContacts } from '@/lib/data/contacts';
 import { isPastEventDay } from '@/lib/data/event-date';
+import { signedInviteImageUrl } from '@/lib/storage/event-media';
 import { sendWhatsAppTemplate } from '@/lib/whatsapp/client';
-import { buildTemplateParams } from '@/lib/whatsapp/template-spec';
+import {
+  buildGiftParams,
+  buildTemplateParams,
+  deriveGuestFirstName,
+} from '@/lib/whatsapp/template-spec';
 import type { Database } from '@/lib/supabase/types';
 
 type AdminClient = ReturnType<typeof createAdminClient>;
@@ -31,6 +36,12 @@ export async function sendOneWhatsApp(
   // Positional {{1}}..{{7}} values from buildTemplateParams — the callers
   // build them (fail-closed) and never pass a partial set.
   bodyParams?: readonly string[],
+  // Media/button extras for the newer template shapes (image-header invite,
+  // gift URL button) — resolved by the caller, passed through verbatim.
+  extras?: {
+    headerImage?: { link: string } | { mediaId: string };
+    urlButtonParam?: string;
+  },
 ): Promise<boolean> {
   try {
     const { providerId } = await sendWhatsAppTemplate(
@@ -44,6 +55,8 @@ export async function sendOneWhatsApp(
         templateName: template.name,
         language: template.language,
         bodyParams,
+        headerImage: extras?.headerImage,
+        urlButtonParam: extras?.urlButtonParam,
       },
     );
     const { error } = await admin.from('contact_interactions').upsert(
@@ -73,6 +86,31 @@ export async function sendOneWhatsApp(
 // as a real schedule index, and it dedups manual-path failures to one row per
 // (campaign, reason).
 export const MANUAL_SEND_TOUCHPOINT_INDEX = -1;
+
+// Media-invite resolution shared by the manual batch and the worker engine:
+// switch to the IMAGE-header sibling template with a short-lived signed URL
+// ONLY when the row maps one AND the event has an uploaded image. ANY failure
+// (no mapping, no image, storage error) falls back to the text template —
+// a picture must never block a send.
+export async function resolveTemplateMedia(
+  template: ResolvedTemplate,
+  inviteImagePath: string | null,
+): Promise<{ template: ResolvedTemplate; headerImage?: { link: string } }> {
+  if (!template.mediaName || !inviteImagePath) return { template };
+  try {
+    const link = await signedInviteImageUrl(inviteImagePath);
+    return { template: { ...template, name: template.mediaName }, headerImage: { link } };
+  } catch (err) {
+    // Fail-open by design (a picture must never block a send) — but an
+    // operator needs the signal that invites went out WITHOUT the image.
+    console.error(
+      `[outreach] invite media signing failed — sending text template instead: ${
+        err instanceof Error ? err.message : 'unknown error'
+      }`,
+    );
+    return { template };
+  }
+}
 
 // Runtime template integrity (plan §5.6): a broken send input (missing/inactive
 // template, channel mismatch, or event data too incomplete to bind the
@@ -149,7 +187,7 @@ export async function sendCampaignWhatsApp(
   // campaign projection above omits them).
   const { data: ev } = await admin
     .from('events')
-    .select('event_date, status, name, event_type, venue_name, venue_address, celebrants')
+    .select('event_date, status, name, event_type, venue_name, venue_address, celebrants, invite_image_path')
     .eq('id', campaign.event_id)
     .maybeSingle();
   if (isPastEventDay(ev?.event_date ?? null)) return { sent: 0, skipped: 0 };
@@ -162,6 +200,35 @@ export async function sendCampaignWhatsApp(
   // Which side of the Meta positional contract to bind — the wedding family
   // renders groom/bride in {{2}}/{{3}} (docs/whatsapp-templates-meta-submission.md).
   const family = template.name.startsWith('kalfa_wedding_') ? 'wedding' : 'generic';
+
+  // Media invite: swap to the IMAGE-header sibling when configured + uploaded.
+  const media = await resolveTemplateMedia(template, ev.invite_image_path ?? null);
+  const sendTemplate = media.template;
+
+  // Gift reminder (message_key 'gift', kalfa_event_gift_v1): a different
+  // positional contract ({{1}}..{{4}} + URL-button token). The gift columns
+  // land with a pending migration, so they are read forward-compat via
+  // select('*') + runtime narrowing (getCampaignHoldsEnabled stance) — absent
+  // columns simply mean "not configured" and the batch fail-closes into the
+  // params_incomplete sink below.
+  const isGift = messageKey === 'gift';
+  let giftUrl: string | null = null;
+  let giftButtonToken: string | null = null;
+  if (isGift) {
+    const { data: evFull } = await admin
+      .from('events')
+      .select('*')
+      .eq('id', campaign.event_id)
+      .maybeSingle();
+    const raw = (evFull ?? {}) as Record<string, unknown>;
+    giftUrl = typeof raw.gift_payment_url === 'string' ? raw.gift_payment_url : null;
+    giftButtonToken =
+      typeof raw.gift_link_token === 'string' ? raw.gift_link_token : null;
+    // The approved template carries a URL button — its variable is REQUIRED
+    // by Meta, so a missing token must fail-close the whole batch exactly
+    // like a missing link (buildGiftParams reports gift_payment_url).
+    if (!giftButtonToken) giftUrl = null;
+  }
 
   // Bind outreach to the campaign's FROZEN authorized set: passing campaign.id
   // makes listSendableContacts INNER JOIN campaign_authorized_contacts, so a
@@ -194,14 +261,22 @@ export async function sendCampaignWhatsApp(
   // the whole batch; the UNIQUE constraint dedups repeat runs anyway.
   let paramsFailureRecorded = false;
   for (const contact of contacts) {
-    // First whitespace token of the linked guest's full_name; no guest → null
-    // (buildTemplateParams falls back to the generic greeting for {{1}}).
-    const firstName =
-      guestNameByContact.get(contact.id)?.trim().split(/\s+/)[0] || null;
-    const built = buildTemplateParams(family, {
-      event: ev,
-      guestFirstName: firstName,
-    });
+    // Shared {{1}} rule (deriveGuestFirstName): first token of the linked
+    // guest's name; households/no-guest → null → generic-greeting fallback.
+    const firstName = deriveGuestFirstName(guestNameByContact.get(contact.id));
+    const built = isGift
+      ? buildGiftParams({
+          event: {
+            event_type: ev.event_type,
+            celebrants: ev.celebrants,
+            gift_payment_url: giftUrl,
+          },
+          guestFirstName: firstName,
+        })
+      : buildTemplateParams(family, {
+          event: ev,
+          guestFirstName: firstName,
+        });
     if ('missing' in built) {
       // Fail-closed: never send a template with an empty positional parameter
       // (event data incomplete — e.g. no venue). Counted for the caller's
@@ -222,7 +297,22 @@ export async function sendCampaignWhatsApp(
       skipped++;
       continue;
     }
-    const ok = await sendOneWhatsApp(admin, campaign, contact, template, config, built.params);
+    const ok = await sendOneWhatsApp(
+      admin,
+      campaign,
+      contact,
+      sendTemplate,
+      config,
+      built.params,
+      // The gift template's URL button gets the event's opaque token as its
+      // suffix (https://beta.kalfa.me/g/{token}); giftButtonToken is always
+      // set here — a missing token surfaced as params_incomplete above.
+      isGift && giftButtonToken
+        ? { urlButtonParam: giftButtonToken, headerImage: media.headerImage }
+        : media.headerImage
+          ? { headerImage: media.headerImage }
+          : undefined,
+    );
     if (ok) sent++;
     else skipped++;
   }

@@ -19,6 +19,7 @@ import { uploadLegalDoc } from '@/lib/storage/legal-docs';
 import { getEmailSender } from '@/lib/email/sender';
 import { agreementEmail } from '@/lib/email/templates';
 import { getAppUrl } from '@/lib/url';
+import { formatIsraelDate } from '@/lib/date';
 
 // Orchestrates the signed-agreement step of campaign approval: verify the phone
 // OTP (identity), render the full Hebrew PDF, hash it, store the PDF + signature
@@ -43,7 +44,7 @@ export type RecordAgreementResult =
 
 function fmtDate(iso: string | null): string {
   if (!iso) return 'לא הוגדר';
-  return new Date(iso).toLocaleDateString('he-IL');
+  return formatIsraelDate(iso) || 'לא הוגדר';
 }
 
 function dataUrlToBytes(dataUrl: string): {
@@ -161,7 +162,7 @@ export async function recordSignedAgreement(
     {
       signerName,
       verifiedPhone: e164,
-      signedDateText: new Date().toLocaleDateString('he-IL'),
+      signedDateText: formatIsraelDate(Date.now()),
       ip: input.ip,
       signatureDataUrl: input.signatureDataUrl,
     },

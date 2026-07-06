@@ -5,6 +5,7 @@ import { useState, useTransition } from 'react';
 import { Constants } from '@/lib/supabase/types';
 import { CONTACT_STATUS_LABELS } from './labels';
 import { setContactStatusAction } from './guests-actions';
+import { recoverFromVersionSkew } from '@/components/use-version-skew-reload';
 import type { ContactStatus } from '@/lib/data/guests';
 
 // Inline quick-action: change a guest's contact status straight from the list.
@@ -27,8 +28,10 @@ export function ContactStatusCell({
     startTransition(async () => {
       try {
         await setContactStatusAction(eventId, guestId, next);
-      } catch {
-        setFailed(true);
+      } catch (err) {
+        // A stale-deployment action id reloads the tab (shared recovery);
+        // anything else keeps the inline "נכשל" indicator.
+        if (!recoverFromVersionSkew(err)) setFailed(true);
       }
     });
   }

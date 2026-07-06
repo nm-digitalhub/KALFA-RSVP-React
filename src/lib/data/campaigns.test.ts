@@ -7,7 +7,10 @@ vi.mock('@/lib/supabase/admin', () => ({ createAdminClient: vi.fn() }));
 // cookie-scoped server client; stub the module so tests wire it explicitly.
 vi.mock('@/lib/supabase/server', () => ({ createClient: vi.fn() }));
 // Lifecycle transitions verify ownership; stub it as a no-op.
-vi.mock('@/lib/data/events', () => ({ requireOwnedEvent: vi.fn() }));
+vi.mock('@/lib/data/events', () => ({
+  requireOwnedEvent: vi.fn(),
+  requireEventAccess: vi.fn(),
+}));
 // approveCampaign reads the session user; stub it.
 vi.mock('@/lib/auth/dal', () => ({ requireUser: vi.fn() }));
 // contacts.ts is owned by another module; stub the two functions prepareCampaignHold

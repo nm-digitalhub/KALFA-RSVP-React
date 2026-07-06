@@ -2,6 +2,9 @@ import Link from 'next/link';
 
 import { buttonVariants } from '@/components/ui/button';
 import { getEvent, type EventDetail } from '@/lib/data/events';
+import { signedInviteImageUrl } from '@/lib/storage/event-media';
+import { formatIsraelDate, formatIsraelDateTime } from '@/lib/date';
+import { ilTimeInputValue } from '@/lib/data/event-date';
 import { isPastEventDay, isBeforeTomorrowIL } from '@/lib/data/event-date';
 import { getCampaignForEvent, listCampaignsForEvent } from '@/lib/data/campaigns';
 import { EVENT_TYPE_LABELS, EVENT_STATUS_LABELS } from '@/lib/data/event-labels';
@@ -22,8 +25,15 @@ const BLOCKING_CAMPAIGN_STATUSES = new Set([
   'paused',
 ]);
 
+// Israel calendar date (dd.mm.yyyy) — never the raw ISO/UTC slice, which shows
+// the wrong day for early-morning IL times (01:00 IDT is 22:00Z the day before).
+// Adds the wall-clock time only when one is actually set (legacy date-only
+// events are stored as midnight UTC — ilTimeInputValue returns '' for those,
+// so they keep showing a plain date instead of a misleading 02:00/03:00).
 function formatDate(value: string | null): string | null {
-  return value ? value.slice(0, 10) : null;
+  if (!value) return null;
+  const hasTime = ilTimeInputValue(value) !== '';
+  return (hasTime ? formatIsraelDateTime(value) : formatIsraelDate(value)) || null;
 }
 
 // Display-only join of the celebrants jsonb. The shapes are Zod-validated on
@@ -68,6 +78,25 @@ export default async function EventPage({
   const event = await getEvent(id);
   const campaign = await getCampaignForEvent(id);
   const isPast = isPastEventDay(event.event_date);
+
+  // Preview of the current invitation image (private bucket → signed URL,
+  // fresh per render so it always shows the latest upload). getEvent above
+  // already enforced event access. Fail-open: a signing hiccup must not take
+  // down the whole event page — the form just renders without the preview.
+  let inviteImageUrl: string | null = null;
+  if (event.invite_image_path) {
+    try {
+      inviteImageUrl = await signedInviteImageUrl(event.invite_image_path, 600);
+    } catch (err) {
+      // No PII/URL in the log — code-level signal only, per project convention.
+      console.error(
+        `[event-media] invite preview signing failed (event=${event.id}): ${
+          err instanceof Error ? err.message : 'unknown error'
+        }`,
+      );
+      inviteImageUrl = null;
+    }
+  }
 
   const allCampaigns = await listCampaignsForEvent(id);
   const hasBlockingCampaign = allCampaigns.some((c) =>
@@ -142,7 +171,7 @@ export default async function EventPage({
 
       <section className="space-y-4 rounded-lg border border-border bg-card p-6">
         <h2 className="text-lg font-semibold">עריכת פרטי האירוע</h2>
-        <EditEventForm event={event} />
+        <EditEventForm event={event} inviteImageUrl={inviteImageUrl} />
       </section>
     </div>
   );

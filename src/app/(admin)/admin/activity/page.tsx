@@ -16,6 +16,7 @@ import {
   formatDateTime,
   parsePageParam,
 } from '../_components';
+import { DateSelectIL } from '@/components/date-select-il';
 
 type SearchParams = {
   page?: string | string[];
@@ -138,22 +139,12 @@ function ActivityFilters({
 
       <label className="flex flex-col gap-1 text-sm">
         <span className="text-xs text-muted-foreground">מתאריך</span>
-        <input
-          type="date"
-          name="from"
-          defaultValue={current.from ?? ''}
-          className="rounded-md border border-border bg-transparent px-3 py-2 text-sm"
-        />
+        <DateSelectIL id="filter-from" name="from" defaultValue={current.from ?? ''} />
       </label>
 
       <label className="flex flex-col gap-1 text-sm">
         <span className="text-xs text-muted-foreground">עד תאריך</span>
-        <input
-          type="date"
-          name="to"
-          defaultValue={current.to ?? ''}
-          className="rounded-md border border-border bg-transparent px-3 py-2 text-sm"
-        />
+        <DateSelectIL id="filter-to" name="to" defaultValue={current.to ?? ''} />
       </label>
 
       <div className="flex items-end gap-2 lg:col-span-1">

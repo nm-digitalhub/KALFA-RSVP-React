@@ -16,6 +16,8 @@ import {
 } from '@/lib/data/interactions';
 import { recordReached } from '@/lib/data/billing';
 import { submitRsvp } from '@/lib/data/rsvp';
+import { handleHeadcountReply, requestHeadcount } from '@/lib/data/headcount';
+import { stageWhatsAppImport } from '@/lib/data/whatsapp-import';
 import type { RsvpStatus } from '@/lib/validation/rsvp';
 import type { WebhookInboxRow } from '@/lib/data/webhooks';
 
@@ -81,6 +83,10 @@ async function processMessage(row: WebhookInboxRow): Promise<void> {
   if (!messageId) return;
 
   const payload = (row.payload ?? {}) as InboundMessagePayload;
+  // Owner-sent guest lists (CSV document / shared contact cards) are an
+  // IMPORT, not a campaign interaction — consumed before any billing logic.
+  if (await stageWhatsAppImport(row)) return;
+
   const { billable, removal, replyId } = classifyMessagePayload(payload);
   if (!billable) return;
 
@@ -158,7 +164,22 @@ async function processMessage(row: WebhookInboxRow): Promise<void> {
       });
       if (outcome.ok) {
         await recordRsvpFromWhatsapp(resolved.eventId, guest.id, rsvpStatus);
+        // Headcount flow: right after an ATTENDING press, ask "כמה תגיעו?"
+        // inside the 24h window the press just opened. Fail-soft inside.
+        if (rsvpStatus === 'attending') {
+          await requestHeadcount(guest.id, resolved.contactId);
+        }
       }
+    }
+  }
+
+  // A plain-text inbound (not a button reply) may be the headcount answer
+  // ("0".."10"). Gated on `fresh` like the RSVP path so a Meta retry can't
+  // double-handle; non-numeric text is ignored inside.
+  if (fresh && !rsvpStatus) {
+    const textBody = (payload as { text?: { body?: string } }).text?.body;
+    if (typeof textBody === 'string' && textBody.trim() !== '') {
+      await handleHeadcountReply(resolved.eventId, resolved.contactId, textBody);
     }
   }
 }

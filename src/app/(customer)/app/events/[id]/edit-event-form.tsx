@@ -1,13 +1,17 @@
 'use client';
 
+import Image from 'next/image';
 import { useActionState, useState } from 'react';
 
 import { updateEventAction } from './actions';
 import { EVENT_TYPES } from '@/lib/validation/schemas';
 import { CELEBRANT_FIELD_LABELS, EVENT_TYPE_LABELS } from '@/lib/data/event-labels';
 import type { EventDetail } from '@/lib/data/events';
-import { todayIL } from '@/lib/data/event-date';
+import { ilDateInputValue, ilTimeInputValue } from '@/lib/data/event-date';
+import { INVITE_IMAGE_MAX_BYTES } from '@/lib/constants';
 import { FieldError, FormError, FormNotice, SubmitButton } from '@/components/forms';
+import { TimeSelect24 } from '@/components/time-select-24';
+import { DateSelectIL } from '@/components/date-select-il';
 
 type EventType = (typeof EVENT_TYPES)[number];
 
@@ -15,11 +19,10 @@ const inputClass =
   'w-full rounded-md border border-border bg-transparent px-3 py-2 disabled:cursor-not-allowed disabled:opacity-60';
 
 // event_date is a timestamptz in the DB, so the value arrives as a full ISO
-// string; a <input type="date"> needs YYYY-MM-DD. Slice the date portion for
-// both date fields (rsvp_deadline is already a date, so the slice is a no-op).
-function dateInputValue(value: string | null): string {
-  return value ? value.slice(0, 10) : '';
-}
+// string; a <input type="date"> needs YYYY-MM-DD. ilDateInputValue converts to
+// the ISRAEL calendar day (a raw UTC slice shows the previous day for
+// early-morning IL times); rsvp_deadline is a plain date and passes through.
+const dateInputValue = ilDateInputValue;
 
 // events.celebrants is schemaless jsonb (Json | null), so narrow defensively:
 // prefill only from a plain object's string values — no cast of the stored
@@ -80,7 +83,15 @@ function CelebrantFields({
   );
 }
 
-export function EditEventForm({ event }: { event: EventDetail }) {
+export function EditEventForm({
+  event,
+  inviteImageUrl,
+}: {
+  event: EventDetail;
+  // Short-lived signed URL of the CURRENT invitation image (private bucket) —
+  // generated per render by the page, so it always reflects the latest upload.
+  inviteImageUrl?: string | null;
+}) {
   const action = updateEventAction.bind(null, event.id);
   const [state, formAction] = useActionState(action, null);
 
@@ -93,22 +104,10 @@ export function EditEventForm({ event }: { event: EventDetail }) {
   // Controlled so the celebrant field group below follows the selected type.
   const [eventType, setEventType] = useState<EventType>(event.event_type);
 
-  // Keep the two date fields coupled so the picker itself prevents the illogical
-  // case (deadline after the event). The server (Zod refine + DB triggers) stays
-  // authoritative; this is UX only.
-  const [eventDate, setEventDate] = useState(dateInputValue(event.event_date));
-  const [rsvpDeadline, setRsvpDeadline] = useState(
-    dateInputValue(event.rsvp_deadline),
-  );
-
-  // R2: event_date >= tomorrow. R2b: rsvp_deadline >= today. Both combined with
-  // the existing mutual coupling (deadline <= event date). Computed once via a
-  // lazy useState initializer (Date.now() is impure — calling it directly
-  // during render is disallowed; the lazy initializer runs once at mount).
-  const [tomorrowIL] = useState(() => todayIL(Date.now() + 24 * 60 * 60 * 1000));
-  const [todayILValue] = useState(() => todayIL());
-  const eventDateMin =
-    rsvpDeadline && rsvpDeadline > tomorrowIL ? rsvpDeadline : tomorrowIL;
+  // Client-side pre-check of the image size cap: a pick above the Server
+  // Action body limit (6mb) is rejected by the framework BEFORE the action
+  // runs, so the server's friendly Hebrew error would never show.
+  const [imageError, setImageError] = useState<string | null>(null);
 
   return (
     <form action={formAction} className="space-y-4">
@@ -166,15 +165,11 @@ export function EditEventForm({ event }: { event: EventDetail }) {
         <label htmlFor="event_date" className="mb-1 block text-sm font-medium">
           תאריך האירוע
         </label>
-        <input
+        <DateSelectIL
           id="event_date"
           name={isDraft ? 'event_date' : undefined}
-          type="date"
-          value={eventDate}
-          min={isDraft ? eventDateMin : undefined}
+          defaultValue={dateInputValue(event.event_date)}
           disabled={!isDraft}
-          onChange={(e) => setEventDate(e.target.value)}
-          className={inputClass}
         />
         {!isDraft ? (
           <p className="mt-1 text-xs text-muted-foreground">נעול לאחר פרסום</p>
@@ -183,19 +178,32 @@ export function EditEventForm({ event }: { event: EventDetail }) {
       </div>
 
       <div>
+        <label htmlFor="event_time" className="mb-1 block text-sm font-medium">
+          שעת האירוע
+        </label>
+        <TimeSelect24
+          id="event_time"
+          name={isDraft ? 'event_time' : undefined}
+          defaultValue={ilTimeInputValue(event.event_date)}
+          disabled={!isDraft}
+        />
+        <p className="mt-1 text-xs text-muted-foreground">
+          {isDraft
+            ? 'תופיע בהזמנות ובתזכורות (שעון ישראל)'
+            : 'נעול לאחר פרסום'}
+        </p>
+        <FieldError errors={state?.fieldErrors?.event_time} />
+      </div>
+
+      <div>
         <label htmlFor="rsvp_deadline" className="mb-1 block text-sm font-medium">
           מועד אחרון לאישור הגעה
         </label>
-        <input
+        <DateSelectIL
           id="rsvp_deadline"
           name={isDraft ? 'rsvp_deadline' : undefined}
-          type="date"
-          value={rsvpDeadline}
-          min={isDraft ? todayILValue : undefined}
-          max={isDraft ? eventDate || undefined : undefined}
+          defaultValue={dateInputValue(event.rsvp_deadline)}
           disabled={!isDraft}
-          onChange={(e) => setRsvpDeadline(e.target.value)}
-          className={inputClass}
         />
         {!isDraft ? (
           <p className="mt-1 text-xs text-muted-foreground">נעול לאחר פרסום</p>
@@ -229,6 +237,70 @@ export function EditEventForm({ event }: { event: EventDetail }) {
           className={inputClass}
         />
         <FieldError errors={state?.fieldErrors?.venue_address} />
+      </div>
+
+      <div>
+        <label htmlFor="gift_payment_url" className="mb-1 block text-sm font-medium">
+          קישור למתנה (פייבוקס/ביט)
+        </label>
+        <input
+          id="gift_payment_url"
+          name="gift_payment_url"
+          type="url"
+          dir="ltr"
+          placeholder="https://…"
+          defaultValue={event.gift_payment_url ?? ''}
+          className="w-full rounded-md border border-border bg-background px-3 py-2"
+        />
+        <p className="mt-1 text-xs text-muted-foreground">
+          יופיע בתזכורת המתנה בוואטסאפ — האורחים יועברו אליו בלחיצה.
+        </p>
+        <FieldError errors={state?.fieldErrors?.gift_payment_url} />
+      </div>
+
+      <div>
+        <label htmlFor="invite_image" className="mb-1 block text-sm font-medium">
+          תמונת הזמנה (רשות)
+        </label>
+        {inviteImageUrl ? (
+          <a
+            href={inviteImageUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="mb-2 block w-fit"
+            aria-label="פתיחת תמונת ההזמנה הנוכחית בגודל מלא"
+          >
+            <Image
+              src={inviteImageUrl}
+              alt="תמונת ההזמנה הנוכחית"
+              width={320}
+              height={180}
+              className="h-auto w-full max-w-[20rem] rounded-md border border-border object-contain"
+            />
+          </a>
+        ) : null}
+        <input
+          id="invite_image"
+          name="invite_image"
+          type="file"
+          accept="image/jpeg,image/png,image/webp"
+          className="block w-full text-sm"
+          onChange={(e) => {
+            const f = e.target.files?.[0];
+            if (f && f.size > INVITE_IMAGE_MAX_BYTES) {
+              setImageError('הקובץ גדול מדי (מעל 5MB) — נא לכווץ את התמונה.');
+              e.target.value = '';
+            } else {
+              setImageError(null);
+            }
+          }}
+        />
+        <FieldError errors={imageError ? [imageError] : undefined} />
+        <p className="mt-1 text-xs text-muted-foreground">
+          {event.invite_image_path
+            ? 'זו התמונה הנוכחית — העלאת קובץ חדש תחליף אותה. תופיע בראש הזמנת הוואטסאפ.'
+            : 'JPG / PNG / WebP עד 5MB — תופיע בראש הזמנת הוואטסאפ.'}
+        </p>
       </div>
 
       <SubmitButton>שמירת שינויים</SubmitButton>

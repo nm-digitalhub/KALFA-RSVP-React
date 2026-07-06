@@ -3,9 +3,12 @@
 import { revalidatePath } from 'next/cache';
 import { unstable_rethrow } from 'next/navigation';
 
-import { parseCsv } from '@/lib/csv';
+import { parseCsv, decodeCsvBuffer, sniffSpreadsheetBinary } from '@/lib/csv';
+import { ISRAELI_PHONE_RE } from '@/lib/constants';
 import { logActivity } from '@/lib/data/activity';
+import { normalizePhone, repairIsraeliLocalPhone } from '@/lib/phone';
 import { importRowSchema } from '@/lib/validation/guests';
+import { guestImportHeaderKey as headerKey } from '@/lib/data/guest-import-shared';
 import {
   listGroups,
   createGroup,
@@ -13,6 +16,7 @@ import {
   type BulkGuestInput,
 } from '@/lib/data/guests';
 import { buildContactsForEvent } from '@/lib/data/contacts';
+import { createAdminClient } from '@/lib/supabase/admin';
 import { CSV_MAX_ROWS, CSV_MAX_BYTES } from '@/lib/constants';
 
 // A single row that failed validation, reported back to the user in Hebrew.
@@ -32,15 +36,6 @@ export type ImportState =
     }
   | null;
 
-// Map a header cell to a known column key. Accepts a small set of Hebrew and
-// English aliases so common spreadsheet exports work without configuration.
-function headerKey(raw: string): 'full_name' | 'phone' | 'group' | null {
-  const h = raw.trim().toLowerCase();
-  if (['name', 'full_name', 'שם', 'שם מלא'].includes(h)) return 'full_name';
-  if (['phone', 'mobile', 'טלפון', 'נייד', 'מספר'].includes(h)) return 'phone';
-  if (['group', 'קבוצה'].includes(h)) return 'group';
-  return null;
-}
 
 // A validated row awaiting group resolution: the guest payload plus the raw
 // group name (kept alongside, NOT in module state, so concurrent imports never
@@ -79,12 +74,25 @@ export async function importGuestsAction(
 
   let text: string;
   try {
-    const buf = await file.arrayBuffer();
+    const bytes = new Uint8Array(await file.arrayBuffer());
     // Belt-and-braces: re-check the decoded byte length.
-    if (buf.byteLength > CSV_MAX_BYTES) {
+    if (bytes.byteLength > CSV_MAX_BYTES) {
       return { error: 'הקובץ גדול מדי.' };
     }
-    text = new TextDecoder('utf-8').decode(buf);
+    // A real Excel workbook can never parse as CSV — name the fix precisely
+    // instead of failing later with a confusing "missing name column".
+    const binary = sniffSpreadsheetBinary(bytes);
+    if (binary) {
+      return {
+        error:
+          'הקובץ שהועלה הוא קובץ Excel‏ (' +
+          binary +
+          ') ולא CSV. פתחו אותו באקסל ושמרו בשם בפורמט "CSV UTF-8", או השתמשו בתבנית המוכנה להורדה.',
+      };
+    }
+    // UTF-8 first; Hebrew-Excel ANSI (Windows-1255) files fall back and load
+    // correctly instead of importing garbled names.
+    text = decodeCsvBuffer(bytes);
   } catch {
     return { error: 'קריאת הקובץ נכשלה.' };
   }
@@ -96,10 +104,14 @@ export async function importGuestsAction(
 
   // First row is the header. Map columns by name.
   const header = grid[0];
-  const colIndex: Record<'full_name' | 'phone' | 'group', number> = {
+  const colIndex: Record<
+    'full_name' | 'phone' | 'group' | 'expected_count',
+    number
+  > = {
     full_name: -1,
     phone: -1,
     group: -1,
+    expected_count: -1,
   };
   header.forEach((cell, i) => {
     const key = headerKey(cell);
@@ -133,16 +145,52 @@ export async function importGuestsAction(
   const failed: ImportRowError[] = [];
   const newGroupNames = new Set<string>();
 
+  // One guest per phone (unique index guests_event_phone_key): duplicates —
+  // inside the file or against existing guests — become per-row errors here,
+  // so the single-statement bulk insert below can never trip the index.
+  const { data: existingRows } = await createAdminClient()
+    .from('guests')
+    .select('full_name, phone')
+    .eq('event_id', eventId)
+    .not('phone', 'is', null);
+  const existingByPhone = new Map<string, string>();
+  for (const g of existingRows ?? []) {
+    const np = normalizePhone(g.phone);
+    if (np && !existingByPhone.has(np)) existingByPhone.set(np, g.full_name);
+  }
+  const seenInFile = new Map<string, number>();
+
   dataRows.forEach((cells, idx) => {
     const rowNum = idx + 1; // 1-based, header excluded.
 
     // Skip a completely blank line.
     if (cells.every((c) => c.trim() === '')) return;
 
+    // Excel repair: a numeric phone cell loses its leading 0 (0501… → 501…).
+    // When the raw value fails the local-format check but still parses as a
+    // valid Israeli number, substitute the canonical 0-form; anything truly
+    // invalid keeps failing the schema below with the per-row Hebrew error.
+    const rawPhone = (
+      colIndex.phone === -1 ? '' : cells[colIndex.phone] ?? ''
+    ).trim();
+    const phone =
+      rawPhone !== '' && !ISRAELI_PHONE_RE.test(rawPhone)
+        ? repairIsraeliLocalPhone(rawPhone) ?? rawPhone
+        : rawPhone;
+
+    const rawCount = (
+      colIndex.expected_count === -1
+        ? ''
+        : cells[colIndex.expected_count] ?? ''
+    ).trim();
+
     const candidate = {
       full_name: cells[colIndex.full_name] ?? '',
-      phone: colIndex.phone === -1 ? '' : cells[colIndex.phone] ?? '',
+      phone,
       group: colIndex.group === -1 ? '' : cells[colIndex.group] ?? '',
+      // An empty count cell must be ABSENT, not '' — z.coerce would turn ''
+      // into 0 and every phone-less family row would import as "0 מוזמנים".
+      ...(rawCount === '' ? {} : { expected_count: rawCount }),
     };
 
     const parsed = importRowSchema.safeParse(candidate);
@@ -150,6 +198,27 @@ export async function importGuestsAction(
       const first = parsed.error.issues[0];
       failed.push({ row: rowNum, message: first?.message ?? 'שורה לא תקינה' });
       return;
+    }
+
+    const np = parsed.data.phone ? normalizePhone(parsed.data.phone) : null;
+    if (np) {
+      const existingName = existingByPhone.get(np);
+      if (existingName) {
+        failed.push({
+          row: rowNum,
+          message: `מספר הטלפון כבר קיים אצל "${existingName}"`,
+        });
+        return;
+      }
+      const firstRow = seenInFile.get(np);
+      if (firstRow) {
+        failed.push({
+          row: rowNum,
+          message: `מספר הטלפון כפול בקובץ (מופיע כבר בשורה ${firstRow})`,
+        });
+        return;
+      }
+      seenInFile.set(np, rowNum);
     }
 
     const groupName = parsed.data.group?.trim() ?? '';

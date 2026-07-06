@@ -61,6 +61,13 @@ export const createEventSchema = z
       .max(200, { error: 'שם האירוע ארוך מדי' }),
     event_type: z.enum(EVENT_TYPES, { error: 'נא לבחור סוג אירוע' }),
     event_date: z.string().trim().optional().or(z.literal('')),
+    event_time: z
+      .string()
+      .trim()
+      .regex(/^([01]\d|2[0-3]):[0-5]\d$/, { error: 'שעה לא תקינה' })
+      .optional()
+      .or(z.literal('')),
+
     venue_name: z
       .string()
       .trim()
@@ -91,6 +98,13 @@ export const updateEventSchema = z.object({
     .max(200, { error: 'שם האירוע ארוך מדי' }),
   event_type: z.enum(EVENT_TYPES, { error: 'נא לבחור סוג אירוע' }),
   event_date: z.string().trim().optional().or(z.literal('')),
+  event_time: z
+    .string()
+    .trim()
+    .regex(/^([01]\d|2[0-3]):[0-5]\d$/, { error: 'שעה לא תקינה' })
+    .optional()
+    .or(z.literal('')),
+
   venue_name: z
     .string()
     .trim()
@@ -104,6 +118,17 @@ export const updateEventSchema = z.object({
     .optional()
     .or(z.literal('')),
   rsvp_deadline: z.string().trim().optional().or(z.literal('')),
+  // The owner's own PayBox/Bit gift link (per-event business data). https-only
+  // — mirrors the DB CHECK events_gift_payment_url_https.
+  gift_payment_url: z
+    .string()
+    .trim()
+    .max(500, { error: 'קישור המתנה ארוך מדי' })
+    .refine((v) => v === '' || /^https:\/\//i.test(v), {
+      error: 'קישור המתנה חייב להתחיל ב־https://',
+    })
+    .optional()
+    .or(z.literal('')),
 })
   // A deadline without an event date is meaningless. Mirrors the DB invariant
   // (events_rsvp_deadline_within_event: a deadline requires an event_date).

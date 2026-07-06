@@ -3,7 +3,13 @@
 import { revalidatePath } from 'next/cache';
 import { unstable_rethrow } from 'next/navigation';
 
-import { CELEBRANTS_LOCKED_ERROR, updateEvent } from '@/lib/data/events';
+import { CELEBRANTS_LOCKED_ERROR, requireEventAccess, updateEvent } from '@/lib/data/events';
+import { ilWallTimeToIso } from '@/lib/data/event-date';
+import {
+  INVITE_IMAGE_MAX_BYTES,
+  INVITE_IMAGE_TYPES,
+  uploadInviteImage,
+} from '@/lib/storage/event-media';
 import {
   celebrantsSchemaFor,
   parseCelebrantsForm,
@@ -56,7 +62,9 @@ export async function updateEventAction(
     name: formData.get('name'),
     event_type: formData.get('event_type'),
     venue_name: formData.get('venue_name'),
+    gift_payment_url: formData.get('gift_payment_url') ?? '',
     venue_address: formData.get('venue_address'),
+    event_time: formData.get('event_time') ?? '',
     ...(formData.has('event_date')
       ? { event_date: formData.get('event_date') }
       : {}),
@@ -90,13 +98,40 @@ export async function updateEventAction(
     };
   }
 
-  const { name, event_type, venue_name, venue_address } = parsed.data;
+  const { name, event_type, venue_name, venue_address, gift_payment_url } = parsed.data;
+
+  // Invitation image (optional). Validated and uploaded BEFORE updateEvent,
+  // behind the same org-aware edit gate; the stored PATH is server-derived —
+  // the client never controls it.
+  let inviteImagePath: string | undefined;
+  const inviteImage = formData.get('invite_image');
+  if (inviteImage instanceof File && inviteImage.size > 0) {
+    if (inviteImage.size > INVITE_IMAGE_MAX_BYTES) {
+      return { error: 'תמונת ההזמנה גדולה מדי (עד 5MB).' };
+    }
+    if (!(inviteImage.type in INVITE_IMAGE_TYPES)) {
+      return { error: 'תמונת ההזמנה חייבת להיות JPG, PNG או WebP.' };
+    }
+    try {
+      await requireEventAccess(eventId, 'events', 'edit');
+      inviteImagePath = await uploadInviteImage(
+        eventId,
+        new Uint8Array(await inviteImage.arrayBuffer()),
+        inviteImage.type,
+      );
+    } catch (err) {
+      unstable_rethrow(err);
+      return { error: 'העלאת תמונת ההזמנה נכשלה.' };
+    }
+  }
 
   try {
     await updateEvent(eventId, {
       name,
       event_type,
       venue_name: venue_name ? venue_name : null,
+      gift_payment_url: gift_payment_url ? gift_payment_url : null,
+      ...(inviteImagePath ? { invite_image_path: inviteImagePath } : {}),
       venue_address: venue_address ? venue_address : null,
       // No formData.has() dance here: the celebrant group is always rendered,
       // so its inputs are always posted. Only the SUBMITTED type's fields
@@ -104,7 +139,13 @@ export async function updateEventAction(
       // null clears the column.
       celebrants: parseCelebrantsForm(event_type, celebrantsParsed.data),
       ...(formData.has('event_date')
-        ? { event_date: trimmedOrNull(formData.get('event_date')) }
+        ? {
+            event_date: (() => {
+              const d = trimmedOrNull(formData.get('event_date'));
+              const t = parsed.data.event_time || '';
+              return d ? ilWallTimeToIso(d, t) : d;
+            })(),
+          }
         : {}),
       ...(formData.has('rsvp_deadline')
         ? { rsvp_deadline: trimmedOrNull(formData.get('rsvp_deadline')) }

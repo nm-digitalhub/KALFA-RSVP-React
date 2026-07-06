@@ -1,5 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+vi.mock('@/lib/data/headcount', () => ({
+  requestHeadcount: vi.fn(),
+  handleHeadcountReply: vi.fn(async () => false),
+}));
 vi.mock('server-only', () => ({}));
 vi.mock('@/lib/data/interactions', () => ({
   resolveByContextId: vi.fn(),

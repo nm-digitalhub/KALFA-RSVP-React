@@ -8,6 +8,7 @@ vi.mock('@/lib/data/outreach-config', () => ({
 }));
 vi.mock('@/lib/data/message-templates', () => ({ resolveTemplateForEvent: vi.fn() }));
 vi.mock('@/lib/data/outreach', () => ({
+  resolveTemplateMedia: vi.fn(async (template) => ({ template })),
   sendOneWhatsApp: vi.fn(),
   recordTemplateFailure: vi.fn(),
 }));
@@ -208,6 +209,7 @@ const makeCtx = (
   schedule: [{ days_before: 7, channel: 'whatsapp', message_key: messageKey }],
   eventDate: '2999-01-01T00:00:00+00:00',
   eventStatus: 'active',
+  inviteImagePath: null,
   event: {
     name: 'החתונה של דוד ושרה',
     event_type: 'wedding',
@@ -446,10 +448,11 @@ describe('executeStep — send-time parameter binding', () => {
         'דוד לוי',
         'שרה כהן',
         'שני',
-        '20.07.2026',
+        'ו׳ באב תשפ״ו (20.07.2026)',
         '21:00',
         'אולמי הגן, דרך השלום 10, תל אביב',
       ],
+      undefined,
     );
     // No integrity failure for a fully-bound send.
     expect(recordTemplateFailure).not.toHaveBeenCalled();

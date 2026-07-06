@@ -6,9 +6,9 @@ import { listOrders, ORDER_STATUS_LABELS } from '@/lib/data/orders';
 import type { OrderListItem } from '@/lib/data/orders';
 import { getPaymentsEnabled } from '@/lib/data/payments';
 import { formatCurrency } from '@/lib/format';
+import { formatIsraelDate } from '@/lib/date';
 
 // Hebrew date formatter (he-IL).
-const dateFmt = new Intl.DateTimeFormat('he-IL', { dateStyle: 'medium' });
 
 const statusBadgeBaseClass =
   'shrink-0 rounded-full border px-3 py-1 text-xs';
@@ -41,7 +41,7 @@ function OrderCard({
       <div className="space-y-1">
         <p className="font-semibold">{formatCurrency(order.total_with_vat)}</p>
         <p className="text-sm text-muted-foreground">
-          {dateFmt.format(new Date(order.created_at))}
+          {formatIsraelDate(order.created_at)}
         </p>
         {order.with_ai_addon ? (
           <p className="text-xs text-muted-foreground">כולל תוסף AI</p>

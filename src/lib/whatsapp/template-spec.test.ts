@@ -3,6 +3,8 @@ import { describe, expect, it } from 'vitest';
 import {
   buildTemplateParams,
   GUEST_FIRST_NAME_FALLBACK,
+  deriveGuestFirstName,
+  buildGiftParams,
   type TemplateParamsContext,
 } from './template-spec';
 
@@ -37,7 +39,7 @@ describe('buildTemplateParams — generic family', () => {
         'חתונה',
         'דוד לוי ו־שרה כהן',
         'שני',
-        '20.07.2026',
+        'ו׳ באב תשפ״ו (20.07.2026)',
         '21:00',
         'אולמי הגן, דרך השלום 10, תל אביב',
       ],
@@ -100,7 +102,7 @@ describe('buildTemplateParams — wedding family', () => {
         'דוד לוי',
         'שרה כהן',
         'שני',
-        '20.07.2026',
+        'ו׳ באב תשפ״ו (20.07.2026)',
         '21:00',
         'אולמי הגן, דרך השלום 10, תל אביב',
       ],
@@ -241,20 +243,82 @@ describe('buildTemplateParams — Israel timezone edges for {{4}}–{{6}}', () =
     // 2026-12-31 22:30 UTC = Friday 2027-01-01 00:30 in Israel.
     const r = buildTemplateParams('generic', ctx({ event_date: '2026-12-31T22:30:00Z' }));
     if ('missing' in r) throw new Error('expected params');
-    expect(r.params.slice(3, 6)).toEqual(['שישי', '01.01.2027', '00:30']);
+    expect(r.params.slice(3, 6)).toEqual(['שישי', 'כ״ב בטבת תשפ״ז (01.01.2027)', '00:30']);
   });
 
   it('late-UTC summer instant crosses midnight under DST (IDT, UTC+3)', () => {
     // 2026-07-20 21:30 UTC = Tuesday 2026-07-21 00:30 in Israel.
     const r = buildTemplateParams('wedding', ctx({ event_date: '2026-07-20T21:30:00Z' }));
     if ('missing' in r) throw new Error('expected params');
-    expect(r.params.slice(3, 6)).toEqual(['שלישי', '21.07.2026', '00:30']);
+    expect(r.params.slice(3, 6)).toEqual(['שלישי', 'ז׳ באב תשפ״ו (21.07.2026)', '00:30']);
   });
 
   it('an early-Israel-morning instant stays on its own day (no off-by-one from server TZ)', () => {
     // 2026-07-17 18:00 UTC = Friday 2026-07-17 21:00 in Israel.
     const r = buildTemplateParams('generic', ctx({ event_date: '2026-07-17T18:00:00Z' }));
     if ('missing' in r) throw new Error('expected params');
-    expect(r.params.slice(3, 6)).toEqual(['שישי', '17.07.2026', '21:00']);
+    expect(r.params.slice(3, 6)).toEqual(['שישי', 'ג׳ באב תשפ״ו (17.07.2026)', '21:00']);
+  });
+});
+
+describe('deriveGuestFirstName', () => {
+  it('takes the first whitespace token of a personal name', () => {
+    expect(deriveGuestFirstName('דנה כהן')).toBe('דנה');
+    expect(deriveGuestFirstName('  יוסי  לוי ')).toBe('יוסי');
+  });
+
+  it('returns null for a household row — the generic greeting must win', () => {
+    expect(deriveGuestFirstName('משפחת כהן')).toBe(null);
+  });
+
+  it('returns null for missing/empty input', () => {
+    expect(deriveGuestFirstName(null)).toBe(null);
+    expect(deriveGuestFirstName(undefined)).toBe(null);
+    expect(deriveGuestFirstName('   ')).toBe(null);
+  });
+});
+
+describe('buildGiftParams (kalfa_event_gift_v1)', () => {
+  const giftEvent = {
+    event_type: 'brit' as const,
+    celebrants: { parents: 'נטלי קלפה' },
+    gift_payment_url: 'https://payboxapp.page.link/abc123',
+  };
+
+  it('builds the 4-param contract for a complete brit event', () => {
+    const r = buildGiftParams({ event: giftEvent, guestFirstName: 'דנה' });
+    if (!('params' in r)) throw new Error('expected params');
+    expect(r.params).toEqual([
+      'דנה',
+      'ברית',
+      'נטלי קלפה',
+      'https://payboxapp.page.link/abc123',
+    ]);
+  });
+
+  it('falls back to the generic greeting without a guest name', () => {
+    const r = buildGiftParams({ event: giftEvent, guestFirstName: null });
+    if (!('params' in r)) throw new Error('expected params');
+    expect(r.params[0]).toBe(GUEST_FIRST_NAME_FALLBACK);
+  });
+
+  it('fail-closes when the gift link is missing or not https', () => {
+    for (const bad of [null, '', '  ', 'http://payboxapp.page.link/x']) {
+      const r = buildGiftParams({
+        event: { ...giftEvent, gift_payment_url: bad as string | null },
+        guestFirstName: 'דנה',
+      });
+      if (!('missing' in r)) throw new Error('expected missing');
+      expect(r.missing).toContain('gift_payment_url');
+    }
+  });
+
+  it('fail-closes when celebrants are incomplete for the kind', () => {
+    const r = buildGiftParams({
+      event: { ...giftEvent, celebrants: { child: 'אריאל' } },
+      guestFirstName: 'דנה',
+    });
+    if (!('missing' in r)) throw new Error('expected missing');
+    expect(r.missing).toContain('celebrants');
   });
 });

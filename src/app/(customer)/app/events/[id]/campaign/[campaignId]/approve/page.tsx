@@ -14,6 +14,7 @@ import { getActiveAgreementDoc } from '@/lib/data/agreements-doc';
 import { getAgreementConfigTokens } from '@/lib/data/agreement-config';
 import { SignAgreementForm } from './sign-agreement-form';
 import { AgreementSheet } from './agreement-sheet';
+import { formatIsraelDate } from '@/lib/date';
 
 const CHANNEL_LABELS: Record<string, string> = {
   whatsapp: 'וואטסאפ',
@@ -21,7 +22,7 @@ const CHANNEL_LABELS: Record<string, string> = {
 };
 
 function fmtDate(iso: string | null): string {
-  return iso ? new Date(iso).toLocaleDateString('he-IL') : 'לא הוגדר';
+  return iso ? formatIsraelDate(iso) || 'לא הוגדר' : 'לא הוגדר';
 }
 
 function ils(n: number | null): string {

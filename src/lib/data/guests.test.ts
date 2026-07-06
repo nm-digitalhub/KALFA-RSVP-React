@@ -92,6 +92,7 @@ describe('listGuests', () => {
     vi.mocked(createClient).mockResolvedValue(
       client as unknown as Awaited<ReturnType<typeof createClient>>,
     );
+    client.rpc.mockResolvedValue({ data: true, error: null });
     return { client, builder };
   }
 
@@ -118,7 +119,7 @@ describe('listGuests', () => {
     passGate(builder);
     vi.mocked(createClient).mockResolvedValue({
       from: vi.fn(() => builder),
-      rpc: vi.fn(),
+      rpc: vi.fn(async () => ({ data: true, error: null })),
     } as unknown as Awaited<ReturnType<typeof createClient>>);
 
     const result = await listGuests(EVENT_ID, { page: 2 });
@@ -181,6 +182,7 @@ describe('listGuests', () => {
     vi.mocked(createClient).mockResolvedValue(
       guests.client as unknown as Awaited<ReturnType<typeof createClient>>,
     );
+    guests.client.rpc.mockResolvedValue({ data: true, error: null });
 
     const result = await listGuests(EVENT_ID, {});
 
@@ -281,6 +283,7 @@ describe('listGuests', () => {
     vi.mocked(createClient).mockResolvedValue(
       client as unknown as Awaited<ReturnType<typeof createClient>>,
     );
+    client.rpc.mockResolvedValue({ data: true, error: null });
     await expect(listGuests(EVENT_ID, {})).rejects.toThrow(
       'טעינת המוזמנים נכשלה',
     );
@@ -299,6 +302,7 @@ describe('getGuest', () => {
     vi.mocked(createClient).mockResolvedValue(
       client as unknown as Awaited<ReturnType<typeof createClient>>,
     );
+    client.rpc.mockResolvedValue({ data: true, error: null });
     await getGuest(EVENT_ID, GUEST_ID);
     expect(builder.select).toHaveBeenCalledWith(GUEST_DETAIL_COLUMNS);
     expect(builder.eq).toHaveBeenCalledWith('event_id', EVENT_ID);
@@ -316,6 +320,7 @@ describe('createGuest', () => {
     vi.mocked(createClient).mockResolvedValue(
       client as unknown as Awaited<ReturnType<typeof createClient>>,
     );
+    client.rpc.mockResolvedValue({ data: true, error: null });
 
     await createGuest(EVENT_ID, { full_name: 'דנה' });
 
@@ -337,6 +342,7 @@ describe('updateGuest', () => {
     vi.mocked(createClient).mockResolvedValue(
       client as unknown as Awaited<ReturnType<typeof createClient>>,
     );
+    client.rpc.mockResolvedValue({ data: true, error: null });
 
     // Cast through unknown: the smuggled keys are deliberately not on the type,
     // proving the function ignores them even if they reach it at runtime.
@@ -364,6 +370,7 @@ describe('deleteGuest', () => {
     vi.mocked(createClient).mockResolvedValue(
       client as unknown as Awaited<ReturnType<typeof createClient>>,
     );
+    client.rpc.mockResolvedValue({ data: true, error: null });
     await deleteGuest(EVENT_ID, GUEST_ID);
     expect(builder.delete).toHaveBeenCalled();
     expect(builder.eq).toHaveBeenCalledWith('event_id', EVENT_ID);
@@ -378,6 +385,7 @@ describe('updateContactStatus', () => {
     vi.mocked(createClient).mockResolvedValue(
       client as unknown as Awaited<ReturnType<typeof createClient>>,
     );
+    client.rpc.mockResolvedValue({ data: true, error: null });
     await updateContactStatus(EVENT_ID, GUEST_ID, 'contacted');
     expect(builder.update).toHaveBeenCalledWith({ contact_status: 'contacted' });
     expect(builder.eq).toHaveBeenCalledWith('event_id', EVENT_ID);
@@ -395,6 +403,7 @@ describe('bulkInsertGuests', () => {
     vi.mocked(createClient).mockResolvedValue(
       client as unknown as Awaited<ReturnType<typeof createClient>>,
     );
+    client.rpc.mockResolvedValue({ data: true, error: null });
 
     const inserted = await bulkInsertGuests(EVENT_ID, [
       { full_name: 'א' },
@@ -418,6 +427,7 @@ describe('bulkInsertGuests', () => {
     vi.mocked(createClient).mockResolvedValue(
       client as unknown as Awaited<ReturnType<typeof createClient>>,
     );
+    client.rpc.mockResolvedValue({ data: true, error: null });
     const inserted = await bulkInsertGuests(EVENT_ID, []);
     expect(inserted).toBe(0);
     expect(builder.insert).not.toHaveBeenCalled();
@@ -437,6 +447,7 @@ describe('listGroups', () => {
     vi.mocked(createClient).mockResolvedValue(
       client as unknown as Awaited<ReturnType<typeof createClient>>,
     );
+    client.rpc.mockResolvedValue({ data: true, error: null });
     await listGroups(EVENT_ID);
     expect(client.from).toHaveBeenCalledWith('guest_groups');
     expect(builder.select).toHaveBeenCalledWith(GROUP_COLUMNS);
@@ -454,6 +465,7 @@ describe('createGroup', () => {
     vi.mocked(createClient).mockResolvedValue(
       client as unknown as Awaited<ReturnType<typeof createClient>>,
     );
+    client.rpc.mockResolvedValue({ data: true, error: null });
     await createGroup(EVENT_ID, { name: 'משפחה' });
     expect(client.from).toHaveBeenCalledWith('guest_groups');
     const payload = builder.insert.mock.calls[0][0] as Record<string, unknown>;
@@ -473,6 +485,7 @@ describe('updateGroup', () => {
     vi.mocked(createClient).mockResolvedValue(
       client as unknown as Awaited<ReturnType<typeof createClient>>,
     );
+    client.rpc.mockResolvedValue({ data: true, error: null });
     await updateGroup(EVENT_ID, 'grp-1', { name: 'חברים' });
     const payload = builder.update.mock.calls[0][0] as Record<string, unknown>;
     expect(payload).toEqual({ name: 'חברים' });
@@ -490,6 +503,7 @@ describe('deleteGroup', () => {
     vi.mocked(createClient).mockResolvedValue(
       client as unknown as Awaited<ReturnType<typeof createClient>>,
     );
+    client.rpc.mockResolvedValue({ data: true, error: null });
     await deleteGroup(EVENT_ID, 'grp-1');
     expect(client.from).toHaveBeenCalledWith('guest_groups');
     expect(builder.delete).toHaveBeenCalled();
@@ -509,6 +523,7 @@ describe('ownership gate', () => {
     vi.mocked(createClient).mockResolvedValue(
       client as unknown as Awaited<ReturnType<typeof createClient>>,
     );
+    client.rpc.mockResolvedValue({ data: true, error: null });
 
     await expect(listGuests(EVENT_ID, {})).rejects.toThrow();
     // `from` was called for the events ownership check, but never for guests.

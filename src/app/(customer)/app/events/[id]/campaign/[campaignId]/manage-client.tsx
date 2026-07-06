@@ -188,6 +188,7 @@ export function ManageClient({
     pause: BoundAction;
     close: BoundAction;
     settle: BoundAction;
+    sendGift: BoundAction;
   };
   isPast?: boolean;
 }) {
@@ -264,6 +265,13 @@ export function ManageClient({
             label="סגירת קמפיין"
             variant="danger"
             confirm="לסגור את הקמפיין? לא יישלחו פניות נוספות."
+          />
+        ) : null}
+        {s === 'active' ? (
+          <ActionButton
+            action={actions.sendGift}
+            label="שליחת תזכורת מתנה"
+            confirm="לשלוח תזכורת מתנה עם קישור הפייבוקס/ביט לכל המוזמנים עם הסכמה?"
           />
         ) : null}
         {canSettle ? (

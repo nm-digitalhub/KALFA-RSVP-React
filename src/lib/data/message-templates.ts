@@ -13,7 +13,12 @@ import type { Database, Json } from '@/lib/supabase/types';
 
 type MessageTemplateRow = Database['public']['Tables']['message_templates']['Row'];
 
-export type ResolvedTemplate = Pick<MessageTemplateRow, 'name' | 'language' | 'channel'>;
+export type ResolvedTemplate = Pick<MessageTemplateRow, 'name' | 'language' | 'channel'> & {
+  // Optional IMAGE-header sibling template (components.media_variant, admin
+  // data). Send paths switch to it ONLY when the event actually has an
+  // uploaded invitation image — otherwise the text template is used as-is.
+  mediaName?: string | null;
+};
 
 export async function getTemplateByKey(
   messageKey: string,
@@ -52,6 +57,26 @@ function variantNameFor(components: Json | null, eventType: EventType): string |
   return typeof name === 'string' && name.trim() !== '' ? name : null;
 }
 
+// The IMAGE-header sibling template name: a per-event-type mapping
+// (components.media_variants[eventType], e.g. a brit-specific media wording)
+// wins over the global components.media_variant fallback. Same defensive walk
+// as variantNameFor — anything malformed simply means "no media".
+function mediaVariantNameFor(
+  components: Json | null,
+  eventType: EventType,
+): string | null {
+  if (!components || typeof components !== 'object' || Array.isArray(components)) {
+    return null;
+  }
+  const map = (components as { [key: string]: Json | undefined }).media_variants;
+  if (map && typeof map === 'object' && !Array.isArray(map)) {
+    const perType = (map as { [key: string]: Json | undefined })[eventType];
+    if (typeof perType === 'string' && perType.trim() !== '') return perType;
+  }
+  const name = (components as { [key: string]: Json | undefined }).media_variant;
+  return typeof name === 'string' && name.trim() !== '' ? name : null;
+}
+
 // getTemplateByKey + per-event-type variant selection. Resolution of the row
 // itself is identical (active-only, fail-closed → null); the variant mapping
 // only ever replaces the template NAME, so a missing/malformed mapping
@@ -74,6 +99,7 @@ export async function resolveTemplateForEvent(
     name: variant ?? data.name,
     language: data.language,
     channel: data.channel,
+    mediaName: mediaVariantNameFor(data.components, eventType),
   };
 }
 

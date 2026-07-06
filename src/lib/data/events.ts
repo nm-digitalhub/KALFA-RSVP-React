@@ -3,6 +3,7 @@ import 'server-only';
 import { notFound } from 'next/navigation';
 
 import { createClient } from '@/lib/supabase/server';
+import { createAdminClient } from '@/lib/supabase/admin';
 import { requireUser } from '@/lib/auth/dal';
 import { logActivity } from '@/lib/data/activity';
 import { ensurePersonalOrg } from '@/lib/data/orgs';
@@ -96,7 +97,10 @@ export interface ListEventsParams {
   offset?: number;
 }
 
-// List the current owner's events. Explicit owner_id filter in addition to RLS.
+// List the events the current user may SEE — their own plus shared-org
+// events. Tenant scoping is the RLS policy's job (events_org_select →
+// can_access_event, phase 3); an app-side owner filter would blank the list
+// for org members even though RLS allows the rows.
 export async function listEvents(
   { limit = 20, offset = 0 }: ListEventsParams = {},
 ): Promise<EventListItem[]> {
@@ -106,7 +110,6 @@ export async function listEvents(
   const { data, error } = await supabase
     .from('events')
     .select(LIST_COLUMNS)
-    .eq('owner_id', user.id)
     .order('created_at', { ascending: false })
     .range(offset, offset + limit - 1);
 
@@ -132,12 +135,10 @@ export async function getEventCounts(): Promise<EventCounts> {
   const [totalRes, activeRes] = await Promise.all([
     supabase
       .from('events')
-      .select('id', { count: 'exact', head: true })
-      .eq('owner_id', user.id),
+      .select('id', { count: 'exact', head: true }),
     supabase
       .from('events')
       .select('id', { count: 'exact', head: true })
-      .eq('owner_id', user.id)
       .eq('status', 'active'),
   ]);
 
@@ -219,6 +220,8 @@ export type EventDetail = Pick<
   EventRow,
   | 'id'
   | 'name'
+  | 'gift_payment_url'
+  | 'invite_image_path'
   | 'event_type'
   | 'event_date'
   | 'venue_name'
@@ -230,10 +233,11 @@ export type EventDetail = Pick<
 >;
 
 const EVENT_DETAIL_COLUMNS =
-  'id, name, event_type, event_date, venue_name, venue_address, rsvp_deadline, celebrants, status, created_at';
+  'id, name, event_type, event_date, venue_name, venue_address, gift_payment_url, invite_image_path, rsvp_deadline, celebrants, status, created_at';
 
 // Fetch one of the current owner's events for the detail/edit page. Scoped by
-// owner_id in addition to RLS; notFound() (404) if missing or not owned.
+// RLS-scoped read (owner or shared-org member with events.view); notFound()
+// when invisible. Mutations stay separately gated (events.edit / owner-only).
 export async function getEvent(eventId: string): Promise<EventDetail> {
   const user = await requireUser();
   const supabase = await createClient();
@@ -242,7 +246,6 @@ export async function getEvent(eventId: string): Promise<EventDetail> {
     .from('events')
     .select(EVENT_DETAIL_COLUMNS)
     .eq('id', eventId)
-    .eq('owner_id', user.id)
     .maybeSingle();
 
   if (error) {
@@ -271,6 +274,13 @@ export interface UpdateEventInput {
   event_type: EventType;
   venue_name: string | null;
   venue_address: string | null;
+  // Owner's PayBox/Bit link for the gift-reminder template. OPTIONAL KEY:
+  // absent = don't touch; present (string | null) = set/clear (same presence
+  // semantics as the date keys below).
+  gift_payment_url?: string | null;
+  // Storage path set by the SERVER after a verified upload — never a raw form
+  // value (optional key, same presence semantics).
+  invite_image_path?: string | null;
   // Always present (the celebrant field group is always rendered, so its
   // inputs are always posted): the submitted value replaces the stored one on
   // every save — all-empty → null clears the column. NOT date-locked: an
@@ -301,7 +311,7 @@ export async function updateEvent(
   eventId: string,
   input: UpdateEventInput,
 ): Promise<EventDetail> {
-  const cur = await requireOwnedEvent(eventId);
+  const cur = await requireEventAccess(eventId, 'events', 'edit');
   const user = await requireUser();
   const supabase = await createClient();
 
@@ -311,6 +321,8 @@ export async function updateEvent(
     name: input.name,
     event_type: input.event_type,
     venue_name: input.venue_name,
+    ...('gift_payment_url' in input ? { gift_payment_url: input.gift_payment_url ?? null } : {}),
+    ...('invite_image_path' in input ? { invite_image_path: input.invite_image_path ?? null } : {}),
     venue_address: input.venue_address,
     // On an event_type change the action already parsed the NEW type's fields
     // only (parseCelebrantsForm), so the new shape replaces the old outright.
@@ -394,9 +406,14 @@ export async function publishEvent(eventId: string): Promise<void> {
     throw new Error('המועד האחרון לאישור הגעה כבר חלף — קבעו מועד חדש לפני הפרסום');
   }
   const user = await requireUser();
-  const supabase = await createClient();
+  // Service-role write: M1 (phase-3 RLS migration) removes the `status` column
+  // from authenticated's UPDATE grant so NO browser-context role can flip
+  // lifecycle state — publish/close are owner-only APP paths (ownership proven
+  // by requireOwnedEvent above; the predicates below keep the transition
+  // atomic and the DB trigger still validates it).
+  const admin = createAdminClient();
 
-  const { error } = await supabase
+  const { error } = await admin
     .from('events')
     .update({ status: 'active' })
     .eq('id', eventId)
@@ -417,9 +434,10 @@ export async function publishEvent(eventId: string): Promise<void> {
 export async function closeEvent(eventId: string): Promise<void> {
   await requireOwnedEvent(eventId);
   const user = await requireUser();
-  const supabase = await createClient();
+  // Same service-role rationale as publishEvent (M1 status column grant).
+  const admin = createAdminClient();
 
-  const { error } = await supabase
+  const { error } = await admin
     .from('events')
     .update({ status: 'closed' })
     .eq('id', eventId)

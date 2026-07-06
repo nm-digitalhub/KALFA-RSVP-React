@@ -1,7 +1,17 @@
 import 'server-only';
 
 import { createClient } from '@/lib/supabase/server';
-import { requireOwnedEvent } from '@/lib/data/events';
+import { requireOwnedEvent, requireEventAccess } from '@/lib/data/events';
+
+// unique index guests_event_phone_key (one guest per phone per event)
+export const PHONE_TAKEN_ERROR =
+  'מספר הטלפון כבר קיים אצל מוזמן אחר באירוע';
+function throwFriendlyGuestError(error: { code?: string; message?: string }, fallback: string): never {
+  if (error.code === '23505' && (error.message ?? '').includes('guests_event_phone_key')) {
+    throw new Error(PHONE_TAKEN_ERROR);
+  }
+  throw new Error(fallback);
+}
 import { pruneOrphanContact } from '@/lib/data/contacts';
 import { logActivity } from '@/lib/data/activity';
 import { getGuestsPageSize } from '@/lib/constants';
@@ -169,7 +179,7 @@ export async function listGuests(
   params: ListGuestsParams = {},
 ): Promise<GuestListResult> {
   // Ownership gate: owner derived server-side; notFound() if not owned.
-  await requireOwnedEvent(eventId);
+  await requireEventAccess(eventId, 'guests', 'view');
   const supabase = await createClient();
 
   const pageSize = getGuestsPageSize();
@@ -292,7 +302,7 @@ export async function getGuest(
   eventId: string,
   guestId: string,
 ): Promise<GuestDetail | null> {
-  await requireOwnedEvent(eventId);
+  await requireEventAccess(eventId, 'guests', 'view');
   const supabase = await createClient();
 
   const { data, error } = await supabase
@@ -329,7 +339,7 @@ export async function createGuest(
   eventId: string,
   input: GuestWriteInput,
 ): Promise<GuestListItem> {
-  await requireOwnedEvent(eventId);
+  await requireEventAccess(eventId, 'guests', 'create');
   const supabase = await createClient();
 
   const { data, error } = await supabase
@@ -386,7 +396,7 @@ export async function updateGuest(
   guestId: string,
   patch: Partial<GuestWriteInput>,
 ): Promise<GuestDetail> {
-  await requireOwnedEvent(eventId);
+  await requireEventAccess(eventId, 'guests', 'edit');
   const supabase = await createClient();
   const previous = await getGuest(eventId, guestId);
 
@@ -411,7 +421,7 @@ export async function updateGuest(
     .single();
 
   if (error || !data) {
-    throw new Error('עדכון המוזמן נכשל');
+    throwFriendlyGuestError(error, 'עדכון המוזמן נכשל');
   }
 
   await logActivity({
@@ -516,7 +526,7 @@ export async function updateContactStatus(
 
 /** List all groups for an owned event. */
 export async function listGroups(eventId: string): Promise<GuestGroup[]> {
-  await requireOwnedEvent(eventId);
+  await requireEventAccess(eventId, 'guests', 'view');
   const supabase = await createClient();
 
   const { data, error } = await supabase
@@ -541,7 +551,7 @@ export async function createGroup(
   eventId: string,
   input: GroupWriteInput,
 ): Promise<GuestGroup> {
-  await requireOwnedEvent(eventId);
+  await requireEventAccess(eventId, 'guests', 'create');
   const supabase = await createClient();
 
   const { data, error } = await supabase
@@ -576,7 +586,7 @@ export async function updateGroup(
   groupId: string,
   patch: Partial<GroupWriteInput>,
 ): Promise<GuestGroup> {
-  await requireOwnedEvent(eventId);
+  await requireEventAccess(eventId, 'guests', 'edit');
   const supabase = await createClient();
 
   const update: Database['public']['Tables']['guest_groups']['Update'] = {};
@@ -655,7 +665,7 @@ export async function bulkInsertGuests(
   eventId: string,
   guests: BulkGuestInput[],
 ): Promise<number> {
-  await requireOwnedEvent(eventId);
+  await requireEventAccess(eventId, 'guests', 'create');
   if (guests.length === 0) return 0;
   const supabase = await createClient();
 
@@ -674,7 +684,7 @@ export async function bulkInsertGuests(
     .select('id');
 
   if (error) {
-    throw new Error('ייבוא המוזמנים נכשל');
+    throwFriendlyGuestError(error, 'ייבוא המוזמנים נכשל');
   }
 
   const inserted = data?.length ?? 0;

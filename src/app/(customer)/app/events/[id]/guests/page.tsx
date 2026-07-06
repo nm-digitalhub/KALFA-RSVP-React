@@ -2,7 +2,7 @@ import Link from 'next/link';
 
 import { Badge, Pagination, type BadgeVariant } from '@/app/(admin)/admin/_components';
 import { buttonVariants } from '@/components/ui/button';
-import { requireOwnedEvent } from '@/lib/data/events';
+import { requireEventAccess } from '@/lib/data/events';
 import { listGuests, listGroups } from '@/lib/data/guests';
 import type { Database } from '@/lib/supabase/types';
 import {
@@ -53,7 +53,7 @@ export default async function GuestsPage({ params, searchParams }: PageProps) {
 
   // requireOwnedEvent here too so the page title can show the event name and the
   // 404 happens before any list query if the event is not owned.
-  const event = await requireOwnedEvent(eventId);
+  const event = await requireEventAccess(eventId, 'guests', 'view');
 
   const page = Number(first(sp.page)) || 1;
   const search = first(sp.search) ?? '';

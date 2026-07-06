@@ -3,6 +3,7 @@ import type { User } from '@supabase/supabase-js';
 
 import { createMockSupabase } from '@/test/supabase-mock';
 import { createClient } from '@/lib/supabase/server';
+import { createAdminClient } from '@/lib/supabase/admin';
 import { requireUser } from '@/lib/auth/dal';
 import { logActivity } from '@/lib/data/activity';
 import type { EventDetail, EventListItem } from '@/lib/data/events';
@@ -34,6 +35,7 @@ vi.mock('server-only', () => ({}));
 // Factories are hoisted above imports; keep them free of outer references
 // (bare vi.fn()), then configure resolved values in beforeEach.
 vi.mock('@/lib/supabase/server', () => ({ createClient: vi.fn() }));
+vi.mock('@/lib/supabase/admin', () => ({ createAdminClient: vi.fn() }));
 vi.mock('@/lib/auth/dal', () => ({ requireUser: vi.fn() }));
 vi.mock('@/lib/data/activity', () => ({ logActivity: vi.fn() }));
 // createEvent now anchors the event to the caller's active org; stub the
@@ -55,7 +57,7 @@ const LIST_COLUMNS =
   'id, name, event_type, event_date, status, venue_name, created_at';
 
 const DETAIL_COLUMNS =
-  'id, name, event_type, event_date, venue_name, venue_address, rsvp_deadline, celebrants, status, created_at';
+  'id, name, event_type, event_date, venue_name, venue_address, gift_payment_url, invite_image_path, rsvp_deadline, celebrants, status, created_at';
 
 const USER_ID = 'user-123';
 
@@ -86,6 +88,8 @@ function detailRow(overrides: Partial<EventDetail> = {}): EventDetail {
     venue_address: 'Tel Aviv',
     rsvp_deadline: '2026-08-15',
     celebrants: null,
+    gift_payment_url: null,
+    invite_image_path: null,
     status: 'draft',
     created_at: '2026-06-23T00:00:00.000Z',
     ...overrides,
@@ -99,7 +103,7 @@ beforeEach(() => {
 });
 
 describe('listEvents', () => {
-  it('applies an explicit owner_id filter scoped to the current user', async () => {
+  it('relies on RLS for scoping — no app-side owner filter (org members see shared events)', async () => {
     const rows = [sampleRow()];
     const { client, builder } = createMockSupabase<EventListItem[]>({
       data: rows,
@@ -108,12 +112,13 @@ describe('listEvents', () => {
     vi.mocked(createClient).mockResolvedValue(
       client as unknown as Awaited<ReturnType<typeof createClient>>,
     );
+    client.rpc.mockResolvedValue({ data: true, error: null });
 
     await listEvents();
 
     // Core ownership-scoping assertion: the query is filtered by the verified
     // user's id server-side, not by any browser-supplied identifier.
-    expect(builder.eq).toHaveBeenCalledWith('owner_id', USER_ID);
+    expect(builder.eq).not.toHaveBeenCalledWith('owner_id', expect.anything());
     expect(client.from).toHaveBeenCalledWith('events');
   });
 
@@ -126,6 +131,7 @@ describe('listEvents', () => {
     vi.mocked(createClient).mockResolvedValue(
       client as unknown as Awaited<ReturnType<typeof createClient>>,
     );
+    client.rpc.mockResolvedValue({ data: true, error: null });
 
     const result = await listEvents();
 
@@ -143,6 +149,7 @@ describe('listEvents', () => {
     vi.mocked(createClient).mockResolvedValue(
       client as unknown as Awaited<ReturnType<typeof createClient>>,
     );
+    client.rpc.mockResolvedValue({ data: true, error: null });
 
     await expect(listEvents()).resolves.toEqual([]);
   });
@@ -155,6 +162,7 @@ describe('listEvents', () => {
     vi.mocked(createClient).mockResolvedValue(
       client as unknown as Awaited<ReturnType<typeof createClient>>,
     );
+    client.rpc.mockResolvedValue({ data: true, error: null });
 
     // User-facing error must not leak the underlying DB message.
     await expect(listEvents()).rejects.toThrow('טעינת האירועים נכשלה');
@@ -178,6 +186,7 @@ describe('createEvent', () => {
     vi.mocked(createClient).mockResolvedValue(
       client as unknown as Awaited<ReturnType<typeof createClient>>,
     );
+    client.rpc.mockResolvedValue({ data: true, error: null });
 
     await createEvent(input);
 
@@ -204,6 +213,7 @@ describe('createEvent', () => {
     vi.mocked(createClient).mockResolvedValue(
       client as unknown as Awaited<ReturnType<typeof createClient>>,
     );
+    client.rpc.mockResolvedValue({ data: true, error: null });
 
     await expect(createEvent(input)).resolves.toEqual(created);
   });
@@ -216,6 +226,7 @@ describe('createEvent', () => {
     vi.mocked(createClient).mockResolvedValue(
       client as unknown as Awaited<ReturnType<typeof createClient>>,
     );
+    client.rpc.mockResolvedValue({ data: true, error: null });
 
     await expect(createEvent(input)).rejects.toThrow('יצירת האירוע נכשלה');
   });
@@ -231,6 +242,7 @@ describe('createEvent', () => {
     vi.mocked(createClient).mockResolvedValue(
       client as unknown as Awaited<ReturnType<typeof createClient>>,
     );
+    client.rpc.mockResolvedValue({ data: true, error: null });
 
     await expect(
       createEvent({ ...input, event_date: null }),
@@ -245,6 +257,7 @@ describe('createEvent', () => {
     vi.mocked(createClient).mockResolvedValue(
       client as unknown as Awaited<ReturnType<typeof createClient>>,
     );
+    client.rpc.mockResolvedValue({ data: true, error: null });
 
     await expect(
       createEvent({ ...input, event_date: ilDate(0) }),
@@ -260,6 +273,7 @@ describe('createEvent', () => {
     vi.mocked(createClient).mockResolvedValue(
       client as unknown as Awaited<ReturnType<typeof createClient>>,
     );
+    client.rpc.mockResolvedValue({ data: true, error: null });
 
     await expect(
       createEvent({ ...input, event_date: ilDate(-1) }),
@@ -274,6 +288,7 @@ describe('createEvent', () => {
     vi.mocked(createClient).mockResolvedValue(
       client as unknown as Awaited<ReturnType<typeof createClient>>,
     );
+    client.rpc.mockResolvedValue({ data: true, error: null });
 
     await expect(
       createEvent({ ...input, event_date: ilDate(1) }),
@@ -291,6 +306,7 @@ describe('createEvent', () => {
     vi.mocked(createClient).mockResolvedValue(
       client as unknown as Awaited<ReturnType<typeof createClient>>,
     );
+    client.rpc.mockResolvedValue({ data: true, error: null });
 
     await createEvent({ ...input, celebrants: { name: 'איתי' } });
 
@@ -307,6 +323,7 @@ describe('createEvent', () => {
     vi.mocked(createClient).mockResolvedValue(
       client as unknown as Awaited<ReturnType<typeof createClient>>,
     );
+    client.rpc.mockResolvedValue({ data: true, error: null });
 
     await createEvent({ ...input, celebrants: null });
 
@@ -317,7 +334,7 @@ describe('createEvent', () => {
 });
 
 describe('getEvent', () => {
-  it('fetches the detail DTO scoped to the owner and event id', async () => {
+  it('fetches the detail DTO by id — visibility scoped by RLS, not an owner filter', async () => {
     const row = detailRow();
     const { client, builder } = createMockSupabase<EventDetail>({
       data: row,
@@ -326,12 +343,13 @@ describe('getEvent', () => {
     vi.mocked(createClient).mockResolvedValue(
       client as unknown as Awaited<ReturnType<typeof createClient>>,
     );
+    client.rpc.mockResolvedValue({ data: true, error: null });
 
     const result = await getEvent('event-1');
 
     expect(client.from).toHaveBeenCalledWith('events');
     expect(builder.select).toHaveBeenCalledWith(DETAIL_COLUMNS);
-    expect(builder.eq).toHaveBeenCalledWith('owner_id', USER_ID);
+    expect(builder.eq).not.toHaveBeenCalledWith('owner_id', expect.anything());
     expect(builder.eq).toHaveBeenCalledWith('id', 'event-1');
     expect(result).toEqual(row);
   });
@@ -344,6 +362,7 @@ describe('getEvent', () => {
     vi.mocked(createClient).mockResolvedValue(
       client as unknown as Awaited<ReturnType<typeof createClient>>,
     );
+    client.rpc.mockResolvedValue({ data: true, error: null });
 
     await expect(getEvent('event-x')).rejects.toThrow('NEXT_NOT_FOUND');
   });
@@ -356,6 +375,7 @@ describe('getEvent', () => {
     vi.mocked(createClient).mockResolvedValue(
       client as unknown as Awaited<ReturnType<typeof createClient>>,
     );
+    client.rpc.mockResolvedValue({ data: true, error: null });
 
     await expect(getEvent('event-1')).rejects.toThrow('טעינת האירוע נכשלה');
   });
@@ -396,6 +416,7 @@ describe('updateEvent', () => {
     vi.mocked(createClient).mockResolvedValue(
       client as unknown as Awaited<ReturnType<typeof createClient>>,
     );
+    client.rpc.mockResolvedValue({ data: true, error: null });
     mockReads(builder, { data: detailRow({ status: 'draft' }), error: null }, NO_LIVE_CAMPAIGN, { data: row, error: null });
 
     await updateEvent('event-1', baseInput);
@@ -413,6 +434,7 @@ describe('updateEvent', () => {
     vi.mocked(createClient).mockResolvedValue(
       client as unknown as Awaited<ReturnType<typeof createClient>>,
     );
+    client.rpc.mockResolvedValue({ data: true, error: null });
     mockReads(builder, { data: detailRow({ status: 'active' }), error: null }, NO_LIVE_CAMPAIGN, { data: row, error: null });
 
     await updateEvent('event-1', baseInput); // no event_date/rsvp_deadline key at all
@@ -438,6 +460,7 @@ describe('updateEvent', () => {
     vi.mocked(createClient).mockResolvedValue(
       client as unknown as Awaited<ReturnType<typeof createClient>>,
     );
+    client.rpc.mockResolvedValue({ data: true, error: null });
     vi.spyOn(builder, 'then').mockImplementationOnce((f) =>
       (f as (v: unknown) => unknown)({ data: detailRow({ status: 'active' }), error: null }),
     );
@@ -456,6 +479,7 @@ describe('updateEvent', () => {
     vi.mocked(createClient).mockResolvedValue(
       client as unknown as Awaited<ReturnType<typeof createClient>>,
     );
+    client.rpc.mockResolvedValue({ data: true, error: null });
     vi.spyOn(builder, 'then').mockImplementationOnce((f) =>
       (f as (v: unknown) => unknown)({ data: detailRow({ status: 'draft' }), error: null }),
     );
@@ -475,6 +499,7 @@ describe('updateEvent', () => {
     vi.mocked(createClient).mockResolvedValue(
       client as unknown as Awaited<ReturnType<typeof createClient>>,
     );
+    client.rpc.mockResolvedValue({ data: true, error: null });
     mockReads(builder, { data: detailRow({ status: 'draft' }), error: null }, NO_LIVE_CAMPAIGN, { data: row, error: null });
 
     await updateEvent('event-1', { ...baseInput, event_date: ilDate(5) });
@@ -496,6 +521,7 @@ describe('updateEvent', () => {
     vi.mocked(createClient).mockResolvedValue(
       client as unknown as Awaited<ReturnType<typeof createClient>>,
     );
+    client.rpc.mockResolvedValue({ data: true, error: null });
     mockReads(builder, { data: detailRow({ status: 'active' }), error: null }, NO_LIVE_CAMPAIGN, { data: row, error: null });
 
     await updateEvent('event-1', {
@@ -516,6 +542,7 @@ describe('updateEvent', () => {
     vi.mocked(createClient).mockResolvedValue(
       client as unknown as Awaited<ReturnType<typeof createClient>>,
     );
+    client.rpc.mockResolvedValue({ data: true, error: null });
     mockReads(builder, { data: detailRow({ status: 'draft' }), error: null }, NO_LIVE_CAMPAIGN, { data: row, error: null });
 
     await updateEvent('event-1', { ...baseInput, celebrants: null });
@@ -535,6 +562,7 @@ describe('updateEvent', () => {
     vi.mocked(createClient).mockResolvedValue(
       client as unknown as Awaited<ReturnType<typeof createClient>>,
     );
+    client.rpc.mockResolvedValue({ data: true, error: null });
 
     await expect(updateEvent('event-x', baseInput)).rejects.toThrow('NEXT_NOT_FOUND');
     expect(builder.update).not.toHaveBeenCalled();
@@ -549,6 +577,7 @@ describe('updateEvent', () => {
     vi.mocked(createClient).mockResolvedValue(
       client as unknown as Awaited<ReturnType<typeof createClient>>,
     );
+    client.rpc.mockResolvedValue({ data: true, error: null });
     mockReads(
       builder,
       { data: detailRow({ status: 'active' }), error: null },
@@ -571,6 +600,7 @@ describe('updateEvent', () => {
     vi.mocked(createClient).mockResolvedValue(
       client as unknown as Awaited<ReturnType<typeof createClient>>,
     );
+    client.rpc.mockResolvedValue({ data: true, error: null });
     // Only TWO reads: ownership → update-select. The complete branch skips the
     // campaigns lookup entirely (baseInput.event_type=birthday, single kind).
     mockReads(
@@ -599,6 +629,10 @@ describe('publishEvent', () => {
     vi.mocked(createClient).mockResolvedValue(
       client as unknown as Awaited<ReturnType<typeof createClient>>,
     );
+    client.rpc.mockResolvedValue({ data: true, error: null });
+    vi.mocked(createAdminClient).mockReturnValue(
+      client as unknown as ReturnType<typeof createAdminClient>,
+    );
     vi.spyOn(builder, 'then')
       .mockImplementationOnce((f) =>
         (f as (v: unknown) => unknown)({
@@ -622,6 +656,10 @@ describe('publishEvent', () => {
     vi.mocked(createClient).mockResolvedValue(
       client as unknown as Awaited<ReturnType<typeof createClient>>,
     );
+    client.rpc.mockResolvedValue({ data: true, error: null });
+    vi.mocked(createAdminClient).mockReturnValue(
+      client as unknown as ReturnType<typeof createAdminClient>,
+    );
 
     await expect(publishEvent('event-1')).rejects.toThrow(
       'יש להגדיר מועד עתידי לפני פרסום',
@@ -641,6 +679,10 @@ describe('publishEvent', () => {
     vi.mocked(createClient).mockResolvedValue(
       client as unknown as Awaited<ReturnType<typeof createClient>>,
     );
+    client.rpc.mockResolvedValue({ data: true, error: null });
+    vi.mocked(createAdminClient).mockReturnValue(
+      client as unknown as ReturnType<typeof createAdminClient>,
+    );
 
     await expect(publishEvent('event-1')).rejects.toThrow(
       'המועד האחרון לאישור הגעה כבר חלף',
@@ -657,6 +699,10 @@ describe('closeEvent', () => {
     });
     vi.mocked(createClient).mockResolvedValue(
       client as unknown as Awaited<ReturnType<typeof createClient>>,
+    );
+    client.rpc.mockResolvedValue({ data: true, error: null });
+    vi.mocked(createAdminClient).mockReturnValue(
+      client as unknown as ReturnType<typeof createAdminClient>,
     );
     vi.spyOn(builder, 'then')
       .mockImplementationOnce((f) =>
@@ -676,6 +722,10 @@ describe('closeEvent', () => {
     });
     vi.mocked(createClient).mockResolvedValue(
       client as unknown as Awaited<ReturnType<typeof createClient>>,
+    );
+    client.rpc.mockResolvedValue({ data: true, error: null });
+    vi.mocked(createAdminClient).mockReturnValue(
+      client as unknown as ReturnType<typeof createAdminClient>,
     );
     vi.spyOn(builder, 'then')
       .mockImplementationOnce((f) =>

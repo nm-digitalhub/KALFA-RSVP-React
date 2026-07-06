@@ -38,6 +38,12 @@ export const ISRAELI_PHONE_RE =
 export const CSV_MAX_ROWS = intEnv('CSV_MAX_ROWS', 2000);
 export const CSV_MAX_BYTES = intEnv('CSV_MAX_BYTES', 1_000_000);
 
+// Invitation image upload cap (bytes). Single source — the server action and
+// storage module enforce it, and the edit form pre-checks it client-side so an
+// oversized pick gets the friendly Hebrew error instead of the framework's
+// generic 413 (serverActions.bodySizeLimit, 6mb, rejects before the action).
+export const INVITE_IMAGE_MAX_BYTES = 5 * 1024 * 1024;
+
 // --- Public RSVP abuse protection ---
 export const RSVP_TOKEN_MIN_LENGTH = 16;
 export const RSVP_READ_RATE = { limit: intEnv('RSVP_READ_LIMIT', 30), windowMs: 60_000 };

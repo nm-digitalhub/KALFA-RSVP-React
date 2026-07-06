@@ -3,6 +3,7 @@ import { CalendarDays, Plus } from 'lucide-react';
 
 import { listEvents, getEventCounts } from '@/lib/data/events';
 import { EVENT_TYPE_LABELS, EVENT_STATUS_LABELS } from '@/lib/data/event-labels';
+import { formatIsraelDate } from '@/lib/date';
 
 export default async function DashboardPage() {
   // Counts come from head queries (ALL events), independent of the recent-events
@@ -70,8 +71,8 @@ export default async function DashboardPage() {
                   <p className="truncate text-sm text-muted-foreground">
                     {[
                       EVENT_TYPE_LABELS[event.event_type] ?? event.event_type,
-                      // event_date is timestamptz → show the date part only.
-                      event.event_date ? event.event_date.slice(0, 10) : null,
+                      // Israel calendar date — timeZone-pinned, never a UTC slice.
+                      event.event_date ? formatIsraelDate(event.event_date) : null,
                       event.venue_name,
                     ]
                       .filter(Boolean)

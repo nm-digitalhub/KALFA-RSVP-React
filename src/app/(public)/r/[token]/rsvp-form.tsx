@@ -4,6 +4,7 @@ import { useActionState, useState } from 'react';
 
 import { FieldError, FormError, FormNotice, SubmitButton } from '@/components/forms';
 import { RSVP_STATUSES, type RsvpStatus } from '@/lib/constants';
+import { ISRAEL_LOCALE, ISRAEL_TIME_ZONE } from '@/lib/date';
 import type { RsvpView } from '@/lib/data/rsvp';
 
 import { submitRsvpAction } from './actions';
@@ -23,7 +24,11 @@ function formatEventDate(value: string | null): string | null {
   if (!value) return null;
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return null;
-  return new Intl.DateTimeFormat('he-IL', {
+  // timeZone pinned to Israel: this is a PUBLIC page — a guest opening the
+  // link abroad (or a server/browser TZ mismatch during hydration) must still
+  // see the event's Israel date, not their device's local calendar day.
+  return new Intl.DateTimeFormat(ISRAEL_LOCALE, {
+    timeZone: ISRAEL_TIME_ZONE,
     weekday: 'long',
     day: 'numeric',
     month: 'long',

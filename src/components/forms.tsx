@@ -53,3 +53,9 @@ export function FormNotice({ message }: { message?: string }) {
     </p>
   );
 }
+
+// Compact select styling for the composed date/time controls — single source
+// (used by TimeSelect24 and DateSelectIL; keep in sync with `inputClass`
+// patterns used by the event forms).
+export const compactSelectClass =
+  'rounded-md border border-border bg-transparent px-2 py-2 disabled:cursor-not-allowed disabled:opacity-60';

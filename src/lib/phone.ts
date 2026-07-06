@@ -18,3 +18,14 @@ export function normalizePhone(raw: string | null | undefined): string | null {
 export function isValidPhone(raw: string | null | undefined): boolean {
   return normalizePhone(raw) !== null;
 }
+
+// Spreadsheet repair: Excel silently strips the leading 0 from a numeric
+// Israeli phone cell (0501234567 → 501234567), and exports sometimes carry
+// the 972 prefix instead of the local 0. When the raw value still parses as a
+// valid Israeli number, return the canonical local 0-form the product stores
+// and displays; null when it is not an Israeli number at all.
+export function repairIsraeliLocalPhone(raw: string): string | null {
+  const e164 = normalizePhone(raw);
+  if (!e164 || !e164.startsWith('+972')) return null;
+  return `0${e164.slice(4)}`;
+}

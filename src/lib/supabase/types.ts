@@ -12,6 +12,31 @@ export type Database = {
   __InternalSupabase: {
     PostgrestVersion: "14.5"
   }
+  graphql_public: {
+    Tables: {
+      [_ in never]: never
+    }
+    Views: {
+      [_ in never]: never
+    }
+    Functions: {
+      graphql: {
+        Args: {
+          extensions?: Json
+          operationName?: string
+          query?: string
+          variables?: Json
+        }
+        Returns: Json
+      }
+    }
+    Enums: {
+      [_ in never]: never
+    }
+    CompositeTypes: {
+      [_ in never]: never
+    }
+  }
   public: {
     Tables: {
       activity_log: {
@@ -768,7 +793,10 @@ export type Database = {
           created_at: string
           event_date: string | null
           event_type: Database["public"]["Enums"]["event_type"]
+          gift_link_token: string
+          gift_payment_url: string | null
           id: string
+          invite_image_path: string | null
           name: string
           notes: string | null
           org_id: string | null
@@ -787,7 +815,10 @@ export type Database = {
           created_at?: string
           event_date?: string | null
           event_type?: Database["public"]["Enums"]["event_type"]
+          gift_link_token?: string
+          gift_payment_url?: string | null
           id?: string
+          invite_image_path?: string | null
           name: string
           notes?: string | null
           org_id?: string | null
@@ -806,7 +837,10 @@ export type Database = {
           created_at?: string
           event_date?: string | null
           event_type?: Database["public"]["Enums"]["event_type"]
+          gift_link_token?: string
+          gift_payment_url?: string | null
           id?: string
+          invite_image_path?: string | null
           name?: string
           notes?: string | null
           org_id?: string | null
@@ -869,10 +903,61 @@ export type Database = {
           },
         ]
       }
+      guest_import_staging: {
+        Row: {
+          created_at: string
+          error_rows: Json
+          event_id: string
+          file_name: string | null
+          id: string
+          resolved_at: string | null
+          row_count: number
+          rows: Json
+          sender_phone: string
+          source: string
+          status: string
+        }
+        Insert: {
+          created_at?: string
+          error_rows?: Json
+          event_id: string
+          file_name?: string | null
+          id?: string
+          resolved_at?: string | null
+          row_count: number
+          rows: Json
+          sender_phone: string
+          source: string
+          status?: string
+        }
+        Update: {
+          created_at?: string
+          error_rows?: Json
+          event_id?: string
+          file_name?: string | null
+          id?: string
+          resolved_at?: string | null
+          row_count?: number
+          rows?: Json
+          sender_phone?: string
+          source?: string
+          status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "guest_import_staging_event_id_fkey"
+            columns: ["event_id"]
+            isOneToOne: false
+            referencedRelation: "events"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       guests: {
         Row: {
           callback_requested: boolean
           confirmed_adults: number | null
+          confirmed_headcount: number
           confirmed_kids: number | null
           contact_id: string | null
           contact_status: Database["public"]["Enums"]["contact_status"]
@@ -882,6 +967,9 @@ export type Database = {
           extras: Json
           full_name: string
           group_id: string | null
+          headcount_answered_at: string | null
+          headcount_attempts: number
+          headcount_requested_at: string | null
           id: string
           language: string | null
           meal_pref: string | null
@@ -895,6 +983,7 @@ export type Database = {
         Insert: {
           callback_requested?: boolean
           confirmed_adults?: number | null
+          confirmed_headcount?: number
           confirmed_kids?: number | null
           contact_id?: string | null
           contact_status?: Database["public"]["Enums"]["contact_status"]
@@ -904,6 +993,9 @@ export type Database = {
           extras?: Json
           full_name: string
           group_id?: string | null
+          headcount_answered_at?: string | null
+          headcount_attempts?: number
+          headcount_requested_at?: string | null
           id?: string
           language?: string | null
           meal_pref?: string | null
@@ -917,6 +1009,7 @@ export type Database = {
         Update: {
           callback_requested?: boolean
           confirmed_adults?: number | null
+          confirmed_headcount?: number
           confirmed_kids?: number | null
           contact_id?: string | null
           contact_status?: Database["public"]["Enums"]["contact_status"]
@@ -926,6 +1019,9 @@ export type Database = {
           extras?: Json
           full_name?: string
           group_id?: string | null
+          headcount_answered_at?: string | null
+          headcount_attempts?: number
+          headcount_requested_at?: string | null
           id?: string
           language?: string | null
           meal_pref?: string | null
@@ -2056,6 +2152,9 @@ export type CompositeTypes<
     : never
 
 export const Constants = {
+  graphql_public: {
+    Enums: {},
+  },
   public: {
     Enums: {
       agreement_status: ["draft", "approved"],

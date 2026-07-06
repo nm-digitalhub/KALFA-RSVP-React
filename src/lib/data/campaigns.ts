@@ -1,7 +1,7 @@
 import 'server-only';
 
 import { requireUser } from '@/lib/auth/dal';
-import { requireOwnedEvent } from '@/lib/data/events';
+import { requireOwnedEvent, requireEventAccess } from '@/lib/data/events';
 import { assertEventNotPast } from '@/lib/data/event-date';
 import {
   countUniqueContactsForEvent,
@@ -230,7 +230,7 @@ export async function getCampaign(campaignId: string): Promise<OwnerCampaign> {
 export async function listCampaignsForEvent(
   eventId: string,
 ): Promise<OwnerCampaign[]> {
-  await requireOwnedEvent(eventId);
+  await requireEventAccess(eventId, 'campaigns', 'view');
   const supabase = await createClient();
   const { data, error } = await supabase
     .from('campaigns')
@@ -248,7 +248,7 @@ export async function listCampaignsForEvent(
 export async function getCampaignForEvent(
   eventId: string,
 ): Promise<OwnerCampaign | null> {
-  await requireOwnedEvent(eventId);
+  await requireEventAccess(eventId, 'campaigns', 'view');
   const supabase = await createClient();
   const { data, error } = await supabase
     .from('campaigns')

@@ -14,6 +14,7 @@ import {
   getCampaignForHold,
 } from '@/lib/data/campaigns';
 import { requireOwnedEvent, publishEvent, closeEvent } from '@/lib/data/events';
+import { sendCampaignWhatsApp } from '@/lib/data/outreach';
 import { closeCampaignAndCharge } from '@/lib/data/close-charge';
 import { recordSignedAgreement } from '@/lib/data/agreements';
 import { getProfile } from '@/lib/data/profiles';
@@ -205,6 +206,45 @@ export async function closeCampaignAction(
 // Final settlement: close (if open) + charge the held card for the accrued total
 // (gated by getCloseChargeEnabled inside the orchestrator). Ownership enforced
 // via the close transition.
+// Manual gift-reminder send (message_key 'gift', kalfa_event_gift_v1).
+// Ownership contract mirrors cancelCampaign (R8): resolve the campaign's
+// event server-side, verify the CURRENT user owns it, only then send.
+// sendCampaignWhatsApp re-checks every §8.3 gate (outreach enabled, campaign
+// active, allowed channel, active template, consent) and fail-closes into the
+// params_incomplete sink when the gift link is not configured.
+export async function sendGiftReminderAction(
+  eventId: string,
+  campaignId: string,
+  _prevState: FormState,
+  _formData: FormData,
+): Promise<FormState> {
+  let result: { sent: number; skipped: number };
+  try {
+    const campaign = await getCampaignForHold(campaignId);
+    if (!campaign || campaign.event_id !== eventId) {
+      return { error: 'הקמפיין לא נמצא.' };
+    }
+    await requireOwnedEvent(campaign.event_id);
+    result = await sendCampaignWhatsApp(campaignId, 'gift');
+  } catch (err) {
+    unstable_rethrow(err);
+    return { error: 'שליחת תזכורת המתנה נכשלה.' };
+  }
+  revalidatePath(`/app/events/${eventId}/campaign/${campaignId}`);
+  if (result.sent === 0) {
+    return {
+      error:
+        'לא נשלחו תזכורות — ודאו שקישור המתנה מולא באירוע, שהקמפיין פעיל ושתבנית המתנה מאושרת ופעילה.',
+    };
+  }
+  return {
+    notice:
+      result.skipped > 0
+        ? `נשלחו ${result.sent} תזכורות מתנה (${result.skipped} דולגו).`
+        : `נשלחו ${result.sent} תזכורות מתנה.`,
+  };
+}
+
 export async function settleCampaignAction(
   eventId: string,
   campaignId: string,

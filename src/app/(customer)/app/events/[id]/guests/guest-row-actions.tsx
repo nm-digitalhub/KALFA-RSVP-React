@@ -5,6 +5,7 @@ import { useState, useTransition } from 'react';
 
 import { Button, buttonVariants } from '@/components/ui/button';
 import { deleteGuestAction } from './guests-actions';
+import { recoverFromVersionSkew } from '@/components/use-version-skew-reload';
 
 // Per-row edit link + delete button. Delete confirms first, then calls the
 // server action with the ids bound here (never trusting a browser-supplied id
@@ -25,8 +26,10 @@ export function GuestRowActions({
     startTransition(async () => {
       try {
         await deleteGuestAction(eventId, guestId);
-      } catch {
-        setFailed(true);
+      } catch (err) {
+        // A stale-deployment action id reloads the tab (shared recovery);
+        // anything else keeps the inline "נכשל" indicator.
+        if (!recoverFromVersionSkew(err)) setFailed(true);
       }
     });
   }

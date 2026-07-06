@@ -74,6 +74,7 @@ describe('resolveTemplateForEvent', () => {
       name: 'kalfa_wedding_invite_v1',
       language: 'he',
       channel: 'whatsapp',
+      mediaName: null,
     });
   });
 
@@ -81,7 +82,7 @@ describe('resolveTemplateForEvent', () => {
     // No components at all.
     mockAdmin({ data: { ...genericRow, components: null }, error: null });
     await expect(resolveTemplateForEvent('invite', 'wedding')).resolves.toEqual(
-      genericRow,
+      { ...genericRow, mediaName: null },
     );
 
     // Variants exist but not for this event type.
@@ -93,8 +94,55 @@ describe('resolveTemplateForEvent', () => {
       error: null,
     });
     await expect(resolveTemplateForEvent('invite', 'birthday')).resolves.toEqual(
-      genericRow,
+      { ...genericRow, mediaName: null },
     );
+  });
+
+
+  it('media_variants: the per-event-type media name wins over the global fallback', async () => {
+    mockAdmin({
+      data: {
+        ...genericRow,
+        components: {
+          media_variant: 'kalfa_event_invite_media_v1',
+          media_variants: { brit: 'kalfa_brit_invite_trad_media_v1' },
+        },
+      },
+      error: null,
+    });
+    await expect(resolveTemplateForEvent('invite', 'brit')).resolves.toEqual({
+      ...genericRow,
+      mediaName: 'kalfa_brit_invite_trad_media_v1',
+    });
+
+    // another event type falls back to the global media sibling
+    mockAdmin({
+      data: {
+        ...genericRow,
+        components: {
+          media_variant: 'kalfa_event_invite_media_v1',
+          media_variants: { brit: 'kalfa_brit_invite_trad_media_v1' },
+        },
+      },
+      error: null,
+    });
+    await expect(resolveTemplateForEvent('invite', 'birthday')).resolves.toEqual({
+      ...genericRow,
+      mediaName: 'kalfa_event_invite_media_v1',
+    });
+  });
+
+  it('media_variants: malformed shapes fall back safely', async () => {
+    for (const media_variants of ['x', 42, ['a'], { brit: 9 }, { brit: ' ' }]) {
+      mockAdmin({
+        data: { ...genericRow, components: { media_variants } },
+        error: null,
+      });
+      await expect(resolveTemplateForEvent('invite', 'brit')).resolves.toEqual({
+        ...genericRow,
+        mediaName: null,
+      });
+    }
   });
 
   it('treats malformed components as no variant, without throwing', async () => {
@@ -112,7 +160,7 @@ describe('resolveTemplateForEvent', () => {
     for (const components of malformed) {
       mockAdmin({ data: { ...genericRow, components }, error: null });
       await expect(resolveTemplateForEvent('invite', 'wedding')).resolves.toEqual(
-        genericRow,
+        { ...genericRow, mediaName: null },
       );
     }
   });

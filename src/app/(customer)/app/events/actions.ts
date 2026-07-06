@@ -10,6 +10,7 @@ import {
   parseCelebrantsForm,
 } from '@/lib/validation/schemas';
 import { issuesToFieldErrors, type FormState } from '@/lib/validation/result';
+import { ilWallTimeToIso } from '@/lib/data/event-date';
 
 // All six possible celebrant inputs across the four kinds (plain named inputs,
 // e.g. `celebrants.groom`). The submitted event_type's schema keeps only its
@@ -35,6 +36,7 @@ export async function createEventAction(
     name: formData.get('name'),
     event_type: formData.get('event_type'),
     event_date: formData.get('event_date'),
+    event_time: formData.get('event_time') ?? '',
     venue_name: formData.get('venue_name'),
   });
 
@@ -61,14 +63,14 @@ export async function createEventAction(
     };
   }
 
-  const { name, event_type, event_date, venue_name } = parsed.data;
+  const { name, event_type, event_date, event_time, venue_name } = parsed.data;
 
   let newEvent: Awaited<ReturnType<typeof createEvent>>;
   try {
     newEvent = await createEvent({
       name,
       event_type,
-      event_date: event_date ? event_date : null,
+      event_date: event_date ? ilWallTimeToIso(event_date, event_time || '') : null,
       venue_name: venue_name ? venue_name : null,
       // Only the submitted type's fields survive; all-empty → null (SQL NULL).
       celebrants: parseCelebrantsForm(event_type, celebrantsParsed.data),

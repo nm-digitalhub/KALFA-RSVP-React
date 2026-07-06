@@ -13,6 +13,7 @@ import {
   resendInvitationAction,
   revokeInvitationAction,
 } from './actions';
+import { formatIsraelDate } from '@/lib/date';
 
 const inputClass =
   'w-full rounded-md border border-border bg-background px-3 py-2 text-sm';
@@ -178,7 +179,7 @@ function InvitationRow({ invitation }: { invitation: OrgInvitationDTO }) {
             {invitation.email}
           </p>
           <p className="text-sm text-muted-foreground">
-            תוקף עד {new Date(invitation.expiresAt).toLocaleDateString('he-IL')}
+            תוקף עד {formatIsraelDate(invitation.expiresAt)}
           </p>
         </div>
         <div className="flex items-center gap-2">

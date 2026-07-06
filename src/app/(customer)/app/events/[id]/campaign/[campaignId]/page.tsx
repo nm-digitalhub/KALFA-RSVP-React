@@ -2,7 +2,7 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { ChevronRight } from 'lucide-react';
 
-import { requireOwnedEvent } from '@/lib/data/events';
+import { requireEventAccess, requireOwnedEvent } from '@/lib/data/events';
 import { isPastEventDay } from '@/lib/data/event-date';
 import { getCampaign } from '@/lib/data/campaigns';
 import { getCampaignBillingSummary } from '@/lib/data/billing';
@@ -12,6 +12,7 @@ import {
   pauseCampaignAction,
   closeCampaignAction,
   settleCampaignAction,
+  sendGiftReminderAction,
 } from '../campaign-actions';
 import { ManageClient } from './manage-client';
 
@@ -23,7 +24,7 @@ export default async function CampaignManagePage({
   params: Promise<{ id: string; campaignId: string }>;
 }) {
   const { id: eventId, campaignId } = await params;
-  const event = await requireOwnedEvent(eventId);
+  const event = await requireEventAccess(eventId, 'campaigns', 'view');
   const isPast = isPastEventDay(event.event_date);
 
   const campaign = await getCampaign(campaignId);
@@ -52,6 +53,7 @@ export default async function CampaignManagePage({
   const pause = pauseCampaignAction.bind(null, eventId, campaignId);
   const close = closeCampaignAction.bind(null, eventId, campaignId);
   const settle = settleCampaignAction.bind(null, eventId, campaignId);
+  const sendGift = sendGiftReminderAction.bind(null, eventId, campaignId);
 
   return (
     <div className="space-y-6">
@@ -79,7 +81,7 @@ export default async function CampaignManagePage({
           }}
           summary={summary}
           delivery={delivery}
-          actions={{ activate, pause, close, settle }}
+          actions={{ activate, pause, close, settle, sendGift }}
           isPast={isPast}
         />
       </section>

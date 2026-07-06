@@ -6,6 +6,8 @@ import { createEventAction } from '../actions';
 import { EVENT_TYPES } from '@/lib/validation/schemas';
 import { CELEBRANT_FIELD_LABELS, EVENT_TYPE_LABELS } from '@/lib/data/event-labels';
 import { FieldError, FormError, SubmitButton } from '@/components/forms';
+import { TimeSelect24 } from '@/components/time-select-24';
+import { DateSelectIL } from '@/components/date-select-il';
 
 type EventType = (typeof EVENT_TYPES)[number];
 
@@ -119,15 +121,20 @@ export function NewEventForm() {
           תאריך האירוע
           <RequiredMark />
         </label>
-        <input
-          id="event_date"
-          name="event_date"
-          type="date"
-          required
-          className={inputClass}
-        />
-        <p className="mt-1 text-xs text-muted-foreground">בחרו תאריך מהלוח</p>
+        <DateSelectIL id="event_date" name="event_date" required />
+        <p className="mt-1 text-xs text-muted-foreground">יום / חודש / שנה</p>
         <FieldError errors={state?.fieldErrors?.event_date} />
+      </div>
+
+      <div>
+        <label htmlFor="event_time" className="mb-1 block text-sm font-medium">
+          שעת האירוע
+        </label>
+        <TimeSelect24 id="event_time" name="event_time" />
+        <p className="mt-1 text-xs text-muted-foreground">
+          רשות — תופיע בהזמנות ובתזכורות (שעון ישראל)
+        </p>
+        <FieldError errors={state?.fieldErrors?.event_time} />
       </div>
 
       <div>

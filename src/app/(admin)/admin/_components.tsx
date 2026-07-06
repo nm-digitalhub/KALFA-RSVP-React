@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { cva, type VariantProps } from 'class-variance-authority';
 
 import { cn } from '@/lib/utils';
+import { formatIsraelDateTime } from '@/lib/date';
 
 // Shared, server-rendered presentational helpers for the admin pages. Kept in
 // the route group (leading underscore = not a route) so they live next to their
@@ -18,14 +19,9 @@ export function formatCurrency(amount: number): string {
   return currencyFormatter.format(amount);
 }
 
-const dateFormatter = new Intl.DateTimeFormat('he-IL', {
-  dateStyle: 'short',
-  timeStyle: 'short',
-});
-
+// Central Israel formatter (he-IL + Asia/Jerusalem + h23) — see src/lib/date.ts.
 export function formatDateTime(iso: string): string {
-  const d = new Date(iso);
-  return Number.isNaN(d.getTime()) ? iso : dateFormatter.format(d);
+  return formatIsraelDateTime(iso) || iso;
 }
 
 export function PageHeading({ children }: { children: React.ReactNode }) {

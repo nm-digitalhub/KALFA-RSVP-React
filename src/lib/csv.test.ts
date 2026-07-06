@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { parseCsv } from './csv';
+import { decodeCsvBuffer, parseCsv, sniffSpreadsheetBinary } from './csv';
 
 describe('parseCsv', () => {
   it('parses a simple comma-separated row', () => {
@@ -69,5 +69,58 @@ describe('parseCsv', () => {
 
   it('does not treat % or * as special (no CSV-level wildcard handling)', () => {
     expect(parseCsv('100%,a*b')).toEqual([['100%', 'a*b']]);
+  });
+});
+
+describe('sniffSpreadsheetBinary', () => {
+  it('detects an xlsx (ZIP) upload by magic bytes', () => {
+    expect(
+      sniffSpreadsheetBinary(new Uint8Array([0x50, 0x4b, 0x03, 0x04, 0x14])),
+    ).toBe('xlsx');
+  });
+
+  it('detects a legacy xls (OLE) upload by magic bytes', () => {
+    expect(
+      sniffSpreadsheetBinary(new Uint8Array([0xd0, 0xcf, 0x11, 0xe0, 0xa1])),
+    ).toBe('xls');
+  });
+
+  it('returns null for plain text (UTF-8 CSV)', () => {
+    expect(
+      sniffSpreadsheetBinary(new TextEncoder().encode('שם מלא,טלפון\n')),
+    ).toBe(null);
+  });
+
+  it('returns null for a short/empty buffer', () => {
+    expect(sniffSpreadsheetBinary(new Uint8Array([0x50, 0x4b]))).toBe(null);
+    expect(sniffSpreadsheetBinary(new Uint8Array([]))).toBe(null);
+  });
+});
+
+describe('decodeCsvBuffer', () => {
+  it('decodes valid UTF-8 (with Hebrew) as UTF-8', () => {
+    const bytes = new TextEncoder().encode('שם מלא,טלפון\nדנה,0501234567\n');
+    expect(decodeCsvBuffer(bytes)).toContain('דנה');
+  });
+
+  it('keeps the UTF-8 BOM intact for parseCsv to strip', () => {
+    const bytes = new TextEncoder().encode('\uFEFF' + 'שם,טלפון\n');
+    const grid = parseCsv(decodeCsvBuffer(bytes));
+    expect(grid[0][0]).toBe('שם');
+  });
+
+  it('falls back to windows-1255 for Hebrew-Excel ANSI bytes', () => {
+    // 'דנה' in windows-1255: 0xE3 0xF0 0xE4 — invalid as UTF-8.
+    const bytes = new Uint8Array([
+      ...new TextEncoder().encode('name,phone\n'),
+      0xe3, 0xf0, 0xe4,
+      ...new TextEncoder().encode(',0501234567\n'),
+    ]);
+    expect(decodeCsvBuffer(bytes)).toContain('דנה');
+  });
+
+  it('decodes pure ASCII identically under either path', () => {
+    const bytes = new TextEncoder().encode('name,phone\nDana,0501234567\n');
+    expect(decodeCsvBuffer(bytes)).toBe('name,phone\nDana,0501234567\n');
   });
 });

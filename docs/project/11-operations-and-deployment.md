@@ -150,7 +150,6 @@ esbuild worker/main.ts --bundle --platform=node --format=cjs --target=node20 \
 | script | פקודה | תפקיד |
 |---|---|---|
 | `build` | `NEXT_DIST_DIR=.next-verify next build --webpack` | **בניית אימות בלבד** — לתיקייה נפרדת, לא נוגעת ב-`.next` החי |
-| `build:prod` | `next build --webpack` | בנייה ישירה ל-`.next` (לא בשימוש בזרימה הרגילה) |
 | `deploy` | ראו להלן | **הפריסה עצמה — כוללת את הבנייה** |
 | `worker:build` | esbuild → `dist/worker.cjs` | בניית ה-worker |
 | `test` | `vitest run` | חבילת הבדיקות |
@@ -183,11 +182,19 @@ npx tsc --noEmit && npm run lint && npm run test && npm run deploy
 1. **`deploy` הוא-הוא הבנייה.** אין להריץ `npm run build` לפני `npm run deploy` —
    זו בנייה כפולה מיותרת (double-build). `npm run build` נועד לאימות בלבד.
 2. **הבנייה תמיד `--webpack`.** בניית production עם Turbopack שוברת את
-   `/_not-found` (InvariantError על 404). סקריפטי `build`/`build:prod`/`deploy`
-   כבר כוללים את הדגל — אין להסירו.
+   `/_not-found` (InvariantError על 404). סקריפטי `build`/`deploy`
+   כבר כוללים את הדגל — אין להסירו. (`build:prod` הוסר ב-2026-07-06 —
+   בנייה ישירה ל-`.next` החי עוקפת גם את בידוד ה-distDir וגם את רענון
+   `.deploy-id` של הגנת ה-version-skew.)
 
 `next.config.ts` מכבד `NEXT_DIST_DIR` (`distDir: process.env.NEXT_DIST_DIR || '.next'`),
 וזה מה שמאפשר את הפרדת `.next-verify` / `.next-stage` / `.next`.
+
+**הגנת version-skew (`.deploy-id`):** סקריפט ה-deploy כותב מזהה חדש לקובץ
+`.deploy-id` **לפני** הבנייה; `next.config.ts` קורא אותו גם בבנייה וגם ב-runtime
+(`deploymentId`). קצה תפעולי: אם deploy נכשל אחרי כתיבת המזהה אך לפני ה-restart,
+קובץ המזהה מקדים את ה-`.next` המוגש — `pm2 restart` ידני במצב כזה יגרום לרענוני
+mismatch. התאוששות: להריץ `npm run deploy` מחדש (לא restart ידני).
 
 ### 4.3 בנייה מקבילית — אסורה
 

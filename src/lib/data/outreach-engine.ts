@@ -3,9 +3,10 @@ import 'server-only';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { getOutreachEnabled, getWhatsAppConfig } from '@/lib/data/outreach-config';
 import { resolveTemplateForEvent } from '@/lib/data/message-templates';
-import { recordTemplateFailure, sendOneWhatsApp } from '@/lib/data/outreach';
+import { recordTemplateFailure, resolveTemplateMedia, sendOneWhatsApp } from '@/lib/data/outreach';
 import {
   buildTemplateParams,
+  deriveGuestFirstName,
   type TemplateParamsContext,
 } from '@/lib/whatsapp/template-spec';
 import { recordReached, type ReachedArgs } from '@/lib/data/billing';
@@ -31,6 +32,7 @@ export type CampaignContext = {
   schedule: Touchpoint[];
   eventDate: string;
   eventStatus: string;
+  inviteImagePath: string | null;
   // The template-binding slice of the event row (event_date repeats eventDate —
   // kept flat above for the worker's scheduling math, nested here in exactly
   // the shape buildTemplateParams consumes).
@@ -105,7 +107,7 @@ export async function getCampaignContext(
   if (error || !c) return null;
   const { data: ev } = await admin
     .from('events')
-    .select('event_date, status, name, event_type, venue_name, venue_address, celebrants')
+    .select('event_date, status, name, event_type, venue_name, venue_address, celebrants, invite_image_path')
     .eq('id', c.event_id)
     .maybeSingle();
   if (!ev?.event_date) return null;
@@ -118,6 +120,7 @@ export async function getCampaignContext(
     schedule: (c.outreach_schedule as Touchpoint[] | null) ?? [],
     eventDate: ev.event_date,
     eventStatus: ev.status,
+    inviteImagePath: ev.invite_image_path ?? null,
     event: {
       name: ev.name,
       event_type: ev.event_type,
@@ -305,7 +308,9 @@ export async function executeStep(
       .order('created_at', { ascending: true })
       .limit(1)
       .maybeSingle();
-    const guestFirstName = guest?.full_name?.trim().split(/\s+/)[0] || null;
+    // Shared {{1}} rule (deriveGuestFirstName): first token of the linked
+    // guest's name; households ("משפחת …")/no-guest → null → generic greeting.
+    const guestFirstName = deriveGuestFirstName(guest?.full_name);
     // Which side of the Meta positional contract to bind — the wedding family
     // renders groom/bride in {{2}}/{{3}} (docs/whatsapp-templates-meta-submission.md).
     const family = template.name.startsWith('kalfa_wedding_') ? 'wedding' : 'generic';
@@ -317,13 +322,17 @@ export async function executeStep(
       await recordTemplateFailure(admin, campaignId, stepIndex, 'params_incomplete', tp.message_key, tp.channel);
       return { action: 'skipped' };
     }
+    // Media invite: swap to the IMAGE-header sibling when the row maps one
+    // AND the event has an uploaded invitation image (fail-open to text).
+    const media = await resolveTemplateMedia(template, ctx.inviteImagePath);
     const ok = await sendOneWhatsApp(
       admin,
       { id: campaignId, event_id: eventId },
       { id: contactId, normalized_phone: contact.normalized_phone },
-      template,
+      media.template,
       config,
       built.params,
+      media.headerImage ? { headerImage: media.headerImage } : undefined,
     );
     if (!ok) return { action: 'skipped' };
     await bumpCount(admin, campaignId, contactId, 'whatsapp_sent_count');

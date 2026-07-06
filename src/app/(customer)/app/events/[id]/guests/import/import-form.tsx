@@ -1,10 +1,11 @@
 'use client';
 
 import Link from 'next/link';
-import { useActionState } from 'react';
+import { useActionState, useState } from 'react';
 import { useFormStatus } from 'react-dom';
 
-import { FormError } from '@/components/forms';
+import { FieldError, FormError } from '@/components/forms';
+import { CSV_MAX_BYTES } from '@/lib/constants';
 import type { ImportState } from './import-actions';
 
 type ImportAction = (
@@ -30,6 +31,7 @@ export function ImportForm({ action }: { action: ImportAction }) {
     action,
     null,
   );
+  const [fileError, setFileError] = useState<string | null>(null);
 
   return (
     <div className="space-y-6">
@@ -47,7 +49,22 @@ export function ImportForm({ action }: { action: ImportAction }) {
             accept=".csv,text/csv"
             required
             className="block w-full text-sm"
+            onChange={(e) => {
+              // Same pre-check rationale as the invite image: above the Server
+              // Action body limit the framework rejects BEFORE the action, so
+              // the server's friendly size error would never render.
+              const f = e.target.files?.[0];
+              if (f && f.size > CSV_MAX_BYTES) {
+                setFileError(
+                  `הקובץ גדול מדי (מעל ${Math.floor(CSV_MAX_BYTES / 1000)}KB). פצלו את הקובץ.`,
+                );
+                e.target.value = '';
+              } else {
+                setFileError(null);
+              }
+            }}
           />
+          <FieldError errors={fileError ? [fileError] : undefined} />
         </div>
 
         <UploadButton />
