@@ -361,13 +361,13 @@ describe('brit personal builders (kalfa_brit_invite_trad_v4 / reminder / thankyo
     );
     if ('missing' in r) throw new Error('expected params');
     expect(r.params).toEqual([
-      'הנני מתכבדת להזמינכם לשמחת ברית בני.',
+      'מתכבדת להזמינכם לשמחת בריתו של בני.',
       'ראשון',
       'כ״ז בתמוז תשפ״ו',
       '12.07.2026',
       '17:30',
       VENUE,
-      'אשמח לראותכם עמי.',
+      'אשמח לראותכם בשמחתי. נטלי קלפה',
     ]);
   });
 
@@ -376,8 +376,8 @@ describe('brit personal builders (kalfa_brit_invite_trad_v4 / reminder / thankyo
       britCtx({ parents: 'דוד כהן', host_composition: 'single_father' }),
     );
     if ('missing' in r) throw new Error('expected params');
-    expect(r.params[0]).toBe('הנני מתכבד להזמינכם לשמחת ברית בני.');
-    expect(r.params[6]).toBe('אשמח לראותכם עמי.');
+    expect(r.params[0]).toBe('מתכבד להזמינכם לשמחת בריתו של בני.');
+    expect(r.params[6]).toBe('אשמח לראותכם בשמחתי. דוד כהן');
   });
 
   it('invite — couple: plural verb, בננו, עמנו', () => {
@@ -385,8 +385,8 @@ describe('brit personal builders (kalfa_brit_invite_trad_v4 / reminder / thankyo
       britCtx({ parents: 'משה ורות כהן', host_composition: 'couple' }),
     );
     if ('missing' in r) throw new Error('expected params');
-    expect(r.params[0]).toBe('הננו מתכבדים להזמינכם לשמחת ברית בננו.');
-    expect(r.params[6]).toBe('נשמח לראותכם עמנו.');
+    expect(r.params[0]).toBe('מתכבדים להזמינכם לשמחת בריתו של בננו.');
+    expect(r.params[6]).toBe('נשמח לראותכם בשמחתנו. משה ורות כהן');
   });
 
   it('reminder — 6 slots, first-person line, no closing slot', () => {

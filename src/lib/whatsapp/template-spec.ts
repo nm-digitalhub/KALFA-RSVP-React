@@ -276,29 +276,32 @@ export function buildTemplateParams(
 // The wording MIRRORS the Meta-approved bodies — changing it here without
 // resubmitting the template would desync the rendered message from the layout.
 type BritPhrasing = {
+  // First-person opening (NO name — the host signs at the end); conjugation per
+  // composition. The closing carries the host SIGNATURE (בעלת/בעל השמחה) on its
+  // own line, owner-approved: "<opening> … <closing>\n<host name>".
   invite: string;
   reminder: string;
-  closing: string;
+  closing: (host: string) => string;
   thanks: string;
 };
 
 const BRIT_PHRASING: Record<HostComposition, BritPhrasing> = {
   single_mother: {
-    invite: 'הנני מתכבדת להזמינכם לשמחת ברית בני.',
+    invite: 'מתכבדת להזמינכם לשמחת בריתו של בני.',
     reminder: 'רציתי להזכיר לכם בשמחה — שמחת ברית בני מתקרבת.',
-    closing: 'אשמח לראותכם עמי.',
+    closing: (host) => `אשמח לראותכם בשמחתי. ${host}`,
     thanks: 'מעומק הלב — תודה שבאתם לחגוג עמי את שמחת ברית בני.',
   },
   single_father: {
-    invite: 'הנני מתכבד להזמינכם לשמחת ברית בני.',
+    invite: 'מתכבד להזמינכם לשמחת בריתו של בני.',
     reminder: 'רציתי להזכיר לכם בשמחה — שמחת ברית בני מתקרבת.',
-    closing: 'אשמח לראותכם עמי.',
+    closing: (host) => `אשמח לראותכם בשמחתי. ${host}`,
     thanks: 'מעומק הלב — תודה שבאתם לחגוג עמי את שמחת ברית בני.',
   },
   couple: {
-    invite: 'הננו מתכבדים להזמינכם לשמחת ברית בננו.',
+    invite: 'מתכבדים להזמינכם לשמחת בריתו של בננו.',
     reminder: 'רצינו להזכיר לכם בשמחה — שמחת ברית בננו מתקרבת.',
-    closing: 'נשמח לראותכם עמנו.',
+    closing: (host) => `נשמח לראותכם בשמחתנו. ${host}`,
     thanks: 'מעומק הלב — תודה שבאתם לחגוג עמנו את שמחת ברית בננו.',
   },
 };
@@ -355,16 +358,18 @@ function britDateVenueParts(
 // {{6}} venue, {{7}} first-person closing.
 export function buildBritTradInviteParams(ctx: TemplateParamsContext): BritParamsResult {
   const phrasing = britPhrasingFor(ctx.event.celebrants);
+  // The closing SIGNS with the host name (בעלת/בעל השמחה) — REQUIRED, per the owner.
+  const host = readCelebrantField(ctx.event.celebrants, 'parents');
   const dv = britDateVenueParts(ctx.event);
-  if (!phrasing || 'missing' in dv) {
+  if (!phrasing || !host || 'missing' in dv) {
     const missing: MissingParamKey[] = [];
-    if (!phrasing) missing.push('celebrants');
+    if (!phrasing || !host) missing.push('celebrants');
     if ('missing' in dv) missing.push(...dv.missing);
     return { missing };
   }
   const [weekday, hebrew, gregorian, time, venue] = dv.parts;
   return {
-    params: [phrasing.invite, weekday, hebrew, gregorian, time, venue, phrasing.closing],
+    params: [phrasing.invite, weekday, hebrew, gregorian, time, venue, phrasing.closing(host)],
   };
 }
 
