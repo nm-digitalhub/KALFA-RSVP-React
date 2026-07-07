@@ -24,6 +24,83 @@ export class WhatsAppSendError extends Error {
   }
 }
 
+// The PII-free delivery classification the serial-flow worker resolves on (§F.5
+// / §12.8.5). Exactly three outcomes:
+//   accepted            — the provider returned a message id (queued/sent).
+//   definitely_not_sent — a VERIFIED synchronous provider rejection (invalid
+//                         recipient/template/params, closed 24h window). KNOWN
+//                         not delivered → the worker may release + retry.
+//   unknown             — timeout / network / 5xx / throttle / unmapped code /
+//                         missing id. Delivery UNCERTAIN → the worker NEVER
+//                         resends (advances at-most-once).
+// Carries only status/code numbers — never phone, name, or body.
+export type DeliveryOutcome =
+  | { kind: 'accepted'; providerId: string }
+  | {
+      kind: 'definitely_not_sent';
+      reason: string;
+      providerStatus?: number;
+      providerCode?: string;
+    }
+  | { kind: 'unknown'; reason: string; providerStatus?: number; providerCode?: string };
+
+// Meta Cloud API error codes that are SYNCHRONOUS pre-queue rejections — the
+// message was KNOWN not delivered. ONLY these map to definitely_not_sent (safe
+// to retry). Everything else — 5xx, network, timeout, throttling, account state,
+// unmapped codes — classifies as unknown (never resends). Conservative by
+// design: an unmapped code costs one advance-skip (the multi-touchpoint schedule
+// self-covers); a wrong 'definite' would cost a resend.
+// https://developers.facebook.com/docs/whatsapp/cloud-api/support/error-codes
+const DEFINITELY_NOT_SENT_CODES = new Set<number>([
+  100, // invalid parameter / unsupported field
+  131008, // required parameter is missing
+  131009, // parameter value is not valid
+  131026, // message undeliverable (recipient cannot receive / not on WhatsApp)
+  131047, // re-engagement required (outside the 24h customer-service window)
+  131051, // unsupported message type
+  132000, // template param count mismatch
+  132001, // template does not exist / not approved for the language
+  132005, // template hydrated text too long
+  132007, // template content violates policy
+  132012, // template parameter format mismatch
+  132015, // template is paused
+  132016, // template is disabled
+]);
+
+// Classify a RESOLVED sendMessage body. whatsapp-api-js returns the parsed JSON
+// (it does NOT throw on an HTTP 4xx/5xx — a Meta error arrives as { error: {…} }
+// in the body). A message id ⇒ accepted; a mapped error code ⇒ definitely_not_sent;
+// anything else ⇒ unknown.
+function classifyResponse(res: unknown): DeliveryOutcome {
+  const r = res as {
+    messages?: Array<{ id?: string | null } | null> | null;
+    error?: { code?: number } | null;
+  } | null;
+  const providerId = r?.messages?.[0]?.id;
+  if (providerId) return { kind: 'accepted', providerId };
+  const code = r?.error?.code;
+  if (typeof code === 'number') {
+    return DEFINITELY_NOT_SENT_CODES.has(code)
+      ? { kind: 'definitely_not_sent', reason: 'provider_rejected', providerCode: String(code) }
+      : { kind: 'unknown', reason: 'provider_error', providerCode: String(code) };
+  }
+  // No id and no recognizable error code → the send cannot be confirmed.
+  return { kind: 'unknown', reason: 'missing_message_id' };
+}
+
+// A THROW from the send path is ambiguous about delivery (fetch network/timeout,
+// a JSON parse failure on a gateway HTML page, or a library WhatsAppAPIError).
+// It is ALWAYS unknown — the verified 'definite' signal is a provider error CODE
+// (which arrives in the resolved body, never as a throw), not an HTTP status.
+function classifyThrow(e: unknown): DeliveryOutcome {
+  const status = (e as { httpStatus?: unknown } | null)?.httpStatus;
+  return {
+    kind: 'unknown',
+    reason: 'send_threw',
+    providerStatus: typeof status === 'number' ? status : undefined,
+  };
+}
+
 export async function sendWhatsAppTemplate(
   cfg: { phoneNumberId: string; accessToken: string; appSecret: string | null },
   params: {
@@ -43,7 +120,7 @@ export async function sendWhatsAppTemplate(
     // button URL (e.g. the event's gift_link_token for kalfa_event_gift_v1).
     urlButtonParam?: string;
   },
-): Promise<{ providerId: string }> {
+): Promise<DeliveryOutcome> {
   // secure:false avoids requiring the appSecret for SENDING (the secret is only
   // needed to verify INBOUND webhooks, handled in B2).
   const api = new WhatsAppAPI({ token: cfg.accessToken, secure: false });
@@ -78,22 +155,12 @@ export async function sendWhatsAppTemplate(
         )
       : new Template(params.templateName, new Language(params.language));
 
-  let res: { messages?: Array<{ id?: string | null } | null> };
   try {
-    res = (await api.sendMessage(
-      cfg.phoneNumberId,
-      params.to,
-      message,
-    )) as typeof res;
-  } catch {
-    throw new WhatsAppSendError('שליחת הודעת וואטסאפ נכשלה');
+    const res = await api.sendMessage(cfg.phoneNumberId, params.to, message);
+    return classifyResponse(res);
+  } catch (e) {
+    return classifyThrow(e);
   }
-
-  const providerId = res?.messages?.[0]?.id;
-  if (!providerId) {
-    throw new WhatsAppSendError('לא התקבל מזהה הודעה מוואטסאפ');
-  }
-  return { providerId };
 }
 
 // Free-form session message — allowed ONLY inside the 24h customer-service
@@ -103,21 +170,12 @@ export async function sendWhatsAppTemplate(
 export async function sendWhatsAppText(
   cfg: { phoneNumberId: string; accessToken: string; appSecret: string | null },
   params: { to: string; body: string },
-): Promise<{ providerId: string }> {
+): Promise<DeliveryOutcome> {
   const api = new WhatsAppAPI({ token: cfg.accessToken, secure: false });
-  let res: { messages?: Array<{ id?: string | null } | null> };
   try {
-    res = (await api.sendMessage(
-      cfg.phoneNumberId,
-      params.to,
-      new Text(params.body),
-    )) as typeof res;
-  } catch {
-    throw new WhatsAppSendError('שליחת הודעת וואטסאפ נכשלה');
+    const res = await api.sendMessage(cfg.phoneNumberId, params.to, new Text(params.body));
+    return classifyResponse(res);
+  } catch (e) {
+    return classifyThrow(e);
   }
-  const providerId = res?.messages?.[0]?.id;
-  if (!providerId) {
-    throw new WhatsAppSendError('לא התקבל מזהה הודעה מוואטסאפ');
-  }
-  return { providerId };
 }

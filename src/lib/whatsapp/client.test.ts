@@ -12,7 +12,7 @@ vi.mock('whatsapp-api-js', () => ({
   },
 }));
 
-import { sendWhatsAppTemplate, WhatsAppSendError } from './client';
+import { sendWhatsAppTemplate } from './client';
 
 const cfg = { phoneNumberId: 'PNID', accessToken: 'TKN', appSecret: null };
 
@@ -44,7 +44,7 @@ describe('sendWhatsAppTemplate', () => {
       '+972501234567',
       expect.objectContaining({ name: 'rsvp_invite' }),
     );
-    expect(r.providerId).toBe('wamid.123');
+    expect(r).toEqual({ kind: 'accepted', providerId: 'wamid.123' });
   });
 
   it('without bodyParams the template goes out BARE — no components key at all', async () => {
@@ -88,17 +88,83 @@ describe('sendWhatsAppTemplate', () => {
     });
   });
 
-  it('throws WhatsAppSendError when the API errors', async () => {
+  it('classifies a thrown send (network/timeout) as unknown — never a resend', async () => {
     sendMessage.mockRejectedValue(new Error('meta down'));
-    await expect(
-      sendWhatsAppTemplate(cfg, { to: '+972500000000', templateName: 't', language: 'he' }),
-    ).rejects.toBeInstanceOf(WhatsAppSendError);
+    const r = await sendWhatsAppTemplate(cfg, {
+      to: '+972500000000',
+      templateName: 't',
+      language: 'he',
+    });
+    expect(r.kind).toBe('unknown');
   });
 
-  it('throws WhatsAppSendError when no message id is returned', async () => {
+  it('classifies a missing message id as unknown', async () => {
     sendMessage.mockResolvedValue({ messages: [] });
-    await expect(
-      sendWhatsAppTemplate(cfg, { to: '+972500000000', templateName: 't', language: 'he' }),
-    ).rejects.toBeInstanceOf(WhatsAppSendError);
+    const r = await sendWhatsAppTemplate(cfg, {
+      to: '+972500000000',
+      templateName: 't',
+      language: 'he',
+    });
+    expect(r.kind).toBe('unknown');
+  });
+
+  it('maps a verified 4xx provider error code to definitely_not_sent', async () => {
+    sendMessage.mockResolvedValue({ error: { code: 131026 } });
+    const r = await sendWhatsAppTemplate(cfg, {
+      to: '+972500000000',
+      templateName: 't',
+      language: 'he',
+    });
+    expect(r.kind).toBe('definitely_not_sent');
+  });
+
+  it('maps an unmapped provider error code to unknown (conservative)', async () => {
+    sendMessage.mockResolvedValue({ error: { code: 500 } });
+    const r = await sendWhatsAppTemplate(cfg, {
+      to: '+972500000000',
+      templateName: 't',
+      language: 'he',
+    });
+    expect(r.kind).toBe('unknown');
+  });
+
+  it('carries the provider code (never PII) on a definitely_not_sent classification', async () => {
+    sendMessage.mockResolvedValue({ error: { code: 132001 } }); // template not approved
+    const r = await sendWhatsAppTemplate(cfg, {
+      to: '+972500000000',
+      templateName: 't',
+      language: 'he',
+    });
+    expect(r).toEqual({
+      kind: 'definitely_not_sent',
+      reason: 'provider_rejected',
+      providerCode: '132001',
+    });
+  });
+
+  it('classifies a thrown 5xx (httpStatus) as unknown and preserves the status number', async () => {
+    // A gateway 5xx arrives as a throw; delivery is UNCERTAIN → unknown, never a
+    // resend. Only a provider error CODE in the body is a "definite" signal.
+    sendMessage.mockRejectedValue(Object.assign(new Error('bad gateway'), { httpStatus: 503 }));
+    const r = await sendWhatsAppTemplate(cfg, {
+      to: '+972500000000',
+      templateName: 't',
+      language: 'he',
+    });
+    expect(r).toEqual({ kind: 'unknown', reason: 'send_threw', providerStatus: 503 });
+  });
+
+  it('every verified 4xx code maps to definitely_not_sent; a neighbour code stays unknown', async () => {
+    const definite = [100, 131008, 131026, 131047, 132000, 132001, 132015, 132016];
+    for (const code of definite) {
+      sendMessage.mockResolvedValue({ error: { code } });
+      const r = await sendWhatsAppTemplate(cfg, { to: '+972500000000', templateName: 't', language: 'he' });
+      expect(r.kind).toBe('definitely_not_sent');
+    }
+    // 131050 is NOT in the verified set → conservative unknown (one advance-skip,
+    // never a wrong "definite" that would cost a resend).
+    sendMessage.mockResolvedValue({ error: { code: 131050 } });
+    const r = await sendWhatsAppTemplate(cfg, { to: '+972500000000', templateName: 't', language: 'he' });
+    expect(r.kind).toBe('unknown');
   });
 });

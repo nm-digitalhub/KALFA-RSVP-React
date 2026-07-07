@@ -398,7 +398,7 @@ describe('executeStep — runtime template integrity (§5.6)', () => {
 describe('executeStep — send-time parameter binding', () => {
   const wireHappyPath = () => {
     vi.mocked(getWhatsAppConfig).mockResolvedValue(waConfig);
-    vi.mocked(sendOneWhatsApp).mockResolvedValue(true);
+    vi.mocked(sendOneWhatsApp).mockResolvedValue({ kind: 'accepted', providerId: 'wamid.e' });
     const { client, builder } = createMockSupabase<Record<string, unknown>>({
       data: null,
       error: null,

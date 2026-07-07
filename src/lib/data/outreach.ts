@@ -13,7 +13,7 @@ import {
 import { listSendableContacts } from '@/lib/data/contacts';
 import { isPastEventDay } from '@/lib/data/event-date';
 import { signedInviteImageUrl } from '@/lib/storage/event-media';
-import { sendWhatsAppTemplate } from '@/lib/whatsapp/client';
+import { sendWhatsAppTemplate, type DeliveryOutcome } from '@/lib/whatsapp/client';
 import {
   buildGiftParams,
   buildTemplateParams,
@@ -25,7 +25,9 @@ type AdminClient = ReturnType<typeof createAdminClient>;
 
 // Send ONE approved WhatsApp template to ONE contact + log the outbound,
 // non-billable interaction (idempotent on UNIQUE(channel, provider_id)). Returns
-// whether it was sent. Never logs the token/phone/body. Shared by the batch
+// the classified DeliveryOutcome (accepted / definitely_not_sent / unknown) so
+// the serial-flow worker can drive retry/advance; the manual batch just checks
+// `kind === 'accepted'`. Never logs the token/phone/body. Shared by the batch
 // send below AND the per-contact outreach engine (C1).
 export async function sendOneWhatsApp(
   admin: AdminClient,
@@ -42,9 +44,10 @@ export async function sendOneWhatsApp(
     headerImage?: { link: string } | { mediaId: string };
     urlButtonParam?: string;
   },
-): Promise<boolean> {
+): Promise<DeliveryOutcome> {
+  let outcome: DeliveryOutcome;
   try {
-    const { providerId } = await sendWhatsAppTemplate(
+    outcome = await sendWhatsAppTemplate(
       {
         phoneNumberId: config.phoneNumberId,
         accessToken: config.accessToken,
@@ -59,7 +62,15 @@ export async function sendOneWhatsApp(
         urlButtonParam: extras?.urlButtonParam,
       },
     );
-    const { error } = await admin.from('contact_interactions').upsert(
+  } catch {
+    // The client classifies transport failures rather than throwing, but stay
+    // defensive: an UNEXPECTED throw is ambiguous → unknown (never a resend).
+    return { kind: 'unknown', reason: 'send_threw' };
+  }
+  // Log the outbound only when the provider accepted it (idempotent, best-effort
+  // — a logging failure never downgrades an accepted send). No PII logged.
+  if (outcome.kind === 'accepted') {
+    await admin.from('contact_interactions').upsert(
       {
         event_id: campaign.event_id,
         campaign_id: campaign.id,
@@ -67,16 +78,13 @@ export async function sendOneWhatsApp(
         channel: 'whatsapp',
         direction: 'out',
         kind: 'template',
-        provider_id: providerId,
+        provider_id: outcome.providerId,
         billable: false,
       },
       { onConflict: 'channel,provider_id', ignoreDuplicates: true },
     );
-    return !error;
-  } catch {
-    // A single send/log failure must not abort the batch. No PII logged.
-    return false;
   }
+  return outcome;
 }
 
 // The manual batch path below has no outreach_schedule touchpoint, but the
@@ -313,7 +321,7 @@ export async function sendCampaignWhatsApp(
           ? { headerImage: media.headerImage }
           : undefined,
     );
-    if (ok) sent++;
+    if (ok.kind === 'accepted') sent++;
     else skipped++;
   }
   return { sent, skipped };

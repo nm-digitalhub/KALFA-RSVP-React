@@ -13,8 +13,9 @@ import { ISRAEL_TIME_ZONE } from '@/lib/date';
 const ISRAEL_TZ = ISRAEL_TIME_ZONE;
 
 // YYYY-MM-DD for an instant's calendar day in Israel (en-CA → ISO order, which
-// sorts chronologically as a plain string).
-function israelCalendarDay(ms: number): string {
+// sorts chronologically as a plain string). Exported for the outreach
+// send-window (it needs the event's Israel calendar date to plan touchpoints).
+export function israelCalendarDay(ms: number): string {
   return new Intl.DateTimeFormat('en-CA', {
     timeZone: ISRAEL_TZ,
     year: 'numeric',

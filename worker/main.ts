@@ -1,8 +1,9 @@
 // KALFA outreach worker — the long-lived pg-boss process (pm2 `kalfa-worker`).
-// Drives the §10 schedule across contacts: WhatsApp → wait → reminders →
-// escalate-to-call → STOP on a billed reach. The web tier stays pg-boss-free;
-// this process owns all send/work/schedule. Inert until outreach_enabled is on
-// (stepGate fail-closes), so it is safe to run before go-live.
+// Drives the §10 schedule across contacts with the §12 FINAL serial flow:
+// cursor-first evaluate → reserve → send → resolve, one step at a time, at most
+// once. The web tier stays pg-boss-free; this process owns all send/work/
+// schedule. Inert until outreach_enabled is on (stepGate + the arm fail-close),
+// so it is safe to run before go-live.
 //
 // Built with esbuild → dist/worker.cjs (server-only / next/headers / next/cache
 // aliased to an empty stub; node_modules kept external). Run: node dist/worker.cjs.
@@ -11,21 +12,32 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { PgBoss } from 'pg-boss';
 
-import { QUEUES, STEP_RETRY } from '@/lib/queue/queues';
+import { QUEUES, type OutreachStepJob } from '@/lib/queue/queues';
 import {
   listActiveCampaigns,
   listActiveOutreach,
   getCampaignContext,
   seedOutreachState,
   stepGate,
-  executeStep,
   setOutreachStatus,
+  loadOutreachRow,
+  ensureCurrentStep,
+  prepareAndSendStep,
+  checkStepTerminal,
+  reserveStep,
+  releaseReservation,
+  resolveStep,
+  type CampaignContext,
 } from '@/lib/data/outreach-engine';
 import {
-  nextTouchpointIndex,
-  touchpointTime,
-  detId,
-} from '@/lib/outreach/schedule';
+  runStepExecution,
+  type StepExecutionDeps,
+} from '@/lib/outreach/enqueue';
+import { detId, deferId, stepPlanRev, stepAuditId } from '@/lib/outreach/schedule';
+import { evaluateStep } from '@/lib/outreach/send-window';
+import { getOutreachEnabled, getSendPolicy } from '@/lib/data/outreach-config';
+import { buildJewishCalendar } from '@/lib/outreach/jewish-calendar';
+import { getJobRetryMeta, closeJobMetaPool } from './pgboss-meta';
 import {
   claimUnprocessedWebhookEvents,
   markWebhookEventProcessed,
@@ -52,20 +64,63 @@ function loadEnv(): void {
 }
 loadEnv();
 
-type StepData = {
-  campaignId: string;
-  contactId: string;
-  eventId: string;
-  stepIndex: number;
-};
+const DAY_MS = 86_400_000;
 
-async function handleStep(boss: PgBoss, data: StepData): Promise<void> {
-  const { campaignId, contactId, eventId, stepIndex } = data;
+type StepJob = { id: string; data: OutreachStepJob };
+
+// The injected side effects for one step's execution (§12 FINAL): the RPC
+// wrappers + the WhatsApp/call send + the worker-only pg-boss retry adapter.
+function buildExecutionDeps(
+  boss: PgBoss,
+  ctx: CampaignContext,
+  campaignId: string,
+  contactId: string,
+  eventId: string,
+  stepIndex: number,
+  planRev: string,
+): StepExecutionDeps {
+  return {
+    reserve: (a) => reserveStep(a),
+    send: () => prepareAndSendStep(boss, ctx, campaignId, contactId, eventId, stepIndex),
+    resolve: (a) => resolveStep(a),
+    release: (a) => releaseReservation(a),
+    getRetryMeta: (jobId) =>
+      getJobRetryMeta({ schema: 'pgboss', queueName: QUEUES.step, jobId }),
+    auditId: (reason) => stepAuditId(campaignId, contactId, stepIndex, planRev, reason),
+    recheckTerminal: () => checkStepTerminal(ctx, contactId, stepIndex),
+  };
+}
+
+async function handleStep(boss: PgBoss, job: StepJob): Promise<void> {
+  const data = job.data;
+  const { campaignId, contactId, eventId } = data;
   const gate = await stepGate(campaignId, contactId, eventId);
 
+  // Pause-poll job (§F.6): id-less, NOT an execution job — it never reserves or
+  // sends. It idles while paused and, on resume, re-arms via deferId.
+  if (data.poll) {
+    if (gate.reason === 'paused') {
+      await boss.send(QUEUES.step, { ...data, poll: true }, { startAfter: 300 });
+      return;
+    }
+    if (gate.reason === 'stopped') {
+      await setOutreachStatus(campaignId, contactId, 'stopped', 'closed');
+      return;
+    }
+    if (gate.reason === 'reached' || !gate.ctx) {
+      await setOutreachStatus(campaignId, contactId, 'reached', 'reached');
+      return;
+    }
+    await ensureCurrentStep(boss, campaignId, contactId, 'defer');
+    return;
+  }
+
+  // Normal execution job.
   if (gate.reason === 'paused') {
-    // Transient global gate — re-check in 5m (a fresh job, not the det id).
-    await boss.send(QUEUES.step, data, { startAfter: 300 });
+    // Convert to an id-less re-poll; THIS (detId/deferId) job now completes.
+    // Because the deterministic job may reach 'completed', resume MUST route
+    // around it via deferId — which the poll's ensureCurrentStep(mode:'defer') does.
+    await boss.send(QUEUES.step, { ...data, poll: true }, { startAfter: 300 });
     return;
   }
   if (gate.reason === 'stopped') {
@@ -78,35 +133,114 @@ async function handleStep(boss: PgBoss, data: StepData): Promise<void> {
   }
   const ctx = gate.ctx;
 
-  // Schedule-next-FIRST so a send failure never breaks the chain.
-  const nextIdx = nextTouchpointIndex(
-    ctx.schedule,
-    ctx.eventDate,
-    stepIndex,
-    Date.now(),
-  );
-  if (nextIdx !== null) {
-    const tp = ctx.schedule[nextIdx];
-    await boss.send(
-      QUEUES.step,
-      { campaignId, contactId, eventId, stepIndex: nextIdx },
-      {
-        id: detId(campaignId, contactId, nextIdx),
-        startAfter: touchpointTime(ctx.eventDate, tp.days_before),
-        ...STEP_RETRY,
-      },
-    );
+  // CURSOR-FIRST: this job is valid only if it targets the CURRENT cursor, the
+  // CURRENT planRev, and carries the matching deterministic id. Any mismatch is a
+  // stale job (a superseded plan / a moved cursor) → drop it.
+  const row = await loadOutreachRow(campaignId, contactId);
+  if (!row || row.status !== 'active') return;
+  const cursor = row.current_step_index;
+  if (data.stepIndex !== cursor) return;
+  if (cursor >= ctx.schedule.length) {
+    await setOutreachStatus(campaignId, contactId, 'exhausted');
+    return;
   }
 
-  const exec = await executeStep(ctx, campaignId, contactId, eventId, stepIndex);
-  if (exec.action === 'call_request') {
-    await boss.send(QUEUES.callRequest, exec.callRequest, {
-      id: detId(campaignId, contactId, 100000 + stepIndex),
+  const policy = await getSendPolicy();
+  const tp = ctx.schedule[cursor];
+  const currentPlanRev = stepPlanRev(ctx.eventDate, tp, policy);
+  if (data.planRev !== currentPlanRev) {
+    // The plan changed under this job → re-arm the cursor under the new plan.
+    await ensureCurrentStep(boss, campaignId, contactId, 'replan');
+    return;
+  }
+  const expectedId =
+    data.mode === 'defer'
+      ? deferId(campaignId, contactId, cursor, data.planRev, Math.round(data.targetSlotMs))
+      : detId(campaignId, contactId, cursor, data.planRev);
+  if (job.id !== expectedId) return;
+
+  const nowMs = Date.now();
+  const cal = buildJewishCalendar(nowMs - DAY_MS, Date.parse(ctx.eventDate) + DAY_MS);
+  const decision = evaluateStep({
+    schedule: ctx.schedule,
+    cursorIndex: cursor,
+    eventDateIso: ctx.eventDate,
+    nowMs,
+    policy,
+    calendar: cal,
+    campaignId,
+    contactId,
+  });
+
+  if (decision.decision === 'defer') {
+    // The legal slot moved forward → re-plan the same cursor (new slot + deferId).
+    await ensureCurrentStep(boss, campaignId, contactId, 'defer');
+    return;
+  }
+  if (decision.decision === 'skip' || decision.decision === 'terminal') {
+    // Advance/terminalize with an audit, then walk to the next schedulable step.
+    await ensureCurrentStep(boss, campaignId, contactId, 'plan');
+    return;
+  }
+
+  // SEND → reserve → send → resolve (or crash-recovery if we already own it).
+  const plannedAtIso = new Date(Math.round(data.targetSlotMs)).toISOString();
+  await runStepExecution(
+    buildExecutionDeps(boss, ctx, campaignId, contactId, eventId, cursor, data.planRev),
+    {
+      campaignId,
+      contactId,
+      eventId,
+      stepIndex: cursor,
+      planRev: data.planRev,
+      plannedAtIso,
+      jobId: job.id,
+      alreadyReserved: row.dispatched_job_id === job.id,
+    },
+  );
+}
+
+// Dead-letter (§F.7): telemetry + chain CONTINUITY only, NO business recovery.
+// Recompute the source execution id from the payload and classify by LIVE state.
+async function handleDead(job: { data: OutreachStepJob }): Promise<void> {
+  const data = job.data;
+  const { campaignId, contactId, eventId } = data;
+  const row = await loadOutreachRow(campaignId, contactId);
+  if (!row || row.status !== 'active') return;
+
+  const sourceId =
+    data.mode === 'defer'
+      ? deferId(campaignId, contactId, data.stepIndex, data.planRev, Math.round(data.targetSlotMs))
+      : detId(campaignId, contactId, data.stepIndex, data.planRev);
+
+  if (row.dispatched_job_id === sourceId) {
+    // The reserved job died — a send MAY have occurred. Fail-closed: telemetry
+    // only, no advance, no resend (at-most-once). No PII.
+    console.warn('[kalfa-worker] dead-letter: reserved job died, no advance', {
+      campaignId,
+      contactId,
+      stepIndex: data.stepIndex,
     });
+    return;
   }
-  if (nextIdx === null) {
-    await setOutreachStatus(campaignId, contactId, 'exhausted');
-  }
+  if (row.dispatched_job_id !== null) return; // a different job owns it → stale.
+  if (row.current_step_index !== data.stepIndex) return; // cursor moved → stale.
+
+  // No reservation and the cursor still matches → advance-skip{internal_fault}
+  // for chain continuity (NOT a delivery guarantee). The RPC's plan_rev + cursor
+  // guards make a mismatch a no-op ('stale').
+  await resolveStep({
+    campaignId,
+    contactId,
+    stepIndex: data.stepIndex,
+    planRev: data.planRev,
+    jobId: null,
+    advance: true,
+    terminalStatus: null,
+    reason: 'internal_fault',
+    eventId,
+    auditId: stepAuditId(campaignId, contactId, data.stepIndex, data.planRev, 'internal_fault'),
+  });
 }
 
 // Drain webhook_inbox: claim the oldest unprocessed rows and run the economic
@@ -126,9 +260,12 @@ async function handleWebhook(): Promise<void> {
   }
 }
 
-// Arm/sweep: enqueue each active contact's CURRENT step (idempotent via det id —
-// already-scheduled steps no-op on conflict). Kickstarts step 0 and self-heals.
+// Arm/sweep: for each active contact, drive the CURRENT cursor step through the
+// single evaluator (idempotent — anchor CAS + deterministic ids). This IS the
+// self-heal (re-enqueues the cursor, walks past superseded touchpoints). Inert
+// while the global emergency stop is engaged.
 async function handleArm(boss: PgBoss): Promise<void> {
+  if (!(await getOutreachEnabled())) return;
   for (const camp of await listActiveCampaigns()) {
     const ctx = await getCampaignContext(camp.id);
     if (!ctx || ctx.schedule.length === 0) continue;
@@ -136,22 +273,7 @@ async function handleArm(boss: PgBoss): Promise<void> {
     // self-healing seeding path. Activation only flips status; the arm seeds.
     await seedOutreachState(camp.event_id, camp.id);
     for (const row of await listActiveOutreach(camp.id)) {
-      const tp = ctx.schedule[row.current_step_index];
-      if (!tp) continue;
-      await boss.send(
-        QUEUES.step,
-        {
-          campaignId: camp.id,
-          contactId: row.contact_id,
-          eventId: camp.event_id,
-          stepIndex: row.current_step_index,
-        },
-        {
-          id: detId(camp.id, row.contact_id, row.current_step_index),
-          startAfter: touchpointTime(ctx.eventDate, tp.days_before),
-          ...STEP_RETRY,
-        },
-      );
+      await ensureCurrentStep(boss, camp.id, row.contact_id, 'plan');
     }
   }
 }
@@ -180,8 +302,11 @@ async function main(): Promise<void> {
     await boss.createQueue(q);
   }
 
-  await boss.work(QUEUES.step, async (jobs: { data: StepData }[]) => {
-    for (const job of jobs) await handleStep(boss, job.data);
+  await boss.work(QUEUES.step, async (jobs: StepJob[]) => {
+    for (const job of jobs) await handleStep(boss, job);
+  });
+  await boss.work(QUEUES.dead, async (jobs: { data: OutreachStepJob }[]) => {
+    for (const job of jobs) await handleDead(job);
   });
   await boss.work(QUEUES.arm, async () => {
     await handleArm(boss);
@@ -202,6 +327,7 @@ async function main(): Promise<void> {
   const shutdown = async (): Promise<void> => {
     console.log('[kalfa-worker] SIGTERM — stopping gracefully');
     await boss.stop({ graceful: true, timeout: 30000 });
+    await closeJobMetaPool();
     process.exit(0);
   };
   process.on('SIGTERM', shutdown);

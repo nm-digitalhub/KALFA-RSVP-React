@@ -1,7 +1,11 @@
 import 'server-only';
 
 import { createAdminClient } from '@/lib/supabase/admin';
-import { getOutreachEnabled, getWhatsAppConfig } from '@/lib/data/outreach-config';
+import {
+  getOutreachEnabled,
+  getWhatsAppConfig,
+  getSendPolicy,
+} from '@/lib/data/outreach-config';
 import { resolveTemplateForEvent } from '@/lib/data/message-templates';
 import { recordTemplateFailure, resolveTemplateMedia, sendOneWhatsApp } from '@/lib/data/outreach';
 import {
@@ -12,8 +16,22 @@ import {
 import { recordReached, type ReachedArgs } from '@/lib/data/billing';
 import { setContactOpStatus } from '@/lib/data/interactions';
 import { isPastEventDay } from '@/lib/data/event-date';
-import type { Touchpoint } from '@/lib/outreach/schedule';
-import type { OutreachCallRequest } from '@/lib/queue/queues';
+import {
+  detId,
+  stepPlanRev,
+  stepAuditId,
+  type Touchpoint,
+} from '@/lib/outreach/schedule';
+import {
+  evaluateStep,
+  plannedSendTime,
+} from '@/lib/outreach/send-window';
+import { buildJewishCalendar } from '@/lib/outreach/jewish-calendar';
+import { enqueueStepJob, type StepSendResult } from '@/lib/outreach/enqueue';
+import { QUEUES, type OutreachCallRequest, type OutreachStepMode } from '@/lib/queue/queues';
+import type { PgBoss } from 'pg-boss';
+
+const DAY_MS = 86_400_000;
 
 // The C1 outreach-engine data layer. REQUEST-FREE (no cookies / requireUser) —
 // it runs from the pg-boss worker (a long-lived process), scoping by loading the
@@ -159,6 +177,10 @@ export async function stepGate(
   if (!(await getOutreachEnabled())) return { reason: 'paused' };
   const ctx = await getCampaignContext(campaignId);
   if (!ctx) return { reason: 'stopped' };
+  // §11.7: pause is REVERSIBLE — never terminalize. A paused campaign re-polls
+  // (id-less, like the global outreach_enabled-off gate); only closed/cancelled/
+  // past-event/event-not-active are terminal ('stopped').
+  if (ctx.status === 'paused') return { reason: 'paused' };
   if (ctx.status !== 'active') return { reason: 'stopped' };
   if (ctx.close_at && nowMs > new Date(ctx.close_at).getTime()) {
     return { reason: 'stopped' };
@@ -211,6 +233,22 @@ export async function setOutreachStatus(
   await admin
     .from('outreach_state')
     .update(patch)
+    .eq('campaign_id', campaignId)
+    .eq('contact_id', contactId);
+}
+
+// Record the first-decided send instant for a contact's current step (the
+// send-timing re-plan anchor / audit). Best-effort; correctness rests on the
+// deterministic plan + det-id queue idempotency + the execution-time gate.
+export async function setPlannedAt(
+  campaignId: string,
+  contactId: string,
+  plannedAtIso: string | null,
+): Promise<void> {
+  const admin = createAdminClient();
+  await admin
+    .from('outreach_state')
+    .update({ planned_at: plannedAtIso })
     .eq('campaign_id', campaignId)
     .eq('contact_id', contactId);
 }
@@ -325,7 +363,7 @@ export async function executeStep(
     // Media invite: swap to the IMAGE-header sibling when the row maps one
     // AND the event has an uploaded invitation image (fail-open to text).
     const media = await resolveTemplateMedia(template, ctx.inviteImagePath);
-    const ok = await sendOneWhatsApp(
+    const outcome = await sendOneWhatsApp(
       admin,
       { id: campaignId, event_id: eventId },
       { id: contactId, normalized_phone: contact.normalized_phone },
@@ -334,7 +372,7 @@ export async function executeStep(
       built.params,
       media.headerImage ? { headerImage: media.headerImage } : undefined,
     );
-    if (!ok) return { action: 'skipped' };
+    if (outcome.kind !== 'accepted') return { action: 'skipped' };
     await bumpCount(admin, campaignId, contactId, 'whatsapp_sent_count');
     await setContactOpStatus(contactId, 'whatsapp_sent');
     return { action: 'whatsapp_sent' };
@@ -376,4 +414,381 @@ export async function cancelOutreachForContact(
   contactId: string,
 ): Promise<void> {
   await setOutreachStatus(campaignId, contactId, 'reached', 'reached');
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// §12 FINAL (M1) SERIAL FLOW — cursor-first reserve → send → resolve.
+// The four RPCs below are SECURITY INVOKER / service_role-only (createAdminClient
+// runs as service_role). Each returns the RPC's text verdict; a transport error
+// surfaces as 'error' (the caller decides — never silently advance). Some SQL
+// params are NULLABLE (the CAS uses IS NOT DISTINCT FROM) but supabase codegen
+// types them non-null, so we assert `as string` at exactly those call sites —
+// this bridges a codegen nullability gap, it does not suppress a real type bug.
+// ─────────────────────────────────────────────────────────────────────────────
+
+export async function recordPlan(input: {
+  campaignId: string;
+  contactId: string;
+  expectedStepIndex: number;
+  expectedPlanRev: string | null;
+  expectedPlannedAt: string | null;
+  nextPlanRev: string;
+  nextPlannedAtIso: string;
+}): Promise<'recorded' | 'stale' | 'missing' | 'error'> {
+  const admin = createAdminClient();
+  const { data, error } = await admin.rpc('record_step_plan', {
+    p_campaign: input.campaignId,
+    p_contact: input.contactId,
+    p_expected_step: input.expectedStepIndex,
+    p_expected_plan_rev: input.expectedPlanRev as string,
+    p_expected_planned_at: input.expectedPlannedAt as string,
+    p_next_plan_rev: input.nextPlanRev,
+    p_next_planned_at: input.nextPlannedAtIso,
+  });
+  if (error) return 'error';
+  return (data as 'recorded' | 'stale' | 'missing') ?? 'error';
+}
+
+export async function reserveStep(input: {
+  campaignId: string;
+  contactId: string;
+  stepIndex: number;
+  planRev: string;
+  plannedAtIso: string;
+  jobId: string;
+}): Promise<'reserved' | 'stale' | 'error'> {
+  const admin = createAdminClient();
+  const { data, error } = await admin.rpc('reserve_outreach_step', {
+    p_campaign: input.campaignId,
+    p_contact: input.contactId,
+    p_step: input.stepIndex,
+    p_expected_plan_rev: input.planRev,
+    p_expected_planned_at: input.plannedAtIso,
+    p_job_id: input.jobId,
+  });
+  if (error) return 'error';
+  return (data as 'reserved' | 'stale') ?? 'error';
+}
+
+export async function releaseReservation(input: {
+  campaignId: string;
+  contactId: string;
+  stepIndex: number;
+  planRev: string;
+  jobId: string;
+}): Promise<'released' | 'stale' | 'error'> {
+  const admin = createAdminClient();
+  const { data, error } = await admin.rpc('release_outreach_reservation', {
+    p_campaign: input.campaignId,
+    p_contact: input.contactId,
+    p_step: input.stepIndex,
+    p_expected_plan_rev: input.planRev,
+    p_job_id: input.jobId,
+  });
+  if (error) return 'error';
+  return (data as 'released' | 'stale') ?? 'error';
+}
+
+export async function resolveStep(input: {
+  campaignId: string;
+  contactId: string;
+  stepIndex: number;
+  planRev: string;
+  // null = a NON-reserved skip/terminal (superseded/missed/expired/internal_fault);
+  // non-null = a send-path resolve guarded to the reserving job.
+  jobId: string | null;
+  advance: boolean;
+  terminalStatus: string | null;
+  reason: string;
+  eventId: string;
+  auditId: string;
+}): Promise<'resolved' | 'stale' | 'error'> {
+  const admin = createAdminClient();
+  const { data, error } = await admin.rpc('resolve_outreach_step', {
+    p_campaign: input.campaignId,
+    p_contact: input.contactId,
+    p_step: input.stepIndex,
+    p_expected_plan_rev: input.planRev,
+    p_job_id: input.jobId as string,
+    p_advance: input.advance,
+    p_terminal_status: input.terminalStatus as string,
+    p_reason: input.reason,
+    p_event_id: input.eventId,
+    p_audit_id: input.auditId,
+  });
+  if (error) return 'error';
+  return (data as 'resolved' | 'stale') ?? 'error';
+}
+
+// The live planning snapshot for one contact — the CAS `expected` inputs + the
+// reservation marker. Loaded fresh at each evaluation (never trusted from a job).
+export async function loadOutreachRow(
+  campaignId: string,
+  contactId: string,
+): Promise<{
+  current_step_index: number;
+  status: string;
+  plan_rev: string | null;
+  planned_at: string | null;
+  dispatched_job_id: string | null;
+} | null> {
+  const admin = createAdminClient();
+  const { data } = await admin
+    .from('outreach_state')
+    .select('current_step_index, status, plan_rev, planned_at, dispatched_job_id')
+    .eq('campaign_id', campaignId)
+    .eq('contact_id', contactId)
+    .maybeSingle();
+  return data ?? null;
+}
+
+// Build + send the WhatsApp/call for the CURSOR step, classified into a
+// StepSendResult. It does NOT reserve/advance (the RPCs own that) — it only
+// performs the external, non-idempotent side effect and reports the outcome:
+//   accepted/definitely_not_sent/unknown — the WhatsApp delivery classification.
+//   skip{reason}     — config/template integrity (advance-skip; schedule covers).
+//   terminal{reason} — opt-out / no consent (terminalize the contact).
+//   advance{reason}  — a call request was dispatched (advance the cursor).
+// On accepted it bumps whatsapp_sent_count + op status adjacent to the send (a
+// resolve failure after accept ⇒ possible sent-count under-count, never resend).
+// The terminal-precheck conditions for one step as a PURE function — the SINGLE
+// source of truth shared by prepareAndSendStep (its first gate) and the
+// crash-recovery re-check. removal_requested terminates on ANY channel; missing
+// WhatsApp consent terminates only a WhatsApp step.
+export function terminalReasonFor(
+  contact: { removal_requested: boolean | null; whatsapp_consent_at: string | null },
+  channel: string,
+): string | null {
+  if (contact.removal_requested) return 'removal_requested';
+  if (channel === 'whatsapp' && !contact.whatsapp_consent_at) return 'no_whatsapp_consent';
+  return null;
+}
+
+// Read-only terminal re-check for the crash-recovery path (terminal-recovery
+// fix): NO send. Lets runStepExecution re-terminalize an opt-out / no-consent
+// contact instead of blindly advancing a failed terminalize. null → not terminal
+// (a prior real send may have happened → advance once, at-most-once).
+export async function checkStepTerminal(
+  ctx: CampaignContext,
+  contactId: string,
+  stepIndex: number,
+): Promise<{ reason: string } | null> {
+  const tp = ctx.schedule[stepIndex];
+  if (!tp) return null;
+  const admin = createAdminClient();
+  const { data: contact } = await admin
+    .from('contacts')
+    .select('removal_requested, whatsapp_consent_at')
+    .eq('id', contactId)
+    .maybeSingle();
+  if (!contact) return null;
+  const reason = terminalReasonFor(contact, tp.channel);
+  return reason ? { reason } : null;
+}
+
+export async function prepareAndSendStep(
+  boss: PgBoss,
+  ctx: CampaignContext,
+  campaignId: string,
+  contactId: string,
+  eventId: string,
+  stepIndex: number,
+): Promise<StepSendResult> {
+  const tp = ctx.schedule[stepIndex];
+  if (!tp) return { kind: 'skip', reason: 'no_touchpoint' };
+  const admin = createAdminClient();
+
+  const { data: contact } = await admin
+    .from('contacts')
+    .select('id, normalized_phone, removal_requested, whatsapp_consent_at')
+    .eq('id', contactId)
+    .maybeSingle();
+  if (!contact) return { kind: 'skip', reason: 'contact_missing' };
+  const terminal = terminalReasonFor(contact, tp.channel);
+  if (terminal) return { kind: 'terminal', reason: terminal };
+
+  if (tp.channel === 'whatsapp') {
+    const config = await getWhatsAppConfig();
+    if (!config) return { kind: 'skip', reason: 'whatsapp_not_configured' };
+    const template = await resolveTemplateForEvent(tp.message_key, ctx.event.event_type);
+    if (!template) {
+      await recordTemplateFailure(admin, campaignId, stepIndex, 'template_missing', tp.message_key, tp.channel);
+      return { kind: 'skip', reason: 'template_missing' };
+    }
+    if (template.channel !== 'whatsapp') {
+      await recordTemplateFailure(admin, campaignId, stepIndex, 'channel_mismatch', tp.message_key, tp.channel);
+      return { kind: 'skip', reason: 'channel_mismatch' };
+    }
+    const { data: guest } = await admin
+      .from('guests')
+      .select('full_name')
+      .eq('event_id', eventId)
+      .eq('contact_id', contactId)
+      .order('created_at', { ascending: true })
+      .limit(1)
+      .maybeSingle();
+    const guestFirstName = deriveGuestFirstName(guest?.full_name);
+    const family = template.name.startsWith('kalfa_wedding_') ? 'wedding' : 'generic';
+    const built = buildTemplateParams(family, { event: ctx.event, guestFirstName });
+    if ('missing' in built) {
+      await recordTemplateFailure(admin, campaignId, stepIndex, 'params_incomplete', tp.message_key, tp.channel);
+      return { kind: 'skip', reason: 'params_incomplete' };
+    }
+    const media = await resolveTemplateMedia(template, ctx.inviteImagePath);
+    const outcome = await sendOneWhatsApp(
+      admin,
+      { id: campaignId, event_id: eventId },
+      { id: contactId, normalized_phone: contact.normalized_phone },
+      media.template,
+      config,
+      built.params,
+      media.headerImage ? { headerImage: media.headerImage } : undefined,
+    );
+    if (outcome.kind === 'accepted') {
+      await bumpCount(admin, campaignId, contactId, 'whatsapp_sent_count');
+      await setContactOpStatus(contactId, 'whatsapp_sent');
+    }
+    return outcome;
+  }
+
+  if (tp.channel !== 'call') return { kind: 'skip', reason: 'unknown_channel' };
+  if (!ctx.allowed_channels.includes('call')) return { kind: 'skip', reason: 'call_not_allowed' };
+  // A call touchpoint is dispatched async (C2 dials; the result arrives by
+  // webhook). Enqueue the per-contact dial (deterministic id), count it, advance.
+  await boss.send(
+    QUEUES.callRequest,
+    {
+      campaignId,
+      eventId,
+      contactId,
+      normalizedPhone: contact.normalized_phone,
+      scriptKey: tp.message_key,
+      touchpointIndex: stepIndex,
+    },
+    { id: detId(campaignId, contactId, 100000 + stepIndex, 'call') },
+  );
+  await bumpCount(admin, campaignId, contactId, 'call_request_count');
+  await setContactOpStatus(contactId, 'pending_call');
+  return { kind: 'advance', reason: 'call_requested' };
+}
+
+// Evaluate the CURSOR step and drive the intent-first plan: record the anchor
+// (CAS), then enqueue (send/defer) OR resolve-without-enqueue (skip/terminal),
+// walking one step at a time through superseded/missed touchpoints. This is the
+// single scheduling entry point for the arm (mode 'plan'), resume (mode 'defer',
+// enqueues via deferId to sidestep the completed original detId), and replan
+// (mode 'replan'). It NEVER enqueues a step > cursor and NEVER reserves/sends.
+export async function ensureCurrentStep(
+  boss: PgBoss,
+  campaignId: string,
+  contactId: string,
+  mode: OutreachStepMode,
+): Promise<void> {
+  const policy = await getSendPolicy();
+  const ctx = await getCampaignContext(campaignId);
+  if (!ctx || ctx.status !== 'active') return;
+  const schedule = ctx.schedule;
+  const maxWalk = schedule.length + 1;
+
+  for (let walk = 0; walk < maxWalk; walk++) {
+    const row = await loadOutreachRow(campaignId, contactId);
+    if (!row || row.status !== 'active') return;
+    const cursor = row.current_step_index;
+    if (cursor >= schedule.length) {
+      await setOutreachStatus(campaignId, contactId, 'exhausted');
+      return;
+    }
+    const nowMs = Date.now();
+    // Calendar from now−1d so an overdue same-day slot (evaluated deterministically
+    // from its planned instant, which may be earlier today) is covered.
+    const cal = buildJewishCalendar(nowMs - DAY_MS, Date.parse(ctx.eventDate) + DAY_MS);
+    const tp = schedule[cursor];
+    const planRev = stepPlanRev(ctx.eventDate, tp, policy);
+    const decision = evaluateStep({
+      schedule,
+      cursorIndex: cursor,
+      eventDateIso: ctx.eventDate,
+      nowMs,
+      policy,
+      calendar: cal,
+      campaignId,
+      contactId,
+    });
+
+    // The anchor's planned_at: the STABLE targetSlotMs for send/defer; the
+    // deterministic planned instant for a skip/terminal (cleared on resolve).
+    const anchorMs =
+      decision.decision === 'send' || decision.decision === 'defer'
+        ? decision.targetSlotMs
+        : Math.round(plannedSendTime(ctx.eventDate, tp.days_before, policy));
+    const anchorIso = new Date(anchorMs).toISOString();
+
+    // CAS the anchor from the row's current values (NULL when fresh) to
+    // (planRev, anchorIso). Blocked while a reservation is held → 'stale' → leave
+    // the in-flight send alone (this IS the replan-lock-while-reserved rule).
+    const rp = await recordPlan({
+      campaignId,
+      contactId,
+      expectedStepIndex: cursor,
+      expectedPlanRev: row.plan_rev,
+      expectedPlannedAt: row.planned_at,
+      nextPlanRev: planRev,
+      nextPlannedAtIso: anchorIso,
+    });
+    if (rp !== 'recorded') return;
+
+    if (decision.decision === 'terminal') {
+      await resolveStep({
+        campaignId,
+        contactId,
+        stepIndex: cursor,
+        planRev,
+        jobId: null,
+        advance: false,
+        terminalStatus: 'exhausted',
+        reason: decision.reason,
+        eventId: ctx.event_id,
+        auditId: stepAuditId(campaignId, contactId, cursor, planRev, decision.reason),
+      });
+      return;
+    }
+    if (decision.decision === 'skip') {
+      const res = await resolveStep({
+        campaignId,
+        contactId,
+        stepIndex: cursor,
+        planRev,
+        jobId: null,
+        advance: true,
+        terminalStatus: null,
+        reason: decision.reason,
+        eventId: ctx.event_id,
+        auditId: stepAuditId(campaignId, contactId, cursor, planRev, decision.reason),
+      });
+      if (res !== 'resolved') return;
+      continue; // walk to the new cursor
+    }
+
+    // send | defer → enqueue (the anchor is already recorded). mode 'defer'
+    // (resume) routes even an immediate send through deferId (fresh identity).
+    const enqMode: OutreachStepMode =
+      decision.decision === 'defer'
+        ? 'defer'
+        : mode === 'defer'
+          ? 'defer'
+          : mode === 'replan'
+            ? 'replan'
+            : 'plan';
+    await enqueueStepJob(boss, {
+      mode: enqMode,
+      campaignId,
+      contactId,
+      eventId: ctx.event_id,
+      stepIndex: cursor,
+      planRev,
+      targetSlotMs: decision.targetSlotMs,
+      runAtMs: decision.decision === 'send' ? decision.at : decision.targetSlotMs,
+    });
+    return;
+  }
 }

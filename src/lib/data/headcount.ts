@@ -59,14 +59,12 @@ export async function requestHeadcount(
   if (g?.headcount_answered_at) return;
   const phone = await contactPhone(admin, contactId);
   if (!phone) return;
-  try {
-    await sendWhatsAppText(config, {
-      to: phone,
-      body: headcountQuestionFor(g?.expected_count ?? null),
-    });
-  } catch {
-    return; // fail-soft: no request marker when nothing was sent
-  }
+  const askOutcome = await sendWhatsAppText(config, {
+    to: phone,
+    body: headcountQuestionFor(g?.expected_count ?? null),
+  });
+  // fail-soft: no request marker unless the provider accepted the message.
+  if (askOutcome.kind !== 'accepted') return;
   await admin
     .from('guests')
     .update({
@@ -113,14 +111,12 @@ export async function handleHeadcountReply(
     if (config) {
       const phone = await contactPhone(admin, contactId);
       if (phone) {
-        try {
-          await sendWhatsAppText(config, {
-            to: phone,
-            body: headcountQuestionFor(guest.expected_count),
-          });
-        } catch {
-          return true; // consumed; count the attempt anyway
-        }
+        const reAsk = await sendWhatsAppText(config, {
+          to: phone,
+          body: headcountQuestionFor(guest.expected_count),
+        });
+        // consumed either way; only count the attempt when the re-ask was sent.
+        if (reAsk.kind !== 'accepted') return true;
       }
     }
     await admin
@@ -145,11 +141,8 @@ export async function handleHeadcountReply(
   if (config) {
     const phone = await contactPhone(admin, contactId);
     if (phone) {
-      try {
-        await sendWhatsAppText(config, { to: phone, body: HEADCOUNT_ACK });
-      } catch {
-        /* answer already stored — ack is best-effort */
-      }
+      // answer already stored — the ack is best-effort (outcome ignored).
+      await sendWhatsAppText(config, { to: phone, body: HEADCOUNT_ACK });
     }
   }
   return true;

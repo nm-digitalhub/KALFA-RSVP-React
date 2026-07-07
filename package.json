@@ -22,6 +22,7 @@
   "dependencies": {
     "@base-ui/react": "^1.6.0",
     "@cantoo/pdf-lib": "^2.7.1",
+    "@hebcal/core": "^6.6.0",
     "@hookform/resolvers": "^5.4.0",
     "@pg-boss/dashboard": "^1.6.1",
     "@supabase/ssr": "^0.12.0",

@@ -353,9 +353,7 @@ async function safeReply(
   to: string,
   body: string,
 ): Promise<void> {
-  try {
-    await sendWhatsAppText(config, { to, body });
-  } catch {
-    /* replies are best-effort */
-  }
+  // replies are best-effort — sendWhatsAppText no longer throws (it classifies
+  // into a DeliveryOutcome); the result is intentionally ignored here.
+  await sendWhatsAppText(config, { to, body });
 }

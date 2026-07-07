@@ -167,7 +167,7 @@ describe('sendCampaignWhatsApp', () => {
     vi.mocked(getOutreachEnabled).mockResolvedValue(true);
     vi.mocked(getWhatsAppConfig).mockResolvedValue(config);
     vi.mocked(resolveTemplateForEvent).mockResolvedValue(genericTemplate);
-    vi.mocked(sendWhatsAppTemplate).mockResolvedValue({ providerId: 'wamid.x' });
+    vi.mocked(sendWhatsAppTemplate).mockResolvedValue({ kind: 'accepted', providerId: 'wamid.x' });
     vi.mocked(listSendableContacts).mockResolvedValue([
       { id: 'k1', normalized_phone: '+972501111111' },
     ]);
@@ -187,7 +187,7 @@ describe('sendCampaignWhatsApp', () => {
     vi.mocked(getOutreachEnabled).mockResolvedValue(true);
     vi.mocked(getWhatsAppConfig).mockResolvedValue(config);
     vi.mocked(resolveTemplateForEvent).mockResolvedValue(genericTemplate);
-    vi.mocked(sendWhatsAppTemplate).mockResolvedValue({ providerId: 'wamid.x' });
+    vi.mocked(sendWhatsAppTemplate).mockResolvedValue({ kind: 'accepted', providerId: 'wamid.x' });
     vi.mocked(listSendableContacts).mockResolvedValue([
       { id: 'k1', normalized_phone: '+972501111111' },
       { id: 'k2', normalized_phone: '+972502222222' },
@@ -253,7 +253,7 @@ describe('sendCampaignWhatsApp', () => {
       language: 'he',
       channel: 'whatsapp',
     });
-    vi.mocked(sendWhatsAppTemplate).mockResolvedValue({ providerId: 'wamid.w' });
+    vi.mocked(sendWhatsAppTemplate).mockResolvedValue({ kind: 'accepted', providerId: 'wamid.w' });
     vi.mocked(listSendableContacts).mockResolvedValue([
       { id: 'k1', normalized_phone: '+972501111111' },
     ]);
@@ -280,7 +280,7 @@ describe('sendCampaignWhatsApp', () => {
     vi.mocked(getOutreachEnabled).mockResolvedValue(true);
     vi.mocked(getWhatsAppConfig).mockResolvedValue(config);
     vi.mocked(resolveTemplateForEvent).mockResolvedValue(genericTemplate);
-    vi.mocked(sendWhatsAppTemplate).mockResolvedValue({ providerId: 'wamid.x' });
+    vi.mocked(sendWhatsAppTemplate).mockResolvedValue({ kind: 'accepted', providerId: 'wamid.x' });
     vi.mocked(listSendableContacts).mockResolvedValue([
       { id: 'k1', normalized_phone: '+972501111111' },
       { id: 'k2', normalized_phone: '+972502222222' },
@@ -319,7 +319,7 @@ describe('sendCampaignWhatsApp', () => {
     vi.mocked(resolveTemplateForEvent).mockResolvedValue(genericTemplate);
     vi.mocked(sendWhatsAppTemplate)
       .mockRejectedValueOnce(new Error('meta down'))
-      .mockResolvedValue({ providerId: 'wamid.ok' });
+      .mockResolvedValue({ kind: 'accepted', providerId: 'wamid.ok' });
     vi.mocked(listSendableContacts).mockResolvedValue([
       { id: 'k1', normalized_phone: '+972501111111' },
       { id: 'k2', normalized_phone: '+972502222222' },

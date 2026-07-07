@@ -1,6 +1,11 @@
 import 'server-only';
 
 import { createAdminClient } from '@/lib/supabase/admin';
+import {
+  DEFAULT_SEND_POLICY,
+  parseSendPolicy,
+  type SendPolicy,
+} from '@/lib/outreach/send-policy';
 
 // Server-side readers of the admin-managed outreach config (app_settings, a
 // singleton with ADMIN-ONLY RLS). Fail-safe AND forward-compatible: the columns
@@ -30,6 +35,26 @@ export async function getOutreachEnabled(): Promise<boolean> {
     return (data as Record<string, unknown>).outreach_enabled === true;
   } catch {
     return false;
+  }
+}
+
+// The Israel send-timing policy (app_settings.whatsapp_send_policy jsonb).
+// Fail-SAFE: a missing or invalid value resolves to the validated DEFAULT
+// (never night/Shabbat sends) rather than throwing — an admin edit can only
+// NARROW the window (parseSendPolicy enforces the ceilings).
+export async function getSendPolicy(): Promise<SendPolicy> {
+  try {
+    const admin = createAdminClient();
+    const { data } = await admin
+      .from('app_settings')
+      .select('*')
+      .eq('id', true)
+      .maybeSingle();
+    const raw = (data as Record<string, unknown> | null)?.whatsapp_send_policy;
+    if (raw == null) return DEFAULT_SEND_POLICY;
+    return parseSendPolicy(raw);
+  } catch {
+    return DEFAULT_SEND_POLICY;
   }
 }
 

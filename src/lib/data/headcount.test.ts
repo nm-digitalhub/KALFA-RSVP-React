@@ -53,7 +53,7 @@ describe('handleHeadcountReply', () => {
     const { client, calls } = makeAdmin({ guests: [AWAITING, {}], contacts: [PHONE] });
     vi.mocked(createAdminClient).mockReturnValue(client as never);
     vi.mocked(getWhatsAppConfig).mockResolvedValue(CONFIG as never);
-    vi.mocked(sendWhatsAppText).mockResolvedValue({ providerId: 'w1' });
+    vi.mocked(sendWhatsAppText).mockResolvedValue({ kind: 'accepted', providerId: 'w1' });
 
     const consumed = await handleHeadcountReply('e1', 'c1', ' 7 ');
 
@@ -73,7 +73,7 @@ describe('handleHeadcountReply', () => {
     const { client, calls } = makeAdmin({ guests: [AWAITING, {}], contacts: [PHONE] });
     vi.mocked(createAdminClient).mockReturnValue(client as never);
     vi.mocked(getWhatsAppConfig).mockResolvedValue(CONFIG as never);
-    vi.mocked(sendWhatsAppText).mockResolvedValue({ providerId: 'w2' });
+    vi.mocked(sendWhatsAppText).mockResolvedValue({ kind: 'accepted', providerId: 'w2' });
 
     const consumed = await handleHeadcountReply('e1', 'c1', '0');
 
@@ -124,7 +124,7 @@ describe('requestHeadcount', () => {
     const { client, calls } = makeAdmin({ contacts: [PHONE], guests: [{ data: { headcount_answered_at: null }, error: null }, {}] });
     vi.mocked(createAdminClient).mockReturnValue(client as never);
     vi.mocked(getWhatsAppConfig).mockResolvedValue(CONFIG as never);
-    vi.mocked(sendWhatsAppText).mockResolvedValue({ providerId: 'w3' });
+    vi.mocked(sendWhatsAppText).mockResolvedValue({ kind: 'accepted', providerId: 'w3' });
 
     await requestHeadcount('g1', 'c1');
 
@@ -142,7 +142,7 @@ describe('requestHeadcount', () => {
     const { client, calls } = makeAdmin({ contacts: [PHONE], guests: [{ data: { headcount_answered_at: null }, error: null }] });
     vi.mocked(createAdminClient).mockReturnValue(client as never);
     vi.mocked(getWhatsAppConfig).mockResolvedValue(CONFIG as never);
-    vi.mocked(sendWhatsAppText).mockRejectedValue(new Error('down'));
+    vi.mocked(sendWhatsAppText).mockResolvedValue({ kind: 'unknown', reason: 'down' });
 
     await requestHeadcount('g1', 'c1');
 
@@ -188,7 +188,7 @@ describe('personalized re-ask', () => {
     const { client } = makeAdmin({ guests: [awaiting, {}], contacts: [phone] });
     vi.mocked(createAdminClient).mockReturnValue(client as never);
     vi.mocked(getWhatsAppConfig).mockResolvedValue(CONFIG as never);
-    vi.mocked(sendWhatsAppText).mockResolvedValue({ providerId: 'w9' });
+    vi.mocked(sendWhatsAppText).mockResolvedValue({ kind: 'accepted', providerId: 'w9' });
 
     await handleHeadcountReply('e1', 'c1', '0');
 

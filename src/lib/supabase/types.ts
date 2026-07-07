@@ -154,6 +154,7 @@ export type Database = {
           whatsapp_access_token: string | null
           whatsapp_app_secret: string | null
           whatsapp_phone_number_id: string | null
+          whatsapp_send_policy: Json | null
           whatsapp_verify_token: string | null
           whatsapp_waba_id: string | null
         }
@@ -200,6 +201,7 @@ export type Database = {
           whatsapp_access_token?: string | null
           whatsapp_app_secret?: string | null
           whatsapp_phone_number_id?: string | null
+          whatsapp_send_policy?: Json | null
           whatsapp_verify_token?: string | null
           whatsapp_waba_id?: string | null
         }
@@ -246,6 +248,7 @@ export type Database = {
           whatsapp_access_token?: string | null
           whatsapp_app_secret?: string | null
           whatsapp_phone_number_id?: string | null
+          whatsapp_send_policy?: Json | null
           whatsapp_verify_token?: string | null
           whatsapp_waba_id?: string | null
         }
@@ -1417,9 +1420,14 @@ export type Database = {
           contact_id: string
           created_at: string
           current_step_index: number
+          dispatched_at: string | null
+          dispatched_job_id: string | null
           event_id: string
           id: string
           next_run_at: string | null
+          plan_rev: string | null
+          planned_at: string | null
+          planned_step_index: number | null
           reached_at: string | null
           reached_channel:
             | Database["public"]["Enums"]["campaign_channel"]
@@ -1435,9 +1443,14 @@ export type Database = {
           contact_id: string
           created_at?: string
           current_step_index?: number
+          dispatched_at?: string | null
+          dispatched_job_id?: string | null
           event_id: string
           id?: string
           next_run_at?: string | null
+          plan_rev?: string | null
+          planned_at?: string | null
+          planned_step_index?: number | null
           reached_at?: string | null
           reached_channel?:
             | Database["public"]["Enums"]["campaign_channel"]
@@ -1453,9 +1466,14 @@ export type Database = {
           contact_id?: string
           created_at?: string
           current_step_index?: number
+          dispatched_at?: string | null
+          dispatched_job_id?: string | null
           event_id?: string
           id?: string
           next_run_at?: string | null
+          plan_rev?: string | null
+          planned_at?: string | null
+          planned_step_index?: number | null
           reached_at?: string | null
           reached_channel?:
             | Database["public"]["Enums"]["campaign_channel"]
@@ -1957,6 +1975,54 @@ export type Database = {
         Returns: boolean
       }
       owns_event: { Args: { _event_id: string }; Returns: boolean }
+      record_step_plan: {
+        Args: {
+          p_campaign: string
+          p_contact: string
+          p_expected_plan_rev: string
+          p_expected_planned_at: string
+          p_expected_step: number
+          p_next_plan_rev: string
+          p_next_planned_at: string
+        }
+        Returns: string
+      }
+      release_outreach_reservation: {
+        Args: {
+          p_campaign: string
+          p_contact: string
+          p_expected_plan_rev: string
+          p_job_id: string
+          p_step: number
+        }
+        Returns: string
+      }
+      reserve_outreach_step: {
+        Args: {
+          p_campaign: string
+          p_contact: string
+          p_expected_plan_rev: string
+          p_expected_planned_at: string
+          p_job_id: string
+          p_step: number
+        }
+        Returns: string
+      }
+      resolve_outreach_step: {
+        Args: {
+          p_advance: boolean
+          p_audit_id: string
+          p_campaign: string
+          p_contact: string
+          p_event_id: string
+          p_expected_plan_rev: string
+          p_job_id: string
+          p_reason: string
+          p_step: number
+          p_terminal_status: string
+        }
+        Returns: string
+      }
       submit_rsvp: {
         Args: {
           _adults: number
