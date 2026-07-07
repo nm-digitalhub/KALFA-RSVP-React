@@ -16,8 +16,8 @@ import { signedInviteImageUrl } from '@/lib/storage/event-media';
 import { sendWhatsAppTemplate, type DeliveryOutcome } from '@/lib/whatsapp/client';
 import { RSVP_QUICK_REPLY_PAYLOADS } from '@/lib/whatsapp/rsvp-buttons';
 import {
+  buildBodyParams,
   buildGiftParams,
-  buildTemplateParams,
   deriveGuestFirstName,
 } from '@/lib/whatsapp/template-spec';
 import type { Database } from '@/lib/supabase/types';
@@ -285,9 +285,10 @@ export async function sendCampaignWhatsApp(
           },
           guestFirstName: firstName,
         })
-      : buildTemplateParams(family, {
-          event: ev,
-          guestFirstName: firstName,
+      : buildBodyParams({
+          paramContract: template.paramContract,
+          family,
+          ctx: { event: ev, guestFirstName: firstName },
         });
     if ('missing' in built) {
       // Fail-closed: never send a template with an empty positional parameter

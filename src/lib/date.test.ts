@@ -5,7 +5,9 @@ import {
   ISRAEL_TIME_ZONE,
   formatIsraelDate,
   formatIsraelDateTime,
+  formatIsraelHebrewDate,
   formatIsraelTime,
+  formatIsraelWeekday,
 } from './date';
 
 describe('Israel display formatters', () => {
@@ -48,5 +50,29 @@ describe('Israel display formatters', () => {
     expect(formatIsraelDate('not-a-date')).toBe('');
     expect(formatIsraelDateTime('')).toBe('');
     expect(formatIsraelTime('garbage')).toBe('');
+  });
+});
+
+describe('Israel weekday + Hebrew-calendar formatters', () => {
+  it('renders the bare Israel weekday (no "יום " prefix)', () => {
+    // 2026-07-12 (the brit) is a Sunday in Israel.
+    expect(formatIsraelWeekday('2026-07-12T12:00:00+03:00')).toBe('ראשון');
+  });
+
+  it('renders the Hebrew (gematria) calendar date', () => {
+    expect(formatIsraelHebrewDate('2026-07-12T12:00:00+03:00')).toBe('כ״ז בתמוז תשפ״ו');
+    // 15 Nisan (Pesach) exercises the טו special case — never spelled י״ה.
+    expect(formatIsraelHebrewDate('2026-04-02T12:00:00+03:00')).toBe('ט״ו בניסן תשפ״ו');
+  });
+
+  it('follows the Israel civil day, not the UTC day', () => {
+    // 21:30Z on 2026-07-11 is already 00:30 the next day in Israel → the 12th.
+    expect(formatIsraelHebrewDate('2026-07-11T21:30:00.000Z')).toBe('כ״ז בתמוז תשפ״ו');
+    expect(formatIsraelWeekday('2026-07-11T21:30:00.000Z')).toBe('ראשון');
+  });
+
+  it('returns an empty string for invalid input instead of throwing', () => {
+    expect(formatIsraelWeekday('not-a-date')).toBe('');
+    expect(formatIsraelHebrewDate('')).toBe('');
   });
 });

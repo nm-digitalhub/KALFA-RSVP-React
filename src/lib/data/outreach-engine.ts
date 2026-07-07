@@ -9,7 +9,7 @@ import {
 import { resolveTemplateForEvent } from '@/lib/data/message-templates';
 import { recordTemplateFailure, resolveTemplateMedia, sendOneWhatsApp } from '@/lib/data/outreach';
 import {
-  buildTemplateParams,
+  buildBodyParams,
   deriveGuestFirstName,
   type TemplateParamsContext,
 } from '@/lib/whatsapp/template-spec';
@@ -352,7 +352,11 @@ export async function executeStep(
     // Which side of the Meta positional contract to bind — the wedding family
     // renders groom/bride in {{2}}/{{3}} (docs/whatsapp-templates-meta-submission.md).
     const family = template.name.startsWith('kalfa_wedding_') ? 'wedding' : 'generic';
-    const built = buildTemplateParams(family, { event: ctx.event, guestFirstName });
+    const built = buildBodyParams({
+      paramContract: template.paramContract,
+      family,
+      ctx: { event: ctx.event, guestFirstName },
+    });
     if ('missing' in built) {
       // Fail-closed: never send a template with an empty positional parameter.
       // Recorded like the other integrity failures (missing-key list is
@@ -629,7 +633,11 @@ export async function prepareAndSendStep(
       .maybeSingle();
     const guestFirstName = deriveGuestFirstName(guest?.full_name);
     const family = template.name.startsWith('kalfa_wedding_') ? 'wedding' : 'generic';
-    const built = buildTemplateParams(family, { event: ctx.event, guestFirstName });
+    const built = buildBodyParams({
+      paramContract: template.paramContract,
+      family,
+      ctx: { event: ctx.event, guestFirstName },
+    });
     if ('missing' in built) {
       await recordTemplateFailure(admin, campaignId, stepIndex, 'params_incomplete', tp.message_key, tp.channel);
       return { kind: 'skip', reason: 'params_incomplete' };

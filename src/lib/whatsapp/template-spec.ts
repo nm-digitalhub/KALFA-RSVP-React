@@ -27,9 +27,14 @@ import {
   CELEBRANT_KIND_BY_EVENT_TYPE,
   celebrantsCompleteFor,
   type CelebrantFieldKey,
+  type HostComposition,
 } from '@/lib/validation/schemas';
 import type { Database, Json } from '@/lib/supabase/types';
-import { ISRAEL_TIME_ZONE } from '@/lib/date';
+import {
+  ISRAEL_TIME_ZONE,
+  formatIsraelHebrewDate,
+  formatIsraelWeekday,
+} from '@/lib/date';
 
 type EventRow = Database['public']['Tables']['events']['Row'];
 type EventType = Database['public']['Enums']['event_type'];
@@ -96,13 +101,10 @@ export function deriveGuestFirstName(
 const ISRAEL_TZ = ISRAEL_TIME_ZONE;
 
 // Module-level formatters (construction is expensive; the engine calls this
-// per recipient). Verified against the installed ICU: weekday long is
-// "יום שני" (prefix stripped below), 2-digit day/month gives dd.MM.yyyy with
-// plain ASCII digits/dots, and hourCycle h23 renders midnight as "00:30".
-const weekdayFmt = new Intl.DateTimeFormat('he-IL', {
-  timeZone: ISRAEL_TZ,
-  weekday: 'long',
-});
+// per recipient). 2-digit day/month gives dd.MM.yyyy with plain ASCII
+// digits/dots, and hourCycle h23 renders midnight as "00:30". Weekday and the
+// Hebrew-calendar date come from src/lib/date.ts (formatIsraelWeekday /
+// formatIsraelHebrewDate).
 const dateFmt = new Intl.DateTimeFormat('he-IL', {
   timeZone: ISRAEL_TZ,
   day: '2-digit',
@@ -115,53 +117,6 @@ const timeFmt = new Intl.DateTimeFormat('he-IL', {
   minute: '2-digit',
   hourCycle: 'h23',
 });
-
-// he-IL long weekdays all arrive as "יום <שם>" — the approved template bodies
-// already say "ביום {{4}}", so the prefix must go or the message reads
-// "ביום יום שני".
-const WEEKDAY_PREFIX_RE = /^יום /;
-
-// --- Hebrew (Jewish) calendar date -------------------------------------------
-// ICU does ALL the calendar math (Intl with calendar:'hebrew' — no hand-rolled
-// algorithm); this layer only renders the numbers in traditional Hebrew
-// letters (a numeral PRESENTATION, not a computation: 27→כ״ז, 5786→תשפ״ו,
-// with the טו/טז exceptions). Fixtures pinned against hebcal.com (2026-07-12 =
-// כ״ז בתמוז תשפ״ו; 2026-09-12 = א׳ בתשרי תשפ״ז). Day boundary follows the
-// Israel CIVIL day — no sunset adjustment (an evening event after שקיעה is
-// still labeled with the civil day's Hebrew date; computing sunset would need
-// a location fix and is out of scope).
-const hebrewPartsFmt = new Intl.DateTimeFormat('he', {
-  timeZone: ISRAEL_TZ,
-  calendar: 'hebrew',
-  day: 'numeric',
-  month: 'long',
-  year: 'numeric',
-});
-
-const GEMATRIA_UNITS = ['', 'א', 'ב', 'ג', 'ד', 'ה', 'ו', 'ז', 'ח', 'ט'];
-const GEMATRIA_TENS = ['', 'י', 'כ', 'ל', 'מ', 'נ', 'ס', 'ע', 'פ', 'צ'];
-const GEMATRIA_HUNDREDS = ['', 'ק', 'ר', 'ש', 'ת', 'תק', 'תר', 'תש', 'תת', 'תתק'];
-
-function gematria(n: number): string {
-  let s = GEMATRIA_HUNDREDS[Math.floor(n / 100)] ?? '';
-  const rem = n % 100;
-  // 15/16 are always written טו/טז — never spelled with י״ה/י״ו.
-  if (rem === 15) s += 'טו';
-  else if (rem === 16) s += 'טז';
-  else s += GEMATRIA_TENS[Math.floor(rem / 10)] + GEMATRIA_UNITS[rem % 10];
-  return s.length === 1 ? `${s}׳` : `${s.slice(0, -1)}״${s.slice(-1)}`;
-}
-
-// "כ״ז בתמוז תשפ״ו" for an instant, in Israel local time.
-export function formatHebrewDateIL(ms: number): string {
-  const parts = hebrewPartsFmt.formatToParts(ms);
-  const get = (t: Intl.DateTimeFormatPartTypes) =>
-    parts.find((p) => p.type === t)?.value ?? '';
-  const day = Number(get('day'));
-  const month = get('month');
-  const year = Number(get('year')) % 1000;
-  return `${gematria(day)} ב${month} ${gematria(year)}`;
-}
 
 // Defensive read of one celebrant field from the RAW jsonb column (Json|null —
 // could be null, a string, an array, or a stale other-kind object after an
@@ -285,12 +240,12 @@ export function buildTemplateParams(
   if (Number.isNaN(eventMs)) {
     missing.push('event_date');
   } else {
-    weekday = weekdayFmt.format(eventMs).replace(WEEKDAY_PREFIX_RE, '');
+    weekday = formatIsraelWeekday(eventMs);
     // {{5}} carries BOTH calendars in one approved slot — "כ״ז בתמוז תשפ״ו
     // (12.07.2026)" — so every existing template (invite/reminders/final,
     // both families) gains the Hebrew date with NO Meta resubmission: the
     // positional contract is unchanged, only the value we bind is richer.
-    date = `${formatHebrewDateIL(eventMs)} (${dateFmt.format(eventMs)})`;
+    date = `${formatIsraelHebrewDate(eventMs)} (${dateFmt.format(eventMs)})`;
     time = timeFmt.format(eventMs);
   }
 
@@ -310,4 +265,153 @@ export function buildTemplateParams(
     return { missing };
   }
   return { params: [guest, honoree, celebrantsText, weekday, date, time, venue] };
+}
+
+// --- Personal brit templates (kalfa_brit_invite_trad_v4 / reminder / thankyou)
+// A DIFFERENT positional contract from the generic 7-tuple: {{1}} is a whole
+// FIRST-PERSON sentence composed from host_composition (NOT the guest name),
+// the Hebrew and Gregorian dates are SEPARATE slots (the generic {{5}} combines
+// them), and the invite adds a first-person closing {{7}}. One template serves
+// every family structure because the system composes the conjugated sentence.
+// The wording MIRRORS the Meta-approved bodies — changing it here without
+// resubmitting the template would desync the rendered message from the layout.
+type BritPhrasing = {
+  invite: string;
+  reminder: string;
+  closing: string;
+  thanks: string;
+};
+
+const BRIT_PHRASING: Record<HostComposition, BritPhrasing> = {
+  single_mother: {
+    invite: 'הנני מתכבדת להזמינכם לשמחת ברית בני.',
+    reminder: 'רציתי להזכיר לכם בשמחה — שמחת ברית בני מתקרבת.',
+    closing: 'אשמח לראותכם עמי.',
+    thanks: 'מעומק הלב — תודה שבאתם לחגוג עמי את שמחת ברית בני.',
+  },
+  single_father: {
+    invite: 'הנני מתכבד להזמינכם לשמחת ברית בני.',
+    reminder: 'רציתי להזכיר לכם בשמחה — שמחת ברית בני מתקרבת.',
+    closing: 'אשמח לראותכם עמי.',
+    thanks: 'מעומק הלב — תודה שבאתם לחגוג עמי את שמחת ברית בני.',
+  },
+  couple: {
+    invite: 'הננו מתכבדים להזמינכם לשמחת ברית בננו.',
+    reminder: 'רצינו להזכיר לכם בשמחה — שמחת ברית בננו מתקרבת.',
+    closing: 'נשמח לראותכם עמנו.',
+    thanks: 'מעומק הלב — תודה שבאתם לחגוג עמנו את שמחת ברית בננו.',
+  },
+};
+
+// A brit builder's output — a readonly positional array (arity varies per
+// template) or the missing-ingredient keys: same fail-closed contract as the
+// generic builder (never emit an empty positional).
+export type BritParamsResult =
+  | { params: readonly string[] }
+  | { missing: MissingParamKey[] };
+
+// host_composition drives the phrasing; it is REQUIRED at the campaign gate
+// (celebrantsCompleteFor for the 'parents' kind), re-read defensively here from
+// the raw jsonb so a stale/invalid value fails closed instead of mis-conjugating.
+function britPhrasingFor(celebrants: Json | null): BritPhrasing | null {
+  const hc = readCelebrantField(celebrants, 'host_composition');
+  return hc && hc in BRIT_PHRASING ? BRIT_PHRASING[hc as HostComposition] : null;
+}
+
+// Shared date + venue slots for the invite/reminder layouts: [weekday,
+// Hebrew date, Gregorian date, time, venue] — the Hebrew and Gregorian dates
+// are SEPARATE positions here (unlike the combined generic {{5}}).
+function britDateVenueParts(
+  event: TemplateParamsContext['event'],
+): { parts: [string, string, string, string, string] } | { missing: MissingParamKey[] } {
+  const missing: MissingParamKey[] = [];
+  const eventMs = event.event_date ? Date.parse(event.event_date) : Number.NaN;
+  let weekday = '';
+  let hebrew = '';
+  let gregorian = '';
+  let time = '';
+  if (Number.isNaN(eventMs)) {
+    missing.push('event_date');
+  } else {
+    weekday = formatIsraelWeekday(eventMs);
+    hebrew = formatIsraelHebrewDate(eventMs);
+    gregorian = dateFmt.format(eventMs);
+    time = timeFmt.format(eventMs);
+  }
+  const venueName = event.venue_name?.trim() || null;
+  const venueAddress = event.venue_address?.trim() || null;
+  let venue = '';
+  if (!venueName) missing.push('venue_name');
+  else venue = venueAddress ? `${venueName}, ${venueAddress}` : venueName;
+
+  if (missing.length > 0 || !weekday || !hebrew || !gregorian || !time || !venue) {
+    return { missing };
+  }
+  return { parts: [weekday, hebrew, gregorian, time, venue] };
+}
+
+// kalfa_brit_invite_trad_v4 / _media_v4 — 7 slots: {{1}} first-person opening,
+// {{2}} weekday, {{3}} Hebrew date, {{4}} Gregorian date, {{5}} time,
+// {{6}} venue, {{7}} first-person closing.
+export function buildBritTradInviteParams(ctx: TemplateParamsContext): BritParamsResult {
+  const phrasing = britPhrasingFor(ctx.event.celebrants);
+  const dv = britDateVenueParts(ctx.event);
+  if (!phrasing || 'missing' in dv) {
+    const missing: MissingParamKey[] = [];
+    if (!phrasing) missing.push('celebrants');
+    if ('missing' in dv) missing.push(...dv.missing);
+    return { missing };
+  }
+  const [weekday, hebrew, gregorian, time, venue] = dv.parts;
+  return {
+    params: [phrasing.invite, weekday, hebrew, gregorian, time, venue, phrasing.closing],
+  };
+}
+
+// kalfa_brit_reminder_trad_v1 / _media_v1 — 6 slots: {{1}} first-person reminder
+// line, {{2}}–{{6}} weekday / Hebrew date / Gregorian date / time / venue.
+export function buildBritTradReminderParams(ctx: TemplateParamsContext): BritParamsResult {
+  const phrasing = britPhrasingFor(ctx.event.celebrants);
+  const dv = britDateVenueParts(ctx.event);
+  if (!phrasing || 'missing' in dv) {
+    const missing: MissingParamKey[] = [];
+    if (!phrasing) missing.push('celebrants');
+    if ('missing' in dv) missing.push(...dv.missing);
+    return { missing };
+  }
+  return { params: [phrasing.reminder, ...dv.parts] };
+}
+
+// kalfa_brit_thankyou_trad_v1 — 2 slots: {{1}} first-person thanks line, {{2}}
+// family signature ("משפחת <surname>", surname = last token of the parents
+// field). POST-EVENT: the SEND path is deferred (the drip engine rejects
+// post-event touchpoints); this builder is ready for a future post-event trigger.
+export function buildBritTradThankyouParams(ctx: TemplateParamsContext): BritParamsResult {
+  const phrasing = britPhrasingFor(ctx.event.celebrants);
+  const parents = readCelebrantField(ctx.event.celebrants, 'parents');
+  if (!phrasing || !parents) return { missing: ['celebrants'] };
+  const surname = parents.trim().split(/\s+/).pop() ?? parents;
+  return { params: [phrasing.thanks, `משפחת ${surname}`] };
+}
+
+// The SINGLE body-parameter dispatch point for all three send sites (manual
+// batch + the two worker paths). Routing is DATA-DRIVEN by the resolved
+// template's paramContract (message_templates.components.param_contract): a
+// recognized contract binds the matching personal builder, everything else
+// falls back to the frozen generic/wedding 7-tuple. Collapses what used to be a
+// `name.startsWith('kalfa_wedding_')` branch duplicated across the three sites,
+// so a new contract is taught here once.
+export function buildBodyParams(args: {
+  paramContract: string | null | undefined;
+  family: TemplateFamily;
+  ctx: TemplateParamsContext;
+}): { params: readonly string[] } | { missing: MissingParamKey[] } {
+  switch (args.paramContract) {
+    case 'brit_trad_invite':
+      return buildBritTradInviteParams(args.ctx);
+    case 'brit_trad_reminder':
+      return buildBritTradReminderParams(args.ctx);
+    default:
+      return buildTemplateParams(args.family, args.ctx);
+  }
 }

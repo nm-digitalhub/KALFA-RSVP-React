@@ -4,7 +4,11 @@ import { useActionState, useState } from 'react';
 
 import { createEventAction } from '../actions';
 import { EVENT_TYPES } from '@/lib/validation/schemas';
-import { CELEBRANT_FIELD_LABELS, EVENT_TYPE_LABELS } from '@/lib/data/event-labels';
+import {
+  CELEBRANT_FIELD_LABELS,
+  EVENT_TYPE_LABELS,
+  HOST_COMPOSITION_LABELS,
+} from '@/lib/data/event-labels';
 import { FieldError, FormError, SubmitButton } from '@/components/forms';
 import { TimeSelect24 } from '@/components/time-select-24';
 import { DateSelectIL } from '@/components/date-select-il';
@@ -49,12 +53,30 @@ function CelebrantFields({
           >
             {label}
           </label>
-          <input
-            id={`celebrants.${field}`}
-            name={`celebrants.${field}`}
-            type="text"
-            className={inputClass}
-          />
+          {field === 'host_composition' ? (
+            <select
+              id={`celebrants.${field}`}
+              name={`celebrants.${field}`}
+              className={inputClass}
+              defaultValue=""
+            >
+              <option value="" disabled>
+                בחרו…
+              </option>
+              {Object.entries(HOST_COMPOSITION_LABELS).map(([value, optLabel]) => (
+                <option key={value} value={value}>
+                  {optLabel}
+                </option>
+              ))}
+            </select>
+          ) : (
+            <input
+              id={`celebrants.${field}`}
+              name={`celebrants.${field}`}
+              type="text"
+              className={inputClass}
+            />
+          )}
           <FieldError errors={errors?.[`celebrants.${field}`]} />
         </div>
       ))}

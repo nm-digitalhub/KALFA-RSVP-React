@@ -73,3 +73,60 @@ export function formatIsraelTime(value: DateInput): string {
   const ms = toMs(value);
   return ms === null ? '' : timeFmt.format(ms);
 }
+
+// --- Weekday (Israel) --------------------------------------------------------
+// he-IL long weekdays all render as "יום <name>"; callers embedding the day in
+// "ביום {day}" want the bare name, so the "יום " prefix is stripped.
+const weekdayFmt = new Intl.DateTimeFormat(ISRAEL_LOCALE, {
+  timeZone: ISRAEL_TIME_ZONE,
+  weekday: 'long',
+});
+const WEEKDAY_PREFIX_RE = /^יום /;
+
+/** 'ראשון' — the instant's Israel weekday, bare (no "יום " prefix). '' for invalid input. */
+export function formatIsraelWeekday(value: DateInput): string {
+  const ms = toMs(value);
+  return ms === null ? '' : weekdayFmt.format(ms).replace(WEEKDAY_PREFIX_RE, '');
+}
+
+// --- Hebrew (Jewish) calendar date -------------------------------------------
+// ICU does ALL the calendar math (Intl with calendar:'hebrew' — no hand-rolled
+// algorithm); this only renders the day/year NUMBERS in traditional Hebrew
+// letters (a presentation, not a computation: 27→כ״ז, 5786→תשפ״ו, with the
+// טו/טז exceptions). Fixtures pinned against hebcal.com (2026-07-12 =
+// כ״ז בתמוז תשפ״ו; 2026-09-12 = א׳ בתשרי תשפ״ז). Day boundary follows the Israel
+// CIVIL day — no sunset adjustment (an evening event after שקיעה still gets the
+// civil day's Hebrew date; sunset would need a location fix, out of scope).
+const hebrewPartsFmt = new Intl.DateTimeFormat('he', {
+  timeZone: ISRAEL_TIME_ZONE,
+  calendar: 'hebrew',
+  day: 'numeric',
+  month: 'long',
+  year: 'numeric',
+});
+const GEMATRIA_UNITS = ['', 'א', 'ב', 'ג', 'ד', 'ה', 'ו', 'ז', 'ח', 'ט'];
+const GEMATRIA_TENS = ['', 'י', 'כ', 'ל', 'מ', 'נ', 'ס', 'ע', 'פ', 'צ'];
+const GEMATRIA_HUNDREDS = ['', 'ק', 'ר', 'ש', 'ת', 'תק', 'תר', 'תש', 'תת', 'תתק'];
+
+function gematria(n: number): string {
+  let s = GEMATRIA_HUNDREDS[Math.floor(n / 100)] ?? '';
+  const rem = n % 100;
+  // 15/16 are always written טו/טז — never spelled with י״ה/י״ו.
+  if (rem === 15) s += 'טו';
+  else if (rem === 16) s += 'טז';
+  else s += GEMATRIA_TENS[Math.floor(rem / 10)] + GEMATRIA_UNITS[rem % 10];
+  return s.length === 1 ? `${s}׳` : `${s.slice(0, -1)}״${s.slice(-1)}`;
+}
+
+/** 'כ״ז בתמוז תשפ״ו' — the instant's Hebrew (Jewish) calendar date in Israel. '' for invalid input. */
+export function formatIsraelHebrewDate(value: DateInput): string {
+  const ms = toMs(value);
+  if (ms === null) return '';
+  const parts = hebrewPartsFmt.formatToParts(ms);
+  const get = (t: Intl.DateTimeFormatPartTypes) =>
+    parts.find((p) => p.type === t)?.value ?? '';
+  const day = Number(get('day'));
+  const month = get('month');
+  const year = Number(get('year')) % 1000;
+  return `${gematria(day)} ב${month} ${gematria(year)}`;
+}

@@ -505,8 +505,16 @@ describe('CELEBRANT_FIELD_LABELS', () => {
       bar_mitzvah: { name: 'שם מלא של חתן הבר־מצווה' },
       bat_mitzvah: { name: 'שם מלא של כלת הבת־מצווה' },
       birthday: { name: 'שם מלא של בעל/ת השמחה' },
-      brit: { parents: 'שמות ההורים', child: 'שם התינוק (אופציונלי)' },
-      britah: { parents: 'שמות ההורים', child: 'שם התינוקת (אופציונלי)' },
+      brit: {
+        parents: 'שמות ההורים',
+        child: 'שם התינוק (אופציונלי)',
+        host_composition: 'הרכב המזמינים',
+      },
+      britah: {
+        parents: 'שמות ההורים',
+        child: 'שם התינוקת (אופציונלי)',
+        host_composition: 'הרכב המזמינים',
+      },
       other: { names: 'שמות בעלי השמחה' },
     });
   });
@@ -630,10 +638,33 @@ describe('celebrantsCompleteFor — campaign-gate completeness', () => {
     expect(celebrantsCompleteFor('birthday', { name: '' })).toBe(false);
   });
 
-  it('parents: requires parents; child stays optional', () => {
-    expect(celebrantsCompleteFor('brit', { parents: 'דנה ויוסי' })).toBe(true);
-    expect(celebrantsCompleteFor('brit', { parents: 'דנה ויוסי', child: 'ארי' })).toBe(true);
-    expect(celebrantsCompleteFor('britah', { child: 'תמר' })).toBe(false);
+  it('parents: requires parents + host_composition; child stays optional', () => {
+    // host_composition is now required — it drives the first-person Hebrew
+    // conjugation (בני/בננו, מתכבדת/מתכבד/מתכבדים), which a free-text parents
+    // string cannot carry.
+    expect(celebrantsCompleteFor('brit', { parents: 'דנה ויוסי' })).toBe(false);
+    expect(
+      celebrantsCompleteFor('brit', { parents: 'דנה ויוסי', host_composition: 'couple' }),
+    ).toBe(true);
+    expect(
+      celebrantsCompleteFor('brit', {
+        parents: 'דנה ויוסי',
+        child: 'ארי',
+        host_composition: 'couple',
+      }),
+    ).toBe(true);
+    // single mother: parents = her own name, host_composition set.
+    expect(
+      celebrantsCompleteFor('brit', { parents: 'נטלי קלפה', host_composition: 'single_mother' }),
+    ).toBe(true);
+    // an unrecognized host_composition value is incomplete (guards raw jsonb).
+    expect(
+      celebrantsCompleteFor('brit', { parents: 'דנה ויוסי', host_composition: 'nope' }),
+    ).toBe(false);
+    // parents still required — child + host_composition alone is incomplete.
+    expect(
+      celebrantsCompleteFor('britah', { child: 'תמר', host_composition: 'couple' }),
+    ).toBe(false);
   });
 
   it('free: requires names', () => {

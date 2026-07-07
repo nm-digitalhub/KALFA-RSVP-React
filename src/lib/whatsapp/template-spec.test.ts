@@ -5,6 +5,9 @@ import {
   GUEST_FIRST_NAME_FALLBACK,
   deriveGuestFirstName,
   buildGiftParams,
+  buildBritTradInviteParams,
+  buildBritTradReminderParams,
+  buildBritTradThankyouParams,
   type TemplateParamsContext,
 } from './template-spec';
 
@@ -59,7 +62,10 @@ describe('buildTemplateParams — generic family', () => {
   it('parents kind: {{3}} is parents, with " — לכבוד <child>" only when the child was filled', () => {
     const withChild = buildTemplateParams(
       'generic',
-      ctx({ event_type: 'brit', celebrants: { parents: 'רון ומיכל כהן', child: 'אריאל' } }),
+      ctx({
+        event_type: 'brit',
+        celebrants: { parents: 'רון ומיכל כהן', child: 'אריאל', host_composition: 'couple' },
+      }),
     );
     if ('missing' in withChild) throw new Error('expected params');
     expect(withChild.params[1]).toBe('ברית');
@@ -67,7 +73,10 @@ describe('buildTemplateParams — generic family', () => {
 
     const withoutChild = buildTemplateParams(
       'generic',
-      ctx({ event_type: 'britah', celebrants: { parents: 'רון ומיכל כהן' } }),
+      ctx({
+        event_type: 'britah',
+        celebrants: { parents: 'רון ומיכל כהן', host_composition: 'couple' },
+      }),
     );
     if ('missing' in withoutChild) throw new Error('expected params');
     expect(withoutChild.params[1]).toBe('בריתה');
@@ -281,7 +290,7 @@ describe('deriveGuestFirstName', () => {
 describe('buildGiftParams (kalfa_event_gift_v1)', () => {
   const giftEvent = {
     event_type: 'brit' as const,
-    celebrants: { parents: 'נטלי קלפה' },
+    celebrants: { parents: 'נטלי קלפה', host_composition: 'single_mother' },
     gift_payment_url: 'https://payboxapp.page.link/abc123',
   };
 
@@ -320,5 +329,103 @@ describe('buildGiftParams (kalfa_event_gift_v1)', () => {
     });
     if (!('missing' in r)) throw new Error('expected missing');
     expect(r.missing).toContain('celebrants');
+  });
+});
+
+describe('brit personal builders (kalfa_brit_invite_trad_v4 / reminder / thankyou)', () => {
+  // 2026-07-12 14:30 UTC = Sunday 17:30 in Israel (IDT) — the brit.
+  const BRIT_MS = '2026-07-12T14:30:00.000Z';
+  const VENUE = 'בית כנסת הרמ״א, ציזלינג 13, אשדוד';
+
+  function britCtx(
+    celebrants: Record<string, string>,
+    overrides: Partial<TemplateParamsContext['event']> = {},
+  ): TemplateParamsContext {
+    return {
+      event: {
+        name: 'ברית',
+        event_type: 'brit',
+        event_date: BRIT_MS,
+        venue_name: 'בית כנסת הרמ״א',
+        venue_address: 'ציזלינג 13, אשדוד',
+        celebrants,
+        ...overrides,
+      },
+      guestFirstName: 'דנה', // ignored by the brit builders (first-person line)
+    };
+  }
+
+  it('invite — single mother: feminine verb, בני, split dates, first-person closing', () => {
+    const r = buildBritTradInviteParams(
+      britCtx({ parents: 'נטלי קלפה', host_composition: 'single_mother' }),
+    );
+    if ('missing' in r) throw new Error('expected params');
+    expect(r.params).toEqual([
+      'הנני מתכבדת להזמינכם לשמחת ברית בני.',
+      'ראשון',
+      'כ״ז בתמוז תשפ״ו',
+      '12.07.2026',
+      '17:30',
+      VENUE,
+      'אשמח לראותכם עמי.',
+    ]);
+  });
+
+  it('invite — single father: masculine verb, same בני/עמי', () => {
+    const r = buildBritTradInviteParams(
+      britCtx({ parents: 'דוד כהן', host_composition: 'single_father' }),
+    );
+    if ('missing' in r) throw new Error('expected params');
+    expect(r.params[0]).toBe('הנני מתכבד להזמינכם לשמחת ברית בני.');
+    expect(r.params[6]).toBe('אשמח לראותכם עמי.');
+  });
+
+  it('invite — couple: plural verb, בננו, עמנו', () => {
+    const r = buildBritTradInviteParams(
+      britCtx({ parents: 'משה ורות כהן', host_composition: 'couple' }),
+    );
+    if ('missing' in r) throw new Error('expected params');
+    expect(r.params[0]).toBe('הננו מתכבדים להזמינכם לשמחת ברית בננו.');
+    expect(r.params[6]).toBe('נשמח לראותכם עמנו.');
+  });
+
+  it('reminder — 6 slots, first-person line, no closing slot', () => {
+    const r = buildBritTradReminderParams(
+      britCtx({ parents: 'נטלי קלפה', host_composition: 'single_mother' }),
+    );
+    if ('missing' in r) throw new Error('expected params');
+    expect(r.params).toEqual([
+      'רציתי להזכיר לכם בשמחה — שמחת ברית בני מתקרבת.',
+      'ראשון',
+      'כ״ז בתמוז תשפ״ו',
+      '12.07.2026',
+      '17:30',
+      VENUE,
+    ]);
+  });
+
+  it('thankyou — thanks line + family signature from the parents surname', () => {
+    const r = buildBritTradThankyouParams(
+      britCtx({ parents: 'נטלי קלפה', host_composition: 'single_mother' }),
+    );
+    if ('missing' in r) throw new Error('expected params');
+    expect(r.params).toEqual([
+      'מעומק הלב — תודה שבאתם לחגוג עמי את שמחת ברית בני.',
+      'משפחת קלפה',
+    ]);
+  });
+
+  it('fail-closes when host_composition is absent (cannot conjugate)', () => {
+    const r = buildBritTradInviteParams(britCtx({ parents: 'נטלי קלפה' }));
+    if (!('missing' in r)) throw new Error('expected missing');
+    expect(r.missing).toContain('celebrants');
+  });
+
+  it('fail-closes when the venue is absent', () => {
+    const r = buildBritTradInviteParams(
+      britCtx({ parents: 'נטלי קלפה', host_composition: 'single_mother' }, { venue_name: null }),
+    );
+    if (!('missing' in r)) throw new Error('expected missing');
+    expect(r.missing).toContain('venue_name');
   });
 });

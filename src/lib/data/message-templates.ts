@@ -22,6 +22,12 @@ export type ResolvedTemplate = Pick<MessageTemplateRow, 'name' | 'language' | 'c
   // THIS event type (components.rsvp_quick_reply[eventType], admin data) → the send
   // injects the rsvp_* payloads so a tap returns button.payload='rsvp_*'.
   rsvpQuickReply?: boolean;
+  // Which positional-parameter contract the send path binds for THIS event type
+  // (components.param_contract[eventType], admin data). Absent → the standard
+  // generic/wedding 7-tuple; 'brit_trad_invite' / 'brit_trad_reminder' select
+  // the personal first-person builders. Data-driven so a new layout is one jsonb
+  // entry, not another code-side name test.
+  paramContract?: string | null;
 };
 
 export async function getTemplateByKey(
@@ -98,6 +104,22 @@ function rsvpQuickReplyFlag(components: Json | null, eventType: EventType): bool
   return (map as { [key: string]: Json | undefined })[eventType] === true;
 }
 
+// Which positional-parameter contract to bind for THIS event type
+// (components.param_contract[eventType], admin data, e.g. {"brit":"brit_trad_invite"}).
+// Absent/malformed → null (the standard generic/wedding tuple). Same defensive
+// walk as variantNameFor — a bad value degrades to the default, never throws.
+function paramContractFor(components: Json | null, eventType: EventType): string | null {
+  if (!components || typeof components !== 'object' || Array.isArray(components)) {
+    return null;
+  }
+  const map = (components as { [key: string]: Json | undefined }).param_contract;
+  if (!map || typeof map !== 'object' || Array.isArray(map)) {
+    return null;
+  }
+  const value = (map as { [key: string]: Json | undefined })[eventType];
+  return typeof value === 'string' && value.trim() !== '' ? value : null;
+}
+
 // getTemplateByKey + per-event-type variant selection. Resolution of the row
 // itself is identical (active-only, fail-closed → null); the variant mapping
 // only ever replaces the template NAME, so a missing/malformed mapping
@@ -122,6 +144,7 @@ export async function resolveTemplateForEvent(
     channel: data.channel,
     mediaName: mediaVariantNameFor(data.components, eventType),
     rsvpQuickReply: rsvpQuickReplyFlag(data.components, eventType),
+    paramContract: paramContractFor(data.components, eventType),
   };
 }
 

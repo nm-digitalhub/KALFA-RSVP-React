@@ -418,7 +418,7 @@ describe('createCampaign — celebrants gate (בעלי השמחה)', () => {
     await expect(createCampaign('e1')).rejects.toThrow('אין אנשי קשר תקינים');
   });
 
-  it('parents kind: `parents` alone is complete (child optional) — the gate passes', async () => {
+  it('parents kind: parents + host_composition is complete (child optional) — the gate passes', async () => {
     const { builder } = serverWith<Record<string, unknown>>({
       data: null,
       error: null,
@@ -428,7 +428,7 @@ describe('createCampaign — celebrants gate (בעלי השמחה)', () => {
         f({
           data: {
             event_type: 'brit',
-            celebrants: { parents: 'משה ורות כהן' },
+            celebrants: { parents: 'משה ורות כהן', host_composition: 'couple' },
             venue_name: 'אולמי הגן',
           },
           error: null,

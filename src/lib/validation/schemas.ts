@@ -184,6 +184,14 @@ export type UpdateEventInput = z.infer<typeof updateEventSchema>;
 
 export type CelebrantKind = 'couple' | 'single' | 'parents' | 'free';
 
+// The Hebrew invitation for a brit/britah (kind 'parents') is written in the
+// FIRST PERSON from the host(s), so the verb + possessive conjugate by WHO is
+// inviting — data a free-text `parents` string cannot carry. This discriminator
+// drives the WhatsApp composer: single_mother → מתכבדת·בני·עמי, single_father →
+// מתכבד·בני·עמי, couple → מתכבדים·בננו·עמנו.
+export const HOST_COMPOSITIONS = ['single_mother', 'single_father', 'couple'] as const;
+export type HostComposition = (typeof HOST_COMPOSITIONS)[number];
+
 // EXHAUSTIVE over the event_type enum — adding/removing an enum value is a
 // compile error here (same guarantee as EVENT_TYPE_LABELS). `as const
 // satisfies` keeps each per-type literal kind so CelebrantFieldLabels below
@@ -209,6 +217,10 @@ const celebrantNameField = z
   .optional()
   .or(z.literal(''));
 
+// host_composition (parents kind only) — an enum select, optional at save like
+// the name fields ('' = not chosen yet); REQUIRED only at the campaign gate.
+const hostCompositionField = z.enum(HOST_COMPOSITIONS).optional().or(z.literal(''));
+
 // Per-kind FORM schemas — what the event forms submit as plain named inputs
 // (celebrants.groom, celebrants.bride, ...). Unknown keys are stripped by
 // z.object, so a caller may pass all six possible field names and only the
@@ -216,7 +228,11 @@ const celebrantNameField = z
 const CELEBRANT_FORM_SCHEMA_BY_KIND = {
   couple: z.object({ groom: celebrantNameField, bride: celebrantNameField }),
   single: z.object({ name: celebrantNameField }),
-  parents: z.object({ parents: celebrantNameField, child: celebrantNameField }),
+  parents: z.object({
+    parents: celebrantNameField,
+    child: celebrantNameField,
+    host_composition: hostCompositionField,
+  }),
   free: z.object({ names: celebrantNameField }),
 } as const;
 
@@ -229,12 +245,19 @@ export function celebrantsSchemaFor<T extends EventType>(eventType: T) {
 }
 
 // Every field name across the four kinds.
-export type CelebrantFieldKey = 'groom' | 'bride' | 'name' | 'parents' | 'child' | 'names';
+export type CelebrantFieldKey =
+  | 'groom'
+  | 'bride'
+  | 'name'
+  | 'parents'
+  | 'child'
+  | 'names'
+  | 'host_composition';
 
 const CELEBRANT_FIELD_KEYS_BY_KIND: Record<CelebrantKind, readonly CelebrantFieldKey[]> = {
   couple: ['groom', 'bride'],
   single: ['name'],
-  parents: ['parents', 'child'],
+  parents: ['parents', 'child', 'host_composition'],
   free: ['names'],
 };
 
@@ -244,7 +267,7 @@ const CELEBRANT_FIELD_KEYS_BY_KIND: Record<CelebrantKind, readonly CelebrantFiel
 export type CelebrantsInput =
   | { groom?: string; bride?: string }
   | { name?: string }
-  | { parents?: string; child?: string }
+  | { parents?: string; child?: string; host_composition?: HostComposition }
   | { names?: string };
 
 // The validated output of celebrantsSchemaFor(...).safeParse — fields
@@ -281,7 +304,10 @@ const completeCelebrantName = z.string().trim().min(1);
 const CELEBRANT_COMPLETE_SCHEMA_BY_KIND: Record<CelebrantKind, z.ZodType> = {
   couple: z.object({ groom: completeCelebrantName, bride: completeCelebrantName }),
   single: z.object({ name: completeCelebrantName }),
-  parents: z.object({ parents: completeCelebrantName }),
+  parents: z.object({
+    parents: completeCelebrantName,
+    host_composition: z.enum(HOST_COMPOSITIONS),
+  }),
   free: z.object({ names: completeCelebrantName }),
 };
 
@@ -300,7 +326,7 @@ export function celebrantsCompleteFor(eventType: EventType, value: unknown): boo
 type CelebrantLabelFieldsByKind = {
   couple: { groom: string; bride: string };
   single: { name: string };
-  parents: { parents: string; child: string };
+  parents: { parents: string; child: string; host_composition: string };
   free: { names: string };
 };
 

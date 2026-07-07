@@ -57,6 +57,7 @@ describe('resolveTemplateForEvent', () => {
     language: 'he',
     channel: 'whatsapp',
     rsvpQuickReply: false,
+    paramContract: null,
   };
 
   it('swaps the name when components.variants has the event type', async () => {
@@ -80,6 +81,7 @@ describe('resolveTemplateForEvent', () => {
       channel: 'whatsapp',
       mediaName: null,
       rsvpQuickReply: false,
+      paramContract: null,
     });
   });
 
@@ -194,6 +196,34 @@ describe('resolveTemplateForEvent', () => {
       mockAdmin({ data: { ...genericRow, components: { rsvp_quick_reply } }, error: null });
       await expect(resolveTemplateForEvent('invite', 'brit')).resolves.toMatchObject({
         rsvpQuickReply: false,
+      });
+    }
+  });
+
+  it('paramContract resolves per event type from components.param_contract', async () => {
+    // brit → its personal contract.
+    mockAdmin({
+      data: { ...genericRow, components: { param_contract: { brit: 'brit_trad_invite' } } },
+      error: null,
+    });
+    await expect(resolveTemplateForEvent('invite', 'brit')).resolves.toMatchObject({
+      paramContract: 'brit_trad_invite',
+    });
+
+    // a different event type → null (falls back to the standard tuple).
+    mockAdmin({
+      data: { ...genericRow, components: { param_contract: { brit: 'brit_trad_invite' } } },
+      error: null,
+    });
+    await expect(resolveTemplateForEvent('invite', 'wedding')).resolves.toMatchObject({
+      paramContract: null,
+    });
+
+    // malformed shapes fall back to null, never throwing.
+    for (const param_contract of ['x', 42, ['brit'], { brit: 9 }, { brit: '' }, null]) {
+      mockAdmin({ data: { ...genericRow, components: { param_contract } }, error: null });
+      await expect(resolveTemplateForEvent('invite', 'brit')).resolves.toMatchObject({
+        paramContract: null,
       });
     }
   });

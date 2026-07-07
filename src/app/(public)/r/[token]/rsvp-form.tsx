@@ -10,8 +10,7 @@ import {
   eventHeadingFor,
 } from '@/lib/data/celebrant-display';
 import { EVENT_TYPE_LABELS } from '@/lib/data/event-labels';
-import { formatHebrewDateIL } from '@/lib/whatsapp/template-spec';
-import { formatIsraelDate, formatIsraelTime } from '@/lib/date';
+import { formatIsraelDate, formatIsraelHebrewDate, formatIsraelTime } from '@/lib/date';
 import { ilTimeInputValue } from '@/lib/data/event-date';
 import { EVENT_TYPES } from '@/lib/validation/schemas';
 import type { Database } from '@/lib/supabase/types';
@@ -70,7 +69,7 @@ function formatEventDateLine(value: string | null): string | null {
   const parts: string[] = [];
   let hebrew = '';
   try {
-    hebrew = formatHebrewDateIL(ms);
+    hebrew = formatIsraelHebrewDate(ms);
   } catch {
     hebrew = '';
   }
