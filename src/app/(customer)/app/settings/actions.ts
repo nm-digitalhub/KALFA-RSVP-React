@@ -8,6 +8,7 @@ import { logActivity } from '@/lib/data/activity';
 import { updateProfile } from '@/lib/data/profiles';
 import { updateUserSettings } from '@/lib/data/user-settings';
 import { createClient } from '@/lib/supabase/server';
+import { getAppUrl } from '@/lib/url';
 import {
   emailChangeSchema,
   updateProfileSchema,
@@ -92,9 +93,14 @@ export async function requestEmailChangeAction(
       return { error: 'הכתובת החדשה זהה לכתובת הנוכחית.' };
     }
 
-    const { error } = await supabase.auth.updateUser({
-      email: parsed.data.email,
-    });
+    // Route the confirmation through OUR /auth/confirm interstitial (the same
+    // token_hash flow as recovery/magic-link). {{ .RedirectTo }} becomes our
+    // trusted /auth/confirm URL; the email_change template appends
+    // token_hash+type=email_change+next=/app/settings.
+    const { error } = await supabase.auth.updateUser(
+      { email: parsed.data.email },
+      { emailRedirectTo: await getAppUrl('/auth/confirm') },
+    );
     if (error) {
       return { error: 'שליחת אישור המייל נכשלה. נסו שוב מאוחר יותר.' };
     }
