@@ -15,9 +15,11 @@
 
 # next.js
 /.next/
-/.next-verify/
-/.next-stage/
+# isolated verification/staging builds + ad-hoc NEXT_DIST_DIR=.next-<label>
+/.next-*/
 /.next.old/
+# manual pre-deploy backup (rename of .next; not used by the deploy script)
+/.next.rollback/
 /out/
 
 # production

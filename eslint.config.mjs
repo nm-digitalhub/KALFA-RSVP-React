@@ -9,10 +9,12 @@ const eslintConfig = defineConfig([
   globalIgnores([
     // Default ignores of eslint-config-next:
     ".next/**",
-    // Isolated verification/staging build dirs (see package.json build/deploy).
-    ".next-verify/**",
-    ".next-stage/**",
+    // Isolated verification/staging build dirs + ad-hoc NEXT_DIST_DIR=.next-<label>,
+    // plus the deploy/manual rollback dirs. No source path begins with `.next-` or
+    // `.next.`, so these patterns match build artifacts only.
+    ".next-*/**",
     ".next.old/**",
+    ".next.rollback/**",
     "out/**",
     "build/**",
     "next-env.d.ts",
