@@ -7,23 +7,13 @@ import { formatIsraelDate, formatIsraelDateTime } from '@/lib/date';
 import { ilTimeInputValue } from '@/lib/data/event-date';
 import { isPastEventDay, isBeforeTomorrowIL } from '@/lib/data/event-date';
 import { getCampaignForEvent, listCampaignsForEvent } from '@/lib/data/campaigns';
+import { hasAnyOperationalCampaign } from '@/lib/data/campaign-status';
 import { EVENT_TYPE_LABELS, EVENT_STATUS_LABELS } from '@/lib/data/event-labels';
 import { celebrantsTextFor } from '@/lib/data/celebrant-display';
 import { EditEventForm } from './edit-event-form';
 import { EventStatusActions } from './event-status-actions';
 import { publishEventAction, closeEventAction } from './campaign/campaign-actions';
 import { CampaignSection } from './campaign-section';
-
-// R7: a non-terminal campaign blocks closing the event. Mirrors the DB
-// trigger's (events_guard_update) blocking set exactly.
-const BLOCKING_CAMPAIGN_STATUSES = new Set([
-  'draft',
-  'pending_approval',
-  'approved',
-  'scheduled',
-  'active',
-  'paused',
-]);
 
 // Israel calendar date (dd.mm.yyyy) — never the raw ISO/UTC slice, which shows
 // the wrong day for early-morning IL times (01:00 IDT is 22:00Z the day before).
@@ -75,9 +65,13 @@ export default async function EventPage({
   }
 
   const allCampaigns = await listCampaignsForEvent(id);
-  const hasBlockingCampaign = allCampaigns.some((c) =>
-    BLOCKING_CAMPAIGN_STATUSES.has(c.status),
-  );
+  // ∃-operational: does the event have AT LEAST ONE operational (non-terminal)
+  // campaign? Computed ONCE over ALL campaigns and reused for both UI surfaces —
+  // the SAME quantifier the server (updateEvent) and the DB trigger
+  // (events_guard_update) use, so the close block AND the edit-field locks agree
+  // with both. NEVER derive this from getCampaignForEvent (newest-non-cancelled):
+  // with a newer terminal + older operational campaign that would disagree.
+  const hasOperationalCampaign = hasAnyOperationalCampaign(allCampaigns);
   const canPublish = Boolean(
     event.event_date && !isBeforeTomorrowIL(event.event_date),
   );
@@ -138,7 +132,7 @@ export default async function EventPage({
       <EventStatusActions
         status={event.status}
         canPublish={canPublish}
-        hasBlockingCampaign={hasBlockingCampaign}
+        hasBlockingCampaign={hasOperationalCampaign}
         publishAction={publishAction}
         closeAction={closeAction}
       />
@@ -147,7 +141,11 @@ export default async function EventPage({
 
       <section className="space-y-4 rounded-lg border border-border bg-card p-6">
         <h2 className="text-lg font-semibold">עריכת פרטי האירוע</h2>
-        <EditEventForm event={event} inviteImageUrl={inviteImageUrl} />
+        <EditEventForm
+          event={event}
+          inviteImageUrl={inviteImageUrl}
+          hasOperationalCampaign={hasOperationalCampaign}
+        />
       </section>
     </div>
   );

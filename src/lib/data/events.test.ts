@@ -7,10 +7,13 @@ import { createAdminClient } from '@/lib/supabase/admin';
 import { requireUser } from '@/lib/auth/dal';
 import { logActivity } from '@/lib/data/activity';
 import type { EventDetail, EventListItem } from '@/lib/data/events';
+import { OPERATIONAL_CAMPAIGN_STATUSES } from '@/lib/data/campaign-status';
 import {
   assertEventNotPast,
+  CELEBRANTS_LOCKED_ERROR,
   closeEvent,
   createEvent,
+  EVENT_TYPE_LOCKED_ERROR,
   getEvent,
   isBeforeTomorrowIL,
   isPastEventDay,
@@ -18,6 +21,7 @@ import {
   publishEvent,
   todayIL,
   updateEvent,
+  VENUE_REQUIRED_WHILE_CAMPAIGN_ERROR,
 } from '@/lib/data/events';
 
 // S2.3 — relative-to-real-time date strings (Israel calendar day), reusing the
@@ -399,7 +403,7 @@ describe('updateEvent', () => {
   // Sequences every awaited builder read in order. With baseInput's INCOMPLETE
   // celebrants (birthday + null) the celebrants lock adds a campaigns lookup
   // between the ownership read and the final update-select, so most tests pass
-  // three results: ownership → campaigns (null = no live campaign) → update.
+  // three results: ownership → campaigns (null = no operational campaign) → update.
   function mockReads<Row>(builder: ReturnType<typeof createMockSupabase<Row>>['builder'], ...results: unknown[]) {
     const spy = vi.spyOn(builder, 'then');
     for (const r of results) {
@@ -407,6 +411,13 @@ describe('updateEvent', () => {
     }
   }
   const NO_LIVE_CAMPAIGN = { data: null, error: null };
+  // The ownership read (requireEventAccess, which now selects event_type too)
+  // supplies cur.event_type — the source for the event_type lock. Default it to
+  // baseInput's type ('birthday') so a normal save shows no spurious "re-type".
+  const owned = (over: Partial<EventDetail> = {}) => ({
+    data: detailRow({ event_type: 'birthday', ...over }),
+    error: null,
+  });
 
   it('never writes a status key (status is owned exclusively by publishEvent/closeEvent)', async () => {
     const row = detailRow({ name: baseInput.name });
@@ -418,7 +429,7 @@ describe('updateEvent', () => {
       client as unknown as Awaited<ReturnType<typeof createClient>>,
     );
     client.rpc.mockResolvedValue({ data: true, error: null });
-    mockReads(builder, { data: detailRow({ status: 'draft' }), error: null }, NO_LIVE_CAMPAIGN, { data: row, error: null });
+    mockReads(builder, owned({ status: 'draft' }), NO_LIVE_CAMPAIGN, { data: row, error: null });
 
     await updateEvent('event-1', baseInput);
 
@@ -436,7 +447,7 @@ describe('updateEvent', () => {
       client as unknown as Awaited<ReturnType<typeof createClient>>,
     );
     client.rpc.mockResolvedValue({ data: true, error: null });
-    mockReads(builder, { data: detailRow({ status: 'active' }), error: null }, NO_LIVE_CAMPAIGN, { data: row, error: null });
+    mockReads(builder, owned({ status: 'active' }), NO_LIVE_CAMPAIGN, { data: row, error: null });
 
     await updateEvent('event-1', baseInput); // no event_date/rsvp_deadline key at all
 
@@ -501,7 +512,7 @@ describe('updateEvent', () => {
       client as unknown as Awaited<ReturnType<typeof createClient>>,
     );
     client.rpc.mockResolvedValue({ data: true, error: null });
-    mockReads(builder, { data: detailRow({ status: 'draft' }), error: null }, NO_LIVE_CAMPAIGN, { data: row, error: null });
+    mockReads(builder, owned({ status: 'draft' }), NO_LIVE_CAMPAIGN, { data: row, error: null });
 
     await updateEvent('event-1', { ...baseInput, event_date: ilDate(5) });
 
@@ -523,7 +534,7 @@ describe('updateEvent', () => {
       client as unknown as Awaited<ReturnType<typeof createClient>>,
     );
     client.rpc.mockResolvedValue({ data: true, error: null });
-    mockReads(builder, { data: detailRow({ status: 'active' }), error: null }, NO_LIVE_CAMPAIGN, { data: row, error: null });
+    mockReads(builder, owned({ status: 'active' }), NO_LIVE_CAMPAIGN, { data: row, error: null });
 
     await updateEvent('event-1', {
       ...baseInput,
@@ -544,7 +555,7 @@ describe('updateEvent', () => {
       client as unknown as Awaited<ReturnType<typeof createClient>>,
     );
     client.rpc.mockResolvedValue({ data: true, error: null });
-    mockReads(builder, { data: detailRow({ status: 'draft' }), error: null }, NO_LIVE_CAMPAIGN, { data: row, error: null });
+    mockReads(builder, owned({ status: 'draft' }), NO_LIVE_CAMPAIGN, { data: row, error: null });
 
     await updateEvent('event-1', { ...baseInput, celebrants: null });
 
@@ -570,7 +581,7 @@ describe('updateEvent', () => {
     expect(logActivity).not.toHaveBeenCalled();
   });
 
-  it('celebrants lock: incomplete celebrants are REJECTED while a non-cancelled campaign exists', async () => {
+  it('celebrants lock: incomplete celebrants are REJECTED while an operational campaign exists', async () => {
     const { client, builder } = createMockSupabase<EventDetail>({
       data: detailRow(),
       error: null,
@@ -581,15 +592,17 @@ describe('updateEvent', () => {
     client.rpc.mockResolvedValue({ data: true, error: null });
     mockReads(
       builder,
-      { data: detailRow({ status: 'active' }), error: null },
-      // the campaigns lookup finds a live campaign
+      owned({ status: 'active' }),
+      // the campaigns lookup finds an operational campaign
       { data: { id: 'c-live' }, error: null },
     );
 
     await expect(
       updateEvent('event-1', { ...baseInput, celebrants: null }),
-    ).rejects.toThrow('לא ניתן למחוק את פרטי בעלי השמחה כשקיים קמפיין אישורי הגעה פעיל');
+    ).rejects.toThrow(CELEBRANTS_LOCKED_ERROR);
     expect(builder.update).not.toHaveBeenCalled();
+    // The lock branch keys off the OPERATIONAL status set (SSOT), not neq-cancelled.
+    expect(builder.in).toHaveBeenCalledWith('status', [...OPERATIONAL_CAMPAIGN_STATUSES]);
   });
 
   it('celebrants lock: a COMPLETE shape saves without ever querying campaigns', async () => {
@@ -602,13 +615,10 @@ describe('updateEvent', () => {
       client as unknown as Awaited<ReturnType<typeof createClient>>,
     );
     client.rpc.mockResolvedValue({ data: true, error: null });
-    // Only TWO reads: ownership → update-select. The complete branch skips the
-    // campaigns lookup entirely (baseInput.event_type=birthday, single kind).
-    mockReads(
-      builder,
-      { data: detailRow({ status: 'active' }), error: null },
-      { data: row, error: null },
-    );
+    // TWO reads: ownership → update-select. No lock condition trips (complete
+    // celebrants, venue present, type unchanged via cur.event_type), so the
+    // campaigns lookup is skipped entirely (baseInput.event_type=birthday).
+    mockReads(builder, owned({ status: 'active' }), { data: row, error: null });
 
     await updateEvent('event-1', {
       ...baseInput,
@@ -618,6 +628,124 @@ describe('updateEvent', () => {
     expect(vi.mocked(client.from).mock.calls.flat()).not.toContain('campaigns');
     const patch = vi.mocked(builder.update).mock.calls[0][0] as Record<string, unknown>;
     expect(patch.celebrants).toEqual({ name: 'איתי לוי' });
+  });
+
+  it('event_type lock: a type change is REJECTED while an operational campaign exists', async () => {
+    const { client, builder } = createMockSupabase<EventDetail>({
+      data: detailRow(),
+      error: null,
+    });
+    vi.mocked(createClient).mockResolvedValue(
+      client as unknown as Awaited<ReturnType<typeof createClient>>,
+    );
+    client.rpc.mockResolvedValue({ data: true, error: null });
+    // stored type (from the ownership read) differs from the submitted one →
+    // typeChanged; the campaign lookup finds an operational campaign.
+    mockReads(
+      builder,
+      owned({ status: 'active', event_type: 'bar_mitzvah' }),
+      { data: { id: 'c-live' }, error: null },
+    );
+
+    await expect(
+      updateEvent('event-1', { ...baseInput, event_type: 'birthday', celebrants: { name: 'רון' } }),
+    ).rejects.toThrow(EVENT_TYPE_LOCKED_ERROR);
+    expect(builder.update).not.toHaveBeenCalled();
+  });
+
+  it('event_type change with no operational campaign is allowed (re-type stays possible pre-campaign)', async () => {
+    const row = detailRow({ event_type: 'birthday' });
+    const { client, builder } = createMockSupabase<EventDetail>({ data: row, error: null });
+    vi.mocked(createClient).mockResolvedValue(
+      client as unknown as Awaited<ReturnType<typeof createClient>>,
+    );
+    client.rpc.mockResolvedValue({ data: true, error: null });
+    mockReads(
+      builder,
+      owned({ status: 'draft', event_type: 'bar_mitzvah' }),
+      NO_LIVE_CAMPAIGN,
+      { data: row, error: null },
+    );
+
+    await updateEvent('event-1', {
+      ...baseInput,
+      event_type: 'birthday',
+      celebrants: { name: 'רון' },
+    });
+
+    const patch = vi.mocked(builder.update).mock.calls[0][0] as Record<string, unknown>;
+    expect(patch.event_type).toBe('birthday');
+  });
+
+  it('venue lock: emptying venue_name is REJECTED while an operational campaign exists', async () => {
+    const { client, builder } = createMockSupabase<EventDetail>({
+      data: detailRow(),
+      error: null,
+    });
+    vi.mocked(createClient).mockResolvedValue(
+      client as unknown as Awaited<ReturnType<typeof createClient>>,
+    );
+    client.rpc.mockResolvedValue({ data: true, error: null });
+    mockReads(
+      builder,
+      owned({ status: 'active' }),
+      { data: { id: 'c-live' }, error: null },
+    );
+
+    await expect(
+      updateEvent('event-1', { ...baseInput, venue_name: null, celebrants: { name: 'רון' } }),
+    ).rejects.toThrow(VENUE_REQUIRED_WHILE_CAMPAIGN_ERROR);
+    expect(builder.update).not.toHaveBeenCalled();
+  });
+
+  it('venue lock: changing venue_name to another non-empty value while live is allowed', async () => {
+    const row = detailRow({ venue_name: 'אולם חדש' });
+    const { client, builder } = createMockSupabase<EventDetail>({ data: row, error: null });
+    vi.mocked(createClient).mockResolvedValue(
+      client as unknown as Awaited<ReturnType<typeof createClient>>,
+    );
+    client.rpc.mockResolvedValue({ data: true, error: null });
+    // No lock condition trips (complete celebrants, venue present, type same) →
+    // the campaign is never even queried; a legitimate edit is not blocked.
+    mockReads(
+      builder,
+      owned({ status: 'active' }),
+      { data: row, error: null },
+    );
+
+    await updateEvent('event-1', {
+      ...baseInput,
+      venue_name: 'אולם חדש',
+      celebrants: { name: 'רון' },
+    });
+
+    const patch = vi.mocked(builder.update).mock.calls[0][0] as Record<string, unknown>;
+    expect(patch.venue_name).toBe('אולם חדש');
+    expect(vi.mocked(client.from).mock.calls.flat()).not.toContain('campaigns');
+  });
+
+  it('regression: an unrelated edit while live (complete celebrants, venue present) is NOT falsely blocked', async () => {
+    const row = detailRow({ show_meal_pref: false });
+    const { client, builder } = createMockSupabase<EventDetail>({ data: row, error: null });
+    vi.mocked(createClient).mockResolvedValue(
+      client as unknown as Awaited<ReturnType<typeof createClient>>,
+    );
+    client.rpc.mockResolvedValue({ data: true, error: null });
+    mockReads(
+      builder,
+      owned({ status: 'active' }),
+      { data: row, error: null },
+    );
+
+    await updateEvent('event-1', {
+      ...baseInput,
+      celebrants: { name: 'רון' },
+      show_meal_pref: false,
+    });
+
+    const patch = vi.mocked(builder.update).mock.calls[0][0] as Record<string, unknown>;
+    expect(patch.show_meal_pref).toBe(false);
+    expect(vi.mocked(client.from).mock.calls.flat()).not.toContain('campaigns');
   });
 });
 

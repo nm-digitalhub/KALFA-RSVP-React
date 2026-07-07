@@ -4,7 +4,12 @@ import Image from 'next/image';
 import { useActionState, useState } from 'react';
 
 import { updateEventAction } from './actions';
-import { EVENT_TYPES } from '@/lib/validation/schemas';
+import {
+  CELEBRANT_KIND_BY_EVENT_TYPE,
+  CELEBRANT_REQUIRED_FIELD_KEYS_BY_KIND,
+  EVENT_TYPES,
+  type CelebrantFieldKey,
+} from '@/lib/validation/schemas';
 import {
   CELEBRANT_FIELD_LABELS,
   EVENT_TYPE_LABELS,
@@ -54,16 +59,25 @@ function CelebrantFields({
   eventType,
   defaults,
   errors,
+  requiredKeys,
 }: {
   eventType: EventType;
   defaults: Record<string, string>;
   errors?: Record<string, string[] | undefined>;
+  // While an operational campaign exists these fields are `required` (they are
+  // bound into every pending invite/reminder — the browser must block a save that
+  // empties them). Empty otherwise: at draft/no-campaign all fields stay
+  // optional (completeness is only the campaign gate's concern).
+  requiredKeys?: readonly CelebrantFieldKey[];
 }) {
+  const required = new Set<string>(requiredKeys ?? []);
   return (
     <fieldset className="space-y-4">
       <legend className="mb-2 text-sm font-medium">בעלי השמחה</legend>
       <p className="text-xs text-muted-foreground">
-        יש למלא לפני הפעלת אישורי הגעה
+        {required.size > 0
+          ? 'כל עוד קמפיין אישורי-הגעה פעיל — הפרטים מופיעים בהזמנות ובתזכורות ולכן חייבים להישאר מלאים.'
+          : 'יש למלא לפני הפעלת אישורי הגעה'}
       </p>
       {Object.entries(CELEBRANT_FIELD_LABELS[eventType]).map(([field, label]) => (
         <div key={field}>
@@ -78,6 +92,7 @@ function CelebrantFields({
               id={`celebrants.${field}`}
               name={`celebrants.${field}`}
               defaultValue={defaults[field] ?? ''}
+              required={required.has(field)}
               className={inputClass}
             >
               <option value="" disabled>
@@ -95,6 +110,7 @@ function CelebrantFields({
               name={`celebrants.${field}`}
               type="text"
               defaultValue={defaults[field] ?? ''}
+              required={required.has(field)}
               className={inputClass}
             />
           )}
@@ -108,11 +124,18 @@ function CelebrantFields({
 export function EditEventForm({
   event,
   inviteImageUrl,
+  hasOperationalCampaign = false,
 }: {
   event: EventDetail;
   // Short-lived signed URL of the CURRENT invitation image (private bucket) —
   // generated per render by the page, so it always reflects the latest upload.
   inviteImageUrl?: string | null;
+  // True when an OPERATIONAL (non-terminal) campaign exists for this event — the
+  // page derives it from the already-loaded campaign via isOperationalCampaignStatus
+  // (the SSOT). Drives the "may change, must not remove / re-type" locks that
+  // protect every pending send: event_type locked, celebrant completeness +
+  // venue_name enforced. The server (updateEvent) is the authority — this is UX.
+  hasOperationalCampaign?: boolean;
 }) {
   const action = updateEventAction.bind(null, event.id);
   const [state, formAction] = useActionState(action, null);
@@ -157,9 +180,13 @@ export function EditEventForm({
         </label>
         <select
           id="event_type"
-          name="event_type"
+          // Locked while an operational campaign exists (the template family +
+          // parameter contract are bound to the type). A disabled control is not
+          // POSTed, so the value rides in a hidden input below (select has no name).
+          name={hasOperationalCampaign ? undefined : 'event_type'}
           required
           value={eventType}
+          disabled={hasOperationalCampaign}
           // The options are rendered from EVENT_TYPES, so the emitted value
           // is always a valid EventType.
           onChange={(e) => setEventType(e.target.value as EventType)}
@@ -171,6 +198,14 @@ export function EditEventForm({
             </option>
           ))}
         </select>
+        {hasOperationalCampaign ? (
+          <>
+            <input type="hidden" name="event_type" value={event.event_type} />
+            <p className="mt-1 text-xs text-muted-foreground">
+              נעול כל עוד קמפיין אישורי-הגעה פעיל
+            </p>
+          </>
+        ) : null}
         <FieldError errors={state?.fieldErrors?.event_type} />
       </div>
 
@@ -181,6 +216,13 @@ export function EditEventForm({
         eventType={eventType}
         defaults={celebrantDefaults(event.celebrants)}
         errors={state?.fieldErrors}
+        requiredKeys={
+          hasOperationalCampaign
+            ? CELEBRANT_REQUIRED_FIELD_KEYS_BY_KIND[
+                CELEBRANT_KIND_BY_EVENT_TYPE[eventType]
+              ]
+            : undefined
+        }
       />
 
       <div>
@@ -241,9 +283,18 @@ export function EditEventForm({
           id="venue_name"
           name="venue_name"
           type="text"
+          // Bound into every pending invite/reminder ({{…}} venue line) — while an
+          // operational campaign exists it may change but must not be emptied, else
+          // the next send skips as params_incomplete. Server-enforced too.
+          required={hasOperationalCampaign}
           defaultValue={event.venue_name ?? ''}
           className={inputClass}
         />
+        {hasOperationalCampaign ? (
+          <p className="mt-1 text-xs text-muted-foreground">
+            המיקום מופיע בהזמנות ובתזכורות ולכן אינו יכול להישאר ריק כל עוד קמפיין פעיל.
+          </p>
+        ) : null}
         <FieldError errors={state?.fieldErrors?.venue_name} />
       </div>
 

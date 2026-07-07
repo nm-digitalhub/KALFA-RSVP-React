@@ -37,6 +37,7 @@ function ownedEvent(
     id: 'e1',
     name: 'Test',
     status,
+    event_type: 'birthday' as const,
     event_date: eventDate,
     rsvp_deadline: null,
   };

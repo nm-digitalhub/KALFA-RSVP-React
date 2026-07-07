@@ -3,7 +3,13 @@
 import { revalidatePath } from 'next/cache';
 import { unstable_rethrow } from 'next/navigation';
 
-import { CELEBRANTS_LOCKED_ERROR, requireEventAccess, updateEvent } from '@/lib/data/events';
+import {
+  CELEBRANTS_LOCKED_ERROR,
+  EVENT_TYPE_LOCKED_ERROR,
+  VENUE_REQUIRED_WHILE_CAMPAIGN_ERROR,
+  requireEventAccess,
+  updateEvent,
+} from '@/lib/data/events';
 import { ilWallTimeToIso } from '@/lib/data/event-date';
 import {
   INVITE_IMAGE_MAX_BYTES,
@@ -159,10 +165,16 @@ export async function updateEventAction(
     // Re-throw Next.js control-flow signals (redirect / notFound from the
     // ownership gate); catching them would silently break that flow.
     unstable_rethrow(err);
-    // The celebrants lock is the one guard reachable through ENABLED UI — the
-    // user must see the actionable message, not the generic one. Matched by
-    // the shared const (never a raw err.message pass-through).
-    if (err instanceof Error && err.message === CELEBRANTS_LOCKED_ERROR) {
+    // The while-campaign-live locks are the guards reachable through ENABLED UI
+    // (the form renders these fields) — the user must see the actionable message,
+    // not the generic one. Matched by shared consts (never a raw err.message
+    // pass-through), so a rewording of the message never breaks this surfacing.
+    if (
+      err instanceof Error &&
+      (err.message === CELEBRANTS_LOCKED_ERROR ||
+        err.message === EVENT_TYPE_LOCKED_ERROR ||
+        err.message === VENUE_REQUIRED_WHILE_CAMPAIGN_ERROR)
+    ) {
       return { error: err.message };
     }
     return { error: 'עדכון האירוע נכשל. נסו שוב.' };

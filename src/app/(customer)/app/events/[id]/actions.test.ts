@@ -23,13 +23,21 @@ vi.mock('next/navigation', async (importOriginal) => {
 });
 vi.mock('@/lib/data/events', () => ({
   updateEvent: vi.fn(),
-  // Real value re-declared in the factory (hoisted above imports, so it cannot
-  // reference the actual module): the action compares err.message against it.
+  // Real values re-declared in the factory (hoisted above imports, so it cannot
+  // reference the actual module): the action compares err.message against these.
   CELEBRANTS_LOCKED_ERROR:
-    'לא ניתן למחוק את פרטי בעלי השמחה כשקיים קמפיין אישורי הגעה פעיל',
+    'לא ניתן להשאיר את פרטי בעלי השמחה חסרים כל עוד קמפיין אישורי-הגעה פעיל — הם מופיעים בהזמנות ובתזכורות. השלימו את השדות המסומנים ונסו שוב.',
+  EVENT_TYPE_LOCKED_ERROR: 'לא ניתן לשנות את סוג האירוע כל עוד קמפיין אישורי-הגעה פעיל.',
+  VENUE_REQUIRED_WHILE_CAMPAIGN_ERROR:
+    'לא ניתן להשאיר את המיקום ריק כל עוד קמפיין אישורי-הגעה פעיל — המיקום מופיע בהזמנות ובתזכורות.',
 }));
 
-import { CELEBRANTS_LOCKED_ERROR, updateEvent } from '@/lib/data/events';
+import {
+  CELEBRANTS_LOCKED_ERROR,
+  EVENT_TYPE_LOCKED_ERROR,
+  updateEvent,
+  VENUE_REQUIRED_WHILE_CAMPAIGN_ERROR,
+} from '@/lib/data/events';
 import { updateEventAction } from './actions';
 
 const NEXT_REDIRECT = Object.assign(new Error('NEXT_REDIRECT'), {
@@ -181,11 +189,29 @@ describe('updateEventAction — Next.js control-flow signals from the ownership 
     expect(result).toEqual({ error: 'עדכון האירוע נכשל. נסו שוב.' });
   });
 
-  it('surfaces the celebrants-lock guard message verbatim (the one guard reachable via enabled UI)', async () => {
+  it('surfaces the celebrants-lock guard message verbatim (a guard reachable via enabled UI)', async () => {
     vi.mocked(updateEvent).mockRejectedValue(new Error(CELEBRANTS_LOCKED_ERROR));
 
     const result = await updateEventAction('e-1', null, fd({ ...BASE }));
 
     expect(result).toEqual({ error: CELEBRANTS_LOCKED_ERROR });
+  });
+
+  it('surfaces the event_type-lock guard message verbatim', async () => {
+    vi.mocked(updateEvent).mockRejectedValue(new Error(EVENT_TYPE_LOCKED_ERROR));
+
+    const result = await updateEventAction('e-1', null, fd({ ...BASE }));
+
+    expect(result).toEqual({ error: EVENT_TYPE_LOCKED_ERROR });
+  });
+
+  it('surfaces the venue-required-while-campaign guard message verbatim', async () => {
+    vi.mocked(updateEvent).mockRejectedValue(
+      new Error(VENUE_REQUIRED_WHILE_CAMPAIGN_ERROR),
+    );
+
+    const result = await updateEventAction('e-1', null, fd({ ...BASE }));
+
+    expect(result).toEqual({ error: VENUE_REQUIRED_WHILE_CAMPAIGN_ERROR });
   });
 });

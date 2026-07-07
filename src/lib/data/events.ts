@@ -7,6 +7,7 @@ import { createAdminClient } from '@/lib/supabase/admin';
 import { requireUser } from '@/lib/auth/dal';
 import { logActivity } from '@/lib/data/activity';
 import { ensurePersonalOrg } from '@/lib/data/orgs';
+import { OPERATIONAL_CAMPAIGN_STATUSES } from '@/lib/data/campaign-status';
 import { isBeforeTomorrowIL, todayIL } from '@/lib/data/event-date';
 import type { Database, Json } from '@/lib/supabase/types';
 import { celebrantsCompleteFor } from '@/lib/validation/schemas';
@@ -20,9 +21,9 @@ export type EventStatus = Database['public']['Enums']['event_status'];
 // owner is derived server-side from the session — never from the browser.
 export type OwnedEvent = Pick<
   EventRow,
-  'id' | 'name' | 'status' | 'event_date' | 'rsvp_deadline'
+  'id' | 'name' | 'status' | 'event_type' | 'event_date' | 'rsvp_deadline'
 >;
-const OWNED_EVENT_COLUMNS = 'id, name, status, event_date, rsvp_deadline';
+const OWNED_EVENT_COLUMNS = 'id, name, status, event_type, event_date, rsvp_deadline';
 
 // L1 — the single shared "past event" rule lives in a dependency-free leaf
 // (./event-date) so the worker and client can import it without `server-only`.
@@ -297,11 +298,18 @@ export interface UpdateEventInput {
   rsvp_deadline?: string | null;
 }
 
-// The one updateEvent guard a user can hit through ENABLED UI (the edit form
-// renders the celebrant fields freely) — exported so the action can surface
-// exactly this message instead of the generic failure text.
+// While an OPERATIONAL campaign exists, every pending send binds the event's
+// type-selected template plus the celebrant + venue values (template-spec.ts is
+// fail-closed: a REMOVED value → params_incomplete → the send is SILENTLY
+// skipped, advance-only, no retry). So these three are "may change, must not
+// remove / re-type" invariants — the guards a user can reach through ENABLED UI,
+// exported so the action surfaces the actionable message, not the generic text.
 export const CELEBRANTS_LOCKED_ERROR =
-  'לא ניתן למחוק את פרטי בעלי השמחה כשקיים קמפיין אישורי הגעה פעיל';
+  'לא ניתן להשאיר את פרטי בעלי השמחה חסרים כל עוד קמפיין אישורי-הגעה פעיל — הם מופיעים בהזמנות ובתזכורות. השלימו את השדות המסומנים ונסו שוב.';
+export const EVENT_TYPE_LOCKED_ERROR =
+  'לא ניתן לשנות את סוג האירוע כל עוד קמפיין אישורי-הגעה פעיל.';
+export const VENUE_REQUIRED_WHILE_CAMPAIGN_ERROR =
+  'לא ניתן להשאיר את המיקום ריק כל עוד קמפיין אישורי-הגעה פעיל — המיקום מופיע בהזמנות ובתזכורות.';
 
 // Update an event the current user owns. The ownership gate runs first (404 if
 // not owned); the update is additionally scoped by owner_id, and the patch is
@@ -356,22 +364,33 @@ export async function updateEvent(
     }
   }
 
-  // Celebrants lock while a campaign lives: createCampaign gates enablement on
-  // a COMPLETE celebrants shape, and the outreach sends keep binding these
-  // values afterwards — so once a non-cancelled campaign exists, the group may
-  // change but never become incomplete for the event's (possibly new) type.
-  // The campaign lookup runs only on the incomplete branch, so the common
-  // complete-save path costs nothing extra (owner-scoped read under RLS).
-  if (!celebrantsCompleteFor(input.event_type, input.celebrants)) {
+  // While-campaign-live invariants — protect every PENDING send (the send path
+  // is fail-closed: a removed ingredient silently skips as params_incomplete, so
+  // a "free" edit could drop a scheduled reminder). A save may CHANGE these but
+  // must not REMOVE them, nor re-type the event its templates/pricing bind to:
+  //   • event_type — locked (template family + param contract + pricing)
+  //   • celebrants — must stay COMPLETE for the type (host signature/composition)
+  //   • venue_name — must stay non-empty ({{…}} venue line in every invite/reminder)
+  // event_date/time are already lifecycle-locked post-publish (above). The stored
+  // type comes from the ownership read (cur) — no extra query; the campaign lookup
+  // runs ONLY when one of the three could trip, and keys off the OPERATIONAL
+  // status set (SSOT) so a terminal/cancelled campaign never locks the form.
+  const typeChanged = cur.event_type !== input.event_type;
+  const celebrantsIncomplete = !celebrantsCompleteFor(input.event_type, input.celebrants);
+  const venueMissing = !input.venue_name || input.venue_name.trim() === '';
+
+  if (typeChanged || celebrantsIncomplete || venueMissing) {
     const { data: liveCampaign } = await supabase
       .from('campaigns')
       .select('id')
       .eq('event_id', eventId)
-      .neq('status', 'cancelled')
+      .in('status', [...OPERATIONAL_CAMPAIGN_STATUSES])
       .limit(1)
       .maybeSingle();
     if (liveCampaign) {
-      throw new Error(CELEBRANTS_LOCKED_ERROR);
+      if (typeChanged) throw new Error(EVENT_TYPE_LOCKED_ERROR);
+      if (celebrantsIncomplete) throw new Error(CELEBRANTS_LOCKED_ERROR);
+      throw new Error(VENUE_REQUIRED_WHILE_CAMPAIGN_ERROR);
     }
   }
 

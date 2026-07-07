@@ -261,6 +261,21 @@ const CELEBRANT_FIELD_KEYS_BY_KIND: Record<CelebrantKind, readonly CelebrantFiel
   free: ['names'],
 };
 
+// The celebrant fields REQUIRED for completeness per kind — mirrors
+// CELEBRANT_COMPLETE_SCHEMA_BY_KIND (the campaign-enablement gate). The edit
+// form marks exactly these `required` while an operational campaign exists, so the
+// browser blocks a save that would drop a value every pending send binds (host
+// signature/composition, both partners, …). `child` stays optional (not here).
+export const CELEBRANT_REQUIRED_FIELD_KEYS_BY_KIND: Record<
+  CelebrantKind,
+  readonly CelebrantFieldKey[]
+> = {
+  couple: ['groom', 'bride'],
+  single: ['name'],
+  parents: ['parents', 'host_composition'],
+  free: ['names'],
+};
+
 // What createEvent/updateEvent accept and what is stored in the jsonb column.
 // Partial is legal at save (e.g. only groom) — completeness is the campaign
 // gate's concern, not the form's.

@@ -80,6 +80,7 @@ describe('recordSignedAgreement — L1 past-event guard', () => {
       id: 'e1',
       name: 'Past Event',
       status: 'active',
+      event_type: 'birthday',
       event_date: '2020-01-01T00:00:00+00:00',
       rsvp_deadline: null,
     });
@@ -101,6 +102,7 @@ describe('recordSignedAgreement — R9 active-event guard', () => {
       id: 'e1',
       name: 'Draft Event',
       status: 'draft',
+      event_type: 'birthday',
       event_date: '2999-01-01T00:00:00+00:00',
       rsvp_deadline: null,
     });

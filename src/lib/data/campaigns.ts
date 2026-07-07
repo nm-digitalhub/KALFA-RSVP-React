@@ -241,10 +241,15 @@ export async function listCampaignsForEvent(
   return (data ?? []) as OwnerCampaign[];
 }
 
-// The event's SINGLE "RSVP confirmations" campaign (one-per-event). Returns the
-// most-recent NON-cancelled campaign, or null if none exists yet. Owner-scoped
-// via RLS (owns_event). `cancelled` is excluded so a future campaign can replace
-// a retired one (mirrors the partial UNIQUE(event_id) WHERE status <> 'cancelled').
+// The event's "RSVP confirmations" campaign. Returns the most-recent
+// NON-cancelled campaign (or null), so `cancelled` is excluded to let a future
+// campaign replace a retired one. Owner-scoped via RLS (owns_event).
+// NOTE: "one non-cancelled campaign per event" is an APP-LEVEL invariant only —
+// upheld by createCampaign's create-or-continue early return (a check-then-insert
+// using this function). There is NO DB backstop: no partial UNIQUE on event_id
+// exists (verified — only campaigns_pkey on id), so two non-cancelled rows are
+// not structurally prevented (e.g. a concurrent createCampaign race). Tracked as
+// a follow-up in docs/event-edit-policy-live-campaign-2026-07-07.md.
 export async function getCampaignForEvent(
   eventId: string,
 ): Promise<OwnerCampaign | null> {
