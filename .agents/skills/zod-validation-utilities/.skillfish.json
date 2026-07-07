@@ -1,0 +1,10 @@
+{
+  "version": 2,
+  "name": "zod-validation-utilities",
+  "owner": "giuseppe-trisciuoglio",
+  "repo": "developer-kit",
+  "path": "plugins/developer-kit-typescript/skills/zod-validation-utilities",
+  "branch": "main",
+  "sha": "1c5c3bd9e1dde5208adcc80230c925025deefccc",
+  "source": "manual"
+}
