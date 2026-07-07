@@ -1,9 +1,15 @@
+import type { ReactNode } from 'react';
 import Link from 'next/link';
 
 import { Badge, Pagination, type BadgeVariant } from '@/app/(admin)/admin/_components';
 import { buttonVariants } from '@/components/ui/button';
 import { requireEventAccess } from '@/lib/data/events';
-import { listGuests, listGroups, getGuestTotals } from '@/lib/data/guests';
+import {
+  listGuests,
+  listGroups,
+  getGuestTotals,
+  type GuestListItem,
+} from '@/lib/data/guests';
 import type { Database } from '@/lib/supabase/types';
 import {
   GUEST_STATUS_LABELS,
@@ -38,6 +44,118 @@ import { GuestListControls } from './guest-list-controls';
 import { GroupsManager } from './groups-manager';
 import { GuestRowActions } from './guest-row-actions';
 import { ContactStatusCell } from './contact-status-cell';
+
+// Webhook-driven state (Meta WhatsApp): meaningful op_status OUTCOMES (see
+// HIDDEN_OP_STATUS), latest delivery, and opt-out. Returns null when there is
+// nothing to show, so the table cell can fold to "—" and the mobile card can
+// omit the row entirely. Single source of truth for both layouts.
+function webhookStateBadges(g: GuestListItem): ReactNode {
+  const showOp = g.op_status && !HIDDEN_OP_STATUS.has(g.op_status);
+  if (!showOp && !g.delivery_status && !g.removal_requested) {
+    return null;
+  }
+  return (
+    <div className="flex flex-wrap items-center gap-1">
+      {g.op_status && !HIDDEN_OP_STATUS.has(g.op_status) ? (
+        <Badge variant={OP_STATUS_VARIANTS[g.op_status]}>
+          {OP_STATUS_LABELS[g.op_status]}
+        </Badge>
+      ) : null}
+      {g.delivery_status ? (
+        <Badge variant={deliveryStatusVariant(g.delivery_status)}>
+          {deliveryStatusLabel(g.delivery_status)}
+        </Badge>
+      ) : null}
+      {g.removal_requested ? (
+        <Badge variant={REMOVAL_REQUESTED_VARIANT}>
+          {REMOVAL_REQUESTED_LABEL}
+        </Badge>
+      ) : null}
+    </div>
+  );
+}
+
+// Confirmed headcount for an attending guest (adults + kids), with the
+// over-invited flag. Returns null for non-attending guests. Shared by table +
+// card so the "prefers WhatsApp-confirmed headcount" rule lives in one place.
+function headcountValue(g: GuestListItem): ReactNode {
+  if (g.status !== 'attending') {
+    return null;
+  }
+  return (
+    <span className="inline-flex items-center gap-1.5">
+      {(g.confirmed_adults ?? 0) + (g.confirmed_kids ?? 0)}
+      {g.over_invited ? (
+        <Badge variant="warning">מעל הכמות שהוזמנה</Badge>
+      ) : null}
+    </span>
+  );
+}
+
+// Mobile / tablet (< lg) presentation of a single guest. The desktop table has
+// 8 columns and forces horizontal scrolling below ~1024px, so under lg each
+// guest is a compact list row instead — two lines plus an optional third:
+//   line 1: status badge · name · edit/delete (icons)
+//   line 2: phone · group · headcount   |   contact-status quick-select
+//   line 3: over-invite flag + WhatsApp webhook badges (only when present)
+// Denser than a stacked card (~90–115px vs ~230px) while dropping no
+// information and using no fixed width.
+function GuestCard({
+  eventId,
+  g,
+  groupLabel,
+}: {
+  eventId: string;
+  g: GuestListItem;
+  groupLabel: string | null;
+}) {
+  const webhook = webhookStateBadges(g);
+  const attendingCount =
+    g.status === 'attending'
+      ? (g.confirmed_adults ?? 0) + (g.confirmed_kids ?? 0)
+      : null;
+  return (
+    <li className="rounded-lg border border-border bg-card px-3 py-2.5">
+      <div className="flex items-center gap-2">
+        <Badge variant={GUEST_STATUS_VARIANTS[g.status]}>
+          {GUEST_STATUS_LABELS[g.status]}
+        </Badge>
+        <p className="min-w-0 flex-1 truncate font-medium">{g.full_name}</p>
+        <GuestRowActions eventId={eventId} guestId={g.id} compact />
+      </div>
+
+      <div className="mt-1.5 flex items-center justify-between gap-2">
+        <p className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
+          <span dir="ltr">{g.phone ?? '—'}</span>
+          {groupLabel ? ` · ${groupLabel}` : ''}
+          {attendingCount !== null ? (
+            <>
+              {' · '}
+              <span className={g.over_invited ? 'text-warning' : undefined}>
+                אישרו {attendingCount}
+              </span>
+            </>
+          ) : null}
+        </p>
+        <ContactStatusCell
+          eventId={eventId}
+          guestId={g.id}
+          value={g.contact_status}
+          scope="card"
+        />
+      </div>
+
+      {g.over_invited || webhook ? (
+        <div className="mt-1.5 flex flex-wrap items-center gap-1">
+          {g.over_invited ? (
+            <Badge variant="warning">מעל הכמות שהוזמנה</Badge>
+          ) : null}
+          {webhook}
+        </div>
+      ) : null}
+    </li>
+  );
+}
 
 interface PageProps {
   params: Promise<{ id: string }>;
@@ -167,95 +285,85 @@ export default async function GuestsPage({ params, searchParams }: PageProps) {
             : 'עדיין אין מוזמנים. הוסיפו מוזמן או ייבאו מקובץ.'}
         </div>
       ) : (
-        <div className="overflow-x-auto rounded-lg border border-border">
-          <table className="w-full min-w-[44rem] text-start text-sm whitespace-nowrap">
-            <thead className="border-b border-border bg-muted/40 text-muted-foreground">
-              <tr>
-                <th className="px-4 py-2 font-medium">שם</th>
-                <th className="px-4 py-2 font-medium">טלפון</th>
-                <th className="px-4 py-2 font-medium">קבוצה</th>
-                <th className="px-4 py-2 font-medium">סטטוס</th>
-                <th className="px-4 py-2 font-medium">יצירת קשר</th>
-                <th className="px-4 py-2 font-medium">מצב הודעות</th>
-                <th className="px-4 py-2 font-medium">אישרו</th>
-                <th className="px-4 py-2 font-medium">
-                  <span className="sr-only">פעולות</span>
-                </th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border">
-              {items.map((g) => (
-                <tr key={g.id}>
-                  <td className="px-4 py-2 font-medium">{g.full_name}</td>
-                  <td className="px-4 py-2" dir="ltr">
-                    {g.phone ?? '—'}
-                  </td>
-                  <td className="px-4 py-2 text-muted-foreground">
-                    {g.group_id ? groupName.get(g.group_id) ?? '—' : '—'}
-                  </td>
-                  <td className="px-4 py-2">
-                    <Badge variant={GUEST_STATUS_VARIANTS[g.status]}>
-                      {GUEST_STATUS_LABELS[g.status]}
-                    </Badge>
-                  </td>
-                  <td className="px-4 py-2">
-                    <ContactStatusCell
-                      eventId={eventId}
-                      guestId={g.id}
-                      value={g.contact_status}
-                    />
-                  </td>
-                  {/* Webhook-driven state (Meta WhatsApp): outreach op_status
-                      (meaningful OUTCOMES only — see HIDDEN_OP_STATUS), latest
-                      delivery, and opt-out. Distinct from the CRM contact status
-                      to its right. "—" when there is no webhook state to show. */}
-                  <td className="px-4 py-2">
-                    {(g.op_status && !HIDDEN_OP_STATUS.has(g.op_status)) ||
-                    g.delivery_status ||
-                    g.removal_requested ? (
-                      <div className="flex flex-wrap items-center gap-1">
-                        {g.op_status && !HIDDEN_OP_STATUS.has(g.op_status) ? (
-                          <Badge variant={OP_STATUS_VARIANTS[g.op_status]}>
-                            {OP_STATUS_LABELS[g.op_status]}
-                          </Badge>
-                        ) : null}
-                        {g.delivery_status ? (
-                          <Badge
-                            variant={deliveryStatusVariant(g.delivery_status)}
-                          >
-                            {deliveryStatusLabel(g.delivery_status)}
-                          </Badge>
-                        ) : null}
-                        {g.removal_requested ? (
-                          <Badge variant={REMOVAL_REQUESTED_VARIANT}>
-                            {REMOVAL_REQUESTED_LABEL}
-                          </Badge>
-                        ) : null}
-                      </div>
-                    ) : (
-                      <span className="text-muted-foreground">—</span>
-                    )}
-                  </td>
-                  <td className="px-4 py-2 text-muted-foreground">
-                    {g.status === 'attending' ? (
-                      <span className="inline-flex items-center gap-1.5">
-                        {(g.confirmed_adults ?? 0) + (g.confirmed_kids ?? 0)}
-                        {g.over_invited ? (
-                          <Badge variant="warning">מעל הכמות שהוזמנה</Badge>
-                        ) : null}
-                      </span>
-                    ) : (
-                      '—'
-                    )}
-                  </td>
-                  <td className="px-4 py-2">
-                    <GuestRowActions eventId={eventId} guestId={g.id} />
-                  </td>
+        <>
+          {/* Mobile / tablet (< lg): compact full-width list rows (GuestCard).
+              The 8-column table only fits comfortably at ~lg+, so below that
+              each guest is a row that uses the whole width instead of forcing
+              horizontal scroll. */}
+          <ul className="space-y-3 lg:hidden">
+            {items.map((g) => (
+              <GuestCard
+                key={g.id}
+                eventId={eventId}
+                g={g}
+                groupLabel={g.group_id ? groupName.get(g.group_id) ?? null : null}
+              />
+            ))}
+          </ul>
+
+          {/* Desktop (lg+): the full table. Still wrapped in overflow-x-auto so
+              it scrolls internally on the rare narrow-lg case rather than
+              widening the page (the shell also clips at SidebarInset). */}
+          <div className="hidden overflow-x-auto rounded-lg border border-border lg:block">
+            <table className="w-full min-w-[44rem] text-start text-sm whitespace-nowrap">
+              <thead className="border-b border-border bg-muted/40 text-muted-foreground">
+                <tr>
+                  <th className="px-4 py-2 font-medium">שם</th>
+                  <th className="px-4 py-2 font-medium">טלפון</th>
+                  <th className="px-4 py-2 font-medium">קבוצה</th>
+                  <th className="px-4 py-2 font-medium">סטטוס</th>
+                  <th className="px-4 py-2 font-medium">יצירת קשר</th>
+                  <th className="px-4 py-2 font-medium">מצב הודעות</th>
+                  <th className="px-4 py-2 font-medium">אישרו</th>
+                  <th className="px-4 py-2 font-medium">
+                    <span className="sr-only">פעולות</span>
+                  </th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody className="divide-y divide-border">
+                {items.map((g) => {
+                  const webhook = webhookStateBadges(g);
+                  const headcount = headcountValue(g);
+                  return (
+                    <tr key={g.id}>
+                      <td className="px-4 py-2 font-medium">{g.full_name}</td>
+                      <td className="px-4 py-2" dir="ltr">
+                        {g.phone ?? '—'}
+                      </td>
+                      <td className="px-4 py-2 text-muted-foreground">
+                        {g.group_id ? groupName.get(g.group_id) ?? '—' : '—'}
+                      </td>
+                      <td className="px-4 py-2">
+                        <Badge variant={GUEST_STATUS_VARIANTS[g.status]}>
+                          {GUEST_STATUS_LABELS[g.status]}
+                        </Badge>
+                      </td>
+                      <td className="px-4 py-2">
+                        <ContactStatusCell
+                          eventId={eventId}
+                          guestId={g.id}
+                          value={g.contact_status}
+                          scope="row"
+                        />
+                      </td>
+                      {/* Webhook-driven state (Meta WhatsApp) — see
+                          webhookStateBadges. "—" when there is nothing to show. */}
+                      <td className="px-4 py-2">
+                        {webhook ?? <span className="text-muted-foreground">—</span>}
+                      </td>
+                      <td className="px-4 py-2 text-muted-foreground">
+                        {headcount ?? '—'}
+                      </td>
+                      <td className="px-4 py-2">
+                        <GuestRowActions eventId={eventId} guestId={g.id} />
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </>
       )}
 
       <Pagination

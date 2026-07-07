@@ -15,13 +15,19 @@ export function ContactStatusCell({
   eventId,
   guestId,
   value,
+  scope,
 }: {
   eventId: string;
   guestId: string;
   value: ContactStatus;
+  // The guest list renders this cell twice per guest (a mobile card + a desktop
+  // table row, one hidden by CSS). `scope` namespaces the control id so the two
+  // instances never share a DOM id (label/for association stays per-instance).
+  scope?: string;
 }) {
   const [pending, startTransition] = useTransition();
   const [failed, setFailed] = useState(false);
+  const fieldId = `contact-${scope ? `${scope}-` : ''}${guestId}`;
 
   function onChange(next: string) {
     setFailed(false);
@@ -38,11 +44,11 @@ export function ContactStatusCell({
 
   return (
     <div className="flex items-center gap-1">
-      <label className="sr-only" htmlFor={`contact-${guestId}`}>
+      <label className="sr-only" htmlFor={fieldId}>
         עדכון סטטוס יצירת קשר
       </label>
       <select
-        id={`contact-${guestId}`}
+        id={fieldId}
         value={value}
         disabled={pending}
         onChange={(e) => onChange(e.target.value)}
