@@ -6,10 +6,12 @@ import {
   celebrantsSchemaFor,
   createEventSchema,
   EVENT_TYPES,
+  forgotPasswordSchema,
   loginSchema,
   ORDER_STATUSES,
   parseCelebrantsForm,
   payPendingOrderSchema,
+  resetPasswordSchema,
   signupSchema,
   updateEventSchema,
   updateProfileSchema,
@@ -25,6 +27,48 @@ import { CELEBRANT_FIELD_LABELS } from '@/lib/data/event-labels';
 function ilDate(offsetDays: number): string {
   return todayIL(Date.now() + offsetDays * 24 * 60 * 60 * 1000);
 }
+
+describe('forgotPasswordSchema (item 5a)', () => {
+  it('accepts a valid email', () => {
+    expect(forgotPasswordSchema.safeParse({ email: 'user@example.com' }).success).toBe(true);
+  });
+
+  it('trims the email', () => {
+    const r = forgotPasswordSchema.safeParse({ email: '  user@example.com  ' });
+    expect(r.success).toBe(true);
+    if (r.success) expect(r.data.email).toBe('user@example.com');
+  });
+
+  it('rejects an invalid email', () => {
+    expect(forgotPasswordSchema.safeParse({ email: 'nope' }).success).toBe(false);
+  });
+});
+
+describe('resetPasswordSchema (item 5a)', () => {
+  it('accepts a valid matching password (>= 8 chars)', () => {
+    const r = resetPasswordSchema.safeParse({
+      password: 'aVeryGoodPass',
+      confirm: 'aVeryGoodPass',
+    });
+    expect(r.success).toBe(true);
+  });
+
+  it('rejects a password shorter than 8 characters', () => {
+    const r = resetPasswordSchema.safeParse({ password: 'short7!', confirm: 'short7!' });
+    expect(r.success).toBe(false);
+  });
+
+  it('rejects when confirm does not match, keyed to `confirm`', () => {
+    const r = resetPasswordSchema.safeParse({
+      password: 'aVeryGoodPass',
+      confirm: 'different1234',
+    });
+    expect(r.success).toBe(false);
+    if (!r.success) {
+      expect(r.error.flatten().fieldErrors.confirm?.[0]).toBe('הסיסמאות אינן תואמות');
+    }
+  });
+});
 
 describe('loginSchema', () => {
   it('accepts a valid email + password', () => {

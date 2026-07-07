@@ -4,7 +4,13 @@ import { redirect } from 'next/navigation';
 
 import { createClient } from '@/lib/supabase/server';
 import { isExistingUserSignup } from '@/lib/auth/signup-helpers';
-import { loginSchema, signupSchema } from '@/lib/validation/schemas';
+import {
+  forgotPasswordSchema,
+  loginSchema,
+  resetPasswordSchema,
+  signupSchema,
+} from '@/lib/validation/schemas';
+import { getAppUrl } from '@/lib/url';
 import type { FormState } from '@/lib/validation/result';
 
 export async function login(
@@ -73,6 +79,83 @@ export async function signup(
   // notice) that explains the email-confirmation step.
   if (!data.session) {
     redirect('/auth/signup/success');
+  }
+
+  redirect('/app');
+}
+
+// Step 1 of the reset flow: an UNAUTHENTICATED user requests a recovery email.
+// resetPasswordForEmail is enumeration-safe (no error whether or not the address
+// exists), so the response is identical either way.
+//
+// `redirectTo` becomes {{ .RedirectTo }} in the recovery email template. We point
+// it at OUR trusted /auth/confirm URL (getAppUrl → APP_ORIGIN), so the email
+// link's host comes from our own config, NOT from Supabase's SiteURL. The
+// template then builds exactly:
+//   {{ .RedirectTo }}?token_hash={{ .TokenHash }}&type=recovery&next=/auth/reset-password
+// = https://<app>/auth/confirm?token_hash=…&type=recovery&next=/auth/reset-password
+// /auth/confirm remains the authority: it verifies the OTP (type=recovery), writes
+// the session cookies, and redirects to the validated next (/auth/reset-password).
+export async function requestPasswordReset(
+  _prevState: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  const parsed = forgotPasswordSchema.safeParse({ email: formData.get('email') });
+  if (!parsed.success) {
+    return { fieldErrors: parsed.error.flatten().fieldErrors };
+  }
+
+  const supabase = await createClient();
+  // {{ .RedirectTo }} = our trusted /auth/confirm URL (see contract above).
+  const redirectTo = await getAppUrl('/auth/confirm');
+  const { error } = await supabase.auth.resetPasswordForEmail(parsed.data.email, {
+    redirectTo,
+  });
+  if (error) {
+    return { error: 'שליחת קישור האיפוס נכשלה. נסו שוב מאוחר יותר.' };
+  }
+
+  // Privacy-safe: the same confirmation regardless of whether the email is
+  // registered (never reveal account existence).
+  return {
+    notice:
+      'אם קיים חשבון עם כתובת זו, נשלח אליו קישור לאיפוס הסיסמה. בדקו את תיבת הדואר (וגם בתיקיית הספאם).',
+  };
+}
+
+// Step 2 of the reset flow. updateUser changes the CURRENT session user's
+// password, so a valid authenticated session must already exist. In the reset
+// flow that session is normally created when the recovery link is verified at
+// /auth/confirm (verifyOtp type=recovery) — a normal Supabase session, not a
+// special "recovery-only" one. The getUser() check below only proves a valid
+// session EXISTS; it does not (and cannot) prove the session came from a recovery
+// link — which is fine, since any authenticated user may change their own password.
+export async function updatePassword(
+  _prevState: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  const parsed = resetPasswordSchema.safeParse({
+    password: formData.get('password'),
+    confirm: formData.get('confirm'),
+  });
+  if (!parsed.success) {
+    return { fieldErrors: parsed.error.flatten().fieldErrors };
+  }
+
+  const supabase = await createClient();
+  // getUser() asks the Auth server whether a valid session exists (it does not
+  // reveal how that session was created). No valid session → no user to update
+  // (recovery link not followed, expired, or already used).
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) {
+    return { error: 'קישור האיפוס אינו תקף או שפג תוקפו. בקשו קישור חדש.' };
+  }
+
+  const { error } = await supabase.auth.updateUser({ password: parsed.data.password });
+  if (error) {
+    return { error: 'עדכון הסיסמה נכשל. נסו שוב.' };
   }
 
   redirect('/app');

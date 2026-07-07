@@ -9,18 +9,24 @@ import type { Database } from '@/lib/supabase/types';
 type EventType = Database['public']['Enums']['event_type'];
 
 // Auth
+// Shared field schemas — a single source reused across login / signup / reset so
+// the email + strong-password rules never drift between forms. `email` trims
+// first so a stray leading/trailing space is not rejected. Login only needs a
+// non-empty password, so it keeps its own min(1) rule below.
+const emailField = z.string().trim().pipe(z.email({ error: 'כתובת אימייל לא תקינה' }));
+const newPasswordField = z
+  .string()
+  .min(8, { error: 'הסיסמה חייבת לכלול לפחות 8 תווים' })
+  .max(72, { error: 'הסיסמה ארוכה מדי' });
+
 export const loginSchema = z.object({
-  // Trim before validating so a stray leading/trailing space is not rejected.
-  email: z.string().trim().pipe(z.email({ error: 'כתובת אימייל לא תקינה' })),
+  email: emailField,
   password: z.string().min(1, { error: 'נא להזין סיסמה' }),
 });
 
 export const signupSchema = z.object({
-  email: z.string().trim().pipe(z.email({ error: 'כתובת אימייל לא תקינה' })),
-  password: z
-    .string()
-    .min(8, { error: 'הסיסמה חייבת לכלול לפחות 8 תווים' })
-    .max(72, { error: 'הסיסמה ארוכה מדי' }),
+  email: emailField,
+  password: newPasswordField,
   // Collected at signup and written to the profile by the handle_new_user()
   // trigger (via auth metadata). full_name is required; phone is optional and,
   // when present, validated against the Israeli numbering plan.
@@ -38,6 +44,22 @@ export const signupSchema = z.object({
     .optional()
     .or(z.literal('')),
 });
+
+// Password reset (forgot-password → recovery email → set new password), built
+// from the shared emailField + newPasswordField above — no duplicated rules.
+export const forgotPasswordSchema = z.object({ email: emailField });
+export type ForgotPasswordInput = z.infer<typeof forgotPasswordSchema>;
+
+export const resetPasswordSchema = z
+  .object({
+    password: newPasswordField,
+    confirm: z.string(),
+  })
+  .refine((v) => v.password === v.confirm, {
+    error: 'הסיסמאות אינן תואמות',
+    path: ['confirm'],
+  });
+export type ResetPasswordInput = z.infer<typeof resetPasswordSchema>;
 
 // Events — event_type matches the public.event_type enum in the live schema.
 export const EVENT_TYPES = [

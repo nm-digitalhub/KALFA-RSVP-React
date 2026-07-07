@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { useActionState } from 'react';
 
 import { login } from '../actions';
@@ -39,6 +40,14 @@ export function LoginForm() {
           required
         />
         <FieldError errors={state?.fieldErrors?.password} />
+        <div className="mt-1 text-end">
+          <Link
+            href="/auth/forgot-password"
+            className="text-sm font-medium text-primary hover:underline"
+          >
+            שכחתם סיסמה?
+          </Link>
+        </div>
       </div>
 
       <SubmitButton>התחברות</SubmitButton>
