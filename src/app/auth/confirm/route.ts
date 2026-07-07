@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 
 import { createClient } from '@/lib/supabase/server';
-import { getAppUrl } from '@/lib/url';
+import { getAppUrl, resolveAppRedirectPath } from '@/lib/url';
 
 // Server-side landing for Supabase auth EMAIL links (invite / recovery /
 // magiclink): verifies the token_hash via the standard @supabase/ssr flow —
@@ -16,20 +16,17 @@ export async function GET(req: Request) {
   const tokenHash = url.searchParams.get('token_hash') ?? '';
   const type = url.searchParams.get('type') ?? '';
   const rawNext = url.searchParams.get('next') ?? '/app';
-  // Relative same-origin only; an ABSOLUTE next (the email template passes
-  // {{ .RedirectTo }} verbatim) is accepted iff it is OUR origin — reduced to
-  // its path. Anything else falls back to /app (never an open redirect).
+  // Validate `next` with the SAME shared policy as getAppUrl (see
+  // src/lib/url.ts → resolveInternalTarget). An origin check ALONE is not enough
+  // — e.g. `https:evil` resolves same-origin to `/evil` — so we delegate to the
+  // one policy instead of re-implementing `new URL(rawNext, ownOrigin)` here. Any
+  // rejection (ambiguous input, off-origin target, credentials, or a disallowed
+  // scheme) keeps /app.
   let next = '/app';
-  if (rawNext.startsWith('/') && !rawNext.startsWith('//')) {
-    next = rawNext;
-  } else {
-    try {
-      const abs = new URL(rawNext);
-      const own = new URL(await getAppUrl('/'));
-      if (abs.origin === own.origin) next = abs.pathname + abs.search;
-    } catch {
-      /* keep /app */
-    }
+  try {
+    next = await resolveAppRedirectPath(rawNext);
+  } catch {
+    // keep /app
   }
 
   if (!tokenHash || !ALLOWED_TYPES.has(type)) {
