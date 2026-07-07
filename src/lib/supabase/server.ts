@@ -17,7 +17,10 @@ export async function createClient() {
       getAll() {
         return cookieStore.getAll();
       },
-      setAll(cookiesToSet) {
+      setAll(cookiesToSet, _headers) {
+        // `_headers` (Cache-Control: no-store …) is applied only in the proxy,
+        // where the outgoing response is writable — a Server Component can't set
+        // response headers, and cookie writes there throw (handled below).
         try {
           cookiesToSet.forEach(({ name, value, options }) => {
             cookieStore.set(name, value, options);
