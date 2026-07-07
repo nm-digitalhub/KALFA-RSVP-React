@@ -10,6 +10,7 @@ import {
   HeaderComponent,
   HeaderParameter,
   URLComponent,
+  PayloadComponent,
   Image,
 } from 'whatsapp-api-js/messages';
 
@@ -119,15 +120,33 @@ export async function sendWhatsAppTemplate(
     // URL-button variable — the suffix Meta appends to the template's static
     // button URL (e.g. the event's gift_link_token for kalfa_event_gift_v1).
     urlButtonParam?: string;
+    // RSVP quick-reply payloads bound at send time, in button-index order, for
+    // templates whose approved layout carries the 3 RSVP QUICK_REPLY buttons.
+    // Meta stores NO payload on a QUICK_REPLY button, so a tap returns these (as
+    // button.payload) ONLY when injected here; otherwise it echoes the LABEL and
+    // the inbound RSVP_BUTTON_MAP misses. One PayloadComponent per payload.
+    rsvpButtonPayloads?: readonly string[];
   },
 ): Promise<DeliveryOutcome> {
+  // Fail-closed: a URL button and RSVP quick-reply payloads share the SAME
+  // button-index space, so injecting both would misalign the indices and Meta
+  // would reject or mis-route the tap. A template is EITHER a URL-button type OR
+  // a quick-reply type here — never both. Refuse rather than send a broken message.
+  if (params.urlButtonParam && params.rsvpButtonPayloads) {
+    return { kind: 'unknown', reason: 'url_and_rsvp_buttons_conflict' };
+  }
   // secure:false avoids requiring the appSecret for SENDING (the secret is only
   // needed to verify INBOUND webhooks, handled in B2).
   const api = new WhatsAppAPI({ token: cfg.accessToken, secure: false });
   // whatsapp-api-js 6.x: Template(name, language, ...components); a positional
   // body is one BodyComponent whose BodyParameter order is the {{i}} order;
   // button component indexes are assigned by constructor order.
-  const components: (HeaderComponent | BodyComponent | URLComponent)[] = [];
+  const components: (
+    | HeaderComponent
+    | BodyComponent
+    | URLComponent
+    | PayloadComponent
+  )[] = [];
   if (params.headerImage) {
     const image =
       'link' in params.headerImage
@@ -146,12 +165,23 @@ export async function sendWhatsAppTemplate(
   if (params.urlButtonParam) {
     components.push(new URLComponent(params.urlButtonParam));
   }
+  // Quick-reply RSVP buttons: one PayloadComponent per payload, in order. The
+  // library assigns each button its index by constructor order (button_counter),
+  // so with no URL button these land at button indices 0..n matching the approved
+  // template layout (מגיע/ה=0, לא מגיע/ה=1, אולי=2).
+  if (params.rsvpButtonPayloads) {
+    for (const payload of params.rsvpButtonPayloads) {
+      components.push(new PayloadComponent(payload));
+    }
+  }
   const message =
     components.length > 0
       ? new Template(
           params.templateName,
           new Language(params.language),
-          ...(components as [HeaderComponent | BodyComponent | URLComponent]),
+          ...(components as [
+            HeaderComponent | BodyComponent | URLComponent | PayloadComponent,
+          ]),
         )
       : new Template(params.templateName, new Language(params.language));
 

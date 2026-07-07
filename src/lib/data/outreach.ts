@@ -14,6 +14,7 @@ import { listSendableContacts } from '@/lib/data/contacts';
 import { isPastEventDay } from '@/lib/data/event-date';
 import { signedInviteImageUrl } from '@/lib/storage/event-media';
 import { sendWhatsAppTemplate, type DeliveryOutcome } from '@/lib/whatsapp/client';
+import { RSVP_QUICK_REPLY_PAYLOADS } from '@/lib/whatsapp/rsvp-buttons';
 import {
   buildGiftParams,
   buildTemplateParams,
@@ -60,6 +61,9 @@ export async function sendOneWhatsApp(
         bodyParams,
         headerImage: extras?.headerImage,
         urlButtonParam: extras?.urlButtonParam,
+        // Inject the RSVP quick-reply payloads only for templates whose approved
+        // layout carries them (data-driven flag) — so a tap returns 'rsvp_*'.
+        rsvpButtonPayloads: template.rsvpQuickReply ? RSVP_QUICK_REPLY_PAYLOADS : undefined,
       },
     );
   } catch {

@@ -18,19 +18,12 @@ import { recordReached } from '@/lib/data/billing';
 import { submitRsvp } from '@/lib/data/rsvp';
 import { handleHeadcountReply, requestHeadcount } from '@/lib/data/headcount';
 import { stageWhatsAppImport } from '@/lib/data/whatsapp-import';
-import type { RsvpStatus } from '@/lib/validation/rsvp';
 import type { WebhookInboxRow } from '@/lib/data/webhooks';
-
-// Maps the OPAQUE action id of an RSVP quick-reply button (set by us on the
-// outbound template, echoed back as button.payload / interactive.*.id) to the
-// RSVP status it records. Only these three ids capture an RSVP; any other reply
-// id is a normal billable reach that records none. The single inbound side of
-// the button-id convention.
-const RSVP_BUTTON_MAP: Record<string, RsvpStatus> = {
-  rsvp_attending: 'attending',
-  rsvp_declined: 'declined',
-  rsvp_maybe: 'maybe',
-};
+// RSVP quick-reply button.payload -> RsvpStatus. Single source of truth SHARED
+// with the OUTBOUND send-time payload injection (client.ts via sendOneWhatsApp),
+// so the ids we send and the ids we resolve can never drift. Only these three ids
+// capture an RSVP; any other reply id is a normal billable reach that records none.
+import { RSVP_BUTTON_MAP } from '@/lib/whatsapp/rsvp-buttons';
 
 // Out-of-band processor for ONE persisted webhook_inbox row (run by the worker,
 // not the HTTP request). The intake route only verifies + persists; ALL economic

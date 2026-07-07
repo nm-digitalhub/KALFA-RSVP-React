@@ -88,6 +88,44 @@ describe('sendWhatsAppTemplate', () => {
     });
   });
 
+  it('injects RSVP quick-reply payloads as quick_reply button components, index 0..2', async () => {
+    sendMessage.mockResolvedValue({ messages: [{ id: 'wamid.rsvp' }] });
+
+    await sendWhatsAppTemplate(cfg, {
+      to: '+972501234567',
+      templateName: 'kalfa_brit_invite_trad_v1',
+      language: 'he',
+      bodyParams: BODY_PARAMS,
+      rsvpButtonPayloads: ['rsvp_attending', 'rsvp_declined', 'rsvp_maybe'],
+    });
+
+    // Exact Cloud API shape the SDK builds: body + one quick_reply button per
+    // payload, index by constructor order — so a tap returns button.payload='rsvp_*'.
+    const message = sendMessage.mock.calls[0][2];
+    expect(JSON.parse(JSON.stringify(message))).toEqual({
+      name: 'kalfa_brit_invite_trad_v1',
+      language: { code: 'he', policy: 'deterministic' },
+      components: [
+        { type: 'body', parameters: BODY_PARAMS.map((text) => ({ type: 'text', text })) },
+        { type: 'button', sub_type: 'quick_reply', index: 0, parameters: [{ type: 'payload', payload: 'rsvp_attending' }] },
+        { type: 'button', sub_type: 'quick_reply', index: 1, parameters: [{ type: 'payload', payload: 'rsvp_declined' }] },
+        { type: 'button', sub_type: 'quick_reply', index: 2, parameters: [{ type: 'payload', payload: 'rsvp_maybe' }] },
+      ],
+    });
+  });
+
+  it('fail-closed: a URL button + RSVP payloads is refused, never sent (index conflict)', async () => {
+    const r = await sendWhatsAppTemplate(cfg, {
+      to: '+972501234567',
+      templateName: 'kalfa_event_gift_v1',
+      language: 'he',
+      urlButtonParam: 'giftToken',
+      rsvpButtonPayloads: ['rsvp_attending', 'rsvp_declined', 'rsvp_maybe'],
+    });
+    expect(sendMessage).not.toHaveBeenCalled();
+    expect(r).toEqual({ kind: 'unknown', reason: 'url_and_rsvp_buttons_conflict' });
+  });
+
   it('classifies a thrown send (network/timeout) as unknown — never a resend', async () => {
     sendMessage.mockRejectedValue(new Error('meta down'));
     const r = await sendWhatsAppTemplate(cfg, {

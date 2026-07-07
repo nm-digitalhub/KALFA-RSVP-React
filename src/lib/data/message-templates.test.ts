@@ -49,10 +49,14 @@ describe('getTemplateByKey', () => {
 });
 
 describe('resolveTemplateForEvent', () => {
+  // Doubles as the mock row AND (spread) the expected resolved shape.
+  // resolveTemplateForEvent always returns rsvpQuickReply (false unless
+  // components.rsvp_quick_reply === true), so it rides along in the expectations.
   const genericRow = {
     name: 'kalfa_event_invite_v2',
     language: 'he',
     channel: 'whatsapp',
+    rsvpQuickReply: false,
   };
 
   it('swaps the name when components.variants has the event type', async () => {
@@ -75,6 +79,7 @@ describe('resolveTemplateForEvent', () => {
       language: 'he',
       channel: 'whatsapp',
       mediaName: null,
+      rsvpQuickReply: false,
     });
   });
 
@@ -162,6 +167,34 @@ describe('resolveTemplateForEvent', () => {
       await expect(resolveTemplateForEvent('invite', 'wedding')).resolves.toEqual(
         { ...genericRow, mediaName: null },
       );
+    }
+  });
+
+  it('rsvp_quick_reply is EVENT-TYPE-scoped: true only for the enabled event type', async () => {
+    // brit enabled in the map → rsvpQuickReply true.
+    mockAdmin({
+      data: { ...genericRow, components: { rsvp_quick_reply: { brit: true } } },
+      error: null,
+    });
+    await expect(resolveTemplateForEvent('invite', 'brit')).resolves.toMatchObject({
+      rsvpQuickReply: true,
+    });
+
+    // the SAME key for a non-enabled event type → false (never injects for wedding).
+    mockAdmin({
+      data: { ...genericRow, components: { rsvp_quick_reply: { brit: true } } },
+      error: null,
+    });
+    await expect(resolveTemplateForEvent('invite', 'wedding')).resolves.toMatchObject({
+      rsvpQuickReply: false,
+    });
+
+    // malformed map shapes fall back to off, never throwing.
+    for (const rsvp_quick_reply of ['x', 42, ['brit'], { brit: 1 }, { brit: 'yes' }, null]) {
+      mockAdmin({ data: { ...genericRow, components: { rsvp_quick_reply } }, error: null });
+      await expect(resolveTemplateForEvent('invite', 'brit')).resolves.toMatchObject({
+        rsvpQuickReply: false,
+      });
     }
   });
 

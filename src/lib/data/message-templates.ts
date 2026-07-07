@@ -18,6 +18,10 @@ export type ResolvedTemplate = Pick<MessageTemplateRow, 'name' | 'language' | 'c
   // data). Send paths switch to it ONLY when the event actually has an
   // uploaded invitation image — otherwise the text template is used as-is.
   mediaName?: string | null;
+  // True when the resolved template carries the 3 RSVP QUICK_REPLY buttons FOR
+  // THIS event type (components.rsvp_quick_reply[eventType], admin data) → the send
+  // injects the rsvp_* payloads so a tap returns button.payload='rsvp_*'.
+  rsvpQuickReply?: boolean;
 };
 
 export async function getTemplateByKey(
@@ -77,6 +81,23 @@ function mediaVariantNameFor(
   return typeof name === 'string' && name.trim() !== '' ? name : null;
 }
 
+// Whether the RSVP quick-reply buttons are enabled for THIS event type (admin
+// data: components.rsvp_quick_reply is a per-event-type map, e.g. {"brit": true},
+// mirroring variants). Scoped by event type ON PURPOSE — only variants whose
+// approved Meta layout was VERIFIED to carry the 3 buttons are enabled, so a
+// non-verified variant (e.g. wedding) never injects payloads Meta would reject.
+// Defensive walk like variantNameFor — anything malformed/absent means "off".
+function rsvpQuickReplyFlag(components: Json | null, eventType: EventType): boolean {
+  if (!components || typeof components !== 'object' || Array.isArray(components)) {
+    return false;
+  }
+  const map = (components as { [key: string]: Json | undefined }).rsvp_quick_reply;
+  if (!map || typeof map !== 'object' || Array.isArray(map)) {
+    return false;
+  }
+  return (map as { [key: string]: Json | undefined })[eventType] === true;
+}
+
 // getTemplateByKey + per-event-type variant selection. Resolution of the row
 // itself is identical (active-only, fail-closed → null); the variant mapping
 // only ever replaces the template NAME, so a missing/malformed mapping
@@ -100,6 +121,7 @@ export async function resolveTemplateForEvent(
     language: data.language,
     channel: data.channel,
     mediaName: mediaVariantNameFor(data.components, eventType),
+    rsvpQuickReply: rsvpQuickReplyFlag(data.components, eventType),
   };
 }
 
