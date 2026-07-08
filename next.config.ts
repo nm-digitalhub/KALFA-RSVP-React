@@ -69,19 +69,43 @@ const nextConfig: NextConfig = {
   // as a real Node module (not be webpack-bundled). Used server-side to render
   // the signed-agreement PDF (Hebrew BiDi). See src/lib/agreements/pdf.ts.
   serverExternalPackages: ['puppeteer'],
-  // Public RSVP pages carry a per-guest bearer token in the path. A Server
-  // Component can't set response headers, so enforce them here: never cache the
-  // guest-specific response, never leak the token via the Referer header, and
-  // keep the page out of search indexes (defense-in-depth with the route's
-  // `robots` metadata).
   async headers() {
     return [
+      // Official Next.js PWA guide (guides/progressive-web-apps §8) global
+      // security headers, applied to every route. Placed FIRST so per-route
+      // blocks below can override a shared key: per the `headers` config docs,
+      // when two matching rules set the same key, the LAST one wins.
+      {
+        source: '/(.*)',
+        headers: [
+          { key: 'X-Content-Type-Options', value: 'nosniff' },
+          { key: 'X-Frame-Options', value: 'DENY' },
+          { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
+        ],
+      },
+      // Public RSVP pages carry a per-guest bearer token in the path. A Server
+      // Component can't set response headers, so enforce them here: never cache
+      // the guest-specific response, never leak the token via the Referer header
+      // (no-referrer OVERRIDES the global strict-origin-when-cross-origin because
+      // this rule is listed after it), and keep the page out of search indexes
+      // (defense-in-depth with the route's `robots` metadata).
       {
         source: '/r/:token*',
         headers: [
           { key: 'Cache-Control', value: 'no-store, max-age=0' },
           { key: 'Referrer-Policy', value: 'no-referrer' },
           { key: 'X-Robots-Tag', value: 'noindex, nofollow' },
+        ],
+      },
+      // Service worker (guides/progressive-web-apps §8): correct JS content type,
+      // never cache so SW updates propagate immediately, and a strict self-only
+      // CSP. X-Content-Type-Options is already applied by the global rule above.
+      {
+        source: '/sw.js',
+        headers: [
+          { key: 'Content-Type', value: 'application/javascript; charset=utf-8' },
+          { key: 'Cache-Control', value: 'no-cache, no-store, must-revalidate' },
+          { key: 'Content-Security-Policy', value: "default-src 'self'; script-src 'self'" },
         ],
       },
     ];

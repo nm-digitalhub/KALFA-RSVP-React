@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="KALFA">
+  <rect width="512" height="512" fill="#FF5A3C"/>
+  <circle cx="256" cy="256" r="190" fill="#FFFDF8" opacity="0.16"/>
+  <path d="M142 148h72v104l104-104h84L288 260l119 104h-94l-99-95v95h-72V148Z" fill="#FFFDF8"/>
+</svg>
