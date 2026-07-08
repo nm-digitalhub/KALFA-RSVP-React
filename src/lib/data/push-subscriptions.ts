@@ -17,6 +17,7 @@ import type {
 
 type PushSubscriptionRow = Database['public']['Tables']['push_subscriptions']['Row'];
 type PushSubscriptionInsert = Database['public']['Tables']['push_subscriptions']['Insert'];
+type PushDeliveryLogInsert = Database['public']['Tables']['push_delivery_log']['Insert'];
 
 const PUSH_SUBSCRIPTION_COLUMNS =
   'id, user_id, org_id, endpoint, p256dh_key, auth_key, expiration_time, user_agent, created_at, updated_at, last_seen_at, revoked_at, failure_count, last_error';
@@ -47,6 +48,60 @@ function errorMessage(error: unknown): string {
   }
 
   return 'Unknown push error';
+}
+
+function endpointHost(endpoint: string): string | null {
+  try {
+    return new URL(endpoint).host;
+  } catch {
+    return null;
+  }
+}
+
+function responseStatusCode(response: unknown): number | null {
+  if (typeof response !== 'object' || response === null || !('statusCode' in response)) {
+    return null;
+  }
+
+  const statusCode = (response as { statusCode?: unknown }).statusCode;
+  return typeof statusCode === 'number' ? statusCode : null;
+}
+
+function pushPayloadToJson(payload: PushMessagePayload): PushDeliveryLogInsert['payload'] {
+  return JSON.parse(JSON.stringify(payload)) as PushDeliveryLogInsert['payload'];
+}
+
+async function logPushDelivery(
+  supabase: ReturnType<typeof createAdminClient>,
+  params: {
+    row: PushSubscriptionRow;
+    payload: PushMessagePayload;
+    success: boolean;
+    statusCode: number | null;
+    errorMessage?: string | null;
+  },
+) {
+  const insert: PushDeliveryLogInsert = {
+    subscription_id: params.row.id,
+    user_id: params.row.user_id,
+    org_id: params.row.org_id,
+    notification_type: 'web_push',
+    payload: pushPayloadToJson(params.payload),
+    success: params.success,
+    status_code: params.statusCode,
+    endpoint_host: endpointHost(params.row.endpoint),
+    error_message: params.errorMessage ?? null,
+    sent_at: new Date().toISOString(),
+  };
+
+  const { error } = await supabase.from('push_delivery_log').insert(insert);
+
+  if (error) {
+    console.error('Writing push delivery log failed', {
+      subscriptionId: params.row.id,
+      error: error.message,
+    });
+  }
 }
 
 export async function upsertCurrentUserPushSubscription(
@@ -152,8 +207,19 @@ export async function sendPushToUser(
 
   for (const row of data) {
     try {
-      await sendWebPushNotification(pushRowToWebPushSubscription(row), payload);
+      const response = await sendWebPushNotification(
+        pushRowToWebPushSubscription(row),
+        payload,
+      );
+      const statusCode = responseStatusCode(response);
       summary.sent += 1;
+
+      await logPushDelivery(supabase, {
+        row,
+        payload,
+        success: true,
+        statusCode,
+      });
 
       await supabase
         .from('push_subscriptions')
@@ -166,17 +232,26 @@ export async function sendPushToUser(
     } catch (err) {
       summary.failed += 1;
       const statusCode = getWebPushStatusCode(err);
+      const message = errorMessage(err);
       const shouldRevoke = statusCode === 404 || statusCode === 410;
       if (shouldRevoke) {
         summary.revoked += 1;
       }
+
+      await logPushDelivery(supabase, {
+        row,
+        payload,
+        success: false,
+        statusCode,
+        errorMessage: message,
+      });
 
       await supabase
         .from('push_subscriptions')
         .update({
           revoked_at: shouldRevoke ? new Date().toISOString() : row.revoked_at,
           failure_count: row.failure_count + 1,
-          last_error: errorMessage(err),
+          last_error: message,
         })
         .eq('id', row.id);
     }

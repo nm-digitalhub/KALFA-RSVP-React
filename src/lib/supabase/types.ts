@@ -12,6 +12,31 @@ export type Database = {
   __InternalSupabase: {
     PostgrestVersion: "14.5"
   }
+  graphql_public: {
+    Tables: {
+      [_ in never]: never
+    }
+    Views: {
+      [_ in never]: never
+    }
+    Functions: {
+      graphql: {
+        Args: {
+          extensions?: Json
+          operationName?: string
+          query?: string
+          variables?: Json
+        }
+        Returns: Json
+      }
+    }
+    Enums: {
+      [_ in never]: never
+    }
+    CompositeTypes: {
+      [_ in never]: never
+    }
+  }
   public: {
     Tables: {
       activity_log: {
@@ -1625,6 +1650,76 @@ export type Database = {
         }
         Relationships: []
       }
+      push_delivery_log: {
+        Row: {
+          created_at: string
+          endpoint_host: string | null
+          error_message: string | null
+          event_id: string | null
+          id: string
+          notification_type: string
+          org_id: string | null
+          payload: Json
+          sent_at: string
+          status_code: number | null
+          subscription_id: string | null
+          success: boolean
+          user_id: string | null
+        }
+        Insert: {
+          created_at?: string
+          endpoint_host?: string | null
+          error_message?: string | null
+          event_id?: string | null
+          id?: string
+          notification_type?: string
+          org_id?: string | null
+          payload?: Json
+          sent_at?: string
+          status_code?: number | null
+          subscription_id?: string | null
+          success: boolean
+          user_id?: string | null
+        }
+        Update: {
+          created_at?: string
+          endpoint_host?: string | null
+          error_message?: string | null
+          event_id?: string | null
+          id?: string
+          notification_type?: string
+          org_id?: string | null
+          payload?: Json
+          sent_at?: string
+          status_code?: number | null
+          subscription_id?: string | null
+          success?: boolean
+          user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "push_delivery_log_event_id_fkey"
+            columns: ["event_id"]
+            isOneToOne: false
+            referencedRelation: "events"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "push_delivery_log_org_id_fkey"
+            columns: ["org_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "push_delivery_log_subscription_id_fkey"
+            columns: ["subscription_id"]
+            isOneToOne: false
+            referencedRelation: "push_subscriptions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       push_subscriptions: {
         Row: {
           auth_key: string
@@ -2267,6 +2362,9 @@ export type CompositeTypes<
     : never
 
 export const Constants = {
+  graphql_public: {
+    Enums: {},
+  },
   public: {
     Enums: {
       agreement_status: ["draft", "approved"],
