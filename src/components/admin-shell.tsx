@@ -28,7 +28,6 @@ import {
 import {
   Sidebar,
   SidebarContent,
-  SidebarFooter,
   SidebarGroup,
   SidebarGroupContent,
   SidebarHeader,
@@ -199,14 +198,6 @@ export function AdminShell({
               </SidebarGroupContent>
             </SidebarGroup>
           </SidebarContent>
-          <SidebarFooter>
-            <Link
-              href="/app"
-              className="truncate px-2 text-xs text-muted-foreground hover:text-foreground"
-            >
-              חזרה לאזור האישי
-            </Link>
-          </SidebarFooter>
         </Sidebar>
 
         <SidebarInset>
@@ -256,6 +247,15 @@ export function AdminShell({
                       </div>
                     </div>
                   </DropdownMenuLabel>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem
+                    render={
+                      <Link href="/app">
+                        <LayoutDashboard />
+                        חזרה לאזור האישי
+                      </Link>
+                    }
+                  />
                   <DropdownMenuSeparator />
                   <LogoutMenuItem />
                 </DropdownMenuGroup>

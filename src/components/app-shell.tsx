@@ -20,7 +20,6 @@ import {
 import {
   Sidebar,
   SidebarContent,
-  SidebarFooter,
   SidebarGroup,
   SidebarGroupContent,
   SidebarHeader,
@@ -190,11 +189,6 @@ export function AppShell({
               </SidebarGroupContent>
             </SidebarGroup>
           </SidebarContent>
-          <SidebarFooter>
-            <p className="truncate px-2 text-xs text-muted-foreground">
-              {userEmail}
-            </p>
-          </SidebarFooter>
         </Sidebar>
 
         <SidebarInset>
