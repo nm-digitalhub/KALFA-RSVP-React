@@ -29,6 +29,7 @@ vi.mock('@/lib/auth/dal', () => ({ requireUser: vi.fn() }));
 // logActivity is best-effort and uses its own client; stub it so the guest
 // tests assert only on the guest queries.
 vi.mock('@/lib/data/activity', () => ({ logActivity: vi.fn() }));
+import { logActivity } from '@/lib/data/activity';
 
 const USER_ID = 'user-123';
 const EVENT_ID = 'event-1';
@@ -417,17 +418,67 @@ describe('deleteGuest', () => {
 });
 
 describe('updateContactStatus', () => {
-  it('updates only contact_status, scoped to event_id and id', async () => {
+  function mockAllowedWrite() {
     const { client, builder } = createMockSupabase({ data: null, error: null });
     passGate(builder);
     vi.mocked(createClient).mockResolvedValue(
       client as unknown as Awaited<ReturnType<typeof createClient>>,
     );
     client.rpc.mockResolvedValue({ data: true, error: null });
+    return { client, builder };
+  }
+
+  it('owner may update contact_status (can_access_event allows guests.edit)', async () => {
+    const { client, builder } = mockAllowedWrite();
+
     await updateContactStatus(EVENT_ID, GUEST_ID, 'contacted');
+
     expect(builder.update).toHaveBeenCalledWith({ contact_status: 'contacted' });
     expect(builder.eq).toHaveBeenCalledWith('event_id', EVENT_ID);
     expect(builder.eq).toHaveBeenCalledWith('id', GUEST_ID);
+    expect(client.rpc).toHaveBeenCalledWith('can_access_event', {
+      _event_id: EVENT_ID,
+      _resource: 'guests',
+      _action: 'edit',
+    });
+  });
+
+  it('org member with guests.edit may update contact_status', async () => {
+    // At the app boundary both owner (owner_id bypass) and a delegated member
+    // surface as can_access_event(..., 'guests', 'edit') = true — the gate is
+    // requireEventAccess, not requireOwnedEvent.
+    const { client, builder } = mockAllowedWrite();
+
+    await updateContactStatus(EVENT_ID, GUEST_ID, 'unavailable');
+
+    expect(builder.update).toHaveBeenCalledWith({ contact_status: 'unavailable' });
+    expect(client.rpc).toHaveBeenCalledWith('can_access_event', {
+      _event_id: EVENT_ID,
+      _resource: 'guests',
+      _action: 'edit',
+    });
+  });
+
+  it('viewer without guests.edit is rejected (404) before any write', async () => {
+    const { client, builder } = createMockSupabase({ data: null, error: null });
+    vi.mocked(createClient).mockResolvedValue(
+      client as unknown as Awaited<ReturnType<typeof createClient>>,
+    );
+    vi.spyOn(builder, 'then').mockImplementationOnce((f) =>
+      (f as (v: unknown) => unknown)({ data: OWNED_EVENT, error: null }),
+    );
+    client.rpc.mockResolvedValue({ data: false, error: null });
+
+    await expect(
+      updateContactStatus(EVENT_ID, GUEST_ID, 'contacted'),
+    ).rejects.toThrow('NEXT_HTTP_ERROR_FALLBACK;404');
+    expect(builder.update).not.toHaveBeenCalled();
+    expect(logActivity).not.toHaveBeenCalled();
+    expect(client.rpc).toHaveBeenCalledWith('can_access_event', {
+      _event_id: EVENT_ID,
+      _resource: 'guests',
+      _action: 'edit',
+    });
   });
 });
 

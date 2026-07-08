@@ -311,9 +311,15 @@ export const EVENT_TYPE_LOCKED_ERROR =
 export const VENUE_REQUIRED_WHILE_CAMPAIGN_ERROR =
   'לא ניתן להשאיר את המיקום ריק כל עוד קמפיין אישורי-הגעה פעיל — המיקום מופיע בהזמנות ובתזכורות.';
 
-// Update an event the current user owns. The ownership gate runs first (404 if
-// not owned); the update is additionally scoped by owner_id, and the patch is
-// built from an explicit allow-list so id/owner_id can never be changed here.
+// Update an event the current user may edit — the OWNER or an org member holding
+// events.edit. The org-aware gate (requireEventAccess → can_access_event) runs
+// first (404 otherwise); the write itself is authorized by RLS (events_org_update,
+// USING+WITH CHECK can_access_event('events','edit')) and by the Phase-3 column
+// grants, which pin id/owner_id/org_id/status/gift_link_token so a member can
+// never re-tenant, hijack, or change lifecycle here. The patch is an explicit
+// allow-list. There is deliberately NO app-side owner_id filter on the write — that
+// pre-Phase-3 leftover matched 0 rows for any non-owner member with events.edit and
+// defeated org sharing; RLS + the column grants are the authority.
 //
 // R5 lock + R2/R2b mirror (defense-in-depth — the DB triggers are the REST-proof
 // authority): on a non-draft event, an explicit event_date/rsvp_deadline KEY is
@@ -326,7 +332,9 @@ export async function updateEvent(
   input: UpdateEventInput,
 ): Promise<EventDetail> {
   const cur = await requireEventAccess(eventId, 'events', 'edit');
-  const user = await requireUser();
+  // Session guard (also enforced by requireEventAccess + logActivity). The write
+  // below is NOT owner_id-scoped — RLS + column grants are the authority.
+  await requireUser();
   const supabase = await createClient();
 
   const datesPresent = 'event_date' in input || 'rsvp_deadline' in input;
@@ -398,7 +406,6 @@ export async function updateEvent(
     .from('events')
     .update(update)
     .eq('id', eventId)
-    .eq('owner_id', user.id)
     .select(EVENT_DETAIL_COLUMNS)
     .single();
 

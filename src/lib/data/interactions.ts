@@ -2,7 +2,7 @@ import 'server-only';
 
 import { createAdminClient } from '@/lib/supabase/admin';
 import { createClient } from '@/lib/supabase/server';
-import { requireOwnedEvent } from '@/lib/data/events';
+import { requireEventAccess } from '@/lib/data/events';
 import { normalizePhone } from '@/lib/phone';
 import type { Database } from '@/lib/supabase/types';
 
@@ -220,15 +220,14 @@ export async function recordRsvpFromWhatsapp(
 }
 
 // ---------------------------------------------------------------------------
-// B7: owner-facing reads for the guest-detail WhatsApp timeline.
+// Org-aware reads for the guest-detail WhatsApp timeline.
 //
 // Everything ABOVE is webhook write-plumbing (service-role, signature-verified,
-// no session). The two readers BELOW are different: they run on the OWNER's
-// cookie client so RLS scopes every row to the owner's own events
-// (`contact_interactions_owner_select` = event_id IS NOT NULL AND owns_event;
-// `contacts_owner_select` = owns_event), and they re-verify ownership
-// (requireOwnedEvent) as defense-in-depth — matching the data-layer idiom. Both
-// are read-only and never select/return a message body or log PII.
+// no session). The two readers BELOW run on the member's cookie client so RLS
+// scopes every row to the event org (`contact_interactions_org_select`,
+// `contacts_org_select`), and they re-verify access via requireEventAccess
+// (contacts.view) as defense-in-depth. Both are read-only and never select/
+// return a message body or log PII.
 // ---------------------------------------------------------------------------
 
 // One timeline entry = one WhatsApp message. delivery_status is updated IN PLACE
@@ -246,14 +245,14 @@ export type ContactInteraction = {
   created_at: string;
 };
 
-// Timeline of WhatsApp interactions for one contact within an owned event,
-// oldest-first (conversational order). Scoped by event_id (the owner RLS policy
-// requires event_id IS NOT NULL) AND contact_id.
+// Timeline of WhatsApp interactions for one contact within an event the member
+// may view, oldest-first (conversational order). Scoped by event_id AND
+// contact_id; RLS + the gate authorize org members holding contacts.view.
 export async function listInteractionsForContact(
   eventId: string,
   contactId: string,
 ): Promise<ContactInteraction[]> {
-  await requireOwnedEvent(eventId);
+  await requireEventAccess(eventId, 'contacts', 'view');
   const supabase = await createClient();
   const { data, error } = await supabase
     .from('contact_interactions')
@@ -285,12 +284,12 @@ export type GuestOutreachSummary = {
 // The guest's outreach state (op_status + opt-out) via its linked contact, plus
 // the contact_id that drives listInteractionsForContact. Returns null when the
 // guest has no contact (invalid/missing phone → not reachable, not billable).
-// Two owner-scoped reads on the cookie client (RLS-gated).
+// Two org-aware reads on the cookie client (RLS-gated).
 export async function getGuestOutreachSummary(
   eventId: string,
   guestId: string,
 ): Promise<GuestOutreachSummary | null> {
-  await requireOwnedEvent(eventId);
+  await requireEventAccess(eventId, 'contacts', 'view');
   const supabase = await createClient();
 
   const { data: guest, error: gErr } = await supabase

@@ -2,7 +2,7 @@ import 'server-only';
 
 import { randomBytes } from 'node:crypto';
 
-import { requireOwnedEvent } from '@/lib/data/events';
+import { requireEventAccess } from '@/lib/data/events';
 import { createAdminClient } from '@/lib/supabase/admin';
 import type { Database, Json } from '@/lib/supabase/types';
 import type { RsvpStatus, RsvpSubmitInput } from '@/lib/validation/rsvp';
@@ -185,10 +185,10 @@ async function recordRsvpAudit(
 }
 
 // ---------------------------------------------------------------------------
-// Owner-side helpers for the guest detail page. Each re-verifies event
-// ownership server-side (requireOwnedEvent throws notFound for non-owners) and
-// uses the service-role client so the bearer token — deliberately excluded from
-// every owner-facing guest projection — is touched only behind that gate.
+// Guest-detail RSVP link helpers. The RSVP token is a bearer secret, so
+// reading, revoking, and regenerating it all require guests.edit. Each
+// helper re-verifies access server-side before touching the token via the
+// service-role client.
 // ---------------------------------------------------------------------------
 
 export interface RsvpLinkInfo {
@@ -196,12 +196,12 @@ export interface RsvpLinkInfo {
   revokedAt: string | null;
 }
 
-/** The current RSVP token + revocation state for one owned guest. */
+/** The current RSVP token + revocation state for one guest the member may edit. */
 export async function getRsvpLinkInfo(
   eventId: string,
   guestId: string,
 ): Promise<RsvpLinkInfo | null> {
-  await requireOwnedEvent(eventId);
+  await requireEventAccess(eventId, 'guests', 'edit');
   const supabase = createAdminClient();
   const { data, error } = await supabase
     .from('guests')
@@ -221,7 +221,7 @@ export async function revokeRsvpToken(
   eventId: string,
   guestId: string,
 ): Promise<void> {
-  await requireOwnedEvent(eventId);
+  await requireEventAccess(eventId, 'guests', 'edit');
   const supabase = createAdminClient();
   const { error } = await supabase
     .from('guests')
@@ -242,7 +242,7 @@ export async function regenerateRsvpToken(
   eventId: string,
   guestId: string,
 ): Promise<void> {
-  await requireOwnedEvent(eventId);
+  await requireEventAccess(eventId, 'guests', 'edit');
   const supabase = createAdminClient();
   const { error } = await supabase
     .from('guests')

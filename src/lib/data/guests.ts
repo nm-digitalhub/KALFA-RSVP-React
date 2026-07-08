@@ -557,7 +557,7 @@ export async function updateContactStatus(
   guestId: string,
   contactStatus: ContactStatus,
 ): Promise<void> {
-  await requireOwnedEvent(eventId);
+  await requireEventAccess(eventId, 'guests', 'edit');
   const supabase = await createClient();
   const previous = await getGuest(eventId, guestId);
 

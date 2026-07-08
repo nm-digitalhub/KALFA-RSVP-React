@@ -93,6 +93,17 @@ try {
   );
 
   // --- 3. freshest answer wins: WA headcount dies with a new answer -------
+  // EVENT_ID may contain other live guests, so guest_totals assertions must be
+  // relative to the fixture row's contribution, not absolute for the event.
+  const totalsBeforeFixture = await db.rpc('guest_totals', { _event_id: EVENT_ID });
+  if (totalsBeforeFixture.error) {
+    throw new Error(`baseline guest_totals failed: ${totalsBeforeFixture.error.message}`);
+  }
+  const attendingPeopleBeforeFixture = totalsBeforeFixture.data?.attending_people;
+  if (typeof attendingPeopleBeforeFixture !== 'number') {
+    throw new Error(`baseline attending_people is not numeric: ${JSON.stringify(totalsBeforeFixture.data)}`);
+  }
+
   const s1 = await db.rpc('submit_rsvp', {
     _token: token, _status: 'attending', _adults: 1, _kids: 0, _meal: null, _note: null,
   });
@@ -121,12 +132,16 @@ try {
     JSON.stringify(after.data),
   );
 
-  // totals must not count the declined row's old headcount
+  // totals must not count the declined row's old headcount. The event can have
+  // unrelated attending guests, so the assertion is: after this fixture is
+  // declined, attending_people returns to the pre-fixture baseline.
   const t = await db.rpc('guest_totals', { _event_id: EVENT_ID });
   check(
     'guest_totals gates attending_people strictly by status=attending',
-    !t.error && typeof t.data?.attending_people === 'number' && t.data.attending_people === 0,
-    `attending_people=${t.data?.attending_people}`,
+    !t.error &&
+      typeof t.data?.attending_people === 'number' &&
+      t.data.attending_people === attendingPeopleBeforeFixture,
+    `before=${attendingPeopleBeforeFixture} after=${t.data?.attending_people}`,
   );
 
   // --- 5. over_invited: the 4-condition business rule ----------------------

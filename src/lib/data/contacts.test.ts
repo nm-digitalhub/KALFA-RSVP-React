@@ -4,9 +4,11 @@ import { describe, expect, it, vi } from 'vitest';
 // that throws outside Next's RSC context. deriveContacts itself is pure.
 vi.mock('server-only', () => ({}));
 vi.mock('@/lib/supabase/admin', () => ({ createAdminClient: vi.fn() }));
-// linkGuestContact verifies ownership server-side; stub it as a no-op so the
+// linkGuestContact verifies access server-side; stub gates as no-ops so the
 // unit tests exercise only the contact upsert/link logic.
-vi.mock('@/lib/data/events', () => ({ requireOwnedEvent: vi.fn() }));
+vi.mock('@/lib/data/events', () => ({
+  requireEventAccess: vi.fn(),
+}));
 
 import { createMockSupabase } from '@/test/supabase-mock';
 import { createAdminClient } from '@/lib/supabase/admin';

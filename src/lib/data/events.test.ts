@@ -456,7 +456,10 @@ describe('updateEvent', () => {
     expect('rsvp_deadline' in patch).toBe(false);
     expect(patch).not.toHaveProperty('id');
     expect(patch).not.toHaveProperty('owner_id');
-    expect(builder.eq).toHaveBeenCalledWith('owner_id', USER_ID);
+    // Org-aware write: NOT scoped by owner_id (RLS events_org_update + the
+    // events.edit gate are the authority — a non-owner member with events.edit
+    // must be able to save; a pre-Phase-3 owner_id filter matched 0 rows).
+    expect(builder.eq).not.toHaveBeenCalledWith('owner_id', expect.anything());
     expect(builder.eq).toHaveBeenCalledWith('id', 'event-1');
     expect(builder.select).toHaveBeenCalledWith(DETAIL_COLUMNS);
     expect(logActivity).toHaveBeenCalledWith(
@@ -562,6 +565,43 @@ describe('updateEvent', () => {
     const patch = vi.mocked(builder.update).mock.calls[0][0] as Record<string, unknown>;
     expect('celebrants' in patch).toBe(true);
     expect(patch.celebrants).toBeNull();
+  });
+
+  it('org member (not the owner) with events.edit can save — the write is NOT owner_id-scoped; RLS + the gate authorize it', async () => {
+    // Non-owner member: the events.edit gate (can_access_event) passes and RLS
+    // (events_org_update) permits the write. The data layer must NOT re-add an
+    // app-side owner_id filter (the pre-Phase-3 leftover that matched 0 rows).
+    const row = detailRow({ status: 'active', event_type: 'birthday' });
+    const { client, builder } = createMockSupabase<EventDetail>({ data: row, error: null });
+    vi.mocked(createClient).mockResolvedValue(
+      client as unknown as Awaited<ReturnType<typeof createClient>>,
+    );
+    client.rpc.mockResolvedValue({ data: true, error: null }); // can_access_event('edit') = true
+    mockReads(builder, owned({ status: 'active' }), NO_LIVE_CAMPAIGN, { data: row, error: null });
+
+    const result = await updateEvent('event-1', baseInput);
+
+    expect(builder.update).toHaveBeenCalled();
+    expect(builder.eq).toHaveBeenCalledWith('id', 'event-1');
+    expect(builder.eq).not.toHaveBeenCalledWith('owner_id', expect.anything());
+    expect(result).toEqual(row);
+  });
+
+  it('rejects via the events.edit gate (404) when can_access_event returns false — a viewer without events.edit cannot save', async () => {
+    const { client, builder } = createMockSupabase<EventDetail>({ data: detailRow(), error: null });
+    vi.mocked(createClient).mockResolvedValue(
+      client as unknown as Awaited<ReturnType<typeof createClient>>,
+    );
+    // requireEventAccess: the event is visible (SELECT returns a row) but the
+    // edit-permission RPC denies → notFound() before any write.
+    vi.spyOn(builder, 'then').mockImplementationOnce((f) =>
+      (f as (v: unknown) => unknown)({ data: detailRow(), error: null }),
+    );
+    client.rpc.mockResolvedValue({ data: false, error: null }); // can_access_event('edit') = false
+
+    await expect(updateEvent('event-1', baseInput)).rejects.toThrow('NEXT_NOT_FOUND');
+    expect(builder.update).not.toHaveBeenCalled();
+    expect(logActivity).not.toHaveBeenCalled();
   });
 
   it('refuses (via the ownership gate) and does not write when not owned', async () => {

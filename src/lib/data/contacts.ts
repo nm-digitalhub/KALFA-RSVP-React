@@ -1,6 +1,6 @@
 import 'server-only';
 
-import { requireOwnedEvent } from '@/lib/data/events';
+import { requireEventAccess } from '@/lib/data/events';
 import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { normalizePhone } from '@/lib/phone';
@@ -8,7 +8,7 @@ import type { Database } from '@/lib/supabase/types';
 
 // "Contacts" = unique reachable phones per event (§2–3). Built from the event's
 // guests by normalizing to E.164 and de-duplicating; many guests may share one
-// phone → one contact. Ownership is enforced (requireOwnedEvent); contact writes
+// phone → one contact. Access is enforced (requireEventAccess); contact writes
 // go through the service-role admin client (contacts are admin-write under RLS).
 
 type ContactRow = Database['public']['Tables']['contacts']['Row'];
@@ -61,7 +61,7 @@ export type BuildContactsResult = {
 export async function buildContactsForEvent(
   eventId: string,
 ): Promise<BuildContactsResult> {
-  await requireOwnedEvent(eventId);
+  await requireEventAccess(eventId, 'contacts', 'create');
 
   const supabase = await createClient();
   const { data: guests, error } = await supabase
@@ -112,14 +112,14 @@ export async function buildContactsForEvent(
 // normalized phone into contacts (UNIQUE event_id+normalized_phone → idempotent,
 // §13) and sets guests.contact_id (null when the phone is invalid/missing, so it
 // is not billable, §4/§5.4). All writes are scoped by event_id. Verifies
-// ownership server-side — this writes the billing source-of-truth via the
+// access server-side — this writes the billing source-of-truth via the
 // service-role client (RLS-bypassing), so it must not rely on the caller alone.
 export async function linkGuestContact(
   eventId: string,
   guestId: string,
   phone: string | null,
 ): Promise<void> {
-  await requireOwnedEvent(eventId);
+  await requireEventAccess(eventId, 'contacts', 'edit');
   const admin = createAdminClient();
   const e164 = normalizePhone(phone);
 
@@ -214,7 +214,7 @@ export async function pruneOrphanContact(
 export async function countUniqueContactsForEvent(
   eventId: string,
 ): Promise<number> {
-  await requireOwnedEvent(eventId);
+  await requireEventAccess(eventId, 'contacts', 'view');
   const admin = createAdminClient();
   const { data: guests, error } = await admin
     .from('guests')
@@ -224,9 +224,9 @@ export async function countUniqueContactsForEvent(
   return deriveContacts(guests ?? []).uniquePhones.length;
 }
 
-// Read-only list of an event's contacts (owner-scoped via RLS).
+// Read-only list of an event's contacts (org-aware via RLS + the gate).
 export async function listContacts(eventId: string): Promise<EventContact[]> {
-  await requireOwnedEvent(eventId);
+  await requireEventAccess(eventId, 'contacts', 'view');
 
   const supabase = await createClient();
   const { data, error } = await supabase
@@ -266,7 +266,7 @@ export async function listSendableContacts(
   eventId: string,
   campaignId?: string,
 ): Promise<Array<{ id: string; normalized_phone: string }>> {
-  await requireOwnedEvent(eventId);
+  await requireEventAccess(eventId, 'contacts', 'view');
   const admin = createAdminClient();
 
   if (campaignId) {

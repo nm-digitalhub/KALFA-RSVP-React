@@ -3,12 +3,14 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 vi.mock('server-only', () => ({}));
 vi.mock('@/lib/supabase/admin', () => ({ createAdminClient: vi.fn() }));
 vi.mock('@/lib/supabase/server', () => ({ createClient: vi.fn() }));
-vi.mock('@/lib/data/events', () => ({ requireOwnedEvent: vi.fn() }));
+vi.mock('@/lib/data/events', () => ({
+  requireEventAccess: vi.fn(),
+}));
 
 import { createMockSupabase, type QueryResult } from '@/test/supabase-mock';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { createClient } from '@/lib/supabase/server';
-import { requireOwnedEvent } from '@/lib/data/events';
+import { requireEventAccess } from '@/lib/data/events';
 import {
   getGuestOutreachSummary,
   insertInteraction,
@@ -32,7 +34,7 @@ function mockAdmin(result: QueryResult<Row | Row[]>) {
   return m;
 }
 
-// Cookie (owner) client double for the B7 owner-facing reads. requireOwnedEvent
+// Cookie client double for the guest-detail org-aware reads. requireEventAccess
 // is mocked as a no-op so the tests exercise only the query shape + mapping.
 function mockCookie(result: QueryResult<Row | Row[]>) {
   const m = createMockSupabase<Row | Row[]>(result);
@@ -189,7 +191,7 @@ describe('listInteractionsForContact', () => {
 
     const r = await listInteractionsForContact('e1', 'k1');
 
-    expect(requireOwnedEvent).toHaveBeenCalledWith('e1');
+    expect(requireEventAccess).toHaveBeenCalledWith('e1', 'contacts', 'view');
     expect(client.from).toHaveBeenCalledWith('contact_interactions');
     expect(builder.eq).toHaveBeenCalledWith('event_id', 'e1');
     expect(builder.eq).toHaveBeenCalledWith('contact_id', 'k1');
@@ -235,7 +237,7 @@ describe('getGuestOutreachSummary', () => {
 
     const r = await getGuestOutreachSummary('e1', 'g1');
 
-    expect(requireOwnedEvent).toHaveBeenCalledWith('e1');
+    expect(requireEventAccess).toHaveBeenCalledWith('e1', 'contacts', 'view');
     expect(client.from).toHaveBeenCalledWith('guests');
     expect(client.from).toHaveBeenCalledWith('contacts');
     expect(r).toEqual({
