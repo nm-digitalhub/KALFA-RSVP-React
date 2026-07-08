@@ -47,6 +47,9 @@ yarn-error.log*
 .remember/
 .claude/
 
+# installed agent skills (tooling — reinstallable via `npx skills`; tracked via skills-lock.json)
+.agents/skills/
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts
