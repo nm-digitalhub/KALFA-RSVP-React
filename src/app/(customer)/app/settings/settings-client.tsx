@@ -30,6 +30,7 @@ import {
   updateSettingsAction,
 } from './actions';
 import { formatIsraelDate } from '@/lib/date';
+import { PushNotificationManager } from './push-notification-manager';
 
 const inputClass =
   'w-full rounded-md border border-border bg-background px-3 py-2 text-sm outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/15';
@@ -189,6 +190,8 @@ function NotificationsSection({ settings }: { settings: UserSettingsDTO }) {
           <SubmitButton>שמירת התראות</SubmitButton>
         </div>
       </form>
+
+      <PushNotificationManager />
     </section>
   );
 }
