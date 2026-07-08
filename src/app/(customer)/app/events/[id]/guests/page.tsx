@@ -1,7 +1,8 @@
 import type { ReactNode } from 'react';
 import Link from 'next/link';
 
-import { Badge, Pagination, type BadgeVariant } from '@/app/(admin)/admin/_components';
+import { Badge, type BadgeVariant } from '@/components/ui/badge';
+import { Pagination } from '@/components/pagination';
 import { buttonVariants } from '@/components/ui/button';
 import { requireEventAccess } from '@/lib/data/events';
 import {

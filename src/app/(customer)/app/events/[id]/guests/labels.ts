@@ -1,5 +1,5 @@
 import type { Database } from '@/lib/supabase/types';
-import type { BadgeVariant } from '@/app/(admin)/admin/_components';
+import type { BadgeVariant } from '@/components/ui/badge';
 
 // Hebrew labels for the guest-domain enums. Defined as EXHAUSTIVE
 // `Record<enum, string>` maps so that adding or removing a value in the DB

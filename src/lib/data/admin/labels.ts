@@ -1,6 +1,6 @@
 import type { Database } from '@/lib/supabase/types';
 import type { CallbackStatus } from '@/lib/validation/admin';
-import type { BadgeVariant } from '@/app/(admin)/admin/_components';
+import type { BadgeVariant } from '@/components/ui/badge';
 
 // Pure label maps — safe to import from both Server and Client Components, so
 // this module must NOT import `server-only` (the admin status form is a client

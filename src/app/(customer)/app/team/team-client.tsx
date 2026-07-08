@@ -4,6 +4,7 @@ import { useActionState } from 'react';
 import { useFormStatus } from 'react-dom';
 
 import { FieldError, FormError, FormNotice } from '@/components/forms';
+import { Badge } from '@/components/ui/badge';
 import type { OrgMemberDTO, OrgInvitationDTO, OrgRoleDTO } from '@/lib/data/orgs';
 
 import {
@@ -20,14 +21,6 @@ const inputClass =
 const selectSmall =
   'rounded-md border border-border bg-background px-2 py-1 text-sm';
 const sectionClass = 'space-y-4 rounded-lg border border-border bg-card p-5';
-
-function Badge({ children }: { children: React.ReactNode }) {
-  return (
-    <span className="rounded-full border border-border px-2.5 py-0.5 text-xs text-muted-foreground">
-      {children}
-    </span>
-  );
-}
 
 // Pending-aware submit for the inline row/section forms. Must render inside a
 // <form>; useFormStatus reflects that form's submission state.

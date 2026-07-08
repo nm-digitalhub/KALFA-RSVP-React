@@ -1,6 +1,6 @@
 import Link from 'next/link';
 
-import { Badge, type BadgeVariant } from '@/app/(admin)/admin/_components';
+import { Badge, type BadgeVariant } from '@/components/ui/badge';
 import { buttonVariants } from '@/components/ui/button';
 import type { OwnerCampaign } from '@/lib/data/campaigns';
 

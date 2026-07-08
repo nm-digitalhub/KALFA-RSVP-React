@@ -8,7 +8,8 @@ import {
   listInteractionsForContact,
 } from '@/lib/data/interactions';
 import { getRsvpLinkInfo } from '@/lib/data/rsvp';
-import { Badge, formatDateTime } from '@/app/(admin)/admin/_components';
+import { Badge } from '@/components/ui/badge';
+import { formatIsraelDateTime } from '@/lib/date';
 import { getAppUrl } from '@/lib/url';
 import {
   regenerateRsvpTokenAction,
@@ -146,7 +147,7 @@ export default async function EditGuestPage({ params }: PageProps) {
                     dateTime={it.created_at}
                     className="mt-1 block text-xs text-muted-foreground"
                   >
-                    {formatDateTime(it.created_at)}
+                    {formatIsraelDateTime(it.created_at) || it.created_at}
                   </time>
                   {it.provider_id ? (
                     <p
