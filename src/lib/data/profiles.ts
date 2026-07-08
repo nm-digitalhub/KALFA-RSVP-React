@@ -15,9 +15,12 @@ export type ProfileDTO = Pick<ProfileRow, 'id' | 'full_name' | 'phone' | 'update
 // This string IS the DTO contract — the data functions return rows as-is.
 const PROFILE_COLUMNS = 'id, full_name, phone, updated_at';
 
-// Load the current user's profile, or null if no row exists yet (a profile is
-// only materialised on first update). owner is the verified user id, never a
-// browser-supplied value.
+// Load the current user's profile. The row is created automatically at signup by
+// the `on_auth_user_created` trigger (`handle_new_user()`, SECURITY DEFINER), which
+// copies full_name/phone from auth `raw_user_meta_data` — so a row normally exists
+// for every user; `null` is only a defensive fallback (e.g. a pre-trigger account).
+// `full_name` may be an empty string when signup omitted it. owner is the verified
+// user id, never a browser-supplied value.
 export async function getProfile(): Promise<ProfileDTO | null> {
   const user = await requireUser();
   const supabase = await createClient();

@@ -42,7 +42,9 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
+import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { OrgSwitcher, type OrgOption } from '@/components/org-switcher';
+import { getInitials } from '@/lib/utils';
 
 // Customer app shell: a fixed right-side sidebar (RTL) plus a top bar. The
 // customer layout stays a Server Component and renders this client shell so
@@ -111,6 +113,7 @@ function LogoutMenuItem() {
 
 export function AppShell({
   userEmail,
+  userName,
   isAdmin = false,
   orgs = [],
   activeOrgId = null,
@@ -118,6 +121,10 @@ export function AppShell({
   children,
 }: {
   userEmail: string | undefined;
+  // Full name from the profile (materialised at signup by the handle_new_user
+  // trigger). The account menu shows the name as the primary identity and the
+  // email as a secondary line, falling back to the email when the name is empty.
+  userName?: string;
   // Whether to reveal the admin nav link. Determined server-side by the layout;
   // this is a convenience link only — the /admin layout enforces authorization.
   isAdmin?: boolean;
@@ -130,7 +137,8 @@ export function AppShell({
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
-  const initial = userEmail?.[0]?.toUpperCase() ?? '?';
+  const displayName = userName || userEmail || '';
+  const initials = getInitials(displayName);
 
   // dashboard/events/orders, then the team link (if permitted), then settings,
   // then the admin link (admins only). The /app/team and /admin routes re-check
@@ -215,11 +223,13 @@ export function AppShell({
               <DropdownMenuTrigger
                 render={
                   <Button variant="ghost" className="ms-auto h-9 gap-2 px-2">
-                    <span className="grid size-7 place-items-center rounded-full bg-primary text-xs font-bold text-primary-foreground">
-                      {initial}
-                    </span>
-                    <span className="hidden max-w-40 truncate text-sm text-muted-foreground sm:inline">
-                      {userEmail}
+                    <Avatar className="size-7">
+                      <AvatarFallback className="bg-primary text-xs font-bold text-primary-foreground">
+                        {initials}
+                      </AvatarFallback>
+                    </Avatar>
+                    <span className="hidden max-w-40 truncate text-sm font-medium sm:inline">
+                      {displayName}
                     </span>
                     <ChevronDown className="size-4 text-muted-foreground" />
                   </Button>
@@ -229,8 +239,22 @@ export function AppShell({
                 {/* Base UI requires Menu group parts (GroupLabel) to live inside
                     a Menu.Group — otherwise it throws error #31 on open. */}
                 <DropdownMenuGroup>
-                  <DropdownMenuLabel className="truncate">
-                    {userEmail}
+                  <DropdownMenuLabel className="p-0 font-normal">
+                    <div className="flex items-center gap-2 px-2 py-1.5">
+                      <Avatar className="size-8">
+                        <AvatarFallback className="bg-primary text-xs font-bold text-primary-foreground">
+                          {initials}
+                        </AvatarFallback>
+                      </Avatar>
+                      <div className="grid flex-1 text-start text-sm leading-tight">
+                        <span className="truncate font-medium">{displayName}</span>
+                        {userName ? (
+                          <span className="truncate text-xs text-muted-foreground">
+                            {userEmail}
+                          </span>
+                        ) : null}
+                      </div>
+                    </div>
                   </DropdownMenuLabel>
                   <DropdownMenuSeparator />
                   <DropdownMenuItem

@@ -49,6 +49,8 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Button } from '@/components/ui/button';
+import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import { getInitials } from '@/lib/utils';
 
 // Admin app shell: a fixed right-side sidebar (RTL) plus a top bar. Dedicated to
 // the admin area — it is NOT the customer AppShell. As with the customer shell,
@@ -124,17 +126,23 @@ function LogoutMenuItem() {
 
 export function AdminShell({
   userEmail,
+  userName,
   jobsDashboardUrl,
   children,
 }: {
   userEmail: string | undefined;
+  // Full name from the profile (materialised at signup by the handle_new_user
+  // trigger). The account menu shows the name as the primary identity and the
+  // email as a secondary line, falling back to the email when the name is empty.
+  userName?: string;
   // External pg-boss ops dashboard (separate process behind its own Basic Auth,
   // served on a dedicated port) — rendered only when configured via env.
   jobsDashboardUrl?: string;
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
-  const initial = userEmail?.[0]?.toUpperCase() ?? '?';
+  const displayName = userName || userEmail || '';
+  const initials = getInitials(displayName);
 
   return (
     <DirectionProvider direction="rtl">
@@ -213,11 +221,13 @@ export function AdminShell({
               <DropdownMenuTrigger
                 render={
                   <Button variant="ghost" className="ms-auto h-9 gap-2 px-2">
-                    <span className="grid size-7 place-items-center rounded-full bg-primary text-xs font-bold text-primary-foreground">
-                      {initial}
-                    </span>
-                    <span className="hidden max-w-40 truncate text-sm text-muted-foreground sm:inline">
-                      {userEmail}
+                    <Avatar className="size-7">
+                      <AvatarFallback className="bg-primary text-xs font-bold text-primary-foreground">
+                        {initials}
+                      </AvatarFallback>
+                    </Avatar>
+                    <span className="hidden max-w-40 truncate text-sm font-medium sm:inline">
+                      {displayName}
                     </span>
                     <ChevronDown className="size-4 text-muted-foreground" />
                   </Button>
@@ -226,10 +236,25 @@ export function AdminShell({
               <DropdownMenuContent align="end" className="w-56">
                 {/* Base UI requires Menu group parts (GroupLabel) to live inside
                     a Menu.Group — otherwise it throws error #31 on open. The
-                    profile menu is intentionally minimal: email + logout. */}
+                    profile menu shows the account identity (name + email) then
+                    logout. */}
                 <DropdownMenuGroup>
-                  <DropdownMenuLabel className="truncate">
-                    {userEmail}
+                  <DropdownMenuLabel className="p-0 font-normal">
+                    <div className="flex items-center gap-2 px-2 py-1.5">
+                      <Avatar className="size-8">
+                        <AvatarFallback className="bg-primary text-xs font-bold text-primary-foreground">
+                          {initials}
+                        </AvatarFallback>
+                      </Avatar>
+                      <div className="grid flex-1 text-start text-sm leading-tight">
+                        <span className="truncate font-medium">{displayName}</span>
+                        {userName ? (
+                          <span className="truncate text-xs text-muted-foreground">
+                            {userEmail}
+                          </span>
+                        ) : null}
+                      </div>
+                    </div>
                   </DropdownMenuLabel>
                   <DropdownMenuSeparator />
                   <LogoutMenuItem />

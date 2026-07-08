@@ -1,5 +1,6 @@
 import { requireUser, isAdmin, getOrgContext } from '@/lib/auth/dal';
 import { can } from '@/lib/permissions';
+import { getProfile } from '@/lib/data/profiles';
 import { AppShell } from '@/components/app-shell';
 
 export default async function CustomerLayout({
@@ -20,9 +21,14 @@ export default async function CustomerLayout({
     ? await can(orgCtx.activeOrgId, 'members', 'view')
     : false;
 
+  // Full name for the account menu; the shell falls back to email when empty.
+  const profile = await getProfile();
+  const userName = profile?.full_name?.trim() || undefined;
+
   return (
     <AppShell
       userEmail={user.email}
+      userName={userName}
       isAdmin={admin}
       orgs={orgCtx.orgs.map((o) => ({ id: o.id, name: o.name }))}
       activeOrgId={orgCtx.activeOrgId}
