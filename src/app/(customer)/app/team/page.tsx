@@ -7,13 +7,12 @@ import { TeamClient } from './team-client';
 export const metadata = { title: 'ניהול משתמשים' };
 
 // User Management Area. Server-loads the org's members, pending invitations and
-// the role catalog, plus the caller's manage permission. Read access is gated
-// by members.view (every role has it); all mutations re-verify members.manage
-// server-side in the actions/data layer.
+// the role catalog. Access to this management screen is gated by members.manage;
+// all mutations re-verify members.manage server-side in the actions/data layer.
 export default async function TeamPage() {
   const user = await requireUser();
   const { orgId } = await requireActiveOrg();
-  await requirePermission(orgId, 'members', 'view');
+  await requirePermission(orgId, 'members', 'manage');
 
   const [members, invitations, roles, canManage] = await Promise.all([
     listMembers(orgId),

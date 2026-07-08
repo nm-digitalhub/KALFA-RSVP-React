@@ -15,10 +15,10 @@ export default async function CustomerLayout({
   const admin = await isAdmin();
 
   // Org context for the switcher + whether to reveal the user-management link.
-  // The /app/team route re-checks members.view independently.
+  // The /app/team route re-checks members.manage independently.
   const orgCtx = await getOrgContext();
   const showTeam = orgCtx.activeOrgId
-    ? await can(orgCtx.activeOrgId, 'members', 'view')
+    ? await can(orgCtx.activeOrgId, 'members', 'manage')
     : false;
 
   // Full name for the account menu; the shell falls back to email when empty.
