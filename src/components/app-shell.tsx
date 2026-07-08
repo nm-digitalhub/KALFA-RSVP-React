@@ -5,7 +5,7 @@ import { usePathname } from 'next/navigation';
 import { DirectionProvider } from '@base-ui/react/direction-provider';
 import {
   CalendarDays,
-  ChevronDown,
+  ChevronsUpDown,
   LayoutDashboard,
   LogOut,
   Menu,
@@ -20,6 +20,7 @@ import {
 import {
   Sidebar,
   SidebarContent,
+  SidebarFooter,
   SidebarGroup,
   SidebarGroupContent,
   SidebarHeader,
@@ -189,6 +190,72 @@ export function AppShell({
               </SidebarGroupContent>
             </SidebarGroup>
           </SidebarContent>
+          <SidebarFooter>
+            <SidebarMenu>
+              <SidebarMenuItem>
+                <DropdownMenu>
+                  <DropdownMenuTrigger
+                    render={
+                      <SidebarMenuButton size="lg">
+                        <Avatar className="size-8">
+                          <AvatarFallback className="bg-primary text-xs font-bold text-primary-foreground">
+                            {initials}
+                          </AvatarFallback>
+                        </Avatar>
+                        <div className="grid flex-1 text-start text-sm leading-tight">
+                          <span className="truncate font-medium">
+                            {displayName}
+                          </span>
+                          {userName ? (
+                            <span className="truncate text-xs text-muted-foreground">
+                              {userEmail}
+                            </span>
+                          ) : null}
+                        </div>
+                        <ChevronsUpDown className="ms-auto size-4 text-muted-foreground" />
+                      </SidebarMenuButton>
+                    }
+                  />
+                  {/* Menu group parts must live inside a Menu.Group (Base UI) or
+                      it throws #31 on open. Opens upward from the sidebar footer. */}
+                  <DropdownMenuContent side="top" align="end" className="w-56">
+                    <DropdownMenuGroup>
+                      <DropdownMenuLabel className="p-0 font-normal">
+                        <div className="flex items-center gap-2 px-2 py-1.5">
+                          <Avatar className="size-8">
+                            <AvatarFallback className="bg-primary text-xs font-bold text-primary-foreground">
+                              {initials}
+                            </AvatarFallback>
+                          </Avatar>
+                          <div className="grid flex-1 text-start text-sm leading-tight">
+                            <span className="truncate font-medium">
+                              {displayName}
+                            </span>
+                            {userName ? (
+                              <span className="truncate text-xs text-muted-foreground">
+                                {userEmail}
+                              </span>
+                            ) : null}
+                          </div>
+                        </div>
+                      </DropdownMenuLabel>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem
+                        render={
+                          <Link href="/app/settings">
+                            <Settings />
+                            הגדרות
+                          </Link>
+                        }
+                      />
+                      <DropdownMenuSeparator />
+                      <LogoutMenuItem />
+                    </DropdownMenuGroup>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </SidebarMenuItem>
+            </SidebarMenu>
+          </SidebarFooter>
         </Sidebar>
 
         <SidebarInset>
@@ -212,58 +279,6 @@ export function AppShell({
             </div>
 
             <OrgSwitcher orgs={orgs} activeOrgId={activeOrgId} />
-
-            <DropdownMenu>
-              <DropdownMenuTrigger
-                render={
-                  <Button variant="ghost" className="ms-auto h-9 gap-2 px-2">
-                    <Avatar className="size-7">
-                      <AvatarFallback className="bg-primary text-xs font-bold text-primary-foreground">
-                        {initials}
-                      </AvatarFallback>
-                    </Avatar>
-                    <span className="hidden max-w-40 truncate text-sm font-medium sm:inline">
-                      {displayName}
-                    </span>
-                    <ChevronDown className="size-4 text-muted-foreground" />
-                  </Button>
-                }
-              />
-              <DropdownMenuContent align="end" className="w-56">
-                {/* Base UI requires Menu group parts (GroupLabel) to live inside
-                    a Menu.Group — otherwise it throws error #31 on open. */}
-                <DropdownMenuGroup>
-                  <DropdownMenuLabel className="p-0 font-normal">
-                    <div className="flex items-center gap-2 px-2 py-1.5">
-                      <Avatar className="size-8">
-                        <AvatarFallback className="bg-primary text-xs font-bold text-primary-foreground">
-                          {initials}
-                        </AvatarFallback>
-                      </Avatar>
-                      <div className="grid flex-1 text-start text-sm leading-tight">
-                        <span className="truncate font-medium">{displayName}</span>
-                        {userName ? (
-                          <span className="truncate text-xs text-muted-foreground">
-                            {userEmail}
-                          </span>
-                        ) : null}
-                      </div>
-                    </div>
-                  </DropdownMenuLabel>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem
-                    render={
-                      <Link href="/app/settings">
-                        <Settings />
-                        הגדרות
-                      </Link>
-                    }
-                  />
-                  <DropdownMenuSeparator />
-                  <LogoutMenuItem />
-                </DropdownMenuGroup>
-              </DropdownMenuContent>
-            </DropdownMenu>
           </header>
 
           {/* SidebarInset already renders the page <main> landmark. */}
