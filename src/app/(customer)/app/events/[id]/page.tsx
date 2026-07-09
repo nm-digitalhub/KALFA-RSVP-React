@@ -127,6 +127,12 @@ export default async function EventPage({
         >
           ניהול מוזמנים
         </Link>
+        <Link
+          href={`/app/events/${event.id}/stats`}
+          className={buttonVariants({ variant: 'outline' })}
+        >
+          סטטיסטיקות
+        </Link>
       </div>
 
       <EventStatusActions

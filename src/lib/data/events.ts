@@ -1,10 +1,11 @@
 import 'server-only';
 
 import { notFound } from 'next/navigation';
+import { cache } from 'react';
 
 import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
-import { requireUser } from '@/lib/auth/dal';
+import { requireUser, getUser } from '@/lib/auth/dal';
 import { logActivity } from '@/lib/data/activity';
 import { ensurePersonalOrg } from '@/lib/data/orgs';
 import { OPERATIONAL_CAMPAIGN_STATUSES } from '@/lib/data/campaign-status';
@@ -482,3 +483,27 @@ export async function closeEvent(eventId: string): Promise<void> {
 
   await logActivity({ eventId, action: 'event.closed', meta: {} });
 }
+
+// Thin boolean VISIBILITY helper ONLY (NOT an auth gate).
+// FAIL-CLOSED: returns false on denied OR on any RPC/client error. The only effect is
+// hiding an optional UI section or showing a permission_limited state. Every mandatory
+// gate stays on requireEventAccess/requireUser/requireAdmin. Reuses the exact same
+// can_access_event RPC as requireEventAccess; never reads owner_id/org_id; never duplicates
+// authorization logic. Mirrors `can` in src/lib/permissions.ts (cache + false-on-error).
+// HARD USAGE BOUNDARY: call ONLY after the `reports.view` page gate has passed, and ONLY
+// for optional-section visibility — never for page access, server actions, mutations,
+// service-role writes, billing/payment ops, or any decision that must tell denied from error.
+export const canAccessEvent = cache(
+  async (eventId: string, resource: string, action: string = 'view'): Promise<boolean> => {
+    const user = await getUser();
+    if (!user) return false; // no session → hide section (page gate already redirected)
+    const supabase = await createClient();
+    const { data, error } = await supabase.rpc('can_access_event', {
+      _event_id: eventId,
+      _resource: resource,
+      _action: action,
+    });
+    if (error) return false; // operational failure → fail-closed, hide section
+    return data === true;
+  },
+);

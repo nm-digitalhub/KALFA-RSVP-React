@@ -1,6 +1,6 @@
 import 'server-only';
 
-import { requireOwnedEvent } from '@/lib/data/events';
+import { requireEventAccess } from '@/lib/data/events';
 import { createClient } from '@/lib/supabase/server';
 import type { Database } from '@/lib/supabase/types';
 
@@ -122,7 +122,7 @@ export async function getCampaignDeliveryBreakdown(
     .maybeSingle();
   if (cErr) throw new Error('טעינת הקמפיין נכשלה');
   if (!campaign?.event_id) return null;
-  await requireOwnedEvent(campaign.event_id); // defense-in-depth ownership gate
+  await requireEventAccess(campaign.event_id, 'campaigns', 'view'); // org-aware, not owner-only
 
   // Outbound delivery rows for the campaign — also seeds part of the contact set.
   const { data: interactions, error: iErr } = await supabase
