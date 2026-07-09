@@ -112,11 +112,13 @@ export default async function EventStatsPage({
             <dl className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
               <div>
                 <dt className="text-muted-foreground">סה״כ מוזמנים</dt>
-                <dd className="text-xl font-bold">{stats.totals.rows}</dd>
+                <dd className="text-xl font-bold">{stats.totals.invited_people}</dd>
+                <p className="text-xs text-muted-foreground">{stats.totals.rows} רשומות</p>
               </div>
               <div>
                 <dt className="text-muted-foreground">מגיעים</dt>
-                <dd className="text-xl font-bold text-success">{stats.totals.attending_rows}</dd>
+                <dd className="text-xl font-bold text-success">{stats.totals.attending_people}</dd>
+                <p className="text-xs text-muted-foreground">{stats.totals.attending_rows} רשומות</p>
               </div>
               <div>
                 <dt className="text-muted-foreground">לא מגיעים</dt>
