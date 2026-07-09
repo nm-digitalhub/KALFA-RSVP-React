@@ -79,17 +79,51 @@ function webhookStateBadges(g: GuestListItem): ReactNode {
 // Confirmed headcount for an attending guest (adults + kids), with the
 // over-invited flag. Returns null for non-attending guests. Shared by table +
 // card so the "prefers WhatsApp-confirmed headcount" rule lives in one place.
+function actualConfirmedCount(g: GuestListItem): number | null {
+  if (g.status !== 'attending') return null;
+
+  const headcount = g.confirmed_headcount ?? 0;
+  if (headcount >= 1 && headcount <= 10) return headcount;
+
+  const adults = Math.max(g.confirmed_adults ?? 0, 0);
+  const kids = Math.max(g.confirmed_kids ?? 0, 0);
+  const sum = adults + kids;
+
+  return sum > 0 ? sum : null;
+}
+
+function effectiveAttendingCount(g: GuestListItem): number | null {
+  if (g.status !== 'attending') return null;
+
+  const actual = actualConfirmedCount(g);
+  if (actual !== null) return actual;
+
+  return g.expected_count && g.expected_count > 0 ? g.expected_count : 1;
+}
+
 function headcountValue(g: GuestListItem): ReactNode {
   if (g.status !== 'attending') {
     return null;
   }
+
+  const actual = actualConfirmedCount(g);
+  const effective = effectiveAttendingCount(g);
+  const adults = Math.max(g.confirmed_adults ?? 0, 0);
+  const kids = Math.max(g.confirmed_kids ?? 0, 0);
+
   return (
-    <span className="inline-flex items-center gap-1.5">
-      {(g.confirmed_adults ?? 0) + (g.confirmed_kids ?? 0)}
-      {g.over_invited ? (
-        <Badge variant="warning">מעל הכמות שהוזמנה</Badge>
-      ) : null}
-    </span>
+    <div className="space-y-0.5">
+      <span className="inline-flex items-center gap-1.5">
+        {actual !== null ? actual : 'לא נמסרה כמות'}
+        {g.over_invited ? (
+          <Badge variant="warning">מעל הכמות שהוזמנה</Badge>
+        ) : null}
+      </span>
+      <p className="text-xs text-muted-foreground">
+        מבוגרים: {adults} · ילדים: {kids} · צפי: {g.expected_count ?? '—'} · נספר כ:{' '}
+        {effective ?? '—'}
+      </p>
+    </div>
   );
 }
 
@@ -111,10 +145,11 @@ function GuestCard({
   groupLabel: string | null;
 }) {
   const webhook = webhookStateBadges(g);
-  const attendingCount =
-    g.status === 'attending'
-      ? (g.confirmed_adults ?? 0) + (g.confirmed_kids ?? 0)
-      : null;
+  const actualCount = actualConfirmedCount(g);
+  const effectiveCount = effectiveAttendingCount(g);
+  const adults = Math.max(g.confirmed_adults ?? 0, 0);
+  const kids = Math.max(g.confirmed_kids ?? 0, 0);
+
   return (
     <li className="rounded-lg border border-border bg-card px-3 py-2.5">
       <div className="flex items-center gap-2">
@@ -129,11 +164,11 @@ function GuestCard({
         <p className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
           <span dir="ltr">{g.phone ?? '—'}</span>
           {groupLabel ? ` · ${groupLabel}` : ''}
-          {attendingCount !== null ? (
+          {effectiveCount !== null ? (
             <>
               {' · '}
               <span className={g.over_invited ? 'text-warning' : undefined}>
-                אישרו {attendingCount}
+                אישרו {actualCount !== null ? actualCount : 'לא נמסרה כמות'}
               </span>
             </>
           ) : null}
@@ -145,6 +180,13 @@ function GuestCard({
           scope="card"
         />
       </div>
+
+      {effectiveCount !== null ? (
+        <p className="mt-1 text-xs text-muted-foreground">
+          מבוגרים: {adults} · ילדים: {kids} · צפי: {g.expected_count ?? '—'} · נספר כ:{' '}
+          {effectiveCount}
+        </p>
+      ) : null}
 
       {g.over_invited || webhook ? (
         <div className="mt-1.5 flex flex-wrap items-center gap-1">

@@ -59,7 +59,7 @@ export type ContactOpStatus = Database['public']['Enums']['contact_op_status'];
 // that surfaces the webhook-driven outreach state + opt-out flag for the list
 // badges (B6). Neither rsvp_token nor extras appears here (asserted by a test).
 export const GUEST_LIST_COLUMNS =
-  'id, full_name, phone, status, contact_status, group_id, expected_count, confirmed_adults, confirmed_kids, callback_requested, created_at, contact_id, contacts(op_status, removal_requested)';
+  'id, full_name, phone, status, contact_status, group_id, expected_count, confirmed_adults, confirmed_kids, confirmed_headcount, callback_requested, created_at, contact_id, contacts(op_status, removal_requested)';
 
 // Columns for a single guest (edit form). Adds note/meal_pref but still
 // excludes rsvp_token and extras.
@@ -81,6 +81,7 @@ type GuestListQueryRow = Pick<
   | 'expected_count'
   | 'confirmed_adults'
   | 'confirmed_kids'
+  | 'confirmed_headcount'
   | 'callback_requested'
   | 'created_at'
   | 'contact_id'
@@ -103,6 +104,7 @@ export type GuestListItem = Pick<
   | 'expected_count'
   | 'confirmed_adults'
   | 'confirmed_kids'
+  | 'confirmed_headcount'
   | 'callback_requested'
   | 'created_at'
   | 'contact_id'
@@ -336,6 +338,7 @@ export async function listGuests(
       expected_count: r.expected_count,
       confirmed_adults: r.confirmed_adults,
       confirmed_kids: r.confirmed_kids,
+      confirmed_headcount: r.confirmed_headcount,
       callback_requested: r.callback_requested,
       created_at: r.created_at,
       contact_id: contactId,
