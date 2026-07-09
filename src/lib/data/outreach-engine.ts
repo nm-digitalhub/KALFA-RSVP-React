@@ -309,6 +309,9 @@ export async function executeStep(
   if (tp.channel === 'call' && !ctx.allowed_channels.includes('call')) {
     return { action: 'skipped' };
   }
+  if (!(await hasLiveGuestForContact(eventId, contactId))) {
+    return { action: 'skipped' };
+  }
 
   // Claim — only the first delivery proceeds; duplicates exit here.
   if (!(await claimStep(campaignId, contactId, stepIndex))) {
@@ -568,6 +571,21 @@ export function terminalReasonFor(
   return null;
 }
 
+// P0-A: a contact is send/bill-eligible only while a live guest row points at it.
+export async function hasLiveGuestForContact(
+  eventId: string,
+  contactId: string,
+): Promise<boolean> {
+  const admin = createAdminClient();
+  const { count, error } = await admin
+    .from('guests')
+    .select('id', { count: 'exact', head: true })
+    .eq('event_id', eventId)
+    .eq('contact_id', contactId);
+  if (error) throw new Error('בדיקת קישור אורח נכשלה');
+  return (count ?? 0) > 0;
+}
+
 // Read-only terminal re-check for the crash-recovery path (terminal-recovery
 // fix): NO send. Lets runStepExecution re-terminalize an opt-out / no-consent
 // contact instead of blindly advancing a failed terminalize. null → not terminal
@@ -587,7 +605,11 @@ export async function checkStepTerminal(
     .maybeSingle();
   if (!contact) return null;
   const reason = terminalReasonFor(contact, tp.channel);
-  return reason ? { reason } : null;
+  if (reason) return { reason };
+  if (!(await hasLiveGuestForContact(ctx.event_id, contactId))) {
+    return { reason: 'not_current_guest' };
+  }
+  return null;
 }
 
 export async function prepareAndSendStep(
@@ -610,6 +632,9 @@ export async function prepareAndSendStep(
   if (!contact) return { kind: 'skip', reason: 'contact_missing' };
   const terminal = terminalReasonFor(contact, tp.channel);
   if (terminal) return { kind: 'terminal', reason: terminal };
+  if (!(await hasLiveGuestForContact(eventId, contactId))) {
+    return { kind: 'terminal', reason: 'not_current_guest' };
+  }
 
   if (tp.channel === 'whatsapp') {
     const config = await getWhatsAppConfig();
