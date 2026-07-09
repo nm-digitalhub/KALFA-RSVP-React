@@ -1,6 +1,6 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
-
+import { formatIsraelDateTime } from '@/lib/date';
 import { buttonVariants } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { getEventStats, type EventStatsResult } from '@/lib/data/event-stats';
@@ -98,7 +98,7 @@ export default async function EventStatsPage({
             {stats.event.eventDate ? (
               <div>
                 <dt className="text-muted-foreground">תאריך</dt>
-                <dd className="font-medium">{stats.event.eventDate}</dd>
+                <dd className="font-medium">{formatIsraelDateTime(stats.event.eventDate) || 'לא נקבע תאריך'}</dd>
               </div>
             ) : null}
           </dl>
