@@ -1,8 +1,10 @@
 # KALFA Event Magic — סכמת מסד הנתונים (Supabase PostgreSQL)
 
-> מסמך זה שוחזר משלושה מקורות אמת, לפי סדר עדיפות: (1) כל קובצי המיגרציה תחת `supabase/migrations/` (47 קבצים, כולם מוחלים על ה‑DB החי — אומת מול `supabase_migrations.schema_migrations`); (2) הטיפוסים המחוללים `src/lib/supabase/types.ts`; (3) אינטרוספקציה קריאה‑בלבד מול ה‑DB החי (`supabase db query --linked` על `pg_catalog`: `pg_constraint`, `pg_policies`, `pg_indexes`, `pg_trigger`, `pg_proc`, `pg_attribute`, `pg_enum`). נכון ל‑2026‑07‑02.
+> מסמך זה שוחזר משלושה מקורות אמת, לפי סדר עדיפות: (1) כל קובצי המיגרציה תחת `supabase/migrations/` (47 קבצים, כולם מוחלים על ה‑DB החי — אומת מול `supabase_migrations.schema_migrations`); (2) הטיפוסים המחוללים `src/lib/supabase/types.ts`; (3) אינטרוספקציה קריאה‑בלבד מול ה‑DB החי (`supabase db query --linked` על `pg_catalog`: `pg_constraint`, `pg_policies`, `pg_indexes`, `pg_trigger`, `pg_proc`, `pg_attribute`, `pg_enum`). נכון ל‑2026‑07-02.
 >
 > ⚠️ הערת אינטרוספקציה למפתחים: ב‑DB הזה שאילתות `information_schema` על אילוצי FK/UNIQUE מחזירות תוצאות ריקות עבור אילוצים אמיתיים — יש להשתמש תמיד ב‑`pg_constraint` / `pg_indexes`.
+>
+> Historical note: the direct `orders` model was removed in the 2026-07-09 cleanup. This document now describes the live schema only; any `orders` rows below are historical migration references, not current tables.
 
 ## 1. מבט‑על
 
@@ -10,7 +12,7 @@
 
 | Schema | תוכן |
 |---|---|
-| `public` | 33 טבלאות אפליקטיביות (מפורטות במסמך זה), 22 פונקציות, טיפוסי enum |
+| `public` | 32 טבלאות אפליקטיביות (מפורטות במסמך זה), 22 פונקציות, טיפוסי enum |
 | `auth` | Supabase Auth (מנוהל); `auth.users` הוא היעד של כל ה‑FK למשתמשים, והטריגר `on_auth_user_created` מזין את `public.profiles` |
 | `storage` | Supabase Storage; bucket פרטי אחד: `id-documents` |
 | `pgboss` | תור העבודות של ה‑worker (pg‑boss v12) — ראו §19 |
@@ -34,14 +36,13 @@
 | `event_type` | `wedding`, `bar_mitzvah`, `bat_mitzvah`, `brit`, `britah`, `henna`, `engagement`, `birthday`, `other` |
 | `guest_status` | `pending`, `attending`, `declined`, `maybe` |
 | `contact_status` | `not_contacted`, `contacted`, `responded`, `wrong_number`, `unclear`, `unavailable`, `callback` |
-| `order_status` | `pending`, `paid`, `failed`, `demo`, `processing`, `payment_review` |
 | `campaign_status` | `draft`, `pending_approval`, `approved`, `scheduled`, `active`, `paused`, `closed`, `awaiting_invoice`, `billed`, `paid`, `cancelled` |
 | `campaign_channel` | `whatsapp`, `call` |
 | `billing_route` | `saved_token` (מסלול B — טוקן שמור), `hold_j5` (מסלול A — תפיסת מסגרת J5) |
 | `contact_op_status` | `pending_contact`, `not_eligible`, `whatsapp_sent`, `whatsapp_delivered`, `whatsapp_read`, `whatsapp_responded`, `pending_call`, `call_dialed`, `no_answer`, `voicemail`, `human_interaction_call`, `wrong_number`, `removal_requested`, `reached_billed`, `not_reached` |
 | `agreement_status` | `draft`, `approved` |
 
-הרחבות enum בוצעו רק פעם אחת: `order_status` קיבל את `processing` ו‑`payment_review` במיגרציה `202606240002` (בקובץ נפרד כי `ALTER TYPE ... ADD VALUE` מוגבל בתוך טרנזקציה).
+הרחבות enum בוצעו רק פעם אחת: `campaign_status` קיבל את `awaiting_invoice`, `billed` ו‑`paid` במיגרציה `202606240007` (בקובץ נפרד כי `ALTER TYPE ... ADD VALUE` מוגבל בתוך טרנזקציה).
 
 ## 3. דומיין אירועים
 
@@ -378,33 +379,7 @@
 - **RLS**: ‏`packages_public_read` — SELECT ל‑anon+authenticated עבור `active = true`; ‏`packages_admin_all`.
 - הערה היסטורית: עמודות מדיניות הניסיונות הקבועה (`whatsapp_attempts` וכו', מיגרציה 0011) הוסרו ב‑0014 לטובת `outreach_schedule`.
 
-## 10. הזמנות ותשלומים (SUMIT)
-
-### `orders`
-
-הזמנות לקוח בזרימת התשלום הישירה (נפרדת מחיוב הקמפיינים).
-
-| עמודה | טיפוס | NULL | הערות |
-|---|---|---|---|
-| `id` | `uuid` | לא | PK |
-| `user_id` | `uuid` | לא | FK → `auth.users` ON DELETE CASCADE |
-| `event_id` | `uuid` | כן | FK → `events` ON DELETE SET NULL |
-| `package_id` | `uuid` | כן | FK → `packages` |
-| `with_ai_addon` | `boolean` | לא | default `false` |
-| `total_with_vat` | `numeric(10,2)` | לא | |
-| `vat_rate` | `numeric(4,2)` | לא | default `18.00` |
-| `status` | `order_status` | לא | default `'demo'` |
-| `terms_accepted`, `privacy_accepted`, `authorization_accepted` | `boolean` | לא | default `false` — תיעוד הסכמות בזמן ההזמנה |
-| `sumit_document_id` | `integer` | כן | PaymentID של SUMIT — מפתח ה‑lookup היחיד; **UNIQUE חלקי** ‏(`WHERE sumit_document_id IS NOT NULL`) |
-| `paid_at` | `timestamptz` | כן | |
-| `payment_attempt_ref` | `uuid` | לא | default `gen_random_uuid()`, **UNIQUE**; מזהה ניסיון — מסובב בכל retry ונשלח ל‑SUMIT כ‑`Customer.ExternalIdentifier` |
-| `payment_processing_started_at` | `timestamptz` | כן | נקבע בזמן הנעילה; לאיתור הזמנות `processing` תקועות |
-| `created_at` | `timestamptz` | לא | `now()` |
-
-- **אינדקס**: `orders_user_id_idx (user_id)` (תואם את פוליסת ה‑RLS).
-- **RLS**: ‏`orders_owner_select` — **SELECT בלבד** עבור `user_id = auth.uid()` (הפוליסה `orders_owner` מסוג ALL הוסרה ב‑0003); ‏`orders_admin_all`. כל מעברי הסטטוס נכתבים דרך `createAdminClient()` (service‑role) בלבד.
-
-## 11. קמפיינים ו‑outreach
+## 10. קמפיינים ו‑outreach
 
 ### `campaigns`
 
@@ -764,9 +739,9 @@
 
 1. **`events.event_date` הוא `timestamptz` — לא `date`; ‏`events.rsvp_deadline` הוא כן `date`.** כל השוואת "יום" נעשית במפורש ב‑Asia/Jerusalem (סשן ה‑DB הוא UTC). בקוד ה‑UI חותכים `slice(0,10)` לתצוגת/קלט תאריך של `event_date`.
 2. **טוקני RSVP**: ‏`guests.rsvp_token` — bearer secret ציבורי; ‏default ב‑DB ‏(`encode(gen_random_bytes(16),'hex')`, ‏128 ביט, ‏CSPRNG) הוא הנקודה היחידה שמייצרת אותו (הקוד בכוונה לא קובע ערך). ‏`rsvp_token_revoked_at` מאפשר ביטול/רוטציה — טוקן מבוטל שקוף כ"לא נמצא" (ללא אות enumeration). מיגרציה 0034 ציינה שרוטציית טוקנים ישנים (קצרים מ‑32 hex) היא תיקון‑דאטה נפרד ומותנה‑אישור, לא חלק מהסכמה.
-3. **הסכמה (consent)**: ‏`contacts.whatsapp_consent_at` — הסכמה שיווקית מפורשת פר‑ערוץ עם חותמת זמן; ‏`contacts.removal_requested` — ‏opt‑out שנאכף גם בשער החיוב; ‏`orders.terms_accepted`/`privacy_accepted`/`authorization_accepted` — הסכמות עסקה; ההסכם החתום מתועד ב‑`signed_agreements` עם ראיות (IP, ‏user agent, ‏OTP, ‏hash).
+3. **הסכמה (consent)**: ‏`contacts.whatsapp_consent_at` — הסכמה שיווקית מפורשת פר‑ערוץ עם חותמת זמן; ‏`contacts.removal_requested` — ‏opt‑out שנאכף גם בשער החיוב; ההסכם החתום מתועד ב‑`signed_agreements` עם ראיות (IP, ‏user agent, ‏OTP, ‏hash).
 4. **PII ורגישות**: ‏`signed_agreements` ו‑`otp_challenges` הם admin‑only ללא קריאת owner; ‏`webhook_inbox.payload` מכיל PII גולמי ולכן admin‑only ולעולם לא נרשם ללוג; ‏`campaigns.card_citizen_id` (ת"ז) הוא PII שהצדקתו ותקופת שמירתו מעוגנות בהסכם; ‏`app_settings` מחזיק סודות ספקים ולכן אין בו קריאת authenticated.
-5. **אידמפוטנטיות ודה‑דופליקציה ברמת DB**: ‏`billed_results (event_id, contact_id)` — חיוב יחיד פר איש‑קשר; ‏`contact_interactions (channel, provider_id)` — ‏retry של Meta לא מכפיל; ‏`webhook_inbox (provider, dedupe_key)`; ‏`orders.payment_attempt_ref` — ניסיון תשלום יחיד; ‏`contacts (event_id, normalized_phone)` — איש קשר יחיד פר טלפון; ‏`outreach_state (campaign_id, contact_id)` — סמן יחיד.
+5. **אידמפוטנטיות ודה‑דופליקציה ברמת DB**: ‏`billed_results (event_id, contact_id)` — חיוב יחיד פר איש‑קשר; ‏`contact_interactions (channel, provider_id)` — ‏retry של Meta לא מכפיל; ‏`webhook_inbox (provider, dedupe_key)`; ‏`contacts (event_id, normalized_phone)` — איש קשר יחיד פר טלפון; ‏`outreach_state (campaign_id, contact_id)` — סמן יחיד.
 6. **"קמפיין אחד לאירוע"** הוא אילוץ אפליקטיבי (DAL) — אין UNIQUE על `campaigns.event_id` ב‑DB.
 7. **הזרימה הכספית fail‑closed בכל שכבה**: דגלי `app_settings` כבויים כברירת מחדל; ‏SET קפוא ריק לא מחייב איש; ‏RPCs נעולים ל‑service_role; ‏RLS נותן ללקוח קריאה בלבד על טבלאות כסף.
 
@@ -786,7 +761,9 @@
 
 ## 20. היסטוריית מיגרציות
 
-כל 47 המיגרציות מוחלות על ה‑DB החי (אומת מול `supabase_migrations.schema_migrations`). ארבע הראשונות הן placeholders ריקים (`;`) — הסכמה הבסיסית (events, guests, orders, packages, user_roles, profiles, וכו') נוצרה ישירות בפרויקט ה‑Supabase החי לפני שהריפו אימץ מיגרציות מנוהלות, וההיסטוריה יושרה (reconciled) מולה.
+כל 47 המיגרציות מוחלות על ה‑DB החי (אומת מול `supabase_migrations.schema_migrations`). ארבע הראשונות הן placeholders ריקים (`;`) — הסכמה הבסיסית (events, guests, packages, user_roles, profiles, וכו') נוצרה ישירות בפרויקט ה‑Supabase החי לפני שהריפו אימץ מיגרציות מנוהלות, וההיסטוריה יושרה (reconciled) מולה.
+
+הערה היסטורית: שורות המיגרציה הקשורות ל‑`orders` נשמרות כאן רק כרשומת עבר של הפרויקט. הן מתעדות את תשתית העבר שנמחקה ב‑2026‑07‑09, לא את הסכמה החיה.
 
 | קובץ | תקציר |
 |---|---|

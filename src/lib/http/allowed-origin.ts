@@ -3,7 +3,7 @@ import 'server-only';
 import type { NextRequest } from 'next/server';
 
 // Shared CSRF origin check for the payment/messaging Route Handlers
-// (orders/pay, campaigns/authorize, campaigns/close-charge,
+// (campaigns/authorize, campaigns/close-charge,
 // campaigns/whatsapp-send, admin/sumit-test). Extracted verbatim from those
 // five routes, which were verified identical (docs/audit-fix-sweep-2026-07-02-pending-approval.md #2).
 //

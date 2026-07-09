@@ -28,7 +28,6 @@ const EXEMPT: Record<string, string[]> = {
   'src/lib/data/admin/channels.ts': [],
   'src/lib/data/admin/contacts.ts': [],
   'src/lib/data/admin/dashboard.ts': [],
-  'src/lib/data/admin/orders.ts': [],
   'src/lib/data/admin/packages.ts': [],
   'src/lib/data/admin/settings.ts': [],
   'src/lib/data/admin/users.ts': [],
@@ -87,7 +86,6 @@ describe('admin data-layer functions gate on requireAdmin()', () => {
 
 describe('admin route handlers gate on requireAdmin()', () => {
   const ROUTE_FILES = [
-    'src/app/api/admin/orders/[id]/reconcile/route.ts',
     'src/app/api/admin/sumit-test/route.ts',
   ];
 

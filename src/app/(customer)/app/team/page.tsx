@@ -1,5 +1,6 @@
+import { redirect } from 'next/navigation';
 import { requireUser, requireActiveOrg } from '@/lib/auth/dal';
-import { can, requirePermission } from '@/lib/permissions';
+import { can } from '@/lib/permissions';
 import { listMembers, listInvitations, listRoles } from '@/lib/data/orgs';
 
 import { TeamClient } from './team-client';
@@ -12,13 +13,16 @@ export const metadata = { title: 'ניהול משתמשים' };
 export default async function TeamPage() {
   const user = await requireUser();
   const { orgId } = await requireActiveOrg();
-  await requirePermission(orgId, 'members', 'manage');
+  const canManage = await can(orgId, 'members', 'manage');
 
-  const [members, invitations, roles, canManage] = await Promise.all([
+  if (!canManage) {
+    redirect('/app');
+  }
+
+  const [members, invitations, roles] = await Promise.all([
     listMembers(orgId),
     listInvitations(orgId),
     listRoles(),
-    can(orgId, 'members', 'manage'),
   ]);
 
   return (

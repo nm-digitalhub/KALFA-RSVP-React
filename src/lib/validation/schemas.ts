@@ -371,17 +371,6 @@ export type CelebrantFieldLabels = {
   [T in EventType]: CelebrantLabelFieldsByKind[(typeof CELEBRANT_KIND_BY_EVENT_TYPE)[T]];
 };
 
-// Orders — order_status matches the public.order_status enum in the live schema.
-// This const is the vocabulary; ORDER_STATUS_LABELS (in src/lib/data/orders.ts)
-// maps each value to its Hebrew label, keyed on the Database enum so a missing
-// label is a compile error.
-export const ORDER_STATUSES = ['pending', 'processing', 'paid', 'failed', 'demo', 'payment_review'] as const;
-
-export const payPendingOrderSchema = z.object({
-  order_id: z.string().uuid({ error: 'מזהה הזמנה לא תקין' }),
-  'og-token': z.string().trim().min(1, { error: 'פרטי תשלום חסרים' }),
-});
-
 // Profile (account settings). Both fields are optional: an empty string clears
 // the value. `phone` is validated against the Israeli numbering plan
 // (ISRAELI_PHONE_RE) only when present. The owner id is derived server-side and

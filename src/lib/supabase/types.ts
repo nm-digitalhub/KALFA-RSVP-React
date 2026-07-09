@@ -1107,78 +1107,6 @@ export type Database = {
         }
         Relationships: []
       }
-      orders: {
-        Row: {
-          authorization_accepted: boolean
-          created_at: string
-          event_id: string | null
-          id: string
-          package_id: string | null
-          paid_at: string | null
-          payment_attempt_ref: string
-          payment_processing_started_at: string | null
-          privacy_accepted: boolean
-          status: Database["public"]["Enums"]["order_status"]
-          sumit_document_id: number | null
-          terms_accepted: boolean
-          total_with_vat: number
-          user_id: string
-          vat_rate: number
-          with_ai_addon: boolean
-        }
-        Insert: {
-          authorization_accepted?: boolean
-          created_at?: string
-          event_id?: string | null
-          id?: string
-          package_id?: string | null
-          paid_at?: string | null
-          payment_attempt_ref?: string
-          payment_processing_started_at?: string | null
-          privacy_accepted?: boolean
-          status?: Database["public"]["Enums"]["order_status"]
-          sumit_document_id?: number | null
-          terms_accepted?: boolean
-          total_with_vat: number
-          user_id: string
-          vat_rate?: number
-          with_ai_addon?: boolean
-        }
-        Update: {
-          authorization_accepted?: boolean
-          created_at?: string
-          event_id?: string | null
-          id?: string
-          package_id?: string | null
-          paid_at?: string | null
-          payment_attempt_ref?: string
-          payment_processing_started_at?: string | null
-          privacy_accepted?: boolean
-          status?: Database["public"]["Enums"]["order_status"]
-          sumit_document_id?: number | null
-          terms_accepted?: boolean
-          total_with_vat?: number
-          user_id?: string
-          vat_rate?: number
-          with_ai_addon?: boolean
-        }
-        Relationships: [
-          {
-            foreignKeyName: "orders_event_id_fkey"
-            columns: ["event_id"]
-            isOneToOne: false
-            referencedRelation: "events"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "orders_package_id_fkey"
-            columns: ["package_id"]
-            isOneToOne: false
-            referencedRelation: "packages"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
       org_roles: {
         Row: {
           created_at: string
@@ -2230,13 +2158,6 @@ export type Database = {
         | "birthday"
         | "other"
       guest_status: "pending" | "attending" | "declined" | "maybe"
-      order_status:
-        | "pending"
-        | "paid"
-        | "failed"
-        | "demo"
-        | "processing"
-        | "payment_review"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -2423,14 +2344,6 @@ export const Constants = {
         "other",
       ],
       guest_status: ["pending", "attending", "declined", "maybe"],
-      order_status: [
-        "pending",
-        "paid",
-        "failed",
-        "demo",
-        "processing",
-        "payment_review",
-      ],
     },
   },
 } as const

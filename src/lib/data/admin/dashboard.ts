@@ -10,7 +10,6 @@ import { requireAdmin } from '@/lib/auth/dal';
 export interface DashboardCounts {
   contacts: number;
   callbacks: number;
-  orders: number;
   packages: number;
 }
 
@@ -18,7 +17,7 @@ export interface DashboardCounts {
 // take down the whole dashboard). Errors are not surfaced to the user here.
 async function countTable(
   supabase: Awaited<ReturnType<typeof createClient>>,
-  table: 'contact_messages' | 'callback_requests' | 'orders' | 'packages',
+  table: 'contact_messages' | 'callback_requests' | 'packages',
 ): Promise<number> {
   const { count, error } = await supabase
     .from(table)
@@ -34,12 +33,11 @@ export async function getDashboardCounts(): Promise<DashboardCounts> {
 
   const supabase = await createClient();
 
-  const [contacts, callbacks, orders, packages] = await Promise.all([
+  const [contacts, callbacks, packages] = await Promise.all([
     countTable(supabase, 'contact_messages'),
     countTable(supabase, 'callback_requests'),
-    countTable(supabase, 'orders'),
     countTable(supabase, 'packages'),
   ]);
 
-  return { contacts, callbacks, orders, packages };
+  return { contacts, callbacks, packages };
 }

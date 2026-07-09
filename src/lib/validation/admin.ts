@@ -284,13 +284,6 @@ export const grantCreditSchema = z.object({
 });
 export type GrantCreditInput = z.infer<typeof grantCreditSchema>;
 
-// Update the plan: switch the package on a not-yet-paid order.
-export const updatePlanSchema = z.object({
-  order_id: z.string().uuid({ error: 'מזהה הזמנה לא תקין' }),
-  package_id: z.string().uuid({ error: 'מזהה חבילה לא תקין' }),
-});
-export type UpdatePlanInput = z.infer<typeof updatePlanSchema>;
-
 // --- agreement (contract) document management ---
 export const agreementEditSchema = z.object({
   version: z

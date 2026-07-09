@@ -9,7 +9,6 @@ import {
   LayoutDashboard,
   LogOut,
   Menu,
-  Receipt,
   Search,
   Settings,
   Shield,
@@ -58,7 +57,6 @@ type NavItem = { href: string; label: string; icon: LucideIcon };
 const NAV: NavItem[] = [
   { href: '/app', label: 'לוח בקרה', icon: LayoutDashboard },
   { href: '/app/events', label: 'האירועים שלי', icon: CalendarDays },
-  { href: '/app/orders', label: 'הזמנות', icon: Receipt },
   { href: '/app/settings', label: 'הגדרות', icon: Settings },
 ];
 
@@ -140,15 +138,15 @@ export function AppShell({
   const displayName = userName || userEmail || '';
   const initials = getInitials(displayName);
 
-  // dashboard/events/orders, then the team link (if permitted), then settings,
-  // then the admin link (admins only). The /app/team and /admin routes re-check
+  // dashboard/events, then the team link (if permitted), then settings, then
+  // the admin link (admins only). The /app/team and /admin routes re-check
   // their own authorization server-side.
   const nav: NavItem[] = [
-    ...NAV.slice(0, 3),
+    ...NAV.slice(0, 2),
     ...(showTeam
       ? [{ href: '/app/team', label: 'ניהול משתמשים', icon: Users }]
       : []),
-    ...NAV.slice(3),
+    ...NAV.slice(2),
     ...(isAdmin ? [{ href: '/admin', label: 'ניהול', icon: Shield }] : []),
   ];
 

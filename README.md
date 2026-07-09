@@ -69,4 +69,8 @@ The database already contains the full domain — `events`, `guests`,
 `packages`, `profiles`, `user_roles`, … — plus RPCs (`submit_rsvp`,
 `get_rsvp_by_token`, `has_role`, `owns_event`). Next domains follow the same
 pattern: guests, public RSVP (`/r/[token]`), campaigns/messaging, reports,
-orders/packages, admin.
+packages/admin.
+
+Historical note: the direct `orders` model and its `/app/orders` / `/admin/orders`
+surfaces were removed in the 2026-07-09 cleanup. Any remaining references in
+older docs are archival only and should not be read as live product state.

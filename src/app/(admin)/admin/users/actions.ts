@@ -6,12 +6,10 @@ import {
   setPlatformAdmin,
   setUserSuspended,
   grantBillingCredit,
-  updateOrderPackage,
 } from '@/lib/data/admin/users';
 import {
   adminUserIdSchema,
   grantCreditSchema,
-  updatePlanSchema,
 } from '@/lib/validation/admin';
 import type { FormState } from '@/lib/validation/result';
 
@@ -123,23 +121,4 @@ export async function grantCreditAction(
   }
   revalidateUsers();
   return { notice: 'ההטבה ניתנה' };
-}
-
-export async function updatePlanAction(
-  _prev: FormState,
-  formData: FormData,
-): Promise<FormState> {
-  const parsed = updatePlanSchema.safeParse({
-    order_id: formData.get('order_id'),
-    package_id: formData.get('package_id'),
-  });
-  if (!parsed.success) return { fieldErrors: parsed.error.flatten().fieldErrors };
-  try {
-    await updateOrderPackage(parsed.data.order_id, parsed.data.package_id);
-  } catch (err) {
-    if (isNextRedirect(err)) throw err;
-    return { error: safeMessage(err, 'עדכון התוכנית נכשל') };
-  }
-  revalidateUsers();
-  return { notice: 'התוכנית עודכנה' };
 }

@@ -39,17 +39,6 @@ export interface AdminUserOrg {
   roleLabel: string;
 }
 
-// One row of the user's "current plan/package": a purchase (order) + its package.
-export interface AdminUserOrder {
-  id: string;
-  packageName: string | null;
-  tier: string | null;
-  status: string;
-  totalWithVat: number;
-  withAiAddon: boolean;
-  createdAt: string;
-}
-
 // A benefit (credit) previously granted to one of the user's events.
 export interface AdminUserCredit {
   id: string;
@@ -69,7 +58,6 @@ export interface AdminUserDetail extends AdminUser {
   orgs: AdminUserOrg[];
   ownedEventCount: number;
   events: AdminUserEvent[];
-  orders: AdminUserOrder[];
   credits: AdminUserCredit[];
 }
 
@@ -160,8 +148,8 @@ export async function listAllUsers(
   };
 }
 
-// Full detail for one user, including their CURRENT PLAN/PACKAGE (orders +
-// packages), org memberships, owned-event count and previously granted benefits.
+// Full detail for one user, including org memberships, owned-event count,
+// events and previously granted benefits.
 export async function getUserDetail(userId: string): Promise<AdminUserDetail | null> {
   await requireAdmin();
   const admin = createAdminClient();
@@ -172,7 +160,7 @@ export async function getUserDetail(userId: string): Promise<AdminUserDetail | n
   }
   const u = authData.user;
 
-  const [profileRes, roleRes, membersRes, eventsRes, ordersRes] = await Promise.all([
+  const [profileRes, roleRes, membersRes, eventsRes] = await Promise.all([
     admin.from('profiles').select('full_name, phone').eq('id', userId).maybeSingle(),
     admin.from('user_roles').select('id').eq('user_id', userId).eq('role', PLATFORM_ADMIN).maybeSingle(),
     admin
@@ -180,11 +168,6 @@ export async function getUserDetail(userId: string): Promise<AdminUserDetail | n
       .select('organization_id, organizations(name), org_roles(label)')
       .eq('user_id', userId),
     admin.from('events').select('id, name').eq('owner_id', userId),
-    admin
-      .from('orders')
-      .select('id, status, total_with_vat, with_ai_addon, created_at, package:packages(name, tier)')
-      .eq('user_id', userId)
-      .order('created_at', { ascending: false }),
   ]);
 
   const eventIds = (eventsRes.data ?? []).map((e) => e.id);
@@ -210,16 +193,6 @@ export async function getUserDetail(userId: string): Promise<AdminUserDetail | n
     roleLabel: m.org_roles?.label ?? '',
   }));
 
-  const orders: AdminUserOrder[] = (ordersRes.data ?? []).map((o) => ({
-    id: o.id,
-    packageName: o.package?.name ?? null,
-    tier: o.package?.tier ?? null,
-    status: o.status,
-    totalWithVat: o.total_with_vat,
-    withAiAddon: o.with_ai_addon,
-    createdAt: o.created_at,
-  }));
-
   return {
     id: u.id,
     email: u.email ?? null,
@@ -233,7 +206,6 @@ export async function getUserDetail(userId: string): Promise<AdminUserDetail | n
     orgs,
     ownedEventCount: eventIds.length,
     events: (eventsRes.data ?? []).map((e) => ({ id: e.id, name: e.name })),
-    orders,
     credits,
   };
 }
@@ -355,51 +327,5 @@ export async function grantBillingCredit(input: {
     eventId: input.eventId,
     action: 'admin.billing_credit_granted',
     meta: { amount: input.amount, targetUserId: ev.owner_id },
-  });
-}
-
-// Orders whose plan/package may still be changed (not yet paid / in-flight).
-const UPDATABLE_ORDER_STATUSES: readonly string[] = ['pending', 'failed'];
-
-// Update the user's plan: switch the package on a not-yet-paid order and set the
-// total to the new package's price (single plan model — the package price IS the
-// plan price). Paid/processing orders are never touched. Audited.
-export async function updateOrderPackage(orderId: string, packageId: string): Promise<void> {
-  await requireAdmin();
-  const admin = createAdminClient();
-
-  const { data: order } = await admin
-    .from('orders')
-    .select('id, status, package_id, user_id, event_id')
-    .eq('id', orderId)
-    .maybeSingle();
-  if (!order) {
-    throw new Error('ההזמנה לא נמצאה');
-  }
-  if (!UPDATABLE_ORDER_STATUSES.includes(order.status)) {
-    throw new Error('ניתן לעדכן תוכנית רק בהזמנה שטרם שולמה');
-  }
-
-  const { data: pkg } = await admin
-    .from('packages')
-    .select('id, price_with_vat, active')
-    .eq('id', packageId)
-    .maybeSingle();
-  if (!pkg) {
-    throw new Error('החבילה לא נמצאה');
-  }
-
-  const { error } = await admin
-    .from('orders')
-    .update({ package_id: pkg.id, total_with_vat: pkg.price_with_vat })
-    .eq('id', orderId);
-  if (error) {
-    throw new Error('עדכון התוכנית נכשל');
-  }
-
-  await logActivity({
-    eventId: order.event_id,
-    action: 'admin.user.plan_updated',
-    meta: { orderId, from: order.package_id, to: pkg.id, targetUserId: order.user_id },
   });
 }

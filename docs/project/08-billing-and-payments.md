@@ -43,7 +43,7 @@ J5 בכרטיס ← צבירת `billed_results` ← חיוב סופי בסגיר
   הם קונפיג אדמין ב-DB — לא hardcode (`campaigns.ts:399-441`; מיגרציה 0024).
 
 הכרעות שאומצו (מ-`docs/billing-backhalf-2026-06-26.md` §4): שני הערוצים (WhatsApp + שיחות)
-בביתא; `orders/pay` הוא **משני/legacy**; כל ספק וכל חיוב אמיתי **config-gated וכבוי כברירת מחדל**;
+בביתא; מסלול ההזמנה הישיר הוסר ב-2026-07-09; כל ספק וכל חיוב אמיתי **config-gated וכבוי כברירת מחדל**;
 ‏§18 (15 קריטריוני קבלה) הוא ספק הבדיקות.
 
 ---
@@ -77,7 +77,7 @@ J5 בכרטיס ← צבירת `billed_results` ← חיוב סופי בסגיר
 
 | מודול | תפקיד | ייצור/PoC |
 |---|---|---|
-| `charge.ts` | חיוב J4 מיידי בטוקן חד-פעמי (`SingleUseToken`) — משמש את orders/pay | ייצור (legacy) |
+| `charge.ts` | חיוב J4 מיידי בטוקן חד-פעמי (`SingleUseToken`) — משמש את ה-PoC האדמיני | ייצור |
 | `authorize.ts` | תפיסת מסגרת J5 (`AutoCapture:false`) — משמש את authorize route | ייצור |
 | `capture.ts` | חיוב סגירה על הטוקן השמור (charge טרי, לא capture של ה-auth) | ייצור |
 | `raw-charge.ts` | קריאת אבחון שמחזירה את התגובה הגולמית — משמש רק את ה-PoC האדמיני | PoC |
@@ -108,9 +108,9 @@ J5 בכרטיס ← צבירת `billed_results` ← חיוב סופי בסגיר
 - **‏SendDocumentByEmail**: ב-PoC תמיד `true` (‏`raw-charge.ts:68`); בייצור — ‏`!!customerEmail`
   (קבלה במייל רק כשיש כתובת; `charge.ts:46-49`, `capture.ts:69`), וב-hold ‏`false`.
 - **‏Customer.ExternalIdentifier** — עוגן ההתאמה (reconciliation): ‏UUID שנוצר בשרת ונשמר
-  (`orders.payment_attempt_ref` / `campaigns.auth_external_ref`; מיגרציה
-  `202606290025_campaign_auth_external_ref.sql`). ל-SUMIT אין חיפוש לפי ExternalIdentifier —
-  ‏lookup פרוגרמטי אפשרי רק לפי `sumit_document_id` (‏reconcile route).
+  (`campaigns.auth_external_ref`; מיגרציה `202606290025_campaign_auth_external_ref.sql`).
+  ל-SUMIT אין חיפוש לפי ExternalIdentifier — ‏lookup פרוגרמטי אפשרי רק לפי
+  `sumit_document_id` (‏reconcile route של ה-PoC).
 
 ### סמנטיקת שגיאות (עקבית בכל המתאמים)
 

@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { MailOpen, PhoneCall, Receipt, Package } from 'lucide-react';
+import { MailOpen, PhoneCall, Package } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 
 import { getDashboardCounts } from '@/lib/data/admin/dashboard';
@@ -26,7 +26,6 @@ export default async function AdminDashboardPage() {
   const cards: Card[] = [
     { href: '/admin/contacts', label: 'פניות', icon: MailOpen, value: counts.contacts },
     { href: '/admin/callbacks', label: 'בקשות חזרה', icon: PhoneCall, value: counts.callbacks },
-    { href: '/admin/orders', label: 'הזמנות', icon: Receipt, value: counts.orders },
     { href: '/admin/packages', label: 'חבילות', icon: Package, value: counts.packages },
   ];
 

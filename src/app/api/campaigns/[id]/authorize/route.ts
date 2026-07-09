@@ -23,7 +23,7 @@ import { isAllowedOrigin } from '@/lib/http/allowed-origin';
 
 // Route A J5 hold: place a SUMIT authorization hold (AutoCapture:false) up to the
 // campaign ceiling after the agreement is signed. Mirrors the proven
-// orders/[id]/pay handler: fail-closed gate, atomic lock (idempotency), and only
+// Payment route pattern: fail-closed gate, atomic lock/idempotency, and only
 // a verified success persists the hold. The actual charge happens later at
 // campaign close (B4) — this only reserves the frame.
 

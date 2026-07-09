@@ -2,6 +2,10 @@
 
 > מסמך זה נכתב מתוך קריאת הקוד בפועל (repo: `/var/www/vhosts/kalfa.me/beta`), נכון ל-2026-07-02.
 > כל מזהה טכני (נתיבים, טבלאות, חבילות, קוד) נשמר באנגלית.
+>
+> Historical note: the direct `orders` model and its `/app/orders` / `/admin/orders`
+> routes were retired in the 2026-07-09 cleanup. This document now reflects the
+> remaining live surface; any older orders references are archival.
 
 ## 1. מה המוצר
 
@@ -17,7 +21,7 @@ KALFA היא פלטפורמת RSVP מסוג B2C, במודל **פר-אירוע** 
 | קמפיין הודעות/טלפוניה פר-אירוע (WhatsApp ‏← תזכורות ← שיחה) | `src/app/(customer)/app/events/[id]/campaign`, `src/lib/data/outreach-engine.ts`, `worker/main.ts` |
 | חיוב לפי תוצאה (per reached contact) דרך SUMIT — J5 hold / J4 | `src/lib/sumit/*`, `src/lib/data/billing.ts`, `src/lib/data/close-charge.ts` |
 | הסכם חתום דיגיטלית + PDF | `src/lib/agreements/*` (‏`signature_pad`, ‏`puppeteer`) |
-| הזמנות ותשלומים של הלקוח | `src/app/(customer)/app/orders`, `src/lib/data/orders.ts`, `src/lib/data/payments.ts` |
+| חיוב ותשלומים של הקמפיינים | `src/lib/sumit/*`, `src/lib/data/billing.ts`, `src/lib/data/close-charge.ts`, `src/lib/data/payments.ts` |
 | ריבוי-ארגונים (organizations) עם תפקידים והרשאות מונחי-נתונים | `src/lib/data/orgs.ts`, `src/lib/permissions.ts`, `src/app/(customer)/app/team` |
 | קונסולת אדמין מלאה | `src/app/(admin)/admin/*`, `src/lib/data/admin/*` |
 | Webhook נכנס מ-WhatsApp‏ (persist-then-process) | `src/app/api/webhooks/whatsapp`, `src/lib/data/webhook-processing.ts` |
@@ -122,19 +126,16 @@ src/app/
 │   ├── events/           # new, [id] (פרטי אירוע)
 │   │   └── [id]/guests/  # רשימה, new, import (CSV), [guestId]
 │   │   └── [id]/campaign/[campaignId]/   # קמפיין: agreement, approve, payment
-│   ├── orders/           # [id], [id]/pay
 │   ├── settings/  team/  # הגדרות משתמש; ניהול חברי ארגון
 │   └── admin-access/     # מעבר מאומת לקונסולת האדמין
 │
 ├── (admin)/admin/        # קונסולת אדמין (prefix /admin) — requireAdmin ב-layout
 │   ├── activity/ agreement/ callbacks/ channels/ company/
-│   ├── contacts/ orders/ settings/ sumit-test/ templates/
+│   ├── contacts/ settings/ sumit-test/ templates/
 │   ├── packages/ ([id], new)  users/ ([id])  webhooks/
 │
 └── api/                  # Route Handlers (מכוסה בפירוט במסמך נפרד)
-    ├── admin/orders/[id]/reconcile/   admin/sumit-test/
     ├── campaigns/[id]/{authorize, close-charge, whatsapp-send}/
-    ├── orders/[id]/pay/
     └── webhooks/whatsapp/             # GET verify + POST intake (persist-then-process)
 ```
 
@@ -168,8 +169,8 @@ src/app/
 | מודול | אחריות |
 |---|---|
 | `auth/` | ‏`dal.ts` — ‏Data Access Layer‏: `getUser` (מאומת מול שרת Auth), ‏`requireUser`, ‏`isAdmin`/`requireAdmin`, ממוזכר עם `cache()` של React; ‏`signup-helpers.ts` |
-| `data/` | ליבת הלוגיקה העסקית, קובץ פר-דומיין: events, guests, rsvp, campaigns, contacts, orders, payments, billing, close-charge, outreach(-engine/-config), interactions, message-templates, agreements(-doc/-config), webhooks + webhook-processing, otp, orgs, profiles, user-settings, activity, company, event-date. כל שאילתה עוברת דרך גבול הבעלות (owner/org) |
-| `data/admin/` | שכבת נתונים לקונסולת האדמין: users, orders, packages, channels, contacts, callbacks, agreements, dashboard, activity, settings, webhook-inbox, labels, shared |
+| `data/` | ליבת הלוגיקה העסקית, קובץ פר-דומיין: events, guests, rsvp, campaigns, contacts, payments, billing, close-charge, outreach(-engine/-config), interactions, message-templates, agreements(-doc/-config), webhooks + webhook-processing, otp, orgs, profiles, user-settings, activity, company, event-date. כל שאילתה עוברת דרך גבול הבעלות (owner/org) |
+| `data/admin/` | שכבת נתונים לקונסולת האדמין: users, packages, channels, contacts, callbacks, agreements, dashboard, activity, settings, webhook-inbox, labels, shared |
 | `supabase/` | ארבעה קליינטים מופרדים: `client.ts` (דפדפן), `server.ts` (cookie-based SSR), `admin.ts` (service-role, שרת-בלבד), `env.ts` (קריאת env), ‏`types.ts` (types שנוצרו מהסכימה החיה) |
 | `validation/` | סכימות Zod פר-דומיין (schemas, guests, rsvp, campaigns, admin) + ‏`result.ts` (אובייקטי תוצאה typed) |
 | `permissions.ts` | הרשאות דקות בתוך ארגון — עטיפה ל-RPC ‏`has_org_permission(_org_id, _resource, _action)`‏; הקטלוג מונחה-נתונים ב-DB, ללא union קשיח בקוד |

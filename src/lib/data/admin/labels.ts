@@ -9,28 +9,7 @@ import type { BadgeVariant } from '@/components/ui/badge';
 // `Record<Enum, string>` so a new enum value becomes a COMPILE error (forcing a
 // translation) rather than a silently-untranslated UI string. The free-text
 // callback status uses a partial map plus a `?? value` fallback in the UI.
-
-type OrderStatus = Database['public']['Enums']['order_status'];
 type AppRole = Database['public']['Enums']['app_role'];
-
-export const ORDER_STATUS_LABELS: Record<OrderStatus, string> = {
-  pending: 'ממתין',
-  processing: 'בעיבוד',
-  paid: 'שולם',
-  failed: 'נכשל',
-  demo: 'הדגמה',
-  payment_review: 'לבירור',
-};
-
-// Status → Badge variant. Exhaustive (a new enum value becomes a compile error).
-export const ORDER_STATUS_VARIANTS: Record<OrderStatus, BadgeVariant> = {
-  pending: 'warning',
-  processing: 'info',
-  paid: 'success',
-  failed: 'destructive',
-  demo: 'info',
-  payment_review: 'warning',
-};
 
 export const APP_ROLE_LABELS: Record<AppRole, string> = {
   admin: 'מנהל',

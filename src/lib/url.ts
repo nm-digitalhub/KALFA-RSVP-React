@@ -6,7 +6,7 @@ import 'server-only';
 // The origin comes from ONE trusted source: the explicitly-configured APP_ORIGIN
 // server var. It is stable, not attacker-controllable, works outside a request
 // context, and is the same server-only var the billing routes require
-// (orders/pay, campaigns/*).
+// (campaign payment routes).
 //
 // We deliberately do NOT derive the origin from the incoming Host /
 // X-Forwarded-Host header: those are attacker-controllable, and building an auth

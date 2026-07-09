@@ -243,7 +243,7 @@ public.has_org_permission(_org_id uuid, _resource text, _action text) returns bo
 
 ### 9.2 דוגמה ב‑Route Handler
 
-`src/app/api/campaigns/[id]/authorize/route.ts` (מסלול כספי — J5 hold): בדיקת origin (`isAllowedOrigin`) → `requireUser()` (`route.ts:83`) → טעינת הקמפיין (`getCampaignForHold`, קריאת service‑role) → **אימות בעלות מפורש** `requireOwnedEvent(campaign.event_id)` (`route.ts:100`) לפני כל פעולה, ובנוסף שערי lifecycle — `isPastEventDay(event.event_date)` (`route.ts:122`) ו‑`event.status === 'active'` (`route.ts:128`). אותו דפוס חוזר ב‑`/api/orders/[id]/pay`, `/api/campaigns/[id]/close-charge` ו‑`/api/campaigns/[id]/whatsapp-send`.
+`src/app/api/campaigns/[id]/authorize/route.ts` (מסלול כספי — J5 hold): בדיקת origin (`isAllowedOrigin`) → `requireUser()` (`route.ts:83`) → טעינת הקמפיין (`getCampaignForHold`, קריאת service‑role) → **אימות בעלות מפורש** `requireOwnedEvent(campaign.event_id)` (`route.ts:100`) לפני כל פעולה, ובנוסף שערי lifecycle — `isPastEventDay(event.event_date)` (`route.ts:122`) ו‑`event.status === 'active'` (`route.ts:128`). אותו דפוס חוזר ב‑`/api/campaigns/[id]/close-charge` ו‑`/api/campaigns/[id]/whatsapp-send`; מסלול `/api/orders/[id]/pay` הוסר ב‑cleanup של 2026‑07‑09.
 
 ## 10. נעילות אבטחה (Security Lockdowns)
 

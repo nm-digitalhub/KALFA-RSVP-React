@@ -2,8 +2,6 @@
 // Domains import from here; they must NOT redefine these values inline.
 // Operationally-tunable values read from env with a safe default.
 
-import type { Database } from '@/lib/supabase/types';
-
 function intEnv(name: string, fallback: number): number {
   const raw = process.env[name];
   const n = raw ? Number(raw) : NaN;
@@ -13,7 +11,6 @@ function intEnv(name: string, fallback: number): number {
 // --- Pagination (server-side) ---
 export const getGuestsPageSize = (): number => intEnv('GUESTS_PAGE_SIZE', 25);
 export const getAdminPageSize = (): number => intEnv('ADMIN_PAGE_SIZE', 25);
-export const getOrdersPageSize = (): number => intEnv('ORDERS_PAGE_SIZE', 20);
 
 // --- Validation bounds ---
 export const PROFILE_NAME_MAX = 100;
@@ -55,20 +52,3 @@ export const RSVP_SUBMIT_RATE = { limit: intEnv('RSVP_SUBMIT_LIMIT', 5), windowM
 // submit_rsvp `_status` whitelist in the DB.
 export const RSVP_STATUSES = ['attending', 'declined', 'maybe'] as const;
 export type RsvpStatus = (typeof RSVP_STATUSES)[number];
-
-// Hebrew labels for every order status. Keyed on the Database enum so adding a
-// status to the schema without a label here is a compile error. Kept here
-// (no `server-only`) so both src/lib/data/orders.ts and client components
-// (e.g. the account settings page) share one definition instead of each
-// re-typing the map.
-export const ORDER_STATUS_LABELS: Record<
-  Database['public']['Enums']['order_status'],
-  string
-> = {
-  pending: 'ממתין לתשלום',
-  processing: 'בעיבוד',
-  paid: 'שולם',
-  failed: 'נכשל',
-  demo: 'הדגמה',
-  payment_review: 'לבירור',
-};

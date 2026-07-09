@@ -38,7 +38,6 @@ describe('getDashboardCounts', () => {
       expect.arrayContaining([
         'contact_messages',
         'callback_requests',
-        'orders',
         'packages',
       ]),
     );
@@ -50,7 +49,6 @@ describe('getDashboardCounts', () => {
     expect(counts).toEqual({
       contacts: 7,
       callbacks: 7,
-      orders: 7,
       packages: 7,
     });
   });
@@ -70,7 +68,6 @@ describe('getDashboardCounts', () => {
     expect(counts).toEqual({
       contacts: 0,
       callbacks: 0,
-      orders: 0,
       packages: 0,
     });
   });

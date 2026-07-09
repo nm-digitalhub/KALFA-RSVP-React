@@ -8,9 +8,7 @@ import {
   EVENT_TYPES,
   forgotPasswordSchema,
   loginSchema,
-  ORDER_STATUSES,
   parseCelebrantsForm,
-  payPendingOrderSchema,
   resetPasswordSchema,
   signupSchema,
   updateEventSchema,
@@ -363,56 +361,7 @@ describe('updateEventSchema — rsvp_deadline vs event_date', () => {
   });
 });
 
-describe('ORDER_STATUSES', () => {
-  it('matches the public.order_status enum vocabulary', () => {
-    expect([...ORDER_STATUSES]).toEqual([
-      'pending',
-      'processing',
-      'paid',
-      'failed',
-      'demo',
-      'payment_review',
-    ]);
-  });
-});
 
-describe('payPendingOrderSchema', () => {
-  // A real v4 UUID — NOT an all-ones value, which Zod 4's z.uuid() rejects
-  // because it enforces a valid version/variant nibble.
-  const validUuid = '550e8400-e29b-41d4-a716-446655440000';
-
-  it('accepts a valid uuid order_id + non-empty og-token', () => {
-    const result = payPendingOrderSchema.safeParse({
-      order_id: validUuid,
-      'og-token': 'tok_abc123',
-    });
-    expect(result.success).toBe(true);
-  });
-
-  it('rejects a non-uuid order_id', () => {
-    const result = payPendingOrderSchema.safeParse({
-      order_id: 'not-a-uuid',
-      'og-token': 'tok_abc123',
-    });
-    expect(result.success).toBe(false);
-  });
-
-  it('rejects an empty og-token', () => {
-    const result = payPendingOrderSchema.safeParse({
-      order_id: validUuid,
-      'og-token': '',
-    });
-    expect(result.success).toBe(false);
-  });
-
-  it('rejects a whitespace-only og-token', () => {
-    const result = payPendingOrderSchema.safeParse({
-      order_id: validUuid,
-      'og-token': '   ',
-    });
-    expect(result.success).toBe(false);
-  });
-});
 
 describe('updateProfileSchema', () => {
   it('accepts both fields empty (nothing required)', () => {

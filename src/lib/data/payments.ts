@@ -29,7 +29,7 @@ export async function getPaymentsEnabled(): Promise<boolean> {
 }
 
 // Independent kill-switch for the route-A J5 campaign hold path (separate from
-// the orders payments_enabled switch). Fail-safe AND forward-compatible: the
+// the campaign payment switches). Fail-safe AND forward-compatible: the
 // `campaign_holds_enabled` column is added by a pending migration, so until it
 // exists `select('*')` simply omits it and this returns false (fail-closed — the
 // hold form/route stay off). False unless the column exists AND is explicitly on.

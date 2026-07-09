@@ -3,26 +3,21 @@
 import { useActionState } from 'react';
 import {
   Bell,
-  CreditCard,
   KeyRound,
   Mail,
-  Receipt,
   Settings,
   ShieldCheck,
   UserRound,
 } from 'lucide-react';
 
 import type { ProfileDTO } from '@/lib/data/profiles';
-import type { OrderListItem } from '@/lib/data/orders';
 import type { UserSettingsDTO } from '@/lib/data/user-settings';
-import { ORDER_STATUS_LABELS } from '@/lib/constants';
 import {
   FieldError,
   FormError,
   FormNotice,
   SubmitButton,
 } from '@/components/forms';
-import { formatCurrency } from '@/lib/format';
 import {
   requestEmailChangeAction,
   sendPasswordResetAction,
@@ -41,7 +36,6 @@ interface SettingsPageClientProps {
   userEmail: string | undefined;
   profile: ProfileDTO | null;
   settings: UserSettingsDTO;
-  orders: OrderListItem[];
   loadError: boolean;
 }
 
@@ -196,39 +190,49 @@ function NotificationsSection({ settings }: { settings: UserSettingsDTO }) {
   );
 }
 
-function BillingSection({ orders }: { orders: OrderListItem[] }) {
-  const recent = orders.slice(0, 3);
-
+function SummarySection({
+  profile,
+  settings,
+}: {
+  profile: ProfileDTO | null;
+  settings: UserSettingsDTO;
+}) {
   return (
-    <section id="billing" className={sectionClass}>
+    <section id="summary" className={sectionClass}>
       <SectionTitle
-        icon={CreditCard}
-        title="חיוב והזמנות"
-        description="סקירת הזמנות קיימות וסטטוסי חיוב בחשבון."
+        icon={Settings}
+        title="סיכום חשבון"
+        description="תמונת מצב קצרה על הפרופיל והעדכונים האחרונים."
       />
 
-      {recent.length === 0 ? (
-        <div className="flex items-center gap-3 rounded-md border border-dashed border-border p-4 text-sm text-muted-foreground">
-          <Receipt className="size-5" aria-hidden />
-          אין הזמנות להצגה כרגע.
+      <dl className="grid gap-3 text-sm sm:grid-cols-2">
+        <div className="rounded-md border border-border p-3">
+          <dt className="text-muted-foreground">שם מלא</dt>
+          <dd className="mt-1 font-medium">
+            {profile?.full_name?.trim() || 'לא הוגדר עדיין'}
+          </dd>
         </div>
-      ) : (
-        <ul className="divide-y divide-border rounded-md border border-border">
-          {recent.map((order) => (
-            <li key={order.id} className="flex items-center justify-between gap-4 px-4 py-3">
-              <div className="space-y-1">
-                <p className="font-medium">{formatCurrency(order.total_with_vat)}</p>
-                <p className="text-xs text-muted-foreground">
-                  {formatIsraelDate(order.created_at)}
-                </p>
-              </div>
-              <span className="rounded-full border border-border px-3 py-1 text-xs text-muted-foreground">
-                {ORDER_STATUS_LABELS[order.status]}
-              </span>
-            </li>
-          ))}
-        </ul>
-      )}
+        <div className="rounded-md border border-border p-3">
+          <dt className="text-muted-foreground">טלפון</dt>
+          <dd className="mt-1 font-medium">{profile?.phone || 'לא הוגדר עדיין'}</dd>
+        </div>
+        <div className="rounded-md border border-border p-3">
+          <dt className="text-muted-foreground">עדכון פרופיל אחרון</dt>
+          <dd className="mt-1 font-medium">
+            {profile?.updated_at
+              ? formatIsraelDate(profile.updated_at)
+              : 'עדיין לא נשמר'}
+          </dd>
+        </div>
+        <div className="rounded-md border border-border p-3">
+          <dt className="text-muted-foreground">עדכון הגדרות אחרון</dt>
+          <dd className="mt-1 font-medium">
+            {settings.updated_at
+              ? formatIsraelDate(settings.updated_at)
+              : 'ברירות מחדל פעילות'}
+          </dd>
+        </div>
+      </dl>
     </section>
   );
 }
@@ -358,13 +362,12 @@ export function SettingsPageClient({
   userEmail,
   profile,
   settings,
-  orders,
   loadError,
 }: SettingsPageClientProps) {
   const nav = [
     { href: '#profile', label: 'פרופיל', icon: UserRound },
     { href: '#notifications', label: 'התראות', icon: Bell },
-    { href: '#billing', label: 'חיוב', icon: CreditCard },
+    { href: '#summary', label: 'סיכום', icon: Settings },
     { href: '#security', label: 'אבטחה', icon: KeyRound },
     { href: '#account', label: 'חשבון', icon: Settings },
   ];
@@ -406,7 +409,7 @@ export function SettingsPageClient({
         <div className="space-y-5">
           <ProfileSection profile={profile} />
           <NotificationsSection settings={settings} />
-          <BillingSection orders={orders} />
+          <SummarySection profile={profile} settings={settings} />
           <SecuritySection />
           <AccountSection
             userEmail={userEmail}

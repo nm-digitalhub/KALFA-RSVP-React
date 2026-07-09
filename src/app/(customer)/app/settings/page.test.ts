@@ -7,7 +7,6 @@ vi.mock('next/navigation', async (importOriginal) => {
 });
 vi.mock('@/lib/auth/dal', () => ({ requireUser: vi.fn() }));
 vi.mock('@/lib/data/profiles', () => ({ getProfile: vi.fn() }));
-vi.mock('@/lib/data/orders', () => ({ listOrders: vi.fn() }));
 vi.mock('@/lib/data/user-settings', () => ({
   DEFAULT_USER_SETTINGS: {
     event_updates: true,
