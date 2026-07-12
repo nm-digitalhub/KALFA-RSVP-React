@@ -13,6 +13,11 @@
       "skillPath": "skills/documentation-writer/SKILL.md",
       "computedHash": "ee53d65b163cd7eb953a930c95841cfe398cc2c0bd24c06508bbaa07c432be35"
     },
+    "hebrew-voice-bot-builder": {
+      "source": "skills-il/developer-tools",
+      "sourceType": "github",
+      "computedHash": "9665481fd25861167b98ba1dc033d466a753af50e55cc253514e164ef668f20d"
+    },
     "israeli-ai-compliance-kit": {
       "source": "skills-il/security-compliance",
       "sourceType": "github",
@@ -22,6 +27,11 @@
       "source": "skills-il/security-compliance",
       "sourceType": "github",
       "computedHash": "0bc84cb6891ceb9547ee58db2d6b6926624610586b4456a119d97f1222999c5a"
+    },
+    "israeli-market-fit": {
+      "source": "skills-il/marketing-growth",
+      "sourceType": "github",
+      "computedHash": "d25881678f1deba2859a6eb05d2d1703fd080879f44fbe622b5389c551c3a768"
     },
     "migrate-radix-to-base": {
       "source": "shadcn/ui",
