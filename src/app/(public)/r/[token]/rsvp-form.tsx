@@ -10,12 +10,12 @@ import {
   eventHeadingFor,
 } from '@/lib/data/celebrant-display';
 import { EVENT_TYPE_LABELS } from '@/lib/data/event-labels';
-import { formatIsraelDate, formatIsraelHebrewDate, formatIsraelTime } from '@/lib/date';
-import { ilTimeInputValue } from '@/lib/data/event-date';
-import { EVENT_TYPES } from '@/lib/validation/schemas';
-import type { Database } from '@/lib/supabase/types';
+import {
+  GIFT_BRAND,
+  asEventType,
+  formatEventDateLine,
+} from '@/lib/data/event-display';
 import { RSVP_STATUSES, type RsvpStatus } from '@/lib/constants';
-import { ISRAEL_LOCALE, ISRAEL_TIME_ZONE } from '@/lib/date';
 import type { RsvpView } from '@/lib/data/rsvp';
 
 import { submitRsvpAction } from './actions';
@@ -30,54 +30,6 @@ const STATUS_LABELS: Record<RsvpStatus, string> = {
 // NULL) — mirrors COUNT_MAX in the Zod schema so the UI never offers a value
 // the server would reject.
 const COUNT_FALLBACK_CAP = 50;
-
-// Official payment-brand marks for the gift CTA (public/brands — bit's is the
-// favicon from bitpay.co.il, PayBox's is its official App Store icon). An
-// unrecognized provider falls back to a neutral gift icon.
-const GIFT_BRAND: Record<string, { icon: string; label: string }> = {
-  bit: { icon: '/brands/bit.png', label: 'שליחת מתנה ב־bit' },
-  paybox: { icon: '/brands/paybox.png', label: 'שליחת מתנה ב־PayBox' },
-};
-
-type EventType = Database['public']['Enums']['event_type'];
-
-// The RPC types event_type as string|null; narrow to the enum (defensive —
-// the DB column IS the enum, so this only guards impossible data).
-function asEventType(value: string | null): EventType {
-  return (EVENT_TYPES as readonly string[]).includes(value ?? '')
-    ? (value as EventType)
-    : 'other';
-}
-
-// All parts pinned to Israel time: this is a PUBLIC page — a guest opening
-// the link abroad (or a server/browser TZ mismatch during hydration) must
-// still see the event's Israel date, never their device's local calendar day.
-const weekdayFmt = new Intl.DateTimeFormat(ISRAEL_LOCALE, {
-  timeZone: ISRAEL_TIME_ZONE,
-  weekday: 'long',
-});
-
-// "יום ראשון, כ״ז בתמוז תשפ״ו · 12.07.2026 · 17:30" — the same language the
-// guest already saw in the WhatsApp invitation (Hebrew date included for every
-// event type, exactly like template slot {{5}}). Time appears only when one
-// was actually set. Hebrew-calendar ICU is wrapped defensively — an exotic
-// browser without it still gets the Gregorian line.
-function formatEventDateLine(value: string | null): string | null {
-  if (!value) return null;
-  const ms = Date.parse(value);
-  if (Number.isNaN(ms)) return null;
-  const parts: string[] = [];
-  let hebrew = '';
-  try {
-    hebrew = formatIsraelHebrewDate(ms);
-  } catch {
-    hebrew = '';
-  }
-  parts.push(hebrew ? `${weekdayFmt.format(ms)}, ${hebrew}` : weekdayFmt.format(ms));
-  parts.push(formatIsraelDate(ms));
-  if (ilTimeInputValue(value) !== '') parts.push(formatIsraelTime(ms));
-  return parts.join(' · ');
-}
 
 function Stepper({
   label,
