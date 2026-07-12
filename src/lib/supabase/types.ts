@@ -12,6 +12,31 @@ export type Database = {
   __InternalSupabase: {
     PostgrestVersion: "14.5"
   }
+  graphql_public: {
+    Tables: {
+      [_ in never]: never
+    }
+    Views: {
+      [_ in never]: never
+    }
+    Functions: {
+      graphql: {
+        Args: {
+          extensions?: Json
+          operationName?: string
+          query?: string
+          variables?: Json
+        }
+        Returns: Json
+      }
+    }
+    Enums: {
+      [_ in never]: never
+    }
+    CompositeTypes: {
+      [_ in never]: never
+    }
+  }
   public: {
     Tables: {
       activity_log: {
@@ -1016,6 +1041,7 @@ export type Database = {
           rsvp_note: string | null
           rsvp_token: string
           rsvp_token_revoked_at: string | null
+          show_in_guest_list: boolean
           status: Database["public"]["Enums"]["guest_status"]
           updated_at: string
         }
@@ -1043,6 +1069,7 @@ export type Database = {
           rsvp_note?: string | null
           rsvp_token?: string
           rsvp_token_revoked_at?: string | null
+          show_in_guest_list?: boolean
           status?: Database["public"]["Enums"]["guest_status"]
           updated_at?: string
         }
@@ -1070,6 +1097,7 @@ export type Database = {
           rsvp_note?: string | null
           rsvp_token?: string
           rsvp_token_revoked_at?: string | null
+          show_in_guest_list?: boolean
           status?: Database["public"]["Enums"]["guest_status"]
           updated_at?: string
         }
@@ -2049,6 +2077,7 @@ export type Database = {
         }
         Returns: boolean
       }
+      get_event_attendees_public: { Args: { _token: string }; Returns: Json }
       get_rsvp_by_token: { Args: { _token: string }; Returns: Json }
       guest_effective_attending: {
         Args: { g: Database["public"]["Tables"]["guests"]["Row"] }
@@ -2143,6 +2172,7 @@ export type Database = {
           _kids: number
           _meal: string
           _note: string
+          _show_in_list?: boolean
           _status: string
           _token: string
         }
@@ -2339,6 +2369,9 @@ export type CompositeTypes<
     : never
 
 export const Constants = {
+  graphql_public: {
+    Enums: {},
+  },
   public: {
     Enums: {
       agreement_status: ["draft", "approved"],

@@ -6,7 +6,9 @@ import {
   deriveGuestFirstName,
   buildGiftParams,
   buildEventDayReminderParams,
+  buildThankyouParams,
   buildBodyParams,
+  POST_EVENT_MESSAGE_KEYS,
   buildBritTradInviteParams,
   buildBritTradReminderParams,
   buildBritTradThankyouParams,
@@ -471,5 +473,87 @@ describe('buildEventDayReminderParams (event_day_pay) — 2-tuple, no name', () 
       ctx: ctx(),
     });
     expect(viaDispatcher).toEqual({ params: ['21:00', 'אולמי הגן, דרך השלום 10, תל אביב'] });
+  });
+});
+
+describe('buildThankyouParams (thankyou) — 2-tuple, no venue/date, all 9 event types', () => {
+  // One complete celebrants fixture per CELEBRANT_KIND_BY_EVENT_TYPE, so every
+  // event type in the enum builds — venue/date are DELIBERATELY absent to prove
+  // the builder never depends on them (the event already happened).
+  const CASES: Array<{
+    eventType: TemplateParamsContext['event']['event_type'];
+    celebrants: Record<string, string>;
+    label: string;
+    celebrantsText: string;
+  }> = [
+    { eventType: 'wedding', celebrants: { groom: 'דוד לוי', bride: 'שרה כהן' }, label: 'חתונה', celebrantsText: 'דוד לוי ו־שרה כהן' },
+    { eventType: 'engagement', celebrants: { groom: 'איתי כהן', bride: 'נועה לוי' }, label: 'אירוסין', celebrantsText: 'איתי כהן ו־נועה לוי' },
+    { eventType: 'henna', celebrants: { groom: 'משה דהן', bride: 'רחל אזולאי' }, label: 'חינה', celebrantsText: 'משה דהן ו־רחל אזולאי' },
+    { eventType: 'brit', celebrants: { parents: 'נטלי קלפה', host_composition: 'single_mother' }, label: 'ברית', celebrantsText: 'נטלי קלפה' },
+    { eventType: 'britah', celebrants: { parents: 'דנה מזרחי', host_composition: 'couple' }, label: 'בריתה', celebrantsText: 'דנה מזרחי' },
+    { eventType: 'bar_mitzvah', celebrants: { name: 'איתי לוי' }, label: 'בר מצווה', celebrantsText: 'איתי לוי' },
+    { eventType: 'bat_mitzvah', celebrants: { name: 'שירה כהן' }, label: 'בת מצווה', celebrantsText: 'שירה כהן' },
+    { eventType: 'birthday', celebrants: { name: 'יוסי מזרחי' }, label: 'יום הולדת', celebrantsText: 'יוסי מזרחי' },
+    { eventType: 'other', celebrants: { names: 'משפחת אברהם' }, label: 'אחר', celebrantsText: 'משפחת אברהם' },
+  ];
+
+  for (const { eventType, celebrants, label, celebrantsText } of CASES) {
+    it(`${eventType}: binds {{1}} label + {{2}} celebrant names, ignoring venue/date`, () => {
+      const r = buildThankyouParams({
+        event: {
+          name: 'אירוע',
+          event_type: eventType,
+          event_date: null,
+          venue_name: null,
+          venue_address: null,
+          celebrants,
+        },
+        guestFirstName: 'דנה', // ignored — the greeting is a fixed literal
+      });
+      expect(r).toEqual({ params: [label, celebrantsText] });
+    });
+  }
+
+  it('fail-closes when celebrants are incomplete for the kind', () => {
+    const r = buildThankyouParams({
+      event: {
+        name: 'אירוע',
+        event_type: 'wedding',
+        event_date: null,
+        venue_name: null,
+        venue_address: null,
+        celebrants: { groom: 'דוד לוי' }, // bride missing
+      },
+      guestFirstName: 'דנה',
+    });
+    expect(r).toEqual({ missing: ['celebrants'] });
+  });
+
+  it('buildBodyParams routes param_contract "thankyou" to the thank-you builder', () => {
+    const viaDispatcher = buildBodyParams({
+      paramContract: 'thankyou',
+      family: 'generic',
+      ctx: {
+        event: {
+          name: 'אירוע',
+          event_type: 'brit',
+          event_date: null,
+          venue_name: null,
+          venue_address: null,
+          celebrants: { parents: 'נטלי קלפה', host_composition: 'single_mother' },
+        },
+        guestFirstName: 'דנה',
+      },
+    });
+    expect(viaDispatcher).toEqual({ params: ['ברית', 'נטלי קלפה'] });
+  });
+});
+
+describe('POST_EVENT_MESSAGE_KEYS', () => {
+  it('contains exactly the documented post-event allow-list (thankyou)', () => {
+    expect(POST_EVENT_MESSAGE_KEYS.has('thankyou')).toBe(true);
+    expect(POST_EVENT_MESSAGE_KEYS.has('gift')).toBe(false);
+    expect(POST_EVENT_MESSAGE_KEYS.has('event_day_pay')).toBe(false);
+    expect(POST_EVENT_MESSAGE_KEYS.has('rsvp_invite')).toBe(false);
   });
 });

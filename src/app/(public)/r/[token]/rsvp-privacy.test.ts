@@ -83,3 +83,69 @@ describe('rsvp_note split migration keeps guests.note out of the RPCs', () => {
     expect(chunk).not.toMatch(/\bnote\s*=\s*_note_n\b/);
   });
 });
+
+// Feature 3 ("who's coming" opt-in, guest-features-natalie-learnings.md)
+// tripwire: get_event_attendees_public exposes ONLY first names of OTHER
+// attending, opted-in guests. It must never select phone / note / rsvp_note /
+// meal_pref / contact_id, and must never surface a non-attending guest.
+const WHO_S_COMING_MIGRATION = join(
+  MIGRATIONS_DIR,
+  '20260712174141_who_s_coming_opt_in.sql',
+);
+const FORBIDDEN_COLUMNS =
+  /\bog\.(?:phone|note|rsvp_note|meal_pref|contact_id)\b/;
+
+describe('get_event_attendees_public exposes first names only', () => {
+  const sql = readFileSync(WHO_S_COMING_MIGRATION, 'utf8');
+  const chunk = functionChunk(sql, 'get_event_attendees_public');
+
+  it('the migration (re)defines get_event_attendees_public', () => {
+    expect(chunk).not.toBeNull();
+  });
+
+  it('never selects phone/note/rsvp_note/meal_pref/contact_id of the other guest', () => {
+    expect(chunk).not.toMatch(FORBIDDEN_COLUMNS);
+  });
+
+  it('only builds a first_name field (derived in SQL via split_part)', () => {
+    expect(chunk).toMatch(/split_part\(\s*btrim\(og\.full_name\)/);
+    expect(chunk).toMatch(/'first_name'/);
+  });
+
+  it('filters the other guest to status = attending AND show_in_guest_list = true', () => {
+    expect(chunk).toMatch(/og\.status\s*=\s*'attending'/);
+    expect(chunk).toMatch(/og\.show_in_guest_list\s*=\s*true/);
+  });
+
+  it('scopes to the caller token, non-revoked, and an active event', () => {
+    expect(chunk).toMatch(/g\.rsvp_token\s*=\s*_token/);
+    expect(chunk).toMatch(/g\.rsvp_token_revoked_at\s+is\s+null/);
+    expect(chunk).toMatch(/e\.status\s*=\s*'active'/);
+  });
+
+  it('is granted to service_role only (revoked from public/anon/authenticated)', () => {
+    expect(sql).toMatch(
+      /revoke all on function public\.get_event_attendees_public\(text\) from public/,
+    );
+    expect(sql).toMatch(
+      /revoke all on function public\.get_event_attendees_public\(text\) from anon, authenticated/,
+    );
+    expect(sql).toMatch(
+      /grant execute on function public\.get_event_attendees_public\(text\) to service_role/,
+    );
+  });
+});
+
+describe('submit_rsvp forces show_in_guest_list false for non-attending guests', () => {
+  const sql = readFileSync(WHO_S_COMING_MIGRATION, 'utf8');
+  const chunk = functionChunk(sql, 'submit_rsvp');
+
+  it('the migration (re)defines submit_rsvp with the new _show_in_list param', () => {
+    expect(chunk).not.toBeNull();
+    expect(chunk).toMatch(/_show_in_list\s+boolean\s+default\s+false/);
+  });
+
+  it('assigns show_in_guest_list from the normalized, not raw, input', () => {
+    expect(chunk).toMatch(/show_in_guest_list\s*=\s*_show_list_n/);
+  });
+});

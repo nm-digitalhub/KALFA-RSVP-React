@@ -65,6 +65,7 @@ export async function submitRsvpAction(
     meal_pref: trimmedOrUndefined(formData.get('meal_pref')),
     note: trimmedOrUndefined(formData.get('note')),
     answers: Object.keys(answers).length > 0 ? answers : undefined,
+    show_in_guest_list: formData.get('show_in_guest_list') === 'on',
   });
   if (!parsed.success) {
     return {

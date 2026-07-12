@@ -15,8 +15,9 @@ import {
   asEventType,
   formatEventDateLine,
 } from '@/lib/data/event-display';
+import { AddToCalendar } from '@/components/add-to-calendar';
 import { RSVP_STATUSES, type RsvpStatus } from '@/lib/constants';
-import type { RsvpView } from '@/lib/data/rsvp';
+import type { RsvpAttendee, RsvpView } from '@/lib/data/rsvp';
 
 import { submitRsvpAction } from './actions';
 
@@ -85,12 +86,16 @@ export function RsvpForm({
   token,
   view,
   inviteImageUrl,
+  attendees,
 }: {
   token: string;
   view: RsvpView;
   // Short-lived signed URL of the uploaded invitation image (private bucket),
   // created by the page AFTER the token resolved; null → no hero block.
   inviteImageUrl?: string | null;
+  // "Who's coming" opt-in list — first names only, fetched server-side by
+  // get_event_attendees_public. Empty when nobody has opted in (or on error).
+  attendees?: RsvpAttendee[];
 }) {
   const { guest, event, questions, can_respond: canRespond } = view;
   const eventType = asEventType(event.event_type);
@@ -240,6 +245,16 @@ export function RsvpForm({
                   <FieldError errors={state?.fieldErrors?.meal_pref} />
                 </div>
               ) : null}
+
+              <label className="flex items-start gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  name="show_in_guest_list"
+                  defaultChecked={guest.show_in_guest_list}
+                  className="mt-0.5 size-4 rounded border-input"
+                />
+                להופיע ברשימת &quot;מי מגיע&quot; — שם פרטי בלבד
+              </label>
             </div>
           ) : null}
 
@@ -323,11 +338,39 @@ export function RsvpForm({
               <p className="mt-1 text-xs text-muted-foreground">
                 אפשר לעדכן את התשובה בכל רגע מאותו קישור.
               </p>
+              {attending ? (
+                <div className="mt-3">
+                  <AddToCalendar
+                    event={{
+                      name: event.name,
+                      event_type: event.event_type,
+                      event_date: event.event_date,
+                      venue_name: event.venue_name,
+                      venue_address: event.venue_address,
+                      celebrants: event.celebrants,
+                    }}
+                  />
+                </div>
+              ) : null}
             </div>
           ) : null}
           <SubmitButton>שליחת אישור</SubmitButton>
         </form>
       )}
+
+      {attendees && attendees.length > 0 ? (
+        <div className="rounded-lg border border-border bg-card px-4 py-4">
+          <p className="mb-2 text-sm font-medium">מי עוד מגיע</p>
+          <p className="flex flex-wrap gap-x-1.5 gap-y-1 text-sm text-muted-foreground">
+            {attendees.map((a, i) => (
+              <span key={`${a.first_name}-${i}`}>
+                {a.first_name}
+                {i < attendees.length - 1 ? ',' : ''}
+              </span>
+            ))}
+          </p>
+        </div>
+      ) : null}
 
       {event.gift_link_token ? (
         <div className="rounded-lg border border-border bg-card px-4 py-4 text-center">

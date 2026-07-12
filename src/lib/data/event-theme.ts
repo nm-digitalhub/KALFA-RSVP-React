@@ -67,3 +67,19 @@ export const EVENT_THEME: Record<EventType, EventTheme> = {
     greeting: 'הוזמנתם לחגוג עמנו',
   },
 };
+
+// Per-event-type copy for the post-event thank-you page (`/ty/[token]`) — a
+// SEPARATE map from `greeting` above (which is invite-tense, "future"); this is
+// deliberately past-tense ("thank you for coming"), shown alongside the same
+// `EVENT_THEME[type].accent`/`.banner` for visual consistency with the gift page.
+export const EVENT_THANKYOU_GREETING: Record<EventType, string> = {
+  wedding: 'תודה שבאתם לחגוג איתנו את החתונה!',
+  engagement: 'תודה שבאתם לחגוג איתנו את האירוסין!',
+  henna: 'תודה שבאתם לחגוג איתנו את ליל החינה!',
+  brit: 'תודה שבאתם לחגוג איתנו את שמחת הברית!',
+  britah: 'תודה שבאתם לחגוג איתנו את שמחת הבריתה!',
+  bar_mitzvah: 'תודה שבאתם לחגוג איתנו את הבר מצווה!',
+  bat_mitzvah: 'תודה שבאתם לחגוג איתנו את הבת מצווה!',
+  birthday: 'תודה שבאתם לחגוג איתנו את יום ההולדת!',
+  other: 'תודה שבאתם לחגוג איתנו!',
+};

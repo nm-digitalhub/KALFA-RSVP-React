@@ -57,6 +57,13 @@ export interface RsvpGuestInfo {
    * owner-internal guests.note is never present in this payload.
    */
   rsvp_note: string | null;
+  /**
+   * Guest opt-in to appear (by first name only) in get_event_attendees_public
+   * for other guests of the same event. Own-row read only — never another
+   * guest's value; that visibility is served exclusively by the separate
+   * get_event_attendees_public RPC.
+   */
+  show_in_guest_list: boolean;
   /** Prior answers, already filtered to the currently-enabled questions. */
   answers: Record<string, string>;
 }
@@ -104,6 +111,32 @@ export async function getRsvpByToken(token: string): Promise<RsvpView | null> {
   return data as unknown as RsvpView;
 }
 
+export interface RsvpAttendee {
+  first_name: string;
+}
+
+/**
+ * "Who's coming" opt-in list: first names of OTHER guests of the same event
+ * who are `status='attending'` AND opted in via `show_in_guest_list`. Mirrors
+ * getRsvpByToken's token-scoping exactly (same rsvp_token/revocation/event
+ * 'active' gate) — get_event_attendees_public is, like get_rsvp_by_token, the
+ * ONLY path allowed to read this, reachable solely through this service-role
+ * client. Never returns phone/note/rsvp_note/meal_pref/contact_id, or any
+ * non-attending guest, by construction of the RPC.
+ */
+export async function getEventAttendeesPublic(
+  token: string,
+): Promise<RsvpAttendee[]> {
+  const supabase = createAdminClient();
+  const { data, error } = await supabase.rpc('get_event_attendees_public', {
+    _token: token,
+  });
+  if (error) {
+    throw new Error('טעינת רשימת המגיעים נכשלה');
+  }
+  return (data ?? []) as unknown as RsvpAttendee[];
+}
+
 /**
  * Submit (or idempotently re-submit) an RSVP for a token. All authorization,
  * status gating, count/answer validation, and atomicity live inside
@@ -123,6 +156,7 @@ export async function submitRsvp(
     _meal: input.meal_pref ?? '',
     _note: input.note ?? '',
     _answers: (input.answers ?? {}) as Json,
+    _show_in_list: input.show_in_guest_list ?? false,
   });
   if (error) {
     throw new Error('שליחת אישור ההגעה נכשלה');

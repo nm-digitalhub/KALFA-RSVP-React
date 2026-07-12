@@ -183,6 +183,45 @@ describe('sendCampaignWhatsApp', () => {
     expect(sendWhatsAppTemplate).not.toHaveBeenCalled();
   });
 
+  it('bypasses the L1 past-event gate for the allow-listed post-event key (thankyou) — the ONE documented exception', async () => {
+    vi.mocked(getOutreachEnabled).mockResolvedValue(true);
+    vi.mocked(getWhatsAppConfig).mockResolvedValue(config);
+    vi.mocked(resolveTemplateForEvent).mockResolvedValue(genericTemplate);
+    vi.mocked(sendWhatsAppTemplate).mockResolvedValue({ kind: 'accepted', providerId: 'wamid.x' });
+    vi.mocked(listSendableContacts).mockResolvedValue([
+      { id: 'k1', normalized_phone: '+972501111111' },
+    ]);
+    const { builder } = mockAdmin(null);
+    sequenceRun(
+      builder,
+      { ...bindableEventRow, event_date: '2020-01-01T00:00:00+00:00' }, // 6 years past
+      [{ contact_id: 'k1', full_name: 'דנה כהן' }],
+    );
+
+    const r = await sendCampaignWhatsApp('c1', 'thankyou');
+
+    expect(r).toEqual({ sent: 1, skipped: 0 });
+    expect(sendWhatsAppTemplate).toHaveBeenCalledTimes(1);
+  });
+
+  it('still skips a past event for a NON-allow-listed key even one character away (no accidental widening)', async () => {
+    vi.mocked(getOutreachEnabled).mockResolvedValue(true);
+    vi.mocked(getWhatsAppConfig).mockResolvedValue(config);
+    vi.mocked(resolveTemplateForEvent).mockResolvedValue(genericTemplate);
+    vi.mocked(listSendableContacts).mockResolvedValue([
+      { id: 'k1', normalized_phone: '+972501111111' },
+    ]);
+    mockAdmin({
+      ...activeCampaignRow,
+      event_date: '2020-01-01T00:00:00+00:00',
+    });
+
+    const r = await sendCampaignWhatsApp('c1', 'thankyou2');
+
+    expect(r).toEqual({ sent: 0, skipped: 0 });
+    expect(sendWhatsAppTemplate).not.toHaveBeenCalled();
+  });
+
   it('sends the template to each eligible contact with bound params and logs an outbound interaction', async () => {
     vi.mocked(getOutreachEnabled).mockResolvedValue(true);
     vi.mocked(getWhatsAppConfig).mockResolvedValue(config);

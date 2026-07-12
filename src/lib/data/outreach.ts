@@ -19,6 +19,7 @@ import {
   buildBodyParams,
   buildGiftParams,
   deriveGuestFirstName,
+  POST_EVENT_MESSAGE_KEYS,
 } from '@/lib/whatsapp/template-spec';
 import type { Database } from '@/lib/supabase/types';
 
@@ -191,18 +192,22 @@ export async function sendCampaignWhatsApp(
     return { sent: 0, skipped: 0 };
   }
 
-  // L1: never send for an event whose day has already passed (Israel calendar).
-  // R9: every commercial campaign action requires event.status='active' — app
-  // defense-in-depth (campaign.status='active' here already structurally
-  // implies it via the DB trigger + R7, but this is explicit per the plan's
-  // "ALL commercial paths" requirement). event fields are read separately (the
-  // campaign projection above omits them).
+  // L1: never send for an event whose day has already passed (Israel calendar) —
+  // ONE documented exception: POST_EVENT_MESSAGE_KEYS (currently just 'thankyou',
+  // a manual post-event touchpoint, never the drip engine). R9: every commercial
+  // campaign action requires event.status='active' — app defense-in-depth
+  // (campaign.status='active' here already structurally implies it via the DB
+  // trigger + R7, but this is explicit per the plan's "ALL commercial paths"
+  // requirement). event fields are read separately (the campaign projection
+  // above omits them).
   const { data: ev } = await admin
     .from('events')
     .select('event_date, status, name, event_type, venue_name, venue_address, celebrants, invite_image_path')
     .eq('id', campaign.event_id)
     .maybeSingle();
-  if (isPastEventDay(ev?.event_date ?? null)) return { sent: 0, skipped: 0 };
+  if (!POST_EVENT_MESSAGE_KEYS.has(messageKey) && isPastEventDay(ev?.event_date ?? null)) {
+    return { sent: 0, skipped: 0 };
+  }
   if (ev?.status !== 'active') return { sent: 0, skipped: 0 };
 
   // Same event-type-aware resolution as the engine (executeStep): the generic

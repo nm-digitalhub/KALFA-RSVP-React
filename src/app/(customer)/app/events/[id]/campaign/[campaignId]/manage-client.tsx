@@ -190,6 +190,7 @@ export function ManageClient({
     settle: BoundAction;
     sendGift: BoundAction;
     sendEventDay: BoundAction;
+    sendThankyou: BoundAction;
   };
   isPast?: boolean;
 }) {
@@ -280,6 +281,13 @@ export function ManageClient({
             action={actions.sendEventDay}
             label="תזכורת יום האירוע + תשלום"
             confirm="לשלוח תזכורת יום האירוע עם קישור לתשלום בביט — רק למי שאישרו הגעה?"
+          />
+        ) : null}
+        {s === 'active' && isPast ? (
+          <ActionButton
+            action={actions.sendThankyou}
+            label="שליחת הודעת תודה"
+            confirm="לשלוח הודעת תודה לכל המוזמנים עם הסכמה?"
           />
         ) : null}
         {canSettle ? (

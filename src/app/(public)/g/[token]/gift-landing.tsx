@@ -1,6 +1,7 @@
 import Image from 'next/image';
 import { Gift, Navigation } from 'lucide-react';
 
+import { AddToCalendar } from '@/components/add-to-calendar';
 import { EVENT_TYPE_ICON, eventHeadingFor } from '@/lib/data/celebrant-display';
 import { EVENT_THEME } from '@/lib/data/event-theme';
 import { formatEventDateLine, GIFT_BRAND } from '@/lib/data/event-display';
@@ -87,6 +88,17 @@ export function GiftLanding({
             </a>
           </p>
         ) : null}
+
+        <AddToCalendar
+          event={{
+            name: view.name,
+            event_type: view.event_type,
+            event_date: view.event_date,
+            venue_name: view.venue_name,
+            venue_address: view.venue_address,
+            celebrants: view.celebrants,
+          }}
+        />
 
         {/* Gift CTA — navigates same-tab to the server-side redirect (/go). */}
         <div className="pt-2">

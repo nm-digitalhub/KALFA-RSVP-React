@@ -110,6 +110,17 @@ const nextConfig: NextConfig = {
           { key: 'X-Robots-Tag', value: 'noindex, nofollow' },
         ],
       },
+      // Public post-event thank-you page — same token/posture as /g above (the
+      // token is reused, not purpose-bound): never cache, never leak via Referer,
+      // keep out of search indexes.
+      {
+        source: '/ty/:token*',
+        headers: [
+          { key: 'Cache-Control', value: 'no-store, max-age=0' },
+          { key: 'Referrer-Policy', value: 'no-referrer' },
+          { key: 'X-Robots-Tag', value: 'noindex, nofollow' },
+        ],
+      },
       // Service worker (guides/progressive-web-apps §8): correct JS content type,
       // never cache so SW updates propagate immediately, and a strict self-only
       // CSP. X-Content-Type-Options is already applied by the global rule above.

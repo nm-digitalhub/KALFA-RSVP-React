@@ -282,6 +282,43 @@ export async function sendEventDayReminderAction(
   };
 }
 
+// Post-event thank-you (message_key 'thankyou'). Manual, non-billable — same
+// gate model as gift/event-day (sendCampaignWhatsApp re-checks outreach enabled +
+// active campaign + approved template). This is the ONE message_key allowed past
+// the L1 past-event gate (POST_EVENT_MESSAGE_KEYS in template-spec.ts) — it can
+// only run AFTER the event day, driven by the authenticated app (never headless).
+export async function sendThankyouAction(
+  eventId: string,
+  campaignId: string,
+  _prevState: FormState,
+  _formData: FormData,
+): Promise<FormState> {
+  let result: { sent: number; skipped: number };
+  try {
+    const campaign = await getCampaignForHold(campaignId);
+    if (!campaign || campaign.event_id !== eventId) {
+      return { error: 'הקמפיין לא נמצא.' };
+    }
+    await requireOwnedEvent(campaign.event_id);
+    result = await sendCampaignWhatsApp(campaignId, 'thankyou');
+  } catch (err) {
+    unstable_rethrow(err);
+    return { error: 'שליחת הודעת התודה נכשלה.' };
+  }
+  revalidatePath(`/app/events/${eventId}/campaign/${campaignId}`);
+  if (result.sent === 0) {
+    return {
+      error: 'לא נשלחו הודעות תודה — ודאו שהקמפיין פעיל ושתבנית התודה מאושרת ופעילה.',
+    };
+  }
+  return {
+    notice:
+      result.skipped > 0
+        ? `נשלחו ${result.sent} הודעות תודה (${result.skipped} דולגו).`
+        : `נשלחו ${result.sent} הודעות תודה.`,
+  };
+}
+
 export async function settleCampaignAction(
   eventId: string,
   campaignId: string,

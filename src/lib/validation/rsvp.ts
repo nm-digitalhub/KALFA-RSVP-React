@@ -43,6 +43,10 @@ export const rsvpSubmitSchema = z
         z.string().trim().max(RSVP_TEXT_MAX, { error: 'התשובה ארוכה מדי' }),
       )
       .optional(),
+    // "Who's coming" opt-in checkbox. submit_rsvp forces this false whenever
+    // status <> attending (defense in depth) — this boundary only carries the
+    // guest's checkbox state through.
+    show_in_guest_list: z.boolean().optional(),
   })
   // When attending, at least one guest must be counted. declined/maybe force
   // the counts to 0 server-side, so this rule only binds on attending.

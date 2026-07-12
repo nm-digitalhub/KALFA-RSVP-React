@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 import { headers } from 'next/headers';
 
 import { RSVP_READ_RATE, RSVP_TOKEN_MIN_LENGTH } from '@/lib/constants';
-import { getRsvpByToken } from '@/lib/data/rsvp';
+import { getEventAttendeesPublic, getRsvpByToken } from '@/lib/data/rsvp';
 import { signedInviteImageUrl } from '@/lib/storage/event-media';
 import { getClientIp, rateLimit } from '@/lib/security/rate-limit';
 
@@ -94,9 +94,27 @@ export default async function RsvpPage({
     }
   }
 
+  // "Who's coming" opt-in list. Own rate-limit bucket (read-rate shape reused;
+  // separate key so it can't starve the main read gate). Fail-open on error —
+  // an empty list just hides the section, never blocks the RSVP form itself.
+  const attendeesGate = rateLimit(`rsvp:attendees:${token}:${ip}`, RSVP_READ_RATE);
+  let attendees: Awaited<ReturnType<typeof getEventAttendeesPublic>> = [];
+  if (attendeesGate.allowed) {
+    try {
+      attendees = await getEventAttendeesPublic(token);
+    } catch {
+      attendees = [];
+    }
+  }
+
   return (
     <Shell>
-      <RsvpForm token={token} view={view} inviteImageUrl={inviteImageUrl} />
+      <RsvpForm
+        token={token}
+        view={view}
+        inviteImageUrl={inviteImageUrl}
+        attendees={attendees}
+      />
     </Shell>
   );
 }

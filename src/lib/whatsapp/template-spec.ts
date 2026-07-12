@@ -211,6 +211,27 @@ export function buildGiftParams(ctx: GiftParamsContext): GiftParamsResult {
 // The Bit link is NOT a body param; it rides the URL button (event.gift_link_token,
 // resolved at /g/[token]) exactly like the gift template. Fail-closed: never emit
 // an empty positional.
+// Post-event message keys — the ONLY message_keys the outreach send-gate
+// (outreach.ts) lets through AFTER the event day has passed (L1 otherwise
+// blocks every send fail-closed). Single source of truth so a future
+// post-event key is one Set entry, not a second `isPastEventDay` carve-out.
+export const POST_EVENT_MESSAGE_KEYS = new Set(['thankyou']);
+
+// Post-event thank-you (message_key 'thankyou'). Deliberately NO venue/date —
+// the event already happened, so those positions would only ever be stale.
+// Same max-deliverability stance as buildEventDayReminderParams: the greeting
+// is a fixed literal in every approved body ("חברים ומשפחה יקרים"), only the
+// event-type label + celebrant names vary. {{1}} label, {{2}} celebrant names.
+export function buildThankyouParams(
+  ctx: TemplateParamsContext,
+): { params: [string, string] } | { missing: MissingParamKey[] } {
+  const { event } = ctx;
+  const label = EVENT_TYPE_LABELS[event.event_type];
+  const celebrantsText = genericCelebrantsText(event.event_type, event.celebrants);
+  if (!celebrantsText) return { missing: ['celebrants'] };
+  return { params: [label, celebrantsText] };
+}
+
 export function buildEventDayReminderParams(
   ctx: TemplateParamsContext,
 ): { params: [string, string] } | { missing: MissingParamKey[] } {
@@ -446,6 +467,8 @@ export function buildBodyParams(args: {
       return buildBritTradReminderParams(args.ctx);
     case 'event_day_pay':
       return buildEventDayReminderParams(args.ctx);
+    case 'thankyou':
+      return buildThankyouParams(args.ctx);
     default:
       return buildTemplateParams(args.family, args.ctx);
   }
