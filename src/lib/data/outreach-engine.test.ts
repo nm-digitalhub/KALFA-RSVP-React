@@ -25,12 +25,14 @@ import {
 import { resolveTemplateForEvent } from '@/lib/data/message-templates';
 import { recordTemplateFailure, sendOneWhatsApp } from '@/lib/data/outreach';
 import { recordReached } from '@/lib/data/billing';
-import { GUEST_FIRST_NAME_FALLBACK } from '@/lib/whatsapp/template-spec';
 import {
   stepGate,
   claimStep,
   executeStep,
   writeReach,
+  hasLiveGuestForContact,
+  checkStepTerminal,
+  prepareAndSendStep,
   type CampaignContext,
 } from '@/lib/data/outreach-engine';
 
@@ -230,16 +232,18 @@ const waConfig: WhatsAppConfig = {
 };
 
 // Sequence one executeStep run on the shared builder: await #1 is the
-// contacts read (eligible, consented), await #2 is claimStep's guarded
-// update (the claim WINS). Any later await — the guest-name read, the
-// failure upsert, bumpCount — falls back to the builder's default result
-// unless the test chains more mockImplementationOnce calls onto the
-// returned spy.
+// contacts read (eligible, consented), await #2 is the live-guest existence
+// check, await #3 is claimStep's guarded update (the claim WINS). Any later
+// await — the guest-name read, the failure upsert, bumpCount — falls back to
+// the builder's default result unless the test chains more mockImplementationOnce
+// calls onto the returned spy.
 const sequenceRun = (
   builder: MockQueryBuilder<Record<string, unknown>>,
   contactId: string,
-) =>
-  vi
+  options?: { hasGuest?: boolean },
+) => {
+  const hasGuest = options?.hasGuest ?? true;
+  return vi
     .spyOn(builder, 'then')
     .mockImplementationOnce((f) =>
       (f as (v: unknown) => unknown)({
@@ -253,8 +257,16 @@ const sequenceRun = (
       }),
     )
     .mockImplementationOnce((f) =>
+      (f as (v: unknown) => unknown)({
+        data: null,
+        error: null,
+        count: hasGuest ? 1 : 0,
+      }),
+    )
+    .mockImplementationOnce((f) =>
       (f as (v: unknown) => unknown)({ data: { id: 'os1' }, error: null }),
     );
+};
 
 describe('executeStep — runtime template integrity (§5.6)', () => {
 
@@ -370,7 +382,7 @@ describe('executeStep — runtime template integrity (§5.6)', () => {
       client as unknown as ReturnType<typeof createAdminClient>,
     );
 
-    // await #3 (after contact + claim) is the guest-name read — present here,
+    // await #4 (after contact + guest-check + claim) is the guest-name read — present here,
     // so the ONLY missing ingredient is the venue.
     sequenceRun(builder, 'k1').mockImplementationOnce((f) =>
       (f as (v: unknown) => unknown)({ data: { full_name: 'דנה כהן' }, error: null }),
@@ -418,7 +430,7 @@ describe('executeStep — send-time parameter binding', () => {
     vi.mocked(resolveTemplateForEvent).mockResolvedValue(weddingTemplate);
     const { builder } = wireHappyPath();
 
-    // await #3: the guest-name read — full_name's FIRST whitespace token is {{1}}.
+    // await #4: the guest-name read — full_name's FIRST whitespace token is {{1}}.
     sequenceRun(builder, 'k1').mockImplementationOnce((f) =>
       (f as (v: unknown) => unknown)({
         data: { full_name: 'דנה כהן מזרחי' },
@@ -458,7 +470,7 @@ describe('executeStep — send-time parameter binding', () => {
     expect(recordTemplateFailure).not.toHaveBeenCalled();
   });
 
-  it('no linked guest → {{1}} falls back to the generic greeting instead of skipping', async () => {
+  it('no live guest → skipped before claimStep, no send (P0-A)', async () => {
     vi.mocked(resolveTemplateForEvent).mockResolvedValue({
       name: 'kalfa_event_invite_v2',
       language: 'he',
@@ -466,17 +478,102 @@ describe('executeStep — send-time parameter binding', () => {
     });
     const { builder } = wireHappyPath();
 
-    // await #3: no guest row for this contact.
-    sequenceRun(builder, 'k1').mockImplementationOnce((f) =>
-      (f as (v: unknown) => unknown)({ data: null, error: null }),
-    );
+    sequenceRun(builder, 'k1', { hasGuest: false });
     const r = await executeStep(makeCtx('invite'), 'c1', 'k1', 'e1', 0);
 
-    expect(r).toEqual({ action: 'whatsapp_sent' });
-    const bodyParams = vi.mocked(sendOneWhatsApp).mock.calls[0][5];
-    expect(bodyParams?.[0]).toBe(GUEST_FIRST_NAME_FALLBACK);
-    // Generic family: {{2}} is the event-type label, {{3}} the celebrants text.
-    expect(bodyParams?.[1]).toBe('חתונה');
-    expect(bodyParams?.[2]).toBe('דוד לוי ו־שרה כהן');
+    expect(r).toEqual({ action: 'skipped' });
+    expect(sendOneWhatsApp).not.toHaveBeenCalled();
+    expect(builder.update).not.toHaveBeenCalled();
+  });
+});
+
+describe('hasLiveGuestForContact (P0-A)', () => {
+  it('returns true when a guest row points at the contact', async () => {
+    const { client, builder } = createMockSupabase<Record<string, unknown>>({
+      data: null,
+      error: null,
+      count: 1,
+    });
+    vi.mocked(createAdminClient).mockReturnValue(
+      client as unknown as ReturnType<typeof createAdminClient>,
+    );
+    expect(await hasLiveGuestForContact('e1', 'k1')).toBe(true);
+    expect(builder.eq).toHaveBeenCalledWith('event_id', 'e1');
+    expect(builder.eq).toHaveBeenCalledWith('contact_id', 'k1');
+  });
+
+  it('returns false when no guest row points at the contact', async () => {
+    const { client } = createMockSupabase<Record<string, unknown>>({
+      data: null,
+      error: null,
+      count: 0,
+    });
+    vi.mocked(createAdminClient).mockReturnValue(
+      client as unknown as ReturnType<typeof createAdminClient>,
+    );
+    expect(await hasLiveGuestForContact('e1', 'k1')).toBe(false);
+  });
+});
+
+describe('checkStepTerminal — P0-A live-guest guard', () => {
+  it('returns not_current_guest when contact is eligible but has no live guest', async () => {
+    const { client, builder } = createMockSupabase<Record<string, unknown>>({
+      data: null,
+      error: null,
+    });
+    vi.mocked(createAdminClient).mockReturnValue(
+      client as unknown as ReturnType<typeof createAdminClient>,
+    );
+    vi.spyOn(builder, 'then')
+      .mockImplementationOnce((f) =>
+        (f as (v: unknown) => unknown)({
+          data: {
+            removal_requested: false,
+            whatsapp_consent_at: '2026-01-01T00:00:00+00:00',
+          },
+          error: null,
+        }),
+      )
+      .mockImplementationOnce((f) =>
+        (f as (v: unknown) => unknown)({ data: null, error: null, count: 0 }),
+      );
+
+    const r = await checkStepTerminal(makeCtx('invite'), 'k1', 0);
+    expect(r).toEqual({ reason: 'not_current_guest' });
+  });
+});
+
+describe('prepareAndSendStep — P0-A live-guest guard', () => {
+  const boss = {} as import('pg-boss').PgBoss;
+
+  it('returns terminal not_current_guest and does not send', async () => {
+    const { client, builder } = createMockSupabase<Record<string, unknown>>({
+      data: null,
+      error: null,
+    });
+    vi.mocked(createAdminClient).mockReturnValue(
+      client as unknown as ReturnType<typeof createAdminClient>,
+    );
+    vi.spyOn(builder, 'then')
+      .mockImplementationOnce((f) =>
+        (f as (v: unknown) => unknown)({
+          data: {
+            id: 'k1',
+            normalized_phone: '972500000001',
+            removal_requested: false,
+            whatsapp_consent_at: '2026-01-01T00:00:00+00:00',
+          },
+          error: null,
+        }),
+      )
+      .mockImplementationOnce((f) =>
+        (f as (v: unknown) => unknown)({ data: null, error: null, count: 0 }),
+      );
+
+    const r = await prepareAndSendStep(boss, makeCtx('invite'), 'c1', 'k1', 'e1', 0);
+
+    expect(r).toEqual({ kind: 'terminal', reason: 'not_current_guest' });
+    expect(sendOneWhatsApp).not.toHaveBeenCalled();
+    expect(getWhatsAppConfig).not.toHaveBeenCalled();
   });
 });
