@@ -204,6 +204,34 @@ export function buildGiftParams(ctx: GiftParamsContext): GiftParamsResult {
   return { params: [guest, label, celebrantsText, giftUrl] };
 }
 
+// Event-day reminder to CONFIRMED guests + Bit payment (message_key
+// 'event_day_pay'). Deliberately NO name and NO celebrants: the greeting is the
+// fixed literal "חברים ומשפחה יקרים" baked into every approved body, and "היום"
+// is literal too — so only two positional values vary: {{1}} time, {{2}} venue.
+// The Bit link is NOT a body param; it rides the URL button (event.gift_link_token,
+// resolved at /g/[token]) exactly like the gift template. Fail-closed: never emit
+// an empty positional.
+export function buildEventDayReminderParams(
+  ctx: TemplateParamsContext,
+): { params: [string, string] } | { missing: MissingParamKey[] } {
+  const { event } = ctx;
+  const missing: MissingParamKey[] = [];
+
+  const eventMs = event.event_date ? Date.parse(event.event_date) : Number.NaN;
+  let time: string | null = null;
+  if (Number.isNaN(eventMs)) missing.push('event_date');
+  else time = timeFmt.format(eventMs);
+
+  const venueName = event.venue_name?.trim() || null;
+  const venueAddress = event.venue_address?.trim() || null;
+  let venue: string | null = null;
+  if (!venueName) missing.push('venue_name');
+  else venue = venueAddress ? `${venueName}, ${venueAddress}` : venueName;
+
+  if (missing.length > 0 || !time || !venue) return { missing };
+  return { params: [time, venue] };
+}
+
 // Build the seven positional parameters for one recipient, or report exactly
 // which ingredients are absent (in position order, each key at most once).
 export function buildTemplateParams(
@@ -416,6 +444,8 @@ export function buildBodyParams(args: {
       return buildBritTradInviteParams(args.ctx);
     case 'brit_trad_reminder':
       return buildBritTradReminderParams(args.ctx);
+    case 'event_day_pay':
+      return buildEventDayReminderParams(args.ctx);
     default:
       return buildTemplateParams(args.family, args.ctx);
   }

@@ -5,6 +5,8 @@ import {
   GUEST_FIRST_NAME_FALLBACK,
   deriveGuestFirstName,
   buildGiftParams,
+  buildEventDayReminderParams,
+  buildBodyParams,
   buildBritTradInviteParams,
   buildBritTradReminderParams,
   buildBritTradThankyouParams,
@@ -427,5 +429,47 @@ describe('brit personal builders (kalfa_brit_invite_trad_v4 / reminder / thankyo
     );
     if (!('missing' in r)) throw new Error('expected missing');
     expect(r.missing).toContain('venue_name');
+  });
+});
+
+describe('buildEventDayReminderParams (event_day_pay) — 2-tuple, no name', () => {
+  it('binds {{1}} time + {{2}} venue (name appended to the venue)', () => {
+    expect(buildEventDayReminderParams(ctx())).toEqual({
+      params: ['21:00', 'אולמי הגן, דרך השלום 10, תל אביב'],
+    });
+  });
+
+  it('venue with no address → just the venue name', () => {
+    expect(buildEventDayReminderParams(ctx({ venue_address: null }))).toEqual({
+      params: ['21:00', 'אולמי הגן'],
+    });
+  });
+
+  it('ignores the guest name entirely (fixed greeting lives in the body)', () => {
+    // Same 2-tuple whether a name is present or not.
+    expect(buildEventDayReminderParams(ctx({}, 'דנה'))).toEqual(
+      buildEventDayReminderParams(ctx({}, null)),
+    );
+  });
+
+  it('fail-closed: unparseable date → missing event_date', () => {
+    expect(buildEventDayReminderParams(ctx({ event_date: 'not-a-date' }))).toEqual({
+      missing: ['event_date'],
+    });
+  });
+
+  it('fail-closed: no venue_name → missing venue_name', () => {
+    expect(buildEventDayReminderParams(ctx({ venue_name: null }))).toEqual({
+      missing: ['venue_name'],
+    });
+  });
+
+  it('buildBodyParams routes param_contract "event_day_pay" to the reminder builder', () => {
+    const viaDispatcher = buildBodyParams({
+      paramContract: 'event_day_pay',
+      family: 'generic',
+      ctx: ctx(),
+    });
+    expect(viaDispatcher).toEqual({ params: ['21:00', 'אולמי הגן, דרך השלום 10, תל אביב'] });
   });
 });

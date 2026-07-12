@@ -224,9 +224,14 @@ export async function sendCampaignWhatsApp(
   // columns simply mean "not configured" and the batch fail-closes into the
   // params_incomplete sink below.
   const isGift = messageKey === 'gift';
+  // Event-day reminder (message_key 'event_day_pay') reuses the SAME Bit
+  // link/button as gift: body = {{1}} time + {{2}} venue, and the payment link
+  // rides the identical URL button (event.gift_link_token → /g/[token]). It
+  // targets ONLY confirmed attendees (filtered below) and is non-billable.
+  const isEventDay = messageKey === 'event_day_pay';
   let giftUrl: string | null = null;
   let giftButtonToken: string | null = null;
-  if (isGift) {
+  if (isGift || isEventDay) {
     const { data: evFull } = await admin
       .from('events')
       .select('*')
@@ -245,14 +250,44 @@ export async function sendCampaignWhatsApp(
   // Bind outreach to the campaign's FROZEN authorized set: passing campaign.id
   // makes listSendableContacts INNER JOIN campaign_authorized_contacts, so a
   // send can never target a contact outside the set (reached ⊆ authorized).
-  const contacts = await listSendableContacts(campaign.event_id, campaign.id);
+  let contacts = await listSendableContacts(campaign.event_id, campaign.id);
+
+  // Event-day reminder targets ONLY guests who CONFIRMED (guests.status =
+  // 'attending'); intersect the sendable set with attending-linked contacts.
+  if (isEventDay && contacts.length > 0) {
+    const { data: attendingRows } = await admin
+      .from('guests')
+      .select('contact_id')
+      .eq('event_id', campaign.event_id)
+      .eq('status', 'attending')
+      .in('contact_id', contacts.map((c) => c.id));
+    const attending = new Set(
+      (attendingRows ?? []).map((g) => g.contact_id).filter((id): id is string => !!id),
+    );
+    contacts = contacts.filter((c) => attending.has(c.id));
+  }
+
+  // Event-day's URL button (the Bit token) is REQUIRED by Meta — a missing token
+  // fails the whole batch closed (mirrors the gift path's missing-link guard).
+  if (isEventDay && !giftButtonToken) {
+    await recordTemplateFailure(
+      admin,
+      campaign.id,
+      MANUAL_SEND_TOUCHPOINT_INDEX,
+      'params_incomplete',
+      messageKey,
+      'whatsapp',
+    );
+    return { sent: 0, skipped: contacts.length };
+  }
 
   // {{1}} source: ONE batched read (not per-contact) of the event's linked
   // guests, oldest-first so the first row seen per contact is the same
   // deterministic pick as the engine's `order created_at asc limit 1` (a
-  // family can share one phone → several guests per contact).
+  // family can share one phone → several guests per contact). Skipped for the
+  // event-day template, which carries no name (fixed "חברים ומשפחה יקרים").
   const guestNameByContact = new Map<string, string>();
-  if (contacts.length > 0) {
+  if (contacts.length > 0 && !isEventDay) {
     const { data: guestRows } = await admin
       .from('guests')
       .select('contact_id, full_name')
@@ -317,10 +352,10 @@ export async function sendCampaignWhatsApp(
       sendTemplate,
       config,
       built.params,
-      // The gift template's URL button gets the event's opaque token as its
+      // The gift / event-day URL button gets the event's opaque token as its
       // suffix (https://beta.kalfa.me/g/{token}); giftButtonToken is always
       // set here — a missing token surfaced as params_incomplete above.
-      isGift && giftButtonToken
+      (isGift || isEventDay) && giftButtonToken
         ? { urlButtonParam: giftButtonToken, headerImage: media.headerImage }
         : media.headerImage
           ? { headerImage: media.headerImage }

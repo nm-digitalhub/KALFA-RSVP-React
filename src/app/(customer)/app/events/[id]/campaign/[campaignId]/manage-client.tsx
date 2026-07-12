@@ -189,6 +189,7 @@ export function ManageClient({
     close: BoundAction;
     settle: BoundAction;
     sendGift: BoundAction;
+    sendEventDay: BoundAction;
   };
   isPast?: boolean;
 }) {
@@ -272,6 +273,13 @@ export function ManageClient({
             action={actions.sendGift}
             label="שליחת תזכורת מתנה"
             confirm="לשלוח תזכורת מתנה עם קישור הפייבוקס/ביט לכל המוזמנים עם הסכמה?"
+          />
+        ) : null}
+        {s === 'active' ? (
+          <ActionButton
+            action={actions.sendEventDay}
+            label="תזכורת יום האירוע + תשלום"
+            confirm="לשלוח תזכורת יום האירוע עם קישור לתשלום בביט — רק למי שאישרו הגעה?"
           />
         ) : null}
         {canSettle ? (

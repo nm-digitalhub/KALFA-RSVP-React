@@ -245,6 +245,43 @@ export async function sendGiftReminderAction(
   };
 }
 
+// Event-day reminder to CONFIRMED guests (guests.status='attending') + a Bit
+// payment button. Manual, non-billable — same gate model as the gift send
+// (sendCampaignWhatsApp re-checks outreach enabled + active campaign + approved
+// template; the confirmed-only filter and the Bit token live in that batch).
+export async function sendEventDayReminderAction(
+  eventId: string,
+  campaignId: string,
+  _prevState: FormState,
+  _formData: FormData,
+): Promise<FormState> {
+  let result: { sent: number; skipped: number };
+  try {
+    const campaign = await getCampaignForHold(campaignId);
+    if (!campaign || campaign.event_id !== eventId) {
+      return { error: 'הקמפיין לא נמצא.' };
+    }
+    await requireOwnedEvent(campaign.event_id);
+    result = await sendCampaignWhatsApp(campaignId, 'event_day_pay');
+  } catch (err) {
+    unstable_rethrow(err);
+    return { error: 'שליחת תזכורת יום האירוע נכשלה.' };
+  }
+  revalidatePath(`/app/events/${eventId}/campaign/${campaignId}`);
+  if (result.sent === 0) {
+    return {
+      error:
+        'לא נשלחו תזכורות — ודאו שקישור הביט מולא באירוע, שיש מאשרי הגעה, שהקמפיין פעיל ושתבנית יום האירוע מאושרת ופעילה.',
+    };
+  }
+  return {
+    notice:
+      result.skipped > 0
+        ? `נשלחו ${result.sent} תזכורות יום האירוע (${result.skipped} דולגו).`
+        : `נשלחו ${result.sent} תזכורות יום האירוע.`,
+  };
+}
+
 export async function settleCampaignAction(
   eventId: string,
   campaignId: string,

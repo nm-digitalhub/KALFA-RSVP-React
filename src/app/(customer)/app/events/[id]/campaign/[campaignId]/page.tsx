@@ -13,6 +13,7 @@ import {
   closeCampaignAction,
   settleCampaignAction,
   sendGiftReminderAction,
+  sendEventDayReminderAction,
 } from '../campaign-actions';
 import { ManageClient } from './manage-client';
 
@@ -54,6 +55,7 @@ export default async function CampaignManagePage({
   const close = closeCampaignAction.bind(null, eventId, campaignId);
   const settle = settleCampaignAction.bind(null, eventId, campaignId);
   const sendGift = sendGiftReminderAction.bind(null, eventId, campaignId);
+  const sendEventDay = sendEventDayReminderAction.bind(null, eventId, campaignId);
 
   return (
     <div className="space-y-6">
@@ -81,7 +83,7 @@ export default async function CampaignManagePage({
           }}
           summary={summary}
           delivery={delivery}
-          actions={{ activate, pause, close, settle, sendGift }}
+          actions={{ activate, pause, close, settle, sendGift, sendEventDay }}
           isPast={isPast}
         />
       </section>
