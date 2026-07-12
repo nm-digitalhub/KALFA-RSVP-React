@@ -478,6 +478,8 @@ export function buildBodyParams(args: {
       return buildBritTradReminderParams(args.ctx);
     case 'event_day_pay':
       return buildEventDayReminderParams(args.ctx);
+    case 'brit_trad_thankyou':
+      return buildBritTradThankyouParams(args.ctx);
     case 'thankyou':
       return buildThankyouParams(args.ctx);
     default:

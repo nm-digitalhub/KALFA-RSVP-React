@@ -547,6 +547,27 @@ describe('buildThankyouParams (thankyou) — 2-tuple, no venue/date, all 9 event
     });
     expect(viaDispatcher).toEqual({ params: ['ברית', 'נטלי קלפה'] });
   });
+
+  it('buildBodyParams routes param_contract "brit_trad_thankyou" to the personal brit thank-you builder', () => {
+    const viaDispatcher = buildBodyParams({
+      paramContract: 'brit_trad_thankyou',
+      family: 'generic',
+      ctx: {
+        event: {
+          name: 'ברית הבן של נטלי קלפה',
+          event_type: 'brit',
+          event_date: null,
+          venue_name: null,
+          venue_address: null,
+          celebrants: { parents: 'נטלי קלפה', host_composition: 'single_mother' },
+        },
+        guestFirstName: 'דנה',
+      },
+    });
+    expect(viaDispatcher).toEqual({
+      params: ['מעומק הלב — תודה שבאתם לחגוג עמי את שמחת ברית בני.', 'משפחת קלפה'],
+    });
+  });
 });
 
 describe('POST_EVENT_MESSAGE_KEYS', () => {
