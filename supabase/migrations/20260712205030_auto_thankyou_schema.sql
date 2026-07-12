@@ -117,6 +117,15 @@ create or replace function public.claim_thankyou_recipient(
   p_campaign uuid, p_contact uuid, p_event uuid
 ) returns text language plpgsql security invoker set search_path = '' as $$
 begin
+  -- Cheap guard: campaign_id/contact_id are nullable on contact_interactions,
+  -- and the partial unique index treats NULL as never-equal (two NULL claims
+  -- would never conflict with each other) — not reachable today (the caller
+  -- always passes non-null ids), but free insurance against ever inserting an
+  -- un-deduplicated claim row.
+  if p_campaign is null or p_contact is null then
+    return 'already_claimed';
+  end if;
+
   insert into public.contact_interactions (
     campaign_id, contact_id, event_id, channel, direction, kind,
     message_key, provider_id, billable

@@ -47,7 +47,7 @@ type ClaimThankyouRpc = (
 type LooseContactInteractionsFilter = {
   update: (v: unknown) => LooseContactInteractionsFilter;
   eq: (column: string, value: unknown) => LooseContactInteractionsFilter;
-} & PromiseLike<unknown>;
+} & PromiseLike<{ error: { message: string; code?: string } | null }>;
 
 // Send ONE approved WhatsApp template to ONE contact + log the outbound,
 // non-billable interaction (idempotent on UNIQUE(channel, provider_id)). Returns
@@ -459,12 +459,24 @@ export async function sendCampaignWhatsApp(
       // best-effort upsert already swallows (it never checks/throws on the
       // returned error). This explicit UPDATE, not that swallowed insert, is
       // what actually persists the accepted outcome onto the claim row.
-      await (admin.from('contact_interactions') as unknown as LooseContactInteractionsFilter)
+      const { error: finalizeErr } = await (
+        admin.from('contact_interactions') as unknown as LooseContactInteractionsFilter
+      )
         .update({ provider_id: ok.providerId })
         .eq('campaign_id', campaign.id)
         .eq('contact_id', contact.id)
         .eq('message_key', 'thankyou')
         .eq('direction', 'out');
+      // Visible, not silent: a failed finalize leaves the claim row's
+      // placeholder provider_id in place — the message WAS sent (accepted),
+      // but Meta's delivery-status webhook will never find this row again.
+      if (finalizeErr) {
+        console.error(
+          '[outreach] thankyou finalize provider_id update failed',
+          campaign.id,
+          finalizeErr.code,
+        );
+      }
     }
     if (ok.kind === 'accepted') sent++;
     else skipped++;

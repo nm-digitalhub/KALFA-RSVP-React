@@ -5,6 +5,9 @@ import { useActionState } from 'react';
 import { FormError, FormNotice } from '@/components/forms';
 import type { FormState } from '@/lib/validation/result';
 import { ilDateInputValue, ilTimeInputValue } from '@/lib/data/event-date';
+import { formatIsraelDateTime } from '@/lib/date';
+import { DateSelectIL } from '@/components/date-select-il';
+import { TimeSelect24 } from '@/components/time-select-24';
 import {
   OP_STATUS_LABELS,
   REMOVAL_REQUESTED_LABEL,
@@ -203,7 +206,7 @@ function ThankyouScheduleForm({
       </div>
       {alreadySent ? (
         <p className="text-sm text-muted-foreground">
-          הודעת התודה כבר נשלחה ({new Date(thankyou.sentAt!).toLocaleString('he-IL')}) — לא ניתן לשנות עוד.
+          הודעת התודה כבר נשלחה ({formatIsraelDateTime(thankyou.sentAt!)}) — לא ניתן לשנות עוד.
         </p>
       ) : (
         <>
@@ -219,20 +222,18 @@ function ThankyouScheduleForm({
           <div className="flex flex-wrap gap-3">
             <label className="text-sm">
               <span className="mb-1 block text-muted-foreground">תאריך</span>
-              <input
-                type="date"
+              <DateSelectIL
+                id="send_date"
                 name="send_date"
                 defaultValue={ilDateInputValue(thankyou.sendAt)}
-                className="rounded-md border border-border px-3 py-1.5 text-sm"
               />
             </label>
             <label className="text-sm">
               <span className="mb-1 block text-muted-foreground">שעה</span>
-              <input
-                type="time"
+              <TimeSelect24
+                id="send_time"
                 name="send_time"
                 defaultValue={ilTimeInputValue(thankyou.sendAt)}
-                className="rounded-md border border-border px-3 py-1.5 text-sm"
               />
             </label>
           </div>
