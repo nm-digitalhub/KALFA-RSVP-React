@@ -374,6 +374,7 @@ export async function executeStep(
       { id: contactId, normalized_phone: contact.normalized_phone },
       media.template,
       config,
+      tp.message_key,
       built.params,
       media.headerImage ? { headerImage: media.headerImage } : undefined,
     );
@@ -663,6 +664,7 @@ export async function prepareAndSendStep(
       { id: contactId, normalized_phone: contact.normalized_phone },
       media.template,
       config,
+      tp.message_key,
       built.params,
       media.headerImage ? { headerImage: media.headerImage } : undefined,
     );

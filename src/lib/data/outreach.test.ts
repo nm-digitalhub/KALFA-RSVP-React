@@ -8,7 +8,10 @@ vi.mock('@/lib/data/outreach-config', () => ({
 }));
 vi.mock('@/lib/data/message-templates', () => ({ resolveTemplateForEvent: vi.fn() }));
 vi.mock('@/lib/data/contacts', () => ({ listSendableContacts: vi.fn() }));
-vi.mock('@/lib/whatsapp/client', () => ({ sendWhatsAppTemplate: vi.fn() }));
+vi.mock('@/lib/whatsapp/client', () => ({
+  sendWhatsAppTemplate: vi.fn(),
+  sendWhatsAppMarketingTemplate: vi.fn(),
+}));
 
 import { createMockSupabase, type MockQueryBuilder } from '@/test/supabase-mock';
 import { createAdminClient } from '@/lib/supabase/admin';
@@ -18,12 +21,13 @@ import {
 } from '@/lib/data/outreach-config';
 import { resolveTemplateForEvent } from '@/lib/data/message-templates';
 import { listSendableContacts } from '@/lib/data/contacts';
-import { sendWhatsAppTemplate } from '@/lib/whatsapp/client';
+import { sendWhatsAppMarketingTemplate, sendWhatsAppTemplate } from '@/lib/whatsapp/client';
 import { GUEST_FIRST_NAME_FALLBACK } from '@/lib/whatsapp/template-spec';
 import {
   MANUAL_SEND_TOUCHPOINT_INDEX,
   recordTemplateFailure,
   sendCampaignWhatsApp,
+  sendOneWhatsApp,
 } from '@/lib/data/outreach';
 
 const config = {
@@ -187,7 +191,9 @@ describe('sendCampaignWhatsApp', () => {
     vi.mocked(getOutreachEnabled).mockResolvedValue(true);
     vi.mocked(getWhatsAppConfig).mockResolvedValue(config);
     vi.mocked(resolveTemplateForEvent).mockResolvedValue(genericTemplate);
-    vi.mocked(sendWhatsAppTemplate).mockResolvedValue({ kind: 'accepted', providerId: 'wamid.x' });
+    // 'thankyou' is a MARKETING_MESSAGE_KEYS key — routes through MM Lite
+    // (sendWhatsAppMarketingTemplate), NOT the regular sendWhatsAppTemplate.
+    vi.mocked(sendWhatsAppMarketingTemplate).mockResolvedValue({ kind: 'accepted', providerId: 'wamid.x' });
     vi.mocked(listSendableContacts).mockResolvedValue([
       { id: 'k1', normalized_phone: '+972501111111' },
     ]);
@@ -201,7 +207,8 @@ describe('sendCampaignWhatsApp', () => {
     const r = await sendCampaignWhatsApp('c1', 'thankyou');
 
     expect(r).toEqual({ sent: 1, skipped: 0 });
-    expect(sendWhatsAppTemplate).toHaveBeenCalledTimes(1);
+    expect(sendWhatsAppMarketingTemplate).toHaveBeenCalledTimes(1);
+    expect(sendWhatsAppTemplate).not.toHaveBeenCalled();
   });
 
   it('still skips a past event for a NON-allow-listed key even one character away (no accidental widening)', async () => {
@@ -371,6 +378,58 @@ describe('sendCampaignWhatsApp', () => {
 
     const r = await sendCampaignWhatsApp('c1', 'invite');
     expect(r).toEqual({ sent: 1, skipped: 1 });
+  });
+});
+
+// MM Lite routing — the messageKey argument decides the send transport:
+// MARKETING_MESSAGE_KEYS (currently only 'thankyou') go through
+// sendWhatsAppMarketingTemplate (`/marketing_messages`); every other key keeps
+// using sendWhatsAppTemplate (`/messages`), unchanged.
+describe('sendOneWhatsApp routing', () => {
+  const asAdmin = (client: unknown) => client as ReturnType<typeof createAdminClient>;
+  const contact = { id: 'k1', normalized_phone: '+972501111111' };
+  const campaign = { id: 'c1', event_id: 'e1' };
+
+  it("routes messageKey='thankyou' to sendWhatsAppMarketingTemplate, not sendWhatsAppTemplate", async () => {
+    vi.mocked(sendWhatsAppMarketingTemplate).mockResolvedValue({
+      kind: 'accepted',
+      providerId: 'wamid.mm',
+    });
+    const { client } = createMockSupabase<Row>({ data: null, error: null });
+
+    const r = await sendOneWhatsApp(
+      asAdmin(client),
+      campaign,
+      contact,
+      genericTemplate,
+      config,
+      'thankyou',
+    );
+
+    expect(sendWhatsAppMarketingTemplate).toHaveBeenCalledTimes(1);
+    expect(sendWhatsAppTemplate).not.toHaveBeenCalled();
+    expect(r).toEqual({ kind: 'accepted', providerId: 'wamid.mm' });
+  });
+
+  it("routes any other messageKey (e.g. 'invite') to sendWhatsAppTemplate, not sendWhatsAppMarketingTemplate", async () => {
+    vi.mocked(sendWhatsAppTemplate).mockResolvedValue({
+      kind: 'accepted',
+      providerId: 'wamid.reg',
+    });
+    const { client } = createMockSupabase<Row>({ data: null, error: null });
+
+    const r = await sendOneWhatsApp(
+      asAdmin(client),
+      campaign,
+      contact,
+      genericTemplate,
+      config,
+      'invite',
+    );
+
+    expect(sendWhatsAppTemplate).toHaveBeenCalledTimes(1);
+    expect(sendWhatsAppMarketingTemplate).not.toHaveBeenCalled();
+    expect(r).toEqual({ kind: 'accepted', providerId: 'wamid.reg' });
   });
 });
 

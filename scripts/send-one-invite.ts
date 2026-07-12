@@ -83,6 +83,7 @@ async function main() {
     { id: CONTACT_ID, normalized_phone: CONTACT_PHONE },
     sendTemplate,
     config,
+    MESSAGE_KEY,
     built.params,
     media.headerImage ? { headerImage: media.headerImage } : undefined,
   );

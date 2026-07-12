@@ -217,6 +217,17 @@ export function buildGiftParams(ctx: GiftParamsContext): GiftParamsResult {
 // post-event key is one Set entry, not a second `isPastEventDay` carve-out.
 export const POST_EVENT_MESSAGE_KEYS = new Set(['thankyou']);
 
+// message_keys whose approved template body was classified MARKETING by Meta
+// (verified live via Graph API `previous_category` — thank-you copy is
+// non-transactional, so Meta always classifies it MARKETING; there is no
+// UTILITY path for it). Routed through the MM Lite `/marketing_messages`
+// endpoint (sendWhatsAppMarketingTemplate) instead of `/messages` — same
+// mild-optimization stance as the plan (docs/plans not duplicated here):
+// MM Lite optimizes delivery WITHIN the 131049 marketing-frequency cap, it
+// does not lift the cap. No `category` column exists on message_templates, so
+// (like POST_EVENT_MESSAGE_KEYS) routing is by message_key, not DB data.
+export const MARKETING_MESSAGE_KEYS = new Set(['thankyou']);
+
 // Post-event thank-you (message_key 'thankyou'). Deliberately NO venue/date —
 // the event already happened, so those positions would only ever be stale.
 // Same max-deliverability stance as buildEventDayReminderParams: the greeting
