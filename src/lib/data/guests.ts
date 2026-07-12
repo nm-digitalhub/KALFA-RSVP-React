@@ -32,7 +32,12 @@ function throwFriendlyGuestError(error: { code?: string; message?: string; detai
 }
 import { normalizeGroupName, normalizeGuestName } from '@/lib/data/guest-import-shared';
 import { normalizePhone } from '@/lib/phone';
-import { pruneOrphanContact } from '@/lib/data/contacts';
+import {
+  pruneOrphanContact,
+  linkGuestContact,
+  reconcileCampaignSetForContact,
+} from '@/lib/data/contacts';
+import { isReconcileEnabled } from '@/lib/data/reconcile-config';
 import { logActivity } from '@/lib/data/activity';
 import { getGuestsPageSize } from '@/lib/constants';
 import type { Database } from '@/lib/supabase/types';
@@ -538,8 +543,13 @@ export async function deleteGuest(
     throw new Error('מחיקת המוזמן נכשלה');
   }
 
-  // Prune the now-possibly-orphaned contact (safe: keeps any with history).
+  // P0-1 (A6): reconcile the campaign set BEFORE pruning — the RPC decides
+  // remove-vs-pin (a serviced/billed contact stays pinned), and the hardened
+  // prune then refuses to delete a still-authorized member. Kill-switch gated.
   if (contactId) {
+    await reconcileCampaignSetForContact(eventId, 'delete', contactId);
+    // Prune the now-possibly-orphaned contact (safe: keeps any with history or
+    // set membership).
     await pruneOrphanContact(eventId, contactId);
   }
 
@@ -790,6 +800,30 @@ export async function bulkInsertGuests(
   }
 
   const inserted = data?.length ?? 0;
+
+  // P0-1 (A6): a bulk import into a LIVE campaign must link each new contact and
+  // admit it to the authorized set (up to funded_cap) instead of silently
+  // dropping it. Kill-switch gated (inert by default → import behaves exactly as
+  // before). Best-effort per row; the guests are already committed. `insert
+  // ... returning` preserves input order, so rows[i] ↔ data[i].
+  if (isReconcileEnabled() && inserted > 0 && data) {
+    for (let i = 0; i < data.length; i++) {
+      const phone = rows[i]?.phone ?? null;
+      if (!phone) continue;
+      try {
+        const { contactId } = await linkGuestContact(eventId, data[i].id, phone);
+        if (contactId) {
+          await reconcileCampaignSetForContact(eventId, 'add', contactId);
+        }
+      } catch (err) {
+        console.error(
+          `[contacts] bulk contact sync failed (event=${eventId} guest=${data[i].id}): ${
+            err instanceof Error ? err.message : 'unknown error'
+          }`,
+        );
+      }
+    }
+  }
 
   return inserted;
 }

@@ -14,7 +14,10 @@ import {
   updateGroup,
   deleteGroup,
 } from '@/lib/data/guests';
-import { linkGuestContact } from '@/lib/data/contacts';
+import {
+  linkGuestContact,
+  reconcileCampaignSetForContact,
+} from '@/lib/data/contacts';
 import { regenerateRsvpToken, revokeRsvpToken } from '@/lib/data/rsvp';
 import {
   createGuestSchema,
@@ -90,7 +93,21 @@ async function syncGuestContact(
   phone: string | null,
 ): Promise<void> {
   try {
-    await linkGuestContact(eventId, guestId, phone);
+    const { contactId, prevContactId } = await linkGuestContact(
+      eventId,
+      guestId,
+      phone,
+    );
+    // P0-1 (A6): reconcile the campaign authorized set for this link delta
+    // (kill-switch gated — inert until RECONCILE_AUTHORIZED_SET_ENABLED).
+    if (prevContactId && contactId && prevContactId !== contactId) {
+      await reconcileCampaignSetForContact(eventId, 'repoint', contactId, prevContactId);
+    } else if (contactId) {
+      await reconcileCampaignSetForContact(eventId, 'add', contactId);
+    } else if (prevContactId) {
+      // Phone removed/invalidated → the guest no longer points to its contact.
+      await reconcileCampaignSetForContact(eventId, 'delete', prevContactId);
+    }
   } catch (err) {
     // Next control-flow signals must propagate, never be swallowed.
     unstable_rethrow(err);

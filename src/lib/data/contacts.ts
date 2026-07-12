@@ -4,6 +4,7 @@ import { requireEventAccess } from '@/lib/data/events';
 import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { normalizePhone } from '@/lib/phone';
+import { isReconcileEnabled } from '@/lib/data/reconcile-config';
 import type { Database } from '@/lib/supabase/types';
 
 // "Contacts" = unique reachable phones per event (§2–3). Built from the event's
@@ -118,7 +119,7 @@ export async function linkGuestContact(
   eventId: string,
   guestId: string,
   phone: string | null,
-): Promise<void> {
+): Promise<{ contactId: string | null; prevContactId: string | null }> {
   await requireEventAccess(eventId, 'contacts', 'edit');
   const admin = createAdminClient();
   const e164 = normalizePhone(phone);
@@ -159,6 +160,10 @@ export async function linkGuestContact(
   if (prevContactId && prevContactId !== contactId) {
     await pruneOrphanContact(eventId, prevContactId);
   }
+
+  // Return the link delta so the caller can reconcile the campaign authorized
+  // set (P0-1 A6). Callers that predate reconciliation simply ignore the result.
+  return { contactId, prevContactId };
 }
 
 // Prune a contact that is no longer referenced by ANY current guest of the event
@@ -196,6 +201,19 @@ export async function pruneOrphanContact(
     .eq('contact_id', contactId);
   if ((interactions ?? 0) > 0) return false;
 
+  // P0-1 (A6): a member of a campaign's frozen authorized set must never be
+  // hard-deleted here — the FK's ON DELETE would silently evict it from the set
+  // (the root of the repoint/orphan mis-charge bug). Kill-switch gated: with
+  // reconciliation off, behavior is exactly as before. reconcile_authorized_set
+  // is the ONLY path that removes a contact from the set.
+  if (isReconcileEnabled()) {
+    const { count: setMember } = await admin
+      .from('campaign_authorized_contacts')
+      .select('contact_id', { count: 'exact', head: true })
+      .eq('contact_id', contactId);
+    if ((setMember ?? 0) > 0) return false;
+  }
+
   // Truly orphaned + history-free → safe to delete.
   const { error } = await admin
     .from('contacts')
@@ -204,6 +222,55 @@ export async function pruneOrphanContact(
     .eq('event_id', eventId);
   if (error) throw new Error('מחיקת איש קשר יתום נכשלה');
   return true;
+}
+
+// P0-1 (A6): reconcile a campaign's authorized recipient SET after a guest
+// mutation (add / repoint / delete of a contact). Delegates the money-safe
+// decision (admit within funded_cap, exposed-or-billed pin, audit) to the
+// reconcile_authorized_set RPC, which runs under the same campaigns FOR UPDATE
+// lock as billing. KILL-SWITCH: inert unless RECONCILE_AUTHORIZED_SET_ENABLED —
+// so the default build behaves exactly as before P0-1. Best-effort (the guest
+// mutation is already committed): errors and ceiling_full/not_eligible are
+// logged (no PII), never thrown. Callers must have already verified event
+// access (this is an internal service-role helper, like pruneOrphanContact).
+export async function reconcileCampaignSetForContact(
+  eventId: string,
+  op: 'add' | 'repoint' | 'delete',
+  contactId: string,
+  prevContactId?: string | null,
+): Promise<void> {
+  if (!isReconcileEnabled()) return;
+  const admin = createAdminClient();
+
+  // Resolve the operational campaign(s) for this event. The app invariant is one
+  // per event, but the schema does not enforce it — iterate defensively.
+  const { data: campaigns, error: campErr } = await admin
+    .from('campaigns')
+    .select('id')
+    .eq('event_id', eventId)
+    .in('status', ['approved', 'scheduled', 'active', 'paused']);
+  if (campErr || !campaigns || campaigns.length === 0) return;
+
+  for (const c of campaigns) {
+    const { data: outcome, error } = await admin.rpc('reconcile_authorized_set', {
+      p_event: eventId,
+      p_campaign: c.id,
+      p_op: op,
+      p_contact: contactId,
+      p_prev_contact: prevContactId ?? undefined,
+    });
+    if (error) {
+      console.error(
+        `[reconcile] rpc failed (event=${eventId} campaign=${c.id} op=${op}): ${error.message}`,
+      );
+    } else if (outcome === 'ceiling_full' || outcome === 'not_eligible') {
+      // Surfaced, not silent: the owner may need a top-up (ceiling_full) or the
+      // contact was ineligible (foreign/opted-out/no live guest).
+      console.warn(
+        `[reconcile] ${outcome} (event=${eventId} campaign=${c.id} op=${op})`,
+      );
+    }
+  }
 }
 
 // Count of unique reachable contacts for an event, derived from the current

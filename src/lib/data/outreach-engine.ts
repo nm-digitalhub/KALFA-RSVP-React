@@ -16,6 +16,7 @@ import {
 import { recordReached, type ReachedArgs } from '@/lib/data/billing';
 import { setContactOpStatus } from '@/lib/data/interactions';
 import { isPastEventDay } from '@/lib/data/event-date';
+import { isReconcileEnabled } from '@/lib/data/reconcile-config';
 import {
   detId,
   stepPlanRev,
@@ -610,6 +611,19 @@ export async function prepareAndSendStep(
   if (!contact) return { kind: 'skip', reason: 'contact_missing' };
   const terminal = terminalReasonFor(contact, tp.channel);
   if (terminal) return { kind: 'terminal', reason: terminal };
+
+  // P0-1 (A6): a contact PINNED in the authorized set (exposed/billed) but no
+  // longer referenced by a live guest keeps its billing legitimacy for a late
+  // callback, but must receive NO new outbound touchpoints. Kill-switch gated —
+  // inert (no extra query) unless reconciliation is enabled.
+  if (isReconcileEnabled()) {
+    const { count: liveGuest } = await admin
+      .from('guests')
+      .select('id', { count: 'exact', head: true })
+      .eq('event_id', eventId)
+      .eq('contact_id', contactId);
+    if ((liveGuest ?? 0) === 0) return { kind: 'skip', reason: 'no_live_guest' };
+  }
 
   if (tp.channel === 'whatsapp') {
     const config = await getWhatsAppConfig();
