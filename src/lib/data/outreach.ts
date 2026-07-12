@@ -450,11 +450,15 @@ export async function sendCampaignWhatsApp(
     if (isThankyou && ok.kind === 'accepted') {
       // Finalize the claim row: move the REAL provider_id onto it so Meta's
       // delivery-status webhook can find it, exactly like every other
-      // message_key. sendOneWhatsApp's OWN insert attempt (above) targets a
-      // DIFFERENT conflict key (channel, provider_id) and silently no-ops
-      // against the SAME row (the thankyou partial unique index rejects it,
-      // and that error is swallowed by sendOneWhatsApp's existing best-effort
-      // stance) — this explicit UPDATE is what actually persists the outcome.
+      // message_key. sendOneWhatsApp's OWN insert attempt (above) tries to
+      // insert a SECOND row for the same (campaign_id, contact_id) — its own
+      // ON CONFLICT clause only names (channel, provider_id) as the arbiter,
+      // which does NOT cover the thankyou partial unique index, so that
+      // second insert genuinely raises a 23505 unique-violation (a real DB
+      // error, not a silent no-op) — which sendOneWhatsApp's existing
+      // best-effort upsert already swallows (it never checks/throws on the
+      // returned error). This explicit UPDATE, not that swallowed insert, is
+      // what actually persists the accepted outcome onto the claim row.
       await (admin.from('contact_interactions') as unknown as LooseContactInteractionsFilter)
         .update({ provider_id: ok.providerId })
         .eq('campaign_id', campaign.id)
