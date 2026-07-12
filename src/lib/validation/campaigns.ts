@@ -31,3 +31,19 @@ export const whatsappSendSchema = z.object({
   message_key: z.string().trim().min(1, { error: 'נא לבחור תבנית הודעה' }),
 });
 export type WhatsappSendInput = z.infer<typeof whatsappSendSchema>;
+
+// Auto-thankyou owner controls: opt-in toggle + an editable Israel wall-clock
+// date/time (composed server-side via ilWallTimeToIso, same as event_date).
+// Both empty together clears the schedule (the sweep just skips a null); a
+// partial pair (one filled, one blank) is rejected rather than guessed.
+export const thankyouScheduleSchema = z
+  .object({
+    auto_enabled: z.boolean(),
+    send_date: z.string().trim(),
+    send_time: z.string().trim(),
+  })
+  .refine((v) => (v.send_date === '') === (v.send_time === ''), {
+    error: 'יש למלא גם תאריך וגם שעה, או להשאיר את שניהם ריקים',
+    path: ['send_date'],
+  });
+export type ThankyouScheduleInput = z.infer<typeof thankyouScheduleSchema>;

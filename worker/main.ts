@@ -44,6 +44,7 @@ import {
   markWebhookEventFailed,
 } from '@/lib/data/webhooks';
 import { processWebhookEvent } from '@/lib/data/webhook-processing';
+import { runThankyouSweep } from '@/lib/data/auto-thankyou';
 
 // Standalone process — load .env.local ourselves (Next is not running here).
 function loadEnv(): void {
@@ -278,6 +279,18 @@ async function handleArm(boss: PgBoss): Promise<void> {
   }
 }
 
+// Auto-thankyou sweep: same periodic-tick idiom as handleArm above, not a
+// per-campaign delayed job — runThankyouSweep re-reads eligibility (opt-in +
+// scheduled-at + campaign/event status) from the DB on every tick, so an
+// owner's toggle/reschedule just takes effect on the next 5-minute pass; there
+// is nothing pg-boss-side to register or cancel. Gated by the same master
+// outreach_enabled switch as the drip engine (sendCampaignWhatsApp re-checks
+// it anyway — this just skips the DB scan while outreach is globally off).
+async function handleThankyouSweep(): Promise<void> {
+  if (!(await getOutreachEnabled())) return;
+  await runThankyouSweep();
+}
+
 async function main(): Promise<void> {
   const boss = new PgBoss({
     host: process.env.SUPABASE_DB_HOST,
@@ -299,7 +312,16 @@ async function main(): Promise<void> {
   await boss.start();
 
   for (const q of Object.values(QUEUES)) {
-    await boss.createQueue(q);
+    // thankyouSweep: 'singleton' policy — only 1 job may be ACTIVE at a time
+    // (unlimited queued). Bug fix (thankyou-review, high): without this, an
+    // overlapping cron tick (the previous sweep still running past the
+    // 5-minute interval) could run concurrently with a new one — two
+    // processes both reading "not yet claimed" for the same contact before
+    // either writes a claim row. The atomic claim (contact_interactions
+    // partial UNIQUE index) already makes a double-SEND impossible even under
+    // overlap, but this closes the race at its source instead of relying on
+    // a single defense layer.
+    await boss.createQueue(q, q === QUEUES.thankyouSweep ? { policy: 'singleton' } : undefined);
   }
 
   await boss.work(QUEUES.step, async (jobs: StepJob[]) => {
@@ -317,10 +339,14 @@ async function main(): Promise<void> {
   await boss.work(QUEUES.webhook, async () => {
     await handleWebhook();
   });
+  await boss.work(QUEUES.thankyouSweep, async () => {
+    await handleThankyouSweep();
+  });
 
   await boss.schedule(QUEUES.arm, '* * * * *');
   await boss.schedule(QUEUES.sweeper, '*/5 * * * *');
   await boss.schedule(QUEUES.webhook, '* * * * *');
+  await boss.schedule(QUEUES.thankyouSweep, '*/5 * * * *');
 
   console.log('[kalfa-worker] started — queues + schedules up');
 

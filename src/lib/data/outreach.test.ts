@@ -67,6 +67,13 @@ const genericTemplate = {
   channel: 'whatsapp' as const,
 };
 
+const thankyouTemplate = {
+  name: 'kalfa_event_thankyou_v1',
+  language: 'he',
+  channel: 'whatsapp' as const,
+  paramContract: 'thankyou',
+};
+
 type Row = Record<string, unknown>;
 function mockAdmin(campaign: Row | null) {
   const { client, builder } = createMockSupabase<Row>({
@@ -107,7 +114,7 @@ describe('sendCampaignWhatsApp', () => {
   it('does nothing when outreach is disabled (fail-closed)', async () => {
     vi.mocked(getOutreachEnabled).mockResolvedValue(false);
     const r = await sendCampaignWhatsApp('c1', 'rsvp_invite');
-    expect(r).toEqual({ sent: 0, skipped: 0 });
+    expect(r).toEqual({ sent: 0, skipped: 0, blocked: true });
     expect(sendWhatsAppTemplate).not.toHaveBeenCalled();
   });
 
@@ -115,7 +122,7 @@ describe('sendCampaignWhatsApp', () => {
     vi.mocked(getOutreachEnabled).mockResolvedValue(true);
     vi.mocked(getWhatsAppConfig).mockResolvedValue(null);
     const r = await sendCampaignWhatsApp('c1', 'rsvp_invite');
-    expect(r).toEqual({ sent: 0, skipped: 0 });
+    expect(r).toEqual({ sent: 0, skipped: 0, blocked: true });
     expect(sendWhatsAppTemplate).not.toHaveBeenCalled();
   });
 
@@ -163,7 +170,7 @@ describe('sendCampaignWhatsApp', () => {
 
     const r = await sendCampaignWhatsApp('c1', 'rsvp_invite');
 
-    expect(r).toEqual({ sent: 0, skipped: 0 });
+    expect(r).toEqual({ sent: 0, skipped: 0, blocked: true });
     expect(sendWhatsAppTemplate).not.toHaveBeenCalled();
   });
 
@@ -183,7 +190,7 @@ describe('sendCampaignWhatsApp', () => {
 
     const r = await sendCampaignWhatsApp('c1', 'rsvp_invite');
 
-    expect(r).toEqual({ sent: 0, skipped: 0 });
+    expect(r).toEqual({ sent: 0, skipped: 0, blocked: true });
     expect(sendWhatsAppTemplate).not.toHaveBeenCalled();
   });
 
@@ -197,7 +204,9 @@ describe('sendCampaignWhatsApp', () => {
     vi.mocked(listSendableContacts).mockResolvedValue([
       { id: 'k1', normalized_phone: '+972501111111' },
     ]);
-    const { builder } = mockAdmin(null);
+    const { client, builder } = mockAdmin(null);
+    // The atomic claim (thankyou-only) — 'claimed' lets the send proceed.
+    client.rpc.mockResolvedValue({ data: 'claimed', error: null });
     sequenceRun(
       builder,
       { ...bindableEventRow, event_date: '2020-01-01T00:00:00+00:00' }, // 6 years past
@@ -206,7 +215,7 @@ describe('sendCampaignWhatsApp', () => {
 
     const r = await sendCampaignWhatsApp('c1', 'thankyou');
 
-    expect(r).toEqual({ sent: 1, skipped: 0 });
+    expect(r).toEqual({ sent: 1, skipped: 0, blocked: false });
     expect(sendWhatsAppMarketingTemplate).toHaveBeenCalledTimes(1);
     expect(sendWhatsAppTemplate).not.toHaveBeenCalled();
   });
@@ -225,7 +234,7 @@ describe('sendCampaignWhatsApp', () => {
 
     const r = await sendCampaignWhatsApp('c1', 'thankyou2');
 
-    expect(r).toEqual({ sent: 0, skipped: 0 });
+    expect(r).toEqual({ sent: 0, skipped: 0, blocked: true });
     expect(sendWhatsAppTemplate).not.toHaveBeenCalled();
   });
 
@@ -248,7 +257,7 @@ describe('sendCampaignWhatsApp', () => {
 
     const r = await sendCampaignWhatsApp('c1', 'invite');
 
-    expect(r).toEqual({ sent: 2, skipped: 0 });
+    expect(r).toEqual({ sent: 2, skipped: 0, blocked: false });
     // Resolution is event-type-aware (the wedding variant swap happens there).
     expect(resolveTemplateForEvent).toHaveBeenCalledWith('invite', 'wedding');
     // ONE batched guest-names read for the whole set — not per contact.
@@ -310,7 +319,7 @@ describe('sendCampaignWhatsApp', () => {
 
     const r = await sendCampaignWhatsApp('c1', 'invite');
 
-    expect(r).toEqual({ sent: 1, skipped: 0 });
+    expect(r).toEqual({ sent: 1, skipped: 0, blocked: false });
     expect(vi.mocked(sendWhatsAppTemplate).mock.calls[0][1].bodyParams).toEqual([
       'דנה',
       'דוד לוי',
@@ -338,7 +347,7 @@ describe('sendCampaignWhatsApp', () => {
 
     const r = await sendCampaignWhatsApp('c1', 'invite');
 
-    expect(r).toEqual({ sent: 0, skipped: 2 });
+    expect(r).toEqual({ sent: 0, skipped: 2, blocked: false });
     expect(sendWhatsAppTemplate).not.toHaveBeenCalled();
     // The §5.6 sink wiring on the MANUAL path (plan: "אותו חיווט גם במסלול
     // הידני"): the missing-params verdict is event-level, so one durable
@@ -377,7 +386,228 @@ describe('sendCampaignWhatsApp', () => {
     ]);
 
     const r = await sendCampaignWhatsApp('c1', 'invite');
-    expect(r).toEqual({ sent: 1, skipped: 1 });
+    expect(r).toEqual({ sent: 1, skipped: 1, blocked: false });
+  });
+});
+
+// Auto-thankyou 131049 mitigation (plan §2.1/§2.2, hardened after
+// thankyou-review BUG #1): the CORE guard is an ATOMIC claim-before-send via
+// the claim_thankyou_recipient RPC (supabase/migrations/20260712205030_auto_
+// thankyou_schema.sql), backed by a partial UNIQUE index on
+// contact_interactions(campaign_id, contact_id) WHERE message_key='thankyou'.
+// A read-then-filter check (read prior rows, then decide) has a check-then-
+// act race between the manual button and the sweep, or between two
+// overlapping sweep ticks — this replaced that with an atomic reserve. The
+// SQL-level uniqueness itself is exercised at migration-apply time, not here;
+// these tests verify the APPLICATION respects the RPC's verdict correctly.
+// Await order for messageKey='thankyou': campaign, event (first read),
+// attending-guests filter, guest-names lookup, then PER CONTACT: the claim
+// RPC (a separate client.rpc call, not part of the `.then` sequence) → send.
+describe('sendCampaignWhatsApp — thankyou (auto-thankyou 131049 mitigation)', () => {
+  function sequenceThankyouRun(
+    builder: MockQueryBuilder<Row>,
+    eventRow: Row,
+    attendingRows: Array<{ contact_id: string }>,
+    guestRows: Array<{ contact_id: string; full_name: string }>,
+  ) {
+    return vi
+      .spyOn(builder, 'then')
+      .mockImplementationOnce((f) =>
+        (f as (v: unknown) => unknown)({ data: activeCampaignRow, error: null }),
+      )
+      .mockImplementationOnce((f) =>
+        (f as (v: unknown) => unknown)({ data: eventRow, error: null }),
+      )
+      .mockImplementationOnce((f) =>
+        (f as (v: unknown) => unknown)({ data: attendingRows, error: null }),
+      )
+      .mockImplementationOnce((f) =>
+        (f as (v: unknown) => unknown)({ data: guestRows, error: null }),
+      );
+  }
+
+  it('skips a contact when claim_thankyou_recipient reports already_claimed (lost the race / already sent)', async () => {
+    vi.mocked(getOutreachEnabled).mockResolvedValue(true);
+    vi.mocked(getWhatsAppConfig).mockResolvedValue(config);
+    vi.mocked(resolveTemplateForEvent).mockResolvedValue(thankyouTemplate);
+    vi.mocked(sendWhatsAppMarketingTemplate).mockResolvedValue({
+      kind: 'accepted',
+      providerId: 'wamid.ty',
+    });
+    vi.mocked(listSendableContacts).mockResolvedValue([
+      { id: 'k1', normalized_phone: '+972501111111' },
+      { id: 'k2', normalized_phone: '+972502222222' },
+    ]);
+    const { client, builder } = mockAdmin(null);
+    // k1's claim lost the race (already claimed elsewhere); k2's succeeds.
+    client.rpc
+      .mockResolvedValueOnce({ data: 'already_claimed', error: null })
+      .mockResolvedValueOnce({ data: 'claimed', error: null });
+    sequenceThankyouRun(
+      builder,
+      bindableEventRow,
+      [{ contact_id: 'k1' }, { contact_id: 'k2' }], // both attending
+      [
+        { contact_id: 'k1', full_name: 'דנה כהן' },
+        { contact_id: 'k2', full_name: 'יוסי לוי' },
+      ],
+    );
+
+    const r = await sendCampaignWhatsApp('c1', 'thankyou');
+
+    expect(r).toEqual({ sent: 1, skipped: 1, blocked: false });
+    expect(sendWhatsAppMarketingTemplate).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(sendWhatsAppMarketingTemplate).mock.calls[0][1].to).toBe(
+      '+972502222222',
+    );
+  });
+
+  it('calls claim_thankyou_recipient with the correct campaign/contact/event ids BEFORE sending', async () => {
+    vi.mocked(getOutreachEnabled).mockResolvedValue(true);
+    vi.mocked(getWhatsAppConfig).mockResolvedValue(config);
+    vi.mocked(resolveTemplateForEvent).mockResolvedValue(thankyouTemplate);
+    vi.mocked(sendWhatsAppMarketingTemplate).mockResolvedValue({
+      kind: 'accepted',
+      providerId: 'wamid.ty',
+    });
+    vi.mocked(listSendableContacts).mockResolvedValue([
+      { id: 'k1', normalized_phone: '+972501111111' },
+    ]);
+    const { client, builder } = mockAdmin(null);
+    client.rpc.mockResolvedValue({ data: 'claimed', error: null });
+    sequenceThankyouRun(
+      builder,
+      bindableEventRow,
+      [{ contact_id: 'k1' }],
+      [{ contact_id: 'k1', full_name: 'דנה כהן' }],
+    );
+
+    await sendCampaignWhatsApp('c1', 'thankyou');
+
+    expect(client.rpc).toHaveBeenCalledWith('claim_thankyou_recipient', {
+      p_campaign: 'c1',
+      p_contact: 'k1',
+      p_event: 'e1',
+    });
+    // The claim MUST happen before the provider is ever called.
+    const claimOrder = client.rpc.mock.invocationCallOrder[0];
+    const sendOrder = vi.mocked(sendWhatsAppMarketingTemplate).mock.invocationCallOrder[0];
+    expect(claimOrder).toBeLessThan(sendOrder);
+  });
+
+  it('targets ONLY attending guests, same audience rule as event-day', async () => {
+    vi.mocked(getOutreachEnabled).mockResolvedValue(true);
+    vi.mocked(getWhatsAppConfig).mockResolvedValue(config);
+    vi.mocked(resolveTemplateForEvent).mockResolvedValue(thankyouTemplate);
+    vi.mocked(sendWhatsAppMarketingTemplate).mockResolvedValue({
+      kind: 'accepted',
+      providerId: 'wamid.ty',
+    });
+    vi.mocked(listSendableContacts).mockResolvedValue([
+      { id: 'k1', normalized_phone: '+972501111111' },
+      { id: 'k2', normalized_phone: '+972502222222' }, // NOT attending
+    ]);
+    const { client, builder } = mockAdmin(null);
+    client.rpc.mockResolvedValue({ data: 'claimed', error: null });
+    sequenceThankyouRun(
+      builder,
+      bindableEventRow,
+      [{ contact_id: 'k1' }], // only k1 confirmed attending
+      [{ contact_id: 'k1', full_name: 'דנה כהן' }],
+    );
+
+    const r = await sendCampaignWhatsApp('c1', 'thankyou');
+
+    expect(r).toEqual({ sent: 1, skipped: 0, blocked: false });
+    expect(sendWhatsAppMarketingTemplate).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(sendWhatsAppMarketingTemplate).mock.calls[0][1].to).toBe(
+      '+972501111111',
+    );
+  });
+
+  it('tags the logged outbound interaction with message_key="thankyou" (enables future dedup)', async () => {
+    vi.mocked(getOutreachEnabled).mockResolvedValue(true);
+    vi.mocked(getWhatsAppConfig).mockResolvedValue(config);
+    vi.mocked(resolveTemplateForEvent).mockResolvedValue(thankyouTemplate);
+    vi.mocked(sendWhatsAppMarketingTemplate).mockResolvedValue({
+      kind: 'accepted',
+      providerId: 'wamid.ty',
+    });
+    vi.mocked(listSendableContacts).mockResolvedValue([
+      { id: 'k1', normalized_phone: '+972501111111' },
+    ]);
+    const { client, builder } = mockAdmin(null);
+    client.rpc.mockResolvedValue({ data: 'claimed', error: null });
+    sequenceThankyouRun(
+      builder,
+      bindableEventRow,
+      [{ contact_id: 'k1' }],
+      [{ contact_id: 'k1', full_name: 'דנה כהן' }],
+    );
+
+    await sendCampaignWhatsApp('c1', 'thankyou');
+
+    expect(builder.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({ message_key: 'thankyou' }),
+      { onConflict: 'channel,provider_id', ignoreDuplicates: true },
+    );
+  });
+
+  // Bug fix (thankyou-review, high — BUG #1): on an accepted send, the claim
+  // row's placeholder provider_id must be finalized to the REAL one, or
+  // Meta's delivery-status webhook (which matches by provider_id) can never
+  // find this row again.
+  it('finalizes the claim row with the REAL provider_id on an accepted send', async () => {
+    vi.mocked(getOutreachEnabled).mockResolvedValue(true);
+    vi.mocked(getWhatsAppConfig).mockResolvedValue(config);
+    vi.mocked(resolveTemplateForEvent).mockResolvedValue(thankyouTemplate);
+    vi.mocked(sendWhatsAppMarketingTemplate).mockResolvedValue({
+      kind: 'accepted',
+      providerId: 'wamid.real',
+    });
+    vi.mocked(listSendableContacts).mockResolvedValue([
+      { id: 'k1', normalized_phone: '+972501111111' },
+    ]);
+    const { client, builder } = mockAdmin(null);
+    client.rpc.mockResolvedValue({ data: 'claimed', error: null });
+    sequenceThankyouRun(
+      builder,
+      bindableEventRow,
+      [{ contact_id: 'k1' }],
+      [{ contact_id: 'k1', full_name: 'דנה כהן' }],
+    );
+
+    await sendCampaignWhatsApp('c1', 'thankyou');
+
+    expect(builder.update).toHaveBeenCalledWith({ provider_id: 'wamid.real' });
+    expect(builder.eq).toHaveBeenCalledWith('message_key', 'thankyou');
+  });
+
+  it('does NOT finalize (no update call) when the send is not accepted', async () => {
+    vi.mocked(getOutreachEnabled).mockResolvedValue(true);
+    vi.mocked(getWhatsAppConfig).mockResolvedValue(config);
+    vi.mocked(resolveTemplateForEvent).mockResolvedValue(thankyouTemplate);
+    vi.mocked(sendWhatsAppMarketingTemplate).mockResolvedValue({
+      kind: 'unknown',
+      reason: 'provider_error',
+      providerCode: '131049',
+    });
+    vi.mocked(listSendableContacts).mockResolvedValue([
+      { id: 'k1', normalized_phone: '+972501111111' },
+    ]);
+    const { client, builder } = mockAdmin(null);
+    client.rpc.mockResolvedValue({ data: 'claimed', error: null });
+    sequenceThankyouRun(
+      builder,
+      bindableEventRow,
+      [{ contact_id: 'k1' }],
+      [{ contact_id: 'k1', full_name: 'דנה כהן' }],
+    );
+
+    const r = await sendCampaignWhatsApp('c1', 'thankyou');
+
+    expect(r).toEqual({ sent: 0, skipped: 1, blocked: false });
+    expect(builder.update).not.toHaveBeenCalled();
   });
 });
 

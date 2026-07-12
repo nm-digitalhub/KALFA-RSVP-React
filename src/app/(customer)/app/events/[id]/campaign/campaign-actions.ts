@@ -12,15 +12,17 @@ import {
   closeCampaign,
   cancelCampaign,
   getCampaignForHold,
+  updateThankyouSchedule,
 } from '@/lib/data/campaigns';
 import { requireOwnedEvent, publishEvent, closeEvent } from '@/lib/data/events';
 import { sendCampaignWhatsApp } from '@/lib/data/outreach';
+import { ilWallTimeToIso } from '@/lib/data/event-date';
 import { closeCampaignAndCharge } from '@/lib/data/close-charge';
 import { recordSignedAgreement } from '@/lib/data/agreements';
 import { getProfile } from '@/lib/data/profiles';
 import { requestOtp } from '@/lib/data/otp';
 import { getActiveAgreementDoc } from '@/lib/data/agreements-doc';
-import { approveCampaignSchema } from '@/lib/validation/campaigns';
+import { approveCampaignSchema, thankyouScheduleSchema } from '@/lib/validation/campaigns';
 import type { FormState } from '@/lib/validation/result';
 
 const OTP_PURPOSE = 'agreement_signing';
@@ -423,4 +425,40 @@ export async function cancelCampaignAction(
   }
   revalidatePath(`/app/events/${eventId}/campaign/${campaignId}`);
   return { notice: 'הקמפיין בוטל' };
+}
+
+// Auto-thankyou owner controls: opt-in toggle + editable schedule. Checkbox
+// semantics: the input is always rendered, so key presence IS the checked
+// state (matches updateEventAction's show_meal_pref convention). Ownership is
+// re-verified inside updateThankyouSchedule; the "already sent" guard there
+// surfaces as a plain error rather than a silent no-op.
+export async function updateThankyouScheduleAction(
+  eventId: string,
+  campaignId: string,
+  _prevState: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  const parsed = thankyouScheduleSchema.safeParse({
+    auto_enabled: formData.has('auto_enabled'),
+    send_date: formData.get('send_date') ?? '',
+    send_time: formData.get('send_time') ?? '',
+  });
+  if (!parsed.success) {
+    return { fieldErrors: parsed.error.flatten().fieldErrors };
+  }
+  const { auto_enabled, send_date, send_time } = parsed.data;
+
+  try {
+    await updateThankyouSchedule(campaignId, {
+      autoEnabled: auto_enabled,
+      sendAt: send_date && send_time ? ilWallTimeToIso(send_date, send_time) : null,
+    });
+  } catch (err) {
+    unstable_rethrow(err);
+    return {
+      error: err instanceof Error ? err.message : 'עדכון לוח הזמנים נכשל. נסו שוב.',
+    };
+  }
+  revalidatePath(`/app/events/${eventId}/campaign/${campaignId}`);
+  return { notice: 'לוח הזמנים לתודה עודכן' };
 }

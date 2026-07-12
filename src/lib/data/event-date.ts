@@ -116,3 +116,19 @@ export function ilDateInputValue(value: string | null): string {
   if (Number.isNaN(ms)) return '';
   return israelCalendarDay(ms);
 }
+
+const DAY_MS = 86_400_000;
+
+// Auto-thankyou default schedule: the morning after the event's Israel
+// calendar day, ~10:00 local (a reader-active hour, not the middle of the
+// night). Composed from the two primitives above so DST is handled the same
+// way everywhere else in the app — no hand-rolled offset math here either.
+// Returns null for an unparseable/missing event_date (the caller must decide
+// what "no schedule yet" means; this never guesses).
+export function defaultThankyouSendAt(eventDate: string | null): string | null {
+  if (!eventDate) return null;
+  const eventMs = Date.parse(eventDate);
+  if (Number.isNaN(eventMs)) return null;
+  const nextDay = israelCalendarDay(eventMs + DAY_MS);
+  return ilWallTimeToIso(nextDay, '10:00');
+}

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { ilDateInputValue, ilTimeInputValue } from './event-date';
+import { defaultThankyouSendAt, ilDateInputValue, ilTimeInputValue } from './event-date';
 
 describe('ilDateInputValue', () => {
   it('passes a plain date column value through unchanged', () => {
@@ -30,5 +30,35 @@ describe('ilTimeInputValue', () => {
   it('treats legacy date-only (midnight UTC) values as "no time set"', () => {
     expect(ilTimeInputValue('2026-07-12')).toBe('');
     expect(ilTimeInputValue('2026-07-12T00:00:00+00:00')).toBe('');
+  });
+});
+
+describe('defaultThankyouSendAt', () => {
+  it('resolves to 10:00 the morning after the event, IDT (summer, +03:00)', () => {
+    // Event on 2026-07-12 (Israel day) → default fires 2026-07-13 10:00 IDT
+    // = 07:00Z.
+    const iso = defaultThankyouSendAt('2026-07-12T17:00:00+03:00');
+    expect(iso).toBe('2026-07-13T10:00:00+03:00');
+    expect(new Date(iso!).toISOString()).toBe('2026-07-13T07:00:00.000Z');
+  });
+
+  it('resolves to 10:00 the morning after the event, IST (winter, +02:00)', () => {
+    // Event on 2026-01-12 (Israel day) → default fires 2026-01-13 10:00 IST
+    // = 08:00Z.
+    const iso = defaultThankyouSendAt('2026-01-12T17:00:00+02:00');
+    expect(iso).toBe('2026-01-13T10:00:00+02:00');
+    expect(new Date(iso!).toISOString()).toBe('2026-01-13T08:00:00.000Z');
+  });
+
+  it('crosses a DST transition correctly (event the day before clocks change)', () => {
+    // Israel switched IDT->IST on 2025-10-26 (example transition). An event
+    // the evening before should default to the NEXT (winter-offset) morning.
+    const iso = defaultThankyouSendAt('2025-10-25T20:00:00+03:00');
+    expect(iso).toBe('2025-10-26T10:00:00+02:00');
+  });
+
+  it('handles null/unparseable event_date by returning null', () => {
+    expect(defaultThankyouSendAt(null)).toBeNull();
+    expect(defaultThankyouSendAt('not-a-date')).toBeNull();
   });
 });

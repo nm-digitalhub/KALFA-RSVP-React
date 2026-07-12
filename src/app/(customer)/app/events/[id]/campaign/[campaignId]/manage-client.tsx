@@ -4,6 +4,10 @@ import { useActionState } from 'react';
 
 import { FormError, FormNotice } from '@/components/forms';
 import type { FormState } from '@/lib/validation/result';
+import { ilDateInputValue, ilTimeInputValue } from '@/lib/data/event-date';
+import { formatIsraelDateTime } from '@/lib/date';
+import { DateSelectIL } from '@/components/date-select-il';
+import { TimeSelect24 } from '@/components/time-select-24';
 import {
   OP_STATUS_LABELS,
   REMOVAL_REQUESTED_LABEL,
@@ -173,16 +177,92 @@ function DeliveryBreakdown({ delivery }: { delivery: NonNullable<Delivery> }) {
   );
 }
 
+type ThankyouSchedule = {
+  autoEnabled: boolean;
+  sendAt: string | null;
+  sentAt: string | null;
+} | null;
+
+// Owner controls for the auto-thankyou sweep (worker/main.ts, every 5 min):
+// opt-in toggle + an editable Israel wall-clock date/time. Once thankyou_sent_at
+// is set, the plan's "cancel window" has already closed — the form disables
+// itself and shows when it fired instead of a misleading editable schedule.
+function ThankyouScheduleForm({
+  thankyou,
+  action,
+}: {
+  thankyou: NonNullable<ThankyouSchedule>;
+  action: BoundAction;
+}) {
+  const [state, formAction] = useActionState(action, null);
+  const alreadySent = thankyou.sentAt != null;
+  return (
+    <form action={formAction} className="space-y-3 rounded-lg border border-border bg-card p-4">
+      <div>
+        <h2 className="text-sm font-semibold">תודה אוטומטית אחרי האירוע</h2>
+        <p className="text-xs text-muted-foreground">
+          נשלחת אוטומטית למי שאישרו הגעה, בשעה שנקבעה. ניתן לבטל או לשנות עד שהיא נשלחת.
+        </p>
+      </div>
+      {alreadySent ? (
+        <p className="text-sm text-muted-foreground">
+          הודעת התודה כבר נשלחה ({formatIsraelDateTime(thankyou.sentAt!)}) — לא ניתן לשנות עוד.
+        </p>
+      ) : (
+        <>
+          <label className="flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              name="auto_enabled"
+              defaultChecked={thankyou.autoEnabled}
+              className="size-4"
+            />
+            שליחה אוטומטית פעילה
+          </label>
+          <div className="flex flex-wrap gap-3">
+            <label className="text-sm">
+              <span className="mb-1 block text-muted-foreground">תאריך</span>
+              <DateSelectIL
+                id="send_date"
+                name="send_date"
+                defaultValue={ilDateInputValue(thankyou.sendAt)}
+              />
+            </label>
+            <label className="text-sm">
+              <span className="mb-1 block text-muted-foreground">שעה</span>
+              <TimeSelect24
+                id="send_time"
+                name="send_time"
+                defaultValue={ilTimeInputValue(thankyou.sendAt)}
+              />
+            </label>
+          </div>
+          <button
+            type="submit"
+            className="rounded-md border border-border px-4 py-2 text-sm font-medium transition hover:bg-accent/40"
+          >
+            עדכון לוח זמנים
+          </button>
+        </>
+      )}
+      <FormError message={state?.error} />
+      <FormNotice message={state?.notice} />
+    </form>
+  );
+}
+
 export function ManageClient({
   campaign,
   summary,
   delivery,
+  thankyou,
   actions,
   isPast = false,
 }: {
   campaign: Campaign;
   summary: Summary;
   delivery: Delivery;
+  thankyou?: ThankyouSchedule;
   actions: {
     activate: BoundAction;
     pause: BoundAction;
@@ -191,6 +271,7 @@ export function ManageClient({
     sendGift: BoundAction;
     sendEventDay: BoundAction;
     sendThankyou: BoundAction;
+    updateThankyouSchedule: BoundAction;
   };
   isPast?: boolean;
 }) {
@@ -245,6 +326,13 @@ export function ManageClient({
           contacts so a not-yet-started campaign doesn't show a wall of zeros. */}
       {delivery && delivery.totalContacts > 0 ? (
         <DeliveryBreakdown delivery={delivery} />
+      ) : null}
+
+      {/* Auto-thankyou schedule — only meaningful once the campaign has
+          activated at least once (thankyou_send_at is seeded on activation;
+          draft/pending_approval/approved/scheduled have nothing to show yet). */}
+      {thankyou && !['draft', 'pending_approval', 'approved', 'scheduled'].includes(s) ? (
+        <ThankyouScheduleForm thankyou={thankyou} action={actions.updateThankyouSchedule} />
       ) : null}
 
       {/* Lifecycle controls */}
