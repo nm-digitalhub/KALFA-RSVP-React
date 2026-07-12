@@ -251,6 +251,36 @@ describe('listGuests', () => {
     expect(builder.or).not.toHaveBeenCalled();
   });
 
+  // guests.phone is stored in LOCAL form (0502223333); a user searching with
+  // the international form should still find it, via the project's existing
+  // phone normalizer (repairIsraeliLocalPhone).
+  it('adds a local-form phone clause when the search is a valid international IL number', async () => {
+    const { builder } = wire([]);
+    await listGuests(EVENT_ID, { search: '972502223333' });
+
+    expect(builder.or).toHaveBeenCalledTimes(1);
+    const filter = builder.or.mock.calls[0][0] as string;
+    expect(filter).toBe(
+      'full_name.ilike.*972502223333*,phone.ilike.*972502223333*,phone.ilike.*0502223333*',
+    );
+  });
+
+  it('does not add a phone-variant clause for a plain name search', async () => {
+    const { builder } = wire([]);
+    await listGuests(EVENT_ID, { search: 'דנה' });
+
+    const filter = builder.or.mock.calls[0][0] as string;
+    expect(filter).toBe('full_name.ilike.*דנה*,phone.ilike.*דנה*');
+  });
+
+  it('strips underscore (ILIKE single-char wildcard) from the search term', async () => {
+    const { builder } = wire([]);
+    await listGuests(EVENT_ID, { search: 'a_b' });
+
+    const filter = builder.or.mock.calls[0][0] as string;
+    expect(filter).toBe('full_name.ilike.*ab*,phone.ilike.*ab*');
+  });
+
   // SECURITY: enum filters validate against the DB enum; invalid is ignored.
   it('applies a valid status filter', async () => {
     const { builder } = wire([]);
