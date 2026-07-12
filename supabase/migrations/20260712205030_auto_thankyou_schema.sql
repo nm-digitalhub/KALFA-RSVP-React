@@ -98,19 +98,21 @@ create unique index if not exists contact_interactions_thankyou_claim_uq
 -- attempt — accepted as a known, narrow limitation, same class as the
 -- existing under-count risk elsewhere in the outreach engine.
 --
--- EXCEPTION WHEN unique_violation (ty-inspector finding): the placeholder
--- provider_id is deterministic — 'thankyou-claim:' || campaign || ':' ||
--- contact — so it is ALWAYS the exact same row that the partial index above
--- guards; the two constraints can never diverge (one guarding a duplicate the
--- other doesn't). Empirically verified (isolated scratch DB, a real
--- concurrent race via two overlapping uncommitted transactions — not just
--- sequential calls in one session): the ON CONFLICT arbiter's wait-then-
--- recheck protocol already resolves this cleanly via DO NOTHING, with NO raw
--- 23505 surfacing, even without this handler. The handler is added anyway as
--- defense-in-depth (a future change to the placeholder scheme that broke that
--- invariant would otherwise leak a raw DB error instead of a clean
--- 'already_claimed' — worse observability, not a correctness gap, but not
--- free to leave unguarded either).
+-- NOTE on the OTHER unique constraint (contact_interactions_provider_unique,
+-- channel+provider_id): the placeholder provider_id below is deterministic —
+-- 'thankyou-claim:' || campaign || ':' || contact — so it is ALWAYS the exact
+-- same row that the partial index above guards; the two constraints can
+-- NEVER diverge (a duplicate under one is, by construction, a duplicate
+-- under the other too — never a duplicate under only one). Two independent
+-- empirical verifications (isolated scratch DB, a REAL concurrent race via
+-- two overlapping uncommitted transactions, not just sequential calls in one
+-- session) confirm the ON CONFLICT arbiter's wait-then-recheck protocol
+-- already resolves this cleanly via DO NOTHING — a plain, error-free
+-- 'already_claimed' — with NO raw 23505 ever surfacing. No EXCEPTION handler
+-- is added: it would be dead code for an outcome that structurally cannot
+-- occur here, and would misleadingly suggest to a future reader that the two
+-- constraints CAN diverge. If the placeholder scheme is ever changed to
+-- something not 1:1 with (campaign_id, contact_id), re-verify this claim.
 create or replace function public.claim_thankyou_recipient(
   p_campaign uuid, p_contact uuid, p_event uuid
 ) returns text language plpgsql security invoker set search_path = '' as $$
@@ -128,9 +130,6 @@ begin
   do nothing;
   if found then return 'claimed'; end if;
   return 'already_claimed';
-exception
-  when unique_violation then
-    return 'already_claimed';
 end; $$;
 
 revoke all on function public.claim_thankyou_recipient(uuid, uuid, uuid) from public, anon, authenticated;
