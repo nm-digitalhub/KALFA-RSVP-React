@@ -26,16 +26,6 @@ The application is Hebrew-first and RTL, with future support for English and Fre
 
 
 
-- Next.js with App Router
-
-- React and TypeScript
-
-- Tailwind CSS
-
-- Supabase for authentication and PostgreSQL
-
-- Source code lives under `src/`
-
 - `package.json` is the source of truth for installed packages, versions, scripts, and tooling
 
 
@@ -131,42 +121,6 @@ Do not guess about existing behavior. Read the code, schema, configuration, and 
 * Use server-side filtering, pagination, sorting, and database aggregation for events, guests, activity, and reports.
 
 * Avoid N+1 queries and avoid loading complete guest lists into the browser without pagination.
-
-
-
-Preferred structure:
-
-
-
-```text
-
-src/
-
-  app/
-
-    (public)/
-
-    auth/
-
-    r/[token]/
-
-    (customer)/app/
-
-    (admin)/admin/
-
-  components/
-
-  lib/
-
-    auth/
-
-    data/
-
-    supabase/
-
-    validation/
-
-```
 
 
 
