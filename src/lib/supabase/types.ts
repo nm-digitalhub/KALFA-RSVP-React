@@ -545,6 +545,9 @@ export type Database = {
           sumit_charge_document_id: number | null
           sumit_order_document_id: number | null
           template_id: string | null
+          thankyou_auto_enabled: boolean
+          thankyou_send_at: string | null
+          thankyou_sent_at: string | null
           tos_version: string | null
           updated_at: string
         }
@@ -587,6 +590,9 @@ export type Database = {
           sumit_charge_document_id?: number | null
           sumit_order_document_id?: number | null
           template_id?: string | null
+          thankyou_auto_enabled?: boolean
+          thankyou_send_at?: string | null
+          thankyou_sent_at?: string | null
           tos_version?: string | null
           updated_at?: string
         }
@@ -629,6 +635,9 @@ export type Database = {
           sumit_charge_document_id?: number | null
           sumit_order_document_id?: number | null
           template_id?: string | null
+          thankyou_auto_enabled?: boolean
+          thankyou_send_at?: string | null
+          thankyou_sent_at?: string | null
           tos_version?: string | null
           updated_at?: string
         }
@@ -664,6 +673,7 @@ export type Database = {
           guest_id: string | null
           id: string
           kind: string
+          message_key: string | null
           payload_meta: Json | null
           provider_id: string
         }
@@ -681,6 +691,7 @@ export type Database = {
           guest_id?: string | null
           id?: string
           kind: string
+          message_key?: string | null
           payload_meta?: Json | null
           provider_id: string
         }
@@ -698,6 +709,7 @@ export type Database = {
           guest_id?: string | null
           id?: string
           kind?: string
+          message_key?: string | null
           payload_meta?: Json | null
           provider_id?: string
         }
@@ -2043,6 +2055,10 @@ export type Database = {
       }
       cancel_campaign: { Args: { p_campaign: string }; Returns: string }
       claim_first_admin: { Args: never; Returns: boolean }
+      claim_thankyou_recipient: {
+        Args: { p_campaign: string; p_contact: string; p_event: string }
+        Returns: string
+      }
       claim_webhook_events: {
         Args: { _limit: number }
         Returns: {
