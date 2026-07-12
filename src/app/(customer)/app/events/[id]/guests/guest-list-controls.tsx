@@ -33,6 +33,16 @@ export function GuestListControls({
 }) {
   const router = useRouter();
   const [search, setSearch] = useState(current.search);
+  // The component stays mounted across navigations (same route, new query
+  // string), so browser back/forward changes `current.search` without a
+  // remount. Adjust the state directly during render (React's documented
+  // pattern for syncing state to a prop change — not an Effect, which would
+  // render one frame of stale input first) rather than via useEffect.
+  const [prevUrlSearch, setPrevUrlSearch] = useState(current.search);
+  if (current.search !== prevUrlSearch) {
+    setPrevUrlSearch(current.search);
+    setSearch(current.search);
+  }
 
   function navigate(next: Partial<Current> & { search?: string }) {
     const merged: Current = { ...current, ...next };
@@ -79,7 +89,14 @@ export function GuestListControls({
           id="status"
           className={inputClass}
           value={current.status ?? ''}
-          onChange={(e) => navigate({ status: e.target.value })}
+          onChange={(e) => {
+            const status = e.target.value || undefined;
+            // "חריגת כמות" only ever matches attending rows; switching to a
+            // different status while it's active would silently zero the
+            // list, so clear it instead of leaving a confusing empty result.
+            const over = status && status !== 'attending' ? undefined : current.over;
+            navigate({ status, over });
+          }}
         >
           <option value="">הכל</option>
           {Constants.public.Enums.guest_status.map((s) => (
@@ -138,7 +155,17 @@ export function GuestListControls({
           id="over"
           className={inputClass}
           value={current.over ?? ''}
-          onChange={(e) => navigate({ over: e.target.value || undefined })}
+          onChange={(e) => {
+            const over = e.target.value || undefined;
+            // Same conflict from the other direction: turning the overage
+            // filter on while a non-attending status is active would zero
+            // the list, so clear the conflicting status.
+            const status =
+              over && current.status && current.status !== 'attending'
+                ? undefined
+                : current.status;
+            navigate({ over, status });
+          }}
         >
           <option value="">הכל</option>
           <option value="1">מעל הכמות שהוזמנה</option>

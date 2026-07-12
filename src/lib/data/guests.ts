@@ -31,7 +31,7 @@ function throwFriendlyGuestError(error: { code?: string; message?: string; detai
   throw new Error(fallback);
 }
 import { normalizeGroupName, normalizeGuestName } from '@/lib/data/guest-import-shared';
-import { normalizePhone } from '@/lib/phone';
+import { normalizePhone, repairIsraeliLocalPhone } from '@/lib/phone';
 import {
   pruneOrphanContact,
   linkGuestContact,
@@ -196,14 +196,31 @@ function isContactStatus(v: string): v is ContactStatus {
 // `.or()` takes a RAW filter string where `,` separates conditions, `(`/`)`
 // group them, and `*` is the wildcard inside an `ilike` pattern. To prevent an
 // attacker from injecting extra conditions, we strip every char with PostgREST
-// meaning (`, ( ) * % "`) plus backslash, then wrap the remainder in `*…*` so
-// it becomes a contains-match. The result is always exactly two ilike clauses.
+// meaning (`, ( ) * % " _`) plus backslash — `_` is ILIKE's single-char
+// wildcard, so it must go too — then wrap the remainder in `*…*` so it becomes
+// a contains-match.
+//
+// Phone search is format-agnostic: guests.phone is stored in LOCAL form
+// (0502223333), but a user may type the international form (972502223333 /
+// +972502223333). If the cleaned term parses as a full, valid Israeli phone
+// number, reuse the project's existing normalizer (repairIsraeliLocalPhone,
+// src/lib/phone.ts — the same one behind contacts.normalized_phone) to add an
+// extra ilike clause against the local-form variant. Known limitation left
+// as-is: a partial/mid-typed international number that doesn't parse as valid
+// yet (e.g. "97250") only matches via the raw digits clause, same as before.
 // ---------------------------------------------------------------------------
 function buildSearchFilter(search: string): string | null {
-  const cleaned = search.replace(/[,()*%"\\]/g, '').trim();
+  const cleaned = search.replace(/[,()*%"_\\]/g, '').trim();
   if (cleaned === '') return null;
   const pattern = `*${cleaned}*`;
-  return `full_name.ilike.${pattern},phone.ilike.${pattern}`;
+  const clauses = [`full_name.ilike.${pattern}`, `phone.ilike.${pattern}`];
+
+  const localVariant = repairIsraeliLocalPhone(cleaned);
+  if (localVariant && localVariant !== cleaned) {
+    clauses.push(`phone.ilike.*${localVariant}*`);
+  }
+
+  return clauses.join(',');
 }
 
 export interface ListGuestsParams {

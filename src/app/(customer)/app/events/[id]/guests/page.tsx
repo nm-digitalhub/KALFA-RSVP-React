@@ -421,6 +421,7 @@ export default async function GuestsPage({ params, searchParams }: PageProps) {
           status,
           contact: contactStatus,
           group: groupId,
+          over: overInvited ? '1' : undefined,
         }}
       />
     </div>
