@@ -67,6 +67,13 @@ const genericTemplate = {
   channel: 'whatsapp' as const,
 };
 
+const thankyouTemplate = {
+  name: 'kalfa_event_thankyou_v1',
+  language: 'he',
+  channel: 'whatsapp' as const,
+  paramContract: 'thankyou',
+};
+
 type Row = Record<string, unknown>;
 function mockAdmin(campaign: Row | null) {
   const { client, builder } = createMockSupabase<Row>({
@@ -378,6 +385,154 @@ describe('sendCampaignWhatsApp', () => {
 
     const r = await sendCampaignWhatsApp('c1', 'invite');
     expect(r).toEqual({ sent: 1, skipped: 1 });
+  });
+});
+
+// Auto-thankyou 131049 mitigation (plan §2.1/§2.2): the CORE guard is per-guest
+// dedup against contact_interactions.message_key — one campaign carries every
+// message_key for its event, so this must filter on 'thankyou' specifically,
+// not "any prior send". Paired with the same attending-only audience rule as
+// event-day. Await order for messageKey='thankyou': campaign, event (first
+// read), attending-guests filter, dedup lookup, guest-names lookup.
+describe('sendCampaignWhatsApp — thankyou (auto-thankyou 131049 mitigation)', () => {
+  function sequenceThankyouRun(
+    builder: MockQueryBuilder<Row>,
+    eventRow: Row,
+    attendingRows: Array<{ contact_id: string }>,
+    priorInteractionRows: Array<{ contact_id: string; message_key?: string }>,
+    guestRows: Array<{ contact_id: string; full_name: string }>,
+  ) {
+    return vi
+      .spyOn(builder, 'then')
+      .mockImplementationOnce((f) =>
+        (f as (v: unknown) => unknown)({ data: activeCampaignRow, error: null }),
+      )
+      .mockImplementationOnce((f) =>
+        (f as (v: unknown) => unknown)({ data: eventRow, error: null }),
+      )
+      .mockImplementationOnce((f) =>
+        (f as (v: unknown) => unknown)({ data: attendingRows, error: null }),
+      )
+      .mockImplementationOnce((f) =>
+        (f as (v: unknown) => unknown)({ data: priorInteractionRows, error: null }),
+      )
+      .mockImplementationOnce((f) =>
+        (f as (v: unknown) => unknown)({ data: guestRows, error: null }),
+      );
+  }
+
+  it('skips a contact who already received a thank-you in THIS campaign (per-guest dedup)', async () => {
+    vi.mocked(getOutreachEnabled).mockResolvedValue(true);
+    vi.mocked(getWhatsAppConfig).mockResolvedValue(config);
+    vi.mocked(resolveTemplateForEvent).mockResolvedValue(thankyouTemplate);
+    vi.mocked(sendWhatsAppMarketingTemplate).mockResolvedValue({
+      kind: 'accepted',
+      providerId: 'wamid.ty',
+    });
+    vi.mocked(listSendableContacts).mockResolvedValue([
+      { id: 'k1', normalized_phone: '+972501111111' },
+      { id: 'k2', normalized_phone: '+972502222222' },
+    ]);
+    const { builder } = mockAdmin(null);
+    sequenceThankyouRun(
+      builder,
+      bindableEventRow,
+      [{ contact_id: 'k1' }, { contact_id: 'k2' }], // both attending
+      [{ contact_id: 'k1', message_key: 'thankyou' }], // k1 already thanked
+      [{ contact_id: 'k2', full_name: 'יוסי לוי' }],
+    );
+
+    const r = await sendCampaignWhatsApp('c1', 'thankyou');
+
+    expect(r).toEqual({ sent: 1, skipped: 0 });
+    expect(sendWhatsAppMarketingTemplate).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(sendWhatsAppMarketingTemplate).mock.calls[0][1].to).toBe(
+      '+972502222222',
+    );
+  });
+
+  it('does NOT skip a contact whose only prior interaction is a DIFFERENT message_key (invite, not thankyou)', async () => {
+    vi.mocked(getOutreachEnabled).mockResolvedValue(true);
+    vi.mocked(getWhatsAppConfig).mockResolvedValue(config);
+    vi.mocked(resolveTemplateForEvent).mockResolvedValue(thankyouTemplate);
+    vi.mocked(sendWhatsAppMarketingTemplate).mockResolvedValue({
+      kind: 'accepted',
+      providerId: 'wamid.ty',
+    });
+    vi.mocked(listSendableContacts).mockResolvedValue([
+      { id: 'k1', normalized_phone: '+972501111111' },
+    ]);
+    const { builder } = mockAdmin(null);
+    sequenceThankyouRun(
+      builder,
+      bindableEventRow,
+      [{ contact_id: 'k1' }],
+      [{ contact_id: 'k1', message_key: 'invite' }], // prior send was the INVITE
+      [{ contact_id: 'k1', full_name: 'דנה כהן' }],
+    );
+
+    const r = await sendCampaignWhatsApp('c1', 'thankyou');
+
+    expect(r).toEqual({ sent: 1, skipped: 0 });
+    expect(sendWhatsAppMarketingTemplate).toHaveBeenCalledTimes(1);
+  });
+
+  it('targets ONLY attending guests, same audience rule as event-day', async () => {
+    vi.mocked(getOutreachEnabled).mockResolvedValue(true);
+    vi.mocked(getWhatsAppConfig).mockResolvedValue(config);
+    vi.mocked(resolveTemplateForEvent).mockResolvedValue(thankyouTemplate);
+    vi.mocked(sendWhatsAppMarketingTemplate).mockResolvedValue({
+      kind: 'accepted',
+      providerId: 'wamid.ty',
+    });
+    vi.mocked(listSendableContacts).mockResolvedValue([
+      { id: 'k1', normalized_phone: '+972501111111' },
+      { id: 'k2', normalized_phone: '+972502222222' }, // NOT attending
+    ]);
+    const { builder } = mockAdmin(null);
+    sequenceThankyouRun(
+      builder,
+      bindableEventRow,
+      [{ contact_id: 'k1' }], // only k1 confirmed attending
+      [],
+      [{ contact_id: 'k1', full_name: 'דנה כהן' }],
+    );
+
+    const r = await sendCampaignWhatsApp('c1', 'thankyou');
+
+    expect(r).toEqual({ sent: 1, skipped: 0 });
+    expect(sendWhatsAppMarketingTemplate).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(sendWhatsAppMarketingTemplate).mock.calls[0][1].to).toBe(
+      '+972501111111',
+    );
+  });
+
+  it('tags the logged outbound interaction with message_key="thankyou" (enables future dedup)', async () => {
+    vi.mocked(getOutreachEnabled).mockResolvedValue(true);
+    vi.mocked(getWhatsAppConfig).mockResolvedValue(config);
+    vi.mocked(resolveTemplateForEvent).mockResolvedValue(thankyouTemplate);
+    vi.mocked(sendWhatsAppMarketingTemplate).mockResolvedValue({
+      kind: 'accepted',
+      providerId: 'wamid.ty',
+    });
+    vi.mocked(listSendableContacts).mockResolvedValue([
+      { id: 'k1', normalized_phone: '+972501111111' },
+    ]);
+    const { builder } = mockAdmin(null);
+    sequenceThankyouRun(
+      builder,
+      bindableEventRow,
+      [{ contact_id: 'k1' }],
+      [],
+      [{ contact_id: 'k1', full_name: 'דנה כהן' }],
+    );
+
+    await sendCampaignWhatsApp('c1', 'thankyou');
+
+    expect(builder.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({ message_key: 'thankyou' }),
+      { onConflict: 'channel,provider_id', ignoreDuplicates: true },
+    );
   });
 });
 

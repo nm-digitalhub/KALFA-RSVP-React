@@ -44,6 +44,7 @@ import {
   markWebhookEventFailed,
 } from '@/lib/data/webhooks';
 import { processWebhookEvent } from '@/lib/data/webhook-processing';
+import { runThankyouSweep } from '@/lib/data/auto-thankyou';
 
 // Standalone process — load .env.local ourselves (Next is not running here).
 function loadEnv(): void {
@@ -278,6 +279,18 @@ async function handleArm(boss: PgBoss): Promise<void> {
   }
 }
 
+// Auto-thankyou sweep: same periodic-tick idiom as handleArm above, not a
+// per-campaign delayed job — runThankyouSweep re-reads eligibility (opt-in +
+// scheduled-at + campaign/event status) from the DB on every tick, so an
+// owner's toggle/reschedule just takes effect on the next 5-minute pass; there
+// is nothing pg-boss-side to register or cancel. Gated by the same master
+// outreach_enabled switch as the drip engine (sendCampaignWhatsApp re-checks
+// it anyway — this just skips the DB scan while outreach is globally off).
+async function handleThankyouSweep(): Promise<void> {
+  if (!(await getOutreachEnabled())) return;
+  await runThankyouSweep();
+}
+
 async function main(): Promise<void> {
   const boss = new PgBoss({
     host: process.env.SUPABASE_DB_HOST,
@@ -317,10 +330,14 @@ async function main(): Promise<void> {
   await boss.work(QUEUES.webhook, async () => {
     await handleWebhook();
   });
+  await boss.work(QUEUES.thankyouSweep, async () => {
+    await handleThankyouSweep();
+  });
 
   await boss.schedule(QUEUES.arm, '* * * * *');
   await boss.schedule(QUEUES.sweeper, '*/5 * * * *');
   await boss.schedule(QUEUES.webhook, '* * * * *');
+  await boss.schedule(QUEUES.thankyouSweep, '*/5 * * * *');
 
   console.log('[kalfa-worker] started — queues + schedules up');
 

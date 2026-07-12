@@ -2,7 +2,7 @@ import 'server-only';
 
 import { requireUser } from '@/lib/auth/dal';
 import { requireOwnedEvent, requireEventAccess } from '@/lib/data/events';
-import { assertEventNotPast } from '@/lib/data/event-date';
+import { assertEventNotPast, defaultThankyouSendAt } from '@/lib/data/event-date';
 import {
   countUniqueContactsForEvent,
   snapshotAuthorizedSet,
@@ -681,7 +681,9 @@ async function transitionCampaignStatus(
   // allowed for a past/non-active event (cleanup + wind-down paths, per R9's
   // explicit carve-out — cancel/close/settle are not commercial-forward).
   opts?: { rejectPastEvent?: boolean; requireActiveEvent?: boolean },
-): Promise<void> {
+  // Returns the event's date so a caller (activateCampaign) can seed
+  // auto-thankyou's default schedule without a second ownership-checked fetch.
+): Promise<{ eventDate: string | null }> {
   const admin = createAdminClient();
   const { data: campaign, error } = await admin
     .from('campaigns')
@@ -714,13 +716,14 @@ async function transitionCampaignStatus(
   if (!updated) {
     throw new Error('לא ניתן לשנות את מצב הקמפיין במצבו הנוכחי');
   }
+  return { eventDate: event.event_date };
 }
 
 // Activate (begin outreach). Requires an approved/scheduled/paused campaign that
 // already has a card hold (capture_status='authorized') — no outreach without a
 // secured payment method.
 export async function activateCampaign(campaignId: string): Promise<void> {
-  return transitionCampaignStatus(
+  const { eventDate } = await transitionCampaignStatus(
     campaignId,
     ['approved', 'scheduled', 'paused'],
     'active',
@@ -728,16 +731,106 @@ export async function activateCampaign(campaignId: string): Promise<void> {
     // L1: never begin outreach for a past event. R9: requires an active event.
     { rejectPastEvent: true, requireActiveEvent: true },
   );
+
+  // Auto-thankyou (§4 auto-thankyou-post-event plan): seed the default
+  // schedule ONLY the first time this campaign activates — `.is(...null)`
+  // guards a re-activation after pause from clobbering an owner-edited
+  // send time. A null/unparseable event_date leaves it unset (the owner can
+  // still set one manually; the sweep simply never picks up a null).
+  const seeded = defaultThankyouSendAt(eventDate);
+  if (seeded) {
+    const admin = createAdminClient();
+    // thankyou_send_at lands with supabase/migrations/20260712205030_auto_
+    // thankyou_schema.sql — forward-compat cast until `gen types` runs.
+    await admin
+      .from('campaigns')
+      .update({ thankyou_send_at: seeded } as unknown as Database['public']['Tables']['campaigns']['Update'])
+      .eq('id', campaignId)
+      .is('thankyou_send_at', null);
+  }
 }
 
 export async function pauseCampaign(campaignId: string): Promise<void> {
-  return transitionCampaignStatus(campaignId, ['active'], 'paused');
+  await transitionCampaignStatus(campaignId, ['active'], 'paused');
+}
+
+// --- Auto-thankyou owner controls -------------------------------------------
+// thankyou_auto_enabled / thankyou_send_at / thankyou_sent_at land with
+// supabase/migrations/20260712205030_auto_thankyou_schema.sql — forward-compat
+// select('*') + runtime narrowing until `gen types` runs (same stance as the
+// gift columns in outreach.ts). The sweep itself (src/lib/data/auto-thankyou.ts)
+// reads these via its own admin-scoped query; these are the OWNER-FACING
+// read/write, RLS-scoped like the rest of this file's getters/setters.
+
+export type ThankyouSchedule = {
+  autoEnabled: boolean;
+  sendAt: string | null;
+  sentAt: string | null;
+};
+
+export async function getThankyouSchedule(
+  campaignId: string,
+): Promise<ThankyouSchedule | null> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from('campaigns')
+    .select('*')
+    .eq('id', campaignId)
+    .maybeSingle();
+  if (error || !data) return null;
+  const raw = data as Record<string, unknown>;
+  return {
+    // Fail-open toward the plan's confirmed default (true) rather than false —
+    // an absent column (migration not yet applied) must not read as "disabled".
+    autoEnabled: raw.thankyou_auto_enabled !== false,
+    sendAt: typeof raw.thankyou_send_at === 'string' ? raw.thankyou_send_at : null,
+    sentAt: typeof raw.thankyou_sent_at === 'string' ? raw.thankyou_sent_at : null,
+  };
+}
+
+// Owner edits the opt-in flag and/or the scheduled time. Blocked once
+// thankyou_sent_at is set — the plan's "cancel window" is explicitly BEFORE
+// the sweep/manual send fires, not after (nothing to cancel once it's out).
+export async function updateThankyouSchedule(
+  campaignId: string,
+  patch: { autoEnabled?: boolean; sendAt?: string | null },
+): Promise<void> {
+  const supabase = await createClient();
+  const { data: campaign, error } = await supabase
+    .from('campaigns')
+    .select('id, event_id')
+    .eq('id', campaignId)
+    .maybeSingle();
+  if (error) throw new Error('טעינת הקמפיין נכשלה');
+  if (!campaign) {
+    const { notFound } = await import('next/navigation');
+    return notFound();
+  }
+  await requireOwnedEvent(campaign.event_id); // ownership, defense-in-depth beyond RLS
+
+  const update: Record<string, unknown> = {};
+  if (patch.autoEnabled !== undefined) update.thankyou_auto_enabled = patch.autoEnabled;
+  if (patch.sendAt !== undefined) update.thankyou_send_at = patch.sendAt;
+  if (Object.keys(update).length === 0) return;
+
+  const admin = createAdminClient();
+  const { data: updated, error: upErr } = await admin
+    .from('campaigns')
+    .update(update as unknown as Database['public']['Tables']['campaigns']['Update'])
+    .eq('id', campaignId)
+    .is('thankyou_sent_at', null)
+    .select('id')
+    .maybeSingle();
+  if (upErr) throw new Error('עדכון לוח הזמנים נכשל');
+  if (!updated) {
+    throw new Error('הודעת התודה כבר נשלחה — לא ניתן לשנות את התזמון');
+  }
 }
 
 // Close the campaign (no new outreach/billing after this). Computing the final
 // charge and capturing the held card is a separate B4 step (needs billed_results).
 export async function closeCampaign(campaignId: string): Promise<void> {
-  return transitionCampaignStatus(
+  await transitionCampaignStatus(
     campaignId,
     ['active', 'paused', 'approved', 'scheduled'],
     'closed',

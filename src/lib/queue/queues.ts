@@ -8,6 +8,10 @@ export const QUEUES = {
   dead: 'outreach-dead',
   // Persist-then-process intake: drains webhook_inbox out-of-band (B2).
   webhook: 'webhook-process',
+  // Auto-thankyou periodic sweep — same idiom as arm/sweeper: a cron-scheduled
+  // tick that reads fresh DB state, not a per-campaign delayed job. See
+  // src/lib/data/auto-thankyou.ts.
+  thankyouSweep: 'campaign-thankyou-sweep',
 } as const;
 
 // outreach-step retry policy: a few backed-off retries, then dead-letter. The

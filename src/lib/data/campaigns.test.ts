@@ -65,6 +65,8 @@ import {
   lockCampaignForCharge,
   recordCampaignCharge,
   markCampaignChargeOutcome,
+  getThankyouSchedule,
+  updateThankyouSchedule,
 } from '@/lib/data/campaigns';
 
 function adminWith<T>(result: QueryResult<T>) {
@@ -702,6 +704,115 @@ describe('campaign lifecycle transitions', () => {
       'יש לפרסם את האירוע לפני אישורי הגעה',
     );
     expect(builder.update).not.toHaveBeenCalled();
+  });
+
+  // Auto-thankyou (§4 auto-thankyou-post-event plan): activation seeds the
+  // default schedule (morning after event_date, ~10:00 Israel) exactly once —
+  // `.is('thankyou_send_at', null)` is what keeps a re-activation after pause
+  // from clobbering an owner-edited send time.
+  it('activateCampaign seeds thankyou_send_at (auto-thankyou default schedule) on activation', async () => {
+    const { builder } = adminWith({
+      data: { id: 'c1', event_id: 'e1' },
+      error: null,
+    });
+    vi.mocked(requireOwnedEvent).mockResolvedValue(
+      ownedEvent('2999-01-06T17:00:00+02:00'),
+    );
+
+    await activateCampaign('c1');
+
+    expect(builder.update).toHaveBeenCalledWith(
+      expect.objectContaining({ thankyou_send_at: '2999-01-07T10:00:00+02:00' }),
+    );
+    expect(builder.is).toHaveBeenCalledWith('thankyou_send_at', null);
+  });
+
+  it('activateCampaign does not seed a thankyou schedule when the event has no date', async () => {
+    const { builder } = adminWith({
+      data: { id: 'c1', event_id: 'e1' },
+      error: null,
+    });
+    vi.mocked(requireOwnedEvent).mockResolvedValue(ownedEvent(null));
+
+    await activateCampaign('c1');
+
+    expect(builder.update).not.toHaveBeenCalledWith(
+      expect.objectContaining({ thankyou_send_at: expect.anything() }),
+    );
+  });
+});
+
+// Auto-thankyou owner controls (getThankyouSchedule / updateThankyouSchedule).
+// Forward-compat columns (pending migration 20260712205030) — read via
+// select('*') + narrowing, same stance as the rest of this file's pending-
+// column readers.
+describe('getThankyouSchedule / updateThankyouSchedule', () => {
+  it('reads the schedule, fail-open toward auto_enabled=true when the column is absent', async () => {
+    serverWith({
+      data: { id: 'c1' }, // no thankyou_* columns at all (pre-migration row)
+      error: null,
+    });
+
+    const schedule = await getThankyouSchedule('c1');
+    expect(schedule).toEqual({ autoEnabled: true, sendAt: null, sentAt: null });
+  });
+
+  it('reads an explicitly disabled + scheduled + sent row', async () => {
+    serverWith({
+      data: {
+        id: 'c1',
+        thankyou_auto_enabled: false,
+        thankyou_send_at: '2026-07-13T10:00:00+03:00',
+        thankyou_sent_at: '2026-07-13T10:00:05+03:00',
+      },
+      error: null,
+    });
+
+    const schedule = await getThankyouSchedule('c1');
+    expect(schedule).toEqual({
+      autoEnabled: false,
+      sendAt: '2026-07-13T10:00:00+03:00',
+      sentAt: '2026-07-13T10:00:05+03:00',
+    });
+  });
+
+  it('returns null when the campaign is not visible (RLS / not found)', async () => {
+    serverWith({ data: null, error: null });
+    expect(await getThankyouSchedule('missing')).toBeNull();
+  });
+
+  it('updateThankyouSchedule verifies ownership before writing', async () => {
+    serverWith({ data: { id: 'c1', event_id: 'e1' }, error: null });
+    vi.mocked(requireOwnedEvent).mockResolvedValue(ownedEvent());
+    const { builder: adminBuilder } = adminWith({ data: { id: 'c1' }, error: null });
+
+    await updateThankyouSchedule('c1', { autoEnabled: false });
+
+    expect(requireOwnedEvent).toHaveBeenCalledWith('e1');
+    expect(adminBuilder.update).toHaveBeenCalledWith(
+      expect.objectContaining({ thankyou_auto_enabled: false }),
+    );
+    expect(adminBuilder.is).toHaveBeenCalledWith('thankyou_sent_at', null);
+  });
+
+  it('updateThankyouSchedule throws a friendly error once the thank-you already fired (no rows updated)', async () => {
+    serverWith({ data: { id: 'c1', event_id: 'e1' }, error: null });
+    vi.mocked(requireOwnedEvent).mockResolvedValue(ownedEvent());
+    adminWith({ data: null, error: null }); // the guarded update matches 0 rows
+
+    await expect(
+      updateThankyouSchedule('c1', { sendAt: '2026-07-14T10:00:00+03:00' }),
+    ).rejects.toThrow('הודעת התודה כבר נשלחה');
+  });
+
+  it('updateThankyouSchedule is a no-op when the patch is empty', async () => {
+    serverWith({ data: { id: 'c1', event_id: 'e1' }, error: null });
+    vi.mocked(requireOwnedEvent).mockResolvedValue(ownedEvent());
+    const { client: adminClient } = adminWith({ data: { id: 'c1' }, error: null });
+
+    await updateThankyouSchedule('c1', {});
+
+    expect(adminClient.from).not.toHaveBeenCalled();
   });
 });
 

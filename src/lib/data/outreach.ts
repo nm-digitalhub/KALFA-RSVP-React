@@ -99,7 +99,14 @@ export async function sendOneWhatsApp(
         kind: 'template',
         provider_id: outcome.providerId,
         billable: false,
-      },
+        // message_key lands with a pending migration (supabase/migrations/
+        // 20260712205030_auto_thankyou_schema.sql) — forward-compat cast until
+        // `gen types` runs. Tags every send (not just thankyou) so the
+        // auto-thankyou per-guest dedup (sendCampaignWhatsApp below) can tell
+        // a thank-you apart from any other message to the same contact under
+        // the shared campaign_id.
+        message_key: messageKey,
+      } as unknown as Database['public']['Tables']['contact_interactions']['Insert'],
       { onConflict: 'channel,provider_id', ignoreDuplicates: true },
     );
   }
@@ -248,6 +255,11 @@ export async function sendCampaignWhatsApp(
   // rides the identical URL button (event.gift_link_token → /g/[token]). It
   // targets ONLY confirmed attendees (filtered below) and is non-billable.
   const isEventDay = messageKey === 'event_day_pay';
+  // Post-event thank-you (message_key 'thankyou'): same "confirmed attendees
+  // only" audience rule as event-day (plan §2.2 — an attending guest is an
+  // engaged recipient, which is exactly the 131049 mitigation the dedup below
+  // depends on being paired with).
+  const isThankyou = messageKey === 'thankyou';
   let giftUrl: string | null = null;
   let giftButtonToken: string | null = null;
   if (isGift || isEventDay) {
@@ -271,9 +283,10 @@ export async function sendCampaignWhatsApp(
   // send can never target a contact outside the set (reached ⊆ authorized).
   let contacts = await listSendableContacts(campaign.event_id, campaign.id);
 
-  // Event-day reminder targets ONLY guests who CONFIRMED (guests.status =
-  // 'attending'); intersect the sendable set with attending-linked contacts.
-  if (isEventDay && contacts.length > 0) {
+  // Event-day reminder AND thank-you target ONLY guests who CONFIRMED
+  // (guests.status = 'attending'); intersect the sendable set with
+  // attending-linked contacts.
+  if ((isEventDay || isThankyou) && contacts.length > 0) {
     const { data: attendingRows } = await admin
       .from('guests')
       .select('contact_id')
@@ -284,6 +297,32 @@ export async function sendCampaignWhatsApp(
       (attendingRows ?? []).map((g) => g.contact_id).filter((id): id is string => !!id),
     );
     contacts = contacts.filter((c) => attending.has(c.id));
+  }
+
+  // Thank-you per-guest dedup (plan §2.1 — the CORE 131049 mitigation): never
+  // send a second thank-you to a contact who already got one in this campaign.
+  // One campaign carries every message_key for its event, so this MUST filter
+  // on message_key='thankyou' specifically, not "any prior send" — otherwise a
+  // guest who already got the invite/gift would wrongly be skipped here.
+  // message_key lands with a pending migration; read forward-compat via
+  // select('*') + runtime narrowing (same stance as the gift columns above).
+  // Exactly-once + partial-failure-safe: a crashed batch that thanked 30/50
+  // contacts will, on retry (auto sweep or manual button), only re-attempt the
+  // remaining 20 — never re-send to the 30 already logged here.
+  if (isThankyou && contacts.length > 0) {
+    const { data: priorRows } = await admin
+      .from('contact_interactions')
+      .select('*')
+      .eq('campaign_id', campaign.id)
+      .eq('direction', 'out')
+      .in('contact_id', contacts.map((c) => c.id));
+    const alreadyThanked = new Set(
+      (priorRows ?? [])
+        .filter((r) => (r as Record<string, unknown>).message_key === 'thankyou')
+        .map((r) => r.contact_id)
+        .filter((id): id is string => !!id),
+    );
+    contacts = contacts.filter((c) => !alreadyThanked.has(c.id));
   }
 
   // Event-day's URL button (the Bit token) is REQUIRED by Meta — a missing token

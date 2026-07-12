@@ -4,7 +4,7 @@ import { ChevronRight } from 'lucide-react';
 
 import { requireEventAccess } from '@/lib/data/events';
 import { isPastEventDay } from '@/lib/data/event-date';
-import { getCampaign } from '@/lib/data/campaigns';
+import { getCampaign, getThankyouSchedule } from '@/lib/data/campaigns';
 import { getCampaignBillingSummary } from '@/lib/data/billing';
 import { getCampaignDeliveryBreakdown } from '@/lib/data/campaign-delivery';
 import {
@@ -15,6 +15,7 @@ import {
   sendGiftReminderAction,
   sendEventDayReminderAction,
   sendThankyouAction,
+  updateThankyouScheduleAction,
 } from '../campaign-actions';
 import { ManageClient } from './manage-client';
 
@@ -51,6 +52,16 @@ export default async function CampaignManagePage({
     delivery = null;
   }
 
+  // Owner-facing auto-thankyou schedule (opt-in + send time) — degrade to
+  // hiding the section rather than crashing the page, same stance as summary/
+  // delivery above.
+  let thankyou = null;
+  try {
+    thankyou = await getThankyouSchedule(campaignId);
+  } catch {
+    thankyou = null;
+  }
+
   const activate = activateCampaignAction.bind(null, eventId, campaignId);
   const pause = pauseCampaignAction.bind(null, eventId, campaignId);
   const close = closeCampaignAction.bind(null, eventId, campaignId);
@@ -58,6 +69,7 @@ export default async function CampaignManagePage({
   const sendGift = sendGiftReminderAction.bind(null, eventId, campaignId);
   const sendEventDay = sendEventDayReminderAction.bind(null, eventId, campaignId);
   const sendThankyou = sendThankyouAction.bind(null, eventId, campaignId);
+  const updateThankyouSchedule = updateThankyouScheduleAction.bind(null, eventId, campaignId);
 
   return (
     <div className="space-y-6">
@@ -85,7 +97,17 @@ export default async function CampaignManagePage({
           }}
           summary={summary}
           delivery={delivery}
-          actions={{ activate, pause, close, settle, sendGift, sendEventDay, sendThankyou }}
+          thankyou={thankyou}
+          actions={{
+            activate,
+            pause,
+            close,
+            settle,
+            sendGift,
+            sendEventDay,
+            sendThankyou,
+            updateThankyouSchedule,
+          }}
           isPast={isPast}
         />
       </section>
