@@ -1,7 +1,8 @@
 'use client';
 
-import { useRouter } from 'next/navigation';
-import { useState } from 'react';
+import Link from 'next/link';
+import { useRouter, usePathname } from 'next/navigation';
+import { useEffect, useRef, useState } from 'react';
 
 import { Constants } from '@/lib/supabase/types';
 import { GUEST_STATUS_LABELS, CONTACT_STATUS_LABELS } from './labels';
@@ -26,12 +27,16 @@ export function GuestListControls({
   eventId,
   groups,
   current,
+  hasActiveFilters,
 }: {
   eventId: string;
   groups: GuestGroup[];
   current: Current;
+  hasActiveFilters: boolean;
 }) {
   const router = useRouter();
+  const pathname = usePathname();
+  const basePath = `/app/events/${eventId}/guests`;
   const [search, setSearch] = useState(current.search);
   // The component stays mounted across navigations (same route, new query
   // string), so browser back/forward changes `current.search` without a
@@ -55,8 +60,32 @@ export function GuestListControls({
     if (merged.group) q.set('group', merged.group);
     if (merged.over) q.set('over', merged.over);
     // Any control change returns to the first page.
-    router.push(`/app/events/${eventId}/guests?${q.toString()}`);
+    router.push(`${basePath}?${q.toString()}`);
   }
+
+  // Reload (F5 / browser refresh) drops any active filters, so a refreshed
+  // page reads as "start over" rather than replaying a stale search. A plain
+  // client-side navigation (typed URL, shared link, back/forward) must NOT be
+  // affected — Navigation Timing is the only reliable way to tell "reload"
+  // apart from those. The ref guard makes this a true run-once regardless of
+  // how often the effect's deps change afterward (hasActiveFilters flips back
+  // to true the moment the visitor applies a new filter, and the navigation
+  // entry's `type` stays "reload" for the rest of the tab's lifetime, so
+  // re-running the check on every dep change would wrongly clear it again).
+  // Caveat: the server still renders the filtered result for one frame before
+  // this client-side replace fires.
+  const didHandleReloadReset = useRef(false);
+  useEffect(() => {
+    if (didHandleReloadReset.current) return;
+    didHandleReloadReset.current = true;
+
+    const [entry] = performance.getEntriesByType('navigation');
+    const isReload =
+      entry instanceof PerformanceNavigationTiming && entry.type === 'reload';
+    if (isReload && hasActiveFilters) {
+      router.replace(pathname);
+    }
+  }, [hasActiveFilters, pathname, router]);
 
   return (
     <form
@@ -195,6 +224,15 @@ export function GuestListControls({
       >
         חיפוש
       </button>
+
+      {hasActiveFilters ? (
+        <Link
+          href={basePath}
+          className="w-full rounded-md border border-border px-4 py-2 text-center text-sm font-medium text-muted-foreground hover:bg-accent sm:w-auto"
+        >
+          איפוס מסננים
+        </Link>
+      ) : null}
     </form>
   );
 }
