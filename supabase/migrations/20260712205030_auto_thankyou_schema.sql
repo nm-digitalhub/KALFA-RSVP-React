@@ -52,12 +52,72 @@ comment on column public.contact_interactions.message_key is
   '(e.g. thankyou, gift, event_day_pay). Nullable — populated going forward '
   'only; used for per-guest per-message-type dedup (auto-thankyou sweep).';
 
--- Per-guest dedup lookup: "has this contact already received message_key X in
--- this campaign?" — a targeted partial index (outbound rows only) rather than
--- a broad one, since inbound rows never participate in this check.
+-- General per-guest lookup: "has this contact received message_key X in this
+-- campaign?" — a targeted partial index (outbound rows only), useful for
+-- future per-type breakdown reads. NOT unique — invite/gift/event_day_pay can
+-- legitimately have several outbound rows per contact (reminders, retries).
 create index if not exists contact_interactions_dedup_idx
   on public.contact_interactions (campaign_id, contact_id, message_key)
   where direction = 'out' and message_key is not null;
+
+-- (c) The ACTUAL 131049 mitigation is atomic claim-before-send, not a
+-- read-then-filter check. A read-then-filter (SELECT prior rows, then send to
+-- whoever's missing) has a check-then-act race: the manual button (web) and
+-- the sweep (worker) — or two overlapping sweep ticks — can both read "not
+-- yet thanked" for the same contact before either has written a row, and both
+-- send. A partial UNIQUE index makes a second claim for the SAME
+-- (campaign, contact) thank-you impossible at the DB level, REGARDLESS of
+-- which process gets there first or how many run concurrently. Scoped to
+-- thank-you outbound rows only (via the WHERE clause) — it must not affect
+-- invite/gift/event_day_pay, which legitimately have multiple rows per
+-- contact.
+create unique index if not exists contact_interactions_thankyou_claim_uq
+  on public.contact_interactions (campaign_id, contact_id)
+  where message_key = 'thankyou' and direction = 'out';
+
+-- claim_thankyou_recipient: the atomic reserve step. Called BEFORE the
+-- WhatsApp send (never after) — inserts a placeholder row (a synthetic
+-- provider_id, since the column is NOT NULL and the real one doesn't exist
+-- yet); `ON CONFLICT ... DO NOTHING` against the partial unique index above
+-- means a second caller for the same (campaign, contact) gets zero rows
+-- inserted, and FOUND is false. The caller (sendCampaignWhatsApp) checks the
+-- return value BEFORE calling the provider — a lost race means "someone else
+-- is/was already sending this contact's thank-you", never a double-send.
+--
+-- On an ACCEPTED send, the caller UPDATEs this SAME row's provider_id to the
+-- real one (a plain UPDATE, not through this function) so Meta's delivery-
+-- status webhook can find it by provider_id like every other message. On a
+-- FAILED/uncertain send, the row is left as-is — deliberately PERMANENT, not
+-- released for retry. This mirrors the codebase's existing at-most-once
+-- philosophy (see src/lib/outreach/enqueue.ts: "a prior real send may already
+-- have happened... both branches are non-sending" — prefer a rare missed
+-- send over ANY chance of a double send) and matches the plan's own stance
+-- (no auto-retry on a failed/uncertain outcome; "resend to non-delivered" is
+-- an explicit, deferred, MANUAL P2 feature). The only scenario this can
+-- "strand" a contact is a hard process crash between the claim and the send
+-- attempt — accepted as a known, narrow limitation, same class as the
+-- existing under-count risk elsewhere in the outreach engine.
+create or replace function public.claim_thankyou_recipient(
+  p_campaign uuid, p_contact uuid, p_event uuid
+) returns text language plpgsql security invoker set search_path = '' as $$
+begin
+  insert into public.contact_interactions (
+    campaign_id, contact_id, event_id, channel, direction, kind,
+    message_key, provider_id, billable
+  )
+  values (
+    p_campaign, p_contact, p_event, 'whatsapp', 'out', 'template',
+    'thankyou', 'thankyou-claim:' || p_campaign::text || ':' || p_contact::text, false
+  )
+  on conflict (campaign_id, contact_id)
+    where message_key = 'thankyou' and direction = 'out'
+  do nothing;
+  if found then return 'claimed'; end if;
+  return 'already_claimed';
+end; $$;
+
+revoke all on function public.claim_thankyou_recipient(uuid, uuid, uuid) from public, anon, authenticated;
+grant execute on function public.claim_thankyou_recipient(uuid, uuid, uuid) to service_role;
 
 -- NOTE: no pacing/delay column here. Re-attributed 2026-07-12 (plan update):
 -- 131049 is a PER-RECIPIENT marketing-template limit, not a throughput cap —

@@ -197,13 +197,13 @@ describe('runThankyouSweep', () => {
   });
 
   it('sends and marks a single due campaign as processed', async () => {
-    vi.mocked(sendCampaignWhatsApp).mockResolvedValue({ sent: 3, skipped: 0 });
+    vi.mocked(sendCampaignWhatsApp).mockResolvedValue({ sent: 3, skipped: 0, blocked: false });
     const { builder } = mockedAdmin([dueCampaign('c1', 'e1')], [{ id: 'e1' }]);
 
     const result = await runThankyouSweep();
 
     expect(sendCampaignWhatsApp).toHaveBeenCalledWith('c1', 'thankyou');
-    expect(result).toEqual({ processed: 1, failed: 0 });
+    expect(result).toEqual({ processed: 1, blocked: 0, failed: 0 });
     expect(builder.update).toHaveBeenCalledWith(
       expect.objectContaining({ thankyou_sent_at: expect.any(String) }),
     );
@@ -216,31 +216,69 @@ describe('runThankyouSweep', () => {
 
     const result = await runThankyouSweep();
 
-    expect(result).toEqual({ processed: 0, failed: 1 });
+    expect(result).toEqual({ processed: 0, blocked: 0, failed: 1 });
     expect(builder.update).not.toHaveBeenCalled();
     errorSpy.mockRestore();
+  });
+
+  // Bug fix (thankyou-review, high — BUG #2): a transient config/state gate
+  // (kill-switch off, WhatsApp not configured, template not approved,
+  // campaign/event not active) makes sendCampaignWhatsApp return
+  // `{sent:0, skipped:0, blocked:true}` WITHOUT throwing. Marking
+  // thankyou_sent_at here would permanently stop retrying this campaign once
+  // the blocker clears, AND lock the owner's UI out of editing the schedule —
+  // silently dropping the thank-you forever. Must stay unmarked + visible.
+  it('does NOT mark thankyou_sent_at when sendCampaignWhatsApp reports blocked (transient gate, not a real completion)', async () => {
+    vi.mocked(sendCampaignWhatsApp).mockResolvedValue({ sent: 0, skipped: 0, blocked: true });
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const { builder } = mockedAdmin([dueCampaign('c1', 'e1')], [{ id: 'e1' }]);
+
+    const result = await runThankyouSweep();
+
+    expect(result).toEqual({ processed: 0, blocked: 1, failed: 0 });
+    expect(builder.update).not.toHaveBeenCalled();
+    // Visible, not silent: an operator must be able to see this in logs.
+    expect(errorSpy).toHaveBeenCalledWith(
+      expect.stringContaining('blocked'),
+      'c1',
+    );
+    errorSpy.mockRestore();
+  });
+
+  it('marks thankyou_sent_at on a real completion even when NO contact was eligible (sent:0, not blocked)', async () => {
+    // e.g. the attending-filter / claim left zero eligible contacts this tick
+    // — a legitimate "nothing to do right now", not a config gate.
+    vi.mocked(sendCampaignWhatsApp).mockResolvedValue({ sent: 0, skipped: 0, blocked: false });
+    const { builder } = mockedAdmin([dueCampaign('c1', 'e1')], [{ id: 'e1' }]);
+
+    const result = await runThankyouSweep();
+
+    expect(result).toEqual({ processed: 1, blocked: 0, failed: 0 });
+    expect(builder.update).toHaveBeenCalledWith(
+      expect.objectContaining({ thankyou_sent_at: expect.any(String) }),
+    );
   });
 
   it('one failing campaign does not block the others in the same sweep', async () => {
     vi.mocked(sendCampaignWhatsApp)
       .mockRejectedValueOnce(new Error('boom'))
-      .mockResolvedValueOnce({ sent: 1, skipped: 0 });
+      .mockResolvedValueOnce({ sent: 1, skipped: 0, blocked: false });
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
     mockedAdmin([dueCampaign('c1', 'e1'), dueCampaign('c2', 'e2')], [{ id: 'e1' }, { id: 'e2' }]);
 
     const result = await runThankyouSweep();
 
     expect(sendCampaignWhatsApp).toHaveBeenCalledTimes(2);
-    expect(result).toEqual({ processed: 1, failed: 1 });
+    expect(result).toEqual({ processed: 1, blocked: 0, failed: 1 });
     errorSpy.mockRestore();
   });
 
-  it('returns {processed: 0, failed: 0} with no provider call when nothing is due', async () => {
+  it('returns {processed: 0, blocked: 0, failed: 0} with no provider call when nothing is due', async () => {
     mockedAdmin([], []);
 
     const result = await runThankyouSweep();
 
-    expect(result).toEqual({ processed: 0, failed: 0 });
+    expect(result).toEqual({ processed: 0, blocked: 0, failed: 0 });
     expect(sendCampaignWhatsApp).not.toHaveBeenCalled();
   });
 });

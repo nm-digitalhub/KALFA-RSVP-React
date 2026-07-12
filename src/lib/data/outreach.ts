@@ -30,6 +30,25 @@ import type { Database } from '@/lib/supabase/types';
 
 type AdminClient = ReturnType<typeof createAdminClient>;
 
+// Forward-compat typing for the auto-thankyou schema (pending migration
+// supabase/migrations/20260712205030_auto_thankyou_schema.sql — not yet
+// applied/gen-typed). `claim_thankyou_recipient` isn't a member of the
+// generated Functions union yet, and `message_key` isn't a column of
+// contact_interactions' generated Row type yet; both narrow casts are removed
+// once `gen types` runs post-deploy.
+type ClaimThankyouRpc = (
+  fn: 'claim_thankyou_recipient',
+  args: { p_campaign: string; p_contact: string; p_event: string },
+) => Promise<{
+  data: 'claimed' | 'already_claimed' | null;
+  error: { message: string; code?: string } | null;
+}>;
+
+type LooseContactInteractionsFilter = {
+  update: (v: unknown) => LooseContactInteractionsFilter;
+  eq: (column: string, value: unknown) => LooseContactInteractionsFilter;
+} & PromiseLike<unknown>;
+
 // Send ONE approved WhatsApp template to ONE contact + log the outbound,
 // non-billable interaction (idempotent on UNIQUE(channel, provider_id)). Returns
 // the classified DeliveryOutcome (accepted / definitely_not_sent / unknown) so
@@ -193,13 +212,23 @@ export async function recordTemplateFailure(
 // successful send is logged as an OUTBOUND, non-billable contact_interaction
 // (idempotent on the UNIQUE(channel, provider_id) webhook key). Never log the
 // access token, recipient phone, or message body.
+//
+// `blocked` distinguishes a TRANSIENT config/state gate (outreach off, no
+// WhatsApp config, campaign/event not active, no approved template — every
+// early return BEFORE contacts are even resolved) from a real completion
+// (contacts were resolved and every one of them was attempted, even if the
+// eligible set turned out to be empty). The auto-thankyou sweep
+// (auto-thankyou.ts) relies on this: it must NOT mark a campaign
+// "processed" while `blocked` is true, or a transient kill-switch/config gap
+// would permanently and silently stop that campaign's thank-you from ever
+// being retried.
 export async function sendCampaignWhatsApp(
   campaignId: string,
   messageKey: string,
-): Promise<{ sent: number; skipped: number }> {
-  if (!(await getOutreachEnabled())) return { sent: 0, skipped: 0 };
+): Promise<{ sent: number; skipped: number; blocked: boolean }> {
+  if (!(await getOutreachEnabled())) return { sent: 0, skipped: 0, blocked: true };
   const config = await getWhatsAppConfig();
-  if (!config) return { sent: 0, skipped: 0 };
+  if (!config) return { sent: 0, skipped: 0, blocked: true };
 
   const admin = createAdminClient();
   const { data: campaign, error } = await admin
@@ -207,10 +236,10 @@ export async function sendCampaignWhatsApp(
     .select('id, event_id, status, allowed_channels')
     .eq('id', campaignId)
     .maybeSingle();
-  if (error || !campaign) return { sent: 0, skipped: 0 };
-  if (campaign.status !== 'active') return { sent: 0, skipped: 0 };
+  if (error || !campaign) return { sent: 0, skipped: 0, blocked: true };
+  if (campaign.status !== 'active') return { sent: 0, skipped: 0, blocked: true };
   if (!(campaign.allowed_channels ?? []).includes('whatsapp')) {
-    return { sent: 0, skipped: 0 };
+    return { sent: 0, skipped: 0, blocked: true };
   }
 
   // L1: never send for an event whose day has already passed (Israel calendar) —
@@ -227,14 +256,16 @@ export async function sendCampaignWhatsApp(
     .eq('id', campaign.event_id)
     .maybeSingle();
   if (!POST_EVENT_MESSAGE_KEYS.has(messageKey) && isPastEventDay(ev?.event_date ?? null)) {
-    return { sent: 0, skipped: 0 };
+    return { sent: 0, skipped: 0, blocked: true };
   }
-  if (ev?.status !== 'active') return { sent: 0, skipped: 0 };
+  if (ev?.status !== 'active') return { sent: 0, skipped: 0, blocked: true };
 
   // Same event-type-aware resolution as the engine (executeStep): the generic
   // row's components.variants may swap in the wedding-family template name.
   const template = await resolveTemplateForEvent(messageKey, ev.event_type);
-  if (!template || template.channel !== 'whatsapp') return { sent: 0, skipped: 0 };
+  if (!template || template.channel !== 'whatsapp') {
+    return { sent: 0, skipped: 0, blocked: true };
+  }
   // Which side of the Meta positional contract to bind — the wedding family
   // renders groom/bride in {{2}}/{{3}} (docs/whatsapp-templates-meta-submission.md).
   const family = template.name.startsWith('kalfa_wedding_') ? 'wedding' : 'generic';
@@ -299,32 +330,6 @@ export async function sendCampaignWhatsApp(
     contacts = contacts.filter((c) => attending.has(c.id));
   }
 
-  // Thank-you per-guest dedup (plan §2.1 — the CORE 131049 mitigation): never
-  // send a second thank-you to a contact who already got one in this campaign.
-  // One campaign carries every message_key for its event, so this MUST filter
-  // on message_key='thankyou' specifically, not "any prior send" — otherwise a
-  // guest who already got the invite/gift would wrongly be skipped here.
-  // message_key lands with a pending migration; read forward-compat via
-  // select('*') + runtime narrowing (same stance as the gift columns above).
-  // Exactly-once + partial-failure-safe: a crashed batch that thanked 30/50
-  // contacts will, on retry (auto sweep or manual button), only re-attempt the
-  // remaining 20 — never re-send to the 30 already logged here.
-  if (isThankyou && contacts.length > 0) {
-    const { data: priorRows } = await admin
-      .from('contact_interactions')
-      .select('*')
-      .eq('campaign_id', campaign.id)
-      .eq('direction', 'out')
-      .in('contact_id', contacts.map((c) => c.id));
-    const alreadyThanked = new Set(
-      (priorRows ?? [])
-        .filter((r) => (r as Record<string, unknown>).message_key === 'thankyou')
-        .map((r) => r.contact_id)
-        .filter((id): id is string => !!id),
-    );
-    contacts = contacts.filter((c) => !alreadyThanked.has(c.id));
-  }
-
   // Event-day's URL button (the Bit token) is REQUIRED by Meta — a missing token
   // fails the whole batch closed (mirrors the gift path's missing-link guard).
   if (isEventDay && !giftButtonToken) {
@@ -336,7 +341,7 @@ export async function sendCampaignWhatsApp(
       messageKey,
       'whatsapp',
     );
-    return { sent: 0, skipped: contacts.length };
+    return { sent: 0, skipped: contacts.length, blocked: false };
   }
 
   // {{1}} source: ONE batched read (not per-contact) of the event's linked
@@ -403,6 +408,28 @@ export async function sendCampaignWhatsApp(
       skipped++;
       continue;
     }
+
+    // Thank-you per-guest dedup (plan §2.1 — the CORE 131049 mitigation):
+    // atomic claim-BEFORE-send, not a read-then-filter check. A read-then-
+    // filter has a check-then-act race — the manual button (web) and the
+    // sweep (worker), or two overlapping sweep ticks, could both read "not
+    // yet thanked" before either writes a row, and both send. The
+    // claim_thankyou_recipient RPC inserts a placeholder row guarded by a
+    // partial UNIQUE index (campaign_id, contact_id) WHERE message_key=
+    // 'thankyou' — a lost race returns 'already_claimed' with NO row written,
+    // so a concurrent caller skips atomically, before ever calling the
+    // provider. See supabase/migrations/20260712205030_auto_thankyou_schema.sql.
+    if (isThankyou) {
+      const { data: claim, error: claimErr } = await (admin.rpc as unknown as ClaimThankyouRpc)(
+        'claim_thankyou_recipient',
+        { p_campaign: campaign.id, p_contact: contact.id, p_event: campaign.event_id },
+      );
+      if (claimErr || claim !== 'claimed') {
+        skipped++;
+        continue;
+      }
+    }
+
     const ok = await sendOneWhatsApp(
       admin,
       campaign,
@@ -420,8 +447,23 @@ export async function sendCampaignWhatsApp(
           ? { headerImage: media.headerImage }
           : undefined,
     );
+    if (isThankyou && ok.kind === 'accepted') {
+      // Finalize the claim row: move the REAL provider_id onto it so Meta's
+      // delivery-status webhook can find it, exactly like every other
+      // message_key. sendOneWhatsApp's OWN insert attempt (above) targets a
+      // DIFFERENT conflict key (channel, provider_id) and silently no-ops
+      // against the SAME row (the thankyou partial unique index rejects it,
+      // and that error is swallowed by sendOneWhatsApp's existing best-effort
+      // stance) — this explicit UPDATE is what actually persists the outcome.
+      await (admin.from('contact_interactions') as unknown as LooseContactInteractionsFilter)
+        .update({ provider_id: ok.providerId })
+        .eq('campaign_id', campaign.id)
+        .eq('contact_id', contact.id)
+        .eq('message_key', 'thankyou')
+        .eq('direction', 'out');
+    }
     if (ok.kind === 'accepted') sent++;
     else skipped++;
   }
-  return { sent, skipped };
+  return { sent, skipped, blocked: false };
 }

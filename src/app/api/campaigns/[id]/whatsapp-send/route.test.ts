@@ -75,7 +75,7 @@ describe('POST /api/campaigns/[id]/whatsapp-send — CSRF origin gate', () => {
       appSecret: 's',
       verifyToken: 'v',
     });
-    vi.mocked(sendCampaignWhatsApp).mockResolvedValue({ sent: 1, skipped: 0 });
+    vi.mocked(sendCampaignWhatsApp).mockResolvedValue({ sent: 1, skipped: 0, blocked: false });
   });
 
   it('reaches sendCampaignWhatsApp for a same-origin POST', async () => {

@@ -80,13 +80,35 @@ async function markThankyouProcessed(admin: AdminClient, campaignId: string): Pr
 
 // The sweep's entry point (called by worker/main.ts on its own schedule).
 // Each due campaign is independent — one failing must not block the rest.
-export async function runThankyouSweep(): Promise<{ processed: number; failed: number }> {
+//
+// Bug fix (thankyou-review, high): sendCampaignWhatsApp does NOT throw for a
+// transient config/state gate (outreach kill-switch off, WhatsApp not
+// configured, template not yet approved, campaign/event not active) — it
+// returns `{sent:0, skipped:0, blocked:true}` instead. Marking
+// thankyou_sent_at on a BLOCKED result would permanently stop this campaign
+// from ever being retried once the blocker clears (and would wrongly close
+// the owner's UI edit window) — silently dropping the thank-you forever.
+// Only a non-blocked result (contacts were actually resolved and attempted,
+// whether or not any were eligible) counts as "processed".
+export async function runThankyouSweep(): Promise<{ processed: number; blocked: number; failed: number }> {
   const admin = createAdminClient();
   const dueIds = await listDueThankyouCampaigns(admin);
+  let blocked = 0;
   let failed = 0;
   for (const campaignId of dueIds) {
     try {
-      await sendCampaignWhatsApp(campaignId, 'thankyou');
+      const result = await sendCampaignWhatsApp(campaignId, 'thankyou');
+      if (result.blocked) {
+        blocked++;
+        // Visible (not silent) — this is the ONLY signal an operator gets
+        // for "auto-thankyou keeps failing to even start" (kill-switch off,
+        // missing config, unapproved template). No PII.
+        console.error(
+          '[auto-thankyou] sweep blocked (transient config/state gate) — will retry next tick',
+          campaignId,
+        );
+        continue;
+      }
       await markThankyouProcessed(admin, campaignId);
     } catch (err) {
       failed++;
@@ -97,5 +119,5 @@ export async function runThankyouSweep(): Promise<{ processed: number; failed: n
       );
     }
   }
-  return { processed: dueIds.length - failed, failed };
+  return { processed: dueIds.length - blocked - failed, blocked, failed };
 }

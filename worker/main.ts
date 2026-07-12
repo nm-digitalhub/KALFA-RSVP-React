@@ -312,7 +312,16 @@ async function main(): Promise<void> {
   await boss.start();
 
   for (const q of Object.values(QUEUES)) {
-    await boss.createQueue(q);
+    // thankyouSweep: 'singleton' policy — only 1 job may be ACTIVE at a time
+    // (unlimited queued). Bug fix (thankyou-review, high): without this, an
+    // overlapping cron tick (the previous sweep still running past the
+    // 5-minute interval) could run concurrently with a new one — two
+    // processes both reading "not yet claimed" for the same contact before
+    // either writes a claim row. The atomic claim (contact_interactions
+    // partial UNIQUE index) already makes a double-SEND impossible even under
+    // overlap, but this closes the race at its source instead of relying on
+    // a single defense layer.
+    await boss.createQueue(q, q === QUEUES.thankyouSweep ? { policy: 'singleton' } : undefined);
   }
 
   await boss.work(QUEUES.step, async (jobs: StepJob[]) => {
