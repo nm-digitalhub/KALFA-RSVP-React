@@ -12,31 +12,6 @@ export type Database = {
   __InternalSupabase: {
     PostgrestVersion: "14.5"
   }
-  graphql_public: {
-    Tables: {
-      [_ in never]: never
-    }
-    Views: {
-      [_ in never]: never
-    }
-    Functions: {
-      graphql: {
-        Args: {
-          extensions?: Json
-          operationName?: string
-          query?: string
-          variables?: Json
-        }
-        Returns: Json
-      }
-    }
-    Enums: {
-      [_ in never]: never
-    }
-    CompositeTypes: {
-      [_ in never]: never
-    }
-  }
   public: {
     Tables: {
       activity_log: {
@@ -119,6 +94,7 @@ export type Database = {
           agr_record_retention_months: string | null
           agr_retention_days: string | null
           agr_service_activation_window: string | null
+          billing_exposure_gate: boolean
           campaign_holds_enabled: boolean
           close_charge_enabled: boolean
           company_contact_email: string | null
@@ -166,6 +142,7 @@ export type Database = {
           agr_record_retention_months?: string | null
           agr_retention_days?: string | null
           agr_service_activation_window?: string | null
+          billing_exposure_gate?: boolean
           campaign_holds_enabled?: boolean
           close_charge_enabled?: boolean
           company_contact_email?: string | null
@@ -213,6 +190,7 @@ export type Database = {
           agr_record_retention_months?: string | null
           agr_retention_days?: string | null
           agr_service_activation_window?: string | null
+          billing_exposure_gate?: boolean
           campaign_holds_enabled?: boolean
           close_charge_enabled?: boolean
           company_contact_email?: string | null
@@ -441,6 +419,60 @@ export type Database = {
           },
           {
             foreignKeyName: "campaign_authorized_contacts_event_id_fkey"
+            columns: ["event_id"]
+            isOneToOne: false
+            referencedRelation: "events"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      campaign_authorized_set_audit: {
+        Row: {
+          action: string | null
+          actor: string | null
+          at: string
+          campaign_id: string
+          contact_id: string | null
+          event_id: string
+          id: string
+          prev_contact_id: string | null
+          reason: string | null
+          resulting_size: number | null
+        }
+        Insert: {
+          action?: string | null
+          actor?: string | null
+          at?: string
+          campaign_id: string
+          contact_id?: string | null
+          event_id: string
+          id?: string
+          prev_contact_id?: string | null
+          reason?: string | null
+          resulting_size?: number | null
+        }
+        Update: {
+          action?: string | null
+          actor?: string | null
+          at?: string
+          campaign_id?: string
+          contact_id?: string | null
+          event_id?: string
+          id?: string
+          prev_contact_id?: string | null
+          reason?: string | null
+          resulting_size?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "campaign_authorized_set_audit_campaign_id_fkey"
+            columns: ["campaign_id"]
+            isOneToOne: false
+            referencedRelation: "campaigns"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "campaign_authorized_set_audit_event_id_fkey"
             columns: ["event_id"]
             isOneToOne: false
             referencedRelation: "events"
@@ -2008,6 +2040,15 @@ export type Database = {
         }
       }
       create_organization: { Args: { _name: string }; Returns: string }
+      exposed_for_billing: {
+        Args: {
+          p_campaign: string
+          p_channel: Database["public"]["Enums"]["campaign_channel"]
+          p_contact: string
+          p_event: string
+        }
+        Returns: boolean
+      }
       get_rsvp_by_token: { Args: { _token: string }; Returns: Json }
       guest_effective_attending: {
         Args: { g: Database["public"]["Tables"]["guests"]["Row"] }
@@ -2025,6 +2066,10 @@ export type Database = {
         }
         Returns: boolean
       }
+      has_service_exposure: {
+        Args: { p_campaign: string; p_contact: string }
+        Returns: boolean
+      }
       is_org_member: { Args: { _org_id: string }; Returns: boolean }
       org_role_rank: { Args: { _role_id: string }; Returns: number }
       over_invited: {
@@ -2032,6 +2077,17 @@ export type Database = {
         Returns: boolean
       }
       owns_event: { Args: { _event_id: string }; Returns: boolean }
+      reconcile_authorized_set: {
+        Args: {
+          p_actor?: string
+          p_campaign: string
+          p_contact: string
+          p_event: string
+          p_op: string
+          p_prev_contact?: string
+        }
+        Returns: string
+      }
       record_step_plan: {
         Args: {
           p_campaign: string
@@ -2283,9 +2339,6 @@ export type CompositeTypes<
     : never
 
 export const Constants = {
-  graphql_public: {
-    Enums: {},
-  },
   public: {
     Enums: {
       agreement_status: ["draft", "approved"],
