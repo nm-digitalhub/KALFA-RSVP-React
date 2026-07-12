@@ -1,6 +1,7 @@
 import 'server-only';
 
 import { WhatsAppAPI } from 'whatsapp-api-js';
+import { DEFAULT_API_VERSION } from 'whatsapp-api-js/types';
 import {
   Text,
   Template,
@@ -66,6 +67,12 @@ const DEFINITELY_NOT_SENT_CODES = new Set<number>([
   132012, // template parameter format mismatch
   132015, // template is paused
   132016, // template is disabled
+  // 131055 (MM Lite: WABA not eligible for /marketing_messages, or ad-sync
+  // still in progress) is DELIBERATELY NOT here — it classifies as `unknown`,
+  // not `definitely_not_sent`. `product_policy: 'CLOUD_API_FALLBACK'` should
+  // already prevent it from ever reaching the caller as a hard rejection, and
+  // a false 'definite' here would cost a real resend; the conservative
+  // `unknown` (one advance-skip) is the safe default per the file-header policy.
 ]);
 
 // Classify a RESOLVED sendMessage body. whatsapp-api-js returns the parsed JSON
@@ -102,45 +109,38 @@ function classifyThrow(e: unknown): DeliveryOutcome {
   };
 }
 
-export async function sendWhatsAppTemplate(
-  cfg: { phoneNumberId: string; accessToken: string; appSecret: string | null },
-  params: {
-    to: string;
-    templateName: string;
-    language: string;
-    // Positional body parameters ({{1}}..{{n}}, in order) for templates that
-    // declare body variables — built upstream by buildTemplateParams
-    // (template-spec.ts), which guarantees none is empty. Omitted → the
-    // template is sent bare, exactly as before (templates with no variables).
-    bodyParams?: readonly string[];
-    // IMAGE-header templates (e.g. kalfa_event_invite_media_v1): the actual
-    // per-event image, as a short-lived signed URL or a WhatsApp media id —
-    // resolved upstream; this adapter never touches storage.
-    headerImage?: { link: string } | { mediaId: string };
-    // URL-button variable — the suffix Meta appends to the template's static
-    // button URL (e.g. the event's gift_link_token for kalfa_event_gift_v1).
-    urlButtonParam?: string;
-    // RSVP quick-reply payloads bound at send time, in button-index order, for
-    // templates whose approved layout carries the 3 RSVP QUICK_REPLY buttons.
-    // Meta stores NO payload on a QUICK_REPLY button, so a tap returns these (as
-    // button.payload) ONLY when injected here; otherwise it echoes the LABEL and
-    // the inbound RSVP_BUTTON_MAP misses. One PayloadComponent per payload.
-    rsvpButtonPayloads?: readonly string[];
-  },
-): Promise<DeliveryOutcome> {
-  // Fail-closed: a URL button and RSVP quick-reply payloads share the SAME
-  // button-index space, so injecting both would misalign the indices and Meta
-  // would reject or mis-route the tap. A template is EITHER a URL-button type OR
-  // a quick-reply type here — never both. Refuse rather than send a broken message.
-  if (params.urlButtonParam && params.rsvpButtonPayloads) {
-    return { kind: 'unknown', reason: 'url_and_rsvp_buttons_conflict' };
-  }
-  // secure:false avoids requiring the appSecret for SENDING (the secret is only
-  // needed to verify INBOUND webhooks, handled in B2).
-  const api = new WhatsAppAPI({ token: cfg.accessToken, secure: false });
-  // whatsapp-api-js 6.x: Template(name, language, ...components); a positional
-  // body is one BodyComponent whose BodyParameter order is the {{i}} order;
-  // button component indexes are assigned by constructor order.
+// Send-time template inputs shared by BOTH send paths (regular `/messages`
+// and MM Lite `/marketing_messages`) — same components, same fail-closed
+// rules, different transport.
+type TemplateMessageParams = {
+  templateName: string;
+  language: string;
+  // Positional body parameters ({{1}}..{{n}}, in order) for templates that
+  // declare body variables — built upstream by buildTemplateParams
+  // (template-spec.ts), which guarantees none is empty. Omitted → the
+  // template is sent bare, exactly as before (templates with no variables).
+  bodyParams?: readonly string[];
+  // IMAGE-header templates (e.g. kalfa_event_invite_media_v1): the actual
+  // per-event image, as a short-lived signed URL or a WhatsApp media id —
+  // resolved upstream; this adapter never touches storage.
+  headerImage?: { link: string } | { mediaId: string };
+  // URL-button variable — the suffix Meta appends to the template's static
+  // button URL (e.g. the event's gift_link_token for kalfa_event_gift_v1).
+  urlButtonParam?: string;
+  // RSVP quick-reply payloads bound at send time, in button-index order, for
+  // templates whose approved layout carries the 3 RSVP QUICK_REPLY buttons.
+  // Meta stores NO payload on a QUICK_REPLY button, so a tap returns these (as
+  // button.payload) ONLY when injected here; otherwise it echoes the LABEL and
+  // the inbound RSVP_BUTTON_MAP misses. One PayloadComponent per payload.
+  rsvpButtonPayloads?: readonly string[];
+};
+
+// Shared Template-message construction for both send paths (extracted so
+// `/messages` and `/marketing_messages` never drift on component-building
+// logic). whatsapp-api-js 6.x: Template(name, language, ...components); a
+// positional body is one BodyComponent whose BodyParameter order is the {{i}}
+// order; button component indexes are assigned by constructor order.
+function buildTemplateMessage(params: TemplateMessageParams): Template {
   const components: (
     | HeaderComponent
     | BodyComponent
@@ -174,20 +174,92 @@ export async function sendWhatsAppTemplate(
       components.push(new PayloadComponent(payload));
     }
   }
-  const message =
-    components.length > 0
-      ? new Template(
-          params.templateName,
-          new Language(params.language),
-          ...(components as [
-            HeaderComponent | BodyComponent | URLComponent | PayloadComponent,
-          ]),
-        )
-      : new Template(params.templateName, new Language(params.language));
+  return components.length > 0
+    ? new Template(
+        params.templateName,
+        new Language(params.language),
+        ...(components as [
+          HeaderComponent | BodyComponent | URLComponent | PayloadComponent,
+        ]),
+      )
+    : new Template(params.templateName, new Language(params.language));
+}
+
+export async function sendWhatsAppTemplate(
+  cfg: { phoneNumberId: string; accessToken: string; appSecret: string | null },
+  params: TemplateMessageParams & { to: string },
+): Promise<DeliveryOutcome> {
+  // Fail-closed: a URL button and RSVP quick-reply payloads share the SAME
+  // button-index space, so injecting both would misalign the indices and Meta
+  // would reject or mis-route the tap. A template is EITHER a URL-button type OR
+  // a quick-reply type here — never both. Refuse rather than send a broken message.
+  if (params.urlButtonParam && params.rsvpButtonPayloads) {
+    return { kind: 'unknown', reason: 'url_and_rsvp_buttons_conflict' };
+  }
+  // secure:false avoids requiring the appSecret for SENDING (the secret is only
+  // needed to verify INBOUND webhooks, handled in B2).
+  const api = new WhatsAppAPI({ token: cfg.accessToken, secure: false });
+  const message = buildTemplateMessage(params);
 
   try {
     const res = await api.sendMessage(cfg.phoneNumberId, params.to, message);
     return classifyResponse(res);
+  } catch (e) {
+    return classifyThrow(e);
+  }
+}
+
+// MM Lite — MARKETING-category templates only (message_key ∈
+// MARKETING_MESSAGE_KEYS, template-spec.ts). Meta requires MARKETING template
+// sends to route through `/marketing_messages` rather than `/messages` for
+// the routing/timing optimization MM Lite provides (a non-MARKETING template
+// here would come back as error 131055). whatsapp-api-js has NO native
+// support for this endpoint (verified across the 6.x line) — it is reached
+// via the library's documented escape hatch, `$$apiFetch$$` (lib/index.js,
+// "for a specific API operation which is not implemented by the library"),
+// which authenticates with the SAME token/version/fetch as every other call.
+// Deliberately NOT a raw fetch or a fetch ponyfill — either would risk
+// diverging from the instance's own transport (e.g. re-pointing markAsRead,
+// which also posts to `/messages`, is a needless hazard `$$apiFetch$$` avoids.
+export async function sendWhatsAppMarketingTemplate(
+  cfg: { phoneNumberId: string; accessToken: string; appSecret: string | null },
+  params: TemplateMessageParams & { to: string },
+): Promise<DeliveryOutcome> {
+  // Same fail-closed button-index guard as sendWhatsAppTemplate.
+  if (params.urlButtonParam && params.rsvpButtonPayloads) {
+    return { kind: 'unknown', reason: 'url_and_rsvp_buttons_conflict' };
+  }
+  // `v` is a private field on WhatsAppAPI (unlike sendMessage, we build the
+  // URL ourselves) — pin the SAME version explicitly here, both for the
+  // constructor and the URL, rather than reading a private property.
+  const api = new WhatsAppAPI({ token: cfg.accessToken, secure: false, v: DEFAULT_API_VERSION });
+  const message = buildTemplateMessage(params);
+  // Same request shape as `/messages` (messaging_product/recipient_type/to/
+  // type/[type]) plus `product_policy` — verified against Meta's Marketing
+  // Messages docs. CLOUD_API_FALLBACK (the default) falls back to ordinary
+  // Cloud API routing if the WABA isn't (yet) eligible for MM Lite, so this is
+  // written explicitly rather than omitted. message_activity_sharing is left
+  // unset on purpose — it inherits the WABA-level default (per the plan).
+  const body = {
+    messaging_product: 'whatsapp',
+    recipient_type: 'individual',
+    to: params.to,
+    type: message._type,
+    [message._type]: message,
+    product_policy: 'CLOUD_API_FALLBACK',
+  };
+  try {
+    const res = await api.$$apiFetch$$(
+      `https://graph.facebook.com/${DEFAULT_API_VERSION}/${cfg.phoneNumberId}/marketing_messages`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      },
+    );
+    // $$apiFetch$$ returns the RAW fetch Response (unlike sendMessage, which
+    // resolves the parsed body) — parse it ourselves before classifying.
+    return classifyResponse(await res.json());
   } catch (e) {
     return classifyThrow(e);
   }

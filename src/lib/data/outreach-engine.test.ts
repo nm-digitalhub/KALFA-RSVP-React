@@ -443,6 +443,7 @@ describe('executeStep — send-time parameter binding', () => {
       { id: 'k1', normalized_phone: '972500000001' },
       weddingTemplate,
       waConfig,
+      'invite',
       [
         'דנה',
         'דוד לוי',
@@ -473,7 +474,7 @@ describe('executeStep — send-time parameter binding', () => {
     const r = await executeStep(makeCtx('invite'), 'c1', 'k1', 'e1', 0);
 
     expect(r).toEqual({ action: 'whatsapp_sent' });
-    const bodyParams = vi.mocked(sendOneWhatsApp).mock.calls[0][5];
+    const bodyParams = vi.mocked(sendOneWhatsApp).mock.calls[0][6];
     expect(bodyParams?.[0]).toBe(GUEST_FIRST_NAME_FALLBACK);
     // Generic family: {{2}} is the event-type label, {{3}} the celebrants text.
     expect(bodyParams?.[1]).toBe('חתונה');

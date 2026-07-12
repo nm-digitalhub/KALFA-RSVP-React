@@ -13,12 +13,17 @@ import {
 import { listSendableContacts } from '@/lib/data/contacts';
 import { isPastEventDay } from '@/lib/data/event-date';
 import { signedInviteImageUrl } from '@/lib/storage/event-media';
-import { sendWhatsAppTemplate, type DeliveryOutcome } from '@/lib/whatsapp/client';
+import {
+  sendWhatsAppMarketingTemplate,
+  sendWhatsAppTemplate,
+  type DeliveryOutcome,
+} from '@/lib/whatsapp/client';
 import { RSVP_QUICK_REPLY_PAYLOADS } from '@/lib/whatsapp/rsvp-buttons';
 import {
   buildBodyParams,
   buildGiftParams,
   deriveGuestFirstName,
+  MARKETING_MESSAGE_KEYS,
   POST_EVENT_MESSAGE_KEYS,
 } from '@/lib/whatsapp/template-spec';
 import type { Database } from '@/lib/supabase/types';
@@ -37,6 +42,12 @@ export async function sendOneWhatsApp(
   contact: { id: string; normalized_phone: string },
   template: ResolvedTemplate,
   config: WhatsAppConfig,
+  // The touchpoint's message_key (both callers already hold it — the manual
+  // batch's own `messageKey` param / the engine's `tp.message_key`). Routes
+  // MARKETING-classified templates (MARKETING_MESSAGE_KEYS, template-spec.ts)
+  // through MM Lite (`/marketing_messages`) instead of the regular `/messages`
+  // endpoint; every other key keeps sending exactly as before.
+  messageKey: string,
   // Positional {{1}}..{{7}} values from buildTemplateParams — the callers
   // build them (fail-closed) and never pass a partial set.
   bodyParams?: readonly string[],
@@ -47,9 +58,12 @@ export async function sendOneWhatsApp(
     urlButtonParam?: string;
   },
 ): Promise<DeliveryOutcome> {
+  const send = MARKETING_MESSAGE_KEYS.has(messageKey)
+    ? sendWhatsAppMarketingTemplate
+    : sendWhatsAppTemplate;
   let outcome: DeliveryOutcome;
   try {
-    outcome = await sendWhatsAppTemplate(
+    outcome = await send(
       {
         phoneNumberId: config.phoneNumberId,
         accessToken: config.accessToken,
@@ -356,6 +370,7 @@ export async function sendCampaignWhatsApp(
       contact,
       sendTemplate,
       config,
+      messageKey,
       built.params,
       // The gift / event-day URL button gets the event's opaque token as its
       // suffix (https://beta.kalfa.me/g/{token}); giftButtonToken is always

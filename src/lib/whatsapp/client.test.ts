@@ -3,16 +3,20 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 vi.mock('server-only', () => ({}));
 
 const sendMessage = vi.fn();
+// The MM Lite escape hatch — spied so tests assert the exact URL + body sent
+// to `/marketing_messages` (there is no native SDK method to call instead).
+const apiFetch = vi.fn();
 // Only the API transport is mocked (never a real network call). The message
 // classes ('whatsapp-api-js/messages') stay REAL so the tests assert the
 // actual Cloud API payload shape the SDK builds — not a mock's echo.
 vi.mock('whatsapp-api-js', () => ({
   WhatsAppAPI: class {
     sendMessage = sendMessage;
+    $$apiFetch$$ = apiFetch;
   },
 }));
 
-import { sendWhatsAppTemplate } from './client';
+import { sendWhatsAppMarketingTemplate, sendWhatsAppTemplate } from './client';
 
 const cfg = { phoneNumberId: 'PNID', accessToken: 'TKN', appSecret: null };
 
@@ -203,6 +207,97 @@ describe('sendWhatsAppTemplate', () => {
     // never a wrong "definite" that would cost a resend).
     sendMessage.mockResolvedValue({ error: { code: 131050 } });
     const r = await sendWhatsAppTemplate(cfg, { to: '+972500000000', templateName: 't', language: 'he' });
+    expect(r.kind).toBe('unknown');
+  });
+});
+
+// MM Lite — MARKETING-category templates (thankyou etc.) route here instead
+// of sendWhatsAppTemplate. There is no native SDK method for
+// `/marketing_messages`, so this exercises the library's documented escape
+// hatch ($$apiFetch$$) directly — asserting the URL + exact body shape is the
+// only way to verify the routing is correct (there's no `sendMessage`-level
+// call to inspect).
+describe('sendWhatsAppMarketingTemplate', () => {
+  it('POSTs to /marketing_messages with product_policy CLOUD_API_FALLBACK and returns the provider message id', async () => {
+    apiFetch.mockResolvedValue({ json: async () => ({ messages: [{ id: 'wamid.mm1' }] }) });
+
+    const r = await sendWhatsAppMarketingTemplate(cfg, {
+      to: '+972501234567',
+      templateName: 'kalfa_thankyou_v1',
+      language: 'he',
+      bodyParams: ['חתונה', 'דוד לוי ו־שרה כהן'],
+    });
+
+    expect(apiFetch).toHaveBeenCalledTimes(1);
+    const [url, options] = apiFetch.mock.calls[0];
+    expect(url).toMatch(/\/PNID\/marketing_messages$/);
+    const body = JSON.parse(options.body);
+    expect(body).toEqual({
+      messaging_product: 'whatsapp',
+      recipient_type: 'individual',
+      to: '+972501234567',
+      type: 'template',
+      template: {
+        name: 'kalfa_thankyou_v1',
+        language: { code: 'he', policy: 'deterministic' },
+        components: [
+          {
+            type: 'body',
+            parameters: [
+              { type: 'text', text: 'חתונה' },
+              { type: 'text', text: 'דוד לוי ו־שרה כהן' },
+            ],
+          },
+        ],
+      },
+      product_policy: 'CLOUD_API_FALLBACK',
+    });
+    expect(r).toEqual({ kind: 'accepted', providerId: 'wamid.mm1' });
+  });
+
+  it('parses the raw fetch Response ($$apiFetch$$ does not resolve the body like sendMessage does)', async () => {
+    const json = vi.fn().mockResolvedValue({ error: { code: 131026 } });
+    apiFetch.mockResolvedValue({ json });
+
+    const r = await sendWhatsAppMarketingTemplate(cfg, {
+      to: '+972500000000',
+      templateName: 't',
+      language: 'he',
+    });
+
+    expect(json).toHaveBeenCalledTimes(1);
+    expect(r.kind).toBe('definitely_not_sent');
+  });
+
+  it('classifies MM Lite ineligibility (131055) as unknown, not definitely_not_sent', async () => {
+    apiFetch.mockResolvedValue({ json: async () => ({ error: { code: 131055 } }) });
+    const r = await sendWhatsAppMarketingTemplate(cfg, {
+      to: '+972500000000',
+      templateName: 't',
+      language: 'he',
+    });
+    expect(r.kind).toBe('unknown');
+  });
+
+  it('fail-closed: a URL button + RSVP payloads is refused before any provider call', async () => {
+    const r = await sendWhatsAppMarketingTemplate(cfg, {
+      to: '+972501234567',
+      templateName: 'kalfa_event_gift_v1',
+      language: 'he',
+      urlButtonParam: 'giftToken',
+      rsvpButtonPayloads: ['rsvp_attending', 'rsvp_declined', 'rsvp_maybe'],
+    });
+    expect(apiFetch).not.toHaveBeenCalled();
+    expect(r).toEqual({ kind: 'unknown', reason: 'url_and_rsvp_buttons_conflict' });
+  });
+
+  it('classifies a thrown fetch (network/timeout) as unknown', async () => {
+    apiFetch.mockRejectedValue(new Error('meta down'));
+    const r = await sendWhatsAppMarketingTemplate(cfg, {
+      to: '+972500000000',
+      templateName: 't',
+      language: 'he',
+    });
     expect(r.kind).toBe('unknown');
   });
 });
