@@ -1416,6 +1416,93 @@ export type Database = {
           },
         ]
       }
+      organization_role_audit_log: {
+        Row: {
+          action: string
+          actor_id: string | null
+          created_at: string
+          details: Json | null
+          id: string
+          organization_id: string
+          target_role_id: string | null
+        }
+        Insert: {
+          action: string
+          actor_id?: string | null
+          created_at?: string
+          details?: Json | null
+          id?: string
+          organization_id: string
+          target_role_id?: string | null
+        }
+        Update: {
+          action?: string
+          actor_id?: string | null
+          created_at?: string
+          details?: Json | null
+          id?: string
+          organization_id?: string
+          target_role_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "organization_role_audit_log_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      organization_role_permissions: {
+        Row: {
+          created_at: string
+          granted_by: string | null
+          id: string
+          organization_id: string
+          permission_id: string
+          role_id: string
+        }
+        Insert: {
+          created_at?: string
+          granted_by?: string | null
+          id?: string
+          organization_id: string
+          permission_id: string
+          role_id: string
+        }
+        Update: {
+          created_at?: string
+          granted_by?: string | null
+          id?: string
+          organization_id?: string
+          permission_id?: string
+          role_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "organization_role_permissions_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "organization_role_permissions_permission_id_fkey"
+            columns: ["permission_id"]
+            isOneToOne: false
+            referencedRelation: "permission_definitions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "organization_role_permissions_role_id_fkey"
+            columns: ["role_id"]
+            isOneToOne: false
+            referencedRelation: "org_roles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       organizations: {
         Row: {
           created_at: string
@@ -1667,6 +1754,7 @@ export type Database = {
           label: string
           resource: string
           sort_order: number
+          system_protected: boolean
         }
         Insert: {
           action: string
@@ -1675,6 +1763,7 @@ export type Database = {
           label: string
           resource: string
           sort_order?: number
+          system_protected?: boolean
         }
         Update: {
           action?: string
@@ -1683,6 +1772,7 @@ export type Database = {
           label?: string
           resource?: string
           sort_order?: number
+          system_protected?: boolean
         }
         Relationships: []
       }
@@ -2370,6 +2460,7 @@ export type Database = {
         Returns: boolean
       }
       is_org_member: { Args: { _org_id: string }; Returns: boolean }
+      is_org_owner: { Args: { _org_id: string }; Returns: boolean }
       is_platform_owner: { Args: never; Returns: boolean }
       is_staff: { Args: never; Returns: boolean }
       org_role_rank: { Args: { _role_id: string }; Returns: number }
