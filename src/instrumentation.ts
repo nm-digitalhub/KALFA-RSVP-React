@@ -10,7 +10,7 @@ import { type Instrumentation } from 'next';
 // instrumentation.md). The `register` export is for run-once startup code and
 // is not required for error capture, so it is intentionally omitted.
 //
-// `@slack/webhook` depends on Node's HTTP stack, so the actual send is loaded
+// `@slack/web-api` depends on Node's HTTP stack, so the actual send is loaded
 // (dynamic import) and invoked ONLY in the Node.js runtime — mirroring the
 // docs' NEXT_RUNTIME guard for runtime-specific code. This keeps the notifier
 // out of any Edge bundle and keeps the hook fail-safe.
@@ -32,6 +32,7 @@ export const onRequestError: Instrumentation.onRequestError = async (err, reques
       source: `${context.routeType} ${context.routePath}`,
       detail: detailParts.join(' · '),
       fields: { method: request.method, path: request.path },
+      category: 'errors',
     });
   } catch {
     // Fail-safe: an error hook must never throw.

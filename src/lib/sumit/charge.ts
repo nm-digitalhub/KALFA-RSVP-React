@@ -65,14 +65,14 @@ export async function chargeSumit(params: SumitChargeParams): Promise<SumitCharg
     // Caller must move to payment_review, not failed.
     // Fail-safe ops alert (non-throwing, no PII — no email/token/amount). NOT
     // fired for SumitDeclinedError: a definite decline is a business outcome.
-    void sendSlackAlert({ level: 'warn', title: 'SUMIT charge failed', detail: 'network', source: 'sumit' });
+    void sendSlackAlert({ level: 'warn', title: 'SUMIT charge failed', detail: 'network', source: 'sumit', category: 'send_health' });
     throw new SumitNetworkError('שגיאת תקשורת עם מערכת התשלום');
   }
 
   if (!res.ok) {
     // Any non-2xx: the request may have reached SUMIT (esp. 5xx). Treat as unknown.
     // Only IsError=true in a 2xx body is a definite decline (safe to retry).
-    void sendSlackAlert({ level: 'warn', title: 'SUMIT charge failed', detail: `http_${res.status}`, source: 'sumit' });
+    void sendSlackAlert({ level: 'warn', title: 'SUMIT charge failed', detail: `http_${res.status}`, source: 'sumit', category: 'send_health' });
     throw new SumitNetworkError('לא התקבל אישור חד משמעי ממערכת התשלום');
   }
 
@@ -87,7 +87,7 @@ export async function chargeSumit(params: SumitChargeParams): Promise<SumitCharg
     json = (await res.json()) as ChargeResponse;
   } catch {
     // Got a response but can't parse — treat as unknown outcome.
-    void sendSlackAlert({ level: 'warn', title: 'SUMIT charge failed', detail: 'invalid_response', source: 'sumit' });
+    void sendSlackAlert({ level: 'warn', title: 'SUMIT charge failed', detail: 'invalid_response', source: 'sumit', category: 'send_health' });
     throw new SumitNetworkError('תגובה לא תקינה ממערכת התשלום');
   }
 
@@ -99,7 +99,7 @@ export async function chargeSumit(params: SumitChargeParams): Promise<SumitCharg
   const documentId = json.Data?.DocumentID;
   if (!documentId) {
     // DocumentID missing in non-error response — unknown outcome.
-    void sendSlackAlert({ level: 'warn', title: 'SUMIT charge failed', detail: 'missing_document_id', source: 'sumit' });
+    void sendSlackAlert({ level: 'warn', title: 'SUMIT charge failed', detail: 'missing_document_id', source: 'sumit', category: 'send_health' });
     throw new SumitNetworkError('אישור תשלום לא התקבל ממערכת');
   }
 

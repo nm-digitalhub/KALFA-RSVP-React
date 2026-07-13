@@ -88,6 +88,7 @@ function guardedWorker<T>(
         title: `worker job failed: ${queue}`,
         detail: e instanceof Error ? e.message : 'unknown error',
         source: queue,
+        category: 'errors',
       });
       throw e;
     }
@@ -253,6 +254,7 @@ async function handleDead(job: { data: OutreachStepJob }): Promise<void> {
       title: 'worker dead-letter: reserved job died',
       source: 'dead-letter',
       fields: { campaignId, contactId, stepIndex: data.stepIndex },
+      category: 'errors',
     });
     return;
   }
@@ -296,6 +298,7 @@ async function handleWebhook(): Promise<void> {
         title: 'webhook processing failed',
         source: 'webhook-processing',
         fields: { rowId: row.id, attempts: row.attempts + 1 },
+        category: 'errors',
       });
     }
   }
@@ -351,7 +354,13 @@ async function main(): Promise<void> {
   boss.on('error', (e: Error) => {
     console.error('[pgboss]', e.message);
     // Fire-and-forget (the listener is sync); sendSlackAlert never throws.
-    void sendSlackAlert({ level: 'error', title: 'pg-boss error', detail: e.message, source: 'pgboss' });
+    void sendSlackAlert({
+      level: 'error',
+      title: 'pg-boss error',
+      detail: e.message,
+      source: 'pgboss',
+      category: 'errors',
+    });
   });
   await boss.start();
 
@@ -430,6 +439,7 @@ main().catch(async (e) => {
     title: 'worker fatal',
     detail: e instanceof Error ? e.message : 'unknown error',
     source: 'worker-fatal',
+    category: 'errors',
   });
   process.exit(1);
 });

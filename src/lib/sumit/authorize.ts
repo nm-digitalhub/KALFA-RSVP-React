@@ -73,11 +73,11 @@ export async function authorizeHoldSumit(
   } catch {
     // Fail-safe ops alert (non-throwing, no PII). NOT fired for a definite
     // SumitDeclinedError (a business decline, not a provider-API failure).
-    void sendSlackAlert({ level: 'warn', title: 'SUMIT authorize failed', detail: 'network', source: 'sumit' });
+    void sendSlackAlert({ level: 'warn', title: 'SUMIT authorize failed', detail: 'network', source: 'sumit', category: 'send_health' });
     throw new SumitNetworkError('שגיאת תקשורת עם מערכת התשלום');
   }
   if (!res.ok) {
-    void sendSlackAlert({ level: 'warn', title: 'SUMIT authorize failed', detail: `http_${res.status}`, source: 'sumit' });
+    void sendSlackAlert({ level: 'warn', title: 'SUMIT authorize failed', detail: `http_${res.status}`, source: 'sumit', category: 'send_health' });
     throw new SumitNetworkError('לא התקבל אישור חד משמעי ממערכת התשלום');
   }
 
@@ -110,7 +110,7 @@ export async function authorizeHoldSumit(
   try {
     json = (await res.json()) as Resp;
   } catch {
-    void sendSlackAlert({ level: 'warn', title: 'SUMIT authorize failed', detail: 'invalid_response', source: 'sumit' });
+    void sendSlackAlert({ level: 'warn', title: 'SUMIT authorize failed', detail: 'invalid_response', source: 'sumit', category: 'send_health' });
     throw new SumitNetworkError('תגובה לא תקינה ממערכת התשלום');
   }
 
@@ -136,7 +136,7 @@ export async function authorizeHoldSumit(
   const authorized =
     success && !!authNumber && payment?.ValidPayment === true;
   if (!authorized || !authNumber) {
-    void sendSlackAlert({ level: 'warn', title: 'SUMIT authorize failed', detail: 'unconfirmed', source: 'sumit' });
+    void sendSlackAlert({ level: 'warn', title: 'SUMIT authorize failed', detail: 'unconfirmed', source: 'sumit', category: 'send_health' });
     throw new SumitNetworkError('אישור התפיסה לא התקבל ממערכת');
   }
 

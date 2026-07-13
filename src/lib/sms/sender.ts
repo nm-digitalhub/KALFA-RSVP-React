@@ -53,6 +53,7 @@ export function createExtraSmsSender(config: {
           title: 'SMS send failed',
           detail: 'transport',
           source: 'sms',
+          category: 'send_health',
         });
         throw new SmsSendError('שליחת ההודעה נכשלה (תקשורת)');
       }
@@ -66,6 +67,7 @@ export function createExtraSmsSender(config: {
           title: 'SMS send failed',
           detail: `http_${res.status}`,
           source: 'sms',
+          category: 'send_health',
         });
         throw new SmsSendError(`שליחת ההודעה נכשלה (HTTP ${res.status})`);
       }
@@ -83,6 +85,7 @@ export function createExtraSmsSender(config: {
           title: 'SMS send failed',
           detail: 'invalid_response',
           source: 'sms',
+          category: 'send_health',
         });
         throw new SmsSendError('תגובה לא תקינה מספק ה-SMS');
       }

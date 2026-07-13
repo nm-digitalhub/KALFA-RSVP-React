@@ -1,0 +1,105 @@
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+vi.mock('next/cache', () => ({ revalidatePath: vi.fn() }));
+vi.mock('next/navigation', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('next/navigation')>();
+  return { ...actual };
+});
+vi.mock('@/lib/auth/dal', () => ({ requireAdmin: vi.fn() }));
+vi.mock('@/lib/data/admin/alerts', () => ({
+  updateSlackConnection: vi.fn(),
+  clearSlackConnection: vi.fn(),
+  setSlackAlertsEnabled: vi.fn(),
+  setSlackAlertCategory: vi.fn(),
+}));
+vi.mock('@/lib/alerts/slack', () => ({ sendSlackTestAlert: vi.fn() }));
+
+import { requireAdmin } from '@/lib/auth/dal';
+import { updateSlackConnection } from '@/lib/data/admin/alerts';
+import { sendSlackTestAlert } from '@/lib/alerts/slack';
+import {
+  saveSlackConnectionAction,
+  sendTestAlertAction,
+} from './actions';
+
+const NEXT_REDIRECT = Object.assign(new Error('NEXT_REDIRECT'), {
+  digest: 'NEXT_REDIRECT;replace;/app;307;',
+});
+
+function fd(entries: Record<string, string>): FormData {
+  const f = new FormData();
+  for (const [k, v] of Object.entries(entries)) f.set(k, v);
+  return f;
+}
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  vi.mocked(requireAdmin).mockResolvedValue({ id: 'admin' } as never);
+});
+
+describe('saveSlackConnectionAction — authorization', () => {
+  it('propagates a requireAdmin redirect instead of returning { error }', async () => {
+    vi.mocked(requireAdmin).mockRejectedValueOnce(NEXT_REDIRECT);
+    await expect(
+      saveSlackConnectionAction(null, fd({ slack_bot_token: 'xoxb-a1', slack_alert_channel_id: 'C123456' })),
+    ).rejects.toThrow('NEXT_REDIRECT');
+    expect(updateSlackConnection).not.toHaveBeenCalled();
+  });
+});
+
+describe('saveSlackConnectionAction — validation', () => {
+  it('rejects a bot token that is not xoxb-…', async () => {
+    const r = await saveSlackConnectionAction(
+      null,
+      fd({ slack_bot_token: 'not-a-token', slack_alert_channel_id: 'C123456' }),
+    );
+    expect(r?.fieldErrors?.slack_bot_token?.length).toBeGreaterThan(0);
+    expect(updateSlackConnection).not.toHaveBeenCalled();
+  });
+
+  it('rejects a channel id that is not C…', async () => {
+    const r = await saveSlackConnectionAction(
+      null,
+      fd({ slack_bot_token: 'xoxb-abc123', slack_alert_channel_id: 'lobby' }),
+    );
+    expect(r?.fieldErrors?.slack_alert_channel_id?.length).toBeGreaterThan(0);
+    expect(updateSlackConnection).not.toHaveBeenCalled();
+  });
+
+  it('accepts a valid token + channel and NEVER echoes the token back', async () => {
+    const r = await saveSlackConnectionAction(
+      null,
+      fd({ slack_bot_token: 'xoxb-secret-value', slack_alert_channel_id: 'C123456' }),
+    );
+    expect(updateSlackConnection).toHaveBeenCalledWith({
+      botToken: 'xoxb-secret-value',
+      channelId: 'C123456',
+    });
+    expect(r).toEqual({ notice: 'החיבור נשמר' });
+    // The secret must not leak into the returned state under any key.
+    expect(JSON.stringify(r)).not.toContain('xoxb-secret-value');
+  });
+
+  it('accepts a blank token (keep existing) with a valid channel', async () => {
+    const r = await saveSlackConnectionAction(
+      null,
+      fd({ slack_bot_token: '', slack_alert_channel_id: 'C999999' }),
+    );
+    expect(updateSlackConnection).toHaveBeenCalledWith({ botToken: '', channelId: 'C999999' });
+    expect(r).toEqual({ notice: 'החיבור נשמר' });
+  });
+});
+
+describe('sendTestAlertAction', () => {
+  it('reports success when the test alert is delivered', async () => {
+    vi.mocked(sendSlackTestAlert).mockResolvedValue({ ok: true });
+    const r = await sendTestAlertAction(null, new FormData());
+    expect(r?.notice).toBeTruthy();
+  });
+
+  it('reports a not_configured error distinctly', async () => {
+    vi.mocked(sendSlackTestAlert).mockResolvedValue({ ok: false, reason: 'not_configured' });
+    const r = await sendTestAlertAction(null, new FormData());
+    expect(r?.error).toContain('שמרו חיבור');
+  });
+});

@@ -122,6 +122,7 @@ function alertWhatsAppThrow(outcome: DeliveryOutcome): void {
     title: 'WhatsApp send failed',
     detail: `send_threw${status !== undefined ? ` status=${status}` : ''}`,
     source: 'whatsapp',
+    category: 'send_health',
   });
 }
 

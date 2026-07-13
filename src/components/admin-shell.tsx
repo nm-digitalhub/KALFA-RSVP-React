@@ -10,6 +10,7 @@ import {
   FileText,
   FlaskConical,
   LayoutDashboard,
+  BellRing,
   ListChecks,
   LogOut,
   MailOpen,
@@ -71,6 +72,7 @@ const NAV: NavItem[] = [
   { href: '/admin/templates', label: 'תבניות פנייה', icon: Megaphone },
   { href: '/admin/webhooks', label: 'בדיקת Webhooks', icon: Webhook },
   { href: '/admin/sumit-test', label: 'בדיקת SUMIT', icon: FlaskConical },
+  { href: '/admin/alerts', label: 'התראות תפעול', icon: BellRing },
   { href: '/admin/settings', label: 'הגדרות', icon: Settings },
 ];
 

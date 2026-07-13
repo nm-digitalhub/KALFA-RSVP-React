@@ -3,16 +3,23 @@ import 'server-only';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-import type { KnownBlock, MrkdwnElement, PlainTextElement } from '@slack/types';
+import type { KnownBlock, MessageAttachment, MrkdwnElement, PlainTextElement } from '@slack/types';
 import {
   ErrorCode,
-  IncomingWebhook,
-  type IncomingWebhookHTTPError,
-  type IncomingWebhookSendArguments,
+  WebClient,
+  type ChatPostMessageArguments,
   type RetryOptions,
-} from '@slack/webhook';
+  type WebAPIHTTPError,
+} from '@slack/web-api';
 
 import { rateLimit } from '@/lib/security/rate-limit';
+import { createAdminClient } from '@/lib/supabase/admin';
+import {
+  categoryEnabled,
+  getAlertsConfig,
+  type AlertCategory,
+  type AlertsConfig,
+} from '@/lib/data/alerts-config';
 
 // Central, fail-safe, PII-safe Slack notifier for internal ops alerting.
 //
@@ -23,10 +30,15 @@ import { rateLimit } from '@/lib/security/rate-limit';
 // error codes. A light redaction pass below is DEFENSE-IN-DEPTH, not a licence
 // to pass personal data.
 //
+// TRANSPORT: posts via the Slack Web API (`@slack/web-api` WebClient
+// chat.postMessage) using an admin-configured BOT TOKEN + CHANNEL ID read from
+// app_settings (see src/lib/data/alerts-config.ts). The token is server-only and
+// never logged.
+//
 // FAIL-SAFE: sendSlackAlert NEVER throws into the caller and NEVER blocks it for
-// long — a missing/empty webhook URL is a silent no-op, any send failure is
-// swallowed (logged without secrets), and the send is bounded by a short
-// timeout so a hung request cannot stall the caller.
+// long — a disabled config / missing token / missing channel / off category is a
+// silent no-op, any send failure is swallowed (logged without secrets), and the
+// send is bounded by a short timeout so a hung request cannot stall the caller.
 //
 // Importable by BOTH the Next.js server and the esbuild worker bundle: the
 // worker aliases `server-only` to an empty stub (see worker/main.ts header), so
@@ -40,8 +52,11 @@ export interface SlackAlertInput {
   detail?: string;
   source?: string;
   fields?: Record<string, string | number>;
+  // Which admin-managed toggle gates this alert. The alert is dropped unless the
+  // matching category is enabled (plus the master switch + token + channel).
+  category: AlertCategory;
   // When true, the message pings the channel (@here). Left OFF everywhere for
-  // now; Phase 3's admin UI will drive it per alert category. The code path
+  // now; a later phase's admin UI may drive it per alert category. The code path
   // exists and is typed so wiring it later is additive.
   mention?: boolean;
 }
@@ -173,10 +188,17 @@ function plain(text: string): PlainTextElement {
   return { type: 'plain_text', text, emoji: true };
 }
 
-// Build the full Slack payload: a plain-text fallback (notifications /
-// accessibility / non-block clients) PLUS a Block Kit layout rendered inside a
-// per-severity colored attachment. Every user-supplied string is redacted.
-function compose(input: SlackAlertInput, suppressedFromPrev: number): IncomingWebhookSendArguments {
+// The composed Slack message content (channel is added by the sender). A
+// plain-text fallback (notifications / accessibility / non-block clients) PLUS a
+// Block Kit layout rendered inside a per-severity colored attachment.
+interface ComposedMessage {
+  text: string;
+  attachments: MessageAttachment[];
+  link_names?: boolean;
+}
+
+// Build the composed content. Every user-supplied string is redacted.
+function compose(input: SlackAlertInput, suppressedFromPrev: number): ComposedMessage {
   const deployId = readDeployId();
   const env = process.env.NODE_ENV ?? 'unknown';
   const contextText =
@@ -191,7 +213,7 @@ function compose(input: SlackAlertInput, suppressedFromPrev: number): IncomingWe
     for (const [k, v] of Object.entries(input.fields)) textLines.push(`${k}: ${redact(String(v))}`);
   }
   textLines.push(contextText);
-  const text = textLines.join('\n');
+  let text = textLines.join('\n');
 
   // Block Kit layout: header + a fields section + a context footer.
   const blocks: KnownBlock[] = [
@@ -210,71 +232,114 @@ function compose(input: SlackAlertInput, suppressedFromPrev: number): IncomingWe
   if (sectionFields.length > 0) blocks.push({ type: 'section', fields: sectionFields.slice(0, 10) });
   blocks.push({ type: 'context', elements: [mrkdwn(contextText)] });
 
-  const payload: IncomingWebhookSendArguments = {
+  const composed: ComposedMessage = {
     text,
     attachments: [{ color: levelColor(input.level), blocks }],
-    unfurl_links: false,
-    unfurl_media: false,
   };
-  // Config-ready mention path (OFF by default; Phase 3 admin UI will drive it):
-  // ping the channel. `link_names` lets Slack resolve the `@here` mention.
+  // Config-ready mention path (OFF by default): ping the channel. `link_names`
+  // lets Slack resolve the `@here` mention.
   if (input.mention) {
-    payload.link_names = true;
-    payload.text = `<!here> ${text}`;
+    composed.link_names = true;
+    text = `<!here> ${text}`;
+    composed.text = text;
   }
-  return payload;
+  return composed;
 }
 
 // Format a send failure for the log — NO secrets/PII. For an HTTP error include
-// the typed code + HTTP status (via ErrorCode); for a request error, the code.
+// the typed code + HTTP status; otherwise the typed code (or plain message).
 function formatSendError(err: unknown): string {
   const base = err instanceof Error ? err.message : 'send failed';
   const code = (err as { code?: unknown }).code;
   if (code === ErrorCode.HTTPError) {
-    const status = (err as IncomingWebhookHTTPError & { original?: { response?: { status?: number } } })
-      .original?.response?.status;
+    const status = (err as WebAPIHTTPError).statusCode;
     return `${base} [code=${ErrorCode.HTTPError}${status !== undefined ? ` status=${status}` : ''}]`;
   }
-  if (code === ErrorCode.RequestError) return `${base} [code=${ErrorCode.RequestError}]`;
+  if (typeof code === 'string') return `${base} [code=${code}]`;
   return base;
 }
 
-// Send the payload, bounded by SEND_TIMEOUT_MS. Resolves either when the send
-// completes, when it fails (logged, no secrets), or when the timeout elapses —
+// Send the payload, bounded by SEND_TIMEOUT_MS. Resolves `true` when the send
+// completes, `false` when it fails (logged, no secrets) or the timeout elapses —
 // NEVER rejects, and never leaves an unhandled rejection if the timeout wins.
-function trySend(webhook: IncomingWebhook, payload: IncomingWebhookSendArguments, ms: number): Promise<void> {
-  return new Promise<void>((resolve) => {
+function trySend(client: WebClient, args: ChatPostMessageArguments, ms: number): Promise<boolean> {
+  return new Promise<boolean>((resolve) => {
     let settled = false;
-    const finish = (): void => {
+    const finish = (ok: boolean): void => {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
-      resolve();
+      resolve(ok);
     };
-    const timer = setTimeout(finish, ms);
-    webhook.send(payload).then(
-      () => finish(),
+    const timer = setTimeout(() => finish(false), ms);
+    client.chat.postMessage(args).then(
+      () => finish(true),
       (err: unknown) => {
         console.error('[slack-alert]', formatSendError(err));
-        finish();
+        finish(false);
       },
     );
   });
 }
 
+// Append-only audit of every actually-attempted alert (delivered or not).
+// Best-effort / fail-safe: writes via the service-role client (RLS: writes are
+// service-role only, admin SELECT), and NEVER throws or blocks the caller. Only
+// non-PII fields are stored, and title/source are redacted defense-in-depth.
+async function logOpsAlert(input: SlackAlertInput, delivered: boolean, suppressed: number): Promise<void> {
+  try {
+    const admin = createAdminClient();
+    await admin.from('ops_alerts').insert({
+      level: input.level,
+      title: redact(input.title).slice(0, 500),
+      source: input.source ? redact(input.source) : null,
+      category: input.category,
+      delivered,
+      suppressed_count: suppressed,
+    });
+  } catch {
+    // Best-effort audit — swallow everything (never surface a secret or PII).
+  }
+}
+
+// Compose → send → audit. Shared by the gated path and the admin test path.
+async function deliver(
+  config: AlertsConfig,
+  input: SlackAlertInput,
+  suppressedFromPrev: number,
+): Promise<boolean> {
+  // Guaranteed by callers (both check token + channel first), asserted for types.
+  if (!config.botToken || !config.channelId) return false;
+  const composed = compose(input, suppressedFromPrev);
+  const args: ChatPostMessageArguments = {
+    channel: config.channelId,
+    text: composed.text,
+    attachments: composed.attachments,
+    unfurl_links: false,
+    unfurl_media: false,
+    ...(composed.link_names ? { link_names: true } : {}),
+  };
+  const client = new WebClient(config.botToken, { timeout: SEND_TIMEOUT_MS, retryConfig: RETRY_CONFIG });
+  const delivered = await trySend(client, args, SEND_TIMEOUT_MS);
+  await logOpsAlert(input, delivered, suppressedFromPrev);
+  return delivered;
+}
+
 /**
  * Post a NON-PII operational alert to the internal ops Slack channel.
  *
- * No-op when `SLACK_ALERT_WEBHOOK_URL` is unset/empty (dev/CI/tests stay
- * silent). Deduplicates identical (level|title|source) alerts within a 60s
- * window and caps total alerts per minute. FAIL-SAFE: never throws, never
- * blocks the caller beyond a short timeout.
+ * No-op unless alerting is enabled AND a bot token + channel are configured AND
+ * this alert's category toggle is on. Deduplicates identical (level|title|source)
+ * alerts within a 60s window and caps total alerts per minute. FAIL-SAFE: never
+ * throws, never blocks the caller beyond a short timeout.
  */
 export async function sendSlackAlert(input: SlackAlertInput): Promise<void> {
-  const url = process.env.SLACK_ALERT_WEBHOOK_URL?.trim();
-  if (!url) return; // No webhook configured → silent no-op.
-
   try {
+    const config = await getAlertsConfig();
+    // Fail-closed gating: master switch, credentials, and per-category toggle.
+    if (!config.enabled || !config.botToken || !config.channelId) return;
+    if (!categoryEnabled(config, input.category)) return;
+
     const now = Date.now();
     const key = `${input.level}|${input.title}|${input.source ?? ''}`;
     const { send, suppressedFromPrev } = dedupCheck(key, now);
@@ -284,18 +349,44 @@ export async function sendSlackAlert(input: SlackAlertInput): Promise<void> {
       return; // Global per-minute cap reached → drop silently.
     }
 
-    const payload = compose(input, suppressedFromPrev);
-    // NOTE: Slack IGNORES username/icon_emoji/icon_url/channel on modern
-    // app-based incoming webhooks — the bot's display name + icon are set in the
-    // Slack app's Incoming Webhook settings (UI side), NOT here. Only `timeout`
-    // and `retryConfig` take effect, so only those are set. Do NOT re-add
-    // identity overrides — they would be silently dropped dead code.
-    const webhook = new IncomingWebhook(url, { timeout: SEND_TIMEOUT_MS, retryConfig: RETRY_CONFIG });
-    await trySend(webhook, payload, SEND_TIMEOUT_MS);
+    await deliver(config, input, suppressedFromPrev);
   } catch (err) {
     // FAIL-SAFE: swallow everything; never surface to the caller, never log a
     // secret or PII (only the error message text).
     console.error('[slack-alert]', err instanceof Error ? err.message : 'unexpected failure');
+  }
+}
+
+/**
+ * Admin "send test alert": posts a fixed test payload, BYPASSING the master
+ * enabled switch, per-category toggles, dedup and the rate cap so the admin can
+ * verify the connection before turning alerting on. Still requires a configured
+ * bot token + channel. Never throws.
+ *
+ * @returns `{ ok }` where `ok` is whether Slack accepted the message, plus a
+ *   `reason` of 'not_configured' (no token/channel) or 'send_failed'.
+ */
+export async function sendSlackTestAlert(): Promise<{
+  ok: boolean;
+  reason?: 'not_configured' | 'send_failed';
+}> {
+  try {
+    const config = await getAlertsConfig();
+    if (!config.botToken || !config.channelId) return { ok: false, reason: 'not_configured' };
+    const delivered = await deliver(
+      config,
+      {
+        level: 'info',
+        title: 'בדיקת התראות KALFA',
+        detail: 'Test alert from the admin console — connection is working.',
+        source: 'admin-test',
+        category: 'errors',
+      },
+      0,
+    );
+    return delivered ? { ok: true } : { ok: false, reason: 'send_failed' };
+  } catch {
+    return { ok: false, reason: 'send_failed' };
   }
 }
 

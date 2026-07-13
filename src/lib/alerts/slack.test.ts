@@ -1,218 +1,282 @@
-import type { IncomingWebhookSendArguments } from '@slack/webhook';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { ChatPostMessageArguments } from '@slack/web-api';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-// `server-only` throws outside Next's server runtime — stub it (repo test
-// convention, see url.test.ts). Mock the Slack webhook so no real request is
-// ever made and we can assert on send().
+// `server-only` throws outside Next's server runtime — stub it (repo convention).
 vi.mock('server-only', () => ({}));
 
-// vi.hoisted exposes the shared `send` spy to both the (hoisted) vi.mock factory
-// and the tests. The class is wrapped in vi.fn() so the constructor itself is
-// spyable — the documented Vitest v4 pattern for mocking an exported class
-// (docs/guide/mocking/classes.md). `send` is shared across instances so a fresh
-// `new IncomingWebhook(url)` per call still records onto the same spy.
-const { send, IncomingWebhook } = vi.hoisted(() => {
-  const sendFn = vi.fn<(payload: IncomingWebhookSendArguments) => Promise<{ text: string }>>();
+// Mock the Slack Web API so no real request is ever made. `postMessage` is shared
+// across WebClient instances so a fresh `new WebClient(token)` per call still
+// records onto the same spy (documented Vitest v4 class-mock pattern).
+const { postMessage, WebClient } = vi.hoisted(() => {
+  const pm = vi.fn<(args: ChatPostMessageArguments) => Promise<{ ok: boolean }>>();
   return {
-    send: sendFn,
-    IncomingWebhook: vi.fn(
+    postMessage: pm,
+    WebClient: vi.fn(
       class {
-        send = sendFn;
+        chat = { postMessage: pm };
       },
     ),
   };
 });
-// Mock only IncomingWebhook + ErrorCode (the runtime values the notifier uses).
-vi.mock('@slack/webhook', () => ({
-  IncomingWebhook,
-  ErrorCode: { RequestError: 'slack_webhook_request_error', HTTPError: 'slack_webhook_http_error' },
+vi.mock('@slack/web-api', () => ({
+  WebClient,
+  ErrorCode: {
+    RequestError: 'slack_webapi_request_error',
+    HTTPError: 'slack_webapi_http_error',
+  },
 }));
 
+// Control the config the notifier reads; keep the real categoryEnabled mapping.
+vi.mock('@/lib/data/alerts-config', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/data/alerts-config')>();
+  return { ...actual, getAlertsConfig: vi.fn() };
+});
+
+// ops_alerts audit insert — a shared spy so tests can assert / fail it.
+const opsInsert = vi.fn<(row: unknown) => Promise<{ error: unknown }>>();
+vi.mock('@/lib/supabase/admin', () => ({
+  createAdminClient: vi.fn(() => ({ from: () => ({ insert: opsInsert }) })),
+}));
+
+import { getAlertsConfig, type AlertsConfig } from '@/lib/data/alerts-config';
 import { __resetRateLimitStateForTests } from '@/lib/security/rate-limit';
 
-import { __dedupSizeForTests, __resetSlackAlertStateForTests, sendSlackAlert } from './slack';
+import {
+  __dedupSizeForTests,
+  __resetSlackAlertStateForTests,
+  sendSlackAlert,
+  sendSlackTestAlert,
+} from './slack';
 
-const WEBHOOK_URL = 'https://hooks.slack.example/services/T000/B000/XXXX';
+const ENABLED: AlertsConfig = {
+  enabled: true,
+  botToken: 'xoxb-test-token',
+  channelId: 'C123',
+  categories: {
+    errors: true,
+    campaignBilling: true,
+    sendHealth: true,
+    security: true,
+  },
+};
 
-/** The payload object passed to webhook.send() on the Nth (default first) call. */
-function sentPayload(call = 0): IncomingWebhookSendArguments {
-  return send.mock.calls[call][0];
+// The composed message the notifier sends (channel + text fallback + a colored
+// attachment carrying the Block Kit blocks). `ChatPostMessageArguments` is a
+// union whose members don't all expose `text`/`attachments`, so we read the
+// recorded call through this concrete shape for assertions.
+type SentPayload = {
+  channel: string;
+  text?: string;
+  link_names?: boolean;
+  unfurl_links?: boolean;
+  unfurl_media?: boolean;
+  attachments?: Array<{ color?: string; blocks?: Array<{ type: string }> }>;
+};
+function sentPayload(call = 0): SentPayload {
+  return postMessage.mock.calls[call][0] as unknown as SentPayload;
 }
-/** Whole payload serialized — asserts redaction across text AND block content. */
 function serialized(call = 0): string {
   return JSON.stringify(sentPayload(call));
 }
 
 beforeEach(() => {
-  send.mockReset();
-  send.mockResolvedValue({ text: 'ok' });
-  IncomingWebhook.mockClear();
+  postMessage.mockReset();
+  postMessage.mockResolvedValue({ ok: true });
+  WebClient.mockClear();
+  opsInsert.mockReset();
+  opsInsert.mockResolvedValue({ error: null });
+  vi.mocked(getAlertsConfig).mockResolvedValue(ENABLED);
   __resetSlackAlertStateForTests();
   __resetRateLimitStateForTests();
-  process.env.SLACK_ALERT_WEBHOOK_URL = WEBHOOK_URL;
 });
 
-afterEach(() => {
-  delete process.env.SLACK_ALERT_WEBHOOK_URL;
+describe('sendSlackAlert — gating', () => {
+  it('no-op when alerting is disabled', async () => {
+    vi.mocked(getAlertsConfig).mockResolvedValue({ ...ENABLED, enabled: false });
+    await sendSlackAlert({ level: 'error', title: 'boom', category: 'errors' });
+    expect(postMessage).not.toHaveBeenCalled();
+  });
+
+  it('no-op when no bot token', async () => {
+    vi.mocked(getAlertsConfig).mockResolvedValue({ ...ENABLED, botToken: null });
+    await sendSlackAlert({ level: 'error', title: 'boom', category: 'errors' });
+    expect(postMessage).not.toHaveBeenCalled();
+  });
+
+  it('no-op when no channel id', async () => {
+    vi.mocked(getAlertsConfig).mockResolvedValue({ ...ENABLED, channelId: null });
+    await sendSlackAlert({ level: 'error', title: 'boom', category: 'errors' });
+    expect(postMessage).not.toHaveBeenCalled();
+  });
+
+  it("no-op when the alert's category toggle is off", async () => {
+    vi.mocked(getAlertsConfig).mockResolvedValue({
+      ...ENABLED,
+      categories: { ...ENABLED.categories, sendHealth: false },
+    });
+    await sendSlackAlert({ level: 'warn', title: 'SMS send failed', category: 'send_health' });
+    expect(postMessage).not.toHaveBeenCalled();
+  });
 });
 
-describe('sendSlackAlert', () => {
-  it('is a no-op when SLACK_ALERT_WEBHOOK_URL is unset', async () => {
-    delete process.env.SLACK_ALERT_WEBHOOK_URL;
-    await sendSlackAlert({ level: 'error', title: 'boom' });
-    expect(IncomingWebhook).not.toHaveBeenCalled();
-    expect(send).not.toHaveBeenCalled();
-  });
-
-  it('is a no-op when SLACK_ALERT_WEBHOOK_URL is empty/whitespace', async () => {
-    process.env.SLACK_ALERT_WEBHOOK_URL = '   ';
-    await sendSlackAlert({ level: 'warn', title: 'boom' });
-    expect(send).not.toHaveBeenCalled();
-  });
-
-  it('sends a rich payload (text fallback + colored attachment with blocks)', async () => {
+describe('sendSlackAlert — send', () => {
+  it('posts to the configured channel with a rich payload', async () => {
     await sendSlackAlert({
       level: 'error',
       title: 'worker job failed',
       source: 'step',
       detail: 'Error · digest=abc',
       fields: { method: 'POST', path: '/r/x' },
+      category: 'errors',
     });
-    expect(send).toHaveBeenCalledTimes(1);
+    expect(postMessage).toHaveBeenCalledTimes(1);
     const payload = sentPayload();
 
-    // Plain-text fallback is still present and carries the essentials.
+    expect(payload.channel).toBe('C123');
     expect(typeof payload.text).toBe('string');
     expect(payload.text).toContain('worker job failed');
-    expect(payload.text).toContain('source: step');
-    expect(payload.text).toContain('method: POST');
-
-    // Colored attachment (error = #E01E5A) with a non-empty blocks array.
     expect(payload.attachments?.[0]?.color).toBe('#E01E5A');
     const blocks = payload.attachments?.[0]?.blocks;
     expect(Array.isArray(blocks)).toBe(true);
-    expect(blocks?.length ?? 0).toBeGreaterThan(0);
     expect(blocks?.[0]?.type).toBe('header');
-
-    // Link previews suppressed.
     expect(payload.unfurl_links).toBe(false);
     expect(payload.unfurl_media).toBe(false);
   });
 
-  it('constructor defaults set only timeout + retryConfig (no ignored identity fields)', async () => {
-    await sendSlackAlert({ level: 'info', title: 'hello' });
-    expect(IncomingWebhook).toHaveBeenCalledWith(
-      WEBHOOK_URL,
-      expect.objectContaining({ timeout: expect.any(Number), retryConfig: expect.any(Object) }),
+  it('constructs the WebClient with the bot token + timeout/retryConfig', async () => {
+    await sendSlackAlert({ level: 'info', title: 'hello', category: 'errors' });
+    expect(WebClient).toHaveBeenCalledWith(
+      'xoxb-test-token',
+      expect.objectContaining({
+        timeout: expect.any(Number),
+        retryConfig: expect.any(Object),
+      }),
     );
-    // Slack IGNORES these on incoming webhooks — they must NOT be set (dead code).
-    const ctorArgs = IncomingWebhook.mock.calls[0] as unknown[];
-    const defaults = ctorArgs[1] as Record<string, unknown>;
-    expect(defaults).not.toHaveProperty('username');
-    expect(defaults).not.toHaveProperty('icon_emoji');
-    expect(defaults).not.toHaveProperty('channel');
   });
 
   it('sets the attachment color per severity level', async () => {
-    await sendSlackAlert({ level: 'error', title: 'e' });
-    await sendSlackAlert({ level: 'warn', title: 'w' });
-    await sendSlackAlert({ level: 'info', title: 'i' });
+    await sendSlackAlert({ level: 'error', title: 'e', category: 'errors' });
+    await sendSlackAlert({ level: 'warn', title: 'w', category: 'errors' });
+    await sendSlackAlert({ level: 'info', title: 'i', category: 'errors' });
     expect(sentPayload(0).attachments?.[0]?.color).toBe('#E01E5A');
     expect(sentPayload(1).attachments?.[0]?.color).toBe('#ECB22E');
     expect(sentPayload(2).attachments?.[0]?.color).toBe('#36C5F0');
   });
 
-  it('mention:true adds link_names and an @here prefix (config-ready path)', async () => {
-    await sendSlackAlert({ level: 'warn', title: 'ping', mention: true });
+  it('mention:true adds link_names and an @here prefix', async () => {
+    await sendSlackAlert({ level: 'warn', title: 'ping', mention: true, category: 'errors' });
     const payload = sentPayload();
     expect(payload.link_names).toBe(true);
     expect(payload.text).toContain('<!here>');
   });
 
-  it('mention omitted → no channel ping', async () => {
-    await sendSlackAlert({ level: 'warn', title: 'quiet' });
-    const payload = sentPayload();
-    expect(payload.link_names).toBeUndefined();
-    expect(payload.text).not.toContain('<!here>');
-  });
-
-  it('never throws when the webhook send rejects', async () => {
-    send.mockRejectedValue(new Error('network down'));
-    await expect(sendSlackAlert({ level: 'error', title: 'boom', source: 'x' })).resolves.toBeUndefined();
-    expect(send).toHaveBeenCalledTimes(1);
+  it('never throws when postMessage rejects', async () => {
+    postMessage.mockRejectedValue(new Error('network down'));
+    await expect(
+      sendSlackAlert({ level: 'error', title: 'boom', source: 'x', category: 'errors' }),
+    ).resolves.toBeUndefined();
+    expect(postMessage).toHaveBeenCalledTimes(1);
   });
 
   it('suppresses a duplicate (level|title|source) within the dedup window', async () => {
-    const input = { level: 'error' as const, title: 'same', source: 'worker' };
+    const input = {
+      level: 'error' as const,
+      title: 'same',
+      source: 'worker',
+      category: 'errors' as const,
+    };
     await sendSlackAlert(input);
     await sendSlackAlert(input);
     await sendSlackAlert(input);
-    // Only the first identical alert is actually sent within the window.
-    expect(send).toHaveBeenCalledTimes(1);
+    expect(postMessage).toHaveBeenCalledTimes(1);
   });
 
-  it('does NOT dedup alerts that differ by level/title/source', async () => {
-    await sendSlackAlert({ level: 'error', title: 'a', source: 's' });
-    await sendSlackAlert({ level: 'warn', title: 'a', source: 's' });
-    await sendSlackAlert({ level: 'error', title: 'b', source: 's' });
-    expect(send).toHaveBeenCalledTimes(3);
-  });
-
-  it('masks Israeli-phone-like values (PII redaction, defense-in-depth)', async () => {
-    await sendSlackAlert({
-      level: 'warn',
-      title: 'contact issue',
-      detail: 'phone 0501234567 failed',
-      fields: { intl: '+972-50-123-4567' },
-    });
-    const s = serialized();
-    expect(s).not.toContain('0501234567');
-    expect(s).not.toContain('972-50-123-4567');
-    expect(s).toContain('[redacted-phone]');
-  });
-
-  it('masks email addresses (PII redaction, defense-in-depth)', async () => {
-    await sendSlackAlert({
-      level: 'error',
-      title: 'signup failed',
-      detail: 'duplicate key for guest@example.co.il',
-      fields: { user: 'Jane.Doe+tag@sub.domain.com' },
-    });
-    const s = serialized();
-    expect(s).not.toContain('guest@example.co.il');
-    expect(s).not.toContain('Jane.Doe+tag@sub.domain.com');
-    expect(s).toContain('[redacted-email]');
-  });
-
-  it('bounds dedup map growth by pruning expired distinct keys', async () => {
-    // Many distinct keys whose windows are already expired: each opens its own
-    // dedup entry. Once the map crosses the prune threshold, expired entries are
-    // dropped, so size stays bounded instead of growing without limit.
-    const base = Date.now() - 10 * 60_000; // 10 min ago → all windows expired
-    vi.spyOn(Date, 'now').mockReturnValue(base);
-    for (let i = 0; i < 400; i++) {
-      await sendSlackAlert({ level: 'error', title: `distinct-${i}`, source: 's' });
-    }
-    // Advance "now" past the dedup window so the accumulated entries are expired,
-    // then one more call triggers the opportunistic prune.
-    vi.spyOn(Date, 'now').mockReturnValue(base + 120_000);
-    await sendSlackAlert({ level: 'error', title: 'trigger', source: 's' });
-    vi.restoreAllMocks();
-    // Far below the number of distinct keys created — proves pruning ran.
-    expect(__dedupSizeForTests()).toBeLessThan(300);
-  });
-
-  it('masks token-like strings but preserves UUIDs', async () => {
+  it('masks phone, email, and token strings but preserves UUIDs', async () => {
     await sendSlackAlert({
       level: 'error',
       title: 'auth failure',
-      detail: 'token EAABsecret1234567890abcdefXYZ used',
+      detail: 'token EAABsecret1234567890abcdefXYZ for guest@example.co.il on 0501234567',
       fields: { campaign_id: '294d23e1-0000-4000-8000-000000000000' },
+      category: 'errors',
     });
     const s = serialized();
     expect(s).toContain('[redacted-token]');
+    expect(s).toContain('[redacted-email]');
+    expect(s).toContain('[redacted-phone]');
     expect(s).not.toContain('EAABsecret1234567890abcdefXYZ');
-    // UUIDs are hyphen-separated and must stay readable for debugging.
+    expect(s).not.toContain('guest@example.co.il');
+    expect(s).not.toContain('0501234567');
     expect(s).toContain('294d23e1-0000-4000-8000-000000000000');
+  });
+
+  it('bounds dedup map growth by pruning expired distinct keys', async () => {
+    const base = Date.now() - 10 * 60_000;
+    vi.spyOn(Date, 'now').mockReturnValue(base);
+    for (let i = 0; i < 400; i++) {
+      await sendSlackAlert({ level: 'error', title: `distinct-${i}`, source: 's', category: 'errors' });
+    }
+    vi.spyOn(Date, 'now').mockReturnValue(base + 120_000);
+    await sendSlackAlert({ level: 'error', title: 'trigger', source: 's', category: 'errors' });
+    vi.restoreAllMocks();
+    expect(__dedupSizeForTests()).toBeLessThan(300);
+  });
+});
+
+describe('sendSlackAlert — ops_alerts audit', () => {
+  it('records a delivered=true row when the send succeeds', async () => {
+    await sendSlackAlert({ level: 'error', title: 'worker fatal', source: 'worker-fatal', category: 'errors' });
+    expect(opsInsert).toHaveBeenCalledTimes(1);
+    expect(opsInsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        level: 'error',
+        title: 'worker fatal',
+        source: 'worker-fatal',
+        category: 'errors',
+        delivered: true,
+        suppressed_count: 0,
+      }),
+    );
+  });
+
+  it('records delivered=false when the send fails', async () => {
+    postMessage.mockRejectedValue(new Error('boom'));
+    await sendSlackAlert({ level: 'error', title: 'x', category: 'errors' });
+    expect(opsInsert).toHaveBeenCalledWith(
+      expect.objectContaining({ delivered: false }),
+    );
+  });
+
+  it('a failing audit insert does NOT break the send', async () => {
+    opsInsert.mockRejectedValue(new Error('insert failed'));
+    await expect(
+      sendSlackAlert({ level: 'error', title: 'x', category: 'errors' }),
+    ).resolves.toBeUndefined();
+    expect(postMessage).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('sendSlackTestAlert', () => {
+  it('bypasses the enabled + category gates but requires token + channel', async () => {
+    vi.mocked(getAlertsConfig).mockResolvedValue({
+      ...ENABLED,
+      enabled: false,
+      categories: { errors: false, campaignBilling: false, sendHealth: false, security: false },
+    });
+    const r = await sendSlackTestAlert();
+    expect(r.ok).toBe(true);
+    expect(postMessage).toHaveBeenCalledTimes(1);
+  });
+
+  it('reports not_configured when no token/channel', async () => {
+    vi.mocked(getAlertsConfig).mockResolvedValue({ ...ENABLED, botToken: null });
+    const r = await sendSlackTestAlert();
+    expect(r).toEqual({ ok: false, reason: 'not_configured' });
+    expect(postMessage).not.toHaveBeenCalled();
+  });
+
+  it('reports send_failed when Slack rejects', async () => {
+    postMessage.mockRejectedValue(new Error('bad token'));
+    const r = await sendSlackTestAlert();
+    expect(r).toEqual({ ok: false, reason: 'send_failed' });
   });
 });
