@@ -117,6 +117,27 @@ export function SettingsForm({ settings }: { settings: AppSettings }) {
         </span>
       </label>
 
+      {/* Final close-charge master switch — REAL MONEY. Gated together with
+          "הפעלת סליקה" above (the charge runs only when BOTH are on). */}
+      <label className="flex items-start gap-3">
+        <input
+          type="checkbox"
+          name="close_charge_enabled"
+          defaultChecked={settings.close_charge_enabled}
+          className="mt-1 size-4 accent-primary"
+        />
+        <span>
+          <span className="block text-sm font-medium">
+            הפעלת חיוב סופי בסגירת קמפיין
+          </span>
+          <span className="block text-xs text-muted-foreground">
+            כסף אמיתי — כשמופעל, סגירת קמפיין לוכדת את הכרטיס שהוחזק ומחייבת את
+            הסכום שנצבר (לפי אנשי־קשר שהושגו, עד התקרה). פועל רק אם גם «הפעלת
+            סליקה» מופעלת. כשכבוי — הסגירה לא מחייבת.
+          </span>
+        </span>
+      </label>
+
       <EditableField
         name="sumit_company_id"
         label="מזהה חברה (SUMIT Company ID)"

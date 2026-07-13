@@ -15,6 +15,7 @@ import { requireAdmin } from '@/lib/auth/dal';
 
 export type AppSettings = {
   payments_enabled: boolean;
+  close_charge_enabled: boolean; // master switch for the final close-charge (real money)
   sumit_company_id: string; // '' when unset (form-friendly)
   sumit_api_public_key: string; // '' when unset
   sumit_api_key: string; // '' when unset — shown masked + reveal in the admin form
@@ -40,7 +41,7 @@ export async function getAppSettings(): Promise<AppSettings> {
   const { data, error } = await supabase
     .from('app_settings')
     .select(
-      'payments_enabled, sumit_company_id, sumit_api_public_key, sumit_api_key, sms_enabled, extra_sms_sender, extra_sms_token, email_enabled, smtp_host, smtp_port, smtp_secure, smtp_user, smtp_password, smtp_from, updated_at',
+      'payments_enabled, close_charge_enabled, sumit_company_id, sumit_api_public_key, sumit_api_key, sms_enabled, extra_sms_sender, extra_sms_token, email_enabled, smtp_host, smtp_port, smtp_secure, smtp_user, smtp_password, smtp_from, updated_at',
     )
     .eq('id', SETTINGS_ID)
     .maybeSingle();
@@ -51,6 +52,7 @@ export async function getAppSettings(): Promise<AppSettings> {
 
   return {
     payments_enabled: data?.payments_enabled ?? false,
+    close_charge_enabled: data?.close_charge_enabled ?? false,
     sumit_company_id: data?.sumit_company_id ?? '',
     sumit_api_public_key: data?.sumit_api_public_key ?? '',
     sumit_api_key: data?.sumit_api_key ?? '',
@@ -70,6 +72,7 @@ export async function getAppSettings(): Promise<AppSettings> {
 
 export type UpdateAppSettingsInput = {
   payments_enabled: boolean;
+  close_charge_enabled: boolean;
   sumit_company_id: string;
   sumit_api_public_key: string;
   sumit_api_key: string;
@@ -98,6 +101,7 @@ export async function updateAppSettings(
     .from('app_settings')
     .update({
       payments_enabled: input.payments_enabled,
+      close_charge_enabled: input.close_charge_enabled,
       sumit_company_id: input.sumit_company_id || null,
       sumit_api_public_key: input.sumit_api_public_key || null,
       sumit_api_key: input.sumit_api_key || null,

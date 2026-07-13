@@ -14,6 +14,7 @@ export async function updateSettingsAction(
   const parsed = appSettingsSchema.safeParse({
     // A checkbox is present ('on') only when checked; absent means off.
     payments_enabled: formData.get('payments_enabled') === 'on',
+    close_charge_enabled: formData.get('close_charge_enabled') === 'on',
     sumit_company_id: formData.get('sumit_company_id') ?? '',
     sumit_api_public_key: formData.get('sumit_api_public_key') ?? '',
     sumit_api_key: formData.get('sumit_api_key') ?? '',

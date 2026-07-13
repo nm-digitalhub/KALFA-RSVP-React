@@ -228,6 +228,7 @@ export type AppRole = Database['public']['Enums']['app_role'];
 // are free strings. sumit_api_key is write-only: blank means "keep existing".
 export const appSettingsSchema = z.object({
   payments_enabled: z.boolean(),
+  close_charge_enabled: z.boolean(),
   sumit_company_id: z
     .string()
     .trim()
