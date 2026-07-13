@@ -1,6 +1,6 @@
 import 'server-only';
 
-import { requireUser } from '@/lib/auth/dal';
+import { requireUser, requireAdmin } from '@/lib/auth/dal';
 import { requireOwnedEvent, requireEventAccess } from '@/lib/data/events';
 import { assertEventNotPast, defaultThankyouSendAt } from '@/lib/data/event-date';
 import {
@@ -684,6 +684,10 @@ async function transitionCampaignStatus(
   opts?: { rejectPastEvent?: boolean; requireActiveEvent?: boolean },
   // Returns the event's date so a caller (activateCampaign) can seed
   // auto-thankyou's default schedule without a second ownership-checked fetch.
+  // authz: 'owner' (default) enforces event ownership + the past/active checks.
+  // 'admin' restricts the transition to platform admins (wind-down ops: pause/
+  // close) with NO ownership and NO past/active gating — eventDate is then null.
+  authz: 'owner' | 'admin' = 'owner',
 ): Promise<{ eventDate: string | null }> {
   const admin = createAdminClient();
   const { data: campaign, error } = await admin
@@ -696,10 +700,18 @@ async function transitionCampaignStatus(
     const { notFound } = await import('next/navigation');
     return notFound();
   }
-  const event = await requireOwnedEvent(campaign.event_id);
-  if (opts?.rejectPastEvent) assertEventNotPast(event.event_date);
-  if (opts?.requireActiveEvent && event.status !== 'active') {
-    throw new Error('יש לפרסם את האירוע לפני אישורי הגעה');
+  let eventDate: string | null;
+  if (authz === 'admin') {
+    // Platform-admin-only wind-down: no ownership, no past/active gating.
+    await requireAdmin();
+    eventDate = null;
+  } else {
+    const event = await requireOwnedEvent(campaign.event_id);
+    if (opts?.rejectPastEvent) assertEventNotPast(event.event_date);
+    if (opts?.requireActiveEvent && event.status !== 'active') {
+      throw new Error('יש לפרסם את האירוע לפני אישורי הגעה');
+    }
+    eventDate = event.event_date;
   }
 
   let query = admin
@@ -717,7 +729,7 @@ async function transitionCampaignStatus(
   if (!updated) {
     throw new Error('לא ניתן לשנות את מצב הקמפיין במצבו הנוכחי');
   }
-  return { eventDate: event.event_date };
+  return { eventDate };
 }
 
 // Activate (begin outreach). Requires an approved/scheduled/paused campaign that
@@ -762,8 +774,16 @@ export async function activateCampaign(campaignId: string): Promise<void> {
   }
 }
 
+// Wind-down: platform-admin only (see transitionCampaignStatus authz='admin').
 export async function pauseCampaign(campaignId: string): Promise<void> {
-  await transitionCampaignStatus(campaignId, ['active'], 'paused');
+  await transitionCampaignStatus(
+    campaignId,
+    ['active'],
+    'paused',
+    undefined,
+    undefined,
+    'admin',
+  );
 }
 
 // --- Auto-thankyou owner controls -------------------------------------------
@@ -841,29 +861,33 @@ export async function updateThankyouSchedule(
 
 // Close the campaign (no new outreach/billing after this). Computing the final
 // charge and capturing the held card is a separate B4 step (needs billed_results).
+// Wind-down: platform-admin only (see transitionCampaignStatus authz='admin').
 export async function closeCampaign(campaignId: string): Promise<void> {
   await transitionCampaignStatus(
     campaignId,
     ['active', 'paused', 'approved', 'scheduled'],
     'closed',
+    undefined,
+    undefined,
+    'admin',
   );
 }
 
 // R8 — cancel a campaign with no financial commitment (draft/pending_approval/
-// approved → cancelled). Explicit ownership contract (round-3): the RPC itself
-// is service_role-only with NO caller-identity check, so authorization is
-// entirely this function's job, BEFORE the RPC is ever called. Mirrors the
-// EXISTING pattern already used by authorize/route.ts (J5 hold) and
-// whatsapp-send/route.ts: load via getCampaignForHold → requireOwnedEvent →
-// only then call the RPC. campaignId/event_id are NEVER trusted from the
-// browser to imply authorization — both are re-derived and re-checked here.
+// approved → cancelled). Explicit authorization contract (round-3): the RPC
+// itself is service_role-only with NO caller-identity check, so authorization is
+// entirely this function's job, BEFORE the RPC is ever called. Cancel is a
+// wind-down operation restricted to PLATFORM ADMINS (requireAdmin) — not the
+// event owner. The campaign is still loaded via getCampaignForHold because
+// campaign.event_id feeds the success Slack alert below. campaignId is NEVER
+// trusted from the browser to imply authorization.
 export async function cancelCampaign(campaignId: string): Promise<void> {
   const campaign = await getCampaignForHold(campaignId);
   if (!campaign) {
     const { notFound } = await import('next/navigation');
     return notFound();
   }
-  await requireOwnedEvent(campaign.event_id); // throws/404s if not owned
+  await requireAdmin(); // platform-admin only; redirects non-admins
 
   const admin = createAdminClient();
   const { data, error } = await admin.rpc('cancel_campaign', {

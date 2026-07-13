@@ -246,6 +246,7 @@ export function ManageClient({
   thankyou,
   actions,
   isPast = false,
+  viewerIsAdmin,
 }: {
   campaign: Campaign;
   summary: Summary;
@@ -256,12 +257,18 @@ export function ManageClient({
     pause: BoundAction;
     close: BoundAction;
     settle: BoundAction;
+    cancel: BoundAction;
     sendGift: BoundAction;
     sendEventDay: BoundAction;
     sendThankyou: BoundAction;
     updateThankyouSchedule: BoundAction;
   };
   isPast?: boolean;
+  // The four wind-down controls (pause/close/settle/cancel) are platform-admin-
+  // only. This flag only HIDES them for non-admins; the real enforcement is
+  // server-side in the campaign actions. Owners keep activate + the send-*
+  // controls.
+  viewerIsAdmin: boolean;
 }) {
   const s = campaign.status;
   const reached = summary?.reachedCount ?? 0;
@@ -273,9 +280,22 @@ export function ManageClient({
   // remain so the owner can wind the campaign down and settle what was reached.
   const activatableState = ['approved', 'scheduled', 'paused'].includes(s);
   const canActivate = !isPast && activatableState;
-  const canPause = s === 'active';
-  const canClose = ['active', 'paused', 'approved', 'scheduled'].includes(s);
-  const canSettle = s === 'closed' && campaign.capture_status === 'authorized';
+  // pause/close/settle/cancel are platform-admin-only (server-enforced). The
+  // viewerIsAdmin factor here only hides the buttons from owners/org-members.
+  const canPause = viewerIsAdmin && s === 'active';
+  const canClose = viewerIsAdmin && ['active', 'paused', 'approved', 'scheduled'].includes(s);
+  const canSettle = viewerIsAdmin && s === 'closed' && campaign.capture_status === 'authorized';
+  // Cancel is a hard wind-down: allowed while operational or closed (before a
+  // final charge lands). Terminal states (billed/paid/cancelled) can't cancel.
+  const canCancel =
+    viewerIsAdmin &&
+    ['active', 'paused', 'approved', 'scheduled', 'closed'].includes(s);
+  // Whether ANY lifecycle control shows — used so an owner (who now sees none of
+  // the admin controls) doesn't get a dangling `border-t` divider. activate +
+  // the send-* controls remain owner-visible.
+  const showLifecycleWarning = isPast && activatableState;
+  const anyLifecycleControl =
+    canActivate || canPause || canClose || canCancel || canSettle || s === 'active';
 
   return (
     <div className="space-y-6">
@@ -323,9 +343,12 @@ export function ManageClient({
         <ThankyouScheduleForm thankyou={thankyou} action={actions.updateThankyouSchedule} />
       ) : null}
 
-      {/* Lifecycle controls */}
+      {/* Lifecycle controls — rendered (with the border-t divider) only when at
+          least one control or the past-event warning shows, so an owner who now
+          sees none of the admin wind-down controls gets no dangling divider. */}
+      {anyLifecycleControl || showLifecycleWarning ? (
       <div className="flex flex-wrap gap-3 border-t border-border pt-4">
-        {isPast && activatableState ? (
+        {showLifecycleWarning ? (
           <p className="w-full rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-sm text-warning">
             מועד האירוע חלף — לא ניתן להפעיל את הקמפיין. ניתן לסגור ולבצע גמר חשבון
             על אנשי הקשר שכבר הושגו.
@@ -374,7 +397,16 @@ export function ManageClient({
             confirm="לבצע גמר חשבון ולחייב את הכרטיס עבור אנשי הקשר שהושגו?"
           />
         ) : null}
+        {canCancel ? (
+          <ActionButton
+            action={actions.cancel}
+            label="ביטול קמפיין"
+            variant="danger"
+            confirm="לבטל את הקמפיין לצמיתות? פעולה זו עוצרת כל פנייה נוספת ולא ניתנת לשחזור."
+          />
+        ) : null}
       </div>
+      ) : null}
     </div>
   );
 }

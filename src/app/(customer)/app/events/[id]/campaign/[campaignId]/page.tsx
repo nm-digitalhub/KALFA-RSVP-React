@@ -3,6 +3,8 @@ import { notFound } from 'next/navigation';
 import { ChevronRight } from 'lucide-react';
 
 import { requireEventAccess } from '@/lib/data/events';
+import { getEventForAdminView } from '@/lib/data/admin/campaigns';
+import { isAdmin } from '@/lib/auth/dal';
 import { isPastEventDay } from '@/lib/data/event-date';
 import { getCampaign, getThankyouSchedule } from '@/lib/data/campaigns';
 import { getCampaignBillingSummary } from '@/lib/data/billing';
@@ -12,6 +14,7 @@ import {
   pauseCampaignAction,
   closeCampaignAction,
   settleCampaignAction,
+  cancelCampaignAction,
   sendGiftReminderAction,
   sendEventDayReminderAction,
   sendThankyouAction,
@@ -27,7 +30,14 @@ export default async function CampaignManagePage({
   params: Promise<{ id: string; campaignId: string }>;
 }) {
   const { id: eventId, campaignId } = await params;
-  const event = await requireEventAccess(eventId, 'campaigns', 'view');
+  // The four wind-down controls (close/pause/settle/cancel) are platform-admin-
+  // only, so an admin who is NOT the owner must still be able to view this page.
+  // Owners/org-members go through requireEventAccess (can_access_event); admins
+  // reach it via an admin-scoped getter that authorizes on has_role('admin').
+  const admin = await isAdmin();
+  const event = admin
+    ? await getEventForAdminView(eventId)
+    : await requireEventAccess(eventId, 'campaigns', 'view');
   const isPast = isPastEventDay(event.event_date);
 
   const campaign = await getCampaign(campaignId);
@@ -66,6 +76,7 @@ export default async function CampaignManagePage({
   const pause = pauseCampaignAction.bind(null, eventId, campaignId);
   const close = closeCampaignAction.bind(null, eventId, campaignId);
   const settle = settleCampaignAction.bind(null, eventId, campaignId);
+  const cancel = cancelCampaignAction.bind(null, eventId, campaignId);
   const sendGift = sendGiftReminderAction.bind(null, eventId, campaignId);
   const sendEventDay = sendEventDayReminderAction.bind(null, eventId, campaignId);
   const sendThankyou = sendThankyouAction.bind(null, eventId, campaignId);
@@ -103,12 +114,14 @@ export default async function CampaignManagePage({
             pause,
             close,
             settle,
+            cancel,
             sendGift,
             sendEventDay,
             sendThankyou,
             updateThankyouSchedule,
           }}
           isPast={isPast}
+          viewerIsAdmin={admin}
         />
       </section>
     </div>

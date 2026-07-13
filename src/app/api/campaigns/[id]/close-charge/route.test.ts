@@ -2,8 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { NextRequest } from 'next/server';
 
 vi.mock('server-only', () => ({}));
-vi.mock('@/lib/auth/dal', () => ({ requireUser: vi.fn() }));
-vi.mock('@/lib/data/events', () => ({ requireOwnedEvent: vi.fn() }));
+vi.mock('@/lib/auth/dal', () => ({ requireUser: vi.fn(), isAdmin: vi.fn() }));
 vi.mock('@/lib/data/campaigns', () => ({ getCampaignForCharge: vi.fn() }));
 vi.mock('@/lib/data/payments', () => ({
   getPaymentsEnabled: vi.fn(),
@@ -13,8 +12,7 @@ vi.mock('@/lib/data/payments', () => ({
 vi.mock('@/lib/data/close-charge', () => ({ closeCampaignAndCharge: vi.fn() }));
 
 import { POST } from './route';
-import { requireUser } from '@/lib/auth/dal';
-import { requireOwnedEvent } from '@/lib/data/events';
+import { requireUser, isAdmin } from '@/lib/auth/dal';
 import { getCampaignForCharge } from '@/lib/data/campaigns';
 import {
   getPaymentsEnabled,
@@ -67,7 +65,7 @@ describe('POST /api/campaigns/[id]/close-charge — CSRF origin gate', () => {
       auth_external_ref: 'auth-1',
       max_charge_ceiling: 100,
     } as never);
-    vi.mocked(requireOwnedEvent).mockResolvedValue({ id: EVENT_ID } as never);
+    vi.mocked(isAdmin).mockResolvedValue(true);
     vi.mocked(getPaymentsEnabled).mockResolvedValue(true);
     vi.mocked(getCloseChargeEnabled).mockResolvedValue(true);
     vi.mocked(getSumitServerConfig).mockResolvedValue({
@@ -84,6 +82,14 @@ describe('POST /api/campaigns/[id]/close-charge — CSRF origin gate', () => {
     const res = await callPost(request({}, { Origin: APP_ORIGIN }));
     expect(closeCampaignAndCharge).toHaveBeenCalledWith(CAMPAIGN_ID);
     expect(res.status).toBe(303);
+  });
+
+  it('rejects a non-admin (owner) with 303 to /app, without calling closeCampaignAndCharge', async () => {
+    vi.mocked(isAdmin).mockResolvedValue(false);
+    const res = await callPost(request({}, { Origin: APP_ORIGIN }));
+    expect(res.status).toBe(303);
+    expect(res.headers.get('location')).toBe(`${APP_ORIGIN}/app`);
+    expect(closeCampaignAndCharge).not.toHaveBeenCalled();
   });
 
   it('rejects a cross-origin POST with 403, without calling closeCampaignAndCharge', async () => {

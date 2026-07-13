@@ -11,8 +11,8 @@ vi.mock('@/lib/data/events', () => ({
   requireOwnedEvent: vi.fn(),
   requireEventAccess: vi.fn(),
 }));
-// approveCampaign reads the session user; stub it.
-vi.mock('@/lib/auth/dal', () => ({ requireUser: vi.fn() }));
+// approveCampaign reads the session user; wind-down transitions require admin.
+vi.mock('@/lib/auth/dal', () => ({ requireUser: vi.fn(), requireAdmin: vi.fn() }));
 // contacts.ts is owned by another module; stub the two functions prepareCampaignHold
 // consumes so this suite runs independently of that module's wiring.
 vi.mock('@/lib/data/contacts', () => ({
@@ -27,7 +27,7 @@ import { createMockSupabase, type QueryResult } from '@/test/supabase-mock';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { createClient } from '@/lib/supabase/server';
 import { requireOwnedEvent } from '@/lib/data/events';
-import { requireUser } from '@/lib/auth/dal';
+import { requireUser, requireAdmin } from '@/lib/auth/dal';
 import { sendSlackAlert } from '@/lib/alerts/slack';
 
 // A future-dated, active owned event so the L1 past-event guard and the R9
@@ -91,7 +91,14 @@ function serverWith<T>(result: QueryResult<T>) {
   return { client, builder };
 }
 
-beforeEach(() => vi.clearAllMocks());
+beforeEach(() => {
+  vi.clearAllMocks();
+  // clearAllMocks resets call history but NOT implementations — a test that
+  // makes requireAdmin reject (non-admin) would otherwise leak into the next.
+  vi.mocked(requireAdmin).mockResolvedValue(
+    { id: 'admin' } as unknown as Awaited<ReturnType<typeof requireAdmin>>,
+  );
+});
 
 describe('computeCeiling', () => {
   it('is price-per-reached × max contacts (the billing ceiling, §7)', () => {
@@ -641,7 +648,10 @@ describe('campaign lifecycle transitions', () => {
     expect(builder.update).not.toHaveBeenCalled();
   });
 
-  it('pauseCampaign: active → paused', async () => {
+  // Wind-down is platform-admin only: pause/close gate on requireAdmin (NOT
+  // event ownership). The regression below (activateCampaign) proves the owner
+  // path is unchanged for forward transitions.
+  it('pauseCampaign: admin allowed → active → paused, WITHOUT an ownership check', async () => {
     const { builder } = adminWith({
       data: { id: 'c1', event_id: 'e1' },
       error: null,
@@ -649,11 +659,25 @@ describe('campaign lifecycle transitions', () => {
 
     await pauseCampaign('c1');
 
+    expect(requireAdmin).toHaveBeenCalled();
+    expect(requireOwnedEvent).not.toHaveBeenCalled();
     expect(builder.update).toHaveBeenCalledWith({ status: 'paused' });
     expect(builder.in).toHaveBeenCalledWith('status', ['active']);
   });
 
-  it('closeCampaign: active/paused/approved/scheduled → closed', async () => {
+  it('pauseCampaign: non-admin rejected → no status write', async () => {
+    const { builder } = adminWith({
+      data: { id: 'c1', event_id: 'e1' },
+      error: null,
+    });
+    const redirected = Object.assign(new Error('NEXT_REDIRECT'), { digest: 'NEXT_REDIRECT;replace;/app;307;' });
+    vi.mocked(requireAdmin).mockRejectedValue(redirected);
+
+    await expect(pauseCampaign('c1')).rejects.toThrow('NEXT_REDIRECT');
+    expect(builder.update).not.toHaveBeenCalled();
+  });
+
+  it('closeCampaign: admin allowed → active/paused/approved/scheduled → closed, WITHOUT an ownership check', async () => {
     const { builder } = adminWith({
       data: { id: 'c1', event_id: 'e1' },
       error: null,
@@ -661,7 +685,35 @@ describe('campaign lifecycle transitions', () => {
 
     await closeCampaign('c1');
 
+    expect(requireAdmin).toHaveBeenCalled();
+    expect(requireOwnedEvent).not.toHaveBeenCalled();
     expect(builder.update).toHaveBeenCalledWith({ status: 'closed' });
+  });
+
+  it('closeCampaign: non-admin rejected → no status write', async () => {
+    const { builder } = adminWith({
+      data: { id: 'c1', event_id: 'e1' },
+      error: null,
+    });
+    const redirected = Object.assign(new Error('NEXT_REDIRECT'), { digest: 'NEXT_REDIRECT;replace;/app;307;' });
+    vi.mocked(requireAdmin).mockRejectedValue(redirected);
+
+    await expect(closeCampaign('c1')).rejects.toThrow('NEXT_REDIRECT');
+    expect(builder.update).not.toHaveBeenCalled();
+  });
+
+  it('activateCampaign stays owner-gated: calls requireOwnedEvent, NOT requireAdmin', async () => {
+    const { builder } = adminWith({
+      data: { id: 'c1', event_id: 'e1' },
+      error: null,
+    });
+    vi.mocked(requireOwnedEvent).mockResolvedValue(ownedEvent());
+
+    await activateCampaign('c1');
+
+    expect(requireOwnedEvent).toHaveBeenCalledWith('e1');
+    expect(requireAdmin).not.toHaveBeenCalled();
+    expect(builder.update).toHaveBeenCalledWith({ status: 'active' });
   });
 
   it('throws when the campaign is not in a transitionable state (0 rows updated)', async () => {
@@ -829,30 +881,30 @@ describe('getThankyouSchedule / updateThankyouSchedule', () => {
   });
 });
 
-describe('cancelCampaign (R8 — explicit ownership contract, round-3)', () => {
-  it('does NOT call the RPC when the calling user does not own the campaign\'s event', async () => {
+describe('cancelCampaign (R8 — wind-down, platform-admin only)', () => {
+  it('does NOT call the RPC when the caller is not a platform admin', async () => {
     const { client } = adminWith<{ id: string; event_id: string }>({
       data: { id: 'c1', event_id: 'e1' },
       error: null,
     });
-    const notOwned = Object.assign(new Error('NEXT_NOT_FOUND'), { digest: 'NEXT_NOT_FOUND' });
-    vi.mocked(requireOwnedEvent).mockRejectedValue(notOwned);
+    const redirected = Object.assign(new Error('NEXT_REDIRECT'), { digest: 'NEXT_REDIRECT;replace;/app;307;' });
+    vi.mocked(requireAdmin).mockRejectedValue(redirected);
 
-    await expect(cancelCampaign('c1')).rejects.toThrow('NEXT_NOT_FOUND');
+    await expect(cancelCampaign('c1')).rejects.toThrow('NEXT_REDIRECT');
     expect(client.rpc).not.toHaveBeenCalled();
   });
 
-  it('calls cancel_campaign with the correct id once ownership is verified', async () => {
+  it('calls cancel_campaign with the correct id once admin is verified, WITHOUT an ownership check', async () => {
     const { client } = adminWith<{ id: string; event_id: string }>({
       data: { id: 'c1', event_id: 'e1' },
       error: null,
     });
-    vi.mocked(requireOwnedEvent).mockResolvedValue(ownedEvent());
     client.rpc.mockResolvedValue({ data: 'cancelled', error: null });
 
     await cancelCampaign('c1');
 
-    expect(requireOwnedEvent).toHaveBeenCalledWith('e1');
+    expect(requireAdmin).toHaveBeenCalled();
+    expect(requireOwnedEvent).not.toHaveBeenCalled();
     expect(client.rpc).toHaveBeenCalledWith('cancel_campaign', { p_campaign: 'c1' });
     // Additive campaign_billing alert on a FRESH cancellation.
     expect(sendSlackAlert).toHaveBeenCalledWith(
@@ -870,7 +922,6 @@ describe('cancelCampaign (R8 — explicit ownership contract, round-3)', () => {
       data: { id: 'c1', event_id: 'e1' },
       error: null,
     });
-    vi.mocked(requireOwnedEvent).mockResolvedValue(ownedEvent());
     client.rpc.mockResolvedValue({ data: 'already_cancelled', error: null });
 
     await expect(cancelCampaign('c1')).resolves.toBeUndefined();
@@ -883,7 +934,6 @@ describe('cancelCampaign (R8 — explicit ownership contract, round-3)', () => {
       data: { id: 'c1', event_id: 'e1' },
       error: null,
     });
-    vi.mocked(requireOwnedEvent).mockResolvedValue(ownedEvent());
     client.rpc.mockResolvedValue({ data: 'not_cancellable', error: null });
 
     await expect(cancelCampaign('c1')).rejects.toThrow('לא ניתן לבטל קמפיין זה');

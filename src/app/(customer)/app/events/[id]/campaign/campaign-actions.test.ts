@@ -31,12 +31,14 @@ vi.mock('@/lib/data/profiles', () => ({ getProfile: vi.fn() }));
 vi.mock('@/lib/data/otp', () => ({ requestOtp: vi.fn() }));
 vi.mock('@/lib/data/agreements-doc', () => ({ getActiveAgreementDoc: vi.fn() }));
 
-import { publishEvent, closeEvent } from '@/lib/data/events';
-import { cancelCampaign } from '@/lib/data/campaigns';
+import { publishEvent, closeEvent, requireOwnedEvent } from '@/lib/data/events';
+import { cancelCampaign, getCampaignForHold } from '@/lib/data/campaigns';
+import { closeCampaignAndCharge } from '@/lib/data/close-charge';
 import {
   publishEventAction,
   closeEventAction,
   cancelCampaignAction,
+  settleCampaignAction,
 } from './campaign-actions';
 
 // Real notFound() digest format (verified against node_modules/next/dist/client/
@@ -141,5 +143,37 @@ describe('cancelCampaignAction', () => {
     const result = await cancelCampaignAction('e1', 'c1', null, new FormData());
 
     expect(result?.error).toBe('לא ניתן לבטל קמפיין זה');
+  });
+});
+
+describe('settleCampaignAction', () => {
+  // Authorization moved into closeCampaignAndCharge (platform-admin only). The
+  // action no longer does its own getCampaignForHold + requireOwnedEvent
+  // pre-check — it delegates straight to the self-gating data-layer call.
+  it('delegates to closeCampaignAndCharge without any ownership pre-check', async () => {
+    vi.mocked(closeCampaignAndCharge).mockResolvedValue({ outcome: 'charged', amount: 12 });
+
+    const result = await settleCampaignAction('e1', 'c1', null, new FormData());
+
+    expect(closeCampaignAndCharge).toHaveBeenCalledWith('c1');
+    expect(getCampaignForHold).not.toHaveBeenCalled();
+    expect(requireOwnedEvent).not.toHaveBeenCalled();
+    expect(result?.notice).toContain('12');
+  });
+
+  it('re-throws a Next.js control-flow signal (the admin gate redirect) instead of swallowing it', async () => {
+    vi.mocked(closeCampaignAndCharge).mockRejectedValue(NEXT_REDIRECT);
+
+    await expect(
+      settleCampaignAction('e1', 'c1', null, new FormData()),
+    ).rejects.toThrow('NEXT_REDIRECT');
+  });
+
+  it('surfaces a safe Hebrew error for a disabled feature outcome', async () => {
+    vi.mocked(closeCampaignAndCharge).mockResolvedValue({ outcome: 'disabled', amount: 0 });
+
+    const result = await settleCampaignAction('e1', 'c1', null, new FormData());
+
+    expect(result?.error).toBeDefined();
   });
 });

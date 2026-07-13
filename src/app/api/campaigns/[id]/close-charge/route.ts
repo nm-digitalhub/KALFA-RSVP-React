@@ -1,7 +1,6 @@
 import { type NextRequest, NextResponse } from 'next/server';
 
-import { requireUser } from '@/lib/auth/dal';
-import { requireOwnedEvent } from '@/lib/data/events';
+import { requireUser, isAdmin } from '@/lib/auth/dal';
 import { getCampaignForCharge } from '@/lib/data/campaigns';
 import {
   getPaymentsEnabled,
@@ -11,9 +10,9 @@ import {
 import { closeCampaignAndCharge } from '@/lib/data/close-charge';
 import { isAllowedOrigin } from '@/lib/http/allowed-origin';
 
-// Owner-triggered campaign close + final charge of the held card. CSRF + auth +
-// ownership + fail-closed gate; the amount is server-derived in the orchestrator
-// (never read from the client). Redirects via APP_ORIGIN (proxy-safe).
+// Admin-triggered campaign close + final charge of the held card. CSRF + auth +
+// platform-admin + fail-closed gate; the amount is server-derived in the
+// orchestrator (never read from the client). Redirects via APP_ORIGIN (proxy-safe).
 
 function r303(url: URL) {
   return NextResponse.redirect(url, 303);
@@ -38,9 +37,7 @@ export async function POST(
 
   const campaign = await getCampaignForCharge(campaignId);
   if (!campaign) return r303(new URL('/app', origin));
-  try {
-    await requireOwnedEvent(campaign.event_id);
-  } catch {
+  if (!(await isAdmin())) {
     return r303(new URL('/app', origin));
   }
 

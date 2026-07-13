@@ -1,0 +1,80 @@
+import 'server-only';
+
+import { notFound } from 'next/navigation';
+
+import { createAdminClient } from '@/lib/supabase/admin';
+import { requireAdmin } from '@/lib/auth/dal';
+import type { OwnedEvent } from '@/lib/data/events';
+import type { CampaignStatus } from '@/lib/data/campaign-status';
+
+// Admin campaign wind-down surface. The four lifecycle controls (close, pause,
+// settle, cancel) are platform-admin-only, so admins need to REACH campaigns of
+// events they do NOT own. These readers use the service-role client (bypassing
+// RLS) and are ALWAYS gated by requireAdmin() — the same trusted has_role('admin')
+// check the customer page and the server actions use. No PII beyond event
+// name/date is read.
+
+const ADMIN_EVENT_COLUMNS = 'id, name, status, event_type, event_date, rsvp_deadline';
+
+// Fetch a single event for a platform admin who is NOT the owner, so the
+// campaign management page can render for admins. Mirrors requireEventAccess's
+// return shape (OwnedEvent) so the page stays field-compatible, but authorizes
+// via requireAdmin() instead of can_access_event(). Does NOT weaken the
+// owner/org path — the page picks this only for admins.
+export async function getEventForAdminView(eventId: string): Promise<OwnedEvent> {
+  await requireAdmin();
+  const admin = createAdminClient();
+  const { data, error } = await admin
+    .from('events')
+    .select(ADMIN_EVENT_COLUMNS)
+    .eq('id', eventId)
+    .maybeSingle();
+  if (error) {
+    throw new Error('טעינת האירוע נכשלה');
+  }
+  if (!data) {
+    notFound();
+  }
+  return data;
+}
+
+// A campaign row for the admin wind-down list: the campaign, its status, and the
+// owning event's name/date so an admin can identify it and click through.
+export interface AdminCampaignListItem {
+  id: string;
+  status: CampaignStatus;
+  eventId: string;
+  eventName: string;
+  eventDate: string | null;
+}
+
+// Statuses that may still need a wind-down action (close/pause/settle/cancel).
+// Terminal states (billed/paid/cancelled) are excluded — nothing left to do.
+const WINDDOWN_STATUSES: readonly CampaignStatus[] = [
+  'active',
+  'paused',
+  'closed',
+];
+
+// List campaigns that may need an admin wind-down action, newest first. Reads
+// via the service-role client (camp_admin_all RLS also covers this) under
+// requireAdmin(). Returns only what the list needs — no billing/card fields.
+export async function listCampaignsForAdmin(): Promise<AdminCampaignListItem[]> {
+  await requireAdmin();
+  const admin = createAdminClient();
+  const { data, error } = await admin
+    .from('campaigns')
+    .select('id, status, event_id, created_at, events(name, event_date)')
+    .in('status', [...WINDDOWN_STATUSES])
+    .order('created_at', { ascending: false });
+  if (error) {
+    throw new Error('טעינת הקמפיינים נכשלה');
+  }
+  return (data ?? []).map((c) => ({
+    id: c.id,
+    status: c.status,
+    eventId: c.event_id,
+    eventName: c.events?.name ?? '—',
+    eventDate: c.events?.event_date ?? null,
+  }));
+}

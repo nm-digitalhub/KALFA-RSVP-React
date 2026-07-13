@@ -327,21 +327,9 @@ export async function settleCampaignAction(
   _prevState: FormState,
   _formData: FormData,
 ): Promise<FormState> {
-  // CAMP-1: enforce ownership at this edge. The other lifecycle transitions gate
-  // inside their data-layer call, but closeCampaignAndCharge tolerates an
-  // already-closed campaign and skips closeCampaign — the one ownership gate — on
-  // that path. So settle must gate itself. Derive event_id from the campaign
-  // (DB-sourced via the admin client), never the browser-bound `eventId` arg.
-  // Mirrors the sibling close-charge/route.ts.
-  const owned = await getCampaignForHold(campaignId);
-  if (!owned) return { error: 'גמר החשבון נכשל. נסו שוב או פנו לתמיכה.' };
-  try {
-    await requireOwnedEvent(owned.event_id);
-  } catch (err) {
-    unstable_rethrow(err);
-    return { error: 'גמר החשבון נכשל. נסו שוב או פנו לתמיכה.' };
-  }
-
+  // Authorization is enforced inside closeCampaignAndCharge (platform-admin
+  // only, requireAdmin as its first statement) — settle no longer pre-checks
+  // ownership here. It delegates straight to the self-gating data-layer call.
   let r: Awaited<ReturnType<typeof closeCampaignAndCharge>>;
   try {
     r = await closeCampaignAndCharge(campaignId);

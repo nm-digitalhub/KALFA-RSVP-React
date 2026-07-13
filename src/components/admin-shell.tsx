@@ -12,6 +12,7 @@ import {
   LayoutDashboard,
   BellRing,
   ListChecks,
+  Send,
   LogOut,
   MailOpen,
   Megaphone,
@@ -62,6 +63,7 @@ type NavItem = { href: string; label: string; icon: LucideIcon };
 const NAV: NavItem[] = [
   { href: '/admin', label: 'סקירה', icon: LayoutDashboard },
   { href: '/admin/users', label: 'משתמשים', icon: Users },
+  { href: '/admin/campaigns', label: 'קמפיינים', icon: Send },
   { href: '/admin/contacts', label: 'פניות', icon: MailOpen },
   { href: '/admin/callbacks', label: 'בקשות חזרה', icon: PhoneCall },
   { href: '/admin/packages', label: 'חבילות', icon: Package },

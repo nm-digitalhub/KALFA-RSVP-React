@@ -21,6 +21,9 @@ vi.mock('@/lib/data/billing', () => ({
 vi.mock('@/lib/sumit/capture', () => ({ captureHeldCardSumit: vi.fn() }));
 vi.mock('@/lib/supabase/admin', () => ({ createAdminClient: vi.fn() }));
 vi.mock('@/lib/alerts/slack', () => ({ sendSlackAlert: vi.fn() }));
+// closeCampaignAndCharge is platform-admin only (billing op); it self-gates on
+// requireAdmin as its first statement.
+vi.mock('@/lib/auth/dal', () => ({ requireAdmin: vi.fn() }));
 
 import {
   getPaymentsEnabled,
@@ -42,6 +45,7 @@ import { captureHeldCardSumit } from '@/lib/sumit/capture';
 import { SumitDeclinedError } from '@/lib/sumit/charge';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { sendSlackAlert } from '@/lib/alerts/slack';
+import { requireAdmin } from '@/lib/auth/dal';
 import { closeCampaignAndCharge } from '@/lib/data/close-charge';
 
 // Mock admin client for the owner-email lookup (events.owner_id → auth user email).
@@ -76,6 +80,7 @@ const m = {
 };
 
 function happy() {
+  (requireAdmin as unknown as Mock).mockResolvedValue({ id: 'admin' });
   m.payments.mockResolvedValue(true);
   m.close.mockResolvedValue(true);
   m.sumit.mockResolvedValue({ companyId: 1, apiKey: 'k' });
@@ -113,6 +118,24 @@ function happy() {
 beforeEach(() => vi.clearAllMocks());
 
 describe('closeCampaignAndCharge', () => {
+  it('rejects a non-admin caller BEFORE reading config or the campaign', async () => {
+    happy();
+    const redirected = Object.assign(new Error('NEXT_REDIRECT'), { digest: 'NEXT_REDIRECT;replace;/app;307;' });
+    vi.mocked(requireAdmin).mockRejectedValue(redirected);
+
+    await expect(closeCampaignAndCharge('c1')).rejects.toThrow('NEXT_REDIRECT');
+    expect(getPaymentsEnabled).not.toHaveBeenCalled();
+    expect(getCampaignForCharge).not.toHaveBeenCalled();
+    expect(captureHeldCardSumit).not.toHaveBeenCalled();
+  });
+
+  it('proceeds for a platform admin (requireAdmin resolves) and charges', async () => {
+    happy();
+    const r = await closeCampaignAndCharge('c1');
+    expect(requireAdmin).toHaveBeenCalled();
+    expect(r).toEqual({ outcome: 'charged', amount: 12 });
+  });
+
   it('does nothing when close-charge is disabled (fail-closed)', async () => {
     m.payments.mockResolvedValue(true);
     m.close.mockResolvedValue(false);

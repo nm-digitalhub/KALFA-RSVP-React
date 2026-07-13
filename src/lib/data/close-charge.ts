@@ -20,6 +20,7 @@ import { captureHeldCardSumit } from '@/lib/sumit/capture';
 import { SumitDeclinedError } from '@/lib/sumit/charge';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { sendSlackAlert } from '@/lib/alerts/slack';
+import { requireAdmin } from '@/lib/auth/dal';
 
 export type CloseChargeOutcome = {
   outcome:
@@ -37,10 +38,12 @@ const CLOSEABLE = ['active', 'paused', 'approved', 'scheduled'];
 // Close a campaign and charge the held card for the accrued reached-contact total.
 // Fail-closed; server-derives amount = min(Σ locked_price, ceiling); charges at
 // most once (atomic guard); retry-tolerant (an already-closed campaign in a
-// retryable charge state proceeds to charge). Ownership is enforced by the caller.
+// retryable charge state proceeds to charge).
+// Authorization: platform-admin only (billing operation).
 export async function closeCampaignAndCharge(
   campaignId: string,
 ): Promise<CloseChargeOutcome> {
+  await requireAdmin();
   const [paymentsOn, closeOn, sumit] = await Promise.all([
     getPaymentsEnabled(),
     getCloseChargeEnabled(),
