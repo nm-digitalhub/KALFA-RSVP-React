@@ -5,6 +5,7 @@ import { revalidatePath } from 'next/cache';
 
 import { requireUser } from '@/lib/auth/dal';
 import { createClient } from '@/lib/supabase/server';
+import { sendSlackAlert } from '@/lib/alerts/slack';
 import type { FormState } from '@/lib/validation/result';
 
 // Bootstrap the FIRST administrator. Delegates entirely to the trusted
@@ -26,7 +27,7 @@ export async function claimFirstAdminAction(
   // input (the RPC has no args). Marked intentionally unused.
   void _prevState;
   void _formData;
-  await requireUser();
+  const user = await requireUser();
 
   const supabase = await createClient();
   const { data, error } = await supabase.rpc('claim_first_admin');
@@ -42,5 +43,16 @@ export async function claimFirstAdminAction(
 
   // Role changed — revalidate cached layouts that branch on admin status.
   revalidatePath('/app', 'layout');
+  // Additive security ops alert. AWAITED (not fire-and-forget): this is a
+  // once-ever bootstrap and redirect() throws immediately after, so awaiting
+  // ensures the send is attempted. sendSlackAlert is fail-safe (never throws).
+  // Non-PII: user id only.
+  await sendSlackAlert({
+    level: 'warn',
+    category: 'security',
+    source: 'admin-access',
+    title: 'נתבעה גישת מנהל ראשונה',
+    fields: { userId: user.id },
+  });
   redirect('/admin');
 }

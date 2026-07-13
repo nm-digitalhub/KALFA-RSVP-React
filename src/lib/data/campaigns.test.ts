@@ -19,12 +19,16 @@ vi.mock('@/lib/data/contacts', () => ({
   countUniqueContactsForEvent: vi.fn(),
   snapshotAuthorizedSet: vi.fn(),
 }));
+// Ops alerting is additive + fail-safe; stub it so lifecycle emits are assertable
+// and the real Slack WebClient is never loaded in unit tests.
+vi.mock('@/lib/alerts/slack', () => ({ sendSlackAlert: vi.fn() }));
 
 import { createMockSupabase, type QueryResult } from '@/test/supabase-mock';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { createClient } from '@/lib/supabase/server';
 import { requireOwnedEvent } from '@/lib/data/events';
 import { requireUser } from '@/lib/auth/dal';
+import { sendSlackAlert } from '@/lib/alerts/slack';
 
 // A future-dated, active owned event so the L1 past-event guard and the R9
 // active-event guard never trip for the generic lifecycle tests (only the
@@ -589,6 +593,15 @@ describe('campaign lifecycle transitions', () => {
       'paused',
     ]);
     expect(builder.eq).toHaveBeenCalledWith('capture_status', 'authorized');
+    // Additive campaign_billing alert once activation succeeds (campaign_id only).
+    expect(sendSlackAlert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        level: 'info',
+        category: 'campaign_billing',
+        title: 'קמפיין הופעל — הפניות מתחילות',
+        fields: { campaign_id: 'c1' },
+      }),
+    );
   });
 
   it('createCampaign rejects a past event at the entry point (L1)', async () => {
@@ -841,6 +854,15 @@ describe('cancelCampaign (R8 — explicit ownership contract, round-3)', () => {
 
     expect(requireOwnedEvent).toHaveBeenCalledWith('e1');
     expect(client.rpc).toHaveBeenCalledWith('cancel_campaign', { p_campaign: 'c1' });
+    // Additive campaign_billing alert on a FRESH cancellation.
+    expect(sendSlackAlert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        level: 'info',
+        category: 'campaign_billing',
+        title: 'קמפיין בוטל',
+        fields: { campaign_id: 'c1', event_id: 'e1' },
+      }),
+    );
   });
 
   it('resolves (idempotent success) on already_cancelled', async () => {
@@ -852,6 +874,8 @@ describe('cancelCampaign (R8 — explicit ownership contract, round-3)', () => {
     client.rpc.mockResolvedValue({ data: 'already_cancelled', error: null });
 
     await expect(cancelCampaign('c1')).resolves.toBeUndefined();
+    // already_cancelled is idempotent-retry noise → NO alert (no Slack spam).
+    expect(sendSlackAlert).not.toHaveBeenCalled();
   });
 
   it('throws a safe Hebrew message on not_cancellable', async () => {

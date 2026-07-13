@@ -16,10 +16,11 @@ import { createAdminClient } from '@/lib/supabase/admin';
 // failed read is NOT cached (so the next call can recover). Per-process — the web
 // and worker keep independent caches, acceptable for best-effort ops alerting.
 
-// Alert categories, each gated by its own admin toggle. NOTE: only `errors`
-// (instrumentation + worker) and `send_health` (whatsapp/sms/sumit provider
-// failures) have emit sites in this phase. `campaign_billing` and `security`
-// toggles exist for a later phase — no code currently emits those categories.
+// Alert categories, each gated by its own admin toggle. All four now have emit
+// sites: `errors` (instrumentation + worker), `send_health` (whatsapp/sms/sumit
+// provider failures), `campaign_billing` (final charge / J5 hold / signed
+// agreement / campaign lifecycle) and `security` (first-admin claim + admin-user
+// grant/revoke/suspend).
 export type AlertCategory = 'errors' | 'campaign_billing' | 'send_health' | 'security';
 
 export interface AlertsConfig {

@@ -22,6 +22,7 @@ vi.mock('@/lib/agreements/pdf', () => ({
 vi.mock('@/lib/storage/legal-docs', () => ({ uploadLegalDoc: vi.fn() }));
 vi.mock('@/lib/email/sender', () => ({ getEmailSender: vi.fn() }));
 vi.mock('@/lib/email/templates', () => ({ agreementEmail: vi.fn() }));
+vi.mock('@/lib/alerts/slack', () => ({ sendSlackAlert: vi.fn() }));
 
 import { createMockSupabase } from '@/test/supabase-mock';
 import { createAdminClient } from '@/lib/supabase/admin';

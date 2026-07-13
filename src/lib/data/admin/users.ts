@@ -5,6 +5,7 @@ import type { User } from '@supabase/supabase-js';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { requireAdmin } from '@/lib/auth/dal';
 import { logActivity } from '@/lib/data/activity';
+import { sendSlackAlert } from '@/lib/alerts/slack';
 import { resolvePage, type PageParams, type PageResult } from './shared';
 
 // Admin: cross-user management (platform staff). user_roles/profiles are
@@ -255,7 +256,15 @@ export async function setPlatformAdmin(userId: string, grant: boolean): Promise<
     action: grant ? 'admin.user.admin_granted' : 'admin.user.admin_revoked',
     meta: { targetUserId: userId },
   });
-  void actor;
+  // Additive security ops alert (fire-and-forget, fail-safe): constant title per
+  // branch (dedup-friendly), non-PII actor/target ids only.
+  void sendSlackAlert({
+    level: 'warn',
+    category: 'security',
+    source: 'admin-users',
+    title: grant ? 'הוענקה הרשאת מנהל מערכת' : 'נשללה הרשאת מנהל מערכת',
+    fields: { actorUserId: actor.id, targetUserId: userId },
+  });
 }
 
 // Suspend (ban) or restore a user's login. Cannot suspend yourself or the last
@@ -287,6 +296,15 @@ export async function setUserSuspended(userId: string, suspend: boolean): Promis
   await logActivity({
     action: suspend ? 'admin.user.suspended' : 'admin.user.reactivated',
     meta: { targetUserId: userId },
+  });
+  // Additive security ops alert (fire-and-forget, fail-safe): constant title per
+  // branch (dedup-friendly), non-PII actor/target ids only.
+  void sendSlackAlert({
+    level: 'warn',
+    category: 'security',
+    source: 'admin-users',
+    title: suspend ? 'משתמש הושהה' : 'משתמש שוחזר',
+    fields: { actorUserId: actor.id, targetUserId: userId },
   });
 }
 

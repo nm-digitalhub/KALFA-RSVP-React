@@ -20,6 +20,7 @@ vi.mock('@/lib/data/billing', () => ({
 }));
 vi.mock('@/lib/sumit/capture', () => ({ captureHeldCardSumit: vi.fn() }));
 vi.mock('@/lib/supabase/admin', () => ({ createAdminClient: vi.fn() }));
+vi.mock('@/lib/alerts/slack', () => ({ sendSlackAlert: vi.fn() }));
 
 import {
   getPaymentsEnabled,
@@ -40,6 +41,7 @@ import {
 import { captureHeldCardSumit } from '@/lib/sumit/capture';
 import { SumitDeclinedError } from '@/lib/sumit/charge';
 import { createAdminClient } from '@/lib/supabase/admin';
+import { sendSlackAlert } from '@/lib/alerts/slack';
 import { closeCampaignAndCharge } from '@/lib/data/close-charge';
 
 // Mock admin client for the owner-email lookup (events.owner_id → auth user email).
@@ -195,6 +197,20 @@ describe('closeCampaignAndCharge', () => {
       paymentId: 777,
     });
     expect(r).toEqual({ outcome: 'charged', amount: 12 });
+    // Additive campaign_billing alert on a successful final charge.
+    expect(sendSlackAlert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        level: 'info',
+        category: 'campaign_billing',
+        title: 'חיוב סופי בוצע',
+        fields: expect.objectContaining({
+          campaign_id: 'c1',
+          event_id: 'e1',
+          amount: 12,
+          document_id: 555,
+        }),
+      }),
+    );
   });
 
   it('caps the amount at the CAMPAIGN ceiling, not the summary ceiling', async () => {
@@ -314,6 +330,15 @@ describe('closeCampaignAndCharge', () => {
     const r = await closeCampaignAndCharge('c1');
     expect(r.outcome).toBe('declined');
     expect(markCampaignChargeOutcome).toHaveBeenCalledWith('c1', 'charge_failed');
+    // Additive campaign_billing warn on a definitive decline.
+    expect(sendSlackAlert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        level: 'warn',
+        category: 'campaign_billing',
+        title: 'החיוב הסופי נדחה על ידי חברת האשראי',
+        fields: { campaign_id: 'c1', event_id: 'e1', amount: 12 },
+      }),
+    );
   });
 
   it('review (not retry) on a network/ambiguous outcome', async () => {
@@ -322,5 +347,8 @@ describe('closeCampaignAndCharge', () => {
     const r = await closeCampaignAndCharge('c1');
     expect(r.outcome).toBe('review');
     expect(markCampaignChargeOutcome).toHaveBeenCalledWith('c1', 'charge_review');
+    // The ambiguous/network path is covered by send_health in the SUMIT layer —
+    // close-charge must NOT emit a campaign_billing alert here (no double-report).
+    expect(sendSlackAlert).not.toHaveBeenCalled();
   });
 });

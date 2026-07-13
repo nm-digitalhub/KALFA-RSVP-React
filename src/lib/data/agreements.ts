@@ -20,6 +20,7 @@ import { getEmailSender } from '@/lib/email/sender';
 import { agreementEmail } from '@/lib/email/templates';
 import { getAppUrl } from '@/lib/url';
 import { formatIsraelDate } from '@/lib/date';
+import { sendSlackAlert } from '@/lib/alerts/slack';
 
 // Orchestrates the signed-agreement step of campaign approval: verify the phone
 // OTP (identity), render the full Hebrew PDF, hash it, store the PDF + signature
@@ -199,6 +200,21 @@ export async function recordSignedAgreement(
   // Lock the campaign as approved (status-guarded, race-safe). The version is
   // the server-read active document's version (not the client-supplied one).
   await approveCampaign(campaign.id, agreementDoc.version);
+
+  // Additive ops alert (fire-and-forget, fail-safe): non-PII ids + version only
+  // (no signer name/phone/IP/signature). Does not affect the approval or the
+  // best-effort receipt email below.
+  void sendSlackAlert({
+    level: 'info',
+    category: 'campaign_billing',
+    source: 'agreement',
+    title: 'הסכם קמפיין נחתם ואושר',
+    fields: {
+      campaign_id: campaign.id,
+      event_id: campaign.event_id,
+      agreement_version: agreementDoc.version,
+    },
+  });
 
   // §14ג(ב): email the signed PDF to the customer. Best-effort — the agreement
   // is already stored and approved; a transient SMTP failure must not void a

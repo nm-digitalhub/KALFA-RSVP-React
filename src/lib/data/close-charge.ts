@@ -19,6 +19,7 @@ import {
 import { captureHeldCardSumit } from '@/lib/sumit/capture';
 import { SumitDeclinedError } from '@/lib/sumit/charge';
 import { createAdminClient } from '@/lib/supabase/admin';
+import { sendSlackAlert } from '@/lib/alerts/slack';
 
 export type CloseChargeOutcome = {
   outcome:
@@ -137,10 +138,33 @@ export async function closeCampaignAndCharge(
       authNumber: result.authNumber,
       paymentId: result.paymentId,
     });
+    // Additive ops alert (fire-and-forget, fail-safe): non-PII ids/amount only.
+    void sendSlackAlert({
+      level: 'info',
+      category: 'campaign_billing',
+      source: 'close-charge',
+      title: 'חיוב סופי בוצע',
+      fields: {
+        campaign_id: campaignId,
+        event_id: campaign.event_id,
+        amount,
+        document_id: result.documentId,
+      },
+    });
     return { outcome: 'charged', amount };
   } catch (e) {
     if (e instanceof SumitDeclinedError) {
       await markCampaignChargeOutcome(campaignId, 'charge_failed');
+      // Additive ops alert (fire-and-forget, fail-safe): does not change the
+      // decline outcome. The network/ambiguous branch below is intentionally
+      // NOT alerted here (already covered by send_health in the SUMIT layer).
+      void sendSlackAlert({
+        level: 'warn',
+        category: 'campaign_billing',
+        source: 'close-charge',
+        title: 'החיוב הסופי נדחה על ידי חברת האשראי',
+        fields: { campaign_id: campaignId, event_id: campaign.event_id, amount },
+      });
       return { outcome: 'declined', amount };
     }
     // Network / ambiguous → review, never silently retried (may have charged).

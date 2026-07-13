@@ -9,6 +9,7 @@ import {
 } from '@/lib/data/contacts';
 import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
+import { sendSlackAlert } from '@/lib/alerts/slack';
 import { celebrantsCompleteFor } from '@/lib/validation/schemas';
 import type { Database, Json } from '@/lib/supabase/types';
 
@@ -732,6 +733,17 @@ export async function activateCampaign(campaignId: string): Promise<void> {
     { rejectPastEvent: true, requireActiveEvent: true },
   );
 
+  // Additive ops alert (fire-and-forget, fail-safe): fires only once the guarded
+  // transition to 'active' succeeded. event_id is not returned by the transition
+  // helper, so only campaign_id is included (no extra DB read just for the alert).
+  void sendSlackAlert({
+    level: 'info',
+    category: 'campaign_billing',
+    source: 'campaign-lifecycle',
+    title: 'קמפיין הופעל — הפניות מתחילות',
+    fields: { campaign_id: campaignId },
+  });
+
   // Auto-thankyou (§4 auto-thankyou-post-event plan): seed the default
   // schedule ONLY the first time this campaign activates — `.is(...null)`
   // guards a re-activation after pause from clobbering an owner-edited
@@ -862,4 +874,15 @@ export async function cancelCampaign(campaignId: string): Promise<void> {
     throw new Error('לא ניתן לבטל קמפיין זה');
   }
   // 'cancelled' and 'already_cancelled' are both idempotent success.
+  // Additive ops alert (fire-and-forget, fail-safe): only a FRESH cancellation
+  // is alerted; 'already_cancelled' is idempotent-retry noise and stays silent.
+  if (data === 'cancelled') {
+    void sendSlackAlert({
+      level: 'info',
+      category: 'campaign_billing',
+      source: 'campaign-lifecycle',
+      title: 'קמפיין בוטל',
+      fields: { campaign_id: campaignId, event_id: campaign.event_id },
+    });
+  }
 }

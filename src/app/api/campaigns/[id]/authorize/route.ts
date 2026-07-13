@@ -20,6 +20,7 @@ import { SumitDeclinedError } from '@/lib/sumit/charge';
 import { authorizeHoldSchema } from '@/lib/validation/campaigns';
 import { VAT_RATE_PERCENT } from '@/lib/agreements/template';
 import { isAllowedOrigin } from '@/lib/http/allowed-origin';
+import { sendSlackAlert } from '@/lib/alerts/slack';
 
 // Route A J5 hold: place a SUMIT authorization hold (AutoCapture:false) up to the
 // campaign ceiling after the agreement is signed. Mirrors the proven
@@ -175,6 +176,15 @@ export async function POST(
     if (err instanceof SumitDeclinedError) {
       console.error('[hold] authorization declined', { campaignId, authRef });
       await markCampaignHoldFailed(campaignId, 'hold_failed');
+      // Additive ops alert (fire-and-forget, fail-safe): does not alter the
+      // decline handling or the redirect below.
+      void sendSlackAlert({
+        level: 'warn',
+        category: 'campaign_billing',
+        source: 'sumit-hold',
+        title: 'תפיסת המסגרת נדחתה על ידי חברת האשראי',
+        fields: { campaign_id: campaignId, event_id: campaign.event_id },
+      });
       return r303(payUrl(ERROR.DECLINED));
     }
     // Ambiguous outcome from SUMIT itself (network/technical/parse) — never
@@ -207,6 +217,21 @@ export async function POST(
       { campaignId, authRef, authNumber: holdResult.authNumber, err },
     );
     await markCampaignHoldFailed(campaignId, 'hold_review');
+    // Additive ops alert (fire-and-forget, fail-safe): reconciliation anchors
+    // only (auth_number/auth_ref) — never card token/expiry/CitizenID. Does not
+    // change the review outcome or the redirect below.
+    void sendSlackAlert({
+      level: 'error',
+      category: 'campaign_billing',
+      source: 'sumit-hold',
+      title: 'תפיסת מסגרת אושרה בסאמיט אך לא נשמרה — נדרשת התאמה ידנית',
+      fields: {
+        campaign_id: campaignId,
+        event_id: campaign.event_id,
+        auth_number: holdResult.authNumber,
+        auth_ref: authRef,
+      },
+    });
     return r303(payUrl(ERROR.REVIEW));
   }
 
