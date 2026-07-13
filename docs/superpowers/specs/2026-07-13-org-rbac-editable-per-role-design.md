@@ -480,13 +480,19 @@ A correct rollback is therefore **two coordinated pieces, both required**:
   every `(role, resource, action)` triple, pre- vs. post-migration. That is
   **false as a literal catalog-equality claim** — it is true for
   **effective** (i.e., actually-enforced) behavior, not raw row equality.
-  Two intended catalog deltas, both zero-behavioral-effect:
-  - `admin` loses `campaigns.create`/`campaigns.manage` in
-    `organization_role_permissions` (the `system_protected` exclusion,
-    §3.9's sibling rule). Zero live effect: `createCampaign`/`approveCampaign`
-    are `requireOwnedEvent`-gated and **never** call `has_org_permission()`
-    (§2, D1/D2) — the flag only prevents the UI from ever offering these
-    permissions, it changes nothing already-enforced.
+  The intended catalog deltas, all zero-behavioral-effect. The `system_protected`
+  exclusion applies to **every non-owner role that holds a `system_protected`
+  permission in the template** (§3.9's sibling rule) — do NOT enumerate this as
+  "admin only". Concretely, from the seed (`202606280021_org_multitenancy.sql`):
+  - `admin` loses BOTH `campaigns.create` and `campaigns.manage` in
+    `organization_role_permissions`.
+  - `member` **also** loses `campaigns.create` (the member template holds
+    `campaigns.view/create/edit`); only `campaigns.manage` is admin-exclusive.
+  - `viewer` is unaffected (holds only `*.view`, none `system_protected`).
+  Zero live effect for all of them: `createCampaign`/`approveCampaign`
+  are `requireOwnedEvent`-gated and **never** call `has_org_permission()`
+  (§2, D1/D2) — the flag only prevents the UI from ever offering these
+  permissions, it changes nothing already-enforced.
   - `admin` does **not** receive `guests.delete` in
     `organization_role_permissions` (§3.9). This is the one delta with
     potential live effect once D4 ships — but D4 and the backfill exclusion
@@ -605,8 +611,10 @@ not left as addenda:
    `has_org_permission()` returns byte-identical booleans pre/post for all 4
    roles — false once `system_protected` and the Fix-1 `guests.delete`
    exclusion are accounted for. Corrected to an **effective-behavior**
-   equivalence claim with the two intended deltas spelled out, and the
-   regression test respecified to match.
+   equivalence claim with the intended catalog deltas spelled out generically
+   (every non-owner role holding a `system_protected` permission — `admin`
+   loses `campaigns.create`+`campaigns.manage`, `member` also loses
+   `campaigns.create`), and the regression test respecified to match.
 3. **Incomplete D4 rollback (blocker).** The original rollback only undid the
    trigger/function pieces, leaving the RLS DELETE swap and the Phase-7 app
    gate swap in place — which, combined with `has_org_permission()` reverting

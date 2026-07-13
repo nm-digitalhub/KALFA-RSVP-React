@@ -91,10 +91,15 @@ gate before moving to the next step.
      `organization_role_permissions`, `system_protected` read-time guard added).
    - Verify (**corrected per adversarial-review Fix 2 — do NOT assert raw
      catalog/boolean equality across the board, it's false**): for every
-     `(role, resource, action)` triple **except** the 2 `system_protected`
-     pairs and `guests.delete` on non-owner roles, `has_org_permission(org,
-     resource, action)` returns the **same** boolean pre/post-rewrite. For the
-     2 `system_protected` pairs, confirm the **effective** app behavior is
+     `(role, resource, action)` triple **except any `(non-owner role,
+     system_protected permission)` combination** and `guests.delete` on
+     non-owner roles, `has_org_permission(org, resource, action)` returns the
+     **same** boolean pre/post-rewrite. Enumerate the excluded combinations
+     generically from the seed — do NOT hard-code "admin only": the affected
+     set is `admin`→`campaigns.create` + `campaigns.manage` AND
+     `member`→`campaigns.create` (member's template holds `campaigns.create`;
+     `viewer` holds no `system_protected` permission). For each of these
+     excluded combinations, confirm the **effective** app behavior is
      unchanged (`createCampaign`/`approveCampaign` never called
      `has_org_permission()` either before or after — grep confirms this, see
      spec §2). For `guests.delete` on `admin`, confirm effective behavior is
