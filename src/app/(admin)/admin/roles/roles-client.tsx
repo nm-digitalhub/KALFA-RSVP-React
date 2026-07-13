@@ -214,10 +214,10 @@ function RolesMatrix({
 
       {error ? <FormError message={error} /> : null}
 
-      <Table className="min-w-[36rem]">
+      <Table>
         <TableHeader>
           <TableRow className="text-xs text-muted-foreground">
-            <TableHead>הרשאה</TableHead>
+            <TableHead className="sticky start-0 z-20 bg-card">הרשאה</TableHead>
             {roles.map((role: PlatformRoleDTO) => (
               <TableHead key={role.id} className="text-center">
                 <span className="inline-flex items-center gap-1">
@@ -243,7 +243,7 @@ function RolesMatrix({
               </TableRow>
               {group.items.map((permission) => (
                 <TableRow key={permission.id}>
-                  <TableCell className="whitespace-normal">
+                  <TableCell className="sticky start-0 z-10 min-w-[11rem] bg-card whitespace-normal">
                     <span className="font-medium">{permission.label}</span>
                     <span className="block text-xs text-muted-foreground" dir="ltr">
                       {permission.key}
