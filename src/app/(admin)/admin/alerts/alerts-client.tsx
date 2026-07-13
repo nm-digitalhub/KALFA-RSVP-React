@@ -287,13 +287,13 @@ export function AlertsClient({ view }: { view: SlackAlertsView }) {
           />
           <ToggleRow
             label="קמפיינים וחיוב"
-            hint="שמור לשלב הבא — אין כרגע מקורות שמפעילים קטגוריה זו."
+            hint="חתימת הסכם, הפעלה/ביטול קמפיין, וחיוב סופי (בוצע/נדחה)."
             defaultChecked={view.categories.campaignBilling}
             category="campaign_billing"
           />
           <ToggleRow
             label="אבטחה"
-            hint="שמור לשלב הבא — אין כרגע מקורות שמפעילים קטגוריה זו."
+            hint="מתן/שלילת הרשאת מנהל, השהיה/שחזור משתמש ואירועי אבטחה."
             defaultChecked={view.categories.security}
             category="security"
           />
