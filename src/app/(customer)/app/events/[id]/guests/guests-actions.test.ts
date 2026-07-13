@@ -31,9 +31,9 @@ vi.mock('@/lib/data/guests', () => ({
   deleteGroup: vi.fn(),
 }));
 vi.mock('@/lib/data/contacts', () => ({ linkGuestContact: vi.fn() }));
-// rsvp.ts is `server-only`; mock it so importing the action module under test
-// doesn't pull the server-only guard into the Node test env.
-vi.mock('@/lib/data/rsvp', () => ({
+// rsvp-links.ts is `server-only`; mock it so importing the action module under
+// test doesn't pull the server-only guard into the Node test env.
+vi.mock('@/lib/data/rsvp-links', () => ({
   revokeRsvpToken: vi.fn(),
   regenerateRsvpToken: vi.fn(),
 }));

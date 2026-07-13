@@ -17,7 +17,7 @@
 
 import { createAdminClient } from '@/lib/supabase/admin';
 import { getOutreachEnabled, getWhatsAppConfig } from '@/lib/data/outreach-config';
-import { resolveTemplateForEvent } from '@/lib/data/message-templates';
+import { resolveTemplateForEvent } from '@/lib/data/message-templates-resolve';
 import { resolveTemplateMedia, sendOneWhatsApp } from '@/lib/data/outreach';
 import { buildBodyParams, deriveGuestFirstName } from '@/lib/whatsapp/template-spec';
 

@@ -6,8 +6,8 @@ import { getGuest, listGroups } from '@/lib/data/guests';
 import {
   getGuestOutreachSummary,
   listInteractionsForContact,
-} from '@/lib/data/interactions';
-import { getRsvpLinkInfo } from '@/lib/data/rsvp';
+} from '@/lib/data/interactions-org-reads';
+import { getRsvpLinkInfo } from '@/lib/data/rsvp-links';
 import { Badge } from '@/components/ui/badge';
 import { formatIsraelDateTime } from '@/lib/date';
 import { getAppUrl } from '@/lib/url';

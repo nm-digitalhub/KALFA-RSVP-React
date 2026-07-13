@@ -1,11 +1,14 @@
 import 'server-only';
 
-import { randomBytes } from 'node:crypto';
-
-import { requireEventAccess } from '@/lib/data/events';
 import { createAdminClient } from '@/lib/supabase/admin';
 import type { Database, Json } from '@/lib/supabase/types';
 import type { RsvpStatus, RsvpSubmitInput } from '@/lib/validation/rsvp';
+
+// This module is request-FREE (service-role admin client only) so the pg-boss
+// worker (webhook-processing → submitRsvp) can import it without dragging
+// next/headers|navigation into the worker bundle. The requireEventAccess-gated
+// guest-detail link helpers (getRsvpLinkInfo / revokeRsvpToken /
+// regenerateRsvpToken) were split out into @/lib/data/rsvp-links for that reason.
 
 // ---------------------------------------------------------------------------
 // Public view shapes — mirror the jsonb returned by public.get_rsvp_by_token.
@@ -218,75 +221,7 @@ async function recordRsvpAudit(
   }
 }
 
-// ---------------------------------------------------------------------------
-// Guest-detail RSVP link helpers. The RSVP token is a bearer secret, so
-// reading, revoking, and regenerating it all require guests.edit. Each
-// helper re-verifies access server-side before touching the token via the
-// service-role client.
-// ---------------------------------------------------------------------------
-
-export interface RsvpLinkInfo {
-  token: string;
-  revokedAt: string | null;
-}
-
-/** The current RSVP token + revocation state for one guest the member may edit. */
-export async function getRsvpLinkInfo(
-  eventId: string,
-  guestId: string,
-): Promise<RsvpLinkInfo | null> {
-  await requireEventAccess(eventId, 'guests', 'edit');
-  const supabase = createAdminClient();
-  const { data, error } = await supabase
-    .from('guests')
-    .select('rsvp_token, rsvp_token_revoked_at')
-    .eq('event_id', eventId)
-    .eq('id', guestId)
-    .maybeSingle();
-  if (error) {
-    throw new Error('טעינת קישור ההזמנה נכשלה');
-  }
-  if (!data) return null;
-  return { token: data.rsvp_token, revokedAt: data.rsvp_token_revoked_at };
-}
-
-/** Revoke the guest's RSVP link (existing link stops resolving immediately). */
-export async function revokeRsvpToken(
-  eventId: string,
-  guestId: string,
-): Promise<void> {
-  await requireEventAccess(eventId, 'guests', 'edit');
-  const supabase = createAdminClient();
-  const { error } = await supabase
-    .from('guests')
-    .update({ rsvp_token_revoked_at: new Date().toISOString() })
-    .eq('event_id', eventId)
-    .eq('id', guestId);
-  if (error) {
-    throw new Error('ביטול קישור ההזמנה נכשל');
-  }
-}
-
-/**
- * Issue a fresh 128-bit RSVP token and clear any revocation. Mirrors the DB
- * DEFAULT (`encode(gen_random_bytes(16),'hex')`) — 16 bytes => 32 lowercase
- * hex chars — so regenerated tokens match the canonical strength standard.
- */
-export async function regenerateRsvpToken(
-  eventId: string,
-  guestId: string,
-): Promise<void> {
-  await requireEventAccess(eventId, 'guests', 'edit');
-  const supabase = createAdminClient();
-  const { error } = await supabase
-    .from('guests')
-    .update({
-      rsvp_token: randomBytes(16).toString('hex'),
-      rsvp_token_revoked_at: null,
-    })
-    .eq('event_id', eventId)
-    .eq('id', guestId);
-  if (error) {
-    throw new Error('יצירת קישור הזמנה חדש נכשלה');
-  }
-}
+// NOTE: the requireEventAccess-gated guest-detail RSVP link helpers
+// (getRsvpLinkInfo, revokeRsvpToken, regenerateRsvpToken) live in
+// @/lib/data/rsvp-links — split out to keep THIS module request-free for the
+// worker/webhook path.

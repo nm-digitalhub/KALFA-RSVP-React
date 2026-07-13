@@ -12,15 +12,17 @@ import { createAdminClient } from '@/lib/supabase/admin';
 import { createClient } from '@/lib/supabase/server';
 import { requireEventAccess } from '@/lib/data/events';
 import {
-  getGuestOutreachSummary,
   insertInteraction,
-  listInteractionsForContact,
   markContactRemovalRequested,
   recordRsvpFromWhatsapp,
   resolveInboundContact,
   setContactOpStatus,
   type InteractionRow,
 } from '@/lib/data/interactions';
+import {
+  getGuestOutreachSummary,
+  listInteractionsForContact,
+} from '@/lib/data/interactions-org-reads';
 
 type Row = Record<string, unknown>;
 

@@ -18,7 +18,7 @@ import {
   linkGuestContact,
   reconcileCampaignSetForContact,
 } from '@/lib/data/contacts';
-import { regenerateRsvpToken, revokeRsvpToken } from '@/lib/data/rsvp';
+import { regenerateRsvpToken, revokeRsvpToken } from '@/lib/data/rsvp-links';
 import {
   createGuestSchema,
   updateGuestSchema,

@@ -32,13 +32,17 @@ const EXEMPT: Record<string, string[]> = {
   'src/lib/data/admin/settings.ts': [],
   'src/lib/data/admin/users.ts': [],
   'src/lib/data/admin/webhook-inbox.ts': [],
-  // getTemplateByKey and resolveTemplateForEvent (the event-type-aware
-  // variant resolver layered on the same active-only query) are the campaign
-  // outreach engine's internal template readers (service-role, read-only,
-  // active-only), also used by the worker -- not admin-facing entry points.
-  // listMessageTemplates/updateMessageTemplate (the actual /admin/templates
-  // surface) are both gated and NOT exempt.
-  'src/lib/data/message-templates.ts': ['getTemplateByKey', 'resolveTemplateForEvent'],
+  // message-templates.ts is now ONLY the admin surface (listMessageTemplates/
+  // updateMessageTemplate, the actual /admin/templates entry points) — both
+  // gated, so NO exemptions remain here.
+  'src/lib/data/message-templates.ts': [],
+  // getTemplateByKey and resolveTemplateForEvent (the event-type-aware variant
+  // resolver layered on the same active-only query) are the campaign outreach
+  // engine's internal template readers (service-role, read-only, active-only),
+  // also used by the worker -- not admin-facing entry points. They live in their
+  // own request-free module so the worker can import them WITHOUT pulling the
+  // admin surface's requireAdmin/request-scoped createClient into its bundle.
+  'src/lib/data/message-templates-resolve.ts': ['getTemplateByKey', 'resolveTemplateForEvent'],
 };
 
 function splitIntoFunctionBlocks(source: string): { name: string; body: string }[] {

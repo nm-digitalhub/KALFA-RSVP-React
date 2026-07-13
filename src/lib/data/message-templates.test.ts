@@ -10,8 +10,10 @@ import { createAdminClient } from '@/lib/supabase/admin';
 import { createClient } from '@/lib/supabase/server';
 import {
   getTemplateByKey,
-  listMessageTemplates,
   resolveTemplateForEvent,
+} from '@/lib/data/message-templates-resolve';
+import {
+  listMessageTemplates,
   updateMessageTemplate,
 } from '@/lib/data/message-templates';
 

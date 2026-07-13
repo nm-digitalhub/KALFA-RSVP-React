@@ -20,13 +20,16 @@ vi.mock('@/lib/data/outreach-config', () => ({
   getOutreachEnabled: vi.fn(),
   getWhatsAppConfig: vi.fn(),
 }));
-vi.mock('@/lib/data/message-templates', () => ({ resolveTemplateForEvent: vi.fn() }));
+vi.mock('@/lib/data/message-templates-resolve', () => ({ resolveTemplateForEvent: vi.fn() }));
 vi.mock('@/lib/whatsapp/client', () => ({
   sendWhatsAppTemplate: vi.fn(),
   sendWhatsAppMarketingTemplate: vi.fn(),
 }));
-// reconcile-config is imported by contacts.ts (module load only — the resolver
-// never calls it); stub it so the real module graph stays inert in the test.
+// After the request-free split, outreach.ts resolves contacts through
+// @/lib/data/sendable-contacts (which imports ONLY createAdminClient), so
+// contacts.ts / reconcile-config are no longer in the worker send graph. This
+// stub stays as belt-and-suspenders in case the graph regresses back through
+// contacts.ts (module load only — the resolver never calls it).
 vi.mock('@/lib/data/reconcile-config', () => ({ isReconcileEnabled: vi.fn(() => false) }));
 
 // The cookie-bearing modules: any invocation throws with a unique marker. These
@@ -56,7 +59,7 @@ vi.mock('@/lib/auth/dal', () => ({ requireUser, getUser: requireUser }));
 import { createMockSupabase, type MockQueryBuilder } from '@/test/supabase-mock';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { getOutreachEnabled, getWhatsAppConfig } from '@/lib/data/outreach-config';
-import { resolveTemplateForEvent } from '@/lib/data/message-templates';
+import { resolveTemplateForEvent } from '@/lib/data/message-templates-resolve';
 import { sendWhatsAppMarketingTemplate } from '@/lib/whatsapp/client';
 import { sendCampaignWhatsApp } from '@/lib/data/outreach';
 

@@ -6,7 +6,7 @@ import {
   getWhatsAppConfig,
   getSendPolicy,
 } from '@/lib/data/outreach-config';
-import { resolveTemplateForEvent } from '@/lib/data/message-templates';
+import { resolveTemplateForEvent } from '@/lib/data/message-templates-resolve';
 import { recordTemplateFailure, resolveTemplateMedia, sendOneWhatsApp } from '@/lib/data/outreach';
 import {
   buildBodyParams,

@@ -6,7 +6,7 @@ vi.mock('@/lib/data/outreach-config', () => ({
   getOutreachEnabled: vi.fn(),
   getWhatsAppConfig: vi.fn(),
 }));
-vi.mock('@/lib/data/message-templates', () => ({ resolveTemplateForEvent: vi.fn() }));
+vi.mock('@/lib/data/message-templates-resolve', () => ({ resolveTemplateForEvent: vi.fn() }));
 vi.mock('@/lib/data/outreach', () => ({
   resolveTemplateMedia: vi.fn(async (template) => ({ template })),
   sendOneWhatsApp: vi.fn(),
@@ -22,7 +22,7 @@ import {
   getWhatsAppConfig,
   type WhatsAppConfig,
 } from '@/lib/data/outreach-config';
-import { resolveTemplateForEvent } from '@/lib/data/message-templates';
+import { resolveTemplateForEvent } from '@/lib/data/message-templates-resolve';
 import { recordTemplateFailure, sendOneWhatsApp } from '@/lib/data/outreach';
 import { recordReached } from '@/lib/data/billing';
 import { GUEST_FIRST_NAME_FALLBACK } from '@/lib/whatsapp/template-spec';

@@ -9,8 +9,8 @@ import {
 import {
   resolveTemplateForEvent,
   type ResolvedTemplate,
-} from '@/lib/data/message-templates';
-import { resolveSendableContacts } from '@/lib/data/contacts';
+} from '@/lib/data/message-templates-resolve';
+import { resolveSendableContacts } from '@/lib/data/sendable-contacts';
 import { isPastEventDay } from '@/lib/data/event-date';
 import { signedInviteImageUrl } from '@/lib/storage/event-media';
 import {

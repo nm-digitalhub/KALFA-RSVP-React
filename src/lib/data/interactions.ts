@@ -1,10 +1,14 @@
 import 'server-only';
 
 import { createAdminClient } from '@/lib/supabase/admin';
-import { createClient } from '@/lib/supabase/server';
-import { requireEventAccess } from '@/lib/data/events';
 import { normalizePhone } from '@/lib/phone';
 import type { Database } from '@/lib/supabase/types';
+
+// This module is request-FREE (service-role admin client only) so the pg-boss
+// worker (billing → setContactOpStatus, webhook-processing) can import it without
+// dragging next/headers|navigation into the worker bundle. The two org-aware,
+// cookie/requireEventAccess-gated guest-detail readers were split out into
+// @/lib/data/interactions-org-reads for exactly that reason.
 
 // Inbound webhook → contact_interactions plumbing (B2). All writes are
 // service-role (the webhook is signature-verified, not session-authed). Never
@@ -219,101 +223,6 @@ export async function recordRsvpFromWhatsapp(
   }
 }
 
-// ---------------------------------------------------------------------------
-// Org-aware reads for the guest-detail WhatsApp timeline.
-//
-// Everything ABOVE is webhook write-plumbing (service-role, signature-verified,
-// no session). The two readers BELOW run on the member's cookie client so RLS
-// scopes every row to the event org (`contact_interactions_org_select`,
-// `contacts_org_select`), and they re-verify access via requireEventAccess
-// (contacts.view) as defense-in-depth. Both are read-only and never select/
-// return a message body or log PII.
-// ---------------------------------------------------------------------------
-
-// One timeline entry = one WhatsApp message. delivery_status is updated IN PLACE
-// by setDeliveryStatus (last-write-wins), so an outbound row carries its CURRENT
-// state (sent/delivered/read/failed), not a per-event stream. `payload_meta` is
-// deliberately NOT selected — only PII-safe metadata reaches the UI.
-export type ContactInteraction = {
-  id: string;
-  direction: 'in' | 'out';
-  kind: string;
-  delivery_status: string | null;
-  delivery_error_code: string | null;
-  provider_id: string;
-  context_message_id: string | null;
-  created_at: string;
-};
-
-// Timeline of WhatsApp interactions for one contact within an event the member
-// may view, oldest-first (conversational order). Scoped by event_id AND
-// contact_id; RLS + the gate authorize org members holding contacts.view.
-export async function listInteractionsForContact(
-  eventId: string,
-  contactId: string,
-): Promise<ContactInteraction[]> {
-  await requireEventAccess(eventId, 'contacts', 'view');
-  const supabase = await createClient();
-  const { data, error } = await supabase
-    .from('contact_interactions')
-    .select(
-      'id, direction, kind, delivery_status, delivery_error_code, provider_id, context_message_id, created_at',
-    )
-    .eq('event_id', eventId)
-    .eq('contact_id', contactId)
-    .order('created_at', { ascending: true });
-  if (error) throw new Error('טעינת היסטוריית האינטראקציות נכשלה');
-  return (data ?? []).map((r) => ({
-    id: r.id,
-    direction: r.direction === 'in' ? 'in' : 'out',
-    kind: r.kind,
-    delivery_status: r.delivery_status,
-    delivery_error_code: r.delivery_error_code,
-    provider_id: r.provider_id,
-    context_message_id: r.context_message_id,
-    created_at: r.created_at,
-  }));
-}
-
-export type GuestOutreachSummary = {
-  contactId: string;
-  opStatus: OpStatus;
-  removalRequested: boolean;
-};
-
-// The guest's outreach state (op_status + opt-out) via its linked contact, plus
-// the contact_id that drives listInteractionsForContact. Returns null when the
-// guest has no contact (invalid/missing phone → not reachable, not billable).
-// Two org-aware reads on the cookie client (RLS-gated).
-export async function getGuestOutreachSummary(
-  eventId: string,
-  guestId: string,
-): Promise<GuestOutreachSummary | null> {
-  await requireEventAccess(eventId, 'contacts', 'view');
-  const supabase = await createClient();
-
-  const { data: guest, error: gErr } = await supabase
-    .from('guests')
-    .select('contact_id')
-    .eq('event_id', eventId)
-    .eq('id', guestId)
-    .maybeSingle();
-  if (gErr) throw new Error('טעינת המוזמן נכשלה');
-  const contactId = guest?.contact_id ?? null;
-  if (!contactId) return null;
-
-  const { data: contact, error: cErr } = await supabase
-    .from('contacts')
-    .select('op_status, removal_requested')
-    .eq('event_id', eventId)
-    .eq('id', contactId)
-    .maybeSingle();
-  if (cErr) throw new Error('טעינת איש הקשר נכשלה');
-  if (!contact) return null;
-
-  return {
-    contactId,
-    opStatus: contact.op_status,
-    removalRequested: contact.removal_requested,
-  };
-}
+// NOTE: the org-aware, cookie-gated guest-detail readers (listInteractionsForContact,
+// getGuestOutreachSummary) live in @/lib/data/interactions-org-reads — split out
+// to keep THIS module request-free for the worker/billing path.

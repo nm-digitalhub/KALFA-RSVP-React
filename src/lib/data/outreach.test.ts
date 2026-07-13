@@ -6,8 +6,8 @@ vi.mock('@/lib/data/outreach-config', () => ({
   getOutreachEnabled: vi.fn(),
   getWhatsAppConfig: vi.fn(),
 }));
-vi.mock('@/lib/data/message-templates', () => ({ resolveTemplateForEvent: vi.fn() }));
-vi.mock('@/lib/data/contacts', () => ({ resolveSendableContacts: vi.fn() }));
+vi.mock('@/lib/data/message-templates-resolve', () => ({ resolveTemplateForEvent: vi.fn() }));
+vi.mock('@/lib/data/sendable-contacts', () => ({ resolveSendableContacts: vi.fn() }));
 vi.mock('@/lib/whatsapp/client', () => ({
   sendWhatsAppTemplate: vi.fn(),
   sendWhatsAppMarketingTemplate: vi.fn(),
@@ -19,8 +19,8 @@ import {
   getOutreachEnabled,
   getWhatsAppConfig,
 } from '@/lib/data/outreach-config';
-import { resolveTemplateForEvent } from '@/lib/data/message-templates';
-import { resolveSendableContacts } from '@/lib/data/contacts';
+import { resolveTemplateForEvent } from '@/lib/data/message-templates-resolve';
+import { resolveSendableContacts } from '@/lib/data/sendable-contacts';
 import { sendWhatsAppMarketingTemplate, sendWhatsAppTemplate } from '@/lib/whatsapp/client';
 import { GUEST_FIRST_NAME_FALLBACK } from '@/lib/whatsapp/template-spec';
 import {

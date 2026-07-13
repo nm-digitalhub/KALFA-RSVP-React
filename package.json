@@ -15,6 +15,8 @@
     "pm2:status": "pm2 status kalfa-beta",
     "pm2:logs": "pm2 logs kalfa-beta --lines 100",
     "lint": "eslint",
+    "worker:deps": "depcruise --config .dependency-cruiser.cjs worker/main.ts",
+    "pretest": "npm run worker:deps",
     "test": "vitest run",
     "test:watch": "vitest",
     "verify:db": "node --env-file=.env.local scripts/verify-db-contracts.mjs"
@@ -62,6 +64,7 @@
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "@types/web-push": "^3.6.4",
+    "dependency-cruiser": "^18.1.0",
     "esbuild": "^0.28.1",
     "eslint": "^9",
     "eslint-config-next": "16.2.9",

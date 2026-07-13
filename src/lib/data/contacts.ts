@@ -5,6 +5,7 @@ import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { normalizePhone } from '@/lib/phone';
 import { isReconcileEnabled } from '@/lib/data/reconcile-config';
+import { resolveSendableContacts } from '@/lib/data/sendable-contacts';
 import type { Database } from '@/lib/supabase/types';
 
 // "Contacts" = unique reachable phones per event (§2–3). Built from the event's
@@ -334,55 +335,10 @@ export async function listSendableContacts(
   campaignId?: string,
 ): Promise<Array<{ id: string; normalized_phone: string }>> {
   await requireEventAccess(eventId, 'contacts', 'view');
+  // Request-free core lives in its own module (@/lib/data/sendable-contacts) so
+  // the worker send path can import it WITHOUT dragging events.ts → auth/dal →
+  // next/headers into the worker bundle; this UI wrapper adds only the gate.
   return resolveSendableContacts(eventId, campaignId);
-}
-
-// Request-free core of listSendableContacts: the SAME service-role query with NO
-// cookie / requireEventAccess gate, so it is safe from the pg-boss worker (the
-// auto-thankyou sweep and the drip engine run in a long-lived process where
-// next/headers is a no-op stub — cookies()/requireUser() would throw). The
-// public listSendableContacts above wraps this with requireEventAccess for
-// request-scoped (UI) callers; the DATA read is service-role either way, so the
-// gate is the ONLY difference. Authorization is the CALLER's responsibility when
-// using this directly — the campaign send route/actions requireOwnedEvent first
-// (their own boundary), and the worker sweep runs system-trusted with no user
-// context. Mirrors outreach-engine.ts, which is deliberately request-free.
-export async function resolveSendableContacts(
-  eventId: string,
-  campaignId?: string,
-): Promise<Array<{ id: string; normalized_phone: string }>> {
-  const admin = createAdminClient();
-
-  if (campaignId) {
-    // INNER JOIN the frozen authorized set: only contacts authorized for THIS
-    // campaign survive (campaign_authorized_contacts.contact_id = contacts.id).
-    const { data, error } = await admin
-      .from('contacts')
-      .select(
-        'id, normalized_phone, campaign_authorized_contacts!inner(campaign_id)',
-      )
-      .eq('event_id', eventId)
-      .eq('removal_requested', false)
-      .not('whatsapp_consent_at', 'is', null)
-      .eq('campaign_authorized_contacts.campaign_id', campaignId);
-    if (error) throw new Error('טעינת אנשי הקשר לשליחה נכשלה');
-    return (data ?? []).map((c) => ({
-      id: c.id,
-      normalized_phone: c.normalized_phone,
-    }));
-  }
-
-  const { data, error } = await admin
-    .from('contacts')
-    .select('id, normalized_phone')
-    .eq('event_id', eventId)
-    .eq('removal_requested', false)
-    .not('whatsapp_consent_at', 'is', null);
-  if (error) throw new Error('טעינת אנשי הקשר לשליחה נכשלה');
-  return (data ?? []).map((c) => ({
-    id: c.id,
-    normalized_phone: c.normalized_phone,
-  }));
 }
 
 // --- Phase 2: frozen authorized contact SET (the money-leak guard) ----------
