@@ -293,7 +293,7 @@ export function AlertsClient({ view }: { view: SlackAlertsView }) {
           />
           <ToggleRow
             label="אבטחה"
-            hint="מתן/שלילת הרשאת מנהל, השהיה/שחזור משתמש ואירועי אבטחה."
+            hint="מתן/שלילת הרשאות (מנהל-מערכת ותפקידי-ארגון), צפיית-תמיכה בנתוני לקוח, השהיה/שחזור משתמש ואירועי אבטחה."
             defaultChecked={view.categories.security}
             category="security"
           />
