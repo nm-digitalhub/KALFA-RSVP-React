@@ -12,31 +12,6 @@ export type Database = {
   __InternalSupabase: {
     PostgrestVersion: "14.5"
   }
-  graphql_public: {
-    Tables: {
-      [_ in never]: never
-    }
-    Views: {
-      [_ in never]: never
-    }
-    Functions: {
-      graphql: {
-        Args: {
-          extensions?: Json
-          operationName?: string
-          query?: string
-          variables?: Json
-        }
-        Returns: Json
-      }
-    }
-    Enums: {
-      [_ in never]: never
-    }
-    CompositeTypes: {
-      [_ in never]: never
-    }
-  }
   public: {
     Tables: {
       activity_log: {
@@ -139,6 +114,13 @@ export type Database = {
           payments_enabled: boolean
           privacy_url: string | null
           reasonable_coverage_contacts: number
+          slack_alert_campaign_billing: boolean
+          slack_alert_channel_id: string | null
+          slack_alert_errors: boolean
+          slack_alert_security: boolean
+          slack_alert_send_health: boolean
+          slack_alerts_enabled: boolean
+          slack_bot_token: string | null
           sms_enabled: boolean
           smtp_from: string | null
           smtp_host: string | null
@@ -187,6 +169,13 @@ export type Database = {
           payments_enabled?: boolean
           privacy_url?: string | null
           reasonable_coverage_contacts?: number
+          slack_alert_campaign_billing?: boolean
+          slack_alert_channel_id?: string | null
+          slack_alert_errors?: boolean
+          slack_alert_security?: boolean
+          slack_alert_send_health?: boolean
+          slack_alerts_enabled?: boolean
+          slack_bot_token?: string | null
           sms_enabled?: boolean
           smtp_from?: string | null
           smtp_host?: string | null
@@ -235,6 +224,13 @@ export type Database = {
           payments_enabled?: boolean
           privacy_url?: string | null
           reasonable_coverage_contacts?: number
+          slack_alert_campaign_billing?: boolean
+          slack_alert_channel_id?: string | null
+          slack_alert_errors?: boolean
+          slack_alert_security?: boolean
+          slack_alert_send_health?: boolean
+          slack_alerts_enabled?: boolean
+          slack_bot_token?: string | null
           sms_enabled?: boolean
           smtp_from?: string | null
           smtp_host?: string | null
@@ -1176,6 +1172,39 @@ export type Database = {
           message_key?: string
           name?: string
           updated_at?: string
+        }
+        Relationships: []
+      }
+      ops_alerts: {
+        Row: {
+          category: string | null
+          created_at: string
+          delivered: boolean
+          id: string
+          level: string
+          source: string | null
+          suppressed_count: number
+          title: string
+        }
+        Insert: {
+          category?: string | null
+          created_at?: string
+          delivered?: boolean
+          id?: string
+          level: string
+          source?: string | null
+          suppressed_count?: number
+          title: string
+        }
+        Update: {
+          category?: string | null
+          created_at?: string
+          delivered?: boolean
+          id?: string
+          level?: string
+          source?: string | null
+          suppressed_count?: number
+          title?: string
         }
         Relationships: []
       }
@@ -2385,9 +2414,6 @@ export type CompositeTypes<
     : never
 
 export const Constants = {
-  graphql_public: {
-    Enums: {},
-  },
   public: {
     Enums: {
       agreement_status: ["draft", "approved"],

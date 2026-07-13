@@ -25,6 +25,7 @@
     "@hebcal/core": "^6.6.0",
     "@hookform/resolvers": "^5.4.0",
     "@pg-boss/dashboard": "^1.6.1",
+    "@slack/web-api": "^7.19.0",
     "@slack/webhook": "^7.2.0",
     "@supabase/ssr": "^0.12.0",
     "@supabase/supabase-js": "^2.108.2",
