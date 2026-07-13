@@ -127,6 +127,19 @@ export const hasPlatformPermission = cache(async (key: string): Promise<boolean>
   return data === true;
 });
 
+// Require the current user to hold platform permission `key` (via their staff
+// role); redirect to /app otherwise. Sibling of requirePlatformOwner, one layer
+// finer-grained. `key` is validated at the DB against the seeded catalog (no
+// hardcoded union here) — an unknown/mistyped key simply never matches and the
+// user is redirected. Memoized per (render pass, key) via cache().
+export const requirePlatformPermission = cache(async (key: string) => {
+  const user = await requireUser();
+  if (!(await hasPlatformPermission(key))) {
+    redirect('/app');
+  }
+  return user;
+});
+
 // ---------------------------------------------------------------------------
 // Organization context (multi-tenant layer). The active org is resolved from a
 // cookie but ALWAYS verified server-side against the caller's memberships — a

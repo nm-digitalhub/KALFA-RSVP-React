@@ -23,6 +23,7 @@ import {
   Settings,
   ShieldCheck,
   Users,
+  UserSearch,
   Webhook,
   type LucideIcon,
 } from 'lucide-react';
@@ -66,6 +67,7 @@ const NAV: NavItem[] = [
   { href: '/admin/users', label: 'משתמשים', icon: Users },
   { href: '/admin/roles', label: 'תפקידי צוות', icon: ShieldCheck },
   { href: '/admin/campaigns', label: 'קמפיינים', icon: Send },
+  { href: '/admin/support', label: 'תמיכת לקוחות', icon: UserSearch },
   { href: '/admin/contacts', label: 'פניות', icon: MailOpen },
   { href: '/admin/callbacks', label: 'בקשות חזרה', icon: PhoneCall },
   { href: '/admin/packages', label: 'חבילות', icon: Package },

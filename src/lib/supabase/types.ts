@@ -2156,6 +2156,41 @@ export type Database = {
           },
         ]
       }
+      support_access_log: {
+        Row: {
+          accessed_at: string
+          event_id: string
+          id: string
+          owner_id: string | null
+          reason: string
+          staff_id: string
+        }
+        Insert: {
+          accessed_at?: string
+          event_id: string
+          id?: string
+          owner_id?: string | null
+          reason: string
+          staff_id: string
+        }
+        Update: {
+          accessed_at?: string
+          event_id?: string
+          id?: string
+          owner_id?: string | null
+          reason?: string
+          staff_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "support_access_log_event_id_fkey"
+            columns: ["event_id"]
+            isOneToOne: false
+            referencedRelation: "events"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       user_roles: {
         Row: {
           created_at: string

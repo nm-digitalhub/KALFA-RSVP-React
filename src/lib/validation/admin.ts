@@ -285,6 +285,42 @@ export const grantCreditSchema = z.object({
 export type GrantCreditInput = z.infer<typeof grantCreditSchema>;
 
 // --- agreement (contract) document management ---
+// --- support access (P3 staff support-access) ---
+// Lookup is by EVENT ID (+ optionally the account owner's phone/email) — NOT a
+// free guest search. Two separate schemas: finding candidate events (no reason
+// needed — it's not a data view yet) vs. actually viewing one (requires the
+// break-glass reason). The data layer re-validates the reason length too.
+// The lookup surfaces customer PII (event name/date + owner name) and can be
+// used to enumerate real customers, so it is treated as a customer-data read:
+// it requires the SAME break-glass reason as an event view (data layer audits
+// every surfaced event). The reason is required up front, alongside at least
+// one lookup key.
+export const supportFindSchema = z
+  .object({
+    event_id: z.string().uuid({ error: 'מזהה אירוע לא תקין' }).optional().or(z.literal('')),
+    owner_phone: z.string().trim().max(30).optional().or(z.literal('')),
+    owner_email: z.string().trim().email({ error: 'אימייל לא תקין' }).optional().or(z.literal('')),
+    reason: z
+      .string()
+      .trim()
+      .min(10, { error: 'יש לציין סיבה לחיפוש (לפחות 10 תווים)' })
+      .max(500, { error: 'הסיבה ארוכה מדי' }),
+  })
+  .refine((v) => v.event_id || v.owner_phone || v.owner_email, {
+    error: 'יש להזין מזהה אירוע או טלפון/אימייל של בעל האירוע',
+  });
+export type SupportFindInput = z.infer<typeof supportFindSchema>;
+
+export const supportViewSchema = z.object({
+  event_id: z.string().uuid({ error: 'מזהה אירוע לא תקין' }),
+  reason: z
+    .string()
+    .trim()
+    .min(10, { error: 'יש לציין סיבה לצפייה (לפחות 10 תווים)' })
+    .max(500, { error: 'הסיבה ארוכה מדי' }),
+});
+export type SupportViewInput = z.infer<typeof supportViewSchema>;
+
 export const agreementEditSchema = z.object({
   version: z
     .string()
