@@ -373,6 +373,102 @@ export async function setOrgRolePermission(
   });
 }
 
+// Reset one non-owner role's org-scoped grants back to the frozen factory
+// template (role_permissions), applying the same two exclusions the Phase-1
+// backfill / create_organization seed use: system_protected permissions and
+// guests.delete are never re-seeded to a non-owner role. Diff-based (deletes only
+// the extras, inserts only the missing) so the audit trail records the real
+// delta rather than a full wipe-and-reload. Owner role is a no-op (always
+// all-permissions). requireOrgOwner gates it, mirroring setOrgRolePermission.
+export async function resetOrgRolePermissionsToDefault(
+  orgId: string,
+  roleId: string,
+): Promise<void> {
+  const actor = await requireOrgOwner(orgId);
+  const admin = createAdminClient();
+
+  const { data: role } = await admin
+    .from('org_roles')
+    .select('id, is_owner_role')
+    .eq('id', roleId)
+    .maybeSingle();
+  if (!role) throw new Error('התפקיד לא נמצא');
+  if (role.is_owner_role) return; // owner is always all-permissions — nothing to reset
+
+  // The permission catalog is tiny (~24 rows); load it once and derive the
+  // exclusion set in memory rather than a nested embed (avoids to-one typing).
+  const { data: defs, error: defsError } = await admin
+    .from('permission_definitions')
+    .select('id, resource, action, system_protected');
+  if (defsError) throw new Error('טעינת ברירת המחדל נכשלה');
+  const excludeIds = new Set(
+    (defs ?? [])
+      .filter(
+        (p) => p.system_protected || (p.resource === 'guests' && p.action === 'delete'),
+      )
+      .map((p) => p.id),
+  );
+
+  const { data: templateRows, error: templateError } = await admin
+    .from('role_permissions')
+    .select('permission_id')
+    .eq('role_id', roleId);
+  if (templateError) throw new Error('טעינת ברירת המחדל נכשלה');
+  const targetIds = new Set(
+    (templateRows ?? []).map((r) => r.permission_id).filter((id) => !excludeIds.has(id)),
+  );
+
+  const { data: currentRows, error: currentError } = await admin
+    .from('organization_role_permissions')
+    .select('permission_id')
+    .eq('organization_id', orgId)
+    .eq('role_id', roleId);
+  if (currentError) throw new Error('טעינת ההרשאות הנוכחיות נכשלה');
+  const currentIds = new Set((currentRows ?? []).map((r) => r.permission_id));
+
+  const extras = [...currentIds].filter((id) => !targetIds.has(id));
+  const missing = [...targetIds].filter((id) => !currentIds.has(id));
+
+  if (extras.length > 0) {
+    const { error } = await admin
+      .from('organization_role_permissions')
+      .delete()
+      .eq('organization_id', orgId)
+      .eq('role_id', roleId)
+      .in('permission_id', extras);
+    if (error) throw new Error('איפוס ההרשאות נכשל');
+  }
+  if (missing.length > 0) {
+    const { error } = await admin.from('organization_role_permissions').insert(
+      missing.map((permissionId) => ({
+        organization_id: orgId,
+        role_id: roleId,
+        permission_id: permissionId,
+        granted_by: actor.id,
+      })),
+    );
+    if (error) throw new Error('איפוס ההרשאות נכשל');
+  }
+
+  await logActivity({
+    action: 'org_role.permissions_reset',
+    meta: { orgId, roleId, removed: extras.length, restored: missing.length },
+  });
+  void sendSlackAlert({
+    level: 'warn',
+    category: 'security',
+    source: 'org-roles',
+    title: 'אופסו הרשאות תפקיד לברירת מחדל',
+    fields: {
+      actorUserId: actor.id,
+      organizationId: orgId,
+      roleId,
+      removed: extras.length,
+      restored: missing.length,
+    },
+  });
+}
+
 // ---------------------------------------------------------------------------
 // Mutations (each re-verifies permission + invariants server-side)
 // ---------------------------------------------------------------------------

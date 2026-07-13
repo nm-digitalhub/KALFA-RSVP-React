@@ -5,7 +5,7 @@ import { unstable_rethrow } from 'next/navigation';
 import { z } from 'zod';
 
 import { requireActiveOrg, requireOrgOwner } from '@/lib/auth/dal';
-import { setOrgRolePermission } from '@/lib/data/orgs';
+import { resetOrgRolePermissionsToDefault, setOrgRolePermission } from '@/lib/data/orgs';
 import type { FormState } from '@/lib/validation/result';
 
 // Server Actions for the ORG (customer) role-permission matrix screen. Sibling
@@ -51,4 +51,27 @@ export async function setOrgRolePermissionAction(input: {
   }
   revalidatePath(ROLES_PATH);
   return { notice: 'נשמר' };
+}
+
+// Reset one non-owner role's grants back to the factory default. orgId is
+// resolved server-side (requireActiveOrg), never client-supplied.
+const resetOrgRoleSchema = z.object({ roleId: z.uuid() });
+
+export async function resetOrgRolePermissionsAction(input: {
+  roleId: string;
+}): Promise<FormState> {
+  const { orgId } = await requireActiveOrg();
+  await requireOrgOwner(orgId);
+  const parsed = resetOrgRoleSchema.safeParse(input);
+  if (!parsed.success) {
+    return { error: 'ערך לא תקין' };
+  }
+  try {
+    await resetOrgRolePermissionsToDefault(orgId, parsed.data.roleId);
+  } catch (err) {
+    unstable_rethrow(err);
+    return { error: err instanceof Error ? err.message : 'איפוס ההרשאות נכשל. נסו שוב.' };
+  }
+  revalidatePath(ROLES_PATH);
+  return { notice: 'התפקיד אופס לברירת המחדל' };
 }

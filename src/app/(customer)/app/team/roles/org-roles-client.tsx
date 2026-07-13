@@ -1,7 +1,8 @@
 'use client';
 
+import { useRouter } from 'next/navigation';
 import { Fragment, useMemo, useState, useTransition } from 'react';
-import { Lock } from 'lucide-react';
+import { Lock, RotateCcw } from 'lucide-react';
 
 import {
   Table,
@@ -19,13 +20,83 @@ import {
   AccordionPanel,
 } from '@/components/ui/accordion';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { Button } from '@/components/ui/button';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog';
 import { FormError } from '@/components/forms';
 import type {
   OrgRoleDTO,
   PermissionDefDTO,
   OrgRolePermissionMatrix,
 } from '@/lib/data/orgs';
-import { setOrgRolePermissionAction } from './actions';
+import { resetOrgRolePermissionsAction, setOrgRolePermissionAction } from './actions';
+
+// Confirm-gated "reset this role to the factory default" button. Owner role
+// renders nothing (its grants are fixed). On confirm it calls the server action
+// then router.refresh() so the whole matrix re-reads server state; the dialog is
+// controlled so it stays open (with a pending label / inline error) until the
+// action resolves.
+function ResetRoleButton({ role }: { role: OrgRoleDTO }) {
+  const router = useRouter();
+  const [open, setOpen] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [pending, startTransition] = useTransition();
+
+  if (role.isOwnerRole) {
+    return null;
+  }
+
+  const onConfirm = (): void => {
+    setError(null);
+    startTransition(async () => {
+      const result = await resetOrgRolePermissionsAction({ roleId: role.id });
+      if (result && 'error' in result && result.error) {
+        setError(result.error);
+        return;
+      }
+      setOpen(false);
+      router.refresh();
+    });
+  };
+
+  return (
+    <AlertDialog open={open} onOpenChange={setOpen}>
+      <AlertDialogTrigger
+        render={
+          <Button variant="ghost" size="xs" className="text-muted-foreground">
+            <RotateCcw aria-hidden />
+            איפוס
+          </Button>
+        }
+      />
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>איפוס לברירת מחדל</AlertDialogTitle>
+          <AlertDialogDescription>
+            כל ההתאמות שביצעת לתפקיד «{role.label}» יימחקו, והוא יחזור להרשאות
+            ברירת המחדל של המערכת. הפעולה תיכנס לתוקף מיד.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        {error ? <FormError message={error} /> : null}
+        <AlertDialogFooter>
+          <AlertDialogCancel disabled={pending}>ביטול</AlertDialogCancel>
+          <AlertDialogAction variant="destructive" onClick={onConfirm} disabled={pending}>
+            {pending ? 'מאפס…' : 'איפוס'}
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  );
+}
 
 // Client matrix editor for the ORG (customer) role-permission screen —
 // COPIED (not imported) from ../../../../(admin)/admin/roles/roles-client.tsx
@@ -175,6 +246,7 @@ function PermissionToggleRow({
   onError: (message: string | null) => void;
 }) {
   const lock = cellLock(role, permission);
+  const initialChecked = lock.locked ? role.isOwnerRole : granted;
   return (
     <div className="flex items-start justify-between gap-4 py-2.5">
       <div className="space-y-0.5">
@@ -184,12 +256,14 @@ function PermissionToggleRow({
         </p>
       </div>
       <MatrixCell
+        // key includes the grant so a post-reset router.refresh() re-mounts it.
+        key={`${role.id}:${permission.id}:${initialChecked}`}
         roleId={role.id}
         permissionId={permission.id}
         ariaLabel={`${permission.label} – ${role.label}`}
         locked={lock.locked}
         lockedReason={lock.reason}
-        initialChecked={lock.locked ? role.isOwnerRole : granted}
+        initialChecked={initialChecked}
         onError={onError}
       />
     </div>
@@ -257,6 +331,11 @@ function RolesAccordion({
                   </div>
                 </div>
               ))}
+              {!role.isOwnerRole ? (
+                <div className="flex justify-end pt-3">
+                  <ResetRoleButton role={role} />
+                </div>
+              ) : null}
             </AccordionPanel>
           </AccordionItem>
         );
@@ -307,10 +386,13 @@ function RolesMatrix({ roles, permissions, granted }: OrgRolePermissionMatrix) {
               <TableHead className="sticky start-0 z-20 bg-card">הרשאה</TableHead>
               {roles.map((role: OrgRoleDTO) => (
                 <TableHead key={role.id} className="text-center">
-                  <span className="inline-flex items-center gap-1">
-                    {role.isOwnerRole ? <Lock className="size-3" aria-hidden /> : null}
-                    {role.label}
-                  </span>
+                  <div className="flex flex-col items-center gap-1">
+                    <span className="inline-flex items-center gap-1">
+                      {role.isOwnerRole ? <Lock className="size-3" aria-hidden /> : null}
+                      {role.label}
+                    </span>
+                    <ResetRoleButton role={role} />
+                  </div>
                 </TableHead>
               ))}
             </TableRow>
@@ -333,20 +415,21 @@ function RolesMatrix({ roles, permissions, granted }: OrgRolePermissionMatrix) {
                     </TableCell>
                     {roles.map((role) => {
                       const lock = cellLock(role, permission);
+                      const grantedNow = grantedSet.has(`${role.id}:${permission.id}`);
                       return (
                         <TableCell key={role.id} className="text-center">
                           <div className="flex justify-center">
                             <MatrixCell
+                              // key includes the current grant so a router.refresh()
+                              // after a reset re-mounts the cell with fresh state
+                              // (the optimistic useState wouldn't re-init otherwise).
+                              key={`${role.id}:${permission.id}:${grantedNow}`}
                               roleId={role.id}
                               permissionId={permission.id}
                               ariaLabel={`${permission.label} – ${role.label}`}
                               locked={lock.locked}
                               lockedReason={lock.reason}
-                              initialChecked={
-                                lock.locked && role.isOwnerRole
-                                  ? true
-                                  : grantedSet.has(`${role.id}:${permission.id}`)
-                              }
+                              initialChecked={lock.locked && role.isOwnerRole ? true : grantedNow}
                               onError={setError}
                             />
                           </div>

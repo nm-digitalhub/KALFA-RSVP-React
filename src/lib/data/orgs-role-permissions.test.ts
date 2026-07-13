@@ -7,7 +7,11 @@ import { createAdminClient } from '@/lib/supabase/admin';
 import { requireOrgOwner } from '@/lib/auth/dal';
 import { logActivity } from '@/lib/data/activity';
 import { sendSlackAlert } from '@/lib/alerts/slack';
-import { getOrgRolePermissionMatrix, setOrgRolePermission } from './orgs';
+import {
+  getOrgRolePermissionMatrix,
+  resetOrgRolePermissionsToDefault,
+  setOrgRolePermission,
+} from './orgs';
 
 // Org-scoped RBAC matrix (owner-only, UI-editable) — mirrors
 // src/lib/data/admin/platform-roles.test.ts one layer down. The owner-only
@@ -303,5 +307,69 @@ describe('getOrgRolePermissionMatrix', () => {
     });
     await getOrgRolePermissionMatrix(ORG_ID);
     expect(builders.organization_role_permissions.eq).toHaveBeenCalledWith('organization_id', ORG_ID);
+  });
+});
+
+// Reset a non-owner role back to the frozen template default (diff-based).
+describe('resetOrgRolePermissionsToDefault', () => {
+  it('awaits requireOrgOwner(orgId) first', async () => {
+    wireAdminClient({
+      tables: { org_roles: { data: { id: 'r-owner', is_owner_role: true }, error: null } },
+    });
+    await resetOrgRolePermissionsToDefault(ORG_ID, 'r-owner');
+    expect(requireOrgOwner).toHaveBeenCalledWith(ORG_ID);
+  });
+
+  it('is a no-op for the owner role (no writes, no audit)', async () => {
+    const { from } = wireAdminClient({
+      tables: { org_roles: { data: { id: 'r-owner', is_owner_role: true }, error: null } },
+    });
+    await resetOrgRolePermissionsToDefault(ORG_ID, 'r-owner');
+    expect(from).not.toHaveBeenCalledWith('organization_role_permissions');
+    expect(logActivity).not.toHaveBeenCalled();
+    expect(sendSlackAlert).not.toHaveBeenCalled();
+  });
+
+  it('restores the missing template perms and removes extras — excluding system_protected + guests.delete', async () => {
+    const { builders } = wireAdminClient({
+      tables: {
+        org_roles: { data: { id: 'r-member', is_owner_role: false }, error: null },
+        permission_definitions: {
+          data: [
+            { id: 'p1', resource: 'guests', action: 'view', system_protected: false },
+            { id: 'pc', resource: 'campaigns', action: 'create', system_protected: true },
+            { id: 'pd', resource: 'guests', action: 'delete', system_protected: false },
+          ],
+          error: null,
+        },
+        // member's frozen template holds p1 + pc + pd
+        role_permissions: {
+          data: [{ permission_id: 'p1' }, { permission_id: 'pc' }, { permission_id: 'pd' }],
+          error: null,
+        },
+        // current org state: member wrongly holds pd (an extra) and is missing p1
+        organization_role_permissions: [
+          { data: [{ permission_id: 'pd' }], error: null }, // read current
+          { data: null, error: null }, // delete extras
+          { data: null, error: null }, // insert missing
+        ],
+      },
+    });
+
+    await resetOrgRolePermissionsToDefault(ORG_ID, 'r-member');
+
+    // pd (guests.delete) is excluded from the target -> removed as an extra
+    expect(builders.organization_role_permissions.delete).toHaveBeenCalled();
+    expect(builders.organization_role_permissions.in).toHaveBeenCalledWith('permission_id', ['pd']);
+    // p1 is the only target perm (pc excluded system_protected, pd excluded guests.delete) -> inserted
+    expect(builders.organization_role_permissions.insert).toHaveBeenCalledWith([
+      { organization_id: ORG_ID, role_id: 'r-member', permission_id: 'p1', granted_by: 'owner-1' },
+    ]);
+    expect(logActivity).toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'org_role.permissions_reset' }),
+    );
+    expect(sendSlackAlert).toHaveBeenCalledWith(
+      expect.objectContaining({ category: 'security' }),
+    );
   });
 });
