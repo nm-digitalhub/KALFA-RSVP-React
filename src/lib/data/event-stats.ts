@@ -6,12 +6,19 @@ import {
   getEvent,
 } from '@/lib/data/events';
 import { getGuestTotals, type GuestTotals } from '@/lib/data/guests';
-import { getCampaignForEvent, type OwnerCampaign } from '@/lib/data/campaigns';
+import {
+  getCampaignForEvent,
+  type OwnerCampaign,
+  type CampaignStatus,
+} from '@/lib/data/campaigns';
 import {
   getCampaignDeliveryBreakdown,
   type CampaignDeliveryBreakdown,
 } from '@/lib/data/campaign-delivery';
 import { getCampaignBillingSummary, type BillingSummary } from '@/lib/data/billing';
+import type { Database } from '@/lib/supabase/types';
+
+type EventStatus = Database['public']['Enums']['event_status'];
 
 export type SectionState = 'visible' | 'permission_limited' | 'empty' | 'error';
 
@@ -33,7 +40,7 @@ export type EventStatsResult = {
     eventType: string | null;
     eventDate: string | null;
     rsvpDeadline: string | null;
-    status: string | null;
+    status: EventStatus | null;
   } | null;
   eventState: SectionState;
   totals: GuestTotals | null;
@@ -42,7 +49,7 @@ export type EventStatsResult = {
   campaign: {
     state: SectionState;
     id: string | null;
-    status: string | null;
+    status: CampaignStatus | null;
     captureStatus: string | null;
     maxContacts: number | null;
     reachedCount: number | null; // operational, from delivery aggregation

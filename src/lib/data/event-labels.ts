@@ -1,5 +1,6 @@
 import type { Database } from '@/lib/supabase/types';
 import type { CelebrantFieldLabels, HostComposition } from '@/lib/validation/schemas';
+import type { BadgeVariant } from '@/components/ui/badge';
 
 // Hebrew labels for the events-domain enums. Defined as EXHAUSTIVE
 // `Record<enum, string>` maps so that adding or removing a value in the DB
@@ -11,6 +12,7 @@ import type { CelebrantFieldLabels, HostComposition } from '@/lib/validation/sch
 
 type EventType = Database['public']['Enums']['event_type'];
 type EventStatus = Database['public']['Enums']['event_status'];
+type CampaignStatus = Database['public']['Enums']['campaign_status'];
 
 export const EVENT_TYPE_LABELS: Record<EventType, string> = {
   wedding: 'חתונה',
@@ -28,6 +30,41 @@ export const EVENT_STATUS_LABELS: Record<EventStatus, string> = {
   draft: 'טיוטה',
   active: 'פעיל',
   closed: 'סגור',
+};
+
+// Hebrew labels for the campaign lifecycle enum, same exhaustive-Record
+// discipline as EVENT_STATUS_LABELS above — a new campaign_status value is a
+// compile error here rather than a silently-missing label. This is the single
+// source for both the campaign lifecycle screen and the event's campaign
+// summary card (previously two hand-maintained, string-keyed duplicates).
+export const CAMPAIGN_STATUS_LABELS: Record<CampaignStatus, string> = {
+  draft: 'טיוטה',
+  pending_approval: 'ממתין לאישור',
+  approved: 'מאושר',
+  scheduled: 'מתוזמן',
+  active: 'פעיל',
+  paused: 'מושהה',
+  closed: 'נסגר',
+  awaiting_invoice: 'ממתין לחשבון',
+  billed: 'חויב',
+  paid: 'שולם',
+  cancelled: 'בוטל',
+};
+
+// Campaign status → Badge variant, kept alongside CAMPAIGN_STATUS_LABELS (same
+// file, same enum-keyed exhaustiveness) per the admin/guests labels.ts convention.
+export const CAMPAIGN_STATUS_VARIANTS: Record<CampaignStatus, BadgeVariant> = {
+  draft: 'neutral',
+  pending_approval: 'warning',
+  approved: 'success',
+  scheduled: 'info',
+  active: 'success',
+  paused: 'warning',
+  closed: 'neutral',
+  awaiting_invoice: 'warning',
+  billed: 'info',
+  paid: 'success',
+  cancelled: 'destructive',
 };
 
 // Hebrew labels for the celebrant (בעלי שמחה) inputs, per event type — used

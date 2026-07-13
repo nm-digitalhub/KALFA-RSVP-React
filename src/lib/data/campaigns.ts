@@ -666,7 +666,7 @@ export async function markCampaignChargeOutcome(
 // final reached-contact total) is intentionally NOT here — it depends on
 // billed_results (B2) and is a separate, gated step.
 
-type CampaignStatus = Database['public']['Enums']['campaign_status'];
+export type CampaignStatus = Database['public']['Enums']['campaign_status'];
 
 // Race-safe guarded transition: the UPDATE only matches a row in one of `from`
 // (plus any extra column guard), so concurrent calls can't double-transition.

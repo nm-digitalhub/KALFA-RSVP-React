@@ -5,6 +5,7 @@ import { buttonVariants } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { getEventStats, type EventStatsResult } from '@/lib/data/event-stats';
 import { requireEventAccess } from '@/lib/data/events';
+import { EVENT_STATUS_LABELS, CAMPAIGN_STATUS_LABELS } from '@/lib/data/event-labels';
 import { StatsRefreshButton } from './stats-refresh-button';
 
 export const dynamic = 'force-dynamic';
@@ -93,7 +94,9 @@ export default async function EventStatsPage({
             </div>
             <div>
               <dt className="text-muted-foreground">סטטוס</dt>
-              <dd className="font-medium">{stats.event.status ?? '—'}</dd>
+              <dd className="font-medium">
+                {stats.event.status ? EVENT_STATUS_LABELS[stats.event.status] : '—'}
+              </dd>
             </div>
             {stats.event.eventDate ? (
               <div>
@@ -164,7 +167,9 @@ export default async function EventStatsPage({
             <dl className="grid grid-cols-2 gap-3 text-sm">
               <div>
                 <dt className="text-muted-foreground">סטטוס</dt>
-                <dd className="font-medium">{stats.campaign.status ?? '—'}</dd>
+                <dd className="font-medium">
+                  {stats.campaign.status ? CAMPAIGN_STATUS_LABELS[stats.campaign.status] : '—'}
+                </dd>
               </div>
               <div>
                 <dt className="text-muted-foreground">מגעים מקסימליים</dt>

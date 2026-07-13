@@ -1,43 +1,12 @@
 import Link from 'next/link';
 
-import { Badge, type BadgeVariant } from '@/components/ui/badge';
+import { Badge } from '@/components/ui/badge';
 import { buttonVariants } from '@/components/ui/button';
 import type { OwnerCampaign } from '@/lib/data/campaigns';
+import { CAMPAIGN_STATUS_LABELS, CAMPAIGN_STATUS_VARIANTS } from '@/lib/data/event-labels';
 
 import { setupCampaignAction } from './campaign/campaign-actions';
 import { CampaignSetupForm } from './campaign-setup-form';
-
-// Campaign status → Hebrew label. Single source for this section (the lifecycle
-// manage screen keeps its own copy; centralizing both is a separate cleanup).
-const STATUS_LABELS: Record<string, string> = {
-  draft: 'טיוטה',
-  pending_approval: 'ממתין לאישור',
-  approved: 'מאושר',
-  scheduled: 'מתוזמן',
-  active: 'פעיל',
-  paused: 'מושהה',
-  closed: 'נסגר',
-  awaiting_invoice: 'ממתין לחשבון',
-  billed: 'חויב',
-  paid: 'שולם',
-  cancelled: 'בוטל',
-};
-
-// Campaign status → Badge variant (loose map matching STATUS_LABELS above;
-// unknown statuses fall back to neutral at the call site).
-const STATUS_VARIANTS: Record<string, BadgeVariant> = {
-  draft: 'neutral',
-  pending_approval: 'warning',
-  approved: 'success',
-  scheduled: 'info',
-  active: 'success',
-  paused: 'warning',
-  closed: 'neutral',
-  awaiting_invoice: 'warning',
-  billed: 'info',
-  paid: 'success',
-  cancelled: 'destructive',
-};
 
 // The next step the owner should take, by lifecycle state — so the single CTA
 // always points at the right screen (approve → pay/hold → activate → manage).
@@ -101,8 +70,8 @@ export function CampaignSection({
     <section className="space-y-3 rounded-lg border border-border bg-card p-6">
       <div className="flex items-center justify-between gap-4">
         <h2 className="text-lg font-semibold">אישורי הגעה</h2>
-        <Badge variant={STATUS_VARIANTS[campaign.status] ?? 'neutral'}>
-          {STATUS_LABELS[campaign.status] ?? campaign.status}
+        <Badge variant={CAMPAIGN_STATUS_VARIANTS[campaign.status]}>
+          {CAMPAIGN_STATUS_LABELS[campaign.status]}
         </Badge>
       </div>
       {campaign.max_charge_ceiling != null ? (
