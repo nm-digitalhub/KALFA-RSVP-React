@@ -7,7 +7,7 @@
     "build": "NEXT_DIST_DIR=.next-verify next build --webpack",
     "start": "next start",
     "deploy": "node -e \"require('fs').writeFileSync('.deploy-id', Date.now().toString(36))\" && NEXT_DIST_DIR=.next-stage next build --webpack && rm -rf .next.old && mv .next .next.old && mv .next-stage .next && pm2 restart kalfa-beta && rm -rf .next.old && npm run worker:build && pm2 restart kalfa-worker",
-    "worker:build": "esbuild worker/main.ts --bundle --platform=node --format=cjs --target=node20 --outfile=dist/worker.cjs --tsconfig=tsconfig.json --alias:server-only=./worker/empty.js --alias:next/headers=./worker/empty.js --alias:next/cache=./worker/empty.js --external:pg-native",
+    "worker:build": "esbuild worker/main.ts --bundle --platform=node --format=cjs --target=node20 --outfile=dist/worker.cjs --tsconfig=tsconfig.json --alias:server-only=./worker/empty.js --alias:next/headers=./worker/empty.js --alias:next/navigation=./worker/empty.js --alias:next/cache=./worker/empty.js --external:pg-native",
     "worker:start": "node dist/worker.cjs",
     "worker:logs": "pm2 logs kalfa-worker --lines 100",
     "pm2:restart": "pm2 restart kalfa-beta",
