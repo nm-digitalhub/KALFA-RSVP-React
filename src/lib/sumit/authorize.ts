@@ -1,5 +1,6 @@
 import 'server-only';
 
+import { sendSlackAlert } from '@/lib/alerts/slack';
 import { SumitDeclinedError, SumitNetworkError } from './charge';
 
 const SUMIT_CHARGE_URL = 'https://api.sumit.co.il/billing/payments/charge/';
@@ -70,9 +71,13 @@ export async function authorizeHoldSumit(
       body: JSON.stringify(body),
     });
   } catch {
+    // Fail-safe ops alert (non-throwing, no PII). NOT fired for a definite
+    // SumitDeclinedError (a business decline, not a provider-API failure).
+    void sendSlackAlert({ level: 'warn', title: 'SUMIT authorize failed', detail: 'network', source: 'sumit' });
     throw new SumitNetworkError('שגיאת תקשורת עם מערכת התשלום');
   }
   if (!res.ok) {
+    void sendSlackAlert({ level: 'warn', title: 'SUMIT authorize failed', detail: `http_${res.status}`, source: 'sumit' });
     throw new SumitNetworkError('לא התקבל אישור חד משמעי ממערכת התשלום');
   }
 
@@ -105,6 +110,7 @@ export async function authorizeHoldSumit(
   try {
     json = (await res.json()) as Resp;
   } catch {
+    void sendSlackAlert({ level: 'warn', title: 'SUMIT authorize failed', detail: 'invalid_response', source: 'sumit' });
     throw new SumitNetworkError('תגובה לא תקינה ממערכת התשלום');
   }
 
@@ -130,6 +136,7 @@ export async function authorizeHoldSumit(
   const authorized =
     success && !!authNumber && payment?.ValidPayment === true;
   if (!authorized || !authNumber) {
+    void sendSlackAlert({ level: 'warn', title: 'SUMIT authorize failed', detail: 'unconfirmed', source: 'sumit' });
     throw new SumitNetworkError('אישור התפיסה לא התקבל ממערכת');
   }
 

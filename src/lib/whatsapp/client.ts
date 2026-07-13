@@ -1,5 +1,6 @@
 import 'server-only';
 
+import { sendSlackAlert } from '@/lib/alerts/slack';
 import { WhatsAppAPI } from 'whatsapp-api-js';
 import { DEFAULT_API_VERSION } from 'whatsapp-api-js/types';
 import {
@@ -109,6 +110,21 @@ function classifyThrow(e: unknown): DeliveryOutcome {
   };
 }
 
+// Fail-safe ops alert for a THROWN send (transport/network/timeout/5xx — an
+// infra failure of the provider API call itself). Deliberately NOT fired for
+// classifyResponse outcomes: a Meta error CODE (e.g. 131049/131026) is a
+// per-recipient business result, not a provider outage. NO PII: only the safe
+// reason + optional HTTP status. Fire-and-forget (sendSlackAlert never throws).
+function alertWhatsAppThrow(outcome: DeliveryOutcome): void {
+  const status = outcome.kind === 'unknown' ? outcome.providerStatus : undefined;
+  void sendSlackAlert({
+    level: 'warn',
+    title: 'WhatsApp send failed',
+    detail: `send_threw${status !== undefined ? ` status=${status}` : ''}`,
+    source: 'whatsapp',
+  });
+}
+
 // Send-time template inputs shared by BOTH send paths (regular `/messages`
 // and MM Lite `/marketing_messages`) — same components, same fail-closed
 // rules, different transport.
@@ -205,7 +221,9 @@ export async function sendWhatsAppTemplate(
     const res = await api.sendMessage(cfg.phoneNumberId, params.to, message);
     return classifyResponse(res);
   } catch (e) {
-    return classifyThrow(e);
+    const outcome = classifyThrow(e);
+    alertWhatsAppThrow(outcome);
+    return outcome;
   }
 }
 
@@ -261,7 +279,9 @@ export async function sendWhatsAppMarketingTemplate(
     // resolves the parsed body) — parse it ourselves before classifying.
     return classifyResponse(await res.json());
   } catch (e) {
-    return classifyThrow(e);
+    const outcome = classifyThrow(e);
+    alertWhatsAppThrow(outcome);
+    return outcome;
   }
 }
 
@@ -278,6 +298,8 @@ export async function sendWhatsAppText(
     const res = await api.sendMessage(cfg.phoneNumberId, params.to, new Text(params.body));
     return classifyResponse(res);
   } catch (e) {
-    return classifyThrow(e);
+    const outcome = classifyThrow(e);
+    alertWhatsAppThrow(outcome);
+    return outcome;
   }
 }

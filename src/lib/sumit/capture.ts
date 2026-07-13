@@ -1,5 +1,6 @@
 import 'server-only';
 
+import { sendSlackAlert } from '@/lib/alerts/slack';
 import { SumitDeclinedError, SumitNetworkError } from '@/lib/sumit/charge';
 
 const SUMIT_CHARGE_URL = 'https://api.sumit.co.il/billing/payments/charge/';
@@ -78,9 +79,13 @@ export async function captureHeldCardSumit(
       body: JSON.stringify(body),
     });
   } catch {
+    // Fail-safe ops alert (non-throwing, no PII). NOT fired for a definite
+    // SumitDeclinedError (a business decline, not a provider-API failure).
+    void sendSlackAlert({ level: 'warn', title: 'SUMIT capture failed', detail: 'network', source: 'sumit' });
     throw new SumitNetworkError('שגיאת תקשורת עם מערכת התשלום');
   }
   if (!res.ok) {
+    void sendSlackAlert({ level: 'warn', title: 'SUMIT capture failed', detail: `http_${res.status}`, source: 'sumit' });
     throw new SumitNetworkError('לא התקבל אישור חד משמעי ממערכת התשלום');
   }
 
@@ -103,6 +108,7 @@ export async function captureHeldCardSumit(
   try {
     json = (await res.json()) as Resp;
   } catch {
+    void sendSlackAlert({ level: 'warn', title: 'SUMIT capture failed', detail: 'invalid_response', source: 'sumit' });
     throw new SumitNetworkError('תגובה לא תקינה ממערכת התשלום');
   }
 
@@ -128,6 +134,7 @@ export async function captureHeldCardSumit(
   // Success requires the payment to be valid AND a receipt document to exist.
   // Anything else is ambiguous → review, never a silent success.
   if (!topSuccess || payment?.ValidPayment !== true || !documentId) {
+    void sendSlackAlert({ level: 'warn', title: 'SUMIT capture failed', detail: 'unconfirmed', source: 'sumit' });
     throw new SumitNetworkError('אישור החיוב לא התקבל ממערכת');
   }
   return {

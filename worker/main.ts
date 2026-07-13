@@ -45,6 +45,7 @@ import {
 } from '@/lib/data/webhooks';
 import { processWebhookEvent } from '@/lib/data/webhook-processing';
 import { runThankyouSweep } from '@/lib/data/auto-thankyou';
+import { sendSlackAlert } from '@/lib/alerts/slack';
 
 // Standalone process — load .env.local ourselves (Next is not running here).
 function loadEnv(): void {
@@ -68,6 +69,30 @@ loadEnv();
 const DAY_MS = 86_400_000;
 
 type StepJob = { id: string; data: OutreachStepJob };
+
+// Wrap a pg-boss work handler so a thrown failure fires a fail-safe ops alert
+// and is then RE-THROWN — pg-boss must still see the failure for its retry /
+// dead-letter machinery. sendSlackAlert never throws, so it cannot corrupt the
+// job outcome. NO PII: only the queue name + the Error message (code errors,
+// never guest data).
+function guardedWorker<T>(
+  queue: string,
+  handler: (jobs: T) => Promise<void>,
+): (jobs: T) => Promise<void> {
+  return async (jobs: T) => {
+    try {
+      await handler(jobs);
+    } catch (e) {
+      await sendSlackAlert({
+        level: 'error',
+        title: `worker job failed: ${queue}`,
+        detail: e instanceof Error ? e.message : 'unknown error',
+        source: queue,
+      });
+      throw e;
+    }
+  };
+}
 
 // The injected side effects for one step's execution (§12 FINAL): the RPC
 // wrappers + the WhatsApp/call send + the worker-only pg-boss retry adapter.
@@ -222,6 +247,13 @@ async function handleDead(job: { data: OutreachStepJob }): Promise<void> {
       contactId,
       stepIndex: data.stepIndex,
     });
+    // Fail-safe ops alert — ids only, no PII, no delivery recovery here.
+    await sendSlackAlert({
+      level: 'warn',
+      title: 'worker dead-letter: reserved job died',
+      source: 'dead-letter',
+      fields: { campaignId, contactId, stepIndex: data.stepIndex },
+    });
     return;
   }
   if (row.dispatched_job_id !== null) return; // a different job owns it → stale.
@@ -257,6 +289,14 @@ async function handleWebhook(): Promise<void> {
     } catch (e) {
       const message = e instanceof Error ? e.message : 'unknown error';
       await markWebhookEventFailed(row.id, row.attempts + 1, message);
+      // Fail-safe ops alert — row id + attempts only (the message may echo
+      // provider payload text, so it is deliberately NOT included).
+      await sendSlackAlert({
+        level: 'warn',
+        title: 'webhook processing failed',
+        source: 'webhook-processing',
+        fields: { rowId: row.id, attempts: row.attempts + 1 },
+      });
     }
   }
 }
@@ -308,7 +348,11 @@ async function main(): Promise<void> {
     persistQueueStats: true,
     persistWarnings: true,
   });
-  boss.on('error', (e: Error) => console.error('[pgboss]', e.message));
+  boss.on('error', (e: Error) => {
+    console.error('[pgboss]', e.message);
+    // Fire-and-forget (the listener is sync); sendSlackAlert never throws.
+    void sendSlackAlert({ level: 'error', title: 'pg-boss error', detail: e.message, source: 'pgboss' });
+  });
   await boss.start();
 
   for (const q of Object.values(QUEUES)) {
@@ -324,24 +368,42 @@ async function main(): Promise<void> {
     await boss.createQueue(q, q === QUEUES.thankyouSweep ? { policy: 'singleton' } : undefined);
   }
 
-  await boss.work(QUEUES.step, async (jobs: StepJob[]) => {
-    for (const job of jobs) await handleStep(boss, job);
-  });
-  await boss.work(QUEUES.dead, async (jobs: { data: OutreachStepJob }[]) => {
-    for (const job of jobs) await handleDead(job);
-  });
-  await boss.work(QUEUES.arm, async () => {
-    await handleArm(boss);
-  });
-  await boss.work(QUEUES.sweeper, async () => {
-    await handleArm(boss);
-  });
-  await boss.work(QUEUES.webhook, async () => {
-    await handleWebhook();
-  });
-  await boss.work(QUEUES.thankyouSweep, async () => {
-    await handleThankyouSweep();
-  });
+  await boss.work(
+    QUEUES.step,
+    guardedWorker(QUEUES.step, async (jobs: StepJob[]) => {
+      for (const job of jobs) await handleStep(boss, job);
+    }),
+  );
+  await boss.work(
+    QUEUES.dead,
+    guardedWorker(QUEUES.dead, async (jobs: { data: OutreachStepJob }[]) => {
+      for (const job of jobs) await handleDead(job);
+    }),
+  );
+  await boss.work(
+    QUEUES.arm,
+    guardedWorker(QUEUES.arm, async () => {
+      await handleArm(boss);
+    }),
+  );
+  await boss.work(
+    QUEUES.sweeper,
+    guardedWorker(QUEUES.sweeper, async () => {
+      await handleArm(boss);
+    }),
+  );
+  await boss.work(
+    QUEUES.webhook,
+    guardedWorker(QUEUES.webhook, async () => {
+      await handleWebhook();
+    }),
+  );
+  await boss.work(
+    QUEUES.thankyouSweep,
+    guardedWorker(QUEUES.thankyouSweep, async () => {
+      await handleThankyouSweep();
+    }),
+  );
 
   await boss.schedule(QUEUES.arm, '* * * * *');
   await boss.schedule(QUEUES.sweeper, '*/5 * * * *');
@@ -360,7 +422,14 @@ async function main(): Promise<void> {
   process.on('SIGINT', shutdown);
 }
 
-main().catch((e) => {
+main().catch(async (e) => {
   console.error('[kalfa-worker] fatal', e);
+  // Best-effort fail-safe alert before exiting (awaited; never throws).
+  await sendSlackAlert({
+    level: 'error',
+    title: 'worker fatal',
+    detail: e instanceof Error ? e.message : 'unknown error',
+    source: 'worker-fatal',
+  });
   process.exit(1);
 });

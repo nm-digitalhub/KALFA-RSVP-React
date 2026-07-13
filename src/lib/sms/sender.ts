@@ -1,5 +1,6 @@
 import 'server-only';
 
+import { sendSlackAlert } from '@/lib/alerts/slack';
 import { createAdminClient } from '@/lib/supabase/admin';
 
 // SMS transport abstraction. The OTP logic is provider-agnostic; only this
@@ -46,6 +47,13 @@ export function createExtraSmsSender(config: {
           }),
         });
       } catch {
+        // Fail-safe ops alert (non-throwing, no PII — no destination/token).
+        void sendSlackAlert({
+          level: 'warn',
+          title: 'SMS send failed',
+          detail: 'transport',
+          source: 'sms',
+        });
         throw new SmsSendError('שליחת ההודעה נכשלה (תקשורת)');
       }
       // Carry the provider's HTTP status / error detail in the thrown message so
@@ -53,6 +61,12 @@ export function createExtraSmsSender(config: {
       // shown to the user — callers map it to a generic notice). No token (it is
       // request-only) or PII destination is included here.
       if (!res.ok) {
+        void sendSlackAlert({
+          level: 'warn',
+          title: 'SMS send failed',
+          detail: `http_${res.status}`,
+          source: 'sms',
+        });
         throw new SmsSendError(`שליחת ההודעה נכשלה (HTTP ${res.status})`);
       }
 
@@ -64,9 +78,21 @@ export function createExtraSmsSender(config: {
           errors?: unknown;
         };
       } catch {
+        void sendSlackAlert({
+          level: 'warn',
+          title: 'SMS send failed',
+          detail: 'invalid_response',
+          source: 'sms',
+        });
         throw new SmsSendError('תגובה לא תקינה מספק ה-SMS');
       }
       if (!json.success || !json.id) {
+        // Provider rejected THIS destination (invalid/blocked number). This is a
+        // routine per-destination business outcome — common for OTP — NOT a
+        // transport/config/outage failure, so it is deliberately NOT alerted
+        // (symmetric with whatsapp's 131049/131026 and sumit's declined cases).
+        // ExtrA exposes no code here that separates a config/auth failure from a
+        // bad destination, so no alert is emitted. Control flow is unchanged.
         const detail = json.errors ? ` (${JSON.stringify(json.errors)})` : '';
         throw new SmsSendError(`שליחת ההודעה נדחתה${detail}`);
       }

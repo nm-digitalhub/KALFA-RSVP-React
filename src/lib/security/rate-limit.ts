@@ -108,3 +108,11 @@ function pruneExpired(now: number): void {
     }
   }
 }
+
+/**
+ * Test-only: clear all rate-limit windows so a test suite starts from a clean
+ * slate (the window Map is module-level and otherwise persists across tests).
+ */
+export function __resetRateLimitStateForTests(): void {
+  windows.clear();
+}
