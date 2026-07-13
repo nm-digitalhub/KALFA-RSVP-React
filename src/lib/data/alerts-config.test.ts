@@ -21,6 +21,8 @@ const ROW = {
   slack_alert_campaign_billing: false,
   slack_alert_send_health: true,
   slack_alert_security: false,
+  slack_mention_user_id: 'U0ABC123',
+  slack_mention_min_level: 'warn',
 };
 
 function wireAdmin(result: { data: unknown; error: unknown }): void {
@@ -42,12 +44,37 @@ describe('getAlertsConfig', () => {
     expect(cfg.enabled).toBe(true);
     expect(cfg.botToken).toBe('xoxb-abc');
     expect(cfg.channelId).toBe('C123');
+    expect(cfg.mentionUserId).toBe('U0ABC123');
+    expect(cfg.mentionMinLevel).toBe('warn');
     expect(cfg.categories).toEqual({
       errors: true,
       campaignBilling: false,
       sendHealth: true,
       security: false,
     });
+  });
+
+  it('parses each valid mention threshold and treats an unknown value as off', async () => {
+    for (const level of ['error', 'warn', 'info'] as const) {
+      __resetAlertsConfigCacheForTests();
+      wireAdmin({ data: { ...ROW, slack_mention_min_level: level }, error: null });
+      const cfg = await getAlertsConfig();
+      expect(cfg.mentionMinLevel).toBe(level);
+    }
+    __resetAlertsConfigCacheForTests();
+    wireAdmin({ data: { ...ROW, slack_mention_min_level: 'bogus' }, error: null });
+    const cfg = await getAlertsConfig();
+    expect(cfg.mentionMinLevel).toBe('off');
+  });
+
+  it('defaults mention config to off/null when the columns are blank/missing', async () => {
+    wireAdmin({
+      data: { ...ROW, slack_mention_user_id: '  ', slack_mention_min_level: 'off' },
+      error: null,
+    });
+    const cfg = await getAlertsConfig();
+    expect(cfg.mentionUserId).toBeNull();
+    expect(cfg.mentionMinLevel).toBe('off');
   });
 
   it('treats blank/whitespace token + channel as null', async () => {
@@ -93,6 +120,8 @@ describe('categoryEnabled', () => {
     enabled: true,
     botToken: 'x',
     channelId: 'C',
+    mentionUserId: null,
+    mentionMinLevel: 'off',
     categories: {
       errors: true,
       campaignBilling: false,

@@ -9,6 +9,7 @@ import {
   clearSlackConnection,
   setSlackAlertCategory,
   setSlackAlertsEnabled,
+  setSlackMention,
   updateSlackConnection,
   type AlertCategoryKey,
 } from '@/lib/data/admin/alerts';
@@ -60,6 +61,47 @@ export async function saveSlackConnectionAction(
   revalidatePath(PATH);
   // NEVER echo the token back — return only a neutral notice.
   return { notice: 'החיבור נשמר' };
+}
+
+// Personal @mention: member id optional (blank = no mention target); when present
+// must be a Slack member id (`U…`/`W…`). Threshold is one of off/error/warn/info.
+const mentionSchema = z.object({
+  slack_mention_user_id: z
+    .string()
+    .trim()
+    .max(50)
+    .refine((v) => v === '' || /^[UW][A-Z0-9]{6,}$/.test(v), {
+      message: 'מזהה חבר לא תקין — צריך להתחיל ב-U או W',
+    }),
+  slack_mention_min_level: z.enum(['off', 'error', 'warn', 'info']),
+});
+
+export async function saveSlackMentionAction(
+  _prevState: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  await requireAdmin();
+
+  const parsed = mentionSchema.safeParse({
+    slack_mention_user_id: formData.get('slack_mention_user_id') ?? '',
+    slack_mention_min_level: formData.get('slack_mention_min_level') ?? 'off',
+  });
+  if (!parsed.success) {
+    return { fieldErrors: parsed.error.flatten().fieldErrors };
+  }
+
+  try {
+    await setSlackMention({
+      userId: parsed.data.slack_mention_user_id,
+      minLevel: parsed.data.slack_mention_min_level,
+    });
+  } catch (err) {
+    unstable_rethrow(err);
+    return { error: 'שמירת הגדרות האזכור נכשלה. נסו שוב.' };
+  }
+
+  revalidatePath(PATH);
+  return { notice: 'הגדרות האזכור נשמרו' };
 }
 
 export async function clearSlackConnectionAction(

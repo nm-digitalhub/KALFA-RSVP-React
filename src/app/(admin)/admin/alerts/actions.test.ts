@@ -11,14 +11,16 @@ vi.mock('@/lib/data/admin/alerts', () => ({
   clearSlackConnection: vi.fn(),
   setSlackAlertsEnabled: vi.fn(),
   setSlackAlertCategory: vi.fn(),
+  setSlackMention: vi.fn(),
 }));
 vi.mock('@/lib/alerts/slack', () => ({ sendSlackTestAlert: vi.fn() }));
 
 import { requireAdmin } from '@/lib/auth/dal';
-import { updateSlackConnection } from '@/lib/data/admin/alerts';
+import { setSlackMention, updateSlackConnection } from '@/lib/data/admin/alerts';
 import { sendSlackTestAlert } from '@/lib/alerts/slack';
 import {
   saveSlackConnectionAction,
+  saveSlackMentionAction,
   sendTestAlertAction,
 } from './actions';
 
@@ -87,6 +89,44 @@ describe('saveSlackConnectionAction — validation', () => {
     );
     expect(updateSlackConnection).toHaveBeenCalledWith({ botToken: '', channelId: 'C999999' });
     expect(r).toEqual({ notice: 'החיבור נשמר' });
+  });
+});
+
+describe('saveSlackMentionAction — validation', () => {
+  it('rejects a member id that is not U…/W…', async () => {
+    const r = await saveSlackMentionAction(
+      null,
+      fd({ slack_mention_user_id: 'nope', slack_mention_min_level: 'error' }),
+    );
+    expect(r?.fieldErrors?.slack_mention_user_id?.length).toBeGreaterThan(0);
+    expect(setSlackMention).not.toHaveBeenCalled();
+  });
+
+  it('accepts a blank member id (no mention target) with a threshold', async () => {
+    const r = await saveSlackMentionAction(
+      null,
+      fd({ slack_mention_user_id: '', slack_mention_min_level: 'off' }),
+    );
+    expect(setSlackMention).toHaveBeenCalledWith({ userId: '', minLevel: 'off' });
+    expect(r).toEqual({ notice: 'הגדרות האזכור נשמרו' });
+  });
+
+  it('accepts a valid U… member id and threshold', async () => {
+    const r = await saveSlackMentionAction(
+      null,
+      fd({ slack_mention_user_id: 'U0ABC123', slack_mention_min_level: 'warn' }),
+    );
+    expect(setSlackMention).toHaveBeenCalledWith({ userId: 'U0ABC123', minLevel: 'warn' });
+    expect(r).toEqual({ notice: 'הגדרות האזכור נשמרו' });
+  });
+
+  it('rejects an unknown threshold value', async () => {
+    const r = await saveSlackMentionAction(
+      null,
+      fd({ slack_mention_user_id: 'U0ABC123', slack_mention_min_level: 'bogus' }),
+    );
+    expect(r?.fieldErrors?.slack_mention_min_level?.length).toBeGreaterThan(0);
+    expect(setSlackMention).not.toHaveBeenCalled();
   });
 });
 

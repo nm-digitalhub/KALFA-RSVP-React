@@ -21,6 +21,8 @@ export interface SlackAlertsView {
   hasToken: boolean;
   channelId: string; // '' when unset — a non-secret Slack channel id
   connected: boolean; // token AND channel both present
+  mentionUserId: string; // '' when unset — a non-secret Slack member id (U…/W…)
+  mentionMinLevel: 'off' | 'error' | 'warn' | 'info';
   categories: {
     errors: boolean;
     campaignBilling: boolean;
@@ -37,7 +39,7 @@ export async function getSlackAlertsView(): Promise<SlackAlertsView> {
   const { data, error } = await supabase
     .from('app_settings')
     .select(
-      'slack_alerts_enabled, slack_bot_token, slack_alert_channel_id, slack_alert_errors, slack_alert_campaign_billing, slack_alert_send_health, slack_alert_security',
+      'slack_alerts_enabled, slack_bot_token, slack_alert_channel_id, slack_alert_errors, slack_alert_campaign_billing, slack_alert_send_health, slack_alert_security, slack_mention_user_id, slack_mention_min_level',
     )
     .eq('id', SETTINGS_ID)
     .maybeSingle();
@@ -46,12 +48,17 @@ export async function getSlackAlertsView(): Promise<SlackAlertsView> {
 
   const hasToken = typeof data?.slack_bot_token === 'string' && data.slack_bot_token.trim() !== '';
   const channelId = data?.slack_alert_channel_id ?? '';
+  const minLevel = data?.slack_mention_min_level;
 
   return {
     enabled: data?.slack_alerts_enabled ?? false,
     hasToken,
     channelId,
     connected: hasToken && channelId.trim() !== '',
+    // The member id is a non-secret identifier → returned directly (unlike the token).
+    mentionUserId: data?.slack_mention_user_id ?? '',
+    mentionMinLevel:
+      minLevel === 'error' || minLevel === 'warn' || minLevel === 'info' ? minLevel : 'off',
     categories: {
       errors: data?.slack_alert_errors ?? false,
       campaignBilling: data?.slack_alert_campaign_billing ?? false,
@@ -78,6 +85,25 @@ export async function updateSlackConnection(input: {
 
   const { error } = await supabase.from('app_settings').update(patch).eq('id', SETTINGS_ID);
   if (error) throw new Error('שמירת חיבור ה-Slack נכשלה');
+}
+
+// Save the personal @mention config: the member id (blank → cleared to null) and
+// the minimum severity that triggers a mention. The member id is a non-secret
+// identifier, so it is stored as-is.
+export async function setSlackMention(input: {
+  userId: string; // '' → cleared
+  minLevel: 'off' | 'error' | 'warn' | 'info';
+}): Promise<void> {
+  await requireAdmin();
+  const supabase = await createClient();
+
+  const patch: Database['public']['Tables']['app_settings']['Update'] = {
+    slack_mention_user_id: input.userId || null,
+    slack_mention_min_level: input.minLevel,
+  };
+
+  const { error } = await supabase.from('app_settings').update(patch).eq('id', SETTINGS_ID);
+  if (error) throw new Error('שמירת הגדרות האזכור נכשלה');
 }
 
 // Disconnect: clear both credentials AND turn alerting off (fail-closed — no

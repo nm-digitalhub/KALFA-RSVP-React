@@ -27,6 +27,10 @@ export interface AlertsConfig {
   enabled: boolean;
   botToken: string | null;
   channelId: string | null;
+  // Personal @mention: prepend `<@userId>` when this alert's level meets the
+  // threshold. `mentionMinLevel: 'off'` (or a null user id) disables mentioning.
+  mentionUserId: string | null;
+  mentionMinLevel: 'off' | 'error' | 'warn' | 'info';
   categories: {
     errors: boolean;
     campaignBilling: boolean;
@@ -39,6 +43,8 @@ const DISABLED: AlertsConfig = {
   enabled: false,
   botToken: null,
   channelId: null,
+  mentionUserId: null,
+  mentionMinLevel: 'off',
   categories: {
     errors: false,
     campaignBilling: false,
@@ -73,10 +79,14 @@ export async function getAlertsConfig(): Promise<AlertsConfig> {
     if (error || !data) return DISABLED; // do NOT cache — allow recovery.
 
     const row = data as Record<string, unknown>;
+    const minLevel = row.slack_mention_min_level;
     const value: AlertsConfig = {
       enabled: row.slack_alerts_enabled === true,
       botToken: nonEmptyString(row.slack_bot_token),
       channelId: nonEmptyString(row.slack_alert_channel_id),
+      mentionUserId: nonEmptyString(row.slack_mention_user_id),
+      mentionMinLevel:
+        minLevel === 'error' || minLevel === 'warn' || minLevel === 'info' ? minLevel : 'off',
       categories: {
         errors: row.slack_alert_errors === true,
         campaignBilling: row.slack_alert_campaign_billing === true,

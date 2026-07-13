@@ -52,6 +52,8 @@ const ENABLED: AlertsConfig = {
   enabled: true,
   botToken: 'xoxb-test-token',
   channelId: 'C123',
+  mentionUserId: null,
+  mentionMinLevel: 'off',
   categories: {
     errors: true,
     campaignBilling: true,
@@ -163,11 +165,60 @@ describe('sendSlackAlert — send', () => {
     expect(sentPayload(2).attachments?.[0]?.color).toBe('#36C5F0');
   });
 
-  it('mention:true adds link_names and an @here prefix', async () => {
-    await sendSlackAlert({ level: 'warn', title: 'ping', mention: true, category: 'errors' });
+  it('prepends a personal <@id> mention when the level meets the configured threshold', async () => {
+    vi.mocked(getAlertsConfig).mockResolvedValue({
+      ...ENABLED,
+      mentionUserId: 'U0ABC123',
+      mentionMinLevel: 'warn',
+    });
+    await sendSlackAlert({ level: 'error', title: 'ping', category: 'errors' });
     const payload = sentPayload();
-    expect(payload.link_names).toBe(true);
-    expect(payload.text).toContain('<!here>');
+    expect(payload.text?.startsWith('<@U0ABC123> ')).toBe(true);
+    // User-id mentions resolve without link_names — it must NOT be sent.
+    expect(payload.link_names).toBeUndefined();
+    expect(payload.text).not.toContain('<!here>');
+  });
+
+  it('mentions when the level exactly equals the threshold', async () => {
+    vi.mocked(getAlertsConfig).mockResolvedValue({
+      ...ENABLED,
+      mentionUserId: 'U0ABC123',
+      mentionMinLevel: 'warn',
+    });
+    await sendSlackAlert({ level: 'warn', title: 'ping', category: 'errors' });
+    expect(sentPayload().text?.startsWith('<@U0ABC123> ')).toBe(true);
+  });
+
+  it('does NOT mention when the level is below the threshold', async () => {
+    vi.mocked(getAlertsConfig).mockResolvedValue({
+      ...ENABLED,
+      mentionUserId: 'U0ABC123',
+      mentionMinLevel: 'error',
+    });
+    await sendSlackAlert({ level: 'warn', title: 'ping', category: 'errors' });
+    expect(sentPayload().text).not.toContain('<@U0ABC123>');
+  });
+
+  it('does NOT mention when min level is off, even with a member id set', async () => {
+    vi.mocked(getAlertsConfig).mockResolvedValue({
+      ...ENABLED,
+      mentionUserId: 'U0ABC123',
+      mentionMinLevel: 'off',
+    });
+    await sendSlackAlert({ level: 'error', title: 'ping', category: 'errors' });
+    expect(sentPayload().text).not.toContain('<@U0ABC123>');
+  });
+
+  it('does NOT mention when no member id is configured', async () => {
+    vi.mocked(getAlertsConfig).mockResolvedValue({
+      ...ENABLED,
+      mentionUserId: null,
+      mentionMinLevel: 'info',
+    });
+    await sendSlackAlert({ level: 'error', title: 'ping', category: 'errors' });
+    const payload = sentPayload();
+    expect(payload.text).not.toContain('<@');
+    expect(payload.link_names).toBeUndefined();
   });
 
   it('never throws when postMessage rejects', async () => {

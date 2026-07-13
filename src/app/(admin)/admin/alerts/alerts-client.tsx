@@ -15,6 +15,7 @@ import type { AlertCategoryKey } from '@/lib/data/admin/alerts';
 import {
   clearSlackConnectionAction,
   saveSlackConnectionAction,
+  saveSlackMentionAction,
   sendTestAlertAction,
   setAlertToggleAction,
 } from './actions';
@@ -87,8 +88,10 @@ export function AlertsClient({ view }: { view: SlackAlertsView }) {
     clearSlackConnectionAction,
     null,
   );
+  const [mentionState, mentionAction] = useActionState(saveSlackMentionAction, null);
   const [showToken, setShowToken] = useState(false);
   const fieldErrors = saveState?.fieldErrors;
+  const mentionFieldErrors = mentionState?.fieldErrors;
 
   return (
     <div className="space-y-6">
@@ -195,6 +198,63 @@ export function AlertsClient({ view }: { view: SlackAlertsView }) {
         <FormNotice message={testState?.notice} />
         <FormError message={clearState?.error} />
         <FormNotice message={clearState?.notice} />
+      </section>
+
+      {/* Personal @mention */}
+      <section className="space-y-4 rounded-lg border border-border bg-card p-5">
+        <div>
+          <h2 className="text-lg font-semibold">אזכור אישי ב-Slack</h2>
+          <p className="text-sm text-muted-foreground">
+            תייגו אתכם אישית (@) בראש ההתראה כשחומרתה עוברת סף שתבחרו — כדי לקבל
+            התראת דחיפה בנייד גם בערוץ שקט.
+          </p>
+        </div>
+
+        <form action={mentionAction} className="space-y-4">
+          <FormError message={mentionState?.error} />
+          <FormNotice message={mentionState?.notice} />
+
+          <div className="space-y-1">
+            <label htmlFor="slack_mention_user_id" className="text-sm font-medium">
+              מזהה חבר (Member ID)
+            </label>
+            <input
+              id="slack_mention_user_id"
+              name="slack_mention_user_id"
+              type="text"
+              dir="ltr"
+              autoComplete="off"
+              defaultValue={view.mentionUserId}
+              placeholder="U0123456789"
+              className={inputClass}
+            />
+            <p className="text-xs text-muted-foreground">
+              מזהה החבר (לא שם המשתמש) — בפרופיל שלכם ב-Slack ← ⋯ (עוד) ← Copy
+              member ID. השאירו ריק כדי לא לתייג אף אחד.
+            </p>
+            <FieldError errors={mentionFieldErrors?.slack_mention_user_id} />
+          </div>
+
+          <div className="space-y-1">
+            <label htmlFor="slack_mention_min_level" className="text-sm font-medium">
+              סף לתיוג
+            </label>
+            <select
+              id="slack_mention_min_level"
+              name="slack_mention_min_level"
+              defaultValue={view.mentionMinLevel}
+              className={inputClass}
+            >
+              <option value="off">כבוי</option>
+              <option value="error">תייג אותי בשגיאות בלבד</option>
+              <option value="warn">אזהרות ומעלה</option>
+              <option value="info">הכול</option>
+            </select>
+            <FieldError errors={mentionFieldErrors?.slack_mention_min_level} />
+          </div>
+
+          <SubmitButton className="w-auto">שמירת אזכור</SubmitButton>
+        </form>
       </section>
 
       {/* Toggles */}

@@ -121,6 +121,8 @@ export type Database = {
           slack_alert_send_health: boolean
           slack_alerts_enabled: boolean
           slack_bot_token: string | null
+          slack_mention_min_level: string
+          slack_mention_user_id: string | null
           sms_enabled: boolean
           smtp_from: string | null
           smtp_host: string | null
@@ -176,6 +178,8 @@ export type Database = {
           slack_alert_send_health?: boolean
           slack_alerts_enabled?: boolean
           slack_bot_token?: string | null
+          slack_mention_min_level?: string
+          slack_mention_user_id?: string | null
           sms_enabled?: boolean
           smtp_from?: string | null
           smtp_host?: string | null
@@ -231,6 +235,8 @@ export type Database = {
           slack_alert_send_health?: boolean
           slack_alerts_enabled?: boolean
           slack_bot_token?: string | null
+          slack_mention_min_level?: string
+          slack_mention_user_id?: string | null
           sms_enabled?: boolean
           smtp_from?: string | null
           smtp_host?: string | null

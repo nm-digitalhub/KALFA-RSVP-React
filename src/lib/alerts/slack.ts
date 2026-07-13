@@ -55,10 +55,17 @@ export interface SlackAlertInput {
   // Which admin-managed toggle gates this alert. The alert is dropped unless the
   // matching category is enabled (plus the master switch + token + channel).
   category: AlertCategory;
-  // When true, the message pings the channel (@here). Left OFF everywhere for
-  // now; a later phase's admin UI may drive it per alert category. The code path
-  // exists and is typed so wiring it later is additive.
-  mention?: boolean;
+}
+
+// Severity rank for the personal-mention threshold check.
+const LEVEL_RANK: Record<SlackAlertLevel, number> = { info: 1, warn: 2, error: 3 };
+
+// Resolve the personal member id to @mention for this alert, or null. Mentions
+// only when a member id is configured AND the threshold is on AND this alert's
+// level meets it (rank(level) >= rank(minLevel)).
+function mentionForLevel(config: AlertsConfig, level: SlackAlertLevel): string | null {
+  if (!config.mentionUserId || config.mentionMinLevel === 'off') return null;
+  return LEVEL_RANK[level] >= LEVEL_RANK[config.mentionMinLevel] ? config.mentionUserId : null;
 }
 
 // Hard bound on the send so a slow/hung Slack request never stalls the caller.
@@ -194,11 +201,16 @@ function plain(text: string): PlainTextElement {
 interface ComposedMessage {
   text: string;
   attachments: MessageAttachment[];
-  link_names?: boolean;
 }
 
-// Build the composed content. Every user-supplied string is redacted.
-function compose(input: SlackAlertInput, suppressedFromPrev: number): ComposedMessage {
+// Build the composed content. Every user-supplied string is redacted. When
+// `mentionUserId` is set the fallback text is prefixed with `<@id>` — a user-id
+// mention resolves without `link_names`.
+function compose(
+  input: SlackAlertInput,
+  suppressedFromPrev: number,
+  mentionUserId: string | null,
+): ComposedMessage {
   const deployId = readDeployId();
   const env = process.env.NODE_ENV ?? 'unknown';
   const contextText =
@@ -214,6 +226,8 @@ function compose(input: SlackAlertInput, suppressedFromPrev: number): ComposedMe
   }
   textLines.push(contextText);
   let text = textLines.join('\n');
+  // Personal @mention prefix (user-id mentions need NO link_names).
+  if (mentionUserId) text = `<@${mentionUserId}> ${text}`;
 
   // Block Kit layout: header + a fields section + a context footer.
   const blocks: KnownBlock[] = [
@@ -232,18 +246,10 @@ function compose(input: SlackAlertInput, suppressedFromPrev: number): ComposedMe
   if (sectionFields.length > 0) blocks.push({ type: 'section', fields: sectionFields.slice(0, 10) });
   blocks.push({ type: 'context', elements: [mrkdwn(contextText)] });
 
-  const composed: ComposedMessage = {
+  return {
     text,
     attachments: [{ color: levelColor(input.level), blocks }],
   };
-  // Config-ready mention path (OFF by default): ping the channel. `link_names`
-  // lets Slack resolve the `@here` mention.
-  if (input.mention) {
-    composed.link_names = true;
-    text = `<!here> ${text}`;
-    composed.text = text;
-  }
-  return composed;
 }
 
 // Format a send failure for the log — NO secrets/PII. For an HTTP error include
@@ -310,14 +316,14 @@ async function deliver(
 ): Promise<boolean> {
   // Guaranteed by callers (both check token + channel first), asserted for types.
   if (!config.botToken || !config.channelId) return false;
-  const composed = compose(input, suppressedFromPrev);
+  const mentionUserId = mentionForLevel(config, input.level);
+  const composed = compose(input, suppressedFromPrev, mentionUserId);
   const args: ChatPostMessageArguments = {
     channel: config.channelId,
     text: composed.text,
     attachments: composed.attachments,
     unfurl_links: false,
     unfurl_media: false,
-    ...(composed.link_names ? { link_names: true } : {}),
   };
   const client = new WebClient(config.botToken, { timeout: SEND_TIMEOUT_MS, retryConfig: RETRY_CONFIG });
   const delivered = await trySend(client, args, SEND_TIMEOUT_MS);
