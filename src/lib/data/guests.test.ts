@@ -432,8 +432,14 @@ describe('updateGuest', () => {
   });
 });
 
+// D4 (org-RBAC): deleteGuest moved from requireOwnedEvent (owner-only) to
+// requireEventAccess(eventId,'guests','delete') — owner OR an org member
+// whose role holds guests.delete via can_access_event(). Per the Fix-1
+// backfill exclusion (supabase/migrations/20260713203826_org_role_permissions_per_role.sql),
+// `admin` does NOT hold guests.delete by default — this must regress-test
+// explicitly, since `admin` is the role most likely to silently reacquire it.
 describe('deleteGuest', () => {
-  it('scopes the delete by event_id and id', async () => {
+  it('owner may delete (can_access_event allows guests.delete)', async () => {
     const { client, builder } = createMockSupabase({ data: null, error: null });
     passGate(builder);
     vi.mocked(createClient).mockResolvedValue(
@@ -444,6 +450,84 @@ describe('deleteGuest', () => {
     expect(builder.delete).toHaveBeenCalled();
     expect(builder.eq).toHaveBeenCalledWith('event_id', EVENT_ID);
     expect(builder.eq).toHaveBeenCalledWith('id', GUEST_ID);
+    expect(client.rpc).toHaveBeenCalledWith('can_access_event', {
+      _event_id: EVENT_ID,
+      _resource: 'guests',
+      _action: 'delete',
+    });
+  });
+
+  // Fix-1 case: an `admin` org member is rejected by DEFAULT (not just "some
+  // non-owner role") — the backfill deliberately withheld guests.delete from
+  // every non-owner role, including admin, even though admin held it in the
+  // frozen global template. can_access_event() returning false for admin here
+  // is exactly the behavior this whole phase exists to preserve.
+  it('admin is rejected by default (Fix-1: guests.delete withheld from admin)', async () => {
+    const { client, builder } = createMockSupabase({ data: null, error: null });
+    vi.mocked(createClient).mockResolvedValue(
+      client as unknown as Awaited<ReturnType<typeof createClient>>,
+    );
+    vi.spyOn(builder, 'then').mockImplementationOnce((f) =>
+      (f as (v: unknown) => unknown)({ data: OWNED_EVENT, error: null }),
+    );
+    client.rpc.mockResolvedValue({ data: false, error: null });
+
+    await expect(deleteGuest(EVENT_ID, GUEST_ID)).rejects.toThrow(
+      'NEXT_HTTP_ERROR_FALLBACK;404',
+    );
+    expect(builder.delete).not.toHaveBeenCalled();
+    expect(logActivity).not.toHaveBeenCalled();
+    expect(client.rpc).toHaveBeenCalledWith('can_access_event', {
+      _event_id: EVENT_ID,
+      _resource: 'guests',
+      _action: 'delete',
+    });
+  });
+
+  it('a member without guests.delete is rejected (404) before any write', async () => {
+    const { client, builder } = createMockSupabase({ data: null, error: null });
+    vi.mocked(createClient).mockResolvedValue(
+      client as unknown as Awaited<ReturnType<typeof createClient>>,
+    );
+    vi.spyOn(builder, 'then').mockImplementationOnce((f) =>
+      (f as (v: unknown) => unknown)({ data: OWNED_EVENT, error: null }),
+    );
+    client.rpc.mockResolvedValue({ data: false, error: null });
+
+    await expect(deleteGuest(EVENT_ID, GUEST_ID)).rejects.toThrow(
+      'NEXT_HTTP_ERROR_FALLBACK;404',
+    );
+    expect(builder.delete).not.toHaveBeenCalled();
+  });
+
+  // Live-revocation integration property (spec §6): once the owner grants
+  // guests.delete to a role, the VERY NEXT request succeeds — no re-login, no
+  // caching. Modeled here as two independent calls against the same mocked
+  // RPC toggled between them (can_access_event is re-evaluated per request,
+  // never cached across calls).
+  it('the same session succeeds immediately after the owner grants guests.delete', async () => {
+    const { client, builder } = createMockSupabase({ data: null, error: null });
+    passGate(builder);
+    vi.mocked(createClient).mockResolvedValue(
+      client as unknown as Awaited<ReturnType<typeof createClient>>,
+    );
+
+    // Default: allowed (deleteGuest's own gate AND getGuest's internal
+    // guests.view gate both consult this RPC — a single `Once` value would
+    // only satisfy the FIRST of the two calls in the success path below).
+    client.rpc.mockResolvedValue({ data: true, error: null });
+    // First call: denied at the delete-check itself, before getGuest ever runs.
+    client.rpc.mockResolvedValueOnce({ data: false, error: null });
+    await expect(deleteGuest(EVENT_ID, GUEST_ID)).rejects.toThrow(
+      'NEXT_HTTP_ERROR_FALLBACK;404',
+    );
+    expect(builder.delete).not.toHaveBeenCalled();
+
+    // Owner grants guests.delete — the next call re-checks can_access_event
+    // fresh (now resolving via the default `true`) and succeeds, with no
+    // re-login / token refresh involved.
+    await deleteGuest(EVENT_ID, GUEST_ID);
+    expect(builder.delete).toHaveBeenCalled();
   });
 });
 
@@ -615,8 +699,10 @@ describe('updateGroup', () => {
   });
 });
 
+// D4 (org-RBAC): same gate swap as deleteGuest — requireEventAccess(eventId,
+// 'guests','delete') instead of requireOwnedEvent.
 describe('deleteGroup', () => {
-  it('scopes the delete by event_id and id', async () => {
+  it('owner may delete (can_access_event allows guests.delete)', async () => {
     const { client, builder } = createMockSupabase({ data: null, error: null });
     passGate(builder);
     vi.mocked(createClient).mockResolvedValue(
@@ -628,6 +714,64 @@ describe('deleteGroup', () => {
     expect(builder.delete).toHaveBeenCalled();
     expect(builder.eq).toHaveBeenCalledWith('event_id', EVENT_ID);
     expect(builder.eq).toHaveBeenCalledWith('id', 'grp-1');
+    expect(client.rpc).toHaveBeenCalledWith('can_access_event', {
+      _event_id: EVENT_ID,
+      _resource: 'guests',
+      _action: 'delete',
+    });
+  });
+
+  // Fix-1 case: admin is rejected by default (guests.delete withheld from
+  // every non-owner role by the backfill, including admin).
+  it('admin is rejected by default (Fix-1: guests.delete withheld from admin)', async () => {
+    const { client, builder } = createMockSupabase({ data: null, error: null });
+    vi.mocked(createClient).mockResolvedValue(
+      client as unknown as Awaited<ReturnType<typeof createClient>>,
+    );
+    vi.spyOn(builder, 'then').mockImplementationOnce((f) =>
+      (f as (v: unknown) => unknown)({ data: OWNED_EVENT, error: null }),
+    );
+    client.rpc.mockResolvedValue({ data: false, error: null });
+
+    await expect(deleteGroup(EVENT_ID, 'grp-1')).rejects.toThrow(
+      'NEXT_HTTP_ERROR_FALLBACK;404',
+    );
+    expect(builder.delete).not.toHaveBeenCalled();
+    expect(logActivity).not.toHaveBeenCalled();
+  });
+
+  it('a member without guests.delete is rejected (404) before any write', async () => {
+    const { client, builder } = createMockSupabase({ data: null, error: null });
+    vi.mocked(createClient).mockResolvedValue(
+      client as unknown as Awaited<ReturnType<typeof createClient>>,
+    );
+    vi.spyOn(builder, 'then').mockImplementationOnce((f) =>
+      (f as (v: unknown) => unknown)({ data: OWNED_EVENT, error: null }),
+    );
+    client.rpc.mockResolvedValue({ data: false, error: null });
+
+    await expect(deleteGroup(EVENT_ID, 'grp-1')).rejects.toThrow(
+      'NEXT_HTTP_ERROR_FALLBACK;404',
+    );
+    expect(builder.delete).not.toHaveBeenCalled();
+  });
+
+  it('the same session succeeds immediately after the owner grants guests.delete', async () => {
+    const { client, builder } = createMockSupabase({ data: null, error: null });
+    passGate(builder);
+    vi.mocked(createClient).mockResolvedValue(
+      client as unknown as Awaited<ReturnType<typeof createClient>>,
+    );
+
+    client.rpc.mockResolvedValueOnce({ data: false, error: null });
+    await expect(deleteGroup(EVENT_ID, 'grp-1')).rejects.toThrow(
+      'NEXT_HTTP_ERROR_FALLBACK;404',
+    );
+    expect(builder.delete).not.toHaveBeenCalled();
+
+    client.rpc.mockResolvedValueOnce({ data: true, error: null });
+    await deleteGroup(EVENT_ID, 'grp-1');
+    expect(builder.delete).toHaveBeenCalled();
   });
 });
 

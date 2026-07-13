@@ -1,7 +1,7 @@
 import 'server-only';
 
 import { createClient } from '@/lib/supabase/server';
-import { requireOwnedEvent, requireEventAccess } from '@/lib/data/events';
+import { requireEventAccess } from '@/lib/data/events';
 
 // unique index guests_event_phone_key (one guest per phone per event)
 export const PHONE_TAKEN_ERROR =
@@ -529,12 +529,12 @@ export async function updateGuest(
   return data;
 }
 
-/** Delete a guest within an owned event. */
+/** Delete a guest — owner OR an org member holding guests.delete. */
 export async function deleteGuest(
   eventId: string,
   guestId: string,
 ): Promise<void> {
-  await requireOwnedEvent(eventId);
+  await requireEventAccess(eventId, 'guests', 'delete');
   const supabase = await createClient();
   const previous = await getGuest(eventId, guestId);
 
@@ -746,12 +746,12 @@ export async function updateGroup(
   return data;
 }
 
-/** Delete a group within an owned event. */
+/** Delete a group — owner OR an org member holding guests.delete. */
 export async function deleteGroup(
   eventId: string,
   groupId: string,
 ): Promise<void> {
-  await requireOwnedEvent(eventId);
+  await requireEventAccess(eventId, 'guests', 'delete');
   const supabase = await createClient();
 
   const { error } = await supabase

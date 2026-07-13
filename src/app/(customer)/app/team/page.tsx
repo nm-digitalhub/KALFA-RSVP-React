@@ -1,5 +1,5 @@
 import { redirect } from 'next/navigation';
-import { requireUser, requireActiveOrg } from '@/lib/auth/dal';
+import { requireUser, requireActiveOrg, isOrgOwner } from '@/lib/auth/dal';
 import { can } from '@/lib/permissions';
 import { listMembers, listInvitations, listRoles } from '@/lib/data/orgs';
 
@@ -19,6 +19,11 @@ export default async function TeamPage() {
     redirect('/app');
   }
 
+  // Whether to reveal the roles-matrix entry point. Non-throwing check
+  // (mirrors the layout's showTeam convention); the /app/team/roles route
+  // re-checks requireOrgOwner independently.
+  const canManageRoles = await isOrgOwner(orgId);
+
   const [members, invitations, roles] = await Promise.all([
     listMembers(orgId),
     listInvitations(orgId),
@@ -31,6 +36,7 @@ export default async function TeamPage() {
       invitations={invitations}
       roles={roles}
       canManage={canManage}
+      canManageRoles={canManageRoles}
       currentUserId={user.id}
     />
   );

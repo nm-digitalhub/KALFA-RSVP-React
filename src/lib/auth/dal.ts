@@ -205,6 +205,38 @@ export const getOrgContext = cache(async (): Promise<OrgContext> => {
   };
 });
 
+// Whether the current user is the OWNER of `orgId` (holds the org's
+// `is_owner_role` role). Non-redirecting — for conditional UI (e.g. revealing
+// the roles-matrix nav link). Returns false for anonymous users. Memoized per
+// (render pass, orgId) via cache(). Deliberately NOT `can(orgId,'organization',
+// 'manage')` — that permission is also granted to the `admin` org role in the
+// seed template, which would let an org admin see/edit the owner-only screen.
+// The RPC resolves the caller from (select auth.uid()) server-side.
+export const isOrgOwner = cache(async (orgId: string): Promise<boolean> => {
+  const user = await getUser();
+  if (!user) {
+    return false;
+  }
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc('is_org_owner', { _org_id: orgId });
+  if (error) {
+    return false;
+  }
+  return data === true;
+});
+
+// Require the current user to be the OWNER of `orgId`; redirect to
+// /app/team otherwise. Ownership is checked server-side via the trusted
+// is_org_owner() RPC (not browser-supplied data). Delegates to isOrgOwner() so
+// the two stay in sync and share one round-trip via cache().
+export const requireOrgOwner = cache(async (orgId: string) => {
+  const user = await requireUser();
+  if (!(await isOrgOwner(orgId))) {
+    redirect('/app/team');
+  }
+  return user;
+});
+
 // Require an active organization; redirects to /app if the user has none.
 // Every user gets a personal org on first event creation, so this normally
 // always resolves for an authenticated user.

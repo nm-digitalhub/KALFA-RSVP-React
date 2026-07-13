@@ -26,7 +26,7 @@ vi.mock('@/lib/supabase/server', () => ({ createClient: vi.fn() }));
 
 import { redirect } from 'next/navigation';
 import { createClient } from '@/lib/supabase/server';
-import { isAdmin, requireAdmin } from './dal';
+import { isAdmin, requireAdmin, isOrgOwner, requireOrgOwner } from './dal';
 
 function fakeUser(id = 'user-1'): User {
   return { id } as unknown as User;
@@ -131,5 +131,83 @@ describe('isAdmin', () => {
     await expect(isAdmin()).resolves.toBe(false);
     expect(rpc).not.toHaveBeenCalled();
     expect(redirect).not.toHaveBeenCalled();
+  });
+});
+
+// requireOrgOwner() gates the org-scoped RBAC matrix screen — mirrors
+// requirePlatformOwner()'s contract (dal.ts:90-96) one layer down: the org
+// OWNER, not a KALFA platform admin. Redirects to /app/team (not /app) on
+// failure, since that is the org-scoped surface a non-owner should land on.
+describe('requireOrgOwner', () => {
+  const orgId = 'org-1';
+
+  it('returns the User when is_org_owner resolves true', async () => {
+    const user = fakeUser();
+    const { rpc } = mockClient(user, async () => ({ data: true, error: null }));
+
+    await expect(requireOrgOwner(orgId)).resolves.toEqual(user);
+    expect(rpc).toHaveBeenCalledWith('is_org_owner', { _org_id: orgId });
+    expect(redirect).not.toHaveBeenCalled();
+  });
+
+  it('redirects to /app/team when is_org_owner resolves false', async () => {
+    const user = fakeUser();
+    mockClient(user, async () => ({ data: false, error: null }));
+
+    await expect(requireOrgOwner(orgId)).rejects.toMatchObject({
+      digest: 'NEXT_REDIRECT;replace;/app/team;307;',
+    });
+    expect(redirect).toHaveBeenCalledWith('/app/team');
+  });
+
+  it('redirects to /auth/login (not /app/team) for an anonymous user, and never calls the RPC', async () => {
+    const { rpc } = mockClient(null, async () => ({ data: true, error: null }));
+
+    await expect(requireOrgOwner(orgId)).rejects.toMatchObject({
+      digest: 'NEXT_REDIRECT;replace;/auth/login;307;',
+    });
+    expect(redirect).toHaveBeenCalledWith('/auth/login');
+    expect(redirect).not.toHaveBeenCalledWith('/app/team');
+    expect(rpc).not.toHaveBeenCalled();
+  });
+
+  // REGRESSION GUARD: mirrors the requireAdmin inverted-condition guard above.
+  // A non-owner member must never receive a User back — it must redirect.
+  it('never resolves with a User when is_org_owner resolves false (inverted-condition guard)', async () => {
+    const user = fakeUser('non-owner-member');
+    mockClient(user, async () => ({ data: false, error: null }));
+
+    let sawFulfillment = false;
+    await requireOrgOwner(orgId).then(
+      () => {
+        sawFulfillment = true;
+      },
+      () => {
+        // expected path: rejection via redirect()
+      },
+    );
+
+    expect(sawFulfillment).toBe(false);
+    expect(redirect).toHaveBeenCalledTimes(1);
+    expect(redirect).toHaveBeenCalledWith('/app/team');
+  });
+});
+
+describe('isOrgOwner', () => {
+  const orgId = 'org-1';
+
+  it('returns false for anonymous users without calling the RPC', async () => {
+    const { rpc } = mockClient(null, async () => ({ data: true, error: null }));
+
+    await expect(isOrgOwner(orgId)).resolves.toBe(false);
+    expect(rpc).not.toHaveBeenCalled();
+    expect(redirect).not.toHaveBeenCalled();
+  });
+
+  it('returns false (not throw) when the RPC errors', async () => {
+    const user = fakeUser();
+    mockClient(user, async () => ({ data: null, error: { message: 'db down' } }));
+
+    await expect(isOrgOwner(orgId)).resolves.toBe(false);
   });
 });

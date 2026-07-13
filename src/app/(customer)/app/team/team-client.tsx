@@ -1,10 +1,12 @@
 'use client';
 
+import Link from 'next/link';
 import { useActionState } from 'react';
 import { useFormStatus } from 'react-dom';
 
 import { FieldError, FormError, FormNotice } from '@/components/forms';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import type { OrgMemberDTO, OrgInvitationDTO, OrgRoleDTO } from '@/lib/data/orgs';
 
 import {
@@ -201,17 +203,28 @@ export function TeamClient({
   invitations,
   roles,
   canManage,
+  canManageRoles,
   currentUserId,
 }: {
   members: OrgMemberDTO[];
   invitations: OrgInvitationDTO[];
   roles: OrgRoleDTO[];
   canManage: boolean;
+  // Whether to reveal the entry point to the roles-matrix screen (owner-only;
+  // /app/team/roles re-checks requireOrgOwner independently).
+  canManageRoles: boolean;
   currentUserId: string;
 }) {
   return (
     <div className="space-y-8">
-      <h1 className="text-2xl font-bold">ניהול משתמשים</h1>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h1 className="text-2xl font-bold">ניהול משתמשים</h1>
+        {canManageRoles ? (
+          <Button variant="outline" size="sm" render={<Link href="/app/team/roles" />}>
+            הרשאות תפקידים
+          </Button>
+        ) : null}
+      </div>
 
       {canManage ? <InviteForm roles={roles} /> : null}
 

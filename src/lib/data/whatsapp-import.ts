@@ -53,7 +53,9 @@ type EventRow = {
 // the sender managed more than one active event (incident 2026-07-06: a brit
 // guest list landed on a newer wedding event). The caller now decides: exactly
 // one → stage; more than one → ask which, never guess.
-async function resolveOwnerActiveEvents(
+// Exported (only) so the composite-key regression test below can drive it
+// directly — it is not part of the module's public contract.
+export async function resolveOwnerActiveEvents(
   senderE164: string,
 ): Promise<ImportEvent[]> {
   const admin = createAdminClient();
@@ -78,15 +80,26 @@ async function resolveOwnerActiveEvents(
     .eq('user_id', sender.id);
   let shared: EventRow[] = [];
   if (memberships && memberships.length > 0) {
-    const { data: allowedRoles } = await admin
-      .from('role_permissions')
-      .select('role_id, permission_definitions!inner(resource, action)')
+    // Permissions are now per-(organization_id, role_id) — a role name/id no
+    // longer means the same thing across orgs (an owner may customize one
+    // org's matrix without touching another's). `.in('organization_id', ...)`
+    // + `.in('role_id', ...)` is a Cartesian PRE-FILTER only (Postgres/
+    // PostgREST has no tuple-IN); the composite key below reconstitutes the
+    // exact (organization_id, role_id) pair before trusting a row. Using a
+    // bare role_id set here would reintroduce the incident-2026-07-06 misroute
+    // class this file's own history already fixed once.
+    const { data: allowedTuples } = await admin
+      .from('organization_role_permissions')
+      .select('organization_id, role_id, permission_definitions!inner(resource, action)')
+      .in('organization_id', memberships.map((m) => m.organization_id))
       .in('role_id', memberships.map((m) => m.role_id))
       .eq('permission_definitions.resource', 'guests')
       .eq('permission_definitions.action', 'create');
-    const okRoles = new Set((allowedRoles ?? []).map((r) => r.role_id));
+    const okTuples = new Set(
+      (allowedTuples ?? []).map((r) => `${r.organization_id}:${r.role_id}`),
+    );
     const orgIds = memberships
-      .filter((m) => okRoles.has(m.role_id))
+      .filter((m) => okTuples.has(`${m.organization_id}:${m.role_id}`))
       .map((m) => m.organization_id);
     if (orgIds.length > 0) {
       const { data } = await admin

@@ -4,8 +4,10 @@ import { randomBytes } from 'node:crypto';
 
 import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
-import { getUser, requireUser, getOrgContext } from '@/lib/auth/dal';
+import { getUser, requireUser, requireOrgOwner, getOrgContext } from '@/lib/auth/dal';
 import { requirePermission } from '@/lib/permissions';
+import { logActivity } from '@/lib/data/activity';
+import { sendSlackAlert } from '@/lib/alerts/slack';
 import type { Database } from '@/lib/supabase/types';
 import type {
   InviteMemberInput,
@@ -38,6 +40,11 @@ export interface PermissionDefDTO {
   action: string;
   label: string;
   sortOrder: number;
+  // system_protected permissions (currently campaigns.create/manage) can never
+  // be granted to a non-owner role — read here so the matrix UI can render
+  // those cells locked for every role except the owner (see
+  // getOrgRolePermissionMatrix / setOrgRolePermission).
+  systemProtected: boolean;
 }
 
 export interface OrgMemberDTO {
@@ -168,7 +175,7 @@ export async function getPermissionCatalog(): Promise<PermissionDefDTO[]> {
   const supabase = await createClient();
   const { data, error } = await supabase
     .from('permission_definitions')
-    .select('id, resource, action, label, sort_order')
+    .select('id, resource, action, label, sort_order, system_protected')
     .order('sort_order', { ascending: true });
   if (error || !data) return [];
   return data.map((p) => ({
@@ -177,6 +184,7 @@ export async function getPermissionCatalog(): Promise<PermissionDefDTO[]> {
     action: p.action,
     label: p.label,
     sortOrder: p.sort_order,
+    systemProtected: p.system_protected,
   }));
 }
 
@@ -245,6 +253,124 @@ export async function listInvitations(orgId: string): Promise<OrgInvitationDTO[]
     expiresAt: i.expires_at,
     createdAt: i.created_at,
   }));
+}
+
+// ---------------------------------------------------------------------------
+// Org-scoped role→permission matrix (owner-only, UI-editable)
+// ---------------------------------------------------------------------------
+//
+// A SECOND, org-scoped RBAC layer on top of the global role_permissions
+// template — mirrors the PLATFORM (KALFA staff) Owner/Staff matrix in
+// src/lib/data/admin/platform-roles.ts one layer down. Every org gets its own
+// (organization_id, role_id) → permission grants, seeded from the global
+// template at org-creation time / by a one-time backfill (see
+// supabase/migrations/20260713203826_org_role_permissions_per_role.sql), then
+// independently editable by that org's OWNER. has_org_permission() reads only
+// this table — role_permissions stays a frozen factory-default template.
+//
+// AUTHORIZATION: requireOrgOwner(orgId) gates every function — deliberately
+// stricter than organization.manage (which the admin role also holds; see
+// isOrgOwner's doc comment). Writes go through the SERVICE-ROLE client (RLS on
+// organization_role_permissions is owner-only READ; writes are service-role
+// only). The DB additionally enforces invariants via triggers: the owner
+// role's grants are immutable, a system_protected permission can never be
+// granted to a non-owner role, and every change is written to
+// organization_role_audit_log. On top of that we logActivity() with the real
+// actor and fire a non-PII security Slack alert (mirrors platform-roles.ts).
+
+export interface OrgRolePermissionMatrix {
+  roles: OrgRoleDTO[];
+  permissions: PermissionDefDTO[];
+  // roleId → the permission ids granted to that role, scoped to THIS org.
+  granted: Record<string, string[]>;
+}
+
+// The full roles × permissions grid for `orgId`'s roles screen.
+export async function getOrgRolePermissionMatrix(orgId: string): Promise<OrgRolePermissionMatrix> {
+  await requireOrgOwner(orgId);
+  const [roles, permissions] = await Promise.all([listRoles(), getPermissionCatalog()]);
+
+  const admin = createAdminClient();
+  const { data, error } = await admin
+    .from('organization_role_permissions')
+    .select('role_id, permission_id')
+    .eq('organization_id', orgId);
+  if (error) throw new Error('טעינת מטריצת ההרשאות נכשלה');
+
+  const granted: Record<string, string[]> = {};
+  for (const role of roles) granted[role.id] = [];
+  for (const row of data ?? []) {
+    (granted[row.role_id] ??= []).push(row.permission_id);
+  }
+  return { roles, permissions, granted };
+}
+
+// Grant or revoke a single (role, permission) matrix cell within `orgId`.
+//
+// Guards (defense-in-depth on top of the DB triggers + RLS):
+//   * The owner role's grants are IMMUTABLE (owner is always all-permissions);
+//     the DB BEFORE-DELETE trigger also blocks removal, but we reject BOTH
+//     grant and revoke here so the UI never even attempts an owner-cell write.
+//   * SYSTEM-PROTECTED permissions (currently campaigns.create/manage) may
+//     never be granted to a non-owner role — the DB BEFORE-INSERT trigger and
+//     has_org_permission()'s own read-time guard also enforce this; this is
+//     the third, app-layer, belt-and-suspenders check.
+export async function setOrgRolePermission(
+  orgId: string,
+  roleId: string,
+  permissionId: string,
+  granted: boolean,
+): Promise<void> {
+  const actor = await requireOrgOwner(orgId);
+  const admin = createAdminClient();
+
+  const [{ data: role }, { data: permission }] = await Promise.all([
+    admin.from('org_roles').select('id, is_owner_role').eq('id', roleId).maybeSingle(),
+    admin
+      .from('permission_definitions')
+      .select('id, system_protected')
+      .eq('id', permissionId)
+      .maybeSingle(),
+  ]);
+  if (!role) throw new Error('התפקיד לא נמצא');
+  if (!permission) throw new Error('ההרשאה לא נמצאה');
+  if (role.is_owner_role) {
+    throw new Error('לא ניתן לשנות את הרשאות הבעלים — הן קבועות');
+  }
+  if (granted && permission.system_protected) {
+    throw new Error('הרשאה זו שמורה לבעלים בלבד');
+  }
+
+  if (granted) {
+    const { error } = await admin.from('organization_role_permissions').upsert(
+      { organization_id: orgId, role_id: roleId, permission_id: permissionId, granted_by: actor.id },
+      { onConflict: 'organization_id,role_id,permission_id' },
+    );
+    if (error) throw new Error('עדכון ההרשאה נכשל');
+  } else {
+    const { error } = await admin
+      .from('organization_role_permissions')
+      .delete()
+      .eq('organization_id', orgId)
+      .eq('role_id', roleId)
+      .eq('permission_id', permissionId);
+    if (error) throw new Error('עדכון ההרשאה נכשל');
+  }
+
+  // organization_role_audit_log is written by the DB trigger on this same
+  // insert/delete (atomic with the write); this is the separate, human-facing
+  // business activity log + security alert, mirroring platform-roles.ts.
+  await logActivity({
+    action: granted ? 'org_role.permission_granted' : 'org_role.permission_revoked',
+    meta: { orgId, roleId, permissionId },
+  });
+  void sendSlackAlert({
+    level: 'warn',
+    category: 'security',
+    source: 'org-roles',
+    title: granted ? 'הוענקה הרשאת ארגון לתפקיד' : 'נשללה הרשאת ארגון מתפקיד',
+    fields: { actorUserId: actor.id, organizationId: orgId, roleId, permissionId },
+  });
 }
 
 // ---------------------------------------------------------------------------
