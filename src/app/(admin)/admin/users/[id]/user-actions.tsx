@@ -1,9 +1,10 @@
 'use client';
 
-import { useActionState } from 'react';
+import { useActionState, useState, useTransition } from 'react';
 import { useFormStatus } from 'react-dom';
 
 import { FieldError, FormError, FormNotice } from '@/components/forms';
+import type { FormState } from '@/lib/validation/result';
 
 import {
   grantAdminAction,
@@ -12,6 +13,16 @@ import {
   reactivateUserAction,
   grantCreditAction,
 } from '../actions';
+import {
+  assignStaffRoleAction,
+  revokeStaffRoleAction,
+} from '../../roles/actions';
+
+// A platform staff role (id + display label) offered in the selector.
+export interface StaffRoleOption {
+  id: string;
+  label: string;
+}
 
 const inputClass =
   'w-full rounded-md border border-border bg-background px-3 py-2 text-sm';
@@ -40,18 +51,91 @@ function RowSubmit({
   );
 }
 
+// Platform staff-role selector (single role per user). Shown only to platform
+// owners. Choosing "ללא" revokes staff membership; any role assigns it. Awaits
+// the server action and surfaces its FormState (the last-owner guard may reject).
+function StaffRoleSelector({
+  userId,
+  roles,
+  currentRoleId,
+}: {
+  userId: string;
+  roles: StaffRoleOption[];
+  currentRoleId: string | null;
+}) {
+  const [selected, setSelected] = useState(currentRoleId ?? '');
+  const [state, setState] = useState<FormState>(null);
+  const [pending, startTransition] = useTransition();
+
+  const onSave = (): void => {
+    setState(null);
+    startTransition(async () => {
+      const result =
+        selected === ''
+          ? await revokeStaffRoleAction({ userId })
+          : await assignStaffRoleAction({ userId, roleId: selected });
+      setState(result);
+    });
+  };
+
+  return (
+    <section className={sectionClass}>
+      <h3 className="font-medium">תפקיד צוות פלטפורמה</h3>
+      <p className="text-sm text-muted-foreground">
+        תפקיד הצוות של המשתמש בפלטפורמה (בעל מערכת / צוות). בחירת &quot;ללא&quot;
+        מסירה את חברות הצוות.
+      </p>
+      <FormError message={state?.error} />
+      <FormNotice message={state?.notice} />
+      <div className="flex flex-wrap items-end gap-3">
+        <div className="min-w-52">
+          <label htmlFor="staff-role" className="mb-1 block text-sm font-medium">
+            תפקיד
+          </label>
+          <select
+            id="staff-role"
+            value={selected}
+            onChange={(e) => setSelected(e.target.value)}
+            disabled={pending}
+            className={inputClass}
+          >
+            <option value="">ללא (לא חבר צוות)</option>
+            {roles.map((r) => (
+              <option key={r.id} value={r.id}>
+                {r.label}
+              </option>
+            ))}
+          </select>
+        </div>
+        <button
+          type="button"
+          onClick={onSave}
+          disabled={pending || selected === (currentRoleId ?? '')}
+          className="rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-60"
+        >
+          {pending ? 'רגע…' : 'שמירת תפקיד'}
+        </button>
+      </div>
+    </section>
+  );
+}
+
 export function UserActions({
   userId,
   isPlatformAdmin,
   suspended,
   isSelf,
   events,
+  platformStaff,
 }: {
   userId: string;
   isPlatformAdmin: boolean;
   suspended: boolean;
   isSelf: boolean;
   events: { id: string; name: string }[];
+  // Present only when the VIEWER is a platform owner (the only role allowed to
+  // manage staff). null/undefined hides the selector entirely.
+  platformStaff?: { roles: StaffRoleOption[]; currentRoleId: string | null } | null;
 }) {
   const [adminState, adminAction] = useActionState(
     isPlatformAdmin ? revokeAdminAction : grantAdminAction,
@@ -91,6 +175,14 @@ export function UserActions({
         {suspendState?.error ? <FormError message={suspendState.error} /> : null}
         {suspendState?.notice ? <FormNotice message={suspendState.notice} /> : null}
       </section>
+
+      {platformStaff ? (
+        <StaffRoleSelector
+          userId={userId}
+          roles={platformStaff.roles}
+          currentRoleId={platformStaff.currentRoleId}
+        />
+      ) : null}
 
       {events.length > 0 ? (
         <section className={sectionClass}>

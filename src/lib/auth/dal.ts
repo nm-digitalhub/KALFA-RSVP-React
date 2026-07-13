@@ -59,6 +59,75 @@ export const requireAdmin = cache(async () => {
 });
 
 // ---------------------------------------------------------------------------
+// Platform (Owner/Staff) RBAC layer. A SECOND platform role layer, orthogonal to
+// the coarse has_role('admin') flag above and to the customer ORG roles below.
+// Authorization facts live in the DB as DATA (platform_roles /
+// platform_role_permissions / platform_permission_definitions) and are read via
+// SECURITY DEFINER RPCs. NOTE: "owner" here means PLATFORM owner (KALFA staff),
+// which is DISTINCT from an EVENT owner — do not confuse with requireOwnedEvent.
+// ---------------------------------------------------------------------------
+
+// Whether the current user is a PLATFORM OWNER (holds a staff row on the owner
+// role). Non-redirecting — for conditional UI. Returns false for anonymous
+// users. Memoized per render pass. The RPC resolves the caller from
+// (select auth.uid()) server-side, so no id is passed from the browser.
+export const isPlatformOwner = cache(async (): Promise<boolean> => {
+  const user = await getUser();
+  if (!user) {
+    return false;
+  }
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc('is_platform_owner');
+  if (error) {
+    return false;
+  }
+  return data === true;
+});
+
+// Require a PLATFORM OWNER. Ownership is checked server-side via the trusted
+// is_platform_owner() RPC (not browser-supplied data). Delegates to
+// isPlatformOwner() so the two stay in sync and share one round-trip via cache().
+export const requirePlatformOwner = cache(async () => {
+  const user = await requireUser();
+  if (!(await isPlatformOwner())) {
+    redirect('/app');
+  }
+  return user;
+});
+
+// Whether the current user is ANY platform staff member. Non-redirecting.
+// Returns false for anonymous users. Memoized per render pass.
+export const isStaff = cache(async (): Promise<boolean> => {
+  const user = await getUser();
+  if (!user) {
+    return false;
+  }
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc('is_staff');
+  if (error) {
+    return false;
+  }
+  return data === true;
+});
+
+// Whether the current user holds the platform permission `key` (via their staff
+// role). Non-throwing — for conditional UI and gating. Memoized per render pass
+// so repeated checks for the same key share one RPC round-trip. `key` is
+// validated at the DB against the seeded catalog (no hardcoded union here).
+export const hasPlatformPermission = cache(async (key: string): Promise<boolean> => {
+  const user = await getUser();
+  if (!user) {
+    return false;
+  }
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc('has_platform_permission', { _key: key });
+  if (error) {
+    return false;
+  }
+  return data === true;
+});
+
+// ---------------------------------------------------------------------------
 // Organization context (multi-tenant layer). The active org is resolved from a
 // cookie but ALWAYS verified server-side against the caller's memberships — a
 // browser-supplied org id is never trusted on its own.

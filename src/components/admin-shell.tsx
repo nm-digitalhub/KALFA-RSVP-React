@@ -21,6 +21,7 @@ import {
   Package,
   PhoneCall,
   Settings,
+  ShieldCheck,
   Users,
   Webhook,
   type LucideIcon,
@@ -63,6 +64,7 @@ type NavItem = { href: string; label: string; icon: LucideIcon };
 const NAV: NavItem[] = [
   { href: '/admin', label: 'סקירה', icon: LayoutDashboard },
   { href: '/admin/users', label: 'משתמשים', icon: Users },
+  { href: '/admin/roles', label: 'תפקידי צוות', icon: ShieldCheck },
   { href: '/admin/campaigns', label: 'קמפיינים', icon: Send },
   { href: '/admin/contacts', label: 'פניות', icon: MailOpen },
   { href: '/admin/callbacks', label: 'בקשות חזרה', icon: PhoneCall },

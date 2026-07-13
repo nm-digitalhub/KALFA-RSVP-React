@@ -1,8 +1,12 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 
-import { requireAdmin } from '@/lib/auth/dal';
+import { isPlatformOwner, requireAdmin } from '@/lib/auth/dal';
 import { getUserDetail } from '@/lib/data/admin/users';
+import {
+  getUserStaffRoleId,
+  listPlatformRoles,
+} from '@/lib/data/admin/platform-roles';
 
 import { PageHeading, Badge, formatCurrency, formatDateTime } from '../../_components';
 import { UserActions } from './user-actions';
@@ -20,6 +24,17 @@ export default async function AdminUserDetailPage({
   if (!user) {
     notFound();
   }
+
+  // Staff-role management is owner-only. Fetch the role catalog + this user's
+  // current staff role only when the viewer is a platform owner; otherwise the
+  // selector is hidden entirely.
+  const owner = await isPlatformOwner();
+  const platformStaff = owner
+    ? {
+        roles: (await listPlatformRoles()).map((r) => ({ id: r.id, label: r.label })),
+        currentRoleId: await getUserStaffRoleId(user.id),
+      }
+    : null;
 
   return (
     <div className="space-y-6">
@@ -106,6 +121,7 @@ export default async function AdminUserDetailPage({
         suspended={user.suspended}
         isSelf={user.id === actor.id}
         events={user.events}
+        platformStaff={platformStaff}
       />
     </div>
   );
