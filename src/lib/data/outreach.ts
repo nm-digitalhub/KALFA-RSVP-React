@@ -10,7 +10,7 @@ import {
   resolveTemplateForEvent,
   type ResolvedTemplate,
 } from '@/lib/data/message-templates';
-import { listSendableContacts } from '@/lib/data/contacts';
+import { resolveSendableContacts } from '@/lib/data/contacts';
 import { isPastEventDay } from '@/lib/data/event-date';
 import { signedInviteImageUrl } from '@/lib/storage/event-media';
 import {
@@ -208,7 +208,7 @@ export async function recordTemplateFailure(
 // §8.3 precondition is re-checked server-side BEFORE any provider call:
 // outreach enabled + WhatsApp configured (fail-closed), campaign active,
 // 'whatsapp' an allowed channel, a resolvable approved template, and per-contact
-// eligibility (consent + not removal-requested, via listSendableContacts). Each
+// eligibility (consent + not removal-requested, via resolveSendableContacts). Each
 // successful send is logged as an OUTBOUND, non-billable contact_interaction
 // (idempotent on the UNIQUE(channel, provider_id) webhook key). Never log the
 // access token, recipient phone, or message body.
@@ -310,9 +310,18 @@ export async function sendCampaignWhatsApp(
   }
 
   // Bind outreach to the campaign's FROZEN authorized set: passing campaign.id
-  // makes listSendableContacts INNER JOIN campaign_authorized_contacts, so a
+  // makes resolveSendableContacts INNER JOIN campaign_authorized_contacts, so a
   // send can never target a contact outside the set (reached ⊆ authorized).
-  let contacts = await listSendableContacts(campaign.event_id, campaign.id);
+  //
+  // The REQUEST-FREE core (resolveSendableContacts, NOT listSendableContacts) is
+  // used on purpose: this function runs both from server actions/route handlers
+  // (which authorize via requireOwnedEvent at their own boundary) AND from the
+  // pg-boss worker's auto-thankyou sweep (worker/main.ts → runThankyouSweep),
+  // where next/headers is a no-op stub — listSendableContacts' requireEventAccess
+  // → requireUser → cookies() would throw ("cookies is not a function"). The data
+  // read is service-role either way, so dropping the redundant request-scoped
+  // gate is safe (mirrors the drip engine's request-free contact resolution).
+  let contacts = await resolveSendableContacts(campaign.event_id, campaign.id);
 
   // Event-day reminder AND thank-you target ONLY guests who CONFIRMED
   // (guests.status = 'attending'); intersect the sendable set with

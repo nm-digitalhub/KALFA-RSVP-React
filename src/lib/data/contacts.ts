@@ -334,6 +334,23 @@ export async function listSendableContacts(
   campaignId?: string,
 ): Promise<Array<{ id: string; normalized_phone: string }>> {
   await requireEventAccess(eventId, 'contacts', 'view');
+  return resolveSendableContacts(eventId, campaignId);
+}
+
+// Request-free core of listSendableContacts: the SAME service-role query with NO
+// cookie / requireEventAccess gate, so it is safe from the pg-boss worker (the
+// auto-thankyou sweep and the drip engine run in a long-lived process where
+// next/headers is a no-op stub — cookies()/requireUser() would throw). The
+// public listSendableContacts above wraps this with requireEventAccess for
+// request-scoped (UI) callers; the DATA read is service-role either way, so the
+// gate is the ONLY difference. Authorization is the CALLER's responsibility when
+// using this directly — the campaign send route/actions requireOwnedEvent first
+// (their own boundary), and the worker sweep runs system-trusted with no user
+// context. Mirrors outreach-engine.ts, which is deliberately request-free.
+export async function resolveSendableContacts(
+  eventId: string,
+  campaignId?: string,
+): Promise<Array<{ id: string; normalized_phone: string }>> {
   const admin = createAdminClient();
 
   if (campaignId) {

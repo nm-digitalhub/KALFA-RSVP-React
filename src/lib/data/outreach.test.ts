@@ -7,7 +7,7 @@ vi.mock('@/lib/data/outreach-config', () => ({
   getWhatsAppConfig: vi.fn(),
 }));
 vi.mock('@/lib/data/message-templates', () => ({ resolveTemplateForEvent: vi.fn() }));
-vi.mock('@/lib/data/contacts', () => ({ listSendableContacts: vi.fn() }));
+vi.mock('@/lib/data/contacts', () => ({ resolveSendableContacts: vi.fn() }));
 vi.mock('@/lib/whatsapp/client', () => ({
   sendWhatsAppTemplate: vi.fn(),
   sendWhatsAppMarketingTemplate: vi.fn(),
@@ -20,7 +20,7 @@ import {
   getWhatsAppConfig,
 } from '@/lib/data/outreach-config';
 import { resolveTemplateForEvent } from '@/lib/data/message-templates';
-import { listSendableContacts } from '@/lib/data/contacts';
+import { resolveSendableContacts } from '@/lib/data/contacts';
 import { sendWhatsAppMarketingTemplate, sendWhatsAppTemplate } from '@/lib/whatsapp/client';
 import { GUEST_FIRST_NAME_FALLBACK } from '@/lib/whatsapp/template-spec';
 import {
@@ -153,7 +153,7 @@ describe('sendCampaignWhatsApp', () => {
     // test fails for the right reason (the event-status guard) and not
     // because of an unrelated earlier guard (no template/contacts mocked).
     vi.mocked(resolveTemplateForEvent).mockResolvedValue(genericTemplate);
-    vi.mocked(listSendableContacts).mockResolvedValue([
+    vi.mocked(resolveSendableContacts).mockResolvedValue([
       { id: 'k1', normalized_phone: '+972501111111' },
     ]);
     const { builder } = mockAdmin(null);
@@ -179,7 +179,7 @@ describe('sendCampaignWhatsApp', () => {
     vi.mocked(getWhatsAppConfig).mockResolvedValue(config);
     vi.mocked(resolveTemplateForEvent).mockResolvedValue(genericTemplate);
     vi.mocked(sendWhatsAppTemplate).mockResolvedValue({ kind: 'accepted', providerId: 'wamid.x' });
-    vi.mocked(listSendableContacts).mockResolvedValue([
+    vi.mocked(resolveSendableContacts).mockResolvedValue([
       { id: 'k1', normalized_phone: '+972501111111' },
     ]);
     mockAdmin({
@@ -201,7 +201,7 @@ describe('sendCampaignWhatsApp', () => {
     // 'thankyou' is a MARKETING_MESSAGE_KEYS key — routes through MM Lite
     // (sendWhatsAppMarketingTemplate), NOT the regular sendWhatsAppTemplate.
     vi.mocked(sendWhatsAppMarketingTemplate).mockResolvedValue({ kind: 'accepted', providerId: 'wamid.x' });
-    vi.mocked(listSendableContacts).mockResolvedValue([
+    vi.mocked(resolveSendableContacts).mockResolvedValue([
       { id: 'k1', normalized_phone: '+972501111111' },
     ]);
     const { client, builder } = mockAdmin(null);
@@ -224,7 +224,7 @@ describe('sendCampaignWhatsApp', () => {
     vi.mocked(getOutreachEnabled).mockResolvedValue(true);
     vi.mocked(getWhatsAppConfig).mockResolvedValue(config);
     vi.mocked(resolveTemplateForEvent).mockResolvedValue(genericTemplate);
-    vi.mocked(listSendableContacts).mockResolvedValue([
+    vi.mocked(resolveSendableContacts).mockResolvedValue([
       { id: 'k1', normalized_phone: '+972501111111' },
     ]);
     mockAdmin({
@@ -243,7 +243,7 @@ describe('sendCampaignWhatsApp', () => {
     vi.mocked(getWhatsAppConfig).mockResolvedValue(config);
     vi.mocked(resolveTemplateForEvent).mockResolvedValue(genericTemplate);
     vi.mocked(sendWhatsAppTemplate).mockResolvedValue({ kind: 'accepted', providerId: 'wamid.x' });
-    vi.mocked(listSendableContacts).mockResolvedValue([
+    vi.mocked(resolveSendableContacts).mockResolvedValue([
       { id: 'k1', normalized_phone: '+972501111111' },
       { id: 'k2', normalized_phone: '+972502222222' },
     ]);
@@ -309,7 +309,7 @@ describe('sendCampaignWhatsApp', () => {
       channel: 'whatsapp',
     });
     vi.mocked(sendWhatsAppTemplate).mockResolvedValue({ kind: 'accepted', providerId: 'wamid.w' });
-    vi.mocked(listSendableContacts).mockResolvedValue([
+    vi.mocked(resolveSendableContacts).mockResolvedValue([
       { id: 'k1', normalized_phone: '+972501111111' },
     ]);
     const { builder } = mockAdmin(null);
@@ -336,7 +336,7 @@ describe('sendCampaignWhatsApp', () => {
     vi.mocked(getWhatsAppConfig).mockResolvedValue(config);
     vi.mocked(resolveTemplateForEvent).mockResolvedValue(genericTemplate);
     vi.mocked(sendWhatsAppTemplate).mockResolvedValue({ kind: 'accepted', providerId: 'wamid.x' });
-    vi.mocked(listSendableContacts).mockResolvedValue([
+    vi.mocked(resolveSendableContacts).mockResolvedValue([
       { id: 'k1', normalized_phone: '+972501111111' },
       { id: 'k2', normalized_phone: '+972502222222' },
     ]);
@@ -375,7 +375,7 @@ describe('sendCampaignWhatsApp', () => {
     vi.mocked(sendWhatsAppTemplate)
       .mockRejectedValueOnce(new Error('meta down'))
       .mockResolvedValue({ kind: 'accepted', providerId: 'wamid.ok' });
-    vi.mocked(listSendableContacts).mockResolvedValue([
+    vi.mocked(resolveSendableContacts).mockResolvedValue([
       { id: 'k1', normalized_phone: '+972501111111' },
       { id: 'k2', normalized_phone: '+972502222222' },
     ]);
@@ -434,7 +434,7 @@ describe('sendCampaignWhatsApp — thankyou (auto-thankyou 131049 mitigation)', 
       kind: 'accepted',
       providerId: 'wamid.ty',
     });
-    vi.mocked(listSendableContacts).mockResolvedValue([
+    vi.mocked(resolveSendableContacts).mockResolvedValue([
       { id: 'k1', normalized_phone: '+972501111111' },
       { id: 'k2', normalized_phone: '+972502222222' },
     ]);
@@ -470,7 +470,7 @@ describe('sendCampaignWhatsApp — thankyou (auto-thankyou 131049 mitigation)', 
       kind: 'accepted',
       providerId: 'wamid.ty',
     });
-    vi.mocked(listSendableContacts).mockResolvedValue([
+    vi.mocked(resolveSendableContacts).mockResolvedValue([
       { id: 'k1', normalized_phone: '+972501111111' },
     ]);
     const { client, builder } = mockAdmin(null);
@@ -503,7 +503,7 @@ describe('sendCampaignWhatsApp — thankyou (auto-thankyou 131049 mitigation)', 
       kind: 'accepted',
       providerId: 'wamid.ty',
     });
-    vi.mocked(listSendableContacts).mockResolvedValue([
+    vi.mocked(resolveSendableContacts).mockResolvedValue([
       { id: 'k1', normalized_phone: '+972501111111' },
       { id: 'k2', normalized_phone: '+972502222222' }, // NOT attending
     ]);
@@ -533,7 +533,7 @@ describe('sendCampaignWhatsApp — thankyou (auto-thankyou 131049 mitigation)', 
       kind: 'accepted',
       providerId: 'wamid.ty',
     });
-    vi.mocked(listSendableContacts).mockResolvedValue([
+    vi.mocked(resolveSendableContacts).mockResolvedValue([
       { id: 'k1', normalized_phone: '+972501111111' },
     ]);
     const { client, builder } = mockAdmin(null);
@@ -565,7 +565,7 @@ describe('sendCampaignWhatsApp — thankyou (auto-thankyou 131049 mitigation)', 
       kind: 'accepted',
       providerId: 'wamid.real',
     });
-    vi.mocked(listSendableContacts).mockResolvedValue([
+    vi.mocked(resolveSendableContacts).mockResolvedValue([
       { id: 'k1', normalized_phone: '+972501111111' },
     ]);
     const { client, builder } = mockAdmin(null);
@@ -592,7 +592,7 @@ describe('sendCampaignWhatsApp — thankyou (auto-thankyou 131049 mitigation)', 
       reason: 'provider_error',
       providerCode: '131049',
     });
-    vi.mocked(listSendableContacts).mockResolvedValue([
+    vi.mocked(resolveSendableContacts).mockResolvedValue([
       { id: 'k1', normalized_phone: '+972501111111' },
     ]);
     const { client, builder } = mockAdmin(null);
