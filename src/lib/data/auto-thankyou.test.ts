@@ -3,10 +3,12 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 vi.mock('server-only', () => ({}));
 vi.mock('@/lib/supabase/admin', () => ({ createAdminClient: vi.fn() }));
 vi.mock('@/lib/data/outreach', () => ({ sendCampaignWhatsApp: vi.fn() }));
+vi.mock('@/lib/alerts/slack', () => ({ sendSlackAlert: vi.fn() }));
 
 import { createMockSupabase, type MockQueryBuilder } from '@/test/supabase-mock';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { sendCampaignWhatsApp } from '@/lib/data/outreach';
+import { sendSlackAlert } from '@/lib/alerts/slack';
 import {
   listDueThankyouCampaigns,
   runThankyouSweep,
@@ -207,6 +209,16 @@ describe('runThankyouSweep', () => {
     expect(builder.update).toHaveBeenCalledWith(
       expect.objectContaining({ thankyou_sent_at: expect.any(String) }),
     );
+    // Additive summary: one send_health alert reporting the accepted count.
+    expect(sendSlackAlert).toHaveBeenCalledTimes(1);
+    expect(sendSlackAlert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        level: 'info',
+        category: 'send_health',
+        source: 'thankyou-sweep',
+        fields: expect.objectContaining({ sent: 3, blocked: 0, failed: 0, campaigns: 1 }),
+      }),
+    );
   });
 
   it('does NOT mark thankyou_sent_at when sendCampaignWhatsApp throws — safe to retry next tick', async () => {
@@ -218,6 +230,16 @@ describe('runThankyouSweep', () => {
 
     expect(result).toEqual({ processed: 0, blocked: 0, failed: 1 });
     expect(builder.update).not.toHaveBeenCalled();
+    // A hard failure raises an error-level summary alert.
+    expect(sendSlackAlert).toHaveBeenCalledTimes(1);
+    expect(sendSlackAlert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        level: 'error',
+        category: 'send_health',
+        source: 'thankyou-sweep',
+        fields: expect.objectContaining({ sent: 0, failed: 1 }),
+      }),
+    );
     errorSpy.mockRestore();
   });
 
@@ -242,6 +264,9 @@ describe('runThankyouSweep', () => {
       expect.stringContaining('blocked'),
       'c1',
     );
+    // Blocked-only tick: no summary alert (would otherwise Slack-spam every
+    // 5-minute tick for a persistently-blocked campaign).
+    expect(sendSlackAlert).not.toHaveBeenCalled();
     errorSpy.mockRestore();
   });
 
@@ -280,5 +305,7 @@ describe('runThankyouSweep', () => {
 
     expect(result).toEqual({ processed: 0, blocked: 0, failed: 0 });
     expect(sendCampaignWhatsApp).not.toHaveBeenCalled();
+    // No activity, no failure → no summary alert.
+    expect(sendSlackAlert).not.toHaveBeenCalled();
   });
 });

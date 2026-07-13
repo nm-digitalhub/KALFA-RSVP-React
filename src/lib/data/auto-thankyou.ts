@@ -2,6 +2,7 @@ import 'server-only';
 
 import { createAdminClient } from '@/lib/supabase/admin';
 import { sendCampaignWhatsApp } from '@/lib/data/outreach';
+import { sendSlackAlert } from '@/lib/alerts/slack';
 import type { Database } from '@/lib/supabase/types';
 
 // The auto-thankyou periodic sweep (docs/plans auto-thankyou-post-event,
@@ -95,6 +96,7 @@ export async function runThankyouSweep(): Promise<{ processed: number; blocked: 
   const dueIds = await listDueThankyouCampaigns(admin);
   let blocked = 0;
   let failed = 0;
+  let totalSent = 0;
   for (const campaignId of dueIds) {
     try {
       const result = await sendCampaignWhatsApp(campaignId, 'thankyou');
@@ -109,6 +111,10 @@ export async function runThankyouSweep(): Promise<{ processed: number; blocked: 
         );
         continue;
       }
+      // `result.sent` counts messages ACCEPTED by Meta at send time; final
+      // delivery / 131049 drops are async (surfaced later via webhooks) and are
+      // NOT reflected in this send-time summary.
+      totalSent += result.sent;
       await markThankyouProcessed(admin, campaignId);
     } catch (err) {
       failed++;
@@ -119,5 +125,25 @@ export async function runThankyouSweep(): Promise<{ processed: number; blocked: 
       );
     }
   }
+
+  // Emit ONE aggregated ops summary — but only when there was real activity or
+  // a hard failure. A blocked-only tick stays the per-campaign console.error
+  // above; alerting on it would Slack-spam every 5-minute tick for a
+  // persistently-blocked campaign. `blocked` is still surfaced in the alert's
+  // fields whenever the alert does fire. Fire-and-forget: sendSlackAlert is
+  // already fail-safe (never throws, bounded timeout) and must never gate the
+  // sweep's control flow.
+  if (totalSent > 0 || failed > 0) {
+    void sendSlackAlert({
+      level: failed > 0 ? 'error' : 'info',
+      category: 'send_health',
+      source: 'thankyou-sweep',
+      title: 'סיכום שליחת תודות',
+      // ids/counts only — NO PII (no guest names/phones).
+      detail: `נשלחו ${totalSent} · חסומות ${blocked} · כשלים ${failed} · קמפיינים ${dueIds.length}`,
+      fields: { sent: totalSent, blocked, failed, campaigns: dueIds.length },
+    });
+  }
+
   return { processed: dueIds.length - blocked - failed, blocked, failed };
 }
