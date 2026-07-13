@@ -13,6 +13,8 @@ import {
   REMOVAL_REQUESTED_LABEL,
   deliveryStatusLabel,
 } from '@/app/(customer)/app/events/[id]/guests/labels';
+import { CAMPAIGN_STATUS_LABELS } from '@/lib/data/event-labels';
+import type { CampaignStatus } from '@/lib/data/campaigns';
 
 type BoundAction = (
   prevState: FormState,
@@ -21,7 +23,7 @@ type BoundAction = (
 
 type Campaign = {
   id: string;
-  status: string;
+  status: CampaignStatus;
   price_per_reached: number | null;
   max_contacts: number | null;
   max_charge_ceiling: number | null;
@@ -43,20 +45,6 @@ type Delivery = {
   delivery: { sent: number; delivered: number; read: number; failed: number };
   outcome: { reached: number; wrongNumber: number; optedOut: number };
 } | null;
-
-const STATUS_LABELS: Record<string, string> = {
-  draft: 'טיוטה',
-  pending_approval: 'ממתין לאישור',
-  approved: 'מאושר',
-  scheduled: 'מתוזמן',
-  active: 'פעיל',
-  paused: 'מושהה',
-  closed: 'נסגר',
-  awaiting_invoice: 'ממתין לחשבון',
-  billed: 'חויב',
-  paid: 'שולם',
-  cancelled: 'בוטל',
-};
 
 function nis(v: number | null | undefined): string {
   return v == null ? '—' : `₪${Number(v).toLocaleString('he-IL')}`;
@@ -295,7 +283,7 @@ export function ManageClient({
         <div className="flex items-center gap-3">
           <span className="text-sm text-muted-foreground">מצב הקמפיין</span>
           <span className="rounded-full border border-border px-3 py-1 text-sm font-semibold">
-            {STATUS_LABELS[s] ?? s}
+            {CAMPAIGN_STATUS_LABELS[s]}
           </span>
         </div>
         {campaign.final_charge_amount != null ? (
