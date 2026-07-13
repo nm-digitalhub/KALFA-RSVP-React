@@ -49,22 +49,35 @@ gate before moving to the next step.
    as the base org migration's backfill block)
    - For every existing `(organization_id, role_id)` pair with ≥1 member,
      copy `role_permissions` rows for that role into
-     `organization_role_permissions`, excluding rows where
-     `permission_definitions.system_protected = true` **and** the role is not
-     the org's owner role.
+     `organization_role_permissions`, excluding rows where:
+     (a) `permission_definitions.system_protected = true` **and** the role is
+     not the org's owner role, **or**
+     (b) `(resource, action) = ('guests','delete')` **and** the role is not
+     the org's owner role — **per adversarial-review Fix 1**: `admin` holds
+     `guests.delete` in the global template today, but that grant is
+     currently inert (`deleteGuest`/`deleteGroup` don't consult
+     `has_org_permission()` yet — see Phase 7). Once Phase 7 wires D4 live,
+     a wholesale copy would silently hand every org's `admin` guest-delete
+     power with zero owner action. This is a **deliberate revoke-with-opt-in
+     decision** (spec §3.9) requiring product-owner sign-off before this
+     phase ships — confirm that sign-off exists before running this step.
    - Verify: `select count(*) from organization_role_permissions;` > 0 (assuming
      orgs+members already exist); spot-check one org's copied rows equal that
-     role's `role_permissions` rows minus the 2 system_protected exclusions
-     (unless it's the owner role).
+     role's `role_permissions` rows minus the `system_protected` exclusions
+     (unless owner) minus `guests.delete` for `admin` specifically (`member`/
+     `viewer` never held `guests.delete` in the template, so no visible change
+     for them — confirm this with a direct query, not just by assumption).
 
 4. **`create_organization()` update**
    - Append: after inserting the owner membership, copy `role_permissions` →
-     `organization_role_permissions` for all 4 roles of the new org (same
-     exclusion rule as step 3).
+     `organization_role_permissions` for all 4 roles of the new org (same two
+     exclusions as step 3, including the `guests.delete` withholding for
+     non-owner roles).
    - Verify: call `create_organization('test')` in a scratch/staging check (not
      against production data — see repo rule against live test events), confirm
      the new org's `organization_role_permissions` row count matches the
-     template's expected count per role.
+     template's expected count per role, and confirm specifically that the new
+     org's `admin` row set does NOT include `guests.delete`.
 
 5. **`is_org_owner(_org_id uuid)`**
    - New SECDEF function per spec §3.5.
@@ -76,24 +89,43 @@ gate before moving to the next step.
 6. **`has_org_permission()` rewrite**
    - `create or replace function` per spec §3.3 (join swapped to
      `organization_role_permissions`, `system_protected` read-time guard added).
-   - Verify: for an org whose backfilled matrix is untouched, every
-     `has_org_permission(org, resource, action)` call returns the **same**
-     boolean as it did before the rewrite, for a representative sample of
-     (role, resource, action) triples across all 4 roles — this is the
-     regression check that the rewrite is behavior-preserving until someone
-     actually edits a matrix cell.
+   - Verify (**corrected per adversarial-review Fix 2 — do NOT assert raw
+     catalog/boolean equality across the board, it's false**): for every
+     `(role, resource, action)` triple **except** the 2 `system_protected`
+     pairs and `guests.delete` on non-owner roles, `has_org_permission(org,
+     resource, action)` returns the **same** boolean pre/post-rewrite. For the
+     2 `system_protected` pairs, confirm the **effective** app behavior is
+     unchanged (`createCampaign`/`approveCampaign` never called
+     `has_org_permission()` either before or after — grep confirms this, see
+     spec §2). For `guests.delete` on `admin`, confirm effective behavior is
+     unchanged too: `deleteGuest`/`deleteGroup` are owner-only before this
+     migration (`requireOwnedEvent`) and `has_org_permission(org,'guests',
+     'delete')` returns `false` for `admin` immediately after (because the
+     backfill withheld the grant, step 3) — i.e., the *result the app acts on*
+     is unchanged even though the *has_org_permission return value itself* is
+     genuinely different from what a naive full-copy backfill would have
+     produced. Write the test to assert the effective/enforced outcome, not
+     table-row equality.
    - Verify: `select has_org_permission(org,'campaigns','create')` is `false`
      for `admin`/`member`/`viewer` even if a row were manually inserted for
      them (test the read-time guard directly, not just the trigger).
 
 7. **Triggers** (created last, per spec §5 step 8, so backfill/seed writes in
-   steps 3–4 don't fire the audit trigger)
+   steps 3–4 don't fire the audit trigger) — **4 triggers, not 3** (Fix 5
+   added the 4th):
    - `org_role_permissions_protect_system` (BEFORE INSERT).
    - `org_role_permissions_protect_owner` (BEFORE DELETE).
+   - `org_role_permissions_no_update` (BEFORE UPDATE) — **added per
+     adversarial-review Fix 5**: without it, a bare `UPDATE` of a row's
+     `role_id`/`permission_id` bypasses both guards above. Unconditionally
+     rejects every `UPDATE` (the app only ever inserts-to-grant or
+     deletes-to-revoke — there is no legitimate `UPDATE` path).
    - `org_role_permissions_audit` (AFTER INSERT/DELETE).
    - Verify: attempt to insert a `(non-owner role, campaigns.create)` row
      directly via SQL → rejected. Attempt to delete an owner-role row directly
-     → rejected. Insert/delete a normal row → one audit row appended each time.
+     → rejected. Attempt any `UPDATE` on an existing row (e.g. changing its
+     `permission_id`) directly via SQL → rejected. Insert/delete a normal row
+     → one audit row appended each time.
 
 8. **RLS**
    - Enable RLS + owner-only SELECT policy (using `is_org_owner`, per spec
@@ -117,16 +149,31 @@ the `system_protected` column present (never hand-edit the generated file).
 
 ## Phase 2 — Companion fix: `whatsapp-import.ts`
 
-- [ ] Change `src/lib/data/whatsapp-import.ts:82` from
-      `.from('role_permissions')` to read `organization_role_permissions`
-      filtered by the caller's actual `(organization_id, role_id)` — same join
-      shape `has_org_permission()` uses, so the two never diverge again.
+- [ ] In `resolveOwnerActiveEvents()` (`whatsapp-import.ts:56-108`), replace the
+      `.from('role_permissions')` query at line 82 **and** the single global
+      `okRoles = new Set(role_id)` filter that follows it — **per
+      adversarial-review Fix 4, the global-role-id-set approach is itself the
+      bug once permissions are per-org**. Query
+      `organization_role_permissions` filtered by both
+      `.in('organization_id', ...)` and `.in('role_id', ...)` (Postgres/
+      PostgREST has no tuple-`IN`, so this is a Cartesian pre-filter), then
+      build a **composite-key** `Set<"organization_id:role_id">` from the
+      result rows and test each membership against that composite key — never
+      a bare `okRoles.has(role_id)`. Exact before/after shown in spec §4;
+      implement verbatim, don't re-derive.
+- [ ] Add a regression test with **two organizations sharing a member on the
+      same global role**, where one org has customized `guests.create` OFF
+      for that role and the other hasn't — assert the routing decision
+      **differs per org** for that member. A test that only exercises a
+      single org cannot catch a regression to the global-set bug (it would
+      still pass), so this two-org shape is required, not optional.
 - [ ] Add/update the regression test covering this file's routing decision for
       an org with a customized (non-default) matrix, proving it reflects the
       customization rather than the frozen template.
 
-**Gate:** existing whatsapp-import tests pass; new test demonstrating
-divergence-detection (matrix customized → routing decision changes) passes.
+**Gate:** existing whatsapp-import tests pass; new two-org composite-key test
+passes; new test demonstrating divergence-detection (matrix customized →
+routing decision changes) passes.
 
 ---
 
@@ -212,14 +259,23 @@ per this repo's UI/RTL requirements.
       `requireEventAccess(eventId, 'guests', 'delete')`.
 - [ ] Confirm this only takes effect once `guests.delete` exists in
       `permission_definitions` and has been granted to at least the owner role
-      in every org's `organization_role_permissions` (should already be true
-      from the Phase 1 backfill, since `guests.delete` already exists in the
-      global catalog and is not `system_protected`).
+      in every org's `organization_role_permissions` (already true from the
+      Phase 1 backfill — owner always keeps every permission, including
+      `guests.delete`).
+- [ ] **Confirm `admin` does NOT have `guests.delete` immediately after this
+      phase ships**, per the Fix-1 backfill exclusion (Phase 1 step 3 /
+      spec §3.9) — this is the specific behavior this whole phase is designed
+      to preserve (no silent escalation). Query
+      `organization_role_permissions` for a representative org's `admin` role
+      and assert the `guests.delete` row is absent.
 - [ ] Update/add tests for `deleteGuest`/`deleteGroup` covering: owner always
-      allowed; a member without `guests.delete` rejected; after the owner
-      grants `guests.delete` to `member`, the **same session** (no re-login)
-      succeeds — this is the concrete instance of the live-revocation
-      integration test described in the spec's §6.
+      allowed; `admin` rejected by default (the Fix-1 case — this must be an
+      explicit test, not just "a member without guests.delete rejected",
+      since `admin` is the role most likely to regress here); a `member`
+      without `guests.delete` rejected; after the owner grants `guests.delete`
+      to `member` (or `admin`), the **same session** (no re-login) succeeds —
+      this is the concrete instance of the live-revocation integration test
+      described in the spec's §6.
 
 **Gate:** focused guest-deletion tests pass; full test suite run.
 
@@ -242,6 +298,33 @@ per this repo's UI/RTL requirements.
 **Gate:** all of the above green before this is considered shippable. Report
 changed files, verification output, and any residual limitations per this
 repo's Definition of Done.
+
+---
+
+## Rollback (if needed after any phase has shipped)
+
+**Corrected per adversarial-review Fix 3 — the original draft's rollback was
+incomplete.** Which pieces need reverting depends on how far the rollout got:
+
+- **If only Phase 1–6 shipped (schema + UI, D4 not yet live in Phase 7):**
+  DB-only rollback suffices — additive migration dropping the 4 triggers,
+  repointing `has_org_permission()` to its exact pre-migration body, reverting
+  `guests_owner_delete`/`gg_owner_delete` back to `owns_event(event_id)`
+  (undo Phase 1 step 8's RLS swap). Leave the new tables in place, unused.
+- **If Phase 7 (the `deleteGuest`/`deleteGroup` app-gate swap) has also
+  shipped:** the DB rollback above and an **app deploy** reverting
+  `deleteGuest`/`deleteGroup` back to `requireOwnedEvent(eventId)` **must
+  land together, in the same rollback window**. Doing only the DB piece
+  would leave the app gate calling `requireEventAccess(...,'guests','delete')`
+  against a `has_org_permission()` that has reverted to reading the frozen
+  `role_permissions` template — under which `admin` **is** granted
+  `guests.delete` (§2) — silently handing every org's `admin` role live
+  guest-delete power, the opposite of what a rollback is supposed to do.
+  Verify immediately after: as an `admin` (not owner), `deleteGuest` is
+  rejected, restoring owner-only deletion.
+- No data loss in either case: `role_permissions` is never dropped or altered
+  structurally; the new tables are left in place (unused) rather than
+  dropped, so a future re-forward-migration doesn't need to re-derive them.
 
 ---
 
