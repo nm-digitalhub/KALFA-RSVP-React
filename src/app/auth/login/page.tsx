@@ -1,6 +1,7 @@
 import Link from 'next/link';
 
 import { LoginForm } from './login-form';
+import { PasskeySignInButton } from './passkey-sign-in-button';
 
 export default function LoginPage() {
   return (
@@ -11,6 +12,14 @@ export default function LoginPage() {
       </div>
 
       <LoginForm />
+
+      <div className="flex items-center gap-3 text-xs text-muted-foreground">
+        <span className="h-px flex-1 bg-border" />
+        או
+        <span className="h-px flex-1 bg-border" />
+      </div>
+
+      <PasskeySignInButton />
 
       <p className="text-center text-sm text-muted-foreground">
         אין לכם חשבון?{' '}

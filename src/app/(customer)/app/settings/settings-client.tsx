@@ -25,6 +25,7 @@ import {
   updateSettingsAction,
 } from './actions';
 import { formatIsraelDate } from '@/lib/date';
+import { PasskeyManager } from './passkey-manager';
 import { PushNotificationManager } from './push-notification-manager';
 
 const inputClass =
@@ -265,6 +266,8 @@ function SecuritySection() {
           <SubmitButton>שליחת קישור</SubmitButton>
         </div>
       </form>
+
+      <PasskeyManager />
     </section>
   );
 }

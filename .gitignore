@@ -59,3 +59,4 @@ storage_state.json
 
 # per-deploy version-skew id (written by npm run deploy)
 /.deploy-id
+*.swp
