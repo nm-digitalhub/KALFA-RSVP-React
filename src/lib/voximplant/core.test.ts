@@ -124,16 +124,16 @@ describe('getTransactionHistory (read-only)', () => {
             result: [
               {
                 transaction_id: 1,
-                transaction_date: '2026-07-01 00:00:00',
-                transaction_type: 'periodic_charge',
+                performed_at: '2026-07-01 00:00:00',
+                transaction_type: 'phone_number_charge',
                 amount: -0.85,
                 currency: 'USD',
-                comment: 'phone number rent',
+                transaction_description: 'phone number rent',
               },
               {
                 transaction_id: 2,
-                transaction_date: '2026-07-05 10:00:00',
-                transaction_type: 'call',
+                performed_at: '2026-07-05 10:00:00',
+                transaction_type: 'resource_charge',
                 amount: -0.12,
                 currency: 'USD',
               },
@@ -152,7 +152,8 @@ describe('getTransactionHistory (read-only)', () => {
     expect(capturedBody.get('from_date')).toBe('2026-06-01 00:00:00');
     expect(capturedBody.get('to_date')).toBe('2026-07-14 00:00:00');
     expect(res.total_count).toBe(2);
-    expect(res.result[0].transaction_type).toBe('periodic_charge');
+    expect(res.result[0].transaction_type).toBe('phone_number_charge');
+    expect(res.result[0].performed_at).toBe('2026-07-01 00:00:00');
     expect(res.result[0].amount).toBeCloseTo(-0.85);
   });
 });

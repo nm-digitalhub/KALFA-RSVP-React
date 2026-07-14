@@ -178,11 +178,8 @@ async function cmdTransactions(
 
   console.log('recent:');
   for (const t of result.slice(0, 25)) {
-    // Some Management API responses omit/rename the date field — print it only
-    // when present rather than a bare "undefined".
-    const date = t.transaction_date ? `${t.transaction_date}  ` : '';
     console.log(
-      `  ${date}${t.transaction_type.padEnd(26)} ${t.amount.toFixed(4)}  ${t.comment ?? ''}`,
+      `  ${t.performed_at}  ${t.transaction_type.padEnd(26)} ${t.amount.toFixed(4)}  ${t.transaction_description ?? ''}`,
     );
   }
 }

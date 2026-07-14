@@ -194,13 +194,17 @@ export function getPhoneNumbers(
 // GetTransactionHistory — READ-ONLY ledger of account debits/credits (to see what
 // the balance is spent on: phone-number rent, call/SMS charges, top-ups, etc.).
 // Amounts follow the API sign convention (charges typically negative). No secrets.
+// Field names per the official TransactionInfoType docs
+// (voximplant.com/docs/references/httpapi/structure/transactioninfotype):
+// the date is `performed_at` (NOT transaction_date) and the text is
+// `transaction_description` (NOT comment).
 export interface TransactionInfo {
   transaction_id: number;
-  transaction_date: string;
+  performed_at: string; // "YYYY-MM-DD HH:mm:ss" in the account's timezone
   transaction_type: string;
   amount: number;
   currency?: string | null;
-  comment?: string | null;
+  transaction_description?: string | null;
 }
 export interface GetTransactionHistoryResponse {
   result: TransactionInfo[];
