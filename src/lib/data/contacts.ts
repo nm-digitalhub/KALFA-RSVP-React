@@ -323,6 +323,28 @@ export async function recordWhatsAppConsent(
   if (error) throw new Error('שמירת ההסכמה לוואטסאפ נכשלה');
 }
 
+// Record channel-specific CALL consent for one contact (caller authorized). The
+// twin of recordWhatsAppConsent for the Voximplant AI-call channel (B1): a single
+// non-null timestamp IS the consent record. Service-role write — `contacts` has
+// SELECT-only owner RLS (contacts_owner_select) + admin-ALL, so owners cannot
+// UPDATE it under RLS; callers MUST verify event access server-side first (the UI
+// action does requireEventAccess; the public-RSVP path stamps it inside the
+// token-bound submit_rsvp DEFINER RPC). Scoped by BOTH id AND event_id — consent
+// is per (event, contact) and never portable across events. Does NOT clear
+// removal_requested or touch the DNC list (independent suppressors).
+export async function recordCallConsent(
+  eventId: string,
+  contactId: string,
+): Promise<void> {
+  const admin = createAdminClient();
+  const { error } = await admin
+    .from('contacts')
+    .update({ call_consent_at: new Date().toISOString() })
+    .eq('id', contactId)
+    .eq('event_id', eventId);
+  if (error) throw new Error('שמירת ההסכמה לשיחה נכשלה');
+}
+
 // Contacts eligible for a WhatsApp send: not removal-requested AND with recorded
 // WhatsApp consent. When a campaignId is given, membership is ADDITIONALLY bound
 // to that campaign's frozen authorized set (campaign_authorized_contacts) via an

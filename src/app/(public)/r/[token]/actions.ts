@@ -66,6 +66,7 @@ export async function submitRsvpAction(
     note: trimmedOrUndefined(formData.get('note')),
     answers: Object.keys(answers).length > 0 ? answers : undefined,
     show_in_guest_list: formData.get('show_in_guest_list') === 'on',
+    call_consent: formData.get('call_consent') === 'on',
   });
   if (!parsed.success) {
     return {

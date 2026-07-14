@@ -255,6 +255,17 @@ export function RsvpForm({
                 />
                 להופיע ברשימת &quot;מי מגיע&quot; — שם פרטי בלבד
               </label>
+
+              <label className="flex items-start gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  name="call_consent"
+                  defaultChecked={guest.call_consent ?? false}
+                  className="mt-0.5 size-4 rounded border-input"
+                />
+                אני מאשר/ת לקבל תזכורת בשיחה טלפונית אוטומטית (מערכת ממוחשבת)
+                למספר זה
+              </label>
             </div>
           ) : null}
 

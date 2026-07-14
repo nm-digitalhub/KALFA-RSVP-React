@@ -16,6 +16,7 @@ import {
   deriveContacts,
   linkGuestContact,
   recordWhatsAppConsent,
+  recordCallConsent,
   listSendableContacts,
   pruneOrphanContact,
   computeCoveredContacts,
@@ -203,6 +204,41 @@ describe('recordWhatsAppConsent', () => {
     expect(payload.whatsapp_consent_at).toBeTruthy();
     expect(builder.eq).toHaveBeenCalledWith('id', 'c1');
     expect(builder.eq).toHaveBeenCalledWith('event_id', 'e1');
+  });
+});
+
+describe('recordCallConsent', () => {
+  it('stamps call_consent_at scoped by id + event', async () => {
+    const { client, builder } = createMockSupabase<{ id: string }>({
+      data: null,
+      error: null,
+    });
+    vi.mocked(createAdminClient).mockReturnValue(
+      client as unknown as ReturnType<typeof createAdminClient>,
+    );
+
+    await recordCallConsent('e1', 'c1');
+
+    const payload = vi.mocked(builder.update).mock.calls[0][0] as Record<
+      string,
+      unknown
+    >;
+    expect(payload.call_consent_at).toBeTruthy();
+    expect(builder.eq).toHaveBeenCalledWith('id', 'c1');
+    expect(builder.eq).toHaveBeenCalledWith('event_id', 'e1');
+  });
+
+  it('throws a Hebrew error when the update fails', async () => {
+    const { client } = createMockSupabase<{ id: string }>({
+      data: null,
+      error: { message: 'update failed' },
+    });
+    vi.mocked(createAdminClient).mockReturnValue(
+      client as unknown as ReturnType<typeof createAdminClient>,
+    );
+    await expect(recordCallConsent('e1', 'c1')).rejects.toThrow(
+      'שמירת ההסכמה לשיחה נכשלה',
+    );
   });
 });
 

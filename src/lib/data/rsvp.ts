@@ -67,6 +67,13 @@ export interface RsvpGuestInfo {
    * get_event_attendees_public RPC.
    */
   show_in_guest_list: boolean;
+  /**
+   * B1: whether the contact behind this guest has recorded CALL consent
+   * (`contacts.call_consent_at is not null`). Boolean ONLY — the RPC never
+   * exposes the contact id/phone. `null` when the guest has no linked contact;
+   * treated as "not consented" by the form pre-check.
+   */
+  call_consent: boolean | null;
   /** Prior answers, already filtered to the currently-enabled questions. */
   answers: Record<string, string>;
 }
@@ -160,6 +167,7 @@ export async function submitRsvp(
     _note: input.note ?? '',
     _answers: (input.answers ?? {}) as Json,
     _show_in_list: input.show_in_guest_list ?? false,
+    _call_consent: input.call_consent ?? false,
   });
   if (error) {
     throw new Error('שליחת אישור ההגעה נכשלה');

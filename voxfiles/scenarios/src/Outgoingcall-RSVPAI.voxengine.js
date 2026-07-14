@@ -29,7 +29,7 @@ VoxEngine.addEventListener(AppEvents.Started, function () {
         try {
             return JSON.stringify(value);
         }
-        catch (e) {
+        catch (_e) {
             return String(value);
         }
     }
@@ -172,7 +172,7 @@ VoxEngine.addEventListener(AppEvents.Started, function () {
             scheduleHangup(call, 2000);
         });
     }
-    function handleVoiceIntent(text, call, asr) {
+    function handleVoiceIntent(text, call, _asr) {
         if (!state.groqKey) {
             log('No Groq key, cannot process voice response');
             call.say('לא הבנתי. אנא לחץ 1 לאישור, 2 לדחייה, או 9 לשמיעה חוזרת.', ttsOptions);

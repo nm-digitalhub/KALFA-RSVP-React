@@ -23,6 +23,25 @@ describe('rsvpSubmitSchema', () => {
     expect(result.success).toBe(true);
   });
 
+  it('parses the optional call_consent opt-in (present true / absent undefined)', () => {
+    const withConsent = rsvpSubmitSchema.safeParse({
+      status: 'attending',
+      adults: 1,
+      kids: 0,
+      call_consent: true,
+    });
+    expect(withConsent.success).toBe(true);
+    expect(withConsent.success && withConsent.data.call_consent).toBe(true);
+
+    const without = rsvpSubmitSchema.safeParse({
+      status: 'attending',
+      adults: 1,
+      kids: 0,
+    });
+    expect(without.success).toBe(true);
+    expect(without.success && without.data.call_consent).toBeUndefined();
+  });
+
   it('rejects a status outside the whitelist', () => {
     const result = rsvpSubmitSchema.safeParse({
       status: 'going',
