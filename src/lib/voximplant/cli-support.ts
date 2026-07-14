@@ -33,6 +33,7 @@ export const KNOWN_FLAGS = new Set([
   'from',
   'confirm',
   'bytes',
+  'raw',
 ]);
 
 // Flags that never take a value (presence = true).
@@ -118,7 +119,7 @@ const ALLOWED_FLAGS: Record<KnownCommand, Set<string>> = {
   transactions: new Set(['key', 'days', 'type']),
   // A manual, one-shot StartScenarios trigger (byte-cap probe). `--confirm` is a
   // mandatory safety interlock — see resolveStartPlan; nothing runs without it.
-  start: new Set(['key', 'rule', 'to', 'from', 'confirm', 'bytes']),
+  start: new Set(['key', 'rule', 'to', 'from', 'confirm', 'bytes', 'raw']),
 };
 
 // Reject any flag that does not belong to the given command (--help is global and
@@ -271,6 +272,10 @@ export interface StartPlan {
   // When set, the synthetic script_custom_data is padded to ~this many UTF-8
   // bytes so the operator can probe exactly where the scenario truncates it.
   targetBytes?: number;
+  // Diagnostic: send this EXACT string as script_custom_data (bypasses the
+  // synthetic payload) — used to isolate whether the delivery problem is size/
+  // encoding vs transport by sending a tiny plain-ASCII value.
+  raw?: string;
 }
 
 // Validate the arguments for `start`. This does NOT place a call — it only
@@ -292,7 +297,8 @@ export function resolveStartPlan(flags: Record<string, FlagValue>): StartPlan {
     flags.bytes !== undefined
       ? positiveInt('bytes', flags.bytes, { max: START_MAX_BYTES })
       : undefined;
-  return { ruleId, to, from, targetBytes };
+  const raw = typeof flags.raw === 'string' ? flags.raw : undefined;
+  return { ruleId, to, from, targetBytes, raw };
 }
 
 // Build a synthetic script_custom_data mirroring the production payload SHAPE
@@ -304,6 +310,10 @@ export function buildStartCustomData(plan: StartPlan): {
   payload: string;
   bytes: number;
 } {
+  // Diagnostic override: send the exact --raw string as script_custom_data.
+  if (plan.raw !== undefined) {
+    return { payload: plan.raw, bytes: Buffer.byteLength(plan.raw, 'utf8') };
+  }
   const base: Record<string, string> = {
     to: plan.to,
     from: plan.from ?? '',

@@ -6,8 +6,9 @@ import type { Database } from '@/lib/supabase/types';
 // Request-FREE service-role DAL for the Voximplant AI-call `call_attempts` table.
 // Imported by the ctx/cb route handlers + the call-result processor (and, later,
 // the outbound trigger). Never logs the access_token, recording_url, or
-// transcript (all sensitive). Identity ALWAYS comes from the server-verified
-// call_attempt_id (from the signed token) — never from client-supplied ids.
+// transcript (all sensitive). Identity ALWAYS comes from a server-side lookup —
+// the attempt id, or (Branch B) the row's opaque access_token — never from
+// client-supplied ids in a callback body.
 
 type CallAttemptRow = Database['public']['Tables']['call_attempts']['Row'];
 type CallAttemptInsert = Database['public']['Tables']['call_attempts']['Insert'];
@@ -78,19 +79,19 @@ export type CallContext = {
   guestFullName: string | null;
 };
 
-// Load the minimal ctx context for a verified call_attempt_id. READ-ONLY (the ctx
-// endpoint never mutates). Returns null when the id matches no row. Never selects
-// PII beyond the guest's display name (no phone, no rsvp_token, no org id).
-export async function getCallContextById(id: string): Promise<CallContext | null> {
-  const admin = createAdminClient();
-  const { data: attempt, error } = await admin
-    .from('call_attempts')
-    .select('id, status, token_expires_at, guest_id, event_id, contact_id')
-    .eq('id', id)
-    .maybeSingle();
-  if (error) throw new Error('טעינת ניסיון השיחה נכשלה');
-  if (!attempt) return null;
+type CallAttemptContextRow = Pick<
+  CallAttemptRow,
+  'id' | 'status' | 'token_expires_at' | 'guest_id' | 'event_id' | 'contact_id'
+>;
+const CTX_SELECT = 'id, status, token_expires_at, guest_id, event_id, contact_id';
 
+// Hydrate the event + guest-name half of a CallContext from an already-loaded
+// attempt row. Shared by the by-id and by-access-token loaders. Never selects PII
+// beyond the guest's display name (no phone, no rsvp_token, no org id).
+async function hydrateCallContext(
+  attempt: CallAttemptContextRow,
+): Promise<CallContext | null> {
+  const admin = createAdminClient();
   const { data: event, error: evErr } = await admin
     .from('events')
     .select('status, name, event_date, venue_name')
@@ -119,6 +120,55 @@ export async function getCallContextById(id: string): Promise<CallContext | null
     },
     guestFullName,
   };
+}
+
+// Load the minimal ctx context for a verified call_attempt_id. READ-ONLY (the ctx
+// endpoint never mutates). Returns null when the id matches no row.
+export async function getCallContextById(id: string): Promise<CallContext | null> {
+  const admin = createAdminClient();
+  const { data: attempt, error } = await admin
+    .from('call_attempts')
+    .select(CTX_SELECT)
+    .eq('id', id)
+    .maybeSingle();
+  if (error) throw new Error('טעינת ניסיון השיחה נכשלה');
+  if (!attempt) return null;
+  return hydrateCallContext(attempt);
+}
+
+// Branch B: the ctx endpoint is authenticated by the row's opaque per-call
+// access_token (128-bit, UNIQUE, unguessable — the same bearer model as
+// guests.rsvp_token), NOT a signed token, so the scenario payload can stay tiny
+// (< 200-byte VoxEngine.customData() cap). Look the attempt up by that token; the
+// route still re-checks expiry, event status, and terminal state on the row.
+export async function getCallContextByAccessToken(
+  accessToken: string,
+): Promise<CallContext | null> {
+  const admin = createAdminClient();
+  const { data: attempt, error } = await admin
+    .from('call_attempts')
+    .select(CTX_SELECT)
+    .eq('access_token', accessToken)
+    .maybeSingle();
+  if (error) throw new Error('טעינת ניסיון השיחה נכשלה');
+  if (!attempt) return null;
+  return hydrateCallContext(attempt);
+}
+
+// Branch B (cb endpoint): resolve the attempt id + expiry from the opaque
+// access_token. Identity for the callback ALWAYS comes from this server-side
+// lookup — never from the POSTed body.
+export async function getCallAttemptByAccessToken(
+  accessToken: string,
+): Promise<{ id: string; token_expires_at: string | null } | null> {
+  const admin = createAdminClient();
+  const { data, error } = await admin
+    .from('call_attempts')
+    .select('id, token_expires_at')
+    .eq('access_token', accessToken)
+    .maybeSingle();
+  if (error) throw new Error('טעינת ניסיון השיחה נכשלה');
+  return data ?? null;
 }
 
 // Full row by id (for the cb processor — identity from the token, never the body).

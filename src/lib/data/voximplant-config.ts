@@ -106,6 +106,26 @@ export async function getVoximplantCallbackSecret(): Promise<string | null> {
   return cfg?.callbackSecret ?? null;
 }
 
+// Just the Groq key (Branch B: served in the ctx response instead of the scenario
+// payload, so it never lands in Voximplant call-history session_custom_data). Read
+// directly from the row so serving it never depends on SA/rule/caller presence.
+// NEVER logged; only returned over the token-gated ctx endpoint. Null if unset.
+export async function getVoximplantGroqKey(): Promise<string | null> {
+  try {
+    const admin = createAdminClient();
+    const { data, error } = await admin
+      .from('app_settings')
+      .select('voximplant_groq_api_key')
+      .eq('id', true)
+      .maybeSingle();
+    if (error || !data) return null;
+    const key = (data as Record<string, unknown>).voximplant_groq_api_key;
+    return typeof key === 'string' && key.trim() !== '' ? key : null;
+  } catch {
+    return null;
+  }
+}
+
 // The env var is now an OPS OVERRIDE / kill switch only: unset (default) lets the
 // admin DB toggle (app_settings.voximplant_live_calls) govern; setting it to the
 // literal 'false' HARD-DISABLES live calls regardless of the DB flag (emergency

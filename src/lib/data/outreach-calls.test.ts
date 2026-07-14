@@ -45,8 +45,7 @@ vi.mock('@/lib/voximplant/core', () => ({
     }
   },
 }));
-vi.mock('@/lib/voximplant/call-token', () => ({ signCallToken: vi.fn(() => 'sig.tok') }));
-vi.mock('@/lib/url', () => ({ getAppUrl: vi.fn(async (p: string) => `https://beta.kalfa.me${p}`) }));
+vi.mock('@/lib/url', () => ({ getAppOrigin: vi.fn(async () => 'https://beta.kalfa.me') }));
 vi.mock('@/lib/alerts/slack', () => ({ sendSlackAlert: vi.fn() }));
 
 import { dispatchOutreachCall, buildScriptCustomData } from './outreach-calls';
@@ -276,9 +275,11 @@ describe('provider outcomes', () => {
 
 describe('payload hygiene', () => {
   it('17a. buildScriptCustomData: valid JSON + Buffer.byteLength(utf8)', () => {
-    const { payload, bytes } = buildScriptCustomData({ to: '+972', from: '972', iid: AID, cb: 'https://x/cb/t', ctx: 'https://x/ctx/t', gk: 'GROQ_SECRET' });
+    const { payload, bytes } = buildScriptCustomData({ to: '+972', from: '972', tok: '0123456789abcdef0123456789abcdef', u: 'https://beta.kalfa.me' });
     expect(() => JSON.parse(payload)).not.toThrow();
     expect(bytes).toBe(Buffer.byteLength(payload, 'utf8'));
+    expect(bytes).toBeLessThan(200); // well under the VoxEngine.customData() 200-byte cap
+    expect(payload).not.toContain('GROQ'); // no key in the payload (Branch B)
   });
   it('17b. no secret (Groq/callbackSecret/privateKey) reaches Slack or console', async () => {
     const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});

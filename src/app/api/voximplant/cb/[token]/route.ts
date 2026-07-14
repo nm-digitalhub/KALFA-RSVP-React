@@ -3,18 +3,18 @@ import { createHash } from 'node:crypto';
 import { NextResponse } from 'next/server';
 
 import { insertWebhookEvents } from '@/lib/data/webhooks';
-import { getVoximplantCallbackSecret } from '@/lib/data/voximplant-config';
+import { getCallAttemptByAccessToken } from '@/lib/data/call-attempts';
 import { getClientIp, rateLimit } from '@/lib/security/rate-limit';
 import type { Database } from '@/lib/supabase/types';
-import { verifyCallToken } from '@/lib/voximplant/call-token';
 import { voxCallbackSchema } from '@/lib/validation/voximplant';
 
 // POST /api/voximplant/cb/{token}
 //
 // The Voximplant RSVP scenario POSTs call results here (recording_started, then a
 // terminal status). Voximplant sends NO signature header and never retries — it
-// only logs the response code — so auth is the signed, purpose='cb', per-call
-// token in the path (verified constant-time). PERSIST-THEN-PROCESS: this route
+// only logs the response code — so auth is the per-call opaque access token in the
+// path (Branch B: the same 128-bit random nonce on the call_attempts row, looked
+// up server-side; identity is the resolved row, never the body). PERSIST-THEN-PROCESS: this route
 // only VERIFIES + PERSISTS (idempotent, into webhook_inbox) and returns fast; the
 // existing 1-minute webhook drain (processWebhookEvent → processCallResult) does
 // the RSVP/billing with received/processed/failed states + retry, so a processing
@@ -50,10 +50,22 @@ export async function POST(
   const declaredLen = Number(req.headers.get('content-length') ?? '0');
   if (Number.isFinite(declaredLen) && declaredLen > MAX_BODY_BYTES) return bad(413);
 
-  const secret = await getVoximplantCallbackSecret();
-  const verified = verifyCallToken(secret, token, 'cb', Math.floor(Date.now() / 1000));
-  if (!verified.ok) return bad(404);
-  const attemptId = verified.callAttemptId;
+  if (typeof token !== 'string' || token.length === 0 || token.length > 256) {
+    return bad(404);
+  }
+  let ref;
+  try {
+    ref = await getCallAttemptByAccessToken(token);
+  } catch {
+    // A real DB error must not reveal itself as anything but the generic 404.
+    return bad(404);
+  }
+  if (!ref) return bad(404);
+  // Reject an expired token (row's token_expires_at is the sole expiry source now).
+  if (!ref.token_expires_at || Date.parse(ref.token_expires_at) <= Date.now()) {
+    return bad(404);
+  }
+  const attemptId = ref.id;
 
   const raw = await req.text();
   if (Buffer.byteLength(raw) > MAX_BODY_BYTES) return bad(413);

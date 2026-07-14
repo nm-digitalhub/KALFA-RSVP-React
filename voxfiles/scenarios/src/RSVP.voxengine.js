@@ -301,17 +301,26 @@ VoxEngine.addEventListener(AppEvents.Started, function () {
         VoxEngine.terminate();
         return;
     }
+    // Branch B: the payload is tiny ({to, from, tok, u}) — well under VoxEngine's
+    // 200-byte customData() cap. The opaque per-call access token (tok) + app
+    // origin (u) are all the scenario needs; it builds the ctx/cb URLs itself and
+    // fetches the Groq key from the ctx response (never in customData, so it never
+    // lands in Voximplant call history).
     state.to = customData.to || '';
     state.from = customData.from || '';
-    state.invitationId = customData.iid || null;
-    state.callbackUrl = customData.cb || '';
-    state.contextUrl = customData.ctx || '';
-    state.groqKey = customData.gk || '';
-    if (!state.to || !state.from || !state.invitationId || !state.callbackUrl || !state.contextUrl) {
+    var appOrigin = customData.u || '';
+    var accessToken = customData.tok || '';
+    // Identity for every callback comes from the URL-path token resolved
+    // server-side — the scenario no longer knows the attempt id, so it never
+    // asserts one (invitation_id stays null and is ignored by the cb route).
+    state.invitationId = null;
+    if (!state.to || !state.from || !appOrigin || !accessToken) {
         log('Missing required fields in customData: ' + safeStringify(customData));
         VoxEngine.terminate();
         return;
     }
+    state.callbackUrl = appOrigin + '/api/voximplant/cb/' + accessToken;
+    state.contextUrl = appOrigin + '/api/voximplant/ctx/' + accessToken;
     // Remote hangup — POST to media_session_access_url from Kalfa backend
     // (triggered by /dashboard/calling "Hang up" button).
     VoxEngine.addEventListener(AppEvents.HttpRequest, function (ev) {
@@ -337,6 +346,9 @@ VoxEngine.addEventListener(AppEvents.Started, function () {
                 state.eventName = normalizeForSpeech(ctx.event_name || '');
                 state.eventDate = normalizeForSpeech(ctx.event_date || '');
                 state.eventVenue = normalizeForSpeech(ctx.event_venue || '');
+                // Branch B: the Groq key is delivered here (token-gated), not in
+                // customData, so it never appears in call-history custom data.
+                state.groqKey = ctx.groq_key || '';
             }
             catch (err) {
                 log('Context parse error: ' + err);

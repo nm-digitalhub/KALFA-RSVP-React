@@ -2,22 +2,23 @@ import { createHash } from 'node:crypto';
 
 import { NextResponse } from 'next/server';
 
-import { getCallContextById } from '@/lib/data/call-attempts';
-import { getVoximplantCallbackSecret } from '@/lib/data/voximplant-config';
+import { getCallContextByAccessToken } from '@/lib/data/call-attempts';
+import { getVoximplantGroqKey } from '@/lib/data/voximplant-config';
 import { formatIsraelSpokenDate } from '@/lib/date';
 import { getClientIp, rateLimit } from '@/lib/security/rate-limit';
-import { verifyCallToken } from '@/lib/voximplant/call-token';
 
 // GET /api/voximplant/ctx/{token}
 //
 // The Voximplant RSVP scenario fetches this once at call start (plain GET, no
-// custom headers) to voice the invitation. Auth is the signed, purpose='ctx',
-// per-call token in the path (verified in constant time against the callback
-// secret) — NOT a session, NOT a guessable id. READ-ONLY: never mutates. Every
-// failure returns an identical generic 404 so a caller cannot learn whether a
-// given guest/event/token exists (privacy-safe, like /r/[token] and /g/[token]).
-// Returns ONLY the four fields the scenario needs — never phone, rsvp_token,
-// org id, or any other internal data.
+// custom headers) to voice the invitation. Auth is the per-call opaque access
+// token in the path (Branch B: the same 128-bit random nonce stored on the
+// call_attempts row and sent in the scenario payload) — NOT a session, NOT a
+// guessable id. READ-ONLY: never mutates. Every failure returns an identical
+// generic 404 so a caller cannot learn whether a given guest/event/token exists
+// (privacy-safe, like /r/[token] and /g/[token]). Returns ONLY the fields the
+// scenario needs — the four invitation fields plus the Groq key (Branch B moved
+// the key OUT of the scenario payload so it never lands in Voximplant call
+// history). Never returns phone, rsvp_token, org id, or any other internal data.
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -44,18 +45,22 @@ export async function GET(
     return new NextResponse(null, { status: 429 });
   }
 
-  const secret = await getVoximplantCallbackSecret();
-  const verified = verifyCallToken(secret, token, 'ctx', Math.floor(Date.now() / 1000));
-  if (!verified.ok) return notFound();
+  if (typeof token !== 'string' || token.length === 0 || token.length > 256) {
+    return notFound();
+  }
 
   let ctx;
   try {
-    ctx = await getCallContextById(verified.callAttemptId);
+    ctx = await getCallContextByAccessToken(token);
   } catch {
     // A real DB error must not reveal itself as anything but the generic 404.
     return notFound();
   }
   if (!ctx) return notFound();
+
+  // Reject an expired token (the row's token_expires_at is the sole expiry source
+  // now that the bearer is the opaque access token, not a self-describing JWT).
+  if (Date.parse(ctx.attempt.token_expires_at) <= Date.now()) return notFound();
 
   // The call must be for an ACTIVE event and an attempt that has not already
   // reached a terminal state (a ctx fetch on a finished call is anomalous).
@@ -63,6 +68,12 @@ export async function GET(
   if (ctx.event.status !== 'active' || terminal.includes(ctx.attempt.status)) {
     return notFound();
   }
+
+  // Groq key for the scenario's ASR→LLM step. Served here (token-gated) instead of
+  // in the scenario payload so it never appears in Voximplant call history. Absent
+  // key → 404 (a call with no key cannot run its dialogue; fail generic).
+  const groqKey = await getVoximplantGroqKey();
+  if (!groqKey) return notFound();
 
   // First name only for the greeting (the scenario's normalizeForSpeech handles
   // the rest). Never leak the full contact/guest record.
@@ -75,5 +86,6 @@ export async function GET(
     event_name: ctx.event.name ?? '',
     event_date: formatIsraelSpokenDate(ctx.event.event_date ?? ''),
     event_venue: ctx.event.venue_name ?? '',
+    groq_key: groqKey,
   });
 }

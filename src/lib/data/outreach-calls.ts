@@ -2,7 +2,7 @@ import 'server-only';
 
 import { randomBytes } from 'node:crypto';
 
-import { getAppUrl } from '@/lib/url';
+import { getAppOrigin } from '@/lib/url';
 import { sendSlackAlert } from '@/lib/alerts/slack';
 import { getOutreachEnabled } from '@/lib/data/outreach-config';
 import { getVoximplantConfig } from '@/lib/data/voximplant-config';
@@ -22,7 +22,6 @@ import {
   isDncListed,
 } from '@/lib/data/outreach-engine';
 import { getGuestsForContact, insertInteraction, setContactOpStatus } from '@/lib/data/interactions';
-import { signCallToken } from '@/lib/voximplant/call-token';
 import {
   getAccountInfo,
   startScenarios,
@@ -32,10 +31,13 @@ import {
 import type { OutreachCallRequest } from '@/lib/queue/queues';
 
 // Stage 3 — the outbound AI-call dispatcher. Consumed by worker/main.ts's
-// QUEUES.callRequest handler. Branch A, DARK-SAFE: no live call is EVER placed
-// unless getVoximplantLiveEnabled() is true, independent of whether credentials
-// are configured. Request-FREE (service-role only) so the worker bundle can
-// import it. NEVER logs the token, Groq key, or the full payload — only ids/bytes.
+// QUEUES.callRequest handler. Branch B, DARK-SAFE: no live call is EVER placed
+// unless config.liveCallsEnabled is true, independent of whether credentials are
+// configured. Request-FREE (service-role only) so the worker bundle can import it.
+// The scenario payload carries ONLY {to, from, tok, u} — an opaque per-call access
+// token and the app origin; the Groq key is served by the token-gated ctx endpoint
+// instead (never in call history). NEVER logs the token or the full payload —
+// only ids/bytes.
 
 const CALL_TOKEN_TTL_SEC = 2 * 60 * 60; // matches call_attempts.token_expires_at intent (created_at + 2h)
 const BALANCE_TIMEOUT_MS = 10_000;
@@ -51,24 +53,26 @@ export type CallDispatchResult =
   | { kind: 'failed_to_start'; attemptId: string; code: number | null }
   | { kind: 'start_unknown'; attemptId: string };
 
-// Single source of truth for the scenario payload. Returns the JSON AND its exact
-// UTF-8 byte length so callers log ONLY the byte count — never the payload, the
-// signed tokens embedded in cb/ctx, or the Groq key.
+// Single source of truth for the scenario payload (Branch B). Returns the JSON AND
+// its exact UTF-8 byte length so callers log ONLY the byte count — never the token.
+// The payload is deliberately tiny (~110 B, well under VoxEngine.customData()'s
+// 200-byte cap) and carries NO secrets: the scenario builds the ctx/cb URLs from
+// {u}/api/voximplant/{ctx,cb}/{tok} and fetches the Groq key from the ctx endpoint.
+//   to  — normalized destination E.164
+//   from— verified caller id
+//   tok — opaque per-call access token (call_attempts.access_token)
+//   u   — app origin (scheme+host) for building the ctx/cb URLs
 export function buildScriptCustomData(args: {
   to: string;
   from: string;
-  iid: string;
-  cb: string;
-  ctx: string;
-  gk: string;
+  tok: string;
+  u: string;
 }): { payload: string; bytes: number } {
   const payload = JSON.stringify({
     to: args.to,
     from: args.from,
-    iid: args.iid,
-    cb: args.cb,
-    ctx: args.ctx,
-    gk: args.gk,
+    tok: args.tok,
+    u: args.u,
   });
   return { payload, bytes: Buffer.byteLength(payload, 'utf8') };
 }
@@ -173,8 +177,9 @@ export async function dispatchOutreachCall(
 
   // 7. ATOMIC create — the ONLY concurrency mechanism (INSERT ... ON CONFLICT DO
   //    NOTHING against UNIQUE(campaign,contact,touchpoint); never read-then-insert).
-  //    access_token here is only a DB nonce satisfying the NOT NULL UNIQUE column —
-  //    the URL bearer is the separate signed HMAC token minted below.
+  //    access_token is the opaque per-call bearer (Branch B): it satisfies the NOT
+  //    NULL UNIQUE column AND is sent to the scenario as `tok` — the ctx/cb
+  //    endpoints authenticate by looking this value up server-side.
   const accessToken = randomBytes(16).toString('hex');
   const tokenExpiresAt = new Date(Date.now() + CALL_TOKEN_TTL_SEC * 1000).toISOString();
   const created = await createCallAttempt({
@@ -208,21 +213,16 @@ export async function dispatchOutreachCall(
   }
   const attemptId = created.id;
 
-  // 8. Mint per-call, per-purpose signed tokens + build the ctx/cb URLs.
-  const expiresAtSec = Math.floor(Date.now() / 1000) + CALL_TOKEN_TTL_SEC;
-  const ctxToken = signCallToken(config.callbackSecret, { callAttemptId: attemptId, purpose: 'ctx', expiresAtSec });
-  const cbToken = signCallToken(config.callbackSecret, { callAttemptId: attemptId, purpose: 'cb', expiresAtSec });
-  const ctxUrl = await getAppUrl(`/api/voximplant/ctx/${ctxToken}`);
-  const cbUrl = await getAppUrl(`/api/voximplant/cb/${cbToken}`);
+  // 8. Resolve the app origin — the scenario builds the ctx/cb URLs from it +
+  //    the opaque access token (Branch B). No signed token, no key in the payload.
+  const origin = await getAppOrigin();
 
   // 9. Assemble the payload (single source of truth) — log ONLY the byte count.
   const { payload, bytes } = buildScriptCustomData({
     to: normalizedPhone,
     from: config.callerId,
-    iid: attemptId,
-    cb: cbUrl,
-    ctx: ctxUrl,
-    gk: config.groqApiKey,
+    tok: accessToken,
+    u: origin,
   });
   console.log('[outreach-calls] dispatching', { campaignId, contactId, attemptId, payloadBytes: bytes });
 

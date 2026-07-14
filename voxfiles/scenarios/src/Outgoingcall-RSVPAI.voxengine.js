@@ -268,17 +268,24 @@ VoxEngine.addEventListener(AppEvents.Started, function () {
         VoxEngine.terminate();
         return;
     }
+    // Branch B: tiny payload ({to, from, tok, u}) under the 200-byte customData()
+    // cap. Build the ctx/cb URLs from the app origin + opaque per-call token; the
+    // Groq key arrives in the ctx response, never in customData (so it never lands
+    // in Voximplant call history).
     state.to = customData.to || '';
     state.from = customData.from || '';
-    state.invitationId = customData.iid || null;
-    state.callbackUrl = customData.cb || '';
-    state.contextUrl = customData.ctx || '';
-    state.groqKey = customData.gk || '';
-    if (!state.to || !state.from || !state.invitationId || !state.callbackUrl || !state.contextUrl) {
+    var appOrigin = customData.u || '';
+    var accessToken = customData.tok || '';
+    // Identity for callbacks comes from the URL-path token (server-resolved); the
+    // scenario no longer knows the attempt id, so invitation_id stays null.
+    state.invitationId = null;
+    if (!state.to || !state.from || !appOrigin || !accessToken) {
         log('Missing required fields in customData: ' + safeStringify(customData));
         VoxEngine.terminate();
         return;
     }
+    state.callbackUrl = appOrigin + '/api/voximplant/cb/' + accessToken;
+    state.contextUrl = appOrigin + '/api/voximplant/ctx/' + accessToken;
     Net.httpRequestAsync(state.contextUrl).then(function (response) {
         log('Context response: ' + response.code + ' ' + response.text);
         if (response.code === 200 && response.text) {
@@ -288,6 +295,8 @@ VoxEngine.addEventListener(AppEvents.Started, function () {
                 state.eventName = normalizeForSpeech(ctx.event_name || '');
                 state.eventDate = normalizeForSpeech(ctx.event_date || '');
                 state.eventVenue = normalizeForSpeech(ctx.event_venue || '');
+                // Branch B: Groq key delivered here (token-gated), not in customData.
+                state.groqKey = ctx.groq_key || '';
             }
             catch (err) {
                 log('Context parse error: ' + err);
