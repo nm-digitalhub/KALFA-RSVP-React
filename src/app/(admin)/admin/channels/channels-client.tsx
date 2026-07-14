@@ -209,9 +209,9 @@ function OutreachMasterSwitch({
   return (
     <form
       action={action}
-      className="flex items-center justify-between gap-4 rounded-lg border border-border bg-card p-4"
+      className="flex flex-col gap-4 rounded-lg border border-border bg-card p-4 sm:flex-row sm:items-center sm:justify-between"
     >
-      <div className="space-y-1">
+      <div className="min-w-0 space-y-1">
         <p className="text-sm font-semibold">מתג פנייה ראשי (כל הערוצים)</p>
         <p className="text-xs text-muted-foreground">
           מפעיל שליחות/שיחות חיות בכל ערוץ מוגדר. שיחות Voximplant דורשות בנוסף
@@ -220,7 +220,7 @@ function OutreachMasterSwitch({
         <FormError message={state?.error} />
         <FormNotice message={state?.notice} />
       </div>
-      <div className="flex items-center gap-3">
+      <div className="flex shrink-0 items-center justify-end gap-3">
         <label className="inline-flex cursor-pointer items-center gap-2 text-sm font-medium">
           <input
             type="checkbox"
@@ -231,7 +231,7 @@ function OutreachMasterSwitch({
           />
           מופעל
         </label>
-        <SubmitButton>עדכון</SubmitButton>
+        <SubmitButton className="w-auto">עדכון</SubmitButton>
       </div>
     </form>
   );
