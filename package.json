@@ -16,6 +16,7 @@
     "pm2:logs": "pm2 logs kalfa-beta --lines 100",
     "lint": "eslint",
     "worker:deps": "depcruise --config .dependency-cruiser.cjs worker/main.ts",
+    "sync:voximplant-sa": "esbuild scripts/sync-voximplant-sa.ts --bundle --platform=node --format=cjs --target=node20 --outfile=dist/sync-voximplant-sa.cjs --tsconfig=tsconfig.json --alias:server-only=./worker/empty.js --alias:next/headers=./worker/empty.js --alias:next/navigation=./worker/empty.js --alias:next/cache=./worker/empty.js --external:pg-native && node --env-file=.env.local dist/sync-voximplant-sa.cjs",
     "pretest": "env -u npm_config_global_ignore_file npm run worker:deps",
     "test": "vitest run",
     "test:watch": "vitest",
