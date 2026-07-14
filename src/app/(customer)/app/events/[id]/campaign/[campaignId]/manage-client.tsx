@@ -44,6 +44,7 @@ type Delivery = {
   totalContacts: number;
   delivery: { sent: number; delivered: number; read: number; failed: number };
   outcome: { reached: number; wrongNumber: number; optedOut: number };
+  call: { dialed: number; noAnswer: number; voicemail: number; humanInteraction: number };
 } | null;
 
 function nis(v: number | null | undefined): string {
@@ -130,7 +131,9 @@ function DeliveryBar({
 // contact) + contact outcomes (reached/wrong-number/opt-out), all from inbound
 // Meta signals. Hidden until the campaign has contacts (deliberate empty state).
 function DeliveryBreakdown({ delivery }: { delivery: NonNullable<Delivery> }) {
-  const { totalContacts, delivery: d, outcome } = delivery;
+  const { totalContacts, delivery: d, outcome, call } = delivery;
+  const hasCalls =
+    call.dialed + call.noAnswer + call.voicemail + call.humanInteraction > 0;
   return (
     <section className="space-y-4 border-t border-border pt-4">
       <div>
@@ -161,6 +164,24 @@ function DeliveryBreakdown({ delivery }: { delivery: NonNullable<Delivery> }) {
           </div>
         </div>
       </div>
+
+      {/* AI-call family — shown only when the campaign has real call activity so
+          a WhatsApp-only campaign doesn't render an empty call block. Counts
+          only; recording links are admin-only (§1F), never surfaced to owners. */}
+      {hasCalls ? (
+        <div className="space-y-3">
+          <p className="text-xs font-medium text-muted-foreground">שיחות AI</p>
+          <div className="grid grid-cols-2 gap-3">
+            <Stat label={OP_STATUS_LABELS.call_dialed} value={String(call.dialed)} />
+            <Stat label={OP_STATUS_LABELS.no_answer} value={String(call.noAnswer)} />
+            <Stat label={OP_STATUS_LABELS.voicemail} value={String(call.voicemail)} />
+            <Stat
+              label={OP_STATUS_LABELS.human_interaction_call}
+              value={String(call.humanInteraction)}
+            />
+          </div>
+        </div>
+      ) : null}
     </section>
   );
 }

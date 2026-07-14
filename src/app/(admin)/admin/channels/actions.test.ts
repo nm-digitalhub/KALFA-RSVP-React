@@ -9,6 +9,17 @@ vi.mock('@/lib/data/admin/channels', () => ({
   updateWhatsAppChannelConfig: vi.fn(),
   testWhatsAppConnection: vi.fn(),
 }));
+// actions.ts now also imports the Voximplant channel + outreach-master DALs
+// (both `server-only`). Stub them so importing './actions' doesn't pull the
+// server-only guard into this Node test suite.
+vi.mock('@/lib/data/admin/voximplant-channel', () => ({
+  updateVoximplantChannelConfig: vi.fn(),
+  testVoximplantConnection: vi.fn(),
+}));
+vi.mock('@/lib/data/admin/outreach-master', () => ({
+  getOutreachMasterState: vi.fn(),
+  setOutreachEnabled: vi.fn(),
+}));
 
 import { updateWhatsAppChannelConfig } from '@/lib/data/admin/channels';
 import { updateWhatsAppChannelAction } from './actions';

@@ -204,6 +204,38 @@ export async function recordRsvpFromCall(
   }
 }
 
+// --- Rate-limit counters (H1) ------------------------------------------------
+
+// Durable (DB) counters backing the concurrency + hourly-per-campaign caps.
+// A per-process rate limiter is not sufficient (multiple workers / restarts),
+// so these count real rows. The active set is the exact non-terminal set of
+// call_attempts_stale_idx. head:true + count:'exact' → COUNT(*), no row payload.
+export async function countActiveCalls(): Promise<number> {
+  const admin = createAdminClient();
+  const { count, error } = await admin
+    .from('call_attempts')
+    .select('id', { count: 'exact', head: true })
+    .in('status', PRE_TERMINAL as unknown as string[]);
+  if (error) throw new Error('count_active_failed');
+  return count ?? 0;
+}
+
+// Count attempts created for one campaign since an ISO cutoff (the rolling
+// 1-hour window for the per-campaign hourly cap).
+export async function countCampaignCallsSince(
+  campaignId: string,
+  sinceIso: string,
+): Promise<number> {
+  const admin = createAdminClient();
+  const { count, error } = await admin
+    .from('call_attempts')
+    .select('id', { count: 'exact', head: true })
+    .eq('campaign_id', campaignId)
+    .gte('created_at', sinceIso);
+  if (error) throw new Error('count_campaign_failed');
+  return count ?? 0;
+}
+
 // --- Outbound-trigger (Stage 3) helpers --------------------------------------
 
 // The full row for a (campaign, contact, touchpoint) — used by the dispatcher to

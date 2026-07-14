@@ -69,7 +69,6 @@ describe('updateWhatsAppChannelConfig', () => {
   it('persists the toggle + maps empty strings to null (intentional unset)', async () => {
     const { builder } = mock(null);
     await updateWhatsAppChannelConfig({
-      outreach_enabled: true,
       whatsapp_phone_number_id: 'PNID',
       whatsapp_waba_id: 'WABA123',
       whatsapp_access_token: 'TOK',
@@ -80,7 +79,6 @@ describe('updateWhatsAppChannelConfig', () => {
       string,
       unknown
     >;
-    expect(payload.outreach_enabled).toBe(true);
     expect(payload.whatsapp_phone_number_id).toBe('PNID');
     expect(payload.whatsapp_waba_id).toBe('WABA123');
     expect(payload.whatsapp_app_secret).toBeNull();

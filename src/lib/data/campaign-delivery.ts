@@ -36,12 +36,25 @@ export type CampaignDeliveryBreakdown = {
     wrongNumber: number; // op_status = 'wrong_number'
     optedOut: number; // removal_requested = true (independent of op_status)
   };
+  // AI-call family — tallied from the SAME contacts.op_status, one bucket per
+  // terminal/near-terminal call state. Owners see counts only; the recording
+  // link is admin-only (never surfaced here).
+  call: {
+    dialed: number; // op_status = 'call_dialed'
+    noAnswer: number; // op_status = 'no_answer'
+    voicemail: number; // op_status = 'voicemail'
+    humanInteraction: number; // op_status = 'human_interaction_call'
+  };
 };
 
 // Enum-typed constants so a renamed contact_op_status value becomes a compile
 // error here rather than a silently-miscounted bucket.
 const REACHED: OpStatus = 'reached_billed';
 const WRONG_NUMBER: OpStatus = 'wrong_number';
+const CALL_DIALED: OpStatus = 'call_dialed';
+const CALL_NO_ANSWER: OpStatus = 'no_answer';
+const CALL_VOICEMAIL: OpStatus = 'voicemail';
+const CALL_HUMAN: OpStatus = 'human_interaction_call';
 
 // Pure aggregation — kept separate from the fetch so it is unit-testable without a
 // database. `interactions` are the campaign's OUTBOUND rows; `contacts` are the
@@ -94,13 +107,18 @@ export function aggregateDeliveryBreakdown(
   }
 
   const outcome = { reached: 0, wrongNumber: 0, optedOut: 0 };
+  const call = { dialed: 0, noAnswer: 0, voicemail: 0, humanInteraction: 0 };
   for (const c of contacts) {
     if (c.removal_requested) outcome.optedOut += 1;
     if (c.op_status === REACHED) outcome.reached += 1;
     else if (c.op_status === WRONG_NUMBER) outcome.wrongNumber += 1;
+    if (c.op_status === CALL_DIALED) call.dialed += 1;
+    else if (c.op_status === CALL_NO_ANSWER) call.noAnswer += 1;
+    else if (c.op_status === CALL_VOICEMAIL) call.voicemail += 1;
+    else if (c.op_status === CALL_HUMAN) call.humanInteraction += 1;
   }
 
-  return { totalContacts: contacts.length, delivery, outcome };
+  return { totalContacts: contacts.length, delivery, outcome, call };
 }
 
 // Owner-gated reader. Returns null only when the campaign isn't visible to the

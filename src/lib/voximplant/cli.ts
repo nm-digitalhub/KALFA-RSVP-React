@@ -10,6 +10,7 @@
  *   npm run voximplant -- rules --app <applicationId>
  *   npm run voximplant -- history --app <id> [--days 120] [--output file.csv]
  *   npm run voximplant -- history --history-id <id> [--output file.csv] [--force]
+ *   npm run voximplant -- start --rule <id> --to <number> [--bytes n] --confirm  (PLACES A REAL CALL)
  *
  * Credentials: `--key <path>`, env VOX_CI_CREDENTIALS, or ./vox_ci_credentials.json
  * (all gitignored). The private key is only ever read from disk — never printed.
@@ -31,9 +32,11 @@ import {
   getCallHistoryAsync,
   getHistoryReports,
   getRules,
+  startScenarios,
 } from './core';
 import {
   assertKnownCommand,
+  buildStartCustomData,
   CliError,
   fetchReportWhenReady,
   helpText,
@@ -41,6 +44,7 @@ import {
   positiveInt,
   resolveHistoryPlan,
   resolveKeyPath,
+  resolveStartPlan,
   summarizeIntoLines,
   validateCommandFlags,
   writeReportAtomic,
@@ -199,6 +203,42 @@ async function cmdHistory(
   emit(csv, plan);
 }
 
+// MANUAL, GUARDED one-shot StartScenarios trigger — the ONLY path in this repo
+// that intentionally places a live call. It is reachable solely by running
+// `start --confirm` at the terminal: resolveStartPlan() throws unless --confirm
+// is present, so no test, default invocation, or other command can ever reach
+// the startScenarios() call below. Never print the payload (byte count only).
+async function cmdStart(
+  cfg: VoximplantConfig,
+  flags: Record<string, FlagValue>,
+): Promise<void> {
+  const plan = resolveStartPlan(flags); // throws without --confirm
+  const { payload, bytes } = buildStartCustomData(plan);
+  console.log('=== StartScenarios — LIVE CALL (byte-cap probe) ===');
+  console.log(`rule_id                 : ${plan.ruleId}`);
+  console.log(`to                      : ${plan.to}`);
+  if (plan.from) console.log(`from                    : ${plan.from}`);
+  console.log(`script_custom_data bytes: ${bytes}`); // count only — never the payload
+  const resp = await startScenarios(
+    cfg,
+    { rule_id: plan.ruleId, script_custom_data: payload },
+    30_000,
+  );
+  console.log(`result                  : ${resp.result}`);
+  console.log(
+    `call_session_history_id : ${resp.call_session_history_id ?? '(none)'}`,
+  );
+  if (resp.result !== 1 || !resp.call_session_history_id) {
+    throw new CliError(
+      'StartScenarios did not confirm a started call (result !== 1 or missing call_session_history_id)',
+    );
+  }
+  console.log(
+    'next: `npm run voximplant -- history --app <id>` and inspect ' +
+      'call_session_history_custom_data to verify whether the full payload arrived.',
+  );
+}
+
 async function dispatch(
   command: KnownCommand,
   cfg: VoximplantConfig,
@@ -211,6 +251,8 @@ async function dispatch(
       return cmdRules(cfg, flags);
     case 'history':
       return cmdHistory(cfg, flags);
+    case 'start':
+      return cmdStart(cfg, flags);
   }
 }
 

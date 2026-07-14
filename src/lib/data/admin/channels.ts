@@ -48,7 +48,8 @@ export async function getWhatsAppChannelConfig(): Promise<WhatsAppChannelConfig>
 }
 
 export type UpdateWhatsAppChannelInput = {
-  outreach_enabled: boolean;
+  // NOTE: no `outreach_enabled` here — the shared global master switch is written
+  // ONLY by the hoisted outreach-master action, never by this channel DAL.
   whatsapp_phone_number_id: string;
   whatsapp_waba_id: string;
   whatsapp_access_token: string;
@@ -64,7 +65,6 @@ export async function updateWhatsAppChannelConfig(
   const { error } = await supabase
     .from('app_settings')
     .update({
-      outreach_enabled: input.outreach_enabled,
       whatsapp_phone_number_id: input.whatsapp_phone_number_id || null,
       whatsapp_waba_id: input.whatsapp_waba_id || null,
       whatsapp_access_token: input.whatsapp_access_token || null,

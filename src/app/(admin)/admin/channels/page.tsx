@@ -1,4 +1,6 @@
 import { getWhatsAppChannelConfig } from '@/lib/data/admin/channels';
+import { getVoximplantChannelConfig } from '@/lib/data/admin/voximplant-channel';
+import { getOutreachMasterState } from '@/lib/data/admin/outreach-master';
 import { getAppUrl } from '@/lib/url';
 import { PageHeading } from '../_components';
 import { ChannelsClient } from './channels-client';
@@ -10,7 +12,11 @@ const sectionClass = 'space-y-4 rounded-lg border border-border bg-card p-5';
 // channel turns on live, paid sends — the master switch is `outreach_enabled`.
 export default async function AdminChannelsPage() {
   const whatsapp = await getWhatsAppChannelConfig();
+  const voximplant = await getVoximplantChannelConfig();
+  const master = await getOutreachMasterState(); // the single global switch
   const callbackUrl = await getAppUrl('/api/webhooks/whatsapp');
+  const voxCtxBase = await getAppUrl('/api/voximplant/ctx'); // reference base — live URL appends a per-call signed token
+  const voxCbBase = await getAppUrl('/api/voximplant/cb');
 
   return (
     <div className="space-y-6">
@@ -25,7 +31,15 @@ export default async function AdminChannelsPage() {
             נבדק.
           </p>
         </div>
-        <ChannelsClient whatsapp={whatsapp} callbackUrl={callbackUrl} />
+        <ChannelsClient
+          whatsapp={whatsapp}
+          callbackUrl={callbackUrl}
+          voximplant={voximplant}
+          voxCtxBase={voxCtxBase}
+          voxCbBase={voxCbBase}
+          outreachEnabled={master.enabled}
+          anyChannelReady={master.anyChannelReady}
+        />
       </section>
     </div>
   );

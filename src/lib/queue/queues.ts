@@ -12,6 +12,14 @@ export const QUEUES = {
   // tick that reads fresh DB state, not a per-campaign delayed job. See
   // src/lib/data/auto-thankyou.ts.
   thankyouSweep: 'campaign-thankyou-sweep',
+  // Voximplant balance-alert cron (H2) — every 30m poll GetAccountInfo and Slack
+  // when balance dips below reserve/low-threshold. Read-only; never dials. Inert
+  // while VOXIMPLANT_LIVE_CALLS is off. See src/lib/data/voximplant-balance.ts.
+  balanceCheck: 'voximplant-balance-check',
+  // Voximplant stuck-row reconciler (H3) — every 10m alert (ONLY) on pre-terminal
+  // call_attempts older than 15m. NEVER re-issues StartScenarios. See
+  // src/lib/data/voximplant-reconcile.ts.
+  callReconcile: 'voximplant-call-reconcile',
 } as const;
 
 // outreach-step retry policy: a few backed-off retries, then dead-letter. The

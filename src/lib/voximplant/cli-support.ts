@@ -27,10 +27,16 @@ export const KNOWN_FLAGS = new Set([
   'force',
   'timeout-seconds',
   'poll-interval-seconds',
+  // `start` subcommand (manual, guarded — places a REAL call)
+  'rule',
+  'to',
+  'from',
+  'confirm',
+  'bytes',
 ]);
 
 // Flags that never take a value (presence = true).
-const BOOLEAN_FLAGS = new Set(['help', 'force']);
+const BOOLEAN_FLAGS = new Set(['help', 'force', 'confirm']);
 
 export type FlagValue = string | true;
 export interface ParsedArgs {
@@ -82,7 +88,7 @@ export function parseArgs(argv: string[]): ParsedArgs {
 // Commands + per-command flag validation
 // ---------------------------------------------------------------------------
 
-export const KNOWN_COMMANDS = ['account', 'rules', 'history'] as const;
+export const KNOWN_COMMANDS = ['account', 'rules', 'history', 'start'] as const;
 export type KnownCommand = (typeof KNOWN_COMMANDS)[number];
 
 export function assertKnownCommand(command: string): asserts command is KnownCommand {
@@ -104,6 +110,9 @@ const ALLOWED_FLAGS: Record<KnownCommand, Set<string>> = {
     'timeout-seconds',
     'poll-interval-seconds',
   ]),
+  // A manual, one-shot StartScenarios trigger (byte-cap probe). `--confirm` is a
+  // mandatory safety interlock — see resolveStartPlan; nothing runs without it.
+  start: new Set(['key', 'rule', 'to', 'from', 'confirm', 'bytes']),
 };
 
 // Reject any flag that does not belong to the given command (--help is global and
@@ -238,6 +247,74 @@ export function resolveHistoryPlan(flags: Record<string, FlagValue>): HistoryPla
   throw new CliError(
     'history requires either --history-id <id> or --app <id> [--days n]',
   );
+}
+
+// ---------------------------------------------------------------------------
+// start command plan — manual, guarded StartScenarios byte-cap probe
+// ---------------------------------------------------------------------------
+
+// Upper bound for the synthetic --bytes padding: comfortably above the real
+// payload (~450-550B) and Voximplant's documented cap, while refusing absurd
+// values. This is a diagnostic size, never a production payload.
+export const START_MAX_BYTES = 4096;
+
+export interface StartPlan {
+  ruleId: number;
+  to: string;
+  from?: string;
+  // When set, the synthetic script_custom_data is padded to ~this many UTF-8
+  // bytes so the operator can probe exactly where the scenario truncates it.
+  targetBytes?: number;
+}
+
+// Validate the arguments for `start`. This does NOT place a call — it only
+// produces a plan. The `--confirm` interlock is enforced HERE so that every
+// path to a live dial (CLI dispatch OR any future caller) must pass it; the
+// command can never fire by default, from a test, or from a bare invocation.
+export function resolveStartPlan(flags: Record<string, FlagValue>): StartPlan {
+  if (flags.confirm !== true) {
+    throw new CliError(
+      'start places a REAL outbound call and is disabled by default. ' +
+        'Re-run with --confirm ONLY after balance top-up and explicit approval.',
+    );
+  }
+  const ruleId = positiveInt('rule', flags.rule);
+  const to = requireStringValue('to', flags.to);
+  const from =
+    flags.from !== undefined ? requireStringValue('from', flags.from) : undefined;
+  const targetBytes =
+    flags.bytes !== undefined
+      ? positiveInt('bytes', flags.bytes, { max: START_MAX_BYTES })
+      : undefined;
+  return { ruleId, to, from, targetBytes };
+}
+
+// Build a synthetic script_custom_data mirroring the production payload SHAPE
+// (to/from/iid/cb/ctx/gk) but with placeholder values only — no real signed
+// tokens or Groq key ever appear here. When `targetBytes` is set the payload is
+// padded to approximately that UTF-8 size to probe the scenario's byte cap.
+// Returns the payload AND its exact byte length so callers log only the count.
+export function buildStartCustomData(plan: StartPlan): {
+  payload: string;
+  bytes: number;
+} {
+  const base: Record<string, string> = {
+    to: plan.to,
+    from: plan.from ?? '',
+    iid: 'cli-cap-test',
+    cb: 'https://example.invalid/api/voximplant/cb/CAP_TEST',
+    ctx: 'https://example.invalid/api/voximplant/ctx/CAP_TEST',
+    gk: 'CAP_TEST',
+  };
+  if (plan.targetBytes === undefined) {
+    const payload = JSON.stringify(base);
+    return { payload, bytes: Buffer.byteLength(payload, 'utf8') };
+  }
+  const empty = JSON.stringify({ ...base, pad: '' });
+  const current = Buffer.byteLength(empty, 'utf8');
+  const padLen = plan.targetBytes > current ? plan.targetBytes - current : 0;
+  const payload = JSON.stringify({ ...base, pad: 'x'.repeat(padLen) });
+  return { payload, bytes: Buffer.byteLength(payload, 'utf8') };
 }
 
 // ---------------------------------------------------------------------------
@@ -598,6 +675,7 @@ commands:
   account                    Show account identity + balance (read-only)
   rules [--app <id>]         List applications and one app's routing rules
   history <mode> [flags]     Fetch a call-history report (async → CSV)
+  start <flags> --confirm    Fire ONE StartScenarios call (byte-cap probe; PLACES A REAL CALL)
 
 history modes:
   --history-id <id>          Download an existing report by id
@@ -608,6 +686,13 @@ history flags:
   --force                    Allow --output to overwrite an existing file
   --timeout-seconds <n>      Poll deadline (default ${HISTORY_DEFAULTS.timeoutSeconds}, max ${HISTORY_DEFAULTS.maxTimeoutSeconds})
   --poll-interval-seconds <n> Poll interval (default ${HISTORY_DEFAULTS.pollIntervalSeconds})
+
+start flags (manual byte-cap probe — PLACES A REAL CALL):
+  --rule <id>                OutCall rule id bound to the RSVP scenario (StartScenarios)
+  --to <number>             Single destination number to dial (embedded in script_custom_data)
+  --from <number>           Optional caller id embedded in the payload
+  --bytes <n>               Pad the synthetic script_custom_data to ~n UTF-8 bytes (max ${START_MAX_BYTES})
+  --confirm                  REQUIRED interlock — without it 'start' refuses to run
 
 global flags:
   --key <path>               Service-account JSON (default: env VOX_CI_CREDENTIALS or ./vox_ci_credentials.json)
@@ -625,7 +710,25 @@ flags:
   --timeout-seconds <n>      Poll deadline in seconds (default ${HISTORY_DEFAULTS.timeoutSeconds})
   --poll-interval-seconds <n> Poll interval in seconds (default ${HISTORY_DEFAULTS.pollIntervalSeconds})`;
 
+const START_HELP = `npm run voximplant -- start --rule <id> --to <number> [--from <number>] [--bytes <n>] --confirm
+
+⚠ This PLACES A REAL OUTBOUND CALL via StartScenarios. It exists solely to probe
+the script_custom_data byte cap. Requires account balance and explicit approval.
+Nothing runs without --confirm.
+
+flags:
+  --rule <id>                OutCall rule id bound to the RSVP scenario (required)
+  --to <number>             Single destination number to dial (required)
+  --from <number>           Optional caller id embedded in the payload
+  --bytes <n>               Pad synthetic script_custom_data to ~n UTF-8 bytes (max ${START_MAX_BYTES})
+  --confirm                  REQUIRED interlock — without it 'start' refuses to run
+
+After it returns a call_session_history_id, use:
+  npm run voximplant -- history --app <id>
+and inspect call_session_history_custom_data to see whether the full payload arrived.`;
+
 export function helpText(command?: string): string {
   if (command === 'history') return HISTORY_HELP;
+  if (command === 'start') return START_HELP;
   return MAIN_HELP;
 }

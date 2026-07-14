@@ -15,6 +15,8 @@ import {
   recordDialConfirmed,
   markFailedToStart,
   markStartUnknown,
+  countActiveCalls,
+  countCampaignCallsSince,
 } from '@/lib/data/call-attempts';
 import {
   getCampaignContext,
@@ -43,7 +45,7 @@ const BALANCE_TIMEOUT_MS = 10_000;
 const START_TIMEOUT_MS = 25_000;
 
 export type CallDispatchResult =
-  | { kind: 'skipped'; reason: 'outreach_disabled' | 'no_call_consent' | 'dnc_listed' | 'already_reached' | 'campaign_not_active' | 'concurrent_owner' }
+  | { kind: 'skipped'; reason: 'outreach_disabled' | 'no_call_consent' | 'dnc_listed' | 'already_reached' | 'campaign_not_active' | 'concurrent_owner' | 'max_concurrency' | 'campaign_hour_cap' }
   | { kind: 'blocked'; reason: 'config_missing' | 'live_calls_disabled' | 'balance_below_reserve' }
   | { kind: 'transient_error'; reason: 'balance_check_failed' } // the ONLY retryable kind
   | { kind: 'already_dispatched'; attemptId: string }
@@ -132,6 +134,22 @@ export async function dispatchOutreachCall(
   //    later; the call still dials).
   const guests = await getGuestsForContact(eventId, contactId);
   const guestId = guests.length === 1 ? guests[0].id : null;
+
+  // 5b. Rate-limit caps (durable DB counters) — enforced BEFORE the balance
+  //     precheck so no API call or attempt row happens when over a cap. Soft
+  //     caps: a small count↔INSERT race is possible under load; the hard
+  //     guarantee stays the UNIQUE(campaign,contact,touchpoint) atomic create.
+  const active = await countActiveCalls();
+  if (active >= config.maxConcurrentCalls) {
+    await alert('warn', 'Voximplant max concurrency reached — deferring', {
+      campaignId, active, cap: config.maxConcurrentCalls,
+    });
+    return { kind: 'skipped', reason: 'max_concurrency' };
+  }
+  const sinceIso = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+  if ((await countCampaignCallsSince(campaignId, sinceIso)) >= config.maxCallsPerCampaignHour) {
+    return { kind: 'skipped', reason: 'campaign_hour_cap' };
+  }
 
   // 6. Balance precheck BEFORE any attempt row is created (so no orphaned row).
   let balance: number;

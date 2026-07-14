@@ -25,6 +25,9 @@ import {
 import {
   updateWhatsAppChannelAction,
   testWhatsAppConnectionAction,
+  updateVoximplantChannelAction,
+  testVoximplantConnectionAction,
+  updateOutreachMasterSwitchAction,
 } from './actions';
 
 type WhatsAppConfig = {
@@ -35,6 +38,20 @@ type WhatsAppConfig = {
   whatsapp_app_secret: string;
   whatsapp_verify_token: string;
   configured: boolean;
+};
+
+type VoximplantConfig = {
+  serviceAccountConfigured: boolean;
+  voximplant_rule_id: string;
+  voximplant_caller_id: string;
+  voximplant_callback_secret: string;
+  voximplant_groq_api_key: string;
+  voximplant_low_balance_threshold: string;
+  voximplant_min_call_reserve: string;
+  voximplant_max_concurrent_calls: string;
+  voximplant_max_calls_per_campaign_hour: string;
+  configured: boolean;
+  liveEnabled: boolean;
 };
 
 const inputClass =
@@ -152,15 +169,23 @@ function CopyRow({ label, value }: { label: string; value: string }) {
 function StatusBadge({
   configured,
   enabled,
+  liveGateOff,
 }: {
   configured: boolean;
   enabled: boolean;
+  liveGateOff?: boolean;
 }) {
-  const [text, cls] = enabled
-    ? ['פעיל', 'bg-emerald-500/10 text-emerald-600 border-emerald-500/30']
-    : configured
-      ? ['מוגדר · כבוי', 'bg-amber-500/10 text-amber-600 border-amber-500/30']
-      : ['לא מוגדר', 'bg-muted text-muted-foreground border-border'];
+  const [text, cls] =
+    enabled && liveGateOff
+      ? [
+          'מוגדר · דלוק · שיחות מושבתות',
+          'bg-amber-500/10 text-amber-600 border-amber-500/30',
+        ]
+      : enabled
+        ? ['פעיל', 'bg-emerald-500/10 text-emerald-600 border-emerald-500/30']
+        : configured
+          ? ['מוגדר · כבוי', 'bg-amber-500/10 text-amber-600 border-amber-500/30']
+          : ['לא מוגדר', 'bg-muted text-muted-foreground border-border'];
   return (
     <span
       className={`inline-flex items-center rounded-full border px-3 py-1 text-xs font-medium ${cls}`}
@@ -170,55 +195,112 @@ function StatusBadge({
   );
 }
 
+function OutreachMasterSwitch({
+  enabled,
+  anyChannelReady,
+}: {
+  enabled: boolean;
+  anyChannelReady: boolean;
+}) {
+  const [state, action] = useActionState(
+    updateOutreachMasterSwitchAction,
+    null,
+  );
+  return (
+    <form
+      action={action}
+      className="flex items-center justify-between gap-4 rounded-lg border border-border bg-card p-4"
+    >
+      <div className="space-y-1">
+        <p className="text-sm font-semibold">מתג פנייה ראשי (כל הערוצים)</p>
+        <p className="text-xs text-muted-foreground">
+          מפעיל שליחות/שיחות חיות בכל ערוץ מוגדר. שיחות Voximplant דורשות בנוסף
+          את מתג השרת VOXIMPLANT_LIVE_CALLS.
+        </p>
+        <FormError message={state?.error} />
+        <FormNotice message={state?.notice} />
+      </div>
+      <div className="flex items-center gap-3">
+        <label className="inline-flex cursor-pointer items-center gap-2 text-sm font-medium">
+          <input
+            type="checkbox"
+            name="outreach_enabled"
+            defaultChecked={enabled}
+            disabled={!enabled && !anyChannelReady}
+            className="size-4 accent-primary"
+          />
+          מופעל
+        </label>
+        <SubmitButton>עדכון</SubmitButton>
+      </div>
+    </form>
+  );
+}
+
 export function ChannelsClient({
   whatsapp,
   callbackUrl,
+  voximplant,
+  voxCtxBase,
+  voxCbBase,
+  outreachEnabled,
+  anyChannelReady,
 }: {
   whatsapp: WhatsAppConfig;
   callbackUrl: string;
+  voximplant: VoximplantConfig;
+  voxCtxBase: string;
+  voxCbBase: string;
+  outreachEnabled: boolean;
+  anyChannelReady: boolean;
 }) {
   const [state, action] = useActionState(updateWhatsAppChannelAction, null);
   const [testState, testAction] = useActionState(
     testWhatsAppConnectionAction,
     null,
   );
+  const [voxState, voxAction] = useActionState(
+    updateVoximplantChannelAction,
+    null,
+  );
+  const [voxTestState, voxTestAction] = useActionState(
+    testVoximplantConnectionAction,
+    null,
+  );
   const e = state?.fieldErrors;
+  const ve = voxState?.fieldErrors;
 
   return (
-    <Tabs defaultValue="whatsapp">
-      <TabsList>
-        <TabsTab value="whatsapp">
-          WhatsApp {whatsapp.configured ? '✓' : '⚠'}
-        </TabsTab>
-        <TabsTab value="voximplant" disabled>
-          Voximplant (בקרוב)
-        </TabsTab>
-      </TabsList>
+    <div className="space-y-6">
+      {/* single global master switch — ABOVE the tabs (§1.0) */}
+      <OutreachMasterSwitch
+        enabled={outreachEnabled}
+        anyChannelReady={anyChannelReady}
+      />
+
+      <Tabs defaultValue="whatsapp">
+        <TabsList>
+          <TabsTab value="whatsapp">
+            WhatsApp {whatsapp.configured ? '✓' : '⚠'}
+          </TabsTab>
+          <TabsTab value="voximplant">
+            שיחות AI {voximplant.configured ? '✓' : '⚠'}
+          </TabsTab>
+        </TabsList>
 
       <TabsPanel value="whatsapp">
         <form action={action} className="space-y-4">
           <FormError message={state?.error} />
           <FormNotice message={state?.notice} />
 
-          <div className="flex items-center justify-between gap-4 rounded-lg border border-border bg-card p-4">
-            <div className="flex items-center gap-3">
-              <StatusBadge
-                configured={whatsapp.configured}
-                enabled={whatsapp.outreach_enabled}
-              />
-              <span className="text-sm text-muted-foreground">
-                הפעלת הערוץ = שליחות חיות בתשלום לאורחים.
-              </span>
-            </div>
-            <label className="inline-flex cursor-pointer items-center gap-2 text-sm font-medium">
-              <input
-                type="checkbox"
-                name="outreach_enabled"
-                defaultChecked={whatsapp.outreach_enabled}
-                className="size-4 accent-primary"
-              />
-              מופעל
-            </label>
+          <div className="flex items-center gap-3 rounded-lg border border-border bg-card p-4">
+            <StatusBadge
+              configured={whatsapp.configured}
+              enabled={outreachEnabled && whatsapp.configured}
+            />
+            <span className="text-sm text-muted-foreground">
+              מצב ערוץ WhatsApp. הפעלה/כיבוי דרך מתג הפנייה הראשי שמעל.
+            </span>
           </div>
 
           <Accordion defaultValue={['creds']}>
@@ -300,10 +382,155 @@ export function ChannelsClient({
       </TabsPanel>
 
       <TabsPanel value="voximplant">
-        <div className="rounded-lg border border-dashed border-border p-8 text-center text-sm text-muted-foreground">
-          ערוץ שיחות ה-AI (Voximplant) ייפתח להגדרה עם בניית הערוץ (C2).
-        </div>
+        <form action={voxAction} className="space-y-4">
+          <FormError message={voxState?.error} />
+          <FormNotice message={voxState?.notice} />
+
+          {/* status row — NO checkbox (the master switch lives above the tabs).
+              Truthful badge: never shows "פעיל" while VOXIMPLANT_LIVE_CALLS keeps
+              calls dark. */}
+          <div className="flex items-center gap-3 rounded-lg border border-border bg-card p-4">
+            <StatusBadge
+              configured={voximplant.configured}
+              enabled={outreachEnabled && voximplant.configured}
+              liveGateOff={!voximplant.liveEnabled}
+            />
+            <span className="text-sm text-muted-foreground">
+              {voximplant.liveEnabled
+                ? 'מתג שיחות חיות (VOXIMPLANT_LIVE_CALLS) דלוק בשרת.'
+                : 'שיחות חיות דורשות גם את מתג השרת VOXIMPLANT_LIVE_CALLS=true (כבוי כעת).'}
+            </span>
+          </div>
+
+          <Accordion defaultValue={['vox-creds']}>
+            <AccordionItem value="vox-creds">
+              <AccordionTrigger>פרטי חשבון וחיוג</AccordionTrigger>
+              <AccordionPanel>
+                <div className="space-y-4 text-foreground">
+                  <div>
+                    <label
+                      htmlFor="voximplant_service_account_json"
+                      className={labelClass}
+                    >
+                      Service Account JSON
+                      <HelpTip text="קובץ ה-JSON של חשבון השירות (account_id / key_id / private_key) מ-Voximplant Control Panel › Service accounts. נשמר מוצפן בשרת ולעולם לא נשלף חזרה לדפדפן." />
+                    </label>
+                    <textarea
+                      id="voximplant_service_account_json"
+                      name="voximplant_service_account_json"
+                      rows={4}
+                      autoComplete="off"
+                      placeholder={
+                        '{"account_id":…,"key_id":"…","private_key":"…"}'
+                      }
+                      className={`${inputClass} font-mono`}
+                    />
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      {voximplant.serviceAccountConfigured
+                        ? '✓ חשבון שירות שמור. השאירו ריק כדי לשמור על הקיים; הדביקו JSON חדש כדי להחליף.'
+                        : 'לא הוגדר עדיין — הדביקו את ה-JSON.'}
+                    </p>
+                  </div>
+                  <Field
+                    name="voximplant_rule_id"
+                    label="Rule ID"
+                    defaultValue={voximplant.voximplant_rule_id}
+                    placeholder="1494311"
+                    errors={ve?.voximplant_rule_id}
+                    help="מזהה ה-OutCall rule של תרחיש ה-RSVP ב-Voximplant (StartScenarios)."
+                  />
+                  <Field
+                    name="voximplant_caller_id"
+                    label="מספר יוצא (Caller ID)"
+                    defaultValue={voximplant.voximplant_caller_id}
+                    placeholder="+972…"
+                    errors={ve?.voximplant_caller_id}
+                    help="מספר Voximplant שנרכש/אומת — משמש כ-from בשיחה היוצאת."
+                  />
+                  <SecretField
+                    name="voximplant_callback_secret"
+                    label="Callback Secret"
+                    defaultValue={voximplant.voximplant_callback_secret}
+                    help="סוד ה-?k= שחותם על כתובות ה-ctx/cb. סובב אותו כדי לפסול טוקנים ישנים."
+                  />
+                  <SecretField
+                    name="voximplant_groq_api_key"
+                    label="Groq API Key"
+                    defaultValue={voximplant.voximplant_groq_api_key}
+                    help="מפתח ה-Groq שהתרחיש משתמש בו (gk). נשמר מוצפן; לעולם לא בלוגים."
+                  />
+                </div>
+              </AccordionPanel>
+            </AccordionItem>
+
+            <AccordionItem value="vox-tuning">
+              <AccordionTrigger>מגבלות ותקציב</AccordionTrigger>
+              <AccordionPanel>
+                <div className="grid grid-cols-2 gap-4">
+                  <Field
+                    name="voximplant_low_balance_threshold"
+                    label="סף יתרה נמוכה ($)"
+                    defaultValue={voximplant.voximplant_low_balance_threshold}
+                    placeholder="5"
+                    errors={ve?.voximplant_low_balance_threshold}
+                  />
+                  <Field
+                    name="voximplant_min_call_reserve"
+                    label="רזרבה מינ׳ לחיוג ($)"
+                    defaultValue={voximplant.voximplant_min_call_reserve}
+                    placeholder="0.1"
+                    errors={ve?.voximplant_min_call_reserve}
+                  />
+                  <Field
+                    name="voximplant_max_concurrent_calls"
+                    label="מקס׳ שיחות במקביל"
+                    defaultValue={voximplant.voximplant_max_concurrent_calls}
+                    placeholder="5"
+                    errors={ve?.voximplant_max_concurrent_calls}
+                  />
+                  <Field
+                    name="voximplant_max_calls_per_campaign_hour"
+                    label="מקס׳ שיחות לקמפיין/שעה"
+                    defaultValue={
+                      voximplant.voximplant_max_calls_per_campaign_hour
+                    }
+                    placeholder="200"
+                    errors={ve?.voximplant_max_calls_per_campaign_hour}
+                  />
+                </div>
+              </AccordionPanel>
+            </AccordionItem>
+
+            <AccordionItem value="vox-urls">
+              <AccordionTrigger>כתובות התרחיש (לעיון)</AccordionTrigger>
+              <AccordionPanel>
+                <div className="space-y-3">
+                  <CopyRow label="Context base (ctx)" value={voxCtxBase} />
+                  <CopyRow label="Callback base (cb)" value={voxCbBase} />
+                  <p className="text-xs text-muted-foreground">
+                    הכתובות המלאות נבנות בזמן החיוג עם טוקן חתום פר-שיחה; אלו
+                    בסיסי הייחוס בלבד.
+                  </p>
+                </div>
+              </AccordionPanel>
+            </AccordionItem>
+          </Accordion>
+
+          <SubmitButton>שמירה</SubmitButton>
+        </form>
+
+        <form action={voxTestAction} className="mt-4 space-y-2">
+          <FormError message={voxTestState?.error} />
+          <FormNotice message={voxTestState?.notice} />
+          <button
+            type="submit"
+            className="rounded-md border border-border px-4 py-2 text-sm font-medium transition hover:bg-accent/40"
+          >
+            בדיקת חיבור (יתרה)
+          </button>
+        </form>
       </TabsPanel>
-    </Tabs>
+      </Tabs>
+    </div>
   );
 }

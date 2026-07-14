@@ -16,6 +16,8 @@ vi.mock('@/lib/data/call-attempts', () => ({
   recordDialConfirmed: vi.fn(),
   markFailedToStart: vi.fn(),
   markStartUnknown: vi.fn(),
+  countActiveCalls: vi.fn(),
+  countCampaignCallsSince: vi.fn(),
 }));
 vi.mock('@/lib/data/outreach-engine', () => ({
   getCampaignContext: vi.fn(),
@@ -57,6 +59,8 @@ import {
   recordDialConfirmed,
   markFailedToStart,
   markStartUnknown,
+  countActiveCalls,
+  countCampaignCallsSince,
 } from '@/lib/data/call-attempts';
 import {
   getCampaignContext,
@@ -99,6 +103,8 @@ beforeEach(() => {
   vi.mocked(getAccountInfo).mockResolvedValue(acct(50) as never);
   vi.mocked(createCallAttempt).mockResolvedValue({ id: AID });
   vi.mocked(getCallAttemptByTouchpoint).mockResolvedValue(null);
+  vi.mocked(countActiveCalls).mockResolvedValue(0);
+  vi.mocked(countCampaignCallsSince).mockResolvedValue(0);
   vi.mocked(recordDialConfirmed).mockResolvedValue({ applied: true });
   vi.mocked(markFailedToStart).mockResolvedValue({ applied: true });
   vi.mocked(markStartUnknown).mockResolvedValue({ applied: true });
@@ -178,6 +184,30 @@ describe('balance', () => {
     expect((await dispatchOutreachCall(job())).kind).toBe('dialed');
     expect(startScenarios).toHaveBeenCalledTimes(1);
     expect(sendSlackAlert).toHaveBeenCalledWith(expect.objectContaining({ level: 'warn' }));
+  });
+});
+
+describe('rate-limit caps (H1)', () => {
+  it('R1. at/over concurrency cap → skipped max_concurrency, no attempt, no dial, warn', async () => {
+    vi.mocked(countActiveCalls).mockResolvedValue(5); // == cap
+    expect(await dispatchOutreachCall(job())).toEqual({ kind: 'skipped', reason: 'max_concurrency' });
+    expect(getAccountInfo).not.toHaveBeenCalled();
+    expect(createCallAttempt).not.toHaveBeenCalled();
+    expect(startScenarios).not.toHaveBeenCalled();
+    expect(sendSlackAlert).toHaveBeenCalledWith(expect.objectContaining({ level: 'warn' }));
+  });
+  it('R2. at/over per-campaign hourly cap → skipped campaign_hour_cap, no attempt, no dial', async () => {
+    vi.mocked(countCampaignCallsSince).mockResolvedValue(200); // == cap
+    expect(await dispatchOutreachCall(job())).toEqual({ kind: 'skipped', reason: 'campaign_hour_cap' });
+    expect(getAccountInfo).not.toHaveBeenCalled();
+    expect(createCallAttempt).not.toHaveBeenCalled();
+    expect(startScenarios).not.toHaveBeenCalled();
+  });
+  it('R3. under both caps → dials normally', async () => {
+    vi.mocked(countActiveCalls).mockResolvedValue(4);
+    vi.mocked(countCampaignCallsSince).mockResolvedValue(199);
+    expect((await dispatchOutreachCall(job())).kind).toBe('dialed');
+    expect(startScenarios).toHaveBeenCalledTimes(1);
   });
 });
 

@@ -46,6 +46,8 @@ import {
 } from '@/lib/data/webhooks';
 import { processWebhookEvent } from '@/lib/data/webhook-processing';
 import { runThankyouSweep } from '@/lib/data/auto-thankyou';
+import { runBalanceCheck } from '@/lib/data/voximplant-balance';
+import { runCallReconcile } from '@/lib/data/voximplant-reconcile';
 import { sendSlackAlert } from '@/lib/alerts/slack';
 
 // Standalone process — load .env.local ourselves (Next is not running here).
@@ -439,11 +441,31 @@ async function main(): Promise<void> {
       await handleThankyouSweep();
     }),
   );
+  // Voximplant balance-alert cron (H2): read-only GetAccountInfo poll — Slack when
+  // the account balance dips below reserve/low-threshold. runBalanceCheck is
+  // internally dark-safe (no-op while VOXIMPLANT_LIVE_CALLS is off) and never
+  // throws/dials, so no extra gate is needed here.
+  await boss.work(
+    QUEUES.balanceCheck,
+    guardedWorker(QUEUES.balanceCheck, async () => {
+      await runBalanceCheck();
+    }),
+  );
+  // Voximplant stuck-row reconciler (H3): ALERT-ONLY — surfaces pre-terminal
+  // call_attempts older than 15m. NEVER re-issues StartScenarios.
+  await boss.work(
+    QUEUES.callReconcile,
+    guardedWorker(QUEUES.callReconcile, async () => {
+      await runCallReconcile();
+    }),
+  );
 
   await boss.schedule(QUEUES.arm, '* * * * *');
   await boss.schedule(QUEUES.sweeper, '*/5 * * * *');
   await boss.schedule(QUEUES.webhook, '* * * * *');
   await boss.schedule(QUEUES.thankyouSweep, '*/5 * * * *');
+  await boss.schedule(QUEUES.balanceCheck, '*/30 * * * *');
+  await boss.schedule(QUEUES.callReconcile, '*/10 * * * *');
 
   console.log('[kalfa-worker] started — queues + schedules up');
 

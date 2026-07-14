@@ -15,6 +15,7 @@ describe('aggregateDeliveryBreakdown', () => {
       totalContacts: 0,
       delivery: { sent: 0, delivered: 0, read: 0, failed: 0 },
       outcome: { reached: 0, wrongNumber: 0, optedOut: 0 },
+      call: { dialed: 0, noAnswer: 0, voicemail: 0, humanInteraction: 0 },
     });
   });
 
@@ -59,5 +60,39 @@ describe('aggregateDeliveryBreakdown', () => {
     );
     expect(result.totalContacts).toBe(4);
     expect(result.outcome).toEqual({ reached: 2, wrongNumber: 1, optedOut: 1 });
+  });
+
+  it('tallies the AI-call family from contact op_status', () => {
+    const result = aggregateDeliveryBreakdown(
+      [],
+      [
+        { op_status: 'call_dialed', removal_requested: false },
+        { op_status: 'call_dialed', removal_requested: false },
+        { op_status: 'no_answer', removal_requested: false },
+        { op_status: 'voicemail', removal_requested: false },
+        { op_status: 'human_interaction_call', removal_requested: false },
+        // A non-call outcome must NOT leak into the call buckets.
+        { op_status: 'reached_billed', removal_requested: false },
+      ],
+    );
+    expect(result.call).toEqual({
+      dialed: 2,
+      noAnswer: 1,
+      voicemail: 1,
+      humanInteraction: 1,
+    });
+    // The call family and the outcome buckets are counted independently.
+    expect(result.outcome.reached).toBe(1);
+  });
+
+  it('leaves the call buckets at zero for a WhatsApp-only campaign', () => {
+    const result = aggregateDeliveryBreakdown(
+      [],
+      [
+        { op_status: 'whatsapp_read', removal_requested: false },
+        { op_status: 'reached_billed', removal_requested: false },
+      ],
+    );
+    expect(result.call).toEqual({ dialed: 0, noAnswer: 0, voicemail: 0, humanInteraction: 0 });
   });
 });
