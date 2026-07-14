@@ -389,60 +389,60 @@ export function ChannelsClient({
       </TabsPanel>
 
       <TabsPanel value="voximplant">
-        <form action={voxAction} className="space-y-4">
+        {/* Status badge + LIVE-CALLS toggle — SIBLINGS above the config form.
+            A <form> must NEVER nest inside another <form> (nesting caused a
+            "React form was unexpectedly submitted" error). */}
+        <div className="flex items-center gap-3 rounded-lg border border-border bg-card p-4">
+          <StatusBadge
+            configured={voximplant.configured}
+            enabled={outreachEnabled && voximplant.configured}
+            liveGateOff={!voximplant.liveEnabled}
+          />
+          <span className="text-sm text-muted-foreground">
+            {voximplant.liveEnabled
+              ? 'שיחות חיות מופעלות — שיחות בתשלום יוצאות בפועל.'
+              : 'שיחות חיות כבויות (מצב dark). הפעילו במתג שיחות חיות.'}
+          </span>
+        </div>
+
+        {/* LIVE-CALLS toggle — permits REAL paid dialing. Admin-only page.
+            Fail-closed: cannot enable without the full config. The env
+            VOXIMPLANT_LIVE_CALLS='false' still hard-overrides (ops kill switch). */}
+        <form
+          action={voxLiveAction}
+          className="mt-4 space-y-2 rounded-lg border border-amber-500/40 bg-amber-500/5 p-4"
+        >
+          <FormError message={voxLiveState?.error} />
+          <FormNotice message={voxLiveState?.notice} />
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="min-w-0 space-y-1">
+              <p className="text-sm font-semibold">שיחות חיות (Live calls)</p>
+              <p className="text-xs text-muted-foreground">
+                הפעלה = שיחות טלפון אמיתיות בתשלום, לאנשי קשר שנתנו הסכמה בלבד.
+                {voximplant.fullyConfigured
+                  ? ''
+                  : ' יש להשלים את כל פרטי החשבון והחיוג לפני הפעלה.'}
+              </p>
+            </div>
+            <div className="flex shrink-0 items-center justify-end gap-3">
+              <label className="inline-flex cursor-pointer items-center gap-2 text-sm font-medium">
+                <input
+                  type="checkbox"
+                  name="voximplant_live_calls"
+                  defaultChecked={voximplant.liveCalls}
+                  disabled={!voximplant.fullyConfigured && !voximplant.liveCalls}
+                  className="size-4 accent-primary"
+                />
+                מופעל
+              </label>
+              <SubmitButton className="w-auto">עדכון</SubmitButton>
+            </div>
+          </div>
+        </form>
+
+        <form action={voxAction} className="mt-4 space-y-4">
           <FormError message={voxState?.error} />
           <FormNotice message={voxState?.notice} />
-
-          {/* status row — NO checkbox (the master switch lives above the tabs).
-              Truthful badge: never shows "פעיל" while VOXIMPLANT_LIVE_CALLS keeps
-              calls dark. */}
-          <div className="flex items-center gap-3 rounded-lg border border-border bg-card p-4">
-            <StatusBadge
-              configured={voximplant.configured}
-              enabled={outreachEnabled && voximplant.configured}
-              liveGateOff={!voximplant.liveEnabled}
-            />
-            <span className="text-sm text-muted-foreground">
-              {voximplant.liveEnabled
-                ? 'שיחות חיות מופעלות — שיחות בתשלום יוצאות בפועל.'
-                : 'שיחות חיות כבויות (מצב dark). הפעילו במתג למטה.'}
-            </span>
-          </div>
-
-          {/* LIVE-CALLS toggle — permits REAL paid dialing. Admin-only page.
-              Fail-closed: cannot enable without the full config. The env
-              VOXIMPLANT_LIVE_CALLS='false' still hard-overrides (ops kill switch). */}
-          <form
-            action={voxLiveAction}
-            className="space-y-2 rounded-lg border border-amber-500/40 bg-amber-500/5 p-4"
-          >
-            <FormError message={voxLiveState?.error} />
-            <FormNotice message={voxLiveState?.notice} />
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <div className="min-w-0 space-y-1">
-                <p className="text-sm font-semibold">שיחות חיות (Live calls)</p>
-                <p className="text-xs text-muted-foreground">
-                  הפעלה = שיחות טלפון אמיתיות בתשלום, לאנשי קשר שנתנו הסכמה בלבד.
-                  {voximplant.fullyConfigured
-                    ? ''
-                    : ' יש להשלים את כל פרטי החשבון והחיוג לפני הפעלה.'}
-                </p>
-              </div>
-              <div className="flex shrink-0 items-center justify-end gap-3">
-                <label className="inline-flex cursor-pointer items-center gap-2 text-sm font-medium">
-                  <input
-                    type="checkbox"
-                    name="voximplant_live_calls"
-                    defaultChecked={voximplant.liveCalls}
-                    disabled={!voximplant.fullyConfigured && !voximplant.liveCalls}
-                    className="size-4 accent-primary"
-                  />
-                  מופעל
-                </label>
-                <SubmitButton className="w-auto">עדכון</SubmitButton>
-              </div>
-            </div>
-          </form>
 
           <Accordion defaultValue={['vox-creds']}>
             <AccordionItem value="vox-creds">
