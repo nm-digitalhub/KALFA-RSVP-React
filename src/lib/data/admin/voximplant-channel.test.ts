@@ -5,7 +5,7 @@ vi.mock('@/lib/supabase/server', () => ({ createClient: vi.fn() }));
 vi.mock('@/lib/auth/dal', () => ({ requireAdmin: vi.fn() }));
 vi.mock('@/lib/data/voximplant-config', () => ({
   getVoximplantConfig: vi.fn(),
-  getVoximplantLiveEnabled: vi.fn(() => false),
+  envAllowsLiveCalls: vi.fn(() => true),
 }));
 vi.mock('@/lib/voximplant/core', () => ({ getAccountInfo: vi.fn() }));
 

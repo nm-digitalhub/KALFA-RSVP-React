@@ -5,10 +5,7 @@ import { randomBytes } from 'node:crypto';
 import { getAppUrl } from '@/lib/url';
 import { sendSlackAlert } from '@/lib/alerts/slack';
 import { getOutreachEnabled } from '@/lib/data/outreach-config';
-import {
-  getVoximplantConfig,
-  getVoximplantLiveEnabled,
-} from '@/lib/data/voximplant-config';
+import { getVoximplantConfig } from '@/lib/data/voximplant-config';
 import {
   createCallAttempt,
   getCallAttemptByTouchpoint,
@@ -117,9 +114,10 @@ export async function dispatchOutreachCall(
     return { kind: 'blocked', reason: 'config_missing' };
   }
 
-  // 3. Independent live-dial gate. Filling credentials must NEVER dial (Branch A
-  //    dark-safe). No alert — this is the expected steady state for the stage.
-  if (!getVoximplantLiveEnabled()) return { kind: 'blocked', reason: 'live_calls_disabled' };
+  // 3. Independent live-dial gate: the admin DB toggle AND the env not force-off
+  //    (config.liveCallsEnabled). Filling credentials must NEVER by itself dial —
+  //    an admin must explicitly enable live calls. No alert — expected steady state.
+  if (!config.liveCallsEnabled) return { kind: 'blocked', reason: 'live_calls_disabled' };
 
   // 4. Fresh gating (never trust the enqueue-time snapshot).
   if (!(await hasCallConsent(contactId))) return { kind: 'skipped', reason: 'no_call_consent' };

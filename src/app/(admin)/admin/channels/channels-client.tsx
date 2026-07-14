@@ -28,6 +28,7 @@ import {
   updateVoximplantChannelAction,
   testVoximplantConnectionAction,
   updateOutreachMasterSwitchAction,
+  updateVoximplantLiveCallsAction,
 } from './actions';
 
 type WhatsAppConfig = {
@@ -51,7 +52,9 @@ type VoximplantConfig = {
   voximplant_max_concurrent_calls: string;
   voximplant_max_calls_per_campaign_hour: string;
   configured: boolean;
-  liveEnabled: boolean;
+  fullyConfigured: boolean; // full dial config — gates the live-calls toggle
+  liveCalls: boolean; // raw admin toggle value (app_settings.voximplant_live_calls)
+  liveEnabled: boolean; // effective gate (toggle AND env not force-off)
 };
 
 const inputClass =
@@ -267,6 +270,10 @@ export function ChannelsClient({
     testVoximplantConnectionAction,
     null,
   );
+  const [voxLiveState, voxLiveAction] = useActionState(
+    updateVoximplantLiveCallsAction,
+    null,
+  );
   const e = state?.fieldErrors;
   const ve = voxState?.fieldErrors;
 
@@ -397,10 +404,45 @@ export function ChannelsClient({
             />
             <span className="text-sm text-muted-foreground">
               {voximplant.liveEnabled
-                ? 'מתג שיחות חיות (VOXIMPLANT_LIVE_CALLS) דלוק בשרת.'
-                : 'שיחות חיות דורשות גם את מתג השרת VOXIMPLANT_LIVE_CALLS=true (כבוי כעת).'}
+                ? 'שיחות חיות מופעלות — שיחות בתשלום יוצאות בפועל.'
+                : 'שיחות חיות כבויות (מצב dark). הפעילו במתג למטה.'}
             </span>
           </div>
+
+          {/* LIVE-CALLS toggle — permits REAL paid dialing. Admin-only page.
+              Fail-closed: cannot enable without the full config. The env
+              VOXIMPLANT_LIVE_CALLS='false' still hard-overrides (ops kill switch). */}
+          <form
+            action={voxLiveAction}
+            className="space-y-2 rounded-lg border border-amber-500/40 bg-amber-500/5 p-4"
+          >
+            <FormError message={voxLiveState?.error} />
+            <FormNotice message={voxLiveState?.notice} />
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="min-w-0 space-y-1">
+                <p className="text-sm font-semibold">שיחות חיות (Live calls)</p>
+                <p className="text-xs text-muted-foreground">
+                  הפעלה = שיחות טלפון אמיתיות בתשלום, לאנשי קשר שנתנו הסכמה בלבד.
+                  {voximplant.fullyConfigured
+                    ? ''
+                    : ' יש להשלים את כל פרטי החשבון והחיוג לפני הפעלה.'}
+                </p>
+              </div>
+              <div className="flex shrink-0 items-center justify-end gap-3">
+                <label className="inline-flex cursor-pointer items-center gap-2 text-sm font-medium">
+                  <input
+                    type="checkbox"
+                    name="voximplant_live_calls"
+                    defaultChecked={voximplant.liveCalls}
+                    disabled={!voximplant.fullyConfigured && !voximplant.liveCalls}
+                    className="size-4 accent-primary"
+                  />
+                  מופעל
+                </label>
+                <SubmitButton className="w-auto">עדכון</SubmitButton>
+              </div>
+            </div>
+          </form>
 
           <Accordion defaultValue={['vox-creds']}>
             <AccordionItem value="vox-creds">

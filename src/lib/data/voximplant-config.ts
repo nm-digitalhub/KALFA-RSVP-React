@@ -22,6 +22,9 @@ export type VoximplantServerConfig = {
   minCallReserve: number; // do-not-dial below this ($)
   maxConcurrentCalls: number;
   maxCallsPerCampaignHour: number;
+  // The EFFECTIVE live-dial gate: the admin DB toggle AND the env not force-off.
+  // Still only PERMITS a dial — consent/DNC/balance are enforced separately.
+  liveCallsEnabled: boolean;
 };
 
 function str(row: Record<string, unknown>, key: string): string {
@@ -90,6 +93,7 @@ export async function getVoximplantConfig(): Promise<VoximplantServerConfig | nu
       minCallReserve: num(row, 'voximplant_min_call_reserve', 0.1),
       maxConcurrentCalls: num(row, 'voximplant_max_concurrent_calls', 5),
       maxCallsPerCampaignHour: num(row, 'voximplant_max_calls_per_campaign_hour', 200),
+      liveCallsEnabled: envAllowsLiveCalls() && row.voximplant_live_calls === true,
     };
   } catch {
     return null;
@@ -102,11 +106,11 @@ export async function getVoximplantCallbackSecret(): Promise<string | null> {
   return cfg?.callbackSecret ?? null;
 }
 
-// Independent LIVE-DIAL hard gate (default OFF). Deliberately NOT derived from
-// app_settings / credentials — having a complete getVoximplantConfig() must NEVER
-// by itself place a real outbound call. A separate env switch keeps "credentials
-// are configured" and "we are actually allowed to dial" from ever being
-// conflated. No DB, no migration — an explicit opt-in, off unless set.
-export function getVoximplantLiveEnabled(): boolean {
-  return process.env.VOXIMPLANT_LIVE_CALLS === 'true';
+// The env var is now an OPS OVERRIDE / kill switch only: unset (default) lets the
+// admin DB toggle (app_settings.voximplant_live_calls) govern; setting it to the
+// literal 'false' HARD-DISABLES live calls regardless of the DB flag (emergency
+// stop that no admin UI click can undo). The effective gate is computed in
+// getVoximplantConfig().liveCallsEnabled = envAllowsLiveCalls() && the DB toggle.
+export function envAllowsLiveCalls(): boolean {
+  return process.env.VOXIMPLANT_LIVE_CALLS !== 'false';
 }

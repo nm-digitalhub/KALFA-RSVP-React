@@ -9,13 +9,16 @@ import {
   testWhatsAppConnection,
 } from '@/lib/data/admin/channels';
 import {
+  getVoximplantChannelConfig,
   updateVoximplantChannelConfig,
   testVoximplantConnection,
+  updateVoximplantLiveCalls,
 } from '@/lib/data/admin/voximplant-channel';
 import {
   getOutreachMasterState,
   setOutreachEnabled,
 } from '@/lib/data/admin/outreach-master';
+import { sendSlackAlert } from '@/lib/alerts/slack';
 import type { FormState } from '@/lib/validation/result';
 
 // Form-friendly: every field is an optional string; the master toggle is a
@@ -161,4 +164,48 @@ export async function updateOutreachMasterSwitchAction(
   }
   revalidatePath('/admin/channels');
   return { notice: enabled ? 'פנייה לאורחים מופעלת' : 'פנייה לאורחים כבויה' };
+}
+
+// Admin toggle for the LIVE-DIAL gate (app_settings.voximplant_live_calls).
+// Enabling PERMITS real, paid outbound calls. Fail-closed: refuses to enable
+// without a complete dial config (SA + rule + caller + callback + Groq).
+// Emits a SECURITY Slack audit on every flip. The env VOXIMPLANT_LIVE_CALLS
+// ='false' still hard-overrides regardless of this toggle. requireAdmin is
+// enforced in getVoximplantChannelConfig + updateVoximplantLiveCalls.
+export async function updateVoximplantLiveCallsAction(
+  _prev: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  const enabled = formData.get('voximplant_live_calls') === 'on';
+  if (enabled) {
+    const cfg = await getVoximplantChannelConfig(); // requireAdmin inside
+    if (!cfg.fullyConfigured) {
+      return {
+        error:
+          'לא ניתן להפעיל שיחות חיות ללא קונפיג מלא — חשבון שירות, Rule ID, מספר יוצא, Callback Secret ו-Groq.',
+      };
+    }
+  }
+  try {
+    await updateVoximplantLiveCalls(enabled);
+  } catch (err) {
+    unstable_rethrow(err);
+    return { error: 'עדכון מתג השיחות החיות נכשל. נסו שוב.' };
+  }
+  // Reliable security audit (fire-and-forget; never throws).
+  void sendSlackAlert({
+    level: 'warn',
+    category: 'security',
+    source: 'voximplant-live-toggle',
+    title: enabled
+      ? 'Voximplant LIVE CALLS enabled — real paid dialing permitted'
+      : 'Voximplant live calls disabled',
+    fields: { enabled: String(enabled) },
+  });
+  revalidatePath('/admin/channels');
+  return {
+    notice: enabled
+      ? 'שיחות חיות מופעלות — שיחות בתשלום ייצאו לאנשי קשר שנתנו הסכמה'
+      : 'שיחות חיות כובו',
+  };
 }

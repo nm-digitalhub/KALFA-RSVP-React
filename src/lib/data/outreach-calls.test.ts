@@ -8,7 +8,6 @@ vi.mock('server-only', () => ({}));
 vi.mock('@/lib/data/outreach-config', () => ({ getOutreachEnabled: vi.fn() }));
 vi.mock('@/lib/data/voximplant-config', () => ({
   getVoximplantConfig: vi.fn(),
-  getVoximplantLiveEnabled: vi.fn(),
 }));
 vi.mock('@/lib/data/call-attempts', () => ({
   createCallAttempt: vi.fn(),
@@ -52,7 +51,7 @@ vi.mock('@/lib/alerts/slack', () => ({ sendSlackAlert: vi.fn() }));
 
 import { dispatchOutreachCall, buildScriptCustomData } from './outreach-calls';
 import { getOutreachEnabled } from '@/lib/data/outreach-config';
-import { getVoximplantConfig, getVoximplantLiveEnabled } from '@/lib/data/voximplant-config';
+import { getVoximplantConfig } from '@/lib/data/voximplant-config';
 import {
   createCallAttempt,
   getCallAttemptByTouchpoint,
@@ -87,6 +86,7 @@ const CONFIG = {
   ruleId: '1494311', callerId: '972500000000',
   callbackSecret: 'CALLBACK_SECRET', groqApiKey: 'GROQ_SECRET',
   lowBalanceThreshold: 5, minCallReserve: 0.1, maxConcurrentCalls: 5, maxCallsPerCampaignHour: 200,
+  liveCallsEnabled: true,
 };
 const acct = (balance: number) => ({ result: { account_id: 1, account_name: 'x', account_email: 'x', active: true, currency: 'USD', balance, created: '' } });
 
@@ -94,7 +94,6 @@ beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(getOutreachEnabled).mockResolvedValue(true);
   vi.mocked(getVoximplantConfig).mockResolvedValue(CONFIG as never);
-  vi.mocked(getVoximplantLiveEnabled).mockReturnValue(true);
   vi.mocked(hasCallConsent).mockResolvedValue(true);
   vi.mocked(isDncListed).mockResolvedValue(false);
   vi.mocked(isContactReached).mockResolvedValue(false);
@@ -121,7 +120,10 @@ describe('gates (no dial)', () => {
     expect(startScenarios).not.toHaveBeenCalled();
   });
   it('2. live gate false (creds present) → blocked, no dial', async () => {
-    vi.mocked(getVoximplantLiveEnabled).mockReturnValue(false);
+    vi.mocked(getVoximplantConfig).mockResolvedValue({
+      ...CONFIG,
+      liveCallsEnabled: false,
+    } as never);
     const r = await dispatchOutreachCall(job());
     expect(r).toEqual({ kind: 'blocked', reason: 'live_calls_disabled' });
     expect(getVoximplantConfig).toHaveBeenCalled();

@@ -13,16 +13,28 @@ vi.mock('@/lib/data/admin/channels', () => ({
 // (both `server-only`). Stub them so importing './actions' doesn't pull the
 // server-only guard into this Node test suite.
 vi.mock('@/lib/data/admin/voximplant-channel', () => ({
+  getVoximplantChannelConfig: vi.fn(),
   updateVoximplantChannelConfig: vi.fn(),
   testVoximplantConnection: vi.fn(),
+  updateVoximplantLiveCalls: vi.fn(),
 }));
 vi.mock('@/lib/data/admin/outreach-master', () => ({
   getOutreachMasterState: vi.fn(),
   setOutreachEnabled: vi.fn(),
 }));
+vi.mock('@/lib/alerts/slack', () => ({ sendSlackAlert: vi.fn() }));
 
 import { updateWhatsAppChannelConfig } from '@/lib/data/admin/channels';
-import { updateWhatsAppChannelAction } from './actions';
+import {
+  getVoximplantChannelConfig,
+  updateVoximplantLiveCalls,
+} from '@/lib/data/admin/voximplant-channel';
+import {
+  updateWhatsAppChannelAction,
+  updateVoximplantLiveCallsAction,
+} from './actions';
+
+type VoxChannelConfig = Awaited<ReturnType<typeof getVoximplantChannelConfig>>;
 
 const NEXT_REDIRECT = Object.assign(new Error('NEXT_REDIRECT'), {
   digest: 'NEXT_REDIRECT;replace;/app;307;',
@@ -59,5 +71,43 @@ describe('updateWhatsAppChannelAction — Next.js control-flow signals (requireA
     const result = await updateWhatsAppChannelAction(null, fd(FIELDS));
 
     expect(result).toEqual({ error: 'עדכון הגדרות הערוץ נכשל. נסו שוב.' });
+  });
+});
+
+describe('updateVoximplantLiveCallsAction — fail-closed live-dial toggle', () => {
+  it('refuses to ENABLE without a full config, and does NOT write', async () => {
+    vi.mocked(getVoximplantChannelConfig).mockResolvedValue({
+      fullyConfigured: false,
+    } as VoxChannelConfig);
+
+    const result = await updateVoximplantLiveCallsAction(
+      null,
+      fd({ voximplant_live_calls: 'on' }),
+    );
+
+    expect(result?.error).toContain('קונפיג מלא');
+    expect(updateVoximplantLiveCalls).not.toHaveBeenCalled();
+  });
+
+  it('ENABLES when the config is complete', async () => {
+    vi.mocked(getVoximplantChannelConfig).mockResolvedValue({
+      fullyConfigured: true,
+    } as VoxChannelConfig);
+
+    const result = await updateVoximplantLiveCallsAction(
+      null,
+      fd({ voximplant_live_calls: 'on' }),
+    );
+
+    expect(updateVoximplantLiveCalls).toHaveBeenCalledWith(true);
+    expect(result?.notice).toBeTruthy();
+  });
+
+  it('DISABLES without a config check (no fail-closed guard on turning off)', async () => {
+    const result = await updateVoximplantLiveCallsAction(null, fd({}));
+
+    expect(getVoximplantChannelConfig).not.toHaveBeenCalled();
+    expect(updateVoximplantLiveCalls).toHaveBeenCalledWith(false);
+    expect(result?.notice).toBeTruthy();
   });
 });

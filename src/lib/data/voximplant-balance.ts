@@ -1,6 +1,6 @@
 import 'server-only';
 
-import { getVoximplantConfig, getVoximplantLiveEnabled } from '@/lib/data/voximplant-config';
+import { getVoximplantConfig } from '@/lib/data/voximplant-config';
 import { getAccountInfo } from '@/lib/voximplant/core';
 import { sendSlackAlert } from '@/lib/alerts/slack';
 
@@ -17,9 +17,10 @@ import { sendSlackAlert } from '@/lib/alerts/slack';
 //   - NEVER dials — this only reads account info, it does not place a call;
 //   - PII-free Slack payloads: balance/threshold numbers only, no guest data.
 export async function runBalanceCheck(): Promise<void> {
-  if (!getVoximplantLiveEnabled()) return; // dark-safe: no polling while the channel is off
   const cfg = await getVoximplantConfig();
-  if (!cfg) return;
+  // dark-safe: no polling while the channel is off (config missing or the
+  // effective live gate — admin toggle + env override — is disabled).
+  if (!cfg || !cfg.liveCallsEnabled) return;
 
   let balance: number;
   try {

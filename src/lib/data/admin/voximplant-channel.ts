@@ -5,7 +5,7 @@ import { requireAdmin } from '@/lib/auth/dal';
 import type { Database } from '@/lib/supabase/types';
 import {
   getVoximplantConfig,
-  getVoximplantLiveEnabled,
+  envAllowsLiveCalls,
 } from '@/lib/data/voximplant-config';
 import { getAccountInfo } from '@/lib/voximplant/core';
 
@@ -29,7 +29,9 @@ export type VoximplantChannelConfig = {
   voximplant_max_concurrent_calls: string;
   voximplant_max_calls_per_campaign_hour: string;
   configured: boolean; // derived: SA json + rule_id + caller_id present (matches getVoximplantConfig !== null)
-  liveEnabled: boolean; // env VOXIMPLANT_LIVE_CALLS — display-only badge, NOT a DB toggle
+  fullyConfigured: boolean; // configured AND callback_secret AND groq — the full dial config
+  liveCalls: boolean; // raw app_settings.voximplant_live_calls (the admin toggle's value)
+  liveEnabled: boolean; // EFFECTIVE live gate: the DB toggle AND the env not force-off
 };
 
 const SETTINGS_ID = true;
@@ -46,7 +48,8 @@ export async function getVoximplantChannelConfig(): Promise<VoximplantChannelCon
     .select(
       'voximplant_service_account_json, voximplant_rule_id, voximplant_caller_id, ' +
         'voximplant_callback_secret, voximplant_groq_api_key, voximplant_low_balance_threshold, ' +
-        'voximplant_min_call_reserve, voximplant_max_concurrent_calls, voximplant_max_calls_per_campaign_hour',
+        'voximplant_min_call_reserve, voximplant_max_concurrent_calls, voximplant_max_calls_per_campaign_hour, ' +
+        'voximplant_live_calls',
     )
     .eq('id', SETTINGS_ID)
     .maybeSingle();
@@ -69,7 +72,14 @@ export async function getVoximplantChannelConfig(): Promise<VoximplantChannelCon
       row.voximplant_max_calls_per_campaign_hour,
     ),
     configured: saConfigured && !!ruleId && !!callerId,
-    liveEnabled: getVoximplantLiveEnabled(),
+    fullyConfigured:
+      saConfigured &&
+      !!ruleId &&
+      !!callerId &&
+      s(row.voximplant_callback_secret).trim() !== '' &&
+      s(row.voximplant_groq_api_key).trim() !== '',
+    liveCalls: row.voximplant_live_calls === true,
+    liveEnabled: envAllowsLiveCalls() && row.voximplant_live_calls === true,
   };
 }
 
@@ -134,6 +144,20 @@ export async function updateVoximplantChannelConfig(
     .update(patch)
     .eq('id', SETTINGS_ID);
   if (error) throw new Error('עדכון הגדרות הערוץ נכשל');
+}
+
+// Admin toggle for the live-dial gate (app_settings.voximplant_live_calls). This
+// PERMITS real outbound calls — enabling it still leaves consent/DNC/balance and
+// the env kill switch in force. Admin-only (RLS + requireAdmin). The action layer
+// is fail-closed (refuses to enable without a complete config) and audit-logs.
+export async function updateVoximplantLiveCalls(enabled: boolean): Promise<void> {
+  await requireAdmin();
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from('app_settings')
+    .update({ voximplant_live_calls: enabled })
+    .eq('id', SETTINGS_ID);
+  if (error) throw new Error('עדכון מתג השיחות החיות נכשל');
 }
 
 export type ConnectionTestResult = { ok: boolean; message: string };
