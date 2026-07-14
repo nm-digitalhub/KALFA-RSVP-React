@@ -165,6 +165,32 @@ export function getAccountInfo(
   return voxRequest<GetAccountInfoResponse>(config, 'GetAccountInfo', {}, timeoutMs);
 }
 
+// GetPhoneNumbers — READ-ONLY list of the account's phone numbers (used to find a
+// usable Caller ID). NEVER purchases, attaches, deactivates, or modifies a number.
+// Fields absent for a given number arrive as null/undefined. No secret data.
+export interface PhoneNumberInfo {
+  phone_id: number;
+  phone_number: string;
+  phone_name?: string | null; // an optional operator-set label
+  phone_country_code?: string | null;
+  deactivated?: boolean;
+  can_be_used?: boolean;
+  application_id?: number | null; // set when the number is bound to an application
+  application_name?: string | null;
+  rule_id?: number | null; // set when the number is bound to a routing rule
+  rule_name?: string | null;
+}
+export interface GetPhoneNumbersResponse {
+  result: PhoneNumberInfo[];
+  total_count: number;
+}
+export function getPhoneNumbers(
+  config: VoximplantConfig,
+  timeoutMs?: number,
+): Promise<GetPhoneNumbersResponse> {
+  return voxRequest<GetPhoneNumbersResponse>(config, 'GetPhoneNumbers', {}, timeoutMs);
+}
+
 // StartScenarios — trigger an outbound scenario run (the RSVP call). `rule_id`
 // binds the scenario; `script_custom_data` carries per-call context. NOTE: this
 // INITIATES a real call — gate behind config + explicit authorization.

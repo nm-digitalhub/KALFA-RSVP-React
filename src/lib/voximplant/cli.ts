@@ -31,6 +31,7 @@ import {
   getApplications,
   getCallHistoryAsync,
   getHistoryReports,
+  getPhoneNumbers,
   getRules,
   startScenarios,
 } from './core';
@@ -84,6 +85,33 @@ async function cmdAccount(cfg: VoximplantConfig): Promise<void> {
   console.log(`currency      : ${a.currency}`);
   console.log(`balance       : ${a.balance}`);
   console.log(`created       : ${a.created}`);
+}
+
+// READ-ONLY: list the account's phone numbers so an operator can pick a Caller ID.
+// Never purchases/attaches/modifies a number; prints no credentials or secrets.
+async function cmdNumbers(cfg: VoximplantConfig): Promise<void> {
+  const { result, total_count } = await getPhoneNumbers(cfg);
+  console.log(`phone numbers : ${total_count}`);
+  if (result.length === 0) {
+    console.log(
+      '  (none — a Caller ID number must be purchased/verified before outbound calls)',
+    );
+    return;
+  }
+  for (const n of result) {
+    const status = n.deactivated
+      ? 'deactivated'
+      : n.can_be_used === false
+        ? 'unusable'
+        : 'active';
+    console.log(`  ${n.phone_number}`);
+    console.log(`    phone_id       : ${n.phone_id}`);
+    if (n.phone_name) console.log(`    phone_name     : ${n.phone_name}`);
+    console.log(`    country        : ${n.phone_country_code ?? '—'}`);
+    console.log(`    status         : ${status}`);
+    console.log(`    application_id : ${n.application_id ?? '—'}`);
+    console.log(`    rule_id        : ${n.rule_id ?? '—'}`);
+  }
 }
 
 async function cmdRules(
@@ -251,6 +279,8 @@ async function dispatch(
       return cmdRules(cfg, flags);
     case 'history':
       return cmdHistory(cfg, flags);
+    case 'numbers':
+      return cmdNumbers(cfg);
     case 'start':
       return cmdStart(cfg, flags);
   }
