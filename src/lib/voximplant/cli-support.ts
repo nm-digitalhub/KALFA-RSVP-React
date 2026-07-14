@@ -88,7 +88,7 @@ export function parseArgs(argv: string[]): ParsedArgs {
 // Commands + per-command flag validation
 // ---------------------------------------------------------------------------
 
-export const KNOWN_COMMANDS = ['account', 'rules', 'history', 'numbers', 'start'] as const;
+export const KNOWN_COMMANDS = ['account', 'rules', 'history', 'numbers', 'transactions', 'start'] as const;
 export type KnownCommand = (typeof KNOWN_COMMANDS)[number];
 
 export function assertKnownCommand(command: string): asserts command is KnownCommand {
@@ -113,6 +113,9 @@ const ALLOWED_FLAGS: Record<KnownCommand, Set<string>> = {
   // READ-ONLY list of the account's phone numbers (find a usable Caller ID).
   // Never purchases/attaches/modifies — only --key (credentials path).
   numbers: new Set(['key']),
+  // READ-ONLY billing ledger — what the balance is spent on. --days window,
+  // --type CSV filter. Never charges/refunds/modifies anything.
+  transactions: new Set(['key', 'days', 'type']),
   // A manual, one-shot StartScenarios trigger (byte-cap probe). `--confirm` is a
   // mandatory safety interlock — see resolveStartPlan; nothing runs without it.
   start: new Set(['key', 'rule', 'to', 'from', 'confirm', 'bytes']),
@@ -679,6 +682,7 @@ commands:
   rules [--app <id>]         List applications and one app's routing rules
   history <mode> [flags]     Fetch a call-history report (async → CSV)
   numbers                    List the account's phone numbers (read-only; find a Caller ID)
+  transactions [--days <n>]  Billing ledger — what the balance is spent on (read-only)
   start <flags> --confirm    Fire ONE StartScenarios call (byte-cap probe; PLACES A REAL CALL)
 
 history modes:

@@ -6,6 +6,7 @@ import {
   getHistoryReports,
   getPhoneNumbers,
   getRules,
+  getTransactionHistory,
   type GetHistoryReportsRequest,
   type GetRulesRequest,
   type VoximplantConfig,
@@ -102,5 +103,56 @@ describe('getPhoneNumbers (read-only)', () => {
     const res = await getPhoneNumbers(cfg);
     expect(res.total_count).toBe(0);
     expect(res.result).toEqual([]);
+  });
+});
+
+describe('getTransactionHistory (read-only)', () => {
+  it('sends the mandatory date range and returns the typed ledger', async () => {
+    let capturedUrl = '';
+    let capturedBody = new URLSearchParams();
+    vi.stubGlobal(
+      'fetch',
+      async (url: string, init: { body: URLSearchParams }) => {
+        capturedUrl = String(url);
+        capturedBody = init.body;
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            total_count: 2,
+            timezone: 'Etc/GMT',
+            result: [
+              {
+                transaction_id: 1,
+                transaction_date: '2026-07-01 00:00:00',
+                transaction_type: 'periodic_charge',
+                amount: -0.85,
+                currency: 'USD',
+                comment: 'phone number rent',
+              },
+              {
+                transaction_id: 2,
+                transaction_date: '2026-07-05 10:00:00',
+                transaction_type: 'call',
+                amount: -0.12,
+                currency: 'USD',
+              },
+            ],
+          }),
+        } as unknown as Response;
+      },
+    );
+
+    const res = await getTransactionHistory(cfg, {
+      from_date: '2026-06-01 00:00:00',
+      to_date: '2026-07-14 00:00:00',
+    });
+
+    expect(capturedUrl).toContain('GetTransactionHistory');
+    expect(capturedBody.get('from_date')).toBe('2026-06-01 00:00:00');
+    expect(capturedBody.get('to_date')).toBe('2026-07-14 00:00:00');
+    expect(res.total_count).toBe(2);
+    expect(res.result[0].transaction_type).toBe('periodic_charge');
+    expect(res.result[0].amount).toBeCloseTo(-0.85);
   });
 });

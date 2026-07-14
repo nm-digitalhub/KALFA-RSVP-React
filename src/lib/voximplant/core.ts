@@ -191,6 +191,42 @@ export function getPhoneNumbers(
   return voxRequest<GetPhoneNumbersResponse>(config, 'GetPhoneNumbers', {}, timeoutMs);
 }
 
+// GetTransactionHistory — READ-ONLY ledger of account debits/credits (to see what
+// the balance is spent on: phone-number rent, call/SMS charges, top-ups, etc.).
+// Amounts follow the API sign convention (charges typically negative). No secrets.
+export interface TransactionInfo {
+  transaction_id: number;
+  transaction_date: string;
+  transaction_type: string;
+  amount: number;
+  currency?: string | null;
+  comment?: string | null;
+}
+export interface GetTransactionHistoryResponse {
+  result: TransactionInfo[];
+  total_count: number;
+  timezone?: string | null;
+}
+export interface GetTransactionHistoryRequest {
+  from_date: string; // "YYYY-MM-DD HH:MM:SS" (account timezone / UTC)
+  to_date: string;
+  transaction_type?: string; // optional CSV filter
+  count?: number;
+}
+export function getTransactionHistory(
+  config: VoximplantConfig,
+  params: GetTransactionHistoryRequest,
+  timeoutMs?: number,
+): Promise<GetTransactionHistoryResponse> {
+  // from_date/to_date are mandatory — set AFTER the spread so they can't be dropped.
+  return voxRequest<GetTransactionHistoryResponse>(
+    config,
+    'GetTransactionHistory',
+    { ...params, from_date: params.from_date, to_date: params.to_date },
+    timeoutMs,
+  );
+}
+
 // StartScenarios — trigger an outbound scenario run (the RSVP call). `rule_id`
 // binds the scenario; `script_custom_data` carries per-call context. NOTE: this
 // INITIATES a real call — gate behind config + explicit authorization.

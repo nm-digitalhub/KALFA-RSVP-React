@@ -33,6 +33,7 @@ import {
   getHistoryReports,
   getPhoneNumbers,
   getRules,
+  getTransactionHistory,
   startScenarios,
 } from './core';
 import {
@@ -111,6 +112,54 @@ async function cmdNumbers(cfg: VoximplantConfig): Promise<void> {
     console.log(`    status         : ${status}`);
     console.log(`    application_id : ${n.application_id ?? '—'}`);
     console.log(`    rule_id        : ${n.rule_id ?? '—'}`);
+  }
+}
+
+// READ-ONLY: what the account balance is spent on. Summarizes the billing ledger
+// by transaction type over a --days window (default 90). Never charges/refunds.
+async function cmdTransactions(
+  cfg: VoximplantConfig,
+  flags: Record<string, FlagValue>,
+): Promise<void> {
+  const days = flags.days ? positiveInt('days', flags.days, { max: 365 }) : 90;
+  const now = new Date();
+  const from = new Date(now.getTime() - days * 24 * 60 * 60 * 1000);
+  // Management API wants "YYYY-MM-DD HH:MM:SS" (UTC is accepted).
+  const fmt = (d: Date): string => d.toISOString().slice(0, 19).replace('T', ' ');
+  const type = typeof flags.type === 'string' ? flags.type : undefined;
+
+  const { result, total_count, timezone } = await getTransactionHistory(cfg, {
+    from_date: fmt(from),
+    to_date: fmt(now),
+    transaction_type: type,
+    count: 500,
+  });
+
+  console.log(
+    `transactions (last ${days}d${type ? `, type=${type}` : ''}): ${total_count}${timezone ? `  [tz ${timezone}]` : ''}`,
+  );
+
+  // Net spend grouped by type (most-spent first). Charges are negative amounts.
+  const byType = new Map<string, { sum: number; count: number }>();
+  for (const t of result) {
+    const e = byType.get(t.transaction_type) ?? { sum: 0, count: 0 };
+    e.sum += t.amount;
+    e.count += 1;
+    byType.set(t.transaction_type, e);
+  }
+  console.log('by type (net amount, count):');
+  for (const [t, e] of [...byType.entries()].sort((a, b) => a[1].sum - b[1].sum)) {
+    console.log(`  ${t.padEnd(30)} ${e.sum.toFixed(4)}  (${e.count})`);
+  }
+
+  console.log('recent:');
+  for (const t of result.slice(0, 25)) {
+    // Some Management API responses omit/rename the date field — print it only
+    // when present rather than a bare "undefined".
+    const date = t.transaction_date ? `${t.transaction_date}  ` : '';
+    console.log(
+      `  ${date}${t.transaction_type.padEnd(26)} ${t.amount.toFixed(4)}  ${t.comment ?? ''}`,
+    );
   }
 }
 
@@ -281,6 +330,8 @@ async function dispatch(
       return cmdHistory(cfg, flags);
     case 'numbers':
       return cmdNumbers(cfg);
+    case 'transactions':
+      return cmdTransactions(cfg, flags);
     case 'start':
       return cmdStart(cfg, flags);
   }
