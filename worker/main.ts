@@ -12,7 +12,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { PgBoss } from 'pg-boss';
 
-import { QUEUES, type OutreachStepJob } from '@/lib/queue/queues';
+import { QUEUES, type OutreachCallRequest, type OutreachStepJob } from '@/lib/queue/queues';
+import { dispatchOutreachCall } from '@/lib/data/outreach-calls';
 import {
   listActiveCampaigns,
   listActiveOutreach,
@@ -69,6 +70,25 @@ loadEnv();
 const DAY_MS = 86_400_000;
 
 type StepJob = { id: string; data: OutreachStepJob };
+type CallJob = { id: string; data: OutreachCallRequest };
+
+// Outbound AI-call dispatch (C2). dispatchOutreachCall is fully fail-safe: only a
+// pre-dial balance-check transport failure is retryable — every other outcome
+// (blocked/skipped/ambiguous start_unknown/definite failed_to_start/reconciled)
+// COMPLETES the job so a retry can never place a second call. We throw ONLY on
+// that transient kind (guardedWorker then Slack-alerts + pg-boss retries per
+// CALL_RETRY). Log ids + kind only — never PII.
+async function handleCallRequest(job: CallJob): Promise<void> {
+  const result = await dispatchOutreachCall(job.data);
+  if (result.kind === 'transient_error') {
+    throw new Error(`voximplant balance check failed: ${result.reason}`);
+  }
+  console.log('[kalfa-worker] call-request resolved', {
+    jobId: job.id,
+    contactId: job.data.contactId,
+    kind: result.kind,
+  });
+}
 
 // Wrap a pg-boss work handler so a thrown failure fires a fail-safe ops alert
 // and is then RE-THROWN — pg-boss must still see the failure for its retry /
@@ -399,6 +419,12 @@ async function main(): Promise<void> {
     QUEUES.sweeper,
     guardedWorker(QUEUES.sweeper, async () => {
       await handleArm(boss);
+    }),
+  );
+  await boss.work(
+    QUEUES.callRequest,
+    guardedWorker(QUEUES.callRequest, async (jobs: CallJob[]) => {
+      for (const job of jobs) await handleCallRequest(job);
     }),
   );
   await boss.work(

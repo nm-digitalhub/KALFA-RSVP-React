@@ -89,6 +89,25 @@ export function formatIsraelWeekday(value: DateInput): string {
   return ms === null ? '' : weekdayFmt.format(ms).replace(WEEKDAY_PREFIX_RE, '');
 }
 
+// --- Spoken date (TTS) -------------------------------------------------------
+// A spoken-friendly Israel date for the AI-voice RSVP call's `ctx` payload:
+// weekday + day + Gregorian month name (Hebrew) + bare numeric year. The year is
+// left as bare digits on purpose — the VoxEngine scenario's own normalizeForSpeech
+// converts "2026"→"אלפיים עשרים ושש" before the TTS voices it.
+const spokenDateFmt = new Intl.DateTimeFormat(ISRAEL_LOCALE, {
+  timeZone: ISRAEL_TIME_ZONE,
+  weekday: 'long',
+  day: 'numeric',
+  month: 'long',
+  year: 'numeric',
+});
+
+/** 'יום ראשון, 14 ביולי 2026' — spoken-friendly Israel date for TTS. '' for invalid input. */
+export function formatIsraelSpokenDate(value: DateInput): string {
+  const ms = toMs(value);
+  return ms === null ? '' : spokenDateFmt.format(ms);
+}
+
 // --- Hebrew (Jewish) calendar date -------------------------------------------
 // ICU does ALL the calendar math (Intl with calendar:'hebrew' — no hand-rolled
 // algorithm); this only renders the day/year NUMBERS in traditional Hebrew

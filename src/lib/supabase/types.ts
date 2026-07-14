@@ -12,31 +12,6 @@ export type Database = {
   __InternalSupabase: {
     PostgrestVersion: "14.5"
   }
-  graphql_public: {
-    Tables: {
-      [_ in never]: never
-    }
-    Views: {
-      [_ in never]: never
-    }
-    Functions: {
-      graphql: {
-        Args: {
-          extensions?: Json
-          operationName?: string
-          query?: string
-          variables?: Json
-        }
-        Returns: Json
-      }
-    }
-    Enums: {
-      [_ in never]: never
-    }
-    CompositeTypes: {
-      [_ in never]: never
-    }
-  }
   public: {
     Tables: {
       activity_log: {
@@ -160,6 +135,15 @@ export type Database = {
           sumit_company_id: string | null
           terms_url: string | null
           updated_at: string
+          voximplant_callback_secret: string | null
+          voximplant_caller_id: string | null
+          voximplant_groq_api_key: string | null
+          voximplant_low_balance_threshold: number
+          voximplant_max_calls_per_campaign_hour: number
+          voximplant_max_concurrent_calls: number
+          voximplant_min_call_reserve: number
+          voximplant_rule_id: string | null
+          voximplant_service_account_json: string | null
           warranty_text: string | null
           whatsapp_access_token: string | null
           whatsapp_app_secret: string | null
@@ -217,6 +201,15 @@ export type Database = {
           sumit_company_id?: string | null
           terms_url?: string | null
           updated_at?: string
+          voximplant_callback_secret?: string | null
+          voximplant_caller_id?: string | null
+          voximplant_groq_api_key?: string | null
+          voximplant_low_balance_threshold?: number
+          voximplant_max_calls_per_campaign_hour?: number
+          voximplant_max_concurrent_calls?: number
+          voximplant_min_call_reserve?: number
+          voximplant_rule_id?: string | null
+          voximplant_service_account_json?: string | null
           warranty_text?: string | null
           whatsapp_access_token?: string | null
           whatsapp_app_secret?: string | null
@@ -274,6 +267,15 @@ export type Database = {
           sumit_company_id?: string | null
           terms_url?: string | null
           updated_at?: string
+          voximplant_callback_secret?: string | null
+          voximplant_caller_id?: string | null
+          voximplant_groq_api_key?: string | null
+          voximplant_low_balance_threshold?: number
+          voximplant_max_calls_per_campaign_hour?: number
+          voximplant_max_concurrent_calls?: number
+          voximplant_min_call_reserve?: number
+          voximplant_rule_id?: string | null
+          voximplant_service_account_json?: string | null
           warranty_text?: string | null
           whatsapp_access_token?: string | null
           whatsapp_app_secret?: string | null
@@ -398,6 +400,140 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      call_attempts: {
+        Row: {
+          access_token: string
+          billed_outcome: string | null
+          call_duration_sec: number | null
+          callback_count: number
+          campaign_id: string
+          contact_id: string
+          created_at: string
+          ctx_delivered_at: string | null
+          ctx_read_count: number
+          event_id: string
+          finish_reason: string | null
+          guest_id: string | null
+          id: string
+          last_callback_at: string | null
+          media_session_access_url: string | null
+          recording_started_at: string | null
+          recording_url: string | null
+          rsvp_digit: string | null
+          rsvp_method: string | null
+          status: string
+          token_expires_at: string
+          touchpoint_index: number
+          transcript: Json | null
+          updated_at: string
+          vox_call_session_history_id: string | null
+        }
+        Insert: {
+          access_token: string
+          billed_outcome?: string | null
+          call_duration_sec?: number | null
+          callback_count?: number
+          campaign_id: string
+          contact_id: string
+          created_at?: string
+          ctx_delivered_at?: string | null
+          ctx_read_count?: number
+          event_id: string
+          finish_reason?: string | null
+          guest_id?: string | null
+          id?: string
+          last_callback_at?: string | null
+          media_session_access_url?: string | null
+          recording_started_at?: string | null
+          recording_url?: string | null
+          rsvp_digit?: string | null
+          rsvp_method?: string | null
+          status?: string
+          token_expires_at: string
+          touchpoint_index: number
+          transcript?: Json | null
+          updated_at?: string
+          vox_call_session_history_id?: string | null
+        }
+        Update: {
+          access_token?: string
+          billed_outcome?: string | null
+          call_duration_sec?: number | null
+          callback_count?: number
+          campaign_id?: string
+          contact_id?: string
+          created_at?: string
+          ctx_delivered_at?: string | null
+          ctx_read_count?: number
+          event_id?: string
+          finish_reason?: string | null
+          guest_id?: string | null
+          id?: string
+          last_callback_at?: string | null
+          media_session_access_url?: string | null
+          recording_started_at?: string | null
+          recording_url?: string | null
+          rsvp_digit?: string | null
+          rsvp_method?: string | null
+          status?: string
+          token_expires_at?: string
+          touchpoint_index?: number
+          transcript?: Json | null
+          updated_at?: string
+          vox_call_session_history_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "call_attempts_campaign_id_fkey"
+            columns: ["campaign_id"]
+            isOneToOne: false
+            referencedRelation: "campaigns"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "call_attempts_contact_id_fkey"
+            columns: ["contact_id"]
+            isOneToOne: false
+            referencedRelation: "contacts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "call_attempts_event_id_fkey"
+            columns: ["event_id"]
+            isOneToOne: false
+            referencedRelation: "events"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "call_attempts_guest_id_fkey"
+            columns: ["guest_id"]
+            isOneToOne: false
+            referencedRelation: "guests"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      call_dnc_list: {
+        Row: {
+          added_by: string | null
+          created_at: string
+          normalized_phone: string
+          reason: string | null
+        }
+        Insert: {
+          added_by?: string | null
+          created_at?: string
+          normalized_phone: string
+          reason?: string | null
+        }
+        Update: {
+          added_by?: string | null
+          created_at?: string
+          normalized_phone?: string
+          reason?: string | null
+        }
+        Relationships: []
       }
       callback_requests: {
         Row: {
@@ -800,6 +936,7 @@ export type Database = {
       }
       contacts: {
         Row: {
+          call_consent_at: string | null
           created_at: string
           event_id: string
           id: string
@@ -810,6 +947,7 @@ export type Database = {
           whatsapp_consent_at: string | null
         }
         Insert: {
+          call_consent_at?: string | null
           created_at?: string
           event_id: string
           id?: string
@@ -820,6 +958,7 @@ export type Database = {
           whatsapp_consent_at?: string | null
         }
         Update: {
+          call_consent_at?: string | null
           created_at?: string
           event_id?: string
           id?: string
@@ -2732,9 +2871,6 @@ export type CompositeTypes<
     : never
 
 export const Constants = {
-  graphql_public: {
-    Enums: {},
-  },
   public: {
     Enums: {
       agreement_status: ["draft", "approved"],

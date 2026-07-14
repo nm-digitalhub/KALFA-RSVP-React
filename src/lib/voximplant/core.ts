@@ -18,6 +18,7 @@ import { createSign } from 'node:crypto';
 
 const MGMT_BASE = 'https://api.voximplant.com/platform_api';
 const JWT_TTL_SECONDS = 3600; // Voximplant hard max.
+const DEFAULT_TIMEOUT_MS = 20_000; // Node/undici fetch has no default timeout.
 
 // The three fields of the downloaded service-account JSON key. The private key is
 // a secret — sourced server-side / from a gitignored file only, never logged.
@@ -84,6 +85,7 @@ export async function voxRequest<T = unknown>(
   config: VoximplantConfig,
   method: string,
   params: VoxParams = {},
+  timeoutMs: number = DEFAULT_TIMEOUT_MS,
 ): Promise<T> {
   const token = signManagementJwt(config);
   const body = new URLSearchParams();
@@ -100,6 +102,11 @@ export async function voxRequest<T = unknown>(
         'Content-Type': 'application/x-www-form-urlencoded',
       },
       body,
+      // Node/undici `fetch` has NO default timeout — without this an unresponsive
+      // Management API would hang the worker forever, and the outbound trigger's
+      // "ambiguous timeout → start_unknown" path could never fire. The abort throws
+      // here and is (correctly) classified below as a VoximplantNetworkError.
+      signal: AbortSignal.timeout(timeoutMs),
     });
   } catch {
     throw new VoximplantNetworkError('שגיאת תקשורת עם מערכת השיחות');
@@ -153,8 +160,9 @@ export interface GetAccountInfoResponse {
 }
 export function getAccountInfo(
   config: VoximplantConfig,
+  timeoutMs?: number,
 ): Promise<GetAccountInfoResponse> {
-  return voxRequest<GetAccountInfoResponse>(config, 'GetAccountInfo');
+  return voxRequest<GetAccountInfoResponse>(config, 'GetAccountInfo', {}, timeoutMs);
 }
 
 // StartScenarios — trigger an outbound scenario run (the RSVP call). `rule_id`
@@ -168,14 +176,22 @@ export interface StartScenariosResponse {
   result: number;
   call_session_history_id?: number;
   media_session_access_url?: string;
+  // HTTPS control URL (verified field, httpapi/scenarios "Returns"). Type-only —
+  // not persisted, and NEVER proof of a started call (only result===1 &&
+  // call_session_history_id is proof).
+  media_session_access_secure_url?: string;
 }
 export function startScenarios(
   config: VoximplantConfig,
   params: StartScenariosRequest,
+  timeoutMs?: number,
 ): Promise<StartScenariosResponse> {
-  return voxRequest<StartScenariosResponse>(config, 'StartScenarios', {
-    ...params,
-  });
+  return voxRequest<StartScenariosResponse>(
+    config,
+    'StartScenarios',
+    { ...params },
+    timeoutMs,
+  );
 }
 
 // GetApplications

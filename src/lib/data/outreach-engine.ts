@@ -29,7 +29,7 @@ import {
 } from '@/lib/outreach/send-window';
 import { buildJewishCalendar } from '@/lib/outreach/jewish-calendar';
 import { enqueueStepJob, type StepSendResult } from '@/lib/outreach/enqueue';
-import { QUEUES, type OutreachCallRequest, type OutreachStepMode } from '@/lib/queue/queues';
+import { CALL_RETRY, QUEUES, type OutreachCallRequest, type OutreachStepMode } from '@/lib/queue/queues';
 import type { PgBoss } from 'pg-boss';
 
 const DAY_MS = 86_400_000;
@@ -165,6 +165,42 @@ export async function isContactReached(
     .eq('event_id', eventId)
     .eq('contact_id', contactId);
   return (count ?? 0) > 0;
+}
+
+// Call-consent gate for the AI-call channel (C2). The dispatcher is the FIRST and
+// ONLY enforcement point (nothing upstream checks it — only allowed_channels).
+// True ONLY when the contact exists, is not opted out (removal_requested), AND has
+// a recorded call consent. Fail-CLOSED: any read error → false (no call).
+export async function hasCallConsent(contactId: string): Promise<boolean> {
+  try {
+    const admin = createAdminClient();
+    const { data, error } = await admin
+      .from('contacts')
+      .select('removal_requested, call_consent_at')
+      .eq('id', contactId)
+      .maybeSingle();
+    if (error || !data) return false;
+    return !data.removal_requested && data.call_consent_at != null;
+  } catch {
+    return false;
+  }
+}
+
+// Do-Not-Call suppression for the AI-call channel. True when the number is on the
+// call_dnc_list. Fail-CLOSED: on error treat as listed (suppress the call).
+export async function isDncListed(normalizedPhone: string): Promise<boolean> {
+  try {
+    const admin = createAdminClient();
+    const { data, error } = await admin
+      .from('call_dnc_list')
+      .select('normalized_phone')
+      .eq('normalized_phone', normalizedPhone)
+      .maybeSingle();
+    if (error) return true;
+    return data != null;
+  } catch {
+    return true;
+  }
 }
 
 // The gate the worker checks at the top of every step. nowMs is injectable.
@@ -689,7 +725,7 @@ export async function prepareAndSendStep(
       scriptKey: tp.message_key,
       touchpointIndex: stepIndex,
     },
-    { id: detId(campaignId, contactId, 100000 + stepIndex, 'call') },
+    { id: detId(campaignId, contactId, 100000 + stepIndex, 'call'), ...CALL_RETRY },
   );
   await bumpCount(admin, campaignId, contactId, 'call_request_count');
   await setContactOpStatus(contactId, 'pending_call');

@@ -23,6 +23,19 @@ export const STEP_RETRY = {
   deadLetter: QUEUES.dead,
 } as const;
 
+// outreach-call-request retry policy. Applied at boss.send() time (like
+// STEP_RETRY, per enqueue.ts:53-57). Only the pre-dial GetAccountInfo transport
+// check is ever retried; once StartScenarios is invoked the dispatcher never
+// asks for a retry (ambiguous ⇒ start_unknown, definite ⇒ failed_to_start), so a
+// retry can never place a second call. Deliberately NO `deadLetter`: QUEUES.dead's
+// consumer (handleDead) hard-assumes an OutreachStepJob shape and would crash on
+// a call job. guardedWorker already Slack-alerts on the final throw.
+export const CALL_RETRY = {
+  retryLimit: 2,
+  retryBackoff: true,
+  retryDelayMax: 60,
+} as const;
+
 // How a step job was enqueued (§11.2/§11.4): 'plan'/'replan' → detId, 'defer' →
 // deferId. Carried in the payload for audit + successor re-enqueue; never PII.
 export type OutreachStepMode = 'plan' | 'defer' | 'replan';
