@@ -212,6 +212,7 @@ export interface GetTransactionHistoryRequest {
   to_date: string;
   transaction_type?: string; // optional CSV filter
   count?: number;
+  offset?: number; // pagination — skip this many rows
 }
 export function getTransactionHistory(
   config: VoximplantConfig,

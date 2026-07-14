@@ -35,6 +35,7 @@ import {
   getRules,
   getTransactionHistory,
   startScenarios,
+  type TransactionInfo,
 } from './core';
 import {
   assertKnownCommand,
@@ -128,15 +129,38 @@ async function cmdTransactions(
   const fmt = (d: Date): string => d.toISOString().slice(0, 19).replace('T', ' ');
   const type = typeof flags.type === 'string' ? flags.type : undefined;
 
-  const { result, total_count, timezone } = await getTransactionHistory(cfg, {
-    from_date: fmt(from),
-    to_date: fmt(now),
-    transaction_type: type,
-    count: 500,
-  });
+  // Paginate through the FULL window so the summary reflects EVERY transaction,
+  // not just the first page. PAGE is the per-request cap; MAX_ROWS is a safety
+  // backstop against an unbounded loop.
+  const PAGE = 1000;
+  const MAX_ROWS = 100_000;
+  const result: TransactionInfo[] = [];
+  let total_count = 0;
+  let timezone: string | null | undefined;
+  let offset = 0;
+  for (;;) {
+    const page = await getTransactionHistory(cfg, {
+      from_date: fmt(from),
+      to_date: fmt(now),
+      transaction_type: type,
+      count: PAGE,
+      offset,
+    });
+    total_count = page.total_count;
+    timezone = page.timezone;
+    result.push(...page.result);
+    offset += page.result.length;
+    if (
+      page.result.length === 0 ||
+      result.length >= total_count ||
+      result.length >= MAX_ROWS
+    ) {
+      break;
+    }
+  }
 
   console.log(
-    `transactions (last ${days}d${type ? `, type=${type}` : ''}): ${total_count}${timezone ? `  [tz ${timezone}]` : ''}`,
+    `transactions (last ${days}d${type ? `, type=${type}` : ''}): ${total_count} total, ${result.length} aggregated${timezone ? `  [tz ${timezone}]` : ''}`,
   );
 
   // Net spend grouped by type (most-spent first). Charges are negative amounts.
