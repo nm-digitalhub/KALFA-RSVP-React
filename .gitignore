@@ -54,9 +54,16 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 dist/
+# Voximplant service-account keys + voxengine-ci config (NEVER commit — RSA private key inside)
 voxi_auth.json
+vox_ci_credentials.json
+*vox*credentials*.json
+voximplant-ci/voximplant.json
 storage_state.json
 
 # per-deploy version-skew id (written by npm run deploy)
 /.deploy-id
 *.swp
+
+# local scratch (downloaded reports etc.)
+/tmp/

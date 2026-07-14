@@ -1,0 +1,183 @@
+.
+├── public
+│   ├── brands
+│   │   ├── bit.png
+│   │   └── paybox.png
+│   ├── icons
+│   │   ├── badge.svg
+│   │   ├── icon.svg
+│   │   └── maskable-icon.svg
+│   └── sw.js
+├── scripts
+│   ├── deploy-email-change-template.mjs
+│   ├── deploy-recovery-email-template.mjs
+│   ├── kalfa-preflight.sh
+│   ├── kalfa-worktree-snapshot.sh
+│   ├── send-one-invite.ts
+│   └── verify-db-contracts.mjs
+├── src
+│   ├── app
+│   │   ├── favicon.ico
+│   │   ├── global-error.tsx
+│   │   ├── globals.css
+│   │   ├── layout.tsx
+│   │   ├── manifest.ts
+│   │   └── not-found.tsx
+│   ├── components
+│   │   ├── add-to-calendar.test.ts
+│   │   ├── add-to-calendar.tsx
+│   │   ├── admin-shell.tsx
+│   │   ├── app-shell.tsx
+│   │   ├── date-select-il.tsx
+│   │   ├── forms.tsx
+│   │   ├── org-switcher.tsx
+│   │   ├── pagination.tsx
+│   │   ├── password-input.tsx
+│   │   ├── time-select-24.tsx
+│   │   └── use-version-skew-reload.ts
+│   ├── hooks
+│   │   └── use-mobile.ts
+│   ├── lib
+│   │   ├── constants.ts
+│   │   ├── csv.test.ts
+│   │   ├── csv.ts
+│   │   ├── date.test.ts
+│   │   ├── date.ts
+│   │   ├── format.test.ts
+│   │   ├── format.ts
+│   │   ├── html.ts
+│   │   ├── password-strength.ts
+│   │   ├── permissions.ts
+│   │   ├── phone.test.ts
+│   │   ├── phone.ts
+│   │   ├── url.test.ts
+│   │   ├── url.ts
+│   │   ├── utils.ts
+│   │   ├── version-skew.test.ts
+│   │   └── version-skew.ts
+│   ├── test
+│   │   └── supabase-mock.ts
+│   ├── instrumentation.test.ts
+│   ├── instrumentation.ts
+│   └── proxy.ts
+├── supabase
+│   ├── migrations
+│   │   ├── 20260621214435_6e440290-12d1-4df4-94f5-09698691d951.sql
+│   │   ├── 20260622000810_ea62510e-3c43-4efe-8bfd-24f6f6467f7b.sql
+│   │   ├── 20260622001354_ed18f6fc-408d-4654-9367-dd6ff3862507.sql
+│   │   ├── 20260622120000_harden_guests_rls.sql
+│   │   ├── 202606240001_settings_and_sumit_payments.sql
+│   │   ├── 202606240002_order_payment_statuses.sql
+│   │   ├── 202606240003_order_payment_flow.sql
+│   │   ├── 202606240004_orders_user_id_index.sql
+│   │   ├── 202606240005_app_settings.sql
+│   │   ├── 202606240006_payment_provider_settings.sql
+│   │   ├── 202606240007_outcome_billing_schema.sql
+│   │   ├── 202606240008_id_documents_bucket.sql
+│   │   ├── 202606240009_campaign_templates.sql
+│   │   ├── 202606240010_fix_template_names.sql
+│   │   ├── 202606240011_attempt_policy.sql
+│   │   ├── 202606240012_single_track.sql
+│   │   ├── 202606240013_template_channels.sql
+│   │   ├── 202606240014_outreach_schedule.sql
+│   │   ├── 202606240015_sms_otp.sql
+│   │   ├── 202606240016_agreement_otp_and_company.sql
+│   │   ├── 202606240017_company_legal_config.sql
+│   │   ├── 202606240018_smtp_email.sql
+│   │   ├── 202606240019_dkim.sql
+│   │   ├── 202606260020_campaign_holds_flag.sql
+│   │   ├── 202606280021_org_multitenancy.sql
+│   │   ├── 202606290022_agreement_documents.sql
+│   │   ├── 202606290023_agreement_config.sql
+│   │   ├── 202606290024_billing_authorized_set.sql
+│   │   ├── 202606290025_campaign_auth_external_ref.sql
+│   │   ├── 202606290026_campaign_card_expiry.sql
+│   │   ├── 202606290027_charge_findings.sql
+│   │   ├── 202606290028_billing_backhalf.sql
+│   │   ├── 202606290029_billing_set_membership.sql
+│   │   ├── 202606290030_message_templates.sql
+│   │   ├── 202606290031_max_contacts_not_null.sql
+│   │   ├── 202606290032_outreach_state.sql
+│   │   ├── 202606290033_whatsapp_waba_id.sql
+│   │   ├── 202606290034_rsvp_harden.sql
+│   │   ├── 202606290035_webhook_inbox.sql
+│   │   ├── 202606300036_webhook_claim_skip_locked.sql
+│   │   ├── 202606300037_message_template_components.sql
+│   │   ├── 202606300038_lock_billing_rpcs.sql
+│   │   ├── 20260630072729_events_date_guards_l0a.sql
+│   │   ├── 20260630164747_l2_rpc_event_date_guards_and_billing_integrity.sql
+│   │   ├── 20260630223635_event_lifecycle_state_model.sql
+│   │   ├── 20260630230249_event_lifecycle_trigger_revoke_public.sql
+│   │   ├── 20260702135940_outreach_template_failures.sql
+│   │   ├── 20260702193231_packages_operational_checks.sql
+│   │   ├── 20260702201958_events_celebrants.sql
+│   │   ├── 20260705115539_org_phase3_rls_swap.sql
+│   │   ├── 20260705120408_event_gift_and_invite_media.sql
+│   │   ├── 20260705162625_rsvp_headcount_and_unique_phone.sql
+│   │   ├── 20260705170319_guest_import_staging.sql
+│   │   ├── 20260706101209_rsvp_view_event_type_fields.sql
+│   │   ├── 20260706102546_rsvp_view_gift_provider.sql
+│   │   ├── 20260706113215_group_name_unique_and_guest_totals.sql
+│   │   ├── 20260706130919_group_norm_unique_totals_v2.sql
+│   │   ├── 20260706132519_count_checks_and_fresh_answer_wins.sql
+│   │   ├── 20260706132838_document_guest_totals.sql
+│   │   ├── 20260706135941_over_invited_business_flag.sql
+│   │   ├── 20260706154252_rsvp_note_split.sql
+│   │   ├── 20260706165113_show_meal_pref_toggle.sql
+│   │   ├── 20260707120000_whatsapp_send_timing.sql
+│   │   ├── 20260707130000_send_timing_plan_rev.sql
+│   │   ├── 20260707140000_record_step_plan_invoker.sql
+│   │   ├── 20260707150000_send_timing_serial_flow.sql
+│   │   ├── 20260707160000_rsvp_quick_reply_flag.sql
+│   │   ├── 20260707170000_brit_trad_templates.sql
+│   │   ├── 20260708140000_create_push_subscriptions.sql
+│   │   ├── 20260708170000_grant_show_meal_pref_update.sql
+│   │   ├── 20260708233928_create_push_delivery_log.sql
+│   │   ├── 20260709120000_remove_orders.sql
+│   │   ├── 20260712104001_campaign_authorized_set_audit.sql
+│   │   ├── 20260712104032_billing_exposure_predicates.sql
+│   │   ├── 20260712104117_reconcile_authorized_set.sql
+│   │   ├── 20260712104129_app_settings_billing_exposure_gate.sql
+│   │   ├── 20260712104155_billed_result_exposure_gate.sql
+│   │   ├── 20260712104206_billed_results_contact_fk_restrict.sql
+│   │   ├── 20260712115459_billing_exposure_funded_cap.sql
+│   │   ├── 20260712124239_event_day_pay_template.sql
+│   │   ├── 20260712174141_who_s_coming_opt_in.sql
+│   │   ├── 20260712174206_thankyou_template.sql
+│   │   ├── 20260712201416_wire_brit_formatted_thankyou_trad_v2.sql
+│   │   ├── 20260712205030_auto_thankyou_schema.sql
+│   │   ├── 20260713022924_slack_ops_alerting_config.sql
+│   │   ├── 20260713044433_slack_mention_config.sql
+│   │   ├── 20260713141127_harden_function_search_path_and_grants.sql
+│   │   ├── 20260713143941_gap1_rls_initplan_optimization.sql
+│   │   ├── 20260713162623_scope_privileged_policies_to_authenticated.sql
+│   │   ├── 20260713171233_platform_rbac_owner_staff.sql
+│   │   ├── 20260713183221_support_access_log.sql
+│   │   ├── 20260713183724_support_access_log_owner_id_and_fk_fix.sql
+│   │   ├── 20260713203826_org_role_permissions_per_role.sql
+│   │   ├── 20260713205146_org_rbac_harden_function_grants.sql
+│   │   └── 20260713211844_harden_secdef_function_grants_anon.sql
+│   ├── templates
+│   │   ├── email_change.html
+│   │   └── recovery.html
+│   └── config.toml
+├── worker
+│   ├── empty.js
+│   ├── main.ts
+│   ├── pg.d.ts
+│   └── pgboss-meta.ts
+├── components.json
+├── ecosystem.config.cjs
+├── eslint.config.mjs
+├── index.html
+├── israeli-market-fit.zip
+├── next.config.ts
+├── next.config.ts.backup.20260624-142707
+├── package-lock.json
+├── package.json
+├── postcss.config.mjs
+├── project-tree.txt
+├── skills-lock.json
+├── swagger.json
+├── tsconfig.json
+└── vitest.config.ts
