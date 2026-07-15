@@ -1,1 +1,1 @@
-[{"ruleName":"KALFA","scenarios":["KALFA"],"rulePattern":".*"}]
+[{"ruleName":"KALFA","scenarios":["KALFA"],"rulePattern":".*"},{"ruleName":"OutCallPreview","scenarios":["RSVPPreview"],"rulePattern":".*"}]
