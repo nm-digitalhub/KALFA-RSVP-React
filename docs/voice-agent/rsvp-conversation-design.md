@@ -23,6 +23,8 @@
 | E-9 | Consent: שדה `contacts.call_consent_at` (חשוף כ-`call_consent` ב-RSVP view). שיחות חיות חסומות עד השלמת מסלול B1. | `src/lib/data/rsvp.ts:70-77`, memory B1 |
 | E-10 | שעות חיוג מותרות 08:00–21:00 שעון ישראל — נאכפות בשכבת ה-dispatch; התרחיש מוסיף safety-net. | כלל מוצר קבוע |
 | E-11 | הסוכן ההופכי (scenario) מדווח תוצאות שיחה (cb) ומטפל ב-`ClientToolCall`; timeout גלובלי סוגר סשן. | VoiceAgentTest.voxengine.js |
+| E-12 | `clientToolResult` **חייב** לכלול `is_error` (boolean) — השמטתו סוגרת את ה-WebSocket ב-1008 (policy violation) מיד אחרי כל קריאת כלי, והסוכן לא מספיק לומר את אישור הסגירה. is_error=false = טופל (saved/queued/removed/noted); true = הכלי לא רץ. | אומת חי session 6760041670 |
+| E-13 | הקול **אינו מונוטוני** — מדד pitch אובייקטיבי (pitchfinder YIN): טווח ~11.9 חצאי-טונים בפתיחה. "רובוטיות" מגיעה ממרקם/איכות אודיו ולא מ-F0. `optimize_streaming_latency` הורד 3→1, stability 0.5→0.4 לשיפור מרקם. | scripts/analyze-call-pitch.ts |
 
 ---
 
