@@ -3,8 +3,9 @@
         {
             "config": "agent_configs/KALFA-RSVP-Preview.json",
             "id": "agent_9701kxj3n54ye518a3s518cexd48",
-            "version_id": "agtvrsn_5901kxkg30r6fg0s9vj6gbwcbhz7",
-            "branch_id": "agtbrch_4101kxj3n5tqf2kae5recbbn2rtj"
+            "version_id": "agtvrsn_9201kxkj22kre3b92hn457vm8jxm",
+            "branch_id": "agtbrch_4101kxj3n5tqf2kae5recbbn2rtj",
+            "branches": {}
         }
     ]
 }
