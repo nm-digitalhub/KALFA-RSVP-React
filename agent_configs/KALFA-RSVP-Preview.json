@@ -11,7 +11,7 @@
             "turn_timeout": 7,
             "silence_end_call_timeout": -1,
             "mode": "turn",
-            "turn_eagerness": "high",
+            "turn_eagerness": "eager",
             "spelling_patience": "auto",
             "speculative_turn": true,
             "retranscribe_on_turn_timeout": false,
