@@ -26,6 +26,10 @@
 //   ElevenLabs.Events.WebSocketMediaStarted / WebSocketMediaEnded (~6351);
 //   CallEvents.Connected / RecordStarted(ev.url) / Failed / Disconnected;
 //   Call.record(CallRecordParameters).
+// The ElevenLabs namespace only exists after its module is required (Modules.ElevenLabs
+// = 'elevenlabs', typings ~8360). Without this the scenario throws "ElevenLabs is not
+// defined" the moment it reaches createAgentsClient.
+require(Modules.ElevenLabs);
 VoxEngine.addEventListener(AppEvents.Started, function () {
     var AGENT_ID = 'agent_9701kxj3n54ye518a3s518cexd48';
     // Global hard limit — a leaked session bills money. Close at 90s.
