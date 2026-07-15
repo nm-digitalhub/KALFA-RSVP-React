@@ -59,8 +59,11 @@
 require(Modules.ElevenLabs);
 VoxEngine.addEventListener(AppEvents.Started, function () {
     var AGENT_ID = 'agent_9701kxj3n54ye518a3s518cexd48';
-    // Global hard limit — a leaked session bills money. Close at 90s.
-    var GLOBAL_TIMEOUT_MS = 90000;
+    // Global hard limit — a leaked session bills money. 150s (conversation-design
+    // §2.5): a REAL conversational call with one guest question was cut mid-count
+    // at 90s (session 6758867554); the timeout is a stuck-session safety net, not
+    // a terminator for a healthy conversation.
+    var GLOBAL_TIMEOUT_MS = 150000;
     var state = {
         to: '',
         from: '',
