@@ -22,6 +22,9 @@ const eslintConfig = defineConfig([
     "dist/**",
     // Harness session data (not application source).
     ".remember/**",
+    // Local agent/skill config — subagent defs, references, and VoxEngine template
+    // scaffolds (which use require(Modules.X)). Gitignored, not application source.
+    ".claude/**",
     // voxengine-ci helper scaffold (generated wrapper, not our source).
     "voximplant-ci/**",
     // voxengine-ci build output + local CI metadata mirror (generated, not
