@@ -19,9 +19,13 @@
 //   VoxEngine.customData/callPSTN/terminate, Call.say(text,{voice}), .handleTones,
 //   .stopPlayback, .hangup, .record(CallRecordParameters); CallEvents.Connected/
 //   PlaybackFinished/ToneReceived(ev.tone)/RecordStarted(ev.url)/Failed/Disconnected;
-//   VoiceList.Google.he_IL_Wavenet_A; Net.httpRequestAsync. say() text accepts
-//   inline SSML for Google (d.ts say() doc references the <say-as> tag; <sub>/<break>
-//   are Google-supported, <speak> root optional) — used for he-IL pronunciation.
+//   VoiceList.Google.he_IL_Wavenet_A; Net.httpRequestAsync.
+//   NOTE on SSML: DISPROVEN on a live call (session 6756017978). Despite the d.ts
+//   say() doc referencing a <say-as> tag, this account's Google he-IL say() spoke
+//   SSML LITERALLY ("<sub alias=...>" -> "קטן-מ SAB ALIAS שווה…") and the raw tags
+//   broke playback (terminal PlaybackFinished never fired). => NO SSML in say() here.
+//   Pronunciation is tuned with niqqud only (plain combining Unicode, safe-by-
+//   degradation: ignored niqqud just reads the bare word, never garbage).
 VoxEngine.addEventListener(AppEvents.Started, function () {
     var ttsOptions = {
         voice: VoiceList.Google.he_IL_Wavenet_A
@@ -29,12 +33,13 @@ VoxEngine.addEventListener(AppEvents.Started, function () {
     // PREVIEW placeholders: event_owner + event_type do NOT exist in the ctx
     // response yet. In production they will arrive from the ctx endpoint after a
     // backend change; for this preview they are fixed demo values.
-    // Pronunciation fix: Google he-IL Wavenet read "קלפה" as "כלפה". SSML <sub>
-    // (supported by say() for Google — <speak> root is optional) forces the spoken
-    // form via a phonetic+niqqud alias while keeping the written token intact. This
-    // constant flows into ALL family-name occurrences (F1 disclosure, reject line,
-    // confirmation line), so the fix is applied uniformly in one place.
-    var PREVIEW_EVENT_OWNER = 'משפחת <sub alias="קָאלְפָה">קלפה</sub>';
+    // Pronunciation fix (tag-free): Google he-IL Wavenet read "קלפה" as "כלפה".
+    // SSML was tried and PROVEN WRONG on a live call — say() spoke the tags aloud
+    // ("קטן-מ SAB ALIAS…") — so we use ONLY niqqud (combining Unicode marks). Niqqud
+    // is safe-by-degradation: if the voice ignores it, it simply reads "קלפה" as
+    // before (never garbage). Qamatz on the kuf pushes a hard "ka". This constant
+    // flows into ALL family-name occurrences, so the fix is applied in one place.
+    var PREVIEW_EVENT_OWNER = 'משפחת קָלְפָה';
     var PREVIEW_EVENT_TYPE = 'הברית';
     // Global hard limit — a leaked session bills money. Close politely at 90s.
     var GLOBAL_TIMEOUT_MS = 90000;
@@ -141,12 +146,18 @@ VoxEngine.addEventListener(AppEvents.Started, function () {
         clearPromptTimer();
         clearCountTimer();
         sayLogged(call, text);
-        // Safety net only: if PlaybackFinished never fires, close after 14s.
+        // Safety net only: normally the terminal CallEvents.PlaybackFinished fires and
+        // hangs up (cleared below). With SSML removed, playback is well-formed so it
+        // WILL fire. As a bound on any silent tail if it somehow doesn't, estimate the
+        // spoken length from the text (~130ms/char, niqqud marks over-count harmlessly)
+        // and cap it to 4.5-9s — long enough never to truncate, short enough to avoid
+        // a long dead tail.
         clearFallbackHangupTimer();
+        var fallbackMs = Math.min(9000, Math.max(4500, text.length * 130));
         state.fallbackHangupTimer = setTimeout(function () {
-            log('Final-line PlaybackFinished not seen — fallback hangup.');
+            log('Final-line PlaybackFinished not seen — fallback hangup after ' + fallbackMs + 'ms.');
             scheduleHangup(call, 0);
-        }, 14000);
+        }, fallbackMs);
     }
     // C1: submit the guest count and close. Empty count => generic confirmation.
     function submitCount(call) {
@@ -158,10 +169,11 @@ VoxEngine.addEventListener(AppEvents.Started, function () {
             finish(call, 'רשמתי אתכם. את המספר המדויק תעדכנו בוואטסאפ. נתראה!');
         }
         else {
-            // Pronunciation fix: a short break separates the owner name from the
-            // closing so "מחכים לכם" is not swallowed, and niqqud sharpens it.
+            // Pronunciation fix (tag-free): niqqud only sharpens "מחכים לכם"; no SSML
+            // <break> (say() would speak the tag aloud). The comma before it gives a
+            // natural spoken pause without any markup.
             finish(call, 'מעולה, ' + state.countDigits + '. רשמתי. ' +
-                PREVIEW_EVENT_OWNER + ' <break time="250ms"/> מְחַכִּים לָכֶם — נתראה!');
+                PREVIEW_EVENT_OWNER + ', מְחַכִּים לָכֶם — נתראה!');
         }
     }
     function armCountTimer(call, delayMs) {
