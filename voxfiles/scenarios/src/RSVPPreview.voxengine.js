@@ -62,6 +62,7 @@ VoxEngine.addEventListener(AppEvents.Started, function () {
         rsvpReprompted: false,
         awaitOptOut: false,
         optOutOffered: false,
+        optOutPlaying: false,
         finished: false,
         finalLinePlaying: false,
         hangupScheduled: false,
@@ -200,7 +201,11 @@ VoxEngine.addEventListener(AppEvents.Started, function () {
         if (isFirst && !state.optOutOffered) {
             state.awaitOptOut = true;
         }
-        armRsvpReprompt(call);
+        // B2 fix: DO NOT arm the no-input/reprompt timer here. The full ask (~9s with
+        // the disclaimer) plus the opt-out line are still speaking; arming now made the
+        // 9s timer fire mid-sentence and truncate "לחצו 3" / jump the opt-out. The
+        // timer is armed instead on the PlaybackFinished of the LAST spoken line (the
+        // opt-out after the first ask, or the ask itself on a repeat) — see below.
     }
     // One gentle re-prompt if no key is pressed; after that, the global timeout
     // owns the polite close (never loop a third time).
@@ -321,12 +326,30 @@ VoxEngine.addEventListener(AppEvents.Started, function () {
                 askRsvp(call, true);
                 return;
             }
-            // F2: after the first ask finishes playing naturally, speak the opt-out
-            // line once, after this short pause.
-            if (state.stage === 'rsvp_ask' && state.awaitOptOut && !state.optOutOffered) {
-                state.awaitOptOut = false;
-                state.optOutOffered = true;
-                sayLogged(call, 'ולהסרה מהרשימה — לחצו אפס.');
+            // B2: the reprompt/no-input window opens ONLY after the guest has actually
+            // heard every option (and, on the first ask, the opt-out line) in full.
+            if (state.stage === 'rsvp_ask') {
+                // (a) The opt-out line itself just finished → now arm the timer.
+                if (state.optOutPlaying) {
+                    state.optOutPlaying = false;
+                    armRsvpReprompt(call);
+                    return;
+                }
+                // (b) The FIRST ask just finished → speak the opt-out once, then defer
+                // the timer until that line's PlaybackFinished (branch a).
+                if (state.awaitOptOut && !state.optOutOffered) {
+                    state.awaitOptOut = false;
+                    state.optOutOffered = true;
+                    state.optOutPlaying = true;
+                    sayLogged(call, 'ולהסרה מהרשימה — לחצו אפס.');
+                    return;
+                }
+                // (c) A repeat ask (option 9) or the reprompt line finished, with no
+                // opt-out pending → open the window. Never arm a 2nd reprompt: after
+                // one reprompt the global timeout owns the polite close (2-strikes).
+                if (!state.rsvpReprompted) {
+                    armRsvpReprompt(call);
+                }
                 return;
             }
             // C1: the moment the count question finishes, open the listening window.
