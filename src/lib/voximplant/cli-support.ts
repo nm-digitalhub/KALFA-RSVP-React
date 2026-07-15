@@ -34,6 +34,8 @@ export const KNOWN_FLAGS = new Set([
   'confirm',
   'bytes',
   'raw',
+  'origin',
+  'tok',
 ]);
 
 // Flags that never take a value (presence = true).
@@ -119,7 +121,7 @@ const ALLOWED_FLAGS: Record<KnownCommand, Set<string>> = {
   transactions: new Set(['key', 'days', 'type']),
   // A manual, one-shot StartScenarios trigger (byte-cap probe). `--confirm` is a
   // mandatory safety interlock — see resolveStartPlan; nothing runs without it.
-  start: new Set(['key', 'rule', 'to', 'from', 'confirm', 'bytes', 'raw']),
+  start: new Set(['key', 'rule', 'to', 'from', 'confirm', 'bytes', 'raw', 'origin', 'tok']),
 };
 
 // Reject any flag that does not belong to the given command (--help is global and
@@ -276,7 +278,22 @@ export interface StartPlan {
   // synthetic payload) — used to isolate whether the delivery problem is size/
   // encoding vs transport by sending a tiny plain-ASCII value.
   raw?: string;
+  // Branch B live-dial test: the app origin the scenario builds the ctx/cb URLs
+  // from. Defaults to the beta origin when omitted.
+  origin?: string;
+  // Branch B live-dial test: the opaque per-call access token (`tok`). A fake
+  // 32-hex value still dials — the scenario runs callPSTN even when ctx 404s —
+  // but there is no personalization or Groq (DTMF-only). Pass a REAL
+  // call_attempts.access_token for a fully personalized test.
+  tok?: string;
 }
+
+// Default app origin for the Branch B start probe (the beta deployment).
+export const START_DEFAULT_ORIGIN = 'https://beta.kalfa.me';
+// A syntactically valid but non-existent access token: ctx will 404 (no
+// personalization / no Groq) yet the scenario still dials — enough to verify the
+// transport + PSTN leg. Overridable via --tok for a real, personalized test.
+const START_PLACEHOLDER_TOK = '0'.repeat(32);
 
 // Validate the arguments for `start`. This does NOT place a call — it only
 // produces a plan. The `--confirm` interlock is enforced HERE so that every
@@ -298,14 +315,20 @@ export function resolveStartPlan(flags: Record<string, FlagValue>): StartPlan {
       ? positiveInt('bytes', flags.bytes, { max: START_MAX_BYTES })
       : undefined;
   const raw = typeof flags.raw === 'string' ? flags.raw : undefined;
-  return { ruleId, to, from, targetBytes, raw };
+  const origin =
+    flags.origin !== undefined ? requireStringValue('origin', flags.origin) : undefined;
+  const tok = flags.tok !== undefined ? requireStringValue('tok', flags.tok) : undefined;
+  return { ruleId, to, from, targetBytes, raw, origin, tok };
 }
 
-// Build a synthetic script_custom_data mirroring the production payload SHAPE
-// (to/from/iid/cb/ctx/gk) but with placeholder values only — no real signed
-// tokens or Groq key ever appear here. When `targetBytes` is set the payload is
-// padded to approximately that UTF-8 size to probe the scenario's byte cap.
-// Returns the payload AND its exact byte length so callers log only the count.
+// Build the script_custom_data for the start probe. Mirrors the production
+// Branch B payload SHAPE — {to, from, tok, u} — so the redeployed scenario reads
+// it correctly and actually dials. `tok` defaults to a syntactically valid but
+// non-existent access token (ctx 404s → DTMF-only, no personalization); pass a
+// real one via --tok for a personalized test. No real Groq key or signed token
+// ever appears here. When `targetBytes` is set the payload is padded to
+// approximately that UTF-8 size to probe the scenario's byte cap. Returns the
+// payload AND its exact byte length so callers log only the count.
 export function buildStartCustomData(plan: StartPlan): {
   payload: string;
   bytes: number;
@@ -317,10 +340,8 @@ export function buildStartCustomData(plan: StartPlan): {
   const base: Record<string, string> = {
     to: plan.to,
     from: plan.from ?? '',
-    iid: 'cli-cap-test',
-    cb: 'https://example.invalid/api/voximplant/cb/CAP_TEST',
-    ctx: 'https://example.invalid/api/voximplant/ctx/CAP_TEST',
-    gk: 'CAP_TEST',
+    tok: plan.tok ?? START_PLACEHOLDER_TOK,
+    u: plan.origin ?? START_DEFAULT_ORIGIN,
   };
   if (plan.targetBytes === undefined) {
     const payload = JSON.stringify(base);
@@ -728,16 +749,20 @@ flags:
   --timeout-seconds <n>      Poll deadline in seconds (default ${HISTORY_DEFAULTS.timeoutSeconds})
   --poll-interval-seconds <n> Poll interval in seconds (default ${HISTORY_DEFAULTS.pollIntervalSeconds})`;
 
-const START_HELP = `npm run voximplant -- start --rule <id> --to <number> [--from <number>] [--bytes <n>] --confirm
+const START_HELP = `npm run voximplant -- start --rule <id> --to <number> --from <number> [--origin <url>] [--tok <hex>] [--bytes <n>] --confirm
 
-⚠ This PLACES A REAL OUTBOUND CALL via StartScenarios. It exists solely to probe
-the script_custom_data byte cap. Requires account balance and explicit approval.
-Nothing runs without --confirm.
+⚠ This PLACES A REAL OUTBOUND CALL via StartScenarios. It sends the Branch B
+payload shape {to, from, tok, u} so the redeployed RSVP scenario actually dials.
+Requires account balance and explicit approval. Nothing runs without --confirm.
+The scenario's dial guard needs a non-empty --from (the verified caller id).
 
 flags:
   --rule <id>                OutCall rule id bound to the RSVP scenario (required)
   --to <number>             Single destination number to dial (required)
-  --from <number>           Optional caller id embedded in the payload
+  --from <number>           Caller id embedded in the payload — REQUIRED to actually dial
+  --origin <url>            App origin the scenario builds ctx/cb URLs from (default ${START_DEFAULT_ORIGIN})
+  --tok <hex>               access_token 'tok'. Default = a fake 32-hex → ctx 404s (DTMF-only, no
+                            personalization); pass a REAL call_attempts.access_token for a full test
   --bytes <n>               Pad synthetic script_custom_data to ~n UTF-8 bytes (max ${START_MAX_BYTES})
   --confirm                  REQUIRED interlock — without it 'start' refuses to run
 
