@@ -19,7 +19,9 @@
 //   VoxEngine.customData/callPSTN/terminate, Call.say(text,{voice}), .handleTones,
 //   .stopPlayback, .hangup, .record(CallRecordParameters); CallEvents.Connected/
 //   PlaybackFinished/ToneReceived(ev.tone)/RecordStarted(ev.url)/Failed/Disconnected;
-//   VoiceList.Google.he_IL_Wavenet_A; Net.httpRequestAsync.
+//   VoiceList.Google.he_IL_Wavenet_A; Net.httpRequestAsync. say() text accepts
+//   inline SSML for Google (d.ts say() doc references the <say-as> tag; <sub>/<break>
+//   are Google-supported, <speak> root optional) — used for he-IL pronunciation.
 VoxEngine.addEventListener(AppEvents.Started, function () {
     var ttsOptions = {
         voice: VoiceList.Google.he_IL_Wavenet_A
@@ -27,7 +29,12 @@ VoxEngine.addEventListener(AppEvents.Started, function () {
     // PREVIEW placeholders: event_owner + event_type do NOT exist in the ctx
     // response yet. In production they will arrive from the ctx endpoint after a
     // backend change; for this preview they are fixed demo values.
-    var PREVIEW_EVENT_OWNER = 'משפחת קלפה';
+    // Pronunciation fix: Google he-IL Wavenet read "קלפה" as "כלפה". SSML <sub>
+    // (supported by say() for Google — <speak> root is optional) forces the spoken
+    // form via a phonetic+niqqud alias while keeping the written token intact. This
+    // constant flows into ALL family-name occurrences (F1 disclosure, reject line,
+    // confirmation line), so the fix is applied uniformly in one place.
+    var PREVIEW_EVENT_OWNER = 'משפחת <sub alias="קָאלְפָה">קלפה</sub>';
     var PREVIEW_EVENT_TYPE = 'הברית';
     // Global hard limit — a leaked session bills money. Close politely at 90s.
     var GLOBAL_TIMEOUT_MS = 90000;
@@ -51,10 +58,12 @@ VoxEngine.addEventListener(AppEvents.Started, function () {
         awaitOptOut: false,
         optOutOffered: false,
         finished: false,
+        finalLinePlaying: false,
         hangupScheduled: false,
         promptTimer: null,
         countTimer: null,
         hangupTimer: null,
+        fallbackHangupTimer: null,
         globalTimer: null
     };
     function log(msg) {
@@ -112,17 +121,32 @@ VoxEngine.addEventListener(AppEvents.Started, function () {
             }
         }, delayMs);
     }
-    // End the call on a terminal branch: say the closing line, then hang up once it
-    // has had time to play. No cb is sent (preview).
-    function finish(call, text, delayMs) {
+    function clearFallbackHangupTimer() {
+        if (state.fallbackHangupTimer) {
+            clearTimeout(state.fallbackHangupTimer);
+            state.fallbackHangupTimer = null;
+        }
+    }
+    // End the call on a terminal branch: say the closing line, then hang up the
+    // MOMENT that line finishes playing (CallEvents.PlaybackFinished) — NOT on a
+    // fixed short timer, which previously truncated long closings (e.g. the count
+    // confirmation). A long fallback timer guards against a missing PlaybackFinished
+    // so the session can never leak. No cb is sent (preview).
+    function finish(call, text) {
         if (state.finished)
             return;
         state.finished = true;
         state.stage = 'done';
+        state.finalLinePlaying = true;
         clearPromptTimer();
         clearCountTimer();
         sayLogged(call, text);
-        scheduleHangup(call, delayMs || 4500);
+        // Safety net only: if PlaybackFinished never fires, close after 14s.
+        clearFallbackHangupTimer();
+        state.fallbackHangupTimer = setTimeout(function () {
+            log('Final-line PlaybackFinished not seen — fallback hangup.');
+            scheduleHangup(call, 0);
+        }, 14000);
     }
     // C1: submit the guest count and close. Empty count => generic confirmation.
     function submitCount(call) {
@@ -134,8 +158,10 @@ VoxEngine.addEventListener(AppEvents.Started, function () {
             finish(call, 'רשמתי אתכם. את המספר המדויק תעדכנו בוואטסאפ. נתראה!');
         }
         else {
+            // Pronunciation fix: a short break separates the owner name from the
+            // closing so "מחכים לכם" is not swallowed, and niqqud sharpens it.
             finish(call, 'מעולה, ' + state.countDigits + '. רשמתי. ' +
-                PREVIEW_EVENT_OWNER + ' מחכים לכם — נתראה!');
+                PREVIEW_EVENT_OWNER + ' <break time="250ms"/> מְחַכִּים לָכֶם — נתראה!');
         }
     }
     function armCountTimer(call, delayMs) {
@@ -266,6 +292,17 @@ VoxEngine.addEventListener(AppEvents.Started, function () {
             sayLogged(call, state.guestName ? 'היי, ' + state.guestName + '?' : 'היי?');
         });
         call.addEventListener(CallEvents.PlaybackFinished, function () {
+            // Fix 1: the terminal closing line just finished playing in full — hang
+            // up now (with a brief natural tail). Checked BEFORE the `finished`
+            // early-return, because finish() sets finished=true. stopPlayback() does
+            // NOT emit PlaybackFinished, so this only fires for the real say() end.
+            if (state.finalLinePlaying) {
+                state.finalLinePlaying = false;
+                clearFallbackHangupTimer();
+                log('Final line finished playing — hanging up.');
+                scheduleHangup(call, 600);
+                return;
+            }
             if (state.finished)
                 return;
             if (state.stage === 'greeting') {
@@ -340,12 +377,14 @@ VoxEngine.addEventListener(AppEvents.Started, function () {
             log('Call failed: ' + safeStringify(ev));
             clearPromptTimer();
             clearCountTimer();
+            clearFallbackHangupTimer();
             VoxEngine.terminate();
         });
         call.addEventListener(CallEvents.Disconnected, function (ev) {
             log('Call disconnected: ' + safeStringify(ev));
             clearPromptTimer();
             clearCountTimer();
+            clearFallbackHangupTimer();
             VoxEngine.terminate();
         });
     }
