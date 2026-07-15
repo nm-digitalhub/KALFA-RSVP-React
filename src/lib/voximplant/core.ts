@@ -347,6 +347,72 @@ export function getCallHistoryAsync(
   );
 }
 
+// GetCallHistory (SYNCHRONOUS) — returns sessions (with records) immediately for a
+// bounded query. Used to resolve a single call's recording URL by session id, far
+// faster than the async CSV report. Requires a from/to window; filter by
+// call_session_history_id to get exactly one session back.
+export interface GetCallHistoryRequest {
+  from_date: string;
+  to_date: string;
+  call_session_history_id?: number;
+  application_id?: number;
+  with_records?: boolean;
+  with_calls?: boolean;
+  count?: number;
+  output?: 'json';
+}
+export interface CallHistoryRecord {
+  record_url?: string;
+  record_id?: number;
+  record_duration?: number;
+}
+export interface CallHistorySession {
+  call_session_history_id: number;
+  records?: CallHistoryRecord[];
+}
+export interface GetCallHistoryResponse {
+  result: CallHistorySession[];
+  total_count?: number;
+}
+export function getCallHistory(
+  config: VoximplantConfig,
+  params: GetCallHistoryRequest,
+  timeoutMs: number = DEFAULT_TIMEOUT_MS,
+): Promise<GetCallHistoryResponse> {
+  return voxRequest<GetCallHistoryResponse>(
+    config,
+    'GetCallHistory',
+    { with_records: true, count: 100, output: 'json', ...params },
+    timeoutMs,
+  );
+}
+
+// Download a secure Voximplant asset (recording / log) that 401s to an anonymous
+// GET. Authenticated with the same Management-API RS256 JWT. Returns the bytes;
+// NEVER logs the token. Throws VoximplantNetworkError on a non-2xx/transport error.
+export async function downloadSecureUrl(
+  config: VoximplantConfig,
+  url: string,
+  timeoutMs: number = 30_000,
+): Promise<Buffer> {
+  const token = signManagementJwt(config);
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      headers: { Authorization: `Bearer ${token}` },
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+  } catch (e) {
+    throw new VoximplantNetworkError(
+      `secure download transport error: ${e instanceof Error ? e.message : String(e)}`,
+    );
+  }
+  if (!res.ok) {
+    throw new VoximplantNetworkError(`secure download failed: HTTP ${res.status}`);
+  }
+  return Buffer.from(await res.arrayBuffer());
+}
+
 // GetHistoryReports — `history_report_id` is absent from the request type and set
 // after the spread so params cannot override it.
 export interface HistoryReportInfo {

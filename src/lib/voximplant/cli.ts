@@ -27,8 +27,10 @@ import { basename, dirname, join } from 'node:path';
 import type { VoximplantConfig } from './core';
 import {
   downloadHistoryReportRaw,
+  downloadSecureUrl,
   getAccountInfo,
   getApplications,
+  getCallHistory,
   getCallHistoryAsync,
   getHistoryReports,
   getPhoneNumbers,
@@ -47,6 +49,7 @@ import {
   positiveInt,
   resolveHistoryPlan,
   resolveKeyPath,
+  resolveRecordingPlan,
   resolveStartPlan,
   summarizeIntoLines,
   validateCommandFlags,
@@ -337,6 +340,38 @@ async function cmdStart(
   );
 }
 
+// READ-ONLY: resolve a call's secure recording URL (sync GetCallHistory) and save
+// it as an mp3. The secure URL 401s to an anonymous GET, so downloadSecureUrl signs
+// the Management-API JWT. Never places a call; never logs the token.
+async function cmdRecording(
+  cfg: VoximplantConfig,
+  flags: Record<string, FlagValue>,
+): Promise<void> {
+  const plan = resolveRecordingPlan(flags);
+  const to = new Date();
+  const from = new Date(to.getTime() - plan.days * 24 * 3600 * 1000);
+  const hist = await getCallHistory(cfg, {
+    from_date: fmtUTC(from),
+    to_date: fmtUTC(to),
+    call_session_history_id: plan.sessionId,
+    with_records: true,
+  });
+  const url = (hist.result ?? [])
+    .flatMap((s) => s.records ?? [])
+    .map((r) => r.record_url)
+    .find((u): u is string => typeof u === 'string' && u.length > 0);
+  if (!url) {
+    throw new CliError(
+      `no recording found for session ${plan.sessionId} (within ${plan.days}d). ` +
+        'The call may have ended before recording started, or the window is too small (--days).',
+    );
+  }
+  console.log(`=== recording for session ${plan.sessionId} ===`);
+  const buf = await downloadSecureUrl(cfg, url);
+  writeFileSync(plan.output, buf);
+  console.log(`saved ${buf.length} bytes → ${plan.output}`);
+}
+
 async function dispatch(
   command: KnownCommand,
   cfg: VoximplantConfig,
@@ -355,6 +390,8 @@ async function dispatch(
       return cmdTransactions(cfg, flags);
     case 'start':
       return cmdStart(cfg, flags);
+    case 'recording':
+      return cmdRecording(cfg, flags);
   }
 }
 

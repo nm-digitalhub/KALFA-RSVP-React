@@ -36,6 +36,7 @@ export const KNOWN_FLAGS = new Set([
   'raw',
   'origin',
   'tok',
+  'session',
 ]);
 
 // Flags that never take a value (presence = true).
@@ -91,7 +92,7 @@ export function parseArgs(argv: string[]): ParsedArgs {
 // Commands + per-command flag validation
 // ---------------------------------------------------------------------------
 
-export const KNOWN_COMMANDS = ['account', 'rules', 'history', 'numbers', 'transactions', 'start'] as const;
+export const KNOWN_COMMANDS = ['account', 'rules', 'history', 'numbers', 'transactions', 'start', 'recording'] as const;
 export type KnownCommand = (typeof KNOWN_COMMANDS)[number];
 
 export function assertKnownCommand(command: string): asserts command is KnownCommand {
@@ -122,6 +123,9 @@ const ALLOWED_FLAGS: Record<KnownCommand, Set<string>> = {
   // A manual, one-shot StartScenarios trigger (byte-cap probe). `--confirm` is a
   // mandatory safety interlock — see resolveStartPlan; nothing runs without it.
   start: new Set(['key', 'rule', 'to', 'from', 'confirm', 'bytes', 'raw', 'origin', 'tok']),
+  // READ-ONLY: fetch a call's secure recording by session id → save an mp3.
+  // Never places a call or modifies anything; only --key + which session/output.
+  recording: new Set(['key', 'session', 'output', 'days']),
 };
 
 // Reject any flag that does not belong to the given command (--help is global and
@@ -352,6 +356,28 @@ export function buildStartCustomData(plan: StartPlan): {
   const padLen = plan.targetBytes > current ? plan.targetBytes - current : 0;
   const payload = JSON.stringify({ ...base, pad: 'x'.repeat(padLen) });
   return { payload, bytes: Buffer.byteLength(payload, 'utf8') };
+}
+
+// ---------------------------------------------------------------------------
+// recording command plan — fetch a call's secure recording by session id
+// ---------------------------------------------------------------------------
+
+export interface RecordingPlan {
+  sessionId: number;
+  output: string;
+  days: number; // lookback window for the GetCallHistory query (default 7)
+}
+
+// Validate the `recording` arguments. READ-ONLY — never places a call.
+export function resolveRecordingPlan(flags: Record<string, FlagValue>): RecordingPlan {
+  const sessionId = positiveInt('session', flags.session);
+  const output =
+    flags.output !== undefined
+      ? requireStringValue('output', flags.output)
+      : `recording-${sessionId}.mp3`;
+  const days =
+    flags.days !== undefined ? positiveInt('days', flags.days, { max: 120 }) : 7;
+  return { sessionId, output, days };
 }
 
 // ---------------------------------------------------------------------------
@@ -715,6 +741,7 @@ commands:
   numbers                    List the account's phone numbers (read-only; find a Caller ID)
   transactions [--days <n>]  Billing ledger — what the balance is spent on (read-only)
   start <flags> --confirm    Fire ONE StartScenarios call (byte-cap probe; PLACES A REAL CALL)
+  recording --session <id>   Download a call's secure recording as mp3 (read-only)
 
 history modes:
   --history-id <id>          Download an existing report by id
@@ -770,8 +797,20 @@ After it returns a call_session_history_id, use:
   npm run voximplant -- history --app <id>
 and inspect call_session_history_custom_data to see whether the full payload arrived.`;
 
+const RECORDING_HELP = `npm run voximplant -- recording --session <id> [--output file.mp3] [--days <n>]
+
+Downloads a call's secure recording (voxdata-*-rec-secure) as an mp3. READ-ONLY —
+never places a call. The recording is fetched with the Management-API JWT (the
+secure URL 401s to an anonymous GET).
+
+flags:
+  --session <id>            call_session_history_id (required; from a 'start' result or history)
+  --output <file>           Output mp3 path (default: recording-<session>.mp3)
+  --days <n>                Lookback window for the history lookup (default 7, max 120)`;
+
 export function helpText(command?: string): string {
   if (command === 'history') return HISTORY_HELP;
   if (command === 'start') return START_HELP;
+  if (command === 'recording') return RECORDING_HELP;
   return MAIN_HELP;
 }
