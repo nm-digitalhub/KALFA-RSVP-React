@@ -1,0 +1,27 @@
+{
+  "name": "UNIT-TOOL save_rsvp(attending,2,1) is called after read-back confirm (S-053)",
+  "type": "tool",
+  "chat_history": [
+    { "role": "agent", "time_in_call_secs": 0, "message": "מטעם נטלי קלפה, לגבי הברית. מגיעים?" },
+    { "role": "user", "time_in_call_secs": 2, "message": "כן, בשמחה" },
+    { "role": "agent", "time_in_call_secs": 4, "message": "מעולה! כמה מבוגרים תהיו?" },
+    { "role": "user", "time_in_call_secs": 6, "message": "שני מבוגרים וילד אחד" },
+    { "role": "agent", "time_in_call_secs": 8, "message": "אז שני מבוגרים וילד אחד, נכון?" },
+    { "role": "user", "time_in_call_secs": 10, "message": "נכון" }
+  ],
+  "tool_call_parameters": {
+    "referenced_tool": { "id": "tool_1501kxjzme3zf3htm544kyjfwkzg", "type": "client" },
+    "parameters": [
+      { "path": "status", "eval": { "type": "llm", "description": "status must mean attending (attending or attending:true)" } },
+      { "path": "adults", "eval": { "type": "exact", "expected_value": "2" } },
+      { "path": "children", "eval": { "type": "exact", "expected_value": "1" } }
+    ],
+    "verify_absence": false
+  },
+  "dynamic_variables": {
+    "guest_name": "זְהָבָה",
+    "event_name": "ברית הבן של נטלי קלפה",
+    "event_date": "יום ראשון, 12 ביולי 2026",
+    "event_venue": "בית הכנסת הרמא"
+  }
+}

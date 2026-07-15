@@ -1,0 +1,22 @@
+{
+  "name": "SIM-04 opt-out — 'תסירו אותי' triggers mark_dnc + polite end (S-031)",
+  "type": "simulation",
+  "simulation_scenario": "You role-play an annoyed guest who wants to be removed from the calling list. Very early, say firmly in spoken Hebrew: 'תסירו אותי, אל תתקשרו אליי יותר'. Do not answer whether you're attending. If the agent complies, say 'תודה' and hang up.",
+  "simulation_max_turns": 5,
+  "success_conditions": [
+    "The agent immediately honored the opt-out: it called the mark_dnc tool.",
+    "The agent confirmed the removal politely and did NOT try to convince the guest to stay or ask about attendance.",
+    "The agent ended the call briefly and politely in natural spoken Hebrew."
+  ],
+  "tool_mock_config": {
+    "mocking_strategy": "all",
+    "fallback_strategy": "raise_error",
+    "mocked_tool_ids": []
+  },
+  "dynamic_variables": {
+    "guest_name": "זְהָבָה",
+    "event_name": "ברית הבן של נטלי קלפה",
+    "event_date": "יום ראשון, 12 ביולי 2026",
+    "event_venue": "בית הכנסת הרמא"
+  }
+}

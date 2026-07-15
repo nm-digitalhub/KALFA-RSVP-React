@@ -1,0 +1,19 @@
+{
+  "name": "UNIT-TOOL mark_dnc is called on 'תסירו אותי' (S-031)",
+  "type": "tool",
+  "chat_history": [
+    { "role": "agent", "time_in_call_secs": 0, "message": "היי זהבה, מטעם נטלי קלפה, לגבי הברית. מגיעים?" },
+    { "role": "user", "time_in_call_secs": 2, "message": "תסירו אותי מהרשימה, אל תתקשרו אליי יותר" }
+  ],
+  "tool_call_parameters": {
+    "referenced_tool": { "id": "tool_0501kxjzme40e93bjg2vh4ah9cvb", "type": "client" },
+    "parameters": [],
+    "verify_absence": false
+  },
+  "dynamic_variables": {
+    "guest_name": "זְהָבָה",
+    "event_name": "ברית הבן של נטלי קלפה",
+    "event_date": "יום ראשון, 12 ביולי 2026",
+    "event_venue": "בית הכנסת הרמא"
+  }
+}

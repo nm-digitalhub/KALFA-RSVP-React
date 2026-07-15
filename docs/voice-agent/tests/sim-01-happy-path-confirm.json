@@ -1,0 +1,23 @@
+{
+  "name": "SIM-01 happy path — confirm + count + save (S-001/015/035/053)",
+  "type": "simulation",
+  "simulation_scenario": "You role-play Zehava, a warm, cooperative invited guest who received a phone call about a brit event. You DO plan to attend. Behave naturally in spoken Hebrew. Turn 1: when the agent asks if you're coming, say yes happily ('כן, בשמחה'). When asked how many adults, say 'שניים' (you and your partner). When asked about children, say 'ילד אחד'. When the agent reads the numbers back to you, confirm ('כן, נכון'). After it confirms the RSVP is recorded, say goodbye politely. Do NOT volunteer numbers before you are asked. Do NOT ask questions.",
+  "simulation_max_turns": 10,
+  "success_conditions": [
+    "The agent asked whether the guest is attending, then asked for the number of adults and the number of children BEFORE saving — it did not assume a count.",
+    "The agent performed a read-back of the final numbers (approximately 2 adults and 1 child) and only then called the save_rsvp tool with status attending / attending:true.",
+    "The save_rsvp tool call reflects 2 adults and 1 child (a small off-by-interpretation is acceptable only if the read-back matched what the guest said).",
+    "The agent said the RSVP was recorded only AFTER the save_rsvp tool returned, and ended the call warmly in natural spoken Hebrew without inventing event details."
+  ],
+  "tool_mock_config": {
+    "mocking_strategy": "all",
+    "fallback_strategy": "raise_error",
+    "mocked_tool_ids": []
+  },
+  "dynamic_variables": {
+    "guest_name": "זְהָבָה",
+    "event_name": "ברית הבן של נטלי קלפה",
+    "event_date": "יום ראשון, 12 ביולי 2026",
+    "event_venue": "בית הכנסת הרמא"
+  }
+}

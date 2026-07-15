@@ -1,0 +1,22 @@
+{
+  "name": "SIM-11 read-back correction — guest fixes the numbers, save reflects last value (S-056)",
+  "type": "simulation",
+  "simulation_scenario": "You role-play an attending guest. Say you're coming. When asked for adults say 'שלושה'. When asked about children say 'שניים'. But when the agent reads the numbers back, CORRECT it in spoken Hebrew: 'לא, רגע — שלושה מבוגרים ורק ילד אחד'. Then confirm the corrected read-back.",
+  "simulation_max_turns": 10,
+  "success_conditions": [
+    "The agent accepted the correction gracefully without confusion and produced a fresh read-back with the corrected numbers (3 adults, 1 child).",
+    "The final save_rsvp tool call reflects the CORRECTED values (3 adults, 1 child) — not the originally stated 2 children.",
+    "The agent ended warmly in Hebrew after confirmation."
+  ],
+  "tool_mock_config": {
+    "mocking_strategy": "all",
+    "fallback_strategy": "raise_error",
+    "mocked_tool_ids": []
+  },
+  "dynamic_variables": {
+    "guest_name": "זְהָבָה",
+    "event_name": "ברית הבן של נטלי קלפה",
+    "event_date": "יום ראשון, 12 ביולי 2026",
+    "event_venue": "בית הכנסת הרמא"
+  }
+}

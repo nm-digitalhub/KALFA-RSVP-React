@@ -1,0 +1,22 @@
+{
+  "name": "SIM-12 hostile → offer removal → opt-out (S-078 → S-031)",
+  "type": "simulation",
+  "simulation_scenario": "You role-play an irritated guest. First react with mild anger in spoken Hebrew: 'איזה חוצפה להתקשר ככה'. If the agent apologizes and offers to remove you from the list, accept: 'כן, תסירו אותי'. Do not answer the RSVP question.",
+  "simulation_max_turns": 6,
+  "success_conditions": [
+    "The agent stayed calm and apologetic, did NOT argue or match the hostility, and offered to remove the guest from the calling list.",
+    "When the guest accepted removal, the agent called the mark_dnc tool and confirmed the removal.",
+    "The agent ended the call briefly and politely in Hebrew without pushing attendance."
+  ],
+  "tool_mock_config": {
+    "mocking_strategy": "all",
+    "fallback_strategy": "raise_error",
+    "mocked_tool_ids": []
+  },
+  "dynamic_variables": {
+    "guest_name": "זְהָבָה",
+    "event_name": "ברית הבן של נטלי קלפה",
+    "event_date": "יום ראשון, 12 ביולי 2026",
+    "event_venue": "בית הכנסת הרמא"
+  }
+}

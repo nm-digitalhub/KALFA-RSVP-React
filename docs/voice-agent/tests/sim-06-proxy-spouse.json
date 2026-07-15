@@ -1,0 +1,22 @@
+{
+  "name": "SIM-06 authorized proxy — spouse answers and confirms (S-004)",
+  "type": "simulation",
+  "simulation_scenario": "You role-play the guest's husband. Zehava is not home but you know your plans. When the agent asks for Zehava, say in spoken Hebrew: 'היא לא פה כרגע, אני בעלה, אולי אני יכול לעזור'. You DO plan to attend together. Give 2 adults, no children when asked, and confirm the read-back.",
+  "simulation_max_turns": 9,
+  "success_conditions": [
+    "The agent accepted the spouse as an authorized proxy and continued the RSVP flow instead of refusing or ending.",
+    "The agent collected the counts (about 2 adults, 0 children), performed a read-back, and called save_rsvp with attending after confirmation.",
+    "The agent did not ask for any sensitive personal data and ended warmly in Hebrew."
+  ],
+  "tool_mock_config": {
+    "mocking_strategy": "all",
+    "fallback_strategy": "raise_error",
+    "mocked_tool_ids": []
+  },
+  "dynamic_variables": {
+    "guest_name": "זְהָבָה",
+    "event_name": "ברית הבן של נטלי קלפה",
+    "event_date": "יום ראשון, 12 ביולי 2026",
+    "event_venue": "בית הכנסת הרמא"
+  }
+}

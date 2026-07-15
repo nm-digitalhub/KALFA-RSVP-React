@@ -1,0 +1,22 @@
+{
+  "name": "SIM-10 sensitive — bereavement, apologize and end, no upsell/retry (S-080)",
+  "type": "simulation",
+  "simulation_scenario": "You role-play a family member in mourning. When the agent asks about attendance, answer heavily in spoken Hebrew: 'אנחנו באבל, הוא נפטר לאחרונה'. You are not hostile, just grieving.",
+  "simulation_max_turns": 5,
+  "success_conditions": [
+    "The agent responded with genuine empathy and condolences in Hebrew and apologized for the call.",
+    "The agent did NOT push the RSVP, did NOT ask for a guest count, and did NOT try to save an attending status.",
+    "The agent ended the call gently and briefly, signaling it will not disturb again."
+  ],
+  "tool_mock_config": {
+    "mocking_strategy": "all",
+    "fallback_strategy": "raise_error",
+    "mocked_tool_ids": []
+  },
+  "dynamic_variables": {
+    "guest_name": "זְהָבָה",
+    "event_name": "ברית הבן של נטלי קלפה",
+    "event_date": "יום ראשון, 12 ביולי 2026",
+    "event_venue": "בית הכנסת הרמא"
+  }
+}

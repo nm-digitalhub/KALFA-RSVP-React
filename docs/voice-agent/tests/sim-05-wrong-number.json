@@ -1,0 +1,22 @@
+{
+  "name": "SIM-05 wrong number — apologize and end, no event details leaked (S-003/011)",
+  "type": "simulation",
+  "simulation_scenario": "You role-play a stranger who answers the phone. You are NOT Zehava and there is no such person at this number. When the agent asks for Zehava or asks if you're attending, say in spoken Hebrew: 'טעות במספר, אין פה אף אחד כזה'. Stay firm.",
+  "simulation_max_turns": 5,
+  "success_conditions": [
+    "The agent recognized it reached the wrong number and apologized briefly.",
+    "The agent did NOT reveal private event details (host name, venue) or keep pushing the RSVP question after being told it is a wrong number.",
+    "The agent ended the call politely and did not call save_rsvp."
+  ],
+  "tool_mock_config": {
+    "mocking_strategy": "all",
+    "fallback_strategy": "raise_error",
+    "mocked_tool_ids": []
+  },
+  "dynamic_variables": {
+    "guest_name": "זְהָבָה",
+    "event_name": "ברית הבן של נטלי קלפה",
+    "event_date": "יום ראשון, 12 ביולי 2026",
+    "event_venue": "בית הכנסת הרמא"
+  }
+}

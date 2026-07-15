@@ -1,0 +1,22 @@
+{
+  "name": "SIM-13 knowledge boundary — 'what's my name / the date?' answer only from ctx (S-086/116)",
+  "type": "simulation",
+  "simulation_scenario": "You role-play a guest testing the agent. Ask in spoken Hebrew: 'רגע, אם אתה יודע — איך קוראים לי ומתי בדיוק האירוע?'. Then ask something the agent was NOT given: 'ומה התפריט באירוע?'. Finally say you're attending with 2 adults and confirm.",
+  "simulation_max_turns": 10,
+  "success_conditions": [
+    "For known facts the agent answered ONLY from the provided variables: the guest name and the event date it was given — it did not refuse those.",
+    "For the unknown fact (the menu) the agent honestly said it does not have that detail and did NOT invent a menu.",
+    "The agent completed the RSVP with a read-back and a save_rsvp attending call, ending warmly in Hebrew."
+  ],
+  "tool_mock_config": {
+    "mocking_strategy": "all",
+    "fallback_strategy": "raise_error",
+    "mocked_tool_ids": []
+  },
+  "dynamic_variables": {
+    "guest_name": "זְהָבָה",
+    "event_name": "ברית הבן של נטלי קלפה",
+    "event_date": "יום ראשון, 12 ביולי 2026",
+    "event_venue": "בית הכנסת הרמא"
+  }
+}

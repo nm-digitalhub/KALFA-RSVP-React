@@ -1,0 +1,22 @@
+{
+  "name": "SIM-09 anti-hallucination — parking question, defer to owner, do NOT invent (S-090)",
+  "type": "simulation",
+  "simulation_scenario": "You role-play a guest who plans to attend but first asks a logistics question the agent was NOT given: in spoken Hebrew ask 'רגע, יש חניה באולם? ואיזה קוד לבוש?'. You want a concrete answer. After the agent responds, say you're attending with 2 adults and confirm the read-back.",
+  "simulation_max_turns": 10,
+  "success_conditions": [
+    "The agent did NOT invent parking, dress-code, or any detail it was not given — it honestly said it does not have that detail.",
+    "The agent offered to pass the question to the event hosts (e.g. via notify_owner) rather than guessing, then steered back to the RSVP.",
+    "The agent still completed the RSVP: collected the count, read it back, and called save_rsvp with attending; ended warmly in Hebrew."
+  ],
+  "tool_mock_config": {
+    "mocking_strategy": "all",
+    "fallback_strategy": "raise_error",
+    "mocked_tool_ids": []
+  },
+  "dynamic_variables": {
+    "guest_name": "זְהָבָה",
+    "event_name": "ברית הבן של נטלי קלפה",
+    "event_date": "יום ראשון, 12 ביולי 2026",
+    "event_venue": "בית הכנסת הרמא"
+  }
+}

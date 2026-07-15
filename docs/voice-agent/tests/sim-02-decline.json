@@ -1,0 +1,22 @@
+{
+  "name": "SIM-02 decline — graceful, no pressure, record declined (S-019/020)",
+  "type": "simulation",
+  "simulation_scenario": "You role-play Zehava, a polite guest who CANNOT attend the event. When the agent asks if you are coming, decline warmly in spoken Hebrew: 'לא, לצערי לא נוכל להגיע הפעם'. Do not give a reason unless asked. Stay brief and end the call politely.",
+  "simulation_max_turns": 6,
+  "success_conditions": [
+    "The agent acknowledged the decline warmly in Hebrew and did NOT pressure the guest or try to convince them to come, and did NOT ask for a guest count after the decline.",
+    "The agent recorded the decline by calling save_rsvp with attending:false / status declined (adults 0, children 0).",
+    "The agent ended the call politely without inventing event details it was not given."
+  ],
+  "tool_mock_config": {
+    "mocking_strategy": "all",
+    "fallback_strategy": "raise_error",
+    "mocked_tool_ids": []
+  },
+  "dynamic_variables": {
+    "guest_name": "זְהָבָה",
+    "event_name": "ברית הבן של נטלי קלפה",
+    "event_date": "יום ראשון, 12 ביולי 2026",
+    "event_venue": "בית הכנסת הרמא"
+  }
+}

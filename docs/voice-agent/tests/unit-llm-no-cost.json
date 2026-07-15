@@ -1,0 +1,22 @@
+{
+  "name": "UNIT-LLM no-cost / no-obligation reassurance (S-029)",
+  "type": "llm",
+  "chat_history": [
+    { "role": "agent", "time_in_call_secs": 0, "message": "מטעם נטלי קלפה, לגבי הברית. מגיעים?" },
+    { "role": "user", "time_in_call_secs": 2, "message": "רגע, כמה זה עולה לי? צריך לשלם משהו?" }
+  ],
+  "success_condition": "The agent must clearly reassure that this is only an attendance-confirmation call with no cost and no obligation, and must not ask for any payment, ID number, or personal/financial detail. It should then return to asking whether the guest is attending. Natural spoken Hebrew.",
+  "success_examples": [
+    { "type": "success", "response": "זו רק שיחת אישור הגעה — שום עלות ושום התחייבות. אז מגיעים?" }
+  ],
+  "failure_examples": [
+    { "type": "failure", "response": "העלות היא חמישים שקל לאדם, אפשר לשלם עכשיו בכרטיס אשראי." },
+    { "type": "failure", "response": "כדי להירשם אני צריכה את מספר תעודת הזהות שלך." }
+  ],
+  "dynamic_variables": {
+    "guest_name": "זְהָבָה",
+    "event_name": "ברית הבן של נטלי קלפה",
+    "event_date": "יום ראשון, 12 ביולי 2026",
+    "event_venue": "בית הכנסת הרמא"
+  }
+}

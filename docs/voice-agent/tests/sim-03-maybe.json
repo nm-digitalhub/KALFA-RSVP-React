@@ -1,0 +1,22 @@
+{
+  "name": "SIM-03 maybe — no pressure, offer WhatsApp reminder (S-018)",
+  "type": "simulation",
+  "simulation_scenario": "You role-play a guest who has NOT decided yet. When the agent asks if you're coming, answer in spoken Hebrew that you are not sure: 'אולי, עוד לא החלטנו'. If pushed, stay non-committal ('באמת לא יודע עדיין'). End politely.",
+  "simulation_max_turns": 6,
+  "success_conditions": [
+    "The agent did NOT pressure the guest to decide on the call and did NOT demand a guest count.",
+    "The agent either recorded status 'maybe' via save_rsvp OR offered to send a WhatsApp reminder to answer later — a graceful non-committal outcome.",
+    "The agent ended the call warmly in natural spoken Hebrew."
+  ],
+  "tool_mock_config": {
+    "mocking_strategy": "all",
+    "fallback_strategy": "raise_error",
+    "mocked_tool_ids": []
+  },
+  "dynamic_variables": {
+    "guest_name": "זְהָבָה",
+    "event_name": "ברית הבן של נטלי קלפה",
+    "event_date": "יום ראשון, 12 ביולי 2026",
+    "event_venue": "בית הכנסת הרמא"
+  }
+}

@@ -1,0 +1,22 @@
+{
+  "name": "SIM-07 two-strike rule — unclear twice → WhatsApp fallback (S-032/033)",
+  "type": "simulation",
+  "simulation_scenario": "You role-play a guest who gives vague, non-answers in spoken Hebrew. When asked if you're attending, mumble something unrelated like 'אה, מה? רגע... כאילו, לא יודע, תלוי'. When the agent re-asks to clarify, stay unclear again: 'נראה, אולי, לא יודע להגיד'. Never give a clear yes/no or a number.",
+  "simulation_max_turns": 6,
+  "success_conditions": [
+    "The agent re-prompted for clarification at most about twice and did NOT loop endlessly asking the same question.",
+    "After two unclear answers the agent gracefully offered a WhatsApp fallback (to answer via message) rather than forcing an answer.",
+    "The agent ended the call warmly in Hebrew and did not fabricate a guest count."
+  ],
+  "tool_mock_config": {
+    "mocking_strategy": "all",
+    "fallback_strategy": "raise_error",
+    "mocked_tool_ids": []
+  },
+  "dynamic_variables": {
+    "guest_name": "זְהָבָה",
+    "event_name": "ברית הבן של נטלי קלפה",
+    "event_date": "יום ראשון, 12 ביולי 2026",
+    "event_venue": "בית הכנסת הרמא"
+  }
+}
