@@ -301,9 +301,18 @@ VoxEngine.addEventListener(AppEvents.Started, function () {
                     if (!route) {
                         return; // unknown tool — ignore (never fabricate a result)
                     }
-                    function reply(result) {
+                    // ElevenLabs REQUIRES is_error on the client-tool-result frame —
+                    // omitting it closes the WebSocket with 1008 (policy violation),
+                    // killing the call right after the tool (verified live, session
+                    // 6760041670). is_error=false = handled (saved/queued/removed/
+                    // noted); true = the tool could not run at all.
+                    function reply(result, isError) {
                         try {
-                            agent.clientToolResult({ tool_call_id: toolCallId, result: result });
+                            agent.clientToolResult({
+                                tool_call_id: toolCallId,
+                                result: result,
+                                is_error: isError === true
+                            });
                         }
                         catch (err) {
                             log('clientToolResult failed: ' + err);
@@ -311,7 +320,7 @@ VoxEngine.addEventListener(AppEvents.Started, function () {
                     }
                     if (!appOrigin || !accessToken) {
                         log(toolName + ' called but no tok/u — cannot persist');
-                        reply('error');
+                        reply('error', true);
                         return;
                     }
                     var postBody = route.body(args);
@@ -327,10 +336,12 @@ VoxEngine.addEventListener(AppEvents.Started, function () {
                         }
                         catch (_e) { }
                         log(toolName + ' -> ' + (r && r.code) + ' ok=' + ok);
-                        reply(ok ? route.okResult : 'queued');
+                        // 'queued' is not an error (durably persisted; agent softens
+                        // wording) — is_error=false so the WS stays open either way.
+                        reply(ok ? route.okResult : 'queued', false);
                     }).catch(function (err) {
                         log(toolName + ' request failed: ' + err);
-                        reply('error');
+                        reply('error', true);
                     });
                 });
             }).catch(function (err) {
