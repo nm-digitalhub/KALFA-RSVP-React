@@ -31,6 +31,11 @@ VoxEngine.addEventListener(AppEvents.Started, function () {
     var PREVIEW_EVENT_TYPE = 'הברית';
     // Global hard limit — a leaked session bills money. Close politely at 90s.
     var GLOBAL_TIMEOUT_MS = 90000;
+    // C1: quantity-entry pacing. The listening window opens the instant the count
+    // question finishes playing. After the last digit we auto-submit within a short
+    // inter-digit window so the wait is never read as dead-air (gap < 2s target).
+    var COUNT_INTERDIGIT_MS = 1500;
+    var COUNT_NOINPUT_MS = 4500;
     var state = {
         guestName: '',
         eventName: '',
@@ -43,9 +48,12 @@ VoxEngine.addEventListener(AppEvents.Started, function () {
         stage: 'idle', // idle -> rsvp_ask -> guest_count -> (terminal)
         countDigits: '',
         rsvpReprompted: false,
+        awaitOptOut: false,
+        optOutOffered: false,
         finished: false,
         hangupScheduled: false,
         promptTimer: null,
+        countTimer: null,
         hangupTimer: null,
         globalTimer: null
     };
@@ -77,6 +85,12 @@ VoxEngine.addEventListener(AppEvents.Started, function () {
             state.promptTimer = null;
         }
     }
+    function clearCountTimer() {
+        if (state.countTimer) {
+            clearTimeout(state.countTimer);
+            state.countTimer = null;
+        }
+    }
     function sayLogged(call, text) {
         log('SAY: ' + text);
         call.say(text, ttsOptions);
@@ -106,17 +120,48 @@ VoxEngine.addEventListener(AppEvents.Started, function () {
         state.finished = true;
         state.stage = 'done';
         clearPromptTimer();
+        clearCountTimer();
         sayLogged(call, text);
         scheduleHangup(call, delayMs || 4500);
     }
-    function rsvpAskText() {
-        return 'מגיעים ל' + PREVIEW_EVENT_TYPE + ' של ' + PREVIEW_EVENT_OWNER +
-            '? לאישור לחצו 1, אם לא תגיעו לחצו 2, אם עדיין לא בטוח לחצו 3.';
+    // C1: submit the guest count and close. Empty count => generic confirmation.
+    function submitCount(call) {
+        if (state.finished || state.stage !== 'guest_count')
+            return;
+        clearCountTimer();
+        call.stopPlayback();
+        if (state.countDigits.length === 0) {
+            finish(call, 'רשמתי אתכם. את המספר המדויק תעדכנו בוואטסאפ. נתראה!');
+        }
+        else {
+            finish(call, 'מעולה, ' + state.countDigits + '. רשמתי. ' +
+                PREVIEW_EVENT_OWNER + ' מחכים לכם — נתראה!');
+        }
     }
-    function askRsvp(call) {
+    function armCountTimer(call, delayMs) {
+        clearCountTimer();
+        state.countTimer = setTimeout(function () {
+            submitCount(call);
+        }, delayMs);
+    }
+    function rsvpAskText() {
+        // F1: legal AI self-identification at the head of the FIRST ask — who is
+        // calling + why, in the first sentence (Israeli automated-call compliance).
+        return 'זו שיחה אוטומטית מטעם ' + PREVIEW_EVENT_OWNER + ', בקשר ל' +
+            PREVIEW_EVENT_TYPE + '. מגיעים? לאישור לחצו 1, אם לא תגיעו לחצו 2, ' +
+            'אם עדיין לא בטוח לחצו 3.';
+    }
+    function askRsvp(call, isFirst) {
         state.stage = 'rsvp_ask';
         state.countDigits = '';
         sayLogged(call, rsvpAskText());
+        // F2: the opt-out line is spoken ONLY after the first ask, after a short
+        // pause. It is chained on the natural PlaybackFinished of this ask (not on a
+        // reprompt, not in the count stage). stopPlayback() does not fire
+        // PlaybackFinished, so pressing a key before it plays cancels the offer.
+        if (isFirst && !state.optOutOffered) {
+            state.awaitOptOut = true;
+        }
         armRsvpReprompt(call);
     }
     // One gentle re-prompt if no key is pressed; after that, the global timeout
@@ -129,7 +174,7 @@ VoxEngine.addEventListener(AppEvents.Started, function () {
             if (state.rsvpReprompted)
                 return;
             state.rsvpReprompted = true;
-            sayLogged(call, 'לא שמעתי. מגיעים? לאישור לחצו 1, אם לא תגיעו לחצו 2, אם עדיין לא בטוח לחצו 3.');
+            sayLogged(call, 'רגע, לא קלטתי. אם מגיעים לחצו 1, אם לא — לחצו 2, ואם עוד לא בטוח — לחצו 3.');
         }, 9000);
     }
     function readSessionCustomData() {
@@ -224,7 +269,20 @@ VoxEngine.addEventListener(AppEvents.Started, function () {
             if (state.finished)
                 return;
             if (state.stage === 'greeting') {
-                askRsvp(call);
+                askRsvp(call, true);
+                return;
+            }
+            // F2: after the first ask finishes playing naturally, speak the opt-out
+            // line once, after this short pause.
+            if (state.stage === 'rsvp_ask' && state.awaitOptOut && !state.optOutOffered) {
+                state.awaitOptOut = false;
+                state.optOutOffered = true;
+                sayLogged(call, 'ולהסרה מהרשימה — לחצו אפס.');
+                return;
+            }
+            // C1: the moment the count question finishes, open the listening window.
+            if (state.stage === 'guest_count' && state.countDigits.length === 0) {
+                armCountTimer(call, COUNT_NOINPUT_MS);
             }
         });
         call.addEventListener(CallEvents.ToneReceived, function (ev) {
@@ -248,29 +306,31 @@ VoxEngine.addEventListener(AppEvents.Started, function () {
                     call.stopPlayback();
                     finish(call, 'בסדר גמור. נשלח תזכורת בוואטסאפ בעוד כמה ימים. יום נעים!');
                 }
+                else if (digit === '0') {
+                    // F2: opt-out. Preview does NOT send a cb — it only logs.
+                    call.stopPlayback();
+                    log('OPT_OUT (0)');
+                    finish(call, 'הוסרת. לא נטריד יותר. סליחה על ההפרעה, יום טוב.');
+                }
                 else if (digit === '9') {
                     call.stopPlayback();
-                    askRsvp(call);
+                    askRsvp(call, false);
                 }
                 // Any other key: ignore, stay in rsvp_ask.
                 return;
             }
             if (state.stage === 'guest_count') {
                 if (digit === '#') {
-                    call.stopPlayback();
-                    if (state.countDigits.length === 0) {
-                        finish(call, 'רשמתי אתכם. את המספר המדויק תעדכנו בוואטסאפ. נתראה!');
-                    }
-                    else {
-                        finish(call, 'מעולה, ' + state.countDigits + '. רשמתי. ' +
-                            PREVIEW_EVENT_OWNER + ' מחכים לכם — נתראה!');
-                    }
+                    submitCount(call);
                 }
                 else if (digit >= '0' && digit <= '9') {
                     // Accumulate the count (cap length defensively).
                     if (state.countDigits.length < 3) {
                         state.countDigits += digit;
                     }
+                    // C1: short inter-digit window — auto-submit soon after the last
+                    // key so the caller never waits on '#'. Reset on every digit.
+                    armCountTimer(call, COUNT_INTERDIGIT_MS);
                 }
                 // '*' or other: ignore.
                 return;
@@ -279,11 +339,13 @@ VoxEngine.addEventListener(AppEvents.Started, function () {
         call.addEventListener(CallEvents.Failed, function (ev) {
             log('Call failed: ' + safeStringify(ev));
             clearPromptTimer();
+            clearCountTimer();
             VoxEngine.terminate();
         });
         call.addEventListener(CallEvents.Disconnected, function (ev) {
             log('Call disconnected: ' + safeStringify(ev));
             clearPromptTimer();
+            clearCountTimer();
             VoxEngine.terminate();
         });
     }
