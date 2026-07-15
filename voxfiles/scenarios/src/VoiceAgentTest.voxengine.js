@@ -1,26 +1,53 @@
 // VoiceAgentTest — bridge an outbound PSTN call to an ElevenLabs conversational
-// agent (kalfatest ONLY, NOT production).
+// agent WITH per-call personalization (kalfatest ONLY, NOT production).
 //
 // Purpose: prove the ElevenLabs Agents realtime bridge end-to-end over a real
-// call before wiring it into any RSVP flow. It dials the recipient, connects the
-// Hebrew RSVP agent (agent_9701kxj3n54ye518a3s518cexd48: language he,
-// eleven_v3_conversational, voice Kalfa) and lets them talk. It records the call
-// and logs the transcript events. It sends NO cb and touches no RSVP row.
+// call, now feeding the agent real per-call guest/event data. It dials the
+// recipient, opens the Hebrew RSVP agent
+// (agent_9701kxj3n54ye518a3s518cexd48: language he, eleven_v3_conversational,
+// voice Kalfa), injects dynamic variables so the agent's {{guest_name}},
+// {{event_name}}, {{event_date}}, {{event_venue}} placeholders resolve, records
+// the call and logs the transcript events. It sends NO cb and touches no RSVP row.
 //
-// Deliberately NARROW vs the live RSVP scenario:
-//   * Reads ONLY {to, from} from the Branch B customData payload; tok/u are
-//     ignored (no ctx fetch, no personalization — this is a wiring test).
-//   * The ElevenLabs API key is read from a Voximplant Secret named
-//     ELEVENLABS_API_KEY via VoxEngine.getSecretValue — NEVER placed in code,
-//     customData or the log.
-//   * Records the call (call.record) so the exchange can be reviewed; the record
-//     URL is logged (CallEvents.RecordStarted.url) for a Management-API pull.
+// Branch B customData ({to, from, tok, u}) — tiny, ≤200-byte cap:
+//   * to/from        — dial legs (required).
+//   * u (app origin) — used to build the ctx URL (optional; if absent, the test
+//                      still runs with empty dynamic variables).
+//   * tok            — opaque per-call access token; the scenario fetches
+//                      GET {u}/api/voximplant/ctx/{tok} → {guest_name, event_name,
+//                      event_date, event_venue, groq_key}. Only the 4 name/event
+//                      fields are used here; groq_key is IGNORED (this scenario
+//                      runs the LLM inside ElevenLabs, not Groq). No secret ever
+//                      sits in customData/call history.
+// If ctx fails/404s the scenario logs a warning and proceeds with empty defaults
+// — it never drops the call over missing personalization.
+//
+// The ElevenLabs API key is read from a Voximplant Secret named
+// ELEVENLABS_API_KEY via VoxEngine.getSecretValue — NEVER placed in code,
+// customData or the log.
+//
+// --- Dynamic-variable INJECTION TIMING (the load-bearing part) ---
+// ElevenLabs' Agents WebSocket protocol: the client MAY send ONE
+// `conversation_initiation_client_data` message (carrying dynamic_variables +
+// overrides) and it must be the FIRST client message; the server then replies
+// with `conversation_initiation_metadata` ("only sent once") and the agent
+// generates its first_message. Once metadata arrives the init is locked in —
+// injecting on the ElevenLabs.AgentsEvents.ConversationInitiationMetadata event
+// would be TOO LATE (that event is the server's acknowledgement that init already
+// happened). VoxEngine's createAgentsClient() resolves once the WebSocket is
+// open, so we call agent.conversationInitiationClientData(...) SYNCHRONOUSLY, the
+// instant the promise resolves — before sendMediaBetween and before attaching the
+// transcript listeners — so it is queued as the first client frame.
+// (Verified vs ElevenLabs client-to-server-events / personalization docs and
+// typings/voxengine.d.ts ~6173: conversationInitiationClientData(parameters:Object):void.)
 //
 // Symbols verified against typings/voxengine.d.ts (cdn.voximplant.com copy):
 //   VoxEngine.customData / callPSTN / terminate / getSecretValue(name):string|undefined
 //     (~13353) / sendMediaBetween(u1,u2):void (~13391);
+//   Net.HttpRequestOptions / Net.httpRequestAsync (used exactly as in RSVP.voxengine.js);
 //   ElevenLabs.createAgentsClient({xiApiKey,agentId,...}):Promise<AgentsClient> (~6327);
-//   AgentsClient.close() / addEventListener(event, cb) (~6113);
+//   AgentsClient.conversationInitiationClientData(Object):void (~6173) /
+//     close() / addEventListener(event, cb) / id();
 //   ElevenLabs.AgentsEvents.UserTranscript / AgentResponse / AgentResponseCorrection /
 //     Interruption / WebSocketError (~6197);
 //   ElevenLabs.Events.WebSocketMediaStarted / WebSocketMediaEnded (~6351);
@@ -37,6 +64,11 @@ VoxEngine.addEventListener(AppEvents.Started, function () {
     var state = {
         to: '',
         from: '',
+        contextUrl: '',
+        guestName: '',
+        eventName: '',
+        eventDate: '',
+        eventVenue: '',
         agent: null,
         recordingUrl: null,
         globalTimer: null,
@@ -73,7 +105,7 @@ VoxEngine.addEventListener(AppEvents.Started, function () {
         }
         VoxEngine.terminate();
     }
-    // --- customData ({to, from}; tok/u ignored) ---
+    // --- customData ({to, from, tok, u}) ---
     var raw;
     try {
         raw = VoxEngine.customData();
@@ -94,7 +126,7 @@ VoxEngine.addEventListener(AppEvents.Started, function () {
         }
     }
     if (!customData) {
-        log('No/invalid script_custom_data. Start with {to, from}.');
+        log('No/invalid script_custom_data. Start with {to, from, tok, u}.');
         VoxEngine.terminate();
         return;
     }
@@ -104,6 +136,16 @@ VoxEngine.addEventListener(AppEvents.Started, function () {
         log('Missing required customData fields (to/from): ' + safeStringify(customData));
         VoxEngine.terminate();
         return;
+    }
+    // tok + u are optional here: without them the wiring test still runs, just
+    // with empty dynamic variables. When present, build the token-gated ctx URL.
+    var appOrigin = customData.u || '';
+    var accessToken = customData.tok || '';
+    if (appOrigin && accessToken) {
+        state.contextUrl = appOrigin + '/api/voximplant/ctx/' + accessToken;
+    }
+    else {
+        log('No tok/u in customData — proceeding with empty dynamic variables.');
     }
     // --- ElevenLabs API key from Voximplant Secret (never logged) ---
     var key = VoxEngine.getSecretValue('ELEVENLABS_API_KEY');
@@ -120,80 +162,137 @@ VoxEngine.addEventListener(AppEvents.Started, function () {
         log('Global timeout reached — closing.');
         cleanupAndTerminate();
     }, GLOBAL_TIMEOUT_MS);
-    log('Creating PSTN call to test recipient');
-    var call = VoxEngine.callPSTN(state.to, state.from);
-    // Record so the exchange can be reviewed; URL logged for a Management-API pull.
-    call.addEventListener(CallEvents.RecordStarted, function (ev) {
-        state.recordingUrl = (ev && ev.url) || null;
-        log('RECORDING_URL: ' + state.recordingUrl);
-    });
-    call.addEventListener(CallEvents.Connected, function () {
-        log('Call connected');
-        // stereo:true splits guest (left) and agent (right); hd_audio:true gives a
-        // 48kHz mp3. No cb is sent — the URL is only written to the log.
-        try {
-            call.record({ stereo: true, hd_audio: true });
-        }
-        catch (err) {
-            log('call.record() failed: ' + err);
-        }
-        // Build the ElevenLabs Agents client (opens a WebSocket to 11labs) and bridge
-        // it to the call. createAgentsClient is async — await it, then bind media.
-        ElevenLabs.createAgentsClient({
-            xiApiKey: key,
-            agentId: AGENT_ID
-        }).then(function (agent) {
-            if (state.terminated) {
-                // Call already ended while the client was connecting — don't leak it.
+    // Places the outbound call and wires the ElevenLabs bridge. Called only after
+    // the ctx fetch settles (success or failure) so the dynamic variables are known
+    // by the time the agent connects.
+    function proceedToDial() {
+        if (state.terminated)
+            return;
+        log('Creating PSTN call to test recipient (guest="' + state.guestName +
+            '", event="' + state.eventName + '")');
+        var call = VoxEngine.callPSTN(state.to, state.from);
+        // Record so the exchange can be reviewed; URL logged for a Management-API pull.
+        call.addEventListener(CallEvents.RecordStarted, function (ev) {
+            state.recordingUrl = (ev && ev.url) || null;
+            log('RECORDING_URL: ' + state.recordingUrl);
+        });
+        call.addEventListener(CallEvents.Connected, function () {
+            log('Call connected');
+            // stereo:true splits guest (left) and agent (right); hd_audio:true gives a
+            // 48kHz mp3. No cb is sent — the URL is only written to the log.
+            try {
+                call.record({ stereo: true, hd_audio: true });
+            }
+            catch (err) {
+                log('call.record() failed: ' + err);
+            }
+            // Build the ElevenLabs Agents client (opens a WebSocket to 11labs) and bridge
+            // it to the call. createAgentsClient is async — await it, then bind media.
+            ElevenLabs.createAgentsClient({
+                xiApiKey: key,
+                agentId: AGENT_ID
+            }).then(function (agent) {
+                if (state.terminated) {
+                    // Call already ended while the client was connecting — don't leak it.
+                    try {
+                        agent.close();
+                    }
+                    catch (_e) { }
+                    return;
+                }
+                state.agent = agent;
+                log('ElevenLabs AgentsClient created: ' + agent.id());
+                // CRITICAL ORDERING: inject per-call dynamic variables as the FIRST
+                // client frame, synchronously, before binding media / listeners. This
+                // must reach 11labs before it emits conversation_initiation_metadata and
+                // generates the first_message, otherwise {{guest_name}} etc. resolve
+                // empty. (See the timing note at the top of this file.)
                 try {
-                    agent.close();
+                    agent.conversationInitiationClientData({
+                        dynamic_variables: {
+                            guest_name: state.guestName,
+                            event_name: state.eventName,
+                            event_date: state.eventDate,
+                            event_venue: state.eventVenue
+                        }
+                    });
+                    log('Injected dynamic_variables');
+                }
+                catch (err) {
+                    log('conversationInitiationClientData failed: ' + err);
+                }
+                // Two-way audio bridge (verified: sendMediaBetween binds BOTH directions,
+                // so no extra agent.sendMediaTo(call) is required).
+                VoxEngine.sendMediaBetween(call, agent);
+                // --- transcript / lifecycle logging ---
+                agent.addEventListener(ElevenLabs.AgentsEvents.UserTranscript, function (e) {
+                    log('USER: ' + safeStringify(e && e.data));
+                });
+                agent.addEventListener(ElevenLabs.AgentsEvents.AgentResponse, function (e) {
+                    log('AGENT: ' + safeStringify(e && e.data));
+                });
+                agent.addEventListener(ElevenLabs.AgentsEvents.AgentResponseCorrection, function (e) {
+                    log('AGENT_CORRECTION: ' + safeStringify(e && e.data));
+                });
+                agent.addEventListener(ElevenLabs.AgentsEvents.Interruption, function (e) {
+                    log('INTERRUPTION: ' + safeStringify(e && e.data));
+                });
+                agent.addEventListener(ElevenLabs.AgentsEvents.WebSocketError, function (e) {
+                    log('AGENT_WS_ERROR: ' + safeStringify(e && e.data));
+                });
+                // Media-stream lifecycle (audio actually flowing / 1s silence tail).
+                agent.addEventListener(ElevenLabs.Events.WebSocketMediaStarted, function () {
+                    log('AGENT_MEDIA_STARTED');
+                });
+                agent.addEventListener(ElevenLabs.Events.WebSocketMediaEnded, function () {
+                    log('AGENT_MEDIA_ENDED');
+                });
+            }).catch(function (err) {
+                log('createAgentsClient failed: ' + err);
+                try {
+                    call.hangup();
                 }
                 catch (_e) { }
-                return;
-            }
-            state.agent = agent;
-            log('ElevenLabs AgentsClient created: ' + agent.id());
-            // Two-way audio bridge (verified: sendMediaBetween binds BOTH directions,
-            // so no extra agent.sendMediaTo(call) is required).
-            VoxEngine.sendMediaBetween(call, agent);
-            // --- transcript / lifecycle logging ---
-            agent.addEventListener(ElevenLabs.AgentsEvents.UserTranscript, function (e) {
-                log('USER: ' + safeStringify(e && e.data));
+                cleanupAndTerminate();
             });
-            agent.addEventListener(ElevenLabs.AgentsEvents.AgentResponse, function (e) {
-                log('AGENT: ' + safeStringify(e && e.data));
-            });
-            agent.addEventListener(ElevenLabs.AgentsEvents.AgentResponseCorrection, function (e) {
-                log('AGENT_CORRECTION: ' + safeStringify(e && e.data));
-            });
-            agent.addEventListener(ElevenLabs.AgentsEvents.Interruption, function (e) {
-                log('INTERRUPTION: ' + safeStringify(e && e.data));
-            });
-            agent.addEventListener(ElevenLabs.AgentsEvents.WebSocketError, function (e) {
-                log('AGENT_WS_ERROR: ' + safeStringify(e && e.data));
-            });
-            // Media-stream lifecycle (audio actually flowing / 1s silence tail).
-            agent.addEventListener(ElevenLabs.Events.WebSocketMediaStarted, function () {
-                log('AGENT_MEDIA_STARTED');
-            });
-            agent.addEventListener(ElevenLabs.Events.WebSocketMediaEnded, function () {
-                log('AGENT_MEDIA_ENDED');
-            });
-        }).catch(function (err) {
-            log('createAgentsClient failed: ' + err);
-            try {
-                call.hangup();
-            }
-            catch (_e) { }
+        });
+        call.addEventListener(CallEvents.Failed, function (ev) {
+            log('Call failed: ' + safeStringify(ev));
             cleanupAndTerminate();
         });
-    });
-    call.addEventListener(CallEvents.Failed, function (ev) {
-        log('Call failed: ' + safeStringify(ev));
-        cleanupAndTerminate();
-    });
-    call.addEventListener(CallEvents.Disconnected, function (ev) {
-        log('Call disconnected: ' + safeStringify(ev));
-        cleanupAndTerminate();
+        call.addEventListener(CallEvents.Disconnected, function (ev) {
+            log('Call disconnected: ' + safeStringify(ev));
+            cleanupAndTerminate();
+        });
+    }
+    // --- fetch ctx (guest/event) BEFORE dialing, then proceed either way ---
+    if (!state.contextUrl) {
+        proceedToDial();
+        return;
+    }
+    Net.httpRequestAsync(state.contextUrl).then(function (response) {
+        log('Context response: ' + response.code);
+        if (response.code === 200 && response.text) {
+            try {
+                var ctx = JSON.parse(response.text);
+                // Raw values — ElevenLabs runs its own TTS, so no speech
+                // normalization (unlike the say()-based RSVP scenario). groq_key
+                // is intentionally ignored here.
+                state.guestName = ctx.guest_name || '';
+                state.eventName = ctx.event_name || '';
+                state.eventDate = ctx.event_date || '';
+                state.eventVenue = ctx.event_venue || '';
+            }
+            catch (err) {
+                log('Context parse error: ' + err + ' — using empty defaults');
+            }
+        }
+        else {
+            log('Context fetch non-200 (' + response.code + ') — using empty defaults');
+        }
+        proceedToDial();
+    }).catch(function (err) {
+        log('Context fetch failed: ' + err + ' — using empty defaults');
+        proceedToDial();
     });
 });
