@@ -18,7 +18,7 @@ vi.mock('@/lib/data/interactions', () => ({
 vi.mock('@/lib/data/outreach-engine', () => ({ writeReach: vi.fn() }));
 vi.mock('@/lib/data/rsvp', () => ({ submitRsvp: vi.fn() }));
 
-import { processCallResult } from './call-result-processing';
+import { processCallResult, processCallRsvp, processCallRsvpRow } from './call-result-processing';
 import {
   getCallAttemptById,
   getGuestRsvpToken,
@@ -160,6 +160,57 @@ describe('processCallResult', () => {
 
   it('bad stored payload (fails strict schema) → no-op', async () => {
     await processCallResult(row({ call_status: 'bogus_status' }));
+    expect(getCallAttemptById).not.toHaveBeenCalled();
+  });
+});
+
+describe('processCallRsvp (Tier 2 save_rsvp)', () => {
+  it('attending → submitRsvp with REAL adult/child counts (kids ← children) + source marker; ok:true', async () => {
+    const r = await processCallRsvp(AID, { attending: true, adults: 2, children: 3 });
+    expect(submitRsvp).toHaveBeenCalledWith('tok', { status: 'attending', adults: 2, kids: 3 });
+    expect(recordRsvpFromCall).toHaveBeenCalledWith('ev1', 'g1', 'attending', AID);
+    expect(r).toEqual({ ok: true });
+  });
+
+  it('declined → submitRsvp status declined with adults/kids zeroed', async () => {
+    vi.mocked(submitRsvp).mockResolvedValue({ ok: true, status: 'declined', unchanged: false } as never);
+    await processCallRsvp(AID, { attending: false, adults: 4, children: 2 });
+    expect(submitRsvp).toHaveBeenCalledWith('tok', { status: 'declined', adults: 0, kids: 0 });
+  });
+
+  it('does NOT bill (writeReach/insertInteraction untouched — billing stays on the completed path)', async () => {
+    await processCallRsvp(AID, { attending: true, adults: 1, children: 0 });
+    expect(writeReach).not.toHaveBeenCalled();
+    expect(insertInteraction).not.toHaveBeenCalled();
+  });
+
+  it('re-confirm of the same answer (unchanged) → no duplicate source marker', async () => {
+    vi.mocked(submitRsvp).mockResolvedValue({ ok: true, status: 'attending', unchanged: true } as never);
+    await processCallRsvp(AID, { attending: true, adults: 1, children: 0 });
+    expect(recordRsvpFromCall).not.toHaveBeenCalled();
+  });
+
+  it('attempt not bound to exactly one guest (guest_id null) → ok:false, no RSVP write', async () => {
+    vi.mocked(getCallAttemptById).mockResolvedValue({ ...ATTEMPT, guest_id: null } as never);
+    const r = await processCallRsvp(AID, { attending: true, adults: 1, children: 0 });
+    expect(r).toEqual({ ok: false });
+    expect(submitRsvp).not.toHaveBeenCalled();
+  });
+
+  it('submitRsvp rejects (closed/revoked token) → ok:false, no source marker', async () => {
+    vi.mocked(submitRsvp).mockResolvedValue({ ok: false, reason: 'closed' } as never);
+    const r = await processCallRsvp(AID, { attending: true, adults: 1, children: 0 });
+    expect(r).toEqual({ ok: false });
+    expect(recordRsvpFromCall).not.toHaveBeenCalled();
+  });
+
+  it('processCallRsvpRow: parses the stored payload and delegates by message_id', async () => {
+    await processCallRsvpRow(row({ attending: true, adults: 2, children: 0 }));
+    expect(submitRsvp).toHaveBeenCalledWith('tok', { status: 'attending', adults: 2, kids: 0 });
+  });
+
+  it('processCallRsvpRow: bad stored payload → no-op', async () => {
+    await processCallRsvpRow(row({ attending: 'yes' }));
     expect(getCallAttemptById).not.toHaveBeenCalled();
   });
 });

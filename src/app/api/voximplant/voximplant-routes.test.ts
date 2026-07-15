@@ -13,9 +13,14 @@ vi.mock('@/lib/data/call-attempts', () => ({
   getCallAttemptByAccessToken: vi.fn(),
 }));
 vi.mock('@/lib/data/webhooks', () => ({ insertWebhookEvents: vi.fn(async () => {}) }));
+vi.mock('@/lib/data/call-result-processing', () => ({
+  processCallRsvp: vi.fn(async () => ({ ok: true })),
+}));
 
 import { GET } from './ctx/[token]/route';
 import { POST } from './cb/[token]/route';
+import { POST as saveRsvpPOST } from './agent-tool/rsvp/[token]/route';
+import { processCallRsvp } from '@/lib/data/call-result-processing';
 import {
   getCallContextByAccessToken,
   getCallAttemptByAccessToken,
@@ -46,6 +51,15 @@ const ctxCall = (token: string, ip?: string) =>
   GET(ctxReq(token, ip), { params: Promise.resolve({ token }) });
 const cbCall = (token: string, body: string, ip?: string, headers?: Record<string, string>) =>
   POST(cbReq(token, body, ip, headers), { params: Promise.resolve({ token }) });
+function rsvpReq(token: string, body: string, ip = '7.7.7.7', headers: Record<string, string> = {}) {
+  return new Request(`https://beta.kalfa.me/api/voximplant/agent-tool/rsvp/${token}`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-real-ip': ip, ...headers },
+    body,
+  });
+}
+const rsvpCall = (token: string, body: string, ip?: string, headers?: Record<string, string>) =>
+  saveRsvpPOST(rsvpReq(token, body, ip, headers), { params: Promise.resolve({ token }) });
 
 const CTX = {
   attempt: { id: AID, status: 'dialing', token_expires_at: FUTURE(), guest_id: 'g1', event_id: 'ev1', contact_id: 'ct1' },
@@ -172,6 +186,76 @@ describe('cb POST', () => {
   it('rate limit trips → 429 (fail-closed)', async () => {
     let last = 200;
     for (let i = 0; i < 33; i++) last = (await cbCall(TOK, validBody, '6.6.6.6')).status;
+    expect(last).toBe(429);
+  });
+});
+
+describe('agent-tool save_rsvp POST', () => {
+  const attendingBody = JSON.stringify({ attending: true, adults: 2, children: 1, tool_call_id: 'tc1' });
+
+  it('valid attending → 200 {ok:true}, persists call_rsvp with value-hash dedupe + syncs', async () => {
+    const res = await rsvpCall(TOK, attendingBody);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: true });
+    expect(insertWebhookEvents).toHaveBeenCalledWith([
+      expect.objectContaining({
+        provider: 'voximplant',
+        event_kind: 'call_rsvp',
+        dedupe_key: expect.stringMatching(new RegExp(`^vox-rsvp:${AID}:[0-9a-f]{16}$`)),
+        message_id: AID,
+      }),
+    ]);
+    expect(processCallRsvp).toHaveBeenCalledWith(AID, expect.objectContaining({ attending: true, adults: 2, children: 1 }));
+  });
+
+  it('declined → 200 and still persists + syncs', async () => {
+    const res = await rsvpCall(TOK, JSON.stringify({ attending: false, adults: 0, children: 0 }));
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: true });
+    expect(processCallRsvp).toHaveBeenCalled();
+  });
+
+  it('distinct answers → distinct dedupe_key (a mid-call correction persists separately)', async () => {
+    await rsvpCall(TOK, JSON.stringify({ attending: true, adults: 2, children: 0 }));
+    await rsvpCall(TOK, JSON.stringify({ attending: true, adults: 3, children: 0 }));
+    const keys = vi.mocked(insertWebhookEvents).mock.calls.map((c) => (c[0][0] as { dedupe_key: string }).dedupe_key);
+    expect(keys[0]).not.toBe(keys[1]);
+  });
+
+  it('sync write fails → 200 {ok:false} but row still persisted (durable retry)', async () => {
+    vi.mocked(processCallRsvp).mockResolvedValueOnce({ ok: false });
+    const res = await rsvpCall(TOK, attendingBody);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: false });
+    expect(insertWebhookEvents).toHaveBeenCalled();
+  });
+
+  it('unknown token → 404 (no persist)', async () => {
+    vi.mocked(getCallAttemptByAccessToken).mockResolvedValue(null);
+    expect((await rsvpCall(TOK, attendingBody)).status).toBe(404);
+    expect(insertWebhookEvents).not.toHaveBeenCalled();
+  });
+  it('expired token → 404 (no persist)', async () => {
+    vi.mocked(getCallAttemptByAccessToken).mockResolvedValue({ id: AID, token_expires_at: PAST() } as never);
+    expect((await rsvpCall(TOK, attendingBody)).status).toBe(404);
+    expect(insertWebhookEvents).not.toHaveBeenCalled();
+  });
+  it('invalid JSON → 400 (no persist)', async () => {
+    expect((await rsvpCall(TOK, '{bad')).status).toBe(400);
+    expect(insertWebhookEvents).not.toHaveBeenCalled();
+  });
+  it('attending with zero people → 400 (refine)', async () => {
+    expect((await rsvpCall(TOK, JSON.stringify({ attending: true, adults: 0, children: 0 }))).status).toBe(400);
+  });
+  it('unknown extra field → 400 (strictObject)', async () => {
+    expect((await rsvpCall(TOK, JSON.stringify({ attending: true, adults: 1, children: 0, x: 1 }))).status).toBe(400);
+  });
+  it('out-of-range count → 400', async () => {
+    expect((await rsvpCall(TOK, JSON.stringify({ attending: true, adults: 99, children: 0 }))).status).toBe(400);
+  });
+  it('rate limit trips → 429 (fail-closed)', async () => {
+    let last = 200;
+    for (let i = 0; i < 33; i++) last = (await rsvpCall(TOK, attendingBody, '4.4.4.4')).status;
     expect(last).toBe(429);
   });
 });

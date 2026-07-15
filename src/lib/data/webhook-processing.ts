@@ -15,7 +15,7 @@ import {
   setDeliveryStatus,
 } from '@/lib/data/interactions';
 import { recordReached } from '@/lib/data/billing';
-import { processCallResult } from '@/lib/data/call-result-processing';
+import { processCallResult, processCallRsvpRow } from '@/lib/data/call-result-processing';
 import { submitRsvp } from '@/lib/data/rsvp';
 import { handleHeadcountReply, requestHeadcount } from '@/lib/data/headcount';
 import { stageWhatsAppImport } from '@/lib/data/whatsapp-import';
@@ -60,6 +60,10 @@ export async function processWebhookEvent(row: WebhookInboxRow): Promise<void> {
   }
   if (row.event_kind === 'call_result') {
     await processCallResult(row);
+    return;
+  }
+  if (row.event_kind === 'call_rsvp') {
+    await processCallRsvpRow(row);
     return;
   }
   // Unknown kind — nothing to do; caller marks it processed (no retry storm).

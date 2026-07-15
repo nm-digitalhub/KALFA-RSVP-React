@@ -11,7 +11,11 @@ import { insertInteraction, setContactOpStatus } from '@/lib/data/interactions';
 import { writeReach } from '@/lib/data/outreach-engine';
 import { submitRsvp } from '@/lib/data/rsvp';
 import { validateRecordingUrl } from '@/lib/voximplant/recording-url';
-import { voxCallbackSchema } from '@/lib/validation/voximplant';
+import {
+  voxCallbackSchema,
+  voxSaveRsvpSchema,
+  type VoxSaveRsvp,
+} from '@/lib/validation/voximplant';
 
 type WebhookInboxRow = Database['public']['Tables']['webhook_inbox']['Row'];
 
@@ -144,4 +148,48 @@ export async function processCallResult(row: WebhookInboxRow): Promise<void> {
   });
   const op = opFor[body.call_status];
   if (applied && op) await setContactOpStatus(attempt.contact_id, op);
+}
+
+// Tier 2: apply ONE `save_rsvp` client-tool call. Called synchronously by the
+// agent-tool route (so the agent gets a truthful ok/fail for its confirmation
+// wording) AND idempotently by the webhook drain (event_kind==='call_rsvp') as the
+// durable retry path. Writes ONLY the RSVP answer + real adult/child counts through
+// the same atomic submit_rsvp RPC the public form uses — it does NOT bill (billing
+// stays on the call-completed path, per-reached, once). Identity is the resolved
+// attempt (token-verified upstream), never the payload. submit_rsvp is
+// idempotent-by-value (last write wins), so a corrected count simply overwrites.
+export async function processCallRsvp(
+  attemptId: string,
+  body: VoxSaveRsvp,
+): Promise<{ ok: boolean }> {
+  const attempt = await getCallAttemptById(attemptId);
+  // Written ONLY when the contact was bound to exactly one guest at dial time.
+  if (!attempt?.guest_id) return { ok: false };
+  const rsvpToken = await getGuestRsvpToken(attempt.guest_id);
+  if (!rsvpToken) return { ok: false };
+
+  const status = body.attending ? 'attending' : 'declined';
+  const outcome = await submitRsvp(rsvpToken, {
+    status,
+    adults: body.attending ? body.adults : 0,
+    kids: body.attending ? body.children : 0, // submit_rsvp param is `kids`
+  });
+  if (!outcome.ok) return { ok: false };
+  // Best-effort source marker only when the RSVP actually CHANGED (a re-confirm of
+  // the same answer is unchanged:true → no duplicate activity_log row).
+  if (!outcome.unchanged) {
+    await recordRsvpFromCall(attempt.event_id, attempt.guest_id, status, attemptId);
+  }
+  return { ok: true };
+}
+
+// Drain entry for a persisted `call_rsvp` row (identity from row.message_id = the
+// token-verified attempt id). Parses the stored body and delegates; a bad stored
+// payload is a no-op (the route already validated it).
+export async function processCallRsvpRow(row: WebhookInboxRow): Promise<void> {
+  const parsed = voxSaveRsvpSchema.safeParse(row.payload);
+  if (!parsed.success) return;
+  const attemptId = row.message_id;
+  if (!attemptId) return;
+  await processCallRsvp(attemptId, parsed.data);
 }

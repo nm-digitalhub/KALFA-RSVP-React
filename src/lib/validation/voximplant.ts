@@ -47,3 +47,23 @@ export const voxCallbackSchema = z
   );
 
 export type VoxCallback = z.infer<typeof voxCallbackSchema>;
+
+// Body of the `save_rsvp` client-tool POST (Tier 2). The ElevenLabs conversational
+// agent extracts REAL adult + child counts from natural speech (richer than the
+// binary rsvp_digit path) and calls this tool AFTER an explicit read-back confirm.
+// The Voximplant scenario forwards it to POST /api/voximplant/agent-tool/rsvp/{token}
+// (auth = the same opaque per-call access_token as cb; identity = the resolved row,
+// never the body). strictObject rejects any field outside the contract.
+export const voxSaveRsvpSchema = z
+  .strictObject({
+    attending: z.boolean(),
+    adults: z.number().int().min(0).max(50),
+    children: z.number().int().min(0).max(50),
+    tool_call_id: z.string().max(128).nullish(), // echoed back to the agent; NEVER trusted for identity
+  })
+  .refine((v) => !v.attending || v.adults + v.children >= 1, {
+    message: 'attending requires at least one person',
+    path: ['adults'],
+  });
+
+export type VoxSaveRsvp = z.infer<typeof voxSaveRsvpSchema>;

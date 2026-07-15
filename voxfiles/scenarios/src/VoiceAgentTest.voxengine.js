@@ -247,6 +247,58 @@ VoxEngine.addEventListener(AppEvents.Started, function () {
                 agent.addEventListener(ElevenLabs.Events.WebSocketMediaEnded, function () {
                     log('AGENT_MEDIA_ENDED');
                 });
+                // Tier 2: the agent's `save_rsvp` client tool. When the LLM calls it
+                // (after the guest confirms), forward the counts to the token-scoped
+                // KALFA endpoint (this scenario already holds tok + u — no secret in
+                // the payload) and return the ok/fail so the agent only claims "נרשם"
+                // on success. Envelope shape mirrors the live-logged agent messages
+                // (e.data.payload.<event>); the exact client_tool_result field names
+                // are confirmed in the live test (D2/D3 residual).
+                agent.addEventListener(ElevenLabs.AgentsEvents.ClientToolCall, function (e) {
+                    var payload = (e && e.data && e.data.payload) || {};
+                    var ctc = payload.client_tool_call || payload;
+                    var toolName = ctc.tool_name || ctc.name;
+                    var toolCallId = ctc.tool_call_id || ctc.id;
+                    var args = ctc.parameters || ctc.arguments || {};
+                    log('CLIENT_TOOL_CALL: ' + safeStringify(payload));
+                    if (toolName !== 'save_rsvp') {
+                        return; // unknown tool — ignore (never fabricate a result)
+                    }
+                    function reply(result) {
+                        try {
+                            agent.clientToolResult({ tool_call_id: toolCallId, result: result });
+                        }
+                        catch (err) {
+                            log('clientToolResult failed: ' + err);
+                        }
+                    }
+                    if (!appOrigin || !accessToken) {
+                        log('save_rsvp called but no tok/u — cannot persist');
+                        reply('error');
+                        return;
+                    }
+                    Net.httpRequestAsync(appOrigin + '/api/voximplant/agent-tool/rsvp/' + accessToken, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        postData: safeStringify({
+                            attending: !!args.attending,
+                            adults: Number(args.adults) || 0,
+                            children: Number(args.children) || 0,
+                            tool_call_id: toolCallId
+                        })
+                    }).then(function (r) {
+                        var ok = false;
+                        try {
+                            ok = r.code === 200 && JSON.parse(r.text || '{}').ok === true;
+                        }
+                        catch (_e) { }
+                        log('save_rsvp -> ' + (r && r.code) + ' ok=' + ok);
+                        reply(ok ? 'saved' : 'queued');
+                    }).catch(function (err) {
+                        log('save_rsvp request failed: ' + err);
+                        reply('error');
+                    });
+                });
             }).catch(function (err) {
                 log('createAgentsClient failed: ' + err);
                 try {
@@ -278,7 +330,22 @@ VoxEngine.addEventListener(AppEvents.Started, function () {
                 // Raw values — ElevenLabs runs its own TTS, so no speech
                 // normalization (unlike the say()-based RSVP scenario). groq_key
                 // is intentionally ignored here.
+                //
+                // PRONUNCIATION HYPOTHESIS TEST (A.2, scenario-side only, no DB
+                // touch): the live call heard "זהבה" as "זה אבא" (dropped medial
+                // /h/ + lost final stress). Docs say phoneme/IPA is unreliable on
+                // eleven_v3_conversational; the scalable fix is injecting a
+                // niqqud-vocalized name — but whether ElevenLabs Hebrew HONORS
+                // niqqud is UNVERIFIED (proven only for Google he-IL say()).
+                // This one-entry map is the minimal falsifier: if the next call
+                // says "Zehava" correctly, we build the auto-niqqud ctx pipeline;
+                // if not, we fall back to an alias dictionary.
+                var NIQQUD_TEST_MAP = { 'זהבה': 'זְהָבָה' };
                 state.guestName = ctx.guest_name || '';
+                if (NIQQUD_TEST_MAP[state.guestName]) {
+                    log('Niqqud test: injecting vocalized guest name');
+                    state.guestName = NIQQUD_TEST_MAP[state.guestName];
+                }
                 state.eventName = ctx.event_name || '';
                 state.eventDate = ctx.event_date || '';
                 state.eventVenue = ctx.event_venue || '';
