@@ -1,5 +1,5 @@
 {
-    "name": "KALFA RSVP Preview (he)",
+    "name": "KALFA RSVP Preview",
     "conversation_config": {
         "asr": {
             "quality": "high",
