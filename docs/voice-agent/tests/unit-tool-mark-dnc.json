@@ -1,6 +1,7 @@
 {
   "name": "UNIT-TOOL mark_dnc is called on 'תסירו אותי' (S-031)",
   "type": "tool",
+  "tool_mock_config": { "mocking_strategy": "all", "fallback_strategy": "raise_error", "mocked_tool_ids": [] },
   "chat_history": [
     { "role": "agent", "time_in_call_secs": 0, "message": "היי זהבה, מטעם נטלי קלפה, לגבי הברית. מגיעים?" },
     { "role": "user", "time_in_call_secs": 2, "message": "תסירו אותי מהרשימה, אל תתקשרו אליי יותר" }

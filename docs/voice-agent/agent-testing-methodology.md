@@ -156,6 +156,13 @@ read-back / כלי / סגירה) — כך הכשל מצביע על הסעיף ה
 - `parameters: []` + `verify_absence:false` → מוודא רק **שהכלי נקרא** (טוב ל-`mark_dnc` חסר-פרמטרים).
 - `parameters: []` + `verify_absence:true` → מוודא ש**אף** קריאה לכלי הזה **לא** קרתה (S-032 anti-premature).
 
+> **⚠ קריטי — client-tool unit test חייב `tool_mock_config` (אומת חי 2026-07-15).** בלי `tool_mock_config:
+> {mocking_strategy:"all", …}` ה-client tool **אינו ניתן-לקריאה** בהארנס של ה-tool-unit, והבדיקה נכשלת עם
+> *"Expected exactly 1 tool call, but found 0"* **ללא קשר ל-LLM ולסוכן** — כשל-שווא. הוכח: אותה בדיקה בלי
+> mock נכשלה תחת gemini **וגם** gpt-4o **וגם** claude-sonnet-4; **עם** `tool_mock_config` היא עוברת (save_rsvp
+> נורה עם `adults=2, children=1`), וגם `verify_absence` הופך לבדיקה אמיתית (בלי mock הוא "עובר" תמיד — false pass).
+> **מסקנה:** כל בדיקת client-tool (כולל `verify_absence`) חייבת `tool_mock_config` — בדיוק כמו simulation.
+
 ### 3C. Simulation (`type:"simulation"`) — אומת (create+run+result) — ר' §2.1.
 
 ---
@@ -198,9 +205,12 @@ read-back / כלי / סגירה) — כך הכשל מצביע על הסעיף ה
 | ריצה | test | תוצאה | מה למדנו |
 |---|---|---|---|
 | simulation | decline (mock all) | **passed** (`result:success`) | הפייפליין השלם עובד; הסימולטור מייצר עברית טבעית; מבנה תוצאה אומת |
-| tool exact | save_rsvp(attending,2,1) | **failed** — *"Expected exactly 1 tool call, but found 0"* | **ממצא אמיתי**: `gemini-2.5-flash` מאשר read-back אך **לא קורא `save_rsvp`** באמינות (תואם "מבטיח בלי כלי") |
-| create+delete | llm response · verify_absence tool | 200 → 204 | וריאנטי הבקשה מתקבלים כפי שנכתבו |
-> שתי בדיקות ה-EMP נמחקו אחרי האימות (204). הן **לא** נשארו בחשבון.
+| tool exact | save_rsvp(attending,2,1) **בלי** mock | **failed** — *"found 0"* | **כשל-שווא**: client tool לא ניתן-לקריאה בהארנס בלי `tool_mock_config` (ר' §3B) |
+| tool exact | save_rsvp **עם** `tool_mock_config` | **passed** ("All parameter evaluations passed") | הכלי נורה `adults=2,children=1` — **הסוכן תקין** |
+| simulation | sim-01 happy-path (mock:all) | **passed** — `save_rsvp` נורה, read-back לפניו | הזרימה המלאה עובדת תחת gemini |
+| **LLM comparison** (`agent_config_override.conversation_config.agent.prompt.llm`) | save-test בלי mock: gemini / gpt-4o / claude-sonnet-4 | **כל השלושה failed זהה** | **ה-LLM אינו המנוף** — הכשל היה הבדיקה, לא המודל. אין צורך בהחלפת LLM לבאג הזה |
+> **מבנה `agent_config_override` המאומת:** `{ "conversation_config": { "agent": { "prompt": { "llm": "<gpt-4o|claude-sonnet-4|gemini-2.5-flash>" } } }, "platform_settings": {} }` — **שני** השדות חובה; ה-override הוא **merge** (הפרסונה+הכלים נשמרים, רק ה-LLM מוחלף). מאפשר בנצ'מרק LLM בלי לגעת בסוכן החי.
+> כל בדיקות ה-EMP/probe נמחקו אחרי האימות (204). החשבון נקי.
 
 ---
 
@@ -228,7 +238,9 @@ Simulation הוא **טקסט בלבד**. הוא **לא** מכסה:
 5. אחת לתקופה — **שיחת-קול אמיתית** לכיסוי §5.
 
 ## 7. מנופים למדידה (עם החבילה הזו)
-- **LLM (החלטת-מוצר #16):** הרץ את החבילה תחת `gemini-2.5-flash` מול `gpt-4o`/`claude-sonnet` דרך
-  `agent_config_override.prompt.llm` ב-`run-tests` — **בלי לשנות את הסוכן החי**. `unit-tool-save-attending`
-  (שנכשל כרגע) הוא מדד-ההצלחה המרכזי לאמינות קריאת-הכלי.
+- **LLM (החלטת-מוצר #16):** הרץ את החבילה תחת `gemini-2.5-flash` מול `gpt-4o`/`claude-sonnet-4` דרך
+  `agent_config_override` ב-`run-tests` (מבנה מאומת ב-§4.2) — **בלי לשנות את הסוכן החי**.
+  **עדכון 2026-07-15:** אימות חי הראה שהחלפת ה-LLM **אינה** משפרת את קריאת-הכלי — `save_rsvp` נורה נכון תחת
+  gemini (simulation + tool-with-mock עוברים). ה"כשל" המקורי היה `tool_mock_config` חסר, לא ה-LLM. אין צורך
+  בהחלפת LLM לבאג הזה; אם בעתיד יישקל LLM אחר — זה מטעמי איכות-שיחה כללית, ויימדד מול החבילה המתוקנת.
 - **`end_call`/tool-forcing:** אחרי הפעלתם, הרץ שוב את `sim-01` + `unit-tool-save-attending` לאימות.

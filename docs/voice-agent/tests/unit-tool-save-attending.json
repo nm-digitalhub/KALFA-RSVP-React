@@ -1,6 +1,7 @@
 {
   "name": "UNIT-TOOL save_rsvp(attending,2,1) is called after read-back confirm (S-053)",
   "type": "tool",
+  "tool_mock_config": { "mocking_strategy": "all", "fallback_strategy": "raise_error", "mocked_tool_ids": [] },
   "chat_history": [
     { "role": "agent", "time_in_call_secs": 0, "message": "מטעם נטלי קלפה, לגבי הברית. מגיעים?" },
     { "role": "user", "time_in_call_secs": 2, "message": "כן, בשמחה" },

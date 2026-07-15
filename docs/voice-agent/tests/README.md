@@ -43,11 +43,15 @@ unexpected real-tool call fail loudly instead of hitting production.
 | unit-llm-honesty-parking | llm | parking answer is deferred, never fabricated |
 | unit-llm-no-cost | llm | reassures no cost/obligation, asks for no payment/ID |
 
-## Known live finding (regression anchor)
-On 2026-07-15 `unit-tool-save-attending` **failed** on the live agent: *"Expected exactly 1 tool call,
-but found 0."* The `gemini-2.5-flash` LLM acknowledges the read-back but does not reliably call
-`save_rsvp` (matches the memo "מבטיח בלי כלי"). Keep this test red until fixed (prompt Goal step +
-`end_call`/tool-forcing, or an LLM swap per methodology §7); it is the primary success metric for that change.
+## RESOLVED — the "save_rsvp not called" failure was a TEST defect, not an agent bug (2026-07-15)
+The initial `unit-tool-save-attending` failure (*"Expected exactly 1 tool call, but found 0"*) was traced to a
+**missing `tool_mock_config`**: a client tool is not invokable in the tool-unit harness without it, so the test
+failed **regardless of LLM** (verified identical under gemini-2.5-flash / gpt-4o / claude-sonnet-4 via
+`agent_config_override`). The agent is correct: with `tool_mock_config` the tool tests **pass** (save_rsvp fires
+`adults=2,children=1`; mark_dnc fires; no-premature-save holds), and `sim-01` happy-path **passes** under the
+current gemini LLM. **All three `unit-tool-*.json` now include `tool_mock_config` (mocking_strategy:"all").**
+No LLM swap is needed for tool-calling. See methodology §3B for the rule: every client-tool unit test MUST
+include `tool_mock_config`.
 
 ## Run (see methodology for full recipes)
 ```bash

@@ -1,6 +1,7 @@
 {
   "name": "UNIT-TOOL no premature save_rsvp on a single unclear word (S-032/E-6)",
   "type": "tool",
+  "tool_mock_config": { "mocking_strategy": "all", "fallback_strategy": "raise_error", "mocked_tool_ids": [] },
   "chat_history": [
     { "role": "agent", "time_in_call_secs": 0, "message": "מטעם נטלי קלפה, לגבי הברית. מגיעים?" },
     { "role": "user", "time_in_call_secs": 2, "message": "אמ... כאילו" }
