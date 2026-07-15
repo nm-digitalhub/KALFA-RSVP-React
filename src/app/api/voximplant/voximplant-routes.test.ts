@@ -5,6 +5,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 // response also carries the Groq key (moved out of the scenario payload). These
 // tests mock the token→row lookups + the key getter directly.
 
+// agent-tool-guard.ts begins with `import 'server-only'` (throws outside a server
+// context); stub it, same convention as call-result-processing.test.ts.
+vi.mock('server-only', () => ({}));
+
 vi.mock('@/lib/data/voximplant-config', () => ({
   getVoximplantGroqKey: vi.fn(async () => 'gsk_test_key'),
 }));
@@ -15,12 +19,20 @@ vi.mock('@/lib/data/call-attempts', () => ({
 vi.mock('@/lib/data/webhooks', () => ({ insertWebhookEvents: vi.fn(async () => {}) }));
 vi.mock('@/lib/data/call-result-processing', () => ({
   processCallRsvp: vi.fn(async () => ({ ok: true })),
+  processCallDnc: vi.fn(async () => ({ ok: true })),
+  processOwnerNote: vi.fn(async () => ({ ok: true })),
 }));
 
 import { GET } from './ctx/[token]/route';
 import { POST } from './cb/[token]/route';
 import { POST as saveRsvpPOST } from './agent-tool/rsvp/[token]/route';
-import { processCallRsvp } from '@/lib/data/call-result-processing';
+import { POST as dncPOST } from './agent-tool/dnc/[token]/route';
+import { POST as notePOST } from './agent-tool/note/[token]/route';
+import {
+  processCallDnc,
+  processCallRsvp,
+  processOwnerNote,
+} from '@/lib/data/call-result-processing';
 import {
   getCallContextByAccessToken,
   getCallAttemptByAccessToken,
@@ -60,6 +72,17 @@ function rsvpReq(token: string, body: string, ip = '7.7.7.7', headers: Record<st
 }
 const rsvpCall = (token: string, body: string, ip?: string, headers?: Record<string, string>) =>
   saveRsvpPOST(rsvpReq(token, body, ip, headers), { params: Promise.resolve({ token }) });
+function toolReq(path: string, token: string, body: string, ip = '3.3.3.3') {
+  return new Request(`https://beta.kalfa.me/api/voximplant/agent-tool/${path}/${token}`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-real-ip': ip },
+    body,
+  });
+}
+const dncCall = (token: string, body: string, ip?: string) =>
+  dncPOST(toolReq('dnc', token, body, ip), { params: Promise.resolve({ token }) });
+const noteCall = (token: string, body: string, ip?: string) =>
+  notePOST(toolReq('note', token, body, ip), { params: Promise.resolve({ token }) });
 
 const CTX = {
   attempt: { id: AID, status: 'dialing', token_expires_at: FUTURE(), guest_id: 'g1', event_id: 'ev1', contact_id: 'ct1' },
@@ -257,5 +280,89 @@ describe('agent-tool save_rsvp POST', () => {
     let last = 200;
     for (let i = 0; i < 33; i++) last = (await rsvpCall(TOK, attendingBody, '4.4.4.4')).status;
     expect(last).toBe(429);
+  });
+
+  it('canonical status field: maybe → 200, processed with status maybe', async () => {
+    const res = await rsvpCall(TOK, JSON.stringify({ status: 'maybe', adults: 0, children: 0 }));
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: true });
+    expect(processCallRsvp).toHaveBeenCalledWith(AID, expect.objectContaining({ status: 'maybe' }));
+  });
+  it('status attending with zero people → 400 (refine applies to canonical status)', async () => {
+    expect((await rsvpCall(TOK, JSON.stringify({ status: 'attending', adults: 0, children: 0 }))).status).toBe(400);
+  });
+  it('neither status nor attending → 400', async () => {
+    expect((await rsvpCall(TOK, JSON.stringify({ adults: 1, children: 0 }))).status).toBe(400);
+  });
+});
+
+describe('agent-tool mark_dnc POST', () => {
+  it('valid → 200 {ok:true}, persists call_dnc idempotently + syncs', async () => {
+    const res = await dncCall(TOK, JSON.stringify({ tool_call_id: 'tc9' }));
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: true });
+    expect(insertWebhookEvents).toHaveBeenCalledWith([
+      expect.objectContaining({
+        provider: 'voximplant',
+        event_kind: 'call_dnc',
+        dedupe_key: `vox-dnc:${AID}`,
+        message_id: AID,
+      }),
+    ]);
+    expect(processCallDnc).toHaveBeenCalledWith(AID);
+  });
+  it('empty body → still valid (no params in the contract)', async () => {
+    expect((await dncCall(TOK, '')).status).toBe(200);
+  });
+  it('unknown token → 404 (no persist)', async () => {
+    vi.mocked(getCallAttemptByAccessToken).mockResolvedValue(null);
+    expect((await dncCall(TOK, '{}')).status).toBe(404);
+    expect(insertWebhookEvents).not.toHaveBeenCalled();
+  });
+  it('extra field → 400 (strictObject)', async () => {
+    expect((await dncCall(TOK, JSON.stringify({ phone: '0501234567' }))).status).toBe(400);
+  });
+  it('sync failure → 200 {ok:false} with durable row persisted', async () => {
+    vi.mocked(processCallDnc).mockResolvedValueOnce({ ok: false });
+    const res = await dncCall(TOK, '{}');
+    expect(await res.json()).toEqual({ ok: false });
+    expect(insertWebhookEvents).toHaveBeenCalled();
+  });
+});
+
+describe('agent-tool notify_owner POST', () => {
+  const noteBody = JSON.stringify({ kind: 'question', text: 'האם יש חניה באולם?' });
+
+  it('valid → 200 {ok:true}, persists with note-hash dedupe + syncs', async () => {
+    const res = await noteCall(TOK, noteBody);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: true });
+    expect(insertWebhookEvents).toHaveBeenCalledWith([
+      expect.objectContaining({
+        provider: 'voximplant',
+        event_kind: 'call_owner_note',
+        dedupe_key: expect.stringMatching(new RegExp(`^vox-note:${AID}:[0-9a-f]{16}$`)),
+        message_id: AID,
+      }),
+    ]);
+    expect(processOwnerNote).toHaveBeenCalledWith(
+      AID,
+      expect.objectContaining({ kind: 'question', text: 'האם יש חניה באולם?' }),
+    );
+  });
+  it('missing text → 400', async () => {
+    expect((await noteCall(TOK, JSON.stringify({ kind: 'question' }))).status).toBe(400);
+  });
+  it('text over 500 chars → 400', async () => {
+    const b = JSON.stringify({ kind: 'message', text: 'א'.repeat(501) });
+    expect((await noteCall(TOK, b)).status).toBe(400);
+  });
+  it('bad kind → 400', async () => {
+    expect((await noteCall(TOK, JSON.stringify({ kind: 'spam', text: 'x' }))).status).toBe(400);
+  });
+  it('expired token → 404 (no persist)', async () => {
+    vi.mocked(getCallAttemptByAccessToken).mockResolvedValue({ id: AID, token_expires_at: PAST() } as never);
+    expect((await noteCall(TOK, noteBody)).status).toBe(404);
+    expect(insertWebhookEvents).not.toHaveBeenCalled();
   });
 });

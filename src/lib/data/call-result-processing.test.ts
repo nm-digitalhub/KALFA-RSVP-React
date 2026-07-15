@@ -7,9 +7,22 @@ vi.mock('server-only', () => ({}));
 
 vi.mock('@/lib/data/call-attempts', () => ({
   getCallAttemptById: vi.fn(),
+  getContactNormalizedPhone: vi.fn(),
   getGuestRsvpToken: vi.fn(),
   recordCallOutcome: vi.fn(),
   recordRsvpFromCall: vi.fn(),
+}));
+// createAdminClient is used by the DNC upsert + owner-note insert. A minimal
+// chainable stub: from(table).upsert/insert resolve {error:null} by default.
+const adminUpsert = vi.fn(async (..._args: unknown[]) => ({ error: null as { message: string } | null }));
+const adminInsert = vi.fn(async (..._args: unknown[]) => ({ error: null as { message: string } | null }));
+vi.mock('@/lib/supabase/admin', () => ({
+  createAdminClient: () => ({
+    from: (table: string) => ({
+      upsert: (...args: unknown[]) => adminUpsert(table, ...args),
+      insert: (...args: unknown[]) => adminInsert(table, ...args),
+    }),
+  }),
 }));
 vi.mock('@/lib/data/interactions', () => ({
   insertInteraction: vi.fn(),
@@ -18,9 +31,16 @@ vi.mock('@/lib/data/interactions', () => ({
 vi.mock('@/lib/data/outreach-engine', () => ({ writeReach: vi.fn() }));
 vi.mock('@/lib/data/rsvp', () => ({ submitRsvp: vi.fn() }));
 
-import { processCallResult, processCallRsvp, processCallRsvpRow } from './call-result-processing';
+import {
+  processCallDnc,
+  processCallResult,
+  processCallRsvp,
+  processCallRsvpRow,
+  processOwnerNote,
+} from './call-result-processing';
 import {
   getCallAttemptById,
+  getContactNormalizedPhone,
   getGuestRsvpToken,
   recordCallOutcome,
   recordRsvpFromCall,
@@ -49,6 +69,7 @@ function row(payload: unknown, messageId: string | null = AID) {
 beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(getCallAttemptById).mockResolvedValue({ ...ATTEMPT } as never);
+  vi.mocked(getContactNormalizedPhone).mockResolvedValue('+972501234567');
   vi.mocked(recordCallOutcome).mockResolvedValue({ applied: true });
   vi.mocked(insertInteraction).mockResolvedValue(true);
   vi.mocked(getGuestRsvpToken).mockResolvedValue('tok');
@@ -212,5 +233,70 @@ describe('processCallRsvp (Tier 2 save_rsvp)', () => {
   it('processCallRsvpRow: bad stored payload → no-op', async () => {
     await processCallRsvpRow(row({ attending: 'yes' }));
     expect(getCallAttemptById).not.toHaveBeenCalled();
+  });
+
+  it('canonical status maybe → submitRsvp maybe with zeroed counts', async () => {
+    vi.mocked(submitRsvp).mockResolvedValue({ ok: true, status: 'maybe', unchanged: false } as never);
+    const r = await processCallRsvp(AID, { status: 'maybe', adults: 2, children: 1 });
+    expect(submitRsvp).toHaveBeenCalledWith('tok', { status: 'maybe', adults: 0, kids: 0 });
+    expect(recordRsvpFromCall).toHaveBeenCalledWith('ev1', 'g1', 'maybe', AID);
+    expect(r).toEqual({ ok: true });
+  });
+
+  it('canonical status attending → counts pass through', async () => {
+    await processCallRsvp(AID, { status: 'attending', adults: 3, children: 2 });
+    expect(submitRsvp).toHaveBeenCalledWith('tok', { status: 'attending', adults: 3, kids: 2 });
+  });
+});
+
+describe('processCallDnc (mark_dnc tool)', () => {
+  it('resolves attempt → contact phone and upserts call_dnc_list with the canonical key', async () => {
+    const r = await processCallDnc(AID);
+    expect(getContactNormalizedPhone).toHaveBeenCalledWith('ct1');
+    expect(adminUpsert).toHaveBeenCalledWith(
+      'call_dnc_list',
+      { normalized_phone: '+972501234567', reason: 'בקשת אורח בשיחה קולית' },
+      { onConflict: 'normalized_phone' },
+    );
+    expect(r).toEqual({ ok: true });
+  });
+  it('unknown attempt → ok:false, nothing written', async () => {
+    vi.mocked(getCallAttemptById).mockResolvedValue(null);
+    expect(await processCallDnc(AID)).toEqual({ ok: false });
+    expect(adminUpsert).not.toHaveBeenCalled();
+  });
+  it('contact without a normalizable phone → ok:false', async () => {
+    vi.mocked(getContactNormalizedPhone).mockResolvedValue(null);
+    expect(await processCallDnc(AID)).toEqual({ ok: false });
+    expect(adminUpsert).not.toHaveBeenCalled();
+  });
+  it('DB error → ok:false (agent must not confirm removal)', async () => {
+    adminUpsert.mockResolvedValueOnce({ error: { message: 'x' } } as never);
+    expect(await processCallDnc(AID)).toEqual({ ok: false });
+  });
+});
+
+describe('processOwnerNote (notify_owner tool)', () => {
+  it('writes an activity_log row with kind+text, no phone/transcript', async () => {
+    const r = await processOwnerNote(AID, { kind: 'question', text: 'יש חניה?' });
+    expect(adminInsert).toHaveBeenCalledWith(
+      'activity_log',
+      expect.objectContaining({
+        event_id: 'ev1',
+        user_id: null,
+        action: 'call.owner_note',
+        meta: expect.objectContaining({ kind: 'question', text: 'יש חניה?', call_attempt_id: AID }),
+      }),
+    );
+    expect(r).toEqual({ ok: true });
+  });
+  it('unknown attempt → ok:false', async () => {
+    vi.mocked(getCallAttemptById).mockResolvedValue(null);
+    expect(await processOwnerNote(AID, { kind: 'flag', text: 'x' })).toEqual({ ok: false });
+    expect(adminInsert).not.toHaveBeenCalled();
+  });
+  it('insert error → ok:false (agent softens "אעביר")', async () => {
+    adminInsert.mockResolvedValueOnce({ error: { message: 'x' } } as never);
+    expect(await processOwnerNote(AID, { kind: 'message', text: 'x' })).toEqual({ ok: false });
   });
 });

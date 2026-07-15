@@ -15,7 +15,12 @@ import {
   setDeliveryStatus,
 } from '@/lib/data/interactions';
 import { recordReached } from '@/lib/data/billing';
-import { processCallResult, processCallRsvpRow } from '@/lib/data/call-result-processing';
+import {
+  processCallDncRow,
+  processCallResult,
+  processCallRsvpRow,
+  processOwnerNoteRow,
+} from '@/lib/data/call-result-processing';
 import { submitRsvp } from '@/lib/data/rsvp';
 import { handleHeadcountReply, requestHeadcount } from '@/lib/data/headcount';
 import { stageWhatsAppImport } from '@/lib/data/whatsapp-import';
@@ -64,6 +69,14 @@ export async function processWebhookEvent(row: WebhookInboxRow): Promise<void> {
   }
   if (row.event_kind === 'call_rsvp') {
     await processCallRsvpRow(row);
+    return;
+  }
+  if (row.event_kind === 'call_dnc') {
+    await processCallDncRow(row);
+    return;
+  }
+  if (row.event_kind === 'call_owner_note') {
+    await processOwnerNoteRow(row);
     return;
   }
   // Unknown kind — nothing to do; caller marks it processed (no retry storm).

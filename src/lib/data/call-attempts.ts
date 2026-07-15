@@ -171,6 +171,19 @@ export async function getCallAttemptByAccessToken(
   return data ?? null;
 }
 
+// Normalized phone of a contact (for the guest-initiated DNC tool: the stored
+// call_dnc_list key MUST be the same canonical form isDncListed matches on).
+export async function getContactNormalizedPhone(contactId: string): Promise<string | null> {
+  const admin = createAdminClient();
+  const { data, error } = await admin
+    .from('contacts')
+    .select('normalized_phone')
+    .eq('id', contactId)
+    .maybeSingle();
+  if (error) throw new Error('טעינת איש הקשר נכשלה');
+  return data?.normalized_phone ?? null;
+}
+
 // Full row by id (for the cb processor — identity from the token, never the body).
 export async function getCallAttemptById(id: string): Promise<CallAttemptRow | null> {
   const admin = createAdminClient();

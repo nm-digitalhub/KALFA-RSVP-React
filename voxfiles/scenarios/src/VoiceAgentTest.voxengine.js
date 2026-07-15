@@ -247,13 +247,46 @@ VoxEngine.addEventListener(AppEvents.Started, function () {
                 agent.addEventListener(ElevenLabs.Events.WebSocketMediaEnded, function () {
                     log('AGENT_MEDIA_ENDED');
                 });
-                // Tier 2: the agent's `save_rsvp` client tool. When the LLM calls it
-                // (after the guest confirms), forward the counts to the token-scoped
-                // KALFA endpoint (this scenario already holds tok + u — no secret in
-                // the payload) and return the ok/fail so the agent only claims "נרשם"
-                // on success. Envelope shape mirrors the live-logged agent messages
-                // (e.data.payload.<event>); the exact client_tool_result field names
-                // are confirmed in the live test (D2/D3 residual).
+                // Client-tool router (conversation-design §4.2). Each tool maps to a
+                // token-scoped KALFA endpoint (this scenario already holds tok + u —
+                // no secret in the payload). The endpoint's {ok} decides the result
+                // string, so the agent only claims success ("נרשם"/"הוסרת") when the
+                // write actually landed. Unknown tools are ignored (never fabricate).
+                //   save_rsvp    → agent-tool/rsvp  → saved | queued
+                //   mark_dnc     → agent-tool/dnc   → removed | queued
+                //   notify_owner → agent-tool/note  → noted | queued
+                var TOOL_ROUTES = {
+                    save_rsvp: {
+                        path: 'rsvp',
+                        okResult: 'saved',
+                        body: function (args) {
+                            return {
+                                status: (args.status === 'attending' || args.status === 'declined' || args.status === 'maybe')
+                                    ? args.status
+                                    : (args.attending ? 'attending' : 'declined'),
+                                adults: Number(args.adults) || 0,
+                                children: Number(args.children) || 0
+                            };
+                        }
+                    },
+                    mark_dnc: {
+                        path: 'dnc',
+                        okResult: 'removed',
+                        body: function () { return {}; }
+                    },
+                    notify_owner: {
+                        path: 'note',
+                        okResult: 'noted',
+                        body: function (args) {
+                            return {
+                                kind: (args.kind === 'question' || args.kind === 'message' || args.kind === 'flag')
+                                    ? args.kind
+                                    : 'message',
+                                text: String(args.text || '').slice(0, 500)
+                            };
+                        }
+                    }
+                };
                 agent.addEventListener(ElevenLabs.AgentsEvents.ClientToolCall, function (e) {
                     var payload = (e && e.data && e.data.payload) || {};
                     var ctc = payload.client_tool_call || payload;
@@ -261,7 +294,8 @@ VoxEngine.addEventListener(AppEvents.Started, function () {
                     var toolCallId = ctc.tool_call_id || ctc.id;
                     var args = ctc.parameters || ctc.arguments || {};
                     log('CLIENT_TOOL_CALL: ' + safeStringify(payload));
-                    if (toolName !== 'save_rsvp') {
+                    var route = TOOL_ROUTES[toolName];
+                    if (!route) {
                         return; // unknown tool — ignore (never fabricate a result)
                     }
                     function reply(result) {
@@ -273,29 +307,26 @@ VoxEngine.addEventListener(AppEvents.Started, function () {
                         }
                     }
                     if (!appOrigin || !accessToken) {
-                        log('save_rsvp called but no tok/u — cannot persist');
+                        log(toolName + ' called but no tok/u — cannot persist');
                         reply('error');
                         return;
                     }
-                    Net.httpRequestAsync(appOrigin + '/api/voximplant/agent-tool/rsvp/' + accessToken, {
+                    var postBody = route.body(args);
+                    postBody.tool_call_id = toolCallId;
+                    Net.httpRequestAsync(appOrigin + '/api/voximplant/agent-tool/' + route.path + '/' + accessToken, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        postData: safeStringify({
-                            attending: !!args.attending,
-                            adults: Number(args.adults) || 0,
-                            children: Number(args.children) || 0,
-                            tool_call_id: toolCallId
-                        })
+                        postData: safeStringify(postBody)
                     }).then(function (r) {
                         var ok = false;
                         try {
                             ok = r.code === 200 && JSON.parse(r.text || '{}').ok === true;
                         }
                         catch (_e) { }
-                        log('save_rsvp -> ' + (r && r.code) + ' ok=' + ok);
-                        reply(ok ? 'saved' : 'queued');
+                        log(toolName + ' -> ' + (r && r.code) + ' ok=' + ok);
+                        reply(ok ? route.okResult : 'queued');
                     }).catch(function (err) {
-                        log('save_rsvp request failed: ' + err);
+                        log(toolName + ' request failed: ' + err);
                         reply('error');
                     });
                 });

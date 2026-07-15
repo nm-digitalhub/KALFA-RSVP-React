@@ -3,17 +3,23 @@ import 'server-only';
 import type { Database } from '@/lib/supabase/types';
 import {
   getCallAttemptById,
+  getContactNormalizedPhone,
   getGuestRsvpToken,
   recordCallOutcome,
   recordRsvpFromCall,
 } from '@/lib/data/call-attempts';
+import { createAdminClient } from '@/lib/supabase/admin';
 import { insertInteraction, setContactOpStatus } from '@/lib/data/interactions';
 import { writeReach } from '@/lib/data/outreach-engine';
 import { submitRsvp } from '@/lib/data/rsvp';
 import { validateRecordingUrl } from '@/lib/voximplant/recording-url';
 import {
   voxCallbackSchema,
+  voxMarkDncSchema,
+  voxNotifyOwnerSchema,
   voxSaveRsvpSchema,
+  voxSaveRsvpStatus,
+  type VoxNotifyOwner,
   type VoxSaveRsvp,
 } from '@/lib/validation/voximplant';
 
@@ -168,11 +174,15 @@ export async function processCallRsvp(
   const rsvpToken = await getGuestRsvpToken(attempt.guest_id);
   if (!rsvpToken) return { ok: false };
 
-  const status = body.attending ? 'attending' : 'declined';
+  // Canonical status (attending/declined/maybe — conversation-design §4.2).
+  // Counts are meaningful only for attending; declined/maybe carry none (same
+  // convention as the WhatsApp quick-reply path).
+  const status = voxSaveRsvpStatus(body);
+  const attending = status === 'attending';
   const outcome = await submitRsvp(rsvpToken, {
     status,
-    adults: body.attending ? body.adults : 0,
-    kids: body.attending ? body.children : 0, // submit_rsvp param is `kids`
+    adults: attending ? body.adults : 0,
+    kids: attending ? body.children : 0, // submit_rsvp param is `kids`
   });
   if (!outcome.ok) return { ok: false };
   // Best-effort source marker only when the RSVP actually CHANGED (a re-confirm of
@@ -181,6 +191,70 @@ export async function processCallRsvp(
     await recordRsvpFromCall(attempt.event_id, attempt.guest_id, status, attemptId);
   }
   return { ok: true };
+}
+
+// `mark_dnc` (conversation-design §4.2, legally critical): the guest asked mid-call
+// not to be called again. Resolves attempt → contact → normalized phone and upserts
+// it into call_dnc_list — the SAME canonical key the dispatcher's isDncListed gate
+// matches on, so the very next dial attempt to this number is skipped. Guest-
+// initiated (no admin session): written via the service-role client; added_by stays
+// null (the reason string marks provenance). Idempotent: re-adding is an upsert.
+export async function processCallDnc(attemptId: string): Promise<{ ok: boolean }> {
+  const attempt = await getCallAttemptById(attemptId);
+  if (!attempt) return { ok: false };
+  const normalized = await getContactNormalizedPhone(attempt.contact_id);
+  if (!normalized) return { ok: false };
+
+  const admin = createAdminClient();
+  const { error } = await admin.from('call_dnc_list').upsert(
+    { normalized_phone: normalized, reason: 'בקשת אורח בשיחה קולית' },
+    { onConflict: 'normalized_phone' },
+  );
+  if (error) return { ok: false };
+  return { ok: true };
+}
+
+export async function processCallDncRow(row: WebhookInboxRow): Promise<void> {
+  const parsed = voxMarkDncSchema.safeParse(row.payload);
+  if (!parsed.success) return;
+  if (!row.message_id) return;
+  await processCallDnc(row.message_id);
+}
+
+// `notify_owner` (conversation-design §4.2): relay a guest question/message/flag to
+// the event owner via the event's activity log (the same PII-discipline as
+// recordRsvpFromCall: guest-authored text only, never phone/transcript/recording).
+export async function processOwnerNote(
+  attemptId: string,
+  body: VoxNotifyOwner,
+): Promise<{ ok: boolean }> {
+  const attempt = await getCallAttemptById(attemptId);
+  if (!attempt) return { ok: false };
+
+  type ActivityLogInsert = Database['public']['Tables']['activity_log']['Insert'];
+  const admin = createAdminClient();
+  const meta = {
+    kind: body.kind,
+    text: body.text,
+    guest_id: attempt.guest_id,
+    call_attempt_id: attemptId,
+  };
+  const row: ActivityLogInsert = {
+    event_id: attempt.event_id,
+    user_id: null,
+    action: 'call.owner_note',
+    meta: meta as unknown as ActivityLogInsert['meta'],
+  };
+  const { error } = await admin.from('activity_log').insert(row);
+  if (error) return { ok: false };
+  return { ok: true };
+}
+
+export async function processOwnerNoteRow(row: WebhookInboxRow): Promise<void> {
+  const parsed = voxNotifyOwnerSchema.safeParse(row.payload);
+  if (!parsed.success) return;
+  if (!row.message_id) return;
+  await processOwnerNote(row.message_id, parsed.data);
 }
 
 // Drain entry for a persisted `call_rsvp` row (identity from row.message_id = the

@@ -54,16 +54,52 @@ export type VoxCallback = z.infer<typeof voxCallbackSchema>;
 // The Voximplant scenario forwards it to POST /api/voximplant/agent-tool/rsvp/{token}
 // (auth = the same opaque per-call access_token as cb; identity = the resolved row,
 // never the body). strictObject rejects any field outside the contract.
+//
+// Conversation-design §4.2: `status` is the canonical field (attending/declined/
+// maybe — the full RSVP_STATUSES set submit_rsvp supports). The legacy boolean
+// `attending` is still accepted (deployed scenario compatibility); exactly one of
+// the two must be present. Effective status: status ?? (attending → attending/declined).
 export const voxSaveRsvpSchema = z
   .strictObject({
-    attending: z.boolean(),
+    status: z.enum(['attending', 'declined', 'maybe']).nullish(),
+    attending: z.boolean().nullish(), // legacy boolean form
     adults: z.number().int().min(0).max(50),
     children: z.number().int().min(0).max(50),
     tool_call_id: z.string().max(128).nullish(), // echoed back to the agent; NEVER trusted for identity
   })
-  .refine((v) => !v.attending || v.adults + v.children >= 1, {
-    message: 'attending requires at least one person',
-    path: ['adults'],
-  });
+  .refine((v) => v.status != null || v.attending != null, {
+    message: 'either status or attending is required',
+    path: ['status'],
+  })
+  .refine(
+    (v) => {
+      const status = v.status ?? (v.attending ? 'attending' : 'declined');
+      return status !== 'attending' || v.adults + v.children >= 1;
+    },
+    { message: 'attending requires at least one person', path: ['adults'] },
+  );
 
 export type VoxSaveRsvp = z.infer<typeof voxSaveRsvpSchema>;
+
+// Effective status of a validated save_rsvp body (single source of truth for the
+// route + processor — never re-derive ad-hoc).
+export function voxSaveRsvpStatus(body: VoxSaveRsvp): 'attending' | 'declined' | 'maybe' {
+  return body.status ?? (body.attending ? 'attending' : 'declined');
+}
+
+// `mark_dnc` client tool (conversation-design §4.2, legally critical): the guest
+// asked not to be called again. No parameters — identity comes ONLY from the
+// URL-path access token; the server resolves attempt → contact → normalized phone.
+export const voxMarkDncSchema = z.strictObject({
+  tool_call_id: z.string().max(128).nullish(),
+});
+export type VoxMarkDnc = z.infer<typeof voxMarkDncSchema>;
+
+// `notify_owner` client tool (conversation-design §4.2): relay a guest question /
+// message / flag to the event owner. Free text is guest-supplied and capped.
+export const voxNotifyOwnerSchema = z.strictObject({
+  kind: z.enum(['question', 'message', 'flag']),
+  text: z.string().trim().min(1).max(500),
+  tool_call_id: z.string().max(128).nullish(),
+});
+export type VoxNotifyOwner = z.infer<typeof voxNotifyOwnerSchema>;
