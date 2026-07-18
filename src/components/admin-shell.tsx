@@ -6,6 +6,7 @@ import { DirectionProvider } from '@base-ui/react/direction-provider';
 import {
   Building2,
   CalendarClock,
+  ChevronDown,
   ChevronsUpDown,
   FileText,
   FlaskConical,
@@ -36,6 +37,7 @@ import {
   SidebarFooter,
   SidebarGroup,
   SidebarGroupContent,
+  SidebarGroupLabel,
   SidebarHeader,
   SidebarInset,
   SidebarMenu,
@@ -44,6 +46,11 @@ import {
   SidebarProvider,
   useSidebar,
 } from '@/components/ui/sidebar';
+import {
+  Collapsible,
+  CollapsiblePanel,
+  CollapsibleTrigger,
+} from '@/components/ui/collapsible';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -62,28 +69,75 @@ import { getInitials } from '@/lib/utils';
 // Base UI defaults to LTR and ignores the DOM `dir`, so DirectionProvider is
 // required for the menu/sheet to position correctly in RTL.
 
-type NavItem = { href: string; label: string; icon: LucideIcon };
+// A nav item is normally an internal route (Link). `external: true` marks an
+// off-app link (the pg-boss ops dashboard) rendered as a plain anchor in a new
+// tab — those never participate in active-state matching.
+type NavItem = {
+  href: string;
+  label: string;
+  icon: LucideIcon;
+  external?: boolean;
+};
 
-const NAV: NavItem[] = [
-  { href: '/admin', label: 'סקירה', icon: LayoutDashboard },
-  { href: '/admin/users', label: 'משתמשים', icon: Users },
-  { href: '/admin/roles', label: 'תפקידי צוות', icon: ShieldCheck },
-  { href: '/admin/campaigns', label: 'קמפיינים', icon: Send },
-  { href: '/admin/support', label: 'תמיכת לקוחות', icon: UserSearch },
-  { href: '/admin/contacts', label: 'פניות', icon: MailOpen },
-  { href: '/admin/callbacks', label: 'בקשות חזרה', icon: PhoneCall },
-  { href: '/admin/packages', label: 'חבילות', icon: Package },
-  { href: '/admin/activity', label: 'יומן פעילות', icon: ListChecks },
-  { href: '/admin/company', label: 'פרטי חברה', icon: Building2 },
-  { href: '/admin/agreement', label: 'חוזה', icon: FileText },
-  { href: '/admin/channels', label: 'ערוצי תקשורת', icon: MessagesSquare },
-  { href: '/admin/templates', label: 'תבניות פנייה', icon: Megaphone },
-  { href: '/admin/recordings', label: 'הקלטות שיחות', icon: Voicemail },
-  { href: '/admin/dnc', label: 'חסימת שיחות (DNC)', icon: PhoneOff },
-  { href: '/admin/webhooks', label: 'בדיקת Webhooks', icon: Webhook },
-  { href: '/admin/sumit-test', label: 'בדיקת SUMIT', icon: FlaskConical },
-  { href: '/admin/alerts', label: 'התראות תפעול', icon: BellRing },
-  { href: '/admin/settings', label: 'הגדרות', icon: Settings },
+// Groups are ordered by workflow, top to bottom. The first group is unlabelled
+// (the pinned overview). The last group is collapsible and collapsed by default
+// so day-to-day nav is not cluttered by diagnostic tooling. Grouping is by what
+// each page *does* (domain / job-to-be-done), not by its label.
+type NavGroup = { label?: string; collapsible?: boolean; items: NavItem[] };
+
+const NAV_GROUPS: NavGroup[] = [
+  {
+    items: [{ href: '/admin', label: 'סקירה', icon: LayoutDashboard }],
+  },
+  {
+    label: 'לקוחות ופניות',
+    items: [
+      { href: '/admin/support', label: 'תמיכת לקוחות', icon: UserSearch },
+      { href: '/admin/contacts', label: 'פניות', icon: MailOpen },
+      { href: '/admin/callbacks', label: 'בקשות חזרה', icon: PhoneCall },
+    ],
+  },
+  {
+    label: 'חשבונות והרשאות',
+    items: [
+      { href: '/admin/users', label: 'משתמשים', icon: Users },
+      { href: '/admin/roles', label: 'תפקידי צוות', icon: ShieldCheck },
+    ],
+  },
+  {
+    label: 'מוצר וחוזה',
+    items: [
+      { href: '/admin/packages', label: 'חבילות', icon: Package },
+      { href: '/admin/agreement', label: 'חוזה', icon: FileText },
+      { href: '/admin/company', label: 'פרטי חברה', icon: Building2 },
+    ],
+  },
+  {
+    label: 'קמפיינים ושליחה',
+    items: [
+      { href: '/admin/campaigns', label: 'קמפיינים', icon: Send },
+      { href: '/admin/channels', label: 'ערוצי תקשורת', icon: MessagesSquare },
+      { href: '/admin/templates', label: 'תבניות פנייה', icon: Megaphone },
+      { href: '/admin/recordings', label: 'הקלטות שיחות', icon: Voicemail },
+      { href: '/admin/dnc', label: 'חסימת שיחות (DNC)', icon: PhoneOff },
+    ],
+  },
+  {
+    label: 'מערכת ותפעול',
+    items: [
+      { href: '/admin/settings', label: 'הגדרות', icon: Settings },
+      { href: '/admin/alerts', label: 'התראות תפעול', icon: BellRing },
+      { href: '/admin/activity', label: 'יומן פעילות', icon: ListChecks },
+    ],
+  },
+  {
+    label: 'כלי בדיקה ואבחון',
+    collapsible: true,
+    items: [
+      { href: '/admin/webhooks', label: 'בדיקת Webhooks', icon: Webhook },
+      { href: '/admin/sumit-test', label: 'בדיקת SUMIT', icon: FlaskConical },
+    ],
+  },
 ];
 
 // '/admin' is active only on an exact match; the rest match their subtree so
@@ -92,6 +146,45 @@ function isActive(pathname: string, href: string): boolean {
   return href === '/admin'
     ? pathname === '/admin'
     : pathname === href || pathname.startsWith(`${href}/`);
+}
+
+// Renders one nav row. External items become a new-tab anchor with no active
+// state; internal items use Link + subtree-based active highlighting. Shared by
+// every group so the markup lives in exactly one place.
+function renderNavItem(item: NavItem, pathname: string) {
+  const { href, label, icon: Icon, external } = item;
+
+  if (external) {
+    return (
+      <SidebarMenuItem key={href}>
+        <SidebarMenuButton
+          tooltip={label}
+          render={
+            <a href={href} target="_blank" rel="noreferrer">
+              <Icon />
+              <span>{label}</span>
+            </a>
+          }
+        />
+      </SidebarMenuItem>
+    );
+  }
+
+  const active = isActive(pathname, href);
+  return (
+    <SidebarMenuItem key={href}>
+      <SidebarMenuButton
+        isActive={active}
+        tooltip={label}
+        render={
+          <Link href={href} aria-current={active ? 'page' : undefined}>
+            <Icon />
+            <span>{label}</span>
+          </Link>
+        }
+      />
+    </SidebarMenuItem>
+  );
 }
 
 // Hamburger that opens the sidebar Sheet on mobile only.
@@ -154,6 +247,27 @@ export function AdminShell({
   const displayName = userName || userEmail || '';
   const initials = getInitials(displayName);
 
+  // The external pg-boss dashboard link is appended to the diagnostics group
+  // only when configured (env-gated), matching the previous behaviour.
+  const groups: NavGroup[] = jobsDashboardUrl
+    ? NAV_GROUPS.map((group) =>
+        group.collapsible
+          ? {
+              ...group,
+              items: [
+                ...group.items,
+                {
+                  href: jobsDashboardUrl,
+                  label: 'משימות מתוזמנות',
+                  icon: CalendarClock,
+                  external: true,
+                },
+              ],
+            }
+          : group,
+      )
+    : NAV_GROUPS;
+
   return (
     <DirectionProvider direction="rtl">
       <SidebarProvider>
@@ -165,49 +279,48 @@ export function AdminShell({
             </Link>
           </SidebarHeader>
           <SidebarContent>
-            <SidebarGroup>
-              <SidebarGroupContent>
+            {groups.map((group, index) => {
+              const menu = (
                 <SidebarMenu>
-                  {NAV.map(({ href, label, icon: Icon }) => {
-                    const active = isActive(pathname, href);
-                    return (
-                      <SidebarMenuItem key={href}>
-                        <SidebarMenuButton
-                          isActive={active}
-                          tooltip={label}
-                          render={
-                            <Link
-                              href={href}
-                              aria-current={active ? 'page' : undefined}
-                            >
-                              <Icon />
-                              <span>{label}</span>
-                            </Link>
-                          }
-                        />
-                      </SidebarMenuItem>
-                    );
-                  })}
-                  {jobsDashboardUrl ? (
-                    <SidebarMenuItem>
-                      <SidebarMenuButton
-                        tooltip="משימות מתוזמנות"
-                        render={
-                          <a
-                            href={jobsDashboardUrl}
-                            target="_blank"
-                            rel="noreferrer"
-                          >
-                            <CalendarClock />
-                            <span>משימות מתוזמנות</span>
-                          </a>
-                        }
-                      />
-                    </SidebarMenuItem>
-                  ) : null}
+                  {group.items.map((item) => renderNavItem(item, pathname))}
                 </SidebarMenu>
-              </SidebarGroupContent>
-            </SidebarGroup>
+              );
+
+              // The diagnostic-tools group collapses; its label is the toggle
+              // (Base UI `render`, not `asChild`) and a chevron rotates off the
+              // Collapsible root's `data-open` state.
+              if (group.collapsible) {
+                return (
+                  <Collapsible
+                    key={group.label ?? index}
+                    defaultOpen={false}
+                    className="group/collapsible"
+                  >
+                    <SidebarGroup>
+                      <SidebarGroupLabel
+                        render={<CollapsibleTrigger />}
+                        className="w-full cursor-pointer hover:text-sidebar-foreground"
+                      >
+                        {group.label}
+                        <ChevronDown className="ms-auto size-4 transition-transform group-data-[open]/collapsible:rotate-180" />
+                      </SidebarGroupLabel>
+                      <CollapsiblePanel>
+                        <SidebarGroupContent>{menu}</SidebarGroupContent>
+                      </CollapsiblePanel>
+                    </SidebarGroup>
+                  </Collapsible>
+                );
+              }
+
+              return (
+                <SidebarGroup key={group.label ?? index}>
+                  {group.label ? (
+                    <SidebarGroupLabel>{group.label}</SidebarGroupLabel>
+                  ) : null}
+                  <SidebarGroupContent>{menu}</SidebarGroupContent>
+                </SidebarGroup>
+              );
+            })}
           </SidebarContent>
           <SidebarFooter>
             <SidebarMenu>
