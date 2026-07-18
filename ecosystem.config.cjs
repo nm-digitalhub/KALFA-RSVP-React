@@ -30,21 +30,6 @@ module.exports = {
       script: 'dist/worker.cjs',
       env: { NODE_ENV: 'production' },
     },
-    // pg-boss ops dashboard (https://beta.kalfa.me:8444 via nginx → 127.0.0.1:3010).
-    // Secrets/bind config live in .env.pgboss-dashboard (600, not committed),
-    // injected via --env-file — HOST=127.0.0.1 there is mandatory (the CLI
-    // defaults to 0.0.0.0 and the host has no local firewall).
-    // NOTE: superseded by kalfa-pgboss-ui (below) + the /admin/jobs proxy; kept
-    // temporarily for rollback and decommissioned once the proxy is verified.
-    {
-      name: 'kalfa-pgboss-dashboard',
-      script: './node_modules/@pg-boss/dashboard/bin/cli.js',
-      cwd: '/var/www/vhosts/kalfa.me/beta',
-      node_args: '--env-file=/var/www/vhosts/kalfa.me/beta/.env.pgboss-dashboard',
-      time: true,
-      autorestart: true,
-      env: { NODE_ENV: 'production' },
-    },
     // pg-boss ops dashboard, base-path build (source build, base "/admin/jobs"),
     // loopback-only and WITHOUT its own auth: access is gated by requireAdmin()
     // in src/app/(admin)/admin/jobs/[[...path]]/route.ts, which reverse-proxies
