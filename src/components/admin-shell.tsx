@@ -68,10 +68,11 @@ import { cn, getInitials } from '@/lib/utils';
 type NavItem = { href: string; label: string; icon: LucideIcon };
 
 // Groups are ordered by workflow, top to bottom. The first group is unlabelled
-// (the pinned overview). The last group is collapsible and collapsed by default
-// so day-to-day nav is not cluttered by diagnostic tooling. Grouping is by what
-// each page *does* (domain / job-to-be-done), not by its label.
-type NavGroup = { label?: string; collapsible?: boolean; items: NavItem[] };
+// (the pinned overview, always shown). Every labelled group is collapsible via
+// its header; `defaultOpen` sets the initial state (open unless false — the
+// diagnostics group starts collapsed). Grouping is by what each page *does*
+// (domain / job-to-be-done), not by its label.
+type NavGroup = { label?: string; defaultOpen?: boolean; items: NavItem[] };
 
 const NAV_GROUPS: NavGroup[] = [
   {
@@ -120,7 +121,7 @@ const NAV_GROUPS: NavGroup[] = [
   },
   {
     label: 'כלי בדיקה ואבחון',
-    collapsible: true,
+    defaultOpen: false,
     items: [
       { href: '/admin/webhooks', label: 'בדיקת Webhooks', icon: Webhook },
       { href: '/admin/sumit-test', label: 'בדיקת SUMIT', icon: FlaskConical },
@@ -217,9 +218,15 @@ export function AdminShell({
   const displayName = userName || userEmail || '';
   const initials = getInitials(displayName);
 
-  // Collapsed/expanded state for collapsible groups (the diagnostics group),
-  // keyed by group label. Collapsed by default.
-  const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({});
+  // Expanded/collapsed state for every labelled group, keyed by label. Each
+  // group starts from its `defaultOpen` (open unless explicitly false).
+  const [openGroups, setOpenGroups] = useState<Record<string, boolean>>(() =>
+    Object.fromEntries(
+      NAV_GROUPS.flatMap((group) =>
+        group.label ? [[group.label, group.defaultOpen ?? true]] : [],
+      ),
+    ),
+  );
 
   return (
     <DirectionProvider direction="rtl">
@@ -239,44 +246,42 @@ export function AdminShell({
                 </SidebarMenu>
               );
 
-              // The diagnostic-tools group collapses. The label is a native
-              // toggle button and the menu is conditionally rendered from local
-              // state — a plain, reliable toggle (collapsed by default). The
-              // chevron rotates to signal open/closed.
-              if (group.collapsible) {
-                const key = String(group.label ?? index);
-                const open = openGroups[key] ?? false;
+              // The unlabelled overview group is always shown (nothing to
+              // collapse — it has no header).
+              if (!group.label) {
                 return (
-                  <SidebarGroup key={key}>
-                    <SidebarGroupLabel
-                      render={<button type="button" />}
-                      aria-expanded={open}
-                      onClick={() =>
-                        setOpenGroups((state) => ({ ...state, [key]: !open }))
-                      }
-                      className="w-full cursor-pointer hover:text-sidebar-foreground"
-                    >
-                      {group.label}
-                      <ChevronDown
-                        className={cn(
-                          'ms-auto size-4 transition-transform',
-                          open && 'rotate-180',
-                        )}
-                      />
-                    </SidebarGroupLabel>
-                    {open ? (
-                      <SidebarGroupContent>{menu}</SidebarGroupContent>
-                    ) : null}
+                  <SidebarGroup key={index}>
+                    <SidebarGroupContent>{menu}</SidebarGroupContent>
                   </SidebarGroup>
                 );
               }
 
+              // Every labelled group is collapsible: its header is a native
+              // toggle button and the menu is conditionally rendered from local
+              // state. The chevron rotates to signal open/closed.
+              const label = group.label;
+              const open = openGroups[label] ?? true;
               return (
-                <SidebarGroup key={group.label ?? index}>
-                  {group.label ? (
-                    <SidebarGroupLabel>{group.label}</SidebarGroupLabel>
+                <SidebarGroup key={label}>
+                  <SidebarGroupLabel
+                    render={<button type="button" />}
+                    aria-expanded={open}
+                    onClick={() =>
+                      setOpenGroups((state) => ({ ...state, [label]: !open }))
+                    }
+                    className="w-full cursor-pointer hover:text-sidebar-foreground"
+                  >
+                    {label}
+                    <ChevronDown
+                      className={cn(
+                        'ms-auto size-4 transition-transform',
+                        open && 'rotate-180',
+                      )}
+                    />
+                  </SidebarGroupLabel>
+                  {open ? (
+                    <SidebarGroupContent>{menu}</SidebarGroupContent>
                   ) : null}
-                  <SidebarGroupContent>{menu}</SidebarGroupContent>
                 </SidebarGroup>
               );
             })}
