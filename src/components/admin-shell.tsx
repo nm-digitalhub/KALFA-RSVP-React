@@ -69,15 +69,7 @@ import { getInitials } from '@/lib/utils';
 // Base UI defaults to LTR and ignores the DOM `dir`, so DirectionProvider is
 // required for the menu/sheet to position correctly in RTL.
 
-// A nav item is normally an internal route (Link). `external: true` marks an
-// off-app link (the pg-boss ops dashboard) rendered as a plain anchor in a new
-// tab — those never participate in active-state matching.
-type NavItem = {
-  href: string;
-  label: string;
-  icon: LucideIcon;
-  external?: boolean;
-};
+type NavItem = { href: string; label: string; icon: LucideIcon };
 
 // Groups are ordered by workflow, top to bottom. The first group is unlabelled
 // (the pinned overview). The last group is collapsible and collapsed by default
@@ -136,6 +128,9 @@ const NAV_GROUPS: NavGroup[] = [
     items: [
       { href: '/admin/webhooks', label: 'בדיקת Webhooks', icon: Webhook },
       { href: '/admin/sumit-test', label: 'בדיקת SUMIT', icon: FlaskConical },
+      // Internal same-origin link: the pg-boss dashboard is reverse-proxied at
+      // /admin/jobs behind requireAdmin (no separate login). See that route.
+      { href: '/admin/jobs', label: 'משימות מתוזמנות', icon: CalendarClock },
     ],
   },
 ];
@@ -148,27 +143,10 @@ function isActive(pathname: string, href: string): boolean {
     : pathname === href || pathname.startsWith(`${href}/`);
 }
 
-// Renders one nav row. External items become a new-tab anchor with no active
-// state; internal items use Link + subtree-based active highlighting. Shared by
+// Renders one nav row: a Link with subtree-based active highlighting. Shared by
 // every group so the markup lives in exactly one place.
 function renderNavItem(item: NavItem, pathname: string) {
-  const { href, label, icon: Icon, external } = item;
-
-  if (external) {
-    return (
-      <SidebarMenuItem key={href}>
-        <SidebarMenuButton
-          tooltip={label}
-          render={
-            <a href={href} target="_blank" rel="noreferrer">
-              <Icon />
-              <span>{label}</span>
-            </a>
-          }
-        />
-      </SidebarMenuItem>
-    );
-  }
+  const { href, label, icon: Icon } = item;
 
   const active = isActive(pathname, href);
   return (
@@ -230,7 +208,6 @@ function LogoutMenuItem() {
 export function AdminShell({
   userEmail,
   userName,
-  jobsDashboardUrl,
   children,
 }: {
   userEmail: string | undefined;
@@ -238,35 +215,11 @@ export function AdminShell({
   // trigger). The account menu shows the name as the primary identity and the
   // email as a secondary line, falling back to the email when the name is empty.
   userName?: string;
-  // External pg-boss ops dashboard (separate process behind its own Basic Auth,
-  // served on a dedicated port) — rendered only when configured via env.
-  jobsDashboardUrl?: string;
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
   const displayName = userName || userEmail || '';
   const initials = getInitials(displayName);
-
-  // The external pg-boss dashboard link is appended to the diagnostics group
-  // only when configured (env-gated), matching the previous behaviour.
-  const groups: NavGroup[] = jobsDashboardUrl
-    ? NAV_GROUPS.map((group) =>
-        group.collapsible
-          ? {
-              ...group,
-              items: [
-                ...group.items,
-                {
-                  href: jobsDashboardUrl,
-                  label: 'משימות מתוזמנות',
-                  icon: CalendarClock,
-                  external: true,
-                },
-              ],
-            }
-          : group,
-      )
-    : NAV_GROUPS;
 
   return (
     <DirectionProvider direction="rtl">
@@ -279,7 +232,7 @@ export function AdminShell({
             </Link>
           </SidebarHeader>
           <SidebarContent>
-            {groups.map((group, index) => {
+            {NAV_GROUPS.map((group, index) => {
               const menu = (
                 <SidebarMenu>
                   {group.items.map((item) => renderNavItem(item, pathname))}

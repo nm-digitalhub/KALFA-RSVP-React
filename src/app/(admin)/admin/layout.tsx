@@ -18,11 +18,7 @@ export default async function AdminLayout({
   const userName = profile?.full_name?.trim() || undefined;
 
   return (
-    <AdminShell
-      userEmail={user.email}
-      userName={userName}
-      jobsDashboardUrl={process.env.PGBOSS_DASHBOARD_URL}
-    >
+    <AdminShell userEmail={user.email} userName={userName}>
       {children}
     </AdminShell>
   );
