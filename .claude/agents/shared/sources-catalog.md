@@ -123,3 +123,23 @@ these URLs are pointers, not snapshots.
 → See `legal-catalog-israel.md` (same directory) — full verified catalog with
 Nevo (binding text), Kol Zchut (plain-language, via Wayback), case law, and the
 declared attorney-questions list.
+
+## Israeli tax (מע"מ, מס הכנסה, ביטוח לאומי, פנסיה)
+
+→ See `tax-catalog-israel.md` (same directory) — verified tax catalog for the
+owner's עוסק-פטור business, with the open CPA-questions (שאלות רו"ח) list.
+Access findings (verified 2026-07-18):
+- **Nevo statute pages fetch LIVE via curl** (browser UA; content is UTF-8
+  despite no declared charset — strip tags with python). The annually-indexed
+  amounts appear INSIDE the statute text (e.g. חוק מע"מ §1 carries the current
+  עוסק-פטור ceiling) — this makes Nevo the live PRIMARY for figures, not just
+  wording. חוק מע"מ: `law_html/law00/72813.htm` · תקנות מע"מ:
+  `law_html/Law01/271_005.htm` · פקודת מס הכנסה (נוסח משולב מלא — the
+  `law01/255_001*.htm` parts are partial/redirect): `law_html/law00/84255.htm` ·
+  הוראות ניהול פנקסים: `law_html/law01/255_179.htm`.
+- kolzchut.org.il, gov.il, greeninvoice.co.il: WAF-403 from this server even
+  with browser UA. WebFetch cannot reach web.archive.org, but **curl can** —
+  Wayback via curl is the LAST resort (check + state the snapshot date).
+  Preferred fallback: WebSearch cross-checked against ≥2 current-year sources,
+  or a real browser from the MAIN session with user approval.
+- btl.gov.il: alive to curl (302 homepage); deep pages vary — test per page.

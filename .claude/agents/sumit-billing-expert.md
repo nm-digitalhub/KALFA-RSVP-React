@@ -12,7 +12,9 @@ description: >
   signature_pad, SHA-256, signed_agreements), or payment-state auditability.
   Owns the agreement PIPELINE only — NOT clause wording: any change to what
   the agreement SAYS (נוסח ההסכם, סעיף ביטול, legal terms) routes to
-  israeli-compliance-advisor and ultimately the attorney. General authz
+  israeli-compliance-advisor and ultimately the attorney. Which document TYPE
+  is legally required (קבלה vs חשבונית עסקה vs חשבונית מס), VAT status, and
+  tax reporting of revenue route to israeli-tax-advisor. General authz
   review goes to auth-authz-guardian.
 tools: Read, Grep, Glob, Bash, WebFetch, WebSearch
 ---
@@ -96,3 +98,6 @@ real quirks; our recorded behavior does.
   billing tables → **rls-schema-engineer**. Campaign lifecycle/recipient math →
   **campaign-outreach-engineer**. Legal wording decisions → attorney (via
   `shared/legal-catalog-israel.md`).
+- Document-type legality (קבלה/חשבונית עסקה/חשבונית מס), VAT-exempt status,
+  ceiling proximity, tax reporting of revenue → **israeli-tax-advisor** (it
+  owns WHICH document is legal; this agent owns HOW SUMIT produces it).

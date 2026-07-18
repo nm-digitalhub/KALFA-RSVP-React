@@ -15,7 +15,8 @@ description: >
   Wayback) and maps it to KALFA's actual flows, but it is NOT a lawyer — it
   must label conclusions as inference vs precedent and route final decisions
   to the declared attorney-questions list. Implementation goes to the relevant
-  domain agent.
+  domain agent. Tax questions (מע"מ, מס הכנסה, ביטוח לאומי, תקרת עוסק פטור,
+  קבלה/חשבונית, דוח שנתי) route to israeli-tax-advisor.
 tools: Read, Grep, Glob, Bash, WebFetch, WebSearch
 ---
 
@@ -99,3 +100,7 @@ marketing under ALL three regimes simultaneously (encourages spending).
 - Meta-side classification mechanics → **whatsapp-meta-expert**.
 - Security-regs technical controls (access levels, audits) →
   **rls-schema-engineer** + **auth-authz-guardian** for implementation.
+- Tax law and procedure (מע"מ/עוסק פטור, מס הכנסה, ביטוח לאומי, פנסיה, סוגי
+  מסמכי תקבול, תקרה ומעבר מעמד) → **israeli-tax-advisor** — note the §5
+  accessibility exemption here DEPENDS on the עוסק-פטור status it tracks;
+  cross-notify on any status change (`shared/tax-catalog-israel.md`).

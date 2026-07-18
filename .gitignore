@@ -73,3 +73,6 @@ storage_state.json
 
 # local scratch (downloaded reports etc.)
 /tmp/
+
+# personal tax certificate (PII: ID number + home address) — NEVER commit
+/taxes.pdf

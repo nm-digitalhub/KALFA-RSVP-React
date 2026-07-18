@@ -1,0 +1,144 @@
+{
+  "schemaVersion": "1.0",
+  "skill": "israeli-osek-patur-tax",
+  "generated_at": "2026-07-18T18:45:00Z",
+  "notes": "Almost every figure below is indexed or amended annually. Claims tagged live=nevo/btl were extracted from pages fetched LIVE on fetched_at; wayback claims state the snapshot date. Re-verify before relying on any figure in a new tax year.",
+  "claims": [
+    {
+      "claim_id": "vat-exempt-ceiling",
+      "claim": "The osek-patur annual turnover ceiling for 2026 is 122,833 NIS, anchored in the statutory definition itself (VAT Law 5736-1975, section 1). The 2025 figure was 120,000 NIS.",
+      "source_url": "https://www.nevo.co.il/law_html/law00/72813.htm",
+      "raw_snippet": "\"עוסק פטור\" – עוסק שמחזור העסקאות שלו בכל עסקיו אינו עולה על 122,833 שקלים חדשים לשנה או על סכום גבוה יותר שקבע שר האוצר",
+      "fetched_at": "2026-07-18T18:00:00Z",
+      "appears_in": ["SKILL.md", "SKILL_HE.md", "references/vat-osek-patur.md"]
+    },
+    {
+      "claim_id": "exemption-section-31-3",
+      "claim": "The exemption base is VAT Law section 31(3): transactions of an osek patur are tax-exempt, except real-estate sales and sales of equipment whose input VAT was deducted.",
+      "source_url": "https://www.nevo.co.il/law_html/law00/72813.htm",
+      "raw_snippet": "(3) עסקאות של עוסק פטור, למעט עסקאות שהן מכירת מקרקעין, או עסקאות שהן מכירת ציוד שאינו מקרקעין שבעת רכישתו נוכה מס תשומות ששולם בשלו",
+      "fetched_at": "2026-07-18T18:00:00Z",
+      "appears_in": ["SKILL.md", "SKILL_HE.md", "references/vat-osek-patur.md"]
+    },
+    {
+      "claim_id": "annual-declaration-jan31",
+      "claim": "An osek patur must declare the previous year's turnover by 31 January each year (VAT (Registration) Regulations, regulation 15).",
+      "source_url": "https://www.nevo.co.il/law_html/Law01/271_005.htm",
+      "raw_snippet": "עוסק הפטור מתשלום המס לפי סעיף 31(3) לחוק למעט עוסק כאמור בתקנה 1(4) יצהיר עד 31 בינואר בכל שנה על מחזור עסקאותיו בשנה שחלפה לפי טופס שקבע המנהל",
+      "fetched_at": "2026-07-18T18:05:00Z",
+      "appears_in": ["SKILL.md", "SKILL_HE.md", "references/vat-osek-patur.md"]
+    },
+    {
+      "claim_id": "receipt-only-no-tax-invoice",
+      "claim": "An osek patur must issue a receipt (kabala) immediately upon every payment received; is statutorily REQUIRED by VAT-Law section 45 to issue a chesbonit-iska for every transaction (even exempt ones) though common practice is receipt-only; and is prohibited from issuing a tax invoice — section 47(a) reserves that right to osek murshe, and unauthorized issuance is a criminal offense under section 117(a)(5), up to one year imprisonment.",
+      "source_url": "https://www.nevo.co.il/law_html/law00/72813.htm",
+      "raw_snippet": "45. עוסק חייב להוציא לקונה חשבונית עסקה על כל עסקה או חלק מעסקה גם אם הם פטורים ממס. | 47.(א) עוסק מורשה רשאי להוציא לגבי עסקה חייבת במס חשבונית מס | 117(א)(5): הוציא חשבונית מס בלי שהיה זכאי לעשות כן",
+      "fetched_at": "2026-07-18T18:00:00Z (sections live; receipt-on-payment duty via Kol Zchut Wayback 2026-03-17)",
+      "appears_in": ["SKILL.md", "SKILL_HE.md", "references/vat-osek-patur.md"]
+    },
+    {
+      "claim_id": "excluded-professions-reg13",
+      "claim": "Regulation 13 of the VAT (Registration) Regulations forces listed liberal professions (plus regulation 6a services: lectures, writing, editing, translation, performances, exam administration) to register as osek murshe regardless of turnover. Software/SaaS services are on neither list, so a SaaS operator may be an osek patur.",
+      "source_url": "https://www.nevo.co.il/law_html/Law01/271_005.htm",
+      "raw_snippet": "13. עוסק הנמנה על אחת מהקבוצות המנויות להלן ירשום אותו המנהל כעוסק מורשה גם אם על פי סכום מחזור עסקותיו... (1) בעל מקצוע חפשי שהוא: אגרונום, אדריכל, הנדסאי, חוקר פרטי, טוען רבני, טכנאי...",
+      "fetched_at": "2026-07-18T18:05:00Z",
+      "appears_in": ["SKILL.md", "SKILL_HE.md", "references/vat-osek-patur.md"]
+    },
+    {
+      "claim_id": "israel-invoices-na",
+      "claim": "The Israel Invoices allocation-number regime applies to tax invoices only (from 1.1.2026 above 10,000 NIS, from 1.6.2026 above 5,000 NIS pre-VAT); an osek patur issues only receipts and is therefore outside the regime.",
+      "source_url": "https://www.greeninvoice.co.il/magazine/israel-invoice/",
+      "raw_snippet": "עוסקים פטורים, בגלל שמפיקים רק קבלות ולא חשבוניות – פטורים מהעניין ולא צריכים לקבל מספרי הקצאה",
+      "fetched_at": "2026-07-18T18:30:00Z (search cross-check: efraty.com, britcpa.co.il)",
+      "appears_in": ["SKILL.md", "SKILL_HE.md", "references/vat-osek-patur.md"]
+    },
+    {
+      "claim_id": "transition-to-morshe",
+      "claim": "Crossing the ceiling requires changing classification to osek murshe at the regional VAT office (form 821 + ID + business documents; office list in the Registration Regulations addendum per regulation 16), preferably before receiving the crossing payment; from the transition onward VAT is charged and tax invoices issued; input VAT on expenses from the exempt period is NOT retroactively deductible (practitioner consensus — the prospective-only treatment of the excess itself was NOT located as an explicit statutory clause). No source supports a '25% tolerance' allowing one to remain exempt until year end.",
+      "source_url": "https://www.kolzchut.org.il/he/עוסק_פטור",
+      "raw_snippet": "כאשר מחזור העסקאות השנתי של העוסק הפטור עולה על סכום התקרה הקבוע... עליו לגשת למשרד מע\"מ האזורי, כדי לשנות את מעמדו לעוסק מורשה",
+      "fetched_at": "2026-07-18T18:30:00Z (Wayback snapshot 2026-03-17 + 2026 search cross-check)",
+      "appears_in": ["SKILL.md", "SKILL_HE.md", "references/vat-osek-patur.md"]
+    },
+    {
+      "claim_id": "esek-zair-30pct",
+      "claim": "The 'tiny business' regime (Income Tax Ordinance, chapter 8: sections 87b-87e) grants an automatic 30% deduction from turnover instead of actual expenses (excluding sections 17-27 deductions except 17(5a), and excluding section 47a national-insurance deduction). Eligibility ceiling equals the osek-patur VAT ceiling, and an osek patur is registered as a tiny-business owner AUTOMATICALLY by the assessing officer, with a right to opt out.",
+      "source_url": "https://www.nevo.co.il/law_html/law00/84255.htm",
+      "raw_snippet": "ינוכה מהכנסתו מהעסק או ממשלח היד סכום השווה ל-30% ממחזור העסקאות שלו באותה שנה... ואולם אם היה היחיד עוסק פטור כהגדרתו בחוק מס ערך מוסף, ירשום אותו פקיד השומה כבעל עסק זעיר אף בלא הגשת בקשה כאמור",
+      "fetched_at": "2026-07-18T18:20:00Z",
+      "appears_in": ["SKILL.md", "SKILL_HE.md", "references/income-tax-annual.md"]
+    },
+    {
+      "claim_id": "tax-brackets-2026",
+      "claim": "2026 operative earned-income brackets (annual, post the 30.3.2026 widening reform/Tiqun 288, retroactive to 1.1.2026), per >=2 identical published tables: 10% to 84,120; 14% to 120,720; 20% to 228,000; 31% to 301,200; 35% to 560,280; 47% above; +3% surtax (reported threshold 721,560, one source claims 765,390 — conflict, verify before use). TRAP: the live Nevo text of section 121 prints pre-indexation base amounts for the low brackets (74,640/107,040) that are NOT the operative values, while the reform-widened brackets (228,000/301,200/560,280) do match — never quote bracket amounts from the statute text without cross-checking the Tax Authority table.",
+      "source_url": "https://taxes-refund.co.il/tax-brackets/",
+      "raw_snippet": "מדרגת המס בשיעור של 20% הורחבה עד ל-19,000 ₪ בחודש (228,000 ₪ בשנה)... מדרגת המס של 31% הורחבה ותעמוד על טווח הכנסות של 19,001 עד 25,100 שקל (cross-check: naama-tax.co.il identical table; nevo 84255.htm carries the widened 228,000/301,200 figures live)",
+      "fetched_at": "2026-07-18T18:25:00Z",
+      "appears_in": ["SKILL.md", "SKILL_HE.md", "references/income-tax-annual.md"]
+    },
+    {
+      "claim_id": "credit-point-2026",
+      "claim": "The 2026 operative credit-point value is 242 NIS/month (2,904 NIS/year); a resident gets 2.25 points (6,534 NIS/year), a woman +0.5. The statutory base figure in section 33a (504 NIS indexed) is NOT the operative value.",
+      "source_url": "https://msl.org.il/research/income-tax-brackets-2026/",
+      "raw_snippet": "בשנת 2026, שווי נקודת זיכוי אחת עומד על 242 ₪ לחודש... שווי נקודות הזיכוי לכל תושב ישראל (2.25 נקודות זיכוי) הוא 6,534 ₪ בשנה",
+      "fetched_at": "2026-07-18T18:25:00Z (search cross-check: cheshbonai.co.il, taxes-refund.co.il)",
+      "appears_in": ["SKILL.md", "SKILL_HE.md", "references/income-tax-annual.md"]
+    },
+    {
+      "claim_id": "annual-return-1301",
+      "claim": "A self-employed individual must file the annual return (form 1301) online; for tax-year 2025 the published deadlines fell in April-June 2026 with representative extensions beyond. Deadlines are published annually and must be re-verified per year.",
+      "source_url": "https://www.gov.il/he/service/reporting-and-payment-2025-annual-tax-report-for-individuals",
+      "raw_snippet": "יחידים החייבים בהגשת דוח מקוון יגישו עד 30.6.2026 (search summary; gov.il page WAF-blocked from this server)",
+      "fetched_at": "2026-07-18T18:25:00Z (search cross-check: kolzchut, kolhamas, greenbergm)",
+      "appears_in": ["SKILL.md", "SKILL_HE.md", "references/income-tax-annual.md"]
+    },
+    {
+      "claim_id": "bookkeeping-service-providers",
+      "claim": "For a service business with no dedicated schedule, Addendum 11 ('service providers and others') of the bookkeeping rules applies: receipts-and-payments ledger plus receipt vouchers; section 2a provides tiny-business bookkeeping relief.",
+      "source_url": "https://www.nevo.co.il/law_html/law01/255_179.htm",
+      "raw_snippet": "תוספת י\"א ניהול פנקסי חשבונות על-ידי נותני שירותים ואחרים... \"נותן שירות\" – (1) נישום שעסקו או חלק מעסקו מתן שירות לעסק אחר או לצרכן ואשר לא חלה עליו תוספת אחרת מהתוספות להוראות אלה",
+      "fetched_at": "2026-07-18T18:15:00Z",
+      "appears_in": ["SKILL.md", "SKILL_HE.md", "references/income-tax-annual.md"]
+    },
+    {
+      "claim_id": "btl-self-employed-definition",
+      "claim": "National Insurance 'self-employed' definition (figures effective 01.01.2026): at least 20 avg weekly hours; OR avg monthly income >= 50% of the average wage = 6,885 NIS; OR at least 12 weekly hours AND income >= 15% of the average wage = 2,065 NIS. Below all thresholds one pays as a non-worker and is NOT insured for work injury.",
+      "source_url": "https://www.btl.gov.il/Insurance/National%20Insurance/type_list/Self_Employed/Pages/default.aspx",
+      "raw_snippet": "עוסק במשלח ידו 20 שעות בשבוע בממוצע לפחות. • הכנסתו החודשית הממוצעת ממשלח ידו שווה או עולה על 50% מהשכר הממוצע - 6,885 (החל ב- 01.01.2026) • עוסק במשלח ידו 12 שעות בשבוע בממוצע לפחות, והכנסתו... 15% מהשכר הממוצע - 2,065 ש\"ח",
+      "fetched_at": "2026-07-18T18:10:00Z",
+      "appears_in": ["SKILL.md", "SKILL_HE.md", "references/bituach-leumi-self-employed.md"]
+    },
+    {
+      "claim_id": "btl-rates-2026",
+      "claim": "2026 self-employed contribution rates (btl.gov.il, fetched live): up to 7,703 NIS/month — 4.47% national insurance + 3.23% health = 7.7%; above that up to the 51,910 NIS/month ceiling — 12.83% + 5.17% = 18%.",
+      "source_url": "https://www.btl.gov.il/Insurance/HozimVeAmalot/Pages/default.aspx",
+      "raw_snippet": "על הכנסה חודשית עד 7,703 ש\"ח - (שיעור מופחת)... דמי ביטוח לאומי 4.47% 12.83% דמי ביטוח בריאות 3.23% 5.17% סך הכול 7.7% 18% ... ההכנסה המרבית החייבת בדמי ביטוח בסך 51,910 ש\"ח לחודש",
+      "fetched_at": "2026-07-18T18:10:00Z",
+      "appears_in": ["SKILL.md", "SKILL_HE.md", "references/bituach-leumi-self-employed.md"]
+    },
+    {
+      "claim_id": "pension-mandatory-2026",
+      "claim": "Mandatory self-employed pension (2026 figures): 4.45% on income up to half the average annual wage (82,614 NIS), 12.55% from there up to the average wage (165,228 NIS); deposit due by tax-year end; a 500 NIS fine (after warning + 90 days) applies to self-employed with annual income above 74,972 NIS who did not deposit.",
+      "source_url": "https://www.kolzchut.org.il/he/הפקדות_לביטוח_פנסיוני_על_ידי_עצמאים",
+      "raw_snippet": "עבור חלק מההכנסה שעד חצי מהשכר הממוצע השנתי במשק (כלומר עבור 82,614 ₪ הראשונים בשנת המס, נכון ל-2026) יש להפקיד 4.45% מההכנסה. • עבור יתרת ההכנסה ועד גובה השכר הממוצע השנתי במשק (כלומר עד 165,228 ₪ בשנה, נכון ל-2026) - יש להפקיד 12.55%",
+      "fetched_at": "2026-07-18T18:12:00Z (Wayback snapshot 2026-02-28)",
+      "appears_in": ["SKILL.md", "SKILL_HE.md", "references/pension-hishtalmut.md"]
+    },
+    {
+      "claim_id": "hishtalmut-2026",
+      "claim": "Self-employed hishtalmut fund (2026, ceilings frozen at 2025 levels): deposits up to 4.5% of taxable income and up to 13,203 NIS/year are deductible (section 17(5a), preserved under the tiny-business regime); qualifying income ceiling 293,397 NIS; capital-gains-exempt deposit cap 20,566 NIS/year; exempt withdrawal after 6 years.",
+      "source_url": "https://www.kolzchut.org.il/he/קרן_השתלמות_לעובד_עצמאי",
+      "raw_snippet": "הפקדות לקרן השתלמות לעצמאים בגובה של עד 4.5% מההכנסה החייבת... ועד 13,203 ₪ בשנה (נכון ל-2026) יוכרו כהוצאה מוכרת... אם הסכום שהופקד מדי שנה לא עלה על 20,566 ₪ (נכון ל-2026)",
+      "fetched_at": "2026-07-18T18:12:00Z (Wayback snapshot 2026-03-12; cross-check pensuni.com 2026-03-14)",
+      "appears_in": ["SKILL.md", "SKILL_HE.md", "references/pension-hishtalmut.md"]
+    },
+    {
+      "claim_id": "vat-rate-18",
+      "claim": "The standard VAT rate is 18% (since 1.1.2025). Relevant to an osek patur only for supplier pricing and for a future transition to osek murshe.",
+      "source_url": "https://www.kolzchut.org.il/he/עוסק_פטור",
+      "raw_snippet": "236 ₪ עבור שעת עבודה (200 ₪ + מע\"מ בשיעור 18%)",
+      "fetched_at": "2026-07-18T18:00:00Z (Wayback snapshot 2026-03-17)",
+      "appears_in": ["SKILL.md", "SKILL_HE.md", "references/vat-osek-patur.md"]
+    }
+  ]
+}
