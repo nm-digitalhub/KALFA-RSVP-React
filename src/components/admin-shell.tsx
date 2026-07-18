@@ -1,5 +1,6 @@
 'use client';
 
+import { useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { DirectionProvider } from '@base-ui/react/direction-provider';
@@ -47,11 +48,6 @@ import {
   useSidebar,
 } from '@/components/ui/sidebar';
 import {
-  Collapsible,
-  CollapsiblePanel,
-  CollapsibleTrigger,
-} from '@/components/ui/collapsible';
-import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuGroup,
@@ -62,7 +58,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
-import { getInitials } from '@/lib/utils';
+import { cn, getInitials } from '@/lib/utils';
 
 // Admin app shell: a fixed right-side sidebar (RTL) plus a top bar. Dedicated to
 // the admin area — it is NOT the customer AppShell. As with the customer shell,
@@ -221,6 +217,10 @@ export function AdminShell({
   const displayName = userName || userEmail || '';
   const initials = getInitials(displayName);
 
+  // Collapsed/expanded state for collapsible groups (the diagnostics group),
+  // keyed by group label. Collapsed by default.
+  const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({});
+
   return (
     <DirectionProvider direction="rtl">
       <SidebarProvider>
@@ -239,29 +239,35 @@ export function AdminShell({
                 </SidebarMenu>
               );
 
-              // The diagnostic-tools group collapses; its label is the toggle
-              // (Base UI `render`, not `asChild`) and a chevron rotates off the
-              // Collapsible root's `data-open` state.
+              // The diagnostic-tools group collapses. The label is a native
+              // toggle button and the menu is conditionally rendered from local
+              // state — a plain, reliable toggle (collapsed by default). The
+              // chevron rotates to signal open/closed.
               if (group.collapsible) {
+                const key = String(group.label ?? index);
+                const open = openGroups[key] ?? false;
                 return (
-                  <Collapsible
-                    key={group.label ?? index}
-                    defaultOpen={false}
-                    className="group/collapsible"
-                  >
-                    <SidebarGroup>
-                      <SidebarGroupLabel
-                        render={<CollapsibleTrigger />}
-                        className="w-full cursor-pointer hover:text-sidebar-foreground"
-                      >
-                        {group.label}
-                        <ChevronDown className="ms-auto size-4 transition-transform group-data-[open]/collapsible:rotate-180" />
-                      </SidebarGroupLabel>
-                      <CollapsiblePanel>
-                        <SidebarGroupContent>{menu}</SidebarGroupContent>
-                      </CollapsiblePanel>
-                    </SidebarGroup>
-                  </Collapsible>
+                  <SidebarGroup key={key}>
+                    <SidebarGroupLabel
+                      render={<button type="button" />}
+                      aria-expanded={open}
+                      onClick={() =>
+                        setOpenGroups((state) => ({ ...state, [key]: !open }))
+                      }
+                      className="w-full cursor-pointer hover:text-sidebar-foreground"
+                    >
+                      {group.label}
+                      <ChevronDown
+                        className={cn(
+                          'ms-auto size-4 transition-transform',
+                          open && 'rotate-180',
+                        )}
+                      />
+                    </SidebarGroupLabel>
+                    {open ? (
+                      <SidebarGroupContent>{menu}</SidebarGroupContent>
+                    ) : null}
+                  </SidebarGroup>
                 );
               }
 
