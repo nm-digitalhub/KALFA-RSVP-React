@@ -114,7 +114,7 @@ export default async function ApproveCampaignPage({
         <h2 className="font-semibold">עיקרי התנאים</h2>
         <dl className="grid grid-cols-1 gap-y-1 sm:grid-cols-2 sm:gap-y-1.5">
           <dt className="text-muted-foreground">מחיר לאיש קשר שהושג</dt>
-          <dd>{ils(campaign.price_per_reached)} (כולל מע״מ)</dd>
+          <dd>{ils(campaign.price_per_reached)} (מחיר סופי; לא נגבה מע״מ)</dd>
           <dt className="text-muted-foreground">תקרת חיוב מרבית</dt>
           <dd>
             <strong>{ils(campaign.max_charge_ceiling)}</strong>

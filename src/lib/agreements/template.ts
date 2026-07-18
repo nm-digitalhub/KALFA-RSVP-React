@@ -17,11 +17,15 @@
 import { escapeHtml as esc } from '@/lib/html';
 
 // Fallback version when no active DB document is available (e.g. pre-migration).
-export const AGREEMENT_VERSION = 'draft-2026-06-v2';
+export const AGREEMENT_VERSION = 'draft-2026-07-v3';
 
-// VAT is 18% in Israel (since 2025-01-01). Consumer-facing prices MUST be shown
-// VAT-inclusive (§ price-display). The admin-set price is treated as the
-// consumer (VAT-inclusive) price; SUMIT charges with VATIncluded=true to match.
+// Standard Israeli VAT rate (18% since 2025-01-01). The business operates as an
+// עוסק פטור (VAT-exempt dealer, VAT Law §31(3)) and does NOT charge VAT —
+// consumer prices are FINAL with no VAT component, and customer-facing wording
+// must never claim "כולל מע"מ". This constant remains only because the SUMIT
+// wire calls (authorize/charge/raw-charge) still send VATRate/VATIncluded;
+// aligning those is a separate money-path change pending a SUMIT account-config
+// check (see .claude/agents/shared/tax-catalog-israel.md §2).
 export const VAT_RATE_PERCENT = 18;
 
 export type AgreementStatus = 'draft' | 'approved';
@@ -187,9 +191,9 @@ function defaultBody(c: AgreementContent, version: string): string {
 
   <h2>3. המחיר והחיוב</h2>
   <dl class="terms">
-    <dt>מחיר לאיש קשר שהושג</dt><dd>${ils(c.pricePerReached)} (כולל מע"מ ${VAT_RATE_PERCENT}%)</dd>
+    <dt>מחיר לאיש קשר שהושג</dt><dd>${ils(c.pricePerReached)} — מחיר סופי; לא נגבה מע"מ (עוסק פטור)</dd>
     <dt>מספר אנשי קשר מרבי</dt><dd>${c.maxContacts.toLocaleString('he-IL')}</dd>
-    <dt>תקרת חיוב מרבית</dt><dd>${ils(c.ceiling)} (כולל מע"מ) — מחיר ליחידה × מספר אנשי הקשר</dd>
+    <dt>תקרת חיוב מרבית</dt><dd>${ils(c.ceiling)} — מחיר ליחידה × מספר אנשי הקשר; מחיר סופי, לא נגבה מע"מ</dd>
     <dt>חלון פעילות</dt><dd>${esc(c.windowText)}</dd>
   </dl>
   <p>הלקוח מתחייב לשלם עבור כל <strong>איש קשר ייחודי שהושג</strong> — אדם שיצר אינטראקציה אנושית מאומתת (תגובת וואטסאפ נכנסת אמיתית, או מענה אנושי בשיחה) — פעם אחת לכל איש קשר, ועד לתקרה. <strong>החיוב הסופי הוא לפי מספר אנשי הקשר שהושגו בפועל</strong>, ומחושב בסגירת הקמפיין.</p>

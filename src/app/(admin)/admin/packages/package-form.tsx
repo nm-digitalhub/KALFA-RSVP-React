@@ -240,7 +240,7 @@ export function PackageForm({
 
       <div className="space-y-1">
         <label htmlFor="price_with_vat" className={labelClass}>
-          מחיר כולל מע&quot;מ (₪)
+          מחיר (₪, מחיר סופי לצרכן)
         </label>
         <input
           id="price_with_vat"

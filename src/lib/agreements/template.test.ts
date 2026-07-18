@@ -47,10 +47,12 @@ describe('renderAgreementBody', () => {
     expect(html).toContain('support@kalfa.me');
   });
 
-  it('shows VAT-inclusive price + ceiling', () => {
+  it('shows final prices with the osek-patur no-VAT disclosure', () => {
     expect(html).toContain('₪4.00');
-    expect(html).toContain('כולל מע"מ');
+    expect(html).toContain('לא נגבה מע"מ');
     expect(html).toContain('₪400.00');
+    // The business is an עוסק פטור — a "VAT included" claim would be false.
+    expect(html).not.toContain('כולל מע"מ');
   });
 
   it('includes the "not billed" clause', () => {

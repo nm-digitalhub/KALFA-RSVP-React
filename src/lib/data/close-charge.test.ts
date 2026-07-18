@@ -19,6 +19,9 @@ vi.mock('@/lib/data/billing', () => ({
   getCampaignCreditTotal: vi.fn(),
 }));
 vi.mock('@/lib/sumit/capture', () => ({ captureHeldCardSumit: vi.fn() }));
+vi.mock('@/lib/data/tax-ceiling', () => ({
+  checkOsekPaturCeilingAfterCharge: vi.fn().mockResolvedValue(undefined),
+}));
 vi.mock('@/lib/supabase/admin', () => ({ createAdminClient: vi.fn() }));
 vi.mock('@/lib/alerts/slack', () => ({ sendSlackAlert: vi.fn() }));
 // closeCampaignAndCharge is platform-admin only (billing op); it self-gates on

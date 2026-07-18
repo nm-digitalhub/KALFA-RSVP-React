@@ -16,6 +16,7 @@ import {
   getCampaignBillingSummary,
   getCampaignCreditTotal,
 } from '@/lib/data/billing';
+import { checkOsekPaturCeilingAfterCharge } from '@/lib/data/tax-ceiling';
 import { captureHeldCardSumit } from '@/lib/sumit/capture';
 import { SumitDeclinedError } from '@/lib/sumit/charge';
 import { createAdminClient } from '@/lib/supabase/admin';
@@ -154,6 +155,9 @@ export async function closeCampaignAndCharge(
         document_id: result.documentId,
       },
     });
+    // Osek-patur turnover-ceiling watch (fire-and-forget, fail-safe): every
+    // charged shekel counts fully toward the yearly VAT-exemption ceiling.
+    void checkOsekPaturCeilingAfterCharge();
     return { outcome: 'charged', amount };
   } catch (e) {
     if (e instanceof SumitDeclinedError) {

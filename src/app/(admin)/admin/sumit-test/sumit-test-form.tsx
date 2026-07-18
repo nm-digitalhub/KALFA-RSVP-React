@@ -117,7 +117,7 @@ export function SumitTestForm({
           </div>
           <div>
             <label htmlFor="amount" className={labelClass}>
-              סכום (₪, כולל מע״מ)
+              סכום (₪)
             </label>
             <input
               id="amount"
@@ -358,7 +358,7 @@ export function SumitTestForm({
         </div>
         <div>
           <label htmlFor="route_b_amount" className={labelClass}>
-            סכום לחיוב (₪, כולל מע״מ)
+            סכום לחיוב (₪)
           </label>
           <input
             id="route_b_amount"
