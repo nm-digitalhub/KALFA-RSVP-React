@@ -43,12 +43,20 @@ yarn-error.log*
 # vercel
 .vercel
 
-# claude code session data
+# claude code session data — EXCEPT project agents + skills, which are team
+# assets shared via git (official project-subagent convention)
 .remember/
-.claude/
+.claude/*
+!.claude/agents/
+!.claude/skills/
+# junk auto-generated skill, pending deletion decision
+.claude/skills/email-template-generator/
 
 # installed agent skills (tooling — reinstallable via `npx skills`; tracked via skills-lock.json)
 .agents/skills/
+
+# skills-CLI symlink farm for other agent runtimes (machine-local, regenerable)
+.hermes/
 
 # typescript
 *.tsbuildinfo

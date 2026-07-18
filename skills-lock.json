@@ -22,21 +22,25 @@
     "hebrew-voice-bot-builder": {
       "source": "skills-il/developer-tools",
       "sourceType": "github",
+      "skillPath": "hebrew-voice-bot-builder/SKILL.md",
       "computedHash": "9665481fd25861167b98ba1dc033d466a753af50e55cc253514e164ef668f20d"
     },
     "israeli-ai-compliance-kit": {
       "source": "skills-il/security-compliance",
       "sourceType": "github",
+      "skillPath": "israeli-ai-compliance-kit/SKILL.md",
       "computedHash": "396dd919940bc643898b298dc08cc2e8d825c213f1ad557d04fb0341c33766d9"
     },
     "israeli-ecommerce-compliance": {
       "source": "skills-il/security-compliance",
       "sourceType": "github",
+      "skillPath": "israeli-ecommerce-compliance/SKILL.md",
       "computedHash": "0bc84cb6891ceb9547ee58db2d6b6926624610586b4456a119d97f1222999c5a"
     },
     "israeli-market-fit": {
       "source": "skills-il/marketing-growth",
       "sourceType": "github",
+      "skillPath": "israeli-market-fit/SKILL.md",
       "computedHash": "d25881678f1deba2859a6eb05d2d1703fd080879f44fbe622b5389c551c3a768"
     },
     "migrate-radix-to-base": {
@@ -97,19 +101,19 @@
       "source": "elevenlabs/skills",
       "sourceType": "github",
       "skillPath": "speech-to-text/SKILL.md",
-      "computedHash": "19958acfde2f68c5eb3342a03da3dc19ef6a12cd76fe8b482e848b2d83a5111c"
+      "computedHash": "d13a8bf2e72d2fffb4e00b5849b4566f9eba419459280b48eb13a02a44bab366"
     },
     "supabase": {
       "source": "supabase/agent-skills",
       "sourceType": "github",
       "skillPath": "skills/supabase/SKILL.md",
-      "computedHash": "d414d598b9428b3e851c4ce61898649906b19e55aa7415bb42a286bd9ca2ab32"
+      "computedHash": "17a437f3de2371ec43ad8a17d3e858337695efb46ed4af5dd6426f330bb6d032"
     },
     "supabase-postgres-best-practices": {
       "source": "supabase/agent-skills",
       "sourceType": "github",
       "skillPath": "skills/supabase-postgres-best-practices/SKILL.md",
-      "computedHash": "0d2c4857a7d6fdcd3fbc46e458fa4c497f029cab89a01548b3defce203003932"
+      "computedHash": "ec56a54fba0e97bee52c7f244ba603bb284bf8d1b739c66a5cc84ec3df709d9d"
     },
     "text-to-speech": {
       "source": "elevenlabs/skills",
