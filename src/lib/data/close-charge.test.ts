@@ -51,12 +51,19 @@ import { sendSlackAlert } from '@/lib/alerts/slack';
 import { requireAdmin } from '@/lib/auth/dal';
 import { closeCampaignAndCharge } from '@/lib/data/close-charge';
 
-// Mock admin client for the owner-email lookup (events.owner_id → auth user email).
+// Mock admin client for the owner lookups (events.owner_id → auth user email +
+// profiles.full_name for the receipt "לכבוד" line).
 const adminClientMock = {
-  from: () => ({
+  from: (table: string) => ({
     select: () => ({
       eq: () => ({
-        maybeSingle: async () => ({ data: { owner_id: 'u1' }, error: null }),
+        maybeSingle: async () => ({
+          data:
+            table === 'profiles'
+              ? { full_name: 'בעל האירוע' }
+              : { owner_id: 'u1' },
+          error: null,
+        }),
       }),
     }),
   }),
@@ -212,6 +219,8 @@ describe('closeCampaignAndCharge', () => {
         expYear: 2031,
         citizenId: '316125434',
         amount: '12',
+        customerEmail: 'owner@example.com',
+        customerName: 'בעל האירוע',
       }),
     );
     expect(recordCampaignCharge).toHaveBeenCalledWith('c1', {

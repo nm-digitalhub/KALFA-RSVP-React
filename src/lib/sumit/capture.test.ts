@@ -53,12 +53,27 @@ describe('captureHeldCardSumit', () => {
     expect(body.AutoCapture).toBe(true);
     expect(body.Items[0].UnitPrice).toBe(4);
     expect(body.Items[0].Item.Name).toBeTruthy();
+    // No customerName given → omitted (SUMIT then prints "כרטיס ללא שם").
+    expect(body.Customer.Name).toBeUndefined();
     // The full response is captured.
     expect(r.documentId).toBe(555);
     expect(r.documentNumber).toBe(40103);
     expect(r.documentUrl).toContain('download=555');
     expect(r.authNumber).toBe('0692601');
     expect(r.paymentId).toBe(777);
+  });
+
+  it('passes customerName through to Customer.Name (the receipt "לכבוד" line)', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ok,
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    await captureHeldCardSumit({ ...base, customerName: 'ישראל ישראלי' });
+
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body as string);
+    expect(body.Customer.Name).toBe('ישראל ישראלי');
   });
 
   it('throws SumitDeclinedError on a business decline (Status 1)', async () => {

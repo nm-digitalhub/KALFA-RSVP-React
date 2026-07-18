@@ -110,6 +110,7 @@ export async function closeCampaignAndCharge(
   // The final charge emails a receipt to the billed party (the event owner).
   const adminCli = createAdminClient();
   let ownerEmail = '';
+  let ownerName = '';
   const { data: ev } = await adminCli
     .from('events')
     .select('owner_id')
@@ -120,6 +121,14 @@ export async function closeCampaignAndCharge(
       ev.owner_id as string,
     );
     ownerEmail = u?.user?.email ?? '';
+    // Receipt "לכבוד" — same fallback chain the signed agreement uses
+    // (profiles.full_name → email); without a name SUMIT prints "כרטיס ללא שם".
+    const { data: prof } = await adminCli
+      .from('profiles')
+      .select('full_name')
+      .eq('id', ev.owner_id as string)
+      .maybeSingle();
+    ownerName = (prof?.full_name ?? '').trim() || ownerEmail;
   }
 
   try {
@@ -133,6 +142,7 @@ export async function closeCampaignAndCharge(
       externalRef: campaign.auth_external_ref ?? '',
       amount: amount.toString(),
       customerEmail: ownerEmail, // non-empty → SendDocumentByEmail:true (receipt)
+      customerName: ownerName,
     });
     await recordCampaignCharge(campaignId, {
       amount,

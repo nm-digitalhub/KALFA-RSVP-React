@@ -15,6 +15,9 @@ export interface SumitCaptureParams {
   externalRef: string; // Customer.ExternalIdentifier — reconciliation anchor
   amount: string; // Postgres numeric as string — no float distortion
   customerEmail: string; // non-empty → SendDocumentByEmail:true (the receipt)
+  // Receipt "לכבוד" line — without it SUMIT prints "כרטיס ללא שם"
+  // (observed on the live doc-check receipt 40106).
+  customerName?: string;
 }
 
 export interface SumitCaptureResult {
@@ -44,6 +47,7 @@ export async function captureHeldCardSumit(
   const body = {
     Credentials: { CompanyID: p.companyId, APIKey: p.apiKey },
     Customer: {
+      Name: p.customerName || undefined,
       EmailAddress: p.customerEmail || undefined,
       ExternalIdentifier: p.externalRef, // reconciliation anchor
     },
