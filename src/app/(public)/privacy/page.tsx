@@ -1,4 +1,7 @@
+import Link from 'next/link';
+
 import { getCompanyLegal } from '@/lib/data/company';
+import { ManageCookiesButton } from '@/components/consent/manage-cookies-button';
 import { LegalShell, LegalSection } from '../_legal';
 
 export const metadata = {
@@ -103,7 +106,13 @@ export default async function PrivacyPage() {
         <p>
           אנו משתמשים בעוגיות חיוניות לתפעול השירות (התחברות וזיהוי), שאינן דורשות
           הסכמה. עוגיות שאינן חיוניות (אנליטיקה/שיווק, ככל שייעשה בהן שימוש) ייאספו
-          בהסכמה מפורשת (opt‑in) בלבד, בהתאם להנחיות הרשות להגנת הפרטיות.
+          בהסכמה מפורשת (opt‑in) בלבד, בהתאם להנחיות הרשות להגנת הפרטיות. לפירוט מלא
+          ראו את <Link href="/cookies" className="underline underline-offset-4">מדיניות
+          העוגיות</Link>, או{' '}
+          <ManageCookiesButton className="underline underline-offset-4">
+            פתחו את הודעת העוגיות
+          </ManageCookiesButton>
+          .
         </p>
       </LegalSection>
 

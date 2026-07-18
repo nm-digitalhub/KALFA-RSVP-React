@@ -1,0 +1,192 @@
+Usage: elevenlabs agents [options] [command]
+
+Manage ElevenLabs agents
+
+Options:
+  --human-friendly             Enable interactive terminal UI
+  -h, --help                   Display help information
+
+Commands:
+  init [options] [path]        Initialize a new agent management project
+  add [options] [name]         Add a new agent - creates config, uploads to
+                               ElevenLabs, and saves ID
+  list [options]               List all configured agents
+  delete [options] [agent_id]  Delete an agent locally and from ElevenLabs
+  status [options]             Show the status of agents
+  push [options]               Push agents to ElevenLabs API when configs
+                               change
+  pull [options]               Pull agents from ElevenLabs
+  templates                    Manage agent templates
+  widget <name>                Generate HTML widget snippet for an agent
+  test [options] <agent>       Run tests for an agent
+  branches                     Manage agent branches
+
+===== elevenlabs agents init --help =====
+
+Usage: elevenlabs agents init [options] [path]
+
+Initialize a new agent management project
+
+Arguments:
+  path              Path to initialize the project in (default: ".")
+
+Options:
+  --no-ui           Disable interactive UI (default, kept for backwards
+                    compatibility)
+  --human-friendly  Enable interactive terminal UI
+  --override        Override existing files and recreate from scratch (default:
+                    false)
+  -h, --help        display help for command
+
+===== elevenlabs agents add --help =====
+
+Usage: elevenlabs agents add [options] [name]
+
+Add a new agent - creates config, uploads to ElevenLabs, and saves ID
+
+Arguments:
+  name                   Name of the agent to create
+
+Options:
+  --output-path <path>   Custom output path for the config file (optional)
+  --template <template>  Template type to use (default, minimal, voice-only,
+                         text-only, customer-service, assistant)
+  --from-file <path>     Create agent from an existing config file
+  --no-ui                Disable interactive UI (default, kept for backwards
+                         compatibility)
+  --human-friendly       Enable interactive terminal UI
+  -h, --help             display help for command
+
+===== elevenlabs agents list --help =====
+
+Usage: elevenlabs agents list [options]
+
+List all configured agents
+
+Options:
+  --no-ui           Disable interactive UI (default, kept for backwards
+                    compatibility)
+  --human-friendly  Enable interactive terminal UI
+  -h, --help        display help for command
+
+===== elevenlabs agents delete --help =====
+
+Usage: elevenlabs agents delete [options] [agent_id]
+
+Delete an agent locally and from ElevenLabs
+
+Arguments:
+  agent_id          ID of the agent to delete (omit with --all to delete all
+                    agents)
+
+Options:
+  --all             Delete all agents (default: false)
+  --no-ui           Disable interactive UI (default, kept for backwards
+                    compatibility)
+  --human-friendly  Enable interactive terminal UI
+  -h, --help        display help for command
+
+===== elevenlabs agents status --help =====
+
+Usage: elevenlabs agents status [options]
+
+Show the status of agents
+
+Options:
+  --no-ui           Disable interactive UI (default, kept for backwards
+                    compatibility)
+  --human-friendly  Enable interactive terminal UI
+  -h, --help        display help for command
+
+===== elevenlabs agents push --help =====
+
+Usage: elevenlabs agents push [options]
+
+Push agents to ElevenLabs API when configs change
+
+Options:
+  --agent <agent_id>            Specific agent ID to push
+  --branch <branch>             Specific branch name or ID to push to
+  --dry-run                     Show what would be done without making changes
+                                (default: false)
+  --version-description <text>  Description for the new version (only applies
+                                to updates)
+  --no-ui                       Disable interactive UI (default, kept for
+                                backwards compatibility)
+  --human-friendly              Enable interactive terminal UI
+  -h, --help                    display help for command
+
+===== elevenlabs agents pull --help =====
+
+Usage: elevenlabs agents pull [options]
+
+Pull agents from ElevenLabs
+
+Options:
+  --agent <agent_id>        Specific agent ID to pull
+  --branch <branch>         Specific branch name or ID to pull from
+  --all-branches            Pull all branches for each agent (default: false)
+  --output-dir <directory>  Output directory for configs (default:
+                            "agent_configs")
+  --dry-run                 Show what would be done without making changes
+                            (default: false)
+  --update                  Update existing items only, skip new
+  --all                     Pull all (new + existing)
+  --no-ui                   Disable interactive UI (default, kept for backwards
+                            compatibility)
+  --human-friendly          Enable interactive terminal UI
+  -h, --help                display help for command
+
+===== elevenlabs agents templates --help =====
+
+Usage: elevenlabs agents templates [options] [command]
+
+Manage agent templates
+
+Options:
+  -h, --help       display help for command
+
+Commands:
+  list             List available agent templates
+  show <template>  Show template configuration
+  help [command]   display help for command
+
+===== elevenlabs agents widget --help =====
+
+Usage: elevenlabs agents widget [options] <name>
+
+Generate HTML widget snippet for an agent
+
+Arguments:
+  name        Name or ID of the agent
+
+Options:
+  -h, --help  display help for command
+
+===== elevenlabs agents test --help =====
+
+Usage: elevenlabs agents test [options] <agent>
+
+Run tests for an agent
+
+Arguments:
+  agent             Name or ID of the agent to test
+
+Options:
+  --no-ui           Disable interactive UI (default, kept for backwards
+                    compatibility)
+  --human-friendly  Enable interactive terminal UI
+  -h, --help        display help for command
+
+===== elevenlabs agents branches --help =====
+
+Usage: elevenlabs agents branches [options] [command]
+
+Manage agent branches
+
+Options:
+  -h, --help      display help for command
+
+Commands:
+  list [options]  List branches for an agent
+  help [command]  display help for command

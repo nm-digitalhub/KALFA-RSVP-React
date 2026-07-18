@@ -182,3 +182,40 @@ body {
     @apply font-sans;
   }
 }
+
+/* vanilla-cookieconsent theming — map the plugin's own CSS variables onto our
+   design tokens so the consent notice matches the app instead of shipping a
+   foreign look. Variable names verified against the installed
+   node_modules/vanilla-cookieconsent/dist/cookieconsent.css. RTL layout comes from
+   `language.rtl: 'he'` in the config (which adds the plugin's `.cc--rtl` class);
+   inheriting dir="rtl" from <html> alone flips text but not the modal chrome. No
+   dark-mode sync is needed (the app has no runtime theme switch). */
+#cc-main {
+  --cc-font-family: var(--font-sans);
+  --cc-bg: var(--popover);
+  --cc-primary-color: var(--popover-foreground);
+  --cc-secondary-color: var(--muted-foreground);
+  --cc-link-color: var(--primary);
+  --cc-separator-border-color: var(--border);
+
+  --cc-btn-primary-bg: var(--primary);
+  --cc-btn-primary-color: var(--primary-foreground);
+  --cc-btn-primary-border-color: var(--primary);
+  --cc-btn-primary-hover-bg: color-mix(in oklch, var(--primary), black 12%);
+  --cc-btn-primary-hover-color: var(--primary-foreground);
+  --cc-btn-primary-hover-border-color: color-mix(in oklch, var(--primary), black 12%);
+
+  --cc-btn-secondary-bg: var(--muted);
+  --cc-btn-secondary-color: var(--foreground);
+  --cc-btn-secondary-border-color: var(--border);
+  --cc-btn-secondary-hover-bg: color-mix(in oklch, var(--muted), var(--foreground) 6%);
+  --cc-btn-secondary-hover-color: var(--foreground);
+  --cc-btn-secondary-hover-border-color: var(--border);
+
+  --cc-toggle-on-bg: var(--primary);
+  --cc-toggle-readonly-bg: var(--muted);
+  --cc-toggle-readonly-knob-bg: var(--background);
+
+  --cc-btn-border-radius: var(--radius);
+  --cc-modal-border-radius: var(--radius);
+}

@@ -1,5 +1,6 @@
 import Link from 'next/link';
 
+import { ManageCookiesButton } from '@/components/consent/manage-cookies-button';
 import { getUser } from '@/lib/auth/dal';
 import {
   Activity,
@@ -461,8 +462,14 @@ export default async function HomePage() {
               </div>
             ))}
           </div>
-          <div className="mt-8 flex flex-wrap justify-between gap-3 border-t border-white/10 pt-5 text-xs">
+          <div className="mt-8 flex flex-col gap-4 border-t border-white/10 pt-5 text-xs sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
             <span>© 2026 KALFA · כל הזכויות שמורות</span>
+            <nav className="flex flex-wrap items-center gap-x-4 gap-y-2" aria-label="קישורים משפטיים">
+              <Link href="/privacy" className="text-white/60 hover:text-white">מדיניות פרטיות</Link>
+              <Link href="/terms" className="text-white/60 hover:text-white">תקנון</Link>
+              <Link href="/cookies" className="text-white/60 hover:text-white">מדיניות עוגיות</Link>
+              <ManageCookiesButton className="text-white/60 hover:text-white">ניהול עוגיות</ManageCookiesButton>
+            </nav>
             <span>פחות התעסקות · יותר שליטה</span>
           </div>
         </div>
