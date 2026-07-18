@@ -49,8 +49,6 @@ yarn-error.log*
 .claude/*
 !.claude/agents/
 !.claude/skills/
-# junk auto-generated skill, pending deletion decision
-.claude/skills/email-template-generator/
 
 # installed agent skills (tooling — reinstallable via `npx skills`; tracked via skills-lock.json)
 .agents/skills/
