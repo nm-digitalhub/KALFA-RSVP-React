@@ -27,7 +27,11 @@ const MAX_BODY_BYTES = 4 * 1024;
 type WebhookInboxInsert = Database['public']['Tables']['webhook_inbox']['Insert'];
 type Json = WebhookInboxInsert['payload'];
 
-const bad = (status: number) => new NextResponse(null, { status });
+// Token-bearing URL: explicit no-store on every response (config-layer block
+// on /api/voximplant/:path* is defense-in-depth, this is the primary control).
+const NO_STORE = { 'Cache-Control': 'no-store' } as const;
+
+const bad = (status: number) => new NextResponse(null, { status, headers: NO_STORE });
 
 export async function POST(
   req: Request,
@@ -74,5 +78,5 @@ export async function POST(
     ok = false;
   }
 
-  return NextResponse.json({ ok }, { status: 200 });
+  return NextResponse.json({ ok }, { status: 200, headers: NO_STORE });
 }

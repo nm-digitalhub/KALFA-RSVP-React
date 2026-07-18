@@ -1,10 +1,9 @@
-import { createHash } from 'node:crypto';
-
 import { NextResponse } from 'next/server';
 
 import { insertWebhookEvents } from '@/lib/data/webhooks';
 import { getCallAttemptByAccessToken } from '@/lib/data/call-attempts';
 import { getClientIp, rateLimit } from '@/lib/security/rate-limit';
+import { tokenFingerprint } from '@/lib/security/token-fingerprint';
 import type { Database } from '@/lib/supabase/types';
 import { voxCallbackSchema } from '@/lib/validation/voximplant';
 
@@ -29,11 +28,11 @@ const MAX_BODY_BYTES = 256 * 1024; // reject anything larger than a real transcr
 type WebhookInboxInsert = Database['public']['Tables']['webhook_inbox']['Insert'];
 type Json = WebhookInboxInsert['payload'];
 
-function tokenFingerprint(token: string): string {
-  return createHash('sha256').update(token).digest('hex').slice(0, 16);
-}
+// Explicit no-store on every response — the URL carries a bearer token
+// (force-dynamic only skips Next's cache, not downstream caches).
+const NO_STORE = { 'Cache-Control': 'no-store' } as const;
 
-const bad = (status: number) => new NextResponse(null, { status });
+const bad = (status: number) => new NextResponse(null, { status, headers: NO_STORE });
 
 export async function POST(
   req: Request,
@@ -108,5 +107,5 @@ export async function POST(
   }
 
   // Stable, minimal ack. Processing + RSVP/billing happen in the webhook drain.
-  return new NextResponse('ok', { status: 200 });
+  return new NextResponse('ok', { status: 200, headers: NO_STORE });
 }

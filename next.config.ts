@@ -97,6 +97,18 @@ const nextConfig: NextConfig = {
           { key: 'X-Robots-Tag', value: 'noindex, nofollow' },
         ],
       },
+      // Voximplant ctx/cb API routes carry a per-call bearer token in the path
+      // and the ctx response includes a provider key — same no-store/no-referrer
+      // posture as the token pages (routes also set no-store explicitly on each
+      // response as the primary control; this block is defense-in-depth).
+      {
+        source: '/api/voximplant/:path*',
+        headers: [
+          { key: 'Cache-Control', value: 'no-store, max-age=0' },
+          { key: 'Referrer-Policy', value: 'no-referrer' },
+          { key: 'X-Robots-Tag', value: 'noindex, nofollow' },
+        ],
+      },
       // Public gift landing page + its redirect carry a per-event token in the
       // path. Same posture as /r: never cache the token-specific response, never
       // leak the token via the Referer header when the /go route redirects to the

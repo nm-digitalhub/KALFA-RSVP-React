@@ -41,7 +41,11 @@ function valueHash(status: string, adults: number, children: number): string {
     .slice(0, 16);
 }
 
-const bad = (status: number) => new NextResponse(null, { status });
+// Token-bearing URL: explicit no-store on every response (config-layer block
+// on /api/voximplant/:path* is defense-in-depth, this is the primary control).
+const NO_STORE = { 'Cache-Control': 'no-store' } as const;
+
+const bad = (status: number) => new NextResponse(null, { status, headers: NO_STORE });
 
 export async function POST(
   req: Request,
@@ -93,5 +97,5 @@ export async function POST(
     ok = false;
   }
 
-  return NextResponse.json({ ok }, { status: 200 });
+  return NextResponse.json({ ok }, { status: 200, headers: NO_STORE });
 }

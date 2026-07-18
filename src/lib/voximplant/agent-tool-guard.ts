@@ -1,9 +1,8 @@
 import 'server-only';
 
-import { createHash } from 'node:crypto';
-
 import { getCallAttemptByAccessToken } from '@/lib/data/call-attempts';
 import { getClientIp, rateLimit } from '@/lib/security/rate-limit';
+import { tokenFingerprint } from '@/lib/security/token-fingerprint';
 
 // Shared request guard for the ElevenLabs agent-tool endpoints
 // (/api/voximplant/agent-tool/*/{token}). One canonical implementation of the
@@ -17,10 +16,6 @@ const RATE = { limit: 30, windowMs: 5 * 60 * 1000 } as const;
 export type AgentToolGuardResult =
   | { ok: true; attemptId: string; raw: string }
   | { ok: false; status: number };
-
-function tokenFingerprint(token: string): string {
-  return createHash('sha256').update(token).digest('hex').slice(0, 16);
-}
 
 export async function guardAgentToolRequest(
   req: Request,

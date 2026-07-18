@@ -108,6 +108,8 @@ describe('ctx GET', () => {
   it('valid → 200 with the invitation fields + Groq key, no PII', async () => {
     const res = await ctxCall(TOK);
     expect(res.status).toBe(200);
+    // Token-bearing URL + provider key in the body: must never be cacheable.
+    expect(res.headers.get('cache-control')).toBe('no-store');
     const json = await res.json();
     expect(Object.keys(json).sort()).toEqual([
       'event_date',
@@ -136,7 +138,10 @@ describe('ctx GET', () => {
   });
   it('unknown token → 404', async () => {
     vi.mocked(getCallContextByAccessToken).mockResolvedValue(null);
-    expect((await ctxCall(TOK)).status).toBe(404);
+    const res = await ctxCall(TOK);
+    expect(res.status).toBe(404);
+    // Error paths must carry no-store too — the URL still bears the token.
+    expect(res.headers.get('cache-control')).toBe('no-store');
   });
   it('event not active → 404', async () => {
     vi.mocked(getCallContextByAccessToken).mockResolvedValue({ ...CTX, event: { ...CTX.event, status: 'closed' } } as never);
@@ -163,6 +168,7 @@ describe('cb POST', () => {
   it('valid → 200 and persists idempotently with the right dedupe_key + message_id', async () => {
     const res = await cbCall(TOK, validBody);
     expect(res.status).toBe(200);
+    expect(res.headers.get('cache-control')).toBe('no-store');
     expect(insertWebhookEvents).toHaveBeenCalledWith([
       expect.objectContaining({
         provider: 'voximplant',
@@ -184,7 +190,9 @@ describe('cb POST', () => {
     expect(insertWebhookEvents).not.toHaveBeenCalled();
   });
   it('invalid JSON → 400 (no persist)', async () => {
-    expect((await cbCall(TOK, '{not json')).status).toBe(400);
+    const res = await cbCall(TOK, '{not json');
+    expect(res.status).toBe(400);
+    expect(res.headers.get('cache-control')).toBe('no-store');
     expect(insertWebhookEvents).not.toHaveBeenCalled();
   });
   it('invalid payload (bad status) → 400', async () => {

@@ -1,11 +1,10 @@
-import { createHash } from 'node:crypto';
-
 import { NextResponse } from 'next/server';
 
 import { getCallContextByAccessToken } from '@/lib/data/call-attempts';
 import { getVoximplantGroqKey } from '@/lib/data/voximplant-config';
 import { formatIsraelSpokenDate } from '@/lib/date';
 import { getClientIp, rateLimit } from '@/lib/security/rate-limit';
+import { tokenFingerprint } from '@/lib/security/token-fingerprint';
 
 // GET /api/voximplant/ctx/{token}
 //
@@ -25,13 +24,12 @@ export const dynamic = 'force-dynamic';
 
 const CTX_RATE = { limit: 12, windowMs: 5 * 60 * 1000 } as const;
 
-function tokenFingerprint(token: string): string {
-  // A short, non-reversible fingerprint for the rate-limit key + any logging —
-  // never put the raw token in a key or log.
-  return createHash('sha256').update(token).digest('hex').slice(0, 16);
-}
+// Explicit no-store on EVERY response: the success body carries the Groq key
+// and guest-facing data behind a bearer token in the URL — `force-dynamic`
+// only skips Next's own cache, it does not forbid downstream caches.
+const NO_STORE = { 'Cache-Control': 'no-store' } as const;
 
-const notFound = () => new NextResponse(null, { status: 404 });
+const notFound = () => new NextResponse(null, { status: 404, headers: NO_STORE });
 
 export async function GET(
   req: Request,
@@ -42,7 +40,7 @@ export async function GET(
   const ip = getClientIp(req.headers.get.bind(req.headers));
   const fp = token ? tokenFingerprint(token) : 'none';
   if (!rateLimit(`vox-ctx:${fp}:${ip}`, CTX_RATE).allowed) {
-    return new NextResponse(null, { status: 429 });
+    return new NextResponse(null, { status: 429, headers: NO_STORE });
   }
 
   if (typeof token !== 'string' || token.length === 0 || token.length > 256) {
@@ -81,11 +79,14 @@ export async function GET(
     ? ctx.guestFullName.trim().split(/\s+/)[0] || ''
     : '';
 
-  return NextResponse.json({
-    guest_name: guestName,
-    event_name: ctx.event.name ?? '',
-    event_date: formatIsraelSpokenDate(ctx.event.event_date ?? ''),
-    event_venue: ctx.event.venue_name ?? '',
-    groq_key: groqKey,
-  });
+  return NextResponse.json(
+    {
+      guest_name: guestName,
+      event_name: ctx.event.name ?? '',
+      event_date: formatIsraelSpokenDate(ctx.event.event_date ?? ''),
+      event_venue: ctx.event.venue_name ?? '',
+      groq_key: groqKey,
+    },
+    { headers: NO_STORE },
+  );
 }
