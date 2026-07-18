@@ -227,6 +227,7 @@ describe('agent-tool save_rsvp POST', () => {
   it('valid attending → 200 {ok:true}, persists call_rsvp with value-hash dedupe + syncs', async () => {
     const res = await rsvpCall(TOK, attendingBody);
     expect(res.status).toBe(200);
+    expect(res.headers.get('cache-control')).toBe('no-store');
     expect(await res.json()).toEqual({ ok: true });
     expect(insertWebhookEvents).toHaveBeenCalledWith([
       expect.objectContaining({
@@ -263,7 +264,9 @@ describe('agent-tool save_rsvp POST', () => {
 
   it('unknown token → 404 (no persist)', async () => {
     vi.mocked(getCallAttemptByAccessToken).mockResolvedValue(null);
-    expect((await rsvpCall(TOK, attendingBody)).status).toBe(404);
+    const res = await rsvpCall(TOK, attendingBody);
+    expect(res.status).toBe(404);
+    expect(res.headers.get('cache-control')).toBe('no-store');
     expect(insertWebhookEvents).not.toHaveBeenCalled();
   });
   it('expired token → 404 (no persist)', async () => {
@@ -308,6 +311,7 @@ describe('agent-tool mark_dnc POST', () => {
   it('valid → 200 {ok:true}, persists call_dnc idempotently + syncs', async () => {
     const res = await dncCall(TOK, JSON.stringify({ tool_call_id: 'tc9' }));
     expect(res.status).toBe(200);
+    expect(res.headers.get('cache-control')).toBe('no-store');
     expect(await res.json()).toEqual({ ok: true });
     expect(insertWebhookEvents).toHaveBeenCalledWith([
       expect.objectContaining({
@@ -324,7 +328,9 @@ describe('agent-tool mark_dnc POST', () => {
   });
   it('unknown token → 404 (no persist)', async () => {
     vi.mocked(getCallAttemptByAccessToken).mockResolvedValue(null);
-    expect((await dncCall(TOK, '{}')).status).toBe(404);
+    const res = await dncCall(TOK, '{}');
+    expect(res.status).toBe(404);
+    expect(res.headers.get('cache-control')).toBe('no-store');
     expect(insertWebhookEvents).not.toHaveBeenCalled();
   });
   it('extra field → 400 (strictObject)', async () => {
@@ -344,6 +350,7 @@ describe('agent-tool notify_owner POST', () => {
   it('valid → 200 {ok:true}, persists with note-hash dedupe + syncs', async () => {
     const res = await noteCall(TOK, noteBody);
     expect(res.status).toBe(200);
+    expect(res.headers.get('cache-control')).toBe('no-store');
     expect(await res.json()).toEqual({ ok: true });
     expect(insertWebhookEvents).toHaveBeenCalledWith([
       expect.objectContaining({
@@ -370,7 +377,9 @@ describe('agent-tool notify_owner POST', () => {
   });
   it('expired token → 404 (no persist)', async () => {
     vi.mocked(getCallAttemptByAccessToken).mockResolvedValue({ id: AID, token_expires_at: PAST() } as never);
-    expect((await noteCall(TOK, noteBody)).status).toBe(404);
+    const res = await noteCall(TOK, noteBody);
+    expect(res.status).toBe(404);
+    expect(res.headers.get('cache-control')).toBe('no-store');
     expect(insertWebhookEvents).not.toHaveBeenCalled();
   });
 });
