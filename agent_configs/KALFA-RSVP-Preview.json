@@ -73,7 +73,41 @@
             },
             "source_attribution": false
         },
-        "language_presets": {},
+        "language_presets": {
+            "en": {
+                "overrides": {
+                    "agent": {
+                        "prompt": null,
+                        "first_message": "Hi {{guest_name}}? … This is Michal, from the family, about {{event_name}}.",
+                        "language": null
+                    },
+                    "tts": null
+                },
+                "first_message_translation": null
+            },
+            "ru": {
+                "overrides": {
+                    "agent": {
+                        "prompt": null,
+                        "first_message": "Здравствуйте, {{guest_name}}? … Это Михаль, по поводу {{event_name}}.",
+                        "language": null
+                    },
+                    "tts": null
+                },
+                "first_message_translation": null
+            },
+            "ar": {
+                "overrides": {
+                    "agent": {
+                        "prompt": null,
+                        "first_message": "مرحبًا {{guest_name}}؟ … أنا ميخال، بخصوص {{event_name}}.",
+                        "language": null
+                    },
+                    "tts": null
+                },
+                "first_message_translation": null
+            }
+        },
         "vad": {
             "background_voice_detection": false
         },
@@ -124,6 +158,30 @@
                             "system_tool_type": "end_call"
                         },
                         "description": "נתקי את השיחה אחרי משפט הסגירה — כשה-RSVP נשמר, כשהאורח סירב או ביקש הסרה, כשנרשם \"אולי\", או אחרי הפניה לוואטסאפ. לעולם אל תנתקי באמצע איסוף נתונים או לפני שסיימת את משפט הסיום."
+                    },
+                    "skip_turn": {
+                        "name": "skip_turn",
+                        "type": "system",
+                        "params": {
+                            "system_tool_type": "skip_turn"
+                        },
+                        "description": "כשהאורח מבקש רגע לחשוב או לבדוק עם בן/בת הזוג (\"רגע\", \"תני לי שנייה\", \"אני בודק\") — המתיני בשקט תור אחד במקום למלא את השתיקה. אל תשתמשי בזה כברירת מחדל לכל שתיקה רגילה."
+                    },
+                    "voicemail_detection": {
+                        "name": "voicemail_detection",
+                        "type": "system",
+                        "params": {
+                            "system_tool_type": "voicemail_detection"
+                        },
+                        "description": "אם השיחה נענתה על ידי תא קולי או משיבון אוטומטי (הודעת פתיחה מוקלטת, \"השאירו הודעה אחרי הצפצוף\", טון מכני) — סיימי את השיחה מיד. אל תנהלי שיחה עם מכונה ואל תשאירי הודעה."
+                    },
+                    "language_detection": {
+                        "name": "language_detection",
+                        "type": "system",
+                        "params": {
+                            "system_tool_type": "language_detection"
+                        },
+                        "description": "עברית היא שפת ברירת המחדל — פתחי והמשיכי תמיד בעברית. החליפי שפה רק אם האורח מדבר באופן ברור ועקבי בשפה אחרת נתמכת (אנגלית / רוסית / ערבית) — משפט שלם, לא מילה בודדת ולא עברית מעורבת. אם הדיבור בעברית, מעורב, קצר או לא ברור — הישארי בעברית ואל תחליפי. אם החלפת ושהאורח חוזר לעברית — חזרי לעברית."
                     }
                 },
                 "enable_parallel_tool_calls": false,
