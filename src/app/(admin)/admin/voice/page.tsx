@@ -1,3 +1,4 @@
+import { requirePlatformPermission } from '@/lib/auth/dal';
 import Link from 'next/link';
 import { AlertTriangle, PhoneCall, PhoneForwarded, Wallet } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
@@ -36,6 +37,9 @@ export default async function VoiceOverviewPage({
 }: {
   searchParams: Promise<{ page?: string }>;
 }) {
+  // Optimistic gate: redirect early instead of rendering an empty page. The
+  // real enforcement is per-function in the DAL.
+  await requirePlatformPermission('manage_voice');
   const sp = await searchParams;
   const page = parsePageParam(sp.page);
 

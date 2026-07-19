@@ -1,3 +1,4 @@
+import { requirePlatformPermission } from '@/lib/auth/dal';
 import Link from 'next/link';
 
 import { listAllUsers } from '@/lib/data/admin/users';
@@ -7,13 +8,16 @@ import { PageHeading, EmptyState, Badge, Pagination, parsePageParam } from '../_
 export const metadata = { title: 'משתמשים' };
 
 // Admin user management — list of all platform users (search by email +
-// pagination). Authorization is enforced by the /admin layout (requirePlatformPermission)
+// pagination). Authorization is enforced by the /admin layout (requireAdmin)
 // and again in listAllUsers.
 export default async function AdminUsersPage({
   searchParams,
 }: {
   searchParams: Promise<{ page?: string; q?: string }>;
 }) {
+  // Optimistic gate: redirect early instead of rendering an empty page. The
+  // real enforcement is per-function in the DAL.
+  await requirePlatformPermission('manage_staff');
   const sp = await searchParams;
   const page = parsePageParam(sp.page);
   const search = typeof sp.q === 'string' && sp.q.trim() !== '' ? sp.q : undefined;

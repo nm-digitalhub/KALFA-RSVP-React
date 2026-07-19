@@ -1,3 +1,4 @@
+import { requirePlatformPermission } from '@/lib/auth/dal';
 import Link from 'next/link';
 
 import { getPackage } from '@/lib/data/admin/packages';
@@ -16,6 +17,9 @@ export default async function EditPackagePage({
 }: {
   params: Promise<{ id: string }>;
 }) {
+  // Optimistic gate: redirect early instead of rendering an empty page. The
+  // real enforcement is per-function in the DAL.
+  await requirePlatformPermission('manage_billing');
   const { id } = await params;
   const pkg = await getPackage(id);
 

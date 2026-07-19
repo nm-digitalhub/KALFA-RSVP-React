@@ -1,3 +1,4 @@
+import { requirePlatformPermission } from '@/lib/auth/dal';
 import { cache } from 'react';
 import Link from 'next/link';
 import type { Metadata } from 'next';
@@ -71,6 +72,9 @@ export default async function EventVoicePage({
   params: Promise<{ eventId: string }>;
   searchParams: Promise<{ page?: string }>;
 }) {
+  // Optimistic gate: redirect early instead of rendering an empty page. The
+  // real enforcement is per-function in the DAL.
+  await requirePlatformPermission('manage_voice');
   const { eventId } = await params;
   const sp = await searchParams;
   const page = parsePageParam(sp.page);

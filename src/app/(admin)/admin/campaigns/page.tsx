@@ -1,3 +1,4 @@
+import { requirePlatformPermission } from '@/lib/auth/dal';
 import Link from 'next/link';
 
 import { listCampaignsForAdmin } from '@/lib/data/admin/campaigns';
@@ -40,9 +41,12 @@ function chargeCell(c: {
 // Admin campaign wind-down list. The four lifecycle controls (close/pause/
 // settle/cancel) are platform-admin-only, so this surface lets an admin REACH
 // campaigns of events they do not own and click through to manage them.
-// Authorization is enforced by the /admin layout (requirePlatformPermission) and again in
+// Authorization is enforced by the /admin layout (requireAdmin) and again in
 // listCampaignsForAdmin.
 export default async function AdminCampaignsPage() {
+  // Optimistic gate: redirect early instead of rendering an empty page. The
+  // real enforcement is per-function in the DAL.
+  await requirePlatformPermission('manage_billing');
   const items = await listCampaignsForAdmin();
 
   return (

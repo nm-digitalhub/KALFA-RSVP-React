@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 
-import { isPlatformOwner, requireAdmin } from '@/lib/auth/dal';
+import { isPlatformOwner, requirePlatformPermission } from '@/lib/auth/dal';
 import { getUserDetail } from '@/lib/data/admin/users';
 import {
   getUserStaffRoleId,
@@ -19,7 +19,7 @@ export default async function AdminUserDetailPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const actor = await requireAdmin();
+  const actor = await requirePlatformPermission('manage_staff');
   const user = await getUserDetail(id);
   if (!user) {
     notFound();

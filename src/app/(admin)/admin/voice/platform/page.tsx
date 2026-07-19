@@ -1,3 +1,4 @@
+import { requirePlatformPermission } from '@/lib/auth/dal';
 import Link from 'next/link';
 import { CalendarClock, FileCheck2, FileClock, FileX2 } from 'lucide-react';
 
@@ -40,6 +41,9 @@ const AUDIT_STATUS_LABEL: Record<string, string> = {
 };
 
 export default async function VoicePlatformPage() {
+  // Optimistic gate: redirect early instead of rendering an empty page. The
+  // real enforcement is per-function in the DAL.
+  await requirePlatformPermission('manage_voice');
   const [view, logExport, origin, fleet] = await Promise.all([
     getVoicePlatformView(),
     getLogExportStatus(),
