@@ -73,6 +73,12 @@ loadEnv();
 
 const DAY_MS = 86_400_000;
 
+// Timezone for the crons anchored to a wall-clock hour (log-export at 03:20,
+// quota-check at 0/6/12/18). pg-boss defaults schedules to UTC; KALFA operates in
+// Israel, so those run on Israel local time (DST-aware via the IANA zone). The
+// interval crons (*/N) are timezone-independent and left as-is.
+const SCHEDULE_TZ = 'Asia/Jerusalem';
+
 type StepJob = { id: string; data: OutreachStepJob };
 type CallJob = { id: string; data: OutreachCallRequest };
 
@@ -488,8 +494,9 @@ async function main(): Promise<void> {
   await boss.schedule(QUEUES.thankyouSweep, '*/5 * * * *');
   await boss.schedule(QUEUES.balanceCheck, '*/30 * * * *');
   await boss.schedule(QUEUES.callReconcile, '*/10 * * * *');
-  await boss.schedule(QUEUES.logExport, '20 3 * * *');
-  await boss.schedule(QUEUES.elevenlabsQuota, '0 */6 * * *');
+  // Anchored to a wall-clock hour → run on Israel local time (DST-aware).
+  await boss.schedule(QUEUES.logExport, '20 3 * * *', null, { tz: SCHEDULE_TZ });
+  await boss.schedule(QUEUES.elevenlabsQuota, '0 */6 * * *', null, { tz: SCHEDULE_TZ });
 
   console.log('[kalfa-worker] started — queues + schedules up');
 
