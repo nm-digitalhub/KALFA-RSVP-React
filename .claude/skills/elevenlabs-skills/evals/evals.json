@@ -1,0 +1,37 @@
+{
+  "skill_name": "elevenlabs-docs",
+  "evals": [
+    {
+      "id": 1,
+      "name": "hebrew-tts-streaming-code",
+      "prompt": "Write Node.js code that streams Hebrew text-to-speech with ElevenLabs at good quality.",
+      "assertions": [
+        {"text": "Selects a model whose Hebrew support is verified against live docs (not memory)"},
+        {"text": "Does NOT recommend eleven_flash_v2_5 for Hebrew (not in its language list)"},
+        {"text": "Respects the v3/WebSocket incompatibility: uses HTTP stream for eleven_v3"},
+        {"text": "Cites the live doc page(s) used"}
+      ]
+    },
+    {
+      "id": 2,
+      "name": "agents-mcp-routing",
+      "prompt": "How do I connect an MCP server to my ElevenLabs conversational agent?",
+      "assertions": [
+        {"text": "Routes to ElevenAgents docs area (not generic API)"},
+        {"text": "Fetches the MCP integration page live and answers from it"},
+        {"text": "Mentions approval/security considerations surfaced by the docs"},
+        {"text": "Cites the source page"}
+      ]
+    },
+    {
+      "id": 3,
+      "name": "openapi-schema-lookup",
+      "prompt": "What request body fields does the Create Agent endpoint accept?",
+      "assertions": [
+        {"text": "Uses scripts/endpoint_schema.py instead of fetching the 1.4MB spec into context"},
+        {"text": "Returns real field names taken from the live OpenAPI spec output"},
+        {"text": "States the exact endpoint path and method from the spec"}
+      ]
+    }
+  ]
+}

@@ -101,6 +101,29 @@ an HMAC header is impossible without redeploying a modified scenario.
    may be placed until this is signed off (pre-existing blocker, unaffected by code).
 4. **`[OPEN]` per-minute IL PSTN rate** to size `voximplant_min_call_reserve` realistically vs
    the $2.88 balance.
+5. **`[OPEN, LEGAL]` ElevenLabs data retention + AI disclosure.** Verified in the live agent config
+   2026-07-19 (`platform_settings.privacy`): `record_voice: true`, `retention_days: -1`
+   (**unlimited** — ElevenLabs' own default is 2 years), `zero_retention_mode: false`,
+   `apply_to_existing_conversations: false`. Every call's guest audio **and** transcript is retained
+   indefinitely on a US processor. Owner decision 2026-07-19: **acceptable while calls go only to the
+   owner's own test numbers.** Before the first call to a real guest, all of the following must be
+   resolved:
+   - `zero_retention_mode: true` (our architecture is already ZRM-shaped: we consume the post-call
+     webhook with `send_audio: false` and store metadata only, so nothing breaks) — or at minimum
+     `record_voice: false` + a finite `retention_days`.
+   - `apply_to_existing_conversations: true` once, to purge the accumulated test backlog —
+     lowering `retention_days` alone does **not** delete what already exists.
+   - **AI disclosure in the opener.** ElevenLabs *contractually* requires notice, before the
+     interaction, that the user is talking to an AI **and** that the call is recorded and may be
+     shared with LLM providers
+     (https://elevenlabs.io/docs/eleven-agents/legal/disclosure-requirement). Our `first_message`
+     currently discloses neither, and the prompt admits AI status only *reactively*, when asked.
+     Note: adopting ZRM + `record_voice:false` removes the recording half of the required sentence,
+     which materially shortens what must be said in a 30-second Hebrew call — so sequence privacy
+     first, then draft the opener (`voice-rsvp-agent`) and clear the wording with
+     `israeli-compliance-advisor`.
+   - `topic_discovery` and `sentiment_analysis` are enabled but produce **dashboard-only** output we
+     cannot consume via API/webhook — they are pure extra transcript processing. Disable.
 
 ---
 
