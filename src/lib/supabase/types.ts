@@ -450,6 +450,75 @@ export type Database = {
           },
         ]
       }
+      call_analysis: {
+        Row: {
+          agent_id: string | null
+          analysis_at: string | null
+          call_attempt_id: string | null
+          call_duration_secs: number | null
+          call_successful: string | null
+          conversation_id: string
+          cost_credits: number | null
+          event_id: string | null
+          id: string
+          linked_at: string | null
+          overall_score: number | null
+          provider: string
+          received_at: string
+          status: string | null
+          termination_reason: string | null
+        }
+        Insert: {
+          agent_id?: string | null
+          analysis_at?: string | null
+          call_attempt_id?: string | null
+          call_duration_secs?: number | null
+          call_successful?: string | null
+          conversation_id: string
+          cost_credits?: number | null
+          event_id?: string | null
+          id?: string
+          linked_at?: string | null
+          overall_score?: number | null
+          provider?: string
+          received_at?: string
+          status?: string | null
+          termination_reason?: string | null
+        }
+        Update: {
+          agent_id?: string | null
+          analysis_at?: string | null
+          call_attempt_id?: string | null
+          call_duration_secs?: number | null
+          call_successful?: string | null
+          conversation_id?: string
+          cost_credits?: number | null
+          event_id?: string | null
+          id?: string
+          linked_at?: string | null
+          overall_score?: number | null
+          provider?: string
+          received_at?: string
+          status?: string | null
+          termination_reason?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "call_analysis_call_attempt_id_fkey"
+            columns: ["call_attempt_id"]
+            isOneToOne: false
+            referencedRelation: "call_attempts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "call_analysis_event_id_fkey"
+            columns: ["event_id"]
+            isOneToOne: false
+            referencedRelation: "events"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       call_attempts: {
         Row: {
           access_token: string
