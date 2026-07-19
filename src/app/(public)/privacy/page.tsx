@@ -5,7 +5,7 @@ import { ManageCookiesButton } from '@/components/consent/manage-cookies-button'
 import { LegalShell, LegalSection } from '../_legal';
 
 export const metadata = {
-  title: 'מדיניות פרטיות — KALFA',
+  title: 'מדיניות פרטיות',
 };
 
 // Render per-request so the page always reflects the current company/legal config

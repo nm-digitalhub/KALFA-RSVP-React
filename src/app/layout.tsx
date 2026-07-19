@@ -13,7 +13,14 @@ const heebo = Heebo({
 });
 
 export const metadata: Metadata = {
-  title: 'KALFA — ניהול אישורי הגעה',
+  // title.template brands every CHILD segment's title automatically
+  // ("קמפיינים | KALFA") — pages define only their own name and must NOT
+  // append the brand by hand. `default` covers segments with no title of
+  // their own (a default is required alongside a template per the docs).
+  title: {
+    default: 'KALFA — ניהול אישורי הגעה',
+    template: '%s | KALFA',
+  },
   description: 'פלטפורמה לניהול אישורי הגעה לאירועים פרטיים',
 };
 

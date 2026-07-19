@@ -3,7 +3,7 @@ import { ManageCookiesButton } from '@/components/consent/manage-cookies-button'
 import { LegalShell, LegalSection } from '../_legal';
 
 export const metadata = {
-  title: 'מדיניות עוגיות — KALFA',
+  title: 'מדיניות עוגיות',
 };
 
 // Render per-request so the page reflects the current company/legal config edited

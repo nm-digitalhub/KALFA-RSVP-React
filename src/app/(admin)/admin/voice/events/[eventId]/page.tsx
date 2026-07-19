@@ -1,4 +1,6 @@
+import { cache } from 'react';
 import Link from 'next/link';
+import type { Metadata } from 'next';
 import {
   Ban,
   CheckCircle2,
@@ -39,7 +41,26 @@ import {
 import type { StackedBarSegment } from '../../_meters';
 import { StatusDonut } from '../../_donut';
 
-export const metadata = { title: 'שיחות AI לאירוע' };
+// Per-request memoization of the event fetch, so generateMetadata and the page
+// body share ONE query. Supabase reads are not `fetch`, so Next's automatic
+// request memoization does not apply — the generate-metadata docs prescribe
+// React `cache` for exactly this case. (requireAdmin inside is already cached.)
+const getEventCached = cache(getEventForAdminView);
+
+// Dynamic <title>: the event's name instead of a fixed string, so a browser tab
+// says WHICH event is being supervised. A static `metadata` export cannot
+// coexist with generateMetadata in the same segment (docs), so this replaces it;
+// getEventForAdminView calls notFound() on a missing event, which the docs
+// explicitly allow inside generateMetadata.
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ eventId: string }>;
+}): Promise<Metadata> {
+  const { eventId } = await params;
+  const event = await getEventCached(eventId);
+  return { title: event.name ? `שיחות AI — ${event.name}` : 'שיחות AI לאירוע' };
+}
 
 const sectionClass = 'space-y-3 rounded-lg border border-border bg-card p-5';
 
@@ -55,7 +76,7 @@ export default async function EventVoicePage({
   const page = parsePageParam(sp.page);
 
   const [event, attempts] = await Promise.all([
-    getEventForAdminView(eventId),
+    getEventCached(eventId),
     listCallAttemptsForEvent(eventId, { page }),
   ]);
 
