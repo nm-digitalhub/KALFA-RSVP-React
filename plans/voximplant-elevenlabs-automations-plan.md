@@ -129,7 +129,7 @@
 | שלב | פריט | סטטוס אימות | תלות | שער | עצירה בטוחה |
 |---|---|---|---|---|---|
 | A | **1** callback | ✅ **DEPLOYED beta 2026-07-19** | קיים | 1702 tests+tsc+lint+build ✓; route חי (404 dark-safe smoke) | כן |
-| B | **3** מכסה | ✅ VERIFIED | קיים | fixtures + חי (+user_read fix) | כן |
+| B | **3** מכסה | ✅ **COMMITTED d8a9e5a** (pending deploy) | קיים | 1712 tests+tsc+lint+worker-esbuild ✓; קובץ ייעודי elevenlabs-quota.ts (מראה voximplant-balance.ts) | כן |
 | C | **4** drift | ✅ VERIFIED (in-sync) | קיים | fixtures + tool_ids canonicalize | כן |
 | D | **2** webhook+analysis | ⚠️ מותנה מסלול-חי | migration + wire | HMAC + inject token | כן (dark) |
 | E | **5** CallList | ✅ VERIFIED | migration + redeploy | staged §5 | כן (flag + pg-boss fallback) |
@@ -146,6 +146,24 @@
 | 3 quota | ✅ VERIFIED | 9860/350071 creator; **רק מפתח DB (env חסר user_read)** |
 | 4 drift | ✅ VERIFIED in-sync | version_id תואם agents.json; gotcha: השווה tool_ids |
 | 5 CallList | ✅ VERIFIED | rule_id 1494311, balance $5.14, num_attempts≤5, CSV body, report-contract |
+
+## טיפול ב-⚠️ — אימות עמוק וסגירה (2026-07-19)
+
+אימות אמפירי מעמיק (2 סוכנים: getDoc חי + קוד ה-SDK הרשמי + probes) של כל סימוני ה-⚠️, וסגירה בקוד היכן שאפשר:
+
+| ⚠️ | פריט | טיפול | סטטוס |
+|---|---|---|---|
+| איות `expiring_callerid`/`certificates` | 1 | 12 סוגי ה-`type` אומתו **מדויק** מול getDoc; אין silent-miss | ✅ סגור |
+| caveat: list כמערך או מחרוזת | 1 | `countMaybeList` — `callerid_count`/`document_count` מתאכלסים בשני המקרים (Voximplant מטייפ list כסקלר) | ✅ סגור בקוד+בדיקה |
+| **פער כיסוי שהתגלה** | 1 | הוספת `account_is_frozen` (error — הקפאה עוצרת הכל, לא מכוסה ב-balance pull), `account_is_unfrozen` (info), `reset_account_password_request` (security) | ✅ סגור בקוד+בדיקה |
+| caveat מפתח quota | 3 | ההתראה "לא ניתן לקריאה" קיימת; הוספתי **נתיב תיקון** מפורש ל-detail (הענק user_read / הגדר DB key) | ✅ סגור בקוד; פעולת פאנל (הענקת user_read ל-env) = נותרה למשתמש |
+| HMAC scheme | 2 | `verifyElevenLabsWebhook` — סכמה מאומתת מקוד ה-SDK: `t=,v0=`, HMAC-SHA256 על `{t}.{body}`, 30 דק' חד-צדדי, `v0=` בהשוואה, timing-safe. משתמש ב-`ELEVENLABS_WEBHOOK` | ✅ ה-verifier סגור בקוד+8 בדיקות; ה-**route** = שלב הבא (ר' OPEN) |
+| קישור conversation→attempt | 2 | אומת סופית: **אין** מזהה KALFA ב-dynamic_variables (רק 4 placeholders); כל 14 non-telephony | ⚠️ דורש הזרקת `kalfa_attempt_token` בתחילת שיחה (החלטת מוצר) |
+| שדות analysis ריקים | 2 | אומת: `evaluation_criteria/data_collection/sentiment` ריקים כי מכובים בקונפיג; `call_success_score` null ב-13/14 (לא 14/14) — optional | ⚠️ למלא criteria בקונפיג הסוכן כדי לאכלס |
+| webhook לא מחווט + route חסר | 2 | אומת: `post_call_webhook_id=null`, 2 webhooks רשומים (kalfa.me+beta.kalfa.me), אירועים שסומנו = voice_removal+STT (**לא** post_call_transcription), route לא קיים ברפו | ⚠️ חיווט + בניית route (שלב הבא) |
+| drift canonicalization | 4 | `canonicalizeAgent`+`compareAgentCanonical` — משווה `sorted(tool_ids)` (לא tools[].name), מחריג מפתחות live-only; false-positive של `end_call` נמנע by design | ✅ סגור בקוד+בדיקה (IO/דשבורד = שלב C) |
+
+**סיכום:** 5 מתוך 8 ה-⚠️ **נסגרו בקוד** (commit נפרד) עם בדיקות. 3 הנותרות שייכות כולן ל-**פריט 2** ותלויות בהחלטת המוצר (ElevenLabs במסלול החי) + חיווט חיצוני — לא ניתנות לסגירה חד-צדדית בקוד.
 
 ## OPEN שנותרו (החלטות, לא אימות)
 - **מוצר**: האם/מתי ElevenLabs ConvAI נכנס למסלול החיוג החי (שער הערך של פריט 2).

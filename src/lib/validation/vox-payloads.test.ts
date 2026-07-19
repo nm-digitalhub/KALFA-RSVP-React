@@ -204,6 +204,24 @@ describe('normalizeAccountCallbackEnvelope', () => {
     expect(JSON.stringify(n)).not.toContain('972500000001');
   });
 
+  it('counts list fields whether Voximplant sends an array or a comma-joined string', () => {
+    const asArray = normalizeAccountCallbackEnvelope({
+      callbacks: [
+        {
+          type: 'expiring_callerid',
+          callback_id: 1,
+          expiring_callerid: { callerids: ['+972500000001', '+972500000002'], expiration_date: '2026-08-01' },
+        },
+      ],
+    });
+    expect(asArray.events[0].detail).toEqual({ expiration_date: '2026-08-01', callerid_count: 2 });
+    const asString = normalizeAccountCallbackEnvelope({
+      callbacks: [{ type: 'expired_agreement', callback_id: 2, expired_agreement: { document_ids: '11,22,33' } }],
+    });
+    expect(asString.events[0].detail).toEqual({ document_count: 3 });
+    expect(JSON.stringify(asArray)).not.toContain('972500000001');
+  });
+
   it('yields empty detail for content-free or unknown types', () => {
     const n = normalizeAccountCallbackEnvelope({
       callbacks: [

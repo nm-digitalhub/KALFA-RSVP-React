@@ -101,6 +101,13 @@ interface CallbackAlertRule {
 
 const CALLBACK_ALERT_RULES: Record<string, CallbackAlertRule> = {
   js_fail: { category: 'errors', level: 'error', title: 'שגיאת JS בתרחיש Voximplant' },
+  // A frozen account halts ALL outbound calls and — unlike a low balance — is
+  // NOT covered by the verified balance pull, so it would otherwise be silent.
+  account_is_frozen: { category: 'send_health', level: 'error', title: 'חשבון Voximplant הוקפא — כל השיחות מושבתות' },
+  account_is_unfrozen: { category: 'send_health', level: 'info', title: 'חשבון Voximplant שוחרר מהקפאה' },
+  // An unexpected password-reset request on the Voximplant account is an
+  // account-takeover indicator → the security category.
+  reset_account_password_request: { category: 'security', level: 'warn', title: 'התבקש איפוס סיסמה לחשבון Voximplant' },
   expiring_callerid: { category: 'send_health', level: 'warn', title: 'אימות Caller ID של Voximplant פג בקרוב' },
   card_payment_failed: { category: 'campaign_billing', level: 'error', title: 'תשלום כרטיס ב-Voximplant נכשל' },
   card_expired: { category: 'campaign_billing', level: 'warn', title: 'כרטיס התשלום ב-Voximplant פג' },

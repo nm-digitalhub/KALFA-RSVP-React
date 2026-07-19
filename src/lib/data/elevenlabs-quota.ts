@@ -46,7 +46,9 @@ export function evaluateQuotaAlert(quota: ElevenLabsQuota | null): QuotaAlertDec
     return {
       level: 'warn',
       title: 'מכסת ElevenLabs לא ניתנת לקריאה',
-      detail: 'תגובת המנוי חסרה character_count/limit — ייתכן שמפתח ה-API חסר הרשאת user_read',
+      detail:
+        'תגובת המנוי חסרה character_count/limit. סיבה נפוצה: מפתח ה-API חסר הרשאת user_read. ' +
+        'תיקון: הענק user_read למפתח, או הגדר ב-app_settings.elevenlabs_api_key מפתח עם ההרשאה.',
       fields: {},
     };
   }

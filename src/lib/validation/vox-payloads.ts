@@ -37,6 +37,18 @@ function asIsoDate(v: unknown): string | null {
   return Number.isNaN(t) ? null : new Date(t).toISOString();
 }
 
+// Voximplant habitually types "list of X" callback fields as the scalar element
+// type, so a list may arrive as a real array OR a delimiter-joined string. Count
+// either (never the elements themselves); null when neither, so the caller omits
+// the *_count field. Keeps the count enrichment reliable regardless of the wire
+// shape (verified: expiring_callerid.callerids is doc-typed `string`,
+// expired_agreement.document_ids `number`).
+function countMaybeList(v: unknown): number | null {
+  if (Array.isArray(v)) return v.length;
+  if (typeof v === 'string' && v.trim() !== '') return v.split(',').filter((s) => s.trim() !== '').length;
+  return null;
+}
+
 // Metadata-only view of a content-bearing external field. The CONTENT never
 // leaves this function — only its presence and byte size.
 export interface PayloadMeta {
@@ -269,7 +281,8 @@ function extractCallbackDetail(type: string, o: Record<string, unknown>): Record
     case 'expiring_callerid': {
       const exp = asString(rec.expiration_date);
       if (exp) d.expiration_date = exp;
-      if (Array.isArray(rec.callerids)) d.callerid_count = rec.callerids.length; // COUNT only — never the numbers
+      const n = countMaybeList(rec.callerids); // COUNT only — never the numbers
+      if (n !== null) d.callerid_count = n;
       break;
     }
     case 'expiring_agreement': {
@@ -280,7 +293,8 @@ function extractCallbackDetail(type: string, o: Record<string, unknown>): Record
       break;
     }
     case 'expired_agreement': {
-      if (Array.isArray(rec.document_ids)) d.document_count = rec.document_ids.length;
+      const n = countMaybeList(rec.document_ids);
+      if (n !== null) d.document_count = n;
       break;
     }
     case 'next_charge_alert': {
@@ -298,15 +312,19 @@ function extractCallbackDetail(type: string, o: Record<string, unknown>): Record
     }
     case 'expiring_certificates':
     case 'expired_certificates': {
-      if (Array.isArray(rec.certificates)) d.certificate_count = rec.certificates.length;
+      const n = countMaybeList(rec.certificates);
+      if (n !== null) d.certificate_count = n;
       break;
     }
     case 'sip_registration_fail': {
-      if (Array.isArray(rec.sip_registrations)) d.sip_registration_count = rec.sip_registrations.length;
+      const n = countMaybeList(rec.sip_registrations);
+      if (n !== null) d.sip_registration_count = n;
       break;
     }
     // js_fail / card_expired / card_expires_in_month / card_payment_failed carry
     // NO payload fields (verified live) — the event itself is the signal.
+    // account_is_frozen / account_is_unfrozen / reset_account_password_request
+    // likewise carry no non-PII scalars we surface — the event is the signal.
   }
   return d;
 }

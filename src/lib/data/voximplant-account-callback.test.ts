@@ -86,6 +86,22 @@ describe('evaluateCallbackAlerts', () => {
     expect(alerts.every((a) => a.level === 'info')).toBe(true);
   });
 
+  it('alerts on account freeze/unfreeze and password-reset (deep-verify coverage gaps)', () => {
+    expect(evaluateCallbackAlerts([ev('account_is_frozen')], NOW)[0]).toMatchObject({
+      level: 'error',
+      category: 'send_health',
+    });
+    expect(evaluateCallbackAlerts([ev('account_is_unfrozen')], NOW)[0]).toMatchObject({
+      level: 'info',
+      category: 'send_health',
+    });
+    // A password-reset request is an account-takeover signal → security category.
+    expect(evaluateCallbackAlerts([ev('reset_account_password_request')], NOW)[0]).toMatchObject({
+      level: 'warn',
+      category: 'security',
+    });
+  });
+
   it('EXCLUDES min_balance (handled by the verified pull) and unknown types', () => {
     const alerts = evaluateCallbackAlerts(
       [ev('min_balance'), ev('future_unknown_kind'), ev('js_fail')],
