@@ -104,6 +104,7 @@ export default async function CampaignManagePage({
             max_contacts: campaign.max_contacts,
             max_charge_ceiling: campaign.max_charge_ceiling,
             final_charge_amount: campaign.final_charge_amount,
+            credit_applied: campaign.credit_applied,
             capture_status: campaign.capture_status,
           }}
           summary={summary}

@@ -85,19 +85,40 @@ export async function getCampaignBillingSummary(
   };
 }
 
-// Σ of approved credits scoped to THIS campaign (§14/§16/D5). Gross (VAT-inclusive),
-// to match the price basis. Event-level credits (null campaign_id) are NOT applied
-// here — they belong to the event account / next campaign. THROWS on a real error
-// (routes close-charge to review, like the summary), never silently 0.
-export async function getCampaignCreditTotal(campaignId: string): Promise<number> {
+// Credit available to THIS campaign's close-charge (§14/§16/D5, gross to match
+// the price basis) = this campaign's own credits + the event's unscoped credits
+// (campaign_id null) − whatever OTHER campaigns of the same event already
+// consumed (campaigns.credit_applied). Under one-campaign-per-event the sibling
+// term is empty and this is simply the full pool; the sibling subtraction only
+// matters for the rare cancel-and-recreate case. THROWS on a real error (routes
+// close-charge to review, like the summary), never silently 0.
+export async function getCampaignCreditTotal(
+  campaignId: string,
+  eventId: string,
+): Promise<number> {
   const admin = createAdminClient();
-  const { data, error } = await admin
-    .from('billing_credits')
-    .select('amount')
-    .eq('campaign_id', campaignId);
-  if (error) throw new Error('שליפת הזיכויים נכשלה');
-  return (data ?? []).reduce(
-    (sum, r) => sum + Number((r as { amount: number | string }).amount ?? 0),
+  const [ownRes, eventRes, siblingsRes] = await Promise.all([
+    admin.from('billing_credits').select('amount').eq('campaign_id', campaignId),
+    admin
+      .from('billing_credits')
+      .select('amount')
+      .is('campaign_id', null)
+      .eq('event_id', eventId),
+    admin
+      .from('campaigns')
+      .select('credit_applied')
+      .eq('event_id', eventId)
+      .neq('id', campaignId),
+  ]);
+  if (ownRes.error || eventRes.error || siblingsRes.error) {
+    throw new Error('שליפת הזיכויים נכשלה');
+  }
+  const sumAmount = (rows: { amount: number | string }[] | null) =>
+    (rows ?? []).reduce((s, r) => s + Number(r.amount ?? 0), 0);
+  const granted = sumAmount(ownRes.data) + sumAmount(eventRes.data);
+  const consumedBySiblings = (siblingsRes.data ?? []).reduce(
+    (s, r) => s + Number(r.credit_applied ?? 0),
     0,
   );
+  return Math.max(0, granted - consumedBySiblings);
 }

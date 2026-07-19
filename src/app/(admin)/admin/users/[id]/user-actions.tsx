@@ -132,7 +132,7 @@ export function UserActions({
   isPlatformAdmin: boolean;
   suspended: boolean;
   isSelf: boolean;
-  events: { id: string; name: string }[];
+  events: { id: string; name: string; campaignId: string | null }[];
   // Present only when the VIEWER is a platform owner (the only role allowed to
   // manage staff). null/undefined hides the selector entirely.
   platformStaff?: { roles: StaffRoleOption[]; currentRoleId: string | null } | null;
@@ -146,6 +146,12 @@ export function UserActions({
     null,
   );
   const [creditState, creditAction] = useActionState(grantCreditAction, null);
+  // Credit scope: controlled event choice so the optional campaign-scope
+  // checkbox can follow the selected event's (single) campaign.
+  const [creditEventId, setCreditEventId] = useState('');
+  const [scopeToCampaign, setScopeToCampaign] = useState(false);
+  const creditCampaignId =
+    events.find((e) => e.id === creditEventId)?.campaignId ?? null;
 
   return (
     <div className="space-y-4">
@@ -195,7 +201,17 @@ export function UserActions({
                 <label htmlFor="credit-event" className="mb-1 block text-sm font-medium">
                   אירוע
                 </label>
-                <select id="credit-event" name="event_id" required defaultValue="" className={inputClass}>
+                <select
+                  id="credit-event"
+                  name="event_id"
+                  required
+                  value={creditEventId}
+                  onChange={(e) => {
+                    setCreditEventId(e.target.value);
+                    setScopeToCampaign(false);
+                  }}
+                  className={inputClass}
+                >
                   <option value="" disabled>
                     בחר/י אירוע
                   </option>
@@ -230,6 +246,23 @@ export function UserActions({
                 <FieldError errors={creditState?.fieldErrors?.reason} />
               </div>
             </div>
+            {creditCampaignId ? (
+              <label className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={scopeToCampaign}
+                  onChange={(e) => setScopeToCampaign(e.target.checked)}
+                  className="size-4 rounded border-border"
+                />
+                שיוך הזיכוי לקמפיין הנוכחי בלבד (אחרת: זיכוי ברמת האירוע)
+              </label>
+            ) : null}
+            <input
+              type="hidden"
+              name="campaign_id"
+              value={scopeToCampaign && creditCampaignId ? creditCampaignId : ''}
+            />
+            <FieldError errors={creditState?.fieldErrors?.campaign_id} />
             <RowSubmit>מתן הטבה</RowSubmit>
           </form>
         </section>

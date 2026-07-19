@@ -105,6 +105,7 @@ export async function grantCreditAction(
 ): Promise<FormState> {
   const parsed = grantCreditSchema.safeParse({
     event_id: formData.get('event_id'),
+    campaign_id: formData.get('campaign_id') ?? '',
     amount: formData.get('amount'),
     reason: formData.get('reason'),
   });
@@ -112,6 +113,7 @@ export async function grantCreditAction(
   try {
     await grantBillingCredit({
       eventId: parsed.data.event_id,
+      campaignId: parsed.data.campaign_id || null,
       amount: parsed.data.amount,
       reason: parsed.data.reason,
     });

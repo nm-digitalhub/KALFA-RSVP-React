@@ -720,6 +720,7 @@ export type Database = {
           charged_at: string | null
           close_at: string | null
           created_at: string
+          credit_applied: number
           enabled: boolean
           event_id: string
           final_charge_amount: number | null
@@ -765,6 +766,7 @@ export type Database = {
           charged_at?: string | null
           close_at?: string | null
           created_at?: string
+          credit_applied?: number
           enabled?: boolean
           event_id: string
           final_charge_amount?: number | null
@@ -810,6 +812,7 @@ export type Database = {
           charged_at?: string | null
           close_at?: string | null
           created_at?: string
+          credit_applied?: number
           enabled?: boolean
           event_id?: string
           final_charge_amount?: number | null

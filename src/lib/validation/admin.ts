@@ -273,9 +273,16 @@ export const adminUserIdSchema = z.object({
 });
 export type AdminUserIdInput = z.infer<typeof adminUserIdSchema>;
 
-// Grant a benefit (billing credit) on one of the user's events.
+// Grant a benefit (billing credit) on one of the user's events. campaign_id is
+// optional: empty = event-level credit (consumed by the event's campaign at
+// close-charge); set = scoped to that specific campaign only.
 export const grantCreditSchema = z.object({
   event_id: z.string().uuid({ error: 'מזהה אירוע לא תקין' }),
+  campaign_id: z
+    .string()
+    .uuid({ error: 'מזהה קמפיין לא תקין' })
+    .optional()
+    .or(z.literal('')),
   amount: z.coerce.number().positive({ error: 'הסכום חייב להיות חיובי' }),
   reason: z
     .string()

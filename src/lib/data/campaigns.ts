@@ -34,12 +34,13 @@ export type OwnerCampaign = Pick<
   | 'close_at'
   | 'approved_at'
   | 'final_charge_amount'
+  | 'credit_applied'
   | 'capture_status'
   | 'created_at'
 >;
 
 const CAMPAIGN_COLUMNS =
-  'id, event_id, status, price_per_reached, max_contacts, max_charge_ceiling, allowed_channels, start_at, close_at, approved_at, final_charge_amount, capture_status, created_at';
+  'id, event_id, status, price_per_reached, max_contacts, max_charge_ceiling, allowed_channels, start_at, close_at, approved_at, final_charge_amount, credit_applied, capture_status, created_at';
 
 // Pure: the approved charge ceiling = price-per-reached × max contacts, rounded
 // to agorot. The ceiling is the maximum the system may ever bill (§7); it is
@@ -619,6 +620,7 @@ export async function recordCampaignCharge(
   campaignId: string,
   charge: {
     amount: number;
+    creditApplied: number; // slice of min(accrued, ceiling) covered by credit
     documentId: number;
     documentNumber: number | null;
     documentUrl: string | null; // the receipt download link
@@ -632,6 +634,7 @@ export async function recordCampaignCharge(
     .update({
       charge_status: 'charged',
       final_charge_amount: charge.amount,
+      credit_applied: charge.creditApplied,
       sumit_charge_document_id: charge.documentId,
       charge_document_number: charge.documentNumber,
       charge_document_url: charge.documentUrl,
@@ -646,6 +649,7 @@ export async function recordCampaignCharge(
 export async function markCampaignChargeOutcome(
   campaignId: string,
   outcome: 'charge_failed' | 'charge_review' | 'nothing_to_charge',
+  creditApplied?: number,
 ): Promise<void> {
   const admin = createAdminClient();
   const payload: Database['public']['Tables']['campaigns']['Update'] = {
@@ -653,12 +657,20 @@ export async function markCampaignChargeOutcome(
   };
   if (outcome === 'nothing_to_charge') {
     payload.final_charge_amount = 0;
+    payload.credit_applied = creditApplied ?? 0;
     payload.charged_at = new Date().toISOString();
   }
+  // Guarded like lockCampaignForCharge: a terminal outcome (charged /
+  // nothing_to_charge) can never be overwritten — a late re-invocation after a
+  // real charge (e.g. a credit granted afterwards) must not zero the recorded
+  // charge. Zero rows matched = benign no-op, not an error.
   const { error } = await admin
     .from('campaigns')
     .update(payload)
-    .eq('id', campaignId);
+    .eq('id', campaignId)
+    .or(
+      'charge_status.is.null,charge_status.in.(pending,charge_failed,charge_review)',
+    );
   if (error) throw new Error('עדכון מצב החיוב נכשל');
 }
 

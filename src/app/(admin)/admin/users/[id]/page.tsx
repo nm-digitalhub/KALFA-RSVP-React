@@ -104,7 +104,10 @@ export default async function AdminUserDetailPage({
           <ul className="divide-y divide-border">
             {user.credits.map((c) => (
               <li key={c.id} className="flex items-center justify-between gap-2 py-2 text-sm">
-                <span className="truncate text-muted-foreground">{c.reason}</span>
+                <span className="truncate text-muted-foreground">
+                  {c.reason}
+                  {c.campaignId ? ' · מוגבל לקמפיין' : ''}
+                </span>
                 <div className="flex items-center gap-2">
                   <span>{formatCurrency(c.amount)}</span>
                   <span className="text-muted-foreground">{formatDateTime(c.createdAt)}</span>
@@ -112,6 +115,18 @@ export default async function AdminUserDetailPage({
               </li>
             ))}
           </ul>
+          {user.creditBalances.length > 0 ? (
+            <ul className="space-y-1 border-t border-border pt-3 text-sm">
+              {user.creditBalances.map((b) => (
+                <li key={b.eventId} className="flex items-center justify-between gap-2">
+                  <span className="truncate text-muted-foreground">{b.eventName || '—'}</span>
+                  <span>
+                    נוצל {formatCurrency(b.applied)} · נותר {formatCurrency(b.remaining)}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          ) : null}
         </section>
       ) : null}
 

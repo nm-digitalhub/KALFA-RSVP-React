@@ -1019,10 +1019,11 @@ describe('B4 close-charge data layer', () => {
     expect(await lockCampaignForCharge('c1')).toBe(false);
   });
 
-  it('recordCampaignCharge persists the charged outcome + document id', async () => {
+  it('recordCampaignCharge persists the charged outcome + document id + credit slice', async () => {
     const { builder } = adminWith({ data: null, error: null });
     await recordCampaignCharge('c1', {
       amount: 12,
+      creditApplied: 3,
       documentId: 555,
       documentNumber: 40103,
       documentUrl: 'https://pay.sumit.co.il/x?download=555',
@@ -1035,20 +1036,26 @@ describe('B4 close-charge data layer', () => {
     >;
     expect(payload.charge_status).toBe('charged');
     expect(payload.final_charge_amount).toBe(12);
+    expect(payload.credit_applied).toBe(3);
     expect(payload.sumit_charge_document_id).toBe(555);
     expect(payload.charged_at).toBeTruthy();
   });
 
-  it('markCampaignChargeOutcome(nothing_to_charge) zeroes the amount + stamps charged_at', async () => {
+  it('markCampaignChargeOutcome(nothing_to_charge) zeroes the amount, records the credit + stamps charged_at', async () => {
     const { builder } = adminWith({ data: null, error: null });
-    await markCampaignChargeOutcome('c1', 'nothing_to_charge');
+    await markCampaignChargeOutcome('c1', 'nothing_to_charge', 84);
     const payload = vi.mocked(builder.update).mock.calls[0][0] as Record<
       string,
       unknown
     >;
     expect(payload.charge_status).toBe('nothing_to_charge');
     expect(payload.final_charge_amount).toBe(0);
+    expect(payload.credit_applied).toBe(84);
     expect(payload.charged_at).toBeTruthy();
+    // Terminal-outcome guard: never overwrites charged / nothing_to_charge.
+    expect(builder.or).toHaveBeenCalledWith(
+      'charge_status.is.null,charge_status.in.(pending,charge_failed,charge_review)',
+    );
   });
 
   it('markCampaignChargeOutcome(charge_failed) only sets the status', async () => {
@@ -1060,5 +1067,9 @@ describe('B4 close-charge data layer', () => {
     >;
     expect(payload.charge_status).toBe('charge_failed');
     expect(payload.final_charge_amount).toBeUndefined();
+    expect(payload.credit_applied).toBeUndefined();
+    expect(builder.or).toHaveBeenCalledWith(
+      'charge_status.is.null,charge_status.in.(pending,charge_failed,charge_review)',
+    );
   });
 });

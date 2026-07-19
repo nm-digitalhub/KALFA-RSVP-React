@@ -100,34 +100,90 @@ describe('getCampaignBillingSummary', () => {
 });
 
 describe('getCampaignCreditTotal', () => {
-  function mockCredits(result: { data: unknown; error: unknown }) {
-    const eq = vi.fn(async () => result);
-    const select = vi.fn(() => ({ eq }));
-    const from = vi.fn(() => ({ select }));
+  type QueryResult = { data: unknown; error: unknown };
+  const ok = (rows: unknown[]): QueryResult => ({ data: rows, error: null });
+  const empty = ok([]);
+
+  // Three parallel queries: campaign-scoped credits (billing_credits.eq),
+  // event-level credits (billing_credits.is(null).eq), and sibling campaigns'
+  // credit_applied (campaigns.eq.neq).
+  function mockCredits({
+    own = empty,
+    eventLevel = empty,
+    siblings = empty,
+  }: {
+    own?: QueryResult;
+    eventLevel?: QueryResult;
+    siblings?: QueryResult;
+  }) {
+    const from = vi.fn((table: string) => {
+      if (table === 'campaigns') {
+        return {
+          select: vi.fn(() => ({
+            eq: vi.fn(() => ({ neq: vi.fn(async () => siblings) })),
+          })),
+        };
+      }
+      return {
+        select: vi.fn(() => ({
+          eq: vi.fn(async () => own),
+          is: vi.fn(() => ({ eq: vi.fn(async () => eventLevel) })),
+        })),
+      };
+    });
     vi.mocked(createAdminClient).mockReturnValue({
       rpc: vi.fn(),
       from,
     } as unknown as ReturnType<typeof createAdminClient>);
-    return { from, select, eq };
+    return { from };
   }
 
-  it('sums the campaign-scoped credit amounts', async () => {
-    const { from, select } = mockCredits({
-      data: [{ amount: 5 }, { amount: 2.5 }],
-      error: null,
-    });
-    await expect(getCampaignCreditTotal('c1')).resolves.toBe(7.5);
+  it('sums the campaign-scoped credit amounts (regression)', async () => {
+    const { from } = mockCredits({ own: ok([{ amount: 5 }, { amount: 2.5 }]) });
+    await expect(getCampaignCreditTotal('c1', 'e1')).resolves.toBe(7.5);
     expect(from).toHaveBeenCalledWith('billing_credits');
-    expect(select).toHaveBeenCalledWith('amount');
+    expect(from).toHaveBeenCalledWith('campaigns');
+  });
+
+  it('includes EVENT-level credits (campaign_id null) — the wiring fix', async () => {
+    mockCredits({ eventLevel: ok([{ amount: 160 }]) });
+    await expect(getCampaignCreditTotal('c1', 'e1')).resolves.toBe(160);
+  });
+
+  it('sums campaign-scoped and event-level credits together', async () => {
+    mockCredits({
+      own: ok([{ amount: 5 }]),
+      eventLevel: ok([{ amount: 160 }]),
+    });
+    await expect(getCampaignCreditTotal('c1', 'e1')).resolves.toBe(165);
+  });
+
+  it('subtracts credit already consumed by sibling campaigns, floored at 0', async () => {
+    mockCredits({
+      eventLevel: ok([{ amount: 100 }]),
+      siblings: ok([{ credit_applied: 30 }]),
+    });
+    await expect(getCampaignCreditTotal('c1', 'e1')).resolves.toBe(70);
+
+    mockCredits({
+      eventLevel: ok([{ amount: 100 }]),
+      siblings: ok([{ credit_applied: 130 }]),
+    });
+    await expect(getCampaignCreditTotal('c1', 'e1')).resolves.toBe(0);
   });
 
   it('returns 0 when there are no credits', async () => {
-    mockCredits({ data: [], error: null });
-    await expect(getCampaignCreditTotal('c1')).resolves.toBe(0);
+    mockCredits({});
+    await expect(getCampaignCreditTotal('c1', 'e1')).resolves.toBe(0);
   });
 
-  it('THROWS on a real error (routes close-charge to review)', async () => {
-    mockCredits({ data: null, error: { message: 'x' } });
-    await expect(getCampaignCreditTotal('c1')).rejects.toThrow();
+  it('THROWS on a credit-query error (routes close-charge to review)', async () => {
+    mockCredits({ own: { data: null, error: { message: 'x' } } });
+    await expect(getCampaignCreditTotal('c1', 'e1')).rejects.toThrow();
+  });
+
+  it('THROWS on a sibling-consumption query error (never silently under-subtracts)', async () => {
+    mockCredits({ siblings: { data: null, error: { message: 'x' } } });
+    await expect(getCampaignCreditTotal('c1', 'e1')).rejects.toThrow();
   });
 });

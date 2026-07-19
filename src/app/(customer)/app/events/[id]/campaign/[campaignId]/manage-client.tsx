@@ -28,6 +28,7 @@ type Campaign = {
   max_contacts: number | null;
   max_charge_ceiling: number | null;
   final_charge_amount: number | null;
+  credit_applied: number | null;
   capture_status: string | null;
 };
 
@@ -330,6 +331,9 @@ export function ManageClient({
         {campaign.final_charge_amount != null ? (
           <span className="text-sm text-muted-foreground">
             חיוב סופי: <strong>{nis(campaign.final_charge_amount)}</strong>
+            {Number(campaign.credit_applied ?? 0) > 0 ? (
+              <> · זיכוי שקוזז: <strong>{nis(campaign.credit_applied)}</strong></>
+            ) : null}
           </span>
         ) : null}
       </div>

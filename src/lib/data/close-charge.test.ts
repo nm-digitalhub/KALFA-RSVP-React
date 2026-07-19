@@ -204,6 +204,7 @@ describe('closeCampaignAndCharge', () => {
     expect(markCampaignChargeOutcome).toHaveBeenCalledWith(
       'c1',
       'nothing_to_charge',
+      0,
     );
     expect(captureHeldCardSumit).not.toHaveBeenCalled();
   });
@@ -225,6 +226,7 @@ describe('closeCampaignAndCharge', () => {
     );
     expect(recordCampaignCharge).toHaveBeenCalledWith('c1', {
       amount: 12,
+      creditApplied: 0,
       documentId: 555,
       documentNumber: 40103,
       documentUrl: 'https://pay.sumit.co.il/x?download=555',
@@ -306,26 +308,79 @@ describe('closeCampaignAndCharge', () => {
     );
   });
 
-  it('subtracts approved credits from the charged amount (G1/D5)', async () => {
+  it('subtracts approved credits from the charged amount (G1/D5) and records the slice consumed', async () => {
     happy();
-    // accrued 12, ceiling 88, credit ₪5 → charge 7.
+    // accrued 12, ceiling 88, credit ₪5 → charge 7; all ₪5 of the credit used.
     m.credits.mockResolvedValue(5);
     const r = await closeCampaignAndCharge('c1');
     expect(r).toEqual({ outcome: 'charged', amount: 7 });
+    // The pool is read for the campaign AND its event (event-level credits).
+    expect(getCampaignCreditTotal).toHaveBeenCalledWith('c1', 'e1');
     expect(captureHeldCardSumit).toHaveBeenCalledWith(
       expect.objectContaining({ amount: '7' }),
     );
+    expect(recordCampaignCharge).toHaveBeenCalledWith(
+      'c1',
+      expect.objectContaining({ amount: 7, creditApplied: 5 }),
+    );
   });
 
-  it('nothing_to_charge when credits ≥ the capped total (no SUMIT call)', async () => {
+  it('nothing_to_charge when credits ≥ the capped total — consumes only the capped slice', async () => {
     happy();
     m.credits.mockResolvedValue(20); // ≥ accrued 12
     const r = await closeCampaignAndCharge('c1');
     expect(r).toEqual({ outcome: 'nothing_to_charge', amount: 0 });
+    // credit_applied records 12 (what the bill needed), NOT the ₪20 granted —
+    // the ₪8 remainder stays available at the event level.
     expect(markCampaignChargeOutcome).toHaveBeenCalledWith(
       'c1',
       'nothing_to_charge',
+      12,
     );
+    expect(captureHeldCardSumit).not.toHaveBeenCalled();
+  });
+
+  it('bad_state on a terminal charge_status — never re-marks nothing_to_charge over a real charge', async () => {
+    happy();
+    // Already charged; a later big event-level credit must NOT flip it to ₪0.
+    m.forCharge.mockResolvedValue({
+      id: 'c1',
+      event_id: 'e1',
+      status: 'closed',
+      capture_status: 'authorized',
+      charge_status: 'charged',
+      card_token_ref: 'tok-abc',
+      card_exp_month: 7,
+      card_exp_year: 2031,
+      card_citizen_id: '316125434',
+      auth_external_ref: 'ext-1',
+      max_charge_ceiling: 88,
+    });
+    m.credits.mockResolvedValue(160);
+    const r = await closeCampaignAndCharge('c1');
+    expect(r).toEqual({ outcome: 'bad_state', amount: 0 });
+    expect(markCampaignChargeOutcome).not.toHaveBeenCalled();
+    expect(captureHeldCardSumit).not.toHaveBeenCalled();
+  });
+
+  it('bad_state when already settled as nothing_to_charge (terminal, idempotent)', async () => {
+    happy();
+    m.forCharge.mockResolvedValue({
+      id: 'c1',
+      event_id: 'e1',
+      status: 'closed',
+      capture_status: 'authorized',
+      charge_status: 'nothing_to_charge',
+      card_token_ref: 'tok-abc',
+      card_exp_month: 7,
+      card_exp_year: 2031,
+      card_citizen_id: '316125434',
+      auth_external_ref: 'ext-1',
+      max_charge_ceiling: 88,
+    });
+    const r = await closeCampaignAndCharge('c1');
+    expect(r).toEqual({ outcome: 'bad_state', amount: 0 });
+    expect(markCampaignChargeOutcome).not.toHaveBeenCalled();
     expect(captureHeldCardSumit).not.toHaveBeenCalled();
   });
 

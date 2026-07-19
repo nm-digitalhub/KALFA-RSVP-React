@@ -44,6 +44,7 @@ export interface AdminUserOrg {
 export interface AdminUserCredit {
   id: string;
   eventId: string;
+  campaignId: string | null; // null = event-level (consumed by the event's campaign)
   amount: number;
   reason: string;
   createdAt: string;
@@ -52,6 +53,18 @@ export interface AdminUserCredit {
 export interface AdminUserEvent {
   id: string;
   name: string;
+  // The event's single campaign (one-campaign-per-event), if one exists —
+  // offered as an optional scope when granting a credit.
+  campaignId: string | null;
+}
+
+// Per-event credit ledger: granted − consumed (campaigns.credit_applied).
+export interface AdminUserCreditBalance {
+  eventId: string;
+  eventName: string;
+  granted: number;
+  applied: number;
+  remaining: number;
 }
 
 export interface AdminUserDetail extends AdminUser {
@@ -60,6 +73,7 @@ export interface AdminUserDetail extends AdminUser {
   ownedEventCount: number;
   events: AdminUserEvent[];
   credits: AdminUserCredit[];
+  creditBalances: AdminUserCreditBalance[];
 }
 
 function isSuspended(bannedUntil: string | null | undefined): boolean {
@@ -173,20 +187,61 @@ export async function getUserDetail(userId: string): Promise<AdminUserDetail | n
 
   const eventIds = (eventsRes.data ?? []).map((e) => e.id);
   let credits: AdminUserCredit[] = [];
+  const campaignByEvent = new Map<string, string>();
+  const appliedByEvent = new Map<string, number>();
   if (eventIds.length > 0) {
-    const { data: creditRows } = await admin
-      .from('billing_credits')
-      .select('id, event_id, amount, reason, created_at')
-      .in('event_id', eventIds)
-      .order('created_at', { ascending: false });
-    credits = (creditRows ?? []).map((c) => ({
+    const [creditsRes, campaignsRes] = await Promise.all([
+      admin
+        .from('billing_credits')
+        .select('id, event_id, campaign_id, amount, reason, created_at')
+        .in('event_id', eventIds)
+        .order('created_at', { ascending: false }),
+      admin
+        .from('campaigns')
+        .select('id, event_id, status, credit_applied')
+        .in('event_id', eventIds),
+    ]);
+    credits = (creditsRes.data ?? []).map((c) => ({
       id: c.id,
       eventId: c.event_id,
+      campaignId: c.campaign_id,
       amount: c.amount,
       reason: c.reason,
       createdAt: c.created_at,
     }));
+    for (const c of campaignsRes.data ?? []) {
+      // The grant form offers only the event's live campaign (one per event;
+      // cancelled ones are not a valid credit scope).
+      if (c.status !== 'cancelled') campaignByEvent.set(c.event_id, c.id);
+      appliedByEvent.set(
+        c.event_id,
+        (appliedByEvent.get(c.event_id) ?? 0) + Number(c.credit_applied ?? 0),
+      );
+    }
   }
+
+  // Per-event ledger (only for events that ever had a credit): granted −
+  // consumed-by-close-charge = remaining.
+  const nameByEvent = new Map((eventsRes.data ?? []).map((e) => [e.id, e.name]));
+  const grantedByEvent = new Map<string, number>();
+  for (const c of credits) {
+    grantedByEvent.set(
+      c.eventId,
+      (grantedByEvent.get(c.eventId) ?? 0) + Number(c.amount ?? 0),
+    );
+  }
+  const creditBalances: AdminUserCreditBalance[] = [...grantedByEvent.entries()].map(
+    ([eventId, granted]) => {
+      const applied = appliedByEvent.get(eventId) ?? 0;
+      return {
+        eventId,
+        eventName: nameByEvent.get(eventId) ?? '',
+        granted,
+        applied,
+        remaining: Math.max(0, Math.round((granted - applied) * 100) / 100),
+      };
+    },
+  );
 
   const orgs: AdminUserOrg[] = (membersRes.data ?? []).map((m) => ({
     id: m.organization_id,
@@ -206,8 +261,13 @@ export async function getUserDetail(userId: string): Promise<AdminUserDetail | n
     suspended: isSuspended(u.banned_until),
     orgs,
     ownedEventCount: eventIds.length,
-    events: (eventsRes.data ?? []).map((e) => ({ id: e.id, name: e.name })),
+    events: (eventsRes.data ?? []).map((e) => ({
+      id: e.id,
+      name: e.name,
+      campaignId: campaignByEvent.get(e.id) ?? null,
+    })),
     credits,
+    creditBalances,
   };
 }
 
@@ -331,6 +391,19 @@ export async function grantBillingCredit(input: {
     .maybeSingle();
   if (!ev) {
     throw new Error('האירוע לא נמצא');
+  }
+  // A campaign-scoped credit must point at a campaign of THIS event — never
+  // trust the submitted id pair on its own.
+  if (input.campaignId) {
+    const { data: camp } = await admin
+      .from('campaigns')
+      .select('id')
+      .eq('id', input.campaignId)
+      .eq('event_id', input.eventId)
+      .maybeSingle();
+    if (!camp) {
+      throw new Error('הקמפיין אינו שייך לאירוע שנבחר');
+    }
   }
   const { error } = await admin.from('billing_credits').insert({
     event_id: input.eventId,

@@ -57,6 +57,16 @@ export async function closeCampaignAndCharge(
   const campaign = await getCampaignForCharge(campaignId);
   if (!campaign) return { outcome: 'bad_state', amount: 0 };
 
+  // Terminal charge outcomes are final: a charged (or credit-settled) campaign
+  // can never be re-charged NOR re-marked nothing_to_charge (which would zero
+  // the recorded amount). Retryable states (charge_failed/charge_review) pass.
+  if (
+    campaign.charge_status === 'charged' ||
+    campaign.charge_status === 'nothing_to_charge'
+  ) {
+    return { outcome: 'bad_state', amount: 0 };
+  }
+
   // Close if still open; tolerate an already-closed campaign (retry); reject any
   // non-closeable, non-closed state (e.g. draft/pending_approval).
   if (CLOSEABLE.includes(campaign.status)) {
@@ -83,7 +93,7 @@ export async function closeCampaignAndCharge(
   let credits: number;
   try {
     summary = await getCampaignBillingSummary(campaignId);
-    credits = await getCampaignCreditTotal(campaignId);
+    credits = await getCampaignCreditTotal(campaignId, campaign.event_id);
   } catch {
     await markCampaignChargeOutcome(campaignId, 'charge_review');
     return { outcome: 'review', amount: 0 };
@@ -96,10 +106,14 @@ export async function closeCampaignAndCharge(
   // final = max(0, min(accrued, ceiling) − credits), rounded to agorot (§14/D5/G4).
   const capped = Math.min(accrued, ceiling);
   const amount = Math.max(0, Math.round((capped - credits) * 100) / 100);
+  // The credit slice actually consumed: never more than the capped total (a
+  // ₪160 credit against ₪84 capped consumes 84; the ₪76 remainder stays
+  // available at the event level). Same agorot rounding as `amount`.
+  const creditApplied = Math.max(0, Math.round((capped - amount) * 100) / 100);
 
   // 0 reached OR credits ≥ the capped total → settle at ₪0, no SUMIT call.
   if (amount <= 0) {
-    await markCampaignChargeOutcome(campaignId, 'nothing_to_charge');
+    await markCampaignChargeOutcome(campaignId, 'nothing_to_charge', creditApplied);
     return { outcome: 'nothing_to_charge', amount: 0 };
   }
 
@@ -146,6 +160,7 @@ export async function closeCampaignAndCharge(
     });
     await recordCampaignCharge(campaignId, {
       amount,
+      creditApplied,
       documentId: result.documentId,
       documentNumber: result.documentNumber,
       documentUrl: result.documentUrl,
@@ -162,6 +177,7 @@ export async function closeCampaignAndCharge(
         campaign_id: campaignId,
         event_id: campaign.event_id,
         amount,
+        credit_applied: creditApplied,
         document_id: result.documentId,
       },
     });
