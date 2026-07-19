@@ -18,7 +18,7 @@ vi.mock('@/lib/data/call-attempts', () => ({
 }));
 vi.mock('@/lib/data/webhooks', () => ({ insertWebhookEvents: vi.fn(async () => {}) }));
 vi.mock('@/lib/data/call-result-processing', () => ({
-  processCallRsvp: vi.fn(async () => ({ ok: true })),
+  processCallRsvp: vi.fn(async () => ({ status: 'saved' })),
   processCallDnc: vi.fn(async () => ({ ok: true })),
   processOwnerNote: vi.fn(async () => ({ ok: true })),
 }));
@@ -120,8 +120,12 @@ describe('ctx GET', () => {
     expect(res.headers.get('cache-control')).toBe('no-store');
     const json = await res.json();
     expect(Object.keys(json).sort()).toEqual([
+      'event_address',
+      'event_celebrants',
       'event_date',
       'event_name',
+      'event_rsvp_deadline',
+      'event_time',
       'event_venue',
       'groq_key',
       'guest_name',
@@ -239,7 +243,7 @@ describe('agent-tool save_rsvp POST', () => {
     const res = await rsvpCall(TOK, attendingBody);
     expect(res.status).toBe(200);
     expect(res.headers.get('cache-control')).toBe('no-store');
-    expect(await res.json()).toEqual({ ok: true });
+    expect(await res.json()).toEqual({ ok: true, status: 'saved' });
     expect(insertWebhookEvents).toHaveBeenCalledWith([
       expect.objectContaining({
         provider: 'voximplant',
@@ -254,7 +258,7 @@ describe('agent-tool save_rsvp POST', () => {
   it('declined → 200 and still persists + syncs', async () => {
     const res = await rsvpCall(TOK, JSON.stringify({ attending: false, adults: 0, children: 0 }));
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ ok: true });
+    expect(await res.json()).toEqual({ ok: true, status: 'saved' });
     expect(processCallRsvp).toHaveBeenCalled();
   });
 
@@ -265,11 +269,35 @@ describe('agent-tool save_rsvp POST', () => {
     expect(keys[0]).not.toBe(keys[1]);
   });
 
-  it('sync write fails → 200 {ok:false} but row still persisted (durable retry)', async () => {
-    vi.mocked(processCallRsvp).mockResolvedValueOnce({ ok: false });
+  // The contract the agent's wording depends on: HTTP 200 is NOT business success.
+  // Only `ok:true && status:'saved'` may be voiced as "נרשם".
+  it('business rejection → 200 {ok:false, status:rejected, reason} — never "saved"', async () => {
+    vi.mocked(processCallRsvp).mockResolvedValueOnce({
+      status: 'rejected',
+      reason: 'closed',
+    });
     const res = await rsvpCall(TOK, attendingBody);
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ ok: false });
+    expect(await res.json()).toEqual({
+      ok: false,
+      status: 'rejected',
+      reason: 'closed',
+    });
+    expect(insertWebhookEvents).toHaveBeenCalled();
+  });
+
+  it('applied → 200 {ok:true, status:saved} — the ONLY shape that permits "נרשם"', async () => {
+    vi.mocked(processCallRsvp).mockResolvedValueOnce({ status: 'saved' });
+    const res = await rsvpCall(TOK, attendingBody);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: true, status: 'saved' });
+  });
+
+  it('transient throw → 200 {ok:false, status:queued} — durable row drives the retry', async () => {
+    vi.mocked(processCallRsvp).mockRejectedValueOnce(new Error('db down'));
+    const res = await rsvpCall(TOK, attendingBody);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: false, status: 'queued' });
     expect(insertWebhookEvents).toHaveBeenCalled();
   });
 
@@ -307,7 +335,7 @@ describe('agent-tool save_rsvp POST', () => {
   it('canonical status field: maybe → 200, processed with status maybe', async () => {
     const res = await rsvpCall(TOK, JSON.stringify({ status: 'maybe', adults: 0, children: 0 }));
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ ok: true });
+    expect(await res.json()).toEqual({ ok: true, status: 'saved' });
     expect(processCallRsvp).toHaveBeenCalledWith(AID, expect.objectContaining({ status: 'maybe' }));
   });
   it('status attending with zero people → 400 (refine applies to canonical status)', async () => {

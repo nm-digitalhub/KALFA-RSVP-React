@@ -1,8 +1,9 @@
 import { NextResponse } from 'next/server';
 
+import { celebrantsTextFor } from '@/lib/data/celebrant-display';
 import { getCallContextByAccessToken } from '@/lib/data/call-attempts';
 import { getVoximplantGroqKey } from '@/lib/data/voximplant-config';
-import { formatIsraelSpokenDate } from '@/lib/date';
+import { formatIsraelSpokenDate, formatIsraelTime } from '@/lib/date';
 import { getClientIp, rateLimit } from '@/lib/security/rate-limit';
 import { tokenFingerprint } from '@/lib/security/token-fingerprint';
 
@@ -84,7 +85,22 @@ export async function GET(
       guest_name: guestName,
       event_name: ctx.event.name ?? '',
       event_date: formatIsraelSpokenDate(ctx.event.event_date ?? ''),
+      // Wall-clock start time ('17:30'). events.event_date is timestamptz, so the
+      // time was always there — it was simply dropped by the date-only formatter,
+      // leaving the agent unable to answer "באיזו שעה?" (the single most common
+      // RSVP question) and forced to deflect to notify_owner.
+      event_time: formatIsraelTime(ctx.event.event_date ?? ''),
       event_venue: ctx.event.venue_name ?? '',
+      // Street address, so "איפה בדיוק?" is answerable. Event-level data that is
+      // printed on the invitation itself — not guest PII.
+      event_address: ctx.event.venue_address ?? '',
+      // "של מי האירוע?" — reuses the shared display helper so the phrasing matches
+      // the rest of the product per event type (couple / single / parents / free).
+      event_celebrants:
+        celebrantsTextFor(ctx.event.event_type, ctx.event.celebrants) ?? '',
+      event_rsvp_deadline: ctx.event.rsvp_deadline
+        ? formatIsraelSpokenDate(ctx.event.rsvp_deadline)
+        : '',
       groq_key: groqKey,
       // ADDITIVE (item-2 link vector): the row's NON-authorizing correlation nonce.
       // The ElevenLabs-bridge scenario (VoiceAgentTest, kalfatest) injects this as

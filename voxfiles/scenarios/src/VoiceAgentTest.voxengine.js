@@ -429,6 +429,10 @@ VoxEngine.addEventListener(AppEvents.Started, function () {
                             event_name: state.eventName,
                             event_date: state.eventDate,
                             event_venue: state.eventVenue,
+                            event_time: state.eventTime,
+                            event_address: state.eventAddress,
+                            event_celebrants: state.eventCelebrants,
+                            event_rsvp_deadline: state.eventRsvpDeadline,
                             // Round-trips in the post-call webhook's
                             // conversation_initiation_client_data.dynamic_variables
                             // → KALFA links conversation → call_attempt (item 2).
@@ -682,6 +686,12 @@ VoxEngine.addEventListener(AppEvents.Started, function () {
                 state.eventName = ctx.event_name || '';
                 state.eventDate = ctx.event_date || '';
                 state.eventVenue = ctx.event_venue || '';
+                // Event details the agent previously lacked, so "באיזו שעה?" /
+                // "איפה בדיוק?" / "של מי?" had to be deflected to notify_owner.
+                state.eventTime = ctx.event_time || '';
+                state.eventAddress = ctx.event_address || '';
+                state.eventCelebrants = ctx.event_celebrants || '';
+                state.eventRsvpDeadline = ctx.event_rsvp_deadline || '';
                 // Correlation nonce (additive ctx field) — carried through to the
                 // agent init below so the post-call webhook can link back. Never
                 // logged: it is a correlation id, not a spoken/personalization field.

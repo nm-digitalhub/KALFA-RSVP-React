@@ -1,0 +1,63 @@
+{
+    "type": "client",
+    "name": "save_rsvp",
+    "description": "שומר את אישור ההגעה במערכת קלפה. לקרוא רק אחרי אישור מילולי בסיכום (attending), או סירוב מפורש (declined), או התלבטות מפורשת (maybe). מחזיר saved בהצלחה.",
+    "response_timeout_secs": 20,
+    "disable_interruptions": true,
+    "interruption_mode": "disable_during_tool_and_turn",
+    "force_pre_tool_speech": false,
+    "pre_tool_speech": "auto",
+    "assignments": [],
+    "tool_call_sound_behavior": "auto",
+    "tool_error_handling_mode": "auto",
+    "parameters": {
+        "description": "",
+        "dynamic_variable": "",
+        "is_omitted": false,
+        "type": "object",
+        "required": [
+            "status",
+            "adults",
+            "children"
+        ],
+        "properties": {
+            "status": {
+                "type": "string",
+                "description": "attending=מגיעים, declined=לא מגיעים, maybe=מתלבטים",
+                "enum": [
+                    "attending",
+                    "declined",
+                    "maybe"
+                ],
+                "is_system_provided": false,
+                "dynamic_variable": "",
+                "allowed_values_dynamic_variable": "",
+                "constant_value": "",
+                "is_omitted": false
+            },
+            "adults": {
+                "type": "integer",
+                "description": "מספר המבוגרים שיגיעו (0 כשלא מגיעים/מתלבטים). המר מדיבור: שניים=2, זוג=2, רק אני=1",
+                "is_system_provided": false,
+                "dynamic_variable": "",
+                "allowed_values_dynamic_variable": "",
+                "constant_value": "",
+                "is_omitted": false
+            },
+            "children": {
+                "type": "integer",
+                "description": "מספר הילדים שיגיעו (0 אם אין)",
+                "is_system_provided": false,
+                "dynamic_variable": "",
+                "allowed_values_dynamic_variable": "",
+                "constant_value": "",
+                "is_omitted": false
+            }
+        }
+    },
+    "expects_response": true,
+    "dynamic_variables": {
+        "dynamic_variable_placeholders": {}
+    },
+    "execution_mode": "immediate"
+}
