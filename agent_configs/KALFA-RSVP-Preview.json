@@ -131,6 +131,7 @@
                 "llm": "gemini-2.5-flash",
                 "opener": null,
                 "enable_reasoning_summary": false,
+                "thinking_budget": 0,
                 "temperature": 0.5,
                 "max_tokens": -1,
                 "tool_ids": [
