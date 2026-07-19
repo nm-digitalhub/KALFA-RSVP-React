@@ -2,6 +2,29 @@
 
 Status: **specified, not executed.** Blast radius mapped and verified 2026-07-20.
 
+
+## CORRECTION (verified 2026-07-20, from the domain + schema agents' cross-check)
+
+The scope is **32 policies, not 30.** Two customer-owned org tables were mis-classified
+as "staff-only" in my earlier axis mapping (a crude keyword match that missed `is_org_owner`):
+
+- `organization_role_permissions` — policy `organization_role_permissions_owner_select`
+- `organization_role_audit_log`  — policy `organization_role_audit_log_owner_select`
+
+Both are `is_org_owner(organization_id) OR has_role(auth.uid(),'admin')` — a MIXED axis, i.e.
+a residual staff leak (an admin can read another tenant's org-role config over the Data API)
+that the 30-policy scope leaves open. They are **REWRITE** (strip `OR has_role`, keep
+`is_org_owner`), taking the rewrite count from 9 to 11 and the total from 30 to 32. No customer
+breakage: their only app readers use `createAdminClient` (orgs.ts L295/L422/L434), so the
+customer half is future-proofing, not load-bearing today.
+
+METHOD NOTE for whoever executes this: ad-hoc keyword classification of policy predicates
+repeatedly produced false results tonight because `auth.uid()` appears INSIDE every wrapped
+`has_role((select auth.uid()),'admin')` call, falsely reading as a customer axis. The
+authoritative DROP/REWRITE classification is the schema agent's per-policy table above —
+re-derive from `pg_policies` per policy, not by grepping for keywords.
+
+
 ## Why it is not urgent today, and why it is mandatory later
 
 An admin can read every tenant's rows over the public Data API with their own JWT
