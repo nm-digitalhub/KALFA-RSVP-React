@@ -1,7 +1,7 @@
 import 'server-only';
 
 import { createClient } from '@/lib/supabase/server';
-import { requireAdmin } from '@/lib/auth/dal';
+import { requirePlatformPermission } from '@/lib/auth/dal';
 import { callbackStatusLabel } from '@/lib/data/admin/labels';
 import type { Database } from '@/lib/supabase/types';
 import { resolvePage, type PageParams, type PageResult } from './shared';
@@ -430,7 +430,7 @@ export async function listActivity(
     packageId,
   }: PageParams & ActivityFilterState = {},
 ): Promise<PageResult<ActivityEntry>> {
-  await requireAdmin();
+  await requirePlatformPermission('view_activity_log');
 
   const { page: safePage, pageSize, from: offsetFrom, to: offsetTo } = resolvePage(page);
   const dateBounds = buildDateBounds(from, to);
@@ -495,7 +495,7 @@ export async function listActivity(
 export async function listActivityActorOptions(
   limit = 50,
 ): Promise<ActivityActorOption[]> {
-  await requireAdmin();
+  await requirePlatformPermission('view_activity_log');
 
   const safeLimit = Math.min(Math.max(Math.floor(limit), 1), 200);
   const supabase = await createClient();
@@ -524,7 +524,7 @@ export async function listActivityActorOptions(
 export async function resolveActivityActors(
   userIds: string[],
 ): Promise<Map<string, string>> {
-  await requireAdmin();
+  await requirePlatformPermission('view_activity_log');
 
   const uniqueUserIds = [...new Set(userIds.filter((id) => id.trim() !== ''))];
   if (uniqueUserIds.length === 0) {
@@ -552,7 +552,7 @@ export async function resolveActivityActors(
 // Most-recent N activity entries for the dashboard (no pagination). `limit` is
 // clamped to a small range to keep the dashboard query cheap.
 export async function recentActivity(limit = 5): Promise<ActivityEntry[]> {
-  await requireAdmin();
+  await requirePlatformPermission('view_activity_log');
 
   const safeLimit = Math.min(Math.max(Math.floor(limit), 1), 20);
 

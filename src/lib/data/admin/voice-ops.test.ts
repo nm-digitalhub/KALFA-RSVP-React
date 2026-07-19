@@ -2,11 +2,11 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { User } from '@supabase/supabase-js';
 
 vi.mock('server-only', () => ({}));
-vi.mock('@/lib/auth/dal', () => ({ requireAdmin: vi.fn() }));
+vi.mock('@/lib/auth/dal', () => ({ requirePlatformPermission: vi.fn() }));
 vi.mock('@/lib/supabase/admin', () => ({ createAdminClient: vi.fn() }));
 vi.mock('@/lib/data/call-attempts', () => ({ countActiveCalls: vi.fn() }));
 
-import { requireAdmin } from '@/lib/auth/dal';
+import { requirePlatformPermission } from '@/lib/auth/dal';
 import { createAdminClient } from '@/lib/supabase/admin';
 import {
   aggregateEventActivity,
@@ -16,7 +16,7 @@ import {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  vi.mocked(requireAdmin).mockResolvedValue({ id: 'admin-1' } as unknown as User);
+  vi.mocked(requirePlatformPermission).mockResolvedValue({ id: 'admin-1' } as unknown as User);
 });
 
 describe('computeAnswerRate (binding formula)', () => {
@@ -54,9 +54,9 @@ describe('aggregateEventActivity (JS-first grouping)', () => {
   });
 });
 
-describe('listCallAttemptsForEvent — requireAdmin + PII column guard', () => {
+describe('listCallAttemptsForEvent — requirePlatformPermission + PII column guard', () => {
   it('does NOT query when the admin gate rejects', async () => {
-    vi.mocked(requireAdmin).mockRejectedValueOnce(
+    vi.mocked(requirePlatformPermission).mockRejectedValueOnce(
       Object.assign(new Error('NEXT_REDIRECT'), { digest: 'NEXT_REDIRECT;' }),
     );
     await expect(listCallAttemptsForEvent('e1')).rejects.toThrow();

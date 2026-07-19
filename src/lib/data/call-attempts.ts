@@ -1,7 +1,8 @@
 import 'server-only';
 
+import type { EventType } from '@/lib/data/events';
 import { createAdminClient } from '@/lib/supabase/admin';
-import type { Database } from '@/lib/supabase/types';
+import type { Database, Json } from '@/lib/supabase/types';
 
 // Request-FREE service-role DAL for the Voximplant AI-call `call_attempts` table.
 // Imported by the ctx/cb route handlers + the call-result processor (and, later,
@@ -91,6 +92,14 @@ export type CallContext = {
     name: string;
     event_date: string | null;
     venue_name: string | null;
+    // Event-level details the agent needs to answer the two most common guest
+    // questions ("באיזו שעה?" / "איפה בדיוק?") instead of deflecting to
+    // notify_owner. All of these appear on the invitation itself — they are
+    // event data, not guest PII.
+    venue_address: string | null;
+    event_type: EventType;
+    celebrants: Json | null;
+    rsvp_deadline: string | null;
   };
   guestFullName: string | null;
 };
@@ -117,7 +126,9 @@ async function hydrateCallContext(
   const admin = createAdminClient();
   const { data: event, error: evErr } = await admin
     .from('events')
-    .select('status, name, event_date, venue_name')
+    .select(
+      'status, name, event_date, venue_name, venue_address, event_type, celebrants, rsvp_deadline',
+    )
     .eq('id', attempt.event_id)
     .maybeSingle();
   if (evErr) throw new Error('טעינת האירוע נכשלה');
@@ -140,6 +151,10 @@ async function hydrateCallContext(
       name: event.name,
       event_date: event.event_date,
       venue_name: event.venue_name,
+      venue_address: event.venue_address,
+      event_type: event.event_type,
+      celebrants: event.celebrants,
+      rsvp_deadline: event.rsvp_deadline,
     },
     guestFullName,
   };
@@ -282,6 +297,36 @@ export async function recordRsvpFromCall(
       event_id: eventId,
       user_id: null,
       action: 'rsvp.from_call',
+      meta: meta as unknown as ActivityLogInsert['meta'],
+    };
+    await admin.from('activity_log').insert(row);
+  } catch {
+    // Deliberately swallowed: the marker is non-fatal and never logs PII.
+  }
+}
+
+// The refusal counterpart of recordRsvpFromCall: the guest DID answer on the
+// call, but submit_rsvp refused to apply it (past event, passed deadline,
+// unknown guest, impossible count). Same channel, same shape, same PII-free
+// rule — because the owner needs to see "someone confirmed by phone and we
+// could not record it", which is actionable for them. Without this the refusal
+// was invisible: the queue row closed as if it had succeeded and the guest was
+// told "נרשם" (session 6866346068, 2026-07-19).
+export async function recordRsvpCallRejected(
+  eventId: string,
+  guestId: string,
+  status: string,
+  reason: string,
+  callAttemptId: string,
+): Promise<void> {
+  type ActivityLogInsert = Database['public']['Tables']['activity_log']['Insert'];
+  try {
+    const admin = createAdminClient();
+    const meta = { guest_id: guestId, status, reason, call_attempt_id: callAttemptId };
+    const row: ActivityLogInsert = {
+      event_id: eventId,
+      user_id: null,
+      action: 'rsvp.call_rejected',
       meta: meta as unknown as ActivityLogInsert['meta'],
     };
     await admin.from('activity_log').insert(row);

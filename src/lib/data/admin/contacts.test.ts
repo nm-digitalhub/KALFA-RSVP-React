@@ -3,7 +3,7 @@ import type { User } from '@supabase/supabase-js';
 
 import { createMockSupabase } from '@/test/supabase-mock';
 import { createClient } from '@/lib/supabase/server';
-import { requireAdmin } from '@/lib/auth/dal';
+import { requirePlatformPermission } from '@/lib/auth/dal';
 import {
   listContactMessages,
   CONTACT_COLUMNS,
@@ -12,7 +12,7 @@ import {
 
 vi.mock('server-only', () => ({}));
 vi.mock('@/lib/supabase/server', () => ({ createClient: vi.fn() }));
-vi.mock('@/lib/auth/dal', () => ({ requireAdmin: vi.fn() }));
+vi.mock('@/lib/auth/dal', () => ({ requirePlatformPermission: vi.fn() }));
 
 const ADMIN_ID = 'admin-1';
 function adminUser(): User {
@@ -33,7 +33,7 @@ function row(overrides: Partial<ContactMessage> = {}): ContactMessage {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  vi.mocked(requireAdmin).mockResolvedValue(adminUser());
+  vi.mocked(requirePlatformPermission).mockResolvedValue(adminUser());
 });
 
 describe('listContactMessages', () => {
@@ -49,14 +49,14 @@ describe('listContactMessages', () => {
 
     await listContactMessages();
 
-    expect(requireAdmin).toHaveBeenCalledTimes(1);
+    expect(requirePlatformPermission).toHaveBeenCalledTimes(1);
   });
 
   it('does NOT query when the admin gate redirects (throws)', async () => {
     const redirectErr = Object.assign(new Error('NEXT_REDIRECT'), {
       digest: 'NEXT_REDIRECT;replace;/app;307;',
     });
-    vi.mocked(requireAdmin).mockRejectedValueOnce(redirectErr);
+    vi.mocked(requirePlatformPermission).mockRejectedValueOnce(redirectErr);
     const { client } = createMockSupabase<ContactMessage[]>({
       data: [],
       error: null,

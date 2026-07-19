@@ -1,6 +1,6 @@
 import 'server-only';
 
-import { requireAdmin } from '@/lib/auth/dal';
+import { requirePlatformPermission } from '@/lib/auth/dal';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { resolvePage, type PageParams, type PageResult } from '@/lib/data/admin/shared';
 import type { Database } from '@/lib/supabase/types';
@@ -50,7 +50,7 @@ const LIST_COLUMNS =
 export async function listWebhookInbox(
   filter: WebhookFilter = {},
 ): Promise<PageResult<AdminWebhookRow>> {
-  await requireAdmin();
+  await requirePlatformPermission('view_webhooks');
   const { page, pageSize, from, to } = resolvePage(filter.page);
   const admin = createAdminClient();
 
@@ -98,7 +98,7 @@ export async function listWebhookInbox(
 export async function getWebhookInboxItem(
   id: string,
 ): Promise<AdminWebhookDetail | null> {
-  await requireAdmin();
+  await requirePlatformPermission('view_webhooks');
   const admin = createAdminClient();
   const { data, error } = await admin
     .from('webhook_inbox')
@@ -117,7 +117,7 @@ export interface WebhookHealth {
 
 // Header strip: last-received timestamp + unprocessed / failed counts.
 export async function getWebhookHealth(): Promise<WebhookHealth> {
-  await requireAdmin();
+  await requirePlatformPermission('view_webhooks');
   const admin = createAdminClient();
 
   const [last, unprocessed, failed] = await Promise.all([
@@ -159,7 +159,7 @@ export interface WebhookAssociation {
 export async function resolveWebhookAssociations(
   rows: AdminWebhookRow[],
 ): Promise<Map<string, WebhookAssociation>> {
-  await requireAdmin();
+  await requirePlatformPermission('view_webhooks');
 
   const wamidByRow = new Map<string, string>();
   const wamids = new Set<string>();

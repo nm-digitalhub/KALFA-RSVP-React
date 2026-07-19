@@ -1,3 +1,4 @@
+import { requirePlatformPermission } from '@/lib/auth/dal';
 import { listCallbackRequests } from '@/lib/data/admin/callbacks';
 import { callbackStatusLabel } from '@/lib/data/admin/labels';
 import {
@@ -19,6 +20,9 @@ export default async function AdminCallbacksPage({
 }: {
   searchParams: Promise<{ page?: string | string[] }>;
 }) {
+  // Optimistic gate (Next.js term): redirects early so the operator does not
+  // land on an empty page. The real enforcement is per-function in the DAL.
+  await requirePlatformPermission('view_customer_data');
   const page = parsePageParam((await searchParams).page);
   const result = await listCallbackRequests({ page });
 

@@ -1,7 +1,7 @@
 import 'server-only';
 
 import { createClient } from '@/lib/supabase/server';
-import { requireAdmin } from '@/lib/auth/dal';
+import { requirePlatformPermission } from '@/lib/auth/dal';
 
 // Admin: guest-OUTREACH provider config (WhatsApp Cloud API; Voximplant ships
 // with C2). Stored on the app_settings singleton (admin-only RLS). Secrets
@@ -23,7 +23,7 @@ export type WhatsAppChannelConfig = {
 const SETTINGS_ID = true;
 
 export async function getWhatsAppChannelConfig(): Promise<WhatsAppChannelConfig> {
-  await requireAdmin();
+  await requirePlatformPermission('manage_settings');
   const supabase = await createClient();
   const { data, error } = await supabase
     .from('app_settings')
@@ -60,7 +60,7 @@ export type UpdateWhatsAppChannelInput = {
 export async function updateWhatsAppChannelConfig(
   input: UpdateWhatsAppChannelInput,
 ): Promise<void> {
-  await requireAdmin();
+  await requirePlatformPermission('manage_settings');
   const supabase = await createClient();
   const { error } = await supabase
     .from('app_settings')
@@ -81,7 +81,7 @@ export type ConnectionTestResult = { ok: boolean; message: string };
 // the Graph API. Validates token + phone id WITHOUT sending a message. Never logs
 // the token; returns a privacy-safe message.
 export async function testWhatsAppConnection(): Promise<ConnectionTestResult> {
-  await requireAdmin();
+  await requirePlatformPermission('manage_settings');
   const cfg = await getWhatsAppChannelConfig();
   if (!cfg.configured) {
     return { ok: false, message: 'חסרים מזהה מספר או טוקן' };

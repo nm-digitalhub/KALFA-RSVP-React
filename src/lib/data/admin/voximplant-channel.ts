@@ -3,7 +3,7 @@ import 'server-only';
 import { randomBytes } from 'node:crypto';
 
 import { createClient } from '@/lib/supabase/server';
-import { requireAdmin } from '@/lib/auth/dal';
+import { requirePlatformPermission } from '@/lib/auth/dal';
 import type { Database } from '@/lib/supabase/types';
 import {
   getVoximplantConfig,
@@ -47,7 +47,7 @@ function s(v: unknown): string {
 }
 
 export async function getVoximplantChannelConfig(): Promise<VoximplantChannelConfig> {
-  await requireAdmin();
+  await requirePlatformPermission('manage_voice');
   const supabase = await createClient();
   const { data, error } = await supabase
     .from('app_settings')
@@ -108,7 +108,7 @@ export type UpdateVoximplantChannelInput = {
 export async function updateVoximplantChannelConfig(
   input: UpdateVoximplantChannelInput,
 ): Promise<void> {
-  await requireAdmin();
+  await requirePlatformPermission('manage_voice');
   const supabase = await createClient();
 
   // The nullable text columns take '' → null (intentional unset). The FOUR
@@ -157,7 +157,7 @@ export async function updateVoximplantChannelConfig(
 // the env kill switch in force. Admin-only (RLS + requireAdmin). The action layer
 // is fail-closed (refuses to enable without a complete config) and audit-logs.
 export async function updateVoximplantLiveCalls(enabled: boolean): Promise<void> {
-  await requireAdmin();
+  await requirePlatformPermission('manage_voice');
   const supabase = await createClient();
   const { error } = await supabase
     .from('app_settings')
@@ -183,7 +183,7 @@ export type WireAccountCallbackResult =
   | { ok: false; message: string };
 
 export async function wireVoximplantAccountCallback(): Promise<WireAccountCallbackResult> {
-  await requireAdmin();
+  await requirePlatformPermission('manage_voice');
   const cfg = await getVoximplantConfig();
   if (!cfg) {
     return { ok: false, message: 'הערוץ אינו מוגדר — נדרש חשבון שירות תקין תחילה' };
@@ -257,7 +257,7 @@ export type RollbackAccountCallbackResult = { ok: boolean; message: string };
 // reset. Moves state → rollback_pending → rolled_back and clears the stored hash
 // so the route goes dark again.
 export async function rollbackVoximplantAccountCallback(): Promise<RollbackAccountCallbackResult> {
-  await requireAdmin();
+  await requirePlatformPermission('manage_voice');
   const cfg = await getVoximplantConfig();
   if (!cfg) return { ok: false, message: 'הערוץ אינו מוגדר' };
   const supabase = await createClient();
@@ -301,7 +301,7 @@ export type ConnectionTestResult = { ok: boolean; message: string };
 // and call GetAccountInfo. Validates the JWT auth WITHOUT placing a call. Never
 // logs or returns the key; surfaces balance so the admin can gate go-live (B5).
 export async function testVoximplantConnection(): Promise<ConnectionTestResult> {
-  await requireAdmin();
+  await requirePlatformPermission('manage_voice');
   const cfg = await getVoximplantConfig();
   if (!cfg) {
     return {

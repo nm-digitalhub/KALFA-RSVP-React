@@ -3,11 +3,18 @@
 > מקור-אמת למבנה ה-`conversation_config` של הסוכן + חבילת ה-Agent Testing.
 > נלמד מהתיעוד הרשמי (`api-reference/agents/update`, `customization/tools/system-tools`,
 > `api-reference/tests/create`, `guides/simulate-conversation`) 2026-07-15.
-> הסוכן שלנו: `agent_9701kxj3n54ye518a3s518cexd48`. עדכון ב-`PATCH /v1/convai/agents/{id}`.
+> הסוכן שלנו: `agent_9701kxj3n54ye518a3s518cexd48`.
+> **עדכון: אך ורק דרך תהליך ה-CLI ב-§6** — לא PATCH ידני ולא עריכה ידנית של ה-JSON מהראש.
 
 ---
 
 ## 1. שלד `conversation_config`
+
+> 🚨 **הסעיף הזה שאיפתי, לא תיאור של המצב החי** (נבדק מול הקונפיג החי 2026-07-19).
+> פערים שאותרו: `asr.keywords` מציג 27 מילים — **חי: `[]`, מעולם לא נפרס** · `llm: gemini-2.5-flash` —
+> חי: `claude-haiku-4-5` · `temperature: 0` — חי: `0.56` · `optimize_streaming_latency: 1` כאן מול `3` ב-§6.5.
+> **מקור-האמת היחיד הוא `agent_configs/KALFA-RSVP-Preview.json` אחרי `pull --update`** — לא הסעיף הזה.
+> אל תסיק מכאן מה פרוס.
 
 ```jsonc
 {
@@ -128,8 +135,9 @@
   // שאר הכלים נשארים null (כבויים)
 }
 ```
-> **חשוב:** ב-PATCH יש לשלוח את **כל** אובייקט ה-`built_in_tools` (הכלים שלא מפעילים = `null`),
-> אחרת הם עלולים להתאפס. וגם — כשמפעילים `end_call`, יש להוסיף ל-prompt (Goal צעד 10) הוראה
+> **חשוב:** יש לשלוח את **כל** אובייקט ה-`built_in_tools` (הכלים שלא מפעילים = `null`),
+> אחרת הם עלולים להתאפס. תהליך ה-`pull --update` (§6.1) מבטיח זאת אוטומטית.
+> וגם — כשמפעילים `end_call`, יש להוסיף ל-prompt (Goal צעד 10) הוראה
 > מפורשת "קראי ל-end_call אחרי משפט הסיום".
 
 ---
@@ -219,3 +227,86 @@
 - **LLM (החלטת-מוצר #16):** `agent.prompt.llm` — כרגע `gemini-2.5-flash` (מדליף `[happy]`, מבטיח בלי כלי).
   מומלץ לבנצ'מרק: `gpt-4o` / `claude-sonnet` (ElevenLabs ממליצים לאורקסטרציית-כלים). מדידה = חבילת §4.
 - **פרוזודיה:** שאלות לא עולות בטון (E-13) — ניסוח + אולי tag ב-first_message הסטטי.
+
+---
+
+## 6. תהליך הזרימה המובנה — איך משנים את הסוכן (מחייב)
+
+> נלמד אמפירית 2026-07-19 מכשלים אמיתיים. **כל חריגה מהתהליך גרמה לבאג שקט** (שדות שנבלעו,
+> כלי שלא נרשם, אנגלית שהושמעה לאורח). זה ה-runbook — לא המלצה.
+
+### 6.1 כלל הזהב: `pull` לפני כל עריכה
+
+הקונפיג ב-`agent_configs/` הוא IaC, אבל **הצורה הקנונית נקבעת בשרת**. עריכה ידנית לפי
+דוגמאות מהתיעוד יוצרת מפתחות שה-API לא מכיר או `null`-ים מקוננים שהוא בולע בשקט.
+
+```bash
+printf 'y\n' | elevenlabs agents pull --agent agent_9701kxj3n54ye518a3s518cexd48 --update
+# ← עריכה של הקובץ רק אחרי זה
+elevenlabs agents push
+# אימות: pull חוזר והשוואה — ראו האזהרה למטה
+printf 'y\n' | elevenlabs agents pull --agent agent_9701kxj3n54ye518a3s518cexd48 --update
+```
+
+> ⚠️ **`elevenlabs agents status` אינו בודק drift.** נבדק במקור של ה-CLI המותקן (v0.5.5,
+> `dist/agents/commands/status-impl.js`): הפקודה קוראת את `agents.json` ומדפיסה שם/ID/branch/version —
+> **אפס קריאות רשת ואפס השוואה**. המחרוזת `"Created (use push to update)"` היא סטטוס קבוע, לא תוצאת
+> בדיקה. הדרך היחידה לאמת שדה נשמר: `pull --update` חוזר ולוודא שהשדה עדיין שם.
+
+`--update` מסנכרן את הקובץ המקומי לצורה שהשרת מחזיר; `printf 'y\n' |` עוקף את
+האישור האינטראקטיבי (אין דגל `--yes`).
+
+**הבאג שזה מונע:** אזהרת `⚠ 12 field(s) in the local config were not persisted by the API`.
+המקור היה 3 שפות ב-`language_presets` × 4 מפתחות `null` שנכתבו ידנית — ה-API לא מחזיר אותם,
+ה-CLI השווה מקומי מול שרת וצעק. `pull --update` מיישר את הצורה ומעלים את הפער.
+
+### 6.2 הוספת client tool חדש — רישום, לא רק inline
+
+**רשומת `tools[]` inline לבדה נבלעת בשקט.** כלי לקוח חייב להיות ישות רשומה עם `tool_id`:
+
+```bash
+elevenlabs tools add schedule_callback --type client   # → tool_configs/schedule_callback.json
+# עריכת הסכמה בקובץ (parameters, description, response_timeout_secs)
+elevenlabs tools push                                   # ← מחזיר tool_id
+# הוספת ה-tool_id ל-conversation_config.agent.prompt.tool_ids בקונפיג הסוכן
+elevenlabs agents push
+```
+
+הכלים הרשומים כרגע (4): `save_rsvp` · `mark_dnc` · `notify_owner` · `schedule_callback`.
+**כך `schedule_callback` "נעלם" בפריסה ראשונה** — הוא היה ב-`tools[]` אבל לא ב-`tool_ids`.
+
+### 6.3 פריסת התרחיש (צד Voximplant)
+
+```bash
+npx voxengine-ci upload --application-name kalfatest --rule-name VoiceAgentTest
+```
+
+**תמיד `kalfatest`** — האפליקציה המבודדת. לעולם לא `kalfa-rsvp`/`OutCall` (rule 1494311) שהיא
+מסלול הייצור. שינוי בקונפיג הסוכן לבדו **לא** דורש פריסת תרחיש; שינוי בגשר (`VoiceAgentTest.voxengine.js`) כן.
+
+### 6.4 אימות: תמלול האודיו האמיתי — לא התמליל של הסוכן
+
+```bash
+npm run voximplant -- recording --session <session_id> --output call.mp3
+# ואז Scribe (skill: speech-to-text) עם use_multi_channel=true
+```
+
+**חובה.** התמליל ש-ElevenLabs מייצר **הסתיר** את הבאג הקריטי: הסוכן הקריא בקול לאורח את
+שרשרת החשיבה שלו באנגלית (`"The user confirmed the details. Now I need to call the save rsvp tool…"`).
+בתמליל של הסוכן זה לא נראה — רק ב-STT של האודיו הגולמי. שם גם נמדדים latency והפרעות.
+
+### 6.5 קונפיג ידוע-טוב (2026-07-19) ומה אסור
+
+| שדה | ערך | למה |
+|---|---|---|
+| `llm` | `gemini-2.5-flash` | מודל החשיבה שעבד הכי טוב בעברית |
+| `thinking_budget` | `0` | **קריטי** — בלי זה החשיבה מודלפת לאודיו (§6.4) וגם מוסיפה לאג. `reasoning_effort` נדחה ע"י ה-API ל-Gemini |
+| `turn_eagerness` | `normal` | `eager` הוריד latency 3.20s→2.11s אבל יצר 3 הפרעות + כשל הבנה |
+| `optimize_streaming_latency` | `3` | ⚠️ **חסר משמעות** — השדה deprecated ו-no-op ("this field is a no-op and is ignored", openapi.json). אל תכוונן אותו כדי לשפר latency; הוא לא עושה כלום |
+| `tts.model_id` | `eleven_v3_conversational` | **נעול בגלל עברית** — `eleven_flash_v2_5` ו-`eleven_multilingual_v2` **אינם מפרטים עברית**; רק `eleven_v3` כן. המעבר ל-Flash "לשיפור latency" יאבד תמיכה מתועדת בעברית |
+
+**אסור:** `gemini-2.5-flash-lite` — נמדד 4.01s ממוצע / 9.5s מקסימום, חזרות מילוליות וג'יבריש;
+המשתמש ניתק שיחה חיה באמצע. אין להחזיר בלי בנצ'מרק מלא (§4).
+
+**כלל מדידה:** כל שינוי ב-LLM/turn נמדד בשיחה חיה אחת לפחות עם §6.4 — `avg latency`,
+`max latency`, מספר הפרעות, ודליפת אנגלית.

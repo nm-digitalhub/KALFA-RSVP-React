@@ -1,7 +1,7 @@
 import 'server-only';
 
 import { createAdminClient } from '@/lib/supabase/admin';
-import { requireAdmin } from '@/lib/auth/dal';
+import { requirePlatformPermission } from '@/lib/auth/dal';
 import { countActiveCalls } from '@/lib/data/call-attempts';
 import { resolvePage, type PageResult } from '@/lib/data/admin/shared';
 import { getVoximplantConfig } from '@/lib/data/voximplant-config';
@@ -109,7 +109,7 @@ export function aggregateEventActivity(
 export async function getVoiceDashboardSummary(
   nowMs: number = Date.now(),
 ): Promise<VoiceDashboardSummary> {
-  await requireAdmin();
+  await requirePlatformPermission('manage_voice');
   const admin = createAdminClient();
   const startToday = new Date(nowMs);
   startToday.setUTCHours(0, 0, 0, 0);
@@ -152,7 +152,7 @@ export async function listEventsWithCallActivity(
   params: { page?: number } = {},
   nowMs: number = Date.now(),
 ): Promise<PageResult<EventCallActivity> & { truncated: boolean }> {
-  await requireAdmin();
+  await requirePlatformPermission('manage_voice');
   const admin = createAdminClient();
   const since = new Date(nowMs - ACTIVITY_WINDOW_DAYS * 24 * 3600 * 1000).toISOString();
 
@@ -238,7 +238,7 @@ export async function listCallAttemptsForEvent(
   eventId: string,
   params: { page?: number } = {},
 ): Promise<PageResult<EventCallAttemptRow>> {
-  await requireAdmin();
+  await requirePlatformPermission('manage_voice');
   const admin = createAdminClient();
   const { page, pageSize, from, to } = resolvePage(params.page);
   // recording_url/transcript appear ONLY inside boolean presence expressions —
@@ -364,7 +364,7 @@ export interface LogExportStatus {
 }
 
 export async function getLogExportStatus(): Promise<LogExportStatus> {
-  await requireAdmin();
+  await requirePlatformPermission('manage_voice');
   const admin = createAdminClient();
   const { data } = await admin
     .from('vox_log_exports')
@@ -383,7 +383,7 @@ export async function getLogExportStatus(): Promise<LogExportStatus> {
 }
 
 export async function getVoicePlatformView(nowMs: number = Date.now()): Promise<VoicePlatformView> {
-  await requireAdmin();
+  await requirePlatformPermission('manage_voice');
   const admin = createAdminClient();
   const cfg = await getVoximplantConfig();
 

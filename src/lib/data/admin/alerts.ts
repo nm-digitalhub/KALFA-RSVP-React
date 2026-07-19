@@ -1,7 +1,7 @@
 import 'server-only';
 
 import { createClient } from '@/lib/supabase/server';
-import { requireAdmin } from '@/lib/auth/dal';
+import { requirePlatformPermission } from '@/lib/auth/dal';
 import type { Database } from '@/lib/supabase/types';
 import { resolvePage, type PageParams, type PageResult } from './shared';
 
@@ -34,7 +34,7 @@ export interface SlackAlertsView {
 // Read the alerting config for the admin screen. Returns a boolean for the token
 // (never the value). Fail-loud (throws) so the page shows an error boundary.
 export async function getSlackAlertsView(): Promise<SlackAlertsView> {
-  await requireAdmin();
+  await requirePlatformPermission('manage_settings');
   const supabase = await createClient();
   const { data, error } = await supabase
     .from('app_settings')
@@ -75,7 +75,7 @@ export async function updateSlackConnection(input: {
   botToken: string; // '' → leave unchanged
   channelId: string;
 }): Promise<void> {
-  await requireAdmin();
+  await requirePlatformPermission('manage_settings');
   const supabase = await createClient();
 
   const patch: Database['public']['Tables']['app_settings']['Update'] = {
@@ -94,7 +94,7 @@ export async function setSlackMention(input: {
   userId: string; // '' → cleared
   minLevel: 'off' | 'error' | 'warn' | 'info';
 }): Promise<void> {
-  await requireAdmin();
+  await requirePlatformPermission('manage_settings');
   const supabase = await createClient();
 
   const patch: Database['public']['Tables']['app_settings']['Update'] = {
@@ -109,7 +109,7 @@ export async function setSlackMention(input: {
 // Disconnect: clear both credentials AND turn alerting off (fail-closed — no
 // silent sends against a half-cleared config).
 export async function clearSlackConnection(): Promise<void> {
-  await requireAdmin();
+  await requirePlatformPermission('manage_settings');
   const supabase = await createClient();
   const { error } = await supabase
     .from('app_settings')
@@ -123,7 +123,7 @@ export async function clearSlackConnection(): Promise<void> {
 }
 
 export async function setSlackAlertsEnabled(enabled: boolean): Promise<void> {
-  await requireAdmin();
+  await requirePlatformPermission('manage_settings');
   const supabase = await createClient();
   const { error } = await supabase
     .from('app_settings')
@@ -146,7 +146,7 @@ export async function setSlackAlertCategory(
   category: AlertCategoryKey,
   enabled: boolean,
 ): Promise<void> {
-  await requireAdmin();
+  await requirePlatformPermission('manage_settings');
   const supabase = await createClient();
   // Literal-keyed patch (no computed key) so it typechecks against the generated
   // Update type; exhaustive over AlertCategoryKey.
@@ -181,7 +181,7 @@ const OPS_ALERT_COLUMNS =
 export async function listOpsAlerts(
   params: PageParams = {},
 ): Promise<PageResult<OpsAlertEntry>> {
-  await requireAdmin();
+  await requirePlatformPermission('manage_settings');
   const supabase = await createClient();
   const { page, pageSize, from, to } = resolvePage(params.page);
 

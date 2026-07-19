@@ -1,4 +1,4 @@
-import { requireAdmin } from '@/lib/auth/dal';
+import { requirePlatformPermission } from '@/lib/auth/dal';
 import { getSumitPublicConfig } from '@/lib/data/payments';
 
 import { SumitTestForm } from './sumit-test-form';
@@ -6,7 +6,7 @@ import { SumitTestForm } from './sumit-test-form';
 // Admin-only SUMIT POC. Verifies live REST behavior (J5/AuthorizeAmount/token)
 // against an admin-chosen parameter set before we build the production flow.
 export default async function SumitTestPage() {
-  await requireAdmin();
+  await requirePlatformPermission('manage_billing');
   const config = await getSumitPublicConfig();
 
   return (

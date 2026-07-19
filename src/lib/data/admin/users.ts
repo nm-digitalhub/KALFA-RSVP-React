@@ -3,7 +3,7 @@ import 'server-only';
 import type { User } from '@supabase/supabase-js';
 
 import { createAdminClient } from '@/lib/supabase/admin';
-import { requireAdmin } from '@/lib/auth/dal';
+import { requirePlatformPermission } from '@/lib/auth/dal';
 import { logActivity } from '@/lib/data/activity';
 import { sendSlackAlert } from '@/lib/alerts/slack';
 import { resolvePage, type PageParams, type PageResult } from './shared';
@@ -116,7 +116,7 @@ async function enrichUsers(users: User[]): Promise<AdminUser[]> {
 export async function listAllUsers(
   { page, search }: PageParams & { search?: string } = {},
 ): Promise<PageResult<AdminUser>> {
-  await requireAdmin();
+  await requirePlatformPermission('manage_staff');
   const { page: safePage, pageSize, from, to } = resolvePage(page);
   const admin = createAdminClient();
   const term = search?.trim().toLowerCase();
@@ -166,7 +166,7 @@ export async function listAllUsers(
 // Full detail for one user, including org memberships, owned-event count,
 // events and previously granted benefits.
 export async function getUserDetail(userId: string): Promise<AdminUserDetail | null> {
-  await requireAdmin();
+  await requirePlatformPermission('manage_staff');
   const admin = createAdminClient();
 
   const { data: authData, error } = await admin.auth.admin.getUserById(userId);
@@ -284,7 +284,7 @@ async function platformAdminCount(): Promise<number> {
 // Grant or revoke the platform admin role. Revoke is guarded: the final admin
 // can never be demoted (which also prevents self-lockout).
 export async function setPlatformAdmin(userId: string, grant: boolean): Promise<void> {
-  const actor = await requireAdmin();
+  const actor = await requirePlatformPermission('manage_staff');
   const admin = createAdminClient();
 
   if (grant) {
@@ -330,7 +330,7 @@ export async function setPlatformAdmin(userId: string, grant: boolean): Promise<
 // Suspend (ban) or restore a user's login. Cannot suspend yourself or the last
 // platform admin.
 export async function setUserSuspended(userId: string, suspend: boolean): Promise<void> {
-  const actor = await requireAdmin();
+  const actor = await requirePlatformPermission('manage_staff');
   if (suspend && userId === actor.id) {
     throw new Error('לא ניתן להשהות את עצמך');
   }
@@ -376,7 +376,7 @@ export async function grantBillingCredit(input: {
   reason: string;
   campaignId?: string | null;
 }): Promise<void> {
-  const actor = await requireAdmin();
+  const actor = await requirePlatformPermission('manage_staff');
   if (!(input.amount > 0)) {
     throw new Error('סכום ההטבה חייב להיות חיובי');
   }

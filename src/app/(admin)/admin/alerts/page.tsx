@@ -16,7 +16,7 @@ import {
 } from '../_components';
 import { AlertsClient } from './alerts-client';
 
-// Admin: Slack operational-alerting configuration + history. requireAdmin() is
+// Admin: Slack operational-alerting configuration + history. requirePlatformPermission('manage_settings') is
 // enforced in the data layer (and the /admin layout). The bot token is NEVER
 // passed to the browser — getSlackAlertsView() returns only a `hasToken` boolean.
 

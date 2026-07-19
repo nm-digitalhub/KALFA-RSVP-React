@@ -7,7 +7,7 @@ import { PageHeading, EmptyState, Badge, Pagination, parsePageParam } from '../_
 export const metadata = { title: 'משתמשים' };
 
 // Admin user management — list of all platform users (search by email +
-// pagination). Authorization is enforced by the /admin layout (requireAdmin)
+// pagination). Authorization is enforced by the /admin layout (requirePlatformPermission)
 // and again in listAllUsers.
 export default async function AdminUsersPage({
   searchParams,

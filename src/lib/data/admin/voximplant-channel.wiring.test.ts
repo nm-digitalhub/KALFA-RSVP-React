@@ -3,7 +3,7 @@ import type { User } from '@supabase/supabase-js';
 
 vi.mock('server-only', () => ({}));
 vi.mock('@/lib/supabase/server', () => ({ createClient: vi.fn() }));
-vi.mock('@/lib/auth/dal', () => ({ requireAdmin: vi.fn() }));
+vi.mock('@/lib/auth/dal', () => ({ requirePlatformPermission: vi.fn() }));
 vi.mock('@/lib/data/voximplant-config', () => ({
   getVoximplantConfig: vi.fn(),
   envAllowsLiveCalls: vi.fn(() => true),
@@ -13,7 +13,7 @@ vi.mock('@/lib/voximplant/mutations', () => ({ setAccountCallbackUrl: vi.fn() })
 vi.mock('@/lib/url', () => ({ getAppUrl: vi.fn(async (p: string) => `https://beta.kalfa.me${p}`) }));
 
 import { createClient } from '@/lib/supabase/server';
-import { requireAdmin } from '@/lib/auth/dal';
+import { requirePlatformPermission } from '@/lib/auth/dal';
 import { getVoximplantConfig } from '@/lib/data/voximplant-config';
 import { getAccountInfo } from '@/lib/voximplant/core';
 import { setAccountCallbackUrl } from '@/lib/voximplant/mutations';
@@ -44,7 +44,7 @@ function supabaseDouble(selectData: Record<string, unknown> | null = null) {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  vi.mocked(requireAdmin).mockResolvedValue({ id: 'admin-1' } as unknown as User);
+  vi.mocked(requirePlatformPermission).mockResolvedValue({ id: 'admin-1' } as unknown as User);
   vi.mocked(getVoximplantConfig).mockResolvedValue(cfg as never);
 });
 

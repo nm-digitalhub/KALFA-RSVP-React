@@ -1,7 +1,7 @@
 {
     "type": "client",
-    "name": "schedule_callback",
-    "description": "כשהאורח מבקש שנחזור אליו במועד אחר (\"תחזרו אליי מחר\", \"עכשיו לא נוח\", \"בערב\", \"אחרי החג\") — קראי לכלי עם הזמן שהאורח ציין. אחרי שהכלי חוזר, אשרי בקצרה (\"מעולה, נחזור אליך\") וסיימי ב-end_call. מחזיר noted/queued.",
+    "name": "notify_owner",
+    "description": "מעביר שאלה/מסר/דגל לבעלי האירוע. לקרוא כשהאורח שואל שאלה שאין עליה תשובה במשתנים, מבקש בקשה מיוחדת, או מוסר ברכה. מחזיר noted בהצלחה.",
     "response_timeout_secs": 10,
     "disable_interruptions": false,
     "interruption_mode": "allow",
@@ -16,21 +16,27 @@
         "is_omitted": false,
         "type": "object",
         "required": [
-            "callback_when_text"
+            "kind",
+            "text"
         ],
         "properties": {
-            "callback_when_text": {
+            "kind": {
                 "type": "string",
-                "description": "הזמן שהאורח ציין לחזרה, כלשונו בעברית (\"מחר בערב\", \"אחרי שש\", \"ביום ראשון\")",
+                "description": "question=שאלה שדורשת מענה, message=מסר/ברכה, flag=דגל חריג (מספר שגוי, בקשת מחיקה)",
+                "enum": [
+                    "question",
+                    "message",
+                    "flag"
+                ],
                 "is_system_provided": false,
                 "dynamic_variable": "",
                 "allowed_values_dynamic_variable": "",
                 "constant_value": "",
                 "is_omitted": false
             },
-            "callback_iso": {
+            "text": {
                 "type": "string",
-                "description": "אופציונלי: הזמן ב-ISO 8601 אם ניתן להסיק במדויק, אחרת השאירי ריק",
+                "description": "ניסוח קצר בעברית של הפנייה, עד 500 תווים",
                 "is_system_provided": false,
                 "dynamic_variable": "",
                 "allowed_values_dynamic_variable": "",

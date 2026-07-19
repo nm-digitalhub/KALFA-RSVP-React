@@ -87,15 +87,35 @@ export async function POST(
     return bad(500); // nothing stored — the scenario will get ok:false and can retry
   }
 
-  // Synchronous best-effort write so the agent gets a truthful confirmation. On
-  // failure we still return 200 with ok:false — the durable row above lets the
-  // drain retry — and the agent softens its wording ("רשמתי, נעדכן").
-  let ok = false;
+  // Synchronous best-effort apply so the agent gets a TRUTHFUL confirmation.
+  // The response distinguishes three outcomes; HTTP 200 alone never means the
+  // RSVP was saved (it only means we accepted and durably captured the intent):
+  //
+  //   saved    — applied. The ONLY value that may be voiced as "נרשם".
+  //   rejected — submit_rsvp refused on business grounds. Terminal; retrying
+  //              cannot change it. The agent must not imply a later save.
+  //   queued   — a transient failure. The durable row above IS retried by the
+  //              drain, so this promise is real.
+  //
+  // `ok` is retained for backward compatibility with a scenario that has not
+  // been redeployed yet, and is true only for `saved`.
+  let applyStatus: 'saved' | 'rejected' | 'queued' = 'queued';
+  let reason: string | undefined;
   try {
-    ({ ok } = await processCallRsvp(attemptId, body));
+    const outcome = await processCallRsvp(attemptId, body);
+    applyStatus = outcome.status;
+    if (outcome.status === 'rejected') reason = outcome.reason;
   } catch {
-    ok = false;
+    // Thrown = transient (RPC/transport). The durable row drives the retry.
+    applyStatus = 'queued';
   }
 
-  return NextResponse.json({ ok }, { status: 200, headers: NO_STORE });
+  return NextResponse.json(
+    {
+      ok: applyStatus === 'saved',
+      status: applyStatus,
+      ...(reason ? { reason } : {}),
+    },
+    { status: 200, headers: NO_STORE },
+  );
 }

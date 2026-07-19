@@ -9,7 +9,7 @@ import {
 
 // Admin: contact-form submissions, paginated server-side. Personal data (name,
 // email, phone, message) is shown to authorized admins only — the page is
-// inside the requireAdmin()-gated admin layout and every query re-checks the
+// inside the requirePlatformPermission('view_customer_data')-gated admin layout and every query re-checks the
 // admin role server-side.
 
 export default async function AdminContactsPage({

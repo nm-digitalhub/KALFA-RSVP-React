@@ -3,7 +3,7 @@ import type { User } from '@supabase/supabase-js';
 
 import { createMockSupabase } from '@/test/supabase-mock';
 import { createClient } from '@/lib/supabase/server';
-import { requireAdmin } from '@/lib/auth/dal';
+import { requirePlatformPermission } from '@/lib/auth/dal';
 import {
   listActivity,
   recentActivity,
@@ -18,7 +18,7 @@ import {
 
 vi.mock('server-only', () => ({}));
 vi.mock('@/lib/supabase/server', () => ({ createClient: vi.fn() }));
-vi.mock('@/lib/auth/dal', () => ({ requireAdmin: vi.fn() }));
+vi.mock('@/lib/auth/dal', () => ({ requirePlatformPermission: vi.fn() }));
 
 function adminUser(): User {
   return { id: 'admin-1' } as unknown as User;
@@ -38,7 +38,7 @@ function row(overrides: Partial<ActivityEntry> = {}): ActivityEntry {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  vi.mocked(requireAdmin).mockResolvedValue(adminUser());
+  vi.mocked(requirePlatformPermission).mockResolvedValue(adminUser());
 });
 
 describe('listActivity', () => {
@@ -62,7 +62,7 @@ describe('listActivity', () => {
   });
 
   it('does NOT query when the admin gate redirects', async () => {
-    vi.mocked(requireAdmin).mockRejectedValueOnce(
+    vi.mocked(requirePlatformPermission).mockRejectedValueOnce(
       Object.assign(new Error('NEXT_REDIRECT'), { digest: 'NEXT_REDIRECT;' }),
     );
     const { client } = createMockSupabase<ActivityEntry[]>({

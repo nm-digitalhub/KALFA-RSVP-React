@@ -9,7 +9,7 @@ import { SettingsForm } from './settings-form';
 
 const sectionClass = 'space-y-4 rounded-lg border border-border bg-card p-5';
 
-// Admin system settings. requireAdmin() is enforced in the data layer (and the
+// Admin system settings. requirePlatformPermission('manage_settings') is enforced in the data layer (and the
 // /admin layout). Manages the clearing master switch + SUMIT provider keys
 // (edited via the form, masked with reveal), and shows a read-only health view
 // of the infra config that stays in env.

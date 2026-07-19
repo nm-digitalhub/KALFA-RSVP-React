@@ -3,7 +3,7 @@ import { PageHeading } from '../_components';
 import { TemplatesClient } from './templates-client';
 
 // Admin: outreach send-content the engine resolves by key (WhatsApp = the
-// Meta-approved template name; call = the script). requireAdmin() in the data
+// Meta-approved template name; call = the script). requirePlatformPermission('manage_settings') in the data
 // layer. Seeded FAIL-CLOSED (inactive) — a template sends only once it carries
 // content AND is activated here.
 export default async function AdminTemplatesPage() {

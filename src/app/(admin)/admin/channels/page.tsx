@@ -8,7 +8,7 @@ import { ChannelsClient } from './channels-client';
 const sectionClass = 'space-y-4 rounded-lg border border-border bg-card p-5';
 
 // Admin: guest-OUTREACH provider configuration (WhatsApp Cloud API; Voximplant
-// ships with C2). requireAdmin() is enforced in the data layer. Enabling a
+// ships with C2). requirePlatformPermission('manage_settings') is enforced in the data layer. Enabling a
 // channel turns on live, paid sends — the master switch is `outreach_enabled`.
 export default async function AdminChannelsPage() {
   const whatsapp = await getWhatsAppChannelConfig();

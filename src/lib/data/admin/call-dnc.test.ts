@@ -2,11 +2,11 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('server-only', () => ({}));
 vi.mock('@/lib/supabase/server', () => ({ createClient: vi.fn() }));
-vi.mock('@/lib/auth/dal', () => ({ requireAdmin: vi.fn() }));
+vi.mock('@/lib/auth/dal', () => ({ requirePlatformPermission: vi.fn() }));
 
 import { createMockSupabase } from '@/test/supabase-mock';
 import { createClient } from '@/lib/supabase/server';
-import { requireAdmin } from '@/lib/auth/dal';
+import { requirePlatformPermission } from '@/lib/auth/dal';
 import { addToCallDnc } from '@/lib/data/admin/call-dnc';
 
 function mock(error: { message: string } | null = null) {
@@ -19,9 +19,9 @@ function mock(error: { message: string } | null = null) {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  // requireAdmin returns the authenticated admin; addToCallDnc records its id as added_by.
-  vi.mocked(requireAdmin).mockResolvedValue({ id: 'admin-1' } as Awaited<
-    ReturnType<typeof requireAdmin>
+  // requirePlatformPermission returns the authenticated admin; addToCallDnc records its id as added_by.
+  vi.mocked(requirePlatformPermission).mockResolvedValue({ id: 'admin-1' } as Awaited<
+    ReturnType<typeof requirePlatformPermission>
   >);
 });
 

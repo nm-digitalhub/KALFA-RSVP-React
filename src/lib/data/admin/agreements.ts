@@ -1,7 +1,7 @@
 import 'server-only';
 
 import { createAdminClient } from '@/lib/supabase/admin';
-import { requireAdmin } from '@/lib/auth/dal';
+import { requirePlatformPermission } from '@/lib/auth/dal';
 import { logActivity } from '@/lib/data/activity';
 import { getActiveAgreementDoc } from '@/lib/data/agreements-doc';
 import type { AgreementDoc } from '@/lib/agreements/template';
@@ -16,7 +16,7 @@ export interface AdminAgreement extends AgreementDoc {
 }
 
 export async function getAgreementForAdmin(): Promise<AdminAgreement> {
-  await requireAdmin();
+  await requirePlatformPermission('manage_settings');
   const admin = createAdminClient();
   const { data } = await admin
     .from('agreement_documents')
@@ -41,7 +41,7 @@ export async function updateAgreement(input: {
   version: string;
   bodyHtml: string | null;
 }): Promise<void> {
-  await requireAdmin();
+  await requirePlatformPermission('manage_settings');
   const admin = createAdminClient();
   const body = input.bodyHtml && input.bodyHtml.trim() !== '' ? input.bodyHtml : null;
   const { error } = await admin
@@ -64,7 +64,7 @@ export async function updateAgreement(input: {
 // Approve the active document: status → approved (the renderer drops the draft
 // marker) and the (possibly renamed, draft-free) version is recorded.
 export async function approveAgreement(version: string): Promise<void> {
-  const actor = await requireAdmin();
+  const actor = await requirePlatformPermission('manage_settings');
   const admin = createAdminClient();
   const { error } = await admin
     .from('agreement_documents')
@@ -81,7 +81,7 @@ export async function approveAgreement(version: string): Promise<void> {
 
 // Discard a custom body and return to the vetted in-code default (as a draft).
 export async function revertAgreementToTemplate(): Promise<void> {
-  await requireAdmin();
+  await requirePlatformPermission('manage_settings');
   const admin = createAdminClient();
   const { error } = await admin
     .from('agreement_documents')

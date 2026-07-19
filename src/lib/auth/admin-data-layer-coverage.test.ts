@@ -58,10 +58,37 @@ function splitIntoFunctionBlocks(source: string): { name: string; body: string }
   }));
 }
 
-describe('admin data-layer functions gate on requireAdmin()', () => {
+// The gates a data-layer function may use. `requireAdmin` is the coarse "is this
+// person staff at all" check; `requirePlatformPermission` is the fine-grained
+// capability from the /admin/roles matrix; `requirePlatformOwner` is owner-only.
+const GATES = [
+  'requireAdmin',
+  'requirePlatformOwner',
+  'requirePlatformPermission',
+] as const;
+
+// The permission each module is expected to enforce. Pinning this (rather than
+// only "some gate exists") is what makes a SILENT downgrade fail CI: swapping a
+// module from `manage_staff` to `view_activity_log`, or back to a bare
+// requireAdmin, now breaks the build instead of quietly widening access.
+// A module absent from this map may use any gate in GATES.
+const EXPECTED_PERMISSION: Record<string, string> = {
+  'src/lib/data/admin/activity.ts': 'view_activity_log',
+  'src/lib/data/admin/agreements.ts': 'manage_settings',
+  'src/lib/data/admin/callbacks.ts': 'view_customer_data',
+  'src/lib/data/admin/channels.ts': 'manage_settings',
+  'src/lib/data/admin/contacts.ts': 'view_customer_data',
+  'src/lib/data/admin/packages.ts': 'manage_billing',
+  'src/lib/data/admin/settings.ts': 'manage_settings',
+  'src/lib/data/admin/users.ts': 'manage_staff',
+  'src/lib/data/admin/webhook-inbox.ts': 'view_webhooks',
+};
+
+describe('admin data-layer functions are gated', () => {
   for (const [relPath, exempt] of Object.entries(EXEMPT)) {
     const source = readFileSync(join(ROOT, relPath), 'utf8');
     const blocks = splitIntoFunctionBlocks(source);
+    const expectedKey = EXPECTED_PERMISSION[relPath];
 
     it(`${relPath} exports at least one async function to check`, () => {
       expect(blocks.length).toBeGreaterThan(0);
@@ -74,8 +101,18 @@ describe('admin data-layer functions gate on requireAdmin()', () => {
         });
         continue;
       }
-      it(`${relPath}: ${name} calls requireAdmin()`, () => {
-        expect(body).toContain('requireAdmin');
+      it(`${relPath}: ${name} calls an authorization gate`, () => {
+        expect(GATES.some((g) => body.includes(g))).toBe(true);
+      });
+    }
+
+    if (expectedKey) {
+      it(`${relPath}: enforces '${expectedKey}' and no other permission`, () => {
+        const used = [
+          ...source.matchAll(/requirePlatformPermission\('([a-z_.]+)'\)/g),
+        ].map((m) => m[1]);
+        expect(used.length).toBeGreaterThan(0);
+        expect([...new Set(used)]).toEqual([expectedKey]);
       });
     }
 

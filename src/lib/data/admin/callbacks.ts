@@ -1,7 +1,7 @@
 import 'server-only';
 
 import { createClient } from '@/lib/supabase/server';
-import { requireAdmin } from '@/lib/auth/dal';
+import { requirePlatformPermission } from '@/lib/auth/dal';
 import { logActivity } from '@/lib/data/activity';
 import type { Database } from '@/lib/supabase/types';
 import type { CallbackStatus } from '@/lib/validation/admin';
@@ -26,7 +26,7 @@ export const CALLBACK_COLUMNS =
 export async function listCallbackRequests(
   { page }: PageParams = {},
 ): Promise<PageResult<CallbackRequest>> {
-  await requireAdmin();
+  await requirePlatformPermission('view_customer_data');
 
   const { page: safePage, pageSize, from, to } = resolvePage(page);
 
@@ -57,7 +57,7 @@ export async function updateCallbackStatus(
   id: string,
   status: CallbackStatus,
 ): Promise<void> {
-  await requireAdmin();
+  await requirePlatformPermission('view_customer_data');
 
   const supabase = await createClient();
   const { data: current, error: currentError } = await supabase
