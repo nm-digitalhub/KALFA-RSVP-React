@@ -2,6 +2,7 @@ import 'server-only';
 
 import { createAdminClient } from '@/lib/supabase/admin';
 import { requirePlatformPermission } from '@/lib/auth/dal';
+import { recordStaffAccess } from '@/lib/data/admin/access-log';
 import { countActiveCalls } from '@/lib/data/call-attempts';
 import { resolvePage, type PageResult } from '@/lib/data/admin/shared';
 import { getVoximplantConfig } from '@/lib/data/voximplant-config';
@@ -238,8 +239,25 @@ export async function listCallAttemptsForEvent(
   eventId: string,
   params: { page?: number } = {},
 ): Promise<PageResult<EventCallAttemptRow>> {
-  await requirePlatformPermission('manage_voice');
+  const staff = await requirePlatformPermission('manage_voice');
   const admin = createAdminClient();
+  // Targeted read of one customer's call attempts (which carry transcript/recording
+  // presence) — audit it. Operational (manage_voice), so no break-glass reason.
+  const { data: ownerRow } = await admin
+    .from('events')
+    .select('owner_id')
+    .eq('id', eventId)
+    .maybeSingle();
+  if (ownerRow) {
+    await recordStaffAccess({
+      staffId: staff.id,
+      permission: 'manage_voice',
+      subjectType: 'call_attempts',
+      subjectId: eventId,
+      ownerId: ownerRow.owner_id,
+      eventId,
+    });
+  }
   const { page, pageSize, from, to } = resolvePage(params.page);
   // recording_url/transcript appear ONLY inside boolean presence expressions —
   // never returned as values (the select still must name them to test presence,

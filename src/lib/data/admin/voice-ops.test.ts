@@ -5,6 +5,7 @@ vi.mock('server-only', () => ({}));
 vi.mock('@/lib/auth/dal', () => ({ requirePlatformPermission: vi.fn() }));
 vi.mock('@/lib/supabase/admin', () => ({ createAdminClient: vi.fn() }));
 vi.mock('@/lib/data/call-attempts', () => ({ countActiveCalls: vi.fn() }));
+vi.mock('@/lib/data/admin/access-log', () => ({ recordStaffAccess: vi.fn() }));
 
 import { requirePlatformPermission } from '@/lib/auth/dal';
 import { createAdminClient } from '@/lib/supabase/admin';
@@ -92,8 +93,16 @@ describe('listCallAttemptsForEvent — requirePlatformPermission + PII column gu
         count: 1,
         error: null,
       });
+    // The fn now resolves the event owner (for the audit) before reading attempts.
+    const eventsBuilder = {
+      select: vi.fn(() => eventsBuilder),
+      eq: vi.fn(() => eventsBuilder),
+      maybeSingle: vi.fn(async () => ({ data: { owner_id: 'o1' }, error: null })),
+    };
     vi.mocked(createAdminClient).mockReturnValue({
-      from: vi.fn(() => builder),
+      from: vi.fn((table: string) =>
+        table === 'events' ? eventsBuilder : builder,
+      ),
     } as unknown as ReturnType<typeof createAdminClient>);
 
     const res = await listCallAttemptsForEvent('e1');

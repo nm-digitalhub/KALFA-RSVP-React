@@ -2533,27 +2533,36 @@ export type Database = {
       support_access_log: {
         Row: {
           accessed_at: string
-          event_id: string
+          event_id: string | null
           id: string
           owner_id: string | null
-          reason: string
+          permission: string | null
+          reason: string | null
           staff_id: string
+          subject_id: string | null
+          subject_type: string | null
         }
         Insert: {
           accessed_at?: string
-          event_id: string
+          event_id?: string | null
           id?: string
           owner_id?: string | null
-          reason: string
+          permission?: string | null
+          reason?: string | null
           staff_id: string
+          subject_id?: string | null
+          subject_type?: string | null
         }
         Update: {
           accessed_at?: string
-          event_id?: string
+          event_id?: string | null
           id?: string
           owner_id?: string | null
-          reason?: string
+          permission?: string | null
+          reason?: string | null
           staff_id?: string
+          subject_id?: string | null
+          subject_type?: string | null
         }
         Relationships: [
           {

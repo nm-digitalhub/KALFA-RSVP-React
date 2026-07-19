@@ -84,6 +84,33 @@ const EXPECTED_PERMISSION: Record<string, string> = {
   'src/lib/data/admin/webhook-inbox.ts': 'view_webhooks',
 };
 
+// Targeted readers of an identified customer subject that MUST record a
+// staff-access audit row (Step-2 audit layer). A new such reader shipping without
+// an audit call — the exact gap that let staff data-access go dark — fails here.
+// support.ts's own two event-view readers audit via a direct support_access_log
+// insert (pre-dating the helper); the rest go through recordStaffAccess.
+const AUDIT_REQUIRED: Record<string, string[]> = {
+  'src/lib/data/admin/campaigns.ts': ['getEventForAdminView'],
+  'src/lib/data/admin/voice-ops.ts': ['listCallAttemptsForEvent'],
+};
+
+describe('targeted admin readers record a staff-access audit', () => {
+  for (const [relPath, fns] of Object.entries(AUDIT_REQUIRED)) {
+    const source = readFileSync(join(ROOT, relPath), 'utf8');
+    const blocks = splitIntoFunctionBlocks(source);
+    for (const fn of fns) {
+      it(`${relPath}: ${fn} calls recordStaffAccess before returning data`, () => {
+        const block = blocks.find((b) => b.name === fn);
+        expect(block, `${fn} not found in ${relPath}`).toBeDefined();
+        expect(
+          block!.body.includes('recordStaffAccess') ||
+            block!.body.includes('support_access_log'),
+        ).toBe(true);
+      });
+    }
+  }
+});
+
 describe('admin data-layer functions are gated', () => {
   for (const [relPath, exempt] of Object.entries(EXEMPT)) {
     const source = readFileSync(join(ROOT, relPath), 'utf8');
