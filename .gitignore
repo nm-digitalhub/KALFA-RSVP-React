@@ -76,3 +76,4 @@ storage_state.json
 
 # personal tax certificate (PII: ID number + home address) — NEVER commit
 /taxes.pdf
+.claude/skills/elevenlabs-docs.zip

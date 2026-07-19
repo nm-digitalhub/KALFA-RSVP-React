@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { User } from '@supabase/supabase-js';
 
 import { createMockSupabase } from '@/test/supabase-mock';
-import { createClient } from '@/lib/supabase/server';
+import { createAdminClient } from '@/lib/supabase/admin';
 import { requirePlatformPermission } from '@/lib/auth/dal';
 import {
   listContactMessages,
@@ -11,7 +11,7 @@ import {
 } from './contacts';
 
 vi.mock('server-only', () => ({}));
-vi.mock('@/lib/supabase/server', () => ({ createClient: vi.fn() }));
+vi.mock('@/lib/supabase/admin', () => ({ createAdminClient: vi.fn() }));
 vi.mock('@/lib/auth/dal', () => ({ requirePlatformPermission: vi.fn() }));
 
 const ADMIN_ID = 'admin-1';
@@ -43,8 +43,8 @@ describe('listContactMessages', () => {
       error: null,
       count: 0,
     });
-    vi.mocked(createClient).mockResolvedValue(
-      client as unknown as Awaited<ReturnType<typeof createClient>>,
+    vi.mocked(createAdminClient).mockReturnValue(
+      client as unknown as ReturnType<typeof createAdminClient>,
     );
 
     await listContactMessages();
@@ -61,8 +61,8 @@ describe('listContactMessages', () => {
       data: [],
       error: null,
     });
-    vi.mocked(createClient).mockResolvedValue(
-      client as unknown as Awaited<ReturnType<typeof createClient>>,
+    vi.mocked(createAdminClient).mockReturnValue(
+      client as unknown as ReturnType<typeof createAdminClient>,
     );
 
     await expect(listContactMessages()).rejects.toThrow('NEXT_REDIRECT');
@@ -75,8 +75,8 @@ describe('listContactMessages', () => {
       error: null,
       count: 1,
     });
-    vi.mocked(createClient).mockResolvedValue(
-      client as unknown as Awaited<ReturnType<typeof createClient>>,
+    vi.mocked(createAdminClient).mockReturnValue(
+      client as unknown as ReturnType<typeof createAdminClient>,
     );
 
     const result = await listContactMessages();
@@ -95,8 +95,8 @@ describe('listContactMessages', () => {
       error: null,
       count: 100,
     });
-    vi.mocked(createClient).mockResolvedValue(
-      client as unknown as Awaited<ReturnType<typeof createClient>>,
+    vi.mocked(createAdminClient).mockReturnValue(
+      client as unknown as ReturnType<typeof createAdminClient>,
     );
 
     const result = await listContactMessages({ page: 2 });
@@ -112,8 +112,8 @@ describe('listContactMessages', () => {
       data: null,
       error: { message: 'db exploded' },
     });
-    vi.mocked(createClient).mockResolvedValue(
-      client as unknown as Awaited<ReturnType<typeof createClient>>,
+    vi.mocked(createAdminClient).mockReturnValue(
+      client as unknown as ReturnType<typeof createAdminClient>,
     );
 
     await expect(listContactMessages()).rejects.toThrow('טעינת הפניות נכשלה');

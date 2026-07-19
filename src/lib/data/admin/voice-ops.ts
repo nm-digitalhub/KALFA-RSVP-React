@@ -467,3 +467,37 @@ export async function getVoicePlatformView(nowMs: number = Date.now()): Promise<
 
   return { balance, callLists, audit, allowlist, wiring };
 }
+
+// Admin recordings list (/admin/recordings). Extracted from the page so it lives
+// behind a tested, service-role seam like every other admin call_attempts read —
+// this is the one surface that intentionally exposes recording_url (guest voice),
+// gated on the most restrictive permission (view_recordings, owner-only). The
+// column list is fixed and explicit so a future `select('*')` can never leak
+// access_token/transcript into the page. RLS does NOT scope this (service_role);
+// the gate is the authorization, exactly as it was under the dropped
+// call_attempts_admin_read policy.
+export interface CallRecordingRow {
+  id: string;
+  campaign_id: string | null;
+  event_id: string | null;
+  status: string;
+  finish_reason: string | null;
+  call_duration_sec: number | null;
+  recording_url: string | null;
+  recording_started_at: string | null;
+  created_at: string;
+}
+
+export async function listCallRecordings(limit = 100): Promise<CallRecordingRow[]> {
+  await requirePlatformPermission('view_recordings');
+  const admin = createAdminClient();
+  const { data, error } = await admin
+    .from('call_attempts')
+    .select(
+      'id, campaign_id, event_id, status, finish_reason, call_duration_sec, recording_url, recording_started_at, created_at',
+    )
+    .order('created_at', { ascending: false })
+    .limit(Math.min(Math.max(limit, 1), 200));
+  if (error) throw new Error('טעינת ההקלטות נכשלה');
+  return (data ?? []) as CallRecordingRow[];
+}

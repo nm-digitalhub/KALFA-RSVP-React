@@ -1,6 +1,6 @@
 import 'server-only';
 
-import { createClient } from '@/lib/supabase/server';
+import { createAdminClient } from '@/lib/supabase/admin';
 import { requirePlatformPermission } from '@/lib/auth/dal';
 import { callbackStatusLabel } from '@/lib/data/admin/labels';
 import type { Database } from '@/lib/supabase/types';
@@ -435,7 +435,7 @@ export async function listActivity(
   const { page: safePage, pageSize, from: offsetFrom, to: offsetTo } = resolvePage(page);
   const dateBounds = buildDateBounds(from, to);
 
-  const supabase = await createClient();
+  const supabase = createAdminClient();
   let query = supabase
     .from('activity_log')
     .select(ACTIVITY_COLUMNS, { count: 'exact' })
@@ -498,7 +498,7 @@ export async function listActivityActorOptions(
   await requirePlatformPermission('view_activity_log');
 
   const safeLimit = Math.min(Math.max(Math.floor(limit), 1), 200);
-  const supabase = await createClient();
+  const supabase = createAdminClient();
   const { data, error } = await supabase
     .from('activity_log')
     .select('user_id')
@@ -531,7 +531,7 @@ export async function resolveActivityActors(
     return new Map();
   }
 
-  const supabase = await createClient();
+  const supabase = createAdminClient();
   const { data, error } = await supabase
     .from('profiles')
     .select('id, full_name')
@@ -556,7 +556,7 @@ export async function recentActivity(limit = 5): Promise<ActivityEntry[]> {
 
   const safeLimit = Math.min(Math.max(Math.floor(limit), 1), 20);
 
-  const supabase = await createClient();
+  const supabase = createAdminClient();
   const { data, error } = await supabase
     .from('activity_log')
     .select(ACTIVITY_COLUMNS)
