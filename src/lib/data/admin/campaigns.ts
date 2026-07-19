@@ -4,6 +4,7 @@ import { notFound } from 'next/navigation';
 
 import { createAdminClient } from '@/lib/supabase/admin';
 import { requirePlatformPermission } from '@/lib/auth/dal';
+import { recordStaffAccess } from '@/lib/data/admin/access-log';
 import type { OwnedEvent } from '@/lib/data/events';
 import type { CampaignStatus } from '@/lib/data/campaign-status';
 
@@ -22,8 +23,29 @@ const ADMIN_EVENT_COLUMNS = 'id, name, status, event_type, event_date, rsvp_dead
 // via requireAdmin() instead of can_access_event(). Does NOT weaken the
 // owner/org path — the page picks this only for admins.
 export async function getEventForAdminView(eventId: string): Promise<OwnedEvent> {
-  await requirePlatformPermission('manage_billing');
+  const staff = await requirePlatformPermission('manage_billing');
   const admin = createAdminClient();
+  // Resolve the owner first, then audit (fail-closed), then read the event — a
+  // targeted cross-tenant read of one customer's event must be observable. This is
+  // an operational read (manage_billing, staff doing their defined job on this
+  // event), so no break-glass reason is required.
+  const { data: ownerRow } = await admin
+    .from('events')
+    .select('owner_id')
+    .eq('id', eventId)
+    .maybeSingle();
+  if (!ownerRow) {
+    notFound();
+  }
+  await recordStaffAccess({
+    staffId: staff.id,
+    permission: 'manage_billing',
+    subjectType: 'event',
+    subjectId: eventId,
+    ownerId: ownerRow.owner_id,
+    eventId,
+  });
+
   const { data, error } = await admin
     .from('events')
     .select(ADMIN_EVENT_COLUMNS)
