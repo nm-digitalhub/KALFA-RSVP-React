@@ -298,3 +298,20 @@ The scenario POSTs `cb` with no signature `[VERIFIED]`. Mitigations, in the endp
 4. **Shared `outreach_enabled` with two admin forms** — ensure each form patches only its own creds + the shared flag; one-line guard comment.
 5. **Legal/DNC** (§3.3) — hard blocker for real calls, independent of code.
 6. Real calls, transcripts, recordings = personal data + PSTN cost — every step is behind config + explicit approval per CLAUDE.md.
+
+---
+
+## 10. נספח 2026-07-19 — דלתאות ממחקר הדוקומנטציה המלא
+
+מקור: `docs/voximplant/` (מחקר כל 2,147 עמודי הדוקס + Kit API ע"י 36 סוכנים; דו"ח מלא: `docs/voximplant/FINAL-voximplant-docs-research.md`). שינויים והכרעות מול הכתוב לעיל:
+
+1. **§3.1 (תקרת 200 בתים) — נפתר ארכיטקטונית, לא רק אמפירית**: התקרה אושרה כתועדת ברמת `VoxEngine.customData()`/`Call.customData()` (200 בתים, כלל־פלטפורמית), אך **CallList עוקף אותה לחלוטין** — כל שורת CSV נושאת `custom_data` פר־אורח ללא תקרה מעשית ומגיעה דרך `VoxEngine.customData()`. המשמעות: Branch A/B מפסיק להיות ה־gate — אימוץ CallList מייתר את הדחיסה. עוקפים נוספים: KeyValueStorage (ערך ≤2000 תווים, TTL 90 יום), POST ל־`media_session_access_secure_url` (מרים `AppEvents.HttpRequest` בסשן חי — גם kill-switch ל־stuck-call reconciler).
+2. **מסלול קמפיינים מומלץ: CallList** במקום/לצד StartScenarios פר־שיחה: `CreateCallList` (rule_id, `num_attempts`≤5, `max_simultaneous`, interval), `AppendToCallList` לאורחים מאוחרים (סוגר ברמת החיוג את בעיית ה־late-added), `CancelCallListTask` (אורח ענה ב־WhatsApp), `StopCallListProcessing`/`RecoverCallList` (pause/resume), `GetCallListDetails(output=json)` (סטטוס+result_data פר־אורח). **חוזה מחייב בתרחיש**: `reportResult`/`reportError` בכל מסלול יציאה — יציאה שקטה = הצלחה בלי retry; `requestNextAttempt` עם `next_attempt_time` = מימוש מתועד ל־schedule_callback. חלונות `__start/__end_execution_time` ב־**UTC+0** (להמיר מ־Asia/Jerusalem). הרשימה נעצרת כשהיתרה < $1.
+3. **§7 (cb לא חתום)**: `Crypto.hmac_sha256` קיים נטיבית ב־VoxEngine — HMAC אמיתי אפשרי בעת redeploy הבא של התרחיש (Branch B כבר ממתין ל־redeploy); עד אז המיטיגציות הקיימות בתוקף.
+4. **מפתח Groq**: לעבור ל־Secrets API + `VoxEngine.getSecretValue` — מייתר את הגשת המפתח דרך ctx (סוגר את החשיפה בהיסטוריית שיחות) ופותר את רוטציית המפתח שדלף בלי redeploy. שדרוג הגשר: `OpenAI.ChatCompletionsAPIClient({baseUrl})` הוא המסלול המתועד ל־BYO-LLM (תאימות Groq — לאימות חי; `storeContext:true` מסכם עם gpt-4o כברירת מחדל — להגדיר `summaryModel`).
+5. **ASR עברי**: `ASRParameters.singleUtterance` דיפולט **false** — לשיחת תורות RSVP כנראה נדרש true (לבדוק מול התרחיש החי); פרופיל Google הוא `iw_IL` (קוד legacy) עם מודל `phone_call`; `phraseHints` (Google בלבד) לכיוון כן/לא/אולי/שמות.
+6. **זיהוי משיבון**: אין AMD לישראל (מודלים: BR/CL/CO/ES/EU_GENERAL/KZ/MX/PE/PH/RU/US). לחיוב per-reached לא להסתמך על AMD; שילוב `Connected/Disconnected`(cost+duration) + `enableBeepDetection` (מבוסס תדרים, לא מוגבל־מדינה) + DTMF "הקש 1" (`Modules.IVR`/`IVRState`) + זיהוי שיחתי בגשר.
+7. **רקונסיליאציה**: `GetCallHistory` בסינון `call_session_history_id` (batch ≤1000) — `CallInfoType.successful`+cost+duration+`finish_reason` ('Insufficient funds' נתפס שם); לוגי session פגים אחרי **חודש** — ההתמדה שלנו היא המקור היחיד.
+8. **תפעול**: `MinBalanceCallback` (`SetAccountInfo(callback_url)`) → Slack ops; `GetAccountInfo(return_live_balance)`; `getMediaResources?with_jsservers` = מקור ה־allowlist ל־IONOS; `OutboundTestNumbers` = בדיקות outbound חינם למספר מאומת; מקס' 200 StartScenarios מקביליים (429), backoff על 340/515.
+9. **QA**: `Call.record({stereo:true})` — אורח/בוט בערוצי L/R נפרדים (מסלול מוכן ל־voice-call-qa-analyst; ברירת retention 3 חודשים, לבחון `secure`+PII); Web SDK v5 כ־harness לחיוג לתרחיש בלי עלות PSTN.
+10. **לא לאמץ**: Kit (מוצר נפרד, מיגרציה מלאה, עברית חלשה — פירוט ב־`digest-kit-sdk.md`), Avatar (NLU מוטה־RU), Deepgram כ־ASR (אין עברית). כן לשקף: תבניות DNC/retry/completion-codes של Kit ("רק Call_Answered=Successful" — קריטריון reached).
