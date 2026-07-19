@@ -11,6 +11,7 @@ vi.mock('@/lib/data/call-attempts', () => ({
   getGuestRsvpToken: vi.fn(),
   recordCallOutcome: vi.fn(),
   recordRsvpFromCall: vi.fn(),
+  recordRsvpCallRejected: vi.fn(),
 }));
 // createAdminClient is used by the DNC upsert + owner-note insert. A minimal
 // chainable stub: from(table).upsert/insert resolve {error:null} by default.
@@ -44,6 +45,7 @@ import {
   getGuestRsvpToken,
   recordCallOutcome,
   recordRsvpFromCall,
+  recordRsvpCallRejected,
 } from '@/lib/data/call-attempts';
 import { insertInteraction, setContactOpStatus } from '@/lib/data/interactions';
 import { writeReach } from '@/lib/data/outreach-engine';
@@ -190,7 +192,7 @@ describe('processCallRsvp (Tier 2 save_rsvp)', () => {
     const r = await processCallRsvp(AID, { attending: true, adults: 2, children: 3 });
     expect(submitRsvp).toHaveBeenCalledWith('tok', { status: 'attending', adults: 2, kids: 3 });
     expect(recordRsvpFromCall).toHaveBeenCalledWith('ev1', 'g1', 'attending', AID);
-    expect(r).toEqual({ ok: true });
+    expect(r).toEqual({ status: 'saved' });
   });
 
   it('declined → submitRsvp status declined with adults/kids zeroed', async () => {
@@ -214,14 +216,26 @@ describe('processCallRsvp (Tier 2 save_rsvp)', () => {
   it('attempt not bound to exactly one guest (guest_id null) → ok:false, no RSVP write', async () => {
     vi.mocked(getCallAttemptById).mockResolvedValue({ ...ATTEMPT, guest_id: null } as never);
     const r = await processCallRsvp(AID, { attending: true, adults: 1, children: 0 });
-    expect(r).toEqual({ ok: false });
+    expect(r).toEqual({ status: 'rejected', reason: 'not_found' });
     expect(submitRsvp).not.toHaveBeenCalled();
   });
 
   it('submitRsvp rejects (closed/revoked token) → ok:false, no source marker', async () => {
     vi.mocked(submitRsvp).mockResolvedValue({ ok: false, reason: 'closed' } as never);
     const r = await processCallRsvp(AID, { attending: true, adults: 1, children: 0 });
-    expect(r).toEqual({ ok: false });
+    // The RPC's refusal reason must survive to the caller — dropping it is what
+    // let a permanently-rejected RSVP be reported to the guest as "queued".
+    expect(r).toEqual({ status: 'rejected', reason: 'closed' });
+    // The refusal must reach the owner-visible activity feed. Previously it was
+    // discarded, the queue row was marked processed, and the guest was told "נרשם".
+    expect(recordRsvpCallRejected).toHaveBeenCalledWith(
+      'ev1',
+      'g1',
+      'attending',
+      'closed',
+      AID,
+    );
+    expect(recordRsvpFromCall).not.toHaveBeenCalled();
     expect(recordRsvpFromCall).not.toHaveBeenCalled();
   });
 
@@ -240,7 +254,7 @@ describe('processCallRsvp (Tier 2 save_rsvp)', () => {
     const r = await processCallRsvp(AID, { status: 'maybe', adults: 2, children: 1 });
     expect(submitRsvp).toHaveBeenCalledWith('tok', { status: 'maybe', adults: 0, kids: 0 });
     expect(recordRsvpFromCall).toHaveBeenCalledWith('ev1', 'g1', 'maybe', AID);
-    expect(r).toEqual({ ok: true });
+    expect(r).toEqual({ status: 'saved' });
   });
 
   it('canonical status attending → counts pass through', async () => {

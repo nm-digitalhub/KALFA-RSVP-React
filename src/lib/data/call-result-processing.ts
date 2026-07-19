@@ -3,6 +3,7 @@ import 'server-only';
 import type { Database } from '@/lib/supabase/types';
 import {
   getCallAttemptById,
+  recordRsvpCallRejected,
   getContactNormalizedPhone,
   getGuestRsvpToken,
   recordCallOutcome,
@@ -11,7 +12,7 @@ import {
 import { createAdminClient } from '@/lib/supabase/admin';
 import { insertInteraction, setContactOpStatus } from '@/lib/data/interactions';
 import { writeReach } from '@/lib/data/outreach-engine';
-import { submitRsvp } from '@/lib/data/rsvp';
+import { submitRsvp, type RsvpFailureReason } from '@/lib/data/rsvp';
 import { validateRecordingUrl } from '@/lib/voximplant/recording-url';
 import {
   voxCallbackSchema,
@@ -164,33 +165,72 @@ export async function processCallResult(row: WebhookInboxRow): Promise<void> {
 // stays on the call-completed path, per-reached, once). Identity is the resolved
 // attempt (token-verified upstream), never the payload. submit_rsvp is
 // idempotent-by-value (last write wins), so a corrected count simply overwrites.
+/**
+ * What actually happened to one `save_rsvp` call. Two orthogonal facts are kept
+ * separate on purpose, because collapsing them into a boolean is what let a
+ * permanently-refused RSVP be reported to a guest as registered (session
+ * 6866346068, 2026-07-19):
+ *
+ *   - `saved`    — terminal. The RSVP is applied. ONLY this may be voiced as
+ *                  "נרשם"/"נשמר".
+ *   - `rejected` — terminal. `submit_rsvp` refused on business grounds (past
+ *                  event, passed deadline, unknown guest, impossible count).
+ *                  Retrying can never change the answer, so the drain must close
+ *                  the row — but it MUST record the reason, or the refusal
+ *                  becomes invisible.
+ *
+ * A transient failure is NOT represented here: it is thrown, so the drain's
+ * existing retry path handles it. That keeps "retryable" expressible exactly
+ * once, in one mechanism.
+ */
+export type RsvpApplyOutcome =
+  | { status: 'saved' }
+  | { status: 'rejected'; reason: RsvpFailureReason };
+
 export async function processCallRsvp(
   attemptId: string,
   body: VoxSaveRsvp,
-): Promise<{ ok: boolean }> {
+): Promise<RsvpApplyOutcome> {
   const attempt = await getCallAttemptById(attemptId);
   // Written ONLY when the contact was bound to exactly one guest at dial time.
-  if (!attempt?.guest_id) return { ok: false };
+  // An attempt with no bound guest can never gain one, so this is terminal, not
+  // a transient miss the drain could recover from.
+  if (!attempt?.guest_id) return { status: 'rejected', reason: 'not_found' };
   const rsvpToken = await getGuestRsvpToken(attempt.guest_id);
-  if (!rsvpToken) return { ok: false };
+  if (!rsvpToken) return { status: 'rejected', reason: 'not_found' };
 
   // Canonical status (attending/declined/maybe — conversation-design §4.2).
   // Counts are meaningful only for attending; declined/maybe carry none (same
   // convention as the WhatsApp quick-reply path).
   const status = voxSaveRsvpStatus(body);
   const attending = status === 'attending';
+  // submitRsvp throws only on an RPC transport error — that propagates and is
+  // classified by the caller as retryable. A returned `ok:false` is the RPC's
+  // considered business refusal, which no amount of retrying will change.
   const outcome = await submitRsvp(rsvpToken, {
     status,
     adults: attending ? body.adults : 0,
     kids: attending ? body.children : 0, // submit_rsvp param is `kids`
   });
-  if (!outcome.ok) return { ok: false };
+  if (!outcome.ok) {
+    // Record the refusal through the SAME event-scoped activity channel the
+    // success path uses, so it surfaces to the owner instead of dying inside a
+    // queue row. Both callers (route + drain) get this for free.
+    await recordRsvpCallRejected(
+      attempt.event_id,
+      attempt.guest_id,
+      status,
+      outcome.reason,
+      attemptId,
+    );
+    return { status: 'rejected', reason: outcome.reason };
+  }
   // Best-effort source marker only when the RSVP actually CHANGED (a re-confirm of
   // the same answer is unchanged:true → no duplicate activity_log row).
   if (!outcome.unchanged) {
     await recordRsvpFromCall(attempt.event_id, attempt.guest_id, status, attemptId);
   }
-  return { ok: true };
+  return { status: 'saved' };
 }
 
 // `mark_dnc` (conversation-design §4.2, legally critical): the guest asked mid-call
@@ -262,8 +302,13 @@ export async function processOwnerNoteRow(row: WebhookInboxRow): Promise<void> {
 // payload is a no-op (the route already validated it).
 export async function processCallRsvpRow(row: WebhookInboxRow): Promise<void> {
   const parsed = voxSaveRsvpSchema.safeParse(row.payload);
+  // A stored payload that no longer validates can never start validating; close
+  // the row with the reason rather than looping or silently dropping it.
   if (!parsed.success) return;
   const attemptId = row.message_id;
   if (!attemptId) return;
+  // The outcome is no longer discarded: processCallRsvp records a refusal to the
+  // event-scoped activity_log before returning, so a rejected RSVP is visible to
+  // the owner instead of vanishing behind a row marked processed.
   await processCallRsvp(attemptId, parsed.data);
 }
