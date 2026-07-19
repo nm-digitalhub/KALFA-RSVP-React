@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { User } from '@supabase/supabase-js';
 
 import { createMockSupabase } from '@/test/supabase-mock';
-import { createClient } from '@/lib/supabase/server';
+import { createAdminClient } from '@/lib/supabase/admin';
 import { requirePlatformPermission } from '@/lib/auth/dal';
 import {
   listActivity,
@@ -17,7 +17,7 @@ import {
 } from './activity';
 
 vi.mock('server-only', () => ({}));
-vi.mock('@/lib/supabase/server', () => ({ createClient: vi.fn() }));
+vi.mock('@/lib/supabase/admin', () => ({ createAdminClient: vi.fn() }));
 vi.mock('@/lib/auth/dal', () => ({ requirePlatformPermission: vi.fn() }));
 
 function adminUser(): User {
@@ -48,8 +48,8 @@ describe('listActivity', () => {
       error: null,
       count: 1,
     });
-    vi.mocked(createClient).mockResolvedValue(
-      client as unknown as Awaited<ReturnType<typeof createClient>>,
+    vi.mocked(createAdminClient).mockReturnValue(
+      client as unknown as ReturnType<typeof createAdminClient>,
     );
 
     const result = await listActivity();
@@ -69,8 +69,8 @@ describe('listActivity', () => {
       data: [],
       error: null,
     });
-    vi.mocked(createClient).mockResolvedValue(
-      client as unknown as Awaited<ReturnType<typeof createClient>>,
+    vi.mocked(createAdminClient).mockReturnValue(
+      client as unknown as ReturnType<typeof createAdminClient>,
     );
 
     await expect(listActivity()).rejects.toThrow('NEXT_REDIRECT');
@@ -84,8 +84,8 @@ describe('recentActivity', () => {
       data: [row()],
       error: null,
     });
-    vi.mocked(createClient).mockResolvedValue(
-      client as unknown as Awaited<ReturnType<typeof createClient>>,
+    vi.mocked(createAdminClient).mockReturnValue(
+      client as unknown as ReturnType<typeof createAdminClient>,
     );
 
     await recentActivity(5);
@@ -98,8 +98,8 @@ describe('recentActivity', () => {
       data: null,
       error: { message: 'boom' },
     });
-    vi.mocked(createClient).mockResolvedValue(
-      client as unknown as Awaited<ReturnType<typeof createClient>>,
+    vi.mocked(createAdminClient).mockReturnValue(
+      client as unknown as ReturnType<typeof createAdminClient>,
     );
 
     await expect(recentActivity()).rejects.toThrow('טעינת היומן נכשלה');
@@ -113,8 +113,8 @@ describe('listActivity filters', () => {
       error: null,
       count: 1,
     });
-    vi.mocked(createClient).mockResolvedValue(
-      client as unknown as Awaited<ReturnType<typeof createClient>>,
+    vi.mocked(createAdminClient).mockReturnValue(
+      client as unknown as ReturnType<typeof createAdminClient>,
     );
 
     await listActivity({
@@ -144,8 +144,8 @@ describe('listActivity entity facet', () => {
       error: null,
       count: 1,
     });
-    vi.mocked(createClient).mockResolvedValue(
-      client as unknown as Awaited<ReturnType<typeof createClient>>,
+    vi.mocked(createAdminClient).mockReturnValue(
+      client as unknown as ReturnType<typeof createAdminClient>,
     );
 
     await listActivity({ entity: 'guest' });
@@ -169,8 +169,8 @@ describe('listActivity entity facet', () => {
       error: null,
       count: 1,
     });
-    vi.mocked(createClient).mockResolvedValue(
-      client as unknown as Awaited<ReturnType<typeof createClient>>,
+    vi.mocked(createAdminClient).mockReturnValue(
+      client as unknown as ReturnType<typeof createAdminClient>,
     );
 
     await listActivity({ entity: 'spaceship' });
@@ -186,8 +186,8 @@ describe('listActivity instance filters', () => {
       error: null,
       count: 1,
     });
-    vi.mocked(createClient).mockResolvedValue(
-      client as unknown as Awaited<ReturnType<typeof createClient>>,
+    vi.mocked(createAdminClient).mockReturnValue(
+      client as unknown as ReturnType<typeof createAdminClient>,
     );
 
     await listActivity({ eventId: 'e-42' });
@@ -201,8 +201,8 @@ describe('listActivity instance filters', () => {
       error: null,
       count: 1,
     });
-    vi.mocked(createClient).mockResolvedValue(
-      client as unknown as Awaited<ReturnType<typeof createClient>>,
+    vi.mocked(createAdminClient).mockReturnValue(
+      client as unknown as ReturnType<typeof createAdminClient>,
     );
 
     await listActivity({ guestId: 'g-7', groupId: 'grp-3', packageId: 'pkg-9' });
@@ -218,8 +218,8 @@ describe('listActivity instance filters', () => {
       error: null,
       count: 1,
     });
-    vi.mocked(createClient).mockResolvedValue(
-      client as unknown as Awaited<ReturnType<typeof createClient>>,
+    vi.mocked(createAdminClient).mockReturnValue(
+      client as unknown as ReturnType<typeof createAdminClient>,
     );
 
     await listActivity({ eventId: '   ', guestId: '' });
@@ -236,8 +236,8 @@ describe('listActivity search', () => {
       error: null,
       count: 1,
     });
-    vi.mocked(createClient).mockResolvedValue(
-      client as unknown as Awaited<ReturnType<typeof createClient>>,
+    vi.mocked(createAdminClient).mockReturnValue(
+      client as unknown as ReturnType<typeof createAdminClient>,
     );
 
     await listActivity({ search: 'מתנה' });
@@ -255,8 +255,8 @@ describe('listActivity search', () => {
       error: null,
       count: 0,
     });
-    vi.mocked(createClient).mockResolvedValue(
-      client as unknown as Awaited<ReturnType<typeof createClient>>,
+    vi.mocked(createAdminClient).mockReturnValue(
+      client as unknown as ReturnType<typeof createAdminClient>,
     );
 
     await listActivity({ search: 'a,b)c*%"\\' });
@@ -274,8 +274,8 @@ describe('listActivity search', () => {
       error: null,
       count: 1,
     });
-    vi.mocked(createClient).mockResolvedValue(
-      client as unknown as Awaited<ReturnType<typeof createClient>>,
+    vi.mocked(createAdminClient).mockReturnValue(
+      client as unknown as ReturnType<typeof createAdminClient>,
     );
 
     await listActivity({ search: '   ' });
@@ -314,8 +314,8 @@ describe('resolveActivityActors', () => {
       ],
       error: null,
     });
-    vi.mocked(createClient).mockResolvedValue(
-      client as unknown as Awaited<ReturnType<typeof createClient>>,
+    vi.mocked(createAdminClient).mockReturnValue(
+      client as unknown as ReturnType<typeof createAdminClient>,
     );
 
     const actors = await resolveActivityActors(['u-1', 'u-2', 'u-1']);
@@ -356,8 +356,8 @@ describe('listActivityActorOptions', () => {
           error: null,
         }),
       );
-    vi.mocked(createClient).mockResolvedValue(
-      client as unknown as Awaited<ReturnType<typeof createClient>>,
+    vi.mocked(createAdminClient).mockReturnValue(
+      client as unknown as ReturnType<typeof createAdminClient>,
     );
 
     const options = await listActivityActorOptions(2);

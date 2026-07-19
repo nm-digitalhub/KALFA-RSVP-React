@@ -12,6 +12,7 @@ import {
   aggregateEventActivity,
   computeAnswerRate,
   listCallAttemptsForEvent,
+  listCallRecordings,
 } from './voice-ops';
 
 beforeEach(() => {
@@ -106,5 +107,64 @@ describe('listCallAttemptsForEvent — requirePlatformPermission + PII column gu
     expect(JSON.stringify(res.items)).not.toContain('https://secret/rec');
     expect(JSON.stringify(res.items)).not.toContain('speaker');
     expect(row.sessionHistoryId).toBe('999');
+  });
+});
+
+describe('listCallRecordings — gate-before-query + service_role + column guard', () => {
+  it('does NOT query when the view_recordings gate rejects', async () => {
+    vi.mocked(requirePlatformPermission).mockRejectedValueOnce(
+      Object.assign(new Error('NEXT_REDIRECT'), { digest: 'NEXT_REDIRECT;' }),
+    );
+    await expect(listCallRecordings()).rejects.toThrow();
+    // The gate is now the SOLE control (service_role bypasses RLS): if it does not
+    // run before the client, the recording_url surface is unprotected.
+    expect(createAdminClient).not.toHaveBeenCalled();
+  });
+
+  it('reads via createAdminClient with a fixed column list that excludes access_token/transcript', async () => {
+    let selectArg = '';
+    const builder: Record<string, unknown> = {};
+    for (const m of ['select', 'order', 'limit']) {
+      builder[m] = vi.fn((...args: unknown[]) => {
+        if (m === 'select') selectArg = String(args[0]);
+        return builder;
+      });
+    }
+    (builder as { then: unknown }).then = (onF: (v: unknown) => unknown) =>
+      onF({
+        data: [
+          {
+            id: 'a1',
+            campaign_id: 'c1',
+            event_id: 'e1',
+            status: 'completed',
+            finish_reason: null,
+            call_duration_sec: 42,
+            recording_url: 'https://secret/rec',
+            recording_started_at: '2026-07-19T10:00:00Z',
+            created_at: '2026-07-19T10:00:00Z',
+          },
+        ],
+        error: null,
+      });
+    const fromSpy = vi.fn(() => builder);
+    vi.mocked(createAdminClient).mockReturnValue({
+      from: fromSpy,
+    } as unknown as ReturnType<typeof createAdminClient>);
+
+    const rows = await listCallRecordings();
+
+    // Service-role client used (not the cookie client) — locks the flip against a
+    // silent revert once the call_attempts_admin_read RLS policy is dropped.
+    expect(createAdminClient).toHaveBeenCalled();
+    expect(fromSpy).toHaveBeenCalledWith('call_attempts');
+    // recording_url is intentionally selected (this is the surface that exposes it)…
+    expect(selectArg).toContain('recording_url');
+    // …but a future select('*') that would drag access_token/transcript into the
+    // page must fail this test.
+    expect(selectArg).not.toContain('access_token');
+    expect(selectArg).not.toContain('transcript');
+    expect(selectArg).not.toContain('*');
+    expect(rows[0].recording_url).toBe('https://secret/rec');
   });
 });

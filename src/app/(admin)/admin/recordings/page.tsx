@@ -1,5 +1,4 @@
-import { createClient } from '@/lib/supabase/server';
-import { requirePlatformPermission } from '@/lib/auth/dal';
+import { listCallRecordings } from '@/lib/data/admin/voice-ops';
 import { validateRecordingUrl } from '@/lib/voximplant/recording-url';
 import { EmptyState, PageHeading, formatDateTime } from '../_components';
 
@@ -43,19 +42,8 @@ function formatDuration(sec: number | null): string {
 }
 
 export default async function AdminRecordingsPage() {
-  await requirePlatformPermission('view_recordings');
-  const supabase = await createClient();
-
-  const { data, error } = await supabase
-    .from('call_attempts')
-    .select(
-      'id, campaign_id, event_id, status, finish_reason, call_duration_sec, recording_url, recording_started_at, created_at',
-    )
-    .order('created_at', { ascending: false })
-    .limit(100);
-  if (error) throw new Error('טעינת ההקלטות נכשלה');
-
-  const rows = data ?? [];
+  // Gate + service-role read now live in the DAL (listCallRecordings), tested there.
+  const rows = await listCallRecordings();
 
   return (
     <div className="space-y-6">

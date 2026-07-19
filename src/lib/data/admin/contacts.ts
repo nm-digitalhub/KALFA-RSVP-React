@@ -1,6 +1,6 @@
 import 'server-only';
 
-import { createClient } from '@/lib/supabase/server';
+import { createAdminClient } from '@/lib/supabase/admin';
 import { requirePlatformPermission } from '@/lib/auth/dal';
 import type { Database } from '@/lib/supabase/types';
 import { resolvePage, type PageParams, type PageResult } from './shared';
@@ -28,7 +28,7 @@ export async function listContactMessages(
 
   const { page: safePage, pageSize, from, to } = resolvePage(page);
 
-  const supabase = await createClient();
+  const supabase = createAdminClient();
   const { data, error, count } = await supabase
     .from('contact_messages')
     .select(CONTACT_COLUMNS, { count: 'exact' })

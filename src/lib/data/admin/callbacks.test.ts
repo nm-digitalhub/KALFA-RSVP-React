@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { User } from '@supabase/supabase-js';
 
 import { createMockSupabase } from '@/test/supabase-mock';
-import { createClient } from '@/lib/supabase/server';
+import { createAdminClient } from '@/lib/supabase/admin';
 import { requirePlatformPermission } from '@/lib/auth/dal';
 import { logActivity } from '@/lib/data/activity';
 import {
@@ -13,7 +13,7 @@ import {
 } from './callbacks';
 
 vi.mock('server-only', () => ({}));
-vi.mock('@/lib/supabase/server', () => ({ createClient: vi.fn() }));
+vi.mock('@/lib/supabase/admin', () => ({ createAdminClient: vi.fn() }));
 vi.mock('@/lib/auth/dal', () => ({ requirePlatformPermission: vi.fn() }));
 vi.mock('@/lib/data/activity', () => ({ logActivity: vi.fn() }));
 
@@ -47,8 +47,8 @@ describe('listCallbackRequests', () => {
       error: null,
       count: 1,
     });
-    vi.mocked(createClient).mockResolvedValue(
-      client as unknown as Awaited<ReturnType<typeof createClient>>,
+    vi.mocked(createAdminClient).mockReturnValue(
+      client as unknown as ReturnType<typeof createAdminClient>,
     );
 
     const result = await listCallbackRequests();
@@ -68,8 +68,8 @@ describe('listCallbackRequests', () => {
       data: [],
       error: null,
     });
-    vi.mocked(createClient).mockResolvedValue(
-      client as unknown as Awaited<ReturnType<typeof createClient>>,
+    vi.mocked(createAdminClient).mockReturnValue(
+      client as unknown as ReturnType<typeof createAdminClient>,
     );
 
     await expect(listCallbackRequests()).rejects.toThrow('NEXT_REDIRECT');
@@ -81,8 +81,8 @@ describe('listCallbackRequests', () => {
       data: null,
       error: { message: 'boom' },
     });
-    vi.mocked(createClient).mockResolvedValue(
-      client as unknown as Awaited<ReturnType<typeof createClient>>,
+    vi.mocked(createAdminClient).mockReturnValue(
+      client as unknown as ReturnType<typeof createAdminClient>,
     );
 
     await expect(listCallbackRequests()).rejects.toThrow(
@@ -97,8 +97,8 @@ describe('updateCallbackStatus', () => {
       data: row(),
       error: null,
     });
-    vi.mocked(createClient).mockResolvedValue(
-      client as unknown as Awaited<ReturnType<typeof createClient>>,
+    vi.mocked(createAdminClient).mockReturnValue(
+      client as unknown as ReturnType<typeof createAdminClient>,
     );
 
     await updateCallbackStatus('cb-1', 'done');
@@ -124,8 +124,8 @@ describe('updateCallbackStatus', () => {
       data: row(),
       error: null,
     });
-    vi.mocked(createClient).mockResolvedValue(
-      client as unknown as Awaited<ReturnType<typeof createClient>>,
+    vi.mocked(createAdminClient).mockReturnValue(
+      client as unknown as ReturnType<typeof createAdminClient>,
     );
 
     await expect(updateCallbackStatus('cb-1', 'done')).rejects.toThrow(
@@ -139,8 +139,8 @@ describe('updateCallbackStatus', () => {
       data: row(),
       error: { message: 'nope' },
     });
-    vi.mocked(createClient).mockResolvedValue(
-      client as unknown as Awaited<ReturnType<typeof createClient>>,
+    vi.mocked(createAdminClient).mockReturnValue(
+      client as unknown as ReturnType<typeof createAdminClient>,
     );
 
     await expect(updateCallbackStatus('cb-1', 'done')).rejects.toThrow(

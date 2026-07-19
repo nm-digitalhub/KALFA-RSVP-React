@@ -13,7 +13,7 @@ type Card = {
   href: string;
   label: string;
   icon: LucideIcon;
-  value: number;
+  value: number | null;
 };
 
 export default async function AdminDashboardPage() {
@@ -23,11 +23,14 @@ export default async function AdminDashboardPage() {
   ]);
   const items = activity.map((entry) => describeActivity(entry));
 
-  const cards: Card[] = [
-    { href: '/admin/contacts', label: 'פניות', icon: MailOpen, value: counts.contacts },
-    { href: '/admin/callbacks', label: 'בקשות חזרה', icon: PhoneCall, value: counts.callbacks },
-    { href: '/admin/packages', label: 'חבילות', icon: Package, value: counts.packages },
-  ];
+  // A null count = the viewer lacks that domain's permission; omit the card.
+  const cards: Card[] = (
+    [
+      { href: '/admin/contacts', label: 'פניות', icon: MailOpen, value: counts.contacts },
+      { href: '/admin/callbacks', label: 'בקשות חזרה', icon: PhoneCall, value: counts.callbacks },
+      { href: '/admin/packages', label: 'חבילות', icon: Package, value: counts.packages },
+    ] satisfies Card[]
+  ).filter((c) => c.value !== null);
 
   return (
     <div className="space-y-8">
