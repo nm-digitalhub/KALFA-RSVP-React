@@ -49,6 +49,7 @@ import { runThankyouSweep } from '@/lib/data/auto-thankyou';
 import { runBalanceCheck } from '@/lib/data/voximplant-balance';
 import { runCallReconcile } from '@/lib/data/voximplant-reconcile';
 import { runLogExport } from '@/lib/data/vox-log-export';
+import { runElevenLabsQuotaCheck } from '@/lib/data/elevenlabs-quota';
 import { sendSlackAlert } from '@/lib/alerts/slack';
 
 // Standalone process — load .env.local ourselves (Next is not running here).
@@ -471,6 +472,15 @@ async function main(): Promise<void> {
       await runLogExport();
     }),
   );
+  // ElevenLabs character-quota alert (item 3): every 6h read /v1/user/
+  // subscription and Slack at ≥80%/≥95%. runElevenLabsQuotaCheck is dark-safe
+  // (no-op when no ElevenLabs key is configured), read-only, and never throws.
+  await boss.work(
+    QUEUES.elevenlabsQuota,
+    guardedWorker(QUEUES.elevenlabsQuota, async () => {
+      await runElevenLabsQuotaCheck();
+    }),
+  );
 
   await boss.schedule(QUEUES.arm, '* * * * *');
   await boss.schedule(QUEUES.sweeper, '*/5 * * * *');
@@ -479,6 +489,7 @@ async function main(): Promise<void> {
   await boss.schedule(QUEUES.balanceCheck, '*/30 * * * *');
   await boss.schedule(QUEUES.callReconcile, '*/10 * * * *');
   await boss.schedule(QUEUES.logExport, '20 3 * * *');
+  await boss.schedule(QUEUES.elevenlabsQuota, '0 */6 * * *');
 
   console.log('[kalfa-worker] started — queues + schedules up');
 

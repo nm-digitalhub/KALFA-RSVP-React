@@ -144,6 +144,28 @@ export interface ElevenLabsQuota {
   tier: string | null;
 }
 
+// Parse a /v1/user/subscription response into the metadata-only quota view.
+// Null when the response is absent/non-object (missing key permission, transport
+// failure).
+function parseSubscription(sub: unknown): ElevenLabsQuota | null {
+  if (!sub || typeof sub !== 'object') return null;
+  const s = sub as Record<string, unknown>;
+  return {
+    characterCount: typeof s.character_count === 'number' ? s.character_count : null,
+    characterLimit: typeof s.character_limit === 'number' ? s.character_limit : null,
+    tier: typeof s.tier === 'string' ? s.tier : null,
+  };
+}
+
+// Read the character quota for a given key (metadata-only). READ-ONLY, so it
+// stays in this dashboard status module; the quota-ALERT cron lives in its own
+// file (elevenlabs-quota.ts) and consumes this — mirroring how voximplant-
+// balance.ts's runBalanceCheck consumes getAccountInfo from core.ts. Null when
+// the subscription endpoint is unavailable (e.g. a key without `user_read`).
+export async function getElevenLabsQuota(key: string): Promise<ElevenLabsQuota | null> {
+  return parseSubscription(await elevenFetch('/v1/user/subscription', key));
+}
+
 export interface ElevenLabsFleetStatus {
   configured: boolean;
   keySource: KeySource; // 'db' | 'env' | null — so the UI can be honest
@@ -185,16 +207,7 @@ export async function getElevenLabsFleetStatus(): Promise<ElevenLabsFleetStatus>
   );
 
   // Quota (VERIFY-LIVE endpoint). Best-effort — null when unavailable.
-  let quota: ElevenLabsQuota | null = null;
-  const sub = await elevenFetch('/v1/user/subscription', key);
-  if (sub && typeof sub === 'object') {
-    const s = sub as Record<string, unknown>;
-    quota = {
-      characterCount: typeof s.character_count === 'number' ? s.character_count : null,
-      characterLimit: typeof s.character_limit === 'number' ? s.character_limit : null,
-      tier: typeof s.tier === 'string' ? s.tier : null,
-    };
-  }
+  const quota = await getElevenLabsQuota(key);
 
   return { configured: true, keySource: source, agents, quota };
 }

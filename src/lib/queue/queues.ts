@@ -25,6 +25,10 @@ export const QUEUES = {
   // never overlaps the cron (an atomic per-row lease is the inner guard). See
   // src/lib/data/vox-log-export.ts.
   logExport: 'voximplant-log-export',
+  // ElevenLabs character-quota alert (item 3) — every 6h read /v1/user/
+  // subscription and Slack at ≥80% (warn) / ≥95% (error). Config-gated (no key
+  // → no-op), read-only, never throws. See src/lib/data/elevenlabs-quota.ts.
+  elevenlabsQuota: 'elevenlabs-quota-check',
 } as const;
 
 // outreach-step retry policy: a few backed-off retries, then dead-letter. The
