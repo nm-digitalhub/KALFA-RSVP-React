@@ -21,7 +21,7 @@ export type CallSuccessful = 'success' | 'failure' | 'unknown';
 export type CallStatus = 'done' | 'failed' | 'unknown';
 
 // The metadata-only shape that is safe to persist. NO transcript, NO summary, NO
-// dynamic_variables, NO evaluation/data-collection results (all PII-bearing).
+// guest dynamic_variables, NO evaluation/data-collection results (all PII-bearing).
 export interface NormalizedCallAnalysis {
   conversationId: string;
   agentId: string | null;
@@ -32,6 +32,11 @@ export interface NormalizedCallAnalysis {
   costCredits: number | null;
   terminationReason: string | null;
   analysisAt: string | null; // ISO
+  // OUR injected, NON-authorizing correlation token (link vector for item 2's
+  // bridge). It is the ONLY dynamic_variable we read back — every guest-bearing
+  // var (guest_name, …) stays dropped. Never persisted as-is: the linker
+  // resolves it to a call_attempts FK. Null when absent (e.g. preview sessions).
+  correlationToken: string | null;
 }
 
 // A webhook envelope reduced to its type + (only for post_call_transcription with
@@ -81,6 +86,10 @@ export function normalizeCallAnalysisWebhook(raw: unknown): NormalizedWebhook {
   const feedback = asObject(metadata.feedback);
   const analysis = asObject(data.analysis);
 
+  // Read back ONLY our own correlation token from the initiation data — never the
+  // sibling guest vars (guest_name, event_name, …), which stay dropped.
+  const initVars = asObject(asObject(data.conversation_initiation_client_data).dynamic_variables);
+
   const rawReason = asString(metadata.termination_reason);
 
   return {
@@ -95,6 +104,7 @@ export function normalizeCallAnalysisWebhook(raw: unknown): NormalizedWebhook {
       costCredits: asNumber(metadata.cost),
       terminationReason: rawReason ? rawReason.slice(0, TERMINATION_MAX) : null,
       analysisAt: unixSecondsToIso(asNumber(env.event_timestamp)), // unix SECONDS
+      correlationToken: capped(initVars.kalfa_attempt_token, 128),
     },
   };
 }

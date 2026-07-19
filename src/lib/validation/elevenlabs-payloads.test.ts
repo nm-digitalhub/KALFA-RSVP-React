@@ -45,6 +45,7 @@ const EXPECTED_KEYS = [
   'costCredits',
   'terminationReason',
   'analysisAt',
+  'correlationToken',
 ];
 
 describe('normalizeCallAnalysisWebhook', () => {
@@ -61,6 +62,7 @@ describe('normalizeCallAnalysisWebhook', () => {
       costCredits: 461,
       terminationReason: 'Client disconnected: 1006',
       analysisAt: new Date(1_784_500_000 * 1000).toISOString(),
+      correlationToken: null, // none injected in this sample
     });
   });
 
@@ -78,6 +80,22 @@ describe('normalizeCallAnalysisWebhook', () => {
     }
     // Structural tripwire: no key beyond the 9 metadata fields ever leaks.
     expect(Object.keys(result.analysis!).sort()).toEqual([...EXPECTED_KEYS].sort());
+  });
+
+  it('reads back ONLY our correlation token — never the sibling guest vars', () => {
+    const withToken = {
+      ...sample,
+      data: {
+        ...sample.data,
+        conversation_initiation_client_data: {
+          dynamic_variables: { kalfa_attempt_token: 'nonce-abc-123', guest_name: 'ANGELO_NAME_SECRET' },
+        },
+      },
+    };
+    const { analysis } = normalizeCallAnalysisWebhook(withToken);
+    expect(analysis?.correlationToken).toBe('nonce-abc-123');
+    // The guest name sitting right next to our token must still be dropped.
+    expect(JSON.stringify(analysis)).not.toContain('ANGELO_NAME_SECRET');
   });
 
   it('yields NO analysis for a non post_call_transcription type (e.g. post_call_audio)', () => {

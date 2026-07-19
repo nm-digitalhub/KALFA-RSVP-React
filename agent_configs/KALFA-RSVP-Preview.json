@@ -86,7 +86,8 @@
                     "event_name": "",
                     "guest_name": "",
                     "event_date": "",
-                    "event_venue": ""
+                    "event_venue": "",
+                    "kalfa_attempt_token": ""
                 }
             },
             "disable_first_message_interruptions": false,

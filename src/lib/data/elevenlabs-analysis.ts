@@ -15,6 +15,30 @@ type CallAnalysisInsert = Database['public']['Tables']['call_analysis']['Insert'
 export async function storeCallAnalysis(a: NormalizedCallAnalysis): Promise<'stored' | 'error'> {
   try {
     const admin = createAdminClient();
+
+    // Resolve the correlation token → the owning call attempt (item 2 link
+    // vector: a NON-authorizing nonce injected at conversation start, round-
+    // tripped in the webhook). Best-effort — a miss/failure leaves an orphan row
+    // (call_attempt_id NULL), which a linker can backfill later via the partial
+    // index. event_id is copied from the attempt so owner RLS scopes the row.
+    let callAttemptId: string | null = null;
+    let eventId: string | null = null;
+    if (a.correlationToken) {
+      try {
+        const { data } = await admin
+          .from('call_attempts')
+          .select('id, event_id')
+          .eq('el_correlation_nonce', a.correlationToken)
+          .maybeSingle();
+        if (data) {
+          callAttemptId = data.id;
+          eventId = data.event_id;
+        }
+      } catch {
+        /* leave orphan — never fail the store on a link lookup */
+      }
+    }
+
     const row: CallAnalysisInsert = {
       provider: 'elevenlabs',
       conversation_id: a.conversationId,
@@ -26,6 +50,9 @@ export async function storeCallAnalysis(a: NormalizedCallAnalysis): Promise<'sto
       cost_credits: a.costCredits,
       termination_reason: a.terminationReason,
       analysis_at: a.analysisAt,
+      call_attempt_id: callAttemptId,
+      event_id: eventId,
+      linked_at: callAttemptId ? new Date().toISOString() : null,
     };
     const { error } = await admin
       .from('call_analysis')

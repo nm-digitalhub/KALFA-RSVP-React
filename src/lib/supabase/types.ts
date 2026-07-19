@@ -530,6 +530,7 @@ export type Database = {
           created_at: string
           ctx_delivered_at: string | null
           ctx_read_count: number
+          el_correlation_nonce: string | null
           event_id: string
           finish_reason: string | null
           guest_id: string | null
@@ -557,6 +558,7 @@ export type Database = {
           created_at?: string
           ctx_delivered_at?: string | null
           ctx_read_count?: number
+          el_correlation_nonce?: string | null
           event_id: string
           finish_reason?: string | null
           guest_id?: string | null
@@ -584,6 +586,7 @@ export type Database = {
           created_at?: string
           ctx_delivered_at?: string | null
           ctx_read_count?: number
+          el_correlation_nonce?: string | null
           event_id?: string
           finish_reason?: string | null
           guest_id?: string | null
