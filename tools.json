@@ -4,6 +4,21 @@
             "type": "client",
             "config": "tool_configs/schedule_callback.json",
             "id": "tool_7901kxxsaw1cfhkrpe5w2mkrxxk3"
+        },
+        {
+            "type": "client",
+            "config": "tool_configs/mark_dnc.json",
+            "id": "tool_0501kxjzme40e93bjg2vh4ah9cvb"
+        },
+        {
+            "type": "client",
+            "config": "tool_configs/save_rsvp.json",
+            "id": "tool_1501kxjzme3zf3htm544kyjfwkzg"
+        },
+        {
+            "type": "client",
+            "config": "tool_configs/notify_owner.json",
+            "id": "tool_1901kxjzme41em68xms7w4e69m2k"
         }
     ]
 }
