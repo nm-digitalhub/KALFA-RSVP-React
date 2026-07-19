@@ -38,14 +38,18 @@ export async function getEventForAdminView(eventId: string): Promise<OwnedEvent>
   return data;
 }
 
-// A campaign row for the admin wind-down list: the campaign, its status, and the
-// owning event's name/date so an admin can identify it and click through.
+// A campaign row for the admin wind-down list: the campaign, its status, the
+// owning event's name/date, and the charge/credit outcome so an admin can see
+// the billing state at a glance.
 export interface AdminCampaignListItem {
   id: string;
   status: CampaignStatus;
   eventId: string;
   eventName: string;
   eventDate: string | null;
+  chargeStatus: string | null;
+  finalChargeAmount: number | null;
+  creditApplied: number;
 }
 
 // Statuses that may still need a wind-down action (close/pause/settle/cancel).
@@ -58,13 +62,16 @@ const WINDDOWN_STATUSES: readonly CampaignStatus[] = [
 
 // List campaigns that may need an admin wind-down action, newest first. Reads
 // via the service-role client (camp_admin_all RLS also covers this) under
-// requireAdmin(). Returns only what the list needs — no billing/card fields.
+// requireAdmin(). Returns only what the list needs — charge OUTCOME fields
+// (status/amount/credit), never card/token fields.
 export async function listCampaignsForAdmin(): Promise<AdminCampaignListItem[]> {
   await requireAdmin();
   const admin = createAdminClient();
   const { data, error } = await admin
     .from('campaigns')
-    .select('id, status, event_id, created_at, events(name, event_date)')
+    .select(
+      'id, status, event_id, created_at, charge_status, final_charge_amount, credit_applied, events(name, event_date)',
+    )
     .in('status', [...WINDDOWN_STATUSES])
     .order('created_at', { ascending: false });
   if (error) {
@@ -76,5 +83,8 @@ export async function listCampaignsForAdmin(): Promise<AdminCampaignListItem[]> 
     eventId: c.event_id,
     eventName: c.events?.name ?? '—',
     eventDate: c.events?.event_date ?? null,
+    chargeStatus: c.charge_status,
+    finalChargeAmount: c.final_charge_amount,
+    creditApplied: Number(c.credit_applied ?? 0),
   }));
 }

@@ -12,9 +12,30 @@ import {
   TableRow,
 } from '@/components/ui/table';
 
-import { PageHeading, EmptyState, Badge } from '../_components';
+import { PageHeading, EmptyState, Badge, formatCurrency } from '../_components';
 
 export const metadata = { title: 'קמפיינים' };
+
+// Charge-outcome labels for the not-yet/non-monetary states; charged and
+// nothing_to_charge render as amounts instead.
+const CHARGE_STATUS_LABELS: Record<string, string> = {
+  pending: 'בתהליך חיוב',
+  charge_failed: 'החיוב נכשל',
+  charge_review: 'בבדיקה',
+};
+
+// The charge cell: an amount once settled (charged / nothing_to_charge), a
+// state label mid-flight, '—' before any charge attempt.
+function chargeCell(c: {
+  chargeStatus: string | null;
+  finalChargeAmount: number | null;
+}): string {
+  if (c.chargeStatus === 'charged' || c.chargeStatus === 'nothing_to_charge') {
+    return formatCurrency(c.finalChargeAmount ?? 0);
+  }
+  if (c.chargeStatus) return CHARGE_STATUS_LABELS[c.chargeStatus] ?? c.chargeStatus;
+  return '—';
+}
 
 // Admin campaign wind-down list. The four lifecycle controls (close/pause/
 // settle/cancel) are platform-admin-only, so this surface lets an admin REACH
@@ -42,6 +63,8 @@ export default async function AdminCampaignsPage() {
                 <TableHead>אירוע</TableHead>
                 <TableHead>תאריך האירוע</TableHead>
                 <TableHead>מצב</TableHead>
+                <TableHead>חיוב סופי</TableHead>
+                <TableHead>זיכוי שקוזז</TableHead>
                 <TableHead>
                   <span className="sr-only">פעולות</span>
                 </TableHead>
@@ -56,6 +79,10 @@ export default async function AdminCampaignsPage() {
                   </TableCell>
                   <TableCell>
                     <Badge>{CAMPAIGN_STATUS_LABELS[c.status]}</Badge>
+                  </TableCell>
+                  <TableCell>{chargeCell(c)}</TableCell>
+                  <TableCell className="text-muted-foreground">
+                    {c.creditApplied > 0 ? formatCurrency(c.creditApplied) : '—'}
                   </TableCell>
                   <TableCell>
                     <Link
