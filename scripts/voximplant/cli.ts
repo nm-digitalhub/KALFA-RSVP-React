@@ -1,19 +1,26 @@
 /**
- * Voximplant Management API — in-repo CLI runner (thin wiring over ./cli-support).
+ * Voximplant Management API — in-repo CLI runner (thin wiring over cli-support).
  *
- * ONE committed entry point for ad-hoc Management API calls, reusing ./core (the
- * same JWT+fetch the Next server uses) instead of hand-rolling throwaway scripts.
+ * ONE committed entry point for ad-hoc Management API READS, reusing
+ * src/lib/voximplant/core.ts (the same JWT+fetch the Next server uses).
  * Run from the repo root via the `voximplant` npm script (tsx):
  *
  *   npm run voximplant -- --help
  *   npm run voximplant -- account
- *   npm run voximplant -- rules --app <applicationId>
- *   npm run voximplant -- history --app <id> [--days 120] [--output file.csv]
- *   npm run voximplant -- history --history-id <id> [--output file.csv] [--force]
- *   npm run voximplant -- start --rule <id> --to <number> [--bytes n] --confirm  (PLACES A REAL CALL)
+ *   npm run voximplant -- rules --application-id <id>
+ *   npm run voximplant -- history --app <id> [--days 120 | --from d --to d] [--output file.csv]
+ *   npm run voximplant -- call-lists [--list-id <n>] [--days <n>]
+ *   npm run voximplant -- media-resources           (no credentials needed)
+ *   npm run voximplant -- audit [--days <n>] [--count <n>]
  *
- * Credentials: `--key <path>`, env VOX_CI_CREDENTIALS, or ./vox_ci_credentials.json
+ * Credentials path resolution (first match wins): `--credentials`/`--key <path>`,
+ * env VOXIMPLANT_CREDENTIALS_FILE, env VOX_CI_CREDENTIALS, ./vox_ci_credentials.json
  * (all gitignored). The private key is only ever read from disk — never printed.
+ *
+ * READ-ONLY BY DESIGN (owner directive): this CLI imports src/lib/voximplant/core
+ * only. The mutating wrappers live in src/lib/voximplant/mutations.ts, which this
+ * file must NEVER import — a guard test (cli-guard.test.ts) pins that, so no
+ * terminal command can place a call or change account state.
  */
 import {
   existsSync,
@@ -24,45 +31,66 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { basename, dirname, join } from 'node:path';
-import type { VoximplantConfig } from './core';
+import type { VoximplantConfig } from '../../src/lib/voximplant/core';
 import {
   downloadHistoryReportRaw,
   downloadSecureUrl,
   getAccountInfo,
   getApplications,
+  getAuditLog,
   getCallHistory,
   getCallHistoryAsync,
+  getCallListDetails,
+  getCallLists,
   getHistoryReports,
+  getMediaResources,
   getPhoneNumbers,
   getRules,
   getTransactionHistory,
-  startScenarios,
+  voxRetry,
+  VoximplantApiError,
   type TransactionInfo,
-} from './core';
+} from '../../src/lib/voximplant/core';
 import {
   assertKnownCommand,
-  buildStartCustomData,
   CliError,
+  collectAllPages,
   fetchReportWhenReady,
   helpText,
+  normalizeAliases,
   parseArgs,
   positiveInt,
+  resolveAuditPlan,
+  resolveCallListsPlan,
   resolveHistoryPlan,
   resolveKeyPath,
   resolveRecordingPlan,
-  resolveStartPlan,
   summarizeIntoLines,
   validateCommandFlags,
   writeReportAtomic,
   type FlagValue,
   type HistoryPlan,
   type KnownCommand,
-} from './cli-support';
+} from '../../src/lib/voximplant/cli-support';
+import {
+  extractIpStrings,
+  normalizeAuditEntry,
+  normalizeCallList,
+  normalizeCallListTask,
+} from '../../src/lib/validation/vox-payloads';
 
 const DEFAULT_KEY = 'vox_ci_credentials.json';
 
+// Retry wrapper for READ-ONLY calls (bounded backoff on 429/340/515, one JWT
+// renewal on 456). Everything this CLI can run is read-only.
+const retried = <T>(run: () => Promise<T>): Promise<T> => voxRetry(run);
+
 function loadConfig(flags: Record<string, FlagValue>): VoximplantConfig {
-  const keyPath = resolveKeyPath(flags, process.env.VOX_CI_CREDENTIALS, DEFAULT_KEY);
+  const keyPath = resolveKeyPath(
+    flags,
+    process.env.VOXIMPLANT_CREDENTIALS_FILE ?? process.env.VOX_CI_CREDENTIALS,
+    DEFAULT_KEY,
+  );
   const raw = JSON.parse(readFileSync(keyPath, 'utf8')) as {
     account_id: number | string;
     key_id: string;
@@ -82,7 +110,7 @@ let writeCounter = 0;
 const uniqueToken = () => `${process.pid}-${Date.now()}-${writeCounter++}`;
 
 async function cmdAccount(cfg: VoximplantConfig): Promise<void> {
-  const { result: a } = await getAccountInfo(cfg);
+  const { result: a } = await retried(() => getAccountInfo(cfg));
   console.log(`account_id    : ${a.account_id}`);
   console.log(`account_name  : ${a.account_name}`);
   console.log(`account_email : ${a.account_email}`);
@@ -95,7 +123,7 @@ async function cmdAccount(cfg: VoximplantConfig): Promise<void> {
 // READ-ONLY: list the account's phone numbers so an operator can pick a Caller ID.
 // Never purchases/attaches/modifies a number; prints no credentials or secrets.
 async function cmdNumbers(cfg: VoximplantConfig): Promise<void> {
-  const { result, total_count } = await getPhoneNumbers(cfg);
+  const { result, total_count } = await retried(() => getPhoneNumbers(cfg));
   console.log(`phone numbers : ${total_count}`);
   if (result.length === 0) {
     console.log(
@@ -133,34 +161,24 @@ async function cmdTransactions(
   const type = typeof flags.type === 'string' ? flags.type : undefined;
 
   // Paginate through the FULL window so the summary reflects EVERY transaction,
-  // not just the first page. PAGE is the per-request cap; MAX_ROWS is a safety
-  // backstop against an unbounded loop.
-  const PAGE = 1000;
-  const MAX_ROWS = 100_000;
-  const result: TransactionInfo[] = [];
-  let total_count = 0;
+  // not just the first page (collectAllPages caps at maxRows as a backstop).
   let timezone: string | null | undefined;
-  let offset = 0;
-  for (;;) {
-    const page = await getTransactionHistory(cfg, {
-      from_date: fmt(from),
-      to_date: fmt(now),
-      transaction_type: type,
-      count: PAGE,
-      offset,
-    });
-    total_count = page.total_count;
-    timezone = page.timezone;
-    result.push(...page.result);
-    offset += page.result.length;
-    if (
-      page.result.length === 0 ||
-      result.length >= total_count ||
-      result.length >= MAX_ROWS
-    ) {
-      break;
-    }
-  }
+  const { rows: result, totalCount: total_count } = await collectAllPages<TransactionInfo>(
+    async (offset, count) => {
+      const page = await retried(() =>
+        getTransactionHistory(cfg, {
+          from_date: fmt(from),
+          to_date: fmt(now),
+          transaction_type: type,
+          count,
+          offset,
+        }),
+      );
+      timezone = page.timezone;
+      return page;
+    },
+    { pageSize: 1000, maxRows: 100_000 },
+  );
 
   console.log(
     `transactions (last ${days}d${type ? `, type=${type}` : ''}): ${total_count} total, ${result.length} aggregated${timezone ? `  [tz ${timezone}]` : ''}`,
@@ -193,7 +211,7 @@ async function cmdRules(
 ): Promise<void> {
   const appId =
     flags.app !== undefined ? positiveInt('app', flags.app) : undefined;
-  const apps = await getApplications(cfg);
+  const apps = await retried(() => getApplications(cfg));
   console.log('=== APPLICATIONS ===');
   for (const a of apps.result) {
     console.log(`app_id=${a.application_id}  name=${a.application_name}`);
@@ -208,7 +226,7 @@ async function cmdRules(
   console.log(
     `\n=== RULES for app_id=${target.application_id} (${target.application_name}) ===`,
   );
-  const rules = await getRules(cfg, target.application_id);
+  const rules = await retried(() => getRules(cfg, target.application_id));
   for (const r of rules.result) {
     const sc = (r.scenarios ?? [])
       .map((s) => `${s.scenario_name}(#${s.scenario_id})`)
@@ -228,10 +246,10 @@ const fmtUTC = (d: Date) =>
 function pollDeps(cfg: VoximplantConfig) {
   return {
     getStatus: async (id: number) => {
-      const st = await getHistoryReports(cfg, id);
+      const st = await retried(() => getHistoryReports(cfg, id));
       return st.result[0];
     },
-    download: (id: number) => downloadHistoryReportRaw(cfg, id),
+    download: (id: number) => retried(() => downloadHistoryReportRaw(cfg, id)),
     now: () => Date.now(),
     sleep,
   };
@@ -280,64 +298,40 @@ async function cmdHistory(
     reportId = plan.historyReportId;
     console.log(`=== history report #${reportId} ===`);
   } else {
-    const to = new Date();
-    const from = new Date(to.getTime() - plan.days * 24 * 3600 * 1000);
-    const start = await getCallHistoryAsync(cfg, {
-      from_date: fmtUTC(from),
-      to_date: fmtUTC(to),
-      application_id: plan.applicationId,
-      with_calls: true,
-      with_records: true,
-      output: 'csv',
-      timezone: 'UTC',
-    });
+    // Explicit --from/--to window when given; otherwise a --days lookback.
+    let fromStr: string;
+    let toStr: string;
+    if (plan.fromDate !== undefined && plan.toDate !== undefined) {
+      fromStr = plan.fromDate;
+      toStr = plan.toDate;
+    } else {
+      const to = new Date();
+      const from = new Date(to.getTime() - plan.days * 24 * 3600 * 1000);
+      fromStr = fmtUTC(from);
+      toStr = fmtUTC(to);
+    }
+    const start = await retried(() =>
+      getCallHistoryAsync(cfg, {
+        from_date: fromStr,
+        to_date: toStr,
+        application_id: plan.applicationId,
+        with_calls: true,
+        with_records: true,
+        output: 'csv',
+        timezone: 'UTC',
+      }),
+    );
     if (!start.history_report_id) {
       throw new CliError('GetCallHistoryAsync returned no history_report_id');
     }
     reportId = start.history_report_id;
     console.log(
-      `queued report #${reportId} for ${fmtUTC(from)} .. ${fmtUTC(to)} UTC — polling…`,
+      `queued report #${reportId} for ${fromStr} .. ${toStr} UTC — polling…`,
     );
   }
 
   const csv = await fetchReportWhenReady(reportId, opts, pollDeps(cfg));
   emit(csv, plan);
-}
-
-// MANUAL, GUARDED one-shot StartScenarios trigger — the ONLY path in this repo
-// that intentionally places a live call. It is reachable solely by running
-// `start --confirm` at the terminal: resolveStartPlan() throws unless --confirm
-// is present, so no test, default invocation, or other command can ever reach
-// the startScenarios() call below. Never print the payload (byte count only).
-async function cmdStart(
-  cfg: VoximplantConfig,
-  flags: Record<string, FlagValue>,
-): Promise<void> {
-  const plan = resolveStartPlan(flags); // throws without --confirm
-  const { payload, bytes } = buildStartCustomData(plan);
-  console.log('=== StartScenarios — LIVE CALL (byte-cap probe) ===');
-  console.log(`rule_id                 : ${plan.ruleId}`);
-  console.log(`to                      : ${plan.to}`);
-  if (plan.from) console.log(`from                    : ${plan.from}`);
-  console.log(`script_custom_data bytes: ${bytes}`); // count only — never the payload
-  const resp = await startScenarios(
-    cfg,
-    { rule_id: plan.ruleId, script_custom_data: payload },
-    30_000,
-  );
-  console.log(`result                  : ${resp.result}`);
-  console.log(
-    `call_session_history_id : ${resp.call_session_history_id ?? '(none)'}`,
-  );
-  if (resp.result !== 1 || !resp.call_session_history_id) {
-    throw new CliError(
-      'StartScenarios did not confirm a started call (result !== 1 or missing call_session_history_id)',
-    );
-  }
-  console.log(
-    'next: `npm run voximplant -- history --app <id>` and inspect ' +
-      'call_session_history_custom_data to verify whether the full payload arrived.',
-  );
 }
 
 // READ-ONLY: resolve a call's secure recording URL (sync GetCallHistory) and save
@@ -350,12 +344,14 @@ async function cmdRecording(
   const plan = resolveRecordingPlan(flags);
   const to = new Date();
   const from = new Date(to.getTime() - plan.days * 24 * 3600 * 1000);
-  const hist = await getCallHistory(cfg, {
-    from_date: fmtUTC(from),
-    to_date: fmtUTC(to),
-    call_session_history_id: plan.sessionId,
-    with_records: true,
-  });
+  const hist = await retried(() =>
+    getCallHistory(cfg, {
+      from_date: fmtUTC(from),
+      to_date: fmtUTC(to),
+      call_session_history_id: plan.sessionId,
+      with_records: true,
+    }),
+  );
   const url = (hist.result ?? [])
     .flatMap((s) => s.records ?? [])
     .map((r) => r.record_url)
@@ -370,6 +366,101 @@ async function cmdRecording(
   const buf = await downloadSecureUrl(cfg, url);
   writeFileSync(plan.output, buf);
   console.log(`saved ${buf.length} bytes → ${plan.output}`);
+}
+
+// READ-ONLY (A1): observe server-side dialing campaigns. Output is PII-safe by
+// construction — rows pass through normalizeCallList/Task, which reduce
+// custom_data/result_data to {present, bytes} metadata.
+async function cmdCallLists(
+  cfg: VoximplantConfig,
+  flags: Record<string, FlagValue>,
+): Promise<void> {
+  const plan = resolveCallListsPlan(flags);
+  const to = new Date();
+  const from = new Date(to.getTime() - plan.days * 24 * 3600 * 1000);
+  const res = await retried(() =>
+    getCallLists(cfg, {
+      ...(plan.listId !== undefined
+        ? { list_id: plan.listId }
+        : { from_date: fmtUTC(from), to_date: fmtUTC(to) }),
+      count: 100,
+    }),
+  );
+  const lists = (res.result ?? []).map(normalizeCallList);
+  console.log(
+    `call lists: ${res.total_count ?? lists.length} total, showing ${lists.length}${plan.listId === undefined ? ` (window ${plan.days}d)` : ''}`,
+  );
+  if (lists.length === 0) {
+    console.log('  (none — the CallList track is not in use yet)');
+    return;
+  }
+  for (const l of lists) {
+    console.log(
+      `  #${l.listId ?? '?'}  ${l.name ?? '(unnamed)'}  status=${l.status}  attempts=${l.numAttempts ?? '—'}  max_sim=${l.maxSimultaneous ?? '—'}  submitted=${l.submittedAt ?? '—'}  completed=${l.completedAt ?? '—'}`,
+    );
+  }
+  if (plan.listId !== undefined) {
+    const listId = plan.listId;
+    const det = await retried(() => getCallListDetails(cfg, listId));
+    const tasks = (det.result ?? []).map(normalizeCallListTask);
+    const byStatus = new Map<string, number>();
+    for (const t of tasks) byStatus.set(t.status, (byStatus.get(t.status) ?? 0) + 1);
+    console.log(`  tasks: ${det.total_count ?? tasks.length} total, ${tasks.length} fetched`);
+    console.log(
+      `  by status: ${[...byStatus.entries()].map(([k, v]) => `${k}=${v}`).join(', ') || '(none)'}`,
+    );
+    const withResult = tasks.filter((t) => t.resultData.present).length;
+    console.log(`  result_data present: ${withResult}/${tasks.length} (content withheld — PII)`);
+  }
+}
+
+// A2: Voximplant IP inventory for the IONOS firewall allowlist. PUBLIC endpoint —
+// runs with no credentials at all (dispatched before loadConfig).
+async function cmdMediaResources(): Promise<void> {
+  const raw = await getMediaResources({ with_jsservers: true });
+  const ips = extractIpStrings(raw);
+  console.log(`jsservers (scenario-origin IPs for the firewall allowlist): ${ips.length}`);
+  for (const ip of ips) console.log(`  ${ip}`);
+  if (ips.length === 0) {
+    console.log('  (no IP strings recognized in the response — inspect manually)');
+  }
+}
+
+// READ-ONLY (A3): account audit log. GetAuditLog is Owner-only per the docs —
+// with the service-account key expect a clean degraded message, not a crash.
+async function cmdAudit(
+  cfg: VoximplantConfig,
+  flags: Record<string, FlagValue>,
+): Promise<void> {
+  const plan = resolveAuditPlan(flags);
+  const to = new Date();
+  const from = new Date(to.getTime() - plan.days * 24 * 3600 * 1000);
+  let res;
+  try {
+    res = await retried(() =>
+      getAuditLog(cfg, {
+        from_date: fmtUTC(from),
+        to_date: fmtUTC(to),
+        count: plan.count,
+      }),
+    );
+  } catch (e) {
+    if (e instanceof VoximplantApiError) {
+      console.log(
+        `audit log unavailable with this key (API code ${e.code ?? '?'}). ` +
+          'GetAuditLog is Owner-only — use an owner-level key or the control panel.',
+      );
+      return;
+    }
+    throw e;
+  }
+  const entries = (res.result ?? []).map(normalizeAuditEntry);
+  console.log(
+    `audit entries (last ${plan.days}d): ${res.total_count ?? entries.length} total, showing ${entries.length}`,
+  );
+  for (const e of entries) {
+    console.log(`  ${e.at ?? '—'}  ${e.command ?? '?'}  actor=${e.actorType}  ip=${e.ipMasked ?? '—'}`);
+  }
 }
 
 async function dispatch(
@@ -388,15 +479,23 @@ async function dispatch(
       return cmdNumbers(cfg);
     case 'transactions':
       return cmdTransactions(cfg, flags);
-    case 'start':
-      return cmdStart(cfg, flags);
     case 'recording':
       return cmdRecording(cfg, flags);
+    case 'call-lists':
+      return cmdCallLists(cfg, flags);
+    case 'audit':
+      return cmdAudit(cfg, flags);
+    case 'media-resources':
+      // handled before loadConfig in main() — unreachable here
+      return cmdMediaResources();
   }
 }
 
 async function main(): Promise<void> {
-  const { command, flags } = parseArgs(process.argv.slice(2));
+  const { command, flags: rawFlags } = parseArgs(process.argv.slice(2));
+  // Canonicalize aliases (--credentials→--key, --application-id→--app) BEFORE
+  // validation so every downstream consumer sees one canonical flag name.
+  const flags = normalizeAliases(rawFlags);
 
   // --help and the no-command case must work WITHOUT credentials.
   if (flags.help === true) {
@@ -413,6 +512,12 @@ async function main(): Promise<void> {
   // command / bad flag fails cleanly even with no key present.
   assertKnownCommand(command);
   validateCommandFlags(command, flags);
+
+  // media-resources is a PUBLIC endpoint — no credentials required.
+  if (command === 'media-resources') {
+    await cmdMediaResources();
+    return;
+  }
 
   const cfg = loadConfig(flags);
   await dispatch(command, cfg, flags);

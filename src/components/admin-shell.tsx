@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { DirectionProvider } from '@base-ui/react/direction-provider';
 import {
+  Bot,
   Building2,
   CalendarClock,
   ChevronDown,
@@ -105,6 +106,7 @@ const NAV_GROUPS: NavGroup[] = [
     label: 'קמפיינים ושליחה',
     items: [
       { href: '/admin/campaigns', label: 'קמפיינים', icon: Send },
+      { href: '/admin/voice', label: 'מוקד שיחות AI', icon: Bot },
       { href: '/admin/channels', label: 'ערוצי תקשורת', icon: MessagesSquare },
       { href: '/admin/templates', label: 'תבניות פנייה', icon: Megaphone },
       { href: '/admin/recordings', label: 'הקלטות שיחות', icon: Voicemail },

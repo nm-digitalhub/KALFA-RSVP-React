@@ -2,7 +2,7 @@
 let d='';
 const typeName=t=>typeof t==='string'?t:(t&&(t.title||t.fqdn||t.kind))||JSON.stringify(t).slice(0,60);
 process.stdin.on('data',c=>d+=c).on('end',()=>{
-  let j; try { j=JSON.parse(d); } catch(e){ console.log('[PARSE-ERROR]'); return; }
+  let j; try { j=JSON.parse(d); } catch { console.log('[PARSE-ERROR]'); return; }
   const out=[];
   const w=(b)=>{
     if(!b) return;

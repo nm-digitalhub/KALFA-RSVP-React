@@ -48,6 +48,7 @@ import { processWebhookEvent } from '@/lib/data/webhook-processing';
 import { runThankyouSweep } from '@/lib/data/auto-thankyou';
 import { runBalanceCheck } from '@/lib/data/voximplant-balance';
 import { runCallReconcile } from '@/lib/data/voximplant-reconcile';
+import { runLogExport } from '@/lib/data/vox-log-export';
 import { sendSlackAlert } from '@/lib/alerts/slack';
 
 // Standalone process — load .env.local ourselves (Next is not running here).
@@ -396,7 +397,8 @@ async function main(): Promise<void> {
     // partial UNIQUE index) already makes a double-SEND impossible even under
     // overlap, but this closes the race at its source instead of relying on
     // a single defense layer.
-    await boss.createQueue(q, q === QUEUES.thankyouSweep ? { policy: 'singleton' } : undefined);
+    const singleton = q === QUEUES.thankyouSweep || q === QUEUES.logExport;
+    await boss.createQueue(q, singleton ? { policy: 'singleton' } : undefined);
   }
 
   await boss.work(
@@ -459,6 +461,16 @@ async function main(): Promise<void> {
       await runCallReconcile();
     }),
   );
+  // Voximplant session-log export (A4): daily — downloads logs (which expire
+  // ~1 month) into the private bucket. runLogExport is dark-safe (no-op when the
+  // channel is unconfigured), never throws, and never dials; the singleton queue
+  // policy plus an atomic per-row lease prevent double-processing.
+  await boss.work(
+    QUEUES.logExport,
+    guardedWorker(QUEUES.logExport, async () => {
+      await runLogExport();
+    }),
+  );
 
   await boss.schedule(QUEUES.arm, '* * * * *');
   await boss.schedule(QUEUES.sweeper, '*/5 * * * *');
@@ -466,6 +478,7 @@ async function main(): Promise<void> {
   await boss.schedule(QUEUES.thankyouSweep, '*/5 * * * *');
   await boss.schedule(QUEUES.balanceCheck, '*/30 * * * *');
   await boss.schedule(QUEUES.callReconcile, '*/10 * * * *');
+  await boss.schedule(QUEUES.logExport, '20 3 * * *');
 
   console.log('[kalfa-worker] started — queues + schedules up');
 

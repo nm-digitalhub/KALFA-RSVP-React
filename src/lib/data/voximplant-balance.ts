@@ -16,6 +16,53 @@ import { sendSlackAlert } from '@/lib/alerts/slack';
 //     job and trigger guardedWorker's error alert for a benign blip;
 //   - NEVER dials — this only reads account info, it does not place a call;
 //   - PII-free Slack payloads: balance/threshold numbers only, no guest data.
+
+// Pure threshold decision, shared between this cron and the account-callback
+// route's verified pull (plan B5) — ONE source of truth for what counts as an
+// alert. `balance: null` means the pull succeeded but the number was
+// unparseable — surfaced loudly rather than silently skipped.
+export interface BalanceAlertInput {
+  balance: number | null;
+  minCallReserve: number;
+  lowBalanceThreshold: number;
+}
+
+export interface BalanceAlertDecision {
+  level: 'error' | 'warn';
+  title: string;
+  detail: string;
+  fields: Record<string, number>;
+}
+
+export function evaluateBalanceAlert(input: BalanceAlertInput): BalanceAlertDecision | null {
+  const { balance, minCallReserve, lowBalanceThreshold } = input;
+  if (balance === null) {
+    return {
+      level: 'warn',
+      title: 'Voximplant balance unknown',
+      detail: 'GetAccountInfo returned a non-numeric balance',
+      fields: { reserve: minCallReserve, threshold: lowBalanceThreshold },
+    };
+  }
+  if (balance < minCallReserve) {
+    return {
+      level: 'error',
+      title: 'Voximplant balance below reserve — calls blocked',
+      detail: `balance $${balance.toFixed(2)} < reserve $${minCallReserve}`,
+      fields: { balance, reserve: minCallReserve },
+    };
+  }
+  if (balance < lowBalanceThreshold) {
+    return {
+      level: 'warn',
+      title: 'Voximplant balance low',
+      detail: `balance $${balance.toFixed(2)}`,
+      fields: { balance, threshold: lowBalanceThreshold },
+    };
+  }
+  return null;
+}
+
 export async function runBalanceCheck(): Promise<void> {
   const cfg = await getVoximplantConfig();
   // dark-safe: no polling while the channel is off (config missing or the
@@ -29,23 +76,19 @@ export async function runBalanceCheck(): Promise<void> {
     return; // transient — next tick retries; never throw (would fail the tick)
   }
 
-  if (balance < cfg.minCallReserve) {
+  const decision = evaluateBalanceAlert({
+    balance,
+    minCallReserve: cfg.minCallReserve,
+    lowBalanceThreshold: cfg.lowBalanceThreshold,
+  });
+  if (decision) {
     void sendSlackAlert({
-      level: 'error',
+      level: decision.level,
       category: 'send_health',
       source: 'voximplant-balance',
-      title: 'Voximplant balance below reserve — calls blocked',
-      detail: `balance $${balance.toFixed(2)} < reserve $${cfg.minCallReserve}`,
-      fields: { balance, reserve: cfg.minCallReserve },
-    });
-  } else if (balance < cfg.lowBalanceThreshold) {
-    void sendSlackAlert({
-      level: 'warn',
-      category: 'send_health',
-      source: 'voximplant-balance',
-      title: 'Voximplant balance low',
-      detail: `balance $${balance.toFixed(2)}`,
-      fields: { balance, threshold: cfg.lowBalanceThreshold },
+      title: decision.title,
+      detail: decision.detail,
+      fields: decision.fields,
     });
   }
 }

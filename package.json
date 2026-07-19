@@ -23,7 +23,7 @@
     "test:watch": "vitest",
     "verify:db": "node --env-file=.env.local scripts/verify-db-contracts.mjs",
     "typecheck": "tsc --noEmit",
-    "voximplant": "tsx src/lib/voximplant/cli.ts"
+    "voximplant": "tsx scripts/voximplant/cli.ts"
   },
   "dependencies": {
     "@base-ui/react": "^1.6.0",

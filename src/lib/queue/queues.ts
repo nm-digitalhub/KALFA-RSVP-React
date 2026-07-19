@@ -20,6 +20,11 @@ export const QUEUES = {
   // call_attempts older than 15m. NEVER re-issues StartScenarios. See
   // src/lib/data/voximplant-reconcile.ts.
   callReconcile: 'voximplant-call-reconcile',
+  // Voximplant session-log export (A4) — daily; downloads logs (which expire
+  // ~1 month) into the private vox-call-logs bucket. Singleton so a manual run
+  // never overlaps the cron (an atomic per-row lease is the inner guard). See
+  // src/lib/data/vox-log-export.ts.
+  logExport: 'voximplant-log-export',
 } as const;
 
 // outreach-step retry policy: a few backed-off retries, then dead-letter. The

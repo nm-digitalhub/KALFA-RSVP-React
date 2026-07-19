@@ -1,5 +1,7 @@
 import 'server-only';
 
+import { randomBytes } from 'node:crypto';
+
 import { createClient } from '@/lib/supabase/server';
 import { requireAdmin } from '@/lib/auth/dal';
 import type { Database } from '@/lib/supabase/types';
@@ -8,6 +10,10 @@ import {
   envAllowsLiveCalls,
 } from '@/lib/data/voximplant-config';
 import { getAccountInfo } from '@/lib/voximplant/core';
+import { setAccountCallbackUrl } from '@/lib/voximplant/mutations';
+import { sha256Hex } from '@/lib/security/token-compare';
+import { normalizeAccountInfo } from '@/lib/validation/vox-payloads';
+import { getAppUrl } from '@/lib/url';
 
 // Admin: Voximplant AI-call channel config (app_settings singleton, admin-only
 // RLS). Same masked-secret pattern as WhatsApp/SUMIT/SMTP. The service-account
@@ -158,6 +164,135 @@ export async function updateVoximplantLiveCalls(enabled: boolean): Promise<void>
     .update({ voximplant_live_calls: enabled })
     .eq('id', SETTINGS_ID);
   if (error) throw new Error('עדכון מתג השיחות החיות נכשל');
+}
+
+// ---------------------------------------------------------------------------
+// B5 — account-callback wiring state machine.
+// ---------------------------------------------------------------------------
+// The ONLY mutating Voximplant call in the product besides the dial: a
+// restricted SetAccountInfo(callback_url, callback_salt). State machine:
+//   unwired → pending → wired | failed → rollback_pending → rolled_back
+// Persist-then-mutate: we store the token HASH + salt + a snapshot of the
+// PREVIOUS callback_url/salt BEFORE calling SetAccountInfo, so the provider can
+// never point at a token we failed to store, and a rollback RESTORES the prior
+// values (never blank-resets). The raw token is returned ONCE for display and
+// then exists only inside the URL registered at Voximplant.
+
+export type WireAccountCallbackResult =
+  | { ok: true; callbackUrl: string; rawToken: string; echoConfirmed: boolean }
+  | { ok: false; message: string };
+
+export async function wireVoximplantAccountCallback(): Promise<WireAccountCallbackResult> {
+  await requireAdmin();
+  const cfg = await getVoximplantConfig();
+  if (!cfg) {
+    return { ok: false, message: 'הערוץ אינו מוגדר — נדרש חשבון שירות תקין תחילה' };
+  }
+  const supabase = await createClient();
+
+  // Snapshot the CURRENT callback_url/salt (echo) so a rollback can restore it.
+  // If the echo is unavailable, snapshot explicit nulls (documented fallback).
+  let prev: { callback_url: string | null; callback_salt: string | null } = {
+    callback_url: null,
+    callback_salt: null,
+  };
+  try {
+    const info = normalizeAccountInfo(await getAccountInfo(cfg.auth, 10_000));
+    prev = { callback_url: info.callbackUrl, callback_salt: info.callbackSalt };
+  } catch {
+    /* echo unavailable — keep null snapshot (rollback will clear, with a warning) */
+  }
+
+  const rawToken = randomBytes(24).toString('hex'); // 48 hex chars, 192-bit
+  const salt = randomBytes(12).toString('hex'); // ≤40 chars, provider salt
+  const tokenHash = sha256Hex(rawToken);
+  const callbackUrl = await getAppUrl(`/api/voximplant/account-callback/${rawToken}`);
+
+  // 1. Persist hash+salt+prev+state='pending' FIRST (before the provider call).
+  const pendingPatch: Database['public']['Tables']['app_settings']['Update'] = {
+    voximplant_account_callback_token_hash: tokenHash,
+    voximplant_account_callback_salt: salt,
+    voximplant_account_callback_prev: prev as unknown as Database['public']['Tables']['app_settings']['Update']['voximplant_account_callback_prev'],
+    voximplant_account_callback_state: 'pending',
+  };
+  const { error: persistErr } = await supabase
+    .from('app_settings')
+    .update(pendingPatch)
+    .eq('id', SETTINGS_ID);
+  if (persistErr) return { ok: false, message: 'שמירת הטוקן נכשלה — לא בוצע חיווט' };
+
+  // 2. Register the callback at Voximplant (the restricted SetAccountInfo).
+  try {
+    await setAccountCallbackUrl(cfg.auth, callbackUrl, salt);
+  } catch {
+    await supabase
+      .from('app_settings')
+      .update({ voximplant_account_callback_state: 'failed' })
+      .eq('id', SETTINGS_ID);
+    return { ok: false, message: 'רישום ה־callback ב־Voximplant נכשל — ניתן לנסות שוב' };
+  }
+
+  // 3. Verify via echo (best-effort), then mark wired.
+  let echoConfirmed = false;
+  try {
+    const after = normalizeAccountInfo(await getAccountInfo(cfg.auth, 10_000));
+    echoConfirmed = after.callbackUrl === callbackUrl;
+  } catch {
+    /* echo unverifiable — the first received callback stamp is the fallback proof */
+  }
+  await supabase
+    .from('app_settings')
+    .update({
+      voximplant_account_callback_state: 'wired',
+      voximplant_account_callback_wired_at: new Date().toISOString(),
+    })
+    .eq('id', SETTINGS_ID);
+
+  return { ok: true, callbackUrl, rawToken, echoConfirmed };
+}
+
+export type RollbackAccountCallbackResult = { ok: boolean; message: string };
+
+// Restore the PREVIOUS callback_url/salt (from the snapshot) — never a blank
+// reset. Moves state → rollback_pending → rolled_back and clears the stored hash
+// so the route goes dark again.
+export async function rollbackVoximplantAccountCallback(): Promise<RollbackAccountCallbackResult> {
+  await requireAdmin();
+  const cfg = await getVoximplantConfig();
+  if (!cfg) return { ok: false, message: 'הערוץ אינו מוגדר' };
+  const supabase = await createClient();
+
+  const { data } = await supabase
+    .from('app_settings')
+    .select('voximplant_account_callback_prev')
+    .eq('id', SETTINGS_ID)
+    .maybeSingle();
+  const prevRaw = (data as Record<string, unknown> | null)?.voximplant_account_callback_prev;
+  const prev = (prevRaw ?? { callback_url: null, callback_salt: null }) as {
+    callback_url: string | null;
+    callback_salt: string | null;
+  };
+
+  await supabase
+    .from('app_settings')
+    .update({ voximplant_account_callback_state: 'rollback_pending' })
+    .eq('id', SETTINGS_ID);
+
+  try {
+    // Restore the snapshotted values (both null clears the callback provider-side).
+    await setAccountCallbackUrl(cfg.auth, prev.callback_url, prev.callback_salt);
+  } catch {
+    return { ok: false, message: 'שחזור ה־callback הקודם נכשל — נסו שוב' };
+  }
+
+  await supabase
+    .from('app_settings')
+    .update({
+      voximplant_account_callback_state: 'rolled_back',
+      voximplant_account_callback_token_hash: null, // route goes dark again
+    })
+    .eq('id', SETTINGS_ID);
+  return { ok: true, message: 'החיווט בוטל וה־callback הקודם שוחזר' };
 }
 
 export type ConnectionTestResult = { ok: boolean; message: string };

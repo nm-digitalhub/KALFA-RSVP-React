@@ -106,6 +106,40 @@ export async function getVoximplantCallbackSecret(): Promise<string | null> {
   return cfg?.callbackSecret ?? null;
 }
 
+// Narrow config for the account-callback verified balance pull (B5): the
+// service-account auth + the two thresholds ONLY. Deliberately does NOT require
+// rule_id/caller_id — a balance alert must work whether or not dialing is
+// configured (number-rent decay matters while calls are off), and the callback's
+// validity must not depend on the dial config. Returns null only if the SA JSON
+// is absent/unparseable.
+export type VoximplantBalancePullConfig = {
+  auth: VoximplantConfig;
+  lowBalanceThreshold: number;
+  minCallReserve: number;
+};
+
+export async function getVoximplantBalancePullConfig(): Promise<VoximplantBalancePullConfig | null> {
+  try {
+    const admin = createAdminClient();
+    const { data, error } = await admin
+      .from('app_settings')
+      .select('*')
+      .eq('id', true)
+      .maybeSingle();
+    if (error || !data) return null;
+    const row = data as Record<string, unknown>;
+    const auth = parseServiceAccount(str(row, 'voximplant_service_account_json'));
+    if (!auth) return null;
+    return {
+      auth,
+      lowBalanceThreshold: num(row, 'voximplant_low_balance_threshold', 5.0),
+      minCallReserve: num(row, 'voximplant_min_call_reserve', 0.1),
+    };
+  } catch {
+    return null;
+  }
+}
+
 // Just the Groq key (Branch B: served in the ctx response instead of the scenario
 // payload, so it never lands in Voximplant call-history session_custom_data). Read
 // directly from the row so serving it never depends on SA/rule/caller presence.

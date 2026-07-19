@@ -19,25 +19,49 @@ export class CliError extends Error {
 
 export const KNOWN_FLAGS = new Set([
   'key',
+  'credentials', // alias of --key
   'help',
   'app',
+  'application-id', // alias of --app
   'days',
   'history-id',
   'output',
   'force',
   'timeout-seconds',
   'poll-interval-seconds',
-  // `start` subcommand (manual, guarded — places a REAL call)
-  'rule',
+  'type', // transactions: transaction_type filter
+  // `history` accepts --from/--to as an explicit UTC date window.
   'to',
   'from',
-  'confirm',
-  'bytes',
-  'raw',
-  'origin',
-  'tok',
   'session',
+  'list-id', // call-lists: single-list filter
+  'count', // audit: page size
 ]);
+
+// Flag aliases, normalized immediately after parsing so every downstream
+// consumer (per-command validation, plans, loadConfig) sees ONE canonical name.
+const FLAG_ALIASES: Record<string, string> = {
+  credentials: 'key',
+  'application-id': 'app',
+};
+
+// Rewrite alias flags to their canonical names. Passing both the alias and its
+// canonical form is ambiguous and rejected (same rule as a duplicate flag).
+export function normalizeAliases(
+  flags: Record<string, FlagValue>,
+): Record<string, FlagValue> {
+  const out: Record<string, FlagValue> = {};
+  for (const [name, value] of Object.entries(flags)) {
+    const canonical = FLAG_ALIASES[name] ?? name;
+    if (canonical in out) {
+      throw new CliError(
+        `duplicate flag: --${canonical} was given more than once (alias)`,
+      );
+    }
+    out[canonical] = value;
+  }
+  return out;
+}
 
 // Flags that never take a value (presence = true).
 const BOOLEAN_FLAGS = new Set(['help', 'force', 'confirm']);
@@ -92,7 +116,10 @@ export function parseArgs(argv: string[]): ParsedArgs {
 // Commands + per-command flag validation
 // ---------------------------------------------------------------------------
 
-export const KNOWN_COMMANDS = ['account', 'rules', 'history', 'numbers', 'transactions', 'start', 'recording'] as const;
+// READ-ONLY command set (owner directive): the CLI can never mutate Voximplant
+// state — `start` was removed with the mutations split (the server dispatcher
+// is the only dial path) and a guard test pins this list.
+export const KNOWN_COMMANDS = ['account', 'rules', 'history', 'numbers', 'transactions', 'recording', 'call-lists', 'media-resources', 'audit'] as const;
 export type KnownCommand = (typeof KNOWN_COMMANDS)[number];
 
 export function assertKnownCommand(command: string): asserts command is KnownCommand {
@@ -108,6 +135,8 @@ const ALLOWED_FLAGS: Record<KnownCommand, Set<string>> = {
     'key',
     'app',
     'days',
+    'from',
+    'to',
     'history-id',
     'output',
     'force',
@@ -120,12 +149,16 @@ const ALLOWED_FLAGS: Record<KnownCommand, Set<string>> = {
   // READ-ONLY billing ledger — what the balance is spent on. --days window,
   // --type CSV filter. Never charges/refunds/modifies anything.
   transactions: new Set(['key', 'days', 'type']),
-  // A manual, one-shot StartScenarios trigger (byte-cap probe). `--confirm` is a
-  // mandatory safety interlock — see resolveStartPlan; nothing runs without it.
-  start: new Set(['key', 'rule', 'to', 'from', 'confirm', 'bytes', 'raw', 'origin', 'tok']),
   // READ-ONLY: fetch a call's secure recording by session id → save an mp3.
   // Never places a call or modifies anything; only --key + which session/output.
   recording: new Set(['key', 'session', 'output', 'days']),
+  // READ-ONLY: observe server-side dialing campaigns (A1). PII-safe output only.
+  'call-lists': new Set(['key', 'list-id', 'days']),
+  // Public firewall-allowlist inventory (A2) — needs NO credentials at all.
+  'media-resources': new Set([]),
+  // READ-ONLY account audit log (A3). Owner-role-only per docs — prints a clean
+  // degraded message when the service-account key is refused.
+  audit: new Set(['key', 'days', 'count']),
 };
 
 // Reject any flag that does not belong to the given command (--help is global and
@@ -174,6 +207,29 @@ export function positiveInt(
   return n;
 }
 
+// Validate a UTC date/datetime flag: `YYYY-MM-DD` (normalized to midnight) or
+// `YYYY-MM-DD HH:MM:SS`. Returns the Management-API form "YYYY-MM-DD HH:MM:SS".
+export function utcDateTime(name: string, v: FlagValue | undefined): string {
+  const s = requireStringValue(name, v);
+  const m = /^(\d{4})-(\d{2})-(\d{2})(?: (\d{2}):(\d{2}):(\d{2}))?$/.exec(s);
+  if (!m) {
+    throw new CliError(
+      `--${name} must be "YYYY-MM-DD" or "YYYY-MM-DD HH:MM:SS" (UTC), got "${s}"`,
+    );
+  }
+  const normalized = m[4] !== undefined ? s : `${s} 00:00:00`;
+  const parsed = Date.parse(`${normalized.replace(' ', 'T')}Z`);
+  if (Number.isNaN(parsed)) {
+    throw new CliError(`--${name} is not a real date: "${s}"`);
+  }
+  // Round-trip guard: rejects e.g. 2026-02-30 which Date.parse would roll over.
+  const rt = new Date(parsed).toISOString().slice(0, 19).replace('T', ' ');
+  if (rt !== normalized) {
+    throw new CliError(`--${name} is not a real date: "${s}"`);
+  }
+  return normalized;
+}
+
 // Resolve the service-account key path. An explicit `--key` MUST carry a value —
 // it never silently falls through to the env/default.
 export function resolveKeyPath(
@@ -207,7 +263,15 @@ export interface HistoryOutputPlan {
 
 export type HistoryPlan =
   | ({ mode: 'existing'; historyReportId: number } & HistoryOutputPlan)
-  | ({ mode: 'create'; applicationId: number; days: number } & HistoryOutputPlan);
+  | ({
+      mode: 'create';
+      applicationId: number;
+      // EITHER a --days lookback (window computed at run time) OR an explicit
+      // --from/--to UTC window (both normalized "YYYY-MM-DD HH:MM:SS").
+      days: number;
+      fromDate?: string;
+      toDate?: string;
+    } & HistoryOutputPlan);
 
 export function resolveHistoryPlan(flags: Record<string, FlagValue>): HistoryPlan {
   const output =
@@ -233,10 +297,11 @@ export function resolveHistoryPlan(flags: Record<string, FlagValue>): HistoryPla
   };
 
   const hasExisting = flags['history-id'] !== undefined;
-  const hasCreate = flags.app !== undefined || flags.days !== undefined;
+  const hasWindow = flags.from !== undefined || flags.to !== undefined;
+  const hasCreate = flags.app !== undefined || flags.days !== undefined || hasWindow;
   if (hasExisting && hasCreate) {
     throw new CliError(
-      'choose ONE mode: --history-id <id> (existing) OR --app <id> [--days n] (new report)',
+      'choose ONE mode: --history-id <id> (existing) OR --app <id> [--days n | --from/--to] (new report)',
     );
   }
   if (hasExisting) {
@@ -247,6 +312,27 @@ export function resolveHistoryPlan(flags: Record<string, FlagValue>): HistoryPla
     };
   }
   if (flags.app !== undefined) {
+    if (hasWindow) {
+      if (flags.days !== undefined) {
+        throw new CliError('choose ONE window: --days n OR --from/--to');
+      }
+      if (flags.from === undefined || flags.to === undefined) {
+        throw new CliError('--from and --to must be given together');
+      }
+      const fromDate = utcDateTime('from', flags.from);
+      const toDate = utcDateTime('to', flags.to);
+      if (fromDate >= toDate) {
+        throw new CliError('--from must be earlier than --to');
+      }
+      return {
+        mode: 'create',
+        applicationId: positiveInt('app', flags.app),
+        days: HISTORY_DEFAULTS.days, // unused when an explicit window is set
+        fromDate,
+        toDate,
+        ...common,
+      };
+    }
     return {
       mode: 'create',
       applicationId: positiveInt('app', flags.app),
@@ -258,104 +344,41 @@ export function resolveHistoryPlan(flags: Record<string, FlagValue>): HistoryPla
     };
   }
   throw new CliError(
-    'history requires either --history-id <id> or --app <id> [--days n]',
+    'history requires either --history-id <id> or --app <id> [--days n | --from/--to]',
   );
 }
 
 // ---------------------------------------------------------------------------
-// start command plan — manual, guarded StartScenarios byte-cap probe
+// call-lists / audit command plans (A1 + A3)
 // ---------------------------------------------------------------------------
+// The former `start` command (live-dial byte-cap probe) was REMOVED with the
+// read-only/mutations split — the server dispatcher is the only dial path.
 
-// Upper bound for the synthetic --bytes padding: comfortably above the real
-// payload (~450-550B) and Voximplant's documented cap, while refusing absurd
-// values. This is a diagnostic size, never a production payload.
-export const START_MAX_BYTES = 4096;
-
-export interface StartPlan {
-  ruleId: number;
-  to: string;
-  from?: string;
-  // When set, the synthetic script_custom_data is padded to ~this many UTF-8
-  // bytes so the operator can probe exactly where the scenario truncates it.
-  targetBytes?: number;
-  // Diagnostic: send this EXACT string as script_custom_data (bypasses the
-  // synthetic payload) — used to isolate whether the delivery problem is size/
-  // encoding vs transport by sending a tiny plain-ASCII value.
-  raw?: string;
-  // Branch B live-dial test: the app origin the scenario builds the ctx/cb URLs
-  // from. Defaults to the beta origin when omitted.
-  origin?: string;
-  // Branch B live-dial test: the opaque per-call access token (`tok`). A fake
-  // 32-hex value still dials — the scenario runs callPSTN even when ctx 404s —
-  // but there is no personalization or Groq (DTMF-only). Pass a REAL
-  // call_attempts.access_token for a fully personalized test.
-  tok?: string;
+export interface CallListsPlan {
+  listId?: number;
+  days: number;
 }
 
-// Default app origin for the Branch B start probe (the beta deployment).
-export const START_DEFAULT_ORIGIN = 'https://beta.kalfa.me';
-// A syntactically valid but non-existent access token: ctx will 404 (no
-// personalization / no Groq) yet the scenario still dials — enough to verify the
-// transport + PSTN leg. Overridable via --tok for a real, personalized test.
-const START_PLACEHOLDER_TOK = '0'.repeat(32);
-
-// Validate the arguments for `start`. This does NOT place a call — it only
-// produces a plan. The `--confirm` interlock is enforced HERE so that every
-// path to a live dial (CLI dispatch OR any future caller) must pass it; the
-// command can never fire by default, from a test, or from a bare invocation.
-export function resolveStartPlan(flags: Record<string, FlagValue>): StartPlan {
-  if (flags.confirm !== true) {
-    throw new CliError(
-      'start places a REAL outbound call and is disabled by default. ' +
-        'Re-run with --confirm ONLY after balance top-up and explicit approval.',
-    );
-  }
-  const ruleId = positiveInt('rule', flags.rule);
-  const to = requireStringValue('to', flags.to);
-  const from =
-    flags.from !== undefined ? requireStringValue('from', flags.from) : undefined;
-  const targetBytes =
-    flags.bytes !== undefined
-      ? positiveInt('bytes', flags.bytes, { max: START_MAX_BYTES })
-      : undefined;
-  const raw = typeof flags.raw === 'string' ? flags.raw : undefined;
-  const origin =
-    flags.origin !== undefined ? requireStringValue('origin', flags.origin) : undefined;
-  const tok = flags.tok !== undefined ? requireStringValue('tok', flags.tok) : undefined;
-  return { ruleId, to, from, targetBytes, raw, origin, tok };
-}
-
-// Build the script_custom_data for the start probe. Mirrors the production
-// Branch B payload SHAPE — {to, from, tok, u} — so the redeployed scenario reads
-// it correctly and actually dials. `tok` defaults to a syntactically valid but
-// non-existent access token (ctx 404s → DTMF-only, no personalization); pass a
-// real one via --tok for a personalized test. No real Groq key or signed token
-// ever appears here. When `targetBytes` is set the payload is padded to
-// approximately that UTF-8 size to probe the scenario's byte cap. Returns the
-// payload AND its exact byte length so callers log only the count.
-export function buildStartCustomData(plan: StartPlan): {
-  payload: string;
-  bytes: number;
-} {
-  // Diagnostic override: send the exact --raw string as script_custom_data.
-  if (plan.raw !== undefined) {
-    return { payload: plan.raw, bytes: Buffer.byteLength(plan.raw, 'utf8') };
-  }
-  const base: Record<string, string> = {
-    to: plan.to,
-    from: plan.from ?? '',
-    tok: plan.tok ?? START_PLACEHOLDER_TOK,
-    u: plan.origin ?? START_DEFAULT_ORIGIN,
+export function resolveCallListsPlan(flags: Record<string, FlagValue>): CallListsPlan {
+  return {
+    listId:
+      flags['list-id'] !== undefined ? positiveInt('list-id', flags['list-id']) : undefined,
+    days:
+      flags.days !== undefined ? positiveInt('days', flags.days, { max: 365 }) : 30,
   };
-  if (plan.targetBytes === undefined) {
-    const payload = JSON.stringify(base);
-    return { payload, bytes: Buffer.byteLength(payload, 'utf8') };
-  }
-  const empty = JSON.stringify({ ...base, pad: '' });
-  const current = Buffer.byteLength(empty, 'utf8');
-  const padLen = plan.targetBytes > current ? plan.targetBytes - current : 0;
-  const payload = JSON.stringify({ ...base, pad: 'x'.repeat(padLen) });
-  return { payload, bytes: Buffer.byteLength(payload, 'utf8') };
+}
+
+export interface AuditPlan {
+  days: number;
+  count: number;
+}
+
+export function resolveAuditPlan(flags: Record<string, FlagValue>): AuditPlan {
+  return {
+    days: flags.days !== undefined ? positiveInt('days', flags.days, { max: 365 }) : 30,
+    count:
+      flags.count !== undefined ? positiveInt('count', flags.count, { max: 1000 }) : 50,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -378,6 +401,40 @@ export function resolveRecordingPlan(flags: Record<string, FlagValue>): Recordin
   const days =
     flags.days !== undefined ? positiveInt('days', flags.days, { max: 120 }) : 7;
   return { sessionId, output, days };
+}
+
+// ---------------------------------------------------------------------------
+// Offset pagination (IO injected)
+// ---------------------------------------------------------------------------
+
+export interface PageResult<T> {
+  result: T[];
+  total_count: number;
+}
+
+// Collect ALL rows of an offset-paginated Management API listing. Stops when a
+// page comes back empty, when `total_count` rows were gathered, or at the
+// `maxRows` safety backstop (guards against an API that keeps returning rows).
+export async function collectAllPages<T>(
+  fetchPage: (offset: number, count: number) => Promise<PageResult<T>>,
+  opts: { pageSize: number; maxRows: number },
+): Promise<{ rows: T[]; totalCount: number }> {
+  const rows: T[] = [];
+  let totalCount = 0;
+  let offset = 0;
+  for (;;) {
+    const page = await fetchPage(offset, opts.pageSize);
+    totalCount = page.total_count;
+    rows.push(...page.result);
+    offset += page.result.length;
+    if (
+      page.result.length === 0 ||
+      rows.length >= totalCount ||
+      rows.length >= opts.maxRows
+    ) {
+      return { rows, totalCount };
+    }
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -734,18 +791,21 @@ const MAIN_HELP = `Voximplant Management API CLI
 
 usage: npm run voximplant -- <command> [flags]
 
-commands:
-  account                    Show account identity + balance (read-only)
+commands (ALL read-only — the CLI cannot mutate Voximplant state):
+  account                    Show account identity + balance
   rules [--app <id>]         List applications and one app's routing rules
   history <mode> [flags]     Fetch a call-history report (async → CSV)
-  numbers                    List the account's phone numbers (read-only; find a Caller ID)
-  transactions [--days <n>]  Billing ledger — what the balance is spent on (read-only)
-  start <flags> --confirm    Fire ONE StartScenarios call (byte-cap probe; PLACES A REAL CALL)
-  recording --session <id>   Download a call's secure recording as mp3 (read-only)
+  numbers                    List the account's phone numbers (find a Caller ID)
+  transactions [--days <n>]  Billing ledger — what the balance is spent on
+  recording --session <id>   Download a call's secure recording as mp3
+  call-lists [--list-id <n>] [--days <n>]  Observe dialing campaigns (PII-safe aggregates)
+  media-resources            Voximplant IP inventory for the firewall allowlist (no credentials)
+  audit [--days <n>] [--count <n>]  Account audit log (Owner-only; degrades cleanly)
 
 history modes:
   --history-id <id>          Download an existing report by id
   --app <id> [--days <n>]    Create a new report (default days ${HISTORY_DEFAULTS.days}, max ${HISTORY_DEFAULTS.maxDays})
+  --app <id> --from <d> --to <d>  Explicit UTC window ("YYYY-MM-DD" or "YYYY-MM-DD HH:MM:SS")
 
 history flags:
   --output <file>            Write CSV to file (atomic; refuses overwrite)
@@ -753,49 +813,29 @@ history flags:
   --timeout-seconds <n>      Poll deadline (default ${HISTORY_DEFAULTS.timeoutSeconds}, max ${HISTORY_DEFAULTS.maxTimeoutSeconds})
   --poll-interval-seconds <n> Poll interval (default ${HISTORY_DEFAULTS.pollIntervalSeconds})
 
-start flags (manual byte-cap probe — PLACES A REAL CALL):
-  --rule <id>                OutCall rule id bound to the RSVP scenario (StartScenarios)
-  --to <number>             Single destination number to dial (embedded in script_custom_data)
-  --from <number>           Optional caller id embedded in the payload
-  --bytes <n>               Pad the synthetic script_custom_data to ~n UTF-8 bytes (max ${START_MAX_BYTES})
-  --confirm                  REQUIRED interlock — without it 'start' refuses to run
-
 global flags:
-  --key <path>               Service-account JSON (default: env VOX_CI_CREDENTIALS or ./vox_ci_credentials.json)
-  --help                     Show this help (no credentials required)`;
+  --credentials <path>       Service-account JSON (alias: --key). Default: env
+                             VOXIMPLANT_CREDENTIALS_FILE, then VOX_CI_CREDENTIALS,
+                             then ./vox_ci_credentials.json
+  --application-id <id>      Alias of --app (rules / history)
+  --help                     Show this help (no credentials required)
+
+Management-API calls retry automatically on 429 / API 340 / API 515 (bounded
+backoff) and renew the JWT once on API 456.`;
 
 const HISTORY_HELP = `npm run voximplant -- history <mode> [flags]
 
 modes (exactly one):
   --history-id <id>          Download an existing report by id
   --app <id> [--days <n>]    Create a new report for an application
+  --app <id> --from <d> --to <d>  Explicit UTC window ("YYYY-MM-DD" or "YYYY-MM-DD HH:MM:SS");
+                             --application-id is accepted as an alias of --app
 
 flags:
   --output <file>            Write CSV to file (atomic; refuses overwrite without --force)
   --force                    Allow --output to overwrite
   --timeout-seconds <n>      Poll deadline in seconds (default ${HISTORY_DEFAULTS.timeoutSeconds})
   --poll-interval-seconds <n> Poll interval in seconds (default ${HISTORY_DEFAULTS.pollIntervalSeconds})`;
-
-const START_HELP = `npm run voximplant -- start --rule <id> --to <number> --from <number> [--origin <url>] [--tok <hex>] [--bytes <n>] --confirm
-
-⚠ This PLACES A REAL OUTBOUND CALL via StartScenarios. It sends the Branch B
-payload shape {to, from, tok, u} so the redeployed RSVP scenario actually dials.
-Requires account balance and explicit approval. Nothing runs without --confirm.
-The scenario's dial guard needs a non-empty --from (the verified caller id).
-
-flags:
-  --rule <id>                OutCall rule id bound to the RSVP scenario (required)
-  --to <number>             Single destination number to dial (required)
-  --from <number>           Caller id embedded in the payload — REQUIRED to actually dial
-  --origin <url>            App origin the scenario builds ctx/cb URLs from (default ${START_DEFAULT_ORIGIN})
-  --tok <hex>               access_token 'tok'. Default = a fake 32-hex → ctx 404s (DTMF-only, no
-                            personalization); pass a REAL call_attempts.access_token for a full test
-  --bytes <n>               Pad synthetic script_custom_data to ~n UTF-8 bytes (max ${START_MAX_BYTES})
-  --confirm                  REQUIRED interlock — without it 'start' refuses to run
-
-After it returns a call_session_history_id, use:
-  npm run voximplant -- history --app <id>
-and inspect call_session_history_custom_data to see whether the full payload arrived.`;
 
 const RECORDING_HELP = `npm run voximplant -- recording --session <id> [--output file.mp3] [--days <n>]
 
@@ -804,13 +844,12 @@ never places a call. The recording is fetched with the Management-API JWT (the
 secure URL 401s to an anonymous GET).
 
 flags:
-  --session <id>            call_session_history_id (required; from a 'start' result or history)
+  --session <id>            call_session_history_id (required; from call history)
   --output <file>           Output mp3 path (default: recording-<session>.mp3)
   --days <n>                Lookback window for the history lookup (default 7, max 120)`;
 
 export function helpText(command?: string): string {
   if (command === 'history') return HISTORY_HELP;
-  if (command === 'start') return START_HELP;
   if (command === 'recording') return RECORDING_HELP;
   return MAIN_HELP;
 }

@@ -41,8 +41,13 @@ export class VoximplantApiError extends Error {
 
 // A transport / non-2xx / unparseable-response failure (distinct from a business
 // error, so callers can retry transport but not a definitive rejection).
+// `status` carries the HTTP status when one was received (e.g. 429 for rate
+// limiting) so retry policies can classify without parsing the message text.
 export class VoximplantNetworkError extends Error {
-  constructor(message: string) {
+  constructor(
+    message: string,
+    readonly status?: number,
+  ) {
     super(message);
     this.name = 'VoximplantNetworkError';
   }
@@ -111,15 +116,34 @@ export async function voxRequest<T = unknown>(
   } catch {
     throw new VoximplantNetworkError('שגיאת תקשורת עם מערכת השיחות');
   }
+
+  // Read the body as TEXT first, then check status + Content-Type, and only
+  // then JSON.parse — so a non-JSON body (HTML error page, empty body) is
+  // classified as a network-layer failure and never reaches JSON.parse blind.
+  let text: string;
+  try {
+    text = await res.text();
+  } catch {
+    throw new VoximplantNetworkError('תגובה לא תקינה ממערכת השיחות');
+  }
   if (!res.ok) {
     throw new VoximplantNetworkError(
       `תגובה לא תקינה ממערכת השיחות (${res.status})`,
+      res.status,
     );
   }
-
+  const contentType = (res.headers?.get('content-type') ?? '').toLowerCase();
+  const stripped = text.replace(/^\uFEFF/, '').trimStart();
+  const looksJson =
+    contentType.includes('application/json') ||
+    stripped.startsWith('{') ||
+    stripped.startsWith('[');
+  if (!looksJson) {
+    throw new VoximplantNetworkError('תגובה לא תקינה ממערכת השיחות');
+  }
   let json: unknown;
   try {
-    json = await res.json();
+    json = JSON.parse(stripped);
   } catch {
     throw new VoximplantNetworkError('תגובה לא תקינה ממערכת השיחות');
   }
@@ -134,6 +158,64 @@ export async function voxRequest<T = unknown>(
     );
   }
   return json as T;
+}
+
+// --- Bounded retry for READ-ONLY calls ----------------------------------------
+//
+// Retry policy per the Management API's documented failure modes:
+//   HTTP 429                        — too many concurrent/parallel requests
+//   API code 340 RATE_LIMIT_EXCEED  — per-method rate limit
+//   API code 515 SAME_OPERATION_... — identical operation repeated too fast
+//   API code 456 TOKEN_EXPIRED      — JWT expired (clock skew); every voxRequest
+//                                     signs a FRESH JWT, so one immediate retry
+//                                     is the renewal — never more than once.
+// Opt-in by design: existing server/worker callers keep their fail-fast
+// behavior (the outbound trigger's timeout classification depends on it); the
+// CLI wraps its read-only calls. NEVER wrap StartScenarios — a blind retry
+// could place a second live call.
+export const VOX_RETRYABLE_API_CODES: ReadonlySet<number> = new Set([340, 515]);
+export const VOX_TOKEN_EXPIRED_CODE = 456;
+
+export interface VoxRetryOptions {
+  attempts?: number; // total attempts including the first (default 4)
+  baseDelayMs?: number; // first backoff delay, doubles each retry (default 1000)
+  sleep?: (ms: number) => Promise<void>; // injectable for tests
+}
+
+export async function voxRetry<T>(
+  run: () => Promise<T>,
+  opts: VoxRetryOptions = {},
+): Promise<T> {
+  const attempts = opts.attempts ?? 4;
+  const baseDelayMs = opts.baseDelayMs ?? 1000;
+  const sleep =
+    opts.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
+  let tokenRetryUsed = false;
+  let delayMs = baseDelayMs;
+  let attempt = 1;
+  for (;;) {
+    try {
+      return await run();
+    } catch (e) {
+      if (
+        e instanceof VoximplantApiError &&
+        e.code === VOX_TOKEN_EXPIRED_CODE &&
+        !tokenRetryUsed
+      ) {
+        tokenRetryUsed = true; // re-run signs a fresh JWT — the one-time renewal
+        continue;
+      }
+      const retryable =
+        (e instanceof VoximplantNetworkError && e.status === 429) ||
+        (e instanceof VoximplantApiError &&
+          e.code !== null &&
+          VOX_RETRYABLE_API_CODES.has(e.code));
+      if (!retryable || attempt >= attempts) throw e;
+      await sleep(delayMs);
+      delayMs *= 2;
+      attempt += 1;
+    }
+  }
 }
 
 // --- Typed Management API wrappers -------------------------------------------
@@ -154,15 +236,33 @@ export interface AccountInfo {
   currency: string;
   balance: number;
   created: string;
+  // Account-callback echo (plan B5). UNVERIFIED against live responses —
+  // AccountInfoType's full field list is not in the research corpus; treat as
+  // optional and confirm at the stage-6 wiring gate (a panel/first-callback
+  // fallback is specced if the echo turns out to be absent).
+  callback_url?: string | null;
+  callback_salt?: string | null;
 }
 export interface GetAccountInfoResponse {
   result: AccountInfo;
 }
+export interface GetAccountInfoOptions {
+  // Ask the API for the LIVE balance (not the cached one) — used by the
+  // account-callback verified pull. Optional to keep every existing call site
+  // source-compatible.
+  returnLiveBalance?: boolean;
+}
 export function getAccountInfo(
   config: VoximplantConfig,
   timeoutMs?: number,
+  opts: GetAccountInfoOptions = {},
 ): Promise<GetAccountInfoResponse> {
-  return voxRequest<GetAccountInfoResponse>(config, 'GetAccountInfo', {}, timeoutMs);
+  return voxRequest<GetAccountInfoResponse>(
+    config,
+    'GetAccountInfo',
+    opts.returnLiveBalance ? { return_live_balance: true } : {},
+    timeoutMs,
+  );
 }
 
 // GetPhoneNumbers — READ-ONLY list of the account's phone numbers (used to find a
@@ -232,34 +332,9 @@ export function getTransactionHistory(
   );
 }
 
-// StartScenarios — trigger an outbound scenario run (the RSVP call). `rule_id`
-// binds the scenario; `script_custom_data` carries per-call context. NOTE: this
-// INITIATES a real call — gate behind config + explicit authorization.
-export interface StartScenariosRequest {
-  rule_id: number | string;
-  script_custom_data?: string;
-}
-export interface StartScenariosResponse {
-  result: number;
-  call_session_history_id?: number;
-  media_session_access_url?: string;
-  // HTTPS control URL (verified field, httpapi/scenarios "Returns"). Type-only —
-  // not persisted, and NEVER proof of a started call (only result===1 &&
-  // call_session_history_id is proof).
-  media_session_access_secure_url?: string;
-}
-export function startScenarios(
-  config: VoximplantConfig,
-  params: StartScenariosRequest,
-  timeoutMs?: number,
-): Promise<StartScenariosResponse> {
-  return voxRequest<StartScenariosResponse>(
-    config,
-    'StartScenarios',
-    { ...params },
-    timeoutMs,
-  );
-}
+// NOTE: this module is READ-ONLY by design (owner directive). Mutating
+// wrappers (StartScenarios, the restricted SetAccountInfo) live in
+// `./mutations`, which the CLI never imports — a guard test pins both facts.
 
 // GetApplications
 export interface ApplicationInfo {
@@ -358,6 +433,9 @@ export interface GetCallHistoryRequest {
   application_id?: number;
   with_records?: boolean;
   with_calls?: boolean;
+  // Include auxiliary session resources (log_file_url et al) in the response —
+  // used by the log-export job (plan A4).
+  with_other_resources?: boolean;
   count?: number;
   output?: 'json';
 }
@@ -369,6 +447,14 @@ export interface CallHistoryRecord {
 export interface CallHistorySession {
   call_session_history_id: number;
   records?: CallHistoryRecord[];
+  // Base CallSessionInfoType fields consumed by the log-export job. The URL is
+  // UNTRUSTED — it must pass src/lib/voximplant/log-download.ts gates before
+  // any fetch (plan §8).
+  log_file_url?: string;
+  custom_data?: string;
+  start_date?: string;
+  duration?: number;
+  finish_reason?: string;
 }
 export interface GetCallHistoryResponse {
   result: CallHistorySession[];
@@ -385,6 +471,145 @@ export function getCallHistory(
     { with_records: true, count: 100, output: 'json', ...params },
     timeoutMs,
   );
+}
+
+// --- A1: CallLists (READ-ONLY observation; creation/edit is out of scope) ----
+
+// GetCallLists — list server-side dialing campaigns. Filters per
+// httpapi/calllists: list_id (intlist or 'all'), name, is_active, UTC
+// from_date/to_date, application_id, type_list, count/offset. The response
+// rows are UNTRUSTED and must go through normalizeCallList before any UI.
+export interface GetCallListsRequest {
+  list_id?: number | string;
+  name?: string;
+  is_active?: boolean;
+  from_date?: string;
+  to_date?: string;
+  application_id?: number;
+  type_list?: 'AUTOMATIC' | 'MANUAL';
+  count?: number;
+  offset?: number;
+}
+export interface GetCallListsResponse {
+  result: unknown[]; // CallListType[] — normalized downstream, never trusted raw
+  count?: number;
+  total_count?: number;
+}
+export function getCallLists(
+  config: VoximplantConfig,
+  params: GetCallListsRequest = {},
+  timeoutMs?: number,
+): Promise<GetCallListsResponse> {
+  return voxRequest<GetCallListsResponse>(config, 'GetCallLists', { ...params }, timeoutMs);
+}
+
+// GetCallListDetails — per-task export for ONE list. `list_id` is excluded
+// from the params type and set AFTER the spread; `output:'json'` is FORCED
+// after the spread so a caller can never flip the response to csv/xls.
+// Task rows carry guest PII in custom_data/result_data — normalize to
+// metadata-only before anything user-facing (plan §4).
+export interface GetCallListDetailsRequest {
+  batch_id?: string;
+  count?: number;
+  offset?: number;
+}
+export interface GetCallListDetailsResponse {
+  result: unknown[]; // CallListDetailType[] — normalized downstream
+  count?: number;
+  total_count?: number;
+}
+export function getCallListDetails(
+  config: VoximplantConfig,
+  listId: number | string,
+  params: GetCallListDetailsRequest = {},
+  timeoutMs?: number,
+): Promise<GetCallListDetailsResponse> {
+  return voxRequest<GetCallListDetailsResponse>(
+    config,
+    'GetCallListDetails',
+    { count: 100, ...params, list_id: listId, output: 'json' },
+    timeoutMs,
+  );
+}
+
+// --- A3: GetAuditLog (Owner-role-only per docs — expect VoximplantApiError
+// with a forbidden code under the service-account key; every caller must
+// degrade gracefully, never hard-fail a page) -------------------------------
+export interface GetAuditLogRequest {
+  from_date: string;
+  to_date: string;
+  filtered_cmd?: string; // semicolon-separated command list
+  count?: number;
+  offset?: number;
+}
+export interface GetAuditLogResponse {
+  result: unknown[]; // AuditLogInfoType[] — field list unconfirmed; normalized downstream
+  count?: number;
+  total_count?: number;
+}
+export function getAuditLog(
+  config: VoximplantConfig,
+  params: GetAuditLogRequest,
+  timeoutMs?: number,
+): Promise<GetAuditLogResponse> {
+  // from/to are mandatory — re-set after the spread (getTransactionHistory idiom).
+  return voxRequest<GetAuditLogResponse>(
+    config,
+    'GetAuditLog',
+    { ...params, from_date: params.from_date, to_date: params.to_date },
+    timeoutMs,
+  );
+}
+
+// --- A2: GetMediaResources — firewall-allowlist inventory -------------------
+//
+// NOT a /platform_api method: a bare GET on https://api.voximplant.com/
+// getMediaResources with presence-style query flags and NO Authorization
+// header (both getting-started §Firewall and the child-accounts guide show it
+// as a plain URL — public by design). Response shape is undocumented → raw
+// JSON out, extractIpStrings() downstream.
+export interface GetMediaResourcesFlags {
+  with_nodes?: boolean;
+  with_jsservers?: boolean;
+  with_mediaservers?: boolean;
+  with_webgateways?: boolean;
+  with_sbcs?: boolean;
+  with_videoconverters?: boolean;
+}
+export async function getMediaResources(
+  flags: GetMediaResourcesFlags = { with_jsservers: true },
+  timeoutMs: number = DEFAULT_TIMEOUT_MS,
+): Promise<unknown> {
+  const query = Object.entries(flags)
+    .filter(([, v]) => v === true)
+    .map(([k]) => k)
+    .join('&');
+  let res: Response;
+  try {
+    res = await fetch(`https://api.voximplant.com/getMediaResources${query ? `?${query}` : ''}`, {
+      method: 'GET',
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+  } catch {
+    throw new VoximplantNetworkError('שגיאת תקשורת עם מערכת השיחות');
+  }
+  let text: string;
+  try {
+    text = await res.text();
+  } catch {
+    throw new VoximplantNetworkError('תגובה לא תקינה ממערכת השיחות');
+  }
+  if (!res.ok) {
+    throw new VoximplantNetworkError(
+      `תגובה לא תקינה ממערכת השיחות (${res.status})`,
+      res.status,
+    );
+  }
+  try {
+    return JSON.parse(text.replace(/^\uFEFF/, '').trimStart());
+  } catch {
+    throw new VoximplantNetworkError('תגובה לא תקינה ממערכת השיחות');
+  }
 }
 
 // Download a secure Voximplant asset (recording / log) that 401s to an anonymous

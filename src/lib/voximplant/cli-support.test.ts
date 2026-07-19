@@ -4,9 +4,13 @@ import {
   assertKnownCommand,
   classifyReportResponse,
   CliError,
+  collectAllPages,
+  resolveAuditPlan,
+  resolveCallListsPlan,
   fetchReportWhenReady,
   helpText,
   looksLikeReport,
+  normalizeAliases,
   parseArgs,
   parseCsv,
   positiveInt,
@@ -15,6 +19,7 @@ import {
   resolveKeyPath,
   summarizeIntoLines,
   tempPathFor,
+  utcDateTime,
   validateCommandFlags,
   writeReportAtomic,
   type AtomicWriteDeps,
@@ -421,4 +426,182 @@ it('fetchReportWhenReady surfaces CliError instances', async () => {
   await expect(
     fetchReportWhenReady(1, { timeoutSeconds: 5, pollIntervalSeconds: 1 }, deps),
   ).rejects.toBeInstanceOf(CliError);
+});
+
+describe('normalizeAliases', () => {
+  it('maps --credentials to --key and --application-id to --app', () => {
+    expect(
+      normalizeAliases({ credentials: '/tmp/k.json', 'application-id': '7' }),
+    ).toEqual({ key: '/tmp/k.json', app: '7' });
+  });
+
+  it('keeps canonical names untouched', () => {
+    expect(normalizeAliases({ key: 'a', app: '1', force: true })).toEqual({
+      key: 'a',
+      app: '1',
+      force: true,
+    });
+  });
+
+  it('rejects an alias given together with its canonical form', () => {
+    expect(() => normalizeAliases({ key: 'a', credentials: 'b' })).toThrow(CliError);
+    expect(() => normalizeAliases({ app: '1', 'application-id': '2' })).toThrow(
+      CliError,
+    );
+  });
+});
+
+describe('utcDateTime', () => {
+  it('normalizes a bare date to midnight UTC', () => {
+    expect(utcDateTime('from', '2026-07-01')).toBe('2026-07-01 00:00:00');
+  });
+
+  it('accepts a full datetime unchanged', () => {
+    expect(utcDateTime('from', '2026-07-01 13:45:00')).toBe('2026-07-01 13:45:00');
+  });
+
+  it('rejects malformed and impossible dates', () => {
+    expect(() => utcDateTime('from', '01/07/2026')).toThrow(CliError);
+    expect(() => utcDateTime('from', '2026-02-30')).toThrow(CliError);
+    expect(() => utcDateTime('from', '2026-07-01 25:00:00')).toThrow(CliError);
+    expect(() => utcDateTime('from', true)).toThrow(CliError);
+  });
+});
+
+describe('resolveHistoryPlan — explicit --from/--to window', () => {
+  it('resolves a create plan with a normalized UTC window', () => {
+    const plan = resolveHistoryPlan({
+      app: '111',
+      from: '2026-07-01',
+      to: '2026-07-15 12:00:00',
+    });
+    expect(plan).toMatchObject({
+      mode: 'create',
+      applicationId: 111,
+      fromDate: '2026-07-01 00:00:00',
+      toDate: '2026-07-15 12:00:00',
+    });
+  });
+
+  it('rejects --from without --to (and vice versa)', () => {
+    expect(() => resolveHistoryPlan({ app: '1', from: '2026-07-01' })).toThrow(
+      /given together/,
+    );
+    expect(() => resolveHistoryPlan({ app: '1', to: '2026-07-01' })).toThrow(
+      /given together/,
+    );
+  });
+
+  it('rejects --from/--to combined with --days', () => {
+    expect(() =>
+      resolveHistoryPlan({
+        app: '1',
+        days: '30',
+        from: '2026-07-01',
+        to: '2026-07-02',
+      }),
+    ).toThrow(/ONE window/);
+  });
+
+  it('rejects an inverted window', () => {
+    expect(() =>
+      resolveHistoryPlan({ app: '1', from: '2026-07-02', to: '2026-07-01' }),
+    ).toThrow(/earlier than/);
+  });
+
+  it('rejects --from/--to together with --history-id', () => {
+    expect(() =>
+      resolveHistoryPlan({ 'history-id': '5', from: '2026-07-01', to: '2026-07-02' }),
+    ).toThrow(/ONE mode/);
+  });
+});
+
+describe('collectAllPages (offset pagination)', () => {
+  const page = (rows: number[], total: number) => ({
+    result: rows,
+    total_count: total,
+  });
+
+  it('walks pages until total_count rows are gathered', async () => {
+    const calls: Array<[number, number]> = [];
+    const { rows, totalCount } = await collectAllPages<number>(
+      async (offset, count) => {
+        calls.push([offset, count]);
+        if (offset === 0) return page([1, 2], 5);
+        if (offset === 2) return page([3, 4], 5);
+        return page([5], 5);
+      },
+      { pageSize: 2, maxRows: 100 },
+    );
+    expect(rows).toEqual([1, 2, 3, 4, 5]);
+    expect(totalCount).toBe(5);
+    expect(calls).toEqual([
+      [0, 2],
+      [2, 2],
+      [4, 2],
+    ]);
+  });
+
+  it('stops on an empty page even when total_count over-reports', async () => {
+    const { rows } = await collectAllPages<number>(
+      async (offset) => (offset === 0 ? page([1], 10) : page([], 10)),
+      { pageSize: 1, maxRows: 100 },
+    );
+    expect(rows).toEqual([1]);
+  });
+
+  it('honors the maxRows backstop against a runaway listing', async () => {
+    const { rows } = await collectAllPages<number>(
+      async () => page([1, 1, 1], 1_000_000),
+      { pageSize: 3, maxRows: 7 },
+    );
+    expect(rows.length).toBeGreaterThanOrEqual(7);
+    expect(rows.length).toBeLessThanOrEqual(9);
+  });
+});
+
+describe('resolveCallListsPlan (A1)', () => {
+  it('defaults to a 30-day window with no list filter', () => {
+    expect(resolveCallListsPlan({})).toEqual({ listId: undefined, days: 30 });
+  });
+  it('accepts --list-id and --days within bounds', () => {
+    expect(resolveCallListsPlan({ 'list-id': '318', days: '90' })).toEqual({
+      listId: 318,
+      days: 90,
+    });
+  });
+  it('rejects invalid values', () => {
+    expect(() => resolveCallListsPlan({ 'list-id': 'abc' })).toThrow(CliError);
+    expect(() => resolveCallListsPlan({ days: '400' })).toThrow(/between 1 and 365/);
+  });
+});
+
+describe('resolveAuditPlan (A3)', () => {
+  it('defaults to 30 days / 50 entries', () => {
+    expect(resolveAuditPlan({})).toEqual({ days: 30, count: 50 });
+  });
+  it('caps --count at 1000', () => {
+    expect(() => resolveAuditPlan({ count: '5000' })).toThrow(/between 1 and 1000/);
+    expect(resolveAuditPlan({ count: '1000', days: '7' })).toEqual({ days: 7, count: 1000 });
+  });
+});
+
+describe('new read-only commands — flag validation', () => {
+  it('accepts the documented flags per command', () => {
+    expect(() => validateCommandFlags('call-lists', { key: 'k', 'list-id': '1' })).not.toThrow();
+    expect(() => validateCommandFlags('media-resources', {})).not.toThrow();
+    expect(() => validateCommandFlags('audit', { days: '7', count: '10' })).not.toThrow();
+  });
+  it('rejects out-of-scope flags (incl. credentials on media-resources)', () => {
+    expect(() => validateCommandFlags('media-resources', { key: 'k' })).toThrow(
+      /not a valid flag/,
+    );
+    expect(() => validateCommandFlags('call-lists', { output: 'f' })).toThrow(
+      /not a valid flag/,
+    );
+    expect(() => validateCommandFlags('audit', { 'list-id': '2' })).toThrow(/not a valid flag/);
+  });
+  it('the former start command is gone', () => {
+    expect(() => assertKnownCommand('start')).toThrow(/unknown command/);
+  });
 });

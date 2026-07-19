@@ -29,9 +29,10 @@ vi.mock('@/lib/data/interactions', () => ({
   insertInteraction: vi.fn(),
   setContactOpStatus: vi.fn(),
 }));
+// startScenarios moved to the separated mutations module (plan stage 1).
+vi.mock('@/lib/voximplant/mutations', () => ({ startScenarios: vi.fn() }));
 vi.mock('@/lib/voximplant/core', () => ({
   getAccountInfo: vi.fn(),
-  startScenarios: vi.fn(),
   VoximplantApiError: class VoximplantApiError extends Error {
     constructor(message: string, readonly code: number | null) {
       super(message);
@@ -67,7 +68,8 @@ import {
   isDncListed,
 } from '@/lib/data/outreach-engine';
 import { getGuestsForContact, insertInteraction, setContactOpStatus } from '@/lib/data/interactions';
-import { getAccountInfo, startScenarios, VoximplantApiError, VoximplantNetworkError } from '@/lib/voximplant/core';
+import { getAccountInfo, VoximplantApiError, VoximplantNetworkError } from '@/lib/voximplant/core';
+import { startScenarios } from '@/lib/voximplant/mutations';
 import { sendSlackAlert } from '@/lib/alerts/slack';
 import type { OutreachCallRequest } from '@/lib/queue/queues';
 

@@ -24,10 +24,12 @@ import {
 import { getGuestsForContact, insertInteraction, setContactOpStatus } from '@/lib/data/interactions';
 import {
   getAccountInfo,
-  startScenarios,
   VoximplantApiError,
   VoximplantNetworkError,
 } from '@/lib/voximplant/core';
+// The dial mutation lives in the separated mutations module (never imported by
+// the CLI); this dispatcher is its only worker-side consumer.
+import { startScenarios } from '@/lib/voximplant/mutations';
 import type { OutreachCallRequest } from '@/lib/queue/queues';
 
 // Stage 3 — the outbound AI-call dispatcher. Consumed by worker/main.ts's

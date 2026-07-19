@@ -14,8 +14,9 @@ type CallAttemptRow = Database['public']['Tables']['call_attempts']['Row'];
 type CallAttemptInsert = Database['public']['Tables']['call_attempts']['Insert'];
 
 // Terminal call outcomes — an older/out-of-order callback must never downgrade a
-// row that already reached one of these (requirement D).
-const TERMINAL_STATUSES = [
+// row that already reached one of these (requirement D). Exported so the log
+// export job (plan A4) reuses the SAME set instead of redeclaring it.
+export const TERMINAL_STATUSES = [
   'completed',
   'failed',
   'no_answer',

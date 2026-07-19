@@ -130,6 +130,7 @@ export type Database = {
           dkim_domain: string | null
           dkim_private_key: string | null
           dkim_selector: string | null
+          elevenlabs_api_key: string | null
           email_enabled: boolean
           extra_sms_sender: string | null
           extra_sms_token: string | null
@@ -160,6 +161,12 @@ export type Database = {
           sumit_company_id: string | null
           terms_url: string | null
           updated_at: string
+          voximplant_account_callback_prev: Json | null
+          voximplant_account_callback_salt: string | null
+          voximplant_account_callback_state: string
+          voximplant_account_callback_token_hash: string | null
+          voximplant_account_callback_wired_at: string | null
+          voximplant_balance_callback_at: string | null
           voximplant_callback_secret: string | null
           voximplant_caller_id: string | null
           voximplant_groq_api_key: string | null
@@ -197,6 +204,7 @@ export type Database = {
           dkim_domain?: string | null
           dkim_private_key?: string | null
           dkim_selector?: string | null
+          elevenlabs_api_key?: string | null
           email_enabled?: boolean
           extra_sms_sender?: string | null
           extra_sms_token?: string | null
@@ -227,6 +235,12 @@ export type Database = {
           sumit_company_id?: string | null
           terms_url?: string | null
           updated_at?: string
+          voximplant_account_callback_prev?: Json | null
+          voximplant_account_callback_salt?: string | null
+          voximplant_account_callback_state?: string
+          voximplant_account_callback_token_hash?: string | null
+          voximplant_account_callback_wired_at?: string | null
+          voximplant_balance_callback_at?: string | null
           voximplant_callback_secret?: string | null
           voximplant_caller_id?: string | null
           voximplant_groq_api_key?: string | null
@@ -264,6 +278,7 @@ export type Database = {
           dkim_domain?: string | null
           dkim_private_key?: string | null
           dkim_selector?: string | null
+          elevenlabs_api_key?: string | null
           email_enabled?: boolean
           extra_sms_sender?: string | null
           extra_sms_token?: string | null
@@ -294,6 +309,12 @@ export type Database = {
           sumit_company_id?: string | null
           terms_url?: string | null
           updated_at?: string
+          voximplant_account_callback_prev?: Json | null
+          voximplant_account_callback_salt?: string | null
+          voximplant_account_callback_state?: string
+          voximplant_account_callback_token_hash?: string | null
+          voximplant_account_callback_wired_at?: string | null
+          voximplant_balance_callback_at?: string | null
           voximplant_callback_secret?: string | null
           voximplant_caller_id?: string | null
           voximplant_groq_api_key?: string | null
@@ -2498,6 +2519,81 @@ export type Database = {
           user_id?: string
         }
         Relationships: []
+      }
+      vox_log_exports: {
+        Row: {
+          attempt_created_at: string | null
+          attempts: number
+          call_attempt_id: string
+          content_sha256: string | null
+          content_type: string | null
+          created_at: string
+          event_id: string | null
+          exported_at: string | null
+          id: string
+          last_error: string | null
+          leased_until: string | null
+          size_bytes: number | null
+          source_url_hash: string | null
+          status: string
+          storage_path: string | null
+          updated_at: string
+          vox_call_session_history_id: string | null
+        }
+        Insert: {
+          attempt_created_at?: string | null
+          attempts?: number
+          call_attempt_id: string
+          content_sha256?: string | null
+          content_type?: string | null
+          created_at?: string
+          event_id?: string | null
+          exported_at?: string | null
+          id?: string
+          last_error?: string | null
+          leased_until?: string | null
+          size_bytes?: number | null
+          source_url_hash?: string | null
+          status?: string
+          storage_path?: string | null
+          updated_at?: string
+          vox_call_session_history_id?: string | null
+        }
+        Update: {
+          attempt_created_at?: string | null
+          attempts?: number
+          call_attempt_id?: string
+          content_sha256?: string | null
+          content_type?: string | null
+          created_at?: string
+          event_id?: string | null
+          exported_at?: string | null
+          id?: string
+          last_error?: string | null
+          leased_until?: string | null
+          size_bytes?: number | null
+          source_url_hash?: string | null
+          status?: string
+          storage_path?: string | null
+          updated_at?: string
+          vox_call_session_history_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "vox_log_exports_call_attempt_id_fkey"
+            columns: ["call_attempt_id"]
+            isOneToOne: true
+            referencedRelation: "call_attempts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "vox_log_exports_event_id_fkey"
+            columns: ["event_id"]
+            isOneToOne: false
+            referencedRelation: "events"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       webhook_inbox: {
         Row: {
