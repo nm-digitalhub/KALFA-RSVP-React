@@ -534,6 +534,9 @@ export type Database = {
           billed_outcome: string | null
           call_duration_sec: number | null
           callback_count: number
+          callback_iso: string | null
+          callback_requested_at: string | null
+          callback_when_text: string | null
           campaign_id: string
           contact_id: string
           created_at: string
@@ -563,6 +566,9 @@ export type Database = {
           billed_outcome?: string | null
           call_duration_sec?: number | null
           callback_count?: number
+          callback_iso?: string | null
+          callback_requested_at?: string | null
+          callback_when_text?: string | null
           campaign_id: string
           contact_id: string
           created_at?: string
@@ -592,6 +598,9 @@ export type Database = {
           billed_outcome?: string | null
           call_duration_sec?: number | null
           callback_count?: number
+          callback_iso?: string | null
+          callback_requested_at?: string | null
+          callback_when_text?: string | null
           campaign_id?: string
           contact_id?: string
           created_at?: string

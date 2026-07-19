@@ -52,6 +52,19 @@ export const voxCallbackSchema = z
 
 export type VoxCallback = z.infer<typeof voxCallbackSchema>;
 
+// schedule_callback (combination feature): the ElevenLabs bridge agent's callback
+// request, POSTed to the SAME cb endpoint but handled OUT-OF-BAND (never persisted
+// to webhook_inbox / the drain, so it can never become a call_attempts.status —
+// processCallResult would otherwise write status:'callback_requested'). It is a
+// SEPARATE strict schema so the shared voxCallbackSchema (reused verbatim by the
+// drain's processCallResult) stays byte-for-byte unchanged. Branch B never sends it.
+export const voxCallbackRequestSchema = z.strictObject({
+  call_status: z.literal('callback_requested'),
+  callback_when_text: z.string().trim().min(1).max(200),
+  callback_iso: z.string().max(40).nullish(),
+});
+export type VoxCallbackRequest = z.infer<typeof voxCallbackRequestSchema>;
+
 // Body of the `save_rsvp` client-tool POST (Tier 2). The ElevenLabs conversational
 // agent extracts REAL adult + child counts from natural speech (richer than the
 // binary rsvp_digit path) and calls this tool AFTER an explicit read-back confirm.

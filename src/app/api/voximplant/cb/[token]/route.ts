@@ -1,11 +1,15 @@
 import { NextResponse } from 'next/server';
 
 import { insertWebhookEvents } from '@/lib/data/webhooks';
-import { getCallAttemptByAccessToken, setElConversationId } from '@/lib/data/call-attempts';
+import {
+  getCallAttemptByAccessToken,
+  recordCallbackRequest,
+  setElConversationId,
+} from '@/lib/data/call-attempts';
 import { getClientIp, rateLimit } from '@/lib/security/rate-limit';
 import { tokenFingerprint } from '@/lib/security/token-fingerprint';
 import type { Database } from '@/lib/supabase/types';
-import { voxCallbackSchema } from '@/lib/validation/voximplant';
+import { voxCallbackRequestSchema, voxCallbackSchema } from '@/lib/validation/voximplant';
 
 // POST /api/voximplant/cb/{token}
 //
@@ -74,6 +78,25 @@ export async function POST(
     json = JSON.parse(raw);
   } catch {
     return bad(400);
+  }
+
+  // schedule_callback (combination feature): handled OUT-OF-BAND — persisted
+  // directly (activity_log + forward-compatible attempt columns), NOT queued to
+  // webhook_inbox, so the drain's processCallResult never sees it (it would
+  // otherwise write status:'callback_requested'). Tried BEFORE the shared schema;
+  // a normal cb body (completed/…) does not match the literal and falls through.
+  const scheduleReq = voxCallbackRequestSchema.safeParse(json);
+  if (scheduleReq.success) {
+    try {
+      await recordCallbackRequest(
+        attemptId,
+        scheduleReq.data.callback_when_text,
+        scheduleReq.data.callback_iso ?? null,
+      );
+    } catch {
+      /* best-effort — never leak DB detail; the agent already softened its wording */
+    }
+    return new NextResponse('ok', { status: 200, headers: NO_STORE });
   }
 
   // strictObject rejects any field outside the verified contract.

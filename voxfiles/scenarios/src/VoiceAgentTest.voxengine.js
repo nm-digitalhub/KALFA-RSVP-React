@@ -57,8 +57,31 @@
 // = 'elevenlabs', typings ~8360). Without this the scenario throws "ElevenLabs is not
 // defined" the moment it reaches createAgentsClient.
 require(Modules.ElevenLabs);
+// AMD (answering-machine detection) for the voicemail PRE-CONNECT gate. Its
+// Modules enum member is MISSING from the bundled typings copy, so require it by
+// the resolved value with a fallback to the 'amd' module id, wrapped so a load
+// failure can NEVER abort the scenario — the gate is itself fail-open (a missing
+// AMD just skips detection and bridges the call).
+try {
+    require((typeof Modules !== 'undefined' && Modules.AMD) ? Modules.AMD : 'amd');
+}
+catch (_amdErr) { /* AMD unavailable — runVoicemailGate() will fail open */ }
 VoxEngine.addEventListener(AppEvents.Started, function () {
     var AGENT_ID = 'agent_9701kxj3n54ye518a3s518cexd48';
+    // Voicemail PRE-CONNECT gate: classify the answered call with Voximplant-native
+    // AMD BEFORE opening the ElevenLabs WS (zero credits on a machine). CONFIGURABLE
+    // + fail-open. FLAG: there is NO Hebrew/IL AMD model — EU_GENERAL is the only
+    // candidate and is UNVALIDATED on +972 voicemail; confidence is advisory. Set
+    // VOICEMAIL_GATE_ENABLED=false to disable while tuning.
+    var VOICEMAIL_GATE_ENABLED = true;
+    var AMD_TIMEOUT_MS = 5000; // ≤20000; only counts after Connected (AMD default 6500)
+    // DTMF fallback (Hebrew-ASR safety net): keypad digit → Hebrew intent injected
+    // into the conversation via AgentsClient.userMessage (corpus voice-ai-b.md).
+    var DTMF_INTENT = {
+        '1': 'אני מאשר הגעה',
+        '2': 'לא אגיע',
+        '0': 'אפשר לחזור אליי מאוחר יותר'
+    };
     // Global hard limit — a leaked session bills money. 150s (conversation-design
     // §2.5): a REAL conversational call with one guest question was cut mid-count
     // at 90s (session 6758867554); the timeout is a stuck-session safety net, not
@@ -96,6 +119,9 @@ VoxEngine.addEventListener(AppEvents.Started, function () {
         // Speech-probability high-water mark (VadScore) — a rough silence / no-
         // answer signal logged at teardown. 0 ⇒ the agent never detected speech.
         maxVadScore: 0,
+        // DTMF debounce: ignore a repeat of the SAME digit within 1.5s (idempotent).
+        lastTone: '',
+        lastToneAt: 0,
         globalTimer: null,
         // Terminal-hangup guard (agent ended the conversation) — idempotent so a
         // WS close + a racing timeout can't schedule two hangups.
@@ -258,6 +284,65 @@ VoxEngine.addEventListener(AppEvents.Started, function () {
             state.recordingUrl = (ev && ev.url) || null;
             log('RECORDING_URL: ' + state.recordingUrl);
         });
+        // VOICEMAIL PRE-CONNECT GATE (Voximplant-native AMD). Runs AMD on the
+        // answered call and only SKIPS the ElevenLabs bridge on a confident
+        // VOICEMAIL — every other outcome (HUMAN, TIMEOUT, CALL_ENDED, any error,
+        // AMD unavailable) FAILS OPEN to onHuman so a real person is never dropped.
+        // Corpus vox-ref-callflow.md §2 + typings AMD.*: AMD.create({model,timeout})
+        // → sendMediaTo(amd) → detect():Promise<DetectionComplete|DetectionError>;
+        // ResultClass = HUMAN|VOICEMAIL|TIMEOUT|CALL_ENDED. NO Hebrew model —
+        // EU_GENERAL only, UNVALIDATED on +972; confidence advisory. Zero ElevenLabs
+        // cost when a machine is caught (we never open the WS).
+        function runVoicemailGate(call, onHuman) {
+            if (!VOICEMAIL_GATE_ENABLED || typeof AMD === 'undefined' || !AMD.create) {
+                if (VOICEMAIL_GATE_ENABLED)
+                    log('AMD unavailable — gate disabled, bridging');
+                onHuman();
+                return;
+            }
+            var amd = null;
+            var decided = false;
+            function decide(bridge, why) {
+                if (decided)
+                    return;
+                decided = true;
+                try {
+                    if (amd)
+                        call.stopMediaTo(amd);
+                }
+                catch (_e) { }
+                if (bridge) {
+                    log('AMD gate: ' + why + ' → bridging');
+                    onHuman();
+                }
+                else {
+                    log('AMD gate: ' + why + ' → machine, NOT bridging (0 EL cost), hanging up');
+                    scheduleHangup(call, 0);
+                }
+            }
+            try {
+                amd = AMD.create({ model: AMD.Model.EU_GENERAL, timeout: AMD_TIMEOUT_MS });
+                call.sendMediaTo(amd);
+            }
+            catch (err) {
+                log('AMD setup failed: ' + err + ' — failing open');
+                decide(true, 'setup_error');
+                return;
+            }
+            amd.detect().then(function (ev) {
+                var rc = ev && ev.resultClass;
+                log('AMD result: class=' + rc + ' subtype=' + (ev && ev.resultSubtype) +
+                    ' confidence=' + (ev && ev.confidence != null ? ev.confidence : '?'));
+                // ONLY a positive VOICEMAIL skips the bridge; everything else opens.
+                decide(rc !== AMD.ResultClass.VOICEMAIL, rc || 'unknown');
+            }).catch(function (err) {
+                log('AMD detect error: ' + err + ' — failing open');
+                decide(true, 'detect_error');
+            });
+            // Watchdog: never let the gate itself stall the call. If detect() neither
+            // resolves nor rejects within timeout + margin, force-bridge.
+            setTimeout(function () { decide(true, 'gate_watchdog'); }, AMD_TIMEOUT_MS + 2000);
+        }
         call.addEventListener(CallEvents.Connected, function () {
             log('Call connected');
             // stereo:true splits guest (left) and agent (right); hd_audio:true gives a
@@ -268,6 +353,35 @@ VoxEngine.addEventListener(AppEvents.Started, function () {
             catch (err) {
                 log('call.record() failed: ' + err);
             }
+            // DTMF fallback (Hebrew-ASR safety net): enable keypad tones and map each
+            // digit to a Hebrew intent, injected into the ElevenLabs conversation via
+            // AgentsClient.userMessage({text}) (corpus voice-ai-b.md line 48; typings
+            // 6189). handleTones is required for ToneReceived (typings 3709/3135).
+            // Guards on a live agent + debounces a repeated digit (idempotent).
+            call.handleTones(true);
+            call.addEventListener(CallEvents.ToneReceived, function (ev) {
+                var digit = ev && ev.tone;
+                var text = DTMF_INTENT[digit];
+                log('TONE ' + digit + (text ? ' -> inject' : ' (ignored)'));
+                if (!text || !state.agent || state.terminated)
+                    return;
+                var now = Date.now();
+                if (state.lastTone === digit && (now - state.lastToneAt) < 1500)
+                    return; // ignore a repeat of the same digit within 1.5s
+                state.lastTone = digit;
+                state.lastToneAt = now;
+                try {
+                    state.agent.userMessage({ text: text });
+                }
+                catch (err) {
+                    log('userMessage failed: ' + err);
+                }
+            });
+            // The ElevenLabs bridge, wrapped so the voicemail gate can DEFER it until
+            // AMD confirms a human (zero ElevenLabs cost on a machine).
+            function bridgeAgent() {
+                if (state.terminated)
+                    return;
             // Build the ElevenLabs Agents client (opens a WebSocket to 11labs) and bridge
             // it to the call. createAgentsClient is async — await it, then bind media.
             ElevenLabs.createAgentsClient({
@@ -435,10 +549,6 @@ VoxEngine.addEventListener(AppEvents.Started, function () {
                     var toolCallId = ctc.tool_call_id || ctc.id;
                     var args = ctc.parameters || ctc.arguments || {};
                     log('CLIENT_TOOL_CALL: ' + safeStringify(payload));
-                    var route = TOOL_ROUTES[toolName];
-                    if (!route) {
-                        return; // unknown tool — ignore (never fabricate a result)
-                    }
                     // ElevenLabs REQUIRES is_error on the client-tool-result frame —
                     // omitting it closes the WebSocket with 1008 (policy violation),
                     // killing the call right after the tool (verified live, session
@@ -460,6 +570,42 @@ VoxEngine.addEventListener(AppEvents.Started, function () {
                         log(toolName + ' called but no tok/u — cannot persist');
                         reply('error', true);
                         return;
+                    }
+                    // schedule_callback (combination feature): the agent asked to be
+                    // called back later. Reported to the EXISTING cb endpoint as an
+                    // additive {call_status:'callback_requested', callback_when_text,
+                    // callback_iso?}. cb persists it OUT-OF-BAND (not via the drain, so
+                    // it never becomes a call_attempts.status). Best-effort; the agent
+                    // gets a truthful 'noted'/'queued'. Actual re-dispatch is a KALFA
+                    // follow-up (the dispatcher must re-enqueue — flagged).
+                    if (toolName === 'schedule_callback') {
+                        if (!state.callbackUrl) {
+                            reply('error', true);
+                            return;
+                        }
+                        var cbBody = {
+                            call_status: 'callback_requested',
+                            callback_when_text: String(args.callback_when_text || args.when || '').slice(0, 200)
+                        };
+                        var whenIso = String(args.callback_iso || args.when_iso || '');
+                        if (whenIso)
+                            cbBody.callback_iso = whenIso.slice(0, 40);
+                        Net.httpRequestAsync(state.callbackUrl, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            postData: safeStringify(cbBody)
+                        }).then(function (r) {
+                            log('schedule_callback -> ' + (r && r.code));
+                            reply(r.code === 200 ? 'noted' : 'queued', false);
+                        }).catch(function (err) {
+                            log('schedule_callback failed: ' + err);
+                            reply('error', true);
+                        });
+                        return;
+                    }
+                    var route = TOOL_ROUTES[toolName];
+                    if (!route) {
+                        return; // unknown tool — ignore (never fabricate a result)
                     }
                     var postBody = route.body(args);
                     postBody.tool_call_id = toolCallId;
@@ -490,6 +636,10 @@ VoxEngine.addEventListener(AppEvents.Started, function () {
                 catch (_e) { }
                 cleanupAndTerminate();
             });
+            } // end bridgeAgent
+            // Gate the bridge on AMD (fail-open). HUMAN → bridgeAgent(); VOICEMAIL →
+            // hang up without ever opening the ElevenLabs WS.
+            runVoicemailGate(call, bridgeAgent);
         });
         call.addEventListener(CallEvents.Failed, function (ev) {
             log('Call failed: ' + safeStringify(ev));

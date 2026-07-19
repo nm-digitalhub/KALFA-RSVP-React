@@ -446,3 +446,47 @@ export async function setElConversationId(
   if (error) throw new Error('רישום מזהה השיחה נכשל');
   return { applied: data !== null };
 }
+
+// schedule_callback (combination feature): persist a guest's request to be called
+// back later. Identity is the token-resolved attempt id (never the body). Works
+// TODAY via a durable, event-scoped activity_log row; ADDITIONALLY writes the
+// requested time onto the attempt for the future re-dispatch — those columns land
+// via a SEPARATE migration (handed to schema/RLS), so the write is
+// forward-compatible (`as never`, like setElConversationId) and its failure is a
+// caught no-op. Re-enqueuing the actual call is a KALFA dispatcher follow-up.
+export async function recordCallbackRequest(
+  id: string,
+  whenText: string,
+  callbackIso: string | null,
+): Promise<{ applied: boolean }> {
+  const admin = createAdminClient();
+  const attempt = await getCallAttemptById(id);
+  if (!attempt) return { applied: false };
+
+  // Durable record that works before the migration lands (activity_log exists).
+  type ActivityLogInsert = Database['public']['Tables']['activity_log']['Insert'];
+  const meta = { call_attempt_id: id, when_text: whenText, callback_iso: callbackIso };
+  const logRow: ActivityLogInsert = {
+    event_id: attempt.event_id,
+    user_id: null,
+    action: 'call.callback_requested',
+    meta: meta as unknown as ActivityLogInsert['meta'],
+  };
+  await admin.from('activity_log').insert(logRow);
+
+  // Stamp the requested time on the attempt for the future re-dispatch.
+  // callback_iso is timestamptz, so only write a PARSEABLE value (else null) — a
+  // malformed ISO from the agent must never fail the whole update. Best-effort;
+  // the activity_log row above is the authoritative record.
+  const iso = callbackIso && !Number.isNaN(Date.parse(callbackIso)) ? callbackIso : null;
+  await admin
+    .from('call_attempts')
+    .update({
+      callback_requested_at: new Date().toISOString(),
+      callback_when_text: whenText,
+      callback_iso: iso,
+    })
+    .eq('id', id);
+
+  return { applied: true };
+}

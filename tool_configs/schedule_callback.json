@@ -1,0 +1,27 @@
+{
+    "name": "schedule_callback",
+    "description": "כשהאורח מבקש שנחזור אליו במועד אחר (\"תחזרו אליי מחר\", \"עכשיו לא נוח\", \"בערב\", \"אחרי החג\") — קראי לכלי עם הזמן שהאורח ציין. אחרי שהכלי חוזר, אשרי בקצרה (\"מעולה, נחזור אליך\") וסיימי ב-end_call. מחזיר noted/queued.",
+    "type": "client",
+    "expects_response": true,
+    "response_timeout_secs": 10,
+    "parameters": {
+        "type": "object",
+        "description": "",
+        "required": [
+            "callback_when_text"
+        ],
+        "properties": {
+            "callback_when_text": {
+                "type": "string",
+                "description": "הזמן שהאורח ציין לחזרה, כלשונו בעברית (\"מחר בערב\", \"אחרי שש\", \"ביום ראשון\")"
+            },
+            "callback_iso": {
+                "type": "string",
+                "description": "אופציונלי: הזמן ב-ISO 8601 אם ניתן להסיק במדויק, אחרת השאירי ריק"
+            }
+        }
+    },
+    "dynamic_variables": {
+        "dynamic_variable_placeholders": {}
+    }
+}
