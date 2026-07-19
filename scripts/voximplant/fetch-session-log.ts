@@ -11,7 +11,7 @@
  *   npx tsx scripts/voximplant/fetch-session-log.ts --session 6863133650 [--days 7]
  */
 import { createHash, createSign } from 'node:crypto';
-import { readFileSync } from 'node:fs';
+import { readFileSync, writeFileSync } from 'node:fs';
 
 import {
   getCallHistory,
@@ -117,6 +117,14 @@ async function main(): Promise<void> {
   console.log(`  content_type          : ${dl.contentType || '(none)'}`);
   console.log(`  size_bytes            : ${dl.bytes.byteLength}`);
   console.log(`  sha256                : ${sha}`);
+  // Optional: save the raw scenario log for inspection. NOTE the log contains the
+  // per-call access token (in the scenario's "raw customData" line) and guest
+  // speech — treat the saved file as sensitive; never commit or share it.
+  const savePath = flag('save');
+  if (savePath) {
+    writeFileSync(savePath, dl.bytes);
+    console.log(`  saved log             : ${savePath} (SENSITIVE — token + transcript)`);
+  }
   console.log('\n>>> The A4 log-download path is verified end-to-end against a real log.');
 }
 
