@@ -64,6 +64,13 @@ VoxEngine.addEventListener(AppEvents.Started, function () {
     // at 90s (session 6758867554); the timeout is a stuck-session safety net, not
     // a terminator for a healthy conversation.
     var GLOBAL_TIMEOUT_MS = 150000;
+    // Grace before hanging up the PSTN leg once the agent has ended the
+    // conversation (end_call → ElevenLabs closes the WS → onWebSocketClose). At
+    // that instant the whole farewell has been SENT to Voximplant, but the last
+    // ~1s may still be draining through the outbound jitter buffer to the PSTN
+    // leg — hanging up immediately clips the goodbye. Mirrors RSVP.voxengine.js's
+    // scheduleHangup(call, 2000) after its closing say().
+    var FAREWELL_GRACE_MS = 2000;
     var state = {
         to: '',
         from: '',
@@ -90,6 +97,10 @@ VoxEngine.addEventListener(AppEvents.Started, function () {
         // answer signal logged at teardown. 0 ⇒ the agent never detected speech.
         maxVadScore: 0,
         globalTimer: null,
+        // Terminal-hangup guard (agent ended the conversation) — idempotent so a
+        // WS close + a racing timeout can't schedule two hangups.
+        hangupScheduled: false,
+        hangupTimer: null,
         terminated: false
     };
     function log(msg) {
@@ -113,6 +124,10 @@ VoxEngine.addEventListener(AppEvents.Started, function () {
             clearTimeout(state.globalTimer);
             state.globalTimer = null;
         }
+        if (state.hangupTimer) {
+            clearTimeout(state.hangupTimer);
+            state.hangupTimer = null;
+        }
         try {
             if (state.agent) {
                 state.agent.close();
@@ -124,6 +139,26 @@ VoxEngine.addEventListener(AppEvents.Started, function () {
         // Silence/no-answer diagnostic: 0 ⇒ the agent never heard speech.
         log('maxVadScore=' + state.maxVadScore);
         VoxEngine.terminate();
+    }
+    // Terminal hangup of the PSTN leg after the agent ends the conversation
+    // (onWebSocketClose). Guarded + idempotent; bails once teardown has begun so a
+    // WS close triggered by our own agent.close() never schedules a stray hangup.
+    // After the grace delay call.hangup() fires CallEvents.Disconnected, which
+    // funnels into cleanupAndTerminate — so this never calls terminate() itself
+    // except as a fallback when hangup() throws (mirrors RSVP.voxengine.js).
+    function scheduleHangup(call, delayMs) {
+        if (state.terminated || state.hangupScheduled)
+            return;
+        state.hangupScheduled = true;
+        state.hangupTimer = setTimeout(function () {
+            try {
+                call.hangup();
+            }
+            catch (err) {
+                log('call.hangup() failed: ' + err);
+                cleanupAndTerminate();
+            }
+        }, delayMs);
     }
     // Report the captured ElevenLabs conversation_id to KALFA's EXISTING cb
     // endpoint (persist-then-process; identity resolved server-side from the token
@@ -241,7 +276,22 @@ VoxEngine.addEventListener(AppEvents.Started, function () {
                 // Surface the ElevenLabs conversation_id in the initiation metadata
                 // (default is off). NOTE: with this on, the conversation_signature is
                 // single-use — fine here, the connector opens exactly one WS.
-                includeConversationId: true
+                includeConversationId: true,
+                // TERMINAL SIGNAL (the fix): when the agent invokes the built-in
+                // end_call system tool, ElevenLabs plays the farewell then CLOSES the
+                // WebSocket (docs: end_call system tool / "End conversation and close
+                // WebSocket"). This callback is the connector-surfaced close — there
+                // is no conversation-end event in AgentsEvents, and end_call is a
+                // server-side system tool, not a ClientToolCall. Hang up the PSTN leg
+                // (after a grace so the buffered goodbye finishes) instead of leaving
+                // dead air until the 150s global timeout. Fires for ANY close (agent
+                // end OR a dropped WS) — hanging up is correct in both cases.
+                onWebSocketClose: function (event) {
+                    log('AGENT_WS_CLOSED code=' + (event && event.code) +
+                        ' clean=' + (event && event.wasClean) +
+                        ' reason=' + (event && event.reason));
+                    scheduleHangup(call, FAREWELL_GRACE_MS);
+                }
             }).then(function (agent) {
                 if (state.terminated) {
                     // Call already ended while the client was connecting — don't leak it.
