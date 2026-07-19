@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 
 import { insertWebhookEvents } from '@/lib/data/webhooks';
-import { getCallAttemptByAccessToken } from '@/lib/data/call-attempts';
+import { getCallAttemptByAccessToken, setElConversationId } from '@/lib/data/call-attempts';
 import { getClientIp, rateLimit } from '@/lib/security/rate-limit';
 import { tokenFingerprint } from '@/lib/security/token-fingerprint';
 import type { Database } from '@/lib/supabase/types';
@@ -104,6 +104,19 @@ export async function POST(
     // Persist failed — return 500 (Voximplant only logs it; we did not lose a
     // stored callback because nothing was stored). Never leak DB detail.
     return bad(500);
+  }
+
+  // ADDITIVE (item-2 second link vector): if the ElevenLabs-bridge scenario sent a
+  // conversation_id, store it on the token-resolved attempt. Best-effort — a
+  // failure (incl. the column not existing yet, before the parallel migration
+  // lands) never affects the ack, and the token nonce remains the PRIMARY link.
+  // Branch B never sends this field, so this path is inert for the DTMF scenario.
+  if (typeof body.el_conversation_id === 'string' && body.el_conversation_id.length > 0) {
+    try {
+      await setElConversationId(attemptId, body.el_conversation_id);
+    } catch {
+      /* swallow — the durable webhook_inbox row above is the source of truth */
+    }
   }
 
   // Stable, minimal ack. Processing + RSVP/billing happen in the webhook drain.

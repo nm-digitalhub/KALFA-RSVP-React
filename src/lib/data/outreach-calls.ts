@@ -183,9 +183,15 @@ export async function dispatchOutreachCall(
   //    NULL UNIQUE column AND is sent to the scenario as `tok` — the ctx/cb
   //    endpoints authenticate by looking this value up server-side.
   const accessToken = randomBytes(16).toString('hex');
+  // NON-authorizing correlation nonce (item-2 link vector): stamped at creation so
+  // every attempt is ready to link an ElevenLabs-bridged conversation back to this
+  // row. Distinct from access_token (a capability bearer) — leaking it exposes
+  // nothing. Branch B's Groq/DTMF scenario never reads it; it is inert there.
+  const elCorrelationNonce = randomBytes(16).toString('hex');
   const tokenExpiresAt = new Date(Date.now() + CALL_TOKEN_TTL_SEC * 1000).toISOString();
   const created = await createCallAttempt({
     eventId, campaignId, contactId, guestId, touchpointIndex, accessToken, tokenExpiresAt,
+    elCorrelationNonce,
   });
 
   if (created === null) {

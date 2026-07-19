@@ -86,6 +86,13 @@ export async function GET(
       event_date: formatIsraelSpokenDate(ctx.event.event_date ?? ''),
       event_venue: ctx.event.venue_name ?? '',
       groq_key: groqKey,
+      // ADDITIVE (item-2 link vector): the row's NON-authorizing correlation nonce.
+      // The ElevenLabs-bridge scenario (VoiceAgentTest, kalfatest) injects this as
+      // the `kalfa_attempt_token` dynamic variable so the post-call webhook can map
+      // the conversation back to this call_attempt. '' when the row has no nonce
+      // (every non-bridge call, incl. all of Branch B — which ignores this field).
+      // Non-authorizing by design, so serving it here leaks no capability.
+      kalfa_attempt_token: ctx.attempt.el_correlation_nonce ?? '',
     },
     { headers: NO_STORE },
   );

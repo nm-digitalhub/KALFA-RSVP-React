@@ -287,7 +287,40 @@
     },
     "platform_settings": {
         "evaluation": {
-            "criteria": []
+            "criteria": [
+                {
+                    "id": "rsvp_captured",
+                    "name": "RSVP נשמר",
+                    "conversation_goal_prompt": "Determine whether the call reached a clear, saved RSVP outcome. Success = the agent called the save_rsvp tool with a status of attending, declined, or maybe after an explicit verbal read-back confirmation, OR the call ended on a legitimate non-save path where skipping the save was correct: the guest asked to be removed (mark_dnc was called), the agent handed off to WhatsApp because of a bad line / language mismatch / repeated misunderstanding, the wrong person answered, or a sensitive situation arose (bereavement, illness). Failure = the call ended with no saved status and no legitimate reason to skip saving. Judge only from the Hebrew conversation and the tool calls, never from the guest's identity.",
+                    "use_knowledge_base": false,
+                    "scope": "conversation",
+                    "scoring_mode": "binary"
+                },
+                {
+                    "id": "headcount_correct",
+                    "name": "מספר אורחים מדויק",
+                    "conversation_goal_prompt": "Evaluate headcount capture, which applies only to attending guests. Success = when the guest confirmed they are attending, the agent collected a whole number of adults and, separately, children, read the totals back for confirmation, and saved only after that confirmation; OR the guest is not attending / undecided / no save occurred, in which case this criterion is not applicable and must be scored as success. Failure = the guest was attending but the agent saved a headcount that was never stated or confirmed, guessed a number, or skipped the read-back. Spoken Hebrew forms such as 'שניים'=2, 'זוג'=2, 'רק אני'=1, 'בלי ילדים'=0 count as validly captured numbers.",
+                    "use_knowledge_base": false,
+                    "scope": "conversation",
+                    "scoring_mode": "binary"
+                },
+                {
+                    "id": "dnc_honored",
+                    "name": "בקשת הסרה כובדה",
+                    "conversation_goal_prompt": "Check how removal requests were handled. Success = if at any point the guest asked, in any phrasing, not to be called again or to be removed (for example 'תסירו אותי', 'אל תתקשרו אליי', 'הורידו אותי מהרשימה'), the agent called the mark_dnc tool immediately, acknowledged briefly, and ended the call with no persuasion and no 'are you sure?'; OR no such request was ever made, in which case score success by default. Failure = the guest asked to be removed but mark_dnc was not called, or the agent argued or tried to persuade before honoring the request.",
+                    "use_knowledge_base": false,
+                    "scope": "conversation",
+                    "scoring_mode": "binary"
+                },
+                {
+                    "id": "stayed_on_task",
+                    "name": "נשאר בתחום ולא בדה פרטים",
+                    "conversation_goal_prompt": "Verify the agent stayed within scope and did not fabricate. Success = the agent did not invent any event detail beyond the provided variables (no made-up start time, full address, dress code, gift information, list of other guests, or changes to the event) and instead routed unknown questions to notify_owner; did not impersonate a human, admitting it is a digital assistant when asked; and did not discuss payment or money or collect personal data beyond attendance and headcount. Failure = the agent fabricated an event detail, claimed to be a human, or went outside the RSVP task.",
+                    "use_knowledge_base": false,
+                    "scope": "conversation",
+                    "scoring_mode": "binary"
+                }
+            ]
         },
         "widget": {
             "variant": "full",
@@ -332,8 +365,36 @@
             "supports_text_only": true,
             "language_presets": {}
         },
-        "data_collection": {},
-        "data_collection_scopes": {},
+        "data_collection": {
+            "rsvp_status": {
+                "type": "string",
+                "description": "The final RSVP outcome the guest committed to in the Hebrew call, used to cross-check the save_rsvp tool call. Return 'attending' if they confirmed they are coming, 'declined' if they said they are not coming, and 'maybe' if they were undecided ('אולי', 'עוד לא יודעים'). If the call ended with no clear decision (removal request, wrong person, handed off to WhatsApp), leave it unset. Infer only from the guest's own words, never from anything else.",
+                "enum": [
+                    "attending",
+                    "declined",
+                    "maybe"
+                ],
+                "is_system_provided": false,
+                "dynamic_variable": ""
+            },
+            "adults": {
+                "type": "integer",
+                "description": "Number of adults the guest said would attend, used to cross-check save_rsvp. Convert spoken Hebrew to a whole number: 'שניים'/'זוג'/'אני ואשתי'=2, 'רק אני'=1. Use 0 when the guest is not attending or undecided, or when no adult count was stated. Count only what the guest explicitly said and never guess.",
+                "is_system_provided": false,
+                "dynamic_variable": ""
+            },
+            "children": {
+                "type": "integer",
+                "description": "Number of children the guest said would attend, used to cross-check save_rsvp. 'בלי ילדים' or no mention = 0. Convert spoken Hebrew numbers to a whole number. Use 0 when the guest is not attending or undecided. Count only what the guest explicitly said and never guess.",
+                "is_system_provided": false,
+                "dynamic_variable": ""
+            }
+        },
+        "data_collection_scopes": {
+            "rsvp_status": "conversation",
+            "adults": "conversation",
+            "children": "conversation"
+        },
         "overrides": {
             "conversation_config_override": {
                 "asr": {
@@ -472,7 +533,7 @@
             "enabled": true
         },
         "sentiment_analysis": {
-            "enabled": false
+            "enabled": true
         },
         "simulation_library": {
             "enabled": false,

@@ -16,27 +16,35 @@ export async function storeCallAnalysis(a: NormalizedCallAnalysis): Promise<'sto
   try {
     const admin = createAdminClient();
 
-    // Resolve the correlation token → the owning call attempt (item 2 link
-    // vector: a NON-authorizing nonce injected at conversation start, round-
-    // tripped in the webhook). Best-effort — a miss/failure leaves an orphan row
-    // (call_attempt_id NULL), which a linker can backfill later via the partial
-    // index. event_id is copied from the attempt so owner RLS scopes the row.
+    // Resolve the owning call attempt via EITHER link vector (best-effort): the
+    // correlation token (el_correlation_nonce, injected at conversation start)
+    // first, then the ElevenLabs conversation_id (el_conversation_id, reported by
+    // the bridge scenario via cb). A miss/failure leaves an orphan (call_attempt_id
+    // NULL) a linker can backfill later. event_id is copied so owner RLS scopes it.
     let callAttemptId: string | null = null;
     let eventId: string | null = null;
-    if (a.correlationToken) {
-      try {
+    try {
+      const lookup = async (
+        col: 'el_correlation_nonce' | 'el_conversation_id',
+        val: string | null,
+      ): Promise<{ id: string; event_id: string } | null> => {
+        if (!val) return null;
         const { data } = await admin
           .from('call_attempts')
           .select('id, event_id')
-          .eq('el_correlation_nonce', a.correlationToken)
+          .eq(col, val)
           .maybeSingle();
-        if (data) {
-          callAttemptId = data.id;
-          eventId = data.event_id;
-        }
-      } catch {
-        /* leave orphan — never fail the store on a link lookup */
+        return data ?? null;
+      };
+      const attempt =
+        (await lookup('el_correlation_nonce', a.correlationToken)) ??
+        (await lookup('el_conversation_id', a.conversationId));
+      if (attempt) {
+        callAttemptId = attempt.id;
+        eventId = attempt.event_id;
       }
+    } catch {
+      /* leave orphan — never fail the store on a link lookup */
     }
 
     const row: CallAnalysisInsert = {
@@ -53,6 +61,10 @@ export async function storeCallAnalysis(a: NormalizedCallAnalysis): Promise<'sto
       call_attempt_id: callAttemptId,
       event_id: eventId,
       linked_at: callAttemptId ? new Date().toISOString() : null,
+      // QA (PII-safe): numeric score, criterion→pass/fail map, structured RSVP read.
+      el_call_score: a.callSuccessScore,
+      el_eval: a.evaluation,
+      el_data: a.dataCollection,
     };
     const { error } = await admin
       .from('call_analysis')

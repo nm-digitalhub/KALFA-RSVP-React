@@ -459,6 +459,9 @@ export type Database = {
           call_successful: string | null
           conversation_id: string
           cost_credits: number | null
+          el_call_score: number | null
+          el_data: Json | null
+          el_eval: Json | null
           event_id: string | null
           id: string
           linked_at: string | null
@@ -476,6 +479,9 @@ export type Database = {
           call_successful?: string | null
           conversation_id: string
           cost_credits?: number | null
+          el_call_score?: number | null
+          el_data?: Json | null
+          el_eval?: Json | null
           event_id?: string | null
           id?: string
           linked_at?: string | null
@@ -493,6 +499,9 @@ export type Database = {
           call_successful?: string | null
           conversation_id?: string
           cost_credits?: number | null
+          el_call_score?: number | null
+          el_data?: Json | null
+          el_eval?: Json | null
           event_id?: string | null
           id?: string
           linked_at?: string | null
@@ -530,6 +539,7 @@ export type Database = {
           created_at: string
           ctx_delivered_at: string | null
           ctx_read_count: number
+          el_conversation_id: string | null
           el_correlation_nonce: string | null
           event_id: string
           finish_reason: string | null
@@ -558,6 +568,7 @@ export type Database = {
           created_at?: string
           ctx_delivered_at?: string | null
           ctx_read_count?: number
+          el_conversation_id?: string | null
           el_correlation_nonce?: string | null
           event_id: string
           finish_reason?: string | null
@@ -586,6 +597,7 @@ export type Database = {
           created_at?: string
           ctx_delivered_at?: string | null
           ctx_read_count?: number
+          el_conversation_id?: string | null
           el_correlation_nonce?: string | null
           event_id?: string
           finish_reason?: string | null

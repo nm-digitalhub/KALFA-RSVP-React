@@ -29,39 +29,43 @@ const base: NormalizedCallAnalysis = {
   terminationReason: 'x',
   analysisAt: '2026-07-19T00:00:00.000Z',
   correlationToken: null,
+  callSuccessScore: 0.8,
+  evaluation: { rsvp_captured: 'success' },
+  dataCollection: { status: 'attending', adults: 2, children: 0 },
 };
 
 beforeEach(() => {
-  attemptMock.mockReset();
+  attemptMock.mockReset().mockResolvedValue({ data: null, error: null });
   upsertMock.mockReset().mockResolvedValue({ error: null });
 });
 afterEach(() => vi.clearAllMocks());
 
-describe('storeCallAnalysis (link + persist)', () => {
-  it('links to the call attempt when the correlation token matches', async () => {
+describe('storeCallAnalysis (dual-link + QA persist)', () => {
+  it('links via the correlation token and persists the QA columns', async () => {
     attemptMock.mockResolvedValue({ data: { id: 'att-1', event_id: 'evt-1' }, error: null });
     const res = await storeCallAnalysis({ ...base, correlationToken: 'nonce-1' });
     expect(res).toBe('stored');
     const row = upsertMock.mock.calls[0][0];
-    expect(row).toMatchObject({ conversation_id: 'c1', call_attempt_id: 'att-1', event_id: 'evt-1' });
+    expect(row).toMatchObject({ call_attempt_id: 'att-1', event_id: 'evt-1', el_call_score: 0.8 });
+    expect(row.el_eval).toEqual({ rsvp_captured: 'success' });
+    expect(row.el_data).toEqual({ status: 'attending', adults: 2, children: 0 });
     expect(row.linked_at).toBeTruthy();
   });
 
-  it('stores an orphan (nulls) when no token is present — never queries attempts', async () => {
-    const res = await storeCallAnalysis(base);
+  it('links via the conversation_id when no token is present (second vector)', async () => {
+    attemptMock.mockResolvedValue({ data: { id: 'att-2', event_id: 'evt-2' }, error: null });
+    const res = await storeCallAnalysis(base); // token null → falls through to conversation_id
     expect(res).toBe('stored');
-    expect(attemptMock).not.toHaveBeenCalled();
+    expect(upsertMock.mock.calls[0][0]).toMatchObject({ call_attempt_id: 'att-2', event_id: 'evt-2' });
+  });
+
+  it('stores an orphan when neither vector matches', async () => {
+    const res = await storeCallAnalysis({ ...base, correlationToken: 'unknown' });
+    expect(res).toBe('stored');
     const row = upsertMock.mock.calls[0][0];
     expect(row.call_attempt_id).toBeNull();
     expect(row.event_id).toBeNull();
     expect(row.linked_at).toBeNull();
-  });
-
-  it('stores an orphan when the token matches no attempt', async () => {
-    attemptMock.mockResolvedValue({ data: null, error: null });
-    const res = await storeCallAnalysis({ ...base, correlationToken: 'unknown' });
-    expect(res).toBe('stored');
-    expect(upsertMock.mock.calls[0][0].call_attempt_id).toBeNull();
   });
 
   it('still stores (orphan) when the link lookup throws — never fails on linking', async () => {

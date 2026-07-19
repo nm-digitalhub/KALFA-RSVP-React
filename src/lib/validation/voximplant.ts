@@ -40,6 +40,10 @@ export const voxCallbackSchema = z
     // The scenario sends an array of turns, or (legacy) a plain string.
     transcript: z.union([z.array(transcriptTurn).max(200), z.string().max(20000)]).nullish(),
     error_reason: z.string().max(256).nullish(),
+    // ADDITIVE (item-2 second link vector): the ElevenLabs conversation_id, sent by
+    // the bridge scenario (VoiceAgentTest) on its recording_started callback. Branch
+    // B's RSVP.voxengine.js never sends it (nullish → no effect on the DTMF path).
+    el_conversation_id: z.string().max(128).nullish(),
   })
   .refine(
     (v) => v.call_status !== 'completed' || v.rsvp_digit === '1' || v.rsvp_digit === '2',

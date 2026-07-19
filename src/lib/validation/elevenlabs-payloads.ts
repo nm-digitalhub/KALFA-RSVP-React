@@ -37,6 +37,13 @@ export interface NormalizedCallAnalysis {
   // var (guest_name, …) stays dropped. Never persisted as-is: the linker
   // resolves it to a call_attempts FK. Null when absent (e.g. preview sessions).
   correlationToken: string | null;
+  // QA analysis — populated once the agent has evaluation/data-collection enabled.
+  // ALL PII-safe: a numeric score; a criterion→pass/fail map (the free-text
+  // rationale that may name the guest is DROPPED); and a STRUCTURED RSVP read
+  // (status/adults/children only — never names/notes) for cross-checking save_rsvp.
+  callSuccessScore: number | null;
+  evaluation: Record<string, string> | null;
+  dataCollection: { status: string | null; adults: number | null; children: number | null } | null;
 }
 
 // A webhook envelope reduced to its type + (only for post_call_transcription with
@@ -68,6 +75,33 @@ function unixSecondsToIso(secs: number | null): string | null {
   const ms = secs * 1000;
   if (ms < 0 || ms > 8.64e15) return null; // outside the valid Date range (±8.64e15 ms)
   return new Date(ms).toISOString();
+}
+
+// evaluation_criteria_results: { <id>: { result: 'success'|'failure'|'unknown',
+// rationale } } → { <id>: result }. The rationale is free text that may name the
+// guest, so it is DROPPED — only the pass/fail verdict survives.
+function extractEvaluation(analysis: Record<string, unknown>): Record<string, string> | null {
+  const raw = asObject(analysis.evaluation_criteria_results);
+  const out: Record<string, string> = {};
+  for (const [k, v] of Object.entries(raw)) {
+    const result = asString(asObject(v).result);
+    if (result) out[k.slice(0, 64)] = result;
+  }
+  return Object.keys(out).length > 0 ? out : null;
+}
+
+// data_collection_results: { <field>: { value, rationale } } → the STRUCTURED
+// value only (rationale DROPPED). Surfaces just the RSVP cross-check fields.
+function extractDataCollection(
+  analysis: Record<string, unknown>,
+): { status: string | null; adults: number | null; children: number | null } | null {
+  const raw = asObject(analysis.data_collection_results);
+  const value = (field: string): unknown => asObject(raw[field]).value;
+  const status = asString(value('rsvp_status'));
+  const adults = asNumber(value('adults'));
+  const children = asNumber(value('children'));
+  if (status === null && adults === null && children === null) return null;
+  return { status, adults, children };
 }
 
 export function normalizeCallAnalysisWebhook(raw: unknown): NormalizedWebhook {
@@ -105,6 +139,9 @@ export function normalizeCallAnalysisWebhook(raw: unknown): NormalizedWebhook {
       terminationReason: rawReason ? rawReason.slice(0, TERMINATION_MAX) : null,
       analysisAt: unixSecondsToIso(asNumber(env.event_timestamp)), // unix SECONDS
       correlationToken: capped(initVars.kalfa_attempt_token, 128),
+      callSuccessScore: asNumber(analysis.call_success_score),
+      evaluation: extractEvaluation(analysis),
+      dataCollection: extractDataCollection(analysis),
     },
   };
 }

@@ -131,7 +131,7 @@
 | A | **1** callback | ✅ **DEPLOYED beta 2026-07-19** | קיים | 1702 tests+tsc+lint+build ✓; route חי (404 dark-safe smoke) | כן |
 | B | **3** מכסה | ✅ **COMMITTED d8a9e5a** (pending deploy) | קיים | 1712 tests+tsc+lint+worker-esbuild ✓; קובץ ייעודי elevenlabs-quota.ts (מראה voximplant-balance.ts) | כן |
 | C | **4** drift | ✅ VERIFIED (in-sync) | קיים | fixtures + tool_ids canonicalize | כן |
-| D | **2** webhook+analysis | ⚠️ מותנה מסלול-חי | migration + wire | HMAC + inject token | כן (dark) |
+| D | **2** webhook+analysis | ✅ **DEPLOYED + WIRED + e2e-verified** (42df383) | migration + wire | signed POST→200+row (PII-free), bad-sig→401, public path→401, post_call_webhook_id=beta | כן |
 | E | **5** CallList | ✅ VERIFIED | migration + redeploy | staged §5 | כן (flag + pg-boss fallback) |
 
 **המלצת סדר**: A→B→C זול/מהיר וללא תלות (יום). E פרויקט נפרד מוכן. **D לדחות** עד החלטת מוצר על מסלול ElevenLabs (כרגע לא בשרשרת החיה).
@@ -164,6 +164,21 @@
 | drift canonicalization | 4 | `canonicalizeAgent`+`compareAgentCanonical` — משווה `sorted(tool_ids)` (לא tools[].name), מחריג מפתחות live-only; false-positive של `end_call` נמנע by design | ✅ סגור בקוד+בדיקה (IO/דשבורד = שלב C) |
 
 **סיכום:** 5 מתוך 8 ה-⚠️ **נסגרו בקוד** (commit נפרד) עם בדיקות. 3 הנותרות שייכות כולן ל-**פריט 2** ותלויות בהחלטת המוצר (ElevenLabs במסלול החי) + חיווט חיצוני — לא ניתנות לסגירה חד-צדדית בקוד.
+
+## סגירת 2 הנקודות הפתוחות (2026-07-19)
+
+מחקר תיעוד (ElevenLabs personalization + קורפוס Voximplant `vox-ref-ai-providers`) + יישום:
+
+**נקודה 1 — קישור conversation→call_attempt: ✅ סגורה ומאומתת e2e (KALFA-side, DEPLOYED 8e37a1e).**
+- וקטור מאומת: `conversation_initiation_client_data.dynamic_variables.kalfa_attempt_token` — אחיד בכל דרכי-ההתחלה (SDK/WebSocket/outbound/batch), חוזר ב-webhook.
+- מיגרציה `20260719162804`: `call_attempts.el_correlation_nonce` (partial-unique) — nonce **לא-מסמיך** (לא access_token — מניעת הדלפת bearer, precedent Branch B).
+- נורמלייזר קורא **רק** את ה-token שלנו (guest vars נזרקים); DAL linker פותר token→call_attempt→ממלא `call_attempt_id`+`event_id`+`linked_at` (best-effort, orphan on miss).
+- placeholder נוסף ל-IaC (`agent_configs`). אימות חי: webhook חתום עם token → שורה מקושרת נכון (event_id תואם), PII=0, נוקה.
+
+**נקודה 2 — ElevenLabs במסלול החי: ⚠️ מגודרת (החלטת מוצר + שערים חיצוניים).** הארכיטקטורה מאומתת מהתיעוד; היישום דורש החלטות + שערים שאי-אפשר לסגור חד-צדדית:
+- **מסלול A (מומלץ) — Voximplant bridge**: `ElevenLabs.AgentsClient` (createAgentsClient{agentId,xiApiKey,includeConversationId}) + `VoxEngine.sendMediaBetween(call,client)`. Voximplant נשאר המחייג (מספר/consent/חיוב), ElevenLabs המוח; ה-nonce עובר ב-`conversationInitiationClientData({dynamic_variables})`; xi-api-key דרך ctx (precedent Groq). דורש rewrite+deploy תרחיש (voxengine-ci).
+- **מסלול B — ElevenLabs native outbound**: `POST /v1/convai/twilio/outbound-call` או `/sip-trunk/outbound-call` או `/batch-calling/submit`. דורש מספר מיובא (Twilio חדש, או SIP trunk לשימוש-חוזר במספר Voximplant — טעון אימות voximplant-engineer).
+- **שערים לכל המסלולים**: (1) החלטת טלפוניה (A/B), (2) שער consent/משפטי [[voximplant-b1-consent-plan]] לשיחות אמת, (3) אימות איכות קול עברי (ElevenLabs), (4) deploy תרחיש/מספר, (5) go לשיחת בדיקה מבוקרת. סגירה e2e אפשרית דרך שיחת בדיקה למספר הבעלים (עוקף שער consent-לאורחים).
 
 ## OPEN שנותרו (החלטות, לא אימות)
 - **מוצר**: האם/מתי ElevenLabs ConvAI נכנס למסלול החיוג החי (שער הערך של פריט 2).

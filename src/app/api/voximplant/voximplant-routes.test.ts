@@ -85,7 +85,15 @@ const noteCall = (token: string, body: string, ip?: string) =>
   notePOST(toolReq('note', token, body, ip), { params: Promise.resolve({ token }) });
 
 const CTX = {
-  attempt: { id: AID, status: 'dialing', token_expires_at: FUTURE(), guest_id: 'g1', event_id: 'ev1', contact_id: 'ct1' },
+  attempt: {
+    id: AID,
+    status: 'dialing',
+    token_expires_at: FUTURE(),
+    guest_id: 'g1',
+    event_id: 'ev1',
+    contact_id: 'ct1',
+    el_correlation_nonce: 'nonce_test_abc',
+  },
   event: { status: 'active', name: 'חתונה', event_date: '2026-07-14T15:00:00Z', venue_name: 'אולם הגן' },
   guestFullName: 'ישראל ישראלי',
 };
@@ -117,11 +125,14 @@ describe('ctx GET', () => {
       'event_venue',
       'groq_key',
       'guest_name',
+      'kalfa_attempt_token',
     ]);
     expect(json.guest_name).toBe('ישראל'); // first name only
     expect(json.event_name).toBe('חתונה');
     expect(json.event_venue).toBe('אולם הגן');
     expect(json.groq_key).toBe('gsk_test_key');
+    // Additive item-2 link field: the row's non-authorizing correlation nonce.
+    expect(json.kalfa_attempt_token).toBe('nonce_test_abc');
     expect(JSON.stringify(json)).not.toContain('rsvp_token');
     expect(JSON.stringify(json)).not.toMatch(/phone|contact_id|ct1|g1/);
   });

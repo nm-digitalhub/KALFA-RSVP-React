@@ -34,6 +34,11 @@ export type CreateCallAttemptInput = {
   touchpointIndex: number;
   accessToken: string; // opaque per-call nonce stored on the row (unique)
   tokenExpiresAt: string; // ISO timestamptz
+  // Optional NON-authorizing correlation nonce for ElevenLabs-bridged calls
+  // (item-2 link vector). Set at creation so every attempt is link-ready; the
+  // partial-unique index enforces one-nonce-one-attempt. Omitted ⇒ column stays
+  // NULL (harmless for the Groq/DTMF Branch B path, which never reads it).
+  elCorrelationNonce?: string;
 };
 
 // Insert a fresh attempt row (used by the future outbound trigger). Returns
@@ -52,6 +57,7 @@ export async function createCallAttempt(
     access_token: input.accessToken,
     token_expires_at: input.tokenExpiresAt,
     status: 'dialing',
+    ...(input.elCorrelationNonce ? { el_correlation_nonce: input.elCorrelationNonce } : {}),
   };
   const { data, error } = await admin
     .from('call_attempts')
@@ -69,7 +75,16 @@ export async function createCallAttempt(
 export type CallContext = {
   attempt: Pick<
     CallAttemptRow,
-    'id' | 'status' | 'token_expires_at' | 'guest_id' | 'event_id' | 'contact_id'
+    | 'id'
+    | 'status'
+    | 'token_expires_at'
+    | 'guest_id'
+    | 'event_id'
+    | 'contact_id'
+    // Non-authorizing correlation nonce (nullable) — surfaced by the ctx route as
+    // `kalfa_attempt_token` for ElevenLabs-bridged calls so the post-call webhook
+    // can link the conversation back to this attempt. Additive; Branch B ignores it.
+    | 'el_correlation_nonce'
   >;
   event: {
     status: string;
@@ -82,9 +97,16 @@ export type CallContext = {
 
 type CallAttemptContextRow = Pick<
   CallAttemptRow,
-  'id' | 'status' | 'token_expires_at' | 'guest_id' | 'event_id' | 'contact_id'
+  | 'id'
+  | 'status'
+  | 'token_expires_at'
+  | 'guest_id'
+  | 'event_id'
+  | 'contact_id'
+  | 'el_correlation_nonce'
 >;
-const CTX_SELECT = 'id, status, token_expires_at, guest_id, event_id, contact_id';
+const CTX_SELECT =
+  'id, status, token_expires_at, guest_id, event_id, contact_id, el_correlation_nonce';
 
 // Hydrate the event + guest-name half of a CallContext from an already-loaded
 // attempt row. Shared by the by-id and by-access-token loaders. Never selects PII
@@ -365,4 +387,62 @@ export async function markStartUnknown(
   reason: string,
 ): Promise<{ applied: boolean }> {
   return recordCallOutcome(id, { status: 'start_unknown', finish_reason: reason });
+}
+
+// --- ElevenLabs bridge correlation (item-2 link vector) ----------------------
+
+// Stamp a NON-authorizing correlation nonce onto an attempt so an ElevenLabs-
+// bridged call can be linked back from the post-call webhook (which echoes it as
+// conversation_initiation_client_data.dynamic_variables.kalfa_attempt_token). The
+// nonce grants no capability — leaking it exposes nothing (see the migration
+// comment) — but it is still a correlation id, so it is never logged.
+//
+// FIRST-WRITER-WINS + idempotent: only sets it WHERE el_correlation_nonce IS NULL,
+// so a re-run reuses the existing nonce and never fights the partial-unique index
+// (call_attempts_el_correlation_nonce_key). Returns the EFFECTIVE nonce on the row
+// after the call (the one we set, or a pre-existing one), or null if the row is
+// gone. Service-role; request-free (safe for the bundled launcher + worker).
+export async function stampElCorrelationNonce(
+  id: string,
+  nonce: string,
+): Promise<{ nonce: string } | null> {
+  const admin = createAdminClient();
+  // Claim the nonce only if unset — race-safe under the partial-unique index.
+  const { error: upErr } = await admin
+    .from('call_attempts')
+    .update({ el_correlation_nonce: nonce, updated_at: new Date().toISOString() })
+    .eq('id', id)
+    .is('el_correlation_nonce', null);
+  if (upErr) throw new Error('רישום מזהה הקורלציה נכשל');
+  // Read back the effective value (ours, or a pre-existing one from a prior run).
+  const { data, error } = await admin
+    .from('call_attempts')
+    .select('el_correlation_nonce')
+    .eq('id', id)
+    .maybeSingle();
+  if (error) throw new Error('רישום מזהה הקורלציה נכשל');
+  if (!data?.el_correlation_nonce) return null;
+  return { nonce: data.el_correlation_nonce };
+}
+
+// Store the ElevenLabs conversation_id on the attempt (item-2 SECOND link vector,
+// belt-and-suspenders with the correlation nonce). Called best-effort from the cb
+// route when the bridge scenario reports it. Identity is the token-resolved
+// attempt id, never the body. Idempotent by nature (a re-report writes the same id).
+export async function setElConversationId(
+  id: string,
+  elConversationId: string,
+): Promise<{ applied: boolean }> {
+  const admin = createAdminClient();
+  const { data, error } = await admin
+    .from('call_attempts')
+    .update({
+      el_conversation_id: elConversationId,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', id)
+    .select('id')
+    .maybeSingle();
+  if (error) throw new Error('רישום מזהה השיחה נכשל');
+  return { applied: data !== null };
 }

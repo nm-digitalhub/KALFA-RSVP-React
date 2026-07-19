@@ -46,6 +46,9 @@ const EXPECTED_KEYS = [
   'terminationReason',
   'analysisAt',
   'correlationToken',
+  'callSuccessScore',
+  'evaluation',
+  'dataCollection',
 ];
 
 describe('normalizeCallAnalysisWebhook', () => {
@@ -63,6 +66,9 @@ describe('normalizeCallAnalysisWebhook', () => {
       terminationReason: 'Client disconnected: 1006',
       analysisAt: new Date(1_784_500_000 * 1000).toISOString(),
       correlationToken: null, // none injected in this sample
+      callSuccessScore: null, // no call_success_score in this sample
+      evaluation: { c1: 'success' }, // criterion verdict kept, rationale dropped
+      dataCollection: null, // sample's 'headcount' field is not a tracked RSVP field
     });
   });
 
@@ -96,6 +102,37 @@ describe('normalizeCallAnalysisWebhook', () => {
     expect(analysis?.correlationToken).toBe('nonce-abc-123');
     // The guest name sitting right next to our token must still be dropped.
     expect(JSON.stringify(analysis)).not.toContain('ANGELO_NAME_SECRET');
+  });
+
+  it('extracts QA (score + criterion pass/fail + structured RSVP) — drops all rationale', () => {
+    const withQa = {
+      ...sample,
+      data: {
+        ...sample.data,
+        analysis: {
+          call_successful: 'success',
+          call_success_score: 0.82,
+          evaluation_criteria_results: {
+            rsvp_captured: { result: 'success', rationale: 'GUEST_RATIONALE_SECRET said yes' },
+            headcount_correct: { result: 'failure', rationale: 'MORE_SECRET' },
+          },
+          data_collection_results: {
+            rsvp_status: { value: 'attending', rationale: 'SECRET_WHY' },
+            adults: { value: 2 },
+            children: { value: 1 },
+          },
+        },
+      },
+    };
+    const { analysis } = normalizeCallAnalysisWebhook(withQa);
+    expect(analysis?.callSuccessScore).toBe(0.82);
+    expect(analysis?.evaluation).toEqual({ rsvp_captured: 'success', headcount_correct: 'failure' });
+    expect(analysis?.dataCollection).toEqual({ status: 'attending', adults: 2, children: 1 });
+    // Every rationale / free-text is dropped.
+    const s = JSON.stringify(analysis);
+    for (const secret of ['GUEST_RATIONALE_SECRET', 'MORE_SECRET', 'SECRET_WHY']) {
+      expect(s).not.toContain(secret);
+    }
   });
 
   it('yields NO analysis for a non post_call_transcription type (e.g. post_call_audio)', () => {

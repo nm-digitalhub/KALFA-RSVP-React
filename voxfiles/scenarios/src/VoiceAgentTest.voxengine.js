@@ -72,8 +72,23 @@ VoxEngine.addEventListener(AppEvents.Started, function () {
         eventName: '',
         eventDate: '',
         eventVenue: '',
+        // NON-authorizing correlation nonce from ctx (ctx.kalfa_attempt_token).
+        // Injected as the `kalfa_attempt_token` dynamic variable so ElevenLabs
+        // echoes it in the post-call webhook and KALFA links conversation→attempt.
+        // Empty-safe: '' when ctx omits it → the agent still runs, just unlinked.
+        attemptToken: '',
         agent: null,
         recordingUrl: null,
+        // Second link vector (belt-and-suspenders with the token): the ElevenLabs
+        // conversation_id, captured from ConversationInitiationMetadata (needs
+        // includeConversationId:true) and reported to KALFA's cb endpoint so it is
+        // stored on the call_attempt. callbackUrl built from {u}+{tok} like ctx.
+        elConversationId: '',
+        callbackUrl: '',
+        cbConversationSent: false,
+        // Speech-probability high-water mark (VadScore) — a rough silence / no-
+        // answer signal logged at teardown. 0 ⇒ the agent never detected speech.
+        maxVadScore: 0,
         globalTimer: null,
         terminated: false
     };
@@ -106,7 +121,35 @@ VoxEngine.addEventListener(AppEvents.Started, function () {
         catch (err) {
             log('agent.close() failed: ' + err);
         }
+        // Silence/no-answer diagnostic: 0 ⇒ the agent never heard speech.
+        log('maxVadScore=' + state.maxVadScore);
         VoxEngine.terminate();
+    }
+    // Report the captured ElevenLabs conversation_id to KALFA's EXISTING cb
+    // endpoint (persist-then-process; identity resolved server-side from the token
+    // in the URL, never the body). Sent ONCE, as an additive field on a
+    // recording_started callback — the cb schema requires a call_status, and
+    // recording_started is the natural non-terminal "call is live" signal that
+    // does not drive RSVP/billing. Best-effort: a failure never affects the call
+    // (the pre-call token nonce remains the PRIMARY link vector).
+    function reportConversationId() {
+        if (!state.callbackUrl || state.cbConversationSent || !state.elConversationId)
+            return;
+        state.cbConversationSent = true;
+        var body = {
+            call_status: 'recording_started',
+            el_conversation_id: state.elConversationId,
+            recording_url: state.recordingUrl || null
+        };
+        Net.httpRequestAsync(state.callbackUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            postData: safeStringify(body)
+        }).then(function (r) {
+            log('cb el_conversation_id -> ' + (r && r.code));
+        }).catch(function (err) {
+            log('cb el_conversation_id failed: ' + err);
+        });
     }
     // --- customData ({to, from, tok, u}) ---
     var raw;
@@ -146,6 +189,7 @@ VoxEngine.addEventListener(AppEvents.Started, function () {
     var accessToken = customData.tok || '';
     if (appOrigin && accessToken) {
         state.contextUrl = appOrigin + '/api/voximplant/ctx/' + accessToken;
+        state.callbackUrl = appOrigin + '/api/voximplant/cb/' + accessToken;
     }
     else {
         log('No tok/u in customData — proceeding with empty dynamic variables.');
@@ -193,7 +237,11 @@ VoxEngine.addEventListener(AppEvents.Started, function () {
             // it to the call. createAgentsClient is async — await it, then bind media.
             ElevenLabs.createAgentsClient({
                 xiApiKey: key,
-                agentId: AGENT_ID
+                agentId: AGENT_ID,
+                // Surface the ElevenLabs conversation_id in the initiation metadata
+                // (default is off). NOTE: with this on, the conversation_signature is
+                // single-use — fine here, the connector opens exactly one WS.
+                includeConversationId: true
             }).then(function (agent) {
                 if (state.terminated) {
                     // Call already ended while the client was connecting — don't leak it.
@@ -216,7 +264,11 @@ VoxEngine.addEventListener(AppEvents.Started, function () {
                             guest_name: state.guestName,
                             event_name: state.eventName,
                             event_date: state.eventDate,
-                            event_venue: state.eventVenue
+                            event_venue: state.eventVenue,
+                            // Round-trips in the post-call webhook's
+                            // conversation_initiation_client_data.dynamic_variables
+                            // → KALFA links conversation → call_attempt (item 2).
+                            kalfa_attempt_token: state.attemptToken
                         }
                     });
                     log('Injected dynamic_variables');
@@ -242,6 +294,42 @@ VoxEngine.addEventListener(AppEvents.Started, function () {
                 });
                 agent.addEventListener(ElevenLabs.AgentsEvents.WebSocketError, function (e) {
                     log('AGENT_WS_ERROR: ' + safeStringify(e && e.data));
+                });
+                // Conversation start metadata — carries the ElevenLabs conversation_id
+                // when includeConversationId:true (item-2 second link vector). Extract
+                // it defensively (the id may sit under conversation_initiation_metadata_event
+                // or at the payload root depending on protocol version) and report it to
+                // KALFA's cb endpoint. This is the server's ack that init is locked in —
+                // the dynamic_variables were already sent above (correct ordering).
+                agent.addEventListener(ElevenLabs.AgentsEvents.ConversationInitiationMetadata, function (e) {
+                    var payload = (e && e.data && e.data.payload) || {};
+                    var meta = payload.conversation_initiation_metadata_event || payload;
+                    var convId = meta.conversation_id || payload.conversation_id || '';
+                    if (convId) {
+                        state.elConversationId = String(convId);
+                        log('CONVERSATION_ID captured');
+                        reportConversationId();
+                    }
+                    else {
+                        log('ConversationInitiationMetadata without a conversation_id');
+                    }
+                });
+                // VadScore (0..1 speech probability) — track the high-water mark as a
+                // rough silence / no-answer signal. Do NOT log every frame (floods the
+                // session log); the max is logged once at teardown.
+                agent.addEventListener(ElevenLabs.AgentsEvents.VadScore, function (e) {
+                    var payload = (e && e.data && e.data.payload) || {};
+                    var scoreEv = payload.vad_score_event || payload;
+                    var score = Number(scoreEv.vad_score);
+                    if (!isNaN(score) && score > state.maxVadScore) {
+                        state.maxVadScore = score;
+                    }
+                });
+                // Ping — health check. The VoxEngine ElevenLabs connector auto-responds
+                // (there is NO pong/respond method on AgentsClient in the typings), so we
+                // only OBSERVE it; no manual pong is possible or required.
+                agent.addEventListener(ElevenLabs.AgentsEvents.Ping, function () {
+                    log('PING (auto-handled by connector)');
                 });
                 // Media-stream lifecycle (audio actually flowing / 1s silence tail).
                 agent.addEventListener(ElevenLabs.Events.WebSocketMediaStarted, function () {
@@ -394,6 +482,10 @@ VoxEngine.addEventListener(AppEvents.Started, function () {
                 state.eventName = ctx.event_name || '';
                 state.eventDate = ctx.event_date || '';
                 state.eventVenue = ctx.event_venue || '';
+                // Correlation nonce (additive ctx field) — carried through to the
+                // agent init below so the post-call webhook can link back. Never
+                // logged: it is a correlation id, not a spoken/personalization field.
+                state.attemptToken = ctx.kalfa_attempt_token || '';
             }
             catch (err) {
                 log('Context parse error: ' + err + ' — using empty defaults');
