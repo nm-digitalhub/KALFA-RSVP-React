@@ -459,6 +459,23 @@ VoxEngine.addEventListener(AppEvents.Started, function () {
                 });
                 agent.addEventListener(ElevenLabs.AgentsEvents.Interruption, function (e) {
                     log('INTERRUPTION: ' + safeStringify(e && e.data));
+                    // Barge-in was broken by OMISSION: we listened and only logged, so
+                    // agent TTS already buffered kept draining to the PSTN leg after the
+                    // guest started talking — the caller hears the agent talk over them.
+                    // clearMediaBuffer() is the documented pattern and is declared on
+                    // AgentsClient itself (voxengine.d.ts class AgentsClient ~3917/3950,
+                    // present in both our pinned 7.51.0 and the live CDN typings).
+                    // Guarded: an older connector build without the method must not throw
+                    // inside an event handler and kill the call.
+                    try {
+                        if (agent && typeof agent.clearMediaBuffer === 'function') {
+                            agent.clearMediaBuffer();
+                            log('INTERRUPTION: media buffer cleared');
+                        }
+                    }
+                    catch (err) {
+                        log('clearMediaBuffer failed: ' + err);
+                    }
                 });
                 agent.addEventListener(ElevenLabs.AgentsEvents.WebSocketError, function (e) {
                     log('AGENT_WS_ERROR: ' + safeStringify(e && e.data));
