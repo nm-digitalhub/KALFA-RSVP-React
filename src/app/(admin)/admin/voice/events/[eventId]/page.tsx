@@ -1,4 +1,14 @@
 import Link from 'next/link';
+import {
+  Ban,
+  CheckCircle2,
+  PhoneCall,
+  PhoneMissed,
+  ThumbsDown,
+  ThumbsUp,
+  XCircle,
+} from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
 
 import { formatIsraelDate } from '@/lib/date';
 import { getEventForAdminView } from '@/lib/data/admin/campaigns';
@@ -19,7 +29,15 @@ import {
   Pagination,
   parsePageParam,
 } from '../../../_components';
-import { callStatusLabel, callStatusVariant } from '../../_helpers';
+import {
+  callStatusLabel,
+  callStatusTone,
+  callStatusVariant,
+  toneChipClass,
+  type MeterTone,
+} from '../../_helpers';
+import type { StackedBarSegment } from '../../_meters';
+import { StatusDonut } from '../../_donut';
 
 export const metadata = { title: 'שיחות AI לאירוע' };
 
@@ -54,14 +72,24 @@ export default async function EventVoicePage({
     declined: rows.filter((r) => r.rsvpDigit === '2').length,
   };
 
-  const tiles = [
-    { label: 'ניסיונות (סה״כ)', value: String(attempts.total) },
-    { label: 'הושלמו (בעמוד)', value: String(tally.completed) },
-    { label: 'אין מענה (בעמוד)', value: String(tally.noAnswer) },
-    { label: 'נכשלו (בעמוד)', value: String(tally.failed) },
-    { label: 'בוטלו (בעמוד)', value: String(tally.cancelled) },
-    { label: 'אישרו (בעמוד)', value: String(tally.confirmed) },
-    { label: 'סירבו (בעמוד)', value: String(tally.declined) },
+  const tiles: Array<{ label: string; value: string; icon: LucideIcon; tone: MeterTone }> = [
+    { label: 'ניסיונות (סה״כ)', value: String(attempts.total), icon: PhoneCall, tone: 'info' },
+    { label: 'הושלמו (בעמוד)', value: String(tally.completed), icon: CheckCircle2, tone: 'success' },
+    { label: 'אין מענה (בעמוד)', value: String(tally.noAnswer), icon: PhoneMissed, tone: 'warning' },
+    { label: 'נכשלו (בעמוד)', value: String(tally.failed), icon: XCircle, tone: 'destructive' },
+    { label: 'בוטלו (בעמוד)', value: String(tally.cancelled), icon: Ban, tone: 'neutral' },
+    { label: 'אישרו (בעמוד)', value: String(tally.confirmed), icon: ThumbsUp, tone: 'success' },
+    { label: 'סירבו (בעמוד)', value: String(tally.declined), icon: ThumbsDown, tone: 'destructive' },
+  ];
+
+  // The same page tallies as a part-to-whole mix — completed/no-answer/
+  // failed/cancelled proportions at a glance, reusing the exact tones the
+  // status Badge already assigns to these outcomes (callStatusTone).
+  const breakdown: StackedBarSegment[] = [
+    { key: 'completed', label: callStatusLabel('completed'), value: tally.completed, tone: callStatusTone('completed') },
+    { key: 'no_answer', label: callStatusLabel('no_answer'), value: tally.noAnswer, tone: callStatusTone('no_answer') },
+    { key: 'failed', label: callStatusLabel('failed'), value: tally.failed, tone: callStatusTone('failed') },
+    { key: 'cancelled', label: callStatusLabel('cancelled'), value: tally.cancelled, tone: callStatusTone('cancelled') },
   ];
 
   return (
@@ -91,13 +119,28 @@ export default async function EventVoicePage({
       </section>
 
       <div className="grid grid-cols-2 gap-4 md:grid-cols-4 lg:grid-cols-7">
-        {tiles.map((t) => (
-          <div key={t.label} className="flex flex-col gap-1 rounded-lg border border-border p-4">
-            <span className="text-sm text-muted-foreground">{t.label}</span>
-            <span className="text-2xl font-bold">{t.value}</span>
-          </div>
-        ))}
+        {tiles.map((t) => {
+          const Icon = t.icon;
+          return (
+            <div key={t.label} className="flex flex-col gap-2 rounded-lg border border-border p-4">
+              <span className={`inline-flex size-7 items-center justify-center rounded-full ${toneChipClass(t.tone)}`}>
+                <Icon className="size-4" aria-hidden />
+              </span>
+              <span className="text-sm text-muted-foreground">{t.label}</span>
+              <span className="text-2xl font-bold">{t.value}</span>
+            </div>
+          );
+        })}
       </div>
+
+      <section className={sectionClass}>
+        <h2 className="text-lg font-semibold">פילוח תוצאות שיחה (בעמוד)</h2>
+        <StatusDonut
+          segments={breakdown}
+          ariaLabel="פילוח תוצאות שיחה בעמוד הנוכחי"
+          centerSubLabel="בעמוד"
+        />
+      </section>
 
       <section className={sectionClass}>
         <h2 className="text-lg font-semibold">ניסיונות שיחה</h2>

@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { CalendarClock, FileCheck2, FileClock, FileX2 } from 'lucide-react';
 
 import { formatIsraelDateTime } from '@/lib/date';
 import { getAppOrigin } from '@/lib/url';
@@ -17,9 +18,12 @@ import {
   balanceVariant,
   callStatusLabel,
   formatBalance,
+  toneChipClass,
   WIRING_STATE_LABELS,
   WIRING_STATE_VARIANTS,
 } from '../_helpers';
+import { BalanceMeter, QuotaProgressBar, type StackedBarSegment } from '../_meters';
+import { StatusDonut } from '../_donut';
 import { RefreshButton, RunLogExportButton } from './platform-actions';
 import { WiringControls } from './wiring-card';
 import { ElevenLabsKeyForm } from './elevenlabs-key-form';
@@ -43,6 +47,16 @@ export default async function VoicePlatformPage() {
     getElevenLabsFleetStatus(),
   ]);
   const proposedCallbackBase = `${origin}/api/voximplant/account-callback`;
+
+  // Log-export state as a part-to-whole mix. `noLog` (rows with nothing to
+  // export) is included so the donut's proportions reflect the true total —
+  // the dl above only shows the three counts an operator acts on.
+  const logExportBreakdown: StackedBarSegment[] = [
+    { key: 'stored', label: 'נשמרו', value: logExport.stored, tone: 'success' },
+    { key: 'pending', label: 'ממתינים', value: logExport.pending, tone: 'info' },
+    { key: 'failed', label: 'כשלים', value: logExport.failed, tone: 'destructive' },
+    { key: 'no_log', label: 'ללא לוג', value: logExport.noLog, tone: 'neutral' },
+  ];
 
   const agentStatusLabel: Record<string, string> = {
     ok: 'פעיל',
@@ -71,19 +85,27 @@ export default async function VoicePlatformPage() {
       <section className={sectionClass}>
         <h2 className="text-lg font-semibold">יתרה וחיווט התראות</h2>
         <dl className="grid gap-3 text-sm sm:grid-cols-2">
-          <div>
+          <div className="sm:col-span-2">
             <dt className="text-muted-foreground">יתרה חיה</dt>
-            <dd>
+            <dd className="space-y-2">
               {view.balance.status === 'ok' ? (
-                <Badge
-                  variant={balanceVariant(
-                    view.balance.balance,
-                    view.balance.minCallReserve,
-                    view.balance.lowBalanceThreshold,
-                  )}
-                >
-                  {formatBalance(view.balance.balance, view.balance.currency)}
-                </Badge>
+                <>
+                  <Badge
+                    variant={balanceVariant(
+                      view.balance.balance,
+                      view.balance.minCallReserve,
+                      view.balance.lowBalanceThreshold,
+                    )}
+                  >
+                    {formatBalance(view.balance.balance, view.balance.currency)}
+                  </Badge>
+                  <BalanceMeter
+                    balance={view.balance.balance}
+                    currency={view.balance.currency}
+                    minReserve={view.balance.minCallReserve}
+                    lowThreshold={view.balance.lowBalanceThreshold}
+                  />
+                </>
               ) : view.balance.status === 'unconfigured' ? (
                 'הערוץ אינו מוגדר'
               ) : (
@@ -225,24 +247,45 @@ export default async function VoicePlatformPage() {
       {/* §5 log export (A4) */}
       <section className={sectionClass}>
         <h2 className="text-lg font-semibold">ייצוא לוגים</h2>
+        <StatusDonut segments={logExportBreakdown} ariaLabel="פילוח מצב ייצוא לוגים" centerSubLabel="רשומות" />
         <dl className="grid gap-3 text-sm sm:grid-cols-4">
-          <div>
-            <dt className="text-muted-foreground">נשמרו</dt>
-            <dd className="text-2xl font-bold">{logExport.stored}</dd>
+          <div className="flex items-start gap-2">
+            <span className={`mt-0.5 inline-flex size-6 items-center justify-center rounded-full ${toneChipClass('success')}`}>
+              <FileCheck2 className="size-3.5" aria-hidden />
+            </span>
+            <div>
+              <dt className="text-muted-foreground">נשמרו</dt>
+              <dd className="text-2xl font-bold">{logExport.stored}</dd>
+            </div>
           </div>
-          <div>
-            <dt className="text-muted-foreground">ממתינים</dt>
-            <dd className="text-2xl font-bold">{logExport.pending}</dd>
+          <div className="flex items-start gap-2">
+            <span className={`mt-0.5 inline-flex size-6 items-center justify-center rounded-full ${toneChipClass('info')}`}>
+              <FileClock className="size-3.5" aria-hidden />
+            </span>
+            <div>
+              <dt className="text-muted-foreground">ממתינים</dt>
+              <dd className="text-2xl font-bold">{logExport.pending}</dd>
+            </div>
           </div>
-          <div>
-            <dt className="text-muted-foreground">כשלים</dt>
-            <dd className="text-2xl font-bold">{logExport.failed}</dd>
+          <div className="flex items-start gap-2">
+            <span className={`mt-0.5 inline-flex size-6 items-center justify-center rounded-full ${toneChipClass('destructive')}`}>
+              <FileX2 className="size-3.5" aria-hidden />
+            </span>
+            <div>
+              <dt className="text-muted-foreground">כשלים</dt>
+              <dd className="text-2xl font-bold">{logExport.failed}</dd>
+            </div>
           </div>
-          <div>
-            <dt className="text-muted-foreground">ייצוא אחרון</dt>
-            <dd dir="ltr">
-              {logExport.lastExportedAt ? formatIsraelDateTime(logExport.lastExportedAt) : '—'}
-            </dd>
+          <div className="flex items-start gap-2">
+            <span className={`mt-0.5 inline-flex size-6 items-center justify-center rounded-full ${toneChipClass('neutral')}`}>
+              <CalendarClock className="size-3.5" aria-hidden />
+            </span>
+            <div>
+              <dt className="text-muted-foreground">ייצוא אחרון</dt>
+              <dd dir="ltr">
+                {logExport.lastExportedAt ? formatIsraelDateTime(logExport.lastExportedAt) : '—'}
+              </dd>
+            </div>
           </div>
         </dl>
         <RunLogExportButton />
@@ -298,10 +341,11 @@ export default async function VoicePlatformPage() {
           </Table>
         </div>
         {fleet.quota ? (
-          <p className="text-sm text-muted-foreground">
-            מכסת תווים: {fleet.quota.characterCount ?? '—'} / {fleet.quota.characterLimit ?? '—'}
-            {fleet.quota.tier ? ` · תוכנית ${fleet.quota.tier}` : ''}
-          </p>
+          <QuotaProgressBar
+            count={fleet.quota.characterCount}
+            limit={fleet.quota.characterLimit}
+            tier={fleet.quota.tier}
+          />
         ) : null}
         <ElevenLabsKeyForm keySource={fleet.keySource} />
       </section>

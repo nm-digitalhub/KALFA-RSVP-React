@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { AlertTriangle, PhoneCall, PhoneForwarded, Wallet } from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
 
 import { formatIsraelDate } from '@/lib/date';
 import { getVoximplantChannelConfig } from '@/lib/data/admin/voximplant-channel';
@@ -23,7 +24,8 @@ import {
   Pagination,
   parsePageParam,
 } from '../_components';
-import { balanceVariant, formatBalance, formatPercent } from './_helpers';
+import { balanceVariant, formatBalance } from './_helpers';
+import { AnswerRateRing, BalanceMeter } from './_meters';
 
 export const metadata = { title: 'מוקד שיחות AI' };
 
@@ -46,17 +48,41 @@ export default async function VoiceOverviewPage({
 
   const liveOn = channel.liveEnabled;
 
-  const tiles = [
+  const tiles: Array<{
+    label: string;
+    icon: LucideIcon;
+    value: React.ReactNode;
+    href?: string;
+    extra?: React.ReactNode;
+  }> = [
     {
       label: 'יתרת Voximplant',
       icon: Wallet,
-      value: formatBalance(balance.balance, balance.currency),
-      variant: balanceVariant(balance.balance, balance.minCallReserve, balance.lowBalanceThreshold),
+      value: (
+        <Badge variant={balanceVariant(balance.balance, balance.minCallReserve, balance.lowBalanceThreshold)}>
+          {formatBalance(balance.balance, balance.currency)}
+        </Badge>
+      ),
       href: '/admin/voice/platform',
+      // Where the live balance sits relative to the reserve (blocks calls)
+      // and low-balance (warns) gates — the same numbers as the badge, in a
+      // form that shows headroom at a glance.
+      extra: (
+        <BalanceMeter
+          balance={balance.balance}
+          currency={balance.currency}
+          minReserve={balance.minCallReserve}
+          lowThreshold={balance.lowBalanceThreshold}
+        />
+      ),
     },
     { label: 'שיחות פעילות כעת', icon: PhoneForwarded, value: String(summary.activeNow) },
     { label: 'שיחות ב־7 ימים', icon: PhoneCall, value: `${summary.completed7d}/${summary.last7d}` },
-    { label: 'אחוז מענה (7 ימים)', icon: PhoneCall, value: formatPercent(summary.answerRate7d) },
+    {
+      label: 'אחוז מענה (7 ימים)',
+      icon: PhoneCall,
+      value: <AnswerRateRing rate={summary.answerRate7d} size={44} />,
+    },
   ];
 
   return (
@@ -91,9 +117,8 @@ export default async function VoiceOverviewPage({
                 <Icon className="size-4" aria-hidden />
                 {t.label}
               </span>
-              <span className="text-3xl font-bold">
-                {t.variant ? <Badge variant={t.variant}>{t.value}</Badge> : t.value}
-              </span>
+              <span className="text-3xl font-bold">{t.value}</span>
+              {t.extra}
             </>
           );
           return t.href ? (
