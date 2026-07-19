@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 
 import {
+  alertForAccountCallbacks,
   getAccountCallbackTokenHash,
   runVerifiedBalancePull,
   stampBalanceCallbackReceived,
@@ -71,8 +72,10 @@ export async function POST(
   } catch {
     /* ignore — poke still triggers the verified pull below */
   }
-  // Normalized only for telemetry (unknown callback types are counted, ignored).
-  normalizeAccountCallbackEnvelope(envelope);
+  // Normalize to typed, metadata-only events (unknown types are counted,
+  // ignored). `min_balance` is NOT alerted from here — the verified pull below
+  // owns it; on a parse failure `events` is empty and only the pull runs.
+  const { events } = normalizeAccountCallbackEnvelope(envelope);
 
   // 5. Stamp receipt (best-effort) + verified pull (rate-limited so a flood of
   //    pokes cannot become a flood of GetAccountInfo calls). Both never throw.
@@ -80,6 +83,14 @@ export async function POST(
   if (rateLimit('vox-acct-cb:pull', PULL_RATE).allowed) {
     await runVerifiedBalancePull();
   }
+
+  // 5b. Type-specific ops alerts (JSFail, expiring CallerID/agreement, card /
+  //     charge issues → Slack). These derive from the untrusted body, which is
+  //     acceptable: the constant-time token gate above already proves possession
+  //     of the secret URL token, the alerts are low-severity + deduped +
+  //     rate-capped in slack.ts, and — unlike the balance — these signals cannot
+  //     be cheaply re-verified via a separate API. Fail-safe (never throws).
+  await alertForAccountCallbacks(events);
 
   // 6. Always 200 past the gates — Voximplant's retry behavior is undocumented
   //    and the callback carries no trusted data, so a non-2xx buys nothing and

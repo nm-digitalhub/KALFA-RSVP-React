@@ -152,20 +152,70 @@ describe('normalizeAccountCallbackEnvelope', () => {
       ],
     });
     expect(n.events).toEqual([
-      { type: 'min_balance', callbackId: '991' },
-      { type: 'future_unknown_kind', callbackId: 'abc' },
+      // min_balance is not lifted (handled by the verified pull) → empty detail.
+      { type: 'min_balance', callbackId: '991', detail: {} },
+      { type: 'future_unknown_kind', callbackId: 'abc', detail: {} },
     ]);
     expect(n.unknownShapes).toBe(0);
   });
   it('counts malformed items without failing the envelope', () => {
     const n = normalizeAccountCallbackEnvelope({ callbacks: [{ no_type: 1 }, 'junk', { type: 'x' }] });
-    expect(n.events).toEqual([{ type: 'x', callbackId: null }]);
+    expect(n.events).toEqual([{ type: 'x', callbackId: null, detail: {} }]);
     expect(n.unknownShapes).toBe(2);
   });
   it('returns an empty result for garbage — a poke is still a poke', () => {
     expect(normalizeAccountCallbackEnvelope('<html>').events).toEqual([]);
     expect(normalizeAccountCallbackEnvelope(null).events).toEqual([]);
     expect(normalizeAccountCallbackEnvelope({ callbacks: 'nope' }).events).toEqual([]);
+  });
+
+  it('lifts NON-PII operational scalars/counts per type (never the numbers themselves)', () => {
+    const n = normalizeAccountCallbackEnvelope({
+      callbacks: [
+        {
+          type: 'expiring_callerid',
+          callback_id: 1,
+          expiring_callerid: { expiration_date: '2026-08-01', callerids: ['+972500000001', '+972500000002'] },
+        },
+        {
+          type: 'expiring_agreement',
+          callback_id: 2,
+          expiring_agreement: { expiration_date: '2026-09-01', until_expiration: 30 },
+        },
+        { type: 'expired_agreement', callback_id: 3, expired_agreement: { document_ids: [11, 22, 33] } },
+        {
+          type: 'next_charge_alert',
+          callback_id: 4,
+          next_charge_alert: { insufficient_funds_amount: 2.5, required_money: 5 },
+        },
+        {
+          type: 'call_history_report',
+          callback_id: 5,
+          call_history_report: { history_report_id: 7788, order_date: '2026-07-19 03:00:00', success: false },
+        },
+      ],
+    });
+    expect(n.events[0].detail).toEqual({ expiration_date: '2026-08-01', callerid_count: 2 });
+    expect(n.events[1].detail).toEqual({ expiration_date: '2026-09-01', until_expiration: 30 });
+    expect(n.events[2].detail).toEqual({ document_count: 3 });
+    expect(n.events[3].detail).toEqual({ insufficient_funds_amount: 2.5, required_money: 5 });
+    expect(n.events[4].detail).toEqual({ history_report_id: 7788, success: 'false' });
+    // The actual caller-ID phone numbers must NOT survive anywhere.
+    expect(JSON.stringify(n)).not.toContain('972500000001');
+  });
+
+  it('yields empty detail for content-free or unknown types', () => {
+    const n = normalizeAccountCallbackEnvelope({
+      callbacks: [
+        { type: 'js_fail', callback_id: 1, js_fail: {} },
+        { type: 'card_payment_failed', callback_id: 2 },
+        { type: 'sms_inbound', callback_id: 3, sms_inbound: { text: 'private message body' } },
+      ],
+    });
+    expect(n.events[0].detail).toEqual({});
+    expect(n.events[1].detail).toEqual({});
+    expect(n.events[2].detail).toEqual({}); // SMS content is never lifted
+    expect(JSON.stringify(n)).not.toContain('private message body');
   });
 });
 

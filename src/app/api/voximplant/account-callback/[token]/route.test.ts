@@ -5,15 +5,17 @@ import { __resetRateLimitStateForTests } from '@/lib/security/rate-limit';
 
 vi.mock('server-only', () => ({}));
 
-const { hashMock, stampMock, pullMock } = vi.hoisted(() => ({
+const { hashMock, stampMock, pullMock, alertMock } = vi.hoisted(() => ({
   hashMock: vi.fn(),
   stampMock: vi.fn(),
   pullMock: vi.fn(),
+  alertMock: vi.fn(),
 }));
 vi.mock('@/lib/data/voximplant-account-callback', () => ({
   getAccountCallbackTokenHash: hashMock,
   stampBalanceCallbackReceived: stampMock,
   runVerifiedBalancePull: pullMock,
+  alertForAccountCallbacks: alertMock,
 }));
 
 import { POST } from './route';
@@ -36,6 +38,7 @@ beforeEach(() => {
   hashMock.mockReset().mockResolvedValue(HASH);
   stampMock.mockReset().mockResolvedValue(undefined);
   pullMock.mockReset().mockResolvedValue(undefined);
+  alertMock.mockReset().mockResolvedValue(undefined);
 });
 afterEach(() => vi.clearAllMocks());
 
@@ -46,6 +49,20 @@ describe('POST /api/voximplant/account-callback/[token]', () => {
     expect(stampMock).toHaveBeenCalledOnce();
     expect(pullMock).toHaveBeenCalledOnce();
     expect(res.headers.get('cache-control')).toBe('no-store');
+  });
+
+  it('forwards the normalized events to the type-specific ops alerter', async () => {
+    await call(
+      TOKEN,
+      JSON.stringify({ callbacks: [{ type: 'js_fail', callback_id: 42, js_fail: {} }] }),
+    );
+    expect(alertMock).toHaveBeenCalledOnce();
+    expect(alertMock).toHaveBeenCalledWith([{ type: 'js_fail', callbackId: '42', detail: {} }]);
+  });
+
+  it('passes an empty event list to the alerter when the body is unparseable', async () => {
+    await call(TOKEN, '<not json>');
+    expect(alertMock).toHaveBeenCalledWith([]);
   });
 
   it('runs the verified pull EVEN when the body is unparseable — it is only a poke', async () => {

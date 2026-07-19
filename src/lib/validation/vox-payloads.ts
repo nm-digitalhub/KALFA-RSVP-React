@@ -240,9 +240,75 @@ export function extractIpStrings(raw: unknown): string[] {
 // do not hold). The route treats any authenticated POST as a poke and pulls
 // verified data itself; this normalizer only enriches telemetry. Parse failure
 // therefore returns an EMPTY event list — never an error.
+//
+// Per the AccountCallback contract (verified live via getDoc), the envelope
+// item's `type` string EQUALS the name of the single populated data property
+// (e.g. `expiring_agreement` → item.expiring_agreement). `detail` lifts only the
+// NON-PII operational scalars/counts from that property (days-to-expiry, shortfall
+// amounts, array lengths) so an alert can carry context — it NEVER carries the
+// caller-ID numbers, card PANs, certificate bodies, or SMS content.
+export interface NormalizedAccountCallbackEvent {
+  type: string;
+  callbackId: string | null;
+  detail: Record<string, string | number>;
+}
 export interface NormalizedAccountCallbacks {
-  events: Array<{ type: string; callbackId: string | null }>;
+  events: NormalizedAccountCallbackEvent[];
   unknownShapes: number;
+}
+
+// Lift the metadata-only scalars/counts for the types KALFA acts on. Any other
+// type (min_balance — handled by the verified pull — or administrative kinds)
+// gets an empty detail; the raw data property is never surfaced.
+function extractCallbackDetail(type: string, o: Record<string, unknown>): Record<string, string | number> {
+  const data = o[type];
+  const rec: Record<string, unknown> =
+    data && typeof data === 'object' && !Array.isArray(data) ? (data as Record<string, unknown>) : {};
+  const d: Record<string, string | number> = {};
+  switch (type) {
+    case 'expiring_callerid': {
+      const exp = asString(rec.expiration_date);
+      if (exp) d.expiration_date = exp;
+      if (Array.isArray(rec.callerids)) d.callerid_count = rec.callerids.length; // COUNT only — never the numbers
+      break;
+    }
+    case 'expiring_agreement': {
+      const exp = asString(rec.expiration_date);
+      if (exp) d.expiration_date = exp;
+      const days = asNumber(rec.until_expiration);
+      if (days !== null) d.until_expiration = days;
+      break;
+    }
+    case 'expired_agreement': {
+      if (Array.isArray(rec.document_ids)) d.document_count = rec.document_ids.length;
+      break;
+    }
+    case 'next_charge_alert': {
+      const shortfall = asNumber(rec.insufficient_funds_amount);
+      if (shortfall !== null) d.insufficient_funds_amount = shortfall;
+      const required = asNumber(rec.required_money);
+      if (required !== null) d.required_money = required;
+      break;
+    }
+    case 'call_history_report': {
+      const id = asNumber(rec.history_report_id);
+      if (id !== null) d.history_report_id = id;
+      if (typeof rec.success === 'boolean') d.success = String(rec.success);
+      break;
+    }
+    case 'expiring_certificates':
+    case 'expired_certificates': {
+      if (Array.isArray(rec.certificates)) d.certificate_count = rec.certificates.length;
+      break;
+    }
+    case 'sip_registration_fail': {
+      if (Array.isArray(rec.sip_registrations)) d.sip_registration_count = rec.sip_registrations.length;
+      break;
+    }
+    // js_fail / card_expired / card_expires_in_month / card_payment_failed carry
+    // NO payload fields (verified live) — the event itself is the signal.
+  }
+  return d;
 }
 
 export function normalizeAccountCallbackEnvelope(raw: unknown): NormalizedAccountCallbacks {
@@ -265,7 +331,11 @@ export function normalizeAccountCallbackEnvelope(raw: unknown): NormalizedAccoun
       continue;
     }
     const idNum = asNumber(o.callback_id);
-    events.push({ type, callbackId: idNum !== null ? String(idNum) : asString(o.callback_id) });
+    events.push({
+      type,
+      callbackId: idNum !== null ? String(idNum) : asString(o.callback_id),
+      detail: extractCallbackDetail(type, o),
+    });
   }
   return { events, unknownShapes };
 }
