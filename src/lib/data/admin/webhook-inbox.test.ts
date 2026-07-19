@@ -2,11 +2,11 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('server-only', () => ({}));
 vi.mock('@/lib/supabase/admin', () => ({ createAdminClient: vi.fn() }));
-vi.mock('@/lib/auth/dal', () => ({ requireAdmin: vi.fn() }));
+vi.mock('@/lib/auth/dal', () => ({ requirePlatformPermission: vi.fn() }));
 
 import { createMockSupabase } from '@/test/supabase-mock';
 import { createAdminClient } from '@/lib/supabase/admin';
-import { requireAdmin } from '@/lib/auth/dal';
+import { requirePlatformPermission } from '@/lib/auth/dal';
 import {
   listWebhookInbox,
   resolveWebhookAssociations,
@@ -63,7 +63,7 @@ describe('listWebhookInbox', () => {
     return { client, builder };
   }
 
-  it('gates on requireAdmin and applies server filters, returning a PageResult', async () => {
+  it('gates on requirePlatformPermission and applies server filters, returning a PageResult', async () => {
     const { builder } = mock([{ id: 'a1' }], 1);
 
     const res = await listWebhookInbox({
@@ -72,7 +72,7 @@ describe('listWebhookInbox', () => {
       q: 'wamid_1',
     });
 
-    expect(requireAdmin).toHaveBeenCalledTimes(1);
+    expect(requirePlatformPermission).toHaveBeenCalledTimes(1);
     expect(builder.eq).toHaveBeenCalledWith('event_kind', 'status');
     // state=error → processed_at IS NULL AND last_error IS NOT NULL
     expect(builder.is).toHaveBeenCalledWith('processed_at', null);
@@ -120,12 +120,12 @@ describe('listWebhookInbox', () => {
 describe('resolveWebhookAssociations', () => {
   // Regression guard: this function queries contact_interactions/events via the
   // service-role (RLS-bypassing) client. It was previously missing its own
-  // requireAdmin() gate, relying entirely on its one caller (an admin-layout
+  // requirePlatformPermission() gate, relying entirely on its one caller (an admin-layout
   // page) already having checked -- a latent risk for any future caller that
   // doesn't go through that page first.
-  it('gates on requireAdmin even when there is nothing to resolve', async () => {
+  it('gates on requirePlatformPermission even when there is nothing to resolve', async () => {
     const result = await resolveWebhookAssociations([]);
-    expect(requireAdmin).toHaveBeenCalledTimes(1);
+    expect(requirePlatformPermission).toHaveBeenCalledTimes(1);
     expect(result.size).toBe(0);
   });
 });

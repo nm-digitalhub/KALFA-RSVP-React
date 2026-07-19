@@ -3,7 +3,7 @@ import 'server-only';
 import { notFound } from 'next/navigation';
 
 import { createAdminClient } from '@/lib/supabase/admin';
-import { requireAdmin } from '@/lib/auth/dal';
+import { requirePlatformPermission } from '@/lib/auth/dal';
 import type { OwnedEvent } from '@/lib/data/events';
 import type { CampaignStatus } from '@/lib/data/campaign-status';
 
@@ -22,7 +22,7 @@ const ADMIN_EVENT_COLUMNS = 'id, name, status, event_type, event_date, rsvp_dead
 // via requireAdmin() instead of can_access_event(). Does NOT weaken the
 // owner/org path — the page picks this only for admins.
 export async function getEventForAdminView(eventId: string): Promise<OwnedEvent> {
-  await requireAdmin();
+  await requirePlatformPermission('manage_billing');
   const admin = createAdminClient();
   const { data, error } = await admin
     .from('events')
@@ -65,7 +65,7 @@ const WINDDOWN_STATUSES: readonly CampaignStatus[] = [
 // requireAdmin(). Returns only what the list needs — charge OUTCOME fields
 // (status/amount/credit), never card/token fields.
 export async function listCampaignsForAdmin(): Promise<AdminCampaignListItem[]> {
-  await requireAdmin();
+  await requirePlatformPermission('manage_billing');
   const admin = createAdminClient();
   const { data, error } = await admin
     .from('campaigns')

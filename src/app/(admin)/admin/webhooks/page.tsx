@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { requirePlatformPermission } from '@/lib/auth/dal';
 
 import {
   getWebhookHealth,
@@ -177,6 +178,9 @@ export default async function AdminWebhooksPage({
 }: {
   searchParams: Promise<SearchParams>;
 }) {
+  // Optimistic gate (Next.js term): redirects early so the operator does not
+  // land on an empty page. The real enforcement is per-function in the DAL.
+  await requirePlatformPermission('view_webhooks');
   const sp = await searchParams;
   const page = parsePageParam(sp.page);
   const current: CurrentFilters = {

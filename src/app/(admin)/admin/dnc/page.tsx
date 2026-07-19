@@ -4,7 +4,7 @@ import { DncClient } from './dnc-client';
 
 const sectionClass = 'space-y-4 rounded-lg border border-border bg-card p-5';
 
-// Admin: Do-Not-Call list for the Voximplant AI-call channel. requireAdmin() is
+// Admin: Do-Not-Call list for the Voximplant AI-call channel. requirePlatformPermission('manage_voice') is
 // enforced in the data layer (and by the admin-only RLS policy on
 // call_dnc_list). Adding a phone here blocks every future AI call to it.
 export default async function AdminDncPage() {

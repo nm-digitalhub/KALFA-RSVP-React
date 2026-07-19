@@ -5,7 +5,7 @@ import { CompanyForm } from './company-form';
 const sectionClass = 'space-y-4 rounded-lg border border-border bg-card p-5';
 
 // Admin: company / legal details embedded in the signed agreement (§14ג
-// mandatory disclosures + privacy + warranty). requireAdmin() is enforced in the
+// mandatory disclosures + privacy + warranty). requirePlatformPermission('manage_settings') is enforced in the
 // data layer. The agreement reads these values live.
 export default async function AdminCompanyPage() {
   const settings = await getCompanySettings();

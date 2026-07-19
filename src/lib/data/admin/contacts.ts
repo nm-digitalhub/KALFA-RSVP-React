@@ -1,7 +1,7 @@
 import 'server-only';
 
 import { createClient } from '@/lib/supabase/server';
-import { requireAdmin } from '@/lib/auth/dal';
+import { requirePlatformPermission } from '@/lib/auth/dal';
 import type { Database } from '@/lib/supabase/types';
 import { resolvePage, type PageParams, type PageResult } from './shared';
 
@@ -24,7 +24,7 @@ export const CONTACT_COLUMNS = 'id, name, email, phone, message, created_at';
 export async function listContactMessages(
   { page }: PageParams = {},
 ): Promise<PageResult<ContactMessage>> {
-  await requireAdmin();
+  await requirePlatformPermission('view_customer_data');
 
   const { page: safePage, pageSize, from, to } = resolvePage(page);
 

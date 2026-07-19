@@ -1,7 +1,7 @@
 import 'server-only';
 
 import { createClient } from '@/lib/supabase/server';
-import { requireAdmin } from '@/lib/auth/dal';
+import { requirePlatformPermission } from '@/lib/auth/dal';
 import { getWhatsAppChannelConfig } from '@/lib/data/admin/channels';
 import { getVoximplantChannelConfig } from '@/lib/data/admin/voximplant-channel';
 
@@ -20,7 +20,7 @@ export type OutreachMasterState = {
 };
 
 export async function getOutreachMasterState(): Promise<OutreachMasterState> {
-  await requireAdmin();
+  await requirePlatformPermission('manage_settings');
   const [wa, vox] = await Promise.all([
     getWhatsAppChannelConfig(),
     getVoximplantChannelConfig(),
@@ -34,7 +34,7 @@ export async function getOutreachMasterState(): Promise<OutreachMasterState> {
 }
 
 export async function setOutreachEnabled(enabled: boolean): Promise<void> {
-  await requireAdmin();
+  await requirePlatformPermission('manage_settings');
   const supabase = await createClient();
   const { error } = await supabase
     .from('app_settings')

@@ -40,7 +40,7 @@ function chargeCell(c: {
 // Admin campaign wind-down list. The four lifecycle controls (close/pause/
 // settle/cancel) are platform-admin-only, so this surface lets an admin REACH
 // campaigns of events they do not own and click through to manage them.
-// Authorization is enforced by the /admin layout (requireAdmin) and again in
+// Authorization is enforced by the /admin layout (requirePlatformPermission) and again in
 // listCampaignsForAdmin.
 export default async function AdminCampaignsPage() {
   const items = await listCampaignsForAdmin();

@@ -1,7 +1,7 @@
 import 'server-only';
 
 import { createClient } from '@/lib/supabase/server';
-import { requireAdmin } from '@/lib/auth/dal';
+import { requirePlatformPermission } from '@/lib/auth/dal';
 import { normalizePhone } from '@/lib/phone';
 
 // Admin: Do-Not-Call list for the Voximplant AI-call channel. A phone on this
@@ -24,7 +24,7 @@ export async function addToCallDnc({
   // requireAdmin returns the authenticated admin — recorded as `added_by` for
   // auditability (who blocked this number), per CLAUDE.md's admin-action audit
   // requirement. On re-add of an existing number the upsert refreshes added_by.
-  const admin = await requireAdmin();
+  const admin = await requirePlatformPermission('manage_voice');
 
   // normalizePhone returns the E.164 form or null for an unparseable/invalid
   // number — guard the null so we never write a non-canonical key the runtime
@@ -54,7 +54,7 @@ export type CallDncEntry = {
 // Read-only list for the admin surface (newest first, capped). requireAdmin +
 // the admin-only RLS policy both gate the read.
 export async function listCallDnc(): Promise<CallDncEntry[]> {
-  await requireAdmin();
+  await requirePlatformPermission('manage_voice');
   const supabase = await createClient();
   const { data, error } = await supabase
     .from('call_dnc_list')

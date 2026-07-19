@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { requirePlatformPermission } from '@/lib/auth/dal';
 
 import { listPackages } from '@/lib/data/admin/packages';
 import { PageHeading, EmptyState, Badge, formatCurrency } from '../_components';
@@ -8,6 +9,9 @@ import { PageHeading, EmptyState, Badge, formatCurrency } from '../_components';
 // catalogue is small, so this view is not paginated.
 
 export default async function AdminPackagesPage() {
+  // Optimistic gate (Next.js term): redirects early so the operator does not
+  // land on an empty page. The real enforcement is per-function in the DAL.
+  await requirePlatformPermission('manage_billing');
   const packages = await listPackages();
 
   return (

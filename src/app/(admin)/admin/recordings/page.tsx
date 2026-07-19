@@ -1,5 +1,5 @@
 import { createClient } from '@/lib/supabase/server';
-import { requireAdmin } from '@/lib/auth/dal';
+import { requirePlatformPermission } from '@/lib/auth/dal';
 import { validateRecordingUrl } from '@/lib/voximplant/recording-url';
 import { EmptyState, PageHeading, formatDateTime } from '../_components';
 
@@ -8,8 +8,8 @@ export const metadata = { title: 'הקלטות שיחות AI' };
 // §1F — read-only ADMIN surface for Voximplant call recordings. Reads
 // `call_attempts` through the cookie client, which is gated by the admin RLS
 // policy `call_attempts_admin_read` (has_role admin). Owners NEVER see this:
-// the route lives under the (admin) group whose layout enforces requireAdmin,
-// and requireAdmin is re-asserted here (defense-in-depth). `recording_url` is
+// the route lives under the (admin) group whose layout enforces requirePlatformPermission,
+// and requirePlatformPermission is re-asserted here (defense-in-depth). `recording_url` is
 // already host-allowlist-validated on write; it is re-validated here before it
 // is rendered as a link, and it is never exposed to any owner-facing surface.
 //
@@ -43,7 +43,7 @@ function formatDuration(sec: number | null): string {
 }
 
 export default async function AdminRecordingsPage() {
-  await requireAdmin();
+  await requirePlatformPermission('view_recordings');
   const supabase = await createClient();
 
   const { data, error } = await supabase

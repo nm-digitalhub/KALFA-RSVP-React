@@ -2,7 +2,7 @@ import 'server-only';
 
 import { createClient } from '@/lib/supabase/server';
 import { isConfiguredServiceRoleKey } from '@/lib/supabase/admin';
-import { requireAdmin } from '@/lib/auth/dal';
+import { requirePlatformPermission } from '@/lib/auth/dal';
 
 // Admin: the singleton app/system settings (operational toggle + admin-managed
 // SUMIT clearing config). Authorized by requireAdmin() + the
@@ -35,7 +35,7 @@ export type AppSettings = {
 const SETTINGS_ID = true;
 
 export async function getAppSettings(): Promise<AppSettings> {
-  await requireAdmin();
+  await requirePlatformPermission('manage_settings');
 
   const supabase = await createClient();
   const { data, error } = await supabase
@@ -91,7 +91,7 @@ export type UpdateAppSettingsInput = {
 export async function updateAppSettings(
   input: UpdateAppSettingsInput,
 ): Promise<void> {
-  await requireAdmin();
+  await requirePlatformPermission('manage_settings');
 
   const supabase = await createClient();
 
@@ -141,7 +141,7 @@ const COMPANY_COLUMNS =
   'company_legal_name, company_legal_id, company_legal_address, company_contact_phone, company_contact_email, privacy_url, terms_url, warranty_text';
 
 export async function getCompanySettings(): Promise<CompanySettings> {
-  await requireAdmin();
+  await requirePlatformPermission('manage_settings');
   const supabase = await createClient();
   const { data, error } = await supabase
     .from('app_settings')
@@ -164,7 +164,7 @@ export async function getCompanySettings(): Promise<CompanySettings> {
 export async function updateCompanySettings(
   input: CompanySettings,
 ): Promise<void> {
-  await requireAdmin();
+  await requirePlatformPermission('manage_settings');
   const supabase = await createClient();
   const { error } = await supabase
     .from('app_settings')
@@ -188,7 +188,7 @@ export async function updateCompanySettings(
 export type InfraConfigItem = { key: string; label: string; configured: boolean };
 
 export async function getInfraConfigStatus(): Promise<InfraConfigItem[]> {
-  await requireAdmin();
+  await requirePlatformPermission('manage_settings');
 
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
   const appOrigin = process.env.APP_ORIGIN;

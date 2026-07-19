@@ -5,7 +5,7 @@ import { notFound } from 'next/navigation';
 import { logActivity } from '@/lib/data/activity';
 import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
-import { requireAdmin } from '@/lib/auth/dal';
+import { requirePlatformPermission } from '@/lib/auth/dal';
 import type { Database, Json } from '@/lib/supabase/types';
 import type {
   PackageInput,
@@ -49,7 +49,7 @@ export const PACKAGE_COLUMNS =
 // curated sort order then name. Not paginated: the catalogue is small and
 // admins manage the full set at once.
 export async function listPackages(): Promise<AdminPackage[]> {
-  await requireAdmin();
+  await requirePlatformPermission('manage_billing');
 
   const supabase = await createClient();
   const { data, error } = await supabase
@@ -67,7 +67,7 @@ export async function listPackages(): Promise<AdminPackage[]> {
 
 // Fetch one package by id; notFound() (404) if it does not exist.
 export async function getPackage(id: string): Promise<AdminPackage> {
-  await requireAdmin();
+  await requirePlatformPermission('manage_billing');
 
   const supabase = await createClient();
   const { data, error } = await supabase
@@ -186,7 +186,7 @@ function packageChangedFields(
 export async function validateOutreachScheduleForPackage(
   schedule: OutreachTouchpointInput[],
 ): Promise<{ index: number; message: string }[]> {
-  await requireAdmin();
+  await requirePlatformPermission('manage_billing');
   const whatsappTouchpoints = schedule
     .map((tp, index) => ({ tp, index }))
     .filter(({ tp }) => tp.channel === 'whatsapp');
@@ -225,7 +225,7 @@ export async function createPackage(
   input: PackageInput,
   operational: OperationalFieldsInput,
 ): Promise<{ id: string }> {
-  await requireAdmin();
+  await requirePlatformPermission('manage_billing');
 
   const supabase = await createClient();
   const writable = toWritable(input, operational);
@@ -258,7 +258,7 @@ export async function updatePackage(
   input: PackageInput,
   operational: OperationalFieldsInput,
 ): Promise<void> {
-  await requireAdmin();
+  await requirePlatformPermission('manage_billing');
 
   const supabase = await createClient();
   const writable = toWritable(input, operational);
@@ -282,7 +282,7 @@ export async function updatePackage(
 
 // Delete a package by id.
 export async function deletePackage(id: string): Promise<void> {
-  await requireAdmin();
+  await requirePlatformPermission('manage_billing');
 
   const supabase = await createClient();
   const previous = await getPackage(id);

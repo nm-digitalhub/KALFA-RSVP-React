@@ -1,4 +1,4 @@
-import { requireAdmin } from '@/lib/auth/dal';
+import { requirePlatformPermission } from '@/lib/auth/dal';
 import { getCompanyLegal } from '@/lib/data/company';
 import { getAgreementForAdmin } from '@/lib/data/admin/agreements';
 import {
@@ -17,7 +17,7 @@ export const metadata = { title: 'חוזה' };
 // draft marker; editing returns it to draft. The preview uses sample event data
 // but reflects the saved version/status/custom body.
 export default async function AdminAgreementPage() {
-  await requireAdmin();
+  await requirePlatformPermission('manage_settings');
   const [doc, company, configTokens, configValues] = await Promise.all([
     getAgreementForAdmin(),
     getCompanyLegal(),

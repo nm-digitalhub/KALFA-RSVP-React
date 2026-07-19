@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { requirePlatformPermission } from '@/lib/auth/dal';
 
 import {
   ACTIVITY_ACTION_OPTIONS,
@@ -171,6 +172,9 @@ export default async function AdminActivityPage({
 }: {
   searchParams: Promise<SearchParams>;
 }) {
+  // Optimistic gate (Next.js term): redirects early so the operator does not
+  // land on an empty page. The real enforcement is per-function in the DAL.
+  await requirePlatformPermission('view_activity_log');
   const sp = await searchParams;
   const page = parsePageParam(sp.page);
   const current: CurrentFilters = {

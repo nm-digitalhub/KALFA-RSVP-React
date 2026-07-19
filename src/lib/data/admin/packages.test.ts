@@ -4,7 +4,7 @@ import type { User } from '@supabase/supabase-js';
 import { createMockSupabase } from '@/test/supabase-mock';
 import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
-import { requireAdmin } from '@/lib/auth/dal';
+import { requirePlatformPermission } from '@/lib/auth/dal';
 import { logActivity } from '@/lib/data/activity';
 import {
   listPackages,
@@ -25,7 +25,7 @@ import type {
 vi.mock('server-only', () => ({}));
 vi.mock('@/lib/supabase/server', () => ({ createClient: vi.fn() }));
 vi.mock('@/lib/supabase/admin', () => ({ createAdminClient: vi.fn() }));
-vi.mock('@/lib/auth/dal', () => ({ requireAdmin: vi.fn() }));
+vi.mock('@/lib/auth/dal', () => ({ requirePlatformPermission: vi.fn() }));
 vi.mock('@/lib/data/activity', () => ({ logActivity: vi.fn() }));
 // notFound throws a distinguishable error so we can assert it.
 vi.mock('next/navigation', () => ({
@@ -99,7 +99,7 @@ const fullOperational: OperationalFieldsInput = {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  vi.mocked(requireAdmin).mockResolvedValue(adminUser());
+  vi.mocked(requirePlatformPermission).mockResolvedValue(adminUser());
 });
 
 describe('listPackages', () => {
@@ -114,13 +114,13 @@ describe('listPackages', () => {
 
     await listPackages();
 
-    expect(requireAdmin).toHaveBeenCalled();
+    expect(requirePlatformPermission).toHaveBeenCalled();
     expect(client.from).toHaveBeenCalledWith('packages');
     expect(builder.select).toHaveBeenCalledWith(PACKAGE_COLUMNS);
   });
 
   it('does NOT query when the admin gate redirects', async () => {
-    vi.mocked(requireAdmin).mockRejectedValueOnce(
+    vi.mocked(requirePlatformPermission).mockRejectedValueOnce(
       Object.assign(new Error('NEXT_REDIRECT'), { digest: 'NEXT_REDIRECT;' }),
     );
     const { client } = createMockSupabase<AdminPackage[]>({
@@ -317,7 +317,7 @@ describe('deletePackage', () => {
 
     await deletePackage('p-1');
 
-    expect(requireAdmin).toHaveBeenCalled();
+    expect(requirePlatformPermission).toHaveBeenCalled();
     expect(builder.delete).toHaveBeenCalled();
     expect(builder.eq).toHaveBeenCalledWith('id', 'p-1');
     expect(logActivity).toHaveBeenCalledWith(
@@ -413,7 +413,7 @@ describe('validateOutreachScheduleForPackage', () => {
 
     const errors = await validateOutreachScheduleForPackage(mixedSchedule);
 
-    expect(requireAdmin).toHaveBeenCalled();
+    expect(requirePlatformPermission).toHaveBeenCalled();
     expect(client.from).toHaveBeenCalledWith('message_templates');
     expect(client.from).toHaveBeenCalledTimes(1);
     expect(builder.select).toHaveBeenCalledWith('message_key, name, language, channel');

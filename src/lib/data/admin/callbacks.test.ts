@@ -3,7 +3,7 @@ import type { User } from '@supabase/supabase-js';
 
 import { createMockSupabase } from '@/test/supabase-mock';
 import { createClient } from '@/lib/supabase/server';
-import { requireAdmin } from '@/lib/auth/dal';
+import { requirePlatformPermission } from '@/lib/auth/dal';
 import { logActivity } from '@/lib/data/activity';
 import {
   listCallbackRequests,
@@ -14,7 +14,7 @@ import {
 
 vi.mock('server-only', () => ({}));
 vi.mock('@/lib/supabase/server', () => ({ createClient: vi.fn() }));
-vi.mock('@/lib/auth/dal', () => ({ requireAdmin: vi.fn() }));
+vi.mock('@/lib/auth/dal', () => ({ requirePlatformPermission: vi.fn() }));
 vi.mock('@/lib/data/activity', () => ({ logActivity: vi.fn() }));
 
 function adminUser(): User {
@@ -37,7 +37,7 @@ function row(overrides: Partial<CallbackRequest> = {}): CallbackRequest {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  vi.mocked(requireAdmin).mockResolvedValue(adminUser());
+  vi.mocked(requirePlatformPermission).mockResolvedValue(adminUser());
 });
 
 describe('listCallbackRequests', () => {
@@ -61,7 +61,7 @@ describe('listCallbackRequests', () => {
   });
 
   it('does NOT query when the admin gate redirects', async () => {
-    vi.mocked(requireAdmin).mockRejectedValueOnce(
+    vi.mocked(requirePlatformPermission).mockRejectedValueOnce(
       Object.assign(new Error('NEXT_REDIRECT'), { digest: 'NEXT_REDIRECT;' }),
     );
     const { client } = createMockSupabase<CallbackRequest[]>({
@@ -103,7 +103,7 @@ describe('updateCallbackStatus', () => {
 
     await updateCallbackStatus('cb-1', 'done');
 
-    expect(requireAdmin).toHaveBeenCalledTimes(1);
+    expect(requirePlatformPermission).toHaveBeenCalledTimes(1);
     expect(client.from).toHaveBeenCalledWith('callback_requests');
     expect(builder.update).toHaveBeenCalledWith(
       expect.objectContaining({ status: 'done' }),
@@ -117,7 +117,7 @@ describe('updateCallbackStatus', () => {
   });
 
   it('does NOT update when the admin gate redirects', async () => {
-    vi.mocked(requireAdmin).mockRejectedValueOnce(
+    vi.mocked(requirePlatformPermission).mockRejectedValueOnce(
       Object.assign(new Error('NEXT_REDIRECT'), { digest: 'NEXT_REDIRECT;' }),
     );
     const { client } = createMockSupabase<CallbackRequest>({
