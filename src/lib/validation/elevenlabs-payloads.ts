@@ -44,6 +44,15 @@ export interface NormalizedCallAnalysis {
   callSuccessScore: number | null;
   evaluation: Record<string, string> | null;
   dataCollection: { status: string | null; adults: number | null; children: number | null } | null;
+  // Engagement counters DERIVED from the transcript and then thrown away with it.
+  // The provider exposes message_count only on the LIST endpoint, not in this
+  // payload — but the transcript is here, so the counts are computed before the
+  // PII is dropped. They are plain integers: no text, no roles' content, nothing
+  // that could name a guest. `userTurns` is the one that matters — a voicemail
+  // produces agent turns and ~zero user turns, which is what separates "a human
+  // engaged" from "the agent talked at a machine".
+  agentTurns: number;
+  userTurns: number;
 }
 
 // A webhook envelope reduced to its type + (only for post_call_transcription with
@@ -104,6 +113,22 @@ function extractDataCollection(
   return { status, adults, children };
 }
 
+// Count turns per role WITHOUT retaining a single character of what was said.
+// The transcript is the payload's heaviest PII (guest speech verbatim); this
+// reduces it to two integers on the way past. Anything that is not an array of
+// objects yields 0/0, keeping the normalizer total.
+function countTurns(raw: unknown): { agentTurns: number; userTurns: number } {
+  if (!Array.isArray(raw)) return { agentTurns: 0, userTurns: 0 };
+  let agentTurns = 0;
+  let userTurns = 0;
+  for (const entry of raw) {
+    const role = asString(asObject(entry).role);
+    if (role === 'agent') agentTurns += 1;
+    else if (role === 'user') userTurns += 1;
+  }
+  return { agentTurns, userTurns };
+}
+
 export function normalizeCallAnalysisWebhook(raw: unknown): NormalizedWebhook {
   const env = asObject(raw);
   const type = asString(env.type);
@@ -125,6 +150,7 @@ export function normalizeCallAnalysisWebhook(raw: unknown): NormalizedWebhook {
   const initVars = asObject(asObject(data.conversation_initiation_client_data).dynamic_variables);
 
   const rawReason = asString(metadata.termination_reason);
+  const turns = countTurns(data.transcript);
 
   return {
     type,
@@ -142,6 +168,8 @@ export function normalizeCallAnalysisWebhook(raw: unknown): NormalizedWebhook {
       callSuccessScore: asNumber(analysis.call_success_score),
       evaluation: extractEvaluation(analysis),
       dataCollection: extractDataCollection(analysis),
+      agentTurns: turns.agentTurns,
+      userTurns: turns.userTurns,
     },
   };
 }

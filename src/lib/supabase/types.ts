@@ -530,6 +530,7 @@ export type Database = {
       call_analysis: {
         Row: {
           agent_id: string | null
+          agent_turns: number | null
           analysis_at: string | null
           call_attempt_id: string | null
           call_duration_secs: number | null
@@ -547,9 +548,11 @@ export type Database = {
           received_at: string
           status: string | null
           termination_reason: string | null
+          user_turns: number | null
         }
         Insert: {
           agent_id?: string | null
+          agent_turns?: number | null
           analysis_at?: string | null
           call_attempt_id?: string | null
           call_duration_secs?: number | null
@@ -567,9 +570,11 @@ export type Database = {
           received_at?: string
           status?: string | null
           termination_reason?: string | null
+          user_turns?: number | null
         }
         Update: {
           agent_id?: string | null
+          agent_turns?: number | null
           analysis_at?: string | null
           call_attempt_id?: string | null
           call_duration_secs?: number | null
@@ -587,6 +592,7 @@ export type Database = {
           received_at?: string
           status?: string | null
           termination_reason?: string | null
+          user_turns?: number | null
         }
         Relationships: [
           {

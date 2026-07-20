@@ -65,6 +65,13 @@ export async function storeCallAnalysis(a: NormalizedCallAnalysis): Promise<'sto
       el_call_score: a.callSuccessScore,
       el_eval: a.evaluation,
       el_data: a.dataCollection,
+      // Engagement counters derived from the transcript the normalizer discarded.
+      // user_turns = 0 with agent_turns > 0 is the voicemail / no-engagement
+      // signature: the bridge bills a `completed` call as a reached contact the
+      // moment media starts, so this is the only stored evidence that separates a
+      // real conversation from the agent talking at a machine.
+      agent_turns: a.agentTurns,
+      user_turns: a.userTurns,
     };
     const { error } = await admin
       .from('call_analysis')

@@ -32,6 +32,8 @@ const base: NormalizedCallAnalysis = {
   callSuccessScore: 0.8,
   evaluation: { rsvp_captured: 'success' },
   dataCollection: { status: 'attending', adults: 2, children: 0 },
+  agentTurns: 8,
+  userTurns: 5,
 };
 
 beforeEach(() => {
@@ -50,6 +52,20 @@ describe('storeCallAnalysis (dual-link + QA persist)', () => {
     expect(row.el_eval).toEqual({ rsvp_captured: 'success' });
     expect(row.el_data).toEqual({ status: 'attending', adults: 2, children: 0 });
     expect(row.linked_at).toBeTruthy();
+    // The engagement counters must reach the row — they are the only stored
+    // evidence separating a real conversation from a missed voicemail.
+    expect(row).toMatchObject({ agent_turns: 8, user_turns: 5 });
+  });
+
+  it('persists a zero user_turns count rather than dropping it (voicemail signature)', async () => {
+    // 0 must be written, not treated as falsy-and-skipped: `user_turns = 0` with
+    // agent_turns > 0 is exactly the signal the no-engagement index looks for,
+    // and NULL would mean "not measured" instead of "nobody spoke".
+    attemptMock.mockResolvedValue({ data: { id: 'att-3', event_id: 'evt-3' }, error: null });
+    await storeCallAnalysis({ ...base, agentTurns: 4, userTurns: 0 });
+    const row = upsertMock.mock.calls[0][0];
+    expect(row.user_turns).toBe(0);
+    expect(row.agent_turns).toBe(4);
   });
 
   it('links via the conversation_id when no token is present (second vector)', async () => {

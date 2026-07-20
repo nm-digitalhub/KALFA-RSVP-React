@@ -49,6 +49,8 @@ const EXPECTED_KEYS = [
   'callSuccessScore',
   'evaluation',
   'dataCollection',
+  'agentTurns',
+  'userTurns',
 ];
 
 describe('normalizeCallAnalysisWebhook', () => {
@@ -69,7 +71,58 @@ describe('normalizeCallAnalysisWebhook', () => {
       callSuccessScore: null, // no call_success_score in this sample
       evaluation: { c1: 'success' }, // criterion verdict kept, rationale dropped
       dataCollection: null, // sample's 'headcount' field is not a tracked RSVP field
+      // Counted from the transcript, then the transcript itself is dropped: the
+      // sample has exactly one user turn and no agent turn.
+      agentTurns: 0,
+      userTurns: 1,
     });
+  });
+
+  it('counts turns by role without retaining any spoken text', () => {
+    const { analysis } = normalizeCallAnalysisWebhook({
+      ...sample,
+      data: {
+        ...sample.data,
+        transcript: [
+          { role: 'agent', message: 'hi' },
+          { role: 'user', message: 'GUEST_SPEECH_SECRET' },
+          { role: 'agent', message: 'how many' },
+          { role: 'user', message: 'two' },
+          { role: 'weird' }, // unknown roles are ignored, not counted
+        ],
+      },
+    });
+    expect(analysis?.agentTurns).toBe(2);
+    expect(analysis?.userTurns).toBe(2);
+    expect(JSON.stringify(analysis)).not.toContain('GUEST_SPEECH_SECRET');
+  });
+
+  it('a voicemail-shaped call (agent spoke, nobody answered) yields zero user turns', () => {
+    // This is the signal that separates a reached human from the agent talking
+    // at a machine — the whole reason the counters exist.
+    const { analysis } = normalizeCallAnalysisWebhook({
+      ...sample,
+      data: {
+        ...sample.data,
+        transcript: [
+          { role: 'agent', message: 'היי, מבורך?' },
+          { role: 'agent', message: 'הלו? שומע אותי?' },
+        ],
+      },
+    });
+    expect(analysis?.userTurns).toBe(0);
+    expect(analysis?.agentTurns).toBe(2);
+  });
+
+  it('a missing or malformed transcript yields 0/0 (stays total)', () => {
+    for (const t of [undefined, null, 'not-an-array', 42, {}]) {
+      const { analysis } = normalizeCallAnalysisWebhook({
+        ...sample,
+        data: { ...sample.data, transcript: t },
+      });
+      expect(analysis?.agentTurns).toBe(0);
+      expect(analysis?.userTurns).toBe(0);
+    }
   });
 
   it('drops EVERY PII-bearing field (transcript, summary, dynamic_variables, criteria)', () => {
