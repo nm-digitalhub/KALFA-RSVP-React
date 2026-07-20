@@ -32,6 +32,7 @@ const EXEMPT: Record<string, string[]> = {
   'src/lib/data/admin/settings.ts': [],
   'src/lib/data/admin/users.ts': [],
   'src/lib/data/admin/webhook-inbox.ts': [],
+  'src/lib/data/admin/access-log-view.ts': [],
   // message-templates.ts is now ONLY the admin surface (listMessageTemplates/
   // updateMessageTemplate, the actual /admin/templates entry points) — both
   // gated, so NO exemptions remain here.
@@ -82,6 +83,7 @@ const EXPECTED_PERMISSION: Record<string, string> = {
   'src/lib/data/admin/settings.ts': 'manage_settings',
   'src/lib/data/admin/users.ts': 'manage_staff',
   'src/lib/data/admin/webhook-inbox.ts': 'view_webhooks',
+  'src/lib/data/admin/access-log-view.ts': 'manage_staff',
 };
 
 // Targeted readers of an identified customer subject that MUST record a
