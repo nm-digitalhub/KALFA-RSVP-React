@@ -14,6 +14,7 @@ import {
 
 vi.mock('server-only', () => ({}));
 vi.mock('@/lib/supabase/admin', () => ({ createAdminClient: vi.fn() }));
+vi.mock('@/lib/data/admin/access-log', () => ({ recordStaffAccess: vi.fn() }));
 vi.mock('@/lib/auth/dal', () => ({ requirePlatformPermission: vi.fn() }));
 vi.mock('@/lib/data/activity', () => ({ logActivity: vi.fn() }));
 vi.mock('@/lib/alerts/slack', () => ({ sendSlackAlert: vi.fn() }));
@@ -106,7 +107,7 @@ describe('gate ordering — every reader calls requirePlatformPermission first',
     const { guests } = wireAdminClient({});
     vi.mocked(requirePlatformPermission).mockRejectedValue(new Error('redirect'));
 
-    await expect(listGuestsForSupportView(EVENT_ID)).rejects.toThrow('redirect');
+    await expect(listGuestsForSupportView(EVENT_ID, 'פנייה בנושא רשימת אורחים 1234')).rejects.toThrow('redirect');
     expect(guests.client.from).not.toHaveBeenCalled();
   });
 
@@ -213,7 +214,7 @@ describe('happy path', () => {
       },
     });
 
-    const guests = await listGuestsForSupportView(EVENT_ID);
+    const guests = await listGuestsForSupportView(EVENT_ID, 'פנייה בנושא רשימת אורחים 1234');
     expect(guests).toEqual([
       expect.objectContaining({
         id: 'g1',
@@ -246,7 +247,7 @@ describe('read-only proof — no mutation on customer tables', () => {
   it('listGuestsForSupportView never calls update/insert/delete on guests', async () => {
     const { guests } = wireAdminClient({});
 
-    await listGuestsForSupportView(EVENT_ID);
+    await listGuestsForSupportView(EVENT_ID, 'פנייה בנושא רשימת אורחים 1234');
 
     expect(guests.builder.update).not.toHaveBeenCalled();
     expect(guests.builder.insert).not.toHaveBeenCalled();

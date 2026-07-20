@@ -2,6 +2,7 @@ import 'server-only';
 
 import { createAdminClient } from '@/lib/supabase/admin';
 import { requirePlatformPermission } from '@/lib/auth/dal';
+import { recordStaffAccess } from '@/lib/data/admin/access-log';
 import { logActivity } from '@/lib/data/activity';
 import { sendSlackAlert } from '@/lib/alerts/slack';
 import { celebrantsTextFor } from '@/lib/data/celebrant-display';
@@ -160,10 +161,33 @@ export interface SupportGuestView {
 // way as getEventForSupportView; no second audit row is written here — call
 // this right after (or alongside) getEventForSupportView, which already
 // recorded the access.
-export async function listGuestsForSupportView(eventId: string): Promise<SupportGuestView[]> {
-  await requirePlatformPermission('view_customer_data');
+export async function listGuestsForSupportView(
+  eventId: string,
+  reason: string,
+): Promise<SupportGuestView[]> {
+  const staff = await requirePlatformPermission('view_customer_data');
 
   const admin = createAdminClient();
+  // The guest list is the PII-heavy read (names, phones, rsvp notes). It records
+  // its OWN audit row rather than relying on a caller having audited the event
+  // first — a break-glass reason is required (view_customer_data), and the F2 gap
+  // (this function unaudited when called alone) is closed. Resolve owner, audit
+  // (fail-closed), then read.
+  const { data: ownerRow } = await admin
+    .from('events')
+    .select('owner_id')
+    .eq('id', eventId)
+    .maybeSingle();
+  await recordStaffAccess({
+    staffId: staff.id,
+    permission: 'view_customer_data',
+    subjectType: 'guest_list',
+    subjectId: eventId,
+    ownerId: ownerRow?.owner_id ?? eventId,
+    reason,
+    eventId,
+  });
+
   const { data, error } = await admin
     .from('guests')
     .select(

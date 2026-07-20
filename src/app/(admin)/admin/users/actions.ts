@@ -6,12 +6,15 @@ import {
   setPlatformAdmin,
   setUserSuspended,
   grantBillingCredit,
+  getUserDetail,
+  type AdminUserDetail,
 } from '@/lib/data/admin/users';
 import {
   adminUserIdSchema,
+  adminUserViewSchema,
   grantCreditSchema,
 } from '@/lib/validation/admin';
-import type { FormState } from '@/lib/validation/result';
+import type { ActionResult, FormState } from '@/lib/validation/result';
 
 function isNextRedirect(err: unknown): boolean {
   return (
@@ -123,4 +126,28 @@ export async function grantCreditAction(
   }
   revalidateUsers();
   return { notice: 'ההטבה ניתנה' };
+}
+
+// Break-glass view of ANOTHER user's full detail. The reason is validated here
+// and re-enforced by getUserDetail, which writes the audit row (subject_type
+// 'user') BEFORE returning any PII — fail-closed. The self-view path never
+// calls this action (the page renders the detail directly with no reason).
+export async function viewUserDetailAction(input: {
+  user_id: string;
+  reason: string;
+}): Promise<ActionResult<AdminUserDetail>> {
+  const parsed = adminUserViewSchema.safeParse(input);
+  if (!parsed.success) {
+    return { ok: false, error: parsed.error.issues[0]?.message ?? 'קלט לא תקין' };
+  }
+  try {
+    const user = await getUserDetail(parsed.data.user_id, parsed.data.reason);
+    if (!user) {
+      return { ok: false, error: 'המשתמש לא נמצא' };
+    }
+    return { ok: true, data: user };
+  } catch (err) {
+    if (isNextRedirect(err)) throw err;
+    return { ok: false, error: safeMessage(err, 'הצפייה נכשלה') };
+  }
 }

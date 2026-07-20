@@ -64,7 +64,7 @@ export async function viewSupportEventAction(input: {
   }
   try {
     const event = await getEventForSupportView(parsed.data.event_id, parsed.data.reason);
-    const guests = await listGuestsForSupportView(parsed.data.event_id);
+    const guests = await listGuestsForSupportView(parsed.data.event_id, parsed.data.reason);
     return { ok: true, data: { event, guests } };
   } catch (err) {
     unstable_rethrow(err);

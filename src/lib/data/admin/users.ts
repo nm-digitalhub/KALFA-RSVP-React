@@ -6,6 +6,7 @@ import { createAdminClient } from '@/lib/supabase/admin';
 import { requirePlatformPermission } from '@/lib/auth/dal';
 import { logActivity } from '@/lib/data/activity';
 import { sendSlackAlert } from '@/lib/alerts/slack';
+import { recordStaffAccess } from './access-log';
 import { resolvePage, type PageParams, type PageResult } from './shared';
 
 // Admin: cross-user management (platform staff). user_roles/profiles are
@@ -22,6 +23,12 @@ const UNBAN = 'none';
 // Capped to stay bounded; a hit on the cap is logged, never silently truncated.
 const SEARCH_PER_PAGE = 200;
 const SEARCH_MAX_PAGES = 10;
+// Name/phone search runs against `profiles` (Postgres, ilike-able). Bound the
+// match set so the per-id auth fetch that materialises each user stays small.
+const SEARCH_PROFILE_CAP = 100;
+// A pasted UUID is treated as an exact user-id lookup (skips the page scan).
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export interface AdminUser {
   id: string;
@@ -111,15 +118,20 @@ async function enrichUsers(users: User[]): Promise<AdminUser[]> {
   }));
 }
 
-// List all platform users, paginated. When `search` is given, scans (capped)
-// and filters by email substring (the admin API has no server-side filter).
+// List all platform users, paginated. When `search` is given it matches across
+// four fields, since the GoTrue admin API has no server-side filter:
+//   * a pasted UUID  → exact id lookup (no scan);
+//   * name / phone   → `profiles` ilike (Postgres), each match materialised via
+//                      getUserById (capped);
+//   * email          → substring over a capped page scan.
+// Results are de-duplicated by id and returned newest-first.
 export async function listAllUsers(
   { page, search }: PageParams & { search?: string } = {},
 ): Promise<PageResult<AdminUser>> {
   await requirePlatformPermission('manage_staff');
   const { page: safePage, pageSize, from, to } = resolvePage(page);
   const admin = createAdminClient();
-  const term = search?.trim().toLowerCase();
+  const term = search?.trim();
 
   if (!term) {
     const { data, error } = await admin.auth.admin.listUsers({
@@ -137,7 +149,38 @@ export async function listAllUsers(
     };
   }
 
-  const matched: User[] = [];
+  // A pasted user id short-circuits to a single direct lookup — no page scan.
+  if (UUID_RE.test(term)) {
+    const { data, error } = await admin.auth.admin.getUserById(term);
+    const user = error ? null : data?.user ?? null;
+    const items = user ? await enrichUsers([user]) : [];
+    return { items, total: items.length, page: safePage, pageSize };
+  }
+
+  // De-duplicated match set (a user can match on both name and email).
+  const byId = new Map<string, User>();
+
+  // (a) name / phone via profiles. Strip characters significant to the
+  // PostgREST .or() grammar and to LIKE (%, _, comma, parens, quote, *, \) so a
+  // free-text term can neither inject a wildcard nor break the filter. Names
+  // and phones never legitimately contain them.
+  const filterTerm = term.replace(/[%_,()"*\\]/g, '').trim();
+  if (filterTerm) {
+    const like = `%${filterTerm}%`;
+    const { data: profs } = await admin
+      .from('profiles')
+      .select('id')
+      .or(`full_name.ilike.${like},phone.ilike.${like}`)
+      .limit(SEARCH_PROFILE_CAP);
+    for (const p of (profs ?? []) as Array<{ id: string }>) {
+      if (byId.has(p.id)) continue;
+      const { data, error } = await admin.auth.admin.getUserById(p.id);
+      if (!error && data?.user) byId.set(p.id, data.user);
+    }
+  }
+
+  // (b) email substring over a capped page scan (no server-side email filter).
+  const lower = term.toLowerCase();
   for (let p = 1; p <= SEARCH_MAX_PAGES; p++) {
     const { data, error } = await admin.auth.admin.listUsers({
       page: p,
@@ -147,13 +190,19 @@ export async function listAllUsers(
       throw new Error('טעינת המשתמשים נכשלה');
     }
     for (const u of data.users) {
-      if ((u.email ?? '').toLowerCase().includes(term)) matched.push(u);
+      if ((u.email ?? '').toLowerCase().includes(lower)) byId.set(u.id, u);
     }
     if (data.nextPage == null) break;
     if (p === SEARCH_MAX_PAGES) {
       console.warn('listAllUsers: search scan cap reached; results may be incomplete');
     }
   }
+
+  const matched = [...byId.values()].sort((a, b) => {
+    const ta = a.created_at ? Date.parse(a.created_at) : 0;
+    const tb = b.created_at ? Date.parse(b.created_at) : 0;
+    return tb - ta;
+  });
   const pageUsers = matched.slice(from, to + 1);
   return {
     items: await enrichUsers(pageUsers),
@@ -165,9 +214,29 @@ export async function listAllUsers(
 
 // Full detail for one user, including org memberships, owned-event count,
 // events and previously granted benefits.
-export async function getUserDetail(userId: string): Promise<AdminUserDetail | null> {
-  await requirePlatformPermission('manage_staff');
+export async function getUserDetail(
+  userId: string,
+  reason?: string,
+): Promise<AdminUserDetail | null> {
+  const staff = await requirePlatformPermission('manage_staff');
   const admin = createAdminClient();
+
+  // Viewing ANOTHER user's full profile (PII: phone, email, owned events,
+  // granted credits) is a break-glass reach into one customer's account —
+  // audited with a mandatory reason (recordStaffAccess enforces the min length
+  // for manage_staff). Viewing your OWN staff record is not cross-customer
+  // access, so it carries no reason and no break-glass row (forcing one on the
+  // self-view would breed the reason-fatigue that launders a real reason).
+  if (userId !== staff.id) {
+    await recordStaffAccess({
+      staffId: staff.id,
+      permission: 'manage_staff',
+      subjectType: 'user',
+      subjectId: userId,
+      ownerId: userId,
+      reason,
+    });
+  }
 
   const { data: authData, error } = await admin.auth.admin.getUserById(userId);
   if (error || !authData?.user) {
