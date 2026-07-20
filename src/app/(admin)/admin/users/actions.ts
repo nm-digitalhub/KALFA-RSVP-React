@@ -107,6 +107,7 @@ export async function grantCreditAction(
   formData: FormData,
 ): Promise<FormState> {
   const parsed = grantCreditSchema.safeParse({
+    user_id: formData.get('user_id'),
     event_id: formData.get('event_id'),
     campaign_id: formData.get('campaign_id') ?? '',
     amount: formData.get('amount'),
@@ -119,6 +120,7 @@ export async function grantCreditAction(
       campaignId: parsed.data.campaign_id || null,
       amount: parsed.data.amount,
       reason: parsed.data.reason,
+      ownerId: parsed.data.user_id,
     });
   } catch (err) {
     if (isNextRedirect(err)) throw err;

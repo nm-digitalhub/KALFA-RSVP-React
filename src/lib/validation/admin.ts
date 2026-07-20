@@ -291,6 +291,9 @@ export type AdminUserViewInput = z.infer<typeof adminUserViewSchema>;
 // optional: empty = event-level credit (consumed by the event's campaign at
 // close-charge); set = scoped to that specific campaign only.
 export const grantCreditSchema = z.object({
+  // The user the credit is granted to — the server re-checks the chosen event is
+  // actually owned by them (never trust the submitted event id on its own).
+  user_id: z.string().uuid({ error: 'מזהה משתמש לא תקין' }),
   event_id: z.string().uuid({ error: 'מזהה אירוע לא תקין' }),
   campaign_id: z
     .string()

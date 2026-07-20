@@ -9,6 +9,7 @@ import { sendSlackAlert } from '@/lib/alerts/slack';
 import { recordStaffAccess } from './access-log';
 import {
   getUserDetail,
+  grantBillingCredit,
   listAllUsers,
   setPlatformAdmin,
   setUserSuspended,
@@ -177,6 +178,24 @@ describe('listAllUsers — search', () => {
     // rebuilt around the safe term.
     expect(orArg).toBe('full_name.ilike.%abcd%,phone.ilike.%abcd%');
     expect(res.items).toEqual([]);
+  });
+});
+
+describe('grantBillingCredit — owner scoping', () => {
+  // The submitted event id is never trusted for ownership: the credit may only
+  // land on an event the target user actually owns.
+  it('rejects when the chosen event is not owned by the target user', async () => {
+    wireAdminClient({ data: { id: 'e1', owner_id: 'owner-1' }, error: null });
+    await expect(
+      grantBillingCredit({ eventId: 'e1', amount: 10, reason: 'הטבה', ownerId: 'owner-2' }),
+    ).rejects.toThrow('אינו שייך למשתמש');
+  });
+
+  it('allows when the event owner matches the target user', async () => {
+    wireAdminClient({ data: { id: 'e1', owner_id: 'owner-1' }, error: null });
+    await expect(
+      grantBillingCredit({ eventId: 'e1', amount: 10, reason: 'הטבה', ownerId: 'owner-1' }),
+    ).resolves.toBeUndefined();
   });
 });
 

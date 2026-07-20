@@ -444,6 +444,11 @@ export async function grantBillingCredit(input: {
   amount: number;
   reason: string;
   campaignId?: string | null;
+  // The user the credit is granted to (the page it was submitted from). The
+  // event MUST be owned by them: the browser-submitted event id is never trusted
+  // for ownership scoping on its own (the UI offers only this user's events, so a
+  // crafted request must not attach a credit to another owner's event).
+  ownerId?: string;
 }): Promise<void> {
   const actor = await requirePlatformPermission('manage_staff');
   if (!(input.amount > 0)) {
@@ -460,6 +465,11 @@ export async function grantBillingCredit(input: {
     .maybeSingle();
   if (!ev) {
     throw new Error('האירוע לא נמצא');
+  }
+  // Never trust the submitted event id for ownership scoping: the credit may
+  // only land on an event the target user actually owns.
+  if (input.ownerId && ev.owner_id !== input.ownerId) {
+    throw new Error('האירוע אינו שייך למשתמש זה');
   }
   // A campaign-scoped credit must point at a campaign of THIS event — never
   // trust the submitted id pair on its own.

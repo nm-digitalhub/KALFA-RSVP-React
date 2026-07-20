@@ -194,6 +194,8 @@ export function UserActions({
         <section className={sectionClass}>
           <h3 className="font-medium">מתן הטבה (זיכוי)</h3>
           <form action={creditAction} className="space-y-3">
+            {/* The server re-verifies the chosen event is owned by this user. */}
+            <input type="hidden" name="user_id" value={userId} />
             <FormError message={creditState?.error} />
             <FormNotice message={creditState?.notice} />
             <div className="grid gap-3 sm:grid-cols-3">
@@ -266,7 +268,19 @@ export function UserActions({
             <RowSubmit>מתן הטבה</RowSubmit>
           </form>
         </section>
-      ) : null}
+      ) : (
+        // A credit is always scoped to one of the user's OWN events (it is
+        // consumed by that event's campaign at close-charge — there is no
+        // account-level credit). A user who owns no event has nothing to credit,
+        // so explain the absence instead of hiding the section silently.
+        <section className={sectionClass}>
+          <h3 className="font-medium">מתן הטבה (זיכוי)</h3>
+          <p className="text-sm text-muted-foreground">
+            הטבה משויכת תמיד לאירוע ספציפי בבעלות המשתמש ונצרכת בסגירת החיוב של
+            הקמפיין. למשתמש זה אין אירועים בבעלותו, ולכן אין לְמה לשייך זיכוי.
+          </p>
+        </section>
+      )}
     </div>
   );
 }
