@@ -32,6 +32,17 @@ const NO_STORE = { 'Cache-Control': 'no-store' } as const;
 
 const notFound = () => new NextResponse(null, { status: 404, headers: NO_STORE });
 
+// Speech form of the celebrants text. The shared display composer returns
+// "X — לכבוד Y" for parents-kind events (brit/britah) — a page-title artifact:
+// injected raw into the agent's dynamic variables, the em-dash run-through
+// mangled the spoken name in a live call (session 6875455354, "נטלי קלפה —
+// לכבוד בני" heard as "נטליקה"). For VOICE, keep only the parents part — the
+// child's name is not needed to answer "של מי האירוע?". Display surfaces keep
+// the full string; this transform lives HERE so celebrantsTextFor (shared with
+// the event page + public RSVP) stays untouched.
+const celebrantsSpeechForm = (text: string | null): string =>
+  text ? text.split('—')[0].trim() : '';
+
 export async function GET(
   req: Request,
   { params }: { params: Promise<{ token: string }> },
@@ -94,10 +105,11 @@ export async function GET(
       // Street address, so "איפה בדיוק?" is answerable. Event-level data that is
       // printed on the invitation itself — not guest PII.
       event_address: ctx.event.venue_address ?? '',
-      // "של מי האירוע?" — reuses the shared display helper so the phrasing matches
-      // the rest of the product per event type (couple / single / parents / free).
-      event_celebrants:
-        celebrantsTextFor(ctx.event.event_type, ctx.event.celebrants) ?? '',
+      // "של מי האירוע?" — the shared display helper, converted to SPEECH form
+      // (see celebrantsSpeechForm above) so no display punctuation reaches TTS.
+      event_celebrants: celebrantsSpeechForm(
+        celebrantsTextFor(ctx.event.event_type, ctx.event.celebrants),
+      ),
       event_rsvp_deadline: ctx.event.rsvp_deadline
         ? formatIsraelSpokenDate(ctx.event.rsvp_deadline)
         : '',
