@@ -6,6 +6,7 @@ import {
   setPlatformAdmin,
   setUserSuspended,
   grantBillingCredit,
+  voidBillingCredit,
   getUserDetail,
   type AdminUserDetail,
 } from '@/lib/data/admin/users';
@@ -13,6 +14,7 @@ import {
   adminUserIdSchema,
   adminUserViewSchema,
   grantCreditSchema,
+  voidCreditSchema,
 } from '@/lib/validation/admin';
 import type { ActionResult, FormState } from '@/lib/validation/result';
 
@@ -152,4 +154,28 @@ export async function viewUserDetailAction(input: {
     if (isNextRedirect(err)) throw err;
     return { ok: false, error: safeMessage(err, 'הצפייה נכשלה') };
   }
+}
+
+// Void (soft-reverse) a granted credit. The data layer re-checks ownership and
+// blocks voiding a credit already consumed by a settled charge; append-only is
+// preserved (the row is kept, only stamped voided).
+export async function voidCreditAction(input: {
+  credit_id: string;
+  user_id: string;
+  reason: string;
+}): Promise<FormState> {
+  const parsed = voidCreditSchema.safeParse(input);
+  if (!parsed.success) return { fieldErrors: parsed.error.flatten().fieldErrors };
+  try {
+    await voidBillingCredit({
+      creditId: parsed.data.credit_id,
+      reason: parsed.data.reason,
+      ownerId: parsed.data.user_id,
+    });
+  } catch (err) {
+    if (isNextRedirect(err)) throw err;
+    return { error: safeMessage(err, 'ביטול הזיכוי נכשל') };
+  }
+  revalidateUsers();
+  return { notice: 'הזיכוי בוטל' };
 }

@@ -309,6 +309,20 @@ export const grantCreditSchema = z.object({
 });
 export type GrantCreditInput = z.infer<typeof grantCreditSchema>;
 
+// Void (soft-reverse) a granted credit. The data layer re-checks the credit is
+// owned by user_id and blocks voiding a credit already consumed by a settled
+// charge. There is no in-place edit — a wrong credit is voided + re-granted.
+export const voidCreditSchema = z.object({
+  credit_id: z.string().uuid({ error: 'מזהה זיכוי לא תקין' }),
+  user_id: z.string().uuid({ error: 'מזהה משתמש לא תקין' }),
+  reason: z
+    .string()
+    .trim()
+    .min(3, { error: 'נא להזין סיבה לביטול' })
+    .max(300, { error: 'הסיבה ארוכה מדי' }),
+});
+export type VoidCreditInput = z.infer<typeof voidCreditSchema>;
+
 // --- agreement (contract) document management ---
 // --- support access (P3 staff support-access) ---
 // Lookup is by EVENT ID (+ optionally the account owner's phone/email) — NOT a

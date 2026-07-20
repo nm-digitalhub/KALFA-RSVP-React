@@ -55,6 +55,10 @@ export interface AdminUserCredit {
   amount: number;
   reason: string;
   createdAt: string;
+  // Soft-void: set once the credit is cancelled. A voided credit is kept for
+  // audit but excluded from the event pool and the granted-total ledger.
+  voidedAt: string | null;
+  voidReason: string | null;
 }
 
 export interface AdminUserEvent {
@@ -262,7 +266,7 @@ export async function getUserDetail(
     const [creditsRes, campaignsRes] = await Promise.all([
       admin
         .from('billing_credits')
-        .select('id, event_id, campaign_id, amount, reason, created_at')
+        .select('id, event_id, campaign_id, amount, reason, created_at, voided_at, void_reason')
         .in('event_id', eventIds)
         .order('created_at', { ascending: false }),
       admin
@@ -277,6 +281,8 @@ export async function getUserDetail(
       amount: c.amount,
       reason: c.reason,
       createdAt: c.created_at,
+      voidedAt: c.voided_at,
+      voidReason: c.void_reason,
     }));
     for (const c of campaignsRes.data ?? []) {
       // The grant form offers only the event's live campaign (one per event;
@@ -294,6 +300,7 @@ export async function getUserDetail(
   const nameByEvent = new Map((eventsRes.data ?? []).map((e) => [e.id, e.name]));
   const grantedByEvent = new Map<string, number>();
   for (const c of credits) {
+    if (c.voidedAt) continue; // a voided credit leaves the pool + the ledger total
     grantedByEvent.set(
       c.eventId,
       (grantedByEvent.get(c.eventId) ?? 0) + Number(c.amount ?? 0),
@@ -497,5 +504,110 @@ export async function grantBillingCredit(input: {
     eventId: input.eventId,
     action: 'admin.billing_credit_granted',
     meta: { amount: input.amount, targetUserId: ev.owner_id },
+  });
+}
+
+// Void (soft-reverse) a previously granted billing credit. Append-only is
+// preserved — the row is never deleted; voided_at/voided_by/void_reason are
+// stamped and the credit drops out of the event pool (getCampaignCreditTotal)
+// and the ledger. A credit already consumed into a settled campaign's
+// credit_applied snapshot may NOT be voided: the guard blocks any void that
+// would pull the event's live ACTIVE pool below what its campaigns already
+// consumed (Σ credit_applied) — that would falsify a completed charge/receipt.
+export async function voidBillingCredit(input: {
+  creditId: string;
+  reason: string;
+  ownerId?: string; // the user the void surface was opened for (scope re-check)
+}): Promise<void> {
+  const actor = await requirePlatformPermission('manage_staff');
+  const reason = input.reason.trim();
+  if (reason.length < 3) throw new Error('נא להזין סיבה לביטול');
+
+  const admin = createAdminClient();
+  const { data: credit } = await admin
+    .from('billing_credits')
+    .select('id, event_id, amount, voided_at')
+    .eq('id', input.creditId)
+    .maybeSingle();
+  if (!credit) throw new Error('הזיכוי לא נמצא');
+  if (credit.voided_at) throw new Error('הזיכוי כבר בוטל');
+
+  const { data: ev } = await admin
+    .from('events')
+    .select('owner_id')
+    .eq('id', credit.event_id)
+    .maybeSingle();
+  // Never trust the submitted credit id for ownership scoping (mirror the grant).
+  if (input.ownerId && ev?.owner_id !== input.ownerId) {
+    throw new Error('הזיכוי אינו שייך למשתמש זה');
+  }
+
+  // Pool-invariant guard: after removing this credit the event's ACTIVE pool
+  // must still cover what its campaigns already consumed (Σ credit_applied) —
+  // otherwise the void would falsify a settled, receipted charge.
+  const [poolRes, appliedRes] = await Promise.all([
+    admin
+      .from('billing_credits')
+      .select('amount')
+      .eq('event_id', credit.event_id)
+      .is('voided_at', null),
+    admin
+      .from('campaigns')
+      .select('credit_applied')
+      .eq('event_id', credit.event_id),
+  ]);
+  if (poolRes.error || appliedRes.error) {
+    throw new Error('בדיקת מצב הזיכויים נכשלה');
+  }
+  const activePool = (poolRes.data ?? []).reduce(
+    (s, r) => s + Number(r.amount ?? 0),
+    0,
+  );
+  const consumed = (appliedRes.data ?? []).reduce(
+    (s, r) => s + Number(r.credit_applied ?? 0),
+    0,
+  );
+  const poolAfterVoid = Math.round((activePool - Number(credit.amount)) * 100) / 100;
+  if (poolAfterVoid < consumed) {
+    throw new Error('לא ניתן לבטל זיכוי שכבר נוצל בחיוב שנסגר');
+  }
+
+  // Guarded update: only an ACTIVE row transitions (idempotent; a lost race is a
+  // benign no-op, not a double-void/double-log).
+  const { data: updated, error } = await admin
+    .from('billing_credits')
+    .update({
+      voided_at: new Date().toISOString(),
+      voided_by: actor.id,
+      void_reason: reason,
+    })
+    .eq('id', input.creditId)
+    .is('voided_at', null)
+    .select('id')
+    .maybeSingle();
+  if (error) throw new Error('ביטול הזיכוי נכשל');
+  if (!updated) throw new Error('הזיכוי כבר בוטל');
+
+  await logActivity({
+    eventId: credit.event_id,
+    action: 'admin.billing_credit_voided',
+    meta: {
+      creditId: input.creditId,
+      amount: Number(credit.amount),
+      targetUserId: ev?.owner_id,
+      reason,
+    },
+  });
+  void sendSlackAlert({
+    level: 'warn',
+    category: 'campaign_billing',
+    source: 'admin-users',
+    title: 'זיכוי בוטל',
+    fields: {
+      actorUserId: actor.id,
+      creditId: input.creditId,
+      eventId: credit.event_id,
+      amount: Number(credit.amount),
+    },
   });
 }

@@ -13,6 +13,7 @@ import {
   listAllUsers,
   setPlatformAdmin,
   setUserSuspended,
+  voidBillingCredit,
 } from './users';
 
 vi.mock('server-only', () => ({}));
@@ -196,6 +197,101 @@ describe('grantBillingCredit — owner scoping', () => {
     await expect(
       grantBillingCredit({ eventId: 'e1', amount: 10, reason: 'הטבה', ownerId: 'owner-1' }),
     ).resolves.toBeUndefined();
+  });
+});
+
+describe('voidBillingCredit — soft-void + pool-invariant guard', () => {
+  type Row = Record<string, unknown>;
+  function wireVoid({
+    credit,
+    ownerId = 'owner-1',
+    pool = [] as Row[],
+    applied = [] as Row[],
+    updated = { id: 'cr1' } as Row | null,
+  }: {
+    credit: Row | null;
+    ownerId?: string;
+    pool?: Row[];
+    applied?: Row[];
+    updated?: Row | null;
+  }) {
+    const billingCredits = {
+      select: vi.fn((cols: string) =>
+        String(cols).includes('voided_at') && String(cols).includes('event_id')
+          ? // credit fetch: .eq('id').maybeSingle()
+            { eq: vi.fn(() => ({ maybeSingle: async () => ({ data: credit, error: null }) })) }
+          : // active pool: .eq('event_id').is('voided_at', null)  (awaited)
+            { eq: vi.fn(() => ({ is: vi.fn(async () => ({ data: pool, error: null })) })) },
+      ),
+      update: vi.fn(() => ({
+        eq: vi.fn(() => ({
+          is: vi.fn(() => ({
+            select: vi.fn(() => ({ maybeSingle: async () => ({ data: updated, error: null }) })),
+          })),
+        })),
+      })),
+    };
+    const events = {
+      select: vi.fn(() => ({
+        eq: vi.fn(() => ({ maybeSingle: async () => ({ data: { owner_id: ownerId }, error: null }) })),
+      })),
+    };
+    const campaigns = {
+      select: vi.fn(() => ({ eq: vi.fn(async () => ({ data: applied, error: null })) })),
+    };
+    vi.mocked(createAdminClient).mockReturnValue({
+      from: vi.fn((t: string) =>
+        t === 'events' ? events : t === 'campaigns' ? campaigns : billingCredits,
+      ),
+    } as unknown as ReturnType<typeof createAdminClient>);
+  }
+
+  const REASON = 'תוקן בטעות — סכום שגוי';
+
+  it('rejects an already-voided credit', async () => {
+    wireVoid({ credit: { id: 'cr1', event_id: 'e1', amount: 10, voided_at: '2026-07-20T00:00:00Z' } });
+    await expect(voidBillingCredit({ creditId: 'cr1', reason: REASON })).rejects.toThrow('כבר בוטל');
+  });
+
+  it('rejects when the credit is not owned by the target user', async () => {
+    wireVoid({ credit: { id: 'cr1', event_id: 'e1', amount: 10, voided_at: null }, ownerId: 'owner-1' });
+    await expect(
+      voidBillingCredit({ creditId: 'cr1', reason: REASON, ownerId: 'owner-2' }),
+    ).rejects.toThrow('אינו שייך');
+  });
+
+  it('blocks voiding a credit already consumed by a settled charge', async () => {
+    wireVoid({
+      credit: { id: 'cr1', event_id: 'e1', amount: 100, voided_at: null },
+      pool: [{ amount: 100 }],
+      applied: [{ credit_applied: 84 }], // poolAfterVoid 0 < consumed 84
+    });
+    await expect(
+      voidBillingCredit({ creditId: 'cr1', reason: REASON, ownerId: 'owner-1' }),
+    ).rejects.toThrow('שכבר נוצל');
+  });
+
+  it('voids an unsettled credit and records the audit + Slack alert', async () => {
+    wireVoid({
+      credit: { id: 'cr1', event_id: 'e1', amount: 160, voided_at: null },
+      pool: [{ amount: 160 }],
+      applied: [{ credit_applied: 0 }], // unsettled → poolAfterVoid 0 >= 0
+      updated: { id: 'cr1' },
+    });
+    await expect(
+      voidBillingCredit({ creditId: 'cr1', reason: REASON, ownerId: 'owner-1' }),
+    ).resolves.toBeUndefined();
+    expect(logActivity).toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'admin.billing_credit_voided' }),
+    );
+    expect(sendSlackAlert).toHaveBeenCalledWith(
+      expect.objectContaining({ category: 'campaign_billing', title: 'זיכוי בוטל' }),
+    );
+  });
+
+  it('rejects a too-short reason before any DB call', async () => {
+    wireVoid({ credit: { id: 'cr1', event_id: 'e1', amount: 10, voided_at: null } });
+    await expect(voidBillingCredit({ creditId: 'cr1', reason: 'ab' })).rejects.toThrow('סיבה');
   });
 });
 

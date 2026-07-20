@@ -98,12 +98,17 @@ export async function getCampaignCreditTotal(
 ): Promise<number> {
   const admin = createAdminClient();
   const [ownRes, eventRes, siblingsRes] = await Promise.all([
-    admin.from('billing_credits').select('amount').eq('campaign_id', campaignId),
+    admin
+      .from('billing_credits')
+      .select('amount')
+      .eq('campaign_id', campaignId)
+      .is('voided_at', null),
     admin
       .from('billing_credits')
       .select('amount')
       .is('campaign_id', null)
-      .eq('event_id', eventId),
+      .eq('event_id', eventId)
+      .is('voided_at', null),
     admin
       .from('campaigns')
       .select('credit_applied')

@@ -104,9 +104,10 @@ describe('getCampaignCreditTotal', () => {
   const ok = (rows: unknown[]): QueryResult => ({ data: rows, error: null });
   const empty = ok([]);
 
-  // Three parallel queries: campaign-scoped credits (billing_credits.eq),
-  // event-level credits (billing_credits.is(null).eq), and sibling campaigns'
-  // credit_applied (campaigns.eq.neq).
+  // Three parallel queries: campaign-scoped credits (billing_credits.eq.is),
+  // event-level credits (billing_credits.is(null).eq.is), each excluding voided
+  // rows (.is('voided_at', null)), and sibling campaigns' credit_applied
+  // (campaigns.eq.neq).
   function mockCredits({
     own = empty,
     eventLevel = empty,
@@ -126,8 +127,12 @@ describe('getCampaignCreditTotal', () => {
       }
       return {
         select: vi.fn(() => ({
-          eq: vi.fn(async () => own),
-          is: vi.fn(() => ({ eq: vi.fn(async () => eventLevel) })),
+          // own: .eq('campaign_id', …).is('voided_at', null)
+          eq: vi.fn(() => ({ is: vi.fn(async () => own) })),
+          // event-level: .is('campaign_id', null).eq('event_id', …).is('voided_at', null)
+          is: vi.fn(() => ({
+            eq: vi.fn(() => ({ is: vi.fn(async () => eventLevel) })),
+          })),
         })),
       };
     });

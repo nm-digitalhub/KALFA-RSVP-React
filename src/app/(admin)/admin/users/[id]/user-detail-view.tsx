@@ -1,11 +1,110 @@
 'use client';
 
+import { useState, useTransition } from 'react';
+
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog';
+import { Button } from '@/components/ui/button';
+import { FormError } from '@/components/forms';
 import type { AdminUserDetail } from '@/lib/data/admin/users';
 
 import { Badge, formatCurrency, formatDateTime } from '../../_components';
 import { UserActions, type StaffRoleOption } from './user-actions';
+import { voidCreditAction } from '../actions';
 
 const sectionClass = 'space-y-3 rounded-lg border border-border bg-card p-5';
+
+// Confirm-gated per-credit void. On success it flips to a "בוטל" badge locally
+// (immediate feedback on both the self-view and the reason-gated other-user
+// view, whose detail is held in client state); a later reload reflects the
+// server-side strike-through + ledger via voidCreditAction's revalidate.
+function VoidCreditButton({
+  creditId,
+  userId,
+  amount,
+}: {
+  creditId: string;
+  userId: string;
+  amount: number;
+}) {
+  const [open, setOpen] = useState(false);
+  const [reason, setReason] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const [done, setDone] = useState(false);
+  const [pending, startTransition] = useTransition();
+
+  if (done) return <Badge>בוטל</Badge>;
+
+  const onConfirm = (): void => {
+    setError(null);
+    startTransition(async () => {
+      const result = await voidCreditAction({
+        credit_id: creditId,
+        user_id: userId,
+        reason,
+      });
+      if (result?.error || result?.fieldErrors) {
+        setError(result.error ?? 'נא להזין סיבה לביטול');
+        return;
+      }
+      setDone(true);
+      setOpen(false);
+    });
+  };
+
+  return (
+    <AlertDialog open={open} onOpenChange={setOpen}>
+      <AlertDialogTrigger
+        render={
+          <Button variant="ghost" size="xs" className="text-red-700">
+            ביטול
+          </Button>
+        }
+      />
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>ביטול זיכוי</AlertDialogTitle>
+          <AlertDialogDescription>
+            ביטול זיכוי בסך {formatCurrency(amount)} יסיר אותו ממאגר הזיכויים של
+            האירוע ומהחיוב הסופי העתידי. השורה נשמרת לביקורת. לא ניתן לבטל זיכוי
+            שכבר נוצל בחיוב שנסגר.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <div className="space-y-2">
+          <label htmlFor={`void-reason-${creditId}`} className="block text-sm font-medium">
+            סיבת הביטול
+          </label>
+          <input
+            id={`void-reason-${creditId}`}
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+            className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm"
+          />
+        </div>
+        {error ? <FormError message={error} /> : null}
+        <AlertDialogFooter>
+          <AlertDialogCancel disabled={pending}>חזרה</AlertDialogCancel>
+          <AlertDialogAction
+            variant="destructive"
+            onClick={onConfirm}
+            disabled={pending || reason.trim().length < 3}
+          >
+            {pending ? 'מבטל…' : 'ביטול הזיכוי'}
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  );
+}
 
 // Presentational body of the user-detail page: the customer's PII (identity,
 // orgs, granted benefits) plus the admin action panel. Rendered directly by the
@@ -80,13 +179,22 @@ export function UserDetailView({
           <ul className="divide-y divide-border">
             {user.credits.map((c) => (
               <li key={c.id} className="flex items-center justify-between gap-2 py-2 text-sm">
-                <span className="truncate text-muted-foreground">
+                <span
+                  className={`truncate text-muted-foreground ${c.voidedAt ? 'line-through' : ''}`}
+                >
                   {c.reason}
                   {c.campaignId ? ' · מוגבל לקמפיין' : ''}
                 </span>
                 <div className="flex items-center gap-2">
-                  <span>{formatCurrency(c.amount)}</span>
+                  <span className={c.voidedAt ? 'text-muted-foreground line-through' : ''}>
+                    {formatCurrency(c.amount)}
+                  </span>
                   <span className="text-muted-foreground">{formatDateTime(c.createdAt)}</span>
+                  {c.voidedAt ? (
+                    <Badge>בוטל</Badge>
+                  ) : (
+                    <VoidCreditButton creditId={c.id} userId={user.id} amount={c.amount} />
+                  )}
                 </div>
               </li>
             ))}
