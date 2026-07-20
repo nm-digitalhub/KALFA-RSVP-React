@@ -312,7 +312,7 @@ describe('enrollConsoleAgent — staff requirement', () => {
       },
     });
     await expect(enrollConsoleAgent('u-2', 'דנה')).rejects.toThrow(
-      'רק חבר צוות פלטפורמה יכול להיות סוכן מוקד — הקצו תפקיד צוות תחילה',
+      'רק חבר צוות פלטפורמה יכול לשמש נציג מוקד — הקצו תפקיד צוות תחילה',
     );
     expect(from).not.toHaveBeenCalledWith('console_agents');
     expect(builders.console_agents.upsert).not.toHaveBeenCalled();
@@ -334,7 +334,7 @@ describe('enrollConsoleAgent — staff requirement', () => {
     });
     const err = await enrollConsoleAgent('u-2', 'דנה').catch((e: Error) => e);
     expect((err as Error).message).toBe(
-      'רק חבר צוות פלטפורמה יכול להיות סוכן מוקד — הקצו תפקיד צוות תחילה',
+      'רק חבר צוות פלטפורמה יכול לשמש נציג מוקד — הקצו תפקיד צוות תחילה',
     );
     expect((err as Error).message).not.toContain('console_agents_staff_fkey');
     expect(logActivity).not.toHaveBeenCalled();
@@ -384,7 +384,7 @@ describe('removeConsoleAgent', () => {
     wireAdminClient({
       tables: { console_agents: { data: null, error: { code: 'XX000', message: 'internal detail' } } },
     });
-    await expect(removeConsoleAgent('u-2')).rejects.toThrow('הסרת סוכן המוקד נכשלה');
+    await expect(removeConsoleAgent('u-2')).rejects.toThrow('הסרת נציג המוקד נכשלה');
     expect(logActivity).not.toHaveBeenCalled();
   });
 });

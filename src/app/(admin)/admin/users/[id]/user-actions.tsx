@@ -160,10 +160,11 @@ function ConsoleAgentSection({
 
   return (
     <section className={sectionClass}>
-      <h3 className="font-medium">סוכן מוקד שיחות</h3>
+      <h3 className="font-medium">נציג אנושי במוקד השיחות</h3>
       <p className="text-sm text-muted-foreground">
-        סוכן מוקד רואה את פיד השיחות של כל האירועים. חובה שיהיה חבר צוות פלטפורמה
-        — שלילת תפקיד הצוות מסירה אותו מהמוקד אוטומטית.
+        נציג מוקד מאזין לשיחות שסוכן ה-AI מנהל ויכול להשתלט עליהן ולדבר עם האורח
+        בעצמו. הוא רואה את פיד השיחות של כל האירועים, ולכן חובה שיהיה חבר צוות
+        פלטפורמה — שלילת תפקיד הצוות מסירה אותו מהמוקד אוטומטית.
       </p>
       <FormError message={state?.error} />
       <FormNotice message={state?.notice} />
@@ -175,7 +176,7 @@ function ConsoleAgentSection({
       ) : current ? (
         <div className="flex flex-wrap items-center gap-3">
           <span className="text-sm">
-            סוכן פעיל בשם <strong>{current.displayName}</strong>
+            נציג פעיל בשם <strong>{current.displayName}</strong>
           </span>
           <button
             type="button"
@@ -207,7 +208,7 @@ function ConsoleAgentSection({
             disabled={pending || displayName.trim().length < 2}
             className="rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-60"
           >
-            {pending ? 'רגע…' : 'הוספה כסוכן מוקד'}
+            {pending ? 'רגע…' : 'הוספה כנציג מוקד'}
           </button>
         </div>
       )}

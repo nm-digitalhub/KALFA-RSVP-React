@@ -271,7 +271,7 @@ export async function enrollConsoleAgent(userId: string, displayName: string): P
     .eq('user_id', userId)
     .maybeSingle();
   if (!staff) {
-    throw new Error('רק חבר צוות פלטפורמה יכול להיות סוכן מוקד — הקצו תפקיד צוות תחילה');
+    throw new Error('רק חבר צוות פלטפורמה יכול לשמש נציג מוקד — הקצו תפקיד צוות תחילה');
   }
 
   const { error } = await admin
@@ -282,8 +282,8 @@ export async function enrollConsoleAgent(userId: string, displayName: string): P
     // the raw constraint text to the UI.
     throw new Error(
       error.code === '23503'
-        ? 'רק חבר צוות פלטפורמה יכול להיות סוכן מוקד — הקצו תפקיד צוות תחילה'
-        : 'הוספת סוכן המוקד נכשלה',
+        ? 'רק חבר צוות פלטפורמה יכול לשמש נציג מוקד — הקצו תפקיד צוות תחילה'
+        : 'הוספת נציג המוקד נכשלה',
     );
   }
 
@@ -295,7 +295,7 @@ export async function enrollConsoleAgent(userId: string, displayName: string): P
     level: 'warn',
     category: 'security',
     source: 'admin-platform-roles',
-    title: 'משתמש נוסף כסוכן מוקד שיחות',
+    title: 'משתמש נוסף כנציג אנושי במוקד השיחות',
     fields: { actorUserId: actor.id, targetUserId: userId },
   });
 }
@@ -307,7 +307,7 @@ export async function removeConsoleAgent(userId: string): Promise<void> {
   const admin = createAdminClient();
 
   const { error } = await admin.from('console_agents').delete().eq('user_id', userId);
-  if (error) throw new Error('הסרת סוכן המוקד נכשלה');
+  if (error) throw new Error('הסרת נציג המוקד נכשלה');
 
   await logActivity({
     action: 'admin.console_agent.removed',
@@ -317,7 +317,7 @@ export async function removeConsoleAgent(userId: string): Promise<void> {
     level: 'warn',
     category: 'security',
     source: 'admin-platform-roles',
-    title: 'משתמש הוסר מסוכני מוקד השיחות',
+    title: 'משתמש הוסר מנציגי מוקד השיחות',
     fields: { actorUserId: actor.id, targetUserId: userId },
   });
 }

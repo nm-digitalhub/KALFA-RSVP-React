@@ -141,9 +141,12 @@ export async function revokeStaffRoleAction(input: { userId: string }): Promise<
   return { notice: 'התפקיד נשלל' };
 }
 
-// Enrol / remove a console (call-centre) agent. Sibling of the staff pair above:
-// the DB requires an agent to be platform staff, so this only ever narrows an
-// existing staff membership — it can never grant platform access on its own.
+// Enrol / remove a HUMAN call-console representative — the person who monitors
+// the AI agent's calls and can take one over (human_agent_call_legs.mode is
+// 'monitor' | 'takeover'). Not to be confused with the ElevenLabs voice agent.
+// Sibling of the staff pair above: the DB requires them to be platform staff, so
+// this only ever narrows an existing staff membership — it can never grant
+// platform access on its own.
 const enrollConsoleAgentSchema = z.object({
   userId: z.uuid(),
   displayName: z
@@ -166,11 +169,11 @@ export async function enrollConsoleAgentAction(input: {
     await enrollConsoleAgent(parsed.data.userId, parsed.data.displayName);
   } catch (err) {
     unstable_rethrow(err);
-    return { error: err instanceof Error ? err.message : 'הוספת סוכן המוקד נכשלה. נסו שוב.' };
+    return { error: err instanceof Error ? err.message : 'הוספת נציג המוקד נכשלה. נסו שוב.' };
   }
   revalidatePath(ROLES_PATH);
   revalidatePath(`/admin/users/${parsed.data.userId}`);
-  return { notice: 'הסוכן נוסף למוקד' };
+  return { notice: 'הנציג נוסף למוקד' };
 }
 
 const removeConsoleAgentSchema = z.object({ userId: z.uuid() });
@@ -185,9 +188,9 @@ export async function removeConsoleAgentAction(input: { userId: string }): Promi
     await removeConsoleAgent(parsed.data.userId);
   } catch (err) {
     unstable_rethrow(err);
-    return { error: err instanceof Error ? err.message : 'הסרת סוכן המוקד נכשלה. נסו שוב.' };
+    return { error: err instanceof Error ? err.message : 'הסרת נציג המוקד נכשלה. נסו שוב.' };
   }
   revalidatePath(ROLES_PATH);
   revalidatePath(`/admin/users/${parsed.data.userId}`);
-  return { notice: 'הסוכן הוסר מהמוקד' };
+  return { notice: 'הנציג הוסר מהמוקד' };
 }
