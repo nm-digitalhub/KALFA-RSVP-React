@@ -41,18 +41,6 @@ const ANSWER_RATE_DENOM = ['completed', 'no_answer', 'no_response', 'failed'] as
 const ACTIVITY_WINDOW_DAYS = 90; // events with call activity within this window
 const AGG_ROW_CAP = 5000; // JS-aggregation safety cap; logged if hit
 
-type AdminClient = ReturnType<typeof createAdminClient>;
-
-async function headCount(
-  admin: AdminClient,
-  build: (q: ReturnType<AdminClient['from']>) => unknown,
-): Promise<number> {
-  const base = admin.from('call_attempts').select('id', { count: 'exact', head: true });
-  const { count } = (await (build(base) as unknown as Promise<{ count: number | null }>)) ?? {
-    count: 0,
-  };
-  return count ?? 0;
-}
 
 export interface VoiceDashboardSummary {
   activeNow: number;
@@ -116,20 +104,46 @@ export async function getVoiceDashboardSummary(
   startToday.setUTCHours(0, 0, 0, 0);
   const iso7d = new Date(nowMs - 7 * 24 * 3600 * 1000).toISOString();
 
+  // Explicit head-counts, one complete chain each — the same shape the
+  // request-free DAL uses (call-attempts.ts countActiveCalls /
+  // countCampaignCallsSince). No builder indirection: the query reads as the
+  // query it runs, and the generated types check every filter.
   const [activeNow, today, last7d, completed7d, denom7d] = await Promise.all([
     countActiveCalls(),
-    headCount(admin, (q) => q.gte('created_at', startToday.toISOString())),
-    headCount(admin, (q) => q.gte('created_at', iso7d)),
-    headCount(admin, (q) => q.gte('created_at', iso7d).eq('status', 'completed')),
-    headCount(admin, (q) => q.gte('created_at', iso7d).in('status', [...ANSWER_RATE_DENOM])),
+    admin
+      .from('call_attempts')
+      .select('id', { count: 'exact', head: true })
+      .gte('created_at', startToday.toISOString()),
+    admin
+      .from('call_attempts')
+      .select('id', { count: 'exact', head: true })
+      .gte('created_at', iso7d),
+    admin
+      .from('call_attempts')
+      .select('id', { count: 'exact', head: true })
+      .gte('created_at', iso7d)
+      .eq('status', 'completed'),
+    admin
+      .from('call_attempts')
+      .select('id', { count: 'exact', head: true })
+      .gte('created_at', iso7d)
+      .in('status', [...ANSWER_RATE_DENOM]),
   ]);
+
+  // Fail loudly: without these a DB error silently reads as count 0 and the
+  // dashboard shows a confident wrong number (same contract as the DAL's
+  // count helpers, which throw rather than degrade).
+  if (today.error) throw new Error('count_today_failed');
+  if (last7d.error) throw new Error('count_last_7d_failed');
+  if (completed7d.error) throw new Error('count_completed_7d_failed');
+  if (denom7d.error) throw new Error('count_answer_denom_failed');
 
   return {
     activeNow,
-    today,
-    last7d,
-    completed7d,
-    answerRate7d: computeAnswerRate(completed7d, denom7d),
+    today: today.count ?? 0,
+    last7d: last7d.count ?? 0,
+    completed7d: completed7d.count ?? 0,
+    answerRate7d: computeAnswerRate(completed7d.count ?? 0, denom7d.count ?? 0),
   };
 }
 

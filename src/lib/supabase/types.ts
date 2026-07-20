@@ -69,8 +69,48 @@ export type Database = {
             foreignKeyName: "activity_log_event_id_fkey"
             columns: ["event_id"]
             isOneToOne: false
+            referencedRelation: "console_events"
+            referencedColumns: ["event_id"]
+          },
+          {
+            foreignKeyName: "activity_log_event_id_fkey"
+            columns: ["event_id"]
+            isOneToOne: false
             referencedRelation: "events"
             referencedColumns: ["id"]
+          },
+        ]
+      }
+      agent_status: {
+        Row: {
+          agent_id: string
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          agent_id: string
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          agent_id?: string
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "agent_status_agent_id_fkey"
+            columns: ["agent_id"]
+            isOneToOne: true
+            referencedRelation: "console_agents"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "agent_status_agent_id_fkey"
+            columns: ["agent_id"]
+            isOneToOne: true
+            referencedRelation: "console_me"
+            referencedColumns: ["user_id"]
           },
         ]
       }
@@ -390,11 +430,25 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "billed_results_campaign_id_fkey"
+            columns: ["campaign_id"]
+            isOneToOne: false
+            referencedRelation: "console_campaigns"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "billed_results_contact_id_fkey"
             columns: ["contact_id"]
             isOneToOne: false
             referencedRelation: "contacts"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "billed_results_event_id_fkey"
+            columns: ["event_id"]
+            isOneToOne: false
+            referencedRelation: "console_events"
+            referencedColumns: ["event_id"]
           },
           {
             foreignKeyName: "billed_results_event_id_fkey"
@@ -449,6 +503,20 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "campaigns"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "billing_credits_campaign_id_fkey"
+            columns: ["campaign_id"]
+            isOneToOne: false
+            referencedRelation: "console_campaigns"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "billing_credits_event_id_fkey"
+            columns: ["event_id"]
+            isOneToOne: false
+            referencedRelation: "console_events"
+            referencedColumns: ["event_id"]
           },
           {
             foreignKeyName: "billing_credits_event_id_fkey"
@@ -527,6 +595,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "call_attempts"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "call_analysis_event_id_fkey"
+            columns: ["event_id"]
+            isOneToOne: false
+            referencedRelation: "console_events"
+            referencedColumns: ["event_id"]
           },
           {
             foreignKeyName: "call_analysis_event_id_fkey"
@@ -643,11 +718,25 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "call_attempts_campaign_id_fkey"
+            columns: ["campaign_id"]
+            isOneToOne: false
+            referencedRelation: "console_campaigns"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "call_attempts_contact_id_fkey"
             columns: ["contact_id"]
             isOneToOne: false
             referencedRelation: "contacts"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "call_attempts_event_id_fkey"
+            columns: ["event_id"]
+            isOneToOne: false
+            referencedRelation: "console_events"
+            referencedColumns: ["event_id"]
           },
           {
             foreignKeyName: "call_attempts_event_id_fkey"
@@ -750,11 +839,25 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "campaign_authorized_contacts_campaign_id_fkey"
+            columns: ["campaign_id"]
+            isOneToOne: false
+            referencedRelation: "console_campaigns"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "campaign_authorized_contacts_contact_id_fkey"
             columns: ["contact_id"]
             isOneToOne: false
             referencedRelation: "contacts"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "campaign_authorized_contacts_event_id_fkey"
+            columns: ["event_id"]
+            isOneToOne: false
+            referencedRelation: "console_events"
+            referencedColumns: ["event_id"]
           },
           {
             foreignKeyName: "campaign_authorized_contacts_event_id_fkey"
@@ -809,6 +912,20 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "campaigns"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "campaign_authorized_set_audit_campaign_id_fkey"
+            columns: ["campaign_id"]
+            isOneToOne: false
+            referencedRelation: "console_campaigns"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "campaign_authorized_set_audit_event_id_fkey"
+            columns: ["event_id"]
+            isOneToOne: false
+            referencedRelation: "console_events"
+            referencedColumns: ["event_id"]
           },
           {
             foreignKeyName: "campaign_authorized_set_audit_event_id_fkey"
@@ -963,6 +1080,13 @@ export type Database = {
             foreignKeyName: "campaigns_event_id_fkey"
             columns: ["event_id"]
             isOneToOne: false
+            referencedRelation: "console_events"
+            referencedColumns: ["event_id"]
+          },
+          {
+            foreignKeyName: "campaigns_event_id_fkey"
+            columns: ["event_id"]
+            isOneToOne: false
             referencedRelation: "events"
             referencedColumns: ["id"]
           },
@@ -971,6 +1095,86 @@ export type Database = {
             columns: ["template_id"]
             isOneToOne: false
             referencedRelation: "packages"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      console_agents: {
+        Row: {
+          created_at: string
+          display_name: string
+          user_id: string
+          vox_username: string | null
+        }
+        Insert: {
+          created_at?: string
+          display_name: string
+          user_id: string
+          vox_username?: string | null
+        }
+        Update: {
+          created_at?: string
+          display_name?: string
+          user_id?: string
+          vox_username?: string | null
+        }
+        Relationships: []
+      }
+      console_call_feed: {
+        Row: {
+          agent_id: string | null
+          call_attempt_id: string
+          call_duration_sec: number | null
+          callback_iso: string | null
+          campaign_id: string | null
+          created_at: string
+          direction: string
+          event_id: string | null
+          finish_reason: string | null
+          handled_by: string
+          kind: string
+          rsvp_digit: string | null
+          status: string | null
+          updated_at: string
+        }
+        Insert: {
+          agent_id?: string | null
+          call_attempt_id: string
+          call_duration_sec?: number | null
+          callback_iso?: string | null
+          campaign_id?: string | null
+          created_at?: string
+          direction?: string
+          event_id?: string | null
+          finish_reason?: string | null
+          handled_by?: string
+          kind?: string
+          rsvp_digit?: string | null
+          status?: string | null
+          updated_at?: string
+        }
+        Update: {
+          agent_id?: string | null
+          call_attempt_id?: string
+          call_duration_sec?: number | null
+          callback_iso?: string | null
+          campaign_id?: string | null
+          created_at?: string
+          direction?: string
+          event_id?: string | null
+          finish_reason?: string | null
+          handled_by?: string
+          kind?: string
+          rsvp_digit?: string | null
+          status?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "console_call_feed_call_attempt_id_fkey"
+            columns: ["call_attempt_id"]
+            isOneToOne: true
+            referencedRelation: "call_attempts"
             referencedColumns: ["id"]
           },
         ]
@@ -1039,11 +1243,25 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "contact_interactions_campaign_id_fkey"
+            columns: ["campaign_id"]
+            isOneToOne: false
+            referencedRelation: "console_campaigns"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "contact_interactions_contact_id_fkey"
             columns: ["contact_id"]
             isOneToOne: false
             referencedRelation: "contacts"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "contact_interactions_event_id_fkey"
+            columns: ["event_id"]
+            isOneToOne: false
+            referencedRelation: "console_events"
+            referencedColumns: ["event_id"]
           },
           {
             foreignKeyName: "contact_interactions_event_id_fkey"
@@ -1127,6 +1345,13 @@ export type Database = {
             foreignKeyName: "contacts_event_id_fkey"
             columns: ["event_id"]
             isOneToOne: false
+            referencedRelation: "console_events"
+            referencedColumns: ["event_id"]
+          },
+          {
+            foreignKeyName: "contacts_event_id_fkey"
+            columns: ["event_id"]
+            isOneToOne: false
             referencedRelation: "events"
             referencedColumns: ["id"]
           },
@@ -1170,6 +1395,13 @@ export type Database = {
           sort_order?: number
         }
         Relationships: [
+          {
+            foreignKeyName: "event_questions_event_id_fkey"
+            columns: ["event_id"]
+            isOneToOne: false
+            referencedRelation: "console_events"
+            referencedColumns: ["event_id"]
+          },
           {
             foreignKeyName: "event_questions_event_id_fkey"
             columns: ["event_id"]
@@ -1293,6 +1525,13 @@ export type Database = {
             foreignKeyName: "guest_groups_event_id_fkey"
             columns: ["event_id"]
             isOneToOne: false
+            referencedRelation: "console_events"
+            referencedColumns: ["event_id"]
+          },
+          {
+            foreignKeyName: "guest_groups_event_id_fkey"
+            columns: ["event_id"]
+            isOneToOne: false
             referencedRelation: "events"
             referencedColumns: ["id"]
           },
@@ -1339,6 +1578,13 @@ export type Database = {
           status?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "guest_import_staging_event_id_fkey"
+            columns: ["event_id"]
+            isOneToOne: false
+            referencedRelation: "console_events"
+            referencedColumns: ["event_id"]
+          },
           {
             foreignKeyName: "guest_import_staging_event_id_fkey"
             columns: ["event_id"]
@@ -1440,6 +1686,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "contacts"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "guests_event_id_fkey"
+            columns: ["event_id"]
+            isOneToOne: false
+            referencedRelation: "console_events"
+            referencedColumns: ["event_id"]
           },
           {
             foreignKeyName: "guests_event_id_fkey"
@@ -1932,11 +2185,25 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "outreach_state_campaign_id_fkey"
+            columns: ["campaign_id"]
+            isOneToOne: false
+            referencedRelation: "console_campaigns"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "outreach_state_contact_id_fkey"
             columns: ["contact_id"]
             isOneToOne: false
             referencedRelation: "contacts"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "outreach_state_event_id_fkey"
+            columns: ["event_id"]
+            isOneToOne: false
+            referencedRelation: "console_events"
+            referencedColumns: ["event_id"]
           },
           {
             foreignKeyName: "outreach_state_event_id_fkey"
@@ -1981,6 +2248,13 @@ export type Database = {
             columns: ["campaign_id"]
             isOneToOne: false
             referencedRelation: "campaigns"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "outreach_template_failures_campaign_id_fkey"
+            columns: ["campaign_id"]
+            isOneToOne: false
+            referencedRelation: "console_campaigns"
             referencedColumns: ["id"]
           },
         ]
@@ -2302,6 +2576,13 @@ export type Database = {
             foreignKeyName: "push_delivery_log_event_id_fkey"
             columns: ["event_id"]
             isOneToOne: false
+            referencedRelation: "console_events"
+            referencedColumns: ["event_id"]
+          },
+          {
+            foreignKeyName: "push_delivery_log_event_id_fkey"
+            columns: ["event_id"]
+            isOneToOne: false
             referencedRelation: "events"
             referencedColumns: ["id"]
           },
@@ -2458,6 +2739,13 @@ export type Database = {
             foreignKeyName: "rsvp_responses_event_id_fkey"
             columns: ["event_id"]
             isOneToOne: false
+            referencedRelation: "console_events"
+            referencedColumns: ["event_id"]
+          },
+          {
+            foreignKeyName: "rsvp_responses_event_id_fkey"
+            columns: ["event_id"]
+            isOneToOne: false
             referencedRelation: "events"
             referencedColumns: ["id"]
           },
@@ -2531,6 +2819,20 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "signed_agreements_campaign_id_fkey"
+            columns: ["campaign_id"]
+            isOneToOne: false
+            referencedRelation: "console_campaigns"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "signed_agreements_event_id_fkey"
+            columns: ["event_id"]
+            isOneToOne: false
+            referencedRelation: "console_events"
+            referencedColumns: ["event_id"]
+          },
+          {
             foreignKeyName: "signed_agreements_event_id_fkey"
             columns: ["event_id"]
             isOneToOne: false
@@ -2574,6 +2876,13 @@ export type Database = {
           subject_type?: string | null
         }
         Relationships: [
+          {
+            foreignKeyName: "support_access_log_event_id_fkey"
+            columns: ["event_id"]
+            isOneToOne: false
+            referencedRelation: "console_events"
+            referencedColumns: ["event_id"]
+          },
           {
             foreignKeyName: "support_access_log_event_id_fkey"
             columns: ["event_id"]
@@ -2701,6 +3010,13 @@ export type Database = {
             foreignKeyName: "vox_log_exports_event_id_fkey"
             columns: ["event_id"]
             isOneToOne: false
+            referencedRelation: "console_events"
+            referencedColumns: ["event_id"]
+          },
+          {
+            foreignKeyName: "vox_log_exports_event_id_fkey"
+            columns: ["event_id"]
+            isOneToOne: false
             referencedRelation: "events"
             referencedColumns: ["id"]
           },
@@ -2756,7 +3072,250 @@ export type Database = {
       }
     }
     Views: {
-      [_ in never]: never
+      console_call_analysis: {
+        Row: {
+          adults: number | null
+          analysis_at: string | null
+          call_attempt_id: string | null
+          call_duration_secs: number | null
+          call_successful: string | null
+          children: number | null
+          el_eval: Json | null
+          event_id: string | null
+          rsvp_status: string | null
+          score: number | null
+          status: string | null
+          termination_reason: string | null
+        }
+        Insert: {
+          adults?: never
+          analysis_at?: string | null
+          call_attempt_id?: string | null
+          call_duration_secs?: number | null
+          call_successful?: string | null
+          children?: never
+          el_eval?: Json | null
+          event_id?: string | null
+          rsvp_status?: never
+          score?: never
+          status?: string | null
+          termination_reason?: string | null
+        }
+        Update: {
+          adults?: never
+          analysis_at?: string | null
+          call_attempt_id?: string | null
+          call_duration_secs?: number | null
+          call_successful?: string | null
+          children?: never
+          el_eval?: Json | null
+          event_id?: string | null
+          rsvp_status?: never
+          score?: never
+          status?: string | null
+          termination_reason?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "call_analysis_call_attempt_id_fkey"
+            columns: ["call_attempt_id"]
+            isOneToOne: false
+            referencedRelation: "call_attempts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "call_analysis_event_id_fkey"
+            columns: ["event_id"]
+            isOneToOne: false
+            referencedRelation: "console_events"
+            referencedColumns: ["event_id"]
+          },
+          {
+            foreignKeyName: "call_analysis_event_id_fkey"
+            columns: ["event_id"]
+            isOneToOne: false
+            referencedRelation: "events"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      console_campaign_targets: {
+        Row: {
+          campaign_id: string | null
+          contact_id: string | null
+          current_step_index: number | null
+          event_id: string | null
+          guest_name: string | null
+          id: string | null
+          next_run_at: string | null
+          phone: string | null
+          reached_at: string | null
+          reached_channel:
+            | Database["public"]["Enums"]["campaign_channel"]
+            | null
+          status: string | null
+          stop_reason: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "outreach_state_campaign_id_fkey"
+            columns: ["campaign_id"]
+            isOneToOne: false
+            referencedRelation: "campaigns"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "outreach_state_campaign_id_fkey"
+            columns: ["campaign_id"]
+            isOneToOne: false
+            referencedRelation: "console_campaigns"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "outreach_state_contact_id_fkey"
+            columns: ["contact_id"]
+            isOneToOne: false
+            referencedRelation: "contacts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "outreach_state_event_id_fkey"
+            columns: ["event_id"]
+            isOneToOne: false
+            referencedRelation: "console_events"
+            referencedColumns: ["event_id"]
+          },
+          {
+            foreignKeyName: "outreach_state_event_id_fkey"
+            columns: ["event_id"]
+            isOneToOne: false
+            referencedRelation: "events"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      console_campaigns: {
+        Row: {
+          close_at: string | null
+          created_at: string | null
+          enabled: boolean | null
+          event_id: string | null
+          id: string | null
+          max_contacts: number | null
+          start_at: string | null
+          status: Database["public"]["Enums"]["campaign_status"] | null
+          updated_at: string | null
+        }
+        Insert: {
+          close_at?: string | null
+          created_at?: string | null
+          enabled?: boolean | null
+          event_id?: string | null
+          id?: string | null
+          max_contacts?: number | null
+          start_at?: string | null
+          status?: Database["public"]["Enums"]["campaign_status"] | null
+          updated_at?: string | null
+        }
+        Update: {
+          close_at?: string | null
+          created_at?: string | null
+          enabled?: boolean | null
+          event_id?: string | null
+          id?: string | null
+          max_contacts?: number | null
+          start_at?: string | null
+          status?: Database["public"]["Enums"]["campaign_status"] | null
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "campaigns_event_id_fkey"
+            columns: ["event_id"]
+            isOneToOne: false
+            referencedRelation: "console_events"
+            referencedColumns: ["event_id"]
+          },
+          {
+            foreignKeyName: "campaigns_event_id_fkey"
+            columns: ["event_id"]
+            isOneToOne: false
+            referencedRelation: "events"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      console_events: {
+        Row: {
+          event_date: string | null
+          event_id: string | null
+          event_name: string | null
+          event_type: string | null
+          has_campaign: boolean | null
+        }
+        Insert: {
+          event_date?: string | null
+          event_id?: string | null
+          event_name?: string | null
+          event_type?: never
+          has_campaign?: never
+        }
+        Update: {
+          event_date?: string | null
+          event_id?: string | null
+          event_name?: string | null
+          event_type?: never
+          has_campaign?: never
+        }
+        Relationships: []
+      }
+      console_me: {
+        Row: {
+          display_name: string | null
+          permissions: string[] | null
+          platform_rank: number | null
+          platform_role: string | null
+          user_id: string | null
+          vox_username: string | null
+        }
+        Relationships: []
+      }
+      console_rsvp_results: {
+        Row: {
+          adults: number | null
+          attending: boolean | null
+          created_at: string | null
+          event_id: string | null
+          guest_id: string | null
+          guest_name: string | null
+          id: string | null
+          kids: number | null
+          note: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "rsvp_responses_event_id_fkey"
+            columns: ["event_id"]
+            isOneToOne: false
+            referencedRelation: "console_events"
+            referencedColumns: ["event_id"]
+          },
+          {
+            foreignKeyName: "rsvp_responses_event_id_fkey"
+            columns: ["event_id"]
+            isOneToOne: false
+            referencedRelation: "events"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "rsvp_responses_guest_id_fkey"
+            columns: ["guest_id"]
+            isOneToOne: false
+            referencedRelation: "guests"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Functions: {
       accept_invitation: { Args: { _token: string }; Returns: string }
@@ -2836,6 +3395,7 @@ export type Database = {
         Args: { p_campaign: string; p_contact: string }
         Returns: boolean
       }
+      is_console_agent: { Args: never; Returns: boolean }
       is_org_member: { Args: { _org_id: string }; Returns: boolean }
       is_org_owner: { Args: { _org_id: string }; Returns: boolean }
       is_platform_owner: { Args: never; Returns: boolean }
