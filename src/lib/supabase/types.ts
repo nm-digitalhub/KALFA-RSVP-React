@@ -1124,7 +1124,15 @@ export type Database = {
           user_id?: string
           vox_username?: string | null
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "console_agents_staff_fkey"
+            columns: ["user_id"]
+            isOneToOne: true
+            referencedRelation: "platform_staff"
+            referencedColumns: ["user_id"]
+          },
+        ]
       }
       console_call_feed: {
         Row: {
@@ -3366,7 +3374,15 @@ export type Database = {
           user_id: string | null
           vox_username: string | null
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "console_agents_staff_fkey"
+            columns: ["user_id"]
+            isOneToOne: true
+            referencedRelation: "platform_staff"
+            referencedColumns: ["user_id"]
+          },
+        ]
       }
       console_rsvp_results: {
         Row: {
