@@ -9,7 +9,10 @@
 // {{event_name}}, {{event_date}}, {{event_venue}} placeholders resolve, records
 // the call, logs transcript events, forwards the agent's client tools
 // (save_rsvp / mark_dnc / notify_owner / schedule_callback) to KALFA's
-// token-scoped endpoints, and reports el_conversation_id via the cb endpoint.
+// token-scoped endpoints, reports el_conversation_id via the cb endpoint, and
+// posts exactly ONE terminal callback per call (rsvp_method 'agent', no digit:
+// completed = conversation ran → billed reach; no_response / no_answer /
+// failed otherwise) so the attempt row always closes and billing is per-reached.
 //
 // Branch B customData ({to, from, tok, u}) — tiny, ≤200-byte cap:
 //   * to/from        — dial legs (required).
@@ -118,6 +121,17 @@ VoxEngine.addEventListener(AppEvents.Started, function () {
         elConversationId: '',
         callbackUrl: '',
         cbConversationSent: false,
+        // Terminal-callback state (mirrors RSVP.voxengine.js): exactly ONE
+        // terminal cb per call, so KALFA's drain can close the attempt row,
+        // bill the reach (rsvp_method 'agent' ⇒ no digit required and the
+        // digit-RSVP path is skipped — save_rsvp already wrote real counts),
+        // and the reconciler never alert-floods on stuck rows.
+        callbackSent: false,
+        callWasConnected: false,
+        // True once the ElevenLabs bridge actually carried the conversation
+        // (media started / init metadata) — decides completed vs no_response.
+        conversationStarted: false,
+        connectedAt: 0,
         // Speech-probability high-water mark (VadScore) — a rough silence / no-
         // answer signal logged at teardown. 0 ⇒ the agent never detected speech.
         maxVadScore: 0,
@@ -184,9 +198,61 @@ VoxEngine.addEventListener(AppEvents.Started, function () {
             }
             catch (err) {
                 log('call.hangup() failed: ' + err);
-                cleanupAndTerminate();
+                // Disconnected will never fire on this path — close the attempt
+                // row here so it cannot stick pre-terminal.
+                postFinalCallbackOnce({
+                    call_status: state.conversationStarted
+                        ? 'completed'
+                        : (state.callWasConnected ? 'no_response' : 'no_answer'),
+                    call_duration: state.connectedAt
+                        ? Math.round((Date.now() - state.connectedAt) / 1000)
+                        : 0
+                }, function () {
+                    cleanupAndTerminate();
+                });
             }
         }, delayMs);
+    }
+    // POST one JSON payload to KALFA's cb endpoint (best-effort, never blocks
+    // teardown). Mirrors RSVP.voxengine.js's postCallback.
+    function postCallback(payload, done) {
+        if (!state.callbackUrl) {
+            if (done)
+                done();
+            return;
+        }
+        log('POST callback: ' + safeStringify(payload));
+        Net.httpRequestAsync(state.callbackUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            postData: safeStringify(payload)
+        }).then(function (r) {
+            log('Callback response: ' + (r && r.code));
+            if (done)
+                done();
+        }).catch(function (err) {
+            log('Callback failed: ' + err);
+            if (done)
+                done();
+        });
+    }
+    // Exactly ONE terminal callback per call (idempotent — a racing Failed +
+    // Disconnected or timeout can never double-post). No transcript is sent:
+    // the agent path is metadata-only; conversation QA arrives via the separate
+    // ElevenLabs post-call webhook.
+    function postFinalCallbackOnce(payload, done) {
+        if (state.callbackSent) {
+            if (done)
+                done();
+            return;
+        }
+        state.callbackSent = true;
+        payload.rsvp_method = 'agent';
+        payload.recording_url = state.recordingUrl || null;
+        if (state.elConversationId) {
+            payload.el_conversation_id = state.elConversationId;
+        }
+        postCallback(payload, done);
     }
     // Report the captured ElevenLabs conversation_id to KALFA's EXISTING cb
     // endpoint (persist-then-process; identity resolved server-side from the token
@@ -268,9 +334,21 @@ VoxEngine.addEventListener(AppEvents.Started, function () {
         return;
     }
     // Global safety net: close the session even if every other path is stuck.
+    // Post the terminal callback FIRST so the attempt row still closes (a cut
+    // conversation is still a reached human; a session that never bridged is not).
     state.globalTimer = setTimeout(function () {
         log('Global timeout reached — closing.');
-        cleanupAndTerminate();
+        var duration = state.connectedAt
+            ? Math.round((Date.now() - state.connectedAt) / 1000)
+            : 0;
+        postFinalCallbackOnce({
+            call_status: state.conversationStarted
+                ? 'completed'
+                : (state.callWasConnected ? 'no_response' : 'no_answer'),
+            call_duration: duration
+        }, function () {
+            cleanupAndTerminate();
+        });
     }, GLOBAL_TIMEOUT_MS);
     // Places the outbound call and wires the ElevenLabs bridge. Called only after
     // the ctx fetch settles (success or failure) so the dynamic variables are known
@@ -319,7 +397,14 @@ VoxEngine.addEventListener(AppEvents.Started, function () {
                 }
                 else {
                     log('AMD gate: ' + why + ' → machine, NOT bridging (0 EL cost), hanging up');
-                    scheduleHangup(call, 0);
+                    // A voicemail is NOT a reached human: close the attempt as
+                    // no_answer (no billing) before dropping the line.
+                    postFinalCallbackOnce({
+                        call_status: 'no_answer',
+                        call_duration: 0
+                    }, function () {
+                        scheduleHangup(call, 0);
+                    });
                 }
             }
             try {
@@ -347,6 +432,8 @@ VoxEngine.addEventListener(AppEvents.Started, function () {
         }
         call.addEventListener(CallEvents.Connected, function () {
             log('Call connected');
+            state.callWasConnected = true;
+            state.connectedAt = Date.now();
             // stereo:true splits guest (left) and agent (right); hd_audio:true gives a
             // 48kHz mp3. No cb is sent — the URL is only written to the log.
             try {
@@ -492,6 +579,7 @@ VoxEngine.addEventListener(AppEvents.Started, function () {
                     var payload = (e && e.data && e.data.payload) || {};
                     var meta = payload.conversation_initiation_metadata_event || payload;
                     var convId = meta.conversation_id || payload.conversation_id || '';
+                    state.conversationStarted = true;
                     if (convId) {
                         state.elConversationId = String(convId);
                         log('CONVERSATION_ID captured');
@@ -521,6 +609,7 @@ VoxEngine.addEventListener(AppEvents.Started, function () {
                 // Media-stream lifecycle (audio actually flowing / 1s silence tail).
                 agent.addEventListener(ElevenLabs.Events.WebSocketMediaStarted, function () {
                     log('AGENT_MEDIA_STARTED');
+                    state.conversationStarted = true;
                 });
                 agent.addEventListener(ElevenLabs.Events.WebSocketMediaEnded, function () {
                     log('AGENT_MEDIA_ENDED');
@@ -653,11 +742,18 @@ VoxEngine.addEventListener(AppEvents.Started, function () {
                 });
             }).catch(function (err) {
                 log('createAgentsClient failed: ' + err);
-                try {
-                    call.hangup();
-                }
-                catch (_e) { }
-                cleanupAndTerminate();
+                // The bridge never opened — close the attempt as failed (not
+                // billed) BEFORE dropping the line, so the row never sticks.
+                postFinalCallbackOnce({
+                    call_status: 'failed',
+                    call_duration: 0
+                }, function () {
+                    try {
+                        call.hangup();
+                    }
+                    catch (_e) { }
+                    cleanupAndTerminate();
+                });
             });
             } // end bridgeAgent
             // Gate the bridge on AMD (fail-open). HUMAN → bridgeAgent(); VOICEMAIL →
@@ -666,10 +762,31 @@ VoxEngine.addEventListener(AppEvents.Started, function () {
         });
         call.addEventListener(CallEvents.Failed, function (ev) {
             log('Call failed: ' + safeStringify(ev));
-            cleanupAndTerminate();
+            postFinalCallbackOnce({
+                call_status: 'failed',
+                call_duration: 0
+            }, function () {
+                cleanupAndTerminate();
+            });
         });
         call.addEventListener(CallEvents.Disconnected, function (ev) {
             log('Call disconnected: ' + safeStringify(ev));
+            var duration = ev && ev.duration ? ev.duration : 0;
+            if (!state.callbackSent) {
+                // completed = the ElevenLabs conversation actually ran (billed as a
+                // reached human — the RSVP itself was already written by save_rsvp);
+                // no_response = answered but the bridge never carried a conversation;
+                // no_answer = never even connected.
+                postFinalCallbackOnce({
+                    call_status: state.conversationStarted
+                        ? 'completed'
+                        : (state.callWasConnected ? 'no_response' : 'no_answer'),
+                    call_duration: duration
+                }, function () {
+                    cleanupAndTerminate();
+                });
+                return;
+            }
             cleanupAndTerminate();
         });
     }

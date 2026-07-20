@@ -112,7 +112,10 @@ export async function processCallResult(row: WebhookInboxRow): Promise<void> {
     // RSVP — submit_rsvp RPC is idempotent (unchanged:true on replay). Written ONLY
     // when the contact was bound to exactly one guest at dial time (guest_id set)
     // and the digit is a validated 1/2. A missing/unsupported digit is NEVER an
-    // automatic decline (the schema already guarantees 1|2 on completed).
+    // automatic decline (the schema guarantees 1|2 on completed UNLESS
+    // rsvp_method==='agent' — the ElevenLabs bridge path, whose RSVP was already
+    // written in-call by save_rsvp with real counts; skipping here is what keeps
+    // those counts from being overwritten with the 1/0 digit defaults).
     if (attempt.guest_id && (body.rsvp_digit === '1' || body.rsvp_digit === '2')) {
       const rsvpToken = await getGuestRsvpToken(attempt.guest_id);
       if (rsvpToken) {

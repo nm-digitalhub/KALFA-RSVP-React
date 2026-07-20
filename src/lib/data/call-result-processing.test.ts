@@ -92,6 +92,26 @@ describe('processCallResult', () => {
     expect(recordRsvpFromCall).toHaveBeenCalledWith('ev1', 'g1', 'attending', AID);
   });
 
+  it("agent completed (no digit, rsvp_method 'agent') → bills reach but NEVER submits a digit-RSVP", async () => {
+    await processCallResult(
+      row({ call_status: 'completed', rsvp_method: 'agent', call_duration: 42 }),
+    );
+    expect(recordCallOutcome).toHaveBeenCalledWith(
+      AID,
+      expect.objectContaining({ status: 'completed', rsvp_method: 'agent', rsvp_digit: null }),
+    );
+    expect(insertInteraction).toHaveBeenCalledWith(
+      expect.objectContaining({ channel: 'call', provider_id: AID, billable: true }),
+    );
+    expect(writeReach).toHaveBeenCalledWith(
+      expect.objectContaining({ channel: 'call', attemptId: AID, evidence: 'voximplant_call_completed' }),
+    );
+    // The bridge's save_rsvp already wrote REAL counts — the digit path must not
+    // overwrite them with the 1/0 defaults.
+    expect(submitRsvp).not.toHaveBeenCalled();
+    expect(recordRsvpFromCall).not.toHaveBeenCalled();
+  });
+
   it('completed digit 2 → RSVP declined (adults 0)', async () => {
     vi.mocked(submitRsvp).mockResolvedValue({ ok: true, status: 'declined', unchanged: false } as never);
     await processCallResult(row({ call_status: 'completed', rsvp_digit: '2' }));
