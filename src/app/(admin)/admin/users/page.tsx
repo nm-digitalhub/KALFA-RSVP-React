@@ -7,9 +7,9 @@ import { PageHeading, EmptyState, Badge, Pagination, parsePageParam } from '../_
 
 export const metadata = { title: 'משתמשים' };
 
-// Admin user management — list of all platform users (search by email +
-// pagination). Authorization is enforced by the /admin layout (requireAdmin)
-// and again in listAllUsers.
+// Admin user management — list of all platform users (search by name, email,
+// phone or id + pagination). Authorization is enforced by the /admin layout
+// (requireAdmin) and again in listAllUsers.
 export default async function AdminUsersPage({
   searchParams,
 }: {
@@ -33,8 +33,8 @@ export default async function AdminUsersPage({
           name="q"
           type="search"
           defaultValue={search ?? ''}
-          placeholder="חיפוש לפי אימייל…"
-          dir="ltr"
+          placeholder="חיפוש לפי שם, אימייל, טלפון או מזהה…"
+          dir="auto"
           className="w-full max-w-sm rounded-md border border-border bg-background px-3 py-2 text-sm"
         />
         <button
