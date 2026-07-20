@@ -51,35 +51,31 @@ describe('attachModeSchema', () => {
   });
 });
 
-describe('agentCommandBodySchema', () => {
-  it('accepts a non-empty whisper', () => {
-    expect(
-      agentCommandBodySchema.safeParse({
-        command: 'agent_context_update',
-        payload: { text: 'האורח מתלבט' },
-      }).success,
-    ).toBe(true);
+describe('agentCommandBodySchema — matches the deployed app wire format', () => {
+  it('accepts the exact FLAT payloads the app sends (ConsoleViewModel.kt:268-281)', () => {
+    expect(agentCommandBodySchema.safeParse({ command: 'contextual_update', text: 'האורח מתלבט' }).success).toBe(
+      true,
+    );
+    expect(agentCommandBodySchema.safeParse({ command: 'user_message', text: 'שלום' }).success).toBe(true);
+    expect(agentCommandBodySchema.safeParse({ command: 'clear_buffer' }).success).toBe(true);
+    expect(agentCommandBodySchema.safeParse({ command: 'close_agent' }).success).toBe(true);
   });
-  it('rejects an empty whisper', () => {
+  it('rejects the NESTED shape and the old envelope names (regression for the bug this fixes)', () => {
     expect(
-      agentCommandBodySchema.safeParse({ command: 'agent_context_update', payload: { text: '  ' } }).success,
-    ).toBe(false);
+      agentCommandBodySchema.safeParse({ command: 'contextual_update', payload: { text: 'x' } }).success,
+    ).toBe(false); // nested
+    expect(agentCommandBodySchema.safeParse({ command: 'agent_context_update', text: 'x' }).success).toBe(
+      false,
+    ); // old name
+    expect(agentCommandBodySchema.safeParse({ command: 'ai_close' }).success).toBe(false);
   });
-  it('accepts payload-less commands with no payload key', () => {
-    expect(agentCommandBodySchema.safeParse({ command: 'ai_clear_buffer' }).success).toBe(true);
-    expect(agentCommandBodySchema.safeParse({ command: 'ai_close' }).success).toBe(true);
+  it('rejects empty text and smuggled fields', () => {
+    expect(agentCommandBodySchema.safeParse({ command: 'contextual_update', text: '  ' }).success).toBe(false);
+    expect(agentCommandBodySchema.safeParse({ command: 'user_message', text: '' }).success).toBe(false);
+    expect(agentCommandBodySchema.safeParse({ command: 'clear_buffer', text: 'x' }).success).toBe(false);
   });
-  it('accepts call_end with or without a reason', () => {
-    expect(agentCommandBodySchema.safeParse({ command: 'call_end' }).success).toBe(true);
-    expect(
-      agentCommandBodySchema.safeParse({ command: 'call_end', payload: { reason: 'agent_takeover' } }).success,
-    ).toBe(true);
-  });
-  it('rejects an unknown command and smuggled payload fields', () => {
-    expect(agentCommandBodySchema.safeParse({ command: 'ai_suspend' }).success).toBe(false);
-    expect(
-      agentCommandBodySchema.safeParse({ command: 'ai_clear_buffer', payload: { text: 'x' } }).success,
-    ).toBe(false);
+  it('rejects call_end here — ending the call is a separate /end route', () => {
+    expect(agentCommandBodySchema.safeParse({ command: 'call_end' }).success).toBe(false);
   });
 });
 
@@ -89,7 +85,7 @@ describe('commandAckSchema', () => {
       commandAckSchema.safeParse({
         ok: true,
         request_id: 'req-1',
-        command: 'agent_context_update',
+        command: 'contextual_update',
         applied: true,
         call_attempt_id: 'att-1',
       }).success,

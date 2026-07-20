@@ -54,56 +54,42 @@ export type AttachModeBody = z.infer<typeof attachModeSchema>;
 // Live-call AI-management commands — POST /api/calls/{callAttemptId}/agent-command
 // ---------------------------------------------------------------------------
 
-// Signaling commands the console may issue on a LIVE call. Each maps to a VERIFIED
-// ElevenLabs.AgentsClient method inside the RSVPAgent VoxEngine bridge (typings
-// voxengine.d.ts:6114-6190). The backend relays the command to the live session
-// via that call's `media_session_access_url` (server-side only) and returns a
-// TRUTHFUL ack (see CommandAck — delivery vs effect).
+// Signaling commands the console may issue on a LIVE call. These names AND the FLAT
+// wire shape are the DEPLOYED app's ACTUAL contract — the schema must accept exactly
+// what the app already sends, not an idealized envelope:
+//   KALFA-ELEVENLABS: ConsoleViewModel.kt:268-281 calls sendAgentCommand(id, "<name>",
+//   {text}); SupabaseImplementations.kt:560-563 serialises `{command, ...fields}`
+//   FLAT (text at top level, NOT nested under "payload"); Telephony.kt:35 documents
+//   the four commands. Each maps to a VERIFIED ElevenLabs.AgentsClient method
+//   (typings voxengine.d.ts:6114-6190), applied by the VoxEngine dispatcher:
+//     contextual_update → agent.contextualUpdate({text})  (NON-interrupting whisper)
+//     user_message      → agent.userMessage({text})       (injects a user turn; interrupts)
+//     clear_buffer      → agent.clearMediaBuffer()         (one-shot barge-in)
+//     close_agent       → agent.close()                    (close the AI WS leg)
 //
-// Deliberately EXCLUDED for v1:
-//   - ai_suspend / ai_resume: return-to-AI is deferred (v1 closes the AI instead),
-//     so we do not accept a command we cannot honor end-to-end.
-//   - monitor/takeover attach: those have their own dedicated routes (above +
-//     the Conference redesign), not this signaling channel.
+// NOTE: ending the whole call is a SEPARATE route (POST /api/calls/{id}/end), not an
+// agent-command — the deployed app sends no end command here.
 export const AGENT_COMMANDS = [
-  'agent_context_update', // whisper — NON-interrupting; agent.contextualUpdate({text})
-  'ai_clear_buffer', // one-shot barge-in (clears buffered TTS); agent.clearMediaBuffer()
-  'ai_close', // close the AI WebSocket leg; agent.close()
-  'call_end', // end the whole call and emit exactly ONE terminal callback
+  'contextual_update',
+  'user_message',
+  'clear_buffer',
+  'close_agent',
 ] as const;
 export type AgentCommand = (typeof AGENT_COMMANDS)[number];
 
-// Whisper text: injected as NON-interrupting background context (contextual_update
-// is incorporated into conversation history, NOT spoken to the guest). Trimmed +
-// capped; must be non-empty so an empty whisper never reaches the session.
-const contextUpdatePayloadSchema = z.strictObject({
-  text: z.string().trim().min(1).max(1000),
-});
-
-// call_end carries an optional internal reason for the terminal callback — never
-// voiced to the guest. Absent payload is valid.
-const callEndPayloadSchema = z
-  .strictObject({
-    reason: z.string().trim().max(128).nullish(),
-  })
-  .nullish();
-
-// ai_clear_buffer / ai_close take no parameters. An absent or empty payload is
-// valid; strictObject rejects any smuggled field.
-const emptyPayloadSchema = z.strictObject({}).nullish();
+// Whisper / user-message text — trimmed, capped, non-empty so nothing empty reaches
+// the session. FLAT (top-level `text`) to match the app's wire format exactly.
+const textField = z.string().trim().min(1).max(1000);
 
 // The request body from the console. `call_attempt_id` is NOT here — it comes from
-// the URL path and is resolved + authorized server-side, never trusted from the
-// body (same identity rule as the agent-tool routes). Discriminated on `command`
-// so each command validates only its own payload.
+// the URL path and is resolved + authorized server-side, never trusted from the body
+// (same identity rule as the agent-tool routes). Discriminated on `command`;
+// strictObject rejects any smuggled field. FLAT shape mirrors the deployed app.
 export const agentCommandBodySchema = z.discriminatedUnion('command', [
-  z.strictObject({
-    command: z.literal('agent_context_update'),
-    payload: contextUpdatePayloadSchema,
-  }),
-  z.strictObject({ command: z.literal('ai_clear_buffer'), payload: emptyPayloadSchema }),
-  z.strictObject({ command: z.literal('ai_close'), payload: emptyPayloadSchema }),
-  z.strictObject({ command: z.literal('call_end'), payload: callEndPayloadSchema }),
+  z.strictObject({ command: z.literal('contextual_update'), text: textField }),
+  z.strictObject({ command: z.literal('user_message'), text: textField }),
+  z.strictObject({ command: z.literal('clear_buffer') }),
+  z.strictObject({ command: z.literal('close_agent') }),
 ]);
 export type AgentCommandBody = z.infer<typeof agentCommandBodySchema>;
 
