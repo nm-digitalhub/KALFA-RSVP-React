@@ -6,13 +6,15 @@ import { createAdminClient } from '@/lib/supabase/admin';
 import { requirePlatformPermission } from '@/lib/auth/dal';
 import { logActivity } from '@/lib/data/activity';
 import { sendSlackAlert } from '@/lib/alerts/slack';
-import { setPlatformAdmin, setUserSuspended } from './users';
+import { recordStaffAccess } from './access-log';
+import { getUserDetail, setPlatformAdmin, setUserSuspended } from './users';
 
 vi.mock('server-only', () => ({}));
 vi.mock('@/lib/supabase/admin', () => ({ createAdminClient: vi.fn() }));
 vi.mock('@/lib/auth/dal', () => ({ requirePlatformPermission: vi.fn() }));
 vi.mock('@/lib/data/activity', () => ({ logActivity: vi.fn() }));
 vi.mock('@/lib/alerts/slack', () => ({ sendSlackAlert: vi.fn() }));
+vi.mock('./access-log', () => ({ recordStaffAccess: vi.fn() }));
 
 function adminUser(): User {
   return { id: 'admin-1' } as unknown as User;
@@ -79,6 +81,47 @@ describe('setPlatformAdmin', () => {
     wireAdminClient({ data: null, error: null, count: 1 });
     await expect(setPlatformAdmin('u-2', false)).rejects.toThrow('חייב להישאר');
     expect(sendSlackAlert).not.toHaveBeenCalled();
+  });
+});
+
+describe('getUserDetail — break-glass audit', () => {
+  const REASON = 'בירור פנייה בנושא חיוב עבור החשבון של המשתמש';
+
+  // The audit runs BEFORE getUserById, so returning an error there short-circuits
+  // the read — enough to assert whether the audit row was (not) recorded without
+  // mocking every downstream table chain.
+  function wireGetUserByIdError() {
+    vi.mocked(createAdminClient).mockReturnValue({
+      auth: {
+        admin: {
+          getUserById: vi.fn(async () => ({
+            data: null,
+            error: { message: 'not found' },
+          })),
+        },
+      },
+      from: vi.fn(),
+    } as unknown as ReturnType<typeof createAdminClient>);
+  }
+
+  it('records a break-glass audit (subject_type user + reason) when viewing ANOTHER user', async () => {
+    wireGetUserByIdError();
+    await getUserDetail('u-2', REASON);
+    expect(recordStaffAccess).toHaveBeenCalledTimes(1);
+    expect(recordStaffAccess).toHaveBeenCalledWith({
+      staffId: 'admin-1',
+      permission: 'manage_staff',
+      subjectType: 'user',
+      subjectId: 'u-2',
+      ownerId: 'u-2',
+      reason: REASON,
+    });
+  });
+
+  it('does NOT record an audit for a self-view (subjectId === staffId)', async () => {
+    wireGetUserByIdError();
+    await getUserDetail('admin-1');
+    expect(recordStaffAccess).not.toHaveBeenCalled();
   });
 });
 

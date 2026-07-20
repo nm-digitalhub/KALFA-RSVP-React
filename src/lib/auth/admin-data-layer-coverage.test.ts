@@ -94,6 +94,10 @@ const EXPECTED_PERMISSION: Record<string, string> = {
 const AUDIT_REQUIRED: Record<string, string[]> = {
   'src/lib/data/admin/campaigns.ts': ['getEventForAdminView'],
   'src/lib/data/admin/voice-ops.ts': ['listCallAttemptsForEvent'],
+  // Viewing another user's full detail is a break-glass customer-data read. The
+  // audit is conditional on it being a cross-user view (self-view is exempt),
+  // but the call must be present.
+  'src/lib/data/admin/users.ts': ['getUserDetail'],
 };
 
 describe('targeted admin readers record a staff-access audit', () => {

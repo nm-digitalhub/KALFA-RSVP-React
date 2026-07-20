@@ -273,6 +273,20 @@ export const adminUserIdSchema = z.object({
 });
 export type AdminUserIdInput = z.infer<typeof adminUserIdSchema>;
 
+// Viewing ANOTHER user's full detail is a break-glass customer-data read — it
+// requires a reason (getUserDetail records the audit row before returning). The
+// self-view path never reaches this schema (the page renders the detail
+// directly). Same shape/length as the support-view reason.
+export const adminUserViewSchema = z.object({
+  user_id: z.string().uuid({ error: 'מזהה משתמש לא תקין' }),
+  reason: z
+    .string()
+    .trim()
+    .min(10, { error: 'יש לציין סיבה לצפייה (לפחות 10 תווים)' })
+    .max(500, { error: 'הסיבה ארוכה מדי' }),
+});
+export type AdminUserViewInput = z.infer<typeof adminUserViewSchema>;
+
 // Grant a benefit (billing credit) on one of the user's events. campaign_id is
 // optional: empty = event-level credit (consumed by the event's campaign at
 // close-charge); set = scoped to that specific campaign only.

@@ -6,6 +6,7 @@ import { createAdminClient } from '@/lib/supabase/admin';
 import { requirePlatformPermission } from '@/lib/auth/dal';
 import { logActivity } from '@/lib/data/activity';
 import { sendSlackAlert } from '@/lib/alerts/slack';
+import { recordStaffAccess } from './access-log';
 import { resolvePage, type PageParams, type PageResult } from './shared';
 
 // Admin: cross-user management (platform staff). user_roles/profiles are
@@ -165,9 +166,29 @@ export async function listAllUsers(
 
 // Full detail for one user, including org memberships, owned-event count,
 // events and previously granted benefits.
-export async function getUserDetail(userId: string): Promise<AdminUserDetail | null> {
-  await requirePlatformPermission('manage_staff');
+export async function getUserDetail(
+  userId: string,
+  reason?: string,
+): Promise<AdminUserDetail | null> {
+  const staff = await requirePlatformPermission('manage_staff');
   const admin = createAdminClient();
+
+  // Viewing ANOTHER user's full profile (PII: phone, email, owned events,
+  // granted credits) is a break-glass reach into one customer's account —
+  // audited with a mandatory reason (recordStaffAccess enforces the min length
+  // for manage_staff). Viewing your OWN staff record is not cross-customer
+  // access, so it carries no reason and no break-glass row (forcing one on the
+  // self-view would breed the reason-fatigue that launders a real reason).
+  if (userId !== staff.id) {
+    await recordStaffAccess({
+      staffId: staff.id,
+      permission: 'manage_staff',
+      subjectType: 'user',
+      subjectId: userId,
+      ownerId: userId,
+      reason,
+    });
+  }
 
   const { data: authData, error } = await admin.auth.admin.getUserById(userId);
   if (error || !authData?.user) {
