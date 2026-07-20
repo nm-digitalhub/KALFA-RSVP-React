@@ -85,7 +85,7 @@ function job(o: Partial<OutreachCallRequest> = {}): OutreachCallRequest {
 const CONFIG = {
   auth: { accountId: 1, keyId: 'KEY_ID', privateKey: 'PRIVATE_KEY_SECRET' },
   ruleId: '1494311', callerId: '972500000000',
-  callbackSecret: 'CALLBACK_SECRET', groqApiKey: 'GROQ_SECRET',
+  callbackSecret: 'CALLBACK_SECRET',
   lowBalanceThreshold: 5, minCallReserve: 0.1, maxConcurrentCalls: 5, maxCallsPerCampaignHour: 200,
   liveCallsEnabled: true,
 };
@@ -281,12 +281,12 @@ describe('payload hygiene', () => {
     expect(() => JSON.parse(payload)).not.toThrow();
     expect(bytes).toBe(Buffer.byteLength(payload, 'utf8'));
     expect(bytes).toBeLessThan(200); // well under the VoxEngine.customData() 200-byte cap
-    expect(payload).not.toContain('GROQ'); // no key in the payload (Branch B)
+    expect(payload).not.toMatch(/SECRET|KEY/i); // no credential of any kind in the payload
   });
-  it('17b. no secret (Groq/callbackSecret/privateKey) reaches Slack or console', async () => {
+  it('17b. no secret (callbackSecret/privateKey) reaches Slack or console', async () => {
     const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
     const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
-    const secrets = [CONFIG.groqApiKey, CONFIG.callbackSecret, CONFIG.auth.privateKey];
+    const secrets = [CONFIG.callbackSecret, CONFIG.auth.privateKey];
     const noSecret = (s: string) => secrets.forEach((sec) => expect(s).not.toContain(sec));
     try {
       await dispatchOutreachCall(job()); // success path: console.log {payloadBytes}

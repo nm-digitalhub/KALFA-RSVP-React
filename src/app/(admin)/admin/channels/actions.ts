@@ -82,7 +82,6 @@ const voximplantChannelSchema = z.object({
   voximplant_rule_id: z.string().trim().max(64).default(''),
   voximplant_caller_id: z.string().trim().max(32).default(''),
   voximplant_callback_secret: z.string().trim().max(256).default(''),
-  voximplant_groq_api_key: z.string().trim().max(256).default(''),
   voximplant_low_balance_threshold: z.string().trim().max(16).default(''),
   voximplant_min_call_reserve: z.string().trim().max(16).default(''),
   voximplant_max_concurrent_calls: z.string().trim().max(8).default(''),
@@ -99,7 +98,6 @@ export async function updateVoximplantChannelAction(
     voximplant_rule_id: formData.get('voximplant_rule_id') ?? '',
     voximplant_caller_id: formData.get('voximplant_caller_id') ?? '',
     voximplant_callback_secret: formData.get('voximplant_callback_secret') ?? '',
-    voximplant_groq_api_key: formData.get('voximplant_groq_api_key') ?? '',
     voximplant_low_balance_threshold:
       formData.get('voximplant_low_balance_threshold') ?? '',
     voximplant_min_call_reserve:
@@ -168,7 +166,7 @@ export async function updateOutreachMasterSwitchAction(
 
 // Admin toggle for the LIVE-DIAL gate (app_settings.voximplant_live_calls).
 // Enabling PERMITS real, paid outbound calls. Fail-closed: refuses to enable
-// without a complete dial config (SA + rule + caller + callback + Groq).
+// without a complete dial config (SA + rule + caller + callback).
 // Emits a SECURITY Slack audit on every flip. The env VOXIMPLANT_LIVE_CALLS
 // ='false' still hard-overrides regardless of this toggle. requireAdmin is
 // enforced in getVoximplantChannelConfig + updateVoximplantLiveCalls.
@@ -182,7 +180,7 @@ export async function updateVoximplantLiveCallsAction(
     if (!cfg.fullyConfigured) {
       return {
         error:
-          'לא ניתן להפעיל שיחות חיות ללא קונפיג מלא — חשבון שירות, Rule ID, מספר יוצא, Callback Secret ו-Groq.',
+          'לא ניתן להפעיל שיחות חיות ללא קונפיג מלא — חשבון שירות, Rule ID, מספר יוצא ו-Callback Secret.',
       };
     }
   }

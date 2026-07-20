@@ -2,7 +2,6 @@ import { NextResponse } from 'next/server';
 
 import { celebrantsTextFor } from '@/lib/data/celebrant-display';
 import { getCallContextByAccessToken } from '@/lib/data/call-attempts';
-import { getVoximplantGroqKey } from '@/lib/data/voximplant-config';
 import { formatIsraelSpokenDate, formatIsraelTime } from '@/lib/date';
 import { getClientIp, rateLimit } from '@/lib/security/rate-limit';
 import { tokenFingerprint } from '@/lib/security/token-fingerprint';
@@ -16,18 +15,24 @@ import { tokenFingerprint } from '@/lib/security/token-fingerprint';
 // guessable id. READ-ONLY: never mutates. Every failure returns an identical
 // generic 404 so a caller cannot learn whether a given guest/event/token exists
 // (privacy-safe, like /r/[token] and /g/[token]). Returns ONLY the fields the
-// scenario needs — the four invitation fields plus the Groq key (Branch B moved
-// the key OUT of the scenario payload so it never lands in Voximplant call
-// history). Never returns phone, rsvp_token, org id, or any other internal data.
+// scenario needs. Never returns phone, rsvp_token, org id, or any other internal
+// data.
+//
+// The response no longer carries a Groq key. It used to, for the DTMF scenario's
+// ASR→LLM step — and this route 404'd when that key was absent, which meant the
+// ElevenLabs bridge could not start a call without a key it explicitly ignores
+// ("groq_key is IGNORED — this scenario runs the LLM inside ElevenLabs",
+// RSVPAgent.voxengine.js:26). A dead dependency that could take down the live
+// path. The dialogue brain is ElevenLabs now; Groq is gone from the stack.
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 const CTX_RATE = { limit: 12, windowMs: 5 * 60 * 1000 } as const;
 
-// Explicit no-store on EVERY response: the success body carries the Groq key
-// and guest-facing data behind a bearer token in the URL — `force-dynamic`
-// only skips Next's own cache, it does not forbid downstream caches.
+// Explicit no-store on EVERY response: the success body carries guest-facing data
+// behind a bearer token in the URL — `force-dynamic` only skips Next's own cache,
+// it does not forbid downstream caches.
 const NO_STORE = { 'Cache-Control': 'no-store' } as const;
 
 const notFound = () => new NextResponse(null, { status: 404, headers: NO_STORE });
@@ -79,12 +84,6 @@ export async function GET(
     return notFound();
   }
 
-  // Groq key for the scenario's ASR→LLM step. Served here (token-gated) instead of
-  // in the scenario payload so it never appears in Voximplant call history. Absent
-  // key → 404 (a call with no key cannot run its dialogue; fail generic).
-  const groqKey = await getVoximplantGroqKey();
-  if (!groqKey) return notFound();
-
   // First name only for the greeting (the scenario's normalizeForSpeech handles
   // the rest). Never leak the full contact/guest record.
   const guestName = ctx.guestFullName
@@ -113,7 +112,6 @@ export async function GET(
       event_rsvp_deadline: ctx.event.rsvp_deadline
         ? formatIsraelSpokenDate(ctx.event.rsvp_deadline)
         : '',
-      groq_key: groqKey,
       // ADDITIVE (item-2 link vector): the row's NON-authorizing correlation nonce.
       // The ElevenLabs-bridge scenario (VoiceAgentTest, kalfatest) injects this as
       // the `kalfa_attempt_token` dynamic variable so the post-call webhook can map

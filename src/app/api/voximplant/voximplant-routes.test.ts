@@ -2,16 +2,13 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 // Branch B: the ctx/cb routes authenticate by the row's opaque per-call
 // access_token (looked up server-side) — NOT a signed/purpose token. The ctx
-// response also carries the Groq key (moved out of the scenario payload). These
-// tests mock the token→row lookups + the key getter directly.
+// response carries only invitation fields — no provider key. These tests mock
+// the token→row lookups directly.
 
 // agent-tool-guard.ts begins with `import 'server-only'` (throws outside a server
 // context); stub it, same convention as call-result-processing.test.ts.
 vi.mock('server-only', () => ({}));
 
-vi.mock('@/lib/data/voximplant-config', () => ({
-  getVoximplantGroqKey: vi.fn(async () => 'gsk_test_key'),
-}));
 vi.mock('@/lib/data/call-attempts', () => ({
   getCallContextByAccessToken: vi.fn(),
   getCallAttemptByAccessToken: vi.fn(),
@@ -37,7 +34,6 @@ import {
   getCallContextByAccessToken,
   getCallAttemptByAccessToken,
 } from '@/lib/data/call-attempts';
-import { getVoximplantGroqKey } from '@/lib/data/voximplant-config';
 import { insertWebhookEvents } from '@/lib/data/webhooks';
 import { __resetRateLimitStateForTests } from '@/lib/security/rate-limit';
 
@@ -105,7 +101,6 @@ beforeEach(() => {
     ...CTX,
     attempt: { ...CTX.attempt, token_expires_at: FUTURE() },
   } as never);
-  vi.mocked(getVoximplantGroqKey).mockResolvedValue('gsk_test_key');
   vi.mocked(getCallAttemptByAccessToken).mockResolvedValue({
     id: AID,
     token_expires_at: FUTURE(),
@@ -113,10 +108,10 @@ beforeEach(() => {
 });
 
 describe('ctx GET', () => {
-  it('valid → 200 with the invitation fields + Groq key, no PII', async () => {
+  it('valid → 200 with the invitation fields only, no PII and no provider key', async () => {
     const res = await ctxCall(TOK);
     expect(res.status).toBe(200);
-    // Token-bearing URL + provider key in the body: must never be cacheable.
+    // Token-bearing URL + guest data in the body: must never be cacheable.
     expect(res.headers.get('cache-control')).toBe('no-store');
     const json = await res.json();
     expect(Object.keys(json).sort()).toEqual([
@@ -127,14 +122,12 @@ describe('ctx GET', () => {
       'event_rsvp_deadline',
       'event_time',
       'event_venue',
-      'groq_key',
       'guest_name',
       'kalfa_attempt_token',
     ]);
     expect(json.guest_name).toBe('ישראל'); // first name only
     expect(json.event_name).toBe('חתונה');
     expect(json.event_venue).toBe('אולם הגן');
-    expect(json.groq_key).toBe('gsk_test_key');
     // Additive item-2 link field: the row's non-authorizing correlation nonce.
     expect(json.kalfa_attempt_token).toBe('nonce_test_abc');
     expect(JSON.stringify(json)).not.toContain('rsvp_token');
@@ -166,9 +159,13 @@ describe('ctx GET', () => {
     vi.mocked(getCallContextByAccessToken).mockResolvedValue({ ...CTX, attempt: { ...CTX.attempt, status: 'completed' } } as never);
     expect((await ctxCall(TOK)).status).toBe(404);
   });
-  it('missing Groq key → 404', async () => {
-    vi.mocked(getVoximplantGroqKey).mockResolvedValue(null);
-    expect((await ctxCall(TOK)).status).toBe(404);
+  // The ctx response used to carry a Groq key and 404 without one, which meant
+  // the ElevenLabs bridge could not start a call without a credential it ignores.
+  // Groq is out of the stack: assert the key can never reappear in the body.
+  it('never returns a provider key', async () => {
+    const json = await (await ctxCall(TOK)).json();
+    expect(json).not.toHaveProperty('groq_key');
+    expect(JSON.stringify(json)).not.toMatch(/gsk_|groq/i);
   });
   it('rate limit trips → 429', async () => {
     let last = 200;

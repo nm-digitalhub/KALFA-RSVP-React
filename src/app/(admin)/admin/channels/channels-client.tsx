@@ -46,7 +46,6 @@ type VoximplantConfig = {
   voximplant_rule_id: string;
   voximplant_caller_id: string;
   voximplant_callback_secret: string;
-  voximplant_groq_api_key: string;
   voximplant_low_balance_threshold: string;
   voximplant_min_call_reserve: string;
   voximplant_max_concurrent_calls: string;
@@ -494,12 +493,6 @@ export function ChannelsClient({
                     label="Callback Secret"
                     defaultValue={voximplant.voximplant_callback_secret}
                     help="סוד ה-?k= שחותם על כתובות ה-ctx/cb. סובב אותו כדי לפסול טוקנים ישנים."
-                  />
-                  <SecretField
-                    name="voximplant_groq_api_key"
-                    label="Groq API Key"
-                    defaultValue={voximplant.voximplant_groq_api_key}
-                    help="מפתח ה-Groq שהתרחיש משתמש בו (gk). נשמר מוצפן; לעולם לא בלוגים."
                   />
                 </div>
               </AccordionPanel>

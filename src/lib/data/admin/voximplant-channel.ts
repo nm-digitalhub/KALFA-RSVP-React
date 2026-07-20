@@ -18,9 +18,9 @@ import { getAppUrl } from '@/lib/url';
 // Admin: Voximplant AI-call channel config (app_settings singleton, admin-only
 // RLS). Same masked-secret pattern as WhatsApp/SUMIT/SMTP. The service-account
 // JSON is a multi-KB RSA private key: it is NEVER round-tripped to the client —
-// only its presence is reported. The dial secrets (callback_secret,
-// groq_api_key) ARE returned to this requireAdmin HTTPS form, shown masked with
-// a reveal toggle, never logged. `outreach_enabled` is the shared master switch
+// only its presence is reported. The dial secret (callback_secret) IS returned
+// to this requireAdmin HTTPS form, shown masked with a reveal toggle, never
+// logged. `outreach_enabled` is the shared master switch
 // (same column WhatsApp uses) and is written ONLY by the hoisted master action,
 // never by this channel DAL.
 
@@ -29,13 +29,12 @@ export type VoximplantChannelConfig = {
   voximplant_rule_id: string;
   voximplant_caller_id: string;
   voximplant_callback_secret: string; // '' when unset — ?k= secret on ctx/cb URLs
-  voximplant_groq_api_key: string; // '' when unset — scenario 'gk' (Branch A)
   voximplant_low_balance_threshold: string; // stringified for the form
   voximplant_min_call_reserve: string;
   voximplant_max_concurrent_calls: string;
   voximplant_max_calls_per_campaign_hour: string;
   configured: boolean; // derived: SA json + rule_id + caller_id present (matches getVoximplantConfig !== null)
-  fullyConfigured: boolean; // configured AND callback_secret AND groq — the full dial config
+  fullyConfigured: boolean; // configured AND callback_secret — the full dial config
   liveCalls: boolean; // raw app_settings.voximplant_live_calls (the admin toggle's value)
   liveEnabled: boolean; // EFFECTIVE live gate: the DB toggle AND the env not force-off
 };
@@ -53,7 +52,7 @@ export async function getVoximplantChannelConfig(): Promise<VoximplantChannelCon
     .from('app_settings')
     .select(
       'voximplant_service_account_json, voximplant_rule_id, voximplant_caller_id, ' +
-        'voximplant_callback_secret, voximplant_groq_api_key, voximplant_low_balance_threshold, ' +
+        'voximplant_callback_secret, voximplant_low_balance_threshold, ' +
         'voximplant_min_call_reserve, voximplant_max_concurrent_calls, voximplant_max_calls_per_campaign_hour, ' +
         'voximplant_live_calls',
     )
@@ -70,7 +69,6 @@ export async function getVoximplantChannelConfig(): Promise<VoximplantChannelCon
     voximplant_rule_id: ruleId,
     voximplant_caller_id: callerId,
     voximplant_callback_secret: s(row.voximplant_callback_secret),
-    voximplant_groq_api_key: s(row.voximplant_groq_api_key),
     voximplant_low_balance_threshold: s(row.voximplant_low_balance_threshold),
     voximplant_min_call_reserve: s(row.voximplant_min_call_reserve),
     voximplant_max_concurrent_calls: s(row.voximplant_max_concurrent_calls),
@@ -82,8 +80,7 @@ export async function getVoximplantChannelConfig(): Promise<VoximplantChannelCon
       saConfigured &&
       !!ruleId &&
       !!callerId &&
-      s(row.voximplant_callback_secret).trim() !== '' &&
-      s(row.voximplant_groq_api_key).trim() !== '',
+      s(row.voximplant_callback_secret).trim() !== '',
     liveCalls: row.voximplant_live_calls === true,
     liveEnabled: envAllowsLiveCalls() && row.voximplant_live_calls === true,
   };
@@ -98,7 +95,6 @@ export type UpdateVoximplantChannelInput = {
   voximplant_rule_id: string;
   voximplant_caller_id: string;
   voximplant_callback_secret: string;
-  voximplant_groq_api_key: string;
   voximplant_low_balance_threshold: string;
   voximplant_min_call_reserve: string;
   voximplant_max_concurrent_calls: string;
@@ -121,7 +117,6 @@ export async function updateVoximplantChannelConfig(
     voximplant_rule_id: input.voximplant_rule_id || null,
     voximplant_caller_id: input.voximplant_caller_id || null,
     voximplant_callback_secret: input.voximplant_callback_secret || null,
-    voximplant_groq_api_key: input.voximplant_groq_api_key || null,
   };
   // NOT NULL numeric columns — only set when a finite number is supplied.
   const num = (v: string): number | undefined => {

@@ -37,7 +37,7 @@ import type { OutreachCallRequest } from '@/lib/queue/queues';
 // unless config.liveCallsEnabled is true, independent of whether credentials are
 // configured. Request-FREE (service-role only) so the worker bundle can import it.
 // The scenario payload carries ONLY {to, from, tok, u} — an opaque per-call access
-// token and the app origin; the Groq key is served by the token-gated ctx endpoint
+// token and the app origin; the invitation context is served by the token-gated ctx endpoint
 // instead (never in call history). NEVER logs the token or the full payload —
 // only ids/bytes.
 
@@ -59,7 +59,7 @@ export type CallDispatchResult =
 // its exact UTF-8 byte length so callers log ONLY the byte count — never the token.
 // The payload is deliberately tiny (~110 B, well under VoxEngine.customData()'s
 // 200-byte cap) and carries NO secrets: the scenario builds the ctx/cb URLs from
-// {u}/api/voximplant/{ctx,cb}/{tok} and fetches the Groq key from the ctx endpoint.
+// {u}/api/voximplant/{ctx,cb}/{tok} and fetches the invitation context from ctx.
 //   to  — normalized destination E.164
 //   from— verified caller id
 //   tok — opaque per-call access token (call_attempts.access_token)
@@ -115,8 +115,11 @@ export async function dispatchOutreachCall(
   if (!(await getOutreachEnabled())) return { kind: 'skipped', reason: 'outreach_disabled' };
 
   // 2. Credentials complete? (does NOT by itself permit a dial — see #3.)
+  //    The Groq key is no longer part of "complete": the dialogue brain is the
+  //    ElevenLabs agent inside the bridge scenario, which never reads it. Keeping
+  //    it here blocked every dial on a credential nothing consumed.
   const config = await getVoximplantConfig();
-  if (!config || !config.callbackSecret || !config.groqApiKey) {
+  if (!config || !config.callbackSecret) {
     return { kind: 'blocked', reason: 'config_missing' };
   }
 
@@ -186,7 +189,7 @@ export async function dispatchOutreachCall(
   // NON-authorizing correlation nonce (item-2 link vector): stamped at creation so
   // every attempt is ready to link an ElevenLabs-bridged conversation back to this
   // row. Distinct from access_token (a capability bearer) — leaking it exposes
-  // nothing. Branch B's Groq/DTMF scenario never reads it; it is inert there.
+  // nothing. The legacy DTMF scenario never read it; it is inert there.
   const elCorrelationNonce = randomBytes(16).toString('hex');
   const tokenExpiresAt = new Date(Date.now() + CALL_TOKEN_TTL_SEC * 1000).toISOString();
   const created = await createCallAttempt({

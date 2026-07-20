@@ -17,7 +17,6 @@ export type VoximplantServerConfig = {
   ruleId: string; // OutCall rule id (live: 1494311)
   callerId: string; // purchased/verified Voximplant number ('from')
   callbackSecret: string | null; // ?k= secret on ctx/cb URLs; null until provisioned
-  groqApiKey: string | null; // scenario 'gk' (Branch A); null if moved to a Vox-side secret
   lowBalanceThreshold: number; // warn below this ($)
   minCallReserve: number; // do-not-dial below this ($)
   maxConcurrentCalls: number;
@@ -88,7 +87,6 @@ export async function getVoximplantConfig(): Promise<VoximplantServerConfig | nu
       ruleId,
       callerId,
       callbackSecret: str(row, 'voximplant_callback_secret') || null,
-      groqApiKey: str(row, 'voximplant_groq_api_key') || null,
       lowBalanceThreshold: num(row, 'voximplant_low_balance_threshold', 5.0),
       minCallReserve: num(row, 'voximplant_min_call_reserve', 0.1),
       maxConcurrentCalls: num(row, 'voximplant_max_concurrent_calls', 5),
@@ -135,26 +133,6 @@ export async function getVoximplantBalancePullConfig(): Promise<VoximplantBalanc
       lowBalanceThreshold: num(row, 'voximplant_low_balance_threshold', 5.0),
       minCallReserve: num(row, 'voximplant_min_call_reserve', 0.1),
     };
-  } catch {
-    return null;
-  }
-}
-
-// Just the Groq key (Branch B: served in the ctx response instead of the scenario
-// payload, so it never lands in Voximplant call-history session_custom_data). Read
-// directly from the row so serving it never depends on SA/rule/caller presence.
-// NEVER logged; only returned over the token-gated ctx endpoint. Null if unset.
-export async function getVoximplantGroqKey(): Promise<string | null> {
-  try {
-    const admin = createAdminClient();
-    const { data, error } = await admin
-      .from('app_settings')
-      .select('voximplant_groq_api_key')
-      .eq('id', true)
-      .maybeSingle();
-    if (error || !data) return null;
-    const key = (data as Record<string, unknown>).voximplant_groq_api_key;
-    return typeof key === 'string' && key.trim() !== '' ? key : null;
   } catch {
     return null;
   }

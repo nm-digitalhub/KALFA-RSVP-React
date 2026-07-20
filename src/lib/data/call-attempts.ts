@@ -38,7 +38,7 @@ export type CreateCallAttemptInput = {
   // Optional NON-authorizing correlation nonce for ElevenLabs-bridged calls
   // (item-2 link vector). Set at creation so every attempt is link-ready; the
   // partial-unique index enforces one-nonce-one-attempt. Omitted ⇒ column stays
-  // NULL (harmless for the Groq/DTMF Branch B path, which never reads it).
+  // NULL (harmless for the legacy DTMF path, which never read it).
   elCorrelationNonce?: string;
 };
 
