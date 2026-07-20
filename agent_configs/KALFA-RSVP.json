@@ -1,5 +1,5 @@
 {
-    "name": "KALFA RSVP Preview",
+    "name": "KALFA RSVP",
     "conversation_config": {
         "asr": {
             "quality": "high",
@@ -99,21 +99,21 @@
                         "model_id": null
                     },
                     "agent": {
-                        "first_message": "Hi {{guest_name}}? … This is Michal, from the family, about {{event_name}}."
+                        "first_message": "Hi {{guest_name}}? … This is Meushar, from the family, about {{event_name}}."
                     }
                 }
             },
             "ru": {
                 "overrides": {
                     "agent": {
-                        "first_message": "Здравствуйте, {{guest_name}}? … Это Михаль, по поводу {{event_name}}."
+                        "first_message": "Здравствуйте, {{guest_name}}? … Это Меушар, по поводу {{event_name}}."
                     }
                 }
             },
             "ar": {
                 "overrides": {
                     "agent": {
-                        "first_message": "مرحبًا {{guest_name}}؟ … أنا ميخال، بخصوص {{event_name}}."
+                        "first_message": "مرحبًا {{guest_name}}؟ … أنا مئوشار، بخصوص {{event_name}}."
                     }
                 }
             }
@@ -260,8 +260,8 @@
                         "response_timeout_secs": 20,
                         "disable_interruptions": true,
                         "interruption_mode": "disable_during_tool_and_turn",
-                        "force_pre_tool_speech": true,
-                        "pre_tool_speech": "force",
+                        "force_pre_tool_speech": false,
+                        "pre_tool_speech": "auto",
                         "assignments": [],
                         "tool_call_sound_behavior": "auto",
                         "tool_error_handling_mode": "auto",

@@ -84,7 +84,7 @@ describe('drift: canonicalizeAgent + compareAgentCanonical (false-positive-proof
 
   it('canonicalizes the real shipped agent_configs file (end_call excluded from tool_ids)', () => {
     const cfg = JSON.parse(
-      readFileSync(join(process.cwd(), 'agent_configs/KALFA-RSVP-Preview.json'), 'utf8'),
+      readFileSync(join(process.cwd(), 'agent_configs/KALFA-RSVP.json'), 'utf8'),
     );
     const c = canonicalizeAgent(cfg);
     expect(c.name).toBeTruthy();

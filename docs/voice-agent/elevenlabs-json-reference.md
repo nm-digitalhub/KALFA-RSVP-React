@@ -13,7 +13,8 @@
 > 🚨 **הסעיף הזה שאיפתי, לא תיאור של המצב החי** (נבדק מול הקונפיג החי 2026-07-19).
 > פערים שאותרו: `asr.keywords` מציג 27 מילים — **חי: `[]`, מעולם לא נפרס** · `llm: gemini-2.5-flash` —
 > חי: `claude-haiku-4-5` · `temperature: 0` — חי: `0.56` · `optimize_streaming_latency: 1` כאן מול `3` ב-§6.5.
-> **מקור-האמת היחיד הוא `agent_configs/KALFA-RSVP-Preview.json` אחרי `pull --update`** — לא הסעיף הזה.
+> **מקור-האמת היחיד הוא `agent_configs/KALFA-RSVP.json` אחרי `pull --update`** — לא הסעיף הזה.
+> (הסוכן והקובץ שונו מ-"KALFA RSVP Preview" ל-"KALFA RSVP" בקידום לייצור, 2026-07-20.)
 > אל תסיק מכאן מה פרוס.
 
 ```jsonc
