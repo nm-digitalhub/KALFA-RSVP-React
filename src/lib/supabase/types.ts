@@ -1133,8 +1133,11 @@ export type Database = {
           finish_reason: string | null
           handled_by: string
           kind: string
+          participation_state: string | null
           rsvp_digit: string | null
           status: string | null
+          takeover_claimed_at: string | null
+          takeover_request_id: string | null
           updated_at: string
         }
         Insert: {
@@ -1149,8 +1152,11 @@ export type Database = {
           finish_reason?: string | null
           handled_by?: string
           kind?: string
+          participation_state?: string | null
           rsvp_digit?: string | null
           status?: string | null
+          takeover_claimed_at?: string | null
+          takeover_request_id?: string | null
           updated_at?: string
         }
         Update: {
@@ -1165,8 +1171,11 @@ export type Database = {
           finish_reason?: string | null
           handled_by?: string
           kind?: string
+          participation_state?: string | null
           rsvp_digit?: string | null
           status?: string | null
+          takeover_claimed_at?: string | null
+          takeover_request_id?: string | null
           updated_at?: string
         }
         Relationships: [
@@ -1706,6 +1715,79 @@ export type Database = {
             columns: ["group_id"]
             isOneToOne: false
             referencedRelation: "guest_groups"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      human_agent_call_legs: {
+        Row: {
+          agent_id: string | null
+          call_attempt_id: string
+          connected_at: string | null
+          device_id: string | null
+          disconnected_at: string | null
+          failure_code: string | null
+          id: string
+          metadata: Json
+          mode: string
+          request_id: string
+          requested_at: string
+          status: string
+          vox_leg_call_id: string | null
+          vox_sdk_call_id: string | null
+        }
+        Insert: {
+          agent_id?: string | null
+          call_attempt_id: string
+          connected_at?: string | null
+          device_id?: string | null
+          disconnected_at?: string | null
+          failure_code?: string | null
+          id?: string
+          metadata?: Json
+          mode: string
+          request_id: string
+          requested_at?: string
+          status: string
+          vox_leg_call_id?: string | null
+          vox_sdk_call_id?: string | null
+        }
+        Update: {
+          agent_id?: string | null
+          call_attempt_id?: string
+          connected_at?: string | null
+          device_id?: string | null
+          disconnected_at?: string | null
+          failure_code?: string | null
+          id?: string
+          metadata?: Json
+          mode?: string
+          request_id?: string
+          requested_at?: string
+          status?: string
+          vox_leg_call_id?: string | null
+          vox_sdk_call_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "human_agent_call_legs_agent_id_fkey"
+            columns: ["agent_id"]
+            isOneToOne: false
+            referencedRelation: "console_agents"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "human_agent_call_legs_agent_id_fkey"
+            columns: ["agent_id"]
+            isOneToOne: false
+            referencedRelation: "console_me"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "human_agent_call_legs_call_attempt_id_fkey"
+            columns: ["call_attempt_id"]
+            isOneToOne: false
+            referencedRelation: "call_attempts"
             referencedColumns: ["id"]
           },
         ]
