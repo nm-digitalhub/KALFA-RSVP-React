@@ -19,9 +19,11 @@
 //   * u (app origin) — used to build the ctx URL (optional; if absent, the call
 //                      still runs with empty dynamic variables).
 //   * tok            — opaque per-call access token; the scenario fetches
-//                      GET {u}/api/voximplant/ctx/{tok} → {guest_name, event_name,
-//                      event_date, event_venue, groq_key}. Only the 4 name/event
-//                      fields are used here; groq_key is IGNORED (this scenario
+//                      GET {u}/api/voximplant/ctx/{tok} → guest/event fields
+//                      (guest_name, event_name, event_date, event_time,
+//                      event_venue, event_address, event_celebrants,
+//                      event_rsvp_deadline) + kalfa_attempt_token (correlation
+//                      nonce) + groq_key. groq_key is IGNORED (this scenario
 //                      runs the LLM inside ElevenLabs, not Groq). No secret ever
 //                      sits in customData/call history.
 // If ctx fails/404s the scenario logs a warning and proceeds with empty defaults
@@ -107,6 +109,15 @@ VoxEngine.addEventListener(AppEvents.Started, function () {
         eventName: '',
         eventDate: '',
         eventVenue: '',
+        // The four later-added ctx fields MUST be declared with the same ''
+        // default as the four above: they are injected into dynamic_variables
+        // unconditionally, and an undeclared field is `undefined` when ctx
+        // fails — leaking the string "undefined" into the agent's variables
+        // instead of a clean empty value.
+        eventTime: '',
+        eventAddress: '',
+        eventCelebrants: '',
+        eventRsvpDeadline: '',
         // NON-authorizing correlation nonce from ctx (ctx.kalfa_attempt_token).
         // Injected as the `kalfa_attempt_token` dynamic variable so ElevenLabs
         // echoes it in the post-call webhook and KALFA links conversation→attempt.
@@ -616,16 +627,20 @@ VoxEngine.addEventListener(AppEvents.Started, function () {
                 });
                 // Client-tool router (conversation-design §4.2). Each tool maps to a
                 // token-scoped KALFA endpoint (this scenario already holds tok + u —
-                // no secret in the payload). The endpoint's {ok} decides the result
-                // string, so the agent only claims success ("נרשם"/"הוסרת") when the
-                // write actually landed. Unknown tools are ignored (never fabricate).
-                //   save_rsvp    → agent-tool/rsvp  → saved | queued
+                // no secret in the payload). The endpoint's THREE-STATE body decides
+                // the result string, so the agent only claims success ("נרשם") when
+                // the write actually landed, and hears the truth when the server
+                // REFUSED (live failure 6875455354: server said rejected, the old
+                // binary ok-mapping collapsed it to 'queued', and the agent told the
+                // guest "נרשם"). Unknown tools are ignored (never fabricate).
+                //   save_rsvp    → agent-tool/rsvp  → saved | rejected | queued
                 //   mark_dnc     → agent-tool/dnc   → removed | queued
                 //   notify_owner → agent-tool/note  → noted | queued
                 var TOOL_ROUTES = {
                     save_rsvp: {
                         path: 'rsvp',
-                        okResult: 'saved',
+                        // No okResult: save_rsvp replies via the three-state
+                        // pass-through below, never the generic boolean mapping.
                         body: function (args) {
                             return {
                                 status: (args.status === 'attending' || args.status === 'declined' || args.status === 'maybe')
@@ -726,12 +741,34 @@ VoxEngine.addEventListener(AppEvents.Started, function () {
                         headers: { 'Content-Type': 'application/json' },
                         postData: safeStringify(postBody)
                     }).then(function (r) {
-                        var ok = false;
+                        var body = null;
                         try {
-                            ok = r.code === 200 && JSON.parse(r.text || '{}').ok === true;
+                            body = JSON.parse(r.text || '{}');
                         }
                         catch (_e) { }
-                        log(toolName + ' -> ' + (r && r.code) + ' ok=' + ok);
+                        var ok = r.code === 200 && !!body && body.ok === true;
+                        var status = body && typeof body.status === 'string' ? body.status : null;
+                        log(toolName + ' -> ' + (r && r.code) + ' ok=' + ok +
+                            (status ? ' status=' + status : ''));
+                        if (toolName === 'save_rsvp') {
+                            // THREE-STATE pass-through (server contract:
+                            // {ok, status: 'saved'|'rejected'|'queued'}).
+                            //   saved    — applied; the agent may say "נרשם".
+                            //   rejected — the server REFUSED on business grounds
+                            //              (event closed/past). Terminal. The agent
+                            //              must be honest, never claim success.
+                            //   queued   — transient; durably retried by the drain.
+                            // ALL THREE are outcomes of a tool that RAN — so
+                            // is_error:false for each (E-12: is_error true/missing
+                            // closes the WebSocket with 1008 immediately, killing
+                            // the call before the honest sentence can be spoken).
+                            var result = (status === 'saved' || status === 'rejected' || status === 'queued')
+                                ? status
+                                : 'queued';
+                            reply(result, false);
+                            return;
+                        }
+                        // Other tools keep the boolean contract ({ok} only).
                         // 'queued' is not an error (durably persisted; agent softens
                         // wording) — is_error=false so the WS stays open either way.
                         reply(ok ? route.okResult : 'queued', false);
