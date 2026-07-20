@@ -119,6 +119,7 @@ const NAV_GROUPS: NavGroup[] = [
       { href: '/admin/settings', label: 'הגדרות', icon: Settings },
       { href: '/admin/alerts', label: 'התראות תפעול', icon: BellRing },
       { href: '/admin/activity', label: 'יומן פעילות', icon: ListChecks },
+      { href: '/admin/access-log', label: 'יומן גישת צוות', icon: ShieldCheck },
     ],
   },
   {
