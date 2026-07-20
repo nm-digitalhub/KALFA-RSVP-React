@@ -1,17 +1,19 @@
-// VoiceAgentTest — bridge an outbound PSTN call to an ElevenLabs conversational
-// agent WITH per-call personalization (kalfatest ONLY, NOT production).
+// RSVPAgent — bridge an outbound PSTN call to an ElevenLabs conversational
+// agent WITH per-call personalization. PRODUCTION scenario (promoted from
+// VoiceAgentTest on kalfatest, 2026-07-20; bound to the kalfa-rsvp application,
+// rule OutCallAgent).
 //
-// Purpose: prove the ElevenLabs Agents realtime bridge end-to-end over a real
-// call, now feeding the agent real per-call guest/event data. It dials the
-// recipient, opens the Hebrew RSVP agent
+// It dials the recipient, opens the Hebrew RSVP agent
 // (agent_9701kxj3n54ye518a3s518cexd48: language he, eleven_v3_conversational,
 // voice Kalfa), injects dynamic variables so the agent's {{guest_name}},
 // {{event_name}}, {{event_date}}, {{event_venue}} placeholders resolve, records
-// the call and logs the transcript events. It sends NO cb and touches no RSVP row.
+// the call, logs transcript events, forwards the agent's client tools
+// (save_rsvp / mark_dnc / notify_owner / schedule_callback) to KALFA's
+// token-scoped endpoints, and reports el_conversation_id via the cb endpoint.
 //
 // Branch B customData ({to, from, tok, u}) — tiny, ≤200-byte cap:
 //   * to/from        — dial legs (required).
-//   * u (app origin) — used to build the ctx URL (optional; if absent, the test
+//   * u (app origin) — used to build the ctx URL (optional; if absent, the call
 //                      still runs with empty dynamic variables).
 //   * tok            — opaque per-call access token; the scenario fetches
 //                      GET {u}/api/voximplant/ctx/{tok} → {guest_name, event_name,
@@ -130,7 +132,7 @@ VoxEngine.addEventListener(AppEvents.Started, function () {
         terminated: false
     };
     function log(msg) {
-        Logger.write('[VoiceAgentTest] ' + msg);
+        Logger.write('[RSVPAgent] ' + msg);
     }
     function safeStringify(value) {
         try {
@@ -259,9 +261,9 @@ VoxEngine.addEventListener(AppEvents.Started, function () {
     var key = VoxEngine.getSecretValue('ELEVENLABS_API_KEY');
     if (!key) {
         // getSecretValue returns undefined when the secret is missing in THIS
-        // application's scope. If this fires on kalfatest, add the ELEVENLABS_API_KEY
-        // secret to the kalfatest application.
-        log('SECRET MISSING — add ELEVENLABS_API_KEY secret to the kalfatest application');
+        // application's scope — the secret must exist on the application this
+        // scenario is bound to (kalfa-rsvp in production; kalfatest for tests).
+        log('SECRET MISSING — add the ELEVENLABS_API_KEY secret to this application');
         VoxEngine.terminate();
         return;
     }
@@ -276,7 +278,7 @@ VoxEngine.addEventListener(AppEvents.Started, function () {
     function proceedToDial() {
         if (state.terminated)
             return;
-        log('Creating PSTN call to test recipient (guest="' + state.guestName +
+        log('Creating PSTN call to recipient (guest="' + state.guestName +
             '", event="' + state.eventName + '")');
         var call = VoxEngine.callPSTN(state.to, state.from);
         // Record so the exchange can be reviewed; URL logged for a Management-API pull.

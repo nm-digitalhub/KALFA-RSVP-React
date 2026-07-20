@@ -1,11 +1,11 @@
 // Voximplant ↔ ElevenLabs BRIDGE — gated single test call (ops tool).
 //
-// Closes item 2's link end-to-end over a REAL call: it stamps a random,
-// NON-authorizing correlation nonce onto an EXISTING test call_attempt, then
-// StartScenarios the already-deployed VoiceAgentTest bridge on the ISOLATED
-// kalfatest rule. The scenario fetches ctx (which now surfaces the nonce as
-// kalfa_attempt_token), injects it as an ElevenLabs dynamic variable, and the
-// post-call webhook echoes it → storeCallAnalysis links conversation → attempt.
+// Places ONE controlled bridged call: it stamps a random, NON-authorizing
+// correlation nonce onto an EXISTING call_attempt, then StartScenarios the
+// deployed RSVPAgent bridge (promoted from VoiceAgentTest, 2026-07-20). The
+// scenario fetches ctx (which surfaces the nonce as kalfa_attempt_token),
+// injects it as an ElevenLabs dynamic variable, and the post-call webhook
+// echoes it → storeCallAnalysis links conversation → attempt.
 //
 //   npm run bridge:test-call -- \
 //     --attempt-id <uuid> --to +9725XXXXXXXX --from 97237219347 --confirm
@@ -13,9 +13,9 @@
 // Isolation + safety:
 //   * Places a REAL outbound call and consumes BOTH Voximplant minutes AND
 //     ElevenLabs credits — nothing runs without --confirm.
-//   * Defaults to (and hard-refuses anything but) a kalfatest rule; it will NOT
-//     run against the production OutCall rule (1494311). Default rule = 1520330
-//     (VoiceAgentTest on kalfatest).
+//   * Default rule = 1520915 (OutCallAgent → RSVPAgent on kalfa-rsvp). It
+//     hard-refuses the DTMF production OutCall rule (1494311) — that rule's
+//     scenario is not the bridge and is driven only by the worker dispatcher.
 //   * NEVER prints the access token, the nonce, or any secret — ids + byte count
 //     only.
 //   * The nonce is stamped first-writer-wins (idempotent): a re-run reuses the
@@ -38,10 +38,11 @@ import { getAppOrigin } from '@/lib/url';
 import type { VoximplantConfig } from '@/lib/voximplant/core';
 import { startScenarios } from '@/lib/voximplant/mutations';
 
-// The production OutCall rule — this launcher must NEVER touch it.
+// The DTMF production OutCall rule — this launcher must NEVER touch it (its
+// scenario is RSVP.voxengine.js, not the bridge; only the worker dials it).
 const PROD_OUTCALL_RULE = '1494311';
-// VoiceAgentTest on the isolated kalfatest application (rules metadata).
-const DEFAULT_KALFATEST_RULE = '1520330';
+// OutCallAgent → RSVPAgent on kalfa-rsvp (rules metadata, promoted 2026-07-20).
+const DEFAULT_AGENT_RULE = '1520915';
 
 function flag(name: string): string | undefined {
   const i = process.argv.indexOf(`--${name}`);
@@ -81,7 +82,7 @@ async function main(): Promise<void> {
   const attemptId = val('attempt-id');
   const to = val('to');
   const from = val('from');
-  const ruleId = val('rule') ?? DEFAULT_KALFATEST_RULE;
+  const ruleId = val('rule') ?? DEFAULT_AGENT_RULE;
 
   if (!attemptId || !to || !from) {
     console.error('ERROR: --attempt-id, --to and --from are required (non-empty).');
@@ -91,8 +92,8 @@ async function main(): Promise<void> {
   // Hard isolation guard: refuse the production rule outright, whatever is passed.
   if (ruleId === PROD_OUTCALL_RULE) {
     console.error(
-      `ERROR: refusing to run against the production OutCall rule (${PROD_OUTCALL_RULE}). ` +
-        'This bridge test only runs on the kalfatest application.',
+      `ERROR: refusing to run against the DTMF production OutCall rule (${PROD_OUTCALL_RULE}). ` +
+        'This launcher only drives the ElevenLabs bridge rule (OutCallAgent).',
     );
     process.exitCode = 1;
     return;
@@ -137,7 +138,7 @@ async function main(): Promise<void> {
   // Same tiny Branch B payload the scenario already parses ({to, from, tok, u}).
   const payload = JSON.stringify({ to, from, tok: attempt.access_token, u: origin });
 
-  console.log('=== StartScenarios — LIVE BRIDGE TEST CALL (kalfatest) ===');
+  console.log('=== StartScenarios — LIVE BRIDGE TEST CALL (RSVPAgent) ===');
   console.log(`rule_id                 : ${ruleId}`);
   console.log(`attempt_id              : ${attemptId}`);
   console.log(`to                      : ${to}`);

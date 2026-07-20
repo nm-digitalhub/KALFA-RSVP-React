@@ -1,1 +1,1 @@
-[{"ruleName":"incoming","ruleId":1494687,"scenarios":[],"rulePattern":"97237219347"},{"ruleName":"OutCall","ruleId":1494311,"scenarios":[{"scenarioName":"RSVP","scenarioId":907512}],"rulePattern":".*"}]
+[{"ruleName":"incoming","ruleId":1494687,"scenarios":[],"rulePattern":"97237219347"},{"ruleName":"OutCall","ruleId":1494311,"scenarios":[{"scenarioName":"RSVP","scenarioId":907512}],"rulePattern":".*"},{"ruleName":"OutCallAgent","ruleId":1520915,"scenarios":[{"scenarioName":"RSVPAgent","scenarioId":918450}],"rulePattern":".*"}]

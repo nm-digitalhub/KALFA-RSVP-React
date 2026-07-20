@@ -278,11 +278,17 @@ elevenlabs agents push
 ### 6.3 פריסת התרחיש (צד Voximplant)
 
 ```bash
-npx voxengine-ci upload --application-name kalfatest --rule-name VoiceAgentTest
+npx voxengine-ci upload --application-name kalfa-rsvp.kalfarsvp.voximplant.com --rule-name OutCallAgent
 ```
 
-**תמיד `kalfatest`** — האפליקציה המבודדת. לעולם לא `kalfa-rsvp`/`OutCall` (rule 1494311) שהיא
-מסלול הייצור. שינוי בקונפיג הסוכן לבדו **לא** דורש פריסת תרחיש; שינוי בגשר (`VoiceAgentTest.voxengine.js`) כן.
+**עדכון 2026-07-20 — הגשר קודם לייצור:** התרחיש נקרא עכשיו `RSVPAgent`
+(`voxfiles/scenarios/src/RSVPAgent.voxengine.js`, scenario id 918450) וכבול לחוק
+`OutCallAgent` (rule id 1520915) על אפליקציית הייצור `kalfa-rsvp`. ה-Secret
+`ELEVENLABS_API_KEY` קיים על שתי האפליקציות. **לעולם לא** לגעת בחוק ה-DTMF
+`OutCall` (rule 1494311) — זה מסלול הייצור של תרחיש ה-DTMF (`RSVP`), והדיספצ'ר
+של ה-worker הוא היחיד שמחייג דרכו. שינוי בקונפיג הסוכן לבדו **לא** דורש פריסת
+תרחיש; שינוי בגשר (`RSVPAgent.voxengine.js`) כן. שרידי `VoiceAgentTest` על
+`kalfatest` (scenario 918276 / rule 1520330) נותרו בפלטפורמה כ-legacy עד ניקוי מאושר.
 
 ### 6.4 אימות: תמלול האודיו האמיתי — לא התמליל של הסוכן
 

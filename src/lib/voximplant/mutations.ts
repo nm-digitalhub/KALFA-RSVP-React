@@ -69,3 +69,55 @@ export function setAccountCallbackUrl(
     timeoutMs,
   );
 }
+
+// Secrets API — application-scoped secret store (Management API "Secrets"
+// folder: AddSecret / GetSecretValue). These live HERE (not core) because a
+// secret read-back is as privileged as a mutation: the CLI must never be able
+// to print a secret, and the cli-guard test pins that the CLI cannot import
+// this module. Values pass through verbatim and are NEVER logged by callers
+// (the copy runner prints presence only). Both take application_id explicitly —
+// secrets are per-application, and an implicit default could silently target
+// the wrong app.
+export interface GetSecretValueResponse {
+  // Observed envelope variants: {result: {secret_value}} or a flat field.
+  result?: { secret_name?: string; secret_value?: string } | number;
+  secret_value?: string;
+}
+export function getApplicationSecretValue(
+  config: VoximplantConfig,
+  applicationId: number | string,
+  secretName: string,
+  timeoutMs?: number,
+): Promise<GetSecretValueResponse> {
+  return voxRequest<GetSecretValueResponse>(
+    config,
+    'GetSecretValue',
+    {
+      application_id: applicationId,
+      secret_name: secretName,
+    },
+    timeoutMs,
+  );
+}
+
+export interface AddSecretResponse {
+  result?: number | { secret_name?: string };
+}
+export function addApplicationSecret(
+  config: VoximplantConfig,
+  applicationId: number | string,
+  secretName: string,
+  secretValue: string,
+  timeoutMs?: number,
+): Promise<AddSecretResponse> {
+  return voxRequest<AddSecretResponse>(
+    config,
+    'AddSecret',
+    {
+      application_id: applicationId,
+      secret_name: secretName,
+      secret_value: secretValue,
+    },
+    timeoutMs,
+  );
+}

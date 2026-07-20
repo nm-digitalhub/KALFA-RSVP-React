@@ -2,7 +2,12 @@ import { generateKeyPairSync } from 'node:crypto';
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { setAccountCallbackUrl, startScenarios } from './mutations';
+import {
+  addApplicationSecret,
+  getApplicationSecretValue,
+  setAccountCallbackUrl,
+  startScenarios,
+} from './mutations';
 import type { VoximplantConfig } from './core';
 
 const { privateKey } = generateKeyPairSync('rsa', {
@@ -49,6 +54,28 @@ describe('setAccountCallbackUrl — restricted SetAccountInfo (plan B5)', () => 
     expect([...lastBody().keys()].sort()).toEqual(['callback_salt', 'callback_url']);
     expect(lastBody().get('callback_url')).toBe('');
     expect(lastBody().get('callback_salt')).toBe('');
+  });
+});
+
+describe('application Secrets wrappers — exact bodies, no caller-input spread', () => {
+  it('getApplicationSecretValue posts EXACTLY application_id + secret_name', async () => {
+    const { lastUrl, lastBody } = stubFetch();
+    await getApplicationSecretValue(cfg, 11107202, 'ELEVENLABS_API_KEY');
+    expect(lastUrl()).toContain('GetSecretValue');
+    expect([...lastBody().keys()].sort()).toEqual(['application_id', 'secret_name']);
+    expect(lastBody().get('application_id')).toBe('11107202');
+    expect(lastBody().get('secret_name')).toBe('ELEVENLABS_API_KEY');
+  });
+
+  it('addApplicationSecret posts EXACTLY application_id + secret_name + secret_value', async () => {
+    const { lastUrl, lastBody } = stubFetch();
+    await addApplicationSecret(cfg, 11107202, 'ELEVENLABS_API_KEY', 'v');
+    expect(lastUrl()).toContain('AddSecret');
+    expect([...lastBody().keys()].sort()).toEqual([
+      'application_id',
+      'secret_name',
+      'secret_value',
+    ]);
   });
 });
 

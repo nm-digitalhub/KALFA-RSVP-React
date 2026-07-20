@@ -26,9 +26,13 @@ describe('CLI ↔ mutations guard', () => {
   });
 
   it('core.ts exports no mutating Management-API method', () => {
-    // The two mutations that exist in the codebase must not appear in core.
+    // The mutations that exist in the codebase must not appear in core. The
+    // Secrets pair lives in mutations even though GetSecretValue is a "read" —
+    // a secret read-back is as privileged as a write and must stay off the CLI.
     expect(core).not.toContain("'StartScenarios'");
     expect(core).not.toContain("'SetAccountInfo'");
+    expect(core).not.toContain("'GetSecretValue'");
+    expect(core).not.toContain("'AddSecret'");
   });
 
   it('KNOWN_COMMANDS is pinned to the read-only set (no start)', () => {

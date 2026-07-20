@@ -1,1 +1,1 @@
-[{"ruleName":"incoming","scenarios":[],"rulePattern":"97237219347"},{"ruleName":"OutCall","scenarios":["RSVP"],"rulePattern":".*"}]
+[{"ruleName":"incoming","scenarios":[],"rulePattern":"97237219347"},{"ruleName":"OutCall","scenarios":["RSVP"],"rulePattern":".*"},{"ruleName":"OutCallAgent","scenarios":["RSVPAgent"],"rulePattern":".*"}]
