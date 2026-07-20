@@ -116,7 +116,11 @@ export async function processCallResult(row: WebhookInboxRow): Promise<void> {
     // rsvp_method==='agent' — the ElevenLabs bridge path, whose RSVP was already
     // written in-call by save_rsvp with real counts; skipping here is what keeps
     // those counts from being overwritten with the 1/0 digit defaults).
-    if (attempt.guest_id && (body.rsvp_digit === '1' || body.rsvp_digit === '2')) {
+    if (
+      attempt.guest_id &&
+      body.rsvp_method !== 'agent' &&
+      (body.rsvp_digit === '1' || body.rsvp_digit === '2')
+    ) {
       const rsvpToken = await getGuestRsvpToken(attempt.guest_id);
       if (rsvpToken) {
         const status = body.rsvp_digit === '1' ? 'attending' : 'declined';
@@ -151,10 +155,15 @@ export async function processCallResult(row: WebhookInboxRow): Promise<void> {
   // recoverable from call_attempts.status — a cosmetic reconcile, not a lost
   // billing/RSVP action, both of which live only on the completed path and are
   // themselves idempotent + reached only via the webhook_inbox claim.)
+  // Persist the disposition too. The scenario reports the SIP code as
+  // error_reason ('sip_408' / 'sip_486' / 'sip_603' …) — that is what separates
+  // "no one picked up, try again" from "the number does not exist, fix the
+  // list". The schema has always accepted the field; it was simply dropped here.
   const { applied } = await recordCallOutcome(attemptId, {
     status: body.call_status,
     call_duration_sec: duration,
     recording_url: recording.url,
+    finish_reason: body.error_reason ?? null,
   });
   const op = opFor[body.call_status];
   if (applied && op) await setContactOpStatus(attempt.contact_id, op);

@@ -112,6 +112,19 @@ describe('processCallResult', () => {
     expect(recordRsvpFromCall).not.toHaveBeenCalled();
   });
 
+  it("agent completed WITH a stray digit still never overwrites the save_rsvp counts", async () => {
+    // The schema's refine is an OR, so {rsvp_method:'agent', rsvp_digit:'1'} is
+    // accepted. The live scenario never sends both, but the digit path must be
+    // gated on the METHOD too — otherwise a hand-crafted payload would replace
+    // the real adults/children the in-call save_rsvp already wrote with 1/0.
+    await processCallResult(
+      row({ call_status: 'completed', rsvp_method: 'agent', rsvp_digit: '1' }),
+    );
+    expect(writeReach).toHaveBeenCalled();
+    expect(submitRsvp).not.toHaveBeenCalled();
+    expect(recordRsvpFromCall).not.toHaveBeenCalled();
+  });
+
   it('completed digit 2 → RSVP declined (adults 0)', async () => {
     vi.mocked(submitRsvp).mockResolvedValue({ ok: true, status: 'declined', unchanged: false } as never);
     await processCallResult(row({ call_status: 'completed', rsvp_digit: '2' }));
@@ -179,6 +192,16 @@ describe('processCallResult', () => {
     expect(recordCallOutcome).toHaveBeenCalledWith(AID, expect.objectContaining({ status: 'no_answer' }));
     expect(setContactOpStatus).toHaveBeenCalledWith('ct1', 'no_answer');
     expect(writeReach).not.toHaveBeenCalled();
+  });
+
+  it('the SIP disposition (error_reason) is persisted as finish_reason', async () => {
+    // Without this the code that separates "try again tomorrow" (408/486) from
+    // "this number does not exist" (404) is silently discarded at the drain.
+    await processCallResult(row({ call_status: 'no_answer', error_reason: 'sip_408' }));
+    expect(recordCallOutcome).toHaveBeenCalledWith(
+      AID,
+      expect.objectContaining({ status: 'no_answer', finish_reason: 'sip_408' }),
+    );
   });
 
   it('stale/out-of-order TERMINAL rejected by the CAS (applied:false) is a FULL no-op — op NOT flipped', async () => {

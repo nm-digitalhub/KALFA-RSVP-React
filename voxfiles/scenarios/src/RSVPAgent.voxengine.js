@@ -340,8 +340,18 @@ VoxEngine.addEventListener(AppEvents.Started, function () {
         // getSecretValue returns undefined when the secret is missing in THIS
         // application's scope — the secret must exist on the application this
         // scenario is bound to (kalfa-rsvp in production; kalfatest for tests).
+        // The callbackUrl is already built at this point, so CLOSE THE ATTEMPT
+        // before terminating: without it a missing/rotated secret leaves the
+        // row pre-terminal forever (never dialed, never retried, and the
+        // reconciler alert-floods on it) — the same stuck-row class the
+        // terminal-callback work fixed everywhere else.
         log('SECRET MISSING — add the ELEVENLABS_API_KEY secret to this application');
-        VoxEngine.terminate();
+        postFinalCallbackOnce({
+            call_status: 'failed',
+            call_duration: 0
+        }, function () {
+            VoxEngine.terminate();
+        });
         return;
     }
     // Global safety net: close the session even if every other path is stuck.
@@ -750,6 +760,18 @@ VoxEngine.addEventListener(AppEvents.Started, function () {
                         var status = body && typeof body.status === 'string' ? body.status : null;
                         log(toolName + ' -> ' + (r && r.code) + ' ok=' + ok +
                             (status ? ' status=' + status : ''));
+                        // A non-200 means the request was REJECTED BEFORE anything
+                        // was persisted (guard rate-limit/expired token → 404/429,
+                        // or Zod refusing the body → 400): there is no inbox row,
+                        // so nothing will ever be retried. Reporting 'queued' there
+                        // would be the same false promise the three-state contract
+                        // exists to kill — say 'error' so the agent uses its
+                        // tool-failure wording instead of implying a pending save.
+                        // is_error stays FALSE: the WS must survive (E-12).
+                        if (r.code !== 200) {
+                            reply('error', false);
+                            return;
+                        }
                         if (toolName === 'save_rsvp') {
                             // THREE-STATE pass-through (server contract:
                             // {ok, status: 'saved'|'rejected'|'queued'}).
@@ -797,11 +819,36 @@ VoxEngine.addEventListener(AppEvents.Started, function () {
             // hang up without ever opening the ElevenLabs WS.
             runVoicemailGate(call, bridgeAgent);
         });
+        // A failed dial is NOT one outcome — the SIP code is a real disposition,
+        // and collapsing every code into 'failed' throws away the only signal
+        // that distinguishes "try again tomorrow" from "this number is wrong".
+        // Classify by ev.code (a NUMBER); never by ev.reason — a live +972 call
+        // returned code 408 with reason:"" (session 6885681848), so the text
+        // field is not populated by our carriers and string matching would fail
+        // silently.
+        //   408 timeout / 486 busy / 480 unavailable → no_answer  (retryable)
+        //   603 declined                             → no_response (they saw it and refused)
+        //   404 / 484 bad number                     → failed      (never retry; fix the list)
         call.addEventListener(CallEvents.Failed, function (ev) {
             log('Call failed: ' + safeStringify(ev));
+            var code = (ev && typeof ev.code === 'number') ? ev.code : 0;
+            var status;
+            if (code === 404 || code === 484) {
+                status = 'failed';
+            }
+            else if (code === 603) {
+                status = 'no_response';
+            }
+            else if (code === 408 || code === 486 || code === 480 || code === 487) {
+                status = 'no_answer';
+            }
+            else {
+                status = 'failed';
+            }
             postFinalCallbackOnce({
-                call_status: 'failed',
-                call_duration: 0
+                call_status: status,
+                call_duration: 0,
+                error_reason: 'sip_' + code
             }, function () {
                 cleanupAndTerminate();
             });
