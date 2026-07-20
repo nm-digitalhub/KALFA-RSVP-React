@@ -229,6 +229,75 @@ describe('revokeStaffRole — last-owner protection', () => {
   });
 });
 
+// GUARDRAIL 4: revoking staff CASCADES the user out of console_agents (FK added
+// in 20260721005100). That is a second privilege removal, so the audit trail has
+// to name it — otherwise a console agent loses their access with nothing on
+// record saying so.
+describe('revokeStaffRole — console cascade is audited', () => {
+  it('records the console un-enrolment when the user WAS an agent', async () => {
+    wireAdminClient({
+      tables: {
+        console_agents: { data: { user_id: 'u-2' }, error: null },
+        platform_staff: { data: null, error: null },
+      },
+    });
+    await expect(revokeStaffRole('u-2')).resolves.toBeUndefined();
+    expect(logActivity).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'admin.platform_staff.role_revoked',
+        meta: { targetUserId: 'u-2', wasConsoleAgent: true },
+      }),
+    );
+    expect(sendSlackAlert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        fields: {
+          actorUserId: 'owner-1',
+          targetUserId: 'u-2',
+          consoleAgent: 'הוסר גם ממוקד השיחות',
+        },
+      }),
+    );
+  });
+
+  it('stays silent in Slack when there was no console membership to remove', async () => {
+    // `false` still reaches the machine-readable audit record; only the human
+    // notification omits it, because "nothing else happened" is not news.
+    wireAdminClient({
+      tables: {
+        console_agents: { data: null, error: null },
+        platform_staff: { data: null, error: null },
+      },
+    });
+    await expect(revokeStaffRole('u-2')).resolves.toBeUndefined();
+    expect(logActivity).toHaveBeenCalledWith(
+      expect.objectContaining({ meta: { targetUserId: 'u-2', wasConsoleAgent: false } }),
+    );
+    expect(sendSlackAlert).toHaveBeenCalledWith(
+      expect.objectContaining({ fields: { actorUserId: 'owner-1', targetUserId: 'u-2' } }),
+    );
+  });
+
+  it('records UNKNOWN rather than a false "no" when the probe fails', async () => {
+    // The probe is bookkeeping; it must never assert something it did not learn,
+    // and must never block the revocation itself.
+    wireAdminClient({
+      tables: {
+        console_agents: { data: null, error: { code: '42501', message: 'denied' } },
+        platform_staff: { data: null, error: null },
+      },
+    });
+    await expect(revokeStaffRole('u-2')).resolves.toBeUndefined();
+    expect(logActivity).toHaveBeenCalledWith(
+      expect.objectContaining({ meta: { targetUserId: 'u-2', wasConsoleAgent: null } }),
+    );
+    expect(sendSlackAlert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        fields: expect.objectContaining({ consoleAgent: 'לא ידוע — בדיקת המוקד נכשלה' }),
+      }),
+    );
+  });
+});
+
 // App-level cover for the gap the DB trigger doesn't reach: the last-owner
 // trigger fires on DELETE only, not on this role-CHANGING upsert.
 describe('assignStaffRole — last-owner reassignment guard', () => {

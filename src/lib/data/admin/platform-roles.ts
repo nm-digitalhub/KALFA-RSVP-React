@@ -296,9 +296,27 @@ export async function assignStaffRole(userId: string, roleId: string): Promise<v
 
 // Revoke a user's platform staff membership. The DB BEFORE-DELETE trigger blocks
 // removing the last owner (raising a Hebrew message we surface as-is).
+//
+// SECOND EFFECT: console_agents.user_id references platform_staff(user_id) ON
+// DELETE CASCADE (migration 20260721005100), so this delete ALSO un-enrols the
+// user from the agent console. That is intentional — a console agent must be
+// staff — but it is a second privilege removal, and an audit trail that names
+// only the first is incomplete. We therefore read the console membership BEFORE
+// the delete (afterwards the row is already gone) and carry it into both records.
 export async function revokeStaffRole(userId: string): Promise<void> {
   const actor = await requirePlatformOwner();
   const admin = createAdminClient();
+
+  // null = the probe itself failed. Recorded as "unknown" rather than asserting a
+  // false "no" into the audit record, and never allowed to block the revocation:
+  // a security action must not be held hostage to a bookkeeping read.
+  let wasConsoleAgent: boolean | null = null;
+  const { data: consoleRow, error: consoleErr } = await admin
+    .from('console_agents')
+    .select('user_id')
+    .eq('user_id', userId)
+    .maybeSingle();
+  if (!consoleErr) wasConsoleAgent = consoleRow !== null;
 
   const { error } = await admin.from('platform_staff').delete().eq('user_id', userId);
   if (error) {
@@ -309,13 +327,20 @@ export async function revokeStaffRole(userId: string): Promise<void> {
 
   await logActivity({
     action: 'admin.platform_staff.role_revoked',
-    meta: { targetUserId: userId },
+    meta: { targetUserId: userId, wasConsoleAgent },
   });
   void sendSlackAlert({
     level: 'warn',
     category: 'security',
     source: 'admin-platform-roles',
     title: 'נשלל תפקיד פלטפורמה ממשתמש',
-    fields: { actorUserId: actor.id, targetUserId: userId },
+    fields: {
+      actorUserId: actor.id,
+      targetUserId: userId,
+      // Surfaced only when it carries information — a cascade actually happened,
+      // or we could not tell whether one did. A plain "no" is silence.
+      ...(wasConsoleAgent === true ? { consoleAgent: 'הוסר גם ממוקד השיחות' } : {}),
+      ...(wasConsoleAgent === null ? { consoleAgent: 'לא ידוע — בדיקת המוקד נכשלה' } : {}),
+    },
   });
 }
