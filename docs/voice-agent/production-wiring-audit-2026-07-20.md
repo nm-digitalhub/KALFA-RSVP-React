@@ -341,3 +341,34 @@ Files that change in that milestone:
 **Admin UI:** `src/app/(admin)/admin/voice/{page,platform/page,events/[eventId]/page}.tsx` · `src/app/(admin)/admin/{dnc,recordings,callbacks,channels}/…` · `src/app/(admin)/admin/voice/platform/{wiring-card,elevenlabs-key-form}.tsx`
 **DB:** `supabase/migrations/{202606290035,202606290036}_webhook_inbox*.sql` · `20260714160000_voximplant_bridge.sql` · `20260714193500_voximplant_b1_rsvp_call_consent.sql` · `20260719104000_voice_ops_dashboard.sql` · `20260719112811_voice_ops_hardening.sql` · `20260719154428_call_analysis.sql` · `20260719162804` (nonce) · `20260719170227` (QA cols) · `20260719180805` (conversation-id + callback cols) · `20260720025656_console_agent_layer.sql` + `20260720025745_…hardening.sql` · `20260720030121_strip_staff_axis_from_customer_tables.sql` · `src/lib/supabase/types.ts`
 **Config:** `package.json` · `.env.example` · `.gitignore` (62, 67) · `docs/voximplant/**` (research corpus)
+
+---
+
+## ADDENDUM 2026-07-21 — the console layer is no longer unwired
+
+This audit was accurate when written. Five of its findings about the console-agent layer
+have since been overtaken by events and must not be quoted as current. The audit body is
+left unchanged (it is a point-in-time record); this addendum is the correction.
+
+| Audit said | Now (measured 2026-07-21) |
+|---|---|
+| §7: "**Zero** application references… the tables are absent from `src/lib/supabase/types.ts` (types never regenerated)" | Types regenerated; `console_agents` is at `types.ts:1108-1128`. The Android console (`nm-digitalhub/KALFA-ELEVENLABS`) reads `console_events`, `console_call_feed`, `console_campaigns`, `console_campaign_targets`, `console_call_analysis`, `console_rsvp_results`, `console_me` and subscribes to Realtime on `console_call_feed`. |
+| §8 line 219: `console_agents` / `agent_status` writer **nobody**, reader **nobody** | Reader: the Android app. Writer: the app upserts its own `agent_status` row and sets `handled_by`/`agent_id` on `console_call_feed`; enrolment is written from `/admin/users/[id]` (`enrollConsoleAgent`, gated by `requirePlatformOwner`, audited via `logActivity` + Slack). |
+| §8 item 3: "no takeover timestamps, no `taken_over_by`" | `console_call_feed` gained `takeover_claimed_at`, `takeover_request_id`, `participation_state` (`20260720190000`), alongside the `human_agent_call_legs` table (`mode ∈ monitor\|takeover`). |
+| §12: "`console_agent_layer` — schema + realtime publication with **zero** consuming code" | Consumed by the Android console. |
+| §7 item 10, "missing for real monitoring+takeover" | Partially closed: a console UI exists, types exist, enrolment has a gated+audited admin path. **Still missing and still blocking: the HTTP surface** (`/api/sdk-auth`, `/api/agents/status`, `/api/calls/outbound`, `/api/calls/{id}/monitor`, `/api/calls/{id}/agent-command`), `console_agents.vox_username` provisioning, and the VoxEngine re-architecture for a human leg. |
+
+Two findings the audit made that have **hardened** since, and should be read as current:
+
+- Access is now staff-gated by construction: `is_console_agent()` requires `is_staff()`
+  (`20260720234500`) and `console_agents.user_id` is an FK to `platform_staff(user_id)`
+  `ON DELETE CASCADE` (`20260721005100`). Before that, any registered user inserted into
+  `console_agents` could read every event and campaign platform-wide.
+- The console views and base tables were write-open to `authenticated` (and, on the three
+  base tables, fully open to `anon`). Closed by `20260720193844` and `20260721005000`.
+
+Live routing is unchanged from the audit's finding: `voximplant_rule_id = 1494311`
+(`OutCall` → `RSVP`, the DTMF/Groq path), `voximplant_live_calls = true`. The bridge
+(`OutCallAgent` 1520915 → `RSVPAgent` #918450) remains promoted-but-dark.
+
+Full contract, call sites and per-endpoint status: `docs/agent-console-api-contract.md`.
