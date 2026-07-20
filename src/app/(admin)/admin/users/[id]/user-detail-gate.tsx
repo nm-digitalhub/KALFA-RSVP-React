@@ -7,7 +7,7 @@ import type { AdminUserDetail } from '@/lib/data/admin/users';
 
 import { viewUserDetailAction } from '../actions';
 import { UserDetailView } from './user-detail-view';
-import type { StaffRoleOption } from './user-actions';
+import type { PlatformStaffPanel } from './user-actions';
 
 const inputClass =
   'w-full rounded-md border border-border bg-background px-3 py-2 text-sm';
@@ -25,7 +25,7 @@ export function UserDetailGate({
 }: {
   id: string;
   actorId: string;
-  platformStaff: { roles: StaffRoleOption[]; currentRoleId: string | null } | null;
+  platformStaff: PlatformStaffPanel | null;
 }) {
   const [reason, setReason] = useState('');
   const [error, setError] = useState<string | undefined>();

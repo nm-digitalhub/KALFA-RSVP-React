@@ -8,6 +8,8 @@ import { requirePlatformOwner } from '@/lib/auth/dal';
 import {
   assignStaffRole,
   createPlatformRole,
+  enrollConsoleAgent,
+  removeConsoleAgent,
   revokeStaffRole,
   setRolePermission,
 } from '@/lib/data/admin/platform-roles';
@@ -137,4 +139,55 @@ export async function revokeStaffRoleAction(input: { userId: string }): Promise<
   revalidatePath(ROLES_PATH);
   revalidatePath(`/admin/users/${parsed.data.userId}`);
   return { notice: 'התפקיד נשלל' };
+}
+
+// Enrol / remove a console (call-centre) agent. Sibling of the staff pair above:
+// the DB requires an agent to be platform staff, so this only ever narrows an
+// existing staff membership — it can never grant platform access on its own.
+const enrollConsoleAgentSchema = z.object({
+  userId: z.uuid(),
+  displayName: z
+    .string()
+    .trim()
+    .min(2, { message: 'שם התצוגה קצר מדי' })
+    .max(80, { message: 'שם התצוגה ארוך מדי' }),
+});
+
+export async function enrollConsoleAgentAction(input: {
+  userId: string;
+  displayName: string;
+}): Promise<FormState> {
+  await requirePlatformOwner();
+  const parsed = enrollConsoleAgentSchema.safeParse(input);
+  if (!parsed.success) {
+    return { error: parsed.error.issues[0]?.message ?? 'ערך לא תקין' };
+  }
+  try {
+    await enrollConsoleAgent(parsed.data.userId, parsed.data.displayName);
+  } catch (err) {
+    unstable_rethrow(err);
+    return { error: err instanceof Error ? err.message : 'הוספת סוכן המוקד נכשלה. נסו שוב.' };
+  }
+  revalidatePath(ROLES_PATH);
+  revalidatePath(`/admin/users/${parsed.data.userId}`);
+  return { notice: 'הסוכן נוסף למוקד' };
+}
+
+const removeConsoleAgentSchema = z.object({ userId: z.uuid() });
+
+export async function removeConsoleAgentAction(input: { userId: string }): Promise<FormState> {
+  await requirePlatformOwner();
+  const parsed = removeConsoleAgentSchema.safeParse(input);
+  if (!parsed.success) {
+    return { error: 'ערך לא תקין' };
+  }
+  try {
+    await removeConsoleAgent(parsed.data.userId);
+  } catch (err) {
+    unstable_rethrow(err);
+    return { error: err instanceof Error ? err.message : 'הסרת סוכן המוקד נכשלה. נסו שוב.' };
+  }
+  revalidatePath(ROLES_PATH);
+  revalidatePath(`/admin/users/${parsed.data.userId}`);
+  return { notice: 'הסוכן הוסר מהמוקד' };
 }

@@ -15,6 +15,8 @@ import {
 } from '../actions';
 import {
   assignStaffRoleAction,
+  enrollConsoleAgentAction,
+  removeConsoleAgentAction,
   revokeStaffRoleAction,
 } from '../../roles/actions';
 
@@ -22,6 +24,19 @@ import {
 export interface StaffRoleOption {
   id: string;
   label: string;
+}
+
+// This user's call-console membership, or null when they are not an agent.
+export interface ConsoleAgentState {
+  displayName: string;
+}
+
+// The owner-only staff panel for one user, threaded page -> gate -> view -> here.
+// Declared once and imported by each of those, rather than restated at every hop.
+export interface PlatformStaffPanel {
+  roles: StaffRoleOption[];
+  currentRoleId: string | null;
+  consoleAgent: ConsoleAgentState | null;
 }
 
 const inputClass =
@@ -120,6 +135,86 @@ function StaffRoleSelector({
   );
 }
 
+// Call-console membership. Deliberately rendered only when the user already holds
+// a staff role: the DB requires an agent to be platform staff (FK to
+// platform_staff, 20260721005100), so offering the control before then would only
+// produce a rejection. Removing the staff role cascades this away — the copy says
+// so, because that happens elsewhere on this screen.
+function ConsoleAgentSection({
+  userId,
+  isStaff,
+  current,
+}: {
+  userId: string;
+  isStaff: boolean;
+  current: ConsoleAgentState | null;
+}) {
+  const [displayName, setDisplayName] = useState(current?.displayName ?? '');
+  const [state, setState] = useState<FormState>(null);
+  const [pending, startTransition] = useTransition();
+
+  const run = (fn: () => Promise<FormState>): void => {
+    setState(null);
+    startTransition(async () => setState(await fn()));
+  };
+
+  return (
+    <section className={sectionClass}>
+      <h3 className="font-medium">סוכן מוקד שיחות</h3>
+      <p className="text-sm text-muted-foreground">
+        סוכן מוקד רואה את פיד השיחות של כל האירועים. חובה שיהיה חבר צוות פלטפורמה
+        — שלילת תפקיד הצוות מסירה אותו מהמוקד אוטומטית.
+      </p>
+      <FormError message={state?.error} />
+      <FormNotice message={state?.notice} />
+
+      {!isStaff ? (
+        <p className="text-sm text-muted-foreground">
+          המשתמש אינו חבר צוות פלטפורמה. הקצו תפקיד צוות תחילה.
+        </p>
+      ) : current ? (
+        <div className="flex flex-wrap items-center gap-3">
+          <span className="text-sm">
+            סוכן פעיל בשם <strong>{current.displayName}</strong>
+          </span>
+          <button
+            type="button"
+            onClick={() => run(() => removeConsoleAgentAction({ userId }))}
+            disabled={pending}
+            className="rounded-md bg-red-50 px-3 py-1.5 text-sm font-medium text-red-700 transition-opacity hover:bg-red-100 disabled:opacity-60"
+          >
+            {pending ? 'רגע…' : 'הסרה מהמוקד'}
+          </button>
+        </div>
+      ) : (
+        <div className="flex flex-wrap items-end gap-3">
+          <div className="min-w-52">
+            <label htmlFor="console-display-name" className="mb-1 block text-sm font-medium">
+              שם תצוגה במוקד
+            </label>
+            <input
+              id="console-display-name"
+              type="text"
+              value={displayName}
+              onChange={(e) => setDisplayName(e.target.value)}
+              disabled={pending}
+              className={inputClass}
+            />
+          </div>
+          <button
+            type="button"
+            onClick={() => run(() => enrollConsoleAgentAction({ userId, displayName }))}
+            disabled={pending || displayName.trim().length < 2}
+            className="rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-60"
+          >
+            {pending ? 'רגע…' : 'הוספה כסוכן מוקד'}
+          </button>
+        </div>
+      )}
+    </section>
+  );
+}
+
 export function UserActions({
   userId,
   isPlatformAdmin,
@@ -134,8 +229,10 @@ export function UserActions({
   isSelf: boolean;
   events: { id: string; name: string; campaignId: string | null }[];
   // Present only when the VIEWER is a platform owner (the only role allowed to
-  // manage staff). null/undefined hides the selector entirely.
-  platformStaff?: { roles: StaffRoleOption[]; currentRoleId: string | null } | null;
+  // manage staff). null/undefined hides the selector entirely. Console membership
+  // rides on the same object rather than a parallel prop, so the owner gate stays
+  // in exactly one place.
+  platformStaff?: PlatformStaffPanel | null;
 }) {
   const [adminState, adminAction] = useActionState(
     isPlatformAdmin ? revokeAdminAction : grantAdminAction,
@@ -183,11 +280,18 @@ export function UserActions({
       </section>
 
       {platformStaff ? (
-        <StaffRoleSelector
-          userId={userId}
-          roles={platformStaff.roles}
-          currentRoleId={platformStaff.currentRoleId}
-        />
+        <>
+          <StaffRoleSelector
+            userId={userId}
+            roles={platformStaff.roles}
+            currentRoleId={platformStaff.currentRoleId}
+          />
+          <ConsoleAgentSection
+            userId={userId}
+            isStaff={platformStaff.currentRoleId !== null}
+            current={platformStaff.consoleAgent}
+          />
+        </>
       ) : null}
 
       {events.length > 0 ? (

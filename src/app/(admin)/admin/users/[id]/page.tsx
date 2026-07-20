@@ -4,6 +4,7 @@ import { notFound } from 'next/navigation';
 import { isPlatformOwner, requirePlatformPermission } from '@/lib/auth/dal';
 import { getUserDetail } from '@/lib/data/admin/users';
 import {
+  getUserConsoleAgent,
   getUserStaffRoleId,
   listPlatformRoles,
 } from '@/lib/data/admin/platform-roles';
@@ -20,15 +21,20 @@ export default async function AdminUserDetailPage({
   const { id } = await params;
   const actor = await requirePlatformPermission('manage_staff');
 
-  // Staff-role management is owner-only. Fetch the role catalog + this user's
-  // current staff role only when the viewer is a platform owner; otherwise the
-  // selector is hidden entirely. These are staff-role reads (not customer PII),
-  // so they sit OUTSIDE the break-glass reason gate.
+  // Staff-role and console management are owner-only. Fetch the role catalog,
+  // this user's current staff role and their call-console membership only when
+  // the viewer is a platform owner; otherwise both sections are hidden entirely.
+  // These are staff-axis reads (not customer PII), so they sit OUTSIDE the
+  // break-glass reason gate. The three are independent — fetched together.
   const owner = await isPlatformOwner();
-  const platformStaff = owner
+  const [roleCatalog, currentRoleId, consoleAgent] = owner
+    ? await Promise.all([listPlatformRoles(), getUserStaffRoleId(id), getUserConsoleAgent(id)])
+    : [null, null, null];
+  const platformStaff = roleCatalog
     ? {
-        roles: (await listPlatformRoles()).map((r) => ({ id: r.id, label: r.label })),
-        currentRoleId: await getUserStaffRoleId(id),
+        roles: roleCatalog.map((r) => ({ id: r.id, label: r.label })),
+        currentRoleId,
+        consoleAgent: consoleAgent ? { displayName: consoleAgent.displayName } : null,
       }
     : null;
 

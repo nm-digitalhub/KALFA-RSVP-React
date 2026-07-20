@@ -13,6 +13,8 @@ import {
   getUserStaffRoleId,
   listPlatformPermissions,
   listPlatformRoles,
+  enrollConsoleAgent,
+  removeConsoleAgent,
   revokeStaffRole,
   setRolePermission,
 } from './platform-roles';
@@ -295,6 +297,95 @@ describe('revokeStaffRole — console cascade is audited', () => {
         fields: expect.objectContaining({ consoleAgent: 'לא ידוע — בדיקת המוקד נכשלה' }),
       }),
     );
+  });
+});
+
+// GUARDRAIL 5: console membership is a strict subset of platform staff. The DB
+// enforces it via the FK; the data layer must refuse early with a sentence a
+// human can act on, and must never leak the constraint text.
+describe('enrollConsoleAgent — staff requirement', () => {
+  it('refuses a target who is not platform staff, without touching console_agents', async () => {
+    const { builders, from } = wireAdminClient({
+      tables: {
+        platform_staff: { data: null, error: null }, // not staff
+        console_agents: { data: null, error: null },
+      },
+    });
+    await expect(enrollConsoleAgent('u-2', 'דנה')).rejects.toThrow(
+      'רק חבר צוות פלטפורמה יכול להיות סוכן מוקד — הקצו תפקיד צוות תחילה',
+    );
+    expect(from).not.toHaveBeenCalledWith('console_agents');
+    expect(builders.console_agents.upsert).not.toHaveBeenCalled();
+    expect(logActivity).not.toHaveBeenCalled();
+    expect(sendSlackAlert).not.toHaveBeenCalled();
+  });
+
+  it('maps the FK violation to the same safe message, never the raw DB text', async () => {
+    // The race: staff revoked between the pre-check and the insert. The 23503
+    // backstop must not surface 'console_agents_staff_fkey' to the UI.
+    wireAdminClient({
+      tables: {
+        platform_staff: { data: { user_id: 'u-2' }, error: null },
+        console_agents: {
+          data: null,
+          error: { code: '23503', message: 'violates foreign key constraint "console_agents_staff_fkey"' },
+        },
+      },
+    });
+    const err = await enrollConsoleAgent('u-2', 'דנה').catch((e: Error) => e);
+    expect((err as Error).message).toBe(
+      'רק חבר צוות פלטפורמה יכול להיות סוכן מוקד — הקצו תפקיד צוות תחילה',
+    );
+    expect((err as Error).message).not.toContain('console_agents_staff_fkey');
+    expect(logActivity).not.toHaveBeenCalled();
+  });
+
+  it('enrols a staff member and audits it', async () => {
+    const { builders } = wireAdminClient({
+      tables: {
+        platform_staff: { data: { user_id: 'u-2' }, error: null },
+        console_agents: { data: null, error: null },
+      },
+    });
+    await expect(enrollConsoleAgent('u-2', 'דנה')).resolves.toBeUndefined();
+    expect(builders.console_agents.upsert).toHaveBeenCalledWith(
+      { user_id: 'u-2', display_name: 'דנה' },
+      { onConflict: 'user_id' },
+    );
+    expect(logActivity).toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'admin.console_agent.enrolled' }),
+    );
+    expect(sendSlackAlert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        category: 'security',
+        fields: { actorUserId: 'owner-1', targetUserId: 'u-2' },
+      }),
+    );
+  });
+});
+
+describe('removeConsoleAgent', () => {
+  it('removes and audits, leaving the staff role alone', async () => {
+    const { from } = wireAdminClient({
+      tables: { console_agents: { data: null, error: null } },
+    });
+    await expect(removeConsoleAgent('u-2')).resolves.toBeUndefined();
+    // The narrow half of the pair: it must NOT touch platform_staff.
+    expect(from).not.toHaveBeenCalledWith('platform_staff');
+    expect(logActivity).toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'admin.console_agent.removed' }),
+    );
+    expect(sendSlackAlert).toHaveBeenCalledWith(
+      expect.objectContaining({ category: 'security' }),
+    );
+  });
+
+  it('maps a DB error to a safe message', async () => {
+    wireAdminClient({
+      tables: { console_agents: { data: null, error: { code: 'XX000', message: 'internal detail' } } },
+    });
+    await expect(removeConsoleAgent('u-2')).rejects.toThrow('הסרת סוכן המוקד נכשלה');
+    expect(logActivity).not.toHaveBeenCalled();
   });
 });
 

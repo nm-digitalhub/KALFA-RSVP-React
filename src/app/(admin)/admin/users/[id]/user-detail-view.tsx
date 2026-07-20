@@ -18,7 +18,7 @@ import { FormError } from '@/components/forms';
 import type { AdminUserDetail } from '@/lib/data/admin/users';
 
 import { Badge, formatCurrency, formatDateTime } from '../../_components';
-import { UserActions, type StaffRoleOption } from './user-actions';
+import { UserActions, type PlatformStaffPanel } from './user-actions';
 import { voidCreditAction } from '../actions';
 
 const sectionClass = 'space-y-3 rounded-lg border border-border bg-card p-5';
@@ -119,7 +119,7 @@ export function UserDetailView({
 }: {
   user: AdminUserDetail;
   actorId: string;
-  platformStaff: { roles: StaffRoleOption[]; currentRoleId: string | null } | null;
+  platformStaff: PlatformStaffPanel | null;
 }) {
   return (
     <div className="space-y-6">

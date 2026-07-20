@@ -224,6 +224,104 @@ export async function createPlatformRole(name: string, label: string): Promise<P
   };
 }
 
+// ---------------------------------------------------------------------------
+// Console agent membership (console_agents).
+//
+// A THIRD axis on top of staff/customer: who sits at the call console. Since
+// 20260720234500 the gate function requires is_staff(), and since 20260721005100
+// console_agents.user_id is a foreign key to platform_staff(user_id) ON DELETE
+// CASCADE — so membership here is a strict subset of platform staff, enforced by
+// the database rather than by convention.
+//
+// These live in this module (not a separate one) because enrolment is a platform
+// staff privilege decision: it is gated by the same owner check, surfaces on the
+// same user-detail screen as the staff-role selector, and its removal is the
+// cascade that revokeStaffRole() above already has to account for.
+// ---------------------------------------------------------------------------
+
+export interface ConsoleAgentDTO {
+  displayName: string;
+  voxUsername: string | null;
+}
+
+// This user's console membership, or null when they are not an agent.
+export async function getUserConsoleAgent(userId: string): Promise<ConsoleAgentDTO | null> {
+  await requirePlatformOwner();
+  const admin = createAdminClient();
+  const { data, error } = await admin
+    .from('console_agents')
+    .select('display_name, vox_username')
+    .eq('user_id', userId)
+    .maybeSingle();
+  if (error) throw new Error('טעינת חברות המוקד נכשלה');
+  return data ? { displayName: data.display_name, voxUsername: data.vox_username } : null;
+}
+
+// Enrol a user as a console agent. The FK guarantees the target is platform
+// staff, but we check first so the owner gets a sentence instead of a constraint
+// violation; the 23503 mapping below stays as the backstop for the race where
+// staff is revoked between the check and the insert.
+export async function enrollConsoleAgent(userId: string, displayName: string): Promise<void> {
+  const actor = await requirePlatformOwner();
+  const admin = createAdminClient();
+
+  const { data: staff } = await admin
+    .from('platform_staff')
+    .select('user_id')
+    .eq('user_id', userId)
+    .maybeSingle();
+  if (!staff) {
+    throw new Error('רק חבר צוות פלטפורמה יכול להיות סוכן מוקד — הקצו תפקיד צוות תחילה');
+  }
+
+  const { error } = await admin
+    .from('console_agents')
+    .upsert({ user_id: userId, display_name: displayName }, { onConflict: 'user_id' });
+  if (error) {
+    // 23503 = the staff FK — the user stopped being staff mid-flight. Never leak
+    // the raw constraint text to the UI.
+    throw new Error(
+      error.code === '23503'
+        ? 'רק חבר צוות פלטפורמה יכול להיות סוכן מוקד — הקצו תפקיד צוות תחילה'
+        : 'הוספת סוכן המוקד נכשלה',
+    );
+  }
+
+  await logActivity({
+    action: 'admin.console_agent.enrolled',
+    meta: { targetUserId: userId },
+  });
+  void sendSlackAlert({
+    level: 'warn',
+    category: 'security',
+    source: 'admin-platform-roles',
+    title: 'משתמש נוסף כסוכן מוקד שיחות',
+    fields: { actorUserId: actor.id, targetUserId: userId },
+  });
+}
+
+// Remove a user's console membership. Leaves their platform staff role intact —
+// this is the narrow half of the pair (revokeStaffRole removes both, via cascade).
+export async function removeConsoleAgent(userId: string): Promise<void> {
+  const actor = await requirePlatformOwner();
+  const admin = createAdminClient();
+
+  const { error } = await admin.from('console_agents').delete().eq('user_id', userId);
+  if (error) throw new Error('הסרת סוכן המוקד נכשלה');
+
+  await logActivity({
+    action: 'admin.console_agent.removed',
+    meta: { targetUserId: userId },
+  });
+  void sendSlackAlert({
+    level: 'warn',
+    category: 'security',
+    source: 'admin-platform-roles',
+    title: 'משתמש הוסר מסוכני מוקד השיחות',
+    fields: { actorUserId: actor.id, targetUserId: userId },
+  });
+}
+
 // The role ids flagged as owner roles (normally exactly one — the seeded 'owner').
 async function ownerRoleIds(): Promise<string[]> {
   const admin = createAdminClient();
