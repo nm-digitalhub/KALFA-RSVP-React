@@ -41,6 +41,33 @@ const notFound = () => new NextResponse(null, { status: 404, headers: NO_STORE }
 const celebrantsSpeechForm = (text: string | null): string =>
   text ? text.split('—')[0].trim() : '';
 
+// Speech form of a free-text name (events.name). The celebrants fix above was
+// never extended to its neighbour, so the owner's raw event title went to TTS
+// untouched — and it is the string the agent repeats most, once per turn while
+// establishing context.
+//
+// Same failure mode, different remedy. Truncating at the dash is right for
+// celebrants (the part after it is a page-title artifact) and wrong here: an
+// owner writing "החתונה של דנה ויוסי — אולם הגן" means all of it. So structural
+// punctuation becomes a comma, which TTS reads as the pause the punctuation was
+// standing in for, instead of running the words together the way "נטלי קלפה —
+// לכבוד בני" collapsed into "נטליקה" (session 6875455354).
+//
+// Latin quotes are dropped as decoration. Hebrew geresh/gershayim (״ ׳) are
+// left ALONE — in הרמ״א they are orthography, not punctuation, and stripping
+// them rewrites the word rather than pausing it. No evidence removal helps, so
+// the conservative choice wins.
+const nameSpeechForm = (text: string | null): string =>
+  (text ?? '')
+    .replace(/[—–|/]+/g, ',')
+    .replace(/[()[\]{}]/g, ',')
+    .replace(/["']/g, '')
+    .replace(/\s*,\s*/g, ', ')
+    .replace(/,\s*(?=,)/g, '')
+    .replace(/\s+/g, ' ')
+    .replace(/^[,\s]+|[,\s]+$/g, '')
+    .trim();
+
 export async function GET(
   req: Request,
   { params }: { params: Promise<{ token: string }> },
@@ -86,7 +113,7 @@ export async function GET(
   return NextResponse.json(
     {
       guest_name: guestName,
-      event_name: ctx.event.name ?? '',
+      event_name: nameSpeechForm(ctx.event.name),
       event_date: formatIsraelSpokenDate(ctx.event.event_date ?? ''),
       // Wall-clock start time ('17:30'). events.event_date is timestamptz, so the
       // time was always there — it was simply dropped by the date-only formatter,
