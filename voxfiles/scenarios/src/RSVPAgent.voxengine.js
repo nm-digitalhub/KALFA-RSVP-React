@@ -760,12 +760,26 @@ VoxEngine.addEventListener(AppEvents.Started, function () {
                     var atr = payload.agent_tool_response || payload;
                     var name = atr.tool_name || '';
                     var isErr = atr.is_error === true;
+                    // is_called / is_blocked are REQUIRED fields on this message that
+                    // it would be easy to ignore. ElevenLabs does not document what
+                    // is_error holds when a call is BLOCKED rather than executed, and
+                    // "blocked" is plausibly not an "error" — so is_error alone can
+                    // report false for a tool that never actually ran. Acting on that
+                    // would mark a real human as voicemail and UNDER-bill a genuine
+                    // reach: the opposite error, and the one that silently loses money.
+                    //
+                    // Absent (older connector build) is treated as executed, so this
+                    // hardening can never quietly disable the detection itself; only an
+                    // EXPLICIT negative signal suppresses it.
+                    var executed = atr.is_called !== false && atr.is_blocked !== true;
                     log('AGENT_TOOL_RESPONSE: ' + name + ' type=' + (atr.tool_type || '?') +
-                        ' is_error=' + isErr);
-                    // Only a SUCCESSFUL detection reclassifies the call. A failed tool
-                    // execution proves nothing about who answered, and guessing 'machine'
-                    // there would under-bill a real conversation.
-                    if (name === 'voicemail_detection' && !isErr) {
+                        ' is_error=' + isErr + ' is_called=' + atr.is_called +
+                        ' is_blocked=' + atr.is_blocked);
+                    // Only a SUCCESSFUL, ACTUALLY-EXECUTED detection reclassifies the
+                    // call. A failed or blocked invocation proves nothing about who
+                    // answered, and guessing 'machine' there would under-bill a real
+                    // conversation.
+                    if (name === 'voicemail_detection' && !isErr && executed) {
                         state.voicemailDetected = true;
                         log('voicemail detected by the agent — call will close as no_answer (not billed)');
                     }

@@ -129,7 +129,22 @@ export async function dispatchOutreachCall(
   // 4. Fresh gating (never trust the enqueue-time snapshot).
   if (!(await hasCallConsent(contactId))) return { kind: 'skipped', reason: 'no_call_consent' };
   if (await isDncListed(normalizedPhone)) return { kind: 'skipped', reason: 'dnc_listed' };
-  if (await isContactReached(eventId, contactId)) return { kind: 'skipped', reason: 'already_reached' };
+  // Stop-on-reach — EXCEPT for a callback the guest themselves asked for.
+  //
+  // Owner decision, 2026-07-21: a callback is the same billable reach
+  // continuing, not a second one. The contact was billed the moment they first
+  // answered, so charging again to finish the conversation they asked to
+  // postpone would bill one contact twice for one RSVP. billed_results
+  // UNIQUE(event_id, contact_id) makes that structurally true anyway — the
+  // second writeReach returns 'already_billed'.
+  //
+  // Deliberately the ONLY gate a callback skips. Consent, DNC and the
+  // event-closed gate above all still apply: asking to be called back is not
+  // consent to be called after opting out, and a callback into a finished event
+  // is as worthless as any other call.
+  if (!job.isCallback && (await isContactReached(eventId, contactId))) {
+    return { kind: 'skipped', reason: 'already_reached' };
+  }
   const cctx = await getCampaignContext(campaignId);
   if (!cctx || cctx.status !== 'active' || !cctx.allowed_channels.includes('call')) {
     return { kind: 'skipped', reason: 'campaign_not_active' };

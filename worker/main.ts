@@ -46,6 +46,7 @@ import {
 } from '@/lib/data/webhooks';
 import { processWebhookEvent } from '@/lib/data/webhook-processing';
 import { runThankyouSweep } from '@/lib/data/auto-thankyou';
+import { runCallbackSweep } from '@/lib/data/call-callbacks';
 import { runBalanceCheck } from '@/lib/data/voximplant-balance';
 import { runCallReconcile } from '@/lib/data/voximplant-reconcile';
 import { runLogExport } from '@/lib/data/vox-log-export';
@@ -409,7 +410,14 @@ async function main(): Promise<void> {
     // partial UNIQUE index) already makes a double-SEND impossible even under
     // overlap, but this closes the race at its source instead of relying on
     // a single defense layer.
-    const singleton = q === QUEUES.thankyouSweep || q === QUEUES.logExport;
+    // callbackSweep is a singleton for the same reason as thankyouSweep, and it
+    // matters more here: an overlapping tick would be two processes reading the
+    // same "due and unclaimed" row. The atomic claim
+    // (UPDATE ... WHERE callback_dispatched_at IS NULL) already makes a double
+    // dial impossible, but a guest's phone ringing twice is not a race worth
+    // leaving to one defence.
+    const singleton =
+      q === QUEUES.thankyouSweep || q === QUEUES.logExport || q === QUEUES.callbackSweep;
     await boss.createQueue(q, singleton ? { policy: 'singleton' } : undefined);
   }
 
@@ -455,6 +463,17 @@ async function main(): Promise<void> {
       await handleThankyouSweep();
     }),
   );
+  // Callback re-dials. runCallbackSweep only ENQUEUES — every dial gate is
+  // re-read by dispatchOutreachCall when the callRequest job runs, so a
+  // callback that became ineligible between the request and its due time (event
+  // closed, consent revoked, number added to the DNC list) is refused at dial
+  // time, not here.
+  await boss.work(
+    QUEUES.callbackSweep,
+    guardedWorker(QUEUES.callbackSweep, async () => {
+      await runCallbackSweep(boss);
+    }),
+  );
   // Voximplant balance-alert cron (H2): read-only GetAccountInfo poll — Slack when
   // the account balance dips below reserve/low-threshold. runBalanceCheck is
   // internally dark-safe (no-op while VOXIMPLANT_LIVE_CALLS is off) and never
@@ -497,6 +516,10 @@ async function main(): Promise<void> {
   await boss.schedule(QUEUES.sweeper, '*/5 * * * *');
   await boss.schedule(QUEUES.webhook, '* * * * *');
   await boss.schedule(QUEUES.thankyouSweep, '*/5 * * * *');
+  // Every 5 minutes: close enough that "מחר בערב" lands when the guest expects,
+  // coarse enough that it is not polling. A callback is due at a time the guest
+  // chose, so precision beyond a few minutes buys nothing.
+  await boss.schedule(QUEUES.callbackSweep, '*/5 * * * *');
   await boss.schedule(QUEUES.balanceCheck, '*/30 * * * *');
   await boss.schedule(QUEUES.callReconcile, '*/10 * * * *');
   // Anchored to a wall-clock hour → run on Israel local time (DST-aware).

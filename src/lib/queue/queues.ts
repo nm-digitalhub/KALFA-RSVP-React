@@ -12,6 +12,12 @@ export const QUEUES = {
   // tick that reads fresh DB state, not a per-campaign delayed job. See
   // src/lib/data/auto-thankyou.ts.
   thankyouSweep: 'campaign-thankyou-sweep',
+  // Callback re-dial sweep — same cron idiom: a tick that reads fresh DB state
+  // and enqueues a callRequest for every callback that has come due. It exists
+  // because schedule_callback only ever RECORDED the guest's request; nothing
+  // dialled. Gates stay in dispatchOutreachCall; this only enqueues.
+  // See src/lib/data/call-callbacks.ts.
+  callbackSweep: 'call-callback-sweep',
   // Voximplant balance-alert cron (H2) — every 30m poll GetAccountInfo and Slack
   // when balance dips below reserve/low-threshold. Read-only; never dials. Inert
   // while VOXIMPLANT_LIVE_CALLS is off. See src/lib/data/voximplant-balance.ts.
@@ -82,4 +88,20 @@ export type OutreachCallRequest = {
   normalizedPhone: string;
   scriptKey: string;
   touchpointIndex: number;
+  /**
+   * This dial fulfils a callback the guest asked for during an earlier call
+   * (schedule_callback), not a new campaign touchpoint.
+   *
+   * It exempts the dial from the already-reached gate and NOTHING else —
+   * consent, DNC and the event-closed gate are still enforced. Owner decision,
+   * 2026-07-21: a callback is the SAME billable reach continuing, not a second
+   * one. The contact was already billed when they first answered, and finishing
+   * the conversation they asked to postpone must not charge for them twice.
+   *
+   * Absent/false on every ordinary campaign job, so the gate keeps its current
+   * behaviour by default.
+   */
+  isCallback?: boolean;
+  /** The attempt that requested the callback — for tracing the re-dial back. */
+  callbackFromAttemptId?: string;
 };
