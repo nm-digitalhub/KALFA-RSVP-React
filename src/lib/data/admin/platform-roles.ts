@@ -243,6 +243,12 @@ export async function createPlatformRole(name: string, label: string): Promise<P
 export interface ConsoleAgentDTO {
   displayName: string;
   voxUsername: string | null;
+  /**
+   * True only when the SDK user's secret is stored alongside the username.
+   * A username on its own proves nothing — console_agents held one for an agent
+   * with no Voximplant user behind it, which is what provisioning exists to fix.
+   */
+  provisioned: boolean;
 }
 
 // This user's console membership, or null when they are not an agent.
@@ -255,7 +261,23 @@ export async function getUserConsoleAgent(userId: string): Promise<ConsoleAgentD
     .eq('user_id', userId)
     .maybeSingle();
   if (error) throw new Error('טעינת חברות המוקד נכשלה');
-  return data ? { displayName: data.display_name, voxUsername: data.vox_username } : null;
+  if (!data) return null;
+
+  // A username alone is NOT proof of provisioning — console_agents carried one
+  // for an agent that had no Voximplant user and no secret, which is the whole
+  // reason provisioning was built. Report the same condition provisioning tests:
+  // an identity counts only when its secret is stored too.
+  const { data: secret } = await admin
+    .from('console_agent_secrets')
+    .select('user_id')
+    .eq('user_id', userId)
+    .maybeSingle();
+
+  return {
+    displayName: data.display_name,
+    voxUsername: data.vox_username,
+    provisioned: Boolean(data.vox_username && secret),
+  };
 }
 
 // Enrol a user as a console agent. The FK guarantees the target is platform

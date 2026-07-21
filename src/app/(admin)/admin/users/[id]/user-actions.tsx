@@ -29,11 +29,12 @@ export interface StaffRoleOption {
 // This user's call-console membership, or null when they are not an agent.
 export interface ConsoleAgentState {
   displayName: string;
-  // The provisioned Voximplant SDK identity, or null when the agent has none.
-  // NOT cosmetic: without it the agent cannot be present in a call at all, and
-  // the console gives no hint why. Surfacing it here is what stops "enrolled"
-  // from reading as "can do everything the description promises".
+  // The Voximplant SDK identity, or null when the agent has none.
   voxUsername: string | null;
+  // Whether it is REALLY provisioned — username AND stored secret. Keyed on this
+  // rather than on voxUsername, because a username on its own is exactly the
+  // misleading state this feature exists to remove.
+  provisioned: boolean;
 }
 
 // The owner-only staff panel for one user, threaded page -> gate -> view -> here.
@@ -202,16 +203,25 @@ function ConsoleAgentSection({
           {/* The SDK identity decides whether this agent could ever be present
               in a call. Shown either way: silence here is what let a username
               with no user behind it look like a working setup. */}
-          {current.voxUsername ? (
+          {current.provisioned ? (
             <p className="text-xs text-muted-foreground">
-              זהות למוקד: <code className="font-mono">{current.voxUsername}</code>
+              זהות למוקד:{' '}
+              <bdi className="break-all font-mono">{current.voxUsername}</bdi>
             </p>
           ) : (
-            <p className="rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-800">
-              לא הוקצתה זהות למוקד. הנציג רואה את הפיד ויכול להנחות את הסוכן,
-              אך לא ניתן יהיה לצרף אותו לשיחה כשההאזנה תיפתח. ההקצאה מתבצעת
-              אוטומטית בשיוך — הסרה ושיוך מחדש ינסו שוב.
-            </p>
+            <div className="space-y-1 rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-800">
+              <p>
+                לא הוקצתה זהות למוקד. הנציג רואה את הפיד ויכול להנחות את הסוכן,
+                אך לא ניתן יהיה לצרף אותו לשיחה כשההאזנה תיפתח. ההקצאה מתבצעת
+                אוטומטית בשיוך — הסרה ושיוך מחדש ינסו שוב.
+              </p>
+              {current.voxUsername ? (
+                <p>
+                  רשום שם ישן שאין מאחוריו משתמש:{' '}
+                  <bdi className="break-all font-mono">{current.voxUsername}</bdi>
+                </p>
+              ) : null}
+            </div>
           )}
         </div>
       ) : (

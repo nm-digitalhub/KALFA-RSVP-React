@@ -38,6 +38,7 @@ export default async function AdminUserDetailPage({
           ? {
               displayName: consoleAgent.displayName,
               voxUsername: consoleAgent.voxUsername,
+              provisioned: consoleAgent.provisioned,
             }
           : null,
       }
