@@ -2,8 +2,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 // Branch B: the ctx/cb routes authenticate by the row's opaque per-call
 // access_token (looked up server-side) — NOT a signed/purpose token. The ctx
-// response carries only invitation fields — no provider key. These tests mock
-// the token→row lookups directly.
+// response carries only invitation fields. These tests mock the token→row
+// lookups directly.
 
 // agent-tool-guard.ts begins with `import 'server-only'` (throws outside a server
 // context); stub it, same convention as call-result-processing.test.ts.
@@ -158,14 +158,6 @@ describe('ctx GET', () => {
   it('terminal attempt status → 404', async () => {
     vi.mocked(getCallContextByAccessToken).mockResolvedValue({ ...CTX, attempt: { ...CTX.attempt, status: 'completed' } } as never);
     expect((await ctxCall(TOK)).status).toBe(404);
-  });
-  // The ctx response used to carry a Groq key and 404 without one, which meant
-  // the ElevenLabs bridge could not start a call without a credential it ignores.
-  // Groq is out of the stack: assert the key can never reappear in the body.
-  it('never returns a provider key', async () => {
-    const json = await (await ctxCall(TOK)).json();
-    expect(json).not.toHaveProperty('groq_key');
-    expect(JSON.stringify(json)).not.toMatch(/gsk_|groq/i);
   });
   it('rate limit trips → 429', async () => {
     let last = 200;

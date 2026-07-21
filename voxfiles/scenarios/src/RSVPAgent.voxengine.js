@@ -23,9 +23,7 @@
 //                      (guest_name, event_name, event_date, event_time,
 //                      event_venue, event_address, event_celebrants,
 //                      event_rsvp_deadline) + kalfa_attempt_token (correlation
-//                      nonce) + groq_key. groq_key is IGNORED (this scenario
-//                      runs the LLM inside ElevenLabs, not Groq). No secret ever
-//                      sits in customData/call history.
+//                      nonce). No secret ever sits in customData/call history.
 // If ctx fails/404s the scenario logs a warning and proceeds with empty defaults
 // — it never drops the call over missing personalization.
 //
@@ -885,8 +883,7 @@ VoxEngine.addEventListener(AppEvents.Started, function () {
             try {
                 var ctx = JSON.parse(response.text);
                 // Raw values — ElevenLabs runs its own TTS, so no speech
-                // normalization (unlike the say()-based RSVP scenario). groq_key
-                // is intentionally ignored here.
+                // normalization (unlike the say()-based RSVP scenario).
                 //
                 // PRONUNCIATION HYPOTHESIS TEST (A.2, scenario-side only, no DB
                 // touch): the live call heard "זהבה" as "זה אבא" (dropped medial

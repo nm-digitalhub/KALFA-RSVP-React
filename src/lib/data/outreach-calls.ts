@@ -115,9 +115,6 @@ export async function dispatchOutreachCall(
   if (!(await getOutreachEnabled())) return { kind: 'skipped', reason: 'outreach_disabled' };
 
   // 2. Credentials complete? (does NOT by itself permit a dial — see #3.)
-  //    The Groq key is no longer part of "complete": the dialogue brain is the
-  //    ElevenLabs agent inside the bridge scenario, which never reads it. Keeping
-  //    it here blocked every dial on a credential nothing consumed.
   const config = await getVoximplantConfig();
   if (!config || !config.callbackSecret) {
     return { kind: 'blocked', reason: 'config_missing' };

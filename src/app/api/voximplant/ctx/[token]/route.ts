@@ -17,13 +17,6 @@ import { tokenFingerprint } from '@/lib/security/token-fingerprint';
 // (privacy-safe, like /r/[token] and /g/[token]). Returns ONLY the fields the
 // scenario needs. Never returns phone, rsvp_token, org id, or any other internal
 // data.
-//
-// The response no longer carries a Groq key. It used to, for the DTMF scenario's
-// ASR→LLM step — and this route 404'd when that key was absent, which meant the
-// ElevenLabs bridge could not start a call without a key it explicitly ignores
-// ("groq_key is IGNORED — this scenario runs the LLM inside ElevenLabs",
-// RSVPAgent.voxengine.js:26). A dead dependency that could take down the live
-// path. The dialogue brain is ElevenLabs now; Groq is gone from the stack.
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';

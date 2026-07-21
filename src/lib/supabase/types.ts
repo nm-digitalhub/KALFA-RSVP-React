@@ -209,7 +209,6 @@ export type Database = {
           voximplant_balance_callback_at: string | null
           voximplant_callback_secret: string | null
           voximplant_caller_id: string | null
-          voximplant_groq_api_key: string | null
           voximplant_live_calls: boolean
           voximplant_low_balance_threshold: number
           voximplant_max_calls_per_campaign_hour: number
@@ -283,7 +282,6 @@ export type Database = {
           voximplant_balance_callback_at?: string | null
           voximplant_callback_secret?: string | null
           voximplant_caller_id?: string | null
-          voximplant_groq_api_key?: string | null
           voximplant_live_calls?: boolean
           voximplant_low_balance_threshold?: number
           voximplant_max_calls_per_campaign_hour?: number
@@ -357,7 +355,6 @@ export type Database = {
           voximplant_balance_callback_at?: string | null
           voximplant_callback_secret?: string | null
           voximplant_caller_id?: string | null
-          voximplant_groq_api_key?: string | null
           voximplant_live_calls?: boolean
           voximplant_low_balance_threshold?: number
           voximplant_max_calls_per_campaign_hour?: number
