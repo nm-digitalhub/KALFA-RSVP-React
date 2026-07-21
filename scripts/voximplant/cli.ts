@@ -65,6 +65,7 @@ import {
   resolveHistoryPlan,
   resolveKeyPath,
   resolveRecordingPlan,
+  resolveLogPlan,
   summarizeIntoLines,
   validateCommandFlags,
   writeReportAtomic,
@@ -368,6 +369,48 @@ async function cmdRecording(
   console.log(`saved ${buf.length} bytes → ${plan.output}`);
 }
 
+// Download a session's scenario LOG (everything Logger.write emitted during the
+// call). Like a recording, the URL 401s to an anonymous GET, so downloadSecureUrl
+// signs it with the Management-API JWT.
+//
+// This is the only way to see what a scenario actually did: which branches ran,
+// which client tools fired, whether a command sent to the live session was
+// applied. The scenario cannot report that anywhere else — AppEvents.HttpRequest
+// has no response channel.
+//
+// CONTAINS GUEST CONTENT. A scenario logs what it chooses to, and the RSVP flows
+// log transcript lines. Treat a downloaded log as personal data: do not paste it
+// into an issue, and delete it when done.
+async function cmdLog(
+  cfg: VoximplantConfig,
+  flags: Record<string, FlagValue>,
+): Promise<void> {
+  const plan = resolveLogPlan(flags);
+  const to = new Date();
+  const from = new Date(to.getTime() - plan.days * 24 * 3600 * 1000);
+  const hist = await retried(() =>
+    getCallHistory(cfg, {
+      from_date: fmtUTC(from),
+      to_date: fmtUTC(to),
+      call_session_history_id: plan.sessionId,
+      with_other_resources: true,
+    }),
+  );
+  const url = (hist.result ?? [])
+    .map((s) => (s as { log_file_url?: string | null }).log_file_url)
+    .find((u): u is string => typeof u === 'string' && u.length > 0);
+  if (!url) {
+    throw new CliError(
+      `no log found for session ${plan.sessionId} (within ${plan.days}d). ` +
+        'Logs appear a short while after the session ends; widen --days or retry.',
+    );
+  }
+  console.log(`=== session log for ${plan.sessionId} ===`);
+  const buf = await downloadSecureUrl(cfg, url);
+  writeFileSync(plan.output, buf);
+  console.log(`saved ${buf.length} bytes → ${plan.output}`);
+}
+
 // READ-ONLY (A1): observe server-side dialing campaigns. Output is PII-safe by
 // construction — rows pass through normalizeCallList/Task, which reduce
 // custom_data/result_data to {present, bytes} metadata.
@@ -481,6 +524,8 @@ async function dispatch(
       return cmdTransactions(cfg, flags);
     case 'recording':
       return cmdRecording(cfg, flags);
+    case 'log':
+      return cmdLog(cfg, flags);
     case 'call-lists':
       return cmdCallLists(cfg, flags);
     case 'audit':

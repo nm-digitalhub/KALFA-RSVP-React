@@ -119,7 +119,7 @@ export function parseArgs(argv: string[]): ParsedArgs {
 // READ-ONLY command set (owner directive): the CLI can never mutate Voximplant
 // state — `start` was removed with the mutations split (the server dispatcher
 // is the only dial path) and a guard test pins this list.
-export const KNOWN_COMMANDS = ['account', 'rules', 'history', 'numbers', 'transactions', 'recording', 'call-lists', 'media-resources', 'audit'] as const;
+export const KNOWN_COMMANDS = ['account', 'rules', 'history', 'numbers', 'transactions', 'recording', 'log', 'call-lists', 'media-resources', 'audit'] as const;
 export type KnownCommand = (typeof KNOWN_COMMANDS)[number];
 
 export function assertKnownCommand(command: string): asserts command is KnownCommand {
@@ -152,6 +152,9 @@ const ALLOWED_FLAGS: Record<KnownCommand, Set<string>> = {
   // READ-ONLY: fetch a call's secure recording by session id → save an mp3.
   // Never places a call or modifies anything; only --key + which session/output.
   recording: new Set(['key', 'session', 'output', 'days']),
+  // Same shape as `recording`: both fetch a session asset whose URL 401s to an
+  // anonymous GET and is signed with the Management-API JWT.
+  log: new Set(['key', 'session', 'output', 'days']),
   // READ-ONLY: observe server-side dialing campaigns (A1). PII-safe output only.
   'call-lists': new Set(['key', 'list-id', 'days']),
   // Public firewall-allowlist inventory (A2) — needs NO credentials at all.
@@ -398,6 +401,19 @@ export function resolveRecordingPlan(flags: Record<string, FlagValue>): Recordin
     flags.output !== undefined
       ? requireStringValue('output', flags.output)
       : `recording-${sessionId}.mp3`;
+  const days =
+    flags.days !== undefined ? positiveInt('days', flags.days, { max: 120 }) : 7;
+  return { sessionId, output, days };
+}
+
+// The session LOG (scenario Logger.write output), same resolution as a recording
+// but defaulting to a .log filename.
+export function resolveLogPlan(flags: Record<string, FlagValue>): RecordingPlan {
+  const sessionId = positiveInt('session', flags.session);
+  const output =
+    flags.output !== undefined
+      ? requireStringValue('output', flags.output)
+      : `session-${sessionId}.log`;
   const days =
     flags.days !== undefined ? positiveInt('days', flags.days, { max: 120 }) : 7;
   return { sessionId, output, days };
@@ -798,6 +814,7 @@ commands (ALL read-only — the CLI cannot mutate Voximplant state):
   numbers                    List the account's phone numbers (find a Caller ID)
   transactions [--days <n>]  Billing ledger — what the balance is spent on
   recording --session <id>   Download a call's secure recording as mp3
+  log --session <id>         Download a call's scenario log (Logger.write output)
   call-lists [--list-id <n>] [--days <n>]  Observe dialing campaigns (PII-safe aggregates)
   media-resources            Voximplant IP inventory for the firewall allowlist (no credentials)
   audit [--days <n>] [--count <n>]  Account audit log (Owner-only; degrades cleanly)

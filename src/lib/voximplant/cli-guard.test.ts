@@ -36,12 +36,17 @@ describe('CLI ↔ mutations guard', () => {
   });
 
   it('KNOWN_COMMANDS is pinned to the read-only set (no start)', () => {
+    // Adding a command here is meant to be deliberate: this list is pinned so a
+    // new subcommand cannot slip in without someone confirming it only reads.
+    // 'log' qualifies — GetCallHistory plus an authenticated GET of the returned
+    // log_file_url, no mutation.
     expect([...KNOWN_COMMANDS].sort()).toEqual(
       [
         'account',
         'audit',
         'call-lists',
         'history',
+        'log',
         'media-resources',
         'numbers',
         'recording',
