@@ -20,8 +20,15 @@
 //   * Default rule = 1520915 (OutCallAgent → RSVPAgent on kalfa-rsvp). It
 //     hard-refuses the DTMF production OutCall rule (1494311) — that rule's
 //     scenario is not the bridge and is driven only by the worker dispatcher.
+//   * Refuses an event that can no longer record an RSVP (not active / past
+//     event day / passed deadline) — the same refusals submit_rsvp applies, and
+//     the same gate the worker dispatcher enforces at 4b. --allow-closed-event
+//     overrides it loudly, for audio-path testing only.
 //   * NEVER prints the access token, the nonce, or any secret — ids + byte count
 //     only.
+//   * NOT gated on consent / DNC / balance / concurrency: those live in
+//     dispatchOutreachCall, which this launcher bypasses. Verify the destination
+//     yourself before dialling — nothing here does it for you.
 //   * The nonce is stamped first-writer-wins (idempotent): a re-run reuses the
 //     existing nonce, so ctx and the injected dynamic variable stay in sync.
 //
@@ -39,6 +46,8 @@ import {
   stampElCorrelationNonce,
   TERMINAL_STATUSES,
 } from '@/lib/data/call-attempts';
+import { rsvpClosedReason, todayIL } from '@/lib/data/event-date';
+import { getCampaignContext } from '@/lib/data/outreach-engine';
 import { getAppOrigin } from '@/lib/url';
 import type { VoximplantConfig } from '@/lib/voximplant/core';
 import { startScenarios } from '@/lib/voximplant/mutations';
@@ -128,6 +137,50 @@ async function main(): Promise<void> {
     );
     process.exitCode = 1;
     return;
+  }
+
+  // The event must still be able to RECORD an answer — the same three
+  // submit_rsvp refusals dispatchOutreachCall enforces at gate 4b. This launcher
+  // bypasses the dispatcher completely, so without this check it is the one
+  // remaining way to place a call the database will refuse to write. That is
+  // precisely what produced the three bridge calls on 2026-07-21: the bridge
+  // worked, QA scored 100/100 on the transcript, and not one RSVP was written,
+  // because the event day had already passed.
+  //
+  // getCampaignContext is reused for the event facts only; its campaign status is
+  // deliberately NOT gated on here (an ops tool must still work against a closed
+  // campaign — that is not what makes a call worthless).
+  const cctx = await getCampaignContext(attempt.campaign_id);
+  const closed = cctx ? rsvpClosedReason(cctx) : null;
+  const closedReason = !cctx
+    ? 'no campaign/event context could be loaded'
+    : closed === 'event_not_active'
+      ? `the event status is '${cctx.eventStatus}', not 'active'`
+      : closed === 'past_event_day'
+        ? `the event day has passed (today in Israel is ${todayIL()})`
+        : closed === 'deadline_passed'
+          ? `the RSVP deadline (${cctx.rsvpDeadline}) has passed`
+          : null;
+  if (closedReason) {
+    // Escape hatch, because testing the AUDIO path (voice, disclosure, barge-in)
+    // is legitimate on a closed event — but it must be a decision, never a
+    // surprise. Silence here is what let three calls look like a success.
+    if (flag('allow-closed-event') !== '__present__') {
+      console.error(
+        `ERROR: refusing to dial — ${closedReason}, so submit_rsvp will REJECT ` +
+          'any answer this call collects. The guest would be asked to confirm and ' +
+          'then apologised to, and the call would still bill as a reached contact. ' +
+          'Use a future-dated active event, or pass --allow-closed-event to test ' +
+          'the audio path knowingly.',
+      );
+      process.exitCode = 1;
+      return;
+    }
+    console.warn(
+      `WARNING: --allow-closed-event — ${closedReason}. save_rsvp WILL return ` +
+        "'rejected' and NO RSVP will be written. Treat any QA score from this " +
+        'call as measuring the audio path only.',
+    );
   }
 
   // Generate + stamp a NON-authorizing correlation nonce (idempotent: a re-run

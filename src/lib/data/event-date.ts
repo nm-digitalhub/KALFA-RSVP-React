@@ -51,6 +51,47 @@ export function todayIL(nowMs: number = Date.now()): string {
   return israelCalendarDay(nowMs);
 }
 
+/**
+ * Why an event can no longer record an RSVP, or null when it still can.
+ *
+ * These are submit_rsvp's THREE event-level refusals, in the RPC's own order:
+ *   event_not_active — events.status <> 'active'        → RPC 'closed'
+ *   past_event_day   — past calendar day in Israel      → RPC 'closed'
+ *   deadline_passed  — today_IL > events.rsvp_deadline   → RPC 'deadline_passed'
+ *
+ * It exists so the two dial paths cannot drift apart. dispatchOutreachCall (the
+ * worker) and scripts/voximplant/bridge-call.ts (the ops launcher) both reach
+ * startScenarios, but the launcher bypasses the dispatcher's gates entirely —
+ * which is how three bridge calls on 2026-07-21 were placed against a past
+ * event, scored 100/100 on their transcripts, and wrote no RSVP at all. Both now
+ * ask this one function, so a gate fixed in one path can never be missing from
+ * the other.
+ *
+ * Pure and nowMs-injectable: the same values in must give the same answer as the
+ * SQL, and that has to be testable without a database or a phone call.
+ * Guest-level refusals (unknown token, impossible count) are NOT here — those
+ * depend on the guest row and can only be judged by the RPC itself.
+ */
+export type RsvpClosedReason = 'event_not_active' | 'past_event_day' | 'deadline_passed';
+
+export function rsvpClosedReason(
+  event: {
+    eventStatus: string;
+    eventDate: string | null;
+    /** events.rsvp_deadline — a plain 'YYYY-MM-DD' date, or null for none. */
+    rsvpDeadline: string | null;
+  },
+  nowMs: number = Date.now(),
+): RsvpClosedReason | null {
+  if (event.eventStatus !== 'active') return 'event_not_active';
+  if (isPastEventDay(event.eventDate, nowMs)) return 'past_event_day';
+  // Strictly greater-than, mirroring the SQL: a deadline of TODAY is still open.
+  if (event.rsvpDeadline !== null && todayIL(nowMs) > event.rsvpDeadline) {
+    return 'deadline_passed';
+  }
+  return null;
+}
+
 // Lifecycle R2/R3 — "event_date must be at least tomorrow (Israel)". Unlike
 // isPastEventDay (today is still valid — R4, an active event rides through its
 // own day), this boundary REJECTS today too: only event_day_IL > today_IL is

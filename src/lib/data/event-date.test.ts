@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
-import { defaultThankyouSendAt, ilDateInputValue, ilTimeInputValue } from './event-date';
+import {
+  defaultThankyouSendAt,
+  ilDateInputValue,
+  ilTimeInputValue,
+  rsvpClosedReason,
+} from './event-date';
 
 describe('ilDateInputValue', () => {
   it('passes a plain date column value through unchanged', () => {
@@ -30,6 +35,50 @@ describe('ilTimeInputValue', () => {
   it('treats legacy date-only (midnight UTC) values as "no time set"', () => {
     expect(ilTimeInputValue('2026-07-12')).toBe('');
     expect(ilTimeInputValue('2026-07-12T00:00:00+00:00')).toBe('');
+  });
+});
+
+// The shared gate both dial paths ask before placing a call. Each case mirrors
+// one of submit_rsvp's event-level refusals — if these drift from the SQL, a
+// call gets placed whose answer the database will refuse to write.
+describe('rsvpClosedReason', () => {
+  // 2026-07-21 12:00 IDT — the day the three un-writable bridge calls went out.
+  const NOW = Date.parse('2026-07-21T09:00:00+00:00');
+  const open = { eventStatus: 'active', eventDate: '2026-08-01T18:00:00+03:00', rsvpDeadline: null };
+
+  it('returns null for an active, future event with no deadline', () => {
+    expect(rsvpClosedReason(open, NOW)).toBeNull();
+  });
+
+  it('refuses a non-active event before looking at any date', () => {
+    expect(rsvpClosedReason({ ...open, eventStatus: 'draft' }, NOW)).toBe('event_not_active');
+    expect(rsvpClosedReason({ ...open, eventStatus: 'cancelled' }, NOW)).toBe('event_not_active');
+  });
+
+  it('refuses a past event day — the real 2026-07-12 brit, judged on 07-21', () => {
+    expect(
+      rsvpClosedReason({ ...open, eventDate: '2026-07-12T20:00:00+03:00' }, NOW),
+    ).toBe('past_event_day');
+  });
+
+  it('allows an event happening TODAY — it rides through its own day', () => {
+    expect(rsvpClosedReason({ ...open, eventDate: '2026-07-21T20:00:00+03:00' }, NOW)).toBeNull();
+    // …including one whose Israel day is today but whose UTC instant is yesterday.
+    expect(rsvpClosedReason({ ...open, eventDate: '2026-07-20T22:30:00+00:00' }, NOW)).toBeNull();
+  });
+
+  it('refuses a passed deadline even when the event is still in the future', () => {
+    expect(rsvpClosedReason({ ...open, rsvpDeadline: '2026-07-20' }, NOW)).toBe('deadline_passed');
+  });
+
+  it('allows a deadline of TODAY — the SQL compares strictly greater-than', () => {
+    expect(rsvpClosedReason({ ...open, rsvpDeadline: '2026-07-21' }, NOW)).toBeNull();
+    expect(rsvpClosedReason({ ...open, rsvpDeadline: '2026-07-22' }, NOW)).toBeNull();
+  });
+
+  it('does not gate on a null/unparseable event_date (mirrors the DB NULL semantics)', () => {
+    expect(rsvpClosedReason({ ...open, eventDate: null }, NOW)).toBeNull();
+    expect(rsvpClosedReason({ ...open, eventDate: 'not-a-date' }, NOW)).toBeNull();
   });
 });
 
