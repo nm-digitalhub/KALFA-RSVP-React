@@ -22,6 +22,7 @@ import {
   isDncListed,
 } from '@/lib/data/outreach-engine';
 import { getGuestsForContact, insertInteraction, setContactOpStatus } from '@/lib/data/interactions';
+import { isPastEventDay, todayIL } from '@/lib/data/event-date';
 import {
   getAccountInfo,
   VoximplantApiError,
@@ -46,7 +47,7 @@ const BALANCE_TIMEOUT_MS = 10_000;
 const START_TIMEOUT_MS = 25_000;
 
 export type CallDispatchResult =
-  | { kind: 'skipped'; reason: 'outreach_disabled' | 'no_call_consent' | 'dnc_listed' | 'already_reached' | 'campaign_not_active' | 'concurrent_owner' | 'max_concurrency' | 'campaign_hour_cap' }
+  | { kind: 'skipped'; reason: 'outreach_disabled' | 'no_call_consent' | 'dnc_listed' | 'already_reached' | 'campaign_not_active' | 'event_closed' | 'concurrent_owner' | 'max_concurrency' | 'campaign_hour_cap' }
   | { kind: 'blocked'; reason: 'config_missing' | 'live_calls_disabled' | 'balance_below_reserve' }
   | { kind: 'transient_error'; reason: 'balance_check_failed' } // the ONLY retryable kind
   | { kind: 'already_dispatched'; attemptId: string }
@@ -132,6 +133,32 @@ export async function dispatchOutreachCall(
   const cctx = await getCampaignContext(campaignId);
   if (!cctx || cctx.status !== 'active' || !cctx.allowed_channels.includes('call')) {
     return { kind: 'skipped', reason: 'campaign_not_active' };
+  }
+
+  // 4b. NEVER place a call whose answer cannot be recorded.
+  //
+  // These are submit_rsvp's three EVENT-level refusals, mirrored at the dial so
+  // the refusal happens before we spend money instead of after: event not
+  // 'active' and past-event-day both return 'closed', a passed rsvp_deadline
+  // returns 'deadline_passed'. isPastEventDay/todayIL are the shared L1 rule and
+  // are documented as matching the DB guard's Asia/Jerusalem calendar-day
+  // comparison exactly, so the two can not drift apart.
+  //
+  // Without this the whole chain still "works" and every layer reports honestly
+  // — and that is the problem. The dial succeeds, the agent asks the guest to
+  // confirm, save_rsvp returns a truthful `rejected`, the agent apologises, and
+  // the completed call is STILL billed as a reached contact by writeReach. The
+  // guest is called about an event that already happened and the owner pays for
+  // it. Observed live on 2026-07-21 (three bridge calls, zero RSVPs written).
+  //
+  // stepGate applies the first two to messaging; the deadline is call-only on
+  // purpose (see CampaignContext.rsvpDeadline).
+  if (
+    cctx.eventStatus !== 'active' ||
+    isPastEventDay(cctx.eventDate) ||
+    (cctx.rsvpDeadline !== null && todayIL() > cctx.rsvpDeadline)
+  ) {
+    return { kind: 'skipped', reason: 'event_closed' };
   }
 
   // 5. Bind a guest ONLY when the contact backs exactly one (else RSVP is skipped

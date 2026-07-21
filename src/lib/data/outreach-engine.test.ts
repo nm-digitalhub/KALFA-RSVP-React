@@ -209,6 +209,8 @@ const makeCtx = (
   schedule: [{ days_before: 7, channel: 'whatsapp', message_key: messageKey }],
   eventDate: '2999-01-01T00:00:00+00:00',
   eventStatus: 'active',
+  // Messaging is not gated on the RSVP deadline (call-only, see the field doc).
+  rsvpDeadline: null,
   inviteImagePath: null,
   event: {
     name: 'החתונה של דוד ושרה',

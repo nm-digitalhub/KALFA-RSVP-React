@@ -97,6 +97,11 @@ async function handleCallRequest(job: CallJob): Promise<void> {
     jobId: job.id,
     contactId: job.data.contactId,
     kind: result.kind,
+    // The reason, not just the kind: 'skipped' spans consent, DNC, caps and a
+    // closed event, and without this a gate that correctly stops every call in a
+    // campaign is indistinguishable from one that is broken. All values are
+    // fixed enum strings — no PII.
+    ...('reason' in result ? { reason: result.reason } : {}),
   });
 }
 

@@ -68,6 +68,9 @@ import {
   isDncListed,
 } from '@/lib/data/outreach-engine';
 import { getGuestsForContact, insertInteraction, setContactOpStatus } from '@/lib/data/interactions';
+// Deliberately NOT mocked: gate 4b must be exercised against the same shared L1
+// date rule the DB guard mirrors, not a stub that could agree with a wrong gate.
+import { todayIL } from '@/lib/data/event-date';
 import { getAccountInfo, VoximplantApiError, VoximplantNetworkError } from '@/lib/voximplant/core';
 import { startScenarios } from '@/lib/voximplant/mutations';
 import { sendSlackAlert } from '@/lib/alerts/slack';
@@ -91,6 +94,17 @@ const CONFIG = {
 };
 const acct = (balance: number) => ({ result: { account_id: 1, account_name: 'x', account_email: 'x', active: true, currency: 'USD', balance, created: '' } });
 
+// A dial-able campaign. The event fields are REAL here, not omitted: gate 4b
+// reads eventStatus/eventDate/rsvpDeadline, and a partial mock would have let a
+// dial through on undefined. Far-future date so the suite never expires.
+const CCTX = {
+  status: 'active',
+  allowed_channels: ['call'],
+  eventStatus: 'active',
+  eventDate: '2099-06-01T18:00:00+03:00',
+  rsvpDeadline: null,
+};
+
 beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(getOutreachEnabled).mockResolvedValue(true);
@@ -98,7 +112,7 @@ beforeEach(() => {
   vi.mocked(hasCallConsent).mockResolvedValue(true);
   vi.mocked(isDncListed).mockResolvedValue(false);
   vi.mocked(isContactReached).mockResolvedValue(false);
-  vi.mocked(getCampaignContext).mockResolvedValue({ status: 'active', allowed_channels: ['call'] } as never);
+  vi.mocked(getCampaignContext).mockResolvedValue(CCTX as never);
   vi.mocked(getGuestsForContact).mockResolvedValue([{ id: 'g1', full_name: 'א', rsvp_token: 't1' }] as never);
   vi.mocked(getAccountInfo).mockResolvedValue(acct(50) as never);
   vi.mocked(createCallAttempt).mockResolvedValue({ id: AID });
@@ -146,9 +160,51 @@ describe('gates (no dial)', () => {
     expect(startScenarios).not.toHaveBeenCalled();
   });
   it('6. campaign not active → skipped', async () => {
-    vi.mocked(getCampaignContext).mockResolvedValue({ status: 'paused', allowed_channels: ['call'] } as never);
+    vi.mocked(getCampaignContext).mockResolvedValue({ ...CCTX, status: 'paused' } as never);
     expect(await dispatchOutreachCall(job())).toEqual({ kind: 'skipped', reason: 'campaign_not_active' });
     expect(startScenarios).not.toHaveBeenCalled();
+  });
+});
+
+// Gate 4b — never dial a call whose answer submit_rsvp would refuse. Each case
+// below is one of that RPC's three event-level refusals; a dial here costs
+// telephony + agent minutes AND bills the owner for a reached contact, so the
+// assertion that matters is `startScenarios` never being called.
+describe('event can still record an RSVP (gate 4b)', () => {
+  const expectSkipped = async () => {
+    expect(await dispatchOutreachCall(job())).toEqual({ kind: 'skipped', reason: 'event_closed' });
+    expect(startScenarios).not.toHaveBeenCalled();
+    expect(createCallAttempt).not.toHaveBeenCalled(); // refused before any row exists
+  };
+
+  it('6a. past event day → skipped (submit_rsvp would answer "closed")', async () => {
+    vi.mocked(getCampaignContext).mockResolvedValue(
+      { ...CCTX, eventDate: '2020-01-01T18:00:00+02:00' } as never,
+    );
+    await expectSkipped();
+  });
+
+  it('6b. event not active → skipped', async () => {
+    vi.mocked(getCampaignContext).mockResolvedValue({ ...CCTX, eventStatus: 'draft' } as never);
+    await expectSkipped();
+  });
+
+  it('6c. rsvp_deadline passed → skipped ("deadline_passed"), though the event is still future', async () => {
+    vi.mocked(getCampaignContext).mockResolvedValue(
+      { ...CCTX, rsvpDeadline: '2020-01-01' } as never,
+    );
+    await expectSkipped();
+  });
+
+  it('6d. deadline TODAY is still open — the DB gate is strictly greater-than', async () => {
+    vi.mocked(getCampaignContext).mockResolvedValue(
+      { ...CCTX, rsvpDeadline: todayIL() } as never,
+    );
+    expect((await dispatchOutreachCall(job())).kind).toBe('dialed');
+  });
+
+  it('6e. no deadline set → dials', async () => {
+    expect((await dispatchOutreachCall(job())).kind).toBe('dialed');
   });
 });
 

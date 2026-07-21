@@ -51,6 +51,14 @@ export type CampaignContext = {
   schedule: Touchpoint[];
   eventDate: string;
   eventStatus: string;
+  /**
+   * events.rsvp_deadline — a plain `date` (no time), or null for "no deadline".
+   * Loaded for the AI-call dispatcher, which must not place a call whose answer
+   * submit_rsvp would refuse. stepGate deliberately does NOT gate on it: a
+   * WhatsApp reminder after the deadline is still informational, whereas a call
+   * exists only to collect an RSVP.
+   */
+  rsvpDeadline: string | null;
   inviteImagePath: string | null;
   // The template-binding slice of the event row (event_date repeats eventDate —
   // kept flat above for the worker's scheduling math, nested here in exactly
@@ -126,7 +134,7 @@ export async function getCampaignContext(
   if (error || !c) return null;
   const { data: ev } = await admin
     .from('events')
-    .select('event_date, status, name, event_type, venue_name, venue_address, celebrants, invite_image_path')
+    .select('event_date, status, rsvp_deadline, name, event_type, venue_name, venue_address, celebrants, invite_image_path')
     .eq('id', c.event_id)
     .maybeSingle();
   if (!ev?.event_date) return null;
@@ -139,6 +147,7 @@ export async function getCampaignContext(
     schedule: (c.outreach_schedule as Touchpoint[] | null) ?? [],
     eventDate: ev.event_date,
     eventStatus: ev.status,
+    rsvpDeadline: ev.rsvp_deadline ?? null,
     inviteImagePath: ev.invite_image_path ?? null,
     event: {
       name: ev.name,
