@@ -699,7 +699,11 @@ async function transitionCampaignStatus(
   // authz: 'owner' (default) enforces event ownership + the past/active checks.
   // 'admin' restricts the transition to platform admins (wind-down ops: pause/
   // close) with NO ownership and NO past/active gating — eventDate is then null.
-  authz: 'owner' | 'admin' = 'owner',
+  // 'console' is the staff agent-console path: the caller (a console Route
+  // Handler) has ALREADY verified requireConsoleAgent + manage_voice, so there is
+  // no ownership check (staff acts across events), but the SAME past/active-event
+  // gating as 'owner' is kept for commercial-forward moves (activate).
+  authz: 'owner' | 'admin' | 'console' = 'owner',
 ): Promise<{ eventDate: string | null }> {
   const admin = createAdminClient();
   const { data: campaign, error } = await admin
@@ -717,6 +721,21 @@ async function transitionCampaignStatus(
     // Platform-admin-only wind-down: no ownership, no past/active gating.
     await requireAdmin();
     eventDate = null;
+  } else if (authz === 'console') {
+    // Staff console: authorization already done at the route boundary. Fetch the
+    // event with the service-role client (staff sees all) and apply the same
+    // past/active gating as the owner path.
+    const { data: event, error: evErr } = await admin
+      .from('events')
+      .select('event_date, status')
+      .eq('id', campaign.event_id)
+      .maybeSingle();
+    if (evErr || !event) throw new Error('טעינת האירוע נכשלה');
+    if (opts?.rejectPastEvent) assertEventNotPast(event.event_date);
+    if (opts?.requireActiveEvent && event.status !== 'active') {
+      throw new Error('יש לפרסם את האירוע לפני אישורי הגעה');
+    }
+    eventDate = event.event_date;
   } else {
     const event = await requireOwnedEvent(campaign.event_id);
     if (opts?.rejectPastEvent) assertEventNotPast(event.event_date);
@@ -747,7 +766,10 @@ async function transitionCampaignStatus(
 // Activate (begin outreach). Requires an approved/scheduled/paused campaign that
 // already has a card hold (capture_status='authorized') — no outreach without a
 // secured payment method.
-export async function activateCampaign(campaignId: string): Promise<void> {
+export async function activateCampaign(
+  campaignId: string,
+  authz: 'owner' | 'console' = 'owner',
+): Promise<void> {
   const { eventDate } = await transitionCampaignStatus(
     campaignId,
     ['approved', 'scheduled', 'paused'],
@@ -755,6 +777,7 @@ export async function activateCampaign(campaignId: string): Promise<void> {
     { column: 'capture_status', value: 'authorized' },
     // L1: never begin outreach for a past event. R9: requires an active event.
     { rejectPastEvent: true, requireActiveEvent: true },
+    authz,
   );
 
   // Additive ops alert (fire-and-forget, fail-safe): fires only once the guarded
@@ -787,14 +810,17 @@ export async function activateCampaign(campaignId: string): Promise<void> {
 }
 
 // Wind-down: platform-admin only (see transitionCampaignStatus authz='admin').
-export async function pauseCampaign(campaignId: string): Promise<void> {
+export async function pauseCampaign(
+  campaignId: string,
+  authz: 'admin' | 'console' = 'admin',
+): Promise<void> {
   await transitionCampaignStatus(
     campaignId,
     ['active'],
     'paused',
     undefined,
     undefined,
-    'admin',
+    authz,
   );
 }
 
