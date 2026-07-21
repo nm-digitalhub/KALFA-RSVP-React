@@ -64,16 +64,10 @@ export async function nextManualTouchpoint(
   contactId: string,
 ): Promise<number> {
   const admin = createAdminClient();
-  // Forward-compatible cast, same stance as setElConversationId and the callback
-  // columns: the function lands with migration 20260721100426, and types.ts is
-  // regenerated from the live schema AFTER that is applied — never hand-edited.
-  // Until then the generated RPC union does not name it.
-  const { data, error } = await (
-    admin.rpc as unknown as (
-      fn: string,
-      args: Record<string, string>,
-    ) => Promise<{ data: unknown; error: unknown }>
-  )('next_manual_touchpoint', { p_campaign: campaignId, p_contact: contactId });
+  const { data, error } = await admin.rpc('next_manual_touchpoint', {
+    p_campaign: campaignId,
+    p_contact: contactId,
+  });
 
   // THROWS rather than falling back to a computed index. A fallback would be the
   // exact race this function exists to remove, reintroduced at the moment the

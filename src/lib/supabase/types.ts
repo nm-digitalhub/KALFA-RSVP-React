@@ -624,6 +624,7 @@ export type Database = {
           billed_outcome: string | null
           call_duration_sec: number | null
           callback_count: number
+          callback_dispatched_at: string | null
           callback_iso: string | null
           callback_requested_at: string | null
           callback_when_text: string | null
@@ -632,6 +633,7 @@ export type Database = {
           created_at: string
           ctx_delivered_at: string | null
           ctx_read_count: number
+          dispatch_id: string | null
           el_conversation_id: string | null
           el_correlation_nonce: string | null
           event_id: string
@@ -657,6 +659,7 @@ export type Database = {
           billed_outcome?: string | null
           call_duration_sec?: number | null
           callback_count?: number
+          callback_dispatched_at?: string | null
           callback_iso?: string | null
           callback_requested_at?: string | null
           callback_when_text?: string | null
@@ -665,6 +668,7 @@ export type Database = {
           created_at?: string
           ctx_delivered_at?: string | null
           ctx_read_count?: number
+          dispatch_id?: string | null
           el_conversation_id?: string | null
           el_correlation_nonce?: string | null
           event_id: string
@@ -690,6 +694,7 @@ export type Database = {
           billed_outcome?: string | null
           call_duration_sec?: number | null
           callback_count?: number
+          callback_dispatched_at?: string | null
           callback_iso?: string | null
           callback_requested_at?: string | null
           callback_when_text?: string | null
@@ -698,6 +703,7 @@ export type Database = {
           created_at?: string
           ctx_delivered_at?: string | null
           ctx_read_count?: number
+          dispatch_id?: string | null
           el_conversation_id?: string | null
           el_correlation_nonce?: string | null
           event_id?: string
@@ -3507,6 +3513,10 @@ export type Database = {
       is_org_owner: { Args: { _org_id: string }; Returns: boolean }
       is_platform_owner: { Args: never; Returns: boolean }
       is_staff: { Args: never; Returns: boolean }
+      next_manual_touchpoint: {
+        Args: { p_campaign: string; p_contact: string }
+        Returns: number
+      }
       org_role_rank: { Args: { _role_id: string }; Returns: number }
       over_invited: {
         Args: { g: Database["public"]["Tables"]["guests"]["Row"] }
