@@ -2,26 +2,19 @@ import { NextResponse } from 'next/server';
 import { z } from 'zod';
 
 import { callerHasPlatformPermission, requireConsoleAgent } from '@/lib/auth/console-agent';
+import { activateCampaign, pauseCampaign } from '@/lib/data/campaigns';
 import { createAdminClient } from '@/lib/supabase/admin';
 
 // POST /api/campaigns/{id}/status   body: { action: 'activate' | 'pause' }
 //
-// Console (Bearer/staff) campaign lifecycle control. The web app drives this via
-// cookie-authed Server Actions (activateCampaign / pauseCampaign in
-// src/lib/data/campaigns.ts), whose transitionCampaignStatus verifies identity with
-// the cookie DAL (requireAdmin / requireOwnedEvent) — which a Bearer request does
-// NOT have. This route mirrors THE SAME guarded transitions with console auth:
-//
-//   pause    : active → paused                          (safety / wind-down; no billing)
-//   activate : approved | scheduled | paused → active   ONLY if capture_status =
-//              'authorized' (the J5 authorization hold) AND the event is active.
-//
-// The J5 guard is preserved verbatim, so activation still cannot happen without the
-// owner's approved payment hold (set up on the web). Keep the from-status sets and
-// the capture_status guard in sync with transitionCampaignStatus. Note: unlike the
-// web activateCampaign, this path does not seed the auto-thankyou default schedule
-// (the owner sets it on the web); it never charges — the close-charge flow is
-// unchanged and still owner-driven.
+// Console (Bearer/staff) campaign lifecycle control. This route is a THIN wrapper:
+// it authorizes the caller (requireConsoleAgent + manage_voice) and then calls the
+// SAME canonical transitions the web uses — activateCampaign / pauseCampaign — via
+// their 'console' authz mode. That keeps the console path byte-identical to the web:
+// the guarded status transition, the J5-hold requirement (capture_status must be
+// 'authorized' to activate), the past/active-event gating, the auto-thankyou default
+// seeding, and the ops alert all run through the one canonical implementation — no
+// duplicated (and drift-prone) transition logic here.
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -29,9 +22,6 @@ export const dynamic = 'force-dynamic';
 const NO_STORE = { 'Cache-Control': 'no-store' } as const;
 const uuidSchema = z.string().uuid();
 const bodySchema = z.strictObject({ action: z.enum(['activate', 'pause']) });
-
-// Statuses a campaign may be activated FROM — mirrors activateCampaign's `from`.
-const ACTIVATE_FROM = ['approved', 'scheduled', 'paused'] as const;
 
 function json(body: unknown, status: number) {
   return NextResponse.json(body, { status, headers: NO_STORE });
@@ -54,54 +44,28 @@ export async function POST(
   if (!parsed.success) return json({ error: 'גוף הבקשה אינו תקין' }, 400);
   const { action } = parsed.data;
 
-  // Read the target from OUR data only (service-role); decide from the real status.
+  // Existence pre-check with the service-role client, so the canonical transition
+  // never reaches notFound() — which renders a 404 PAGE (not JSON) in a Route
+  // Handler. Returns a clean JSON 404 instead.
   const admin = createAdminClient();
   const { data: campaign, error: cErr } = await admin
     .from('campaigns')
-    .select('id, status, event_id, capture_status')
+    .select('id')
     .eq('id', id)
     .maybeSingle();
   if (cErr) return json({ error: 'טעינת הקמפיין נכשלה' }, 500);
   if (!campaign) return json({ error: 'הקמפיין לא נמצא' }, 404);
 
-  if (action === 'pause') {
-    if (campaign.status !== 'active') {
-      return json({ error: 'ניתן להשהות רק קמפיין פעיל' }, 409);
-    }
-    // Guarded flip: only active → paused (CAS on status guards a concurrent change).
-    const { error: upErr } = await admin
-      .from('campaigns')
-      .update({ status: 'paused' })
-      .eq('id', id)
-      .eq('status', 'active');
-    if (upErr) return json({ error: 'השהיית הקמפיין נכשלה' }, 500);
-    return json({ ok: true, status: 'paused' }, 200);
+  try {
+    if (action === 'pause') await pauseCampaign(id, 'console');
+    else await activateCampaign(id, 'console');
+  } catch (e) {
+    // The canonical transition throws safe, user-facing Hebrew messages for
+    // business-rule failures (wrong current status, missing J5 hold, past or
+    // inactive event). Surface the message; the client shows it verbatim.
+    const message = e instanceof Error ? e.message : 'שינוי מצב הקמפיין נכשל';
+    return json({ error: message }, 409);
   }
 
-  // action === 'activate' — preserve every activateCampaign safeguard.
-  if (!ACTIVATE_FROM.includes(campaign.status as (typeof ACTIVATE_FROM)[number])) {
-    return json({ error: 'לא ניתן להפעיל את הקמפיין במצבו הנוכחי' }, 409);
-  }
-  if (campaign.capture_status !== 'authorized') {
-    // The J5 authorization hold must be approved first (owner flow on the web).
-    return json({ error: 'להפעלת הקמפיין נדרשת תפיסת מסגרת מאושרת' }, 409);
-  }
-  const { data: ev } = await admin
-    .from('events')
-    .select('status')
-    .eq('id', campaign.event_id)
-    .maybeSingle();
-  if (ev?.status !== 'active') {
-    return json({ error: 'האירוע אינו פעיל — לא ניתן להתחיל פנייה' }, 409);
-  }
-
-  // Guarded flip: only from a valid pre-send status AND with an authorized hold.
-  const { error: upErr } = await admin
-    .from('campaigns')
-    .update({ status: 'active' })
-    .eq('id', id)
-    .in('status', ACTIVATE_FROM)
-    .eq('capture_status', 'authorized');
-  if (upErr) return json({ error: 'הפעלת הקמפיין נכשלה' }, 500);
-  return json({ ok: true, status: 'active' }, 200);
+  return json({ ok: true, status: action === 'pause' ? 'paused' : 'active' }, 200);
 }

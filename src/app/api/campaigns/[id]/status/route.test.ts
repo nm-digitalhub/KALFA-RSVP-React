@@ -6,14 +6,18 @@ vi.mock('@/lib/auth/console-agent', () => ({
   callerHasPlatformPermission: vi.fn(),
 }));
 vi.mock('@/lib/supabase/admin', () => ({ createAdminClient: vi.fn() }));
+vi.mock('@/lib/data/campaigns', () => ({
+  activateCampaign: vi.fn(),
+  pauseCampaign: vi.fn(),
+}));
 
 import { POST } from './route';
 import { requireConsoleAgent, callerHasPlatformPermission } from '@/lib/auth/console-agent';
 import { createAdminClient } from '@/lib/supabase/admin';
+import { activateCampaign, pauseCampaign } from '@/lib/data/campaigns';
 
 const USER_ID = '33333333-3333-4333-8333-333333333333';
 const CAMPAIGN_ID = '11111111-1111-4111-8111-111111111111';
-const EVENT_ID = '22222222-2222-4222-8222-222222222222';
 
 function req(action: string, id: string = CAMPAIGN_ID): Request {
   return new Request(`https://beta.kalfa.me/api/campaigns/${id}/status`, {
@@ -24,27 +28,14 @@ function req(action: string, id: string = CAMPAIGN_ID): Request {
 }
 const ctx = (id: string = CAMPAIGN_ID) => ({ params: Promise.resolve({ id }) });
 
-// A chainable stand-in for the service-role client. Reads terminate at
-// maybeSingle() (campaigns → campaignRow, events → eventRow); update chains are
-// awaited directly, resolving via `then` to { error: updateError }.
-function mockAdmin(opts: {
-  campaignRow?: { data: unknown; error: unknown };
-  eventRow?: { data: unknown; error: unknown };
-  updateError?: unknown;
-}) {
-  const { campaignRow = { data: null, error: null }, eventRow = { data: { status: 'active' }, error: null }, updateError = null } = opts;
-  const makeChain = (table: string) => {
-    const c: Record<string, unknown> = {
-      select: vi.fn(() => c),
-      update: vi.fn(() => c),
-      eq: vi.fn(() => c),
-      in: vi.fn(() => c),
-      maybeSingle: vi.fn(() => Promise.resolve(table === 'events' ? eventRow : campaignRow)),
-      then: (resolve: (v: unknown) => void) => resolve({ error: updateError }),
-    };
-    return c;
+// Existence pre-check stub: from('campaigns').select('id').eq('id', id).maybeSingle().
+function mockAdmin(campaignRow: { data: unknown; error: unknown }) {
+  const c: Record<string, unknown> = {
+    select: vi.fn(() => c),
+    eq: vi.fn(() => c),
+    maybeSingle: vi.fn(() => Promise.resolve(campaignRow)),
   };
-  vi.mocked(createAdminClient).mockReturnValue({ from: vi.fn((t: string) => makeChain(t)) } as never);
+  vi.mocked(createAdminClient).mockReturnValue({ from: vi.fn(() => c) } as never);
 }
 
 function authOk(hasManageVoice = true) {
@@ -54,6 +45,8 @@ function authOk(hasManageVoice = true) {
   } as never);
   vi.mocked(callerHasPlatformPermission).mockResolvedValue(hasManageVoice as never);
 }
+
+const found = { data: { id: CAMPAIGN_ID }, error: null };
 
 describe('POST /api/campaigns/[id]/status', () => {
   beforeEach(() => vi.clearAllMocks());
@@ -75,49 +68,37 @@ describe('POST /api/campaigns/[id]/status', () => {
 
   it('404 when the campaign does not exist', async () => {
     authOk();
-    mockAdmin({ campaignRow: { data: null, error: null } });
+    mockAdmin({ data: null, error: null });
     expect((await POST(req('pause'), ctx())).status).toBe(404);
+    expect(pauseCampaign).not.toHaveBeenCalled();
   });
 
-  it('pauses an active campaign', async () => {
+  it('pauses via the canonical pauseCampaign with console authz', async () => {
     authOk();
-    mockAdmin({ campaignRow: { data: { id: CAMPAIGN_ID, status: 'active', event_id: EVENT_ID, capture_status: 'authorized' }, error: null } });
+    mockAdmin(found);
+    vi.mocked(pauseCampaign).mockResolvedValue(undefined as never);
     const res = await POST(req('pause'), ctx());
     expect(res.status).toBe(200);
     expect(await res.json()).toMatchObject({ status: 'paused' });
+    expect(pauseCampaign).toHaveBeenCalledWith(CAMPAIGN_ID, 'console');
   });
 
-  it('409 when pausing a non-active campaign', async () => {
+  it('activates via the canonical activateCampaign with console authz', async () => {
     authOk();
-    mockAdmin({ campaignRow: { data: { id: CAMPAIGN_ID, status: 'paused', event_id: EVENT_ID, capture_status: 'authorized' }, error: null } });
-    expect((await POST(req('pause'), ctx())).status).toBe(409);
-  });
-
-  it('409 when activating without an authorized J5 hold', async () => {
-    authOk();
-    mockAdmin({ campaignRow: { data: { id: CAMPAIGN_ID, status: 'paused', event_id: EVENT_ID, capture_status: 'pending' }, error: null } });
-    const res = await POST(req('activate'), ctx());
-    expect(res.status).toBe(409);
-    expect(await res.json()).toMatchObject({ error: expect.stringContaining('תפיסת מסגרת') });
-  });
-
-  it('activates an authorized, paused campaign on an active event', async () => {
-    authOk();
-    mockAdmin({
-      campaignRow: { data: { id: CAMPAIGN_ID, status: 'paused', event_id: EVENT_ID, capture_status: 'authorized' }, error: null },
-      eventRow: { data: { status: 'active' }, error: null },
-    });
+    mockAdmin(found);
+    vi.mocked(activateCampaign).mockResolvedValue(undefined as never);
     const res = await POST(req('activate'), ctx());
     expect(res.status).toBe(200);
     expect(await res.json()).toMatchObject({ status: 'active' });
+    expect(activateCampaign).toHaveBeenCalledWith(CAMPAIGN_ID, 'console');
   });
 
-  it('409 when activating for a non-active event', async () => {
+  it('surfaces a canonical business-rule failure as 409 with its message', async () => {
     authOk();
-    mockAdmin({
-      campaignRow: { data: { id: CAMPAIGN_ID, status: 'approved', event_id: EVENT_ID, capture_status: 'authorized' }, error: null },
-      eventRow: { data: { status: 'closed' }, error: null },
-    });
-    expect((await POST(req('activate'), ctx())).status).toBe(409);
+    mockAdmin(found);
+    vi.mocked(activateCampaign).mockRejectedValue(new Error('לא ניתן לשנות את מצב הקמפיין במצבו הנוכחי') as never);
+    const res = await POST(req('activate'), ctx());
+    expect(res.status).toBe(409);
+    expect(await res.json()).toMatchObject({ error: expect.stringContaining('לא ניתן לשנות') });
   });
 });
