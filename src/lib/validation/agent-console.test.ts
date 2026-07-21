@@ -6,6 +6,9 @@ import {
   attachModeSchema,
   agentCommandBodySchema,
   commandAckSchema,
+  AGENT_COMMANDS,
+  type AppliedState,
+  type AgentCommandResult,
 } from './agent-console';
 
 describe('agentStatusSchema', () => {
@@ -95,5 +98,36 @@ describe('commandAckSchema', () => {
     expect(commandAckSchema.safeParse({ request_id: 'r', applied: true }).success).toBe(false);
     expect(commandAckSchema.safeParse({ ok: true, applied: true }).success).toBe(false);
     expect(commandAckSchema.safeParse({ ok: true, request_id: 'r' }).success).toBe(false);
+  });
+});
+
+describe('AgentCommandResult.applied', () => {
+  // The ack is out-of-band and the scenario cannot answer the request it was
+  // given (_HttpRequestEvent has no response object), so at the moment the route
+  // replies it normally knows only that the POST landed. A boolean would force
+  // that into `false` — "the command failed" — which is untrue and is exactly the
+  // fake-failure this contract exists to prevent.
+  it('models "not known yet" as its own state, not as failure', () => {
+    const pending: AgentCommandResult = {
+      delivered: true,
+      applied: 'pending',
+      command: 'contextual_update',
+      request_id: 'req-1',
+    };
+    expect(pending.applied).not.toBe(false as never);
+    const states: AppliedState[] = ['pending', 'confirmed', 'rejected'];
+    expect(states).toHaveLength(3);
+  });
+
+  // Whoever writes the dispatcher reads the ack comments to know what to handle.
+  // Those comments once named four commands that no longer exist, which would
+  // have produced handlers for messages that never arrive. Pin the names.
+  it('the command set is exactly what the deployed app sends', () => {
+    expect([...AGENT_COMMANDS]).toEqual([
+      'contextual_update',
+      'user_message',
+      'clear_buffer',
+      'close_agent',
+    ]);
   });
 });

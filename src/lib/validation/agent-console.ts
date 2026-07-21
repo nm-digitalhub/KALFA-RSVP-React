@@ -108,15 +108,22 @@ export interface CommandEnvelope {
   payload: Record<string, unknown>;
 }
 
-// The live session's acknowledgement. Because AppEvents.HttpRequest cannot return
-// an HTTP response body, the bridge delivers this ack OUT-OF-BAND (a POST to the
-// call's callback endpoint keyed by request_id). `applied` is DELIBERATELY honest
-// and per-command:
-//   - agent_context_update: contextual_update is async with NO ElevenLabs server
-//     response, so applied === "delivered to the ElevenLabs session", NOT "the
-//     model acted on it".
-//   - ai_clear_buffer / ai_close / call_end: applied is a real VoxEngine state
-//     transition (buffer cleared / WS closed / call terminating).
+// The live session's acknowledgement, delivered OUT-OF-BAND (a POST to the call's
+// callback endpoint keyed by request_id) — not as an HTTP response.
+//
+// That is forced, not a design preference: the scenario receives the command as
+// AppEvents.HttpRequest, and _HttpRequestEvent (typings voxengine.d.ts) exposes
+// only { method, path, content, headers }. There is no response object and no
+// reply API anywhere in the namespace, so the session physically cannot answer
+// the request it was given. Anything the backend learns beyond "the POST returned
+// 200" has to arrive on a separate channel.
+//
+// `applied` is per-command and deliberately narrow:
+//   - contextual_update / user_message: sent into the ElevenLabs session, which
+//     returns nothing. applied === "handed to the session", NEVER "the model
+//     acted on it". No later signal upgrades this — it is the ceiling.
+//   - clear_buffer / close_agent: a real VoxEngine state transition (buffer
+//     cleared / agent WS closed), so the ack can assert it.
 export const commandAckSchema = z.strictObject({
   ok: z.boolean(),
   request_id: z.string().min(1).max(64),
@@ -127,13 +134,31 @@ export const commandAckSchema = z.strictObject({
 });
 export type CommandAck = z.infer<typeof commandAckSchema>;
 
-// What the console receives. HTTP 200 alone NEVER implies effect: `delivered` = the
-// command reached and was accepted by the live session; `applied` carries the
-// honest per-command effect flag from the ack above. The UI must not present a
-// whisper as "the AI acted" on `applied` alone.
+// Whether the command took effect, as far as the backend can honestly tell.
+//
+// Three states, not a boolean, because "we do not know yet" is the ordinary
+// outcome — not an error. The ack is out-of-band, so at the moment the route
+// answers the console it usually has not arrived. A boolean would have to render
+// that as `false`, which reads as "the command failed" and is a lie; rendering it
+// as `true` is the worse lie.
+//
+//   pending    the POST reached the session (delivered) and nothing contradicts
+//              it, but no ack has been correlated. The resting state for
+//              contextual_update and user_message, permanently — there is no
+//              signal that would ever confirm them.
+//   confirmed  an ack arrived for this request_id with applied true.
+//   rejected   the command definitively did not apply: the attempt was already
+//              terminal, the session refused it, or an ack came back applied
+//              false. Certain, unlike pending.
+export type AppliedState = 'pending' | 'confirmed' | 'rejected';
+
+// What the console receives. HTTP 200 alone NEVER implies effect: `delivered` says
+// the command reached and was accepted by the live session; `applied` carries the
+// honest state above. The UI must not present a whisper as "the AI acted" on
+// `delivered`, and must not present `pending` as failure.
 export interface AgentCommandResult {
   delivered: boolean;
-  applied: boolean;
+  applied: AppliedState;
   command: AgentCommand;
   request_id: string;
   state?: string | null;
