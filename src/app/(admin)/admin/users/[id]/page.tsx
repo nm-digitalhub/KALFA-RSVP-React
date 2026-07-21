@@ -34,7 +34,12 @@ export default async function AdminUserDetailPage({
     ? {
         roles: roleCatalog.map((r) => ({ id: r.id, label: r.label })),
         currentRoleId,
-        consoleAgent: consoleAgent ? { displayName: consoleAgent.displayName } : null,
+        consoleAgent: consoleAgent
+          ? {
+              displayName: consoleAgent.displayName,
+              voxUsername: consoleAgent.voxUsername,
+            }
+          : null,
       }
     : null;
 

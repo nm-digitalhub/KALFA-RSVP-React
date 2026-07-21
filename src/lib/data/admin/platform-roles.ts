@@ -1,6 +1,7 @@
 import 'server-only';
 
 import { createAdminClient } from '@/lib/supabase/admin';
+import { provisionConsoleAgentVoxUser } from '@/lib/data/console-agent-provisioning';
 import { hasPlatformPermission, requirePlatformOwner } from '@/lib/auth/dal';
 import { logActivity } from '@/lib/data/activity';
 import { sendSlackAlert } from '@/lib/alerts/slack';
@@ -287,9 +288,30 @@ export async function enrollConsoleAgent(userId: string, displayName: string): P
     );
   }
 
+  // Full automation (owner directive): enrolment provisions the agent's
+  // Voximplant SDK identity too. Without it an agent looks enrolled and cannot
+  // log in — which is the exact state this codebase already had, a vox_username
+  // with no user behind it.
+  //
+  // Deliberately NOT fatal: enrolment itself succeeded and grants real console
+  // access (the call feed, live-call commands, outbound dial). Provisioning
+  // failure only withholds the listen/take-over half, and rolling back the
+  // enrolment over it would be worse. It is surfaced instead — the outcome is
+  // returned, logged, and vox_username stays null so a retry is safe.
+  const provisioning = await provisionConsoleAgentVoxUser(userId, displayName);
+  if (!provisioning.ok) {
+    console.error(
+      `[enrol] console agent ${userId} enrolled WITHOUT a Voximplant identity (${provisioning.reason})`,
+    );
+  }
+
   await logActivity({
     action: 'admin.console_agent.enrolled',
-    meta: { targetUserId: userId },
+    meta: {
+      targetUserId: userId,
+      voxProvisioned: provisioning.ok,
+      ...(provisioning.ok ? {} : { voxFailure: provisioning.reason }),
+    },
   });
   void sendSlackAlert({
     level: 'warn',

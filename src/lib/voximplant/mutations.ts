@@ -1,5 +1,6 @@
 import {
   voxRequest,
+  type VoxParams,
   type VoximplantConfig,
 } from './core';
 
@@ -120,4 +121,53 @@ export function addApplicationSecret(
     },
     timeoutMs,
   );
+}
+
+// AddUser — create a Voximplant SDK/SIP user inside an application.
+//
+// MUTATION, and the only one in this codebase that MINTS A CREDENTIAL. It is
+// here and deliberately NOT in the read-only CLI (see cli-guard.test.ts): a
+// password comes into existence at the moment of this call and must be stored in
+// the same operation, which a terminal command cannot guarantee.
+//
+// Constraints are the API's own, quoted from the official method tree
+// (voximplant.com/api/v2/getDoc?fqdn=references.httpapi.users):
+//   user_name     "[a-z0-9][a-z0-9_-]{2,49}"
+//   user_password "at least 8 characters long and contain at least one uppercase
+//                  and lowercase letter, one number, and one special character"
+// Callers must satisfy both before calling; the API rejects otherwise and the
+// error is not friendly.
+//
+// The password is passed in and never logged here. Nothing in the response
+// echoes it back.
+export const VOX_USER_NAME_PATTERN = /^[a-z0-9][a-z0-9_-]{2,49}$/;
+
+export interface AddUserResponse {
+  result?: number;
+  user_id?: number;
+  error?: { code: number; msg: string };
+}
+export function addVoximplantUser(
+  config: VoximplantConfig,
+  applicationId: number,
+  userName: string,
+  userPassword: string,
+  userDisplayName?: string,
+  timeoutMs?: number,
+): Promise<AddUserResponse> {
+  if (!VOX_USER_NAME_PATTERN.test(userName)) {
+    // Fail before the network call so a bad name is a clear local error rather
+    // than an opaque API rejection mid-provisioning.
+    return Promise.reject(
+      new Error(`שם משתמש Voximplant אינו תקין: ${userName}`),
+    );
+  }
+  const params: VoxParams = {
+    application_id: applicationId,
+    user_name: userName,
+    user_password: userPassword,
+    user_active: true,
+  };
+  if (userDisplayName) params.user_display_name = userDisplayName;
+  return voxRequest<AddUserResponse>(config, 'AddUser', params, timeoutMs);
 }

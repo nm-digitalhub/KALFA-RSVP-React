@@ -206,6 +206,7 @@ export type Database = {
           voximplant_account_callback_state: string
           voximplant_account_callback_token_hash: string | null
           voximplant_account_callback_wired_at: string | null
+          voximplant_application_id: string | null
           voximplant_balance_callback_at: string | null
           voximplant_callback_secret: string | null
           voximplant_caller_id: string | null
@@ -279,6 +280,7 @@ export type Database = {
           voximplant_account_callback_state?: string
           voximplant_account_callback_token_hash?: string | null
           voximplant_account_callback_wired_at?: string | null
+          voximplant_application_id?: string | null
           voximplant_balance_callback_at?: string | null
           voximplant_callback_secret?: string | null
           voximplant_caller_id?: string | null
@@ -352,6 +354,7 @@ export type Database = {
           voximplant_account_callback_state?: string
           voximplant_account_callback_token_hash?: string | null
           voximplant_account_callback_wired_at?: string | null
+          voximplant_application_id?: string | null
           voximplant_balance_callback_at?: string | null
           voximplant_callback_secret?: string | null
           voximplant_caller_id?: string | null
@@ -1179,6 +1182,42 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "events"
             referencedColumns: ["id"]
+          },
+        ]
+      }
+      console_agent_secrets: {
+        Row: {
+          created_at: string
+          rotated_at: string | null
+          user_id: string
+          vox_password: string
+        }
+        Insert: {
+          created_at?: string
+          rotated_at?: string | null
+          user_id: string
+          vox_password: string
+        }
+        Update: {
+          created_at?: string
+          rotated_at?: string | null
+          user_id?: string
+          vox_password?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "console_agent_secrets_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: true
+            referencedRelation: "console_agents"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "console_agent_secrets_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: true
+            referencedRelation: "console_me"
+            referencedColumns: ["user_id"]
           },
         ]
       }

@@ -29,6 +29,11 @@ export interface StaffRoleOption {
 // This user's call-console membership, or null when they are not an agent.
 export interface ConsoleAgentState {
   displayName: string;
+  // The provisioned Voximplant SDK identity, or null when the agent has none.
+  // NOT cosmetic: without it the agent cannot be present in a call at all, and
+  // the console gives no hint why. Surfacing it here is what stops "enrolled"
+  // from reading as "can do everything the description promises".
+  voxUsername: string | null;
 }
 
 // The owner-only staff panel for one user, threaded page -> gate -> view -> here.
@@ -162,9 +167,14 @@ function ConsoleAgentSection({
     <section className={sectionClass}>
       <h3 className="font-medium">נציג אנושי במוקד השיחות</h3>
       <p className="text-sm text-muted-foreground">
-        נציג מוקד מאזין לשיחות שסוכן ה-AI מנהל ויכול להשתלט עליהן ולדבר עם האורח
-        בעצמו. הוא רואה את פיד השיחות של כל האירועים, ולכן חובה שיהיה חבר צוות
+        נציג מוקד רואה את פיד השיחות ואת נתוני האירועים של <strong>כל</strong>{' '}
+        בעלי האירועים בפלטפורמה, יכול להנחות את סוכן ה-AI בזמן שיחה חיה, לנתק
+        שיחה, לחייג ביוזמתו ולהשהות או להחיות קמפיין. לכן חובה שיהיה חבר צוות
         פלטפורמה — שלילת תפקיד הצוות מסירה אותו מהמוקד אוטומטית.
+      </p>
+      <p className="text-sm text-muted-foreground">
+        האזנה לשיחה חיה והשתלטות עליה עדיין בפיתוח, וגם נציג מוקצה אינו יכול
+        לבצע אותן כרגע.
       </p>
       <FormError message={state?.error} />
       <FormNotice message={state?.notice} />
@@ -174,18 +184,35 @@ function ConsoleAgentSection({
           המשתמש אינו חבר צוות פלטפורמה. הקצו תפקיד צוות תחילה.
         </p>
       ) : current ? (
-        <div className="flex flex-wrap items-center gap-3">
-          <span className="text-sm">
-            נציג פעיל בשם <strong>{current.displayName}</strong>
-          </span>
-          <button
-            type="button"
-            onClick={() => run(() => removeConsoleAgentAction({ userId }))}
-            disabled={pending}
-            className="rounded-md bg-red-50 px-3 py-1.5 text-sm font-medium text-red-700 transition-opacity hover:bg-red-100 disabled:opacity-60"
-          >
-            {pending ? 'רגע…' : 'הסרה מהמוקד'}
-          </button>
+        <div className="space-y-3">
+          <div className="flex flex-wrap items-center gap-3">
+            <span className="text-sm">
+              נציג פעיל בשם <strong>{current.displayName}</strong>
+            </span>
+            <button
+              type="button"
+              onClick={() => run(() => removeConsoleAgentAction({ userId }))}
+              disabled={pending}
+              className="rounded-md bg-red-50 px-3 py-1.5 text-sm font-medium text-red-700 transition-opacity hover:bg-red-100 disabled:opacity-60"
+            >
+              {pending ? 'רגע…' : 'הסרה מהמוקד'}
+            </button>
+          </div>
+
+          {/* The SDK identity decides whether this agent could ever be present
+              in a call. Shown either way: silence here is what let a username
+              with no user behind it look like a working setup. */}
+          {current.voxUsername ? (
+            <p className="text-xs text-muted-foreground">
+              זהות למוקד: <code className="font-mono">{current.voxUsername}</code>
+            </p>
+          ) : (
+            <p className="rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-800">
+              לא הוקצתה זהות למוקד. הנציג רואה את הפיד ויכול להנחות את הסוכן,
+              אך לא ניתן יהיה לצרף אותו לשיחה כשההאזנה תיפתח. ההקצאה מתבצעת
+              אוטומטית בשיוך — הסרה ושיוך מחדש ינסו שוב.
+            </p>
+          )}
         </div>
       ) : (
         <div className="flex flex-wrap items-end gap-3">
