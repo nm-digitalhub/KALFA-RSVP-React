@@ -396,7 +396,14 @@ export async function getCallAttemptByTouchpoint(
 // to a terminal state is never clobbered (no read-then-write).
 export async function recordDialConfirmed(
   id: string,
-  ids: { callSessionHistoryId: number; mediaSessionAccessUrl?: string | null },
+  ids: {
+    callSessionHistoryId: number;
+    mediaSessionAccessUrl?: string | null;
+    // HTTPS sibling of the above. Prefer it when commanding a live session — the
+    // plain URL is HTTP to a media server by raw IP, so an access token that
+    // controls a live guest call would travel in cleartext.
+    mediaSessionAccessSecureUrl?: string | null;
+  },
 ): Promise<{ applied: boolean }> {
   const admin = createAdminClient();
   const { data, error } = await admin
@@ -404,6 +411,7 @@ export async function recordDialConfirmed(
     .update({
       vox_call_session_history_id: String(ids.callSessionHistoryId),
       media_session_access_url: ids.mediaSessionAccessUrl ?? null,
+      media_session_access_secure_url: ids.mediaSessionAccessSecureUrl ?? null,
       updated_at: new Date().toISOString(),
     })
     .eq('id', id)

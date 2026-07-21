@@ -241,6 +241,7 @@ export async function dispatchOutreachCall(
       await recordDialConfirmed(attemptId, {
         callSessionHistoryId: res.call_session_history_id,
         mediaSessionAccessUrl: res.media_session_access_url ?? null,
+        mediaSessionAccessSecureUrl: res.media_session_access_secure_url ?? null,
       });
       await finishDialed(job, res.call_session_history_id);
       return { kind: 'dialed', attemptId, callSessionHistoryId: res.call_session_history_id };

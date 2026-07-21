@@ -259,6 +259,35 @@ describe('provider outcomes', () => {
     expect(insertInteraction).toHaveBeenCalledWith(expect.objectContaining({ channel: 'call', kind: 'call_dialed', billable: false, provider_id: String(HISTORY) }));
     expect(setContactOpStatus).toHaveBeenCalledWith(CTID, 'call_dialed');
   });
+  it('15b. BOTH media handles are persisted, https included', async () => {
+    // The HTTPS handle is what a live-session command channel must use: the plain
+    // one is http:// to a media server by raw IP, so its access token — which can
+    // terminate a guest's call — would cross the internet in cleartext.
+    vi.mocked(startScenarios).mockResolvedValue({
+      result: 1,
+      call_session_history_id: HISTORY,
+      media_session_access_url: 'http://10.0.0.1:12092/request/s/tok',
+      media_session_access_secure_url: 'https://media.example/request/s/tok',
+    } as never);
+    await dispatchOutreachCall(job());
+    expect(recordDialConfirmed).toHaveBeenCalledWith(AID, {
+      callSessionHistoryId: HISTORY,
+      mediaSessionAccessUrl: 'http://10.0.0.1:12092/request/s/tok',
+      mediaSessionAccessSecureUrl: 'https://media.example/request/s/tok',
+    });
+  });
+  it('15c. a provider response without the https handle stores null, not undefined', async () => {
+    vi.mocked(startScenarios).mockResolvedValue({
+      result: 1,
+      call_session_history_id: HISTORY,
+      media_session_access_url: 'http://10.0.0.1:12092/request/s/tok',
+    } as never);
+    await dispatchOutreachCall(job());
+    expect(recordDialConfirmed).toHaveBeenCalledWith(
+      AID,
+      expect.objectContaining({ mediaSessionAccessSecureUrl: null }),
+    );
+  });
   it('16. dial ok then interaction throws → dispatch throws; retry completes WITHOUT a second StartScenarios', async () => {
     vi.mocked(insertInteraction).mockRejectedValueOnce(new Error('db down'));
     await expect(dispatchOutreachCall(job())).rejects.toThrow();

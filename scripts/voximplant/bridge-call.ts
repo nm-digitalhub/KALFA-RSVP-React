@@ -176,10 +176,11 @@ async function main(): Promise<void> {
   const { applied } = await recordDialConfirmed(attemptId, {
     callSessionHistoryId: resp.call_session_history_id,
     mediaSessionAccessUrl: resp.media_session_access_url ?? null,
+    mediaSessionAccessSecureUrl: resp.media_session_access_secure_url ?? null,
   });
   console.log(`dial recorded           : ${applied ? 'yes' : 'no (row already terminal)'}`);
   console.log(
-    `media_session_access_url: ${resp.media_session_access_url ? 'stored' : '(not returned)'}`,
+    `media handle            : ${resp.media_session_access_secure_url ? 'https stored' : resp.media_session_access_url ? 'http only' : '(not returned)'}`,
   );
 }
 

@@ -636,6 +636,7 @@ export type Database = {
           guest_id: string | null
           id: string
           last_callback_at: string | null
+          media_session_access_secure_url: string | null
           media_session_access_url: string | null
           recording_started_at: string | null
           recording_url: string | null
@@ -668,6 +669,7 @@ export type Database = {
           guest_id?: string | null
           id?: string
           last_callback_at?: string | null
+          media_session_access_secure_url?: string | null
           media_session_access_url?: string | null
           recording_started_at?: string | null
           recording_url?: string | null
@@ -700,6 +702,7 @@ export type Database = {
           guest_id?: string | null
           id?: string
           last_callback_at?: string | null
+          media_session_access_secure_url?: string | null
           media_session_access_url?: string | null
           recording_started_at?: string | null
           recording_url?: string | null
