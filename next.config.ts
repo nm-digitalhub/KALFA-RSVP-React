@@ -68,7 +68,17 @@ const nextConfig: NextConfig = {
   // Puppeteer bundles a Chromium binary and uses dynamic requires; it must run
   // as a real Node module (not be webpack-bundled). Used server-side to render
   // the signed-agreement PDF (Hebrew BiDi). See src/lib/agreements/pdf.ts.
-  serverExternalPackages: ['puppeteer'],
+  // Kept out of the server bundle so Node loads them with a native require.
+  //
+  // pg-boss: verified, not assumed. Without it webpack inlined the whole library
+  // into the outreach-call route — 283 KB, with contractor.check()'s own source
+  // ("pg-boss is not installed") and a HARD-CODED schema version sitting inside
+  // the built file. That copy would drift from the worker's node_modules on any
+  // dependency bump while the deployed bundle stayed frozen, and it pulls `pg`
+  // (dynamic requires, optional pg-native) through webpack, which is exactly the
+  // case the Next docs describe: a dependency relying on Node.js-specific
+  // features must not be bundled.
+  serverExternalPackages: ['puppeteer', 'pg-boss'],
   async headers() {
     return [
       // Official Next.js PWA guide (guides/progressive-web-apps §8) global
