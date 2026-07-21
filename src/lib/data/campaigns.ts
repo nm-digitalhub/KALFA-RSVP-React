@@ -681,9 +681,27 @@ export async function markCampaignChargeOutcome(
 
 export type CampaignStatus = Database['public']['Enums']['campaign_status'];
 
+// WHO is performing a campaign transition.
+//
+// This is a value, not a boolean "skip auth" flag, on purpose: the console
+// variant CARRIES the verified staff user id, so it cannot be conjured by a
+// caller that has not been through requireConsoleAgent — and that same id is
+// what the support-access audit row is written from. A bare "trust me" mode
+// would be one careless import away from an unauthenticated transition.
+export type CampaignActor =
+  // Cookie session, event owner. The default for every owner-facing Server Action.
+  | { kind: 'owner' }
+  // Cookie session, platform admin. Wind-down ops (pause / close / cancel).
+  | { kind: 'admin' }
+  // Bearer session, already verified by the console route as a console agent
+  // holding `manage_voice`. Cross-tenant by design (staff), so there is no
+  // ownership check here — the ROUTE is the authorization boundary, and what a
+  // console actor may reach is narrowed at the call sites below, not here.
+  | { kind: 'console'; staffUserId: string };
+
 // Race-safe guarded transition: the UPDATE only matches a row in one of `from`
 // (plus any extra column guard), so concurrent calls can't double-transition.
-// Ownership is verified first. Throws if no row matched its current state.
+// Identity is verified first. Throws if no row matched its current state.
 async function transitionCampaignStatus(
   campaignId: string,
   from: CampaignStatus[],
@@ -695,11 +713,8 @@ async function transitionCampaignStatus(
   // explicit carve-out — cancel/close/settle are not commercial-forward).
   opts?: { rejectPastEvent?: boolean; requireActiveEvent?: boolean },
   // Returns the event's date so a caller (activateCampaign) can seed
-  // auto-thankyou's default schedule without a second ownership-checked fetch.
-  // authz: 'owner' (default) enforces event ownership + the past/active checks.
-  // 'admin' restricts the transition to platform admins (wind-down ops: pause/
-  // close) with NO ownership and NO past/active gating — eventDate is then null.
-  authz: 'owner' | 'admin' = 'owner',
+  // auto-thankyou's default schedule without a second identity-checked fetch.
+  actor: CampaignActor = { kind: 'owner' },
 ): Promise<{ eventDate: string | null }> {
   const admin = createAdminClient();
   const { data: campaign, error } = await admin
@@ -712,17 +727,40 @@ async function transitionCampaignStatus(
     const { notFound } = await import('next/navigation');
     return notFound();
   }
-  let eventDate: string | null;
-  if (authz === 'admin') {
-    // Platform-admin-only wind-down: no ownership, no past/active gating.
-    await requireAdmin();
-    eventDate = null;
-  } else {
-    const event = await requireOwnedEvent(campaign.event_id);
+
+  // The business guards are deliberately SEPARATE from the identity check. They
+  // used to be welded to requireOwnedEvent — the only path that returned the
+  // event row — which is why the first draft of the console route silently
+  // dropped rejectPastEvent: it could not call the cookie DAL, so it lost the
+  // guards along with the ownership check. They are two different concerns and
+  // are now applied independently of who the actor is.
+  const applyEventGuards = (event: { event_date: string | null; status: string }) => {
     if (opts?.rejectPastEvent) assertEventNotPast(event.event_date);
     if (opts?.requireActiveEvent && event.status !== 'active') {
       throw new Error('יש לפרסם את האירוע לפני אישורי הגעה');
     }
+  };
+
+  let eventDate: string | null;
+  if (actor.kind === 'admin') {
+    // Platform-admin-only wind-down: no ownership, no past/active gating.
+    await requireAdmin();
+    eventDate = null;
+  } else if (actor.kind === 'owner') {
+    const event = await requireOwnedEvent(campaign.event_id);
+    applyEventGuards(event);
+    eventDate = event.event_date;
+  } else {
+    // Console (Bearer). Identity was verified by the route; read the event with
+    // the service-role client so the SAME guards run without the cookie DAL.
+    const { data: event, error: evErr } = await admin
+      .from('events')
+      .select('event_date, status')
+      .eq('id', campaign.event_id)
+      .maybeSingle();
+    if (evErr) throw new Error('טעינת האירוע נכשלה');
+    if (!event) throw new Error('האירוע לא נמצא');
+    applyEventGuards(event);
     eventDate = event.event_date;
   }
 
@@ -747,14 +785,32 @@ async function transitionCampaignStatus(
 // Activate (begin outreach). Requires an approved/scheduled/paused campaign that
 // already has a card hold (capture_status='authorized') — no outreach without a
 // secured payment method.
-export async function activateCampaign(campaignId: string): Promise<void> {
+//
+// `actor` narrows WHICH activations are reachable — the owner decision of
+// 2026-07-21. An owner may activate from any pre-send status; a console agent
+// may only REVIVE, i.e. `paused → active`.
+//
+// That asymmetry is the whole safety argument, and it lives HERE rather than in
+// the route so a future caller cannot widen it: `paused` is reachable only from
+// `active` (pauseCampaign is the sole writer of that status, and it accepts only
+// `['active']`), so a paused campaign is PROOF the owner already activated it.
+// Staff therefore restore a commitment the owner made; they can never create
+// one. The J5 hold is likewise already present on anything that was live.
+export async function activateCampaign(
+  campaignId: string,
+  actor: CampaignActor = { kind: 'owner' },
+): Promise<void> {
+  const from: CampaignStatus[] =
+    actor.kind === 'console' ? ['paused'] : ['approved', 'scheduled', 'paused'];
+
   const { eventDate } = await transitionCampaignStatus(
     campaignId,
-    ['approved', 'scheduled', 'paused'],
+    from,
     'active',
     { column: 'capture_status', value: 'authorized' },
     // L1: never begin outreach for a past event. R9: requires an active event.
     { rejectPastEvent: true, requireActiveEvent: true },
+    actor,
   );
 
   // Additive ops alert (fire-and-forget, fail-safe): fires only once the guarded
@@ -786,15 +842,26 @@ export async function activateCampaign(campaignId: string): Promise<void> {
   }
 }
 
-// Wind-down: platform-admin only (see transitionCampaignStatus authz='admin').
-export async function pauseCampaign(campaignId: string): Promise<void> {
+// Wind-down: `active → paused`. Platform admin on the web; a console agent with
+// `manage_voice` may also pause.
+//
+// Opening the stop button wider than the start button is deliberate. Pausing is
+// a SAFETY action — a guest complains, a template is wrong, the owner phones
+// support — and the person taking that call must be able to stop sends
+// immediately rather than escalate while messages keep going out. A wrong pause
+// costs nothing: it is fully reversible by the revival path above. A late pause
+// costs messages that cannot be recalled.
+export async function pauseCampaign(
+  campaignId: string,
+  actor: CampaignActor = { kind: 'admin' },
+): Promise<void> {
   await transitionCampaignStatus(
     campaignId,
     ['active'],
     'paused',
     undefined,
     undefined,
-    'admin',
+    actor,
   );
 }
 
@@ -873,7 +940,8 @@ export async function updateThankyouSchedule(
 
 // Close the campaign (no new outreach/billing after this). Computing the final
 // charge and capturing the held card is a separate B4 step (needs billed_results).
-// Wind-down: platform-admin only (see transitionCampaignStatus authz='admin').
+// Wind-down: platform-admin only. NOT opened to the console — closing ends the
+// campaign and leads into the close-charge flow, which stays owner/admin.
 export async function closeCampaign(campaignId: string): Promise<void> {
   await transitionCampaignStatus(
     campaignId,
@@ -881,7 +949,7 @@ export async function closeCampaign(campaignId: string): Promise<void> {
     'closed',
     undefined,
     undefined,
-    'admin',
+    { kind: 'admin' },
   );
 }
 

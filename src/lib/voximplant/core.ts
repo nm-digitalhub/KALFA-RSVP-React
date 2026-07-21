@@ -336,6 +336,52 @@ export function getPhoneNumbers(
   return voxRequest<GetPhoneNumbersResponse>(config, 'GetPhoneNumbers', {}, timeoutMs);
 }
 
+// GetUsers — READ-ONLY inventory of the account's SDK/SIP users. This is what
+// tells us whether a `console_agents.vox_username` is a REAL Voximplant user or
+// just a string somebody wrote into our database: the app's one-time-key login
+// resolves the username on Voximplant's side, so an unprovisioned name fails at
+// login with no signal on ours.
+//
+// Never returns or accepts a password. Provisioning (AddUser) is deliberately NOT
+// here — creating a user mints a credential, which is a mutation with billing
+// (MAU) consequences and belongs behind an explicit, audited action.
+export interface VoxUserInfo {
+  user_id: number;
+  user_name: string;
+  user_display_name?: string | null;
+  user_active: boolean;
+  // Present only when the query asks for application binding.
+  application_id?: number | null;
+  application_name?: string | null;
+}
+export interface GetUsersResponse {
+  result: VoxUserInfo[];
+  total_count: number;
+}
+export function getUsers(
+  config: VoximplantConfig,
+  applicationId: number,
+  timeoutMs?: number,
+): Promise<GetUsersResponse> {
+  // application_id is REQUIRED, despite the reference describing it as a filter
+  // ("The application ID to filter"). Calling GetUsers without it returns
+  // `'application_id' parameter is invalid` from the live API — verified
+  // 2026-07-21. Every official curl example passes it too. Users are scoped per
+  // application on Voximplant, so "all users on the account" is not a query the
+  // method answers; enumerate applications and ask per application.
+  //
+  // Params verified against the official method tree
+  // (voximplant.com/api/v2/getDoc?fqdn=references.httpapi.users): GetUsers takes
+  // application_id / application_name / with_queues / with_skills — there is NO
+  // `with_application` flag, which an earlier draft of this function invented.
+  return voxRequest<GetUsersResponse>(
+    config,
+    'GetUsers',
+    { application_id: applicationId },
+    timeoutMs,
+  );
+}
+
 // GetTransactionHistory — READ-ONLY ledger of account debits/credits (to see what
 // the balance is spent on: phone-number rent, call/SMS charges, top-ups, etc.).
 // Amounts follow the API sign convention (charges typically negative). No secrets.

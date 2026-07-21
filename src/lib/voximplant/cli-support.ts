@@ -119,7 +119,7 @@ export function parseArgs(argv: string[]): ParsedArgs {
 // READ-ONLY command set (owner directive): the CLI can never mutate Voximplant
 // state — `start` was removed with the mutations split (the server dispatcher
 // is the only dial path) and a guard test pins this list.
-export const KNOWN_COMMANDS = ['account', 'autocharge', 'rules', 'history', 'numbers', 'transactions', 'recording', 'log', 'call-lists', 'media-resources', 'audit'] as const;
+export const KNOWN_COMMANDS = ['account', 'autocharge', 'rules', 'history', 'numbers', 'users', 'transactions', 'recording', 'log', 'call-lists', 'media-resources', 'audit'] as const;
 export type KnownCommand = (typeof KNOWN_COMMANDS)[number];
 
 export function assertKnownCommand(command: string): asserts command is KnownCommand {
@@ -132,6 +132,7 @@ const ALLOWED_FLAGS: Record<KnownCommand, Set<string>> = {
   account: new Set(['key']),
   autocharge: new Set(['key']),
   rules: new Set(['key', 'app']),
+  users: new Set(['key', 'app']),
   history: new Set([
     'key',
     'app',
@@ -813,6 +814,7 @@ commands (ALL read-only — the CLI cannot mutate Voximplant state):
   rules [--app <id>]         List applications and one app's routing rules
   history <mode> [flags]     Fetch a call-history report (async → CSV)
   numbers                    List the account's phone numbers (find a Caller ID)
+  users [--app <id>]         List SDK/SIP users (is a console agent provisioned?)
   transactions [--days <n>]  Billing ledger — what the balance is spent on
   recording --session <id>   Download a call's secure recording as mp3
   log --session <id>         Download a call's scenario log (Logger.write output)

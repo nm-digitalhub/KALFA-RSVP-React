@@ -46,13 +46,29 @@ export type AgentStatusBody = z.infer<typeof agentStatusSchema>;
 //     Android SDK adds a second auth system and MAU billing to reach one human
 //     per event who already has a phone; dialling the owner via callPSTN is the
 //     recommendation.
-//   POST /api/campaigns/{id}/start | pause       NOT BUILT — BLOCKED. The
-//     lifecycle functions exist (activateCampaign / pauseCampaign) but reach
-//     authorization through requireAdmin/requireOwnedEvent, which read the
-//     COOKIE session (lib/auth/dal.ts imports next/headers). The console
-//     authenticates by Bearer, so wrapping them would either fail for lack of a
-//     session or resolve against whoever's cookie happened to be present. That
-//     is an authorization-model change, not a route.
+//   POST /api/campaigns/{id}/status              LIVE — run state only.
+//     Body {action: 'activate' | 'pause'}. This was previously blocked: the
+//     lifecycle functions reached authorization through requireAdmin /
+//     requireOwnedEvent, which read the COOKIE session, and the console
+//     authenticates by Bearer. Resolved by separating the two concerns that had
+//     been welded together — WHO is acting (now a CampaignActor value, one
+//     variant per authentication path) and WHICH business guards apply (the J5
+//     hold, the past-event refusal, the active-event requirement), which now run
+//     for every actor. The route calls the same activateCampaign / pauseCampaign
+//     the web Server Actions call; it does not reimplement them, and
+//     campaign-lifecycle-parity.test.ts fails if a future route tries.
+//
+//     Authority is `campaigns.runstate` (migration 20260721183855), NOT
+//     manage_voice — pausing a campaign also stops its WhatsApp sends, so it is
+//     not a call-floor permission. Every transition writes a support_access_log
+//     row: staff acting on a customer's asset must be attributable.
+//
+//     Scope is deliberately narrow (owner decision, 2026-07-21): staff may
+//     pause, and may activate ONLY from `paused` — a revival. First activation
+//     (approved/scheduled → active) stays with the event owner on the web,
+//     because that is the commercial commitment against their card. `paused` is
+//     reachable only from `active`, so a revived campaign is provably one the
+//     owner already ran.
 
 // The console asks the backend to ENQUEUE an outbound AI call. The request path
 // only enqueues (the worker owns dispatch + StartScenarios); it returns the

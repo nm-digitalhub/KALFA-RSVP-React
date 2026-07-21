@@ -40,6 +40,9 @@ describe('CLI ↔ mutations guard', () => {
     // new subcommand cannot slip in without someone confirming it only reads.
     // 'log' qualifies — GetCallHistory plus an authenticated GET of the returned
     // log_file_url, no mutation.
+    // 'users' qualifies — GetUsers lists SDK/SIP users and returns no password.
+    // Provisioning (AddUser) is deliberately NOT here: minting a credential is a
+    // mutation with MAU billing consequences and does not belong in a read-only CLI.
     // 'autocharge' qualifies — GetAutochargeConfig reads the account's top-up
     // config and cannot write it. Note the method is absent from the public
     // Accounts index while being live, so that index cannot be used to argue a
@@ -55,6 +58,7 @@ describe('CLI ↔ mutations guard', () => {
         'log',
         'media-resources',
         'numbers',
+        'users',
         'recording',
         'rules',
         'transactions',

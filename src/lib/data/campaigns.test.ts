@@ -1073,3 +1073,117 @@ describe('B4 close-charge data layer', () => {
     );
   });
 });
+
+// A console actor's identity is verified by the ROUTE (Bearer + the
+// campaigns.runstate permission), so these transitions touch neither the cookie
+// ownership check nor requireAdmin. What they must still honour is every
+// BUSINESS guard — and the event they are guarded against is read through the
+// service-role client, not requireOwnedEvent. This double serves the two reads
+// that path makes (campaigns, then events) with different rows.
+function adminByTable(rows: Record<string, unknown>) {
+  const builders: Record<string, ReturnType<typeof createMockSupabase>['builder']> = {};
+  const client = {
+    from: vi.fn((table: string) => {
+      builders[table] ??= createMockSupabase({
+        data: (rows[table] ?? null) as never,
+        error: null,
+      }).builder;
+      return builders[table];
+    }),
+  };
+  vi.mocked(createAdminClient).mockReturnValue(
+    client as unknown as ReturnType<typeof createAdminClient>,
+  );
+  return builders;
+}
+
+describe('campaign run-state: console actor (owner decision 2026-07-21)', () => {
+  const CONSOLE = { kind: 'console' as const, staffUserId: 'staff-1' };
+
+  it('activate is REVIVAL only — the from-set is paused, never approved/scheduled', async () => {
+    const builders = adminByTable({
+      campaigns: { id: 'c1', event_id: 'e1' },
+      events: { event_date: '2999-01-01T00:00:00+00:00', status: 'active' },
+    });
+
+    await activateCampaign('c1', CONSOLE);
+
+    // The narrowing that makes staff activation safe: a paused campaign is proof
+    // the OWNER already activated it, so staff resume a commitment and can never
+    // create one.
+    expect(builders.campaigns.in).toHaveBeenCalledWith('status', ['paused']);
+    expect(builders.campaigns.in).not.toHaveBeenCalledWith(
+      'status',
+      expect.arrayContaining(['approved']),
+    );
+    expect(builders.campaigns.update).toHaveBeenCalledWith({ status: 'active' });
+  });
+
+  it('still requires the J5 hold', async () => {
+    const builders = adminByTable({
+      campaigns: { id: 'c1', event_id: 'e1' },
+      events: { event_date: '2999-01-01T00:00:00+00:00', status: 'active' },
+    });
+
+    await activateCampaign('c1', CONSOLE);
+
+    expect(builders.campaigns.eq).toHaveBeenCalledWith('capture_status', 'authorized');
+  });
+
+  it('still refuses a PAST event — the guard the first draft of the route lost', async () => {
+    const builders = adminByTable({
+      campaigns: { id: 'c1', event_id: 'e1' },
+      events: { event_date: '2020-01-01T00:00:00+00:00', status: 'active' },
+    });
+
+    await expect(activateCampaign('c1', CONSOLE)).rejects.toThrow('האירוע כבר חלף');
+    expect(builders.campaigns.update).not.toHaveBeenCalled();
+  });
+
+  it('still refuses a non-active event', async () => {
+    const builders = adminByTable({
+      campaigns: { id: 'c1', event_id: 'e1' },
+      events: { event_date: '2999-01-01T00:00:00+00:00', status: 'draft' },
+    });
+
+    await expect(activateCampaign('c1', CONSOLE)).rejects.toThrow(
+      'יש לפרסם את האירוע לפני אישורי הגעה',
+    );
+    expect(builders.campaigns.update).not.toHaveBeenCalled();
+  });
+
+  it('uses neither the cookie ownership check nor requireAdmin', async () => {
+    adminByTable({
+      campaigns: { id: 'c1', event_id: 'e1' },
+      events: { event_date: '2999-01-01T00:00:00+00:00', status: 'active' },
+    });
+
+    await activateCampaign('c1', CONSOLE);
+
+    expect(requireOwnedEvent).not.toHaveBeenCalled();
+    expect(requireAdmin).not.toHaveBeenCalled();
+  });
+
+  it('pause: active → paused without requireAdmin', async () => {
+    const builders = adminByTable({
+      campaigns: { id: 'c1', event_id: 'e1' },
+      events: { event_date: '2999-01-01T00:00:00+00:00', status: 'active' },
+    });
+
+    await pauseCampaign('c1', CONSOLE);
+
+    expect(builders.campaigns.update).toHaveBeenCalledWith({ status: 'paused' });
+    expect(builders.campaigns.in).toHaveBeenCalledWith('status', ['active']);
+    expect(requireAdmin).not.toHaveBeenCalled();
+  });
+
+  it('the OWNER path is unchanged — full from-set, ownership still checked', async () => {
+    const { builder } = adminWith({ data: { id: 'c1', event_id: 'e1' }, error: null });
+    vi.mocked(requireOwnedEvent).mockResolvedValue(ownedEvent());
+
+    await activateCampaign('c1');
+
+    expect(requireOwnedEvent).toHaveBeenCalledWith('e1');
+    expect(builder.in).toHaveBeenCalledWith('status', ['approved', 'scheduled', 'paused']);
+  });
+});

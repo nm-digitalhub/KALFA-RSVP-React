@@ -46,6 +46,7 @@ import {
   getHistoryReports,
   getMediaResources,
   getPhoneNumbers,
+  getUsers,
   getRules,
   getTransactionHistory,
   voxRetry,
@@ -166,6 +167,44 @@ async function cmdNumbers(cfg: VoximplantConfig): Promise<void> {
     console.log(`    status         : ${status}`);
     console.log(`    application_id : ${n.application_id ?? '—'}`);
     console.log(`    rule_id        : ${n.rule_id ?? '—'}`);
+  }
+}
+
+// READ-ONLY: the account's SDK/SIP users. Answers the one question our own
+// database cannot: whether a console agent's `vox_username` corresponds to a
+// user that actually exists on Voximplant. A name stored here with no user there
+// fails only at the app's login, with nothing on our side to see.
+async function cmdUsers(
+  cfg: VoximplantConfig,
+  flags: Record<string, FlagValue>,
+): Promise<void> {
+  // Users are scoped PER APPLICATION — GetUsers rejects a call without
+  // application_id — so walk the applications unless one was named.
+  const only = flags.app !== undefined ? positiveInt('app', flags.app) : undefined;
+  const apps = await retried(() => getApplications(cfg));
+  const targets = only
+    ? apps.result.filter((a) => a.application_id === only)
+    : apps.result;
+  if (targets.length === 0) {
+    console.log(only ? `no such application: ${only}` : 'no applications on the account');
+    return;
+  }
+  let total = 0;
+  for (const app of targets) {
+    const { result } = await retried(() =>
+      getUsers(cfg, app.application_id),
+    );
+    console.log(`=== ${app.application_name} (app_id=${app.application_id}) — ${result.length} user(s)`);
+    total += result.length;
+    for (const u of result) {
+      console.log(`  ${u.user_name}`);
+      console.log(`    user_id : ${u.user_id}`);
+      if (u.user_display_name) console.log(`    display : ${u.user_display_name}`);
+      console.log(`    active  : ${u.user_active}`);
+    }
+  }
+  if (total === 0) {
+    console.log('(no SDK/SIP users anywhere — no console agent can log in yet)');
   }
 }
 
@@ -543,6 +582,8 @@ async function dispatch(
       return cmdHistory(cfg, flags);
     case 'numbers':
       return cmdNumbers(cfg);
+    case 'users':
+      return cmdUsers(cfg, flags);
     case 'transactions':
       return cmdTransactions(cfg, flags);
     case 'recording':
