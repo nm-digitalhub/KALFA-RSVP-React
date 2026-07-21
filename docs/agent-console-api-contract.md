@@ -107,16 +107,29 @@ Two matter to us specifically:
 
 ## Related state, verified 2026-07-21
 
-- Live routing: `app_settings.voximplant_rule_id = 1494311` = rule `OutCall` → scenario
-  `RSVP` (the DTMF/Groq path). `voximplant_live_calls = true`.
-- The ElevenLabs bridge is promoted but **dark**: rule `OutCallAgent` (1520915) → `RSVPAgent`
-  (#918450) exists on `kalfa-rsvp` (app 11107202) and receives no traffic until the rule id
-  flips.
-- `kalfatest` (app 11107302) still carries `KALFA`, `OutCallPreview` → `RSVPPreview`, and
-  `VoiceABTest`. `VoiceAgentTest` is gone from it — the rename/promotion is reflected.
-  Note: `npm run voximplant -- rules` enumerates rules for the production app only, so the
-  `kalfatest` list above comes from `voxfiles/applications/…/rules.config.json`, not from the
-  platform.
+- Live routing: `app_settings.voximplant_rule_id = 1520915` = rule `OutCallAgent` → scenario
+  `RSVPAgent` (#918450) on `kalfa-rsvp` (app 11107202). `voximplant_live_calls = true`.
+  Rule `OutCall` (1494311 → `RSVP`, the old DTMF path) still exists but nothing routes to it.
+- The bridge is proven in production, not merely configured — session `6899241664`: 61s,
+  `end_code 200`, ElevenLabs QA 100/100 on all four criteria, RSVP captured as
+  `attending, 1 adult`.
+- Groq is out of the stack: the ctx `groq_key` field and its 404 gate, the dial gate, the
+  admin surface, `getVoximplantGroqKey()` and the `voximplant_groq_api_key` column
+  (`20260721033000`) are all gone. The ElevenLabs agent is the dialogue brain.
+- **`kalfatest` (app 11107302) is disconnected — do not build or test against it.** The
+  application object still exists on the account, but its last session was 2026-07-19 20:28
+  UTC with zero sessions on 07-20 and 07-21, and nothing in this repo routes to it. The
+  bridge moved off it: `VoiceAgentTest` was renamed `RSVPAgent` and promoted to `kalfa-rsvp`.
+  What remains there (`KALFA`, `OutCallPreview` → `RSVPPreview`, `VoiceABTest`) is PoC
+  debris pending cleanup. Note that `npm run voximplant -- rules` enumerates rules for the
+  production app only, so that list comes from `voxfiles/applications/…/rules.config.json`,
+  not from the platform — the disconnection itself is measured from call history.
+- Placing a bridged call: `npm run bridge:call` (formerly `bridge:test-call`). Despite the
+  old name it is a real dial path — with no campaign enabled the worker dispatcher never
+  runs, so it is the only thing that dials, and it now persists
+  `vox_call_session_history_id` and `media_session_access_url` via the same
+  `recordDialConfirmed` the dispatcher uses. **Rows created before 2026-07-21 03:45 have
+  both columns NULL**; a live-session command channel needs a call placed after that.
 - Console access requires staff: `is_console_agent()` is `is_staff() AND exists(console_agents…)`
   (`20260720234500`) and `console_agents.user_id` is an FK to `platform_staff(user_id)`
   `ON DELETE CASCADE` (`20260721005100`). Removing an agent from staff revokes console access

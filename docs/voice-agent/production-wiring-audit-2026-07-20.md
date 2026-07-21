@@ -367,8 +367,39 @@ Two findings the audit made that have **hardened** since, and should be read as 
 - The console views and base tables were write-open to `authenticated` (and, on the three
   base tables, fully open to `anon`). Closed by `20260720193844` and `20260721005000`.
 
-Live routing is unchanged from the audit's finding: `voximplant_rule_id = 1494311`
-(`OutCall` → `RSVP`, the DTMF/Groq path), `voximplant_live_calls = true`. The bridge
-(`OutCallAgent` 1520915 → `RSVPAgent` #918450) remains promoted-but-dark.
+### Routing — the audit's central finding is now inverted (2026-07-21 03:00)
+
+The audit found production on the DTMF+Groq stack with the ElevenLabs bridge promoted but
+dark. **That flipped.** `app_settings.voximplant_rule_id` is now `1520915` (`OutCallAgent`
+→ `RSVPAgent` #918450); `1494311` (`OutCall` → `RSVP`) still exists on the application but
+nothing routes to it. Anywhere this document says production calls run the DTMF scenario,
+read it as history.
+
+Proven end to end, not just configured — session `6899241664`: 61s, `call_successful yes`,
+`end_code 200`, ElevenLabs QA 100/100 on all four criteria, RSVP captured as
+`attending, 1 adult`, `agent_turns 13 / user_turns 5`.
+
+**Groq is gone from the stack entirely** — the ctx `groq_key` field and its 404 gate, the
+dial gate, the admin field and DAL, `getVoximplantGroqKey()`, and the
+`app_settings.voximplant_groq_api_key` column (`20260721033000`). The ctx endpoint used to
+404 without a Groq key, which meant the bridge could not start a call without a credential
+it explicitly ignores.
+
+### Corrections to specific claims in the body
+
+- **§Executive / §3 / §12 — "sandbox only… `VoiceAgentTest` on `kalfatest` rule 1520330".**
+  Superseded. The scenario was renamed `RSVPAgent` (#918450) and promoted to `kalfa-rsvp`
+  under rule `OutCallAgent` 1520915. `kalfatest` (app 11107302) still exists on the account
+  but is **disconnected**: last session 2026-07-19 20:28 UTC, zero sessions on 07-20 and
+  07-21, and nothing in this repo routes to it. Do not build or test against it.
+- **`scripts/voximplant/bridge-test-call.ts` → `scripts/voximplant/bridge-call.ts`**
+  (`npm run bridge:call`). It is not a test harness: with no campaign enabled the worker
+  dispatcher never runs, so this is the only path that actually dials, and its rows feed
+  billing and QA like any other.
+- **§8 item 9 — "attempt↔human-agent call: no identifier exists" / `media_session_access_url`
+  "reserved/unwired".** Half closed. The launcher now calls `recordDialConfirmed`, the same
+  DAL the dispatcher uses, so new calls persist `vox_call_session_history_id` and
+  `media_session_access_url`. Rows created before 2026-07-21 03:45 remain NULL — the fix is
+  forward-only, and a live-session command channel needs a call placed after it.
 
 Full contract, call sites and per-endpoint status: `docs/agent-console-api-contract.md`.
