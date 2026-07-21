@@ -19,25 +19,10 @@ import {
 import {
   celebrantsSchemaFor,
   parseCelebrantsForm,
+  readCelebrantsForm,
   updateEventSchema,
 } from '@/lib/validation/schemas';
 import { issuesToFieldErrors, type FormState } from '@/lib/validation/result';
-
-// All six possible celebrant inputs across the four kinds (plain named inputs,
-// e.g. `celebrants.groom`). The submitted event_type's schema keeps only its
-// own kind's fields (z.object strips unknown keys). A missing key maps to
-// undefined (accepted by the optional fields) — defensive only; the celebrant
-// group is always rendered, so the current kind's inputs are always posted.
-function readCelebrantsForm(formData: FormData) {
-  return {
-    groom: formData.get('celebrants.groom') ?? undefined,
-    bride: formData.get('celebrants.bride') ?? undefined,
-    name: formData.get('celebrants.name') ?? undefined,
-    parents: formData.get('celebrants.parents') ?? undefined,
-    child: formData.get('celebrants.child') ?? undefined,
-    names: formData.get('celebrants.names') ?? undefined,
-  };
-}
 
 // `eventId` is bound from the route segment (server-side), NOT submitted by the
 // browser. Authorization is enforced again inside updateEvent via the ownership

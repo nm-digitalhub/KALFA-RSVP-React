@@ -276,12 +276,47 @@ export type CelebrantFieldKey =
   | 'names'
   | 'host_composition';
 
-const CELEBRANT_FIELD_KEYS_BY_KIND: Record<CelebrantKind, readonly CelebrantFieldKey[]> = {
+export const CELEBRANT_FIELD_KEYS_BY_KIND: Record<
+  CelebrantKind,
+  readonly CelebrantFieldKey[]
+> = {
   couple: ['groom', 'bride'],
   single: ['name'],
   parents: ['parents', 'child', 'host_composition'],
   free: ['names'],
 };
+
+// Every celebrant field name, DERIVED from the per-kind map above rather than
+// listed again — the two cannot drift apart.
+export const ALL_CELEBRANT_FIELD_KEYS: readonly CelebrantFieldKey[] = [
+  ...new Set(Object.values(CELEBRANT_FIELD_KEYS_BY_KIND).flat()),
+];
+
+// Pull every celebrant input out of a submitted form. The event forms post them
+// as plain named inputs (`celebrants.groom`, `celebrants.host_composition`, …);
+// the submitted event_type's schema then keeps only its own kind's fields, since
+// z.object strips unknown keys. A field the current kind does not render is
+// simply absent → undefined, which the optional fields accept.
+//
+// This lives here, beside the key map it iterates, because it used to be
+// hand-written TWICE — once in the create action and once in the edit action —
+// and both copies listed the field names literally. When host_composition was
+// added for the brit flow, the schema, the form and the storage shape all
+// learned about it and neither reader did, so "הרכב המזמינים" was silently
+// dropped on BOTH create and edit: the select posted a value, Zod never saw the
+// key, parseCelebrantsForm found nothing to store, and the event came back
+// showing "בחרו…" with no error anywhere. Deriving the list from
+// CELEBRANT_FIELD_KEYS_BY_KIND means a future field is picked up by definition.
+export function readCelebrantsForm(
+  formData: FormData,
+): Partial<Record<CelebrantFieldKey, FormDataEntryValue>> {
+  return Object.fromEntries(
+    ALL_CELEBRANT_FIELD_KEYS.map((key) => [
+      key,
+      formData.get(`celebrants.${key}`) ?? undefined,
+    ]),
+  );
+}
 
 // The celebrant fields REQUIRED for completeness per kind — mirrors
 // CELEBRANT_COMPLETE_SCHEMA_BY_KIND (the campaign-enablement gate). The edit
