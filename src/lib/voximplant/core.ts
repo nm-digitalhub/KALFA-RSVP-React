@@ -267,26 +267,42 @@ export function getAccountInfo(
 
 // GetAutochargeConfig — READ-ONLY view of the account's automatic top-up setup.
 //
-// Voximplant exposes NO setter for this: the whole accounts category is 15
-// methods, of which only SetAccountInfo and SetChildAccountInfo write, and
-// neither touches autocharge. Enabling it is a support ticket (done for this
-// account on 2026-07-21). So this reads back what support configured — the only
-// programmatic visibility that exists.
+// NOT in the public Accounts method index (which lists 15), yet live and
+// answering: it has result types in Voximplant's own .NET/Java/Go/Node SDKs, and
+// a real call against this account returned a populated config. Runtime evidence
+// outranks a docs index — treat it as a supported Management API method that the
+// published list has fallen behind on, not an internal endpoint.
+//
+// NO PUBLIC SETTER WAS FOUND — deliberately phrased that way. An earlier version
+// of this comment claimed no setter EXISTS, reasoning from that same 15-method
+// index. That reasoning is void: the index omits this very method, so its silence
+// proves nothing about a SetAutochargeConfig. What is true is that a search of
+// the API reference surfaces no such method, and that support configured this
+// account by ticket.
 //
 // Worth having because the balance floor stopped being a natural brake the
 // moment autocharge was enabled: before, a runaway would exhaust the balance and
-// halt; now it silently refills. Knowing the recharge amount and threshold is
+// halt; now it silently refills. Knowing the threshold and recharge amount is
 // what makes the spend ceiling calculable instead of assumed.
-//
-// Field names are NOT pinned to an interface: the documented result type
-// (GetAutochargeConfigResultType) publishes no field list beyond auto_charge, so
-// asserting a shape here would be inventing one. The CLI prints whatever comes
-// back.
+export interface AutochargeConfig {
+  /** Whether automatic top-up is enabled on the account. */
+  auto_charge: boolean;
+  /** Balance at/below which a top-up is expected to trigger (account currency). */
+  min_balance: number;
+  /** Amount charged to the card per top-up (account currency). */
+  card_overrun_value: number;
+  /** Where Voximplant sends the charge receipt. */
+  receipt_email: string;
+  /** The four above are observed live; the result type publishes no exhaustive
+   *  list, so anything else Voximplant returns survives instead of being dropped. */
+  [key: string]: unknown;
+}
+
 export function getAutochargeConfig(
   config: VoximplantConfig,
   timeoutMs?: number,
-): Promise<{ result?: Record<string, unknown> }> {
-  return voxRequest<{ result?: Record<string, unknown> }>(
+): Promise<{ result?: AutochargeConfig }> {
+  return voxRequest<{ result?: AutochargeConfig }>(
     config,
     'GetAutochargeConfig',
     {},

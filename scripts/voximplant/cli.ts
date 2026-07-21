@@ -122,11 +122,14 @@ async function cmdAccount(cfg: VoximplantConfig): Promise<void> {
   console.log(`created       : ${a.created}`);
 }
 
-// READ-ONLY: what automatic top-up support configured on this account. There is
-// no API to CHANGE it (the accounts category has exactly two setters, neither
-// touching autocharge) — this only reads it back. Prints every returned field
-// verbatim: the documented result type publishes no field list, so filtering to
-// an assumed shape would hide whatever else is actually there.
+// READ-ONLY: what automatic top-up support configured on this account. No public
+// setter was found, and support configures it by ticket — but note this method is
+// itself missing from the public Accounts index while being live, so that index
+// is not evidence a setter is absent.
+//
+// Prints every returned field verbatim. Four are typed in AutochargeConfig from a
+// live response; the result type publishes no exhaustive list, so filtering to an
+// assumed shape would hide whatever else is actually there.
 async function cmdAutocharge(cfg: VoximplantConfig): Promise<void> {
   const res = await retried(() => getAutochargeConfig(cfg));
   const r = res.result;

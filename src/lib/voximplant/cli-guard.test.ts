@@ -40,11 +40,11 @@ describe('CLI ↔ mutations guard', () => {
     // new subcommand cannot slip in without someone confirming it only reads.
     // 'log' qualifies — GetCallHistory plus an authenticated GET of the returned
     // log_file_url, no mutation.
-    // 'autocharge' qualifies — GetAutochargeConfig, and there is no setter to
-    // confuse it with: the accounts category has exactly two write methods
-    // (SetAccountInfo, SetChildAccountInfo) and neither touches autocharge.
-    // Enabling automatic top-up is a support ticket, so this can only read back
-    // what support configured.
+    // 'autocharge' qualifies — GetAutochargeConfig reads the account's top-up
+    // config and cannot write it. Note the method is absent from the public
+    // Accounts index while being live, so that index cannot be used to argue a
+    // SetAutochargeConfig does not exist either; the honest statement is that no
+    // public setter was FOUND, and that support configures this by ticket.
     expect([...KNOWN_COMMANDS].sort()).toEqual(
       [
         'account',
