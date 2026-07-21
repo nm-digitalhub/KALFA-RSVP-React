@@ -1,6 +1,6 @@
 # KALFA — חוזה אינטגרציה לאפליקציית הקונסולה
 
-> **גרסה 2026-07-22.** כל שדה, קוד וערך במסמך נשלף מהקוד או מה-DB החי ביום זה.
+> **גרסה 2026-07-22 (עודכן: sdk-auth נבנה).** כל שדה, קוד וערך במסמך נשלף מהקוד או מה-DB החי ביום זה.
 > מה שלא נבנה מסומן ❌ ומופיע רק כדי שתדעו מה יגיע.
 >
 > בסיס: `https://beta.kalfa.me`
@@ -172,7 +172,7 @@ agent_status · console_call_feed · human_agent_call_legs
 ```
 1. Client.connect()
 2. requestOneTimeLoginKey( שם קצר )            → login_key
-3. POST /api/agents/sdk-auth { one_time_key }   → { hash }      ❌ טרם נבנה
+3. POST /api/agents/sdk-auth { one_time_key }   → { hash }      ✅ קיים — §6.6
 4. loginWithOneTimeKey( שם מלא , hash)          → AuthResult
 ```
 
@@ -289,14 +289,57 @@ approved/scheduled → active    ❌ 409 — הפעלה ראשונה היא של
 `409` מחזיר טקסט עברי אמיתי — *"להפעלת הקמפיין נדרשת תפיסת מסגרת מאושרת"*,
 *"האירוע כבר חלף"*. **הציגו אותו כמו שהוא**, אל תחליפו בהודעה כללית.
 
-### 6.6 ❌ טרם נבנו
+### 6.6 `POST /api/agents/sdk-auth` — חתימת מפתח חד-פעמי ✅
+
+הרשאה: אין (חברות במוקד מספיקה — היכולת להתחבר היא עצם החברות)
+
+```json
+{ "one_time_key": "<הערך מ-requestOneTimeLoginKey>" }
+→ 200 { "hash": "3c85e45030acefcf93958cd26a3ee098" }
+```
+
+**שם המשתמש אינו נשלח בגוף** — השרת מזהה את הנציג מה-JWT. גוף שמנסה לציין
+נציג אחר נדחה ב-`400`.
+
+הקוד בצד שלכם:
+
+```kotlin
+val shortName = me.voxUsername                       // agent_1bbe74dc-…
+val fullName  = "$shortName@kalfa-rsvp.kalfarsvp.voximplant.com"
+
+client.requestOneTimeLoginKey(shortName)             // ← קצר
+// ב-onOneTimeKeyGenerated:
+val hash = post("/api/agents/sdk-auth", mapOf("one_time_key" to key)).hash
+client.loginWithOneTimeKey(fullName, hash)           // ← מלא
+```
+
+| קוד | משמעות | מה לעשות |
+|---|---|---|
+| `200` | `{ hash }` | להתחבר |
+| `400` | מפתח לא תקין (אורך/תווים) | באג אצלכם |
+| `401` | לא נציג מוקד | להתנתק |
+| `409` | **אין זהות מוקצית לנציג** | **לעצור ולהציג הודעה — לא לנסות שוב** |
+| `413` | גוף גדול מדי | באג אצלכם |
+| `429` | מעל 10 חתימות בדקה | להאט |
+
+**שלוש נקודות שישברו את ההתחברות:**
+
+1. **שלב 2 מקבל את השם הקצר, שלב 4 את המלא.** הפוך — `AuthResult` נכשל בלי
+   שום הסבר. זה הכשל הנפוץ ביותר כאן.
+2. **`409` אינו כשל אימות.** הנציג מורשה; פשוט אין לו זהות. ניסיון חוזר לא
+   יעזור.
+3. **אל תתחברו בכל פתיחה.** כל התחברות נספרת כ-MAU (1,000 חינם/חודש). שמרו
+   סשן ובדקו אותו לפני בקשת מפתח חדש. `429` בשימוש רגיל = מתחברים יותר מדי.
+
+### 6.7 ❌ טרם נבנו
 
 ```
-POST /api/agents/sdk-auth              { one_time_key } → { hash }
 POST /api/calls/{id}/monitor|takeover  { mode: "monitor" | "takeover" }
 ```
 
-`monitor`/`takeover` חסומים גם מאחורי Conference ב-VoxEngine שלא נבנה.
+חסומים מאחורי Conference ב-VoxEngine שלא נבנה — שינוי טופולוגיה בתסריט
+שמריץ שיחות חיות, ולכן נדחה עד ש-`sdk-auth` יוכח בשטח.
+
 **ותיקון למפרט שלכם:** `Conference.add()` **אינו מקבל `AgentsClient`** —
 מימוש לפיו ייצר קוד שמתקמפל ולא עובד. הצירוף ייעשה ב-`VoxEngine.callUser({username})`.
 
