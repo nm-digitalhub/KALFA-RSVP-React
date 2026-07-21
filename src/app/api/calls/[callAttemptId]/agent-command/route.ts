@@ -5,6 +5,7 @@ import { z } from 'zod';
 
 import { callerHasPlatformPermission, requireConsoleAgent } from '@/lib/auth/console-agent';
 import { getCallAttemptById, TERMINAL_STATUSES } from '@/lib/data/call-attempts';
+import { recordConsoleAgentCommand } from '@/lib/data/console-agent-commands';
 import {
   agentCommandBodySchema,
   type AgentCommandResult,
@@ -110,6 +111,33 @@ export async function POST(
   };
 
   const delivery = await postCommandToSession(sessionUrl, envelope);
+
+  // Audit BOTH outcomes. A command that failed to reach the session still tells
+  // us a staff member tried to change a live call and what they tried to say —
+  // which is exactly what an intervention trail is for. `delivered` carries the
+  // difference; it is not a success-only log.
+  try {
+    await recordConsoleAgentCommand({
+      agentId: ctx.userId,
+      callAttemptId: attempt.id,
+      eventId: attempt.event_id ?? null,
+      command: body.command,
+      text: 'text' in body ? body.text : null,
+      requestId: request_id,
+      delivered: delivery.delivered,
+      applied: 'pending',
+    });
+  } catch (err) {
+    // Never blocks the call path: by now the command has already reached the
+    // live session (or definitively not). Losing the row is bad and must be
+    // visible; failing the request for it would be worse and would misreport.
+    console.error(
+      `[agent-command] AUDIT WRITE FAILED (attempt=${attempt.id} command=${body.command}): ${
+        err instanceof Error ? err.message : 'unknown'
+      }`,
+    );
+  }
+
   if (!delivery.delivered) return json({ error: 'הפקודה לא נמסרה לשיחה' }, 502);
 
   // Delivered to the live session; effect NOT confirmed. `pending` is the truthful

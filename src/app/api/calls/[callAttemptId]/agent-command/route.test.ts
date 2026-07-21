@@ -14,10 +14,14 @@ vi.mock('@/lib/voximplant/session-command', async (orig) => ({
   ...(await orig<typeof import('@/lib/voximplant/session-command')>()),
   postCommandToSession: vi.fn(),
 }));
+vi.mock('@/lib/data/console-agent-commands', () => ({
+  recordConsoleAgentCommand: vi.fn(),
+}));
 
 import { POST } from './route';
 import { callerHasPlatformPermission, requireConsoleAgent } from '@/lib/auth/console-agent';
 import { getCallAttemptById } from '@/lib/data/call-attempts';
+import { recordConsoleAgentCommand } from '@/lib/data/console-agent-commands';
 import { postCommandToSession } from '@/lib/voximplant/session-command';
 
 const USER_ID = '33333333-3333-4333-8333-333333333333';
@@ -177,5 +181,76 @@ describe('POST /api/calls/{id}/agent-command', () => {
     mockHappyPath();
     vi.mocked(getCallAttemptById).mockRejectedValue(new Error('db down'));
     expect((await call('{"command":"clear_buffer"}')).status).toBe(500);
+  });
+});
+
+// This route lets a staff member change what a guest is being told, mid-call.
+// Until console_agent_commands existed it recorded nothing at all — no actor, no
+// time, no call, no words. These pin the trail so it cannot quietly go away.
+describe('intervention audit', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(recordConsoleAgentCommand).mockResolvedValue(undefined);
+  });
+
+  it('records the actor, the call and the words for a whisper', async () => {
+    mockHappyPath();
+    const res = await call(
+      JSON.stringify({ command: 'contextual_update', text: 'האורח מבולבל — חזור על התאריך' }),
+    );
+    expect(res.status).toBe(202);
+    expect(recordConsoleAgentCommand).toHaveBeenCalledWith(
+      expect.objectContaining({
+        agentId: USER_ID,
+        callAttemptId: ATTEMPT_ID,
+        command: 'contextual_update',
+        text: 'האורח מבולבל — חזור על התאריך',
+        delivered: true,
+        applied: 'pending',
+      }),
+    );
+  });
+
+  it('stores no text for the payload-free commands', async () => {
+    mockHappyPath();
+    await call(JSON.stringify({ command: 'clear_buffer' }));
+    expect(recordConsoleAgentCommand).toHaveBeenCalledWith(
+      expect.objectContaining({ command: 'clear_buffer', text: null }),
+    );
+  });
+
+  // An attempt that never reached the call is still an attempt to change it.
+  it('records a FAILED delivery too, with delivered false', async () => {
+    mockHappyPath();
+    vi.mocked(postCommandToSession).mockResolvedValue({ delivered: false });
+    const res = await call(JSON.stringify({ command: 'user_message', text: 'שלום' }));
+    expect(res.status).toBe(502);
+    expect(recordConsoleAgentCommand).toHaveBeenCalledWith(
+      expect.objectContaining({ delivered: false, text: 'שלום' }),
+    );
+  });
+
+  it('correlates with the request_id the caller is given', async () => {
+    mockHappyPath();
+    const res = await call(JSON.stringify({ command: 'contextual_update', text: 'x' }));
+    const body = (await res.json()) as { request_id: string };
+    expect(recordConsoleAgentCommand).toHaveBeenCalledWith(
+      expect.objectContaining({ requestId: body.request_id }),
+    );
+  });
+
+  // The command has already reached the live call by the time the row is
+  // written; failing the request for a lost audit row would misreport it.
+  it('still answers 202 when the audit write throws', async () => {
+    mockHappyPath();
+    vi.mocked(recordConsoleAgentCommand).mockRejectedValue(new Error('insert failed'));
+    expect((await call(JSON.stringify({ command: 'close_agent' }))).status).toBe(202);
+  });
+
+  it('does not audit a request rejected before it reaches the call', async () => {
+    mockHappyPath();
+    vi.mocked(callerHasPlatformPermission).mockResolvedValue(false);
+    await call(JSON.stringify({ command: 'clear_buffer' }));
+    expect(recordConsoleAgentCommand).not.toHaveBeenCalled();
   });
 });

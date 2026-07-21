@@ -1121,6 +1121,67 @@ export type Database = {
           },
         ]
       }
+      console_agent_commands: {
+        Row: {
+          agent_id: string
+          applied: string
+          call_attempt_id: string
+          command: string
+          command_text: string | null
+          created_at: string
+          delivered: boolean
+          event_id: string | null
+          id: string
+          request_id: string
+        }
+        Insert: {
+          agent_id: string
+          applied?: string
+          call_attempt_id: string
+          command: string
+          command_text?: string | null
+          created_at?: string
+          delivered: boolean
+          event_id?: string | null
+          id?: string
+          request_id: string
+        }
+        Update: {
+          agent_id?: string
+          applied?: string
+          call_attempt_id?: string
+          command?: string
+          command_text?: string | null
+          created_at?: string
+          delivered?: boolean
+          event_id?: string | null
+          id?: string
+          request_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "console_agent_commands_call_attempt_id_fkey"
+            columns: ["call_attempt_id"]
+            isOneToOne: false
+            referencedRelation: "call_attempts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "console_agent_commands_event_id_fkey"
+            columns: ["event_id"]
+            isOneToOne: false
+            referencedRelation: "console_events"
+            referencedColumns: ["event_id"]
+          },
+          {
+            foreignKeyName: "console_agent_commands_event_id_fkey"
+            columns: ["event_id"]
+            isOneToOne: false
+            referencedRelation: "events"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       console_agents: {
         Row: {
           created_at: string
