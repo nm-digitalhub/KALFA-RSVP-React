@@ -144,6 +144,13 @@ VoxEngine.addEventListener(AppEvents.Started, function () {
         // Speech-probability high-water mark (VadScore) — a rough silence / no-
         // answer signal logged at teardown. 0 ⇒ the agent never detected speech.
         maxVadScore: 0,
+        // The agent's own voicemail_detection system tool fired. This is the
+        // SECOND line of defence: the AMD gate above runs pre-connect and is
+        // explicitly UNVALIDATED on +972 voicemail, so when it fails open the
+        // agent still ends up talking to a machine. Without this flag that call
+        // reaches Disconnected with conversationStarted=true and closes as
+        // 'completed' — which writeReach bills as a reached human.
+        voicemailDetected: false,
         // DTMF debounce: ignore a repeat of the SAME digit within 1.5s (idempotent).
         lastTone: '',
         lastToneAt: 0,
@@ -210,9 +217,7 @@ VoxEngine.addEventListener(AppEvents.Started, function () {
                 // Disconnected will never fire on this path — close the attempt
                 // row here so it cannot stick pre-terminal.
                 postFinalCallbackOnce({
-                    call_status: state.conversationStarted
-                        ? 'completed'
-                        : (state.callWasConnected ? 'no_response' : 'no_answer'),
+                    call_status: terminalStatus(),
                     call_duration: state.connectedAt
                         ? Math.round((Date.now() - state.connectedAt) / 1000)
                         : 0
@@ -244,6 +249,27 @@ VoxEngine.addEventListener(AppEvents.Started, function () {
             if (done)
                 done();
         });
+    }
+    // The ONE terminal-status rule, shared by all three teardown paths (failed
+    // hangup, global timeout, Disconnected). It was duplicated three times; a
+    // rule that must not be added to only two of three places does not get to
+    // live in three places.
+    //
+    // Order matters. Voicemail is tested FIRST: a machine greeting starts media,
+    // which sets conversationStarted, so testing that first would bill every
+    // voicemail the AMD gate let through as a reached human.
+    //
+    //   no_answer   — never connected, OR a voicemail. A machine is not a reached
+    //                 human; identical to what the pre-connect AMD gate posts.
+    //   no_response — answered, but the bridge never carried a conversation.
+    //   completed   — a real conversation ran. THIS is the status writeReach
+    //                 bills as a reached contact.
+    function terminalStatus() {
+        if (state.voicemailDetected)
+            return 'no_answer';
+        if (state.conversationStarted)
+            return 'completed';
+        return state.callWasConnected ? 'no_response' : 'no_answer';
     }
     // Exactly ONE terminal callback per call (idempotent — a racing Failed +
     // Disconnected or timeout can never double-post). No transcript is sent:
@@ -361,9 +387,7 @@ VoxEngine.addEventListener(AppEvents.Started, function () {
             ? Math.round((Date.now() - state.connectedAt) / 1000)
             : 0;
         postFinalCallbackOnce({
-            call_status: state.conversationStarted
-                ? 'completed'
-                : (state.callWasConnected ? 'no_response' : 'no_answer'),
+            call_status: terminalStatus(),
             call_duration: duration
         }, function () {
             cleanupAndTerminate();
@@ -717,6 +741,35 @@ VoxEngine.addEventListener(AppEvents.Started, function () {
                 agent.addEventListener(ElevenLabs.Events.WebSocketMediaEnded, function () {
                     log('AGENT_MEDIA_ENDED');
                 });
+                // SYSTEM-tool observer. The four built-in tools enabled on the agent
+                // (end_call / language_detection / skip_turn / voicemail_detection)
+                // execute INSIDE ElevenLabs — they never arrive as ClientToolCall, so
+                // without this handler the scenario is blind to them. The agent's
+                // client_events already includes 'agent_tool_response', so the signal
+                // was being sent and dropped.
+                //
+                // voicemail_detection is the one that costs money. The AMD gate runs
+                // pre-connect and its own comment flags EU_GENERAL as UNVALIDATED on
+                // +972 voicemail; when it fails open, the agent talks to a machine,
+                // the machine's beep and greeting start media, and Disconnected sees
+                // conversationStarted=true → 'completed' → writeReach bills it as a
+                // reached human. Recording it here lets teardown close the attempt the
+                // same way the AMD gate already does: no_answer, not billed.
+                agent.addEventListener(ElevenLabs.AgentsEvents.AgentToolResponse, function (e) {
+                    var payload = (e && e.data && e.data.payload) || {};
+                    var atr = payload.agent_tool_response || payload;
+                    var name = atr.tool_name || '';
+                    var isErr = atr.is_error === true;
+                    log('AGENT_TOOL_RESPONSE: ' + name + ' type=' + (atr.tool_type || '?') +
+                        ' is_error=' + isErr);
+                    // Only a SUCCESSFUL detection reclassifies the call. A failed tool
+                    // execution proves nothing about who answered, and guessing 'machine'
+                    // there would under-bill a real conversation.
+                    if (name === 'voicemail_detection' && !isErr) {
+                        state.voicemailDetected = true;
+                        log('voicemail detected by the agent — call will close as no_answer (not billed)');
+                    }
+                });
                 // Client-tool router (conversation-design §4.2). Each tool maps to a
                 // token-scoped KALFA endpoint (this scenario already holds tok + u —
                 // no secret in the payload). The endpoint's THREE-STATE body decides
@@ -944,9 +997,7 @@ VoxEngine.addEventListener(AppEvents.Started, function () {
                 // no_response = answered but the bridge never carried a conversation;
                 // no_answer = never even connected.
                 postFinalCallbackOnce({
-                    call_status: state.conversationStarted
-                        ? 'completed'
-                        : (state.callWasConnected ? 'no_response' : 'no_answer'),
+                    call_status: terminalStatus(),
                     call_duration: duration
                 }, function () {
                     cleanupAndTerminate();
