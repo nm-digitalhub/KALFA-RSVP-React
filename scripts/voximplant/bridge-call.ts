@@ -1,13 +1,17 @@
-// Voximplant ↔ ElevenLabs BRIDGE — gated single test call (ops tool).
+// Voximplant ↔ ElevenLabs BRIDGE — gated single outbound call (ops tool).
+//
+// This is a REAL dial path, not a test harness. Until a campaign is enabled and
+// the worker dispatcher runs, it is the ONLY path that places a bridged call —
+// so it records the same provider identity the worker does (see
+// recordDialConfirmed below). Treat its output as production data.
 //
 // Places ONE controlled bridged call: it stamps a random, NON-authorizing
 // correlation nonce onto an EXISTING call_attempt, then StartScenarios the
-// deployed RSVPAgent bridge (promoted from VoiceAgentTest, 2026-07-20). The
-// scenario fetches ctx (which surfaces the nonce as kalfa_attempt_token),
-// injects it as an ElevenLabs dynamic variable, and the post-call webhook
-// echoes it → storeCallAnalysis links conversation → attempt.
+// deployed RSVPAgent bridge. The scenario fetches ctx (which surfaces the nonce
+// as kalfa_attempt_token), injects it as an ElevenLabs dynamic variable, and the
+// post-call webhook echoes it → storeCallAnalysis links conversation → attempt.
 //
-//   npm run bridge:test-call -- \
+//   npm run bridge:call -- \
 //     --attempt-id <uuid> --to +9725XXXXXXXX --from 97237219347 --confirm
 //
 // Isolation + safety:
@@ -23,7 +27,7 @@
 //
 // Reuses the committed client (startScenarios from src/lib/voximplant/mutations)
 // and the request-free DAL — no hand-rolled JWT/fetch. Bundled via esbuild (see
-// the `bridge:test-call` npm script) so `@/` + the service-role client resolve,
+// the `bridge:call` npm script) so `@/` + the service-role client resolve,
 // and run with `--env-file=.env.local`.
 
 import { randomBytes } from 'node:crypto';
@@ -31,6 +35,7 @@ import { readFileSync } from 'node:fs';
 
 import {
   getCallAttemptById,
+  recordDialConfirmed,
   stampElCorrelationNonce,
   TERMINAL_STATUSES,
 } from '@/lib/data/call-attempts';
@@ -154,7 +159,28 @@ async function main(): Promise<void> {
   if (resp.result !== 1 || !resp.call_session_history_id) {
     console.error('StartScenarios did not confirm a started call.');
     process.exitCode = 1;
+    return;
   }
+
+  // Persist the provider identity exactly as the worker dispatcher does
+  // (dispatchOutreachCall → recordDialConfirmed). Same DAL, same CAS guard on
+  // PRE_TERMINAL, so a cb callback that already advanced the row is never
+  // clobbered.
+  //
+  // This launcher used to print the StartScenarios response and drop it, leaving
+  // vox_call_session_history_id and media_session_access_url NULL. Since it is
+  // the only path that actually dials today (no campaign is enabled, so the
+  // worker never runs), those columns were empty on every row ever created — and
+  // media_session_access_url is the server-side handle a live-session command
+  // channel needs. Printing an id the database never learns is not a dial record.
+  const { applied } = await recordDialConfirmed(attemptId, {
+    callSessionHistoryId: resp.call_session_history_id,
+    mediaSessionAccessUrl: resp.media_session_access_url ?? null,
+  });
+  console.log(`dial recorded           : ${applied ? 'yes' : 'no (row already terminal)'}`);
+  console.log(
+    `media_session_access_url: ${resp.media_session_access_url ? 'stored' : '(not returned)'}`,
+  );
 }
 
 main().catch((e: unknown) => {

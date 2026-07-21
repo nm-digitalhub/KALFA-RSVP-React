@@ -10,7 +10,7 @@
 // success the script reports presence ("copied") and byte length parity only.
 //
 // Reuses the committed client (src/lib/voximplant/{core,mutations}) — no
-// hand-rolled JWT/fetch. Bundled via esbuild like bridge-test-call.ts and run
+// hand-rolled JWT/fetch. Bundled via esbuild like bridge-call.ts and run
 // with `--env-file=.env.local`.
 
 import { readFileSync } from 'node:fs';
