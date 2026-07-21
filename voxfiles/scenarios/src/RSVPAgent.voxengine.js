@@ -482,7 +482,19 @@ VoxEngine.addEventListener(AppEvents.Started, function () {
                 }
             }
             try {
-                amd = AMD.create({ model: AMD.Model.EU_GENERAL, timeout: AMD_TIMEOUT_MS });
+                // `call` is REQUIRED at runtime and is ABSENT from the bundled
+                // typings' AMD.Parameters (model/timeout/thresholds only). Without
+                // it every single call logged "AMD detect error: The 'call'
+                // parameter is required, the operation will be skipped!" and the
+                // gate failed open — so the pre-connect voicemail defence has never
+                // once run in production, on any call, and the only thing catching a
+                // machine was the agent's own voicemail_detection.
+                //
+                // The typings lost this argument, not the platform: the runtime
+                // error names the parameter explicitly. Where the two disagree, the
+                // running platform wins — a QA pass reading only the typings
+                // concluded this was a race condition, which it is not.
+                amd = AMD.create({ call: call, model: AMD.Model.EU_GENERAL, timeout: AMD_TIMEOUT_MS });
                 call.sendMediaTo(amd);
             }
             catch (err) {
