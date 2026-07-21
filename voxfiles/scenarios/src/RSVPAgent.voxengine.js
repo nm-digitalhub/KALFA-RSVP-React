@@ -896,6 +896,27 @@ VoxEngine.addEventListener(AppEvents.Started, function () {
                         state.voicemailDetected = true;
                         log('voicemail detected by the agent — call will close as no_answer (not billed)');
                     }
+                    // end_call is the agent saying it is DONE. It runs inside
+                    // ElevenLabs and does NOT close the WebSocket, so the existing
+                    // onWebSocketClose hangup never fires for it — and this handler,
+                    // added hours ago to watch system tools, looked at the event and
+                    // acted only on voicemail. The observation channel was built and
+                    // the most obvious action was left unwired.
+                    //
+                    // Live cost, session 6905201622: the agent said "יום נהדר!",
+                    // called end_call at 05:08:23, and the line stayed open until the
+                    // GUEST hung up at 05:09:51 — 88 seconds of silence, and 88
+                    // seconds billed. The guest reported it as "the agent stopped
+                    // responding"; it had simply finished.
+                    //
+                    // scheduleHangup, not call.hangup(): the same teardown every
+                    // other terminal path uses, and FAREWELL_GRACE_MS lets the last
+                    // of the goodbye drain out of the jitter buffer instead of
+                    // clipping it.
+                    if (name === 'end_call' && !isErr && executed) {
+                        log('agent called end_call — hanging up after the farewell drains');
+                        scheduleHangup(call, FAREWELL_GRACE_MS);
+                    }
                 });
                 // Client-tool router (conversation-design §4.2). Each tool maps to a
                 // token-scoped KALFA endpoint (this scenario already holds tok + u —
