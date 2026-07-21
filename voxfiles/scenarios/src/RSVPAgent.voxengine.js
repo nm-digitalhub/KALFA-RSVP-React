@@ -485,6 +485,74 @@ VoxEngine.addEventListener(AppEvents.Started, function () {
                     log('userMessage failed: ' + err);
                 }
             });
+            // ── Live-call command channel ────────────────────────────────────
+            // KALFA POSTs a command envelope to this session's managing URL
+            // (media_session_access_secure_url, returned by StartScenarios and
+            // stored server-side); the platform raises AppEvents.HttpRequest here
+            // with the body in e.content. Source of the envelope shape:
+            // src/lib/validation/agent-console.ts (CommandEnvelope).
+            //
+            // There is NO reply: _HttpRequestEvent carries only method/path/content/
+            // headers and the namespace exposes no response API, so the caller
+            // learns nothing beyond "the POST returned 200". That is exactly why
+            // the route answers applied:'pending' — a real acknowledgement has to
+            // travel back out-of-band, which is the next phase, not this one.
+            //
+            // Trust: the managing URL is a capability held only by our backend and
+            // never exposed to a client, so arrival here is the authorization. We
+            // still validate the shape, ignore unknown commands, and never log the
+            // whisper text (it is guest-facing conversation content).
+            VoxEngine.addEventListener(AppEvents.HttpRequest, function (e) {
+                var env;
+                try {
+                    env = JSON.parse((e && e.content) || '{}');
+                }
+                catch (_parseErr) {
+                    log('command: unparseable body');
+                    return;
+                }
+                var cmd = env && env.command;
+                var rid = (env && env.request_id) || '(none)';
+                // Same guard as the DTMF injector: a command that arrives after the
+                // agent leg is gone is a no-op, not an error.
+                if (!state.agent || state.terminated) {
+                    log('command ' + cmd + ' [' + rid + '] ignored — no live agent');
+                    return;
+                }
+                var text = env && env.payload && env.payload.text;
+                try {
+                    if (cmd === 'contextual_update') {
+                        // Non-interrupting: enters conversation history, is NOT spoken.
+                        if (!text)
+                            return;
+                        state.agent.contextualUpdate({ text: text });
+                    }
+                    else if (cmd === 'user_message') {
+                        // Injects a user turn — DOES interrupt the agent mid-sentence.
+                        if (!text)
+                            return;
+                        state.agent.userMessage({ text: text });
+                    }
+                    else if (cmd === 'clear_buffer') {
+                        // One-shot barge-in: drops buffered TTS already queued out.
+                        state.agent.clearMediaBuffer();
+                    }
+                    else if (cmd === 'close_agent') {
+                        // Closes the AI leg only. The PSTN call stays up — ending the
+                        // call is a separate route, deliberately not a command here.
+                        state.agent.close();
+                    }
+                    else {
+                        log('command unknown: ' + cmd + ' [' + rid + ']');
+                        return;
+                    }
+                    // Text is never logged — only which command and its correlation id.
+                    log('command ' + cmd + ' [' + rid + '] applied');
+                }
+                catch (err) {
+                    log('command ' + cmd + ' [' + rid + '] failed: ' + err);
+                }
+            });
             // The ElevenLabs bridge, wrapped so the voicemail gate can DEFER it until
             // AMD confirms a human (zero ElevenLabs cost on a machine).
             function bridgeAgent() {
