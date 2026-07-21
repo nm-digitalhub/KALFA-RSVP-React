@@ -707,6 +707,21 @@ VoxEngine.addEventListener(AppEvents.Started, function () {
                     var meta = payload.conversation_initiation_metadata_event || payload;
                     var convId = meta.conversation_id || payload.conversation_id || '';
                     state.conversationStarted = true;
+                    // The NEGOTIATED audio formats. ElevenLabs' WebSocket schema marks
+                    // agent_output_audio_format and user_input_audio_format as REQUIRED
+                    // on this event, so they arrive on every call — they were simply
+                    // never read. Nothing in the Voximplant AgentsClient parameters lets
+                    // a scenario choose the format (xiApiKey / agentId /
+                    // includeConversationId / baseUrl are the whole surface), so this is
+                    // the only way to learn what the connector actually negotiated.
+                    //
+                    // Worth logging rather than assuming: the difference between
+                    // pcm_8000 and pcm_16000 is the difference between telephone-band
+                    // and wideband ASR, and Hebrew proper nouns are already the weakest
+                    // point in these calls (a live call heard "זהבה" as "זה אבא"). If we
+                    // are being handed 8 kHz, that is a measured cause, not a theory.
+                    log('AUDIO_FORMAT: agent_out=' + (meta.agent_output_audio_format || '?') +
+                        ' user_in=' + (meta.user_input_audio_format || '?'));
                     if (convId) {
                         state.elConversationId = String(convId);
                         log('CONVERSATION_ID captured');
