@@ -513,9 +513,15 @@ VoxEngine.addEventListener(AppEvents.Started, function () {
                 }
                 var cmd = env && env.command;
                 var rid = (env && env.request_id) || '(none)';
-                // Same guard as the DTMF injector: a command that arrives after the
-                // agent leg is gone is a no-op, not an error.
-                if (!state.agent || state.terminated) {
+                // Once teardown has begun nothing is actionable.
+                if (state.terminated) {
+                    log('command ' + cmd + ' [' + rid + '] ignored — session terminated');
+                    return;
+                }
+                // The four AI commands need a live agent leg; call_end does NOT.
+                // Hanging up must still work after close_agent dropped the agent —
+                // that is precisely when an operator reaches for it.
+                if (cmd !== 'call_end' && !state.agent) {
                     log('command ' + cmd + ' [' + rid + '] ignored — no live agent');
                     return;
                 }
@@ -541,6 +547,16 @@ VoxEngine.addEventListener(AppEvents.Started, function () {
                         // Closes the AI leg only. The PSTN call stays up — ending the
                         // call is a separate route, deliberately not a command here.
                         state.agent.close();
+                    }
+                    else if (cmd === 'call_end') {
+                        // Operator hangup (POST /api/calls/{id}/end). Goes through
+                        // scheduleHangup like every other terminal path so
+                        // Disconnected fires and postFinalCallbackOnce closes the
+                        // attempt row. Calling VoxEngine.terminate() here instead
+                        // would end the call and leave the row stuck pre-terminal —
+                        // the stale-row state that had to be cleaned by hand on
+                        // 2026-07-21. Short grace so audio already queued out drains.
+                        scheduleHangup(call, 500);
                     }
                     else {
                         log('command unknown: ' + cmd + ' [' + rid + ']');

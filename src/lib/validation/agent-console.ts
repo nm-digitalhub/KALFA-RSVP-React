@@ -97,12 +97,23 @@ export type AgentCommandBody = z.infer<typeof agentCommandBodySchema>;
 // Backend → live VoxEngine session (posted to media_session_access_url) and back
 // ---------------------------------------------------------------------------
 
+// What the server↔session channel may carry: the four the console can request,
+// plus 'call_end'.
+//
+// call_end is deliberately NOT in AGENT_COMMANDS. The four above act on the AI
+// leg; this one hangs up on the guest, and a control that ends a live
+// conversation must not sit one typo away from "clear the buffer". It has its own
+// route (/api/calls/{id}/end) and its own authority check, and only that route
+// may put it on the wire.
+export const SESSION_COMMANDS = [...AGENT_COMMANDS, 'call_end'] as const;
+export type SessionCommand = (typeof SESSION_COMMANDS)[number];
+
 // The signed envelope the backend POSTs to the live session. `call_attempt_id` is
 // the SERVER-resolved id (from the URL + ownership check), `request_id` correlates
 // the async ack. This is an internal server↔session shape — never exposed to the
 // console.
 export interface CommandEnvelope {
-  command: AgentCommand;
+  command: SessionCommand;
   request_id: string;
   call_attempt_id: string;
   payload: Record<string, unknown>;
