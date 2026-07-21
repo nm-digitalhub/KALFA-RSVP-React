@@ -289,6 +289,37 @@ VoxEngine.addEventListener(AppEvents.Started, function () {
         }
         postCallback(payload, done);
     }
+    // LAST-RESORT terminal callback. VoxEngine guarantees that exactly one HTTP
+    // request may be performed inside an AppEvents.Terminating handler — the only
+    // slot left once the session is being torn down.
+    //
+    // Every ordinary path (Disconnected, Failed, the global timeout, a failed
+    // hangup) already posts its own callback, so this is a no-op on a healthy
+    // call: postFinalCallbackOnce is idempotent on state.callbackSent. It exists
+    // for the paths that do NOT reach any of them — a JS error mid-scenario, or
+    // the platform force-ending a wedged session (the 'Internal error (billing
+    // timeout)' finish_reason proves that happens). Those are precisely the calls
+    // that left rows stuck pre-terminal and had to be cleaned by hand on
+    // 2026-07-21.
+    //
+    // Deliberately reports terminalStatus() rather than assuming 'failed': if the
+    // conversation genuinely ran, the reach is real and refusing to bill it would
+    // be as wrong as billing a voicemail. finish_reason records that the row was
+    // closed by teardown rather than by a clean disconnect, so the two are
+    // distinguishable afterwards.
+    VoxEngine.addEventListener(AppEvents.Terminating, function () {
+        if (state.callbackSent) {
+            return;
+        }
+        log('Terminating with no terminal callback sent — posting last-resort close');
+        postFinalCallbackOnce({
+            call_status: terminalStatus(),
+            call_duration: state.connectedAt
+                ? Math.round((Date.now() - state.connectedAt) / 1000)
+                : 0,
+            error_reason: 'session_terminating'
+        });
+    });
     // Report the captured ElevenLabs conversation_id to KALFA's EXISTING cb
     // endpoint (persist-then-process; identity resolved server-side from the token
     // in the URL, never the body). Sent ONCE, as an additive field on a
