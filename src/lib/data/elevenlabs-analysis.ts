@@ -23,15 +23,22 @@ export async function storeCallAnalysis(a: NormalizedCallAnalysis): Promise<'sto
     // NULL) a linker can backfill later. event_id is copied so owner RLS scopes it.
     let callAttemptId: string | null = null;
     let eventId: string | null = null;
+    let guestId: string | null = null;
+    let attemptStartedAt: string | null = null;
     try {
       const lookup = async (
         col: 'el_correlation_nonce' | 'el_conversation_id',
         val: string | null,
-      ): Promise<{ id: string; event_id: string } | null> => {
+      ): Promise<{
+        id: string;
+        event_id: string;
+        guest_id: string | null;
+        created_at: string | null;
+      } | null> => {
         if (!val) return null;
         const { data } = await admin
           .from('call_attempts')
-          .select('id, event_id')
+          .select('id, event_id, guest_id, created_at')
           .eq(col, val)
           .maybeSingle();
         return data ?? null;
@@ -42,9 +49,38 @@ export async function storeCallAnalysis(a: NormalizedCallAnalysis): Promise<'sto
       if (attempt) {
         callAttemptId = attempt.id;
         eventId = attempt.event_id;
+        guestId = attempt.guest_id;
+        attemptStartedAt = attempt.created_at;
       }
     } catch {
       /* leave orphan — never fail the store on a link lookup */
+    }
+
+    // Did the RSVP the agent reported actually land? ElevenLabs criteria only see
+    // the transcript, so `rsvp_captured: success` means "the agent sounded like it
+    // saved" — not that anything was written. Compare against the guest row.
+    //
+    // TIMESTAMPS, not values: a guest already 'attending' from an earlier channel
+    // would make a value comparison approve a call that wrote nothing.
+    //
+    // Stays null on any doubt — no reported outcome, no linked guest, or a failed
+    // read. null means "not checked", and the column comment says so, because a
+    // false negative here would accuse a working call of losing data.
+    let rsvpPersisted: boolean | null = null;
+    const reportedStatus = a.dataCollection?.status ?? null;
+    if (reportedStatus && guestId && attemptStartedAt) {
+      try {
+        const { data: guest } = await admin
+          .from('guests')
+          .select('updated_at')
+          .eq('id', guestId)
+          .maybeSingle();
+        if (guest?.updated_at) {
+          rsvpPersisted = Date.parse(guest.updated_at) >= Date.parse(attemptStartedAt);
+        }
+      } catch {
+        /* leave null — unknown, never asserted as fine */
+      }
     }
 
     const row: CallAnalysisInsert = {
@@ -72,6 +108,9 @@ export async function storeCallAnalysis(a: NormalizedCallAnalysis): Promise<'sto
       // real conversation from the agent talking at a machine.
       agent_turns: a.agentTurns,
       user_turns: a.userTurns,
+      // Measured, unlike every el_* field above: those are ElevenLabs reading the
+      // transcript, this is whether the guest row actually moved.
+      rsvp_persisted: rsvpPersisted,
     };
     const { error } = await admin
       .from('call_analysis')

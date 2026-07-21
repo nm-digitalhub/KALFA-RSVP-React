@@ -543,6 +543,7 @@ export type Database = {
           overall_score: number | null
           provider: string
           received_at: string
+          rsvp_persisted: boolean | null
           status: string | null
           termination_reason: string | null
           user_turns: number | null
@@ -565,6 +566,7 @@ export type Database = {
           overall_score?: number | null
           provider?: string
           received_at?: string
+          rsvp_persisted?: boolean | null
           status?: string | null
           termination_reason?: string | null
           user_turns?: number | null
@@ -587,6 +589,7 @@ export type Database = {
           overall_score?: number | null
           provider?: string
           received_at?: string
+          rsvp_persisted?: boolean | null
           status?: string | null
           termination_reason?: string | null
           user_turns?: number | null

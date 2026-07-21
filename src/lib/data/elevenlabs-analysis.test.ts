@@ -5,13 +5,19 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 // stub: 'call_attempts' resolves the correlation-token lookup; 'call_analysis'
 // captures the upsert row so we can assert what is (and isn't) persisted.
 vi.mock('server-only', () => ({}));
-const { attemptMock, upsertMock } = vi.hoisted(() => ({ attemptMock: vi.fn(), upsertMock: vi.fn() }));
+const { attemptMock, guestMock, upsertMock } = vi.hoisted(() => ({
+  attemptMock: vi.fn(),
+  guestMock: vi.fn(),
+  upsertMock: vi.fn(),
+}));
 vi.mock('@/lib/supabase/admin', () => ({
   createAdminClient: () => ({
     from: (table: string) =>
       table === 'call_attempts'
         ? { select: () => ({ eq: () => ({ maybeSingle: attemptMock }) }) }
-        : { upsert: upsertMock },
+        : table === 'guests'
+          ? { select: () => ({ eq: () => ({ maybeSingle: guestMock }) }) }
+          : { upsert: upsertMock },
   }),
 }));
 
@@ -38,6 +44,7 @@ const base: NormalizedCallAnalysis = {
 
 beforeEach(() => {
   attemptMock.mockReset().mockResolvedValue({ data: null, error: null });
+  guestMock.mockReset().mockResolvedValue({ data: null, error: null });
   upsertMock.mockReset().mockResolvedValue({ error: null });
 });
 afterEach(() => vi.clearAllMocks());
@@ -94,5 +101,43 @@ describe('storeCallAnalysis (dual-link + QA persist)', () => {
   it('returns error when the upsert fails', async () => {
     upsertMock.mockResolvedValue({ error: { message: 'boom' } });
     expect(await storeCallAnalysis(base)).toBe('error');
+  });
+});
+
+// ElevenLabs criteria are evaluated against the TRANSCRIPT only (docs:
+// agent-analysis/success-evaluation), so rsvp_captured:'success' means the agent
+// SOUNDED like it saved. On 2026-07-21 three calls scored 100 with
+// el_data {status:'attending'} while guests.updated_at stayed weeks old — the
+// recording has the agent saying "לא הצלחתי לעדכן את זה במערכת". rsvp_persisted is
+// the measured counterpart.
+describe('rsvp_persisted — measured, not inferred', () => {
+  const linked = { id: 'att-1', event_id: 'evt-1', guest_id: 'g-1', created_at: '2026-07-21T01:00:00Z' };
+
+  it('false when the agent reported an outcome the guest row never received', async () => {
+    attemptMock.mockResolvedValue({ data: linked, error: null });
+    // Guest untouched since long before the call — exactly the live case.
+    guestMock.mockResolvedValue({ data: { updated_at: '2026-07-07T09:41:48Z' }, error: null });
+    await storeCallAnalysis({ ...base, dataCollection: { status: 'attending', adults: 1, children: 0 } });
+    expect(upsertMock.mock.calls[0][0].rsvp_persisted).toBe(false);
+  });
+
+  it('true when the guest row moved during the call', async () => {
+    attemptMock.mockResolvedValue({ data: linked, error: null });
+    guestMock.mockResolvedValue({ data: { updated_at: '2026-07-21T01:00:30Z' }, error: null });
+    await storeCallAnalysis({ ...base, dataCollection: { status: 'attending', adults: 1, children: 0 } });
+    expect(upsertMock.mock.calls[0][0].rsvp_persisted).toBe(true);
+  });
+
+  it('null when the conversation reported no outcome — nothing to verify', async () => {
+    attemptMock.mockResolvedValue({ data: linked, error: null });
+    await storeCallAnalysis({ ...base, dataCollection: null });
+    expect(upsertMock.mock.calls[0][0].rsvp_persisted).toBeNull();
+  });
+
+  it('null — never false — when the guest read fails, so a working call is not accused', async () => {
+    attemptMock.mockResolvedValue({ data: linked, error: null });
+    guestMock.mockRejectedValue(new Error('db blip'));
+    await storeCallAnalysis({ ...base, dataCollection: { status: 'attending', adults: 1, children: 0 } });
+    expect(upsertMock.mock.calls[0][0].rsvp_persisted).toBeNull();
   });
 });
