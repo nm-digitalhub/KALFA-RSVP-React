@@ -764,6 +764,13 @@ export type Database = {
             foreignKeyName: "call_attempts_guest_id_fkey"
             columns: ["guest_id"]
             isOneToOne: false
+            referencedRelation: "console_event_guests"
+            referencedColumns: ["guest_id"]
+          },
+          {
+            foreignKeyName: "call_attempts_guest_id_fkey"
+            columns: ["guest_id"]
+            isOneToOne: false
             referencedRelation: "guests"
             referencedColumns: ["id"]
           },
@@ -1301,6 +1308,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "events"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "contact_interactions_guest_id_fkey"
+            columns: ["guest_id"]
+            isOneToOne: false
+            referencedRelation: "console_event_guests"
+            referencedColumns: ["guest_id"]
           },
           {
             foreignKeyName: "contact_interactions_guest_id_fkey"
@@ -2858,6 +2872,13 @@ export type Database = {
             foreignKeyName: "rsvp_responses_guest_id_fkey"
             columns: ["guest_id"]
             isOneToOne: false
+            referencedRelation: "console_event_guests"
+            referencedColumns: ["guest_id"]
+          },
+          {
+            foreignKeyName: "rsvp_responses_guest_id_fkey"
+            columns: ["guest_id"]
+            isOneToOne: false
             referencedRelation: "guests"
             referencedColumns: ["id"]
           },
@@ -3350,6 +3371,33 @@ export type Database = {
           },
         ]
       }
+      console_event_guests: {
+        Row: {
+          dialable: boolean | null
+          event_id: string | null
+          guest_id: string | null
+          guest_name: string | null
+          has_active_campaign: boolean | null
+          phone: string | null
+          rsvp_status: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "guests_event_id_fkey"
+            columns: ["event_id"]
+            isOneToOne: false
+            referencedRelation: "console_events"
+            referencedColumns: ["event_id"]
+          },
+          {
+            foreignKeyName: "guests_event_id_fkey"
+            columns: ["event_id"]
+            isOneToOne: false
+            referencedRelation: "events"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       console_events: {
         Row: {
           event_date: string | null
@@ -3419,6 +3467,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "events"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "rsvp_responses_guest_id_fkey"
+            columns: ["guest_id"]
+            isOneToOne: false
+            referencedRelation: "console_event_guests"
+            referencedColumns: ["guest_id"]
           },
           {
             foreignKeyName: "rsvp_responses_guest_id_fkey"

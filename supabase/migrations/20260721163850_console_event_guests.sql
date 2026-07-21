@@ -21,7 +21,10 @@ create or replace view public.console_event_guests as
     g.id                                   as guest_id,
     g.event_id,
     g.full_name                            as guest_name,
-    (c.normalized_phone is not null)       as dialable,
+    (
+      c.normalized_phone is not null
+      and c.removal_requested = false
+    )                                    as dialable,
     case
       when public.has_platform_permission('view_customer_data') then c.normalized_phone
       else null::text
@@ -37,5 +40,20 @@ create or replace view public.console_event_guests as
   left join public.contacts c on c.id = g.contact_id
   where public.is_console_agent();
 
+-- Grants. `revoke ... from authenticated` FIRST is load-bearing, not decorative:
+-- the schema's default privileges hand `authenticated` the full arwdDxtm set on
+-- every newly created relation, and a later `grant select` does NOT remove what
+-- the defaults already gave. Revoking only from anon and then granting select —
+-- which is what this file did on its first pass — leaves INSERT/UPDATE/DELETE/
+-- TRUNCATE in place. That is the exact hole migration 20260720193844 was written
+-- to close on the other six console views; verified live here, where this view
+-- came up as the only console view with ins/upd/del = true for `authenticated`.
+--
+-- The LEFT JOIN happens to make the view non-auto-updatable ("Views that do not
+-- select from a single table or view are not automatically updatable"), so the
+-- write privileges were not reachable in practice. That is an accident of the
+-- view's SHAPE, not a permission boundary: collapse the join, or add an
+-- INSTEAD OF trigger, and the writes open up silently. Revoke explicitly.
+revoke all on public.console_event_guests from authenticated;
 revoke all on public.console_event_guests from anon;
 grant select on public.console_event_guests to authenticated;
