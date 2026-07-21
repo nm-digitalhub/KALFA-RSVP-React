@@ -40,9 +40,15 @@ describe('CLI ↔ mutations guard', () => {
     // new subcommand cannot slip in without someone confirming it only reads.
     // 'log' qualifies — GetCallHistory plus an authenticated GET of the returned
     // log_file_url, no mutation.
+    // 'autocharge' qualifies — GetAutochargeConfig, and there is no setter to
+    // confuse it with: the accounts category has exactly two write methods
+    // (SetAccountInfo, SetChildAccountInfo) and neither touches autocharge.
+    // Enabling automatic top-up is a support ticket, so this can only read back
+    // what support configured.
     expect([...KNOWN_COMMANDS].sort()).toEqual(
       [
         'account',
+        'autocharge',
         'audit',
         'call-lists',
         'history',

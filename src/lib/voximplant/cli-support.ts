@@ -119,7 +119,7 @@ export function parseArgs(argv: string[]): ParsedArgs {
 // READ-ONLY command set (owner directive): the CLI can never mutate Voximplant
 // state — `start` was removed with the mutations split (the server dispatcher
 // is the only dial path) and a guard test pins this list.
-export const KNOWN_COMMANDS = ['account', 'rules', 'history', 'numbers', 'transactions', 'recording', 'log', 'call-lists', 'media-resources', 'audit'] as const;
+export const KNOWN_COMMANDS = ['account', 'autocharge', 'rules', 'history', 'numbers', 'transactions', 'recording', 'log', 'call-lists', 'media-resources', 'audit'] as const;
 export type KnownCommand = (typeof KNOWN_COMMANDS)[number];
 
 export function assertKnownCommand(command: string): asserts command is KnownCommand {
@@ -130,6 +130,7 @@ export function assertKnownCommand(command: string): asserts command is KnownCom
 
 const ALLOWED_FLAGS: Record<KnownCommand, Set<string>> = {
   account: new Set(['key']),
+  autocharge: new Set(['key']),
   rules: new Set(['key', 'app']),
   history: new Set([
     'key',

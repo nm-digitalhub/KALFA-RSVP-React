@@ -265,6 +265,35 @@ export function getAccountInfo(
   );
 }
 
+// GetAutochargeConfig — READ-ONLY view of the account's automatic top-up setup.
+//
+// Voximplant exposes NO setter for this: the whole accounts category is 15
+// methods, of which only SetAccountInfo and SetChildAccountInfo write, and
+// neither touches autocharge. Enabling it is a support ticket (done for this
+// account on 2026-07-21). So this reads back what support configured — the only
+// programmatic visibility that exists.
+//
+// Worth having because the balance floor stopped being a natural brake the
+// moment autocharge was enabled: before, a runaway would exhaust the balance and
+// halt; now it silently refills. Knowing the recharge amount and threshold is
+// what makes the spend ceiling calculable instead of assumed.
+//
+// Field names are NOT pinned to an interface: the documented result type
+// (GetAutochargeConfigResultType) publishes no field list beyond auto_charge, so
+// asserting a shape here would be inventing one. The CLI prints whatever comes
+// back.
+export function getAutochargeConfig(
+  config: VoximplantConfig,
+  timeoutMs?: number,
+): Promise<{ result?: Record<string, unknown> }> {
+  return voxRequest<{ result?: Record<string, unknown> }>(
+    config,
+    'GetAutochargeConfig',
+    {},
+    timeoutMs,
+  );
+}
+
 // GetPhoneNumbers — READ-ONLY list of the account's phone numbers (used to find a
 // usable Caller ID). NEVER purchases, attaches, deactivates, or modifies a number.
 // Fields absent for a given number arrive as null/undefined. No secret data.

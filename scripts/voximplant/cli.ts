@@ -36,6 +36,7 @@ import {
   downloadHistoryReportRaw,
   downloadSecureUrl,
   getAccountInfo,
+  getAutochargeConfig,
   getApplications,
   getAuditLog,
   getCallHistory,
@@ -119,6 +120,23 @@ async function cmdAccount(cfg: VoximplantConfig): Promise<void> {
   console.log(`currency      : ${a.currency}`);
   console.log(`balance       : ${a.balance}`);
   console.log(`created       : ${a.created}`);
+}
+
+// READ-ONLY: what automatic top-up support configured on this account. There is
+// no API to CHANGE it (the accounts category has exactly two setters, neither
+// touching autocharge) — this only reads it back. Prints every returned field
+// verbatim: the documented result type publishes no field list, so filtering to
+// an assumed shape would hide whatever else is actually there.
+async function cmdAutocharge(cfg: VoximplantConfig): Promise<void> {
+  const res = await retried(() => getAutochargeConfig(cfg));
+  const r = res.result;
+  if (!r || typeof r !== 'object') {
+    console.log('autocharge    : (no config returned)');
+    return;
+  }
+  for (const [k, v] of Object.entries(r)) {
+    console.log(`${k.padEnd(22)}: ${v === null ? '(null)' : String(v)}`);
+  }
 }
 
 // READ-ONLY: list the account's phone numbers so an operator can pick a Caller ID.
@@ -514,6 +532,8 @@ async function dispatch(
   switch (command) {
     case 'account':
       return cmdAccount(cfg);
+    case 'autocharge':
+      return cmdAutocharge(cfg);
     case 'rules':
       return cmdRules(cfg, flags);
     case 'history':
