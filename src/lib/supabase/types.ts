@@ -3314,7 +3314,7 @@ export type Database = {
         Insert: {
           close_at?: string | null
           created_at?: string | null
-          enabled?: boolean | null
+          enabled?: never
           event_id?: string | null
           id?: string | null
           max_contacts?: number | null
@@ -3325,7 +3325,7 @@ export type Database = {
         Update: {
           close_at?: string | null
           created_at?: string | null
-          enabled?: boolean | null
+          enabled?: never
           event_id?: string | null
           id?: string | null
           max_contacts?: number | null
