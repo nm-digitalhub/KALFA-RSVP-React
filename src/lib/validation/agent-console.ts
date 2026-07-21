@@ -23,8 +23,36 @@ export const agentStatusSchema = z.strictObject({
 export type AgentStatusBody = z.infer<typeof agentStatusSchema>;
 
 // ---------------------------------------------------------------------------
-// Outbound enqueue — POST /api/calls/outbound
+// Outbound enqueue — SUPERSEDED by POST /api/events/{eventId}/outreach-call
 // ---------------------------------------------------------------------------
+//
+// The shipped route takes {guest_id} against an eventId in the path and derives
+// the destination from our own data (event→campaign, guest→contact→phone). The
+// schema below still accepts a client-supplied phone, which the shipped route
+// deliberately does not: a console must not be able to name an arbitrary number
+// to dial. Kept because the deployed app may still send this shape, not because
+// it is the target contract.
+//
+// The rest of the app contract, as of 2026-07-21:
+//   POST /api/agents/status                      LIVE
+//   POST /api/calls/{id}/agent-command           LIVE
+//   POST /api/calls/{id}/end                     LIVE
+//   POST /api/events/{eventId}/outreach-call     LIVE (enqueue-only)
+//   POST /api/calls/{id}/monitor | takeover      NOT BUILT — needs a VoxEngine
+//     Conference and a sandbox-verified attach; the app's own AGENTS.md spec is
+//     wrong here (Conference.add() cannot take an ElevenLabs AgentsClient, and
+//     an Endpoint's direction has no setter).
+//   POST /api/agents/sdk-auth                    NOT BUILT — deliberately. The
+//     Android SDK adds a second auth system and MAU billing to reach one human
+//     per event who already has a phone; dialling the owner via callPSTN is the
+//     recommendation.
+//   POST /api/campaigns/{id}/start | pause       NOT BUILT — BLOCKED. The
+//     lifecycle functions exist (activateCampaign / pauseCampaign) but reach
+//     authorization through requireAdmin/requireOwnedEvent, which read the
+//     COOKIE session (lib/auth/dal.ts imports next/headers). The console
+//     authenticates by Bearer, so wrapping them would either fail for lack of a
+//     session or resolve against whoever's cookie happened to be present. That
+//     is an authorization-model change, not a route.
 
 // The console asks the backend to ENQUEUE an outbound AI call. The request path
 // only enqueues (the worker owns dispatch + StartScenarios); it returns the
