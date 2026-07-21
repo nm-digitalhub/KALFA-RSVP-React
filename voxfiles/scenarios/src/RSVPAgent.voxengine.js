@@ -638,6 +638,21 @@ VoxEngine.addEventListener(AppEvents.Started, function () {
                 // must reach 11labs before it emits conversation_initiation_metadata and
                 // generates the first_message, otherwise {{guest_name}} etc. resolve
                 // empty. (See the timing note at the top of this file.)
+                // dynamic_variables ONLY — deliberately no conversation_config_override.
+                // Voximplant's guide says "if you want to use the
+                // conversationInitiationClientData method, you should allow the override
+                // functionality", which reads as though this whole call needs
+                // permission. It does not: that requirement is for
+                // conversation_config_override, whose every field must be individually
+                // enabled under platform_settings.overrides on the agent. Dynamic
+                // variables just fill {{placeholders}} and need no permission — proven
+                // live, since the agent speaks the guest's name.
+                //
+                // The trap is for later: adding an override here without first enabling
+                // that exact field on the agent gets it SILENTLY DROPPED — no error, no
+                // log, the agent simply uses its configured value. If an override ever
+                // appears not to work, check platform_settings.overrides before
+                // debugging anything in this file.
                 try {
                     agent.conversationInitiationClientData({
                         dynamic_variables: {
@@ -720,8 +735,33 @@ VoxEngine.addEventListener(AppEvents.Started, function () {
                     // and wideband ASR, and Hebrew proper nouns are already the weakest
                     // point in these calls (a live call heard "זהבה" as "זה אבא"). If we
                     // are being handed 8 kHz, that is a measured cause, not a theory.
+                    // NOTE ON WHAT THIS CAN AND CANNOT TELL US. Both values are
+                    // declared by OUR agent config (agent_configs/KALFA-RSVP.json
+                    // pins pcm_16000 in both directions), so seeing pcm_16000 here
+                    // confirms the ElevenLabs side only — it is NOT evidence about the
+                    // audio Voximplant actually hands the connector. Its value is
+                    // catching a MISMATCH: a format we did not configure means the
+                    // connector overrode us, and that would be worth knowing.
+                    //
+                    // pcm_16000 is REQUIRED, not chosen. Voximplant's ElevenLabs guide
+                    // ("Bot audio settings"): "You need to specify the 16000 Hz PCM
+                    // audio format on the ElevenLabs side of the bot." There is no
+                    // documented pcm_8000 variant for PSTN calls — our config is
+                    // compliant, and lowering it would break the bridge, not match it.
+                    //
+                    // Which fixes the ASR ceiling in place. The PSTN leg is G.711/8 kHz
+                    // class with no knob at all (CallPSTNParameters carries only
+                    // amd/followDiversion, while CallSIPParameters does expose
+                    // scheme/strictCodecList — Voximplant's own types say the PSTN codec
+                    // is not scenario-controllable). The connector's "built-in media
+                    // conversion" then upsamples to the required 16 kHz, and upsampling
+                    // recovers no information: the agent hears telephone-band audio in a
+                    // wideband wrapper. So Hebrew name misrecognition cannot be tuned
+                    // away with audio settings — that avenue is closed by design, and
+                    // effort belongs on pronunciation/prompting instead.
                     log('AUDIO_FORMAT: agent_out=' + (meta.agent_output_audio_format || '?') +
-                        ' user_in=' + (meta.user_input_audio_format || '?'));
+                        ' user_in=' + (meta.user_input_audio_format || '?') +
+                        ' (declared by our agent config — not proof of the PSTN-side rate)');
                     if (convId) {
                         state.elConversationId = String(convId);
                         log('CONVERSATION_ID captured');
@@ -730,6 +770,21 @@ VoxEngine.addEventListener(AppEvents.Started, function () {
                     else {
                         log('ConversationInitiationMetadata without a conversation_id');
                     }
+                });
+                // ConnectorInformation — the only channel that could describe what
+                // Voximplant's connector is actually doing between the PSTN leg and the
+                // agent. Deliberately logged raw and unparsed: the typings give it the
+                // generic untyped _AgentsEvent payload, the JSDoc says only "Contains
+                // information about connector", and the identical contentless shape is
+                // reused across every AI provider — so there is no documented schema to
+                // parse against, and inventing one would be guessing.
+                //
+                // It may well be empty or useless. That is itself the answer worth
+                // having: right now the conversion step is a black box we have been
+                // reasoning about from telephony first principles, and one real session
+                // log settles whether it can be observed at all.
+                agent.addEventListener(ElevenLabs.AgentsEvents.ConnectorInformation, function (e) {
+                    log('CONNECTOR_INFO: ' + safeStringify((e && e.data) || {}));
                 });
                 // VadScore (0..1 speech probability) — track the high-water mark as a
                 // rough silence / no-answer signal. Do NOT log every frame (floods the
