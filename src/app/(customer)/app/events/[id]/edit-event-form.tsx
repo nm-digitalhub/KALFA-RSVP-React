@@ -154,8 +154,41 @@ export function EditEventForm({
   // runs, so the server's friendly Hebrew error would never show.
   const [imageError, setImageError] = useState<string | null>(null);
 
+  // Fingerprint of the SERVER's copy of every field rendered below as an
+  // uncontrolled input. It keys the <form>, so the inputs remount — and pick up
+  // their new defaultValue — whenever the saved event actually changes.
+  //
+  // WHY. React documents that "after the action function successfully
+  // completes, all uncontrolled field elements within the form are
+  // automatically reset" (react.dev, <form action>). Reset means "back to
+  // defaultValue", and defaultValue comes from the `event` prop of the tree
+  // that is already mounted — i.e. the state BEFORE the save. So a field the
+  // owner had just edited snapped back to its old value seconds after pressing
+  // save, while the database held the new one. It was reported for
+  // "הרכב המזמינים" because there the old value was empty and the field visibly
+  // fell back to "בחרו…", but every uncontrolled field here had it: change the
+  // event name, save, and the box shows the previous name until a refresh.
+  //
+  // Keying the <form> and not this component is deliberate — useActionState
+  // lives above it, so the "האירוע עודכן" notice and any field errors survive
+  // the remount. The fingerprint only moves when the server's data moves, so
+  // this cannot interrupt typing: it changes on a successful save (or someone
+  // else's edit arriving via revalidation), which is exactly when the inputs
+  // SHOULD be re-seeded.
+  const serverFingerprint = JSON.stringify([
+    event.name,
+    event.event_type,
+    event.event_date,
+    event.rsvp_deadline,
+    event.venue_name,
+    event.venue_address,
+    event.gift_payment_url,
+    event.show_meal_pref,
+    event.celebrants,
+  ]);
+
   return (
-    <form action={formAction} className="space-y-4">
+    <form key={serverFingerprint} action={formAction} className="space-y-4">
       <FormError message={state?.error} />
       <FormNotice message={state?.notice} />
 
