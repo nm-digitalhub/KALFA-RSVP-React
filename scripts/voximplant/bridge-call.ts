@@ -46,8 +46,8 @@ import {
   stampElCorrelationNonce,
   TERMINAL_STATUSES,
 } from '@/lib/data/call-attempts';
-import { rsvpClosedReason, todayIL } from '@/lib/data/event-date';
 import { getCampaignContext } from '@/lib/data/outreach-engine';
+import { closedEventRefusal } from '@/lib/voximplant/dial-preconditions';
 import { getAppOrigin } from '@/lib/url';
 import type { VoximplantConfig } from '@/lib/voximplant/core';
 import { startScenarios } from '@/lib/voximplant/mutations';
@@ -151,16 +151,7 @@ async function main(): Promise<void> {
   // deliberately NOT gated on here (an ops tool must still work against a closed
   // campaign — that is not what makes a call worthless).
   const cctx = await getCampaignContext(attempt.campaign_id);
-  const closed = cctx ? rsvpClosedReason(cctx) : null;
-  const closedReason = !cctx
-    ? 'no campaign/event context could be loaded'
-    : closed === 'event_not_active'
-      ? `the event status is '${cctx.eventStatus}', not 'active'`
-      : closed === 'past_event_day'
-        ? `the event day has passed (today in Israel is ${todayIL()})`
-        : closed === 'deadline_passed'
-          ? `the RSVP deadline (${cctx.rsvpDeadline}) has passed`
-          : null;
+  const closedReason = closedEventRefusal(cctx);
   if (closedReason) {
     // Escape hatch, because testing the AUDIO path (voice, disclosure, barge-in)
     // is legitimate on a closed event — but it must be a decision, never a
