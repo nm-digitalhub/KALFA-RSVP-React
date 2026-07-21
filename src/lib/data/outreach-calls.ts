@@ -8,6 +8,7 @@ import { getOutreachEnabled } from '@/lib/data/outreach-config';
 import { getVoximplantConfig } from '@/lib/data/voximplant-config';
 import {
   createCallAttempt,
+  nextManualTouchpoint,
   getCallAttemptByTouchpoint,
   recordDialConfirmed,
   markFailedToStart,
@@ -225,15 +226,29 @@ export async function dispatchOutreachCall(
   // nothing. The legacy DTMF scenario never read it; it is inert there.
   const elCorrelationNonce = randomBytes(16).toString('hex');
   const tokenExpiresAt = new Date(Date.now() + CALL_TOKEN_TTL_SEC * 1000).toISOString();
+
+  // A manual console dial takes its index from the reserved band, allocated
+  // ATOMICALLY in the database. Doing it here would race: two operators tapping
+  // the same guest read the same MAX, both compute the same index, and the loser
+  // hits ON CONFLICT DO NOTHING — createCallAttempt returns null, this function
+  // reports 'already_dispatched', and the second call silently never happens.
+  // The enqueue-time index carried on the job is a placeholder for that reason.
+  const resolvedTouchpoint = job.isManual
+    ? await nextManualTouchpoint(campaignId, contactId)
+    : touchpointIndex;
+
   const created = await createCallAttempt({
-    eventId, campaignId, contactId, guestId, touchpointIndex, accessToken, tokenExpiresAt,
+    eventId, campaignId, contactId, guestId,
+    touchpointIndex: resolvedTouchpoint,
+    accessToken, tokenExpiresAt,
     elCorrelationNonce,
+    ...(job.dispatchId ? { dispatchId: job.dispatchId } : {}),
   });
 
   if (created === null) {
     // Lost the race. RECONCILE — never redial, and NEVER write the row's status
     // (a racing loser must not corrupt the in-flight winner).
-    const existing = await getCallAttemptByTouchpoint(campaignId, contactId, touchpointIndex);
+    const existing = await getCallAttemptByTouchpoint(campaignId, contactId, resolvedTouchpoint);
     if (!existing) return { kind: 'skipped', reason: 'concurrent_owner' }; // fail-closed
     if (existing.vox_call_session_history_id) {
       // Winner already confirmed a start — complete the missing idempotent

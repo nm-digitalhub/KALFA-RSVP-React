@@ -47,6 +47,7 @@ import {
 import { processWebhookEvent } from '@/lib/data/webhook-processing';
 import { runThankyouSweep } from '@/lib/data/auto-thankyou';
 import { runCallbackSweep } from '@/lib/data/call-callbacks';
+import { recordManualDialOutcome } from '@/lib/data/call-attempts';
 import { runBalanceCheck } from '@/lib/data/voximplant-balance';
 import { runCallReconcile } from '@/lib/data/voximplant-reconcile';
 import { runLogExport } from '@/lib/data/vox-log-export';
@@ -93,6 +94,20 @@ async function handleCallRequest(job: CallJob): Promise<void> {
   const result = await dispatchOutreachCall(job.data);
   if (result.kind === 'transient_error') {
     throw new Error(`voximplant balance check failed: ${result.reason}`);
+  }
+  // An operator is waiting on this one. The console polls call_attempts by
+  // dispatch_id, and a refused dial creates no row — so without this the caller
+  // cannot tell "still queued" from "refused, and here is why". Event-scoped, so
+  // the owner sees it too, not only the agent who pressed the button.
+  if (job.data.isManual) {
+    await recordManualDialOutcome({
+      eventId: job.data.eventId,
+      contactId: job.data.contactId,
+      dispatchId: job.data.dispatchId ?? null,
+      kind: result.kind,
+      ...('reason' in result ? { reason: result.reason } : {}),
+      ...('attemptId' in result ? { attemptId: result.attemptId } : {}),
+    });
   }
   console.log('[kalfa-worker] call-request resolved', {
     jobId: job.id,

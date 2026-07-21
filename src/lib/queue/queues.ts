@@ -104,4 +104,21 @@ export type OutreachCallRequest = {
   isCallback?: boolean;
   /** The attempt that requested the callback — for tracing the re-dial back. */
   callbackFromAttemptId?: string;
+  /**
+   * An operator pressed "call this guest" in the console. Two effects, both
+   * narrow: the touchpoint index is allocated from the reserved manual band
+   * (atomically, see nextManualTouchpoint), and the outcome is written to the
+   * event's activity log so a refusal is visible to the owner rather than
+   * living only in a worker log line.
+   *
+   * It does NOT exempt any gate. A manual dial is a new reach; unlike
+   * isCallback, nothing here bypasses already-reached.
+   */
+  isManual?: boolean;
+  /**
+   * The enqueue job id handed to the console at 202, stamped onto the attempt
+   * row so the caller can poll for a row that did not exist when it was
+   * answered.
+   */
+  dispatchId?: string;
 };

@@ -51,10 +51,6 @@ const NO_STORE = { 'Cache-Control': 'no-store' } as const;
 const uuid = z.string().uuid();
 const bodySchema = z.strictObject({ guest_id: z.string().uuid() });
 
-// A manual console dial lives in its own touchpoint lane so its attempt slot never
-// collides with a campaign plan step (the engine uses 100000 + stepIndex).
-const MANUAL_TOUCHPOINT_BASE = 900000;
-
 function json(body: unknown, status: number) {
   return NextResponse.json(body, { status, headers: NO_STORE });
 }
@@ -77,6 +73,20 @@ async function getSender(): Promise<PgBoss> {
     max: 2,
     supervise: false,
     schedule: false,
+    // The load-bearing flag. pg-boss defaults migrate to TRUE, and start()
+    // branches on it: migrate -> contractor.start() (creates the schema if
+    // absent, migrates it if older), otherwise contractor.check() (verifies
+    // only, and THROWS on a missing or mismatched schema).
+    //
+    // Without this the web tier would attempt a pg-boss schema migration on
+    // every cold start, racing the worker that owns it. With it, a deployment
+    // whose web bundle expects a different schema version fails loudly at
+    // boss.start() instead of sending jobs against a schema it does not match.
+    //
+    // createSchema (also defaulting to true) is deliberately NOT set: it is
+    // only read inside contractor.create(), which check() never reaches. Adding
+    // it would document the wrong mechanism — the gate is migrate.
+    migrate: false,
   });
   await boss.start();
   sender = boss;
@@ -103,16 +113,27 @@ export async function POST(
   // event → its campaign; guest → contact → dialable phone. Service-role read.
   const admin = createAdminClient();
 
-  // [D4] one-campaign-per-event is the product norm; .limit(1) until "which
-  // campaign" (active?) is decided.
-  const { data: campaign, error: cErr } = await admin
+  // Exactly one ACTIVE campaign, or refuse. Status is not optional here: every
+  // campaign is created as 'draft', and dispatchOutreachCall hard-refuses a
+  // non-active one — so a .limit(1) that happened to pick a draft would answer
+  // 202 and then silently never dial. Observed live on 2026-07-21.
+  //
+  // Ambiguity is refused rather than resolved. There is no DB constraint making
+  // one-campaign-per-event true (only the PK), so picking "the first" of several
+  // would mean dialling on behalf of a campaign nobody chose.
+  const { data: campaigns, error: cErr } = await admin
     .from('campaigns')
     .select('id')
     .eq('event_id', eventId)
-    .limit(1)
-    .maybeSingle();
+    .eq('status', 'active');
   if (cErr) return json({ error: 'טעינת הקמפיין נכשלה' }, 500);
-  if (!campaign) return json({ error: 'לאירוע אין קמפיין' }, 409);
+  if (!campaigns || campaigns.length === 0) {
+    return json({ error: 'לאירוע אין קמפיין פעיל' }, 409);
+  }
+  if (campaigns.length > 1) {
+    return json({ error: 'לאירוע יותר מקמפיין פעיל אחד — לא ניתן לקבוע לאיזה לחייג' }, 409);
+  }
+  const campaign = campaigns[0];
 
   const { data: guest } = await admin
     .from('guests')
@@ -130,16 +151,26 @@ export async function POST(
     .maybeSingle();
   if (!contact?.normalized_phone) return json({ error: 'לאורח אין מספר חיוג' }, 422);
 
-  // [D2] unique lane per manual dial so a re-call is not deduped by
-  // getCallAttemptByTouchpoint.
-  const touchpointIndex = MANUAL_TOUCHPOINT_BASE + (Date.now() % 100000);
+  // The index is allocated ATOMICALLY by the dispatcher (next_manual_touchpoint,
+  // under an advisory lock on campaign+contact), NOT here. Any value computed in
+  // this process races: two operators tapping the same guest would derive the
+  // same index, and because createCallAttempt is ON CONFLICT DO NOTHING the
+  // loser inserts nothing, returns null, and is reported 'already_dispatched' —
+  // correct data, silently missing call. This placeholder is never used for a
+  // manual dial; isManual is what routes allocation into the database.
+  const dispatchId = randomUUID();
   const job: OutreachCallRequest = {
     campaignId: campaign.id,
     eventId,
     contactId: guest.contact_id,
     normalizedPhone: contact.normalized_phone,
-    scriptKey: 'manual_console_call', // [D1]
-    touchpointIndex,
+    // scriptKey is inert: three call sites write it, none read it (verified
+    // across src/ and worker/). Kept consistent with the callback sweep rather
+    // than inventing a value that means nothing.
+    scriptKey: 'rsvp_v1',
+    touchpointIndex: 0,
+    isManual: true,
+    dispatchId,
   };
 
   // A fresh job id per manual dial (each tap is a distinct intent). The worker's
@@ -147,10 +178,21 @@ export async function POST(
   // transport check, never a placed call.
   try {
     const boss = await getSender();
-    await boss.send(QUEUES.callRequest, job, { id: randomUUID(), ...CALL_RETRY });
+    await boss.send(QUEUES.callRequest, job, { id: dispatchId, ...CALL_RETRY });
   } catch {
     return json({ error: 'הוספת השיחה לתור נכשלה' }, 502);
   }
 
-  return json({ ok: true, status: 'queued', event_id: eventId }, 202);
+  // 'accepted', not 'queued'. The job still has eleven gates to pass in the
+  // worker, so claiming it is queued to dial would promise more than is known —
+  // the same false-confidence shape save_rsvp's three-state contract exists to
+  // kill.
+  //
+  // dispatch_id, not attempt_id: the attempt row does not exist yet. It is
+  // created inside dispatchOutreachCall (outreach-calls.ts), in the worker,
+  // after this response is already sent. The dispatcher stamps this id on the
+  // row it creates, so the console polls call_attempts by dispatch_id and reads
+  // a real status. "No row yet" stays ambiguous between queued and refused —
+  // the worker's activity_log entry is what resolves that.
+  return json({ status: 'accepted', dispatch_id: dispatchId, event_id: eventId }, 202);
 }

@@ -40,7 +40,50 @@ export type CreateCallAttemptInput = {
   // partial-unique index enforces one-nonce-one-attempt. Omitted ⇒ column stays
   // NULL (harmless for the legacy DTMF path, which never read it).
   elCorrelationNonce?: string;
+  /**
+   * The enqueue job id the console was handed at 202. Stamped on the row so the
+   * caller can poll for an attempt it could not be given synchronously — the row
+   * does not exist until this function runs, in the worker. Omitted for campaign
+   * dials, which nobody polls by handle.
+   */
+  dispatchId?: string;
 };
+
+/**
+ * Allocate the next operator-dial touchpoint_index for one (campaign, contact).
+ *
+ * Delegates to next_manual_touchpoint, which holds a transaction-scoped advisory
+ * lock on that pair. The allocation CANNOT be done here: two requests would read
+ * the same MAX and compute the same index, and because createCallAttempt is
+ * ON CONFLICT DO NOTHING the loser inserts nothing, returns null, and is reported
+ * as 'already_dispatched'. The data stays correct and a CALL silently disappears,
+ * which is the failure mode worth paying a round-trip to avoid.
+ */
+export async function nextManualTouchpoint(
+  campaignId: string,
+  contactId: string,
+): Promise<number> {
+  const admin = createAdminClient();
+  // Forward-compatible cast, same stance as setElConversationId and the callback
+  // columns: the function lands with migration 20260721100426, and types.ts is
+  // regenerated from the live schema AFTER that is applied — never hand-edited.
+  // Until then the generated RPC union does not name it.
+  const { data, error } = await (
+    admin.rpc as unknown as (
+      fn: string,
+      args: Record<string, string>,
+    ) => Promise<{ data: unknown; error: unknown }>
+  )('next_manual_touchpoint', { p_campaign: campaignId, p_contact: contactId });
+
+  // THROWS rather than falling back to a computed index. A fallback would be the
+  // exact race this function exists to remove, reintroduced at the moment the
+  // database is unavailable to prevent it — and it would fail silently, as a
+  // dropped call. Failing loudly leaves the job for pg-boss to retry.
+  if (error || typeof data !== 'number') {
+    throw new Error('הקצאת מזהה שיחה נכשלה');
+  }
+  return data;
+}
 
 // Insert a fresh attempt row (used by the future outbound trigger). Returns
 // { id } on success, or null if a row already exists for this (campaign, contact,
@@ -59,6 +102,7 @@ export async function createCallAttempt(
     token_expires_at: input.tokenExpiresAt,
     status: 'dialing',
     ...(input.elCorrelationNonce ? { el_correlation_nonce: input.elCorrelationNonce } : {}),
+    ...(input.dispatchId ? { dispatch_id: input.dispatchId } : {}),
   };
   const { data, error } = await admin
     .from('call_attempts')
@@ -507,6 +551,53 @@ export async function setElConversationId(
 // via a SEPARATE migration (handed to schema/RLS), so the write is
 // forward-compatible (`as never`, like setElConversationId) and its failure is a
 // caught no-op. Re-enqueuing the actual call is a KALFA dispatcher follow-up.
+/**
+ * Record the outcome of an operator-initiated dial on the event's activity log.
+ *
+ * The route answers 202 `accepted` and cannot say more: eleven gates still run
+ * in the worker. If the dial is refused there, the reason previously existed
+ * only as a line in a pm2 log — invisible to the owner, and indistinguishable
+ * from "still queued" to the console polling by dispatch_id.
+ *
+ * Same remedy the RSVP path already uses (recordRsvpCallRejected): surface the
+ * refusal through the event-scoped channel the success path uses, so it reaches
+ * a person instead of dying inside a queue row. A refusal is operational
+ * information — a campaign correctly refusing forty calls is something the owner
+ * needs to see, not just the agent who tapped the button.
+ *
+ * Best-effort and never throws: failing to log an outcome must not fail the job
+ * that produced it. Ids and fixed enum strings only — no PII.
+ */
+export async function recordManualDialOutcome(args: {
+  eventId: string;
+  contactId: string;
+  dispatchId: string | null;
+  kind: string;
+  reason?: string;
+  attemptId?: string;
+}): Promise<void> {
+  try {
+    const admin = createAdminClient();
+    type ActivityLogInsert = Database['public']['Tables']['activity_log']['Insert'];
+    const meta = {
+      dispatch_id: args.dispatchId,
+      contact_id: args.contactId,
+      kind: args.kind,
+      ...(args.reason ? { reason: args.reason } : {}),
+      ...(args.attemptId ? { call_attempt_id: args.attemptId } : {}),
+    };
+    const row: ActivityLogInsert = {
+      event_id: args.eventId,
+      user_id: null,
+      action: 'call.manual_dispatch',
+      meta: meta as unknown as ActivityLogInsert['meta'],
+    };
+    await admin.from('activity_log').insert(row);
+  } catch {
+    // Deliberately swallowed — see the doc comment.
+  }
+}
+
 export async function recordCallbackRequest(
   id: string,
   whenText: string,
