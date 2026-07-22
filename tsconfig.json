@@ -15,6 +15,11 @@
     "moduleResolution": "bundler",
     "resolveJsonModule": true,
     "isolatedModules": true,
+    // TS 6 defaults `types` to [] (no ambient auto-include). Node globals
+    // (process, Buffer, __dirname) currently survive only via next-env.d.ts's
+    // generated reference chain (next → node) — declare node explicitly so a
+    // future Next scaffolding change can't silently drop them.
+    "types": ["node"],
     "jsx": "react-jsx",
     "incremental": true,
     "plugins": [
