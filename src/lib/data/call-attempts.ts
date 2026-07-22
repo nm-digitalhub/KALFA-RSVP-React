@@ -1,8 +1,14 @@
 import 'server-only';
 
-import type { EventType } from '@/lib/data/events';
 import { createAdminClient } from '@/lib/supabase/admin';
 import type { Database, Json } from '@/lib/supabase/types';
+
+// Local alias of events.ts's EventType (same Database enum). Deliberately NOT
+// imported from '@/lib/data/events': that module is request-scoped (notFound,
+// requireUser → next/headers), and this file is in the worker's dependency
+// graph — depcruise (worker-no-request-scoped-next, tsPreCompilationDeps)
+// rightly flags even a type-only edge into it.
+type EventType = Database['public']['Enums']['event_type'];
 
 // Request-FREE service-role DAL for the Voximplant AI-call `call_attempts` table.
 // Imported by the ctx/cb route handlers + the call-result processor (and, later,

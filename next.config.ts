@@ -40,6 +40,12 @@ const nextConfig: NextConfig = {
   // a restart. `next start` (pm2) leaves NEXT_DIST_DIR unset → always uses
   // `.next`; the deploy script atomically swaps the freshly built dir in.
   distDir: process.env.NEXT_DIST_DIR || '.next',
+  // The vhost HOME above us is itself a git project with its own lockfile
+  // (the Laravel site), so Next's workspace-root inference walks up, picks the
+  // WRONG root, and traces from there. Declare the truth explicitly: this app
+  // is standalone and its root is this directory. Same cwd assumption as
+  // readDeployId above (npm scripts and pm2 both run from the app dir).
+  outputFileTracingRoot: process.cwd(),
   // Server Action uploads: Next's default body limit is 1MB, which rejected
   // the invite-image upload (product limit: INVITE_IMAGE_MAX_BYTES = 5MB) with
   // "Body exceeded 1 MB limit" (413). 6mb = 5MB image + multipart/form
@@ -61,6 +67,10 @@ const nextConfig: NextConfig = {
       {
         protocol: 'https',
         hostname: supabaseHostname(),
+        // Default port (443) only — an omitted field implies a `**` wildcard,
+        // which the Next docs explicitly recommend against. `search` MUST stay
+        // omitted: signed storage urls carry a varying `?token=` query.
+        port: '',
         pathname: '/storage/v1/object/sign/**',
       },
     ],
