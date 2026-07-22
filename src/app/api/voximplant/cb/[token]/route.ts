@@ -6,10 +6,15 @@ import {
   recordCallbackRequest,
   setElConversationId,
 } from '@/lib/data/call-attempts';
+import { advanceLegStatus } from '@/lib/data/console-monitor';
 import { getClientIp, rateLimit } from '@/lib/security/rate-limit';
 import { tokenFingerprint } from '@/lib/security/token-fingerprint';
 import type { Database } from '@/lib/supabase/types';
-import { voxCallbackRequestSchema, voxCallbackSchema } from '@/lib/validation/voximplant';
+import {
+  voxCallbackRequestSchema,
+  voxCallbackSchema,
+  voxLegStatusSchema,
+} from '@/lib/validation/voximplant';
 
 // POST /api/voximplant/cb/{token}
 //
@@ -95,6 +100,26 @@ export async function POST(
       );
     } catch {
       /* best-effort — never leak DB detail; the agent already softened its wording */
+    }
+    return new NextResponse('ok', { status: 200, headers: NO_STORE });
+  }
+
+  // Human-agent supervisor leg status (monitor / takeover): the RSVPAgent scenario
+  // POSTs this OUT-OF-BAND as the leg dials / connects / drops. It advances the
+  // human_agent_call_legs row KALFA created, SCOPED to this token's attempt so a
+  // token can never move another call's leg. Handled here (not queued to the drain)
+  // and tried before the shared schema; a normal cb body falls through.
+  const legStatus = voxLegStatusSchema.safeParse(json);
+  if (legStatus.success) {
+    try {
+      await advanceLegStatus(
+        attemptId,
+        legStatus.data.request_id,
+        legStatus.data.leg_status,
+        legStatus.data.failure_code,
+      );
+    } catch {
+      /* best-effort — never leak DB detail; the app also watches its own SDK leg */
     }
     return new NextResponse('ok', { status: 200, headers: NO_STORE });
   }

@@ -14,6 +14,7 @@ vi.mock('@/lib/data/call-attempts', () => ({
   getCallAttemptByAccessToken: vi.fn(),
 }));
 vi.mock('@/lib/data/webhooks', () => ({ insertWebhookEvents: vi.fn(async () => {}) }));
+vi.mock('@/lib/data/console-monitor', () => ({ advanceLegStatus: vi.fn(async () => {}) }));
 vi.mock('@/lib/data/call-result-processing', () => ({
   processCallRsvp: vi.fn(async () => ({ status: 'saved' })),
   processCallDnc: vi.fn(async () => ({ ok: true })),
@@ -35,6 +36,7 @@ import {
   getCallAttemptByAccessToken,
 } from '@/lib/data/call-attempts';
 import { insertWebhookEvents } from '@/lib/data/webhooks';
+import { advanceLegStatus } from '@/lib/data/console-monitor';
 import { __resetRateLimitStateForTests } from '@/lib/security/rate-limit';
 
 const AID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
@@ -222,6 +224,33 @@ describe('cb POST', () => {
     let last = 200;
     for (let i = 0; i < 33; i++) last = (await cbCall(TOK, validBody, '6.6.6.6')).status;
     expect(last).toBe(429);
+  });
+
+  // Human-agent supervisor leg status (monitor/takeover) is handled OUT-OF-BAND:
+  // it advances the leg row, does NOT queue to the webhook drain, and is SCOPED to
+  // the token's attempt so a token can never move another call's leg.
+  it('leg status connected → 200, advances the leg scoped to the token attempt, no drain', async () => {
+    const b = JSON.stringify({ kind: 'human_leg', request_id: 'rid-9', leg_status: 'connected' });
+    const res = await cbCall(TOK, b);
+    expect(res.status).toBe(200);
+    expect(advanceLegStatus).toHaveBeenCalledWith(AID, 'rid-9', 'connected', undefined);
+    expect(insertWebhookEvents).not.toHaveBeenCalled();
+  });
+  it('leg failed with a numeric code → coerced to string, terminal state advanced', async () => {
+    const b = JSON.stringify({ kind: 'human_leg', request_id: 'rid-9', leg_status: 'failed', failure_code: 486 });
+    expect((await cbCall(TOK, b)).status).toBe(200);
+    expect(advanceLegStatus).toHaveBeenCalledWith(AID, 'rid-9', 'failed', '486');
+  });
+  it('leg status on an unknown token → 404, never advances a leg', async () => {
+    vi.mocked(getCallAttemptByAccessToken).mockResolvedValue(null);
+    const b = JSON.stringify({ kind: 'human_leg', request_id: 'rid-9', leg_status: 'connected' });
+    expect((await cbCall(TOK, b)).status).toBe(404);
+    expect(advanceLegStatus).not.toHaveBeenCalled();
+  });
+  it('leg status with an unknown leg_status → 400 (strictObject/enum), no advance', async () => {
+    const b = JSON.stringify({ kind: 'human_leg', request_id: 'rid-9', leg_status: 'spying' });
+    expect((await cbCall(TOK, b)).status).toBe(400);
+    expect(advanceLegStatus).not.toHaveBeenCalled();
   });
 });
 

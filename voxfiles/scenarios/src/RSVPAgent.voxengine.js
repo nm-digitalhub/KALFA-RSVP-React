@@ -62,6 +62,12 @@
 // = 'elevenlabs', typings ~8360). Without this the scenario throws "ElevenLabs is not
 // defined" the moment it reaches createAgentsClient.
 require(Modules.ElevenLabs);
+// Conference module — the mixer that lets a human-agent supervisor leg hear BOTH
+// the guest and the AI at once (VoxEngine.createConference / destroyConference in
+// the attach/detach handler). A Call receives only ONE inbound audio stream, so
+// monitor/takeover cannot be wired without a mixer. Required unconditionally so
+// the namespace exists before the first `attach` command arrives.
+require(Modules.Conference);
 // AMD (answering-machine detection) for the voicemail PRE-CONNECT gate. Its
 // Modules enum member is MISSING from the bundled typings copy, so require it by
 // the resolved value with a fallback to the 'amd' module id, wrapped so a load
@@ -122,6 +128,13 @@ VoxEngine.addEventListener(AppEvents.Started, function () {
         // Empty-safe: '' when ctx omits it → the agent still runs, just unlinked.
         attemptToken: '',
         agent: null,
+        // Human-agent supervisor leg (monitor / takeover). All null until an
+        // `attach` command wires the conference; torn down on `detach` or when the
+        // supervisor's own call drops. Topology is 1:1 with the Voximplant
+        // supervisor guide — docs/voice-agent/monitor-scenario-topology.md.
+        conf: null,
+        supervisor: null,
+        supervisorRequestId: '',
         recordingUrl: null,
         // Second link vector (belt-and-suspenders with the token): the ElevenLabs
         // conversation_id, captured from ConversationInitiationMetadata (needs
@@ -248,6 +261,27 @@ VoxEngine.addEventListener(AppEvents.Started, function () {
             log('Callback failed: ' + err);
             if (done)
                 done();
+        });
+    }
+    // Best-effort supervisor-leg status, posted to the same cb endpoint keyed by
+    // request_id (the id KALFA created the human_agent_call_legs row with). It is
+    // NON-terminal and independent of the RSVP callback — the app also observes
+    // its own SDK call answering, so a dropped report never breaks the UX; it only
+    // keeps the server-side leg row honest (dialing → connected → disconnected).
+    function reportLegStatus(requestId, legStatus, failureCode) {
+        if (!state.callbackUrl || !requestId)
+            return;
+        var payload = { kind: 'human_leg', request_id: requestId, leg_status: legStatus };
+        if (failureCode)
+            payload.failure_code = failureCode;
+        Net.httpRequestAsync(state.callbackUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            postData: safeStringify(payload)
+        }).then(function (r) {
+            log('leg ' + legStatus + ' [' + requestId + '] reported: ' + (r && r.code));
+        }).catch(function (err) {
+            log('leg status report failed: ' + err);
         });
     }
     // The ONE terminal-status rule, shared by all three teardown paths (failed
@@ -552,6 +586,101 @@ VoxEngine.addEventListener(AppEvents.Started, function () {
                     log('userMessage failed: ' + err);
                 }
             });
+            // ── Human-agent supervisor leg (monitor / takeover) ──────────────
+            // Wire a listening or speaking human into the LIVE call. Topology copied
+            // 1:1 from the Voximplant supervisor guide (guides.contact-center.
+            // supervisors): a VoxEngine.createConference() MIXER plus a callUser()
+            // leg — because a Call receives only ONE inbound audio stream, so a
+            // monitor who must hear BOTH guest and AI cannot be wired with direct
+            // media routing. Variable map: operatorCall→state.agent, clientCall→
+            // call, supervisorCall→supervisor. Full spec and the live-call
+            // verification that gates this: docs/voice-agent/monitor-scenario-topology.md.
+            function restoreDirectBridge(why) {
+                // Guide teardown: agent and guest continue on the direct bridge and
+                // the conference is destroyed. sendMediaBetween FIRST, then destroy.
+                try {
+                    if (state.agent)
+                        VoxEngine.sendMediaBetween(call, state.agent);
+                }
+                catch (err) {
+                    log('restore bridge failed: ' + err);
+                }
+                try {
+                    if (state.conf)
+                        VoxEngine.destroyConference(state.conf);
+                }
+                catch (err) {
+                    log('destroyConference failed: ' + err);
+                }
+                state.conf = null;
+                state.supervisor = null;
+                log('supervisor ' + why + ' — restored direct agent-guest bridge');
+            }
+            function attachSupervisor(voxUsername, mode, requestId) {
+                if (!voxUsername || !state.agent || state.terminated) {
+                    log('attach [' + requestId + '] ignored — missing username/agent or terminated');
+                    return;
+                }
+                if (state.supervisor) {
+                    log('attach [' + requestId + '] ignored — a supervisor leg is already live');
+                    return;
+                }
+                state.supervisorRequestId = requestId;
+                // Mixer first (needs no video-conference rule flag, unlike Conference.add).
+                state.conf = VoxEngine.createConference();
+                // Dial the agent's provisioned SDK identity; callerid mirrors the
+                // guest-facing number so the device shows a KALFA call.
+                var supervisor = VoxEngine.callUser(voxUsername, state.from);
+                state.supervisor = supervisor;
+                reportLegStatus(requestId, 'dialing');
+                supervisor.addEventListener(CallEvents.Connected, function () {
+                    if (state.terminated || !state.agent) {
+                        try {
+                            supervisor.hangup();
+                        }
+                        catch (_e) { }
+                        return;
+                    }
+                    if (mode === 'takeover') {
+                        // Conference — full three-way; everyone hears everyone.
+                        VoxEngine.sendMediaBetween(state.agent, state.conf);
+                        VoxEngine.sendMediaBetween(supervisor, state.conf);
+                        VoxEngine.sendMediaBetween(call, state.conf);
+                    }
+                    else {
+                        // Supervision — listen-only. Supervisor hears the agent+guest
+                        // mix; neither hears the supervisor; agent-guest stay direct.
+                        state.agent.sendMediaTo(state.conf);
+                        call.sendMediaTo(state.conf);
+                        state.conf.sendMediaTo(supervisor);
+                        VoxEngine.sendMediaBetween(state.agent, call);
+                    }
+                    log('supervisor connected [' + requestId + '] mode=' + mode);
+                    reportLegStatus(requestId, 'connected');
+                });
+                supervisor.addEventListener(CallEvents.Disconnected, function () {
+                    restoreDirectBridge('disconnected [' + requestId + ']');
+                    reportLegStatus(requestId, 'disconnected');
+                });
+                supervisor.addEventListener(CallEvents.Failed, function (ev) {
+                    restoreDirectBridge('failed [' + requestId + ']');
+                    reportLegStatus(requestId, 'failed', ev && ev.code);
+                });
+            }
+            function detachSupervisor(requestId) {
+                if (!state.supervisor) {
+                    log('detach [' + (requestId || '') + '] ignored — no supervisor leg');
+                    return;
+                }
+                // Ending the supervisor call fires Disconnected, whose handler
+                // restores the direct bridge and destroys the conference.
+                try {
+                    state.supervisor.hangup();
+                }
+                catch (err) {
+                    log('detach hangup failed: ' + err);
+                }
+            }
             // ── Live-call command channel ────────────────────────────────────
             // KALFA POSTs a command envelope to this session's managing URL
             // (media_session_access_secure_url, returned by StartScenarios and
@@ -585,10 +714,11 @@ VoxEngine.addEventListener(AppEvents.Started, function () {
                     log('command ' + cmd + ' [' + rid + '] ignored — session terminated');
                     return;
                 }
-                // The four AI commands need a live agent leg; call_end does NOT.
-                // Hanging up must still work after close_agent dropped the agent —
-                // that is precisely when an operator reaches for it.
-                if (cmd !== 'call_end' && !state.agent) {
+                // The four AI commands need a live agent leg; call_end does NOT,
+                // and neither does detach — tearing down a supervisor must still
+                // work after close_agent dropped the agent (that is precisely when
+                // an operator reaches for either).
+                if (cmd !== 'call_end' && cmd !== 'detach' && !state.agent) {
                     log('command ' + cmd + ' [' + rid + '] ignored — no live agent');
                     return;
                 }
@@ -624,6 +754,16 @@ VoxEngine.addEventListener(AppEvents.Started, function () {
                         // the stale-row state that had to be cleaned by hand on
                         // 2026-07-21. Short grace so audio already queued out drains.
                         scheduleHangup(call, 500);
+                    }
+                    else if (cmd === 'attach') {
+                        // Wire a human-agent audio leg into the live call. mode +
+                        // vox_username come from KALFA's envelope; the identity is
+                        // never invented here. Topology per the supervisor guide.
+                        var ap = env && env.payload;
+                        attachSupervisor(ap && ap.vox_username, (ap && ap.mode) || 'monitor', rid);
+                    }
+                    else if (cmd === 'detach') {
+                        detachSupervisor(rid);
                     }
                     else {
                         log('command unknown: ' + cmd + ' [' + rid + ']');

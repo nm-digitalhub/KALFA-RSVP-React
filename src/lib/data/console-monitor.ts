@@ -3,6 +3,7 @@ import 'server-only';
 import { randomUUID } from 'node:crypto';
 
 import { createAdminClient } from '@/lib/supabase/admin';
+import type { Database } from '@/lib/supabase/types';
 
 // Data layer for human-agent monitor / takeover — the "attach a listening or
 // speaking human leg to a live AI call" flow.
@@ -99,4 +100,42 @@ export async function createRequestedLeg(
   if (error || !data) throw new Error('רישום רגל הנציג נכשל');
 
   return { legId: data.id, requestId };
+}
+
+export type LegStatus = 'dialing' | 'ringing' | 'connected' | 'disconnected' | 'failed';
+
+// Which live transition stamps a timestamp column. `connected` records when the
+// human joined; both terminal states record when the leg left.
+const LEG_STATUS_STAMP: Partial<Record<LegStatus, 'connected_at' | 'disconnected_at'>> = {
+  connected: 'connected_at',
+  disconnected: 'disconnected_at',
+  failed: 'disconnected_at',
+};
+
+/**
+ * Advance a supervisor leg as the RSVPAgent scenario reports it (dialing →
+ * connected → disconnected / failed). Scoped to `callAttemptId` — the attempt the
+ * cb TOKEN resolved to — so a token can only ever move ITS OWN call's leg, never
+ * another's. Best-effort: the app also observes its own SDK call state, so a lost
+ * report degrades server-side bookkeeping, not the operator's screen.
+ */
+export async function advanceLegStatus(
+  callAttemptId: string,
+  requestId: string,
+  legStatus: LegStatus,
+  failureCode?: string,
+): Promise<void> {
+  const admin = createAdminClient();
+  const patch: Database['public']['Tables']['human_agent_call_legs']['Update'] = {
+    status: legStatus,
+  };
+  const stamp = LEG_STATUS_STAMP[legStatus];
+  if (stamp) patch[stamp] = new Date().toISOString();
+  if (failureCode) patch.failure_code = failureCode;
+
+  await admin
+    .from('human_agent_call_legs')
+    .update(patch)
+    .eq('request_id', requestId)
+    .eq('call_attempt_id', callAttemptId);
 }

@@ -76,6 +76,21 @@ export const voxCallbackRequestSchema = z.strictObject({
 });
 export type VoxCallbackRequest = z.infer<typeof voxCallbackRequestSchema>;
 
+// Human-agent supervisor leg status (monitor / takeover), posted OUT-OF-BAND by
+// the RSVPAgent scenario as the leg dials / connects / drops (kind:'human_leg').
+// Like schedule_callback it is a SEPARATE strict schema, tried before the shared
+// voxCallbackSchema so a normal cb body is untouched. request_id correlates to the
+// human_agent_call_legs row KALFA created; identity stays the token-resolved
+// attempt, never the body. failure_code is coerced (the scenario sends a numeric
+// CallEvents.Failed code; the column is text).
+export const voxLegStatusSchema = z.strictObject({
+  kind: z.literal('human_leg'),
+  request_id: z.string().min(1).max(64),
+  leg_status: z.enum(['dialing', 'ringing', 'connected', 'disconnected', 'failed']),
+  failure_code: z.coerce.string().max(64).optional(),
+});
+export type VoxLegStatus = z.infer<typeof voxLegStatusSchema>;
+
 // Body of the `save_rsvp` client-tool POST (Tier 2). The ElevenLabs conversational
 // agent extracts REAL adult + child counts from natural speech (richer than the
 // binary rsvp_digit path) and calls this tool AFTER an explicit read-back confirm.
