@@ -11,6 +11,7 @@ vi.mock('@/lib/data/voximplant-config', () => ({
 }));
 vi.mock('@/lib/data/call-attempts', () => ({
   createCallAttempt: vi.fn(),
+  nextManualTouchpoint: vi.fn(),
   getCallAttemptByTouchpoint: vi.fn(),
   recordDialConfirmed: vi.fn(),
   markFailedToStart: vi.fn(),
@@ -54,6 +55,7 @@ import { getOutreachEnabled } from '@/lib/data/outreach-config';
 import { getVoximplantConfig } from '@/lib/data/voximplant-config';
 import {
   createCallAttempt,
+  nextManualTouchpoint,
   getCallAttemptByTouchpoint,
   recordDialConfirmed,
   markFailedToStart,
@@ -116,6 +118,7 @@ beforeEach(() => {
   vi.mocked(getGuestsForContact).mockResolvedValue([{ id: 'g1', full_name: 'א', rsvp_token: 't1' }] as never);
   vi.mocked(getAccountInfo).mockResolvedValue(acct(50) as never);
   vi.mocked(createCallAttempt).mockResolvedValue({ id: AID });
+  vi.mocked(nextManualTouchpoint).mockResolvedValue(100001);
   vi.mocked(getCallAttemptByTouchpoint).mockResolvedValue(null);
   vi.mocked(countActiveCalls).mockResolvedValue(0);
   vi.mocked(countCampaignCallsSince).mockResolvedValue(0);
@@ -157,6 +160,24 @@ describe('gates (no dial)', () => {
   it('5. already reached → skipped', async () => {
     vi.mocked(isContactReached).mockResolvedValue(true);
     expect(await dispatchOutreachCall(job())).toEqual({ kind: 'skipped', reason: 'already_reached' });
+    expect(startScenarios).not.toHaveBeenCalled();
+  });
+  it('5b. already reached + isCallback → DIALS (the sole exemption, spec test 5)', async () => {
+    // A guest-requested callback is the SAME billable reach continuing (owner
+    // decision 2026-07-21) — the only gate it skips. Without this case nothing
+    // pinned the exemption; a refactor dropping `!job.isCallback` would have
+    // passed the whole suite while silently killing every callback.
+    vi.mocked(isContactReached).mockResolvedValue(true);
+    const r = await dispatchOutreachCall(job({ isCallback: true }));
+    expect(r.kind).toBe('dialed');
+    expect(startScenarios).toHaveBeenCalledTimes(1);
+  });
+  it('5c. already reached blocks a MANUAL job too — no operator override exists ([D3] CLOSED)', async () => {
+    vi.mocked(isContactReached).mockResolvedValue(true);
+    expect(await dispatchOutreachCall(job({ isManual: true, dispatchId: 'd' }))).toEqual({
+      kind: 'skipped',
+      reason: 'already_reached',
+    });
     expect(startScenarios).not.toHaveBeenCalled();
   });
   it('6. campaign not active → skipped', async () => {
@@ -287,6 +308,27 @@ describe('concurrency / reconcile', () => {
     expect(startScenarios).not.toHaveBeenCalled();
     expect(insertInteraction).toHaveBeenCalledWith(expect.objectContaining({ kind: 'call_dialed', provider_id: String(HISTORY) }));
     expect(setContactOpStatus).toHaveBeenCalledWith(CTID, 'call_dialed');
+  });
+  it('11c. reach written BETWEEN two worker runs → first dialed, second skipped/already_reached (spec test 4, serial)', async () => {
+    // SERIAL scenario, deliberately: the route preflight passed for both taps
+    // (contact not reached yet), worker run #1 dials and the call completes
+    // (billed_results row appears), worker run #2 — processed after — finds
+    // the contact reached and stops. This pins the execution-time re-check
+    // that closes the gap AFTER the route already answered 202.
+    //
+    // It does NOT prove atomic locking of two truly-simultaneous dispatches —
+    // that guarantee lives in UNIQUE(campaign,contact,touchpoint) + the
+    // reconcile path (cases 11a/11b) and billed_results UNIQUE(event,contact),
+    // and true concurrency is exercised only in the OUTREACH_DB_IT-gated
+    // integration suites against a real database.
+    const first = await dispatchOutreachCall(job({ isManual: true, dispatchId: 'd1' }));
+    expect(first.kind).toBe('dialed');
+
+    vi.mocked(isContactReached).mockResolvedValue(true); // the reach landed
+    const second = await dispatchOutreachCall(job({ isManual: true, dispatchId: 'd2' }));
+    expect(second).toEqual({ kind: 'skipped', reason: 'already_reached' });
+
+    expect(startScenarios).toHaveBeenCalledTimes(1); // one call rang, once
   });
 });
 

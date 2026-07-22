@@ -129,3 +129,53 @@ describe('console_* views are never left writable by `authenticated`', () => {
     });
   }
 });
+
+// The LATEST definition of each console view is what the live database runs
+// (`create or replace` swaps the body wholesale), so these two guards read the
+// last create statement per view, in migration order.
+describe('console_* view bodies — latest definition invariants', () => {
+  // A whole `create [or replace] view console_x ... ;` statement. View bodies
+  // here contain no internal semicolons, so non-greedy-to-semicolon is the
+  // statement boundary.
+  const STATEMENT_RE = /create\s+(?:or\s+replace\s+)?view\s+(?:public\.)?(console_\w+)[\s\S]*?;/gi;
+
+  const latest = new Map<string, { version: string; body: string }>();
+  for (const file of migrationFiles()) {
+    const body = readFileSync(join(MIGRATIONS, file), 'utf8');
+    const version = file.split('_')[0];
+    for (const m of body.matchAll(STATEMENT_RE)) {
+      latest.set(m[1], { version, body: m[0] });
+    }
+  }
+
+  it('parses the same view set as the grants guard (anti-no-op)', () => {
+    expect([...latest.keys()].sort()).toEqual([...EXPECTED_VIEWS]);
+  });
+
+  // Staff-model authorization (user correction, 2026-07-22): the console is a
+  // staff-wide surface. Every console view must be gated by is_console_agent()
+  // — which itself requires is_staff() (20260720234500) — EXCEPT console_me,
+  // whose gate is the self-row predicate `ca.user_id = auth.uid()` (a different
+  // but equally closed gate; it lists the caller's own enrollment row or
+  // nothing). A regular org user is not a console agent and gets zero rows.
+  for (const [view, { version, body }] of latest) {
+    if (view === 'console_me') {
+      it('console_me (exempt) keeps its self-row gate', () => {
+        expect(body).toContain('auth.uid()');
+      });
+      continue;
+    }
+    it(`${view} latest definition (${version}) is gated by is_console_agent()`, () => {
+      expect(body).toContain('is_console_agent()');
+    });
+  }
+
+  // Billing internals never reach a console surface: reach state is exposed
+  // ONLY as the derived reached_at scalar — the price locked for that reach
+  // must not appear in any console view body, ever.
+  it('no console view exposes locked_price', () => {
+    for (const [view, { body }] of latest) {
+      expect(body, `${view} must never select locked_price`).not.toContain('locked_price');
+    }
+  });
+});

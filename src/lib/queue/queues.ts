@@ -35,6 +35,11 @@ export const QUEUES = {
   // subscription and Slack at ≥80% (warn) / ≥95% (error). Config-gated (no key
   // → no-op), read-only, never throws. See src/lib/data/elevenlabs-quota.ts.
   elevenlabsQuota: 'elevenlabs-quota-check',
+  // call_dispatch_status retention — daily delete of rows older than 30 days.
+  // The table is a status channel, not an audit log (activity_log keeps the
+  // durable record); this also clears version-skew stragglers. See
+  // src/lib/data/call-dispatch-status.ts.
+  dispatchRetention: 'call-dispatch-retention',
 } as const;
 
 // outreach-step retry policy: a few backed-off retries, then dead-letter. The

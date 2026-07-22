@@ -785,6 +785,68 @@ export type Database = {
           },
         ]
       }
+      call_dispatch_status: {
+        Row: {
+          call_attempt_id: string | null
+          contact_id: string
+          created_at: string
+          dispatch_id: string
+          event_id: string
+          reason: string | null
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          call_attempt_id?: string | null
+          contact_id: string
+          created_at?: string
+          dispatch_id: string
+          event_id: string
+          reason?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          call_attempt_id?: string | null
+          contact_id?: string
+          created_at?: string
+          dispatch_id?: string
+          event_id?: string
+          reason?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "call_dispatch_status_call_attempt_id_fkey"
+            columns: ["call_attempt_id"]
+            isOneToOne: false
+            referencedRelation: "call_attempts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "call_dispatch_status_contact_id_fkey"
+            columns: ["contact_id"]
+            isOneToOne: false
+            referencedRelation: "contacts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "call_dispatch_status_event_id_fkey"
+            columns: ["event_id"]
+            isOneToOne: false
+            referencedRelation: "console_events"
+            referencedColumns: ["event_id"]
+          },
+          {
+            foreignKeyName: "call_dispatch_status_event_id_fkey"
+            columns: ["event_id"]
+            isOneToOne: false
+            referencedRelation: "events"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       call_dnc_list: {
         Row: {
           added_by: string | null
@@ -3479,12 +3541,16 @@ export type Database = {
       }
       console_event_guests: {
         Row: {
+          call_block_reason: string | null
+          callback_scheduled_at: string | null
+          can_start_outreach_call: boolean | null
           dialable: boolean | null
           event_id: string | null
           guest_id: string | null
           guest_name: string | null
           has_active_campaign: boolean | null
           phone: string | null
+          reached_at: string | null
           rsvp_status: string | null
         }
         Relationships: [

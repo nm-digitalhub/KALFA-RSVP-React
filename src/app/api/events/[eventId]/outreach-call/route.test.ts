@@ -9,6 +9,15 @@ vi.mock('@/lib/auth/console-agent', () => ({
   callerHasPlatformPermission: vi.fn(),
 }));
 vi.mock('@/lib/supabase/admin', () => ({ createAdminClient: vi.fn() }));
+// Module mocks, not table stubs: the preflight helper lives in outreach-engine
+// (whose real import graph is the whole outreach engine) and the dispatch-row
+// helpers have their own unit suite (call-dispatch-status.test.ts). The route
+// test asserts WHEN they are called and how their answers steer the response.
+vi.mock('@/lib/data/outreach-engine', () => ({ isContactReached: vi.fn() }));
+vi.mock('@/lib/data/call-dispatch-status', () => ({
+  recordDispatchAccepted: vi.fn(),
+  settleDispatchFailure: vi.fn(),
+}));
 
 // vi.mock is hoisted above every declaration, so the capture cell has to be
 // hoisted with it — a plain `let` above would still be in TDZ when the factory
@@ -32,6 +41,8 @@ vi.mock('pg-boss', () => ({
 
 import { POST } from './route';
 import { callerHasPlatformPermission, requireConsoleAgent } from '@/lib/auth/console-agent';
+import { recordDispatchAccepted, settleDispatchFailure } from '@/lib/data/call-dispatch-status';
+import { isContactReached } from '@/lib/data/outreach-engine';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { QUEUES } from '@/lib/queue/queues';
 
@@ -98,6 +109,9 @@ beforeEach(() => {
   } as never);
   vi.mocked(callerHasPlatformPermission).mockResolvedValue(true);
   vi.mocked(createAdminClient).mockReturnValue(stubAdmin());
+  vi.mocked(isContactReached).mockResolvedValue(false);
+  vi.mocked(recordDispatchAccepted).mockResolvedValue(true);
+  vi.mocked(settleDispatchFailure).mockResolvedValue(undefined);
 });
 
 describe('POST /api/events/{eventId}/outreach-call', () => {
@@ -185,6 +199,97 @@ describe('POST /api/events/{eventId}/outreach-call', () => {
     expect(boss.send).not.toHaveBeenCalled();
   });
 
+  // ── already_reached preflight ([D3] CLOSED) + the dispatch-status contract ──
+
+  it('answers 202 only after the preflight passed AND an accepted row exists (spec test 1)', async () => {
+    const order: string[] = [];
+    vi.mocked(recordDispatchAccepted).mockImplementation(async () => {
+      order.push('accepted-row');
+      return true;
+    });
+    boss.send.mockImplementation(async () => {
+      order.push('send');
+      return 'job';
+    });
+
+    const res = await call();
+    expect(res.status).toBe(202);
+    const body = await res.json();
+
+    // Preflight is computed by (event_id, contact_id) ONLY — the exact pair,
+    // which is also what makes the SAME contact dialable in a DIFFERENT event
+    // (spec test 3: billed_results is UNIQUE(event_id, contact_id)).
+    expect(isContactReached).toHaveBeenCalledWith(EVENT, CONTACT);
+
+    // The row precedes the enqueue: every 202 has an 'accepted' row the app
+    // can watch — the worker only ever SETTLES it.
+    expect(order).toEqual(['accepted-row', 'send']);
+    expect(recordDispatchAccepted).toHaveBeenCalledWith({
+      dispatchId: body.dispatch_id,
+      eventId: EVENT,
+      contactId: CONTACT,
+    });
+  });
+
+  it('allows the SAME contact in a DIFFERENT event — 202 and a job (spec test 3, behavioral)', async () => {
+    const EVENT2 = '99999999-9999-4999-8999-999999999999';
+    // Reach state is per (event_id, contact_id): this contact IS reached in
+    // EVENT, and is NOT in EVENT2 — the mock answers per the pair, so the test
+    // exercises the actual scoping, not just the argument list.
+    vi.mocked(isContactReached).mockImplementation(
+      async (eventId: string, contactId: string) => eventId === EVENT && contactId === CONTACT,
+    );
+    vi.mocked(createAdminClient).mockReturnValue(
+      stubAdmin({ guest: { contact_id: CONTACT, event_id: EVENT2 } }),
+    );
+
+    const res = await call(EVENT2);
+    expect(res.status).toBe(202);
+    expect(isContactReached).toHaveBeenCalledWith(EVENT2, CONTACT);
+    expect(boss.send).toHaveBeenCalledTimes(1);
+    expect(boss.send.mock.calls[0][1]).toMatchObject({ eventId: EVENT2, contactId: CONTACT });
+  });
+
+  it('409s an already-reached contact with a typed domain code — no job, no row (spec test 2)', async () => {
+    vi.mocked(isContactReached).mockResolvedValue(true);
+    const res = await call();
+    expect(res.status).toBe(409);
+    const body = await res.json();
+    // The app branches on `code`, never on the Hebrew string.
+    expect(body.code).toBe('already_reached');
+    expect(boss.send).not.toHaveBeenCalled();
+    expect(recordDispatchAccepted).not.toHaveBeenCalled();
+  });
+
+  it('500s (and does NOT enqueue) when the accepted row cannot be recorded', async () => {
+    vi.mocked(recordDispatchAccepted).mockResolvedValue(false);
+    const res = await call();
+    expect(res.status).toBe(500);
+    // A dial whose status cannot be published would resolve into silence —
+    // refuse it rather than dial blind.
+    expect(boss.send).not.toHaveBeenCalled();
+  });
+
+  it('settles failed/temporary_dispatch_failure on the 502 enqueue-failure path', async () => {
+    boss.send.mockRejectedValue(new Error('pg down'));
+    const res = await call();
+    expect(res.status).toBe(502);
+    // No job exists, so no worker will ever settle the row — the route must,
+    // or it stays 'accepted' forever.
+    expect(settleDispatchFailure).toHaveBeenCalledWith(
+      expect.objectContaining({ eventId: EVENT, contactId: CONTACT }),
+    );
+  });
+
+  it('still answers 502 when the failure-settle itself throws (strict helper, caught here)', async () => {
+    boss.send.mockRejectedValue(new Error('pg down'));
+    vi.mocked(settleDispatchFailure).mockRejectedValue(new Error('db down too'));
+    const res = await call();
+    // The app already knows the request failed (no 202 was given) — the stale
+    // 'accepted' row is logged inside the helper and cleared by retention.
+    expect(res.status).toBe(502);
+  });
+
   it('opens pg-boss send-only, with migrate off', async () => {
     await call();
     // migrate is the load-bearing one: pg-boss defaults it to TRUE, and start()
@@ -208,10 +313,17 @@ describe('outreach-call route stays enqueue-only (source guard)', () => {
     expect(src).not.toContain('startScenarios');
   });
 
-  it('runs no dial gate itself — every one belongs to the worker', () => {
-    for (const gate of ['hasCallConsent', 'isDncListed', 'isContactReached', 'rsvpClosedReason']) {
+  it('runs no dial gate EXCEPT the already-reached preflight', () => {
+    // Deliberately revised (2026-07-22, [D3] CLOSED): the route runs exactly
+    // ONE gate — the synchronous already-reached preflight, so the app gets a
+    // typed 409 instead of a 202 for a dial the worker is certain to refuse.
+    // Every OTHER gate stays in the worker, where job-time state is fresh; the
+    // worker also re-checks already-reached as race protection.
+    for (const gate of ['hasCallConsent', 'isDncListed', 'rsvpClosedReason']) {
       expect(src).not.toContain(gate);
     }
+    expect(src).toContain('isContactReached');
+    expect(src).toMatch(/code:\s*'already_reached'/);
   });
 
   it('does not reintroduce a locally computed touchpoint index', () => {

@@ -1,6 +1,8 @@
 # KALFA — חוזה אינטגרציה לאפליקציית הקונסולה
 
-> **גרסה 2026-07-22 (עודכן: sdk-auth + monitor/takeover נבנו; monitor חסום מאחורי flag).**
+> **גרסה 2026-07-22b (עודכן: already_reached מקצה-לקצה — 4 שדות חדשים ב-`console_event_guests`, preflight 409 בחיוג יזום, וטבלת הסטטוס `call_dispatch_status` ב-Realtime; מיפוי מלא ב-`app-handoff-already-reached.md`).**
+> **מצב פריסה של תוספות 22.7b: הכול פרוס ופעיל** — DB + route + worker
+> (deploy `mrwfoluv`). צד Android טרם מומש (ראו handoff).
 > כל שדה, קוד וערך במסמך נשלף מהקוד או מה-DB החי ביום זה.
 > מה שלא נבנה מסומן ❌; מה שנבנה אך חסום מאחורי flag מסומן ✅⛔ ומופיע עם תנאי ההדלקה.
 >
@@ -78,13 +80,57 @@ id · event_id · status · enabled · start_at · close_at · max_contacts · c
 
 ```
 guest_id · event_id · guest_name · dialable · phone · rsvp_status · has_active_campaign
+reached_at · callback_scheduled_at · can_start_outreach_call · call_block_reason
 ```
 
 - `dialable` — יש טלפון **וגם** לא ביקש הסרה
 - `phone` — `null` בלי `view_customer_data`
 - `has_active_campaign` — משקף את גייט ה-409 של נתיב החיוג
+- `reached_at` — מתי נוצר קשר עם איש הקשר **באירוע הזה** (`null` = טרם).
+  מחושב לפי `(event_id, contact_id)` בלבד — אותו איש קשר באירוע אחר עדיין
+  ניתן לחיוג.
+- `callback_scheduled_at` — מועד ה-callback שהאורח ביקש וטרם חויג (`null`
+  אם אין). callback טקסטואלי בלי מועד ("מחר בערב") **אינו** חוסם חיוג ידני.
+- `can_start_outreach_call` — `false` כאשר כבר נוצר קשר **או** קיים callback
+  ממתין. אורתוגונלי בכוונה לשני השדות האחרים.
+- `call_block_reason` — `'already_reached'` (גובר) · `'callback_scheduled'` ·
+  `null`. **הסתעפו על הערכים האלה**, לא על טקסט.
+
+**כלל ה-affordance של כפתור החיוג** (מחליף כל היגיון קודם):
+
+```
+dial_enabled = dialable AND has_active_campaign AND can_start_outreach_call
+```
+
+- על `already_reached`: כפתור מושבת + **"כבר נוצר קשר באירוע זה"** + הסבר
+  קבוע ונגיש מתחת לכפתור. זהו מצב עסקי סופי — **בלי "נסה שוב"**.
+- על `callback_scheduled`: הציגו את `callback_scheduled_at`; חיוג ידני מושבת;
+  רק מסלול ה-callback האוטומטי יחייג.
 
 **זה הווי לרשימת האורחים.** לא `console_campaign_targets`.
+
+### `call_dispatch_status` — **ערוץ האמת אחרי 202 של חיוג יזום**
+
+```
+dispatch_id · event_id · contact_id · call_attempt_id · status · reason
+created_at · updated_at
+```
+
+טבלה (לא ווי), קריאה בלבד, מפורסמת ב-Realtime. שורה = **בקשת חיוג**, לא
+שיחה. הנתיב יוצר אותה כ-`accepted` לפני שהוא עונה 202, וה-worker מיישב אותה
+לערך סופי. התאימו לפי ה-`dispatch_id` שקיבלתם ב-202; אחרי reconnect בצעו
+poll לפי אותו מפתח.
+
+`status`: `accepted` → `dispatched` · `skipped` · `blocked` · `failed` ·
+`unknown` (סופיים). על `dispatched` — `call_attempt_id` מוביל לשורת
+`console_call_feed` של השיחה עצמה.
+
+`skipped` + `reason='already_reached'` = **ביטול עסקי תקין**, לא שגיאה ולא
+כשל רשת. המיפוי המלא של כל צמדי status/reason להודעות עברית — ב-
+`app-handoff-already-reached.md`.
+
+(`call_attempts` עצמה מעולם לא הייתה קריאה לאפליקציה — ההרשאה היחידה עליה
+היא admin. אל תנסו לבצע עליה poll.)
 
 ### `console_campaign_targets` — יעדי קמפיין (לא אורחים)
 
@@ -144,13 +190,14 @@ takeover_claimed_at · takeover_request_id · participation_state
 
 ## 4 · Realtime
 
-שלוש טבלאות מפורסמות ב-`supabase_realtime`:
+ארבע טבלאות מפורסמות ב-`supabase_realtime`:
 
 ```
-agent_status · console_call_feed · human_agent_call_legs
+agent_status · console_call_feed · human_agent_call_legs · call_dispatch_status
 ```
 
-`console_call_feed` הוא ערוץ פיד השיחות החי.
+`console_call_feed` הוא ערוץ פיד השיחות החי. `call_dispatch_status` הוא ערוץ
+תוצאת החיוג היזום — הרשמו אליו אחרי כל 202 (או סננו לפי `event_id`).
 
 ---
 
@@ -252,17 +299,27 @@ agent_status · console_call_feed · human_agent_call_legs
 → 202 { "status": "accepted", "dispatch_id": "uuid", "event_id": "uuid" }
 ```
 
-**`202` = נכנס לתור, לא "מחייג".** כל הגייטים — הסכמה, DNC, כבר-נוצר-קשר,
-אירוע פעיל, יתרה — נבדקים **בעובד**, אחרי התשובה. שיחה עשויה להידחות בשקט.
-הציגו *"הבקשה נקלטה"*.
+**`202` = נכנס לתור, לא "מחייג".** הנתיב מריץ **גייט אחד בלבד** — preflight
+כבר-נוצר-קשר (409 מיידי, ראו למטה). כל שאר הגייטים — הסכמה, DNC, אירוע
+פעיל, יתרה — נבדקים **בעובד**, אחרי התשובה. אל תציגו "השיחה בתור" לפני 202
+אמיתי; אחרי 202 הציגו *"הבקשה נקלטה"* ועקבו אחרי שורת `call_dispatch_status`
+לפי `dispatch_id` (Realtime או poll, §2) — היא זו שאומרת אם חויג, דולג,
+נחסם או נכשל. שיחה לעולם לא נדחית "בשקט" יותר.
 
-| קוד | סיבה |
-|---|---|
-| `400` | `eventId` אינו UUID, או גוף לא תקין |
-| `404` | האורח לא נמצא באירוע |
-| `409` | אין קמפיין פעיל / יותר מאחד |
-| `422` | לאורח אין מספר חיוג |
-| `502` | הוספה לתור נכשלה |
+| קוד | סיבה | טיפול |
+|---|---|---|
+| `400` | `eventId` אינו UUID, או גוף לא תקין | באג אצלכם |
+| `404` | האורח לא נמצא באירוע | רעננו את הרשימה |
+| `409` + `code: "already_reached"` | **כבר נוצר קשר באירוע זה** — preflight; לא נוצר job ולא שורת סטטוס | **תוצאת domain, לא שגיאה.** כפתור מושבת + "כבר נוצר קשר באירוע זה"; בלי retry |
+| `409` בלי `code` | אין קמפיין פעיל / יותר מאחד | הציגו את הטקסט כמו שהוא |
+| `422` | לאורח אין מספר חיוג | — |
+| `500` | רישום הבקשה נכשל — לא נוצר job | שגיאה זמנית; מותר לנסות שוב |
+| `502` | הוספה לתור נכשלה — לא נוצר job | שגיאה זמנית; מותר לנסות שוב |
+
+**הסתעפו על `code`, לעולם לא על המחרוזת העברית.** רק `409` של already_reached
+נושא `code`; ה-UI שלו קבוע ונגיש — זה מצב עסקי סופי, לא תקלה. השדות
+`can_start_outreach_call`/`call_block_reason` ב-`console_event_guests` (§2)
+אמורים למנוע את הלחיצה מלכתחילה — ה-409 הוא ההגנה למצב ישן/מרוץ.
 
 **⚠️ שני תיקונים נדרשים אצלכם:** `event_id` נשלח כמחרוזת קשיחה
 `"default-event"` — חייב UUID; וה-JSON נבנה בשרשור מחרוזות עם הטלפון בפנים —

@@ -170,6 +170,39 @@ the app, and the app's `AGENTS.md` API-contract section must be updated in the s
 Whichever way it goes, the two repos must not be allowed to drift again silently: this
 mismatch existed for hours because nothing on either side compared the wire formats.
 
+## Addendum 2026-07-22 — already_reached end-to-end
+
+Deployment status: **DB LIVE** (both migrations applied, pg_catalog readback
+verified) · **server code DEPLOYED** (2026-07-22 evening, deploy `mrwfoluv` —
+route + worker restarted, retention queue/schedule registered, post-deploy
+smoke passed) · **Android side NOT implemented**. The app-side mapping spec is
+`docs/voice-agent/app-handoff-already-reached.md` and the technical contract is
+`app-integration-reference.md` §2/§4/§6.4 (2026-07-22b).
+
+- **`console_event_guests` gained four columns** — `reached_at`,
+  `callback_scheduled_at`, `can_start_outreach_call`, `call_block_reason`
+  (`'already_reached'` wins over `'callback_scheduled'`; computed strictly per
+  `(event_id, contact_id)`). Dial affordance rule:
+  `dialable AND has_active_campaign AND can_start_outreach_call`.
+- **The manual-dial route now runs ONE gate** — an already-reached preflight
+  answering `409 { code: "already_reached" }` with no job created. Every other
+  gate stays in the worker; the worker re-checks already-reached as race
+  protection. `[D3]` in the route header is CLOSED: no manual bypass exists;
+  the sole exemption is the guest-requested callback path (isCallback).
+- **New Realtime table `call_dispatch_status`** (RLS `is_console_agent()`
+  SELECT-only, service-role writes, in `supabase_realtime`, 30-day retention
+  cron). One row per manual dispatch: the route inserts `accepted` BEFORE
+  answering 202, the worker settles it to
+  `dispatched | skipped | blocked | failed | unknown` with a closed reason
+  union (CHECK-constrained; `skipped/already_reached` = valid domain refusal).
+  The settle is STRICT on the worker side — a failed publish fails the job so
+  pg-boss retries it; a completed job can never leave a row stuck `accepted`.
+- **Correction to the poll-handle story:** `call_attempts.dispatch_id` was
+  NEVER readable by the app — `call_attempts`' only authenticated policy is
+  admin-read, and console agents are staff, not admins. The comments promising
+  "the console polls call_attempts by dispatch_id" were unrealizable and have
+  been corrected in code; `call_dispatch_status` is the app's status channel.
+
 ### Note on how this file was nearly lost
 
 It was first written uncommitted in a cloud working copy, and vanished with that environment

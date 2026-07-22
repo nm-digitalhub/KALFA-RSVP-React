@@ -5,42 +5,46 @@ import { PgBoss } from 'pg-boss';
 import { z } from 'zod';
 
 import { callerHasPlatformPermission, requireConsoleAgent } from '@/lib/auth/console-agent';
+import { recordDispatchAccepted, settleDispatchFailure } from '@/lib/data/call-dispatch-status';
+import { isContactReached } from '@/lib/data/outreach-engine';
 import { CALL_RETRY, QUEUES, type OutreachCallRequest } from '@/lib/queue/queues';
 import { createAdminClient } from '@/lib/supabase/admin';
 
 // POST /api/events/{eventId}/outreach-call   body: { guest_id }
 //
-// DRAFT — NOT wired to the app, NOT for merge until the flags below are resolved.
-//
-// ENQUEUE-ONLY. The console asks to place ONE outbound AI call to an EXISTING
-// guest. This route NEVER dials and NEVER runs a gate: it only enqueues an
-// `outreach-call-request` job. The worker's dispatchOutreachCall owns the whole
-// gate chain (consent / DNC / already-reached / campaign-active / concurrency /
-// hourly-cap / balance / event-closed = Gate 4b) AND StartScenarios — verified in
-// src/lib/data/outreach-calls.ts:110-286. Mirrors exactly how the outreach engine
-// enqueues a call touchpoint (src/lib/data/outreach-engine.ts:726-737).
+// ENQUEUE-ONLY, with exactly ONE gate. The console asks to place ONE outbound
+// AI call to an EXISTING guest. This route never dials: it runs the
+// already-reached PREFLIGHT (a synchronous 409 with a typed domain code, so the
+// app never gets a 202 for a dial the worker is certain to refuse) and then
+// only enqueues an `outreach-call-request` job. Every OTHER gate — consent /
+// DNC / campaign-active / concurrency / hourly-cap / balance / event-closed =
+// Gate 4b — stays in the worker's dispatchOutreachCall, which re-checks
+// already-reached too as race protection (src/lib/data/outreach-calls.ts).
+// Mirrors exactly how the outreach engine enqueues a call touchpoint
+// (src/lib/data/outreach-engine.ts:726-737).
 //
 // Auth: requireConsoleAgent (Bearer + staff-gated is_console_agent) +
 // has_platform_permission('manage_voice') — same authority gate as the live-call
 // command routes.
 //
-// ── OPEN DECISIONS (flagged; do not merge before these close) ────────────────
-// [ARCH] The web tier has NO pg-boss instance today — every boss.send() lives in
-//        the worker, and the WhatsApp send route stays synchronous "until the
-//        pg-boss scheduler ships". Enqueuing from a route therefore opens a
-//        SEND-ONLY PgBoss (below). This preempts an architectural decision that
-//        belongs to the worker/boss owner — confirm the web→worker enqueue
-//        channel (send-only boss vs a worker-polled intent row) before adopting.
-//        Also: add 'pg-boss' to next.config serverExternalPackages so it is not
-//        bundled into the server build.
+// ── DECISIONS ────────────────────────────────────────────────────────────────
+// [D3]   CLOSED (2026-07-22): already_reached has NO manual bypass. The
+//        preflight answers 409 code='already_reached'; the worker's own check
+//        stays as race protection; the SOLE exemption is a guest-requested
+//        callback (isCallback), which is enqueued by the callback sweep and
+//        never passes through this route.
+// ── OPEN DECISIONS ───────────────────────────────────────────────────────────
+// [ARCH] The web tier has NO pg-boss instance elsewhere — every other
+//        boss.send() lives in the worker. Enqueuing from a route therefore
+//        opens a SEND-ONLY PgBoss (below). 'pg-boss' is already in
+//        next.config serverExternalPackages, so it is not bundled into the
+//        server build.
 // [D1]   scriptKey — dispatchOutreachCall forwards it as the touchpoint script.
 //        'manual_console_call' must be a script the ctx/scenario understands, or
 //        reuse the campaign's call script key.
 // [D2]   touchpointIndex uniqueness — a fixed index makes getCallAttemptByTouchpoint
 //        return `already_dispatched` on a re-dial. A manual dial uses a unique lane
 //        (below) so re-dialling the same guest is allowed.
-// [D3]   already_reached policy — if the guest was already reached the worker skips
-//        the dial. A manual re-call may want to bypass that (product decision).
 // [D4]   which campaign — an event may have >1 campaign; picking the right one
 //        (active?) is a product decision (see the .limit(1) TODO below).
 
@@ -151,6 +155,18 @@ export async function POST(
     .maybeSingle();
   if (!contact?.normalized_phone) return json({ error: 'לאורח אין מספר חיוג' }, 422);
 
+  // PREFLIGHT — the ONE gate this route runs ([D3] CLOSED): a contact already
+  // billed as reached for THIS event is refused synchronously with a typed
+  // domain code, and no job is created — instead of a 202 for a dial the worker
+  // is certain to refuse. Same source of truth the worker re-checks as race
+  // protection (billed_results UNIQUE(event_id, contact_id)). The app branches
+  // on `code`, never on the Hebrew string. No manual bypass exists; the sole
+  // exemption is a guest-requested callback (isCallback), which the callback
+  // sweep enqueues directly — it never passes through this route.
+  if (await isContactReached(eventId, guest.contact_id)) {
+    return json({ error: 'כבר נוצר קשר באירוע זה', code: 'already_reached' }, 409);
+  }
+
   // The index is allocated ATOMICALLY by the dispatcher (next_manual_touchpoint,
   // under an advisory lock on campaign+contact), NOT here. Any value computed in
   // this process races: two operators tapping the same guest would derive the
@@ -173,6 +189,15 @@ export async function POST(
     dispatchId,
   };
 
+  // The status contract (call_dispatch_status): INSERT the 'accepted' row
+  // BEFORE boss.send, so every 202 has a row the app can watch. A request whose
+  // status cannot be recorded is refused (500) rather than dialled blind — the
+  // worker settles rows by dispatch_id, and a dial with no row would resolve
+  // into silence, the exact ambiguity this table exists to kill.
+  if (!(await recordDispatchAccepted({ dispatchId, eventId, contactId: guest.contact_id }))) {
+    return json({ error: 'רישום הבקשה נכשל' }, 500);
+  }
+
   // A fresh job id per manual dial (each tap is a distinct intent). The worker's
   // dispatch stays idempotent per attempt row; CALL_RETRY only retries the pre-dial
   // transport check, never a placed call.
@@ -180,19 +205,30 @@ export async function POST(
     const boss = await getSender();
     await boss.send(QUEUES.callRequest, job, { id: dispatchId, ...CALL_RETRY });
   } catch {
+    // No job exists, so no worker will ever settle this row — settle it here
+    // with the public failure reason so it cannot stay 'accepted' forever.
+    // settleDispatchFailure is STRICT (throws on failure); here the 502 must
+    // still reach the app — no 202 was given, so no contract is broken by a
+    // stale 'accepted' row (logged inside; the retention sweep clears it).
+    await settleDispatchFailure({ dispatchId, eventId, contactId: guest.contact_id }).catch(
+      () => {},
+    );
     return json({ error: 'הוספת השיחה לתור נכשלה' }, 502);
   }
 
-  // 'accepted', not 'queued'. The job still has eleven gates to pass in the
+  // 'accepted', not 'queued'. The job still has ten more gates to pass in the
   // worker, so claiming it is queued to dial would promise more than is known —
   // the same false-confidence shape save_rsvp's three-state contract exists to
   // kill.
   //
   // dispatch_id, not attempt_id: the attempt row does not exist yet. It is
   // created inside dispatchOutreachCall (outreach-calls.ts), in the worker,
-  // after this response is already sent. The dispatcher stamps this id on the
-  // row it creates, so the console polls call_attempts by dispatch_id and reads
-  // a real status. "No row yet" stays ambiguous between queued and refused —
-  // the worker's activity_log entry is what resolves that.
+  // after this response is already sent. The truth channel is the
+  // call_dispatch_status row keyed by this id: the worker settles it with the
+  // final outcome (dispatched / skipped / blocked / failed / unknown) and the
+  // app receives it over Realtime — or polls it after a reconnect. On
+  // 'dispatched' the app hops to the console_call_feed row via call_attempt_id.
+  // (call_attempts itself was never app-readable — its only authenticated
+  // policy is admin-read.)
   return json({ status: 'accepted', dispatch_id: dispatchId, event_id: eventId }, 202);
 }

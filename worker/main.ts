@@ -48,6 +48,11 @@ import { processWebhookEvent } from '@/lib/data/webhook-processing';
 import { runThankyouSweep } from '@/lib/data/auto-thankyou';
 import { runCallbackSweep } from '@/lib/data/call-callbacks';
 import { recordManualDialOutcome } from '@/lib/data/call-attempts';
+import {
+  runDispatchRetention,
+  settleDispatchFailure,
+  settleManualDispatch,
+} from '@/lib/data/call-dispatch-status';
 import { runBalanceCheck } from '@/lib/data/voximplant-balance';
 import { runCallReconcile } from '@/lib/data/voximplant-reconcile';
 import { runLogExport } from '@/lib/data/vox-log-export';
@@ -93,12 +98,44 @@ type CallJob = { id: string; data: OutreachCallRequest };
 async function handleCallRequest(job: CallJob): Promise<void> {
   const result = await dispatchOutreachCall(job.data);
   if (result.kind === 'transient_error') {
+    // Not a final outcome — the dispatch row stays 'accepted' while pg-boss
+    // retries. On the LAST permitted delivery (retry_count = retry_limit, same
+    // adapter + semantics as the step path's definitely_not_sent decision),
+    // settle failed/temporary_dispatch_failure BEFORE the rethrow so no 202
+    // is left unanswered. A failed meta read degrades safely: the row stays
+    // 'accepted' and the retention sweep clears it.
+    if (job.data.isManual && job.data.dispatchId) {
+      try {
+        const meta = await getJobRetryMeta({
+          schema: 'pgboss',
+          queueName: QUEUES.callRequest,
+          jobId: job.id,
+        });
+        if (meta && meta.retryCount >= meta.retryLimit) {
+          await settleDispatchFailure({
+            dispatchId: job.data.dispatchId,
+            eventId: job.data.eventId,
+            contactId: job.data.contactId,
+          });
+        }
+      } catch (e) {
+        console.error('[kalfa-worker] dispatch retry-meta read failed', {
+          jobId: job.id,
+          detail: e instanceof Error ? e.message : 'unknown error',
+        });
+      }
+    }
     throw new Error(`voximplant balance check failed: ${result.reason}`);
   }
-  // An operator is waiting on this one. The console polls call_attempts by
-  // dispatch_id, and a refused dial creates no row — so without this the caller
-  // cannot tell "still queued" from "refused, and here is why". Event-scoped, so
-  // the owner sees it too, not only the agent who pressed the button.
+  // An operator is waiting on this one. Two writes with OPPOSITE contracts:
+  // recordManualDialOutcome (activity_log audit) is best-effort and never
+  // throws; settleManualDispatch (the app's Realtime status channel keyed by
+  // the dispatch_id from the 202 — call_attempts itself was never app-readable)
+  // is STRICT — its failure throws, failing the job so pg-boss redelivers and
+  // the answer is retried. The redelivery is dial-safe: the attempt row already
+  // exists, so the dispatcher reconciles (already_dispatched) instead of
+  // placing a second call. A job may therefore never complete with its
+  // dispatch row stuck 'accepted'.
   if (job.data.isManual) {
     await recordManualDialOutcome({
       eventId: job.data.eventId,
@@ -108,6 +145,7 @@ async function handleCallRequest(job: CallJob): Promise<void> {
       ...('reason' in result ? { reason: result.reason } : {}),
       ...('attemptId' in result ? { attemptId: result.attemptId } : {}),
     });
+    await settleManualDispatch(job.data, result);
   }
   console.log('[kalfa-worker] call-request resolved', {
     jobId: job.id,
@@ -526,6 +564,15 @@ async function main(): Promise<void> {
       await runElevenLabsQuotaCheck();
     }),
   );
+  // call_dispatch_status retention: daily delete of rows older than 30 days
+  // (status channel, not audit — activity_log keeps the durable record).
+  // runDispatchRetention never throws.
+  await boss.work(
+    QUEUES.dispatchRetention,
+    guardedWorker(QUEUES.dispatchRetention, async () => {
+      await runDispatchRetention();
+    }),
+  );
 
   await boss.schedule(QUEUES.arm, '* * * * *');
   await boss.schedule(QUEUES.sweeper, '*/5 * * * *');
@@ -540,6 +587,7 @@ async function main(): Promise<void> {
   // Anchored to a wall-clock hour → run on Israel local time (DST-aware).
   await boss.schedule(QUEUES.logExport, '20 3 * * *', null, { tz: SCHEDULE_TZ });
   await boss.schedule(QUEUES.elevenlabsQuota, '0 */6 * * *', null, { tz: SCHEDULE_TZ });
+  await boss.schedule(QUEUES.dispatchRetention, '40 3 * * *', null, { tz: SCHEDULE_TZ });
 
   console.log('[kalfa-worker] started — queues + schedules up');
 
