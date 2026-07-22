@@ -178,8 +178,30 @@ export async function isContactReached(
 
 // Call-consent gate for the AI-call channel (C2). The dispatcher is the FIRST and
 // ONLY enforcement point (nothing upstream checks it — only allowed_channels).
-// True ONLY when the contact exists, is not opted out (removal_requested), AND has
-// a recorded call consent. Fail-CLOSED: any read error → false (no call).
+// Whether the AI-call channel still requires a recorded prior consent. The admin
+// switch app_settings.call_consent_required (channels UI) governs it. FAIL-SAFE:
+// anything but an explicit false — including a read error — reads as "required",
+// so a hiccup can never silently drop the consent requirement.
+async function callConsentRequired(): Promise<boolean> {
+  try {
+    const admin = createAdminClient();
+    const { data } = await admin
+      .from('app_settings')
+      .select('call_consent_required')
+      .eq('id', true)
+      .maybeSingle();
+    return data?.call_consent_required !== false;
+  } catch {
+    return true;
+  }
+}
+
+// Call-consent gate for the AI-call channel (C2). True when the contact exists,
+// is not opted out (removal_requested), AND — WHEN the admin switch requires it
+// (the default) — has a recorded call_consent_at. An admin may lift the explicit
+// prior-consent requirement from the channels UI (call_consent_required=false),
+// which skips ONLY the call_consent_at check; opt-out and fail-closed are never
+// affected. Fail-CLOSED: any read error → false (no call).
 export async function hasCallConsent(contactId: string): Promise<boolean> {
   try {
     const admin = createAdminClient();
@@ -189,7 +211,9 @@ export async function hasCallConsent(contactId: string): Promise<boolean> {
       .eq('id', contactId)
       .maybeSingle();
     if (error || !data) return false;
-    return !data.removal_requested && data.call_consent_at != null;
+    if (data.removal_requested) return false; // opt-out always wins
+    if (!(await callConsentRequired())) return true; // admin lifted the requirement
+    return data.call_consent_at != null;
   } catch {
     return false;
   }

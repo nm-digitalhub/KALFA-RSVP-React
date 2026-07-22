@@ -31,6 +31,7 @@ import {
   claimStep,
   executeStep,
   writeReach,
+  hasCallConsent,
   type CampaignContext,
 } from '@/lib/data/outreach-engine';
 
@@ -481,5 +482,69 @@ describe('executeStep — send-time parameter binding', () => {
     // Generic family: {{2}} is the event-type label, {{3}} the celebrants text.
     expect(bodyParams?.[1]).toBe('חתונה');
     expect(bodyParams?.[2]).toBe('דוד לוי ו־שרה כהן');
+  });
+});
+
+// hasCallConsent is the ONLY gate that blocks an AI dial for a contact without
+// recorded prior consent, and app_settings.call_consent_required can now lift that
+// check at runtime. Because turning it off has LEGAL weight, these tests pin the
+// exact truth table — especially that opt-out and fail-closed are NEVER lifted.
+describe('hasCallConsent — AI-call consent gate', () => {
+  type Row = Record<string, unknown> | null;
+
+  // Two tables, two results: contacts and app_settings. A thrown app_settings
+  // read simulates a flag-read failure (must fail SAFE = "consent required").
+  function mockAdmin(contacts: Row, settings: Row | 'throw') {
+    const contactsB = createMockSupabase({ data: contacts, error: null }).builder;
+    const settingsB = createMockSupabase({ data: settings === 'throw' ? null : settings, error: null }).builder;
+    if (settings === 'throw') {
+      settingsB.then = () => {
+        throw new Error('flag read failed');
+      };
+    }
+    vi.mocked(createAdminClient).mockReturnValue({
+      from: (table: string) => (table === 'app_settings' ? settingsB : contactsB),
+      rpc: vi.fn(),
+    } as unknown as ReturnType<typeof createAdminClient>);
+  }
+
+  const consented = { removal_requested: false, call_consent_at: '2026-01-01T00:00:00Z' };
+  const noConsent = { removal_requested: false, call_consent_at: null };
+  const REQUIRED = { call_consent_required: true };
+  const LIFTED = { call_consent_required: false };
+
+  it('opt-out (removal_requested) → false even WITH a recorded consent', async () => {
+    mockAdmin({ removal_requested: true, call_consent_at: '2026-01-01T00:00:00Z' }, REQUIRED);
+    expect(await hasCallConsent('c1')).toBe(false);
+  });
+
+  it('consent required (default) + recorded consent → true', async () => {
+    mockAdmin(consented, REQUIRED);
+    expect(await hasCallConsent('c1')).toBe(true);
+  });
+
+  it('consent required (default) + NO recorded consent → false', async () => {
+    mockAdmin(noConsent, REQUIRED);
+    expect(await hasCallConsent('c1')).toBe(false);
+  });
+
+  it('admin LIFTED the requirement + NO recorded consent → true (the new behavior)', async () => {
+    mockAdmin(noConsent, LIFTED);
+    expect(await hasCallConsent('c1')).toBe(true);
+  });
+
+  it('opt-out STILL wins when the requirement is lifted', async () => {
+    mockAdmin({ removal_requested: true, call_consent_at: null }, LIFTED);
+    expect(await hasCallConsent('c1')).toBe(false);
+  });
+
+  it('unknown contact → false', async () => {
+    mockAdmin(null, LIFTED);
+    expect(await hasCallConsent('c1')).toBe(false);
+  });
+
+  it('flag read throws → treated as REQUIRED (fail-safe); a no-consent contact → false', async () => {
+    mockAdmin(noConsent, 'throw');
+    expect(await hasCallConsent('c1')).toBe(false);
   });
 });

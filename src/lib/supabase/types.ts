@@ -160,6 +160,7 @@ export type Database = {
           agr_retention_days: string | null
           agr_service_activation_window: string | null
           billing_exposure_gate: boolean
+          call_consent_required: boolean
           campaign_holds_enabled: boolean
           close_charge_enabled: boolean
           company_contact_email: string | null
@@ -235,6 +236,7 @@ export type Database = {
           agr_retention_days?: string | null
           agr_service_activation_window?: string | null
           billing_exposure_gate?: boolean
+          call_consent_required?: boolean
           campaign_holds_enabled?: boolean
           close_charge_enabled?: boolean
           company_contact_email?: string | null
@@ -310,6 +312,7 @@ export type Database = {
           agr_retention_days?: string | null
           agr_service_activation_window?: string | null
           billing_exposure_gate?: boolean
+          call_consent_required?: boolean
           campaign_holds_enabled?: boolean
           close_charge_enabled?: boolean
           company_contact_email?: string | null

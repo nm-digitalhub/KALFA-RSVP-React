@@ -29,6 +29,7 @@ import {
   testVoximplantConnectionAction,
   updateOutreachMasterSwitchAction,
   updateVoximplantLiveCallsAction,
+  updateCallConsentRequiredAction,
 } from './actions';
 
 type WhatsAppConfig = {
@@ -54,6 +55,7 @@ type VoximplantConfig = {
   fullyConfigured: boolean; // full dial config — gates the live-calls toggle
   liveCalls: boolean; // raw admin toggle value (app_settings.voximplant_live_calls)
   liveEnabled: boolean; // effective gate (toggle AND env not force-off)
+  callConsentRequired: boolean; // app_settings.call_consent_required — off = dial without prior consent
 };
 
 const inputClass =
@@ -273,6 +275,10 @@ export function ChannelsClient({
     updateVoximplantLiveCallsAction,
     null,
   );
+  const [consentState, consentAction] = useActionState(
+    updateCallConsentRequiredAction,
+    null,
+  );
   const e = state?.fieldErrors;
   const ve = voxState?.fieldErrors;
 
@@ -433,6 +439,46 @@ export function ChannelsClient({
                   className="size-4 accent-primary"
                 />
                 מופעל
+              </label>
+              <SubmitButton className="w-auto">עדכון</SubmitButton>
+            </div>
+          </div>
+        </form>
+
+        {/* CONSENT gate toggle — the checkbox REQUIRES explicit prior consent
+            (default on, SAFE). Turning it OFF permits AI dialing to contacts with
+            no recorded consent — a legal (spam-law) decision, surfaced in red.
+            opt-out + DNC + fail-closed still apply regardless. */}
+        <form
+          action={consentAction}
+          className="mt-4 space-y-2 rounded-lg border border-red-500/50 bg-red-500/5 p-4"
+        >
+          <FormError message={consentState?.error} />
+          <FormNotice message={consentState?.notice} />
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="min-w-0 space-y-1">
+              <p className="text-sm font-semibold">דרישת הסכמה לשיחות AI</p>
+              <p className="text-xs text-muted-foreground">
+                כשמסומן (ברירת מחדל) — שיחות AI יוצאות רק לאנשי קשר עם הסכמה מתועדת
+                (<code>call_consent_at</code>). ביטול הסימון מאפשר חיוג גם ללא הסכמה
+                מוקדמת. הסרת נמענים (opt-out), רשימת DNL וכשל־סגור נשמרים בכל מקרה.
+              </p>
+              {voximplant.callConsentRequired ? null : (
+                <p className="text-xs font-semibold text-red-600 dark:text-red-400">
+                  ⚠️ דרישת ההסכמה כבויה — שיחות AI ייצאו לאנשי קשר ללא הסכמה מוקדמת.
+                  זו חשיפה משפטית תחת סעיף 30א (חוק הספאם) והחלטה משפטית, לא טכנית.
+                </p>
+              )}
+            </div>
+            <div className="flex shrink-0 items-center justify-end gap-3">
+              <label className="inline-flex cursor-pointer items-center gap-2 text-sm font-medium">
+                <input
+                  type="checkbox"
+                  name="call_consent_required"
+                  defaultChecked={voximplant.callConsentRequired}
+                  className="size-4 accent-primary"
+                />
+                דרוש הסכמה
               </label>
               <SubmitButton className="w-auto">עדכון</SubmitButton>
             </div>

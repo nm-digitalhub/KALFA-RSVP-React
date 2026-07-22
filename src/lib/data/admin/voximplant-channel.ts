@@ -37,6 +37,7 @@ export type VoximplantChannelConfig = {
   fullyConfigured: boolean; // configured AND callback_secret — the full dial config
   liveCalls: boolean; // raw app_settings.voximplant_live_calls (the admin toggle's value)
   liveEnabled: boolean; // EFFECTIVE live gate: the DB toggle AND the env not force-off
+  callConsentRequired: boolean; // app_settings.call_consent_required — when false, AI dials skip the prior-consent check (opt-out + DNC still apply)
 };
 
 const SETTINGS_ID = true;
@@ -54,7 +55,7 @@ export async function getVoximplantChannelConfig(): Promise<VoximplantChannelCon
       'voximplant_service_account_json, voximplant_rule_id, voximplant_caller_id, ' +
         'voximplant_callback_secret, voximplant_low_balance_threshold, ' +
         'voximplant_min_call_reserve, voximplant_max_concurrent_calls, voximplant_max_calls_per_campaign_hour, ' +
-        'voximplant_live_calls',
+        'voximplant_live_calls, call_consent_required',
     )
     .eq('id', SETTINGS_ID)
     .maybeSingle();
@@ -83,6 +84,8 @@ export async function getVoximplantChannelConfig(): Promise<VoximplantChannelCon
       s(row.voximplant_callback_secret).trim() !== '',
     liveCalls: row.voximplant_live_calls === true,
     liveEnabled: envAllowsLiveCalls() && row.voximplant_live_calls === true,
+    // Default SAFE: anything but an explicit false reads as "consent required".
+    callConsentRequired: row.call_consent_required !== false,
   };
 }
 
@@ -159,6 +162,22 @@ export async function updateVoximplantLiveCalls(enabled: boolean): Promise<void>
     .update({ voximplant_live_calls: enabled })
     .eq('id', SETTINGS_ID);
   if (error) throw new Error('עדכון מתג השיחות החיות נכשל');
+}
+
+// Admin toggle for the AI-call CONSENT gate (app_settings.call_consent_required).
+// When required (the default, SAFE), hasCallConsent() blocks a dial unless the
+// contact has a recorded call_consent_at. Setting it false lifts ONLY that check —
+// opt-out (removal_requested), the DNC list, and fail-closed reads still apply.
+// Turning it off carries legal (spam-law) exposure surfaced at the toggle; the
+// action layer audits every flip. Admin-only (RLS + manage_voice).
+export async function updateCallConsentRequired(required: boolean): Promise<void> {
+  await requirePlatformPermission('manage_voice');
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from('app_settings')
+    .update({ call_consent_required: required })
+    .eq('id', SETTINGS_ID);
+  if (error) throw new Error('עדכון מתג ההסכמה נכשל');
 }
 
 // ---------------------------------------------------------------------------

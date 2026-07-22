@@ -13,6 +13,7 @@ import {
   updateVoximplantChannelConfig,
   testVoximplantConnection,
   updateVoximplantLiveCalls,
+  updateCallConsentRequired,
 } from '@/lib/data/admin/voximplant-channel';
 import {
   getOutreachMasterState,
@@ -205,5 +206,41 @@ export async function updateVoximplantLiveCallsAction(
     notice: enabled
       ? 'שיחות חיות מופעלות — שיחות בתשלום ייצאו לאנשי קשר שנתנו הסכמה'
       : 'שיחות חיות כובו',
+  };
+}
+
+// Admin toggle for the AI-call CONSENT gate (app_settings.call_consent_required).
+// The checkbox is "require explicit consent"; DEFAULT is on (SAFE). Turning it OFF
+// permits AI dials to contacts with NO recorded prior consent — spam-law exposure,
+// an owner/legal decision. opt-out + DNC + fail-closed still apply. Emits a
+// SECURITY Slack audit on every flip. requireAdmin is enforced inside
+// updateCallConsentRequired (manage_voice).
+export async function updateCallConsentRequiredAction(
+  _prev: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  const required = formData.get('call_consent_required') === 'on';
+  try {
+    await updateCallConsentRequired(required);
+  } catch (err) {
+    unstable_rethrow(err);
+    return { error: 'עדכון מתג ההסכמה נכשל. נסו שוב.' };
+  }
+  // Turning the requirement OFF is the security-relevant event — alert on both,
+  // but make the lifted-consent case unmistakable.
+  void sendSlackAlert({
+    level: required ? 'info' : 'warn',
+    category: 'security',
+    source: 'call-consent-toggle',
+    title: required
+      ? 'AI-call consent requirement RE-ENABLED'
+      : 'AI-call consent requirement LIFTED — dialing without prior consent permitted',
+    fields: { consent_required: String(required) },
+  });
+  revalidatePath('/admin/channels');
+  return {
+    notice: required
+      ? 'דרישת ההסכמה הופעלה — שיחות AI רק לאנשי קשר עם הסכמה מתועדת'
+      : 'דרישת ההסכמה בוטלה — שיחות AI ייצאו גם ללא הסכמה מוקדמת (חשיפה משפטית — ראו האזהרה)',
   };
 }
