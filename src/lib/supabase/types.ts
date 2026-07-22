@@ -176,6 +176,7 @@ export type Database = {
           extra_sms_token: string | null
           extreme_threshold_contacts: number
           id: boolean
+          monitor_enabled: boolean
           outreach_enabled: boolean
           payments_enabled: boolean
           privacy_url: string | null
@@ -250,6 +251,7 @@ export type Database = {
           extra_sms_token?: string | null
           extreme_threshold_contacts?: number
           id?: boolean
+          monitor_enabled?: boolean
           outreach_enabled?: boolean
           payments_enabled?: boolean
           privacy_url?: string | null
@@ -324,6 +326,7 @@ export type Database = {
           extra_sms_token?: string | null
           extreme_threshold_contacts?: number
           id?: boolean
+          monitor_enabled?: boolean
           outreach_enabled?: boolean
           payments_enabled?: boolean
           privacy_url?: string | null

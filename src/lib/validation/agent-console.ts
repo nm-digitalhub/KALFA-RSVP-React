@@ -38,14 +38,18 @@ export type AgentStatusBody = z.infer<typeof agentStatusSchema>;
 //   POST /api/calls/{id}/agent-command           LIVE
 //   POST /api/calls/{id}/end                     LIVE
 //   POST /api/events/{eventId}/outreach-call     LIVE (enqueue-only)
-//   POST /api/calls/{id}/monitor | takeover      NOT BUILT — needs a VoxEngine
-//     Conference and a sandbox-verified attach; the app's own AGENTS.md spec is
-//     wrong here (Conference.add() cannot take an ElevenLabs AgentsClient, and
-//     an Endpoint's direction has no setter).
-//   POST /api/agents/sdk-auth                    NOT BUILT — deliberately. The
-//     Android SDK adds a second auth system and MAU billing to reach one human
-//     per event who already has a phone; dialling the owner via callPSTN is the
-//     recommendation.
+//   POST /api/calls/{id}/monitor                 BUILT, GATED. The route,
+//     authorization, leg record, and command envelope all ship; it stays behind
+//     app_settings.monitor_enabled (default OFF) and returns 503 until the
+//     RSVPAgent scenario carries the supervisor conference handler AND that is
+//     verified on a live call. The topology follows the Voximplant supervisor
+//     guide 1:1 — VoxEngine.createConference (a mixer, because a Call receives
+//     only ONE audio stream) plus VoxEngine.callUser — NOT Conference.add(),
+//     which the app's AGENTS.md spec wrongly reaches for and which cannot take
+//     an ElevenLabs AgentsClient. Spec: docs/voice-agent/monitor-scenario-topology.md.
+//   POST /api/agents/sdk-auth                    LIVE (b77f274). Signs the SDK
+//     one-time key so the console agent can log in as its per-agent Voximplant
+//     identity — the identity the monitor conference dials via callUser.
 //   POST /api/campaigns/{id}/status              LIVE — run state only.
 //     Body {action: 'activate' | 'pause'}. This was previously blocked: the
 //     lifecycle functions reached authorization through requireAdmin /
@@ -149,7 +153,17 @@ export type AgentCommandBody = z.infer<typeof agentCommandBodySchema>;
 // conversation must not sit one typo away from "clear the buffer". It has its own
 // route (/api/calls/{id}/end) and its own authority check, and only that route
 // may put it on the wire.
-export const SESSION_COMMANDS = [...AGENT_COMMANDS, 'call_end'] as const;
+// `attach` / `detach` add and remove a human agent's audio leg (monitor or
+// takeover). Like call_end, they are NOT in AGENT_COMMANDS: they change the call
+// TOPOLOGY (a third leg via VoxEngine.callUser into a mixer conference), not the
+// AI conversation, and reach the wire only through /api/calls/{id}/monitor.
+//
+// The mixer, not manual media routing, is forced by the platform: a Call may
+// RECEIVE only one audio stream (Call.sendMediaTo docs, verified live 2026-07-22),
+// so a monitor who must hear BOTH the guest and the AI cannot be wired with
+// sendMediaTo — the second source replaces the first. VoxEngine.createConference
+// mixes, and (unlike Conference.add) needs no video-conference rule flag.
+export const SESSION_COMMANDS = [...AGENT_COMMANDS, 'call_end', 'attach', 'detach'] as const;
 export type SessionCommand = (typeof SESSION_COMMANDS)[number];
 
 // The signed envelope the backend POSTs to the live session. `call_attempt_id` is

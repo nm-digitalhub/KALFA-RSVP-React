@@ -1,7 +1,8 @@
 # KALFA — חוזה אינטגרציה לאפליקציית הקונסולה
 
-> **גרסה 2026-07-22 (עודכן: sdk-auth נבנה).** כל שדה, קוד וערך במסמך נשלף מהקוד או מה-DB החי ביום זה.
-> מה שלא נבנה מסומן ❌ ומופיע רק כדי שתדעו מה יגיע.
+> **גרסה 2026-07-22 (עודכן: sdk-auth + monitor/takeover נבנו; monitor חסום מאחורי flag).**
+> כל שדה, קוד וערך במסמך נשלף מהקוד או מה-DB החי ביום זה.
+> מה שלא נבנה מסומן ❌; מה שנבנה אך חסום מאחורי flag מסומן ✅⛔ ומופיע עם תנאי ההדלקה.
 >
 > בסיס: `https://beta.kalfa.me`
 
@@ -331,23 +332,40 @@ client.loginWithOneTimeKey(fullName, hash)           // ← מלא
 3. **אל תתחברו בכל פתיחה.** כל התחברות נספרת כ-MAU (1,000 חינם/חודש). שמרו
    סשן ובדקו אותו לפני בקשת מפתח חדש. `429` בשימוש רגיל = מתחברים יותר מדי.
 
-### 6.7 ❌ טרם נבנו
+### 6.7 `POST /api/calls/{callAttemptId}/monitor` — האזנה / השתלטות ✅ נבנה, חסום מאחורי flag
 
-```
-POST /api/calls/{id}/monitor|takeover  { mode: "monitor" | "takeover" }
+הרשאה: `manage_voice`
+
+```json
+{ "mode": "monitor" | "takeover" }
+→ 202 { "attached": true, "leg_id": "…", "request_id": "…", "mode": "…" }
 ```
 
-חסומים מאחורי Conference ב-VoxEngine שלא נבנה — שינוי טופולוגיה בתסריט
-שמריץ שיחות חיות, ולכן נדחה עד ש-`sdk-auth` יוכח בשטח.
+הנתיב, ההרשאה, רישום הרגל ומעטפת הפקודה — כולם נבנו. הוא **חסום מאחורי
+`app_settings.monitor_enabled` (ברירת מחדל OFF)** ומחזיר `503` עד שתסריט
+`RSVPAgent` יישא את מטפל ועידת-המפקח **וזה יאומת על שיחה חיה**. זה בכוונה: `202`
+שיוצר רגל שהתסריט לא יכול לענות לה הוא בדיוק השקר ש-§9 אוסר.
+
+| קוד | משמעות | מה לעשות |
+|---|---|---|
+| `202` | חובר, הרגל מחייגת א-סינכרונית | לצפות בשורת `human_agent_call_legs` / ב-realtime, **לא** בתגובה הזו |
+| `400` | mode לא תקין / `vox_username` בגוף (נדחה) | באג אצלכם — הזהות מה-JWT בלבד |
+| `403` | אין `manage_voice` | להסתיר את הפקד |
+| `409` | אין זהות מוקצית לנציג / השיחה אינה חיה / הנציג כבר מחובר | לעצור, לא לנסות שוב |
+| `502` | הפקודה לא נמסרה לסשן החי | השיחה כנראה נסגרה — לרענן |
+| `503` | **`monitor_enabled` = OFF** | להשבית את הפקד עם הסבר "עדיין לא פעיל" |
+
+הטופולוגיה עצמה (מיקסר-ועידה 1:1 לפי מדריך המפקח של Voximplant) מתועדת ב-
+`docs/voice-agent/monitor-scenario-topology.md`, כולל פרוטוקול האימות שמדליק את
+ה-flag.
 
 **ותיקון למפרט שלכם:** `Conference.add()` **אינו מקבל `AgentsClient`** —
-מימוש לפיו ייצר קוד שמתקמפל ולא עובד. הצירוף ייעשה ב-`VoxEngine.callUser({username})`.
+מימוש לפיו ייצר קוד שמתקמפל ולא עובד. הצירוף נעשה ב-`VoxEngine.callUser(username)`
+לתוך `VoxEngine.createConference()` (מיקסר, כי Call מקבל זרם אודיו אחד בלבד).
 
 ---
 
-## 7 · `human_agent_call_legs` — רגל האזנה ❌
-
-הטבלה קיימת, ריקה, ואף אחד לא כותב אליה. תתמלא כשהאזנה תיבנה.
+## 7 · `human_agent_call_legs` — רגל האזנה ✅ (השרת כותב את שורת ה-`requested`)
 
 ```
 id · call_attempt_id · agent_id · request_id · mode · status
@@ -358,8 +376,11 @@ requested_at · connected_at · disconnected_at · failure_code · metadata
 `mode ∈ {monitor, takeover}` · `status ∈ {requested, dialing, ringing,
 connected, cancelled, failed, disconnected}`
 
-מהאפליקציה יגיעו: `request_id`, `mode`, `vox_sdk_call_id`, `device_id`.
-השאר בשרת.
+נתיב ה-monitor (§6.7) יוצר את שורת ה-`requested` ומחזיר את ה-`request_id` שלה —
+זה המזהה שמקשר את הפקודה לסשן החי ולעדכוני הסטטוס העתידיים. **הרגל אחת לכל
+(נציג, שיחה):** בקשה שנייה בזמן שרגל חיה קיימת נדחית ב-`409`, כך שהקשה כפולה לא
+תחייג לנציג פעמיים. את המעברים `dialing → ringing → connected → disconnected`
+מקדם התסריט; האפליקציה מספקת `vox_sdk_call_id` ו-`device_id` מה-SDK.
 
 ---
 

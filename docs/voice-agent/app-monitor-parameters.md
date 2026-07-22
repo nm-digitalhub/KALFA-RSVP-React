@@ -36,11 +36,11 @@
 ```
 1. Client.connect()
 2. requestOneTimeLoginKey(  שם קצר  )        → login_key
-3. POST /api/agents/sdk-auth { one_time_key } → { hash }       ❌ לא נבנה
+3. POST /api/agents/sdk-auth { one_time_key } → { hash }       ✅ נבנה (b77f274)
 4. loginWithOneTimeKey(  שם מלא  , hash)      → AuthResult
 ```
 
-**שלב 3 עדיין לא קיים.** זה הפער היחיד שחוסם התחברות, והוא בצד שלנו.
+**שלב 3 קיים ופרוס.** ההתחברות פתוחה מקצה לקצה בצד שלנו.
 
 **שלב 2 מקבל את הקצר, שלב 4 את המלא.** זו הטעות הקלה ביותר לעשות כאן: אותו רצף עם הפורמט ההפוך נכשל באימות בלי לומר למה.
 
@@ -65,11 +65,14 @@ Authorization: Bearer <supabase-jwt>
 ### ב.1 הנתיב
 
 ```
-POST /api/calls/{callAttemptId}/monitor        ❌ לא קיים
+POST /api/calls/{callAttemptId}/monitor        ✅ נבנה, חסום מאחורי flag
 { "mode": "monitor" | "takeover" }
 ```
 
-הסכמה שלו כבר מוגדרת אצלנו ב-`agent-console.ts` (`attachModeSchema`).
+הנתיב, ההרשאה (`manage_voice`), רישום הרגל ומעטפת הפקודה נבנו. הסכמה מוגדרת
+ב-`agent-console.ts` (`attachModeSchema`). הוא מחזיר `503` כל עוד
+`app_settings.monitor_enabled` = OFF — כלומר עד שהתסריט יישא את מטפל הוועידה
+וזה יאומת חי. ראו `monitor-scenario-topology.md`.
 
 ### ב.2 שדות התיאום — קריטי, וזה קיים כבר עכשיו
 
@@ -103,9 +106,10 @@ participation_state    מצב ההשתתפות
 
 ```
 משתמש ב-Voximplant     ✅ קיים
-sdk-auth               ❌ שלב 3
-Conference ב-VoxEngine ❌ לא נבנה
-monitor/takeover route ❌ לא נבנה
+sdk-auth               ✅ נבנה (b77f274)
+monitor/takeover route ✅ נבנה, חסום מאחורי monitor_enabled
+Conference ב-VoxEngine ⛔ החוליה האחרונה — מתועדת ב-monitor-scenario-topology.md,
+                          מחכה לאימות חי לפני הדלקת ה-flag
 ```
 
 **ותיקון למפרט שלכם:** `Conference.add()` **אינו מקבל `AgentsClient`**. מימוש לפי המפרט הנוכחי ייצר קוד שמתקמפל ולא עובד. הצירוף ייעשה ב-`VoxEngine.callUser({ username })` — ולכן הזהות פר-נציג, כי אי אפשר לכוון לנציג שתפס שיחה בזהות משותפת.
@@ -134,8 +138,10 @@ POST /api/calls/{callAttemptId}/agent-command
 
 | | צד שלנו | צד שלכם |
 |---|---|---|
-| התחברות SDK | `sdk-auth` ❌ | הרכבת FQDN, שמירת סשן |
-| האזנה | Conference + route ❌ | שדות התיאום, DTO |
+| התחברות SDK | `sdk-auth` ✅ | הרכבת FQDN, שמירת סשן |
+| האזנה | route ✅ (חסום מאחורי flag); Conference בתסריט ⛔ | שדות התיאום, DTO |
 | לחישה | ✅ מוכן | כפתור בלבד |
 
-**הפריט הבודד שחוסם הכל בהאזנה הוא `sdk-auth`** — ואחריו עוד שתי חוליות אצלנו. הלחישה לא חוסמת בכלום.
+**החוליה האחרונה בהאזנה היא מטפל הוועידה בתסריט** — מתועד 1:1 ב-
+`monitor-scenario-topology.md`, ומחכה לאימות על שיחה חיה לפני שמדליקים את
+`monitor_enabled`. `sdk-auth` וההתחברות כבר פתוחים; הלחישה לא חוסמת בכלום.
