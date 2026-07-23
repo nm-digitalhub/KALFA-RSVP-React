@@ -1496,27 +1496,54 @@ export type Database = {
       contact_messages: {
         Row: {
           created_at: string
+          draft_created_at: string | null
+          draft_reply: string | null
           email: string | null
+          handled_at: string | null
           id: string
+          internal_note: string | null
           message: string
           name: string
           phone: string | null
+          replied_at: string | null
+          sent_reply: string | null
+          status: string
+          topic: string | null
+          user_id: string | null
         }
         Insert: {
           created_at?: string
+          draft_created_at?: string | null
+          draft_reply?: string | null
           email?: string | null
+          handled_at?: string | null
           id?: string
+          internal_note?: string | null
           message: string
           name: string
           phone?: string | null
+          replied_at?: string | null
+          sent_reply?: string | null
+          status?: string
+          topic?: string | null
+          user_id?: string | null
         }
         Update: {
           created_at?: string
+          draft_created_at?: string | null
+          draft_reply?: string | null
           email?: string | null
+          handled_at?: string | null
           id?: string
+          internal_note?: string | null
           message?: string
           name?: string
           phone?: string | null
+          replied_at?: string | null
+          sent_reply?: string | null
+          status?: string
+          topic?: string | null
+          user_id?: string | null
         }
         Relationships: []
       }
