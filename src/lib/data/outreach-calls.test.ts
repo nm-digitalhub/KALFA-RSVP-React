@@ -127,7 +127,7 @@ beforeEach(() => {
   vi.mocked(markStartUnknown).mockResolvedValue({ applied: true });
   vi.mocked(insertInteraction).mockResolvedValue(true);
   vi.mocked(setContactOpStatus).mockResolvedValue(undefined);
-  vi.mocked(sendSlackAlert).mockResolvedValue(undefined);
+  vi.mocked(sendSlackAlert).mockResolvedValue(null);
   vi.mocked(startScenarios).mockResolvedValue({ result: 1, call_session_history_id: HISTORY } as never);
 });
 

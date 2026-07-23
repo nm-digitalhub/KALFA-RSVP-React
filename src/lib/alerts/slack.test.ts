@@ -8,7 +8,7 @@ vi.mock('server-only', () => ({}));
 // across WebClient instances so a fresh `new WebClient(token)` per call still
 // records onto the same spy (documented Vitest v4 class-mock pattern).
 const { postMessage, WebClient } = vi.hoisted(() => {
-  const pm = vi.fn<(args: ChatPostMessageArguments) => Promise<{ ok: boolean }>>();
+  const pm = vi.fn<(args: ChatPostMessageArguments) => Promise<{ ok: boolean; ts?: string }>>();
   return {
     postMessage: pm,
     WebClient: vi.fn(
@@ -72,6 +72,7 @@ type SentPayload = {
   link_names?: boolean;
   unfurl_links?: boolean;
   unfurl_media?: boolean;
+  thread_ts?: string;
   attachments?: Array<{ color?: string; blocks?: Array<{ type: string }> }>;
 };
 function sentPayload(call = 0): SentPayload {
@@ -143,6 +144,28 @@ describe('sendSlackAlert — send', () => {
     expect(blocks?.[0]?.type).toBe('header');
     expect(payload.unfurl_links).toBe(false);
     expect(payload.unfurl_media).toBe(false);
+  });
+
+  it('returns the posted message ts and passes threadTs through as thread_ts', async () => {
+    postMessage.mockResolvedValueOnce({ ok: true, ts: '1753265000.000100' });
+    const rootTs = await sendSlackAlert({ level: 'warn', title: 'fleet request', category: 'errors' });
+    expect(rootTs).toBe('1753265000.000100');
+
+    await sendSlackAlert({
+      level: 'info',
+      title: 'fleet request answered',
+      category: 'errors',
+      threadTs: rootTs ?? undefined,
+    });
+    expect(sentPayload(1).thread_ts).toBe('1753265000.000100');
+  });
+
+  it('returns null when the API response carries no ts', async () => {
+    const rootTs = await sendSlackAlert({ level: 'info', title: 'no ts', category: 'errors' });
+    expect(rootTs).toBeNull();
+    // Still an actual send — only the thread handle is unavailable.
+    expect(postMessage).toHaveBeenCalledTimes(1);
+    expect(sentPayload().thread_ts).toBeUndefined();
   });
 
   it('constructs the WebClient with the bot token + timeout/retryConfig', async () => {
@@ -225,7 +248,7 @@ describe('sendSlackAlert — send', () => {
     postMessage.mockRejectedValue(new Error('network down'));
     await expect(
       sendSlackAlert({ level: 'error', title: 'boom', source: 'x', category: 'errors' }),
-    ).resolves.toBeUndefined();
+    ).resolves.toBeNull();
     expect(postMessage).toHaveBeenCalledTimes(1);
   });
 
@@ -299,9 +322,11 @@ describe('sendSlackAlert — ops_alerts audit', () => {
 
   it('a failing audit insert does NOT break the send', async () => {
     opsInsert.mockRejectedValue(new Error('insert failed'));
+    // The send succeeded (audit is best-effort) — but the mocked response has
+    // no ts, so the returned thread handle is null.
     await expect(
       sendSlackAlert({ level: 'error', title: 'x', category: 'errors' }),
-    ).resolves.toBeUndefined();
+    ).resolves.toBeNull();
     expect(postMessage).toHaveBeenCalledTimes(1);
   });
 });

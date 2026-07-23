@@ -77,3 +77,11 @@ storage_state.json
 # personal tax certificate (PII: ID number + home address) — NEVER commit
 /taxes.pdf
 .claude/skills/elevenlabs-docs.zip
+
+# fleet: runtime logs + headless auth token (never committed)
+.fleet-logs/
+.claude/fleet/.token.env
+.claude/fleet/KILLSWITCH
+
+# filebrowser live tool database (may contain credential hashes) — never commit
+/filebrowser.db

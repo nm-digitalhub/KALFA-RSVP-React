@@ -1712,6 +1712,89 @@ export type Database = {
           },
         ]
       }
+      fleet_request_slack_threads: {
+        Row: {
+          created_at: string
+          request_id: string
+          thread_ts: string
+        }
+        Insert: {
+          created_at?: string
+          request_id: string
+          thread_ts: string
+        }
+        Update: {
+          created_at?: string
+          request_id?: string
+          thread_ts?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "fleet_request_slack_threads_request_id_fkey"
+            columns: ["request_id"]
+            isOneToOne: true
+            referencedRelation: "fleet_requests"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      fleet_requests: {
+        Row: {
+          answer: string | null
+          answered_at: string | null
+          answered_by: string | null
+          body: string
+          consumed_at: string | null
+          created_at: string
+          expires_at: string
+          id: string
+          kind: string
+          payload: Json
+          request_key: string
+          role: string
+          run_id: string | null
+          status: string
+          tier: number
+          title: string
+        }
+        Insert: {
+          answer?: string | null
+          answered_at?: string | null
+          answered_by?: string | null
+          body: string
+          consumed_at?: string | null
+          created_at?: string
+          expires_at?: string
+          id?: string
+          kind: string
+          payload?: Json
+          request_key: string
+          role: string
+          run_id?: string | null
+          status?: string
+          tier?: number
+          title: string
+        }
+        Update: {
+          answer?: string | null
+          answered_at?: string | null
+          answered_by?: string | null
+          body?: string
+          consumed_at?: string | null
+          created_at?: string
+          expires_at?: string
+          id?: string
+          kind?: string
+          payload?: Json
+          request_key?: string
+          role?: string
+          run_id?: string | null
+          status?: string
+          tier?: number
+          title?: string
+        }
+        Relationships: []
+      }
       guest_groups: {
         Row: {
           color: string | null
@@ -3711,6 +3794,37 @@ export type Database = {
           p_event: string
         }
         Returns: boolean
+      }
+      fleet_answer_request: {
+        Args: { p_answer?: string; p_id: string; p_verdict: string }
+        Returns: undefined
+      }
+      fleet_consume_request: {
+        Args: { p_id: string }
+        Returns: {
+          answer: string | null
+          answered_at: string | null
+          answered_by: string | null
+          body: string
+          consumed_at: string | null
+          created_at: string
+          expires_at: string
+          id: string
+          kind: string
+          payload: Json
+          request_key: string
+          role: string
+          run_id: string | null
+          status: string
+          tier: number
+          title: string
+        }[]
+        SetofOptions: {
+          from: "*"
+          to: "fleet_requests"
+          isOneToOne: false
+          isSetofReturn: true
+        }
       }
       get_event_attendees_public: { Args: { _token: string }; Returns: Json }
       get_rsvp_by_token: { Args: { _token: string }; Returns: Json }

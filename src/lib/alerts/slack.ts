@@ -55,6 +55,10 @@ export interface SlackAlertInput {
   // Which admin-managed toggle gates this alert. The alert is dropped unless the
   // matching category is enabled (plus the master switch + token + channel).
   category: AlertCategory;
+  // Optional Slack thread root (`ts` of a previously posted message, as
+  // returned by sendSlackAlert). When set, the alert is posted as a reply in
+  // that thread instead of a new channel message.
+  threadTs?: string;
 }
 
 // Severity rank for the personal-mention threshold check.
@@ -265,24 +269,34 @@ function formatSendError(err: unknown): string {
   return base;
 }
 
-// Send the payload, bounded by SEND_TIMEOUT_MS. Resolves `true` when the send
-// completes, `false` when it fails (logged, no secrets) or the timeout elapses —
-// NEVER rejects, and never leaves an unhandled rejection if the timeout wins.
-function trySend(client: WebClient, args: ChatPostMessageArguments, ms: number): Promise<boolean> {
-  return new Promise<boolean>((resolve) => {
+// Outcome of a bounded send: whether Slack accepted the message, and the
+// posted message's `ts` (thread root handle) when the API returned one.
+interface SendOutcome {
+  sent: boolean;
+  ts: string | null;
+}
+
+// Send the payload, bounded by SEND_TIMEOUT_MS. Resolves the outcome — never
+// rejects, and never leaves an unhandled rejection if the timeout wins.
+function trySend(
+  client: WebClient,
+  args: ChatPostMessageArguments,
+  ms: number,
+): Promise<SendOutcome> {
+  return new Promise<SendOutcome>((resolve) => {
     let settled = false;
-    const finish = (ok: boolean): void => {
+    const finish = (outcome: SendOutcome): void => {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
-      resolve(ok);
+      resolve(outcome);
     };
-    const timer = setTimeout(() => finish(false), ms);
+    const timer = setTimeout(() => finish({ sent: false, ts: null }), ms);
     client.chat.postMessage(args).then(
-      () => finish(true),
+      (res) => finish({ sent: true, ts: typeof res.ts === 'string' ? res.ts : null }),
       (err: unknown) => {
         console.error('[slack-alert]', formatSendError(err));
-        finish(false);
+        finish({ sent: false, ts: null });
       },
     );
   });
@@ -313,9 +327,9 @@ async function deliver(
   config: AlertsConfig,
   input: SlackAlertInput,
   suppressedFromPrev: number,
-): Promise<boolean> {
+): Promise<SendOutcome> {
   // Guaranteed by callers (both check token + channel first), asserted for types.
-  if (!config.botToken || !config.channelId) return false;
+  if (!config.botToken || !config.channelId) return { sent: false, ts: null };
   const mentionUserId = mentionForLevel(config, input.level);
   const composed = compose(input, suppressedFromPrev, mentionUserId);
   const args: ChatPostMessageArguments = {
@@ -325,10 +339,14 @@ async function deliver(
     unfurl_links: false,
     unfurl_media: false,
   };
+  // Threaded reply: post under the given root message instead of the channel
+  // top level (the fleet request lifecycle uses this to keep one thread per
+  // request).
+  if (input.threadTs) args.thread_ts = input.threadTs;
   const client = new WebClient(config.botToken, { timeout: SEND_TIMEOUT_MS, retryConfig: RETRY_CONFIG });
-  const delivered = await trySend(client, args, SEND_TIMEOUT_MS);
-  await logOpsAlert(input, delivered, suppressedFromPrev);
-  return delivered;
+  const outcome = await trySend(client, args, SEND_TIMEOUT_MS);
+  await logOpsAlert(input, outcome.sent, suppressedFromPrev);
+  return outcome;
 }
 
 /**
@@ -338,28 +356,34 @@ async function deliver(
  * this alert's category toggle is on. Deduplicates identical (level|title|source)
  * alerts within a 60s window and caps total alerts per minute. FAIL-SAFE: never
  * throws, never blocks the caller beyond a short timeout.
+ *
+ * @returns the posted Slack message `ts` (usable as `threadTs` for follow-up
+ *   replies) when the message was actually sent; `null` when gated, suppressed,
+ *   rate-limited or failed. Callers that don't thread can ignore it.
  */
-export async function sendSlackAlert(input: SlackAlertInput): Promise<void> {
+export async function sendSlackAlert(input: SlackAlertInput): Promise<string | null> {
   try {
     const config = await getAlertsConfig();
     // Fail-closed gating: master switch, credentials, and per-category toggle.
-    if (!config.enabled || !config.botToken || !config.channelId) return;
-    if (!categoryEnabled(config, input.category)) return;
+    if (!config.enabled || !config.botToken || !config.channelId) return null;
+    if (!categoryEnabled(config, input.category)) return null;
 
     const now = Date.now();
     const key = `${input.level}|${input.title}|${input.source ?? ''}`;
     const { send, suppressedFromPrev } = dedupCheck(key, now);
-    if (!send) return; // Duplicate within the dedup window → suppressed.
+    if (!send) return null; // Duplicate within the dedup window → suppressed.
 
     if (!rateLimit(GLOBAL_RATE_KEY, { limit: GLOBAL_MAX_PER_MIN, windowMs: 60_000 }).allowed) {
-      return; // Global per-minute cap reached → drop silently.
+      return null; // Global per-minute cap reached → drop silently.
     }
 
-    await deliver(config, input, suppressedFromPrev);
+    const outcome = await deliver(config, input, suppressedFromPrev);
+    return outcome.sent ? outcome.ts : null;
   } catch (err) {
     // FAIL-SAFE: swallow everything; never surface to the caller, never log a
     // secret or PII (only the error message text).
     console.error('[slack-alert]', err instanceof Error ? err.message : 'unexpected failure');
+    return null;
   }
 }
 
@@ -379,7 +403,7 @@ export async function sendSlackTestAlert(): Promise<{
   try {
     const config = await getAlertsConfig();
     if (!config.botToken || !config.channelId) return { ok: false, reason: 'not_configured' };
-    const delivered = await deliver(
+    const outcome = await deliver(
       config,
       {
         level: 'info',
@@ -390,7 +414,7 @@ export async function sendSlackTestAlert(): Promise<{
       },
       0,
     );
-    return delivered ? { ok: true } : { ok: false, reason: 'send_failed' };
+    return outcome.sent ? { ok: true } : { ok: false, reason: 'send_failed' };
   } catch {
     return { ok: false, reason: 'send_failed' };
   }
