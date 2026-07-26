@@ -1,0 +1,124 @@
+{
+  "title": "Israeli Consumer and Contract Law Core Corpus",
+  "as_of": "2026-07-26",
+  "jurisdiction": "Israel",
+  "access_note": "knesset.gov.il (HTML+OData+fs) is GEO-BLOCKED from this server (HTTP 474, measured 2026-07-26). knesset_url values are BROWSER-ONLY anchors. Operational retrieval: scripts/fetch_law_pdf.py (Wayback id_ + PyMuPDF) for gazette PDFs; Nevo law_html pages live (record the consolidation date stamp); scripts/knesset_search.py prints ready browser OData URLs.",
+  "odata": {
+    "base_url_v4": "https://knesset.gov.il/OdataV4/ParliamentInfo/",
+    "base_url_v3": "https://knesset.gov.il/Odata/ParliamentInfo.svc/",
+    "entities": ["KNS_Bill", "KNS_BillInitiator", "KNS_IsraelLaw", "KNS_IsraelLawName", "KNS_SecondaryLaw"],
+    "syntax": "$filter=contains(Name,'…') [and KnessetNum eq N]&$orderby=LastUpdatedDate desc&$top=N&$format=json — escape a Hebrew geresh (') inside a literal by doubling it ('')",
+    "blocked_from_server": true
+  },
+  "core_statutes": [
+    {
+      "id": "consumer_protection",
+      "name": "חוק הגנת הצרכן, התשמ\"א-1981",
+      "priority": "P0",
+      "knesset_url": "https://main.knesset.gov.il/APPS/legislation/main/bills/148395",
+      "nevo_url": "https://www.nevo.co.il/law_html/law00/70305.htm",
+      "nevo_note": "verified live 2026-07-26 (consolidation stamped 02-04-2026)",
+      "focus": [
+        "הטעיה (§2) ואיסור ניצול מצוקה או השפעה בלתי הוגנת",
+        "חובות גילוי ומסירת מסמכים",
+        "עסקה ברוכלות, עסקת מכר מרחוק (14ג/14ג1) ועסקה מתמשכת (13ג)",
+        "ביטול עסקה, החזר כספי ודמי ביטול (14ה)",
+        "אחריות ושירות לאחר מכירה",
+        "עיצומים, אכיפה ופיצוי לדוגמה",
+        "תחולת תיקונים והוראות מעבר"
+      ],
+      "currency_notes": [
+        {"claim": "תיקון מס' 73 — ס\"ח 3510 (31.3.2026), במסגרת חוק ההסדרים; עניינו ערבויות בלבד; תחילת הפרק 6 חודשים מיום התחילה", "label": "verified-primary (PDF read in full 2026-07-26)"},
+        {"claim": "תיקון מס' 74 קיים, תחילה 22.03.2027", "label": "UNVERIFIABLE from this server — plausible (Wikipedia counts 74 amendments) but content+date not reproduced from any reachable source; verify via human browser (Knesset DB) before ANY reliance; never apply a published amendment before its effective date"}
+      ]
+    },
+    {
+      "id": "standard_contracts",
+      "name": "חוק החוזים האחידים, התשמ\"ג-1982",
+      "priority": "P0",
+      "knesset_url": "https://main.knesset.gov.il/apps/legislation/main/bills/147393",
+      "nevo_url": "https://www.nevo.co.il/law_html/law00/70311.htm",
+      "nevo_note": "verified in prior session work (§4(12) read verbatim from this page)",
+      "focus": [
+        "הגדרת חוזה אחיד, ספק ולקוח",
+        "תנאי מקפח (§3) וביטול או שינוי תנאי (§19)",
+        "חזקות הקיפוח (§4) — incl. §4(4), §4(6), §4(12)",
+        "יחסי החוק עם חוק הגנת הצרכן",
+        "סמכות בית הדין לחוזים אחידים ובתי המשפט (ביקורת מופשטת ביוזמת רגולטור)"
+      ]
+    },
+    {
+      "id": "contract_remedies",
+      "name": "חוק החוזים (תרופות בשל הפרת חוזה), התשל\"א-1970",
+      "priority": "P0",
+      "knesset_url": "https://main.knesset.gov.il/apps/legislation/main/laws/2000293",
+      "nevo_url": null,
+      "nevo_note": "locate via Nevo search before relying — do not fabricate a page id",
+      "focus": [
+        "הפרה והפרה יסודית",
+        "אכיפה וסייגים לאכיפה",
+        "ביטול מלא או חלקי והשבה",
+        "פיצויי קיום, פיצויים מוסכמים (§15) ונזק לא ממוני",
+        "הפרה צפויה, הקטנת נזק וריבית"
+      ]
+    },
+    {
+      "id": "contracts_general",
+      "name": "חוק החוזים (חלק כללי), התשל\"ג-1973",
+      "priority": "P0",
+      "knesset_url": "https://main.knesset.gov.il/apps/legislation/main/laws/2000292",
+      "nevo_url": null,
+      "nevo_note": "locate via Nevo search before relying — do not fabricate a page id",
+      "focus": [
+        "הצעה, קיבול, גמירות דעת ומסוימות",
+        "תום לב במשא ומתן ובקיום חיובים",
+        "טעות, הטעיה, כפייה ועושק",
+        "חוזה פסול, חוזה על תנאי וחוזה לטובת צד שלישי",
+        "פרשנות חוזה — ס' 25 אחרי תיקון מס' 3 (2026)",
+        "ביטול והשבה"
+      ],
+      "currency_notes": [
+        {"claim": "תיקון מס' 3 — ס\"ח התשפ\"ו 3481 (7.1.2026); התקבל 5.1.2026; תחילה בפרסום; מחליף את ס' 25(א); חוזה אחיד יפורש לפי המסלול הגמיש אף אם הוסכם בו אחרת; פירוש-נגד-המנסח בלתי-נתיק; לא-מיוצגים = לא הסכימו על אופן פרשנות; חידוש חוזה ככריתתו", "label": "verified-primary (gazette PDF fetched via Wayback id_ snapshot 20260521 and read in full 2026-07-26)", "gazette_wayback": "https://web.archive.org/web/2026id_/https://fs.knesset.gov.il/25/law/25_lsr_10622519.pdf"}
+      ]
+    },
+    {
+      "id": "class_actions",
+      "name": "חוק תובענות ייצוגיות, התשס\"ו-2006",
+      "priority": "P0",
+      "knesset_url": null,
+      "nevo_url": null,
+      "nevo_note": "locate by exact name; verify the consolidated text AND the Second Schedule on the day of the check",
+      "focus": [
+        "עילות ופרטים בתוספת השנייה (פרט 1 — עוסק↔לקוח)",
+        "זכות עמידה והגדרת קבוצה",
+        "תנאים לאישור תובענה ייצוגית (§8)",
+        "שאלות מהותיות משותפות וסיכויי הכרעה",
+        "דרך יעילה והוגנת להכרעה",
+        "הסתלקות, פשרה, גמול ושכר טרחה",
+        "פנקס תובענות ייצוגיות והשלכות הליך קודם",
+        "סעדים לציבור ואכיפה צרכנית"
+      ]
+    },
+    {
+      "id": "electronic_signature",
+      "name": "חוק חתימה אלקטרונית, התשס\"א-2001",
+      "priority": "P0",
+      "knesset_url": null,
+      "nevo_url": null,
+      "nevo_note": "locate by exact name; verify secondary legislation",
+      "focus": [
+        "מסר אלקטרוני וחתימה אלקטרונית",
+        "חתימה אלקטרונית מאובטחת ומאושרת",
+        "קבילות ומשקל ראייתי (§3)",
+        "נטלי הוכחה",
+        "דרישות כתב וחתימה בעסקאות דיגיטליות",
+        "זיהוי, הסכמה, ייחוס ושלמות מסמך"
+      ]
+    }
+  ],
+  "required_metadata": [
+    "title", "authority", "document_type", "publication_date", "effective_date",
+    "official_citation (ס\"ח/ק\"ת + date)", "retrieval_url", "retrieved_at",
+    "amendment_number", "version", "wayback_snapshot (if used)"
+  ]
+}

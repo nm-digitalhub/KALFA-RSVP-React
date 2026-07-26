@@ -121,8 +121,34 @@ these URLs are pointers, not snapshots.
 ## Israeli law / regulation
 
 → See `legal-catalog-israel.md` (same directory) — full verified catalog with
-Nevo (binding text), Kol Zchut (plain-language, via Wayback), case law, and the
-declared attorney-questions list.
+case law and the declared attorney-questions list. The GENERIC six-law layer
+(contracts/consumer/class-actions/e-signature) lives in the skill
+`.claude/skills/israeli-consumer-contract-law/` (preloaded into
+israeli-compliance-advisor).
+
+**Measured access map from THIS server (2026-07-26):**
+- `knesset.gov.il` (HTML + OData V4 + fs PDFs) — **BLOCKED (HTTP 474**, Radware
+  geo/bot block; browser-UA does not help). `gov.il` — **BLOCKED (403)**.
+- **Gazette PDFs (ס"ח/ק"ת)** → the skill's `scripts/fetch_law_pdf.py`:
+  Wayback `id_` (`web.archive.org/web/<ts>id_/<url>`) serves the ORIGINAL
+  bytes; a static dated gazette publication never changes ⇒ its snapshot is
+  FULL verification. A snapshot of a LIVE page (consolidated text, kolzchut,
+  gov.il guidance) is discovery-only — always state the snapshot date.
+  Extraction: PyMuPDF only (bidi logical order) — never raw WebFetch of a
+  Hebrew PDF (garbled visual-order; proven on ס"ח 3481).
+- **Amendment metadata** → OData (`KNS_Bill`/`KNS_IsraelLaw`…) via the skill's
+  `scripts/knesset_search.py` — from this server it prints a READY browser URL
+  for the human operator (fallback-chain, exit 0, never fabricates).
+- **Nevo** `/law_html/` — fetches LIVE (record the "נוסח עדכני נכון ליום"
+  stamp). Commercial consolidation: operational retrieval layer, NOT the
+  normative citation (that is רשומות). Case-law pages login-gated.
+- **kolzchut.org.il** (incl. its MediaWiki API `/w/api.php`) — Azure-WAF 403
+  from this server; use Wayback (discovery-only) OR the hosted MCP below.
+- **Hosted Kol Zchut MCP** (`@skills-il/kolzchut-mcp`; hosted endpoint
+  `https://agentskills.co.il/mcp` measured reachable 200) — the LOCAL npm
+  server calls kolzchut directly and is therefore blocked from here; the
+  hosted endpoint would work. Connecting it is a persistent `.mcp.json`
+  change — owner opt-in required; not configured yet.
 
 ## Israeli tax (מע"מ, מס הכנסה, ביטוח לאומי, פנסיה)
 
