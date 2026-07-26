@@ -16,6 +16,7 @@ import {
   getCampaignBillingSummary,
   getCampaignCreditTotal,
 } from '@/lib/data/billing';
+import { computeChargeAmount } from '@/lib/data/close-charge-amount';
 import { checkOsekPaturCeilingAfterCharge } from '@/lib/data/tax-ceiling';
 import { captureHeldCardSumit } from '@/lib/sumit/capture';
 import { SumitDeclinedError } from '@/lib/sumit/charge';
@@ -36,10 +37,12 @@ export type CloseChargeOutcome = {
 
 const CLOSEABLE = ['active', 'paused', 'approved', 'scheduled'];
 
-// Close a campaign and charge the held card for the accrued reached-contact total.
-// Fail-closed; server-derives amount = min(Σ locked_price, ceiling); charges at
-// most once (atomic guard); retry-tolerant (an already-closed campaign in a
-// retryable charge state proceeds to charge).
+// Close a campaign and charge the held card for the flat-base + included +
+// overage total. Fail-closed; server-derives amount = base + max(0, reached −
+// included) × overage, capped at the signed ceiling, minus credits (see
+// computeChargeAmount; base/included = 0 ⇒ pure per-reached, unchanged for
+// pre-model campaigns); charges at most once (atomic guard); retry-tolerant
+// (an already-closed campaign in a retryable charge state proceeds to charge).
 // Authorization: platform-admin only (billing operation).
 export async function closeCampaignAndCharge(
   campaignId: string,
@@ -99,17 +102,24 @@ export async function closeCampaignAndCharge(
     return { outcome: 'review', amount: 0 };
   }
 
-  const accrued = summary?.accrued ?? 0;
+  // Flat-base + included + overage. base/included from the campaign SNAPSHOT
+  // (S3 at authorize); NULL ⇒ 0 = pre-model / pre-S3 campaign ⇒ reduces to pure
+  // per-reached (Σ reached × price_per_reached), verified behaviour-neutral for
+  // the live campaigns. price_per_reached is the per-reached (overage) rate. The
+  // ceiling fallback preserves the prior truthiness (0/NULL → summary ceiling).
   const ceiling = campaign.max_charge_ceiling
     ? campaign.max_charge_ceiling
     : (summary?.ceiling ?? 0);
-  // final = max(0, min(accrued, ceiling) − credits), rounded to agorot (§14/D5/G4).
-  const capped = Math.min(accrued, ceiling);
-  const amount = Math.max(0, Math.round((capped - credits) * 100) / 100);
-  // The credit slice actually consumed: never more than the capped total (a
-  // ₪160 credit against ₪84 capped consumes 84; the ₪76 remainder stays
-  // available at the event level). Same agorot rounding as `amount`.
-  const creditApplied = Math.max(0, Math.round((capped - amount) * 100) / 100);
+  // final = max(0, min(base + max(0, reached − included) × overage, ceiling) −
+  // credits), rounded to agorot (§14/D5/G4).
+  const { amount, creditApplied } = computeChargeAmount({
+    base: campaign.base_price ?? 0,
+    included: campaign.included_reached ?? 0,
+    overage: campaign.price_per_reached ?? 0,
+    reached: summary?.reachedCount ?? 0,
+    ceiling,
+    credits,
+  });
 
   // 0 reached OR credits ≥ the capped total → settle at ₪0, no SUMIT call.
   if (amount <= 0) {

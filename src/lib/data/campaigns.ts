@@ -578,10 +578,15 @@ export type CampaignChargeState = Pick<
   | 'card_citizen_id'
   | 'auth_external_ref'
   | 'max_charge_ceiling'
+  // Flat-base + included + overage snapshot (S2 charge math; S3 populates at
+  // authorize). price_per_reached is the per-reached overage rate.
+  | 'base_price'
+  | 'included_reached'
+  | 'price_per_reached'
 >;
 
 const CHARGE_COLUMNS =
-  'id, event_id, status, capture_status, charge_status, card_token_ref, card_exp_month, card_exp_year, card_citizen_id, auth_external_ref, max_charge_ceiling';
+  'id, event_id, status, capture_status, charge_status, card_token_ref, card_exp_month, card_exp_year, card_citizen_id, auth_external_ref, max_charge_ceiling, base_price, included_reached, price_per_reached';
 
 // Read the charge-relevant fields. Service-role (the charge writes bypass RLS);
 // the caller (the Route Handler) has already verified ownership.

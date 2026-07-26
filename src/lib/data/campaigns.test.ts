@@ -963,7 +963,7 @@ describe('B4 close-charge data layer', () => {
 
     expect(client.from).toHaveBeenCalledWith('campaigns');
     expect(builder.select).toHaveBeenCalledWith(
-      'id, event_id, status, capture_status, charge_status, card_token_ref, card_exp_month, card_exp_year, card_citizen_id, auth_external_ref, max_charge_ceiling',
+      'id, event_id, status, capture_status, charge_status, card_token_ref, card_exp_month, card_exp_year, card_citizen_id, auth_external_ref, max_charge_ceiling, base_price, included_reached, price_per_reached',
     );
     expect(builder.eq).toHaveBeenCalledWith('id', 'c1');
     expect(r).toEqual({

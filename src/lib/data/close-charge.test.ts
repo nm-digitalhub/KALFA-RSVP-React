@@ -106,6 +106,10 @@ function happy() {
     card_citizen_id: '316125434',
     auth_external_ref: 'ext-1',
     max_charge_ceiling: 88,
+    // Pre-model campaign: base/included 0 ⇒ pure per-reached at ₪4/reach.
+    base_price: 0,
+    included_reached: 0,
+    price_per_reached: 4,
   });
   m.summary.mockResolvedValue({
     reachedCount: 3,
@@ -266,6 +270,9 @@ describe('closeCampaignAndCharge', () => {
       card_citizen_id: '316125434',
       auth_external_ref: 'ext-1',
       max_charge_ceiling: 60,
+      base_price: 0,
+      included_reached: 0,
+      price_per_reached: 4,
     });
     m.summary.mockResolvedValue({
       reachedCount: 99,
@@ -294,6 +301,9 @@ describe('closeCampaignAndCharge', () => {
       card_citizen_id: '316125434',
       auth_external_ref: 'ext-1',
       max_charge_ceiling: null,
+      base_price: 0,
+      included_reached: 0,
+      price_per_reached: 4,
     });
     m.summary.mockResolvedValue({
       reachedCount: 99,
@@ -305,6 +315,34 @@ describe('closeCampaignAndCharge', () => {
     expect(r).toEqual({ outcome: 'charged', amount: 45 });
     expect(captureHeldCardSumit).toHaveBeenCalledWith(
       expect.objectContaining({ amount: '45' }),
+    );
+  });
+
+  it('new model: charges the flat base even at 0 reached (base ₪200, included 200)', async () => {
+    happy();
+    m.forCharge.mockResolvedValue({
+      id: 'c1',
+      event_id: 'e1',
+      status: 'active',
+      capture_status: 'authorized',
+      charge_status: null,
+      card_token_ref: 'tok-abc',
+      card_exp_month: 7,
+      card_exp_year: 2031,
+      card_citizen_id: '316125434',
+      auth_external_ref: 'ext-1',
+      max_charge_ceiling: 600,
+      base_price: 200,
+      included_reached: 200,
+      price_per_reached: 4,
+    });
+    m.summary.mockResolvedValue({ reachedCount: 0, accrued: 0, ceiling: 600, maxContacts: 300 });
+    const r = await closeCampaignAndCharge('c1');
+    // Base charged even though nobody was reached (plan D1 — service fee), and
+    // NOT settled as nothing_to_charge.
+    expect(r).toEqual({ outcome: 'charged', amount: 200 });
+    expect(captureHeldCardSumit).toHaveBeenCalledWith(
+      expect.objectContaining({ amount: '200' }),
     );
   });
 
