@@ -172,6 +172,15 @@ israeli-compliance-advisor).
   NEVER redistribute judgment text to end users; citations point to the
   dataset, not official court URLs — verify any load-bearing holding against
   an official/secondary source before citing.
+- **data-gov-il MCP — WORKING, configured** (`claude mcp list` →
+  `data-gov-il ✔`; local scope, beta; installed at `~/.claude/mcp/data-gov-il`;
+  `data-gov-il-mcp` v3.0.1, 107★, active). 9 tools over the data.gov.il CKAN
+  API (REACHABLE from this server — measured): find_datasets,
+  get_dataset_info, list_all_datasets, list_resources, **search_records**
+  (query actual rows), list_organizations, tags… Tested live: Hebrew dataset
+  search returns real results. Scope: government OPEN DATA (statistics,
+  registries) — not statutes/case law; useful for market/demographic research
+  and official registries.
 - **Kol Zchut MCP** (`@skills-il/kolzchut-mcp`) — NOT viable from this server
   (measured 2026-07-26): `agentskills.co.il/mcp` is a catalog WEBPAGE, not an
   MCP endpoint (HTTP 405 on an MCP initialize POST); the npm stdio server
