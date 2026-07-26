@@ -1,7 +1,10 @@
 import Link from 'next/link';
 
 import { ManageCookiesButton } from '@/components/consent/manage-cookies-button';
+import { LandingMobileNav } from '@/components/landing-mobile-nav';
+import { LandingUserMenu } from '@/components/landing-user-menu';
 import { getUser } from '@/lib/auth/dal';
+import { getProfile } from '@/lib/data/profiles';
 import {
   Activity,
   AlarmClock,
@@ -127,6 +130,10 @@ export default async function HomePage() {
   // Recognise a signed-in visitor (verified server-side; null when anonymous)
   // so the landing points returning users to their dashboard, not to sign-up.
   const user = await getUser();
+  // Full name for the header account menu; same profile lookup and fallback
+  // rule as the customer app shell (src/app/(customer)/app/layout.tsx).
+  const profile = user ? await getProfile() : null;
+  const userName = profile?.full_name?.trim() || undefined;
   const startHref = user ? '/app' : '/auth/signup';
   const startLabel = user ? 'לאזור האישי' : 'צרו אירוע חדש';
 
@@ -144,20 +151,11 @@ export default async function HomePage() {
           </nav>
           <div className="flex items-center gap-3">
             {user ? (
-              <>
-                <span className="hidden max-w-40 truncate text-sm text-muted-foreground sm:inline">
-                  {user.email}
-                </span>
-                <Link
-                  href="/app"
-                  className="inline-flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground transition hover:opacity-90"
-                >
-                  לאזור האישי
-                  <ArrowLeft className="size-4" />
-                </Link>
-              </>
+              <LandingUserMenu userEmail={user.email} userName={userName} />
             ) : (
-              <>
+              // Hidden below md: these two live inside the mobile drawer
+              // instead, so the mobile header stays logo + hamburger only.
+              <div className="hidden items-center gap-3 md:flex">
                 <Link href="/auth/login" className="text-sm font-semibold hover:underline">כניסה</Link>
                 <Link
                   href="/auth/signup"
@@ -166,8 +164,12 @@ export default async function HomePage() {
                   צרו אירוע
                   <ArrowLeft className="size-4" />
                 </Link>
-              </>
+              </div>
             )}
+            {/* Below md, the nav above and the CTAs/auth links are hidden —
+                this hamburger is the only way to reach #features/#how/#trust
+                and יצירת קשר (and, when anonymous, כניסה/צרו אירוע). */}
+            <LandingMobileNav showAuthCta={!user} />
           </div>
         </div>
       </header>
