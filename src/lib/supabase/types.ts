@@ -1042,6 +1042,7 @@ export type Database = {
           auth_external_ref: string | null
           auth_number: string | null
           authorized_at: string | null
+          base_price: number | null
           billing_route: Database["public"]["Enums"]["billing_route"] | null
           capture_status: string | null
           card_citizen_id: string | null
@@ -1062,6 +1063,7 @@ export type Database = {
           final_charge_amount: number | null
           final_invoice_document_id: number | null
           id: string
+          included_reached: number | null
           max_charge_ceiling: number | null
           max_contacts: number
           outreach_schedule: Json | null
@@ -1088,6 +1090,7 @@ export type Database = {
           auth_external_ref?: string | null
           auth_number?: string | null
           authorized_at?: string | null
+          base_price?: number | null
           billing_route?: Database["public"]["Enums"]["billing_route"] | null
           capture_status?: string | null
           card_citizen_id?: string | null
@@ -1108,6 +1111,7 @@ export type Database = {
           final_charge_amount?: number | null
           final_invoice_document_id?: number | null
           id?: string
+          included_reached?: number | null
           max_charge_ceiling?: number | null
           max_contacts: number
           outreach_schedule?: Json | null
@@ -1134,6 +1138,7 @@ export type Database = {
           auth_external_ref?: string | null
           auth_number?: string | null
           authorized_at?: string | null
+          base_price?: number | null
           billing_route?: Database["public"]["Enums"]["billing_route"] | null
           capture_status?: string | null
           card_citizen_id?: string | null
@@ -1154,6 +1159,7 @@ export type Database = {
           final_charge_amount?: number | null
           final_invoice_document_id?: number | null
           id?: string
+          included_reached?: number | null
           max_charge_ceiling?: number | null
           max_contacts?: number
           outreach_schedule?: Json | null
@@ -2662,12 +2668,14 @@ export type Database = {
       packages: {
         Row: {
           active: boolean
+          base_price: number | null
           category: string
           channels: Database["public"]["Enums"]["campaign_channel"][] | null
           created_at: string
           description: string | null
           hold_buffer_pct: number
           id: string
+          included_reached: number | null
           includes: Json
           min_hold_floor: number
           name: string
@@ -2679,12 +2687,14 @@ export type Database = {
         }
         Insert: {
           active?: boolean
+          base_price?: number | null
           category?: string
           channels?: Database["public"]["Enums"]["campaign_channel"][] | null
           created_at?: string
           description?: string | null
           hold_buffer_pct?: number
           id?: string
+          included_reached?: number | null
           includes?: Json
           min_hold_floor?: number
           name: string
@@ -2696,12 +2706,14 @@ export type Database = {
         }
         Update: {
           active?: boolean
+          base_price?: number | null
           category?: string
           channels?: Database["public"]["Enums"]["campaign_channel"][] | null
           created_at?: string
           description?: string | null
           hold_buffer_pct?: number
           id?: string
+          included_reached?: number | null
           includes?: Json
           min_hold_floor?: number
           name?: string
