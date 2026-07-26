@@ -2,8 +2,9 @@ import { requirePlatformPermission } from '@/lib/auth/dal';
 import Link from 'next/link';
 
 import { getVoximplantConfig } from '@/lib/data/voximplant-config';
+import { getChannelCatalog } from '@/lib/data/channel-catalog';
 import { PageHeading } from '../../_components';
-import { PackageForm } from '../package-form';
+import { PackageForm, type CallChannelStatus } from '../package-form';
 import { createPackageAction } from '../actions';
 
 // Admin: create a new package. The form posts to createPackageAction, which
@@ -12,7 +13,14 @@ export default async function NewPackagePage() {
   // Optimistic gate: redirect early instead of rendering an empty page. The
   // real enforcement is per-function in the DAL.
   await requirePlatformPermission('manage_billing');
-  const callChannelLive = (await getVoximplantConfig())?.liveCallsEnabled ?? false;
+  // Real 3-state dial status of the AI-voice channel, so a `call` touchpoint shows
+  // an accurate note (not_configured / configured_off / live) instead of a stale
+  // "built but off" warning. getVoximplantConfig() reads app_settings via the
+  // service-role client (no manage_voice needed on this manage_billing page).
+  const voxCfg = await getVoximplantConfig();
+  const callChannelStatus: CallChannelStatus =
+    voxCfg == null ? 'not_configured' : voxCfg.liveCallsEnabled ? 'live' : 'configured_off';
+  const channelOptions = await getChannelCatalog();
   return (
     <div className="mx-auto max-w-2xl space-y-6">
       <div className="space-y-1">
@@ -28,7 +36,8 @@ export default async function NewPackagePage() {
       <PackageForm
         action={createPackageAction}
         submitLabel="יצירת חבילה"
-        callChannelLive={callChannelLive}
+        callChannelStatus={callChannelStatus}
+        channelOptions={channelOptions}
       />
     </div>
   );

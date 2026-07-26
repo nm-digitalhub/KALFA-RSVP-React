@@ -9,6 +9,7 @@ import {
   SubmitButton,
 } from '@/components/forms';
 import type { FormState } from '@/lib/validation/result';
+import type { ChannelCatalogEntry } from '@/lib/data/channel-catalog';
 
 // Shared create/edit form for a package. The parent binds the correct Server
 // Action (create, or update with the id pre-bound) and passes initial values
@@ -23,14 +24,22 @@ import type { FormState } from '@/lib/validation/result';
 // field before submit. `hold_buffer_pct` is entered/displayed as a PERCENT
 // (10 = +10%); the server converts to the stored fraction (0.1) — see §5.1.
 // A `call` touchpoint dials the live Voximplant AI-voice bridge (RSVPAgent,
-// rule 1520915). Whether outreach calls actually FIRE is the runtime gate
-// getVoximplantConfig().liveCallsEnabled (env + app_settings.voximplant_live_calls,
-// toggled at /admin/channels) — passed in as `callChannelLive` so the row shows
-// the real state instead of a hardcoded "not built" warning.
+// rule 1520915). The row shows the REAL channel state, derived server-side from
+// getVoximplantConfig() (env + app_settings, no manage_voice needed) and passed
+// in as `callChannelStatus` — three states, so the copy never claims the channel
+// is "built" when it was never configured:
+//   'not_configured' → getVoximplantConfig() === null (no SA/rule/caller)
+//   'configured_off' → configured but liveCallsEnabled === false (env/DB toggle off)
+//   'live'           → liveCallsEnabled === true (a real call will fire, subject to
+//                      consent/DNC/quiet-hours/balance/quotas)
+export type CallChannelStatus = 'not_configured' | 'configured_off' | 'live';
 
+// `channel` is a plain string: the storable set comes from the admin-managed
+// channel catalog (public.channels), and the server (z.enum in validation/admin.ts)
+// is the narrowing guard on submit — see channel-catalog.ts.
 export type OutreachTouchpointFormValue = {
   days_before: number | '';
-  channel: 'whatsapp' | 'call';
+  channel: string;
   message_key: string;
 };
 
@@ -46,7 +55,7 @@ export interface PackageFormInitial {
   price_per_reached: number | '';
   base_price: number | '';
   included_reached: number | '';
-  channels: ('whatsapp' | 'call')[];
+  channels: string[];
   outreach_schedule: OutreachTouchpointFormValue[];
   min_hold_floor: number | '';
   // Percent, for display — already converted from the stored fraction by the
@@ -78,23 +87,20 @@ const labelClass = 'block text-sm font-medium';
 const inputClass =
   'w-full rounded-md border border-border bg-background px-3 py-2 text-sm';
 
-const CHANNEL_LABELS: Record<'whatsapp' | 'call', string> = {
-  whatsapp: 'וואטסאפ',
-  call: 'שיחת AI (Voximplant)',
-};
-
 function TouchpointRow({
   value,
   onChange,
   onRemove,
   errors,
-  callChannelLive,
+  callChannelStatus,
+  channelOptions,
 }: {
   value: OutreachTouchpointFormValue;
   onChange: (next: OutreachTouchpointFormValue) => void;
   onRemove: () => void;
   errors?: string[];
-  callChannelLive: boolean;
+  callChannelStatus: CallChannelStatus;
+  channelOptions: ChannelCatalogEntry[];
 }) {
   return (
     <div className="space-y-1 rounded-md border border-border p-3">
@@ -120,13 +126,14 @@ function TouchpointRow({
           <label className="text-xs text-muted-foreground">ערוץ</label>
           <select
             value={value.channel}
-            onChange={(e) =>
-              onChange({ ...value, channel: e.target.value as 'whatsapp' | 'call' })
-            }
+            onChange={(e) => onChange({ ...value, channel: e.target.value })}
             className={inputClass}
           >
-            <option value="whatsapp">{CHANNEL_LABELS.whatsapp}</option>
-            <option value="call">{CHANNEL_LABELS.call}</option>
+            {channelOptions.map((c) => (
+              <option key={c.key} value={c.key}>
+                {c.display_name}
+              </option>
+            ))}
           </select>
         </div>
         <div>
@@ -148,15 +155,20 @@ function TouchpointRow({
         </button>
       </div>
       {value.channel === 'call' &&
-        (callChannelLive ? (
+        (callChannelStatus === 'live' ? (
           <p className="text-xs text-muted-foreground">
             ערוץ שיחת ה-AI (Voximplant) פעיל ומחובר. שלב זה יבצע שיחה אמיתית —
             בכפוף להסכמת הנמען, חסימות (DNC), חלון שעות פעילות, יתרה ומכסות.
           </p>
+        ) : callChannelStatus === 'configured_off' ? (
+          <p className="text-xs text-amber-600">
+            ערוץ שיחת ה-AI (Voximplant) מוגדר אך כבוי כרגע — שלב זה לא יבצע שיחה עד
+            שהערוץ יודלק תחת /admin/channels.
+          </p>
         ) : (
           <p className="text-xs text-amber-600">
-            ערוץ שיחת ה-AI (Voximplant) בנוי אך כבוי כרגע — שלב זה לא יבצע שיחה עד
-            שהערוץ יודלק תחת /admin/channels.
+            ערוץ שיחת ה-AI (Voximplant) טרם הוגדר במערכת — הגדירו אותו תחת
+            /admin/channels לפני שילוב שלב שיחה. שלב זה לא יבצע שיחה.
           </p>
         ))}
       <FieldError errors={errors} />
@@ -168,22 +180,26 @@ export function PackageForm({
   action,
   initial = EMPTY,
   submitLabel,
-  callChannelLive,
+  callChannelStatus,
+  channelOptions,
 }: {
   action: FormAction;
   initial?: PackageFormInitial;
   submitLabel: string;
-  // Live-dial state of the Voximplant AI-voice channel
-  // (getVoximplantConfig().liveCallsEnabled) — computed server-side by the page.
-  callChannelLive: boolean;
+  // Three-state dial status of the Voximplant AI-voice channel, derived
+  // server-side by the page from getVoximplantConfig() (no manage_voice needed).
+  callChannelStatus: CallChannelStatus;
+  // Admin-managed channel catalog (public.channels) — the source of the channel
+  // list + labels, replacing the old hardcoded literals. Fetched by the page.
+  channelOptions: ChannelCatalogEntry[];
 }) {
   const [state, formAction] = useActionState(action, null);
-  const [channels, setChannels] = useState<('whatsapp' | 'call')[]>(initial.channels);
+  const [channels, setChannels] = useState<string[]>(initial.channels);
   const [schedule, setSchedule] = useState<OutreachTouchpointFormValue[]>(
     initial.outreach_schedule,
   );
 
-  function toggleChannel(channel: 'whatsapp' | 'call', checked: boolean) {
+  function toggleChannel(channel: string, checked: boolean) {
     setChannels((prev) =>
       checked ? [...prev, channel] : prev.filter((c) => c !== channel),
     );
@@ -200,7 +216,9 @@ export function PackageForm({
   function addTouchpoint() {
     setSchedule((prev) => [
       ...prev,
-      { days_before: '', channel: 'whatsapp', message_key: '' },
+      // Default to the first catalog channel (falls back to '' if the catalog is
+      // empty — the admin then picks explicitly).
+      { days_before: '', channel: channelOptions[0]?.key ?? '', message_key: '' },
     ]);
   }
 
@@ -410,17 +428,17 @@ export function PackageForm({
       <div className="space-y-1">
         <span className={labelClass}>ערוצים</span>
         <div className="flex gap-4">
-          {(['whatsapp', 'call'] as const).map((channel) => (
-            <label key={channel} className="flex items-center gap-2 text-sm">
+          {channelOptions.map((channel) => (
+            <label key={channel.key} className="flex items-center gap-2 text-sm">
               <input
                 type="checkbox"
                 name="channels"
-                value={channel}
-                checked={channels.includes(channel)}
-                onChange={(e) => toggleChannel(channel, e.target.checked)}
+                value={channel.key}
+                checked={channels.includes(channel.key)}
+                onChange={(e) => toggleChannel(channel.key, e.target.checked)}
                 className="size-4 rounded border-border"
               />
-              {CHANNEL_LABELS[channel]}
+              {channel.display_name}
             </label>
           ))}
         </div>
@@ -433,7 +451,8 @@ export function PackageForm({
           <TouchpointRow
             key={i}
             value={tp}
-            callChannelLive={callChannelLive}
+            callChannelStatus={callChannelStatus}
+            channelOptions={channelOptions}
             onChange={(next) => updateTouchpoint(i, next)}
             onRemove={() => removeTouchpoint(i)}
             errors={[

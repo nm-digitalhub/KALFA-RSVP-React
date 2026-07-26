@@ -1204,6 +1204,36 @@ export type Database = {
           },
         ]
       }
+      channels: {
+        Row: {
+          active: boolean
+          created_at: string
+          display_name: string
+          is_built: boolean
+          key: string
+          sort_order: number
+          updated_at: string
+        }
+        Insert: {
+          active?: boolean
+          created_at?: string
+          display_name: string
+          is_built?: boolean
+          key: string
+          sort_order?: number
+          updated_at?: string
+        }
+        Update: {
+          active?: boolean
+          created_at?: string
+          display_name?: string
+          is_built?: boolean
+          key?: string
+          sort_order?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
       console_agent_commands: {
         Row: {
           agent_id: string

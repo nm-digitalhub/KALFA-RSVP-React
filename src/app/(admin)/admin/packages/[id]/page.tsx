@@ -3,9 +3,14 @@ import Link from 'next/link';
 
 import { getPackage } from '@/lib/data/admin/packages';
 import { getVoximplantConfig } from '@/lib/data/voximplant-config';
+import { getChannelCatalog } from '@/lib/data/channel-catalog';
 import { holdBufferFractionToPercent } from '@/lib/validation/admin';
 import { PageHeading } from '../../_components';
-import { PackageForm, type PackageFormInitial } from '../package-form';
+import {
+  PackageForm,
+  type PackageFormInitial,
+  type CallChannelStatus,
+} from '../package-form';
 import { updatePackageAction } from '../actions';
 import { DeletePackageForm } from './delete-package-form';
 
@@ -23,9 +28,14 @@ export default async function EditPackagePage({
   await requirePlatformPermission('manage_billing');
   const { id } = await params;
   const pkg = await getPackage(id);
-  // Real live-dial state of the AI-voice channel (env + app_settings toggle) so a
-  // `call` touchpoint shows an accurate note, not a stale "not built" warning.
-  const callChannelLive = (await getVoximplantConfig())?.liveCallsEnabled ?? false;
+  // Real 3-state dial status of the AI-voice channel (not_configured /
+  // configured_off / live) so a `call` touchpoint shows an accurate note instead
+  // of a stale "built but off" warning. getVoximplantConfig() reads app_settings
+  // via the service-role client (no manage_voice needed on this manage_billing page).
+  const voxCfg = await getVoximplantConfig();
+  const callChannelStatus: CallChannelStatus =
+    voxCfg == null ? 'not_configured' : voxCfg.liveCallsEnabled ? 'live' : 'configured_off';
+  const channelOptions = await getChannelCatalog();
 
   // `includes` is stored as Json; the column holds a string[] by contract. Coerce
   // defensively for display (non-string entries are dropped).
@@ -38,7 +48,7 @@ export default async function EditPackagePage({
   const outreachSchedule = Array.isArray(pkg.outreach_schedule)
     ? (pkg.outreach_schedule as unknown as {
         days_before: number;
-        channel: 'whatsapp' | 'call';
+        channel: string;
         message_key: string;
       }[])
     : [];
@@ -81,7 +91,8 @@ export default async function EditPackagePage({
         action={updateAction}
         initial={initial}
         submitLabel="שמירת שינויים"
-        callChannelLive={callChannelLive}
+        callChannelStatus={callChannelStatus}
+        channelOptions={channelOptions}
       />
 
       <div className="border-t border-border pt-6">
