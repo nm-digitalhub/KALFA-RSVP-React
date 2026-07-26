@@ -144,11 +144,14 @@ israeli-compliance-advisor).
   normative citation (that is רשומות). Case-law pages login-gated.
 - **kolzchut.org.il** (incl. its MediaWiki API `/w/api.php`) — Azure-WAF 403
   from this server; use Wayback (discovery-only) OR the hosted MCP below.
-- **Hosted Kol Zchut MCP** (`@skills-il/kolzchut-mcp`; hosted endpoint
-  `https://agentskills.co.il/mcp` measured reachable 200) — the LOCAL npm
-  server calls kolzchut directly and is therefore blocked from here; the
-  hosted endpoint would work. Connecting it is a persistent `.mcp.json`
-  change — owner opt-in required; not configured yet.
+- **Kol Zchut MCP** (`@skills-il/kolzchut-mcp`) — NOT viable from this server
+  (measured 2026-07-26): `agentskills.co.il/mcp` is a catalog WEBPAGE, not an
+  MCP endpoint (HTTP 405 on an MCP initialize POST); the npm stdio server
+  calls `kolzchut.org.il/w/api.php` directly, which is Azure-WAF-blocked from
+  here — it would connect but every tool call would fail. Usable ONLY from an
+  unblocked (e.g. Israeli) machine: `claude mcp add --transport stdio
+  kolzchut -- npx -y @skills-il/kolzchut-mcp`. On this server: Wayback
+  (discovery-only) remains the Kol Zchut route.
 
 ## Israeli tax (מע"מ, מס הכנסה, ביטוח לאומי, פנסיה)
 
