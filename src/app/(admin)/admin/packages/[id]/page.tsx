@@ -2,6 +2,7 @@ import { requirePlatformPermission } from '@/lib/auth/dal';
 import Link from 'next/link';
 
 import { getPackage } from '@/lib/data/admin/packages';
+import { getVoximplantConfig } from '@/lib/data/voximplant-config';
 import { holdBufferFractionToPercent } from '@/lib/validation/admin';
 import { PageHeading } from '../../_components';
 import { PackageForm, type PackageFormInitial } from '../package-form';
@@ -22,6 +23,9 @@ export default async function EditPackagePage({
   await requirePlatformPermission('manage_billing');
   const { id } = await params;
   const pkg = await getPackage(id);
+  // Real live-dial state of the AI-voice channel (env + app_settings toggle) so a
+  // `call` touchpoint shows an accurate note, not a stale "not built" warning.
+  const callChannelLive = (await getVoximplantConfig())?.liveCallsEnabled ?? false;
 
   // `includes` is stored as Json; the column holds a string[] by contract. Coerce
   // defensively for display (non-string entries are dropped).
@@ -77,6 +81,7 @@ export default async function EditPackagePage({
         action={updateAction}
         initial={initial}
         submitLabel="שמירת שינויים"
+        callChannelLive={callChannelLive}
       />
 
       <div className="border-t border-border pt-6">

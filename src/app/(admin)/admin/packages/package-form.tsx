@@ -22,9 +22,11 @@ import type { FormState } from '@/lib/validation/result';
 // typed by the admin) and synced into one hidden `outreach_schedule_json`
 // field before submit. `hold_buffer_pct` is entered/displayed as a PERCENT
 // (10 = +10%); the server converts to the stored fraction (0.1) — see §5.1.
-// A `call` touchpoint has no verifiable source of truth yet (the Voximplant
-// AI-voice channel is not built — see admin/channels/channels-client.tsx's
-// disabled "Voximplant (בקרוב)" tab) and is flagged as such, not blocked.
+// A `call` touchpoint dials the live Voximplant AI-voice bridge (RSVPAgent,
+// rule 1520915). Whether outreach calls actually FIRE is the runtime gate
+// getVoximplantConfig().liveCallsEnabled (env + app_settings.voximplant_live_calls,
+// toggled at /admin/channels) — passed in as `callChannelLive` so the row shows
+// the real state instead of a hardcoded "not built" warning.
 
 export type OutreachTouchpointFormValue = {
   days_before: number | '';
@@ -86,11 +88,13 @@ function TouchpointRow({
   onChange,
   onRemove,
   errors,
+  callChannelLive,
 }: {
   value: OutreachTouchpointFormValue;
   onChange: (next: OutreachTouchpointFormValue) => void;
   onRemove: () => void;
   errors?: string[];
+  callChannelLive: boolean;
 }) {
   return (
     <div className="space-y-1 rounded-md border border-border p-3">
@@ -143,12 +147,18 @@ function TouchpointRow({
           הסרה
         </button>
       </div>
-      {value.channel === 'call' && (
-        <p className="text-xs text-amber-600">
-          לא מאומת — ערוץ ה-AI voice (Voximplant) טרם נבנה (C2). השלב הזה לא
-          יופעל עד אז.
-        </p>
-      )}
+      {value.channel === 'call' &&
+        (callChannelLive ? (
+          <p className="text-xs text-muted-foreground">
+            ערוץ שיחת ה-AI (Voximplant) פעיל ומחובר. שלב זה יבצע שיחה אמיתית —
+            בכפוף להסכמת הנמען, חסימות (DNC), חלון שעות פעילות, יתרה ומכסות.
+          </p>
+        ) : (
+          <p className="text-xs text-amber-600">
+            ערוץ שיחת ה-AI (Voximplant) בנוי אך כבוי כרגע — שלב זה לא יבצע שיחה עד
+            שהערוץ יודלק תחת /admin/channels.
+          </p>
+        ))}
       <FieldError errors={errors} />
     </div>
   );
@@ -158,10 +168,14 @@ export function PackageForm({
   action,
   initial = EMPTY,
   submitLabel,
+  callChannelLive,
 }: {
   action: FormAction;
   initial?: PackageFormInitial;
   submitLabel: string;
+  // Live-dial state of the Voximplant AI-voice channel
+  // (getVoximplantConfig().liveCallsEnabled) — computed server-side by the page.
+  callChannelLive: boolean;
 }) {
   const [state, formAction] = useActionState(action, null);
   const [channels, setChannels] = useState<('whatsapp' | 'call')[]>(initial.channels);
@@ -419,6 +433,7 @@ export function PackageForm({
           <TouchpointRow
             key={i}
             value={tp}
+            callChannelLive={callChannelLive}
             onChange={(next) => updateTouchpoint(i, next)}
             onRemove={() => removeTouchpoint(i)}
             errors={[

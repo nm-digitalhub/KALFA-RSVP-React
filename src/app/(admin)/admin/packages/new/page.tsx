@@ -1,6 +1,7 @@
 import { requirePlatformPermission } from '@/lib/auth/dal';
 import Link from 'next/link';
 
+import { getVoximplantConfig } from '@/lib/data/voximplant-config';
 import { PageHeading } from '../../_components';
 import { PackageForm } from '../package-form';
 import { createPackageAction } from '../actions';
@@ -11,6 +12,7 @@ export default async function NewPackagePage() {
   // Optimistic gate: redirect early instead of rendering an empty page. The
   // real enforcement is per-function in the DAL.
   await requirePlatformPermission('manage_billing');
+  const callChannelLive = (await getVoximplantConfig())?.liveCallsEnabled ?? false;
   return (
     <div className="mx-auto max-w-2xl space-y-6">
       <div className="space-y-1">
@@ -23,7 +25,11 @@ export default async function NewPackagePage() {
         </Link>
       </div>
 
-      <PackageForm action={createPackageAction} submitLabel="יצירת חבילה" />
+      <PackageForm
+        action={createPackageAction}
+        submitLabel="יצירת חבילה"
+        callChannelLive={callChannelLive}
+      />
     </div>
   );
 }
