@@ -34,6 +34,16 @@ import type { ChannelCatalogEntry } from '@/lib/data/channel-catalog';
 //                      consent/DNC/quiet-hours/balance/quotas)
 export type CallChannelStatus = 'not_configured' | 'configured_off' | 'live';
 
+// Gate-aware pricing-model status, computed server-side by the page. `gateActive`
+// = app_settings.base_overage_pricing_enabled. `effectiveSummaryHe` is the live,
+// data-driven price phrasing from buildBusinessFacts (the SAME source the
+// support-drafter quotes) — never a number hardcoded here; null when there is no
+// saved campaign package yet (the create page), where only the gate state shows.
+export type PricingModelStatus = {
+  gateActive: boolean;
+  effectiveSummaryHe: string | null;
+};
+
 // `channel` is a plain string: the storable set comes from the admin-managed
 // channel catalog (public.channels), and the server (z.enum in validation/admin.ts)
 // is the narrowing guard on submit — see channel-catalog.ts.
@@ -182,6 +192,7 @@ export function PackageForm({
   submitLabel,
   callChannelStatus,
   channelOptions,
+  pricingModelStatus,
 }: {
   action: FormAction;
   initial?: PackageFormInitial;
@@ -192,6 +203,9 @@ export function PackageForm({
   // Admin-managed channel catalog (public.channels) — the source of the channel
   // list + labels, replacing the old hardcoded literals. Fetched by the page.
   channelOptions: ChannelCatalogEntry[];
+  // Gate-aware effective pricing model, so the base/included fields don't
+  // mislead (they are inert while the base+overage gate is off).
+  pricingModelStatus: PricingModelStatus;
 }) {
   const [state, formAction] = useActionState(action, null);
   const [channels, setChannels] = useState<string[]>(initial.channels);
@@ -424,6 +438,33 @@ export function PackageForm({
         הכמות הכלולה, ומעבר לה מחיר החריגה לכל מושג נוסף. השאירו את שניהם ריקים
         לתמחור לפי-תוצאה בלבד. התמחור החדש נכנס לתוקף רק כשהוא מודלק במערכת.
       </p>
+
+      {/* Gate-aware effective-model status. Numbers come from the data-driven
+          effectiveSummaryHe (buildBusinessFacts) — never hardcoded here. */}
+      <div
+        className={`rounded-md border p-3 text-xs ${
+          pricingModelStatus.gateActive
+            ? 'border-border text-muted-foreground'
+            : 'border-amber-300 text-amber-700'
+        }`}
+      >
+        {pricingModelStatus.gateActive ? (
+          <p>
+            המודל המדורג (בסיס + חריגה) פעיל במערכת — קמפיינים חדשים יחויבו לפיו.
+          </p>
+        ) : (
+          <p>
+            המודל המדורג (בסיס + חריגה) מוגדר אך כבוי כרגע — המחיר האפקטיבי הוא
+            לפי-תוצאה בלבד. שדות מחיר הבסיס והכמות הכלולה נשמרים אך אינם פעילים
+            עד שהמודל יודלק במערכת.
+          </p>
+        )}
+        {pricingModelStatus.effectiveSummaryHe ? (
+          <p className="mt-1 font-medium">
+            המחיר האפקטיבי כעת: {pricingModelStatus.effectiveSummaryHe}
+          </p>
+        ) : null}
+      </div>
 
       <div className="space-y-1">
         <span className={labelClass}>ערוצים</span>

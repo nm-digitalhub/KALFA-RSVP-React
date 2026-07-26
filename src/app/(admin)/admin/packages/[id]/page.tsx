@@ -4,12 +4,15 @@ import Link from 'next/link';
 import { getPackage } from '@/lib/data/admin/packages';
 import { getVoximplantConfig } from '@/lib/data/voximplant-config';
 import { getChannelCatalog } from '@/lib/data/channel-catalog';
+import { getBaseOveragePricingEnabled } from '@/lib/data/payments';
+import { buildBusinessFacts } from '@/lib/fleet/business-facts';
 import { holdBufferFractionToPercent } from '@/lib/validation/admin';
 import { PageHeading } from '../../_components';
 import {
   PackageForm,
   type PackageFormInitial,
   type CallChannelStatus,
+  type PricingModelStatus,
 } from '../package-form';
 import { updatePackageAction } from '../actions';
 import { DeletePackageForm } from './delete-package-form';
@@ -36,6 +39,26 @@ export default async function EditPackagePage({
   const callChannelStatus: CallChannelStatus =
     voxCfg == null ? 'not_configured' : voxCfg.liveCallsEnabled ? 'live' : 'configured_off';
   const channelOptions = await getChannelCatalog();
+
+  // Gate-aware effective pricing model for THIS package, so the base/included
+  // fields don't mislead while the base+overage gate is off. Numbers come from
+  // buildBusinessFacts (the same source the support-drafter quotes) — never
+  // hardcoded. Only campaign packages (a per-reached price) have an effective
+  // price to summarise.
+  const gateActive = await getBaseOveragePricingEnabled();
+  const pricingModelStatus: PricingModelStatus = {
+    gateActive,
+    effectiveSummaryHe:
+      pkg.price_per_reached != null
+        ? (buildBusinessFacts(gateActive, {
+            name: pkg.name,
+            price_per_reached: Number(pkg.price_per_reached),
+            base_price: Number(pkg.base_price ?? 0),
+            included_reached: pkg.included_reached ?? 0,
+            channels: pkg.channels ?? [],
+          }).summary_he ?? null)
+        : null,
+  };
 
   // `includes` is stored as Json; the column holds a string[] by contract. Coerce
   // defensively for display (non-string entries are dropped).
@@ -93,6 +116,7 @@ export default async function EditPackagePage({
         submitLabel="שמירת שינויים"
         callChannelStatus={callChannelStatus}
         channelOptions={channelOptions}
+        pricingModelStatus={pricingModelStatus}
       />
 
       <div className="border-t border-border pt-6">
