@@ -26,6 +26,12 @@
 //     Call BEFORE acting on the verdict.
 //   expire
 //     Marks pending requests past expires_at as expired (chief-of-staff sweep).
+//   withdraw --id UUID [--reason TEXT]
+//     Retires a STILL-PENDING request the calling role filed (superseded /
+//     no longer relevant) so the owner's inbox stays clean. Uses the guard's
+//     legal pending->expired edge, recording the reason in `answer`. A row
+//     that is no longer pending is a no-op (someone answered first — respect
+//     it). Never deletes; the ledger stays append-only.
 //   digest --title T --body B [--level info|warn|error]
 //     Posts the daily fleet digest to Slack via the existing alerting stack.
 //   draft-reply --id UUID --body TEXT
@@ -366,6 +372,33 @@ async function cmdAck(args: Record<string, string | undefined>): Promise<void> {
   if (!claimed) process.exitCode = 2;
 }
 
+// Retire one still-pending request (superseded / no longer relevant). The
+// fleet_requests_guard permits pending->expired with `answer` set on the same
+// edge; anything not pending is left untouched (0 rows = benign no-op).
+async function cmdWithdraw(args: Record<string, string | undefined>): Promise<void> {
+  const id = requireOption(args.id, 'id');
+  const reason = args.reason?.trim() || 'הוסרה על-ידי הסוכן (התייתרה)';
+  const admin = createAdminClient();
+  const { data, error } = await admin
+    .from('fleet_requests')
+    .update({ status: 'expired', answer: `[withdraw] ${reason}` })
+    .eq('id', id)
+    .eq('status', 'pending')
+    .select('id, role, title');
+  if (error) fail(`withdraw failed: ${error.message}`);
+  const row = data?.[0];
+  if (row) {
+    await sendSlackAlert({
+      level: 'info',
+      title: `פנייה הוסרה ע"י הסוכן: ${row.title}`,
+      detail: reason,
+      source: `fleet:${row.role}`,
+      category: 'errors',
+    });
+  }
+  console.log(JSON.stringify({ withdrawn: !!row, request: row ?? null }, null, 2));
+}
+
 async function cmdExpire(): Promise<void> {
   const admin = createAdminClient();
   const { data, error } = await admin
@@ -662,6 +695,7 @@ async function main(): Promise<void> {
       'run-id': { type: 'string' },
       'request-key': { type: 'string' },
       id: { type: 'string' },
+      reason: { type: 'string' },
       level: { type: 'string' },
       query: { type: 'string' },
       limit: { type: 'string' },
@@ -683,6 +717,8 @@ async function main(): Promise<void> {
       return cmdAck(scalarValues);
     case 'expire':
       return cmdExpire();
+    case 'withdraw':
+      return cmdWithdraw(scalarValues);
     case 'digest':
       return cmdDigest(scalarValues);
     case 'sql':
@@ -695,7 +731,7 @@ async function main(): Promise<void> {
       return cmdBusinessFacts();
     default:
       fail(
-        'usage: fleet-agent-cli <request|poll|verdicts|ack|expire|digest|sql|draft-reply|distill-corrections|business-facts> [options]',
+        'usage: fleet-agent-cli <request|poll|verdicts|ack|expire|withdraw|digest|sql|draft-reply|distill-corrections|business-facts> [options]',
       );
   }
 }
