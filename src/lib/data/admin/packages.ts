@@ -36,6 +36,8 @@ export type AdminPackage = Pick<
   | 'sort_order'
   | 'created_at'
   | 'price_per_reached'
+  | 'base_price'
+  | 'included_reached'
   | 'channels'
   | 'outreach_schedule'
   | 'min_hold_floor'
@@ -43,7 +45,7 @@ export type AdminPackage = Pick<
 >;
 
 export const PACKAGE_COLUMNS =
-  'id, name, tier, category, description, price_with_vat, includes, active, sort_order, created_at, price_per_reached, channels, outreach_schedule, min_hold_floor, hold_buffer_pct';
+  'id, name, tier, category, description, price_with_vat, includes, active, sort_order, created_at, price_per_reached, base_price, included_reached, channels, outreach_schedule, min_hold_floor, hold_buffer_pct';
 
 // List all packages (active and inactive) for the admin table, ordered by the
 // curated sort order then name. Not paginated: the catalogue is small and
@@ -113,6 +115,8 @@ function toWritable(
   active: boolean;
   sort_order: number;
   price_per_reached: number | null;
+  base_price: number | null;
+  included_reached: number | null;
   channels: PackageInsert['channels'];
   outreach_schedule: PackageInsert['outreach_schedule'];
   min_hold_floor: number;
@@ -128,6 +132,8 @@ function toWritable(
     active: input.active,
     sort_order: input.sort_order,
     price_per_reached: operational.price_per_reached,
+    base_price: operational.base_price,
+    included_reached: operational.included_reached,
     channels: operational.channels,
     outreach_schedule: outreachScheduleJson(operational.outreach_schedule),
     min_hold_floor: operational.min_hold_floor,
@@ -147,6 +153,8 @@ function packageChangedFields(
     | 'active'
     | 'sort_order'
     | 'price_per_reached'
+    | 'base_price'
+    | 'included_reached'
     | 'channels'
     | 'outreach_schedule'
     | 'min_hold_floor'
@@ -166,6 +174,8 @@ function packageChangedFields(
     previous.active !== next.active ? 'active' : null,
     previous.sort_order !== next.sort_order ? 'sort_order' : null,
     previous.price_per_reached !== next.price_per_reached ? 'price_per_reached' : null,
+    previous.base_price !== next.base_price ? 'base_price' : null,
+    previous.included_reached !== next.included_reached ? 'included_reached' : null,
     // channels/outreach_schedule are arrays/JSON — reference-compare via
     // JSON.stringify, mirroring the existing `includes` precedent above.
     JSON.stringify(previous.channels) !== JSON.stringify(next.channels)

@@ -42,6 +42,8 @@ export interface PackageFormInitial {
   active: boolean;
   sort_order: number | '';
   price_per_reached: number | '';
+  base_price: number | '';
+  included_reached: number | '';
   channels: ('whatsapp' | 'call')[];
   outreach_schedule: OutreachTouchpointFormValue[];
   min_hold_floor: number | '';
@@ -60,6 +62,8 @@ const EMPTY: PackageFormInitial = {
   active: true,
   sort_order: '',
   price_per_reached: '',
+  base_price: '',
+  included_reached: '',
   channels: [],
   outreach_schedule: [],
   min_hold_floor: '',
@@ -328,7 +332,7 @@ export function PackageForm({
 
       <div className="space-y-1">
         <label htmlFor="price_per_reached" className={labelClass}>
-          מחיר לאיש קשר שהושג (₪)
+          מחיר לכל מושג מעבר לכמות הכלולה (חריגה, ₪)
         </label>
         <input
           id="price_per_reached"
@@ -344,6 +348,50 @@ export function PackageForm({
         />
         <FieldError errors={state?.fieldErrors?.price_per_reached} />
       </div>
+
+      <div className="grid gap-4 sm:grid-cols-2">
+        <div className="space-y-1">
+          <label htmlFor="base_price" className={labelClass}>
+            מחיר בסיס (₪)
+          </label>
+          <input
+            id="base_price"
+            name="base_price"
+            type="number"
+            min="0"
+            step="0.01"
+            inputMode="decimal"
+            dir="ltr"
+            defaultValue={initial.base_price}
+            className={inputClass}
+            placeholder="ריק = בלי דמי בסיס (לפי תוצאה בלבד)"
+          />
+          <FieldError errors={state?.fieldErrors?.base_price} />
+        </div>
+        <div className="space-y-1">
+          <label htmlFor="included_reached" className={labelClass}>
+            כמות מושגים כלולה בבסיס
+          </label>
+          <input
+            id="included_reached"
+            name="included_reached"
+            type="number"
+            min="0"
+            step="1"
+            inputMode="numeric"
+            dir="ltr"
+            defaultValue={initial.included_reached}
+            className={inputClass}
+            placeholder="מספר המושגים הכלול במחיר הבסיס"
+          />
+          <FieldError errors={state?.fieldErrors?.included_reached} />
+        </div>
+      </div>
+      <p className="text-xs text-muted-foreground">
+        מחיר בסיס + כמות כלולה מפעילים תמחור מדורג (בסיס + חריגה): הבסיס נגבה עד
+        הכמות הכלולה, ומעבר לה מחיר החריגה לכל מושג נוסף. השאירו את שניהם ריקים
+        לתמחור לפי-תוצאה בלבד. התמחור החדש נכנס לתוקף רק כשהוא מודלק במערכת.
+      </p>
 
       <div className="space-y-1">
         <span className={labelClass}>ערוצים</span>

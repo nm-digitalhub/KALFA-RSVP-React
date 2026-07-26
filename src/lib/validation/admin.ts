@@ -192,15 +192,49 @@ const minHoldFloorField = z.coerce
   .number({ error: 'נא להזין רצפת hold תקינה' })
   .nonnegative({ error: 'רצפת ה-hold לא יכולה להיות שלילית' });
 
+// Base+overage (plan S4). Nullable like price_per_reached; non-negative, and
+// included_reached is a whole count. 0 is valid (base-fee-only tier).
+const basePriceField = z.preprocess(
+  (v) => (v === undefined || v === null || v === '' ? null : v),
+  z.union([
+    z.null(),
+    z.coerce
+      .number({ error: 'נא להזין מחיר בסיס תקין' })
+      .nonnegative({ error: 'מחיר הבסיס לא יכול להיות שלילי' }),
+  ]),
+);
+
+const includedReachedField = z.preprocess(
+  (v) => (v === undefined || v === null || v === '' ? null : v),
+  z.union([
+    z.null(),
+    z.coerce
+      .number({ error: 'נא להזין כמות כלולה תקינה' })
+      .int({ error: 'הכמות הכלולה חייבת להיות מספר שלם' })
+      .nonnegative({ error: 'הכמות הכלולה לא יכולה להיות שלילית' }),
+  ]),
+);
+
 export const operationalFieldsSchema = z
   .object({
     price_per_reached: pricePerReachedField,
+    base_price: basePriceField,
+    included_reached: includedReachedField,
     channels: channelsField,
     outreach_schedule: outreachScheduleField,
     min_hold_floor: minHoldFloorField,
     hold_buffer_pct: holdBufferPctField,
   })
   .superRefine((val, ctx) => {
+    // base+overage is all-or-nothing: a base with no included tier (or vice
+    // versa) is a misconfiguration. Both empty = pure per-reached (fine).
+    if ((val.base_price !== null) !== (val.included_reached !== null)) {
+      ctx.addIssue({
+        code: 'custom',
+        path: [val.base_price !== null ? 'included_reached' : 'base_price'],
+        message: 'מחיר בסיס וכמות כלולה חייבים להיות מוגדרים יחד (או שניהם ריקים)',
+      });
+    }
     const campaignEnabled = val.price_per_reached !== null;
     if (!campaignEnabled) return;
     if (val.price_per_reached !== null && val.price_per_reached <= 0) {

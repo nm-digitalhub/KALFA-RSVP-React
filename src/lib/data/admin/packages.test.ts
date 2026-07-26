@@ -51,6 +51,8 @@ function row(overrides: Partial<AdminPackage> = {}): AdminPackage {
     sort_order: 0,
     created_at: '2026-06-20T10:00:00.000Z',
     price_per_reached: null,
+    base_price: null,
+    included_reached: null,
     channels: [],
     outreach_schedule: [],
     min_hold_floor: 0,
@@ -74,6 +76,8 @@ const input: PackageInput = {
 // case for §1.6's "package that isn't a campaign template" state.
 const operational: OperationalFieldsInput = {
   price_per_reached: null,
+  base_price: null,
+  included_reached: null,
   channels: [],
   outreach_schedule: [],
   min_hold_floor: 0,
@@ -91,6 +95,8 @@ const fullSchedule = [
 
 const fullOperational: OperationalFieldsInput = {
   price_per_reached: 4,
+  base_price: 200,
+  included_reached: 200,
   channels: ['whatsapp', 'call'],
   outreach_schedule: fullSchedule,
   min_hold_floor: 50,

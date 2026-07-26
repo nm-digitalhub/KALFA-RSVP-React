@@ -49,6 +49,8 @@ export default async function EditPackagePage({
     active: pkg.active,
     sort_order: pkg.sort_order ?? 0,
     price_per_reached: pkg.price_per_reached ?? '',
+    base_price: pkg.base_price ?? '',
+    included_reached: pkg.included_reached ?? '',
     channels: pkg.channels ?? [],
     outreach_schedule: outreachSchedule,
     min_hold_floor: pkg.min_hold_floor,

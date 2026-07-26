@@ -50,6 +50,8 @@ function readOperationalForm(formData: FormData) {
   }
   return {
     price_per_reached: formData.get('price_per_reached'),
+    base_price: formData.get('base_price'),
+    included_reached: formData.get('included_reached'),
     channels,
     outreach_schedule,
     min_hold_floor: formData.get('min_hold_floor'),

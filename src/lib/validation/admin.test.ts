@@ -185,6 +185,66 @@ describe('operationalFieldsSchema', () => {
     }
   });
 
+  it('accepts base_price + included_reached set together (base+overage, S4)', () => {
+    const result = operationalFieldsSchema.safeParse({
+      ...campaignBase,
+      base_price: '200',
+      included_reached: '200',
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.base_price).toBe(200);
+      expect(result.data.included_reached).toBe(200);
+    }
+  });
+
+  it('coerces empty base_price/included_reached to null (pure per-reached, NOT 0)', () => {
+    const result = operationalFieldsSchema.safeParse({
+      ...campaignBase,
+      base_price: '',
+      included_reached: '',
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.base_price).toBeNull();
+      expect(result.data.included_reached).toBeNull();
+    }
+  });
+
+  it('rejects a base_price without an included_reached (all-or-nothing)', () => {
+    const result = operationalFieldsSchema.safeParse({
+      ...campaignBase,
+      base_price: '200',
+      included_reached: '',
+    });
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      const issue = result.error.issues.find(
+        (i) => i.path.join('.') === 'included_reached',
+      );
+      expect(issue?.message).toBe(
+        'מחיר בסיס וכמות כלולה חייבים להיות מוגדרים יחד (או שניהם ריקים)',
+      );
+    }
+  });
+
+  it('rejects a negative base_price and a non-integer included_reached', () => {
+    expect(
+      operationalFieldsSchema.safeParse({
+        ...campaignBase,
+        base_price: '-1',
+        included_reached: '10',
+      }).success,
+    ).toBe(false);
+    expect(
+      operationalFieldsSchema.safeParse({
+        ...campaignBase,
+        base_price: '200',
+        included_reached: '10.5',
+      }).success,
+    ).toBe(false);
+  });
+
   it('converts the hold_buffer_pct percent input to a stored fraction', () => {
     // The form takes percent ("10" = +10%); the schema stores the fraction
     // that computeHoldAmount multiplies by directly.
