@@ -66,6 +66,26 @@ export async function getCloseChargeEnabled(): Promise<boolean> {
   }
 }
 
+// Gate for the flat-base + included + overage pricing model (plan S3). FALSE
+// (default) ⇒ new campaigns snapshot base/included = 0 (pure per-reached,
+// unchanged today). Flip to TRUE only after agreement v4 + attorney sign-off —
+// it activates base charging for NEW campaigns. Fail-closed: any read error ⇒
+// false (stay on the legacy per-reached model).
+export async function getBaseOveragePricingEnabled(): Promise<boolean> {
+  try {
+    const admin = createAdminClient();
+    const { data, error } = await admin
+      .from('app_settings')
+      .select('*')
+      .eq('id', true)
+      .maybeSingle();
+    if (error || !data) return false;
+    return (data as Record<string, unknown>).base_overage_pricing_enabled === true;
+  } catch {
+    return false;
+  }
+}
+
 // Non-secret fields the browser legitimately needs for tokenization. Returned
 // to the pay page and passed as props to the client PaymentForm.
 export async function getSumitPublicConfig(): Promise<SumitPublicConfig | null> {

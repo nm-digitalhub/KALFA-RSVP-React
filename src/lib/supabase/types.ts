@@ -159,6 +159,7 @@ export type Database = {
           agr_record_retention_months: string | null
           agr_retention_days: string | null
           agr_service_activation_window: string | null
+          base_overage_pricing_enabled: boolean
           billing_exposure_gate: boolean
           call_consent_required: boolean
           campaign_holds_enabled: boolean
@@ -236,6 +237,7 @@ export type Database = {
           agr_record_retention_months?: string | null
           agr_retention_days?: string | null
           agr_service_activation_window?: string | null
+          base_overage_pricing_enabled?: boolean
           billing_exposure_gate?: boolean
           call_consent_required?: boolean
           campaign_holds_enabled?: boolean
@@ -313,6 +315,7 @@ export type Database = {
           agr_record_retention_months?: string | null
           agr_retention_days?: string | null
           agr_service_activation_window?: string | null
+          base_overage_pricing_enabled?: boolean
           billing_exposure_gate?: boolean
           call_consent_required?: boolean
           campaign_holds_enabled?: boolean

@@ -10,6 +10,7 @@ import {
 import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { sendSlackAlert } from '@/lib/alerts/slack';
+import { getBaseOveragePricingEnabled } from '@/lib/data/payments';
 import { celebrantsCompleteFor } from '@/lib/validation/schemas';
 import type { Database, Json } from '@/lib/supabase/types';
 
@@ -77,6 +78,38 @@ export function computeHoldAmount(
   return Math.max(minHoldFloor, sized);
 }
 
+// Pure: the flat-base + included + overage charge ceiling = base + max(0,
+// maxContacts − included) × overage, rounded to agorot. With base=0 & included=0
+// this equals the legacy computeCeiling(overage, maxContacts) — so a gated-OFF
+// campaign (base/included snapshotted 0) keeps today's exact ceiling.
+export function computeCeilingBaseOverage(
+  base: number,
+  included: number,
+  overage: number,
+  maxContacts: number,
+): number {
+  const gross = base + Math.max(0, maxContacts - included) * overage;
+  return Math.round(gross * 100) / 100;
+}
+
+// Pure: the flat-base + included + overage J5 hold = (base + max(0, covered −
+// included) × overage) × (1 + buffer), rounded to agorot, floored at
+// min_hold_floor. With base=0 & included=0 this equals the legacy
+// computeHoldAmount(covered, overage, floor, buffer) — behaviour-neutral for the
+// gated-OFF path. The base term makes the hold cover the always-charged fee.
+export function computeHoldAmountBaseOverage(
+  base: number,
+  included: number,
+  overage: number,
+  covered: number,
+  minHoldFloor: number,
+  holdBufferPct: number,
+): number {
+  const gross = base + Math.max(0, covered - included) * overage;
+  const sized = Math.round(gross * (1 + holdBufferPct) * 100) / 100;
+  return Math.max(minHoldFloor, sized);
+}
+
 // A single touchpoint in the event-anchored outreach schedule (§10) — a friendly
 // drip leading up to the event to maximize reached contacts.
 export type OutreachTouchpoint = {
@@ -92,6 +125,10 @@ export type CampaignTemplate = {
   id: string;
   name: string;
   price_per_reached: number;
+  // Flat-base + included tier (plan S3). 0 when the package has no base set.
+  // price_per_reached is the per-reached OVERAGE rate above `included_reached`.
+  base_price: number;
+  included_reached: number;
   description: string | null;
   channels: Channel[];
   outreach_schedule: OutreachTouchpoint[];
@@ -101,7 +138,9 @@ export async function listCampaignTemplates(): Promise<CampaignTemplate[]> {
   const admin = createAdminClient();
   const { data, error } = await admin
     .from('packages')
-    .select('id, name, price_per_reached, description, channels, outreach_schedule')
+    .select(
+      'id, name, price_per_reached, base_price, included_reached, description, channels, outreach_schedule',
+    )
     .eq('active', true)
     .not('price_per_reached', 'is', null)
     .order('sort_order', { ascending: true });
@@ -114,6 +153,8 @@ export async function listCampaignTemplates(): Promise<CampaignTemplate[]> {
       id: p.id,
       name: p.name,
       price_per_reached: Number(p.price_per_reached),
+      base_price: Number(p.base_price ?? 0),
+      included_reached: Number(p.included_reached ?? 0),
       description: p.description,
       channels: p.channels ?? [],
       outreach_schedule:
@@ -189,6 +230,13 @@ export async function createCampaign(eventId: string): Promise<{ id: string }> {
     throw new Error('למסלול השירות לא הוגדרו ערוצי פנייה');
   }
   const price = template.price_per_reached;
+  // Base+overage gate (plan S3): OFF (default) ⇒ snapshot base/included = 0 ⇒
+  // the close-charge formula reduces to pure per-reached (today's behaviour).
+  // ON ⇒ snapshot the package's base/included, activating base charging for this
+  // NEW campaign. The snapshot pins the terms the customer signs against.
+  const useBaseOverage = await getBaseOveragePricingEnabled();
+  const base = useBaseOverage ? template.base_price : 0;
+  const included = useBaseOverage ? template.included_reached : 0;
 
   const admin = createAdminClient();
   const { data, error } = await admin
@@ -198,8 +246,10 @@ export async function createCampaign(eventId: string): Promise<{ id: string }> {
       status: 'pending_approval',
       template_id: template.id,
       price_per_reached: price, // locked copy from the canonical template
+      base_price: base, // 0 unless the base+overage gate is on
+      included_reached: included, // 0 unless the base+overage gate is on
       max_contacts: maxContacts, // derived from the unique-contact count (§7)
-      max_charge_ceiling: computeCeiling(price, maxContacts),
+      max_charge_ceiling: computeCeilingBaseOverage(base, included, price, maxContacts),
       allowed_channels: template.channels, // from the template, not owner choice
       start_at: null,
       close_at: event.event_date, // window closes at the event date
@@ -508,7 +558,7 @@ export async function prepareCampaignHold(
 
   const { data: campaign, error } = await admin
     .from('campaigns')
-    .select('event_id, price_per_reached, template_id')
+    .select('event_id, price_per_reached, template_id, base_price, included_reached')
     .eq('id', campaignId)
     .maybeSingle();
   if (error) throw new Error('טעינת הקמפיין נכשלה');
@@ -518,6 +568,9 @@ export async function prepareCampaignHold(
   if (!Number.isFinite(price) || price <= 0) {
     throw new Error('מחיר לאיש קשר אינו תקין');
   }
+  // Base+overage snapshot frozen at create (plan S3); 0/0 = pre-model campaign.
+  const base = Number(campaign.base_price ?? 0);
+  const included = Number(campaign.included_reached ?? 0);
 
   // full = the CURRENT unique-contact count (verifies ownership server-side).
   const full = await countUniqueContactsForEvent(campaign.event_id);
@@ -541,18 +594,22 @@ export async function prepareCampaignHold(
   );
   const holdBasis = Math.max(covered, frozenSetSize);
 
-  // Recompute + persist the ceiling (full × price) and max_contacts (= full,
-  // NON-NULL). The ceiling stays full × price; it is never lowered to covered.
-  const ceiling = computeCeiling(price, full);
+  // Recompute + persist the ceiling and max_contacts (= full, NON-NULL) from the
+  // CURRENT full count. Base+overage ceiling = base + max(0, full − included) ×
+  // overage (with base/included 0 this is full × price — unchanged); never
+  // lowered to covered, and always ≥ base so the flat fee is never capped away.
+  const ceiling = computeCeilingBaseOverage(base, included, price, full);
   const { error: upErr } = await admin
     .from('campaigns')
     .update({ max_contacts: full, max_charge_ceiling: ceiling })
     .eq('id', campaignId);
   if (upErr) throw new Error('עדכון תקרת החיוב נכשל');
 
-  const holdAmount = computeHoldAmount(
-    holdBasis,
+  const holdAmount = computeHoldAmountBaseOverage(
+    base,
+    included,
     price,
+    holdBasis,
     minHoldFloor,
     holdBufferPct,
   );

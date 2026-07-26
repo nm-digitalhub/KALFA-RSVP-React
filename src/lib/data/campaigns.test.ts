@@ -22,6 +22,11 @@ vi.mock('@/lib/data/contacts', () => ({
 // Ops alerting is additive + fail-safe; stub it so lifecycle emits are assertable
 // and the real Slack WebClient is never loaded in unit tests.
 vi.mock('@/lib/alerts/slack', () => ({ sendSlackAlert: vi.fn() }));
+// Base+overage gate (plan S3): default OFF so createCampaign snapshots 0/0 =
+// today's pure per-reached. Per-test override for the gate-ON path.
+vi.mock('@/lib/data/payments', () => ({
+  getBaseOveragePricingEnabled: vi.fn().mockResolvedValue(false),
+}));
 
 import { createMockSupabase, type QueryResult } from '@/test/supabase-mock';
 import { createAdminClient } from '@/lib/supabase/admin';
@@ -52,8 +57,10 @@ import {
 } from '@/lib/data/contacts';
 import {
   computeCeiling,
+  computeCeilingBaseOverage,
   computeCovered,
   computeHoldAmount,
+  computeHoldAmountBaseOverage,
   prepareCampaignHold,
   getCampaignForHold,
   lockCampaignForHold,
@@ -72,6 +79,7 @@ import {
   getThankyouSchedule,
   updateThankyouSchedule,
 } from '@/lib/data/campaigns';
+import { getBaseOveragePricingEnabled } from '@/lib/data/payments';
 
 function adminWith<T>(result: QueryResult<T>) {
   const { client, builder } = createMockSupabase<T>(result);
@@ -150,6 +158,43 @@ describe('computeHoldAmount (J5 hold = security only)', () => {
 
   it('rounds to agorot (2 decimals), no float drift', () => {
     expect(computeHoldAmount(3, 0.1, 0, 0)).toBe(0.3); // not 0.30000000000000004
+  });
+});
+
+describe('computeCeilingBaseOverage (S3)', () => {
+  it('reduces to the legacy full×price when base=0 & included=0 (behaviour-neutral)', () => {
+    expect(computeCeilingBaseOverage(0, 0, 4, 250)).toBe(computeCeiling(4, 250)); // 1000
+    expect(computeCeilingBaseOverage(0, 0, 4, 100)).toBe(400);
+  });
+
+  it('new model: base + overage only above the included tier', () => {
+    expect(computeCeilingBaseOverage(200, 200, 4, 200)).toBe(200); // all included
+    expect(computeCeilingBaseOverage(200, 200, 4, 50)).toBe(200); // fewer than included → base only, never below ₪200
+    expect(computeCeilingBaseOverage(200, 200, 4, 300)).toBe(600); // 200 + 100×4
+  });
+
+  it('rounds to agorot', () => {
+    expect(computeCeilingBaseOverage(0, 0, 0.1, 3)).toBe(0.3);
+  });
+});
+
+describe('computeHoldAmountBaseOverage (S3)', () => {
+  it('reduces to the legacy computeHoldAmount when base=0 & included=0', () => {
+    expect(computeHoldAmountBaseOverage(0, 0, 4, 300, 0, 0)).toBe(
+      computeHoldAmount(300, 4, 0, 0),
+    ); // 1200
+    expect(computeHoldAmountBaseOverage(0, 0, 4, 40, 100, 0)).toBe(160);
+    expect(computeHoldAmountBaseOverage(0, 0, 4, 300, 0, 0.1)).toBe(1320);
+  });
+
+  it('new model: reserves base + overage above included, buffer on the whole', () => {
+    expect(computeHoldAmountBaseOverage(200, 200, 4, 50, 0, 0)).toBe(200); // small event → just the base
+    expect(computeHoldAmountBaseOverage(200, 200, 4, 300, 0, 0)).toBe(600); // 200 + 100×4
+    expect(computeHoldAmountBaseOverage(200, 200, 4, 300, 0, 0.1)).toBe(660); // ×1.1
+  });
+
+  it('floors at min_hold_floor', () => {
+    expect(computeHoldAmountBaseOverage(0, 0, 4, 10, 100, 0)).toBe(100); // 40 < 100
   });
 });
 
@@ -357,6 +402,59 @@ describe('createCampaign (§5.5#5א — snapshot locked from the canonical templ
     // Derived server-side, never client input: 100 contacts × ₪4.
     expect(inserted.max_contacts).toBe(100);
     expect(inserted.max_charge_ceiling).toBe(400);
+  });
+
+  it('gate ON: snapshots base_price/included_reached from the package + base+overage ceiling', async () => {
+    // Once-only so the gate does not leak to sibling tests (clearAllMocks keeps
+    // implementations).
+    vi.mocked(getBaseOveragePricingEnabled).mockResolvedValueOnce(true);
+    vi.mocked(requireOwnedEvent).mockResolvedValue(ownedEvent());
+    vi.mocked(countUniqueContactsForEvent).mockResolvedValue(100);
+
+    const server = serverWith<Record<string, unknown>>({ data: null, error: null });
+    vi.spyOn(server.builder, 'then')
+      .mockImplementationOnce((f) =>
+        f({
+          data: {
+            event_type: 'wedding',
+            celebrants: { groom: 'דוד לוי', bride: 'שרה כהן' },
+            venue_name: 'אולמי הגן',
+          },
+          error: null,
+        }),
+      )
+      .mockImplementationOnce((f) => f({ data: null, error: null }));
+
+    const { builder } = adminWith<unknown>({ data: null, error: null });
+    vi.spyOn(builder, 'then')
+      .mockImplementationOnce((f) =>
+        f({
+          data: [
+            {
+              id: 'pkg1',
+              name: 'x',
+              price_per_reached: 4,
+              base_price: 200,
+              included_reached: 200,
+              description: null,
+              channels: ['whatsapp'],
+              outreach_schedule: [],
+            },
+          ],
+          error: null,
+        }),
+      )
+      .mockImplementationOnce((f) => f({ data: { id: 'c-new' }, error: null }));
+
+    await createCampaign('e1');
+    const inserted = vi.mocked(builder.insert).mock.calls[0][0] as Record<
+      string,
+      unknown
+    >;
+    expect(inserted.base_price).toBe(200);
+    expect(inserted.included_reached).toBe(200);
+    // ceiling = 200 + max(0, 100 − 200) × 4 = 200 (fewer contacts than included).
+    expect(inserted.max_charge_ceiling).toBe(200);
   });
 });
 
