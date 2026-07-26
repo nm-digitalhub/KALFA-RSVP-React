@@ -4,8 +4,10 @@ import type { User } from '@supabase/supabase-js';
 import { createMockSupabase } from '@/test/supabase-mock';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { requirePlatformPermission } from '@/lib/auth/dal';
+import { logActivity } from '@/lib/data/activity';
 import {
   listContactMessages,
+  updateContactStatus,
   CONTACT_COLUMNS,
   type ContactMessage,
 } from './contacts';
@@ -13,6 +15,7 @@ import {
 vi.mock('server-only', () => ({}));
 vi.mock('@/lib/supabase/admin', () => ({ createAdminClient: vi.fn() }));
 vi.mock('@/lib/auth/dal', () => ({ requirePlatformPermission: vi.fn() }));
+vi.mock('@/lib/data/activity', () => ({ logActivity: vi.fn() }));
 
 const ADMIN_ID = 'admin-1';
 function adminUser(): User {
@@ -27,6 +30,11 @@ function row(overrides: Partial<ContactMessage> = {}): ContactMessage {
     phone: '0501234567',
     message: 'שלום',
     created_at: '2026-06-20T10:00:00.000Z',
+    status: 'new',
+    topic: null,
+    user_id: null,
+    handled_at: null,
+    draft_reply: null,
     ...overrides,
   };
 }
@@ -117,5 +125,48 @@ describe('listContactMessages', () => {
     );
 
     await expect(listContactMessages()).rejects.toThrow('טעינת הפניות נכשלה');
+  });
+});
+
+describe('updateContactStatus', () => {
+  it('updates status, stamps handled_at for terminal statuses, logs previous status', async () => {
+    const { client, builder } = createMockSupabase<{ status: string }>({
+      data: { status: 'new' },
+      error: null,
+    });
+    vi.mocked(createAdminClient).mockReturnValue(
+      client as unknown as ReturnType<typeof createAdminClient>,
+    );
+
+    await updateContactStatus('11111111-1111-4111-8111-111111111111', 'done');
+
+    expect(client.from).toHaveBeenCalledWith('contact_messages');
+    expect(builder.update).toHaveBeenCalledWith(
+      expect.objectContaining({ status: 'done', handled_at: expect.any(String) }),
+    );
+    expect(logActivity).toHaveBeenCalledWith({
+      action: 'contact.status_updated',
+      meta: expect.objectContaining({
+        contactMessageId: '11111111-1111-4111-8111-111111111111',
+        previousStatus: 'new',
+        status: 'done',
+      }),
+    });
+  });
+
+  it('clears handled_at when moving back to a non-terminal status', async () => {
+    const { client, builder } = createMockSupabase<{ status: string }>({
+      data: { status: 'done' },
+      error: null,
+    });
+    vi.mocked(createAdminClient).mockReturnValue(
+      client as unknown as ReturnType<typeof createAdminClient>,
+    );
+
+    await updateContactStatus('11111111-1111-4111-8111-111111111111', 'in_progress');
+
+    expect(builder.update).toHaveBeenCalledWith(
+      expect.objectContaining({ status: 'in_progress', handled_at: null }),
+    );
   });
 });
