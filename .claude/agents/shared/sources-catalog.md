@@ -144,6 +144,20 @@ israeli-compliance-advisor).
   normative citation (that is רשומות). Case-law pages login-gated.
 - **kolzchut.org.il** (incl. its MediaWiki API `/w/api.php`) — Azure-WAF 403
   from this server; use Wayback (discovery-only) OR the hosted MCP below.
+- **israel-law MCP — WORKING, configured** (`claude mcp list` → `israel-law ✔`;
+  installed at `~/.claude/mcp/israel-law/pkg`, local scope, project beta;
+  needs `ISRAEL_LAW_DB_PATH` env — set in the config). `@ansvar/israel-law-mcp`
+  v1.1.0 with a BUNDLED SQLite corpus (works offline ⇒ immune to the geo-block).
+  13 tools: search_legislation, get_provision, validate_citation,
+  build_legal_stance, check_currency, EU-mapping, list_sources…
+  **Limits (measured 2026-07-26):** corpus is the ENGLISH official translations
+  (Hebrew queries return 0 — search in English; Hebrew remains the authoritative
+  language, verify wording via Nevo/רשומות); 10 statutes only — privacy/cyber
+  side (הגנת הפרטיות, תקנות אבטחת מידע, תקשורת/30א domain, מחשבים, **חתימה
+  אלקטרונית**, חברות, נתוני אשראי, חופש המידע…) — NOT the consumer-contract
+  six (except e-signature); data snapshot 2026-02-20. Published bin is broken
+  (`dist/index.js` missing) — we run `dist/src/index.js` directly. The hosted
+  Vercel variant is DEAD (404).
 - **Kol Zchut MCP** (`@skills-il/kolzchut-mcp`) — NOT viable from this server
   (measured 2026-07-26): `agentskills.co.il/mcp` is a catalog WEBPAGE, not an
   MCP endpoint (HTTP 405 on an MCP initialize POST); the npm stdio server
