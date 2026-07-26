@@ -106,23 +106,12 @@ const PREVIEW_GUESTS = [
   { n: 'נועה אבני', m: '1 אורח', label: 'לא מגיע', cls: 'bg-rose-50 text-rose-700' },
 ];
 
-const FOOTER_COLS: {
-  title: string;
-  links: { label: string; href?: string }[];
-}[] = [
-  { title: 'מוצר', links: [{ label: 'יכולות' }, { label: 'איך זה עובד' }, { label: 'אבטחה' }] },
-  {
-    title: 'אירועים',
-    links: [{ label: 'חתונות' }, { label: 'בר/בת מצווה' }, { label: 'כנסים' }, { label: 'אירועי חברה' }],
-  },
-  {
-    title: 'חברה',
-    links: [
-      { label: 'אודות' },
-      { label: 'יצירת קשר', href: '/contact' },
-      { label: 'תמיכה', href: '/contact?t=support' },
-    ],
-  },
+// Decorative marketing columns — placeholder text, not links. The real,
+// functional links live in the header nav and the footer bottom bar.
+const FOOTER_COLS = [
+  { title: 'מוצר', links: ['יכולות', 'איך זה עובד', 'אבטחה'] },
+  { title: 'אירועים', links: ['חתונות', 'בר/בת מצווה', 'כנסים', 'אירועי חברה'] },
+  { title: 'חברה', links: ['אודות', 'יצירת קשר', 'תמיכה'] },
 ];
 
 function Eyebrow({ icon: Icon, children }: { icon: LucideIcon; children: React.ReactNode }) {
@@ -151,6 +140,7 @@ export default async function HomePage() {
             <a href="#features" className="text-sm font-medium text-muted-foreground hover:text-foreground">יכולות</a>
             <a href="#how" className="text-sm font-medium text-muted-foreground hover:text-foreground">איך זה עובד</a>
             <a href="#trust" className="text-sm font-medium text-muted-foreground hover:text-foreground">אמון</a>
+            <Link href="/contact" className="text-sm font-medium text-muted-foreground hover:text-foreground">יצירת קשר</Link>
           </nav>
           <div className="flex items-center gap-3">
             {user ? (
@@ -468,24 +458,17 @@ export default async function HomePage() {
               <div key={col.title}>
                 <div className="mb-3.5 font-semibold text-white">{col.title}</div>
                 <div className="grid gap-2.5">
-                  {col.links.map((l) =>
-                    l.href ? (
-                      <Link key={l.label} href={l.href} className="text-sm text-white/60 hover:text-white">
-                        {l.label}
-                      </Link>
-                    ) : (
-                      <span key={l.label} className="text-sm text-white/60">
-                        {l.label}
-                      </span>
-                    ),
-                  )}
+                  {col.links.map((l) => (
+                    <span key={l} className="text-sm text-white/60">{l}</span>
+                  ))}
                 </div>
               </div>
             ))}
           </div>
           <div className="mt-8 flex flex-col gap-4 border-t border-white/10 pt-5 text-xs sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
             <span>© 2026 KALFA · כל הזכויות שמורות</span>
-            <nav className="flex flex-wrap items-center gap-x-4 gap-y-2" aria-label="קישורים משפטיים">
+            <nav className="flex flex-wrap items-center gap-x-4 gap-y-2" aria-label="קישורי תחתית">
+              <Link href="/contact" className="text-white/60 hover:text-white">יצירת קשר</Link>
               <Link href="/privacy" className="text-white/60 hover:text-white">מדיניות פרטיות</Link>
               <Link href="/terms" className="text-white/60 hover:text-white">תקנון</Link>
               <Link href="/cookies" className="text-white/60 hover:text-white">מדיניות עוגיות</Link>
