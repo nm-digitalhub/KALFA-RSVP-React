@@ -36,6 +36,11 @@
 //     run (.claude/fleet/roles/support-drafter.examples.md), and prints the
 //     "sent nearly as-is" rate that baselines future autonomy. Reads submitter
 //     PII ONLY to redact it — nothing raw reaches the corpus or stdout.
+//   business-facts
+//     Stage-2 grounding: prints the read-only, PII/secret-free pricing facts the
+//     support-drafter quotes for a pricing inquiry (canonical package + the live
+//     base+overage gate → the EFFECTIVE model). Lets the drafter write the real
+//     price instead of a `[מחירים]` placeholder; a human still reviews the draft.
 //
 // PII rule: requests are owner-facing internal ops traffic. Callers must not
 // put guest personal data in title/body; the Slack layer redacts as
@@ -84,6 +89,8 @@ import {
   summarizeMetric,
   toRedactedExample,
 } from '@/lib/fleet/corrections';
+import { buildBusinessFacts } from '@/lib/fleet/business-facts';
+import { getBaseOveragePricingEnabled } from '@/lib/data/payments';
 import { sendPushToUser } from '@/lib/data/push-subscriptions';
 import { createAdminClient } from '@/lib/supabase/admin';
 import type { Database, Json } from '@/lib/supabase/types';
@@ -561,6 +568,40 @@ async function cmdDistillCorrections(args: Record<string, string | undefined>): 
   );
 }
 
+// Stage-2 grounding (plan S5): the read-only, PII/secret-free business facts the
+// support-drafter quotes for a pricing inquiry — so it writes the REAL price
+// instead of a `[מחירים]` placeholder. Reads the canonical active campaign
+// package + the live base+overage gate, and surfaces the EFFECTIVE model (pure
+// per-reached while the gate is off; base+overage when on). packages carries no
+// PII/secrets; the gate is read via the fail-closed accessor (a boolean, never
+// the raw app_settings row). A human still reviews every draft before it sends.
+async function cmdBusinessFacts(): Promise<void> {
+  const admin = createAdminClient();
+  const gateOn = await getBaseOveragePricingEnabled();
+  // The canonical campaign package — the same row resolveCanonicalTemplate picks
+  // (active, campaign-enabled, lowest sort_order).
+  const { data, error } = await admin
+    .from('packages')
+    .select('name, price_per_reached, base_price, included_reached, channels')
+    .eq('active', true)
+    .not('price_per_reached', 'is', null)
+    .order('sort_order', { ascending: true })
+    .limit(1)
+    .maybeSingle();
+  if (error) fail(`business-facts read failed: ${error.message}`);
+
+  const pkg = data
+    ? {
+        name: data.name,
+        price_per_reached: Number(data.price_per_reached ?? 0),
+        base_price: Number(data.base_price ?? 0),
+        included_reached: Number(data.included_reached ?? 0),
+        channels: (data.channels ?? []) as string[],
+      }
+    : null;
+  console.log(JSON.stringify(buildBusinessFacts(gateOn, pkg), null, 2));
+}
+
 async function main(): Promise<void> {
   const { positionals, values } = parseArgs({
     allowPositionals: true,
@@ -600,9 +641,11 @@ async function main(): Promise<void> {
       return cmdDraftReply(values);
     case 'distill-corrections':
       return cmdDistillCorrections(values);
+    case 'business-facts':
+      return cmdBusinessFacts();
     default:
       fail(
-        'usage: fleet-agent-cli <request|poll|verdicts|ack|expire|digest|sql|draft-reply|distill-corrections> [options]',
+        'usage: fleet-agent-cli <request|poll|verdicts|ack|expire|digest|sql|draft-reply|distill-corrections|business-facts> [options]',
       );
   }
 }
