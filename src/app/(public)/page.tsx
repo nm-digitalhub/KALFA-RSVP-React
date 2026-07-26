@@ -106,10 +106,23 @@ const PREVIEW_GUESTS = [
   { n: 'נועה אבני', m: '1 אורח', label: 'לא מגיע', cls: 'bg-rose-50 text-rose-700' },
 ];
 
-const FOOTER_COLS = [
-  { title: 'מוצר', links: ['יכולות', 'איך זה עובד', 'אבטחה'] },
-  { title: 'אירועים', links: ['חתונות', 'בר/בת מצווה', 'כנסים', 'אירועי חברה'] },
-  { title: 'חברה', links: ['אודות', 'יצירת קשר', 'תמיכה'] },
+const FOOTER_COLS: {
+  title: string;
+  links: { label: string; href?: string }[];
+}[] = [
+  { title: 'מוצר', links: [{ label: 'יכולות' }, { label: 'איך זה עובד' }, { label: 'אבטחה' }] },
+  {
+    title: 'אירועים',
+    links: [{ label: 'חתונות' }, { label: 'בר/בת מצווה' }, { label: 'כנסים' }, { label: 'אירועי חברה' }],
+  },
+  {
+    title: 'חברה',
+    links: [
+      { label: 'אודות' },
+      { label: 'יצירת קשר', href: '/contact' },
+      { label: 'תמיכה', href: '/contact?t=support' },
+    ],
+  },
 ];
 
 function Eyebrow({ icon: Icon, children }: { icon: LucideIcon; children: React.ReactNode }) {
@@ -455,9 +468,17 @@ export default async function HomePage() {
               <div key={col.title}>
                 <div className="mb-3.5 font-semibold text-white">{col.title}</div>
                 <div className="grid gap-2.5">
-                  {col.links.map((l) => (
-                    <span key={l} className="text-sm text-white/60">{l}</span>
-                  ))}
+                  {col.links.map((l) =>
+                    l.href ? (
+                      <Link key={l.label} href={l.href} className="text-sm text-white/60 hover:text-white">
+                        {l.label}
+                      </Link>
+                    ) : (
+                      <span key={l.label} className="text-sm text-white/60">
+                        {l.label}
+                      </span>
+                    ),
+                  )}
                 </div>
               </div>
             ))}

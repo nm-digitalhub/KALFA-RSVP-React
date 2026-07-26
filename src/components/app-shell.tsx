@@ -7,6 +7,7 @@ import {
   CalendarDays,
   ChevronsUpDown,
   LayoutDashboard,
+  LifeBuoy,
   LogOut,
   Menu,
   Search,
@@ -58,6 +59,7 @@ const NAV: NavItem[] = [
   { href: '/app', label: 'לוח בקרה', icon: LayoutDashboard },
   { href: '/app/events', label: 'האירועים שלי', icon: CalendarDays },
   { href: '/app/settings', label: 'הגדרות', icon: Settings },
+  { href: '/contact?t=support', label: 'עזרה ותמיכה', icon: LifeBuoy },
 ];
 
 // '/app' is active only on an exact match; the rest match their subtree so
