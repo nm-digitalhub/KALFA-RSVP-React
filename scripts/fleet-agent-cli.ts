@@ -1,5 +1,6 @@
-// Fleet agent CLI — the ONLY write path autonomous fleet roles have into the
-// owner<->fleet ledger (public.fleet_requests) and the notification fan-out.
+// Fleet agent CLI — the write path autonomous fleet roles have into the
+// owner<->fleet ledger (public.fleet_requests), the notification fan-out, and
+// the ONE narrow customer-facing write below (`draft-reply`).
 //
 // Runs as service_role via createAdminClient() (env from .env.local through
 // `node --env-file`, same pattern as sync-voximplant-sa). Fleet roles invoke
@@ -22,10 +23,17 @@
 //     Marks pending requests past expires_at as expired (chief-of-staff sweep).
 //   digest --title T --body B [--level info|warn|error]
 //     Posts the daily fleet digest to Slack via the existing alerting stack.
+//   draft-reply --id UUID --body TEXT
+//     support-drafter's ONLY write: sets contact_messages.draft_reply +
+//     draft_created_at for a still-'new', not-yet-drafted inquiry. NEVER sends
+//     to the customer (a human reviews the draft in /admin/contacts and sends).
+//     Idempotent + scope-limited: touches exactly 2 columns, 1 row, only when
+//     `status='new' AND draft_reply IS NULL` (the guard is the loop-breaker).
 //
 // PII rule: requests are owner-facing internal ops traffic. Callers must not
 // put guest personal data in title/body; the Slack layer redacts as
-// defense-in-depth but the ledger itself is not redacted.
+// defense-in-depth but the ledger itself is not redacted. `draft-reply` writes
+// a staff-facing DRAFT only; it is never emailed by this CLI.
 
 import { parseArgs } from 'node:util';
 
@@ -409,6 +417,54 @@ async function cmdDigest(args: Record<string, string | undefined>): Promise<void
   console.log(JSON.stringify({ posted: true, title, level }, null, 2));
 }
 
+// support-drafter's narrow write. Sets draft_reply + draft_created_at on a
+// contact_messages row ONLY when it is still 'new' and has no draft yet. The
+// `status='new' AND draft_reply IS NULL` predicate is enforced in the query
+// itself, so:
+//   - it never overwrites an existing draft or a human's sent reply,
+//   - it is idempotent (a drafted row drops out of the role's next read set,
+//     breaking any re-draft loop),
+//   - 0 rows updated is a no-op BY DESIGN (already drafted / not new / unknown
+//     id), reported as written:false, not an error.
+// It NEVER emails the customer — sending stays a human action in /admin/contacts.
+const DRAFT_REPLY_MAX = 4000;
+
+async function cmdDraftReply(args: Record<string, string | undefined>): Promise<void> {
+  const id = requireOption(args.id, 'id');
+  const body = requireOption(args.body, 'body');
+  if (body.length > DRAFT_REPLY_MAX) {
+    fail(`--body exceeds ${DRAFT_REPLY_MAX} characters`);
+  }
+
+  const admin = createAdminClient();
+  const { data, error } = await admin
+    .from('contact_messages')
+    .update({ draft_reply: body, draft_created_at: new Date().toISOString() })
+    .eq('id', id)
+    .eq('status', 'new')
+    .is('draft_reply', null)
+    .select('id, status, draft_created_at');
+
+  if (error) fail(`draft-reply failed: ${error.message}`);
+
+  const rows = data ?? [];
+  console.log(
+    JSON.stringify(
+      {
+        written: rows.length > 0,
+        reason:
+          rows.length > 0
+            ? null
+            : 'not writable (already drafted, not new, or unknown id) — no-op by design',
+        rows,
+      },
+      null,
+      2,
+    ),
+  );
+  if (rows.length === 0) process.exitCode = 2;
+}
+
 async function main(): Promise<void> {
   const { positionals, values } = parseArgs({
     allowPositionals: true,
@@ -443,8 +499,12 @@ async function main(): Promise<void> {
       return cmdDigest(values);
     case 'sql':
       return cmdSql(values);
+    case 'draft-reply':
+      return cmdDraftReply(values);
     default:
-      fail('usage: fleet-agent-cli <request|poll|verdicts|ack|expire|digest|sql> [options]');
+      fail(
+        'usage: fleet-agent-cli <request|poll|verdicts|ack|expire|digest|sql|draft-reply> [options]',
+      );
   }
 }
 
