@@ -145,6 +145,7 @@ const CATEGORY_KEYS: readonly AlertCategoryKey[] = [
   'campaign_billing',
   'send_health',
   'security',
+  'customer_inquiry',
 ];
 
 const toggleSchema = z.object({

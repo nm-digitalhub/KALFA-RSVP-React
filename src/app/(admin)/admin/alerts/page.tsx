@@ -31,6 +31,7 @@ const CATEGORY_LABEL: Record<string, string> = {
   send_health: 'תקינות שליחה',
   campaign_billing: 'קמפיינים וחיוב',
   security: 'אבטחה',
+  customer_inquiry: 'פניות לקוחות',
 };
 
 function levelClass(level: string): string {

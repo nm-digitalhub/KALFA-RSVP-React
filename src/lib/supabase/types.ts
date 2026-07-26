@@ -184,6 +184,7 @@ export type Database = {
           reasonable_coverage_contacts: number
           slack_alert_campaign_billing: boolean
           slack_alert_channel_id: string | null
+          slack_alert_customer_inquiry: boolean
           slack_alert_errors: boolean
           slack_alert_security: boolean
           slack_alert_send_health: boolean
@@ -260,6 +261,7 @@ export type Database = {
           reasonable_coverage_contacts?: number
           slack_alert_campaign_billing?: boolean
           slack_alert_channel_id?: string | null
+          slack_alert_customer_inquiry?: boolean
           slack_alert_errors?: boolean
           slack_alert_security?: boolean
           slack_alert_send_health?: boolean
@@ -336,6 +338,7 @@ export type Database = {
           reasonable_coverage_contacts?: number
           slack_alert_campaign_billing?: boolean
           slack_alert_channel_id?: string | null
+          slack_alert_customer_inquiry?: boolean
           slack_alert_errors?: boolean
           slack_alert_security?: boolean
           slack_alert_send_health?: boolean

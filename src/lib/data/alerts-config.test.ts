@@ -21,6 +21,7 @@ const ROW = {
   slack_alert_campaign_billing: false,
   slack_alert_send_health: true,
   slack_alert_security: false,
+  slack_alert_customer_inquiry: true,
   slack_mention_user_id: 'U0ABC123',
   slack_mention_min_level: 'warn',
 };
@@ -51,6 +52,7 @@ describe('getAlertsConfig', () => {
       campaignBilling: false,
       sendHealth: true,
       security: false,
+      customerInquiry: true,
     });
   });
 
@@ -127,6 +129,7 @@ describe('categoryEnabled', () => {
       campaignBilling: false,
       sendHealth: true,
       security: false,
+      customerInquiry: true,
     },
   };
 
@@ -135,5 +138,6 @@ describe('categoryEnabled', () => {
     expect(categoryEnabled(cfg, 'campaign_billing')).toBe(false);
     expect(categoryEnabled(cfg, 'send_health')).toBe(true);
     expect(categoryEnabled(cfg, 'security')).toBe(false);
+    expect(categoryEnabled(cfg, 'customer_inquiry')).toBe(true);
   });
 });

@@ -3,11 +3,13 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createMockSupabase } from '@/test/supabase-mock';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { logActivity } from '@/lib/data/activity';
+import { sendSlackAlert } from '@/lib/alerts/slack';
 import { createContactMessage, createCallbackRequest } from './inquiries';
 
 vi.mock('server-only', () => ({}));
 vi.mock('@/lib/supabase/admin', () => ({ createAdminClient: vi.fn() }));
 vi.mock('@/lib/data/activity', () => ({ logActivity: vi.fn() }));
+vi.mock('@/lib/alerts/slack', () => ({ sendSlackAlert: vi.fn() }));
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -52,18 +54,28 @@ describe('createContactMessage', () => {
       action: 'inquiry.contact_created',
       meta: { contactMessageId: 'cm-1', source: 'app' },
     });
+    // Slack alert fires with the row id + closed-vocabulary topic only — no PII.
+    expect(sendSlackAlert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        category: 'customer_inquiry',
+        source: 'contact_form',
+        fields: { contactMessageId: 'cm-1', topic: 'מכירות' },
+      }),
+    );
   });
 
-  it('does NOT call logActivity for an anonymous submitter (no session)', async () => {
+  it('fires the Slack alert even for an anonymous submitter (no session)', async () => {
     mockInsertReturning('cm-2');
 
     const result = await createContactMessage({ ...input, email: undefined }, null);
 
     expect(result.ok).toBe(true);
+    // Anonymous → no activity log, but the Slack alert STILL fires (its whole point).
     expect(logActivity).not.toHaveBeenCalled();
+    expect(sendSlackAlert).toHaveBeenCalledTimes(1);
   });
 
-  it('returns ok:false on insert error without throwing', async () => {
+  it('returns ok:false on insert error without throwing, and does not alert', async () => {
     const { client } = createMockSupabase<{ id: string }>({
       data: null,
       error: { message: 'boom' },
@@ -76,6 +88,7 @@ describe('createContactMessage', () => {
 
     expect(result.ok).toBe(false);
     expect(logActivity).not.toHaveBeenCalled();
+    expect(sendSlackAlert).not.toHaveBeenCalled();
   });
 });
 
@@ -96,5 +109,12 @@ describe('createCallbackRequest', () => {
       topic: 'תמיכה',
       note: null,
     });
+    expect(sendSlackAlert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        category: 'customer_inquiry',
+        source: 'callback_form',
+        fields: { callbackRequestId: 'cb-1', topic: 'תמיכה' },
+      }),
+    );
   });
 });

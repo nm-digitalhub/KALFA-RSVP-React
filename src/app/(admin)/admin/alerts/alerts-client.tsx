@@ -297,6 +297,12 @@ export function AlertsClient({ view }: { view: SlackAlertsView }) {
             defaultChecked={view.categories.security}
             category="security"
           />
+          <ToggleRow
+            label="פניות לקוחות"
+            hint="פנייה חדשה מטופס יצירת קשר או בקשת חזרה טלפונית (ציבורי או לקוח מחובר)."
+            defaultChecked={view.categories.customerInquiry}
+            category="customer_inquiry"
+          />
         </div>
       </section>
     </div>

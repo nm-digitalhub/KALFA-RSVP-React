@@ -59,6 +59,7 @@ const ENABLED: AlertsConfig = {
     campaignBilling: true,
     sendHealth: true,
     security: true,
+    customerInquiry: true,
   },
 };
 
@@ -336,7 +337,7 @@ describe('sendSlackTestAlert', () => {
     vi.mocked(getAlertsConfig).mockResolvedValue({
       ...ENABLED,
       enabled: false,
-      categories: { errors: false, campaignBilling: false, sendHealth: false, security: false },
+      categories: { errors: false, campaignBilling: false, sendHealth: false, security: false, customerInquiry: false },
     });
     const r = await sendSlackTestAlert();
     expect(r.ok).toBe(true);

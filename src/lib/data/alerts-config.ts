@@ -16,12 +16,18 @@ import { createAdminClient } from '@/lib/supabase/admin';
 // failed read is NOT cached (so the next call can recover). Per-process — the web
 // and worker keep independent caches, acceptable for best-effort ops alerting.
 
-// Alert categories, each gated by its own admin toggle. All four now have emit
-// sites: `errors` (instrumentation + worker), `send_health` (whatsapp/sms/sumit
-// provider failures), `campaign_billing` (final charge / J5 hold / signed
-// agreement / campaign lifecycle) and `security` (first-admin claim + admin-user
-// grant/revoke/suspend).
-export type AlertCategory = 'errors' | 'campaign_billing' | 'send_health' | 'security';
+// Alert categories, each gated by its own admin toggle. Emit sites: `errors`
+// (instrumentation + worker), `send_health` (whatsapp/sms/sumit provider
+// failures), `campaign_billing` (final charge / J5 hold / signed agreement /
+// campaign lifecycle), `security` (first-admin claim + admin-user
+// grant/revoke/suspend) and `customer_inquiry` (a new public/customer inquiry —
+// contact form or call-me-back — landed).
+export type AlertCategory =
+  | 'errors'
+  | 'campaign_billing'
+  | 'send_health'
+  | 'security'
+  | 'customer_inquiry';
 
 export interface AlertsConfig {
   enabled: boolean;
@@ -36,6 +42,7 @@ export interface AlertsConfig {
     campaignBilling: boolean;
     sendHealth: boolean;
     security: boolean;
+    customerInquiry: boolean;
   };
 }
 
@@ -50,6 +57,7 @@ const DISABLED: AlertsConfig = {
     campaignBilling: false,
     sendHealth: false,
     security: false,
+    customerInquiry: false,
   },
 };
 
@@ -92,6 +100,7 @@ export async function getAlertsConfig(): Promise<AlertsConfig> {
         campaignBilling: row.slack_alert_campaign_billing === true,
         sendHealth: row.slack_alert_send_health === true,
         security: row.slack_alert_security === true,
+        customerInquiry: row.slack_alert_customer_inquiry === true,
       },
     };
     cache = { value, at: now };
@@ -112,6 +121,8 @@ export function categoryEnabled(config: AlertsConfig, category: AlertCategory): 
       return config.categories.sendHealth;
     case 'security':
       return config.categories.security;
+    case 'customer_inquiry':
+      return config.categories.customerInquiry;
   }
 }
 

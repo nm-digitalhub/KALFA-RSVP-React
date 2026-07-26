@@ -28,6 +28,7 @@ export interface SlackAlertsView {
     campaignBilling: boolean;
     sendHealth: boolean;
     security: boolean;
+    customerInquiry: boolean;
   };
 }
 
@@ -39,7 +40,7 @@ export async function getSlackAlertsView(): Promise<SlackAlertsView> {
   const { data, error } = await supabase
     .from('app_settings')
     .select(
-      'slack_alerts_enabled, slack_bot_token, slack_alert_channel_id, slack_alert_errors, slack_alert_campaign_billing, slack_alert_send_health, slack_alert_security, slack_mention_user_id, slack_mention_min_level',
+      'slack_alerts_enabled, slack_bot_token, slack_alert_channel_id, slack_alert_errors, slack_alert_campaign_billing, slack_alert_send_health, slack_alert_security, slack_alert_customer_inquiry, slack_mention_user_id, slack_mention_min_level',
     )
     .eq('id', SETTINGS_ID)
     .maybeSingle();
@@ -64,6 +65,7 @@ export async function getSlackAlertsView(): Promise<SlackAlertsView> {
       campaignBilling: data?.slack_alert_campaign_billing ?? false,
       sendHealth: data?.slack_alert_send_health ?? false,
       security: data?.slack_alert_security ?? false,
+      customerInquiry: data?.slack_alert_customer_inquiry ?? false,
     },
   };
 }
@@ -132,12 +134,13 @@ export async function setSlackAlertsEnabled(enabled: boolean): Promise<void> {
   if (error) throw new Error('עדכון מתג ההתראות נכשל');
 }
 
-// The four category toggles, keyed by the app_settings column they drive.
+// The category toggles, keyed by the app_settings column they drive.
 export const ALERT_CATEGORY_COLUMNS = {
   errors: 'slack_alert_errors',
   campaign_billing: 'slack_alert_campaign_billing',
   send_health: 'slack_alert_send_health',
   security: 'slack_alert_security',
+  customer_inquiry: 'slack_alert_customer_inquiry',
 } as const;
 
 export type AlertCategoryKey = keyof typeof ALERT_CATEGORY_COLUMNS;
@@ -157,7 +160,9 @@ export async function setSlackAlertCategory(
         ? { slack_alert_campaign_billing: enabled }
         : category === 'send_health'
           ? { slack_alert_send_health: enabled }
-          : { slack_alert_security: enabled };
+          : category === 'security'
+            ? { slack_alert_security: enabled }
+            : { slack_alert_customer_inquiry: enabled };
   const { error } = await supabase
     .from('app_settings')
     .update(patch)

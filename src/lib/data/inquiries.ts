@@ -2,6 +2,7 @@ import 'server-only';
 
 import { createAdminClient } from '@/lib/supabase/admin';
 import { logActivity } from '@/lib/data/activity';
+import { sendSlackAlert } from '@/lib/alerts/slack';
 import { normalizePhone } from '@/lib/phone';
 import type {
   CallbackRequestInput,
@@ -16,6 +17,13 @@ import type {
 // logActivity requires a session (requireUser) — so it runs ONLY for
 // signed-in submitters. Anonymous submissions are audited by the inserted
 // row itself (created_at + content), which is the meaningful record here.
+//
+// The Slack alert fires UNCONDITIONALLY on insert success (not gated on userId):
+// anonymous public-form submissions are the majority and are exactly the ones
+// with no logActivity trail, so the alert is their only real-time signal. It is
+// fire-and-forget (`void`) — sendSlackAlert never throws and is fully gated by
+// the admin toggle, so it never blocks or fails the submission. PII rule: only
+// the row id + closed-vocabulary topic go to Slack — never name/email/phone/message.
 
 export async function createContactMessage(
   input: ContactMessageInput,
@@ -38,6 +46,14 @@ export async function createContactMessage(
   if (error || !data) {
     return { ok: false };
   }
+
+  void sendSlackAlert({
+    category: 'customer_inquiry',
+    level: 'info',
+    title: 'פנייה חדשה מלקוח',
+    source: 'contact_form',
+    fields: { contactMessageId: data.id, topic: input.topic },
+  });
 
   if (userId) {
     await logActivity({
@@ -67,6 +83,14 @@ export async function createCallbackRequest(
   if (error || !data) {
     return { ok: false };
   }
+
+  void sendSlackAlert({
+    category: 'customer_inquiry',
+    level: 'info',
+    title: 'בקשת חזרה טלפונית חדשה',
+    source: 'callback_form',
+    fields: { callbackRequestId: data.id, topic: input.topic },
+  });
 
   if (userId) {
     await logActivity({
