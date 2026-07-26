@@ -157,7 +157,12 @@ israeli-compliance-advisor).
   אלקטרונית**, חברות, נתוני אשראי, חופש המידע…) — NOT the consumer-contract
   six (except e-signature); data snapshot 2026-02-20. Published bin is broken
   (`dist/index.js` missing) — we run `dist/src/index.js` directly. The hosted
-  Vercel variant is DEAD (404).
+  Vercel variant is DEAD (404). **Tier note (the server's own `about` tool):**
+  the npm DB is `tier:"free"` — the README's "66 statutes / 537 provisions /
+  Hebrew search (incl. Contracts + Consumer Protection)" describes the FULL
+  tier, which is NOT published (repo 404, hosted dead, npm has only v1.1.0).
+  Do not expect contract/consumer statutes or Hebrew-text search here; re-run
+  `about` to re-check coverage after any future upgrade.
 - **il-eli MCP — WORKING (case-law side), configured** (`claude mcp list` →
   `il-eli ✔`; local scope, beta; runs the interpreter-venv `il-eli-mcp` with
   `IL_ELI_CACHE_DIR`/`IL_ELI_AUDIT_DIR` under `~/.claude/mcp/`). 6 tools —
@@ -173,14 +178,25 @@ israeli-compliance-advisor).
   dataset, not official court URLs — verify any load-bearing holding against
   an official/secondary source before citing.
 - **data-gov-il MCP — WORKING, configured** (`claude mcp list` →
-  `data-gov-il ✔`; local scope, beta; installed at `~/.claude/mcp/data-gov-il`;
-  `data-gov-il-mcp` v3.0.1, 107★, active). 9 tools over the data.gov.il CKAN
-  API (REACHABLE from this server — measured): find_datasets,
-  get_dataset_info, list_all_datasets, list_resources, **search_records**
-  (query actual rows), list_organizations, tags… Tested live: Hebrew dataset
-  search returns real results. Scope: government OPEN DATA (statistics,
-  registries) — not statutes/case law; useful for market/demographic research
-  and official registries.
+  `data-gov-il ✔`; local scope, beta; `~/.claude/mcp/data-gov-il`;
+  `data-gov-il-mcp` v3.0.1). 9 tools over data.gov.il CKAN (reachable from
+  this server). **The intended workflow is a 4-step chain, not one call**
+  (validated end-to-end 2026-07-26 — returned real business-license rows):
+  1. `find_datasets(query, sort:'relevance'|'newest', tags?)` — fuzzy; use
+     PRECISE Hebrew terms ("רישוי עסקים", not broad words); discovery aids:
+     `search_tags(keyword)` / `list_available_tags(relatedTo?)`,
+     `list_organizations` / `list_all_datasets(org:'cbs'|…)`.
+  2. `get_dataset_info(dataset)` — metadata by dataset NAME from step 1.
+  3. `list_resources(dataset)` — resource UUIDs; **only
+     `datastore_active:true` resources are queryable** (CSV/XLSX usually
+     are; JSON/XML mirrors often aren't).
+  4. `search_records(resource_id, q?, filters?:{field:exact}, fields?,
+     sort?:["field desc"], limit:1-1000, offset, include_total:true,
+     distinct?:'field')` — the ONLY tool that returns actual data ROWS;
+     paginate with offset+include_total; field ids must match exactly.
+  Scope: government OPEN DATA (registries/statistics; much of it municipal —
+  e.g. `-br7` = Beer-Sheva) — not statutes/case law; useful for market/
+  demographic research and official registries.
 - **Kol Zchut MCP** (`@skills-il/kolzchut-mcp`) — NOT viable from this server
   (measured 2026-07-26): `agentskills.co.il/mcp` is a catalog WEBPAGE, not an
   MCP endpoint (HTTP 405 on an MCP initialize POST); the npm stdio server
