@@ -136,8 +136,28 @@ export async function sendInquiryReply(id: string, replyText: string): Promise<v
     recipientName: msg.name,
     replyText,
   });
-  const sender = await getEmailSender();
-  await sender.send({ to: msg.email, subject, html, text });
+
+  // Actionable errors: the admin is the operator who CAN fix these, so say
+  // exactly what to do and where — not a generic "failed". Match on the error
+  // name (getEmailSender/send set EmailConfigError/EmailSendError) so this holds
+  // even when the module is mocked. Nothing is persisted yet, so a retry is safe.
+  try {
+    const sender = await getEmailSender();
+    await sender.send({ to: msg.email, subject, html, text });
+  } catch (err) {
+    const name = err instanceof Error ? err.name : '';
+    if (name === 'EmailConfigError') {
+      throw new Error(
+        'שירות הדואר אינו מוגדר — הגדירו SMTP במסך ההגדרות (מערכת ותפעול ← הגדרות) והפעילו "אימייל", ואז נסו שוב.',
+      );
+    }
+    if (name === 'EmailSendError') {
+      throw new Error(
+        'שליחת הדואר נכשלה — בדקו במסך ההגדרות את פרטי ה-SMTP (שרת, פורט, משתמש, סיסמה). הרשומה לא עודכנה; אפשר לנסות שוב.',
+      );
+    }
+    throw err;
+  }
 
   const now = new Date().toISOString();
   const { error: updateError } = await supabase

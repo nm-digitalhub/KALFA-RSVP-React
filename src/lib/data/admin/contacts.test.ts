@@ -233,8 +233,9 @@ describe('sendInquiryReply', () => {
     expect(send).not.toHaveBeenCalled();
   });
 
-  it('propagates a send failure and does NOT persist (send-then-persist safety)', async () => {
-    const send = vi.fn().mockRejectedValue(new Error('שליחת הדואר נכשלה'));
+  it('turns a send failure into an actionable error and does NOT persist (send-then-persist safety)', async () => {
+    const sendErr = Object.assign(new Error('שליחת הדואר נכשלה'), { name: 'EmailSendError' });
+    const send = vi.fn().mockRejectedValue(sendErr);
     vi.mocked(getEmailSender).mockResolvedValue(
       { send } as unknown as Awaited<ReturnType<typeof getEmailSender>>,
     );
@@ -246,8 +247,24 @@ describe('sendInquiryReply', () => {
       client as unknown as ReturnType<typeof createAdminClient>,
     );
 
-    await expect(sendInquiryReply(ID, 'תשובה')).rejects.toThrow('שליחת הדואר נכשלה');
+    // Actionable, not generic: tells the admin exactly where/what to check.
+    await expect(sendInquiryReply(ID, 'תשובה')).rejects.toThrow('בדקו במסך ההגדרות');
     expect(builder.update).not.toHaveBeenCalled();
     expect(logActivity).not.toHaveBeenCalled();
+  });
+
+  it('turns an unconfigured mail service into an actionable "set up SMTP" error', async () => {
+    const cfgErr = Object.assign(new Error('שירות הדואר אינו מוגדר'), { name: 'EmailConfigError' });
+    vi.mocked(getEmailSender).mockRejectedValue(cfgErr);
+    const { client, builder } = createMockSupabase<{ email: string; name: string }>({
+      data: { email: 'dana@example.com', name: 'דנה' },
+      error: null,
+    });
+    vi.mocked(createAdminClient).mockReturnValue(
+      client as unknown as ReturnType<typeof createAdminClient>,
+    );
+
+    await expect(sendInquiryReply(ID, 'תשובה')).rejects.toThrow('הגדירו SMTP');
+    expect(builder.update).not.toHaveBeenCalled();
   });
 });
