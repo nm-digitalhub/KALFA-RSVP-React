@@ -123,6 +123,23 @@ export async function updateAppSettings(
   }
 }
 
+// The base+overage pricing gate (app_settings.base_overage_pricing_enabled).
+// Enabling turns on real ₪200 activation-fee billing for NEW campaigns — a
+// money-path switch, so the ACTION layer fail-closes on the active agreement
+// version + emits a security audit. This DAL is the gated writer only; the read
+// for display goes through the fail-safe payments reader (getBaseOveragePricingEnabled).
+export async function setBaseOveragePricingEnabled(
+  enabled: boolean,
+): Promise<void> {
+  await requirePlatformPermission('manage_settings');
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from('app_settings')
+    .update({ base_overage_pricing_enabled: enabled })
+    .eq('id', SETTINGS_ID);
+  if (error) throw new Error('עדכון מתג התמחור המדורג נכשל');
+}
+
 // --- Company / legal details (for the signed agreement) ---
 // Admin-managed via the dedicated /admin/company screen; the agreement reads
 // these live (§14ג mandatory disclosures + privacy/warranty). Not secret.

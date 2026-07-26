@@ -43,6 +43,9 @@ export default async function AdminAgreementPage() {
       ceiling: 400,
       channels: ['whatsapp', 'call'],
       windowText: '01/07/2026 – 15/07/2026',
+      // Sample base-fee figures so the v4 preview renders realistically.
+      baseFee: 200,
+      includedReached: 200,
     },
     { version: doc.version, status: doc.status, bodyHtml: doc.bodyHtml },
     configTokens,

@@ -4,8 +4,10 @@ import {
   getAppSettings,
   getInfraConfigStatus,
 } from '@/lib/data/admin/settings';
+import { getBaseOveragePricingEnabled } from '@/lib/data/payments';
 import { PageHeading } from '../_components';
 import { SettingsForm } from './settings-form';
+import { PricingModelToggle } from './pricing-model-toggle';
 
 const sectionClass = 'space-y-4 rounded-lg border border-border bg-card p-5';
 
@@ -14,9 +16,10 @@ const sectionClass = 'space-y-4 rounded-lg border border-border bg-card p-5';
 // (edited via the form, masked with reveal), and shows a read-only health view
 // of the infra config that stays in env.
 export default async function AdminSettingsPage() {
-  const [settings, infra] = await Promise.all([
+  const [settings, infra, baseOveragePricing] = await Promise.all([
     getAppSettings(),
     getInfraConfigStatus(),
+    getBaseOveragePricingEnabled(),
   ]);
 
   return (
@@ -32,6 +35,18 @@ export default async function AdminSettingsPage() {
           </p>
         </div>
         <SettingsForm settings={settings} />
+      </section>
+
+      <section className={sectionClass}>
+        <div>
+          <h2 className="text-lg font-semibold">מודל תמחור מדורג</h2>
+          <p className="text-sm text-muted-foreground">
+            מתג ראשי למודל דמי‑ההפעלה (₪200 + 200 כלולים + ₪4 חריגה). כבוי = חיוב
+            לפי‑תוצאה בלבד (₪4 למושג). הפעלה = מוצא‑כסף חי, חסום עד שהסכם v4 מאושר
+            ופעיל; חותמי v3 מוגנים ע"י guard ה‑D5.
+          </p>
+        </div>
+        <PricingModelToggle enabled={baseOveragePricing} />
       </section>
 
       <section className={sectionClass}>

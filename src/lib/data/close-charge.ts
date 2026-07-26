@@ -17,6 +17,8 @@ import {
   getCampaignCreditTotal,
 } from '@/lib/data/billing';
 import { computeChargeAmount } from '@/lib/data/close-charge-amount';
+import { getSignedAgreementVersion } from '@/lib/data/agreements';
+import { isBaseFeeAgreementVersion } from '@/lib/agreements/template';
 import { checkOsekPaturCeilingAfterCharge } from '@/lib/data/tax-ceiling';
 import { captureHeldCardSumit } from '@/lib/sumit/capture';
 import { SumitDeclinedError } from '@/lib/sumit/charge';
@@ -110,11 +112,57 @@ export async function closeCampaignAndCharge(
   const ceiling = campaign.max_charge_ceiling
     ? campaign.max_charge_ceiling
     : (summary?.ceiling ?? 0);
+
+  // D5 GUARD — bind the base-fee to the SIGNED contract. The campaign may carry a
+  // snapshotted base (the gate was on at authorize), but the ₪200 activation fee
+  // may be billed ONLY if the customer actually signed a base-fee agreement
+  // version. Otherwise suppress base+included → pure per-reached, so a v3-signer
+  // (whose contract says "0 → no charge") is NEVER charged the base regardless of
+  // the global gate's state or timing.
+  //   NOTE: suppression does NOT merely lower the amount — zeroing `included`
+  //   removes the free tier, so per-reached gross can exceed the base+overage
+  //   gross. The overcharge guarantee is NOT "always lower"; it is the hard cap:
+  //   computeChargeAmount caps at `ceiling` = the exact number in the signed PDF
+  //   (agreements.ts passes campaign.max_charge_ceiling), so charge ≤ signed
+  //   ceiling in every branch. Billing every reached contact with no free tier is
+  //   precisely what a v3 signer's contract states (template §3).
+  let effectiveBase = campaign.base_price ?? 0;
+  let effectiveIncluded = campaign.included_reached ?? 0;
+  if (effectiveBase > 0 || effectiveIncluded > 0) {
+    let signedVersion: string | null;
+    try {
+      signedVersion = await getSignedAgreementVersion(campaignId);
+    } catch {
+      // A real DB error reading the signature must NOT terminally settle a wrong
+      // amount — route to review, exactly like the summary/credit reads above.
+      await markCampaignChargeOutcome(campaignId, 'charge_review');
+      return { outcome: 'review', amount: 0 };
+    }
+    if (!isBaseFeeAgreementVersion(signedVersion)) {
+      effectiveBase = 0;
+      effectiveIncluded = 0;
+      // Security/billing audit (fire-and-forget, fail-safe): a base snapshot that
+      // the signed contract does not authorize indicates a config/ordering issue
+      // (e.g. gate flipped before the v4 agreement went active) — surface it.
+      void sendSlackAlert({
+        level: 'warn',
+        category: 'campaign_billing',
+        source: 'close-charge-d5-guard',
+        title: 'D5 guard: base fee suppressed — signed agreement is not a base-fee version',
+        fields: {
+          campaign_id: campaignId,
+          event_id: campaign.event_id,
+          signed_version: signedVersion ?? 'none',
+        },
+      });
+    }
+  }
+
   // final = max(0, min(base + max(0, reached − included) × overage, ceiling) −
   // credits), rounded to agorot (§14/D5/G4).
   const { amount, creditApplied } = computeChargeAmount({
-    base: campaign.base_price ?? 0,
-    included: campaign.included_reached ?? 0,
+    base: effectiveBase,
+    included: effectiveIncluded,
     overage: campaign.price_per_reached ?? 0,
     reached: summary?.reachedCount ?? 0,
     ceiling,

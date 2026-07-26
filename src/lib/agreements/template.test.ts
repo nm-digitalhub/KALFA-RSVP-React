@@ -4,6 +4,7 @@ import {
   renderAgreementBody,
   renderAgreementDocument,
   AGREEMENT_VERSION,
+  BASE_FEE_AGREEMENT_VERSION,
   type AgreementContent,
   type AgreementSignature,
 } from '@/lib/agreements/template';
@@ -27,6 +28,8 @@ const content: AgreementContent = {
   ceiling: 400,
   channels: ['whatsapp', 'call'],
   windowText: '1.7.2026 – 15.7.2026',
+  baseFee: 0, // per-reached (v3) content
+  includedReached: 0,
 };
 
 const sig: AgreementSignature = {
@@ -36,6 +39,43 @@ const sig: AgreementSignature = {
   ip: '203.0.113.5',
   signatureDataUrl: 'data:image/png;base64,AAAA',
 };
+
+describe('base-fee (v4) body — version-selected §3-4', () => {
+  const v4Content: AgreementContent = {
+    ...content,
+    baseFee: 200,
+    includedReached: 200,
+    ceiling: 600,
+  };
+  const v4 = renderAgreementBody(v4Content, {
+    version: BASE_FEE_AGREEMENT_VERSION,
+    status: 'draft',
+    bodyHtml: null,
+  });
+
+  it('renders the base-fee clauses with data-driven figures (no hardcoded price)', () => {
+    expect(v4).toContain('דמי הפעלת שירות');
+    expect(v4).toContain('₪200.00'); // baseFee, from data
+    expect(v4).toContain('₪4.00'); // overage, from data
+    expect(v4).toContain('₪600.00'); // ceiling, from data
+    expect(v4).toContain('200 אנשי קשר שהושגו'); // includedReached, from data
+  });
+
+  it('discloses the activation fee is charged even at 0 results (§2 / חוזים אחידים)', () => {
+    expect(v4).toContain('0 תוצאות');
+    expect(v4).toContain('דמי ההפעלה');
+  });
+
+  it('does NOT show the per-reached "0 → no charge" wording', () => {
+    expect(v4).not.toContain('חיוב 0 אנשי קשר → אין חיוב');
+  });
+
+  it('the per-reached (v3) default still shows its own §3-4, not the base fee', () => {
+    const v3 = renderAgreementBody(content); // baseFee 0 → per-reached
+    expect(v3).toContain('מחיר לאיש קשר שהושג');
+    expect(v3).not.toContain('דמי הפעלת שירות');
+  });
+});
 
 describe('renderAgreementBody', () => {
   const html = renderAgreementBody(content);

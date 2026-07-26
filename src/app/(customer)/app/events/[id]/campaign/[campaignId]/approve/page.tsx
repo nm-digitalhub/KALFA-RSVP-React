@@ -92,6 +92,8 @@ export default async function ApproveCampaignPage({
     ceiling: campaign.max_charge_ceiling ?? 0,
     channels: campaign.allowed_channels,
     windowText: `${fmtDate(campaign.start_at)} – ${fmtDate(campaign.close_at)}`,
+    baseFee: campaign.base_price ?? 0,
+    includedReached: campaign.included_reached ?? 0,
   }, agreementDoc, configTokens);
 
   return (

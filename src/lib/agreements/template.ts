@@ -19,6 +19,27 @@ import { escapeHtml as esc } from '@/lib/html';
 // Fallback version when no active DB document is available (e.g. pre-migration).
 export const AGREEMENT_VERSION = 'draft-2026-07-v3';
 
+// The base-fee agreement version — §3-4 disclose the ₪200 activation fee (charged
+// even at 0 reached) + 200 included + ₪4 overage. NEW-signers-only: existing v3
+// signatures keep the per-reached "0 → no charge" terms. This is the ONLY version
+// under which the base+overage model may be billed.
+export const BASE_FEE_AGREEMENT_VERSION = 'draft-2026-07-v4';
+
+// D5 guard predicate. The base+overage model (the ₪200 activation fee) may be
+// charged ONLY when the customer signed a base-fee agreement version. Explicit
+// allow-list with a SAFE default: an unknown/absent version is NOT base-fee, so
+// the charge falls back to pure per-reached. This binds the money to the signed
+// contract, independent of the global gate's timing — a v3-signer can never be
+// charged the base even if the gate is on and the campaign snapshotted one.
+const BASE_FEE_AGREEMENT_VERSIONS: ReadonlySet<string> = new Set([
+  BASE_FEE_AGREEMENT_VERSION,
+]);
+export function isBaseFeeAgreementVersion(
+  version: string | null | undefined,
+): boolean {
+  return version != null && BASE_FEE_AGREEMENT_VERSIONS.has(version);
+}
+
 // Standard Israeli VAT rate (18% since 2025-01-01). The business operates as an
 // עוסק פטור (VAT-exempt dealer, VAT Law §31(3)) and does NOT charge VAT —
 // consumer prices are FINAL with no VAT component, and customer-facing wording
@@ -59,11 +80,13 @@ export type CompanyInfo = {
 export type AgreementContent = {
   company: CompanyInfo;
   eventName: string;
-  pricePerReached: number; // ₪, VAT-inclusive
+  pricePerReached: number; // ₪, VAT-inclusive — per-reached rate / overage above included
   maxContacts: number;
-  ceiling: number; // ₪, VAT-inclusive (price × maxContacts)
+  ceiling: number; // ₪, VAT-inclusive — model-aware (campaign.max_charge_ceiling)
   channels: string[];
   windowText: string;
+  baseFee: number; // ₪ activation fee (base+overage model); 0 = per-reached model
+  includedReached: number; // reached contacts included in the base fee; 0 = per-reached
 };
 
 export type AgreementSignature = {
@@ -126,6 +149,8 @@ function tokenMap(c: AgreementContent, version: string): Record<string, string> 
     pricePerReached: ils(c.pricePerReached),
     maxContacts: c.maxContacts.toLocaleString('he-IL'),
     ceiling: ils(c.ceiling),
+    baseFee: ils(c.baseFee),
+    includedReached: c.includedReached.toLocaleString('he-IL'),
     channels: esc(channelList),
     windowText: esc(c.windowText),
     vatRate: String(VAT_RATE_PERCENT),
@@ -167,8 +192,66 @@ function substituteTokens(
   );
 }
 
+// §3-4 (price + payment) — the ONLY clauses that differ between the per-reached
+// (v3) and base-fee (v4) models. All figures are data-driven from AgreementContent
+// (baseFee/includedReached/pricePerReached/ceiling) — no hardcoded prices.
+function pricingClausesPerReached(c: AgreementContent): string {
+  return `
+  <h2>3. המחיר והחיוב</h2>
+  <dl class="terms">
+    <dt>מחיר לאיש קשר שהושג</dt><dd>${ils(c.pricePerReached)} — מחיר סופי; לא נגבה מע"מ (עוסק פטור)</dd>
+    <dt>מספר אנשי קשר מרבי</dt><dd>${c.maxContacts.toLocaleString('he-IL')}</dd>
+    <dt>תקרת חיוב מרבית</dt><dd>${ils(c.ceiling)} — מחיר ליחידה × מספר אנשי הקשר; מחיר סופי, לא נגבה מע"מ</dd>
+    <dt>חלון פעילות</dt><dd>${esc(c.windowText)}</dd>
+  </dl>
+  <p>הלקוח מתחייב לשלם עבור כל <strong>איש קשר ייחודי שהושג</strong> — אדם שיצר אינטראקציה אנושית מאומתת (תגובת וואטסאפ נכנסת אמיתית, או מענה אנושי בשיחה) — פעם אחת לכל איש קשר, ועד לתקרה. <strong>החיוב הסופי הוא לפי מספר אנשי הקשר שהושגו בפועל</strong>, ומחושב בסגירת הקמפיין.</p>
+  <p><strong>לא יחויבו:</strong></p>
+  <ul>
+    <li>הודעה שנשלחה / נמסרה / נקראה ללא תגובה</li>
+    <li>צלצול ללא מענה אנושי, תא קולי או משיבון</li>
+    <li>מספר שגוי או לא זמין</li>
+    <li>אותו איש קשר יותר מפעם אחת באותו אירוע</li>
+  </ul>
+
+  <h2>4. אמצעי תשלום והרשאת חיוב</h2>
+  <p>הלקוח מאשר שמירת אמצעי תשלום ו/או תפיסת מסגרת אשראי עד גובה התקרה, ומורה לחייב בסגירת הקמפיין את הסכום בפועל (לכל היותר התקרה). חיוב 0 אנשי קשר → אין חיוב. נתוני הכרטיס מנוהלים באמצעות ספק סליקה מאובטח (טוקניזציה); KALFA אינה שומרת את פרטי הכרטיס.</p>`;
+}
+
+// v4 base-fee clauses (attorney-DRAFT — see plans/pricing-base-fee-attorney-brief.md).
+// The activation fee is charged even at 0 reached; disclosed prominently (§2 /
+// חוזים אחידים). Figures are data-driven; no literals.
+function pricingClausesBaseFee(c: AgreementContent): string {
+  return `
+  <h2>3. המחיר והחיוב</h2>
+  <dl class="terms">
+    <dt>דמי הפעלת שירות</dt><dd>${ils(c.baseFee)} — תשלום עבור הפעלת הקמפיין (הפעלת המערכת והפצת הפניות בערוצים), הכולל עד ${c.includedReached.toLocaleString('he-IL')} אנשי קשר שהושגו. מחיר סופי; לא נגבה מע"מ (עוסק פטור).</dd>
+    <dt>אנשי קשר כלולים בדמי ההפעלה</dt><dd>${c.includedReached.toLocaleString('he-IL')} אנשי קשר שהושגו</dd>
+    <dt>תוספת מעבר לכלול</dt><dd>${ils(c.pricePerReached)} לכל איש קשר ייחודי נוסף שהושג מעבר לכמות הכלולה; מחיר סופי, לא נגבה מע"מ</dd>
+    <dt>מספר אנשי קשר מרבי</dt><dd>${c.maxContacts.toLocaleString('he-IL')}</dd>
+    <dt>תקרת חיוב מרבית</dt><dd>${ils(c.ceiling)} — דמי הפעלה בתוספת ${ils(c.pricePerReached)} לכל איש קשר מעל הכמות הכלולה ועד למספר המרבי; מחיר סופי, לא נגבה מע"מ</dd>
+    <dt>חלון פעילות</dt><dd>${esc(c.windowText)}</dd>
+  </dl>
+  <div class="intent">
+    שימו לב — דמי ההפעלה בסך ${ils(c.baseFee)} נגבים עם הפעלת הקמפיין <strong>בכל מקרה, גם אם לא הושג אף איש קשר (0 תוצאות)</strong>. דמי ההפעלה הם תשלום עבור עצם הפעלת השירות והפצת הפניות בערוצים, ואינם מותנים בתוצאה. חיוב מעבר לדמי ההפעלה (${ils(c.pricePerReached)} לכל איש קשר שהושג מעל הכמות הכלולה) מחושב לפי מספר אנשי הקשר שהושגו בפועל, ועד לתקרה.
+  </div>
+  <p>"איש קשר שהושג" = אדם שיצר אינטראקציה אנושית מאומתת (תגובת וואטסאפ נכנסת אמיתית, או מענה אנושי בשיחה), פעם אחת לכל איש קשר באותו אירוע. החיוב שמעבר לדמי ההפעלה נקבע בסגירת הקמפיין לפי מספר אנשי הקשר שהושגו בפועל מעל הכמות הכלולה.</p>
+  <p><strong>מעבר לדמי ההפעלה, לא יחויבו:</strong></p>
+  <ul>
+    <li>הודעה שנשלחה / נמסרה / נקראה ללא תגובה</li>
+    <li>צלצול ללא מענה אנושי, תא קולי או משיבון</li>
+    <li>מספר שגוי או לא זמין</li>
+    <li>אותו איש קשר יותר מפעם אחת באותו אירוע</li>
+    <li>אנשי קשר בגבולות הכמות הכלולה בדמי ההפעלה (אינם מוסיפים לחיוב)</li>
+  </ul>
+
+  <h2>4. אמצעי תשלום, מועד חיוב והרשאת חיוב</h2>
+  <p>הלקוח מאשר שמירת אמצעי תשלום ו/או תפיסת מסגרת אשראי עד גובה התקרה. <strong>דמי ההפעלה (${ils(c.baseFee)}) ייגבו במועד הפעלת הקמפיין בפועל</strong> — עם תחילת מתן השירות — ולא במועד החתימה. יתרת החיוב (תוספת ${ils(c.pricePerReached)} לכל איש קשר מעל הכמות הכלולה) תיגבה בסגירת הקמפיין לפי הביצוע בפועל, ולכל היותר עד התקרה. נתוני הכרטיס מנוהלים באמצעות ספק סליקה מאובטח (טוקניזציה); KALFA אינה שומרת את פרטי הכרטיס.</p>
+  <p>בוטלה העסקה עקב פגם, אי‑התאמה או הפרה של KALFA — יושבו ללקוח מלוא התשלומים ששולמו, לרבות דמי ההפעלה, בהתאם לחוק הגנת הצרכן. אין באמור בסעיף זה כדי לגרוע מזכויות הביטול שבסעיף 5.</p>`;
+}
+
 // The vetted in-code default body (used when the active document has no custom
-// body). NO draft marker here — the renderer appends it based on status.
+// body). NO draft marker here — the renderer appends it based on status. §3-4 are
+// selected by version: the base-fee (v4) model vs per-reached (v3).
 function defaultBody(c: AgreementContent, version: string): string {
   const channelList = c.channels
     .map((ch) => CHANNEL_LABELS[ch] ?? ch)
@@ -188,25 +271,7 @@ function defaultBody(c: AgreementContent, version: string): string {
 
   <h2>2. תיאור השירות</h2>
   <p>KALFA מפעילה עבור הלקוח קמפיין אישורי הגעה (RSVP) לאורחי האירוע, בשני ערוצי תקשורת: ${esc(channelList)}. השירות פונה לאנשי הקשר ברשימת המוזמנים ואוסף את תגובותיהם.</p>
-
-  <h2>3. המחיר והחיוב</h2>
-  <dl class="terms">
-    <dt>מחיר לאיש קשר שהושג</dt><dd>${ils(c.pricePerReached)} — מחיר סופי; לא נגבה מע"מ (עוסק פטור)</dd>
-    <dt>מספר אנשי קשר מרבי</dt><dd>${c.maxContacts.toLocaleString('he-IL')}</dd>
-    <dt>תקרת חיוב מרבית</dt><dd>${ils(c.ceiling)} — מחיר ליחידה × מספר אנשי הקשר; מחיר סופי, לא נגבה מע"מ</dd>
-    <dt>חלון פעילות</dt><dd>${esc(c.windowText)}</dd>
-  </dl>
-  <p>הלקוח מתחייב לשלם עבור כל <strong>איש קשר ייחודי שהושג</strong> — אדם שיצר אינטראקציה אנושית מאומתת (תגובת וואטסאפ נכנסת אמיתית, או מענה אנושי בשיחה) — פעם אחת לכל איש קשר, ועד לתקרה. <strong>החיוב הסופי הוא לפי מספר אנשי הקשר שהושגו בפועל</strong>, ומחושב בסגירת הקמפיין.</p>
-  <p><strong>לא יחויבו:</strong></p>
-  <ul>
-    <li>הודעה שנשלחה / נמסרה / נקראה ללא תגובה</li>
-    <li>צלצול ללא מענה אנושי, תא קולי או משיבון</li>
-    <li>מספר שגוי או לא זמין</li>
-    <li>אותו איש קשר יותר מפעם אחת באותו אירוע</li>
-  </ul>
-
-  <h2>4. אמצעי תשלום והרשאת חיוב</h2>
-  <p>הלקוח מאשר שמירת אמצעי תשלום ו/או תפיסת מסגרת אשראי עד גובה התקרה, ומורה לחייב בסגירת הקמפיין את הסכום בפועל (לכל היותר התקרה). חיוב 0 אנשי קשר → אין חיוב. נתוני הכרטיס מנוהלים באמצעות ספק סליקה מאובטח (טוקניזציה); KALFA אינה שומרת את פרטי הכרטיס.</p>
+${isBaseFeeAgreementVersion(version) ? pricingClausesBaseFee(c) : pricingClausesPerReached(c)}
 
   <h2>5. זכות ביטול (חוק הגנת הצרכן §14ג)</h2>
   <p>הלקוח רשאי לבטל את העסקה בכתב (לפרטי הקשר בסעיף 1) בתוך <strong>14 ימים</strong> ממועד ההתקשרות או מקבלת מסמך זה, לפי המאוחר; ובכל מקרה עד <strong>שני ימים (שאינם ימי מנוחה) לפני מועד הפעלת הקמפיין</strong> — שכן הפעלת הקמפיין מהווה תחילת מתן השירות.</p>

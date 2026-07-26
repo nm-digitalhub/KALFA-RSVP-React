@@ -6,7 +6,19 @@ vi.mock('@/lib/data/payments', () => ({
   getCloseChargeEnabled: vi.fn(),
   getSumitServerConfig: vi.fn(),
 }));
-vi.mock('@/lib/agreements/template', () => ({ VAT_RATE_PERCENT: 18 }));
+vi.mock('@/lib/agreements/template', async (orig) => {
+  // Use the REAL allow-list predicate + version constant (a change to the
+  // allow-list must be caught here), keeping only VAT_RATE_PERCENT explicit.
+  const actual = await orig<typeof import('@/lib/agreements/template')>();
+  return {
+    VAT_RATE_PERCENT: 18,
+    BASE_FEE_AGREEMENT_VERSION: actual.BASE_FEE_AGREEMENT_VERSION,
+    isBaseFeeAgreementVersion: actual.isBaseFeeAgreementVersion,
+  };
+});
+vi.mock('@/lib/data/agreements', () => ({
+  getSignedAgreementVersion: vi.fn(),
+}));
 vi.mock('@/lib/data/campaigns', () => ({
   closeCampaign: vi.fn(),
   getCampaignForCharge: vi.fn(),
@@ -45,6 +57,7 @@ import {
   getCampaignCreditTotal,
 } from '@/lib/data/billing';
 import { captureHeldCardSumit } from '@/lib/sumit/capture';
+import { getSignedAgreementVersion } from '@/lib/data/agreements';
 import { SumitDeclinedError } from '@/lib/sumit/charge';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { sendSlackAlert } from '@/lib/alerts/slack';
@@ -87,6 +100,7 @@ const m = {
   summary: getCampaignBillingSummary as unknown as Mock,
   credits: getCampaignCreditTotal as unknown as Mock,
   capture: captureHeldCardSumit as unknown as Mock,
+  signed: getSignedAgreementVersion as unknown as Mock,
 };
 
 function happy() {
@@ -94,6 +108,9 @@ function happy() {
   m.payments.mockResolvedValue(true);
   m.close.mockResolvedValue(true);
   m.sumit.mockResolvedValue({ companyId: 1, apiKey: 'k' });
+  // Default: the signed contract is the base-fee version, so a snapshotted base
+  // is honored (the D5 guard only bites on a mismatch — exercised in its suite).
+  m.signed.mockResolvedValue('draft-2026-07-v4');
   m.forCharge.mockResolvedValue({
     id: 'c1',
     event_id: 'e1',
@@ -478,5 +495,97 @@ describe('closeCampaignAndCharge', () => {
     // The ambiguous/network path is covered by send_health in the SUMIT layer —
     // close-charge must NOT emit a campaign_billing alert here (no double-report).
     expect(sendSlackAlert).not.toHaveBeenCalled();
+  });
+
+  // D5 guard — the ₪200 base fee may be billed ONLY when the customer signed a
+  // base-fee agreement version. A snapshotted base under any other signature is
+  // suppressed → pure per-reached, so a v3-signer is never charged the base.
+  describe('D5 guard — base fee bound to the signed agreement version', () => {
+    const withBase = {
+      id: 'c1',
+      event_id: 'e1',
+      status: 'active',
+      capture_status: 'authorized',
+      charge_status: null,
+      card_token_ref: 'tok-abc',
+      card_exp_month: 7,
+      card_exp_year: 2031,
+      card_citizen_id: '316125434',
+      auth_external_ref: 'ext-1',
+      max_charge_ceiling: 600,
+      base_price: 200,
+      included_reached: 200,
+      price_per_reached: 4,
+    };
+
+    it('honors the base when the customer signed the base-fee version (v4)', async () => {
+      happy();
+      m.forCharge.mockResolvedValue({ ...withBase });
+      m.signed.mockResolvedValue('draft-2026-07-v4');
+      m.summary.mockResolvedValue({ reachedCount: 0, accrued: 0, ceiling: 600, maxContacts: 300 });
+      const r = await closeCampaignAndCharge('c1');
+      expect(r).toEqual({ outcome: 'charged', amount: 200 });
+      expect(sendSlackAlert).not.toHaveBeenCalledWith(
+        expect.objectContaining({ source: 'close-charge-d5-guard' }),
+      );
+    });
+
+    it('SUPPRESSES the base to per-reached for a v3 signer (0 reached → nothing_to_charge)', async () => {
+      happy();
+      m.forCharge.mockResolvedValue({ ...withBase });
+      m.signed.mockResolvedValue('draft-2026-07-v3');
+      m.summary.mockResolvedValue({ reachedCount: 0, accrued: 0, ceiling: 600, maxContacts: 300 });
+      const r = await closeCampaignAndCharge('c1');
+      expect(r).toEqual({ outcome: 'nothing_to_charge', amount: 0 });
+      expect(captureHeldCardSumit).not.toHaveBeenCalled();
+      expect(sendSlackAlert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          source: 'close-charge-d5-guard',
+          fields: expect.objectContaining({
+            campaign_id: 'c1',
+            signed_version: 'draft-2026-07-v3',
+          }),
+        }),
+      );
+    });
+
+    it('suppressed base still bills per-reached overage on reached contacts (v3 signer)', async () => {
+      happy();
+      m.forCharge.mockResolvedValue({ ...withBase });
+      m.signed.mockResolvedValue('draft-2026-07-v3');
+      // base+included suppressed to 0 → 5 reached × ₪4 = ₪20 (no free included).
+      m.summary.mockResolvedValue({ reachedCount: 5, accrued: 0, ceiling: 600, maxContacts: 300 });
+      const r = await closeCampaignAndCharge('c1');
+      expect(r).toEqual({ outcome: 'charged', amount: 20 });
+      expect(captureHeldCardSumit).toHaveBeenCalledWith(
+        expect.objectContaining({ amount: '20' }),
+      );
+    });
+
+    it('suppresses the base when nothing was signed (null) — safe default', async () => {
+      happy();
+      m.forCharge.mockResolvedValue({ ...withBase });
+      m.signed.mockResolvedValue(null);
+      m.summary.mockResolvedValue({ reachedCount: 0, accrued: 0, ceiling: 600, maxContacts: 300 });
+      const r = await closeCampaignAndCharge('c1');
+      expect(r).toEqual({ outcome: 'nothing_to_charge', amount: 0 });
+      expect(sendSlackAlert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          source: 'close-charge-d5-guard',
+          fields: expect.objectContaining({ signed_version: 'none' }),
+        }),
+      );
+    });
+
+    it('routes to review (never a terminal settle) when the signature read errors', async () => {
+      happy();
+      m.forCharge.mockResolvedValue({ ...withBase });
+      m.signed.mockRejectedValue(new Error('db down'));
+      m.summary.mockResolvedValue({ reachedCount: 0, accrued: 0, ceiling: 600, maxContacts: 300 });
+      const r = await closeCampaignAndCharge('c1');
+      expect(r).toEqual({ outcome: 'review', amount: 0 });
+      expect(markCampaignChargeOutcome).toHaveBeenCalledWith('c1', 'charge_review');
+      expect(captureHeldCardSumit).not.toHaveBeenCalled();
+    });
   });
 });

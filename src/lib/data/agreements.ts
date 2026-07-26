@@ -57,6 +57,29 @@ function dataUrlToBytes(dataUrl: string): {
   return { contentType: m[1], bytes: new Uint8Array(Buffer.from(m[2], 'base64')) };
 }
 
+// Read the agreement version the customer actually signed for a campaign (the
+// latest signature, by signed_at). The close-charge D5 guard uses this to bind
+// the base-fee charge to the signed contract. Returns null when nothing was
+// signed (→ the guard treats it as not-base-fee, the safe default).
+export async function getSignedAgreementVersion(
+  campaignId: string,
+): Promise<string | null> {
+  const admin = createAdminClient();
+  const { data, error } = await admin
+    .from('signed_agreements')
+    .select('agreement_version')
+    .eq('campaign_id', campaignId)
+    .order('signed_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  // THROW on a real DB error — never let it collapse into the same null as
+  // "no signature": the close-charge D5 guard routes a thrown read to
+  // charge_review, so a transient glitch can't terminally suppress a legit
+  // v4 signer's base (mirrors the summary/credit read guards).
+  if (error) throw new Error('קריאת גרסת ההסכם החתום נכשלה');
+  return (data?.agreement_version as string | undefined) ?? null;
+}
+
 export async function recordSignedAgreement(
   input: RecordAgreementInput,
 ): Promise<RecordAgreementResult> {
@@ -81,7 +104,7 @@ export async function recordSignedAgreement(
   const { data: campaign, error } = await admin
     .from('campaigns')
     .select(
-      'id, event_id, status, price_per_reached, max_contacts, max_charge_ceiling, allowed_channels, start_at, close_at',
+      'id, event_id, status, price_per_reached, max_contacts, max_charge_ceiling, base_price, included_reached, allowed_channels, start_at, close_at',
     )
     .eq('id', input.campaignId)
     .maybeSingle();
@@ -159,6 +182,8 @@ export async function recordSignedAgreement(
       ceiling: campaign.max_charge_ceiling,
       channels: campaign.allowed_channels,
       windowText: `${fmtDate(campaign.start_at)} – ${fmtDate(campaign.close_at)}`,
+      baseFee: campaign.base_price ?? 0,
+      includedReached: campaign.included_reached ?? 0,
     },
     {
       signerName,
