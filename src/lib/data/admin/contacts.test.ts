@@ -5,9 +5,11 @@ import { createMockSupabase } from '@/test/supabase-mock';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { requirePlatformPermission } from '@/lib/auth/dal';
 import { logActivity } from '@/lib/data/activity';
+import { getEmailSender } from '@/lib/email/sender';
 import {
   listContactMessages,
   updateContactStatus,
+  sendInquiryReply,
   CONTACT_COLUMNS,
   type ContactMessage,
 } from './contacts';
@@ -16,6 +18,10 @@ vi.mock('server-only', () => ({}));
 vi.mock('@/lib/supabase/admin', () => ({ createAdminClient: vi.fn() }));
 vi.mock('@/lib/auth/dal', () => ({ requirePlatformPermission: vi.fn() }));
 vi.mock('@/lib/data/activity', () => ({ logActivity: vi.fn() }));
+vi.mock('@/lib/email/sender', () => ({ getEmailSender: vi.fn() }));
+vi.mock('@/lib/email/templates', () => ({
+  inquiryReplyEmail: vi.fn(() => ({ subject: 's', html: 'h', text: 't' })),
+}));
 
 const ADMIN_ID = 'admin-1';
 function adminUser(): User {
@@ -35,6 +41,8 @@ function row(overrides: Partial<ContactMessage> = {}): ContactMessage {
     user_id: null,
     handled_at: null,
     draft_reply: null,
+    sent_reply: null,
+    replied_at: null,
     ...overrides,
   };
 }
@@ -168,5 +176,78 @@ describe('updateContactStatus', () => {
     expect(builder.update).toHaveBeenCalledWith(
       expect.objectContaining({ status: 'in_progress', handled_at: null }),
     );
+  });
+});
+
+describe('sendInquiryReply', () => {
+  const ID = '22222222-2222-4222-8222-222222222222';
+
+  function mockSend() {
+    const send = vi.fn();
+    vi.mocked(getEmailSender).mockResolvedValue(
+      { send } as unknown as Awaited<ReturnType<typeof getEmailSender>>,
+    );
+    return send;
+  }
+
+  it('sends the email THEN stamps sent_reply/replied_at/status=done and logs', async () => {
+    const send = mockSend();
+    const { client, builder } = createMockSupabase<{ email: string; name: string }>({
+      data: { email: 'dana@example.com', name: 'דנה' },
+      error: null,
+    });
+    vi.mocked(createAdminClient).mockReturnValue(
+      client as unknown as ReturnType<typeof createAdminClient>,
+    );
+
+    await sendInquiryReply(ID, 'שלום, תודה על פנייתך.');
+
+    expect(send).toHaveBeenCalledWith(
+      expect.objectContaining({ to: 'dana@example.com', subject: 's' }),
+    );
+    expect(builder.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sent_reply: 'שלום, תודה על פנייתך.',
+        status: 'done',
+        replied_at: expect.any(String),
+        handled_at: expect.any(String),
+      }),
+    );
+    expect(logActivity).toHaveBeenCalledWith({
+      action: 'contact.reply_sent',
+      meta: { contactMessageId: ID },
+    });
+  });
+
+  it('throws (and never sends) when the inquiry has no email', async () => {
+    const send = mockSend();
+    const { client } = createMockSupabase<{ email: string | null; name: string }>({
+      data: { email: null, name: 'דנה' },
+      error: null,
+    });
+    vi.mocked(createAdminClient).mockReturnValue(
+      client as unknown as ReturnType<typeof createAdminClient>,
+    );
+
+    await expect(sendInquiryReply(ID, 'תשובה')).rejects.toThrow('אין כתובת אימייל');
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it('propagates a send failure and does NOT persist (send-then-persist safety)', async () => {
+    const send = vi.fn().mockRejectedValue(new Error('שליחת הדואר נכשלה'));
+    vi.mocked(getEmailSender).mockResolvedValue(
+      { send } as unknown as Awaited<ReturnType<typeof getEmailSender>>,
+    );
+    const { client, builder } = createMockSupabase<{ email: string; name: string }>({
+      data: { email: 'dana@example.com', name: 'דנה' },
+      error: null,
+    });
+    vi.mocked(createAdminClient).mockReturnValue(
+      client as unknown as ReturnType<typeof createAdminClient>,
+    );
+
+    await expect(sendInquiryReply(ID, 'תשובה')).rejects.toThrow('שליחת הדואר נכשלה');
+    expect(builder.update).not.toHaveBeenCalled();
+    expect(logActivity).not.toHaveBeenCalled();
   });
 });

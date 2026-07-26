@@ -10,12 +10,14 @@ import {
   parsePageParam,
 } from '../_components';
 import { ContactStatusForm } from './contact-status-form';
+import { ContactReplyForm } from './contact-reply-form';
 
 // Admin: contact-form + in-app support submissions, paginated server-side.
 // Personal data is shown to authorized staff only — the layout gate is
 // optimistic; every query re-checks the permission server-side. Each row shows
-// source (anonymous/registered), topic, status workflow, and the
-// support-drafter reply draft when one exists (draft only — sending is human).
+// source (anonymous/registered), topic, status workflow, the sent reply (once
+// answered), and an inline reply composer that pre-fills the support-drafter's
+// draft when one exists — a human reviews/edits and sends it (never auto-sent).
 
 export default async function AdminContactsPage({
   searchParams,
@@ -50,14 +52,34 @@ export default async function AdminContactsPage({
                   {[msg.email, msg.phone].filter(Boolean).join(' · ') || '—'}
                 </p>
                 <p className="whitespace-pre-wrap text-sm">{msg.message}</p>
-                {msg.draft_reply && (
-                  <div className="rounded-md border border-border bg-muted/40 p-3">
-                    <p className="text-xs font-semibold text-muted-foreground">
-                      טיוטת מענה (סוכן) — לא נשלחה
+
+                {msg.sent_reply && (
+                  <div className="rounded-md border border-success/40 bg-success/10 p-3">
+                    <p className="text-xs font-semibold text-success">
+                      מענה נשלח ללקוח
+                      {msg.replied_at ? ` · ${formatDateTime(msg.replied_at)}` : ''}
                     </p>
-                    <p className="whitespace-pre-wrap text-sm">{msg.draft_reply}</p>
+                    <p className="whitespace-pre-wrap text-sm">{msg.sent_reply}</p>
                   </div>
                 )}
+
+                {msg.email ? (
+                  <ContactReplyForm
+                    id={msg.id}
+                    defaultReply={msg.replied_at ? undefined : msg.draft_reply}
+                    alreadyReplied={Boolean(msg.replied_at)}
+                  />
+                ) : (
+                  msg.draft_reply && (
+                    <div className="rounded-md border border-border bg-muted/40 p-3">
+                      <p className="text-xs font-semibold text-muted-foreground">
+                        טיוטת מענה (סוכן) — אין אימייל לפנייה, לא ניתן לשלוח
+                      </p>
+                      <p className="whitespace-pre-wrap text-sm">{msg.draft_reply}</p>
+                    </div>
+                  )
+                )}
+
                 <p className="text-xs text-muted-foreground">
                   {formatDateTime(msg.created_at)}
                   {msg.handled_at ? ` · טופל: ${formatDateTime(msg.handled_at)}` : ''}

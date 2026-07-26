@@ -43,6 +43,18 @@ export const updateContactStatusSchema = z.object({
   status: callbackStatusEnum,
 });
 
+// Form payload for sending an email reply to a contact message. The reply body
+// is staff-authored free text; capped at 4000 chars (matches the drafter's
+// draft_reply cap) so a single email stays reasonable.
+export const sendInquiryReplySchema = z.object({
+  id: z.string().uuid({ error: 'מזהה לא תקין' }),
+  reply: z
+    .string()
+    .trim()
+    .min(1, { error: 'נא לכתוב את תוכן המענה' })
+    .max(4000, { error: 'המענה ארוך מדי' }),
+});
+
 // --- packages CRUD ---
 // `category` and `tier` are free-text columns in the DB. We keep them as
 // trimmed non-empty strings (server-validated) rather than inventing an enum.
