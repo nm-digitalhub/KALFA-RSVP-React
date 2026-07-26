@@ -20,6 +20,9 @@ vi.mock('@/lib/data/admin/outreach-master', () => ({
   getOutreachMasterState: vi.fn(),
   setOutreachEnabled: vi.fn(),
 }));
+vi.mock('@/lib/data/admin/channel-catalog', () => ({
+  updateChannelMetadata: vi.fn(),
+}));
 vi.mock('@/lib/alerts/slack', () => ({ sendSlackAlert: vi.fn() }));
 
 import {

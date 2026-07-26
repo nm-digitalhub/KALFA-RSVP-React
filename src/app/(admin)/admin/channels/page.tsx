@@ -1,9 +1,11 @@
 import { getWhatsAppChannelConfig } from '@/lib/data/admin/channels';
 import { getVoximplantChannelConfig } from '@/lib/data/admin/voximplant-channel';
 import { getOutreachMasterState } from '@/lib/data/admin/outreach-master';
+import { listAllChannels } from '@/lib/data/admin/channel-catalog';
 import { getAppUrl } from '@/lib/url';
 import { PageHeading } from '../_components';
 import { ChannelsClient } from './channels-client';
+import { ChannelCatalogEditor } from './channel-catalog-editor';
 
 const sectionClass = 'space-y-4 rounded-lg border border-border bg-card p-5';
 
@@ -14,6 +16,7 @@ export default async function AdminChannelsPage() {
   const whatsapp = await getWhatsAppChannelConfig();
   const voximplant = await getVoximplantChannelConfig();
   const master = await getOutreachMasterState(); // the single global switch
+  const catalogChannels = await listAllChannels(); // display metadata catalog
   const callbackUrl = await getAppUrl('/api/webhooks/whatsapp');
   const voxCtxBase = await getAppUrl('/api/voximplant/ctx'); // reference base — live URL appends a per-call signed token
   const voxCbBase = await getAppUrl('/api/voximplant/cb');
@@ -40,6 +43,18 @@ export default async function AdminChannelsPage() {
           outreachEnabled={master.enabled}
           anyChannelReady={master.anyChannelReady}
         />
+      </section>
+
+      <section className={sectionClass}>
+        <div>
+          <h2 className="text-lg font-semibold">קטלוג הערוצים (תצוגה)</h2>
+          <p className="text-sm text-muted-foreground">
+            שם התצוגה, הסדר, והצג/הסתר של הערוצים בטופס החבילה — נתונים הניתנים
+            לעריכה כאן במקום בקוד. שינוי חל מיד על טופס החבילה, בלי פריסה. הוספת
+            ערוץ חדש אינה עריכת-תצוגה אלא שינוי סכמה וקוד — אינה זמינה כאן.
+          </p>
+        </div>
+        <ChannelCatalogEditor channels={catalogChannels} />
       </section>
     </div>
   );

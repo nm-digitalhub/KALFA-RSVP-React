@@ -19,6 +19,7 @@ import {
   getOutreachMasterState,
   setOutreachEnabled,
 } from '@/lib/data/admin/outreach-master';
+import { updateChannelMetadata } from '@/lib/data/admin/channel-catalog';
 import { sendSlackAlert } from '@/lib/alerts/slack';
 import type { FormState } from '@/lib/validation/result';
 
@@ -243,4 +244,42 @@ export async function updateCallConsentRequiredAction(
       ? 'דרישת ההסכמה הופעלה — שיחות AI רק לאנשי קשר עם הסכמה מתועדת'
       : 'דרישת ההסכמה בוטלה — שיחות AI ייצאו גם ללא הסכמה מוקדמת (חשיפה משפטית — ראו האזהרה)',
   };
+}
+
+// Edit ONE existing channel's display metadata (label / built-flag / show-hide /
+// order) in the channel catalog (public.channels). `key` is immutable and there
+// is no create/delete — adding a channel is a schema+code concern, not a metadata
+// edit (see the DAL note + plans/channels-data-driven-plan.md). manage_settings +
+// admin RLS enforced in the DAL.
+const channelCatalogSchema = z.object({
+  key: z.string().trim().min(1).max(64),
+  display_name: z.string().trim().min(1, { error: 'שם תצוגה חובה' }).max(64),
+  is_built: z.boolean(),
+  active: z.boolean(),
+  sort_order: z.coerce.number().int().min(0).max(9999),
+});
+
+export async function updateChannelCatalogAction(
+  _prev: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  const parsed = channelCatalogSchema.safeParse({
+    key: formData.get('key') ?? '',
+    display_name: formData.get('display_name') ?? '',
+    // Unchecked checkboxes are absent from FormData → false.
+    is_built: formData.get('is_built') === 'on',
+    active: formData.get('active') === 'on',
+    sort_order: (formData.get('sort_order') || '0') as string,
+  });
+  if (!parsed.success) {
+    return { fieldErrors: parsed.error.flatten().fieldErrors };
+  }
+  try {
+    await updateChannelMetadata(parsed.data);
+  } catch (err) {
+    unstable_rethrow(err);
+    return { error: 'עדכון הערוץ נכשל. נסו שוב.' };
+  }
+  revalidatePath('/admin/channels');
+  return { notice: `הערוץ "${parsed.data.display_name}" נשמר` };
 }

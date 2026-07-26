@@ -23,6 +23,9 @@ vi.mock('@/lib/data/admin/outreach-master', () => ({
   getOutreachMasterState: vi.fn(),
   setOutreachEnabled: vi.fn(),
 }));
+vi.mock('@/lib/data/admin/channel-catalog', () => ({
+  updateChannelMetadata: vi.fn(),
+}));
 vi.mock('@/lib/alerts/slack', () => ({ sendSlackAlert: vi.fn() }));
 
 import { updateWhatsAppChannelConfig } from '@/lib/data/admin/channels';
@@ -31,10 +34,12 @@ import {
   updateVoximplantLiveCalls,
   updateCallConsentRequired,
 } from '@/lib/data/admin/voximplant-channel';
+import { updateChannelMetadata } from '@/lib/data/admin/channel-catalog';
 import {
   updateWhatsAppChannelAction,
   updateVoximplantLiveCallsAction,
   updateCallConsentRequiredAction,
+  updateChannelCatalogAction,
 } from './actions';
 
 type VoxChannelConfig = Awaited<ReturnType<typeof getVoximplantChannelConfig>>;
@@ -144,5 +149,59 @@ describe('updateCallConsentRequiredAction — the AI-call consent gate toggle', 
     vi.mocked(updateCallConsentRequired).mockRejectedValueOnce(new Error('db down'));
     const result = await updateCallConsentRequiredAction(null, fd({}));
     expect(result?.error).toBeTruthy();
+  });
+});
+
+describe('updateChannelCatalogAction — catalog display-metadata edit', () => {
+  const OK = {
+    key: 'call',
+    display_name: 'שיחת AI',
+    is_built: 'on',
+    active: 'on',
+    sort_order: '2',
+  };
+
+  it('rejects an empty display_name and does NOT write', async () => {
+    const result = await updateChannelCatalogAction(
+      null,
+      fd({ ...OK, display_name: '' }),
+    );
+    expect(result?.fieldErrors?.display_name).toBeTruthy();
+    expect(updateChannelMetadata).not.toHaveBeenCalled();
+  });
+
+  it('saves valid metadata (checkboxes → booleans, sort coerced to number)', async () => {
+    const result = await updateChannelCatalogAction(null, fd(OK));
+    expect(updateChannelMetadata).toHaveBeenCalledWith({
+      key: 'call',
+      display_name: 'שיחת AI',
+      is_built: true,
+      active: true,
+      sort_order: 2,
+    });
+    expect(result?.notice).toBeTruthy();
+  });
+
+  it('absent checkboxes → false (hidden / not-built)', async () => {
+    await updateChannelCatalogAction(
+      null,
+      fd({ key: 'call', display_name: 'x', sort_order: '0' }),
+    );
+    expect(updateChannelMetadata).toHaveBeenCalledWith(
+      expect.objectContaining({ is_built: false, active: false }),
+    );
+  });
+
+  it('propagates a framework redirect instead of swallowing it', async () => {
+    vi.mocked(updateChannelMetadata).mockRejectedValueOnce(NEXT_REDIRECT);
+    await expect(updateChannelCatalogAction(null, fd(OK))).rejects.toBe(
+      NEXT_REDIRECT,
+    );
+  });
+
+  it('a genuine error becomes a friendly message, not a throw', async () => {
+    vi.mocked(updateChannelMetadata).mockRejectedValueOnce(new Error('db down'));
+    const result = await updateChannelCatalogAction(null, fd(OK));
+    expect(result?.error).toBe('עדכון הערוץ נכשל. נסו שוב.');
   });
 });
