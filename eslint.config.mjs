@@ -25,6 +25,9 @@ const eslintConfig = defineConfig([
     // Local agent/skill config — subagent defs, references, and VoxEngine template
     // scaffolds (which use require(Modules.X)). Gitignored, not application source.
     ".claude/**",
+    // Cross-agent installed skills (skills-cli universal dir; .claude/skills
+    // symlinks into it). Third-party skill scripts, not application source.
+    ".agents/**",
     // voxengine-ci helper scaffold (generated wrapper, not our source).
     "voximplant-ci/**",
     // voxengine-ci build output + local CI metadata mirror (generated, not

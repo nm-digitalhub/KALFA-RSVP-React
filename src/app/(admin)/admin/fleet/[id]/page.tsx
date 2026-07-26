@@ -39,6 +39,66 @@ const KIND_LABEL: Record<string, string> = {
   fyi: 'עדכון',
 };
 
+// Attachments an agent referenced in payload.attachments — files it saved under
+// .fleet-logs/drafts/, served through the admin-gated /api/admin/fleet-file
+// route (realpath-allowlisted there; a bad/outside path simply 404s). Audio gets
+// an inline player so the owner can ear-check drafts straight from this page.
+type RequestAttachment = { path: string; label?: string; mime?: string };
+
+function parseAttachments(payload: unknown): RequestAttachment[] {
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return [];
+  const raw = (payload as { attachments?: unknown }).attachments;
+  if (!Array.isArray(raw)) return [];
+  return raw.flatMap((item): RequestAttachment[] => {
+    if (!item || typeof item !== 'object') return [];
+    const { path, label, mime } = item as Record<string, unknown>;
+    if (typeof path !== 'string' || !path.trim()) return [];
+    return [{
+      path,
+      label: typeof label === 'string' ? label : undefined,
+      mime: typeof mime === 'string' ? mime : undefined,
+    }];
+  });
+}
+
+function attachmentKind(att: RequestAttachment): 'audio' | 'image' | 'video' | 'file' {
+  const hint = att.mime ?? '';
+  if (hint.startsWith('audio/')) return 'audio';
+  if (hint.startsWith('image/')) return 'image';
+  if (hint.startsWith('video/')) return 'video';
+  const ext = att.path.toLowerCase().split('.').pop() ?? '';
+  if (['mp3', 'wav', 'm4a', 'ogg'].includes(ext)) return 'audio';
+  if (['png', 'jpg', 'jpeg', 'webp', 'gif'].includes(ext)) return 'image';
+  if (['mp4', 'webm'].includes(ext)) return 'video';
+  return 'file';
+}
+
+function AttachmentItem({ att }: { att: RequestAttachment }) {
+  const src = `/api/admin/fleet-file?path=${encodeURIComponent(att.path)}`;
+  const name = att.label ?? (att.path.split('/').pop() || att.path);
+  const kind = attachmentKind(att);
+  return (
+    <li className="space-y-1 rounded-md border border-border p-3">
+      <p className="text-sm font-medium">{name}</p>
+      {kind === 'audio' ? (
+        <audio controls preload="none" src={src} className="w-full" />
+      ) : kind === 'image' ? (
+        // eslint-disable-next-line @next/next/no-img-element -- authed dynamic stream, not an optimizable static asset
+        <img src={src} alt={name} className="max-h-72 max-w-full rounded-md" />
+      ) : kind === 'video' ? (
+        <video controls preload="none" src={src} className="max-h-72 w-full rounded-md" />
+      ) : (
+        <a href={src} download className="text-sm text-primary hover:underline">
+          הורדת הקובץ
+        </a>
+      )}
+      <p className="text-xs text-muted-foreground" dir="ltr">
+        {att.path}
+      </p>
+    </li>
+  );
+}
+
 function TimelineItem({
   title,
   at,
@@ -82,6 +142,7 @@ export default async function AdminFleetRequestPage({
     typeof (request.payload as { prepared_command?: unknown }).prepared_command === 'string'
       ? ((request.payload as { prepared_command: string }).prepared_command)
       : null;
+  const attachments = parseAttachments(request.payload);
 
   return (
     <div className="space-y-6">
@@ -125,6 +186,17 @@ export default async function AdminFleetRequestPage({
           ) : null}
         </section>
       )}
+
+      {attachments.length > 0 ? (
+        <section className="space-y-4 rounded-lg border border-border bg-card p-5">
+          <h2 className="text-lg font-semibold">קבצים מצורפים</h2>
+          <ul className="space-y-3">
+            {attachments.map((att) => (
+              <AttachmentItem key={att.path} att={att} />
+            ))}
+          </ul>
+        </section>
+      ) : null}
 
       <section className="space-y-4 rounded-lg border border-border bg-card p-5">
         <h2 className="text-lg font-semibold">ציר זמן</h2>

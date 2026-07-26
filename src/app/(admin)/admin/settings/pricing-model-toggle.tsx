@@ -31,7 +31,7 @@ export function PricingModelToggle({ enabled }: { enabled: boolean }) {
       <p className="text-xs text-amber-600">
         הפעלה מחייבת קמפיינים חדשים בדמי הפעלה ₪200 — גם ב‑0 תוצאות. ניתן להפעיל
         רק כשהסכם דמי‑ההפעלה (v4) פעיל ומאושר תחת /admin/agreement. חותמי v3
-        ממשיכים לפי‑תוצאה בלבד (מוגן ע"י guard ה‑D5 בחיוב).
+        ממשיכים לפי‑תוצאה בלבד (מוגן ע״י guard ה‑D5 בחיוב).
       </p>
       <SubmitButton>שמירה</SubmitButton>
     </form>

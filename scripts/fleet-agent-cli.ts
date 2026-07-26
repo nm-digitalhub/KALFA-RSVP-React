@@ -10,10 +10,15 @@
 // Subcommands:
 //   request --role R --kind approval|question|fyi --title T --body B
 //           [--tier 0..2] [--payload JSON] [--run-id ID] [--request-key K]
+//           [--attach PATH]...
 //     Inserts a pending request, then notifies: web push to every admin
 //     (existing sendPushToUser pipeline) + Slack mirror (sendSlackAlert).
 //     Idempotent: a retry deriving the same request_key returns the existing
 //     row instead of failing (unique-violation -> lookup).
+//     --attach (repeatable): reference a draft file so /admin/fleet renders it
+//     inline (audio player / image). The path MUST live under
+//     .fleet-logs/drafts/ (validated here AND at serve time by the admin-only
+//     /api/admin/fleet-file route); stored as payload.attachments entries.
 //   poll --role R
 //     Prints the role's unconsumed verdicts + its still-open requests.
 //   ack --id UUID
@@ -49,8 +54,8 @@
 
 import { parseArgs } from 'node:util';
 
-import { mkdirSync, writeFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { mkdirSync, writeFileSync, statSync } from 'node:fs';
+import { dirname, join, resolve, relative, sep, extname, basename } from 'node:path';
 
 import { createRequire } from 'node:module';
 
@@ -181,7 +186,20 @@ async function threadTsFor(requestId: string): Promise<string | null> {
   return data?.thread_ts ?? null;
 }
 
-async function cmdRequest(args: Record<string, string | undefined>): Promise<void> {
+// Extension→MIME hints for payload.attachments (a compact mirror of the serve
+// route's allowlist in src/app/api/admin/fleet-file/route.ts — the route is the
+// enforcing side; this only pre-labels for the UI).
+const ATTACH_MIME: Record<string, string> = {
+  '.mp3': 'audio/mpeg', '.wav': 'audio/wav', '.m4a': 'audio/mp4', '.ogg': 'audio/ogg',
+  '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp', '.gif': 'image/gif',
+  '.pdf': 'application/pdf', '.txt': 'text/plain', '.md': 'text/plain', '.json': 'application/json',
+  '.mp4': 'video/mp4', '.webm': 'video/webm',
+};
+
+async function cmdRequest(
+  args: Record<string, string | undefined>,
+  attachPaths?: string[],
+): Promise<void> {
   const role = requireOption(args.role, 'role');
   const kind = requireOption(args.kind, 'kind') as Kind;
   if (!KINDS.includes(kind)) fail(`--kind must be one of: ${KINDS.join(', ')}`);
@@ -203,6 +221,34 @@ async function cmdRequest(args: Record<string, string | undefined>): Promise<voi
       if (err instanceof SyntaxError) fail('--payload is not valid JSON');
       throw err;
     }
+  }
+
+  // --attach: reference draft files for inline rendering at /admin/fleet.
+  // Validated to live under .fleet-logs/drafts/ (the serve route re-enforces
+  // the same allowlist with realpath at read time). Stored as RELATIVE paths.
+  if (attachPaths && attachPaths.length > 0) {
+    const draftsRoot = resolve(process.cwd(), '.fleet-logs', 'drafts');
+    const fromPayload = (payload as Record<string, Json | undefined>).attachments;
+    const list: Json[] = Array.isArray(fromPayload) ? [...fromPayload] : [];
+    for (const raw of attachPaths) {
+      const abs = resolve(process.cwd(), raw);
+      if (abs !== draftsRoot && !abs.startsWith(draftsRoot + sep)) {
+        fail(`--attach must point under .fleet-logs/drafts/ (got: ${raw})`);
+      }
+      let st;
+      try {
+        st = statSync(abs);
+      } catch {
+        return fail(`--attach file not found: ${raw}`);
+      }
+      if (!st.isFile()) fail(`--attach is not a file: ${raw}`);
+      list.push({
+        path: relative(process.cwd(), abs),
+        label: basename(abs),
+        mime: ATTACH_MIME[extname(abs).toLowerCase()] ?? 'application/octet-stream',
+      });
+    }
+    payload = { ...(payload as Record<string, Json>), attachments: list };
   }
 
   const requestKey = args['request-key']?.trim() || deriveRequestKey({ role, kind, title, body });
@@ -612,6 +658,7 @@ async function main(): Promise<void> {
       title: { type: 'string' },
       body: { type: 'string' },
       payload: { type: 'string' },
+      attach: { type: 'string', multiple: true },
       'run-id': { type: 'string' },
       'request-key': { type: 'string' },
       id: { type: 'string' },
@@ -622,25 +669,28 @@ async function main(): Promise<void> {
   });
 
   const command = positionals[0];
+  // `attach` is the only multiple:true option — split it off so the remaining
+  // values keep the Record<string, string | undefined> shape the verbs expect.
+  const { attach, ...scalarValues } = values;
   switch (command) {
     case 'request':
-      return cmdRequest(values);
+      return cmdRequest(scalarValues as Record<string, string | undefined>, attach);
     case 'poll':
-      return cmdPoll(values);
+      return cmdPoll(scalarValues);
     case 'verdicts':
       return cmdVerdicts();
     case 'ack':
-      return cmdAck(values);
+      return cmdAck(scalarValues);
     case 'expire':
       return cmdExpire();
     case 'digest':
-      return cmdDigest(values);
+      return cmdDigest(scalarValues);
     case 'sql':
-      return cmdSql(values);
+      return cmdSql(scalarValues);
     case 'draft-reply':
-      return cmdDraftReply(values);
+      return cmdDraftReply(scalarValues);
     case 'distill-corrections':
-      return cmdDistillCorrections(values);
+      return cmdDistillCorrections(scalarValues);
     case 'business-facts':
       return cmdBusinessFacts();
     default:

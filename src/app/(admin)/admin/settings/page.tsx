@@ -43,7 +43,7 @@ export default async function AdminSettingsPage() {
           <p className="text-sm text-muted-foreground">
             מתג ראשי למודל דמי‑ההפעלה (₪200 + 200 כלולים + ₪4 חריגה). כבוי = חיוב
             לפי‑תוצאה בלבד (₪4 למושג). הפעלה = מוצא‑כסף חי, חסום עד שהסכם v4 מאושר
-            ופעיל; חותמי v3 מוגנים ע"י guard ה‑D5.
+            ופעיל; חותמי v3 מוגנים ע״י guard ה‑D5.
           </p>
         </div>
         <PricingModelToggle enabled={baseOveragePricing} />
