@@ -36,6 +36,13 @@ export const updateCallbackStatusSchema = z.object({
   status: callbackStatusEnum,
 });
 
+// Form payload for updating a single contact message's status. Reuses the
+// SAME closed vocabulary as callbacks — one inquiry status system, not two.
+export const updateContactStatusSchema = z.object({
+  id: z.string().uuid({ error: 'מזהה לא תקין' }),
+  status: callbackStatusEnum,
+});
+
 // --- packages CRUD ---
 // `category` and `tier` are free-text columns in the DB. We keep them as
 // trimmed non-empty strings (server-validated) rather than inventing an enum.
