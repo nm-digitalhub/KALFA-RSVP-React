@@ -85,3 +85,4 @@ storage_state.json
 
 # filebrowser live tool database (may contain credential hashes) — never commit
 /filebrowser.db
+__pycache__/
