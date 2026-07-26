@@ -29,6 +29,13 @@
 //     to the customer (a human reviews the draft in /admin/contacts and sends).
 //     Idempotent + scope-limited: touches exactly 2 columns, 1 row, only when
 //     `status='new' AND draft_reply IS NULL` (the guard is the loop-breaker).
+//   distill-corrections [--limit N]
+//     Stage-1 learning loop (maintenance/curation — NOT run by the drafter
+//     role). Distils the draft_reply<->sent_reply feedback ALREADY in
+//     contact_messages into a redacted few-shot corpus the drafter reads each
+//     run (.claude/fleet/roles/support-drafter.examples.md), and prints the
+//     "sent nearly as-is" rate that baselines future autonomy. Reads submitter
+//     PII ONLY to redact it — nothing raw reaches the corpus or stdout.
 //
 // PII rule: requests are owner-facing internal ops traffic. Callers must not
 // put guest personal data in title/body; the Slack layer redacts as
@@ -36,6 +43,9 @@
 // a staff-facing DRAFT only; it is never emailed by this CLI.
 
 import { parseArgs } from 'node:util';
+
+import { mkdirSync, writeFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 
 import { createRequire } from 'node:module';
 
@@ -69,6 +79,11 @@ const PgClient = (createRequire(__filename)('pg') as {
   Client: new (config: PgClientConfig) => PgClientLike;
 }).Client;
 import { deriveRequestKey } from '@/lib/fleet/request-key';
+import {
+  renderExamplesMarkdown,
+  summarizeMetric,
+  toRedactedExample,
+} from '@/lib/fleet/corrections';
 import { sendPushToUser } from '@/lib/data/push-subscriptions';
 import { createAdminClient } from '@/lib/supabase/admin';
 import type { Database, Json } from '@/lib/supabase/types';
@@ -465,6 +480,87 @@ async function cmdDraftReply(args: Record<string, string | undefined>): Promise<
   if (rows.length === 0) process.exitCode = 2;
 }
 
+// Stage-1 learning loop. Distils the draft_reply<->sent_reply feedback already
+// in contact_messages into a redacted few-shot corpus the drafter reads each
+// run, and reports the "sent nearly as-is" rate that baselines any future
+// autonomy. Reads submitter PII (name/email/phone) ONLY to redact it — nothing
+// raw is written to the corpus or printed. This is a maintenance/curation verb;
+// the PII-free support-drafter role never runs it.
+const EXAMPLES_MAX = 30;
+const EXAMPLE_FIELD_MAX = 1200;
+const NEAR_THRESHOLD = 0.85;
+// dist/ (esbuild bundle) -> repo root -> role dir. The corpus is git-ignored
+// like every .claude/fleet/roles file — which is also correct: a redacted
+// derivative of customer replies must never be committed.
+const EXAMPLES_PATH = join(
+  dirname(__filename),
+  '..',
+  '.claude',
+  'fleet',
+  'roles',
+  'support-drafter.examples.md',
+);
+
+async function cmdDistillCorrections(args: Record<string, string | undefined>): Promise<void> {
+  const limit = args.limit ? Number(args.limit) : EXAMPLES_MAX;
+  if (!Number.isInteger(limit) || limit < 1 || limit > 200) {
+    fail('--limit must be an integer 1..200');
+  }
+
+  const admin = createAdminClient();
+  const { data, error } = await admin
+    .from('contact_messages')
+    .select('id, topic, message, name, email, phone, draft_reply, sent_reply, replied_at, created_at')
+    .not('draft_reply', 'is', null)
+    .not('sent_reply', 'is', null)
+    .order('replied_at', { ascending: false, nullsFirst: false })
+    .order('created_at', { ascending: false })
+    .limit(limit);
+
+  if (error) fail(`distill-corrections read failed: ${error.message}`);
+
+  const rows = data ?? [];
+  // The query guarantees both columns are non-null; narrow via a type guard so
+  // no cast is needed downstream.
+  const pairs = rows.filter(
+    (r): r is (typeof rows)[number] & { draft_reply: string; sent_reply: string } =>
+      r.draft_reply !== null && r.sent_reply !== null,
+  );
+
+  const examples = pairs.map((r) =>
+    toRedactedExample(
+      {
+        topic: r.topic,
+        message: r.message,
+        draft: r.draft_reply,
+        sent: r.sent_reply,
+        pii: { name: r.name, email: r.email, phone: r.phone },
+      },
+      EXAMPLE_FIELD_MAX,
+    ),
+  );
+
+  const markdown = renderExamplesMarkdown(examples, NEAR_THRESHOLD);
+  mkdirSync(dirname(EXAMPLES_PATH), { recursive: true });
+  writeFileSync(EXAMPLES_PATH, markdown, 'utf8');
+
+  const metric = summarizeMetric(examples, NEAR_THRESHOLD);
+  // Output is PII-free by construction: file path, aggregate metric, and ids
+  // only — never message/draft/sent content.
+  console.log(
+    JSON.stringify(
+      {
+        wrote: EXAMPLES_PATH,
+        ...metric,
+        nearThreshold: NEAR_THRESHOLD,
+        ids: pairs.map((r) => r.id),
+      },
+      null,
+      2,
+    ),
+  );
+}
+
 async function main(): Promise<void> {
   const { positionals, values } = parseArgs({
     allowPositionals: true,
@@ -480,6 +576,7 @@ async function main(): Promise<void> {
       id: { type: 'string' },
       level: { type: 'string' },
       query: { type: 'string' },
+      limit: { type: 'string' },
     },
   });
 
@@ -501,9 +598,11 @@ async function main(): Promise<void> {
       return cmdSql(values);
     case 'draft-reply':
       return cmdDraftReply(values);
+    case 'distill-corrections':
+      return cmdDistillCorrections(values);
     default:
       fail(
-        'usage: fleet-agent-cli <request|poll|verdicts|ack|expire|digest|sql|draft-reply> [options]',
+        'usage: fleet-agent-cli <request|poll|verdicts|ack|expire|digest|sql|draft-reply|distill-corrections> [options]',
       );
   }
 }
