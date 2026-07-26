@@ -36,6 +36,12 @@ describe('buildBusinessFacts', () => {
     expect(f.per_reached_price).toBe(4);
     expect(f.summary_he).toContain('₪200');
     expect(f.summary_he).toContain('₪4');
+    // §2-safe framing: the base must be disclosed as UNCONDITIONAL (charged even
+    // if no one responded), and must NOT carry the outcome-only "pay only for
+    // responders" claim that (correctly) belongs to the per-reached model / overage.
+    expect(f.summary_he).toContain('אינם מותנים בתוצאה');
+    expect(f.summary_he).toContain('גם אם לא נענה אף איש קשר');
+    expect(f.summary_he).not.toContain('משלמים רק');
   });
 
   it('gate ON but package has no base → still per-reached', () => {

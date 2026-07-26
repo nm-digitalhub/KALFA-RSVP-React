@@ -48,9 +48,16 @@ export function buildBusinessFacts(
   const model: 'base_overage' | 'per_reached' =
     gateOn && base > 0 ? 'base_overage' : 'per_reached';
 
+  // §2 (הגנת הצרכן) — the base fee must be presented as UNCONDITIONAL (charged
+  // regardless of outcome); the "pay only for responders" claim is TRUE ONLY of the
+  // overage above the included, never of the base. Framing the base as
+  // outcome-conditional is a price misrepresentation (compliance review 2026-07-26;
+  // attorney item 18). Balanced tone: the required disclosure is framed as the VALUE
+  // the fee buys (activation + included responses, no subscription) rather than a
+  // penalty — accurate AND not deal-deterring.
   const summary_he =
     model === 'base_overage'
-      ? `דמי בסיס ₪${base} (נגבים עם הפעלת הקמפיין) הכוללים עד ${included} אנשי קשר שהושגו, ומעבר לכך ₪${overage} לכל איש קשר נוסף שהושג.`
+      ? `דמי הפעלה ₪${base} — עבור הפעלת השירות והפצת הפניות בערוצים — הכוללים כבר עד ${included} אנשי קשר שנענו בפועל, ללא תוספת. מעבר ל-${included}: ₪${overage} בלבד לכל איש קשר נוסף שנענה בפועל. דמי ההפעלה נגבים עם הפעלת הקמפיין ואינם מותנים בתוצאה — הם חלים על עצם הפעלת השירות, גם אם לא נענה אף איש קשר. ללא דמי מנוי; מחיר סופי, ללא מע"מ (עוסק פטור).`
       : `₪${overage} לכל איש קשר שהושג (נענה בוואטסאפ או השלים שיחת AI). משלמים רק על מי שנענה בפועל — פנייה שלא נענתה אינה מחויבת.`;
 
   return {
