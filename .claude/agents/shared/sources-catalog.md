@@ -158,6 +158,20 @@ israeli-compliance-advisor).
   six (except e-signature); data snapshot 2026-02-20. Published bin is broken
   (`dist/index.js` missing) — we run `dist/src/index.js` directly. The hosted
   Vercel variant is DEAD (404).
+- **il-eli MCP — WORKING (case-law side), configured** (`claude mcp list` →
+  `il-eli ✔`; local scope, beta; runs the interpreter-venv `il-eli-mcp` with
+  `IL_ELI_CACHE_DIR`/`IL_ELI_AUDIT_DIR` under `~/.claude/mcp/`). 6 tools —
+  from THIS server: **`il_search_case_law` + `il_get_case` WORK** (local 81MB
+  corpus of 10,558 Hebrew judgments — Family/District/Magistrate/Labor/
+  Military/Administrative, NO Supreme Court; snapshot dataset, cached after
+  first download; tested live: Hebrew substring search over title/text/
+  judges/case-number). The 4 legislation tools (il_search_laws/il_get_law/
+  il_search_law_texts/il_get_law_documents) call the geo-blocked Knesset
+  OData → 474 from here (usable from an unblocked machine). ⚠️ Corpus is
+  community-scraped with an UNDOCUMENTED license — internal analysis only,
+  NEVER redistribute judgment text to end users; citations point to the
+  dataset, not official court URLs — verify any load-bearing holding against
+  an official/secondary source before citing.
 - **Kol Zchut MCP** (`@skills-il/kolzchut-mcp`) — NOT viable from this server
   (measured 2026-07-26): `agentskills.co.il/mcp` is a catalog WEBPAGE, not an
   MCP endpoint (HTTP 405 on an MCP initialize POST); the npm stdio server
