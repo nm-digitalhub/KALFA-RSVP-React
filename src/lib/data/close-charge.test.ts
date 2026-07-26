@@ -108,9 +108,10 @@ function happy() {
   m.payments.mockResolvedValue(true);
   m.close.mockResolvedValue(true);
   m.sumit.mockResolvedValue({ companyId: 1, apiKey: 'k' });
-  // Default: the signed contract is the base-fee version, so a snapshotted base
-  // is honored (the D5 guard only bites on a mismatch — exercised in its suite).
-  m.signed.mockResolvedValue('draft-2026-07-v4');
+  // Default: the signed contract is the APPROVED base-fee version (draft-free, as
+  // the approve flow records it), so a snapshotted base is honored (the D5 guard
+  // only bites on a mismatch — exercised in its suite).
+  m.signed.mockResolvedValue('2026-07-v4');
   m.forCharge.mockResolvedValue({
     id: 'c1',
     event_id: 'e1',
@@ -518,10 +519,10 @@ describe('closeCampaignAndCharge', () => {
       price_per_reached: 4,
     };
 
-    it('honors the base when the customer signed the base-fee version (v4)', async () => {
+    it('honors the base for the APPROVED base-fee version (2026-07-v4)', async () => {
       happy();
       m.forCharge.mockResolvedValue({ ...withBase });
-      m.signed.mockResolvedValue('draft-2026-07-v4');
+      m.signed.mockResolvedValue('2026-07-v4');
       m.summary.mockResolvedValue({ reachedCount: 0, accrued: 0, ceiling: 600, maxContacts: 300 });
       const r = await closeCampaignAndCharge('c1');
       expect(r).toEqual({ outcome: 'charged', amount: 200 });

@@ -19,6 +19,8 @@ const sectionClass = 'space-y-3 rounded-lg border border-border bg-card p-5';
 const TOKENS = [
   'eventName',
   'pricePerReached',
+  'baseFee',
+  'includedReached',
   'maxContacts',
   'ceiling',
   'channels',

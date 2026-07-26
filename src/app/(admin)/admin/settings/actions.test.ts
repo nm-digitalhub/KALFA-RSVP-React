@@ -11,7 +11,7 @@ vi.mock('@/lib/data/admin/settings', () => ({
 }));
 vi.mock('@/lib/data/agreements-doc', () => ({ getActiveAgreementDoc: vi.fn() }));
 vi.mock('@/lib/agreements/template', () => ({
-  BASE_FEE_AGREEMENT_VERSION: 'draft-2026-07-v4',
+  BASE_FEE_AGREEMENT_VERSION: '2026-07-v4',
 }));
 vi.mock('@/lib/alerts/slack', () => ({ sendSlackAlert: vi.fn() }));
 
@@ -70,7 +70,7 @@ describe('updateSettingsAction — Next.js control-flow signals (requireAdmin)',
 
 describe('updateBaseOveragePricingAction — fail-closed pricing gate', () => {
   const V4_APPROVED = {
-    version: 'draft-2026-07-v4',
+    version: '2026-07-v4',
     status: 'approved' as const,
     bodyHtml: null,
   };
@@ -89,9 +89,9 @@ describe('updateBaseOveragePricingAction — fail-closed pricing gate', () => {
     expect(setBaseOveragePricingEnabled).not.toHaveBeenCalled();
   });
 
-  it('refuses to ENABLE when v4 is active but still a draft (not approved)', async () => {
+  it('refuses to ENABLE when the v4 doc is active but still a draft (not approved)', async () => {
     vi.mocked(getActiveAgreementDoc).mockResolvedValue({
-      version: 'draft-2026-07-v4',
+      version: '2026-07-v4',
       status: 'draft',
       bodyHtml: null,
     });

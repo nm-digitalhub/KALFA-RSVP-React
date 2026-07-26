@@ -20,19 +20,25 @@ import { escapeHtml as esc } from '@/lib/html';
 export const AGREEMENT_VERSION = 'draft-2026-07-v3';
 
 // The base-fee agreement version — §3-4 disclose the ₪200 activation fee (charged
-// even at 0 reached) + 200 included + ₪4 overage. NEW-signers-only: existing v3
-// signatures keep the per-reached "0 → no charge" terms. This is the ONLY version
-// under which the base+overage model may be billed.
-export const BASE_FEE_AGREEMENT_VERSION = 'draft-2026-07-v4';
+// even at 0 reached) + included + overage. NEW-signers-only: existing v3 signatures
+// keep the per-reached "0 → no charge" terms. This is the APPROVED (draft-free)
+// version string, because approving strips the "draft-" prefix (agreement-client
+// `version.replace(/^draft-/, '')`), so a real approved v4 signature records
+// exactly this. The base+overage model may be billed ONLY under this version, and
+// the pricing-gate toggle refuses to enable unless the active APPROVED doc matches it.
+export const BASE_FEE_AGREEMENT_VERSION = '2026-07-v4';
 
-// D5 guard predicate. The base+overage model (the ₪200 activation fee) may be
-// charged ONLY when the customer signed a base-fee agreement version. Explicit
-// allow-list with a SAFE default: an unknown/absent version is NOT base-fee, so
-// the charge falls back to pure per-reached. This binds the money to the signed
-// contract, independent of the global gate's timing — a v3-signer can never be
-// charged the base even if the gate is on and the campaign snapshotted one.
+// D5 guard predicate. The base+overage clauses/charge apply when the version is a
+// base-fee variant — the APPROVED `2026-07-v4` (what a real signer records once the
+// doc is approved) AND its `draft-` form (so the admin preview + a pre-approval
+// draft still render the v4 clauses). Draft-v4 can only be SIGNED while the gate is
+// off (the toggle needs the APPROVED doc), so a draft-v4 signature never coincides
+// with a base>0 snapshot — harmless to include. SAFE default: unknown/absent → not
+// base-fee → the charge falls back to pure per-reached. Binds the money to the
+// signed contract, independent of the global gate's timing.
 const BASE_FEE_AGREEMENT_VERSIONS: ReadonlySet<string> = new Set([
   BASE_FEE_AGREEMENT_VERSION,
+  `draft-${BASE_FEE_AGREEMENT_VERSION}`,
 ]);
 export function isBaseFeeAgreementVersion(
   version: string | null | undefined,
