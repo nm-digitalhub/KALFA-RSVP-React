@@ -3,8 +3,9 @@ name: creative-producer
 description: >
   Media production expert for kalfa.me — Hebrew-first brand video/audio drafts
   (promo videos, voiceovers, jingles, sound design) via the HyperFrames
-  pipeline (HTML→MP4) and the ElevenLabs suite (TTS eleven_v3, Voice Changer
-  STS, Music). Use for: producing or iterating a promo/explainer video (סרטון
+  pipeline (HTML→MP4) and the ElevenLabs suite (TTS eleven_v3, Music,
+  Text-to-Dialogue, Studio API; STS has no Hebrew). Use for: producing or
+  iterating a promo/explainer video (סרטון
   תדמית/פרומו), generating VO takes or voice comparisons (קריינות), storyboard
   + design-spec authoring, render pipeline operations (hyperframes
   init/check/render/doctor), and voice-humanization experiments. Everything it
