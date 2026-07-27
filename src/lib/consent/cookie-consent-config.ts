@@ -3,14 +3,19 @@ import type * as CookieConsent from 'vanilla-cookieconsent';
 // Central cookie-consent configuration for KALFA.
 // See docs/consent/cookie-consent.md for the full rationale and how to extend it.
 //
-// Today KALFA loads ZERO non-essential trackers (no analytics, no marketing, no
-// third-party embeds), so only the strictly-necessary category is surfaced — an
-// honest "essential cookies only" notice, not an empty opt-in theatre.
+// Two categories: strictly-necessary (always on) and OPT-IN analytics (GA4 via
+// the consent-gated component src/components/consent/google-analytics-gated.tsx,
+// mounted only on marketing + customer-app surfaces — never on guest token
+// routes). Analytics loads NOTHING until the visitor grants the category; on
+// revoke, autoClear wipes the _ga* cookies.
 //
-// To add analytics/marketing later: add the category + a preferences section
-// here, list its cookies under `autoClear`, gate the tracker's <Script> on
-// `CookieConsent.acceptedCategory(...)`, and bump CONSENT_REVISION to re-ask.
-export const CONSENT_REVISION = 1;
+// REVISION 2 (2026-07-27): analytics category added — the previous "essential
+// only" consent is stale, so every returning visitor is re-asked.
+// REVISION 3 (2026-07-27, same day): Google Signals enabled on the property —
+// the analytics category now also covers cross-device association via
+// signed-in Google accounts and demographics/interests reporting, so the
+// category description changed materially and everyone is re-asked again.
+export const CONSENT_REVISION = 3;
 
 export const cookieConsentConfig: CookieConsent.CookieConsentConfig = {
   revision: CONSENT_REVISION,
@@ -34,15 +39,23 @@ export const cookieConsentConfig: CookieConsent.CookieConsentConfig = {
     preferencesModal: { layout: 'box' },
   },
 
-  // Only the strictly-necessary category exists today. It covers every cookie
-  // KALFA sets: Supabase auth/session (sb-*), active_org tenant scoping, the
-  // version-skew reload guard, the sidebar UI-state cookie, and the SUMIT
-  // payment script loaded on checkout. All are required for the service to work
-  // and therefore cannot be disabled.
   categories: {
+    // Covers every cookie KALFA itself sets: Supabase auth/session (sb-*),
+    // active_org tenant scoping, the version-skew reload guard, the sidebar
+    // UI-state cookie, and the SUMIT payment script loaded on checkout. All are
+    // required for the service to work and therefore cannot be disabled.
     necessary: {
       enabled: true,
       readOnly: true,
+    },
+    // Google Analytics 4 — opt-in only. The tracker itself is rendered by
+    // GoogleAnalyticsGated strictly after this category is granted, so the
+    // autoClear below is the cleanup path for a LATER revoke.
+    analytics: {
+      enabled: false,
+      autoClear: {
+        cookies: [{ name: /^_ga/ }],
+      },
     },
   },
 
@@ -58,27 +71,35 @@ export const cookieConsentConfig: CookieConsent.CookieConsentConfig = {
         consentModal: {
           title: 'עוגיות באתר',
           description:
-            'אנחנו משתמשים אך ורק בעוגיות חיוניות הנדרשות להתחברות, לאבטחה ולתפעול השירות. איננו משתמשים בעוגיות מעקב, אנליטיקה או שיווק.',
-          acceptAllBtn: 'הבנתי',
+            'אנחנו משתמשים בעוגיות חיוניות הנדרשות להתחברות, לאבטחה ולתפעול השירות, ובנוסף — רק אם תאשרו — באנליטיקה (Google Analytics) שעוזרת לנו להבין את השימוש באתר ולשפר אותו.',
+          acceptAllBtn: 'אישור הכול',
+          acceptNecessaryBtn: 'רק חיוניות',
           showPreferencesBtn: 'פרטים',
           footer:
             '<a href="/cookies">מדיניות עוגיות</a> · <a href="/privacy">מדיניות פרטיות</a>',
         },
         preferencesModal: {
           title: 'העדפות עוגיות',
-          acceptAllBtn: 'הבנתי',
+          acceptAllBtn: 'אישור הכול',
+          acceptNecessaryBtn: 'רק חיוניות',
           savePreferencesBtn: 'שמירה',
           closeIconLabel: 'סגירה',
           sections: [
             {
               description:
-                'האתר משתמש בעוגיות חיוניות בלבד. עוגיות אלה נדרשות לתפקוד הבסיסי — התחברות, אבטחה ושמירת מצב ממשק — ולכן אינן ניתנות לכיבוי. למידע מלא ראו <a href="/cookies">מדיניות העוגיות</a>.',
+                'עוגיות חיוניות נדרשות לתפקוד הבסיסי ואינן ניתנות לכיבוי; אנליטיקה פועלת רק בהסכמתכם, וניתן לשנות את הבחירה כאן בכל עת. למידע מלא ראו <a href="/cookies">מדיניות העוגיות</a>.',
             },
             {
               title: 'עוגיות חיוניות',
               description:
                 'עוגיות אימות וזיהוי (Supabase), בחירת הארגון הפעיל, שמירת מצב סרגל הצד, ושמירת יציבות גרסה. ללא עוגיות אלה השירות אינו יכול לפעול.',
               linkedCategory: 'necessary',
+            },
+            {
+              title: 'אנליטיקה (Google Analytics)',
+              description:
+                'מדידת שימוש — אילו עמודים נצפים וכיצד משתמשים באתר — לצורך שיפורו, כולל Google Signals: קישור ביקורים חוצה-מכשירים עבור משתמשים המחוברים לחשבון Google שהפעילו התאמה אישית של מודעות, ונתוני דמוגרפיה ותחומי עניין מצרפיים. נטענת רק לאחר אישורכם, לא בדפי אישורי-ההגעה של אורחים, וביטול ההסכמה מוחק את עוגיות המדידה (_ga*).',
+              linkedCategory: 'analytics',
             },
             {
               title: 'מידע נוסף',

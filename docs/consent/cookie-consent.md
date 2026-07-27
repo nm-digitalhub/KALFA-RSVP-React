@@ -2,13 +2,25 @@
 
 ## What & why
 
-KALFA loads **zero non-essential trackers** — no Google Analytics, GTM, Meta
-Pixel, Clarity, Hotjar, Sentry, chat widgets, or third-party embeds (verified by
-codebase sweep, 2026-07-18). The only third-party client script is the SUMIT
-payment library, loaded on the checkout page when the user initiates a payment.
+> **REVISION 2 (2026-07-27):** Google Analytics 4 was added as an OPT-IN
+> `analytics` category — the "zero trackers" statement below describes revision
+> 1 history. GA is rendered by
+> `src/components/consent/google-analytics-gated.tsx` strictly AFTER the
+> visitor grants the category (no Google request leaves the browser before
+> consent), and is mounted only on the marketing route group
+> `(public)/(site)` and the customer app layout — NEVER on the guest token
+> surfaces (`/r` `/g` `/ty` `/join`), so guests are unmeasured and tokenized
+> URLs cannot leak. Revoking wipes `_ga*` via `autoClear`; the measurement id
+> comes from `NEXT_PUBLIC_GA_ID` (component renders nothing when unset).
+> Invariants are unit-tested in `src/lib/consent/analytics-gate.test.ts`.
 
-Because there is nothing non-essential to gate, the implementation is an honest
-**"essential cookies only" notice** — not an empty multi-category opt-in. It uses
+As of revision 1 (2026-07-18), KALFA loaded **zero non-essential trackers** — no
+Google Analytics, GTM, Meta Pixel, Clarity, Hotjar, Sentry, chat widgets, or
+third-party embeds (verified by codebase sweep). The only third-party client
+script was the SUMIT payment library, loaded on the checkout page when the user
+initiates a payment.
+
+The implementation uses
 [`vanilla-cookieconsent`](https://cookieconsent.orestbida.com) so we get a
 professional, accessible, versioned notice with a preference dialog, while keeping
 consent **local-only** (a first-party cookie) with no backend or paid service.

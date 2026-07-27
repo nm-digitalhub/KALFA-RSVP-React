@@ -2,6 +2,7 @@ import { requireUser, isAdmin, getOrgContext } from '@/lib/auth/dal';
 import { can } from '@/lib/permissions';
 import { getProfile } from '@/lib/data/profiles';
 import { AppShell } from '@/components/app-shell';
+import { GoogleAnalyticsGated } from '@/components/consent/google-analytics-gated';
 
 export default async function CustomerLayout({
   children,
@@ -35,6 +36,7 @@ export default async function CustomerLayout({
       showTeam={showTeam}
     >
       {children}
+      <GoogleAnalyticsGated />
     </AppShell>
   );
 }

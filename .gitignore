@@ -67,6 +67,9 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 dist/
+# Server-side secret files (GA4 service-account key etc. — private keys inside)
+.secrets/
+
 # Voximplant service-account keys + voxengine-ci config (NEVER commit — RSA private key inside)
 voxi_auth.json
 vox_ci_credentials.json
