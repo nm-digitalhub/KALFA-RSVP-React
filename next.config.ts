@@ -88,7 +88,10 @@ const nextConfig: NextConfig = {
   // (dynamic requires, optional pg-native) through webpack, which is exactly the
   // case the Next docs describe: a dependency relying on Node.js-specific
   // features must not be bundled.
-  serverExternalPackages: ['puppeteer', 'pg-boss'],
+  //
+  // Google Analytics Data uses Node-specific runtime loading through
+  // google-gax; keep it external to the Next.js server bundle.
+  serverExternalPackages: ['puppeteer', 'pg-boss', '@google-analytics/data'],
   async headers() {
     return [
       // Official Next.js PWA guide (guides/progressive-web-apps §8) global
