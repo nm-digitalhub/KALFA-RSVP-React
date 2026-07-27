@@ -1,0 +1,190 @@
+{
+  "$comment": "kalfa-fleet configuration. The pm2 scheduler (bin/scheduler.mjs) reloads this every tick, so edits take effect within 60s without a restart. KILLSWITCH file in this directory stops everything. answer_watcher: detects owner verdicts autonomously — roles with auto_ack get an immediate CLI ack (trivial consumers); scheduled roles get their headless run spawned to act on the verdict. Times are Asia/Jerusalem, days 0=Sunday (Israel work week Sun-Thu = '0-4').",
+  "timezone": "Asia/Jerusalem",
+  "daily_run_cap": 14,
+  "dry_run": false,
+  "answer_watcher": {
+    "enabled": true
+  },
+  "roles": {
+    "smoke-test": {
+      "enabled": true,
+      "auto_ack": true,
+      "tier": 0,
+      "model": "haiku",
+      "timeout_minutes": 5,
+      "schedule": []
+    },
+    "ops-monitor": {
+      "enabled": true,
+      "tier": 0,
+      "model": "haiku",
+      "timeout_minutes": 15,
+      "schedule": [
+        {
+          "time": "07:30",
+          "days": "*"
+        }
+      ]
+    },
+    "event-health-watcher": {
+      "enabled": true,
+      "tier": 0,
+      "model": "haiku",
+      "timeout_minutes": 15,
+      "schedule": [
+        {
+          "time": "08:00",
+          "days": "*"
+        }
+      ]
+    },
+    "$support_drafter_comment": "UNBLOCKED (data source shipped 2026-07-23): contact_messages is the free-text inquiry table. Role reads status='new', draft_reply IS NULL rows (id/topic/message only — no name/email/phone) and writes a proposed reply to draft_reply via `npm run fleet:agent -- draft-reply --id --body` (the CLI's only customer-table write; idempotent on the IS NULL guard). It NEVER emails — a human reviews/sends the draft in /admin/contacts. Prompt: roles/support-drafter.md. Kept enabled:false; ACTIVATION (flip to true) also requires the draft_reply length-cap migration — see roles/support-drafter.md 'הפעלה'.",
+    "support-drafter": {
+      "enabled": true,
+      "reactive": true,
+      "tier": 0,
+      "model": "sonnet",
+      "timeout_minutes": 30,
+      "schedule": [
+        {
+          "time": "09:30",
+          "days": "0-4"
+        },
+        {
+          "time": "15:30",
+          "days": "0-4"
+        }
+      ]
+    },
+    "business-ops": {
+      "enabled": true,
+      "tier": 0,
+      "model": "sonnet",
+      "timeout_minutes": 30,
+      "schedule": [
+        {
+          "time": "10:00",
+          "days": "0"
+        }
+      ]
+    },
+    "$main_comment": "Reactive Tier-2 executor for role=main requests (handoff --to main). NO schedule — spawned ONLY by the answer-watcher after the owner answers such a request; the per-request verdict is the authorization. Its only Tier-2 power is supabase db query (guard-tier2.sh). Completion notifies the owner via the CLI complete verb (push + Slack thread + green badge).",
+    "main": {
+      "enabled": true,
+      "tier": 2,
+      "model": "sonnet",
+      "timeout_minutes": 45,
+      "schedule": []
+    },
+    "chief-of-staff": {
+      "enabled": true,
+      "tier": 0,
+      "model": "sonnet",
+      "timeout_minutes": 20,
+      "schedule": [
+        {
+          "time": "17:30",
+          "days": "*"
+        }
+      ]
+    },
+    "marketing-content": {
+      "enabled": false,
+      "tier": 0,
+      "model": "sonnet",
+      "timeout_minutes": 45,
+      "schedule": [
+        {
+          "time": "21:00",
+          "days": "2"
+        }
+      ]
+    },
+    "$creative_comment": "Creative fleet — all draft-only (report tier). Kept disabled until docs/marketing/BRAND.md is owner-approved (every creative role reads it as source-of-truth). brand-director is the editor-in-chief gate every other creative draft passes through. lifecycle-copywriter additionally BLOCKED until its compliance gate is filled by israeli-compliance-advisor.",
+    "brand-director": {
+      "enabled": true,
+      "tier": 0,
+      "model": "sonnet",
+      "timeout_minutes": 20,
+      "schedule": [
+        {
+          "time": "16:30",
+          "days": "*"
+        }
+      ]
+    },
+    "content-seo-strategist": {
+      "enabled": true,
+      "tier": 0,
+      "model": "sonnet",
+      "timeout_minutes": 40,
+      "schedule": [
+        {
+          "time": "11:00",
+          "days": "0"
+        }
+      ]
+    },
+    "social-manager": {
+      "enabled": true,
+      "tier": 0,
+      "model": "sonnet",
+      "timeout_minutes": 30,
+      "schedule": [
+        {
+          "time": "11:30",
+          "days": "0"
+        }
+      ]
+    },
+    "creative-producer": {
+      "enabled": true,
+      "tier": 0,
+      "model": "sonnet",
+      "timeout_minutes": 45,
+      "schedule": [
+        {
+          "time": "20:00",
+          "days": "1"
+        }
+      ]
+    },
+    "lifecycle-copywriter": {
+      "enabled": false,
+      "tier": 0,
+      "model": "sonnet",
+      "timeout_minutes": 30,
+      "schedule": [
+        {
+          "time": "12:00",
+          "days": "0"
+        }
+      ]
+    },
+    "qa-runner": {
+      "enabled": true,
+      "tier": 1,
+      "model": "sonnet",
+      "timeout_minutes": 45,
+      "schedule": [
+        {
+          "time": "02:30",
+          "days": "*"
+        }
+      ]
+    },
+    "dev-engineer": {
+      "enabled": false,
+      "tier": 1,
+      "model": "fable",
+      "timeout_minutes": 90,
+      "schedule": [
+        {
+          "time": "03:30",
+          "days": "*"
+        }
+      ]
+    }
+  }
+}

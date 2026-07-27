@@ -49,6 +49,13 @@ yarn-error.log*
 .claude/*
 !.claude/agents/
 !.claude/skills/
+# project harness settings (SessionStart fleet inbox hook) — team asset
+!.claude/settings.json
+# autonomous fleet — config, roles, scheduler, guards are team assets; the
+# headless OAuth token and the redacted customer-reply corpus NEVER commit
+!.claude/fleet/
+.claude/fleet/.token.env*
+.claude/fleet/roles/support-drafter.examples.md
 
 # installed agent skills (tooling — reinstallable via `npx skills`; tracked via skills-lock.json)
 .agents/skills/

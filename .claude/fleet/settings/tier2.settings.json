@@ -1,0 +1,100 @@
+{
+  "$comment": "Fleet Tier-2 — the 'main' executor role ONLY (reactive, spawned by the answer-watcher after the owner answers a role='main' request; the per-request verdict is the authorization). Narrower than Tier-1 on purpose: NO code editing (only .fleet-logs summaries), NO git writes, NO deploy, NO pm2 mutations, NO npm build/test. Its single Tier-2 power is `supabase db query` (postgres on the LIVE project) for the focused UPDATEs the owner ordered — guard-tier2.sh hook-blocks every other supabase subcommand plus the full Tier-0/1 wall (SUMIT, messaging, interpreters, secrets, egress). Edit(path) rules also govern Write.",
+  "permissions": {
+    "defaultMode": "dontAsk",
+    "allow": [
+      "Read",
+      "Grep",
+      "Glob",
+      "Edit(//var/www/vhosts/kalfa.me/beta/.fleet-logs/**)",
+      "Bash(git status:*)",
+      "Bash(git log:*)",
+      "Bash(git diff:*)",
+      "Bash(git show:*)",
+      "Bash(supabase db query:*)",
+      "Bash(npm run fleet:agent:*)",
+      "Bash(node dist/fleet-agent-cli.cjs:*)",
+      "Bash(pm2 ls)",
+      "Bash(pm2 jlist)",
+      "Bash(pm2 status:*)",
+      "Bash(pm2 logs:*)",
+      "Bash(pm2 describe:*)",
+      "Bash(df:*)",
+      "Bash(free:*)",
+      "Bash(uptime)",
+      "Bash(date:*)",
+      "Bash(ls:*)",
+      "Bash(wc:*)",
+      "Bash(rg:*)",
+      "Bash(jq:*)"
+    ],
+    "deny": [
+      "Read(//var/www/vhosts/kalfa.me/beta/.env*)",
+      "Read(//var/www/vhosts/kalfa.me/beta/**/.env*)",
+      "Read(//var/www/vhosts/kalfa.me/beta/.claude/fleet/.token.env)",
+      "Read(//var/www/vhosts/kalfa.me/beta/vox_ci_credentials.json)",
+      "Edit(//var/www/vhosts/kalfa.me/beta/src/**)",
+      "Edit(//var/www/vhosts/kalfa.me/beta/supabase/**)",
+      "Edit(//var/www/vhosts/kalfa.me/beta/scripts/**)",
+      "Edit(//var/www/vhosts/kalfa.me/beta/worker/**)",
+      "Edit(//var/www/vhosts/kalfa.me/beta/.claude/**)",
+      "Edit(//var/www/vhosts/kalfa.me/beta/agent_configs/**)",
+      "Edit(//var/www/vhosts/kalfa.me/beta/package.json)",
+      "NotebookEdit",
+      "WebFetch",
+      "WebSearch",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git push:*)",
+      "Bash(git checkout:*)",
+      "Bash(git switch:*)",
+      "Bash(git restore:*)",
+      "Bash(git reset:*)",
+      "Bash(git clean:*)",
+      "Bash(git worktree:*)",
+      "Bash(git rebase:*)",
+      "Bash(git merge:*)",
+      "Bash(supabase db push:*)",
+      "Bash(supabase db reset:*)",
+      "Bash(supabase migration:*)",
+      "Bash(supabase link:*)",
+      "Bash(psql:*)",
+      "Bash(npm run deploy)",
+      "Bash(npm run build:*)",
+      "Bash(npm install:*)",
+      "Bash(npm i:*)",
+      "Bash(npm uninstall:*)",
+      "Bash(pm2 restart:*)",
+      "Bash(pm2 stop:*)",
+      "Bash(pm2 start:*)",
+      "Bash(pm2 delete:*)",
+      "Bash(pm2 kill:*)",
+      "Bash(pm2 save:*)",
+      "Bash(rm:*)",
+      "Bash(curl:*)",
+      "Bash(wget:*)",
+      "Bash(ssh:*)",
+      "Bash(scp:*)",
+      "Bash(node -e:*)",
+      "Bash(node --eval:*)",
+      "Bash(bash -c:*)",
+      "Bash(sh -c:*)",
+      "Bash(python:*)",
+      "Bash(python3:*)",
+      "Bash(crontab:*)"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/var/www/vhosts/kalfa.me/beta/.claude/fleet/settings/hooks/guard-tier2.sh"
+          }
+        ]
+      }
+    ]
+  }
+}

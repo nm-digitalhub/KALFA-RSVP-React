@@ -1,0 +1,27 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/var/www/vhosts/kalfa.me/beta/.claude/fleet/bin/main-inbox.sh",
+            "timeout": 20,
+            "statusMessage": "בודק תיבת main של ה-fleet..."
+          }
+        ]
+      }
+    ]
+  },
+  "extraKnownMarketplaces": {
+    "postgres-skills": {
+      "source": {
+        "source": "github",
+        "repo": "neondatabase/postgres-skills"
+      }
+    }
+  },
+  "enabledPlugins": {
+    "postgres-best-practices@postgres-skills": true
+  }
+}
