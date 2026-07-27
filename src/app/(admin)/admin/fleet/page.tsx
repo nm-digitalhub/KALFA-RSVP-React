@@ -33,6 +33,7 @@ const STATUS_LABEL: Record<string, string> = {
   answered: 'נענה',
   expired: 'פג תוקף',
   consumed: 'נקלט אצל הסוכן',
+  completed: 'הושלם',
 };
 
 const STATUS_VARIANT: Record<string, BadgeVariant> = {
@@ -41,6 +42,7 @@ const STATUS_VARIANT: Record<string, BadgeVariant> = {
   answered: 'info',
   expired: 'neutral',
   consumed: 'success',
+  completed: 'success',
 };
 
 const KIND_LABEL: Record<string, string> = {

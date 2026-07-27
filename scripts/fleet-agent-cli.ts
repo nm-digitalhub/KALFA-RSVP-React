@@ -13,12 +13,31 @@
 //           [--attach PATH]...
 //     Inserts a pending request, then notifies: web push to every admin
 //     (existing sendPushToUser pipeline) + Slack mirror (sendSlackAlert).
+//     --role must be a role DEFINED in fleet.json (enabled or not): a request
+//     filed under an unknown name would surface to the owner but its verdict
+//     would be skipped forever by the answer-watcher (dead letter).
 //     Idempotent: a retry deriving the same request_key returns the existing
 //     row instead of failing (unique-violation -> lookup).
+//   handoff --to R|main --from-request UUID [--note TEXT]
+//     Forwards an existing request to another role as a NEW pending request
+//     (same kind/tier, provenance + attachments carried in payload). The owner
+//     stays in the loop: the target acts only after the owner answers the
+//     forwarded request. --to must be an ENABLED fleet role (so the
+//     answer-watcher will actually spawn it) or the special target `main` —
+//     handled by the main session: interactively (SessionStart inbox), or by
+//     the reactive Tier-2 `main` role the watcher spawns once the owner
+//     answers. The executor closes the loop with `complete` (push + Slack).
 //     --attach (repeatable): reference a draft file so /admin/fleet renders it
 //     inline (audio player / image). The path MUST live under
 //     .fleet-logs/drafts/ (validated here AND at serve time by the admin-only
 //     /api/admin/fleet-file route); stored as payload.attachments entries.
+//   complete --id UUID --summary TEXT
+//     Marks a request COMPLETED by its executor (the main session, or a role)
+//     after the work is actually done. Legal from pending/approved/answered
+//     (never from denied). Appends "[הושלם] <summary>" to the answer (an
+//     owner's verdict stays a verbatim prefix — DB-enforced), then notifies:
+//     web push to every admin + a reply in the request's Slack thread. This is
+//     the closure signal the owner sees on their phone.
 //   poll --role R
 //     Prints the role's unconsumed verdicts + its still-open requests.
 //   ack --id UUID
@@ -60,7 +79,7 @@
 
 import { parseArgs } from 'node:util';
 
-import { mkdirSync, writeFileSync, statSync } from 'node:fs';
+import { mkdirSync, writeFileSync, statSync, readFileSync } from 'node:fs';
 import { dirname, join, resolve, relative, sep, extname, basename } from 'node:path';
 
 import { createRequire } from 'node:module';
@@ -95,6 +114,13 @@ const PgClient = (createRequire(__filename)('pg') as {
   Client: new (config: PgClientConfig) => PgClientLike;
 }).Client;
 import { deriveRequestKey } from '@/lib/fleet/request-key';
+import {
+  buildHandoffRequest,
+  parseFleetRoles,
+  validateHandoffTarget,
+  validateRequestRole,
+} from '@/lib/fleet/handoff';
+import { buildCompletionAnswer, isCompletableStatus } from '@/lib/fleet/complete';
 import {
   renderExamplesMarkdown,
   summarizeMetric,
@@ -202,11 +228,88 @@ const ATTACH_MIME: Record<string, string> = {
   '.mp4': 'video/mp4', '.webm': 'video/webm',
 };
 
+// Role list for request/handoff validation, from the same fleet.json the
+// scheduler reloads every tick. Fail-closed: no readable config -> no insert
+// (the validation IS the dead-letter guard; inserting unvalidated defeats it).
+const FLEET_CONFIG_PATH = join(dirname(__filename), '..', '.claude', 'fleet', 'fleet.json');
+
+function loadFleetRoles(): Map<string, boolean> {
+  try {
+    return parseFleetRoles(JSON.parse(readFileSync(FLEET_CONFIG_PATH, 'utf8')));
+  } catch (err) {
+    return fail(
+      `cannot load fleet roles from ${FLEET_CONFIG_PATH}: ${err instanceof Error ? err.message : 'unknown error'}`,
+    );
+  }
+}
+
+// Shared insert + fan-out for request/handoff. Returns the outcome instead of
+// printing so each verb can shape its own JSON output.
+async function insertAndNotify(row: {
+  requestKey: string;
+  role: string;
+  runId: string | null;
+  kind: string;
+  tier: number;
+  title: string;
+  body: string;
+  payload: Json;
+}): Promise<{
+  deduplicated: boolean;
+  request: FleetRequestRow | null;
+  notify: Awaited<ReturnType<typeof notifyAdmins>> | null;
+}> {
+  const admin = createAdminClient();
+  const { data: inserted, error } = await admin
+    .from('fleet_requests')
+    .insert({
+      request_key: row.requestKey,
+      role: row.role,
+      run_id: row.runId,
+      kind: row.kind,
+      tier: row.tier,
+      title: row.title,
+      body: row.body,
+      payload: row.payload,
+    })
+    .select()
+    .single();
+
+  if (error) {
+    // Unique violation on request_key = an idempotent retry. Surface the
+    // existing row so the calling role can continue with its id/status.
+    if (error.code === '23505') {
+      const { data: existing } = await admin
+        .from('fleet_requests')
+        .select()
+        .eq('request_key', row.requestKey)
+        .single();
+      return { deduplicated: true, request: existing ?? null, notify: null };
+    }
+    fail(`insert failed: ${error.message}`);
+  }
+
+  const notify = await notifyAdmins(inserted);
+  if (notify.slackThreadTs) {
+    // Store the thread root so the answered/consumed follow-ups can reply in
+    // the same Slack thread. Best-effort: without it they post top-level.
+    const { error: threadErr } = await admin
+      .from('fleet_request_slack_threads')
+      .insert({ request_id: inserted.id, thread_ts: notify.slackThreadTs });
+    if (threadErr) {
+      console.error('[fleet-agent] storing slack thread ts failed:', threadErr.message);
+    }
+  }
+  return { deduplicated: false, request: inserted, notify };
+}
+
 async function cmdRequest(
   args: Record<string, string | undefined>,
   attachPaths?: string[],
 ): Promise<void> {
   const role = requireOption(args.role, 'role');
+  const roleError = validateRequestRole(loadFleetRoles(), role);
+  if (roleError) fail(roleError);
   const kind = requireOption(args.kind, 'kind') as Kind;
   if (!KINDS.includes(kind)) fail(`--kind must be one of: ${KINDS.join(', ')}`);
   const title = requireOption(args.title, 'title');
@@ -258,52 +361,139 @@ async function cmdRequest(
   }
 
   const requestKey = args['request-key']?.trim() || deriveRequestKey({ role, kind, title, body });
+  const result = await insertAndNotify({
+    requestKey,
+    role,
+    runId: args['run-id']?.trim() || null,
+    kind,
+    tier,
+    title,
+    body,
+    payload,
+  });
+  console.log(JSON.stringify(result, null, 2));
+}
+
+// Forward an existing request to another role (or the interactive main
+// session) as a new pending request. The original row is never mutated — the
+// ledger stays append-only; provenance lives in the new row's payload.
+async function cmdHandoff(args: Record<string, string | undefined>): Promise<void> {
+  const target = requireOption(args.to, 'to');
+  const fromId = requireOption(args['from-request'], 'from-request');
+  const note = args.note?.trim() || undefined;
+
+  const targetError = validateHandoffTarget(loadFleetRoles(), target);
+  if (targetError) fail(targetError);
+
   const admin = createAdminClient();
-
-  const { data: inserted, error } = await admin
+  const { data: original, error } = await admin
     .from('fleet_requests')
-    .insert({
-      request_key: requestKey,
-      role,
-      run_id: args['run-id']?.trim() || null,
-      kind,
-      tier,
-      title,
-      body,
-      payload,
-    })
-    .select()
-    .single();
+    .select('id, role, kind, tier, title, body, payload, status')
+    .eq('id', fromId)
+    .maybeSingle();
+  if (error) fail(`handoff lookup failed: ${error.message}`);
+  if (!original) fail(`--from-request ${fromId} not found`);
+  if (original.role === target) fail('handoff target equals the originating role — nothing to forward');
 
-  if (error) {
-    // Unique violation on request_key = an idempotent retry. Surface the
-    // existing row so the calling role can continue with its id/status.
-    if (error.code === '23505') {
-      const { data: existing } = await admin
-        .from('fleet_requests')
-        .select()
-        .eq('request_key', requestKey)
-        .single();
-      console.log(
-        JSON.stringify({ deduplicated: true, request: existing ?? null }, null, 2),
+  const fields = buildHandoffRequest(original, target, note);
+  const requestKey = deriveRequestKey({
+    role: fields.role,
+    kind: fields.kind,
+    title: fields.title,
+    body: fields.body,
+  });
+  const result = await insertAndNotify({
+    requestKey,
+    role: fields.role,
+    runId: args['run-id']?.trim() || null,
+    kind: fields.kind,
+    tier: fields.tier,
+    title: fields.title,
+    body: fields.body,
+    payload: fields.payload,
+  });
+  console.log(
+    JSON.stringify(
+      { handoff: { from: original.id, from_role: original.role, to: target }, ...result },
+      null,
+      2,
+    ),
+  );
+}
+
+// Executor-side closure: pending/approved/answered -> completed, with the
+// completion summary appended to `answer` and consumed_at as the completion
+// timestamp (both DB-enforced). Then the notification the owner asked for:
+// web push to every admin + a reply in the request's original Slack thread.
+async function cmdComplete(args: Record<string, string | undefined>): Promise<void> {
+  const id = requireOption(args.id, 'id');
+  const summary = requireOption(args.summary, 'summary');
+
+  const admin = createAdminClient();
+  const { data: row, error } = await admin
+    .from('fleet_requests')
+    .select('id, role, kind, title, status, answer')
+    .eq('id', id)
+    .maybeSingle();
+  if (error) fail(`complete lookup failed: ${error.message}`);
+  if (!row) fail(`--id ${id} not found`);
+  if (!isCompletableStatus(row.status)) {
+    fail(`request is '${row.status}' — only pending/approved/answered can be completed`);
+  }
+
+  let answer: string;
+  try {
+    answer = buildCompletionAnswer(row.answer, summary);
+  } catch (err) {
+    return fail(err instanceof Error ? err.message : 'invalid summary');
+  }
+
+  // CAS on the observed status: a concurrent owner answer/expiry loses nothing
+  // — we simply report and the caller re-reads.
+  const { data: updated, error: updateError } = await admin
+    .from('fleet_requests')
+    .update({ status: 'completed', answer, consumed_at: new Date().toISOString() })
+    .eq('id', id)
+    .eq('status', row.status)
+    .select('id, role, title, status');
+  if (updateError) fail(`complete failed: ${updateError.message}`);
+  if (!updated || updated.length === 0) {
+    fail('request status changed concurrently — re-run poll and retry');
+  }
+
+  // Push to every admin (same pipeline as new-request pushes) + Slack thread
+  // reply. Best-effort: the ledger transition above is the source of truth.
+  let pushSent = 0;
+  const { data: admins } = await admin.from('user_roles').select('user_id').eq('role', 'admin');
+  for (const { user_id } of admins ?? []) {
+    try {
+      const s = await sendPushToUser(user_id, {
+        title: `✅ הושלם: ${row.title.slice(0, 80)}`,
+        body: summary.slice(0, 140),
+        url: '/admin/fleet',
+        tag: `fleet-complete-${row.id}`,
+        renotify: true,
+      });
+      pushSent += s.sent;
+    } catch (err) {
+      console.error(
+        '[fleet-agent] completion push failed:',
+        err instanceof Error ? err.message : 'unknown error',
       );
-      return;
     }
-    fail(`insert failed: ${error.message}`);
   }
+  await sendSlackAlert({
+    level: 'info',
+    title: `המשימה הושלמה: ${row.title}`,
+    detail: summary.length > 2900 ? `${summary.slice(0, 2900)}…` : summary,
+    source: `fleet:${row.role}`,
+    category: 'errors',
+    threadTs: (await threadTsFor(row.id)) ?? undefined,
+  });
 
-  const notify = await notifyAdmins(inserted);
-  if (notify.slackThreadTs) {
-    // Store the thread root so the answered/consumed follow-ups can reply in
-    // the same Slack thread. Best-effort: without it they post top-level.
-    const { error: threadErr } = await admin
-      .from('fleet_request_slack_threads')
-      .insert({ request_id: inserted.id, thread_ts: notify.slackThreadTs });
-    if (threadErr) {
-      console.error('[fleet-agent] storing slack thread ts failed:', threadErr.message);
-    }
-  }
-  console.log(JSON.stringify({ deduplicated: false, request: inserted, notify }, null, 2));
+  console.log(
+    JSON.stringify({ completed: true, request: updated[0], pushSent }, null, 2),
+  );
 }
 
 // All answered-but-unconsumed verdicts across every role, for the scheduler's
@@ -694,6 +884,10 @@ async function main(): Promise<void> {
       attach: { type: 'string', multiple: true },
       'run-id': { type: 'string' },
       'request-key': { type: 'string' },
+      to: { type: 'string' },
+      'from-request': { type: 'string' },
+      note: { type: 'string' },
+      summary: { type: 'string' },
       id: { type: 'string' },
       reason: { type: 'string' },
       level: { type: 'string' },
@@ -709,6 +903,10 @@ async function main(): Promise<void> {
   switch (command) {
     case 'request':
       return cmdRequest(scalarValues as Record<string, string | undefined>, attach);
+    case 'handoff':
+      return cmdHandoff(scalarValues);
+    case 'complete':
+      return cmdComplete(scalarValues);
     case 'poll':
       return cmdPoll(scalarValues);
     case 'verdicts':
@@ -731,7 +929,7 @@ async function main(): Promise<void> {
       return cmdBusinessFacts();
     default:
       fail(
-        'usage: fleet-agent-cli <request|poll|verdicts|ack|expire|withdraw|digest|sql|draft-reply|distill-corrections|business-facts> [options]',
+        'usage: fleet-agent-cli <request|handoff|complete|poll|verdicts|ack|expire|withdraw|digest|sql|draft-reply|distill-corrections|business-facts> [options]',
       );
   }
 }
