@@ -27,7 +27,15 @@ const eslintConfig = defineConfig([
     ".claude/**",
     // Cross-agent installed skills (skills-cli universal dir; .claude/skills
     // symlinks into it). Third-party skill scripts, not application source.
-    ".agents/**",
+    // `**/` because agent labs (e.g. .fleet-logs/drafts/creative/*) carry their
+    // own nested .agents/ installs of the same upstream skill packages.
+    "**/.agents/**",
+    // Minified / pre-built third-party bundles vendored as assets (gsap.min.js,
+    // *.iife.js in the creative labs). Build OUTPUT of someone else's source —
+    // hand-editing them corrupts the library, so they are not lintable by
+    // definition. Our own lab sources (e.g. .fleet-logs/**/src/) stay linted.
+    "**/*.min.js",
+    "**/*.iife.js",
     // voxengine-ci helper scaffold (generated wrapper, not our source).
     "voximplant-ci/**",
     // voxengine-ci build output + local CI metadata mirror (generated, not
