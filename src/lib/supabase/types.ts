@@ -891,36 +891,96 @@ export type Database = {
       }
       callback_requests: {
         Row: {
+          attempt_count: number
+          calendar_item_id: string | null
           created_at: string
+          exchange_connection_id: string | null
+          excluded_dates: string[] | null
           full_name: string
           id: string
+          not_after_min: number | null
+          not_before_min: number | null
           note: string | null
           phone: string
+          requested_at: string | null
+          requested_rank: string | null
+          scheduled_at: string | null
           status: string
           topic: string | null
+          triage: Json | null
+          triage_attempt_count: number
+          triage_claimed_at: string | null
+          triage_last_error: string | null
+          triage_status: string
+          triaged_at: string | null
           updated_at: string
         }
         Insert: {
+          attempt_count?: number
+          calendar_item_id?: string | null
           created_at?: string
+          exchange_connection_id?: string | null
+          excluded_dates?: string[] | null
           full_name: string
           id?: string
+          not_after_min?: number | null
+          not_before_min?: number | null
           note?: string | null
           phone: string
+          requested_at?: string | null
+          requested_rank?: string | null
+          scheduled_at?: string | null
           status?: string
           topic?: string | null
+          triage?: Json | null
+          triage_attempt_count?: number
+          triage_claimed_at?: string | null
+          triage_last_error?: string | null
+          triage_status?: string
+          triaged_at?: string | null
           updated_at?: string
         }
         Update: {
+          attempt_count?: number
+          calendar_item_id?: string | null
           created_at?: string
+          exchange_connection_id?: string | null
+          excluded_dates?: string[] | null
           full_name?: string
           id?: string
+          not_after_min?: number | null
+          not_before_min?: number | null
           note?: string | null
           phone?: string
+          requested_at?: string | null
+          requested_rank?: string | null
+          scheduled_at?: string | null
           status?: string
           topic?: string | null
+          triage?: Json | null
+          triage_attempt_count?: number
+          triage_claimed_at?: string | null
+          triage_last_error?: string | null
+          triage_status?: string
+          triaged_at?: string | null
           updated_at?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "callback_requests_exchange_connection_id_fkey"
+            columns: ["exchange_connection_id"]
+            isOneToOne: false
+            referencedRelation: "exchange_connections"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "callback_requests_exchange_connection_id_fkey"
+            columns: ["exchange_connection_id"]
+            isOneToOne: false
+            referencedRelation: "exchange_connections_status"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       campaign_authorized_contacts: {
         Row: {
@@ -3994,6 +4054,40 @@ export type Database = {
         Returns: boolean
       }
       cancel_campaign: { Args: { p_campaign: string }; Returns: string }
+      claim_callback_triage: {
+        Args: never
+        Returns: {
+          attempt_count: number
+          calendar_item_id: string | null
+          created_at: string
+          exchange_connection_id: string | null
+          excluded_dates: string[] | null
+          full_name: string
+          id: string
+          not_after_min: number | null
+          not_before_min: number | null
+          note: string | null
+          phone: string
+          requested_at: string | null
+          requested_rank: string | null
+          scheduled_at: string | null
+          status: string
+          topic: string | null
+          triage: Json | null
+          triage_attempt_count: number
+          triage_claimed_at: string | null
+          triage_last_error: string | null
+          triage_status: string
+          triaged_at: string | null
+          updated_at: string
+        }[]
+        SetofOptions: {
+          from: "*"
+          to: "callback_requests"
+          isOneToOne: false
+          isSetofReturn: true
+        }
+      }
       claim_first_admin: { Args: never; Returns: boolean }
       claim_thankyou_recipient: {
         Args: { p_campaign: string; p_contact: string; p_event: string }
@@ -4032,6 +4126,21 @@ export type Database = {
           p_event: string
         }
         Returns: boolean
+      }
+      finish_callback_triage: {
+        Args: {
+          p_at_time?: string
+          p_claimed_attempt: number
+          p_error?: string
+          p_excluded_dates?: string[]
+          p_not_after_min?: number
+          p_not_before_min?: number
+          p_on_date?: string
+          p_request_id: string
+          p_status: string
+          p_triage?: Json
+        }
+        Returns: string
       }
       fleet_answer_request: {
         Args: { p_answer?: string; p_id: string; p_verdict: string }

@@ -1,3 +1,5 @@
+import Link from 'next/link';
+
 import { requirePlatformPermission } from '@/lib/auth/dal';
 import { listCallbackRequests } from '@/lib/data/admin/callbacks';
 import { callbackStatusLabel } from '@/lib/data/admin/labels';
@@ -41,7 +43,12 @@ export default async function AdminCallbacksPage({
             >
               <div className="space-y-1">
                 <div className="flex items-center gap-2">
-                  <p className="font-medium">{cb.full_name}</p>
+                  <Link
+                    href={`/admin/callbacks/${cb.id}`}
+                    className="font-medium underline underline-offset-2"
+                  >
+                    {cb.full_name}
+                  </Link>
                   <Badge>{callbackStatusLabel(cb.status)}</Badge>
                 </div>
                 <p className="text-sm text-muted-foreground" dir="ltr">

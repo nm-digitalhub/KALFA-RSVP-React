@@ -22,6 +22,62 @@ export type CallbackRequest = Pick<
 export const CALLBACK_COLUMNS =
   'id, full_name, phone, topic, note, status, created_at, updated_at';
 
+// The detail view adds the scheduling columns the list deliberately omits: a
+// list is for triage, this is the screen the calendar item links to while the
+// phone is already ringing.
+export type CallbackRequestDetail = CallbackRequest &
+  Pick<CallbackRow, 'requested_at' | 'scheduled_at' | 'calendar_item_id' | 'attempt_count'>;
+
+const CALLBACK_DETAIL_COLUMNS = `${CALLBACK_COLUMNS}, requested_at, scheduled_at, calendar_item_id, attempt_count`;
+
+/**
+ * One callback request, or null when the id does not exist.
+ *
+ * Returns null rather than throwing on a missing row so the page can render a
+ * proper not-found instead of a server error — this URL is embedded in calendar
+ * items that outlive the request they point at.
+ */
+export async function getCallbackRequest(id: string): Promise<CallbackRequestDetail | null> {
+  await requirePlatformPermission('view_customer_data');
+
+  const supabase = createAdminClient();
+  const { data, error } = await supabase
+    .from('callback_requests')
+    .select(CALLBACK_DETAIL_COLUMNS)
+    .eq('id', id)
+    .maybeSingle();
+
+  if (error) throw new Error('טעינת בקשת החזרה נכשלה');
+  return data ?? null;
+}
+
+/**
+ * The callback request one calendar appointment was created for, or null.
+ *
+ * Keyed on the calendar item rather than on the request id, because the caller
+ * holds an appointment and nothing else: /admin/calendar knows which item the
+ * owner clicked. The partial unique index on `calendar_item_id` makes this at
+ * most one row, so `maybeSingle` is exact rather than a "first of many".
+ *
+ * Null is the ordinary answer, not an error — most appointments in the mailbox
+ * are the owner's own meetings and were never scheduled by this system.
+ */
+export async function getCallbackRequestByCalendarItem(
+  calendarItemId: string,
+): Promise<CallbackRequestDetail | null> {
+  await requirePlatformPermission('view_customer_data');
+
+  const supabase = createAdminClient();
+  const { data, error } = await supabase
+    .from('callback_requests')
+    .select(CALLBACK_DETAIL_COLUMNS)
+    .eq('calendar_item_id', calendarItemId)
+    .maybeSingle();
+
+  if (error) throw new Error('טעינת בקשת החזרה נכשלה');
+  return data ?? null;
+}
+
 // List callback requests, newest first, with exact total for pagination.
 export async function listCallbackRequests(
   { page }: PageParams = {},

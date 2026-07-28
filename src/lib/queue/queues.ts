@@ -18,6 +18,14 @@ export const QUEUES = {
   // dialled. Gates stay in dispatchOutreachCall; this only enqueues.
   // See src/lib/data/call-callbacks.ts.
   callbackSweep: 'call-callback-sweep',
+  // Callback CALENDAR-scheduling sweep — distinct from callbackSweep above, and
+  // easy to confuse: that one dials a GUEST back after an RSVP call, this one
+  // books time in the OWNER's Exchange calendar for a lead who asked to be
+  // called from the public contact page. Different table, different direction,
+  // no dialling at all. Heals first (an appointment the owner deleted releases
+  // its request back into the queue), then schedules.
+  // See src/lib/data/callback-scheduling.ts.
+  callbackScheduleSweep: 'callback-calendar-schedule-sweep',
   // Voximplant balance-alert cron (H2) — every 30m poll GetAccountInfo and Slack
   // when balance dips below reserve/low-threshold. Read-only; never dials. Inert
   // while VOXIMPLANT_LIVE_CALLS is off. See src/lib/data/voximplant-balance.ts.

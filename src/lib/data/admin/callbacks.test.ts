@@ -6,6 +6,7 @@ import { createAdminClient } from '@/lib/supabase/admin';
 import { requirePlatformPermission } from '@/lib/auth/dal';
 import { logActivity } from '@/lib/data/activity';
 import {
+  getCallbackRequestByCalendarItem,
   listCallbackRequests,
   updateCallbackStatus,
   CALLBACK_COLUMNS,
@@ -38,6 +39,52 @@ function row(overrides: Partial<CallbackRequest> = {}): CallbackRequest {
 beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(requirePlatformPermission).mockResolvedValue(adminUser());
+});
+
+// The calendar dialog renders a dialable number and a working link from THIS
+// lookup rather than from the appointment's description. If it silently
+// returned nothing, the dialog would fall back to showing prose with dead
+// links — the exact regression this replaced.
+describe('getCallbackRequestByCalendarItem', () => {
+  function mockClient(data: unknown, error: unknown = null) {
+    const { client, builder } = createMockSupabase<unknown>({
+      data: data as never,
+      error: error as never,
+    });
+    vi.mocked(createAdminClient).mockReturnValue(
+      client as unknown as ReturnType<typeof createAdminClient>,
+    );
+    return { client, builder };
+  }
+
+  it('is gated on customer-data access before it reads anything', async () => {
+    mockClient(null);
+    await getCallbackRequestByCalendarItem('item-1');
+    expect(requirePlatformPermission).toHaveBeenCalledWith('view_customer_data');
+  });
+
+  it('looks the request up by the calendar item the owner clicked', async () => {
+    const { client, builder } = mockClient(row());
+
+    await getCallbackRequestByCalendarItem('item-1');
+
+    expect(client.from).toHaveBeenCalledWith('callback_requests');
+    expect(builder.eq).toHaveBeenCalledWith('calendar_item_id', 'item-1');
+    // maybeSingle, not single: an ordinary meeting matches no row at all.
+    expect(builder.maybeSingle).toHaveBeenCalled();
+  });
+
+  it('returns null for an appointment this system never scheduled', async () => {
+    mockClient(null);
+    await expect(getCallbackRequestByCalendarItem('item-1')).resolves.toBeNull();
+  });
+
+  it('raises a safe Hebrew error instead of leaking the database one', async () => {
+    mockClient(null, { message: 'relation "callback_requests" does not exist' });
+    await expect(getCallbackRequestByCalendarItem('item-1')).rejects.toThrow(
+      'טעינת בקשת החזרה נכשלה',
+    );
+  });
 });
 
 describe('listCallbackRequests', () => {
