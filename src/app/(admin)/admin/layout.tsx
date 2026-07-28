@@ -1,5 +1,12 @@
 import { requireAdmin } from '@/lib/auth/dal';
 import { getProfile } from '@/lib/data/profiles';
+import { getMyActiveExchangeConnection } from '@/lib/data/exchange-connections';
+import {
+  getMyPresence,
+  listMyAvailabilityBlocks,
+  type AvailabilityBlock,
+  type PresenceSnapshot,
+} from '@/lib/data/exchange-availability';
 import { AdminShell } from '@/components/admin-shell';
 
 // Admin area layout. requireAdmin() enforces authentication AND the admin role
@@ -17,8 +24,37 @@ export default async function AdminLayout({
   const profile = await getProfile();
   const userName = profile?.full_name?.trim() || undefined;
 
+  // Availability presence for the account menu. Read here so the avatar's
+  // status dot is correct on first paint, with no client round trip. Both
+  // reads fail SOFT: an Exchange hiccup must never take down the whole admin
+  // area — the menu then simply offers to connect a mailbox.
+  let availabilityBlocks: AvailabilityBlock[] = [];
+  let availabilityPresence: PresenceSnapshot = {
+    showAs: 'free',
+    untilIso: null,
+    ownedByApp: false,
+  };
+  let hasExchangeConnection = false;
+  try {
+    hasExchangeConnection = (await getMyActiveExchangeConnection()) !== null;
+    if (hasExchangeConnection) {
+      [availabilityBlocks, availabilityPresence] = await Promise.all([
+        listMyAvailabilityBlocks(),
+        getMyPresence(),
+      ]);
+    }
+  } catch {
+    hasExchangeConnection = false;
+  }
+
   return (
-    <AdminShell userEmail={user.email} userName={userName}>
+    <AdminShell
+      userEmail={user.email}
+      userName={userName}
+      availabilityBlocks={availabilityBlocks}
+      availabilityPresence={availabilityPresence}
+      hasExchangeConnection={hasExchangeConnection}
+    >
       {children}
     </AdminShell>
   );

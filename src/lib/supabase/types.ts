@@ -169,11 +169,16 @@ export type Database = {
           company_legal_address: string | null
           company_legal_id: string | null
           company_legal_name: string | null
+          cookie_consent_analytics_enabled: boolean
+          cookie_consent_enabled: boolean
+          cookie_consent_marketing_enabled: boolean
+          cookie_consent_revision_bump: number
           dkim_domain: string | null
           dkim_private_key: string | null
           dkim_selector: string | null
           elevenlabs_api_key: string | null
           email_enabled: boolean
+          exchange_connection_mode: string
           extra_sms_sender: string | null
           extra_sms_token: string | null
           extreme_threshold_contacts: number
@@ -247,11 +252,16 @@ export type Database = {
           company_legal_address?: string | null
           company_legal_id?: string | null
           company_legal_name?: string | null
+          cookie_consent_analytics_enabled?: boolean
+          cookie_consent_enabled?: boolean
+          cookie_consent_marketing_enabled?: boolean
+          cookie_consent_revision_bump?: number
           dkim_domain?: string | null
           dkim_private_key?: string | null
           dkim_selector?: string | null
           elevenlabs_api_key?: string | null
           email_enabled?: boolean
+          exchange_connection_mode?: string
           extra_sms_sender?: string | null
           extra_sms_token?: string | null
           extreme_threshold_contacts?: number
@@ -325,11 +335,16 @@ export type Database = {
           company_legal_address?: string | null
           company_legal_id?: string | null
           company_legal_name?: string | null
+          cookie_consent_analytics_enabled?: boolean
+          cookie_consent_enabled?: boolean
+          cookie_consent_marketing_enabled?: boolean
+          cookie_consent_revision_bump?: number
           dkim_domain?: string | null
           dkim_private_key?: string | null
           dkim_selector?: string | null
           elevenlabs_api_key?: string | null
           email_enabled?: boolean
+          exchange_connection_mode?: string
           extra_sms_sender?: string | null
           extra_sms_token?: string | null
           extreme_threshold_contacts?: number
@@ -1777,6 +1792,119 @@ export type Database = {
             columns: ["package_id"]
             isOneToOne: false
             referencedRelation: "packages"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      exchange_availability_blocks: {
+        Row: {
+          appointment_id: string
+          connection_id: string
+          created_at: string
+          ends_at: string
+          id: string
+          label: string
+          show_as: string
+          starts_at: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          appointment_id: string
+          connection_id: string
+          created_at?: string
+          ends_at: string
+          id?: string
+          label: string
+          show_as: string
+          starts_at: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          appointment_id?: string
+          connection_id?: string
+          created_at?: string
+          ends_at?: string
+          id?: string
+          label?: string
+          show_as?: string
+          starts_at?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "exchange_availability_blocks_connection_id_fkey"
+            columns: ["connection_id"]
+            isOneToOne: false
+            referencedRelation: "exchange_connections"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "exchange_availability_blocks_connection_id_fkey"
+            columns: ["connection_id"]
+            isOneToOne: false
+            referencedRelation: "exchange_connections_status"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      exchange_connections: {
+        Row: {
+          auth_method: string
+          created_at: string
+          credential_auth_tag: string
+          credential_ciphertext: string
+          credential_iv: string
+          encryption_key_version: number
+          id: string
+          last_error: string | null
+          last_verified_at: string | null
+          mailbox_email: string
+          org_id: string | null
+          status: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          auth_method?: string
+          created_at?: string
+          credential_auth_tag: string
+          credential_ciphertext: string
+          credential_iv: string
+          encryption_key_version?: number
+          id?: string
+          last_error?: string | null
+          last_verified_at?: string | null
+          mailbox_email: string
+          org_id?: string | null
+          status?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          auth_method?: string
+          created_at?: string
+          credential_auth_tag?: string
+          credential_ciphertext?: string
+          credential_iv?: string
+          encryption_key_version?: number
+          id?: string
+          last_error?: string | null
+          last_verified_at?: string | null
+          mailbox_email?: string
+          org_id?: string | null
+          status?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "exchange_connections_org_id_fkey"
+            columns: ["org_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
             referencedColumns: ["id"]
           },
         ]
@@ -3810,6 +3938,41 @@ export type Database = {
             columns: ["guest_id"]
             isOneToOne: false
             referencedRelation: "guests"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      exchange_connections_status: {
+        Row: {
+          id: string | null
+          last_verified_at: string | null
+          mailbox_email: string | null
+          org_id: string | null
+          status: string | null
+          user_id: string | null
+        }
+        Insert: {
+          id?: string | null
+          last_verified_at?: string | null
+          mailbox_email?: string | null
+          org_id?: string | null
+          status?: string | null
+          user_id?: string | null
+        }
+        Update: {
+          id?: string | null
+          last_verified_at?: string | null
+          mailbox_email?: string | null
+          org_id?: string | null
+          status?: string | null
+          user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "exchange_connections_org_id_fkey"
+            columns: ["org_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
             referencedColumns: ["id"]
           },
         ]

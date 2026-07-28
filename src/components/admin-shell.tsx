@@ -8,7 +8,9 @@ import {
   Bot,
   Building2,
   CalendarClock,
+  CalendarDays,
   ChevronDown,
+  Cookie,
   ChevronsUpDown,
   FileText,
   FlaskConical,
@@ -60,6 +62,14 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import {
+  AvailabilityDot,
+  AvailabilityMenuSection,
+} from '@/components/availability/availability-status';
+import type {
+  AvailabilityBlock,
+  PresenceSnapshot,
+} from '@/lib/data/exchange-availability';
 import { cn, getInitials } from '@/lib/utils';
 
 // Admin app shell: a fixed right-side sidebar (RTL) plus a top bar. Dedicated to
@@ -118,9 +128,11 @@ const NAV_GROUPS: NavGroup[] = [
     label: 'מערכת ותפעול',
     items: [
       { href: '/admin/settings', label: 'הגדרות', icon: Settings },
+      { href: '/admin/calendar', label: 'יומן Exchange', icon: CalendarDays },
       { href: '/admin/fleet', label: 'פניות סוכנים', icon: Bot },
       { href: '/admin/alerts', label: 'התראות תפעול', icon: BellRing },
       { href: '/admin/analytics', label: 'אנליטיקת אתר', icon: ChartColumn },
+      { href: '/admin/cookie-consent', label: 'הסכמת עוגיות', icon: Cookie },
       { href: '/admin/activity', label: 'יומן פעילות', icon: ListChecks },
       { href: '/admin/access-log', label: 'יומן גישת צוות', icon: ShieldCheck },
     ],
@@ -211,9 +223,20 @@ function LogoutMenuItem() {
 export function AdminShell({
   userEmail,
   userName,
+  availabilityBlocks,
+  availabilityPresence,
+  hasExchangeConnection,
   children,
 }: {
   userEmail: string | undefined;
+  // Availability constraints in effect / scheduled (Exchange-backed presence).
+  // Passed in from the layout so the avatar dot renders server-side with no
+  // client fetch; the menu section takes over interactively from there.
+  availabilityBlocks: AvailabilityBlock[];
+  // Live presence from Exchange (not from our table) — a meeting created in
+  // Outlook colours the dot exactly like a status set from this menu.
+  availabilityPresence: PresenceSnapshot;
+  hasExchangeConnection: boolean;
   // Full name from the profile (materialised at signup by the handle_new_user
   // trigger). The account menu shows the name as the primary identity and the
   // email as a secondary line, falling back to the email when the name is empty.
@@ -299,11 +322,20 @@ export function AdminShell({
                   <DropdownMenuTrigger
                     render={
                       <SidebarMenuButton size="lg">
-                        <Avatar className="size-8">
-                          <AvatarFallback className="bg-primary text-xs font-bold text-primary-foreground">
-                            {initials}
-                          </AvatarFallback>
-                        </Avatar>
+                        <span className="relative inline-flex">
+                          <Avatar className="size-8">
+                            <AvatarFallback className="bg-primary text-xs font-bold text-primary-foreground">
+                              {initials}
+                            </AvatarFallback>
+                          </Avatar>
+                          {/* Presence dot on the avatar itself — the standard
+                              affordance; bottom-end so it stays clear of the
+                              initials in both directions. */}
+                          <AvailabilityDot
+                            presence={availabilityPresence}
+                            className="absolute -bottom-0.5 -end-0.5"
+                          />
+                        </span>
                         <div className="grid flex-1 text-start text-sm leading-tight">
                           <span className="truncate font-medium">
                             {displayName}
@@ -349,6 +381,12 @@ export function AdminShell({
                             חזרה לאזור האישי
                           </Link>
                         }
+                      />
+                      <DropdownMenuSeparator />
+                      <AvailabilityMenuSection
+                        initialBlocks={availabilityBlocks}
+                        initialPresence={availabilityPresence}
+                        hasConnection={hasExchangeConnection}
                       />
                       <DropdownMenuSeparator />
                       <LogoutMenuItem />

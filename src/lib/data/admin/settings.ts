@@ -199,6 +199,26 @@ export async function updateCompanySettings(
   if (error) throw new Error('עדכון פרטי החברה נכשל');
 }
 
+// Exchange (IONOS Hosted EWS) ownership-model switch (plan §3.1,
+// plans/exchange-ews-stage1.md). Admin-only write; the non-gated reader used
+// by the connect screen itself is getExchangeConnectionMode() in
+// src/lib/data/exchange-connections.ts (that module also documents WHY the
+// reader must not require an admin permission — a non-admin user connecting
+// their own mailbox still needs to know which mode is active).
+export type ExchangeConnectionMode = 'per_user' | 'per_org';
+
+export async function setExchangeConnectionMode(
+  mode: ExchangeConnectionMode,
+): Promise<void> {
+  await requirePlatformPermission('manage_settings');
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from('app_settings')
+    .update({ exchange_connection_mode: mode })
+    .eq('id', SETTINGS_ID);
+  if (error) throw new Error('עדכון מצב הבעלות של Exchange נכשל');
+}
+
 // Infra config that legitimately stays in env (not editable via the form): the
 // Supabase service-role key (the DB master credential — cannot live inside the
 // DB it secures) and APP_ORIGIN (deploy infra). Presence only, never values.

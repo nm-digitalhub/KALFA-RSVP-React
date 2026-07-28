@@ -6,6 +6,8 @@ import { unstable_rethrow } from 'next/navigation';
 import {
   updateAppSettings,
   setBaseOveragePricingEnabled,
+  setExchangeConnectionMode,
+  type ExchangeConnectionMode,
 } from '@/lib/data/admin/settings';
 import { getActiveAgreementDoc } from '@/lib/data/agreements-doc';
 import { BASE_FEE_AGREEMENT_VERSION } from '@/lib/agreements/template';
@@ -91,5 +93,30 @@ export async function updateBaseOveragePricingAction(
     notice: enabled
       ? 'התמחור המדורג הופעל — קמפיינים חדשים יחויבו בדמי הפעלה ₪200'
       : 'התמחור המדורג כובה — חזרה לחיוב לפי-תוצאה',
+  };
+}
+
+// Ownership-model switch for Exchange (EWS) connections (plan §3.1). Does NOT
+// touch existing exchange_connections rows — only which mode new connections
+// are created under and which UI path /app/settings shows.
+export async function updateExchangeConnectionModeAction(
+  _prev: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  const raw = formData.get('exchange_connection_mode');
+  const mode: ExchangeConnectionMode = raw === 'per_org' ? 'per_org' : 'per_user';
+  try {
+    await setExchangeConnectionMode(mode);
+  } catch (err) {
+    unstable_rethrow(err);
+    return { error: 'עדכון מצב הבעלות של Exchange נכשל. נסו שוב.' };
+  }
+  revalidatePath('/admin/settings');
+  revalidatePath('/app/settings');
+  return {
+    notice:
+      mode === 'per_org'
+        ? 'מצב הבעלות עודכן: חיבורי Exchange חדשים ישויכו לארגון.'
+        : 'מצב הבעלות עודכן: חיבורי Exchange חדשים ישויכו למשתמש המחבר.',
   };
 }

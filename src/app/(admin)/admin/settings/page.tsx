@@ -5,9 +5,15 @@ import {
   getInfraConfigStatus,
 } from '@/lib/data/admin/settings';
 import { getBaseOveragePricingEnabled } from '@/lib/data/payments';
+import {
+  getExchangeConnectionMode,
+  listMyExchangeConnections,
+} from '@/lib/data/exchange-connections';
 import { PageHeading } from '../_components';
 import { SettingsForm } from './settings-form';
 import { PricingModelToggle } from './pricing-model-toggle';
+import { ExchangeModeToggle } from './exchange-mode-toggle';
+import { ExchangeManager } from './exchange-manager';
 
 const sectionClass = 'space-y-4 rounded-lg border border-border bg-card p-5';
 
@@ -16,11 +22,14 @@ const sectionClass = 'space-y-4 rounded-lg border border-border bg-card p-5';
 // (edited via the form, masked with reveal), and shows a read-only health view
 // of the infra config that stays in env.
 export default async function AdminSettingsPage() {
-  const [settings, infra, baseOveragePricing] = await Promise.all([
-    getAppSettings(),
-    getInfraConfigStatus(),
-    getBaseOveragePricingEnabled(),
-  ]);
+  const [settings, infra, baseOveragePricing, exchangeMode, exchangeConnections] =
+    await Promise.all([
+      getAppSettings(),
+      getInfraConfigStatus(),
+      getBaseOveragePricingEnabled(),
+      getExchangeConnectionMode(),
+      listMyExchangeConnections(),
+    ]);
 
   return (
     <div className="space-y-6">
@@ -47,6 +56,19 @@ export default async function AdminSettingsPage() {
           </p>
         </div>
         <PricingModelToggle enabled={baseOveragePricing} />
+      </section>
+
+      <section className={sectionClass}>
+        <div>
+          <h2 className="text-lg font-semibold">חיבור Exchange (IONOS)</h2>
+          <p className="text-sm text-muted-foreground">
+            חיבור תיבת ה-Exchange של העסק ליצירת ועדכון אירועים ביומן — פיצ׳ר
+            ניהול בלבד, אינו חשוף ללקוחות. שלב 1: בדיקת חיבור, רשימת יומנים
+            ופגישת בדיקה.
+          </p>
+        </div>
+        <ExchangeManager connections={exchangeConnections} mode={exchangeMode} />
+        <ExchangeModeToggle mode={exchangeMode} />
       </section>
 
       <section className={sectionClass}>

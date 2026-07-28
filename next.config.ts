@@ -91,7 +91,21 @@ const nextConfig: NextConfig = {
   //
   // Google Analytics Data uses Node-specific runtime loading through
   // google-gax; keep it external to the Next.js server bundle.
-  serverExternalPackages: ['puppeteer', 'pg-boss', '@google-analytics/data'],
+  //
+  // ews-javascript-api + @ewsjs/xhr (IONOS Exchange calendar): @ewsjs/xhr's
+  // NTLM transport pulls http-cookie-agent, whose dynamic require webpack
+  // cannot bundle (the build itself warns "Critical dependency: require
+  // function is used in a way in which dependencies cannot be statically
+  // extracted"). MEASURED 27.07: the identical provider code reaches the
+  // Exchange server fine under plain Node but failed inside the bundle —
+  // same class of problem as puppeteer/pg-boss above.
+  serverExternalPackages: [
+    'puppeteer',
+    'pg-boss',
+    '@google-analytics/data',
+    'ews-javascript-api',
+    '@ewsjs/xhr',
+  ],
   async headers() {
     return [
       // Official Next.js PWA guide (guides/progressive-web-apps §8) global
