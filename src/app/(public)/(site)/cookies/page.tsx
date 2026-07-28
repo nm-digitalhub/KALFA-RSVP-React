@@ -1,9 +1,11 @@
 import { getCompanyLegal } from '@/lib/data/company';
 import { ManageCookiesButton } from '@/components/consent/manage-cookies-button';
-import { LegalShell, LegalSection } from '../_legal';
+import { getCookieConsentPublicConfig } from '@/lib/consent/admin-config';
+import { LegalShell, LegalSection, CategoryStatusBadge } from '../_legal';
 
 export const metadata = {
   title: 'מדיניות עוגיות',
+  alternates: { canonical: '/cookies' },
 };
 
 // Render per-request so the page reflects the current company/legal config edited
@@ -14,7 +16,10 @@ export const dynamic = 'force-dynamic';
 // Protection Law + Amendment 13; lawyer review required before go-live. Content
 // describes only the services actually present in the app — no generic boilerplate.
 export default async function CookiesPage() {
-  const company = await getCompanyLegal();
+  const [company, consentAdmin] = await Promise.all([
+    getCompanyLegal(),
+    getCookieConsentPublicConfig(),
+  ]);
 
   return (
     <LegalShell
@@ -26,9 +31,10 @@ export default async function CookiesPage() {
         <p>
           עוגיות (Cookies) הן קובצי טקסט קטנים הנשמרים בדפדפן. מדיניות זו מפרטת אילו
           עוגיות KALFA משתמשת בהן בפועל: <strong>עוגיות חיוניות</strong> הנדרשות לתפעול
-          השירות, ו<strong>עוגיות אנליטיקה (Google Analytics) — רק בהסכמתכם המפורשת
-          מראש (opt-in)</strong>. איננו טוענים עוגיות פרסום או שיווק, ואיננו מודדים את
-          דפי אישורי-ההגעה של אורחים כלל.
+          השירות; <strong>עוגיות אנליטיקה (Google Analytics)</strong>; ו
+          <strong>עוגיות שיווק ורימרקטינג (Google Ads)</strong> — שתי הקטגוריות
+          האחרונות רק בהסכמתכם המפורשת מראש (opt-in), כל אחת בנפרד. איננו מודדים ואיננו
+          משתפים מידע פרסומי על דפי אישורי-ההגעה של אורחים כלל.
         </p>
       </LegalSection>
 
@@ -74,7 +80,10 @@ export default async function CookiesPage() {
         </p>
       </LegalSection>
 
-      <LegalSection title="5. עוגיות אנליטיקה (Google Analytics) — בהסכמה בלבד">
+      <LegalSection
+        title="5. עוגיות אנליטיקה (Google Analytics) — בהסכמה בלבד"
+        badge={<CategoryStatusBadge active={consentAdmin.analyticsEnabled} />}
+      >
         <p>
           אם אישרתם את קטגוריית האנליטיקה בהודעת העוגיות, אנו טוענים את Google
           Analytics 4 לצורך מדידת השימוש באתר ושיפורו. במסגרת זו:
@@ -85,9 +94,20 @@ export default async function CookiesPage() {
             מדידה של Google (בשמות המתחילים ב-<span dir="ltr">_ga</span>).
           </li>
           <li>
-            מופעל Google Signals: עבור מבקרים המחוברים לחשבון Google שהפעילו התאמה
-            אישית של מודעות, Google עשויה לקשר ביקורים ממכשירים שונים ולספק לנו נתוני
-            דמוגרפיה ותחומי עניין <strong>מצרפיים בלבד</strong>.
+            המדידה עשויה לכלול <strong>מזהים פנימיים של המערכת</strong> — מזהים
+            אקראיים (כגון מזהה אירוע או קמפיין) המופיעים בכתובות עמודים באזור
+            האישי, וכן תווית כללית של מודל החיוב באירוע תשלום. המזהים אינם כוללים
+            כשלעצמם את שם האירוע או את זהות בעליו, והקישור שלהם לרשומות העסקיות
+            נעשה באמצעות מערכות KALFA. סוג האירוע (למשל חתונה או בר מצווה){' '}
+            <strong>אינו נשלח</strong> למדידה.
+          </li>
+          <li>
+            <strong>Google Signals</strong> מופעל ברמת הנכס: עבור מבקרים המחוברים
+            לחשבון Google שהפעילו התאמה אישית של מודעות, Google עשויה לקשר ביקורים
+            ממכשירים שונים ולספק לנו נתוני דמוגרפיה ותחומי עניין{' '}
+            <strong>מצרפיים בלבד</strong> — אך רק אם אישרתם <strong>גם</strong> את
+            קטגוריית ״שיווק ורימרקטינג״ בסעיף 6 להלן. אישור האנליטיקה בלבד אינו מפעיל
+            את Google Signals בפועל.
           </li>
           <li>
             האנליטיקה <strong>אינה נטענת כלל</strong> לפני הסכמתכם, ואינה פועלת בדפי
@@ -98,10 +118,46 @@ export default async function CookiesPage() {
             המדידה.
           </li>
           <li>
+            הסכמתכם מתורגמת לאות הסכמה מפורש הנשלח לתג (Consent Mode):‏
+            <span dir="ltr"> analytics_storage</span> — מאושר רק לאחר הסכמתכם, ומבוטל
+            מיידית עם ביטולה. אותות הפרסום (<span dir="ltr">ad_storage,
+            ad_user_data, ad_personalization</span>) נשלטים בנפרד על ידי קטגוריית
+            השיווק, ר׳ סעיף 6.
+          </li>
+        </ul>
+      </LegalSection>
+
+      <LegalSection
+        title="6. עוגיות שיווק ורימרקטינג (Google Ads) — בהסכמה נפרדת ובנוסף בלבד"
+        badge={<CategoryStatusBadge active={consentAdmin.marketingEnabled} />}
+      >
+        <p>
+          חשבון Google Ads שלנו מקושר לנכס האנליטיקה (Google Analytics) של האתר. אם
+          תאשרו את קטגוריית השיווק בהודעת העוגיות — קטגוריה נפרדת מהאנליטיקה, כבויה
+          כברירת מחדל — יחולו הדברים הבאים:
+        </p>
+        <ul className="list-disc space-y-1 ps-5">
+          <li>
+            אנו משתפים עם Google Ads <strong>קהלים</strong> המבוססים על ביקורכם באתר
+            (רימרקטינג), לצורך הצגת מודעות מותאמות לכם באתרים ואפליקציות אחרים, ומדידת
+            המרות ממודעות שלחצתם עליהן.
+          </li>
+          <li>
+            אישור קטגוריה זו, <strong>יחד עם</strong> אישור קטגוריית האנליטיקה, גם
+            מפעיל בפועל את Google Signals (קישור חוצה-מכשירים ונתוני דמוגרפיה מצרפיים,
+            ר׳ סעיף 5) — אישור השיווק לבדו, בלי אנליטיקה, אינו טוען את התג כלל ולכן
+            חסר השפעה נצפית.
+          </li>
+          <li>
             הסכמתכם מתורגמת לאותות הסכמה מפורשים הנשלחים לתג (Consent Mode):‏
-            <span dir="ltr"> analytics_storage, ad_storage, ad_user_data,
-            ad_personalization</span> — כולם מאושרים רק לאחר הסכמתכם, ומבוטלים
-            מיידית עם ביטולה.
+            <span dir="ltr"> ad_storage, ad_user_data, ad_personalization</span> —
+            כולם מאושרים רק לאחר הסכמתכם לקטגוריה זו, ומבוטלים מיידית עם ביטולה
+            (ומוחקים את עוגיות/מזהי הפרסום, ‏<span dir="ltr">_gcl*</span>/
+            <span dir="ltr">_gac*</span>).
+          </li>
+          <li>
+            קטגוריה זו <strong>אינה פועלת כלל</strong> בדפי אישורי-ההגעה, המתנות
+            והאישורים של אורחים — אורחים אינם נחשפים לשיתוף מידע פרסומי בשום מקרה.
           </li>
           <li>
             את העדפות ההתאמה האישית של מודעות בחשבון Google ניתן לנהל דרך{' '}
@@ -127,10 +183,10 @@ export default async function CookiesPage() {
         </ul>
       </LegalSection>
 
-      <LegalSection title="6. ניהול העדפות">
+      <LegalSection title="7. ניהול העדפות">
         <p>
-          ניתן לפתוח את הודעת העוגיות בכל עת, לצפות בפירוט הקטגוריות, ולאשר או לבטל את
-          קטגוריית האנליטיקה:
+          ניתן לפתוח את הודעת העוגיות בכל עת, לצפות בפירוט הקטגוריות, ולאשר או לבטל כל
+          אחת מקטגוריות האנליטיקה והשיווק בנפרד:
         </p>
         <p>
           <ManageCookiesButton className="text-primary hover:text-primary/80">
@@ -139,11 +195,12 @@ export default async function CookiesPage() {
         </p>
       </LegalSection>
 
-      <LegalSection title="7. שינויים במדיניות">
+      <LegalSection title="8. שינויים במדיניות">
         <p>
-          כל הרחבה עתידית של השימוש בעוגיות (למשל שיווק) תעודכן במדיניות זו, תתווסף
-          כקטגוריה נפרדת, ותדרוש הסכמה מפורשת (opt-in) מחדש לפני הפעלתה, בהתאם
-          להנחיות הרשות להגנת הפרטיות.
+          סעיף זה עודכן ב־2026-07-27 עם הוספת קטגוריית השיווק והרימרקטינג (סעיף 6) בעקבות
+          קישור חשבון Google Ads לנכס האנליטיקה. כל הרחבה עתידית נוספת של השימוש
+          בעוגיות תעודכן במדיניות זו, תתווסף כקטגוריה נפרדת, ותדרוש הסכמה מפורשת
+          (opt-in) מחדש לפני הפעלתה, בהתאם להנחיות הרשות להגנת הפרטיות.
         </p>
       </LegalSection>
     </LegalShell>
