@@ -103,6 +103,10 @@ export async function submitCallbackAction(
     phone: formData.get('phone'),
     topic: formData.get('topic'),
     note: trimmedOrUndefined(formData.get('note')),
+    // An unchecked radio group posts nothing at all; the schema's default
+    // turns that into 'asap', which is exactly what the form did before this
+    // field existed.
+    preference: trimmedOrUndefined(formData.get('preference')),
   });
   if (!parsed.success) {
     return {

@@ -150,6 +150,57 @@ export function ContactForm({
   );
 }
 
+/**
+ * When to call back.
+ *
+ * The ONE field on this form a machine acts on. Everything else is read by a
+ * person; this becomes the instant the scheduler starts searching from, which
+ * is why it is a closed set of choices rather than another line of prose.
+ *
+ * It exists because prose does not reach the scheduler: measured 28.07, a
+ * caller wrote that they were reachable 08:00–13:00 and not today, and the
+ * system booked them for that same afternoon — the note said so, and nothing
+ * that picks a time ever reads the note.
+ *
+ * Plain radios, no client state: the form posts as FormData, an unchecked group
+ * simply posts nothing, and the server defaults that to "as soon as possible" —
+ * the behaviour this form already had.
+ */
+const TIME_PREFERENCES = [
+  { value: 'asap', label: 'בהקדם האפשרי' },
+  { value: 'morning', label: 'בבוקר' },
+  { value: 'afternoon', label: 'בצהריים' },
+  { value: 'evening', label: 'אחר הצהריים' },
+] as const;
+
+function CallbackTimePreference() {
+  return (
+    <fieldset>
+      <legend className="mb-1 block text-sm font-medium">מתי נוח שנחזור אליך?</legend>
+      <div className="flex flex-wrap gap-2">
+        {TIME_PREFERENCES.map((option, index) => (
+          <label
+            key={option.value}
+            className="inline-flex cursor-pointer items-center gap-2 rounded-md border border-input px-3 py-2 text-sm transition has-checked:border-primary has-checked:bg-primary/10 has-checked:font-medium hover:bg-muted"
+          >
+            <input
+              type="radio"
+              name="preference"
+              value={option.value}
+              defaultChecked={index === 0}
+              className="size-4 accent-primary"
+            />
+            {option.label}
+          </label>
+        ))}
+      </div>
+      <p className="mt-1 text-xs text-muted-foreground">
+        נשתדל לחזור בטווח שבחרת, בשעות הפעילות.
+      </p>
+    </fieldset>
+  );
+}
+
 export function CallbackForm({ defaultTopic }: { defaultTopic?: string }) {
   const [state, formAction] = useActionState(submitCallbackAction, null);
   useLeadEvent(state);
@@ -172,6 +223,7 @@ export function CallbackForm({ defaultTopic }: { defaultTopic?: string }) {
         <FieldError errors={state?.fieldErrors?.phone} />
       </div>
       <TopicSelect id="cb-topic" defaultTopic={defaultTopic} />
+      <CallbackTimePreference />
       <div>
         <label htmlFor="cb-note" className="mb-1 block text-sm font-medium">
           הערה (לא חובה)

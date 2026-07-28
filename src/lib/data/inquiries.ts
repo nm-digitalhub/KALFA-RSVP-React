@@ -3,6 +3,7 @@ import 'server-only';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { logActivity } from '@/lib/data/activity';
 import { sendSlackAlert } from '@/lib/alerts/slack';
+import { preferenceToInstant } from '@/lib/callbacks/schedule-policy';
 import { normalizePhone } from '@/lib/phone';
 import type {
   CallbackRequestInput,
@@ -68,6 +69,22 @@ export async function createCallbackRequest(
   input: CallbackRequestInput,
   userId: string | null,
 ): Promise<{ ok: boolean }> {
+  // The caller's chosen part of the day, resolved to the instant the scheduler
+  // starts searching from. 'asap' stays NULL on purpose: it means "no stated
+  // time", and the scheduler resolves that against the clock at the moment it
+  // actually runs rather than against the moment this form was submitted — a
+  // request can sit in the queue for a while, and "as soon as possible" should
+  // mean soon from THEN.
+  const preferredMs =
+    input.preference === 'asap' ? null : preferenceToInstant(input.preference, Date.now());
+
+  // The band is also a DIRECTION, and the instant above throws that away: once
+  // it is a timestamp, nothing downstream can tell "they wanted the afternoon"
+  // from "start looking at four". Recording the rank keeps the choice usable
+  // when the exact instant turns out to be taken.
+  const requestedRank: 'earliest' | 'early' | 'late' =
+    input.preference === 'asap' ? 'earliest' : input.preference === 'morning' ? 'early' : 'late';
+
   const supabase = createAdminClient();
   const { data, error } = await supabase
     .from('callback_requests')
@@ -76,6 +93,8 @@ export async function createCallbackRequest(
       phone: normalizePhone(input.phone) ?? input.phone,
       topic: input.topic,
       note: input.note ?? null,
+      requested_at: preferredMs === null ? null : new Date(preferredMs).toISOString(),
+      requested_rank: requestedRank,
     })
     .select('id')
     .single();
@@ -89,7 +108,8 @@ export async function createCallbackRequest(
     level: 'info',
     title: 'בקשת חזרה טלפונית חדשה',
     source: 'callback_form',
-    fields: { callbackRequestId: data.id, topic: input.topic },
+    // Counts and closed vocabulary only — no name, phone or note in an alert.
+    fields: { callbackRequestId: data.id, topic: input.topic, מועד: input.preference },
   });
 
   if (userId) {

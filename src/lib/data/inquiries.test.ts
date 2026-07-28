@@ -4,6 +4,8 @@ import { createMockSupabase } from '@/test/supabase-mock';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { logActivity } from '@/lib/data/activity';
 import { sendSlackAlert } from '@/lib/alerts/slack';
+import { CALLBACK_PREFERENCES } from '@/lib/callbacks/schedule-policy';
+import { CALLBACK_TIME_PREFERENCES } from '@/lib/validation/inquiries';
 import { createContactMessage, createCallbackRequest } from './inquiries';
 
 vi.mock('server-only', () => ({}));
@@ -97,7 +99,13 @@ describe('createCallbackRequest', () => {
     const { client, builder } = mockInsertReturning('cb-1');
 
     const result = await createCallbackRequest(
-      { full_name: 'יוסי כהן', phone: '0521112222', topic: 'תמיכה', note: undefined },
+      {
+        full_name: 'יוסי כהן',
+        phone: '0521112222',
+        topic: 'תמיכה',
+        note: undefined,
+        preference: 'asap',
+      },
       null,
     );
 
@@ -108,13 +116,92 @@ describe('createCallbackRequest', () => {
       phone: '+972521112222',
       topic: 'תמיכה',
       note: null,
+      // 'asap' means "no stated time" — the scheduler resolves it against the
+      // clock when it runs, not against submission time.
+      requested_at: null,
+      // The band is a DIRECTION as well as an instant, and the instant alone
+      // cannot express it — recorded so a taken slot can still be resolved the
+      // way the caller asked for.
+      requested_rank: 'earliest',
     });
     expect(sendSlackAlert).toHaveBeenCalledWith(
       expect.objectContaining({
         category: 'customer_inquiry',
         source: 'callback_form',
-        fields: { callbackRequestId: 'cb-1', topic: 'תמיכה' },
+        fields: { callbackRequestId: 'cb-1', topic: 'תמיכה', מועד: 'asap' },
       }),
+    );
+  });
+
+  // The field exists because prose in `note` never reaches the scheduler. If
+  // the choice stopped being written here it would fail silently — the row
+  // would look fine and the caller would be rung at the wrong time.
+  it('records a chosen part of the day as the instant the search starts from', async () => {
+    const { builder } = mockInsertReturning('cb-2');
+
+    await createCallbackRequest(
+      {
+        full_name: 'נטלי',
+        phone: '0548145688',
+        topic: 'מכירות',
+        note: undefined,
+        preference: 'morning',
+      },
+      null,
+    );
+
+    const written = vi.mocked(builder.insert).mock.calls[0][0] as {
+      requested_at: string | null;
+      requested_rank: string;
+    };
+    expect(written.requested_at).not.toBeNull();
+    expect(written.requested_rank).toBe('early');
+    // Israel wall-clock 09:00 — the morning band's start in the policy engine.
+    const israelHour = new Date(written.requested_at as string).toLocaleString('en-GB', {
+      timeZone: 'Asia/Jerusalem',
+      hour: '2-digit',
+      hour12: false,
+    });
+    expect(israelHour).toBe('09');
+  });
+
+  it('puts an afternoon request in the afternoon, not merely "later"', async () => {
+    const { builder } = mockInsertReturning('cb-3');
+
+    await createCallbackRequest(
+      {
+        full_name: 'דנה',
+        phone: '0521112222',
+        topic: 'מכירות',
+        note: undefined,
+        preference: 'afternoon',
+      },
+      null,
+    );
+
+    const written = vi.mocked(builder.insert).mock.calls[0][0] as {
+      requested_at: string | null;
+      requested_rank: string;
+    };
+    // Both afternoon and evening aim at the LATE end of what is workable.
+    expect(written.requested_rank).toBe('late');
+    const israelHour = new Date(written.requested_at as string).toLocaleString('en-GB', {
+      timeZone: 'Asia/Jerusalem',
+      hour: '2-digit',
+      hour12: false,
+    });
+    expect(israelHour).toBe('12');
+  });
+});
+
+// The public form and the policy engine must offer the same choices. They are
+// declared separately — the form's list excludes 'exact', which needs a picker
+// the public form does not have — so this pins the relationship rather than
+// leaving it to be noticed when a caller picks something the scheduler ignores.
+describe('the form vocabulary and the scheduler agree', () => {
+  it('offers every engine preference except the one that needs a picker', () => {
+    expect([...CALLBACK_TIME_PREFERENCES]).toEqual(
+      CALLBACK_PREFERENCES.filter((p) => p !== 'exact'),
     );
   });
 });
