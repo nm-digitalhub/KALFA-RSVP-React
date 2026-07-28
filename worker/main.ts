@@ -11,6 +11,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { PgBoss } from 'pg-boss';
+import { Client as PgClient } from 'pg';
 
 import { QUEUES, type OutreachCallRequest, type OutreachStepJob } from '@/lib/queue/queues';
 import { dispatchOutreachCall } from '@/lib/data/outreach-calls';
@@ -47,6 +48,7 @@ import {
 import { processWebhookEvent } from '@/lib/data/webhook-processing';
 import { runThankyouSweep } from '@/lib/data/auto-thankyou';
 import { runCallbackSweep } from '@/lib/data/call-callbacks';
+import { runCallbackSchedulingSweep } from '@/lib/data/callback-scheduling';
 import { recordManualDialOutcome } from '@/lib/data/call-attempts';
 import {
   runDispatchRetention,
@@ -423,6 +425,147 @@ async function handleThankyouSweep(): Promise<void> {
   await runThankyouSweep();
 }
 
+
+// ── Push instead of poll ────────────────────────────────────────────────────
+// A dedicated LISTEN connection so a callback request is scheduled the moment
+// it is ready, not on the next tick. The database announces (trigger
+// callback_requests_notify_work → channel callback_work); this reacts.
+//
+// Verified on this project's connection before it was written: LISTEN needs a
+// SESSION-mode connection, and transaction-mode pooling drops it in silence.
+// Port 5432 on the Supabase pooler is session mode — hence the same env the
+// pg-boss client above uses, deliberately, rather than a second definition
+// that could drift out of session mode without anyone noticing.
+//
+// This is an OPTIMISATION, never the guarantee. NOTIFY is fire-and-forget: with
+// no listener attached at that instant — a restart, a dropped connection, a
+// deploy — the announcement is gone for good. The cron schedule below is what
+// makes the work eventually happen regardless, which is why it stays.
+// A Client, not a Pool: LISTEN is per-connection state, and a pool is free to
+// hand back a different connection — or recycle the subscribed one — leaving a
+// listener that is attached to nothing and reports no error.
+//
+// The driver arrives as a plain static import. It must NOT be loaded through
+// createRequire(import.meta.url) the way the fleet CLI does: the CLI runs as
+// real ESM, whereas this file is bundled to CJS, where esbuild leaves
+// `import.meta.url` undefined and createRequire throws during module load —
+// before a single line here runs, which takes the whole worker down in a
+// restart loop that no amount of typechecking or `next build` would catch.
+
+const NOTIFY_CHANNEL = 'callback_work';
+// A burst of requests announces a burst of times. One sweep drains all of them,
+// so anything arriving while a sweep is in flight — or moments after one — is
+// folded into a single follow-up run rather than starting its own.
+const NOTIFY_COALESCE_MS = 3_000;
+
+function startCallbackWorkListener(): () => Promise<void> {
+  let client: PgClient | null = null;
+  let stopped = false;
+  let sweeping = false;
+  let pending = false;
+  let reconnecting = false;
+  let retryMs = 1_000;
+
+  const drain = async (): Promise<void> => {
+    if (sweeping) {
+      pending = true;
+      return;
+    }
+    sweeping = true;
+    try {
+      // Logged because a push-triggered sweep is otherwise invisible: the
+      // notification line above proves the announcement arrived, not that the
+      // work ran or what it decided.
+      const r = await runCallbackSchedulingSweep();
+      console.log(
+        `[callback-listen] sweep — שובצו ${r.scheduled}, נדחו ${r.skipped}, שוחררו ${r.released}, תוקנו ${r.repaired}`,
+      );
+    } catch (e) {
+      console.error('[callback-listen] sweep failed:', e instanceof Error ? e.message : e);
+    } finally {
+      sweeping = false;
+      if (pending) {
+        pending = false;
+        setTimeout(() => void drain(), NOTIFY_COALESCE_MS);
+      }
+    }
+  };
+
+  const connect = async (): Promise<void> => {
+    if (stopped) return;
+    // Cleared here rather than after connecting: a failure below calls
+    // reconnect(), which must not find its own guard still raised.
+    reconnecting = false;
+    try {
+      client = new PgClient({
+        host: process.env.SUPABASE_DB_HOST,
+        port: Number(process.env.SUPABASE_DB_PORT || 5432),
+        user: process.env.SUPABASE_DB_USER,
+        password: process.env.SUPABASE_DB_PASSWORD,
+        database: process.env.SUPABASE_DB_NAME || 'postgres',
+        ssl: { rejectUnauthorized: false },
+        application_name: 'kalfa-worker-listen',
+      });
+      // A dropped LISTEN is the failure mode that kills this quietly: the
+      // process stays up, the channel is simply no longer subscribed. Reconnect
+      // and re-LISTEN, backing off so a database outage is not hammered.
+      client.on('error', (e: Error) => {
+        console.error('[callback-listen] connection error:', e.message);
+        void reconnect();
+      });
+      client.on('end', () => void reconnect());
+      client.on('notification', (msg: { channel: string; payload?: string }) => {
+        if (msg.channel !== NOTIFY_CHANNEL) return;
+        console.log(`[callback-listen] ${msg.payload ?? '(no payload)'}`);
+        void drain();
+      });
+      await client.connect();
+      await client.query(`listen ${NOTIFY_CHANNEL}`);
+      retryMs = 1_000;
+      console.log('[callback-listen] subscribed');
+    } catch (e) {
+      console.error('[callback-listen] connect failed:', e instanceof Error ? e.message : e);
+      void reconnect();
+    }
+  };
+
+  // One recovery at a time, however many events announce the same failure. A
+  // dropped connection emits BOTH 'error' and 'end' — measured, not assumed —
+  // and without this guard each one opened its own connection: the channel got
+  // a second subscriber, every notification was handled twice, and the earlier
+  // client was no longer referenced so nothing ever closed it. Every subsequent
+  // drop then doubled the count again.
+  const reconnect = async (): Promise<void> => {
+    if (stopped || reconnecting) return;
+    reconnecting = true;
+    const c = client;
+    client = null;
+    if (c) {
+      // Detach first: a client being torn down still emits, and those events
+      // belong to a connection this closure has already given up on. 'error' is
+      // replaced rather than merely removed — an EventEmitter that emits 'error'
+      // with no listener throws, which would take the worker down.
+      c.removeAllListeners('notification');
+      c.removeAllListeners('end');
+      c.removeAllListeners('error');
+      c.on('error', () => {});
+      await c.end().catch(() => {});
+    }
+    const wait = retryMs;
+    retryMs = Math.min(retryMs * 2, 60_000);
+    setTimeout(() => void connect(), wait);
+  };
+
+  void connect();
+
+  return async () => {
+    stopped = true;
+    const c = client;
+    client = null;
+    if (c) await c.end().catch(() => {});
+  };
+}
+
 async function main(): Promise<void> {
   const boss = new PgBoss({
     host: process.env.SUPABASE_DB_HOST,
@@ -470,7 +613,15 @@ async function main(): Promise<void> {
     // dial impossible, but a guest's phone ringing twice is not a race worth
     // leaving to one defence.
     const singleton =
-      q === QUEUES.thankyouSweep || q === QUEUES.logExport || q === QUEUES.callbackSweep;
+      q === QUEUES.thankyouSweep ||
+      q === QUEUES.logExport ||
+      q === QUEUES.callbackSweep ||
+      // Singleton too: two ticks reading the same "unscheduled" rows would each
+      // create an appointment. The partial unique index on calendar_item_id and
+      // the `.is(calendar_item_id, null)` guard on the write already make a
+      // duplicate impossible, but a second item appearing in the owner's
+      // calendar is not a race worth leaving to one defence.
+      q === QUEUES.callbackScheduleSweep;
     await boss.createQueue(q, singleton ? { policy: 'singleton' } : undefined);
   }
 
@@ -525,6 +676,16 @@ async function main(): Promise<void> {
     QUEUES.callbackSweep,
     guardedWorker(QUEUES.callbackSweep, async () => {
       await runCallbackSweep(boss);
+    }),
+  );
+  // Books calendar time for leads from the public contact page. Writes to
+  // Exchange, never to the phone system — the two callback sweeps share a name
+  // and nothing else. Fail-closed on its own: no verified connection, an
+  // ambiguous one, or a failed calendar read all end the tick without writing.
+  await boss.work(
+    QUEUES.callbackScheduleSweep,
+    guardedWorker(QUEUES.callbackScheduleSweep, async () => {
+      await runCallbackSchedulingSweep();
     }),
   );
   // Voximplant balance-alert cron (H2): read-only GetAccountInfo poll — Slack when
@@ -582,6 +743,14 @@ async function main(): Promise<void> {
   // coarse enough that it is not polling. A callback is due at a time the guest
   // chose, so precision beyond a few minutes buys nothing.
   await boss.schedule(QUEUES.callbackSweep, '*/5 * * * *');
+  // Every 10 minutes. A lead who just submitted the form is not waiting on the
+  // appointment itself — the minimum-notice guard puts the call two hours out
+  // regardless — so a tighter tick would only mean more Exchange round trips.
+  // The BACKSTOP, not the main path: the LISTEN above schedules within a
+  // second of a request becoming ready. This catches anything that announced
+  // while nothing was listening — a restart, a dropped connection, a deploy.
+  await boss.schedule(QUEUES.callbackScheduleSweep, '*/10 * * * *');
+  const stopCallbackListener = startCallbackWorkListener();
   await boss.schedule(QUEUES.balanceCheck, '*/30 * * * *');
   await boss.schedule(QUEUES.callReconcile, '*/10 * * * *');
   // Anchored to a wall-clock hour → run on Israel local time (DST-aware).
@@ -593,6 +762,7 @@ async function main(): Promise<void> {
 
   const shutdown = async (): Promise<void> => {
     console.log('[kalfa-worker] SIGTERM — stopping gracefully');
+    await stopCallbackListener();
     await boss.stop({ graceful: true, timeout: 30000 });
     await closeJobMetaPool();
     process.exit(0);
