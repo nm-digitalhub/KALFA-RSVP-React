@@ -61,6 +61,11 @@
       "skillPath": "skills/general-video/SKILL.md",
       "computedHash": "3dfc5966832f544b11a0b59a585161015eb3f67151b8cb9093ad4b415b2c0dc8"
     },
+    "hebrew-seo-geo-toolkit": {
+      "source": "skills-il/marketing-growth",
+      "sourceType": "github",
+      "computedHash": "00bfe0a64438fb4fc618aec1008c392065de89f8a2f7462b93dd5592026a7086"
+    },
     "hebrew-voice-bot-builder": {
       "source": "skills-il/developer-tools",
       "sourceType": "github",
@@ -115,6 +120,11 @@
       "skillPath": "israeli-ai-compliance-kit/SKILL.md",
       "computedHash": "396dd919940bc643898b298dc08cc2e8d825c213f1ad557d04fb0341c33766d9"
     },
+    "israeli-content-marketing": {
+      "source": "skills-il/marketing-growth",
+      "sourceType": "github",
+      "computedHash": "2a301511e9c1ed8dd12be30ad1a7124d8dc8f012aadf02ecf49004374a74bc76"
+    },
     "israeli-ecommerce-compliance": {
       "source": "skills-il/security-compliance",
       "sourceType": "github",
@@ -126,6 +136,11 @@
       "sourceType": "github",
       "skillPath": "israeli-market-fit/SKILL.md",
       "computedHash": "d25881678f1deba2859a6eb05d2d1703fd080879f44fbe622b5389c551c3a768"
+    },
+    "israeli-paid-ads": {
+      "source": "skills-il/marketing-growth",
+      "sourceType": "github",
+      "computedHash": "a4412c50f59ecc1ddc98c926e4b32d8fe8317eecab5689cd0e841ac4fe8e1d7c"
     },
     "media-use": {
       "source": "heygen-com/hyperframes",

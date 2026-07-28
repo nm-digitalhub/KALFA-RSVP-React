@@ -88,12 +88,16 @@ export function PendingRequestCard({
       </header>
 
       <div className="space-y-2">
-        <h2 className="text-base font-semibold">
+        <h2 className="wrap-anywhere text-base font-semibold">
           <Link href={`/admin/fleet/${request.id}`} className="hover:underline">
             {request.title}
           </Link>
         </h2>
-        <p className="whitespace-pre-wrap text-sm text-muted-foreground">{request.body}</p>
+        {/* wrap-anywhere (not break-words): agent-authored bodies carry long
+            unbreakable tokens (hashes/paths); only overflow-wrap:anywhere is
+            factored into intrinsic sizing, so it stops the flex row from
+            inflating past the viewport (iPad Safari zooms the page out). */}
+        <p className="wrap-anywhere whitespace-pre-wrap text-sm text-muted-foreground">{request.body}</p>
         {preparedCommand ? (
           <pre
             dir="ltr"

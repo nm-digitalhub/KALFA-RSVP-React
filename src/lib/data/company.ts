@@ -17,6 +17,17 @@ export type CompanyLegal = {
   warrantyText: string;
 };
 
+// "033301505" / "03-330-1505" / "+972 3 3301505" → "+97233301505" for
+// machine-readable surfaces (schema.org telephone). Anything that doesn't look
+// like an Israeli number resolves to '' so callers omit the field instead of
+// publishing a malformed value.
+export function toE164Israel(raw: string): string {
+  const digits = raw.replace(/\D/g, '');
+  if (digits.startsWith('972') && digits.length >= 11) return `+${digits}`;
+  if (digits.startsWith('0') && digits.length >= 9) return `+972${digits.slice(1)}`;
+  return '';
+}
+
 export async function getCompanyLegal(): Promise<CompanyLegal> {
   const admin = createAdminClient();
   const { data, error } = await admin

@@ -177,7 +177,9 @@ export default async function AdminFleetRequestPage({
               </span>
             ) : null}
           </div>
-          <p className="whitespace-pre-wrap text-sm">{request.body}</p>
+          {/* wrap-anywhere: long unbreakable agent tokens must not inflate the
+              shell's flex row (see fleet-client.tsx PendingRequestCard). */}
+          <p className="wrap-anywhere whitespace-pre-wrap text-sm">{request.body}</p>
           {preparedCommand ? (
             <pre
               dir="ltr"
@@ -210,7 +212,7 @@ export default async function AdminFleetRequestPage({
               at={request.answered_at}
               detail={
                 request.answer ? (
-                  <p className="whitespace-pre-wrap rounded-md bg-muted p-3 text-sm">
+                  <p className="wrap-anywhere whitespace-pre-wrap rounded-md bg-muted p-3 text-sm">
                     {request.answer}
                   </p>
                 ) : undefined
