@@ -4,12 +4,13 @@ import { ManageCookiesButton } from '@/components/consent/manage-cookies-button'
 import { LandingMobileNav } from '@/components/landing-mobile-nav';
 import { LandingUserMenu } from '@/components/landing-user-menu';
 import { getUser } from '@/lib/auth/dal';
+import { getCompanyLegal, toE164Israel } from '@/lib/data/company';
 import { getProfile } from '@/lib/data/profiles';
+import { getAppOrigin } from '@/lib/url';
 import {
   Activity,
   AlarmClock,
   ArrowLeft,
-  Armchair,
   Building2,
   CalendarPlus,
   ChartColumnBig,
@@ -17,6 +18,7 @@ import {
   CircleCheck,
   CircleQuestionMark,
   Clock,
+  FileUp,
   Gauge,
   Gift,
   HandHeart,
@@ -47,6 +49,12 @@ import {
 // Public landing page — implemented from the KALFA Claude Design "Home" output.
 // RTL Hebrew, indigo brand, Heebo (inherited from the root layout).
 
+// Canonical is declared per (site) page (not inherited from the root layout) so
+// app/admin/auth segments never accidentally inherit a canonical of '/'.
+export const metadata = {
+  alternates: { canonical: '/' },
+};
+
 const PROBLEMS: { icon: LucideIcon; t: string; d: string }[] = [
   { icon: ListX, t: 'מעקב ידני אחרי אורחים', d: 'גיליונות, פתקים ורשימות שמתעדכנות לאט ומלאות טעויות.' },
   { icon: MessagesSquare, t: 'הודעות מפוזרות', d: 'תשובות שמגיעות בוואטסאפ, בטלפון ובמייל — וקשה לאחד אותן.' },
@@ -73,7 +81,7 @@ const FEATURES: {
   { n: '02', icon: Send, t: 'שליחת הזמנות ותזכורות', d: 'הזמנות אישיות ותזכורות אוטומטיות למי שעוד לא השיב.' },
   { n: '03', icon: CircleCheck, t: 'מעקב אחר אישורי הגעה', d: 'כל תגובה נרשמת מיד — מי מגיע, מי לא, וכמה מלווים.' },
   { n: '04', icon: Activity, t: 'סטטוס אירוע בזמן אמת', d: 'תמונת מצב חיה של היענות, אישורים והתקדמות.', anim: 'k-ico-pulse' },
-  { n: '05', icon: Armchair, t: 'ניהול שולחנות והושבה', d: 'שיבוץ אורחים לשולחנות בקלות, לפי קבוצות והעדפות.' },
+  { n: '05', icon: FileUp, t: 'ייבוא מוזמנים מהיר', d: 'ייבוא רשימה קיימת מקובץ או מוואטסאפ — בלי הקלדה ידנית.' },
   { n: '06', icon: MessageCircle, t: 'תקשורת מסודרת', d: 'עדכונים ופניות לאורחים בערוץ אחד ברור.' },
   { n: '07', icon: ChartColumnBig, t: 'דוחות וסיכומים', d: 'סיכום מספרים ברור למארגן — לפני האירוע ואחריו.', iconAnim: 'k-ico-bars' },
 ];
@@ -83,7 +91,7 @@ const STEPS: { n: string; icon: LucideIcon; t: string; d: string }[] = [
   { n: '2', icon: UserPlus, t: 'מוסיפים אורחים', d: 'ידנית או בייבוא רשימה קיימת, עם קבוצות ומלווים.' },
   { n: '3', icon: Send, t: 'שולחים הזמנות', d: 'הזמנה אישית לכל אורח, בערוץ הנוח לכם.' },
   { n: '4', icon: MessageSquareReply, t: 'עוקבים אחרי תגובות', d: 'כל אישור נרשם בזמן אמת, עם תזכורת לממתינים.' },
-  { n: '5', icon: Armchair, t: 'מנהלים הושבה ועדכונים', d: 'שיבוץ שולחנות ועדכונים שוטפים לאורחים.' },
+  { n: '5', icon: MessageCircle, t: 'שולחים עדכונים ותזכורות', d: 'תזכורות אוטומטיות לממתינים ועדכונים שוטפים לאורחים.' },
   { n: '6', icon: PartyPopper, t: 'מגיעים לאירוע מסודר', d: 'עם תמונת מצב ברורה של מי שמגיע.' },
 ];
 
@@ -137,8 +145,71 @@ export default async function HomePage() {
   const startHref = user ? '/app' : '/auth/signup';
   const startLabel = user ? 'לאזור האישי' : 'צרו אירוע חדש';
 
+  // Structured data (Organization / WebSite / SoftwareApplication) for search
+  // and AI answer engines. Company details come from the admin-managed
+  // app_settings (same reader the legal pages use) — never hardcoded; on a
+  // read failure the optional fields are simply omitted (the page must not
+  // break over JSON-LD).
+  const origin = await getAppOrigin();
+  let orgLegalName = '';
+  let orgPhone = '';
+  try {
+    const company = await getCompanyLegal();
+    orgLegalName = company.name.trim();
+    orgPhone = toE164Israel(company.contactPhone);
+  } catch {
+    // omit optional org fields
+  }
+  const jsonLd = {
+    '@context': 'https://schema.org',
+    '@graph': [
+      {
+        '@type': 'Organization',
+        '@id': `${origin}/#organization`,
+        name: 'KALFA',
+        ...(orgLegalName ? { legalName: orgLegalName } : {}),
+        url: `${origin}/`,
+        logo: `${origin}/icons/icon.svg`,
+        ...(orgPhone
+          ? {
+              contactPoint: {
+                '@type': 'ContactPoint',
+                telephone: orgPhone,
+                contactType: 'customer support',
+                availableLanguage: ['he'],
+              },
+            }
+          : {}),
+      },
+      {
+        '@type': 'WebSite',
+        '@id': `${origin}/#website`,
+        name: 'KALFA',
+        url: `${origin}/`,
+        inLanguage: 'he',
+        publisher: { '@id': `${origin}/#organization` },
+      },
+      {
+        '@type': 'SoftwareApplication',
+        name: 'KALFA',
+        applicationCategory: 'BusinessApplication',
+        operatingSystem: 'Web',
+        inLanguage: 'he',
+        url: `${origin}/`,
+        description:
+          'מערכת לניהול אישורי הגעה לאירועים: ניהול רשימת מוזמנים ומלווים, שליחת הזמנות ותזכורות ומעקב תשובות בזמן אמת.',
+      },
+    ],
+  };
+
   return (
     <div className="bg-background">
+      <script
+        type="application/ld+json"
+        // JSON.stringify output with `<` escaped — standard guard against
+        // closing the script tag via DB-sourced strings.
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd).replace(/</g, '\\u003c') }}
+      />
       {/* Header */}
       <header className="sticky top-0 z-50 border-b border-border bg-background/85 backdrop-blur-md backdrop-saturate-150">
         <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-6">
@@ -186,7 +257,7 @@ export default async function HomePage() {
                 <span className="text-primary">במקום אחד.</span>
               </h1>
               <p className="mt-5 max-w-prose text-lg text-muted-foreground">
-                שלחו הזמנות, עקבו אחר התגובות בזמן אמת ונהלו את רשימת האורחים וההושבה — בלי גיליונות, בלי הודעות מפוזרות, בלי בלגן.
+                שלחו הזמנות, עקבו אחר התגובות בזמן אמת ונהלו את רשימת המוזמנים והמלווים — בלי גיליונות, בלי הודעות מפוזרות, בלי בלגן.
               </p>
               <div className="mt-7 flex flex-wrap gap-3">
                 <Link

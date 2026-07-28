@@ -6,6 +6,7 @@ import { CallbackForm, ContactForm } from './inquiry-forms';
 
 export const metadata = {
   title: 'יצירת קשר ותמיכה',
+  alternates: { canonical: '/contact' },
 };
 
 // Session-aware (prefill for signed-in customers) → render per-request.

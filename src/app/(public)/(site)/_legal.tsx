@@ -61,17 +61,48 @@ export function LegalShell({
 
 export function LegalSection({
   title,
+  badge,
   children,
 }: {
   title: string;
+  badge?: React.ReactNode;
   children: React.ReactNode;
 }) {
   return (
     <section className="space-y-2">
-      <h2 className="text-lg font-semibold">{title}</h2>
+      <h2 className="flex flex-wrap items-center gap-2 text-lg font-semibold">
+        {title}
+        {badge}
+      </h2>
       <div className="space-y-2 text-sm leading-7 text-muted-foreground">
         {children}
       </div>
     </section>
+  );
+}
+
+// Live status pill for a cookie-consent category, sourced from
+// src/lib/consent/admin-config.ts — the SAME config the banner itself reads,
+// so /cookies and /privacy can never show a stale category status. The
+// underlying legal text stays fixed in code regardless (plan
+// plans/cookie-consent-admin-control.md §8) — this only reflects whether the
+// admin currently offers the category, never a substitute for the text.
+export function CategoryStatusBadge({
+  active,
+  label,
+}: {
+  active: boolean;
+  label?: string;
+}) {
+  return (
+    <span
+      className={
+        'rounded-full px-2 py-0.5 text-xs font-normal ' +
+        (active ? 'bg-emerald-500/10 text-emerald-600' : 'bg-amber-500/10 text-amber-600')
+      }
+    >
+      {label ? `${label}: ` : ''}
+      {active ? 'פעיל' : 'מושבת זמנית'}
+    </span>
   );
 }

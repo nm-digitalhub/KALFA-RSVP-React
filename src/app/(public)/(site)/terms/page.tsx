@@ -3,6 +3,7 @@ import { LegalShell, LegalSection } from '../_legal';
 
 export const metadata = {
   title: 'תקנון ותנאי שירות',
+  alternates: { canonical: '/terms' },
 };
 
 // Render per-request so the page always reflects the current company/legal config

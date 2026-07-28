@@ -2,10 +2,12 @@ import Link from 'next/link';
 
 import { getCompanyLegal } from '@/lib/data/company';
 import { ManageCookiesButton } from '@/components/consent/manage-cookies-button';
-import { LegalShell, LegalSection } from '../_legal';
+import { getCookieConsentPublicConfig } from '@/lib/consent/admin-config';
+import { LegalShell, LegalSection, CategoryStatusBadge } from '../_legal';
 
 export const metadata = {
   title: 'מדיניות פרטיות',
+  alternates: { canonical: '/privacy' },
 };
 
 // Render per-request so the page always reflects the current company/legal config
@@ -16,7 +18,10 @@ export const dynamic = 'force-dynamic';
 // identity from config. DRAFT per Privacy Protection Law §11 + Amendment 13;
 // lawyer review required before go-live.
 export default async function PrivacyPage() {
-  const company = await getCompanyLegal();
+  const [company, consentAdmin] = await Promise.all([
+    getCompanyLegal(),
+    getCookieConsentPublicConfig(),
+  ]);
 
   return (
     <LegalShell
@@ -46,6 +51,19 @@ export default async function PrivacyPage() {
             <strong>נתונים טכניים:</strong> כתובת IP, מזהי מכשיר ודפדפן וחותמות
             זמן. בהתאם לתיקון 13, כתובת IP ומזהים מקוונים נחשבים מידע אישי.
           </li>
+          <li>
+            <strong>נתוני מדידת שימוש (בהסכמה בלבד):</strong> אם אישרתם את קטגוריית
+            האנליטיקה, מדידת השימוש עשויה לכלול גם מזהים פנימיים אקראיים של המערכת
+            (כגון מזהה אירוע או קמפיין, לרבות ככתובת עמוד). פירוט מלא במדיניות
+            העוגיות.
+          </li>
+          <li>
+            <strong>נתוני שיווק ורימרקטינג (בהסכמה נפרדת בלבד):</strong> אם אישרתם את
+            קטגוריית השיווק, אנו משתפים עם Google Ads קהלים המבוססים על ביקורכם באתר,
+            לצורך רימרקטינג ומדידת המרות ממודעות. קטגוריה זו כבויה כברירת מחדל,
+            נפרדת מהאנליטיקה, ואינה פועלת בדפי אישורי-ההגעה של אורחים. פירוט מלא
+            במדיניות העוגיות.
+          </li>
         </ul>
       </LegalSection>
 
@@ -69,7 +87,10 @@ export default async function PrivacyPage() {
         <p>
           לצורך מתן השירות אנו נעזרים בספקי תקשורת וסליקה הפועלים בשמנו: Meta
           (WhatsApp Cloud API), Voximplant (שיחות), ספק סליקה לתשלומים, וספק SMS
-          לאימות. ספקים אלה מעבדים מידע בהתאם להוראותינו ולמטרת השירות בלבד.
+          לאימות. ספקים אלה מעבדים מידע בהתאם להוראותינו ולמטרת השירות בלבד. בנוסף,
+          ורק בהסכמתכם המפורשת (opt-in) לקטגוריות הרלוונטיות בהודעת העוגיות, אנו
+          משתפים עם Google מידע לצורך מדידת שימוש (אנליטיקה) ו/או קהלי רימרקטינג
+          לצורך פרסום (Google Ads) — לפירוט המלא ראו את מדיניות העוגיות.
         </p>
       </LegalSection>
 
@@ -102,11 +123,20 @@ export default async function PrivacyPage() {
         </p>
       </LegalSection>
 
-      <LegalSection title="10. עוגיות (Cookies)">
+      <LegalSection
+        title="10. עוגיות (Cookies)"
+        badge={
+          <>
+            <CategoryStatusBadge active={consentAdmin.analyticsEnabled} label="אנליטיקה" />
+            <CategoryStatusBadge active={consentAdmin.marketingEnabled} label="שיווק" />
+          </>
+        }
+      >
         <p>
           אנו משתמשים בעוגיות חיוניות לתפעול השירות (התחברות וזיהוי), שאינן דורשות
-          הסכמה. עוגיות שאינן חיוניות (אנליטיקה/שיווק, ככל שייעשה בהן שימוש) ייאספו
-          בהסכמה מפורשת (opt‑in) בלבד, בהתאם להנחיות הרשות להגנת הפרטיות. לפירוט מלא
+          הסכמה. עוגיות אנליטיקה (Google Analytics) ועוגיות שיווק ורימרקטינג (Google
+          Ads) הן שתי קטגוריות נפרדות, כל אחת כבויה כברירת מחדל, וכל אחת נאספת רק
+          בהסכמה מפורשת (opt‑in) נפרדת, בהתאם להנחיות הרשות להגנת הפרטיות. לפירוט מלא
           ראו את <Link href="/cookies" className="underline underline-offset-4">מדיניות
           העוגיות</Link>, או{' '}
           <ManageCookiesButton className="underline underline-offset-4">
