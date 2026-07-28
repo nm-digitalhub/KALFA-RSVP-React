@@ -25,16 +25,21 @@ import {
   FolderTraversal,
   FolderView,
   ItemId,
+  BodyType,
   MessageBody,
   SendCancellationsMode,
   SendInvitationsMode,
   SendInvitationsOrCancellationsMode,
   ServiceError,
   Uri,
+  UserConfiguration,
+  UserConfigurationProperties,
   WebCredentials,
   WellKnownFolderName,
 } from 'ews-javascript-api';
 
+import { parseCategoryList } from './category-list';
+import { xmlSafe } from './xml-safe';
 import type { ExchangeCalendarProvider, ExchangeErrorCode, ExchangeResult } from './provider';
 import type {
   AppointmentAttendee,
@@ -47,6 +52,7 @@ import type {
   ExchangeAppointmentDetail,
   CalendarSummary,
   ExchangeAppointment,
+  ExchangeCategory,
   ExchangeConnectionConfig,
   MailboxInfo,
 } from './types';
@@ -463,24 +469,41 @@ function applyAttendees(appointment: Appointment, attendees: AppointmentAttendee
     const target = person.optional
       ? appointment.OptionalAttendees
       : appointment.RequiredAttendees;
-    if (person.name) target.Add(person.name, person.email);
-    else target.Add(person.email);
+    if (person.name) target.Add(xmlSafe(person.name), xmlSafe(person.email));
+    else target.Add(xmlSafe(person.email));
   }
 }
 
-/** The first Outlook category, or '' — the dialog edits a single one. */
+/**
+ * The first Outlook category, or '' — the dialog edits a single one.
+ *
+ * StringList keeps its contents in a PRIVATE `items` field and exposes them
+ * through GetEnumerator() (verified in the installed d.ts). Reading `.Items`
+ * therefore always yielded undefined, and every appointment came back with no
+ * category at all — measured 28.07 on a live item that definitely had one.
+ * GetEnumerator first, with the other shapes kept as fallbacks.
+ */
 function readFirstCategory(item: Appointment): string {
-  const list = item.Categories as unknown as { Items?: string[] } | string[] | undefined;
-  const values = Array.isArray(list) ? list : (list?.Items ?? []);
-  return values[0] ?? '';
+  const list = item.Categories as unknown as
+    | { GetEnumerator?: () => string[]; Items?: string[] }
+    | string[]
+    | undefined;
+  if (!list) return '';
+  if (Array.isArray(list)) return list[0] ?? '';
+  if (typeof list.GetEnumerator === 'function') return list.GetEnumerator()[0] ?? '';
+  return list.Items?.[0] ?? '';
 }
 
 /** Reads the attendee lists back out. */
 function readAttendees(appointment: Appointment): AppointmentAttendee[] {
   const collect = (list: { GetEnumerator?: () => Attendee[] } | Attendee[], optional: boolean) => {
+    // Same accessor rule as readFirstCategory: the documented way into an EWS
+    // complex collection is GetEnumerator(), not a public `Items` field.
     const items = Array.isArray(list)
       ? list
-      : ((list as unknown as { Items?: Attendee[] }).Items ?? []);
+      : typeof list.GetEnumerator === 'function'
+        ? list.GetEnumerator()
+        : ((list as unknown as { Items?: Attendee[] }).Items ?? []);
     return items
       .filter((a) => Boolean(a?.Address))
       .map((a) => ({ email: a.Address, name: a.Name || undefined, optional }));
@@ -511,14 +534,29 @@ function bodyToPlainText(body: unknown): string {
   if (!looksLikeHtml) return raw.trim();
   return raw
     .replace(/<\s*br\s*\/?\s*>/gi, '\n')
+    // <hr> separates sections in the bodies we compose; without this the
+    // blocks either side of it ran together into one paragraph.
+    .replace(/<\s*hr\s*\/?\s*>/gi, '\n')
     .replace(/<\s*\/\s*(p|div|li|tr|h[1-6])\s*>/gi, '\n')
     .replace(/<[^>]+>/g, '')
     .replace(/&nbsp;/gi, ' ')
-    .replace(/&amp;/gi, '&')
+    // Numeric entities BEFORE the named ones, and &amp; last of all: Exchange
+    // encodes a leading "+" as &#43;, and without this the raw entity reached
+    // our own UI too. Decoding &amp; first would turn "&amp;#43;" into a live
+    // "&#43;" that the numeric pass then wrongly resolves.
+    .replace(/&#(\d+);/g, (_m, code: string) => {
+      const n = Number(code);
+      return Number.isFinite(n) && n >= 32 && n <= 0x10ffff ? String.fromCodePoint(n) : '';
+    })
+    .replace(/&#x([0-9a-f]+);/gi, (_m, hex: string) => {
+      const n = Number.parseInt(hex, 16);
+      return Number.isFinite(n) && n >= 32 && n <= 0x10ffff ? String.fromCodePoint(n) : '';
+    })
     .replace(/&lt;/gi, '<')
     .replace(/&gt;/gi, '>')
     .replace(/&quot;/gi, '"')
     .replace(/&#39;/gi, "'")
+    .replace(/&amp;/gi, '&')
     .replace(/\n{3,}/g, '\n\n')
     .trim();
 }
@@ -615,8 +653,19 @@ async function createAppointment(
 ): Promise<ExchangeResult<{ appointmentId: string }>> {
   return runProviderCall(cfg, async (service) => {
     const appointment = new Appointment(service);
-    appointment.Subject = draft.subject;
-    if (draft.body) appointment.Body = new MessageBody(draft.body);
+    appointment.Subject = xmlSafe(draft.subject);
+    // BodyType MUST be explicit. `new MessageBody(text)` takes the single-arg
+    // overload, which defaults to BodyType.HTML (verified in the installed
+    // enum: HTML = 0, Text = 1) — measured on a live item, a plain-text body
+    // written that way came back as `<html>…&#43;9725…</html>`: every newline
+    // collapsed and the leading "+" of a phone number entity-encoded, which
+    // silently breaks tap-to-dial. Callers say which they mean.
+    if (draft.body) {
+      appointment.Body = new MessageBody(
+        draft.bodyIsHtml ? BodyType.HTML : BodyType.Text,
+        xmlSafe(draft.body),
+      );
+    }
     appointment.Start = new DateTime(draft.start);
     appointment.End = new DateTime(draft.end);
     if (draft.allDay) appointment.IsAllDayEvent = true; // setter verified in the installed d.ts
@@ -625,8 +674,8 @@ async function createAppointment(
     // the owner's time. Setters verified against the installed d.ts.
     if (draft.showAs) appointment.LegacyFreeBusyStatus = SHOW_AS_TO_EWS[draft.showAs];
     if (draft.private) appointment.Sensitivity = Sensitivity.Private;
-    if (draft.category) appointment.Categories = new StringList([draft.category]);
-    if (draft.location !== undefined) appointment.Location = draft.location;
+    if (draft.category) appointment.Categories = new StringList([xmlSafe(draft.category)]);
+    if (draft.location !== undefined) appointment.Location = xmlSafe(draft.location);
     if (draft.reminderMinutes !== undefined) {
       appointment.IsReminderSet = draft.reminderMinutes > 0;
       if (draft.reminderMinutes > 0) {
@@ -674,9 +723,15 @@ async function updateAppointment(
     // Each field is written ONLY when the caller supplied it: `undefined`
     // means "leave whatever Exchange has", so a drag that sends times alone
     // can never wipe a location or a body the owner typed in Outlook.
-    if (update.subject !== undefined) appointment.Subject = update.subject;
-    if (update.location !== undefined) appointment.Location = update.location;
-    if (update.body !== undefined) appointment.Body = new MessageBody(update.body);
+    if (update.subject !== undefined) appointment.Subject = xmlSafe(update.subject);
+    if (update.location !== undefined) appointment.Location = xmlSafe(update.location);
+    if (update.body !== undefined) {
+      // Same explicit-type rule as createAppointment above.
+      appointment.Body = new MessageBody(
+        update.bodyIsHtml ? BodyType.HTML : BodyType.Text,
+        xmlSafe(update.body),
+      );
+    }
     if (update.allDay !== undefined) appointment.IsAllDayEvent = update.allDay;
     if (update.showAs !== undefined) {
       appointment.LegacyFreeBusyStatus = SHOW_AS_TO_EWS[update.showAs];
@@ -692,7 +747,9 @@ async function updateAppointment(
       appointment.Sensitivity = SENSITIVITY_TO_EWS[update.sensitivity];
     }
     if (update.category !== undefined) {
-      appointment.Categories = new StringList(update.category ? [update.category] : []);
+      appointment.Categories = new StringList(
+        update.category ? [xmlSafe(update.category)] : [],
+      );
     }
     if (update.attendees !== undefined) applyAttendees(appointment, update.attendees);
     await appointment.Update(
@@ -718,6 +775,30 @@ async function deleteAppointment(
   }, 'deleteAppointment');
 }
 
+// The mailbox's master category list.
+//
+// Not an item property and not a folder: Outlook keeps it as a UserConfiguration
+// named "CategoryList" on the Calendar folder, whose XmlData is a base64 blob of
+// a <categories> document. Verified against this IONOS mailbox on 28.07.2026 —
+// unlike GetUserAvailability, which that hosting answers with HTTP 500, this
+// call works. Parsing lives in ./category-list so it can be tested without a
+// mailbox.
+async function listCategories(
+  cfg: ExchangeConnectionConfig,
+): Promise<ExchangeResult<ExchangeCategory[]>> {
+  return runProviderCall(cfg, async (service) => {
+    const config = await UserConfiguration.Bind(
+      service,
+      'CategoryList',
+      WellKnownFolderName.Calendar,
+      UserConfigurationProperties.XmlData,
+    );
+    return parseCategoryList(
+      Buffer.from(String(config.XmlData ?? ''), 'base64').toString('utf8'),
+    );
+  }, 'listCategories');
+}
+
 export const ewsProvider: ExchangeCalendarProvider = {
   testConnection,
   listCalendars,
@@ -727,4 +808,5 @@ export const ewsProvider: ExchangeCalendarProvider = {
   createAppointment,
   updateAppointment,
   deleteAppointment,
+  listCategories,
 };

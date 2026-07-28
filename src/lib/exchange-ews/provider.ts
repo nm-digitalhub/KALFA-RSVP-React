@@ -7,6 +7,7 @@ import type {
   ExchangeAppointmentDetail,
   CalendarSummary,
   ExchangeAppointment,
+  ExchangeCategory,
   ExchangeConnectionConfig,
   MailboxInfo,
 } from './types';
@@ -69,4 +70,7 @@ export interface ExchangeCalendarProvider {
     cfg: ExchangeConnectionConfig,
     appointmentId: string,
   ): Promise<ExchangeResult<void>>;
+  // The mailbox's master category list — the ONLY place a category's colour
+  // exists. Items carry names; this is the lookup Outlook itself performs.
+  listCategories(cfg: ExchangeConnectionConfig): Promise<ExchangeResult<ExchangeCategory[]>>;
 }

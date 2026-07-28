@@ -70,6 +70,16 @@ export type AppointmentDraft = {
   start: Date;
   end: Date;
   body?: string;
+  /**
+   * Whether `body` is HTML. Default false = plain text.
+   *
+   * Exists because the underlying library defaults to HTML when the type is
+   * left unsaid, which turns "\n" into nothing and "+" into "&#43;". Anything
+   * hand-typed by the owner is plain; only bodies WE compose (the callback
+   * item, so its phone number is a real tel: link) opt into HTML — and those
+   * must escape every value they interpolate.
+   */
+  bodyIsHtml?: boolean;
   // True for a day-granular event; start/end must then be display-zone
   // midnights (the calendar component supplies them that way).
   allDay?: boolean;
@@ -137,6 +147,8 @@ export type AppointmentUpdate = {
   end: Date;
   subject?: string;
   body?: string;
+  /** See AppointmentDraft.bodyIsHtml — same rule on update. */
+  bodyIsHtml?: boolean;
   location?: string;
   allDay?: boolean;
   showAs?: AppointmentShowAs;
@@ -169,4 +181,19 @@ export type ExchangeAppointmentDetail = {
   attendees: AppointmentAttendee[];
   /** A human summary of the recurrence, or null for a one-off. */
   recurrenceText: string | null;
+};
+
+/**
+ * One entry of the mailbox's master category list.
+ *
+ * The colour is NOT a property of any appointment — an item carries only the
+ * category NAME, and Outlook looks the colour up in this mailbox-wide list.
+ * That is why picking a "colour" for an event is really picking a category, and
+ * why a name absent from this list shows uncoloured in Outlook however it is
+ * rendered elsewhere.
+ */
+export type ExchangeCategory = {
+  name: string;
+  /** Index into OUTLOOK_CATEGORY_COLORS; null when the entry carries no colour. */
+  colorIndex: number | null;
 };

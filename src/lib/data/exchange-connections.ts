@@ -3,7 +3,13 @@ import 'server-only';
 import { randomUUID } from 'node:crypto';
 
 import { createAdminClient } from '@/lib/supabase/admin';
-import { requirePlatformPermission, requireUser, getOrgContext } from '@/lib/auth/dal';
+import {
+  hasPlatformPermission,
+  requirePlatformPermission,
+  requireUser,
+  getOrgContext,
+} from '@/lib/auth/dal';
+import { getCallbackRequestByCalendarItem } from '@/lib/data/admin/callbacks';
 import { logActivity } from '@/lib/data/activity';
 import { decryptCredential, encryptCredential } from '@/lib/exchange-ews/crypto';
 import { ewsProvider } from '@/lib/exchange-ews/ews-impl';
@@ -11,6 +17,7 @@ import type {
   AppointmentAttendee,
   AppointmentRecurrence,
   AppointmentSensitivity,
+  ExchangeCategory,
   ExchangeConnectionConfig,
 } from '@/lib/exchange-ews/types';
 
@@ -541,6 +548,30 @@ export async function updateMyExchangeCalendarEvent(
 // are never duplicated.
 export { loadOwnedConnectionConfig as loadExchangeConfigForConnection };
 
+/**
+ * The mailbox's own category list, for the calendar's category picker.
+ *
+ * Read rather than hardcoded because the list belongs to the OWNER: they add,
+ * rename and recolour categories in Outlook, and a list we invented here would
+ * write names the mailbox does not know — which is exactly how an appointment
+ * ends up carrying a category that Outlook then shows with no colour at all.
+ */
+export async function listMyExchangeCategories(
+  connectionId: string,
+): Promise<{ ok: true; categories: ExchangeCategory[] } | { ok: false; message: string }> {
+  const loaded = await loadOwnedConnectionConfig(connectionId);
+  if (!loaded.ok) return { ok: false, message: loaded.message };
+
+  const result = await ewsProvider.listCategories(loaded.config);
+  if (!result.ok) {
+    // A mailbox whose category list has never been saved has no configuration
+    // object to bind to. That is an empty list, not a failure worth showing.
+    if (result.error === 'not_found') return { ok: true, categories: [] };
+    return { ok: false, message: ERROR_MESSAGES[result.error] ?? ERROR_MESSAGES.provider_error };
+  }
+  return { ok: true, categories: result.data };
+}
+
 /** Delete one appointment from the admin calendar screen. */
 export async function deleteMyExchangeCalendarEvent(
   connectionId: string,
@@ -561,6 +592,31 @@ export async function deleteMyExchangeCalendarEvent(
   return { ok: true };
 }
 
+/**
+ * The callback request an appointment was scheduled for, when it is one.
+ *
+ * Why this rides along with the appointment: the description in the mailbox is
+ * a rendering FOR OUTLOOK — labelled lines, an HTML tel: link, a named
+ * hyperlink. Reading it back means parsing prose to recover fields we already
+ * hold in columns, and it only ever works for items written by the current
+ * format. Sending the structure instead means the dialog renders real controls
+ * for EVERY item the scheduler wrote, including the ones whose body predates
+ * the format or arrived empty.
+ *
+ * Deliberately not the whole row: status and the scheduling bookkeeping belong
+ * to /admin/callbacks. This is what the owner needs in the seconds before
+ * dialling.
+ */
+export type LinkedCallbackDTO = {
+  id: string;
+  fullName: string;
+  phone: string;
+  topic: string | null;
+  note: string | null;
+  createdAtIso: string;
+  attemptCount: number;
+};
+
 /** Full detail of one appointment, for the edit dialog. */
 export type CalendarEventDetailDTO = {
   id: string;
@@ -577,6 +633,7 @@ export type CalendarEventDetailDTO = {
   category: string;
   attendees: AppointmentAttendee[];
   recurrenceText: string | null;
+  callback: LinkedCallbackDTO | null;
 };
 
 export async function getMyExchangeCalendarEvent(
@@ -590,6 +647,14 @@ export async function getMyExchangeCalendarEvent(
   if (!result.ok) {
     return { ok: false, message: ERROR_MESSAGES[result.error] ?? ERROR_MESSAGES.provider_error };
   }
+  // Checked rather than required: owning the mailbox and being allowed to read
+  // customer data are two different permissions. Someone with the calendar but
+  // not the customer-data capability sees the appointment exactly as Exchange
+  // has it — no linked panel — instead of an error page.
+  const callbackRow = (await hasPlatformPermission('view_customer_data'))
+    ? await getCallbackRequestByCalendarItem(appointmentId)
+    : null;
+
   const a = result.data;
   return {
     ok: true,
@@ -608,6 +673,17 @@ export async function getMyExchangeCalendarEvent(
       category: a.category,
       attendees: a.attendees,
       recurrenceText: a.recurrenceText,
+      callback: callbackRow
+        ? {
+            id: callbackRow.id,
+            fullName: callbackRow.full_name,
+            phone: callbackRow.phone,
+            topic: callbackRow.topic,
+            note: callbackRow.note,
+            createdAtIso: callbackRow.created_at,
+            attemptCount: callbackRow.attempt_count,
+          }
+        : null,
     },
   };
 }

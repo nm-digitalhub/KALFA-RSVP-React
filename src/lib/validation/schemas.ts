@@ -577,6 +577,11 @@ export const calendarUpdateEventSchema = z.object({
   attendees: z.array(attendeeSchema).max(50, { error: 'יותר מדי משתתפים' }).optional(),
 });
 
+/** The connection alone — for reads that are about the mailbox, not an item. */
+export const calendarConnectionSchema = z.object({
+  connectionId: z.uuid({ error: 'מזהה חיבור לא תקין' }),
+});
+
 export const calendarEventIdSchema = z.object({
   connectionId: z.uuid({ error: 'מזהה חיבור לא תקין' }),
   appointmentId: z.string().trim().min(1).max(1024, { error: 'מזהה פגישה לא תקין' }),

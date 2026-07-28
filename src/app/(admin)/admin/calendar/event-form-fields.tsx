@@ -7,6 +7,8 @@ import { ChevronDown, Plus, Repeat, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Separator } from '@/components/ui/separator';
+import { categoryColorHex } from '@/lib/exchange-ews/category-colors';
+import type { ExchangeCategory } from '@/lib/exchange-ews/types';
 
 // The Outlook-parity field set, shared by the create dialog and the edit
 // dialog so the two can never drift. Mirrors the mobile Outlook "new event"
@@ -78,16 +80,70 @@ export const SHOW_AS_OPTIONS = [
   { value: 'working_elsewhere', label: 'עובד מרחוק' },
 ] as const;
 
-// Outlook's own category palette names, so what we write is recognised there.
-export const CATEGORY_OPTIONS = [
-  { value: '', label: 'ללא קטגוריה', dot: 'bg-muted-foreground/40' },
-  { value: 'Red category', label: 'אדום', dot: 'bg-red-500' },
-  { value: 'Orange category', label: 'כתום', dot: 'bg-orange-500' },
-  { value: 'Yellow category', label: 'צהוב', dot: 'bg-yellow-400' },
-  { value: 'Green category', label: 'ירוק', dot: 'bg-emerald-500' },
-  { value: 'Blue category', label: 'כחול', dot: 'bg-blue-500' },
-  { value: 'Purple category', label: 'סגול', dot: 'bg-purple-500' },
-];
+/**
+ * The category picker.
+ *
+ * Chips rather than a <select>, because the whole point is the colour and a
+ * native <option> cannot carry one. Real radio inputs underneath, so arrow keys
+ * and screen readers behave without any of it being re-implemented.
+ *
+ * What is offered comes from the MAILBOX, never from a list of our own: a name
+ * absent from the master list is a category Outlook does not know, and it draws
+ * such an item with no colour at all — so inventing names here would quietly
+ * produce exactly the uncoloured item the owner is trying to avoid.
+ */
+function CategoryPicker({
+  value,
+  categories,
+  disabled,
+  onSelect,
+}: {
+  value: string;
+  categories: ExchangeCategory[];
+  disabled: boolean;
+  onSelect: (name: string) => void;
+}) {
+  // An appointment can carry a category the list no longer contains (renamed or
+  // deleted in Outlook). Showing it keeps the current value visible and
+  // selected instead of silently appearing as "no category".
+  const known = categories.some((c) => c.name === value);
+  const options: ExchangeCategory[] =
+    value && !known ? [...categories, { name: value, colorIndex: null }] : categories;
+
+  return (
+    <div className="flex flex-wrap gap-1.5" role="radiogroup" aria-label="קטגוריה">
+      {[{ name: '', colorIndex: null } as ExchangeCategory, ...options].map((option) => {
+        const selected = value === option.name;
+        const hex = categoryColorHex(option.colorIndex);
+        return (
+          <label
+            key={option.name || '__none__'}
+            className={`inline-flex cursor-pointer items-center gap-1.5 rounded-md border px-2 py-1 text-xs transition ${
+              selected
+                ? 'border-primary bg-primary/10 font-medium'
+                : 'border-border hover:bg-muted'
+            } ${disabled ? 'pointer-events-none opacity-50' : ''}`}
+          >
+            <input
+              type="radio"
+              name="ef-category"
+              className="sr-only"
+              checked={selected}
+              disabled={disabled}
+              onChange={() => onSelect(option.name)}
+            />
+            <span
+              className={`size-2.5 shrink-0 rounded-full ${hex ? '' : 'border border-border'}`}
+              style={hex ? { backgroundColor: hex } : undefined}
+              aria-hidden
+            />
+            {option.name || 'ללא קטגוריה'}
+          </label>
+        );
+      })}
+    </div>
+  );
+}
 
 const WEEKDAYS = [
   { value: 0, label: 'א' },
@@ -176,12 +232,20 @@ export function EventFormFields({
   onChange,
   disabled = false,
   showRecurrence = true,
+  categories,
 }: {
   value: EventFormValue;
   onChange: (next: EventFormValue) => void;
   disabled?: boolean;
   /** Recurrence is creation-only: series items are read-only once they exist. */
   showRecurrence?: boolean;
+  /**
+   * The mailbox's own category list. Undefined while it is still loading, and
+   * empty when the mailbox has none or could not be read — the picker degrades
+   * to free text in both cases rather than offering names Outlook never heard
+   * of.
+   */
+  categories?: ExchangeCategory[];
 }) {
   const [attendeeEmail, setAttendeeEmail] = useState('');
   const [attendeeError, setAttendeeError] = useState<string | null>(null);
@@ -531,16 +595,34 @@ export function EventFormFields({
 
         <div className="space-y-1">
           <label htmlFor="ef-category" className="text-sm font-medium">קטגוריה</label>
-          <FieldSelect
-            id="ef-category"
-            value={value.category}
-            disabled={disabled}
-            onChange={(e) => set('category', e.target.value)}
-          >
-            {CATEGORY_OPTIONS.map((opt) => (
-              <option key={opt.value} value={opt.value}>{opt.label}</option>
-            ))}
-          </FieldSelect>
+          {categories === undefined ? (
+            <p className="text-xs text-muted-foreground">טוען קטגוריות…</p>
+          ) : categories.length > 0 ? (
+            <CategoryPicker
+              value={value.category}
+              categories={categories}
+              disabled={disabled}
+              onSelect={(name) => set('category', name)}
+            />
+          ) : (
+            <>
+              {/* No list to choose from — free text, because Exchange accepts
+                  any name and refusing to let the owner type one would be a
+                  worse answer than an uncoloured category. */}
+              <input
+                id="ef-category"
+                type="text"
+                value={value.category}
+                disabled={disabled}
+                onChange={(e) => set('category', e.target.value)}
+                maxLength={255}
+                className={FIELD_INPUT_CLASS}
+              />
+              <p className="text-xs text-muted-foreground">
+                לא נמצאו קטגוריות בתיבה. שם שאינו קיים באאוטלוק יוצג ללא צבע.
+              </p>
+            </>
+          )}
         </div>
 
         <label className="flex items-center gap-2 text-sm font-medium">

@@ -7,11 +7,14 @@ import {
   deleteMyExchangeCalendarEvent,
   getMyExchangeCalendarEvent,
   listMyExchangeCalendarEvents,
+  listMyExchangeCategories,
   updateMyExchangeCalendarEvent,
   type CalendarEventDTO,
   type CalendarEventDetailDTO,
 } from '@/lib/data/exchange-connections';
+import type { ExchangeCategory } from '@/lib/exchange-ews/types';
 import {
+  calendarConnectionSchema,
   calendarCreateEventSchema,
   calendarDeleteEventSchema,
   calendarEventIdSchema,
@@ -44,6 +47,30 @@ export async function fetchCalendarEventsAction(input: {
   } catch (err) {
     unstable_rethrow(err);
     return { ok: false, message: 'טעינת היומן נכשלה. נסו שוב.' };
+  }
+}
+
+export type CalendarCategoriesResult =
+  | { ok: true; categories: ExchangeCategory[] }
+  | { ok: false; message: string };
+
+/**
+ * The mailbox's category list, for the pickers in both forms.
+ *
+ * Fetched once by the calendar client rather than per dialog: the list is a
+ * property of the mailbox, it changes only when the owner edits it in Outlook,
+ * and an EWS round-trip on every dialog open would be paid for nothing.
+ */
+export async function fetchCalendarCategoriesAction(input: {
+  connectionId: string;
+}): Promise<CalendarCategoriesResult> {
+  const parsed = calendarConnectionSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, message: 'מזהה חיבור לא תקין' };
+  try {
+    return await listMyExchangeCategories(parsed.data.connectionId);
+  } catch (err) {
+    unstable_rethrow(err);
+    return { ok: false, message: 'טעינת הקטגוריות נכשלה.' };
   }
 }
 

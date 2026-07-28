@@ -31,8 +31,11 @@ import type {
 import type { CalendarEventDTO } from '@/lib/data/exchange-connections';
 import { formatIsraelDateTime } from '@/lib/date';
 
+import type { ExchangeCategory } from '@/lib/exchange-ews/types';
+
 import {
   createCalendarEventAction,
+  fetchCalendarCategoriesAction,
   fetchCalendarEventsAction,
   updateCalendarEventAction,
 } from './actions';
@@ -120,6 +123,8 @@ export function AdminExchangeCalendar({
   } | null>(null);
   // The appointment currently open in the edit dialog (null = closed).
   const [editingId, setEditingId] = useState<string | null>(null);
+  /** undefined = still loading; [] = none available, picker degrades to text. */
+  const [categories, setCategories] = useState<ExchangeCategory[] | undefined>(undefined);
   // The full Outlook-parity draft (same component as the edit dialog).
   const [createForm, setCreateForm] = useState<EventFormValue>(EMPTY_CREATE_FORM);
   const [createBusy, setCreateBusy] = useState(false);
@@ -187,6 +192,23 @@ export function AdminExchangeCalendar({
   const requestAuthoritativeRefresh = useCallback(() => {
     if (tracker.requestRefresh()) void runRefresh();
   }, [runRefresh, tracker]);
+
+  // The mailbox's category list, fetched ONCE for the screen. It belongs to the
+  // mailbox, not to any appointment, and changes only when the owner edits it
+  // in Outlook — so paying an EWS round-trip per dialog open would buy nothing.
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      const res = await fetchCalendarCategoriesAction({ connectionId });
+      if (cancelled) return;
+      // A failure here must never block editing: an empty list makes the picker
+      // fall back to free text, which still writes a valid category.
+      setCategories(res.ok ? res.categories : []);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [connectionId]);
 
   const settleWrite = useCallback(
     (eventId: string, opId: number, failureMessage?: string) => {
@@ -438,6 +460,7 @@ export function AdminExchangeCalendar({
       <EventEditDialog
         connectionId={connectionId}
         appointmentId={editingId}
+        categories={categories}
         onClose={() => setEditingId(null)}
         onSaved={requestAuthoritativeRefresh}
       />
@@ -477,7 +500,12 @@ export function AdminExchangeCalendar({
             ref={createScrollRef}
             className="max-h-[60dvh] -me-2 overflow-y-auto pe-2 scrollbar-gutter-stable"
           >
-            <EventFormFields value={createForm} onChange={setCreateForm} disabled={createBusy} />
+            <EventFormFields
+              value={createForm}
+              onChange={setCreateForm}
+              disabled={createBusy}
+              categories={categories}
+            />
           </div>
 
           {/* OUTSIDE the scroller on purpose: a validation error about a field
