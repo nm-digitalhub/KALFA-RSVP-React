@@ -85,6 +85,7 @@ import { dirname, join, resolve, relative, sep, extname, basename } from 'node:p
 import { createRequire } from 'node:module';
 
 import { sendSlackAlert, type SlackAlertLevel } from '@/lib/alerts/slack';
+import { getAppOrigin } from '@/lib/url';
 
 // pg runtime handle. @types/pg ships a dual .d.ts/.d.mts; under this repo's
 // moduleResolution:bundler the .d.mts variant wins, where the named re-export
@@ -756,6 +757,194 @@ async function cmdDraftReply(args: Record<string, string | undefined>): Promise<
   if (rows.length === 0) process.exitCode = 2;
 }
 
+// ── Callback triage ─────────────────────────────────────────────────────────
+// The triage role's ONLY two writes, and the only way it can reach the
+// callback_requests table at all: `sql` runs inside BEGIN TRANSACTION READ ONLY,
+// so the RPCs below — which UPDATE — are unreachable from it by design.
+//
+// Both are thin wrappers. Every rule (the lease, the attempt ceiling, the fence,
+// the state machine) lives in the database functions, where it cannot be
+// bypassed by a caller that forgets. This layer's job is to expose them and to
+// keep PII out of the role's context.
+
+// What the role is given. Deliberately NOT full_name or phone: extracting when
+// somebody can answer needs the words they wrote and nothing about who they are.
+// Same rule support-drafter follows on contact_messages.
+type TriageClaimView = {
+  id: string;
+  topic: string | null;
+  note: string | null;
+  created_at: string;
+  attempt: number;
+};
+
+async function cmdTriageClaim(): Promise<void> {
+  const admin = createAdminClient();
+  const { data, error } = await admin.rpc('claim_callback_triage');
+  if (error) fail(`triage-claim failed: ${error.message}`);
+
+  // `setof` with no rows arrives as null (or an empty array, depending on how
+  // PostgREST renders it) — both mean the same thing: nothing was claimable.
+  const row = Array.isArray(data) ? data[0] : data;
+  if (!row) {
+    console.log(JSON.stringify({ claimed: false, reason: 'nothing pending' }, null, 2));
+    process.exitCode = 2;
+    return;
+  }
+
+  const view: TriageClaimView = {
+    id: String(row.id),
+    topic: (row.topic as string | null) ?? null,
+    note: (row.note as string | null) ?? null,
+    created_at: String(row.created_at),
+    // Echoed back to triage-finish as the fence. The role must present this
+    // number; if its claim was revoked meanwhile, the finish is refused.
+    attempt: Number(row.triage_attempt_count),
+  };
+  console.log(JSON.stringify({ claimed: true, request: view }, null, 2));
+}
+
+const TRIAGE_STATUSES = ['completed', 'manual_review', 'failed'] as const;
+const MINUTES_IN_DAY = 24 * 60;
+const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
+
+/** "08:00" or a bare minute count, as Israel wall-clock minutes from midnight. */
+function parseMinuteOfDay(raw: string | undefined, label: string): number | null {
+  if (raw === undefined || raw === '') return null;
+  const hhmm = /^(\d{1,2}):(\d{2})$/.exec(raw.trim());
+  const minutes = hhmm
+    ? Number(hhmm[1]) * 60 + Number(hhmm[2])
+    : Number.parseInt(raw.trim(), 10);
+  if (!Number.isInteger(minutes) || minutes < 0 || minutes >= MINUTES_IN_DAY) {
+    fail(`--${label} must be HH:MM or 0-1439 (got "${raw}")`);
+  }
+  return minutes;
+}
+
+async function cmdTriageFinish(args: Record<string, string | undefined>): Promise<void> {
+  const id = requireOption(args.id, 'id');
+  const attemptRaw = requireOption(args.attempt, 'attempt');
+  const attempt = Number.parseInt(attemptRaw, 10);
+  if (!Number.isInteger(attempt) || attempt < 1) {
+    fail(`--attempt must be the attempt number returned by triage-claim (got "${attemptRaw}")`);
+  }
+
+  const status = requireOption(args.status, 'status');
+  if (!(TRIAGE_STATUSES as readonly string[]).includes(status)) {
+    fail(`--status must be one of ${TRIAGE_STATUSES.join(', ')}`);
+  }
+
+  const notBefore = parseMinuteOfDay(args['not-before'], 'not-before');
+  const notAfter = parseMinuteOfDay(args['not-after'], 'not-after');
+  if (notBefore !== null && notAfter !== null && notBefore >= notAfter) {
+    fail('--not-before must be earlier than --not-after');
+  }
+
+  let excluded: string[] | null = null;
+  if (args['exclude-dates']) {
+    excluded = args['exclude-dates']
+      .split(',')
+      .map((d) => d.trim())
+      .filter(Boolean);
+    for (const d of excluded) {
+      if (!DATE_ONLY.test(d)) fail(`--exclude-dates entries must be YYYY-MM-DD (got "${d}")`);
+    }
+    if (excluded.length === 0) excluded = null;
+  }
+
+  // Evidence as QUOTED TEXT, not character offsets. A model asked for offsets
+  // returns plausible-looking numbers that point at the wrong span — it is being
+  // asked to count characters, which it cannot do reliably. Asked for the words
+  // instead, it quotes them, and the offsets are computed HERE from a string
+  // match. A quote that is not in the note is rejected rather than recorded,
+  // which turns evidence from a claim into a check.
+  let triage: Json | null = null;
+  if (args.evidence) {
+    const admin0 = createAdminClient();
+    const { data: noteRow } = await admin0
+      .from('callback_requests')
+      .select('note')
+      .eq('id', id)
+      .maybeSingle();
+    const note = (noteRow?.note as string | null) ?? '';
+    const quote = args.evidence.trim();
+    const at = note.indexOf(quote);
+    if (at < 0) {
+      fail('--evidence must be text copied verbatim from the request note');
+    }
+    triage = { evidence: { quote, start: at, end: at + quote.length } };
+  }
+
+  const admin = createAdminClient();
+  // A moment the caller NAMED, as opposed to a window they described. Aims the
+  // search rather than narrowing it, and switches the engine to closing in on
+  // that moment from either side instead of stepping past it.
+  const onDate = args['on-date']?.trim();
+  if (onDate && !DATE_ONLY.test(onDate)) fail(`--on-date must be YYYY-MM-DD (got "${onDate}")`);
+  const atTime = args['at-time']?.trim();
+  if (atTime && !/^\d{1,2}:\d{2}$/.test(atTime)) fail(`--at-time must be HH:MM (got "${atTime}")`);
+  if ((onDate || atTime) && status === 'failed') {
+    fail('a failed triage may not name a requested moment');
+  }
+
+  // The generated argument type makes every defaulted parameter optional, so an
+  // absent constraint is OMITTED rather than sent as null — which is also the
+  // honest encoding: "nothing was stated" is not "explicitly nothing".
+  const { data, error } = await admin.rpc('finish_callback_triage', {
+    p_request_id: id,
+    p_claimed_attempt: attempt,
+    p_status: status,
+    ...(notBefore !== null ? { p_not_before_min: notBefore } : {}),
+    ...(notAfter !== null ? { p_not_after_min: notAfter } : {}),
+    ...(excluded !== null ? { p_excluded_dates: excluded } : {}),
+    ...(triage !== null ? { p_triage: triage } : {}),
+    ...(args.error ? { p_error: args.error } : {}),
+    ...(onDate ? { p_on_date: onDate } : {}),
+    ...(atTime ? { p_at_time: atTime } : {}),
+  });
+  if (error) fail(`triage-finish failed: ${error.message}`);
+
+  const outcome = String(data);
+
+  // A flag nobody sees is not a flag. 'manual_review' and 'failed' both mean a
+  // request needs a person — and neither stops it being scheduled, because the
+  // grace period in the sweep deliberately refuses to leave a lead untouched.
+  // So the request DOES get a call, at whatever time the form guessed, and the
+  // only thing standing between that and a wrong call is this message.
+  //
+  // Fired only on 'finalized': a claim that was lost did not write anything, and
+  // alerting on it would report another worker's outcome as our own.
+  if (outcome === 'finalized' && (status === 'manual_review' || status === 'failed')) {
+    // The id is IN THE TITLE on purpose. sendSlackAlert dedups on
+    // level|title|source, so a fixed title would silence every request after the
+    // first one inside the dedup window — exactly when a batch of them arrives.
+    const short = id.slice(0, 8);
+    await sendSlackAlert({
+      level: status === 'failed' ? 'error' : 'warn',
+      category: 'customer_inquiry',
+      source: 'callback-triage',
+      title:
+        status === 'failed'
+          ? `טריאז' שיחה חוזרת נכשל · ${short}`
+          : `בקשת שיחה חוזרת דורשת בדיקה · ${short}`,
+      // No note text and no quote: the caller's own words are content we hold,
+      // not content we broadcast. The link is how a person reaches them.
+      detail: `${await getAppOrigin()}/admin/callbacks/${id}`,
+      fields: {
+        ...(args.error ? { סיבה: args.error } : {}),
+        // Says what the scheduler will do if nobody intervenes.
+        משובץ_בכל_מקרה: 'כן',
+      },
+    });
+  }
+
+  console.log(JSON.stringify({ outcome, id, attempt, status, onDate: onDate ?? null, atTime: atTime ?? null }, null, 2));
+  // Anything but a win is a no-op the role must not treat as success — most
+  // importantly claim_lost, which means its work was superseded and must be
+  // dropped rather than retried.
+  if (outcome !== 'finalized') process.exitCode = 2;
+}
+
 // Stage-1 learning loop. Distils the draft_reply<->sent_reply feedback already
 // in contact_messages into a redacted few-shot corpus the drafter reads each
 // run, and reports the "sent nearly as-is" rate that baselines any future
@@ -893,6 +1082,15 @@ async function main(): Promise<void> {
       level: { type: 'string' },
       query: { type: 'string' },
       limit: { type: 'string' },
+      attempt: { type: 'string' },
+      status: { type: 'string' },
+      'not-before': { type: 'string' },
+      'not-after': { type: 'string' },
+      'exclude-dates': { type: 'string' },
+      evidence: { type: 'string' },
+      'on-date': { type: 'string' },
+      'at-time': { type: 'string' },
+      error: { type: 'string' },
     },
   });
 
@@ -927,9 +1125,13 @@ async function main(): Promise<void> {
       return cmdDistillCorrections(scalarValues);
     case 'business-facts':
       return cmdBusinessFacts();
+    case 'triage-claim':
+      return cmdTriageClaim();
+    case 'triage-finish':
+      return cmdTriageFinish(scalarValues);
     default:
       fail(
-        'usage: fleet-agent-cli <request|handoff|complete|poll|verdicts|ack|expire|withdraw|digest|sql|draft-reply|distill-corrections|business-facts> [options]',
+        'usage: fleet-agent-cli <request|handoff|complete|poll|verdicts|ack|expire|withdraw|digest|sql|draft-reply|distill-corrections|business-facts|triage-claim|triage-finish> [options]',
       );
   }
 }

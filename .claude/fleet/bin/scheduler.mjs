@@ -157,17 +157,53 @@ function tick() {
 const inFlightAcks = new Set();
 const CLI = join(REPO_DIR, 'dist', 'fleet-agent-cli.cjs');
 
-// --- inquiry-watcher (reactive support-drafter) -----------------------------
-// Event-ish triggering: instead of waiting for the 09:30/15:30 slots, spawn
-// support-drafter within one tick (~60s) of a new inquiry landing. Gated on the
-// role being enabled AND opted-in (`reactive:true` in fleet.json). Bounded by:
-//   - a cheap read-only count (only spawns when there IS undrafted work),
+// --- inquiry-watcher (reactive roles) ---------------------------------------
+// Event-ish triggering: instead of waiting for a scheduled slot, spawn a role
+// within one tick (~60s) of work landing for it. Each role opts in by naming a
+// TRIGGER in fleet.json:
+//
+//   "support-drafter": { "reactive": "contact_messages_new" }
+//
+// Bounded per role by:
+//   - a cheap read-only count (only spawns when there IS work),
 //   - a cooldown marker (no re-spawn while a run is likely still in flight —
 //     run-role.sh's `flock -n` already makes a concurrent spawn a cheap
 //     lock-skip, but the cooldown avoids burning the daily cap on those),
 //   - the shared daily_run_cap.
-// The scheduled slots stay as a fallback that catches anything this misses.
-const REACTIVE_ROLE = 'support-drafter';
+// Scheduled slots stay as a fallback that catches anything this misses.
+//
+// The SQL lives HERE, in code, and fleet.json only SELECTS from this catalog.
+// Putting queries in the config would turn an edited-by-hand file into one that
+// runs SQL against production — the CLI's read-only wrapper bounds the damage,
+// but the decision would have moved out of reviewed code, which is the part
+// that matters.
+//
+// Adding a trigger is a code change; WIRING a role to an existing one is a
+// one-line config change. That asymmetry is deliberate.
+const TRIGGERS = {
+  contact_messages_new: {
+    query:
+      "select count(*)::int as n from contact_messages where status = 'new' and draft_reply is null",
+    // A run writes draft_reply, which drops those rows out of this count — so
+    // once a run finishes the count returns to 0 on its own and this goes quiet.
+    describe: (n) => `${n} new undrafted inquiry(ies)`,
+  },
+  callback_requests_pending: {
+    query:
+      "select count(*)::int as n from callback_requests where triage_status = 'pending' and status in ('new','in_progress')",
+    // A run claims and finishes rows, which moves them out of 'pending' — so the
+    // count falls to 0 on its own and this goes quiet. The scheduler's 15-minute
+    // grace period means a request left un-triaged is still scheduled, just
+    // without constraints; this trigger is what makes that the rare case.
+    describe: (n) => `${n} callback request(s) awaiting triage`,
+  },
+  webhook_inbox_errors: {
+    query:
+      'select count(*)::int as n from webhook_inbox where last_error is not null and processed_at is null',
+    describe: (n) => `${n} unprocessed webhook(s) with errors`,
+  },
+};
+
 const REACTIVE_COOLDOWN_MS = 4 * 60_000;
 
 function runCli(args) {
@@ -182,6 +218,7 @@ function runCli(args) {
 }
 
 async function answerWatcherTick(config) {
+  const now = nowIn(config.timezone || 'Asia/Jerusalem');
   if (!config.answer_watcher?.enabled) return;
   if (!existsSync(CLI)) {
     log('answer-watcher: dist/fleet-agent-cli.cjs missing — run `npm run fleet:agent` once to build it');
@@ -225,8 +262,27 @@ async function answerWatcherTick(config) {
     // per request id ever (marker file) — the run itself acks after acting.
     const marker = join(LOCKS_DIR, `verdict-${v.id}`);
     if (existsSync(marker)) continue;
+
+    // The daily cap applies HERE too. It used to be checked only in the
+    // scheduled and inquiry paths, which left this one — the busiest, since
+    // every owner answer to every role passes through it — able to spawn
+    // without bound. The cap exists to bound runaway config errors; a path
+    // that ignores it is a hole in exactly the case the cap was written for.
+    //
+    // Checked BEFORE the marker is written, deliberately: the marker means
+    // "this verdict has been spawned, never again". Writing it and then
+    // declining to spawn would strand the verdict permanently. Leaving it
+    // unwritten means the next tick (or tomorrow, once the count rolls over)
+    // picks the same verdict up again.
+    const cap = config.daily_run_cap ?? 14;
+    if (dailyCount(now.dateKey) >= cap) {
+      log(`answer-watcher: daily cap ${cap} reached — deferring "${v.title}" (${v.role})`);
+      break;
+    }
+
     writeFileSync(marker, 'spawned');
     log(`answer-watcher: spawning ${v.role} to consume "${v.title}"`);
+    bumpDailyCount(now.dateKey);
     const out = openSync(join(LOCKS_DIR, `spawn-${v.role}.log`), 'a');
     const child = spawn(join(FLEET_DIR, 'bin', 'run-role.sh'), [v.role], {
       cwd: REPO_DIR,
@@ -237,58 +293,82 @@ async function answerWatcherTick(config) {
   }
 }
 
+/** Every enabled role that named a trigger, paired with it. */
+function reactiveRoles(config) {
+  const out = [];
+  for (const [role, rc] of Object.entries(config.roles ?? {})) {
+    if (!rc?.enabled || !rc.reactive) continue;
+
+    // `reactive: true` was the shape before triggers were named, when the role
+    // was hardcoded here. Refused rather than guessed at: silently mapping it
+    // to a trigger would mean this file decides which table a role watches,
+    // which is the coupling the catalog exists to remove. Loud and harmless —
+    // the role keeps its scheduled slots and loses only the reactive path.
+    if (typeof rc.reactive !== 'string') {
+      log(
+        `inquiry-watcher: ${role} has reactive:${JSON.stringify(rc.reactive)} — expected a trigger name (${Object.keys(TRIGGERS).join(' | ')}); reactive spawning is OFF for it until fleet.json names one`,
+      );
+      continue;
+    }
+
+    const trigger = TRIGGERS[rc.reactive];
+    if (!trigger) {
+      log(`inquiry-watcher: ${role} names unknown trigger "${rc.reactive}" — ignored`);
+      continue;
+    }
+    out.push({ role, name: rc.reactive, trigger });
+  }
+  return out;
+}
+
 async function inquiryWatcherTick(config) {
-  const rc = config.roles?.[REACTIVE_ROLE];
-  if (!rc || !rc.enabled || !rc.reactive) return;
   if (!existsSync(CLI)) return; // same guard as answer-watcher
-
-  // Cheap read-only signal: is there any new, not-yet-drafted inquiry?
-  const { err, stdout } = await runCli([
-    'sql',
-    '--query',
-    "select count(*)::int as n from contact_messages where status = 'new' and draft_reply is null",
-  ]);
-  if (err) {
-    log(`inquiry-watcher: count failed: ${err.message}`);
-    return;
-  }
-  let pending = 0;
-  try {
-    pending = JSON.parse(stdout).rows?.[0]?.n ?? 0;
-  } catch {
-    log('inquiry-watcher: unparsable count output');
-    return;
-  }
-  if (pending <= 0) return; // nothing to draft — the common, quiet case
-
-  // Cooldown: don't re-spawn while a run is likely still in flight. A run
-  // writes draft_reply, which drops those rows out of the count above — so once
-  // a run finishes, `pending` naturally returns to 0 and this goes quiet again.
-  const marker = join(LOCKS_DIR, `reactive-${REACTIVE_ROLE}`);
-  if (existsSync(marker)) {
-    const last = Number(readFileSync(marker, 'utf8').trim()) || 0;
-    if (Date.now() - last < REACTIVE_COOLDOWN_MS) return;
-  }
 
   const now = nowIn(config.timezone || 'Asia/Jerusalem');
   const cap = config.daily_run_cap ?? 14;
-  if (dailyCount(now.dateKey) >= cap) {
-    log(`inquiry-watcher: daily cap ${cap} reached — not spawning (${pending} pending)`);
-    return;
-  }
 
-  mkdirSync(LOCKS_DIR, { recursive: true });
-  writeFileSync(marker, String(Date.now()));
-  bumpDailyCount(now.dateKey);
-  log(`inquiry-watcher: ${pending} new undrafted inquiry(ies) — spawning ${REACTIVE_ROLE}`);
-  indexLine({ ts: new Date().toISOString(), role: REACTIVE_ROLE, reactive: true, pending });
-  const out = openSync(join(LOCKS_DIR, `spawn-${REACTIVE_ROLE}.log`), 'a');
-  const child = spawn(join(FLEET_DIR, 'bin', 'run-role.sh'), [REACTIVE_ROLE], {
-    cwd: REPO_DIR,
-    detached: true,
-    stdio: ['ignore', out, out],
-  });
-  child.unref();
+  for (const { role, name, trigger } of reactiveRoles(config)) {
+    // Re-read per role: an earlier role in this same loop may have spawned.
+    if (dailyCount(now.dateKey) >= cap) {
+      log(`inquiry-watcher: daily cap ${cap} reached — not spawning ${role}`);
+      break;
+    }
+
+    // Cooldown FIRST: it is a file check, the count is a database round-trip.
+    // A role still inside its cooldown would have its count discarded anyway.
+    const marker = join(LOCKS_DIR, `reactive-${role}`);
+    if (existsSync(marker)) {
+      const last = Number(readFileSync(marker, 'utf8').trim()) || 0;
+      if (Date.now() - last < REACTIVE_COOLDOWN_MS) continue;
+    }
+
+    const { err, stdout } = await runCli(['sql', '--query', trigger.query]);
+    if (err) {
+      log(`inquiry-watcher: ${name} count failed: ${err.message}`);
+      continue;
+    }
+    let pending = 0;
+    try {
+      pending = JSON.parse(stdout).rows?.[0]?.n ?? 0;
+    } catch {
+      log(`inquiry-watcher: ${name} unparsable count output`);
+      continue;
+    }
+    if (pending <= 0) continue; // no work — the common, quiet case
+
+    mkdirSync(LOCKS_DIR, { recursive: true });
+    writeFileSync(marker, String(Date.now()));
+    bumpDailyCount(now.dateKey);
+    log(`inquiry-watcher: ${trigger.describe(pending)} — spawning ${role}`);
+    indexLine({ ts: new Date().toISOString(), role, reactive: name, pending });
+    const out = openSync(join(LOCKS_DIR, `spawn-${role}.log`), 'a');
+    const child = spawn(join(FLEET_DIR, 'bin', 'run-role.sh'), [role], {
+      cwd: REPO_DIR,
+      detached: true,
+      stdio: ['ignore', out, out],
+    });
+    child.unref();
+  }
 }
 
 function fullTick() {

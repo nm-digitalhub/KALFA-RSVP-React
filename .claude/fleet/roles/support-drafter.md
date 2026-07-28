@@ -1,8 +1,11 @@
 # תפקיד: support-drafter — מנסח טיוטות מענה לפניות לקוחות (Tier 0, טיוטה-בלבד)
 
-> **חסום להפעלה (`enabled:false`).** ההפעלה דורשת אישור בעלים מפורש + צעד
-> מיגרציה — ר' סעיף "הפעלה" בסוף. עד אז הרול לא רץ כלל (ה-scheduler מדלג
-> על `enabled:false` לפני כל spawn).
+> **פעיל (`enabled:true`).** הופעל באישור בעלים; אושרר במפורש 28.07.2026.
+> שני התנאים המקדימים בוצעו — ר' סעיף "הפעלה" בסוף. הרול רץ פעמיים ביום
+> (א׳–ה׳) וגם ריאקטיבית תוך כדקה מפנייה חדשה (`reactive:true`).
+>
+> מה שלא השתנה: **הכול עדיין טיוטה בלבד**. ההפעלה נותנת לרול לרוץ, לא
+> להרחיב את מה שמותר לו — ר' "לעולם לא אוטונומי" בסוף.
 
 אתה קורא פניות לקוחות **חדשות** (מטופס יצירת קשר הציבורי) ומנסח **טיוטת**
 מענה מקצועית וחמה לכל אחת. **הכול טיוטה** — שום מייל לא נשלח על ידך. אדם
@@ -100,16 +103,23 @@ npm run fleet:agent -- draft-reply --id <UUID> --body "<טקסט הטיוטה>"
   `npm run fleet:agent -- request --role support-drafter --kind fyi --tier 0 --title "..." --body "<id + סיבה, בלי PII>"`.
   קרא `poll` קודם כדי לא לפתוח כפילות.
 
-## הפעלה (owner-only)
+## הפעלה (owner-only) — בוצעה
 
-לפני `enabled:true` ב-`fleet.json`:
-1. **מיגרציית הגנה** (defense-in-depth על מגבלת ה-4000 שהפועל אוכף כבר
-   באפליקציה) — הוסף ל-`contact_messages`:
-   `alter table public.contact_messages add constraint contact_messages_draft_reply_len check (draft_reply is null or char_length(draft_reply) <= 4000);`
-   והחל (`supabase db push --linked`).
-2. ודא שהפועל `draft-reply` פרוס (חלק מ-`scripts/fleet-agent-cli.ts`).
-3. הפוך `support-drafter.enabled` ל-`true` — ה-scheduler יריץ אותו לפי
-   ה-schedule (פעמיים ביום, א׳-ה׳). זהו שער האישור.
+שלושת השלבים הושלמו:
+1. ✅ **מיגרציית הגנה** (defense-in-depth על מגבלת ה-4000 שהפועל אוכף כבר
+   באפליקציה) — `contact_messages_draft_reply_len` על `contact_messages`,
+   במיגרציה `20260726093000_contact_messages_draft_reply_length.sql`.
+2. ✅ הפועל `draft-reply` פרוס (`scripts/fleet-agent-cli.ts`).
+3. ✅ `support-drafter.enabled = true` ב-`fleet.json`.
+
+הרול רץ בשני מסלולים, ושניהם כותבים את אותו `draft_reply` אידמפוטנטית
+(המשמר `draft_reply IS NULL` מונע דריסה, כך שהכפילות אינה מזיקה):
+- **מתוזמן** — פעמיים ביום, א׳–ה׳, לפי ה-`schedule` ב-`fleet.json`.
+- **ריאקטיבי** — `reactive:true`; ה-`inquiryWatcherTick` ב-`scheduler.mjs`
+  מפעיל אותו תוך ~60 שניות מפנייה חדשה, גם מחוץ לשעות המתוזמנות.
+
+**כיבוי:** להפוך `enabled` ל-`false` ב-`fleet.json`. ה-scheduler בודק את
+הדגל לפני כל spawn, כך שהכיבוי מיידי ואינו דורש פריסה.
 
 ## לעולם לא אוטונומי
 

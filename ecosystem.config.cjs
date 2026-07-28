@@ -15,6 +15,24 @@
 //   env -i HOME="$HOME" USER="$USER" PATH=/usr/local/bin:/usr/bin:/bin \
 //     pm2 start ecosystem.config.cjs
 //   pm2 save
+//
+// TZ is declared here rather than inherited from the host (host set to
+// Asia/Jerusalem on 2026-07-28). KALFA is an Israel-only product: every date the
+// owner and every guest sees is Israel wall-clock, so the runtime must not
+// depend on how the machine happens to be configured. Declaring it means a
+// rebuilt host, a migration to another server, or a stray `timedatectl` cannot
+// shift application behaviour silently.
+//
+// It changes almost nothing in the app itself — the server code formats through
+// src/lib/date.ts and parses with an explicit `Z`, and pg-boss reads each
+// schedule's own timezone column, not the process one. What it does fix is
+// everything OUTSIDE that discipline: log lines, stack-trace timestamps, and any
+// future code that reaches for a bare `new Date()` and assumes local means
+// Israel.
+//
+// NOTE: a plain `pm2 restart` REUSES the env captured at the last clean start —
+// exactly the property described above — so adding a variable here does NOT
+// reach a running process. It requires the one-time clean restart shown above.
 module.exports = {
   apps: [
     {
@@ -22,13 +40,13 @@ module.exports = {
       cwd: '/var/www/vhosts/kalfa.me/beta',
       script: 'node_modules/next/dist/bin/next',
       args: 'start -H 127.0.0.1 -p 3002',
-      env: { NODE_ENV: 'production' },
+      env: { NODE_ENV: 'production', TZ: 'Asia/Jerusalem' },
     },
     {
       name: 'kalfa-worker',
       cwd: '/var/www/vhosts/kalfa.me/beta',
       script: 'dist/worker.cjs',
-      env: { NODE_ENV: 'production' },
+      env: { NODE_ENV: 'production', TZ: 'Asia/Jerusalem' },
     },
     // pg-boss ops dashboard, base-path build (source build, base "/admin/jobs"),
     // loopback-only and WITHOUT its own auth: access is gated by requireAdmin()
@@ -44,7 +62,51 @@ module.exports = {
         '--env-file=/var/www/vhosts/kalfa.me/pgboss-dashboard-ui/packages/dashboard/.env.pgboss-ui',
       time: true,
       autorestart: true,
-      env: { NODE_ENV: 'production' },
+      env: { NODE_ENV: 'production', TZ: 'Asia/Jerusalem' },
+    },
+    // The agent-fleet scheduler: a minute-tick loop that spawns
+    // .claude/fleet/bin/run-role.sh for scheduled slots, for owner answers, and
+    // for reactive triggers. Added here 2026-07-28 — it had been started
+    // ad-hoc, and pm2 had therefore captured the environment of the Claude Code
+    // session that launched it (CLAUDECODE, CLAUDE_CODE_SESSION_ID and ~50
+    // others, from a session long since ended). Harmless in itself — the script
+    // reads NOTHING from process.env, verified — but it meant the fleet was the
+    // one production process outside this file, so it had no declared TZ and no
+    // guarantee of coming back correctly after a reboot.
+    //
+    // It needs no secrets of its own: run-role.sh sources .claude/fleet/.token.env
+    // for the Claude token, and the CLI it calls runs under `node
+    // --env-file=.env.local`. Both children fetch their own credentials, which
+    // is why a scrubbed environment is safe here.
+    //
+    // Adopting this definition requires the one-time clean restart at the top of
+    // this file (delete + start from a scrubbed shell) — a plain `pm2 restart`
+    // keeps the environment pm2 already captured, which is the polluted one.
+    //
+    // PATH is DECLARED here, and that is not cosmetic. The scheduler spawns
+    // run-role.sh, which runs `claude` — installed at
+    // ~/.local/bin/claude, outside the default system path. Adopting this
+    // definition on 2026-07-28 with the scrubbed-shell recipe above
+    // (PATH=/usr/local/bin:/usr/bin:/bin) removed exactly that directory, and
+    // every role began failing with `timeout: failed to run command 'claude':
+    // No such file or directory` — silently, since a spawn that dies is not a
+    // spawn that reports. It was caught only because a reactive role was
+    // triggered by hand minutes later; the next scheduled run was 02:30, so the
+    // whole fleet would otherwise have been mute until morning.
+    //
+    // The lesson is the reason this file exists: an inherited environment is
+    // not a dependency you can scrub without declaring what was in it.
+    {
+      name: 'kalfa-fleet',
+      cwd: '/var/www/vhosts/kalfa.me/beta',
+      script: '.claude/fleet/bin/scheduler.mjs',
+      time: true,
+      autorestart: true,
+      env: {
+        NODE_ENV: 'production',
+        TZ: 'Asia/Jerusalem',
+        PATH: '/var/www/vhosts/kalfa.me/.local/bin:/usr/local/bin:/usr/bin:/bin',
+      },
     },
   ],
 };
