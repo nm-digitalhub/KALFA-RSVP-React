@@ -44,6 +44,22 @@ export function rangeToDateRange(range: AnalyticsRange): { startDate: string; en
   }
 }
 
+// The immediately-preceding period of equal length, for KPI deltas (v3).
+export function rangeToPreviousDateRange(
+  range: AnalyticsRange,
+): { startDate: string; endDate: string } {
+  switch (range) {
+    case 'today':
+      return { startDate: 'yesterday', endDate: 'yesterday' };
+    case '7d':
+      return { startDate: '15daysAgo', endDate: '8daysAgo' };
+    case '90d':
+      return { startDate: '181daysAgo', endDate: '91daysAgo' };
+    case '30d':
+      return { startDate: '61daysAgo', endDate: '31daysAgo' };
+  }
+}
+
 // GA's "NdaysAgo..today" span is N+1 calendar days inclusive; 'today' is 1.
 export function rangeDayCount(range: AnalyticsRange): number {
   switch (range) {
@@ -70,13 +86,22 @@ export interface Sectioned<T> {
 }
 
 // ---- חוזי נתונים (ערך יחיד לטווח הנבחר — אין שדות 7d/30d קבועים) ----
-export interface AnalyticsOverview {
+export interface OverviewMetrics {
   activeUsers: number;
   newUsers: number;
   sessions: number;
   pageViews: number;
   engagementRate: number | null; // 0–1; null when there are no sessions
   averageSessionDuration: number; // seconds, as returned by the API
+  purchaseRevenue: number; // ILS (v3)
+}
+
+// current = the selected range; previous = the equal-length period right
+// before it (KPI delta arrows). previous is null when the API returned no
+// second date-range row.
+export interface AnalyticsOverview {
+  current: OverviewMetrics;
+  previous: OverviewMetrics | null;
 }
 
 export interface TrendPoint {
@@ -141,6 +166,69 @@ export interface QuotaSnapshot {
   tokensPerHour: { consumed: number; remaining: number };
 }
 
+// ---- v3 additions ----
+
+// Phase-1 business-event funnel, in journey order. Counts come from the
+// eventCount metric filtered to exactly these names.
+export const FUNNEL_EVENTS = [
+  { name: 'sign_up', label: 'הרשמות' },
+  { name: 'generate_lead', label: 'פניות (לידים)' },
+  { name: 'agreement_signed', label: 'הסכמים שנחתמו' },
+  { name: 'payment_authorized', label: 'תפיסות מסגרת' },
+  { name: 'purchase', label: 'חיובים (הכנסה)' },
+] as const;
+
+export interface FunnelStep {
+  name: string;
+  label: string;
+  count: number;
+}
+
+export interface NotFoundRow {
+  pagePath: string;
+  views: number;
+}
+
+export interface DemographicRow {
+  key: string;
+  label: string;
+  activeUsers: number;
+}
+
+export interface LandingPageRow {
+  landingPage: string;
+  sessions: number;
+}
+
+export const GENDER_LABELS: Record<string, string> = {
+  male: 'גברים',
+  female: 'נשים',
+  unknown: 'לא ידוע',
+};
+
+// v4 (27.7 אחה"צ): פילוחים מהמימדים המותאמים + קבוצת הערוצים של KALFA.
+export const LEAD_SOURCE_LABELS: Record<string, string> = {
+  contact_form: 'טופס יצירת קשר',
+  callback_request: 'בקשת חזרה',
+};
+
+export const BILLING_MODEL_LABELS: Record<string, string> = {
+  base_overage: 'בסיס + חריגה',
+  per_reached: 'לפי אנשי קשר שהושגו',
+};
+
+export interface LabeledCountRow {
+  key: string;
+  label: string;
+  count: number;
+}
+
+export interface BillingModelRow {
+  key: string;
+  label: string;
+  revenue: number;
+}
+
 export type Ga4ConfigIssue =
   | 'missing_property_id'
   | 'invalid_property_id'
@@ -159,7 +247,23 @@ export interface AnalyticsDashboard {
   geo: Sectioned<CountryRow[]>;
   devices: Sectioned<DeviceRow[]>;
   events: Sectioned<EventCountRow[]>;
+  funnel: Sectioned<FunnelStep[]>; // v3 — phase-1 journey
+  notFound: Sectioned<NotFoundRow[]>; // v3 — 404 detector
+  ages: Sectioned<DemographicRow[]>; // v3 — Signals
+  genders: Sectioned<DemographicRow[]>; // v3 — Signals
+  interests: Sectioned<DemographicRow[]>; // v3 — Signals
+  landingPages: Sectioned<LandingPageRow[]>; // v3
+  leadSources: Sectioned<LabeledCountRow[]>; // v4 — customEvent:lead_source
+  billingModels: Sectioned<BillingModelRow[]>; // v4 — customEvent:billing_model
+  kalfaChannels: Sectioned<LabeledCountRow[]>; // v4 — sessionCustomChannelGroup
   coreQuota: QuotaSnapshot | null; // core and realtime pools are separate
+}
+
+// getRealtimeSnapshot v3 return: the section plus the realtime pool's own
+// quota (a separate token pool from core — surfaced separately in the banner).
+export interface RealtimeResult {
+  section: Sectioned<RealtimeSnapshot>;
+  quota: QuotaSnapshot | null;
 }
 
 export const TABLE_ROW_LIMIT = 10;

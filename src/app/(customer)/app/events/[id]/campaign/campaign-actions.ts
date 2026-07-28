@@ -2,7 +2,15 @@
 
 import { redirect, unstable_rethrow } from 'next/navigation';
 import { revalidatePath } from 'next/cache';
-import { headers } from 'next/headers';
+import { cookies, headers } from 'next/headers';
+
+import {
+  GA_FLAG_COOKIE_MAX_AGE_SECONDS,
+  GA_FLAG_COOKIE_NAME,
+  buildFlagCookieValue,
+  buildPurchaseParams,
+  type GaActionEvent,
+} from '@/lib/analytics/ga-event-contracts';
 
 import { requireUser } from '@/lib/auth/dal';
 import {
@@ -142,6 +150,17 @@ export async function signAgreementAction(
   }
 
   revalidatePath(`/app/events/${eventId}/campaign`);
+  // Analytics flag (phase-1 events plan): one-shot cookie consumed exactly
+  // once by GaFlagListener on the destination — queues `agreement_signed`.
+  // Name-only (minimization ruling 27.7 afternoon): UUID context params are
+  // HELD — no consumer exists (not custom dimensions, no BigQuery), so they
+  // fail the necessity test. The validated id-carrying mechanism stays in
+  // ga-event-contracts, dormant, pending the legal decision.
+  (await cookies()).set(GA_FLAG_COOKIE_NAME, buildFlagCookieValue('agreement_signed'), {
+    maxAge: GA_FLAG_COOKIE_MAX_AGE_SECONDS,
+    path: '/',
+    sameSite: 'lax',
+  });
   // Route A: after signing, proceed to the card-capture (payment-method) step.
   redirect(`/app/events/${eventId}/campaign/${campaignId}/payment`);
 }
@@ -321,12 +340,24 @@ export async function sendThankyouAction(
   };
 }
 
+// FormState + an optional analytics payload the client fires exactly once per
+// returned state (useGaFromState in manage-client). Structural superset of
+// FormState, so generic consumers keep working unchanged.
+export type SettleFormState =
+  | {
+      error?: string;
+      notice?: string;
+      fieldErrors?: Record<string, string[] | undefined>;
+      ga?: GaActionEvent;
+    }
+  | null;
+
 export async function settleCampaignAction(
   eventId: string,
   campaignId: string,
-  _prevState: FormState,
+  _prevState: SettleFormState,
   _formData: FormData,
-): Promise<FormState> {
+): Promise<SettleFormState> {
   // Authorization is enforced inside closeCampaignAndCharge (platform-admin
   // only, requireAdmin as its first statement) — settle no longer pre-checks
   // ownership here. It delegates straight to the self-gating data-layer call.
@@ -340,7 +371,19 @@ export async function settleCampaignAction(
   revalidatePath(`/app/events/${eventId}/campaign/${campaignId}`);
   switch (r.outcome) {
     case 'charged':
-      return { notice: `גמר חשבון הושלם — חויב ₪${r.amount}.` };
+      return {
+        notice: `גמר חשבון הושלם — חויב ₪${r.amount}.`,
+        // The revenue event (phase-1 plan): fired client-side once per state.
+        // Plan label only — UUID context HELD per the minimization ruling
+        // (transaction_id already uniquely keys the charge; the ids have no
+        // consumer until they are dimensions or BigQuery exists).
+        ga: {
+          name: 'purchase',
+          params: buildPurchaseParams(r.amount, r.paymentId, {
+            billingModel: r.billingModel,
+          }),
+        },
+      };
     case 'nothing_to_charge':
       return { notice: 'גמר חשבון הושלם — אין אנשי קשר שהושגו, אין חיוב.' };
     case 'disabled':

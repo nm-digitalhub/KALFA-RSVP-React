@@ -10,6 +10,8 @@ vi.mock('@/lib/auth/dal', () => ({
 vi.mock('@/lib/analytics/ga4-client', () => ({
   getGa4ConfigStatus: vi.fn(async () => ({ ok: true })),
   getGa4Property: vi.fn(() => 'properties/123456'),
+  getGa4StreamId: vi.fn(() => '15330155015'),
+  getGa4ChannelGroupId: vi.fn(() => '15331180408'),
   getGa4Client: vi.fn(),
 }));
 
@@ -42,7 +44,9 @@ async function load() {
   const batchRunReports = vi.fn(async (req: { requests: { returnPropertyQuota?: boolean }[] }) => [
     { reports: req.requests.map((r) => fakeReport(!!r.returnPropertyQuota)) },
   ]);
-  const runRealtimeReport = vi.fn(async () => [fakeReport(false)]);
+  const runRealtimeReport = vi.fn(
+    async (req: { returnPropertyQuota?: boolean }) => [fakeReport(!!req.returnPropertyQuota)],
+  );
   client.getGa4Client.mockReturnValue({
     batchRunReports,
     runRealtimeReport,
@@ -85,28 +89,28 @@ describe('getAnalyticsDashboard — cache', () => {
   it('serves from cache within TTL and refetches after expiry', async () => {
     const { dal, batchRunReports } = await load();
     await dal.getAnalyticsDashboard('30d');
-    expect(batchRunReports).toHaveBeenCalledTimes(2); // batch A + batch B
+    expect(batchRunReports).toHaveBeenCalledTimes(4); // batches A + B + C + D
     await dal.getAnalyticsDashboard('30d');
-    expect(batchRunReports).toHaveBeenCalledTimes(2); // cached
+    expect(batchRunReports).toHaveBeenCalledTimes(4); // cached
     vi.advanceTimersByTime(5 * 60_000 + 1);
     await dal.getAnalyticsDashboard('30d');
-    expect(batchRunReports).toHaveBeenCalledTimes(4); // expired → refetch
+    expect(batchRunReports).toHaveBeenCalledTimes(8); // expired → refetch
   });
 
   it('cache is keyed per range: 7d does not reuse 30d, and 30d stays cached', async () => {
     const { dal, batchRunReports } = await load();
     await dal.getAnalyticsDashboard('30d');
-    expect(batchRunReports).toHaveBeenCalledTimes(2);
+    expect(batchRunReports).toHaveBeenCalledTimes(4);
     await dal.getAnalyticsDashboard('7d');
-    expect(batchRunReports).toHaveBeenCalledTimes(4); // separate slots
+    expect(batchRunReports).toHaveBeenCalledTimes(8); // separate slots
     await dal.getAnalyticsDashboard('30d');
-    expect(batchRunReports).toHaveBeenCalledTimes(4); // 30d still fresh
+    expect(batchRunReports).toHaveBeenCalledTimes(8); // 30d still fresh
   });
 
-  it('single-flight: two concurrent renders share one API call pair', async () => {
+  it('single-flight: two concurrent renders share one API call quartet', async () => {
     const { dal, batchRunReports } = await load();
     await Promise.all([dal.getAnalyticsDashboard('30d'), dal.getAnalyticsDashboard('30d')]);
-    expect(batchRunReports).toHaveBeenCalledTimes(2);
+    expect(batchRunReports).toHaveBeenCalledTimes(4);
   });
 
   it('failed refresh with lastGood serves stale with the ORIGINAL fetchedAt; failure is not cached', async () => {
@@ -116,7 +120,11 @@ describe('getAnalyticsDashboard — cache', () => {
     expect(first?.overview.state).toBe('ok');
 
     vi.advanceTimersByTime(5 * 60_000 + 1);
-    batchRunReports.mockRejectedValueOnce(new Error('boom')).mockRejectedValueOnce(new Error('boom'));
+    batchRunReports
+      .mockRejectedValueOnce(new Error('boom'))
+      .mockRejectedValueOnce(new Error('boom'))
+      .mockRejectedValueOnce(new Error('boom'))
+      .mockRejectedValueOnce(new Error('boom'));
     const second = await dal.getAnalyticsDashboard('30d');
     expect(second?.overview.state).toBe('stale');
     expect(second?.overview.data).not.toBeNull();
@@ -140,11 +148,11 @@ describe('getAnalyticsDashboard — cache', () => {
     batchRunReports.mockRejectedValue({ code: 8 });
     const dash = await dal.getAnalyticsDashboard('30d');
     expect(dash?.overview.state).toBe('quota_exhausted');
-    expect(batchRunReports).toHaveBeenCalledTimes(2);
+    expect(batchRunReports).toHaveBeenCalledTimes(4);
 
     // inside the backoff window: no new API calls at all
     await dal.getAnalyticsDashboard('30d');
-    expect(batchRunReports).toHaveBeenCalledTimes(2);
+    expect(batchRunReports).toHaveBeenCalledTimes(4);
 
     // after the window: retried (and succeeds again)
     batchRunReports.mockImplementation(async (req: { requests: { returnPropertyQuota?: boolean }[] }) => [
@@ -153,7 +161,7 @@ describe('getAnalyticsDashboard — cache', () => {
     vi.advanceTimersByTime(60_000 + 1);
     const after = await dal.getAnalyticsDashboard('30d');
     expect(after?.overview.state).toBe('ok');
-    expect(batchRunReports).toHaveBeenCalledTimes(4);
+    expect(batchRunReports).toHaveBeenCalledTimes(8);
   });
 
   it('exposes core quota from returnPropertyQuota', async () => {
@@ -167,12 +175,17 @@ describe('getAnalyticsDashboard — cache', () => {
 });
 
 describe('getRealtimeSnapshot', () => {
-  it('fires the three realtime requests and maps the snapshot', async () => {
+  it('fires the three realtime requests, maps the snapshot, and surfaces the realtime pool quota', async () => {
     const { dal, runRealtimeReport } = await load();
     const snap = await dal.getRealtimeSnapshot();
     expect(runRealtimeReport).toHaveBeenCalledTimes(3);
-    expect(snap.state).toBe('ok');
-    expect(snap.data?.activeUsersNow).toBe(10);
+    expect(snap.section.state).toBe('ok');
+    expect(snap.section.data?.activeUsersNow).toBe(10);
+    // quota rides the active-users request (the only one with returnPropertyQuota)
+    expect(snap.quota).toEqual({
+      tokensPerDay: { consumed: 5, remaining: 95 },
+      tokensPerHour: { consumed: 1, remaining: 9 },
+    });
   });
 
   it('realtime slot is independent of core ranges (own 45s TTL)', async () => {
@@ -182,7 +195,7 @@ describe('getRealtimeSnapshot', () => {
     await dal.getAnalyticsDashboard('7d');
     await dal.getRealtimeSnapshot(); // still within 45s → cached
     expect(runRealtimeReport).toHaveBeenCalledTimes(3);
-    expect(batchRunReports).toHaveBeenCalledTimes(4);
+    expect(batchRunReports).toHaveBeenCalledTimes(8);
 
     vi.advanceTimersByTime(45_000 + 1);
     await dal.getRealtimeSnapshot();
@@ -193,7 +206,8 @@ describe('getRealtimeSnapshot', () => {
     const { dal, client, runRealtimeReport } = await load();
     client.getGa4ConfigStatus.mockResolvedValueOnce({ ok: false, issue: 'missing_property_id' });
     const snap = await dal.getRealtimeSnapshot();
-    expect(snap.state).toBe('not_configured');
+    expect(snap.section.state).toBe('not_configured');
+    expect(snap.quota).toBeNull();
     expect(runRealtimeReport).not.toHaveBeenCalled();
   });
 });

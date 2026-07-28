@@ -10,6 +10,7 @@ import {
   getSumitPublicConfig,
 } from '@/lib/data/payments';
 import { CampaignHoldForm } from './hold-form';
+import { HeldAnalytics } from './_held-analytics';
 
 // Card-capture step of campaign approval (route A: a J5 authorization hold up to
 // the ceiling at approval; the actual charge happens at campaign close). The live
@@ -104,7 +105,8 @@ export default async function CampaignPaymentPage({
     );
   }
 
-  // Already held → done, no form.
+  // Already held → done, no form. HeldAnalytics fires payment_authorized once
+  // when arriving here via the hold redirect (?held=1) and strips the param.
   if (campaign.capture_status === 'authorized') {
     return (
       <div className="mx-auto max-w-2xl space-y-4">
@@ -113,6 +115,7 @@ export default async function CampaignPaymentPage({
           ✓ נתפסה מסגרת אשראי עד {ils(campaign.max_charge_ceiling)}. החיוב בפועל
           ייעשה בסגירת הקמפיין, לפי מספר אנשי הקשר שהושגו.
         </p>
+        <HeldAnalytics />
       </div>
     );
   }

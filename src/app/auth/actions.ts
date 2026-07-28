@@ -1,7 +1,12 @@
 'use server';
 
+import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 
+import {
+  GA_FLAG_COOKIE_MAX_AGE_SECONDS,
+  GA_FLAG_COOKIE_NAME,
+} from '@/lib/analytics/ga-event-contracts';
 import { createClient } from '@/lib/supabase/server';
 import { isExistingUserSignup } from '@/lib/auth/signup-helpers';
 import {
@@ -73,6 +78,16 @@ export async function signup(
   if (isExistingUserSignup(data)) {
     return { error: 'כתובת המייל כבר רשומה. אנא היכנסו לחשבון הקיים.' };
   }
+
+  // Analytics flag (phase-1 events plan): a one-shot, short-lived cookie the
+  // destination page's GaFlagListener consumes exactly once to queue the
+  // `sign_up` event — a redirecting action has no in-place send point. Not
+  // httpOnly by design (client JS must read it); carries an event name only.
+  (await cookies()).set(GA_FLAG_COOKIE_NAME, 'sign_up', {
+    maxAge: GA_FLAG_COOKIE_MAX_AGE_SECONDS,
+    path: '/',
+    sameSite: 'lax',
+  });
 
   // Genuine new signup: email confirmation is required, so there is no session
   // yet. Send the user to a dedicated success page (rather than an inline

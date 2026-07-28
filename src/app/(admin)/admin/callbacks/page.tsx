@@ -49,7 +49,9 @@ export default async function AdminCallbacksPage({
                 </p>
                 {cb.topic && <p className="text-sm">{cb.topic}</p>}
                 {cb.note && (
-                  <p className="whitespace-pre-wrap text-sm text-muted-foreground">
+                  // wrap-anywhere: same latent overflow as /admin/fleet — a
+                  // long unbreakable token here would widen the shell row.
+                  <p className="wrap-anywhere whitespace-pre-wrap text-sm text-muted-foreground">
                     {cb.note}
                   </p>
                 )}

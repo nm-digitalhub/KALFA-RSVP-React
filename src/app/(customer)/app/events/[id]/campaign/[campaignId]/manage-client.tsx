@@ -1,8 +1,10 @@
 'use client';
 
-import { useActionState } from 'react';
+import { useActionState, useEffect, useRef } from 'react';
 
+import { sendBusinessEvent } from '@/components/consent/send-ga-event';
 import { FormError, FormNotice } from '@/components/forms';
+import type { GaActionEvent } from '@/lib/analytics/ga-event-contracts';
 import type { FormState } from '@/lib/validation/result';
 import { ilDateInputValue, ilTimeInputValue } from '@/lib/data/event-date';
 import { formatIsraelDateTime } from '@/lib/date';
@@ -61,6 +63,20 @@ function Stat({ label, value }: { label: string; value: string }) {
   );
 }
 
+// Fires an analytics payload a Server Action attached to its returned state
+// (e.g. settle's `purchase`) — exactly once per returned state object, so
+// re-renders with the same state never duplicate the event.
+function useGaFromState(state: unknown) {
+  const fired = useRef<unknown>(null);
+  useEffect(() => {
+    if (!state || fired.current === state) return;
+    const ga = (state as { ga?: GaActionEvent }).ga;
+    if (!ga?.name) return;
+    fired.current = state;
+    sendBusinessEvent(ga);
+  }, [state]);
+}
+
 function ActionButton({
   action,
   label,
@@ -73,6 +89,7 @@ function ActionButton({
   variant?: 'default' | 'primary' | 'danger';
 }) {
   const [state, formAction] = useActionState(action, null);
+  useGaFromState(state);
   const cls =
     variant === 'primary'
       ? 'bg-primary text-primary-foreground hover:opacity-90'

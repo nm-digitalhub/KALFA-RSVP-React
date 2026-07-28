@@ -2,16 +2,27 @@
 // (missing rows → [], metric values arrive as strings → Number with a 0
 // fallback). No I/O; everything here is unit-testable in the node env.
 import {
+  BILLING_MODEL_LABELS,
   CHANNEL_GROUP_LABELS,
   DEVICE_LABELS,
+  FUNNEL_EVENTS,
+  GENDER_LABELS,
+  LEAD_SOURCE_LABELS,
   rangeDayCount,
   type AnalyticsOverview,
   type AnalyticsRange,
   type ApiPropertyQuota,
   type ChannelRow,
   type CountryRow,
+  type DemographicRow,
   type DeviceRow,
   type EventCountRow,
+  type FunnelStep,
+  type LabeledCountRow,
+  type BillingModelRow,
+  type LandingPageRow,
+  type NotFoundRow,
+  type OverviewMetrics,
   type QuotaSnapshot,
   type RealtimeSnapshot,
   type RunRealtimeReportResponse,
@@ -40,9 +51,13 @@ function met(row: { metricValues?: { value?: string | null }[] | null }, i: numb
   return num(row.metricValues?.[i]?.value);
 }
 
-// Metric order contract: buildCoreBatchA report #1.
-export function mapOverview(resp: RunReportResponse | null | undefined): AnalyticsOverview {
-  const row = rows(resp)[0];
+// Metric order contract: buildCoreBatchA report #1 (7 metrics). The report is
+// dual-dateRange, so the API adds an implicit dateRange dimension whose value
+// is 'date_range_0' (current) / 'date_range_1' (previous) — rows are matched
+// by that value, never by array position.
+type ReportRow = NonNullable<RunReportResponse['rows']>[number];
+
+function rowToOverviewMetrics(row: ReportRow | undefined): OverviewMetrics {
   const sessions = row ? met(row, 2) : 0;
   return {
     activeUsers: row ? met(row, 0) : 0,
@@ -51,6 +66,17 @@ export function mapOverview(resp: RunReportResponse | null | undefined): Analyti
     pageViews: row ? met(row, 3) : 0,
     engagementRate: sessions > 0 && row ? met(row, 4) : null,
     averageSessionDuration: row ? met(row, 5) : 0,
+    purchaseRevenue: row ? met(row, 6) : 0,
+  };
+}
+
+export function mapOverview(resp: RunReportResponse | null | undefined): AnalyticsOverview {
+  const all = rows(resp);
+  const current = all.find((r) => dim(r, 0) === 'date_range_0') ?? all[0];
+  const previous = all.find((r) => dim(r, 0) === 'date_range_1');
+  return {
+    current: rowToOverviewMetrics(current),
+    previous: previous ? rowToOverviewMetrics(previous) : null,
   };
 }
 
@@ -171,6 +197,82 @@ export function mapEvents(resp: RunReportResponse | null | undefined): EventCoun
   return [...byName.values()].sort(
     (a, b) => b.eventCount - a.eventCount || a.eventName.localeCompare(b.eventName),
   );
+}
+
+// v3: exact-count funnel over the phase-1 events, in journey order; events
+// with no data yet render as 0 (a new product's honest funnel).
+export function mapFunnel(resp: RunReportResponse | null | undefined): FunnelStep[] {
+  const counts = new Map(rows(resp).map((row) => [dim(row, 0), met(row, 0)]));
+  return FUNNEL_EVENTS.map((step) => ({
+    name: step.name,
+    label: step.label,
+    count: counts.get(step.name) ?? 0,
+  }));
+}
+
+export function mapNotFound(resp: RunReportResponse | null | undefined): NotFoundRow[] {
+  return rows(resp)
+    .map((row) => ({ pagePath: dim(row, 0), views: met(row, 0) }))
+    .filter((r) => r.pagePath && r.pagePath !== '(not set)');
+}
+
+// Shared for the Signals demographics (age / gender / interests): drops
+// '(not set)' rows, applies a label map when given, falls back to the raw
+// value. Empty output = no data yet or Google's privacy thresholding.
+export function mapDemographic(
+  resp: RunReportResponse | null | undefined,
+  labels?: Record<string, string>,
+): DemographicRow[] {
+  return rows(resp)
+    .map((row) => {
+      const key = dim(row, 0);
+      return { key, label: labels?.[key] ?? key, activeUsers: met(row, 0) };
+    })
+    .filter((r) => r.key && r.key !== '(not set)');
+}
+
+export function mapGenders(resp: RunReportResponse | null | undefined): DemographicRow[] {
+  return mapDemographic(resp, GENDER_LABELS);
+}
+
+export function mapLandingPages(resp: RunReportResponse | null | undefined): LandingPageRow[] {
+  return rows(resp)
+    .map((row) => ({ landingPage: dim(row, 0), sessions: met(row, 0) }))
+    .filter((r) => r.landingPage && r.landingPage !== '(not set)');
+}
+
+// v4: custom-dimension breakdowns. Rows with '(not set)'/empty keys are
+// dropped — every OTHER event reports '(not set)' for a param it never
+// carried (live-verified 27.7: lead_source returned '(not set)'×59 alongside
+// the real contact_form row).
+export function mapLeadSources(resp: RunReportResponse | null | undefined): LabeledCountRow[] {
+  return rows(resp)
+    .map((row) => {
+      const key = dim(row, 0);
+      return { key, label: LEAD_SOURCE_LABELS[key] ?? key, count: met(row, 0) };
+    })
+    .filter((r) => r.key && r.key !== '(not set)');
+}
+
+export function mapBillingModels(resp: RunReportResponse | null | undefined): BillingModelRow[] {
+  return rows(resp)
+    .map((row) => {
+      const key = dim(row, 0);
+      return { key, label: BILLING_MODEL_LABELS[key] ?? key, revenue: met(row, 0) };
+    })
+    .filter((r) => r.key && r.key !== '(not set)');
+}
+
+// Channel names arrive as the group's rule display names (already Hebrew for
+// KALFA's custom rules; English for the built-in defaults) — CHANNEL_GROUP_LABELS
+// translates the known defaults, custom names pass through.
+export function mapKalfaChannels(resp: RunReportResponse | null | undefined): LabeledCountRow[] {
+  return rows(resp)
+    .map((row) => {
+      const key = dim(row, 0);
+      return { key, label: CHANNEL_GROUP_LABELS[key] ?? key, count: met(row, 0) };
+    })
+    .filter((r) => r.key && r.key !== '(not set)');
 }
 
 // Argument order contract: buildRealtimeRequests() → [active, events, locations].

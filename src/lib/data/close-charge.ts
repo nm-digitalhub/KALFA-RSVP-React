@@ -35,6 +35,13 @@ export type CloseChargeOutcome = {
     | 'disabled'
     | 'bad_state';
   amount: number;
+  // Present only on 'charged': the provider's per-charge payment id — the
+  // analytics transaction_id (never the campaign id). null when the provider
+  // response carried no id.
+  paymentId?: number | null;
+  // Present only on 'charged': the billing model actually applied AFTER the
+  // D5 guard — a coarse analytics label, never an amount.
+  billingModel?: 'base_overage' | 'per_reached';
 };
 
 const CLOSEABLE = ['active', 'paused', 'approved', 'scheduled'];
@@ -242,7 +249,15 @@ export async function closeCampaignAndCharge(
     // Osek-patur turnover-ceiling watch (fire-and-forget, fail-safe): every
     // charged shekel counts fully toward the yearly VAT-exemption ceiling.
     void checkOsekPaturCeilingAfterCharge();
-    return { outcome: 'charged', amount };
+    // paymentId = the provider's per-charge id — the ONLY valid analytics
+    // transaction_id (campaign ids repeat across retries/refunds).
+    return {
+      outcome: 'charged',
+      amount,
+      paymentId: result.paymentId ?? null,
+      billingModel:
+        effectiveBase > 0 || effectiveIncluded > 0 ? 'base_overage' : 'per_reached',
+    };
   } catch (e) {
     if (e instanceof SumitDeclinedError) {
       await markCampaignChargeOutcome(campaignId, 'charge_failed');

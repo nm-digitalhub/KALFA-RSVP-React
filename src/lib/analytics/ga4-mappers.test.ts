@@ -5,7 +5,15 @@ import {
   fillTrendGaps,
   formatSeconds,
   mapCountries,
+  mapDemographic,
   mapEvents,
+  mapFunnel,
+  mapBillingModels,
+  mapGenders,
+  mapKalfaChannels,
+  mapLandingPages,
+  mapLeadSources,
+  mapNotFound,
   mapOverview,
   mapQuota,
   mapRealtime,
@@ -13,9 +21,25 @@ import {
 } from './ga4-mappers';
 import type { RunReportResponse } from './ga4-types';
 
+// Dual-dateRange response: the API adds an implicit dateRange dimension —
+// rows are matched by its VALUE ('date_range_0'/'date_range_1'), never by
+// array position (previous listed first here on purpose).
 const overviewResp = {
   rows: [
     {
+      dimensionValues: [{ value: 'date_range_1' }],
+      metricValues: [
+        { value: '10' }, // activeUsers (previous)
+        { value: '5' },
+        { value: '20' },
+        { value: '80' },
+        { value: '0.25' },
+        { value: '60' },
+        { value: '0' },
+      ],
+    },
+    {
+      dimensionValues: [{ value: 'date_range_0' }],
       metricValues: [
         { value: '42' }, // activeUsers
         { value: '17' }, // newUsers
@@ -23,31 +47,47 @@ const overviewResp = {
         { value: '198' }, // screenPageViews
         { value: '0.5432' }, // engagementRate
         { value: '154.7' }, // averageSessionDuration (seconds)
+        { value: '204' }, // purchaseRevenue (ILS)
       ],
     },
   ],
 } as RunReportResponse;
 
 describe('mapOverview', () => {
-  it('maps the six v2 metrics including newUsers and averageSessionDuration', () => {
+  it('splits current/previous by the implicit dateRange dimension value, not row order', () => {
     const o = mapOverview(overviewResp);
-    expect(o.activeUsers).toBe(42);
-    expect(o.newUsers).toBe(17);
-    expect(o.sessions).toBe(55);
-    expect(o.pageViews).toBe(198);
-    expect(o.engagementRate).toBeCloseTo(0.5432);
-    expect(o.averageSessionDuration).toBeCloseTo(154.7);
+    expect(o.current.activeUsers).toBe(42);
+    expect(o.current.newUsers).toBe(17);
+    expect(o.current.sessions).toBe(55);
+    expect(o.current.pageViews).toBe(198);
+    expect(o.current.engagementRate).toBeCloseTo(0.5432);
+    expect(o.current.averageSessionDuration).toBeCloseTo(154.7);
+    expect(o.current.purchaseRevenue).toBe(204);
+    expect(o.previous?.activeUsers).toBe(10);
+    expect(o.previous?.purchaseRevenue).toBe(0);
   });
 
-  it('empty/missing rows → zeros and null engagement', () => {
+  it('single row without a dateRange dimension → current from it, previous null', () => {
+    const o = mapOverview({
+      rows: [{ metricValues: [{ value: '7' }] }],
+    } as RunReportResponse);
+    expect(o.current.activeUsers).toBe(7);
+    expect(o.previous).toBeNull();
+  });
+
+  it('empty/missing rows → zeros, null engagement, null previous', () => {
     const o = mapOverview({} as RunReportResponse);
     expect(o).toEqual({
-      activeUsers: 0,
-      newUsers: 0,
-      sessions: 0,
-      pageViews: 0,
-      engagementRate: null,
-      averageSessionDuration: 0,
+      current: {
+        activeUsers: 0,
+        newUsers: 0,
+        sessions: 0,
+        pageViews: 0,
+        engagementRate: null,
+        averageSessionDuration: 0,
+        purchaseRevenue: 0,
+      },
+      previous: null,
     });
   });
 
@@ -55,9 +95,9 @@ describe('mapOverview', () => {
     const o = mapOverview({
       rows: [{ metricValues: [{ value: 'NaN?' }, {}, { value: '3' }] }],
     } as RunReportResponse);
-    expect(o.activeUsers).toBe(0);
-    expect(o.newUsers).toBe(0);
-    expect(o.sessions).toBe(3);
+    expect(o.current.activeUsers).toBe(0);
+    expect(o.current.newUsers).toBe(0);
+    expect(o.current.sessions).toBe(3);
   });
 });
 
@@ -139,6 +179,117 @@ describe('mapEvents — key detection via the keyEvents metric, no hardcoded nam
       ],
     } as RunReportResponse);
     expect(events.map((e) => e.eventName)).toEqual(['click', 'login']);
+  });
+});
+
+describe('mapFunnel', () => {
+  it('returns every funnel step in journey order with 0 defaults for missing events', () => {
+    const steps = mapFunnel({
+      rows: [
+        { dimensionValues: [{ value: 'generate_lead' }], metricValues: [{ value: '6' }] },
+        { dimensionValues: [{ value: 'sign_up' }], metricValues: [{ value: '4' }] },
+      ],
+    } as RunReportResponse);
+    expect(steps.map((s) => s.name)).toEqual([
+      'sign_up',
+      'generate_lead',
+      'agreement_signed',
+      'payment_authorized',
+      'purchase',
+    ]);
+    expect(steps.map((s) => s.count)).toEqual([4, 6, 0, 0, 0]);
+    expect(steps[0].label).toBe('הרשמות');
+  });
+
+  it('empty response → all-zero funnel, never a missing step', () => {
+    const steps = mapFunnel({} as RunReportResponse);
+    expect(steps).toHaveLength(5);
+    expect(steps.every((s) => s.count === 0)).toBe(true);
+  });
+});
+
+describe('mapNotFound', () => {
+  it('maps pagePath views and drops unset rows', () => {
+    const rows = mapNotFound({
+      rows: [
+        { dimensionValues: [{ value: '/no-such-page' }], metricValues: [{ value: '3' }] },
+        { dimensionValues: [{ value: '(not set)' }], metricValues: [{ value: '1' }] },
+        { dimensionValues: [{ value: '' }], metricValues: [{ value: '9' }] },
+      ],
+    } as RunReportResponse);
+    expect(rows).toEqual([{ pagePath: '/no-such-page', views: 3 }]);
+  });
+});
+
+describe('mapDemographic / mapGenders / mapLandingPages', () => {
+  it('drops (not set), applies labels when given, falls back to the raw key', () => {
+    const resp = {
+      rows: [
+        { dimensionValues: [{ value: '25-34' }], metricValues: [{ value: '8' }] },
+        { dimensionValues: [{ value: '(not set)' }], metricValues: [{ value: '2' }] },
+      ],
+    } as RunReportResponse;
+    expect(mapDemographic(resp)).toEqual([{ key: '25-34', label: '25-34', activeUsers: 8 }]);
+  });
+
+  it('genders get Hebrew labels with raw fallback for unknown keys', () => {
+    const rows = mapGenders({
+      rows: [
+        { dimensionValues: [{ value: 'female' }], metricValues: [{ value: '5' }] },
+        { dimensionValues: [{ value: 'male' }], metricValues: [{ value: '3' }] },
+        { dimensionValues: [{ value: 'other' }], metricValues: [{ value: '1' }] },
+      ],
+    } as RunReportResponse);
+    expect(rows.map((r) => r.label)).toEqual(['נשים', 'גברים', 'other']);
+  });
+
+  it('landing pages map sessions and drop unset rows', () => {
+    const rows = mapLandingPages({
+      rows: [
+        { dimensionValues: [{ value: '/' }], metricValues: [{ value: '12' }] },
+        { dimensionValues: [{ value: '(not set)' }], metricValues: [{ value: '1' }] },
+      ],
+    } as RunReportResponse);
+    expect(rows).toEqual([{ landingPage: '/', sessions: 12 }]);
+  });
+});
+
+describe('v4 custom-dimension mappers', () => {
+  it('lead sources: Hebrew labels, (not set)/empty rows dropped (live-verified shape)', () => {
+    const rows = mapLeadSources({
+      rows: [
+        { dimensionValues: [{ value: '(not set)' }], metricValues: [{ value: '59' }] },
+        { dimensionValues: [{ value: '' }], metricValues: [{ value: '35' }] },
+        { dimensionValues: [{ value: 'contact_form' }], metricValues: [{ value: '1' }] },
+        { dimensionValues: [{ value: 'callback_request' }], metricValues: [{ value: '2' }] },
+      ],
+    } as never);
+    expect(rows).toEqual([
+      { key: 'contact_form', label: 'טופס יצירת קשר', count: 1 },
+      { key: 'callback_request', label: 'בקשת חזרה', count: 2 },
+    ]);
+  });
+
+  it('billing models: labels + revenue, unknown keys pass through raw', () => {
+    const rows = mapBillingModels({
+      rows: [
+        { dimensionValues: [{ value: 'base_overage' }], metricValues: [{ value: '204' }] },
+        { dimensionValues: [{ value: 'legacy' }], metricValues: [{ value: '12' }] },
+      ],
+    } as never);
+    expect(rows[0]).toEqual({ key: 'base_overage', label: 'בסיס + חריגה', revenue: 204 });
+    expect(rows[1].label).toBe('legacy');
+  });
+
+  it('kalfa channels: default channels translated, custom Hebrew names pass through', () => {
+    const rows = mapKalfaChannels({
+      rows: [
+        { dimensionValues: [{ value: 'Direct' }], metricValues: [{ value: '11' }] },
+        { dimensionValues: [{ value: 'וואטסאפ' }], metricValues: [{ value: '3' }] },
+      ],
+    } as never);
+    expect(rows[0].label).toBe('ישיר');
+    expect(rows[1].label).toBe('וואטסאפ');
   });
 });
 

@@ -13,13 +13,27 @@ import {
   callbackRequestSchema,
   contactMessageSchema,
 } from '@/lib/validation/inquiries';
-import type { FormState } from '@/lib/validation/result';
+import { LEAD_SOURCES } from '@/lib/analytics/ga-event-contracts';
 
 // Public inquiry actions (contact form + call-me-back). Order per form:
 // IP rate-limit → honeypot → Zod → server-side session attach → write.
 // Errors are generic (no DB/provider detail); the honeypot returns the SAME
 // success notice as a real submission so bots learn nothing, but writes
 // nothing.
+//
+// `leadSource` (analytics contract): set ONLY on a REAL persisted lead — the
+// honeypot's fake success deliberately carries no flag, so a bot can never
+// fire a generate_lead conversion. The UI reads notice; analytics reads
+// leadSource.
+
+export type InquiryFormState =
+  | {
+      error?: string;
+      notice?: string;
+      fieldErrors?: Record<string, string[] | undefined>;
+      leadSource?: (typeof LEAD_SOURCES)[keyof typeof LEAD_SOURCES];
+    }
+  | null;
 
 const RATE_ERROR = 'נשלחו יותר מדי בקשות. נא לנסות שוב בעוד רגע.';
 const GENERIC_ERROR = 'שליחת הפנייה נכשלה. נסו שוב בעוד רגע.';
@@ -33,9 +47,9 @@ function trimmedOrUndefined(value: FormDataEntryValue | null): string | undefine
 }
 
 export async function submitContactAction(
-  _prevState: FormState,
+  _prevState: InquiryFormState,
   formData: FormData,
-): Promise<FormState> {
+): Promise<InquiryFormState> {
   const requestHeaders = await headers();
   const ip = getClientIp(requestHeaders.get.bind(requestHeaders));
   if (!rateLimit(`inquiry:contact:${ip}`, INQUIRY_SUBMIT_RATE).allowed) {
@@ -67,13 +81,13 @@ export async function submitContactAction(
   if (!result.ok) {
     return { error: GENERIC_ERROR };
   }
-  return { notice: CONTACT_SUCCESS };
+  return { notice: CONTACT_SUCCESS, leadSource: LEAD_SOURCES.contact };
 }
 
 export async function submitCallbackAction(
-  _prevState: FormState,
+  _prevState: InquiryFormState,
   formData: FormData,
-): Promise<FormState> {
+): Promise<InquiryFormState> {
   const requestHeaders = await headers();
   const ip = getClientIp(requestHeaders.get.bind(requestHeaders));
   if (!rateLimit(`inquiry:callback:${ip}`, INQUIRY_SUBMIT_RATE).allowed) {
@@ -102,5 +116,5 @@ export async function submitCallbackAction(
   if (!result.ok) {
     return { error: GENERIC_ERROR };
   }
-  return { notice: CALLBACK_SUCCESS };
+  return { notice: CALLBACK_SUCCESS, leadSource: LEAD_SOURCES.callback };
 }

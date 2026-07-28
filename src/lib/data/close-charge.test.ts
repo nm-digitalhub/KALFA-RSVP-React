@@ -165,7 +165,7 @@ describe('closeCampaignAndCharge', () => {
     happy();
     const r = await closeCampaignAndCharge('c1');
     expect(requireAdmin).toHaveBeenCalled();
-    expect(r).toEqual({ outcome: 'charged', amount: 12 });
+    expect(r).toEqual({ outcome: 'charged', amount: 12, paymentId: 777, billingModel: 'per_reached' });
   });
 
   it('does nothing when close-charge is disabled (fail-closed)', async () => {
@@ -255,7 +255,7 @@ describe('closeCampaignAndCharge', () => {
       authNumber: '0692601',
       paymentId: 777,
     });
-    expect(r).toEqual({ outcome: 'charged', amount: 12 });
+    expect(r).toEqual({ outcome: 'charged', amount: 12, paymentId: 777, billingModel: 'per_reached' });
     // Additive campaign_billing alert on a successful final charge.
     expect(sendSlackAlert).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -299,7 +299,7 @@ describe('closeCampaignAndCharge', () => {
       maxContacts: 22,
     });
     const r = await closeCampaignAndCharge('c1');
-    expect(r).toEqual({ outcome: 'charged', amount: 60 });
+    expect(r).toEqual({ outcome: 'charged', amount: 60, paymentId: 777, billingModel: 'per_reached' });
     expect(captureHeldCardSumit).toHaveBeenCalledWith(
       expect.objectContaining({ amount: '60' }),
     );
@@ -330,7 +330,7 @@ describe('closeCampaignAndCharge', () => {
       maxContacts: 22,
     });
     const r = await closeCampaignAndCharge('c1');
-    expect(r).toEqual({ outcome: 'charged', amount: 45 });
+    expect(r).toEqual({ outcome: 'charged', amount: 45, paymentId: 777, billingModel: 'per_reached' });
     expect(captureHeldCardSumit).toHaveBeenCalledWith(
       expect.objectContaining({ amount: '45' }),
     );
@@ -358,7 +358,7 @@ describe('closeCampaignAndCharge', () => {
     const r = await closeCampaignAndCharge('c1');
     // Base charged even though nobody was reached (plan D1 — service fee), and
     // NOT settled as nothing_to_charge.
-    expect(r).toEqual({ outcome: 'charged', amount: 200 });
+    expect(r).toEqual({ outcome: 'charged', amount: 200, paymentId: 777, billingModel: 'base_overage' });
     expect(captureHeldCardSumit).toHaveBeenCalledWith(
       expect.objectContaining({ amount: '200' }),
     );
@@ -369,7 +369,7 @@ describe('closeCampaignAndCharge', () => {
     // accrued 12, ceiling 88, credit ₪5 → charge 7; all ₪5 of the credit used.
     m.credits.mockResolvedValue(5);
     const r = await closeCampaignAndCharge('c1');
-    expect(r).toEqual({ outcome: 'charged', amount: 7 });
+    expect(r).toEqual({ outcome: 'charged', amount: 7, paymentId: 777, billingModel: 'per_reached' });
     // The pool is read for the campaign AND its event (event-level credits).
     expect(getCampaignCreditTotal).toHaveBeenCalledWith('c1', 'e1');
     expect(captureHeldCardSumit).toHaveBeenCalledWith(
@@ -525,7 +525,7 @@ describe('closeCampaignAndCharge', () => {
       m.signed.mockResolvedValue('2026-07-v4');
       m.summary.mockResolvedValue({ reachedCount: 0, accrued: 0, ceiling: 600, maxContacts: 300 });
       const r = await closeCampaignAndCharge('c1');
-      expect(r).toEqual({ outcome: 'charged', amount: 200 });
+      expect(r).toEqual({ outcome: 'charged', amount: 200, paymentId: 777, billingModel: 'base_overage' });
       expect(sendSlackAlert).not.toHaveBeenCalledWith(
         expect.objectContaining({ source: 'close-charge-d5-guard' }),
       );
@@ -557,7 +557,8 @@ describe('closeCampaignAndCharge', () => {
       // base+included suppressed to 0 → 5 reached × ₪4 = ₪20 (no free included).
       m.summary.mockResolvedValue({ reachedCount: 5, accrued: 0, ceiling: 600, maxContacts: 300 });
       const r = await closeCampaignAndCharge('c1');
-      expect(r).toEqual({ outcome: 'charged', amount: 20 });
+      // D5-suppressed billing reports the plan ACTUALLY billed: per_reached.
+      expect(r).toEqual({ outcome: 'charged', amount: 20, paymentId: 777, billingModel: 'per_reached' });
       expect(captureHeldCardSumit).toHaveBeenCalledWith(
         expect.objectContaining({ amount: '20' }),
       );

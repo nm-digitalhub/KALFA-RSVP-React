@@ -33,6 +33,22 @@ export function getGa4Property(): string {
   return `properties/${process.env.GA4_PROPERTY_ID?.trim() ?? ''}`;
 }
 
+// Optional stream scoping (streamId filter on every report): the property
+// still carries deleted-old-stream history, so the dashboard queries are
+// pinned to the beta stream. Unset/malformed → no filter (whole property).
+export function getGa4StreamId(): string | undefined {
+  const streamId = process.env.GA4_STREAM_ID?.trim();
+  return streamId && /^\d+$/.test(streamId) ? streamId : undefined;
+}
+
+// Optional custom channel-group scoping ("ערוצי KALFA") — the numeric id of
+// the property's custom channel group. Unset/malformed → the kalfaChannels
+// card renders as not-configured (batch D simply omits that report).
+export function getGa4ChannelGroupId(): string | undefined {
+  const id = process.env.GA4_CHANNEL_GROUP_ID?.trim();
+  return id && /^\d+$/.test(id) ? id : undefined;
+}
+
 // Lazy module-level singleton. No explicit credentials — ADC reads
 // GOOGLE_APPLICATION_CREDENTIALS itself. fallback:'rest' keeps gRPC (and its
 // bundling problems) entirely out of the runtime.

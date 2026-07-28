@@ -28,10 +28,7 @@ export default async function SettingsPage() {
   try {
     const user = await requireUser();
     userEmail = user.email;
-    [profile, settings] = await Promise.all([
-      getProfile(),
-      getUserSettings(),
-    ]);
+    [profile, settings] = await Promise.all([getProfile(), getUserSettings()]);
   } catch (err) {
     unstable_rethrow(err);
     loadError = true;

@@ -446,6 +446,147 @@ export const emailChangeSchema = z.object({
 });
 export type EmailChangeInput = z.infer<typeof emailChangeSchema>;
 
+// Exchange (IONOS Hosted EWS) calendar connection — /app/settings, Stage 1 of
+// plans/exchange-ews-stage1.md. `password` has a generous max only (not a
+// strength rule) — it is the owner's EXISTING mailbox password, not a new
+// KALFA credential, so it must not be silently rejected for being long.
+export const createExchangeConnectionSchema = z.object({
+  mailboxEmail: z.string().trim().pipe(z.email({ error: 'כתובת אימייל לא תקינה' })),
+  password: z
+    .string()
+    .min(1, { error: 'נא להזין סיסמה' })
+    .max(256, { error: 'הסיסמה ארוכה מדי' }),
+});
+export type CreateExchangeConnectionInput = z.infer<typeof createExchangeConnectionSchema>;
+
+export const exchangeConnectionIdSchema = z.object({
+  connectionId: z.uuid({ error: 'מזהה חיבור לא תקין' }),
+});
+
+export const exchangeTestAppointmentIdSchema = z.object({
+  connectionId: z.uuid({ error: 'מזהה חיבור לא תקין' }),
+  appointmentId: z.string().trim().min(1, { error: 'מזהה פגישה חסר' }),
+});
+
+// Shared pieces for the calendar dialogs (create + edit share the same
+// field set, so the rules live in one place).
+const showAsEnum = z.enum(['free', 'tentative', 'busy', 'oof', 'working_elsewhere'], {
+  error: 'ערך "הצג כ" לא תקין',
+});
+const sensitivityEnum = z.enum(['normal', 'personal', 'private', 'confidential'], {
+  error: 'רמת פרטיות לא תקינה',
+});
+// Attendees receive REAL invitations, so the address is validated strictly.
+const attendeeSchema = z.object({
+  email: z.string().trim().pipe(z.email({ error: 'כתובת אימייל לא תקינה' })),
+  name: z.string().trim().max(120).optional(),
+  optional: z.boolean().optional(),
+});
+const recurrenceSchema = z.object({
+  frequency: z.enum(['daily', 'weekly', 'monthly', 'yearly'], { error: 'תדירות לא תקינה' }),
+  interval: z.number().int().min(1).max(99, { error: 'מרווח החזרה גדול מדי' }),
+  daysOfWeek: z.array(z.number().int().min(0).max(6)).max(7).optional(),
+  dayOfMonth: z.number().int().min(1).max(31).optional(),
+  month: z.number().int().min(1).max(12).optional(),
+  occurrences: z.number().int().min(1).max(999).optional(),
+  endDateIso: z.iso.datetime({ offset: true }).optional(),
+});
+
+// /admin/calendar. ISO datetimes travel as strings between the client
+// calendar and the Server Actions; EWS ItemIds are long opaque base64-ish
+// strings (measured well under 1kB) — bounded, never interpolated anywhere.
+const isoInstant = z.iso.datetime({ offset: true, error: 'תאריך לא תקין' });
+
+export const calendarRangeSchema = z.object({
+  connectionId: z.uuid({ error: 'מזהה חיבור לא תקין' }),
+  startIso: isoInstant,
+  endIso: isoInstant,
+});
+
+export const calendarCreateEventSchema = z.object({
+  connectionId: z.uuid({ error: 'מזהה חיבור לא תקין' }),
+  subject: z
+    .string()
+    .trim()
+    .min(1, { error: 'נא להזין כותרת לאירוע' })
+    .max(255, { error: 'הכותרת ארוכה מדי' }),
+  startIso: isoInstant,
+  endIso: isoInstant,
+  allDay: z.boolean(),
+  // Same optional-rich fields as the edit form, so an event can be created
+  // complete instead of created-then-edited.
+  location: z.string().trim().max(255, { error: 'המיקום ארוך מדי' }).optional(),
+  body: z.string().max(5000, { error: 'התיאור ארוך מדי' }).optional(),
+  reminderMinutes: z
+    .number()
+    .int()
+    .min(0)
+    .max(10080, { error: 'זמן התזכורת ארוך מדי' })
+    .optional(),
+  showAs: showAsEnum.optional(),
+  sensitivity: sensitivityEnum.optional(),
+  category: z.string().trim().max(64, { error: 'שם הקטגוריה ארוך מדי' }).optional(),
+  // Non-empty ⇒ Exchange dispatches real invitations by email.
+  attendees: z.array(attendeeSchema).max(50, { error: 'יותר מדי משתתפים' }).optional(),
+  // Recurrence is settable at creation only (editing a series is out of
+  // scope — series items are read-only, matching the calendar UI).
+  recurrence: recurrenceSchema.optional(),
+});
+
+// Availability status (avatar menu). The owner picks a preset + a window;
+// no free text ever reaches Exchange — the label/subject come from a fixed
+// server-side vocabulary (src/lib/data/exchange-availability.ts).
+export const availabilityBlockSchema = z.object({
+  showAs: z.enum(['busy', 'oof', 'working_elsewhere', 'tentative'], {
+    error: 'סטטוס לא תקין',
+  }),
+  startsAtIso: isoInstant,
+  endsAtIso: isoInstant,
+});
+
+export const availabilityBlockIdSchema = z.object({
+  blockId: z.uuid({ error: 'מזהה סטטוס לא תקין' }),
+});
+
+export const calendarUpdateEventSchema = z.object({
+  connectionId: z.uuid({ error: 'מזהה חיבור לא תקין' }),
+  appointmentId: z.string().trim().min(1).max(1024, { error: 'מזהה פגישה לא תקין' }),
+  startIso: isoInstant,
+  endIso: isoInstant,
+  // Every field below is sent ONLY by the edit dialog; a drag/resize omits
+  // them, and omission means "leave as is in Exchange" (never "clear").
+  subject: z
+    .string()
+    .trim()
+    .min(1, { error: 'נא להזין כותרת לאירוע' })
+    .max(255, { error: 'הכותרת ארוכה מדי' })
+    .optional(),
+  location: z.string().trim().max(255, { error: 'המיקום ארוך מדי' }).optional(),
+  body: z.string().max(5000, { error: 'התיאור ארוך מדי' }).optional(),
+  allDay: z.boolean().optional(),
+  // 0 = no reminder; capped at a week so a typo cannot create an absurd alarm.
+  reminderMinutes: z
+    .number()
+    .int()
+    .min(0)
+    .max(10080, { error: 'זמן התזכורת ארוך מדי' })
+    .optional(),
+  showAs: showAsEnum.optional(),
+  sensitivity: sensitivityEnum.optional(),
+  category: z.string().trim().max(64, { error: 'שם הקטגוריה ארוך מדי' }).optional(),
+  attendees: z.array(attendeeSchema).max(50, { error: 'יותר מדי משתתפים' }).optional(),
+});
+
+export const calendarEventIdSchema = z.object({
+  connectionId: z.uuid({ error: 'מזהה חיבור לא תקין' }),
+  appointmentId: z.string().trim().min(1).max(1024, { error: 'מזהה פגישה לא תקין' }),
+});
+
+export const calendarDeleteEventSchema = z.object({
+  connectionId: z.uuid({ error: 'מזהה חיבור לא תקין' }),
+  appointmentId: z.string().trim().min(1).max(1024, { error: 'מזהה פגישה לא תקין' }),
+});
+
 // Organizations & members (multi-tenant layer). role_id is a uuid into
 // public.org_roles — the actual role/permission set is validated server-side
 // against the DB (never trusted from the browser), so these schemas only check

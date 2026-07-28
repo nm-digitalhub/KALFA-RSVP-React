@@ -1,3 +1,4 @@
+import { ArrowDown, ArrowUp } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 
 import { Badge, EmptyState, formatDateTime } from '../_components';
@@ -19,9 +20,10 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import type {
+  FunnelStep,
   Ga4ConfigIssue,
   QuotaSnapshot,
-  RealtimeSnapshot,
+  RealtimeResult,
   SectionState,
   Sectioned,
 } from '@/lib/analytics/ga4-types';
@@ -103,6 +105,46 @@ export function StatTile({
   );
 }
 
+// KPI delta vs the equal previous period (v3). Renders nothing when there is
+// no previous row, and 'חדש' when the previous value was 0 (a % of zero is
+// meaningless). Directional color only accompanies the arrow + number — never
+// color alone.
+export function StatDelta({
+  current,
+  previous,
+}: {
+  current: number;
+  previous: number | null | undefined;
+}) {
+  if (previous === null || previous === undefined) return null;
+  if (previous === 0) {
+    return current > 0 ? (
+      <span className="text-xs text-muted-foreground">חדש בתקופה זו</span>
+    ) : null;
+  }
+  const pct = Math.round(((current - previous) / previous) * 100);
+  if (pct === 0) {
+    return <span className="text-xs text-muted-foreground">ללא שינוי מהתקופה הקודמת</span>;
+  }
+  const up = pct > 0;
+  return (
+    <span
+      className={`flex items-center gap-1 text-xs tabular-nums ${up ? 'text-success' : 'text-destructive'}`}
+    >
+      {up ? (
+        <ArrowUp className="size-3" aria-hidden />
+      ) : (
+        <ArrowDown className="size-3" aria-hidden />
+      )}
+      <span dir="ltr">
+        {up ? '+' : '-'}
+        {Math.abs(pct)}%
+      </span>
+      מהתקופה הקודמת
+    </span>
+  );
+}
+
 // Rows carry an explicit stable key from the data (pagePath, countryId,
 // eventName…) — never an array index.
 export interface DataRow {
@@ -154,18 +196,22 @@ export function EngagementMeter({ rate }: { rate: number | null }) {
   return <Progress value={pct} aria-label={`${pct}% מעורבות`} />;
 }
 
-export function RealtimeCard({ realtime }: { realtime: Sectioned<RealtimeSnapshot> }) {
+export function RealtimeCard({ realtime }: { realtime: RealtimeResult }) {
+  const { section, quota } = realtime;
+  // The realtime token pool is separate from core; its remaining budget shows
+  // here (its own consumer), not in the page-level core banner.
+  const hourRemaining = quota?.tokensPerHour?.remaining;
   return (
-    <SectionCard title="פעילות עכשיו" section={realtime}>
+    <SectionCard title="פעילות עכשיו" section={section}>
       <div className="flex items-baseline gap-3">
         <span className="text-4xl font-bold tabular-nums">
-          {realtime.data?.activeUsersNow ?? 0}
+          {section.data?.activeUsersNow ?? 0}
         </span>
         <Badge variant="info">בזמן אמת</Badge>
       </div>
-      {realtime.data && realtime.data.topEvents.length > 0 ? (
+      {section.data && section.data.topEvents.length > 0 ? (
         <ul className="space-y-1 text-sm">
-          {realtime.data.topEvents.map((e) => (
+          {section.data.topEvents.map((e) => (
             <li key={e.eventName} className="flex items-center justify-between gap-4">
               <span className="text-muted-foreground">{e.eventName}</span>
               <span className="tabular-nums">{e.count}</span>
@@ -173,9 +219,9 @@ export function RealtimeCard({ realtime }: { realtime: Sectioned<RealtimeSnapsho
           ))}
         </ul>
       ) : null}
-      {realtime.data && realtime.data.topLocations.length > 0 ? (
+      {section.data && section.data.topLocations.length > 0 ? (
         <ul className="space-y-1 border-t border-border pt-2 text-sm">
-          {realtime.data.topLocations.map((l) => (
+          {section.data.topLocations.map((l) => (
             <li key={l.label} className="flex items-center justify-between gap-4">
               <span className="text-muted-foreground">{l.label}</span>
               <span className="tabular-nums">{l.activeUsers}</span>
@@ -183,6 +229,51 @@ export function RealtimeCard({ realtime }: { realtime: Sectioned<RealtimeSnapsho
           ))}
         </ul>
       ) : null}
+      {typeof hourRemaining === 'number' ? (
+        <p className="text-xs text-muted-foreground">
+          מכסת זמן-אמת: נותרו {hourRemaining.toLocaleString('he-IL')} יחידות לשעה זו.
+        </p>
+      ) : null}
+    </SectionCard>
+  );
+}
+
+// v3 funnel: the phase-1 journey in order. Progress bars are relative to the
+// widest step (not step #1 — leads can legitimately exceed signups), so the
+// bar always fits; the between-steps percentage reads vs the PREVIOUS step
+// and only when that step has data.
+export function FunnelCard({ section }: { section: Sectioned<FunnelStep[]> }) {
+  const steps = section.data ?? [];
+  const max = Math.max(1, ...steps.map((s) => s.count));
+  return (
+    <SectionCard title="משפך עסקי" section={section}>
+      <ul className="space-y-3">
+        {steps.map((step, i) => {
+          const prev = i > 0 ? steps[i - 1].count : 0;
+          const pctOfPrev = i > 0 && prev > 0 ? Math.round((step.count / prev) * 100) : null;
+          return (
+            <li key={step.name} className="space-y-1">
+              <div className="flex items-center justify-between gap-4 text-sm">
+                <span>{step.label}</span>
+                <span className="tabular-nums">
+                  {step.count.toLocaleString('he-IL')}
+                  {pctOfPrev !== null ? (
+                    <span className="text-xs text-muted-foreground"> ({pctOfPrev}% מהשלב הקודם)</span>
+                  ) : null}
+                </span>
+              </div>
+              <Progress
+                value={Math.min(100, Math.round((step.count / max) * 100))}
+                aria-label={`${step.label}: ${step.count}`}
+              />
+            </li>
+          );
+        })}
+      </ul>
+      <p className="text-xs text-muted-foreground">
+        ספירת אירועים בטווח הנבחר; השלבים אינם מסלול חובה — הפרשים בין שלבים הם אינדיקציה, לא
+        נטישה מדויקת.
+      </p>
     </SectionCard>
   );
 }

@@ -2,7 +2,9 @@ import { requireUser, isAdmin, getOrgContext } from '@/lib/auth/dal';
 import { can } from '@/lib/permissions';
 import { getProfile } from '@/lib/data/profiles';
 import { AppShell } from '@/components/app-shell';
+import { GaFlagListener } from '@/components/consent/ga-flag-listener';
 import { GoogleAnalyticsGated } from '@/components/consent/google-analytics-gated';
+import { getCookieConsentPublicConfig } from '@/lib/consent/admin-config';
 
 export default async function CustomerLayout({
   children,
@@ -26,6 +28,10 @@ export default async function CustomerLayout({
   const profile = await getProfile();
   const userName = profile?.full_name?.trim() || undefined;
 
+  // Deduped against the same call in the root layout via React `cache()`
+  // (src/lib/consent/admin-config.ts) — not a second DB round trip.
+  const cookieConsentAdminConfig = await getCookieConsentPublicConfig();
+
   return (
     <AppShell
       userEmail={user.email}
@@ -36,7 +42,8 @@ export default async function CustomerLayout({
       showTeam={showTeam}
     >
       {children}
-      <GoogleAnalyticsGated />
+      <GoogleAnalyticsGated mechanismEnabled={cookieConsentAdminConfig.enabled} />
+      <GaFlagListener />
     </AppShell>
   );
 }

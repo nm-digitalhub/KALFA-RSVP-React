@@ -1,13 +1,20 @@
 import Link from 'next/link';
 import { MailCheck } from 'lucide-react';
 
+import { GaFlagListener } from '@/components/consent/ga-flag-listener';
+import { GoogleAnalyticsGated } from '@/components/consent/google-analytics-gated';
+import { getCookieConsentPublicConfig } from '@/lib/consent/admin-config';
+
 export const metadata = { title: 'ההרשמה הצליחה' };
 
 // Post-signup interstitial shown after a successful registration that requires
 // email confirmation. The signup action redirects here instead of showing an
 // inline notice. The actual confirmation happens when the user clicks the email
 // link (handled by /auth/callback). No personal data is passed in the URL.
-export default function SignupSuccessPage() {
+export default async function SignupSuccessPage() {
+  // Deduped against any other call in this request tree via React `cache()`
+  // (src/lib/consent/admin-config.ts).
+  const cookieConsentAdminConfig = await getCookieConsentPublicConfig();
   return (
     <main className="mx-auto flex min-h-dvh max-w-md flex-col justify-center gap-6 px-6 text-center">
       <div className="flex flex-col items-center gap-3">
@@ -42,6 +49,11 @@ export default function SignupSuccessPage() {
           הרשמה מחדש
         </Link>
       </div>
+      {/* The auth tree carries no analytics by default; this page mounts the
+          consent-gated tag + the flag listener so the sign_up event set by the
+          signup action can fire (once, post-consent only). */}
+      <GoogleAnalyticsGated mechanismEnabled={cookieConsentAdminConfig.enabled} />
+      <GaFlagListener />
     </main>
   );
 }

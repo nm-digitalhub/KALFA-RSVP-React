@@ -3,15 +3,25 @@ import 'server-only';
 import {
   getGa4Client,
   getGa4ConfigStatus,
+  getGa4ChannelGroupId,
   getGa4Property,
+  getGa4StreamId,
 } from '@/lib/analytics/ga4-client';
 import {
   classifyGa4Error,
   fillTrendGaps,
   mapChannels,
   mapCountries,
+  mapDemographic,
   mapDevices,
   mapEvents,
+  mapFunnel,
+  mapBillingModels,
+  mapGenders,
+  mapKalfaChannels,
+  mapLandingPages,
+  mapLeadSources,
+  mapNotFound,
   mapOverview,
   mapQuota,
   mapRealtime,
@@ -22,12 +32,15 @@ import {
 import {
   buildCoreBatchA,
   buildCoreBatchB,
+  buildCoreBatchC,
+  buildCoreBatchD,
   buildRealtimeRequests,
 } from '@/lib/analytics/ga4-requests';
 import type {
   AnalyticsDashboard,
   AnalyticsRange,
   QuotaSnapshot,
+  RealtimeResult,
   RealtimeSnapshot,
   RunReportResponse,
   RunRealtimeReportResponse,
@@ -60,6 +73,7 @@ interface CoreData {
 
 interface RealtimeData {
   snapshot: RealtimeSnapshot;
+  quota: QuotaSnapshot | null;
 }
 
 interface CacheSlot<T> {
@@ -190,16 +204,33 @@ export async function getAnalyticsDashboard(
       geo: notConfigured(),
       devices: notConfigured(),
       events: notConfigured(),
+      funnel: notConfigured(),
+      notFound: notConfigured(),
+      ages: notConfigured(),
+      genders: notConfigured(),
+      interests: notConfigured(),
+      landingPages: notConfigured(),
+      leadSources: notConfigured(),
+      billingModels: notConfigured(),
+      kalfaChannels: notConfigured(),
       coreQuota: null,
     };
   }
 
-  const [a, b] = await Promise.all([
+  const streamId = getGa4StreamId();
+  const channelGroupId = getGa4ChannelGroupId();
+  const [a, b, c, dBatch] = await Promise.all([
     fetchCached(coreSlot(`A:${range}`), CORE_TTL_MS, () =>
-      fetchCoreBatch(buildCoreBatchA(range)),
+      fetchCoreBatch(buildCoreBatchA(range, streamId)),
     ),
     fetchCached(coreSlot(`B:${range}`), CORE_TTL_MS, () =>
-      fetchCoreBatch(buildCoreBatchB(range)),
+      fetchCoreBatch(buildCoreBatchB(range, streamId)),
+    ),
+    fetchCached(coreSlot(`C:${range}`), CORE_TTL_MS, () =>
+      fetchCoreBatch(buildCoreBatchC(range, streamId)),
+    ),
+    fetchCached(coreSlot(`D:${range}`), CORE_TTL_MS, () =>
+      fetchCoreBatch(buildCoreBatchD(range, streamId, channelGroupId)),
     ),
   ]);
 
@@ -213,33 +244,52 @@ export async function getAnalyticsDashboard(
     topPages: sectioned(a, (d) => mapTopPages(d.responses[2])),
     channels: sectioned(a, (d) => mapChannels(d.responses[3])),
     sources: sectioned(a, (d) => mapSources(d.responses[4])),
-    // Batch B report order contract: [geo, devices, events]
+    // Batch B report order contract: [geo, devices, events, funnel, notFound]
     geo: sectioned(b, (d) => mapCountries(d.responses[0])),
     devices: sectioned(b, (d) => mapDevices(d.responses[1])),
     events: sectioned(b, (d) => mapEvents(d.responses[2])),
-    coreQuota: a.data?.quota ?? b.data?.quota ?? null,
+    funnel: sectioned(b, (d) => mapFunnel(d.responses[3])),
+    notFound: sectioned(b, (d) => mapNotFound(d.responses[4])),
+    // Batch C report order contract: [ages, genders, interests, landingPages]
+    ages: sectioned(c, (d) => mapDemographic(d.responses[0])),
+    genders: sectioned(c, (d) => mapGenders(d.responses[1])),
+    interests: sectioned(c, (d) => mapDemographic(d.responses[2])),
+    landingPages: sectioned(c, (d) => mapLandingPages(d.responses[3])),
+    // Batch D report order contract: [leadSources, billingModels, kalfaChannels?]
+    leadSources: sectioned(dBatch, (d) => mapLeadSources(d.responses[0])),
+    billingModels: sectioned(dBatch, (d) => mapBillingModels(d.responses[1])),
+    kalfaChannels: channelGroupId
+      ? sectioned(dBatch, (d) => mapKalfaChannels(d.responses[2]))
+      : notConfigured(),
+    coreQuota: a.data?.quota ?? b.data?.quota ?? c.data?.quota ?? dBatch.data?.quota ?? null,
   };
 }
 
-export async function getRealtimeSnapshot(): Promise<Sectioned<RealtimeSnapshot>> {
+export async function getRealtimeSnapshot(): Promise<RealtimeResult> {
   await requireAdmin();
   if (!(await hasPlatformPermission('view_customer_data'))) {
-    return { state: 'error', data: null, fetchedAt: null };
+    return { section: { state: 'error', data: null, fetchedAt: null }, quota: null };
   }
   const config = await getGa4ConfigStatus();
-  if (!config.ok) return notConfigured();
+  if (!config.ok) return { section: notConfigured(), quota: null };
 
   const outcome = await fetchCached(realtimeSlot, REALTIME_TTL_MS, async () => {
     const client = getGa4Client();
     const property = getGa4Property();
     const [active, events, locations] = await Promise.all(
-      buildRealtimeRequests().map(async (request) => {
+      buildRealtimeRequests(getGa4StreamId()).map(async (request) => {
         const [response] = await client.runRealtimeReport({ property, ...request });
         return response as RunRealtimeReportResponse;
       }),
     );
-    return { snapshot: mapRealtime(active, events, locations) };
+    return {
+      snapshot: mapRealtime(active, events, locations),
+      quota: mapQuota(active?.propertyQuota),
+    };
   });
 
-  return sectioned(outcome, (d) => d.snapshot);
+  return {
+    section: sectioned(outcome, (d) => d.snapshot),
+    quota: outcome.data?.quota ?? null,
+  };
 }

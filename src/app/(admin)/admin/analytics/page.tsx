@@ -1,4 +1,4 @@
-import { Clock3, Eye, Gauge, TrendingUp, UserPlus, Users } from 'lucide-react';
+import { Banknote, Clock3, Eye, Gauge, TrendingUp, UserPlus, Users } from 'lucide-react';
 
 import { EmptyState, PageHeading, formatDateTime } from '../_components';
 import { AutoRefresh } from './_auto-refresh';
@@ -6,10 +6,12 @@ import { RangePicker } from './_range-picker';
 import {
   DataTable,
   EngagementMeter,
+  FunnelCard,
   NotConfiguredCard,
   QuotaBanner,
   RealtimeCard,
   SectionCard,
+  StatDelta,
   StatTile,
 } from './_sections';
 import { TrendChart } from './_trend-chart';
@@ -19,6 +21,10 @@ import {
   getAnalyticsDashboard,
   getRealtimeSnapshot,
 } from '@/lib/data/admin/analytics';
+import { formatCurrency } from '@/lib/format';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { getCookieConsentPublicConfig } from '@/lib/consent/admin-config';
+import { CONSENT_REVISION } from '@/lib/consent/cookie-consent-config';
 
 // Admin GA4 dashboard. Server component end-to-end except the trend chart and
 // the refresh timer; every GA4 call happens in the DAL behind requireAdmin +
@@ -33,9 +39,10 @@ export default async function AdminAnalyticsPage({
   searchParams: Promise<{ range?: string | string[] }>;
 }) {
   const range = parseRange((await searchParams).range);
-  const [dash, realtime] = await Promise.all([
+  const [dash, realtime, consent] = await Promise.all([
     getAnalyticsDashboard(range),
     getRealtimeSnapshot(),
+    getCookieConsentPublicConfig(),
   ]);
 
   if (dash === null) {
@@ -57,7 +64,8 @@ export default async function AdminAnalyticsPage({
   }
 
   const rangeLabel = RANGE_OPTIONS.find((o) => o.value === range)?.label ?? range;
-  const overview = dash.overview.data;
+  const cur = dash.overview.data?.current;
+  const prev = dash.overview.data?.previous;
   // Exhaustive: the banner shows only when SOME section is quota-blocked.
   const quotaHit = [
     dash.overview,
@@ -68,8 +76,21 @@ export default async function AdminAnalyticsPage({
     dash.geo,
     dash.devices,
     dash.events,
-    realtime,
+    dash.funnel,
+    dash.notFound,
+    dash.ages,
+    dash.genders,
+    dash.interests,
+    dash.landingPages,
+    dash.leadSources,
+    dash.billingModels,
+    dash.kalfaChannels,
+    realtime.section,
   ].some((s) => s.state === 'quota_exhausted');
+
+  const signalsEmptyText =
+    'אין עדיין נתונים — דמוגרפיה מגיעה מ-Google Signals, נצברת ממשתמשים שהסכימו להתאמה אישית ' +
+    'וכפופה לסף פרטיות של Google.';
 
   return (
     <div className="space-y-8">
@@ -80,28 +101,91 @@ export default async function AdminAnalyticsPage({
 
       {quotaHit ? <QuotaBanner quota={dash.coreQuota} /> : null}
 
+      {/* v4: the collection-context strip — the numbers below only accrue
+          while the consent mechanism is on and categories are offered. */}
+      {!consent.enabled ? (
+        <Alert variant="destructive">
+          <AlertTitle>מנגנון ההסכמה כבוי — אין איסוף נתונים חדש</AlertTitle>
+          <AlertDescription>
+            כל עוד המנגנון כבוי (ניתן להפעילו במסך ״הסכמת עוגיות״), אף מבקר אינו
+            נמדד והנתונים בדשבורד אינם מתעדכנים.
+          </AlertDescription>
+        </Alert>
+      ) : !consent.analyticsEnabled || !consent.marketingEnabled ? (
+        <Alert>
+          <AlertTitle>חלק מקטגוריות ההסכמה מושבתות</AlertTitle>
+          <AlertDescription>
+            אנליטיקה: {consent.analyticsEnabled ? 'מוצעת' : 'מושבתת — אין מדידה'} ·
+            שיווק: {consent.marketingEnabled ? 'מוצע' : 'מושבת'} · גרסת הסכמה
+            בפועל: {CONSENT_REVISION + consent.revisionBump}
+          </AlertDescription>
+        </Alert>
+      ) : (
+        <p className="text-xs text-muted-foreground">
+          מנגנון הסכמה פעיל · אנליטיקה ושיווק מוצעות · גרסת הסכמה בפועל:{' '}
+          {CONSENT_REVISION + consent.revisionBump}
+        </p>
+      )}
+
       <SectionCard title={`מדדים מרכזיים — ${rangeLabel}`} section={dash.overview}>
-        <div className="grid grid-cols-2 gap-4 lg:grid-cols-3">
-          <StatTile label="משתמשים פעילים" value={overview?.activeUsers ?? 0} icon={Users} />
-          <StatTile label="משתמשים חדשים" value={overview?.newUsers ?? 0} icon={UserPlus} />
-          <StatTile label="ביקורים" value={overview?.sessions ?? 0} icon={TrendingUp} />
-          <StatTile label="צפיות בעמודים" value={overview?.pageViews ?? 0} icon={Eye} />
+        <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+          <StatTile
+            label="משתמשים פעילים"
+            value={cur?.activeUsers ?? 0}
+            icon={Users}
+            extra={<StatDelta current={cur?.activeUsers ?? 0} previous={prev?.activeUsers} />}
+          />
+          <StatTile
+            label="משתמשים חדשים"
+            value={cur?.newUsers ?? 0}
+            icon={UserPlus}
+            extra={<StatDelta current={cur?.newUsers ?? 0} previous={prev?.newUsers} />}
+          />
+          <StatTile
+            label="ביקורים"
+            value={cur?.sessions ?? 0}
+            icon={TrendingUp}
+            extra={<StatDelta current={cur?.sessions ?? 0} previous={prev?.sessions} />}
+          />
+          <StatTile
+            label="צפיות בעמודים"
+            value={cur?.pageViews ?? 0}
+            icon={Eye}
+            extra={<StatDelta current={cur?.pageViews ?? 0} previous={prev?.pageViews} />}
+          />
           <StatTile
             label="משך ביקור ממוצע"
-            value={formatSeconds(overview?.averageSessionDuration ?? 0)}
+            value={formatSeconds(cur?.averageSessionDuration ?? 0)}
             icon={Clock3}
+            extra={
+              <StatDelta
+                current={cur?.averageSessionDuration ?? 0}
+                previous={prev?.averageSessionDuration}
+              />
+            }
+          />
+          <StatTile
+            label="הכנסות (purchase)"
+            value={formatCurrency(cur?.purchaseRevenue ?? 0)}
+            icon={Banknote}
+            extra={
+              <StatDelta current={cur?.purchaseRevenue ?? 0} previous={prev?.purchaseRevenue} />
+            }
           />
           <StatTile
             label="שיעור מעורבות"
             value={
-              overview?.engagementRate === null || overview === null
+              cur?.engagementRate === null || cur === undefined
                 ? '—'
-                : `${Math.round((overview?.engagementRate ?? 0) * 100)}%`
+                : `${Math.round((cur?.engagementRate ?? 0) * 100)}%`
             }
             icon={Gauge}
-            extra={<EngagementMeter rate={overview?.engagementRate ?? null} />}
+            extra={<EngagementMeter rate={cur?.engagementRate ?? null} />}
           />
         </div>
+        <p className="text-xs text-muted-foreground">
+          ההשוואה היא מול תקופה קודמת שוות-אורך ({rangeLabel} שלפני הטווח הנבחר).
+        </p>
       </SectionCard>
 
       <div className="grid gap-8 lg:grid-cols-3">
@@ -118,6 +202,56 @@ export default async function AdminAnalyticsPage({
       </div>
 
       <div className="grid gap-8 lg:grid-cols-2">
+        <FunnelCard section={dash.funnel} />
+
+        <SectionCard title="לידים לפי מקור" section={dash.leadSources}>
+          <DataTable
+            headers={['מקור הליד', 'פניות']}
+            rows={(dash.leadSources.data ?? []).map((r) => ({
+              key: r.key,
+              cells: [r.label, r.count],
+            }))}
+            emptyText="אין עדיין לידים בטווח הזה."
+          />
+        </SectionCard>
+
+        <SectionCard title="הכנסות לפי מודל חיוב" section={dash.billingModels}>
+          <DataTable
+            headers={['מודל חיוב', 'הכנסות']}
+            rows={(dash.billingModels.data ?? []).map((r) => ({
+              key: r.key,
+              cells: [r.label, formatCurrency(r.revenue)],
+            }))}
+            emptyText="אין עדיין חיובים בטווח הזה — הפילוח יתמלא מגמר-החשבון הראשון."
+          />
+        </SectionCard>
+
+        <SectionCard title="ערוצי KALFA" section={dash.kalfaChannels}>
+          <DataTable
+            headers={['ערוץ', 'ביקורים']}
+            rows={(dash.kalfaChannels.data ?? []).map((r) => ({
+              key: r.key,
+              cells: [r.label, r.count],
+            }))}
+            emptyText="אין נתוני ערוצים מותאמים בטווח הזה עדיין."
+          />
+          <p className="text-xs text-muted-foreground">
+            ערוצי ההפצה המותאמים (וואטסאפ / QR / שיחה) יתמלאו כשקישורים עם UTM
+            ייצאו בפועל.
+          </p>
+        </SectionCard>
+
+        <SectionCard title="עמודי נחיתה" section={dash.landingPages}>
+          <DataTable
+            headers={['עמוד נחיתה', 'ביקורים']}
+            rows={(dash.landingPages.data ?? []).map((r) => ({
+              key: r.landingPage,
+              cells: [r.landingPage, r.sessions],
+            }))}
+            emptyText="אין נתוני עמודי נחיתה בטווח הזה עדיין."
+          />
+        </SectionCard>
+
         <SectionCard title="עמודים מובילים" section={dash.topPages}>
           <DataTable
             headers={['עמוד', 'כותרת', 'צפיות']}
@@ -126,6 +260,17 @@ export default async function AdminAnalyticsPage({
               cells: [r.pagePath, r.pageTitle, r.views],
             }))}
             emptyText="אין נתוני עמודים בטווח הזה עדיין."
+          />
+        </SectionCard>
+
+        <SectionCard title="קישורים שבורים (404)" section={dash.notFound}>
+          <DataTable
+            headers={['עמוד', 'צפיות']}
+            rows={(dash.notFound.data ?? []).map((r) => ({
+              key: r.pagePath,
+              cells: [r.pagePath, r.views],
+            }))}
+            emptyText="לא נרשמו צפיות בעמודי 404 בטווח הזה — אין קישורים שבורים ידועים."
           />
         </SectionCard>
 
@@ -185,6 +330,39 @@ export default async function AdminAnalyticsPage({
           <p className="text-xs text-muted-foreground">
             ★ = נספרו אירועי-מפתח לאירוע זה בטווח הנבחר
           </p>
+        </SectionCard>
+
+        <SectionCard title="גילאים" section={dash.ages}>
+          <DataTable
+            headers={['קבוצת גיל', 'משתמשים פעילים']}
+            rows={(dash.ages.data ?? []).map((r) => ({
+              key: r.key,
+              cells: [r.label, r.activeUsers],
+            }))}
+            emptyText={signalsEmptyText}
+          />
+        </SectionCard>
+
+        <SectionCard title="מגדר" section={dash.genders}>
+          <DataTable
+            headers={['מגדר', 'משתמשים פעילים']}
+            rows={(dash.genders.data ?? []).map((r) => ({
+              key: r.key,
+              cells: [r.label, r.activeUsers],
+            }))}
+            emptyText={signalsEmptyText}
+          />
+        </SectionCard>
+
+        <SectionCard title="תחומי עניין" section={dash.interests}>
+          <DataTable
+            headers={['תחום עניין', 'משתמשים פעילים']}
+            rows={(dash.interests.data ?? []).map((r) => ({
+              key: r.key,
+              cells: [r.label, r.activeUsers],
+            }))}
+            emptyText={signalsEmptyText}
+          />
         </SectionCard>
       </div>
 

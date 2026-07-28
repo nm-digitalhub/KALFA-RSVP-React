@@ -1,8 +1,9 @@
 'use client';
 
-import { useActionState } from 'react';
+import { useActionState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 
+import { sendBusinessEvent } from '@/components/consent/send-ga-event';
 import { INQUIRY_TOPICS } from '@/lib/validation/inquiries';
 import {
   FieldError,
@@ -11,7 +12,23 @@ import {
   SubmitButton,
 } from '@/components/forms';
 import { Input } from '@/components/ui/input';
-import { submitCallbackAction, submitContactAction } from './actions';
+import {
+  submitCallbackAction,
+  submitContactAction,
+  type InquiryFormState,
+} from './actions';
+
+// generate_lead — fired exactly once per successful REAL submission (the
+// server sets `leadSource` only when a lead was actually persisted; the
+// honeypot's fake success carries no flag, so bots never become conversions).
+function useLeadEvent(state: InquiryFormState) {
+  const fired = useRef<InquiryFormState>(null);
+  useEffect(() => {
+    if (!state?.leadSource || fired.current === state) return;
+    fired.current = state;
+    sendBusinessEvent({ name: 'generate_lead', params: { lead_source: state.leadSource } });
+  }, [state]);
+}
 
 // Both public inquiry forms. Server-validated (Zod in the actions); the
 // required/type attributes here are UX hints only. The "company" field is a
@@ -75,6 +92,7 @@ export function ContactForm({
   defaultName?: string;
 }) {
   const [state, formAction] = useActionState(submitContactAction, null);
+  useLeadEvent(state);
 
   return (
     <form action={formAction} className="relative space-y-4">
@@ -134,6 +152,7 @@ export function ContactForm({
 
 export function CallbackForm({ defaultTopic }: { defaultTopic?: string }) {
   const [state, formAction] = useActionState(submitCallbackAction, null);
+  useLeadEvent(state);
 
   return (
     <form action={formAction} className="relative space-y-4">
