@@ -105,9 +105,9 @@
   },
   "allowScripts": {
     "esbuild@0.28.1": true,
-    "puppeteer@25.3.0": true,
     "sharp@0.35.3": true,
-    "unrs-resolver@1.12.2": true
+    "unrs-resolver@1.12.2": true,
+    "puppeteer@25.4.0": true
   },
   "overrides": {
     "sharp": "^0.35.3",
