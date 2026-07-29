@@ -129,6 +129,57 @@ Never hand-edit `agent_configs/*.json` and never `PATCH` the agent directly. The
 
 Follow `docs/voice-agent/elevenlabs-json-reference.md` §6 for every change: `agents pull --update` before editing, `tools add`/`tools push` to register a client tool (an inline `tools[]` entry alone is silently dropped), and verification by transcribing the actual call audio — the agent's own transcript hides bugs. The production bridge scenario is `RSVPAgent` on the `kalfa-rsvp` application (rule `OutCallAgent`, promoted 2026-07-20); deploy it only via `voxengine-ci upload`, and never touch the DTMF `OutCall` rule (1494311) with the bridge.
 
+## Claude Code `/checkup` policy
+
+`/checkup` is a maintenance and configuration audit for Claude Code. It is not an application health check and does not replace type-checking, linting, tests, builds, dependency-boundary checks, runtime verification, or deployment verification.
+
+KALFA is an existing production application. Treat every `/checkup` recommendation as a proposal requiring evidence and explicit approval.
+
+When running `/checkup`:
+
+- Start in read-only audit mode.
+- Do not modify files, settings, hooks, permissions, plugins, MCP servers, skills, or installed versions until the user approves the exact proposed change.
+- Preserve all behavioral and architectural guardrails.
+- Remove only true duplication. Repeated rules that intentionally reinforce security, accessibility, RTL, architecture, validation, deployment, or production-safety requirements are not presumed redundant.
+- Do not weaken or remove rules merely to reduce token or context usage.
+- Do not replace precise project rules with broader summaries that lose requirements, exceptions, scope, or verification steps.
+- Do not move always-applicable rules out of the root `CLAUDE.md`.
+- Move content to a nested `CLAUDE.md` only when its scope is genuinely limited to that directory subtree.
+- Move content to a Skill only when it is an on-demand workflow or specialized reference that does not need to be loaded for ordinary work.
+- Before deduplicating local and checked-in memory, compare their scope, precedence, wording, exceptions, and intended audience.
+- Do not disable a hook solely because it is slow. First identify its purpose, measured cost, invocation frequency, failure behavior, and the protection lost by disabling it.
+- Do not remove an MCP server, plugin, agent, or Skill solely because recent usage is low. Confirm that it is obsolete, replaceable, or unrelated to active project workflows.
+- Do not enable auto mode or broaden permissions automatically. Permission changes require explicit user approval and must remain least-privilege.
+- Pre-approve only commands that are demonstrably read-only, narrowly scoped, and free of network, credential, process-control, deployment, database-write, or filesystem-write side effects.
+- Do not update Claude Code or any plugin as part of the same change set as instruction restructuring unless separately approved.
+- Keep configuration cleanup, instruction restructuring, permission changes, and version updates as separate reviewable changes.
+- Preserve Git history and make every accepted change easy to inspect and revert.
+- After approved changes, show the exact diff and verify that no mandatory rule was lost.
+
+A `/checkup` report must classify each recommendation as one of:
+
+- safe deduplication
+- scope correction
+- candidate Skill extraction
+- performance optimization
+- obsolete integration
+- permission change
+- version update
+- no action
+
+For every recommendation, report:
+
+- current state
+- evidence
+- proposed change
+- expected benefit
+- behavioral or security risk
+- affected files or settings
+- rollback method
+- whether explicit approval is required
+
+Never interpret `/checkup` success as proof that the KALFA application is healthy. Application validation remains governed by the project's existing Definition of Done and required validation gates.
+
 ## Definition Of Done
 
 A task is complete only when:
