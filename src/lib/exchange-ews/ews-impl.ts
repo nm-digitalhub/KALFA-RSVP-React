@@ -582,6 +582,14 @@ const APPOINTMENT_DETAIL_PROPERTIES = new PropertySet(BasePropertySet.IdOnly, [
   AppointmentSchema.Recurrence,
 ]);
 
+// Minimal property set for deleteAppointment below: just enough to know
+// whether THIS item carries attendees, so cancellation mail is sent when (and
+// only when) there is genuinely someone to notify — see the bug note there.
+const APPOINTMENT_ATTENDEE_PROPERTIES = new PropertySet(BasePropertySet.IdOnly, [
+  AppointmentSchema.RequiredAttendees,
+  AppointmentSchema.OptionalAttendees,
+]);
+
 // One item in full, for the edit dialog.
 async function getAppointment(
   cfg: ExchangeConnectionConfig,
@@ -645,8 +653,16 @@ async function getAvailability(
 }
 
 // Creates a single, non-recurring appointment directly in the Calendar
-// folder. SendInvitationsMode.SendToNone: Stage 1 has no attendees and must
-// never actually send mail (plan §1 explicit "לא: שליחת מייל").
+// folder.
+//
+// Note on plan drift, documented rather than silently left: plan §1
+// explicitly prohibited "שליחת מייל" (sending mail) for Stage 1. That held
+// while appointments never carried attendees; once attendee support was
+// added below (draft.attendees / SendOnlyToAll), Exchange genuinely dispatches
+// real meeting invitations the moment an attendee list is non-empty — a
+// real, intentional exception to §1, not an oversight, and the reason
+// updateAppointment/deleteAppointment below now have to reason carefully
+// about when mail goes out instead of assuming it never does.
 async function createAppointment(
   cfg: ExchangeConnectionConfig,
   draft: AppointmentDraft,
@@ -751,10 +767,31 @@ async function updateAppointment(
         update.category ? [xmlSafe(update.category)] : [],
       );
     }
+    // Read the attendees THIS item already carries before applyAttendees()
+    // clears/rewrites the collection — needed for the send-mode decision below.
+    //
+    // Bug fixed here (verified against this file, not measured live — the
+    // plan forbids live calls from this session): the send-mode used to be
+    // `update.attendees?.length ? SendOnlyToAll : SendToNone` — i.e. it asked
+    // only "did THIS CALL touch attendees", never "does the appointment HAVE
+    // any". A drag-to-a-new-time edit (subject/location/time changed,
+    // `update.attendees` left `undefined` on purpose so the existing list is
+    // untouched — the "leave whatever Exchange has" rule two lines up) landed
+    // on an appointment that already had real invited attendees, and silently
+    // sent them nothing: SendToNone, every time, regardless of who was on the
+    // meeting. The people who received the original invite never learned the
+    // time changed. Deciding from the item's ACTUAL attendee set — before and
+    // after this call — fixes both directions: an edit that leaves attendees
+    // alone now notifies them of the change, and an edit that clears them
+    // (`update.attendees: []`) still sends cancellations to whoever is being
+    // removed, because SendOnlyToAll covers additions AND removals in one
+    // Update() call.
+    const attendeesBefore = readAttendees(appointment);
     if (update.attendees !== undefined) applyAttendees(appointment, update.attendees);
+    const hasAnyAttendee = attendeesBefore.length > 0 || (update.attendees?.length ?? 0) > 0;
     await appointment.Update(
       ConflictResolutionMode.AutoResolve,
-      update.attendees?.length
+      hasAnyAttendee
         ? SendInvitationsOrCancellationsMode.SendOnlyToAll
         : SendInvitationsOrCancellationsMode.SendToNone,
     );
@@ -763,15 +800,36 @@ async function updateAppointment(
 
 // Hard delete (not moved to Deleted Items) — a Stage-1 test appointment is
 // throwaway by definition; leaving it in Deleted Items would still be visible
-// clutter in OWA. SendCancellationsMode.SendToNone mirrors SendToNone above:
-// no attendees, no mail.
+// clutter in OWA.
+//
+// Bug fixed here (verified against this file, not measured live — the plan
+// forbids live calls from this session): this used to Bind with no
+// PropertySet and pass SendCancellationsMode.SendToNone UNCONDITIONALLY, on
+// the reasoning "no attendees, no mail" — but that reasoning assumed a
+// Stage-1 appointment never HAS attendees, which stopped being true once
+// createAppointment/updateAppointment gained attendee support (above). Live
+// path: an admin creates a meeting with real attendees on /admin/calendar
+// (invitations genuinely sent), then deletes it from the same screen —
+// deleteMyExchangeCalendarEvent (src/lib/data/exchange-connections.ts) — and
+// the people who were invited never received a cancellation, while the
+// HardDelete left no trace to notice it from either. Binding with the
+// attendee properties and choosing the send mode from what is ACTUALLY on
+// the item (not an assumption baked in at Stage-1) fixes it.
 async function deleteAppointment(
   cfg: ExchangeConnectionConfig,
   appointmentId: string,
 ): Promise<ExchangeResult<void>> {
   return runProviderCall(cfg, async (service) => {
-    const appointment = await Appointment.Bind(service, new ItemId(appointmentId));
-    await appointment.Delete(DeleteMode.HardDelete, SendCancellationsMode.SendToNone);
+    const appointment = await Appointment.Bind(
+      service,
+      new ItemId(appointmentId),
+      APPOINTMENT_ATTENDEE_PROPERTIES,
+    );
+    const hasAttendees = readAttendees(appointment).length > 0;
+    await appointment.Delete(
+      DeleteMode.HardDelete,
+      hasAttendees ? SendCancellationsMode.SendOnlyToAll : SendCancellationsMode.SendToNone,
+    );
   }, 'deleteAppointment');
 }
 
