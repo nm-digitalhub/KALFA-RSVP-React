@@ -44,7 +44,11 @@ echo "$C" | grep -Eiq '(^|[;&| ])psql([ ]|$)' && block "psql is Tier-2 (prod DB)
 # still caught server-side. Nothing to regex here beyond the CLI itself.
 
 # --- Customer-facing / money scripts (Tier-2 by definition) -----------------
-echo "$C" | grep -Eiq 'send-one-invite|send-email-file|bridge-call|whatsapp-send|deploy-.*-template' \
+# Kept identical to guard.sh's pattern — see that file's comment for why
+# `send-email` (not just `send-email-file`) is matched: it closes the same
+# future-CLI-verb hole here too. Patching only one of the two hooks would
+# leave this tier's Bash(npm run fleet:agent:*) allow rule exposed.
+echo "$C" | grep -Eiq 'send-one-invite|send-email|send-mail|email-send|sendmail|bridge-call|whatsapp-send|deploy-.*-template' \
   && block "customer messaging / calling scripts are Tier-2"
 echo "$C" | grep -Eiq 'sumit' && block "SUMIT / billing scripts are Tier-2"
 

@@ -35,14 +35,29 @@ block() {
 C="$(printf '%s' "$CMD" | tr '\n' ' ')"
 
 # --- Database: no Supabase CLI, no psql, no migration/DDL paths -------------
-echo "$C" | grep -Eiq '(^|[;&| ])supabase([ ]|$)' && block "supabase CLI is Tier-2 (prod DB)"
+# Allow only the harmless local CLI version check.
+if echo "$C" | grep -Eiq '(^|[;&| ])([^ ]*/)?supabase[ ]+--version([ ]|$)'; then
+  :
+elif echo "$C" | grep -Eiq '(^|[;&| ])([^ ]*/)?supabase([ ]|$)'; then
+  block "supabase CLI is Tier-2 (prod DB)"
+fi
 echo "$C" | grep -Eiq '(^|[;&| ])psql([ ]|$)' && block "psql is Tier-2 (prod DB)"
 # Read-only SQL door: the fleet CLI 'sql' subcommand enforces read-only at the
 # connection level; any OTHER attempt to smuggle SQL mutations through it is
 # still caught server-side. Nothing to regex here beyond the CLI itself.
 
 # --- Customer-facing / money scripts (Tier-2 by definition) -----------------
-echo "$C" | grep -Eiq 'send-one-invite|send-email-file|bridge-call|whatsapp-send|deploy-.*-template' \
+# `send-email` (not `send-email-file`) is deliberate: matched as a substring,
+# it still catches send-email-file, but also any FUTURE CLI verb shaped like
+# send-email/send-mail/email-send/sendmail. Before this, the pattern matched
+# only the literal script name — a new verb such as
+# `npm run fleet:agent -- send-email --to x` would have passed this hook
+# untouched (Bash(npm run fleet:agent:*) is allowed at every tier) and opened
+# external send to all enabled roles with no permission file edited. Not a
+# measured breach (no such verb exists in fleet-agent-cli.ts today) — closed
+# pre-emptively because adding the verb IS the permission decision, exactly
+# like `git worktree add` below (tier1.settings.json's own $comment).
+echo "$C" | grep -Eiq 'send-one-invite|send-email|send-mail|email-send|sendmail|bridge-call|whatsapp-send|deploy-.*-template' \
   && block "customer messaging / calling scripts are Tier-2"
 echo "$C" | grep -Eiq 'sumit' && block "SUMIT / billing scripts are Tier-2"
 
@@ -68,7 +83,23 @@ echo "$C" | grep -Eq '(^|[;&| ])(python3?|perl|ruby)([ ]|$)' && block "generic i
 echo "$C" | grep -Eq '(^|[;&| ])(eval|source)([ ]|$)' && block "shell eval/source is forbidden"
 
 # --- Secrets / sensitive files ----------------------------------------------
-echo "$C" | grep -Eq '\.env(\.|[ ]|$)|\.token\.env|vox_ci_credentials' && block "secret files are off-limits"
+# The fleet CLI invocation that tier0 and tier1 EXPLICITLY allow —
+# `node --env-file=.env.local dist/fleet-agent-cli.cjs …` — carries `.env.` in
+# its own command string, so this scan blocked a command the allow list grants.
+# The rule could therefore never fire: measured 18 denials (chief-of-staff 9,
+# ops-monitor 9) before this line existed. Strip that ONE exact token pair
+# before scanning; it is not a hole, verified against bypass attempts —
+# `… fleet-agent-cli.cjs poll; cat .env.local` and
+# `cat --env-file=.env.local dist/fleet-agent-cli.cjs .env.local` both still
+# block, because what remains after the strip still contains `.env.`.
+# The character class is deliberately BROAD: the old `\.env(\.|[ ]|$)` matched
+# `.env.local` and a bare `.env`, but NOT `.env*` or `.env"` — so `cat .env*`,
+# `head .env*`, `grep -r KEY .env*` and `find . -name "*.env"` all walked
+# straight through (measured 2026-07-29). That was survivable only while no
+# read utility was allowed; it became a live hole the moment cat/head/grep/find
+# were granted below, which is why the two changes landed together.
+C_SECRET="${C//--env-file=.env.local dist\/fleet-agent-cli.cjs/}"
+echo "$C_SECRET" | grep -Eq '\.env($|[^A-Za-z0-9_-])|\.token\.env|vox_ci_credentials' && block "secret files are off-limits"
 echo "$C" | grep -Eq 'agent_configs/' && block "agent_configs is managed only via the documented ElevenLabs workflow"
 
 # --- Network egress beyond the allowed CLIs ---------------------------------

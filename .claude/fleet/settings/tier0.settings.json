@@ -34,7 +34,19 @@
       "Bash(date:*)",
       "Bash(ls:*)",
       "Bash(wc:*)",
-      "Bash(rg:*)"
+      "Bash(rg:*)",
+      "Bash(grep:*)",
+      "Bash(cat:*)",
+      "Bash(head:*)",
+      "Bash(tail:*)",
+      "Bash(sed:*)",
+      "Bash(awk:*)",
+      "Bash(find:*)",
+      "Bash(du:*)",
+      "Bash(ps:*)",
+      "Bash(which:*)",
+      "Bash(pm2 list)",
+      "Bash(pm2 show:*)"
     ],
     "deny": [
       "Read(//var/www/vhosts/kalfa.me/beta/.env*)",
@@ -88,7 +100,9 @@
       "Bash(sh -c:*)",
       "Bash(python:*)",
       "Bash(python3:*)",
-      "Bash(crontab:*)"
+      "Bash(crontab:*)",
+      "Bash(env:*)",
+      "Bash(printenv:*)"
     ]
   },
   "hooks": {
