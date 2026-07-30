@@ -94,6 +94,17 @@ module.exports = {
     // triggered by hand minutes later; the next scheduled run was 02:30, so the
     // whole fleet would otherwise have been mute until morning.
     //
+    // ~/.supabase/bin is declared for exactly the same reason, added
+    // 2026-07-29. The Tier-2 `main` role's only live-DB door is
+    // `supabase db query --linked`, and the CLI installs to ~/.supabase/bin —
+    // also outside the default path. Measured before this line existed:
+    // `env -i PATH=<the four directories above> supabase --version` exits 127
+    // (control: `jq --version` exits 0 in the same environment), so the door
+    // answered "command not found" on every attempt and — like the failure
+    // above — reported nothing. It needs no environment of its own: the CLI
+    // authenticates from ~/.supabase/access-token, verified by running
+    // `supabase projects list` under `env -i` with only PATH and HOME set.
+    //
     // The lesson is the reason this file exists: an inherited environment is
     // not a dependency you can scrub without declaring what was in it.
     {
@@ -105,7 +116,7 @@ module.exports = {
       env: {
         NODE_ENV: 'production',
         TZ: 'Asia/Jerusalem',
-        PATH: '/var/www/vhosts/kalfa.me/.local/bin:/usr/local/bin:/usr/bin:/bin',
+        PATH: '/var/www/vhosts/kalfa.me/.local/bin:/var/www/vhosts/kalfa.me/.supabase/bin:/usr/local/bin:/usr/bin:/bin',
       },
     },
   ],

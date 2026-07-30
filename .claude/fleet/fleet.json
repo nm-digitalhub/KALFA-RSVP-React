@@ -10,6 +10,7 @@
     "smoke-test": {
       "enabled": true,
       "auto_ack": true,
+      "reactive": ["goal_due"],
       "tier": 0,
       "model": "haiku",
       "timeout_minutes": 5,
@@ -17,6 +18,7 @@
     },
     "ops-monitor": {
       "enabled": true,
+      "reactive": ["owner_direct_request", "goal_due"],
       "tier": 0,
       "model": "haiku",
       "timeout_minutes": 15,
@@ -29,6 +31,7 @@
     },
     "event-health-watcher": {
       "enabled": true,
+      "reactive": ["goal_due"],
       "tier": 0,
       "model": "haiku",
       "timeout_minutes": 15,
@@ -42,7 +45,7 @@
     "$support_drafter_comment": "UNBLOCKED (data source shipped 2026-07-23): contact_messages is the free-text inquiry table. Role reads status='new', draft_reply IS NULL rows (id/topic/message only — no name/email/phone) and writes a proposed reply to draft_reply via `npm run fleet:agent -- draft-reply --id --body` (the CLI's only customer-table write; idempotent on the IS NULL guard). It NEVER emails — a human reviews/sends the draft in /admin/contacts. Prompt: roles/support-drafter.md. Kept enabled:false; ACTIVATION (flip to true) also requires the draft_reply length-cap migration — see roles/support-drafter.md 'הפעלה'.",
     "support-drafter": {
       "enabled": true,
-      "reactive": "contact_messages_new",
+      "reactive": ["contact_messages_new", "goal_due"],
       "tier": 0,
       "model": "sonnet",
       "timeout_minutes": 30,
@@ -59,6 +62,7 @@
     },
     "business-ops": {
       "enabled": true,
+      "reactive": ["goal_due"],
       "tier": 0,
       "model": "sonnet",
       "timeout_minutes": 30,
@@ -72,6 +76,7 @@
     "$main_comment": "Reactive Tier-2 executor for role=main requests (handoff --to main). NO schedule — spawned ONLY by the answer-watcher after the owner answers such a request; the per-request verdict is the authorization. Its only Tier-2 power is supabase db query (guard-tier2.sh). Completion notifies the owner via the CLI complete verb (push + Slack thread + green badge).",
     "main": {
       "enabled": true,
+      "reactive": ["goal_due"],
       "tier": 2,
       "model": "sonnet",
       "timeout_minutes": 45,
@@ -79,6 +84,7 @@
     },
     "chief-of-staff": {
       "enabled": true,
+      "reactive": ["goal_due"],
       "tier": 0,
       "model": "sonnet",
       "timeout_minutes": 20,
@@ -91,6 +97,7 @@
     },
     "marketing-content": {
       "enabled": false,
+      "reactive": ["goal_due"],
       "tier": 0,
       "model": "sonnet",
       "timeout_minutes": 45,
@@ -104,6 +111,7 @@
     "$creative_comment": "Creative fleet — all draft-only (report tier). Kept disabled until docs/marketing/BRAND.md is owner-approved (every creative role reads it as source-of-truth). brand-director is the editor-in-chief gate every other creative draft passes through. lifecycle-copywriter additionally BLOCKED until its compliance gate is filled by israeli-compliance-advisor.",
     "brand-director": {
       "enabled": true,
+      "reactive": ["goal_due"],
       "tier": 0,
       "model": "sonnet",
       "timeout_minutes": 20,
@@ -116,6 +124,7 @@
     },
     "content-seo-strategist": {
       "enabled": true,
+      "reactive": ["goal_due"],
       "tier": 0,
       "model": "sonnet",
       "timeout_minutes": 40,
@@ -128,6 +137,7 @@
     },
     "social-manager": {
       "enabled": true,
+      "reactive": ["goal_due"],
       "tier": 0,
       "model": "sonnet",
       "timeout_minutes": 30,
@@ -140,6 +150,7 @@
     },
     "creative-producer": {
       "enabled": true,
+      "reactive": ["goal_due"],
       "tier": 0,
       "model": "sonnet",
       "timeout_minutes": 45,
@@ -152,6 +163,7 @@
     },
     "lifecycle-copywriter": {
       "enabled": false,
+      "reactive": ["goal_due"],
       "tier": 0,
       "model": "sonnet",
       "timeout_minutes": 30,
@@ -164,6 +176,7 @@
     },
     "qa-runner": {
       "enabled": true,
+      "reactive": ["goal_due"],
       "tier": 1,
       "model": "sonnet",
       "timeout_minutes": 45,
@@ -177,7 +190,7 @@
     "$callback_triage_comment": "Reads the free text of a NEW callback request and extracts ONLY structured availability constraints (not-before / not-after / excluded dates) for the deterministic scheduler. Writes through two narrow CLI verbs (triage-claim / triage-finish) that wrap SECURITY DEFINER RPCs; the fence, lease, attempt ceiling and state machine all live in the database. It never picks a time, never writes to the calendar, and never reads the caller's name or phone. Prompt: roles/callback-triage.md. timeout_minutes is 10 ON PURPOSE — the claim lease is 30 minutes, and a role allowed to run as long as its lease (which is what the 30 its neighbours use would mean) has its work reclaimed mid-run and duplicated. Disabled until the owner enables it.",
     "callback-triage": {
       "enabled": true,
-      "reactive": "callback_requests_pending",
+      "reactive": ["callback_requests_pending", "goal_due"],
       "tier": 0,
       "model": "haiku",
       "timeout_minutes": 10,
@@ -185,6 +198,7 @@
     },
     "dev-engineer": {
       "enabled": false,
+      "reactive": ["goal_due"],
       "tier": 1,
       "model": "fable",
       "timeout_minutes": 90,

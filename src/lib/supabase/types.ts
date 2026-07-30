@@ -1969,6 +1969,57 @@ export type Database = {
           },
         ]
       }
+      fleet_goals: {
+        Row: {
+          body: string
+          closed_at: string | null
+          consecutive_failures: number
+          created_at: string
+          created_by: string | null
+          id: string
+          last_error: string | null
+          next_wake_at: string | null
+          role: string
+          state: Json
+          status: string
+          step_count: number
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          body: string
+          closed_at?: string | null
+          consecutive_failures?: number
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          last_error?: string | null
+          next_wake_at?: string | null
+          role: string
+          state?: Json
+          status?: string
+          step_count?: number
+          title: string
+          updated_at?: string
+        }
+        Update: {
+          body?: string
+          closed_at?: string | null
+          consecutive_failures?: number
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          last_error?: string | null
+          next_wake_at?: string | null
+          role?: string
+          state?: Json
+          status?: string
+          step_count?: number
+          title?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       fleet_request_slack_threads: {
         Row: {
           created_at: string
@@ -4171,6 +4222,96 @@ export type Database = {
           to: "fleet_requests"
           isOneToOne: false
           isSetofReturn: true
+        }
+      }
+      fleet_goal_abandon: {
+        Args: { p_id: string; p_note: string }
+        Returns: string
+      }
+      fleet_goal_close: {
+        Args: {
+          p_id: string
+          p_note?: string
+          p_status: string
+          p_step: number
+        }
+        Returns: string
+      }
+      fleet_goal_create: {
+        Args: { p_body: string; p_role: string; p_title: string }
+        Returns: {
+          body: string
+          closed_at: string | null
+          consecutive_failures: number
+          created_at: string
+          created_by: string | null
+          id: string
+          last_error: string | null
+          next_wake_at: string | null
+          role: string
+          state: Json
+          status: string
+          step_count: number
+          title: string
+          updated_at: string
+        }
+        SetofOptions: {
+          from: "*"
+          to: "fleet_goals"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
+      fleet_goal_pause: {
+        Args: { p_id: string; p_note?: string }
+        Returns: string
+      }
+      fleet_goal_progress: {
+        Args: {
+          p_error?: string
+          p_id: string
+          p_next_wake_at: string
+          p_state: Json
+          p_step: number
+        }
+        Returns: string
+      }
+      fleet_goal_resume: {
+        Args: { p_id: string; p_next_wake_at?: string }
+        Returns: string
+      }
+      fleet_owner_request: {
+        Args: {
+          p_body: string
+          p_kind: string
+          p_role: string
+          p_thread_root?: string
+          p_tier: number
+          p_title: string
+        }
+        Returns: {
+          answer: string | null
+          answered_at: string | null
+          answered_by: string | null
+          body: string
+          consumed_at: string | null
+          created_at: string
+          expires_at: string
+          id: string
+          kind: string
+          payload: Json
+          request_key: string
+          role: string
+          run_id: string | null
+          status: string
+          tier: number
+          title: string
+        }
+        SetofOptions: {
+          from: "*"
+          to: "fleet_requests"
+          isOneToOne: true
+          isSetofReturn: false
         }
       }
       get_event_attendees_public: { Args: { _token: string }; Returns: Json }

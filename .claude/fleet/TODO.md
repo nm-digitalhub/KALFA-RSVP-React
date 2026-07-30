@@ -34,8 +34,10 @@
 
 ## ⚪ מתוכנן (בונה בלי אישור — נשאר כבוי)
 
-- [ ] קבצי תפקידים חסרים (5): event-health-watcher, support-drafter, business-ops,
-      marketing-content, qa-runner, dev-engineer — בפ fleet.json אך בלי `roles/*.md`.
+- [ ] קבצי תפקידים חסרים (2): marketing-content, dev-engineer — ב-fleet.json אך בלי
+      `roles/*.md`. שניהם `enabled:false`, ולכן run-role.sh מסמן אותם `skipped:disabled`
+      לפני שהיעדר הפרומפט בכלל נבדק. (אומת 29.07: event-health-watcher, support-drafter,
+      business-ops ו-qa-runner נכתבו מאז ופועלים — הרשימה כאן מנתה אותם בטעות.)
 - [ ] קטגוריית Slack ייעודית `fleet` + toggle ב-/admin/alerts (כרגע רוכב על `errors`).
 - [ ] בדיקות (tests) ל-fleet_requests RPCs ול-fleet-agent-cli.
 

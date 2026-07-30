@@ -39,6 +39,65 @@ export function parseFleetRoles(raw: unknown): Map<string, boolean> {
   return map;
 }
 
+// The same fleet.json `roles` object, but with the fields /admin/fleet needs to
+// tell the owner WHEN a direct request will actually be seen. Kept beside
+// parseFleetRoles rather than in a second module: fleet.json's shape has one
+// reader here, and a duplicate parser elsewhere would drift the moment the
+// config grows a field.
+//
+// `reactive` is the load-bearing one. A role that names the
+// `owner_direct_request` trigger is spawned by the scheduler within a tick
+// (~60s); a role without it only sees the request on its next scheduled slot;
+// a disabled role never sees it at all. The UI must say which of the three it
+// is, because otherwise "pending" looks identical in all three cases.
+//
+// Always a string[] (never a bare string) — a role can be reactive to more
+// than one trigger at once (e.g. callback-triage already answers
+// callback_requests_pending AND now also advances a persistent goal via
+// goal_due). fleet.json may still write a single string for a role with only
+// one trigger; parseReactive normalizes both shapes so callers never branch
+// on which form was used. Empty array = no reactive trigger, replacing the
+// old `null` sentinel.
+export interface FleetRoleInfo {
+  name: string;
+  enabled: boolean;
+  tier: number;
+  reactive: string[];
+  scheduleSlots: number;
+}
+
+function parseReactive(raw: unknown): string[] {
+  if (typeof raw === 'string') return raw ? [raw] : [];
+  if (Array.isArray(raw)) return raw.filter((entry): entry is string => typeof entry === 'string');
+  return [];
+}
+
+export function parseFleetRoleRegistry(raw: unknown): FleetRoleInfo[] {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+    throw new Error('fleet config is not an object');
+  }
+  const roles = (raw as { roles?: unknown }).roles;
+  if (!roles || typeof roles !== 'object' || Array.isArray(roles)) {
+    throw new Error('fleet config has no roles object');
+  }
+  const out: FleetRoleInfo[] = [];
+  for (const [name, config] of Object.entries(roles)) {
+    // `$`-prefixed keys are inline comments in fleet.json, not roles.
+    if (name.startsWith('$')) continue;
+    if (!config || typeof config !== 'object') continue;
+    const c = config as Record<string, unknown>;
+    const tier = typeof c.tier === 'number' ? c.tier : 0;
+    out.push({
+      name,
+      enabled: c.enabled === true,
+      tier: tier >= 0 && tier <= 2 ? tier : 0,
+      reactive: parseReactive(c.reactive),
+      scheduleSlots: Array.isArray(c.schedule) ? c.schedule.length : 0,
+    });
+  }
+  return out.sort((a, b) => a.name.localeCompare(b.name));
+}
+
 // null = valid; otherwise the error message for fail().
 export function validateRequestRole(roles: Map<string, boolean>, role: string): string | null {
   if (roles.has(role)) return null;

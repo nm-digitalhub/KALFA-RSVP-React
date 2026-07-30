@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   MAIN_HANDOFF_TARGET,
   buildHandoffRequest,
+  parseFleetRoleRegistry,
   parseFleetRoles,
   validateHandoffTarget,
   validateRequestRole,
@@ -31,6 +32,37 @@ describe('parseFleetRoles', () => {
     expect(() => parseFleetRoles([])).toThrow();
     expect(() => parseFleetRoles({})).toThrow();
     expect(() => parseFleetRoles({ roles: 'nope' })).toThrow();
+  });
+});
+
+describe('parseFleetRoleRegistry', () => {
+  it('normalizes reactive to an array regardless of the config shape', () => {
+    const roles = parseFleetRoleRegistry({
+      roles: {
+        'single-string': { enabled: true, tier: 0, reactive: 'goal_due' },
+        'already-array': {
+          enabled: true,
+          tier: 0,
+          reactive: ['callback_requests_pending', 'goal_due'],
+        },
+        'no-trigger': { enabled: true, tier: 0 },
+        // The pre-catalog shape, when a role was hardcoded in the scheduler.
+        'legacy-boolean': { enabled: true, tier: 0, reactive: true },
+      },
+    });
+    const byName = (name: string) => roles.find((r) => r.name === name);
+
+    expect(byName('single-string')?.reactive).toEqual(['goal_due']);
+    expect(byName('already-array')?.reactive).toEqual(['callback_requests_pending', 'goal_due']);
+    expect(byName('no-trigger')?.reactive).toEqual([]);
+    expect(byName('legacy-boolean')?.reactive).toEqual([]);
+  });
+
+  it('drops non-string entries from an array instead of throwing', () => {
+    const roles = parseFleetRoleRegistry({
+      roles: { mixed: { enabled: true, tier: 0, reactive: ['goal_due', 42, null] } },
+    });
+    expect(roles[0]?.reactive).toEqual(['goal_due']);
   });
 });
 

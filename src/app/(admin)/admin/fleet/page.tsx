@@ -10,7 +10,9 @@ import {
 } from '@/components/ui/table';
 import { Badge, type BadgeVariant } from '@/components/ui/badge';
 import {
+  listFleetGoals,
   listFleetRequestHistory,
+  listFleetRoles,
   listPendingFleetRequests,
 } from '@/lib/data/admin/fleet';
 import {
@@ -20,7 +22,7 @@ import {
   formatDateTime,
   parsePageParam,
 } from '../_components';
-import { PendingRequestCard } from './fleet-client';
+import { ComposeRequestCard, GoalCard, GoalComposeCard, PendingRequestCard } from './fleet-client';
 
 // Admin: the autonomous-fleet request inbox (/admin/fleet). Fleet roles file
 // approval/question/fyi requests via the service-role CLI; the owner answers
@@ -57,14 +59,18 @@ export default async function AdminFleetPage({
   searchParams: Promise<{ page?: string | string[] }>;
 }) {
   const page = parsePageParam((await searchParams).page);
-  const [pending, history] = await Promise.all([
+  const [pending, history, roles, goals] = await Promise.all([
     listPendingFleetRequests(),
     listFleetRequestHistory({ page }),
+    listFleetRoles(),
+    listFleetGoals(),
   ]);
 
   return (
     <div className="space-y-6">
       <PageHeading>פניות הסוכנים (Fleet)</PageHeading>
+
+      <ComposeRequestCard roles={roles} />
 
       <section className="space-y-4">
         <h2 className="text-lg font-semibold">
@@ -80,6 +86,27 @@ export default async function AdminFleetPage({
               request={request}
               createdAtLabel={formatDateTime(request.created_at)}
               expiresAtLabel={formatDateTime(request.expires_at)}
+            />
+          ))
+        )}
+      </section>
+
+      <GoalComposeCard roles={roles} />
+
+      <section className="space-y-4">
+        <h2 className="text-lg font-semibold">
+          מטרות
+          {goals.length > 0 ? ` (${goals.length})` : ''}
+        </h2>
+        {goals.length === 0 ? (
+          <EmptyState>אין מטרות פעילות</EmptyState>
+        ) : (
+          goals.map((goal) => (
+            <GoalCard
+              key={goal.id}
+              goal={goal}
+              createdAtLabel={formatDateTime(goal.created_at)}
+              nextWakeAtLabel={goal.next_wake_at ? formatDateTime(goal.next_wake_at) : null}
             />
           ))
         )}

@@ -40,6 +40,19 @@
 //     the closure signal the owner sees on their phone.
 //   poll --role R
 //     Prints the role's unconsumed verdicts + its still-open requests.
+//   goal-poll --role R
+//     Active goals for R whose next_wake_at has arrived. The owner creates a
+//     goal; the role reads state, decides the next step, and reports back via
+//     goal-progress/goal-close. Mirrors cmdPoll's no-op-is-not-an-error stance
+//     (this runs unconditionally in run-context.sh every tick).
+//   goal-progress --id UUID --step N [--state JSON] [--next-wake-at ISO] [--error TEXT]
+//     Single CAS write: --step must be the step_count read from goal-poll.
+//     --next-wake-at must carry an explicit UTC offset (Z or +03:00) — the
+//     naive datetime-local form is rejected. Only 'advanced' is a normal
+//     continuation; every other outcome (paused_on_failures / stale_step /
+//     not_active / not_found) means stop, not retry (exitCode 2).
+//   goal-close --id UUID --step N --status completed|failed [--note TEXT]
+//     Terminal write. 'completed' is the agent's own factual claim of success.
 //   ack --id UUID
 //     Claims a verdict exactly-once via the fleet_consume_request RPC (CAS).
 //     Call BEFORE acting on the verdict.
@@ -128,6 +141,13 @@ import {
   toRedactedExample,
 } from '@/lib/fleet/corrections';
 import { buildBusinessFacts } from '@/lib/fleet/business-facts';
+import {
+  goalWakeAtSchema,
+  isGoalCloseStuck,
+  isGoalProgressStuck,
+  type GoalCloseOutcome,
+  type GoalProgressOutcome,
+} from '@/lib/fleet/goal';
 import { getBaseOveragePricingEnabled } from '@/lib/data/payments';
 import { sendPushToUser } from '@/lib/data/push-subscriptions';
 import { createAdminClient } from '@/lib/supabase/admin';
@@ -516,19 +536,42 @@ async function cmdPoll(args: Record<string, string | undefined>): Promise<void> 
   const role = requireOption(args.role, 'role');
   const admin = createAdminClient();
 
-  // Verdicts waiting to be acted on (ack first!), then the role's open asks.
+  // Three buckets, because "pending" alone hides the DIRECTION of a request and
+  // a role that cannot tell them apart does nothing with either:
+  //   inbox    — the OWNER opened this, addressed to you. Act on it.
+  //   verdicts — you asked, the owner answered. ack, then act.
+  //   open     — you asked, still waiting. Nothing to do.
+  // Before this split, an owner-initiated request landed in `open` and every
+  // role correctly ignored it: from the role's side that bucket means "asks I
+  // filed". Measured 2026-07-29 — ops-monitor was spawned for one, ran clean,
+  // and left it pending, because nothing in its context said otherwise.
   const { data, error } = await admin
     .from('fleet_requests')
-    .select('id, request_key, kind, tier, title, status, answer, created_at, answered_at, expires_at')
+    .select(
+      'id, request_key, kind, tier, title, body, payload, status, answer, created_at, answered_at, expires_at',
+    )
     .eq('role', role)
     .in('status', ['pending', 'approved', 'denied', 'answered'])
     .is('consumed_at', null)
     .order('created_at', { ascending: true });
   if (error) fail(`poll failed: ${error.message}`);
 
-  const verdicts = (data ?? []).filter((r) => r.status !== 'pending');
-  const open = (data ?? []).filter((r) => r.status === 'pending');
-  console.log(JSON.stringify({ role, verdicts, open }, null, 2));
+  const rows = data ?? [];
+  const isFromOwner = (r: (typeof rows)[number]) =>
+    !!r.payload &&
+    typeof r.payload === 'object' &&
+    !Array.isArray(r.payload) &&
+    (r.payload as Record<string, unknown>).origin === 'owner';
+
+  // body/payload are carried ONLY on the inbox: that is the one bucket whose
+  // text the role must read to act. Echoing every body back would grow the
+  // run context with the role's own prose on every single run.
+  const slim = ({ body: _b, payload: _p, ...rest }: (typeof rows)[number]) => rest;
+
+  const inbox = rows.filter((r) => r.status === 'pending' && isFromOwner(r));
+  const verdicts = rows.filter((r) => r.status !== 'pending').map(slim);
+  const open = rows.filter((r) => r.status === 'pending' && !isFromOwner(r)).map(slim);
+  console.log(JSON.stringify({ role, inbox, verdicts, open }, null, 2));
 }
 
 async function cmdAck(args: Record<string, string | undefined>): Promise<void> {
@@ -1060,6 +1103,126 @@ async function cmdBusinessFacts(): Promise<void> {
   console.log(JSON.stringify(buildBusinessFacts(gateOn, pkg), null, 2));
 }
 
+// ── Fleet goals ──────────────────────────────────────────────────────────────
+// The autonomy loop: goal-poll (mirrors cmdPoll — runs unconditionally, "0
+// due" is a normal outcome, no exitCode games) and goal-progress/goal-close
+// (mirror cmdTriageFinish — single CAS write, exitCode 2 on anything but the
+// success outcome). See plan §3.2 for why each verb takes its template from a
+// different existing command.
+
+async function cmdGoalPoll(args: Record<string, string | undefined>): Promise<void> {
+  const role = requireOption(args.role, 'role');
+  const admin = createAdminClient();
+
+  // Only goals DUE this run — status='active' and next_wake_at <= now().
+  // Mirrors the scheduler's own goal_due query exactly, so a role never sees a
+  // goal it wasn't woken up for.
+  //
+  // No validateRequestRole — deliberately, like cmdPoll itself. The name was
+  // already validated twice before we got here: ROLE_NAME_RE in run-role.sh,
+  // and membership in fleet.json before the role was even spawned.
+  const { data, error } = await admin
+    .from('fleet_goals')
+    .select('id, title, body, state, step_count, consecutive_failures')
+    .eq('role', role)
+    .eq('status', 'active')
+    .lte('next_wake_at', new Date().toISOString())
+    .order('created_at', { ascending: true });
+  if (error) fail(`goal-poll failed: ${error.message}`);
+
+  console.log(JSON.stringify({ role, goals: data ?? [] }, null, 2));
+}
+
+async function cmdGoalProgress(args: Record<string, string | undefined>): Promise<void> {
+  const id = requireOption(args.id, 'id');
+
+  const stepRaw = requireOption(args.step, 'step');
+  const step = Number.parseInt(stepRaw, 10);
+  if (!Number.isInteger(step) || step < 0) {
+    fail(`--step must be the step_count you read from goal-poll (got "${stepRaw}")`);
+  }
+
+  // Same pattern as --payload in cmdRequest: client-side parsing gives a
+  // friendly message; fleet_goals_state_object in the DB is the second net,
+  // not the only one. Default {} — a first step may not change state at all.
+  let state: Json = {};
+  if (args.state) {
+    try {
+      const parsed: unknown = JSON.parse(args.state);
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+        fail('--state must be a JSON object');
+      }
+      state = parsed as Json;
+    } catch (err) {
+      if (err instanceof SyntaxError) fail('--state is not valid JSON');
+      throw err;
+    }
+  }
+
+  // Shape check only, not range: the (now, now+30d] range is enforced by the
+  // RPC, not duplicated here. Same schema as the owner's UI (§2.2), not a copy.
+  let nextWakeAt: string | null = null;
+  if (args['next-wake-at']) {
+    const parsed = goalWakeAtSchema.safeParse(args['next-wake-at']);
+    if (!parsed.success) fail(`--next-wake-at ${parsed.error.issues[0]?.message ?? 'invalid'}`);
+    nextWakeAt = parsed.data;
+  }
+
+  const admin = createAdminClient();
+  const { data, error } = await admin.rpc('fleet_goal_progress', {
+    p_id: id,
+    p_step: step,
+    p_state: state,
+    // `supabase gen types` drops the null variant for a required (no
+    // `default`) nullable RPC scalar arg — the generated Args type says
+    // `string`, but the SQL param is `timestamptz` with no `not null`, and
+    // the RPC body explicitly branches on `p_next_wake_at is not null`. This
+    // is a generator gap, not a real constraint.
+    p_next_wake_at: nextWakeAt as string,
+    ...(args.error ? { p_error: args.error } : {}),
+  });
+  if (error) fail(`goal-progress failed: ${error.message}`);
+
+  const outcome = data as GoalProgressOutcome;
+  console.log(JSON.stringify({ outcome, id, step }, null, 2));
+  // Only 'advanced' is a normal continuation. Everything else means stop —
+  // see the outcome table in run-context.sh §3.3.
+  if (isGoalProgressStuck(outcome)) process.exitCode = 2;
+}
+
+const GOAL_CLOSE_STATUSES = ['completed', 'failed'] as const;
+
+async function cmdGoalClose(args: Record<string, string | undefined>): Promise<void> {
+  const id = requireOption(args.id, 'id');
+
+  const stepRaw = requireOption(args.step, 'step');
+  const step = Number.parseInt(stepRaw, 10);
+  if (!Number.isInteger(step) || step < 0) {
+    fail(`--step must be the step_count you read from goal-poll (got "${stepRaw}")`);
+  }
+
+  const status = requireOption(args.status, 'status');
+  if (!(GOAL_CLOSE_STATUSES as readonly string[]).includes(status)) {
+    fail(`--status must be one of ${GOAL_CLOSE_STATUSES.join(', ')}`);
+  }
+
+  const admin = createAdminClient();
+  const { data, error } = await admin.rpc('fleet_goal_close', {
+    p_id: id,
+    p_step: step,
+    p_status: status,
+    ...(args.note ? { p_note: args.note } : {}),
+  });
+  if (error) fail(`goal-close failed: ${error.message}`);
+
+  const outcome = data as GoalCloseOutcome;
+  console.log(JSON.stringify({ outcome, id, step, status }, null, 2));
+  // No Slack alert here, unlike cmdTriageFinish: a failed goal STOPS (no race
+  // against time that needs an immediate push) — the summary the agent writes
+  // is the reporting channel.
+  if (isGoalCloseStuck(outcome)) process.exitCode = 2;
+}
+
 async function main(): Promise<void> {
   const { positionals, values } = parseArgs({
     allowPositionals: true,
@@ -1091,6 +1254,9 @@ async function main(): Promise<void> {
       'on-date': { type: 'string' },
       'at-time': { type: 'string' },
       error: { type: 'string' },
+      step: { type: 'string' },
+      state: { type: 'string' },
+      'next-wake-at': { type: 'string' },
     },
   });
 
@@ -1129,9 +1295,15 @@ async function main(): Promise<void> {
       return cmdTriageClaim();
     case 'triage-finish':
       return cmdTriageFinish(scalarValues);
+    case 'goal-poll':
+      return cmdGoalPoll(scalarValues);
+    case 'goal-progress':
+      return cmdGoalProgress(scalarValues);
+    case 'goal-close':
+      return cmdGoalClose(scalarValues);
     default:
       fail(
-        'usage: fleet-agent-cli <request|handoff|complete|poll|verdicts|ack|expire|withdraw|digest|sql|draft-reply|distill-corrections|business-facts|triage-claim|triage-finish> [options]',
+        'usage: fleet-agent-cli <request|handoff|complete|poll|verdicts|ack|expire|withdraw|digest|sql|draft-reply|distill-corrections|business-facts|triage-claim|triage-finish|goal-poll|goal-progress|goal-close> [options]',
       );
   }
 }

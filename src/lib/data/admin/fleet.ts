@@ -1,8 +1,12 @@
 import 'server-only';
 
+import { readFile } from 'node:fs/promises';
+import { join } from 'node:path';
+
 import { sendSlackAlert } from '@/lib/alerts/slack';
 import { createClient } from '@/lib/supabase/server';
 import { requirePlatformPermission } from '@/lib/auth/dal';
+import { parseFleetRoleRegistry, type FleetRoleInfo } from '@/lib/fleet/handoff';
 import type { Database } from '@/lib/supabase/types';
 import { resolvePage, type PageParams, type PageResult } from './shared';
 
@@ -134,6 +138,86 @@ export async function listFleetRequestsByRole(
   return (data ?? []) as FleetRequestEntry[];
 }
 
+// The role registry the compose form offers, read from the same fleet.json the
+// scheduler reloads every tick. Read at request time (not cached): fleet.json
+// is owner-edited and a stale list would offer a role that no longer exists —
+// which the CLI would reject as a dead letter anyway.
+export async function listFleetRoles(): Promise<FleetRoleInfo[]> {
+  await requirePlatformPermission('manage_settings');
+  const path = join(process.cwd(), '.claude', 'fleet', 'fleet.json');
+  try {
+    return parseFleetRoleRegistry(JSON.parse(await readFile(path, 'utf8')));
+  } catch {
+    // Fail-closed: an unreadable config means no roles to offer, not a crash.
+    // The form renders its empty state and the owner keeps the rest of the page.
+    return [];
+  }
+}
+
+export type OwnerRequestKind = 'approval' | 'question' | 'fyi';
+
+// Open a conversation with a role from /admin/fleet.
+//
+// The INSERT itself is impossible from here by design — `authenticated` holds
+// SELECT only and the single RLS policy is SELECT-only — so this goes through
+// the fleet_owner_request SECURITY DEFINER function, the same shape as the
+// answer path. The function re-checks admin membership itself, marks
+// payload.origin='owner' (what the scheduler's owner_direct_request trigger
+// counts) and derives a deterministic request_key.
+//
+// That key is the double-send guard: submitting the identical ask twice on the
+// same day collides with the UNIQUE index and returns the EXISTING row instead
+// of a duplicate. Callers get `deduplicated` so the UI can say so rather than
+// pretending a second request was filed.
+export async function createOwnerFleetRequest(input: {
+  role: string;
+  kind: OwnerRequestKind;
+  tier: number;
+  title: string;
+  body: string;
+  threadRoot?: string | null;
+}): Promise<{ id: string; deduplicated: boolean }> {
+  await requirePlatformPermission('manage_settings');
+  const supabase = await createClient();
+
+  const { data, error } = await supabase.rpc('fleet_owner_request', {
+    p_role: input.role,
+    p_kind: input.kind,
+    p_tier: input.tier,
+    p_title: input.title,
+    p_body: input.body,
+    p_thread_root: input.threadRoot ?? undefined,
+  });
+
+  if (error) {
+    if (error.message.includes('admin only')) throw new Error('אין לך הרשאה לפתוח פנייה');
+    if (error.message.includes('kind must be')) throw new Error('סוג פנייה לא תקין');
+    if (error.message.includes('tier must be')) throw new Error('דרגה לא תקינה');
+    if (error.message.includes('are required')) throw new Error('כותרת ותוכן הם שדות חובה');
+    throw new Error('פתיחת הפנייה נכשלה');
+  }
+
+  const row = (Array.isArray(data) ? data[0] : data) as { id: string; created_at: string } | null;
+  if (!row?.id) throw new Error('פתיחת הפנייה נכשלה');
+
+  // A row whose created_at predates this request is the idempotent hit.
+  const deduplicated = Date.now() - new Date(row.created_at).getTime() > 5_000;
+
+  // Mirror of the agent-filed path: the ledger row is the source of truth and
+  // Slack is best-effort, so a Slack outage must not fail the request.
+  await sendSlackAlert({
+    level: 'info',
+    title: `פנייה ישירה מהבעלים ל-${input.role}: ${input.title}`,
+    detail: deduplicated
+      ? 'פנייה זהה כבר קיימת היום — לא נוצרה כפילות.'
+      : 'הסוכן יקלוט אותה בהרצה הבאה שלו.',
+    source: `fleet:${input.role}`,
+    category: 'errors',
+  });
+
+  return { id: row.id, deduplicated };
+}
+
 export type FleetVerdict = 'approved' | 'denied' | 'answered';
 
 // Record the owner's verdict via the fleet_answer_request RPC. The function
@@ -197,4 +281,158 @@ export async function answerFleetRequest(input: {
       threadTs: thread?.thread_ts ?? undefined,
     });
   }
+}
+
+// ── Fleet goals: persistent goal + self-scheduling ──────────────────────────
+// Owner creates via fleet_goal_create (SECDEF, admin only); the role advances
+// itself between runs via the CLI's goal-progress/goal-close (service_role
+// only — no grant to authenticated, so neither is reachable from here or the
+// browser). Reads go through the cookie client + fleet_goals_admin_select RLS,
+// same second layer as fleet_requests above.
+
+type FleetGoalRow = Database['public']['Tables']['fleet_goals']['Row'];
+
+export type FleetGoalEntry = Pick<
+  FleetGoalRow,
+  | 'id'
+  | 'role'
+  | 'title'
+  | 'body'
+  | 'status'
+  | 'state'
+  | 'next_wake_at'
+  | 'step_count'
+  | 'consecutive_failures'
+  | 'last_error'
+  | 'created_at'
+  | 'closed_at'
+>;
+
+// One string literal, not a concatenation — supabase-js infers the exact
+// column-literal type from `.select()` only when it sees one, same as
+// FLEET_REQUEST_COLUMNS above. A `+`-joined string loses that and the query
+// resolves to GenericStringError instead of FleetGoalEntry.
+const FLEET_GOAL_COLUMNS =
+  'id, role, title, body, status, state, next_wake_at, step_count, consecutive_failures, last_error, created_at, closed_at';
+
+export async function listFleetGoals(): Promise<FleetGoalEntry[]> {
+  await requirePlatformPermission('manage_settings');
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from('fleet_goals')
+    .select(FLEET_GOAL_COLUMNS)
+    .order('closed_at', { ascending: true, nullsFirst: true }) // active first
+    .order('next_wake_at', { ascending: true, nullsFirst: false });
+  if (error) throw new Error('טעינת המטרות נכשלה');
+  return (data ?? []) as FleetGoalEntry[];
+}
+
+// INSERT is impossible from here: authenticated holds SELECT only and RLS is
+// SELECT-only. The only path is the SECDEF — same shape as createOwnerFleetRequest.
+export async function createFleetGoal(input: {
+  role: string;
+  title: string;
+  body: string;
+}): Promise<{ id: string }> {
+  await requirePlatformPermission('manage_settings');
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc('fleet_goal_create', {
+    p_role: input.role,
+    p_title: input.title,
+    p_body: input.body,
+  });
+  if (error) {
+    if (error.message.includes('admin only')) throw new Error('אין לך הרשאה ליצור מטרה');
+    if (error.message.includes('role ~')) throw new Error('שם סוכן לא תקין');
+    throw new Error('יצירת המטרה נכשלה');
+  }
+  const row = (Array.isArray(data) ? data[0] : data) as { id: string } | null;
+  if (!row?.id) throw new Error('יצירת המטרה נכשלה');
+  return { id: row.id };
+}
+
+// Three owner actions on an existing goal. Each returns the RPC's result
+// string as an exact union — "nothing happened" must stay distinguishable
+// from "failed", or the UI reports success on a no-op. Same principle as
+// `written:false` in the CLI's cmdDraftReply.
+//
+// Do NOT align these with answerFleetRequest (returns Promise<void>) — that
+// is the exception, not the norm: fleet_answer_request raises on races
+// ('request not found' / 'is not pending' / 'has expired') that are not
+// reader error, and those get swallowed as a red { error } in
+// answerFleetRequestAction. fleet_goal_pause instead returns 'not_active'
+// without raising, and the UI shows a notice.
+export type GoalPauseOutcome = 'paused' | 'not_active';
+export type GoalResumeOutcome = 'resumed' | 'not_paused';
+export type GoalAbandonOutcome = 'abandoned' | 'already_closed';
+
+// Machine-checked anchor against the DB: if a goal RPC is ever converted to
+// `returns void`, `supabase gen types --linked` flips its Returns type to
+// undefined and these three assertions fail to compile (TS2322) rather than
+// silently accepting a Promise<void> that the callers below then compare
+// against a string.
+type ReturnsText<T, R> = [T] extends [R] ? true : never;
+const _pauseReturnsText: ReturnsText<
+  GoalPauseOutcome,
+  Database['public']['Functions']['fleet_goal_pause']['Returns']
+> = true;
+const _resumeReturnsText: ReturnsText<
+  GoalResumeOutcome,
+  Database['public']['Functions']['fleet_goal_resume']['Returns']
+> = true;
+const _abandonReturnsText: ReturnsText<
+  GoalAbandonOutcome,
+  Database['public']['Functions']['fleet_goal_abandon']['Returns']
+> = true;
+
+export async function pauseFleetGoal(id: string, note?: string): Promise<GoalPauseOutcome> {
+  await requirePlatformPermission('manage_settings');
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc('fleet_goal_pause', {
+    p_id: id,
+    p_note: note ?? undefined,
+  });
+  if (error) {
+    if (error.message.includes('admin only')) throw new Error('אין לך הרשאה להשהות מטרה');
+    throw new Error('השהיית המטרה נכשלה');
+  }
+  return data as GoalPauseOutcome;
+}
+
+export async function resumeFleetGoal(
+  id: string,
+  nextWakeAt?: string,
+): Promise<GoalResumeOutcome> {
+  await requirePlatformPermission('manage_settings');
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc('fleet_goal_resume', {
+    p_id: id,
+    p_next_wake_at: nextWakeAt ?? undefined,
+  });
+  if (error) {
+    if (error.message.includes('admin only')) throw new Error('אין לך הרשאה לשחרר מטרה');
+    if (error.message.includes('next_wake_at must be within')) {
+      throw new Error('מועד ההתעוררות חייב להיות בעתיד, ולא יותר מ-30 יום מהיום');
+    }
+    throw new Error('שחרור המטרה נכשל');
+  }
+  return data as GoalResumeOutcome;
+}
+
+// 'failed' not 'completed' — deliberately. 'completed' is a factual claim only
+// the agent that did the work may make, so it is reachable only via
+// fleet_goal_close in the CLI (service_role only).
+export async function abandonFleetGoal(id: string, note: string): Promise<GoalAbandonOutcome> {
+  await requirePlatformPermission('manage_settings');
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc('fleet_goal_abandon', {
+    p_id: id,
+    p_note: note,
+  });
+  if (error) {
+    if (error.message.includes('admin only')) throw new Error('אין לך הרשאה לסגור מטרה');
+    if (error.message.includes('note is required')) throw new Error('נדרשת סיבה לסגירה');
+    throw new Error('סגירת המטרה נכשלה');
+  }
+  return data as GoalAbandonOutcome;
 }
