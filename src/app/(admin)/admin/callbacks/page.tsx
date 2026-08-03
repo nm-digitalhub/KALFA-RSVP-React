@@ -1,3 +1,4 @@
+import type { Metadata } from 'next';
 import Link from 'next/link';
 
 import { requirePlatformPermission } from '@/lib/auth/dal';
@@ -12,6 +13,8 @@ import {
   parsePageParam,
 } from '../_components';
 import { CallbackStatusForm } from './callback-status-form';
+
+export const metadata: Metadata = { title: 'בקשות חזרה' };
 
 // Admin: callback (call-me-back) requests, paginated server-side. Each row
 // shows the request details, the current status (via free-text-safe label) and

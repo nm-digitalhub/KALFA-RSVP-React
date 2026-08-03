@@ -1,4 +1,6 @@
 import Link from 'next/link';
+import { cache } from 'react';
+import type { Metadata } from 'next';
 
 import { buttonVariants } from '@/components/ui/button';
 import { getEvent, type EventDetail } from '@/lib/data/events';
@@ -35,13 +37,27 @@ function celebrantsSummary(
   return celebrantsTextFor(eventType, celebrants);
 }
 
+// cache() so generateMetadata and the page body share ONE getEvent call per
+// request instead of fetching (and re-checking ownership) twice.
+const getEventCached = cache(getEvent);
+
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ id: string }>;
+}): Promise<Metadata> {
+  const { id } = await params;
+  const event = await getEventCached(id);
+  return { title: event.name };
+}
+
 export default async function EventPage({
   params,
 }: {
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const event = await getEvent(id);
+  const event = await getEventCached(id);
   const campaign = await getCampaignForEvent(id);
   const isPast = isPastEventDay(event.event_date);
 

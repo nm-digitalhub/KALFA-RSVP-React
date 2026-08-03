@@ -1,8 +1,11 @@
+import type { Metadata } from 'next';
 import Link from 'next/link';
 
 import { listEvents } from '@/lib/data/events';
 import { EVENT_TYPE_LABELS, EVENT_STATUS_LABELS } from '@/lib/data/event-labels';
 import { formatIsraelDate } from '@/lib/date';
+
+export const metadata: Metadata = { title: 'האירועים שלי' };
 
 export default async function EventsPage() {
   const events = await listEvents();

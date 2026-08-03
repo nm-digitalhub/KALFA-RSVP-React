@@ -1,3 +1,4 @@
+import type { Metadata } from 'next';
 import Link from 'next/link';
 
 import { requireEventAccess } from '@/lib/data/events';
@@ -9,6 +10,8 @@ import {
   discardWhatsappImportAction,
 } from './actions';
 import { StagingActions } from './staging-client';
+
+export const metadata: Metadata = { title: 'ייבוא מוואטסאפ' };
 
 interface PageProps {
   params: Promise<{ id: string }>;

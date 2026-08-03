@@ -1,7 +1,10 @@
+import type { Metadata } from 'next';
 import { requirePlatformPermission } from '@/lib/auth/dal';
 import { getSumitPublicConfig } from '@/lib/data/payments';
 
 import { SumitTestForm } from './sumit-test-form';
+
+export const metadata: Metadata = { title: 'בדיקת SUMIT' };
 
 // Admin-only SUMIT POC. Verifies live REST behavior (J5/AuthorizeAmount/token)
 // against an admin-chosen parameter set before we build the production flow.

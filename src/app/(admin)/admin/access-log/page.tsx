@@ -1,3 +1,4 @@
+import type { Metadata } from 'next';
 import { requirePlatformPermission } from '@/lib/auth/dal';
 import { listStaffAccessLog } from '@/lib/data/admin/access-log-view';
 import {
@@ -8,6 +9,8 @@ import {
   formatDateTime,
   parsePageParam,
 } from '../_components';
+
+export const metadata: Metadata = { title: 'יומן גישת צוות' };
 
 // Staff data-access audit: one row per targeted staff read of an identified
 // customer's data — who, under which permission, whose data, when, and (for

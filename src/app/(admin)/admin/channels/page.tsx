@@ -1,3 +1,4 @@
+import type { Metadata } from 'next';
 import { getWhatsAppChannelConfig } from '@/lib/data/admin/channels';
 import { getVoximplantChannelConfig } from '@/lib/data/admin/voximplant-channel';
 import { getOutreachMasterState } from '@/lib/data/admin/outreach-master';
@@ -6,6 +7,8 @@ import { getAppUrl } from '@/lib/url';
 import { PageHeading } from '../_components';
 import { ChannelsClient } from './channels-client';
 import { ChannelCatalogEditor } from './channel-catalog-editor';
+
+export const metadata: Metadata = { title: 'ערוצי תקשורת' };
 
 const sectionClass = 'space-y-4 rounded-lg border border-border bg-card p-5';
 

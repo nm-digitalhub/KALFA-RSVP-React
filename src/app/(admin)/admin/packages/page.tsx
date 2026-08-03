@@ -1,8 +1,11 @@
+import type { Metadata } from 'next';
 import Link from 'next/link';
 import { requirePlatformPermission } from '@/lib/auth/dal';
 
 import { listPackages } from '@/lib/data/admin/packages';
 import { PageHeading, EmptyState, Badge, formatCurrency } from '../_components';
+
+export const metadata: Metadata = { title: 'חבילות' };
 
 // Admin: package catalogue management. Lists all packages (active + inactive)
 // with a link to create a new one and to edit each existing package. The

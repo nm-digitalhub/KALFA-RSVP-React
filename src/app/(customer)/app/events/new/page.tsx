@@ -1,6 +1,9 @@
+import type { Metadata } from 'next';
 import Link from 'next/link';
 
 import { NewEventForm } from './new-event-form';
+
+export const metadata: Metadata = { title: 'אירוע חדש' };
 
 export default function NewEventPage() {
   return (

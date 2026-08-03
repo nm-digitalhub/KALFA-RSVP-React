@@ -1,3 +1,4 @@
+import type { Metadata } from 'next';
 import Link from 'next/link';
 import { MailOpen, PhoneCall, Package } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
@@ -5,6 +6,8 @@ import type { LucideIcon } from 'lucide-react';
 import { getDashboardCounts } from '@/lib/data/admin/dashboard';
 import { describeActivity, recentActivity } from '@/lib/data/admin/activity';
 import { PageHeading, EmptyState, formatDateTime } from './_components';
+
+export const metadata: Metadata = { title: 'סקירה' };
 
 // Admin dashboard: headline counts (each links to its section) plus the most
 // recent activity. All data is fetched server-side under the admin RLS gate.

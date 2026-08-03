@@ -1,3 +1,4 @@
+import type { Metadata } from 'next';
 import {
   Table,
   TableBody,
@@ -15,6 +16,8 @@ import {
   parsePageParam,
 } from '../_components';
 import { AlertsClient } from './alerts-client';
+
+export const metadata: Metadata = { title: 'התראות תפעול' };
 
 // Admin: Slack operational-alerting configuration + history. requirePlatformPermission('manage_settings') is
 // enforced in the data layer (and the /admin layout). The bot token is NEVER

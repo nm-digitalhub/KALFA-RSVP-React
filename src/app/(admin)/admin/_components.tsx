@@ -1,4 +1,5 @@
 import { formatIsraelDateTime } from '@/lib/date';
+import { cn } from '@/lib/utils';
 
 // Shared, server-rendered presentational helpers for the admin pages. Kept in
 // the route group (leading underscore = not a route) so they live next to their
@@ -27,8 +28,14 @@ export function formatDateTime(iso: string): string {
   return formatIsraelDateTime(iso) || iso;
 }
 
-export function PageHeading({ children }: { children: React.ReactNode }) {
-  return <h1 className="text-2xl font-bold">{children}</h1>;
+export function PageHeading({
+  children,
+  className,
+}: {
+  children: React.ReactNode;
+  className?: string;
+}) {
+  return <h1 className={cn('text-2xl font-bold', className)}>{children}</h1>;
 }
 
 export function EmptyState({ children }: { children: React.ReactNode }) {

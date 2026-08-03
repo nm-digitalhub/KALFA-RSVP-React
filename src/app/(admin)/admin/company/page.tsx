@@ -1,6 +1,9 @@
+import type { Metadata } from 'next';
 import { getCompanySettings } from '@/lib/data/admin/settings';
 import { PageHeading } from '../_components';
 import { CompanyForm } from './company-form';
+
+export const metadata: Metadata = { title: 'פרטי חברה' };
 
 const sectionClass = 'space-y-4 rounded-lg border border-border bg-card p-5';
 

@@ -1,3 +1,4 @@
+import type { Metadata } from 'next';
 import { unstable_rethrow } from 'next/navigation';
 import { requireUser } from '@/lib/auth/dal';
 import { getProfile, type ProfileDTO } from '@/lib/data/profiles';
@@ -7,6 +8,8 @@ import {
   type UserSettingsDTO,
 } from '@/lib/data/user-settings';
 import { SettingsPageClient } from './settings-client';
+
+export const metadata: Metadata = { title: 'הגדרות' };
 
 function settingsWithDefaults(settings: UserSettingsDTO | null): UserSettingsDTO {
   return {

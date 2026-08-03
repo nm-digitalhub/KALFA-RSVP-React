@@ -1,7 +1,10 @@
+import type { Metadata } from 'next';
 import Link from 'next/link';
 
 import { LoginForm } from './login-form';
 import { PasskeySignInButton } from './passkey-sign-in-button';
+
+export const metadata: Metadata = { title: 'התחברות' };
 
 export default function LoginPage() {
   return (

@@ -1,3 +1,4 @@
+import type { Metadata } from 'next';
 import Link from 'next/link';
 import { requirePlatformPermission } from '@/lib/auth/dal';
 
@@ -18,6 +19,8 @@ import {
   parsePageParam,
 } from '../_components';
 import { DateSelectIL } from '@/components/date-select-il';
+
+export const metadata: Metadata = { title: 'יומן פעילות' };
 
 type SearchParams = {
   page?: string | string[];

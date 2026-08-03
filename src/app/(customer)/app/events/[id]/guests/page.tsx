@@ -1,3 +1,4 @@
+import type { Metadata } from 'next';
 import type { ReactNode } from 'react';
 import Link from 'next/link';
 
@@ -21,6 +22,8 @@ import {
   REMOVAL_REQUESTED_LABEL,
   REMOVAL_REQUESTED_VARIANT,
 } from './labels';
+
+export const metadata: Metadata = { title: 'רשימת מוזמנים' };
 
 type GuestStatus = Database['public']['Enums']['guest_status'];
 type ContactOpStatus = Database['public']['Enums']['contact_op_status'];

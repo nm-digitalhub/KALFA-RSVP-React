@@ -1,3 +1,4 @@
+import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 
@@ -12,6 +13,8 @@ import {
 import { PageHeading } from '../../_components';
 import { UserDetailView } from './user-detail-view';
 import { UserDetailGate } from './user-detail-gate';
+
+export const metadata: Metadata = { title: 'פרטי משתמש' };
 
 export default async function AdminUserDetailPage({
   params,

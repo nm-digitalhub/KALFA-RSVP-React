@@ -1,6 +1,9 @@
+import type { Metadata } from 'next';
 import { getCookieConsentAdminView } from '@/lib/data/admin/cookie-consent';
 import { PageHeading } from '../_components';
 import { CookieConsentClient } from './cookie-consent-client';
+
+export const metadata: Metadata = { title: 'הסכמת עוגיות' };
 
 const sectionClass = 'space-y-4 rounded-lg border border-border bg-card p-5';
 

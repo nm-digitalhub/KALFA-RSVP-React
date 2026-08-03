@@ -1,9 +1,12 @@
+import type { Metadata } from 'next';
 import Link from 'next/link';
 
 import { requireEventAccess } from '@/lib/data/events';
 import { CSV_MAX_ROWS } from '@/lib/constants';
 import { importGuestsAction } from './import-actions';
 import { ImportForm } from './import-form';
+
+export const metadata: Metadata = { title: 'ייבוא מוזמנים' };
 
 interface PageProps {
   params: Promise<{ id: string }>;

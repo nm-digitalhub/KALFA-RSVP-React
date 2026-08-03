@@ -1,3 +1,4 @@
+import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { ChevronRight } from 'lucide-react';
@@ -21,6 +22,8 @@ import {
   updateThankyouScheduleAction,
 } from '../campaign-actions';
 import { ManageClient } from './manage-client';
+
+export const metadata: Metadata = { title: 'ניהול קמפיין' };
 
 // Campaign management (§9 lifecycle + §15 owner board). Wires the previously
 // orphaned activate/pause/close + final settlement. Ownership enforced server-side.

@@ -1,3 +1,4 @@
+import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 
@@ -26,6 +27,8 @@ import {
   deliveryStatusVariant,
 } from '../labels';
 import { RsvpLink } from './rsvp-link';
+
+export const metadata: Metadata = { title: 'פרטי מוזמן' };
 
 interface PageProps {
   params: Promise<{ id: string; guestId: string }>;

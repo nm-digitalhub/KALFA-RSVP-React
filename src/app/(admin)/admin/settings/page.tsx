@@ -1,3 +1,4 @@
+import type { Metadata } from 'next';
 import { Check, X } from 'lucide-react';
 
 import {
@@ -14,6 +15,8 @@ import { SettingsForm } from './settings-form';
 import { PricingModelToggle } from './pricing-model-toggle';
 import { ExchangeModeToggle } from './exchange-mode-toggle';
 import { ExchangeManager } from './exchange-manager';
+
+export const metadata: Metadata = { title: 'הגדרות' };
 
 const sectionClass = 'space-y-4 rounded-lg border border-border bg-card p-5';
 

@@ -1,7 +1,10 @@
+import type { Metadata } from 'next';
 import Link from 'next/link';
 
 import { isAdmin } from '@/lib/auth/dal';
 import { ClaimAdminForm } from './claim-admin-form';
+
+export const metadata: Metadata = { title: 'גישת ניהול' };
 
 // Admin bootstrap page. If the current user is already an admin, point them to
 // the admin area. Otherwise offer to claim the FIRST-admin role — the

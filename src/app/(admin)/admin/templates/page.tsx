@@ -1,6 +1,9 @@
+import type { Metadata } from 'next';
 import { listMessageTemplates } from '@/lib/data/message-templates';
 import { PageHeading } from '../_components';
 import { TemplatesClient } from './templates-client';
+
+export const metadata: Metadata = { title: 'תבניות פנייה' };
 
 // Admin: outreach send-content the engine resolves by key (WhatsApp = the
 // Meta-approved template name; call = the script). requirePlatformPermission('manage_settings') in the data

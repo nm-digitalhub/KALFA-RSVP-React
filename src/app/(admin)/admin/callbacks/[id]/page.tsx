@@ -1,3 +1,4 @@
+import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 
@@ -6,6 +7,8 @@ import { getCallbackRequest } from '@/lib/data/admin/callbacks';
 import { callbackStatusLabel } from '@/lib/data/admin/labels';
 import { PageHeading, formatDateTime } from '../../_components';
 import { CallbackStatusForm } from '../callback-status-form';
+
+export const metadata: Metadata = { title: 'פרטי בקשת חזרה' };
 
 // One callback request.
 //

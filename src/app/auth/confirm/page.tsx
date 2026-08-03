@@ -1,9 +1,12 @@
+import type { Metadata } from 'next';
 import { redirect } from 'next/navigation';
 
 import { SubmitButton } from '@/components/forms';
 import { resolveAppRedirectPath } from '@/lib/url';
 import { confirmOtp } from './actions';
 import { isConfirmOtpType } from './otp-types';
+
+export const metadata: Metadata = { title: 'אימות התחברות' };
 
 // Interstitial landing for Supabase auth email links (recovery / magic-link /
 // invite / email-change / email confirmation). We deliberately do NOT verify the

@@ -1,3 +1,4 @@
+import type { Metadata } from 'next';
 import { requirePlatformPermission } from '@/lib/auth/dal';
 import Link from 'next/link';
 
@@ -11,6 +12,8 @@ import {
   type PricingModelStatus,
 } from '../package-form';
 import { createPackageAction } from '../actions';
+
+export const metadata: Metadata = { title: 'חבילה חדשה' };
 
 // Admin: create a new package. The form posts to createPackageAction, which
 // validates server-side and redirects back to the list on success.

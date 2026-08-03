@@ -1,3 +1,4 @@
+import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
 
@@ -11,6 +12,8 @@ import {
 } from '@/lib/data/payments';
 import { CampaignHoldForm } from './hold-form';
 import { HeldAnalytics } from './_held-analytics';
+
+export const metadata: Metadata = { title: 'תשלום קמפיין' };
 
 // Card-capture step of campaign approval (route A: a J5 authorization hold up to
 // the ceiling at approval; the actual charge happens at campaign close). The live

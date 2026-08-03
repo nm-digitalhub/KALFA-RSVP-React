@@ -1,9 +1,12 @@
+import type { Metadata } from 'next';
 import Link from 'next/link';
 import { CalendarX2 } from 'lucide-react';
 
 import { getMyActiveExchangeConnection } from '@/lib/data/exchange-connections';
 import { PageHeading } from '../_components';
 import { AdminExchangeCalendar } from './calendar-client';
+
+export const metadata: Metadata = { title: 'יומן Exchange' };
 
 // Admin-only Exchange calendar (owner ruling 27.07: business-management
 // feature, never customer-facing). Authorization is enforced in the data

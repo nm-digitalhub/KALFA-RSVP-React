@@ -1,3 +1,4 @@
+import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 
@@ -15,6 +16,8 @@ import { getAgreementConfigTokens } from '@/lib/data/agreement-config';
 import { SignAgreementForm } from './sign-agreement-form';
 import { AgreementSheet } from './agreement-sheet';
 import { formatIsraelDate } from '@/lib/date';
+
+export const metadata: Metadata = { title: 'אישור קמפיין' };
 
 const CHANNEL_LABELS: Record<string, string> = {
   whatsapp: 'וואטסאפ',

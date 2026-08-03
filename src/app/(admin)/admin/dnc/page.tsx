@@ -1,6 +1,9 @@
+import type { Metadata } from 'next';
 import { listCallDnc } from '@/lib/data/admin/call-dnc';
 import { PageHeading } from '../_components';
 import { DncClient } from './dnc-client';
+
+export const metadata: Metadata = { title: 'חסימת שיחות (DNC)' };
 
 const sectionClass = 'space-y-4 rounded-lg border border-border bg-card p-5';
 

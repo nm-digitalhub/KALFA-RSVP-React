@@ -1,3 +1,4 @@
+import type { Metadata } from 'next';
 import { requirePlatformPermission } from '@/lib/auth/dal';
 import { listContactMessages } from '@/lib/data/admin/contacts';
 import { callbackStatusLabel } from '@/lib/data/admin/labels';
@@ -11,6 +12,8 @@ import {
 } from '../_components';
 import { ContactStatusForm } from './contact-status-form';
 import { ContactReplyForm } from './contact-reply-form';
+
+export const metadata: Metadata = { title: 'פניות' };
 
 // Admin: contact-form + in-app support submissions, paginated server-side.
 // Personal data is shown to authorized staff only — the layout gate is

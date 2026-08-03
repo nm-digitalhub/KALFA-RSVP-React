@@ -1,9 +1,12 @@
+import type { Metadata } from 'next';
 import Link from 'next/link';
 import { CalendarDays, Plus } from 'lucide-react';
 
 import { listEvents, getEventCounts } from '@/lib/data/events';
 import { EVENT_TYPE_LABELS, EVENT_STATUS_LABELS } from '@/lib/data/event-labels';
 import { formatIsraelDate } from '@/lib/date';
+
+export const metadata: Metadata = { title: 'לוח בקרה' };
 
 export default async function DashboardPage() {
   // Counts come from head queries (ALL events), independent of the recent-events

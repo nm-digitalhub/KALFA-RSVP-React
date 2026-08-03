@@ -1,9 +1,12 @@
+import type { Metadata } from 'next';
 import Link from 'next/link';
 
 import { requireEventAccess } from '@/lib/data/events';
 import { listGroups } from '@/lib/data/guests';
 import { createGuestAction } from '../guests-actions';
 import { GuestForm } from '../guest-form';
+
+export const metadata: Metadata = { title: 'הוספת מוזמן' };
 
 interface PageProps {
   params: Promise<{ id: string }>;

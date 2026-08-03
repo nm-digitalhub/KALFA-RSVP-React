@@ -1,8 +1,11 @@
+import type { Metadata } from 'next';
 import { requirePlatformOwner } from '@/lib/auth/dal';
 import { getRolePermissionMatrix } from '@/lib/data/admin/platform-roles';
 
 import { EmptyState, PageHeading } from '../_components';
 import { RolesClient } from './roles-client';
+
+export const metadata: Metadata = { title: 'תפקידי צוות' };
 
 // Admin: UI-editable PLATFORM (Owner/Staff) RBAC matrix editor. Owner-only —
 // requirePlatformOwner() redirects a non-owner to /app (belt-and-suspenders on

@@ -1,3 +1,4 @@
+import type { Metadata } from 'next';
 import { requirePlatformPermission } from '@/lib/auth/dal';
 import Link from 'next/link';
 
@@ -16,6 +17,8 @@ import {
 } from '../package-form';
 import { updatePackageAction } from '../actions';
 import { DeletePackageForm } from './delete-package-form';
+
+export const metadata: Metadata = { title: 'עריכת חבילה' };
 
 // Admin: edit an existing package. getPackage() calls notFound() for a missing
 // id (404). The update action is pre-bound with the id and passed to the shared
