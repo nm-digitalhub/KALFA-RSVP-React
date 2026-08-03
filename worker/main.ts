@@ -161,6 +161,29 @@ async function handleCallRequest(job: CallJob): Promise<void> {
   });
 }
 
+// Data-layer throws for a failed Supabase/Postgrest call attach the original
+// error as `cause` (see e.g. claimUnprocessedWebhookEvents) so the generic
+// Hebrew message shown to that layer's other callers doesn't erase the
+// diagnostic code underneath. Surface that code here — it's a Postgres/
+// PostgREST error code, never guest data — so an ops alert alone is enough to
+// triage a recurrence without a live DB query.
+function errorDetail(e: unknown): string {
+  if (!(e instanceof Error)) return 'unknown error';
+  const cause = e.cause;
+  if (cause && typeof cause === 'object' && 'message' in cause) {
+    const rawCode =
+      'code' in cause && typeof (cause as { code?: unknown }).code === 'string'
+        ? (cause as { code: string }).code
+        : '';
+    // PostgrestError's own fields are always strings, but a fetch/network
+    // failure surfaces the same {message,details,hint,code} shape with code
+    // defaulted to '' — skip the brackets rather than print "[]".
+    const code = rawCode.length > 0 ? rawCode : undefined;
+    return `${e.message} — ${code ? `[${code}] ` : ''}${String((cause as { message: unknown }).message)}`;
+  }
+  return e.message;
+}
+
 // Wrap a pg-boss work handler so a thrown failure fires a fail-safe ops alert
 // and is then RE-THROWN — pg-boss must still see the failure for its retry /
 // dead-letter machinery. sendSlackAlert never throws, so it cannot corrupt the
@@ -177,7 +200,7 @@ function guardedWorker<T>(
       await sendSlackAlert({
         level: 'error',
         title: `worker job failed: ${queue}`,
-        detail: e instanceof Error ? e.message : 'unknown error',
+        detail: errorDetail(e),
         source: queue,
         category: 'errors',
       });

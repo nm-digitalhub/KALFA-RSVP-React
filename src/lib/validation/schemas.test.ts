@@ -241,11 +241,13 @@ describe('updateEventSchema — rsvp_deadline vs event_date', () => {
     status: 'draft' as const,
   };
 
+  // S2.2 — relative-to-real-time fixtures (ilDate), like the rest of this
+  // file, so these never go stale as real time passes a hardcoded literal.
   it('accepts a deadline on/before the event date', () => {
     const result = updateEventSchema.safeParse({
       ...base,
-      event_date: '2026-08-15',
-      rsvp_deadline: '2026-08-01',
+      event_date: ilDate(30),
+      rsvp_deadline: ilDate(10),
     });
     expect(result.success).toBe(true);
   });
@@ -253,8 +255,8 @@ describe('updateEventSchema — rsvp_deadline vs event_date', () => {
   it('accepts a deadline equal to the event date (boundary)', () => {
     const result = updateEventSchema.safeParse({
       ...base,
-      event_date: '2026-08-15',
-      rsvp_deadline: '2026-08-15',
+      event_date: ilDate(30),
+      rsvp_deadline: ilDate(30),
     });
     expect(result.success).toBe(true);
   });
@@ -262,7 +264,7 @@ describe('updateEventSchema — rsvp_deadline vs event_date', () => {
   it('accepts an event date with no deadline', () => {
     const result = updateEventSchema.safeParse({
       ...base,
-      event_date: '2026-08-15',
+      event_date: ilDate(30),
       rsvp_deadline: '',
     });
     expect(result.success).toBe(true);
@@ -280,8 +282,8 @@ describe('updateEventSchema — rsvp_deadline vs event_date', () => {
   it('rejects a deadline after the event date, with the error on rsvp_deadline', () => {
     const result = updateEventSchema.safeParse({
       ...base,
-      event_date: '2026-08-15',
-      rsvp_deadline: '2026-08-20',
+      event_date: ilDate(30),
+      rsvp_deadline: ilDate(35),
     });
     expect(result.success).toBe(false);
     if (!result.success) {
@@ -293,7 +295,7 @@ describe('updateEventSchema — rsvp_deadline vs event_date', () => {
     const result = updateEventSchema.safeParse({
       ...base,
       event_date: '',
-      rsvp_deadline: '2026-08-20',
+      rsvp_deadline: ilDate(35),
     });
     expect(result.success).toBe(false);
     if (!result.success) {

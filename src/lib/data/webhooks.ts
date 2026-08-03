@@ -26,7 +26,7 @@ export async function insertWebhookEvents(
   const { error } = await admin
     .from('webhook_inbox')
     .upsert(rows, { onConflict: 'provider,dedupe_key', ignoreDuplicates: true });
-  if (error) throw new Error('שמירת אירועי הוובהוק נכשלה');
+  if (error) throw new Error('שמירת אירועי הוובהוק נכשלה', { cause: error });
 }
 
 // The worker's claim: oldest unprocessed rows that have not exhausted their retry
@@ -42,7 +42,7 @@ export async function claimUnprocessedWebhookEvents(
   const { data, error } = await admin.rpc('claim_webhook_events', {
     _limit: limit,
   });
-  if (error) throw new Error('טעינת אירועי הוובהוק נכשלה');
+  if (error) throw new Error('טעינת אירועי הוובהוק נכשלה', { cause: error });
   return (data ?? []) as WebhookInboxRow[];
 }
 
@@ -53,7 +53,7 @@ export async function markWebhookEventProcessed(id: string): Promise<void> {
     .from('webhook_inbox')
     .update({ processed_at: new Date().toISOString() })
     .eq('id', id);
-  if (error) throw new Error('עדכון אירוע הוובהוק נכשל');
+  if (error) throw new Error('עדכון אירוע הוובהוק נכשל', { cause: error });
 }
 
 // Record a failed attempt: bump the counter and keep the latest error so the
