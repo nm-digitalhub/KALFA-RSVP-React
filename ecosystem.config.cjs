@@ -40,12 +40,15 @@ module.exports = {
       cwd: '/var/www/vhosts/kalfa.me/beta',
       script: 'node_modules/next/dist/bin/next',
       args: 'start -H 127.0.0.1 -p 3002',
+      log_date_format: 'YYYY-MM-DD HH:mm:ss.SSS Z',
       env: { NODE_ENV: 'production', TZ: 'Asia/Jerusalem' },
     },
     {
       name: 'kalfa-worker',
       cwd: '/var/www/vhosts/kalfa.me/beta',
-      script: 'dist/worker.cjs',
+      // Wrapper, not the bundle directly — see worker/start.mjs's header for why.
+      script: 'worker/start.mjs',
+      log_date_format: 'YYYY-MM-DD HH:mm:ss.SSS Z',
       env: { NODE_ENV: 'production', TZ: 'Asia/Jerusalem' },
     },
     // pg-boss ops dashboard, base-path build (source build, base "/admin/jobs"),
@@ -60,8 +63,12 @@ module.exports = {
       cwd: '/var/www/vhosts/kalfa.me/pgboss-dashboard-ui/packages/dashboard',
       node_args:
         '--env-file=/var/www/vhosts/kalfa.me/pgboss-dashboard-ui/packages/dashboard/.env.pgboss-ui',
-      time: true,
       autorestart: true,
+      // `time: true` removed 2026-07-31 — it unconditionally overwrites
+      // log_date_format with a fixed 'YYYY-MM-DDTHH:mm:ss' (no ms, no offset),
+      // per pm2's lib/Common.js. The explicit format below is strictly more
+      // precise, so `time` was pure loss once this field existed.
+      log_date_format: 'YYYY-MM-DD HH:mm:ss.SSS Z',
       env: { NODE_ENV: 'production', TZ: 'Asia/Jerusalem' },
     },
     // The agent-fleet scheduler: a minute-tick loop that spawns
@@ -111,13 +118,68 @@ module.exports = {
       name: 'kalfa-fleet',
       cwd: '/var/www/vhosts/kalfa.me/beta',
       script: '.claude/fleet/bin/scheduler.mjs',
-      time: true,
       autorestart: true,
+      // `time: true` removed 2026-07-31 — see kalfa-pgboss-ui's comment above.
+      log_date_format: 'YYYY-MM-DD HH:mm:ss.SSS Z',
       env: {
         NODE_ENV: 'production',
         TZ: 'Asia/Jerusalem',
+        // Defense-in-depth, added 2026-07-30: src/lib/url.ts:50 throws in
+        // production when APP_ORIGIN is unset. scheduler.mjs itself never
+        // touches it (verified — no reference in scheduler.mjs/run-role.sh),
+        // and dist/fleet-agent-cli.cjs already loads its own copy via
+        // `--env-file=.env.local`. This exists only so a FUTURE Bash command
+        // a role runs, that reaches app code outside that one CLI process,
+        // does not fail on a missing value that .env.local already answers.
+        APP_ORIGIN: 'https://beta.kalfa.me',
         PATH: '/var/www/vhosts/kalfa.me/.local/bin:/var/www/vhosts/kalfa.me/.supabase/bin:/usr/local/bin:/usr/bin:/bin',
       },
+    },
+    // Debug Mode's read-only system-probe sidecar (ops/probe-server.mjs, NOT
+    // part of the .claude/fleet/ agent system — see that file's header
+    // comment). Loopback-only on :3012, gated by a bearer token
+    // (OPS_AGENT_TOKEN, .env.local) and never reachable outside this machine
+    // — same shape as kalfa-pgboss-ui above: an unauthenticated-by-itself
+    // backend exposed to the internet only via src/app/(admin)/admin/debug/*,
+    // which calls requirePlatformOwner() before ever reverse-proxying here.
+    //
+    // Exists as its own process specifically so kalfa-beta (the Next.js
+    // server) never has to shell out — every system probe (pm2 jlist, df, du,
+    // git) runs here via execFile with fixed arguments, never in the web
+    // request path. PATH is declared explicitly for the same reason
+    // documented at the top of this file: pm2 is in /usr/local/bin; df, du,
+    // and git are in /usr/bin. Added new — start with
+    // `pm2 start ecosystem.config.cjs --only kalfa-ops-agent`, which (per
+    // pm2's own --only filter) starts only this entry and does not touch any
+    // already-running app in this file.
+    {
+      name: 'kalfa-ops-agent',
+      cwd: '/var/www/vhosts/kalfa.me/beta',
+      script: 'ops/probe-server.mjs',
+      node_args: '--env-file=.env.local',
+      autorestart: true,
+      // `time: true` removed 2026-07-31 — see kalfa-pgboss-ui's comment above.
+      log_date_format: 'YYYY-MM-DD HH:mm:ss.SSS Z',
+      env: {
+        NODE_ENV: 'production',
+        TZ: 'Asia/Jerusalem',
+        PATH: '/usr/local/bin:/usr/bin:/bin',
+      },
+    },
+    // Admin-only file browser (SSH-tunnel access, see beta's filebrowser
+    // notes) — previously started ad-hoc and undeclared here, so it had no
+    // TZ/log_date_format and no guarantee of coming back correctly after a
+    // reboot. Adopted 2026-07-31, args copied verbatim from the running
+    // process (`pm2 describe kalfa-filebrowser`). Not a Node script —
+    // `interpreter: 'none'` runs the binary directly, same as pm2 already
+    // does for it.
+    {
+      name: 'kalfa-filebrowser',
+      cwd: '/var/www/vhosts/kalfa.me/beta',
+      script: '/usr/local/bin/filebrowser',
+      args: '-r /var/www/vhosts/kalfa.me/beta -d /var/www/vhosts/kalfa.me/beta/filebrowser.db -a 127.0.0.1 -p 8082',
+      interpreter: 'none',
+      log_date_format: 'YYYY-MM-DD HH:mm:ss.SSS Z',
     },
   ],
 };
