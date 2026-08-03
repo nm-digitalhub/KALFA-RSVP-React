@@ -23,6 +23,7 @@ import {
   updateThankyouSchedule,
 } from '@/lib/data/campaigns';
 import { requireOwnedEvent, publishEvent, closeEvent } from '@/lib/data/events';
+import { syncEventToExchange, markEventExchangeCancelled } from '@/lib/data/event-exchange-sync';
 import { sendCampaignWhatsApp } from '@/lib/data/outreach';
 import { ilWallTimeToIso } from '@/lib/data/event-date';
 import { closeCampaignAndCharge } from '@/lib/data/close-charge';
@@ -415,6 +416,10 @@ export async function publishEventAction(
       error: err instanceof Error ? err.message : 'פרסום האירוע נכשל. נסו שוב.',
     };
   }
+  // Best-effort Exchange calendar sync (Layer 2) — syncEventToExchange never
+  // throws (see its own module note), so a mailbox/connection failure here
+  // must never surface as a publish failure to the customer.
+  await syncEventToExchange(eventId);
   revalidatePath(`/app/events/${eventId}`);
   return { notice: 'האירוע פורסם' };
 }
@@ -432,6 +437,9 @@ export async function closeEventAction(
       error: err instanceof Error ? err.message : 'סגירת האירוע נכשלה. נסו שוב.',
     };
   }
+  // Best-effort cancellation marking on the already-synced Exchange
+  // appointment(s) — same never-throws contract as syncEventToExchange.
+  await markEventExchangeCancelled(eventId);
   revalidatePath(`/app/events/${eventId}`);
   return { notice: 'האירוע נסגר' };
 }

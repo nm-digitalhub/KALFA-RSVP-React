@@ -17,6 +17,10 @@ vi.mock('@/lib/data/events', () => ({
   publishEvent: vi.fn(),
   closeEvent: vi.fn(),
 }));
+vi.mock('@/lib/data/event-exchange-sync', () => ({
+  syncEventToExchange: vi.fn(),
+  markEventExchangeCancelled: vi.fn(),
+}));
 vi.mock('@/lib/data/campaigns', () => ({
   createCampaign: vi.fn(),
   activateCampaign: vi.fn(),
@@ -32,6 +36,7 @@ vi.mock('@/lib/data/otp', () => ({ requestOtp: vi.fn() }));
 vi.mock('@/lib/data/agreements-doc', () => ({ getActiveAgreementDoc: vi.fn() }));
 
 import { publishEvent, closeEvent, requireOwnedEvent } from '@/lib/data/events';
+import { syncEventToExchange, markEventExchangeCancelled } from '@/lib/data/event-exchange-sync';
 import { cancelCampaign, getCampaignForHold } from '@/lib/data/campaigns';
 import { closeCampaignAndCharge } from '@/lib/data/close-charge';
 import {
@@ -63,6 +68,14 @@ describe('publishEventAction', () => {
     expect(result?.notice).toBeDefined();
   });
 
+  it('syncs the event to Exchange (Layer 2) after a successful publish', async () => {
+    vi.mocked(publishEvent).mockResolvedValue(undefined);
+
+    await publishEventAction('e1', null, new FormData());
+
+    expect(syncEventToExchange).toHaveBeenCalledWith('e1');
+  });
+
   it('surfaces the data layer\'s Hebrew error message', async () => {
     vi.mocked(publishEvent).mockRejectedValue(
       new Error('יש להגדיר מועד עתידי לפני פרסום'),
@@ -88,6 +101,14 @@ describe('publishEventAction', () => {
       'NEXT_REDIRECT',
     );
   });
+
+  it('does not sync to Exchange when publishEvent fails', async () => {
+    vi.mocked(publishEvent).mockRejectedValue(new Error('יש להגדיר מועד עתידי לפני פרסום'));
+
+    await publishEventAction('e1', null, new FormData());
+
+    expect(syncEventToExchange).not.toHaveBeenCalled();
+  });
 });
 
 describe('closeEventAction', () => {
@@ -98,6 +119,24 @@ describe('closeEventAction', () => {
 
     expect(closeEvent).toHaveBeenCalledWith('e1');
     expect(result?.notice).toBeDefined();
+  });
+
+  it('marks the synced Exchange appointment(s) cancelled after a successful close', async () => {
+    vi.mocked(closeEvent).mockResolvedValue(undefined);
+
+    await closeEventAction('e1', null, new FormData());
+
+    expect(markEventExchangeCancelled).toHaveBeenCalledWith('e1');
+  });
+
+  it('does not mark Exchange cancelled when closeEvent fails', async () => {
+    vi.mocked(closeEvent).mockRejectedValue(
+      new Error('יש לסגור או לבטל את הקמפיין לפני סגירת האירוע'),
+    );
+
+    await closeEventAction('e1', null, new FormData());
+
+    expect(markEventExchangeCancelled).not.toHaveBeenCalled();
   });
 
   it('re-throws a Next.js control-flow signal (the ownership gate) instead of swallowing it', async () => {
