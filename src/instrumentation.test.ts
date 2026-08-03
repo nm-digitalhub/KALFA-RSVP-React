@@ -1,8 +1,19 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const sendSlackAlert = vi.fn();
+const readDeployId = vi.fn(() => null as string | null);
 vi.mock('@/lib/alerts/slack', () => ({
   sendSlackAlert: (...args: unknown[]) => sendSlackAlert(...args),
+  readDeployId: () => readDeployId(),
+}));
+
+const opsErrorInsert = vi.fn((_table: string, _row: unknown) => Promise.resolve({ error: null }));
+vi.mock('@/lib/supabase/admin', () => ({
+  createAdminClient: () => ({
+    from: (table: string) => ({
+      insert: (row: unknown) => opsErrorInsert(table, row),
+    }),
+  }),
 }));
 
 import { isUnknownServerActionError, onRequestError } from './instrumentation';
@@ -90,5 +101,65 @@ describe('onRequestError alert level', () => {
       level: 'error',
       title: 'Unhandled server error',
     });
+  });
+});
+
+// ops_errors exists specifically because sendSlackAlert's own gates (disabled /
+// category off / deduped / rate-capped) mean an alert can be dropped with zero
+// trace anywhere — measured live: 135 suppressed alerts in 30 days, none
+// recoverable. This write must happen regardless of what Slack does.
+describe('onRequestError writes ops_errors independent of Slack', () => {
+  const req = { method: 'POST', path: '/' } as never;
+  const ctx = { routeType: 'render', routePath: '/(public)/page' } as never;
+
+  beforeEach(() => {
+    sendSlackAlert.mockClear();
+    opsErrorInsert.mockClear();
+    readDeployId.mockReset().mockReturnValue(null);
+  });
+
+  it('inserts a PII-safe ops_errors row (no error.message, no headers/body)', async () => {
+    readDeployId.mockReturnValue('abc123');
+    await onRequestError(
+      {
+        name: 'TypeError',
+        message: "Cannot read properties of undefined (owner: admin@nm-digitalhub.com)",
+        digest: 'DIGEST1',
+      } as never,
+      req,
+      ctx,
+    );
+    expect(opsErrorInsert).toHaveBeenCalledTimes(1);
+    const [table, row] = opsErrorInsert.mock.calls[0] as [string, Record<string, unknown>];
+    expect(table).toBe('ops_errors');
+    expect(row).toMatchObject({
+      route_path: '/(public)/page',
+      route_type: 'render',
+      method: 'POST',
+      error_name: 'TypeError',
+      digest: 'DIGEST1',
+      deploy_id: 'abc123',
+    });
+    expect(JSON.stringify(row)).not.toContain('admin@nm-digitalhub.com');
+  });
+
+  it('still writes ops_errors when the Slack send rejects (e.g. alerting disabled)', async () => {
+    sendSlackAlert.mockRejectedValueOnce(new Error('slack not configured'));
+    await onRequestError({ name: 'Error', message: 'boom' } as never, req, ctx);
+    expect(opsErrorInsert).toHaveBeenCalledTimes(1);
+    expect(sendSlackAlert).toHaveBeenCalledTimes(1); // attempted, but its outcome doesn't gate the write above
+  });
+
+  it('writes ops_errors for a benign downgraded Server Action error too', async () => {
+    await onRequestError(
+      {
+        name: 'Error',
+        __NEXT_ERROR_CODE: 'E975',
+        message: 'Failed to find Server Action. This request might be from ...',
+      } as never,
+      req,
+      ctx,
+    );
+    expect(opsErrorInsert).toHaveBeenCalledTimes(1);
   });
 });

@@ -5,6 +5,7 @@ import { randomUUID } from 'node:crypto';
 import { createAdminClient } from '@/lib/supabase/admin';
 import {
   hasPlatformPermission,
+  requirePlatformOwner,
   requirePlatformPermission,
   requireUser,
   getOrgContext,
@@ -113,6 +114,26 @@ export async function listMyExchangeConnections(): Promise<ExchangeConnectionVie
   const { data, error } = await admin.from('exchange_connections')
     .select(PUBLIC_COLUMNS)
     .eq('user_id', user.id)
+    .order('created_at', { ascending: false });
+  if (error) throw new Error('טעינת חיבורי Exchange נכשלה');
+  return ((data ?? []) as ExchangeConnectionRow[]).map(toView);
+}
+
+// Platform-wide read for /admin/debug — every admin's connection, not just
+// the caller's own. Gated by requirePlatformOwner() (stricter than the
+// manage_settings permission every function above uses), matching the debug
+// page's own bar for exposing cross-account operational state. Read-only —
+// deliberately no "test connection" action here; testMyExchangeConnection
+// only works for the CALLER's own connection (loadOwnedConnectionConfig is
+// user-scoped), so triggering a live EWS test against another admin's
+// mailbox from this page is out of scope. Manage/test stays on
+// /admin/settings, which this panel links to.
+export async function listAllExchangeConnectionsForDebug(): Promise<ExchangeConnectionView[]> {
+  await requirePlatformOwner();
+  const admin = createAdminClient();
+  const { data, error } = await admin
+    .from('exchange_connections')
+    .select(PUBLIC_COLUMNS)
     .order('created_at', { ascending: false });
   if (error) throw new Error('טעינת חיבורי Exchange נכשלה');
   return ((data ?? []) as ExchangeConnectionRow[]).map(toView);

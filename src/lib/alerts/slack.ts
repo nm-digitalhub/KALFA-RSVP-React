@@ -155,7 +155,9 @@ let deployIdCache: string | null | undefined;
 // The deploy writes a fresh id to `.deploy-id` at the repo root before building
 // (see next.config.ts / version-skew-protection). Read it best-effort for the
 // environment label; absent (dev / verification builds) → simply omitted.
-function readDeployId(): string | null {
+// Exported for reuse by instrumentation.ts's ops_errors write (same deploy-id
+// label, same file, same cache — no reason to duplicate this).
+export function readDeployId(): string | null {
   if (deployIdCache !== undefined) return deployIdCache;
   try {
     const id = readFileSync(join(process.cwd(), '.deploy-id'), 'utf8').trim();

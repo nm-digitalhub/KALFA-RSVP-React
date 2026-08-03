@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { DirectionProvider } from '@base-ui/react/direction-provider';
 import {
+  Activity,
   Bot,
   Building2,
   CalendarClock,
@@ -141,6 +142,13 @@ const NAV_GROUPS: NavGroup[] = [
     label: 'כלי בדיקה ואבחון',
     defaultOpen: false,
     items: [
+      // Server-side gated to the platform owner (requirePlatformOwner), not
+      // just admin — surfaces raw process/server internals. Visible to every
+      // admin here regardless (nav visibility is convenience only, never a
+      // gate — see requireAdmin's own comment in src/lib/auth/dal.ts); a
+      // non-owner admin who clicks it is redirected by the page itself,
+      // consistent with every other admin-only link.
+      { href: '/admin/debug', label: 'Debug Mode', icon: Activity },
       { href: '/admin/webhooks', label: 'בדיקת Webhooks', icon: Webhook },
       { href: '/admin/sumit-test', label: 'בדיקת SUMIT', icon: FlaskConical },
       // Internal same-origin link: the pg-boss dashboard is reverse-proxied at

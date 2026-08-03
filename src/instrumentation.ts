@@ -1,5 +1,7 @@
 import { type Instrumentation } from 'next';
 
+import { rateLimit } from '@/lib/security/rate-limit';
+
 // Next.js server-error capture (file convention: instrumentation.ts). Placed in
 // `src/` per the docs — "If you're using the `src` folder, then place the file
 // inside `src` alongside `pages` and `app`"
@@ -41,15 +43,62 @@ export function isUnknownServerActionError(error: {
   );
 }
 
+// Global cap on ops_errors writes per minute — protects the DB from a true
+// fault-storm hammering it with inserts. Deliberately NOT a per-(route+error)
+// dedup like sendSlackAlert's: that dedup is exactly what makes ops_alerts an
+// incomplete error log (135 suppressed errors in a measured 30-day window,
+// none written anywhere) — the whole point of ops_errors is to not repeat
+// that gap. A single generous global ceiling is enough to bound worst-case
+// volume without recreating per-error suppression.
+const OPS_ERROR_MAX_PER_MIN = 120;
+const OPS_ERROR_RATE_KEY = 'ops-error:global';
+
+// Best-effort, fail-safe write to ops_errors — runs INDEPENDENTLY of the
+// Slack alert below (own try/catch, own gating), so a disabled/deduped/
+// rate-capped Slack alert still leaves a row here. Uses the service-role
+// client (this runs server-side only, never in a browser) since ops_errors'
+// RLS restricts INSERT to service-role and SELECT to the platform owner.
+async function recordOpsError(
+  error: Error & { digest?: string },
+  request: { method: string; path: string },
+  context: { routeType: string; routePath: string },
+  runtime: string,
+): Promise<void> {
+  if (!rateLimit(OPS_ERROR_RATE_KEY, { limit: OPS_ERROR_MAX_PER_MIN, windowMs: 60_000 }).allowed) return;
+  try {
+    const [{ createAdminClient }, { readDeployId }] = await Promise.all([
+      import('@/lib/supabase/admin'),
+      import('@/lib/alerts/slack'),
+    ]);
+    const admin = createAdminClient();
+    // PII-SAFE — same discipline as the Slack send below: no error.message,
+    // no headers, no request body. Only name/digest/route/deploy-id.
+    await admin.from('ops_errors').insert({
+      route_path: context.routePath,
+      route_type: context.routeType,
+      method: request.method,
+      error_name: error.name || 'Error',
+      digest: error.digest ?? null,
+      deploy_id: readDeployId(),
+      runtime,
+    });
+  } catch {
+    // Fail-safe: never throw into the caller.
+  }
+}
+
 export const onRequestError: Instrumentation.onRequestError = async (err, request, context) => {
   if (process.env.NEXT_RUNTIME === 'edge') return;
+  const error = err as Error & { digest?: string; __NEXT_ERROR_CODE?: string };
+  // Benign unknown/forged Server Action id (scanner POST or auto-recovered deploy
+  // skew): DOWNGRADE to an info breadcrumb instead of paging as a red error — see
+  // isUnknownServerActionError above. Genuine render errors stay level 'error'.
+  const benign = isUnknownServerActionError(error);
+
+  await recordOpsError(error, request, context, process.env.NEXT_RUNTIME ?? 'nodejs');
+
   try {
     const { sendSlackAlert } = await import('@/lib/alerts/slack');
-    const error = err as Error & { digest?: string; __NEXT_ERROR_CODE?: string };
-    // Benign unknown/forged Server Action id (scanner POST or auto-recovered deploy
-    // skew): DOWNGRADE to an info breadcrumb instead of paging as a red error — see
-    // isUnknownServerActionError above. Genuine render errors stay level 'error'.
-    const benign = isUnknownServerActionError(error);
     // PII-SAFE: this is a GLOBAL catch-all, so error.message can embed personal
     // data (Zod messages, DB constraint text, interpolated names/emails). NEVER
     // forward it. Send a constant title + only the error NAME and Next's server

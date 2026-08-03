@@ -68,6 +68,22 @@ import type {
 // override, no Autodiscover: this is the only URL the server ever contacts
 // for EWS, exactly as MEASURED live against the account's mailbox config
 // (plan §0).
+//
+// Autodiscover VERIFIED (31.07, authenticated GetUserSettings against the
+// real mailbox) — not merely "unused," now confirmed CORRECT: it resolves
+// Internal/ExternalEwsUrl to https://exchange2019.ionos.com/EWS/Exchange.asmx
+// — a different hostname, but the SAME server, proven three independent ways:
+// (1) DNS — identical A records (74.208.122.80/.64) for both hostnames;
+// (2) TLS — exchange2019.ionos.com is the certificate's own CN, with
+// exchange.ionos.com as a matching SAN on the SAME cert; (3) DEFINITIVE — a
+// real EWS GetFolder(calendar) call, same NTLM creds, same RequestServer
+// Version, run against BOTH hostnames back-to-back: byte-identical SOAP
+// response, byte-identical FolderId (a mailbox-derived opaque identifier —
+// cannot match unless it's the literal same mailbox on the literal same
+// server). Kept as exchange.ionos.com (the account's own server-explicit
+// config, plan §0) rather than switching to the Autodiscover-reported name —
+// proven zero behavioral difference, so changing it is pure risk for zero
+// gain. Do not revisit without new evidence.
 const EWS_ENDPOINT = 'https://exchange.ionos.com/EWS/Exchange.asmx';
 
 class UnsupportedAuthMethodError extends Error {}
@@ -81,6 +97,19 @@ function buildService(cfg: ExchangeConnectionConfig): ExchangeService {
     // 'basic' is documented in the schema's check constraint for a possible
     // future method but is NOT implemented in Stage 1 (plan §8) — NTLM is the
     // only method verified live against the IONOS endpoint (plan §7.1).
+    //
+    // OAuth CLOSED, not just deferred (31.07): the endpoint DOES advertise and
+    // process OAuth (a deliberately-invalid Bearer token gets a real, parsed
+    // `WWW-Authenticate: Bearer ... error="invalid_token"` challenge naming
+    // Microsoft's own Exchange-Online app id, client_id=00000002-0000-0ff1-
+    // ce00-000000000000 — i.e. Hybrid Modern Auth is genuinely configured
+    // server-side). But kalfa.me itself has NO Entra ID/Azure AD tenant:
+    // https://login.microsoftonline.com/kalfa.me/.well-known/openid-
+    // configuration → AADSTS90002 "Tenant not found"; the userrealm discovery
+    // endpoint returns NameSpaceType:"Unknown". There is no tenant on our side
+    // that could ever issue a token this server would accept — this isn't
+    // "not implemented yet," it's structurally unavailable to us. NTLM stays
+    // the only viable auth method.
     throw new UnsupportedAuthMethodError('Only NTLM is implemented in Stage 1');
   }
 
@@ -91,9 +120,21 @@ function buildService(cfg: ExchangeConnectionConfig): ExchangeService {
   // only recognizes the classic values up to "Exchange2016" and rejects
   // anything else with SoapFaultDetails "The request is invalid." — exactly
   // what the pm2 diagnostic captured. Exchange 2019 has no schema value of
-  // its own; Exchange2016 is the correct wire version for it.
-  // No Autodiscover — the endpoint is set explicitly below, matching the
-  // account's server-explicit iOS config (plan §0).
+  // its own; Exchange2016 is the correct wire version for it. INDEPENDENTLY
+  // corroborated 31.07: an unrelated Python EWS library hits the identical
+  // Exchange2019→500/Exchange2016→200 split against this same class of server
+  // (ecederstrand/exchangelib#927).
+  //
+  // KNOWN DISCREPANCY, not yet acted on (31.07): this account's own
+  // Autodiscover GetUserSettings response lists EwsSupportedSchemas up to
+  // "Exchange2015" only — "Exchange2016" is absent from that metadata list,
+  // even though it is the value MEASURED to work over the actual EWS wire
+  // protocol, repeatedly, in production. Autodiscover's advertised schema
+  // list and the server's real RequestServerVersion acceptance are evidently
+  // not in lockstep here. DO NOT switch to Exchange2015 on the strength of
+  // this metadata alone — Exchange2016 is proven working; Exchange2015 has
+  // never been tried against a real EWS operation. Only revisit if
+  // Exchange2016 ever starts failing.
   const service = new ExchangeService(ExchangeVersion.Exchange2016);
   service.Url = new Uri(EWS_ENDPOINT);
   // Defense-in-depth: never trace/log SOAP request or response bodies (plan
@@ -194,6 +235,23 @@ function classifyError(err: unknown): ExchangeErrorCode {
 // content) or auth-handshake detail, and plan §5.4/§5.5 forbid logging either
 // (see also the module-level `service.TraceEnabled = false` above). A caller
 // that wants an operational log logs the CLASSIFIED code only, never `err`.
+//
+// Malformed-500 crash risk CHECKED, not a concern (31.07 deep-dive re: the
+// GetUserAvailability 500 above, prompted by gautamsi/ews-javascript-api#455
+// — an open report that a malformed non-SOAP-fault 500 body can throw
+// UNCAUGHT rather than reject). Traced the actual transport this app uses:
+// every standard request goes through ServiceRequestBase → this.service.
+// XHRApi.xhr(request) (node_modules/ews-javascript-api/js/Core/Requests/
+// ServiceRequestBase.js:171,403) — the INSTALLED @ewsjs/xhr@3.1.3's `xhr()`
+// (dist/xhrApi.js:97-148) is itself an `async function` with
+// `validateStatus: () => true` (axios never auto-throws on status), and every
+// non-200 response is `throw`n from INSIDE that async body — which JS
+// guarantees becomes a rejected Promise, never a synchronous/uncaught
+// escape. So the `await fn(service)` below always sees it as a normal
+// rejection and this try/catch already handles it. #455's failure mode would
+// require the streaming path (`xhrStream`, a manual `new Promise` executor)
+// instead — that path is only reachable via HangingServiceRequestBase
+// (push-notification subscriptions), which this app never calls.
 async function runProviderCall<T>(
   cfg: ExchangeConnectionConfig,
   fn: (service: ExchangeService) => Promise<T>,

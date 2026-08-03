@@ -1910,6 +1910,68 @@ export type Database = {
           },
         ]
       }
+      exchange_calendar_links: {
+        Row: {
+          appointment_id: string
+          connection_id: string
+          created_at: string
+          event_id: string
+          id: string
+          rsvp_deadline_appointment_id: string | null
+          subject_synced: string | null
+          updated_at: string
+        }
+        Insert: {
+          appointment_id: string
+          connection_id: string
+          created_at?: string
+          event_id: string
+          id?: string
+          rsvp_deadline_appointment_id?: string | null
+          subject_synced?: string | null
+          updated_at?: string
+        }
+        Update: {
+          appointment_id?: string
+          connection_id?: string
+          created_at?: string
+          event_id?: string
+          id?: string
+          rsvp_deadline_appointment_id?: string | null
+          subject_synced?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "exchange_calendar_links_connection_id_fkey"
+            columns: ["connection_id"]
+            isOneToOne: false
+            referencedRelation: "exchange_connections"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "exchange_calendar_links_connection_id_fkey"
+            columns: ["connection_id"]
+            isOneToOne: false
+            referencedRelation: "exchange_connections_status"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "exchange_calendar_links_event_id_fkey"
+            columns: ["event_id"]
+            isOneToOne: true
+            referencedRelation: "console_events"
+            referencedColumns: ["event_id"]
+          },
+          {
+            foreignKeyName: "exchange_calendar_links_event_id_fkey"
+            columns: ["event_id"]
+            isOneToOne: true
+            referencedRelation: "events"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       exchange_connections: {
         Row: {
           auth_method: string
@@ -2460,6 +2522,45 @@ export type Database = {
           source?: string | null
           suppressed_count?: number
           title?: string
+        }
+        Relationships: []
+      }
+      ops_errors: {
+        Row: {
+          deploy_id: string | null
+          digest: string | null
+          error_name: string | null
+          id: string
+          method: string | null
+          occurred_at: string
+          occurrences: number
+          route_path: string | null
+          route_type: string | null
+          runtime: string | null
+        }
+        Insert: {
+          deploy_id?: string | null
+          digest?: string | null
+          error_name?: string | null
+          id?: string
+          method?: string | null
+          occurred_at?: string
+          occurrences?: number
+          route_path?: string | null
+          route_type?: string | null
+          runtime?: string | null
+        }
+        Update: {
+          deploy_id?: string | null
+          digest?: string | null
+          error_name?: string | null
+          id?: string
+          method?: string | null
+          occurred_at?: string
+          occurrences?: number
+          route_path?: string | null
+          route_type?: string | null
+          runtime?: string | null
         }
         Relationships: []
       }
@@ -4345,6 +4446,32 @@ export type Database = {
       next_manual_touchpoint: {
         Args: { p_campaign: string; p_contact: string }
         Returns: number
+      }
+      ops_db_health: {
+        Args: never
+        Returns: {
+          active_connections: number
+          index_hit_rate_pct: number
+          longest_query_seconds: number
+          max_connections: number
+          table_hit_rate_pct: number
+          top_queries: Json
+        }[]
+      }
+      ops_job_health: {
+        Args: never
+        Returns: {
+          active_count: number
+          cron: string
+          failed_count: number
+          is_scheduled: boolean
+          last_completed_on: string
+          oldest_pending_on: string
+          queue_name: string
+          queued_count: number
+          schedule_tz: string
+          total_count: number
+        }[]
       }
       org_role_rank: { Args: { _role_id: string }; Returns: number }
       over_invited: {
