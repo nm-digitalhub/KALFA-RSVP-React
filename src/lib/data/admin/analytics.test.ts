@@ -7,11 +7,14 @@ vi.mock('@/lib/auth/dal', () => ({
   hasPlatformPermission: vi.fn(async () => true),
 }));
 
-vi.mock('@/lib/analytics/ga4-client', () => ({
+vi.mock('@/lib/analytics/ga4-config', () => ({
   getGa4ConfigStatus: vi.fn(async () => ({ ok: true })),
   getGa4Property: vi.fn(() => 'properties/123456'),
   getGa4StreamId: vi.fn(() => '15330155015'),
   getGa4ChannelGroupId: vi.fn(() => '15331180408'),
+}));
+
+vi.mock('@/lib/analytics/ga4-client', () => ({
   getGa4Client: vi.fn(),
 }));
 
@@ -40,6 +43,7 @@ async function load() {
   const dal = await import('@/lib/data/admin/analytics');
   const auth = vi.mocked(await import('@/lib/auth/dal'));
   const client = vi.mocked(await import('@/lib/analytics/ga4-client'));
+  const config = vi.mocked(await import('@/lib/analytics/ga4-config'));
 
   const batchRunReports = vi.fn(async (req: { requests: { returnPropertyQuota?: boolean }[] }) => [
     { reports: req.requests.map((r) => fakeReport(!!r.returnPropertyQuota)) },
@@ -52,7 +56,7 @@ async function load() {
     runRealtimeReport,
   } as unknown as ReturnType<typeof client.getGa4Client>);
 
-  return { dal, auth, client, batchRunReports, runRealtimeReport };
+  return { dal, auth, client, config, batchRunReports, runRealtimeReport };
 }
 
 beforeEach(() => {
@@ -74,8 +78,8 @@ describe('getAnalyticsDashboard — gates', () => {
   });
 
   it('invalid config → configured:false with issue, all sections not_configured, zero network', async () => {
-    const { dal, client, batchRunReports } = await load();
-    client.getGa4ConfigStatus.mockResolvedValueOnce({ ok: false, issue: 'credentials_unreadable' });
+    const { dal, config, batchRunReports } = await load();
+    config.getGa4ConfigStatus.mockResolvedValueOnce({ ok: false, issue: 'credentials_unreadable' });
     const dash = await dal.getAnalyticsDashboard('30d');
     expect(dash?.configured).toBe(false);
     expect(dash?.configIssue).toBe('credentials_unreadable');
@@ -203,8 +207,8 @@ describe('getRealtimeSnapshot', () => {
   });
 
   it('not configured → not_configured without network', async () => {
-    const { dal, client, runRealtimeReport } = await load();
-    client.getGa4ConfigStatus.mockResolvedValueOnce({ ok: false, issue: 'missing_property_id' });
+    const { dal, config, runRealtimeReport } = await load();
+    config.getGa4ConfigStatus.mockResolvedValueOnce({ ok: false, issue: 'missing_property_id' });
     const snap = await dal.getRealtimeSnapshot();
     expect(snap.section.state).toBe('not_configured');
     expect(snap.quota).toBeNull();

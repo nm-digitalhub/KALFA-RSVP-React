@@ -116,26 +116,61 @@ export async function getFleetRequest(id: string): Promise<{
   return { request, answeredByName };
 }
 
-// The same role's other requests, newest first — the "thread" view for
-// follow-ups on the same topic (agents file follow-ups as new requests).
+export type FleetRequestThreadView = {
+  /** Every other message in this same conversation (thread_root match, or the
+   * root itself), chronological oldest-first, UNCAPPED at a small number —
+   * a thread item must never silently fall off this list. */
+  sameThread: FleetRequestEntry[];
+  /** The role's other, unrelated recent activity — newest first, capped, and
+   * guaranteed not to duplicate anything already in `sameThread`. */
+  other: FleetRequestEntry[];
+};
+
+// The same role's other requests: split into "this conversation" (unbounded —
+// see FleetRequestThreadView.sameThread) and "everything else" (capped, most
+// recent first). Previously a single flat newest-first list capped at 10,
+// which meant a still-pending thread reply could silently drop off the page
+// if the role filed 10+ unrelated things since — the exact shape of bug this
+// split exists to rule out.
 export async function listFleetRequestsByRole(
   role: string,
   excludeId: string,
-  limit = 10,
-): Promise<FleetRequestEntry[]> {
+  threadRoot: string,
+  otherLimit = 10,
+): Promise<FleetRequestThreadView> {
   await requirePlatformPermission('manage_settings');
   const supabase = await createClient();
 
-  const { data, error } = await supabase
-    .from('fleet_requests')
-    .select(FLEET_REQUEST_COLUMNS)
-    .eq('role', role)
-    .neq('id', excludeId)
-    .order('created_at', { ascending: false })
-    .limit(limit);
+  const [threadResult, recentResult] = await Promise.all([
+    supabase
+      .from('fleet_requests')
+      .select(FLEET_REQUEST_COLUMNS)
+      .eq('role', role)
+      .neq('id', excludeId)
+      .or(`id.eq.${threadRoot},payload->>thread_root.eq.${threadRoot}`)
+      .order('created_at', { ascending: true })
+      .limit(200),
+    // A modest buffer over otherLimit, not otherLimit itself: rows that turn
+    // out to belong to the thread get filtered out below, so the DB limit has
+    // to leave enough room for `otherLimit` real "other" rows to survive that.
+    supabase
+      .from('fleet_requests')
+      .select(FLEET_REQUEST_COLUMNS)
+      .eq('role', role)
+      .neq('id', excludeId)
+      .order('created_at', { ascending: false })
+      .limit(otherLimit + 20),
+  ]);
 
-  if (error) throw new Error('טעינת פניות קשורות נכשלה');
-  return (data ?? []) as FleetRequestEntry[];
+  if (threadResult.error || recentResult.error) throw new Error('טעינת פניות קשורות נכשלה');
+
+  const sameThread = (threadResult.data ?? []) as FleetRequestEntry[];
+  const threadIds = new Set(sameThread.map((r) => r.id));
+  const other = ((recentResult.data ?? []) as FleetRequestEntry[])
+    .filter((r) => !threadIds.has(r.id))
+    .slice(0, otherLimit);
+
+  return { sameThread, other };
 }
 
 // The role registry the compose form offers, read from the same fleet.json the

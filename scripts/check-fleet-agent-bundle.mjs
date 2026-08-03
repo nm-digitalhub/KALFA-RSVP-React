@@ -45,6 +45,16 @@ const SHIM = 'var import_meta = {}';
 // a disk-full or interrupted esbuild that still exited 0.
 const MIN_BYTES = 1_000_000;
 
+// A ceiling, not just a floor. The analytics-summary verb (fleet-agent-cli.ts)
+// loads @google-analytics/data via createRequire specifically to keep its
+// unconditional gRPC require chain (protos.js alone is 4,684,376 bytes, plus
+// google-gax's @grpc/grpc-js require) out of this bundle — a future edit that
+// reverts that to a static `import` would balloon the artifact to ~12-18MB
+// without any other gate noticing, since this is the only check that loads
+// the bundle at all. Real artifact stays ~2.3MB; 4MB leaves headroom for
+// normal growth while still catching a regression to static import.
+const MAX_BYTES = 4_000_000;
+
 let size;
 try {
   size = statSync(BUNDLE).size;
@@ -56,6 +66,21 @@ try {
 if (size < MIN_BYTES) {
   console.error(
     `check-fleet-agent-bundle: ${BUNDLE} is ${size} bytes, below the ${MIN_BYTES} floor — truncated build`,
+  );
+  process.exit(1);
+}
+
+if (size > MAX_BYTES) {
+  console.error(
+    [
+      `check-fleet-agent-bundle: ${BUNDLE} is ${size} bytes, above the ${MAX_BYTES} ceiling.`,
+      '',
+      '  This bundle is spawned ~17 times a minute across 16 roles, most of',
+      '  which never touch GA4 — a jump this size usually means a dependency',
+      '  (most likely @google-analytics/data) got pulled in via a static',
+      '  `import` instead of createRequire(). See fleet-agent-cli.ts\'s',
+      '  cmdAnalyticsSummary for the intended pattern.',
+    ].join('\n'),
   );
   process.exit(1);
 }

@@ -1,12 +1,12 @@
 import 'server-only';
 
+import { getGa4Client } from '@/lib/analytics/ga4-client';
 import {
-  getGa4Client,
   getGa4ConfigStatus,
   getGa4ChannelGroupId,
   getGa4Property,
   getGa4StreamId,
-} from '@/lib/analytics/ga4-client';
+} from '@/lib/analytics/ga4-config';
 import {
   classifyGa4Error,
   fillTrendGaps,

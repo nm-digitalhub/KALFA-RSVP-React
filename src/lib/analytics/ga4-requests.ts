@@ -224,6 +224,29 @@ export function buildCoreBatchC(
   ];
 }
 
+// Single-report request for landingPage — deliberately NOT the whole of
+// buildCoreBatchC (which bundles 3 demographic reports ahead of this one):
+// the fleet CLI's analytics-summary verb wants only this report, and paying
+// for 3 discarded demographic calls on every invocation (content-seo-strategist
+// runs it every week, not just once) would be pure waste. Same dimension/
+// metric/filter/limit shape as buildCoreBatchC's own landingPage entry —
+// kept in sync by hand since GA4 has no shared sub-request type to extract.
+export function buildLandingPagesRequest(
+  range: AnalyticsRange,
+  streamId?: string,
+): RunReportRequest[] {
+  return [
+    {
+      dateRanges: [rangeToDateRange(range)],
+      dimensions: [{ name: 'landingPage' }],
+      metrics: [{ name: 'sessions' }],
+      dimensionFilter: withStreamFilter(streamId),
+      orderBys: metricDesc('sessions'),
+      limit: TABLE_ROW_LIMIT,
+    },
+  ];
+}
+
 // Batch D order (v4): [leadSources, billingModels, kalfaChannels?] — the two
 // custom-dimension breakdowns (live-verified 27.7: `customEvent:<param>` is
 // the documented Data API syntax and accepted by the property) plus, ONLY

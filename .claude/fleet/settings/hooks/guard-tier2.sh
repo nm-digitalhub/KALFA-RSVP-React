@@ -74,7 +74,15 @@ echo "$C" | grep -Eq '(^|[;&| ])(python3?|perl|ruby)([ ]|$)' && block "generic i
 echo "$C" | grep -Eq '(^|[;&| ])(eval|source)([ ]|$)' && block "shell eval/source is forbidden"
 
 # --- Secrets / sensitive files ----------------------------------------------
-echo "$C" | grep -Eq '\.env(\.|[ ]|$)|\.token\.env|vox_ci_credentials' && block "secret files are off-limits"
+# Parity fix (2026-07-30): this pattern had NOT received the same hardening
+# guard.sh got on 2026-07-29 — its narrow `(\.|[ ]|$)` character class did not
+# cover a trailing `*`, so `rg SERVICE_ROLE .env*` walked straight through
+# this hook at Tier-2 (the higher-privilege 'main' role) while guard.sh
+# already blocked the equivalent at Tier-0/1. Same broadened class and the
+# same env-file carve-out as guard.sh:101-102, so main's own legitimate
+# `--env-file=.env.local dist/fleet-agent-cli.cjs` call still passes.
+C_SECRET="${C//--env-file=.env.local dist\/fleet-agent-cli.cjs/}"
+echo "$C_SECRET" | grep -Eq '\.env($|[^A-Za-z0-9_-])|\.token\.env|vox_ci_credentials|\.secrets/' && block "secret files are off-limits"
 echo "$C" | grep -Eq 'agent_configs/' && block "agent_configs is managed only via the documented ElevenLabs workflow"
 
 # --- Network egress beyond the allowed CLIs ---------------------------------

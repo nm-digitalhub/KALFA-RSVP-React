@@ -1,3 +1,4 @@
+import type { Metadata } from 'next';
 import Link from 'next/link';
 
 import {
@@ -15,14 +16,18 @@ import {
   listFleetRoles,
   listPendingFleetRequests,
 } from '@/lib/data/admin/fleet';
+import { LocalDateTime } from '@/components/local-date-time';
+import { EmptyState, PageHeading, Pagination, parsePageParam } from '../_components';
 import {
-  EmptyState,
-  PageHeading,
-  Pagination,
-  formatDateTime,
-  parsePageParam,
-} from '../_components';
-import { ComposeRequestCard, GoalCard, GoalComposeCard, PendingRequestCard } from './fleet-client';
+  ComposeRequestCard,
+  GoalCard,
+  GoalComposeCard,
+  KIND_LABEL,
+  KIND_VARIANT,
+  PendingRequestCard,
+} from './fleet-client';
+
+export const metadata: Metadata = { title: 'פניות סוכנים' };
 
 // Admin: the autonomous-fleet request inbox (/admin/fleet). Fleet roles file
 // approval/question/fyi requests via the service-role CLI; the owner answers
@@ -45,12 +50,6 @@ const STATUS_VARIANT: Record<string, BadgeVariant> = {
   expired: 'neutral',
   consumed: 'success',
   completed: 'success',
-};
-
-const KIND_LABEL: Record<string, string> = {
-  approval: 'אישור',
-  question: 'שאלה',
-  fyi: 'עדכון',
 };
 
 export default async function AdminFleetPage({
@@ -80,14 +79,7 @@ export default async function AdminFleetPage({
         {pending.length === 0 ? (
           <EmptyState>אין פניות ממתינות — כל הסוכנים מסודרים 🎉</EmptyState>
         ) : (
-          pending.map((request) => (
-            <PendingRequestCard
-              key={request.id}
-              request={request}
-              createdAtLabel={formatDateTime(request.created_at)}
-              expiresAtLabel={formatDateTime(request.expires_at)}
-            />
-          ))
+          pending.map((request) => <PendingRequestCard key={request.id} request={request} />)
         )}
       </section>
 
@@ -101,14 +93,7 @@ export default async function AdminFleetPage({
         {goals.length === 0 ? (
           <EmptyState>אין מטרות פעילות</EmptyState>
         ) : (
-          goals.map((goal) => (
-            <GoalCard
-              key={goal.id}
-              goal={goal}
-              createdAtLabel={formatDateTime(goal.created_at)}
-              nextWakeAtLabel={goal.next_wake_at ? formatDateTime(goal.next_wake_at) : null}
-            />
-          ))
+          goals.map((goal) => <GoalCard key={goal.id} goal={goal} />)
         )}
       </section>
 
@@ -133,10 +118,14 @@ export default async function AdminFleetPage({
                 {history.items.map((request) => (
                   <TableRow key={request.id}>
                     <TableCell className="whitespace-nowrap text-muted-foreground">
-                      {formatDateTime(request.created_at)}
+                      <LocalDateTime iso={request.created_at} />
                     </TableCell>
                     <TableCell>{request.role}</TableCell>
-                    <TableCell>{KIND_LABEL[request.kind] ?? request.kind}</TableCell>
+                    <TableCell>
+                      <Badge variant={KIND_VARIANT[request.kind] ?? 'secondary'}>
+                        {KIND_LABEL[request.kind] ?? request.kind}
+                      </Badge>
+                    </TableCell>
                     <TableCell className="max-w-64 truncate" title={request.title}>
                       <Link
                         href={`/admin/fleet/${request.id}`}

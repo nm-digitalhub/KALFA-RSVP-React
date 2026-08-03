@@ -6,7 +6,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest
 
 vi.mock('server-only', () => ({}));
 
-import { getGa4ConfigStatus } from './ga4-client';
+import { getGa4ConfigStatus } from './ga4-config';
 
 const ORIGINAL = {
   propertyId: process.env.GA4_PROPERTY_ID,

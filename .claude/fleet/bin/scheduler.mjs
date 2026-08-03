@@ -79,15 +79,26 @@ function dayMatches(daysSpec, day) {
   });
 }
 
-function dailyCount(dateKey) {
-  const file = join(LOCKS_DIR, `count-${dateKey}`);
+// `kind` picks which counter file to use. Default ('count') is the original
+// shared budget for self-initiated spawns (scheduled + inquiry-watcher) —
+// the paths a config error could genuinely make runaway. 'answer' is a
+// SEPARATE budget for answer-watcher's verdict-consumption spawns (see its
+// call site) — those are inherently bounded by how many requests exist
+// (itself already capped when each request was FIRST created), so charging
+// them against the same shared budget double-counts one unit of fleet
+// activity and can starve an owner's own answer from ever being acted on —
+// measured 2026-07-30: a disk-94% alert the owner had already answered sat
+// unconsumed for hours because routine same-day spawns had exhausted the
+// shared cap first.
+function dailyCount(dateKey, kind = 'count') {
+  const file = join(LOCKS_DIR, `${kind}-${dateKey}`);
   if (!existsSync(file)) return 0;
   return Number(readFileSync(file, 'utf8').trim()) || 0;
 }
 
-function bumpDailyCount(dateKey) {
-  const file = join(LOCKS_DIR, `count-${dateKey}`);
-  writeFileSync(file, String(dailyCount(dateKey) + 1));
+function bumpDailyCount(dateKey, kind = 'count') {
+  const file = join(LOCKS_DIR, `${kind}-${dateKey}`);
+  writeFileSync(file, String(dailyCount(dateKey, kind) + 1));
 }
 
 function tick() {
@@ -299,26 +310,33 @@ async function answerWatcherTick(config) {
     const marker = join(LOCKS_DIR, `verdict-${v.id}`);
     if (existsSync(marker)) continue;
 
-    // The daily cap applies HERE too. It used to be checked only in the
-    // scheduled and inquiry paths, which left this one — the busiest, since
-    // every owner answer to every role passes through it — able to spawn
-    // without bound. The cap exists to bound runaway config errors; a path
-    // that ignores it is a hole in exactly the case the cap was written for.
+    // A cap applies here too, but a SEPARATE one from the shared
+    // daily_run_cap (see dailyCount's own comment for why): this path only
+    // ever spawns to consume a verdict on a request that was already counted
+    // against daily_run_cap when the request was first CREATED (scheduled or
+    // inquiry-watcher path). Sharing one counter between "opening N requests"
+    // and "consuming N answers to those same requests" charges the same unit
+    // of activity twice, and — measured 2026-07-30 — can starve an owner's
+    // own already-given answer from ever being acted on, for hours, on days
+    // where routine same-day spawns happen to exhaust the shared budget
+    // first. answer_daily_run_cap defaults generously (50): the real bound
+    // on this path is "how many distinct verdicts exist right now", which
+    // the shared cap already constrains upstream.
     //
     // Checked BEFORE the marker is written, deliberately: the marker means
     // "this verdict has been spawned, never again". Writing it and then
     // declining to spawn would strand the verdict permanently. Leaving it
     // unwritten means the next tick (or tomorrow, once the count rolls over)
     // picks the same verdict up again.
-    const cap = config.daily_run_cap ?? 14;
-    if (dailyCount(now.dateKey) >= cap) {
-      log(`answer-watcher: daily cap ${cap} reached — deferring "${v.title}" (${v.role})`);
+    const cap = config.answer_daily_run_cap ?? 50;
+    if (dailyCount(now.dateKey, 'answer') >= cap) {
+      log(`answer-watcher: answer cap ${cap} reached — deferring "${v.title}" (${v.role})`);
       break;
     }
 
     writeFileSync(marker, 'spawned');
     log(`answer-watcher: spawning ${v.role} to consume "${v.title}"`);
-    bumpDailyCount(now.dateKey);
+    bumpDailyCount(now.dateKey, 'answer');
     const out = openSync(join(LOCKS_DIR, `spawn-${v.role}.log`), 'a');
     const child = spawn(join(FLEET_DIR, 'bin', 'run-role.sh'), [v.role], {
       cwd: REPO_DIR,

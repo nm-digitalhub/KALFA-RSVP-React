@@ -99,7 +99,7 @@ echo "$C" | grep -Eq '(^|[;&| ])(eval|source)([ ]|$)' && block "shell eval/sourc
 # read utility was allowed; it became a live hole the moment cat/head/grep/find
 # were granted below, which is why the two changes landed together.
 C_SECRET="${C//--env-file=.env.local dist\/fleet-agent-cli.cjs/}"
-echo "$C_SECRET" | grep -Eq '\.env($|[^A-Za-z0-9_-])|\.token\.env|vox_ci_credentials' && block "secret files are off-limits"
+echo "$C_SECRET" | grep -Eq '\.env($|[^A-Za-z0-9_-])|\.token\.env|vox_ci_credentials|\.secrets/' && block "secret files are off-limits"
 echo "$C" | grep -Eq 'agent_configs/' && block "agent_configs is managed only via the documented ElevenLabs workflow"
 
 # --- Network egress beyond the allowed CLIs ---------------------------------
