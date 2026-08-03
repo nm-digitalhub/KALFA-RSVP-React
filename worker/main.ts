@@ -599,7 +599,16 @@ async function main(): Promise<void> {
     ssl: { rejectUnauthorized: false },
     schema: 'pgboss',
     application_name: 'kalfa-worker',
-    max: 4,
+    // Raised from the original 4 (measured, 03.08): 14 queues now share this
+    // pool, several on the same "* * * * *" tick, and pg-pool's own connect()
+    // rejects with "timeout exceeded when trying to connect" once a burst
+    // exceeds `max` and waits past `connectionTimeoutMillis` — confirmed via
+    // pgboss.job that every one of those bursts' jobs still completed a few
+    // seconds later, i.e. genuine contention, not a dead DB. Doubling both
+    // gives a same-minute burst realistic room without holding many more
+    // connections open at rest (idle ones still close per idleTimeoutMillis).
+    max: 8,
+    connectionTimeoutMillis: 20_000,
     // Both off by default in pg-boss; required for the ops dashboard's
     // metrics-history/sparklines (queue_stats, 7-day retention) and
     // Warning History tabs to populate.
