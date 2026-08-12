@@ -47,11 +47,13 @@ import {
   SidebarHeader,
   SidebarInset,
   SidebarMenu,
+  SidebarMenuBadge,
   SidebarMenuButton,
   SidebarMenuItem,
   SidebarProvider,
   useSidebar,
 } from '@/components/ui/sidebar';
+import type { AdminNavCounts } from '@/lib/data/admin/nav-counts';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -166,9 +168,24 @@ function isActive(pathname: string, href: string): boolean {
     : pathname === href || pathname.startsWith(`${href}/`);
 }
 
-// Renders one nav row: a Link with subtree-based active highlighting. Shared by
-// every group so the markup lives in exactly one place.
-function renderNavItem(item: NavItem, pathname: string) {
+// Which nav items get a "needs attention" badge, and which AdminNavCounts key
+// feeds it. Static mapping — the counts themselves are per-request server
+// data, threaded in via the navCounts prop, never baked into this module.
+const NAV_COUNT_KEY: Partial<Record<string, keyof AdminNavCounts>> = {
+  '/admin/contacts': 'contacts',
+  '/admin/callbacks': 'callbacks',
+  '/admin/campaigns': 'campaigns',
+  '/admin/fleet': 'fleet',
+};
+
+// Renders one nav row: a Link with subtree-based active highlighting, plus an
+// optional count badge. Shared by every group so the markup lives in exactly
+// one place. The badge MUST be a sibling of SidebarMenuButton inside
+// SidebarMenuItem, never nested inside the Link/render prop — SidebarMenuBadge
+// positions itself off `peer/menu-button` (a previous-sibling selector) and
+// the button's `[&>span:last-child]:truncate` would otherwise retarget from
+// the label to the badge, breaking Hebrew label truncation.
+function renderNavItem(item: NavItem, pathname: string, count?: number) {
   const { href, label, icon: Icon } = item;
 
   const active = isActive(pathname, href);
@@ -177,6 +194,7 @@ function renderNavItem(item: NavItem, pathname: string) {
       <SidebarMenuButton
         isActive={active}
         tooltip={label}
+        className={count ? 'pe-8' : undefined}
         render={
           <Link href={href} aria-current={active ? 'page' : undefined}>
             <Icon />
@@ -184,6 +202,7 @@ function renderNavItem(item: NavItem, pathname: string) {
           </Link>
         }
       />
+      {count ? <SidebarMenuBadge>{count > 99 ? '99+' : count}</SidebarMenuBadge> : null}
     </SidebarMenuItem>
   );
 }
@@ -234,6 +253,7 @@ export function AdminShell({
   availabilityBlocks,
   availabilityPresence,
   hasExchangeConnection,
+  navCounts,
   children,
 }: {
   userEmail: string | undefined;
@@ -249,6 +269,11 @@ export function AdminShell({
   // trigger). The account menu shows the name as the primary identity and the
   // email as a secondary line, falling back to the email when the name is empty.
   userName?: string;
+  // "Needs attention" counts per domain, resolved server-side under the
+  // caller's own platform permissions (a null value means the viewer lacks
+  // that domain's permission — NAV_COUNT_KEY lookups against it stay
+  // undefined, so no badge renders rather than showing a stale 0).
+  navCounts: AdminNavCounts;
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
@@ -279,7 +304,11 @@ export function AdminShell({
             {NAV_GROUPS.map((group, index) => {
               const menu = (
                 <SidebarMenu>
-                  {group.items.map((item) => renderNavItem(item, pathname))}
+                  {group.items.map((item) => {
+                    const countKey = NAV_COUNT_KEY[item.href];
+                    const count = countKey ? (navCounts[countKey] ?? undefined) : undefined;
+                    return renderNavItem(item, pathname, count);
+                  })}
                 </SidebarMenu>
               );
 

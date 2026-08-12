@@ -76,7 +76,9 @@ export interface AdminCampaignListItem {
 
 // Statuses that may still need a wind-down action (close/pause/settle/cancel).
 // Terminal states (billed/paid/cancelled) are excluded — nothing left to do.
-const WINDDOWN_STATUSES: readonly CampaignStatus[] = [
+// Exported so nav-counts.ts can count against the same predicate this list
+// already filters by, instead of duplicating the status list.
+export const WINDDOWN_STATUSES: readonly CampaignStatus[] = [
   'active',
   'paused',
   'closed',

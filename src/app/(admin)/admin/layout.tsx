@@ -7,6 +7,7 @@ import {
   type AvailabilityBlock,
   type PresenceSnapshot,
 } from '@/lib/data/exchange-availability';
+import { getAdminNavCounts } from '@/lib/data/admin/nav-counts';
 import { AdminShell } from '@/components/admin-shell';
 
 // Admin area layout. requireAdmin() enforces authentication AND the admin role
@@ -21,7 +22,9 @@ export default async function AdminLayout({
   const user = await requireAdmin();
   // Full name for the account menu (profile row is created at signup by the
   // handle_new_user trigger); falls back to the email in the shell when empty.
-  const profile = await getProfile();
+  // navCounts (per-item sidebar badges) is independent of the profile read —
+  // fetched in parallel rather than as a second sequential await.
+  const [profile, navCounts] = await Promise.all([getProfile(), getAdminNavCounts()]);
   const userName = profile?.full_name?.trim() || undefined;
 
   // Availability presence for the account menu. Read here so the avatar's
@@ -54,6 +57,7 @@ export default async function AdminLayout({
       availabilityBlocks={availabilityBlocks}
       availabilityPresence={availabilityPresence}
       hasExchangeConnection={hasExchangeConnection}
+      navCounts={navCounts}
     >
       {children}
     </AdminShell>

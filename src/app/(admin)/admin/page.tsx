@@ -29,8 +29,8 @@ export default async function AdminDashboardPage() {
   // A null count = the viewer lacks that domain's permission; omit the card.
   const cards: Card[] = (
     [
-      { href: '/admin/contacts', label: 'פניות', icon: MailOpen, value: counts.contacts },
-      { href: '/admin/callbacks', label: 'בקשות חזרה', icon: PhoneCall, value: counts.callbacks },
+      { href: '/admin/contacts', label: 'פניות חדשות', icon: MailOpen, value: counts.contacts },
+      { href: '/admin/callbacks', label: 'בקשות חזרה חדשות', icon: PhoneCall, value: counts.callbacks },
       { href: '/admin/packages', label: 'חבילות', icon: Package, value: counts.packages },
     ] satisfies Card[]
   ).filter((c) => c.value !== null);

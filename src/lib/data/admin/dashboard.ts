@@ -2,6 +2,7 @@ import 'server-only';
 
 import { createAdminClient } from '@/lib/supabase/admin';
 import { hasPlatformPermission, requireAdmin } from '@/lib/auth/dal';
+import { countNewCallbacks, countNewContacts } from './nav-counts';
 
 // Admin dashboard: headline counts. Each is a count-only query (head: true,
 // count: 'exact') so no rows are transferred — but a count still discloses one
@@ -12,6 +13,13 @@ import { hasPlatformPermission, requireAdmin } from '@/lib/auth/dal';
 // but not the packages count (view_billing). A count the viewer may not see is
 // `null`, and the page omits its card. Reads run via service_role; the permission
 // check is the authorization, exactly as every other admin reader.
+//
+// contacts/callbacks count status='new' (via nav-counts.ts's shared counters),
+// NOT total row volume — this is the same "needs handling" predicate the
+// admin-sidebar badge uses (see nav-counts.ts), so the overview card and the
+// sidebar badge always agree on one number instead of showing two different
+// counts for the same domain. packages has no status workflow, so it stays a
+// plain catalog-size total.
 
 export interface DashboardCounts {
   contacts: number | null;
@@ -21,9 +29,11 @@ export interface DashboardCounts {
 
 // Count a single table head-only; returns 0 on error (a failed counter must not
 // take down the whole dashboard). Errors are not surfaced to the user here.
+// Used for `packages` only — contacts/callbacks reuse nav-counts.ts's status-
+// filtered counters instead (see module comment above).
 async function countTable(
   supabase: ReturnType<typeof createAdminClient>,
-  table: 'contact_messages' | 'callback_requests' | 'packages',
+  table: 'packages',
 ): Promise<number> {
   const { count, error } = await supabase
     .from(table)
@@ -46,8 +56,8 @@ export async function getDashboardCounts(): Promise<DashboardCounts> {
   ]);
 
   const [contacts, callbacks, packages] = await Promise.all([
-    canCustomer ? countTable(supabase, 'contact_messages') : Promise.resolve(null),
-    canCustomer ? countTable(supabase, 'callback_requests') : Promise.resolve(null),
+    canCustomer ? countNewContacts(supabase) : Promise.resolve(null),
+    canCustomer ? countNewCallbacks(supabase) : Promise.resolve(null),
     canBilling ? countTable(supabase, 'packages') : Promise.resolve(null),
   ]);
 
