@@ -34,6 +34,7 @@ export function PasskeySignInButton() {
         setError('ההתחברות עם passkey נכשלה. נסו שוב או התחברו עם סיסמה.');
         return;
       }
+      // eslint-disable-next-line @next/next/no-location-assign-relative-destination -- intentional hard navigation, see comment above handleClick
       window.location.assign('/app');
     });
   }
