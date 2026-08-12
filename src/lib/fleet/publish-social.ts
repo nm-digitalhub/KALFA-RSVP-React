@@ -272,7 +272,10 @@ export interface InstagramPublishPlan {
 // its actual create_container/media_publish requests from THIS SAME plan (endpoint
 // + body, minus the dry-run-only `note`) — one source of truth, so the dry-run
 // artifact is a provable preview of the real call, not just a look-alike.
-const IG_LOGIN_GRAPH_API_BASE = 'https://graph.instagram.com/v25.0';
+// Exported so the ig-token-refresh cron (src/lib/data/instagram-token-refresh.ts)
+// verifies a freshly-refreshed token against the SAME host+version this file's
+// publish path uses, instead of a second literal that could drift out of sync.
+export const IG_LOGIN_GRAPH_API_BASE = 'https://graph.instagram.com/v25.0';
 
 // imageUrl defaults to null (dry-run, no resolved URL yet — plan §4.6/§7 stage 6
 // history). The live path (plan social-publish-live-stage-plan.md §2.5/§3.7)

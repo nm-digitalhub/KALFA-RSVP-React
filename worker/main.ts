@@ -59,6 +59,7 @@ import { runBalanceCheck } from '@/lib/data/voximplant-balance';
 import { runCallReconcile } from '@/lib/data/voximplant-reconcile';
 import { runLogExport } from '@/lib/data/vox-log-export';
 import { runElevenLabsQuotaCheck } from '@/lib/data/elevenlabs-quota';
+import { runInstagramTokenRefresh } from '@/lib/data/instagram-token-refresh';
 import { sendSlackAlert } from '@/lib/alerts/slack';
 
 // Standalone process — load .env.local ourselves (Next is not running here).
@@ -653,7 +654,13 @@ async function main(): Promise<void> {
       // the `.is(calendar_item_id, null)` guard on the write already make a
       // duplicate impossible, but a second item appearing in the owner's
       // calendar is not a race worth leaving to one defence.
-      q === QUEUES.callbackScheduleSweep;
+      q === QUEUES.callbackScheduleSweep ||
+      // Singleton too: this is a WEEKLY cron, so overlap is unlikely, but an
+      // overlapping run would refresh the same not-yet-rotated token twice in
+      // flight against Meta and race the two atomic .env.local rewrites
+      // against each other. Nothing else defends against that (there is no
+      // per-row lease here, unlike the other IO-writing crons above).
+      q === QUEUES.igTokenRefresh;
     await boss.createQueue(q, singleton ? { policy: 'singleton' } : undefined);
   }
 
@@ -766,6 +773,16 @@ async function main(): Promise<void> {
       await runDispatchRetention();
     }),
   );
+  // Instagram long-lived access-token self-refresh — weekly. Keeps
+  // META_IG_ACCESS_TOKEN (.env.local) from reaching its 60-day expiry with no
+  // human OAuth step. runInstagramTokenRefresh never throws (every branch
+  // alerts or no-ops and returns).
+  await boss.work(
+    QUEUES.igTokenRefresh,
+    guardedWorker(QUEUES.igTokenRefresh, async () => {
+      await runInstagramTokenRefresh();
+    }),
+  );
 
   await boss.schedule(QUEUES.arm, '* * * * *');
   await boss.schedule(QUEUES.sweeper, '*/5 * * * *');
@@ -789,6 +806,9 @@ async function main(): Promise<void> {
   await boss.schedule(QUEUES.logExport, '20 3 * * *', null, { tz: SCHEDULE_TZ });
   await boss.schedule(QUEUES.elevenlabsQuota, '0 */6 * * *', null, { tz: SCHEDULE_TZ });
   await boss.schedule(QUEUES.dispatchRetention, '40 3 * * *', null, { tz: SCHEDULE_TZ });
+  // Weekly, off-peak, deliberately non-round (04:17) — a 60-day token refreshed
+  // once a week has ample margin even if a run is missed for a while.
+  await boss.schedule(QUEUES.igTokenRefresh, '17 4 * * 2', null, { tz: SCHEDULE_TZ });
 
   console.log('[kalfa-worker] started — queues + schedules up');
 

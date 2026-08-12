@@ -48,6 +48,14 @@ export const QUEUES = {
   // durable record); this also clears version-skew stragglers. See
   // src/lib/data/call-dispatch-status.ts.
   dispatchRetention: 'call-dispatch-retention',
+  // Instagram long-lived access-token self-refresh — weekly. Meta allows a
+  // token ≥24h old to refresh itself with no human OAuth step
+  // (GET graph.instagram.com/refresh_access_token); this keeps
+  // META_IG_ACCESS_TOKEN (.env.local, read fresh by publish-social's own
+  // process per invocation — see fleet-agent-cli.ts) from ever reaching its
+  // 60-day expiry. Singleton so an overlapping run never refreshes the same
+  // token twice in flight. See src/lib/data/instagram-token-refresh.ts.
+  igTokenRefresh: 'instagram-token-refresh',
 } as const;
 
 // outreach-step retry policy: a few backed-off retries, then dead-letter. The
