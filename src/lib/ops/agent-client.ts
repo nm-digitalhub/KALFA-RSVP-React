@@ -40,7 +40,17 @@ export const systemSchema = z.object({
     .object({ fs: z.string(), type: z.string(), sizeGB: z.number(), usedGB: z.number(), availGB: z.number(), pct: z.number().nullable() })
     .nullable(),
   mem: z
-    .object({ totalMB: z.number().nullable(), availMB: z.number().nullable(), pct: z.number().nullable(), swapUsedMB: z.number().nullable() })
+    .object({
+      totalMB: z.number().nullable(),
+      availMB: z.number().nullable(),
+      pct: z.number().nullable(),
+      swapUsedMB: z.number().nullable(),
+      swapTotalMB: z.number().nullable(),
+      swapPct: z.number().nullable(),
+    })
+    .nullable(),
+  swapActivity: z
+    .object({ pswpinPerSec: z.number(), pswpoutPerSec: z.number(), sampledAt: z.string() })
     .nullable(),
   load: z.tuple([z.number(), z.number(), z.number()]),
   uptimeSec: z.number(),

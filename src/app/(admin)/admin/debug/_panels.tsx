@@ -9,7 +9,7 @@ import {
 } from '@/components/ui/card';
 import { Badge, type BadgeVariant } from '@/components/ui/badge';
 import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
-import { Progress } from '@/components/ui/progress';
+import { Progress, type ProgressVariant } from '@/components/ui/progress';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table';
 import { LocalDateTime } from '@/components/local-date-time';
 
@@ -18,7 +18,19 @@ import type { JobHealthRow, DbHealthRow, QUEUE_EXPECTED_MAX_MINUTES } from '@/li
 import type { RecentError } from '@/lib/ops/app-health';
 import type { IntegrationStatus } from '@/lib/ops/integrations';
 import type { ExchangeConnectionView } from '@/lib/data/exchange-connections';
-import { isQueueStale, type OverallStatus } from '@/lib/ops/summary';
+import {
+  isQueueStale,
+  severityForThreshold,
+  severityForSwapUsage,
+  severityForSwapActivity,
+  worseSeverity,
+  DISK_WARN_PCT,
+  DISK_ERROR_PCT,
+  CONNECTIONS_WARN_RATIO,
+  CONNECTIONS_ERROR_RATIO,
+  type OverallStatus,
+  type Severity,
+} from '@/lib/ops/summary';
 
 // Presentational only — every panel here receives ALREADY-RESOLVED data
 // (fetched with Promise.allSettled in page.tsx) so a failed source renders an
@@ -55,6 +67,18 @@ const LEVEL_LABEL: Record<OverallStatus['level'], string> = {
   warn: 'דורש תשומת לב',
   error: 'תקלה',
 };
+const PROGRESS_VARIANT: Record<Severity, ProgressVariant> = {
+  ok: 'success',
+  warn: 'warning',
+  error: 'destructive',
+};
+
+// Only rendered for warn/error — a healthy metric stays visually quiet
+// instead of stamping every card with a "תקין" badge.
+function SeverityBadge({ severity }: { severity: Severity }) {
+  if (severity === 'ok') return null;
+  return <Badge variant={LEVEL_VARIANT[severity]}>{LEVEL_LABEL[severity]}</Badge>;
+}
 
 export function SummaryCard({ status }: { status: OverallStatus }) {
   return (
@@ -194,16 +218,28 @@ function ProcessesTable({ data }: { data: ProcessesProbe }) {
 
 function SystemSummary({ data }: { data: SystemProbe }) {
   const diskPct = data.disk?.pct ?? null;
+  const diskSeverity = diskPct != null ? severityForThreshold(diskPct, DISK_WARN_PCT, DISK_ERROR_PCT) : 'ok';
+
+  const swapPct = data.mem?.swapPct ?? null;
+  const swapUsageSeverity = swapPct != null ? severityForSwapUsage(swapPct) : 'ok';
+  const swapActivitySeverity = data.swapActivity
+    ? severityForSwapActivity(data.swapActivity.pswpinPerSec, data.swapActivity.pswpoutPerSec)
+    : 'ok';
+  const swapSeverity = worseSeverity(swapUsageSeverity, swapActivitySeverity);
+
   return (
     <div className="grid gap-4 sm:grid-cols-2">
       <div className="space-y-1">
         <div className="flex items-center justify-between text-sm">
-          <span>דיסק</span>
+          <span className="flex items-center gap-2">
+            דיסק
+            <SeverityBadge severity={diskSeverity} />
+          </span>
           <span className="text-muted-foreground" dir="ltr">
             {data.disk ? `${data.disk.usedGB}GB / ${data.disk.sizeGB}GB (${data.disk.availGB}GB פנוי)` : '—'}
           </span>
         </div>
-        {diskPct != null && <Progress value={diskPct} />}
+        {diskPct != null && <Progress value={diskPct} variant={PROGRESS_VARIANT[diskSeverity]} />}
         <div className="flex flex-wrap gap-3 pt-2 text-xs text-muted-foreground">
           <span>.fleet-logs/drafts: {formatBytes(data.logsDirBytes.fleetDrafts)}</span>
           <span>לוגי PM2: {formatBytes(data.logsDirBytes.pm2Logs)}</span>
@@ -221,12 +257,36 @@ function SystemSummary({ data }: { data: SystemProbe }) {
         {data.mem?.pct != null && <Progress value={data.mem.pct} />}
         <div className="flex flex-wrap gap-3 pt-2 text-xs text-muted-foreground">
           <span>
-            Swap בשימוש:{' '}
-            <bdi dir="ltr">{data.mem?.swapUsedMB != null ? `${(data.mem.swapUsedMB / 1024).toFixed(1)}GB` : '—'}</bdi>
-          </span>
-          <span>
             Load: <bdi dir="ltr">{data.load.map((n) => n.toFixed(2)).join(' · ')}</bdi>
           </span>
+        </div>
+      </div>
+      <div className="space-y-1 sm:col-span-2">
+        <div className="flex items-center justify-between text-sm">
+          <span className="flex items-center gap-2">
+            Swap
+            <SeverityBadge severity={swapSeverity} />
+          </span>
+          <span className="text-muted-foreground" dir="ltr">
+            {data.mem?.swapUsedMB != null
+              ? `${(data.mem.swapUsedMB / 1024).toFixed(1)}GB / ${data.mem.swapTotalMB != null ? (data.mem.swapTotalMB / 1024).toFixed(1) : '—'}GB`
+              : '—'}
+          </span>
+        </div>
+        {swapPct != null && <Progress value={swapPct} variant={PROGRESS_VARIANT[swapUsageSeverity]} />}
+        <div className="text-xs text-muted-foreground">
+          {data.swapActivity ? (
+            <>
+              פעילות (מרווח {data.swapActivity.sampledAt}):{' '}
+              <bdi dir="ltr">
+                {data.swapActivity.pswpinPerSec.toFixed(1)} in / {data.swapActivity.pswpoutPerSec.toFixed(1)} out
+                עמודים/שנ&apos;
+              </bdi>
+              {swapActivitySeverity === 'ok' && swapUsageSeverity !== 'ok' && ' — שימוש גבוה אך ללא פעילות פעילה כרגע'}
+            </>
+          ) : (
+            'נתוני פעילות swap (sysstat) אינם זמינים'
+          )}
         </div>
       </div>
       <div className="flex flex-wrap gap-2 text-xs sm:col-span-2">
@@ -290,7 +350,9 @@ export function ProcessesPanel({
 
 export function DatabasePanel({ result, reason }: { result: DbHealthRow | null; reason: string | null }) {
   if (!result) return <UnavailableAlert reason={reason ?? 'שגיאה לא ידועה'} />;
-  const connPct = result.maxConnections > 0 ? Math.round((result.activeConnections / result.maxConnections) * 100) : null;
+  const connRatio = result.maxConnections > 0 ? result.activeConnections / result.maxConnections : null;
+  const connPct = connRatio != null ? Math.round(connRatio * 100) : null;
+  const connSeverity = connRatio != null ? severityForThreshold(connRatio, CONNECTIONS_WARN_RATIO, CONNECTIONS_ERROR_RATIO) : 'ok';
 
   return (
     <Card>
@@ -301,11 +363,14 @@ export function DatabasePanel({ result, reason }: { result: DbHealthRow | null; 
       <CardContent className="space-y-4">
         <div className="grid gap-4 sm:grid-cols-3">
           <div>
-            <div className="text-sm text-muted-foreground">חיבורים</div>
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              חיבורים
+              <SeverityBadge severity={connSeverity} />
+            </div>
             <div className="text-lg font-medium" dir="ltr">
               {result.activeConnections} / {result.maxConnections}
             </div>
-            {connPct != null && <Progress value={connPct} />}
+            {connPct != null && <Progress value={connPct} variant={PROGRESS_VARIANT[connSeverity]} />}
           </div>
           <div>
             <div className="text-sm text-muted-foreground">Index hit rate</div>
@@ -338,7 +403,7 @@ export function DatabasePanel({ result, reason }: { result: DbHealthRow | null; 
               <TableBody>
                 {result.topQueries.map((q, i) => (
                   <TableRow key={i}>
-                    <TableCell className="max-w-md truncate font-mono text-xs" title={q.query}>
+                    <TableCell className="max-w-[140px] truncate font-mono text-xs sm:max-w-md" title={q.query}>
                       {q.query}
                     </TableCell>
                     <TableCell>{q.calls}</TableCell>

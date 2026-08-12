@@ -88,21 +88,63 @@ function parseMeminfo(text) {
   const availKb = get('MemAvailable');
   const swapTotalKb = get('SwapTotal');
   const swapFreeKb = get('SwapFree');
+  const swapUsedMB =
+    swapTotalKb != null && swapFreeKb != null ? Math.round((swapTotalKb - swapFreeKb) / 1024) : null;
   return {
     totalMB: totalKb ? Math.round(totalKb / 1024) : null,
     availMB: availKb ? Math.round(availKb / 1024) : null,
     pct: totalKb && availKb ? Math.round(((totalKb - availKb) / totalKb) * 100) : null,
-    swapUsedMB:
-      swapTotalKb != null && swapFreeKb != null ? Math.round((swapTotalKb - swapFreeKb) / 1024) : null,
+    swapUsedMB,
+    swapTotalMB: swapTotalKb ? Math.round(swapTotalKb / 1024) : null,
+    swapPct: swapTotalKb && swapUsedMB != null ? Math.round((swapUsedMB / (swapTotalKb / 1024)) * 100) : null,
   };
 }
 
+// Swap USAGE alone can't tell you whether swap is an active problem — Linux
+// happily leaves reclaimed-but-still-swapped pages sitting there long after
+// pressure passes. The page-in/out RATE is the actual signal, and computing
+// it live would mean blocking every debug-page load on a multi-second `sar`
+// sample; instead we read the most recent already-completed interval from
+// today's sysstat log (sampled every 10min by the OS-level `sysstat` cron —
+// see /etc/cron.d/sysstat), which returns in milliseconds. Soft-fails to
+// null on any error (missing sysstat, rotated-away file, no data yet today)
+// — this must never be the reason the debug page fails to render.
+async function probeSwapActivity() {
+  try {
+    const now = new Date();
+    const day = String(now.getDate()).padStart(2, '0');
+    const logPath = `/var/log/sysstat/sa${day}`;
+    if (!existsSync(logPath)) return null;
+    const stdout = await run('sar', ['-W', '-f', logPath]);
+    const lines = stdout.split('\n').map((l) => l.trim()).filter(Boolean);
+    const headerIdx = lines.findIndex((l) => l.includes('pswpin/s'));
+    if (headerIdx === -1) return null;
+    const dataLines = lines
+      .slice(headerIdx + 1)
+      .filter((l) => !l.startsWith('Average'));
+    const last = dataLines.at(-1);
+    if (!last) return null;
+    const parts = last.split(/\s+/);
+    // Rows are "HH:MM:SS pswpin/s pswpout/s" (24h locale) or with an AM/PM
+    // marker inserted as an extra token — pswpin/pswpout are always the last
+    // two columns regardless of that.
+    const pswpoutPerSec = Number(parts.at(-1));
+    const pswpinPerSec = Number(parts.at(-2));
+    const sampledAt = parts[0];
+    if (!Number.isFinite(pswpinPerSec) || !Number.isFinite(pswpoutPerSec)) return null;
+    return { pswpinPerSec, pswpoutPerSec, sampledAt };
+  } catch {
+    return null;
+  }
+}
+
 export async function probeSystem(repoRoot) {
-  const [dfOut, meminfoText, drafts, pm2Logs] = await Promise.all([
+  const [dfOut, meminfoText, drafts, pm2Logs, swapActivity] = await Promise.all([
     run('df', ['-PT', '/']),
     readText('/proc/meminfo'),
     dirSizeBytes(join(repoRoot, '.fleet-logs', 'drafts')),
     dirSizeBytes(join(HOME, '.pm2', 'logs')),
+    probeSwapActivity(),
   ]);
 
   const dfLine = dfOut.trim().split('\n')[1]?.trim().split(/\s+/) ?? [];
@@ -123,6 +165,7 @@ export async function probeSystem(repoRoot) {
   return {
     disk,
     mem,
+    swapActivity,
     load: os.loadavg(),
     uptimeSec: Math.round(os.uptime()),
     nodeVersion: process.version,
