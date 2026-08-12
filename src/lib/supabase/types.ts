@@ -12,31 +12,6 @@ export type Database = {
   __InternalSupabase: {
     PostgrestVersion: "14.5"
   }
-  graphql_public: {
-    Tables: {
-      [_ in never]: never
-    }
-    Views: {
-      [_ in never]: never
-    }
-    Functions: {
-      graphql: {
-        Args: {
-          extensions?: Json
-          operationName?: string
-          query?: string
-          variables?: Json
-        }
-        Returns: Json
-      }
-    }
-    Enums: {
-      [_ in never]: never
-    }
-    CompositeTypes: {
-      [_ in never]: never
-    }
-  }
   public: {
     Tables: {
       activity_log: {
@@ -2164,6 +2139,59 @@ export type Database = {
           title?: string
         }
         Relationships: []
+      }
+      fleet_social_posts: {
+        Row: {
+          attempt_count: number
+          caption_sha256: string
+          created_at: string
+          error: string | null
+          external_post_id: string | null
+          id: string
+          image_sha256: string | null
+          permalink: string | null
+          platform: string
+          published_at: string | null
+          request_id: string
+          status: string
+        }
+        Insert: {
+          attempt_count?: number
+          caption_sha256: string
+          created_at?: string
+          error?: string | null
+          external_post_id?: string | null
+          id?: string
+          image_sha256?: string | null
+          permalink?: string | null
+          platform: string
+          published_at?: string | null
+          request_id: string
+          status: string
+        }
+        Update: {
+          attempt_count?: number
+          caption_sha256?: string
+          created_at?: string
+          error?: string | null
+          external_post_id?: string | null
+          id?: string
+          image_sha256?: string | null
+          permalink?: string | null
+          platform?: string
+          published_at?: string | null
+          request_id?: string
+          status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "fleet_social_posts_request_id_fkey"
+            columns: ["request_id"]
+            isOneToOne: false
+            referencedRelation: "fleet_requests"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       guest_groups: {
         Row: {
@@ -4743,9 +4771,6 @@ export type CompositeTypes<
     : never
 
 export const Constants = {
-  graphql_public: {
-    Enums: {},
-  },
   public: {
     Enums: {
       agreement_status: ["draft", "approved"],
