@@ -96,3 +96,11 @@ storage_state.json
 # filebrowser live tool database (may contain credential hashes) — never commit
 /filebrowser.db
 __pycache__/
+
+# Ruflo local secrets and runtime data
+.env
+.env.local
+.env.*.local
+.claude-flow/data/
+.claude-flow/logs/
+.claude-flow/sessions/
