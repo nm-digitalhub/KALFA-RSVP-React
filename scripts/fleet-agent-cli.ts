@@ -34,7 +34,12 @@
 //     /admin/fleet renders it inline (audio player / image). The path MUST
 //     live under .fleet-logs/drafts/ (validated here AND at serve time by the
 //     admin-only /api/admin/fleet-file route); stored as payload.attachments
-//     entries.
+//     entries — {path, label, mime, sha256}. sha256 is computed HERE, from the
+//     file's actual bytes, by this trusted server-side handler — never
+//     supplied by the calling role (plans/fleet-social-publishing-capability-
+//     plan.md §4.5 item 2). It is what `publish-social` later pins its
+//     --caption-file/--image-path content against, so a batch file edited
+//     after the owner's approval is detected rather than silently published.
 //   handoff --to R|main --from-request UUID [--note TEXT]
 //     Forwards an existing request to another role as a NEW pending request
 //     (same kind/tier, provenance + attachments carried in payload). The owner
@@ -53,6 +58,10 @@
 //     the closure signal the owner sees on their phone.
 //   poll --role R
 //     Prints the role's unconsumed verdicts + its still-open requests.
+//   verdicts
+//     All answered-but-unconsumed verdicts across every role — the scheduler's
+//     answer-watcher reads this to decide per role whether to auto-ack
+//     (trivial roles) or spawn the role's headless run to act on the verdict.
 //   goal-poll --role R
 //     Active goals for R whose next_wake_at has arrived. The owner creates a
 //     goal; the role reads state, decides the next step, and reports back via
@@ -79,14 +88,27 @@
 //     Call BEFORE acting on the verdict.
 //   expire
 //     Marks pending requests past expires_at as expired (chief-of-staff sweep).
-//   withdraw --id UUID [--reason TEXT]
+//   withdraw --id UUID --role R [--reason TEXT]
 //     Retires a STILL-PENDING request the calling role filed (superseded /
-//     no longer relevant) so the owner's inbox stays clean. Uses the guard's
-//     legal pending->expired edge, recording the reason in `answer`. A row
-//     that is no longer pending is a no-op (someone answered first — respect
-//     it). Never deletes; the ledger stays append-only.
+//     no longer relevant) so the owner's inbox stays clean. --role must match
+//     the request's own role — enforced via validateWithdrawOwnership
+//     (src/lib/fleet/withdraw.ts): a role may withdraw only requests IT
+//     filed, never another role's, even knowing its id (the same ownership
+//     principle publish-social's validatePublishRequestRow enforces for
+//     publish_social requests). A role mismatch is a hard failure (exit 1) —
+//     a caller acting outside its own requests, not a benign race. Uses the
+//     guard's legal pending->expired edge, recording the reason in `answer`.
+//     A row that is no longer pending (or not found) is unchanged: still a
+//     no-op (someone answered first, or the id is unknown — respect it).
+//     Never deletes; the ledger stays append-only.
 //   digest --title T --body B [--level info|warn|error]
 //     Posts the daily fleet digest to Slack via the existing alerting stack.
+//   sql --query SQL
+//     Read-only SQL for the data-reading roles (event-health, business-ops,
+//     support). Runs inside `BEGIN TRANSACTION READ ONLY` (the authoritative
+//     safety layer) behind a pre-flight text guard (single SELECT/WITH…SELECT,
+//     no stacked statements, no write keyword), with a 200-row cap and a 15s
+//     statement timeout.
 //   draft-reply --id UUID --body TEXT
 //     support-drafter's ONLY write: sets contact_messages.draft_reply +
 //     draft_created_at for a still-'new', not-yet-drafted inquiry. NEVER sends
@@ -105,6 +127,99 @@
 //     support-drafter quotes for a pricing inquiry (canonical package + the live
 //     base+overage gate → the EFFECTIVE model). Lets the drafter write the real
 //     price instead of a `[מחירים]` placeholder; a human still reviews the draft.
+//   triage-claim
+//     The callback-triage role's claim step: atomically leases the next
+//     pending callback_requests row via the claim_callback_triage RPC.
+//     Returns only topic/note/created_at/attempt — never the caller's name or
+//     phone.
+//   triage-finish --id UUID --attempt N --status completed|manual_review|failed
+//           [--not-before HH:MM] [--not-after HH:MM] [--exclude-dates D,D,...]
+//           [--on-date YYYY-MM-DD] [--at-time HH:MM] [--evidence TEXT]
+//     Closes out a claimed callback triage via the finish_callback_triage RPC,
+//     fenced by --attempt (the number returned by triage-claim). Alerts Slack
+//     when the outcome finalizes as manual_review or failed, since the
+//     request still gets scheduled either way. exitCode 2 on anything but
+//     'finalized'.
+//   housekeeping-pr --catalog-id ID --request-id UUID
+//     The fleet's ONLY git-writing verb (plans/fleet-maintenance-capability-plan.md
+//     §4). Applies ONE .claude/fleet/known-issues.json entry's `fix` to `fix.file`
+//     (which must live under docs/fleet/** — the sole category approved for v1;
+//     .claude/fleet/** and this file itself stay human-only) inside an ISOLATED
+//     `git worktree` checked out from origin/main — never the live working tree —
+//     then pushes a `fleet/maintenance-<catalog-id>-<YYYYMMDD>` branch and opens a
+//     PR via `gh pr create`. NEVER merges; merge stays a human decision always.
+//     Requires: --request-id names a fleet_requests row with
+//     role='fleet-maintainer', kind='approval', status='approved' (an OWNER
+//     verdict — a role's own judgment is never sufficient); --catalog-id names a
+//     remediation_kind='pr-eligible' entry whose check.type is mechanical
+//     (contains_line/absent_line, not custom). Re-runs that check itself against
+//     the worktree's content immediately before writing — the calling role's
+//     earlier read is never trusted. Idempotent: `gh pr list --head` against the
+//     branch prefix (deliberately WITHOUT the date suffix, since --head is a
+//     prefix match) finds an already-open PR for this catalog-id first.
+//     exit 0 = PR opened (URL in the JSON); exit 2 = benign no-op (issue already
+//     resolved, or a PR is already open for this catalog-id); exit 1 = hard error
+//     (bad request-id/catalog-id, git/gh failure). Requires `GH_TOKEN` in
+//     .env.local (gh's own non-interactive auth mechanism) — never exposed to the
+//     calling role, which never runs git/gh itself (see plan §4, "מנגנון git").
+//     The worktree is always removed on every path, including every failure path.
+//   publish-social --request-id UUID --platform instagram|facebook
+//           --caption-file PATH [--image-path PATH] [--dry-run]
+//     plans/fleet-social-publishing-capability-plan.md §4 (stage 2 of §7) +
+//     plans/social-publish-live-stage-plan.md §3-§4 (the live call). Safety
+//     checks, in the order the plan specifies (§4.5): (1) --request-id names a
+//     fleet_requests row with role='social-manager', kind='approval',
+//     status='approved', payload.action='publish_social', and
+//     payload.platform matching --platform (a role's own judgment, or an
+//     approval for a DIFFERENT platform, is never sufficient — see
+//     publish-social.ts's own comment for why platform is checked here even
+//     though §4.5 item 1 doesn't spell it out); (2) --caption-file/--image-path
+//     content hashes must match payload.attachments[0]/[1].sha256 — the hash
+//     `request`'s --attach now computes automatically; a mismatch means the
+//     file changed after the owner approved it; (3) a mechanical grounding
+//     scan (₪ / N% / חינם / superlatives) in the caption requires a non-empty
+//     payload.facts_source when triggered; (4) the batch's REVIEW.md (derived
+//     from the caption attachment's own path, not the CLI argument) must open
+//     with "סטטוס: מוכנה-לאישור" — brand-director's approval, enforced
+//     mechanically. State machine in fleet_social_posts (§4.3-4.4, unique on
+//     request_id+platform): INSERT claims a fresh row at 'publishing'; on
+//     conflict, 'published'/'publishing' is a benign no-op (exit 2), and
+//     'failed'/'dry_run' is retry-eligible via a CAS UPDATE back to
+//     'publishing' UNLESS attempt_count already reached PUBLISH_RETRY_CEILING
+//     (social-publish-live-stage-plan.md §3.6) — that case is a hard refusal
+//     (exit 1, outcome='retry_ceiling_reached'), not a silent retry, since
+//     social-manager has no direct SQL visibility into attempt_count itself.
+//     Every failure AFTER the claim (checks #2-4, or a live Meta-call error)
+//     marks the row 'failed' with `error` set before this process exits — the
+//     ledger can never say a post succeeded when it did not.
+//     --dry-run writes the exact request body(ies) a real Meta call would
+//     send to .fleet-logs/drafts/social/<batch>/publish-payload-<platform>-
+//     <caption basename>.json (never a real fetch) and moves the row to
+//     'dry_run'. Live (--dry-run omitted/false): Facebook posts through the
+//     classic surface (graph.facebook.com, Page access token —
+//     META_PAGE_ACCESS_TOKEN/META_FACEBOOK_PAGE_ID; missing credential is a
+//     hard fail-closed error, never a silent skip). Instagram posts through
+//     Route B, "Instagram API with Instagram Login"
+//     (social-publish-live-stage-plan.md addendum א׳, decided 2026-08-12):
+//     host graph.instagram.com, its OWN Instagram User access token
+//     (META_IG_ACCESS_TOKEN + META_INSTAGRAM_BUSINESS_ACCOUNT_ID) — no
+//     dependency on a linked Facebook Page. Instagram's image_url is a
+//     short-lived (600s) Supabase Storage signed URL for the PRIVATE
+//     social-publish-assets bucket (Option A′, §2.5): upload happens only
+//     after all four safety checks, at a random object path, and the object
+//     is removed via the Storage API on every terminal outcome (success or
+//     failure) — never left behind for the TTL alone to clean up. On success,
+//     fleet_social_posts is updated to status='published' with
+//     external_post_id/permalink/published_at; if THAT update itself fails,
+//     the process does NOT call markFailed (Meta already published — retrying
+//     would create a second post) and instead fails loudly with the real ids
+//     so a human fixes the ledger row directly. exit 0 = success (dry-run
+//     artifact written, or a real post published); exit 2 = benign no-op
+//     (already published/publishing, or a lost claim race); exit 1 = any
+//     other failure (not found/wrong role-kind-status-platform/hash
+//     mismatch/grounding failed/REVIEW.md not ready/retry ceiling
+//     reached/missing credential/Meta API error/post-publish ledger-write
+//     failure).
 //
 // PII rule: requests are owner-facing internal ops traffic. Callers must not
 // put guest personal data in title/body; the Slack layer redacts as
@@ -113,10 +228,14 @@
 
 import { parseArgs } from 'node:util';
 
-import { mkdirSync, writeFileSync, statSync, readFileSync } from 'node:fs';
+import { mkdirSync, writeFileSync, statSync, readFileSync, rmSync } from 'node:fs';
 import { dirname, join, resolve, relative, sep, extname, basename } from 'node:path';
 
 import { createRequire } from 'node:module';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
+import { tmpdir } from 'node:os';
+import { randomUUID } from 'node:crypto';
 
 import { sendSlackAlert, type SlackAlertLevel } from '@/lib/alerts/slack';
 import { getAppOrigin } from '@/lib/url';
@@ -156,12 +275,46 @@ import {
   validateRequestRole,
 } from '@/lib/fleet/handoff';
 import { buildCompletionAnswer, isCompletableStatus } from '@/lib/fleet/complete';
+import { validateWithdrawOwnership } from '@/lib/fleet/withdraw';
 import {
   renderExamplesMarkdown,
   summarizeMetric,
   toRedactedExample,
 } from '@/lib/fleet/corrections';
 import { buildBusinessFacts } from '@/lib/fleet/business-facts';
+import {
+  applyFix,
+  branchNameFor,
+  buildPrMetadata,
+  findPrEligibleEntry,
+  parseKnownIssues,
+  prHeadPrefixFor,
+  runMechanicalCheck,
+  validateApprovalVerdict,
+  type KnownIssueEntry,
+} from '@/lib/fleet/housekeeping-pr';
+import {
+  PLATFORMS,
+  buildDryRunArtifact,
+  buildInstagramPublishPlan,
+  checkReviewApproved,
+  decideContainerPoll,
+  decideExistingRow,
+  deriveDryRunArtifactPath,
+  deriveReviewMdPath,
+  extractStringId,
+  formatGraphApiError,
+  isPlatform,
+  isRetryCeilingReached,
+  PUBLISH_RETRY_CEILING,
+  sha256Hex,
+  validateGrounding,
+  validatePlatformImageRequirement,
+  validatePublishPayload,
+  validatePublishRequestRow,
+  type GraphApiErrorBody,
+  type Platform,
+} from '@/lib/fleet/publish-social';
 import {
   goalWakeAtSchema,
   isGoalCloseStuck,
@@ -192,6 +345,7 @@ import { createAdminClient } from '@/lib/supabase/admin';
 import type { Database, Json } from '@/lib/supabase/types';
 
 type FleetRequestRow = Database['public']['Tables']['fleet_requests']['Row'];
+type FleetSocialPostRow = Database['public']['Tables']['fleet_social_posts']['Row'];
 
 const KINDS = ['approval', 'question', 'fyi'] as const;
 type Kind = (typeof KINDS)[number];
@@ -398,11 +552,12 @@ async function insertAndNotify(row: {
     // Unique violation on request_key = an idempotent retry. Surface the
     // existing row so the calling role can continue with its id/status.
     if (error.code === '23505') {
-      const { data: existing } = await admin
+      const { data: existing, error: selectError } = await admin
         .from('fleet_requests')
         .select()
         .eq('request_key', row.requestKey)
         .single();
+      if (selectError) fail(`dedup re-select failed: ${selectError.message}`);
       return { deduplicated: true, request: existing ?? null, notify: null };
     }
     fail(`insert failed: ${error.message}`);
@@ -474,6 +629,7 @@ async function cmdRequest(
         path: relative(process.cwd(), abs),
         label: basename(abs),
         mime: ATTACH_MIME[extname(abs).toLowerCase()] ?? 'application/octet-stream',
+        sha256: sha256Hex(readFileSync(abs)),
       });
     }
     payload = { ...(payload as Record<string, Json>), attachments: list };
@@ -745,17 +901,34 @@ async function cmdAck(args: Record<string, string | undefined>): Promise<void> {
   if (!claimed) process.exitCode = 2;
 }
 
-// Retire one still-pending request (superseded / no longer relevant). The
-// fleet_requests_guard permits pending->expired with `answer` set on the same
-// edge; anything not pending is left untouched (0 rows = benign no-op).
+// Retire one still-pending request THE CALLING ROLE FILED (superseded / no
+// longer relevant). --role is checked against the row's own role BEFORE the
+// update (validateWithdrawOwnership, same ownership principle as
+// publish-social's validatePublishRequestRow) — a role may never withdraw
+// another role's request, even knowing its id. The fleet_requests_guard
+// permits pending->expired with `answer` set on the same edge; anything not
+// pending (or not found) is left untouched exactly as before (0 rows =
+// benign no-op) — that behavior is unchanged by the ownership check.
 async function cmdWithdraw(args: Record<string, string | undefined>): Promise<void> {
   const id = requireOption(args.id, 'id');
+  const role = requireOption(args.role, 'role');
   const reason = args.reason?.trim() || 'הוסרה על-ידי הסוכן (התייתרה)';
   const admin = createAdminClient();
+
+  const { data: existing, error: lookupError } = await admin
+    .from('fleet_requests')
+    .select('id, role')
+    .eq('id', id)
+    .maybeSingle();
+  if (lookupError) fail(`withdraw lookup failed: ${lookupError.message}`);
+  const ownershipError = validateWithdrawOwnership(existing, role);
+  if (ownershipError) fail(`withdraw: ${ownershipError}`);
+
   const { data, error } = await admin
     .from('fleet_requests')
     .update({ status: 'expired', answer: `[withdraw] ${reason}` })
     .eq('id', id)
+    .eq('role', role)
     .eq('status', 'pending')
     .select('id, role, title');
   if (error) fail(`withdraw failed: ${error.message}`);
@@ -770,6 +943,7 @@ async function cmdWithdraw(args: Record<string, string | undefined>): Promise<vo
     });
   }
   console.log(JSON.stringify({ withdrawn: !!row, request: row ?? null }, null, 2));
+  if (!row) process.exitCode = 2;
 }
 
 async function cmdExpire(): Promise<void> {
@@ -880,7 +1054,7 @@ async function cmdDigest(args: Record<string, string | undefined>): Promise<void
   const level = (args.level ?? 'info') as SlackAlertLevel;
   if (!['info', 'warn', 'error'].includes(level)) fail('--level must be info, warn or error');
 
-  await sendSlackAlert({
+  const threadTs = await sendSlackAlert({
     level,
     title,
     // Slack section fields are capped; keep the digest body inside the limit.
@@ -888,7 +1062,13 @@ async function cmdDigest(args: Record<string, string | undefined>): Promise<void
     source: 'fleet:digest',
     category: 'errors',
   });
-  console.log(JSON.stringify({ posted: true, title, level }, null, 2));
+  // threadTs is null both on a real failure and on a routine no-op (alerting
+  // disabled, category off, dedup window) — sendSlackAlert is deliberately
+  // fail-safe and does not distinguish them. posted:false is therefore not
+  // wired to process.exitCode: the caller (chief-of-staff's daily digest step)
+  // does not branch on this command's exit code, and doing so would turn an
+  // administratively-off alerting config into a nonzero exit every run.
+  console.log(JSON.stringify({ posted: threadTs !== null, threadTs, title, level }, null, 2));
 }
 
 // support-drafter's narrow write. Sets draft_reply + draft_created_at on a
@@ -1242,6 +1422,810 @@ async function cmdBusinessFacts(): Promise<void> {
   console.log(JSON.stringify(buildBusinessFacts(gateOn, pkg), null, 2));
 }
 
+// ── housekeeping-pr ──────────────────────────────────────────────────────────
+// The fleet's only git-writing verb. See the synopsis above and
+// plans/fleet-maintenance-capability-plan.md §4 for the full spec; the safety
+// checks numbered below match the plan's numbering exactly.
+
+const execFileAsync = promisify(execFile);
+const GIT_GH_TIMEOUT_MS = 60_000;
+// dist/ (esbuild bundle) -> repo root, same derivation as FLEET_CONFIG_PATH.
+const REPO_ROOT = join(dirname(__filename), '..');
+const KNOWN_ISSUES_PATH = join(REPO_ROOT, '.claude', 'fleet', 'known-issues.json');
+
+function loadKnownIssues(): KnownIssueEntry[] {
+  try {
+    return parseKnownIssues(JSON.parse(readFileSync(KNOWN_ISSUES_PATH, 'utf8')));
+  } catch (err) {
+    return fail(
+      `cannot load known issues from ${KNOWN_ISSUES_PATH}: ${err instanceof Error ? err.message : 'unknown error'}`,
+    );
+  }
+}
+
+// execFile (never a shell) with every argument passed as an array element —
+// catalog-id/branch names never pass through shell interpolation.
+async function runShellCommand(cmd: string, args: string[], cwd: string): Promise<string> {
+  try {
+    const { stdout } = await execFileAsync(cmd, args, { cwd, timeout: GIT_GH_TIMEOUT_MS });
+    return stdout.trim();
+  } catch (err) {
+    const stderr =
+      err && typeof err === 'object' && 'stderr' in err
+        ? String((err as { stderr?: unknown }).stderr).trim()
+        : '';
+    const message = stderr || (err instanceof Error ? err.message : 'unknown error');
+    throw new Error(`${cmd} ${args.join(' ')} failed: ${message}`);
+  }
+}
+
+// Same containment pattern as resolveFleetLogsPath, applied to the isolated
+// worktree instead of .fleet-logs/: a catalog entry is git-tracked/PR-reviewed
+// (trusted), but a resolved path is still checked against traversal as
+// defense in depth before any read/write, per plan §4 safety #2.
+// THROWS rather than fail()'ing: both call sites run inside cmdHousekeepingPr's
+// worktree try-block, after the worktree already exists — fail()'s
+// process.exit(1) would skip that block's cleanup entirely (see the comment
+// above the try below). A thrown Error is caught there and cleaned up first.
+function resolveUnderRoot(root: string, relPath: string, label: string): string {
+  const abs = resolve(root, relPath);
+  if (abs !== root && !abs.startsWith(root + sep)) {
+    throw new Error(`${label} "${relPath}" escapes the repository root`);
+  }
+  return abs;
+}
+
+async function cmdHousekeepingPr(args: Record<string, string | undefined>): Promise<void> {
+  const catalogId = requireOption(args['catalog-id'], 'catalog-id');
+  const requestId = requireOption(args['request-id'], 'request-id');
+
+  // Safety #1: an OWNER'S approving verdict, never the role's own judgment.
+  const admin = createAdminClient();
+  const { data: row, error } = await admin
+    .from('fleet_requests')
+    .select('id, role, kind, status')
+    .eq('id', requestId)
+    .maybeSingle();
+  if (error) fail(`housekeeping-pr: request-id lookup failed: ${error.message}`);
+  const verdictError = validateApprovalVerdict(row);
+  if (verdictError) fail(`housekeeping-pr: ${verdictError}`);
+
+  // Safety #2: catalog scoping, mechanical, not a judgment call.
+  const entries = loadKnownIssues();
+  const lookup = findPrEligibleEntry(entries, catalogId);
+  if (!lookup.ok) fail(`housekeeping-pr: ${lookup.reason}`);
+  const entry = lookup.entry;
+
+  // Safety #7 precondition: gh must already be authenticated non-interactively
+  // (GH_TOKEN in .env.local) — fail with a clear message now, not mid-flow
+  // after a worktree already exists.
+  try {
+    await runShellCommand('gh', ['auth', 'status'], REPO_ROOT);
+  } catch (err) {
+    fail(
+      `housekeeping-pr: gh is not authenticated non-interactively (GH_TOKEN missing/invalid): ${err instanceof Error ? err.message : 'unknown error'}`,
+    );
+  }
+
+  // Safety #6: idempotency against an already-open PR, checked BEFORE any
+  // worktree/branch is created. --head is a prefix match, so the prefix
+  // deliberately omits the date suffix (see prHeadPrefixFor's own comment).
+  const headPrefix = prHeadPrefixFor(entry.id);
+  let existingPrUrl: string | null = null;
+  try {
+    const out = await runShellCommand(
+      'gh',
+      ['pr', 'list', '--head', headPrefix, '--state', 'open', '--json', 'url', '--jq', '.[0].url'],
+      REPO_ROOT,
+    );
+    existingPrUrl = out && out !== 'null' ? out : null;
+  } catch (err) {
+    fail(`housekeeping-pr: gh pr list failed: ${err instanceof Error ? err.message : 'unknown error'}`);
+  }
+  if (existingPrUrl) {
+    console.log(
+      JSON.stringify(
+        { opened: false, reason: 'pr-already-open', prUrl: existingPrUrl, catalogId: entry.id },
+        null,
+        2,
+      ),
+    );
+    process.exitCode = 2;
+    return;
+  }
+
+  // Safety #5: isolated worktree, never the live working tree — a dedicated
+  // tmp path (never mkdtemp-pre-created; `git worktree add` creates it).
+  // Safety #4: no flock here — this call already runs inside the lock the
+  // containing role's run holds; taking a second one would deadlock on itself.
+  const worktreeDir = join(tmpdir(), `kalfa-fleet-housekeeping-${randomUUID()}`);
+
+  // Cleanup must run on EVERY path, including failure — but process.exit()
+  // (which fail() calls) terminates the process immediately and skips any
+  // pending `finally` block reached via that path. So failures below are
+  // CAPTURED, not fail()'d directly: cleanup always runs first, and the exit
+  // decision (fail() / exitCode=2 / success) happens only after it completes.
+  let outcome: { opened: boolean; reason?: string; prUrl?: string } | null = null;
+  let hardError: string | null = null;
+
+  try {
+    // origin/main is a remote-tracking ref that can be stale on an
+    // autonomous box with no other reason to fetch — and safety #3 below
+    // re-checks against exactly this content, so a stale ref would let an
+    // already-upstream-fixed issue still read as present.
+    await runShellCommand('git', ['fetch', 'origin', 'main', '--no-tags'], REPO_ROOT);
+    await runShellCommand('git', ['worktree', 'add', '--detach', worktreeDir, 'origin/main'], REPO_ROOT);
+
+    // Safety #3: the mechanical re-check, re-run here against the worktree's
+    // freshly-checked-out content — never trusting the calling role's earlier
+    // read — immediately before any write is attempted.
+    const checkFilePath = resolveUnderRoot(worktreeDir, entry.check.file, 'check.file');
+    const checkContent = readFileSync(checkFilePath, 'utf8');
+    const stillPresent = runMechanicalCheck(entry.check, checkContent);
+
+    if (!stillPresent) {
+      outcome = { opened: false, reason: 'issue-already-resolved' };
+    } else {
+      const fixFilePath = resolveUnderRoot(worktreeDir, entry.fix.file, 'fix.file');
+      const docsFleetRoot = resolve(worktreeDir, 'docs', 'fleet');
+      if (fixFilePath !== docsFleetRoot && !fixFilePath.startsWith(docsFleetRoot + sep)) {
+        throw new Error(`fix.file "${entry.fix.file}" resolves outside docs/fleet/**`);
+      }
+      const fixSourceContent =
+        entry.fix.file === entry.check.file ? checkContent : readFileSync(fixFilePath, 'utf8');
+      const fixed = applyFix(entry.fix, fixSourceContent);
+      if (!fixed.ok) throw new Error(fixed.reason);
+      writeFileSync(fixFilePath, fixed.content, 'utf8');
+
+      const branch = branchNameFor(entry.id);
+      const { title, body, commitMessage } = buildPrMetadata(entry);
+
+      await runShellCommand('git', ['checkout', '-b', branch], worktreeDir);
+      await runShellCommand('git', ['add', entry.fix.file], worktreeDir);
+      await runShellCommand('git', ['commit', '-m', commitMessage], worktreeDir);
+      // Safety #7: gh pr create needs the branch pushed first — it prompts
+      // interactively otherwise, which cannot work under a headless run.
+      await runShellCommand('git', ['push', '-u', 'origin', branch], worktreeDir);
+      // Safety #8: create only — this call never appears with `gh pr merge`
+      // anywhere in this verb.
+      const prCreateOutput = await runShellCommand(
+        'gh',
+        ['pr', 'create', '--title', title, '--body', body, '--head', branch, '--base', 'main'],
+        worktreeDir,
+      );
+      // gh pr create can print warnings to stdout ahead of the URL; the URL
+      // is reliably the last non-empty line, not the whole trimmed output.
+      const prUrl =
+        prCreateOutput
+          .split('\n')
+          .map((line) => line.trim())
+          .filter(Boolean)
+          .pop() ?? prCreateOutput;
+      outcome = { opened: true, prUrl };
+    }
+  } catch (err) {
+    hardError = err instanceof Error ? err.message : 'unknown error';
+  }
+
+  // Cleanup — always, including every failure path above.
+  try {
+    await runShellCommand('git', ['worktree', 'remove', '--force', worktreeDir], REPO_ROOT);
+  } catch (cleanupErr) {
+    console.error(
+      `[fleet-agent] housekeeping-pr: worktree cleanup failed for ${worktreeDir}: ${cleanupErr instanceof Error ? cleanupErr.message : 'unknown error'}`,
+    );
+    // Fall back to a raw directory delete, then `git worktree prune` so
+    // .git/worktrees/ doesn't keep a stale registration pointing at a
+    // directory that no longer exists (rmSync alone would leave exactly that).
+    try {
+      rmSync(worktreeDir, { recursive: true, force: true });
+    } catch {
+      // best-effort
+    }
+    try {
+      await runShellCommand('git', ['worktree', 'prune'], REPO_ROOT);
+    } catch (pruneErr) {
+      console.error(
+        `[fleet-agent] housekeeping-pr: worktree prune failed: ${pruneErr instanceof Error ? pruneErr.message : 'unknown error'}`,
+      );
+    }
+  }
+
+  if (hardError) fail(`housekeeping-pr: ${hardError}`);
+  if (outcome && !outcome.opened) {
+    console.log(JSON.stringify({ ...outcome, catalogId: entry.id }, null, 2));
+    process.exitCode = 2;
+    return;
+  }
+  console.log(JSON.stringify({ ...outcome, catalogId: entry.id }, null, 2));
+}
+
+// ── publish-social ───────────────────────────────────────────────────────────
+// See the synopsis above and plans/fleet-social-publishing-capability-plan.md
+// §4 (+ §7 stage 2) for the full spec; the safety checks below match the
+// plan's §4.5 numbering. Live-path additions below follow
+// plans/social-publish-live-stage-plan.md §3-§4, adapted for Route B
+// (addendum א׳, decided 2026-08-12): Instagram publishes through
+// graph.instagram.com with its OWN Instagram User access token
+// (META_IG_ACCESS_TOKEN) — it no longer depends on a linked Facebook Page or
+// a Page access token at all. Facebook is unaffected and stays on the
+// classic surface (graph.facebook.com, Page access token) — its credentials
+// (META_PAGE_ACCESS_TOKEN/META_FACEBOOK_PAGE_ID) are not yet provisioned, so
+// that path is implemented but fails explicitly (fail-closed, §3.1 pattern)
+// until the owner sets them.
+
+// Facebook's classic surface. Instagram's Route B base
+// (graph.instagram.com/v25.0, verified live 2026-08-12 via ctx7 + WebFetch —
+// see buildInstagramPublishPlan's own comment) is NOT duplicated as a second
+// constant here: publishInstagram derives its create_container/poll/publish
+// endpoints straight from that same builder — the one place the host+version
+// string lives, so the dry-run artifact is a provable preview of the live
+// call. Only the Instagram permalink fetch (a call the builder doesn't
+// model) needs its own base below.
+const FB_GRAPH_API_BASE = 'https://graph.facebook.com/v26.0';
+const IG_LOGIN_GRAPH_API_BASE = 'https://graph.instagram.com/v25.0';
+
+async function graphApiJson(res: Response): Promise<unknown> {
+  try {
+    return await res.json();
+  } catch {
+    return null;
+  }
+}
+
+async function publishFacebookFeed(
+  token: string,
+  pageId: string,
+  caption: string,
+): Promise<{ externalPostId: string; permalink: string | null }> {
+  const res = await fetch(`${FB_GRAPH_API_BASE}/${pageId}/feed`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ message: caption, access_token: token }),
+  });
+  const json = await graphApiJson(res);
+  if (!res.ok) throw new Error(formatGraphApiError(json as GraphApiErrorBody, res.status));
+  // Read as a STRING, never Number() — a Graph API id can exceed JS's safe-
+  // integer precision (see extractStringId's own comment; the incident that
+  // motivated this was an Instagram id, but the same discipline applies to
+  // every Meta-assigned id read in this file).
+  const id = extractStringId(json, 'id');
+  if (!id) throw new Error('Meta Graph API returned 2xx from /feed with no post id');
+  const permalink = await fetchFacebookPermalink(token, id);
+  return { externalPostId: id, permalink };
+}
+
+async function publishFacebookPhoto(
+  token: string,
+  pageId: string,
+  caption: string,
+  imageBytes: Buffer,
+  mime: string,
+): Promise<{ externalPostId: string; permalink: string | null }> {
+  const form = new FormData();
+  form.set('message', caption);
+  form.set('access_token', token);
+  // Field name 'source' is historical convention, not a hard requirement
+  // (verified live 2026-08-12 — plan §7); confirm at go-live if Meta rejects it.
+  // Blob requires a plain-ArrayBuffer-backed view — Buffer's ArrayBufferLike
+  // type (which also permits SharedArrayBuffer) doesn't structurally satisfy
+  // BlobPart, so copy into a fresh Uint8Array first (cheap for a single
+  // post-image, not a batch).
+  form.set('source', new Blob([new Uint8Array(imageBytes)], { type: mime }), 'image');
+  const res = await fetch(`${FB_GRAPH_API_BASE}/${pageId}/photos`, { method: 'POST', body: form });
+  const json = await graphApiJson(res);
+  if (!res.ok) throw new Error(formatGraphApiError(json as GraphApiErrorBody, res.status));
+  // /photos returns {id, post_id} — post_id is the page-post id, analogous
+  // to /feed's "id" (verified live 2026-08-12, plan §7). "id" alone is the
+  // photo object's own id, not the post.
+  const postId = extractStringId(json, 'post_id');
+  if (!postId) throw new Error('Meta Graph API returned 2xx from /photos with no post_id');
+  const permalink = await fetchFacebookPermalink(token, postId);
+  return { externalPostId: postId, permalink };
+}
+
+async function fetchFacebookPermalink(token: string, postId: string): Promise<string | null> {
+  try {
+    const res = await fetch(
+      `${FB_GRAPH_API_BASE}/${postId}?fields=permalink_url&access_token=${encodeURIComponent(token)}`,
+    );
+    const json = await graphApiJson(res);
+    if (!res.ok) return null;
+    return (json as { permalink_url?: string } | null)?.permalink_url ?? null;
+  } catch {
+    // Permalink is nice-to-have, not required for the ledger to record a
+    // real, successful publish — never fail the whole call over it.
+    return null;
+  }
+}
+
+// Instagram: 3-step container flow (plan §4.6/§0, adapted for Route B —
+// addendum א׳). imageUrl MUST already be resolved (signed URL, §2.5) before
+// this is called. Endpoints/body come from buildInstagramPublishPlan — the
+// SAME builder the dry-run path uses (`note` is a dry-run-only annotation,
+// stripped before the real call — Meta does not define that field).
+async function publishInstagram(
+  token: string,
+  igUserId: string,
+  caption: string,
+  imageUrl: string,
+): Promise<string> {
+  const plan = buildInstagramPublishPlan(caption, imageUrl);
+  const { note: _note, ...createBody } = plan.steps[0].body;
+  const createEndpoint = plan.steps[0].endpoint.replace('{META_INSTAGRAM_BUSINESS_ACCOUNT_ID}', igUserId);
+
+  const createRes = await fetch(createEndpoint, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ...createBody, access_token: token }),
+  });
+  const createJson = await graphApiJson(createRes);
+  if (!createRes.ok) {
+    throw new Error(formatGraphApiError(createJson as GraphApiErrorBody, createRes.status));
+  }
+  const containerId = extractStringId(createJson, 'id');
+  if (!containerId) throw new Error('Meta Graph API returned 2xx from /media with no container id');
+
+  const pollEndpoint = plan.steps[1].endpoint.replace('{container-id}', containerId);
+  for (let attempt = 0; ; attempt += 1) {
+    const pollRes = await fetch(`${pollEndpoint}&access_token=${encodeURIComponent(token)}`);
+    const pollJson = await graphApiJson(pollRes);
+    if (!pollRes.ok) {
+      throw new Error(formatGraphApiError(pollJson as GraphApiErrorBody, pollRes.status));
+    }
+    const statusCode = (pollJson as { status_code?: string } | null)?.status_code ?? 'UNKNOWN';
+    const decision = decideContainerPoll(statusCode, attempt);
+    if (decision.action === 'fail') throw new Error(decision.reason);
+    if (decision.action === 'publish') break;
+    // decision.action === 'wait'
+    await new Promise((resolve) => setTimeout(resolve, 3000));
+  }
+
+  const publishEndpoint = plan.steps[2].endpoint.replace('{META_INSTAGRAM_BUSINESS_ACCOUNT_ID}', igUserId);
+  const publishRes = await fetch(publishEndpoint, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ creation_id: containerId, access_token: token }),
+  });
+  const publishJson = await graphApiJson(publishRes);
+  if (!publishRes.ok) {
+    throw new Error(formatGraphApiError(publishJson as GraphApiErrorBody, publishRes.status));
+  }
+  const mediaId = extractStringId(publishJson, 'id');
+  if (!mediaId) throw new Error('Meta Graph API returned 2xx from /media_publish with no media id');
+  return mediaId;
+}
+
+async function fetchInstagramPermalink(token: string, mediaId: string): Promise<string | null> {
+  try {
+    const res = await fetch(
+      `${IG_LOGIN_GRAPH_API_BASE}/${mediaId}?fields=permalink&access_token=${encodeURIComponent(token)}`,
+    );
+    const json = await graphApiJson(res);
+    if (!res.ok) return null;
+    return (json as { permalink?: string } | null)?.permalink ?? null;
+  } catch {
+    return null;
+  }
+}
+
+// Option A' (plan §2.5): sign a short-lived URL from the PRIVATE
+// social-publish-assets bucket. Upload happens here too — deliberately AFTER
+// all four safety checks (caller-enforced, see cmdPublishSocial below), never
+// speculatively. Object path is random (crypto.randomUUID, not the original
+// filename or any batch/event-identifying string) — the plan's own
+// requirement (fleet-social-publishing-capability-plan.md §4.6 point 2).
+const SOCIAL_PUBLISH_ASSET_EXT: Record<string, string> = { 'image/jpeg': 'jpg', 'image/png': 'png' };
+
+async function resolveInstagramImageUrl(
+  admin: ReturnType<typeof createAdminClient>,
+  imageBytes: Buffer,
+  mime: string,
+): Promise<{ url: string; objectPath: string }> {
+  // Guard BEFORE upload: the bucket's own allowed_mime_types (migration §4.2)
+  // permits only image/jpeg and image/png. --attach also allows webp/gif
+  // (ATTACH_MIME above) — an unmapped mime here would otherwise fail
+  // opaquely inside the Storage API AFTER the ledger row is already claimed.
+  const ext = SOCIAL_PUBLISH_ASSET_EXT[mime];
+  if (!ext) {
+    throw new Error(
+      `social-publish-assets: unsupported image mime "${mime}" — only image/jpeg and image/png are accepted (bucket allowed_mime_types)`,
+    );
+  }
+  const objectPath = `${randomUUID()}.${ext}`;
+  const { error: uploadError } = await admin.storage
+    .from('social-publish-assets')
+    .upload(objectPath, imageBytes, { contentType: mime });
+  if (uploadError) throw new Error(`social-publish-assets upload failed: ${uploadError.message}`);
+
+  const { data, error: signError } = await admin.storage
+    .from('social-publish-assets')
+    .createSignedUrl(objectPath, 600); // 600s — same TTL already used for
+  // invite-image signed URLs (event-media.ts, /g/[token]); comfortably above
+  // the bounded poll window (~30s, IG_CONTAINER_POLL_MAX_ATTEMPTS).
+  if (signError || !data) {
+    await admin.storage.from('social-publish-assets').remove([objectPath]);
+    throw new Error(`social-publish-assets signing failed: ${signError?.message ?? 'no data'}`);
+  }
+  return { url: data.signedUrl, objectPath };
+}
+
+// Cleanup MUST go through the Storage API, never raw SQL — a statement-level
+// trigger blocks direct DELETE on storage schema tables unless
+// storage.allow_delete_query=true in-session, and only the Storage API sets
+// that flag automatically (verified live by the base plan, 2026-03-05
+// supabase/supabase changelog — carried forward here unchanged).
+async function cleanupInstagramImage(
+  admin: ReturnType<typeof createAdminClient>,
+  objectPath: string,
+): Promise<void> {
+  const { error } = await admin.storage.from('social-publish-assets').remove([objectPath]);
+  if (error) {
+    console.error(
+      `[fleet-agent] publish-social: social-publish-assets cleanup failed for ${objectPath}: ${error.message}`,
+    );
+  }
+}
+
+async function cmdPublishSocial(
+  args: Record<string, string | undefined>,
+  dryRun: boolean,
+): Promise<void> {
+  const requestId = requireOption(args['request-id'], 'request-id');
+  const platformRaw = requireOption(args.platform, 'platform');
+  if (!isPlatform(platformRaw)) fail(`--platform must be one of: ${PLATFORMS.join(', ')}`);
+  const platform: Platform = platformRaw;
+  const captionFileRaw = requireOption(args['caption-file'], 'caption-file');
+  const imagePathRaw = args['image-path']?.trim() || null;
+
+  const imageRequirementError = validatePlatformImageRequirement(platform, imagePathRaw !== null);
+  if (imageRequirementError) fail(imageRequirementError);
+
+  const captionAbsPath = resolveFleetLogsPath(captionFileRaw, 'caption-file');
+  const imageAbsPath = imagePathRaw ? resolveFleetLogsPath(imagePathRaw, 'image-path') : null;
+
+  const admin = createAdminClient();
+
+  // Safety #1 (plan §4.5 item 1, extended with a platform cross-check — see
+  // publish-social.ts's own comment for why): the request-id must name an
+  // OWNER-approved publish_social request for THIS role and THIS platform.
+  const { data: row, error } = await admin
+    .from('fleet_requests')
+    .select('id, role, kind, status, payload')
+    .eq('id', requestId)
+    .maybeSingle();
+  if (error) fail(`publish-social: request-id lookup failed: ${error.message}`);
+  if (!row) fail(`publish-social: request-id ${requestId} not found`);
+  const rowError = validatePublishRequestRow(row);
+  if (rowError) fail(`publish-social: ${rowError}`);
+
+  const payloadResult = validatePublishPayload(row.payload, platform);
+  if (!payloadResult.ok) fail(`publish-social: ${payloadResult.reason}`);
+  const { attachments } = payloadResult.payload;
+
+  const captionAttachment = attachments[0];
+  if (!captionAttachment) fail('publish-social: payload.attachments[0] (caption) is missing');
+  let imageAttachment: (typeof attachments)[number] | null = null;
+  if (imageAbsPath) {
+    const candidate = attachments[1];
+    if (!candidate) fail('publish-social: --image-path given but payload.attachments[1] (image) is missing');
+    imageAttachment = candidate;
+  }
+
+  // Hashes are computed now: needed both for the ledger insert below
+  // (caption_sha256 is NOT NULL) and for safety check #2.
+  let captionBuffer: Buffer;
+  try {
+    captionBuffer = readFileSync(captionAbsPath);
+  } catch {
+    return fail(`--caption-file not found: ${captionFileRaw}`);
+  }
+  const captionSha256 = sha256Hex(captionBuffer);
+
+  // imageBuffer is hoisted OUT of the `if` (not block-scoped) — the live path
+  // below (Instagram upload, Facebook multipart) needs these same bytes
+  // again after hash-pinning; re-reading the file a second time would be
+  // both wasteful and a second TOCTOU window against safety check #2.
+  let imageBuffer: Buffer | null = null;
+  let imageSha256: string | null = null;
+  if (imageAbsPath) {
+    try {
+      imageBuffer = readFileSync(imageAbsPath);
+    } catch {
+      return fail(`--image-path not found: ${imagePathRaw}`);
+    }
+    imageSha256 = sha256Hex(imageBuffer);
+  }
+
+  // Ledger claim (plan §4.4): INSERT if absent; on conflict, branch on the
+  // existing row's status. This happens BEFORE checks #2-4 so that every
+  // downstream failure (including those checks) has a claimed row to mark
+  // 'failed' against, matching §4.4 step 2's ordering.
+  const { data: inserted, error: insertError } = await admin
+    .from('fleet_social_posts')
+    .insert({
+      request_id: requestId,
+      platform,
+      status: 'publishing',
+      caption_sha256: captionSha256,
+      image_sha256: imageSha256,
+    })
+    .select()
+    .single();
+
+  let postRow: FleetSocialPostRow;
+  if (insertError) {
+    if (insertError.code !== '23505') {
+      fail(`publish-social: ledger insert failed: ${insertError.message}`);
+    }
+    const { data: existing, error: selectError } = await admin
+      .from('fleet_social_posts')
+      .select()
+      .eq('request_id', requestId)
+      .eq('platform', platform)
+      .single();
+    if (selectError) fail(`publish-social: ledger re-select failed: ${selectError.message}`);
+
+    const decision = decideExistingRow(existing.status);
+
+    // Retry ceiling (plan social-publish-live-stage-plan.md §3.6/§9.2): a row
+    // that has already failed PUBLISH_RETRY_CEILING times is NOT re-claimed
+    // for another automatic live attempt. social-manager has no direct SQL
+    // access to fleet_social_posts (plan §3 point 9) — it cannot see
+    // attempt_count itself, so this is a code-level backstop, not just a
+    // prompt instruction. Checked BEFORE the 'noop' branch: a row stuck at
+    // 'failed' with attempt_count already at the ceiling would otherwise fall
+    // into 'retry' below and re-claim indefinitely on every weekly poll.
+    if (decision === 'retry' && isRetryCeilingReached(existing.attempt_count)) {
+      const reason = `retry ceiling reached (attempt_count=${existing.attempt_count} >= ${PUBLISH_RETRY_CEILING}) — publish-social will not retry automatically; escalate via --kind question, do not retry`;
+      console.log(
+        JSON.stringify(
+          {
+            published: false,
+            outcome: 'retry_ceiling_reached',
+            reason,
+            platform,
+            requestId,
+            request: existing,
+          },
+          null,
+          2,
+        ),
+      );
+      process.exitCode = 1;
+      return;
+    }
+
+    if (decision === 'noop') {
+      console.log(
+        JSON.stringify(
+          {
+            published: existing.status === 'published',
+            outcome: 'no-op',
+            reason:
+              existing.status === 'published'
+                ? 'already published for this request+platform'
+                : 'another attempt is currently publishing (race lost)',
+            platform,
+            requestId,
+            request: existing,
+          },
+          null,
+          2,
+        ),
+      );
+      process.exitCode = 2;
+      return;
+    }
+
+    // decision === 'retry' (existing.status is 'failed' or 'dry_run'): CAS on
+    // the OBSERVED status — either value is legal here (§4.4 point 1).
+    const { data: claimed, error: casError } = await admin
+      .from('fleet_social_posts')
+      .update({ status: 'publishing', attempt_count: existing.attempt_count + 1, error: null })
+      .eq('id', existing.id)
+      .eq('status', existing.status)
+      .select()
+      .maybeSingle();
+    if (casError) fail(`publish-social: ledger retry-claim failed: ${casError.message}`);
+    if (!claimed) {
+      console.log(
+        JSON.stringify(
+          {
+            published: false,
+            outcome: 'no-op',
+            reason: 'lost the retry race — another attempt claimed this request+platform concurrently',
+            platform,
+            requestId,
+          },
+          null,
+          2,
+        ),
+      );
+      process.exitCode = 2;
+      return;
+    }
+    postRow = claimed;
+  } else {
+    postRow = inserted;
+  }
+
+  // From here the row is exclusively ours at status='publishing'. Every
+  // failure path below marks it 'failed' before calling fail(), so the
+  // ledger can never be left claiming an in-progress attempt that actually
+  // stopped (plan §4.4 point 4: never {published:true} without a real post).
+  const markFailed = async (reason: string): Promise<void> => {
+    const { error: failErr } = await admin
+      .from('fleet_social_posts')
+      .update({ status: 'failed', error: reason })
+      .eq('id', postRow.id);
+    if (failErr) {
+      console.error(`[fleet-agent] publish-social: failed to record failure in ledger: ${failErr.message}`);
+    }
+  };
+
+  // Safety #2: hash-pinning against what the owner actually approved.
+  if (captionSha256 !== captionAttachment.sha256) {
+    const reason =
+      '--caption-file content does not match payload.attachments[0].sha256 — the file changed since the owner approved it';
+    await markFailed(reason);
+    fail(`publish-social: ${reason}`);
+  }
+  if (imageAttachment && imageSha256 !== imageAttachment.sha256) {
+    const reason =
+      '--image-path content does not match payload.attachments[1].sha256 — the file changed since the owner approved it';
+    await markFailed(reason);
+    fail(`publish-social: ${reason}`);
+  }
+
+  const captionText = captionBuffer.toString('utf8');
+
+  // Safety #3: mechanical grounding scan.
+  const groundingError = validateGrounding(captionText, payloadResult.payload.facts_source);
+  if (groundingError) {
+    await markFailed(groundingError);
+    fail(`publish-social: ${groundingError}`);
+  }
+
+  // Safety #4: REVIEW.md must mechanically show brand-director's approval.
+  // The path is derived from the caption ATTACHMENT's stored path (what the
+  // owner approved), not from --caption-file (what the caller happened to
+  // pass) — see publish-social.ts's own comment.
+  const reviewMdRelPath = deriveReviewMdPath(captionAttachment.path);
+  const reviewMdAbsPath = resolveFleetLogsPath(reviewMdRelPath, 'review-md');
+  let reviewContent: string;
+  try {
+    reviewContent = readFileSync(reviewMdAbsPath, 'utf8');
+  } catch {
+    const reason = `REVIEW.md not found at ${reviewMdRelPath} — brand-director has not reviewed this batch`;
+    await markFailed(reason);
+    return fail(`publish-social: ${reason}`);
+  }
+  if (!checkReviewApproved(reviewContent)) {
+    const reason = `REVIEW.md at ${reviewMdRelPath} does not open with "סטטוס: מוכנה-לאישור" — brand-director has not approved this batch`;
+    await markFailed(reason);
+    fail(`publish-social: ${reason}`);
+  }
+
+  // All four safety checks passed.
+  if (dryRun) {
+    const artifact = buildDryRunArtifact(platform, captionText, imageAttachment ? imageAttachment.path : null);
+    const artifactRelPath = deriveDryRunArtifactPath(captionAttachment.path, platform);
+    const artifactAbsPath = resolveFleetLogsPath(artifactRelPath, 'dry-run-artifact');
+    writeFileSync(artifactAbsPath, JSON.stringify(artifact, null, 2), 'utf8');
+
+    const { data: updated, error: updateError } = await admin
+      .from('fleet_social_posts')
+      .update({ status: 'dry_run', error: null })
+      .eq('id', postRow.id)
+      .select()
+      .single();
+    if (updateError) fail(`publish-social: ledger update to dry_run failed: ${updateError.message}`);
+
+    console.log(
+      JSON.stringify(
+        {
+          published: false,
+          dryRun: true,
+          outcome: 'dry_run',
+          platform,
+          requestId,
+          artifactPath: artifactRelPath,
+          request: updated,
+        },
+        null,
+        2,
+      ),
+    );
+    return;
+  }
+
+  // ── LIVE PATH (plan social-publish-live-stage-plan.md §3-§4, Route B for
+  // Instagram — addendum א׳) ──────────────────────────────────────────────
+  let externalPostId: string;
+  let permalink: string | null = null;
+  let igObjectPath: string | null = null;
+
+  try {
+    if (platform === 'facebook') {
+      const pageAccessToken = process.env.META_PAGE_ACCESS_TOKEN?.trim();
+      const facebookPageId = process.env.META_FACEBOOK_PAGE_ID?.trim();
+      if (!pageAccessToken || !facebookPageId) {
+        // NOT a silent exit 0 — an approved publish request that cannot run
+        // for lack of credentials is a real failure, not a benign
+        // "not configured" state (plan §4.2 explicitly contrasts this with
+        // getGa4ConfigStatus). Thrown here so the single catch below runs
+        // markFailed/fail — one failure path for both credential-missing and
+        // an actual Meta-call error, not two.
+        throw new Error('not_configured: missing META_PAGE_ACCESS_TOKEN/META_FACEBOOK_PAGE_ID');
+      }
+      const result =
+        imageAttachment && imageBuffer
+          ? await publishFacebookPhoto(pageAccessToken, facebookPageId, captionText, imageBuffer, imageAttachment.mime)
+          : await publishFacebookFeed(pageAccessToken, facebookPageId, captionText);
+      externalPostId = result.externalPostId;
+      permalink = result.permalink;
+    } else {
+      // Route B: Instagram's own credentials — no dependency on the
+      // Facebook Page token/id at all (addendum א׳).
+      const igAccessToken = process.env.META_IG_ACCESS_TOKEN?.trim();
+      const instagramBusinessAccountId = process.env.META_INSTAGRAM_BUSINESS_ACCOUNT_ID?.trim();
+      if (!igAccessToken || !instagramBusinessAccountId) {
+        throw new Error('not_configured: missing META_IG_ACCESS_TOKEN/META_INSTAGRAM_BUSINESS_ACCOUNT_ID');
+      }
+      // Instagram always has an image here — validatePlatformImageRequirement
+      // already enforced this before any of the four safety checks ran.
+      if (!imageBuffer || !imageAttachment) {
+        throw new Error('internal error — instagram reached the live path without an image');
+      }
+      const { url, objectPath } = await resolveInstagramImageUrl(admin, imageBuffer, imageAttachment.mime);
+      igObjectPath = objectPath;
+      externalPostId = await publishInstagram(igAccessToken, instagramBusinessAccountId, captionText, url);
+      permalink = await fetchInstagramPermalink(igAccessToken, externalPostId);
+    }
+  } catch (err) {
+    if (igObjectPath) await cleanupInstagramImage(admin, igObjectPath);
+    const reason = err instanceof Error ? err.message : 'unknown error calling Meta Graph API';
+    await markFailed(reason);
+    fail(`publish-social: ${reason}`);
+  }
+
+  // Success path: clean up the Instagram staging object BEFORE the final
+  // ledger write (a signed URL also self-expires — §2.5 — but the primary
+  // mechanism stays "delete on terminal state", not "wait for TTL").
+  if (igObjectPath) await cleanupInstagramImage(admin, igObjectPath);
+
+  const { data: updated, error: updateError } = await admin
+    .from('fleet_social_posts')
+    .update({
+      status: 'published',
+      external_post_id: externalPostId,
+      permalink,
+      published_at: new Date().toISOString(),
+      error: null,
+    })
+    .eq('id', postRow.id)
+    .select()
+    .single();
+  if (updateError) {
+    // Meta ALREADY published successfully — this is not a "failed post", it
+    // is a ledger-write failure on top of a real success. Never call
+    // markFailed here (that would make a retry create a SECOND post). Surface
+    // the real ids loudly so a human fixes the ledger row directly.
+    fail(
+      `publish-social: Meta publish SUCCEEDED (external_post_id=${externalPostId}${permalink ? `, permalink=${permalink}` : ''}) but the ledger UPDATE failed: ${updateError.message} — fix fleet_social_posts row ${postRow.id} manually, do NOT retry`,
+    );
+  }
+
+  console.log(
+    JSON.stringify(
+      { published: true, outcome: 'published', platform, requestId, externalPostId, permalink, request: updated },
+      null,
+      2,
+    ),
+  );
+}
+
 // ── Fleet goals ──────────────────────────────────────────────────────────────
 // The autonomy loop: goal-poll (mirrors cmdPoll — runs unconditionally, "0
 // due" is a normal outcome, no exitCode games) and goal-progress/goal-close
@@ -1487,6 +2471,12 @@ async function main(): Promise<void> {
       state: { type: 'string' },
       'next-wake-at': { type: 'string' },
       range: { type: 'string' },
+      'catalog-id': { type: 'string' },
+      'request-id': { type: 'string' },
+      platform: { type: 'string' },
+      'caption-file': { type: 'string' },
+      'image-path': { type: 'string' },
+      'dry-run': { type: 'boolean' },
       'body-file': { type: 'string' },
       'summary-file': { type: 'string' },
       'note-file': { type: 'string' },
@@ -1508,7 +2498,7 @@ async function main(): Promise<void> {
   // `attach` (multiple:true) and `landing-pages` (boolean) are the only two
   // non-string option shapes — split both off so the remaining values keep
   // the Record<string, string | undefined> shape the other verbs expect.
-  const { attach, 'landing-pages': landingPages, ...scalarValues } = values;
+  const { attach, 'landing-pages': landingPages, 'dry-run': dryRun, ...scalarValues } = values;
   switch (command) {
     case 'request':
       return cmdRequest(scalarValues as Record<string, string | undefined>, attach);
@@ -1548,9 +2538,13 @@ async function main(): Promise<void> {
       return cmdGoalClose(scalarValues);
     case 'analytics-summary':
       return cmdAnalyticsSummary(scalarValues, landingPages);
+    case 'housekeeping-pr':
+      return cmdHousekeepingPr(scalarValues);
+    case 'publish-social':
+      return cmdPublishSocial(scalarValues, !!dryRun);
     default:
       fail(
-        'usage: fleet-agent-cli <request|handoff|complete|poll|verdicts|ack|expire|withdraw|digest|sql|draft-reply|distill-corrections|business-facts|triage-claim|triage-finish|goal-poll|goal-progress|goal-close|analytics-summary> [options]',
+        'usage: fleet-agent-cli <request|handoff|complete|poll|verdicts|ack|expire|withdraw|digest|sql|draft-reply|distill-corrections|business-facts|triage-claim|triage-finish|goal-poll|goal-progress|goal-close|analytics-summary|housekeeping-pr|publish-social> [options]',
       );
   }
 }
