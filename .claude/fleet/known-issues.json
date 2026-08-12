@@ -1,0 +1,146 @@
+[
+  {
+    "id": "ehw-write-path-missing-beta",
+    "title": "נתיב-כתיבה חסר מקטע beta/ ב-event-health-watcher",
+    "category": "code-bug",
+    "target_file": "roles/event-health-watcher.md",
+    "remediation_kind": "detect-only",
+    "check": {
+      "type": "custom",
+      "file": "roles/event-health-watcher.md",
+      "match": "בדוק שבניית נתיב-הכתיבה כוללת את מקטע ה-beta/ המפורש"
+    },
+    "fix": {
+      "type": "none"
+    },
+    "status": "open",
+    "stale_after_days": 5,
+    "notes": "הוסף/תקן את בניית ה-path לכלול את מקטע ה-beta/ המפורש — ראו 04, §4"
+  },
+  {
+    "id": "fleetjson-main-comment-drift",
+    "title": "$main_comment ב-fleet.json לא מכיר ב-owner_direct_request כמסלול-spawn",
+    "category": "docs-drift",
+    "target_file": "fleet.json:86",
+    "remediation_kind": "detect-only",
+    "check": {
+      "type": "custom",
+      "file": "fleet.json",
+      "match": "בדוק אם $main_comment מזכיר את owner_direct_request כמסלול-spawn שלישי"
+    },
+    "fix": {
+      "type": "none"
+    },
+    "status": "open",
+    "stale_after_days": 5,
+    "notes": "הוסף ל-$main_comment את owner_direct_request כמסלול-spawn שלישי, מוכר במפורש"
+  },
+  {
+    "id": "tier2-comment-vs-smoketest-t2",
+    "title": "$comment ב-tier2.settings.json לא מכיר ב-smoke-test-t2",
+    "category": "docs-drift",
+    "target_file": ".claude/fleet/settings/tier2.settings.json",
+    "remediation_kind": "detect-only",
+    "check": {
+      "type": "contains_line",
+      "file": ".claude/fleet/settings/tier2.settings.json",
+      "match": "the 'main' executor role ONLY"
+    },
+    "fix": {
+      "type": "none"
+    },
+    "status": "open",
+    "stale_after_days": 5,
+    "notes": "עדכן מ-'the main executor role ONLY' לתיאור שמכיר גם ב-smoke-test-t2 כמשובץ לאותה דרגה"
+  },
+  {
+    "id": "todo-git-commit-stale",
+    "title": "פריט TODO.md מיושן — הכול כבר במעקב git",
+    "category": "docs-drift",
+    "target_file": ".claude/fleet/TODO.md:33",
+    "remediation_kind": "detect-only",
+    "check": {
+      "type": "custom",
+      "file": ".claude/fleet/TODO.md",
+      "match": "בדוק אם שורה 33 עדיין דורשת git add/tracking שכבר בוצע בפועל"
+    },
+    "fix": {
+      "type": "none"
+    },
+    "status": "open",
+    "stale_after_days": 5,
+    "notes": "הסר את השורה — git ls-files .claude/fleet מאשר שהכול כבר במעקב"
+  },
+  {
+    "id": "cli-synopsis-missing-verbs",
+    "title": "תקציר ראש-קובץ fleet-agent-cli.ts חסר ארבעה verbs",
+    "category": "docs-drift",
+    "target_file": "scripts/fleet-agent-cli.ts:20-107",
+    "remediation_kind": "detect-only",
+    "check": {
+      "type": "custom",
+      "file": "scripts/fleet-agent-cli.ts",
+      "match": "בדוק אם תקציר ראש-הקובץ (שורות 20-107) כולל verdicts/sql/triage-claim/triage-finish"
+    },
+    "fix": {
+      "type": "none"
+    },
+    "status": "open",
+    "stale_after_days": 5,
+    "notes": "הוסף לתקציר את verdicts/sql/triage-claim/triage-finish"
+  },
+  {
+    "id": "insertandnotify-swallowed-error",
+    "title": "שגיאת re-select בדדופ נבלעת ב-insertAndNotify",
+    "category": "code-bug",
+    "target_file": "scripts/fleet-agent-cli.ts:397-407",
+    "remediation_kind": "detect-only",
+    "check": {
+      "type": "custom",
+      "file": "scripts/fleet-agent-cli.ts",
+      "match": "בדוק שה-error של ה-re-select במסלול הדדופ נבדק, לא רק ב-insert הראשי"
+    },
+    "fix": {
+      "type": "none"
+    },
+    "status": "open",
+    "stale_after_days": 5,
+    "notes": "בדוק את ה-error של ה-re-select גם במסלול הדדופ, לא רק ב-insert הראשי"
+  },
+  {
+    "id": "digest-fake-success",
+    "title": "digest מדווח {posted:true} קבוע במקום ערך-החזרה אמיתי",
+    "category": "code-bug",
+    "target_file": "scripts/fleet-agent-cli.ts:877-892",
+    "remediation_kind": "detect-only",
+    "check": {
+      "type": "custom",
+      "file": "scripts/fleet-agent-cli.ts",
+      "match": "בדוק אם sendSlackAlert() מדווח ערך-החזרה אמיתי או עדיין {posted:true} קבוע"
+    },
+    "fix": {
+      "type": "none"
+    },
+    "status": "open",
+    "stale_after_days": 5,
+    "notes": "דווח את ערך-ההחזרה האמיתי של sendSlackAlert() במקום {posted:true} קבוע"
+  },
+  {
+    "id": "withdraw-exit-code-inconsistent",
+    "title": "withdraw לא מגדיר exitCode=2 על no-op, בניגוד ליתר ה-verbs",
+    "category": "correctness-gap",
+    "target_file": "scripts/fleet-agent-cli.ts:748-773",
+    "remediation_kind": "detect-only",
+    "check": {
+      "type": "custom",
+      "file": "scripts/fleet-agent-cli.ts",
+      "match": "בדוק אם withdraw מגדיר process.exitCode=2 על no-op כמו ack/draft-reply/triage-finish/goal-progress/goal-close"
+    },
+    "fix": {
+      "type": "none"
+    },
+    "status": "open",
+    "stale_after_days": 5,
+    "notes": "קבע process.exitCode = 2 על no-op, כמו ack/draft-reply/triage-finish/goal-progress/goal-close — כבר מתועד כפער ב-03, §6, ממצא #3"
+  }
+]

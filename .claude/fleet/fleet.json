@@ -83,7 +83,7 @@
         }
       ]
     },
-    "$main_comment": "Reactive Tier-2 executor for role=main requests (handoff --to main). NO schedule — spawned ONLY by the answer-watcher after the owner answers such a request; the per-request verdict is the authorization. Its only Tier-2 power is supabase db query (guard-tier2.sh). Completion notifies the owner via the CLI complete verb (push + Slack thread + green badge).",
+    "$main_comment": "Role=main is spawned via THREE distinct paths, all reactive — NO schedule. (1) answer-watcher (scheduler.mjs answerWatcherTick): spawns whenever any fleet_requests row assigned role=main receives an owner verdict (poll's `verdicts` bucket) — runs independently of the `reactive` array below, gated only by enabled + non-auto_ack. Covers agent-filed requests, including another role's `handoff --to main` (buildHandoffRequest never sets payload.origin, so a handoff row always waits here for an explicit owner answer — it never routes through path 2). Authorization is the per-request answer; closes via the CLI complete verb (push + Slack thread + green badge), no ack except denied. (2) owner_direct_request (inquiry-watcher trigger, scheduler.mjs TRIGGERS): spawns while a fleet_requests row assigned role=main with payload.origin='owner' is still pending (poll's `inbox` bucket) — created when the owner opens a new conversation targeting main directly from /admin/fleet's compose form (fleet_owner_request RPC), bypassing handoff entirely. (3) goal_due (inquiry-watcher trigger): spawns when a fleet_goals row assigned role=main comes due; authorization is the goal body itself; closes via goal-progress/goal-close, never complete/ack. Its only Tier-2 power on any path is supabase db query (guard-tier2.sh).",
     "main": {
       "enabled": true,
       "reactive": ["owner_direct_request", "goal_due"],
@@ -216,6 +216,20 @@
         {
           "time": "03:30",
           "days": "*"
+        }
+      ]
+    },
+    "$fleet_maintainer_comment": "Self-maintenance role for the FLEET's own code/prompts/config/docs (NOT the KALFA app). Tier 0 always — even its one write path (housekeeping-pr) runs git/gh as trusted server-side code inside fleet-agent-cli.ts, never as a Bash-tool grant to this role. Ships enabled:false; owner flips after reviewing the role prompt + known-issues.json catalog (see plans/fleet-maintenance-capability-plan.md §7 for the staged rollout).",
+    "fleet-maintainer": {
+      "enabled": false,
+      "reactive": ["owner_direct_request", "goal_due"],
+      "tier": 0,
+      "model": "sonnet",
+      "timeout_minutes": 30,
+      "schedule": [
+        {
+          "time": "13:00",
+          "days": "0"
         }
       ]
     }

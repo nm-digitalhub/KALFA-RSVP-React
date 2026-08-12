@@ -30,7 +30,6 @@
 - [ ] **אישור שער התאימות** של lifecycle + 3 שאלות ליועמ"ש אנושי.
 - [ ] **איזה גל תפעולי הבא להפעיל**: event-health-watcher / support-drafter / business-ops.
 - [ ] **worktree `beta-fleet`** (`git worktree add`) — שינוי מבנה ריפו, לצורך qa-runner + dev-engineer (Tier-1).
-- [ ] **commit** של כל עבודת המצבה ל-git (כרגע הכול untracked; לפי CLAUDE.md לא מבצעים בלי אישור).
 
 ## ⚪ מתוכנן (בונה בלי אישור — נשאר כבוי)
 

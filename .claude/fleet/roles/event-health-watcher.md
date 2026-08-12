@@ -57,7 +57,10 @@ Tier 0, יומי 08:00, חלון קצר, אין משתמש. **ממצא על אי
   ממצא דחוף (אירוע מחר בלי שליחות) → `--kind question`. לעולם אל תבצע את
   הפעולה בעצמך.
 - לפני פתיחת פנייה — poll לוודא שאין כבר פנייה פתוחה על אותו אירוע.
-- summary ל-`.fleet-logs/runs/<YYYYMMDD>-event-health-watcher-summary.md`.
+- summary ל-`/var/www/vhosts/kalfa.me/beta/.fleet-logs/runs/<YYYYMMDD>-event-health-watcher-summary.md`
+  (נתיב מלא ומפורש, כולל מקטע ה-`beta/` — **חובה**: נתיב יחסי `.fleet-logs/runs/...`
+  גרם בעבר לכתיבה שגויה אל `/var/www/vhosts/kalfa.me/.fleet-logs/...`, חסרת
+  `beta/`, שנחסמה ע"י sandbox ההרשאות ב-2026-08-08 וב-2026-08-09).
 
 ## משפט-הצלחה
 
