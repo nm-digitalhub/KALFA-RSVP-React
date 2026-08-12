@@ -10,6 +10,7 @@ import {
 import {
   classifyGa4Error,
   fillTrendGaps,
+  mapCampaigns,
   mapChannels,
   mapCountries,
   mapDemographic,
@@ -212,6 +213,7 @@ export async function getAnalyticsDashboard(
       landingPages: notConfigured(),
       leadSources: notConfigured(),
       billingModels: notConfigured(),
+      campaigns: notConfigured(),
       kalfaChannels: notConfigured(),
       coreQuota: null,
     };
@@ -255,11 +257,12 @@ export async function getAnalyticsDashboard(
     genders: sectioned(c, (d) => mapGenders(d.responses[1])),
     interests: sectioned(c, (d) => mapDemographic(d.responses[2])),
     landingPages: sectioned(c, (d) => mapLandingPages(d.responses[3])),
-    // Batch D report order contract: [leadSources, billingModels, kalfaChannels?]
+    // Batch D report order contract: [leadSources, billingModels, campaigns, campaignLeads, kalfaChannels?]
     leadSources: sectioned(dBatch, (d) => mapLeadSources(d.responses[0])),
     billingModels: sectioned(dBatch, (d) => mapBillingModels(d.responses[1])),
+    campaigns: sectioned(dBatch, (d) => mapCampaigns(d.responses[2], d.responses[3])),
     kalfaChannels: channelGroupId
-      ? sectioned(dBatch, (d) => mapKalfaChannels(d.responses[2]))
+      ? sectioned(dBatch, (d) => mapKalfaChannels(d.responses[4]))
       : notConfigured(),
     coreQuota: a.data?.quota ?? b.data?.quota ?? c.data?.quota ?? dBatch.data?.quota ?? null,
   };

@@ -85,6 +85,7 @@ describe('getAnalyticsDashboard — gates', () => {
     expect(dash?.configIssue).toBe('credentials_unreadable');
     expect(dash?.overview.state).toBe('not_configured');
     expect(dash?.events.state).toBe('not_configured');
+    expect(dash?.campaigns.state).toBe('not_configured');
     expect(batchRunReports).not.toHaveBeenCalled();
   });
 });
@@ -175,6 +176,13 @@ describe('getAnalyticsDashboard — cache', () => {
       tokensPerDay: { consumed: 5, remaining: 95 },
       tokensPerHour: { consumed: 1, remaining: 9 },
     });
+  });
+
+  it('v5: campaigns section is wired from batch D and reaches ok state', async () => {
+    const { dal } = await load();
+    const dash = await dal.getAnalyticsDashboard('30d');
+    expect(dash?.campaigns.state).toBe('ok');
+    expect(dash?.campaigns.data).not.toBeNull();
   });
 });
 

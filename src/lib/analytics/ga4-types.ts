@@ -229,6 +229,25 @@ export interface BillingModelRow {
   revenue: number;
 }
 
+// v5 — campaign performance (sessionCampaignName), for owner-run paid
+// campaigns (e.g. Instagram UTM tests). Session-scoped, same attribution
+// model as the rest of the dashboard (sessions/channels/sources are all
+// session-scoped too): a lead counts toward a campaign only when generate_lead
+// fires in a session that itself carries that campaign — a later return visit
+// in a new session (direct/bookmark) is not joined back to the campaign that
+// originally acquired the user. leads comes from a SEPARATE eventName-filtered
+// report joined by campaignName (dimensionFilter can't mix an eventName
+// restriction with unfiltered session metrics in one report).
+export interface CampaignRow {
+  campaignName: string;
+  source: string;
+  medium: string;
+  sessions: number;
+  activeUsers: number;
+  engagementRate: number | null; // null when sessions === 0
+  leads: number; // generate_lead eventCount attributed to this campaign
+}
+
 export type Ga4ConfigIssue =
   | 'missing_property_id'
   | 'invalid_property_id'
@@ -255,6 +274,7 @@ export interface AnalyticsDashboard {
   landingPages: Sectioned<LandingPageRow[]>; // v3
   leadSources: Sectioned<LabeledCountRow[]>; // v4 — customEvent:lead_source
   billingModels: Sectioned<BillingModelRow[]>; // v4 — customEvent:billing_model
+  campaigns: Sectioned<CampaignRow[]>; // v5 — sessionCampaignName + generate_lead attribution
   kalfaChannels: Sectioned<LabeledCountRow[]>; // v4 — sessionCustomChannelGroup
   coreQuota: QuotaSnapshot | null; // core and realtime pools are separate
 }

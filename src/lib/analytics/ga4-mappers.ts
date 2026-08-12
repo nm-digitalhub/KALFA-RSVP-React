@@ -12,6 +12,7 @@ import {
   type AnalyticsOverview,
   type AnalyticsRange,
   type ApiPropertyQuota,
+  type CampaignRow,
   type ChannelRow,
   type CountryRow,
   type DemographicRow,
@@ -261,6 +262,61 @@ export function mapBillingModels(resp: RunReportResponse | null | undefined): Bi
       return { key, label: BILLING_MODEL_LABELS[key] ?? key, revenue: met(row, 0) };
     })
     .filter((r) => r.key && r.key !== '(not set)');
+}
+
+// v5: campaign performance. leadsResp is a SEPARATE eventName='generate_lead'
+// report over the same [campaignName, source, medium] triple (see
+// buildCoreBatchD) — joined here on the FULL triple, not campaignName alone:
+// the same campaign name can legitimately appear with different source/medium
+// (e.g. reused across placements, or a source spelling variant), and a
+// name-only join would double-count that campaign's leads onto every row
+// sharing the name. A campaign with leads but outside the top-10 sessions
+// rows (TABLE_ROW_LIMIT) is dropped along with the row itself, same
+// truncation behavior as every other table on this dashboard.
+// Pipe delimiter: not a realistic character in a UTM campaign/source/medium
+// value, so a false positive collision across the join is effectively
+// impossible in practice.
+const CAMPAIGN_KEY_SEP = '|';
+function campaignKey(name: string, source: string, medium: string): string {
+  return `${name}${CAMPAIGN_KEY_SEP}${source}${CAMPAIGN_KEY_SEP}${medium}`;
+}
+
+// GA4 wraps every one of its own auto-generated "no campaign" placeholders in
+// parentheses — live-verified on this property: untagged traffic reports
+// sessionCampaignName='(direct)' (NOT '(not set)', unlike every other
+// dimension on this dashboard). Matching the whole `(...)` shape rather than
+// an explicit allowlist of just '(not set)'/'(direct)' also covers any other
+// GA4 placeholder that might surface (e.g. on properties with different
+// traffic mixes) without another live-verify round trip.
+const GA4_PLACEHOLDER = /^\(.*\)$/;
+
+export function mapCampaigns(
+  campaignsResp: RunReportResponse | null | undefined,
+  leadsResp: RunReportResponse | null | undefined,
+): CampaignRow[] {
+  const leadsByCampaign = new Map<string, number>();
+  for (const row of rows(leadsResp)) {
+    const name = dim(row, 0);
+    if (!name || GA4_PLACEHOLDER.test(name)) continue;
+    leadsByCampaign.set(campaignKey(name, dim(row, 1), dim(row, 2)), met(row, 0));
+  }
+  return rows(campaignsResp)
+    .map((row) => {
+      const campaignName = dim(row, 0);
+      const source = dim(row, 1);
+      const medium = dim(row, 2);
+      const sessions = met(row, 0);
+      return {
+        campaignName,
+        source,
+        medium,
+        sessions,
+        activeUsers: met(row, 1),
+        engagementRate: sessions > 0 ? met(row, 2) : null,
+        leads: leadsByCampaign.get(campaignKey(campaignName, source, medium)) ?? 0,
+      };
+    })
+    .filter((r) => r.campaignName && !GA4_PLACEHOLDER.test(r.campaignName));
 }
 
 // Channel names arrive as the group's rule display names (already Hebrew for

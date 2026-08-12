@@ -185,10 +185,10 @@ describe('buildCoreBatchC', () => {
   });
 });
 
-describe('buildCoreBatchD — custom-dimension breakdowns + KALFA channel group', () => {
-  it('without a channel-group id: exactly 2 reports, quota on the first only', () => {
+describe('buildCoreBatchD — custom-dimension breakdowns + campaigns + KALFA channel group', () => {
+  it('without a channel-group id: exactly 4 reports, quota on the first only', () => {
     const reqs = buildCoreBatchD('30d');
-    expect(reqs).toHaveLength(2);
+    expect(reqs).toHaveLength(4);
     expect(reqs[0].returnPropertyQuota).toBe(true);
     expect(reqs[0].dimensions?.map((d) => d.name)).toEqual(['customEvent:lead_source']);
     expect(reqs[0].metrics?.map((m) => m.name)).toEqual(['eventCount']);
@@ -197,19 +197,52 @@ describe('buildCoreBatchD — custom-dimension breakdowns + KALFA channel group'
     expect(reqs[1].metrics?.map((m) => m.name)).toEqual(['purchaseRevenue']);
   });
 
-  it('with a channel-group id: a 3rd report on sessionCustomChannelGroup:<id>', () => {
+  it('campaigns report: sessionCampaignName/source/medium with sessions/users/engagement', () => {
+    const campaigns = buildCoreBatchD('30d')[2];
+    expect(campaigns.dimensions?.map((d) => d.name)).toEqual([
+      'sessionCampaignName',
+      'sessionSource',
+      'sessionMedium',
+    ]);
+    expect(campaigns.metrics?.map((m) => m.name)).toEqual([
+      'sessions',
+      'activeUsers',
+      'engagementRate',
+    ]);
+  });
+
+  it('campaign leads report: same [campaignName, source, medium] triple as the campaigns report, filtered to eventName=generate_lead', () => {
+    const campaignLeads = buildCoreBatchD('30d')[3];
+    // Must match the campaigns report's dimension triple exactly — mapCampaigns
+    // joins on the full triple, not campaignName alone, to avoid double-
+    // counting leads onto every row that shares a campaign name.
+    expect(campaignLeads.dimensions?.map((d) => d.name)).toEqual([
+      'sessionCampaignName',
+      'sessionSource',
+      'sessionMedium',
+    ]);
+    expect(campaignLeads.metrics?.map((m) => m.name)).toEqual(['eventCount']);
+    expect(campaignLeads.dimensionFilter?.filter?.fieldName).toBe('eventName');
+    expect(campaignLeads.dimensionFilter?.filter?.stringFilter).toEqual({
+      matchType: 'EXACT',
+      value: 'generate_lead',
+    });
+  });
+
+  it('with a channel-group id: a 5th report on sessionCustomChannelGroup:<id>', () => {
     const reqs = buildCoreBatchD('30d', undefined, '15331180408');
-    expect(reqs).toHaveLength(3);
-    expect(reqs[2].dimensions?.map((d) => d.name)).toEqual([
+    expect(reqs).toHaveLength(5);
+    expect(reqs[4].dimensions?.map((d) => d.name)).toEqual([
       'sessionCustomChannelGroup:15331180408',
     ]);
-    expect(reqs[2].metrics?.map((m) => m.name)).toEqual(['sessions']);
+    expect(reqs[4].metrics?.map((m) => m.name)).toEqual(['sessions']);
   });
 
   it('stream scoping applies to every batch-D report', () => {
     const SID = '15330155015';
     for (const req of buildCoreBatchD('7d', SID, '15331180408')) {
-      expect(req.dimensionFilter?.filter?.fieldName).toBe('streamId');
+      const filter = req.dimensionFilter?.filter ?? req.dimensionFilter?.andGroup?.expressions?.[0]?.filter;
+      expect(filter?.fieldName).toBe('streamId');
     }
   });
 });

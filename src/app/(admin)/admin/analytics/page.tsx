@@ -84,6 +84,7 @@ export default async function AdminAnalyticsPage({
     dash.landingPages,
     dash.leadSources,
     dash.billingModels,
+    dash.campaigns,
     dash.kalfaChannels,
     realtime.section,
   ].some((s) => s.state === 'quota_exhausted');
@@ -213,6 +214,30 @@ export default async function AdminAnalyticsPage({
             }))}
             emptyText="אין עדיין לידים בטווח הזה."
           />
+        </SectionCard>
+
+        <SectionCard title="קמפיינים" section={dash.campaigns}>
+          <DataTable
+            headers={['קמפיין', 'מקור / אמצעי', 'ביקורים', 'משתמשים', 'לידים', 'מעורבות']}
+            rows={(dash.campaigns.data ?? []).map((r) => ({
+              // composite key: the same campaign name can legitimately repeat
+              // with a different source/medium (see mapCampaigns).
+              key: `${r.campaignName}/${r.source}/${r.medium}`,
+              cells: [
+                r.campaignName,
+                `${r.source} / ${r.medium}`,
+                r.sessions,
+                r.activeUsers,
+                r.leads,
+                r.engagementRate === null ? '—' : `${Math.round(r.engagementRate * 100)}%`,
+              ],
+            }))}
+            emptyText="אין עדיין תנועה מתויגת בקמפיין (UTM) בטווח הזה."
+          />
+          <p className="text-xs text-muted-foreground">
+            ״לידים״ נספר רק כאשר generate_lead קרה באותו ביקור שנשא את הקמפיין — ביקור חוזר
+            בלי UTM (למשל כניסה ישירה ביום אחר) לא משויך לקמפיין המקורי.
+          </p>
         </SectionCard>
 
         <SectionCard title="הכנסות לפי מודל חיוב" section={dash.billingModels}>

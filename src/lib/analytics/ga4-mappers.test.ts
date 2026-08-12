@@ -4,6 +4,7 @@ import {
   classifyGa4Error,
   fillTrendGaps,
   formatSeconds,
+  mapCampaigns,
   mapCountries,
   mapDemographic,
   mapEvents,
@@ -290,6 +291,124 @@ describe('v4 custom-dimension mappers', () => {
     } as never);
     expect(rows[0].label).toBe('ישיר');
     expect(rows[1].label).toBe('וואטסאפ');
+  });
+});
+
+describe('mapCampaigns — v5 campaign performance + generate_lead attribution', () => {
+  const campaignsResp = {
+    rows: [
+      {
+        dimensionValues: [{ value: 'aug26-test' }, { value: 'instagram' }, { value: 'paid' }],
+        metricValues: [{ value: '20' }, { value: '18' }, { value: '0.7' }],
+      },
+      {
+        // Live-verified shape (12.8): GA4 reports untagged traffic's
+        // sessionCampaignName as '(direct)' — NOT '(not set)' like every
+        // other dimension on this dashboard.
+        dimensionValues: [{ value: '(direct)' }, { value: '(direct)' }, { value: '(none)' }],
+        metricValues: [{ value: '25' }, { value: '25' }, { value: '0.4' }],
+      },
+      {
+        dimensionValues: [{ value: 'no-clicks' }, { value: 'instagram' }, { value: 'paid' }],
+        metricValues: [{ value: '0' }, { value: '0' }, { value: '0' }],
+      },
+    ],
+  } as RunReportResponse;
+
+  it('joins leads by the FULL [campaignName, source, medium] triple and drops the (direct) placeholder', () => {
+    const rows = mapCampaigns(campaignsResp, {
+      rows: [
+        {
+          dimensionValues: [{ value: 'aug26-test' }, { value: 'instagram' }, { value: 'paid' }],
+          metricValues: [{ value: '7' }],
+        },
+        {
+          dimensionValues: [{ value: '(direct)' }, { value: '(direct)' }, { value: '(none)' }],
+          metricValues: [{ value: '2' }],
+        },
+      ],
+    } as RunReportResponse);
+    expect(rows).toEqual([
+      {
+        campaignName: 'aug26-test',
+        source: 'instagram',
+        medium: 'paid',
+        sessions: 20,
+        activeUsers: 18,
+        engagementRate: 0.7,
+        leads: 7,
+      },
+      {
+        campaignName: 'no-clicks',
+        source: 'instagram',
+        medium: 'paid',
+        sessions: 0,
+        activeUsers: 0,
+        engagementRate: null,
+        leads: 0,
+      },
+    ]);
+  });
+
+  it('drops any GA4 parenthetical placeholder as campaignName, not just (not set)/(direct)', () => {
+    const resp = {
+      rows: [
+        {
+          dimensionValues: [{ value: '(not set)' }, { value: 'x' }, { value: 'y' }],
+          metricValues: [{ value: '5' }, { value: '5' }, { value: '0.5' }],
+        },
+        {
+          dimensionValues: [{ value: '(organic)' }, { value: 'google' }, { value: 'organic' }],
+          metricValues: [{ value: '5' }, { value: '5' }, { value: '0.5' }],
+        },
+        {
+          dimensionValues: [{ value: 'real-campaign' }, { value: 'x' }, { value: 'y' }],
+          metricValues: [{ value: '5' }, { value: '5' }, { value: '0.5' }],
+        },
+      ],
+    } as RunReportResponse;
+    const rows = mapCampaigns(resp, { rows: [] } as RunReportResponse);
+    expect(rows.map((r) => r.campaignName)).toEqual(['real-campaign']);
+  });
+
+  it('does NOT double-count leads when the same campaign name repeats with a different source/medium', () => {
+    const twoPlacements = {
+      rows: [
+        {
+          dimensionValues: [{ value: 'aug26-test' }, { value: 'instagram' }, { value: 'paid' }],
+          metricValues: [{ value: '20' }, { value: '18' }, { value: '0.7' }],
+        },
+        {
+          dimensionValues: [{ value: 'aug26-test' }, { value: 'facebook' }, { value: 'paid' }],
+          metricValues: [{ value: '5' }, { value: '4' }, { value: '0.6' }],
+        },
+      ],
+    } as RunReportResponse;
+    const rows = mapCampaigns(twoPlacements, {
+      rows: [
+        {
+          dimensionValues: [{ value: 'aug26-test' }, { value: 'instagram' }, { value: 'paid' }],
+          metricValues: [{ value: '7' }],
+        },
+        {
+          dimensionValues: [{ value: 'aug26-test' }, { value: 'facebook' }, { value: 'paid' }],
+          metricValues: [{ value: '1' }],
+        },
+      ],
+    } as RunReportResponse);
+    expect(rows.find((r) => r.source === 'instagram')?.leads).toBe(7);
+    expect(rows.find((r) => r.source === 'facebook')?.leads).toBe(1);
+  });
+
+  it('a campaign with zero sessions gets null engagementRate and defaults leads to 0 when absent', () => {
+    const rows = mapCampaigns(campaignsResp, { rows: [] } as RunReportResponse);
+    const noClicks = rows.find((r) => r.campaignName === 'no-clicks');
+    expect(noClicks?.engagementRate).toBeNull();
+    expect(noClicks?.leads).toBe(0);
+  });
+
+  it('empty responses → empty table', () => {
+    expect(mapCampaigns({} as RunReportResponse, {} as RunReportResponse)).toEqual([]);
   });
 });
 

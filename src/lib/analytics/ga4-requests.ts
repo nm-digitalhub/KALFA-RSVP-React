@@ -247,11 +247,20 @@ export function buildLandingPagesRequest(
   ];
 }
 
-// Batch D order (v4): [leadSources, billingModels, kalfaChannels?] — the two
-// custom-dimension breakdowns (live-verified 27.7: `customEvent:<param>` is
-// the documented Data API syntax and accepted by the property) plus, ONLY
-// when a channel-group id is configured, traffic by the custom "ערוצי KALFA"
-// group (`sessionCustomChannelGroup:<id>` — syntax live-verified as well).
+// Batch D order (v5): [leadSources, billingModels, campaigns, campaignLeads,
+// kalfaChannels?] — the two custom-dimension breakdowns (live-verified 27.7:
+// `customEvent:<param>` is the documented Data API syntax and accepted by the
+// property), the campaign-performance pair (v5 — owner-run paid campaigns,
+// e.g. Instagram UTM tests: `campaigns` carries sessions/users/engagement per
+// sessionCampaignName+source+medium; `campaignLeads` is a SEPARATE
+// eventName='generate_lead'-filtered report over the same campaignName
+// dimension, joined client-side by mapCampaigns — a single report can't mix
+// an eventName restriction with unfiltered session metrics), plus, ONLY when
+// a channel-group id is configured, traffic by the custom "ערוצי KALFA" group
+// (`sessionCustomChannelGroup:<id>` — syntax live-verified as well). 5 reports
+// is the batchRunReports cap (confirmed against the official Data API
+// reference: "Each batch request is allowed up to 5 requests") — exactly hit
+// when channelGroupId is set.
 export function buildCoreBatchD(
   range: AnalyticsRange,
   streamId?: string,
@@ -274,6 +283,40 @@ export function buildCoreBatchD(
       metrics: [{ name: 'purchaseRevenue' }],
       dimensionFilter: withStreamFilter(streamId),
       orderBys: metricDesc('purchaseRevenue'),
+      limit: TABLE_ROW_LIMIT,
+    },
+    {
+      dateRanges,
+      dimensions: [
+        { name: 'sessionCampaignName' },
+        { name: 'sessionSource' },
+        { name: 'sessionMedium' },
+      ],
+      metrics: [{ name: 'sessions' }, { name: 'activeUsers' }, { name: 'engagementRate' }],
+      dimensionFilter: withStreamFilter(streamId),
+      orderBys: metricDesc('sessions'),
+      limit: TABLE_ROW_LIMIT,
+    },
+    {
+      // Same [campaignName, source, medium] triple as the campaigns report
+      // above — a campaignName-only join would collapse distinct rows that
+      // happen to share a campaign name (e.g. the same UTM campaign reused
+      // across two placements with different source/medium) and double-count
+      // that campaign's leads onto every row sharing the name.
+      dateRanges,
+      dimensions: [
+        { name: 'sessionCampaignName' },
+        { name: 'sessionSource' },
+        { name: 'sessionMedium' },
+      ],
+      metrics: [{ name: 'eventCount' }],
+      dimensionFilter: withStreamFilter(streamId, {
+        filter: {
+          fieldName: 'eventName',
+          stringFilter: { matchType: 'EXACT', value: 'generate_lead' },
+        },
+      }),
+      orderBys: metricDesc('eventCount'),
       limit: TABLE_ROW_LIMIT,
     },
   ];
