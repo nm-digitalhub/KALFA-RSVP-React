@@ -104,3 +104,11 @@ __pycache__/
 .claude-flow/data/
 .claude-flow/logs/
 .claude-flow/sessions/
+# Ruflo runtime state (zeroed telemetry, regenerated on init) + machine-local
+# resolution paths — not source, and .swarm/ruvector.db sit at repo root
+# outside .claude-flow/ so the rules above don't reach them.
+.claude-flow/metrics/
+.claude-flow/security/
+.claude-flow/memory-package.json
+.swarm/
+/ruvector.db
