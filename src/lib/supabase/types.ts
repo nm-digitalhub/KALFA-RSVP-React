@@ -1735,6 +1735,7 @@ export type Database = {
           caller_masked: string | null
           conference_agent_ids: Json
           consult_agent_id: string | null
+          consult_connected_at: string | null
           contact_id: string | null
           created_at: string
           direction: string
@@ -1761,6 +1762,7 @@ export type Database = {
           caller_masked?: string | null
           conference_agent_ids?: Json
           consult_agent_id?: string | null
+          consult_connected_at?: string | null
           contact_id?: string | null
           created_at?: string
           direction: string
@@ -1787,6 +1789,7 @@ export type Database = {
           caller_masked?: string | null
           conference_agent_ids?: Json
           consult_agent_id?: string | null
+          consult_connected_at?: string | null
           contact_id?: string | null
           created_at?: string
           direction?: string

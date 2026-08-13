@@ -188,6 +188,33 @@ describe('POST /api/voximplant/console/event', () => {
     expect(updateConsoleCallStatus).not.toHaveBeenCalled();
   });
 
+  // Full telephony audit (13.8): both scenarios have sent consult_connected
+  // since consult shipped, but it was missing from consoleEventBodySchema's
+  // discriminatedUnion — every report was rejected 400 before the secret
+  // check ever ran. Now accepted AND load-bearing: it stamps
+  // consult_connected_at, which is the ONLY thing the UI may gate "השלמת
+  // העברה" on. consult_agent_id is written earlier and optimistically (at
+  // consult_started, while the target is still ringing), so gating the
+  // button on it offered a no-op click for up to 20s — the save_rsvp
+  // 'queued' false-promise pattern. See migration 20260813064814.
+  it('consult_connected: stamps consult_connected_at (the honest "ready to complete" signal)', async () => {
+    const res = await POST(
+      req({
+        secret: SECRET,
+        session_id: 1,
+        call_kind: 'outbound',
+        token: 'ct' + 'a'.repeat(64),
+        event: 'consult_connected',
+        request_id: 'r1',
+      }),
+    );
+    expect(res.status).toBe(202);
+    expect(updateConsoleCallStatus).toHaveBeenCalledWith({
+      callId: 'call-1',
+      consultConnected: true,
+    });
+  });
+
   it.each(['consult_cancelled', 'consult_failed'])(
     '%s: clears consult_agent_id',
     async (event) => {
@@ -250,6 +277,23 @@ describe('POST /api/voximplant/console/event', () => {
   });
 
   // ── Stage 2 (3-way conference) ───────────────────────────────────────────
+
+  // Same schema gap and same fix as consult_connected above.
+  it('conference_started: accepted (was a schema-rejected 400) and never touches the DAL', async () => {
+    const res = await POST(
+      req({
+        secret: SECRET,
+        session_id: 1,
+        call_kind: 'inbound',
+        called: '97237219347',
+        event: 'conference_started',
+        request_id: 'r1',
+        target: 'agent_target',
+      }),
+    );
+    expect(res.status).toBe(202);
+    expect(updateConsoleCallStatus).not.toHaveBeenCalled();
+  });
 
   it('conference_joined: resolves the target and writes conference_agent_ids', async () => {
     vi.mocked(resolveAgentIdByVoxUsername).mockResolvedValue('conf-agent-uuid');

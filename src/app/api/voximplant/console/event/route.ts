@@ -205,11 +205,37 @@ export async function POST(request: Request) {
         break;
       }
 
+      case 'consult_connected':
+        // The PRIVATE operator<->target bridge is now actually live (the
+        // target answered). THIS is the moment "complete transfer" becomes a
+        // true statement — consult_agent_id was already set optimistically at
+        // consult_started, while the target was still ringing, and gating the
+        // button on that made it clickable up to 20s early for a no-op (the
+        // save_rsvp 'queued' pattern; see the 20260813064814 migration).
+        // Stamped as its own column rather than by moving the consult_agent_id
+        // write here, so the CANCEL affordance stays available from the first
+        // moment — and so no scenario edit is needed (this report carries only
+        // request_id; the row is already resolved from the linked session).
+        await updateConsoleCallStatus({ callId, consultConnected: true });
+        break;
+
+      case 'conference_started':
+        // Dialing the 3rd participant has begun. No DB write — nothing in
+        // console_calls or the UI keys off the dialing phase (the "בוועידה"
+        // badge only reads conference_agent_ids, written on conference_joined,
+        // and the caller stays normally bridged throughout the dial, so
+        // there is no silence/honesty gap here the way there is for
+        // consult). Recognized only so the event is acknowledged instead of
+        // failing validation — see consoleEventBodySchema.
+        break;
+
       case 'consult_cancelled':
       case 'consult_failed':
         // Either way the consult attempt is over without a transfer having
-        // happened — clear the optimistic write from consult_started.
-        await updateConsoleCallStatus({ callId, consultAgentId: null });
+        // happened — clear the optimistic write from consult_started AND the
+        // connected stamp, so a later consult on this same call starts from
+        // an honest "not connected yet" again.
+        await updateConsoleCallStatus({ callId, consultAgentId: null, consultConnected: null });
         break;
 
       case 'consult_completed': {
@@ -222,6 +248,7 @@ export async function POST(request: Request) {
         await updateConsoleCallStatus({
           callId,
           consultAgentId: null,
+          consultConnected: null,
           ...(targetAgentId ? { transferredToAgentId: targetAgentId } : {}),
         });
         break;

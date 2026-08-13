@@ -207,6 +207,24 @@ export const consoleEventBodySchema = z.discriminatedUnion('event', [
     request_id: requestIdField,
     target: z.string().trim().min(1).max(128),
   }),
+  // consult_connected — the moment the consult target actually answers and
+  // the PRIVATE operator<->target bridge goes live (ConsoleDial.voxengine.js:574,
+  // ConsoleInbound.voxengine.js:561: `reportEvent('consult_connected', {
+  // request_id: requestId})` — no `target`, unlike consult_started/completed,
+  // since the scenario has nothing new to attribute here). Found missing from
+  // this union in a full telephony audit (13.8): both scenarios have sent this
+  // event since the day consult shipped, and every single one was rejected
+  // with a 400 before the secret check ever ran (a discriminatedUnion with no
+  // matching literal fails validation, not routing) — a live, well-formed
+  // report from production silently dropped. Recognized here so it stops
+  // failing schema validation; event/route.ts's handler is currently a
+  // logged no-op (see that file's own comment for why consultAgentId's write
+  // timing is a SEPARATE, deliberately deferred decision).
+  z.strictObject({
+    ...eventEnvelopeBase,
+    event: z.literal('consult_connected'),
+    request_id: requestIdField,
+  }),
   z.strictObject({
     ...eventEnvelopeBase,
     event: z.literal('consult_cancelled'),
@@ -221,6 +239,22 @@ export const consoleEventBodySchema = z.discriminatedUnion('event', [
   z.strictObject({
     ...eventEnvelopeBase,
     event: z.literal('consult_completed'),
+    request_id: requestIdField,
+    target: z.string().trim().min(1).max(128),
+  }),
+  // conference_started — dialing the 3rd participant has begun
+  // (ConsoleDial.voxengine.js:737, ConsoleInbound.voxengine.js:725:
+  // `reportEvent('conference_started', {request_id, target})`). Same gap and
+  // same fix as consult_connected above: sent since conference shipped,
+  // rejected with a 400 every time because this union had no matching
+  // literal. Nothing in console_calls or the UI keys off this event today
+  // (the "בוועידה" badge only ever reads conference_agent_ids, written on
+  // conference_joined) — recognizing it here is purely to stop a live,
+  // well-formed report from failing validation; event/route.ts's handler is
+  // a logged no-op.
+  z.strictObject({
+    ...eventEnvelopeBase,
+    event: z.literal('conference_started'),
     request_id: requestIdField,
     target: z.string().trim().min(1).max(128),
   }),

@@ -773,6 +773,15 @@ export interface UpdateConsoleCallStatusInput {
   // Stage 2 (consult/conference). Same "undefined = no change" convention as
   // every other field here.
   consultAgentId?: string | null;
+  // TRUE stamps consult_connected_at = now (the consult target actually
+  // answered); NULL clears it (the consult ended, however it ended).
+  // Deliberately separate from consultAgentId, which is written
+  // OPTIMISTICALLY at consult_started while the target is still ringing —
+  // the UI must gate "complete transfer" on the connected stamp and may gate
+  // "cancel consult" on the optimistic one. See the column comment in
+  // 20260813064814_callcenter_consult_connected_at.sql for the honesty bug
+  // this split closes.
+  consultConnected?: true | null;
   conferenceAgentIds?: string[];
   // "202 semantics, idempotent-ish (status transitions only forward; ended
   // is terminal)" — when true, the status write only applies while the row
@@ -797,6 +806,9 @@ export async function updateConsoleCallStatus(input: UpdateConsoleCallStatusInpu
     patch.transferred_to_agent_id = input.transferredToAgentId;
   }
   if (input.consultAgentId !== undefined) patch.consult_agent_id = input.consultAgentId;
+  if (input.consultConnected !== undefined) {
+    patch.consult_connected_at = input.consultConnected === null ? null : new Date().toISOString();
+  }
   // conference_agent_ids is jsonb — generated as `Json`, not `string[]`, so
   // types.ts can't narrow it on its own. We know its real shape (this
   // module's own migration defines it as an array of agent uuids); a
@@ -1069,10 +1081,28 @@ export type TransferTargetResolution =
 
 /**
  * Routable = console_agents.vox_username IS NOT NULL (provisioned) AND
- * agent_status.status = 'ready', excluding the requester themselves. Queries
- * the base tables directly (same reasoning as findRoutableAgentVoxUsernames —
- * this runs service-role, so console_agents_roster's is_console_agent() WHERE
- * would resolve auth.uid() to NULL and silently return nothing).
+ * agent_status.status = 'ready' AND agent_status.updated_at fresher than
+ * AGENT_STATUS_FRESHNESS_MS (same <90s heartbeat gate findRoutableAgents
+ * applies to inbound ring routing — see that function's own doc comment),
+ * excluding the requester themselves. Queries the base tables directly (same
+ * reasoning as findRoutableAgentVoxUsernames — this runs service-role, so
+ * console_agents_roster's is_console_agent() WHERE would resolve auth.uid()
+ * to NULL and silently return nothing).
+ *
+ * The freshness half was missing until a full telephony audit (13.8) found
+ * it: this function is the ONE server-side gate transfer/consult/conference
+ * all share, but unlike inbound ring routing it used to accept a bare
+ * status='ready' row with no staleness check — an agent whose session died
+ * without a clean 'busy'/'offline' transition (tab closed, SDK dropped,
+ * laptop asleep) stayed a valid transfer/consult/conference target
+ * indefinitely, so naming them rings a phantom agent_<uuid> for up to
+ * TRANSFER_TIMEOUT_MS (20s) before the scenario's own timeout gives up —
+ * wasted time a consult target spends as customer-facing SILENCE (the
+ * customer is on hold throughout) and a transfer/conference target spends as
+ * a live but pointless ring (the customer stays normally bridged). Fails
+ * CLOSED on a missing/unparseable updated_at, matching every other gate in
+ * this file — never silently admits a target this function cannot actually
+ * vouch for as fresh.
  */
 export async function resolveTransferTarget(
   targetAgentId: string,
@@ -1096,10 +1126,13 @@ export async function resolveTransferTarget(
 
   const { data: status } = await admin
     .from('agent_status')
-    .select('status')
+    .select('status, updated_at')
     .eq('agent_id', targetAgentId)
     .maybeSingle();
   if (status?.status !== 'ready') return { ok: false, reason: 'not_ready' };
+  const freshMs = Date.parse(status.updated_at ?? '');
+  if (!Number.isFinite(freshMs)) return { ok: false, reason: 'not_ready' };
+  if (freshMs <= Date.now() - AGENT_STATUS_FRESHNESS_MS) return { ok: false, reason: 'not_ready' };
 
   return { ok: true, voxUsername: agent.vox_username };
 }

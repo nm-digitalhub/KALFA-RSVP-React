@@ -815,17 +815,43 @@ describe('resolveTransferTarget', () => {
     wireAdmin({
       console_agents: [{ data: { vox_username: 'agent_target' }, error: null }],
       console_agent_secrets: [{ data: { user_id: TARGET }, error: null }],
-      agent_status: [{ data: { status: 'dnd' }, error: null }],
+      agent_status: [{ data: { status: 'dnd', updated_at: new Date().toISOString() }, error: null }],
     });
     const result = await resolveTransferTarget(TARGET, SELF);
     expect(result).toEqual({ ok: false, reason: 'not_ready' });
   });
 
-  it('ok: provisioned + ready + not the caller resolves the vox_username', async () => {
+  // Freshness gate (full telephony audit, 13.8) — resolveTransferTarget used
+  // to accept a bare status='ready' row with no staleness check, unlike
+  // findRoutableAgents' identical <90s AGENT_STATUS_FRESHNESS_MS heartbeat
+  // gate for inbound ring routing. These three cases pin the fix.
+  it('not_ready when status=ready but updated_at is older than the freshness window', async () => {
     wireAdmin({
       console_agents: [{ data: { vox_username: 'agent_target' }, error: null }],
       console_agent_secrets: [{ data: { user_id: TARGET }, error: null }],
-      agent_status: [{ data: { status: 'ready' }, error: null }],
+      agent_status: [
+        { data: { status: 'ready', updated_at: new Date(Date.now() - 91_000).toISOString() }, error: null },
+      ],
+    });
+    const result = await resolveTransferTarget(TARGET, SELF);
+    expect(result).toEqual({ ok: false, reason: 'not_ready' });
+  });
+
+  it('not_ready — fails CLOSED when updated_at is missing/unparseable (never silently admits)', async () => {
+    wireAdmin({
+      console_agents: [{ data: { vox_username: 'agent_target' }, error: null }],
+      console_agent_secrets: [{ data: { user_id: TARGET }, error: null }],
+      agent_status: [{ data: { status: 'ready', updated_at: null }, error: null }],
+    });
+    const result = await resolveTransferTarget(TARGET, SELF);
+    expect(result).toEqual({ ok: false, reason: 'not_ready' });
+  });
+
+  it('ok: provisioned + ready + fresh + not the caller resolves the vox_username', async () => {
+    wireAdmin({
+      console_agents: [{ data: { vox_username: 'agent_target' }, error: null }],
+      console_agent_secrets: [{ data: { user_id: TARGET }, error: null }],
+      agent_status: [{ data: { status: 'ready', updated_at: new Date().toISOString() }, error: null }],
     });
     const result = await resolveTransferTarget(TARGET, SELF);
     expect(result).toEqual({ ok: true, voxUsername: 'agent_target' });

@@ -78,6 +78,8 @@ interface CollabCallInfo {
   status: string;
   kind: string;
   consultAgentId: string | null;
+  /** Set only once the consult target actually ANSWERED — see below. */
+  consultConnectedAt: string | null;
   conferenceAgentIds: string[];
 }
 
@@ -139,7 +141,7 @@ export function CallBar({
     async function refresh() {
       const { data, error } = await supabase
         .from('console_calls')
-        .select('id, status, kind, consult_agent_id, conference_agent_ids')
+        .select('id, status, kind, consult_agent_id, consult_connected_at, conference_agent_ids')
         .in('status', ['ringing', 'connected'])
         .or(`agent_id.eq.${selfUserId},transferred_to_agent_id.eq.${selfUserId}`)
         .order('created_at', { ascending: false })
@@ -155,6 +157,7 @@ export function CallBar({
         status: data.status,
         kind: data.kind,
         consultAgentId: data.consult_agent_id,
+        consultConnectedAt: data.consult_connected_at,
         conferenceAgentIds: asAgentIdArray(data.conference_agent_ids),
       });
     }
@@ -329,8 +332,23 @@ export function CallBar({
           {consultConferenceEnabled && collab && CONSULTABLE_KINDS.has(collab.kind) ? (
             <div className="space-y-1.5 border-t border-border pt-2">
               {collab.consultAgentId ? (
+                /* TWO distinct states, not one. consult_agent_id is written
+                   OPTIMISTICALLY at consult_started — while the target is
+                   still ringing, for up to TRANSFER_TIMEOUT_MS (20s).
+                   consult_connected_at is stamped only when they actually
+                   answer. Gating "השלמת העברה" on the optimistic field made
+                   it clickable long before there was anything to complete,
+                   and the scenario's completeConsult() then silently no-ops
+                   (it guards on state.consultActive) — a 202 followed by
+                   nothing, which is the save_rsvp 'queued' false promise in
+                   another costume. Cancel stays available from the first
+                   moment BECAUSE it is gated on the optimistic field: a
+                   consult that is still ringing is exactly what an operator
+                   most wants to abort. */
                 <div className="flex flex-wrap items-center gap-1.5">
-                  <Badge variant="info">בהתייעצות</Badge>
+                  <Badge variant="info">
+                    {collab.consultConnectedAt ? 'בהתייעצות' : 'מחייג להתייעצות…'}
+                  </Badge>
                   <Button
                     type="button"
                     size="xs"
@@ -340,14 +358,16 @@ export function CallBar({
                   >
                     ביטול התייעצות
                   </Button>
-                  <Button
-                    type="button"
-                    size="xs"
-                    disabled={collabBusy}
-                    onClick={() => void fireCollab('consult/complete')}
-                  >
-                    השלמת העברה
-                  </Button>
+                  {collab.consultConnectedAt ? (
+                    <Button
+                      type="button"
+                      size="xs"
+                      disabled={collabBusy}
+                      onClick={() => void fireCollab('consult/complete')}
+                    >
+                      השלמת העברה
+                    </Button>
+                  ) : null}
                 </div>
               ) : collab.conferenceAgentIds.length > 0 ? (
                 <Badge variant="info">בוועידה</Badge>
