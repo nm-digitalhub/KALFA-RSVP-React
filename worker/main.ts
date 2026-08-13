@@ -60,6 +60,7 @@ import { runCallReconcile } from '@/lib/data/voximplant-reconcile';
 import { runLogExport } from '@/lib/data/vox-log-export';
 import { runElevenLabsQuotaCheck } from '@/lib/data/elevenlabs-quota';
 import { runInstagramTokenRefresh } from '@/lib/data/instagram-token-refresh';
+import { runConsoleAgentCalendarPresenceSync } from '@/lib/data/console-agent-calendar-presence';
 import { sendSlackAlert } from '@/lib/alerts/slack';
 
 // Standalone process — load .env.local ourselves (Next is not running here).
@@ -660,7 +661,13 @@ async function main(): Promise<void> {
       // flight against Meta and race the two atomic .env.local rewrites
       // against each other. Nothing else defends against that (there is no
       // per-row lease here, unlike the other IO-writing crons above).
-      q === QUEUES.igTokenRefresh;
+      q === QUEUES.igTokenRefresh ||
+      // Singleton too: an overlapping tick would open two concurrent NTLM
+      // sessions against the same agent's mailbox for no benefit — the sync
+      // is a plain upsert keyed on agent_id, so a second run mid-flight can
+      // only repeat work, never corrupt it, but there is no reason to allow
+      // the overlap.
+      q === QUEUES.calendarPresenceSync;
     await boss.createQueue(q, singleton ? { policy: 'singleton' } : undefined);
   }
 
@@ -783,6 +790,17 @@ async function main(): Promise<void> {
       await runInstagramTokenRefresh();
     }),
   );
+  // Console-agent calendar presence sync (Outlook/Exchange research, 12.8):
+  // per-agent EWS free/busy read → console_agent_calendar_presence (advisory
+  // only — never writes agent_status). runConsoleAgentCalendarPresenceSync
+  // never throws (one agent's broken mailbox does not stop the rest) and
+  // is a no-op when no console agent has a verified Exchange connection.
+  await boss.work(
+    QUEUES.calendarPresenceSync,
+    guardedWorker(QUEUES.calendarPresenceSync, async () => {
+      await runConsoleAgentCalendarPresenceSync();
+    }),
+  );
 
   await boss.schedule(QUEUES.arm, '* * * * *');
   await boss.schedule(QUEUES.sweeper, '*/5 * * * *');
@@ -809,6 +827,13 @@ async function main(): Promise<void> {
   // Weekly, off-peak, deliberately non-round (04:17) — a 60-day token refreshed
   // once a week has ample margin even if a run is missed for a while.
   await boss.schedule(QUEUES.igTokenRefresh, '17 4 * * 2', null, { tz: SCHEDULE_TZ });
+  // Every 10 minutes — a calendar event's start/end is minute-granular at
+  // best, and this is a remote NTLM/SOAP call per agent (buildService in
+  // ews-impl.ts opens a fresh session every time, no connection reuse), so a
+  // tighter tick would only mean more round trips against the same
+  // mailbox(es) for no material gain in freshness. Same cadence family as
+  // callbackScheduleSweep (also EWS, also */10).
+  await boss.schedule(QUEUES.calendarPresenceSync, '*/10 * * * *');
 
   console.log('[kalfa-worker] started — queues + schedules up');
 

@@ -39,12 +39,28 @@ describe('voxCallbackSchema — completed/rsvp_digit refine per rsvp_method', ()
   });
 
   it('agent non-completed terminal statuses pass without a digit', () => {
-    for (const call_status of ['failed', 'no_answer', 'no_response'] as const) {
+    for (const call_status of ['failed', 'no_answer', 'no_response', 'handed_off'] as const) {
       expect(
         voxCallbackSchema.safeParse({ call_status, rsvp_method: 'agent', call_duration: 0 })
           .success,
       ).toBe(true);
     }
+  });
+
+  // Stage 6: 'handed_off' is the new terminal status RSVPAgent.voxengine.js's
+  // terminalStatus() posts once a human takeover connected but the AI never
+  // carried the conversation. Accepted BEFORE the scenario deploy (hard
+  // ordering constraint) — see call-attempts.ts TERMINAL_STATUSES and
+  // call-result-processing.ts's billing branch.
+  it('handed_off is accepted as a terminal call_status, with or without a recording', () => {
+    expect(
+      voxCallbackSchema.safeParse({
+        call_status: 'handed_off',
+        rsvp_method: 'agent',
+        call_duration: 90,
+        recording_url: 'https://storage-gw-us-01.voximplant.com/rec.mp3',
+      }).success,
+    ).toBe(true);
   });
 
   it('strictObject still rejects unknown fields on the agent path', () => {

@@ -16,7 +16,11 @@ vi.mock('@/lib/supabase/admin', () => ({
   }),
 }));
 
-import { isUnknownServerActionError, onRequestError } from './instrumentation';
+import {
+  isDestinationStreamClosedError,
+  isUnknownServerActionError,
+  onRequestError,
+} from './instrumentation';
 
 // Guards the ops-alert filter for Next's benign "Failed to find Server Action"
 // (E974/E975): forged/scanner action ids and cross-deploy skew must NOT page ops,
@@ -64,6 +68,39 @@ describe('isUnknownServerActionError', () => {
   });
 });
 
+// Guards the ops-alert filter for React/Next's "destination stream closed
+// early" render error — a client disconnect mid-RSC-stream (aborted prefetch,
+// navigation away, closed tab) that React's cancel handler throws as a plain
+// Error React/Next's own isAbortError() doesn't recognize (see the doc
+// comment on isDestinationStreamClosedError). Exact-match only.
+describe('isDestinationStreamClosedError', () => {
+  it('matches the exact observed message', () => {
+    expect(
+      isDestinationStreamClosedError({ message: 'The destination stream closed early.' }),
+    ).toBe(true);
+  });
+
+  it('does NOT match the sibling write-error message (left at full severity)', () => {
+    expect(
+      isDestinationStreamClosedError({
+        message: 'The destination stream errored while writing data.',
+      }),
+    ).toBe(false);
+  });
+
+  it('does NOT match a generic render error — real errors still alert', () => {
+    expect(
+      isDestinationStreamClosedError({
+        message: "Cannot read properties of undefined (reading 'x')",
+      }),
+    ).toBe(false);
+  });
+
+  it('handles a missing message safely', () => {
+    expect(isDestinationStreamClosedError({})).toBe(false);
+  });
+});
+
 // The alert level is the actual behavior guests/ops feel: a benign unknown Server
 // Action must DOWNGRADE to info (no page), while a real error stays 'error'.
 describe('onRequestError alert level', () => {
@@ -87,6 +124,19 @@ describe('onRequestError alert level', () => {
     expect(sendSlackAlert.mock.calls[0][0]).toMatchObject({
       level: 'info',
       title: 'Unknown Server Action (benign)',
+    });
+  });
+
+  it('downgrades a benign destination-stream-closed error to info', async () => {
+    await onRequestError(
+      { name: 'Error', message: 'The destination stream closed early.' } as never,
+      req,
+      ctx,
+    );
+    expect(sendSlackAlert).toHaveBeenCalledTimes(1);
+    expect(sendSlackAlert.mock.calls[0][0]).toMatchObject({
+      level: 'info',
+      title: 'Client disconnected mid-stream (benign)',
     });
   });
 
@@ -157,6 +207,15 @@ describe('onRequestError writes ops_errors independent of Slack', () => {
         __NEXT_ERROR_CODE: 'E975',
         message: 'Failed to find Server Action. This request might be from ...',
       } as never,
+      req,
+      ctx,
+    );
+    expect(opsErrorInsert).toHaveBeenCalledTimes(1);
+  });
+
+  it('writes ops_errors for a benign downgraded destination-stream-closed error too', async () => {
+    await onRequestError(
+      { name: 'Error', message: 'The destination stream closed early.' } as never,
       req,
       ctx,
     );

@@ -217,6 +217,54 @@ describe('processCallResult', () => {
     expect(recordCallOutcome).toHaveBeenCalledWith(AID, expect.objectContaining({ recording_url: null }));
   });
 
+  // Stage 6 — AI→human handoff billing (owner-authorized decision: handed_off
+  // bills exactly like completed, ONE writeReach call site, distinct evidence).
+  describe('handed_off (AI→human handoff)', () => {
+    it('bills via the SAME writeReach site as completed, with distinct evidence + interaction kind', async () => {
+      await processCallResult(row({ call_status: 'handed_off', call_duration: 400 }));
+      expect(recordCallOutcome).toHaveBeenCalledWith(
+        AID,
+        expect.objectContaining({ status: 'handed_off', call_duration_sec: 400 }),
+      );
+      expect(insertInteraction).toHaveBeenCalledWith(
+        expect.objectContaining({ channel: 'call', provider_id: AID, kind: 'call_handoff', billable: true }),
+      );
+      expect(writeReach).toHaveBeenCalledTimes(1); // ONE call site — never a second writeReach
+      expect(writeReach).toHaveBeenCalledWith(
+        expect.objectContaining({ channel: 'call', attemptId: AID, evidence: 'voximplant_call_handoff' }),
+      );
+    });
+
+    it('never submits a digit-RSVP — a handed-off call never had an AI-captured answer', async () => {
+      // Even a hand-crafted payload with a digit must not apply it: the human
+      // agent's own conversation is out of V1's automated-RSVP scope.
+      await processCallResult(row({ call_status: 'handed_off', rsvp_digit: '1' }));
+      expect(submitRsvp).not.toHaveBeenCalled();
+      expect(recordRsvpFromCall).not.toHaveBeenCalled();
+    });
+
+    it('completed and handed_off are billed independently — no cross-contamination of evidence/kind', async () => {
+      await processCallResult(row({ call_status: 'completed', rsvp_method: 'agent' }));
+      expect(writeReach).toHaveBeenLastCalledWith(
+        expect.objectContaining({ evidence: 'voximplant_call_completed' }),
+      );
+      await processCallResult(row({ call_status: 'handed_off' }));
+      expect(writeReach).toHaveBeenLastCalledWith(
+        expect.objectContaining({ evidence: 'voximplant_call_handoff' }),
+      );
+    });
+
+    it('stale/out-of-order handed_off rejected by the CAS (applied:false) still attempts billing — writeReach itself is the durable idempotency guard (billed_results UNIQUE), matching the completed path', async () => {
+      // Mirrors the existing "ungated" behavior for completed (test above):
+      // insertInteraction/recordCallOutcome are not gated on their own
+      // freshness, so a retry safely re-runs — billed_results UNIQUE(event,
+      // contact) is what actually prevents a double charge.
+      vi.mocked(recordCallOutcome).mockResolvedValue({ applied: false });
+      await processCallResult(row({ call_status: 'handed_off' }));
+      expect(writeReach).toHaveBeenCalled();
+    });
+  });
+
   it('unknown attempt id → no-op (nothing written)', async () => {
     vi.mocked(getCallAttemptById).mockResolvedValue(null);
     await processCallResult(row({ call_status: 'completed', rsvp_digit: '1' }));

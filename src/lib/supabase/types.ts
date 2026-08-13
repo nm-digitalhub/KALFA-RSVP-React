@@ -12,6 +12,31 @@ export type Database = {
   __InternalSupabase: {
     PostgrestVersion: "14.5"
   }
+  graphql_public: {
+    Tables: {
+      [_ in never]: never
+    }
+    Views: {
+      [_ in never]: never
+    }
+    Functions: {
+      graphql: {
+        Args: {
+          extensions?: Json
+          operationName?: string
+          query?: string
+          variables?: Json
+        }
+        Returns: Json
+      }
+    }
+    Enums: {
+      [_ in never]: never
+    }
+    CompositeTypes: {
+      [_ in never]: never
+    }
+  }
   public: {
     Tables: {
       activity_log: {
@@ -84,6 +109,13 @@ export type Database = {
             foreignKeyName: "agent_status_agent_id_fkey"
             columns: ["agent_id"]
             isOneToOne: true
+            referencedRelation: "console_agents_roster"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "agent_status_agent_id_fkey"
+            columns: ["agent_id"]
+            isOneToOne: true
             referencedRelation: "console_me"
             referencedColumns: ["user_id"]
           },
@@ -144,6 +176,13 @@ export type Database = {
           company_legal_address: string | null
           company_legal_id: string | null
           company_legal_name: string | null
+          console_call_me_now_enabled: boolean
+          console_consult_conference_enabled: boolean
+          console_dtmf_handoff_enabled: boolean
+          console_manual_dial_enabled: boolean
+          console_softphone_enabled: boolean
+          console_wake_enabled: boolean
+          console_widget_enabled: boolean
           cookie_consent_analytics_enabled: boolean
           cookie_consent_enabled: boolean
           cookie_consent_marketing_enabled: boolean
@@ -157,7 +196,9 @@ export type Database = {
           extra_sms_sender: string | null
           extra_sms_token: string | null
           extreme_threshold_contacts: number
+          handoff_enabled: boolean
           id: boolean
+          inbound_calls_enabled: boolean
           monitor_enabled: boolean
           outreach_enabled: boolean
           payments_enabled: boolean
@@ -192,6 +233,7 @@ export type Database = {
           voximplant_account_callback_wired_at: string | null
           voximplant_application_id: string | null
           voximplant_balance_callback_at: string | null
+          voximplant_call_me_now_rule_id: string | null
           voximplant_callback_secret: string | null
           voximplant_caller_id: string | null
           voximplant_live_calls: boolean
@@ -227,6 +269,13 @@ export type Database = {
           company_legal_address?: string | null
           company_legal_id?: string | null
           company_legal_name?: string | null
+          console_call_me_now_enabled?: boolean
+          console_consult_conference_enabled?: boolean
+          console_dtmf_handoff_enabled?: boolean
+          console_manual_dial_enabled?: boolean
+          console_softphone_enabled?: boolean
+          console_wake_enabled?: boolean
+          console_widget_enabled?: boolean
           cookie_consent_analytics_enabled?: boolean
           cookie_consent_enabled?: boolean
           cookie_consent_marketing_enabled?: boolean
@@ -240,7 +289,9 @@ export type Database = {
           extra_sms_sender?: string | null
           extra_sms_token?: string | null
           extreme_threshold_contacts?: number
+          handoff_enabled?: boolean
           id?: boolean
+          inbound_calls_enabled?: boolean
           monitor_enabled?: boolean
           outreach_enabled?: boolean
           payments_enabled?: boolean
@@ -275,6 +326,7 @@ export type Database = {
           voximplant_account_callback_wired_at?: string | null
           voximplant_application_id?: string | null
           voximplant_balance_callback_at?: string | null
+          voximplant_call_me_now_rule_id?: string | null
           voximplant_callback_secret?: string | null
           voximplant_caller_id?: string | null
           voximplant_live_calls?: boolean
@@ -310,6 +362,13 @@ export type Database = {
           company_legal_address?: string | null
           company_legal_id?: string | null
           company_legal_name?: string | null
+          console_call_me_now_enabled?: boolean
+          console_consult_conference_enabled?: boolean
+          console_dtmf_handoff_enabled?: boolean
+          console_manual_dial_enabled?: boolean
+          console_softphone_enabled?: boolean
+          console_wake_enabled?: boolean
+          console_widget_enabled?: boolean
           cookie_consent_analytics_enabled?: boolean
           cookie_consent_enabled?: boolean
           cookie_consent_marketing_enabled?: boolean
@@ -323,7 +382,9 @@ export type Database = {
           extra_sms_sender?: string | null
           extra_sms_token?: string | null
           extreme_threshold_contacts?: number
+          handoff_enabled?: boolean
           id?: boolean
+          inbound_calls_enabled?: boolean
           monitor_enabled?: boolean
           outreach_enabled?: boolean
           payments_enabled?: boolean
@@ -358,6 +419,7 @@ export type Database = {
           voximplant_account_callback_wired_at?: string | null
           voximplant_application_id?: string | null
           voximplant_balance_callback_at?: string | null
+          voximplant_call_me_now_rule_id?: string | null
           voximplant_callback_secret?: string | null
           voximplant_caller_id?: string | null
           voximplant_live_calls?: boolean
@@ -1284,6 +1346,52 @@ export type Database = {
         }
         Relationships: []
       }
+      console_agent_calendar_presence: {
+        Row: {
+          agent_id: string
+          busy_until: string | null
+          last_error_code: string | null
+          show_as: string | null
+          synced_at: string
+        }
+        Insert: {
+          agent_id: string
+          busy_until?: string | null
+          last_error_code?: string | null
+          show_as?: string | null
+          synced_at?: string
+        }
+        Update: {
+          agent_id?: string
+          busy_until?: string | null
+          last_error_code?: string | null
+          show_as?: string | null
+          synced_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "console_agent_calendar_presence_agent_id_fkey"
+            columns: ["agent_id"]
+            isOneToOne: true
+            referencedRelation: "console_agents"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "console_agent_calendar_presence_agent_id_fkey"
+            columns: ["agent_id"]
+            isOneToOne: true
+            referencedRelation: "console_agents_roster"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "console_agent_calendar_presence_agent_id_fkey"
+            columns: ["agent_id"]
+            isOneToOne: true
+            referencedRelation: "console_me"
+            referencedColumns: ["user_id"]
+          },
+        ]
+      }
       console_agent_commands: {
         Row: {
           agent_id: string
@@ -1345,6 +1453,53 @@ export type Database = {
           },
         ]
       }
+      console_agent_queues: {
+        Row: {
+          agent_id: string
+          created_at: string
+          queue_id: string
+        }
+        Insert: {
+          agent_id: string
+          created_at?: string
+          queue_id: string
+        }
+        Update: {
+          agent_id?: string
+          created_at?: string
+          queue_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "console_agent_queues_agent_id_fkey"
+            columns: ["agent_id"]
+            isOneToOne: false
+            referencedRelation: "console_agents"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "console_agent_queues_agent_id_fkey"
+            columns: ["agent_id"]
+            isOneToOne: false
+            referencedRelation: "console_agents_roster"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "console_agent_queues_agent_id_fkey"
+            columns: ["agent_id"]
+            isOneToOne: false
+            referencedRelation: "console_me"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "console_agent_queues_queue_id_fkey"
+            columns: ["queue_id"]
+            isOneToOne: false
+            referencedRelation: "console_queues"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       console_agent_secrets: {
         Row: {
           created_at: string
@@ -1375,6 +1530,53 @@ export type Database = {
           {
             foreignKeyName: "console_agent_secrets_user_id_fkey"
             columns: ["user_id"]
+            isOneToOne: true
+            referencedRelation: "console_agents_roster"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "console_agent_secrets_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: true
+            referencedRelation: "console_me"
+            referencedColumns: ["user_id"]
+          },
+        ]
+      }
+      console_agent_shift: {
+        Row: {
+          active: boolean
+          agent_id: string
+          updated_at: string
+        }
+        Insert: {
+          active?: boolean
+          agent_id: string
+          updated_at?: string
+        }
+        Update: {
+          active?: boolean
+          agent_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "console_agent_shift_agent_id_fkey"
+            columns: ["agent_id"]
+            isOneToOne: true
+            referencedRelation: "console_agents"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "console_agent_shift_agent_id_fkey"
+            columns: ["agent_id"]
+            isOneToOne: true
+            referencedRelation: "console_agents_roster"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "console_agent_shift_agent_id_fkey"
+            columns: ["agent_id"]
             isOneToOne: true
             referencedRelation: "console_me"
             referencedColumns: ["user_id"]
@@ -1477,6 +1679,338 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      console_call_pii: {
+        Row: {
+          call_id: string
+          created_at: string
+          dial_token_expires_at: string | null
+          dial_token_hash: string | null
+          origin_ip_hash: string | null
+          phone_e164: string | null
+          recording_url: string | null
+          secure_session_url: string | null
+          session_url: string | null
+          vox_session_id: number | null
+        }
+        Insert: {
+          call_id: string
+          created_at?: string
+          dial_token_expires_at?: string | null
+          dial_token_hash?: string | null
+          origin_ip_hash?: string | null
+          phone_e164?: string | null
+          recording_url?: string | null
+          secure_session_url?: string | null
+          session_url?: string | null
+          vox_session_id?: number | null
+        }
+        Update: {
+          call_id?: string
+          created_at?: string
+          dial_token_expires_at?: string | null
+          dial_token_hash?: string | null
+          origin_ip_hash?: string | null
+          phone_e164?: string | null
+          recording_url?: string | null
+          secure_session_url?: string | null
+          session_url?: string | null
+          vox_session_id?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "console_call_pii_call_id_fkey"
+            columns: ["call_id"]
+            isOneToOne: true
+            referencedRelation: "console_calls"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      console_calls: {
+        Row: {
+          agent_id: string | null
+          answered_at: string | null
+          call_attempt_id: string | null
+          caller_masked: string | null
+          conference_agent_ids: Json
+          consult_agent_id: string | null
+          contact_id: string | null
+          created_at: string
+          direction: string
+          disclosure_played: boolean
+          duration_sec: number | null
+          ended_at: string | null
+          ended_reason: string | null
+          event_id: string | null
+          guest_id: string | null
+          has_recording: boolean
+          id: string
+          kind: string
+          peer_agent_id: string | null
+          queue_id: string | null
+          started_at: string
+          status: string
+          transferred_to_agent_id: string | null
+          updated_at: string
+        }
+        Insert: {
+          agent_id?: string | null
+          answered_at?: string | null
+          call_attempt_id?: string | null
+          caller_masked?: string | null
+          conference_agent_ids?: Json
+          consult_agent_id?: string | null
+          contact_id?: string | null
+          created_at?: string
+          direction: string
+          disclosure_played?: boolean
+          duration_sec?: number | null
+          ended_at?: string | null
+          ended_reason?: string | null
+          event_id?: string | null
+          guest_id?: string | null
+          has_recording?: boolean
+          id?: string
+          kind: string
+          peer_agent_id?: string | null
+          queue_id?: string | null
+          started_at?: string
+          status?: string
+          transferred_to_agent_id?: string | null
+          updated_at?: string
+        }
+        Update: {
+          agent_id?: string | null
+          answered_at?: string | null
+          call_attempt_id?: string | null
+          caller_masked?: string | null
+          conference_agent_ids?: Json
+          consult_agent_id?: string | null
+          contact_id?: string | null
+          created_at?: string
+          direction?: string
+          disclosure_played?: boolean
+          duration_sec?: number | null
+          ended_at?: string | null
+          ended_reason?: string | null
+          event_id?: string | null
+          guest_id?: string | null
+          has_recording?: boolean
+          id?: string
+          kind?: string
+          peer_agent_id?: string | null
+          queue_id?: string | null
+          started_at?: string
+          status?: string
+          transferred_to_agent_id?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "console_calls_agent_id_fkey"
+            columns: ["agent_id"]
+            isOneToOne: false
+            referencedRelation: "console_agents"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "console_calls_agent_id_fkey"
+            columns: ["agent_id"]
+            isOneToOne: false
+            referencedRelation: "console_agents_roster"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "console_calls_agent_id_fkey"
+            columns: ["agent_id"]
+            isOneToOne: false
+            referencedRelation: "console_me"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "console_calls_call_attempt_id_fkey"
+            columns: ["call_attempt_id"]
+            isOneToOne: false
+            referencedRelation: "call_attempts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "console_calls_consult_agent_id_fkey"
+            columns: ["consult_agent_id"]
+            isOneToOne: false
+            referencedRelation: "console_agents"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "console_calls_consult_agent_id_fkey"
+            columns: ["consult_agent_id"]
+            isOneToOne: false
+            referencedRelation: "console_agents_roster"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "console_calls_consult_agent_id_fkey"
+            columns: ["consult_agent_id"]
+            isOneToOne: false
+            referencedRelation: "console_me"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "console_calls_contact_id_fkey"
+            columns: ["contact_id"]
+            isOneToOne: false
+            referencedRelation: "contacts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "console_calls_event_id_fkey"
+            columns: ["event_id"]
+            isOneToOne: false
+            referencedRelation: "console_events"
+            referencedColumns: ["event_id"]
+          },
+          {
+            foreignKeyName: "console_calls_event_id_fkey"
+            columns: ["event_id"]
+            isOneToOne: false
+            referencedRelation: "events"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "console_calls_guest_id_fkey"
+            columns: ["guest_id"]
+            isOneToOne: false
+            referencedRelation: "console_event_guests"
+            referencedColumns: ["guest_id"]
+          },
+          {
+            foreignKeyName: "console_calls_guest_id_fkey"
+            columns: ["guest_id"]
+            isOneToOne: false
+            referencedRelation: "guests"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "console_calls_peer_agent_id_fkey"
+            columns: ["peer_agent_id"]
+            isOneToOne: false
+            referencedRelation: "console_agents"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "console_calls_peer_agent_id_fkey"
+            columns: ["peer_agent_id"]
+            isOneToOne: false
+            referencedRelation: "console_agents_roster"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "console_calls_peer_agent_id_fkey"
+            columns: ["peer_agent_id"]
+            isOneToOne: false
+            referencedRelation: "console_me"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "console_calls_queue_id_fkey"
+            columns: ["queue_id"]
+            isOneToOne: false
+            referencedRelation: "console_queues"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "console_calls_transferred_to_agent_id_fkey"
+            columns: ["transferred_to_agent_id"]
+            isOneToOne: false
+            referencedRelation: "console_agents"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "console_calls_transferred_to_agent_id_fkey"
+            columns: ["transferred_to_agent_id"]
+            isOneToOne: false
+            referencedRelation: "console_agents_roster"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "console_calls_transferred_to_agent_id_fkey"
+            columns: ["transferred_to_agent_id"]
+            isOneToOne: false
+            referencedRelation: "console_me"
+            referencedColumns: ["user_id"]
+          },
+        ]
+      }
+      console_chat_messages: {
+        Row: {
+          author_id: string
+          body: string
+          created_at: string
+          id: string
+        }
+        Insert: {
+          author_id: string
+          body: string
+          created_at?: string
+          id?: string
+        }
+        Update: {
+          author_id?: string
+          body?: string
+          created_at?: string
+          id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "console_chat_messages_author_id_fkey"
+            columns: ["author_id"]
+            isOneToOne: false
+            referencedRelation: "console_agents"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "console_chat_messages_author_id_fkey"
+            columns: ["author_id"]
+            isOneToOne: false
+            referencedRelation: "console_agents_roster"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "console_chat_messages_author_id_fkey"
+            columns: ["author_id"]
+            isOneToOne: false
+            referencedRelation: "console_me"
+            referencedColumns: ["user_id"]
+          },
+        ]
+      }
+      console_queues: {
+        Row: {
+          created_at: string
+          id: string
+          is_active: boolean
+          key: string
+          name_he: string
+          priority: number
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          key: string
+          name_he: string
+          priority?: number
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          key?: string
+          name_he?: string
+          priority?: number
+        }
+        Relationships: []
       }
       contact_interactions: {
         Row: {
@@ -2460,6 +2994,13 @@ export type Database = {
             columns: ["agent_id"]
             isOneToOne: false
             referencedRelation: "console_agents"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "human_agent_call_legs_agent_id_fkey"
+            columns: ["agent_id"]
+            isOneToOne: false
+            referencedRelation: "console_agents_roster"
             referencedColumns: ["user_id"]
           },
           {
@@ -3892,6 +4433,26 @@ export type Database = {
       }
     }
     Views: {
+      console_agents_roster: {
+        Row: {
+          calendar_busy_until: string | null
+          calendar_show_as: string | null
+          display_name: string | null
+          provisioned: boolean | null
+          status: string | null
+          status_updated_at: string | null
+          user_id: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "console_agents_staff_fkey"
+            columns: ["user_id"]
+            isOneToOne: true
+            referencedRelation: "platform_staff"
+            referencedColumns: ["user_id"]
+          },
+        ]
+      }
       console_call_analysis: {
         Row: {
           adults: number | null
@@ -4771,6 +5332,9 @@ export type CompositeTypes<
     : never
 
 export const Constants = {
+  graphql_public: {
+    Enums: {},
+  },
   public: {
     Enums: {
       agreement_status: ["draft", "approved"],

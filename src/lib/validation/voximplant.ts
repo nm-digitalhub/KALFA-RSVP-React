@@ -28,6 +28,13 @@ export const voxCallbackSchema = z
       'no_answer',
       'no_response',
       'cancelled',
+      // Stage 6 (AI→human handoff): a KALFA console agent took over the call
+      // via attachSupervisor(mode:'takeover') and RSVPAgent.voxengine.js's
+      // terminalStatus() latched handoffWasActive. Terminal, billed like
+      // 'completed' (see call-result-processing.ts) — MUST be accepted here
+      // BEFORE the scenario can post it, or the terminal callback 400s and
+      // the attempt row sticks pre-terminal (the 2026-07-21 stale-row class).
+      'handed_off',
     ]),
     call_duration: z
       .number()

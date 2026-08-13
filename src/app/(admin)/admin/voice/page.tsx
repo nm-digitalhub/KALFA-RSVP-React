@@ -109,6 +109,12 @@ export default async function VoiceOverviewPage({
           >
             פלטפורמה וניהול
           </Link>
+          <Link
+            href="/admin/voice/queues"
+            className="text-sm font-medium text-primary hover:underline"
+          >
+            מחלקות
+          </Link>
         </div>
       </div>
 

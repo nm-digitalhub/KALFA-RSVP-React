@@ -486,6 +486,46 @@ export function getRules(
   });
 }
 
+// GetScenarios — READ-ONLY fetch of scenario metadata and (with with_script)
+// the DEPLOYED scenario text. This is the only way to prove what is actually
+// running behind a rule: voxfiles/scenarios/dist/ is gitignored, so the repo
+// cannot prove what was uploaded — the parity gate diffs this against a fresh
+// local build. Never creates/edits/binds a scenario (those are Add/SetScenario,
+// deliberately absent from this module).
+export interface ScenarioInfo {
+  scenario_id: number;
+  scenario_name: string;
+  modified?: string | null;
+  // Present only when with_script=true. The deployed JS text — treat as code,
+  // not as trusted display content.
+  scenario_script?: string | null;
+}
+export interface GetScenariosRequest {
+  count?: number;
+  offset?: number;
+  scenario_name?: string;
+  with_script?: boolean;
+}
+export interface GetScenariosResponse {
+  result: ScenarioInfo[];
+  total_count?: number;
+}
+export function getScenarios(
+  config: VoximplantConfig,
+  scenarioId: number | string,
+  params: GetScenariosRequest = {},
+  timeoutMs?: number,
+): Promise<GetScenariosResponse> {
+  // scenario_id is excluded from the params type and set AFTER the spread
+  // (getRules idiom) so a caller can never override which scenario is fetched.
+  return voxRequest<GetScenariosResponse>(
+    config,
+    'GetScenarios',
+    { with_script: true, ...params, scenario_id: scenarioId },
+    timeoutMs,
+  );
+}
+
 // GetCallHistoryAsync — queues an async CSV report, returns its id.
 export interface GetCallHistoryAsyncRequest {
   from_date: string;

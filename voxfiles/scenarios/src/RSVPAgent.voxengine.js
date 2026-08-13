@@ -11,10 +11,12 @@
 // (save_rsvp / mark_dnc / notify_owner / schedule_callback) to KALFA's
 // token-scoped endpoints, reports el_conversation_id via the cb endpoint, and
 // posts exactly ONE terminal callback per call (rsvp_method 'agent', no digit:
-// completed = conversation ran → billed reach; no_response / no_answer /
+// completed = conversation ran → billed reach; handed_off (Stage 6) = a KALFA
+// console agent took over and the AI never carried a conversation first →
+// billed reach via a distinct evidence string; no_response / no_answer /
 // failed otherwise) so the attempt row always closes and billing is per-reached.
 //
-// Branch B customData ({to, from, tok, u}) — tiny, ≤200-byte cap:
+// Branch B customData ({to, from, tok, u, ca, dh}) — tiny, ≤200-byte cap:
 //   * to/from        — dial legs (required).
 //   * u (app origin) — used to build the ctx URL (optional; if absent, the call
 //                      still runs with empty dynamic variables).
@@ -24,6 +26,15 @@
 //                      event_venue, event_address, event_celebrants,
 //                      event_rsvp_deadline) + kalfa_attempt_token (correlation
 //                      nonce). No secret ever sits in customData/call history.
+//   * ca             — (Stage 6) COMPACT key for console_agent_username: the
+//                      single READY provisioned console agent's vox_username,
+//                      or '' when none is routable. Powers the DTMF '9'
+//                      handoff smoke test (see ToneReceived below). See
+//                      outreach-calls.ts buildScriptCustomData's doc comment
+//                      for why the key is short, not the full literal name.
+//   * dh             — (Stage 6) COMPACT key for the dtmf-handoff-enabled
+//                      owner knob (app_settings.console_dtmf_handoff_enabled):
+//                      '1' when on, OMITTED (absent) otherwise.
 // If ctx fails/404s the scenario logs a warning and proceeds with empty defaults
 // — it never drops the call over missing personalization.
 //
@@ -98,6 +109,13 @@ VoxEngine.addEventListener(AppEvents.Started, function () {
     // at 90s (session 6758867554); the timeout is a stuck-session safety net, not
     // a terminator for a healthy conversation.
     var GLOBAL_TIMEOUT_MS = 150000;
+    // Stage 6 (B1): hard bound for a human-owned call. REPLACES the 150s net in
+    // state.globalTimer once a takeover connects — armHandoffCeiling() disarms
+    // the 150s net and re-arms this ceiling in the SAME field; there is no
+    // second timer. Owner knob (ops-knobs decision, 12.8): 30 minutes, measured
+    // against human_agent_call_legs.connected_at via Realtime — never a browser
+    // stopwatch (the same UI-honesty rule save_rsvp's three-state contract follows).
+    var HANDOFF_MAX_MS = 30 * 60 * 1000;
     // Grace before hanging up the PSTN leg once the agent has ended the
     // conversation (end_call → ElevenLabs closes the WS → onWebSocketClose). At
     // that instant the whole farewell has been SENT to Voximplant, but the last
@@ -135,6 +153,22 @@ VoxEngine.addEventListener(AppEvents.Started, function () {
         conf: null,
         supervisor: null,
         supervisorRequestId: '',
+        // Stage 6 (B1-B4 handoff fixes). handoffActive = a human takeover
+        // conference is CURRENTLY live — gates the onWebSocketClose guard (B2)
+        // so the AI leaving never hangs up a guest still talking to a human.
+        // handoffWasActive LATCHES true the first time a takeover connects and
+        // never resets — the single terminalStatus() precedence check reads
+        // it (feeds the owner's handed_off billing decision). Both are set
+        // ONLY in attachSupervisor's Connected handler, mode==='takeover' branch.
+        handoffActive: false,
+        handoffWasActive: false,
+        // Stage 6 DTMF '9' handoff smoke test — from customData's compact 'ca'/
+        // 'dh' keys (outreach-calls.ts buildScriptCustomData): the single READY
+        // provisioned console agent's vox_username ('' = none routable) and
+        // whether the owner knob (app_settings.console_dtmf_handoff_enabled)
+        // is on.
+        consoleAgentUsername: '',
+        dtmfHandoffEnabled: false,
         recordingUrl: null,
         // Second link vector (belt-and-suspenders with the token): the ElevenLabs
         // conversation_id, captured from ConversationInitiationMetadata (needs
@@ -298,11 +332,19 @@ VoxEngine.addEventListener(AppEvents.Started, function () {
     //   no_response — answered, but the bridge never carried a conversation.
     //   completed   — a real conversation ran. THIS is the status writeReach
     //                 bills as a reached contact.
+    //   handed_off  — (Stage 6) a human console agent took over (takeover
+    //                 connected) but the AI never carried a real conversation
+    //                 first. Tested AFTER completed on purpose: an AI-reach
+    //                 that happened before the handoff still bills as
+    //                 'completed' (owner billing decision — completed wins),
+    //                 so this only fires for an early/immediate takeover.
     function terminalStatus() {
         if (state.voicemailDetected)
             return 'no_answer';
         if (state.conversationStarted)
             return 'completed';
+        if (state.handoffWasActive)
+            return 'handed_off';
         return state.callWasConnected ? 'no_response' : 'no_answer';
     }
     // Exactly ONE terminal callback per call (idempotent — a racing Failed +
@@ -423,6 +465,15 @@ VoxEngine.addEventListener(AppEvents.Started, function () {
     else {
         log('No tok/u in customData — proceeding with empty dynamic variables.');
     }
+    // Stage 6: DTMF '9' handoff smoke test — compact customData keys (the
+    // 200-byte cap; see outreach-calls.ts buildScriptCustomData's doc comment
+    // for the exact key mapping). ca = console_agent_username (the routable
+    // console agent's vox_username, or '' when none — attachSupervisor's own
+    // guard makes an empty username a safe no-op). dh = '1' when
+    // app_settings.console_dtmf_handoff_enabled; anything else (including
+    // absent) leaves the smoke test OFF.
+    state.consoleAgentUsername = customData.ca || '';
+    state.dtmfHandoffEnabled = customData.dh === '1';
     // --- ElevenLabs API key from Voximplant Secret (never logged) ---
     var key = VoxEngine.getSecretValue('ELEVENLABS_API_KEY');
     if (!key) {
@@ -446,7 +497,12 @@ VoxEngine.addEventListener(AppEvents.Started, function () {
     // Global safety net: close the session even if every other path is stuck.
     // Post the terminal callback FIRST so the attempt row still closes (a cut
     // conversation is still a reached human; a session that never bridged is not).
-    state.globalTimer = setTimeout(function () {
+    //
+    // Stage 6 (B1): extracted into arm/disarm helpers on the SAME state.globalTimer
+    // field so the handoff ceiling can safely swap the 150s net out for
+    // HANDOFF_MAX_MS and back — never a second timer. globalTimeoutFired's body
+    // is byte-for-byte the original inline callback.
+    function globalTimeoutFired() {
         log('Global timeout reached — closing.');
         var duration = state.connectedAt
             ? Math.round((Date.now() - state.connectedAt) / 1000)
@@ -457,7 +513,34 @@ VoxEngine.addEventListener(AppEvents.Started, function () {
         }, function () {
             cleanupAndTerminate();
         });
-    }, GLOBAL_TIMEOUT_MS);
+    }
+    // Idempotent + terminated-safe: a timer already armed, or a session already
+    // tearing down, is a no-op — never two live timers on one field.
+    function armGlobalTimer(ms) {
+        if (state.globalTimer || state.terminated)
+            return;
+        state.globalTimer = setTimeout(globalTimeoutFired, ms || GLOBAL_TIMEOUT_MS);
+    }
+    function disarmGlobalTimer(why) {
+        if (state.globalTimer) {
+            clearTimeout(state.globalTimer);
+            state.globalTimer = null;
+        }
+        log('global timer disarmed: ' + why);
+    }
+    // The handoff ceiling REPLACES the 150s net in state.globalTimer — one
+    // timer field, never two (ARCH stage 6, B1). armGlobalTimer's own timeout
+    // body already ends in postFinalCallbackOnce → cleanupAndTerminate, so the
+    // ceiling closes the attempt row by itself; no separate handler needed.
+    // Wired ONLY from attachSupervisor's Connected handler, mode==='takeover'
+    // branch — never on ring-out/Failed, so a leg that never connects cannot
+    // leave the AI call unbounded.
+    function armHandoffCeiling() {
+        disarmGlobalTimer('takeover connected');
+        armGlobalTimer(HANDOFF_MAX_MS);
+        log('handoff ceiling armed');
+    }
+    armGlobalTimer(GLOBAL_TIMEOUT_MS);
     // Places the outbound call and wires the ElevenLabs bridge. Called only after
     // the ctx fetch settles (success or failure) so the dynamic variables are known
     // by the time the agent connects.
@@ -570,6 +653,17 @@ VoxEngine.addEventListener(AppEvents.Started, function () {
             call.handleTones(true);
             call.addEventListener(CallEvents.ToneReceived, function (ev) {
                 var digit = ev && ev.tone;
+                // Stage 6: DTMF '9' handoff smoke test — a cheap, pre-EL-changes proof
+                // that the deployed scenario matches the reviewed source and exercises
+                // the full takeover/conference topology from the guest side, with zero
+                // ElevenLabs protocol changes. Requires BOTH the owner knob AND a
+                // routable console agent (empty consoleAgentUsername ⇒ nothing to
+                // dial — attachSupervisor's own guard makes that a safe no-op anyway).
+                if (digit === '9' && state.dtmfHandoffEnabled && state.consoleAgentUsername) {
+                    log('TONE 9 -> DTMF handoff smoke test');
+                    attachSupervisor(state.consoleAgentUsername, 'takeover', 'dtmf9-' + Date.now());
+                    return;
+                }
                 var text = DTMF_INTENT[digit];
                 log('TONE ' + digit + (text ? ' -> inject' : ' (ignored)'));
                 if (!text || !state.agent || state.terminated)
@@ -597,13 +691,15 @@ VoxEngine.addEventListener(AppEvents.Started, function () {
             // verification that gates this: docs/voice-agent/monitor-scenario-topology.md.
             function restoreDirectBridge(why) {
                 // Guide teardown: agent and guest continue on the direct bridge and
-                // the conference is destroyed. sendMediaBetween FIRST, then destroy.
-                try {
-                    if (state.agent)
+                // the conference is destroyed. sendMediaBetween FIRST when the AI is
+                // still alive (guide order, unchanged), then destroy either way.
+                if (state.agent) {
+                    try {
                         VoxEngine.sendMediaBetween(call, state.agent);
-                }
-                catch (err) {
-                    log('restore bridge failed: ' + err);
+                    }
+                    catch (err) {
+                        log('restore bridge failed: ' + err);
+                    }
                 }
                 try {
                     if (state.conf)
@@ -614,7 +710,24 @@ VoxEngine.addEventListener(AppEvents.Started, function () {
                 }
                 state.conf = null;
                 state.supervisor = null;
-                log('supervisor ' + why + ' — restored direct agent-guest bridge');
+                state.handoffActive = false;
+                // Drops the ceiling (if any) — re-armed below ONLY when the AI is
+                // still alive. Also correctly disarms/re-arms the plain 150s net on
+                // an ordinary monitor detach (accepted: each restore is human-
+                // initiated and rare — see the B1 failure-mode note above).
+                disarmGlobalTimer('handoff over');
+                if (state.agent) {
+                    armGlobalTimer(GLOBAL_TIMEOUT_MS); // the AI owns the call again — re-net it
+                    log('supervisor ' + why + ' — restored direct agent-guest bridge');
+                }
+                else {
+                    // B3: AI dead AND the human just left — nobody is on the line.
+                    // Never dead-air the guest; end the call cleanly (short grace)
+                    // instead of re-bridging a closed AgentsClient — the exact bug
+                    // this fix exists to close.
+                    log('supervisor ' + why + ' — no live agent to restore, ending call');
+                    scheduleHangup(call, 500);
+                }
             }
             function attachSupervisor(voxUsername, mode, requestId) {
                 if (!voxUsername || !state.agent || state.terminated) {
@@ -627,10 +740,20 @@ VoxEngine.addEventListener(AppEvents.Started, function () {
                 }
                 state.supervisorRequestId = requestId;
                 // Mixer first (needs no video-conference rule flag, unlike Conference.add).
-                state.conf = VoxEngine.createConference();
+                // hd_audio explicit: the parameter is the interface's only field and HD
+                // audio bills extra — false = the free 8kHz default, stated on purpose.
+                state.conf = VoxEngine.createConference({ hd_audio: false });
                 // Dial the agent's provisioned SDK identity; callerid mirrors the
                 // guest-facing number so the device shows a KALFA call.
-                var supervisor = VoxEngine.callUser(voxUsername, state.from);
+                // OBJECT form (fix, rides the stage-6 atomic deploy): the current
+                // VoxEngine API declares callUser(parameters) ONLY — the positional
+                // (username, callerid) form that stood here is absent from the typings
+                // and this call site has never executed live (human_agent_call_legs was
+                // empty when checked 2026-08-12), so the old form was never proven.
+                var supervisor = VoxEngine.callUser({
+                    username: voxUsername,
+                    callerid: state.from,
+                });
                 state.supervisor = supervisor;
                 reportLegStatus(requestId, 'dialing');
                 supervisor.addEventListener(CallEvents.Connected, function () {
@@ -642,6 +765,15 @@ VoxEngine.addEventListener(AppEvents.Started, function () {
                         return;
                     }
                     if (mode === 'takeover') {
+                        // Stage 6 latch: set ONLY here, in the takeover branch of this
+                        // Connected handler (never in attachSupervisor itself, never
+                        // for mode==='monitor', never on dialing/ringing). handoffActive
+                        // gates the onWebSocketClose guard (B2) for as long as this
+                        // takeover is live; handoffWasActive never resets — it is the
+                        // single fact terminalStatus() reads to report 'handed_off'.
+                        state.handoffActive = true;
+                        state.handoffWasActive = true;
+                        armHandoffCeiling();
                         // Conference — full three-way; everyone hears everyone.
                         VoxEngine.sendMediaBetween(state.agent, state.conf);
                         VoxEngine.sendMediaBetween(supervisor, state.conf);
@@ -743,7 +875,15 @@ VoxEngine.addEventListener(AppEvents.Started, function () {
                     else if (cmd === 'close_agent') {
                         // Closes the AI leg only. The PSTN call stays up — ending the
                         // call is a separate route, deliberately not a command here.
-                        state.agent.close();
+                        // Stage 6 (B3): null BEFORE close() — safe whether or not the
+                        // local close() call itself synchronously fires
+                        // onWebSocketClose (open platform question, §7.1); that
+                        // handler's own null is idempotent either way, and every
+                        // restore path (restoreDirectBridge) already treats a null
+                        // agent as "no live agent to restore".
+                        var closingAgent = state.agent;
+                        state.agent = null;
+                        closingAgent.close();
                     }
                     else if (cmd === 'call_end') {
                         // Operator hangup (POST /api/calls/{id}/end). Goes through
@@ -803,6 +943,20 @@ VoxEngine.addEventListener(AppEvents.Started, function () {
                     log('AGENT_WS_CLOSED code=' + (event && event.code) +
                         ' clean=' + (event && event.wasClean) +
                         ' reason=' + (event && event.reason));
+                    // Stage 6 (B3): a closed/dead AI client is never a valid bridge
+                    // target — null it unconditionally, whether this fired from
+                    // close_agent, the agent's own end_call, or a dropped WS.
+                    state.agent = null;
+                    // Stage 6 (B2+B4): during an ACTIVE human takeover, the AI leaving
+                    // — an explicit close_agent OR ElevenLabs' own ~600s session cap
+                    // closing the WS — must NOT hang up the guest; the human is still
+                    // on the line. Requires BOTH flags: if the supervisor has already
+                    // dropped too, fall through to the normal hangup so the call still
+                    // ends honestly instead of going silent.
+                    if (state.handoffActive && state.supervisor) {
+                        log('agent WS closed during handoff — human continues');
+                        return;
+                    }
                     scheduleHangup(call, FAREWELL_GRACE_MS);
                 }
             }).then(function (agent) {

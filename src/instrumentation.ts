@@ -43,6 +43,41 @@ export function isUnknownServerActionError(error: {
   );
 }
 
+// "The destination stream closed early." — thrown by React's Flight/SSR
+// renderer (createCancelHandler in react-server-dom-webpack-server /
+// react-dom-server, node_modules/next/dist/compiled/...) when the client's
+// HTTP connection closes before a streamed render finishes: an aborted RSC
+// prefetch, a navigation away mid-stream, or a closed tab. This is the SAME
+// class of "client went away" event `isAbortError` in Next's own
+// pipe-readable.js is meant to swallow — but React's cancel handler wraps it
+// in a plain `Error(reason)` with `.name === 'Error'` (not `'AbortError'`),
+// so Next's isAbortError() check misses it and it surfaces here as if it
+// were a genuine unhandled render error.
+//
+// Confirmed page-agnostic, not specific to any one route: investigated
+// 13.8.2026 after a report attributed this to /admin/voice — the two
+// historical ops_errors rows for this exact message (digest 608786559) show
+// it firing on /admin/campaigns AND /admin/voice, at different times. That
+// rules out "this page's render is unusually slow" as the trigger; it is a
+// routine, low-frequency artifact of RSC streaming + client aborts that can
+// happen on any page. Next.js/React have no public API to reclassify it
+// (node_modules is not ours to patch), so this predicate is the app-level
+// lever: it stops the Slack "Unhandled server error" page for a benign,
+// already-rare event while still recording every occurrence to ops_errors
+// (recordOpsError below runs unconditionally, before this check) so genuine
+// frequency spikes stay visible.
+//
+// Exact-match on purpose (not `.includes('stream')`): a loose match risks
+// silently downgrading a real streaming failure. The sibling message "The
+// destination stream errored while writing data." (same cancel-handler
+// idiom, fired from destination.on('error') instead of .on('close')) is
+// deliberately NOT included here — it can also indicate a genuine write
+// failure, not only a client disconnect, so it is left at full severity
+// until it is itself observed and confirmed benign.
+export function isDestinationStreamClosedError(error: { message?: string }): boolean {
+  return error.message === 'The destination stream closed early.';
+}
+
 // Global cap on ops_errors writes per minute — protects the DB from a true
 // fault-storm hammering it with inserts. Deliberately NOT a per-(route+error)
 // dedup like sendSlackAlert's: that dedup is exactly what makes ops_alerts an
@@ -90,10 +125,15 @@ async function recordOpsError(
 export const onRequestError: Instrumentation.onRequestError = async (err, request, context) => {
   if (process.env.NEXT_RUNTIME === 'edge') return;
   const error = err as Error & { digest?: string; __NEXT_ERROR_CODE?: string };
-  // Benign unknown/forged Server Action id (scanner POST or auto-recovered deploy
-  // skew): DOWNGRADE to an info breadcrumb instead of paging as a red error — see
-  // isUnknownServerActionError above. Genuine render errors stay level 'error'.
-  const benign = isUnknownServerActionError(error);
+  // Benign, known-noisy patterns: DOWNGRADE to an info breadcrumb instead of
+  // paging as a red error. Genuine render errors stay level 'error'. Order
+  // matters only for the title below; both predicates are independent checks.
+  const benignTitle = isUnknownServerActionError(error)
+    ? 'Unknown Server Action (benign)'
+    : isDestinationStreamClosedError(error)
+      ? 'Client disconnected mid-stream (benign)'
+      : null;
+  const benign = benignTitle !== null;
 
   await recordOpsError(error, request, context, process.env.NEXT_RUNTIME ?? 'nodejs');
 
@@ -108,7 +148,7 @@ export const onRequestError: Instrumentation.onRequestError = async (err, reques
     if (error.digest) detailParts.push(`digest=${error.digest}`);
     await sendSlackAlert({
       level: benign ? 'info' : 'error',
-      title: benign ? 'Unknown Server Action (benign)' : 'Unhandled server error',
+      title: benignTitle ?? 'Unhandled server error',
       source: `${context.routeType} ${context.routePath}`,
       detail: detailParts.join(' · '),
       fields: { method: request.method, path: request.path },

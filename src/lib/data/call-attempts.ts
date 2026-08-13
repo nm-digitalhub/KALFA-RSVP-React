@@ -23,12 +23,29 @@ type CallAttemptInsert = Database['public']['Tables']['call_attempts']['Insert']
 // Terminal call outcomes — an older/out-of-order callback must never downgrade a
 // row that already reached one of these (requirement D). Exported so the log
 // export job (plan A4) reuses the SAME set instead of redeclaring it.
+//
+// 'handed_off' (Stage 6): a KALFA console agent took over the call and
+// RSVPAgent.voxengine.js's terminalStatus() reported it as such — billed like
+// 'completed' (call-result-processing.ts). Added to TERMINAL_STATUSES so
+// recordCallOutcome's CAS below protects a handed-off row from being
+// downgraded by a stray late callback, exactly like every other terminal
+// status. Every OTHER consumer of this set/TERMINAL_SET is either correct
+// unchanged or gains the intended protection, not a regression:
+//   - /api/calls/{id}/{end,monitor,agent-command} routes: each refuses to act
+//     (409 "השיחה אינה פעילה") once attempt.status is terminal. A row only
+//     ever reaches 'handed_off' at call teardown (postFinalCallbackOnce), so
+//     these routes correctly start refusing a handoff call the instant it
+//     actually ends — the exact behavior they already give 'completed'.
+//   - vox-log-export.ts's enqueuePending: a handed-off attempt now becomes
+//     eligible for session-log export, same as any other concluded call —
+//     desired, not a change in kind.
 export const TERMINAL_STATUSES = [
   'completed',
   'failed',
   'no_answer',
   'no_response',
   'cancelled',
+  'handed_off',
 ] as const;
 const TERMINAL_SET: ReadonlySet<string> = new Set(TERMINAL_STATUSES);
 const PRE_TERMINAL = ['queued', 'dialing', 'in_progress'] as const;

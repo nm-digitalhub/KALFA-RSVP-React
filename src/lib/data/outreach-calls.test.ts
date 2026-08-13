@@ -30,6 +30,10 @@ vi.mock('@/lib/data/interactions', () => ({
   insertInteraction: vi.fn(),
   setContactOpStatus: vi.fn(),
 }));
+vi.mock('@/lib/data/console-calls', () => ({
+  findRoutableAgentVoxUsernames: vi.fn(),
+  consoleDtmfHandoffEnabled: vi.fn(),
+}));
 // startScenarios moved to the separated mutations module (plan stage 1).
 vi.mock('@/lib/voximplant/mutations', () => ({ startScenarios: vi.fn() }));
 vi.mock('@/lib/voximplant/core', () => ({
@@ -70,6 +74,7 @@ import {
   isDncListed,
 } from '@/lib/data/outreach-engine';
 import { getGuestsForContact, insertInteraction, setContactOpStatus } from '@/lib/data/interactions';
+import { findRoutableAgentVoxUsernames, consoleDtmfHandoffEnabled } from '@/lib/data/console-calls';
 // Deliberately NOT mocked: gate 4b must be exercised against the same shared L1
 // date rule the DB guard mirrors, not a stub that could agree with a wrong gate.
 import { todayIL } from '@/lib/data/event-date';
@@ -129,6 +134,8 @@ beforeEach(() => {
   vi.mocked(setContactOpStatus).mockResolvedValue(undefined);
   vi.mocked(sendSlackAlert).mockResolvedValue(null);
   vi.mocked(startScenarios).mockResolvedValue({ result: 1, call_session_history_id: HISTORY } as never);
+  vi.mocked(findRoutableAgentVoxUsernames).mockResolvedValue([]);
+  vi.mocked(consoleDtmfHandoffEnabled).mockResolvedValue(false);
 });
 
 describe('gates (no dial)', () => {
@@ -402,6 +409,37 @@ describe('provider outcomes', () => {
   });
 });
 
+describe('Stage 6 — DTMF handoff wiring into the dispatched customData', () => {
+  it('18a. routable agent + flag ON → script_custom_data carries ca=<vox_username> and dh="1"', async () => {
+    vi.mocked(findRoutableAgentVoxUsernames).mockResolvedValue(['agent_1bbe74dc-90b8-4e3a-9c11-abcdef123456']);
+    vi.mocked(consoleDtmfHandoffEnabled).mockResolvedValue(true);
+    await dispatchOutreachCall(job());
+    const call = vi.mocked(startScenarios).mock.calls[0];
+    const sent = JSON.parse((call?.[1] as { script_custom_data: string }).script_custom_data);
+    expect(sent.ca).toBe('agent_1bbe74dc-90b8-4e3a-9c11-abcdef123456');
+    expect(sent.dh).toBe('1');
+  });
+
+  it('18b. no routable agent (flag ON anyway) → ca:"" — attachSupervisor\'s own guard makes this a safe no-op', async () => {
+    vi.mocked(findRoutableAgentVoxUsernames).mockResolvedValue([]);
+    vi.mocked(consoleDtmfHandoffEnabled).mockResolvedValue(true);
+    await dispatchOutreachCall(job());
+    const call = vi.mocked(startScenarios).mock.calls[0];
+    const sent = JSON.parse((call?.[1] as { script_custom_data: string }).script_custom_data);
+    expect(sent.ca).toBe('');
+    expect(sent.dh).toBe('1');
+  });
+
+  it('18c. flag OFF (default) → dh omitted entirely, regardless of agent availability', async () => {
+    vi.mocked(findRoutableAgentVoxUsernames).mockResolvedValue(['agent_1bbe74dc-90b8-4e3a-9c11-abcdef123456']);
+    vi.mocked(consoleDtmfHandoffEnabled).mockResolvedValue(false);
+    await dispatchOutreachCall(job());
+    const call = vi.mocked(startScenarios).mock.calls[0];
+    const sent = JSON.parse((call?.[1] as { script_custom_data: string }).script_custom_data);
+    expect(sent).not.toHaveProperty('dh');
+  });
+});
+
 describe('payload hygiene', () => {
   it('17a. buildScriptCustomData: valid JSON + Buffer.byteLength(utf8)', () => {
     const { payload, bytes } = buildScriptCustomData({ to: '+972', from: '972', tok: '0123456789abcdef0123456789abcdef', u: 'https://beta.kalfa.me' });
@@ -409,6 +447,44 @@ describe('payload hygiene', () => {
     expect(bytes).toBe(Buffer.byteLength(payload, 'utf8'));
     expect(bytes).toBeLessThan(200); // well under the VoxEngine.customData() 200-byte cap
     expect(payload).not.toMatch(/SECRET|KEY/i); // no credential of any kind in the payload
+    // ca defaults to '' when no agent is passed — always present (never omitted),
+    // matching "the single READY agent's vox_username, or ''".
+    expect(JSON.parse(payload)).toMatchObject({ ca: '' });
+    expect(JSON.parse(payload)).not.toHaveProperty('dh'); // omitted when the flag is off
+  });
+
+  it('17c. Stage 6 HARD CONSTRAINT: realistic worst-case values stay ≤200 bytes with the compact ca/dh keys', () => {
+    // Realistic maxima, not best-case: full E.164 numbers, a full 32-hex-char
+    // access token (randomBytes(16).toString('hex') — the actual format
+    // dispatchOutreachCall generates), the beta app origin, and a
+    // console_agent_username in the REAL provisioned shape ('agent_' + a
+    // uuid — provisionConsoleAgentVoxUser's format, platform-roles.ts).
+    const { payload, bytes } = buildScriptCustomData({
+      to: '+972501234567',
+      from: '+972529998888',
+      tok: '793964fbb522d1a2f8e78e40f0cef8eb', // 32 hex chars
+      u: 'https://beta.kalfa.me',
+      consoleAgentUsername: 'agent_1bbe74dc-90b8-4e3a-9c11-abcdef123456',
+      dtmfHandoffEnabled: true,
+    });
+    expect(() => JSON.parse(payload)).not.toThrow();
+    expect(bytes).toBe(Buffer.byteLength(payload, 'utf8'));
+    expect(bytes).toBeLessThanOrEqual(200); // VoxEngine.customData()'s hard cap
+    expect(JSON.parse(payload)).toMatchObject({ dh: '1' });
+  });
+
+  it('17d. no routable agent + flag off → ca:"" and dh omitted (both are safe no-ops in the scenario)', () => {
+    const { payload } = buildScriptCustomData({
+      to: '+972501234567',
+      from: '+972529998888',
+      tok: '793964fbb522d1a2f8e78e40f0cef8eb',
+      u: 'https://beta.kalfa.me',
+      consoleAgentUsername: '',
+      dtmfHandoffEnabled: false,
+    });
+    const parsed = JSON.parse(payload);
+    expect(parsed.ca).toBe('');
+    expect(parsed).not.toHaveProperty('dh');
   });
   it('17b. no secret (callbackSecret/privateKey) reaches Slack or console', async () => {
     const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});

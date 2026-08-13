@@ -36,6 +36,7 @@ export const KNOWN_FLAGS = new Set([
   'session',
   'list-id', // call-lists: single-list filter
   'count', // audit: page size
+  'id', // scenario: scenario_id to fetch
 ]);
 
 // Flag aliases, normalized immediately after parsing so every downstream
@@ -119,7 +120,7 @@ export function parseArgs(argv: string[]): ParsedArgs {
 // READ-ONLY command set (owner directive): the CLI can never mutate Voximplant
 // state — `start` was removed with the mutations split (the server dispatcher
 // is the only dial path) and a guard test pins this list.
-export const KNOWN_COMMANDS = ['account', 'autocharge', 'rules', 'history', 'numbers', 'users', 'transactions', 'recording', 'log', 'call-lists', 'media-resources', 'audit'] as const;
+export const KNOWN_COMMANDS = ['account', 'autocharge', 'rules', 'history', 'numbers', 'users', 'transactions', 'recording', 'log', 'call-lists', 'media-resources', 'audit', 'scenario'] as const;
 export type KnownCommand = (typeof KNOWN_COMMANDS)[number];
 
 export function assertKnownCommand(command: string): asserts command is KnownCommand {
@@ -164,6 +165,9 @@ const ALLOWED_FLAGS: Record<KnownCommand, Set<string>> = {
   // READ-ONLY account audit log (A3). Owner-role-only per docs — prints a clean
   // degraded message when the service-account key is refused.
   audit: new Set(['key', 'days', 'count']),
+  // READ-ONLY: fetch a scenario's DEPLOYED text by id (GetScenarios with_script)
+  // and save it for the parity diff against the local build. Never edits/binds.
+  scenario: new Set(['key', 'id', 'output', 'force']),
 };
 
 // Reject any flag that does not belong to the given command (--help is global and
@@ -406,6 +410,24 @@ export function resolveRecordingPlan(flags: Record<string, FlagValue>): Recordin
   const days =
     flags.days !== undefined ? positiveInt('days', flags.days, { max: 120 }) : 7;
   return { sessionId, output, days };
+}
+
+// The `scenario` command: which scenario to fetch and where to save its deployed
+// text. READ-ONLY — the output exists so the parity gate can diff deployed vs
+// the local voxfiles build; refuses to overwrite without --force.
+export interface ScenarioPlan {
+  scenarioId: number;
+  output: string;
+  force: boolean;
+}
+
+export function resolveScenarioPlan(flags: Record<string, FlagValue>): ScenarioPlan {
+  const scenarioId = positiveInt('id', flags.id);
+  const output =
+    flags.output !== undefined
+      ? requireStringValue('output', flags.output)
+      : `scenario-${scenarioId}.deployed.js`;
+  return { scenarioId, output, force: flags.force === true };
 }
 
 // The session LOG (scenario Logger.write output), same resolution as a recording
@@ -821,6 +843,7 @@ commands (ALL read-only — the CLI cannot mutate Voximplant state):
   call-lists [--list-id <n>] [--days <n>]  Observe dialing campaigns (PII-safe aggregates)
   media-resources            Voximplant IP inventory for the firewall allowlist (no credentials)
   audit [--days <n>] [--count <n>]  Account audit log (Owner-only; degrades cleanly)
+  scenario --id <n> [--output f] [--force]  Save a scenario's DEPLOYED text (parity diff vs local build)
 
 history modes:
   --history-id <id>          Download an existing report by id

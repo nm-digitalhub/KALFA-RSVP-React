@@ -23,6 +23,20 @@ export const agentStatusSchema = z.strictObject({
 export type AgentStatusBody = z.infer<typeof agentStatusSchema>;
 
 // ---------------------------------------------------------------------------
+// Agent "on shift" intent — POST /api/agents/shift (wake-and-answer, 12.8)
+// ---------------------------------------------------------------------------
+
+// Deliberately its OWN concept from agentStatusSchema above, not a reuse —
+// see console_agent_shift's migration comment (console-calls.ts,
+// isShiftActiveAndFresh) for why: agent_status is live SDK/business
+// presence; this is a standing, bounded-freshness intent that drives
+// auto-connect on app launch and expands the inbound push-wake audience.
+export const agentShiftSchema = z.strictObject({
+  active: z.boolean(),
+});
+export type AgentShiftBody = z.infer<typeof agentShiftSchema>;
+
+// ---------------------------------------------------------------------------
 // Outbound enqueue — SUPERSEDED by POST /api/events/{eventId}/outreach-call
 // ---------------------------------------------------------------------------
 //

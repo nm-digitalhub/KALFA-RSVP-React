@@ -48,6 +48,9 @@ describe('CLI ↔ mutations guard', () => {
     // Accounts index while being live, so that index cannot be used to argue a
     // SetAutochargeConfig does not exist either; the honest statement is that no
     // public setter was FOUND, and that support configures this by ticket.
+    // 'scenario' qualifies — GetScenarios with_script reads a scenario's
+    // deployed text for the parity gate; Add/Set/BindScenario stay in mutations
+    // territory and are absent from core.
     expect([...KNOWN_COMMANDS].sort()).toEqual(
       [
         'account',
@@ -61,6 +64,7 @@ describe('CLI ↔ mutations guard', () => {
         'users',
         'recording',
         'rules',
+        'scenario',
         'transactions',
       ].sort(),
     );

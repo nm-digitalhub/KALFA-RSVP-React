@@ -15,6 +15,7 @@ import {
   ChevronsUpDown,
   FileText,
   FlaskConical,
+  History,
   LayoutDashboard,
   BellRing,
   ChartColumn,
@@ -73,6 +74,8 @@ import type {
   AvailabilityBlock,
   PresenceSnapshot,
 } from '@/lib/data/exchange-availability';
+import { SoftphonePanelLazy } from '@/components/console/softphone-panel-lazy';
+import type { SoftphoneGateInfo } from '@/components/console/softphone-panel';
 import { cn, getInitials } from '@/lib/utils';
 
 // Admin app shell: a fixed right-side sidebar (RTL) plus a top bar. Dedicated to
@@ -124,6 +127,13 @@ const NAV_GROUPS: NavGroup[] = [
       { href: '/admin/channels', label: 'ערוצי תקשורת', icon: MessagesSquare },
       { href: '/admin/templates', label: 'תבניות פנייה', icon: Megaphone },
       { href: '/admin/recordings', label: 'הקלטות שיחות', icon: Voicemail },
+      // Console audit 12.8 — the page (src/app/(admin)/admin/voice/console-history)
+      // was fully built and server-side gated (requirePlatformPermission
+      // 'manage_voice') but had no nav entry anywhere, making it reachable
+      // only by typing the URL directly. Placed beside recordings — its own
+      // header comment distinguishes it from both /admin/recordings
+      // (call_attempts, the AI ledger) and /admin/voice/events/[id].
+      { href: '/admin/voice/console-history', label: 'היסטוריית מוקד', icon: History },
       { href: '/admin/dnc', label: 'חסימת שיחות (DNC)', icon: PhoneOff },
     ],
   },
@@ -254,6 +264,7 @@ export function AdminShell({
   availabilityPresence,
   hasExchangeConnection,
   navCounts,
+  softphone,
   children,
 }: {
   userEmail: string | undefined;
@@ -274,6 +285,11 @@ export function AdminShell({
   // that domain's permission — NAV_COUNT_KEY lookups against it stay
   // undefined, so no badge renders rather than showing a stale 0).
   navCounts: AdminNavCounts;
+  // Browser call-center softphone gate (call-center stage 3). Optional so any
+  // other future caller of AdminShell renders byte-identically without it;
+  // the layout always supplies it today. The panel component itself decides
+  // whether to render anything — see SoftphonePanel's early return.
+  softphone?: SoftphoneGateInfo;
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
@@ -449,6 +465,14 @@ export function AdminShell({
             {children}
           </div>
         </SidebarInset>
+
+        {/* Sibling of SidebarInset (not a child of it) so it floats over the
+            page content and survives navigation — AdminShell itself is not
+            remounted between admin pages, only `children` swaps. Mounted
+            inside DirectionProvider/SidebarProvider: any portaled Base UI
+            piece the panel grows later needs that ancestor for RTL (see
+            SidebarInset RTL memory — Base UI ignores the DOM `dir`). */}
+        {softphone ? <SoftphonePanelLazy {...softphone} /> : null}
       </SidebarProvider>
     </DirectionProvider>
   );

@@ -6,8 +6,8 @@ import { recordStaffAccess } from '@/lib/data/admin/access-log';
 import { countActiveCalls } from '@/lib/data/call-attempts';
 import { resolvePage, type PageResult } from '@/lib/data/admin/shared';
 import { getVoximplantConfig } from '@/lib/data/voximplant-config';
+import { getCachedAccountInfo } from '@/lib/data/admin/voice-balance-cache';
 import {
-  getAccountInfo,
   getAuditLog,
   getCallLists,
   getMediaResources,
@@ -15,7 +15,6 @@ import {
 } from '@/lib/voximplant/core';
 import {
   extractIpStrings,
-  normalizeAccountInfo,
   normalizeAuditEntry,
   normalizeCallList,
   type NormalizedAuditEntry,
@@ -349,8 +348,15 @@ export interface VoicePlatformView {
   wiring: VoiceWiringSection;
 }
 
-// The live-balance tile (reused by the overview and the platform view). Isolated
-// so a slow/failed GetAccountInfo degrades one tile. Requires admin.
+// The live-balance tile (reused by the overview and the platform view). Backed
+// by a short-TTL cache (voice-balance-cache.ts) rather than an inline
+// GetAccountInfo call — this renders on every /admin/voice(/platform) request
+// AND on every background RSC prefetch of /admin/voice from the sidebar link
+// present on every other admin page, so an uncached live call here was an
+// unbounded-latency external dependency in a very hot render path. This
+// function does NOT self-gate (unlike its siblings in this file) — both
+// callers (VoiceOverviewPage and getVoicePlatformView, below) already run
+// requirePlatformPermission('manage_voice') before reaching it.
 export async function getVoiceBalanceTile(): Promise<VoiceBalanceSection> {
   const cfg = await getVoximplantConfig();
   if (!cfg) {
@@ -363,19 +369,8 @@ export async function getVoiceBalanceTile(): Promise<VoiceBalanceSection> {
       callbackUrlEcho: null,
     };
   }
-  try {
-    const info = normalizeAccountInfo(
-      await getAccountInfo(cfg.auth, 10_000, { returnLiveBalance: true }),
-    );
-    return {
-      status: 'ok',
-      balance: info.balance,
-      currency: info.currency,
-      lowBalanceThreshold: cfg.lowBalanceThreshold,
-      minCallReserve: cfg.minCallReserve,
-      callbackUrlEcho: info.callbackUrl,
-    };
-  } catch {
+  const info = await getCachedAccountInfo();
+  if (!info) {
     return {
       status: 'unavailable',
       balance: null,
@@ -385,6 +380,14 @@ export async function getVoiceBalanceTile(): Promise<VoiceBalanceSection> {
       callbackUrlEcho: null,
     };
   }
+  return {
+    status: 'ok',
+    balance: info.balance,
+    currency: info.currency,
+    lowBalanceThreshold: cfg.lowBalanceThreshold,
+    minCallReserve: cfg.minCallReserve,
+    callbackUrlEcho: info.callbackUrl,
+  };
 }
 
 export interface LogExportStatus {

@@ -1,7 +1,5 @@
 import 'server-only';
 
-import type { CommandEnvelope } from '@/lib/validation/agent-console';
-
 // Server → live VoxEngine session command delivery.
 //
 // The session's "media access" URL is a CAPABILITY, not an identifier: whoever
@@ -57,6 +55,20 @@ export interface DeliveryResult {
   status?: number;
 }
 
+// The minimal wire shape every scenario's AppEvents.HttpRequest dispatcher
+// actually parses (RSVPAgent :701, ConsoleDial/ConsoleInbound's identical
+// `{command, request_id, payload}` handler). `call_attempt_id` is optional
+// here (unlike validation/agent-console.ts's CommandEnvelope, which requires
+// it): it is an RSVPAgent-only concept no scenario here actually reads off
+// the wire, so a console-call command (transfer between two ConsoleDial/
+// ConsoleInbound legs — no call_attempt_id at all) never has to fabricate one.
+export interface SessionCommandEnvelope {
+  command: string;
+  request_id: string;
+  payload: Record<string, unknown>;
+  call_attempt_id?: string;
+}
+
 /**
  * POST a command envelope to the live session's managing URL. A 2xx response means
  * the managing request was delivered to the session; it does not prove the command
@@ -65,7 +77,7 @@ export interface DeliveryResult {
  */
 export async function postCommandToSession(
   sessionUrl: URL,
-  envelope: CommandEnvelope,
+  envelope: SessionCommandEnvelope,
 ): Promise<DeliveryResult> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), POST_TIMEOUT_MS);

@@ -1,0 +1,12 @@
+-- Browser call-center stage 1 (gate A), hardening 1/4: call_attempts client grants.
+--
+-- Live state (pg_catalog, 2026-08-12): FULL grants (arwdDxtm) to anon AND
+-- authenticated, RLS ON, ZERO policies. Nothing is exposed today — but the first
+-- policy anyone adds would expose access_token, recording_url, transcript and the
+-- media-session capability URLs (the power to command a live call) to clients.
+-- Every application reader uses the service-role client (grep-verified), and the
+-- console views run as postgres — client grants carry zero traffic, so this
+-- changes nothing for the app. The old call_attempts_admin_read policy was
+-- dropped by 20260720030121_strip_staff_axis_from_customer_tables; the grants
+-- outlived it. Rollback: re-GRANT (not recommended).
+revoke all on table public.call_attempts from anon, authenticated;

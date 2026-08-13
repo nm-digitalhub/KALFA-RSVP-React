@@ -2,6 +2,7 @@ import 'server-only';
 
 import type {
   AppointmentDraft,
+  AppointmentShowAs,
   AppointmentUpdate,
   AvailabilityWindow,
   ExchangeAppointmentDetail,
@@ -32,6 +33,59 @@ export type ExchangeErrorCode =
 export type ExchangeResult<T> =
   | { ok: true; data: T }
   | { ok: false; error: ExchangeErrorCode };
+
+// Business ranking when several blocking windows overlap "now" — OOF
+// outranks Busy outranks WorkingElsewhere outranks Tentative. Mirrors
+// exchange-availability.ts's presenceRank() exactly (that module's inline
+// copy is left as-is rather than refactored onto this one in this pass —
+// it is a live, already-verified admin feature with no regression test
+// today, so the duplication is accepted deliberately rather than risked;
+// see the calendar-presence-sync report). A future cleanup can point both
+// callers at this single copy.
+function presenceRank(showAs: AppointmentShowAs): number {
+  if (showAs === 'oof') return 3;
+  if (showAs === 'busy') return 2;
+  if (showAs === 'working_elsewhere') return 1;
+  return 0; // tentative, or anything unrecognized
+}
+
+/** Availability categories that actually block time — everything but 'free'. */
+export type CalendarBusyShowAs = Exclude<AppointmentShowAs, 'free'>;
+
+export type ActiveCalendarWindow = {
+  showAs: CalendarBusyShowAs;
+  /** When the picked window ends, as epoch milliseconds. */
+  endMs: number;
+};
+
+/**
+ * Pure (no I/O): picks the busiest blocking window in effect at `nowMs` from
+ * a set of calendar items, or null when nothing blocks "now".
+ *
+ * Exists so "what counts as busy right now" is computed identically by every
+ * caller that reads a mailbox's calendar for presence — currently
+ * exchange-availability.ts's interactive getMyPresence() (inline copy, see
+ * the comment on presenceRank above) and
+ * console-agent-calendar-presence.ts's unattended worker sync (uses this
+ * function directly). Takes the minimal shape getAvailability() already
+ * returns rather than the full ExchangeAppointment, so no caller needs to
+ * import a wider type than it uses.
+ */
+export function pickActiveCalendarWindow(
+  items: readonly { start: Date; end: Date; showAs: AppointmentShowAs }[],
+  nowMs: number,
+): ActiveCalendarWindow | null {
+  const active = items
+    .filter(
+      (item) =>
+        item.showAs !== 'free' &&
+        item.start.getTime() <= nowMs &&
+        item.end.getTime() > nowMs,
+    )
+    .sort((a, b) => presenceRank(b.showAs) - presenceRank(a.showAs))[0];
+  if (!active) return null;
+  return { showAs: active.showAs as CalendarBusyShowAs, endMs: active.end.getTime() };
+}
 
 export interface ExchangeCalendarProvider {
   testConnection(cfg: ExchangeConnectionConfig): Promise<ExchangeResult<MailboxInfo>>;

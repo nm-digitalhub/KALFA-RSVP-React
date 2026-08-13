@@ -22,6 +22,10 @@ import {
   isContactReached,
   isDncListed,
 } from '@/lib/data/outreach-engine';
+import {
+  consoleDtmfHandoffEnabled,
+  findRoutableAgentVoxUsernames,
+} from '@/lib/data/console-calls';
 import { getGuestsForContact, insertInteraction, setContactOpStatus } from '@/lib/data/interactions';
 import { rsvpClosedReason } from '@/lib/data/event-date';
 import {
@@ -38,10 +42,12 @@ import type { OutreachCallRequest } from '@/lib/queue/queues';
 // QUEUES.callRequest handler. Branch B, DARK-SAFE: no live call is EVER placed
 // unless config.liveCallsEnabled is true, independent of whether credentials are
 // configured. Request-FREE (service-role only) so the worker bundle can import it.
-// The scenario payload carries ONLY {to, from, tok, u} — an opaque per-call access
-// token and the app origin; the invitation context is served by the token-gated ctx endpoint
-// instead (never in call history). NEVER logs the token or the full payload —
-// only ids/bytes.
+// The scenario payload carries ONLY {to, from, tok, u, ca, dh} — an opaque
+// per-call access token and the app origin; the invitation context is served
+// by the token-gated ctx endpoint instead (never in call history). ca/dh
+// (Stage 6) are the compact DTMF-'9' handoff smoke-test keys — see
+// buildScriptCustomData's doc comment for the key mapping. NEVER logs the
+// token or the full payload — only ids/bytes.
 
 const CALL_TOKEN_TTL_SEC = 2 * 60 * 60; // matches call_attempts.token_expires_at intent (created_at + 2h)
 const BALANCE_TIMEOUT_MS = 10_000;
@@ -59,25 +65,46 @@ export type CallDispatchResult =
 
 // Single source of truth for the scenario payload (Branch B). Returns the JSON AND
 // its exact UTF-8 byte length so callers log ONLY the byte count — never the token.
-// The payload is deliberately tiny (~110 B, well under VoxEngine.customData()'s
-// 200-byte cap) and carries NO secrets: the scenario builds the ctx/cb URLs from
+// The payload is deliberately tiny (well under VoxEngine.customData()'s HARD
+// 200-byte cap — a payload over that limit is a silent corruption risk for
+// EVERY outbound AI call, so this is measured, not assumed: see
+// outreach-calls.test.ts's byte-cap tests with realistic worst-case values)
+// and carries NO secrets: the scenario builds the ctx/cb URLs from
 // {u}/api/voximplant/{ctx,cb}/{tok} and fetches the invitation context from ctx.
 //   to  — normalized destination E.164
 //   from— verified caller id
 //   tok — opaque per-call access token (call_attempts.access_token)
 //   u   — app origin (scheme+host) for building the ctx/cb URLs
+//   ca  — COMPACT key for console_agent_username (Stage 6 DTMF-'9' handoff
+//         smoke test): the single READY provisioned console agent's
+//         vox_username, or '' when none is routable. RSVPAgent.voxengine.js
+//         reads it into state.consoleAgentUsername. Kept short (not the full
+//         literal name) because the full-key payload measured at 184-195
+//         bytes in realistic worst cases — too little headroom under the
+//         200-byte cap for a field on the live revenue path; document this
+//         mapping here since the scenario's customData-parse block must
+//         match it exactly.
+//   dh  — COMPACT key for the dtmf-handoff-enabled flag
+//         (app_settings.console_dtmf_handoff_enabled): '1' when the owner
+//         knob is on, OMITTED (not present) otherwise — RSVPAgent reads
+//         `customData.dh === '1'` into state.dtmfHandoffEnabled.
 export function buildScriptCustomData(args: {
   to: string;
   from: string;
   tok: string;
   u: string;
+  consoleAgentUsername?: string;
+  dtmfHandoffEnabled?: boolean;
 }): { payload: string; bytes: number } {
-  const payload = JSON.stringify({
+  const body: Record<string, string> = {
     to: args.to,
     from: args.from,
     tok: args.tok,
     u: args.u,
-  });
+    ca: args.consoleAgentUsername ?? '',
+  };
+  if (args.dtmfHandoffEnabled) body.dh = '1';
+  const payload = JSON.stringify(body);
   return { payload, bytes: Buffer.byteLength(payload, 'utf8') };
 }
 
@@ -276,12 +303,21 @@ export async function dispatchOutreachCall(
   //    the opaque access token (Branch B). No signed token, no key in the payload.
   const origin = await getAppOrigin();
 
+  // 8b. Stage 6 DTMF-'9' handoff smoke test: the single READY provisioned
+  //     console agent (if any) + the owner knob. Read fresh per dial (never
+  //     cached) — same freshness discipline as every other gate above.
+  const routableAgents = await findRoutableAgentVoxUsernames();
+  const consoleAgentUsername = routableAgents[0] ?? '';
+  const dtmfHandoffEnabled = await consoleDtmfHandoffEnabled();
+
   // 9. Assemble the payload (single source of truth) — log ONLY the byte count.
   const { payload, bytes } = buildScriptCustomData({
     to: normalizedPhone,
     from: config.callerId,
     tok: accessToken,
     u: origin,
+    consoleAgentUsername,
+    dtmfHandoffEnabled,
   });
   console.log('[outreach-calls] dispatching', { campaignId, contactId, attemptId, payloadBytes: bytes });
 

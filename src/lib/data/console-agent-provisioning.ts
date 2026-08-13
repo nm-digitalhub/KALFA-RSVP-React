@@ -4,7 +4,11 @@ import { randomBytes } from 'node:crypto';
 
 import { createAdminClient } from '@/lib/supabase/admin';
 import { getVoximplantConfig } from '@/lib/data/voximplant-config';
-import { addVoximplantUser, VOX_USER_NAME_PATTERN } from '@/lib/voximplant/mutations';
+import {
+  addVoximplantUser,
+  setVoximplantUserPassword,
+  VOX_USER_NAME_PATTERN,
+} from '@/lib/voximplant/mutations';
 
 // Provision the Voximplant SDK identity a console agent needs in order to be
 // present in a live call at all (listen / take over).
@@ -164,6 +168,73 @@ export async function provisionConsoleAgentVoxUser(
   }
 
   return { ok: true, voxUsername: userName, alreadyProvisioned: false };
+}
+
+export type RotateOutcome =
+  | { ok: true; voxUsername: string }
+  | { ok: false; reason: 'not_provisioned' | 'not_configured' | 'api_failed' | 'store_failed' };
+
+/**
+ * Rotate the platform password of an ALREADY-provisioned console agent and
+ * store the fresh secret. Recovery for the state live login just exposed
+ * (LoginInvalidPasswordError with a correct hash formula): the stored secret
+ * and the platform password have drifted, and since Voximplant never reads a
+ * password back, re-minting the pair is the only honest repair.
+ *
+ * Same ordering discipline as provisioning: platform FIRST, then the store.
+ * If the store fails, the platform now holds a password nobody knows — which
+ * is exactly the state we started from, and a re-run mints again. Idempotent
+ * to repeat; loud on partial failure.
+ */
+export async function rotateConsoleAgentVoxSecret(userId: string): Promise<RotateOutcome> {
+  const admin = createAdminClient();
+
+  const { data: agent } = await admin
+    .from('console_agents')
+    .select('vox_username')
+    .eq('user_id', userId)
+    .maybeSingle();
+  if (!agent?.vox_username) return { ok: false, reason: 'not_provisioned' };
+
+  const cfg = await getVoximplantConfig();
+  const applicationId = await readApplicationId(admin);
+  if (!cfg || !applicationId) return { ok: false, reason: 'not_configured' };
+
+  const password = generateVoxPassword();
+  try {
+    const res = await setVoximplantUserPassword(
+      cfg.auth,
+      applicationId,
+      agent.vox_username,
+      password,
+    );
+    if (res.error) {
+      console.error(`[rotate] SetUserInfo failed (code=${res.error.code})`);
+      return { ok: false, reason: 'api_failed' };
+    }
+  } catch {
+    console.error('[rotate] SetUserInfo threw');
+    return { ok: false, reason: 'api_failed' };
+  }
+
+  const { error: secretErr } = await admin
+    .from('console_agent_secrets')
+    .upsert(
+      {
+        user_id: userId,
+        vox_password: password,
+        rotated_at: new Date().toISOString(),
+      },
+      { onConflict: 'user_id' },
+    );
+  if (secretErr) {
+    console.error(
+      `[rotate] platform password for ${agent.vox_username} was CHANGED but the new secret could not be stored — re-run to mint again`,
+    );
+    return { ok: false, reason: 'store_failed' };
+  }
+
+  return { ok: true, voxUsername: agent.vox_username };
 }
 
 // The application new users are created in. Configuration, not a constant — the

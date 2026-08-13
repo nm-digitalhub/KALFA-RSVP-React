@@ -46,6 +46,7 @@ import {
   getHistoryReports,
   getMediaResources,
   getPhoneNumbers,
+  getScenarios,
   getUsers,
   getRules,
   getTransactionHistory,
@@ -68,6 +69,7 @@ import {
   resolveKeyPath,
   resolveRecordingPlan,
   resolveLogPlan,
+  resolveScenarioPlan,
   summarizeIntoLines,
   validateCommandFlags,
   writeReportAtomic,
@@ -566,6 +568,52 @@ async function cmdAudit(
   }
 }
 
+// READ-ONLY (stage-0 parity gate): fetch a scenario's DEPLOYED text and save it,
+// so it can be diffed against the local voxfiles build (dist/, which is what
+// voxengine-ci actually uploads). Never creates/edits/binds a scenario. The
+// script is written to a file, never printed — it is code, and diffs belong in
+// a diff tool, not a terminal scrollback.
+async function cmdScenario(
+  cfg: VoximplantConfig,
+  flags: Record<string, FlagValue>,
+): Promise<void> {
+  const plan = resolveScenarioPlan(flags);
+  const res = await retried(() =>
+    getScenarios(cfg, plan.scenarioId, { with_script: true }),
+  );
+  const row = (res.result ?? []).find((s) => s.scenario_id === plan.scenarioId);
+  if (!row) {
+    throw new CliError(`no scenario with id ${plan.scenarioId} on this account`);
+  }
+  console.log(`=== scenario #${row.scenario_id} ===`);
+  console.log(`name     : ${row.scenario_name}`);
+  console.log(`modified : ${row.modified ?? '—'}`);
+  const script = row.scenario_script;
+  if (typeof script !== 'string' || script.length === 0) {
+    throw new CliError(
+      'GetScenarios returned no script body (with_script was requested) — cannot prove parity',
+    );
+  }
+  writeReportAtomic(
+    plan.output,
+    script,
+    { force: plan.force, uniqueToken: uniqueToken() },
+    {
+      mkdirp: (dir) => {
+        if (dir) mkdirSync(dir, { recursive: true });
+      },
+      exists: existsSync,
+      writeFile: writeFileSync,
+      rename: renameSync,
+      remove: unlinkSync,
+      dirname,
+      basename,
+      join,
+    },
+  );
+  console.log(`saved ${Buffer.byteLength(script)} bytes → ${plan.output}`);
+}
+
 async function dispatch(
   command: KnownCommand,
   cfg: VoximplantConfig,
@@ -594,6 +642,8 @@ async function dispatch(
       return cmdCallLists(cfg, flags);
     case 'audit':
       return cmdAudit(cfg, flags);
+    case 'scenario':
+      return cmdScenario(cfg, flags);
     case 'media-resources':
       // handled before loadConfig in main() — unreachable here
       return cmdMediaResources();

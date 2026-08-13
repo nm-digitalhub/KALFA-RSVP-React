@@ -56,6 +56,13 @@ export const QUEUES = {
   // 60-day expiry. Singleton so an overlapping run never refreshes the same
   // token twice in flight. See src/lib/data/instagram-token-refresh.ts.
   igTokenRefresh: 'instagram-token-refresh',
+  // Console-agent calendar presence sync (Outlook/Exchange research, 12.8) —
+  // every 10m, per-agent calendar-derived free/busy into
+  // console_agent_calendar_presence (a THIRD, advisory axis — never merged
+  // into agent_status, the business truth). Read-only against Exchange;
+  // writes only the closed presence table. See
+  // src/lib/data/console-agent-calendar-presence.ts.
+  calendarPresenceSync: 'console-agent-calendar-presence-sync',
 } as const;
 
 // outreach-step retry policy: a few backed-off retries, then dead-letter. The

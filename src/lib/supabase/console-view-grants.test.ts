@@ -76,6 +76,11 @@ function collect(re: RegExp, body: string): string[] {
 // LOUDLY here instead of quietly shrinking the set this suite checks — which is
 // how the first version of this guard came to cover only 4 of the 7.
 const EXPECTED_VIEWS = [
+  // Call-center stage 3 (2026-08-12): the agent roster. Created in
+  // 20260812154126; its authenticated write-revoke landed one migration later
+  // (20260812154544) after the live grants audit caught the exact
+  // default-privileges mistake this suite documents above.
+  'console_agents_roster',
   'console_call_analysis',
   'console_campaign_targets',
   'console_campaigns',

@@ -15,6 +15,12 @@ export type VoximplantServerConfig = {
   // shaped for src/lib/voximplant/core.ts's VoximplantConfig.
   auth: VoximplantConfig;
   ruleId: string; // OutCall rule id (live: 1494311)
+  // ConsoleCallMeNow rule id, targeted by StartScenarios from
+  // /api/call-me-now/verify. EMPTY STRING when no rule is bound yet — that
+  // is the normal, fail-closed state, and unlike ruleId/callerId it must NOT
+  // make this whole config resolve to null: the AI-call channel and the
+  // console's other flows do not depend on call-me-now existing.
+  callMeNowRuleId: string;
   callerId: string; // purchased/verified Voximplant number ('from')
   callbackSecret: string | null; // ?k= secret on ctx/cb URLs; null until provisioned
   lowBalanceThreshold: number; // warn below this ($)
@@ -85,6 +91,9 @@ export async function getVoximplantConfig(): Promise<VoximplantServerConfig | nu
     return {
       auth,
       ruleId,
+      // Intentionally NOT part of the null-guard above: a missing
+      // call-me-now rule must never disable the AI-call channel.
+      callMeNowRuleId: str(row, 'voximplant_call_me_now_rule_id'),
       callerId,
       callbackSecret: str(row, 'voximplant_callback_secret') || null,
       lowBalanceThreshold: num(row, 'voximplant_low_balance_threshold', 5.0),

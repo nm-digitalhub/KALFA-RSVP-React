@@ -64,11 +64,19 @@ export async function processCallResult(row: WebhookInboxRow): Promise<void> {
     return;
   }
 
-  if (body.call_status === 'completed') {
-    // A completed call is a reached human REGARDLESS of the RSVP answer. Record
-    // the outcome first (atomic, terminal).
+  if (body.call_status === 'completed' || body.call_status === 'handed_off') {
+    // Stage 6 billing decision (owner-authorized 12.8): a handed-off call is a
+    // reached human exactly like a completed AI call — "reached" in the signed
+    // agreement is channel-neutral ("מענה אנושי בשיחה"). Both statuses share
+    // this ONE branch (single writeReach call site) with a distinct evidence
+    // string per status; terminalStatus()'s precedence in the scenario already
+    // guarantees 'completed' wins whenever the AI conversation actually
+    // started, so 'handed_off' only ever arrives here for a call the AI never
+    // carried. recordCallOutcome writes the REAL status (not hardcoded
+    // 'completed') — CAS-protected via TERMINAL_STATUSES either way.
+    const isHandoff = body.call_status === 'handed_off';
     await recordCallOutcome(attemptId, {
-      status: 'completed',
+      status: body.call_status,
       recording_url: recording.url,
       transcript: (body.transcript ??
         null) as Database['public']['Tables']['call_attempts']['Update']['transcript'],
@@ -90,33 +98,42 @@ export async function processCallResult(row: WebhookInboxRow): Promise<void> {
       contact_id: attempt.contact_id,
       channel: 'call',
       direction: 'in',
-      kind: 'call_completed',
+      kind: isHandoff ? 'call_handoff' : 'call_completed',
       provider_id: attemptId,
       billable: true,
     });
 
     // Billing — idempotent via billed_results UNIQUE(event_id,contact_id): a replay
     // returns 'already_billed' (no double charge, no op re-flip). Run unconditionally.
+    // ONE writeReach site for both statuses (never a second call) — only the
+    // evidence string tells them apart downstream.
     await writeReach({
       eventId: attempt.event_id,
       campaignId: attempt.campaign_id,
       contactId: attempt.contact_id,
       channel: 'call',
       attemptId,
-      evidence: invitationMismatch
-        ? 'voximplant_call_completed_iid_mismatch'
-        : 'voximplant_call_completed',
+      evidence: isHandoff
+        ? 'voximplant_call_handoff'
+        : invitationMismatch
+          ? 'voximplant_call_completed_iid_mismatch'
+          : 'voximplant_call_completed',
       providerRef: attemptId,
     });
 
     // RSVP — submit_rsvp RPC is idempotent (unchanged:true on replay). Written ONLY
-    // when the contact was bound to exactly one guest at dial time (guest_id set)
-    // and the digit is a validated 1/2. A missing/unsupported digit is NEVER an
-    // automatic decline (the schema guarantees 1|2 on completed UNLESS
-    // rsvp_method==='agent' — the ElevenLabs bridge path, whose RSVP was already
-    // written in-call by save_rsvp with real counts; skipping here is what keeps
-    // those counts from being overwritten with the 1/0 digit defaults).
+    // for a genuinely completed AI call: when the contact was bound to exactly one
+    // guest at dial time (guest_id set) and the digit is a validated 1/2. A
+    // missing/unsupported digit is NEVER an automatic decline (the schema
+    // guarantees 1|2 on completed UNLESS rsvp_method==='agent' — the ElevenLabs
+    // bridge path, whose RSVP was already written in-call by save_rsvp with real
+    // counts; skipping here is what keeps those counts from being overwritten
+    // with the 1/0 digit defaults). A handed-off call never reaches this: by
+    // definition the AI conversation did not start (precedence order above), so
+    // there is no digit/save_rsvp answer to apply — the human agent's own
+    // conversation is out of V1's automated-RSVP scope.
     if (
+      !isHandoff &&
       attempt.guest_id &&
       body.rsvp_method !== 'agent' &&
       (body.rsvp_digit === '1' || body.rsvp_digit === '2')

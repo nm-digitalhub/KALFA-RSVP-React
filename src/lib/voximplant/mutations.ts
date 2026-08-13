@@ -123,6 +123,49 @@ export function addApplicationSecret(
   );
 }
 
+// ReorderRules — set the ORDER of an application's routing rules.
+//
+// Order is load-bearing, not cosmetic: the platform evaluates rules TOP TO
+// BOTTOM and executes the FIRST whose pattern matches the destination,
+// disregarding every rule after it (official docs,
+// getting-started.basic-concepts.routing-rules — and the same doc states this
+// applies to SDK-originated calls, matched against `e.destination`). A `.*`
+// rule therefore shadows everything below it, which is exactly the state a
+// freshly-added rule lands in: AddRule appends.
+//
+// This is what voxengine-ci calls internally after an application-level upload
+// (Rules.reorderRules); exposed here so the order can be fixed on its own,
+// without an application-level upload dragging unrelated scenarios along.
+//
+// The signature takes the full ordered id list — the API's own contract
+// ("Configures the rules' order… the rules should belong to the same
+// application"). Verified against references.httpapi.rules.reorderrules:
+// the single parameter is `rule_id`.
+export interface ReorderRulesResponse {
+  result?: number;
+  error?: { code: number; msg: string };
+}
+export function reorderApplicationRules(
+  config: VoximplantConfig,
+  orderedRuleIds: number[],
+  timeoutMs?: number,
+): Promise<ReorderRulesResponse> {
+  if (orderedRuleIds.length === 0) {
+    return Promise.reject(new Error('ReorderRules requires at least one rule id'));
+  }
+  // SEMICOLON-separated, not comma: `rule_id` is an API "intlist", the same
+  // convention GetAuditLog's `filtered_cmd` uses. A comma-joined value is
+  // rejected by the platform with a Java parse error ("For input string: …"),
+  // verified live 2026-08-12 — the error names the whole string, which is what
+  // makes the separator the obvious suspect.
+  return voxRequest<ReorderRulesResponse>(
+    config,
+    'ReorderRules',
+    { rule_id: orderedRuleIds.join(';') },
+    timeoutMs,
+  );
+}
+
 // AddUser — create a Voximplant SDK/SIP user inside an application.
 //
 // MUTATION, and the only one in this codebase that MINTS A CREDENTIAL. It is
@@ -141,6 +184,43 @@ export function addApplicationSecret(
 // The password is passed in and never logged here. Nothing in the response
 // echoes it back.
 export const VOX_USER_NAME_PATTERN = /^[a-z0-9][a-z0-9_-]{2,49}$/;
+
+// SetUserInfo — RESTRICTED here to PASSWORD ROTATION of an existing SDK user.
+// Recovery path for a stored-secret ↔ platform-password mismatch: Voximplant
+// never reads a password back, so the only fix is minting a fresh known pair
+// and storing it in the same operation (the AddUser rationale, applied again).
+// Params verified against the official method tree (references.httpapi.users →
+// SetUserInfo: user_id|user_name, application_id|application_name,
+// user_password, …). The body is built inline from named arguments — no spread
+// of caller input — so no other SetUserInfo field (active, display name, …)
+// can ever be sent through this wrapper.
+export interface SetUserInfoResponse {
+  result?: number;
+  error?: { code: number; msg: string };
+}
+export function setVoximplantUserPassword(
+  config: VoximplantConfig,
+  applicationId: number,
+  userName: string,
+  newPassword: string,
+  timeoutMs?: number,
+): Promise<SetUserInfoResponse> {
+  if (!VOX_USER_NAME_PATTERN.test(userName)) {
+    return Promise.reject(
+      new Error(`שם משתמש Voximplant אינו תקין: ${userName}`),
+    );
+  }
+  return voxRequest<SetUserInfoResponse>(
+    config,
+    'SetUserInfo',
+    {
+      application_id: applicationId,
+      user_name: userName,
+      user_password: newPassword,
+    },
+    timeoutMs,
+  );
+}
 
 export interface AddUserResponse {
   result?: number;
