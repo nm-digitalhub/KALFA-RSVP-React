@@ -305,16 +305,25 @@ describe('evaluateInboundCaps (pure — Gate E.2 caps math)', () => {
     expect(evaluateInboundCaps({ ...base, perCliAnsweredLastHour: 3 })).toEqual({ ok: false, reason: 'per_cli_rate' });
   });
 
-  it('rejects at the daily call-count breaker (>=100)', () => {
-    expect(evaluateInboundCaps({ ...base, answeredToday: 100 })).toEqual({ ok: false, reason: 'daily_breaker' });
+  it('rejects at the daily call-count breaker (>=300)', () => {
+    expect(evaluateInboundCaps({ ...base, answeredToday: 300 })).toEqual({ ok: false, reason: 'daily_breaker' });
   });
 
-  it('rejects at the daily estimated-spend breaker BEFORE the 100-call count cap (whichever first)', () => {
-    // 84 * $0.06/call = $5.04 — crosses the spend estimate while still well
-    // under the 100-call count cap, proving the spend breaker is not dead
-    // code shadowed by the count breaker.
-    expect(evaluateInboundCaps({ ...base, answeredToday: 84 })).toEqual({ ok: false, reason: 'daily_breaker' });
-    expect(evaluateInboundCaps({ ...base, answeredToday: 83 })).toEqual({ ok: true });
+  it('rejects at the daily estimated-spend breaker BEFORE the count cap (whichever first)', () => {
+    // 250 * $0.02/call = $5.00 — crosses the spend estimate while still well
+    // under the 300-call count cap, proving the spend breaker is not dead
+    // code shadowed by the count breaker. That ORDERING is the invariant this
+    // test protects; the numbers were recalibrated 13.8 after the old $0.06
+    // estimate (an OUTBOUND rate, applied to inbound) tripped this breaker at
+    // 84 calls that had actually spent well under a dollar.
+    expect(evaluateInboundCaps({ ...base, answeredToday: 250 })).toEqual({ ok: false, reason: 'daily_breaker' });
+    expect(evaluateInboundCaps({ ...base, answeredToday: 249 })).toEqual({ ok: true });
+  });
+
+  // Regression pin for the incident itself: the observed overnight
+  // dialer flood was 84 answered calls, and must no longer trip anything.
+  it('does NOT trip on the 13.8 dialer-flood volume (84 answered)', () => {
+    expect(evaluateInboundCaps({ ...base, answeredToday: 84 })).toEqual({ ok: true });
   });
 
   it('rejects on balance/live-calls independently of the others', () => {
@@ -361,11 +370,15 @@ describe('evaluateCallMeNowCaps (pure — capability A, third design)', () => {
   });
 
   it('rejects at the daily estimated-spend breaker BEFORE the 100-call count cap (whichever first)', () => {
-    // Same $0.06/call figure as inbound (reused, not reinvented — see the
-    // constants' own comment): 84 * 0.06 = $5.04, crossing the spend
-    // estimate while still well under the 100-call count cap.
-    expect(evaluateCallMeNowCaps({ ...base, answeredToday: 84 })).toEqual({ ok: false, reason: 'daily_breaker' });
-    expect(evaluateCallMeNowCaps({ ...base, answeredToday: 83 })).toEqual({ ok: true });
+    // Its OWN $0.09/call figure, NOT inbound's — this flow places an OUTBOUND
+    // PSTN leg, measured at ~10x an inbound answer in this account's billing.
+    // The two constants were split on 13.8: while they were shared, whichever
+    // flow the number was tuned for made it wrong for the other, and after the
+    // inbound recalibration to $0.02 this cap would silently have allowed ~4x
+    // the spend it promises. 56 * 0.09 = $5.04, crossing the spend estimate
+    // well under the 100-call count cap.
+    expect(evaluateCallMeNowCaps({ ...base, answeredToday: 56 })).toEqual({ ok: false, reason: 'daily_breaker' });
+    expect(evaluateCallMeNowCaps({ ...base, answeredToday: 55 })).toEqual({ ok: true });
   });
 
   it('rejects on balance/live-calls independently of the others', () => {

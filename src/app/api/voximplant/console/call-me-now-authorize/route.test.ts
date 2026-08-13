@@ -4,7 +4,7 @@ vi.mock('@/lib/data/console-calls', () => ({
   CALL_ME_NOW_DAILY_CALL_CAP: 100,
   CALL_ME_NOW_DAILY_SPEND_CAP_USD: 5,
   CALL_ME_NOW_MAX_CONCURRENCY: 2,
-  INBOUND_ESTIMATED_COST_PER_CALL_USD: 0.06,
+  CALL_ME_NOW_ESTIMATED_COST_PER_CALL_USD: 0.09,
   computeRingOrder: vi.fn(() => []),
   consoleCallMeNowEnabled: vi.fn(),
   countAnsweredCallMeNowToday: vi.fn(),

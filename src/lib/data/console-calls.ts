@@ -1250,17 +1250,36 @@ export async function countLiveConsoleCalls(): Promise<number> {
 // Gate E / ops-knobs decision 3 — the operative caps, restated as constants.
 export const INBOUND_MAX_CONCURRENCY = 2;
 export const INBOUND_MAX_PER_CLI_HOURLY = 3;
-export const INBOUND_DAILY_CALL_CAP = 100;
+// RECALIBRATED 13.8 after the estimate below fired a false emergency.
+//
+// The original design intent was right and is preserved: in "N calls OR $X,
+// whichever first", the $ cap must bind slightly BEFORE the count cap, or it
+// is dead code. What was wrong was the input. The old $0.06/call was taken
+// from the top of a measured range ("fractions of a cent to $0.08") that
+// included PSTN_OUT_INCOUNTRY — the OUTBOUND rate. Inbound is far cheaper,
+// so a $5 cap tripped at 84 answered calls that had actually spent well
+// under a dollar, disabled the service, and flooded Slack.
+//
+// MEASURED (13.8), not estimated from a range:
+//   • account transaction history: an inbound call bills PSTN_IN_GEOGRAPHIC
+//     $0.005–0.01 + AUDIORECORD $0.0015 ⇒ ~$0.0065–0.0115 before speech.
+//   • call history, 24h window covering the whole overnight flood:
+//     call_cost sum $0.6340 across 499 rows. Attributing ALL of it to the 84
+//     answered inbound calls — a deliberate overestimate, since that window
+//     also contains outbound and call-me-now activity — gives $0.0075/call.
+// 0.02 sits ~2.7x above that measured aggregate. The headroom is deliberate
+// and specific, not padding: as of 13.8 an unanswered inbound call now also
+// speaks a hold line once per ring attempt (ConsoleInbound's ringNext), on
+// top of the disclosure and the no-agent line, and TTS_TEXT_GOOGLE is billed
+// per character. Revisit once a post-hold-line day has actually been billed.
+export const INBOUND_DAILY_CALL_CAP = 300;
 export const INBOUND_DAILY_SPEND_CAP_USD = 5;
-// Not a billing figure — a per-answered-call estimate for the daily
-// $-breaker only, from this account's measured per-call resource_charge
-// range (fractions of a cent to $0.08, ops-knobs evidence). Deliberately
-// NOT set to a value where 100 calls × estimate lands exactly on $5 (that
-// would make the two caps in "100 calls OR $5, whichever first" always trip
-// together and make the $ cap dead code) — at $0.06/call the spend breaker
-// fires at 84 answered calls, genuinely ahead of the count cap, so a
-// higher-than-typical per-call cost day is still caught before 100 calls.
-export const INBOUND_ESTIMATED_COST_PER_CALL_USD = 0.06;
+// $5 ÷ $0.02 ⇒ the spend breaker fires at 250 answered calls, ahead of the
+// 300-call cap: the original ordering, with numbers that reflect reality.
+// For scale: the 13.8 dialer flood was 84 calls in 7 hours (~250/day if it
+// ran around the clock), so a repeat is bounded at the owner's stated $5/day
+// tolerance without false-alarming on the baseline the way $0.06 did.
+export const INBOUND_ESTIMATED_COST_PER_CALL_USD = 0.02;
 
 export async function countConcurrentAnsweredInbound(): Promise<number> {
   const admin = createAdminClient();
@@ -1612,8 +1631,21 @@ export const CALL_ME_NOW_MAX_CONCURRENCY = 2; // same N=1-2 staff-pool rationale
 // script from ringing the same real person's phone repeatedly even if every
 // other gate is somehow satisfied.
 export const CALL_ME_NOW_MAX_PER_PHONE_HOURLY = 1;
-export const CALL_ME_NOW_DAILY_CALL_CAP = 100; // mirrors INBOUND_DAILY_CALL_CAP
-export const CALL_ME_NOW_DAILY_SPEND_CAP_USD = 5; // mirrors INBOUND_DAILY_SPEND_CAP_USD
+export const CALL_ME_NOW_DAILY_CALL_CAP = 100;
+export const CALL_ME_NOW_DAILY_SPEND_CAP_USD = 5;
+// Its OWN cost estimate — it used to borrow INBOUND_ESTIMATED_COST_PER_CALL_USD,
+// which was wrong in a way that only became visible when that constant was
+// recalibrated for inbound (13.8). The two are not comparable: an inbound call
+// bills PSTN_IN_GEOGRAPHIC (~$0.005–0.01), a call-me-now call bills
+// PSTN_OUT_INCOUNTRY — measured at $0.08 in this account's own transaction
+// history — plus AUDIORECORD ($0.0015) and per-character TTS for the
+// disclosure, hold and no-agent lines (a full script measured $0.0081).
+// Sharing one number meant the direction of the error flipped with whichever
+// flow it was tuned for: keeping $0.06 would have been ~8x too HIGH for
+// inbound, and dropping to $0.02 would have been ~4x too LOW here, quietly
+// letting outbound spend run past the $5 the cap promises. $0.09 is the
+// measured floor plus a small margin for speech.
+export const CALL_ME_NOW_ESTIMATED_COST_PER_CALL_USD = 0.09;
 // No separate cost constant: this call's telephony shape (one PSTN leg to
 // the visitor + internal callUser legs ringing agents) is the SAME shape as
 // PSTN inbound, not the widget's all-WebRTC shape — INBOUND_ESTIMATED_COST_PER_CALL_USD
@@ -1651,7 +1683,7 @@ export function evaluateCallMeNowCaps(
   if (input.perPhoneCallsLastHour >= CALL_ME_NOW_MAX_PER_PHONE_HOURLY) {
     return { ok: false, reason: 'per_phone_rate' };
   }
-  const estSpendUsd = input.answeredToday * INBOUND_ESTIMATED_COST_PER_CALL_USD;
+  const estSpendUsd = input.answeredToday * CALL_ME_NOW_ESTIMATED_COST_PER_CALL_USD;
   if (input.answeredToday >= CALL_ME_NOW_DAILY_CALL_CAP || estSpendUsd >= CALL_ME_NOW_DAILY_SPEND_CAP_USD) {
     return { ok: false, reason: 'daily_breaker' };
   }

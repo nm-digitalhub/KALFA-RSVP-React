@@ -6,7 +6,7 @@ import {
   CALL_ME_NOW_DAILY_CALL_CAP,
   CALL_ME_NOW_DAILY_SPEND_CAP_USD,
   CALL_ME_NOW_MAX_CONCURRENCY,
-  INBOUND_ESTIMATED_COST_PER_CALL_USD,
+  CALL_ME_NOW_ESTIMATED_COST_PER_CALL_USD,
   computeRingOrder,
   consoleCallMeNowEnabled,
   countAnsweredCallMeNowToday,
@@ -157,7 +157,10 @@ export async function POST(request: Request) {
 
   if (!flagEnabled || !liveCallsEnabled || !balanceOk) return json(REFUSED, 200);
   if (globalConcurrentCallMeNow >= CALL_ME_NOW_MAX_CONCURRENCY) return json(REFUSED, 200);
-  const estSpendUsd = answeredToday * INBOUND_ESTIMATED_COST_PER_CALL_USD;
+  // CALL_ME_NOW_*, not INBOUND_* — this places an OUTBOUND PSTN leg, which
+  // this account bills at ~10x an inbound answer. See the constant's own
+  // header in console-calls.ts (recalibrated 13.8).
+  const estSpendUsd = answeredToday * CALL_ME_NOW_ESTIMATED_COST_PER_CALL_USD;
   if (answeredToday >= CALL_ME_NOW_DAILY_CALL_CAP || estSpendUsd >= CALL_ME_NOW_DAILY_SPEND_CAP_USD) {
     return json(REFUSED, 200);
   }
