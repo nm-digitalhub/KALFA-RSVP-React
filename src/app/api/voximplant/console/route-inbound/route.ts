@@ -133,15 +133,29 @@ export async function POST(request: Request) {
   });
 
   if (!decision.ok) {
+    // ONE alert per hour, not one per refused call. Measured the hard way
+    // (13.8): the breaker tripped at 84 answered calls during an overnight
+    // automated-dialer flood, and from that moment EVERY subsequent call —
+    // arriving several per minute — fired its own "breaker tripped" alert.
+    // The owner's Slack was unusable. An alert that repeats on every
+    // occurrence of a condition that is, by design, now permanent for the
+    // rest of the day is not monitoring; it is noise that buries the next
+    // real alert. Reuses the existing rateLimit helper (already imported for
+    // the flood guard above) rather than inventing a second mechanism —
+    // limit:1 per hour, so the trip is still announced promptly, still
+    // re-announced hourly while it persists, and the breaker itself is
+    // completely unaffected (this gates only the notification).
     if (decision.reason === 'daily_breaker') {
-      void sendSlackAlert({
-        level: 'error',
-        category: 'send_health',
-        source: 'console-route-inbound',
-        title: 'עצר-חירום יומי לשיחות נכנסות הופעל',
-        detail: `answered_today=${answeredToday}`,
-        fields: { answered_today: answeredToday },
-      });
+      if (rateLimit('console-inbound-breaker-alert', { limit: 1, windowMs: 3_600_000 }).allowed) {
+        void sendSlackAlert({
+          level: 'error',
+          category: 'send_health',
+          source: 'console-route-inbound',
+          title: 'עצר-חירום יומי לשיחות נכנסות הופעל',
+          detail: `answered_today=${answeredToday} · שיחות נוספות נדחות ללא עלות · התראה זו מוגבלת לאחת לשעה`,
+          fields: { answered_today: answeredToday },
+        });
+      }
     }
     return json(REJECT, 200);
   }
