@@ -1841,6 +1841,61 @@ export async function findRoutableAgents(nowMs: number = Date.now()): Promise<Ro
     .map((a) => ({ agentId: a.user_id, voxUsername: a.vox_username }));
 }
 
+/**
+ * Provisioned console agents who DECLARED they are on shift — deliberately
+ * WITHOUT the heartbeat gate findRoutableAgents applies.
+ *
+ * This exists to break a closed loop that only became visible once native
+ * push was researched (14.8). Voximplant sends an incoming-call push to a
+ * device ONLY when a scenario calls `callUser` on that user. `callUser` is
+ * only reached for usernames the server put in a ring order. Ring orders
+ * only contain heartbeat-fresh agents. So a sleeping app could never be
+ * woken by the platform: no heartbeat ⇒ not in the ring ⇒ no callUser ⇒ no
+ * push ⇒ still asleep.
+ *
+ * For a BROWSER agent that loop was already broken from outside, by
+ * notifyOffDutyShiftAgentsOfInboundCall's VAPID web push. That push cannot
+ * reach a native app (push_subscriptions is Browser-Push-API shaped —
+ * endpoint + p256dh/auth keys — and there is no FCM sender in this codebase),
+ * so the native case needs the loop broken from INSIDE: put the on-shift
+ * agent in the retry ring, let `callUser` fire, and let Voximplant's own
+ * push infrastructure do the waking.
+ *
+ * Same shift rule as the web-push audience (isShiftActiveAndFresh — active
+ * AND touched within CONSOLE_SHIFT_FRESHNESS_MS), so a forgotten toggle from
+ * two days ago does not resurrect anyone. Callers are expected to use this
+ * ONLY for the retry wave, never the primary ring: ringing a sleeping agent
+ * costs a real attempt, and a caller should not pay that before every
+ * already-connected agent has been tried.
+ */
+export async function findOnShiftAgentVoxUsernames(nowMs: number = Date.now()): Promise<string[]> {
+  const admin = createAdminClient();
+  const { data: agents, error: agentsErr } = await admin
+    .from('console_agents')
+    .select('user_id, vox_username')
+    .not('vox_username', 'is', null);
+  if (agentsErr) throw new Error('find_on_shift_agents_failed');
+  if (!agents || agents.length === 0) return [];
+
+  const { data: shiftRows, error: shiftErr } = await admin
+    .from('console_agent_shift')
+    .select('agent_id, active, updated_at')
+    .in(
+      'agent_id',
+      agents.map((a) => a.user_id),
+    );
+  if (shiftErr) throw new Error('find_on_shift_agents_failed');
+
+  const onShiftIds = new Set(
+    (shiftRows ?? []).filter((r) => isShiftActiveAndFresh(r, nowMs)).map((r) => r.agent_id),
+  );
+  return agents
+    .filter((a): a is { user_id: string; vox_username: string } =>
+      onShiftIds.has(a.user_id) && !!a.vox_username,
+    )
+    .map((a) => a.vox_username);
+}
+
 export async function findRoutableAgentVoxUsernames(nowMs: number = Date.now()): Promise<string[]> {
   return (await findRoutableAgents(nowMs)).map((a) => a.voxUsername);
 }

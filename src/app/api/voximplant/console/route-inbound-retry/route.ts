@@ -4,6 +4,7 @@ import { getClientIp, rateLimit } from '@/lib/security/rate-limit';
 import { safeTokenEqual, sha256Hex } from '@/lib/security/token-compare';
 import {
   consoleWakeEnabled,
+  findOnShiftAgentVoxUsernames,
   findRoutableAgentVoxUsernames,
   recordConsoleWakeRetryAudit,
 } from '@/lib/data/console-calls';
@@ -92,9 +93,43 @@ export async function POST(request: Request) {
 
   let ringOrder: string[];
   try {
+    // TWO audiences, in this order — and the order is the whole design.
+    //
+    // 1. Heartbeat-fresh agents (the original behaviour): someone who
+    //    connected AFTER the primary ring was computed. They are awake, so
+    //    they can answer immediately — always try them first.
+    // 2. On-shift agents, WITHOUT the heartbeat gate (added 14.8). These are
+    //    the sleepers. Ringing one is what makes Voximplant send an
+    //    incoming-call push to their device: the platform pushes on
+    //    `callUser`, and `callUser` only happens for names in a ring order.
+    //    Until this route emitted them, a sleeping native app could never be
+    //    woken — no heartbeat ⇒ not in any ring ⇒ no callUser ⇒ no push. See
+    //    findOnShiftAgentVoxUsernames' header for the full loop.
+    //
+    // Confined to the RETRY wave on purpose: a sleeper costs a real ring
+    // attempt, and no caller should pay a cold-start wait before every
+    // already-connected agent has been tried. Today, before the Firebase
+    // credential is uploaded to the Voximplant control panel, ringing a
+    // sleeper simply fails fast with SIP 480 "User offline" (observed on this
+    // account 13.8) and the scenario's Failed handler advances immediately —
+    // so this is inert-but-harmless until push is configured, and becomes the
+    // wake mechanism the moment it is.
     const alreadyTried = new Set(body.already_tried);
-    const routable = await findRoutableAgentVoxUsernames();
-    ringOrder = routable.filter((u) => !alreadyTried.has(u));
+    const [routable, onShift] = await Promise.all([
+      findRoutableAgentVoxUsernames(),
+      findOnShiftAgentVoxUsernames(),
+    ]);
+    // Dedupe across both audiences AND against already_tried in one pass: an
+    // agent can legitimately be in both lists (on shift AND freshly
+    // connected), and ringing the same username twice in one wave would waste
+    // a ring window on someone who just declined or timed out.
+    const seen = new Set(alreadyTried);
+    ringOrder = [];
+    for (const username of [...routable, ...onShift]) {
+      if (seen.has(username)) continue;
+      seen.add(username);
+      ringOrder.push(username);
+    }
   } catch {
     return json(EMPTY, 200); // fail toward "nobody new", never a hard error the scenario must handle
   }
