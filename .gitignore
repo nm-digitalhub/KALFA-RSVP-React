@@ -115,3 +115,10 @@ __pycache__/
 
 # device telemetry: diagnostic log written by POST /api/agents/telemetry (never committed)
 .telemetry/
+
+# Voximplant session logs pulled by `npm run voximplant -- log --session <id>`.
+# They land at the repo root and they carry guest PII — the called number in
+# full, and on an RSVP call the guest's spoken answers in the scenario's own
+# log lines. Downloading one is a normal diagnostic step; committing one
+# publishes a third party's phone number and what they said on the phone.
+/session-*.log
