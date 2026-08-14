@@ -64,6 +64,14 @@ export type ConsoleCallStatus = (typeof CONSOLE_CALL_STATUSES)[number];
 // Exported for the stage-7/8 consumers (transfer-target validation, panel UI).
 export const LIVE_STATUSES: readonly ConsoleCallStatus[] = ['initiated', 'ringing', 'connected'];
 
+// How long a 'connected' console_calls row may still mean "this agent is on a
+// call". Mirrors SAFETY_NET_MS in ConsoleInbound.voxengine.js and
+// ConsoleDial.voxengine.js, which hard-terminate a session at 60 minutes — past
+// that the scenario has torn the call down, so a row still marked connected is
+// leaked bookkeeping, not a live call. See findRoutableAgents for why the bound
+// matters more than the exclusion it bounds.
+export const AGENT_BUSY_MAX_MS = 60 * 60 * 1000;
+
 // Call kinds that carry a real customer leg — the only ones any live-call
 // topology change (blind transfer, consult, conference) may act on. 'internal'
 // (agent<->agent, no customer) and 'ai_handoff' (RSVPAgent's own command
@@ -1836,8 +1844,53 @@ export async function findRoutableAgents(nowMs: number = Date.now()): Promise<Ro
       .filter((s) => Date.parse(s.updated_at) > freshCutoffMs)
       .map((s) => s.agent_id),
   );
+
+  // An agent already on a call is not routable, and nothing else establishes
+  // that. `agent_status` has an 'in_call' value that NOTHING ever writes: the
+  // status route rejects it from clients as "system-managed" (softphone-panel
+  // .tsx) and no server path sets it — and it could not work if one did, because
+  // the heartbeat overwrites the row with 'ready' every 30-60s. So busy is
+  // DERIVED here from the calls table, which the server owns outright, instead
+  // of stored in a field the heartbeat would clobber.
+  //
+  // Only 'connected' counts, not the rest of LIVE_STATUSES: agent_id is written
+  // in exactly one place — the event route's 'connected' branch — so a row with
+  // both is an agent genuinely on a call, while 'ringing' rows have no agent yet
+  // and excluding them would remove agents from the very ring being computed.
+  //
+  // Time-bounded, and that bound is load-bearing rather than defensive. There is
+  // no sweep closing stuck console_calls rows (checked: none in worker/, and the
+  // module already notes a row "stays stuck non-terminal"), so an unbounded
+  // exclusion would drop an agent from routing PERMANENTLY over one leaked row —
+  // with a single provisioned agent, that is the whole call centre, silently.
+  // One hour is not a guess: both ConsoleInbound and ConsoleDial hard-terminate
+  // a session at SAFETY_NET_MS = 60 minutes, so a 'connected' row older than
+  // that cannot still be a live call by construction. The failure mode degrades
+  // to the old behaviour (a wasted ring window) instead of an invisible outage.
+  const busyIds = new Set<string>();
+  const candidateIds = agents.map((a) => a.user_id).filter((id) => readyIds.has(id));
+  if (candidateIds.length > 0) {
+    const { data: liveCalls, error: liveErr } = await admin
+      .from('console_calls')
+      .select('agent_id')
+      .eq('status', 'connected')
+      .in('agent_id', candidateIds)
+      .gt('created_at', new Date(nowMs - AGENT_BUSY_MAX_MS).toISOString());
+    // Fail OPEN on a query error: not knowing who is busy must never empty the
+    // ring order. A ring to a busy agent is rejected by their SDK and costs one
+    // window; an empty ring order tells a real caller nobody is available.
+    if (!liveErr) {
+      for (const c of liveCalls ?? []) {
+        if (c.agent_id) busyIds.add(c.agent_id);
+      }
+    }
+  }
+
   return agents
-    .filter((a): a is { user_id: string; vox_username: string } => readyIds.has(a.user_id) && !!a.vox_username)
+    .filter(
+      (a): a is { user_id: string; vox_username: string } =>
+        readyIds.has(a.user_id) && !busyIds.has(a.user_id) && !!a.vox_username,
+    )
     .map((a) => ({ agentId: a.user_id, voxUsername: a.vox_username }));
 }
 

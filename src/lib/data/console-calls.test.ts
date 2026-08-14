@@ -28,6 +28,7 @@ import {
   mapEndedReasonToStatus,
   mintDialToken,
   notifyOffDutyShiftAgentsOfInboundCall,
+  findRoutableAgents,
   notifyAgentsInboundCallResolved,
   notifyRoutableAgentsOfInboundCall,
   offerCallbackForCallMeNow,
@@ -1308,5 +1309,77 @@ describe('notifyAgentsInboundCallResolved (stale inbound-call notification, 14.8
       notifyAgentsInboundCallResolved({ consoleCallId: 'call-9', reason: 'no_agent' }),
     ).resolves.toBeUndefined();
     expect(sendPushToUser).not.toHaveBeenCalled();
+  });
+});
+
+// agent_status has an 'in_call' value nothing ever writes, so "busy" is derived
+// from the calls table instead. The TIME BOUND is the part that matters: there
+// is no sweep closing stuck console_calls rows, so an unbounded exclusion would
+// drop an agent from routing permanently over one leaked row.
+describe('findRoutableAgents — busy exclusion (14.8)', () => {
+  const AGENT = { user_id: 'agent-1', vox_username: 'agent_agent-1' };
+  const freshStatus = [{ agent_id: 'agent-1', status: 'ready', updated_at: new Date().toISOString() }];
+
+  it('excludes an agent who is on a live connected call', async () => {
+    wireAdmin({
+      console_agents: [{ data: [AGENT], error: null }],
+      agent_status: [{ data: freshStatus, error: null }],
+      console_calls: [{ data: [{ agent_id: 'agent-1' }], error: null }],
+    });
+
+    expect(await findRoutableAgents()).toEqual([]);
+  });
+
+  it('routes normally when the agent has no live call', async () => {
+    wireAdmin({
+      console_agents: [{ data: [AGENT], error: null }],
+      agent_status: [{ data: freshStatus, error: null }],
+      console_calls: [{ data: [], error: null }],
+    });
+
+    expect(await findRoutableAgents()).toEqual([
+      { agentId: 'agent-1', voxUsername: 'agent_agent-1' },
+    ]);
+  });
+
+  it('fails OPEN when the live-call lookup errors', async () => {
+    // Not knowing who is busy must never empty the ring order. A ring to a busy
+    // agent costs one window and their SDK rejects it; an empty ring order tells
+    // a real caller nobody is available at all.
+    wireAdmin({
+      console_agents: [{ data: [AGENT], error: null }],
+      agent_status: [{ data: freshStatus, error: null }],
+      console_calls: [{ data: null, error: { message: 'boom' } }],
+    });
+
+    expect(await findRoutableAgents()).toEqual([
+      { agentId: 'agent-1', voxUsername: 'agent_agent-1' },
+    ]);
+  });
+
+  it('still gates on the heartbeat, so a stale ready agent is out regardless of calls', async () => {
+    wireAdmin({
+      console_agents: [{ data: [AGENT], error: null }],
+      agent_status: [{
+        data: [{ agent_id: 'agent-1', status: 'ready', updated_at: new Date(Date.now() - 10 * 60_000).toISOString() }],
+        error: null,
+      }],
+      console_calls: [{ data: [], error: null }],
+    });
+
+    expect(await findRoutableAgents()).toEqual([]);
+  });
+
+  it('does not query live calls at all when nobody passed the heartbeat gate', async () => {
+    // Guards the candidateIds.length check: an empty `.in()` list is both a
+    // wasted round trip and, in PostgREST, a filter that matches nothing in a
+    // way that is easy to misread later.
+    const client = wireAdmin({
+      console_agents: [{ data: [AGENT], error: null }],
+      agent_status: [{ data: [], error: null }],
+    });
+
+    expect(await findRoutableAgents()).toEqual([]);
+    expect(client.from).not.toHaveBeenCalledWith('console_calls');
   });
 });
