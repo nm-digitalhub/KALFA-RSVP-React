@@ -276,15 +276,26 @@ const TELEMETRY_FIELD_KEY_RE = /^[a-z][a-z0-9_]*$/;
 const TELEMETRY_TIMESTAMP_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
 const TELEMETRY_SESSION_ID_RE = /^[pc][0-9a-f]{1,12}$/;
 
-const PHONE_SHAPED_RE = /^[+()\-. \d]{7,}$/;
-const PHONE_PUNCTUATION_RE = /[+()\-. ]/;
+// `_` is in the class on purpose. The app flattens whitespace to `_` before
+// sending, so a number that reached its scrub as "(050) 123 4567" would arrive
+// here as "(050)_123_4567". The app redacts before flattening so that should
+// never happen — but "should never happen" is what this second check exists for.
+const PHONE_SHAPED_RE = /^[+()\-. _\d]{7,}$/;
+const PHONE_PUNCTUATION_RE = /[+()\-. _]/;
 const OPAQUE_TOKEN_RE = /^[A-Za-z0-9_:-]{40,}$/;
 
 /**
  * Whether a telemetry field value looks like something that must never be
- * logged. Mirrors `scrubTelemetryValue` in the Android app one-for-one, so a
- * value the app would have redacted is a value this rejects — a mismatch would
- * mean the client is not the client we think it is.
+ * logged. Deliberately at least as broad as `scrubTelemetryValue` in the Android
+ * app, so anything the app would have redacted is something this rejects — a
+ * value arriving unredacted means the client is not the client we think it is.
+ *
+ * Strictly BROADER in one place, on purpose: the phone-shape class here includes
+ * `_`, because the app flattens whitespace to `_` before sending and a scrub
+ * regression could deliver "(050)_123_4567". The app currently redacts before
+ * flattening, so that shape should never arrive — this is the check for when
+ * "should never" turns out to be wrong, which on this code path it already has
+ * once.
  *
  * Exported for its test. Conservative by design: a false positive costs one
  * rejected diagnostic line, a false negative costs a guest's phone number.
