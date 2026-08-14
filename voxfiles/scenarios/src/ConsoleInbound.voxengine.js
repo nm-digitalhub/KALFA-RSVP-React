@@ -51,6 +51,22 @@
 // ConsoleDial.voxengine.js's identical require: RSVPAgent.voxengine.js:81
 // already requires it unconditionally for its own supervisor mixer.
 require(Modules.Conference);
+// PushService — makes the platform send an incoming-call push to a registered
+// device whenever this scenario calls VoxEngine.callUser. Live docs
+// (guides.sdk.android-push, fetched 14.8): "Call push notifications are sent
+// automatically. Call the callUser method in the VoxEngine scenario and a push
+// notification is automatically sent to the app." No call site changes.
+//
+// Load-bearing here specifically: route-inbound-retry's second audience now
+// includes agents who are on shift but NOT heartbeat-fresh (beta 8af24ab) —
+// i.e. sleeping apps. Ringing them is the ONLY way a push gets sent, and this
+// require is the only thing that makes that ring produce one.
+//
+// Inert until a Firebase service-account JSON is uploaded to the Voximplant
+// control panel (Applications -> kalfa-rsvp -> Push Certificates -> GOOGLE).
+// Until then callUser to a sleeping agent simply fails fast with SIP 480, as
+// it does today.
+require(Modules.PushService);
 VoxEngine.addEventListener(AppEvents.Started, function (startedEvent) {
     // ---- Constants ---------------------------------------------------------
     // Same reasoning as ConsoleDial.voxengine.js: a CallAlerting-triggered

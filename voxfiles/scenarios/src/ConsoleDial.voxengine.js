@@ -60,6 +60,14 @@
 // mirrored here rather than lazily, so the namespace exists before the first
 // conference_add command can possibly arrive.
 require(Modules.Conference);
+// PushService — same reasoning and same live-doc citation as
+// ConsoleInbound.voxengine.js's identical require (14.8). This file rings
+// agents from SEVEN call sites (the internal agent_* branch, blind transfer,
+// consult, and conference targets), and every one of them can legitimately
+// target an agent whose app is asleep — a colleague dialling them directly, or
+// a transfer aimed at someone who is on shift but not currently connected.
+// Without this the platform sends no push and those attempts just fail 480.
+require(Modules.PushService);
 VoxEngine.addEventListener(AppEvents.Started, function (startedEvent) {
     // ---- Constants ---------------------------------------------------------
     // The production app origin this scenario reports to. A CallAlerting-

@@ -98,7 +98,11 @@
 // ring order plus started/ringing/connected/ended" baseline. No retry loop,
 // no request per ring attempt.
 //
-// No require(Modules.*) — unlike ConsoleDial/ConsoleInbound, this file never
+// ONE require(Modules.*), added 14.8 — see the PushService block immediately
+// below the header. Everything in the paragraph that follows still holds for
+// Conference and ASR: this file does not use them and does not declare them.
+//
+// No OTHER require(Modules.*) — unlike ConsoleDial/ConsoleInbound, this file never
 // calls VoxEngine.createConference/destroyConference (transfer/consult/
 // conference are NOT implemented for this call kind: console-calls.ts's
 // LIVE_CUSTOMER_CALL_KINDS deliberately excludes 'call_me_now', same as
@@ -128,6 +132,17 @@
 // its shape"); Net.httpRequestAsync(url,options) (~8496);
 // VoiceList.Google.he_IL_Wavenet_A (same voice as the other two console
 // scenarios).
+// PushService — same reasoning and same live-doc citation as
+// ConsoleInbound.voxengine.js's identical require (14.8). Declared here for
+// completeness and future-proofing, NOT because it changes anything today:
+// this file's ring order comes from call-me-now-authorize, which selects on
+// findRoutableAgentVoxUsernames (heartbeat-fresh only), so it never targets a
+// sleeping agent as things stand. If that route ever gains a shift-based
+// audience the way route-inbound-retry did, push works here with no further
+// change — and a missing require would have been a silent failure, which is
+// the exact bug class that already bit this project twice.
+require(Modules.PushService);
+
 VoxEngine.addEventListener(AppEvents.Started, function (startedEvent) {
     // ---- Constants ---------------------------------------------------------
     var KALFA_APP_ORIGIN = 'https://beta.kalfa.me';
