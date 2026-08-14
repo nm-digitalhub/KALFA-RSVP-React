@@ -1294,11 +1294,26 @@ export const INBOUND_DAILY_CALL_CAP = 300;
 // flood is unexplained and under investigation. Put this back to 5 once the
 // flood's cause is known, or sooner if real billing contradicts $0.0075.
 export const INBOUND_DAILY_SPEND_CAP_USD = 15;
-// $5 ÷ $0.02 ⇒ the spend breaker fires at 250 answered calls, ahead of the
-// 300-call cap: the original ordering, with numbers that reflect reality.
-// For scale: the 13.8 dialer flood was 84 calls in 7 hours (~250/day if it
-// ran around the clock), so a repeat is bounded at the owner's stated $5/day
-// tolerance without false-alarming on the baseline the way $0.06 did.
+// Read this together with the two constants above, because the ordering they
+// describe REVERSED on 15.8 and the consequence is easy to miss.
+//
+// While the spend cap was $5: $5 ÷ $0.02 ⇒ the spend breaker fired at 250
+// answered calls, AHEAD of the 300-call cap. The spend cap was the binding one.
+//
+// At $15 it no longer is. 300 x $0.02 = $6, well under $15, so the breaker now
+// trips at INBOUND_DAILY_CALL_CAP — a flat 300 answered calls/day.
+//
+// That number has to be read against the flood, not in isolation: the measured
+// inbound flood runs ~25 calls/hour, i.e. ~250/day sustained. The binding limit
+// therefore sits ABOVE the thing it exists to bound, and a steady flood at the
+// observed rate will never trip it. The breaker is protecting against a SURGE
+// past 300, not against the flood we actually have.
+//
+// This is not an argument for lowering it — it was raised because it was
+// refusing the owner's own test calls, and that reason still stands. It is an
+// argument that the breaker is not, and was never going to be, the answer to
+// the flood. Blocking the sources is. Keep both facts visible so nobody reads
+// "the breaker is armed" as "the flood is handled".
 export const INBOUND_ESTIMATED_COST_PER_CALL_USD = 0.02;
 
 export async function countConcurrentAnsweredInbound(): Promise<number> {
