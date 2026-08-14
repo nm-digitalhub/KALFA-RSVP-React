@@ -3,11 +3,11 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 vi.mock('server-only', () => ({}));
 vi.mock('@/lib/supabase/admin', () => ({ createAdminClient: vi.fn() }));
 vi.mock('@/lib/data/outreach-engine', () => ({ isDncListed: vi.fn() }));
-vi.mock('@/lib/data/push-subscriptions', () => ({ sendPushToUser: vi.fn() }));
+vi.mock('@/lib/data/push-delivery', () => ({ sendPushToUser: vi.fn() }));
 
 import { createAdminClient } from '@/lib/supabase/admin';
 import { isDncListed } from '@/lib/data/outreach-engine';
-import { sendPushToUser } from '@/lib/data/push-subscriptions';
+import { sendPushToUser } from '@/lib/data/push-delivery';
 import {
   computeQueueRingOrder,
   computeRingOrder,

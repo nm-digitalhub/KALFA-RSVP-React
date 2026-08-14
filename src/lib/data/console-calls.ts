@@ -9,7 +9,7 @@ import { isPastEventDay } from '@/lib/data/event-date';
 import { buildJewishCalendar } from '@/lib/outreach/jewish-calendar';
 import { safeTokenEqual, sha256Hex } from '@/lib/security/token-compare';
 import { AGENT_STATUS_FRESHNESS_MS } from '@/lib/console/presence';
-import { sendPushToUser } from '@/lib/data/push-subscriptions';
+import { sendPushToUser } from '@/lib/data/push-delivery';
 import type { Database } from '@/lib/supabase/types';
 
 // Service-role DAL for the browser call-center (plan stages 4/5 — internal +

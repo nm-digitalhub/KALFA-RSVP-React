@@ -340,7 +340,7 @@ import {
   type RunReportResponse,
 } from '@/lib/analytics/ga4-types';
 import { getBaseOveragePricingEnabled } from '@/lib/data/payments';
-import { sendPushToUser } from '@/lib/data/push-subscriptions';
+import { sendPushToUser } from '@/lib/data/push-delivery';
 import { createAdminClient } from '@/lib/supabase/admin';
 import type { Database, Json } from '@/lib/supabase/types';
 
