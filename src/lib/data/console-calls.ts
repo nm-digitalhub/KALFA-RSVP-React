@@ -1282,7 +1282,18 @@ export const INBOUND_MAX_PER_CLI_HOURLY = 3;
 // top of the disclosure and the no-agent line, and TTS_TEXT_GOOGLE is billed
 // per character. Revisit once a post-hold-line day has actually been billed.
 export const INBOUND_DAILY_CALL_CAP = 300;
-export const INBOUND_DAILY_SPEND_CAP_USD = 5;
+// RAISED 15.8 at the owner's explicit instruction ("תעלה את העצר"), because the
+// breaker was refusing his own test calls and nothing shipped tonight had ever
+// reached the ring stage as a result. It fired on the ESTIMATE, not on real
+// spend: 250 answered calls x $0.02 = $5, while the measured aggregate is
+// ~$0.0075/call, so actual spend when it tripped was ~$1.87. Raising this to 15
+// deliberately makes INBOUND_DAILY_CALL_CAP (300) the binding limit instead —
+// a hard call ceiling rather than a guess multiplied by a count. Worst case is
+// therefore 300 x ~$0.0075 = ~$2.25/day, against a $10.83 balance.
+// This is NOT a licence to stop caring: the sustained ~25 calls/hour inbound
+// flood is unexplained and under investigation. Put this back to 5 once the
+// flood's cause is known, or sooner if real billing contradicts $0.0075.
+export const INBOUND_DAILY_SPEND_CAP_USD = 15;
 // $5 ÷ $0.02 ⇒ the spend breaker fires at 250 answered calls, ahead of the
 // 300-call cap: the original ordering, with numbers that reflect reality.
 // For scale: the 13.8 dialer flood was 84 calls in 7 hours (~250/day if it

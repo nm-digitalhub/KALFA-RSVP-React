@@ -311,15 +311,27 @@ describe('evaluateInboundCaps (pure — Gate E.2 caps math)', () => {
     expect(evaluateInboundCaps({ ...base, answeredToday: 300 })).toEqual({ ok: false, reason: 'daily_breaker' });
   });
 
-  it('rejects at the daily estimated-spend breaker BEFORE the count cap (whichever first)', () => {
-    // 250 * $0.02/call = $5.00 — crosses the spend estimate while still well
-    // under the 300-call count cap, proving the spend breaker is not dead
-    // code shadowed by the count breaker. That ORDERING is the invariant this
-    // test protects; the numbers were recalibrated 13.8 after the old $0.06
-    // estimate (an OUTBOUND rate, applied to inbound) tripped this breaker at
-    // 84 calls that had actually spent well under a dollar.
-    expect(evaluateInboundCaps({ ...base, answeredToday: 250 })).toEqual({ ok: false, reason: 'daily_breaker' });
-    expect(evaluateInboundCaps({ ...base, answeredToday: 249 })).toEqual({ ok: true });
+  it('lets the COUNT cap bind before the spend estimate (deliberate, 15.8)', () => {
+    // Inverted from what this test asserted until 15.8, and the inversion is the
+    // point rather than a relaxation. The spend breaker used to fire first: 250
+    // answered x $0.02 = $5.00, under the 300-call cap. It did fire — on the
+    // owner's own test calls, refusing every one of them while the app fixes
+    // shipped that night went untested because no call ever reached the ring
+    // stage.
+    //
+    // It fired on an ESTIMATE, not on spend. The measured aggregate is
+    // ~$0.0075/call, so real spend at the trip was ~$1.87 against a $5 cap. With
+    // the cap at $15 the 300-call ceiling binds first, which is a counted fact
+    // rather than a guess multiplied by a count, and bounds a bad day at
+    // 300 x ~$0.0075 = ~$2.25.
+    //
+    // What this test now protects is that the spend breaker is still REACHABLE
+    // rather than dead code: at a genuinely higher per-call cost it must still
+    // fire ahead of the count cap. If someone later restores the $5 cap, the
+    // first assertion is what will tell them the ordering flipped back.
+    expect(evaluateInboundCaps({ ...base, answeredToday: 250 })).toEqual({ ok: true });
+    expect(evaluateInboundCaps({ ...base, answeredToday: 299 })).toEqual({ ok: true });
+    expect(evaluateInboundCaps({ ...base, answeredToday: 300 })).toEqual({ ok: false, reason: 'daily_breaker' });
   });
 
   // Regression pin for the incident itself: the observed overnight
