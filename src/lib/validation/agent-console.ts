@@ -246,3 +246,102 @@ export interface AgentCommandResult {
   request_id: string;
   state?: string | null;
 }
+
+// ---------------------------------------------------------------------------
+// Live device telemetry — POST /api/agents/telemetry
+// ---------------------------------------------------------------------------
+//
+// A diagnostic channel, not a product surface: the native console streams the
+// steps of its own call path here so the owner can `tail -f` the resulting log
+// over SSH and see which step is the LAST one that happens when a call is routed
+// to a phone sitting idle in a pocket. Feature-flagged off at both ends; see
+// `src/lib/ops/device-telemetry.ts` for the server half.
+//
+// The hard rule this file enforces is AGENTS.md's, unqualified: NO PII, ever.
+// The app scrubs before sending (KALFA-ELEVENLABS `telemetry/TelemetryEvent.kt`,
+// `scrubTelemetryValue`) and the schema below scrubs again and REJECTS rather
+// than trusting it. Two independent checks because either alone is a single
+// point of failure for a rule whose failure mode is a guest's phone number
+// sitting in a log file that someone who should not see customer data is
+// reading — which is exactly how this log is expected to be read.
+
+/** Hard cap on events per request. The app's batch size must not exceed this. */
+export const DEVICE_TELEMETRY_MAX_EVENTS = 50;
+
+/** Hard cap on `k=v` pairs per event, so one line stays readable in a terminal. */
+export const DEVICE_TELEMETRY_MAX_FIELDS = 8;
+
+const TELEMETRY_EVENT_NAME_RE = /^[a-z][a-z0-9_]*(\.[a-z0-9_]+)*$/;
+const TELEMETRY_FIELD_KEY_RE = /^[a-z][a-z0-9_]*$/;
+const TELEMETRY_TIMESTAMP_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
+const TELEMETRY_SESSION_ID_RE = /^[pc][0-9a-f]{1,12}$/;
+
+const PHONE_SHAPED_RE = /^[+()\-. \d]{7,}$/;
+const PHONE_PUNCTUATION_RE = /[+()\-. ]/;
+const OPAQUE_TOKEN_RE = /^[A-Za-z0-9_:-]{40,}$/;
+
+/**
+ * Whether a telemetry field value looks like something that must never be
+ * logged. Mirrors `scrubTelemetryValue` in the Android app one-for-one, so a
+ * value the app would have redacted is a value this rejects — a mismatch would
+ * mean the client is not the client we think it is.
+ *
+ * Exported for its test. Conservative by design: a false positive costs one
+ * rejected diagnostic line, a false negative costs a guest's phone number.
+ */
+export function looksLikePersonalData(value: string): boolean {
+  if (value.includes('@')) return true;
+  // Every Supabase access token is a JWT, and every JWT starts with the base64
+  // of `{"` — so this catches an accidentally-forwarded auth token exactly.
+  if (value.startsWith('eyJ')) return true;
+  // Phone-shaped: made of digits and phone punctuation ONLY. Deliberately not
+  // "any long digit run anywhere" — a Voximplant call id is a useful,
+  // non-identifying field that can legitimately carry one, and redacting it
+  // would destroy the field that ties two lines to the same leg.
+  //
+  // Two thresholds, because one would be wrong in both directions. Punctuation
+  // is itself strong evidence of a phone number (no telemetry field contains a
+  // `+`, a bracket or a dash), so 7 digits is enough alongside it. A bare run of
+  // digits needs 9, so that a millisecond duration — `ms=1234567` is a legitimate
+  // 20-minute value — is not mistaken for a number. Nothing this app can hold is
+  // a bare phone shorter than 9 digits: it stores E.164 (+972…) and Israeli
+  // mobile (05…), which are 13 and 10.
+  if (PHONE_SHAPED_RE.test(value)) {
+    const digits = (value.match(/\d/g) ?? []).length;
+    if (digits >= 9) return true;
+    if (digits >= 7 && PHONE_PUNCTUATION_RE.test(value)) return true;
+  }
+  // FCM registration tokens and Voximplant access/refresh tokens.
+  if (OPAQUE_TOKEN_RE.test(value)) return true;
+  return false;
+}
+
+const telemetryFieldValueSchema = z
+  .string()
+  .max(64)
+  .refine((v) => !looksLikePersonalData(v), { message: 'value rejected' });
+
+export const deviceTelemetryEventSchema = z.strictObject({
+  // The DEVICE clock. Recorded, never trusted for ordering — a dozing phone can
+  // resync NTP mid-wake and move it backwards. `seq` is the ordering authority
+  // and the route stamps its own receive time alongside so skew stays visible.
+  at: z.string().regex(TELEMETRY_TIMESTAMP_RE),
+  // The trace this line belongs to: `p…` process-scoped, `c…` one call attempt.
+  sid: z.string().regex(TELEMETRY_SESSION_ID_RE),
+  // Monotonic per device process. A gap proves upload loss; a restart at 1
+  // proves the process died. That distinction is the point of the whole channel.
+  seq: z.number().int().min(0).max(1_000_000_000),
+  name: z.string().max(48).regex(TELEMETRY_EVENT_NAME_RE),
+  fields: z
+    .record(z.string().max(24).regex(TELEMETRY_FIELD_KEY_RE), telemetryFieldValueSchema)
+    .refine((f) => Object.keys(f).length <= DEVICE_TELEMETRY_MAX_FIELDS, {
+      message: 'too many fields',
+    })
+    .optional(),
+});
+export type DeviceTelemetryEvent = z.infer<typeof deviceTelemetryEventSchema>;
+
+export const deviceTelemetryBatchSchema = z.strictObject({
+  events: z.array(deviceTelemetryEventSchema).min(1).max(DEVICE_TELEMETRY_MAX_EVENTS),
+});
+export type DeviceTelemetryBatch = z.infer<typeof deviceTelemetryBatchSchema>;

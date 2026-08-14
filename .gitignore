@@ -112,3 +112,6 @@ __pycache__/
 .claude-flow/memory-package.json
 .swarm/
 /ruvector.db
+
+# device telemetry: diagnostic log written by POST /api/agents/telemetry (never committed)
+.telemetry/
