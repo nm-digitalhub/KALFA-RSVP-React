@@ -33,6 +33,14 @@ describe('looksLikePersonalData', () => {
     }
   });
 
+  it('rejects a number whose spaces were already flattened to underscores', () => {
+    // The app replaces whitespace with `_` before sending. If its own scrub ever
+    // regressed to running AFTER that flattening — which it did, and a test
+    // caught — the value would arrive in this shape. Second line of defence.
+    expect(looksLikePersonalData('(050)_123_4567')).toBe(true);
+    expect(looksLikePersonalData('050_123_4567')).toBe(true);
+  });
+
   it('rejects a Supabase JWT', () => {
     expect(looksLikePersonalData('eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.abc.def')).toBe(true);
   });
