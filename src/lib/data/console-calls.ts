@@ -8,6 +8,7 @@ import { isDncListed } from '@/lib/data/outreach-engine';
 import { isPastEventDay } from '@/lib/data/event-date';
 import { buildJewishCalendar } from '@/lib/outreach/jewish-calendar';
 import { safeTokenEqual, sha256Hex } from '@/lib/security/token-compare';
+import { AGENT_STATUS_FRESHNESS_MS } from '@/lib/console/presence';
 import { sendPushToUser } from '@/lib/data/push-subscriptions';
 import type { Database } from '@/lib/supabase/types';
 
@@ -1785,7 +1786,12 @@ export function deprioritizeCalendarBusyAgents(
 // updated_at inside the window; a stale/abandoned 'ready' row (tab closed,
 // SDK disconnected, laptop asleep) ages out and stops being routable within
 // two missed beats.
-const AGENT_STATUS_FRESHNESS_MS = 90_000;
+// Imported, not redeclared: the browser roster and CallBar's target picker
+// apply the SAME window via effectivePresence() (src/lib/console/presence.ts).
+// Two copies of this number would let the router and the roster disagree
+// about who is available — which is exactly the bug that motivated moving it
+// there (MEASURED 13.8: roster showed 'ready', heartbeat was 661 minutes old).
+export { AGENT_STATUS_FRESHNESS_MS };
 
 export interface RoutableAgent {
   agentId: string;

@@ -38,6 +38,11 @@ import { CallBar } from '@/components/console/call-bar';
 import { ChatSection } from '@/components/console/chat-section';
 import { ConsolePushAlertToggle } from '@/components/console/push-alert-toggle';
 import { computeUnreadChatCount, type ChatMessageRow } from '@/lib/console/chat';
+import {
+  effectivePresence,
+  type EffectivePresence,
+  type PresenceStatus,
+} from '@/lib/console/presence';
 import { RosterDialButton } from '@/components/console/roster-dial-button';
 import { cn } from '@/lib/utils';
 
@@ -80,7 +85,6 @@ export interface SoftphoneGateInfo {
 // empirically, once).
 const NODE_STORAGE_KEY = 'kalfa-console-node';
 
-type PresenceStatus = 'ready' | 'not_ready' | 'dnd' | 'in_call';
 const PRESENCE_VALUES: readonly PresenceStatus[] = ['ready', 'not_ready', 'dnd', 'in_call'];
 function asPresenceStatus(value: string | null | undefined): PresenceStatus {
   return (PRESENCE_VALUES as readonly string[]).includes(value ?? '')
@@ -88,17 +92,24 @@ function asPresenceStatus(value: string | null | undefined): PresenceStatus {
     : 'not_ready';
 }
 
-const PRESENCE_LABEL: Record<PresenceStatus, string> = {
+// Keyed by EffectivePresence, so 'offline' — the state the DB column cannot
+// express, and the one a stale heartbeat collapses everything else into — has
+// to be given a label and a dot rather than silently falling back to a
+// neighbouring status.
+const PRESENCE_LABEL: Record<EffectivePresence, string> = {
   ready: 'זמין',
   not_ready: 'לא זמין',
   dnd: 'נא לא להפריע',
   in_call: 'בשיחה',
+  offline: 'מנותק',
 };
-const PRESENCE_DOT: Record<PresenceStatus, string> = {
+const PRESENCE_DOT: Record<EffectivePresence, string> = {
   ready: 'bg-emerald-500',
   not_ready: 'bg-slate-400',
   dnd: 'bg-amber-500',
   in_call: 'bg-blue-500',
+  // Hollow, not filled: an offline agent is absent, not merely un-ready.
+  offline: 'border border-slate-400 bg-transparent',
 };
 // The three states an agent may set for themselves. `in_call` is
 // system-managed (POST /api/agents/status rejects it) — no button for it.
@@ -135,7 +146,11 @@ const PHONE_STATE_VARIANT: Partial<Record<ConsolePhoneSnapshot['state'], BadgeVa
 export interface RosterAgent {
   userId: string;
   displayName: string;
-  status: PresenceStatus;
+  // EFFECTIVE presence — 'offline' when the heartbeat is stale, whatever the
+  // stored column says. Consumers (this roster, CallBar's target picker) must
+  // never see the raw status: it is what let the UI offer an agent the server
+  // would refuse to ring. See src/lib/console/presence.ts.
+  status: EffectivePresence;
   provisioned: boolean;
   // Calendar-derived, ADVISORY only (Outlook/Exchange presence-sync
   // research, 12.8) — a third signal alongside `status` (business truth,
@@ -299,7 +314,9 @@ function SoftphonePanelBody({
     async function loadRoster() {
       const { data, error } = await supabase
         .from('console_agents_roster')
-        .select('user_id, display_name, status, provisioned, calendar_busy_until, calendar_show_as')
+        .select(
+          'user_id, display_name, status, status_updated_at, provisioned, calendar_busy_until, calendar_show_as',
+        )
         .order('display_name', { ascending: true });
       if (cancelled || error || !data) return;
       // "Is this window still in the future?" is decided HERE (inside the
@@ -315,7 +332,14 @@ function SoftphonePanelBody({
           .map((row) => ({
             userId: row.user_id,
             displayName: row.display_name ?? 'ללא שם',
-            status: asPresenceStatus(row.status),
+            // EFFECTIVE, not raw. agent_status.status is a standing
+            // declaration that nothing clears when a tab closes or a laptop
+            // sleeps; liveness is the heartbeat. Showing the raw column let
+            // the roster claim "זמין" for someone the ROUTER had already
+            // aged out — measured 13.8 at a 661-minute-stale 'ready' while
+            // every inbound call was answered with "אין נציג זמין". Same
+            // window as findRoutableAgents, from the same constant.
+            status: effectivePresence(asPresenceStatus(row.status), row.status_updated_at, nowMs),
             provisioned: row.provisioned === true,
             calendarBusyUntilIso:
               row.calendar_busy_until && Date.parse(row.calendar_busy_until) > nowMs

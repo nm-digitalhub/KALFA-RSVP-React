@@ -220,6 +220,12 @@ export function CallBar({
   // Ready + provisioned + not-self — same eligibility RosterDialButton
   // already enforces for internal calls.
   const pickableAgents = useMemo(
+    // `status` here is EFFECTIVE presence (softphone-panel maps it through
+    // effectivePresence before it ever reaches this component), so a stale
+    // heartbeat has already become 'offline' and drops out of this filter.
+    // That closes the gap where the picker offered a target the server's
+    // resolveTransferTarget would then refuse with 409 — the two now apply
+    // the same freshness window, from the same constant.
     () => roster.filter((a) => a.provisioned && a.status === 'ready' && a.userId !== selfUserId),
     [roster, selfUserId],
   );
