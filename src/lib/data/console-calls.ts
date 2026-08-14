@@ -2082,6 +2082,80 @@ export async function notifyOffDutyShiftAgentsOfInboundCall(input: {
   }
 }
 
+/**
+ * Replaces the "שיחה נכנסת ממתינה במוקד" push once the call is over, so the
+ * alert stops claiming a call is waiting that hung up minutes ago.
+ *
+ * Reported live 14.8: notifications piled up on the agent's device, one per
+ * unanswered inbound call, each still saying a call was waiting. Nothing ever
+ * closed them — `public/sw.js` only closes a notification on `notificationclick`,
+ * so an untapped one persists until the OS or the user removes it, and iOS
+ * (this account's endpoint is web.push.apple.com) keeps them indefinitely.
+ *
+ * This REPLACES rather than closes, deliberately. A push on the open web must
+ * result in a shown notification — `userVisibleOnly` is mandatory and a handler
+ * that shows nothing gets the browser's own "site updated in the background"
+ * notice instead, which would be a worse lie than the one being fixed. Reusing
+ * the same `tag` swaps the displayed notification in place, and because sw.js
+ * leaves `renotify` false unless asked, the swap is silent — no second buzz for
+ * a call that is already over.
+ *
+ * The audience comes from `push_delivery_log`, which already records the
+ * `user_id` and the payload `tag` of every successful send. That matters: it
+ * targets exactly the agents who received the original. Re-deriving the
+ * routable set here instead would push a "call ended" notification to agents
+ * who never saw a "call waiting" one — inventing an alert out of nothing rather
+ * than correcting one.
+ */
+export async function notifyAgentsInboundCallResolved(input: {
+  consoleCallId: string;
+  reason?: string | null;
+}): Promise<void> {
+  try {
+    const tag = `console-call-${input.consoleCallId}`;
+    const admin = createAdminClient();
+
+    const { data: delivered, error } = await admin
+      .from('push_delivery_log')
+      .select('user_id')
+      .eq('payload->>tag', tag)
+      .eq('success', true);
+    if (error || !delivered || delivered.length === 0) return;
+
+    const userIds = Array.from(
+      new Set(delivered.map((d) => d.user_id).filter((id): id is string => Boolean(id))),
+    );
+    if (userIds.length === 0) return;
+
+    // Says what actually happened. 'no_agent' is the case the caller was
+    // promised a callback for (recordNoAgentCallback runs on the same event),
+    // so the agent is told the follow-up exists rather than just that a call
+    // was missed — that is the actionable half.
+    const body =
+      input.reason === 'no_agent'
+        ? 'שיחה נכנסת לא נענתה. נרשמה בקשה לחזור אל המתקשר.'
+        : 'השיחה הנכנסת הסתיימה.';
+
+    await Promise.all(
+      userIds.map((userId) =>
+        sendPushToUser(userId, {
+          title: 'KALFA — מוקד שירות',
+          body,
+          url: `/admin?call=${input.consoleCallId}`,
+          tag,
+        }).catch(() => {
+          // Best-effort per agent — same discipline as the two notify
+          // functions above: one dead subscription must not stop the others.
+        }),
+      ),
+    );
+  } catch {
+    // Best-effort overall. A stale notification is a real annoyance but never
+    // a reason to fail the scenario's end-of-call report, which also closes
+    // the call row and creates the callback.
+  }
+}
+
 // ─────────────────────────────────────────────────────────────────────────
 // Inbound caller identification — best-effort enrichment (never a gate: the
 // call is answered/refused purely on the caps above, independent of whether

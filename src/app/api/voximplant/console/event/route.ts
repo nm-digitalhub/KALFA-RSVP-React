@@ -1,10 +1,11 @@
-import { NextResponse } from 'next/server';
+import { NextResponse, after } from 'next/server';
 
 import { getClientIp, rateLimit } from '@/lib/security/rate-limit';
 import { safeTokenEqual, sha256Hex } from '@/lib/security/token-compare';
 import {
   findConsoleCallForEvent,
   mapEndedReasonToStatus,
+  notifyAgentsInboundCallResolved,
   recordConsoleCallSessionAccess,
   recordNoAgentCallback,
   resolveAgentIdByVoxUsername,
@@ -174,6 +175,16 @@ export async function POST(request: Request) {
         if (body.reason === 'no_agent') {
           await recordNoAgentCallback({ consoleCallId: callId });
         }
+        // The "שיחה נכנסת ממתינה במוקד" push is still on the agent's device
+        // saying a call is waiting. Replace it with what actually happened —
+        // scheduled through after() for the same reason route-inbound does it
+        // for the original send: the scenario is waiting on this response and
+        // a slow push must not hold it up. Runs for every ended call, not just
+        // no_agent: an answered call leaves the same stale alert on every other
+        // agent who was rung and did not pick up.
+        after(() =>
+          notifyAgentsInboundCallResolved({ consoleCallId: callId, reason: body.reason }),
+        );
         break;
 
       case 'transfer_started': {

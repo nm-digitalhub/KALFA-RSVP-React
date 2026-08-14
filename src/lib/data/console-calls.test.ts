@@ -28,6 +28,7 @@ import {
   mapEndedReasonToStatus,
   mintDialToken,
   notifyOffDutyShiftAgentsOfInboundCall,
+  notifyAgentsInboundCallResolved,
   notifyRoutableAgentsOfInboundCall,
   offerCallbackForCallMeNow,
   recordConsoleCallSessionAccess,
@@ -1230,5 +1231,80 @@ describe('routeInboundRetryBodySchema (wake-and-answer research, 12.8)', () => {
       extra: 'nope',
     });
     expect(result.success).toBe(false);
+  });
+});
+
+// Reported live 14.8: "שיחה נכנסת ממתינה במוקד" notifications piled up on the
+// agent's device, each still claiming a call was waiting long after it hung up.
+// Nothing ever closed them — sw.js only closes on notificationclick.
+describe('notifyAgentsInboundCallResolved (stale inbound-call notification, 14.8)', () => {
+  beforeEach(() => {
+    vi.mocked(sendPushToUser).mockResolvedValue({ attempted: 1, sent: 1, failed: 0, revoked: 0 });
+  });
+
+  it('reuses the ORIGINAL tag so the stale notification is replaced, not stacked beside it', async () => {
+    wireAdmin({ push_delivery_log: [{ data: [{ user_id: 'agent-1' }], error: null }] });
+
+    await notifyAgentsInboundCallResolved({ consoleCallId: 'call-9', reason: 'completed' });
+
+    expect(sendPushToUser).toHaveBeenCalledTimes(1);
+    expect(sendPushToUser).toHaveBeenCalledWith('agent-1', {
+      title: 'KALFA — מוקד שירות',
+      body: 'השיחה הנכנסת הסתיימה.',
+      url: '/admin?call=call-9',
+      // Identical to notifyRoutableAgentsOfInboundCall's tag for the same call.
+      // If these ever drift, the replacement becomes a SECOND notification and
+      // this function makes the reported problem worse instead of fixing it.
+      tag: 'console-call-call-9',
+    });
+  });
+
+  it('tells the agent a callback was recorded when the ring found nobody', async () => {
+    // recordNoAgentCallback runs on the same 'ended' event, so the follow-up
+    // genuinely exists — this is the actionable half, not just "you missed one".
+    wireAdmin({ push_delivery_log: [{ data: [{ user_id: 'agent-1' }], error: null }] });
+
+    await notifyAgentsInboundCallResolved({ consoleCallId: 'call-9', reason: 'no_agent' });
+
+    expect(sendPushToUser).toHaveBeenCalledWith('agent-1', expect.objectContaining({
+      body: 'שיחה נכנסת לא נענתה. נרשמה בקשה לחזור אל המתקשר.',
+    }));
+  });
+
+  it('never invents a recipient: pushes ONLY agents the log says received the original', async () => {
+    // The whole reason the audience comes from push_delivery_log rather than
+    // re-deriving the routable set. An agent who never saw "call waiting" must
+    // not be handed "call ended" out of nowhere.
+    wireAdmin({ push_delivery_log: [{ data: [], error: null }] });
+
+    await notifyAgentsInboundCallResolved({ consoleCallId: 'call-9', reason: 'no_agent' });
+
+    expect(sendPushToUser).not.toHaveBeenCalled();
+  });
+
+  it('deduplicates an agent who has several subscriptions logged for the same call', async () => {
+    // One row per subscription, not per user — a phone plus a laptop would
+    // otherwise get the same replacement pushed twice.
+    wireAdmin({
+      push_delivery_log: [{
+        data: [{ user_id: 'agent-1' }, { user_id: 'agent-1' }, { user_id: 'agent-2' }],
+        error: null,
+      }],
+    });
+
+    await notifyAgentsInboundCallResolved({ consoleCallId: 'call-9' });
+
+    expect(sendPushToUser).toHaveBeenCalledTimes(2);
+  });
+
+  it('stays silent when the log read fails rather than failing the end-of-call report', async () => {
+    // Best-effort: this shares the 'ended' event with closing the call row and
+    // creating the callback, and a stale notification must never cost those.
+    wireAdmin({ push_delivery_log: [{ data: null, error: { message: 'boom' } }] });
+
+    await expect(
+      notifyAgentsInboundCallResolved({ consoleCallId: 'call-9', reason: 'no_agent' }),
+    ).resolves.toBeUndefined();
+    expect(sendPushToUser).not.toHaveBeenCalled();
   });
 });
