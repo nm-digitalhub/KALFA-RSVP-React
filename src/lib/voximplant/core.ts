@@ -336,6 +336,50 @@ export function getPhoneNumbers(
   return voxRequest<GetPhoneNumbersResponse>(config, 'GetPhoneNumbers', {}, timeoutMs);
 }
 
+// GetPushCredential — READ-ONLY inventory of the account's push certificates
+// (the Firebase service-account JSON / APNs cert uploaded in the control panel
+// under Applications -> Push Certificates).
+//
+// Why this belongs in the read-only CLI: whether a credential exists AND is
+// bound to the right application is the difference between "callUser sends a
+// push" and "callUser silently sends nothing" — and nothing in our own stack
+// can observe it. Without this, the only way to check was to open the control
+// panel and look, which is not something a later reader can reproduce.
+//
+// Params verified against the official method tree
+// (references.httpapi.pushcredentials.getpushcredential, fetched 14.8): the
+// documented curl takes account_id and an optional push_credential_id. Called
+// with no filter it lists every credential on the account, each with its
+// provider and the applications it is bound to — which is exactly the
+// verification question. AddPushCredential/SetPushCredential/DelPushCredential/
+// BindPushCredential are MUTATIONS and are deliberately absent from this
+// read-only module (cli-guard.test.ts pins that the CLI cannot reach mutations).
+//
+// The response deliberately does NOT include the credential's secret material:
+// `content` carries only a file name. Nothing here can leak the uploaded key.
+export interface PushCredentialApplication {
+  application_id?: number;
+  application_name?: string;
+}
+export interface PushCredentialEntry {
+  push_credential_id?: number;
+  push_provider_id?: number;
+  push_provider_name?: string; // 'GOOGLE' | 'APPLE' | 'HUAWEI'
+  expiration_date?: string | null;
+  content?: { file_name?: string; [k: string]: unknown };
+  applications?: PushCredentialApplication[];
+}
+export interface GetPushCredentialResponse {
+  result?: PushCredentialEntry[];
+  error?: { code: number; msg: string };
+}
+export function getPushCredentials(
+  config: VoximplantConfig,
+  timeoutMs?: number,
+): Promise<GetPushCredentialResponse> {
+  return voxRequest<GetPushCredentialResponse>(config, 'GetPushCredential', {}, timeoutMs);
+}
+
 // GetUsers — READ-ONLY inventory of the account's SDK/SIP users. This is what
 // tells us whether a `console_agents.vox_username` is a REAL Voximplant user or
 // just a string somebody wrote into our database: the app's one-time-key login

@@ -120,7 +120,7 @@ export function parseArgs(argv: string[]): ParsedArgs {
 // READ-ONLY command set (owner directive): the CLI can never mutate Voximplant
 // state — `start` was removed with the mutations split (the server dispatcher
 // is the only dial path) and a guard test pins this list.
-export const KNOWN_COMMANDS = ['account', 'autocharge', 'rules', 'history', 'numbers', 'users', 'transactions', 'recording', 'log', 'call-lists', 'media-resources', 'audit', 'scenario'] as const;
+export const KNOWN_COMMANDS = ['account', 'autocharge', 'rules', 'history', 'numbers', 'users', 'transactions', 'recording', 'log', 'call-lists', 'media-resources', 'audit', 'scenario', 'push-credentials'] as const;
 export type KnownCommand = (typeof KNOWN_COMMANDS)[number];
 
 export function assertKnownCommand(command: string): asserts command is KnownCommand {
@@ -149,6 +149,7 @@ const ALLOWED_FLAGS: Record<KnownCommand, Set<string>> = {
   // READ-ONLY list of the account's phone numbers (find a usable Caller ID).
   // Never purchases/attaches/modifies — only --key (credentials path).
   numbers: new Set(['key']),
+  'push-credentials': new Set(['key']),
   // READ-ONLY billing ledger — what the balance is spent on. --days window,
   // --type CSV filter. Never charges/refunds/modifies anything.
   transactions: new Set(['key', 'days', 'type']),

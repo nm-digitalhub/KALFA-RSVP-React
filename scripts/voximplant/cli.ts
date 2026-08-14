@@ -46,6 +46,7 @@ import {
   getHistoryReports,
   getMediaResources,
   getPhoneNumbers,
+  getPushCredentials,
   getScenarios,
   getUsers,
   getRules,
@@ -169,6 +170,41 @@ async function cmdNumbers(cfg: VoximplantConfig): Promise<void> {
     console.log(`    status         : ${status}`);
     console.log(`    application_id : ${n.application_id ?? '—'}`);
     console.log(`    rule_id        : ${n.rule_id ?? '—'}`);
+  }
+}
+
+// READ-ONLY: push certificates uploaded in the control panel (Applications ->
+// Push Certificates). Answers a question nothing in our own stack can: whether
+// the platform is actually able to send an incoming-call push. A missing or
+// unbound credential means callUser sends NOTHING, silently — there is no error
+// anywhere to notice. Prints the provider and, critically, which applications
+// the credential is bound to; a credential that exists but is bound to the
+// wrong application is indistinguishable from none at all at call time.
+//
+// Never prints secret material: the API's `content` field carries only a file
+// name, not the key.
+async function cmdPushCredentials(cfg: VoximplantConfig): Promise<void> {
+  const res = await retried(() => getPushCredentials(cfg));
+  const entries = res.result ?? [];
+  console.log(`push credentials : ${entries.length}`);
+  if (entries.length === 0) {
+    console.log(
+      '  (none — callUser will send no push to any device until a certificate is uploaded)',
+    );
+    return;
+  }
+  for (const c of entries) {
+    console.log(`  #${c.push_credential_id ?? '—'}  provider=${c.push_provider_name ?? '—'}`);
+    if (c.content?.file_name) console.log(`    file          : ${c.content.file_name}`);
+    console.log(`    expires       : ${c.expiration_date ?? '— (service-account JSON: n/a)'}`);
+    const apps = c.applications ?? [];
+    if (apps.length === 0) {
+      console.log('    applications  : *** NONE — uploaded but bound to nothing ***');
+    } else {
+      for (const a of apps) {
+        console.log(`    application   : ${a.application_name ?? '—'} (${a.application_id ?? '—'})`);
+      }
+    }
   }
 }
 
@@ -630,6 +666,8 @@ async function dispatch(
       return cmdHistory(cfg, flags);
     case 'numbers':
       return cmdNumbers(cfg);
+    case 'push-credentials':
+      return cmdPushCredentials(cfg);
     case 'users':
       return cmdUsers(cfg, flags);
     case 'transactions':

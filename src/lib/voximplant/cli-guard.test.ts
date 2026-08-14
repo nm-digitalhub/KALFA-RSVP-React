@@ -61,6 +61,12 @@ describe('CLI ↔ mutations guard', () => {
         'log',
         'media-resources',
         'numbers',
+        // 'push-credentials' qualifies — GetPushCredential lists the account's
+        // uploaded push certificates and the applications they are bound to. It
+        // returns NO secret material (the `content` field carries only a file
+        // name), and every mutating sibling (Add/Set/Del/BindPushCredential)
+        // stays out of core.ts and therefore out of the CLI's reach.
+        'push-credentials',
         'users',
         'recording',
         'rules',
