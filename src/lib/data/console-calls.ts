@@ -2143,6 +2143,10 @@ export async function notifyAgentsInboundCallResolved(input: {
           body,
           url: `/admin?call=${input.consoleCallId}`,
           tag,
+          // Corrects an alert the agent was already buzzed for. Ringing again
+          // for a call that is over is the annoyance this whole function exists
+          // to reduce, so the replacement lands quietly.
+          silent: true,
         }).catch(() => {
           // Best-effort per agent — same discipline as the two notify
           // functions above: one dead subscription must not stop the others.

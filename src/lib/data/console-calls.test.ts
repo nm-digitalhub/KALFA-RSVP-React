@@ -1256,6 +1256,8 @@ describe('notifyAgentsInboundCallResolved (stale inbound-call notification, 14.8
       // If these ever drift, the replacement becomes a SECOND notification and
       // this function makes the reported problem worse instead of fixing it.
       tag: 'console-call-call-9',
+      // Corrects an alert already delivered — must not buzz again.
+      silent: true,
     });
   });
 
