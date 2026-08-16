@@ -2,10 +2,38 @@
 
 > נכתב 16.08.2026. כל מספר כאן נמדד מול ה‑DB החי או מול הקוד, לא הוסק.
 > תגיות: **[נמדד]** = הרצתי ואימתתי · **[הסקה]** = נגזר מקריאת קוד · **[לא נבדק]**
+>
+> **ביקורת מלאה 16.08 אחה"צ** — כל סעיף נקרא שורה‑שורה ואומת מול הקוד וה‑DB
+> החיים. סימוני מצב: `✅ בוצע ואומת` · `⏳ פתוח` · `❌ בוטל`.
+>
+> **ארבעה פגמים נמצאו בתוכנית עצמה** — לא בקוד — וכולם היו מייצרים יישום שבור
+> אילו הועתקו כלשונם. מסומנים בגוף המסמך ב‑**⚠️ תוקן בביקורת**:
+>
+> | # | היכן | מה היה שגוי |
+> |---|---|---|
+> | 1 | A2 | הפניה לפונקציה בשם שאינו קיים (`runCallbackScheduleSweep`) |
+> | 2 | **E** | `חיוב ותשלום` בטופס מול `גבייה` בתור — **לעולם לא יתאימו** |
+> | 3 | G1 | השינוי המוצע שובר את `tsc` בקריאת ה‑Slack |
+> | 4 | **H3** | הסינון מפיל את שורת הציות הקריטית, ומדליף `{{tokens}}` ללקוח |
+>
+> פגמים 2 ו‑4 הם מאותה משפחה של H5 שנמשך: מדידה נכונה, מסקנה שגויה, בגלל
+> שלא נבדק מי **צורך** את הנתון.
 
 ---
 
 ## A. 14 שיחות חוזרות שנעלמו — באג חי, לקוחות אמיתיים
+
+> ### ✅ A1 בוצע ואומת · ⏳ A2 פתוח
+>
+> **[נמדד 16.08 12:40]** השחרור רץ (`UPDATE … RETURNING` = 14 שורות), הסריקה
+> יצרה אותן מחדש, וכל 14 הפגישות אומתו קיימות ב‑Graph (200, לא דגימה).
+> מצב נוכחי: `ews_dead: 0` · `graph_new: 14` · `stranded_now: 0`.
+> תיעוד מצב‑הלפני: `plans/a1-before-state.json` (commit `c85b888`).
+>
+> אלה גם **כתיבות ה‑Graph הראשונות שהצליחו בייצור** — מה שמאשר רטרואקטיבית
+> את תיקון סדר‑הטעינה ב‑`worker/start.mjs`.
+>
+> **A2 (הגלאי) עדיין לא נכתב** — `countStrandedCallbacks` אינו קיים בקוד.
 
 ### האבחון
 
@@ -21,7 +49,10 @@
 | מנגנון | הקוד | למה מדלג |
 |---|---|---|
 | תזמון | `callback-scheduling.ts:215` | `if (request.calendar_item_id) return 'already_scheduled'` |
-| ריפוי | `callback-scheduling.ts:341` | `.gte('scheduled_at', now − 1 day)` — כולן ישנות מזה |
+| ריפוי | `callback-scheduling.ts:342` | `.gte('scheduled_at', now − DAY_MS)` — כולן ישנות מזה |
+
+*(שתי ההפניות אומתו בביקורת. 341 תוקן ל‑342; `reconcileCallbacksWithCalendar`
+עצמה מתחילה ב‑332.)*
 
 **[נמדד]** `in_heal_window: 0`, `past_window: 14`. אף אחת מהן אינה נראית לריפוי.
 
@@ -62,28 +93,49 @@ Graph בריצה הבאה — **בלי קוד חדש**, כי היא כבר עו�
 
 ---
 
-## B. שאריות EWS — ניקוי, לא תיקון
+## B. שאריות EWS — ניקוי, לא תיקון · ⏳ פתוח
 
-**[נמדד]** קיימים עדיין: `ews-impl.ts`, `xml-safe.ts` + מבחן, `category-list.ts`
-+ מבחן, `crypto.ts` + מבחן. `package.json` מכיל 2 אזכורים ל‑`ews-javascript-api`.
+**[נמדד — אומת שוב בביקורת]** קיימים עדיין: `ews-impl.ts`, `xml-safe.ts` + מבחן,
+`category-list.ts` + מבחן, `crypto.ts` + מבחן. `package.json` מכיל 2 אזכורים
+ל‑`ews-javascript-api`.
 
-**[נמדד]** `app_settings` מחזיקה `dkim_domain`, `dkim_selector`,
-`dkim_private_key` — אף שורת קוד אינה קוראת אותן.
+**[נמדד — אומת שוב]** `app_settings` מחזיקה 3 עמודות `dkim_*` שאף שורת קוד
+אינה קוראת (חיפוש חוזר מחוץ ל‑`types.ts` מחזיר אפס).
 
 **החלטה: לא עכשיו, ובמכוון.** `EXCHANGE_PROVIDER=ews` הוא מתג החזרה לאחור,
 ומחיקת המימוש מבטלת אותו. לחכות מספר ימים של יציבות מוכחת על Graph.
 
-מה שכן אפשר מיד: `crypto.ts` מצפין סיסמאות תיבה, ואימות‑תעודה אינו קורא סיסמאות
-כלל **[הסקה]** — אבל הוא עדיין בשימוש בנתיב ה‑EWS. נשאר.
+> **עדכון 16.08 — ה‑`[הסקה]` כאן הפכה ל‑`[נמדד]`, ובגדול.** הסעיף אמר
+> *"אימות‑תעודה אינו קורא סיסמאות כלל **[הסקה]**"*. ההסקה הייתה נכונה לגבי
+> `graph-impl.ts`, אבל **שגויה לגבי המערכת**: ארבעה מודולים המשיכו לפענח את
+> הסיסמה לפני כל קריאת יומן ולהיכשל‑סגור אם הפענוח נכשל — כלומר Graph היה תלוי
+> ב‑`EXCHANGE_EWS_ENCRYPTION_KEY` בפועל. תוקן ב‑`77dc57b` דרך
+> `resolveMailboxPassword()` (`src/lib/exchange-ews/mailbox-credential.ts`).
+> **הלקח:** "המימוש אינו קורא X" אינו אותו דבר כמו "המערכת אינה טוענת X".
+>
+> **מה שנשאר חסום מבנית ל‑B:** `exchange_connections` בנויה ל‑EWS —
+> `auth_method` הוא `NOT NULL CHECK IN ('ntlm','basic')` בלי ערך ל"תעודה",
+> ושלוש עמודות הסוד הן `NOT NULL` עם `CHECK (btrim <> '')`. **אי אפשר להחזיק
+> חיבור בלי סוד ש‑Graph לעולם לא קורא.** ניקוי דורש מיגרציה, ושייך לכאן — לא
+> לפני יציבות מוכחת.
 
 ---
 
-## C. commit
+## C. commit · ✅ בוצע ואומת
 
-**[נמדד]** 62 קבצים בעץ העבודה. עבודת לילה שלמה שאינה שמורה בשום מקום.
+~~**[נמדד]** 62 קבצים בעץ העבודה.~~ **בוצע 16.08** — עץ העבודה נקי (0 קבצים),
+עשרה commits, וכולם **פרוסים ומאומתים חי** (`.deploy-id: msvmptw7`,
+`.next` 12:57:25):
 
-לפי כלל הפרויקט — תיקונים קטנים ל‑main, עבודה מהותית לענף. כאן יש שני גושים
-נפרדים שראוי להם commit נפרד: המעבר ל‑M365/Resend, ועמוד ה‑FAQ.
+| sha | מה |
+|---|---|
+| `37a431b` | תלויות — Graph + Resend |
+| `aaf5287` | M365: יומן ל‑Graph, דואר ל‑Resend |
+| `94c005a` | עמוד FAQ ציבורי מנוהל‑אדמין |
+| `cfc2959` | איכות התשובה — H1/H2/H4/H6 |
+| `bca68b9` · `a6ae5ae` · `79f63c4` · `c85b888` | תיעוד ותוכניות |
+| `a46779a` | proxy — חסימת בדיקות Server Action פגומות |
+| `77dc57b` | ניתוק Graph מסוד ה‑EWS |
 
 ---
 
@@ -172,22 +224,74 @@ Graph בריצה הבאה — **בלי קוד חדש**, כי היא כבר עו�
 
 ---
 
-## E. `topic` חופשי מול `console_queues` — כפילות אמיתית
+## E. `topic` חופשי מול `console_queues` — כפילות אמיתית · ⏳ פתוח
 
-### האבחון
+### ⚠️ תוקן בביקורת — הטבלה כאן הייתה שגויה, והיישום היה מנתב שגוי בשקט
 
-**[נמדד]** שתי טקסונומיות לאותו מושג:
+הגרסה הקודמת הציגה `billing` מול **`חיוב ותשלום`** כאילו הם תואמים. **הם לא.**
+`console_queues.name_he` של `billing` הוא **`גבייה`**. מדידה חוזרת:
 
-| `console_queues` — טבלה, עם עדיפות ושיוך סוכנים | `INQUIRY_TOPICS` — מחרוזת |
-|---|---|
-| `sales` · priority 10 | מכירות |
-| `support` · priority 20 | תמיכה |
-| `events` · priority 30 | — |
-| `billing` · priority 40 | חיוב ותשלום |
+| `console_queues` (`key` · `name_he` · priority) | `INQUIRY_TOPICS` | תואם? |
+|---|---|---|
+| `sales` · **מכירות** · 10 | מכירות | ✅ |
+| `support` · **תמיכה** · 20 | תמיכה | ✅ |
+| `events` · **אירועים** · 30 | — (אינו בטופס) | — |
+| `billing` · **גבייה** · 40 | **חיוב ותשלום** | ❌ **לעולם לא** |
+| — | אחר | ❌ (אינו תור, במכוון) |
 
-**[נמדד]** 4 מ‑6 הפניות כבר תואמות תור **בשם מדויק**. שתיים לא — ואלה
-בדיוק אלה שנוצרו ע"י קליטת הדואר עם `topic = 'פנייה בדואר'`, ערך שהמצאתי
-ואינו תואם דבר.
+`INQUIRY_TOPICS = ['מכירות', 'תמיכה', 'חיוב ותשלום', 'אחר']`
+(`src/lib/validation/inquiries.ts:9`).
+
+**מה זה היה עושה:** ה‑`UPDATE` החד‑פעמי וגם המיפוי בזמן יצירה — שניהם ממופים
+ב‑`q.name_he = c.topic` — היו **מדלגים על כל פנייה בנושא חיוב**, שהיא בדיוק
+הקטגוריה שהכי לא כדאי לאבד. בלי שגיאה, בלי לוג. `queue_id` היה נשאר `null`
+והפנייה הייתה נראית "לא מסווגת" לנצח.
+
+**זו אותה משפחת טעות של H5:** הספירה "4 מ‑6 תואמות" הייתה נכונה כמדידה, אבל
+נבדקה רק על הנתונים שקיימים במקרה — ולא על **אוצר המילים** שהטופס מסוגל לייצר.
+אף לקוח לא בחר "חיוב ותשלום" עדיין, ולכן הפער לא הופיע בספירה.
+
+**[נמדד מחדש 16.08]** 7 פניות בסך הכול · 5 יתאימו · 2 לא (שתי פניות הדואר עם
+`'פנייה בדואר'`). הספירה הישנה "4 מ‑6" התיישנה.
+
+### התיקון הנכון — מפה מפורשת, לא התאמת מחרוזות
+
+שתי הטקסונומיות **אמורות** להיות עצמאיות — זו בדיוק ההכרעה שהסעיף עצמו ממליץ
+עליה ("המלצה: מפה"). התאמה לפי `name_he` סותרת אותה: היא הופכת כל שינוי ניסוח
+בתור לשינוי ניתוב שקט.
+
+```ts
+// src/lib/data/inquiries.ts — לצד INQUIRY_TOPICS
+//
+// The customer-facing vocabulary and the operational one are deliberately
+// separate: the form says "חיוב ותשלום" because that is what a customer calls
+// it, the queue is keyed `billing` and displays "גבייה" because that is what
+// the desk calls it. Matching them by Hebrew NAME looked like it worked and
+// silently did not — measured 16.08: `name_he` for billing is "גבייה", so
+// every billing inquiry would have failed to route, with no error.
+//
+// Keyed by the queue `key`, never by `name_he`: renaming a queue in
+// /admin/voice/queues is a display change and must never re-route anything.
+const TOPIC_TO_QUEUE_KEY: Record<string, string> = {
+  'מכירות': 'sales',
+  'תמיכה': 'support',
+  'חיוב ותשלום': 'billing',
+  // 'אחר' is deliberately absent — an unrouted inquiry is visible and
+  // triageable; a wrongly-routed one is not.
+};
+```
+
+**בדיקה שחייבת להתלוות** (אחרת אותו פער יחזור כשמישהו יוסיף נושא):
+
+```ts
+it('every INQUIRY_TOPIC except אחר maps to a real, active queue key', async () => {
+  const keys = new Set((await activeQueueKeys()).map((q) => q.key));
+  for (const topic of INQUIRY_TOPICS) {
+    if (topic === 'אחר') continue;
+    expect(keys, `topic ${topic}`).toContain(TOPIC_TO_QUEUE_KEY[topic]);
+  }
+});
+```
 
 **[נמדד]** אין CHECK על `topic`, ואין על `status` — הקוד כבר כותב `'cancelled'`
 שאינו במרחב המתועד (`admin/contacts.ts:92`).
@@ -424,7 +528,19 @@ export async function countStrandedCallbacks(
 }
 ```
 
-וב‑`runCallbackScheduleSweep`, מיד אחרי `const healed = await reconcile…`:
+### ⚠️ תוקן בביקורת — שם הפונקציה היה שגוי
+
+הגרסה הקודמת כאן אמרה **`runCallbackScheduleSweep`**. אין פונקציה כזו. השם
+האמיתי הוא **`runCallbackSchedulingSweep`** (`callback-scheduling.ts:464`) —
+`Scheduling`, לא `Schedule`. העתקה כלשונה הייתה נכשלת מיד.
+
+מה שכן אומת ותקין: `sendSlackAlert` ו‑`createAdminClient` **כבר מיובאים** בקובץ
+(שורות 19 ו‑42), ו‑`SlackAlertInput` מקבל בדיוק את חמשת השדות שבקטע
+(`level`, `title`, `source`, `fields`, `category`). אין ייבוא חדש להוסיף.
+
+ב‑`runCallbackSchedulingSweep` (שורה 464), מיד אחרי
+`const healed = await reconcileCallbacksWithCalendar({ nowMs: opts.nowMs });`
+(שורה 471):
 
 ```ts
   const stranded = await countStrandedCallbacks({ nowMs: opts.nowMs });
@@ -438,6 +554,11 @@ export async function countStrandedCallbacks(
     });
   }
 ```
+
+**למה דווקא שם, ולא בסוף הפונקציה:** לפונקציה יש יציאה מוקדמת בשורה 509
+(`return { scheduled: 0, skipped: 0, released: healed.released, … }`) כשאין מה
+לשבץ. הצבה מיד אחרי `healed` מבטיחה שהגלאי רץ **בשני המסלולים** — וזה בדיוק
+המסלול השקט שבו 14 השורות הצטברו.
 
 ### A2ב · הסריקה המתוזמנת שותקת — **נמדד 16.08 בזמן אמת**
 
@@ -518,7 +639,36 @@ describe('countStrandedCallbacks', () => {
 const MAIL_TOPIC: string | null = null;
 ```
 
-ובקריאת ה‑upsert, `topic: MAIL_TOPIC` נשאר כפי שהוא — הוא כבר nullable בסכמה.
+ובקריאת ה‑upsert (שורה 83), `topic: MAIL_TOPIC` נשאר כפי שהוא — הוא כבר
+nullable בסכמה.
+
+### ⚠️ תוקן בביקורת — השינוי הזה שובר את `tsc`, והמסמך לא אמר זאת
+
+`MAIL_TOPIC` מופיע ב**שלושה** מקומות, לא בשניים. השלישי הוא שורה **109**:
+
+```ts
+  void sendSlackAlert({
+    category: 'customer_inquiry',
+    ...
+    fields: { contactMessageId: created, topic: MAIL_TOPIC },   // ← כאן
+  });
+```
+
+`SlackAlertInput.fields` מוקלד `Record<string, string | number>`
+(`src/lib/alerts/slack.ts:54`). **`null` אינו מתקבל שם.** הפיכת הקבוע ל‑
+`string | null` מפילה את `npx tsc --noEmit` מיד.
+
+**התיקון:** להסיר את השדה לגמרי מההתראה. הוא מיותר מרגע שהערך הוא `null`, ו‑
+`source: 'outlook'` שכבר יושב שם אומר בדיוק את מה שהוא ניסה לומר:
+
+```ts
+  // `source` already carries the channel; `topic` is deliberately unset for
+  // mail intake (see MAIL_TOPIC above), so sending it here would be a null.
+  fields: { contactMessageId: created },
+```
+
+**ולתקן גם את ההערה בשורות 102‑103** — היא אומרת *"only the row id and the
+closed-vocabulary topic reach Slack"*, ומרגע השינוי אין topic כלל.
 
 ### תיקון שתי השורות הקיימות
 
@@ -711,11 +861,20 @@ alter table public.contact_messages
 
 ### שינוי 3 — מוני הניווט
 
-`src/lib/data/admin/nav-counts.ts:36`:
+`src/lib/data/admin/nav-counts.ts:36`, בתוך `countNewContacts`:
 
 ```ts
     .in('status', ['new', 'reopened']);
 ```
+
+**[אומת בביקורת]** שורה 36 מדויקת, ו**רק** היא — שורה 44 היא `.eq('status','new')`
+על `callback_requests`, טבלה אחרת, ואסור לגעת בה.
+
+**מה שקריאה מלאה חשפה והמסמך לא אמר:** ההערה בשורות 28‑30 קובעת שדשבורד
+`/admin` (`dashboard.ts`) **משתמש חוזר באותם שני מונים בדיוק**, "so that card
+and this sidebar badge can never show two different numbers". כלומר השינוי הזה
+מעדכן **שני משטחים גלויים**, לא אחד — וזו התנהגות רצויה, אבל צריכה להופיע
+באימות: לוודא ששניהם עלו במקביל.
 
 ### שינוי 4 — הצירוף
 
@@ -867,9 +1026,11 @@ npx tsc --noEmit && npm run lint && npx vitest run && npm run build
 
 ---
 
-## H1+H2+H4 · תבנית המייל — **בוצע ואומת**
+## H1+H2+H4 · תבנית המייל — ✅ בוצע ואומת · commit `cfc2959`
 
-`src/lib/email/templates.ts` · `templates.test.ts` — 16 בדיקות, כולן עוברות.
+`src/lib/email/templates.ts` · `templates.test.ts` — **21 בדיקות**, כולן עוברות
+(המסמך אמר 16; נוספו מקרי הקצה המנוונים ובדיקת הפיסוק אחרי הכתיבה המקורית).
+פרוס וחי מ‑12:57.
 
 **קישורים.** תחביר `[טקסט](/נתיב)` הופך לעוגן. **נתיב בלבד, אף פעם לא URL מלא** —
 סכימה אינה מתקבלת כלל, ולכן `javascript:`/`data:` אינם ניתנים לביטוי מלכתחילה,
@@ -880,7 +1041,14 @@ npx tsc --noEmit && npm run lint && npx vitest run && npm run build
 נשבר ב‑bidi — סימני פיסוק קופצים לצד הלא נכון. עוגן בעברית מסלק את הבעיה.
 
 **זרוע הטקסט חובה.** בלעדיה הלקוח מקבל `[הרשמה](/auth/signup)` — מקור markdown
-בתיבה שלו. מומר ל‑`הרשמה: https://…`.
+בתיבה שלו.
+
+> **⚠️ תוקן בביקורת — הצורה שתועדה כאן אינה הצורה שנשלחת.** המסמך אמר
+> `הרשמה: https://…` (נקודתיים). הקוד בפועל (`templates.ts:109`) מייצר
+> **`הרשמה (https://…)`** — בסוגריים. השינוי נעשה אחרי כתיבת הסעיף, משתי סיבות
+> שנמדדו ברינדור אמיתי: נקודתיים חותכות משפט עברי באמצע כשהקישור יושב בתוך
+> פסקה, ו‑URL שמסיים משפט **בולע את הנקודה** לתוך הקישור האוטומטי שרוב לקוחות
+> הדואר בונים. סוגריים נסגרות לפני הפיסוק, ושתי הבעיות נעלמות.
 
 **ברכה כפולה** — `LEADING_GREETING` מסיר שורת פתיחה עצמאית בלבד (דורש מעבר שורה
 אחריה), כך שמשפט שרק *מתחיל* במילה "שלום" נשאר שלם.
@@ -920,30 +1088,85 @@ npx tsc --noEmit && npm run lint && npx vitest run && npm run build
 תגובה, לוח הזמנים המלא, ייבוא אורחים, סוגי אירועים, אופן התשלום, ביטול.
 הסוכן כתב `[נציג יפרט תכונות נוספות]` כי אין לו פועל שקורא אותם.
 
-**התיקון:** פועל `faq` ב‑`scripts/fleet-agent-cli.ts`, במראה מדויקת ל‑
-`business-facts` — read‑only, ללא PII, מחזיר את המפורסמים בלבד. זו אותה נקודה
-שהוכחה ב‑H0 כמשפיעה בפועל.
+### ⚠️ תוקן בביקורת — הגרסה הקודמת של הקטע הזה הייתה שגויה בשלוש דרכים
+
+הקטע שהיה כאן שאל את **העמודות הגולמיות** וסינן `.not('answer','eq','')`.
+קריאה מלאה של `src/lib/faq/page-model.ts` מראה ששלושתן שגויות:
+
+| # | מה הקטע הישן עשה | למה זה שבור |
+|---|---|---|
+| 1 | `.not('answer','eq','')` | **מפיל בדיוק את שורת הציות הקריטית.** ההערה שם אף הפנתה ל‑H5 — ממצא שנמשך. `pricing_no_response` ריק **בכוונה**; התשובה מורכבת בקוד |
+| 2 | שאילתת עמודות גולמיות | **מפספס 2 שאלות שאינן שורות DB כלל** — כרטיס המחיר ו‑*"מה ההבדל בין אורח, איש קשר ונענה"* (`page-model.ts:9-14`). השנייה היא התיקון בעל הערך הגבוה ביותר מ‑G2 |
+| 3 | ללא `substituteFaqTokens` | **[נמדד]** 2 שורות מפורסמות מכילות `{{channels_list}}` מילולית. הסוכן היה מדביק `ב־{{channels_list}}` **לתוך מייל ללקוח** |
+
+**התיקון: לא לשאול את ה‑DB — לבנות את אותו מודל שהעמוד הציבורי בונה.**
+`buildFaqPageModel()` כבר עושה את שלושת הדברים: מרכיב את המשפט המחייב
+(`page-model.ts:111-116`), מוסיף את שתי השאלות הקוד‑מוכוונות, ומריץ
+`substituteFaqTokens` על כל שאלה ותשובה (`page-model.ts:89-94`).
+`flattenFaqEntries()` (שורה 149) מחזיר בדיוק את מה שהלקוח רואה.
+
+**[נמדד] בטיחות‑באנדל אומתה:** `page-model.ts`, `tokens.ts`,
+`substitute-tokens.ts`, `agreements/template.ts` ו‑`business-facts.ts` —
+**אף אחד מהם אינו מייבא `server-only`**, כך שכולם נכנסים ל‑esbuild bundle.
+
+**מה שאסור:** `getPublishedFaqItems()` (`src/lib/data/faq.ts:18`) — הוא
+`server-only` ומשתמש ב‑`createClient()` מבוסס‑עוגייה. ב‑CLI אין session,
+ו‑`next/headers` ממילא ממופה ל‑`empty.js` בבאנדל. חייבים `createAdminClient()`
+עם אותו `select` בדיוק.
 
 ```ts
-// Stage-2 grounding, mirroring cmdBusinessFacts: the PUBLISHED public FAQ is
-// the answer to "what does the package include" — already written, already
-// reviewed, already live. Without this the drafter emits a placeholder while
-// twelve approved answers sit one query away. Published rows only: a draft FAQ
-// answer must never reach a customer through the side door.
+// Stage-2 grounding, mirroring cmdBusinessFacts above. The PUBLISHED FAQ is
+// already the answer to "what does the package include" — written, reviewed
+// and live. Without it the drafter emits `[נציג יפרט…]` while twelve approved
+// answers sit one query away.
+//
+// This builds the SAME model the public page renders (buildFaqPageModel +
+// flattenFaqEntries) instead of selecting raw columns, and that is the whole
+// point rather than a nicety:
+//   - two of the answers are code-owned and are NOT rows at all (the price
+//     card, and the guest/contact/reached explainer that G2 identified as the
+//     highest-value correction in the system);
+//   - `pricing_no_response` has an intentionally EMPTY answer column — its
+//     mandatory §2 sentence is composed from live facts, so a raw select
+//     returns nothing for the single most compliance-sensitive question;
+//   - answers carry {{channels_list}} tokens. MEASURED: two published rows do.
+//     Handing those to the drafter raw would put `ב־{{channels_list}}` into a
+//     customer's inbox.
+// The drafter must see exactly what the customer sees. One composition.
 async function cmdFaq(): Promise<void> {
   const admin = createAdminClient();
-  const { data, error } = await admin
+
+  const { data: rows, error } = await admin
     .from('faq_items')
-    .select('question, answer')
+    .select('item_key, category, question, answer, sort_order')
     .eq('published', true)
-    .not('answer', 'eq', '')      // ר' H5 — פריט מפורסם עם תשובה ריקה קיים בפועל
-    .order('sort_order');
+    .order('category', { ascending: true })
+    .order('sort_order', { ascending: true });
   if (error) fail(`faq read failed: ${error.message}`);
-  console.log(JSON.stringify({ items: data ?? [] }, null, 2));
+
+  // The same package + gate read cmdBusinessFacts performs — the FAQ's live
+  // numbers and the drafter's quoted price must come from one source.
+  const facts = await loadBusinessFacts();
+
+  const model = buildFaqPageModel((rows ?? []) as FaqItemRow[], facts);
+  console.log(JSON.stringify({ items: flattenFaqEntries(model) }, null, 2));
 }
 ```
 
-לרשום ב‑`case 'faq': return cmdFaq();` ובמחרוזת ה‑usage.
+**ריפקטור נדרש קודם:** לחלץ מ‑`cmdBusinessFacts` את גוף הקריאה ל‑
+`loadBusinessFacts(): Promise<BusinessFacts>` (הגייט + שורת ה‑package +
+`buildBusinessFacts`), ולקרוא לו משני הפעלים. אחרת שתי הקריאות יכולות להיפרד.
+
+ייבואים להוסיף בראש `scripts/fleet-agent-cli.ts`:
+
+```ts
+import { buildFaqPageModel, flattenFaqEntries, type FaqItemRow } from '@/lib/faq/page-model';
+```
+
+לרשום ב‑`case 'faq': return cmdFaq();` ובמחרוזת ה‑usage (שורה 2547).
+
+**אימות:** הפלט חייב להכיל **14 פריטים** — 12 מפורסמים + כרטיס המחיר + מסביר
+היחידות — ו**אפס** מופעי `{{`. שאילתה גולמית הייתה מחזירה 11 ומדליפה 2 טוקנים.
 
 ---
 
@@ -999,10 +1222,13 @@ check (not published or length(btrim(answer)) > 0)   -- ❌ אל תיישם
 
 **שלוש הוראות להחלה בקובץ `support-drafter.md`:**
 
-1. שורה 75 — `פתיח ניטרלי ("שלום, תודה שפנית אלינו")` → **להסיר**. התבנית כבר
-   מרנדרת כותרת *"תודה שפנית אלינו"* וגם `שלום {שם},`. ההוראה הנוכחית **מייצרת**
-   את הכפילות. הנחיה חלופית: *"פתח ישירות בעניין — המעטפת מוסיפה ברכה ופתיח."*
-2. שורה 91 — `סיום מקצועי ("נשמח לעזור… — צוות KALFA")` → **להסיר** מאותה סיבה.
+1. שורה **74** — `פתיח ניטרלי ("שלום, תודה שפנית אלינו")` → **להסיר**. התבנית
+   כבר מרנדרת כותרת *"תודה שפנית אלינו"* וגם `שלום {שם},`. ההוראה הנוכחית
+   **מייצרת** את הכפילות. הנחיה חלופית:
+   *"פתח ישירות בעניין — המעטפת מוסיפה ברכה ופתיח."*
+   *(המסמך אמר 75; ההוראה מתחילה ב‑74 ונמשכת ל‑75.)*
+2. שורה **91** — `סיום מקצועי ("נשמח לעזור… — צוות KALFA")` → **להסיר** מאותה
+   סיבה. *(אומת — 91 מדויק.)*
 3. **להוסיף** תחת "מה לעשות בכל ריצה":
    > **קישורים:** כשיש צעד המשך, כתוב אותו כקישור בתחביר `[טקסט](/נתיב)` —
    > נתיב פנימי בלבד, לעולם לא כתובת מלאה. לדוגמה: `[פתיחת חשבון](/auth/signup)`,
@@ -1022,8 +1248,10 @@ check (not published or length(btrim(answer)) > 0)   -- ❌ אל תיישם
 
 `/admin/contacts/page.tsx` מרנדר כל שדה **פעם אחת**:
 `message` (57) · `draft_reply` (72/81) · `sent_reply` (59‑67) · `replied_at` (63).
-`CONTACT_COLUMNS` (`admin/contacts.ts:42`) הוא select שטוח — וההערה שם קובעת
-במפורש: *"The select string IS the contract"*.
+`CONTACT_COLUMNS` (`admin/contacts.ts:41`, הערך ב‑42) הוא select שטוח — וההערה
+שם קובעת במפורש: *"The select string IS the contract"*.
+
+*(כל ההפניות ב‑I0 אומתו בביקורת. רק `contacts.ts:42` תוקן ל‑41.)*
 
 | # | ממצא | הראיה | מה קורה עם D3 |
 |---|---|---|---|
@@ -1270,30 +1498,47 @@ defaultReply={
 
 ---
 
-## סדר סופי
+## סדר סופי — מאומת בביקורת 16.08
 
-| # | שלב | למה כאן |
+### ✅ נסגר, פרוס ואומת חי
+
+| שלב | commit | הראיה |
 |---|---|---|
-| 1 | **C** commit | הזול ביותר, מונע את הנזק הגדול ביותר |
-| 2 | **A1** 14 השיחות | באג חי, לקוחות אמיתיים ממתינים |
-| 3 | **G1** ה‑topic שהמצאתי | זול, ועוצר הצטברות נתונים שגויים |
-| 4 | ~~**H5** FAQ ריק~~ | **בוטל** — ממצא שגוי, ר' H5. אין פעולה |
-| 5 | **A2** גלאי נטושות | כדי שזה לא יחזור בשקט |
-| 6 | **H3** פועל `faq` | מסיר placeholder מכל תשובה עתידית |
-| 7 | **H7** הוראות לסוכן | owner דרך `!`; בלעדיו H1/H2/H4 אינם משנים התנהגות |
-| 8 | **D1** כותרות שרשור | תנאי מוקדם לכל השאר, ועצמאי מהשאר |
-| 9 | **I5–I7** טבלת שרשור + מיון + תווית | **חייב לקדום ל‑D3** — ר' למטה |
-| 10 | **I8–I10** תצוגת שרשור + שער הטיוטה | בלעדיהם D3 תוקע בשקט (I2) |
-| 11 | **D2+D3** זיהוי תגובה + סטטוס | רק עכשיו יש לאן לכתוב ומה להציג |
-| 12 | **E** תורים | ערך גבוה, תשתית בנויה |
-| 13 | **F** דחיפות | דורש את E |
-| 14 | **G2** ניקוי חותמות | קוסמטי |
-| 15 | **B + G3** ניקוי EWS | רק אחרי ימי יציבות על Graph |
+| **C** commit | 10 commits | עץ נקי · `.deploy-id msvmptw7` |
+| **A1** 14 השיחות | `c85b888` | `ews_dead 0` · `graph_new 14` · 14/14 מאומתות ב‑Graph |
+| **H1·H2·H4** תבנית המייל | `cfc2959` | 21 בדיקות ירוקות |
+| **H6** ניסוח `billing_unit_he` | `cfc2959` | — |
+| ~~**H5** FAQ ריק~~ | — | ❌ **בוטל** — ממצא שגוי. הריקנות מכוונת |
+
+### ⏳ פתוח — לפי (השפעה על לקוח × מוכנות)
+
+| # | שלב | תלוי ב־ | מוכנות | למה כאן |
+|---|---|---|---|---|
+| 1 | **H7** הוראות לסוכן | — | ⚠️ **owner בלבד** | בלעדיו H1/H2/H4 אינם משנים התנהגות. **המעטפת מסתירה זאת** — המייל ייראה תקין גם אם הסוכן לא למד |
+| 2 | **H3** פועל `faq` | ריפקטור `loadBusinessFacts` | ✅ קוד מלא בתוכנית | מסיר `[נציג יפרט…]` מכל תשובה עתידית. **הקטע תוקן בביקורת** |
+| 3 | **G1** ה‑topic שהמצאתי | — | ✅ קוד מלא | זול, עוצר הצטברות נתונים שגויים. **תוקן: כולל תיקון ה‑`tsc`** |
+| 4 | **A2 + A2ב** גלאי + לוג | — | ✅ קוד מלא | כדי שזה לא יחזור בשקט. **תוקן: שם הפונקציה** |
+| 5 | **D1** כותרות שרשור | — | ✅ קוד מלא | עצמאי לגמרי, תנאי מוקדם לכל שרשור |
+| 6 | **I5–I7** טבלה + מיון + תווית | מיגרציה | ✅ קוד מלא | **חייב לקדום ל‑D3** |
+| 7 | **I8–I10** תצוגה + שער הטיוטה | I5 | ✅ קוד מלא | בלעדיהם D3 תוקע בשקט (I2) |
+| 8 | **D2+D3** זיהוי + סטטוס | I5–I10 | ✅ קוד מלא | רק עכשיו יש לאן לכתוב ומה להציג |
+| 9 | **E** תורים | הכרעת בעלים | ⚠️ **תוקן — היה שבור** | `חיוב ותשלום` ≠ `גבייה` |
+| 10 | **F** דחיפות | E | קוד חלקי | דורש את E |
+| 11 | **G2** ניקוי חותמות | — | ✅ | קוסמטי |
+| 12 | **B + G3** ניקוי EWS | יציבות Graph | חסום מבנית | סכמת `exchange_connections` דורשת מיגרציה |
+
+### תלויות קשיחות
+
+```
+I5 (טבלה) ──> I8–I10 (ממשק) ──> D2+D3 (סטטוס)
+E (תורים) ──> F (דחיפות)
+H3 ──> ריפקטור loadBusinessFacts (מ‑cmdBusinessFacts)
+```
+
+`H7` · `G1` · `A2` · `D1` **אינם תלויים בכלום** — אפשר לבצע אותם בכל סדר, היום.
 
 **שינוי סדר מהותי מול הגרסה הקודמת.** D2+D3 היו במקום 6 ולפני הממשק. המדידות
 ב‑I הראו ש‑D3 בסדר ההוא **מוחק היסטוריה** (I1) ו**תוקע בשקט** (I2). שכבת
 השרשור והממשק שלה הן כעת **תנאי מוקדם ל‑D3**, לא המשך לו.
-
-**בוצע כבר:** H1 · H2 · H4 · H6 — קוד + 16 בדיקות, `tsc`/lint/טסטים ירוקים.
 
 **החלטות פתוחות לבעלים:** E (טופס מול תורים) · H7 (עריכת קובץ הרול דרך `!`).
