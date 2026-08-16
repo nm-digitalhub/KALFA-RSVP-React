@@ -15,6 +15,7 @@
 // licensed Israeli consumer-protection lawyer must approve it before go-live.
 
 import { escapeHtml as esc } from '@/lib/html';
+import { substituteTokens as substituteTokensCore } from '@/lib/text/substitute-tokens';
 
 // Fallback version when no active DB document is available (e.g. pre-migration).
 export const AGREEMENT_VERSION = 'draft-2026-07-v3';
@@ -103,7 +104,10 @@ export type AgreementSignature = {
   signatureDataUrl: string;
 };
 
-const CHANNEL_LABELS: Record<string, string> = {
+// Exported so other surfaces that display the channel list (e.g. the public
+// FAQ page's {channels_list} token, src/lib/faq/tokens.ts) reuse this exact
+// mapping instead of hand-rolling a second one that can drift from it.
+export const CHANNEL_LABELS: Record<string, string> = {
   whatsapp: 'וואטסאפ',
   call: 'שיחה טלפונית (AI)',
 };
@@ -193,9 +197,11 @@ function substituteTokens(
     escapedExtra[key] = esc(value);
   }
   const tokens = { ...escapedExtra, ...tokenMap(c, version) };
-  return html.replace(/\{\{\s*([\w.]+)\s*\}\}/g, (whole, key: string) =>
-    Object.prototype.hasOwnProperty.call(tokens, key) ? tokens[key] : whole,
-  );
+  // The regex/replace mechanics themselves live in the shared core
+  // (src/lib/text/substitute-tokens.ts) — this function's own job is only
+  // building `tokens` (the AgreementContent-specific map, HTML-escaped) and
+  // handing it off.
+  return substituteTokensCore(html, tokens);
 }
 
 // §3-4 (price + payment) — the ONLY clauses that differ between the per-reached

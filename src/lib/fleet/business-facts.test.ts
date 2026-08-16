@@ -56,3 +56,37 @@ describe('buildBusinessFacts', () => {
     expect(f.package_name).toBe('אישורי הגעה — וואטסאפ + שיחות AI');
   });
 });
+
+describe('billing_unit_he', () => {
+  // Regression for a real drafting error: a "150 אורחים" question was answered
+  // as though 150 were contacts, and contacts were reached. The facts payload
+  // said nothing about the units, so the drafter had nothing to go on.
+  const pkg: PackageFacts = {
+    name: 'אישורי הגעה',
+    price_per_reached: 4,
+    base_price: 200,
+    included_reached: 200,
+    channels: ['whatsapp'],
+  };
+
+  it.each([true, false])('is present whenever a price is quoted (gate=%s)', (gateOn) => {
+    const facts = buildBusinessFacts(gateOn, pkg);
+    expect(facts.billing_unit_he).toBeTruthy();
+  });
+
+  it('names all three units so they cannot be read as one', () => {
+    const unit = buildBusinessFacts(true, pkg).billing_unit_he ?? '';
+    expect(unit).toContain('אורח');
+    expect(unit).toContain('איש קשר');
+    expect(unit).toContain('נענה');
+  });
+
+  it('tells the drafter not to derive a price from a guest count', () => {
+    const unit = buildBusinessFacts(true, pkg).billing_unit_he ?? '';
+    expect(unit).toContain('אי אפשר לגזור מחיר ממספר אורחים');
+  });
+
+  it('is absent when there is no package to price', () => {
+    expect(buildBusinessFacts(true, null).billing_unit_he).toBeUndefined();
+  });
+});

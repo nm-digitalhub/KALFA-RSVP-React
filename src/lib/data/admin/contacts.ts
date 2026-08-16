@@ -4,6 +4,7 @@ import { createAdminClient } from '@/lib/supabase/admin';
 import { requirePlatformPermission } from '@/lib/auth/dal';
 import { logActivity } from '@/lib/data/activity';
 import { getEmailSender } from '@/lib/email/sender';
+import { getAppOrigin } from '@/lib/url';
 import { inquiryReplyEmail } from '@/lib/email/templates';
 import type { Database } from '@/lib/supabase/types';
 import type { CallbackStatus } from '@/lib/validation/admin';
@@ -135,6 +136,7 @@ export async function sendInquiryReply(id: string, replyText: string): Promise<v
   const { subject, html, text } = inquiryReplyEmail({
     recipientName: msg.name,
     replyText,
+    origin: await getAppOrigin(),
   });
 
   // Actionable errors: the admin is the operator who CAN fix these, so say
