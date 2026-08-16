@@ -1097,25 +1097,85 @@ async function cmdDraftReply(args: Record<string, string | undefined>): Promise<
   }
 
   const admin = createAdminClient();
+
+  // Eligibility is READ FIRST and decided here rather than expressed as filters,
+  // because the reopened case compares two COLUMNS against each other and that
+  // is not something a PostgREST filter can say.
+  const { data: current, error: readError } = await admin
+    .from('contact_messages')
+    .select('id, status, draft_reply, draft_created_at, reply_needed_at')
+    .eq('id', id)
+    .maybeSingle();
+  if (readError) fail(`draft-reply failed: ${readError.message}`);
+
+  // Two ways a row is drafteable, and the second one is the whole reason this
+  // is not simply `status = 'new' AND draft_reply IS NULL`:
+  //
+  //   new      — never drafted. The null check is the loop brake.
+  //   reopened — the customer wrote back on a thread already answered, so
+  //              draft_reply is ALREADY populated from the previous round. A
+  //              null check would refuse forever and the reply would sit
+  //              unanswered with nothing reporting it. Comparing TIMES instead
+  //              keeps the row eligible until a draft is written AFTER the
+  //              customer's message, which is exactly what the fleet trigger
+  //              (scheduler.mjs) matches on.
+  const eligible =
+    current != null &&
+    ((current.status === 'new' && current.draft_reply == null) ||
+      (current.status === 'reopened' &&
+        current.reply_needed_at != null &&
+        (current.draft_created_at == null ||
+          current.reply_needed_at > current.draft_created_at)));
+
+  if (!eligible) {
+    console.log(
+      JSON.stringify(
+        {
+          written: false,
+          reason:
+            'not writable (already drafted, not new/reopened, or unknown id) — no-op by design',
+          rows: [],
+        },
+        null,
+        2,
+      ),
+    );
+    process.exitCode = 2;
+    return;
+  }
+
+  const draftedAt = new Date().toISOString();
   const { data, error } = await admin
     .from('contact_messages')
-    .update({ draft_reply: body, draft_created_at: new Date().toISOString() })
+    .update({ draft_reply: body, draft_created_at: draftedAt })
     .eq('id', id)
-    .eq('status', 'new')
-    .is('draft_reply', null)
+    // Re-asserts what the read saw, so two runs racing cannot both write.
+    .eq('status', current.status)
     .select('id, status, draft_created_at');
 
   if (error) fail(`draft-reply failed: ${error.message}`);
 
   const rows = data ?? [];
+
+  // The thread view renders drafts too, and without this a NEW draft would be
+  // written to the flat column and be invisible in the conversation the admin
+  // actually reads. Superseding rather than appending: there is one current
+  // proposal, and stacking every regeneration would bury the exchange itself.
+  if (rows.length > 0) {
+    await admin.from('inquiry_messages').delete().eq('inquiry_id', id).eq('direction', 'draft');
+    await admin.from('inquiry_messages').insert({
+      inquiry_id: id,
+      direction: 'draft',
+      body,
+      created_at: draftedAt,
+    });
+  }
+
   console.log(
     JSON.stringify(
       {
         written: rows.length > 0,
-        reason:
-          rows.length > 0
-            ? null
-            : 'not writable (already drafted, not new, or unknown id) — no-op by design',
+        reason: rows.length > 0 ? null : 'update matched no row — no-op by design',
         rows,
       },
       null,
@@ -1124,6 +1184,7 @@ async function cmdDraftReply(args: Record<string, string | undefined>): Promise<
   );
   if (rows.length === 0) process.exitCode = 2;
 }
+
 
 // ── Callback triage ─────────────────────────────────────────────────────────
 // The triage role's ONLY two writes, and the only way it can reach the
