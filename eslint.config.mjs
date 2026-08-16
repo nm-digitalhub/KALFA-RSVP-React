@@ -103,6 +103,19 @@ const eslintConfig = defineConfig([
       "@typescript-eslint/no-require-imports": "off",
     },
   },
+
+  // Operator scripts under scripts/ carry a .cjs extension precisely because
+  // they are CommonJS: they are run straight with `node`, outside the Next
+  // build, so `require()` is the correct form rather than a lapse. Scoping the
+  // rule off by extension keeps it fully enforced everywhere else — which an
+  // inline disable comment in each file would not.
+  {
+    files: ["**/*.cjs"],
+    languageOptions: { sourceType: "commonjs" },
+    rules: {
+      "@typescript-eslint/no-require-imports": "off",
+    },
+  },
 ]);
 
 export default eslintConfig;
