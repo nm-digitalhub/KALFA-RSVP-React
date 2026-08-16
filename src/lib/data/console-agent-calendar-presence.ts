@@ -1,7 +1,7 @@
 import 'server-only';
 
 import { createAdminClient } from '@/lib/supabase/admin';
-import { decryptCredential } from '@/lib/exchange-ews/crypto';
+import { resolveMailboxPassword } from '@/lib/exchange-ews/mailbox-credential';
 import { calendarProvider } from '@/lib/exchange-ews/calendar-provider';
 import { pickActiveCalendarWindow } from '@/lib/exchange-ews/provider';
 import type { ExchangeConnectionConfig } from '@/lib/exchange-ews/types';
@@ -107,7 +107,7 @@ async function syncOneAgent(
 
   let password: string;
   try {
-    password = decryptCredential(
+    password = resolveMailboxPassword(
       {
         ciphertext: candidate.credentialCiphertext,
         iv: candidate.credentialIv,

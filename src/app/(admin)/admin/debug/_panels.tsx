@@ -634,7 +634,7 @@ export function ExchangePanel({
         )}
 
         <Alert>
-          <AlertTitle>מצב מעבר: היומן עדיין מול IONOS, הדואר כבר ב-Microsoft 365</AlertTitle>
+          <AlertTitle>דואר ויומן — הועברו ל-Microsoft 365, ה-IONOS אינו בנתיב</AlertTitle>
           <AlertDescription>
             <ul className="list-inside list-disc space-y-1">
               <li>

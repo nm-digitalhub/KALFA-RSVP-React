@@ -29,7 +29,7 @@ import {
   buildRsvpDeadlineDraft,
 } from '@/lib/data/event-exchange-calendar-item';
 import { ilWallTimeToIso } from '@/lib/data/event-date';
-import { decryptCredential } from '@/lib/exchange-ews/crypto';
+import { resolveMailboxPassword } from '@/lib/exchange-ews/mailbox-credential';
 import { calendarProvider } from '@/lib/exchange-ews/calendar-provider';
 import type { ExchangeConnectionConfig } from '@/lib/exchange-ews/types';
 import { createAdminClient } from '@/lib/supabase/admin';
@@ -69,7 +69,7 @@ async function loadBusinessExchangeConnection(
   const row = data[0];
   let password: string;
   try {
-    password = decryptCredential(
+    password = resolveMailboxPassword(
       {
         ciphertext: row.credential_ciphertext,
         iv: row.credential_iv,

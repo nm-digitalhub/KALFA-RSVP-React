@@ -7,7 +7,7 @@ import 'server-only';
 // long after whoever submitted the form has gone. That is also why this module
 // cannot reuse exchange-connections.ts's loadOwnedConnectionConfig — that one
 // is deliberately gated on the signed-in user. The credential path here is the
-// SAME (same columns, same decryptCredential, same fail-closed behaviour); only
+// SAME (same columns, same resolveMailboxPassword, same fail-closed); only
 // the ownership question differs: "the business connection" instead of "this
 // user's connection".
 //
@@ -32,7 +32,7 @@ import {
   type CallerConstraints,
   type SlotRank,
 } from '@/lib/callbacks/schedule-policy';
-import { decryptCredential } from '@/lib/exchange-ews/crypto';
+import { resolveMailboxPassword } from '@/lib/exchange-ews/mailbox-credential';
 import { calendarProvider } from '@/lib/exchange-ews/calendar-provider';
 import type {
   AvailabilityWindow,
@@ -87,7 +87,7 @@ async function loadBusinessConnection(
   const row = data[0];
   let password: string;
   try {
-    password = decryptCredential(
+    password = resolveMailboxPassword(
       {
         ciphertext: row.credential_ciphertext,
         iv: row.credential_iv,

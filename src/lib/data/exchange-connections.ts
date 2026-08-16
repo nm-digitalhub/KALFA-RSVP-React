@@ -12,7 +12,8 @@ import {
 } from '@/lib/auth/dal';
 import { getCallbackRequestByCalendarItem } from '@/lib/data/admin/callbacks';
 import { logActivity } from '@/lib/data/activity';
-import { decryptCredential, encryptCredential } from '@/lib/exchange-ews/crypto';
+import { encryptCredential } from '@/lib/exchange-ews/crypto';
+import { resolveMailboxPassword } from '@/lib/exchange-ews/mailbox-credential';
 import { calendarProvider } from '@/lib/exchange-ews/calendar-provider';
 import type {
   AppointmentAttendee,
@@ -274,7 +275,7 @@ async function loadOwnedConnectionConfig(
 
   let password: string;
   try {
-    password = decryptCredential(
+    password = resolveMailboxPassword(
       {
         ciphertext: row.credential_ciphertext,
         iv: row.credential_iv,

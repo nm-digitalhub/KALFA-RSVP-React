@@ -17,12 +17,14 @@ import type { ExchangeCalendarProvider, ExchangeResult } from './provider';
 //   EXCHANGE_PROVIDER=graph   Microsoft 365 via Graph (default)
 //   EXCHANGE_PROVIDER=ews     legacy IONOS Hosted Exchange via EWS
 //   EXCHANGE_PROVIDER=off     every call fails fast, nothing is contacted
-export type CalendarProviderName = 'graph' | 'ews' | 'off';
+//
+// The SELECTION itself lives in ./provider-selection, which pulls in neither
+// implementation — so a caller that only needs to know which backend is active
+// (mailbox-credential.ts) does not import the entire EWS stack to find out.
+// Re-exported here because this is where every existing caller looks for it.
+export { selectedCalendarProvider, type CalendarProviderName } from './provider-selection';
 
-export function selectedCalendarProvider(): CalendarProviderName {
-  const raw = (process.env.EXCHANGE_PROVIDER ?? 'graph').trim().toLowerCase();
-  return raw === 'ews' || raw === 'off' ? raw : 'graph';
-}
+import { selectedCalendarProvider } from './provider-selection';
 
 // The kill switch returns 'provider_error', deliberately NOT 'not_found':
 // deleteAvailabilityBlock (exchange-availability.ts) and
