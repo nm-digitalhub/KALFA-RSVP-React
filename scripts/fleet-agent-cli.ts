@@ -286,6 +286,7 @@ import {
   toRedactedExample,
 } from '@/lib/fleet/corrections';
 import { buildBusinessFacts, type BusinessFacts } from '@/lib/fleet/business-facts';
+import { buildHebrewStyleGuide } from '@/lib/fleet/hebrew-style';
 import { buildFaqPageModel, flattenFaqEntries, type FaqItemRow } from '@/lib/faq/page-model';
 import {
   applyFix,
@@ -1471,6 +1472,25 @@ async function cmdFaq(): Promise<void> {
   console.log(JSON.stringify({ items: flattenFaqEntries(model) }, null, 2));
 }
 
+// Stage-2 grounding, third of three (business-facts = the numbers, faq = the
+// answers, style = how to write them down).
+//
+// The Academy of the Hebrew Language punctuation rules, as grounding rather
+// than as something the drafter has to already know. Pure, no DB, no I/O — it
+// is a constant, and the verb exists so the rules live in a file that can be
+// revised, reviewed and tested like any other code.
+//
+// WHY A VERB AND NOT A PARAGRAPH IN THE ROLE FILE. MEASURED 16.08: editing
+// business-facts.ts changed the next draft's wording nineteen minutes after
+// deploy, with no owner action; `.claude/fleet/roles/**` is owner-only and
+// needs a manual step every time. Punctuation rules get revised as new failure
+// modes turn up, so they belong on the side that iterates freely. The role file
+// needs exactly one durable line — "run this every time" — and never changes
+// again.
+async function cmdStyle(): Promise<void> {
+  console.log(JSON.stringify(buildHebrewStyleGuide(), null, 2));
+}
+
 // ── housekeeping-pr ──────────────────────────────────────────────────────────
 // The fleet's only git-writing verb. See the synopsis above and
 // plans/fleet-maintenance-capability-plan.md §4 for the full spec; the safety
@@ -2577,6 +2597,8 @@ async function main(): Promise<void> {
       return cmdBusinessFacts();
     case 'faq':
       return cmdFaq();
+    case 'style':
+      return cmdStyle();
     case 'triage-claim':
       return cmdTriageClaim();
     case 'triage-finish':
@@ -2595,7 +2617,7 @@ async function main(): Promise<void> {
       return cmdPublishSocial(scalarValues, !!dryRun);
     default:
       fail(
-        'usage: fleet-agent-cli <request|handoff|complete|poll|verdicts|ack|expire|withdraw|digest|sql|draft-reply|distill-corrections|business-facts|faq|triage-claim|triage-finish|goal-poll|goal-progress|goal-close|analytics-summary|housekeeping-pr|publish-social> [options]',
+        'usage: fleet-agent-cli <request|handoff|complete|poll|verdicts|ack|expire|withdraw|digest|sql|draft-reply|distill-corrections|business-facts|faq|style|triage-claim|triage-finish|goal-poll|goal-progress|goal-close|analytics-summary|housekeeping-pr|publish-social> [options]',
       );
   }
 }
