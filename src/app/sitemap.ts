@@ -10,6 +10,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const origin = await getAppOrigin();
   return [
     { url: `${origin}/`, changeFrequency: 'monthly', priority: 1 },
+    { url: `${origin}/faq`, changeFrequency: 'weekly', priority: 0.8 },
     { url: `${origin}/contact`, changeFrequency: 'monthly', priority: 0.8 },
     { url: `${origin}/terms`, changeFrequency: 'yearly', priority: 0.3 },
     { url: `${origin}/privacy`, changeFrequency: 'yearly', priority: 0.3 },

@@ -218,6 +218,7 @@ export default async function HomePage() {
             <a href="#features" className="text-sm font-medium text-muted-foreground hover:text-foreground">יכולות</a>
             <a href="#how" className="text-sm font-medium text-muted-foreground hover:text-foreground">איך זה עובד</a>
             <a href="#trust" className="text-sm font-medium text-muted-foreground hover:text-foreground">אמון</a>
+            <Link href="/faq" className="text-sm font-medium text-muted-foreground hover:text-foreground">שאלות נפוצות</Link>
             <Link href="/contact" className="text-sm font-medium text-muted-foreground hover:text-foreground">יצירת קשר</Link>
           </nav>
           <div className="flex items-center gap-3">
@@ -541,6 +542,7 @@ export default async function HomePage() {
           <div className="mt-8 flex flex-col gap-4 border-t border-white/10 pt-5 text-xs sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
             <span>© 2026 KALFA · כל הזכויות שמורות</span>
             <nav className="flex flex-wrap items-center gap-x-4 gap-y-2" aria-label="קישורי תחתית">
+              <Link href="/faq" className="text-white/60 hover:text-white">שאלות נפוצות</Link>
               <Link href="/contact" className="text-white/60 hover:text-white">יצירת קשר</Link>
               <Link href="/privacy" className="text-white/60 hover:text-white">מדיניות פרטיות</Link>
               <Link href="/terms" className="text-white/60 hover:text-white">תקנון</Link>

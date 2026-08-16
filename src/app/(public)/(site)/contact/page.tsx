@@ -48,6 +48,13 @@ export default async function ContactPage({
           <p className="mt-2 text-muted-foreground">
             יש לכם שאלה, בקשה או תקלה? כתבו לנו או השאירו מספר — ונחזור אליכם.
           </p>
+          <p className="mt-2 text-sm text-muted-foreground">
+            לפני שפונים, כדאי לבדוק את{' '}
+            <Link href="/faq" className="font-semibold text-primary hover:underline">
+              השאלות הנפוצות
+            </Link>{' '}
+            — יכול להיות שהתשובה כבר שם.
+          </p>
         </div>
 
         <section

@@ -17,8 +17,8 @@ import {
 } from '@/components/ui/sheet';
 
 // Mobile nav drawer for the public landing header. The header's in-page nav
-// (#features/#how/#trust) and "יצירת קשר" are `hidden md:flex` — below that
-// breakpoint this hamburger is the only way to reach them, so an anonymous
+// (#features/#how/#trust), "שאלות נפוצות" and "יצירת קשר" are `hidden md:flex`
+// — below that breakpoint this hamburger is the only way to reach them, so an anonymous
 // visitor on a phone isn't stuck with only the footer link. Base UI's Dialog
 // portal ignores the DOM `dir` attribute (same as the dropdown menu in
 // landing-user-menu.tsx and the mobile sidebar sheet in app-shell.tsx), so it
@@ -68,6 +68,9 @@ export function LandingMobileNav({
             <a href="#trust" onClick={close} className={NAV_LINK_CLASS}>
               אמון
             </a>
+            <Link href="/faq" onClick={close} className={NAV_LINK_CLASS}>
+              שאלות נפוצות
+            </Link>
             <Link href="/contact" onClick={close} className={NAV_LINK_CLASS}>
               יצירת קשר
             </Link>

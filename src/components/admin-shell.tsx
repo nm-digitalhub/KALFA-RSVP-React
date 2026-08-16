@@ -11,6 +11,7 @@ import {
   CalendarClock,
   CalendarDays,
   ChevronDown,
+  CircleQuestionMark,
   Cookie,
   ChevronsUpDown,
   FileText,
@@ -117,6 +118,7 @@ const NAV_GROUPS: NavGroup[] = [
       { href: '/admin/packages', label: 'חבילות', icon: Package },
       { href: '/admin/agreement', label: 'חוזה', icon: FileText },
       { href: '/admin/company', label: 'פרטי חברה', icon: Building2 },
+      { href: '/admin/faq', label: 'שאלות נפוצות', icon: CircleQuestionMark },
     ],
   },
   {
