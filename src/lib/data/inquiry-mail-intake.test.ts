@@ -32,17 +32,44 @@ import { sendSlackAlert } from '@/lib/alerts/slack';
 type UpsertArgs = { row: Record<string, unknown>; opts: Record<string, unknown> };
 
 /** Minimal supabase double that records the upsert and returns `rows`. */
-function mockAdmin(rows: Array<{ id: string }>, captured: UpsertArgs[]) {
-  const chain = {
-    upsert(row: Record<string, unknown>, opts: Record<string, unknown>) {
-      captured.push({ row, opts });
-      return { select: () => Promise.resolve({ data: rows, error: null }) };
-    },
+type ThreadInsert = { table: string; row: Record<string, unknown> };
+
+// Mirrors the three shapes intake now performs: a thread lookup
+// (select→eq→order→limit→maybeSingle), the upsert, and inserts into
+// inquiry_messages. `existingThread` is what the lookup resolves to — null
+// means "no thread yet", which is the new-inquiry path.
+function mockAdmin(
+  rows: Array<{ id: string }>,
+  captured: UpsertArgs[],
+  opts: { existingThread?: { id: string } | null; inserts?: ThreadInsert[]; updates?: Record<string, unknown>[] } = {},
+) {
+  const makeChain = (table: string) => {
+    const chain: Record<string, unknown> = {
+      upsert(row: Record<string, unknown>, o: Record<string, unknown>) {
+        captured.push({ row, opts: o });
+        return { select: () => Promise.resolve({ data: rows, error: null }) };
+      },
+      insert(row: Record<string, unknown>) {
+        opts.inserts?.push({ table, row });
+        return Promise.resolve({ error: null });
+      },
+      update(row: Record<string, unknown>) {
+        opts.updates?.push(row);
+        return { eq: () => Promise.resolve({ error: null }) };
+      },
+      select: () => chain,
+      eq: () => chain,
+      order: () => chain,
+      limit: () => chain,
+      maybeSingle: () => Promise.resolve({ data: opts.existingThread ?? null, error: null }),
+    };
+    return chain;
   };
   vi.mocked(createAdminClient).mockReturnValue({
-    from: () => chain,
+    from: (table: string) => makeChain(table),
   } as unknown as ReturnType<typeof createAdminClient>);
 }
+
 
 function mail(overrides: Partial<InboundMail> = {}): InboundMail {
   return {
@@ -182,4 +209,70 @@ describe('intakeMailAsInquiry', () => {
     expect(captured[0].row.topic).toBeNull();
     expect(captured[0].row.source).toBe('outlook');
   });
+  // ── the reply path ─────────────────────────────────────────────────────────
+  // A customer answering our reply must land ON the existing inquiry. Without
+  // this, one conversation lives in two rows and neither shows the exchange.
+  describe('when the message belongs to a thread we already hold', () => {
+    it('attaches to the existing inquiry instead of opening a second one', async () => {
+      const captured: UpsertArgs[] = [];
+      const inserts: ThreadInsert[] = [];
+      mockAdmin([], captured, { existingThread: { id: 'cm-existing' }, inserts, updates: [] });
+      vi.mocked(fetchInboundMail).mockResolvedValue(mail());
+
+      const res = await intakeMailAsInquiry('AAkALgAA');
+
+      expect(res).toEqual({ status: 'reopened', contactMessageId: 'cm-existing' });
+      // No upsert at all — a second contact_messages row is the bug.
+      expect(captured).toHaveLength(0);
+      expect(inserts).toHaveLength(1);
+      expect(inserts[0]).toMatchObject({
+        table: 'inquiry_messages',
+        row: { inquiry_id: 'cm-existing', direction: 'inbound' },
+      });
+    });
+
+    // The status is the whole trap. The fleet trigger is
+    // `status='new' AND draft_reply IS NULL`; on an answered inquiry draft_reply
+    // is populated, so `new` would leave the drafter asleep and the customer
+    // unanswered with nothing reporting it.
+    it('sets reopened — never new — and records when the customer wrote', async () => {
+      const updates: Record<string, unknown>[] = [];
+      mockAdmin([], [], { existingThread: { id: 'cm-existing' }, inserts: [], updates });
+      vi.mocked(fetchInboundMail).mockResolvedValue(mail());
+
+      await intakeMailAsInquiry('AAkALgAA');
+
+      expect(updates[0]).toMatchObject({
+        status: 'reopened',
+        reply_needed_at: '2026-08-16T09:00:00Z',
+        last_activity_at: '2026-08-16T09:00:00Z',
+        handled_at: null,
+      });
+      expect(updates[0].status).not.toBe('new');
+    });
+
+    // The original question is the context the drafter needs to avoid repeating
+    // an answer already given.
+    it('never overwrites the original question with the reply', async () => {
+      const updates: Record<string, unknown>[] = [];
+      mockAdmin([], [], { existingThread: { id: 'cm-existing' }, inserts: [], updates });
+      vi.mocked(fetchInboundMail).mockResolvedValue(mail());
+
+      await intakeMailAsInquiry('AAkALgAA');
+
+      expect(updates[0]).not.toHaveProperty('message');
+    });
+
+    it('opens a new inquiry when the thread is unrelated', async () => {
+      const captured: UpsertArgs[] = [];
+      mockAdmin([{ id: 'cm-new' }], captured, { existingThread: null, inserts: [] });
+      vi.mocked(fetchInboundMail).mockResolvedValue(mail({ conversationId: 'conv-unseen' }));
+
+      const res = await intakeMailAsInquiry('AAkALgAA');
+
+      expect(res).toEqual({ status: 'created', contactMessageId: 'cm-new' });
+      expect(captured[0].row.thread_id).toBe('conv-unseen');
+    });
+  });
+
 });

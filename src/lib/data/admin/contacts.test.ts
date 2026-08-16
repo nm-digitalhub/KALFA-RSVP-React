@@ -41,8 +41,10 @@ function row(overrides: Partial<ContactMessage> = {}): ContactMessage {
     user_id: null,
     handled_at: null,
     draft_reply: null,
+    draft_created_at: null,
     sent_reply: null,
     replied_at: null,
+    last_activity_at: '2026-06-20T10:00:00.000Z',
     ...overrides,
   };
 }

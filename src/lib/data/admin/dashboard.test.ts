@@ -49,10 +49,17 @@ describe('getDashboardCounts — per-domain permission gating', () => {
       count: 'exact',
       head: true,
     });
-    // contacts/callbacks filter to status='new' (same predicate as the sidebar
-    // badge, via nav-counts.ts's shared counters) — packages stays unfiltered,
-    // so exactly two .eq() calls, both this exact predicate.
-    expect(builder.eq).toHaveBeenCalledTimes(2);
+    // The two domains no longer share one predicate, and the difference is the
+    // point. A contact_message can be `reopened` — a customer wrote back on a
+    // thread already answered, and they are waiting exactly as much as a
+    // first-time sender. A callback_request has no such state, so it still
+    // filters on 'new' alone. Packages stays unfiltered.
+    //
+    // Both counters come from nav-counts.ts, which this dashboard and the
+    // sidebar badge share deliberately — so asserting them here also pins the
+    // badge. The two surfaces can never disagree.
+    expect(builder.in).toHaveBeenCalledWith('status', ['new', 'reopened']);
+    expect(builder.eq).toHaveBeenCalledTimes(1);
     expect(builder.eq).toHaveBeenCalledWith('status', 'new');
     expect(counts).toEqual({ contacts: 7, callbacks: 7, packages: 7 });
   });

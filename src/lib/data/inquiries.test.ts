@@ -28,6 +28,19 @@ function mockInsertReturning(id: string) {
   return { client, builder };
 }
 
+// createContactMessage performs TWO reads against DIFFERENT tables: the
+// console_queues lookup that resolves routing, then the insert. A single shared
+// result made the queue lookup hand back the inquiry's own id — meaningless,
+// and it hid what the assertion was checking. createCallbackRequest has no such
+// lookup, which is why this is a separate helper rather than a wider default.
+function mockContactInsert(id: string, queueId: string | null = null) {
+  const { client, builder } = mockInsertReturning(id);
+  vi.spyOn(builder, 'then').mockImplementationOnce((f) =>
+    (f as (v: unknown) => unknown)({ data: queueId ? { id: queueId } : null, error: null }),
+  );
+  return { client, builder };
+}
+
 describe('createContactMessage', () => {
   const input = {
     name: 'דנה לוי',
@@ -38,7 +51,7 @@ describe('createContactMessage', () => {
   } as const;
 
   it('inserts a normalized row and logs activity for a signed-in submitter', async () => {
-    const { client, builder } = mockInsertReturning('cm-1');
+    const { client, builder } = mockContactInsert('cm-1', 'queue-sales');
 
     const result = await createContactMessage(input, 'user-1');
 
@@ -51,6 +64,9 @@ describe('createContactMessage', () => {
       topic: 'מכירות',
       message: 'אשמח לפרטים',
       user_id: 'user-1',
+      // Resolved at insert time from the topic. `topic` stays the customer's own
+      // words; `queue_id` is where it routes — two facts, deliberately not one.
+      queue_id: 'queue-sales',
     });
     expect(logActivity).toHaveBeenCalledWith({
       action: 'inquiry.contact_created',
@@ -67,7 +83,7 @@ describe('createContactMessage', () => {
   });
 
   it('fires the Slack alert even for an anonymous submitter (no session)', async () => {
-    mockInsertReturning('cm-2');
+    mockContactInsert('cm-2');
 
     const result = await createContactMessage({ ...input, email: undefined }, null);
 
@@ -203,5 +219,43 @@ describe('the form vocabulary and the scheduler agree', () => {
     expect([...CALLBACK_TIME_PREFERENCES]).toEqual(
       CALLBACK_PREFERENCES.filter((p) => p !== 'exact'),
     );
+  });
+});
+
+// The routing hint is worth less than the submission. A queue lookup that finds
+// nothing — renamed key, deactivated queue, a topic nobody mapped — must leave
+// the inquiry unrouted and stored, never rejected.
+describe('createContactMessage — routing is fail-soft', () => {
+  // 'אחר' is unmapped by design, and the code short-circuits before touching
+  // the database at all — which is why this uses the single-chain helper. That
+  // shortcut is worth pinning: an unroutable topic should cost nothing.
+  it('stores an unroutable topic without even querying for a queue', async () => {
+    const { client, builder } = mockInsertReturning('cm-9');
+
+    const result = await createContactMessage(
+      { name: 'דנה', email: 'd@x.com', phone: '0521112222', topic: 'אחר', message: 'שאלה' },
+      null,
+    );
+
+    expect(result.ok).toBe(true);
+    expect(client.from).not.toHaveBeenCalledWith('console_queues');
+    const row = vi.mocked(builder.insert).mock.calls[0][0] as { queue_id: string | null };
+    expect(row.queue_id).toBeNull();
+  });
+
+  // A mapped topic whose queue is missing or inactive must still store the
+  // inquiry: losing a routing hint costs a triage step, losing the submission
+  // costs a customer.
+  it('still stores the inquiry when a mapped queue cannot be found', async () => {
+    const { builder } = mockContactInsert('cm-10', null);
+
+    const result = await createContactMessage(
+      { name: 'דנה', email: 'd@x.com', phone: '0521112222', topic: 'תמיכה', message: 'שאלה' },
+      null,
+    );
+
+    expect(result.ok).toBe(true);
+    const row = vi.mocked(builder.insert).mock.calls[0][0] as { queue_id: string | null };
+    expect(row.queue_id).toBeNull();
   });
 });

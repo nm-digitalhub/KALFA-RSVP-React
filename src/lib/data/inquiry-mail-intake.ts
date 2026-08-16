@@ -1,7 +1,12 @@
 import 'server-only';
 
 import { sendSlackAlert } from '@/lib/alerts/slack';
-import { ensureMailFolder, fetchInboundMail, flattenForDrafter } from '@/lib/microsoft/mail';
+import {
+  ensureMailFolder,
+  fetchInboundMail,
+  flattenForDrafter,
+  type InboundMail,
+} from '@/lib/microsoft/mail';
 import { graphConfigured, primaryMailbox } from '@/lib/microsoft/graph-client';
 import {
   ensureIntakeSubscription,
@@ -43,6 +48,7 @@ const MAIL_TOPIC: string | null = null;
 
 export type MailIntakeResult =
   | { status: 'created'; contactMessageId: string }
+  | { status: 'reopened'; contactMessageId: string }
   | { status: 'duplicate' }
   | { status: 'gone' }
   | { status: 'skipped'; reason: string };
@@ -78,6 +84,27 @@ export async function intakeMailAsInquiry(graphMessageId: string): Promise<MailI
   if (skip) return { status: 'skipped', reason: skip };
 
   const admin = createAdminClient();
+  const body = flattenForDrafter(mail);
+
+  // A message in a thread we already hold is a REPLY, not a new inquiry.
+  //
+  // Graph's conversationId groups a mail thread natively and is stable across
+  // replies, so this needs no RFC 5322 References parsing. Without it a customer
+  // answering our reply opens a SECOND inquiry, and the two halves of one
+  // conversation sit in different rows with neither showing the whole exchange.
+  if (mail.conversationId) {
+    const { data: existing } = await admin
+      .from('contact_messages')
+      .select('id')
+      .eq('thread_id', mail.conversationId)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (existing) {
+      return attachReplyToInquiry(existing.id, mail, body);
+    }
+  }
+
   const { data, error } = await admin
     .from('contact_messages')
     .upsert(
@@ -88,10 +115,11 @@ export async function intakeMailAsInquiry(graphMessageId: string): Promise<MailI
         email: mail.fromAddress,
         phone: null,
         topic: MAIL_TOPIC,
-        message: flattenForDrafter(mail),
+        message: body,
         user_id: null,
         source: 'outlook',
         source_message_id: mail.internetMessageId,
+        thread_id: mail.conversationId,
       },
       { onConflict: 'source,source_message_id', ignoreDuplicates: true },
     )
@@ -105,6 +133,16 @@ export async function intakeMailAsInquiry(graphMessageId: string): Promise<MailI
   // success path for a redelivery, not a failure.
   const created = data?.[0]?.id;
   if (!created) return { status: 'duplicate' };
+
+  // The thread carries the same text the flat column does, so the conversation
+  // view is right from the first message rather than only from the first reply.
+  await admin.from('inquiry_messages').insert({
+    inquiry_id: created,
+    direction: 'inbound',
+    body,
+    message_id: mail.internetMessageId,
+    created_at: mail.receivedAt,
+  });
 
   // Same contract as the web form: only the row id reaches Slack — never the
   // sender, subject or body. `topic` is deliberately NOT sent: it is null for
@@ -162,4 +200,62 @@ export async function runGraphIntakeSubscriptionSweep(): Promise<void> {
       fields: { reason: err instanceof Error ? err.message : 'unknown' },
     });
   }
+}
+
+/**
+ * A customer wrote back on a thread we already hold.
+ *
+ * Status becomes `reopened`, NOT `new`, and that distinction is load-bearing.
+ * The fleet trigger is `status = 'new' AND draft_reply IS NULL`; on an inquiry
+ * that was already answered `draft_reply` is populated, so setting `new` would
+ * leave the row looking handled and the drafter would never wake — the reply
+ * would sit unanswered with nothing reporting it. `reopened` is paired with a
+ * trigger clause that compares reply_needed_at against draft_created_at, so the
+ * row stays eligible until a draft is written AFTER the customer's message.
+ *
+ * `handled_at` is cleared for the same reason: the inquiry is open again.
+ */
+async function attachReplyToInquiry(
+  inquiryId: string,
+  mail: InboundMail,
+  body: string,
+): Promise<MailIntakeResult> {
+  const admin = createAdminClient();
+
+  // The reply is appended as its own message. The flat `message` column is left
+  // alone: it holds the ORIGINAL question, and overwriting it would destroy the
+  // context the drafter needs to avoid repeating an answer already given.
+  const { error: threadError } = await admin.from('inquiry_messages').insert({
+    inquiry_id: inquiryId,
+    direction: 'inbound',
+    body,
+    message_id: mail.internetMessageId,
+    created_at: mail.receivedAt,
+  });
+  if (threadError) {
+    throw new Error('שמירת תגובת הלקוח נכשלה', { cause: threadError });
+  }
+
+  const { error } = await admin
+    .from('contact_messages')
+    .update({
+      status: 'reopened',
+      reply_needed_at: mail.receivedAt,
+      last_activity_at: mail.receivedAt,
+      handled_at: null,
+    })
+    .eq('id', inquiryId);
+  if (error) {
+    throw new Error('עדכון הפנייה שנפתחה מחדש נכשל', { cause: error });
+  }
+
+  void sendSlackAlert({
+    category: 'customer_inquiry',
+    level: 'info',
+    title: 'לקוח הגיב לפנייה קיימת',
+    source: 'outlook',
+    fields: { contactMessageId: inquiryId },
+  });
+
+  return { status: 'reopened', contactMessageId: inquiryId };
 }

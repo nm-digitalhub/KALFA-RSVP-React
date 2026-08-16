@@ -26,6 +26,49 @@ import type {
 // the admin toggle, so it never blocks or fails the submission. PII rule: only
 // the row id + closed-vocabulary topic go to Slack — never name/email/phone/message.
 
+// Which QUEUE a customer-chosen topic routes to.
+//
+// The two vocabularies are deliberately independent: the form says
+// "חיוב ותשלום" because that is what a customer calls it, while the queue is
+// keyed `billing` and displays "גבייה" because that is what the desk calls it.
+//
+// Keyed on the queue `key`, never on `name_he`. Matching by Hebrew name looked
+// obviously correct and silently was not — MEASURED 16.08: those two strings
+// differ, so a name match would have failed to route EVERY billing inquiry,
+// with no error and no log, on the category least affordable to lose. Keying on
+// `key` also means renaming a queue for display can never re-route anything.
+//
+// 'אחר' is absent on purpose, and so is mail intake's null topic: an unrouted
+// inquiry is visible and triageable, a wrongly-routed one is not.
+export const TOPIC_TO_QUEUE_KEY: Record<string, string> = {
+  'מכירות': 'sales',
+  'תמיכה': 'support',
+  'חיוב ותשלום': 'billing',
+};
+
+/**
+ * Resolve the routing queue for a topic, or null when it does not route.
+ *
+ * Fail-soft: a missing or inactive queue yields null rather than throwing. The
+ * inquiry itself is the thing that must not be lost — losing the routing hint
+ * costs a triage step, losing the submission costs a customer.
+ */
+async function resolveQueueId(
+  supabase: ReturnType<typeof createAdminClient>,
+  topic: string | null,
+): Promise<string | null> {
+  const key = topic ? TOPIC_TO_QUEUE_KEY[topic] : undefined;
+  if (!key) return null;
+
+  const { data } = await supabase
+    .from('console_queues')
+    .select('id')
+    .eq('key', key)
+    .eq('is_active', true)
+    .maybeSingle();
+  return data?.id ?? null;
+}
+
 export async function createContactMessage(
   input: ContactMessageInput,
   userId: string | null,
@@ -40,6 +83,7 @@ export async function createContactMessage(
       topic: input.topic,
       message: input.message,
       user_id: userId,
+      queue_id: await resolveQueueId(supabase, input.topic),
     })
     .select('id')
     .single();

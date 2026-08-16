@@ -30,6 +30,21 @@ export function callbackStatusLabel(status: string): string {
   return (CALLBACK_STATUS_LABELS as Record<string, string>)[status] ?? status;
 }
 
+// Contact messages share most of the callback vocabulary but add one state of
+// their own: a customer wrote back on a thread that was already answered.
+// Kept SEPARATE rather than widening CALLBACK_STATUS_LABELS — `reopened` has no
+// meaning for a callback request, and a shared map would offer it there.
+//
+// Without this the fallback above renders the raw English word `reopened` in a
+// Hebrew RTL admin, which is what the plan's own I3 finding measured.
+const CONTACT_ONLY_STATUS_LABELS: Record<string, string> = {
+  reopened: 'נפתחה מחדש',
+};
+
+export function contactStatusLabel(status: string): string {
+  return CONTACT_ONLY_STATUS_LABELS[status] ?? callbackStatusLabel(status);
+}
+
 // --- Webhook inspector (free-text columns → partial map + fallback) ---
 
 // Derived processing state of a webhook_inbox row. `processed_at` wins (terminal);

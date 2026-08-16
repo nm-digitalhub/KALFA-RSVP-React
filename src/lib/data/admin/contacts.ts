@@ -34,12 +34,18 @@ export type ContactMessage = Pick<
   | 'user_id'
   | 'handled_at'
   | 'draft_reply'
+  | 'draft_created_at'
   | 'sent_reply'
   | 'replied_at'
+  | 'last_activity_at'
 >;
 
+// `draft_created_at` is here for the composer gate, which compares TIMES rather
+// than testing whether a reply ever happened — see ContactReplyForm. Without it
+// a re-drafted reply on a reopened thread is written to the database and never
+// shown to anyone.
 export const CONTACT_COLUMNS =
-  'id, name, email, phone, message, created_at, status, topic, user_id, handled_at, draft_reply, sent_reply, replied_at';
+  'id, name, email, phone, message, created_at, status, topic, user_id, handled_at, draft_reply, draft_created_at, sent_reply, replied_at, last_activity_at';
 
 // List contact messages, newest first, with exact total for pagination.
 export async function listContactMessages(
@@ -53,7 +59,12 @@ export async function listContactMessages(
   const { data, error, count } = await supabase
     .from('contact_messages')
     .select(CONTACT_COLUMNS, { count: 'exact' })
-    .order('created_at', { ascending: false })
+    // A reopened inquiry is MORE urgent than a new one — the customer already
+    // waited once. Ordering by created_at buried it at its original date, so a
+    // July thread answered today sank below everything on the first page.
+    // last_activity_at is maintained on write (intake, reply) rather than
+    // computed, so this stays a single indexed query.
+    .order('last_activity_at', { ascending: false })
     .range(from, to);
 
   if (error) {
@@ -162,12 +173,36 @@ export async function sendInquiryReply(id: string, replyText: string): Promise<v
   }
 
   const now = new Date().toISOString();
+
+  // The thread is the record. `sent_reply` is a single column, so a second reply
+  // overwrites the first and the earlier exchange disappears — which is exactly
+  // what makes a reopened inquiry unreadable. Appending here keeps every reply.
+  //
+  // Written BEFORE the contact_messages stamp on purpose: if this insert fails
+  // the row still shows the previous state and the admin retries, whereas losing
+  // it after the stamp would leave a sent reply with no record of what was sent.
+  // Best-effort by design though — the mail is already gone, so a failure here
+  // must not present as "the send failed".
+  const { error: threadError } = await supabase.from('inquiry_messages').insert({
+    inquiry_id: id,
+    direction: 'outbound',
+    body: replyText,
+  });
+
   const { error: updateError } = await supabase
     .from('contact_messages')
-    .update({ sent_reply: replyText, replied_at: now, status: 'done', handled_at: now })
+    .update({
+      sent_reply: replyText,
+      replied_at: now,
+      status: 'done',
+      handled_at: now,
+      // Keeps the admin list ordered by real activity rather than by the date
+      // the inquiry first arrived.
+      last_activity_at: now,
+    })
     .eq('id', id);
 
-  if (updateError) {
+  if (updateError || threadError) {
     throw new Error(
       'המענה נשלח ללקוח, אך שמירת הרשומה נכשלה — נא לרענן ולוודא לפני שליחה חוזרת',
     );
@@ -178,4 +213,126 @@ export async function sendInquiryReply(id: string, replyText: string): Promise<v
     action: 'contact.reply_sent',
     meta: { contactMessageId: id },
   });
+}
+
+export type InquiryMessage = {
+  id: string;
+  inquiry_id: string;
+  direction: 'inbound' | 'outbound' | 'draft';
+  body: string;
+  created_at: string;
+};
+
+/**
+ * Every message on the inquiries in `ids`, oldest first, as ONE query.
+ *
+ * Batched deliberately: the admin list renders a page of inquiries, and a
+ * per-row read would be a classic N+1 against a table that grows with every
+ * reply. The caller groups by `inquiry_id`.
+ *
+ * The flat `message` / `sent_reply` / `draft_reply` columns are still written
+ * alongside these rows, because distill-corrections reads the draft↔sent pair
+ * and the fleet trigger reads draft_reply. This is the read path for DISPLAY;
+ * those remain the read path for their own consumers until they move.
+ */
+export async function listInquiryMessages(ids: string[]): Promise<InquiryMessage[]> {
+  await requirePlatformPermission('view_customer_data');
+  if (ids.length === 0) return [];
+
+  const supabase = createAdminClient();
+  const { data, error } = await supabase
+    .from('inquiry_messages')
+    .select('id, inquiry_id, direction, body, created_at')
+    .in('inquiry_id', ids)
+    .order('created_at', { ascending: true });
+
+  // Fail-soft: the thread is context around the inquiry, and losing it must not
+  // take down the page that lets a human answer a waiting customer.
+  if (error) return [];
+  return (data ?? []) as InquiryMessage[];
+}
+
+export type InquiryUrgency = {
+  /** Days until the soonest upcoming event this inquirer owns. */
+  daysToEvent: number;
+  eventName: string;
+};
+
+/**
+ * How soon the person asking has an event, keyed by inquiry id.
+ *
+ * DERIVED at read time, never stored. A stored urgency flag is wrong the moment
+ * the event passes, and nothing would be watching to clear it.
+ *
+ * Matched on PHONE. `profiles` carries `phone` but no email, so an email match
+ * would have to go through GoTrue's listUsers with its 200-user ceiling — a
+ * silent cutoff on the exact axis this is meant to make reliable. Phone is a
+ * real indexed column, so phone is the key.
+ *
+ * ⚠️ NOT proof of identity. A phone number typed into a public form is a
+ * PRIORITY HINT and nothing else: it orders a queue for a human, and must never
+ * gate access to account data. Two inquiries could carry the same number and
+ * neither has authenticated.
+ *
+ * Why it matters here specifically: KALFA's customers are private individuals,
+ * so an event three days out is somebody's wedding. That question cannot wait
+ * in line behind a general pricing enquiry, and nothing in the list currently
+ * distinguishes them.
+ */
+export async function resolveInquiryUrgency(
+  inquiries: Array<{ id: string; phone: string | null }>,
+  nowMs: number = Date.now(),
+): Promise<Map<string, InquiryUrgency>> {
+  await requirePlatformPermission('view_customer_data');
+
+  const phones = [...new Set(inquiries.map((i) => i.phone).filter((p): p is string => !!p))];
+  const urgency = new Map<string, InquiryUrgency>();
+  if (phones.length === 0) return urgency;
+
+  const supabase = createAdminClient();
+
+  // Two batched reads, never one per row: this renders inside a paginated list.
+  const { data: profiles } = await supabase
+    .from('profiles')
+    .select('id, phone')
+    .in('phone', phones);
+  if (!profiles || profiles.length === 0) return urgency;
+
+  // `profiles.phone` is nullable, and the `.in()` above cannot return a null
+  // match — but the generated type does not know that, so narrow explicitly
+  // rather than assert.
+  const ownerByPhone = new Map<string, string>();
+  for (const p of profiles) {
+    if (p.phone) ownerByPhone.set(p.phone, p.id);
+  }
+  const nowIso = new Date(nowMs).toISOString();
+
+  const { data: events } = await supabase
+    .from('events')
+    .select('owner_id, name, event_date')
+    .in('owner_id', [...ownerByPhone.values()])
+    .gte('event_date', nowIso)
+    .order('event_date', { ascending: true });
+  if (!events) return urgency;
+
+  // Soonest event per owner — the list is already ascending, so the first wins.
+  const soonestByOwner = new Map<string, { name: string; event_date: string }>();
+  for (const e of events) {
+    if (e.owner_id && !soonestByOwner.has(e.owner_id)) {
+      soonestByOwner.set(e.owner_id, { name: e.name, event_date: e.event_date });
+    }
+  }
+
+  const DAY_MS = 86_400_000;
+  for (const inquiry of inquiries) {
+    if (!inquiry.phone) continue;
+    const ownerId = ownerByPhone.get(inquiry.phone);
+    const event = ownerId ? soonestByOwner.get(ownerId) : undefined;
+    if (!event) continue;
+    urgency.set(inquiry.id, {
+      daysToEvent: Math.max(0, Math.ceil((Date.parse(event.event_date) - nowMs) / DAY_MS)),
+      eventName: event.name,
+    });
+  }
+  return urgency;
 }

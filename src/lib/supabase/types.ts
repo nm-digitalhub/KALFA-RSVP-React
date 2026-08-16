@@ -2131,14 +2131,18 @@ export type Database = {
           handled_at: string | null
           id: string
           internal_note: string | null
+          last_activity_at: string
           message: string
           name: string
           phone: string | null
+          queue_id: string | null
           replied_at: string | null
+          reply_needed_at: string | null
           sent_reply: string | null
           source: string
           source_message_id: string | null
           status: string
+          thread_id: string | null
           topic: string | null
           user_id: string | null
         }
@@ -2150,14 +2154,18 @@ export type Database = {
           handled_at?: string | null
           id?: string
           internal_note?: string | null
+          last_activity_at?: string
           message: string
           name: string
           phone?: string | null
+          queue_id?: string | null
           replied_at?: string | null
+          reply_needed_at?: string | null
           sent_reply?: string | null
           source?: string
           source_message_id?: string | null
           status?: string
+          thread_id?: string | null
           topic?: string | null
           user_id?: string | null
         }
@@ -2169,18 +2177,30 @@ export type Database = {
           handled_at?: string | null
           id?: string
           internal_note?: string | null
+          last_activity_at?: string
           message?: string
           name?: string
           phone?: string | null
+          queue_id?: string | null
           replied_at?: string | null
+          reply_needed_at?: string | null
           sent_reply?: string | null
           source?: string
           source_message_id?: string | null
           status?: string
+          thread_id?: string | null
           topic?: string | null
           user_id?: string | null
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "contact_messages_queue_id_fkey"
+            columns: ["queue_id"]
+            isOneToOne: false
+            referencedRelation: "console_queues"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       contacts: {
         Row: {
@@ -3063,6 +3083,44 @@ export type Database = {
             columns: ["call_attempt_id"]
             isOneToOne: false
             referencedRelation: "call_attempts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      inquiry_messages: {
+        Row: {
+          author_id: string | null
+          body: string
+          created_at: string
+          direction: string
+          id: string
+          inquiry_id: string
+          message_id: string | null
+        }
+        Insert: {
+          author_id?: string | null
+          body: string
+          created_at?: string
+          direction: string
+          id?: string
+          inquiry_id: string
+          message_id?: string | null
+        }
+        Update: {
+          author_id?: string | null
+          body?: string
+          created_at?: string
+          direction?: string
+          id?: string
+          inquiry_id?: string
+          message_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "inquiry_messages_inquiry_id_fkey"
+            columns: ["inquiry_id"]
+            isOneToOne: false
+            referencedRelation: "contact_messages"
             referencedColumns: ["id"]
           },
         ]

@@ -33,7 +33,12 @@ export async function countNewContacts(supabase: AdminClient): Promise<number> {
   const { count, error } = await supabase
     .from('contact_messages')
     .select('id', { count: 'exact', head: true })
-    .eq('status', 'new');
+    // `reopened` counts too: a customer who wrote back on an answered thread is
+    // waiting exactly as much as a first-time sender, and a badge that ignored
+    // them would make a live conversation look handled. Per the note above this
+    // moves BOTH surfaces — the sidebar badge and the /admin dashboard card —
+    // which is the point: they must never disagree.
+    .in('status', ['new', 'reopened']);
   return error ? 0 : (count ?? 0);
 }
 
