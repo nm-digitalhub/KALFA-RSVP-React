@@ -7,7 +7,7 @@ import {
   getMyActiveExchangeConnection,
   loadExchangeConfigForConnection,
 } from '@/lib/data/exchange-connections';
-import { ewsProvider } from '@/lib/exchange-ews/ews-impl';
+import { calendarProvider } from '@/lib/exchange-ews/calendar-provider';
 import type { AppointmentShowAs } from '@/lib/exchange-ews/types';
 
 // Availability status ("presence") for the business owner, expressed the way
@@ -150,7 +150,7 @@ export async function getMyPresence(): Promise<PresenceSnapshot> {
     // Read the calendar directly (not the availability service — it answers
     // 500 on this hosting, see ews-impl). One read serves both purposes:
     // deciding presence AND reconciling our rows against reality.
-    const result = await ewsProvider.listAppointments(loaded.config, {
+    const result = await calendarProvider.listAppointments(loaded.config, {
       start: new Date(now.getTime() - 24 * 60 * 60_000),
       end: new Date(now.getTime() + 12 * 60 * 60_000),
     });
@@ -243,7 +243,7 @@ export async function createAvailabilityBlock(input: {
   if (!loaded.ok) return { ok: false, message: loaded.message };
 
   const preset = AVAILABILITY_PRESETS[input.showAs];
-  const created = await ewsProvider.createAppointment(loaded.config, {
+  const created = await calendarProvider.createAppointment(loaded.config, {
     subject: statusSubject(preset.label),
     start,
     end,
@@ -299,7 +299,7 @@ export async function deleteAvailabilityBlock(blockId: string): Promise<Availabi
   const loaded = await loadExchangeConfigForConnection(row.connection_id);
   if (!loaded.ok) return { ok: false, message: loaded.message };
 
-  const deleted = await ewsProvider.deleteAppointment(loaded.config, row.appointment_id);
+  const deleted = await calendarProvider.deleteAppointment(loaded.config, row.appointment_id);
   // 'not_found' means it is already gone (deleted in Outlook) — that is the
   // desired end state, so treat it as success and clean up our row.
   if (!deleted.ok && deleted.error !== 'not_found') {

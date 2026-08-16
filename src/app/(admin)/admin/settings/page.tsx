@@ -6,6 +6,7 @@ import {
   getInfraConfigStatus,
 } from '@/lib/data/admin/settings';
 import { getBaseOveragePricingEnabled } from '@/lib/data/payments';
+import { selectedEmailProvider } from '@/lib/email/sender';
 import {
   getExchangeConnectionMode,
   listMyExchangeConnections,
@@ -46,7 +47,7 @@ export default async function AdminSettingsPage() {
             בנפרד; המפתחות מוצגים מוסכים עם כפתור חשיפה.
           </p>
         </div>
-        <SettingsForm settings={settings} />
+        <SettingsForm settings={settings} emailProvider={selectedEmailProvider()} />
       </section>
 
       <section className={sectionClass}>
@@ -63,7 +64,7 @@ export default async function AdminSettingsPage() {
 
       <section className={sectionClass}>
         <div>
-          <h2 className="text-lg font-semibold">חיבור Exchange (IONOS)</h2>
+          <h2 className="text-lg font-semibold">חיבור יומן Exchange</h2>
           <p className="text-sm text-muted-foreground">
             חיבור תיבת ה-Exchange של העסק ליצירת ועדכון אירועים ביומן — פיצ׳ר
             ניהול בלבד, אינו חשוף ללקוחות. שלב 1: בדיקת חיבור, רשימת יומנים

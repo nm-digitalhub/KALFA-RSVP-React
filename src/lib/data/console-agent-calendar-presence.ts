@@ -2,7 +2,7 @@ import 'server-only';
 
 import { createAdminClient } from '@/lib/supabase/admin';
 import { decryptCredential } from '@/lib/exchange-ews/crypto';
-import { ewsProvider } from '@/lib/exchange-ews/ews-impl';
+import { calendarProvider } from '@/lib/exchange-ews/calendar-provider';
 import { pickActiveCalendarWindow } from '@/lib/exchange-ews/provider';
 import type { ExchangeConnectionConfig } from '@/lib/exchange-ews/types';
 
@@ -32,7 +32,7 @@ import type { ExchangeConnectionConfig } from '@/lib/exchange-ews/types';
 //
 // NOT GetUserAvailability: MEASURED dead on this IONOS mailbox (HTTP 500 /
 // ErrorInternalServerError 127 — ews-impl.ts:686-711). Uses
-// ewsProvider.getAvailability(), which is itself calendar-derived
+// calendarProvider.getAvailability(), which is itself calendar-derived
 // (listAppointments + LegacyFreeBusyStatus, filtering out 'free') — the same
 // working path exchange-availability.ts's getMyPresence() already uses.
 //
@@ -136,7 +136,7 @@ async function syncOneAgent(
     authMethod: candidate.authMethod,
   };
 
-  const result = await ewsProvider.getAvailability(cfg, {
+  const result = await calendarProvider.getAvailability(cfg, {
     start: new Date(nowMs - SYNC_LOOKBACK_MS),
     end: new Date(nowMs + SYNC_LOOKAHEAD_MS),
   });

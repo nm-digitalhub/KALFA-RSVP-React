@@ -30,7 +30,7 @@ import {
 } from '@/lib/data/event-exchange-calendar-item';
 import { ilWallTimeToIso } from '@/lib/data/event-date';
 import { decryptCredential } from '@/lib/exchange-ews/crypto';
-import { ewsProvider } from '@/lib/exchange-ews/ews-impl';
+import { calendarProvider } from '@/lib/exchange-ews/calendar-provider';
 import type { ExchangeConnectionConfig } from '@/lib/exchange-ews/types';
 import { createAdminClient } from '@/lib/supabase/admin';
 import type { Database } from '@/lib/supabase/types';
@@ -184,7 +184,7 @@ export async function syncEventToExchange(eventId: string): Promise<void> {
       notes: event.notes,
       detailUrl,
     });
-    const created = await ewsProvider.createAppointment(connection.connection.config, draft);
+    const created = await calendarProvider.createAppointment(connection.connection.config, draft);
     if (!created.ok) {
       logSync('create_failed', { eventId, error: created.error });
       return;
@@ -194,7 +194,7 @@ export async function syncEventToExchange(eventId: string): Promise<void> {
     if (event.rsvp_deadline) {
       const startIsoMidnight = ilWallTimeToIso(event.rsvp_deadline, '00:00');
       const rsvpDraft = buildRsvpDeadlineDraft({ ...headingInput, startIsoMidnight });
-      const rsvpCreated = await ewsProvider.createAppointment(
+      const rsvpCreated = await calendarProvider.createAppointment(
         connection.connection.config,
         rsvpDraft,
       );
@@ -224,9 +224,9 @@ export async function syncEventToExchange(eventId: string): Promise<void> {
       // appointment(s) exist but we could not record them, so remove them
       // rather than leave an orphan (and a duplicate) the owner would see.
       if ((insertError as { code?: string }).code === '23505') {
-        await ewsProvider.deleteAppointment(connection.connection.config, created.data.appointmentId);
+        await calendarProvider.deleteAppointment(connection.connection.config, created.data.appointmentId);
         if (rsvpDeadlineAppointmentId) {
-          await ewsProvider.deleteAppointment(
+          await calendarProvider.deleteAppointment(
             connection.connection.config,
             rsvpDeadlineAppointmentId,
           );
@@ -289,7 +289,7 @@ export async function markEventExchangeCancelled(eventId: string): Promise<void>
 
     let updated = 0;
     for (const appointmentId of appointmentIds) {
-      const detail = await ewsProvider.getAppointment(connection.connection.config, appointmentId);
+      const detail = await calendarProvider.getAppointment(connection.connection.config, appointmentId);
       if (!detail.ok) {
         // Gone (owner deleted it in Outlook) or unreachable — nothing to mark.
         logSync('cancel_appointment_unreadable', { eventId, error: detail.error });
@@ -300,7 +300,7 @@ export async function markEventExchangeCancelled(eventId: string): Promise<void>
         start: detail.data.start,
         end: detail.data.end,
       });
-      const result = await ewsProvider.updateAppointment(
+      const result = await calendarProvider.updateAppointment(
         connection.connection.config,
         appointmentId,
         update,

@@ -562,7 +562,7 @@ export function IntegrationsPanel({
   );
 }
 
-// --- Exchange (IONOS EWS) --------------------------------------------------
+// --- Exchange calendar (mid-migration: IONOS EWS → Microsoft 365 Graph) -----
 
 const EXCHANGE_STATUS_VARIANT: Record<ExchangeConnectionView['status'], BadgeVariant> = {
   verified: 'success',
@@ -587,7 +587,7 @@ export function ExchangePanel({
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Exchange (IONOS EWS)</CardTitle>
+        <CardTitle>יומן Exchange</CardTitle>
         <CardDescription>
           כל חיבורי ה-Exchange בפלטפורמה, קריאה בלבד — ניהול ובדיקת חיבור ב-
           <Link href="/admin/settings" className="underline underline-offset-2">
@@ -634,28 +634,36 @@ export function ExchangePanel({
         )}
 
         <Alert>
-          <AlertTitle>התנהגות ספק (IONOS) — נבדקה לעומק, לא דורשת פעולה</AlertTitle>
+          <AlertTitle>מצב מעבר: היומן עדיין מול IONOS, הדואר כבר ב-Microsoft 365</AlertTitle>
           <AlertDescription>
-            <p className="mb-2">
-              הסעיפים נחקרו ב-31.07 מול מקורות ראשוניים (תיעוד Microsoft EWS, מאגר הספרייה, ספריות EWS אחרות)
-              ובחלקם אומתו חי מול השרת (Autodiscover מאומת, OAuth נבדק ונסגר) — הגישה הנוכחית אומתה כנכונה
-              בכל אחד מהם.
-            </p>
             <ul className="list-inside list-disc space-y-1">
               <li>
-                נקודת קצה: <span dir="ltr" className="font-mono">exchange.ionos.com/EWS/Exchange.asmx</span> — קבועה בקוד במכוון. Autodiscover מאומת חי (בקשה מאומתת אמיתית): מחזיר <span dir="ltr" className="font-mono">exchange2019.ionos.com</span> — hostname שונה, אך אותו שרת בדיוק (אותם IPs, אותו TLS cert)
+                <strong>דואר — הועבר (15.08.2026).</strong> ה-<span dir="ltr" className="font-mono">MX</span> מפנה ל-Microsoft 365,
+                ה-<span dir="ltr" className="font-mono">SPF</span> ממוזג (IONOS ומיקרוסופט מאושרים שניהם), ו-
+                <span dir="ltr" className="font-mono">DKIM</span> חתום ותקף. נכנס ויוצא אומתו מקצה לקצה
               </li>
               <li>
-                גרסת חיווט: <span dir="ltr" className="font-mono">Exchange2016</span> — מאומת גם על ידי ספריית EWS נפרדת לגמרי (Python) שנתקלת באותו כשל מדויק מול Exchange 2019
+                <strong>יומן — הועבר ל-Microsoft Graph (16.08.2026).</strong> ברירת המחדל היא
+                <span dir="ltr" className="font-mono"> EXCHANGE_PROVIDER=graph</span>, אימות בתעודה ברמת האפליקציה
+                (לא סיסמת תיבה), וכל שכבת הנתונים עוברת דרך
+                <span dir="ltr" className="font-mono"> calendar-provider.ts</span>. חזרה לאחור:
+                <span dir="ltr" className="font-mono"> ews</span>, כיבוי מלא: <span dir="ltr" className="font-mono">off</span>
               </li>
               <li>
-                <span dir="ltr" className="font-mono">GetUserAvailability</span> מחזירה 500 על תיבה זו — תקלה מתועדת ורחבה (לא ספציפית ל-IONOS, כולל ב-repo הרשמי של Microsoft); זמינות נגזרת מהיומן עצמו במקום, ונבדק שאין סיכון קריסה בנתיב הקוד שלנו
+                <span dir="ltr" className="font-mono">getSchedule</span> נותן פנוי/תפוס אמיתי — היכולת ש-
+                <span dir="ltr" className="font-mono">GetUserAvailability</span> לא סיפקה מול IONOS (החזירה 500,
+                והזמינות נגזרה מהיומן עצמו כעקיפה)
               </li>
               <li>
-                ספריית <span dir="ltr" className="font-mono">ews-javascript-api@0.15.3</span> + <span dir="ltr" className="font-mono">@ewsjs/xhr@3.1.3</span> — ללא תחזוקה מאז 05/2024; תיקון ה-XML-escaping שביצענו כבר מכסה שני באגים פתוחים ב-upstream מאז 2020
+                <strong>הדואר היוצא של האפליקציה אינו עובר בתיבה כלל.</strong> הוא נשלח דרך ספק
+                טרנזקציוני לפי <span dir="ltr" className="font-mono">EMAIL_PROVIDER</span>, אחרי ש-Exchange Online
+                חסם שליחה חיצונית ב-<span dir="ltr" className="font-mono">550 5.7.708</span>
               </li>
               <li>
-                <span dir="ltr" className="font-mono">OAuth</span> נבדק ונסגר סופית: השרת תומך (Hybrid Modern Auth פעיל, אישר טוקן ריק כ-Bearer תקין-פורמטית), אך ל-<span dir="ltr" className="font-mono">kalfa.me</span> אין tenant ב-Entra ID כלל — אין דרך להנפיק טוקן תקף. NTLM נשאר שיטת האימות היחידה הזמינה
+                <strong>לוח זמנים:</strong> EWS ב-Exchange Online מתחיל להיסגר ב-10/2026 ונסגר ב-04/2027 —
+                זו הסיבה שהיעד היה Graph ולא EWS עם OAuth. תוכניות:
+                <span dir="ltr" className="font-mono"> plans/m365-graph-migration.md</span>,
+                <span dir="ltr" className="font-mono"> plans/m365-fleet-mail-intake.md</span>
               </li>
             </ul>
           </AlertDescription>

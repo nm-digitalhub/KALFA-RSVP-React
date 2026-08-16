@@ -2136,6 +2136,8 @@ export type Database = {
           phone: string | null
           replied_at: string | null
           sent_reply: string | null
+          source: string
+          source_message_id: string | null
           status: string
           topic: string | null
           user_id: string | null
@@ -2153,6 +2155,8 @@ export type Database = {
           phone?: string | null
           replied_at?: string | null
           sent_reply?: string | null
+          source?: string
+          source_message_id?: string | null
           status?: string
           topic?: string | null
           user_id?: string | null
@@ -2170,6 +2174,8 @@ export type Database = {
           phone?: string | null
           replied_at?: string | null
           sent_reply?: string | null
+          source?: string
+          source_message_id?: string | null
           status?: string
           topic?: string | null
           user_id?: string | null
@@ -2542,6 +2548,45 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      faq_items: {
+        Row: {
+          answer: string
+          category: Database["public"]["Enums"]["faq_category"]
+          created_at: string
+          id: string
+          is_structural: boolean
+          item_key: string | null
+          published: boolean
+          question: string
+          sort_order: number
+          updated_at: string
+        }
+        Insert: {
+          answer?: string
+          category: Database["public"]["Enums"]["faq_category"]
+          created_at?: string
+          id?: string
+          is_structural?: boolean
+          item_key?: string | null
+          published?: boolean
+          question: string
+          sort_order?: number
+          updated_at?: string
+        }
+        Update: {
+          answer?: string
+          category?: Database["public"]["Enums"]["faq_category"]
+          created_at?: string
+          id?: string
+          is_structural?: boolean
+          item_key?: string | null
+          published?: boolean
+          question?: string
+          sort_order?: number
+          updated_at?: string
+        }
+        Relationships: []
       }
       fleet_goals: {
         Row: {
@@ -5209,6 +5254,7 @@ export type Database = {
         | "engagement"
         | "birthday"
         | "other"
+      faq_category: "about" | "pricing" | "how_it_works" | "legal_support"
       guest_status: "pending" | "attending" | "declined" | "maybe"
     }
     CompositeTypes: {
@@ -5395,6 +5441,7 @@ export const Constants = {
         "birthday",
         "other",
       ],
+      faq_category: ["about", "pricing", "how_it_works", "legal_support"],
       guest_status: ["pending", "attending", "declined", "maybe"],
     },
   },

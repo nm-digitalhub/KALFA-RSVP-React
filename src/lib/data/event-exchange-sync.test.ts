@@ -7,8 +7,8 @@ vi.mock('@/lib/url', () => ({
   getAppUrl: vi.fn(async (path: string) => `https://beta.kalfa.me${path}`),
 }));
 vi.mock('@/lib/exchange-ews/crypto', () => ({ decryptCredential: vi.fn(() => 'pw') }));
-vi.mock('@/lib/exchange-ews/ews-impl', () => ({
-  ewsProvider: {
+vi.mock('@/lib/exchange-ews/calendar-provider', () => ({
+  calendarProvider: {
     getAppointment: vi.fn(),
     updateAppointment: vi.fn(),
     createAppointment: vi.fn(),
@@ -19,7 +19,7 @@ vi.mock('@/lib/exchange-ews/ews-impl', () => ({
 import { createMockSupabase, type MockQueryBuilder } from '@/test/supabase-mock';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { logActivity } from '@/lib/data/activity';
-import { ewsProvider } from '@/lib/exchange-ews/ews-impl';
+import { calendarProvider } from '@/lib/exchange-ews/calendar-provider';
 import type { ExchangeAppointmentDetail } from '@/lib/exchange-ews/types';
 import {
   EVENT_EXCHANGE_CANCELLED_CATEGORY,
@@ -74,15 +74,15 @@ describe('syncEventToExchange', () => {
       { data: [CONNECTION], error: null }, // exchange_connections lookup
       { data: null, error: null }, // exchange_calendar_links insert
     );
-    vi.mocked(ewsProvider.createAppointment).mockResolvedValue({
+    vi.mocked(calendarProvider.createAppointment).mockResolvedValue({
       ok: true,
       data: { appointmentId: 'appt-1' },
     });
 
     await syncEventToExchange('event-1');
 
-    expect(ewsProvider.createAppointment).toHaveBeenCalledTimes(1);
-    const [, draft] = vi.mocked(ewsProvider.createAppointment).mock.calls[0];
+    expect(calendarProvider.createAppointment).toHaveBeenCalledTimes(1);
+    const [, draft] = vi.mocked(calendarProvider.createAppointment).mock.calls[0];
     expect(draft.category).toBe(EVENT_EXCHANGE_CATEGORY);
     expect(draft.allDay).toBeUndefined();
 
@@ -102,14 +102,14 @@ describe('syncEventToExchange', () => {
       { data: [CONNECTION], error: null },
       { data: null, error: null },
     );
-    vi.mocked(ewsProvider.createAppointment)
+    vi.mocked(calendarProvider.createAppointment)
       .mockResolvedValueOnce({ ok: true, data: { appointmentId: 'appt-1' } })
       .mockResolvedValueOnce({ ok: true, data: { appointmentId: 'appt-2' } });
 
     await syncEventToExchange('event-1');
 
-    expect(ewsProvider.createAppointment).toHaveBeenCalledTimes(2);
-    const [, rsvpDraft] = vi.mocked(ewsProvider.createAppointment).mock.calls[1];
+    expect(calendarProvider.createAppointment).toHaveBeenCalledTimes(2);
+    const [, rsvpDraft] = vi.mocked(calendarProvider.createAppointment).mock.calls[1];
     expect(rsvpDraft.allDay).toBe(true);
     expect(rsvpDraft.showAs).toBe('free');
 
@@ -125,7 +125,7 @@ describe('syncEventToExchange', () => {
 
     await syncEventToExchange('event-1');
 
-    expect(ewsProvider.createAppointment).not.toHaveBeenCalled();
+    expect(calendarProvider.createAppointment).not.toHaveBeenCalled();
     expect(logActivity).not.toHaveBeenCalled();
   });
 
@@ -138,7 +138,7 @@ describe('syncEventToExchange', () => {
 
     await syncEventToExchange('event-1');
 
-    expect(ewsProvider.createAppointment).not.toHaveBeenCalled();
+    expect(calendarProvider.createAppointment).not.toHaveBeenCalled();
   });
 
   it('refuses to guess between two verified connections', async () => {
@@ -150,7 +150,7 @@ describe('syncEventToExchange', () => {
 
     await syncEventToExchange('event-1');
 
-    expect(ewsProvider.createAppointment).not.toHaveBeenCalled();
+    expect(calendarProvider.createAppointment).not.toHaveBeenCalled();
   });
 
   it('skips without throwing when the event has no event_date', async () => {
@@ -160,7 +160,7 @@ describe('syncEventToExchange', () => {
     );
 
     await expect(syncEventToExchange('event-1')).resolves.toBeUndefined();
-    expect(ewsProvider.createAppointment).not.toHaveBeenCalled();
+    expect(calendarProvider.createAppointment).not.toHaveBeenCalled();
   });
 
   it('cleans up the appointment and never throws when the correlation insert loses a race', async () => {
@@ -170,15 +170,15 @@ describe('syncEventToExchange', () => {
       { data: [CONNECTION], error: null },
       { data: null, error: { message: 'duplicate key', code: '23505' } },
     );
-    vi.mocked(ewsProvider.createAppointment).mockResolvedValue({
+    vi.mocked(calendarProvider.createAppointment).mockResolvedValue({
       ok: true,
       data: { appointmentId: 'appt-1' },
     });
-    vi.mocked(ewsProvider.deleteAppointment).mockResolvedValue({ ok: true, data: undefined });
+    vi.mocked(calendarProvider.deleteAppointment).mockResolvedValue({ ok: true, data: undefined });
 
     await expect(syncEventToExchange('event-1')).resolves.toBeUndefined();
 
-    expect(ewsProvider.deleteAppointment).toHaveBeenCalledWith(expect.anything(), 'appt-1');
+    expect(calendarProvider.deleteAppointment).toHaveBeenCalledWith(expect.anything(), 'appt-1');
     expect(logActivity).not.toHaveBeenCalled();
   });
 
@@ -186,7 +186,7 @@ describe('syncEventToExchange', () => {
     mockAdmin({ data: null, error: { message: 'boom' } });
 
     await expect(syncEventToExchange('event-1')).resolves.toBeUndefined();
-    expect(ewsProvider.createAppointment).not.toHaveBeenCalled();
+    expect(calendarProvider.createAppointment).not.toHaveBeenCalled();
   });
 });
 
@@ -216,13 +216,13 @@ describe('markEventExchangeCancelled', () => {
       { data: { appointment_id: 'appt-1', rsvp_deadline_appointment_id: null }, error: null },
       { data: [CONNECTION], error: null },
     );
-    vi.mocked(ewsProvider.getAppointment).mockResolvedValue({ ok: true, data: appointmentDetail() });
-    vi.mocked(ewsProvider.updateAppointment).mockResolvedValue({ ok: true, data: undefined });
+    vi.mocked(calendarProvider.getAppointment).mockResolvedValue({ ok: true, data: appointmentDetail() });
+    vi.mocked(calendarProvider.updateAppointment).mockResolvedValue({ ok: true, data: undefined });
 
     await markEventExchangeCancelled('event-1');
 
-    expect(ewsProvider.updateAppointment).toHaveBeenCalledTimes(1);
-    const [, appointmentId, update] = vi.mocked(ewsProvider.updateAppointment).mock.calls[0];
+    expect(calendarProvider.updateAppointment).toHaveBeenCalledTimes(1);
+    const [, appointmentId, update] = vi.mocked(calendarProvider.updateAppointment).mock.calls[0];
     expect(appointmentId).toBe('appt-1');
     expect(update.subject).toBe('[בוטל] החתונה של דנה ויוסי');
     expect(update.category).toBe(EVENT_EXCHANGE_CANCELLED_CATEGORY);
@@ -239,12 +239,12 @@ describe('markEventExchangeCancelled', () => {
       { data: { appointment_id: 'appt-1', rsvp_deadline_appointment_id: 'appt-2' }, error: null },
       { data: [CONNECTION], error: null },
     );
-    vi.mocked(ewsProvider.getAppointment).mockResolvedValue({ ok: true, data: appointmentDetail() });
-    vi.mocked(ewsProvider.updateAppointment).mockResolvedValue({ ok: true, data: undefined });
+    vi.mocked(calendarProvider.getAppointment).mockResolvedValue({ ok: true, data: appointmentDetail() });
+    vi.mocked(calendarProvider.updateAppointment).mockResolvedValue({ ok: true, data: undefined });
 
     await markEventExchangeCancelled('event-1');
 
-    expect(ewsProvider.updateAppointment).toHaveBeenCalledTimes(2);
+    expect(calendarProvider.updateAppointment).toHaveBeenCalledTimes(2);
   });
 
   it('is idempotent — does not double-prefix an already-cancelled subject', async () => {
@@ -252,15 +252,15 @@ describe('markEventExchangeCancelled', () => {
       { data: { appointment_id: 'appt-1', rsvp_deadline_appointment_id: null }, error: null },
       { data: [CONNECTION], error: null },
     );
-    vi.mocked(ewsProvider.getAppointment).mockResolvedValue({
+    vi.mocked(calendarProvider.getAppointment).mockResolvedValue({
       ok: true,
       data: appointmentDetail({ subject: '[בוטל] החתונה של דנה ויוסי' }),
     });
-    vi.mocked(ewsProvider.updateAppointment).mockResolvedValue({ ok: true, data: undefined });
+    vi.mocked(calendarProvider.updateAppointment).mockResolvedValue({ ok: true, data: undefined });
 
     await markEventExchangeCancelled('event-1');
 
-    const [, , update] = vi.mocked(ewsProvider.updateAppointment).mock.calls[0];
+    const [, , update] = vi.mocked(calendarProvider.updateAppointment).mock.calls[0];
     expect(update.subject).toBe('[בוטל] החתונה של דנה ויוסי');
   });
 
@@ -269,8 +269,8 @@ describe('markEventExchangeCancelled', () => {
 
     await markEventExchangeCancelled('event-1');
 
-    expect(ewsProvider.getAppointment).not.toHaveBeenCalled();
-    expect(ewsProvider.updateAppointment).not.toHaveBeenCalled();
+    expect(calendarProvider.getAppointment).not.toHaveBeenCalled();
+    expect(calendarProvider.updateAppointment).not.toHaveBeenCalled();
   });
 
   it('skips an appointment the owner already deleted, without throwing', async () => {
@@ -278,10 +278,10 @@ describe('markEventExchangeCancelled', () => {
       { data: { appointment_id: 'appt-1', rsvp_deadline_appointment_id: null }, error: null },
       { data: [CONNECTION], error: null },
     );
-    vi.mocked(ewsProvider.getAppointment).mockResolvedValue({ ok: false, error: 'not_found' });
+    vi.mocked(calendarProvider.getAppointment).mockResolvedValue({ ok: false, error: 'not_found' });
 
     await expect(markEventExchangeCancelled('event-1')).resolves.toBeUndefined();
-    expect(ewsProvider.updateAppointment).not.toHaveBeenCalled();
+    expect(calendarProvider.updateAppointment).not.toHaveBeenCalled();
   });
 
   it('never throws when there is no reachable connection', async () => {
@@ -291,6 +291,6 @@ describe('markEventExchangeCancelled', () => {
     );
 
     await expect(markEventExchangeCancelled('event-1')).resolves.toBeUndefined();
-    expect(ewsProvider.getAppointment).not.toHaveBeenCalled();
+    expect(calendarProvider.getAppointment).not.toHaveBeenCalled();
   });
 });

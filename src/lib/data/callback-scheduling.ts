@@ -33,7 +33,7 @@ import {
   type SlotRank,
 } from '@/lib/callbacks/schedule-policy';
 import { decryptCredential } from '@/lib/exchange-ews/crypto';
-import { ewsProvider } from '@/lib/exchange-ews/ews-impl';
+import { calendarProvider } from '@/lib/exchange-ews/calendar-provider';
 import type {
   AvailabilityWindow,
   ExchangeAppointment,
@@ -234,7 +234,7 @@ export async function scheduleCallbackAppointment(
   // over the whole horizon in one call.
   const searchFromMs = Math.max(preferredMs, nowMs);
   const searchToMs = nowMs + policy.horizonMs;
-  const availability = await ewsProvider.getAvailability(loaded.connection.config, {
+  const availability = await calendarProvider.getAvailability(loaded.connection.config, {
     start: new Date(searchFromMs),
     end: new Date(searchToMs + DAY_MS),
   });
@@ -284,7 +284,7 @@ export async function scheduleCallbackAppointment(
   // the phone with nothing to dial.
   if (!draft.body?.trim()) return { ok: false, reason: 'empty_body' };
 
-  const created = await ewsProvider.createAppointment(loaded.connection.config, draft);
+  const created = await calendarProvider.createAppointment(loaded.connection.config, draft);
   if (!created.ok) return { ok: false, reason: `create_${created.error}` };
 
   const startIso = new Date(slot.startMs).toISOString();
@@ -307,7 +307,7 @@ export async function scheduleCallbackAppointment(
   if (writeError) {
     // The appointment exists but we could not record it — remove it rather than
     // leave an orphan the owner would see with no way to manage it.
-    await ewsProvider.deleteAppointment(loaded.connection.config, created.data.appointmentId);
+    await calendarProvider.deleteAppointment(loaded.connection.config, created.data.appointmentId);
     return { ok: false, reason: 'link_write_failed' };
   }
 
@@ -353,7 +353,7 @@ export async function reconcileCallbacksWithCalendar(
     .filter((n) => !Number.isNaN(n));
   if (scheduledTimes.length === 0) return { released: 0 };
 
-  const listed = await ewsProvider.listAppointments(loaded.connection.config, {
+  const listed = await calendarProvider.listAppointments(loaded.connection.config, {
     start: new Date(Math.min(...scheduledTimes) - DAY_MS),
     end: new Date(Math.max(...scheduledTimes) + DAY_MS),
   });
@@ -419,7 +419,7 @@ export async function repairBlankCallbackBodies(
   for (const row of rows) {
     if (!row.calendar_item_id) continue;
 
-    const detail = await ewsProvider.getAppointment(
+    const detail = await calendarProvider.getAppointment(
       loaded.connection.config,
       row.calendar_item_id,
     );
@@ -432,7 +432,7 @@ export async function repairBlankCallbackBodies(
     );
     if (!draft.body?.trim()) continue;
 
-    const updated = await ewsProvider.updateAppointment(
+    const updated = await calendarProvider.updateAppointment(
       loaded.connection.config,
       row.calendar_item_id,
       {

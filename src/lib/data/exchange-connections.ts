@@ -13,7 +13,7 @@ import {
 import { getCallbackRequestByCalendarItem } from '@/lib/data/admin/callbacks';
 import { logActivity } from '@/lib/data/activity';
 import { decryptCredential, encryptCredential } from '@/lib/exchange-ews/crypto';
-import { ewsProvider } from '@/lib/exchange-ews/ews-impl';
+import { calendarProvider } from '@/lib/exchange-ews/calendar-provider';
 import type {
   AppointmentAttendee,
   AppointmentRecurrence,
@@ -324,7 +324,7 @@ export async function testMyExchangeConnection(
   const loaded = await loadOwnedConnectionConfig(connectionId);
   if (!loaded.ok) return { ok: false, message: loaded.message };
 
-  const result = await ewsProvider.testConnection(loaded.config);
+  const result = await calendarProvider.testConnection(loaded.config);
   if (result.ok) {
     await recordConnectionResult(connectionId, { status: 'verified', lastError: null });
     await logActivity({ action: 'exchange.connection_tested', meta: { connectionId, ok: true } });
@@ -346,7 +346,7 @@ export async function listMyExchangeCalendars(
   const loaded = await loadOwnedConnectionConfig(connectionId);
   if (!loaded.ok) return { ok: false, message: loaded.message };
 
-  const result = await ewsProvider.listCalendars(loaded.config);
+  const result = await calendarProvider.listCalendars(loaded.config);
   if (!result.ok) {
     return { ok: false, message: ERROR_MESSAGES[result.error] ?? ERROR_MESSAGES.provider_error };
   }
@@ -367,7 +367,7 @@ export async function createMyExchangeTestAppointment(
 
   const start = new Date(Date.now() + 5 * 60_000); // +5 min — clear of "now" so it is not mistaken for an in-progress event
   const end = new Date(start.getTime() + 15 * 60_000);
-  const result = await ewsProvider.createAppointment(loaded.config, {
+  const result = await calendarProvider.createAppointment(loaded.config, {
     subject: 'בדיקת חיבור KALFA — ניתן למחוק',
     start,
     end,
@@ -390,7 +390,7 @@ export async function deleteMyExchangeTestAppointment(
   const loaded = await loadOwnedConnectionConfig(connectionId);
   if (!loaded.ok) return { ok: false, message: loaded.message };
 
-  const result = await ewsProvider.deleteAppointment(loaded.config, appointmentId);
+  const result = await calendarProvider.deleteAppointment(loaded.config, appointmentId);
   if (!result.ok) {
     return { ok: false, message: ERROR_MESSAGES[result.error] ?? ERROR_MESSAGES.provider_error };
   }
@@ -450,7 +450,7 @@ export async function listMyExchangeCalendarEvents(
   const loaded = await loadOwnedConnectionConfig(connectionId);
   if (!loaded.ok) return { ok: false, message: loaded.message };
 
-  const result = await ewsProvider.listAppointments(loaded.config, {
+  const result = await calendarProvider.listAppointments(loaded.config, {
     start: new Date(range.startIso),
     end: new Date(range.endIso),
   });
@@ -489,7 +489,7 @@ export async function createMyExchangeCalendarEvent(
   const loaded = await loadOwnedConnectionConfig(connectionId);
   if (!loaded.ok) return { ok: false, message: loaded.message };
 
-  const result = await ewsProvider.createAppointment(loaded.config, {
+  const result = await calendarProvider.createAppointment(loaded.config, {
     subject: draft.subject,
     start: new Date(draft.startIso),
     end: new Date(draft.endIso),
@@ -536,7 +536,7 @@ export async function updateMyExchangeCalendarEvent(
   const loaded = await loadOwnedConnectionConfig(connectionId);
   if (!loaded.ok) return { ok: false, message: loaded.message };
 
-  const result = await ewsProvider.updateAppointment(loaded.config, update.appointmentId, {
+  const result = await calendarProvider.updateAppointment(loaded.config, update.appointmentId, {
     start: new Date(update.startIso),
     end: new Date(update.endIso),
     // Spread only the keys the caller actually sent — see AppointmentUpdate:
@@ -583,7 +583,7 @@ export async function listMyExchangeCategories(
   const loaded = await loadOwnedConnectionConfig(connectionId);
   if (!loaded.ok) return { ok: false, message: loaded.message };
 
-  const result = await ewsProvider.listCategories(loaded.config);
+  const result = await calendarProvider.listCategories(loaded.config);
   if (!result.ok) {
     // A mailbox whose category list has never been saved has no configuration
     // object to bind to. That is an empty list, not a failure worth showing.
@@ -601,7 +601,7 @@ export async function deleteMyExchangeCalendarEvent(
   const loaded = await loadOwnedConnectionConfig(connectionId);
   if (!loaded.ok) return { ok: false, message: loaded.message };
 
-  const result = await ewsProvider.deleteAppointment(loaded.config, appointmentId);
+  const result = await calendarProvider.deleteAppointment(loaded.config, appointmentId);
   // Already gone (deleted in Outlook meanwhile) is the desired end state.
   if (!result.ok && result.error !== 'not_found') {
     return { ok: false, message: ERROR_MESSAGES[result.error] ?? ERROR_MESSAGES.provider_error };
@@ -664,7 +664,7 @@ export async function getMyExchangeCalendarEvent(
   const loaded = await loadOwnedConnectionConfig(connectionId);
   if (!loaded.ok) return { ok: false, message: loaded.message };
 
-  const result = await ewsProvider.getAppointment(loaded.config, appointmentId);
+  const result = await calendarProvider.getAppointment(loaded.config, appointmentId);
   if (!result.ok) {
     return { ok: false, message: ERROR_MESSAGES[result.error] ?? ERROR_MESSAGES.provider_error };
   }

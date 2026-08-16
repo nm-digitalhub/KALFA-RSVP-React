@@ -74,7 +74,7 @@ function sampleRow(overrides: Partial<EventListItem> = {}): EventListItem {
     id: 'event-1',
     name: 'Test Wedding',
     event_type: 'wedding',
-    event_date: '2026-09-01',
+    event_date: ilDate(30),
     status: 'draft',
     venue_name: 'Test Venue',
     created_at: '2026-06-23T00:00:00.000Z',
@@ -87,10 +87,14 @@ function detailRow(overrides: Partial<EventDetail> = {}): EventDetail {
     id: 'event-1',
     name: 'Test Wedding',
     event_type: 'wedding',
-    event_date: '2026-09-01T00:00:00+00:00',
+    // Relative, not literal. A fixed date here is a time bomb: these two feed
+    // publishEvent, which refuses to publish once rsvp_deadline is in the past.
+    // A literal '2026-08-15' passed for months and then began failing on
+    // 2026-08-16 with nothing in the codebase having changed.
+    event_date: `${ilDate(30)}T00:00:00+00:00`,
     venue_name: 'Test Venue',
     venue_address: 'Tel Aviv',
-    rsvp_deadline: '2026-08-15',
+    rsvp_deadline: ilDate(14),
     celebrants: null,
     gift_payment_url: null,
     invite_image_path: null,

@@ -5,8 +5,8 @@ vi.mock('@/lib/supabase/admin', () => ({ createAdminClient: vi.fn() }));
 vi.mock('@/lib/alerts/slack', () => ({ sendSlackAlert: vi.fn() }));
 vi.mock('@/lib/url', () => ({ getAppOrigin: vi.fn(async () => 'https://beta.kalfa.me') }));
 vi.mock('@/lib/exchange-ews/crypto', () => ({ decryptCredential: vi.fn(() => 'pw') }));
-vi.mock('@/lib/exchange-ews/ews-impl', () => ({
-  ewsProvider: {
+vi.mock('@/lib/exchange-ews/calendar-provider', () => ({
+  calendarProvider: {
     getAvailability: vi.fn(),
     getAppointment: vi.fn(),
     updateAppointment: vi.fn(),
@@ -26,7 +26,7 @@ vi.mock('@/lib/callbacks/calendar-item', async (importOriginal) => {
 
 import { createMockSupabase, type MockQueryBuilder } from '@/test/supabase-mock';
 import { createAdminClient } from '@/lib/supabase/admin';
-import { ewsProvider } from '@/lib/exchange-ews/ews-impl';
+import { calendarProvider } from '@/lib/exchange-ews/calendar-provider';
 import { buildCallbackDraft } from '@/lib/callbacks/calendar-item';
 import type { ExchangeAppointmentDetail } from '@/lib/exchange-ews/types';
 import {
@@ -111,7 +111,7 @@ describe('scheduleCallbackAppointment — empty-body guard', () => {
       { data: [CONNECTION], error: null }, // loadBusinessConnection
       { data: [], error: null }, // countScheduledPerDay
     );
-    vi.mocked(ewsProvider.getAvailability).mockResolvedValue({ ok: true, data: [] });
+    vi.mocked(calendarProvider.getAvailability).mockResolvedValue({ ok: true, data: [] });
     vi.mocked(buildCallbackDraft).mockReturnValueOnce({
       subject: 'שיחה חוזרת — ישראל ישראלי',
       start: START,
@@ -127,7 +127,7 @@ describe('scheduleCallbackAppointment — empty-body guard', () => {
 
     expect(outcome).toEqual({ ok: false, reason: 'empty_body' });
     // The row keeps no link, so the next tick retries rather than stranding it.
-    expect(ewsProvider.createAppointment).not.toHaveBeenCalled();
+    expect(calendarProvider.createAppointment).not.toHaveBeenCalled();
   });
 });
 
@@ -137,13 +137,13 @@ describe('repairBlankCallbackBodies', () => {
       { data: [REQUEST], error: null }, // candidate rows
       { data: [CONNECTION], error: null }, // loadBusinessConnection
     );
-    vi.mocked(ewsProvider.getAppointment).mockResolvedValue({ ok: true, data: appointment('') });
-    vi.mocked(ewsProvider.updateAppointment).mockResolvedValue({ ok: true, data: undefined });
+    vi.mocked(calendarProvider.getAppointment).mockResolvedValue({ ok: true, data: appointment('') });
+    vi.mocked(calendarProvider.updateAppointment).mockResolvedValue({ ok: true, data: undefined });
 
     const result = await repairBlankCallbackBodies({ nowMs: NOW_MS });
 
     expect(result).toEqual({ repaired: 1 });
-    const [, itemId, update] = vi.mocked(ewsProvider.updateAppointment).mock.calls[0];
+    const [, itemId, update] = vi.mocked(calendarProvider.updateAppointment).mock.calls[0];
     expect(itemId).toBe('item-1');
     expect(update.bodyIsHtml).toBe(true);
     expect(update.body).toContain('href="tel:+972532743588"');
@@ -160,7 +160,7 @@ describe('repairBlankCallbackBodies', () => {
       { data: [REQUEST], error: null },
       { data: [CONNECTION], error: null },
     );
-    vi.mocked(ewsProvider.getAppointment).mockResolvedValue({
+    vi.mocked(calendarProvider.getAppointment).mockResolvedValue({
       ok: true,
       data: appointment('להתקשר אחרי 14:00'),
     });
@@ -168,7 +168,7 @@ describe('repairBlankCallbackBodies', () => {
     const result = await repairBlankCallbackBodies({ nowMs: NOW_MS });
 
     expect(result).toEqual({ repaired: 0 });
-    expect(ewsProvider.updateAppointment).not.toHaveBeenCalled();
+    expect(calendarProvider.updateAppointment).not.toHaveBeenCalled();
   });
 
   it('leaves an unreadable appointment to the reconcile pass', async () => {
@@ -176,12 +176,12 @@ describe('repairBlankCallbackBodies', () => {
       { data: [REQUEST], error: null },
       { data: [CONNECTION], error: null },
     );
-    vi.mocked(ewsProvider.getAppointment).mockResolvedValue({ ok: false, error: 'not_found' });
+    vi.mocked(calendarProvider.getAppointment).mockResolvedValue({ ok: false, error: 'not_found' });
 
     const result = await repairBlankCallbackBodies({ nowMs: NOW_MS });
 
     expect(result).toEqual({ repaired: 0 });
-    expect(ewsProvider.updateAppointment).not.toHaveBeenCalled();
+    expect(calendarProvider.updateAppointment).not.toHaveBeenCalled();
   });
 
   it('does nothing when the mailbox is unreachable, rather than guessing', async () => {
@@ -193,7 +193,7 @@ describe('repairBlankCallbackBodies', () => {
     const result = await repairBlankCallbackBodies({ nowMs: NOW_MS });
 
     expect(result).toEqual({ repaired: 0 });
-    expect(ewsProvider.getAppointment).not.toHaveBeenCalled();
+    expect(calendarProvider.getAppointment).not.toHaveBeenCalled();
   });
 
   it('only considers future items of a request still awaiting a call', async () => {

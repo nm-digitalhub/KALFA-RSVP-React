@@ -2,7 +2,7 @@
 // Exchange calendar (Layer 2: one-way event → Exchange sync).
 //
 // Pure: no DB, no EWS network call — src/lib/data/event-exchange-sync.ts is
-// the DAL that loads the event/connection and calls ewsProvider with what
+// the DAL that loads the event/connection and calls the calendar provider with what
 // this module builds. Mirrors the same split as
 // src/lib/callbacks/calendar-item.ts (also pure) / callback-scheduling.ts.
 

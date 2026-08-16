@@ -63,6 +63,12 @@ export const QUEUES = {
   // writes only the closed presence table. See
   // src/lib/data/console-agent-calendar-presence.ts.
   calendarPresenceSync: 'console-agent-calendar-presence-sync',
+  // Microsoft Graph subscription renewal for mail intake. A Graph subscription
+  // lasts ~2.94 days and expires with NO notification — intake would simply go
+  // quiet, which is the worst failure shape because nothing looks broken. This
+  // tick renews well inside the window and recreates a subscription that has
+  // vanished. See src/lib/data/inquiry-mail-intake.ts.
+  graphIntakeRenew: 'graph-intake-subscription-renew',
 } as const;
 
 // outreach-step retry policy: a few backed-off retries, then dead-letter. The

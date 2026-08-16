@@ -92,7 +92,13 @@ function EditableField({
   );
 }
 
-export function SettingsForm({ settings }: { settings: AppSettings }) {
+export function SettingsForm({
+  settings,
+  emailProvider,
+}: {
+  settings: AppSettings;
+  emailProvider: 'resend' | 'smtp';
+}) {
   const [state, action] = useActionState(updateSettingsAction, null);
   const fieldErrors = state?.fieldErrors;
 
@@ -205,7 +211,7 @@ export function SettingsForm({ settings }: { settings: AppSettings }) {
 
       <hr className="border-border" />
 
-      {/* Email (SMTP / IONOS) — business emails: signed agreement, invoices. */}
+      {/* Business email (SMTP) — signed agreement, invoices, inquiry replies. */}
       <label className="flex items-start gap-3">
         <input
           type="checkbox"
@@ -214,18 +220,27 @@ export function SettingsForm({ settings }: { settings: AppSettings }) {
           className="mt-1 size-4 accent-primary"
         />
         <span>
-          <span className="block text-sm font-medium">הפעלת דואר (SMTP)</span>
+          <span className="block text-sm font-medium">הפעלת דואר עסקי</span>
           <span className="block text-xs text-muted-foreground">
-            נדרש לשליחת מיילים עסקיים (ההסכם החתום, חשבוניות). כשכבוי — לא נשלח דואר.
+            נדרש לשליחת מיילים עסקיים (ההסכם החתום, חשבוניות). כשכבוי — לא נשלח
+            דואר, בכל מוביל.
           </span>
         </span>
       </label>
+
+      {/* Which transport is live is decided by EMAIL_PROVIDER, not by this
+          form. Saying so here is the difference between an admin who knows the
+          fields below are dormant and one who edits them expecting an effect. */}
+      <p className="text-xs text-muted-foreground">
+        {emailProvider === 'resend'
+          ? 'המוביל הפעיל: Resend (שולח דרך ה-API, ללא סיסמה). השדות שלהלן משמשים רק את נתיב הנסיגה ואינם בשימוש כרגע.'
+          : 'המוביל הפעיל: SMTP. השדות שלהלן הם שמפעילים את שליחת הדואר.'}
+      </p>
 
       <EditableField
         name="smtp_host"
         label="שרת SMTP"
         defaultValue={settings.smtp_host}
-        placeholder="exchange.ionos.com"
         errors={fieldErrors?.smtp_host}
       />
       <EditableField

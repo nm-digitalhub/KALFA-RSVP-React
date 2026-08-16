@@ -47,6 +47,7 @@ import {
 } from '@/lib/data/webhooks';
 import { processWebhookEvent } from '@/lib/data/webhook-processing';
 import { runThankyouSweep } from '@/lib/data/auto-thankyou';
+import { runGraphIntakeSubscriptionSweep } from '@/lib/data/inquiry-mail-intake';
 import { runCallbackSweep } from '@/lib/data/call-callbacks';
 import { runCallbackSchedulingSweep } from '@/lib/data/callback-scheduling';
 import { recordManualDialOutcome } from '@/lib/data/call-attempts';
@@ -64,20 +65,24 @@ import { runConsoleAgentCalendarPresenceSync } from '@/lib/data/console-agent-ca
 import { sendSlackAlert } from '@/lib/alerts/slack';
 
 // Standalone process — load .env.local ourselves (Next is not running here).
+//
+// worker/start.mjs, the pm2 entry point, already does this BEFORE importing
+// this bundle, which is the only ordering that works for modules reading
+// process.env at their top level. This call is the fallback for running the
+// bundle directly (`node dist/worker.cjs`) and is a cheap no-op otherwise,
+// since loadEnvFile does not overwrite variables that are already set.
+//
+// Uses Node's built-in loader rather than the hand-rolled line parser this
+// replaced: that one silently mishandled quoted values containing '=' and had
+// to be kept correct by hand.
 function loadEnv(): void {
   const p = path.join(process.cwd(), '.env.local');
   if (!fs.existsSync(p)) return;
-  for (const line of fs.readFileSync(p, 'utf8').split('\n')) {
-    const m = line.match(/^([A-Z_][A-Z0-9_]*)=(.*)$/);
-    if (!m) continue;
-    let v = m[2].trim();
-    if (
-      (v.startsWith("'") && v.endsWith("'")) ||
-      (v.startsWith('"') && v.endsWith('"'))
-    ) {
-      v = v.slice(1, -1);
-    }
-    if (process.env[m[1]] === undefined) process.env[m[1]] = v;
+  try {
+    process.loadEnvFile(p);
+  } catch {
+    // Malformed file — the process still starts and fails loudly on the first
+    // missing credential, which is more debuggable than a partial load.
   }
 }
 loadEnv();
@@ -667,7 +672,12 @@ async function main(): Promise<void> {
       // is a plain upsert keyed on agent_id, so a second run mid-flight can
       // only repeat work, never corrupt it, but there is no reason to allow
       // the overlap.
-      q === QUEUES.calendarPresenceSync;
+      q === QUEUES.calendarPresenceSync ||
+      // Singleton too: two overlapping ticks would each see a subscription
+      // that is missing or near expiry and each create one, leaving a
+      // duplicate that delivers every message twice. ensureIntakeSubscription
+      // prunes duplicates on the next pass, but not creating them is better.
+      q === QUEUES.graphIntakeRenew;
     await boss.createQueue(q, singleton ? { policy: 'singleton' } : undefined);
   }
 
@@ -790,6 +800,15 @@ async function main(): Promise<void> {
       await runInstagramTokenRefresh();
     }),
   );
+  // Microsoft Graph mail-intake subscription renewal. runGraphIntakeSubscription
+  // Sweep never throws (it alerts and returns), and is a no-op when the Graph
+  // app identity or the intake mailbox is not configured for this deployment.
+  await boss.work(
+    QUEUES.graphIntakeRenew,
+    guardedWorker(QUEUES.graphIntakeRenew, async () => {
+      await runGraphIntakeSubscriptionSweep();
+    }),
+  );
   // Console-agent calendar presence sync (Outlook/Exchange research, 12.8):
   // per-agent EWS free/busy read → console_agent_calendar_presence (advisory
   // only — never writes agent_status). runConsoleAgentCalendarPresenceSync
@@ -827,6 +846,10 @@ async function main(): Promise<void> {
   // Weekly, off-peak, deliberately non-round (04:17) — a 60-day token refreshed
   // once a week has ample margin even if a run is missed for a while.
   await boss.schedule(QUEUES.igTokenRefresh, '17 4 * * 2', null, { tz: SCHEDULE_TZ });
+  // Every 6 hours. The subscription lives ~2.94 days and renewal triggers under
+  // 24h remaining, so four chances a day means a renewal survives a full day of
+  // worker downtime without intake ever lapsing.
+  await boss.schedule(QUEUES.graphIntakeRenew, '23 */6 * * *', null, { tz: SCHEDULE_TZ });
   // Every 10 minutes — a calendar event's start/end is minute-granular at
   // best, and this is a remote NTLM/SOAP call per agent (buildService in
   // ews-impl.ts opens a fresh session every time, no connection reuse), so a

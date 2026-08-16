@@ -21,6 +21,7 @@ import {
   processCallRsvpRow,
   processOwnerNoteRow,
 } from '@/lib/data/call-result-processing';
+import { intakeMailAsInquiry } from '@/lib/data/inquiry-mail-intake';
 import { submitRsvp } from '@/lib/data/rsvp';
 import { handleHeadcountReply, requestHeadcount } from '@/lib/data/headcount';
 import { stageWhatsAppImport } from '@/lib/data/whatsapp-import';
@@ -79,7 +80,29 @@ export async function processWebhookEvent(row: WebhookInboxRow): Promise<void> {
     await processOwnerNoteRow(row);
     return;
   }
+  if (row.event_kind === 'graph_mail') {
+    await processGraphMail(row);
+    return;
+  }
   // Unknown kind — nothing to do; caller marks it processed (no retry storm).
+}
+
+// An Outlook message filed into the intake folder. The notification carried
+// only an id, so the message itself is fetched here — in the worker, which is
+// the only place that may hold the mailbox certificate.
+//
+// Every outcome except a thrown error is terminal on purpose. 'gone' means the
+// item was deleted between notification and fetch; 'duplicate' means Graph
+// redelivered; 'skipped' means it was our own mail or a bounce. None of those
+// improve by retrying, and leaving the row unprocessed would just re-run the
+// same fetch forever. Only an unexpected throw reaches the retry budget.
+async function processGraphMail(row: WebhookInboxRow): Promise<void> {
+  if (!row.message_id) return;
+  // The result is deliberately not logged: this module's rule is that nothing
+  // touching a webhook payload is written to a log, and every outcome here is
+  // already visible in durable state — a created inquiry as a contact_messages
+  // row, anything else as a processed webhook_inbox row with no row behind it.
+  await intakeMailAsInquiry(row.message_id);
 }
 
 // An inbound human message. Bills the reach when it is a billable type AND it

@@ -1,6 +1,6 @@
 // Generic one-off email runner: send an HTML file (with optional plain-text
-// alternative) through the app's real SMTP transport (getEmailSender →
-// app_settings config). Used for operational sends like delivering the
+// alternative) through the app's real mail transport (getEmailSender — whichever
+// provider EMAIL_PROVIDER selects). Used for operational sends like delivering the
 // contract-review report to the owner. No PII/bodies are logged.
 //
 // Parameters come from the environment (never hardcode recipients — this file
