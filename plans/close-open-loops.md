@@ -439,6 +439,50 @@ export async function countStrandedCallbacks(
   }
 ```
 
+### A2ב · הסריקה המתוזמנת שותקת — **נמדד 16.08 בזמן אמת**
+
+השחרור של 14 השורות רץ בפועל, יצר 14 פגישות ב-Graph, ו**לא הותיר שורה אחת
+בלוג**. חיפוש ב-`kalfa-worker-out.log` בין 12:40 ל-12:52 מחזיר ריק. את ההצלחה
+אפשר היה לאמת רק מול ה-DB.
+
+הסיבה בקוד: מסלול ה-LISTEN מתעד את התוצאה, ומסביר במפורש למה —
+*"a push-triggered sweep is otherwise invisible: the notification line proves
+the announcement arrived, not that the work ran or what it decided"*
+(`worker/main.ts:506-512`). מסלול ה-cron קורא לאותה פונקציה בדיוק
+ו**משליך את הערך המוחזר**:
+
+```ts
+    guardedWorker(QUEUES.callbackScheduleSweep, async () => {
+      await runCallbackSchedulingSweep();     // ← התוצאה נזרקת
+    }),
+```
+
+זו אותה עיוורון שאיפשר ל-14 השורות להצטבר מלכתחילה. ההערה הקיימת כבר מנמקת את
+התיקון; היא פשוט לא הוחלה על המסלול השני.
+
+**התיקון** (`worker/main.ts`, ברישום `QUEUES.callbackScheduleSweep`):
+
+```ts
+    guardedWorker(QUEUES.callbackScheduleSweep, async () => {
+      // Same reason the LISTEN path above logs: a sweep that reports nothing
+      // cannot be distinguished from a sweep that did nothing. MEASURED 16.08 —
+      // the run that re-created 14 stranded customer callbacks left no trace at
+      // all, and only a DB query could confirm it had happened.
+      const r = await runCallbackSchedulingSweep();
+      // Quiet ticks are the normal case, so only speak when something moved —
+      // otherwise this prints every ten minutes forever and becomes the noise
+      // it is meant to cut through.
+      if (r.scheduled || r.released || r.repaired) {
+        console.log(
+          `[callback-cron] sweep — שובצו ${r.scheduled}, נדחו ${r.skipped}, שוחררו ${r.released}, תוקנו ${r.repaired}`,
+        );
+      }
+    }),
+```
+
+תג נפרד (`[callback-cron]` מול `[callback-listen]`) כדי שיהיה אפשר להבחין איזה
+מסלול פעל — היום שניהם היו נראים זהים.
+
 ### בדיקה (הבדיקה שהייתה תופסת את הבאג)
 
 `src/lib/data/callback-scheduling.test.ts`:
