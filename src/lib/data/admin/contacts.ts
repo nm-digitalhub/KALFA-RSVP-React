@@ -316,10 +316,16 @@ export async function resolveInquiryUrgency(
   if (!events) return urgency;
 
   // Soonest event per owner — the list is already ascending, so the first wins.
+  // `name` is nullable in the schema; an unnamed event still carries urgency, so
+  // it gets a neutral label rather than being dropped.
   const soonestByOwner = new Map<string, { name: string; event_date: string }>();
   for (const e of events) {
-    if (e.owner_id && !soonestByOwner.has(e.owner_id)) {
-      soonestByOwner.set(e.owner_id, { name: e.name, event_date: e.event_date });
+    // A dateless event carries no urgency at all — the `.gte` above already
+    // excludes it, but the generated type is nullable so narrow rather than
+    // assert. An unnamed one still does, and gets a neutral label.
+    if (!e.owner_id || !e.event_date) continue;
+    if (!soonestByOwner.has(e.owner_id)) {
+      soonestByOwner.set(e.owner_id, { name: e.name ?? 'אירוע', event_date: e.event_date });
     }
   }
 

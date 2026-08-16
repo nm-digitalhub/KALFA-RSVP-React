@@ -1,6 +1,10 @@
 import type { Metadata } from 'next';
 import { requirePlatformPermission } from '@/lib/auth/dal';
-import { listContactMessages, listInquiryMessages } from '@/lib/data/admin/contacts';
+import {
+  listContactMessages,
+  listInquiryMessages,
+  resolveInquiryUrgency,
+} from '@/lib/data/admin/contacts';
 import { contactStatusLabel } from '@/lib/data/admin/labels';
 import {
   PageHeading,
@@ -35,6 +39,9 @@ export default async function AdminContactsPage({
   // ONE query for the whole page, then grouped in memory — a per-row read would
   // be an N+1 against a table that grows with every reply.
   const thread = await listInquiryMessages(result.items.map((m) => m.id));
+  // Derived, never stored — a saved urgency flag is wrong the moment the event
+  // passes. A phone match is a PRIORITY HINT only, never identity.
+  const urgency = await resolveInquiryUrgency(result.items);
   const byInquiry = new Map<string, typeof thread>();
   for (const m of thread) {
     const list = byInquiry.get(m.inquiry_id);
@@ -61,6 +68,19 @@ export default async function AdminContactsPage({
                   <Badge>{contactStatusLabel(msg.status)}</Badge>
                   <Badge>{msg.user_id ? 'לקוח רשום' : 'פנייה ציבורית'}</Badge>
                   {msg.topic && <span className="text-sm">{msg.topic}</span>}
+                  {(() => {
+                    const u = urgency.get(msg.id);
+                    if (!u) return null;
+                    // Under a week is the band where a private customer's event
+                    // is imminent — a wedding in three days cannot queue behind
+                    // a general pricing question.
+                    return (
+                      <Badge>
+                        {u.daysToEvent <= 7 ? '🔴 ' : ''}
+                        {u.eventName} · בעוד {u.daysToEvent} ימים
+                      </Badge>
+                    );
+                  })()}
                 </div>
                 <p className="text-sm text-muted-foreground" dir="ltr">
                   {[msg.email, msg.phone].filter(Boolean).join(' · ') || '—'}

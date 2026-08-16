@@ -10,6 +10,7 @@ import {
   listContactMessages,
   updateContactStatus,
   sendInquiryReply,
+  resolveInquiryUrgency,
   CONTACT_COLUMNS,
   type ContactMessage,
 } from './contacts';
@@ -268,5 +269,73 @@ describe('sendInquiryReply', () => {
 
     await expect(sendInquiryReply(ID, 'תשובה')).rejects.toThrow('הגדירו SMTP');
     expect(builder.update).not.toHaveBeenCalled();
+  });
+});
+
+// Urgency is DERIVED, never stored: a saved flag is wrong the moment the event
+// passes and nothing would clear it. KALFA's customers are private individuals,
+// so an event three days out is somebody's wedding — that question cannot queue
+// behind a general pricing enquiry, and nothing else in the list says so.
+describe('resolveInquiryUrgency', () => {
+  const NOW = Date.parse('2026-08-16T09:00:00Z');
+  const IN_3_DAYS = new Date(NOW + 3 * 86_400_000).toISOString();
+
+  // Two batched reads for the whole page — profiles, then events — never one
+  // per row: this renders inside a paginated list.
+  function mockTwoReads(profiles: unknown, events: unknown) {
+    const { client, builder } = createMockSupabase<unknown>({ data: null, error: null });
+    const then = vi.spyOn(builder, 'then');
+    then.mockImplementationOnce((f) => (f as (v: unknown) => unknown)({ data: profiles, error: null }));
+    then.mockImplementationOnce((f) => (f as (v: unknown) => unknown)({ data: events, error: null }));
+    vi.mocked(createAdminClient).mockReturnValue(
+      client as unknown as ReturnType<typeof createAdminClient>,
+    );
+    return { client, builder };
+  }
+
+  it('reports days to the soonest upcoming event of a matching phone', async () => {
+    mockTwoReads(
+      [{ id: 'owner-1', phone: '+972501112222' }],
+      [{ owner_id: 'owner-1', name: 'החתונה של דנה', event_date: IN_3_DAYS }],
+    );
+
+    const map = await resolveInquiryUrgency([{ id: 'cm-1', phone: '+972501112222' }], NOW);
+
+    expect(map.get('cm-1')).toEqual({ daysToEvent: 3, eventName: 'החתונה של דנה' });
+  });
+
+  it('does not query at all when no inquiry carries a phone', async () => {
+    const { client } = mockTwoReads([], []);
+    const map = await resolveInquiryUrgency([{ id: 'cm-1', phone: null }], NOW);
+    expect(map.size).toBe(0);
+    expect(client.from).not.toHaveBeenCalled();
+  });
+
+  it('returns nothing for a phone that matches no account', async () => {
+    mockTwoReads([], []);
+    const map = await resolveInquiryUrgency([{ id: 'cm-1', phone: '+972500000000' }], NOW);
+    expect(map.size).toBe(0);
+  });
+
+  // An account with no upcoming event is the common case and must stay quiet.
+  it('returns nothing when the matched account has no upcoming event', async () => {
+    mockTwoReads([{ id: 'owner-1', phone: '+972501112222' }], []);
+    const map = await resolveInquiryUrgency([{ id: 'cm-1', phone: '+972501112222' }], NOW);
+    expect(map.size).toBe(0);
+  });
+
+  // A phone typed into a public form is a PRIORITY HINT, never identity — so the
+  // gate runs before any lookup, exactly as the list query does.
+  it('enforces the admin gate before touching the database', async () => {
+    const redirectErr = Object.assign(new Error('NEXT_REDIRECT'), {
+      digest: 'NEXT_REDIRECT;replace;/app;307;',
+    });
+    vi.mocked(requirePlatformPermission).mockRejectedValueOnce(redirectErr);
+    const { client } = mockTwoReads([], []);
+
+    await expect(
+      resolveInquiryUrgency([{ id: 'cm-1', phone: '+972501112222' }], NOW),
+    ).rejects.toThrow('NEXT_REDIRECT');
+    expect(client.from).not.toHaveBeenCalled();
   });
 });
