@@ -2,6 +2,7 @@ import 'server-only';
 
 import { createAdminClient } from '@/lib/supabase/admin';
 import { resolveMailboxPassword } from '@/lib/exchange-ews/mailbox-credential';
+import type { ExchangeAuthMethod } from '@/lib/exchange-ews/types';
 import { calendarProvider } from '@/lib/exchange-ews/calendar-provider';
 import { pickActiveCalendarWindow } from '@/lib/exchange-ews/provider';
 import type { ExchangeConnectionConfig } from '@/lib/exchange-ews/types';
@@ -46,10 +47,13 @@ interface AgentExchangeCandidate {
   agentId: string;
   connectionId: string;
   mailboxEmail: string;
-  authMethod: 'ntlm' | 'basic';
-  credentialCiphertext: string;
-  credentialIv: string;
-  credentialAuthTag: string;
+  authMethod: ExchangeAuthMethod;
+  // Nullable since the §B phase-1 migration: under Graph a connection has no
+  // mailbox secret to store, and the old NOT NULL forced every row to carry one
+  // that authenticated nothing. resolveMailboxPassword narrows these.
+  credentialCiphertext: string | null;
+  credentialIv: string | null;
+  credentialAuthTag: string | null;
   encryptionKeyVersion: number;
 }
 

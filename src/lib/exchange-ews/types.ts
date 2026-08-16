@@ -5,7 +5,11 @@ import 'server-only';
 // ./ews-impl.ts, the only file in this directory allowed to touch them
 // (plan §2, plans/exchange-ews-stage1.md).
 
-export type ExchangeAuthMethod = 'ntlm' | 'basic';
+// 'certificate' describes how the ACTIVE backend authenticates: Graph signs in
+// once as the application with the app certificate, so there is no per-mailbox
+// method and no password. Added alongside the EWS pair rather than replacing
+// them — the EWS path is still available and still uses NTLM.
+export type ExchangeAuthMethod = 'ntlm' | 'basic' | 'certificate';
 
 // Decrypted, ready-to-use connection config for a single EWS call. Built by
 // the DAL (src/lib/data/exchange-connections.ts) from a decrypted

@@ -29,8 +29,25 @@ import { selectedCalendarProvider } from './provider-selection';
 // The empty string is returned rather than undefined so `ExchangeConnectionConfig`
 // keeps its existing shape — the field is part of the shared provider interface
 // and the Graph implementation never reads it.
+
+/**
+ * A credential as the DATABASE now holds it: possibly absent.
+ *
+ * The three columns became nullable in the §B phase-1 migration, because under
+ * Graph a connection has no mailbox secret to store and the old NOT NULL forced
+ * every row to carry one that authenticated nothing. A DB-level constraint
+ * keeps them all-present or all-absent, so the half-populated shape cannot
+ * reach here — but the types are independently nullable, so this narrows them.
+ */
+export type StoredCredential = {
+  ciphertext: string | null;
+  iv: string | null;
+  authTag: string | null;
+  keyVersion: number;
+};
+
 export function resolveMailboxPassword(
-  encrypted: EncryptedCredential,
+  stored: StoredCredential,
   connectionId: string,
   subjectId: string,
 ): string {
@@ -38,6 +55,22 @@ export function resolveMailboxPassword(
   // process up for days must follow a changed EXCHANGE_PROVIDER on restart
   // without any path holding a stale decision.
   if (selectedCalendarProvider() !== 'ews') return '';
+
+  // EWS is active and there is no stored secret. Throwing is correct and not a
+  // regression: NTLM cannot authenticate without a password, so the only
+  // alternative is to call the mailbox with an empty one and read the failure
+  // back as an auth error. Every caller already wraps this in a fail-closed
+  // catch, so this surfaces exactly where a decrypt failure would.
+  if (!stored.ciphertext || !stored.iv || !stored.authTag) {
+    throw new Error('EWS is the active provider but this connection stores no credential');
+  }
+
+  const encrypted: EncryptedCredential = {
+    ciphertext: stored.ciphertext,
+    iv: stored.iv,
+    authTag: stored.authTag,
+    keyVersion: stored.keyVersion,
+  };
 
   // Still throws on failure when the credential IS required, so every caller's
   // existing fail-closed catch keeps behaving exactly as it does today.

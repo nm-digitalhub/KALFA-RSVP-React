@@ -187,9 +187,6 @@ export type Database = {
           cookie_consent_enabled: boolean
           cookie_consent_marketing_enabled: boolean
           cookie_consent_revision_bump: number
-          dkim_domain: string | null
-          dkim_private_key: string | null
-          dkim_selector: string | null
           elevenlabs_api_key: string | null
           email_enabled: boolean
           exchange_connection_mode: string
@@ -280,9 +277,6 @@ export type Database = {
           cookie_consent_enabled?: boolean
           cookie_consent_marketing_enabled?: boolean
           cookie_consent_revision_bump?: number
-          dkim_domain?: string | null
-          dkim_private_key?: string | null
-          dkim_selector?: string | null
           elevenlabs_api_key?: string | null
           email_enabled?: boolean
           exchange_connection_mode?: string
@@ -373,9 +367,6 @@ export type Database = {
           cookie_consent_enabled?: boolean
           cookie_consent_marketing_enabled?: boolean
           cookie_consent_revision_bump?: number
-          dkim_domain?: string | null
-          dkim_private_key?: string | null
-          dkim_selector?: string | null
           elevenlabs_api_key?: string | null
           email_enabled?: boolean
           exchange_connection_mode?: string
@@ -2514,9 +2505,9 @@ export type Database = {
         Row: {
           auth_method: string
           created_at: string
-          credential_auth_tag: string
-          credential_ciphertext: string
-          credential_iv: string
+          credential_auth_tag: string | null
+          credential_ciphertext: string | null
+          credential_iv: string | null
           encryption_key_version: number
           id: string
           last_error: string | null
@@ -2530,9 +2521,9 @@ export type Database = {
         Insert: {
           auth_method?: string
           created_at?: string
-          credential_auth_tag: string
-          credential_ciphertext: string
-          credential_iv: string
+          credential_auth_tag?: string | null
+          credential_ciphertext?: string | null
+          credential_iv?: string | null
           encryption_key_version?: number
           id?: string
           last_error?: string | null
@@ -2546,9 +2537,9 @@ export type Database = {
         Update: {
           auth_method?: string
           created_at?: string
-          credential_auth_tag?: string
-          credential_ciphertext?: string
-          credential_iv?: string
+          credential_auth_tag?: string | null
+          credential_ciphertext?: string | null
+          credential_iv?: string | null
           encryption_key_version?: number
           id?: string
           last_error?: string | null

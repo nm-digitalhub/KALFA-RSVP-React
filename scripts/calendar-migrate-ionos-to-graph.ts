@@ -51,6 +51,14 @@ async function loadIonosConfig(): Promise<ExchangeConnectionConfig> {
   if (error) throw new Error('failed to load exchange_connections');
   if (!data || data.length !== 1) throw new Error(`expected exactly 1 verified connection, got ${data?.length ?? 0}`);
   const row = data[0];
+  // One-time IONOS→Graph migration script: it reads FROM EWS, so it genuinely
+  // needs the mailbox password. The columns became nullable in §B phase 1, so
+  // an absent credential is now expressible — and for this script that means
+  // the source it is supposed to read is unreachable, which must stop it rather
+  // than let it report an empty migration as success.
+  if (!row.credential_ciphertext || !row.credential_iv || !row.credential_auth_tag) {
+    throw new Error('the verified connection stores no credential — cannot reach IONOS EWS');
+  }
   return {
     mailboxEmail: row.mailbox_email,
     password: decryptCredential(

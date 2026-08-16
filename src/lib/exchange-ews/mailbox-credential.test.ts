@@ -56,4 +56,40 @@ describe('resolveMailboxPassword', () => {
     process.env.EXCHANGE_PROVIDER = 'graph';
     expect(resolveMailboxPassword(ENCRYPTED, 'c', 'u')).toBe('');
   });
+  // The columns became nullable in §B phase 1: under Graph a connection has no
+  // mailbox secret to store, and the old NOT NULL made every row carry one that
+  // authenticated nothing. These pin what "absent" now means per provider.
+  describe('when the connection stores no credential', () => {
+    const EMPTY = { ciphertext: null, iv: null, authTag: null, keyVersion: 1 };
+
+    it('is a non-event under graph — nothing needed it', () => {
+      delete process.env.EXCHANGE_PROVIDER;
+      expect(resolveMailboxPassword(EMPTY, 'conn-1', 'user-1')).toBe('');
+      expect(decryptCredential).not.toHaveBeenCalled();
+    });
+
+    // NTLM cannot authenticate without a password. Throwing surfaces it exactly
+    // where a decrypt failure would, and every caller already fails closed
+    // there — the alternative is calling the mailbox with an empty password and
+    // reading the rejection back as a mysterious auth error.
+    it('throws under ews rather than attempting an empty password', () => {
+      process.env.EXCHANGE_PROVIDER = 'ews';
+      expect(() => resolveMailboxPassword(EMPTY, 'conn-1', 'user-1')).toThrow(
+        /stores no credential/,
+      );
+      expect(decryptCredential).not.toHaveBeenCalled();
+    });
+
+    // A DB constraint keeps the three columns all-present or all-absent, but the
+    // types are independently nullable, so a partial shape must not reach the
+    // decrypter and fail there instead.
+    it('rejects a half-present credential under ews', () => {
+      process.env.EXCHANGE_PROVIDER = 'ews';
+      expect(() =>
+        resolveMailboxPassword({ ciphertext: 'c', iv: null, authTag: 't', keyVersion: 1 }, 'c', 'u'),
+      ).toThrow(/stores no credential/);
+      expect(decryptCredential).not.toHaveBeenCalled();
+    });
+  });
+
 });
