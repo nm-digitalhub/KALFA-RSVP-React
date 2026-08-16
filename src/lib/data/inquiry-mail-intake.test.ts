@@ -152,16 +152,34 @@ describe('intakeMailAsInquiry', () => {
     expect(captured[0].row.name).toBe('dana@example.com');
   });
 
-  it('alerts with the row id and topic only — never the sender or the body', async () => {
+  it('alerts with the row id ONLY — never the sender, the body, or a topic', async () => {
     mockAdmin([{ id: 'cm-4' }], []);
     vi.mocked(fetchInboundMail).mockResolvedValue(mail());
 
     await intakeMailAsInquiry('AAkALgAA');
 
     const alert = vi.mocked(sendSlackAlert).mock.calls[0][0];
-    expect(alert.fields).toEqual({ contactMessageId: 'cm-4', topic: 'פנייה בדואר' });
+    // `topic` is gone on purpose: mail intake leaves it null, and `source`
+    // already carries the channel it used to duplicate.
+    expect(alert.fields).toEqual({ contactMessageId: 'cm-4' });
+    expect(alert.source).toBe('outlook');
     const serialized = JSON.stringify(alert);
     expect(serialized).not.toContain('dana@example.com');
     expect(serialized).not.toContain('מה כולל המסלול');
+  });
+
+  // The channel is not a topic. 'פנייה בדואר' described where the inquiry came
+  // from — which `source` already stores — and matched no console_queues row,
+  // which is what routing will key on. "Not yet classified" is real information;
+  // a wrong label is not.
+  it('leaves topic null, and records the channel in source instead', async () => {
+    const captured: UpsertArgs[] = [];
+    mockAdmin([{ id: 'cm-5' }], captured);
+    vi.mocked(fetchInboundMail).mockResolvedValue(mail());
+
+    await intakeMailAsInquiry('AAkALgAA');
+
+    expect(captured[0].row.topic).toBeNull();
+    expect(captured[0].row.source).toBe('outlook');
   });
 });

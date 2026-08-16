@@ -374,6 +374,45 @@ export async function reconcileCallbacksWithCalendar(
 }
 
 /**
+ * How many requests are STRANDED: holding a `calendar_item_id`, past their
+ * slot, and not terminal.
+ *
+ * Such a row exists in neither the calendar nor the queue. The sweep skips it
+ * (the id is set, so scheduling returns 'already_scheduled') and the reconciler
+ * above cannot see it (its window is one day back). Neither reports what it
+ * skipped, which is precisely how they stay invisible.
+ *
+ * MEASURED 2026-08-16: fourteen accumulated silently across the EWS→Graph
+ * migration, the oldest from 28.07 — fourteen real customers who asked to be
+ * called and were never scheduled, with nothing anywhere saying so. They were
+ * released and re-created (all fourteen now resolve in Graph), but nothing
+ * would have caught the next occurrence.
+ *
+ * Deliberately a DETECTOR, not a fixer. Releasing automatically would
+ * double-book any row whose appointment does still exist — the release we ran
+ * by hand was safe only because every one of the fourteen ids was checked
+ * against Graph first and all fourteen came back 404. A human deciding beats a
+ * heuristic guessing. Cheap: one counted query, no calendar read.
+ */
+export async function countStrandedCallbacks(
+  opts: { nowMs?: number } = {},
+): Promise<number> {
+  const nowMs = opts.nowMs ?? Date.now();
+  const admin = createAdminClient();
+  const { count, error } = await admin
+    .from('callback_requests')
+    .select('id', { count: 'exact', head: true })
+    .not('calendar_item_id', 'is', null)
+    .not('status', 'in', '(completed,cancelled)')
+    .lt('scheduled_at', new Date(nowMs - DAY_MS).toISOString());
+  // A failed read must never masquerade as "all clear" — but it must not raise
+  // a false alarm either, so it reports zero and the sweep's own error handling
+  // owns the failure.
+  if (error) return 0;
+  return count ?? 0;
+}
+
+/**
  * Fills in the description of a scheduled callback whose body reached the
  * mailbox empty.
  *
@@ -549,6 +588,23 @@ export async function runCallbackSchedulingSweep(
       title: 'שיבוץ שיחות חוזרות נכשל',
       source: 'callback-scheduling-sweep',
       fields: Object.fromEntries(failures),
+    });
+  }
+
+  // Detection, not repair. A stranded row is invisible to both mechanisms above
+  // by construction, so the only way it surfaces is by being counted and
+  // reported — see countStrandedCallbacks. Runs last so it also sees anything
+  // this tick failed to schedule. Silent at zero, which is the normal state.
+  const stranded = await countStrandedCallbacks({ nowMs: opts.nowMs });
+  if (stranded > 0) {
+    await sendSlackAlert({
+      level: 'warn',
+      category: 'errors',
+      title: 'בקשות שיחה חוזרת נטושות — מועד שחלף ופגישה שאינה בתור',
+      source: 'callback-scheduling-sweep',
+      // A count, never an id: this goes to a chat room, and the rows are
+      // customer requests.
+      fields: { נטושות: stranded },
     });
   }
 

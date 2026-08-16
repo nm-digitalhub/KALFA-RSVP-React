@@ -21,18 +21,25 @@ import { createAdminClient } from '@/lib/supabase/admin';
 // missing from this row is missing from the reply it drafts.
 
 /**
- * `INQUIRY_TOPICS` is closed only at the FORM boundary — the same list gates
- * both public schemas (contactMessageSchema and callbackRequestSchema), but the
- * column itself is free text with no CHECK constraint, verified against
- * pg_constraint. Server-side flows already write descriptive values outside the
- * list: callback_requests carries 'שיחה נכנסת ללא נציג זמין' and
- * 'בקשת "התקשרו אליי עכשיו" — לא נמצא נציג זמין'.
+ * An emailed inquiry arrives with NO topic — nobody picked one from a list.
  *
- * So intake follows that precedent rather than flattening to 'אחר'. The admin
- * list renders topic raw, and 'אחר' would tell a reader nothing; the channel
- * does. Machine-readable provenance lives in `source` — this is the label.
+ * The earlier value here was 'פנייה בדואר', and the reasoning for it was that
+ * `INQUIRY_TOPICS` is closed only at the FORM boundary (the column is free text,
+ * no CHECK constraint — verified against pg_constraint) and that server-side
+ * flows already write descriptive values outside the list, e.g.
+ * `callback_requests` carries 'שיחה נכנסת ללא נציג זמין'.
+ *
+ * That precedent does not actually apply. Those values describe an EVENT that
+ * happened. 'פנייה בדואר' describes the CHANNEL — and the channel already has
+ * its own column, `source`. So it duplicated a fact we already stored while
+ * answering the wrong question, and produced a value matching no
+ * `console_queues` row, which is what routing will key on (§E).
+ *
+ * NULL is the honest value: "not yet classified" is real information, and a
+ * wrong label is worse than an absent one. `source='outlook'` already says
+ * where it came from.
  */
-const MAIL_TOPIC = 'פנייה בדואר';
+const MAIL_TOPIC: string | null = null;
 
 export type MailIntakeResult =
   | { status: 'created'; contactMessageId: string }
@@ -99,14 +106,17 @@ export async function intakeMailAsInquiry(graphMessageId: string): Promise<MailI
   const created = data?.[0]?.id;
   if (!created) return { status: 'duplicate' };
 
-  // Same contract as the web form: only the row id and the closed-vocabulary
-  // topic reach Slack — never the sender, subject or body.
+  // Same contract as the web form: only the row id reaches Slack — never the
+  // sender, subject or body. `topic` is deliberately NOT sent: it is null for
+  // mail intake now, `fields` is typed Record<string, string | number> so null
+  // would not even compile, and `source: 'outlook'` above already carries the
+  // one thing the old topic field was really saying.
   void sendSlackAlert({
     category: 'customer_inquiry',
     level: 'info',
     title: 'פנייה חדשה בדואר',
     source: 'outlook',
-    fields: { contactMessageId: created, topic: MAIL_TOPIC },
+    fields: { contactMessageId: created },
   });
 
   return { status: 'created', contactMessageId: created };

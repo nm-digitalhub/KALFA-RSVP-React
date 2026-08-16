@@ -30,6 +30,7 @@ import { calendarProvider } from '@/lib/exchange-ews/calendar-provider';
 import { buildCallbackDraft } from '@/lib/callbacks/calendar-item';
 import type { ExchangeAppointmentDetail } from '@/lib/exchange-ews/types';
 import {
+  countStrandedCallbacks,
   repairBlankCallbackBodies,
   scheduleCallbackAppointment,
   type SchedulableCallback,
@@ -90,7 +91,11 @@ function appointment(body: string): ExchangeAppointmentDetail {
 
 // Each awaited chain resolves in call order; every test declares the exact
 // sequence its code path performs, so an added query fails loudly here.
-function mockAdmin(...results: Array<{ data: unknown; error: unknown }>) {
+// `count` is optional because only counted queries ({ count: 'exact', head: true })
+// resolve with one — countStrandedCallbacks is the first such caller here.
+function mockAdmin(
+  ...results: Array<{ data: unknown; error: unknown; count?: number | null }>
+) {
   const { client, builder } = createMockSupabase<Row>({ data: null, error: null });
   const then = vi.spyOn(builder, 'then');
   for (const result of results) {
@@ -204,5 +209,51 @@ describe('repairBlankCallbackBodies', () => {
     expect(builder.in).toHaveBeenCalledWith('status', ['new', 'in_progress']);
     expect(builder.gte).toHaveBeenCalledWith('scheduled_at', new Date(NOW_MS).toISOString());
     expect(builder.not).toHaveBeenCalledWith('calendar_item_id', 'is', null);
+  });
+});
+
+// Regression for a measured incident, not a hypothetical: fourteen requests
+// accumulated invisibly across the EWS→Graph migration because the sweep skips
+// any row that HAS a calendar id and the reconciler only looks one day back.
+// Neither reported what it skipped, so nobody knew until someone went looking.
+describe('countStrandedCallbacks', () => {
+  const DAY_MS = 86_400_000;
+
+  it('counts rows past their slot that still hold a calendar id', async () => {
+    mockAdmin({ data: null, error: null, count: 14 });
+    await expect(countStrandedCallbacks({ nowMs: NOW_MS })).resolves.toBe(14);
+  });
+
+  it('asks only for a count — never pulls the customer rows themselves', async () => {
+    const builder = mockAdmin({ data: null, error: null, count: 0 });
+
+    await countStrandedCallbacks({ nowMs: NOW_MS });
+
+    expect(builder.select).toHaveBeenCalledWith('id', { count: 'exact', head: true });
+  });
+
+  // The three predicates ARE the definition of stranded. If any one drifts the
+  // detector silently stops detecting, which is the failure it exists to catch.
+  it('scopes to non-terminal rows with an id, older than the reconciler window', async () => {
+    const builder = mockAdmin({ data: null, error: null, count: 0 });
+
+    await countStrandedCallbacks({ nowMs: NOW_MS });
+
+    expect(builder.not).toHaveBeenCalledWith('calendar_item_id', 'is', null);
+    expect(builder.not).toHaveBeenCalledWith('status', 'in', '(completed,cancelled)');
+    expect(builder.lt).toHaveBeenCalledWith(
+      'scheduled_at',
+      new Date(NOW_MS - DAY_MS).toISOString(),
+    );
+  });
+
+  it('reports zero — never a false alarm — when the read fails', async () => {
+    mockAdmin({ data: null, error: { message: 'boom' }, count: null });
+    await expect(countStrandedCallbacks({ nowMs: NOW_MS })).resolves.toBe(0);
+  });
+
+  it('reports zero when the driver returns no count at all', async () => {
+    mockAdmin({ data: null, error: null, count: null });
+    await expect(countStrandedCallbacks({ nowMs: NOW_MS })).resolves.toBe(0);
   });
 });

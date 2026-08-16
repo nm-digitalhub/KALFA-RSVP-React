@@ -61,9 +61,23 @@ export function buildBusinessFacts(
   // attorney item 18). Balanced tone: the required disclosure is framed as the VALUE
   // the fee buys (activation + included responses, no subscription) rather than a
   // penalty — accurate AND not deal-deterring.
+  //
+  // PUNCTUATION HERE IS NOT COSMETIC. MEASURED 16.08 across two live drafts: the
+  // drafter reproduces these strings almost verbatim into customer replies, so
+  // whatever punctuation they carry is the punctuation the customer reads. Two
+  // faults shipped that way and are fixed below, per the Academy of the Hebrew
+  // Language rules:
+  //   - `ללא דמי מנוי; מחיר סופי` used a semicolon between two FRAGMENTS. That
+  //     mark joins closely-related full clauses; between noun phrases it is a
+  //     comma or a full stop. Now two sentences.
+  //   - `מע"מ` used a straight ASCII quote where Hebrew takes gershayim (״).
+  //     /terms already renders מע״מ, so the two surfaces disagreed on the same
+  //     word.
+  // Same rule drove `לא לפי X, ולא לפי Y` → no comma before vav in the
+  // billing_unit_he text below.
   const summary_he =
     model === 'base_overage'
-      ? `דמי הפעלה ₪${base} — עבור הפעלת השירות והפצת הפניות בערוצים — הכוללים כבר עד ${included} אנשי קשר שנענו בפועל, ללא תוספת. מעבר ל-${included}: ₪${overage} בלבד לכל איש קשר נוסף שנענה בפועל. דמי ההפעלה נגבים עם הפעלת הקמפיין ואינם מותנים בתוצאה — הם חלים על עצם הפעלת השירות, גם אם לא נענה אף איש קשר. ללא דמי מנוי; מחיר סופי, ללא מע"מ (עוסק פטור).`
+      ? `דמי הפעלה ₪${base} — עבור הפעלת השירות והפצת הפניות בערוצים — הכוללים כבר עד ${included} אנשי קשר שנענו בפועל, ללא תוספת. מעבר ל-${included}: ₪${overage} בלבד לכל איש קשר נוסף שנענה בפועל. דמי ההפעלה נגבים עם הפעלת הקמפיין ואינם מותנים בתוצאה — הם חלים על עצם הפעלת השירות, גם אם לא נענה אף איש קשר. ללא דמי מנוי. המחיר סופי, ללא מע״מ (עוסק פטור).`
       : `₪${overage} לכל איש קשר שהושג (נענה בוואטסאפ או השלים שיחת AI). משלמים רק על מי שנענה בפועל — פנייה שלא נענתה אינה מחויבת.`;
 
   // WHY THIS EXISTS — a measured drafting error, not a hypothetical.
@@ -100,11 +114,11 @@ export function buildBusinessFacts(
   // removes the guest/contact confusion instead of explaining it.
   const billing_unit_he =
     `החיוב נספר לפי אנשי קשר שנענו בפועל, כלומר כאלה שהשיבו בהודעת וואטסאפ או השלימו את שיחת ה-AI. ` +
-    `לא לפי מספר האורחים, ולא לפי מספר ההודעות שנשלחו. ` +
+    `לא לפי מספר האורחים ולא לפי מספר ההודעות שנשלחו. ` +
     `איש קשר הוא מספר טלפון אחד, והוא עשוי לייצג יותר מאורח אחד באותו בית, ולכן אי אפשר לגזור מחיר ממספר אורחים. ` +
     `הכלל שתמיד נכון: לא ייתכן שיענו יותר אנשים ממספר הטלפונים שברשימה, ולכן ברשימה של עד ${included} מספרי טלפון ` +
     `המחיר הוא ₪${base} תמיד, בלי קשר לכמה מהם יענו בפועל. ` +
-    `רק ברשימה גדולה מ-${included}, ורק אם יותר מ-${included} מהם אכן ייענו, מתווספים ₪${overage} לכל נענה מעל ${included}. ` +
+    `רק ברשימה גדולה מ-${included} ורק אם יותר מ-${included} מהם אכן ייענו, מתווספים ₪${overage} לכל נענה מעל ${included}. ` +
     `כשלקוח נוקב במספר אורחים — הצג לו את הכלל הזה כדי שיוכל ליישם אותו על הרשימה שלו, במקום לאמוד עבורו.`;
 
   return {

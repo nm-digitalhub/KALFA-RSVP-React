@@ -122,6 +122,10 @@
 //     run (.claude/fleet/roles/support-drafter.examples.md), and prints the
 //     "sent nearly as-is" rate that baselines future autonomy. Reads submitter
 //     PII ONLY to redact it — nothing raw reaches the corpus or stdout.
+//   faq
+//     Stage-2 grounding: the PUBLISHED public FAQ, rendered exactly as the
+//     customer sees it (tokens substituted, code-owned answers included).
+//
 //   business-facts
 //     Stage-2 grounding: prints the read-only, PII/secret-free pricing facts the
 //     support-drafter quotes for a pricing inquiry (canonical package + the live
@@ -281,7 +285,8 @@ import {
   summarizeMetric,
   toRedactedExample,
 } from '@/lib/fleet/corrections';
-import { buildBusinessFacts } from '@/lib/fleet/business-facts';
+import { buildBusinessFacts, type BusinessFacts } from '@/lib/fleet/business-facts';
+import { buildFaqPageModel, flattenFaqEntries, type FaqItemRow } from '@/lib/faq/page-model';
 import {
   applyFix,
   branchNameFor,
@@ -1395,7 +1400,11 @@ async function cmdDistillCorrections(args: Record<string, string | undefined>): 
 // per-reached while the gate is off; base+overage when on). packages carries no
 // PII/secrets; the gate is read via the fail-closed accessor (a boolean, never
 // the raw app_settings row). A human still reviews every draft before it sends.
-async function cmdBusinessFacts(): Promise<void> {
+// Shared by `business-facts` and `faq`. Extracted rather than duplicated
+// because the FAQ's live numbers and the price the drafter quotes MUST come
+// from one read — two copies of this could answer a customer with a price the
+// FAQ contradicts, in the same reply.
+async function loadBusinessFacts(): Promise<BusinessFacts> {
   const admin = createAdminClient();
   const gateOn = await getBaseOveragePricingEnabled();
   // The canonical campaign package — the same row resolveCanonicalTemplate picks
@@ -1419,7 +1428,47 @@ async function cmdBusinessFacts(): Promise<void> {
         channels: (data.channels ?? []) as string[],
       }
     : null;
-  console.log(JSON.stringify(buildBusinessFacts(gateOn, pkg), null, 2));
+  return buildBusinessFacts(gateOn, pkg);
+}
+
+async function cmdBusinessFacts(): Promise<void> {
+  console.log(JSON.stringify(await loadBusinessFacts(), null, 2));
+}
+
+// Stage-2 grounding, mirroring cmdBusinessFacts. The PUBLISHED FAQ is already
+// the answer to "what does the package include" — written, reviewed and live.
+// Without it the drafter emits `[נציג יפרט…]` while fourteen approved answers
+// sit one query away. MEASURED 16.08: a live draft shipped exactly that
+// placeholder twice.
+//
+// This builds the SAME model the public page renders rather than selecting raw
+// columns, and that is the whole point, not a nicety:
+//   - two answers are code-owned and are not rows at all — the price card, and
+//     the guest/contact/reached explainer that is the single highest-value
+//     correction this system has made;
+//   - `pricing_no_response` has an intentionally EMPTY answer column, its
+//     mandatory §2 sentence being composed from live facts, so a raw select
+//     returns nothing for the most compliance-sensitive question we publish;
+//   - answers carry {{token}} placeholders. MEASURED: two published rows do,
+//     and handing those over raw would put `ב־{{channels_list}}` verbatim into
+//     a customer's inbox.
+//
+// Read-only, no PII, no secrets — the same posture as business-facts. Note it
+// must NOT call getPublishedFaqItems(): that is `server-only` and uses the
+// cookie-session client, and the CLI bundle maps next/headers to an empty
+// module. Same select, admin client.
+async function cmdFaq(): Promise<void> {
+  const admin = createAdminClient();
+  const { data, error } = await admin
+    .from('faq_items')
+    .select('item_key, category, question, answer, sort_order')
+    .eq('published', true)
+    .order('category', { ascending: true })
+    .order('sort_order', { ascending: true });
+  if (error) fail(`faq read failed: ${error.message}`);
+
+  const model = buildFaqPageModel((data ?? []) as FaqItemRow[], await loadBusinessFacts());
+  console.log(JSON.stringify({ items: flattenFaqEntries(model) }, null, 2));
 }
 
 // ── housekeeping-pr ──────────────────────────────────────────────────────────
@@ -2526,6 +2575,8 @@ async function main(): Promise<void> {
       return cmdDistillCorrections(scalarValues);
     case 'business-facts':
       return cmdBusinessFacts();
+    case 'faq':
+      return cmdFaq();
     case 'triage-claim':
       return cmdTriageClaim();
     case 'triage-finish':
@@ -2544,7 +2595,7 @@ async function main(): Promise<void> {
       return cmdPublishSocial(scalarValues, !!dryRun);
     default:
       fail(
-        'usage: fleet-agent-cli <request|handoff|complete|poll|verdicts|ack|expire|withdraw|digest|sql|draft-reply|distill-corrections|business-facts|triage-claim|triage-finish|goal-poll|goal-progress|goal-close|analytics-summary|housekeeping-pr|publish-social> [options]',
+        'usage: fleet-agent-cli <request|handoff|complete|poll|verdicts|ack|expire|withdraw|digest|sql|draft-reply|distill-corrections|business-facts|faq|triage-claim|triage-finish|goal-poll|goal-progress|goal-close|analytics-summary|housekeeping-pr|publish-social> [options]',
       );
   }
 }

@@ -741,7 +741,24 @@ async function main(): Promise<void> {
   await boss.work(
     QUEUES.callbackScheduleSweep,
     guardedWorker(QUEUES.callbackScheduleSweep, async () => {
-      await runCallbackSchedulingSweep();
+      // Logged for the same reason the LISTEN path above logs its own result:
+      // a sweep that reports nothing cannot be told apart from a sweep that did
+      // nothing. MEASURED 16.08 — the tick that re-created fourteen stranded
+      // customer callbacks and wrote fourteen appointments into Graph left no
+      // line at all, and only a DB query could confirm it had happened.
+      //
+      // Not redundant with the Slack alerts inside the sweep: those are
+      // fail-open and can be switched off per category, and a chat room is not
+      // something you can grep six days later while diagnosing.
+      const r = await runCallbackSchedulingSweep();
+      // Quiet ticks are the normal case, so speak only when something moved —
+      // otherwise this prints every ten minutes forever and becomes the noise
+      // it exists to cut through.
+      if (r.scheduled || r.released || r.repaired) {
+        console.log(
+          `[callback-cron] sweep — שובצו ${r.scheduled}, נדחו ${r.skipped}, שוחררו ${r.released}, תוקנו ${r.repaired}`,
+        );
+      }
     }),
   );
   // Voximplant balance-alert cron (H2): read-only GetAccountInfo poll — Slack when
