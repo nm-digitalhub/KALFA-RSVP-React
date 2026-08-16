@@ -1,5 +1,22 @@
 # Attorney brief + S6 spec — base-fee pricing agreement clause
 
+> ## ⚠️ THIS MODEL IS NOW LIVE — measured 2026-08-16
+>
+> This brief was written **before** go-live and reads as prospective throughout
+> ("go-live also requires flipping…"). It no longer describes the current state.
+>
+> Measured against the live system: `app_settings.base_overage_pricing_enabled`
+> = **`true`**, the active agreement document is **`2026-07-v4` / `approved`**,
+> `business-facts` returns **`base_overage`** (₪200 / 200 included / ₪4), and
+> `https://beta.kalfa.me/faq` publicly states the base is charged regardless of
+> outcome. **Customers are being billed under this model.**
+>
+> The document is kept as the reasoning record and the S6 spec. Read every
+> "until approved" / "before go-live" sentence below as **already passed**.
+> The attorney questions it raises (16–18 in `legal-catalog-israel.md`) are
+> **not** thereby answered — they remain open items for a licensed attorney;
+> what changed is that the owner proceeded, not that the questions closed.
+
 **Status:** ADVISORY-verified by `israeli-compliance-advisor` (2026-07-26), NOT legal approval. The advisor is explicit: *"מידע משפטי ולא ייעוץ משפטי — אין זה אישור משפטי; החתימה הסופית להפעלה מסחרית היא של עו״ד מוסמך לדיני הגנת הצרכן בלבד."* This file is the record + the S6 implementation spec. Attorney questions 16-18 are recorded in `.claude/agents/shared/legal-catalog-israel.md`.
 
 **Model:** flat activation fee **₪200** charged ALWAYS on campaign activation (even 0 reached — a deliberate reversal of the current agreement §4 "0 contacts → no charge") + **200 reached included** + **₪4** per reached above 200. Ceiling = `200 + 4×max(0, maxContacts−200)`.

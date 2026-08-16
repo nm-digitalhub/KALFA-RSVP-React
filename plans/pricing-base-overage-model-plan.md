@@ -1,5 +1,13 @@
 # Pricing model change: flat base + included + overage
 
+> **⚠️ SUPERSEDED BY REALITY — measured 2026-08-16. This model SHIPPED and is
+> BILLING.** `app_settings.base_overage_pricing_enabled = true`, agreement
+> `2026-07-v4` approved, `business-facts` → `base_overage` (₪200 / 200 / ₪4),
+> and `/faq` publicly discloses the base as unconditional. Read the "Status"
+> line below and every staged/gated statement as **historical**. Kept as the
+> design record. Current state lives in the memory
+> `pricing-base-overage-model-workstream`.
+
 **Status:** PLAN — awaiting owner approval before any code. Billing is cross-cutting → plan-first per CLAUDE.md.
 **Owner-locked model (2026-07-26):** base **₪200** · included **200 reached** · overage **₪4 per reached above 200**.
 **Count basis:** reached (a guest who replied on WhatsApp OR completed an AI call) — the existing per-reached definition.
