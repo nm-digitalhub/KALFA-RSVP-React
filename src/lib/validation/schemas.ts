@@ -450,12 +450,15 @@ export type EmailChangeInput = z.infer<typeof emailChangeSchema>;
 // plans/exchange-ews-stage1.md. `password` has a generous max only (not a
 // strength rule) — it is the owner's EXISTING mailbox password, not a new
 // KALFA credential, so it must not be silently rejected for being long.
+// `password` is OPTIONAL because only the EWS path has any use for it. Graph
+// authenticates as the application with a certificate and never reads a mailbox
+// secret, so requiring one here forced an admin to hand over a live password to
+// create a connection that would not use it. The DAL rejects an empty password
+// when EWS is genuinely the active provider — the requirement moved to where the
+// answer is actually known, rather than being asserted at the form boundary.
 export const createExchangeConnectionSchema = z.object({
   mailboxEmail: z.string().trim().pipe(z.email({ error: 'כתובת אימייל לא תקינה' })),
-  password: z
-    .string()
-    .min(1, { error: 'נא להזין סיסמה' })
-    .max(256, { error: 'הסיסמה ארוכה מדי' }),
+  password: z.string().max(256, { error: 'הסיסמה ארוכה מדי' }).optional(),
 });
 export type CreateExchangeConnectionInput = z.infer<typeof createExchangeConnectionSchema>;
 

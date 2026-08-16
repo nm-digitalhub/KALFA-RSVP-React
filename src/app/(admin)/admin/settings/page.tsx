@@ -16,6 +16,7 @@ import { SettingsForm } from './settings-form';
 import { PricingModelToggle } from './pricing-model-toggle';
 import { ExchangeModeToggle } from './exchange-mode-toggle';
 import { ExchangeManager } from './exchange-manager';
+import { selectedCalendarProvider } from '@/lib/exchange-ews/provider-selection';
 
 export const metadata: Metadata = { title: 'הגדרות' };
 
@@ -71,7 +72,11 @@ export default async function AdminSettingsPage() {
             ופגישת בדיקה.
           </p>
         </div>
-        <ExchangeManager connections={exchangeConnections} mode={exchangeMode} />
+        <ExchangeManager
+          connections={exchangeConnections}
+          mode={exchangeMode}
+          needsPassword={selectedCalendarProvider() === 'ews'}
+        />
         <ExchangeModeToggle mode={exchangeMode} />
       </section>
 

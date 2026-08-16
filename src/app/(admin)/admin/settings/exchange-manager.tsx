@@ -32,7 +32,13 @@ const STATUS_BADGE_CLASS: Record<ExchangeConnectionView['status'], string> = {
   revoked: 'bg-muted text-muted-foreground',
 };
 
-function ConnectForm({ modeNotice }: { modeNotice: string | null }) {
+function ConnectForm({
+  modeNotice,
+  needsPassword,
+}: {
+  modeNotice: string | null;
+  needsPassword: boolean;
+}) {
   const [state, action] = useActionState(createExchangeConnectionAction, null);
   return (
     <form action={action} className="space-y-4">
@@ -57,23 +63,35 @@ function ConnectForm({ modeNotice }: { modeNotice: string | null }) {
         <FieldError errors={state?.fieldErrors?.mailboxEmail} />
       </div>
 
-      <div>
-        <label htmlFor="exchangePassword" className="mb-1 block text-sm font-medium">
-          סיסמה
-        </label>
-        <input
-          id="exchangePassword"
-          name="password"
-          type="password"
-          dir="ltr"
-          autoComplete="off"
-          className={`${inputClass} text-start`}
-        />
-        <FieldError errors={state?.fieldErrors?.password} />
-        <p className="mt-1 text-xs text-muted-foreground">
-          הסיסמה מוצפנת בשרת מיד עם השליחה ואינה מוצגת שוב במסך זה.
+      {/* Shown ONLY when EWS is the active provider, because only NTLM has any
+          use for it. Under Graph the app authenticates with its own certificate
+          and never reads a mailbox password — asking for one made an admin hand
+          over a live secret to create a connection that would not use it, and
+          then stored it encrypted indefinitely. */}
+      {needsPassword ? (
+        <div>
+          <label htmlFor="exchangePassword" className="mb-1 block text-sm font-medium">
+            סיסמה
+          </label>
+          <input
+            id="exchangePassword"
+            name="password"
+            type="password"
+            dir="ltr"
+            autoComplete="off"
+            className={`${inputClass} text-start`}
+          />
+          <FieldError errors={state?.fieldErrors?.password} />
+          <p className="mt-1 text-xs text-muted-foreground">
+            הסיסמה מוצפנת בשרת מיד עם השליחה ואינה מוצגת שוב במסך זה.
+          </p>
+        </div>
+      ) : (
+        <p className="text-xs text-muted-foreground">
+          החיבור מאומת בתעודת האפליקציה מול Microsoft&nbsp;365 — אין צורך בסיסמת
+          תיבה, ואף סיסמה אינה נשמרת.
         </p>
-      </div>
+      )}
 
       <div className="max-w-56">
         <SubmitButton>חיבור תיבת Exchange</SubmitButton>
@@ -179,9 +197,13 @@ function ConnectionCard({ connection }: { connection: ExchangeConnectionView }) 
 export function ExchangeManager({
   connections,
   mode,
+  // Resolved on the server (the provider lives in a server-only env var) and
+  // passed down, rather than read here — this is a client component.
+  needsPassword,
 }: {
   connections: ExchangeConnectionView[];
   mode: 'per_user' | 'per_org';
+  needsPassword: boolean;
 }) {
   const modeNotice =
     mode === 'per_org'
@@ -197,7 +219,7 @@ export function ExchangeManager({
         {connections.length > 0 ? (
           <p className="mb-3 text-sm text-muted-foreground">חיבור תיבה נוספת:</p>
         ) : null}
-        <ConnectForm modeNotice={modeNotice} />
+        <ConnectForm modeNotice={modeNotice} needsPassword={needsPassword} />
       </div>
     </div>
   );

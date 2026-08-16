@@ -12,7 +12,8 @@ import {
 } from '@/lib/auth/dal';
 import { getCallbackRequestByCalendarItem } from '@/lib/data/admin/callbacks';
 import { logActivity } from '@/lib/data/activity';
-import { encryptCredential } from '@/lib/exchange-ews/crypto';
+import { CURRENT_ENCRYPTION_KEY_VERSION, encryptCredential } from '@/lib/exchange-ews/crypto';
+import { selectedCalendarProvider } from '@/lib/exchange-ews/provider-selection';
 import { resolveMailboxPassword } from '@/lib/exchange-ews/mailbox-credential';
 import { calendarProvider } from '@/lib/exchange-ews/calendar-provider';
 import type {
@@ -150,7 +151,17 @@ export type CreateExchangeConnectionResult =
 // and inserted explicitly.
 export async function createExchangeConnection(input: {
   mailboxEmail: string;
-  password: string;
+  /**
+   * The mailbox password — required ONLY under EWS, where NTLM needs it.
+   *
+   * Graph authenticates once as the application with a certificate and never
+   * reads this. Demanding it there made an admin type a live mailbox secret to
+   * create a connection that would not use it, and then stored it encrypted
+   * forever. The §B phase-1 migration made the credential columns nullable and
+   * added `auth_method = 'certificate'` precisely so a connection can exist
+   * without one; this is the code catching up to the schema.
+   */
+  password?: string;
 }): Promise<CreateExchangeConnectionResult> {
   const user = await requireUser();
   await requirePlatformPermission('manage_settings');
@@ -168,6 +179,11 @@ export async function createExchangeConnection(input: {
     }
     orgId = orgContext.activeOrgId;
   }
+
+  // Only the EWS path stores a secret, because only NTLM has anything to do
+  // with one. Resolved once here so the revive and insert paths below cannot
+  // drift apart.
+  const needsCredential = selectedCalendarProvider() === 'ews';
 
   // Reconnect flow (MEASURED gap, 27.07 owner screenshot): revoke is a
   // soft-disconnect that keeps the row, so the unique (user_id, mailbox_email)
@@ -187,16 +203,25 @@ export async function createExchangeConnection(input: {
     if (existing.status !== 'revoked') {
       return { ok: false, error: 'תיבת הדואר הזו כבר מחוברת לחשבון שלכם.' };
     }
-    const revived = encryptCredential(input.password, existing.id, user.id);
+    // Same rule as the fresh-insert path below: a revived connection stores a
+    // secret only when EWS is the provider that would use one. Reviving under
+    // Graph must not carry the old row's NTLM shape back in.
+    if (needsCredential && !input.password) {
+      return { ok: false, error: 'חיבור במצב EWS מחייב סיסמת תיבה.' };
+    }
+    const revived =
+      needsCredential && input.password
+        ? encryptCredential(input.password, existing.id, user.id)
+        : null;
     const { error: reviveError } = await admin
       .from('exchange_connections')
       .update({
         org_id: orgId,
-        auth_method: 'ntlm',
-        credential_ciphertext: revived.ciphertext,
-        credential_iv: revived.iv,
-        credential_auth_tag: revived.authTag,
-        encryption_key_version: revived.keyVersion,
+        auth_method: needsCredential ? 'ntlm' : 'certificate',
+        credential_ciphertext: revived?.ciphertext ?? null,
+        credential_iv: revived?.iv ?? null,
+        credential_auth_tag: revived?.authTag ?? null,
+        encryption_key_version: revived?.keyVersion ?? CURRENT_ENCRYPTION_KEY_VERSION,
         status: 'pending',
         last_verified_at: null,
         last_error: null,
@@ -212,18 +237,29 @@ export async function createExchangeConnection(input: {
   }
 
   const connectionId = randomUUID();
-  const encrypted = encryptCredential(input.password, connectionId, user.id);
+
+  // Under Graph the three credential columns stay NULL — permitted by the
+  // all-or-none constraint added in phase 1 — and auth_method finally states
+  // what is true instead of the literal 'ntlm' that used to be written
+  // regardless of which provider would ever read it.
+  if (needsCredential && !input.password) {
+    return { ok: false, error: 'חיבור במצב EWS מחייב סיסמת תיבה.' };
+  }
+  const encrypted =
+    needsCredential && input.password
+      ? encryptCredential(input.password, connectionId, user.id)
+      : null;
 
   const { error } = await admin.from('exchange_connections').insert({
     id: connectionId,
     user_id: user.id,
     org_id: orgId,
     mailbox_email: input.mailboxEmail,
-    auth_method: 'ntlm', // the only method implemented in Stage 1 — see ews-impl.ts
-    credential_ciphertext: encrypted.ciphertext,
-    credential_iv: encrypted.iv,
-    credential_auth_tag: encrypted.authTag,
-    encryption_key_version: encrypted.keyVersion,
+    auth_method: needsCredential ? 'ntlm' : 'certificate',
+    credential_ciphertext: encrypted?.ciphertext ?? null,
+    credential_iv: encrypted?.iv ?? null,
+    credential_auth_tag: encrypted?.authTag ?? null,
+    encryption_key_version: encrypted?.keyVersion ?? CURRENT_ENCRYPTION_KEY_VERSION,
     status: 'pending',
   });
 
