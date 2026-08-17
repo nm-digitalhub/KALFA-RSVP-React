@@ -1,7 +1,7 @@
 import 'server-only';
 
 import { normalizeVoxSessions, type VoxNormalizedSession } from '@/lib/voximplant/call-history-normalize';
-import { getCallHistory } from '@/lib/voximplant/core';
+import { getCallHistory, VoximplantApiError } from '@/lib/voximplant/core';
 import { getVoximplantConfig } from '@/lib/data/voximplant-config';
 import { normalizePhone } from '@/lib/phone';
 import { createAdminClient } from '@/lib/supabase/admin';
@@ -46,12 +46,30 @@ const PAGE_CAP = 20;
 const TZ = 'Asia/Jerusalem';
 
 export interface VoxHistoryQuery {
-  days: number;
+  /**
+   * Lookback in days. A convenience only — `from`/`to` win when supplied.
+   *
+   * It used to be the ONLY time control the app could express, which reduced a
+   * date range to three preset drawers. The API takes 'YYYY-MM-DD HH:mm:ss' on
+   * both ends and always did.
+   */
+  days?: number;
+  /** Explicit window start. Epoch ms, converted to Asia/Jerusalem clock time. */
+  from?: number;
+  /** Explicit window end. */
+  to?: number;
   direction?: 'inbound' | 'outbound';
   outcome?: 'answered' | 'missed';
-  /** Filters server-side on Voximplant, unlike outcome. */
+  /** Server-side on Voximplant, unlike outcome. */
   minDurationSec?: number;
-  /** A specific caller. Server-side. */
+  maxDurationSec?: number;
+  /**
+   * A specific number, passed to Voximplant as `remote_number_list`.
+   *
+   * That parameter, not `remote_number`: the reference states it "has higher
+   * priority", and that `remote_number` is "ignored if the remote_number_list
+   * parameter is not empty" — so sending both would silently drop one.
+   */
   phone?: string;
   limit?: number;
 }
@@ -134,14 +152,89 @@ async function namesForNumbers(phones: string[]): Promise<Map<string, string>> {
   return out;
 }
 
+/**
+ * Reads back the number to ring for ONE session, from Voximplant.
+ *
+ * This is the whole resolver for returning a call, and it deliberately touches no
+ * table of ours. The owner put it plainly: the call log comes from Voximplant, so
+ * the number is already in Voximplant's record — going to our database to find it
+ * is a detour that also limits the feature to calls we happen to have a row for
+ * (28 of 1,241 in the measured week).
+ *
+ * What the DEVICE sends is a session id, never a number, so this stays a resolver
+ * and not a hole. And the checks below are made against Voximplant's own record
+ * rather than against anything the caller asserted:
+ *
+ *   * the session must contain an INBOUND leg — an outbound leg we placed is not
+ *     somebody who rang us, and returning one would turn "call back a caller" into
+ *     "dial any number this account has ever reached";
+ *   * the number comes off that leg, not off any agent leg, which is our own side
+ *     wearing a phone number.
+ *
+ * Bounded to the freshness window: a call from six weeks ago is not a call being
+ * returned, and GetCallHistory needs a from/to pair regardless.
+ */
+export async function fetchReturnableCall(
+  sessionId: string,
+  withinMs: number,
+  nowMs: number = Date.now(),
+): Promise<{ phone: string; startedAt: string | null } | null> {
+  const config = await getVoximplantConfig();
+  if (!config) throw new Error('voximplant_not_configured');
+
+  const numericId = Number(sessionId);
+  if (!Number.isSafeInteger(numericId) || numericId <= 0) return null;
+
+  let res;
+  try {
+    res = await getCallHistory(config.auth, {
+      from_date: fmtInTz(new Date(nowMs - withinMs)),
+      to_date: fmtInTz(new Date(nowMs)),
+      timezone: TZ,
+      call_session_history_id: numericId,
+      with_calls: true,
+      count: 1,
+    });
+  } catch (e) {
+    // An id the platform will not accept is NOT FOUND, not a lookup failure, and
+    // the distinction reaches the agent as different words. Measured: asking for
+    // session 999999999 raises `'call_session_history_id' parameter is invalid`
+    // rather than returning an empty result — so without this the app would say
+    // "נסה שוב" forever about a session that does not exist.
+    //
+    // A NETWORK error is re-thrown: that one genuinely is worth retrying, and
+    // swallowing it here would report "no such call" every time Voximplant is
+    // briefly unreachable.
+    if (e instanceof VoximplantApiError) return null;
+    throw e;
+  }
+
+  const session = normalizeVoxSessions(res.result ?? [], nowMs)[0];
+  if (!session) return null;
+  if (session.direction !== 'inbound') return null;
+
+  const inboundLeg = session.legs.find((l) => l.incoming === true);
+  const phone = inboundLeg?.remoteNumber ? normalizePhone(inboundLeg.remoteNumber) : null;
+  // A withheld CLI leaves nothing to ring. Null rather than a partial result, so
+  // the caller reports "no number" instead of "no such call".
+  if (!phone) return null;
+
+  return { phone, startedAt: session.startedAt };
+}
+
 export async function fetchVoxCallHistory(q: VoxHistoryQuery): Promise<VoxHistoryResult> {
   const config = await getVoximplantConfig();
   if (!config) throw new Error('voximplant_not_configured');
   const auth = config.auth;
 
   const limit = Math.min(Math.max(q.limit ?? 50, 1), 200);
-  const to = new Date();
-  const from = new Date(to.getTime() - q.days * 86_400_000);
+  // An explicit window wins over the day count. Both ends are honoured
+  // independently, so "everything since 14 August" and "everything up to noon
+  // yesterday" are each expressible without inventing the other end.
+  const to = new Date(q.to ?? Date.now());
+  const from = new Date(
+    q.from ?? to.getTime() - (q.days ?? 7) * 86_400_000,
+  );
 
   const kept: VoxNormalizedSession[] = [];
   let scanned = 0;
@@ -158,8 +251,11 @@ export async function fetchVoxCallHistory(q: VoxHistoryQuery): Promise<VoxHistor
       desc_order: true,
       count: PAGE_SIZE,
       offset: page * PAGE_SIZE,
-      // Server-side where the API supports it, so fewer rows travel at all.
+      // Server-side wherever the API supports it, so fewer rows travel at all —
+      // and a duration or number filter narrows the scan itself rather than the
+      // page, which is what keeps a deep outcome query from paging the window.
       ...(q.minDurationSec !== undefined ? { min_duration: q.minDurationSec } : {}),
+      ...(q.maxDurationSec !== undefined ? { max_duration: q.maxDurationSec } : {}),
       ...(q.phone ? { remote_number_list: JSON.stringify([q.phone]) } : {}),
     });
 
@@ -188,7 +284,11 @@ export async function fetchVoxCallHistory(q: VoxHistoryQuery): Promise<VoxHistor
         answered: s.outcome === 'answered',
         outcome: s.outcome,
         name: norm ? names.get(norm) ?? null : null,
-        phone: s.remoteNumber,
+        // NORMALIZED, not raw. Voximplant returns '972536212562' without a
+        // leading '+', while the dial path normalizes before ringing — so the
+        // number an agent read and the number that gets called were two different
+        // strings for the same person. Same helper on both sides now.
+        phone: norm ?? s.remoteNumber,
         startedAt: s.startedAt,
         durationSec: s.durationSec,
         talkSec: s.agentTalkSec,

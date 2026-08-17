@@ -56,17 +56,54 @@ export async function GET(request: Request) {
   // Validated here rather than trusted. An unrecognised value becomes "unfiltered"
   // instead of reaching the query, so a malformed request can neither widen what is
   // returned nor shape an upstream error.
+  //
+  // Every axis Voximplant supports is exposed, not a day count standing in for a
+  // date range: `from`/`to` are epoch milliseconds so an exact window — including
+  // hours — survives the trip, and phone and duration narrow the scan on the
+  // platform side rather than after it.
   const url = new URL(request.url);
-  const rawDays = Number(url.searchParams.get('days'));
+  const p = url.searchParams;
+
+  const int = (key: string): number | undefined => {
+    const raw = Number(p.get(key));
+    return Number.isFinite(raw) ? raw : undefined;
+  };
+
+  const rawDays = Number(p.get('days'));
   const days = Number.isFinite(rawDays) && rawDays > 0 ? Math.min(rawDays, MAX_DAYS) : 7;
-  const dir = url.searchParams.get('direction');
-  const out = url.searchParams.get('outcome');
+  let from = int('from');
+  let to = int('to');
+  // A backwards window returns nothing and reads as a broken screen, so it is
+  // corrected rather than served. Ordering the two ends is not a guess about
+  // intent — it is the only interpretation under which the request means anything.
+  if (from !== undefined && to !== undefined && from > to) [from, to] = [to, from];
+  // A window wider than MAX_DAYS is clamped to it rather than refused: the request
+  // is still meaningful, and the response says what was scanned.
+  if (from !== undefined && to !== undefined && to - from > MAX_DAYS * 86_400_000) {
+    from = to - MAX_DAYS * 86_400_000;
+  }
+
+  const dir = p.get('direction');
+  const out = p.get('outcome');
+  // E.164 only. Anything else is dropped rather than passed through — this value
+  // reaches Voximplant inside a JSON array, and a permissive filter here is how a
+  // free-text field becomes an injection surface.
+  const rawPhone = p.get('phone')?.trim();
+  const phone = rawPhone && /^\+[1-9]\d{6,14}$/.test(rawPhone) ? rawPhone : undefined;
+
+  const minDur = int('min_duration');
+  const maxDur = int('max_duration');
 
   try {
     const result = await fetchVoxCallHistory({
       days,
+      from,
+      to,
       direction: dir === 'inbound' || dir === 'outbound' ? dir : undefined,
       outcome: out === 'answered' || out === 'missed' ? out : undefined,
+      phone,
+      minDurationSec: minDur !== undefined && minDur >= 0 ? minDur : undefined,
+      maxDurationSec: maxDur !== undefined && maxDur > 0 ? maxDur : undefined,
     });
 
     return json(

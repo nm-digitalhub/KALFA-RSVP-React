@@ -11,6 +11,9 @@ import { safeTokenEqual, sha256Hex } from '@/lib/security/token-compare';
 import { rateLimit } from '@/lib/security/rate-limit';
 import { AGENT_STATUS_FRESHNESS_MS } from '@/lib/console/presence';
 import { sendPushToUser } from '@/lib/data/push-delivery';
+// Returning a call resolves its number from VOXIMPLANT, not from our tables —
+// see fetchReturnableCall for why that is both simpler and more capable.
+import { fetchReturnableCall } from '@/lib/data/vox-call-history';
 import type { Database } from '@/lib/supabase/types';
 
 // Service-role DAL for the browser call-center (plan stages 4/5 — internal +
@@ -322,8 +325,15 @@ export async function consoleDtmfHandoffEnabled(): Promise<boolean> {
 export type DialTargetInput =
   | { kind: 'callback'; id: string }
   | { kind: 'guest_service'; eventId: string; contactId: string }
-  /** Returning a call somebody placed to US and nobody answered. */
-  | { kind: 'returned_call'; consoleCallId: string };
+  /**
+   * Returning a call somebody placed to US.
+   *
+   * A VOXIMPLANT session id, not a row of ours. The number is read back from
+   * Voximplant's own record of that session — see fetchReturnableCall — which is
+   * both simpler and strictly more capable: it works for every call in the log
+   * rather than only the 2% that carry an event/contact link in our tables.
+   */
+  | { kind: 'returned_call'; sessionId: string };
 
 // ─────────────────────────────────────────────────────────────────────────
 // WHICH GATES APPLY TO WHICH DIAL, stated per scenario rather than shared.
@@ -634,55 +644,34 @@ export async function resolveDialTarget(
   // this stays a resolver and not a hole through which an arbitrary number could be
   // dialled.
   if (input.kind === 'returned_call') {
-    const { data: call, error: callErr } = await admin
-      .from('console_calls')
-      .select('id, direction, answered_at, created_at, event_id, contact_id, guest_id')
-      .eq('id', input.consoleCallId)
-      .maybeSingle();
-    if (callErr) return { ok: false, reason: 'lookup_failed' };
-    if (!call) return { ok: false, reason: 'not_found' };
-
-    // INBOUND only. An outbound leg we placed is not somebody who called us, and
-    // letting this shape return one would turn "ring back a caller" into "ring any
-    // number this console has ever dialled" — which is the cold-call path the union
-    // exists to keep closed.
-    if (call.direction !== 'inbound') return { ok: false, reason: 'not_found' };
-
-    // Same freshness bound as a callback request. A call from six weeks ago is not
-    // a call being returned; it is a fresh outbound call to somebody who has since
-    // heard nothing from us, and it should go through the gates that govern one.
-    const anchorMs = Date.parse(call.created_at ?? '');
-    if (Number.isNaN(anchorMs) || nowMs - anchorMs > CALLBACK_FRESHNESS_MS) {
-      return { ok: false, reason: 'stale' };
+    let returnable: Awaited<ReturnType<typeof fetchReturnableCall>>;
+    try {
+      returnable = await fetchReturnableCall(input.sessionId, CALLBACK_FRESHNESS_MS, nowMs);
+    } catch {
+      // Voximplant unreachable is a lookup failure, not a refusal. The agent should
+      // be told to retry, not told they may not call this person.
+      return { ok: false, reason: 'lookup_failed' };
     }
+    // Covers three cases on purpose — unknown session, an outbound leg, and a
+    // session outside the freshness window (GetCallHistory simply will not return
+    // it for that from/to pair). None of them is a consent refusal.
+    if (!returnable) return { ok: false, reason: 'not_found' };
 
-    const { data: pii, error: piiErr } = await admin
-      .from('console_call_pii')
-      .select('phone_e164')
-      .eq('call_id', call.id)
-      .maybeSingle();
-    if (piiErr) return { ok: false, reason: 'lookup_failed' };
-    const phone = normalizePhone(pii?.phone_e164);
-    // A withheld CLI leaves nothing to ring. Distinct from 'not_found' so the UI
-    // can say why rather than implying the call itself is unknown.
-    if (!phone) return { ok: false, reason: 'invalid_phone' };
-
-    const shared = await evaluateSharedConsentGates(admin, phone, nowMs, {
+    const shared = await evaluateSharedConsentGates(admin, returnable.phone, nowMs, {
       allowOutsideHours: opts.allowOutsideHours,
       policy: DIAL_GATE_POLICY.returned_call,
     });
     if (!shared.ok) return shared;
 
+    // No event/contact/guest linkage, and that is the point rather than a gap:
+    // this path deliberately does not depend on our tables knowing the caller,
+    // which is what limited the button to 28 of 1,241 calls.
     return {
       ok: true,
-      phone,
-      // Carried when the caller happened to be a known contact, so the audit trail
-      // and any downstream event linkage stay intact — but their ABSENCE no longer
-      // decides whether the call may be returned, which is what made the button
-      // unavailable on 98% of real calls.
-      eventId: call.event_id ?? null,
-      contactId: call.contact_id ?? null,
-      guestId: call.guest_id ?? null,
+      phone: returnable.phone,
+      eventId: null,
+      contactId: null,
+      guestId: null,
       callbackRequestId: null,
     };
   }
@@ -3276,7 +3265,7 @@ export async function recordConsoleDialAudit(input: {
     } else if (input.target.kind === 'returned_call') {
       // The audited fact is WHICH recorded call was returned. Any event linkage
       // is incidental here and is captured on the console_calls row itself.
-      meta.returned_console_call_id = input.target.consoleCallId;
+      meta.returned_vox_session_id = input.target.sessionId;
     } else {
       meta.event_id = input.target.eventId;
       meta.contact_id = input.target.contactId;

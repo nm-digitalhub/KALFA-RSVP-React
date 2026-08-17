@@ -50,9 +50,20 @@ export const dialIntentBodySchema = z.discriminatedUnion('kind', [
   // apply to it genuinely differ (see DIAL_GATE_POLICY in data/console-calls.ts).
   // One shape serving several scenarios is what let rules written for the AI
   // ringing a guest silently govern an agent ringing back a caller.
+  // A VOXIMPLANT session id — digits, not a uuid of ours. The server reads the
+  // number back from Voximplant's own record of that session, so this widens what
+  // an agent may RETURN without widening what anyone may DIAL, and it works for
+  // every call in the log rather than only the ones our tables happen to know.
+  //
+  // It is a third shape rather than a flag on 'callback' because the gates that
+  // apply to it genuinely differ (see DIAL_GATE_POLICY in data/console-calls.ts).
+  // One shape serving several scenarios is what let rules written for the AI
+  // ringing a guest silently govern an agent ringing back a caller.
   z.strictObject({
     kind: z.literal('returned_call'),
-    consoleCallId: z.string().uuid(),
+    // Length-bounded rather than free digits: this value is sent upstream, and an
+    // unbounded numeric string is a URL-length problem waiting to happen.
+    sessionId: z.string().regex(/^[1-9]\d{0,17}$/),
     confirm_outside_hours: z.boolean().optional(),
   }),
 ]);
