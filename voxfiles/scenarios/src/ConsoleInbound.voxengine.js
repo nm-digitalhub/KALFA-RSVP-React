@@ -134,6 +134,12 @@ VoxEngine.addEventListener(AppEvents.Started, function (startedEvent) {
     // The owner-supplied hold-music clip — same file, same cache-versioning
     // rule, same reasoning as ConsoleDial.voxengine.js's identical constant.
     var HOLD_MUSIC_URL = KALFA_APP_ORIGIN + '/audio/hold-music-v1.mp3';
+    // Ringback heard by the CONSULTING agent while their target rings. ToneScript,
+    // in the syntax the typings themselves link to: `F@L;duration(on/off/freqs)` —
+    // 400 Hz at -19 dBm, 1s on, 3s off, `*` meaning repeat forever. That is the
+    // Israeli/European cadence; the platform's own playProgressTone offers only US
+    // and RU, and neither is local.
+    var CONSULT_RINGBACK_TONESCRIPT = '400@-19;*(1/3/1)';
     var ttsOptions = { voice: VoiceList.Google.he_IL_Wavenet_A };
     // Per-agent serial-ring ceiling — plan-decided constant for V1 (§ שלב 5).
     var RING_PER_AGENT_MS = 20000;
@@ -247,6 +253,9 @@ VoxEngine.addEventListener(AppEvents.Started, function (startedEvent) {
         // completeConsult()/cancelConsult() run from a LATER command-channel
         // invocation than startConsult(), so its own payload is out of scope
         // by then.
+        consultRingbackPlayer: null, // the ringback Player heard by the CONSULTING
+        // agent while the target rings; null whenever it is not playing. Stopped
+        // EXPLICITLY at every consult exit — see stopConsultRingback().
         consulting: false, // true while dialing the consult target
         consultActive: false, // true once privately bridged with the operator
         consultTimer: null,
@@ -391,6 +400,7 @@ VoxEngine.addEventListener(AppEvents.Started, function (startedEvent) {
         // downstream can read remoteNeedsHold() as true on a dead call.
         state.ringing = false;
         stopHoldAudio();
+        stopConsultRingback();
         // Same reasoning as ConsoleDial.voxengine.js's identical block: a
         // consult in flight (dialing OR privately bridged) has no meaning
         // once operator or remote is gone — hang up the orphaned consult leg
@@ -577,6 +587,25 @@ VoxEngine.addEventListener(AppEvents.Started, function (startedEvent) {
             delay = Math.min(delay * 2, HOLD_REPEAT_MAX_MS);
         }
         tick();
+    }
+    // Ends the consulting agent's ringback. Called on EVERY path out of the dialing
+    // window, because the previous mechanism's failure was precisely that it had no
+    // such path — see startConsult for the measurement.
+    //
+    // Clearing the reference BEFORE stop() mirrors stopHoldAudio's discipline: any
+    // event the stop itself raises then finds a null player and knows the stop was
+    // ours. Idempotent, so callers never have to know whether a ringback is running.
+    function stopConsultRingback() {
+        if (!state.consultRingbackPlayer)
+            return;
+        var player = state.consultRingbackPlayer;
+        state.consultRingbackPlayer = null;
+        try {
+            player.stop();
+        }
+        catch (err) {
+            log('consult ringback stop failed: ' + err);
+        }
     }
     function stopHoldAudio() {
         if (state.holdPlayer) {
@@ -796,6 +825,7 @@ VoxEngine.addEventListener(AppEvents.Started, function (startedEvent) {
         if (!state.consulting)
             return; // already resolved (Connected raced the timeout/Failed)
         state.consulting = false;
+        stopConsultRingback();
         if (state.consultTimer) {
             clearTimeout(state.consultTimer);
             state.consultTimer = null;
@@ -856,37 +886,43 @@ VoxEngine.addEventListener(AppEvents.Started, function (startedEvent) {
         // unbridged them from the customer, and nothing has replaced that stream yet
         // (owner, 17.8: "לא שומע צליל חיוג כאשר אני מחייג להתייעצות").
         //
-        // The obvious fix — bridge operator to the ringing leg and pass the real
-        // network audio through — is NOT AVAILABLE, and that was checked rather than
-        // assumed. Call.sendMediaTo's own contract says "The target call has to be
-        // CallEvents.Connected earlier" (typings, and confirmed against the live
-        // reference `references.voxengine.call.sendmediato` on 17.8). So a leg that
-        // is still ringing cannot be a media source, and real early media — the
-        // carrier's own "this number is disconnected" announcement — is out of
-        // reach here whatever we would prefer.
+        // Passing the CARRIER's real audio through instead — the far end's own
+        // ringback, or its "this number is disconnected" announcement — is not
+        // available, and that was checked rather than assumed: Call.sendMediaTo's
+        // contract is "The target call has to be CallEvents.Connected earlier"
+        // (confirmed on the live reference references.voxengine.call.sendmediato,
+        // 17.8). A still-ringing leg cannot be a media source.
         //
-        // playProgressTone is the documented alternative: the Voximplant cloud
-        // generates the tone. 'US' because the same live page states "Currently
-        // supported values are US, RU" — there is no IL, so an Israeli agent hears a
-        // US cadence (2s on / 4s off rather than 1s / 3s). Unmistakably ringing,
-        // just not the local rhythm; that is the whole menu.
+        // A PLAYER, not Call.playProgressTone, and that distinction is the bug this
+        // replaces. playProgressTone was shipped here first, with a comment claiming
+        // it "stops by being replaced" when the Connected handler bridges new media
+        // in. It does not. MEASURED on session 7734982694: the consult connected at
+        // 15:06:46.756, sendMediaBetween ran, and the agent still heard the tone
+        // instead of the IVR that had answered — reported as "היית אמור לשמוע את
+        // התקליט של ה-IVR אבל במקום זאת היה צליל חיוג רגיל". The live docs say why:
+        // stopPlayback is documented only as stopping "playback started before via
+        // the Call.startPlayback method", and NOTHING documents a way to stop a
+        // progress tone at all. It was fire-and-forget with no off switch.
         //
-        // startEarlyMedia is NOT needed first. Its precondition applies to a call
-        // that is not connected yet, and state.operator is an agent already live on
-        // this call.
-        //
-        // It stops by being REPLACED, not by an explicit stop, on every exit: the
-        // Connected handler's sendMediaBetween, and failConsult's restoreCustomerBridge,
-        // each give this leg a new incoming stream, and "a new incoming stream always
-        // replaces the previous one" is stated on playProgressTone's own page. The
-        // tone therefore cannot outlive the dialing window it describes.
+        // Player.stop() by contrast is documented — "Stops playback. The current
+        // player's instance is destroyed." So the tone is now something this
+        // scenario owns and ends deliberately at every exit (stopConsultRingback),
+        // rather than something it starts and hopes gets overwritten.
         try {
-            state.operator.playProgressTone('US');
+            var ringback = VoxEngine.createToneScriptPlayer(CONSULT_RINGBACK_TONESCRIPT);
+            state.consultRingbackPlayer = ringback;
+            // Logged, not fallen back to: if the ToneScript is malformed the agent
+            // waits in the same silence they had before this existed, which is a
+            // regression to the old behaviour rather than a new failure — and this
+            // line is what will say so.
+            ringback.addEventListener(PlayerEvents.Error, function (ev) {
+                log('consult ringback error: ' + (ev && ev.error));
+            });
+            ringback.sendMediaTo(state.operator);
         }
         catch (err) {
-            // Never fatal: the consult still connects, the agent just waits in
-            // silence as they did before this existed.
-            log('consult progress tone failed: ' + err);
+            state.consultRingbackPlayer = null;
+            log('consult ringback failed: ' + err);
         }
         reportEvent('consult_started', { request_id: requestId, target: targetLabel });
         var timer = setTimeout(function () {
@@ -911,6 +947,10 @@ VoxEngine.addEventListener(AppEvents.Started, function (startedEvent) {
             }
             state.consulting = false;
             state.consultActive = true;
+            // FIRST, before the bridge below. This is the exact ordering whose
+            // absence produced the reported bug: the target answered, media was
+            // bridged, and the ringback kept playing over it.
+            stopConsultRingback();
             try {
                 // PRIVATE bridge — the caller (state.remote) is not part of
                 // this and stays on hold (silent) throughout.
@@ -932,6 +972,7 @@ VoxEngine.addEventListener(AppEvents.Started, function (startedEvent) {
             return;
         }
         var target = state.consultTarget;
+        stopConsultRingback();
         if (state.consultTimer) {
             clearTimeout(state.consultTimer);
             state.consultTimer = null;
