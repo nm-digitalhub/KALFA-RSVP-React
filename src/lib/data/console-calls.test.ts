@@ -21,6 +21,7 @@ import {
   findRoutableAgentVoxUsernames,
   getConsoleCallById,
   getConsoleCallSessionUrls,
+  identifyInboundCaller,
   isShabbatOrYomTovBlocked,
   isShiftActiveAndFresh,
   isWithinHumanCallWindow,
@@ -325,6 +326,54 @@ describe('countAnsweredLastHourForPhone (17.8 — the withheld-CLI hole)', () =>
     const builder = client.from.mock.results[0]?.value as Record<string, ReturnType<typeof vi.fn>>;
     expect(builder.eq).toHaveBeenCalledWith('phone_e164', '+972501234567');
     expect(builder.is).not.toHaveBeenCalled();
+  });
+});
+
+// The ringing agent's phone used to show OUR OWN DID on every incoming call and
+// nothing about the caller (owner report, 17.8). The scenario now puts the
+// caller's number in callUser's `callerid` and this name in its `displayName` —
+// which makes `guestName` the load-bearing half of "who is calling", not a
+// nice-to-have. These pin the two ways it can be absent, because both of them
+// silently degrade to showing a bare number rather than failing loudly.
+describe('identifyInboundCaller — the agent-facing name (17.8)', () => {
+  it('returns the guest name alongside the ids', async () => {
+    wireAdmin({
+      contacts: [{ data: [{ id: 'c-1', event_id: 'e-1' }], error: null }],
+      guests: [{ data: { id: 'g-1', full_name: '  דנה כהן  ' }, error: null }],
+    });
+
+    // Trimmed, not echoed raw: an import-whitespaced name would otherwise ride
+    // into a SIP displayName, where "whitespace is not allowed" is a documented
+    // constraint on the sibling callerid field.
+    await expect(identifyInboundCaller('+972501234567')).resolves.toEqual({
+      eventId: 'e-1',
+      guestId: 'g-1',
+      contactId: 'c-1',
+      guestName: 'דנה כהן',
+    });
+  });
+
+  it('identifies the caller but reports no name when full_name is blank', async () => {
+    wireAdmin({
+      contacts: [{ data: [{ id: 'c-1', event_id: 'e-1' }], error: null }],
+      guests: [{ data: { id: 'g-1', full_name: '   ' }, error: null }],
+    });
+
+    // null, NOT '' and NOT a placeholder: the route falls back to the caller's
+    // E.164, so the agent sees a real number instead of something that looks
+    // like a successful identification.
+    const identified = await identifyInboundCaller('+972501234567');
+    expect(identified?.guestId).toBe('g-1');
+    expect(identified?.guestName).toBeNull();
+  });
+
+  it('stays null for a number no guest is attached to', async () => {
+    wireAdmin({
+      contacts: [{ data: [{ id: 'c-1', event_id: 'e-1' }], error: null }],
+      guests: [{ data: null, error: null }],
+    });
+
+    await expect(identifyInboundCaller('+972501234567')).resolves.toBeNull();
   });
 });
 

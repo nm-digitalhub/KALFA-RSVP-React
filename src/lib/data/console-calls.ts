@@ -2341,6 +2341,15 @@ export interface IdentifiedCaller {
   eventId: string;
   guestId: string;
   contactId: string;
+  /**
+   * The guest's own name, for the ringing agent to see before they answer.
+   *
+   * Read from the guests row this function ALREADY fetches, so it costs no extra
+   * round trip — it was simply never selected. Nullable because `full_name` is,
+   * and a caller identified without a usable name should fall back to their
+   * number rather than to a placeholder that looks like an identification.
+   */
+  guestName: string | null;
 }
 
 export async function identifyInboundCaller(normalizedCli: string): Promise<IdentifiedCaller | null> {
@@ -2357,12 +2366,19 @@ export async function identifyInboundCaller(normalizedCli: string): Promise<Iden
   for (const c of contacts ?? []) {
     const { data: guest } = await admin
       .from('guests')
-      .select('id')
+      .select('id, full_name')
       .eq('event_id', c.event_id)
       .eq('contact_id', c.id)
       .limit(1)
       .maybeSingle();
-    if (guest) return { eventId: c.event_id, guestId: guest.id, contactId: c.id };
+    if (guest) {
+      return {
+        eventId: c.event_id,
+        guestId: guest.id,
+        contactId: c.id,
+        guestName: guest.full_name?.trim() || null,
+      };
+    }
   }
   return null;
 }

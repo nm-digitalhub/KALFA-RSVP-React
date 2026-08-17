@@ -37,6 +37,15 @@
 //   (~13092/13391/13359/13419); Net.httpRequestAsync(url,options) (~8496);
 //   VoiceList.Google.he_IL_Wavenet_A (same voice as RSVP.voxengine.js).
 //
+// CallUserParameters also inherits `displayName?: string` from
+// BaseCallParameters (typings ~2329, "Name of the caller that is displayed to
+// the user. Normally it is a human-readable version of CallerID, e.g. a
+// person's name") — used by ringIdentity() to put the caller's name in front of
+// the ringing agent. The typings say nothing about non-ASCII in that field, so
+// a Hebrew name there is INFERRED-safe, not measured; ringNext's Failed handler
+// carries the one-shot fallback that keeps that inference from being able to
+// break the ring. Settle it on the live-call matrix.
+//
 // UNVERIFIED / cross-cutting finding (NOT fixed here — out of this file's
 // scope, same finding as ConsoleDial.voxengine.js): the typings declare
 // VoxEngine.callUser with ONLY the object form, `callUser(parameters:
@@ -186,8 +195,15 @@ VoxEngine.addEventListener(AppEvents.Started, function (startedEvent) {
         // inbound has no other correlating id (no vox_session_id, no dial
         // token) — instead of the ambiguous FIFO fallback tier.
         callId: null,
-        cli: '', // inbound CallerID — NEVER logged raw (PII)
+        cli: '', // inbound CallerID — NEVER logged raw (PII). Since 17.8 it is
+        // ALSO the `callerid` passed on every agent ring, so the agent whose
+        // phone is ringing sees who is calling (see ringIdentity()).
         called: '', // the dialed DID (97237219347) — not PII, safe to log/reuse
+        callerDisplay: '', // route-inbound's `caller_display`: the guest's name
+        // when we recognise the number, their E.164 otherwise, '' when the CLI
+        // was withheld/unparsable. Copied into callUser's `displayName` — PII,
+        // same handling rule as `cli`: never logged, never sent in a
+        // reportEvent extra.
         operator: null, // the currently-bridged AGENT leg — replaceable via transfer
         agentUsername: '', // vox_username of whoever is currently connected
         remote: null, // the CALLER leg — anchor, never replaced, recorded
@@ -675,6 +691,9 @@ VoxEngine.addEventListener(AppEvents.Started, function (startedEvent) {
             return;
         }
         state.transferring = true;
+        // Keeps the DID as callerid — see ringIdentity()'s own note for why the
+        // caller-identity change (17.8) deliberately stops at the primary ring
+        // and does not reach the three internal agent-to-agent legs.
         var target = VoxEngine.callUser({
             username: voxUsername,
             callerid: state.called || 'kalfa-console'
@@ -1159,7 +1178,10 @@ VoxEngine.addEventListener(AppEvents.Started, function (startedEvent) {
     // purpose (route-inbound-retry/route.ts's own server-side audit already
     // records the found count) — this function is the ONE added request in
     // the worst case, not two.
-    function attemptWakeRetry(callerCall, triedSoFar) {
+    // [suppressName] is threaded through, not defaulted: if the primary ring
+    // already proved the displayName unusable (see ringNext's Failed handler),
+    // the retry wave must not put it straight back on the wire.
+    function attemptWakeRetry(callerCall, triedSoFar, suppressName) {
         if (state.wakeRetryDone) {
             declareNoAgent(callerCall);
             return;
@@ -1188,16 +1210,49 @@ VoxEngine.addEventListener(AppEvents.Started, function (startedEvent) {
                 return;
             }
             log('wake retry found ' + newRing.length + ' newly-routable agent(s)');
-            ringNext(callerCall, newRing, 0, RING_RETRY_WINDOW_MS);
+            ringNext(callerCall, newRing, 0, RING_RETRY_WINDOW_MS, suppressName);
         }).catch(function (err) {
             log('wake retry request failed: ' + err);
             declareNoAgent(callerCall);
         });
     }
-    function ringNext(callerCall, ringOrder, idx, ringWindowMs) {
+    // Who the ringing agent sees. Builds the identity half of
+    // CallUserParameters for a ring attempt.
+    //
+    // `callerid` is the CALLER'S OWN NUMBER, echoed back byte-for-byte from
+    // AppEvents.CallAlerting's e.callerid. Verbatim on purpose: it is a shape
+    // the platform itself produced and therefore provably accepts, which
+    // sidesteps the one documented constraint on this field ("Usage of
+    // whitespaces is not allowed" — CallUserParameters.callerid) without this
+    // scenario having to guess at a normalization. It also satisfies the
+    // field's stated intent, "normally a phone number that can be used for
+    // callback". The DID stays the fallback for a withheld/absent CLI, where
+    // there is no caller number to show.
+    //
+    // `displayName` is route-inbound's `caller_display` — the guest's name when
+    // the number is recognised, their E.164 otherwise. [suppressName] drops it;
+    // see ringNext's Failed handler for the one case that sets it.
+    //
+    // NOT applied to startTransfer/startConsult/startConference, which keep the
+    // DID: those are internal agent-to-agent legs, none of them has any app UI
+    // yet (the transfer/consult/conference buttons do not exist), and for a
+    // consult the target speaks to the AGENT first, not the caller — so
+    // labelling that leg with the caller's number would be actively wrong.
+    // Deferred deliberately, to be decided when those buttons are built.
+    function ringIdentity(suppressName) {
+        var params = { callerid: state.cli || state.called || 'kalfa-console' };
+        if (!suppressName) {
+            // No CLI at all: say so, rather than leave the agent looking at our
+            // own DID with no explanation — that reads exactly like the bug
+            // this change fixes.
+            params.displayName = state.callerDisplay || (state.cli ? state.cli : 'מספר חסוי');
+        }
+        return params;
+    }
+    function ringNext(callerCall, ringOrder, idx, ringWindowMs, suppressName) {
         var windowMs = ringWindowMs || RING_PER_AGENT_MS;
         if (idx >= ringOrder.length) {
-            attemptWakeRetry(callerCall, ringOrder);
+            attemptWakeRetry(callerCall, ringOrder, suppressName);
             return;
         }
         // Caller-facing hold cue, once per agent attempted — see
@@ -1215,18 +1270,27 @@ VoxEngine.addEventListener(AppEvents.Started, function (startedEvent) {
         }
         var username = ringOrder[idx];
         var settled = false;
-        // callerid = the dialed DID (a real, rented, verified Voximplant
-        // number), NOT the raw inbound CLI — deliberate: display_hint from
-        // route-inbound is the intended channel for showing caller identity
-        // to the agent (via Realtime/console_calls), so the caller's phone
-        // number never needs to ride an internal callUser leg at all. Avoids
-        // both a PII-exposure surface and an UNVERIFIED assumption about
-        // whether Voximplant's "real rented number" CallerID rule applies the
-        // same way to an intra-app callUser as it does to callPSTN.
-        var agentCall = VoxEngine.callUser({
-            username: username,
-            callerid: state.called || 'kalfa-console'
-        });
+        // The ring used to pass our OWN DID as the callerid, reasoning that
+        // route-inbound's display_hint was "the intended channel for showing
+        // caller identity to the agent" so the caller's number never needed to
+        // ride an internal callUser leg. Two things were wrong with that. The
+        // app never read display_hint, so the agent's phone showed OUR number
+        // on every incoming call and nothing else — the owner's report, 17.8.
+        // And the second half of the reasoning, an explicitly UNVERIFIED worry
+        // about whether the "real rented number" CallerID rule applies to an
+        // intra-app callUser, was resolvable and has been resolved: the live
+        // reference (references.voxengine.calluserparameters, 17.8) restricts
+        // only TEST numbers rented from Voximplant — a real caller's own number
+        // is precisely what the field is for.
+        //
+        // ACCEPTED CONSEQUENCE, not an oversight: the CLI and the display name
+        // now travel in SIP signalling, so they appear in the platform's own
+        // session logs however carefully this file's log() calls avoid them.
+        // That is inseparable from showing an agent who is calling.
+        var ringParams = ringIdentity(suppressName);
+        ringParams.username = username;
+        var sentName = typeof ringParams.displayName === 'string';
+        var agentCall = VoxEngine.callUser(ringParams);
         var timer = setTimeout(function () {
             if (settled)
                 return;
@@ -1237,7 +1301,7 @@ VoxEngine.addEventListener(AppEvents.Started, function (startedEvent) {
             catch (err) {
                 log('ring timeout hangup failed: ' + err);
             }
-            ringNext(callerCall, ringOrder, idx + 1, windowMs);
+            ringNext(callerCall, ringOrder, idx + 1, windowMs, suppressName);
         }, windowMs);
         agentCall.addEventListener(CallEvents.Connected, function () {
             if (settled) {
@@ -1270,7 +1334,35 @@ VoxEngine.addEventListener(AppEvents.Started, function (startedEvent) {
             settled = true;
             clearTimeout(timer);
             log('ring attempt failed for ' + username + ': ' + safeStringify(ev));
-            ringNext(callerCall, ringOrder, idx + 1, windowMs);
+            // Self-heal for the ONE thing about this ring that is inferred
+            // rather than measured. displayName carries a Hebrew guest name
+            // into SIP signalling; the typings document the field
+            // (BaseCallParameters.displayName) but say nothing about non-ASCII,
+            // and the failure mode if the platform rejects the INVITE is not
+            // cosmetic — it is EVERY ring failing, i.e. inbound console dead.
+            //
+            // So the first failure of the first agent, when a name was sent,
+            // re-rings that SAME agent once with the name dropped, and the flag
+            // then rides the rest of the recursion: a bad displayName costs one
+            // extra internal leg and degrades the whole call to number-only,
+            // instead of taking the call down. Scoped to idx 0 because a broken
+            // displayName fails EVERY ring, so the first one is where it shows;
+            // scoped to one retry because that is enough to distinguish it.
+            //
+            // Cost when the name is fine and agent 0 is simply unreachable:
+            // one duplicate internal ring to an agent already known to be
+            // failing, then the name is dropped for the rest of THIS call.
+            // Cosmetic, in the safe direction, and it is why this stays a
+            // one-shot at idx 0 rather than a per-index retry.
+            //
+            // Delete this branch (and `suppressName`) once a live call has
+            // shown a Hebrew name arriving intact on the device.
+            if (!suppressName && sentName && idx === 0) {
+                log('first ring failed with a displayName set — retrying the same agent without it');
+                ringNext(callerCall, ringOrder, idx, windowMs, true);
+                return;
+            }
+            ringNext(callerCall, ringOrder, idx + 1, windowMs, suppressName);
         });
     }
     function proceedInbound(callerCall, ringOrder) {
@@ -1370,6 +1462,10 @@ VoxEngine.addEventListener(AppEvents.Started, function (startedEvent) {
             // fires — proceedInbound's very first report is 'started', which
             // must already carry it.
             state.callId = (body && body.call_id) || null;
+            // The agent-facing label for this caller (see ringIdentity()).
+            // Coerced to a string here rather than trusted: a non-string
+            // displayName would reach CallUserParameters on every ring.
+            state.callerDisplay = (body && typeof body.caller_display === 'string') ? body.caller_display : '';
             proceedInbound(callerCall, body.ring_order);
         }).catch(function (err) {
             log('route-inbound request failed: ' + err);

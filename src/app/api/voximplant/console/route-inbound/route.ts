@@ -34,10 +34,18 @@ import { routeInboundBodySchema } from '@/lib/validation/console-calls';
 // autocharge exposure (verified this account's own billing data — Gate E.3
 // fixture: zero-duration `incoming` sessions all carry call_cost=$0.00).
 //
-// Response shape is exactly what the scenario parses
-// (ConsoleInbound.voxengine.js:519-530): accept:true requires ring_order to
-// be an array — an EMPTY array is a valid, intentional accept (see the
-// no-agent branch below), NOT a refusal.
+// Response shape is exactly what the scenario parses, in its
+// AppEvents.CallAlerting handler (ConsoleInbound.voxengine.js — named by
+// handler, not by line number, which has already drifted once):
+//   accept       — must be true, and `ring_order` must be an array; an EMPTY
+//                  array is a valid, intentional accept (see the no-agent
+//                  branch below), NOT a refusal
+//   call_id      — stashed before the first reportEvent so every lifecycle
+//                  report resolves this exact console_calls row
+//   caller_display — copied into callUser's `displayName` on each ring (see
+//                  the accept return at the bottom of this file)
+//   display_hint — NOT read by the scenario at all; it is persisted by
+//                  createConsoleCall for the console UI
 //
 // go-live for this endpoint binding to rule 1494687 is Gate E (ops-knobs
 // doc) — a SEPARATE owner approval from this route existing/working. Nothing
@@ -305,5 +313,49 @@ export async function POST(request: Request) {
   // learns vox_session_id/dial-token any other way, and under concurrent
   // inbound calls the FIFO tier can attach one call's session-command
   // capability to a DIFFERENT call's row.
-  return json({ accept: true, ring_order: ringOrder, display_hint: callerMasked, call_id: callId }, 200);
+  // `caller_display` is the human-readable label for the RINGING AGENT — the one
+  // thing about the caller the scenario cannot work out on its own.
+  //
+  // The scenario already holds the raw CLI (AppEvents.CallAlerting's `e.callerid`) and
+  // now passes it through as callUser's `callerid`, so it needs nothing from us to
+  // show a NUMBER. What it has no way to produce is a NAME — and no way to format a
+  // number either (no libphonenumber in VoxEngine, and the platform hands over bare
+  // digits like `972…`). Both are decided here, where the guest lookup and the
+  // normalizer already live, and returned as ONE field the scenario copies straight
+  // into callUser's `displayName` — surfaced by the SDK as `Call.remoteDisplayName`,
+  // which the app already renders (VoxCallSession.customerName).
+  //
+  // Name when we recognise the caller, their E.164 otherwise, null when the CLI was
+  // withheld or unparsable. Deliberately not a placeholder in that last case: the
+  // scenario says "מספר חסוי" itself, so a withheld number reads as withheld rather
+  // than as this fix having failed.
+  //
+  // This reverses an earlier choice, and says so plainly. The scenario used to pass
+  // our OWN DID as the callerid on every ring, reasoning that the caller's number
+  // "never needs to ride an internal callUser leg" — but the effect was an agent being
+  // asked to answer a call knowing nothing about who is on it, which is not privacy,
+  // it is a broken console. The agent is about to speak with this person. The other
+  // half of that reasoning, an UNVERIFIED worry about Voximplant's CallerID rules for
+  // an intra-app callUser, resolved against the live reference on 2026-08-17: the
+  // documented restriction is "test numbers rented from Voximplant cannot be used as
+  // CallerID, use only real numbers" — a real caller's own number is exactly that.
+  //
+  // ACCEPTED CONSEQUENCE, stated rather than glossed: the CLI and this label now ride
+  // SIP signalling, so they appear in Voximplant's own session logs regardless of this
+  // codebase's Logger discipline. That is inherent to showing the agent who is calling
+  // — the thing that was asked for — not an oversight.
+  //
+  // `display_hint` stays MASKED and stays exactly as it was: it feeds console_calls, a
+  // stored, queryable record with a far wider audience than the one agent whose phone
+  // is ringing right now. Different surface, different exposure, different field.
+  return json(
+    {
+      accept: true,
+      ring_order: ringOrder,
+      display_hint: callerMasked,
+      caller_display: identified?.guestName ?? normalizedCli,
+      call_id: callId,
+    },
+    200,
+  );
 }
