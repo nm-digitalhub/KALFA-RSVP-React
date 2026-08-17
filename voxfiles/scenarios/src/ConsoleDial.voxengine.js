@@ -85,6 +85,18 @@ VoxEngine.addEventListener(AppEvents.Started, function (startedEvent) {
     var OUTBOUND_REFUSED_HE = 'לא ניתן לבצע את השיחה כעת. אנא פנו למנהל המערכת.';
     var OUTBOUND_UNREACHABLE_HE = 'לא הצלחנו להשלים את השיחה. אנא נסו שוב מאוחר יותר.';
     var INTERNAL_UNAVAILABLE_HE = 'הנציג המבוקש אינו זמין כרגע.';
+    // Hold cue (this task, 17.8) — an OPERATIONAL hold line, NOT owner/
+    // regulation-authorized wording like DISCLOSURE_LINE_HE above (same
+    // category as ConsoleInbound.voxengine.js's RING_HOLD_LINE_HE — that
+    // precedent is exactly why this needs no separate sign-off). Repeated via
+    // say() while the customer leg has no live audio flowing to it — driven
+    // by CallEvents.OnHold (the operator's SDK "השהיה" button,
+    // src/lib/voximplant/web-client.ts's toggleHold) AND by an active
+    // consult (startConsult's own stopMediaBetween) — see
+    // startHoldAudio()/remoteNeedsHold() below. Outbound branch only: the
+    // internal (agent_*) branch is colleague-to-colleague, never recorded,
+    // never customer-facing (this file's own header) and gets no hold audio.
+    var HOLD_LINE_HE = 'השיחה מוחזקת לרגע, אנא המתינו על הקו.';
     // Wavenet Hebrew — same voice RSVP.voxengine.js already vetted as stable
     // for he-IL names/dates. No SSML anywhere (the platform reads it literally).
     var ttsOptions = { voice: VoiceList.Google.he_IL_Wavenet_A };
@@ -93,6 +105,13 @@ VoxEngine.addEventListener(AppEvents.Started, function (startedEvent) {
     // target never leaves the guest waiting a full minute (plan owner-decided
     // constant for V1 blind transfer).
     var TRANSFER_TIMEOUT_MS = 20000;
+    // Hold-cue repeat cadence — a scenario-side setTimeout loop (not
+    // Call.say's own mechanism, which has no loop option; verified against
+    // live docs), bounded so an open-ended hold does not run away with
+    // per-call TTS cost. Independently tunable from RING_PER_AGENT_MS in
+    // ConsoleInbound.voxengine.js on purpose — same value today by
+    // coincidence, not because the two concepts are coupled.
+    var HOLD_REPEAT_MS = 20000;
     // Leaked-session backstop, NOT a call-length cap — operator calls are
     // human-paced and can legitimately run long. 60 minutes is a generous
     // ceiling purely so a wedged session cannot bill/hold forever; tune as an
@@ -176,7 +195,16 @@ VoxEngine.addEventListener(AppEvents.Started, function (startedEvent) {
         conferenceTargetUsername: '', // same reasoning as consultTargetUsername
         conferencing: false, // true while dialing the conference target
         conferenced: false, // true once the 3-way mixer is live
-        conferenceTimer: null
+        conferenceTimer: null,
+        // ── Hold audio (this task, 17.8) ─────────────────────────────────
+        sdkOnHold: false, // true while CallEvents.OnHold is active on the
+        // CURRENT operator leg (outbound branch only — see
+        // attachOperatorTerminalHandlers). Reset on every operator handoff
+        // (completeTransfer/completeConsult) — a stale leg's hold state
+        // never carries over to the fresh one.
+        holdAudioTimer: null // the repeating say() timer driving HOLD_LINE_HE
+        // while remoteNeedsHold() is true; null whenever it is not playing
+        // (see startHoldAudio/stopHoldAudio).
     };
     function log(msg) {
         Logger.write('[ConsoleDial] ' + msg);
@@ -286,6 +314,11 @@ VoxEngine.addEventListener(AppEvents.Started, function (startedEvent) {
             state.operator = null;
         else
             state.remote = null;
+        // Either leg going down ends any point in a pending hold-audio
+        // timer — state.remote's own identity check inside it would catch
+        // this within HOLD_REPEAT_MS anyway, but there is no reason to leave
+        // it dangling for that long.
+        stopHoldAudio();
         // Same reasoning as the conference block below: a consult in flight
         // (dialing OR privately bridged) has no meaning once operator or
         // remote is gone — hang up the orphaned consult leg explicitly
@@ -346,6 +379,53 @@ VoxEngine.addEventListener(AppEvents.Started, function (startedEvent) {
             cleanupAndTerminate();
         }
     }
+    // ── Hold audio ───────────────────────────────────────────────────────
+    // The customer leg (state.remote) goes silent for two INDEPENDENT
+    // reasons: the operator's own SDK "השהיה" button (CallEvents.OnHold
+    // below), and an active consult (startConsult's own stopMediaBetween —
+    // the pre-existing gap this file's consult section already documented:
+    // "NO hold-music asset exists in this scenario"). remoteNeedsHold() is
+    // the single source of truth both triggers check, so neither one can
+    // prematurely resume the live bridge while the OTHER reason is still
+    // active (e.g. the operator toggles SDK hold mid-consult).
+    function remoteNeedsHold() {
+        return state.sdkOnHold || state.consulting || state.consultActive;
+    }
+    // Repeating say() rather than a looped hosted audio file — reuses the
+    // exact production-proven mechanism and voice as this codebase's other
+    // operational hold cues (ConsoleInbound.voxengine.js's RING_HOLD_LINE_HE)
+    // instead of inventing a new audio asset (this file's own consult
+    // comment already declined to do that once; a hosted asset is an
+    // owner-decision this task does not extend to). Self-terminates the
+    // instant remoteNeedsHold() goes false OR state.remote has moved on to a
+    // different leg (transfer/consult-complete/conference/hangup), so no
+    // stray utterance can land on a leg that already has a live
+    // conversation running.
+    function startHoldAudio() {
+        if (state.holdAudioTimer || !state.remote)
+            return; // already playing, or nothing to play it to
+        var remote = state.remote;
+        function tick() {
+            if (state.remote !== remote || !remoteNeedsHold()) {
+                state.holdAudioTimer = null;
+                return;
+            }
+            try {
+                remote.say(HOLD_LINE_HE, ttsOptions);
+            }
+            catch (err) {
+                log('hold-audio say failed: ' + err);
+            }
+            state.holdAudioTimer = setTimeout(tick, HOLD_REPEAT_MS);
+        }
+        tick();
+    }
+    function stopHoldAudio() {
+        if (state.holdAudioTimer) {
+            clearTimeout(state.holdAudioTimer);
+            state.holdAudioTimer = null;
+        }
+    }
     // (Re)binds the terminal listeners for whichever Call is currently
     // playing the "operator" role — called once at dial time and again after
     // a successful transfer hands the role to the target leg.
@@ -365,6 +445,31 @@ VoxEngine.addEventListener(AppEvents.Started, function (startedEvent) {
             log('operator failed: ' + safeStringify(ev));
             handleLegDown('operator', 'operator_failed');
         });
+        // SDK-initiated hold (verified live docs, references.voxengine.
+        // callevents: "Triggered when a call is put/taken off hold", cross-
+        // referenced from ReInviteReceived's "3) put a call on hold / took a
+        // call off hold" — the Call object here is whichever leg the SDK put
+        // on hold). Outbound only: internal legs are never customer-facing
+        // (see HOLD_LINE_HE's own comment). Conference guard: once
+        // state.conferenced is true, state.remote's incoming stream is the
+        // Conference mixer, not this leg directly — a say() here would
+        // silently steal the customer's audio out of a live 3-way call
+        // (Call.sendMediaTo's docs: "a new incoming stream always replaces
+        // the previous one"), so hold is ignored entirely while conferenced.
+        call.addEventListener(CallEvents.OnHold, function () {
+            if (state.kind !== 'outbound' || state.conferenced)
+                return;
+            state.sdkOnHold = true;
+            log('operator SDK hold — starting hold audio for the customer leg');
+            startHoldAudio();
+        });
+        call.addEventListener(CallEvents.OffHold, function () {
+            if (!state.sdkOnHold)
+                return; // hold was ignored above (internal/conferenced) — nothing to undo
+            state.sdkOnHold = false;
+            log('operator SDK off-hold');
+            restoreCustomerBridge('sdk_hold_released');
+        });
     }
     function attachRemoteTerminalHandlers(call) {
         call.addEventListener(CallEvents.Disconnected, function (ev) {
@@ -376,6 +481,11 @@ VoxEngine.addEventListener(AppEvents.Started, function (startedEvent) {
     function completeTransfer(target, requestId) {
         var origin = state.operator;
         state.operator = target; // hand off the "operator" role FIRST
+        // The ORIGIN's hold state (if any) does not carry over to a fresh
+        // target leg, and any pending hold-audio timer must not land a stray
+        // utterance on the just-established post-transfer conversation.
+        state.sdkOnHold = false;
+        stopHoldAudio();
         attachOperatorTerminalHandlers(target);
         try {
             // Recording lives on state.remote (guest/callee), untouched by
@@ -489,6 +599,16 @@ VoxEngine.addEventListener(AppEvents.Started, function (startedEvent) {
     // therefore NEVER recorded. Deliberate: the guest's disclosure said
     // THEIR call is recorded, not that internal staff consultations are.
     function restoreCustomerBridge(why) {
+        // The OTHER trigger for hold (SDK hold vs. consult) may still be
+        // active — e.g. the operator toggled SDK hold mid-consult, and this
+        // call is consult ending first. Defer the restore; the remaining
+        // trigger's own resolution (OffHold, or this same function called
+        // again once it clears) is what actually resumes the live bridge.
+        if (remoteNeedsHold()) {
+            log('bridge restore (' + why + ') deferred — still on hold (sdkOnHold=' + state.sdkOnHold + ')');
+            return;
+        }
+        stopHoldAudio();
         if (state.operator && state.remote) {
             try {
                 VoxEngine.sendMediaBetween(state.operator, state.remote);
@@ -543,6 +663,7 @@ VoxEngine.addEventListener(AppEvents.Started, function (startedEvent) {
         catch (err) {
             log('consult hold (stopMediaBetween) failed: ' + err);
         }
+        startHoldAudio();
         var target = VoxEngine.callUser({
             username: voxUsername,
             callerid: state.operatorUsername || 'kalfa-console'
@@ -633,6 +754,11 @@ VoxEngine.addEventListener(AppEvents.Started, function (startedEvent) {
         catch (err) {
             log('consult unbridge on complete failed: ' + err);
         }
+        // consulting/consultActive clear further below, but a pending
+        // hold-audio timer must not land a stray say() on the live
+        // post-warm-transfer conversation this bridge is about to start —
+        // stop it explicitly rather than wait for its own lazy check.
+        stopHoldAudio();
         try {
             // The actual warm transfer: the customer, silent since
             // startConsult's hold, is now bridged to the consult target.
@@ -642,6 +768,9 @@ VoxEngine.addEventListener(AppEvents.Started, function (startedEvent) {
             log('consult complete bridge failed: ' + err);
         }
         state.operator = target; // hand off the "operator" role
+        // The ORIGIN's SDK-hold state (if any) does not carry over to the
+        // consult target now playing "operator".
+        state.sdkOnHold = false;
         attachOperatorTerminalHandlers(target);
         state.releasingOperator = origin;
         try {
@@ -688,7 +817,16 @@ VoxEngine.addEventListener(AppEvents.Started, function (startedEvent) {
         state.conferenceTargetUsername = '';
         state.conferencing = false;
         state.conferenced = false;
-        if (state.operator && state.remote) {
+        // The direct operator<->customer bridge below is only correct if
+        // NEITHER hold trigger is still active (state.conferenced is now
+        // false, so remoteNeedsHold() reflects SDK-hold/consult accurately
+        // again) — e.g. the operator never took SDK hold off for the whole
+        // conference. Resuming hold audio instead of a silent direct bridge
+        // in that case is the same fix this task made everywhere else.
+        if (remoteNeedsHold()) {
+            startHoldAudio();
+        }
+        else if (state.operator && state.remote) {
             try {
                 VoxEngine.sendMediaBetween(state.operator, state.remote);
             }
@@ -763,6 +901,15 @@ VoxEngine.addEventListener(AppEvents.Started, function (startedEvent) {
             }
             state.conferencing = false;
             state.conferenced = true;
+            // From this point state.remote's incoming stream becomes the
+            // Conference mixer (below), not a direct feed from state.operator
+            // — a hold-audio say() landing on it now (a pending timer from
+            // SDK hold or a consult that happened to be active right up to
+            // this moment) would silently steal the customer's audio out of
+            // the live 3-way call. Stop it unconditionally; the OnHold
+            // handler's own conferenced guard prevents a NEW one from
+            // starting for as long as the mixer is live.
+            stopHoldAudio();
             // Mixer (needs no video-conference rule flag, unlike Conference.add
             // — RSVPAgent's own precedent, :742-745). hd_audio explicit: the
             // parameter is the interface's only field and HD audio bills
@@ -978,7 +1125,22 @@ VoxEngine.addEventListener(AppEvents.Started, function (startedEvent) {
             catch (err) {
                 log('disclosure say() failed: ' + err);
             }
+            // ONE-SHOT — without this, ANY later PlaybackFinished on this
+            // same leg (e.g. a repeating hold-audio say() completing while
+            // the operator has the call on hold, see startHoldAudio()) would
+            // re-enter this handler: re-bridge to the CAPTURED operatorCall
+            // (stale after any transfer), and fire a duplicate
+            // reportEvent('connected') that corrupts the row's answered
+            // timestamp. addEventListener does not replace a previous
+            // handler (see ConsoleInbound.voxengine.js's identical
+            // ringStarted guard/comment for the citation) — guarded rather
+            // than argued, exactly like that one. Found in this task (17.8)
+            // while adding hold audio, not exercised by a live call before.
+            var bridgedAfterDisclosure = false;
             guestCall.addEventListener(CallEvents.PlaybackFinished, function () {
+                if (bridgedAfterDisclosure)
+                    return;
+                bridgedAfterDisclosure = true;
                 try {
                     VoxEngine.sendMediaBetween(operatorCall, guestCall);
                 }
