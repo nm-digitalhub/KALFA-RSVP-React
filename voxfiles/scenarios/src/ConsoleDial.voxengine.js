@@ -94,7 +94,14 @@ VoxEngine.addEventListener(AppEvents.Started, function (startedEvent) {
     // and the caller must be told. What is removed is only the sentence that was
     // false — narrowing an authorized disclosure to the case it was authorized
     // for, rather than inventing a new claim.
-    var DISCLOSURE_LINE_GENERAL_HE = 'שלום, שיחה זו מטעם קלפה. השיחה מוקלטת לצורך תיעוד.';
+    // NIQQUD on the brand name, not a tag. Google's he-IL voice reads bare "קלפה"
+    // as "כלפה" — reported by the owner on the first live manual call, and already
+    // solved once in RSVPPreview.voxengine.js, whose comment records that SSML was
+    // tried and PROVEN WRONG on a live call: say() spoke the tags aloud
+    // ("קטן-מ SAB ALIAS…"). Niqqud degrades safely — a voice that ignores the marks
+    // reads the word exactly as before, never garbage. Qamatz on the kuf forces the
+    // hard "ka".
+    var DISCLOSURE_LINE_GENERAL_HE = 'שלום, שיחה זו מטעם קָלְפָה. השיחה מוקלטת לצורך תיעוד.';
     // BY CALL KIND, as a table rather than a condition.
     //
     // One scenario serves several kinds of outbound call, and the wording is the
