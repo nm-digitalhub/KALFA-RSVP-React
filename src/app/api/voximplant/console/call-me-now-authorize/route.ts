@@ -55,7 +55,7 @@ import { callMeNowAuthorizeBodySchema } from '@/lib/validation/console-calls';
 // call that briefly looked answerable is answered with the honest promise
 // and dies recorded, not in silence. That branch reports 'ended' with
 // reason 'no_agent' through the existing /event route, which is what
-// actually triggers recordNoAgentCallback — this route does not write a
+// actually triggers recordMissedCallCallback — this route does not write a
 // callback row itself.
 //
 // perPhoneCallsLastHour is intentionally NOT re-checked here — same

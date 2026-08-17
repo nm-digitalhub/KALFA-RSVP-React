@@ -933,7 +933,7 @@ async function linkSession(
 // ConsoleCallMeNow.voxengine.js's own "EVENT call_kind CHOICE" header note)
 // — Tier 3's FIFO fallback filters on direction and can never find it. The
 // practical cost: the row stays stuck non-terminal, and if the ring
-// exhausts, recordNoAgentCallback() never fires — the "we'll call you back"
+// exhausts, recordMissedCallCallback() never fires — the "we'll call you back"
 // promise NO_AGENT_LINE_HE just made becomes a lie nobody acts on. Linking
 // here removes the dependency on 'started' having landed at all: every
 // later /event report resolves via Tier 1 (already linked, direction-
@@ -1828,7 +1828,7 @@ export async function recordWidgetOriginIpHash(callId: string, ipHash: string): 
 // time the scenario actually rings — the scenario's ring-exhausted branch
 // must still handle it (reusing ConsoleInbound's NO_AGENT_LINE_HE/
 // declareNoAgent() verbatim, which reports 'no_agent' through the existing
-// /event route and triggers recordNoAgentCallback unchanged), so a 04:00
+// /event route and triggers recordMissedCallCallback unchanged), so a 04:00
 // call that briefly looked answerable doesn't get answered and die in
 // silence.
 //
@@ -2442,26 +2442,59 @@ export async function notifyAgentsInboundCallResolved(input: {
     );
     if (userIds.length === 0) return;
 
-    // Says what actually happened. 'no_agent' is the case the caller was
-    // promised a callback for (recordNoAgentCallback runs on the same event),
-    // so the agent is told the follow-up exists rather than just that a call
-    // was missed — that is the actionable half.
-    const body =
-      input.reason === 'no_agent'
-        ? 'שיחה נכנסת לא נענתה. נרשמה בקשה לחזור אל המתקשר.'
-        : 'השיחה הנכנסת הסתיימה.';
+    // WHICH call this was, not just that one ended. A missed call is the whole
+    // reason an agent would look at their phone again, and until 17.8 this said
+    // "שיחה נכנסת לא נענתה" with no number and arrived SILENTLY — engineered to be
+    // unnoticeable, which is exactly how calls were being lost ("פספסתי שיחה
+    // מלקוח").
+    //
+    // The FULL number, not display_hint's masked form, and for the same reason the
+    // ring screen shows it: this goes to the one agent who has to call this person
+    // back, and half a number cannot be dialled. It reaches nobody else — the
+    // recipient list below is exactly the agents this call was already pushed to.
+    // A caller who withheld their number simply has none to show.
+    const { data: pii } = await admin
+      .from('console_call_pii')
+      .select('phone_e164')
+      .eq('call_id', input.consoleCallId)
+      .maybeSingle();
+    const phone = pii?.phone_e164 ?? null;
+
+    // Answered or not, decided by the row rather than the reason — the same
+    // discriminator recordMissedCallCallback uses, for the same reason: a
+    // 'caller_hangup' can be either a five-second abandon or the end of a long
+    // conversation.
+    const { data: row } = await admin
+      .from('console_calls')
+      .select('answered_at')
+      .eq('id', input.consoleCallId)
+      .maybeSingle();
+    const missed = row ? row.answered_at === null : input.reason === 'no_agent';
+
+    const body = missed
+      ? phone
+        ? `שיחה שלא נענתה מ־${phone}. נרשמה בקשה לחזור אל המתקשר.`
+        : 'שיחה נכנסת לא נענתה (מספר חסוי).'
+      : 'השיחה הנכנסת הסתיימה.';
 
     await Promise.all(
       userIds.map((userId) =>
         sendPushToUser(userId, {
-          title: 'KALFA — מוקד שירות',
+          title: missed ? 'KALFA — שיחה שלא נענתה' : 'KALFA — מוקד שירות',
           body,
-          url: `/admin?call=${input.consoleCallId}`,
+          // Straight to the callback queue for a missed call: the follow-up this
+          // notification is about is a row there, and "/admin" would leave the
+          // agent to find it. An answered call has nothing to action, so it keeps
+          // pointing at the call itself.
+          url: missed ? '/admin/callbacks' : `/admin?call=${input.consoleCallId}`,
           tag,
-          // Corrects an alert the agent was already buzzed for. Ringing again
-          // for a call that is over is the annoyance this whole function exists
-          // to reduce, so the replacement lands quietly.
-          silent: true,
+          // Silent ONLY when there is nothing to do. This function exists to stop
+          // re-buzzing an agent about a call that is over — true for an answered
+          // one, and the opposite of what a MISSED call needs. A silent missed-call
+          // alert is a missed-call alert nobody sees, which is how this was lost:
+          // it corrected the "call waiting" banner and said nothing audible in its
+          // place.
+          silent: !missed,
         }).catch(() => {
           // Best-effort per agent — same discipline as the two notify
           // functions above: one dead subscription must not stop the others.
@@ -2593,11 +2626,55 @@ export const CONSOLE_DIAL_AUDIT_ACTION = 'console_call.dial_intent';
  * Best-effort like the rest of this module — a lost write degrades the
  * follow-up, never the live call.
  */
-export async function recordNoAgentCallback(input: {
+/**
+ * Was this inbound call ever picked up by a human?
+ *
+ * `answered_at` is the honest signal and `agent_id` alone is not: an outbound call
+ * carries agent_id from creation (dial-intent's caller), so it says who OWNS the
+ * call, not that anyone spoke. answered_at is written in exactly one place — the
+ * event route's 'connected' branch, when the serial ring finds a winner.
+ *
+ * Errors resolve to "answered", i.e. NOT missed. That direction is deliberate: a
+ * failed read must not manufacture a callback promise to a caller who already got
+ * through, which would put a real person on a call-back list for a conversation
+ * they already had.
+ */
+async function inboundCallWentUnanswered(consoleCallId: string): Promise<boolean> {
+  try {
+    const admin = createAdminClient();
+    const { data, error } = await admin
+      .from('console_calls')
+      .select('answered_at, direction')
+      .eq('id', consoleCallId)
+      .maybeSingle();
+    if (error || !data) return false;
+    return data.direction === 'inbound' && data.answered_at === null;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Records the follow-up for a call nobody answered, and is the thing that makes
+ * "נחזור אליכם בהקדם" true.
+ *
+ * Fires for ANY inbound call that ended without ever being answered, not only for a
+ * ring that ran out of agents (owner decision, 17.8). A caller who gives up after
+ * five seconds of ringing wanted something from this business and did not get it —
+ * commercially identical to the ring exhausting, and previously invisible: that path
+ * recorded nothing and told the agent only "השיחה הנכנסת הסתיימה".
+ *
+ * Worth stating plainly, because it is the one asymmetry: in the abandoned case we
+ * never PROMISED a callback. The scenario only speaks NO_AGENT_LINE_HE when the ring
+ * exhausts, and a caller who hung up first heard nothing. So this is a promise the
+ * business is making to itself about following up — not one the caller was given.
+ */
+export async function recordMissedCallCallback(input: {
   consoleCallId: string;
   callerName?: string | null;
 }): Promise<void> {
   try {
+    if (!(await inboundCallWentUnanswered(input.consoleCallId))) return;
     const admin = createAdminClient();
 
     // The caller's number lives only in the server-only PII side table — it
@@ -2639,11 +2716,11 @@ export async function recordNoAgentCallback(input: {
  * decision, 12.8) — the COMMON no-agent case now, since /api/call-me-now/verify
  * checks findRoutableAgentVoxUsernames() BEFORE placing any outbound leg (see
  * this section's own "AVAILABILITY, NOT THE CLOCK" header above). Ring
- * exhaustion (recordNoAgentCallback, above) is the narrow race that survives
+ * exhaustion (recordMissedCallCallback, above) is the narrow race that survives
  * this — an agent was routable at intent, gone by the time the scenario
  * actually rings.
  *
- * Deliberately the SAME insert shape as recordNoAgentCallback — full_name/
+ * Deliberately the SAME insert shape as recordMissedCallCallback — full_name/
  * topic text differ (there is no consoleCallId to reference; no leg was ever
  * placed), but the table, the idempotency check, and every column this row
  * needs later are identical, so resolveDialTarget({kind:'callback', id})
@@ -2657,7 +2734,7 @@ export async function recordNoAgentCallback(input: {
  * writes is picked up ONLY when a human agent chooses to dial it from the
  * panel, through every existing callback gate — never automatically.
  *
- * Idempotent per phone (same check as recordNoAgentCallback): an existing
+ * Idempotent per phone (same check as recordMissedCallCallback): an existing
  * open request for this number is left alone rather than duplicated. Best-
  * effort — a lost write here degrades the follow-up, never the (already
  * decided) "no agent" response to the visitor.
@@ -2680,7 +2757,7 @@ export async function offerCallbackForCallMeNow(phone: string): Promise<void> {
       phone,
       topic: 'בקשת "התקשרו אליי עכשיו" — לא נמצא נציג זמין',
       // requested_at NULL = "no stated time", same convention as
-      // recordNoAgentCallback — the scheduler resolves ASAP against the
+      // recordMissedCallCallback — the scheduler resolves ASAP against the
       // clock when it actually runs.
       requested_at: null,
       requested_rank: 'earliest',

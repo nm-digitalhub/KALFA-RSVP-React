@@ -1574,15 +1574,76 @@ describe('notifyAgentsInboundCallResolved (stale inbound-call notification, 14.8
     });
   });
 
-  it('tells the agent a callback was recorded when the ring found nobody', async () => {
-    // recordNoAgentCallback runs on the same 'ended' event, so the follow-up
-    // genuinely exists — this is the actionable half, not just "you missed one".
-    wireAdmin({ push_delivery_log: [{ data: [{ user_id: 'agent-1' }], error: null }] });
+  it('names the number to call back, and ARRIVES — a missed call is not silent', async () => {
+    // The point of the whole notification. It used to say "שיחה נכנסת לא נענתה"
+    // with no number AND silent:true — an alert engineered to be unnoticeable,
+    // which is how calls were being lost (owner, 17.8: "פספסתי שיחה מלקוח").
+    wireAdmin({
+      push_delivery_log: [{ data: [{ user_id: 'agent-1' }], error: null }],
+      console_call_pii: [{ data: { phone_e164: '+972536212562' }, error: null }],
+      console_calls: [{ data: { answered_at: null }, error: null }],
+    });
 
     await notifyAgentsInboundCallResolved({ consoleCallId: 'call-9', reason: 'no_agent' });
 
     expect(sendPushToUser).toHaveBeenCalledWith('agent-1', expect.objectContaining({
-      body: 'שיחה נכנסת לא נענתה. נרשמה בקשה לחזור אל המתקשר.',
+      body: 'שיחה שלא נענתה מ־+972536212562. נרשמה בקשה לחזור אל המתקשר.',
+      // The full number, not display_hint's masked form: this reaches only the
+      // agents already pushed about this call, and half a number cannot be dialled.
+      silent: false,
+      url: '/admin/callbacks',
+    }));
+  });
+
+  it('treats an abandoned ring as missed too, on answered_at rather than the reason', async () => {
+    // 'caller_hangup' covers both "gave up after five seconds" and "ended a long
+    // conversation". Only the row knows which, which is why the reason stopped
+    // being the discriminator on 17.8.
+    wireAdmin({
+      push_delivery_log: [{ data: [{ user_id: 'agent-1' }], error: null }],
+      console_call_pii: [{ data: { phone_e164: '+972501234567' }, error: null }],
+      console_calls: [{ data: { answered_at: null }, error: null }],
+    });
+
+    await notifyAgentsInboundCallResolved({ consoleCallId: 'call-9', reason: 'caller_hangup' });
+
+    expect(sendPushToUser).toHaveBeenCalledWith('agent-1', expect.objectContaining({
+      body: 'שיחה שלא נענתה מ־+972501234567. נרשמה בקשה לחזור אל המתקשר.',
+      silent: false,
+    }));
+  });
+
+  it('stays silent for a call that WAS answered, whatever the reason says', async () => {
+    // The behaviour this function was built for, and the one thing the change
+    // above must not break: an agent who just finished a call is not buzzed again.
+    wireAdmin({
+      push_delivery_log: [{ data: [{ user_id: 'agent-1' }], error: null }],
+      console_call_pii: [{ data: { phone_e164: '+972501234567' }, error: null }],
+      console_calls: [{ data: { answered_at: '2026-08-17T15:00:00Z' }, error: null }],
+    });
+
+    await notifyAgentsInboundCallResolved({ consoleCallId: 'call-9', reason: 'caller_hangup' });
+
+    expect(sendPushToUser).toHaveBeenCalledWith('agent-1', expect.objectContaining({
+      body: 'השיחה הנכנסת הסתיימה.',
+      silent: true,
+    }));
+  });
+
+  it('says so plainly when the caller withheld their number', async () => {
+    wireAdmin({
+      push_delivery_log: [{ data: [{ user_id: 'agent-1' }], error: null }],
+      console_call_pii: [{ data: { phone_e164: null }, error: null }],
+      console_calls: [{ data: { answered_at: null }, error: null }],
+    });
+
+    await notifyAgentsInboundCallResolved({ consoleCallId: 'call-9', reason: 'no_agent' });
+
+    // NOT a promise of a callback: recordMissedCallCallback returns early with no
+    // number to store, so claiming one was recorded would be false.
+    expect(sendPushToUser).toHaveBeenCalledWith('agent-1', expect.objectContaining({
+      body: 'שיחה נכנסת לא נענתה (מספר חסוי).',
+      silent: false,
     }));
   });
 

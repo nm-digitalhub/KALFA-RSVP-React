@@ -7,7 +7,7 @@ import {
   mapEndedReasonToStatus,
   notifyAgentsInboundCallResolved,
   recordConsoleCallSessionAccess,
-  recordNoAgentCallback,
+  recordMissedCallCallback,
   resolveAgentIdByVoxUsername,
   updateConsoleCallStatus,
 } from '@/lib/data/console-calls';
@@ -168,13 +168,17 @@ export async function POST(request: Request) {
           recordingUrl: body.recording_url,
           endedNow: true,
         });
-        // The scenario already TOLD the caller "נחזור אליכם בהקדם" when the
-        // ring order ran out; this is what makes that true. Hour-agnostic:
-        // the ring exhausts at 03:00 because nobody is awake and at 14:00
-        // because everyone is busy, and both deserve a callback.
-        if (body.reason === 'no_agent') {
-          await recordNoAgentCallback({ consoleCallId: callId });
-        }
+        // Called for EVERY ended inbound call; recordMissedCallCallback itself
+        // decides, from answered_at, whether anyone actually picked up. Widened
+        // from `reason === 'no_agent'` on 17.8 — a caller who gave up after five
+        // seconds of ringing is commercially identical to the ring exhausting, and
+        // that path used to record nothing at all.
+        //
+        // Reason is deliberately NOT the discriminator any more. 'caller_hangup'
+        // covers both "gave up while ringing" and "ended a ten-minute conversation",
+        // and only the row knows which. Hour-agnostic, as before: a call is missed at
+        // 03:00 because nobody is awake and at 14:00 because everyone is busy.
+        await recordMissedCallCallback({ consoleCallId: callId });
         // The "שיחה נכנסת ממתינה במוקד" push is still on the agent's device
         // saying a call is waiting. Replace it with what actually happened —
         // scheduled through after() for the same reason route-inbound does it
