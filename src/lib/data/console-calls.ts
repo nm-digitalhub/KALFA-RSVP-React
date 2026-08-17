@@ -76,6 +76,34 @@ export const LIVE_STATUSES: readonly ConsoleCallStatus[] = ['initiated', 'ringin
 // matters more than the exclusion it bounds.
 export const AGENT_BUSY_MAX_MS = 60 * 60 * 1000;
 
+/**
+ * How long an 'initiated' row may still mean "a call is being placed".
+ *
+ * 'initiated' is written by dial-intent BEFORE the device has a leg — the row and
+ * its one-time token are minted, and the app then asks Voximplant to ring. If the
+ * app never gets that far, nothing moves the row on and it stays 'initiated' for
+ * ever. It is counted as live, so each one permanently consumes a slot out of
+ * MANUAL_DIAL_MAX_LIVE_CALLS.
+ *
+ * TWO OF THEM DISABLED DIALLING ENTIRELY. Measured 2026-08-17: rows created at
+ * 21:20:49 and 21:21:41 — the second timestamp is the app.crash to the second —
+ * left `countLiveConsoleCalls()` returning 2 against a cap of 2, so every dial
+ * after that answered 429 "יותר מדי שיחות פעילות כעת" while nothing was live at
+ * all. Confirmed from the device log: `dial.step step=intent_http status=429
+ * ms=1897`, twice, ninety minutes later.
+ *
+ * 2 minutes, and the number is not arbitrary: DIAL_TOKEN_TTL_MS is 60s, so at
+ * double that the token this row was minted with expired a minute ago and can no
+ * longer authorise a call. A row older than its own token cannot become a live
+ * call by any path, which makes this a statement of fact rather than a heuristic
+ * timeout — and the doubling is slack for clock skew, not for hope.
+ *
+ * The cure is a BOUND rather than a cleanup job, for the same reason
+ * AGENT_BUSY_MAX_MS is: the client that was meant to close the row is precisely
+ * the one that failed, so the count must not depend on it.
+ */
+export const INITIATED_ROW_STALE_MS = 2 * 60 * 1000;
+
 // Call kinds that carry a real customer leg — the only ones any live-call
 // topology change (blind transfer, consult, conference) may act on. 'internal'
 // (agent<->agent, no customer) and 'ai_handoff' (RSVPAgent's own command
@@ -1883,14 +1911,49 @@ export async function recordConsoleConferenceAudit(input: {
 // pool is small" rationale.
 export const MANUAL_DIAL_MAX_LIVE_CALLS = 2;
 
-export async function countLiveConsoleCalls(): Promise<number> {
+/**
+ * How many console calls are live right now, for the concurrency cap.
+ *
+ * BOUNDED BY AGE, because an unbounded count of LIVE_STATUSES is a count of rows
+ * rather than of calls. 'initiated' is written before the device has a leg, so a
+ * dial that dies in between — a crash, a lost network, a killed app — leaves a row
+ * nothing will ever move on. Each one consumes a slot permanently.
+ *
+ * Two of them took the cap of 2 and disabled dialling outright: measured
+ * 2026-08-17, rows from 21:20:49 and 21:21:41 (the latter is the app.crash to the
+ * second) made every subsequent dial answer 429 "יותר מדי שיחות פעילות כעת" with
+ * nothing live at all, for ninety minutes and counting.
+ *
+ * Two queries rather than one, because the two statuses age differently and for
+ * different reasons: an 'initiated' row outlives its own dial token in a minute
+ * (INITIATED_ROW_STALE_MS), while a 'connected' row is real until the scenario's
+ * own safety net tears the session down at an hour (AGENT_BUSY_MAX_MS). Counting
+ * them with one cutoff would either keep dead rows or discard live calls.
+ */
+export async function countLiveConsoleCalls(nowMs: number = Date.now()): Promise<number> {
   const admin = createAdminClient();
-  const { count, error } = await admin
+
+  // 'ringing' and 'connected' — a real leg exists, bounded by the scenario's own
+  // hard termination.
+  const connectedSince = new Date(nowMs - AGENT_BUSY_MAX_MS).toISOString();
+  const { count: connected, error: connectedErr } = await admin
     .from('console_calls')
     .select('id', { count: 'exact', head: true })
-    .in('status', LIVE_STATUSES as string[]);
-  if (error) throw new Error('count_live_console_calls_failed');
-  return count ?? 0;
+    .in('status', ['ringing', 'connected'])
+    .gte('created_at', connectedSince);
+  if (connectedErr) throw new Error('count_live_console_calls_failed');
+
+  // 'initiated' — a token was minted and nothing has rung yet. Past its token's
+  // life this row cannot become a call.
+  const initiatedSince = new Date(nowMs - INITIATED_ROW_STALE_MS).toISOString();
+  const { count: initiated, error: initiatedErr } = await admin
+    .from('console_calls')
+    .select('id', { count: 'exact', head: true })
+    .eq('status', 'initiated')
+    .gte('created_at', initiatedSince);
+  if (initiatedErr) throw new Error('count_live_console_calls_failed');
+
+  return (connected ?? 0) + (initiated ?? 0);
 }
 
 // Gate E / ops-knobs decision 3 — the operative caps, restated as constants.

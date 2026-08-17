@@ -9,8 +9,13 @@ import { createAdminClient } from '@/lib/supabase/admin';
 import { isDncListed } from '@/lib/data/outreach-engine';
 import { sendPushToUser } from '@/lib/data/push-delivery';
 import {
+  AGENT_BUSY_MAX_MS,
   computeQueueRingOrder,
   DIAL_GATE_POLICY,
+  DIAL_TOKEN_TTL_MS,
+  INITIATED_ROW_STALE_MS,
+  LIVE_STATUSES,
+  MANUAL_DIAL_MAX_LIVE_CALLS,
   computeRingOrder,
   CONSOLE_SHIFT_FRESHNESS_MS,
   countAnsweredLastHourForPhone,
@@ -1968,5 +1973,40 @@ describe('DIAL_GATE_POLICY', () => {
   it('leaves the call-me-now request under the timing gates', () => {
     expect(DIAL_GATE_POLICY.callback.shabbat).toBe(true);
     expect(DIAL_GATE_POLICY.callback.dailyWindow).toBe('overridable');
+  });
+});
+
+describe('live-call staleness bounds', () => {
+  // These constants are what stop a failed dial from permanently consuming a
+  // concurrency slot. Two rows stuck in 'initiated' — one written the second the
+  // app crashed — took the cap of 2 and made every subsequent dial answer 429
+  // with nothing live at all (measured 2026-08-17).
+  it('bounds an initiated row by more than its own dial token can live', () => {
+    // The bound is only meaningful if it OUTLASTS the token: a row younger than
+    // its token might still legitimately ring.
+    expect(INITIATED_ROW_STALE_MS).toBeGreaterThan(DIAL_TOKEN_TTL_MS);
+    // …and stays short enough that a leaked row frees its slot in minutes, not
+    // in the hour a genuinely connected call is allowed.
+    expect(INITIATED_ROW_STALE_MS).toBeLessThan(AGENT_BUSY_MAX_MS);
+  });
+
+  it('keeps the two statuses on separate clocks', () => {
+    // A single cutoff would either keep dead 'initiated' rows or discard live
+    // 'connected' ones — they age for different reasons.
+    expect(INITIATED_ROW_STALE_MS).not.toBe(AGENT_BUSY_MAX_MS);
+  });
+
+  it('still treats initiated as a live status for every other reader', () => {
+    // The bound belongs to the COUNTER, not to the vocabulary: a freshly
+    // initiated call is live, and code that lists live calls must still see it.
+    expect(LIVE_STATUSES).toContain('initiated');
+    expect(LIVE_STATUSES).toContain('ringing');
+    expect(LIVE_STATUSES).toContain('connected');
+  });
+
+  it('leaves room for a real second call under the cap', () => {
+    // Regression guard on the cap itself: at 1 a single live call would block
+    // the agent's own second line.
+    expect(MANUAL_DIAL_MAX_LIVE_CALLS).toBeGreaterThanOrEqual(2);
   });
 });
