@@ -333,7 +333,22 @@ export type DialTargetInput =
    * both simpler and strictly more capable: it works for every call in the log
    * rather than only the 2% that carry an event/contact link in our tables.
    */
-  | { kind: 'returned_call'; sessionId: string };
+  | { kind: 'returned_call'; sessionId: string }
+  /**
+   * A human at the console dialling a number they typed.
+   *
+   * This shape did not exist, and its absence was a rule applied to the wrong
+   * situation. The union was built so the AI CAMPAIGN could never cold-call: an
+   * automated system ringing people who asked for nothing is what consent law
+   * governs. An owner picking up their own business phone and dialling a number is
+   * not that, and refusing it made the console less capable than the handset it
+   * replaced.
+   *
+   * The number still never becomes a dial target unchecked — it is normalized
+   * server-side and passes the gates in DIAL_GATE_POLICY.manual before a token is
+   * minted, and every attempt is written to the audit log with the agent's id.
+   */
+  | { kind: 'manual'; phone: string };
 
 // ─────────────────────────────────────────────────────────────────────────
 // WHICH GATES APPLY TO WHICH DIAL, stated per scenario rather than shared.
@@ -385,6 +400,21 @@ export const DIAL_GATE_POLICY: Record<DialTargetInput['kind'], DialGatePolicy> =
   //   window   DROPPED. Same reasoning; and blocking it was the concrete failure
   //            the owner hit — a missed call at 20:15 that could not be returned.
   returned_call: { dnc: true, optOut: false, shabbat: false, dailyWindow: 'skip' },
+
+  // A HUMAN dialling a number they typed, on the business's own phone.
+  //
+  //   dnc      KEPT, and it is the only one. "Never call me" is a standing
+  //            instruction from the person on the other end; it does not become
+  //            void because a human rather than a robot is placing the call.
+  //   the rest DROPPED. Shabbat, business hours and the per-event opt-out are
+  //            rules for AUTOMATED outreach — a campaign that must not ring
+  //            strangers at protected times. An owner deciding to call someone
+  //            right now has already made that judgement, and a console that
+  //            refuses is less useful than the handset beside it.
+  //
+  // Every manual dial is audited (see recordDialAudit), which is the accountability
+  // that replaces a gate here: who called which number, and when.
+  manual: { dnc: true, optOut: false, shabbat: false, dailyWindow: 'skip' },
 };
 
 export type DialTargetFailureReason =
@@ -722,6 +752,35 @@ export async function resolveDialTarget(
     return {
       ok: true,
       phone: returnable.phone,
+      eventId: null,
+      contactId: null,
+      guestId: null,
+      callbackRequestId: null,
+    };
+  }
+
+  // manual — a number a human typed at the console.
+  //
+  // The number is normalized HERE with libphonenumber (region IL) rather than
+  // trusted as sent, so 0536212562 and +972536212562 are one number and an
+  // unparseable string is refused before it can reach the dialler. DNC still
+  // applies; see DIAL_GATE_POLICY.manual for what does not and why.
+  if (input.kind === 'manual') {
+    const phone = normalizePhone(input.phone);
+    if (!phone) return { ok: false, reason: 'invalid_phone' };
+
+    const shared = await evaluateSharedConsentGates(admin, phone, nowMs, {
+      allowOutsideHours: opts.allowOutsideHours,
+      policy: DIAL_GATE_POLICY.manual,
+    });
+    if (!shared.ok) return shared;
+
+    // No event, contact or guest: a manually dialled number is not claimed to be
+    // any of ours. Inventing a linkage here would put a call in an event's history
+    // because the numbers happened to match.
+    return {
+      ok: true,
+      phone,
       eventId: null,
       contactId: null,
       guestId: null,
@@ -3315,6 +3374,11 @@ export async function recordConsoleDialAudit(input: {
     let eventId: string | null = null;
     if (input.target.kind === 'callback') {
       meta.callback_request_id = input.target.id;
+    } else if (input.target.kind === 'manual') {
+      // The NUMBER is the audited fact for a manual dial — there is no id to point
+      // at, and "who rang which number, and when" is exactly what accountability
+      // means for a call nobody but the agent chose to place.
+      meta.manual_phone = input.target.phone;
     } else if (input.target.kind === 'returned_call') {
       // The audited fact is WHICH recorded call was returned. Any event linkage
       // is incidental here and is captured on the console_calls row itself.

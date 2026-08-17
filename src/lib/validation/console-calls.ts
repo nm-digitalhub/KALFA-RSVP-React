@@ -15,11 +15,18 @@ import { z } from 'zod';
 // 1. POST /api/console-calls/dial-intent
 // ---------------------------------------------------------------------------
 
-// The decided consent matrix (decide-consent, GO/NO-GO table) recognizes
-// EXACTLY two dial-target shapes. A cold-call (freeform phone / arbitrary
-// contact with no event/callback provenance) has NO representation here on
-// purpose — the union itself is the enforcement of "no code path exists for
-// scenario ג", not a runtime check elsewhere.
+// FOUR dial shapes, each with its own gate row in DIAL_GATE_POLICY.
+//
+// This union used to hold two, and its comment said a freeform number had "no
+// representation here on purpose". That rule was written for the AI CAMPAIGN — an
+// automated system must never be able to ring a stranger — and it was then applied
+// to a human at the console dialling their own business's phone. Those are opposite
+// situations, and enforcing them with one union made the console refuse the owner.
+//
+// So the enforcement moved to where the difference lives: each shape declares which
+// gates apply to it. DNC holds for every one of them, because "never call me" is a
+// standing instruction regardless of who dials. The automated shapes keep the
+// timing and event gates; the human ones do not.
 //
 // `confirm_outside_hours` waives ONE gate — the daily business-hours window — and
 // only because a human said so for this dial. It cannot reach DNC, opt-out,
@@ -42,14 +49,6 @@ export const dialIntentBodySchema = z.discriminatedUnion('kind', [
     contactId: z.string().uuid(),
     confirm_outside_hours: z.boolean().optional(),
   }),
-  // Returning a call somebody placed to US. A console_calls id, never a phone —
-  // the server reads the number itself from the PII table, so this widens what
-  // an agent may RETURN without widening what anyone may DIAL.
-  //
-  // It is a third shape rather than a flag on 'callback' because the gates that
-  // apply to it genuinely differ (see DIAL_GATE_POLICY in data/console-calls.ts).
-  // One shape serving several scenarios is what let rules written for the AI
-  // ringing a guest silently govern an agent ringing back a caller.
   // A VOXIMPLANT session id — digits, not a uuid of ours. The server reads the
   // number back from Voximplant's own record of that session, so this widens what
   // an agent may RETURN without widening what anyone may DIAL, and it works for
@@ -59,6 +58,17 @@ export const dialIntentBodySchema = z.discriminatedUnion('kind', [
   // apply to it genuinely differ (see DIAL_GATE_POLICY in data/console-calls.ts).
   // One shape serving several scenarios is what let rules written for the AI
   // ringing a guest silently govern an agent ringing back a caller.
+  // A number a human typed. This shape was deliberately absent — the union existed
+  // so the AI campaign could never cold-call — and that rule was being applied to
+  // the wrong actor: an owner dialling from their own console is not an automated
+  // system ringing strangers. Loosely validated here (length and charset only)
+  // because the SERVER normalizes with libphonenumber; a strict E.164 pattern here
+  // would refuse 0536212562, which is how the number is actually written.
+  z.strictObject({
+    kind: z.literal('manual'),
+    phone: z.string().min(7).max(20).regex(/^[+0-9][0-9\-\s()]*$/),
+    confirm_outside_hours: z.boolean().optional(),
+  }),
   z.strictObject({
     kind: z.literal('returned_call'),
     // Length-bounded rather than free digits: this value is sent upstream, and an
