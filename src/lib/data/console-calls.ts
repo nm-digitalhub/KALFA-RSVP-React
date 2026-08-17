@@ -1358,18 +1358,27 @@ export async function findRecentConsoleCalls(limit = 50): Promise<ConsoleCallRec
   if (error) throw new Error('find_recent_console_calls_failed');
   if (!calls || calls.length === 0) return [];
 
-  const ids = calls.map((c) => c.id);
-  const { data: pii } = await admin
-    .from('console_call_pii')
-    .select('call_id, phone_e164')
-    .in('call_id', ids);
-  const phones = new Map((pii ?? []).map((p) => [p.call_id, p.phone_e164]));
+  // Chunked and error-checked for the reason spelled out on PG_IN_CHUNK. `limit`
+  // defaults to 50 here, which fits comfortably in one URL — but it is a PARAMETER,
+  // and the identical two-line idiom a few hundred lines below is what took the
+  // missed-call card down once the row count grew. Bounding it at the call site
+  // rather than trusting the caller is the cheaper half of that lesson.
+  const pii = await selectByIdsChunked(
+    calls.map((c) => c.id),
+    (chunk) => admin.from('console_call_pii').select('call_id, phone_e164').in('call_id', chunk),
+    'find_recent_console_calls_pii_failed',
+  );
+  const phones = new Map(pii.map((p) => [p.call_id, p.phone_e164]));
 
   const guestIds = calls.map((c) => c.guest_id).filter((g): g is string => Boolean(g));
   const names = new Map<string, string>();
   if (guestIds.length > 0) {
-    const { data: guests } = await admin.from('guests').select('id, full_name').in('id', guestIds);
-    for (const g of guests ?? []) {
+    const guests = await selectByIdsChunked(
+      guestIds,
+      (chunk) => admin.from('guests').select('id, full_name').in('id', chunk),
+      'find_recent_console_calls_names_failed',
+    );
+    for (const g of guests) {
       const n = g.full_name?.trim();
       if (n) names.set(g.id, n);
     }
@@ -1418,6 +1427,52 @@ const MISSED_CALL_MIN_DURATION_SEC = 10;
 /** How far back the missed-call list looks. */
 const MISSED_CALL_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
 
+/**
+ * How many ids one `.in(...)` filter may carry.
+ *
+ * A PostgREST filter travels in the URL, and PostgREST echoes the whole request
+ * URI back in the response's `Content-Location` header — so the binding limit is
+ * the RESPONSE header budget, not the request one, and it is Node's 16 KB
+ * `maxHeaderSize` that enforces it. The reply is rejected by undici before any
+ * row is read, as `TypeError: fetch failed` / `UND_ERR_HEADERS_OVERFLOW`.
+ *
+ * MEASURED on the live project, 2026-08-17 18:34 UTC — the minute the owner
+ * photographed "לא הצלחנו לטעון את רשימת השיחות שלא נענו" on the dashboard.
+ * `findMissedCalls` took 500 candidate rows and asked for their phone numbers in
+ * one filter: a 19,608-character URL. The edge logged all four attempts as 200
+ * (Kong and PostgREST were fine — the failure is entirely on our side of the
+ * wire), the retries burned past the app's HTTP timeout, and the phone showed a
+ * failed card.
+ *
+ * 100 uuids ≈ 4 KB, a quarter of the budget, with room for the select list and
+ * any other filters on the same URL.
+ */
+const PG_IN_CHUNK = 100;
+
+/**
+ * Runs an `.in(...)` lookup in chunks and concatenates the rows.
+ *
+ * FAILS LOUDLY, and that is half the point. The call this replaces destructured
+ * only `{ data }` and dropped `error` on the floor, so the overflow above did not
+ * surface as a failure — it produced an empty phone map, every candidate was
+ * filtered out for having no number, and the route answered 200 with an empty
+ * list. "Nobody called" and "we could not find out who called" are opposite facts
+ * and the agent acts on them differently; a read that cannot answer must say so.
+ */
+async function selectByIdsChunked<T>(
+  ids: readonly string[],
+  run: (chunk: string[]) => PromiseLike<{ data: T[] | null; error: unknown }>,
+  failure: string,
+): Promise<T[]> {
+  const out: T[] = [];
+  for (let i = 0; i < ids.length; i += PG_IN_CHUNK) {
+    const { data, error } = await run(ids.slice(i, i + PG_IN_CHUNK));
+    if (error) throw new Error(failure);
+    if (data) out.push(...data);
+  }
+  return out;
+}
+
 export interface MissedCall {
   callId: string;
   name: string | null;
@@ -1460,11 +1515,12 @@ export async function findMissedCalls(limit = 25): Promise<MissedCall[]> {
   if (error) throw new Error('find_missed_calls_failed');
   if (!calls || calls.length === 0) return [];
 
-  const { data: pii } = await admin
-    .from('console_call_pii')
-    .select('call_id, phone_e164')
-    .in('call_id', calls.map((c) => c.id));
-  const phones = new Map((pii ?? []).map((p) => [p.call_id, p.phone_e164]));
+  const pii = await selectByIdsChunked(
+    calls.map((c) => c.id),
+    (chunk) => admin.from('console_call_pii').select('call_id, phone_e164').in('call_id', chunk),
+    'find_missed_calls_pii_failed',
+  );
+  const phones = new Map(pii.map((p) => [p.call_id, p.phone_e164]));
 
   // Real attempts only. A withheld number is dropped too — not as noise, but because
   // there is nothing to call back and a row an agent cannot act on is clutter on the
@@ -1479,8 +1535,12 @@ export async function findMissedCalls(limit = 25): Promise<MissedCall[]> {
   const guestIds = real.map((c) => c.guest_id).filter((g): g is string => Boolean(g));
   const names = new Map<string, string>();
   if (guestIds.length > 0) {
-    const { data: guests } = await admin.from('guests').select('id, full_name').in('id', guestIds);
-    for (const g of guests ?? []) {
+    const guests = await selectByIdsChunked(
+      guestIds,
+      (chunk) => admin.from('guests').select('id, full_name').in('id', chunk),
+      'find_missed_calls_names_failed',
+    );
+    for (const g of guests) {
       const n = g.full_name?.trim();
       if (n) names.set(g.id, n);
     }
