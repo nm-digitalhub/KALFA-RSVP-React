@@ -851,6 +851,43 @@ VoxEngine.addEventListener(AppEvents.Started, function (startedEvent) {
             return;
         }
         state.consultTarget = target;
+        // Ringback for the consulting agent. Without it they hear NOTHING between
+        // pressing the button and the target answering: startConsult has just
+        // unbridged them from the customer, and nothing has replaced that stream yet
+        // (owner, 17.8: "לא שומע צליל חיוג כאשר אני מחייג להתייעצות").
+        //
+        // The obvious fix — bridge operator to the ringing leg and pass the real
+        // network audio through — is NOT AVAILABLE, and that was checked rather than
+        // assumed. Call.sendMediaTo's own contract says "The target call has to be
+        // CallEvents.Connected earlier" (typings, and confirmed against the live
+        // reference `references.voxengine.call.sendmediato` on 17.8). So a leg that
+        // is still ringing cannot be a media source, and real early media — the
+        // carrier's own "this number is disconnected" announcement — is out of
+        // reach here whatever we would prefer.
+        //
+        // playProgressTone is the documented alternative: the Voximplant cloud
+        // generates the tone. 'US' because the same live page states "Currently
+        // supported values are US, RU" — there is no IL, so an Israeli agent hears a
+        // US cadence (2s on / 4s off rather than 1s / 3s). Unmistakably ringing,
+        // just not the local rhythm; that is the whole menu.
+        //
+        // startEarlyMedia is NOT needed first. Its precondition applies to a call
+        // that is not connected yet, and state.operator is an agent already live on
+        // this call.
+        //
+        // It stops by being REPLACED, not by an explicit stop, on every exit: the
+        // Connected handler's sendMediaBetween, and failConsult's restoreCustomerBridge,
+        // each give this leg a new incoming stream, and "a new incoming stream always
+        // replaces the previous one" is stated on playProgressTone's own page. The
+        // tone therefore cannot outlive the dialing window it describes.
+        try {
+            state.operator.playProgressTone('US');
+        }
+        catch (err) {
+            // Never fatal: the consult still connects, the agent just waits in
+            // silence as they did before this existed.
+            log('consult progress tone failed: ' + err);
+        }
         reportEvent('consult_started', { request_id: requestId, target: targetLabel });
         var timer = setTimeout(function () {
             failConsult(target, requestId, 'timeout');
@@ -1069,6 +1106,13 @@ VoxEngine.addEventListener(AppEvents.Started, function (startedEvent) {
             return;
         }
         state.conferenceTarget = target;
+        // NO ringback here, unlike startConsult, and that is a decision rather than
+        // an omission. A conference does not put the customer on hold: the operator
+        // is still talking to them while the third party is dialed. A progress tone
+        // would REPLACE the customer's audio on the operator's one incoming stream
+        // — they would stop hearing the person they are mid-sentence with, in order
+        // to listen to a phone ring. The agent is not in silence here; they are in a
+        // conversation, and interrupting it to announce a dial is the worse trade.
         reportEvent('conference_started', { request_id: requestId, target: targetLabel });
         var timer = setTimeout(function () {
             failConference(target, requestId, 'timeout');
