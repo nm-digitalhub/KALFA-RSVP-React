@@ -50,6 +50,53 @@ const STATUS_LABEL: Record<string, string> = {
   failed: 'נכשלה',
   no_agent: 'אין נציג',
 };
+/**
+ * Why a call ended, in Hebrew.
+ *
+ * ended_reason has been read from the database by this page's loader all along and
+ * never rendered — so the column that says WHICH kind of failure this was existed
+ * and was invisible. It matters more since 17.8, when the scenario started folding
+ * the platform's own SIP code into it (486 busy, 480 unavailable, 404 invalid
+ * number, 603 rejected, 408 no answer, 402 no funds), because the status badge
+ * cannot express those: 'failed' is one word for six different events.
+ *
+ * The stored value is `reason` or `reason:detail`. The DETAIL is looked up first —
+ * it is the network's own account of what happened, and "תפוס" tells an operator
+ * more than "רגל הנציג נכשלה".
+ *
+ * An unmapped value renders as NOTHING rather than raw. `caller_hangup:sip_503` is
+ * for a bug report, not for a Hebrew admin table, and showing it would put
+ * engineering vocabulary in front of whoever is reviewing the call floor. The value
+ * is still in the row for anyone who queries it.
+ */
+const END_DETAIL_LABEL: Record<string, string> = {
+  busy: 'תפוס',
+  unavailable: 'לא זמין',
+  invalid_number: 'מספר לא תקין',
+  rejected: 'נדחתה',
+  no_answer: 'לא ענה',
+  no_funds: 'אין יתרה',
+};
+const END_REASON_LABEL: Record<string, string> = {
+  no_agent: 'לא נמצא נציג פנוי',
+  caller_hangup: 'המתקשר ניתק',
+  operator_hangup: 'הנציג סיים',
+  operator_failed: 'רגל הנציג נכשלה',
+  callee_failed: 'היעד לא נענה',
+  guest_failed: 'האורח לא נענה',
+  call_end: 'נותקה מהמוקד',
+  safety_net_timeout: 'נותקה בזמן קצוב',
+  session_terminating: 'הסתיימה עם הסשן',
+};
+
+function endedReasonLabel(raw: string | null): string | null {
+  if (!raw) return null;
+  const detail = raw.includes(':') ? raw.slice(raw.indexOf(':') + 1) : null;
+  if (detail && END_DETAIL_LABEL[detail]) return END_DETAIL_LABEL[detail];
+  const base = raw.includes(':') ? raw.slice(0, raw.indexOf(':')) : raw;
+  return END_REASON_LABEL[base] ?? null;
+}
+
 const STATUS_VARIANT: Record<string, BadgeVariant> = {
   initiated: 'info',
   ringing: 'info',
@@ -166,6 +213,11 @@ export default async function ConsoleHistoryPage({
                       <Badge variant={STATUS_VARIANT[r.status] ?? 'neutral'}>
                         {STATUS_LABEL[r.status] ?? r.status}
                       </Badge>
+                      {endedReasonLabel(r.endedReason) ? (
+                        <div className="mt-1 text-xs text-muted-foreground">
+                          {endedReasonLabel(r.endedReason)}
+                        </div>
+                      ) : null}
                     </TableCell>
                     <TableCell dir="ltr">{r.callerMasked ?? '—'}</TableCell>
                     <TableCell>
