@@ -93,18 +93,23 @@ VoxEngine.addEventListener(AppEvents.Started, function (startedEvent) {
     // Wake-and-answer research (12.8) — NOT owner/regulation-authorized
     // wording like the two lines above (this is an operational hold line,
     // not a disclosure). Originally written only for the wake-retry wave;
-    // NOW ALSO played once per serial-ring attempt in ringNext (found in a
-    // full telephony audit, 13.8: ringNext did nothing at all to callerCall
-    // while dialing an agent, leaving an ANSWERED, RECORDING, BILLING call in
-    // raw silence for up to RING_PER_AGENT_MS per agent tried — 100s on a
-    // 5-deep ring — which a caller reasonably reads as a dead line, not
-    // "please wait". Reused verbatim rather than inventing new
-    // compliance-sensitive wording — this exact string was already live in
-    // production for the retry wave). See route-inbound-retry/route.ts's
-    // header for why the RETRY wave specifically still degrades to
-    // byte-identical NO_AGENT_LINE_HE behaviour when app_settings.console_wake_enabled
-    // is off — that flag has no bearing on this line's use in the PRIMARY
-    // ring, which is unconditional.
+    // FALLBACK ONLY since 17.8. The ring phase is now covered by the same looped
+    // hold music as every other silent stretch (state.ringing feeds
+    // remoteNeedsHold), and this line is what startHoldAudioSayFallback speaks
+    // instead when the audio file cannot be played.
+    //
+    // The silence it was originally written for is the same one the music now
+    // fills: a full telephony audit (13.8) found ringNext doing nothing at all to
+    // callerCall while dialing an agent, leaving an ANSWERED, RECORDING, BILLING
+    // call in raw silence for up to RING_PER_AGENT_MS per agent tried — 100s on a
+    // 5-deep ring — which a caller reasonably reads as a dead line. A spoken line
+    // per attempt was the fix available then; it had to repeat precisely because
+    // speech ends and leaves silence behind it, which a loop does not.
+    //
+    // Kept rather than deleted because the fallback needs a line that is TRUE
+    // during the search, and HOLD_LINE_HE ("השיחה מוחזקת") is not — nobody has
+    // answered yet. Still an OPERATIONAL line, not owner/regulation-authorized
+    // wording like DISCLOSURE_LINE_INBOUND_HE, and already production-proven.
     var RING_HOLD_LINE_HE = 'אנא המתינו רגע, מחפשים עבורכם נציג.';
     // Hold cue for AFTER an agent is already connected (17.8; music-file
     // swap 17.8) — deliberately a DIFFERENT line from RING_HOLD_LINE_HE
@@ -121,11 +126,10 @@ VoxEngine.addEventListener(AppEvents.Started, function (startedEvent) {
     // exists in this scenario" finding recorded elsewhere in this file's
     // history, e.g. startConsult()'s own header). HOLD_LINE_HE is kept as
     // the FALLBACK spoken cue for when the file player fails (see
-    // startHoldAudioSayFallback()) — the same production-proven
-    // mechanism/voice this scenario already used everywhere else (including
-    // RING_HOLD_LINE_HE, which is unaffected — playback mechanism only, this
-    // task does not extend to the ringing-wait line), now a safety net
-    // instead of the primary path.
+    // startHoldAudioSayFallback()) — the same production-proven mechanism and
+    // voice this scenario already used everywhere else, now a safety net instead
+    // of the primary path. The fallback picks between this line and
+    // RING_HOLD_LINE_HE by phase; see its tick().
     var HOLD_LINE_HE = 'השיחה מוחזקת לרגע, אנא המתינו על הקו.';
     // The owner-supplied hold-music clip — same file, same cache-versioning
     // rule, same reasoning as ConsoleDial.voxengine.js's identical constant.
@@ -258,6 +262,9 @@ VoxEngine.addEventListener(AppEvents.Started, function (startedEvent) {
         // this call — guards against a second retry wave's own exhaustion
         // recursing back into attemptWakeRetry.
         // ── Hold audio (17.8; music-file swap 17.8) ──────────────────────
+        ringing: false, // true from the moment the serial ring starts until an
+        // agent connects or the ring is declared over. Feeds remoteNeedsHold(),
+        // so the caller hears the hold music while the search runs.
         sdkOnHold: false, // true while CallEvents.OnHold is active on the
         // CURRENT operator leg. Reset on every operator handoff
         // (completeTransfer/completeConsult) — a stale leg's hold state
@@ -380,7 +387,9 @@ VoxEngine.addEventListener(AppEvents.Started, function (startedEvent) {
         // Either leg going down ends any point in a pending hold-audio
         // timer — state.remote's own identity check inside it would catch
         // this within HOLD_REPEAT_MS anyway, but there is no reason to leave
-        // it dangling for that long.
+        // it dangling for that long. The ring flag clears with it so nothing
+        // downstream can read remoteNeedsHold() as true on a dead call.
+        state.ringing = false;
         stopHoldAudio();
         // Same reasoning as ConsoleDial.voxengine.js's identical block: a
         // consult in flight (dialing OR privately bridged) has no meaning
@@ -452,8 +461,16 @@ VoxEngine.addEventListener(AppEvents.Started, function (startedEvent) {
     // both triggers check, so neither one can prematurely resume the live
     // bridge while the OTHER reason is still active (e.g. the agent toggles
     // SDK hold mid-consult).
+    // THREE reasons the caller leg has no live audio, not two. The ring is the
+    // third and was the loudest silence of the lot: between the disclosure and an
+    // agent answering, the caller heard one spoken line per attempt and then
+    // nothing, for up to RING_PER_AGENT_MS each — 100 seconds of near-silence on a
+    // 5-deep ring, at the exact moment a caller is deciding whether the line is
+    // dead (owner, 17.8: "עד שהנציג עונה יש שקט"). Folding it in here rather than
+    // giving the ring its own player means one mechanism, one stop path, and no way
+    // for two players to end up sending to the same leg.
     function remoteNeedsHold() {
-        return state.sdkOnHold || state.consulting || state.consultActive;
+        return state.sdkOnHold || state.consulting || state.consultActive || state.ringing;
     }
     // Owner-supplied looped audio file (17.8) is now PRIMARY — see
     // ConsoleDial.voxengine.js's identical function for the full reasoning
@@ -547,7 +564,11 @@ VoxEngine.addEventListener(AppEvents.Started, function (startedEvent) {
                 return;
             }
             try {
-                remote.say(HOLD_LINE_HE, ttsOptions);
+                // The wording follows the PHASE, which is the whole reason two
+                // operational lines exist. "השיחה מוחזקת" is false while nobody has
+                // answered yet, and "מחפשים עבורכם נציג" is false once someone has —
+                // this fallback runs in both situations, so it cannot have one line.
+                remote.say(state.ringing ? RING_HOLD_LINE_HE : HOLD_LINE_HE, ttsOptions);
             }
             catch (err) {
                 log('hold-audio fallback say failed: ' + err);
@@ -1179,6 +1200,11 @@ VoxEngine.addEventListener(AppEvents.Started, function (startedEvent) {
     // ── Serial ring through server-ordered agents ────────────────────────────
     function declareNoAgent(callerCall) {
         log('ring exhausted — no agent found');
+        // Stop the music FIRST. NO_AGENT_LINE_HE is owner/regulation-authorized
+        // wording and the last thing this caller hears — it must not be competing
+        // with, or replaced by, a looped audio file.
+        state.ringing = false;
+        stopHoldAudio();
         reportEndedOnce('no_agent');
         try {
             callerCall.say(NO_AGENT_LINE_HE, ttsOptions);
@@ -1214,12 +1240,9 @@ VoxEngine.addEventListener(AppEvents.Started, function (startedEvent) {
             return;
         }
         state.wakeRetryDone = true;
-        try {
-            callerCall.say(RING_HOLD_LINE_HE, ttsOptions);
-        }
-        catch (err) {
-            log('wake-retry hold line failed: ' + err);
-        }
+        // No spoken line here any more: state.ringing is still true across the
+        // retry wave, so the hold music is already playing and a say() would only
+        // interrupt it to state something the caller can hear is true.
         Net.httpRequestAsync(KALFA_APP_ORIGIN + '/api/voximplant/console/route-inbound-retry', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -1403,19 +1426,19 @@ VoxEngine.addEventListener(AppEvents.Started, function (startedEvent) {
             attemptWakeRetry(callerCall, ringOrder, suppressName);
             return;
         }
-        // Caller-facing hold cue, once per agent attempted — see
-        // RING_HOLD_LINE_HE's own comment for the silence this closes. A
-        // fresh say() replaces whatever is already playing on this leg
-        // (typings Call.say: "a new incoming stream always replaces the
-        // previous one"), so this is safe to call on every attempt without
-        // stacking/queuing, and self-resolves the instant an agent connects
-        // (sendMediaBetween below replaces it in turn).
-        try {
-            callerCall.say(RING_HOLD_LINE_HE, ttsOptions);
-        }
-        catch (err) {
-            log('ring hold line failed: ' + err);
-        }
+        // The caller hears the hold music for the whole search, started ONCE here
+        // rather than a spoken line per attempt (17.8).
+        //
+        // startHoldAudio() is idempotent — its first guard returns early when a
+        // player or a fallback timer is already running — so calling it on every
+        // attempt costs nothing and guarantees the music is playing even if this
+        // ring was entered from the wake-retry wave rather than from the top.
+        //
+        // What this REPLACED was a say() per attempt, which had to be per-attempt
+        // because a spoken line ends and leaves silence behind it. A looped player
+        // does not, so the reason for the repetition is gone with it.
+        state.ringing = true;
+        startHoldAudio();
         var username = ringOrder[idx];
         var settled = false;
         // The ring used to pass our OWN DID as the callerid, reasoning that
@@ -1467,6 +1490,11 @@ VoxEngine.addEventListener(AppEvents.Started, function (startedEvent) {
             state.agentUsername = username;
             attachOperatorTerminalHandlers(agentCall);
             state.connectedAt = Date.now();
+            // The search is over — clear the flag BEFORE stopping, so a
+            // remoteNeedsHold() check racing this cannot restart the music
+            // underneath the conversation that is about to begin.
+            state.ringing = false;
+            stopHoldAudio();
             try {
                 VoxEngine.sendMediaBetween(callerCall, agentCall);
             }
