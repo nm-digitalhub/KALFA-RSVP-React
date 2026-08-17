@@ -354,6 +354,22 @@ export async function POST(request: Request) {
       ring_order: ringOrder,
       display_hint: callerMasked,
       caller_display: identified?.guestName ?? normalizedCli,
+      // The caller's number as a SEPARATE field, because the agent must see it
+      // on every call — not only when we failed to recognise them (owner, 17.8:
+      // "השם לא מספיק לדעתי, חובה תמיד להציג את המספר ממנו השיחה מתקבלת").
+      // The scenario sends this as a SIP header rather than folding it into
+      // `caller_display`, so the device gets a name and a number it can lay out
+      // as two lines instead of one run-on string. Null for a withheld or
+      // unparsable CLI — there is no number to show, and the app must render
+      // nothing rather than fall back to whatever the SIP `From` happens to
+      // carry, which in that case is our own DID.
+      //
+      // Deliberately the SAME value `caller_display` falls back to, so when the
+      // caller is unrecognised the two fields are byte-identical and the app can
+      // suppress the duplicate with a plain equality check. An earlier draft had
+      // the app compare the label against the raw platform CLI instead — one
+      // normalized, one not — which would never have matched.
+      caller_number: normalizedCli,
       call_id: callId,
     },
     200,

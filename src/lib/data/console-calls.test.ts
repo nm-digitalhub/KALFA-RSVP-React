@@ -367,6 +367,57 @@ describe('identifyInboundCaller — the agent-facing name (17.8)', () => {
     expect(identified?.guestName).toBeNull();
   });
 
+  // The live regression, 17.8. One real number backs a guest called "מבורך קלפה"
+  // in one event and "Netanel" in another; the old rule returned whichever
+  // contact was imported most recently, and the agent's phone rang showing a
+  // bare first token. Recency is not a signal about the caller's name.
+  it('prefers the record with a full name over a single-token one', async () => {
+    wireAdmin({
+      contacts: [{ data: [{ id: 'c-new', event_id: 'e-new' }, { id: 'c-old', event_id: 'e-old' }], error: null }],
+      guests: [
+        { data: { id: 'g-new', full_name: 'Netanel' }, error: null },
+        { data: { id: 'g-old', full_name: 'מבורך קלפה' }, error: null },
+      ],
+    });
+
+    const identified = await identifyInboundCaller('+972536212562');
+    expect(identified?.guestName).toBe('מבורך קלפה');
+    // The event follows the name — the chosen record is the whole identification,
+    // not just its label.
+    expect(identified?.eventId).toBe('e-old');
+    expect(identified?.guestId).toBe('g-old');
+  });
+
+  it('keeps contact recency as the tie-break when both names are equally full', async () => {
+    wireAdmin({
+      contacts: [{ data: [{ id: 'c-new', event_id: 'e-new' }, { id: 'c-old', event_id: 'e-old' }], error: null }],
+      guests: [
+        { data: { id: 'g-new', full_name: 'דנה כהן' }, error: null },
+        { data: { id: 'g-old', full_name: 'דנה לוי' }, error: null },
+      ],
+    });
+
+    // Array.sort is stable and `contacts` arrives newest-first, so equal rank
+    // must leave the previous behaviour untouched.
+    await expect(identifyInboundCaller('+972501234567')).resolves.toMatchObject({
+      eventId: 'e-new',
+      guestName: 'דנה כהן',
+    });
+  });
+
+  it('still identifies the caller when the only match has no name at all', async () => {
+    wireAdmin({
+      contacts: [{ data: [{ id: 'c-1', event_id: 'e-1' }], error: null }],
+      guests: [{ data: { id: 'g-1', full_name: null }, error: null }],
+    });
+
+    // Ranked last, but last of one is still the answer — a nameless guest is a
+    // successful identification, and the route falls back to their number.
+    const identified = await identifyInboundCaller('+972501234567');
+    expect(identified?.guestId).toBe('g-1');
+    expect(identified?.guestName).toBeNull();
+  });
+
   it('stays null for a number no guest is attached to', async () => {
     wireAdmin({
       contacts: [{ data: [{ id: 'c-1', event_id: 'e-1' }], error: null }],

@@ -214,6 +214,10 @@ VoxEngine.addEventListener(AppEvents.Started, function (startedEvent) {
         // was withheld/unparsable. Copied into callUser's `displayName` — PII,
         // same handling rule as `cli`: never logged, never sent in a
         // reportEvent extra.
+        callerNumber: '', // route-inbound's `caller_number`: the caller's E.164,
+        // '' when withheld/unparsable. Sent as the X-Kalfa-Caller-Number SIP
+        // header so the ringing device can show a number ALONGSIDE the name
+        // rather than instead of it. PII, same handling rule as the two above.
         operator: null, // the currently-bridged AGENT leg — replaceable via transfer
         agentUsername: '', // vox_username of whoever is currently connected
         remote: null, // the CALLER leg — anchor, never replaced, recorded
@@ -1249,8 +1253,34 @@ VoxEngine.addEventListener(AppEvents.Started, function (startedEvent) {
     // consult the target speaks to the AGENT first, not the caller — so
     // labelling that leg with the caller's number would be actively wrong.
     // Deferred deliberately, to be decided when those buttons are built.
+    // The NUMBER travels separately, in a SIP header, and that separation is the
+    // point (owner, 17.8: "השם לא מספיק לדעתי, חובה תמיד להציג את המספר ממנו
+    // השיחה מתקבלת"). displayName can only ever be one string; folding a name and
+    // a number into it would give the device a single run-on line to render. With
+    // the number in its own header, the ring screen gets two fields and can lay
+    // them out as two lines.
+    //
+    // extraHeaders is CallUserParameters' documented channel for exactly this
+    // ("Custom parameters (SIP headers)… have to begin with the 'X-' prefix…
+    // can be handled by a SIP phone or WEB SDK"), and the Android side is already
+    // wired for it end to end: VoxClientManager's IncomingCallListener takes a
+    // headers map and forwards it to VoxIncomingCallCoordinator.handleIncomingCall,
+    // which today logs only its SIZE (`hdrs=`, measured 0 on every call so far).
+    //
+    // ASCII-only by construction — an E.164 or the literal below — so unlike
+    // displayName this carries no encoding question at all.
+    //
+    // The withheld case is stated, never left implicit: an ABSENT header and a
+    // withheld number would look identical to the device, and the fallback it
+    // would reach for (the SIP From) is our own DID. Sending the sentinel means
+    // "we know, and there is nothing to show", which the app renders as no number
+    // line rather than as our number.
+    var CALLER_NUMBER_HEADER = 'X-Kalfa-Caller-Number';
+    var CALLER_NUMBER_WITHHELD = 'withheld';
     function ringIdentity(suppressName) {
         var params = { callerid: state.cli || state.called || 'kalfa-console' };
+        params.extraHeaders = {};
+        params.extraHeaders[CALLER_NUMBER_HEADER] = state.callerNumber || CALLER_NUMBER_WITHHELD;
         if (!suppressName) {
             // No CLI at all: say so, rather than leave the agent looking at our
             // own DID with no explanation — that reads exactly like the bug
@@ -1486,6 +1516,7 @@ VoxEngine.addEventListener(AppEvents.Started, function (startedEvent) {
             // Coerced to a string here rather than trusted: a non-string
             // displayName would reach CallUserParameters on every ring.
             state.callerDisplay = (body && typeof body.caller_display === 'string') ? body.caller_display : '';
+            state.callerNumber = (body && typeof body.caller_number === 'string') ? body.caller_number : '';
             proceedInbound(callerCall, body.ring_order);
         }).catch(function (err) {
             log('route-inbound request failed: ' + err);

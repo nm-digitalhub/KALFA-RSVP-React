@@ -2363,6 +2363,12 @@ export async function identifyInboundCaller(normalizedCli: string): Promise<Iden
     .eq('normalized_phone', normalizedCli)
     .order('created_at', { ascending: false })
     .limit(5);
+
+  // Collect every match instead of returning the first, so the rule below has
+  // something to choose between. Same worst-case query count as the previous
+  // early-return loop (both are bounded by the 5 contacts above) and identical
+  // in the common single-contact case.
+  const matches: IdentifiedCaller[] = [];
   for (const c of contacts ?? []) {
     const { data: guest } = await admin
       .from('guests')
@@ -2372,15 +2378,40 @@ export async function identifyInboundCaller(normalizedCli: string): Promise<Iden
       .limit(1)
       .maybeSingle();
     if (guest) {
-      return {
+      matches.push({
         eventId: c.event_id,
         guestId: guest.id,
         contactId: c.id,
         guestName: guest.full_name?.trim() || null,
-      };
+      });
     }
   }
-  return null;
+  if (matches.length === 0) return null;
+
+  // Prefer the record that actually names the person.
+  //
+  // This used to return the first match outright, which meant "whichever event
+  // this phone was most recently imported into" decided the name — and one real
+  // number here demonstrates why that is not good enough: it backs a guest called
+  // "מבורך קלפה" in one event and "Netanel" in another, and recency picked the
+  // bare first token. The agent's phone rang showing a partial name (owner
+  // report, 17.8: "נדרש להציג שם מלא של הלקוח").
+  //
+  // Ranked, most decisive first: a name with more than one token beats a
+  // single-token name, which beats no name at all. Recency breaks every tie,
+  // because `contacts` is already ordered by it and Array.sort is stable — so
+  // this only ever reorders records the old rule had no reason to prefer between.
+  //
+  // Note this also decides the EVENT the call is attributed to, not just the
+  // label. That is not a side effect to apologise for: between two records of the
+  // same human, the one carrying their full name is the better-maintained row,
+  // and the previous rule was choosing arbitrarily on a signal (import order)
+  // that means nothing to the person calling.
+  const rank = (m: IdentifiedCaller): number => {
+    if (!m.guestName) return 2;
+    return /\s/.test(m.guestName) ? 0 : 1;
+  };
+  return [...matches].sort((a, b) => rank(a) - rank(b))[0];
 }
 
 /** "05x-xxx1234"-style masked hint. Never the full E.164 — that lives only
