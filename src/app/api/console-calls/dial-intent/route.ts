@@ -4,6 +4,7 @@ import { callerHasPlatformPermission, requireConsoleAgent } from '@/lib/auth/con
 import {
   MANUAL_DIAL_MAX_LIVE_CALLS,
   consoleManualDialEnabled,
+  closeStaleInitiatedCalls,
   countLiveConsoleCalls,
   createConsoleCall,
   mintDialToken,
@@ -112,6 +113,13 @@ export async function POST(request: Request) {
   // 9: concurrency.
   let live: number;
   try {
+    // Sweep first, then count. A dial that died before it rang leaves an
+    // 'initiated' row nothing else will ever close, and two of them once filled
+    // the cap and refused every subsequent dial for ninety minutes. Repairing on
+    // the dial path means the fix runs exactly when it matters and needs no cron
+    // to be remembered; it is best-effort, and the counter is bounded by age
+    // regardless, so a failed sweep cannot refuse a legitimate call.
+    await closeStaleInitiatedCalls();
     live = await countLiveConsoleCalls();
   } catch {
     return json({ error: 'שגיאה בבדיקת עומס' }, 500);
@@ -152,5 +160,31 @@ export async function POST(request: Request) {
     outsideHoursOverride: parsed.data.confirm_outside_hours === true,
   });
 
-  return json({ dial: token }, 200);
+  // THE TARGET, stated by the side that decided it.
+  //
+  // The response used to be the token alone, so the app had to source the number
+  // it displayed from somewhere else — the history row it was tapped from, or the
+  // digits the agent typed. That is two sources of truth for one call: the server
+  // decides which number to RING, the device decided which number to SHOW, and a
+  // stale row or a resolution the server did differently means an agent watches
+  // one number while another is dialled. On a call to a customer that is not a
+  // cosmetic defect.
+  //
+  // `target_phone` is the number this call WILL ring — the same value the token
+  // authorises, taken from the resolution rather than from the request. The app
+  // displays this and nothing else.
+  //
+  // It is safe to return: it is the number the agent just asked to call, on a
+  // staff-gated route that has already run the full consent chain. What the
+  // device still cannot do is CHOOSE it — dial-intent has no shape that accepts a
+  // number to ring, and this field is an answer, never an input.
+  return json(
+    {
+      dial: token,
+      console_call_id: callId,
+      target_phone: resolved.phone,
+      call_kind: 'manual',
+    },
+    200,
+  );
 }

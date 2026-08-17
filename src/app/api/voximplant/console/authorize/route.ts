@@ -113,5 +113,17 @@ export async function POST(request: Request) {
     /* best-effort — see comment above */
   }
 
-  return json({ ok: true, phone: verified.phone, callerid: vconfig.callerId }, 200);
+  // `kind` is NEW and OPTIONAL for the scenario, deliberately — expand then
+  // contract, the same reasoning consoleAuthorizeBodySchema's `session_id`
+  // carries. This route and the scenario deploy through two different systems
+  // that cannot be made atomic, so each side has to tolerate the other being a
+  // version behind. A scenario that does not read it behaves exactly as before.
+  //
+  // It exists because the disclosure ConsoleDial plays before bridging says the
+  // call is "מטעם בעלי האירוע בנוגע לאישור הגעה" — true of a guest_service dial,
+  // false of a manual one, and the scenario had no way to tell them apart.
+  return json(
+    { ok: true, phone: verified.phone, callerid: vconfig.callerId, kind: verified.kind ?? null },
+    200,
+  );
 }

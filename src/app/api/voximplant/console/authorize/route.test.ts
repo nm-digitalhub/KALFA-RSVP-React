@@ -42,7 +42,7 @@ describe('POST /api/voximplant/console/authorize', () => {
   // the still-old scenario during the gap. This pins the ACCEPTANCE so a later
   // tightening to required has to be a deliberate deletion, not a drift.
   it('accepts a body with no session_id and simply skips the link (deploy-window safety)', async () => {
-    vi.mocked(verifyDialToken).mockResolvedValue({ ok: true, callId: 'call-1', phone: '+972500000000' });
+    vi.mocked(verifyDialToken).mockResolvedValue({ ok: true, callId: 'call-1', phone: '+972500000000', kind: 'manual' });
     vi.mocked(getVoximplantConfig).mockResolvedValue({ liveCallsEnabled: false } as never);
 
     const res = await POST(req({ secret: SECRET, token: TOKEN }));
@@ -52,7 +52,7 @@ describe('POST /api/voximplant/console/authorize', () => {
   });
 
   it('links the session BEFORE the live-calls gate, even when that gate then refuses', async () => {
-    vi.mocked(verifyDialToken).mockResolvedValue({ ok: true, callId: 'call-1', phone: '+972500000000' });
+    vi.mocked(verifyDialToken).mockResolvedValue({ ok: true, callId: 'call-1', phone: '+972500000000', kind: 'manual' });
     vi.mocked(getVoximplantConfig).mockResolvedValue({ liveCallsEnabled: false } as never);
 
     const res = await POST(req({ secret: SECRET, token: TOKEN, session_id: 777 }));
@@ -64,14 +64,22 @@ describe('POST /api/voximplant/console/authorize', () => {
   });
 
   it('a failed link never blocks the call (best-effort)', async () => {
-    vi.mocked(verifyDialToken).mockResolvedValue({ ok: true, callId: 'call-1', phone: '+972500000000' });
+    vi.mocked(verifyDialToken).mockResolvedValue({ ok: true, callId: 'call-1', phone: '+972500000000', kind: 'manual' });
     vi.mocked(linkConsoleCallSession).mockRejectedValue(new Error('db down'));
     vi.mocked(getVoximplantConfig).mockResolvedValue({ liveCallsEnabled: true, callerId: '+97230000000' } as never);
 
     const res = await POST(req({ secret: SECRET, token: TOKEN, session_id: 1 }));
 
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ ok: true, phone: '+972500000000', callerid: '+97230000000' });
+    // `kind` travels with the authorization: it is what lets the scenario play a
+    // disclosure that is TRUE for this call rather than the RSVP wording on every
+    // outbound leg. Asserted rather than tolerated.
+    expect(await res.json()).toEqual({
+      ok: true,
+      phone: '+972500000000',
+      callerid: '+97230000000',
+      kind: 'manual',
+    });
   });
 
   it('does not link when the token itself fails to verify', async () => {

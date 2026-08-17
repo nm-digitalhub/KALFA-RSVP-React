@@ -73,7 +73,7 @@ describe('POST /api/voximplant/console/call-me-now-authorize', () => {
   // "cleanup" to required has to delete it deliberately rather than drift into
   // breaking a deploy window.
   it('accepts a body with no session_id and simply skips the link (deploy-window safety)', async () => {
-    vi.mocked(verifyDialToken).mockResolvedValue({ ok: true, callId: 'call-1', phone: '+972500000000' });
+    vi.mocked(verifyDialToken).mockResolvedValue({ ok: true, callId: 'call-1', phone: '+972500000000', kind: 'manual' });
     admitAllCaps();
 
     const res = await POST(req({ secret: SECRET, token: TOKEN }));
@@ -84,7 +84,7 @@ describe('POST /api/voximplant/console/call-me-now-authorize', () => {
   });
 
   it('links the session BEFORE any caps check, even when a cap then refuses', async () => {
-    vi.mocked(verifyDialToken).mockResolvedValue({ ok: true, callId: 'call-1', phone: '+972500000000' });
+    vi.mocked(verifyDialToken).mockResolvedValue({ ok: true, callId: 'call-1', phone: '+972500000000', kind: 'manual' });
     admitAllCaps();
     vi.mocked(consoleCallMeNowEnabled).mockResolvedValue(false); // flag off -> refused
 
@@ -95,7 +95,7 @@ describe('POST /api/voximplant/console/call-me-now-authorize', () => {
   });
 
   it('a failed link never blocks the ring (best-effort)', async () => {
-    vi.mocked(verifyDialToken).mockResolvedValue({ ok: true, callId: 'call-1', phone: '+972500000000' });
+    vi.mocked(verifyDialToken).mockResolvedValue({ ok: true, callId: 'call-1', phone: '+972500000000', kind: 'manual' });
     vi.mocked(linkConsoleCallSession).mockRejectedValue(new Error('db down'));
     admitAllCaps();
 

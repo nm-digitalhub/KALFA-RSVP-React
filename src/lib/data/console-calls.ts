@@ -977,7 +977,13 @@ export async function mintDialToken(callId: string, prefix: DialTokenPrefix = 'c
 }
 
 export type VerifyDialTokenResult =
-  | { ok: true; callId: string; phone: string | null }
+  | {
+      ok: true;
+      callId: string;
+      phone: string | null;
+      /** What the call IS, so the scenario can say something true about it. */
+      kind: ConsoleCallKind | null;
+    }
   | { ok: false; reason: 'not_found' | 'expired' | 'malformed' };
 
 // expectedPrefix is a REQUIRED authorization check, not just a routing hint:
@@ -1022,7 +1028,28 @@ export async function verifyDialToken(
     .maybeSingle();
   if (consumeErr || !consumed) return { ok: false, reason: 'not_found' };
 
-  return { ok: true, callId: match.call_id, phone: match.phone_e164 };
+  // The call's KIND travels with the authorization, because the scenario has no
+  // other way to learn it and it decides what the customer is told.
+  //
+  // ConsoleDial plays a disclosure before bridging, and its wording is the RSVP
+  // campaign's: "שיחה זו מטעם בעלי האירוע בנוגע לאישור הגעה". That sentence is
+  // TRUE for a guest_service dial and FALSE for a manual business call — the
+  // owner heard it played to a customer who had no event at all. The scenario
+  // knows only 'internal' vs 'outbound', so it could not tell them apart.
+  //
+  // A separate read, not a join onto the PII fetch above: that query is a
+  // constant-time scan over live tokens and adding a join to it would widen a
+  // path whose narrowness is the security property. Failure is non-fatal — a
+  // missing kind falls back to the safest wording, not to a refused call.
+  let kind: ConsoleCallKind | null = null;
+  const { data: call } = await admin
+    .from('console_calls')
+    .select('kind')
+    .eq('id', match.call_id)
+    .maybeSingle();
+  if (call?.kind) kind = call.kind as ConsoleCallKind;
+
+  return { ok: true, callId: match.call_id, phone: match.phone_e164, kind };
 }
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -1930,6 +1957,49 @@ export const MANUAL_DIAL_MAX_LIVE_CALLS = 2;
  * own safety net tears the session down at an hour (AGENT_BUSY_MAX_MS). Counting
  * them with one cutoff would either keep dead rows or discard live calls.
  */
+/**
+ * Closes 'initiated' rows whose dial token has long expired.
+ *
+ * The counter's age bound stopped these rows from BLOCKING dialling; this stops
+ * them from existing. Both are needed and they are not the same fix: a bound makes
+ * the count right, and leaves the table asserting that a call is being placed
+ * which never was. Every reader of `console_calls` — the admin history page, any
+ * future report, a person running a query at 2am — would go on seeing a live call
+ * that ended in a crash ninety minutes earlier.
+ *
+ * 'failed' rather than 'ended': nothing connected, and 'ended' is the word for a
+ * call that happened. `ended_reason` records what actually became of it.
+ *
+ * SELF-HEALING, called from the dial path rather than scheduled. A cron job would
+ * be a second mechanism to own, monitor and forget; running it here means the
+ * repair happens exactly when it matters — the next time somebody tries to dial —
+ * and cannot itself go stale. It is one bounded UPDATE against an indexed status,
+ * and it never touches a row young enough to still ring.
+ *
+ * Best-effort by design: a dial must not be refused because the cleanup failed.
+ * The counter's own bound already makes the count correct without it.
+ */
+export async function closeStaleInitiatedCalls(nowMs: number = Date.now()): Promise<number> {
+  try {
+    const admin = createAdminClient();
+    const cutoff = new Date(nowMs - INITIATED_ROW_STALE_MS).toISOString();
+    const { data, error } = await admin
+      .from('console_calls')
+      .update({
+        status: 'failed',
+        ended_reason: 'dial_never_started',
+        ended_at: new Date(nowMs).toISOString(),
+      })
+      .eq('status', 'initiated')
+      .lt('created_at', cutoff)
+      .select('id');
+    if (error) return 0;
+    return data?.length ?? 0;
+  } catch {
+    return 0;
+  }
+}
+
 export async function countLiveConsoleCalls(nowMs: number = Date.now()): Promise<number> {
   const admin = createAdminClient();
 

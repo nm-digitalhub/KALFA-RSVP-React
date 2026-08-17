@@ -1219,9 +1219,13 @@ describe('mintDialToken / verifyDialToken', () => {
         { data: [row], error: null },
         { data: { call_id: 'call-2' }, error: null }, // consuming update .select().maybeSingle()
       ],
+      // The kind lookup that follows the consume. It decides which disclosure the
+      // scenario plays, so it travels with the authorization rather than being
+      // guessed downstream — see verifyDialToken.
+      console_calls: [{ data: { kind: 'manual' }, error: null }],
     });
     const first = await verifyDialToken(token, 'ct');
-    expect(first).toEqual({ ok: true, callId: 'call-2', phone: '+972501234567' });
+    expect(first).toEqual({ ok: true, callId: 'call-2', phone: '+972501234567', kind: 'manual' });
 
     // Replay: the row is gone (hash already nulled server-side) — select
     // returns nothing live for this hash.

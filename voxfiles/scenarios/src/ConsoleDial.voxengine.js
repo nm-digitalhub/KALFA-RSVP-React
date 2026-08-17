@@ -82,6 +82,36 @@ VoxEngine.addEventListener(AppEvents.Started, function (startedEvent) {
     // slash-forms (TTS reads them literally). Played on the GUEST leg only,
     // before the bridge, over recording already running.
     var DISCLOSURE_LINE_HE = 'שלום, שיחה זו מטעם בעלי האירוע בנוגע לאישור הגעה — השיחה מוקלטת לצורך תיעוד.';
+    // The SAME recording notice without the event claim, for a call that has no
+    // event. DISCLOSURE_LINE_HE is the regulation reviewer's authorized wording
+    // for an RSVP call, and it was being played on EVERY outbound leg — so a
+    // customer rung manually by a human heard "בנוגע לאישור הגעה" about an event
+    // that does not exist. Reported by the owner 2026-08-18 after dialling from
+    // the call log.
+    //
+    // The recording half is kept verbatim and is the part that carries the legal
+    // weight: the leg IS recorded (guestCall.record() immediately above the say),
+    // and the caller must be told. What is removed is only the sentence that was
+    // false — narrowing an authorized disclosure to the case it was authorized
+    // for, rather than inventing a new claim.
+    var DISCLOSURE_LINE_GENERAL_HE = 'שלום, שיחה זו מטעם קלפה. השיחה מוקלטת לצורך תיעוד.';
+    // BY CALL KIND, as a table rather than a condition.
+    //
+    // One scenario serves several kinds of outbound call, and the wording is the
+    // only thing that differs between them — so the difference is expressed where
+    // it lives instead of as an `if` that the next kind will silently inherit.
+    // Adding a kind means adding a row; forgetting to means falling back to the
+    // RSVP wording, which says MORE rather than less and is the safe direction
+    // for a disclosure.
+    //
+    // `guest_service` keeps the regulation-authorized RSVP line because it IS an
+    // event call. 'manual' and the call-back path are business calls with no
+    // event to be "בנוגע" to.
+    var DISCLOSURE_BY_KIND = {
+        manual: DISCLOSURE_LINE_GENERAL_HE,
+        guest_service: DISCLOSURE_LINE_HE,
+        inbound_customer: DISCLOSURE_LINE_HE
+    };
     var OUTBOUND_REFUSED_HE = 'לא ניתן לבצע את השיחה כעת. אנא פנו למנהל המערכת.';
     var OUTBOUND_UNREACHABLE_HE = 'לא הצלחנו להשלים את השיחה. אנא נסו שוב מאוחר יותר.';
     var INTERNAL_UNAVAILABLE_HE = 'הנציג המבוקש אינו זמין כרגע.';
@@ -1267,7 +1297,7 @@ VoxEngine.addEventListener(AppEvents.Started, function (startedEvent) {
             cleanupAndTerminate();
         }
     }
-    function proceedOutbound(operatorCall, phone, callerid) {
+    function proceedOutbound(operatorCall, phone, callerid, callKind) {
         try {
             operatorCall.answer();
         }
@@ -1294,7 +1324,13 @@ VoxEngine.addEventListener(AppEvents.Started, function (startedEvent) {
                 log('guest record() failed: ' + err);
             }
             try {
-                guestCall.say(DISCLOSURE_LINE_HE, ttsOptions);
+                // A manual dial is a human ringing somebody on the business's own
+                // line — there is no event and no RSVP to be "בנוגע" to. Anything
+                // else keeps the authorized RSVP wording, including an unknown
+                // kind: falling back to the MORE specific disclosure is the safe
+                // direction, since it says more rather than less.
+                var disclosure = DISCLOSURE_BY_KIND[callKind] || DISCLOSURE_LINE_HE;
+                guestCall.say(disclosure, ttsOptions);
             }
             catch (err) {
                 log('disclosure say() failed: ' + err);
@@ -1310,11 +1346,24 @@ VoxEngine.addEventListener(AppEvents.Started, function (startedEvent) {
             // ringStarted guard/comment for the citation) — guarded rather
             // than argued, exactly like that one. Found in this task (17.8)
             // while adding hold audio, not exercised by a live call before.
+            //
+            // REMOVED as well as flagged, and the removal is the stronger half.
+            // The flag makes a second firing harmless; removing the listener means
+            // there is no second firing to be harmless about — and this leg goes on
+            // to play hold audio through the same event for the rest of the call,
+            // so it is not a hypothetical stream. A named function is needed to
+            // remove it, which is why the handler is no longer anonymous.
             var bridgedAfterDisclosure = false;
-            guestCall.addEventListener(CallEvents.PlaybackFinished, function () {
+            function onDisclosureFinished() {
                 if (bridgedAfterDisclosure)
                     return;
                 bridgedAfterDisclosure = true;
+                try {
+                    guestCall.removeEventListener(CallEvents.PlaybackFinished, onDisclosureFinished);
+                }
+                catch (err) {
+                    log('disclosure listener removal failed: ' + err);
+                }
                 try {
                     VoxEngine.sendMediaBetween(operatorCall, guestCall);
                 }
@@ -1323,7 +1372,8 @@ VoxEngine.addEventListener(AppEvents.Started, function (startedEvent) {
                 }
                 log('outbound call bridged after disclosure');
                 reportEvent('connected', {});
-            });
+            }
+            guestCall.addEventListener(CallEvents.PlaybackFinished, onDisclosureFinished);
         });
         guestCall.addEventListener(CallEvents.Failed, function (ev) {
             log('guest call failed: ' + safeStringify(ev));
@@ -1383,7 +1433,17 @@ VoxEngine.addEventListener(AppEvents.Started, function (startedEvent) {
                     refuseOutbound(operatorCall, 'refused');
                     return;
                 }
-                proceedOutbound(operatorCall, String(body.phone), String(body.callerid));
+                // `kind` is OPTIONAL on the wire — expand then contract. A server
+                // that predates it sends nothing, and String(undefined) would put
+                // the literal "undefined" into a comparison, so it is normalised
+                // to '' and the disclosure falls back to the event wording, which
+                // is what every call got before this existed.
+                proceedOutbound(
+                    operatorCall,
+                    String(body.phone),
+                    String(body.callerid),
+                    body.kind ? String(body.kind) : ''
+                );
             }).catch(function (err) {
                 log('authorize request failed: ' + err);
                 refuseOutbound(operatorCall, 'authorize_unreachable');
