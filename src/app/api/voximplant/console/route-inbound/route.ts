@@ -8,6 +8,7 @@ import {
   computeQueueRingOrder,
   countAnsweredInboundToday,
   countAnsweredLastHourForPhone,
+  countAnsweredUnidentifiedInboundToday,
   countConcurrentAnsweredInbound,
   createConsoleCall,
   evaluateInboundCaps,
@@ -91,6 +92,16 @@ export async function POST(request: Request) {
   const nowMs = Date.now();
   const normalizedCli = normalizePhone(body.cli); // null for withheld/unparsable CLI
 
+  // Caller identification moved up (fraud incident, 17.8) — it now FEEDS the
+  // caps decision below, not just the post-accept display_hint enrichment.
+  // Still never a hard fail on its own: an identification-lookup error is
+  // swallowed to `null` (unidentified) here, deliberately OUTSIDE the
+  // fail-closed Promise.all below, so a contacts-table hiccup degrades this
+  // caller to the tighter unidentified budget rather than refusing the whole
+  // gate — the same lenient-on-this-one-signal posture the ORIGINAL
+  // enrichment-only call already had (`.catch(() => null)`).
+  const identified = normalizedCli ? await identifyInboundCaller(normalizedCli).catch(() => null) : null;
+
   // Gather every capped input FIRST (all pre-answer, all fail-closed on
   // error) — evaluateInboundCaps is the single, pure decision point so the
   // caps math itself is unit-testable without touching Supabase.
@@ -99,21 +110,30 @@ export async function POST(request: Request) {
   let globalConcurrentAnswered: number;
   let perCliAnsweredLastHour: number;
   let answeredToday: number;
+  let answeredUnidentifiedToday: number;
   let balanceOk: boolean;
   try {
-    const [flag, vconfig, concurrent, today, balance] = await Promise.all([
+    const [flag, vconfig, concurrent, today, unidentifiedToday, balance, perCli] = await Promise.all([
       inboundCallsEnabled(),
       getVoximplantConfig(),
       countConcurrentAnsweredInbound(),
       countAnsweredInboundToday(nowMs),
+      countAnsweredUnidentifiedInboundToday(nowMs),
       checkInboundBalanceReserve(nowMs),
+      // FIXED (fraud incident, 17.8): used to pass the string literal
+      // 'unknown-cli' for an unparseable CLI, which console_call_pii never
+      // actually stores (it stores SQL NULL) — that made this cap silently
+      // never bind for exactly the CLI shapes this incident used. See the
+      // function's own header in console-calls.ts.
+      countAnsweredLastHourForPhone(normalizedCli),
     ]);
     flagEnabled = flag;
     liveCallsEnabled = !!vconfig?.liveCallsEnabled;
     globalConcurrentAnswered = concurrent;
     answeredToday = today;
+    answeredUnidentifiedToday = unidentifiedToday;
     balanceOk = balance.ok;
-    perCliAnsweredLastHour = await countAnsweredLastHourForPhone(normalizedCli ?? 'unknown-cli');
+    perCliAnsweredLastHour = perCli;
   } catch {
     // Any measurement failure ⇒ fail closed (unknown is treated as capped).
     return json(REJECT, 200);
@@ -130,6 +150,8 @@ export async function POST(request: Request) {
     globalConcurrentAnswered,
     perCliAnsweredLastHour,
     answeredToday,
+    isIdentifiedCaller: identified !== null,
+    answeredUnidentifiedToday,
   });
 
   if (!decision.ok) {
@@ -157,13 +179,28 @@ export async function POST(request: Request) {
         });
       }
     }
+    // ADDED (fraud incident, 17.8) — same rate-limited-alert shape as the
+    // daily breaker above, DIFFERENT rateLimit key so the two never compete
+    // for the same hourly budget. Worth alerting on (unlike concurrency/
+    // per_cli_rate, deliberately silent): this reason means the account is
+    // actively being probed by callers this account has never talked to.
+    if (decision.reason === 'unidentified_flood') {
+      if (rateLimit('console-inbound-unidentified-alert', { limit: 1, windowMs: 3_600_000 }).allowed) {
+        void sendSlackAlert({
+          level: 'warn',
+          category: 'send_health',
+          source: 'console-route-inbound',
+          title: 'תקרת שיחות נכנסות ממתקשרים לא-מזוהים הופעלה',
+          detail: `answered_unidentified_today=${answeredUnidentifiedToday} · שיחות נוספות ממתקשרים לא מוכרים נדחות ללא עלות · שיחות ממתקשרים מוכרים לא מושפעות · התראה זו מוגבלת לאחת לשעה`,
+          fields: { answered_unidentified_today: answeredUnidentifiedToday },
+        });
+      }
+    }
     return json(REJECT, 200);
   }
 
-  // Caller identification — best-effort ENRICHMENT, never a gate. An
-  // unrecognized or unnormalizable CLI still gets accepted (or refused)
-  // purely on the caps above.
-  const identified = normalizedCli ? await identifyInboundCaller(normalizedCli).catch(() => null) : null;
+  // `identified` was resolved above (feeds the caps decision). callerMasked
+  // stays a best-effort DISPLAY enrichment only, same as before.
   const callerMasked = normalizedCli ? maskPhoneForDisplay(normalizedCli) : null;
 
   let routable: string[];
@@ -188,6 +225,35 @@ export async function POST(request: Request) {
     ringOrder = computeQueueRingOrder(queueMembers, routable, answeredToday);
   } catch {
     ringOrder = computeQueueRingOrder([], routable, answeredToday); // == plain computeRingOrder(routable, ...)
+  }
+
+  // ADDED (fraud incident, 17.8, owner-approved) — an UNIDENTIFIED caller
+  // arriving when the ring order is EMPTY is a call this account cannot serve
+  // by anyone, and answering it buys nothing while costing a real inbound
+  // minute plus the disclosure TTS plus a stored recording, purely to say
+  // "nobody is here". Measured over the flood's first five days: 1,215 inbound
+  // calls, 3 ever reached an agent, and none of those 3 was an unidentified
+  // caller. Refusing HERE — before createConsoleCall, so before the scenario
+  // ever calls Call.answer() — costs nothing at all.
+  //
+  // Deliberately ordered BEFORE the unidentified daily budget can be spent
+  // (evaluateInboundCaps' 'unidentified_flood', above). The flood runs around
+  // the clock, so on the budget alone it would exhaust all 20 slots overnight
+  // and the first real unrecognized caller at midday — the exact person that
+  // budget exists to admit — would be refused. Gating on "nobody could have
+  // answered anyway" spends none of it.
+  //
+  // A KNOWN guest/contact is never affected: they still reach the honest
+  // no-agent line and its callback promise, which is the product decision this
+  // must not quietly reverse.
+  //
+  // Fails closed by construction: findRoutableAgentVoxUsernames() degrading to
+  // [] (above) now REFUSES an unidentified caller instead of answering them.
+  // That is a deliberate change to that catch's "never a hard refuse" comment
+  // — for unidentified callers only — and matches the fail-closed posture
+  // every other gate in this route already takes.
+  if (ringOrder.length === 0 && identified === null) {
+    return json(REJECT, 200);
   }
 
   let callId: string;

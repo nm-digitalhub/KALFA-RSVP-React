@@ -12,6 +12,7 @@ import {
   computeQueueRingOrder,
   computeRingOrder,
   CONSOLE_SHIFT_FRESHNESS_MS,
+  countAnsweredLastHourForPhone,
   deprioritizeCalendarBusyAgents,
   evaluateCallMeNowCaps,
   evaluateCallMeNowConsent,
@@ -133,6 +134,8 @@ const inboundCapsBase = {
   globalConcurrentAnswered: 0,
   perCliAnsweredLastHour: 0,
   answeredToday: 0,
+  isIdentifiedCaller: true,
+  answeredUnidentifiedToday: 0,
 };
 
 // The inbound hours gate was REMOVED (compliance ruling 2026-08-12): no
@@ -152,9 +155,11 @@ describe('inbound admission is hour-agnostic (the quiet-hours gate was removed)'
     expect(Object.keys(inboundCapsBase).sort()).toEqual(
       [
         'answeredToday',
+        'answeredUnidentifiedToday',
         'balanceOk',
         'flagEnabled',
         'globalConcurrentAnswered',
+        'isIdentifiedCaller',
         'liveCallsEnabled',
         'perCliAnsweredLastHour',
       ].sort(),
@@ -287,6 +292,42 @@ describe('deprioritizeCalendarBusyAgents (pure — Outlook/Exchange presence-syn
   });
 });
 
+// ADDED (fraud incident, 17.8). The caps-math suite below is PURE — it takes
+// perCliAnsweredLastHour as an input and would have passed unchanged all five
+// days the flood ran. The defect was never in the math; it was in the plumbing
+// that produces that number, so the regression pin has to live HERE, at the
+// query builder, or it pins nothing.
+//
+// The bug: the route passed the string literal 'unknown-cli' whenever
+// normalizePhone returned null, but console_call_pii stores an unparseable CLI
+// as SQL NULL. `.eq('phone_e164','unknown-cli')` can never match a stored row,
+// so the per-CLI hourly cap silently returned 0 forever and never bound for
+// any caller who withheld a number. Measured on the live table: 0 rows holding
+// the literal 'unknown-cli', 396 rows holding NULL; every IDENTIFIED number
+// peaked at exactly 3 calls in an hour (the cap working), while the withheld
+// bucket reached 14 in an hour (the cap absent).
+describe('countAnsweredLastHourForPhone (17.8 — the withheld-CLI hole)', () => {
+  it('matches the stored NULLs with IS NULL when the CLI could not be normalized', async () => {
+    const client = wireAdmin({ console_call_pii: [{ data: null, error: null }] });
+    await countAnsweredLastHourForPhone(null);
+
+    const builder = client.from.mock.results[0]?.value as Record<string, ReturnType<typeof vi.fn>>;
+    expect(builder.is).toHaveBeenCalledWith('phone_e164', null);
+    // The heart of the regression: a withheld CLI must never be looked up as
+    // an equality match against some sentinel value no row can ever hold.
+    expect(builder.eq).not.toHaveBeenCalled();
+  });
+
+  it('still filters on the exact number when the CLI did normalize', async () => {
+    const client = wireAdmin({ console_call_pii: [{ data: null, error: null }] });
+    await countAnsweredLastHourForPhone('+972501234567');
+
+    const builder = client.from.mock.results[0]?.value as Record<string, ReturnType<typeof vi.fn>>;
+    expect(builder.eq).toHaveBeenCalledWith('phone_e164', '+972501234567');
+    expect(builder.is).not.toHaveBeenCalled();
+  });
+});
+
 describe('evaluateInboundCaps (pure — Gate E.2 caps math)', () => {
   const base = inboundCapsBase;
 
@@ -303,12 +344,47 @@ describe('evaluateInboundCaps (pure — Gate E.2 caps math)', () => {
     expect(evaluateInboundCaps({ ...base, globalConcurrentAnswered: 1 })).toEqual({ ok: true });
   });
 
-  it('rejects at the per-CLI hourly cap (>=3)', () => {
-    expect(evaluateInboundCaps({ ...base, perCliAnsweredLastHour: 3 })).toEqual({ ok: false, reason: 'per_cli_rate' });
+  // Pins the boundary on BOTH sides, not just the rejection. Raised 3 → 7 on
+  // 17.8 (see the constant's own header): a test that only asserted the reject
+  // side would have kept passing if the cap were raised to something absurd,
+  // which is exactly the drift this suite exists to catch.
+  it('rejects at the per-CLI hourly cap (>=7) and admits below it', () => {
+    expect(evaluateInboundCaps({ ...base, perCliAnsweredLastHour: 7 })).toEqual({ ok: false, reason: 'per_cli_rate' });
+    expect(evaluateInboundCaps({ ...base, perCliAnsweredLastHour: 6 })).toEqual({ ok: true });
   });
 
   it('rejects at the daily call-count breaker (>=300)', () => {
     expect(evaluateInboundCaps({ ...base, answeredToday: 300 })).toEqual({ ok: false, reason: 'daily_breaker' });
+  });
+
+  // ADDED (fraud incident, 17.8): a caller not resolved to a known
+  // contact/guest is admitted only against a much tighter shared daily budget
+  // — a KNOWN caller is NEVER subject to it, no matter how many unidentified
+  // calls already landed today.
+  describe('unidentified-caller daily budget (17.8 fraud incident)', () => {
+    it('rejects an unidentified caller once the unidentified budget is spent (>=20)', () => {
+      expect(
+        evaluateInboundCaps({ ...base, isIdentifiedCaller: false, answeredUnidentifiedToday: 20 }),
+      ).toEqual({ ok: false, reason: 'unidentified_flood' });
+      expect(
+        evaluateInboundCaps({ ...base, isIdentifiedCaller: false, answeredUnidentifiedToday: 19 }),
+      ).toEqual({ ok: true });
+    });
+
+    it('never caps a known contact/guest, regardless of the unidentified count', () => {
+      expect(
+        evaluateInboundCaps({ ...base, isIdentifiedCaller: true, answeredUnidentifiedToday: 10_000 }),
+      ).toEqual({ ok: true });
+    });
+
+    it('does not trip on the 17.8 incident volume once every call is treated as unidentified (431/day)', () => {
+      // Regression pin mirroring the 13.8 dialer-flood pin below: this incident's
+      // OWN observed volume must land on 'unidentified_flood', not sail through
+      // under the 300-call daily_breaker the way it did for five days.
+      expect(
+        evaluateInboundCaps({ ...base, isIdentifiedCaller: false, answeredUnidentifiedToday: 431 }),
+      ).toEqual({ ok: false, reason: 'unidentified_flood' });
+    });
   });
 
   it('lets the COUNT cap bind before the spend estimate (deliberate, 15.8)', () => {

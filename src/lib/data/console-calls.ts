@@ -1258,7 +1258,35 @@ export async function countLiveConsoleCalls(): Promise<number> {
 
 // Gate E / ops-knobs decision 3 — the operative caps, restated as constants.
 export const INBOUND_MAX_CONCURRENCY = 2;
-export const INBOUND_MAX_PER_CLI_HOURLY = 3;
+// RAISED 3 → 7 on 17.8 at the owner's explicit instruction, for the same reason
+// INBOUND_DAILY_SPEND_CAP_USD was raised on 15.8: it was refusing his own test
+// calls. Three inbound calls per number per rolling hour is spent in under two
+// minutes of testing, and the fourth attempt is rejected before answer with no
+// ring and no message — indistinguishable, from the caller's side, from a dead
+// line.
+//
+// Why this is a smaller concession than it was this morning. Until 17.8 this
+// cap was the FRONT line against the inbound flood. It no longer is; two layers
+// now sit above it:
+//   • Voximplant PSTN blacklist — 23 entries, including the pattern
+//     `^0?882[0-9]+$` covering the ITU +882 international-networks range every
+//     unidentified caller in the flood used. A blacklisted number is refused
+//     before a session is even created, so it never reaches this code.
+//   • INBOUND_UNIDENTIFIED_DAILY_CAP (20/day) — added the same day. For an
+//     UNIDENTIFIED flooder that budget binds long before an hourly cap of 7
+//     could matter, which is precisely the population this cap was defending
+//     against.
+//
+// What the raise DOES change, and is the better argument for it: an IDENTIFIED
+// guest — a real customer of a real event — has no daily budget above them, and
+// was being cut off after three attempts in an hour. A customer who cannot get
+// through and keeps trying is the normal case, not an attack. Three was treating
+// them as one.
+//
+// MEASURED the same day: 1,215 inbound calls over five days, 3 ever reached an
+// agent. Nothing in that record suggests a legitimate caller was ever served by
+// this cap being 3 rather than 7.
+export const INBOUND_MAX_PER_CLI_HOURLY = 7;
 // RECALIBRATED 13.8 after the estimate below fired a false emergency.
 //
 // The original design intent was right and is preserved: in "N calls OR $X,
@@ -1316,6 +1344,18 @@ export const INBOUND_DAILY_SPEND_CAP_USD = 15;
 // "the breaker is armed" as "the flood is handled".
 export const INBOUND_ESTIMATED_COST_PER_CALL_USD = 0.02;
 
+// ADDED (fraud incident, 17.8) — the "blocking the sources" the comment above
+// says the count/spend breaker was never going to be. Owner-tunable, same as
+// every other cap in this file; 20 is a starting point, not a measured
+// optimum: it is far above the ~1/week of genuinely identified-but-first-time
+// callers this account has ever seen (0 evidence either way for a legitimate
+// UNIDENTIFIED caller — none observed in 7 days), and far below the flood's
+// observed ~250-450/day, so it should bind fast against a repeat of this
+// incident while leaving headroom for a real caller Voximplant/KALFA cannot
+// resolve to a contact (wrong number saved, new phone, etc.). Revisit once a
+// day with the fix live has been observed.
+export const INBOUND_UNIDENTIFIED_DAILY_CAP = 20;
+
 export async function countConcurrentAnsweredInbound(): Promise<number> {
   const admin = createAdminClient();
   const { count, error } = await admin
@@ -1334,15 +1374,54 @@ export async function countConcurrentAnsweredInbound(): Promise<number> {
  * represent "contact with this phone in the last hour", which is the
  * property the cap actually protects.
  */
-export async function countAnsweredLastHourForPhone(normalizedPhone: string): Promise<number> {
+// FIXED (fraud incident, 17.8): the call site used to pass the STRING
+// literal 'unknown-cli' whenever normalizePhone couldn't parse the caller ID
+// (any international/satellite-format/withheld CLI — precisely the format the
+// 8/13-17 inbound flood's caller IDs used), but createConsoleCall/console_call_pii
+// stores an unparseable CLI as SQL NULL, never the string 'unknown-cli'. A
+// `.eq('phone_e164', 'unknown-cli')` query can therefore never match a row —
+// this cap was silently returning 0 (i.e. never binding) for every call this
+// flood actually made with a non-Israeli-format CLI. Verified empirically: no
+// row in console_call_pii has ever contained the literal string 'unknown-cli'.
+// Now accepts `null` and queries IS NULL, so every unparseable-CLI call shares
+// ONE real rolling-hour bucket (still capped at INBOUND_MAX_PER_CLI_HOURLY) —
+// callers cannot evade the per-CLI cap merely by presenting a CLI this account
+// cannot normalize.
+export async function countAnsweredLastHourForPhone(normalizedPhone: string | null): Promise<number> {
   const admin = createAdminClient();
   const sinceIso = new Date(Date.now() - 60 * 60 * 1000).toISOString();
-  const { count, error } = await admin
+  let query = admin
     .from('console_call_pii')
     .select('call_id', { count: 'exact', head: true })
-    .eq('phone_e164', normalizedPhone)
     .gte('created_at', sinceIso);
+  query = normalizedPhone === null ? query.is('phone_e164', null) : query.eq('phone_e164', normalizedPhone);
+  const { count, error } = await query;
   if (error) throw new Error('count_per_cli_failed');
+  return count ?? 0;
+}
+
+/**
+ * UTC calendar day count of answered inbound calls whose caller was NOT
+ * resolved to a known contact/guest (createConsoleCall's guest_id/contact_id
+ * both null — see identifyInboundCaller). Added for the same fraud incident:
+ * measured 17.8, 7 days of console_calls — only 7 of 1218 inbound calls ever
+ * matched a known contact; 1211 did not. A daily budget scoped to exactly the
+ * unidentified population lets a real (rare) unrecognized caller through while
+ * cutting off a rotating-spoofed-CLI flood far faster than the 300/day
+ * account-wide breaker, which was calibrated for a totally different failure
+ * mode (a burst past normal volume) — see INBOUND_DAILY_CALL_CAP's own header.
+ */
+export async function countAnsweredUnidentifiedInboundToday(nowMs: number = Date.now()): Promise<number> {
+  const admin = createAdminClient();
+  const dayStartIso = new Date(nowMs).toISOString().slice(0, 10) + 'T00:00:00.000Z';
+  const { count, error } = await admin
+    .from('console_calls')
+    .select('id', { count: 'exact', head: true })
+    .eq('direction', 'inbound')
+    .is('guest_id', null)
+    .is('contact_id', null)
+    .gte('created_at', dayStartIso);
+  if (error) throw new Error('count_unidentified_today_failed');
   return count ?? 0;
 }
 
@@ -1375,6 +1454,15 @@ export interface InboundCapsInput {
   globalConcurrentAnswered: number;
   perCliAnsweredLastHour: number;
   answeredToday: number;
+  // ADDED (fraud incident, 17.8). `isIdentifiedCaller` mirrors what
+  // route-inbound already computes via identifyInboundCaller — previously
+  // ENRICHMENT-only (display_hint), never a gate (see that call site's own
+  // comment, unchanged in spirit: an unidentified caller is still admitted,
+  // just against a MUCH tighter shared budget instead of an unlimited one).
+  // `answeredUnidentifiedToday` is irrelevant when isIdentifiedCaller is true
+  // — a known contact/guest is NEVER capped by this mechanism.
+  isIdentifiedCaller: boolean;
+  answeredUnidentifiedToday: number;
 }
 
 export type InboundCapReason =
@@ -1383,6 +1471,7 @@ export type InboundCapReason =
   | 'balance'
   | 'concurrency'
   | 'per_cli_rate'
+  | 'unidentified_flood'
   | 'daily_breaker';
 
 export function evaluateInboundCaps(
@@ -1396,6 +1485,9 @@ export function evaluateInboundCaps(
   }
   if (input.perCliAnsweredLastHour >= INBOUND_MAX_PER_CLI_HOURLY) {
     return { ok: false, reason: 'per_cli_rate' };
+  }
+  if (!input.isIdentifiedCaller && input.answeredUnidentifiedToday >= INBOUND_UNIDENTIFIED_DAILY_CAP) {
+    return { ok: false, reason: 'unidentified_flood' };
   }
   const estSpendUsd = input.answeredToday * INBOUND_ESTIMATED_COST_PER_CALL_USD;
   if (input.answeredToday >= INBOUND_DAILY_CALL_CAP || estSpendUsd >= INBOUND_DAILY_SPEND_CAP_USD) {
