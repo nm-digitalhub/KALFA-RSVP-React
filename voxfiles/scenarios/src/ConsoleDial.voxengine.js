@@ -105,13 +105,22 @@ VoxEngine.addEventListener(AppEvents.Started, function (startedEvent) {
     // target never leaves the guest waiting a full minute (plan owner-decided
     // constant for V1 blind transfer).
     var TRANSFER_TIMEOUT_MS = 20000;
-    // Hold-cue repeat cadence — a scenario-side setTimeout loop (not
-    // Call.say's own mechanism, which has no loop option; verified against
-    // live docs), bounded so an open-ended hold does not run away with
-    // per-call TTS cost. Independently tunable from RING_PER_AGENT_MS in
+    // Hold-cue cadence — a scenario-side setTimeout loop (not Call.say's own
+    // mechanism, which has no loop option; verified against live docs).
+    // HOLD_REPEAT_MS is the STARTING interval; startHoldAudio() doubles it on
+    // every repeat, capped at HOLD_REPEAT_MAX_MS — an uncapped flat 20s cue
+    // on a 10-minute hold is 31 TTS calls on ONE call (this project's own
+    // flood measured 41% of its cost as TTS), while a hard N-repeat cutoff
+    // just replaces "audible reassurance" with "silence again" past that
+    // point, which is the exact bug this task exists to fix. Backoff bounds
+    // both: a 10-minute hold plays HOLD_LINE_HE only 7 times (immediately,
+    // then at the 20s/60s/140s/260s/380s/500s marks) instead of 31, and
+    // NEVER reverts to permanent silence — it just gets less frequent, for
+    // as long as the hold lasts. Independently tunable from RING_PER_AGENT_MS in
     // ConsoleInbound.voxengine.js on purpose — same value today by
     // coincidence, not because the two concepts are coupled.
     var HOLD_REPEAT_MS = 20000;
+    var HOLD_REPEAT_MAX_MS = 120000;
     // Leaked-session backstop, NOT a call-length cap — operator calls are
     // human-paced and can legitimately run long. 60 minutes is a generous
     // ceiling purely so a wedged session cannot bill/hold forever; tune as an
@@ -405,6 +414,11 @@ VoxEngine.addEventListener(AppEvents.Started, function (startedEvent) {
         if (state.holdAudioTimer || !state.remote)
             return; // already playing, or nothing to play it to
         var remote = state.remote;
+        // Resets to HOLD_REPEAT_MS every time a NEW hold period starts (a
+        // fresh call to startHoldAudio — see its guard above) — a caller who
+        // was unheld and gets re-held hears the frequent cadence again from
+        // the top, not wherever a previous hold's backoff left off.
+        var delay = HOLD_REPEAT_MS;
         function tick() {
             if (state.remote !== remote || !remoteNeedsHold()) {
                 state.holdAudioTimer = null;
@@ -416,7 +430,8 @@ VoxEngine.addEventListener(AppEvents.Started, function (startedEvent) {
             catch (err) {
                 log('hold-audio say failed: ' + err);
             }
-            state.holdAudioTimer = setTimeout(tick, HOLD_REPEAT_MS);
+            state.holdAudioTimer = setTimeout(tick, delay);
+            delay = Math.min(delay * 2, HOLD_REPEAT_MAX_MS);
         }
         tick();
     }
@@ -445,17 +460,29 @@ VoxEngine.addEventListener(AppEvents.Started, function (startedEvent) {
             log('operator failed: ' + safeStringify(ev));
             handleLegDown('operator', 'operator_failed');
         });
-        // SDK-initiated hold (verified live docs, references.voxengine.
-        // callevents: "Triggered when a call is put/taken off hold", cross-
-        // referenced from ReInviteReceived's "3) put a call on hold / took a
-        // call off hold" — the Call object here is whichever leg the SDK put
-        // on hold). Outbound only: internal legs are never customer-facing
-        // (see HOLD_LINE_HE's own comment). Conference guard: once
+        // SDK-initiated hold (verified live docs — guides.calls.features'
+        // "How to hold a call" gives ONE shared VoxEngine-side example for
+        // Web/iOS/Android SDK hold alike: "play the file when the OnHold
+        // event is triggered", platform-agnostic by the vendor's own design;
+        // references.voxengine.callevents' OnHold/OffHold entries and the
+        // ReInviteReceived cross-reference — "3) put a call on hold / took a
+        // call off hold" — describe the same cloud-side signal. The Call
+        // object here is whichever leg the SDK put on hold). Outbound only:
+        // internal legs are never customer-facing (see HOLD_LINE_HE's own
+        // comment).
+        //
+        // Conference guard, and the KNOWN GAP it accepts: once
         // state.conferenced is true, state.remote's incoming stream is the
         // Conference mixer, not this leg directly — a say() here would
         // silently steal the customer's audio out of a live 3-way call
         // (Call.sendMediaTo's docs: "a new incoming stream always replaces
         // the previous one"), so hold is ignored entirely while conferenced.
+        // This means an operator who holds mid-conference leaves the
+        // customer in silence again — the ORIGINAL bug this task fixes,
+        // reappearing in the one topology where fixing it risks a worse
+        // outcome (silencing the whole 3-way call for everyone). Accepted
+        // deliberately, not missed: silence for one caller in a rare
+        // topology beats breaking a live 3-way call for three people.
         call.addEventListener(CallEvents.OnHold, function () {
             if (state.kind !== 'outbound' || state.conferenced)
                 return;
