@@ -597,43 +597,181 @@ export function getCallHistoryAsync(
   );
 }
 
-// GetCallHistory (SYNCHRONOUS) — returns sessions (with records) immediately for a
-// bounded query. Used to resolve a single call's recording URL by session id, far
-// faster than the async CSV report. Requires a from/to window; filter by
-// call_session_history_id to get exactly one session back.
+// GetCallHistory (SYNCHRONOUS) — returns sessions immediately for a bounded query.
+//
+// This is the AUTHORITATIVE record of what happened on a call, and the types below
+// model the whole documented response rather than the three fields one caller
+// happened to need. The narrow version that preceded them is why the platform
+// looked less capable than it is: `calls[]` was never declared, so nothing in this
+// codebase could see that Voximplant reports EVERY LEG of a session — including
+// each agent we rang and whether they picked up. The missed-call list was inferring
+// that from our own webhook bookkeeping and getting it wrong by a factor of 13
+// (12 vs 156 over the same week, measured 2026-08-17).
+//
+// Field-for-field against the live reference, walked recursively from
+// references.httpapi.history.getcallhistory on 2026-08-17: CallSessionInfoType (17),
+// CallInfoType (15), RecordType (10), ResourceUsageType (9).
+//
+// Every field is optional on the wire. The API omits rather than nulls, and the
+// `with_*` request flags decide whole branches — `calls` is absent unless
+// `with_calls`, `records` unless `with_records`, `other_resource_usage` unless
+// `with_other_resources`. Treat all of it as UNTRUSTED: it is normalized in
+// call-history-normalize.ts before anything reads it.
 export interface GetCallHistoryRequest {
   from_date: string;
   to_date: string;
-  call_session_history_id?: number;
+  /** Semicolon-separated (`;`) per the reference — NOT comma. Max 1000 ids. */
+  call_session_history_id?: number | string;
+  call_session_history_custom_data?: string;
   application_id?: number;
+  application_name?: string;
+  /** Only applied when application_id or application_name is also set. */
+  rule_name?: string;
+  /** Semicolon-separated (`;`). Ignored when remote_number_list is non-empty. */
+  remote_number?: string;
+  /** JSON array of strings. Takes priority over remote_number. */
+  remote_number_list?: string;
+  local_number?: string;
+  user_id?: number | string;
+  min_duration?: number;
+  max_duration?: number;
+  /** Must be set explicitly — 'auto' means the ACCOUNT's location, not ours. */
+  timezone?: string;
+  desc_order?: boolean;
   with_records?: boolean;
   with_calls?: boolean;
-  // Include auxiliary session resources (log_file_url et al) in the response —
-  // used by the log-export job (plan A4).
   with_other_resources?: boolean;
+  /** Also documented as a performance improvement, not just an extra field. */
+  with_total_count?: boolean;
+  /** Max 1000 per the reference. */
   count?: number;
+  /** Max 10000 per the reference. */
+  offset?: number;
   output?: 'json';
 }
+
+/**
+ * RecordType — a bound recording, and its transcription when one exists.
+ *
+ * The last six fields are NOT in the RecordType reference. They come from the
+ * official response example on the GetCallHistory page itself, which is the only
+ * place the real payload is written down — and `expiration_date` and `is_removed`
+ * are load-bearing rather than trivia: a recording URL EXPIRES (three months out,
+ * in the published example), so a history screen that stores one is storing
+ * something that stops working, and `is_removed` marks a recording already gone.
+ */
 export interface CallHistoryRecord {
-  record_url?: string;
   record_id?: number;
-  record_duration?: number;
+  record_name?: string;
+  record_url?: string;
+  duration?: number;
+  file_size?: number;
+  cost?: number;
+  start_time?: string;
+  transaction_id?: number;
+  /** 'Not required' | 'In progress' | 'Complete' */
+  transcription_status?: string;
+  transcription_url?: string;
+  /** Undocumented in RecordType; present in the official example. */
+  expiration_date?: string;
+  is_removed?: boolean;
+  hd_audio?: boolean;
+  lossless?: boolean;
+  media_parameters?: string;
+  transcription_transaction_id?: number;
 }
+
+/**
+ * ResourceUsageType — per-component cost (ASR, TTS, recording, …).
+ *
+ * `resource_type` is a STRING here and deliberately not a union, even though the
+ * reference publishes a closed list of ten values. The official response example
+ * on the GetCallHistory page returns `TTS_SMARTSPEECH`, which is not one of them.
+ * The documented enum is therefore incomplete, and a union typed from it would
+ * reject real payloads — so the value is carried through and rendered, never
+ * validated against a list the platform does not honour.
+ */
+export interface CallHistoryResourceUsage {
+  resource_usage_id?: number;
+  resource_type?: string;
+  resource_quantity?: number;
+  unit?: string;
+  cost?: number;
+  description?: string;
+  used_at?: string;
+  ref_call_id?: number;
+  transaction_id?: number;
+}
+
+/**
+ * CallInfoType — ONE LEG.
+ *
+ * A session holds several: the inbound PSTN leg, then one per agent rung, then any
+ * consult/conference leg. `successful` on the agent legs is the fact the console
+ * has been guessing at.
+ */
+export interface CallHistoryLeg {
+  call_id?: number;
+  incoming?: boolean;
+  successful?: boolean;
+  duration?: number;
+  start_time?: string;
+  remote_number?: string;
+  /** 'pstn' | 'mobile' | 'user' | 'sip address' — 'user' identifies an agent leg. */
+  remote_number_type?: string;
+  local_number?: string;
+  /** An OBJECT `{code, details}` on the wire, not a string. */
+  end_reason?: { code?: number; details?: string } | string;
+  cost?: number;
+  transaction_id?: number;
+  custom_data?: string;
+  diversion_number?: string;
+  record_url?: string;
+  media_server_address?: string;
+  /** Undocumented in CallInfoType; both appear in the official example. */
+  direction?: string;
+  audio_quality?: string;
+}
+
+/** CallSessionInfoType — one JS session. */
 export interface CallHistorySession {
   call_session_history_id: number;
-  records?: CallHistoryRecord[];
-  // Base CallSessionInfoType fields consumed by the log-export job. The URL is
-  // UNTRUSTED — it must pass src/lib/voximplant/log-download.ts gates before
-  // any fetch (plan §8).
-  log_file_url?: string;
-  custom_data?: string;
+  account_id?: number;
+  application_id?: number;
+  application_name?: string;
+  user_id?: number;
+  rule_name?: string;
   start_date?: string;
   duration?: number;
+  /** 'Normal termination' | 'Insufficient funds' | 'Internal error (billing timeout)'
+   *  | 'Terminated administratively' | 'JS session error' | 'Timeout' */
   finish_reason?: string;
+  /** 'Standard' | 'HD' | 'Ultra HD' */
+  audio_quality?: string;
+  /** Our join key. 200 bytes max, set by VoxEngine.customData or CallSettings. */
+  custom_data?: string;
+  calls?: CallHistoryLeg[];
+  records?: CallHistoryRecord[];
+  other_resource_usage?: CallHistoryResourceUsage[];
+  /** UNTRUSTED — must pass src/lib/voximplant/log-download.ts gates before any
+   *  fetch. CLEARED BY VOXIMPLANT AFTER ONE MONTH ("The log retention policy is 1
+   *  month, after that time this field clears"), which is a sync-cadence
+   *  constraint and not only a performance one. */
+  log_file_url?: string;
+  media_server_address?: string;
+  initiator_address?: string;
+  /** Undocumented in CallSessionInfoType; present in the official example. A
+   *  session still running — history can return a call that has not ended. */
+  active?: boolean;
 }
 export interface GetCallHistoryResponse {
   result: CallHistorySession[];
+  /** Rows in THIS page. */
+  count?: number;
+  /** Rows in the whole window — only when with_total_count was requested. */
   total_count?: number;
+  /** Echoed back, so the caller can verify the window it actually got. */
+  timezone?: string;
 }
 export function getCallHistory(
   config: VoximplantConfig,

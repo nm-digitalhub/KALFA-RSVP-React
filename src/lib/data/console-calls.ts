@@ -1298,111 +1298,23 @@ export async function resolveExternalDialTarget(
   return { ok: true, phone };
 }
 
-export interface ConsoleCallRecord {
-  id: string;
-  direction: 'inbound' | 'outbound';
-  status: string;
-  /**
-   * WHY it ended, as the scenario reported it — 'no_agent', 'caller_hangup',
-   * 'operator_hangup', 'safety_net_timeout', or a 'sip_<code>' for a leg the
-   * platform refused.
-   *
-   * Carried because `status` alone collapses distinct outcomes: 'ended' covers both
-   * "we spoke and they hung up" and "they gave up while it was ringing", and an
-   * agent reviewing their own calls needs those apart.
-   */
-  endedReason: string | null;
-  /** The guest's name when we know them, else null — the app shows the number instead. */
-  name: string | null;
-  /** E.164, or null when the CLI was withheld. */
-  phone: string | null;
-  startedAt: string;
-  durationSec: number;
-  answered: boolean;
-  /**
-   * Present only when this call can be returned through the consent-checked
-   * `guest_service` dial-intent shape — i.e. we know both the event and the contact.
-   * Absent means the app must not offer a dial button, because there is no approved
-   * path to that number.
-   */
-  eventId: string | null;
-  contactId: string | null;
-}
-
-/**
- * Recent console calls, for the native console's history screen.
- *
- * REPLACES what that screen used to show, which was the wrong table entirely: it read
- * `console_call_feed`, keyed on `call_attempts` — the AI campaign calls — so an agent
- * looking at "היסטוריה" saw the robot's work rather than their own conversations, with
- * every row rendered as "אורח" and a blank phone because that feed carries no PII by
- * design.
- *
- * These are console_calls: the calls a human actually took or placed. Name comes from
- * the linked guest when there is one, and the phone from the server-only PII table,
- * because an agent reviewing their own call list needs to know who each call was with
- * — including a caller who has never been a customer, where the number is the only
- * identity there is.
- *
- * Two queries, not a join, for the same reason identifyInboundCaller uses two: the PII
- * lives in a separate table with its own RLS, and reaching it through the admin client
- * per-call keeps that boundary explicit rather than dissolving it into a view.
- */
-export async function findRecentConsoleCalls(limit = 50): Promise<ConsoleCallRecord[]> {
-  const admin = createAdminClient();
-  const { data: calls, error } = await admin
-    .from('console_calls')
-    .select('id, direction, status, ended_reason, started_at, duration_sec, answered_at, event_id, guest_id, contact_id')
-    .order('started_at', { ascending: false })
-    .limit(limit);
-  if (error) throw new Error('find_recent_console_calls_failed');
-  if (!calls || calls.length === 0) return [];
-
-  // Chunked and error-checked for the reason spelled out on PG_IN_CHUNK. `limit`
-  // defaults to 50 here, which fits comfortably in one URL — but it is a PARAMETER,
-  // and the identical two-line idiom a few hundred lines below is what took the
-  // missed-call card down once the row count grew. Bounding it at the call site
-  // rather than trusting the caller is the cheaper half of that lesson.
-  const pii = await selectByIdsChunked(
-    calls.map((c) => c.id),
-    (chunk) => admin.from('console_call_pii').select('call_id, phone_e164').in('call_id', chunk),
-    'find_recent_console_calls_pii_failed',
-  );
-  const phones = new Map(pii.map((p) => [p.call_id, p.phone_e164]));
-
-  const guestIds = calls.map((c) => c.guest_id).filter((g): g is string => Boolean(g));
-  const names = new Map<string, string>();
-  if (guestIds.length > 0) {
-    const guests = await selectByIdsChunked(
-      guestIds,
-      (chunk) => admin.from('guests').select('id, full_name').in('id', chunk),
-      'find_recent_console_calls_names_failed',
-    );
-    for (const g of guests) {
-      const n = g.full_name?.trim();
-      if (n) names.set(g.id, n);
-    }
-  }
-
-  return calls.map((c) => ({
-    id: c.id,
-    direction: c.direction === 'inbound' ? ('inbound' as const) : ('outbound' as const),
-    status: c.status,
-    endedReason: c.ended_reason ?? null,
-    name: c.guest_id ? names.get(c.guest_id) ?? null : null,
-    phone: phones.get(c.id) ?? null,
-    startedAt: c.started_at ?? '',
-    durationSec: c.duration_sec ?? 0,
-    // answered_at, not status: it is written in exactly one place (the event route's
-    // 'connected' branch) and means a human picked up, whereas status carries a dozen
-    // end reasons that each need interpreting.
-    answered: c.answered_at !== null,
-    // Both or neither — a dial needs the pair, and offering a button that the server
-    // would refuse for a missing half is worse than not offering one.
-    eventId: c.event_id && c.contact_id ? c.event_id : null,
-    contactId: c.event_id && c.contact_id ? c.contact_id : null,
-  }));
-}
+// `findRecentConsoleCalls` and its ConsoleCallRecord lived here and are GONE.
+//
+// They read the console's history out of `console_calls`, and that table cannot
+// answer the question the screen asks. `answered_at` is set when the SCENARIO
+// answers — the disclosure line, the hold music — not when a human picks up, so
+// every call the system took and no agent ever did was filed as answered. Over one
+// measured week (2026-08-17) that reported 12 missed calls where Voximplant's own
+// per-leg record holds 157.
+//
+// The call log now reads from Voximplant directly: src/lib/data/vox-call-history.ts.
+// Deleted rather than left in place, because an exported function named
+// "findRecentConsoleCalls" with no caller is the kind of thing the next change
+// reaches for, and it would quietly reintroduce the wrong number.
+//
+// NOTE `findMissedCalls` below still reads this table and is still in use by
+// /api/agents/callbacks. Moving it to the same source is step 5 of
+// plans/voximplant-authoritative-call-history-plan.md.
 
 /**
  * How long an inbound call must have lasted before an UNIDENTIFIED caller counts as
