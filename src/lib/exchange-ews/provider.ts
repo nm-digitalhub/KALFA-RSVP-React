@@ -15,14 +15,13 @@ import type {
 
 // The isolated provider boundary (plan §2.1, plans/exchange-ews-stage1.md).
 // Code outside src/lib/exchange-ews/ must import ONLY from this module and
-// ./types — never from ./ews-impl or the ews-javascript-api / @ewsjs/xhr
-// packages directly. That is what lets the whole integration be replaced or
-// dropped without touching a single caller: the library has been unmaintained
-// since 5/2024 (plan §8).
+// ./types — never an implementation module or a vendor SDK directly. The
+// boundary has now proved itself: the entire EWS implementation was replaced by
+// Graph and then deleted, and not one caller outside this directory changed.
 //
-// A library error (SOAP fault text, stack trace, NTLM handshake detail) NEVER
-// crosses this boundary as-is — every failure collapses to one of the codes
-// below in ./ews-impl, and nothing raw is logged (plan §5.4).
+// A vendor error (fault text, stack trace, handshake detail) NEVER crosses this
+// boundary as-is — every failure collapses to one of the codes below inside the
+// active implementation (./graph-impl), and nothing raw is logged (plan §5.4).
 export type ExchangeErrorCode =
   | 'auth_failed'
   | 'unreachable'
@@ -106,9 +105,10 @@ export interface ExchangeCalendarProvider {
     cfg: ExchangeConnectionConfig,
     draft: AppointmentDraft,
   ): Promise<ExchangeResult<{ appointmentId: string }>>;
-  // Times (and optionally subject) of one existing appointment. Bind-fresh
-  // then Update(AutoResolve) — see ews-impl. Recurring items are refused at
-  // the DAL/UI layer (readOnly), not here.
+  // Times (and optionally subject) of one existing appointment. Read the item
+  // fresh, then apply the change — see ./graph-impl for how the active backend
+  // does it. Recurring items are refused at the DAL/UI layer (readOnly), not
+  // here.
   updateAppointment(
     cfg: ExchangeConnectionConfig,
     appointmentId: string,

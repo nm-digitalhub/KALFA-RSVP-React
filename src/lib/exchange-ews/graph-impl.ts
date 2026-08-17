@@ -25,11 +25,14 @@ import type {
   MailboxInfo,
 } from './types';
 
-// Microsoft Graph implementation of the same provider interface ews-impl.ts
-// implements. Replaces Exchange Web Services, which Microsoft starts disabling
-// in Exchange Online in 10/2026 and fully disables in 04/2027.
+// Microsoft Graph implementation of ./provider — now the ONLY one. It replaced
+// the EWS implementation (ews-impl.ts, since deleted), because Microsoft starts
+// disabling Exchange Web Services in Exchange Online in 10/2026 and disables it
+// fully in 04/2027.
 //
-// TWO THINGS THAT DIFFER FROM ews-impl AND MATTER:
+// TWO THINGS THAT DIFFERED FROM ews-impl AND STILL MATTER — kept because both
+// explain why this file is shaped the way it is, not because that file is still
+// around to compare against:
 //
 // 1. Credentials do NOT come from `cfg`. EWS authenticated per-user with a
 //    decrypted mailbox password; Graph authenticates ONCE as the application,
@@ -381,7 +384,18 @@ async function followPages(client: Client, firstPath: string, headers?: Record<s
     if (typeof next !== 'string' || out.length >= 1000) break;
     const url = new URL(next);
     if (url.hostname !== 'graph.microsoft.com' || url.username || url.password) break;
-    let nextReq = client.api(url.pathname + url.search);
+    // MEASURED 17.08 against the live mailbox: `url.pathname + url.search`
+    // strips the host but LEAVES the API version segment ("/v1.0/…") in the
+    // path, and client.api() always prepends its OWN configured version —
+    // the request became "/v1.0/v1.0/users/…", which Graph rejected on every
+    // page past the first with 400 "Resource not found for the segment
+    // 'v1.0'." (silently swallowed by run()'s catch, surfacing only as
+    // listAppointments failing once a range held more than $top=300 events).
+    // The SDK's own path parser (GraphRequest.parsePath) already strips BOTH
+    // the host and the version when handed a string starting with "https://",
+    // so passing the full, already-validated `next` URL (not a hand-built
+    // substring of it) is the only form that works.
+    let nextReq = client.api(next);
     if (headers) nextReq = nextReq.headers(headers);
     page = await nextReq.get();
   }
@@ -441,7 +455,25 @@ export const graphProvider: ExchangeCalendarProvider = {
         `?startDateTime=${encodeURIComponent(range.start.toISOString())}` +
         `&endDateTime=${encodeURIComponent(range.end.toISOString())}` +
         `&$select=${LIST_SELECT}&$top=300&$orderby=start/dateTime`;
-      return (await followPages(graphClient(), path)).map(toAppointment);
+      // Prefer: IdType="ImmutableId" — createAppointment() below sets the
+      // SAME header, so the id it hands back (and that callers persist, e.g.
+      // reconcileCallbacksWithCalendar in callback-scheduling.ts, which later
+      // checks `liveIds.has(storedId)` against exactly this list) is in the
+      // IMMUTABLE format. Without this header HERE, Graph lists the DEFAULT
+      // (mutable) id for the same event — a different string — so that
+      // comparison can never match. MEASURED 17.08 against the live mailbox:
+      // the same event read back as id "AAMkA…" from an unheadered list vs
+      // the "AAkAL…" stored from createAppointment. This is what made every
+      // scheduled callback look "gone" on the next reconcile pass, releasing
+      // and re-creating it — the mailbox accumulated 553 duplicate
+      // appointments this way before the pagination fix above even mattered.
+      // getAppointment/updateAppointment/deleteAppointment are unaffected —
+      // measured: a direct /events/{id} lookup resolves an immutable id
+      // correctly with or without the header; only a LIST-based comparison
+      // needs it.
+      return (
+        await followPages(graphClient(), path, { Prefer: 'IdType="ImmutableId"' })
+      ).map(toAppointment);
     });
   },
 

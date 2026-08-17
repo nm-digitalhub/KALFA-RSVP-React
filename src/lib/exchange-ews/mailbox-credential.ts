@@ -1,78 +1,24 @@
 import 'server-only';
 
-import { decryptCredential, type EncryptedCredential } from './crypto';
-import { selectedCalendarProvider } from './provider-selection';
-
-// The mailbox password for whichever calendar backend is ACTUALLY active.
+// The mailbox password for the active calendar backend — which is now always
+// the empty string, because no backend has one.
 //
-// WHY THIS EXISTS — a real coupling, measured 2026-08-16, not a tidy-up.
+// HISTORY, because the shape looks pointless without it. Four modules loaded the
+// encrypted mailbox credential and decrypted it before every calendar call, each
+// failing closed when that threw. Correct under EWS: NTLM needs the password.
+// Graph does not — it authenticates once as the application with a certificate.
+// So the certificate-authenticated calendar had a hard dependency on
+// EXCHANGE_EWS_ENCRYPTION_KEY, and rotating that key would have taken scheduling
+// down for a reason with no relationship to the cause. That was fixed by making
+// the decryption conditional; with EWS now removed, the condition is always
+// false and the decryption is gone entirely.
 //
-// Four modules (callback-scheduling, event-exchange-sync,
-// console-agent-calendar-presence, exchange-connections) each loaded the
-// encrypted mailbox credential and decrypted it before every calendar call,
-// and each one FAILS CLOSED when that decryption throws. That was correct
-// while EWS was the backend: NTLM needs the password.
+// The function survives rather than being inlined so the four call sites keep a
+// single, named answer to "what password does this connection use" — and so that
+// answer is documented in one place instead of four empty strings.
 //
-// Graph does not. It authenticates ONCE as the application with a certificate,
-// and `graph-impl.ts` documents the fields as ignored ("`cfg.password` /
-// `cfg.authMethod` are ignored here — deliberately"). So on the active path
-// every sweep was decrypting a secret nothing consumed, and — the part that
-// matters — a decrypt failure would abort a Graph operation that never needed
-// the credential. In effect the certificate-authenticated calendar had a hard
-// dependency on EXCHANGE_EWS_ENCRYPTION_KEY, which .env.example described as
-// legacy and only needed for EWS. Rotating or dropping that key would have
-// taken the calendar down for a reason with no relationship to the cause.
-//
-// Decrypting a credential is also not free of consequence: it puts a live
-// mailbox password in process memory on every scheduled tick, for nothing.
-//
-// The empty string is returned rather than undefined so `ExchangeConnectionConfig`
-// keeps its existing shape — the field is part of the shared provider interface
-// and the Graph implementation never reads it.
-
-/**
- * A credential as the DATABASE now holds it: possibly absent.
- *
- * The three columns became nullable in the §B phase-1 migration, because under
- * Graph a connection has no mailbox secret to store and the old NOT NULL forced
- * every row to carry one that authenticated nothing. A DB-level constraint
- * keeps them all-present or all-absent, so the half-populated shape cannot
- * reach here — but the types are independently nullable, so this narrows them.
- */
-export type StoredCredential = {
-  ciphertext: string | null;
-  iv: string | null;
-  authTag: string | null;
-  keyVersion: number;
-};
-
-export function resolveMailboxPassword(
-  stored: StoredCredential,
-  connectionId: string,
-  subjectId: string,
-): string {
-  // Resolved per call, exactly like `active()` in calendar-provider.ts: a
-  // process up for days must follow a changed EXCHANGE_PROVIDER on restart
-  // without any path holding a stale decision.
-  if (selectedCalendarProvider() !== 'ews') return '';
-
-  // EWS is active and there is no stored secret. Throwing is correct and not a
-  // regression: NTLM cannot authenticate without a password, so the only
-  // alternative is to call the mailbox with an empty one and read the failure
-  // back as an auth error. Every caller already wraps this in a fail-closed
-  // catch, so this surfaces exactly where a decrypt failure would.
-  if (!stored.ciphertext || !stored.iv || !stored.authTag) {
-    throw new Error('EWS is the active provider but this connection stores no credential');
-  }
-
-  const encrypted: EncryptedCredential = {
-    ciphertext: stored.ciphertext,
-    iv: stored.iv,
-    authTag: stored.authTag,
-    keyVersion: stored.keyVersion,
-  };
-
-  // Still throws on failure when the credential IS required, so every caller's
-  // existing fail-closed catch keeps behaving exactly as it does today.
-  return decryptCredential(encrypted, connectionId, subjectId);
+// `ExchangeConnectionConfig.password` remains part of the shared provider
+// interface; graph-impl.ts states outright that it ignores the field.
+export function resolveMailboxPassword(): string {
+  return '';
 }

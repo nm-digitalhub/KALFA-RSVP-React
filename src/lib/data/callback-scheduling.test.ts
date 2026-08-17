@@ -4,7 +4,6 @@ vi.mock('server-only', () => ({}));
 vi.mock('@/lib/supabase/admin', () => ({ createAdminClient: vi.fn() }));
 vi.mock('@/lib/alerts/slack', () => ({ sendSlackAlert: vi.fn() }));
 vi.mock('@/lib/url', () => ({ getAppOrigin: vi.fn(async () => 'https://beta.kalfa.me') }));
-vi.mock('@/lib/exchange-ews/crypto', () => ({ decryptCredential: vi.fn(() => 'pw') }));
 vi.mock('@/lib/exchange-ews/calendar-provider', () => ({
   calendarProvider: {
     getAvailability: vi.fn(),

@@ -867,12 +867,12 @@ async function main(): Promise<void> {
   // 24h remaining, so four chances a day means a renewal survives a full day of
   // worker downtime without intake ever lapsing.
   await boss.schedule(QUEUES.graphIntakeRenew, '23 */6 * * *', null, { tz: SCHEDULE_TZ });
-  // Every 10 minutes — a calendar event's start/end is minute-granular at
-  // best, and this is a remote NTLM/SOAP call per agent (buildService in
-  // ews-impl.ts opens a fresh session every time, no connection reuse), so a
-  // tighter tick would only mean more round trips against the same
-  // mailbox(es) for no material gain in freshness. Same cadence family as
-  // callbackScheduleSweep (also EWS, also */10).
+  // Every 10 minutes — a calendar event's start/end is minute-granular at best,
+  // so a tighter tick would only mean more remote Graph round trips against the
+  // same mailbox(es) for no material gain in freshness. (Pre-Graph this also
+  // bought a saved NTLM/SOAP handshake per agent; Graph caches its token, so
+  // freshness is now the whole argument.) Same cadence family as
+  // callbackScheduleSweep (also calendar-backed, also */10).
   await boss.schedule(QUEUES.calendarPresenceSync, '*/10 * * * *');
 
   console.log('[kalfa-worker] started — queues + schedules up');

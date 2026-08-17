@@ -1,14 +1,20 @@
 import 'server-only';
 
-// Plain data-shape contracts for the Exchange EWS integration. No import of
-// `ews-javascript-api` or `@ewsjs/xhr` here — those are confined to
-// ./ews-impl.ts, the only file in this directory allowed to touch them
-// (plan §2, plans/exchange-ews-stage1.md).
+// Plain data-shape contracts for the calendar integration. These are pure
+// shapes: no provider SDK is imported here, so a caller can describe a
+// connection without pulling in an implementation. (Until the Graph cutover the
+// rule here named ./ews-impl.ts as the one file allowed to touch
+// `ews-javascript-api` / `@ewsjs/xhr`; both that file and both packages are
+// gone, so the rule now has nothing left to constrain.)
 
-// 'certificate' describes how the ACTIVE backend authenticates: Graph signs in
-// once as the application with the app certificate, so there is no per-mailbox
-// method and no password. Added alongside the EWS pair rather than replacing
-// them — the EWS path is still available and still uses NTLM.
+// 'certificate' is how the ACTIVE backend authenticates: Graph signs in once as
+// the application with the app certificate, so there is no per-mailbox method
+// and no password — graph-impl.ts ignores `authMethod` and `password` outright.
+//
+// 'ntlm' and 'basic' are retained ONLY because stored rows still carry them
+// (the live exchange_connections row reads 'ntlm'). They are inert: no code
+// path branches on them to reach a different backend, because there is no other
+// backend left. Do not read a value here as evidence that EWS still works.
 export type ExchangeAuthMethod = 'ntlm' | 'basic' | 'certificate';
 
 // Decrypted, ready-to-use connection config for a single EWS call. Built by

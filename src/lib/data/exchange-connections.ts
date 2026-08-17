@@ -12,8 +12,6 @@ import {
 } from '@/lib/auth/dal';
 import { getCallbackRequestByCalendarItem } from '@/lib/data/admin/callbacks';
 import { logActivity } from '@/lib/data/activity';
-import { CURRENT_ENCRYPTION_KEY_VERSION, encryptCredential } from '@/lib/exchange-ews/crypto';
-import { selectedCalendarProvider } from '@/lib/exchange-ews/provider-selection';
 import { resolveMailboxPassword } from '@/lib/exchange-ews/mailbox-credential';
 import { calendarProvider } from '@/lib/exchange-ews/calendar-provider';
 import type {
@@ -180,10 +178,6 @@ export async function createExchangeConnection(input: {
     orgId = orgContext.activeOrgId;
   }
 
-  // Only the EWS path stores a secret, because only NTLM has anything to do
-  // with one. Resolved once here so the revive and insert paths below cannot
-  // drift apart.
-  const needsCredential = selectedCalendarProvider() === 'ews';
 
   // Reconnect flow (MEASURED gap, 27.07 owner screenshot): revoke is a
   // soft-disconnect that keeps the row, so the unique (user_id, mailbox_email)
@@ -203,25 +197,15 @@ export async function createExchangeConnection(input: {
     if (existing.status !== 'revoked') {
       return { ok: false, error: 'תיבת הדואר הזו כבר מחוברת לחשבון שלכם.' };
     }
-    // Same rule as the fresh-insert path below: a revived connection stores a
-    // secret only when EWS is the provider that would use one. Reviving under
-    // Graph must not carry the old row's NTLM shape back in.
-    if (needsCredential && !input.password) {
-      return { ok: false, error: 'חיבור במצב EWS מחייב סיסמת תיבה.' };
-    }
-    const revived =
-      needsCredential && input.password
-        ? encryptCredential(input.password, existing.id, user.id)
-        : null;
     const { error: reviveError } = await admin
       .from('exchange_connections')
       .update({
         org_id: orgId,
-        auth_method: needsCredential ? 'ntlm' : 'certificate',
-        credential_ciphertext: revived?.ciphertext ?? null,
-        credential_iv: revived?.iv ?? null,
-        credential_auth_tag: revived?.authTag ?? null,
-        encryption_key_version: revived?.keyVersion ?? CURRENT_ENCRYPTION_KEY_VERSION,
+        auth_method: 'certificate',
+        credential_ciphertext: null,
+        credential_iv: null,
+        credential_auth_tag: null,
+        encryption_key_version: 1,
         status: 'pending',
         last_verified_at: null,
         last_error: null,
@@ -238,28 +222,21 @@ export async function createExchangeConnection(input: {
 
   const connectionId = randomUUID();
 
-  // Under Graph the three credential columns stay NULL — permitted by the
-  // all-or-none constraint added in phase 1 — and auth_method finally states
-  // what is true instead of the literal 'ntlm' that used to be written
-  // regardless of which provider would ever read it.
-  if (needsCredential && !input.password) {
-    return { ok: false, error: 'חיבור במצב EWS מחייב סיסמת תיבה.' };
-  }
-  const encrypted =
-    needsCredential && input.password
-      ? encryptCredential(input.password, connectionId, user.id)
-      : null;
+  // No secret is stored, and none is needed: Graph authenticates with the
+  // application certificate. The three credential columns stay NULL — permitted
+  // by the all-or-none constraint — and auth_method finally states what is true
+  // instead of the literal 'ntlm' that used to be written regardless.
 
   const { error } = await admin.from('exchange_connections').insert({
     id: connectionId,
     user_id: user.id,
     org_id: orgId,
     mailbox_email: input.mailboxEmail,
-    auth_method: needsCredential ? 'ntlm' : 'certificate',
-    credential_ciphertext: encrypted?.ciphertext ?? null,
-    credential_iv: encrypted?.iv ?? null,
-    credential_auth_tag: encrypted?.authTag ?? null,
-    encryption_key_version: encrypted?.keyVersion ?? CURRENT_ENCRYPTION_KEY_VERSION,
+    auth_method: 'certificate',
+    credential_ciphertext: null,
+    credential_iv: null,
+    credential_auth_tag: null,
+    encryption_key_version: 1,
     status: 'pending',
   });
 
@@ -311,16 +288,7 @@ async function loadOwnedConnectionConfig(
 
   let password: string;
   try {
-    password = resolveMailboxPassword(
-      {
-        ciphertext: row.credential_ciphertext,
-        iv: row.credential_iv,
-        authTag: row.credential_auth_tag,
-        keyVersion: row.encryption_key_version,
-      },
-      row.id,
-      row.user_id,
-    );
+    password = resolveMailboxPassword();
   } catch {
     // Fail closed — never fall back to a default or skip the check (plan §4).
     return { ok: false, message: 'פענוח פרטי החיבור נכשל' };

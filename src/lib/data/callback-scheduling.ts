@@ -87,16 +87,7 @@ async function loadBusinessConnection(
   const row = data[0];
   let password: string;
   try {
-    password = resolveMailboxPassword(
-      {
-        ciphertext: row.credential_ciphertext,
-        iv: row.credential_iv,
-        authTag: row.credential_auth_tag,
-        keyVersion: row.encryption_key_version,
-      },
-      row.id,
-      row.user_id,
-    );
+    password = resolveMailboxPassword();
   } catch {
     // Fail closed, exactly as the request-bound loader does.
     return { ok: false, reason: 'decrypt_failed' };

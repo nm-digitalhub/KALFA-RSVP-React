@@ -122,3 +122,8 @@ __pycache__/
 # log lines. Downloading one is a normal diagnostic step; committing one
 # publishes a third party's phone number and what they said on the phone.
 /session-*.log
+
+# Debug downloads of DEPLOYED VoxEngine scenarios (npm run voximplant -- scenario --id N).
+# Snapshots of what the platform is running, not source — the source of truth is
+# voxfiles/scenarios/src/. Committing them would create a second, silently stale copy.
+scenario-*.deployed.js

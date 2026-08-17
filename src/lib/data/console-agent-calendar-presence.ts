@@ -31,15 +31,17 @@ import type { ExchangeConnectionConfig } from '@/lib/exchange-ews/types';
 // (the owner) — the join is written to generalize to N agents regardless,
 // which is the whole point of the feature.
 //
-// NOT GetUserAvailability: MEASURED dead on this IONOS mailbox (HTTP 500 /
-// ErrorInternalServerError 127 — ews-impl.ts:686-711). Uses
-// calendarProvider.getAvailability(), which is itself calendar-derived
-// (listAppointments + LegacyFreeBusyStatus, filtering out 'free') — the same
-// working path exchange-availability.ts's getMyPresence() already uses.
+// NOT a dedicated availability/free-busy service call: it was MEASURED dead on
+// the old IONOS mailbox (HTTP 500 / ErrorInternalServerError 127) back when the
+// backend was EWS. That specific measurement is now history — the mailbox moved
+// to Microsoft 365 — but the shape it forced is still what this uses and still
+// the right one: calendarProvider.getAvailability() derives presence from the
+// calendar itself, the same working path exchange-availability.ts's
+// getMyPresence() uses. Re-measure before reaching for a free-busy API again.
 //
-// xmlSafe() is NOT relevant here: every EWS call below is a read
-// (getAvailability), so no string from this module is ever written into a
-// SOAP request body.
+// The xmlSafe() caveat that used to live here is gone with EWS: Graph speaks
+// JSON, so there is no SOAP body for a string to escape into. Every call below
+// is a read regardless.
 
 type AdminClient = ReturnType<typeof createAdminClient>;
 
@@ -92,9 +94,12 @@ async function listAgentsWithVerifiedExchangeConnection(
 
 // Narrow window on purpose: this is an unattended cron (every 10 minutes,
 // see worker/main.ts), not an interactive read with a user waiting, but it
-// is still a remote NTLM/SOAP round trip against a shared mailbox
-// (buildService in ews-impl.ts builds a fresh service per call — no
-// connection reuse). getMyPresence() reads -24h/+12h because it also needs
+// is still a remote Graph round trip per agent against a shared mailbox. (That
+// used to be the stronger argument: under EWS each call paid a fresh NTLM/SOAP
+// handshake. Graph holds one module-level credential and MSAL caches the token,
+// so a tick is cheaper now — the cadence stays because calendar times are
+// minute-granular at best, not because the call is expensive.)
+// getMyPresence() reads -24h/+12h because it also needs
 // to RECONCILE exchange_availability_blocks rows; this sync has no such
 // bookkeeping to reconcile, so it only needs enough range to find the
 // window presently in effect (plus a short look-back in case the tick lands
@@ -111,16 +116,7 @@ async function syncOneAgent(
 
   let password: string;
   try {
-    password = resolveMailboxPassword(
-      {
-        ciphertext: candidate.credentialCiphertext,
-        iv: candidate.credentialIv,
-        authTag: candidate.credentialAuthTag,
-        keyVersion: candidate.encryptionKeyVersion,
-      },
-      candidate.connectionId,
-      candidate.agentId,
-    );
+    password = resolveMailboxPassword();
   } catch {
     // Fail closed on the sync bookkeeping ONLY — busy_until/show_as are
     // deliberately left out of this payload so a decrypt failure can never

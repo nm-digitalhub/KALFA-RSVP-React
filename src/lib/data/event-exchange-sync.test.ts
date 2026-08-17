@@ -6,7 +6,6 @@ vi.mock('@/lib/data/activity', () => ({ logActivity: vi.fn() }));
 vi.mock('@/lib/url', () => ({
   getAppUrl: vi.fn(async (path: string) => `https://beta.kalfa.me${path}`),
 }));
-vi.mock('@/lib/exchange-ews/crypto', () => ({ decryptCredential: vi.fn(() => 'pw') }));
 vi.mock('@/lib/exchange-ews/calendar-provider', () => ({
   calendarProvider: {
     getAppointment: vi.fn(),

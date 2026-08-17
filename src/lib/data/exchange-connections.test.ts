@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi, beforeEach } from 'vitest';
 
 vi.mock('server-only', () => ({}));
 vi.mock('@/lib/supabase/admin', () => ({ createAdminClient: vi.fn() }));
@@ -8,27 +8,12 @@ vi.mock('@/lib/auth/dal', () => ({
 }));
 vi.mock('@/lib/data/activity', () => ({ logActivity: vi.fn() }));
 vi.mock('@/lib/data/orgs', () => ({ getOrgContext: vi.fn(async () => ({ activeOrgId: null })) }));
-vi.mock('@/lib/exchange-ews/crypto', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('@/lib/exchange-ews/crypto')>();
-  return {
-    ...actual,
-    encryptCredential: vi.fn(() => ({
-      ciphertext: 'ct',
-      iv: 'iv',
-      authTag: 'tag',
-      keyVersion: 1,
-    })),
-  };
-});
 
 import { createAdminClient } from '@/lib/supabase/admin';
-import { encryptCredential } from '@/lib/exchange-ews/crypto';
 import { createExchangeConnection } from '@/lib/data/exchange-connections';
 
 type Row = Record<string, unknown>;
 
-// Two awaited chains: the app_settings mode read, then the existing-row lookup.
-// Both resolve empty so the fresh-insert path runs.
 function mockAdmin(inserts: Row[]) {
   const chain: Record<string, unknown> = {
     insert(row: Row) {
@@ -46,27 +31,25 @@ function mockAdmin(inserts: Row[]) {
   } as unknown as ReturnType<typeof createAdminClient>);
 }
 
-const original = process.env.EXCHANGE_PROVIDER;
 beforeEach(() => vi.clearAllMocks());
-afterEach(() => {
-  if (original === undefined) delete process.env.EXCHANGE_PROVIDER;
-  else process.env.EXCHANGE_PROVIDER = original;
-});
 
-// This is a credential-COLLECTING entry point reachable from a live admin form,
-// so what it does with a secret is worth pinning precisely.
-describe('createExchangeConnection — the credential is provider-conditional', () => {
-  it('stores NO secret under graph, and says so in auth_method', async () => {
-    delete process.env.EXCHANGE_PROVIDER; // graph is the default
+// This is a credential-COLLECTING entry point reachable from a live admin form
+// at /admin/settings, so what it does with a secret is worth pinning exactly.
+//
+// It used to demand a mailbox password, encrypt it, and store it forever — for a
+// connection Graph authenticates with the application certificate and which
+// never read the stored value. With the EWS backend removed there is no longer
+// any provider that wants one, so the honest answer is that nothing is stored.
+describe('createExchangeConnection', () => {
+  it('stores NO credential, and says certificate in auth_method', async () => {
     const inserts: Row[] = [];
     mockAdmin(inserts);
 
     const res = await createExchangeConnection({ mailboxEmail: 'office@kalfa.me' });
 
     expect(res.ok).toBe(true);
-    // Never called: nothing should encrypt a secret that authenticates nothing.
-    expect(encryptCredential).not.toHaveBeenCalled();
     expect(inserts[0]).toMatchObject({
+      mailbox_email: 'office@kalfa.me',
       auth_method: 'certificate',
       credential_ciphertext: null,
       credential_iv: null,
@@ -74,47 +57,18 @@ describe('createExchangeConnection — the credential is provider-conditional', 
     });
   });
 
-  // Even if a password is somehow posted, Graph has no use for it — storing it
-  // anyway would recreate exactly the situation this removes.
-  it('ignores a password that arrives anyway under graph', async () => {
-    delete process.env.EXCHANGE_PROVIDER;
+  // Nothing should be persisted even if a password reaches the action — a stale
+  // form, a replayed POST, a client that kept the old field. Storing it would
+  // recreate precisely the surface this removed.
+  it('persists nothing when a password arrives anyway', async () => {
     const inserts: Row[] = [];
     mockAdmin(inserts);
 
     await createExchangeConnection({ mailboxEmail: 'office@kalfa.me', password: 'hunter2' });
 
-    expect(encryptCredential).not.toHaveBeenCalled();
-    expect(inserts[0].credential_ciphertext).toBeNull();
-  });
-
-  it('still stores an encrypted secret under ews, where NTLM needs one', async () => {
-    process.env.EXCHANGE_PROVIDER = 'ews';
-    const inserts: Row[] = [];
-    mockAdmin(inserts);
-
-    const res = await createExchangeConnection({
-      mailboxEmail: 'office@kalfa.me',
-      password: 'hunter2',
-    });
-
-    expect(res.ok).toBe(true);
-    expect(encryptCredential).toHaveBeenCalledOnce();
-    expect(inserts[0]).toMatchObject({
-      auth_method: 'ntlm',
-      credential_ciphertext: 'ct',
-    });
-  });
-
-  // The requirement moved from the form schema to here, because only here is the
-  // active provider known. It must still be enforced.
-  it('refuses under ews when no password was supplied', async () => {
-    process.env.EXCHANGE_PROVIDER = 'ews';
-    const inserts: Row[] = [];
-    mockAdmin(inserts);
-
-    const res = await createExchangeConnection({ mailboxEmail: 'office@kalfa.me' });
-
-    expect(res.ok).toBe(false);
-    expect(inserts).toHaveLength(0);
+    const row = inserts[0] as Record<string, unknown>;
+    expect(row.credential_ciphertext).toBeNull();
+    // The password must not have leaked into any other column either.
+    expect(JSON.stringify(row)).not.toContain('hunter2');
   });
 });

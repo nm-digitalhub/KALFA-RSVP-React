@@ -103,8 +103,6 @@ const nextConfig: NextConfig = {
     'puppeteer',
     'pg-boss',
     '@google-analytics/data',
-    'ews-javascript-api',
-    '@ewsjs/xhr',
   ],
   async headers() {
     return [

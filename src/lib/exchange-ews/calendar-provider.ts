@@ -1,22 +1,29 @@
 import 'server-only';
 
-import { ewsProvider } from './ews-impl';
 import { graphProvider } from './graph-impl';
 import type { ExchangeCalendarProvider, ExchangeResult } from './provider';
 
 // The single place that decides WHICH calendar backend the app talks to.
 //
 // Every caller outside src/lib/exchange-ews/ must import `calendarProvider`
-// from here — never ./ews-impl or ./graph-impl directly. That is what makes
-// the cutover (and the rollback) a config change instead of a deploy.
+// from here — never ./graph-impl directly. That is what made the cutover a
+// config change instead of a deploy, and it is what would keep a future second
+// backend equally cheap to introduce.
 //
 // Selection is by environment variable rather than a DB column so that
 // switching back does not depend on the database being reachable — the most
 // likely moment to need a rollback is the moment something is already broken.
 //
 //   EXCHANGE_PROVIDER=graph   Microsoft 365 via Graph (default)
-//   EXCHANGE_PROVIDER=ews     legacy IONOS Hosted Exchange via EWS
 //   EXCHANGE_PROVIDER=off     every call fails fast, nothing is contacted
+//
+// `ews` is gone. It was kept as a no-deploy rollback after the cutover, and
+// removed once that rollback stopped being worth its cost: `ews-javascript-api`
+// was imported at THIS module's top level, so it and its vulnerable transitive
+// @azure/msal-node loaded into every server start — 435ms and three moderate
+// advisories — for a path no request took. The rollback it bought was already
+// degraded: every stored calendar id is Graph-format, so flipping back would
+// have stranded them exactly as the forward move stranded the EWS ones.
 //
 // The SELECTION itself lives in ./provider-selection, which pulls in neither
 // implementation — so a caller that only needs to know which backend is active
@@ -53,8 +60,6 @@ const offProvider: ExchangeCalendarProvider = {
 // holding a stale reference.
 function active(): ExchangeCalendarProvider {
   switch (selectedCalendarProvider()) {
-    case 'ews':
-      return ewsProvider;
     case 'off':
       return offProvider;
     default:

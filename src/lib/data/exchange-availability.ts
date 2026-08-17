@@ -147,9 +147,11 @@ export async function getMyPresence(): Promise<PresenceSnapshot> {
     if (!loaded.ok) return free;
 
     const now = new Date();
-    // Read the calendar directly (not the availability service — it answers
-    // 500 on this hosting, see ews-impl). One read serves both purposes:
-    // deciding presence AND reconciling our rows against reality.
+    // Read the calendar directly rather than a free-busy service: that service
+    // answered 500 on the old EWS hosting, and the calendar read has served
+    // both purposes ever since — deciding presence AND reconciling our rows
+    // against reality. The 500 is history (the mailbox is on Graph now); the
+    // one-read-serves-both property is why this stayed.
     const result = await calendarProvider.listAppointments(loaded.config, {
       start: new Date(now.getTime() - 24 * 60 * 60_000),
       end: new Date(now.getTime() + 12 * 60 * 60_000),
