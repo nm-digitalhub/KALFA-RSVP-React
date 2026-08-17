@@ -330,18 +330,46 @@ export type ConsoleTransferBody = z.infer<typeof consoleTransferBodySchema>;
 //    POST /api/console-calls/[id]/conference            (plan stage 2)
 // ---------------------------------------------------------------------------
 //
-// Same shape and same "browser names the target agent only" discipline as
-// consoleTransferBodySchema above — kept as its own named schema (not a
-// reused alias) so each route's contract is independently documented, matching
-// this file's own per-route numbering convention.
-export const consoleConsultBodySchema = z.strictObject({
-  to_agent_id: z.string().uuid(),
-});
+// A UNION, unlike transfer above: consult and conference may reach an agent OR an
+// outside phone number (owner request, 17.8 — "לא קיימת האפשרות להוסיף לוועידה/
+// להוציא שיחת התייעצות למספר נייד"). The person an agent needs mid-call is often
+// not on the console at all: a manager, a supplier, the event owner.
+//
+// `to_phone` is the ONE place in this file where the client names a raw phone
+// number, and it is a deliberate, narrow exception to dial-intent's "the browser
+// never names a number" rule rather than an oversight of it. That rule protects
+// GUEST data — dial-intent resolves a guest record server-side so a browser can
+// never enumerate guest phones. Here the number is the caller's own input about a
+// third party we hold no record of, so there is nothing to resolve it FROM; the
+// rule cannot apply, and pretending otherwise would just mean the feature does not
+// exist.
+//
+// What replaces it is resolveExternalDialTarget (console-calls.ts), which every
+// route using this schema must run: E.164 validation, a region gate, a DNC check
+// and a per-agent rate limit. Zod's job here stops at "this is a plausible dialable
+// string of sane length" — the authority is that function, never this shape.
+//
+// Blind TRANSFER deliberately keeps agents only. Transfer hands the customer over
+// and drops this agent from the call entirely; doing that to an unverified outside
+// number would leave a KALFA customer alone on a line with someone the platform
+// has no record of, and nobody left who could take the call back.
+const externalPhoneField = z
+  .string()
+  .trim()
+  .min(7)
+  .max(20)
+  .regex(/^\+?[0-9\-\s()]+$/, 'phone_shape');
+
+export const consoleConsultBodySchema = z.union([
+  z.strictObject({ to_agent_id: z.string().uuid() }),
+  z.strictObject({ to_phone: externalPhoneField }),
+]);
 export type ConsoleConsultBody = z.infer<typeof consoleConsultBodySchema>;
 
-export const consoleConferenceBodySchema = z.strictObject({
-  to_agent_id: z.string().uuid(),
-});
+export const consoleConferenceBodySchema = z.union([
+  z.strictObject({ to_agent_id: z.string().uuid() }),
+  z.strictObject({ to_phone: externalPhoneField }),
+]);
 export type ConsoleConferenceBody = z.infer<typeof consoleConferenceBodySchema>;
 
 // ---------------------------------------------------------------------------

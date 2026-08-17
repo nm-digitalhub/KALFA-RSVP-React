@@ -9,6 +9,7 @@ import {
   getConsoleCallSessionUrls,
   LIVE_CUSTOMER_CALL_KINDS,
   recordConsoleConferenceAudit,
+  resolveExternalDialTarget,
   resolveTransferTarget,
 } from '@/lib/data/console-calls';
 import { consoleConferenceBodySchema } from '@/lib/validation/console-calls';
@@ -78,7 +79,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   }
   const parsed = consoleConferenceBodySchema.safeParse(parsedJson);
   if (!parsed.success) return json({ error: 'גוף הבקשה אינו תקין' }, 400);
-  const { to_agent_id: toAgentId } = parsed.data;
+  const body = parsed.data;
 
   const call = await getConsoleCallById(callId);
   if (!call) return json({ error: 'שיחה לא נמצאה' }, 404);
@@ -89,15 +90,33 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     return json({ error: 'השיחה אינה מחוברת כעת' }, 409);
   }
 
-  const target = await resolveTransferTarget(toAgentId, ctx.userId);
-  if (!target.ok) {
-    const messages: Record<typeof target.reason, string> = {
-      self: 'לא ניתן לצרף את עצמך',
-      not_found: 'הנציג המבוקש לא נמצא',
-      not_provisioned: 'לנציג המבוקש אין זהות טלפוניה במוקד',
-      not_ready: 'הנציג המבוקש אינו זמין כעת',
-    };
-    return json({ error: messages[target.reason] }, 409);
+  // Two kinds of target, two authorities — see consult/route.ts for the same
+  // split and the reasoning behind resolveExternalDialTarget's gate order.
+  let payload: { vox_username: string } | { phone: string };
+  if ('to_agent_id' in body) {
+    const target = await resolveTransferTarget(body.to_agent_id, ctx.userId);
+    if (!target.ok) {
+      const messages: Record<typeof target.reason, string> = {
+        self: 'לא ניתן לצרף את עצמך',
+        not_found: 'הנציג המבוקש לא נמצא',
+        not_provisioned: 'לנציג המבוקש אין זהות טלפוניה במוקד',
+        not_ready: 'הנציג המבוקש אינו זמין כעת',
+      };
+      return json({ error: messages[target.reason] }, 409);
+    }
+    payload = { vox_username: target.voxUsername };
+  } else {
+    const external = await resolveExternalDialTarget(body.to_phone, ctx.userId);
+    if (!external.ok) {
+      const messages: Record<typeof external.reason, string> = {
+        invalid: 'מספר הטלפון אינו תקין',
+        not_allowed_country: 'ניתן לחייג למספרים ישראליים בלבד',
+        dnc: 'המספר מופיע ברשימת החסומים',
+        rate_limited: 'בוצעו יותר מדי חיוגים החוצה. נסו שוב בעוד זמן מה.',
+      };
+      return json({ error: messages[external.reason] }, external.reason === 'rate_limited' ? 429 : 409);
+    }
+    payload = { phone: external.phone };
   }
 
   const sessionUrls = await getConsoleCallSessionUrls(callId);
@@ -111,7 +130,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   const envelope: SessionCommandEnvelope = {
     command: 'conference_add',
     request_id: requestId,
-    payload: { vox_username: target.voxUsername },
+    payload,
   };
 
   const delivery = await postCommandToSession(sessionUrl, envelope);
@@ -121,7 +140,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
 
   await recordConsoleConferenceAudit({
     fromAgentId: ctx.userId,
-    toAgentId,
+    ...('to_agent_id' in body ? { toAgentId: body.to_agent_id } : { externalTarget: true }),
     consoleCallId: callId,
     eventId: call.eventId,
     requestId,
@@ -129,5 +148,16 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
 
   // Delivered; NOT confirmed. The scenario's own conference_joined /
   // conference_failed report is the truth the panel must watch.
-  return json({ conferencing: true, request_id: requestId, to_agent_id: toAgentId }, 202);
+  //
+  // The phone number is never echoed back — the response names the KIND of target
+  // accepted, so a response body cannot become a second copy of a dialable number.
+  return json(
+    {
+      conferencing: true,
+      request_id: requestId,
+      target: 'vox_username' in payload ? 'agent' : 'external',
+      ...('to_agent_id' in body ? { to_agent_id: body.to_agent_id } : {}),
+    },
+    202,
+  );
 }

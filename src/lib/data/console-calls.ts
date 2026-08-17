@@ -8,6 +8,7 @@ import { isDncListed } from '@/lib/data/outreach-engine';
 import { isPastEventDay } from '@/lib/data/event-date';
 import { buildJewishCalendar } from '@/lib/outreach/jewish-calendar';
 import { safeTokenEqual, sha256Hex } from '@/lib/security/token-compare';
+import { rateLimit } from '@/lib/security/rate-limit';
 import { AGENT_STATUS_FRESHNESS_MS } from '@/lib/console/presence';
 import { sendPushToUser } from '@/lib/data/push-delivery';
 import type { Database } from '@/lib/supabase/types';
@@ -1146,6 +1147,84 @@ export async function resolveTransferTarget(
   return { ok: true, voxUsername: agent.vox_username };
 }
 
+/**
+ * Countries an agent may dial into from a live call, as E.164 prefixes.
+ *
+ * Israel only, and this is the single most effective control on the feature it
+ * guards. The attack it exists for is IRSF — international revenue share fraud, the
+ * outbound mirror of the wangiri flood this account measured on 17.8 (1,875 calls,
+ * $13.41, over 4.5 months). There the attacker made US dial THEM; an endpoint that
+ * dials any number on an agent's say-so is the same economics with the direction
+ * reversed, and a leaked token or a stolen unlocked phone is all it needs. The
+ * payload is always a premium-rate range in a country nobody here has business
+ * calling, so refusing those costs this product nothing: KALFA is a B2C Israeli
+ * event platform and the manager, supplier or event owner an agent conferences in
+ * has an Israeli number.
+ *
+ * A CONSTANT, not an app_settings row, and deliberately so despite this codebase's
+ * "no hardcoded business facts" rule. That rule is about facts the owner changes —
+ * prices, channels, policy. This is a security boundary, and putting it in a table
+ * would make widening it a data edit rather than a reviewed code change. When a real
+ * need for another country appears, adding it here is one line and leaves a diff.
+ */
+const EXTERNAL_DIAL_ALLOWED_PREFIXES = ['+972'] as const;
+
+/** Per-agent ceiling on outward consult/conference legs. */
+const EXTERNAL_DIAL_RATE = { limit: 10, windowMs: 60 * 60 * 1000 } as const;
+
+export type ExternalDialResolution =
+  | { ok: true; phone: string }
+  | { ok: false; reason: 'invalid' | 'not_allowed_country' | 'dnc' | 'rate_limited' };
+
+/**
+ * Validates and clears an operator-typed phone number for a consult or conference
+ * leg. This function, not the Zod schema, is the authority on whether a number may
+ * be dialled.
+ *
+ * Order is chosen so the cheapest and most decisive checks run first, and so a
+ * caller probing the endpoint learns as little as possible per attempt:
+ *
+ *   1. E.164 normalization (libphonenumber) — anything unparsable stops here.
+ *   2. Country allowlist — see EXTERNAL_DIAL_ALLOWED_PREFIXES.
+ *   3. Rate limit, per AGENT and before the DNC query, so a token being used to
+ *      enumerate the DNC list runs out of attempts rather than database round
+ *      trips.
+ *   4. DNC. Applied even though this is an operational internal call rather than
+ *      marketing: the number an agent types may well be a guest's, we cannot tell
+ *      from the digits alone, and a person who asked never to be called by this
+ *      platform has not consented to being conferenced into a call either.
+ *
+ * The raw number is never logged by this function or its callers — it travels to
+ * the scenario in the command envelope and nowhere else.
+ */
+export async function resolveExternalDialTarget(
+  rawPhone: string,
+  requestingAgentId: string,
+): Promise<ExternalDialResolution> {
+  const phone = normalizePhone(rawPhone);
+  if (!phone) return { ok: false, reason: 'invalid' };
+
+  if (!EXTERNAL_DIAL_ALLOWED_PREFIXES.some((p) => phone.startsWith(p))) {
+    return { ok: false, reason: 'not_allowed_country' };
+  }
+
+  if (!rateLimit(`console-external-dial:${requestingAgentId}`, EXTERNAL_DIAL_RATE).allowed) {
+    return { ok: false, reason: 'rate_limited' };
+  }
+
+  // Fail CLOSED on a DNC lookup error, unlike most best-effort checks in this file:
+  // isDncListed already swallows its own errors to `false`, so this call cannot
+  // distinguish "not listed" from "could not check" — which is why the DNC list is
+  // the last gate rather than the only one, and why the country allowlist above
+  // carries the weight it does.
+  if (await isDncListed(phone)) return { ok: false, reason: 'dnc' };
+
+  return { ok: true, phone };
+}
+
+/** Audit action for a consult/conference leg placed to a number outside the console. */
+export const CONSOLE_EXTERNAL_DIAL_AUDIT_ACTION = 'console_call.external_dial';
+
 // Mirrors CONSOLE_DIAL_AUDIT_ACTION below — direct service-role activity_log
 // insert, best-effort, non-PII (identifiers + a purpose code only).
 export const CONSOLE_TRANSFER_AUDIT_ACTION = 'console_call.transfer';
@@ -1185,11 +1264,16 @@ export const CONSOLE_CONFERENCE_AUDIT_ACTION = 'console_call.conference';
 
 export async function recordConsoleConsultAudit(input: {
   fromAgentId: string;
-  // Known (and worth recording) only on 'start' — the route resolves a real
-  // target agent there. 'cancel'/'complete' act on whatever consult the
-  // SCENARIO already has in flight, which the route never reads back from
-  // the DB, so there is no target to attribute at those two phases.
+  // Known (and worth recording) only on 'start', and only when the target was an
+  // AGENT — the route resolves a real one there. 'cancel'/'complete' act on
+  // whatever consult the SCENARIO already has in flight, which the route never
+  // reads back from the DB, so there is no target to attribute at those phases.
   toAgentId?: string;
+  // True when the target was a phone number outside the console. The NUMBER is
+  // deliberately not recorded: this log is identifiers and a purpose code, never
+  // PII (same rule as every other audit in this file). That an outward leg was
+  // placed, by whom, on which call, is the auditable fact.
+  externalTarget?: boolean;
   consoleCallId: string;
   eventId: string | null;
   requestId: string;
@@ -1204,6 +1288,7 @@ export async function recordConsoleConsultAudit(input: {
       meta: {
         console_call_id: input.consoleCallId,
         ...(input.toAgentId ? { to_agent_id: input.toAgentId } : {}),
+        ...(input.externalTarget ? { external_target: true } : {}),
         request_id: input.requestId,
         phase: input.phase,
       } as Database['public']['Tables']['activity_log']['Insert']['meta'],
@@ -1215,7 +1300,14 @@ export async function recordConsoleConsultAudit(input: {
 
 export async function recordConsoleConferenceAudit(input: {
   fromAgentId: string;
-  toAgentId: string;
+  /** Present when the third participant was an AGENT; absent for an outside number. */
+  toAgentId?: string;
+  /**
+   * True when the third participant was a phone number outside the console. The
+   * NUMBER is deliberately not recorded — identifiers and a purpose code only,
+   * the same rule every other audit in this file follows.
+   */
+  externalTarget?: boolean;
   consoleCallId: string;
   eventId: string | null;
   requestId: string;
@@ -1228,7 +1320,8 @@ export async function recordConsoleConferenceAudit(input: {
       action: CONSOLE_CONFERENCE_AUDIT_ACTION,
       meta: {
         console_call_id: input.consoleCallId,
-        to_agent_id: input.toAgentId,
+        ...(input.toAgentId ? { to_agent_id: input.toAgentId } : {}),
+        ...(input.externalTarget ? { external_target: true } : {}),
         request_id: input.requestId,
       } as Database['public']['Tables']['activity_log']['Insert']['meta'],
     });

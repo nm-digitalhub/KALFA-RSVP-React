@@ -37,6 +37,7 @@ import {
   offerCallbackForCallMeNow,
   recordConsoleCallSessionAccess,
   resolveDialTarget,
+  resolveExternalDialTarget,
   resolveTransferTarget,
   verifyDialToken,
   type DialTargetInput,
@@ -471,6 +472,83 @@ describe('findTransferTargets (17.8 — the console transfer picker)', () => {
     const targets = await findTransferTargets('me');
     expect(targets).toHaveLength(1);
     expect(targets[0].displayName).toContain('נציג');
+  });
+});
+
+// The gate chain behind consulting/conferencing a number outside the console.
+// This is the one place in the console where an agent's own typing becomes an
+// outbound PSTN call, so each gate gets a test — a hole here is billable and,
+// for the country allowlist specifically, is the control standing between a
+// leaked agent token and international revenue-share fraud.
+describe('resolveExternalDialTarget (17.8 — dialling out of a live call)', () => {
+  beforeEach(() => {
+    vi.mocked(isDncListed).mockResolvedValue(false);
+  });
+
+  it('accepts a normal Israeli mobile, normalized to E.164', async () => {
+    // Typed the way a human types it, not the way the DB stores it.
+    await expect(resolveExternalDialTarget('054-123-4567', 'agent-1')).resolves.toEqual({
+      ok: true,
+      phone: '+972541234567',
+    });
+  });
+
+  it('refuses a number outside the allowed countries', async () => {
+    // A real, valid London number — NOT one of Ofcom's reserved drama ranges,
+    // which libphonenumber rejects outright and which would have made this test
+    // pass on 'invalid' while proving nothing about the country gate.
+    await expect(resolveExternalDialTarget('+442079460958', 'agent-1')).resolves.toEqual({
+      ok: false,
+      reason: 'not_allowed_country',
+    });
+  });
+
+  it('refuses an unparsable number before anything else runs', async () => {
+    await expect(resolveExternalDialTarget('not a phone', 'agent-1')).resolves.toEqual({
+      ok: false,
+      reason: 'invalid',
+    });
+    // The DNC list is never consulted for a number that cannot be dialled — the
+    // cheap check has to come first, or the endpoint becomes a lookup oracle.
+    expect(isDncListed).not.toHaveBeenCalled();
+  });
+
+  it('refuses a number on the DNC list', async () => {
+    vi.mocked(isDncListed).mockResolvedValue(true);
+    await expect(resolveExternalDialTarget('0541234567', 'agent-2')).resolves.toEqual({
+      ok: false,
+      reason: 'dnc',
+    });
+  });
+
+  it('rate-limits per agent, and does so BEFORE the DNC query', async () => {
+    const agent = `agent-rate-${Math.random().toString(36).slice(2)}`;
+    // The limit is 10/hour; the 11th must be refused.
+    for (let i = 0; i < 10; i += 1) {
+      await expect(resolveExternalDialTarget('0541234567', agent)).resolves.toMatchObject({ ok: true });
+    }
+    const dncCallsBefore = vi.mocked(isDncListed).mock.calls.length;
+
+    await expect(resolveExternalDialTarget('0541234567', agent)).resolves.toEqual({
+      ok: false,
+      reason: 'rate_limited',
+    });
+    // Ordering matters: a token being used to probe the DNC list has to run out
+    // of attempts rather than out of database round trips.
+    expect(vi.mocked(isDncListed).mock.calls.length).toBe(dncCallsBefore);
+  });
+
+  it('counts the limit per agent, not globally', async () => {
+    const busy = `agent-busy-${Math.random().toString(36).slice(2)}`;
+    const quiet = `agent-quiet-${Math.random().toString(36).slice(2)}`;
+    for (let i = 0; i < 10; i += 1) {
+      await resolveExternalDialTarget('0541234567', busy);
+    }
+    await expect(resolveExternalDialTarget('0541234567', busy)).resolves.toMatchObject({
+      reason: 'rate_limited',
+    });
+    // One agent exhausting their budget must not take the call floor with them.
+    await expect(resolveExternalDialTarget('0541234567', quiet)).resolves.toMatchObject({ ok: true });
   });
 });
 

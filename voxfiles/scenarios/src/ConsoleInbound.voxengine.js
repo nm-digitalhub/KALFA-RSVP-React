@@ -34,7 +34,9 @@
 //   Disconnected/Failed/PlaybackFinished/RecordStarted
 //   (~2540/2568/2586/2617/2657); VoxEngine.callUser(CallUserParameters)/
 //   sendMediaBetween(u1,u2)/getSecretValue(name)/terminate()
-//   (~13092/13391/13359/13419); Net.httpRequestAsync(url,options) (~8496);
+//   (~13092/13391/13359/13419); VoxEngine.callPSTN(number,callerid,params?)
+//   (~13055) — the consult/conference leg to a number outside the console;
+//   Net.httpRequestAsync(url,options) (~8496);
 //   VoiceList.Google.he_IL_Wavenet_A (same voice as RSVP.voxengine.js).
 //
 // CallUserParameters also inherits `displayName?: string` from
@@ -232,11 +234,15 @@ VoxEngine.addEventListener(AppEvents.Started, function (startedEvent) {
         terminated: false,
         globalTimer: null,
         // ── Stage 2 (consult-before-transfer) ────────────────────────────
-        consultTarget: null, // the Call object of the agent being consulted
-        consultTargetUsername: '', // stashed for consult_completed's report —
+        consultTarget: null, // the Call object of whoever is being consulted —
+        // a console agent OR an outside phone number (see dialCommandTarget).
+        consultTargetUsername: '', // the target's LABEL, stashed for
+        // consult_completed's report: a vox_username for an agent, the literal
+        // 'external' for a phone number, which is deliberately never the number
+        // itself (describeCommandTarget's own note covers why).
         // completeConsult()/cancelConsult() run from a LATER command-channel
-        // invocation than startConsult(), so its own `voxUsername` param is
-        // out of scope by then.
+        // invocation than startConsult(), so its own payload is out of scope
+        // by then.
         consulting: false, // true while dialing the consult target
         consultActive: false, // true once privately bridged with the operator
         consultTimer: null,
@@ -786,9 +792,12 @@ VoxEngine.addEventListener(AppEvents.Started, function (startedEvent) {
         reportEvent('consult_failed', { request_id: requestId, reason: why });
         log('consult [' + requestId + '] failed: ' + why);
     }
-    function startConsult(voxUsername, requestId) {
-        if (!voxUsername) {
-            log('consult_start [' + requestId + '] ignored — missing vox_username');
+    // [payload] names EITHER a console agent (vox_username) or an outside phone
+    // number, already validated and cleared server-side — see dialCommandTarget().
+    function startConsult(payload, requestId) {
+        var targetLabel = describeCommandTarget(payload);
+        if (targetLabel === '(none)') {
+            log('consult_start [' + requestId + '] ignored — no target in payload');
             return;
         }
         if (specialOpBusy()) {
@@ -800,7 +809,7 @@ VoxEngine.addEventListener(AppEvents.Started, function (startedEvent) {
             return;
         }
         state.consulting = true;
-        state.consultTargetUsername = voxUsername;
+        state.consultTargetUsername = targetLabel;
         // Hold FIRST (per the task's own ordering): the caller must never
         // hear the target ring or any part of the consultation.
         try {
@@ -810,9 +819,18 @@ VoxEngine.addEventListener(AppEvents.Started, function (startedEvent) {
             log('consult hold (stopMediaBetween) failed: ' + err);
         }
         startHoldAudio();
-        var target = VoxEngine.callUser(internalLegParams(voxUsername));
+        var target = dialCommandTarget(payload);
+        if (!target) {
+            // Unreachable given the guard above, but a null here would otherwise
+            // leave the caller on hold with no leg dialing and no way out.
+            state.consulting = false;
+            state.consultTargetUsername = '';
+            restoreCustomerBridge('consult target could not be dialed');
+            log('consult_start [' + requestId + '] aborted — target could not be dialed');
+            return;
+        }
         state.consultTarget = target;
-        reportEvent('consult_started', { request_id: requestId, target: voxUsername });
+        reportEvent('consult_started', { request_id: requestId, target: targetLabel });
         var timer = setTimeout(function () {
             failConsult(target, requestId, 'timeout');
         }, TRANSFER_TIMEOUT_MS);
@@ -1004,9 +1022,12 @@ VoxEngine.addEventListener(AppEvents.Started, function (startedEvent) {
         reportEvent('conference_failed', { request_id: requestId, reason: why });
         log('conference [' + requestId + '] failed: ' + why);
     }
-    function startConference(voxUsername, requestId) {
-        if (!voxUsername) {
-            log('conference_add [' + requestId + '] ignored — missing vox_username');
+    // [payload] names EITHER a console agent or an outside phone number — same
+    // contract as startConsult above.
+    function startConference(payload, requestId) {
+        var targetLabel = describeCommandTarget(payload);
+        if (targetLabel === '(none)') {
+            log('conference_add [' + requestId + '] ignored — no target in payload');
             return;
         }
         if (specialOpBusy()) {
@@ -1018,10 +1039,16 @@ VoxEngine.addEventListener(AppEvents.Started, function (startedEvent) {
             return;
         }
         state.conferencing = true;
-        state.conferenceTargetUsername = voxUsername;
-        var target = VoxEngine.callUser(internalLegParams(voxUsername));
+        state.conferenceTargetUsername = targetLabel;
+        var target = dialCommandTarget(payload);
+        if (!target) {
+            state.conferencing = false;
+            state.conferenceTargetUsername = '';
+            log('conference_add [' + requestId + '] aborted — target could not be dialed');
+            return;
+        }
         state.conferenceTarget = target;
-        reportEvent('conference_started', { request_id: requestId, target: voxUsername });
+        reportEvent('conference_started', { request_id: requestId, target: targetLabel });
         var timer = setTimeout(function () {
             failConference(target, requestId, 'timeout');
         }, TRANSFER_TIMEOUT_MS);
@@ -1071,7 +1098,7 @@ VoxEngine.addEventListener(AppEvents.Started, function (startedEvent) {
                 log('conference target disconnected: ' + safeStringify(ev));
                 teardownConference('target_left');
             });
-            reportEvent('conference_joined', { request_id: requestId, target: voxUsername });
+            reportEvent('conference_joined', { request_id: requestId, target: targetLabel });
             log('conference [' + requestId + '] joined — 3-way live');
         });
         target.addEventListener(CallEvents.Failed, function (ev) {
@@ -1107,8 +1134,7 @@ VoxEngine.addEventListener(AppEvents.Started, function (startedEvent) {
                 startTransfer(payload && payload.vox_username, rid);
             }
             else if (cmd === 'consult_start') {
-                var consultPayload = env && env.payload;
-                startConsult(consultPayload && consultPayload.vox_username, rid);
+                startConsult(env && env.payload, rid);
             }
             else if (cmd === 'consult_cancel') {
                 cancelConsult(rid);
@@ -1117,8 +1143,7 @@ VoxEngine.addEventListener(AppEvents.Started, function (startedEvent) {
                 completeConsult(rid);
             }
             else if (cmd === 'conference_add') {
-                var conferencePayload = env && env.payload;
-                startConference(conferencePayload && conferencePayload.vox_username, rid);
+                startConference(env && env.payload, rid);
             }
             else {
                 log('command unknown: ' + cmd + ' [' + rid + ']');
@@ -1306,6 +1331,45 @@ VoxEngine.addEventListener(AppEvents.Started, function (startedEvent) {
     // facts, and the alternative — the consulting agent's own identity — is not
     // something this scenario holds in a displayable form (state.agentUsername is a
     // vox username, not a person's name).
+    // Dials whoever a consult/conference command named: a console agent, or a phone
+    // number outside the console entirely (owner request, 17.8 — the person an agent
+    // needs mid-call is often a manager, a supplier or the event owner, none of whom
+    // is on the app).
+    //
+    // The server decides WHICH, and has already cleared it: an agent arrives as a
+    // resolved `vox_username`, an outside number as a normalized E.164 `phone` that
+    // passed a country allowlist, a per-agent rate limit and the DNC list
+    // (resolveExternalDialTarget). This function never validates and never chooses —
+    // it dials what it is handed, and returns null when handed neither, so a
+    // malformed command cannot silently place a call.
+    //
+    // callerid for the PSTN leg is our own DID, which is the correct value here and
+    // not the caller's: this leg is KALFA calling someone, so the number that must
+    // appear on their phone — and that they may call back — is ours. It is also the
+    // only real, rented, verified number this scenario can legitimately present
+    // outward (CallUserParameters.callerid's own rule about test numbers applies to
+    // callPSTN too).
+    function dialCommandTarget(payload) {
+        var voxUsername = payload && payload.vox_username;
+        if (voxUsername) {
+            return VoxEngine.callUser(internalLegParams(voxUsername));
+        }
+        var phone = payload && payload.phone;
+        if (phone) {
+            // No headers and no displayName: an outside phone is not a console
+            // device, there is nothing on the far end that reads either.
+            return VoxEngine.callPSTN(String(phone), state.called || 'kalfa-console');
+        }
+        return null;
+    }
+    // Describes a command target for a LOG line and a report. Never the number
+    // itself — an outward leg's destination is PII the moment it is a guest's, and
+    // this scenario cannot tell from the digits whether it is.
+    function describeCommandTarget(payload) {
+        if (payload && payload.vox_username) return String(payload.vox_username);
+        if (payload && payload.phone) return 'external';
+        return '(none)';
+    }
     function internalLegParams(voxUsername) {
         var params = {
             username: voxUsername,
