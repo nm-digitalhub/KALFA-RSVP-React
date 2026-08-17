@@ -18,6 +18,8 @@ vi.mock('@/lib/supabase/admin', () => ({
 
 import {
   isDestinationStreamClosedError,
+  isRouterStateParseError,
+  isClientDisconnectError,
   isUnknownServerActionError,
   onRequestError,
 } from './instrumentation';
@@ -101,6 +103,76 @@ describe('isDestinationStreamClosedError', () => {
   });
 });
 
+// Guards the ops-alert filter for Next's "router state header was sent but
+// could not be parsed" (E10) — a stale/foreign RSC request Next throws on
+// before any component renders, dominated by non-genuine traffic replaying a
+// captured `_rsc=` URL (see the doc comment on isRouterStateParseError).
+// Guards the ops-alert filter for a client that closed the socket mid-request.
+// MEASURED 2026-08-17: the alert fired 668ms after the native console wrote its own
+// `app.crash` line, i.e. the severed upload WAS the app dying — see the doc comment on
+// isClientDisconnectError.
+describe('isClientDisconnectError', () => {
+  it('matches by Node error code, the stable half of the contract', () => {
+    expect(isClientDisconnectError({ code: 'ECONNRESET', message: 'aborted' })).toBe(true);
+  });
+
+  it('matches by message alone when the code did not survive Next error handling', () => {
+    expect(isClientDisconnectError({ message: 'aborted' })).toBe(true);
+  });
+
+  it('matches on code alone even if the message was reworded by a future runtime', () => {
+    expect(isClientDisconnectError({ code: 'ECONNRESET', message: 'socket hang up' })).toBe(true);
+  });
+
+  // The point of the whole filter: a real server fault must still page. A route that
+  // throws while a client happens to be connected is not a disconnect.
+  it('does NOT match a genuine server error', () => {
+    expect(
+      isClientDisconnectError({ message: "Cannot read properties of undefined (reading 'x')" }),
+    ).toBe(false);
+  });
+
+  it('does NOT match other socket codes — only the client-went-away one', () => {
+    expect(isClientDisconnectError({ code: 'ETIMEDOUT', message: 'timeout' })).toBe(false);
+  });
+});
+
+describe('isRouterStateParseError', () => {
+  it('matches E10 (framework code) regardless of message', () => {
+    expect(isRouterStateParseError({ __NEXT_ERROR_CODE: 'E10', message: 'anything' })).toBe(true);
+  });
+
+  it('matches by exact message when the code is absent (forward-compat)', () => {
+    expect(
+      isRouterStateParseError({
+        message: 'The router state header was sent but could not be parsed.',
+      }),
+    ).toBe(true);
+  });
+
+  it('does NOT match a generic render error — real errors still alert', () => {
+    expect(
+      isRouterStateParseError({
+        __NEXT_ERROR_CODE: 'E999',
+        message: "Cannot read properties of undefined (reading 'x')",
+      }),
+    ).toBe(false);
+  });
+
+  it('does NOT match the sibling "too large" router-state error (E142)', () => {
+    expect(
+      isRouterStateParseError({
+        __NEXT_ERROR_CODE: 'E142',
+        message: 'The router state header was too large.',
+      }),
+    ).toBe(false);
+  });
+
+  it('handles a missing message and missing code safely', () => {
+    expect(isRouterStateParseError({})).toBe(false);
+  });
+});
+
 // The alert level is the actual behavior guests/ops feel: a benign unknown Server
 // Action must DOWNGRADE to info (no page), while a real error stays 'error'.
 describe('onRequestError alert level', () => {
@@ -137,6 +209,23 @@ describe('onRequestError alert level', () => {
     expect(sendSlackAlert.mock.calls[0][0]).toMatchObject({
       level: 'info',
       title: 'Client disconnected mid-stream (benign)',
+    });
+  });
+
+  it('downgrades a benign router-state-parse error to info', async () => {
+    await onRequestError(
+      {
+        name: 'Error',
+        __NEXT_ERROR_CODE: 'E10',
+        message: 'The router state header was sent but could not be parsed.',
+      } as never,
+      req,
+      ctx,
+    );
+    expect(sendSlackAlert).toHaveBeenCalledTimes(1);
+    expect(sendSlackAlert.mock.calls[0][0]).toMatchObject({
+      level: 'info',
+      title: 'Unparseable router state header (benign)',
     });
   });
 
@@ -216,6 +305,19 @@ describe('onRequestError writes ops_errors independent of Slack', () => {
   it('writes ops_errors for a benign downgraded destination-stream-closed error too', async () => {
     await onRequestError(
       { name: 'Error', message: 'The destination stream closed early.' } as never,
+      req,
+      ctx,
+    );
+    expect(opsErrorInsert).toHaveBeenCalledTimes(1);
+  });
+
+  it('writes ops_errors for a benign downgraded router-state-parse error too', async () => {
+    await onRequestError(
+      {
+        name: 'Error',
+        __NEXT_ERROR_CODE: 'E10',
+        message: 'The router state header was sent but could not be parsed.',
+      } as never,
       req,
       ctx,
     );

@@ -78,6 +78,63 @@ export function isDestinationStreamClosedError(error: { message?: string }): boo
   return error.message === 'The destination stream closed early.';
 }
 
+// "The router state header was sent but could not be parsed." — Next's own
+// throw (E10, node_modules/next/dist/server/app-render/parse-and-validate-
+// flight-router-state.js) when an RSC request's `Next-Router-State-Tree`
+// header fails JSON.parse or its superstruct schema. Next builds this header
+// from the CLIENT's own router state, so it fails when a stale/foreign client
+// sends one the current server no longer recognises — a bot or link-checker
+// replaying a captured `_rsc=` URL without a genuine Next.js router behind it,
+// or a tab that survives a deploy in a way `deploymentId` doesn't catch for
+// this particular header. Either way it is thrown before any component ever
+// renders (`parseRequestHeaders` runs ahead of the tree), so it is provably
+// not an app bug — there is no request data our own code touched yet.
+//
+// MEASURED 17.08 against ops_errors + the live Slack alert: every occurrence
+// in the last 2 days is route_path=/(public)/(site)/page, method=GET,
+// digest=null (consistent with the pre-render throw above), always in pairs
+// ~1s apart — the signature of a single non-browser client retrying, not
+// distinct real visitors. Same class of problem, same fix, as the two
+// predicates above: downgrade instead of drop, so ops keeps full visibility
+// via ops_errors (recordOpsError runs unconditionally, before this check)
+// without paging on every recurrence.
+export function isRouterStateParseError(error: {
+  message?: string;
+  __NEXT_ERROR_CODE?: string;
+}): boolean {
+  return (
+    error.__NEXT_ERROR_CODE === 'E10' ||
+    error.message === 'The router state header was sent but could not be parsed.'
+  );
+}
+
+// "aborted" with `code: 'ECONNRESET'` — Node's own error when the CLIENT closes the
+// socket while the server is still reading the request body. Same family as the two
+// predicates above: a fault in someone else's network, reported as ours.
+//
+// MEASURED 2026-08-17, and the correlation is what settles it. The native agent console
+// streams diagnostics to POST /api/agents/telemetry, and the alert fired at
+// 14:47:43.091 — 668ms after the device wrote its own `app.crash` line at 14:47:42.423.
+// The severed upload WAS the app dying mid-POST. Paging a human about it inverts cause
+// and effect: the actionable fault was on the phone, and the server did nothing wrong
+// except notice.
+//
+// Deliberately NOT narrowed to the telemetry route. Any endpoint that accepts a body
+// from a mobile client on cellular can see this — a tunnel dropping, a process killed,
+// a user walking into a lift — and a predicate that only recognised the one route we
+// happened to hit first would re-raise this alert from the next one.
+//
+// Matched on `code` FIRST and the message only as a fallback: `code` is Node's stable
+// contract, while "aborted" is a bare string that a future runtime could reword. Both
+// are checked because the object reaching onRequestError has already been through
+// Next's own error handling, which does not promise to preserve either.
+export function isClientDisconnectError(error: {
+  message?: string;
+  code?: string;
+}): boolean {
+  return error.code === 'ECONNRESET' || error.message === 'aborted';
+}
+
 // Global cap on ops_errors writes per minute — protects the DB from a true
 // fault-storm hammering it with inserts. Deliberately NOT a per-(route+error)
 // dedup like sendSlackAlert's: that dedup is exactly what makes ops_alerts an
@@ -124,7 +181,14 @@ async function recordOpsError(
 
 export const onRequestError: Instrumentation.onRequestError = async (err, request, context) => {
   if (process.env.NEXT_RUNTIME === 'edge') return;
-  const error = err as Error & { digest?: string; __NEXT_ERROR_CODE?: string };
+  // `code` is Node's own field on system errors (ECONNRESET and friends) — see
+  // isClientDisconnectError. Widened here rather than cast at the call site so every
+  // predicate below sees the same shape.
+  const error = err as Error & {
+    digest?: string;
+    __NEXT_ERROR_CODE?: string;
+    code?: string;
+  };
   // Benign, known-noisy patterns: DOWNGRADE to an info breadcrumb instead of
   // paging as a red error. Genuine render errors stay level 'error'. Order
   // matters only for the title below; both predicates are independent checks.
@@ -132,7 +196,11 @@ export const onRequestError: Instrumentation.onRequestError = async (err, reques
     ? 'Unknown Server Action (benign)'
     : isDestinationStreamClosedError(error)
       ? 'Client disconnected mid-stream (benign)'
-      : null;
+      : isRouterStateParseError(error)
+        ? 'Unparseable router state header (benign)'
+        : isClientDisconnectError(error)
+          ? 'Client disconnected mid-upload (benign)'
+          : null;
   const benign = benignTitle !== null;
 
   await recordOpsError(error, request, context, process.env.NEXT_RUNTIME ?? 'nodejs');
