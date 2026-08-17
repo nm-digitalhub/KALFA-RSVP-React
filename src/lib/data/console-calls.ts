@@ -2669,6 +2669,25 @@ async function inboundCallWentUnanswered(consoleCallId: string): Promise<boolean
  * exhausts, and a caller who hung up first heard nothing. So this is a promise the
  * business is making to itself about following up — not one the caller was given.
  */
+/**
+ * How far back an OPEN callback suppresses a new one for the same number.
+ *
+ * The dedupe itself is right — somebody who calls three times in five minutes
+ * because nobody is picking up needs one follow-up, not three. What was wrong was
+ * that it had no time bound at all, so ANY open request blocked that number forever.
+ *
+ * Measured 17.8, which is how this surfaced: 14 requests sat in status 'new' from
+ * 13.8, none ever worked, and every one of them was silently suppressing every
+ * future missed call from its caller. A real unanswered call at 19:42 that evening
+ * recorded nothing at all, for exactly that reason.
+ *
+ * Six hours is "the same episode of trying to reach us". Someone calling again the
+ * next day is not retrying — they are asking again, and a queue that cannot say so
+ * is worse than one with two rows in it. Deliberately shorter than a working day so
+ * a morning call and an afternoon call are never collapsed into one.
+ */
+const CALLBACK_DEDUPE_WINDOW_MS = 6 * 60 * 60 * 1000;
+
 export async function recordMissedCallCallback(input: {
   consoleCallId: string;
   callerName?: string | null;
@@ -2687,11 +2706,15 @@ export async function recordMissedCallCallback(input: {
     const phoneE164 = pii?.phone_e164 ?? null;
     if (!phoneE164) return; // withheld/unnormalizable CLI — nothing to call back
 
+    // Bounded — see CALLBACK_DEDUPE_WINDOW_MS. An open request older than the window
+    // no longer suppresses a fresh call, because at that age it is a backlog item
+    // rather than the follow-up for THIS attempt to reach us.
     const { data: existing } = await admin
       .from('callback_requests')
       .select('id')
       .eq('phone', phoneE164)
       .in('status', ['new', 'in_progress'])
+      .gte('created_at', new Date(Date.now() - CALLBACK_DEDUPE_WINDOW_MS).toISOString())
       .limit(1)
       .maybeSingle();
     if (existing) return;
@@ -2748,6 +2771,9 @@ export async function offerCallbackForCallMeNow(phone: string): Promise<void> {
       .select('id')
       .eq('phone', phone)
       .in('status', ['new', 'in_progress'])
+      // Same bound, same reason as recordMissedCallCallback's — an unworked request
+      // from days ago must not silently swallow a fresh request for help.
+      .gte('created_at', new Date(Date.now() - CALLBACK_DEDUPE_WINDOW_MS).toISOString())
       .limit(1)
       .maybeSingle();
     if (existing) return;

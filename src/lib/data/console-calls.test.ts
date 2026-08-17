@@ -36,6 +36,7 @@ import {
   notifyRoutableAgentsOfInboundCall,
   offerCallbackForCallMeNow,
   recordConsoleCallSessionAccess,
+  recordMissedCallCallback,
   resolveDialTarget,
   resolveExternalDialTarget,
   resolveTransferTarget,
@@ -549,6 +550,74 @@ describe('resolveExternalDialTarget (17.8 — dialling out of a live call)', () 
     });
     // One agent exhausting their budget must not take the call floor with them.
     await expect(resolveExternalDialTarget('0541234567', quiet)).resolves.toMatchObject({ ok: true });
+  });
+});
+
+// The dedupe that stopped a real missed call from being recorded. Measured 17.8:
+// 14 callback requests sat in 'new' from four days earlier, and because the check
+// had no time bound, every one of them permanently suppressed new callbacks for its
+// caller. An unanswered call at 19:42 that evening produced nothing.
+describe('recordMissedCallCallback — the dedupe must not become a permanent block', () => {
+  const rows = (existingCallback: unknown) => ({
+    console_calls: [{ data: { answered_at: null, direction: 'inbound' }, error: null }],
+    console_call_pii: [{ data: { phone_e164: '+972536212562' }, error: null }],
+    callback_requests: [{ data: existingCallback, error: null }],
+  });
+
+  it('records a callback when nothing recent is open', async () => {
+    const client = wireAdmin(rows(null));
+
+    await recordMissedCallCallback({ consoleCallId: 'call-1' });
+
+    const inserted = client.from.mock.results.some((r) => {
+      const b = r.value as Record<string, ReturnType<typeof vi.fn>>;
+      return b.insert?.mock.calls.length > 0;
+    });
+    expect(inserted).toBe(true);
+  });
+
+  it('bounds the open-request lookup by age, so a stale row cannot suppress forever', async () => {
+    const client = wireAdmin(rows(null));
+
+    await recordMissedCallCallback({ consoleCallId: 'call-1' });
+
+    // The query itself is the assertion. Without the .gte the check matches ANY
+    // open request for the number, which is exactly how a four-day-old backlog
+    // item silenced a live call.
+    const callbackBuilder = client.from.mock.results
+      .map((r) => r.value as Record<string, ReturnType<typeof vi.fn>>)
+      .find((b) => b.gte?.mock.calls.length > 0);
+    expect(callbackBuilder).toBeDefined();
+    expect(callbackBuilder!.gte).toHaveBeenCalledWith('created_at', expect.any(String));
+  });
+
+  it('still skips when a RECENT open request exists', async () => {
+    const client = wireAdmin(rows({ id: 'cb-recent' }));
+
+    await recordMissedCallCallback({ consoleCallId: 'call-1' });
+
+    // Someone calling three times in five minutes needs one follow-up, not three.
+    const inserted = client.from.mock.results.some((r) => {
+      const b = r.value as Record<string, ReturnType<typeof vi.fn>>;
+      return b.insert?.mock.calls.length > 0;
+    });
+    expect(inserted).toBe(false);
+  });
+
+  it('records nothing for a call that WAS answered', async () => {
+    const client = wireAdmin({
+      console_calls: [{ data: { answered_at: '2026-08-17T16:00:00Z', direction: 'inbound' }, error: null }],
+      console_call_pii: [{ data: { phone_e164: '+972536212562' }, error: null }],
+      callback_requests: [{ data: null, error: null }],
+    });
+
+    await recordMissedCallCallback({ consoleCallId: 'call-1' });
+
+    const inserted = client.from.mock.results.some((r) => {
+      const b = r.value as Record<string, ReturnType<typeof vi.fn>>;
+      return b.insert?.mock.calls.length > 0;
+    });
+    expect(inserted).toBe(false);
   });
 });
 
