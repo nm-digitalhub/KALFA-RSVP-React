@@ -1057,6 +1057,33 @@ VoxEngine.addEventListener(AppEvents.Started, function (startedEvent) {
         reportEvent('conference_ended', { reason: why });
         log('conference ended: ' + why);
     }
+    // Removes the third participant, whether they are still ringing or already in
+    // the mixer. Closes the gap that shipped with conference_add: a participant
+    // could be joined and never removed, so an agent who conferenced the wrong
+    // number was stuck with them until the whole call ended.
+    //
+    // Two states, two exits, because they are genuinely different situations and
+    // collapsing them would either hang up a live mixer's worth of people or leave
+    // a dialing leg ringing:
+    //   * conferencing — still dialing. failConference cancels the attempt; the
+    //     operator<->caller bridge was never touched, so nothing to restore.
+    //   * conferenced — the mixer is live. teardownConference drops the third leg,
+    //     destroys the mixer and re-bridges operator<->caller directly (or resumes
+    //     hold audio if the agent is ALSO on hold — its own remoteNeedsHold check).
+    // Both already existed and are reused verbatim; this handler only chooses.
+    function removeConferenceParticipant(requestId) {
+        if (state.conferencing) {
+            log('conference_remove [' + requestId + '] cancelling a conference still dialing');
+            failConference(state.conferenceTarget, requestId, 'removed_by_agent');
+            return;
+        }
+        if (state.conferenced) {
+            log('conference_remove [' + requestId + '] removing the third participant');
+            teardownConference('removed_by_agent');
+            return;
+        }
+        log('conference_remove [' + requestId + '] ignored — no conference in progress');
+    }
     function failConference(target, requestId, why) {
         if (!state.conferencing)
             return; // already resolved
@@ -1209,6 +1236,9 @@ VoxEngine.addEventListener(AppEvents.Started, function (startedEvent) {
             }
             else if (cmd === 'conference_add') {
                 startConference(env && env.payload, rid);
+            }
+            else if (cmd === 'conference_remove') {
+                removeConferenceParticipant(rid);
             }
             else {
                 log('command unknown: ' + cmd + ' [' + rid + ']');
