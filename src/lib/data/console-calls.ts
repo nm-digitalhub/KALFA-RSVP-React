@@ -335,7 +335,14 @@ export type DialTargetFailureReason =
   | 'invalid_phone'
   | 'dnc'
   | 'opted_out'
-  | 'quiet_hours';
+  | 'quiet_hours'
+  // The DAILY window only (08:00–19:00 Sun–Thu, 08:00–13:00 Fri), and separated from
+  // 'quiet_hours' on purpose: this one an agent may override with an explicit
+  // confirmation, and the others may not. Shabbat/Yom-Tov, a caller's OWN stated
+  // hours, DNC and opt-out all stay 'quiet_hours'/'dnc'/'opted_out' and stay
+  // absolute — an override exists for "it is 20:15 and this person is waiting for a
+  // call back", not for "this person asked never to be called".
+  | 'outside_hours';
 
 export type DialTargetResolution =
   | {
@@ -379,7 +386,7 @@ async function evaluateSharedConsentGates(
   admin: AdminClient,
   phone: string,
   nowMs: number,
-  opts: { hoursGate?: HoursGate } = {},
+  opts: { hoursGate?: HoursGate; allowOutsideHours?: boolean } = {},
 ): Promise<{ ok: true } | { ok: false; reason: DialTargetFailureReason }> {
   // DNC — normalized phone, fail-closed (isDncListed itself fails closed on
   // any DB error; see outreach-engine.ts). Unconditional for every caller,
@@ -410,8 +417,22 @@ async function evaluateSharedConsentGates(
   // (compliance ruling, 12.8; see evaluateCallMeNowConsent's header for the
   // full basis). Every other caller (callback, guest_service) passes no
   // options at all and gets today's exact behavior, untouched.
-  if ((opts.hoursGate ?? 'apply') === 'apply' && !isWithinDailyCallWindow(nowMs)) {
-    return { ok: false, reason: 'quiet_hours' };
+  //
+  // OVERRIDABLE, uniquely among the gates in this function, and only when a human
+  // has said so for this specific dial (opts.allowOutsideHours). Everything above —
+  // DNC, opt-out, Shabbat — returns before this point and cannot be waived by
+  // anyone. The distinction is who the rule protects: those three protect the person
+  // being called, and this one encodes a default business hour that an agent
+  // returning a missed call at 20:15 can reasonably judge for themselves.
+  //
+  // The override is recorded by the caller (dial-intent's audit), so "who decided to
+  // ring someone after hours, and when" stays answerable.
+  if (
+    (opts.hoursGate ?? 'apply') === 'apply' &&
+    !opts.allowOutsideHours &&
+    !isWithinDailyCallWindow(nowMs)
+  ) {
+    return { ok: false, reason: 'outside_hours' };
   }
 
   return { ok: true };
@@ -465,6 +486,12 @@ export function isWithinCallerStatedWindow(
 export async function resolveDialTarget(
   input: DialTargetInput,
   nowMs: number = Date.now(),
+  /**
+   * Set only when the agent has been shown the after-hours warning and confirmed.
+   * Waives the daily business-hours window and NOTHING else — see
+   * evaluateSharedConsentGates for why that one is separable and the others are not.
+   */
+  opts: { allowOutsideHours?: boolean } = {},
 ): Promise<DialTargetResolution> {
   const admin = createAdminClient();
 
@@ -502,7 +529,9 @@ export async function resolveDialTarget(
     const attempts = await countRecentCallbackDialAttempts(admin, data.id, nowMs);
     if (attempts >= CALLBACK_MAX_ATTEMPTS) return { ok: false, reason: 'attempt_cap' };
 
-    const shared = await evaluateSharedConsentGates(admin, phone, nowMs);
+    const shared = await evaluateSharedConsentGates(admin, phone, nowMs, {
+      allowOutsideHours: opts.allowOutsideHours,
+    });
     if (!shared.ok) return shared;
 
     return {
@@ -552,7 +581,9 @@ export async function resolveDialTarget(
   const phone = normalizePhone(contact.normalized_phone);
   if (!phone) return { ok: false, reason: 'invalid_phone' };
 
-  const shared = await evaluateSharedConsentGates(admin, phone, nowMs);
+  const shared = await evaluateSharedConsentGates(admin, phone, nowMs, {
+    allowOutsideHours: opts.allowOutsideHours,
+  });
   if (!shared.ok) return shared;
 
   return {
@@ -1220,6 +1251,207 @@ export async function resolveExternalDialTarget(
   if (await isDncListed(phone)) return { ok: false, reason: 'dnc' };
 
   return { ok: true, phone };
+}
+
+export interface ConsoleCallRecord {
+  id: string;
+  direction: 'inbound' | 'outbound';
+  status: string;
+  /** The guest's name when we know them, else null — the app shows the number instead. */
+  name: string | null;
+  /** E.164, or null when the CLI was withheld. */
+  phone: string | null;
+  startedAt: string;
+  durationSec: number;
+  answered: boolean;
+  /**
+   * Present only when this call can be returned through the consent-checked
+   * `guest_service` dial-intent shape — i.e. we know both the event and the contact.
+   * Absent means the app must not offer a dial button, because there is no approved
+   * path to that number.
+   */
+  eventId: string | null;
+  contactId: string | null;
+}
+
+/**
+ * Recent console calls, for the native console's history screen.
+ *
+ * REPLACES what that screen used to show, which was the wrong table entirely: it read
+ * `console_call_feed`, keyed on `call_attempts` — the AI campaign calls — so an agent
+ * looking at "היסטוריה" saw the robot's work rather than their own conversations, with
+ * every row rendered as "אורח" and a blank phone because that feed carries no PII by
+ * design.
+ *
+ * These are console_calls: the calls a human actually took or placed. Name comes from
+ * the linked guest when there is one, and the phone from the server-only PII table,
+ * because an agent reviewing their own call list needs to know who each call was with
+ * — including a caller who has never been a customer, where the number is the only
+ * identity there is.
+ *
+ * Two queries, not a join, for the same reason identifyInboundCaller uses two: the PII
+ * lives in a separate table with its own RLS, and reaching it through the admin client
+ * per-call keeps that boundary explicit rather than dissolving it into a view.
+ */
+export async function findRecentConsoleCalls(limit = 50): Promise<ConsoleCallRecord[]> {
+  const admin = createAdminClient();
+  const { data: calls, error } = await admin
+    .from('console_calls')
+    .select('id, direction, status, started_at, duration_sec, answered_at, event_id, guest_id, contact_id')
+    .order('started_at', { ascending: false })
+    .limit(limit);
+  if (error) throw new Error('find_recent_console_calls_failed');
+  if (!calls || calls.length === 0) return [];
+
+  const ids = calls.map((c) => c.id);
+  const { data: pii } = await admin
+    .from('console_call_pii')
+    .select('call_id, phone_e164')
+    .in('call_id', ids);
+  const phones = new Map((pii ?? []).map((p) => [p.call_id, p.phone_e164]));
+
+  const guestIds = calls.map((c) => c.guest_id).filter((g): g is string => Boolean(g));
+  const names = new Map<string, string>();
+  if (guestIds.length > 0) {
+    const { data: guests } = await admin.from('guests').select('id, full_name').in('id', guestIds);
+    for (const g of guests ?? []) {
+      const n = g.full_name?.trim();
+      if (n) names.set(g.id, n);
+    }
+  }
+
+  return calls.map((c) => ({
+    id: c.id,
+    direction: c.direction === 'inbound' ? ('inbound' as const) : ('outbound' as const),
+    status: c.status,
+    name: c.guest_id ? names.get(c.guest_id) ?? null : null,
+    phone: phones.get(c.id) ?? null,
+    startedAt: c.started_at ?? '',
+    durationSec: c.duration_sec ?? 0,
+    // answered_at, not status: it is written in exactly one place (the event route's
+    // 'connected' branch) and means a human picked up, whereas status carries a dozen
+    // end reasons that each need interpreting.
+    answered: c.answered_at !== null,
+    // Both or neither — a dial needs the pair, and offering a button that the server
+    // would refuse for a missing half is worse than not offering one.
+    eventId: c.event_id && c.contact_id ? c.event_id : null,
+    contactId: c.event_id && c.contact_id ? c.contact_id : null,
+  }));
+}
+
+/**
+ * How long an inbound call must have lasted before an UNIDENTIFIED caller counts as
+ * a real missed call rather than scanner noise.
+ *
+ * MEASURED, 17.8, and the numbers are not close. Over the preceding 48 hours the
+ * console recorded 384 unanswered anonymous calls lasting under five seconds — from
+ * THIRTEEN distinct numbers. Against 11 identified calls from one. That is the
+ * wangiri pattern this account already paid for once: the same handful of spoofed
+ * numbers dialling repeatedly and dropping before anything can happen.
+ *
+ * Ten seconds is not a guess about attention span. The disclosure line alone takes
+ * several seconds to speak and the ring gives each agent 20 seconds, so a caller
+ * gone inside ten has not waited for even one ring attempt to finish. Someone who
+ * actually wants to reach this business waits longer than that.
+ *
+ * An IDENTIFIED caller bypasses this entirely — a known guest hanging up after three
+ * seconds is still a guest who called.
+ */
+const MISSED_CALL_MIN_DURATION_SEC = 10;
+
+/** How far back the missed-call list looks. */
+const MISSED_CALL_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
+
+export interface MissedCall {
+  callId: string;
+  name: string | null;
+  phone: string;
+  at: string;
+  /** How many times this number called and got no answer inside the window. */
+  attempts: number;
+  eventId: string | null;
+  contactId: string | null;
+}
+
+/**
+ * Inbound calls nobody answered, as a list a human can act on.
+ *
+ * NOT `callback_requests`, which is what the app's first missed-call card showed and
+ * what made it wrong: that table mixes "call me now" requests with follow-ups, keeps
+ * rows open indefinitely, and on 17.8 was serving fourteen entries from four days
+ * earlier as though they were today's missed calls.
+ *
+ * And not raw "unanswered inbound" either — that is 1,228 rows over seven days,
+ * almost all of it the fraud flood. See MISSED_CALL_MIN_DURATION_SEC for the
+ * measurement that separates the two.
+ *
+ * DEDUPED BY NUMBER, newest first, with the repeat count kept. Someone who tried four
+ * times is one person to call back, not four rows — but how hard they tried is worth
+ * showing, so it is carried rather than discarded.
+ */
+export async function findMissedCalls(limit = 25): Promise<MissedCall[]> {
+  const admin = createAdminClient();
+  const sinceIso = new Date(Date.now() - MISSED_CALL_WINDOW_MS).toISOString();
+
+  const { data: calls, error } = await admin
+    .from('console_calls')
+    .select('id, guest_id, event_id, contact_id, started_at, duration_sec, created_at')
+    .eq('direction', 'inbound')
+    .is('answered_at', null)
+    .gte('created_at', sinceIso)
+    .order('created_at', { ascending: false })
+    .limit(500);
+  if (error) throw new Error('find_missed_calls_failed');
+  if (!calls || calls.length === 0) return [];
+
+  const { data: pii } = await admin
+    .from('console_call_pii')
+    .select('call_id, phone_e164')
+    .in('call_id', calls.map((c) => c.id));
+  const phones = new Map((pii ?? []).map((p) => [p.call_id, p.phone_e164]));
+
+  // Real attempts only. A withheld number is dropped too — not as noise, but because
+  // there is nothing to call back and a row an agent cannot act on is clutter on the
+  // one screen that exists to be acted on.
+  const real = calls.filter((c) => {
+    const phone = phones.get(c.id);
+    if (!phone) return false;
+    return Boolean(c.guest_id) || (c.duration_sec ?? 0) >= MISSED_CALL_MIN_DURATION_SEC;
+  });
+  if (real.length === 0) return [];
+
+  const guestIds = real.map((c) => c.guest_id).filter((g): g is string => Boolean(g));
+  const names = new Map<string, string>();
+  if (guestIds.length > 0) {
+    const { data: guests } = await admin.from('guests').select('id, full_name').in('id', guestIds);
+    for (const g of guests ?? []) {
+      const n = g.full_name?.trim();
+      if (n) names.set(g.id, n);
+    }
+  }
+
+  // Already newest-first from the query, so the FIRST row per number is the one kept
+  // and every later one only increments the count.
+  const byPhone = new Map<string, MissedCall>();
+  for (const c of real) {
+    const phone = phones.get(c.id) as string;
+    const existing = byPhone.get(phone);
+    if (existing) {
+      existing.attempts += 1;
+      continue;
+    }
+    byPhone.set(phone, {
+      callId: c.id,
+      name: c.guest_id ? names.get(c.guest_id) ?? null : null,
+      phone,
+      at: c.started_at ?? c.created_at ?? '',
+      attempts: 1,
+      eventId: c.event_id && c.contact_id ? c.event_id : null,
+      contactId: c.event_id && c.contact_id ? c.contact_id : null,
+    });
+  }
+
+  return Array.from(byPhone.values()).slice(0, limit);
 }
 
 export interface PendingCallback {
@@ -2838,6 +3070,15 @@ export async function recordConsoleDialAudit(input: {
   agentId: string;
   consoleCallId: string;
   target: DialTargetInput;
+  /**
+   * True when the agent waived the daily business-hours window for this dial.
+   *
+   * A separate parameter rather than a field on [target]: DialTargetInput is
+   * resolveDialTarget's contract — WHO to call — and an override is a fact about the
+   * decision, not about the destination. Folding it in would put an authorisation
+   * flag inside the type every consent gate reads.
+   */
+  outsideHoursOverride?: boolean;
 }): Promise<void> {
   try {
     const admin = createAdminClient();
@@ -2846,6 +3087,13 @@ export async function recordConsoleDialAudit(input: {
       agent_id: input.agentId,
       kind: input.target.kind,
     };
+    // Recorded when it happened, because it is the one gate a human waived. "Who
+    // decided to ring someone outside business hours, and when" has to stay
+    // answerable — an override that leaves no trace is indistinguishable from the
+    // rule never having existed.
+    if (input.outsideHoursOverride) {
+      meta.outside_hours_override = true;
+    }
     let eventId: string | null = null;
     if (input.target.kind === 'callback') {
       meta.callback_request_id = input.target.id;

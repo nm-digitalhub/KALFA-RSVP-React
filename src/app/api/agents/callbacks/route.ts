@@ -1,15 +1,26 @@
 import { NextResponse } from 'next/server';
 
 import { requireConsoleAgent } from '@/lib/auth/console-agent';
-import { findPendingCallbacks } from '@/lib/data/console-calls';
+import { findMissedCalls } from '@/lib/data/console-calls';
 import { rateLimit } from '@/lib/security/rate-limit';
 
 // GET /api/agents/callbacks  ->  { callbacks: [{ id, full_name, phone, topic, created_at }] }
 //
-// The missed-call queue, for the native console. Every unanswered inbound call
-// records one of these (recordMissedCallCallback), and until now they were visible
-// only in the web admin — an agent holding the phone that rang had no way to see
-// what they had missed, let alone return it.
+// The missed-call list, for the native console. An agent holding the phone that rang
+// had no way to see what they had missed, let alone return it.
+//
+// SOURCED FROM console_calls, NOT callback_requests, and that correction is the
+// whole point of this route's second version. Serving the callback table put
+// fourteen rows on the agent's dashboard on 17.8 that were four days old, mixed
+// "call me now" requests in among genuine missed calls, and stayed there because
+// nothing closes an unworked row. It looked like a missed-call list and was a
+// backlog.
+//
+// findMissedCalls reads the calls themselves and filters on measured evidence rather
+// than on a status column — see MISSED_CALL_MIN_DURATION_SEC for the 384-calls-from-
+// 13-numbers measurement that separates a real caller from scanner traffic. Deduped
+// per number with the attempt count kept, so four tries are one person to ring back
+// and the fact that they tried four times still shows.
 //
 // CARRIES THE PHONE NUMBER, deliberately, and it is the one read in this app that
 // hands an agent a full number rather than a masked hint. An agent about to return a
@@ -52,15 +63,17 @@ export async function GET(request: Request) {
   }
 
   try {
-    const callbacks = await findPendingCallbacks();
+    const missed = await findMissedCalls();
     return json(
       {
-        callbacks: callbacks.map((c) => ({
-          id: c.id,
-          full_name: c.fullName,
+        callbacks: missed.map((c) => ({
+          id: c.callId,
+          full_name: c.name,
           phone: c.phone,
-          topic: c.topic,
-          created_at: c.createdAt,
+          attempts: c.attempts,
+          created_at: c.at,
+          event_id: c.eventId,
+          contact_id: c.contactId,
         })),
       },
       200,

@@ -68,7 +68,16 @@ export async function POST(request: Request) {
   if (!parsed.success) return json({ error: 'גוף הבקשה אינו תקין' }, 400);
 
   // 3-6: fresh DB load + DNC + opt-out + quiet-hours/Shabbat, all fail-closed.
-  const resolved = await resolveDialTarget(parsed.data);
+  //
+  // confirm_outside_hours waives the daily business-hours window ONLY, and only
+  // because the agent was shown it and said yes. Every other gate here is
+  // unreachable by it — DNC, opt-out, Shabbat/Yom-Tov and the caller's own stated
+  // hours all return before the window is evaluated. An agent returning a missed
+  // call at 20:15 is a judgement they may make; calling someone who asked never to
+  // be called is not.
+  const resolved = await resolveDialTarget(parsed.data, Date.now(), {
+    allowOutsideHours: parsed.data.confirm_outside_hours === true,
+  });
   if (!resolved.ok) {
     // Generic, privacy-safe — never echo WHICH gate tripped in detail beyond
     // a stable reason code (no phone, no name, ever).
@@ -122,7 +131,12 @@ export async function POST(request: Request) {
     return json({ error: 'הנפקת אסימון החיוג נכשלה' }, 500);
   }
 
-  await recordConsoleDialAudit({ agentId: ctx.userId, consoleCallId: callId, target: parsed.data });
+  await recordConsoleDialAudit({
+    agentId: ctx.userId,
+    consoleCallId: callId,
+    target: parsed.data,
+    outsideHoursOverride: parsed.data.confirm_outside_hours === true,
+  });
 
   return json({ dial: token }, 200);
 }

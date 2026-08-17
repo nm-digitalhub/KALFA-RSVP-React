@@ -20,12 +20,27 @@ import { z } from 'zod';
 // contact with no event/callback provenance) has NO representation here on
 // purpose — the union itself is the enforcement of "no code path exists for
 // scenario ג", not a runtime check elsewhere.
+//
+// `confirm_outside_hours` waives ONE gate — the daily business-hours window — and
+// only because a human said so for this dial. It cannot reach DNC, opt-out,
+// Shabbat/Yom-Tov, a caller's own stated hours, the attempt cap or the event gates:
+// those return before the window is ever evaluated. Added 17.8 after an agent could
+// not return a missed call at 20:15 and the refusal was indistinguishable, on
+// screen, from "this number is blocked".
+//
+// Optional and defaulting to false, so an old client that never sends it keeps
+// today's exact behaviour.
 export const dialIntentBodySchema = z.discriminatedUnion('kind', [
-  z.strictObject({ kind: z.literal('callback'), id: z.string().uuid() }),
+  z.strictObject({
+    kind: z.literal('callback'),
+    id: z.string().uuid(),
+    confirm_outside_hours: z.boolean().optional(),
+  }),
   z.strictObject({
     kind: z.literal('guest_service'),
     eventId: z.string().uuid(),
     contactId: z.string().uuid(),
+    confirm_outside_hours: z.boolean().optional(),
   }),
 ]);
 export type DialIntentBody = z.infer<typeof dialIntentBodySchema>;

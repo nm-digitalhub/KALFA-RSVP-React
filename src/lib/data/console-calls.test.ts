@@ -991,6 +991,79 @@ describe('evaluateCallMeNowConsent — reuses the shared DNC/opt-out/Shabbat gat
 describe('daily-window ruling, paired: callback/guest_service keep it, call-me-now does not', () => {
   const lateThursday = Date.parse('2026-06-04T22:00:00+03:00'); // Thursday, well past 19:00
 
+  // The override, and — more importantly — its limits. Added 17.8 after an agent
+  // could not return a missed call at 20:15 and the refusal looked, on screen,
+  // exactly like "this number is blocked".
+  it('an explicit confirmation waives the daily window', async () => {
+    wireAdmin({
+      callback_requests: [{
+        data: {
+          id: 'cb-ovr', phone: '0501234567', status: 'new',
+          requested_at: null, created_at: new Date(lateThursday - 60_000).toISOString(),
+        },
+        error: null,
+      }],
+      activity_log: [{ data: null, error: null, count: 0 } as unknown as QueryResult],
+      contacts: [{ data: null, error: null }],
+    });
+    vi.mocked(isDncListed).mockResolvedValue(false);
+
+    const result = await resolveDialTarget(
+      { kind: 'callback', id: 'cb-ovr' },
+      lateThursday,
+      { allowOutsideHours: true },
+    );
+    expect(result).toMatchObject({ ok: true });
+  });
+
+  it('the confirmation does NOT waive DNC', async () => {
+    wireAdmin({
+      callback_requests: [{
+        data: {
+          id: 'cb-dnc', phone: '0501234567', status: 'new',
+          requested_at: null, created_at: new Date(lateThursday - 60_000).toISOString(),
+        },
+        error: null,
+      }],
+      activity_log: [{ data: null, error: null, count: 0 } as unknown as QueryResult],
+    });
+    // Someone who asked never to be called is not a business-hours question, and no
+    // agent confirmation may reach them.
+    vi.mocked(isDncListed).mockResolvedValue(true);
+
+    const result = await resolveDialTarget(
+      { kind: 'callback', id: 'cb-dnc' },
+      lateThursday,
+      { allowOutsideHours: true },
+    );
+    expect(result).toEqual({ ok: false, reason: 'dnc' });
+  });
+
+  it('the confirmation does NOT waive Shabbat', async () => {
+    // Saturday midday — blocked by isShabbatOrYomTovBlocked, which returns before the
+    // daily window is ever evaluated and is therefore out of the override's reach.
+    const shabbat = Date.parse('2026-06-06T12:00:00+03:00');
+    wireAdmin({
+      callback_requests: [{
+        data: {
+          id: 'cb-shb', phone: '0501234567', status: 'new',
+          requested_at: null, created_at: new Date(shabbat - 60_000).toISOString(),
+        },
+        error: null,
+      }],
+      activity_log: [{ data: null, error: null, count: 0 } as unknown as QueryResult],
+      contacts: [{ data: null, error: null }],
+    });
+    vi.mocked(isDncListed).mockResolvedValue(false);
+
+    const result = await resolveDialTarget(
+      { kind: 'callback', id: 'cb-shb' },
+      shabbat,
+      { allowOutsideHours: true },
+    );
+    expect(result).toEqual({ ok: false, reason: 'quiet_hours' });
+  });
+
   it('resolveDialTarget(callback) still refuses at this hour', async () => {
     wireAdmin({
       callback_requests: [{
@@ -1004,7 +1077,7 @@ describe('daily-window ruling, paired: callback/guest_service keep it, call-me-n
     });
     vi.mocked(isDncListed).mockResolvedValue(false);
     const result = await resolveDialTarget({ kind: 'callback', id: 'cb-paired' }, lateThursday);
-    expect(result).toEqual({ ok: false, reason: 'quiet_hours' });
+    expect(result).toEqual({ ok: false, reason: 'outside_hours' });
   });
 
   it('resolveDialTarget(guest_service) still refuses at this hour', async () => {
@@ -1015,7 +1088,7 @@ describe('daily-window ruling, paired: callback/guest_service keep it, call-me-n
     });
     vi.mocked(isDncListed).mockResolvedValue(false);
     const result = await resolveDialTarget({ kind: 'guest_service', eventId: 'event-paired', contactId: 'contact-paired' }, lateThursday);
-    expect(result).toEqual({ ok: false, reason: 'quiet_hours' });
+    expect(result).toEqual({ ok: false, reason: 'outside_hours' });
   });
 
   it('evaluateCallMeNowConsent does NOT refuse at the identical hour', async () => {
