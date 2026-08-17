@@ -710,7 +710,8 @@ VoxEngine.addEventListener(AppEvents.Started, function (startedEvent) {
         // and does not reach the three internal agent-to-agent legs.
         var target = VoxEngine.callUser({
             username: voxUsername,
-            callerid: state.called || 'kalfa-console'
+            callerid: state.called || 'kalfa-console',
+            extraHeaders: internalLegHeaders()
         });
         reportEvent('transfer_started', { request_id: requestId, target: voxUsername });
         var timer = setTimeout(function () {
@@ -818,7 +819,8 @@ VoxEngine.addEventListener(AppEvents.Started, function (startedEvent) {
         startHoldAudio();
         var target = VoxEngine.callUser({
             username: voxUsername,
-            callerid: state.called || 'kalfa-console'
+            callerid: state.called || 'kalfa-console',
+            extraHeaders: internalLegHeaders()
         });
         state.consultTarget = target;
         reportEvent('consult_started', { request_id: requestId, target: voxUsername });
@@ -1030,7 +1032,8 @@ VoxEngine.addEventListener(AppEvents.Started, function (startedEvent) {
         state.conferenceTargetUsername = voxUsername;
         var target = VoxEngine.callUser({
             username: voxUsername,
-            callerid: state.called || 'kalfa-console'
+            callerid: state.called || 'kalfa-console',
+            extraHeaders: internalLegHeaders()
         });
         state.conferenceTarget = target;
         reportEvent('conference_started', { request_id: requestId, target: voxUsername });
@@ -1277,9 +1280,39 @@ VoxEngine.addEventListener(AppEvents.Started, function (startedEvent) {
     // line rather than as our number.
     var CALLER_NUMBER_HEADER = 'X-Kalfa-Caller-Number';
     var CALLER_NUMBER_WITHHELD = 'withheld';
+    // The console_calls row id for THIS call, handed to the ringing device.
+    //
+    // Without it the app cannot use the transfer / consult / conference routes at
+    // all: each is POST /api/console-calls/{id}/…, and {id} is a console_calls row
+    // the app has no way to name. Its own live-call list is built from
+    // console_call_feed, which is keyed on call_attempts (the AI campaign calls) —
+    // a different table describing different calls. There is no join from an SDK
+    // leg to a console_calls row on the device side, and inventing one by matching
+    // on phone number or timing would be a guess about which call the agent is on.
+    //
+    // The scenario, by contrast, already knows it exactly: route-inbound returns it
+    // as `call_id` and it is stashed in state.callId before the first report goes
+    // out. Sending it on the leg that rings is the whole mechanism — no new
+    // endpoint, no correlation heuristic, no ambiguity about which call the id
+    // refers to.
+    //
+    // NOT sensitive: an opaque row id, useless without the agent's own Bearer token
+    // and the manage_voice permission every one of those routes checks server-side.
+    var CONSOLE_CALL_ID_HEADER = 'X-Kalfa-Console-Call-Id';
+    // The internal-leg headers: everything an agent's device needs to act on this
+    // call, minus the caller identity that ringIdentity adds for the primary ring.
+    // Shared by transfer/consult/conference so an agent who RECEIVES a transferred
+    // call can transfer it onward — without this the buttons would work for the
+    // first agent on a call and silently not for the second.
+    function internalLegHeaders() {
+        var headers = {};
+        if (state.callId)
+            headers[CONSOLE_CALL_ID_HEADER] = String(state.callId);
+        return headers;
+    }
     function ringIdentity(suppressName) {
         var params = { callerid: state.cli || state.called || 'kalfa-console' };
-        params.extraHeaders = {};
+        params.extraHeaders = internalLegHeaders();
         params.extraHeaders[CALLER_NUMBER_HEADER] = state.callerNumber || CALLER_NUMBER_WITHHELD;
         if (!suppressName) {
             // No CLI at all: say so, rather than leave the agent looking at our

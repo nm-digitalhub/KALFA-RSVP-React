@@ -2012,6 +2012,57 @@ export async function findRoutableAgents(nowMs: number = Date.now()): Promise<Ro
     .map((a) => ({ agentId: a.user_id, voxUsername: a.vox_username }));
 }
 
+export interface TransferTarget {
+  agentId: string;
+  displayName: string;
+}
+
+/**
+ * The agents an agent on a live call may hand it to — the list behind the
+ * transfer / consult / conference pickers in the native console.
+ *
+ * Built on findRoutableAgents rather than a query of its own, so "who can take a
+ * call" has exactly one definition (provisioned + ready + heartbeat-fresh + not
+ * already on one). That is deliberately STRICTER than resolveTransferTarget,
+ * which each of those routes runs as the real authority and which does not
+ * exclude busy agents. The mismatch is in the safe direction: the picker may hide
+ * someone the route would have accepted, so an agent never gets an error from a
+ * name they were just offered. It cannot do the reverse.
+ *
+ * [excludeAgentId] drops the caller. resolveTransferTarget already refuses a
+ * transfer to self with reason 'self', so this only stops the UI offering a
+ * choice that is guaranteed to fail.
+ *
+ * `display_name` is what the agent picking reads; agents with none fall back to
+ * a truncated id rather than being hidden, because an unnamed but reachable
+ * colleague is still a valid destination and silently dropping them would look
+ * like they were offline.
+ */
+export async function findTransferTargets(
+  excludeAgentId: string,
+  nowMs: number = Date.now(),
+): Promise<TransferTarget[]> {
+  const routable = (await findRoutableAgents(nowMs)).filter((a) => a.agentId !== excludeAgentId);
+  if (routable.length === 0) return [];
+
+  const admin = createAdminClient();
+  const { data: named } = await admin
+    .from('console_agents')
+    .select('user_id, display_name')
+    .in(
+      'user_id',
+      routable.map((a) => a.agentId),
+    );
+  const names = new Map((named ?? []).map((n) => [n.user_id, n.display_name?.trim() || null]));
+
+  return routable
+    .map((a) => ({
+      agentId: a.agentId,
+      displayName: names.get(a.agentId) || `נציג ${a.agentId.slice(0, 8)}`,
+    }))
+    .sort((a, b) => a.displayName.localeCompare(b.displayName, 'he'));
+}
+
 /**
  * Provisioned console agents who DECLARED they are on shift — deliberately
  * WITHOUT the heartbeat gate findRoutableAgents applies.

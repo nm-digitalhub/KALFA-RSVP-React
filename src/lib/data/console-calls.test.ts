@@ -19,6 +19,7 @@ import {
   evaluateInboundCaps,
   findConsoleCallForEvent,
   findRoutableAgentVoxUsernames,
+  findTransferTargets,
   getConsoleCallById,
   getConsoleCallSessionUrls,
   identifyInboundCaller,
@@ -425,6 +426,51 @@ describe('identifyInboundCaller — the agent-facing name (17.8)', () => {
     });
 
     await expect(identifyInboundCaller('+972501234567')).resolves.toBeNull();
+  });
+});
+
+// Behind the native console's transfer / consult / conference pickers. The two
+// properties worth pinning are the ones whose failure is invisible in the UI: an
+// agent offered to themselves (a choice guaranteed to fail at
+// resolveTransferTarget with reason 'self'), and an agent silently missing from
+// the list because their console_agents row has no display_name.
+describe('findTransferTargets (17.8 — the console transfer picker)', () => {
+  // A FUNCTION, not a shared object: makeAdminMock consumes each queue with
+  // Array.shift, so a fixture reused across `it` blocks is drained by the first
+  // one and silently starves the second (findRoutableAgents then sees no ready
+  // agents and returns nothing, which looks like a logic failure).
+  const routableRows = (nameRow: { user_id: string; display_name: string | null }) => ({
+    console_agents: [
+      { data: [{ user_id: 'me', vox_username: 'a_me' }, { user_id: 'other', vox_username: 'a_other' }], error: null },
+      { data: [nameRow], error: null },
+    ],
+    agent_status: [
+      {
+        data: [
+          { agent_id: 'me', status: 'ready', updated_at: new Date().toISOString() },
+          { agent_id: 'other', status: 'ready', updated_at: new Date().toISOString() },
+        ],
+        error: null,
+      },
+    ],
+    console_calls: [{ data: [], error: null }],
+  });
+
+  it('never offers the caller themselves', async () => {
+    wireAdmin(routableRows({ user_id: 'other', display_name: 'רותם' }));
+
+    const targets = await findTransferTargets('me');
+    expect(targets.map((t) => t.agentId)).toEqual(['other']);
+  });
+
+  it('keeps a reachable agent who has no display name, under a fallback label', async () => {
+    wireAdmin(routableRows({ user_id: 'other', display_name: null }));
+
+    // Present, not hidden: an unnamed colleague is still a valid destination, and
+    // dropping them would read in the UI as "nobody is available".
+    const targets = await findTransferTargets('me');
+    expect(targets).toHaveLength(1);
+    expect(targets[0].displayName).toContain('נציג');
   });
 });
 
