@@ -42,6 +42,19 @@ export const dialIntentBodySchema = z.discriminatedUnion('kind', [
     contactId: z.string().uuid(),
     confirm_outside_hours: z.boolean().optional(),
   }),
+  // Returning a call somebody placed to US. A console_calls id, never a phone —
+  // the server reads the number itself from the PII table, so this widens what
+  // an agent may RETURN without widening what anyone may DIAL.
+  //
+  // It is a third shape rather than a flag on 'callback' because the gates that
+  // apply to it genuinely differ (see DIAL_GATE_POLICY in data/console-calls.ts).
+  // One shape serving several scenarios is what let rules written for the AI
+  // ringing a guest silently govern an agent ringing back a caller.
+  z.strictObject({
+    kind: z.literal('returned_call'),
+    consoleCallId: z.string().uuid(),
+    confirm_outside_hours: z.boolean().optional(),
+  }),
 ]);
 export type DialIntentBody = z.infer<typeof dialIntentBodySchema>;
 

@@ -66,6 +66,11 @@ export async function GET(request: Request) {
     const missed = await findMissedCalls();
     return json(
       {
+        // `id` is a console_calls id, and the app returns it through
+        // dial-intent's `returned_call` shape. It used to go through `callback`,
+        // which resolves against `callback_requests` — a table these ids are not
+        // in, so every "חזור" tap refused (measured: 200 of 200 sampled ids
+        // absent). The list moved source and the dial side did not follow.
         callbacks: missed.map((c) => ({
           id: c.callId,
           full_name: c.name,

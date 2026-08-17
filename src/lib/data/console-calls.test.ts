@@ -10,6 +10,7 @@ import { isDncListed } from '@/lib/data/outreach-engine';
 import { sendPushToUser } from '@/lib/data/push-delivery';
 import {
   computeQueueRingOrder,
+  DIAL_GATE_POLICY,
   computeRingOrder,
   CONSOLE_SHIFT_FRESHNESS_MS,
   countAnsweredLastHourForPhone,
@@ -1930,5 +1931,42 @@ describe('findRoutableAgents — busy exclusion (14.8)', () => {
 
     expect(await findRoutableAgents()).toEqual([]);
     expect(client.from).not.toHaveBeenCalledWith('console_calls');
+  });
+});
+
+describe('DIAL_GATE_POLICY', () => {
+  // The table exists because one gate set served every scenario, and a rule
+  // written for the AI ringing a guest then governed an agent ringing back a
+  // caller. These assertions pin the distinction so it cannot quietly collapse
+  // back into one row.
+  it('applies every gate when WE initiate', () => {
+    expect(DIAL_GATE_POLICY.guest_service).toEqual({
+      dnc: true,
+      optOut: true,
+      shabbat: true,
+      dailyWindow: 'apply',
+    });
+  });
+
+  it('keeps DNC on every scenario, including returning a call', () => {
+    for (const kind of ['callback', 'guest_service', 'returned_call'] as const) {
+      expect(DIAL_GATE_POLICY[kind].dnc).toBe(true);
+    }
+  });
+
+  // Answering is not soliciting. The owner ruled on this directly, and the
+  // concrete failure was a missed call at 20:15 that could not be returned.
+  it('does not apply timing or event-scoped gates when returning a call', () => {
+    expect(DIAL_GATE_POLICY.returned_call).toEqual({
+      dnc: true,
+      optOut: false,
+      shabbat: false,
+      dailyWindow: 'skip',
+    });
+  });
+
+  it('leaves the call-me-now request under the timing gates', () => {
+    expect(DIAL_GATE_POLICY.callback.shabbat).toBe(true);
+    expect(DIAL_GATE_POLICY.callback.dailyWindow).toBe('overridable');
   });
 });

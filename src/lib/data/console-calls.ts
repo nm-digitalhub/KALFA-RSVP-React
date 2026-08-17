@@ -321,7 +321,61 @@ export async function consoleDtmfHandoffEnabled(): Promise<boolean> {
 
 export type DialTargetInput =
   | { kind: 'callback'; id: string }
-  | { kind: 'guest_service'; eventId: string; contactId: string };
+  | { kind: 'guest_service'; eventId: string; contactId: string }
+  /** Returning a call somebody placed to US and nobody answered. */
+  | { kind: 'returned_call'; consoleCallId: string };
+
+// ─────────────────────────────────────────────────────────────────────────
+// WHICH GATES APPLY TO WHICH DIAL, stated per scenario rather than shared.
+//
+// One gate set served every dial, and that is the actual defect the owner named:
+// "שער אחד משרת מספר תרחישים יחד ושם זו בעיה". A rule written for one scenario
+// then applies silently to another where it is wrong, and nothing in the code
+// says so. Concretely, the rules below were written for the case where WE
+// initiate — the AI ringing a guest about an event, which is a call nobody asked
+// for — and they were being applied unchanged to an agent returning a call
+// somebody had just placed to us. Those are opposite situations:
+//
+//   the bot rings a guest      we initiate    consent is the whole question
+//   we ring back a caller      they initiated  answering, not soliciting
+//
+// So the policy is a table, one row per scenario, and adding a scenario means
+// stating its row rather than inheriting whatever the previous one needed.
+// ─────────────────────────────────────────────────────────────────────────
+export interface DialGatePolicy {
+  /** An explicit "never call me". Applies to every scenario. */
+  dnc: boolean;
+  /** contacts.removal_requested — a per-EVENT messaging preference. */
+  optOut: boolean;
+  shabbat: boolean;
+  /** 'apply' | 'overridable' (agent confirms) | 'skip'. */
+  dailyWindow: 'apply' | 'overridable' | 'skip';
+}
+
+export const DIAL_GATE_POLICY: Record<DialTargetInput['kind'], DialGatePolicy> = {
+  // Someone asked us to call them back. Consent to be called is the request
+  // itself; the timing rules still protect them.
+  callback: { dnc: true, optOut: true, shabbat: true, dailyWindow: 'overridable' },
+
+  // WE initiate, to a guest who asked for nothing. Every gate applies — this is
+  // the scenario all of them were written for.
+  guest_service: { dnc: true, optOut: true, shabbat: true, dailyWindow: 'apply' },
+
+  // They rang us and we did not answer. Returning it is a RESPONSE, and the
+  // owner ruled on this directly: "לקוח שחייג אליי ואני חוזר אליו לא מהווה שום
+  // בעיה". The reasoning, gate by gate:
+  //
+  //   dnc      KEPT. "Never call me" is a standing instruction, it costs one
+  //            lookup, and a number on that list ringing us is vanishingly rare.
+  //   optOut   DROPPED. removal_requested means "stop messaging me about that
+  //            event" — it is event-scoped and says nothing about whether we may
+  //            answer a call this person just placed to the business.
+  //   shabbat  DROPPED. The bar exists so we do not solicit at a protected time.
+  //            Ringing back somebody who dialled us is not soliciting.
+  //   window   DROPPED. Same reasoning; and blocking it was the concrete failure
+  //            the owner hit — a missed call at 20:15 that could not be returned.
+  returned_call: { dnc: true, optOut: false, shabbat: false, dailyWindow: 'skip' },
+};
 
 export type DialTargetFailureReason =
   | 'lookup_failed'
@@ -386,32 +440,53 @@ async function evaluateSharedConsentGates(
   admin: AdminClient,
   phone: string,
   nowMs: number,
-  opts: { hoursGate?: HoursGate; allowOutsideHours?: boolean } = {},
+  opts: {
+    hoursGate?: HoursGate;
+    allowOutsideHours?: boolean;
+    /**
+     * Which gates this scenario is subject to. Defaults to the strictest row —
+     * an unnamed caller gets guest_service's policy, so a new call site that
+     * forgets to declare one is over-protected rather than under-protected.
+     */
+    policy?: DialGatePolicy;
+  } = {},
 ): Promise<{ ok: true } | { ok: false; reason: DialTargetFailureReason }> {
+  const policy = opts.policy ?? DIAL_GATE_POLICY.guest_service;
+
   // DNC — normalized phone, fail-closed (isDncListed itself fails closed on
-  // any DB error; see outreach-engine.ts). Unconditional for every caller,
-  // including call-me-now: protects people who asked NOT to be called, a
-  // different question entirely from call timing.
-  if (await isDncListed(phone)) return { ok: false, reason: 'dnc' };
+  // any DB error; see outreach-engine.ts). Applies in every policy row: it
+  // protects people who asked NOT to be called, a different question entirely
+  // from call timing.
+  if (policy.dnc && (await isDncListed(phone))) return { ok: false, reason: 'dnc' };
 
   // Opt-out — ANY contacts row for this phone (across any event) with
   // removal_requested=true blocks. contacts is event-scoped, so the same
   // phone can legitimately appear under several events; the most protective
   // reading (decide-consent: "אם קיימת שורה תואמת") is "any row objects".
-  // Unconditional for every caller, same reasoning as DNC above.
-  const { data: optedOut, error: optOutErr } = await admin
-    .from('contacts')
-    .select('id')
-    .eq('normalized_phone', phone)
-    .eq('removal_requested', true)
-    .limit(1)
-    .maybeSingle();
-  if (optOutErr) return { ok: false, reason: 'opted_out' }; // fail-closed
-  if (optedOut) return { ok: false, reason: 'opted_out' };
+  //
+  // NOT applied when returning a call: that column is a per-event messaging
+  // preference, and it has nothing to say about whether we may ring back
+  // somebody who just dialled the business. See DIAL_GATE_POLICY.
+  if (policy.optOut) {
+    const { data: optedOut, error: optOutErr } = await admin
+      .from('contacts')
+      .select('id')
+      .eq('normalized_phone', phone)
+      .eq('removal_requested', true)
+      .limit(1)
+      .maybeSingle();
+    if (optOutErr) return { ok: false, reason: 'opted_out' }; // fail-closed
+    if (optedOut) return { ok: false, reason: 'opted_out' };
+  }
 
-  // Shabbat/Yom-Tov — see the type comment above for why this is
-  // unconditional and outside the hoursGate option entirely.
-  if (isShabbatOrYomTovBlocked(nowMs)) return { ok: false, reason: 'quiet_hours' };
+  // Shabbat/Yom-Tov — absolute for every scenario where WE initiate. Not applied
+  // when returning a call, for the reason set out in DIAL_GATE_POLICY: the bar
+  // exists so we do not solicit at a protected time, and answering somebody who
+  // rang us is not soliciting.
+  if (policy.shabbat && isShabbatOrYomTovBlocked(nowMs)) {
+    return { ok: false, reason: 'quiet_hours' };
+  }
+  if (policy.dailyWindow === 'skip') return { ok: true };
 
   // The daily window — SKIPPED only for call-me-now's immediate leg
   // (compliance ruling, 12.8; see evaluateCallMeNowConsent's header for the
@@ -531,6 +606,7 @@ export async function resolveDialTarget(
 
     const shared = await evaluateSharedConsentGates(admin, phone, nowMs, {
       allowOutsideHours: opts.allowOutsideHours,
+      policy: DIAL_GATE_POLICY.callback,
     });
     if (!shared.ok) return shared;
 
@@ -541,6 +617,73 @@ export async function resolveDialTarget(
       contactId: null,
       guestId: null,
       callbackRequestId: data.id,
+    };
+  }
+
+  // returned_call — ringing back somebody who called US and got no answer.
+  //
+  // THE BUG THIS CLOSES, measured 2026-08-17: /api/agents/callbacks was moved to
+  // source its list from `console_calls` (because `callback_requests` was serving
+  // four-day-old rows as though they were today's missed calls), but the dial side
+  // was left resolving against `callback_requests`. The ids therefore never matched
+  // — 200 of 200 sampled missed-call ids were absent from that table — so the
+  // "חזור" button on the missed-call card refused every single time.
+  //
+  // The number is read HERE, from the server-only PII table, keyed on a call this
+  // console actually recorded. The device sends an id and never a phone number, so
+  // this stays a resolver and not a hole through which an arbitrary number could be
+  // dialled.
+  if (input.kind === 'returned_call') {
+    const { data: call, error: callErr } = await admin
+      .from('console_calls')
+      .select('id, direction, answered_at, created_at, event_id, contact_id, guest_id')
+      .eq('id', input.consoleCallId)
+      .maybeSingle();
+    if (callErr) return { ok: false, reason: 'lookup_failed' };
+    if (!call) return { ok: false, reason: 'not_found' };
+
+    // INBOUND only. An outbound leg we placed is not somebody who called us, and
+    // letting this shape return one would turn "ring back a caller" into "ring any
+    // number this console has ever dialled" — which is the cold-call path the union
+    // exists to keep closed.
+    if (call.direction !== 'inbound') return { ok: false, reason: 'not_found' };
+
+    // Same freshness bound as a callback request. A call from six weeks ago is not
+    // a call being returned; it is a fresh outbound call to somebody who has since
+    // heard nothing from us, and it should go through the gates that govern one.
+    const anchorMs = Date.parse(call.created_at ?? '');
+    if (Number.isNaN(anchorMs) || nowMs - anchorMs > CALLBACK_FRESHNESS_MS) {
+      return { ok: false, reason: 'stale' };
+    }
+
+    const { data: pii, error: piiErr } = await admin
+      .from('console_call_pii')
+      .select('phone_e164')
+      .eq('call_id', call.id)
+      .maybeSingle();
+    if (piiErr) return { ok: false, reason: 'lookup_failed' };
+    const phone = normalizePhone(pii?.phone_e164);
+    // A withheld CLI leaves nothing to ring. Distinct from 'not_found' so the UI
+    // can say why rather than implying the call itself is unknown.
+    if (!phone) return { ok: false, reason: 'invalid_phone' };
+
+    const shared = await evaluateSharedConsentGates(admin, phone, nowMs, {
+      allowOutsideHours: opts.allowOutsideHours,
+      policy: DIAL_GATE_POLICY.returned_call,
+    });
+    if (!shared.ok) return shared;
+
+    return {
+      ok: true,
+      phone,
+      // Carried when the caller happened to be a known contact, so the audit trail
+      // and any downstream event linkage stay intact — but their ABSENCE no longer
+      // decides whether the call may be returned, which is what made the button
+      // unavailable on 98% of real calls.
+      eventId: call.event_id ?? null,
+      contactId: call.contact_id ?? null,
+      guestId: call.guest_id ?? null,
+      callbackRequestId: null,
     };
   }
 
@@ -3122,9 +3265,18 @@ export async function recordConsoleDialAudit(input: {
     if (input.outsideHoursOverride) {
       meta.outside_hours_override = true;
     }
+    // Exhaustive per kind rather than an if/else. The compiler caught the previous
+    // shape the moment a third kind existed — the `else` branch had been reading
+    // `eventId` off whatever was not a callback, which a returned_call does not
+    // carry. Written out so the next kind fails to compile instead of quietly
+    // logging an audit row with the wrong fields.
     let eventId: string | null = null;
     if (input.target.kind === 'callback') {
       meta.callback_request_id = input.target.id;
+    } else if (input.target.kind === 'returned_call') {
+      // The audited fact is WHICH recorded call was returned. Any event linkage
+      // is incidental here and is captured on the console_calls row itself.
+      meta.returned_console_call_id = input.target.consoleCallId;
     } else {
       meta.event_id = input.target.eventId;
       meta.contact_id = input.target.contactId;
