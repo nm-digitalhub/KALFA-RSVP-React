@@ -95,17 +95,30 @@ VoxEngine.addEventListener(AppEvents.Started, function (startedEvent) {
     // is off — that flag has no bearing on this line's use in the PRIMARY
     // ring, which is unconditional.
     var RING_HOLD_LINE_HE = 'אנא המתינו רגע, מחפשים עבורכם נציג.';
-    // Hold cue for AFTER an agent is already connected (this task, 17.8) —
-    // deliberately a DIFFERENT line from RING_HOLD_LINE_HE above: "מחפשים
-    // עבורכם נציג" ("looking for an agent for you") is false once one is
-    // already on the call. Same category as RING_HOLD_LINE_HE — an
-    // OPERATIONAL hold line, NOT owner/regulation-authorized wording like
-    // DISCLOSURE_LINE_INBOUND_HE. Repeated via say() while the caller leg has
-    // no live audio flowing to it — driven by CallEvents.OnHold (the agent's
+    // Hold cue for AFTER an agent is already connected (17.8; music-file
+    // swap 17.8) — deliberately a DIFFERENT line from RING_HOLD_LINE_HE
+    // above: "מחפשים עבורכם נציג" ("looking for an agent for you") is false
+    // once one is already on the call. Same category as RING_HOLD_LINE_HE —
+    // an OPERATIONAL hold line, NOT owner/regulation-authorized wording like
+    // DISCLOSURE_LINE_INBOUND_HE. Driven by CallEvents.OnHold (the agent's
     // SDK "השהיה" button, src/lib/voximplant/web-client.ts's toggleHold) AND
     // by an active consult (startConsult's own stopMediaBetween) — see
     // startHoldAudio()/remoteNeedsHold() below.
+    //
+    // PRIMARY mechanism is now HOLD_MUSIC_URL below, a looped audio file
+    // (owner-supplied, 17.8 — supersedes the earlier "NO hold-music asset
+    // exists in this scenario" finding recorded elsewhere in this file's
+    // history, e.g. startConsult()'s own header). HOLD_LINE_HE is kept as
+    // the FALLBACK spoken cue for when the file player fails (see
+    // startHoldAudioSayFallback()) — the same production-proven
+    // mechanism/voice this scenario already used everywhere else (including
+    // RING_HOLD_LINE_HE, which is unaffected — playback mechanism only, this
+    // task does not extend to the ringing-wait line), now a safety net
+    // instead of the primary path.
     var HOLD_LINE_HE = 'השיחה מוחזקת לרגע, אנא המתינו על הקו.';
+    // The owner-supplied hold-music clip — same file, same cache-versioning
+    // rule, same reasoning as ConsoleDial.voxengine.js's identical constant.
+    var HOLD_MUSIC_URL = KALFA_APP_ORIGIN + '/audio/hold-music-v1.mp3';
     var ttsOptions = { voice: VoiceList.Google.he_IL_Wavenet_A };
     // Per-agent serial-ring ceiling — plan-decided constant for V1 (§ שלב 5).
     var RING_PER_AGENT_MS = 20000;
@@ -119,16 +132,21 @@ VoxEngine.addEventListener(AppEvents.Started, function (startedEvent) {
     var RING_RETRY_WINDOW_MS = 15000;
     // Blind-transfer watchdog — same constant and reasoning as ConsoleDial.
     var TRANSFER_TIMEOUT_MS = 20000;
-    // Hold-cue cadence — same reasoning and same backoff shape as
-    // ConsoleDial.voxengine.js's identical constants (a scenario-side
-    // setTimeout loop; Call.say has no loop option). HOLD_REPEAT_MS is the
-    // STARTING interval; startHoldAudio() doubles it on every repeat, capped
-    // at HOLD_REPEAT_MAX_MS — bounds a 10-minute hold to 7 TTS calls
-    // instead of 31 at a flat 20s cadence, without ever reverting to
-    // permanent silence (a hard N-repeat cutoff would just reintroduce the
-    // silence this task exists to fix). Independently tunable from
-    // RING_PER_AGENT_MS above — same value today by coincidence, not because
-    // the two concepts couple.
+    // Hold-cue cadence for the SAY FALLBACK ONLY — same reasoning and same
+    // backoff shape as ConsoleDial.voxengine.js's identical constants (see
+    // that file's comment for the full "why keep backoff here but not on
+    // the primary path" reasoning). The PRIMARY path (HOLD_MUSIC_URL, looped
+    // via loop:true) has no per-repeat cost and needs no backoff — this
+    // constant pair stopped applying to it the moment the music file became
+    // primary (17.8). Kept, unchanged, for startHoldAudioSayFallback: a
+    // scenario-side setTimeout loop (Call.say has no loop option).
+    // HOLD_REPEAT_MS is the STARTING interval; the fallback doubles it on
+    // every repeat, capped at HOLD_REPEAT_MAX_MS — bounds a 10-minute
+    // FALLBACK (e.g. a sustained CDN/deploy outage keeping HOLD_MUSIC_URL
+    // unreachable for the whole hold) to 7 TTS calls instead of 31 at a flat
+    // 20s cadence, without ever reverting to permanent silence. Independently
+    // tunable from RING_PER_AGENT_MS above — same value today by
+    // coincidence, not because the two concepts couple.
     var HOLD_REPEAT_MS = 20000;
     var HOLD_REPEAT_MAX_MS = 120000;
     // Leaked-session backstop, NOT a call-length cap — see ConsoleDial.voxengine.js
@@ -203,14 +221,18 @@ VoxEngine.addEventListener(AppEvents.Started, function (startedEvent) {
         wakeRetryDone: false, // true once attemptWakeRetry has fired ONCE for
         // this call — guards against a second retry wave's own exhaustion
         // recursing back into attemptWakeRetry.
-        // ── Hold audio (this task, 17.8) ───────────────────────────────────
+        // ── Hold audio (17.8; music-file swap 17.8) ──────────────────────
         sdkOnHold: false, // true while CallEvents.OnHold is active on the
         // CURRENT operator leg. Reset on every operator handoff
         // (completeTransfer/completeConsult) — a stale leg's hold state
         // never carries over to the fresh one.
+        holdPlayer: null, // the looped HOLD_MUSIC_URL Player instance while
+        // it is playing; null whenever it is not (see
+        // startHoldAudio/stopHoldAudio). PRIMARY hold mechanism.
         holdAudioTimer: null // the repeating say() timer driving HOLD_LINE_HE
-        // while remoteNeedsHold() is true; null whenever it is not playing
-        // (see startHoldAudio/stopHoldAudio).
+        // — FALLBACK ONLY now, used while holdPlayer failed/is unavailable
+        // and remoteNeedsHold() is true; null whenever it is not running
+        // (see startHoldAudioSayFallback/stopHoldAudio).
     };
     function log(msg) {
         Logger.write('[ConsoleInbound] ' + msg);
@@ -387,34 +409,84 @@ VoxEngine.addEventListener(AppEvents.Started, function (startedEvent) {
     // ── Hold audio ───────────────────────────────────────────────────────
     // The caller leg (state.remote) goes silent for two INDEPENDENT reasons:
     // the agent's own SDK "השהיה" button (CallEvents.OnHold below), and an
-    // active consult (startConsult's own stopMediaBetween — the pre-existing
-    // gap this file's consult section already documented: "NO hold-music
-    // asset exists in this scenario"). remoteNeedsHold() is the single
-    // source of truth both triggers check, so neither one can prematurely
-    // resume the live bridge while the OTHER reason is still active (e.g.
-    // the agent toggles SDK hold mid-consult).
+    // active consult (startConsult's own stopMediaBetween). Both now hear
+    // HOLD_MUSIC_URL, looped (17.8 — supersedes this section's earlier "NO
+    // hold-music asset exists in this scenario" finding, now that the owner
+    // has supplied one). remoteNeedsHold() is the single source of truth
+    // both triggers check, so neither one can prematurely resume the live
+    // bridge while the OTHER reason is still active (e.g. the agent toggles
+    // SDK hold mid-consult).
     function remoteNeedsHold() {
         return state.sdkOnHold || state.consulting || state.consultActive;
     }
-    // Repeating say() rather than a looped hosted audio file — see
+    // Owner-supplied looped audio file (17.8) is now PRIMARY — see
     // ConsoleDial.voxengine.js's identical function for the full reasoning
-    // (reuses this codebase's proven operational-hold-cue mechanism/voice
-    // instead of inventing a new audio asset). Self-terminates the instant
+    // (loop:true native repeat, cold-cache cost accepted/documented,
+    // say()-fallback on any unexpected end, and the enumerated
+    // stopHoldAudio() call sites that each re-bridge or terminate
+    // immediately after). Self-terminates (both paths) the instant
     // remoteNeedsHold() goes false OR state.remote has moved on to a
-    // different leg (transfer/consult-complete/conference/hangup), so no
-    // stray utterance can land on a leg that already has a live
-    // conversation running.
+    // different leg (transfer/consult-complete/conference/hangup).
     function startHoldAudio() {
-        if (state.holdAudioTimer || !state.remote)
-            return; // already playing, or nothing to play it to
+        if (state.holdPlayer || state.holdAudioTimer || !state.remote)
+            return; // already playing (music or say fallback), or nothing to play it to
         var remote = state.remote;
-        // Resets to HOLD_REPEAT_MS every time a NEW hold period starts (a
-        // fresh call to startHoldAudio — see its guard above) — a caller who
-        // was unheld and gets re-held hears the frequent cadence again from
-        // the top, not wherever a previous hold's backoff left off.
+        var player;
+        try {
+            player = VoxEngine.createURLPlayer({ url: HOLD_MUSIC_URL }, { loop: true });
+        }
+        catch (err) {
+            log('hold-music createURLPlayer failed: ' + err);
+            startHoldAudioSayFallback(remote);
+            return;
+        }
+        state.holdPlayer = player;
+        function onPlayerDone(ev) {
+            if (state.holdPlayer !== player)
+                return; // stopHoldAudio() already nulled this reference
+            // before calling player.stop() — an intentional stop, not a
+            // failure; nothing to fall back to.
+            state.holdPlayer = null;
+            log('hold-music player ended unexpectedly' + (ev && ev.error ? ' (' + ev.error + ')' : ''));
+            if (state.remote === remote && remoteNeedsHold()) {
+                startHoldAudioSayFallback(remote);
+            }
+        }
+        player.addEventListener(PlayerEvents.Error, onPlayerDone);
+        player.addEventListener(PlayerEvents.PlaybackFinished, onPlayerDone);
+        try {
+            player.sendMediaTo(remote);
+        }
+        catch (err) {
+            log('hold-music sendMediaTo failed: ' + err);
+            state.holdPlayer = null;
+            try {
+                player.stop();
+            }
+            catch (_stopErr) {
+                // already gone — nothing further to clean up
+            }
+            startHoldAudioSayFallback(remote);
+        }
+    }
+    // FALLBACK ONLY (see startHoldAudio() above) — the original say()-based
+    // hold cue this scenario shipped with, kept verbatim as the safety net
+    // for a broken/unreachable HOLD_MUSIC_URL. HOLD_REPEAT_MS/MAX's own
+    // comment covers why the backoff still belongs here even though the
+    // primary path no longer needs one.
+    function startHoldAudioSayFallback(remote) {
+        if (state.holdAudioTimer)
+            return; // already running
+        // Resets to HOLD_REPEAT_MS every time a NEW fallback period starts —
+        // a caller who was unheld and gets re-held hears the frequent
+        // cadence again from the top, not wherever a previous backoff left
+        // off.
         var delay = HOLD_REPEAT_MS;
         function tick() {
-            if (state.remote !== remote || !remoteNeedsHold()) {
+            if (state.remote !== remote || !remoteNeedsHold() || state.holdPlayer) {
+                // state.holdPlayer set: a fresh startHoldAudio() call (hold
+                // toggled off/on, or a later trigger) got a working player
+                // since this fallback started — defer to it.
                 state.holdAudioTimer = null;
                 return;
             }
@@ -422,7 +494,7 @@ VoxEngine.addEventListener(AppEvents.Started, function (startedEvent) {
                 remote.say(HOLD_LINE_HE, ttsOptions);
             }
             catch (err) {
-                log('hold-audio say failed: ' + err);
+                log('hold-audio fallback say failed: ' + err);
             }
             state.holdAudioTimer = setTimeout(tick, delay);
             delay = Math.min(delay * 2, HOLD_REPEAT_MAX_MS);
@@ -430,6 +502,19 @@ VoxEngine.addEventListener(AppEvents.Started, function (startedEvent) {
         tick();
     }
     function stopHoldAudio() {
+        if (state.holdPlayer) {
+            var player = state.holdPlayer;
+            state.holdPlayer = null; // clear FIRST — see onPlayerDone()'s
+            // guard in startHoldAudio(): this makes the PlaybackFinished
+            // that stop() itself triggers recognizable as our own
+            // intentional stop, not a failure needing the say() fallback.
+            try {
+                player.stop();
+            }
+            catch (err) {
+                log('hold-music player stop failed: ' + err);
+            }
+        }
         if (state.holdAudioTimer) {
             clearTimeout(state.holdAudioTimer);
             state.holdAudioTimer = null;
@@ -465,8 +550,8 @@ VoxEngine.addEventListener(AppEvents.Started, function (startedEvent) {
         //
         // Conference guard, and the KNOWN GAP it accepts: once
         // state.conferenced is true, state.remote's incoming stream is the
-        // Conference mixer, not this leg directly — a say() here would
-        // silently steal the caller's audio out of a live 3-way call
+        // Conference mixer, not this leg directly — playing hold audio here
+        // would silently steal the caller's audio out of a live 3-way call
         // (Call.sendMediaTo's docs: "a new incoming stream always replaces
         // the previous one"), so hold is ignored entirely while conferenced.
         // This means an agent who holds mid-conference leaves the caller in
@@ -600,18 +685,18 @@ VoxEngine.addEventListener(AppEvents.Started, function (startedEvent) {
         });
     }
     // ── Consult-before-transfer (stage 2, V1: single consult target) ────────
-    // Puts the caller on hold (silent — NO hold-music asset exists in this
-    // scenario; documented here rather than invented) and privately bridges
-    // operator<->target so the caller hears NEITHER side of the
-    // consultation. Two ways out: consult_cancel restores the caller bridge;
-    // consult_complete is the actual warm transfer (drops the operator,
-    // bridges caller<->target). Recording (Call.record() on state.remote,
-    // armed once at connect time in proceedInbound) is UNAFFECTED by any of
-    // this: it keeps recording whatever state.remote currently receives
-    // (silence during the hold window) — the operator<->target conversation
-    // never touches state.remote and is therefore NEVER recorded. Deliberate:
-    // the caller's disclosure said THEIR call is recorded, not that internal
-    // staff consultations are.
+    // Puts the caller on hold (HOLD_MUSIC_URL, looped — see
+    // startHoldAudio(); supersedes this section's earlier "no asset" finding)
+    // and privately bridges operator<->target so the caller hears NEITHER
+    // side of the consultation. Two ways out: consult_cancel restores the
+    // caller bridge; consult_complete is the actual warm transfer (drops the
+    // operator, bridges caller<->target). Recording (Call.record() on
+    // state.remote, armed once at connect time in proceedInbound) is
+    // UNAFFECTED by any of this: it keeps recording whatever state.remote
+    // currently receives (hold music during the hold window) — the
+    // operator<->target conversation never touches state.remote and is
+    // therefore NEVER recorded. Deliberate: the caller's disclosure said
+    // THEIR call is recorded, not that internal staff consultations are.
     function restoreCustomerBridge(why) {
         // The OTHER trigger for hold (SDK hold vs. consult) may still be
         // active — e.g. the agent toggled SDK hold mid-consult, and this
