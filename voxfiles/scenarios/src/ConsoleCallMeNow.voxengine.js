@@ -147,7 +147,16 @@ VoxEngine.addEventListener(AppEvents.Started, function (startedEvent) {
     // ---- Constants ---------------------------------------------------------
     var KALFA_APP_ORIGIN = 'https://beta.kalfa.me';
     // NEW, NOT YET owner/regulation-authorized — see file header.
-    var DISCLOSURE_LINE_CALL_ME_NOW_HE = 'שלום, כאן קלפה, חוזרים אליכם לפי בקשתכם להתקשרות. לתשומת ליבכם, השיחה מוקלטת לצורך תיעוד ושיפור השירות. כעת מנסים לחבר אתכם לנציג.';
+    // NIQQUD on the brand name — the same fix as ConsoleDial's and
+    // RSVPPreview's, applied here after the owner heard "כלפה" on a live call.
+    // Google's he-IL voice reads bare "קלפה" as "כלפה"; SSML was tried and PROVEN
+    // WRONG (say() spoke the tags aloud), so ONLY combining niqqud marks are used.
+    // They degrade safely: a voice that ignores them reads the word exactly as
+    // before, never garbage. Qamatz on the kuf forces the hard "ka".
+    //
+    // The WORDS are unchanged — this alters pronunciation, not wording, so the
+    // regulation-approved text is still the approved text.
+    var DISCLOSURE_LINE_CALL_ME_NOW_HE = 'שלום, כאן קָלְפָה, חוזרים אליכם לפי בקשתכם להתקשרות. לתשומת ליבכם, השיחה מוקלטת לצורך תיעוד ושיפור השירות. כעת מנסים לחבר אתכם לנציג.';
     // Verbatim — ConsoleInbound.voxengine.js:65. Do not paraphrase.
     var NO_AGENT_LINE_HE = 'אין נציג זמין כרגע. נחזור אליכם בהקדם.';
     // Operational hold line — NOT owner/regulation-authorized wording like

@@ -88,7 +88,16 @@ VoxEngine.addEventListener(AppEvents.Started, function (startedEvent) {
     // (12.8), verbatim, no slash-forms. "מנסים לחבר" not "מעבירים לנציג" is
     // DELIBERATE (plan honest-UI principle: never claim a connection that has
     // not happened yet).
-    var DISCLOSURE_LINE_INBOUND_HE = 'הגעתם לקלפה. לתשומת ליבכם, השיחה מוקלטת לצורך תיעוד ושיפור השירות. כעת מנסים לחבר את השיחה.';
+    // NIQQUD on the brand name — the same fix as ConsoleDial's and
+    // RSVPPreview's, applied here after the owner heard "כלפה" on a live call.
+    // Google's he-IL voice reads bare "קלפה" as "כלפה"; SSML was tried and PROVEN
+    // WRONG (say() spoke the tags aloud), so ONLY combining niqqud marks are used.
+    // They degrade safely: a voice that ignores them reads the word exactly as
+    // before, never garbage. Qamatz on the kuf forces the hard "ka".
+    //
+    // The WORDS are unchanged — this alters pronunciation, not wording, so the
+    // regulation-approved text is still the approved text.
+    var DISCLOSURE_LINE_INBOUND_HE = 'הגעתם לְקָלְפָה. לתשומת ליבכם, השיחה מוקלטת לצורך תיעוד ושיפור השירות. כעת מנסים לחבר את השיחה.';
     var NO_AGENT_LINE_HE = 'אין נציג זמין כרגע. נחזור אליכם בהקדם.';
     // Wake-and-answer research (12.8) — NOT owner/regulation-authorized
     // wording like the two lines above (this is an operational hold line,

@@ -116,7 +116,7 @@ VoxEngine.addEventListener(AppEvents.Started, function () {
     function buildMainMessage() {
         var parts = [];
         parts.push(state.guestName ? 'שלום, ' + state.guestName + '.' : 'שלום.');
-        parts.push('כאן קלפה, מערכת אישורי ההגעה.');
+        parts.push('כאן קָלְפָה, מערכת אישורי ההגעה.');
         parts.push(state.eventName
             ? 'אני מתקשרת אליך בנוגע לאירוע ' + state.eventName + '.'
             : 'אני מתקשרת אליך בנוגע לאירוע שלך.');
