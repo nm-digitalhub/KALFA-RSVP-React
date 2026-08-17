@@ -112,28 +112,36 @@ describe('isDestinationStreamClosedError', () => {
 // `app.crash` line, i.e. the severed upload WAS the app dying — see the doc comment on
 // isClientDisconnectError.
 describe('isClientDisconnectError', () => {
-  it('matches by Node error code, the stable half of the contract', () => {
-    expect(isClientDisconnectError({ code: 'ECONNRESET', message: 'aborted' })).toBe(true);
+  it('matches Node\'s inbound-abort signature, with the code alongside it', () => {
+    expect(isClientDisconnectError({ message: 'aborted', code: 'ECONNRESET' })).toBe(true);
   });
 
-  it('matches by message alone when the code did not survive Next error handling', () => {
+  it('matches on the message alone when Next did not preserve the code', () => {
     expect(isClientDisconnectError({ message: 'aborted' })).toBe(true);
   });
 
-  it('matches on code alone even if the message was reworded by a future runtime', () => {
-    expect(isClientDisconnectError({ code: 'ECONNRESET', message: 'socket hang up' })).toBe(true);
-  });
-
-  // The point of the whole filter: a real server fault must still page. A route that
-  // throws while a client happens to be connected is not a disconnect.
-  it('does NOT match a genuine server error', () => {
+  // THE case this predicate exists to get right. ECONNRESET is equally what an
+  // OUTBOUND call gets when Supabase / SUMIT / Voximplant resets us mid-flight, and
+  // that is a real server fault that must keep paging. Keying on the code alone would
+  // have silenced it — and an alert filter that fails toward silence is the dangerous
+  // kind.
+  it('does NOT suppress a server-side fault that merely carries ECONNRESET', () => {
     expect(
-      isClientDisconnectError({ message: "Cannot read properties of undefined (reading 'x')" }),
+      isClientDisconnectError({ message: 'Database query failed', code: 'ECONNRESET' }),
     ).toBe(false);
   });
 
-  it('does NOT match other socket codes — only the client-went-away one', () => {
-    expect(isClientDisconnectError({ code: 'ETIMEDOUT', message: 'timeout' })).toBe(false);
+  it('does NOT suppress an outbound reset, which reads as a hang-up rather than an abort', () => {
+    expect(isClientDisconnectError({ message: 'socket hang up', code: 'ECONNRESET' })).toBe(false);
+  });
+
+  it('does NOT suppress an ordinary application error', () => {
+    expect(isClientDisconnectError({ message: 'Invalid telemetry payload' })).toBe(false);
+  });
+
+  it('does NOT match an empty or absent message', () => {
+    expect(isClientDisconnectError({ code: 'ECONNRESET' })).toBe(false);
+    expect(isClientDisconnectError({})).toBe(false);
   });
 });
 

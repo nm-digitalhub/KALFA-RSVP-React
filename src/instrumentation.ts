@@ -124,15 +124,34 @@ export function isRouterStateParseError(error: {
 // a user walking into a lift — and a predicate that only recognised the one route we
 // happened to hit first would re-raise this alert from the next one.
 //
-// Matched on `code` FIRST and the message only as a fallback: `code` is Node's stable
-// contract, while "aborted" is a bare string that a future runtime could reword. Both
-// are checked because the object reaching onRequestError has already been through
-// Next's own error handling, which does not promise to preserve either.
+// KEYED ON THE MESSAGE, NOT ON `code` ALONE — and that is the whole care in this
+// function.
+//
+// The first version of this matched `code === 'ECONNRESET'` on its own, which is too
+// broad in a direction that matters: ECONNRESET is equally what an OUTBOUND call gets
+// when Supabase, SUMIT or Voximplant resets the connection mid-flight. That is a real
+// server-side fault and must keep paging. A predicate that cannot tell "the phone went
+// away while POSTing to us" from "our request to the payment provider was reset" would
+// silence the second while aiming at the first, and its failure mode is silence — the
+// worst kind for an alert filter.
+//
+// `message === 'aborted'` IS Node's inbound signature specifically: it is what the HTTP
+// server raises when the client closes the socket while the request body is still being
+// read. An outbound reset surfaces as "socket hang up" or "read ECONNRESET" instead, and
+// neither is matched here on purpose, even though both are also disconnects — proving
+// the disconnect happened on the INBOUND side is the property being tested, and those
+// two do not prove it.
+//
+// `code` is therefore corroboration, never the trigger: the object reaching
+// onRequestError has already been through Next's error handling, which promises to
+// preserve neither field, so a match is accepted on the message with or without it.
 export function isClientDisconnectError(error: {
   message?: string;
   code?: string;
 }): boolean {
-  return error.code === 'ECONNRESET' || error.message === 'aborted';
+  const message = error.message?.trim().toLowerCase();
+  if (message === 'aborted') return true;
+  return error.code === 'ECONNRESET' && message?.includes('aborted') === true;
 }
 
 // Global cap on ops_errors writes per minute — protects the DB from a true
