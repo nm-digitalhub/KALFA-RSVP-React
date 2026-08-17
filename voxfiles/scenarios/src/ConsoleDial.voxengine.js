@@ -453,13 +453,20 @@ VoxEngine.addEventListener(AppEvents.Started, function (startedEvent) {
     // revisit if the cold-start window turns out to matter in practice.
     //
     // Falls back to the pre-existing say() cue (startHoldAudioSayFallback,
-    // below) on ANY unexpected end of playback while hold is still needed —
-    // not just a reported error — because loop:true failing silently is as
-    // much a "caller now hears nothing" bug as an explicit
-    // PlayerEvents.Error. This is the guest-must-never-hear-dead-silence
-    // guarantee this mechanism existed to provide in the first place; a
+    // below) whenever PlayerEvents.Error fires — the documented failure
+    // signal (download timeout, bad format/URL, etc.) — so a
     // broken/unreachable audio asset degrades to "the original TTS cue"
-    // instead of to silence.
+    // instead of to silence, the guest-must-never-hear-dead-silence
+    // guarantee this mechanism existed to provide in the first place.
+    // Deliberately NOT triggered by every PlayerEvents.PlaybackFinished: the
+    // typings do not document whether loop:true fires PlaybackFinished once
+    // per loop iteration or only at a genuine terminal stop, and treating
+    // every ~31s loop boundary as "ended" would cut the fallback say() in
+    // across still-looping music. PlaybackFinished IS still checked for an
+    // explicit ev.error (belt-and-braces, in case ordering ever puts the
+    // error there instead of on the Error event) and otherwise only logged,
+    // so a genuinely silent unexpected stop leaves a trace to investigate
+    // instead of triggering a spurious fallback.
     //
     // Self-terminates (both paths) the instant remoteNeedsHold() goes false
     // OR state.remote has moved on to a different leg
@@ -484,19 +491,37 @@ VoxEngine.addEventListener(AppEvents.Started, function (startedEvent) {
             return;
         }
         state.holdPlayer = player;
-        function onPlayerDone(ev) {
+        function onPlayerError(ev) {
             if (state.holdPlayer !== player)
                 return; // stopHoldAudio() already nulled this reference
             // before calling player.stop() — an intentional stop, not a
             // failure; nothing to fall back to.
             state.holdPlayer = null;
-            log('hold-music player ended unexpectedly' + (ev && ev.error ? ' (' + ev.error + ')' : ''));
+            log('hold-music player error: ' + (ev && ev.error));
             if (state.remote === remote && remoteNeedsHold()) {
                 startHoldAudioSayFallback(remote);
             }
         }
-        player.addEventListener(PlayerEvents.Error, onPlayerDone);
-        player.addEventListener(PlayerEvents.PlaybackFinished, onPlayerDone);
+        function onPlaybackFinished(ev) {
+            if (state.holdPlayer !== player)
+                return; // our own intentional stop — expected
+            if (ev && ev.error) {
+                // Finished WITH an error — the same failure PlayerEvents.Error
+                // is documented to cover; belt-and-braces in case the two
+                // events ever fire in a different order for one failure.
+                onPlayerError(ev);
+                return;
+            }
+            // No error, and we did not stop it ourselves — diagnostic only,
+            // NOT a fallback trigger (see the comment above startHoldAudio()
+            // for why: an undocumented per-loop-iteration firing would
+            // otherwise cut the say() fallback in across still-looping
+            // music every ~31s). A log line here on an active hold is the
+            // tell to check first if callers report the music cutting out.
+            log('hold-music PlaybackFinished without error while still playing — investigate cadence (~31s would indicate per-loop firing)');
+        }
+        player.addEventListener(PlayerEvents.Error, onPlayerError);
+        player.addEventListener(PlayerEvents.PlaybackFinished, onPlaybackFinished);
         try {
             player.sendMediaTo(remote);
         }

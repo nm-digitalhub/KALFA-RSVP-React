@@ -422,11 +422,13 @@ VoxEngine.addEventListener(AppEvents.Started, function (startedEvent) {
     // Owner-supplied looped audio file (17.8) is now PRIMARY — see
     // ConsoleDial.voxengine.js's identical function for the full reasoning
     // (loop:true native repeat, cold-cache cost accepted/documented,
-    // say()-fallback on any unexpected end, and the enumerated
-    // stopHoldAudio() call sites that each re-bridge or terminate
-    // immediately after). Self-terminates (both paths) the instant
-    // remoteNeedsHold() goes false OR state.remote has moved on to a
-    // different leg (transfer/consult-complete/conference/hangup).
+    // say()-fallback triggered by PlayerEvents.Error specifically — NOT
+    // every PlaybackFinished, since loop:true's per-iteration firing
+    // behaviour is undocumented — and the enumerated stopHoldAudio() call
+    // sites that each re-bridge or terminate immediately after).
+    // Self-terminates (both paths) the instant remoteNeedsHold() goes false
+    // OR state.remote has moved on to a different leg
+    // (transfer/consult-complete/conference/hangup).
     function startHoldAudio() {
         if (state.holdPlayer || state.holdAudioTimer || !state.remote)
             return; // already playing (music or say fallback), or nothing to play it to
@@ -441,19 +443,37 @@ VoxEngine.addEventListener(AppEvents.Started, function (startedEvent) {
             return;
         }
         state.holdPlayer = player;
-        function onPlayerDone(ev) {
+        function onPlayerError(ev) {
             if (state.holdPlayer !== player)
                 return; // stopHoldAudio() already nulled this reference
             // before calling player.stop() — an intentional stop, not a
             // failure; nothing to fall back to.
             state.holdPlayer = null;
-            log('hold-music player ended unexpectedly' + (ev && ev.error ? ' (' + ev.error + ')' : ''));
+            log('hold-music player error: ' + (ev && ev.error));
             if (state.remote === remote && remoteNeedsHold()) {
                 startHoldAudioSayFallback(remote);
             }
         }
-        player.addEventListener(PlayerEvents.Error, onPlayerDone);
-        player.addEventListener(PlayerEvents.PlaybackFinished, onPlayerDone);
+        function onPlaybackFinished(ev) {
+            if (state.holdPlayer !== player)
+                return; // our own intentional stop — expected
+            if (ev && ev.error) {
+                // Finished WITH an error — the same failure PlayerEvents.Error
+                // is documented to cover; belt-and-braces in case the two
+                // events ever fire in a different order for one failure.
+                onPlayerError(ev);
+                return;
+            }
+            // No error, and we did not stop it ourselves — diagnostic only,
+            // NOT a fallback trigger (see the comment above startHoldAudio()
+            // for why: an undocumented per-loop-iteration firing would
+            // otherwise cut the say() fallback in across still-looping
+            // music every ~31s). A log line here on an active hold is the
+            // tell to check first if callers report the music cutting out.
+            log('hold-music PlaybackFinished without error while still playing — investigate cadence (~31s would indicate per-loop firing)');
+        }
+        player.addEventListener(PlayerEvents.Error, onPlayerError);
+        player.addEventListener(PlayerEvents.PlaybackFinished, onPlaybackFinished);
         try {
             player.sendMediaTo(remote);
         }
