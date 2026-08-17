@@ -1,4 +1,4 @@
-# Agent Console — server-side API contract (verified 2026-07-21)
+# Agent Console — server-side API contract (first verified 2026-07-21; partially superseded 2026-08-17)
 
 The Android agent console (`nm-digitalhub/KALFA-ELEVENLABS`, package `me.kalfa.agentconsole`)
 is a **separate repository**. This document is the server side's record of what that app
@@ -7,6 +7,46 @@ app's sources at commit `cc89325`, not from its README.
 
 Nothing here is aspirational: every "exists / missing" verdict below was checked against
 `src/app/api/**` and the live database on 2026-07-21.
+
+> ## ⚠️ Read this before trusting anything below — corrections of 2026-08-17
+>
+> **The 2026-07-21 body of this file is now wrong in several load-bearing places, and it
+> actively misled two separate readers on 2026-08-17 before being re-checked.** It is
+> corrected in place below rather than rewritten, so the drift itself stays visible; this
+> block is the index of what moved.
+>
+> Sections marked **[STALE 07-21]** below were true when written and are false now. Sections
+> not marked were re-verified on 2026-08-17 and still hold.
+>
+> 1. **"the app has no Voximplant SDK" — FALSE.** `gradle/libs.versions.toml` declares
+>    `com.voximplant:android-sdk-bom:3.2.0` plus `-core` and `-calls`, used across ~10 files
+>    under `telephony/vox/`. The SDK line is **v3**, not the v2 this file's login section
+>    describes.
+> 2. **"`SupabaseCallEngineImpl` returns a `MockCallSession` from all three call paths" —
+>    FALSE.** Those three methods now `throw UnsupportedOperationException` on purpose
+>    ("fail loudly instead of faking"). The mock survives only as a DEBUG fallback and is
+>    refused in `release` by `DependencyContainer.mockOrFailClosed`.
+> 3. **"Endpoints the app calls — none of which exist here" — FALSE.** Most now exist; see
+>    the corrected table in that section.
+> 4. **A whole capability is missing from this file:** the **inbound-to-human** path
+>    (Voximplant `onIncomingCall` → `VoxIncomingCallCoordinator` → `CallEngine.attachIncomingSession`)
+>    was built from 2026-08-14 onward, after this file was written. It is wired end-to-end
+>    **in code** and **has never been verified on a physical device** — in particular
+>    *whether audio is actually two-way after `answer()` has never been tested on a live call*.
+> 5. **`console_agents.vox_username` is populated** (1 of 1 agent), not NULL as stated below.
+>
+> **What did NOT change, and is the honest headline:** the app still cannot place an
+> agent-initiated outbound call, and still cannot monitor or take over an AI call. But the
+> reason is no longer "no SDK" — it is that `startOutboundCall` / `monitorCall` /
+> `takeoverCall` are unwired, and monitor/takeover are additionally gated server-side by
+> `app_settings.monitor_enabled` (verified **`false`** on 2026-08-17) until the `RSVPAgent`
+> scenario carries the supervisor-conference topology.
+>
+> **Distinction this file never drew, and should have:** `startOutboundCall` (agent-initiated
+> dial that puts a leg on the agent's own device — does not exist) is NOT the same as
+> `enqueueOutboundCall` → `POST /api/events/{eventId}/outreach-call` (real, live,
+> worker-driven, with `409 already_reached` handling). The app *can* cause a real outbound
+> call today; it just does not join that call from the handset.
 
 ## Why this file exists
 
@@ -24,24 +64,32 @@ sequencing:
 | Half | State | Depends on this repo? |
 |---|---|---|
 | **Data layer** — call feed, campaigns, RSVP results, call analysis, live captions | **Real and working.** `data/SupabaseImplementations.kt` reads the `console_*` views through PostgREST with the agent's own JWT, plus Realtime on `console_call_feed` and Broadcast for captions. | **No.** It needs no route from us — RLS and `is_console_agent()` are the whole authorization story. |
-| **Telephony** — outbound, monitor, takeover, mute/hold/DTMF | **Mock.** `SupabaseCallEngineImpl` returns a `MockCallSession` from all three call paths; the app has no Voximplant SDK and (until 2026-07-21) declared no audio permissions. | **Yes**, and doubly: it needs both the routes below and the SDK. |
+| **Telephony** — outbound, monitor, takeover, mute/hold/DTMF | **[STALE 07-21]** ~~Mock. `SupabaseCallEngineImpl` returns a `MockCallSession` from all three call paths; the app has no Voximplant SDK and (until 2026-07-21) declared no audio permissions.~~ **Corrected 2026-08-17:** the SDK is real (v3.2.0) and audio permissions are requested at runtime. Those three methods now THROW rather than fake. Mute and audio-routing are real and reach the UI; `hold` and `sendDtmf` have real SDK implementations with **no UI entry point** (deliberate — documented in `ActiveCallScreen.kt`). Inbound-to-human is wired end-to-end in code, unverified on a device. | **Partly.** Outbound-from-handset needs app wiring only. Monitor/takeover need this repo *and* the VoxEngine scenario. |
 
 So the data half is unblocked and should not wait on us. The telephony half cannot be
 finished in the app alone, because the Voximplant password must never ship inside an APK.
 
-## Endpoints the app calls — none of which exist here
+## Endpoints the app calls — **[STALE 07-21]** the heading's "none of which exist here" is false as of 2026-08-17
 
 All are `POST`, base `https://beta.kalfa.me`, `Authorization: Bearer <supabase-jwt>`.
 Call sites are in the app's `data/SupabaseImplementations.kt`.
 
-| Route | Body | Called from | Exists here |
+The "Exists here" column below is re-verified 2026-08-17 by enumerating `src/app/api/**`
+route files directly. Note two of the 07-21 paths were **guesses that the server did not
+adopt** — the real paths differ, and an app still calling the old ones would 404.
+
+| Route (as built) | Body | Exists here | Note |
 |---|---|---|---|
-| `/api/sdk-auth` | `{one_time_key, username}` → `{hash}` | not yet — required before login is possible | **No** |
-| `/api/agents/status` | `{"status":"ready\|not_ready\|dnd"}` | `:516` | **No** |
-| `/api/calls/outbound` | `{"phone":"+9725…","event_id":"uuid"}` → `{call_id}` | `:578` | **No** |
-| `/api/calls/{id}/monitor` | `{"mode":"monitor\|takeover"}` | `:609`, `:632`, `:663` | **No** |
-| `/api/calls/{id}/agent-command` | `{"command":"contextual_update\|user_message\|clear_buffer\|close_agent", …}` | `:542` | **No** |
-| `/api/campaigns/{id}/start` · `/pause` | `{}` | nowhere — declared in the app's contract, never called | **No** |
+| `/api/agents/sdk-auth` | `{one_time_key, username}` → `{hash}` | **Yes** | 07-21 predicted `/api/sdk-auth`; the built path is namespaced under `agents/` |
+| `/api/agents/status` | `{"status":"ready\|not_ready\|dnd"}` | **Yes** | |
+| `/api/agents/shift` | `{"active":bool}` | **Yes** | Not in the 07-21 list at all — added for the push-wake retry wave |
+| `/api/agents/telemetry` | — | **Yes** | Not in the 07-21 list at all |
+| `/api/calls/{callAttemptId}/agent-command` | `{"command":…}` | **Yes** | See the command-name mismatch section below — still the authority on wire format |
+| `/api/calls/{callAttemptId}/end` | `{}` | **Yes** | Not in the 07-21 list at all |
+| `/api/calls/{callAttemptId}/monitor` | `{"mode":"monitor\|takeover"}` | **Yes, but gated** | Answers `503` while `app_settings.monitor_enabled` is false (verified **false**, 2026-08-17) |
+| `/api/events/{eventId}/outreach-call` | enqueue a worker-driven call | **Yes** | The app's only real outbound path; handles `409 {code:"already_reached"}` |
+| `/api/campaigns/{id}/status` | `{action: activate\|pause}` | **Yes** | 07-21 predicted `/start` · `/pause`; the built path is one route with an action |
+| `/api/calls/outbound` | `{"phone":…,"event_id":…}` → `{call_id}` | **No — and none is planned under this name** | This was the agent-initiated dial. It is unbuilt on BOTH sides: the app's `startOutboundCall` throws, so nothing calls it |
 
 What *does* exist under `src/app/api/`: `voximplant/{ctx,cb,account-callback}/[token]`,
 `voximplant/agent-tool/{rsvp,dnc,note}/[token]`, `elevenlabs/rsvp/update`,
@@ -49,9 +97,15 @@ What *does* exist under `src/app/api/`: `voximplant/{ctx,cb,account-callback}/[t
 `admin/sumit-test`. The `agent-tool/*` routes are **not** related: they are the AI's own
 client tools during a call, token-authed, not the human console.
 
-### `/api/sdk-auth` is the one hard blocker
+### `/api/agents/sdk-auth` — **[STALE 07-21]** no longer a blocker; built and live
 
-The Voximplant Android SDK v2 login is a one-time-key exchange:
+Corrected 2026-08-17: the route exists, and the two "simply not connected" items below are
+now connected — `console_agents.vox_username` is **populated** (1 of 1 agent), and the app
+reads it. The SDK line is **v3**, not the v2 described here; v3 additionally supports a
+persisted-token silent login (`loginWithAccessToken` / `refreshToken`) which the app uses on
+the push-wake path, where no human is present to drive an interactive login. The one-time-key
+exchange below is still accurate for the *interactive* foreground login, and the reason it
+must be server-side is unchanged:
 
 ```
 app:    connect → requestOneTimeKey(username) → oneTimeKey
@@ -65,14 +119,19 @@ is a fact about the protocol, not a scheduling preference.
 
 Two things already exist for it and are simply not connected:
 
-- **`console_agents.vox_username`** — the per-agent Voximplant user. Nullable and currently
-  NULL for the one enrolled agent, so provisioning is unbuilt.
-- **`console_me.vox_username`** — already exposed to the app by the view. The app's `MeRow`
-  DTO does not read it yet.
+- **`console_agents.vox_username`** — the per-agent Voximplant user. ~~Nullable and currently
+  NULL for the one enrolled agent, so provisioning is unbuilt.~~ **[STALE 07-21] — corrected
+  2026-08-17: populated, 1 of 1 agent.**
+- **`console_me.vox_username`** — already exposed to the app by the view. ~~The app's `MeRow`
+  DTO does not read it yet.~~ **[STALE 07-21] — the app reads it; `VoxConfigTest` guards the
+  full-username format, which is the app's #1 silent auth failure.**
 
 **Billing note:** client-SDK logins count against Voximplant's Monthly Active Users quota
 and fail with `LoginMauAccessDeniedError`. Whatever we build should not encourage the app to
-log in on every launch.
+log in on every launch. **Refined 2026-08-17:** MAU counts a unique *credential per month*,
+not a login event — multiple devices and repeated silent logins on the SAME credential are
+one MAU. The "don't log in speculatively" discipline is still right for the interactive path,
+but MAU exhaustion is not a realistic risk for push-wake re-logins.
 
 ## What the app writes directly (no route involved)
 
@@ -100,10 +159,19 @@ Two matter to us specifically:
    count and notes, calls it, and hangs up — writing nothing and reporting nothing. If we
    ever expose an RSVP write route, it must be *impossible* to call it and get silence; and
    until then the app should disable the form rather than pretend.
-2. **`startOutboundCall` posts a hardcoded `"event_id":"default-event"`** and builds its JSON
-   by string concatenation with the phone interpolated. When `/api/calls/outbound` is built,
-   it must reject a non-UUID `event_id` loudly rather than coerce it, or the first real call
-   will be attributed to nothing.
+   **Update 2026-08-17:** `saveRsvpResult` is *still* an intentionally empty body (RSVP
+   outcomes belong to the ElevenLabs client-tools pipeline; the console must never write
+   them) — but the data-loss path is gone: the RSVP form was removed from every screen, so
+   nothing collects an answer only to discard it. **The real gap this leaves is worth naming
+   and is a product decision, not a wiring gap: an agent on a live call has nowhere in the
+   app to record what the guest said. Do not close it by inventing a client-side write.**
+2. **[STALE 07-21]** ~~`startOutboundCall` posts a hardcoded `"event_id":"default-event"` and
+   builds its JSON by string concatenation with the phone interpolated.~~ **Corrected
+   2026-08-17: fixed on the app side.** The hardcoded `"default-event"` and the concatenated
+   JSON are gone; the real outbound path (`enqueueOutboundCall` → `/api/events/{eventId}/outreach-call`)
+   posts a real `eventId`/`guest_id` pair through a serializer. The design warning is kept
+   anyway, because it still binds anything built later: **if an agent-initiated dial route is
+   ever added, it must reject a non-UUID `event_id` loudly rather than coerce it.**
 
 ## Related state, verified 2026-07-21
 
@@ -136,7 +204,24 @@ Two matter to us specifically:
   immediately — the app should read a sudden empty feed plus RLS denials as revocation, not
   as a network fault.
 
-## BLOCKING: the app and the server schema disagree on every command
+## ~~BLOCKING~~ **RESOLVED 2026-08-17** — the app and the server schema disagreed on every command
+
+> **This section is kept as a record; the conflict it describes no longer exists, and it was
+> resolved the OPPOSITE way from the recommendation at the bottom of it.**
+>
+> `src/lib/validation/agent-console.ts`'s `agentCommandBodySchema` now accepts exactly the
+> four names the app sends — `contextual_update`, `user_message`, `clear_buffer`,
+> `close_agent` — in the app's **flat** shape (`{command, ...fields}`), not the nested
+> `{command, payload:{…}}` this section proposed. The server adopted the app's wire format.
+> That file's own header records the reasoning and cites the app's serialiser line.
+>
+> The closing warning below still stands and is the reason this section is not deleted:
+> **the two repos must not be allowed to drift silently again.** One live mismatch survives
+> and is tracked in the app's `AGENTS.md` (Known state 8): the control labelled "השתק AI"
+> sends `clear_buffer`, which flushes the AI's buffer (barge-in) rather than muting it. The
+> wire format agrees; the *label* lies. Rename the control or change the command.
+
+**[Historical, 2026-07-21 — the conflict as it stood then]**
 
 `src/lib/validation/agent-console.ts` now exists on `origin/claude/session-8vlt7m` (`7e78f4d`).
 It is good work — discriminated union, honest `delivered` vs `applied` acks, `in_call`
