@@ -1222,6 +1222,46 @@ export async function resolveExternalDialTarget(
   return { ok: true, phone };
 }
 
+export interface PendingCallback {
+  id: string;
+  fullName: string;
+  phone: string;
+  topic: string | null;
+  createdAt: string;
+}
+
+/**
+ * The open callback queue, for the native console's missed-call list.
+ *
+ * Returns the PHONE, unlike most agent-facing reads in this file, and that is the
+ * point rather than an oversight: an agent returning a call has to see who they are
+ * about to ring — including someone who has never been a customer, which is exactly
+ * the case a masked number makes useless. The dial itself still never trusts this
+ * value; the app sends back the callback's ID and dial-intent re-reads the number
+ * server-side.
+ *
+ * Ordered oldest-first, because a callback queue is a queue: the person who has been
+ * waiting longest is the one to call. 'in_progress' rows are included so an agent
+ * who started and was interrupted can find their own work again.
+ */
+export async function findPendingCallbacks(limit = 50): Promise<PendingCallback[]> {
+  const admin = createAdminClient();
+  const { data, error } = await admin
+    .from('callback_requests')
+    .select('id, full_name, phone, topic, created_at')
+    .in('status', ['new', 'in_progress'])
+    .order('created_at', { ascending: true })
+    .limit(limit);
+  if (error) throw new Error('find_pending_callbacks_failed');
+  return (data ?? []).map((r) => ({
+    id: r.id,
+    fullName: r.full_name?.trim() || 'מתקשר לא מזוהה',
+    phone: r.phone,
+    topic: r.topic?.trim() || null,
+    createdAt: r.created_at,
+  }));
+}
+
 /** Audit action for a consult/conference leg placed to a number outside the console. */
 export const CONSOLE_EXTERNAL_DIAL_AUDIT_ACTION = 'console_call.external_dial';
 
