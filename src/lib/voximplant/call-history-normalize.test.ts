@@ -327,3 +327,75 @@ describe('normalizeVoxSessions', () => {
     expect(normalizeVoxSessions({})).toEqual([]);
   });
 });
+
+// A call the AGENT placed, captured live from session 7760988732 (numbers masked).
+//
+// The shape that broke every outbound row on the call log: Voximplant's docs say
+// "An outgoing call from an SDK also generates an incoming call to the platform",
+// so the AGENT's leg is incoming=true and the CUSTOMER's is incoming=false — the
+// mirror of a customer ringing us. Reading `incoming` alone rendered these as
+// "inbound · abandoned · agent_1bbe74dc… · 0s" on calls that connected.
+const AGENT_PLACED: CallHistorySession = {
+  call_session_history_id: 7760988732,
+  rule_name: 'ConsoleOut',
+  start_date: '2026-08-18 02:01:36',
+  duration: 30,
+  calls: [
+    {
+      incoming: true,
+      successful: true,
+      duration: 26,
+      remote_number: 'agent_1bbe74dc-5721-48e9-9092-fd9e3c6e6b21',
+      remote_number_type: 'user',
+      end_reason: { code: 200, details: 'Normal call clearing' },
+    },
+    {
+      incoming: false,
+      successful: true,
+      duration: 16,
+      remote_number: '972536212562',
+      remote_number_type: 'pstn',
+      end_reason: { code: 200, details: 'Normal call clearing' },
+    },
+  ],
+};
+
+describe('a call the agent placed', () => {
+  it('is OUTBOUND, however the platform labels the legs', () => {
+    expect(normalizeVoxSession(AGENT_PLACED)!.direction).toBe('outbound');
+  });
+
+  it('names the CUSTOMER as the other party, never our own agent', () => {
+    const n = normalizeVoxSession(AGENT_PLACED)!;
+    expect(n.remoteNumber).toBe('972536212562');
+    expect(n.remoteNumber).not.toContain('agent_');
+  });
+
+  it('is ANSWERED when the far end picked up', () => {
+    const n = normalizeVoxSession(AGENT_PLACED)!;
+    expect(n.outcome).toBe('answered');
+    // The FAR leg's duration — our own leg includes ringing and the disclosure.
+    expect(n.agentTalkSec).toBe(16);
+    expect(n.endCode).toBe(200);
+  });
+
+  it('is FAILED when the far end never picked up', () => {
+    const n = normalizeVoxSession({
+      ...AGENT_PLACED,
+      calls: [
+        AGENT_PLACED.calls![0],
+        { ...AGENT_PLACED.calls![1], successful: false, duration: 0, end_reason: { code: 486, details: 'Busy Here' } },
+      ],
+    })!;
+    expect(n.outcome).toBe('failed');
+    expect(n.agentTalkSec).toBe(0);
+    expect(n.endCode).toBe(486);
+  });
+
+  // The mirror case must keep working: a real caller ringing us is still inbound.
+  it('does not mistake a genuine inbound call for an agent-placed one', () => {
+    expect(normalizeVoxSession(MISSED)!.direction).toBe('inbound');
+    expect(normalizeVoxSession(ANSWERED)!.direction).toBe('inbound');
+    expect(normalizeVoxSession(MISSED)!.outcome).toBe('missed');
+  });
+});

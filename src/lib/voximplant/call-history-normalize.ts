@@ -68,6 +68,14 @@ export interface VoxNormalizedLeg {
   /** PII when the far end is a caller. Never log it. */
   remoteNumber: string | null;
   remoteNumberType: string | null;
+  /**
+   * The far end of this leg is one of OUR agents on the platform, not a customer.
+   *
+   * True on either direction, which is the point: on a call somebody places TO us
+   * an agent leg is outgoing, and on a call an agent PLACES their own SDK leg
+   * arrives incoming. `isAgentLeg` answers only the first shape.
+   */
+  isPlatformUser: boolean;
   isAgentLeg: boolean;
   endCode: number | null;
   endDetails: string | null;
@@ -178,6 +186,7 @@ function normalizeLeg(raw: CallHistoryLeg): VoxNormalizedLeg {
     startedAt: str(raw.start_time),
     remoteNumber: str(raw.remote_number),
     remoteNumberType: type,
+    isPlatformUser: type === AGENT_LEG_TYPE,
     isAgentLeg: raw.incoming === false && type === AGENT_LEG_TYPE,
     endCode: code,
     endDetails: details,
@@ -230,7 +239,26 @@ function pickRecord(
 function decideOutcome(
   direction: VoxCallDirection,
   legs: VoxNormalizedLeg[],
+  agentOriginated: boolean,
 ): { outcome: VoxCallOutcome; agentLegsTried: number; agentTalkSec: number } {
+  // A CALL THE AGENT PLACED is judged on whether the far party picked up, not on
+  // whether an agent was rung — the agent is the one who dialled. Reading it the
+  // other way reported "abandoned · 0s" on calls that connected and lasted sixteen
+  // seconds, because no leg matched "outgoing leg to one of our users".
+  if (agentOriginated) {
+    const ourLeg = legs.find((l) => l.isPlatformUser);
+    const theirLeg = legs.find((l) => !l.isPlatformUser);
+    const connected = theirLeg?.successful === true;
+    return {
+      outcome: connected ? 'answered' : 'failed',
+      agentLegsTried: ourLeg ? 1 : 0,
+      // The FAR leg's duration: how long the two were actually connected. Our own
+      // leg starts when the agent taps dial and includes the ringing and the
+      // disclosure, so it overstates the conversation.
+      agentTalkSec: connected ? theirLeg?.durationSec ?? 0 : 0,
+    };
+  }
+
   const agentLegs = legs.filter((l) => l.isAgentLeg);
   const connected = agentLegs.filter((l) => l.successful);
   const agentTalkSec = connected.reduce((m, l) => Math.max(m, l.durationSec), 0);
@@ -253,7 +281,13 @@ function decideOutcome(
 }
 
 /** The SIP code that explains the outcome, not merely the last one seen. */
-function decisiveEnd(legs: VoxNormalizedLeg[], outcome: VoxCallOutcome) {
+function decisiveEnd(legs: VoxNormalizedLeg[], outcome: VoxCallOutcome, agentOriginated: boolean) {
+  // On a call the agent placed, what matters is how the FAR end ended — our own
+  // leg's code says only how the agent's app closed.
+  if (agentOriginated) {
+    const theirLeg = legs.find((l) => !l.isPlatformUser);
+    return { endCode: theirLeg?.endCode ?? null, endDetails: theirLeg?.endDetails ?? null };
+  }
   const agentLegs = legs.filter((l) => l.isAgentLeg);
   if (outcome === 'answered') {
     const c = agentLegs.find((l) => l.successful) ?? legs.find((l) => l.successful);
@@ -284,15 +318,35 @@ export function normalizeVoxSession(
     .map(normalizeLeg);
 
   const inboundLeg = legs.find((l) => l.incoming === true) ?? null;
+
+  // AN AGENT-PLACED CALL ARRIVES AS AN INBOUND LEG, and reading `incoming` alone
+  // gets every one of them backwards.
+  //
+  // Voximplant's own docs say it plainly: "An outgoing call from an SDK also
+  // generates an incoming call to the platform." So when the console dials, the
+  // AGENT's SDK leg is incoming=true and the CUSTOMER's leg is incoming=false —
+  // the mirror image of a customer ringing us.
+  //
+  // Classifying on `incoming` alone made every outbound console call render as
+  // "inbound · abandoned · agent_1bbe74dc · 0s talk" — wrong direction, wrong
+  // outcome, wrong party, wrong duration, on calls that had connected and lasted
+  // sixteen seconds. Measured on sessions 7758711828 and 7760988732.
+  //
+  // The leg TYPE settles it: `remote_number_type === 'user'` means the far end is
+  // one of our own agents on the platform, which an actual customer never is.
+  const agentOriginated = inboundLeg?.isPlatformUser === true;
+
   const direction: VoxCallDirection =
-    legs.length === 0 ? 'unknown' : inboundLeg ? 'inbound' : 'outbound';
+    legs.length === 0 ? 'unknown' : agentOriginated ? 'outbound' : inboundLeg ? 'inbound' : 'outbound';
 
-  // The far party: on inbound that is the caller; on outbound the destination we
-  // dialled — never an agent leg, which is our own side wearing a phone number.
-  const party = inboundLeg ?? legs.find((l) => !l.isAgentLeg) ?? null;
+  // The far party is whoever is NOT us: never an agent leg on either shape — that
+  // is our own side wearing a phone number.
+  const party = agentOriginated
+    ? legs.find((l) => !l.isPlatformUser) ?? null
+    : inboundLeg ?? legs.find((l) => !l.isPlatformUser) ?? null;
 
-  const { outcome, agentLegsTried, agentTalkSec } = decideOutcome(direction, legs);
-  const { endCode, endDetails } = decisiveEnd(legs, outcome);
+  const { outcome, agentLegsTried, agentTalkSec } = decideOutcome(direction, legs, agentOriginated);
+  const { endCode, endDetails } = decisiveEnd(legs, outcome, agentOriginated);
   const record = pickRecord(raw.records, nowMs);
 
   return {
