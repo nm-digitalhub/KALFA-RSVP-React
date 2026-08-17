@@ -65,9 +65,26 @@ export async function GET(request: Request) {
   const url = new URL(request.url);
   const p = url.searchParams;
 
+  /**
+   * An absent parameter is UNDEFINED, not zero.
+   *
+   * `Number(null)` is 0 and `Number.isFinite(0)` is true, so reading a missing
+   * param through Number() alone yields a perfectly valid-looking zero. That is
+   * not a style point here: it emptied the entire call log. With `from` and `to`
+   * both defaulting to 0, every request asked Voximplant for the window
+   * 1970-01-01 → 1970-01-01 and got nothing back — so the screen showed
+   * "אין שיחות ב<range> האחרון" for every filter, immediately, including no
+   * filter at all. The `days` fallback below was never reached because `from`
+   * and `to` were always "present".
+   *
+   * The null check has to come FIRST, before any numeric coercion, which is the
+   * whole reason this is a helper rather than an inline Number().
+   */
   const int = (key: string): number | undefined => {
-    const raw = Number(p.get(key));
-    return Number.isFinite(raw) ? raw : undefined;
+    const raw = p.get(key);
+    if (raw === null || raw.trim() === '') return undefined;
+    const n = Number(raw);
+    return Number.isFinite(n) ? n : undefined;
   };
 
   const rawDays = Number(p.get('days'));
