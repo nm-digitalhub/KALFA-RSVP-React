@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 
 import { requireConsoleAgent } from '@/lib/auth/console-agent';
 import { fetchVoxCallHistory } from '@/lib/data/vox-call-history';
+import { normalizePhone } from '@/lib/phone';
 import { rateLimit } from '@/lib/security/rate-limit';
 
 // GET /api/agents/call-history?days=7&outcome=missed&direction=inbound
@@ -85,11 +86,13 @@ export async function GET(request: Request) {
 
   const dir = p.get('direction');
   const out = p.get('outcome');
-  // E.164 only. Anything else is dropped rather than passed through — this value
-  // reaches Voximplant inside a JSON array, and a permissive filter here is how a
-  // free-text field becomes an injection surface.
-  const rawPhone = p.get('phone')?.trim();
-  const phone = rawPhone && /^\+[1-9]\d{6,14}$/.test(rawPhone) ? rawPhone : undefined;
+  // Normalized through the SAME helper the dial path uses — libphonenumber-js with
+  // region IL — rather than through a regex written here. An agent typing
+  // 0536212562, 972536212562 or +972536212562 means one person, and a hand-rolled
+  // E.164 pattern would accept only the third while the rest of the system treats
+  // all three as identical. One canonical form, one implementation; anything that
+  // does not parse as a real dialable number is dropped rather than forwarded.
+  const phone = normalizePhone(p.get('phone')) ?? undefined;
 
   const minDur = int('min_duration');
   const maxDur = int('max_duration');

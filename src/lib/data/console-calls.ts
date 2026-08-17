@@ -644,18 +644,30 @@ export async function resolveDialTarget(
   // this stays a resolver and not a hole through which an arbitrary number could be
   // dialled.
   if (input.kind === 'returned_call') {
-    let returnable: Awaited<ReturnType<typeof fetchReturnableCall>>;
-    try {
-      returnable = await fetchReturnableCall(input.sessionId, CALLBACK_FRESHNESS_MS, nowMs);
-    } catch {
-      // Voximplant unreachable is a lookup failure, not a refusal. The agent should
-      // be told to retry, not told they may not call this person.
-      return { ok: false, reason: 'lookup_failed' };
+    const returnable = await fetchReturnableCall(input.sessionId, CALLBACK_FRESHNESS_MS, nowMs);
+    if (!returnable.ok) {
+      // Mapped one-to-one, not collapsed. Every one of these used to arrive as the
+      // same `null` and be reported as "no such call" — so a rate limit, an expired
+      // service-account token and a genuinely unknown session were indistinguishable
+      // on screen, and a real outage read as a missing row.
+      switch (returnable.reason) {
+        case 'not_found':
+        case 'invalid_session_id':
+        case 'not_inbound':
+          return { ok: false, reason: 'not_found' };
+        case 'out_of_window':
+          return { ok: false, reason: 'stale' };
+        case 'withheld_number':
+          return { ok: false, reason: 'invalid_phone' };
+        // A malformed query or a credentials fault is OURS, and 'lookup_failed'
+        // is the reason that tells the agent to retry rather than blaming the
+        // person they are trying to reach.
+        case 'bad_request':
+        case 'auth_failed':
+        case 'unavailable':
+          return { ok: false, reason: 'lookup_failed' };
+      }
     }
-    // Covers three cases on purpose — unknown session, an outbound leg, and a
-    // session outside the freshness window (GetCallHistory simply will not return
-    // it for that from/to pair). None of them is a consent refusal.
-    if (!returnable) return { ok: false, reason: 'not_found' };
 
     const shared = await evaluateSharedConsentGates(admin, returnable.phone, nowMs, {
       allowOutsideHours: opts.allowOutsideHours,

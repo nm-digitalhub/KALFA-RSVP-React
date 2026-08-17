@@ -45,6 +45,39 @@ const PAGE_CAP = 20;
 /** Must be explicit: 'auto' resolves to the ACCOUNT's location, not the owner's. */
 const TZ = 'Asia/Jerusalem';
 
+/**
+ * Voximplant stores and matches remote numbers WITHOUT a leading '+'.
+ *
+ * MEASURED against the live account, same window, 2026-08-17:
+ *
+ *     remote_number_list ["+972536212562"]   ->  0 rows
+ *     remote_number_list  ["972536212562"]   -> 25 rows
+ *
+ * Exact string match, no normalisation on their side. So a canonical E.164 value
+ * — which is what the rest of this system stores and dials — silently matches
+ * NOTHING when used as a filter. Not an error, not an empty-ish result: a
+ * confident "no such calls" for a number with 25 of them, which is precisely the
+ * failure an agent cannot distinguish from the truth.
+ *
+ * Canonical everywhere internally, stripped only at this boundary.
+ */
+function toVoxNumberFilter(e164: string): string {
+  return e164.startsWith('+') ? e164.slice(1) : e164;
+}
+
+/**
+ * How far back a single-session lookup may look.
+ *
+ * Wide on purpose. The FRESHNESS RULE IS OURS, not the platform's, and it has to
+ * be applied to a session we actually found — otherwise the two failures collapse.
+ * Measured: asking for a valid session id outside the requested from/to window
+ * does NOT return an empty result, it raises code 150, the same code an unknown id
+ * raises. So querying inside the freshness bound made "too old" indistinguishable
+ * from "no such call", and the agent was told the wrong thing about a call they
+ * were looking at.
+ */
+const SESSION_LOOKUP_DAYS = 365;
+
 export interface VoxHistoryQuery {
   /**
    * Lookback in days. A convenience only — `from`/`to` win when supplied.
@@ -153,6 +186,52 @@ async function namesForNumbers(phones: string[]): Promise<Map<string, string>> {
 }
 
 /**
+ * Voximplant error codes this resolver classifies on, taken from
+ * `references.httpapi.errors` (457 codes, read live 2026-08-17).
+ *
+ * BY CODE, never by matching the message text. The first version of this matched
+ * the string "parameter is invalid" and treated every platform error as "no such
+ * call" — which would have reported a rate-limit, an expired token or a database
+ * fault as a missing session, hiding real outages behind a wrong answer. The
+ * platform publishes structured codes; there is no reason to parse prose.
+ *
+ * Note 429 is NOT "too many requests" here — Voximplant assigns it to "The
+ * 'resource_type' parameter is invalid". HTTP intuitions do not carry over, which
+ * is exactly why these are listed explicitly rather than inferred.
+ */
+const VOX_ERR = {
+  /** 150 — "The 'call_session_history_id' parameter is invalid" */
+  SESSION_ID_INVALID: 150,
+  /** Our own request was malformed — a bug on this side, not a missing call. */
+  BAD_REQUEST: new Set([101, 103, 104, 111, 115, 116, 123, 134, 156]),
+  /** Credentials / service-account problem. Operational, not user-facing. */
+  AUTH: new Set([100]),
+  /** Transient. voxRetry already backs off on these; a survivor is still retryable. */
+  TRANSIENT: new Set([1, 2, 4, 340, 456, 484, 515]),
+} as const;
+
+export type ReturnableCall =
+  | { ok: true; phone: string; startedAt: string | null }
+  | {
+      ok: false;
+      /**
+       * Explicit, because `null` for every failure hid three different situations
+       * behind one word — an unknown session, a malformed id, and a call outside
+       * the window are not the same fact and an agent acts on them differently.
+       */
+      reason:
+        | 'invalid_session_id' // not a positive integer — never reached the platform
+        | 'not_found' // platform code 150: no such session
+        | 'out_of_window' // valid id, but older than the freshness bound
+        | 'not_inbound' // an outbound leg: not somebody who called us
+        | 'withheld_number' // inbound, but no CLI to ring back
+        | 'bad_request' // our query was malformed — a bug, logged not shown
+        | 'auth_failed' // service-account problem
+        | 'unavailable'; // transient: network, rate limit, platform fault
+      code?: number;
+    };
+
+/**
  * Reads back the number to ring for ONE session, from Voximplant.
  *
  * This is the whole resolver for returning a call, and it deliberately touches no
@@ -178,17 +257,24 @@ export async function fetchReturnableCall(
   sessionId: string,
   withinMs: number,
   nowMs: number = Date.now(),
-): Promise<{ phone: string; startedAt: string | null } | null> {
+): Promise<ReturnableCall> {
   const config = await getVoximplantConfig();
-  if (!config) throw new Error('voximplant_not_configured');
+  if (!config) return { ok: false, reason: 'auth_failed' };
 
   const numericId = Number(sessionId);
-  if (!Number.isSafeInteger(numericId) || numericId <= 0) return null;
+  // Rejected before the request is made: a non-numeric id is a client bug, and
+  // sending it upstream would burn a round trip to be told the same thing.
+  if (!Number.isSafeInteger(numericId) || numericId <= 0) {
+    return { ok: false, reason: 'invalid_session_id' };
+  }
 
   let res;
   try {
     res = await getCallHistory(config.auth, {
-      from_date: fmtInTz(new Date(nowMs - withinMs)),
+      // A WIDE window, then our freshness rule applied to what came back — see
+      // SESSION_LOOKUP_DAYS. Querying inside the bound made "too old" raise the
+      // same code 150 as "no such session".
+      from_date: fmtInTz(new Date(nowMs - SESSION_LOOKUP_DAYS * 86_400_000)),
       to_date: fmtInTz(new Date(nowMs)),
       timezone: TZ,
       call_session_history_id: numericId,
@@ -196,30 +282,37 @@ export async function fetchReturnableCall(
       count: 1,
     });
   } catch (e) {
-    // An id the platform will not accept is NOT FOUND, not a lookup failure, and
-    // the distinction reaches the agent as different words. Measured: asking for
-    // session 999999999 raises `'call_session_history_id' parameter is invalid`
-    // rather than returning an empty result — so without this the app would say
-    // "נסה שוב" forever about a session that does not exist.
-    //
-    // A NETWORK error is re-thrown: that one genuinely is worth retrying, and
-    // swallowing it here would report "no such call" every time Voximplant is
-    // briefly unreachable.
-    if (e instanceof VoximplantApiError) return null;
-    throw e;
+    if (e instanceof VoximplantApiError) {
+      const code = e.code ?? undefined;
+      if (code === VOX_ERR.SESSION_ID_INVALID) return { ok: false, reason: 'not_found', code };
+      if (code !== undefined && VOX_ERR.AUTH.has(code)) return { ok: false, reason: 'auth_failed', code };
+      if (code !== undefined && VOX_ERR.BAD_REQUEST.has(code)) return { ok: false, reason: 'bad_request', code };
+      if (code !== undefined && VOX_ERR.TRANSIENT.has(code)) return { ok: false, reason: 'unavailable', code };
+      // An unlisted code is TRANSIENT rather than "not found". 457 codes exist and
+      // this resolver names nine; guessing "no such call" for the rest would turn
+      // any new platform fault into a confident wrong answer.
+      return { ok: false, reason: 'unavailable', code };
+    }
+    // Network / unparseable response — retryable by definition.
+    return { ok: false, reason: 'unavailable' };
   }
 
   const session = normalizeVoxSessions(res.result ?? [], nowMs)[0];
-  if (!session) return null;
-  if (session.direction !== 'inbound') return null;
+  if (!session) return { ok: false, reason: 'not_found' };
+
+  // OUR rule, applied to a session we actually found, so "too old to return from
+  // here" is reported as itself rather than as "no such call".
+  const startedMs = session.startedAt ? Date.parse(session.startedAt.replace(' ', 'T')) : NaN;
+  if (Number.isFinite(startedMs) && nowMs - startedMs > withinMs) {
+    return { ok: false, reason: 'out_of_window' };
+  }
+  if (session.direction !== 'inbound') return { ok: false, reason: 'not_inbound' };
 
   const inboundLeg = session.legs.find((l) => l.incoming === true);
   const phone = inboundLeg?.remoteNumber ? normalizePhone(inboundLeg.remoteNumber) : null;
-  // A withheld CLI leaves nothing to ring. Null rather than a partial result, so
-  // the caller reports "no number" instead of "no such call".
-  if (!phone) return null;
+  if (!phone) return { ok: false, reason: 'withheld_number' };
 
-  return { phone, startedAt: session.startedAt };
+  return { ok: true, phone, startedAt: session.startedAt };
 }
 
 export async function fetchVoxCallHistory(q: VoxHistoryQuery): Promise<VoxHistoryResult> {
@@ -256,7 +349,7 @@ export async function fetchVoxCallHistory(q: VoxHistoryQuery): Promise<VoxHistor
       // page, which is what keeps a deep outcome query from paging the window.
       ...(q.minDurationSec !== undefined ? { min_duration: q.minDurationSec } : {}),
       ...(q.maxDurationSec !== undefined ? { max_duration: q.maxDurationSec } : {}),
-      ...(q.phone ? { remote_number_list: JSON.stringify([q.phone]) } : {}),
+      ...(q.phone ? { remote_number_list: JSON.stringify([toVoxNumberFilter(q.phone)]) } : {}),
     });
 
     const batch = res.result ?? [];
