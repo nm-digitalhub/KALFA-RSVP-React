@@ -79,9 +79,23 @@ export async function POST(request: Request) {
     allowOutsideHours: parsed.data.confirm_outside_hours === true,
   });
   if (!resolved.ok) {
-    // Generic, privacy-safe — never echo WHICH gate tripped in detail beyond
-    // a stable reason code (no phone, no name, ever).
-    return json({ error: 'לא ניתן לחייג כעת', reason: resolved.reason }, 403);
+    // Privacy-safe — no phone, no name, ever. But the REASON is stable and
+    // machine-readable, and `vox_code` carries the platform's own error number
+    // when the refusal came from there.
+    //
+    // The code travels because for the faults an agent cannot fix — a rejected
+    // service account, a malformed upstream query, a platform outage — the number
+    // is the entire diagnosis. Without it the screen can only say "something went
+    // wrong", and whoever reads the report has to reproduce the failure to learn
+    // what it was. It identifies a class of error, never a person.
+    return json(
+      {
+        error: 'לא ניתן לחייג כעת',
+        reason: resolved.reason,
+        ...(resolved.code !== undefined ? { vox_code: resolved.code } : {}),
+      },
+      403,
+    );
   }
 
   // 7: live-dial gate (admin DB toggle AND env not force-off).

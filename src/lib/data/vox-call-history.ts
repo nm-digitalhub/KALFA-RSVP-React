@@ -202,12 +202,49 @@ async function namesForNumbers(phones: string[]): Promise<Map<string, string>> {
 const VOX_ERR = {
   /** 150 — "The 'call_session_history_id' parameter is invalid" */
   SESSION_ID_INVALID: 150,
-  /** Our own request was malformed — a bug on this side, not a missing call. */
-  BAD_REQUEST: new Set([101, 103, 104, 111, 115, 116, 123, 134, 156]),
-  /** Credentials / service-account problem. Operational, not user-facing. */
-  AUTH: new Set([100]),
-  /** Transient. voxRetry already backs off on these; a survivor is still retryable. */
-  TRANSIENT: new Set([1, 2, 4, 340, 456, 484, 515]),
+
+  /** 340 "Rate limit exceed" — waiting genuinely helps. */
+  RATE_LIMITED: 340,
+
+  /**
+   * 484 "HTTP request is rejected due to probable automatic request resend. Try
+   * again later." and 515 "The same operation has been performed recently."
+   *
+   * Both are duplicate-suppression guards, and 484's own text says to try later.
+   * Distinct from a rate limit: nothing is over quota, the same call was simply
+   * made a moment ago.
+   */
+  DUPLICATE_GUARD: new Set([484, 515]),
+
+  /**
+   * 1 "Fatal error", 2 "Internal error", 4 "DB error" — faults on VOXIMPLANT'S
+   * side. Retrying may work and may not; either way it is not our request that is
+   * wrong, and lumping these in with a rate limit would tell an agent to wait for
+   * a queue that does not exist.
+   */
+  PLATFORM_FAULT: new Set([1, 2, 4]),
+
+  /** 456 "The token has expired." voxRetry renews once; a survivor is real. */
+  TOKEN_EXPIRED: 456,
+
+  /**
+   * Credentials and account configuration. 100 "Authorization failed",
+   * 104 "Forbidden command", 115 "The 'account_id' parameter is invalid",
+   * 116 "The 'application_id' parameter is invalid".
+   *
+   * PERMANENT until somebody changes a setting. No amount of retrying moves it.
+   */
+  CONFIG_FAULT: new Set([100, 104, 115, 116]),
+
+  /**
+   * Our query is malformed. 101 "Invalid arguments", 103 "Unknown command",
+   * 111 "Invalid date format", 123 "Invalid date range", 134 "Required parameter
+   * is empty", 156 "The 'rule_name' parameter is invalid".
+   *
+   * A bug in this codebase, and the only class where the code itself is the whole
+   * diagnosis — which is why it travels to the log and to the screen.
+   */
+  BAD_REQUEST: new Set([101, 103, 111, 123, 134, 156]),
 } as const;
 
 export type ReturnableCall =
@@ -221,13 +258,18 @@ export type ReturnableCall =
        */
       reason:
         | 'invalid_session_id' // not a positive integer — never reached the platform
-        | 'not_found' // platform code 150: no such session
-        | 'out_of_window' // valid id, but older than the freshness bound
+        | 'not_found' // code 150: no such session
+        | 'out_of_window' // valid id, older than the freshness bound
         | 'not_inbound' // an outbound leg: not somebody who called us
         | 'withheld_number' // inbound, but no CLI to ring back
-        | 'bad_request' // our query was malformed — a bug, logged not shown
-        | 'auth_failed' // service-account problem
-        | 'unavailable'; // transient: network, rate limit, platform fault
+        | 'rate_limited' // code 340 — waiting helps
+        | 'duplicate_request' // codes 484/515 — the same call a moment ago
+        | 'platform_fault' // codes 1/2/4 — broken on Voximplant's side
+        | 'token_expired' // code 456 — auth renewal did not hold
+        | 'config_fault' // codes 100/104/115/116 — permanent, needs a setting changed
+        | 'bad_request' // codes 101/103/111/123/134/156 — our query is wrong
+        | 'network_error'; // never reached the platform at all
+      /** The platform's own code, carried so the screen and the log can name it. */
       code?: number;
     };
 
@@ -259,7 +301,7 @@ export async function fetchReturnableCall(
   nowMs: number = Date.now(),
 ): Promise<ReturnableCall> {
   const config = await getVoximplantConfig();
-  if (!config) return { ok: false, reason: 'auth_failed' };
+  if (!config) return { ok: false, reason: 'config_fault' };
 
   const numericId = Number(sessionId);
   // Rejected before the request is made: a non-numeric id is a client bug, and
@@ -285,16 +327,28 @@ export async function fetchReturnableCall(
     if (e instanceof VoximplantApiError) {
       const code = e.code ?? undefined;
       if (code === VOX_ERR.SESSION_ID_INVALID) return { ok: false, reason: 'not_found', code };
-      if (code !== undefined && VOX_ERR.AUTH.has(code)) return { ok: false, reason: 'auth_failed', code };
-      if (code !== undefined && VOX_ERR.BAD_REQUEST.has(code)) return { ok: false, reason: 'bad_request', code };
-      if (code !== undefined && VOX_ERR.TRANSIENT.has(code)) return { ok: false, reason: 'unavailable', code };
-      // An unlisted code is TRANSIENT rather than "not found". 457 codes exist and
-      // this resolver names nine; guessing "no such call" for the rest would turn
-      // any new platform fault into a confident wrong answer.
-      return { ok: false, reason: 'unavailable', code };
+      if (code === VOX_ERR.RATE_LIMITED) return { ok: false, reason: 'rate_limited', code };
+      if (code === VOX_ERR.TOKEN_EXPIRED) return { ok: false, reason: 'token_expired', code };
+      if (code !== undefined && VOX_ERR.DUPLICATE_GUARD.has(code)) {
+        return { ok: false, reason: 'duplicate_request', code };
+      }
+      if (code !== undefined && VOX_ERR.PLATFORM_FAULT.has(code)) {
+        return { ok: false, reason: 'platform_fault', code };
+      }
+      if (code !== undefined && VOX_ERR.CONFIG_FAULT.has(code)) {
+        return { ok: false, reason: 'config_fault', code };
+      }
+      if (code !== undefined && VOX_ERR.BAD_REQUEST.has(code)) {
+        return { ok: false, reason: 'bad_request', code };
+      }
+      // 457 codes exist and this names fifteen. An unlisted one is reported as a
+      // PLATFORM FAULT carrying its number — never as "no such call", which would
+      // turn every new platform error into a confident wrong answer, and never as
+      // a generic retry, which would be advice we cannot justify.
+      return { ok: false, reason: 'platform_fault', code };
     }
-    // Network / unparseable response — retryable by definition.
-    return { ok: false, reason: 'unavailable' };
+    // Never reached the platform: transport, timeout, unparseable response.
+    return { ok: false, reason: 'network_error' };
   }
 
   const session = normalizeVoxSessions(res.result ?? [], nowMs)[0];

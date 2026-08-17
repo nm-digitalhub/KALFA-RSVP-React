@@ -406,7 +406,37 @@ export type DialTargetFailureReason =
   // hours, DNC and opt-out all stay 'quiet_hours'/'dnc'/'opted_out' and stay
   // absolute — an override exists for "it is 20:15 and this person is waiting for a
   // call back", not for "this person asked never to be called".
-  | 'outside_hours';
+  | 'outside_hours'
+  // ── Returning a call: every upstream outcome kept DISTINCT ────────────────
+  //
+  // Nothing here is folded into a neighbour. An earlier version mapped three of
+  // these onto 'not_found' and two more onto 'lookup_failed', which produced a
+  // screen that said the same sentence for a malformed id, an outbound leg and a
+  // broken service account — three different problems with three different
+  // responses, described identically. Every one of them now survives to the agent
+  // with its own wording, and the platform's own code travels with it.
+  /** The id the device sent was not a positive integer. A client bug. */
+  | 'invalid_session_id'
+  /** The session exists but predates the freshness bound for returning a call. */
+  | 'out_of_window'
+  /** A call WE placed. Not somebody who rang us, so not returnable from here. */
+  | 'not_inbound'
+  /** Inbound, but the caller withheld their number — nothing to ring. */
+  | 'withheld_number'
+  /** Vox 340 "Rate limit exceed" — waiting genuinely helps. */
+  | 'rate_limited'
+  /** Vox 484/515 — the same request a moment ago. Waiting helps. */
+  | 'duplicate_request'
+  /** Vox 1/2/4 — Fatal / Internal / DB error on the PLATFORM's side. */
+  | 'platform_fault'
+  /** Vox 456 — the management token expired and renewal did not hold. */
+  | 'token_expired'
+  /** Vox 100/104/115/116 — credentials or account config. Permanent. */
+  | 'config_fault'
+  /** Vox 101/103/111/123/134/156 — our own query is malformed. A bug. */
+  | 'bad_request'
+  /** Never reached the platform: transport, timeout, unparseable response. */
+  | 'network_error';
 
 export type DialTargetResolution =
   | {
@@ -417,7 +447,18 @@ export type DialTargetResolution =
       guestId: string | null;
       callbackRequestId: string | null;
     }
-  | { ok: false; reason: DialTargetFailureReason };
+  | {
+      ok: false;
+      reason: DialTargetFailureReason;
+      /**
+       * Voximplant's own error number, when the refusal came from the platform.
+       *
+       * Carried to the screen deliberately. For the classes an agent cannot fix,
+       * the code IS the diagnosis, and a message without it forces whoever reads
+       * the report to reproduce the failure to learn what it was.
+       */
+      code?: number;
+    };
 
 // decide-consent §2 correction: 30 days, a policy choice, not a statutory
 // figure (the exemption itself carries no expiry).
@@ -646,27 +687,27 @@ export async function resolveDialTarget(
   if (input.kind === 'returned_call') {
     const returnable = await fetchReturnableCall(input.sessionId, CALLBACK_FRESHNESS_MS, nowMs);
     if (!returnable.ok) {
-      // Mapped one-to-one, not collapsed. Every one of these used to arrive as the
-      // same `null` and be reported as "no such call" — so a rate limit, an expired
-      // service-account token and a genuinely unknown session were indistinguishable
-      // on screen, and a real outage read as a missing row.
-      switch (returnable.reason) {
-        case 'not_found':
-        case 'invalid_session_id':
-        case 'not_inbound':
-          return { ok: false, reason: 'not_found' };
-        case 'out_of_window':
-          return { ok: false, reason: 'stale' };
-        case 'withheld_number':
-          return { ok: false, reason: 'invalid_phone' };
-        // A malformed query or a credentials fault is OURS, and 'lookup_failed'
-        // is the reason that tells the agent to retry rather than blaming the
-        // person they are trying to reach.
-        case 'bad_request':
-        case 'auth_failed':
-        case 'unavailable':
-          return { ok: false, reason: 'lookup_failed' };
+      // PASSED THROUGH, not mapped. The reason names are shared between the two
+      // unions on purpose: every upstream outcome reaches the agent as itself,
+      // carrying the platform's own code. An earlier version folded three of these
+      // into "not found" and two more into "try again", which produced one sentence
+      // for a malformed id, an outbound leg and a broken service account — and told
+      // an agent to retry a fault that will never resolve by retrying.
+      //
+      // Logged for the classes an engineer can act on and an agent cannot. No phone
+      // number and no session id in the line.
+      if (
+        returnable.reason === 'bad_request' ||
+        returnable.reason === 'config_fault' ||
+        returnable.reason === 'platform_fault' ||
+        returnable.reason === 'token_expired'
+      ) {
+        console.error(
+          `[dial-intent] returned_call upstream=${returnable.reason}` +
+            (returnable.code !== undefined ? ` vox_code=${returnable.code}` : ''),
+        );
       }
+      return { ok: false, reason: returnable.reason, code: returnable.code };
     }
 
     const shared = await evaluateSharedConsentGates(admin, returnable.phone, nowMs, {
