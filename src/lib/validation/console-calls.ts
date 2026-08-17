@@ -193,6 +193,20 @@ export const consoleEventBodySchema = z.discriminatedUnion('event', [
     reason: z.string().trim().min(1).max(64),
     duration_s: z.number().int().min(0).max(24 * 3600),
     recording_url: z.string().trim().url().max(2048).nullable(),
+    // The PLATFORM's own status code for the leg that ended — CallEvents
+    // .Disconnected/.Failed's `internalCode` ("Status code of the call (i.e., 486)",
+    // live reference references.voxengine.callevents.disconnected, 17.8).
+    //
+    // OPTIONAL, and for the deploy-ordering reason spelled out on
+    // consoleAuthorizeBodySchema: these schemas are strictObject and the scenario
+    // ships through voxengine-ci while this route ships through the Next deploy,
+    // which cannot be made atomic. Required here would break live calls in whichever
+    // gap opened first.
+    //
+    // Bounded to the SIP response range rather than left open: a value outside it is
+    // not a status code, and accepting one would put noise in the column that exists
+    // to make failures legible.
+    end_code: z.number().int().min(100).max(699).optional(),
   }),
   z.strictObject({
     ...eventEnvelopeBase,

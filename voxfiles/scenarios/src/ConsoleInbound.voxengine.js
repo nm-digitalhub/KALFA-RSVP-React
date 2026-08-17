@@ -347,16 +347,33 @@ VoxEngine.addEventListener(AppEvents.Started, function (startedEvent) {
         });
     }
     // Exactly ONE 'ended' report per session (idempotent).
-    function reportEndedOnce(reason) {
+    // [endCode] is the PLATFORM's own status code for the leg that ended, taken from
+    // CallEvents.Disconnected/Failed's `internalCode`. Live reference, 17.8
+    // (references.voxengine.callevents.disconnected): "internalCode — Status code of
+    // the call (i.e., 486)", alongside `reason`.
+    //
+    // Sent because our own `reason` strings cannot express what the network said.
+    // 'caller_hangup' is the same word whether the far end hung up normally (200),
+    // was busy (486), rejected the call (603), was unreachable (480) or the number
+    // does not exist (404) — and those are different events with different follow-ups.
+    // Measured before adding this: THIRTY DAYS of console calls carried exactly three
+    // distinct reasons between them, which is not a quiet system, it is a blind one.
+    //
+    // Optional on the server schema, so a scenario deployed before this keeps
+    // reporting exactly as it does now.
+    function reportEndedOnce(reason, endCode) {
         if (state.endedReported)
             return;
         state.endedReported = true;
         var duration = state.connectedAt ? Math.round((Date.now() - state.connectedAt) / 1000) : 0;
-        reportEvent('ended', {
+        var payload = {
             reason: reason,
             duration_s: duration,
             recording_url: state.recordingUrl || null
-        });
+        };
+        if (typeof endCode === 'number' && endCode > 0)
+            payload.end_code = endCode;
+        reportEvent('ended', payload);
     }
     function scheduleOperatorHangup(delayMs) {
         if (state.operatorHangupScheduled || !state.operator)
@@ -388,7 +405,9 @@ VoxEngine.addEventListener(AppEvents.Started, function (startedEvent) {
     }
     // Either leg going down brings the whole call down — hang up the other
     // one (idempotent) and finalize once BOTH are gone.
-    function handleLegDown(which, reasonForEnd) {
+    // [endCode] comes from the Disconnected/Failed event that triggered this — see
+    // reportEndedOnce for why the platform's own code is worth carrying.
+    function handleLegDown(which, reasonForEnd, endCode) {
         if (which === 'operator')
             state.operator = null;
         else
@@ -457,7 +476,7 @@ VoxEngine.addEventListener(AppEvents.Started, function (startedEvent) {
         if (state.remote)
             scheduleRemoteHangup(HANGUP_GRACE_MS);
         if (!state.operator && !state.remote) {
-            reportEndedOnce(reasonForEnd);
+            reportEndedOnce(reasonForEnd, endCode);
             cleanupAndTerminate();
         }
     }
@@ -637,11 +656,11 @@ VoxEngine.addEventListener(AppEvents.Started, function (startedEvent) {
                 return;
             }
             log('operator disconnected: ' + safeStringify(ev));
-            handleLegDown('operator', 'operator_hangup');
+            handleLegDown('operator', 'operator_hangup', ev && ev.internalCode);
         });
         call.addEventListener(CallEvents.Failed, function (ev) {
             log('operator failed: ' + safeStringify(ev));
-            handleLegDown('operator', 'operator_failed');
+            handleLegDown('operator', 'operator_failed', ev && (ev.code || ev.internalCode));
         });
         // SDK-initiated hold (verified live docs — guides.calls.features'
         // "How to hold a call" gives ONE shared VoxEngine-side example for
@@ -684,7 +703,7 @@ VoxEngine.addEventListener(AppEvents.Started, function (startedEvent) {
     function attachRemoteTerminalHandlers(call) {
         call.addEventListener(CallEvents.Disconnected, function (ev) {
             log('remote (caller) disconnected: ' + safeStringify(ev));
-            handleLegDown('remote', 'caller_hangup');
+            handleLegDown('remote', 'caller_hangup', ev && ev.internalCode);
         });
     }
     // ── Blind transfer between agents (V1: scenario-side, no consult) ───────

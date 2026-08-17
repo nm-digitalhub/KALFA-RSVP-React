@@ -37,6 +37,7 @@ import {
   offerCallbackForCallMeNow,
   recordConsoleCallSessionAccess,
   recordMissedCallCallback,
+  refineEndedReason,
   resolveDialTarget,
   resolveExternalDialTarget,
   resolveTransferTarget,
@@ -188,6 +189,39 @@ describe('isWithinCallerStatedWindow (pure) — the caller\'s own stated limits'
   it('respects an excluded date (Israel-local)', () => {
     expect(isWithinCallerStatedWindow({ excluded_dates: ['2026-06-04'] }, noon)).toBe(false);
     expect(isWithinCallerStatedWindow({ excluded_dates: ['2026-06-05'] }, noon)).toBe(true);
+  });
+});
+
+// The mapping that turns a nearly information-free column into a legible one.
+// Pure, so it is cheap to pin — and worth pinning, because a wrong entry here
+// mislabels history silently rather than failing.
+describe('refineEndedReason (pure — the SIP code the platform actually returned)', () => {
+  it('leaves a normal clearing alone', () => {
+    // 200 is what almost every real call ends with. Decorating those would bury the
+    // handful that mean something.
+    expect(refineEndedReason('caller_hangup', 200)).toBe('caller_hangup');
+  });
+
+  it('leaves the reason alone when no code was sent', () => {
+    // A scenario deployed before end_code existed keeps reporting exactly as it did.
+    expect(refineEndedReason('caller_hangup')).toBe('caller_hangup');
+    expect(refineEndedReason('caller_hangup', null)).toBe('caller_hangup');
+  });
+
+  it('names the codes the live reference calls most frequent', () => {
+    // Exactly the table at references.voxengine.callevents (read 17.8).
+    expect(refineEndedReason('operator_failed', 486)).toBe('operator_failed:busy');
+    expect(refineEndedReason('operator_failed', 480)).toBe('operator_failed:unavailable');
+    expect(refineEndedReason('operator_failed', 404)).toBe('operator_failed:invalid_number');
+    expect(refineEndedReason('operator_failed', 603)).toBe('operator_failed:rejected');
+    expect(refineEndedReason('operator_failed', 408)).toBe('operator_failed:no_answer');
+    expect(refineEndedReason('operator_failed', 402)).toBe('operator_failed:no_funds');
+  });
+
+  it('keeps an unmapped code verbatim rather than discarding it', () => {
+    // A code with no Hebrew word for it is exactly the one worth seeing in a bug
+    // report — dropping it would make the rarest failures the least diagnosable.
+    expect(refineEndedReason('caller_hangup', 503)).toBe('caller_hangup:sip_503');
   });
 });
 

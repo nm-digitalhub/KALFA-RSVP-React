@@ -889,6 +889,51 @@ export async function resolveAgentIdByVoxUsername(voxUsername: string): Promise<
  * sites) — mapped onto console_calls' status CHECK constraint, which has no
  * 'ended_reason'-shaped granularity of its own.
  */
+/**
+ * Sharpens a scenario's end reason with the platform's own status code.
+ *
+ * The scenario knows WHICH leg went down and calls it 'caller_hangup' or
+ * 'operator_failed'. Only the network knows WHY, and it says so in
+ * CallEvents.Disconnected/Failed's `internalCode` — the codes the live reference
+ * enumerates: 486 busy, 480 unavailable, 404 invalid number, 603 rejected, 408 no
+ * answer within 60s, 402 insufficient funds
+ * (references.voxengine.callevents, read 17.8).
+ *
+ * Without this the column is nearly information-free: THIRTY DAYS of console calls
+ * carried three distinct reasons in total, so "the call ended" and "the number does
+ * not exist" were the same row.
+ *
+ * PURE, and unit-tested, because it is the one place a wrong mapping would quietly
+ * mislabel history rather than fail.
+ *
+ * A normal clearing (200) or a missing code returns the reason UNCHANGED — most
+ * calls end normally, and inventing a suffix for them would add noise to the very
+ * thing this exists to make legible.
+ */
+export function refineEndedReason(reason: string, endCode?: number | null): string {
+  if (!endCode || endCode === 200) return reason;
+  const suffix = SIP_CODE_MEANINGS[endCode];
+  // An unmapped code is still worth keeping VERBATIM rather than dropping: a code we
+  // have no Hebrew word for is exactly the one worth seeing in a bug report.
+  return suffix ? `${reason}:${suffix}` : `${reason}:sip_${endCode}`;
+}
+
+/**
+ * The SIP codes the Voximplant reference calls out as most frequent, mapped to a
+ * short machine-readable token. Deliberately not an exhaustive RFC 3261 table — the
+ * codes the platform says it actually returns are the ones worth naming, and a long
+ * table of never-seen entries invites trusting a label nothing produces.
+ */
+const SIP_CODE_MEANINGS: Record<number, string> = {
+  402: 'no_funds',
+  404: 'invalid_number',
+  408: 'no_answer',
+  480: 'unavailable',
+  486: 'busy',
+  487: 'cancelled',
+  603: 'rejected',
+};
+
 export function mapEndedReasonToStatus(reason: string): ConsoleCallStatus {
   if (reason === 'no_agent') return 'no_agent';
   if (reason === 'operator_failed' || reason === 'callee_failed' || reason === 'guest_failed') {
@@ -1257,6 +1302,16 @@ export interface ConsoleCallRecord {
   id: string;
   direction: 'inbound' | 'outbound';
   status: string;
+  /**
+   * WHY it ended, as the scenario reported it — 'no_agent', 'caller_hangup',
+   * 'operator_hangup', 'safety_net_timeout', or a 'sip_<code>' for a leg the
+   * platform refused.
+   *
+   * Carried because `status` alone collapses distinct outcomes: 'ended' covers both
+   * "we spoke and they hung up" and "they gave up while it was ringing", and an
+   * agent reviewing their own calls needs those apart.
+   */
+  endedReason: string | null;
   /** The guest's name when we know them, else null — the app shows the number instead. */
   name: string | null;
   /** E.164, or null when the CLI was withheld. */
@@ -1297,7 +1352,7 @@ export async function findRecentConsoleCalls(limit = 50): Promise<ConsoleCallRec
   const admin = createAdminClient();
   const { data: calls, error } = await admin
     .from('console_calls')
-    .select('id, direction, status, started_at, duration_sec, answered_at, event_id, guest_id, contact_id')
+    .select('id, direction, status, ended_reason, started_at, duration_sec, answered_at, event_id, guest_id, contact_id')
     .order('started_at', { ascending: false })
     .limit(limit);
   if (error) throw new Error('find_recent_console_calls_failed');
@@ -1324,6 +1379,7 @@ export async function findRecentConsoleCalls(limit = 50): Promise<ConsoleCallRec
     id: c.id,
     direction: c.direction === 'inbound' ? ('inbound' as const) : ('outbound' as const),
     status: c.status,
+    endedReason: c.ended_reason ?? null,
     name: c.guest_id ? names.get(c.guest_id) ?? null : null,
     phone: phones.get(c.id) ?? null,
     startedAt: c.started_at ?? '',

@@ -5,6 +5,7 @@ import { safeTokenEqual, sha256Hex } from '@/lib/security/token-compare';
 import {
   findConsoleCallForEvent,
   mapEndedReasonToStatus,
+  refineEndedReason,
   notifyAgentsInboundCallResolved,
   recordConsoleCallSessionAccess,
   recordMissedCallCallback,
@@ -163,7 +164,12 @@ export async function POST(request: Request) {
         await updateConsoleCallStatus({
           callId,
           status: mapEndedReasonToStatus(body.reason),
-          endedReason: body.reason,
+          // The reason plus what the network said about it — see refineEndedReason.
+          // The STATUS is still derived from the bare reason: 'busy' is a detail of
+          // how a call ended, not a different kind of ending, and widening the status
+          // set would break the CHECK constraint and every consumer that switches on
+          // it.
+          endedReason: refineEndedReason(body.reason, body.end_code),
           durationSec: body.duration_s,
           recordingUrl: body.recording_url,
           endedNow: true,

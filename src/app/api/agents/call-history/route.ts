@@ -56,6 +56,7 @@ export async function GET(request: Request) {
           id: c.id,
           direction: c.direction,
           status: c.status,
+          ended_reason: c.endedReason,
           name: c.name,
           phone: c.phone,
           started_at: c.startedAt,
