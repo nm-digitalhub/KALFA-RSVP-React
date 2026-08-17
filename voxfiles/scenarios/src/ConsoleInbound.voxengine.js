@@ -705,14 +705,7 @@ VoxEngine.addEventListener(AppEvents.Started, function (startedEvent) {
             return;
         }
         state.transferring = true;
-        // Keeps the DID as callerid — see ringIdentity()'s own note for why the
-        // caller-identity change (17.8) deliberately stops at the primary ring
-        // and does not reach the three internal agent-to-agent legs.
-        var target = VoxEngine.callUser({
-            username: voxUsername,
-            callerid: state.called || 'kalfa-console',
-            extraHeaders: internalLegHeaders()
-        });
+        var target = VoxEngine.callUser(internalLegParams(voxUsername));
         reportEvent('transfer_started', { request_id: requestId, target: voxUsername });
         var timer = setTimeout(function () {
             failTransfer(target, requestId, 'timeout');
@@ -817,11 +810,7 @@ VoxEngine.addEventListener(AppEvents.Started, function (startedEvent) {
             log('consult hold (stopMediaBetween) failed: ' + err);
         }
         startHoldAudio();
-        var target = VoxEngine.callUser({
-            username: voxUsername,
-            callerid: state.called || 'kalfa-console',
-            extraHeaders: internalLegHeaders()
-        });
+        var target = VoxEngine.callUser(internalLegParams(voxUsername));
         state.consultTarget = target;
         reportEvent('consult_started', { request_id: requestId, target: voxUsername });
         var timer = setTimeout(function () {
@@ -1030,11 +1019,7 @@ VoxEngine.addEventListener(AppEvents.Started, function (startedEvent) {
         }
         state.conferencing = true;
         state.conferenceTargetUsername = voxUsername;
-        var target = VoxEngine.callUser({
-            username: voxUsername,
-            callerid: state.called || 'kalfa-console',
-            extraHeaders: internalLegHeaders()
-        });
+        var target = VoxEngine.callUser(internalLegParams(voxUsername));
         state.conferenceTarget = target;
         reportEvent('conference_started', { request_id: requestId, target: voxUsername });
         var timer = setTimeout(function () {
@@ -1250,12 +1235,9 @@ VoxEngine.addEventListener(AppEvents.Started, function (startedEvent) {
     // the number is recognised, their E.164 otherwise. [suppressName] drops it;
     // see ringNext's Failed handler for the one case that sets it.
     //
-    // NOT applied to startTransfer/startConsult/startConference, which keep the
-    // DID: those are internal agent-to-agent legs, none of them has any app UI
-    // yet (the transfer/consult/conference buttons do not exist), and for a
-    // consult the target speaks to the AGENT first, not the caller — so
-    // labelling that leg with the caller's number would be actively wrong.
-    // Deferred deliberately, to be decided when those buttons are built.
+    // The three internal legs (transfer/consult/conference) keep the DID as their
+    // callerid and carry the caller's identity in headers instead — see
+    // internalLegParams(), which is where that difference is explained.
     // The NUMBER travels separately, in a SIP header, and that separation is the
     // point (owner, 17.8: "השם לא מספיק לדעתי, חובה תמיד להציג את המספר ממנו
     // השיחה מתקבלת"). displayName can only ever be one string; folding a name and
@@ -1299,20 +1281,49 @@ VoxEngine.addEventListener(AppEvents.Started, function (startedEvent) {
     // NOT sensitive: an opaque row id, useless without the agent's own Bearer token
     // and the manage_voice permission every one of those routes checks server-side.
     var CONSOLE_CALL_ID_HEADER = 'X-Kalfa-Console-Call-Id';
-    // The internal-leg headers: everything an agent's device needs to act on this
-    // call, minus the caller identity that ringIdentity adds for the primary ring.
-    // Shared by transfer/consult/conference so an agent who RECEIVES a transferred
-    // call can transfer it onward — without this the buttons would work for the
-    // first agent on a call and silently not for the second.
-    function internalLegHeaders() {
-        var headers = {};
+    // Everything an agent's device needs when it is rung ABOUT an existing call:
+    // transfer, consult and conference targets. Shared by all three so an agent who
+    // RECEIVES a transferred call can transfer it onward — without the call id the
+    // buttons would work for the first agent on a call and silently not for the
+    // second.
+    //
+    // `callerid` stays the DID here, unlike the primary ring. These are internal
+    // agent-to-agent legs and the callerid is not what the device displays anyway —
+    // the header below is.
+    //
+    // That header is NOT optional, and leaving it off was a real bug on this exact
+    // path. The device treats an ABSENT caller-number header as "an older scenario,
+    // fall back to Call.number" — and on these legs Call.number is our own DID, so
+    // the receiving agent's screen showed 97237219347 as the caller: the very
+    // complaint this whole change set started from, reappearing one leg deeper. The
+    // ambiguity is exactly the one CALLER_NUMBER_WITHHELD exists to remove, so it is
+    // removed here too, always sending one or the other.
+    //
+    // The identity sent is the CUSTOMER's, on all three. For transfer and conference
+    // that is plainly right — the receiving agent ends up talking to them. For a
+    // consult it names the call being consulted ABOUT rather than the party the
+    // target speaks to first (their colleague); that is the more useful of the two
+    // facts, and the alternative — the consulting agent's own identity — is not
+    // something this scenario holds in a displayable form (state.agentUsername is a
+    // vox username, not a person's name).
+    function internalLegParams(voxUsername) {
+        var params = {
+            username: voxUsername,
+            callerid: state.called || 'kalfa-console',
+            extraHeaders: {}
+        };
         if (state.callId)
-            headers[CONSOLE_CALL_ID_HEADER] = String(state.callId);
-        return headers;
+            params.extraHeaders[CONSOLE_CALL_ID_HEADER] = String(state.callId);
+        params.extraHeaders[CALLER_NUMBER_HEADER] = state.callerNumber || CALLER_NUMBER_WITHHELD;
+        if (state.callerDisplay)
+            params.displayName = state.callerDisplay;
+        return params;
     }
     function ringIdentity(suppressName) {
         var params = { callerid: state.cli || state.called || 'kalfa-console' };
-        params.extraHeaders = internalLegHeaders();
+        params.extraHeaders = {};
+        if (state.callId)
+            params.extraHeaders[CONSOLE_CALL_ID_HEADER] = String(state.callId);
         params.extraHeaders[CALLER_NUMBER_HEADER] = state.callerNumber || CALLER_NUMBER_WITHHELD;
         if (!suppressName) {
             // No CLI at all: say so, rather than leave the agent looking at our
