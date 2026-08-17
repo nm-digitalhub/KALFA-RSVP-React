@@ -141,6 +141,16 @@ VoxEngine.addEventListener(AppEvents.Started, function (startedEvent) {
     var RING_RETRY_WINDOW_MS = 15000;
     // Blind-transfer watchdog — same constant and reasoning as ConsoleDial.
     var TRANSFER_TIMEOUT_MS = 20000;
+    // SIP codes on CallEvents.Failed that mean the call attempt was ANSWERED on
+    // its merits — by the platform or by the callee — rather than refused as a
+    // bad request. Verbatim from the Failed event's own typings table
+    // (voxengine.d.ts ~2574): 402 insufficient funds, 404 invalid number,
+    // 408 no answer within 60s, 480 destination unavailable, 486 busy,
+    // 487 request terminated, 603 rejected. Used by ringNext's displayName
+    // self-heal to tell "this agent is asleep" (480, the common case) from
+    // "the platform would not accept this INVITE" — see there for why
+    // conflating the two would switch the feature off on most calls.
+    var RING_ROUTINE_FAILURE_CODES = [402, 404, 408, 480, 486, 487, 603];
     // Hold-cue cadence for the SAY FALLBACK ONLY — same reasoning and same
     // backoff shape as ConsoleDial.voxengine.js's identical constants (see
     // that file's comment for the full "why keep backoff here but not on
@@ -1340,25 +1350,35 @@ VoxEngine.addEventListener(AppEvents.Started, function (startedEvent) {
             // (BaseCallParameters.displayName) but say nothing about non-ASCII,
             // and the failure mode if the platform rejects the INVITE is not
             // cosmetic — it is EVERY ring failing, i.e. inbound console dead.
+            // So the first agent's failure re-rings that SAME agent once with
+            // the name dropped, and the flag then rides the rest of the
+            // recursion: a bad displayName costs one extra internal leg and
+            // degrades the whole call to number-only instead of taking it down.
             //
-            // So the first failure of the first agent, when a name was sent,
-            // re-rings that SAME agent once with the name dropped, and the flag
-            // then rides the rest of the recursion: a bad displayName costs one
-            // extra internal leg and degrades the whole call to number-only,
-            // instead of taking the call down. Scoped to idx 0 because a broken
-            // displayName fails EVERY ring, so the first one is where it shows;
-            // scoped to one retry because that is enough to distinguish it.
+            // GATED ON THE SIP CODE, and that gate is the whole correctness of
+            // this branch. Without it the retry fires on the single most common
+            // outcome there is — this file's own PushService note records that
+            // "callUser to a sleeping agent simply fails fast with SIP 480" —
+            // so any call whose first agent is merely asleep would ring them
+            // twice and then drop the name for the WHOLE call. The feature
+            // would be off on most calls, and a live test would read as
+            // "Hebrew displayName is broken" when nothing was wrong with it.
             //
-            // Cost when the name is fine and agent 0 is simply unreachable:
-            // one duplicate internal ring to an agent already known to be
-            // failing, then the name is dropped for the rest of THIS call.
-            // Cosmetic, in the safe direction, and it is why this stays a
-            // one-shot at idx 0 rather than a per-index retry.
+            // The routine codes are the ones CallEvents.Failed's own typings
+            // table enumerates: 402 insufficient funds, 404 invalid number,
+            // 408 no answer, 480 unavailable, 486 busy, 487 terminated,
+            // 603 rejected. Every one of those is the platform or the callee
+            // answering the call attempt on its merits — none of them can mean
+            // "this INVITE was malformed", so none of them justifies a retry.
+            // Anything else (including a missing code, which cannot be ruled
+            // out) does, because that is where a rejected request would land.
             //
             // Delete this branch (and `suppressName`) once a live call has
             // shown a Hebrew name arriving intact on the device.
-            if (!suppressName && sentName && idx === 0) {
-                log('first ring failed with a displayName set — retrying the same agent without it');
+            var failCode = (ev && ev.code) || 0;
+            var routineFailure = RING_ROUTINE_FAILURE_CODES.indexOf(failCode) !== -1;
+            if (!suppressName && sentName && idx === 0 && !routineFailure) {
+                log('first ring failed with sip_' + failCode + ' while a displayName was set — retrying the same agent without it');
                 ringNext(callerCall, ringOrder, idx, windowMs, true);
                 return;
             }
