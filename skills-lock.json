@@ -385,6 +385,102 @@
       "skillPath": "skills/ghost-recovery-sequences/SKILL.md",
       "computedHash": "0ef56c30f5099919e0d4345694543bde21cd3309fd3c8c84acd3d69382e2e203"
     },
+    "gplay-apps": {
+      "source": "PollyGlot/google-play-cli-skills",
+      "sourceType": "github",
+      "skillPath": "skills/gplay-apps/SKILL.md",
+      "computedHash": "845864a3733010a2a0f36aacb7df16927a55608846bcd5206438de2658812fd8"
+    },
+    "gplay-cli-usage": {
+      "source": "PollyGlot/google-play-cli-skills",
+      "sourceType": "github",
+      "skillPath": "skills/gplay-cli-usage/SKILL.md",
+      "computedHash": "53f9d930a5b6daf856833e2209f8d6cdab13a79e3a263a9d515e50c2f61754d7"
+    },
+    "gplay-compliance": {
+      "source": "PollyGlot/google-play-cli-skills",
+      "sourceType": "github",
+      "skillPath": "skills/gplay-compliance/SKILL.md",
+      "computedHash": "a0a6758421549c05588f99d12c6b0d485ef282a9fee72e770c5f154a201224dd"
+    },
+    "gplay-customapps": {
+      "source": "PollyGlot/google-play-cli-skills",
+      "sourceType": "github",
+      "skillPath": "skills/gplay-customapps/SKILL.md",
+      "computedHash": "8cffc7494c218bfe61ec8424a8c54331038a0e4751c405381c542e459b435803"
+    },
+    "gplay-device-tiers": {
+      "source": "PollyGlot/google-play-cli-skills",
+      "sourceType": "github",
+      "skillPath": "skills/gplay-device-tiers/SKILL.md",
+      "computedHash": "2bea9a5892801eb8a887294b71d4d1332237e4a8022f027f1221cc2e85d29202"
+    },
+    "gplay-games": {
+      "source": "PollyGlot/google-play-cli-skills",
+      "sourceType": "github",
+      "skillPath": "skills/gplay-games/SKILL.md",
+      "computedHash": "7ea17c894d3cc6b49f9125e06489d77fcf8d563bf44efba8429aa5451140efea"
+    },
+    "gplay-metadata-sync": {
+      "source": "PollyGlot/google-play-cli-skills",
+      "sourceType": "github",
+      "skillPath": "skills/gplay-metadata-sync/SKILL.md",
+      "computedHash": "934e4508e12e82df9ee961dd0e77e6e99fecfc53c656f7d125bf6bc0992a5c7d"
+    },
+    "gplay-monetization": {
+      "source": "PollyGlot/google-play-cli-skills",
+      "sourceType": "github",
+      "skillPath": "skills/gplay-monetization/SKILL.md",
+      "computedHash": "af4475c95607aedfef08e775e88a22a285d3768a0219a89c848b201e8fe48ae3"
+    },
+    "gplay-orders": {
+      "source": "PollyGlot/google-play-cli-skills",
+      "sourceType": "github",
+      "skillPath": "skills/gplay-orders/SKILL.md",
+      "computedHash": "92a3b84989a876e52690f3372b29dde8fb2ec322ac0ec4f96f2cda416e473ef5"
+    },
+    "gplay-recovery": {
+      "source": "PollyGlot/google-play-cli-skills",
+      "sourceType": "github",
+      "skillPath": "skills/gplay-recovery/SKILL.md",
+      "computedHash": "cac519d70772f9140977f7e607075985455f87bd1979a8affa4ee4680b405223"
+    },
+    "gplay-release-flow": {
+      "source": "PollyGlot/google-play-cli-skills",
+      "sourceType": "github",
+      "skillPath": "skills/gplay-release-flow/SKILL.md",
+      "computedHash": "f9b95239584a2d24fbdef8b07a6e7a3c48cbe4e9e50ffedc81f56adefb16ce77"
+    },
+    "gplay-reviews": {
+      "source": "PollyGlot/google-play-cli-skills",
+      "sourceType": "github",
+      "skillPath": "skills/gplay-reviews/SKILL.md",
+      "computedHash": "c99fbcc59e3bd06ce07b1e57f262245667937dce6f142c3bb314d9615e350667"
+    },
+    "gplay-setup": {
+      "source": "PollyGlot/google-play-cli-skills",
+      "sourceType": "github",
+      "skillPath": "skills/gplay-setup/SKILL.md",
+      "computedHash": "2684abf246a1127ef8a23c31738638f23eca33491dbc4acd0a5d19c91a358471"
+    },
+    "gplay-team": {
+      "source": "PollyGlot/google-play-cli-skills",
+      "sourceType": "github",
+      "skillPath": "skills/gplay-team/SKILL.md",
+      "computedHash": "dea5eb8c09f9e245e59cab495492ba078c2befb10d8b4041c44fdb12db7eda28"
+    },
+    "gplay-tracks": {
+      "source": "PollyGlot/google-play-cli-skills",
+      "sourceType": "github",
+      "skillPath": "skills/gplay-tracks/SKILL.md",
+      "computedHash": "181fa9576caa9423f538d644e2aa7c3f1106e1fbd1ad24712fef2c349a7491b3"
+    },
+    "gplay-vitals": {
+      "source": "PollyGlot/google-play-cli-skills",
+      "sourceType": "github",
+      "skillPath": "skills/gplay-vitals/SKILL.md",
+      "computedHash": "bd551df946cddb2cfe2a316e759e84e4415d45bcbcd7147247e2b0c8d45c9e50"
+    },
     "handoff-detection": {
       "source": "louisblythe/salesskills",
       "sourceType": "github",

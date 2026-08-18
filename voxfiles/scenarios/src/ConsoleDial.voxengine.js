@@ -121,6 +121,18 @@ VoxEngine.addEventListener(AppEvents.Started, function (startedEvent) {
     };
     var OUTBOUND_REFUSED_HE = 'לא ניתן לבצע את השיחה כעת. אנא פנו למנהל המערכת.';
     var OUTBOUND_UNREACHABLE_HE = 'לא הצלחנו להשלים את השיחה. אנא נסו שוב מאוחר יותר.';
+    // Israeli ringback, played to the OPERATOR while the callee's phone rings and
+    // their network is sending no audio of its own.
+    //
+    // The owner's own reference recording, audio copied bit-for-bit (same stream
+    // MD5) with only the embedded cover art stripped. Measured from it rather than
+    // taken from a spec sheet: a single tone at 425.00 Hz — NOT the 400 Hz that
+    // secondary sources give for Israel — 1.005 s on, 4.00 s period. Confirmed by
+    // ear against the real thing before it was used.
+    //
+    // 60 s of it, which outlasts any no-answer timeout, so `loop` is belt not
+    // braces. Voximplant caches the file after the first play.
+    var RINGBACK_URL = 'https://beta.kalfa.me/audio/ringback-il.mp3';
     var INTERNAL_UNAVAILABLE_HE = 'הנציג המבוקש אינו זמין כרגע.';
     // Hold cue (17.8; music-file swap 17.8) — an OPERATIONAL hold line, NOT
     // owner/regulation-authorized wording like DISCLOSURE_LINE_HE above (same
@@ -1305,24 +1317,131 @@ VoxEngine.addEventListener(AppEvents.Started, function (startedEvent) {
         }
     }
     function proceedOutbound(operatorCall, phone, callerid, callKind) {
-        try {
-            operatorCall.answer();
-        }
-        catch (err) {
-            log('operator answer() failed: ' + err);
-            cleanupAndTerminate();
-            return;
-        }
+        // The operator leg is NOT answered here any more, and that is the whole
+        // point of this block.
+        //
+        // It used to be answered before the PSTN leg even existed. Two consequences,
+        // both reported from live calls on 18.8:
+        //   * Nothing sends media to an answered-but-unbridged leg, so the agent
+        //     heard SILENCE from the tap until the callee picked up.
+        //   * VoxCallSession starts its duration ticker on onCallConnected, which
+        //     fired at once — the screen said "connected" and counted seconds while
+        //     the callee's phone was still ringing. Session 7769476232 is recorded
+        //     `successful=yes` for 122 s against a PSTN leg that failed with SIP 603
+        //     and was never answered at all.
+        //
+        // The order below is Voximplant's own, from the published source of
+        // VoxEngine.easyProcess (github.com/voximplant/easyprocess): ring on
+        // Ringing, startEarlyMedia on AudioStarted, answer only on Connected.
         reportEvent('ringing', {});
         var guestCall = VoxEngine.callPSTN(phone, callerid);
         state.remote = guestCall;
         attachRemoteTerminalHandlers(guestCall);
+        // ── Call progress: what the agent hears while the callee's phone rings ──
+        //
+        // Two cases, and they are different SIP messages rather than different
+        // timings:
+        //
+        //   SIP 180 Ringing        — no media exists. Nobody is sending audio, so
+        //   (CallEvents.Ringing)     one has to be generated. RINGBACK_URL below.
+        //
+        //   SIP 183 Session        — the callee's network IS sending real audio:
+        //   Progress                 their business hold music, an operator
+        //   (CallEvents.AudioStarted) announcement, an IVR that answers early.
+        //                            That audio is what the agent must hear, not a
+        //                            substitute for it.
+        //
+        // CallEvents.AudioStarted is documented as triggering "after receiving the
+        // 183 Session Progress SIP message", which is precisely the custom-ringback
+        // case. NOT CallEvents.FirstAudioPacketReceived, which is a later and weaker
+        // signal.
+        //
+        // They cannot overlap, and not because of the ordering here: `startPlayback`,
+        // `sendMediaTo` and `ring` all carry the same note — "each call object can
+        // send media to any number of other calls, but can receive only ONE audio
+        // stream. A new incoming stream always replaces the previous one." The
+        // callee's real music displaces our tone structurally. stopPlayback() below
+        // is tidiness, not the guarantee.
+        //
+        // startEarlyMedia() is what makes any of this legal on a leg that has not
+        // been answered: "Informs the call endpoint that early media is sent before
+        // accepting the call."
+        var progressStarted = false;
+        function startProgressMedia() {
+            if (progressStarted)
+                return false;
+            progressStarted = true;
+            try {
+                operatorCall.startEarlyMedia();
+            }
+            catch (err) {
+                log('startEarlyMedia failed: ' + err);
+                return false;
+            }
+            return true;
+        }
+        guestCall.addEventListener(CallEvents.Ringing, function () {
+            if (!startProgressMedia())
+                return;
+            try {
+                operatorCall.startPlayback(RINGBACK_URL, { loop: true });
+                log('ringback started');
+            }
+            catch (err) {
+                log('ringback startPlayback failed: ' + err);
+            }
+        });
+        guestCall.addEventListener(CallEvents.AudioStarted, function () {
+            startProgressMedia();
+            try {
+                operatorCall.stopPlayback();
+            }
+            catch (err) {
+                log('ringback stopPlayback failed: ' + err);
+            }
+            // ONE-DIRECTIONAL on purpose. sendMediaBetween here would let the callee
+            // hear the agent before the recorded disclosure has played, which the
+            // disclosure design forbids; the reverse direction is opened only after
+            // PlaybackFinished below.
+            try {
+                guestCall.sendMediaTo(operatorCall);
+                log('forwarding real early media to operator');
+            }
+            catch (err) {
+                log('early-media forward failed: ' + err);
+            }
+        });
         guestCall.addEventListener(CallEvents.RecordStarted, function (ev) {
             state.recordingUrl = (ev && ev.url) || null;
             log('RECORDING_URL captured');
         });
         guestCall.addEventListener(CallEvents.Connected, function () {
             state.connectedAt = Date.now();
+            // The callee picked up — NOW the operator leg is answered. This is the
+            // moment the app's duration ticker starts, and it is finally the truth.
+            try {
+                operatorCall.answer();
+            }
+            catch (err) {
+                log('operator answer() failed: ' + err);
+                cleanupAndTerminate();
+                return;
+            }
+            // Tear down the progress media. The playback and the one-directional
+            // forward were both for the ringing window only; from here the existing
+            // disclosure-then-bridge flow owns the media path, unchanged.
+            try {
+                operatorCall.stopPlayback();
+            }
+            catch (err) {
+                log('stopPlayback at connect failed: ' + err);
+            }
+            try {
+                guestCall.stopMediaTo(operatorCall);
+            }
+            catch (err) {
+                log('stopMediaTo at connect failed: ' + err);
+            }
             // Recording FIRST — the disclosure itself must be on tape.
             try {
                 guestCall.record({ stereo: true });
@@ -1386,6 +1505,24 @@ VoxEngine.addEventListener(AppEvents.Started, function (startedEvent) {
             log('guest call failed: ' + safeStringify(ev));
             state.remote = null;
             reportEndedOnce('guest_failed');
+            // ANSWER BEFORE SPEAKING. Call.say is documented as saying text "to the
+            // [CallEvents.Connected] call", and since the operator leg is no longer
+            // answered up front it may still be in early-media here — in which case
+            // the agent would be told nothing at all and simply hear the line drop.
+            // Idempotent in practice: answer() on an already-answered leg is a no-op,
+            // and the guard below keeps a throw from swallowing the hangup.
+            try {
+                operatorCall.answer();
+            }
+            catch (err) {
+                log('answer before unreachable notice failed: ' + err);
+            }
+            try {
+                operatorCall.stopPlayback();
+            }
+            catch (err) {
+                log('stopPlayback on guest failure failed: ' + err);
+            }
             try {
                 operatorCall.say(OUTBOUND_UNREACHABLE_HE, ttsOptions);
             }
