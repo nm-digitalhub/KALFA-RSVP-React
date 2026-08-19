@@ -27,8 +27,9 @@ import { createMockSupabase, type MockQueryBuilder } from '@/test/supabase-mock'
 import { createAdminClient } from '@/lib/supabase/admin';
 import { calendarProvider } from '@/lib/exchange-ews/calendar-provider';
 import { buildCallbackDraft } from '@/lib/callbacks/calendar-item';
-import type { ExchangeAppointmentDetail } from '@/lib/exchange-ews/types';
+import type { ExchangeAppointment, ExchangeAppointmentDetail } from '@/lib/exchange-ews/types';
 import {
+  countOrphanedCalendarAppointments,
   countStrandedCallbacks,
   repairBlankCallbackBodies,
   scheduleCallbackAppointment,
@@ -254,5 +255,72 @@ describe('countStrandedCallbacks', () => {
   it('reports zero when the driver returns no count at all', async () => {
     mockAdmin({ data: null, error: null, count: null });
     await expect(countStrandedCallbacks({ nowMs: NOW_MS })).resolves.toBe(0);
+  });
+});
+
+// Regression for a measured incident (2026-08-19): reconcileCallbacksWithCalendar
+// only ever checks "does my row's appointment still exist" — never "does an
+// appointment exist that no row claims". That one-directional gap let 575
+// duplicate appointments accumulate over three weeks, invisibly, because a
+// Graph id-mismatch bug kept releasing rows whose appointments were still live
+// and each release created a NEW appointment without removing the old one.
+// This is the mirror check.
+function calItem(overrides: Partial<ExchangeAppointment> = {}): ExchangeAppointment {
+  return {
+    id: 'cal-item-1',
+    subject: 'שיחה חוזרת — ישראל ישראלי',
+    start: START,
+    end: END,
+    allDay: false,
+    showAs: 'busy',
+    seriesLinked: false,
+    ...overrides,
+  };
+}
+
+describe('countOrphanedCalendarAppointments', () => {
+  it('counts a callback-subject calendar item with no matching DB row', async () => {
+    mockAdmin(
+      { data: [CONNECTION], error: null }, // loadBusinessConnection
+      { data: [{ calendar_item_id: 'known-1' }], error: null }, // known ids
+    );
+    vi.mocked(calendarProvider.listAppointments).mockResolvedValue({
+      ok: true,
+      data: [calItem({ id: 'orphan-1' }), calItem({ id: 'known-1' })],
+    });
+
+    await expect(countOrphanedCalendarAppointments({ nowMs: NOW_MS })).resolves.toBe(1);
+  });
+
+  it('never counts an item outside the callback feature\'s own subject prefix', async () => {
+    mockAdmin(
+      { data: [CONNECTION], error: null },
+      { data: [], error: null },
+    );
+    vi.mocked(calendarProvider.listAppointments).mockResolvedValue({
+      ok: true,
+      data: [calItem({ id: 'unrelated-1', subject: 'פגישת צוות' })],
+    });
+
+    await expect(countOrphanedCalendarAppointments({ nowMs: NOW_MS })).resolves.toBe(0);
+  });
+
+  it('reports zero, never guesses, when the mailbox is unreachable', async () => {
+    mockAdmin({ data: [], error: null }); // no verified connection
+    await expect(countOrphanedCalendarAppointments({ nowMs: NOW_MS })).resolves.toBe(0);
+    expect(calendarProvider.listAppointments).not.toHaveBeenCalled();
+  });
+
+  it('reports zero when the calendar read fails', async () => {
+    mockAdmin(
+      { data: [CONNECTION], error: null },
+      { data: [], error: null },
+    );
+    vi.mocked(calendarProvider.listAppointments).mockResolvedValue({
+      ok: false,
+      error: 'unreachable',
+    });
+
+    await expect(countOrphanedCalendarAppointments({ nowMs: NOW_MS })).resolves.toBe(0);
   });
 });

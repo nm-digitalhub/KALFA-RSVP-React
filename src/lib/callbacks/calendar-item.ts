@@ -16,6 +16,14 @@ export const CALLBACK_CATEGORY = 'KALFA — שיחת לקוח';
 /** Owner decision 28.07. */
 export const CALLBACK_REMINDER_MINUTES = 10;
 
+/**
+ * The exact, only prefix buildCallbackSubject() ever writes. Exported so any
+ * code that needs to recognise "this calendar item belongs to the callback
+ * feature" (e.g. reconciliation) matches the real value instead of a second,
+ * driftable copy of the literal.
+ */
+export const CALLBACK_SUBJECT_PREFIX = 'שיחה חוזרת';
+
 export type CallbackItemInput = {
   fullName: string;
   /** Already normalised to E.164 by the DAL. */
@@ -65,7 +73,7 @@ export function buildCallbackSubject(input: {
   topic: string | null;
   attemptCount: number;
 }): string {
-  const parts = ['שיחה חוזרת', input.fullName.trim()];
+  const parts = [CALLBACK_SUBJECT_PREFIX, input.fullName.trim()];
   if (input.topic?.trim()) parts.push(input.topic.trim());
   const base = parts.join(' — ');
   // attemptCount 0 = never dialled, 1 = the first call went unanswered, so the

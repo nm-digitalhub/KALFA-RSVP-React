@@ -8,7 +8,7 @@ import {
   loadExchangeConfigForConnection,
 } from '@/lib/data/exchange-connections';
 import { calendarProvider } from '@/lib/exchange-ews/calendar-provider';
-import type { AppointmentShowAs } from '@/lib/exchange-ews/types';
+import type { AppointmentShowAs, ExchangeAppointment } from '@/lib/exchange-ews/types';
 
 // Availability status ("presence") for the business owner, expressed the way
 // Exchange itself understands it: each constraint is a blocking appointment
@@ -131,6 +131,49 @@ async function reconcileBlocksWithCalendar(
 }
 
 /**
+ * The exact set of subjects statusSubject() can ever produce — one per
+ * AVAILABILITY_PRESETS entry. A whitelist rather than a prefix/suffix match:
+ * with only four possible values there is no reason to risk a loose match
+ * catching an appointment this module never wrote.
+ */
+const STATUS_SUBJECTS = new Set(
+  Object.values(AVAILABILITY_PRESETS).map((preset) => statusSubject(preset.label)),
+);
+
+/**
+ * The mirror of reconcileBlocksWithCalendar, in the direction it never
+ * checks: appointments in the calendar that carry one of OUR status subjects
+ * but that no exchange_availability_blocks row points at.
+ *
+ * This module and callback-scheduling.ts's reconcileCallbacksWithCalendar
+ * share the exact same one-directional shape — DB row says an appointment
+ * exists, is that still true? — and never the reverse. In callback-scheduling
+ * that gap let 575 orphaned appointments accumulate silently over three weeks
+ * (measured 2026-08-19) before anyone noticed, because a Graph id-mismatch
+ * bug kept releasing rows whose appointments were still live, each release
+ * creating a new appointment without ever removing the old one. This module
+ * had NO live data when that was found (one historical row, already past),
+ * so the same failure had not yet happened here — but the missing check was
+ * identical, and leaving it missing would have left this function as a
+ * working example of the wrong pattern for the next person who copies it.
+ *
+ * Detector only, not a fixer — same reasoning as its sibling: a human
+ * deciding beats a heuristic guessing, and this feature manages a single
+ * user's own manually-created constraints, so an unrecognised status
+ * appointment here is more likely something the owner made directly in
+ * Outlook than debris.
+ */
+export function findOrphanedStatusAppointments(
+  liveItems: readonly ExchangeAppointment[],
+  rows: BlockRow[],
+): ExchangeAppointment[] {
+  const knownAppointmentIds = new Set(rows.map((row) => row.appointment_id));
+  return liveItems.filter(
+    (item) => STATUS_SUBJECTS.has(item.subject) && !knownAppointmentIds.has(item.id),
+  );
+}
+
+/**
  * Live presence: asks Exchange for the mailbox's own free/busy right now.
  * Reads windows only — never subjects or attendees — so nothing sensitive is
  * pulled just to colour a dot. Fails SOFT to 'free': presence is a hint, and
@@ -182,6 +225,23 @@ export async function getMyPresence(): Promise<PresenceSnapshot> {
       .gt('ends_at', new Date().toISOString());
     const rows = (rowData ?? []) as BlockRow[];
     await reconcileBlocksWithCalendar(rows.map(toBlock), liveIds, rows);
+
+    // The reverse direction reconcileBlocksWithCalendar never checks — see
+    // findOrphanedStatusAppointments' own comment. Reuses the calendar read
+    // already done above; no extra call, same window this function already
+    // operates on.
+    const orphaned = findOrphanedStatusAppointments(result.data, rows);
+    if (orphaned.length > 0) {
+      console.warn(
+        `[exchange-availability] ${orphaned.length} status appointment(s) in the calendar have no matching exchange_availability_blocks row`,
+        orphaned.map((o) => o.id),
+      );
+      await logActivity({
+        action: 'exchange.availability_block_orphaned',
+        meta: { count: orphaned.length, appointmentIds: orphaned.map((o) => o.id) },
+      });
+    }
+
     const ownedByApp = rows.some(
       (row) => liveIds.has(row.appointment_id) && row.appointment_id === activeIdOf(result.data, active),
     );

@@ -20,6 +20,7 @@ import { sendSlackAlert } from '@/lib/alerts/slack';
 import {
   buildCallbackDraft,
   CALLBACK_CATEGORY,
+  CALLBACK_SUBJECT_PREFIX,
   type CallbackItemInput,
 } from '@/lib/callbacks/calendar-item';
 import {
@@ -404,6 +405,58 @@ export async function countStrandedCallbacks(
 }
 
 /**
+ * How many "שיחה חוזרת" calendar appointments exist with NO callback_requests
+ * row pointing at them — the mirror image of countStrandedCallbacks.
+ *
+ * reconcileCallbacksWithCalendar only ever checks ONE direction: "my row says
+ * an appointment exists — is that still true?". It never asks the reverse,
+ * "does an appointment exist that no row claims?". MEASURED 2026-08-19: a
+ * Graph immutable-id mismatch (fixed 2026-08-17, see graph-impl.ts) made that
+ * one-directional check falsely release requests whose appointments were
+ * still live; each false release rescheduled the SAME request into a new
+ * appointment without ever removing the old one. 575 orphaned appointments
+ * accumulated over about three weeks before anyone noticed, because nothing
+ * anywhere ever asked this question. This is that question.
+ *
+ * Deliberately a DETECTOR, not a fixer — same reasoning as
+ * countStrandedCallbacks: an appointment a human is looking at right now
+ * (mid-edit, or one this system is about to correctly claim) must never be
+ * auto-deleted by a background job. A human deciding beats a heuristic
+ * guessing.
+ */
+export async function countOrphanedCalendarAppointments(
+  opts: { nowMs?: number } = {},
+): Promise<number> {
+  const nowMs = opts.nowMs ?? Date.now();
+  const admin = createAdminClient();
+
+  const loaded = await loadBusinessConnection(admin);
+  // Cannot see the calendar → cannot claim an orphan exists there.
+  if (!loaded.ok) return 0;
+
+  const { data: rows } = await admin
+    .from('callback_requests')
+    .select('calendar_item_id')
+    .not('calendar_item_id', 'is', null);
+  const knownIds = new Set((rows ?? []).map((r) => r.calendar_item_id).filter(Boolean));
+
+  // The full range this feature could EVER have written into, both
+  // directions — an orphan cannot exist outside it. DAY_MS margin on each
+  // side covers timezone-boundary slop the same way reconcile's own window
+  // does.
+  const listed = await calendarProvider.listAppointments(loaded.connection.config, {
+    start: new Date(nowMs - 31 * DAY_MS),
+    end: new Date(nowMs + DEFAULT_CALLBACK_POLICY.horizonMs + DAY_MS),
+  });
+  if (!listed.ok) return 0;
+
+  return listed.data.filter(
+    (item: ExchangeAppointment) =>
+      item.subject.startsWith(CALLBACK_SUBJECT_PREFIX) && !knownIds.has(item.id),
+  ).length;
+}
+
+/**
  * Fills in the description of a scheduled callback whose body reached the
  * mailbox empty.
  *
@@ -596,6 +649,19 @@ export async function runCallbackSchedulingSweep(
       // A count, never an id: this goes to a chat room, and the rows are
       // customer requests.
       fields: { נטושות: stranded },
+    });
+  }
+
+  // The mirror check — see countOrphanedCalendarAppointments' own comment for
+  // why this exists and what it catches that the reconcile above cannot.
+  const orphaned = await countOrphanedCalendarAppointments({ nowMs: opts.nowMs });
+  if (orphaned > 0) {
+    await sendSlackAlert({
+      level: 'warn',
+      category: 'errors',
+      title: 'פגישות "שיחה חוזרת" ביומן בלי שורת בקשה תואמת',
+      source: 'callback-scheduling-sweep',
+      fields: { יתומות: orphaned },
     });
   }
 
