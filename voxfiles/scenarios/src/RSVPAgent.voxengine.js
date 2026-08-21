@@ -233,6 +233,21 @@ VoxEngine.addEventListener(AppEvents.Started, function () {
             clearTimeout(state.hangupTimer);
             state.hangupTimer = null;
         }
+        // A live supervisor leg's OWN Disconnected/Failed listeners (attached in
+        // attachSupervisor) will never fire once VoxEngine.terminate() runs below
+        // — live-verified against the official reference: "after this function,
+        // only AppEvents.Terminating/Terminated events are triggered." Without
+        // this, human_agent_call_legs sticks at its last non-terminal status
+        // forever whenever the session tears down (guest hangup, global timeout,
+        // agent-ended conversation) while a supervisor leg is still live.
+        // reportLegStatus is a plain best-effort POST, called here BEFORE
+        // VoxEngine.terminate() while network access is still unrestricted —
+        // idempotent on the KALFA side (advanceLegStatus is an unconditional
+        // UPDATE keyed by request_id), so a race with the leg's own Disconnected
+        // handler firing first is harmless.
+        if (state.supervisor && state.supervisorRequestId) {
+            reportLegStatus(state.supervisorRequestId, 'disconnected');
+        }
         try {
             if (state.agent) {
                 state.agent.close();
@@ -782,6 +797,16 @@ VoxEngine.addEventListener(AppEvents.Started, function () {
                     else {
                         // Supervision — listen-only. Supervisor hears the agent+guest
                         // mix; neither hears the supervisor; agent-guest stay direct.
+                        //
+                        // Same ceiling swap as takeover: without this, a monitor leg
+                        // shares the plain 150s net armed once at call start (line
+                        // ~543) — a supervisor who joins late in a call can get the
+                        // WHOLE CALL cut out from under them almost immediately, for
+                        // no reason connected to how long THEY have been listening.
+                        // Does NOT touch handoffActive/handoffWasActive — those are
+                        // deliberately takeover-only (terminalStatus()'s 'handed_off'
+                        // reporting and the onWebSocketClose guard), unchanged here.
+                        armHandoffCeiling();
                         state.agent.sendMediaTo(state.conf);
                         call.sendMediaTo(state.conf);
                         state.conf.sendMediaTo(supervisor);
