@@ -11,6 +11,7 @@ import { safeTokenEqual, sha256Hex } from '@/lib/security/token-compare';
 import { rateLimit } from '@/lib/security/rate-limit';
 import { AGENT_STATUS_FRESHNESS_MS } from '@/lib/console/presence';
 import { sendPushToUser } from '@/lib/data/push-delivery';
+import { monitorEnabled } from '@/lib/data/console-monitor';
 // Returning a call resolves its number from VOXIMPLANT, not from our tables —
 // see fetchReturnableCall for why that is both simpler and more capable.
 import { fetchReturnableCall } from '@/lib/data/vox-call-history';
@@ -332,6 +333,16 @@ export async function consoleCallMeNowEnabled(): Promise<boolean> {
 // the compact 'dh' key. Default FALSE (migration
 // 20260812154126_callcenter_s3_console_calls_schema.sql) — fails closed like
 // every other flag reader in this file.
+//
+// ALSO gated on monitorEnabled(): the digit drives the exact same
+// conference-mixer attachSupervisor() path as the /api/calls/{id}/monitor
+// route (RSVPAgent.voxengine.js line ~662), and monitor_enabled is that
+// path's kill switch — "OFF until the RSVPAgent scenario carries the
+// conference handler AND that change is verified on a live call" (migration
+// 20260721235311_console_monitor_enabled_flag.sql). Before this check the two
+// flags were independent: a guest pressing 9 could reach the never-verified
+// path while monitor_enabled stayed false, defeating the kill switch for
+// this entry point entirely.
 export async function consoleDtmfHandoffEnabled(): Promise<boolean> {
   const admin = createAdminClient();
   const { data } = await admin
@@ -339,7 +350,8 @@ export async function consoleDtmfHandoffEnabled(): Promise<boolean> {
     .select('console_dtmf_handoff_enabled')
     .eq('id', true)
     .maybeSingle();
-  return data?.console_dtmf_handoff_enabled === true;
+  if (data?.console_dtmf_handoff_enabled !== true) return false;
+  return monitorEnabled();
 }
 
 // ─────────────────────────────────────────────────────────────────────────

@@ -4,13 +4,16 @@ vi.mock('server-only', () => ({}));
 vi.mock('@/lib/supabase/admin', () => ({ createAdminClient: vi.fn() }));
 vi.mock('@/lib/data/outreach-engine', () => ({ isDncListed: vi.fn() }));
 vi.mock('@/lib/data/push-delivery', () => ({ sendPushToUser: vi.fn() }));
+vi.mock('@/lib/data/console-monitor', () => ({ monitorEnabled: vi.fn() }));
 
 import { createAdminClient } from '@/lib/supabase/admin';
 import { isDncListed } from '@/lib/data/outreach-engine';
 import { sendPushToUser } from '@/lib/data/push-delivery';
+import { monitorEnabled } from '@/lib/data/console-monitor';
 import {
   AGENT_BUSY_MAX_MS,
   computeQueueRingOrder,
+  consoleDtmfHandoffEnabled,
   DIAL_GATE_POLICY,
   DIAL_TOKEN_TTL_MS,
   INITIATED_ROW_STALE_MS,
@@ -95,6 +98,27 @@ function wireAdmin(queues: Record<string, QueryResult[]>) {
   vi.mocked(createAdminClient).mockReturnValue(client as unknown as ReturnType<typeof createAdminClient>);
   return client;
 }
+
+describe('consoleDtmfHandoffEnabled — must not be armable while the monitor kill switch is off', () => {
+  it('is false when console_dtmf_handoff_enabled is true but monitor_enabled is false', async () => {
+    wireAdmin({ app_settings: [{ data: { console_dtmf_handoff_enabled: true }, error: null }] });
+    vi.mocked(monitorEnabled).mockResolvedValue(false);
+    expect(await consoleDtmfHandoffEnabled()).toBe(false);
+  });
+
+  it('is true when both console_dtmf_handoff_enabled and monitor_enabled are true', async () => {
+    wireAdmin({ app_settings: [{ data: { console_dtmf_handoff_enabled: true }, error: null }] });
+    vi.mocked(monitorEnabled).mockResolvedValue(true);
+    expect(await consoleDtmfHandoffEnabled()).toBe(true);
+  });
+
+  it('is false, without even consulting monitor_enabled, when console_dtmf_handoff_enabled itself is false', async () => {
+    wireAdmin({ app_settings: [{ data: { console_dtmf_handoff_enabled: false }, error: null }] });
+    vi.mocked(monitorEnabled).mockResolvedValue(true);
+    expect(await consoleDtmfHandoffEnabled()).toBe(false);
+    expect(monitorEnabled).not.toHaveBeenCalled();
+  });
+});
 
 // A Thursday well inside the 08:00–19:00 window, not a Jewish holiday.
 const OPEN_HOURS_MS = Date.parse('2026-06-04T10:00:00+03:00');
