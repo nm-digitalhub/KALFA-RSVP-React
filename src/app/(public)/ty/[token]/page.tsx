@@ -4,6 +4,7 @@ import { headers } from 'next/headers';
 import { getThankyouByToken } from '@/lib/data/thankyou';
 import { signedInviteImageUrl } from '@/lib/storage/event-media';
 import { getClientIp, rateLimit } from '@/lib/security/rate-limit';
+import { tokenFingerprint } from '@/lib/security/token-fingerprint';
 
 import { ThankyouLanding } from './thankyou-landing';
 
@@ -40,7 +41,11 @@ export default async function ThankyouPage({
 
   const requestHeaders = await headers();
   const ip = getClientIp(requestHeaders.get.bind(requestHeaders));
-  const gate = rateLimit(`ty:view:${token}:${ip}`, THANKYOU_VIEW_RATE);
+  // Bucket key uses a token FINGERPRINT, never the raw bearer token (raw
+  // tokens in in-memory keys can surface in diagnostics; same pattern as
+  // r/[token]/page.tsx).
+  const fp = tokenFingerprint(token);
+  const gate = rateLimit(`ty:view:${fp}:${ip}`, THANKYOU_VIEW_RATE);
   if (!gate.allowed) {
     return (
       <Shell>

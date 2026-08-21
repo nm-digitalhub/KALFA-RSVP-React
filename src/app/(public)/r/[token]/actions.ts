@@ -5,6 +5,7 @@ import { headers } from 'next/headers';
 import { RSVP_SUBMIT_RATE } from '@/lib/constants';
 import { submitRsvp, type RsvpFailureReason } from '@/lib/data/rsvp';
 import { getClientIp, rateLimit } from '@/lib/security/rate-limit';
+import { tokenFingerprint } from '@/lib/security/token-fingerprint';
 import { rsvpSubmitSchema } from '@/lib/validation/rsvp';
 import type { FormState } from '@/lib/validation/result';
 
@@ -31,9 +32,9 @@ function trimmedOrUndefined(value: FormDataEntryValue | null): string | undefine
 
 /**
  * Public RSVP submit. Bound to the route token, so the browser never supplies
- * a guest identifier. Order: SUBMIT rate-limit (token+IP) → reassemble custom
- * answers from flat FormData → Zod → submit_rsvp (which performs all
- * authorization, gating, atomicity) → safe FormState.
+ * a guest identifier. Order: SUBMIT rate-limit (token fingerprint+IP) →
+ * reassemble custom answers from flat FormData → Zod → submit_rsvp (which
+ * performs all authorization, gating, atomicity) → safe FormState.
  */
 export async function submitRsvpAction(
   token: string,
@@ -42,7 +43,11 @@ export async function submitRsvpAction(
 ): Promise<FormState> {
   const requestHeaders = await headers();
   const ip = getClientIp(requestHeaders.get.bind(requestHeaders));
-  const gate = rateLimit(`rsvp:submit:${token}:${ip}`, RSVP_SUBMIT_RATE);
+  // Bucket key uses a token FINGERPRINT, never the raw bearer token (raw
+  // tokens in in-memory keys can surface in diagnostics; same pattern as the
+  // read site, r/[token]/page.tsx).
+  const fp = tokenFingerprint(token);
+  const gate = rateLimit(`rsvp:submit:${fp}:${ip}`, RSVP_SUBMIT_RATE);
   if (!gate.allowed) {
     return { error: 'נשלחו יותר מדי בקשות. נא לנסות שוב בעוד רגע.' };
   }

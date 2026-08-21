@@ -27,3 +27,25 @@ describe('public RSVP page rate-limit keys never embed the raw token', () => {
     expect(source).toMatch(/rateLimit\(`rsvp:attendees:\$\{fp\}/);
   });
 });
+
+// The mutation site (production-readiness audit 21.8, §2 finding 5): the read
+// site above was already fixed while the submit action — the more sensitive
+// of the two, since it accepts a POST — still built its key from the raw
+// token. Same tripwire shape, same file-under-test discipline.
+describe('public RSVP submit action rate-limit key never embeds the raw token', () => {
+  const source = readFileSync(join(__dirname, 'actions.ts'), 'utf8');
+
+  it('imports tokenFingerprint from the shared security module', () => {
+    expect(source).toMatch(
+      /import\s*\{\s*tokenFingerprint\s*\}\s*from\s*'@\/lib\/security\/token-fingerprint'/,
+    );
+  });
+
+  it('does not build the rateLimit key from the raw token', () => {
+    expect(source).not.toMatch(/rateLimit\(`rsvp:submit:\$\{token\}/);
+  });
+
+  it('builds the rate-limit key from the fingerprint variable', () => {
+    expect(source).toMatch(/rateLimit\(`rsvp:submit:\$\{fp\}/);
+  });
+});

@@ -4,6 +4,7 @@ import { headers } from 'next/headers';
 import { getGiftByToken } from '@/lib/data/gift';
 import { signedInviteImageUrl } from '@/lib/storage/event-media';
 import { getClientIp, rateLimit } from '@/lib/security/rate-limit';
+import { tokenFingerprint } from '@/lib/security/token-fingerprint';
 
 import { GiftLanding } from './gift-landing';
 
@@ -40,7 +41,11 @@ export default async function GiftPage({
 
   const requestHeaders = await headers();
   const ip = getClientIp(requestHeaders.get.bind(requestHeaders));
-  const gate = rateLimit(`gift:view:${token}:${ip}`, GIFT_VIEW_RATE);
+  // Bucket key uses a token FINGERPRINT, never the raw bearer token (raw
+  // tokens in in-memory keys can surface in diagnostics; same pattern as
+  // r/[token]/page.tsx).
+  const fp = tokenFingerprint(token);
+  const gate = rateLimit(`gift:view:${fp}:${ip}`, GIFT_VIEW_RATE);
   if (!gate.allowed) {
     return (
       <Shell>
