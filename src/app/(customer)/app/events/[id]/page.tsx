@@ -12,10 +12,13 @@ import { getCampaignForEvent, listCampaignsForEvent } from '@/lib/data/campaigns
 import { hasAnyOperationalCampaign } from '@/lib/data/campaign-status';
 import { EVENT_TYPE_LABELS, EVENT_STATUS_LABELS } from '@/lib/data/event-labels';
 import { celebrantsTextFor } from '@/lib/data/celebrant-display';
+import { getCancellationRequestForEvent } from '@/lib/data/event-cancellation';
 import { EditEventForm } from './edit-event-form';
 import { EventStatusActions } from './event-status-actions';
 import { publishEventAction, closeEventAction } from './campaign/campaign-actions';
 import { CampaignSection } from './campaign-section';
+import { CancellationRequestForm } from './cancellation-request-form';
+import { createCancellationRequestAction } from './actions';
 
 // Israel calendar date (dd.mm.yyyy) — never the raw ISO/UTC slice, which shows
 // the wrong day for early-morning IL times (01:00 IDT is 22:00Z the day before).
@@ -93,6 +96,9 @@ export default async function EventPage({
   );
   const publishAction = publishEventAction.bind(null, event.id);
   const closeAction = closeEventAction.bind(null, event.id);
+  const createCancellationAction = createCancellationRequestAction.bind(null, event.id);
+  const cancellationRequest =
+    event.status !== 'draft' ? await getCancellationRequestForEvent(event.id) : null;
 
   const summary = [
     EVENT_TYPE_LABELS[event.event_type] ?? event.event_type,
@@ -160,6 +166,13 @@ export default async function EventPage({
       />
 
       <CampaignSection eventId={event.id} campaign={campaign} isPast={isPast} />
+
+      {event.status !== 'draft' ? (
+        <CancellationRequestForm
+          existingRequest={cancellationRequest}
+          action={createCancellationAction}
+        />
+      ) : null}
 
       <section className="space-y-4 rounded-lg border border-border bg-card p-6">
         <h2 className="text-lg font-semibold">עריכת פרטי האירוע</h2>

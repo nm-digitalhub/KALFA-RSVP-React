@@ -16,12 +16,14 @@ import {
   INVITE_IMAGE_TYPES,
   uploadInviteImage,
 } from '@/lib/storage/event-media';
+import { createCancellationRequest } from '@/lib/data/event-cancellation';
 import {
   celebrantsSchemaFor,
   parseCelebrantsForm,
   readCelebrantsForm,
   updateEventSchema,
 } from '@/lib/validation/schemas';
+import { createCancellationRequestSchema } from '@/lib/validation/event-cancellation';
 import { issuesToFieldErrors, type FormState } from '@/lib/validation/result';
 
 // `eventId` is bound from the route segment (server-side), NOT submitted by the
@@ -168,4 +170,26 @@ export async function updateEventAction(
   revalidatePath('/app/events');
   revalidatePath(`/app/events/${eventId}`);
   return { notice: 'האירוע עודכן' };
+}
+
+export async function createCancellationRequestAction(
+  eventId: string,
+  _prevState: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  const parsed = createCancellationRequestSchema.safeParse({
+    reason: formData.get('reason'),
+    smsConsent: formData.get('smsConsent') === 'on',
+  });
+  if (!parsed.success) {
+    return { fieldErrors: parsed.error.flatten().fieldErrors };
+  }
+  try {
+    const { requestNumber } = await createCancellationRequest(eventId, parsed.data);
+    revalidatePath(`/app/events/${eventId}`);
+    return { notice: `בקשת הביטול נשלחה — מספר בקשה #${requestNumber}. נעדכן אותך במייל.` };
+  } catch (err) {
+    unstable_rethrow(err);
+    return { error: err instanceof Error ? err.message : 'פתיחת בקשת הביטול נכשלה' };
+  }
 }

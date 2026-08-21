@@ -31,6 +31,9 @@ vi.mock('@/lib/data/events', () => ({
   VENUE_REQUIRED_WHILE_CAMPAIGN_ERROR:
     'לא ניתן להשאיר את המיקום ריק כל עוד קמפיין אישורי-הגעה פעיל — המיקום מופיע בהזמנות ובתזכורות.',
 }));
+vi.mock('@/lib/data/event-cancellation', () => ({
+  createCancellationRequest: vi.fn(),
+}));
 
 import {
   CELEBRANTS_LOCKED_ERROR,
@@ -38,7 +41,8 @@ import {
   updateEvent,
   VENUE_REQUIRED_WHILE_CAMPAIGN_ERROR,
 } from '@/lib/data/events';
-import { updateEventAction } from './actions';
+import { createCancellationRequest } from '@/lib/data/event-cancellation';
+import { updateEventAction, createCancellationRequestAction } from './actions';
 
 const NEXT_REDIRECT = Object.assign(new Error('NEXT_REDIRECT'), {
   digest: 'NEXT_REDIRECT;replace;/auth/login;307;',
@@ -213,5 +217,42 @@ describe('updateEventAction — Next.js control-flow signals from the ownership 
     const result = await updateEventAction('e-1', null, fd({ ...BASE }));
 
     expect(result).toEqual({ error: VENUE_REQUIRED_WHILE_CAMPAIGN_ERROR });
+  });
+});
+
+describe('createCancellationRequestAction', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('returns a notice with the request number on success', async () => {
+    vi.mocked(createCancellationRequest).mockResolvedValue({ id: 'r1', requestNumber: 42 });
+    const result = await createCancellationRequestAction(
+      'e1',
+      null,
+      fd({ reason: 'שינוי תוכניות משפחתיות', smsConsent: 'on' }),
+    );
+    expect(result?.notice).toContain('42');
+  });
+
+  it('surfaces a validation error for a too-short reason', async () => {
+    const result = await createCancellationRequestAction('e1', null, fd({ reason: 'קצר' }));
+    expect(result?.fieldErrors?.reason).toBeDefined();
+    expect(createCancellationRequest).not.toHaveBeenCalled();
+  });
+
+  it('re-throws a Next.js control-flow signal instead of swallowing it', async () => {
+    vi.mocked(createCancellationRequest).mockRejectedValue(NEXT_REDIRECT);
+    await expect(
+      createCancellationRequestAction('e1', null, fd({ reason: 'שינוי תוכניות משפחתיות' })),
+    ).rejects.toThrow('NEXT_REDIRECT');
+  });
+
+  it('surfaces the data-layer error message on failure', async () => {
+    vi.mocked(createCancellationRequest).mockRejectedValue(new Error('פתיחת בקשת הביטול נכשלה'));
+    const result = await createCancellationRequestAction(
+      'e1',
+      null,
+      fd({ reason: 'שינוי תוכניות משפחתיות' }),
+    );
+    expect(result?.error).toBe('פתיחת בקשת הביטול נכשלה');
   });
 });
