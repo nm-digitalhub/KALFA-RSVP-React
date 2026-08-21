@@ -222,6 +222,31 @@ export function setVoximplantUserPassword(
   );
 }
 
+// Params verified against the live method tree (voximplant.com/api/v2/getDoc
+// ?fqdn=references.httpapi.users.adduser, fetched 2026-08-21). Every field the
+// API accepts is represented — the always-required ones as plain arguments,
+// every other one (לא חובה) inside `opts`:
+//   application_id      — the app a new user is bound to. Required unless
+//                          opts.applicationName is used instead.
+//   user_name           — [a-z0-9][a-z0-9_-]{2,49}. Required.
+//   user_password       — ≥8 chars, upper+lower+digit+special. Required.
+//   user_display_name   — (לא חובה) — only sent when non-empty. Voximplant's
+//                          own doc marks it required, but an empty string is
+//                          never useful here.
+//   user_active         — (לא חובה) whether the user can log in. We always
+//                          pass true.
+//   opts.applicationName — (לא חובה) alternative to application_id. Not used
+//                          by KALFA today — app_settings stores only the
+//                          numeric id — kept here for full API parity.
+//   opts.parentAccounting — (לא חובה) use the parent account's balance
+//                          instead of a separate one. Not set by KALFA today.
+//   opts.userCustomData  — (לא חובה) arbitrary string. Not set by KALFA today.
+export interface AddVoximplantUserOptions {
+  applicationName?: string;
+  parentAccounting?: boolean;
+  userCustomData?: string;
+  timeoutMs?: number;
+}
 export interface AddUserResponse {
   result?: number;
   user_id?: number;
@@ -233,7 +258,7 @@ export function addVoximplantUser(
   userName: string,
   userPassword: string,
   userDisplayName?: string,
-  timeoutMs?: number,
+  opts?: AddVoximplantUserOptions,
 ): Promise<AddUserResponse> {
   if (!VOX_USER_NAME_PATTERN.test(userName)) {
     // Fail before the network call so a bad name is a clear local error rather
@@ -249,5 +274,61 @@ export function addVoximplantUser(
     user_active: true,
   };
   if (userDisplayName) params.user_display_name = userDisplayName;
-  return voxRequest<AddUserResponse>(config, 'AddUser', params, timeoutMs);
+  if (opts?.applicationName) params.application_name = opts.applicationName;
+  if (opts?.parentAccounting !== undefined) params.parent_accounting = opts.parentAccounting;
+  if (opts?.userCustomData) params.user_custom_data = opts.userCustomData;
+  return voxRequest<AddUserResponse>(config, 'AddUser', params, opts?.timeoutMs);
+}
+
+// DelUser — params verified against the live method tree (voximplant.com/api/
+// v2/getDoc?fqdn=references.httpapi.users.deluser, fetched 2026-08-21). Every
+// field the API accepts is represented:
+//   application_id      — the app the user(s) are bound to. Required unless
+//                          opts.applicationName is used instead.
+//   user_name            — semicolon-separated list, or 'all'. Required
+//                          unless opts.userId is given.
+//   opts.applicationName — (לא חובה) alternative to application_id. Not used
+//                          by KALFA today (same reason as AddUser).
+//   opts.userId          — (לא חובה) alternative to user_name — a numeric
+//                          Voximplant user id (or semicolon list / 'all').
+//                          Not used by KALFA today: console_agents stores only
+//                          vox_username, never Voximplant's own numeric id.
+//                          When given, it REPLACES user_name in the request
+//                          (the API takes one or the other, never both).
+//
+// Deletes the Voximplant-side identity a console agent's removal leaves
+// behind. Without this, removeConsoleAgent only deletes the KALFA-side row —
+// the Voximplant user (whose name is DETERMINISTIC, agent_<user_id>) survives
+// orphaned, and every future AddUser for the same person collides with it
+// forever (the exact bug this closes).
+export interface DelVoximplantUserOptions {
+  applicationName?: string;
+  userId?: number | string;
+  timeoutMs?: number;
+}
+export interface DelUserResponse {
+  result?: number;
+  error?: { code: number; msg: string };
+}
+export function delVoximplantUser(
+  config: VoximplantConfig,
+  applicationId: number,
+  userName: string,
+  opts?: DelVoximplantUserOptions,
+): Promise<DelUserResponse> {
+  // opts.userId REPLACES user_name below, so the local pattern check only
+  // applies when user_name is actually the one being sent.
+  if (opts?.userId === undefined && !VOX_USER_NAME_PATTERN.test(userName)) {
+    return Promise.reject(
+      new Error(`שם משתמש Voximplant אינו תקין: ${userName}`),
+    );
+  }
+  const params: VoxParams = { application_id: applicationId };
+  if (opts?.applicationName) params.application_name = opts.applicationName;
+  if (opts?.userId !== undefined) {
+    params.user_id = opts.userId;
+  } else {
+    params.user_name = userName;
+  }
+  return voxRequest<DelUserResponse>(config, 'DelUser', params, opts?.timeoutMs);
 }

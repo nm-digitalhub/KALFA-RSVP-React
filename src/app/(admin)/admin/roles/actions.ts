@@ -165,14 +165,35 @@ export async function enrollConsoleAgentAction(input: {
   if (!parsed.success) {
     return { error: parsed.error.issues[0]?.message ?? 'ערך לא תקין' };
   }
+  let provisioning;
   try {
-    await enrollConsoleAgent(parsed.data.userId, parsed.data.displayName);
+    provisioning = await enrollConsoleAgent(parsed.data.userId, parsed.data.displayName);
   } catch (err) {
     unstable_rethrow(err);
     return { error: err instanceof Error ? err.message : 'הוספת נציג המוקד נכשלה. נסו שוב.' };
   }
   revalidatePath(ROLES_PATH);
   revalidatePath(`/admin/users/${parsed.data.userId}`);
+  // The enrolment itself DID succeed (real console access, feed, commands) —
+  // but a failed Voximplant provisioning must not read as a clean success:
+  // the person can never be added to a live call until it's retried. Code 157
+  // ("The 'user_display_name' parameter is invalid" — verified live against
+  // voximplant.com/api/v2/getDoc?fqdn=references.httpapi.errors, 2026-08-21)
+  // is the one case attributable to a specific field; every other failure
+  // gets a general (still visible, still an error — never a silent notice).
+  if (!provisioning.ok) {
+    if (provisioning.reason === 'api_failed' && provisioning.voxErrorCode === 157) {
+      return {
+        error: 'הנציג נוסף למוקד, אך זהות השיחה נכשלה — שם התצוגה נדחה על ידי מערכת השיחות.',
+        fieldErrors: {
+          displayName: ['שם התצוגה נדחה על ידי מערכת השיחות — נסו שם אחר ונסו לשייך שוב.'],
+        },
+      };
+    }
+    return {
+      error: `הנציג נוסף למוקד, אך זהות השיחה לא נוצרה (${provisioning.reason}) — לא ניתן יהיה לצרפו לשיחה חיה עד שהזהות תסופק (הסירו ושייכו מחדש כדי לנסות שוב).`,
+    };
+  }
   return { notice: 'הנציג נוסף למוקד' };
 }
 
@@ -184,13 +205,23 @@ export async function removeConsoleAgentAction(input: { userId: string }): Promi
   if (!parsed.success) {
     return { error: 'ערך לא תקין' };
   }
+  let outcome;
   try {
-    await removeConsoleAgent(parsed.data.userId);
+    outcome = await removeConsoleAgent(parsed.data.userId);
   } catch (err) {
     unstable_rethrow(err);
     return { error: err instanceof Error ? err.message : 'הסרת נציג המוקד נכשלה. נסו שוב.' };
   }
   revalidatePath(ROLES_PATH);
   revalidatePath(`/admin/users/${parsed.data.userId}`);
+  // The local removal (access revocation) DID succeed either way — but a
+  // failed Voximplant cleanup is surfaced as an ERROR, not a quiet success
+  // notice: it means re-enrolling this same person will keep failing until
+  // the orphaned identity is deleted by hand, and that must not go unnoticed.
+  if (outcome.voxCleanup === 'failed') {
+    return {
+      error: `הנציג הוסר מהמוקד, אך מחיקת הזהות שלו ב-Voximplant (${outcome.voxUsername}) נכשלה (${outcome.reason}) — שיוך מחדש לאותו משתמש ייכשל עד שהזהות תימחק ידנית.`,
+    };
+  }
   return { notice: 'הנציג הוסר מהמוקד' };
 }

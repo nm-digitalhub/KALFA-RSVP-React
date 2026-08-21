@@ -6,6 +6,7 @@ import { createAdminClient } from '@/lib/supabase/admin';
 import { hasPlatformPermission, requirePlatformOwner } from '@/lib/auth/dal';
 import { logActivity } from '@/lib/data/activity';
 import { sendSlackAlert } from '@/lib/alerts/slack';
+import { deprovisionConsoleAgentVoxUser } from '@/lib/data/console-agent-provisioning';
 import {
   assignStaffRole,
   createPlatformRole,
@@ -27,6 +28,10 @@ vi.mock('@/lib/auth/dal', () => ({
 }));
 vi.mock('@/lib/data/activity', () => ({ logActivity: vi.fn() }));
 vi.mock('@/lib/alerts/slack', () => ({ sendSlackAlert: vi.fn() }));
+vi.mock('@/lib/data/console-agent-provisioning', async (orig) => {
+  const actual = await orig<typeof import('@/lib/data/console-agent-provisioning')>();
+  return { ...actual, deprovisionConsoleAgentVoxUser: vi.fn() };
+});
 
 // The acting PLATFORM owner (KALFA staff on the owner role), returned by the
 // mocked requirePlatformOwner(). Owners hold every permission.
@@ -347,7 +352,8 @@ describe('enrollConsoleAgent — staff requirement', () => {
         console_agents: { data: null, error: null },
       },
     });
-    await expect(enrollConsoleAgent('u-2', 'דנה')).resolves.toBeUndefined();
+    const outcome = await enrollConsoleAgent('u-2', 'דנה');
+    expect(outcome.ok).toBe(false); // no live Voximplant config in this test — not_configured
     expect(builders.console_agents.upsert).toHaveBeenCalledWith(
       { user_id: 'u-2', display_name: 'דנה' },
       { onConflict: 'user_id' },
@@ -369,7 +375,7 @@ describe('removeConsoleAgent', () => {
     const { from } = wireAdminClient({
       tables: { console_agents: { data: null, error: null } },
     });
-    await expect(removeConsoleAgent('u-2')).resolves.toBeUndefined();
+    await expect(removeConsoleAgent('u-2')).resolves.toEqual({ voxCleanup: 'not_applicable' });
     // The narrow half of the pair: it must NOT touch platform_staff.
     expect(from).not.toHaveBeenCalledWith('platform_staff');
     expect(logActivity).toHaveBeenCalledWith(
@@ -386,6 +392,78 @@ describe('removeConsoleAgent', () => {
     });
     await expect(removeConsoleAgent('u-2')).rejects.toThrow('הסרת נציג המוקד נכשלה');
     expect(logActivity).not.toHaveBeenCalled();
+  });
+
+  // The bug this closes: without deleting the Voximplant-side user too, its
+  // DETERMINISTIC name (agent_<user_id>) survives orphaned and blocks every
+  // future re-enrollment of the same person forever.
+  it('deletes the Voximplant user when the agent was provisioned, and audits its name', async () => {
+    wireAdminClient({
+      tables: { console_agents: { data: { vox_username: 'agent_u-2' }, error: null } },
+    });
+    vi.mocked(deprovisionConsoleAgentVoxUser).mockResolvedValue({ ok: true });
+    await expect(removeConsoleAgent('u-2')).resolves.toEqual({ voxCleanup: 'ok' });
+    expect(deprovisionConsoleAgentVoxUser).toHaveBeenCalledWith('agent_u-2', undefined);
+    expect(logActivity).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'admin.console_agent.removed',
+        meta: { targetUserId: 'u-2', voxUsername: 'agent_u-2' },
+      }),
+    );
+  });
+
+  // vox_user_id (Voximplant's own numeric id, captured at provisioning time)
+  // is the more robust of the two DelUser identifiers — passed through when
+  // known so deletion doesn't rely on name-matching alone.
+  it('passes vox_user_id through to the Voximplant cleanup when it is known', async () => {
+    wireAdminClient({
+      tables: {
+        console_agents: {
+          data: { vox_username: 'agent_u-2', vox_user_id: 11184450 },
+          error: null,
+        },
+      },
+    });
+    vi.mocked(deprovisionConsoleAgentVoxUser).mockResolvedValue({ ok: true });
+    await removeConsoleAgent('u-2');
+    expect(deprovisionConsoleAgentVoxUser).toHaveBeenCalledWith('agent_u-2', 11184450);
+  });
+
+  it('never calls the Voximplant cleanup when the agent was never provisioned', async () => {
+    wireAdminClient({
+      tables: { console_agents: { data: { vox_username: null }, error: null } },
+    });
+    await expect(removeConsoleAgent('u-2')).resolves.toEqual({ voxCleanup: 'not_applicable' });
+    expect(deprovisionConsoleAgentVoxUser).not.toHaveBeenCalled();
+  });
+
+  // The local removal itself must never fail because Voximplant cleanup did —
+  // but the CALLER must be told, so it can surface this as a visible error
+  // rather than a quiet success (removeConsoleAgentAction turns this outcome
+  // into a FormError, not a FormNotice).
+  it('the local removal still succeeds, but the outcome reports the cleanup failure — not just a log line', async () => {
+    wireAdminClient({
+      tables: { console_agents: { data: { vox_username: 'agent_u-2' }, error: null } },
+    });
+    vi.mocked(deprovisionConsoleAgentVoxUser).mockResolvedValue({
+      ok: false,
+      reason: 'api_failed',
+    });
+    await expect(removeConsoleAgent('u-2')).resolves.toEqual({
+      voxCleanup: 'failed',
+      voxUsername: 'agent_u-2',
+      reason: 'api_failed',
+    });
+    expect(logActivity).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'admin.console_agent.removed',
+        meta: {
+          targetUserId: 'u-2',
+          voxUsername: 'agent_u-2',
+          voxCleanupFailed: 'api_failed',
+        },
+      }),
+    );
   });
 });
 

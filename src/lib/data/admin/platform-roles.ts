@@ -1,7 +1,11 @@
 import 'server-only';
 
 import { createAdminClient } from '@/lib/supabase/admin';
-import { provisionConsoleAgentVoxUser } from '@/lib/data/console-agent-provisioning';
+import {
+  provisionConsoleAgentVoxUser,
+  deprovisionConsoleAgentVoxUser,
+  type ProvisionOutcome,
+} from '@/lib/data/console-agent-provisioning';
 import { hasPlatformPermission, requirePlatformOwner } from '@/lib/auth/dal';
 import { logActivity } from '@/lib/data/activity';
 import { sendSlackAlert } from '@/lib/alerts/slack';
@@ -284,7 +288,10 @@ export async function getUserConsoleAgent(userId: string): Promise<ConsoleAgentD
 // staff, but we check first so the owner gets a sentence instead of a constraint
 // violation; the 23503 mapping below stays as the backstop for the race where
 // staff is revoked between the check and the insert.
-export async function enrollConsoleAgent(userId: string, displayName: string): Promise<void> {
+export async function enrollConsoleAgent(
+  userId: string,
+  displayName: string,
+): Promise<ProvisionOutcome> {
   const actor = await requirePlatformOwner();
   const admin = createAdminClient();
 
@@ -342,20 +349,72 @@ export async function enrollConsoleAgent(userId: string, displayName: string): P
     title: 'משתמש נוסף כנציג אנושי במוקד השיחות',
     fields: { actorUserId: actor.id, targetUserId: userId },
   });
+
+  return provisioning;
 }
+
+// The LOCAL removal (access revocation) always happens and is never gated on
+// Voximplant — but the caller MUST be told when the Voximplant-side identity
+// could not be cleaned up: silently logging it server-side is what let the
+// original incident go unnoticed until the next enrollment attempt failed.
+// 'not_applicable' — the agent had no vox_username (nothing to clean up).
+// 'ok' — had one; DelUser succeeded.
+// 'failed' — had one; DelUser failed. Re-enrolling this same person WILL fail
+//   (deterministic username collision) until voxUsername is deleted by hand.
+export type RemoveConsoleAgentOutcome =
+  | { voxCleanup: 'not_applicable' }
+  | { voxCleanup: 'ok' }
+  | { voxCleanup: 'failed'; voxUsername: string; reason: 'not_configured' | 'api_failed' };
 
 // Remove a user's console membership. Leaves their platform staff role intact —
 // this is the narrow half of the pair (revokeStaffRole removes both, via cascade).
-export async function removeConsoleAgent(userId: string): Promise<void> {
+export async function removeConsoleAgent(
+  userId: string,
+): Promise<RemoveConsoleAgentOutcome> {
   const actor = await requirePlatformOwner();
   const admin = createAdminClient();
+
+  // Read vox_username (+ vox_user_id, when known — the more robust of the two
+  // DelUser identifiers) BEFORE deleting — the row (and, via its ON DELETE
+  // CASCADE, console_agent_secrets) is gone the moment the delete below
+  // succeeds, so this is the only chance to see them.
+  const { data: agent } = await admin
+    .from('console_agents')
+    .select('vox_username, vox_user_id')
+    .eq('user_id', userId)
+    .maybeSingle();
 
   const { error } = await admin.from('console_agents').delete().eq('user_id', userId);
   if (error) throw new Error('הסרת נציג המוקד נכשלה');
 
+  // Deliberately AFTER the local delete already succeeded: local removal is
+  // the actual access revocation (feed, live-call commands) and must never be
+  // BLOCKED by Voximplant's availability. But its outcome IS surfaced to the
+  // caller (below) — never just logged — so "removed" never silently means
+  // "removed, but re-enrolling this person is now permanently broken."
+  let voxCleanup: RemoveConsoleAgentOutcome = { voxCleanup: 'not_applicable' };
+  if (agent?.vox_username) {
+    const deprovisioning = await deprovisionConsoleAgentVoxUser(
+      agent.vox_username,
+      agent.vox_user_id,
+    );
+    voxCleanup = deprovisioning.ok
+      ? { voxCleanup: 'ok' }
+      : { voxCleanup: 'failed', voxUsername: agent.vox_username, reason: deprovisioning.reason };
+    if (!deprovisioning.ok) {
+      console.error(
+        `[remove] console agent ${userId} removed but its Voximplant user (${agent.vox_username}) could NOT be deleted (${deprovisioning.reason}) — re-enrolling this person will fail until it is cleaned up manually`,
+      );
+    }
+  }
+
   await logActivity({
     action: 'admin.console_agent.removed',
-    meta: { targetUserId: userId },
+    meta: {
+      targetUserId: userId,
+      ...(agent?.vox_username ? { voxUsername: agent.vox_username } : {}),
+      ...(voxCleanup.voxCleanup === 'failed' ? { voxCleanupFailed: voxCleanup.reason } : {}),
+    },
   });
   void sendSlackAlert({
     level: 'warn',
@@ -364,6 +423,8 @@ export async function removeConsoleAgent(userId: string): Promise<void> {
     title: 'משתמש הוסר מנציגי מוקד השיחות',
     fields: { actorUserId: actor.id, targetUserId: userId },
   });
+
+  return voxCleanup;
 }
 
 // The role ids flagged as owner roles (normally exactly one — the seeded 'owner').

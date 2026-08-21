@@ -1609,18 +1609,21 @@ export type Database = {
           created_at: string
           display_name: string
           user_id: string
+          vox_user_id: number | null
           vox_username: string | null
         }
         Insert: {
           created_at?: string
           display_name: string
           user_id: string
+          vox_user_id?: number | null
           vox_username?: string | null
         }
         Update: {
           created_at?: string
           display_name?: string
           user_id?: string
+          vox_user_id?: number | null
           vox_username?: string | null
         }
         Relationships: [

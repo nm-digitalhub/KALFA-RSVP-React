@@ -238,6 +238,7 @@ function ConsoleAgentSection({
               disabled={pending}
               className={inputClass}
             />
+            <FieldError errors={state?.fieldErrors?.displayName} />
           </div>
           <button
             type="button"
