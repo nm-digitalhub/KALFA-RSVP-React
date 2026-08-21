@@ -6,9 +6,13 @@ import { createAdminClient } from '@/lib/supabase/admin';
 import { hasPlatformPermission, requirePlatformOwner } from '@/lib/auth/dal';
 import { logActivity } from '@/lib/data/activity';
 import { sendSlackAlert } from '@/lib/alerts/slack';
-import { deprovisionConsoleAgentVoxUser } from '@/lib/data/console-agent-provisioning';
+import {
+  deprovisionConsoleAgentVoxUser,
+  setConsoleAgentVoxActive,
+} from '@/lib/data/console-agent-provisioning';
 import {
   assignStaffRole,
+  blockConsoleAgent,
   createPlatformRole,
   getRolePermissionMatrix,
   getUserStaffRoleId,
@@ -18,6 +22,7 @@ import {
   removeConsoleAgent,
   revokeStaffRole,
   setRolePermission,
+  unblockConsoleAgent,
 } from './platform-roles';
 
 vi.mock('server-only', () => ({}));
@@ -30,7 +35,7 @@ vi.mock('@/lib/data/activity', () => ({ logActivity: vi.fn() }));
 vi.mock('@/lib/alerts/slack', () => ({ sendSlackAlert: vi.fn() }));
 vi.mock('@/lib/data/console-agent-provisioning', async (orig) => {
   const actual = await orig<typeof import('@/lib/data/console-agent-provisioning')>();
-  return { ...actual, deprovisionConsoleAgentVoxUser: vi.fn() };
+  return { ...actual, deprovisionConsoleAgentVoxUser: vi.fn(), setConsoleAgentVoxActive: vi.fn() };
 });
 
 // The acting PLATFORM owner (KALFA staff on the owner role), returned by the
@@ -325,48 +330,51 @@ describe('enrollConsoleAgent — staff requirement', () => {
     expect(sendSlackAlert).not.toHaveBeenCalled();
   });
 
-  it('maps the FK violation to the same safe message, never the raw DB text', async () => {
-    // The race: staff revoked between the pre-check and the insert. The 23503
-    // backstop must not surface 'console_agents_staff_fkey' to the UI.
-    wireAdminClient({
-      tables: {
-        platform_staff: { data: { user_id: 'u-2' }, error: null },
-        console_agents: {
-          data: null,
-          error: { code: '23503', message: 'violates foreign key constraint "console_agents_staff_fkey"' },
-        },
-      },
-    });
-    const err = await enrollConsoleAgent('u-2', 'דנה').catch((e: Error) => e);
-    expect((err as Error).message).toBe(
-      'רק חבר צוות פלטפורמה יכול לשמש נציג מוקד — הקצו תפקיד צוות תחילה',
-    );
-    expect((err as Error).message).not.toContain('console_agents_staff_fkey');
-    expect(logActivity).not.toHaveBeenCalled();
-  });
-
-  it('enrols a staff member and audits it', async () => {
+  // OWNER DIRECTIVE: Voximplant must succeed BEFORE any local access is
+  // granted. provisionConsoleAgentVoxUser checks Voximplant config before
+  // touching console_agents at all, so a fresh enrolment with no live
+  // Voximplant config in this test environment must grant NOTHING locally —
+  // not even a partial row. This also closes the old race the FK backstop
+  // used to guard: the local write no longer happens until Voximplant has
+  // already confirmed the identity, so there is nothing left un-staffed to
+  // race against at this layer.
+  it('grants nothing locally when Voximplant is not configured, and logs the failure', async () => {
     const { builders } = wireAdminClient({
       tables: {
         platform_staff: { data: { user_id: 'u-2' }, error: null },
-        console_agents: { data: null, error: null },
+        console_agents: { data: null, error: null }, // no existing agent
       },
     });
     const outcome = await enrollConsoleAgent('u-2', 'דנה');
-    expect(outcome.ok).toBe(false); // no live Voximplant config in this test — not_configured
-    expect(builders.console_agents.upsert).toHaveBeenCalledWith(
-      { user_id: 'u-2', display_name: 'דנה' },
-      { onConflict: 'user_id' },
-    );
+    expect(outcome).toEqual({ ok: false, reason: 'not_configured' });
+    expect(builders.console_agents.upsert).not.toHaveBeenCalled();
     expect(logActivity).toHaveBeenCalledWith(
-      expect.objectContaining({ action: 'admin.console_agent.enrolled' }),
-    );
-    expect(sendSlackAlert).toHaveBeenCalledWith(
       expect.objectContaining({
-        category: 'security',
-        fields: { actorUserId: 'owner-1', targetUserId: 'u-2' },
+        action: 'admin.console_agent.enroll_failed',
+        meta: { targetUserId: 'u-2', reason: 'not_configured' },
       }),
     );
+    expect(sendSlackAlert).not.toHaveBeenCalled();
+  });
+
+  // Re-enrolling an ALREADY fully-provisioned agent (real vox_username +
+  // stored secret) is a display-name edit, not a new grant — no Voximplant
+  // dependency, since nothing new is being authorized.
+  it('re-enrolling an already-provisioned agent only edits the display name — no Voximplant call', async () => {
+    const { builders } = wireAdminClient({
+      tables: {
+        platform_staff: { data: { user_id: 'u-2' }, error: null },
+        console_agents: { data: { vox_username: 'agent_u-2' }, error: null },
+        console_agent_secrets: { data: { user_id: 'u-2' }, error: null },
+      },
+    });
+    const outcome = await enrollConsoleAgent('u-2', 'שם חדש');
+    expect(outcome).toEqual({ ok: true, voxUsername: 'agent_u-2', alreadyProvisioned: true });
+    expect(builders.console_agents.update).toHaveBeenCalledWith({ display_name: 'שם חדש' });
+    expect(logActivity).toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'admin.console_agent.display_name_updated' }),
+    );
+    expect(sendSlackAlert).not.toHaveBeenCalled();
   });
 });
 
@@ -375,7 +383,7 @@ describe('removeConsoleAgent', () => {
     const { from } = wireAdminClient({
       tables: { console_agents: { data: null, error: null } },
     });
-    await expect(removeConsoleAgent('u-2')).resolves.toEqual({ voxCleanup: 'not_applicable' });
+    await expect(removeConsoleAgent('u-2')).resolves.toEqual({ ok: true });
     // The narrow half of the pair: it must NOT touch platform_staff.
     expect(from).not.toHaveBeenCalledWith('platform_staff');
     expect(logActivity).toHaveBeenCalledWith(
@@ -402,7 +410,7 @@ describe('removeConsoleAgent', () => {
       tables: { console_agents: { data: { vox_username: 'agent_u-2' }, error: null } },
     });
     vi.mocked(deprovisionConsoleAgentVoxUser).mockResolvedValue({ ok: true });
-    await expect(removeConsoleAgent('u-2')).resolves.toEqual({ voxCleanup: 'ok' });
+    await expect(removeConsoleAgent('u-2')).resolves.toEqual({ ok: true });
     expect(deprovisionConsoleAgentVoxUser).toHaveBeenCalledWith('agent_u-2', undefined);
     expect(logActivity).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -433,16 +441,16 @@ describe('removeConsoleAgent', () => {
     wireAdminClient({
       tables: { console_agents: { data: { vox_username: null }, error: null } },
     });
-    await expect(removeConsoleAgent('u-2')).resolves.toEqual({ voxCleanup: 'not_applicable' });
+    await expect(removeConsoleAgent('u-2')).resolves.toEqual({ ok: true });
     expect(deprovisionConsoleAgentVoxUser).not.toHaveBeenCalled();
   });
 
-  // The local removal itself must never fail because Voximplant cleanup did —
-  // but the CALLER must be told, so it can surface this as a visible error
-  // rather than a quiet success (removeConsoleAgentAction turns this outcome
-  // into a FormError, not a FormNotice).
-  it('the local removal still succeeds, but the outcome reports the cleanup failure — not just a log line', async () => {
-    wireAdminClient({
+  // OWNER DIRECTIVE (repeated, emphatic): removal must genuinely depend on
+  // Voximplant, not proceed locally regardless. A failed Voximplant cleanup
+  // now means the removal did NOT happen at all — the local row is left
+  // untouched, and the caller must see this as a real failure.
+  it('removal fails entirely, and the local row is left untouched, when the Voximplant cleanup fails', async () => {
+    const { builders } = wireAdminClient({
       tables: { console_agents: { data: { vox_username: 'agent_u-2' }, error: null } },
     });
     vi.mocked(deprovisionConsoleAgentVoxUser).mockResolvedValue({
@@ -450,19 +458,59 @@ describe('removeConsoleAgent', () => {
       reason: 'api_failed',
     });
     await expect(removeConsoleAgent('u-2')).resolves.toEqual({
-      voxCleanup: 'failed',
-      voxUsername: 'agent_u-2',
+      ok: false,
       reason: 'api_failed',
+      voxUsername: 'agent_u-2',
     });
+    expect(builders.console_agents.delete).not.toHaveBeenCalled();
+    expect(logActivity).not.toHaveBeenCalled();
+    expect(sendSlackAlert).not.toHaveBeenCalled();
+  });
+});
+
+describe('blockConsoleAgent / unblockConsoleAgent', () => {
+  it('blockConsoleAgent delegates to setConsoleAgentVoxActive(false) and audits success', async () => {
+    vi.mocked(setConsoleAgentVoxActive).mockResolvedValue({ ok: true });
+    const outcome = await blockConsoleAgent('u-2');
+    expect(outcome).toEqual({ ok: true });
+    expect(setConsoleAgentVoxActive).toHaveBeenCalledWith('u-2', false);
     expect(logActivity).toHaveBeenCalledWith(
       expect.objectContaining({
-        action: 'admin.console_agent.removed',
-        meta: {
-          targetUserId: 'u-2',
-          voxUsername: 'agent_u-2',
-          voxCleanupFailed: 'api_failed',
-        },
+        action: 'admin.console_agent.blocked',
+        meta: { targetUserId: 'u-2', ok: true },
       }),
+    );
+    expect(sendSlackAlert).toHaveBeenCalledWith(
+      expect.objectContaining({ category: 'security', title: 'נציג מוקד נחסם' }),
+    );
+  });
+
+  it('blockConsoleAgent surfaces a Voximplant failure without alerting Slack', async () => {
+    vi.mocked(setConsoleAgentVoxActive).mockResolvedValue({ ok: false, reason: 'api_failed' });
+    const outcome = await blockConsoleAgent('u-2');
+    expect(outcome).toEqual({ ok: false, reason: 'api_failed' });
+    expect(logActivity).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'admin.console_agent.blocked',
+        meta: { targetUserId: 'u-2', ok: false, reason: 'api_failed' },
+      }),
+    );
+    expect(sendSlackAlert).not.toHaveBeenCalled();
+  });
+
+  it('unblockConsoleAgent delegates to setConsoleAgentVoxActive(true) and audits success', async () => {
+    vi.mocked(setConsoleAgentVoxActive).mockResolvedValue({ ok: true });
+    const outcome = await unblockConsoleAgent('u-2');
+    expect(outcome).toEqual({ ok: true });
+    expect(setConsoleAgentVoxActive).toHaveBeenCalledWith('u-2', true);
+    expect(logActivity).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'admin.console_agent.unblocked',
+        meta: { targetUserId: 'u-2', ok: true },
+      }),
+    );
+    expect(sendSlackAlert).toHaveBeenCalledWith(
+      expect.objectContaining({ category: 'security', title: 'חסימת נציג מוקד בוטלה' }),
     );
   });
 });

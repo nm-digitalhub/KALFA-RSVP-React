@@ -7,6 +7,7 @@ import { getVoximplantConfig } from '@/lib/data/voximplant-config';
 import {
   addVoximplantUser,
   delVoximplantUser,
+  setVoximplantUserActive,
   setVoximplantUserPassword,
   VOX_USER_NAME_PATTERN,
 } from '@/lib/voximplant/mutations';
@@ -89,22 +90,35 @@ export type ProvisionOutcome =
   | { ok: false; reason: 'api_failed'; voxErrorCode?: number };
 
 /**
- * Create (or confirm) the Voximplant user for one console agent and persist its
- * secret.
+ * Mint a fresh Voximplant identity for a console agent being enrolled for the
+ * FIRST time, and persist its secret.
  *
- * ORDER IS THE WHOLE DESIGN:
- *   1. AddUser        — the credential now exists on Voximplant
- *   2. store secret   — if THIS fails we have an unusable user, but we know it,
- *                       because step 3 never ran
- *   3. vox_username   — written LAST, so a non-null username means "provisioned
- *                       AND its secret is stored". Never the reverse.
+ * Callers: enrollConsoleAgent ONLY, and only on the fresh-enrollment path — an
+ * agent that already has a username and a stored secret is handled entirely by
+ * the caller (a display-name edit, no Voximplant call at all). This function
+ * therefore never checks for an existing identity; it always mints one.
  *
- * The reverse order is what produces the state we are cleaning up: a username
- * that looks authoritative with nothing behind it. A caller seeing a null
- * username can safely retry; a caller seeing a set one can rely on it.
+ * ORDER IS THE WHOLE DESIGN, and it is now the OWNER'S OWN RULE, not just an
+ * internal convention: "לא הגיוני לבצע שינויים שקשורים לספק רק מהצד שלנו" — no
+ * local grant of console access may exist unless Voximplant genuinely holds the
+ * identity behind it.
+ *   1. AddUser        — Voximplant FIRST. Nothing local exists yet, so a
+ *                       failure here grants nothing: this agent is simply not
+ *                       enrolled, not a "half-enrolled" local row.
+ *   2. console_agents  — ONLY once Voximplant has succeeded. This is the FK
+ *                       console_agent_secrets depends on, so it must exist
+ *                       before step 3.
+ *   3. store secret    — if THIS fails we have an unusable user, but we know
+ *                       it, because step 4 never ran.
+ *   4. vox_username    — written LAST, so a non-null username still means
+ *                       "provisioned AND its secret is stored". Never the
+ *                       reverse.
  *
- * Idempotent by intent: an agent that already has BOTH a username and a stored
- * secret is returned as-is rather than issued a second identity.
+ * A failure at step 2, 3, or 4 leaves a Voximplant user Kalfa cannot yet use —
+ * the same narrow, already-logged "delete it there and retry" state this
+ * module has always surfaced for a failed store. What no longer happens is the
+ * OLD failure mode: real console access granted locally while Voximplant was
+ * never actually asked, or was asked and refused.
  */
 export async function provisionConsoleAgentVoxUser(
   userId: string,
@@ -115,21 +129,6 @@ export async function provisionConsoleAgentVoxUser(
 ): Promise<ProvisionOutcome> {
   const admin = createAdminClient();
 
-  const { data: agent } = await admin
-    .from('console_agents')
-    .select('vox_username')
-    .eq('user_id', userId)
-    .maybeSingle();
-  const { data: existingSecret } = await admin
-    .from('console_agent_secrets')
-    .select('user_id')
-    .eq('user_id', userId)
-    .maybeSingle();
-
-  if (agent?.vox_username && existingSecret) {
-    return { ok: true, voxUsername: agent.vox_username, alreadyProvisioned: true };
-  }
-
   const cfg = await getVoximplantConfig();
   const applicationId = await readApplicationId(admin);
   if (!cfg || !applicationId) return { ok: false, reason: 'not_configured' };
@@ -138,6 +137,7 @@ export async function provisionConsoleAgentVoxUser(
   if (!VOX_USER_NAME_PATTERN.test(userName)) return { ok: false, reason: 'api_failed' };
   const password = generateVoxPassword();
 
+  // Step 1 — Voximplant FIRST. Nothing local is written until this succeeds.
   let voxUserId: number | undefined;
   try {
     const res = await addVoximplantUser(
@@ -165,7 +165,20 @@ export async function provisionConsoleAgentVoxUser(
     return { ok: false, reason: 'api_failed' };
   }
 
-  // Step 2 — the secret, BEFORE the username.
+  // Step 2 — the local grant row, ONLY now that Voximplant has confirmed the
+  // identity. This is the FIRST point at which the agent has real console
+  // access (feed, live-call commands, dial) — never earlier.
+  const { error: rowErr } = await admin
+    .from('console_agents')
+    .upsert({ user_id: userId, display_name: displayName }, { onConflict: 'user_id' });
+  if (rowErr) {
+    console.error(
+      `[provision] user ${userName} CREATED on Voximplant but the local grant could not be written — delete it there before retrying`,
+    );
+    return { ok: false, reason: 'store_failed' };
+  }
+
+  // Step 3 — the secret, BEFORE the username.
   const { error: secretErr } = await admin
     .from('console_agent_secrets')
     .upsert({ user_id: userId, vox_password: password }, { onConflict: 'user_id' });
@@ -179,7 +192,7 @@ export async function provisionConsoleAgentVoxUser(
     return { ok: false, reason: 'store_failed' };
   }
 
-  // Step 3 — only now does the agent read as provisioned.
+  // Step 4 — only now does the agent read as provisioned.
   //
   // The BARE user_name is stored, not the FQDN. Two reasons, both from the
   // protocol: this is exactly the string AddUser accepted, so it is the one
@@ -296,12 +309,11 @@ export type DeprovisionOutcome =
  * identifiers DelUser accepts. Falls back to voxUsername for an agent
  * provisioned before vox_user_id existed.
  *
- * Best-effort by design, same contract as provisioning's failure mode: the
- * caller's local removal (the actual access revocation — feed, live-call
- * commands) must never be gated on Voximplant's availability. A failure here
- * only means the SAME orphan risk this function exists to close; it is
- * logged loudly so it can be cleaned up by hand rather than silently
- * recurring.
+ * LOAD-BEARING, not best-effort: removeConsoleAgent calls this BEFORE its own
+ * local delete and does not remove the local row unless this succeeds (owner
+ * directive — a removal must not claim to have cut access at Voximplant when
+ * it has not). A failure here is therefore a failed removal, surfaced to the
+ * admin as an error, not a logged-and-ignored side note.
  */
 export async function deprovisionConsoleAgentVoxUser(
   voxUsername: string,
@@ -325,6 +337,73 @@ export async function deprovisionConsoleAgentVoxUser(
     }
   } catch (err) {
     console.error(`[deprovision] DelUser threw: ${describeThrown(err)}`);
+    return { ok: false, reason: 'api_failed' };
+  }
+
+  return { ok: true };
+}
+
+export type SetActiveOutcome =
+  | { ok: true }
+  | { ok: false; reason: 'not_provisioned' | 'not_configured' | 'api_failed' };
+
+/**
+ * Block or unblock a console agent's Voximplant identity — the whole feature
+ * exists because a KALFA-only flag is not an acceptable design for something
+ * that gates a Voximplant-side capability (owner directive, repeated: "לא
+ * הגיוני לבצע שינויים שקשורים לספק רק מהצד שלנו").
+ *
+ * ORDER, again, IS the design: SetUserInfo(user_active) at Voximplant FIRST —
+ * that call is load-bearing, not a mirror of a decision already made. The
+ * local console_agents.vox_active flag (which is_console_agent() actually
+ * checks — see migration 20260821170246) is written ONLY after Voximplant
+ * confirms the change. A Voximplant failure returns api_failed and writes
+ * NOTHING locally: this function must never let KALFA claim a block the
+ * provider does not actually hold, or an unblock the provider never granted.
+ *
+ * 'not_provisioned' — the agent has no vox_username at all (never enrolled
+ * with a Voximplant identity, or enrollment never got that far). There is
+ * nothing at Voximplant to block; the caller should say so plainly rather
+ * than attempt a call that has no identity to target.
+ */
+export async function setConsoleAgentVoxActive(
+  userId: string,
+  active: boolean,
+): Promise<SetActiveOutcome> {
+  const admin = createAdminClient();
+
+  const { data: agent } = await admin
+    .from('console_agents')
+    .select('vox_username')
+    .eq('user_id', userId)
+    .maybeSingle();
+  if (!agent?.vox_username) return { ok: false, reason: 'not_provisioned' };
+
+  const cfg = await getVoximplantConfig();
+  const applicationId = await readApplicationId(admin);
+  if (!cfg || !applicationId) return { ok: false, reason: 'not_configured' };
+
+  try {
+    const res = await setVoximplantUserActive(cfg.auth, applicationId, agent.vox_username, active);
+    if (res.error) {
+      console.error(`[set-active] SetUserInfo failed (code=${res.error.code})`);
+      return { ok: false, reason: 'api_failed' };
+    }
+  } catch (err) {
+    console.error(`[set-active] SetUserInfo threw: ${describeThrown(err)}`);
+    return { ok: false, reason: 'api_failed' };
+  }
+
+  // Voximplant confirmed the change — now, and only now, the local gate
+  // is_console_agent() actually reads is updated to match.
+  const { error } = await admin
+    .from('console_agents')
+    .update({ vox_active: active })
+    .eq('user_id', userId);
+  if (error) {
+    console.error(
+      `[set-active] Voximplant user ${agent.vox_username} set active=${active} but the local flag write failed — provider and local state now disagree, retry`,
+    );
     return { ok: false, reason: 'api_failed' };
   }
 

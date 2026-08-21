@@ -4,7 +4,9 @@ import { createAdminClient } from '@/lib/supabase/admin';
 import {
   provisionConsoleAgentVoxUser,
   deprovisionConsoleAgentVoxUser,
+  setConsoleAgentVoxActive,
   type ProvisionOutcome,
+  type SetActiveOutcome,
 } from '@/lib/data/console-agent-provisioning';
 import { hasPlatformPermission, requirePlatformOwner } from '@/lib/auth/dal';
 import { logActivity } from '@/lib/data/activity';
@@ -253,6 +255,12 @@ export interface ConsoleAgentDTO {
    * with no Voximplant user behind it, which is what provisioning exists to fix.
    */
   provisioned: boolean;
+  /**
+   * Mirrors Voximplant's own user_active, written only after a confirmed
+   * SetUserInfo call (setConsoleAgentVoxActive) — never toggled locally on its
+   * own. FALSE means an owner has blocked this agent.
+   */
+  voxActive: boolean;
 }
 
 // This user's console membership, or null when they are not an agent.
@@ -261,7 +269,7 @@ export async function getUserConsoleAgent(userId: string): Promise<ConsoleAgentD
   const admin = createAdminClient();
   const { data, error } = await admin
     .from('console_agents')
-    .select('display_name, vox_username')
+    .select('display_name, vox_username, vox_active')
     .eq('user_id', userId)
     .maybeSingle();
   if (error) throw new Error('טעינת חברות המוקד נכשלה');
@@ -281,13 +289,24 @@ export async function getUserConsoleAgent(userId: string): Promise<ConsoleAgentD
     displayName: data.display_name,
     voxUsername: data.vox_username,
     provisioned: Boolean(data.vox_username && secret),
+    voxActive: data.vox_active,
   };
 }
 
-// Enrol a user as a console agent. The FK guarantees the target is platform
-// staff, but we check first so the owner gets a sentence instead of a constraint
-// violation; the 23503 mapping below stays as the backstop for the race where
-// staff is revoked between the check and the insert.
+// Enrol a user as a console agent.
+//
+// OWNER DIRECTIVE (repeated, emphatic): a change that grants a Voximplant-
+// backed capability may not be enforced only on KALFA's side. So the order
+// here is not an implementation detail — it IS the authorization model:
+// Voximplant must accept the new identity BEFORE this user has any console
+// access at all. A person is never "enrolled but not provisioned" anymore;
+// they are either genuinely enrolled (Voximplant identity confirmed) or not
+// enrolled (nothing granted, nothing to clean up).
+//
+// The one exception: an ALREADY fully-provisioned agent (existing
+// vox_username + stored secret) calling this again is just a display-name
+// edit — no new grant is being made, so there is nothing to gate on
+// Voximplant for.
 export async function enrollConsoleAgent(
   userId: string,
   displayName: string,
@@ -304,43 +323,46 @@ export async function enrollConsoleAgent(
     throw new Error('רק חבר צוות פלטפורמה יכול לשמש נציג מוקד — הקצו תפקיד צוות תחילה');
   }
 
-  const { error } = await admin
+  const { data: existing } = await admin
     .from('console_agents')
-    .upsert({ user_id: userId, display_name: displayName }, { onConflict: 'user_id' });
-  if (error) {
-    // 23503 = the staff FK — the user stopped being staff mid-flight. Never leak
-    // the raw constraint text to the UI.
-    throw new Error(
-      error.code === '23503'
-        ? 'רק חבר צוות פלטפורמה יכול לשמש נציג מוקד — הקצו תפקיד צוות תחילה'
-        : 'הוספת נציג המוקד נכשלה',
-    );
+    .select('vox_username')
+    .eq('user_id', userId)
+    .maybeSingle();
+  const { data: existingSecret } = existing?.vox_username
+    ? await admin.from('console_agent_secrets').select('user_id').eq('user_id', userId).maybeSingle()
+    : { data: null };
+
+  if (existing?.vox_username && existingSecret) {
+    // Already a real, provisioned agent — metadata-only edit, no Voximplant
+    // dependency (nothing new is being granted).
+    const { error } = await admin
+      .from('console_agents')
+      .update({ display_name: displayName })
+      .eq('user_id', userId);
+    if (error) throw new Error('עדכון נציג המוקד נכשל');
+    await logActivity({
+      action: 'admin.console_agent.display_name_updated',
+      meta: { targetUserId: userId },
+    });
+    return { ok: true, voxUsername: existing.vox_username, alreadyProvisioned: true };
   }
 
-  // Full automation (owner directive): enrolment provisions the agent's
-  // Voximplant SDK identity too. Without it an agent looks enrolled and cannot
-  // log in — which is the exact state this codebase already had, a vox_username
-  // with no user behind it.
-  //
-  // Deliberately NOT fatal: enrolment itself succeeded and grants real console
-  // access (the call feed, live-call commands, outbound dial). Provisioning
-  // failure only withholds the listen/take-over half, and rolling back the
-  // enrolment over it would be worse. It is surfaced instead — the outcome is
-  // returned, logged, and vox_username stays null so a retry is safe.
+  // Fresh enrolment (or a prior attempt that never reached a stored secret):
+  // Voximplant must succeed first — provisionConsoleAgentVoxUser creates the
+  // local console_agents row itself, only after AddUser confirms. Nothing is
+  // granted locally by this function before that call returns ok.
   const provisioning = await provisionConsoleAgentVoxUser(userId, displayName);
   if (!provisioning.ok) {
-    console.error(
-      `[enrol] console agent ${userId} enrolled WITHOUT a Voximplant identity (${provisioning.reason})`,
-    );
+    await logActivity({
+      action: 'admin.console_agent.enroll_failed',
+      meta: { targetUserId: userId, reason: provisioning.reason },
+    });
+    return provisioning;
   }
 
   await logActivity({
     action: 'admin.console_agent.enrolled',
-    meta: {
-      targetUserId: userId,
-      voxProvisioned: provisioning.ok,
-      ...(provisioning.ok ? {} : { voxFailure: provisioning.reason }),
-    },
+    meta: { targetUserId: userId, voxProvisioned: true },
   });
   void sendSlackAlert({
     level: 'warn',
@@ -353,18 +375,18 @@ export async function enrollConsoleAgent(
   return provisioning;
 }
 
-// The LOCAL removal (access revocation) always happens and is never gated on
-// Voximplant — but the caller MUST be told when the Voximplant-side identity
-// could not be cleaned up: silently logging it server-side is what let the
-// original incident go unnoticed until the next enrollment attempt failed.
-// 'not_applicable' — the agent had no vox_username (nothing to clean up).
-// 'ok' — had one; DelUser succeeded.
-// 'failed' — had one; DelUser failed. Re-enrolling this same person WILL fail
-//   (deterministic username collision) until voxUsername is deleted by hand.
+// OWNER DIRECTIVE (repeated, emphatic): removal must genuinely depend on
+// Voximplant, not just attempt cleanup and proceed locally regardless — "לא
+// הגיוני לבצע שינויים שקשורים לספק רק מהצד שלנו". So when the agent has a
+// Voximplant identity, deleting it there is not best-effort: it must succeed
+// BEFORE the local row is removed. 'ok' — either there was nothing to clean
+// up (never provisioned) or DelUser succeeded and the local row is gone.
+// 'not_configured' / 'api_failed' — DelUser could not run or was refused; the
+// local row is UNTOUCHED, the agent is still enrolled, and the caller must
+// surface this as a real failure, not a soft warning after a completed removal.
 export type RemoveConsoleAgentOutcome =
-  | { voxCleanup: 'not_applicable' }
-  | { voxCleanup: 'ok' }
-  | { voxCleanup: 'failed'; voxUsername: string; reason: 'not_configured' | 'api_failed' };
+  | { ok: true }
+  | { ok: false; reason: 'not_configured' | 'api_failed'; voxUsername: string };
 
 // Remove a user's console membership. Leaves their platform staff role intact —
 // this is the narrow half of the pair (revokeStaffRole removes both, via cascade).
@@ -384,36 +406,31 @@ export async function removeConsoleAgent(
     .eq('user_id', userId)
     .maybeSingle();
 
-  const { error } = await admin.from('console_agents').delete().eq('user_id', userId);
-  if (error) throw new Error('הסרת נציג המוקד נכשלה');
-
-  // Deliberately AFTER the local delete already succeeded: local removal is
-  // the actual access revocation (feed, live-call commands) and must never be
-  // BLOCKED by Voximplant's availability. But its outcome IS surfaced to the
-  // caller (below) — never just logged — so "removed" never silently means
-  // "removed, but re-enrolling this person is now permanently broken."
-  let voxCleanup: RemoveConsoleAgentOutcome = { voxCleanup: 'not_applicable' };
+  // Voximplant FIRST: local removal is the actual claim "this person no
+  // longer has console access AND their Voximplant identity is gone" — it
+  // must not be recorded unless both halves are true. An agent with no
+  // vox_username was never provisioned; there is nothing to depend on here.
   if (agent?.vox_username) {
     const deprovisioning = await deprovisionConsoleAgentVoxUser(
       agent.vox_username,
       agent.vox_user_id,
     );
-    voxCleanup = deprovisioning.ok
-      ? { voxCleanup: 'ok' }
-      : { voxCleanup: 'failed', voxUsername: agent.vox_username, reason: deprovisioning.reason };
     if (!deprovisioning.ok) {
       console.error(
-        `[remove] console agent ${userId} removed but its Voximplant user (${agent.vox_username}) could NOT be deleted (${deprovisioning.reason}) — re-enrolling this person will fail until it is cleaned up manually`,
+        `[remove] console agent ${userId} NOT removed — its Voximplant user (${agent.vox_username}) could not be deleted (${deprovisioning.reason})`,
       );
+      return { ok: false, reason: deprovisioning.reason, voxUsername: agent.vox_username };
     }
   }
+
+  const { error } = await admin.from('console_agents').delete().eq('user_id', userId);
+  if (error) throw new Error('הסרת נציג המוקד נכשלה');
 
   await logActivity({
     action: 'admin.console_agent.removed',
     meta: {
       targetUserId: userId,
       ...(agent?.vox_username ? { voxUsername: agent.vox_username } : {}),
-      ...(voxCleanup.voxCleanup === 'failed' ? { voxCleanupFailed: voxCleanup.reason } : {}),
     },
   });
   void sendSlackAlert({
@@ -424,7 +441,49 @@ export async function removeConsoleAgent(
     fields: { actorUserId: actor.id, targetUserId: userId },
   });
 
-  return voxCleanup;
+  return { ok: true };
+}
+
+// Block or unblock a console agent at Voximplant — see setConsoleAgentVoxActive
+// for the full ordering rationale (Voximplant first, local flag only on
+// success). These are the thin, owner-gated, audited wrappers the admin UI
+// calls.
+export async function blockConsoleAgent(userId: string): Promise<SetActiveOutcome> {
+  const actor = await requirePlatformOwner();
+  const outcome = await setConsoleAgentVoxActive(userId, false);
+  await logActivity({
+    action: 'admin.console_agent.blocked',
+    meta: { targetUserId: userId, ok: outcome.ok, ...(outcome.ok ? {} : { reason: outcome.reason }) },
+  });
+  if (outcome.ok) {
+    void sendSlackAlert({
+      level: 'warn',
+      category: 'security',
+      source: 'admin-platform-roles',
+      title: 'נציג מוקד נחסם',
+      fields: { actorUserId: actor.id, targetUserId: userId },
+    });
+  }
+  return outcome;
+}
+
+export async function unblockConsoleAgent(userId: string): Promise<SetActiveOutcome> {
+  const actor = await requirePlatformOwner();
+  const outcome = await setConsoleAgentVoxActive(userId, true);
+  await logActivity({
+    action: 'admin.console_agent.unblocked',
+    meta: { targetUserId: userId, ok: outcome.ok, ...(outcome.ok ? {} : { reason: outcome.reason }) },
+  });
+  if (outcome.ok) {
+    void sendSlackAlert({
+      level: 'warn',
+      category: 'security',
+      source: 'admin-platform-roles',
+      title: 'חסימת נציג מוקד בוטלה',
+      fields: { actorUserId: actor.id, targetUserId: userId },
+    });
+  }
+  return outcome;
 }
 
 // The role ids flagged as owner roles (normally exactly one — the seeded 'owner').

@@ -7,11 +7,13 @@ import { z } from 'zod';
 import { requirePlatformOwner } from '@/lib/auth/dal';
 import {
   assignStaffRole,
+  blockConsoleAgent,
   createPlatformRole,
   enrollConsoleAgent,
   removeConsoleAgent,
   revokeStaffRole,
   setRolePermission,
+  unblockConsoleAgent,
 } from '@/lib/data/admin/platform-roles';
 import type { FormState } from '@/lib/validation/result';
 
@@ -172,28 +174,27 @@ export async function enrollConsoleAgentAction(input: {
     unstable_rethrow(err);
     return { error: err instanceof Error ? err.message : 'הוספת נציג המוקד נכשלה. נסו שוב.' };
   }
-  revalidatePath(ROLES_PATH);
-  revalidatePath(`/admin/users/${parsed.data.userId}`);
-  // The enrolment itself DID succeed (real console access, feed, commands) —
-  // but a failed Voximplant provisioning must not read as a clean success:
-  // the person can never be added to a live call until it's retried. Code 157
-  // ("The 'user_display_name' parameter is invalid" — verified live against
-  // voximplant.com/api/v2/getDoc?fqdn=references.httpapi.errors, 2026-08-21)
-  // is the one case attributable to a specific field; every other failure
-  // gets a general (still visible, still an error — never a silent notice).
+  // Voximplant must succeed BEFORE any local access is granted (owner
+  // directive) — so a failed provisioning means the enrolment did not happen
+  // AT ALL, not "added but incomplete". Code 157 ("The 'user_display_name'
+  // parameter is invalid" — verified live against voximplant.com/api/v2/
+  // getDoc?fqdn=references.httpapi.errors, 2026-08-21) is the one case
+  // attributable to a specific field.
   if (!provisioning.ok) {
     if (provisioning.reason === 'api_failed' && provisioning.voxErrorCode === 157) {
       return {
-        error: 'הנציג נוסף למוקד, אך זהות השיחה נכשלה — שם התצוגה נדחה על ידי מערכת השיחות.',
+        error: 'הוספת הנציג נכשלה — שם התצוגה נדחה על ידי מערכת השיחות.',
         fieldErrors: {
-          displayName: ['שם התצוגה נדחה על ידי מערכת השיחות — נסו שם אחר ונסו לשייך שוב.'],
+          displayName: ['שם התצוגה נדחה על ידי מערכת השיחות — נסו שם אחר.'],
         },
       };
     }
     return {
-      error: `הנציג נוסף למוקד, אך זהות השיחה לא נוצרה (${provisioning.reason}) — לא ניתן יהיה לצרפו לשיחה חיה עד שהזהות תסופק (הסירו ושייכו מחדש כדי לנסות שוב).`,
+      error: `הוספת הנציג נכשלה — לא ניתן היה ליצור עבורו זהות במערכת השיחות (${provisioning.reason}). נסו שוב.`,
     };
   }
+  revalidatePath(ROLES_PATH);
+  revalidatePath(`/admin/users/${parsed.data.userId}`);
   return { notice: 'הנציג נוסף למוקד' };
 }
 
@@ -212,16 +213,61 @@ export async function removeConsoleAgentAction(input: { userId: string }): Promi
     unstable_rethrow(err);
     return { error: err instanceof Error ? err.message : 'הסרת נציג המוקד נכשלה. נסו שוב.' };
   }
-  revalidatePath(ROLES_PATH);
-  revalidatePath(`/admin/users/${parsed.data.userId}`);
-  // The local removal (access revocation) DID succeed either way — but a
-  // failed Voximplant cleanup is surfaced as an ERROR, not a quiet success
-  // notice: it means re-enrolling this same person will keep failing until
-  // the orphaned identity is deleted by hand, and that must not go unnoticed.
-  if (outcome.voxCleanup === 'failed') {
+  // Removal now depends on Voximplant (owner directive): a failed deletion
+  // there means the removal did NOT happen — the agent is still enrolled,
+  // locally too. This must read as a real failure, not a completed removal
+  // with a side note.
+  if (!outcome.ok) {
     return {
-      error: `הנציג הוסר מהמוקד, אך מחיקת הזהות שלו ב-Voximplant (${outcome.voxUsername}) נכשלה (${outcome.reason}) — שיוך מחדש לאותו משתמש ייכשל עד שהזהות תימחק ידנית.`,
+      error: `הסרת הנציג נכשלה — מחיקת הזהות שלו ב-Voximplant (${outcome.voxUsername}) לא הצליחה (${outcome.reason}). הנציג עדיין רשום במוקד. נסו שוב.`,
     };
   }
+  revalidatePath(ROLES_PATH);
+  revalidatePath(`/admin/users/${parsed.data.userId}`);
   return { notice: 'הנציג הוסר מהמוקד' };
+}
+
+const setConsoleAgentActiveSchema = z.object({ userId: z.uuid() });
+
+function voxActiveFailureText(reason: 'not_provisioned' | 'not_configured' | 'api_failed'): string {
+  if (reason === 'not_provisioned') return 'לנציג זה אין זהות במערכת השיחות — אין מה לחסום.';
+  return `הפעולה נכשלה במערכת השיחות (${reason}). נסו שוב.`;
+}
+
+// Block a console agent — deactivates the Voximplant identity FIRST; the
+// local vox_active flag (what is_console_agent() actually checks) is written
+// only once that succeeds. See setConsoleAgentVoxActive for the full
+// rationale.
+export async function blockConsoleAgentAction(input: { userId: string }): Promise<FormState> {
+  await requirePlatformOwner();
+  const parsed = setConsoleAgentActiveSchema.safeParse(input);
+  if (!parsed.success) return { error: 'ערך לא תקין' };
+  let outcome;
+  try {
+    outcome = await blockConsoleAgent(parsed.data.userId);
+  } catch (err) {
+    unstable_rethrow(err);
+    return { error: err instanceof Error ? err.message : 'חסימת הנציג נכשלה. נסו שוב.' };
+  }
+  if (!outcome.ok) return { error: voxActiveFailureText(outcome.reason) };
+  revalidatePath(ROLES_PATH);
+  revalidatePath(`/admin/users/${parsed.data.userId}`);
+  return { notice: 'הנציג נחסם' };
+}
+
+export async function unblockConsoleAgentAction(input: { userId: string }): Promise<FormState> {
+  await requirePlatformOwner();
+  const parsed = setConsoleAgentActiveSchema.safeParse(input);
+  if (!parsed.success) return { error: 'ערך לא תקין' };
+  let outcome;
+  try {
+    outcome = await unblockConsoleAgent(parsed.data.userId);
+  } catch (err) {
+    unstable_rethrow(err);
+    return { error: err instanceof Error ? err.message : 'ביטול החסימה נכשל. נסו שוב.' };
+  }
+  if (!outcome.ok) return { error: voxActiveFailureText(outcome.reason) };
+  revalidatePath(ROLES_PATH);
+  revalidatePath(`/admin/users/${parsed.data.userId}`);
+  return { notice: 'החסימה בוטלה' };
 }

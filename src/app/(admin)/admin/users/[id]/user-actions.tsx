@@ -15,9 +15,11 @@ import {
 } from '../actions';
 import {
   assignStaffRoleAction,
+  blockConsoleAgentAction,
   enrollConsoleAgentAction,
   removeConsoleAgentAction,
   revokeStaffRoleAction,
+  unblockConsoleAgentAction,
 } from '../../roles/actions';
 
 // A platform staff role (id + display label) offered in the selector.
@@ -35,6 +37,9 @@ export interface ConsoleAgentState {
   // rather than on voxUsername, because a username on its own is exactly the
   // misleading state this feature exists to remove.
   provisioned: boolean;
+  // Mirrors Voximplant's own user_active — written only after a confirmed
+  // SetUserInfo call, never toggled locally on its own. FALSE = blocked.
+  voxActive: boolean;
 }
 
 // The owner-only staff panel for one user, threaded page -> gate -> view -> here.
@@ -189,7 +194,35 @@ function ConsoleAgentSection({
           <div className="flex flex-wrap items-center gap-3">
             <span className="text-sm">
               נציג פעיל בשם <strong>{current.displayName}</strong>
+              {current.provisioned && !current.voxActive ? (
+                <span className="mr-2 rounded-full bg-red-50 px-2 py-0.5 text-xs font-medium text-red-700">
+                  חסום
+                </span>
+              ) : null}
             </span>
+            {/* Block/unblock changes Voximplant's own user_active FIRST — it only
+                makes sense when a real Voximplant identity exists to change. */}
+            {current.provisioned ? (
+              current.voxActive ? (
+                <button
+                  type="button"
+                  onClick={() => run(() => blockConsoleAgentAction({ userId }))}
+                  disabled={pending}
+                  className="rounded-md bg-amber-50 px-3 py-1.5 text-sm font-medium text-amber-800 transition-opacity hover:bg-amber-100 disabled:opacity-60"
+                >
+                  {pending ? 'רגע…' : 'חסימה'}
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => run(() => unblockConsoleAgentAction({ userId }))}
+                  disabled={pending}
+                  className="rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-60"
+                >
+                  {pending ? 'רגע…' : 'ביטול חסימה'}
+                </button>
+              )
+            ) : null}
             <button
               type="button"
               onClick={() => run(() => removeConsoleAgentAction({ userId }))}

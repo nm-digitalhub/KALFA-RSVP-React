@@ -8,6 +8,7 @@ import {
   delVoximplantUser,
   getApplicationSecretValue,
   setAccountCallbackUrl,
+  setVoximplantUserActive,
   startScenarios,
 } from './mutations';
 import type { VoximplantConfig } from './core';
@@ -156,6 +157,30 @@ describe('delVoximplantUser — the cleanup AddUser never had', () => {
     const { lastBody } = stubFetch();
     await delVoximplantUser(cfg, 11107202, 'agent_abc', { applicationName: 'kalfa-rsvp' });
     expect(lastBody().get('application_name')).toBe('kalfa-rsvp');
+  });
+});
+
+describe('setVoximplantUserActive — restricted to user_active (block/unblock)', () => {
+  it('posts EXACTLY application_id + user_name + user_active — no other SetUserInfo field', async () => {
+    const { lastUrl, lastBody } = stubFetch();
+    await setVoximplantUserActive(cfg, 11107202, 'agent_abc', false);
+    expect(lastUrl()).toContain('SetUserInfo');
+    expect([...lastBody().keys()].sort()).toEqual(['application_id', 'user_active', 'user_name']);
+    expect(lastBody().get('application_id')).toBe('11107202');
+    expect(lastBody().get('user_name')).toBe('agent_abc');
+    expect(lastBody().get('user_active')).toBe('false');
+  });
+
+  it('unblock sends user_active=true', async () => {
+    const { lastBody } = stubFetch();
+    await setVoximplantUserActive(cfg, 11107202, 'agent_abc', true);
+    expect(lastBody().get('user_active')).toBe('true');
+  });
+
+  it('rejects an invalid user_name before any network call', async () => {
+    await expect(setVoximplantUserActive(cfg, 11107202, 'Bad Name!', false)).rejects.toThrow(
+      'שם משתמש Voximplant אינו תקין',
+    );
   });
 });
 

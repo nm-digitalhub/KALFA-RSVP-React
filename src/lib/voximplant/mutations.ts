@@ -222,6 +222,38 @@ export function setVoximplantUserPassword(
   );
 }
 
+// SetUserInfo — RESTRICTED here to the `user_active` field: blocking/
+// unblocking a console agent's Voximplant identity (and the identity the
+// owner directive requires — see setConsoleAgentVoxActive in
+// console-agent-provisioning.ts — this must be the LOAD-BEARING call: the
+// local vox_active flag is written only after this succeeds, never before,
+// never independently). Same restricted-body discipline as
+// setVoximplantUserPassword above — no other SetUserInfo field can ever be
+// sent through this wrapper.
+export function setVoximplantUserActive(
+  config: VoximplantConfig,
+  applicationId: number,
+  userName: string,
+  active: boolean,
+  timeoutMs?: number,
+): Promise<SetUserInfoResponse> {
+  if (!VOX_USER_NAME_PATTERN.test(userName)) {
+    return Promise.reject(
+      new Error(`שם משתמש Voximplant אינו תקין: ${userName}`),
+    );
+  }
+  return voxRequest<SetUserInfoResponse>(
+    config,
+    'SetUserInfo',
+    {
+      application_id: applicationId,
+      user_name: userName,
+      user_active: active,
+    },
+    timeoutMs,
+  );
+}
+
 // Params verified against the live method tree (voximplant.com/api/v2/getDoc
 // ?fqdn=references.httpapi.users.adduser, fetched 2026-08-21). Every field the
 // API accepts is represented — the always-required ones as plain arguments,

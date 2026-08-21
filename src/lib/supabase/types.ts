@@ -1609,6 +1609,7 @@ export type Database = {
           created_at: string
           display_name: string
           user_id: string
+          vox_active: boolean
           vox_user_id: number | null
           vox_username: string | null
         }
@@ -1616,6 +1617,7 @@ export type Database = {
           created_at?: string
           display_name: string
           user_id: string
+          vox_active?: boolean
           vox_user_id?: number | null
           vox_username?: string | null
         }
@@ -1623,6 +1625,7 @@ export type Database = {
           created_at?: string
           display_name?: string
           user_id?: string
+          vox_active?: boolean
           vox_user_id?: number | null
           vox_username?: string | null
         }
