@@ -149,3 +149,117 @@ export async function captureHeldCardSumit(
     paymentId: payment?.ID ?? null,
   };
 }
+
+export type SumitCreditParams = SumitCaptureParams;
+
+// Refund/credit via the SAME /billing/payments/charge/ endpoint
+// captureHeldCardSumit uses, with SupportCredit:true + a negative item total —
+// verified against the repo-root swagger.json (SUMIT's own OpenAPI spec):
+// PaymentsController_Payments_Charge_Request.SupportCredit — "Allow credit
+// instead of charge (debit), in case the total is less than 0? Defaults to
+// false." ChargeItem.UnitPrice/Total are plain nullable numbers, unrestricted
+// to positive values. A credit note document ("תעודת זיכוי") is issued
+// automatically, same as captureHeldCardSumit issues a receipt.
+// UNTESTED against the live SUMIT API as of this writing — captureHeldCardSumit's
+// own hard-won gotchas (no VATRate, no CreditCardAuthNumber, AutoCapture:true)
+// may or may not carry over to the credit direction; verify live before relying
+// on this for a real customer.
+export async function creditHeldCardSumit(
+  p: SumitCreditParams,
+): Promise<SumitCaptureResult> {
+  const body = {
+    Credentials: { CompanyID: p.companyId, APIKey: p.apiKey },
+    Customer: {
+      Name: p.customerName || undefined,
+      EmailAddress: p.customerEmail || undefined,
+      ExternalIdentifier: p.externalRef,
+    },
+    PaymentMethod: {
+      CreditCard_Token: p.cardToken,
+      CreditCard_ExpirationMonth: p.expMonth,
+      CreditCard_ExpirationYear: p.expYear,
+      CreditCard_CitizenID: p.citizenId,
+      Type: 1,
+    },
+    VATIncluded: true,
+    SupportCredit: true,
+    Items: [
+      {
+        Quantity: 1,
+        UnitPrice: -parseFloat(p.amount),
+        Item: { Name: 'KALFA — זיכוי ביטול אירוע' },
+        Description: 'KALFA — זיכוי ביטול אירוע',
+      },
+    ],
+    AutoCapture: true,
+    PreventDocumentCreation: false,
+    SendDocumentByEmail: !!p.customerEmail,
+    DraftDocument: false,
+  };
+
+  let res: Response;
+  try {
+    res = await fetch(SUMIT_CHARGE_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+  } catch {
+    void sendSlackAlert({ level: 'warn', title: 'SUMIT credit failed', detail: 'network', source: 'sumit', category: 'send_health' });
+    throw new SumitNetworkError('שגיאת תקשורת עם מערכת התשלום');
+  }
+  if (!res.ok) {
+    void sendSlackAlert({ level: 'warn', title: 'SUMIT credit failed', detail: `http_${res.status}`, source: 'sumit', category: 'send_health' });
+    throw new SumitNetworkError('לא התקבל אישור חד משמעי ממערכת התשלום');
+  }
+
+  type Payment = {
+    ID?: number | null;
+    ValidPayment?: boolean | null;
+    Status?: string | null;
+    AuthNumber?: string | null;
+  } | null;
+  type Resp = {
+    Status?: number | string | { IsError?: boolean } | null;
+    Data?: {
+      DocumentID?: number | null;
+      DocumentNumber?: number | null;
+      DocumentDownloadURL?: string | null;
+      Payment?: Payment;
+    } | null;
+  };
+  let json: Resp;
+  try {
+    json = (await res.json()) as Resp;
+  } catch {
+    void sendSlackAlert({ level: 'warn', title: 'SUMIT credit failed', detail: 'invalid_response', source: 'sumit', category: 'send_health' });
+    throw new SumitNetworkError('תגובה לא תקינה ממערכת התשלום');
+  }
+
+  const status = json.Status;
+  const payment = json.Data?.Payment;
+  const topBusinessError =
+    status === 1 ||
+    (typeof status === 'string' && /business|\(1\)/i.test(status)) ||
+    (typeof status === 'object' && status?.IsError === true);
+  if (topBusinessError || payment?.ValidPayment === false) {
+    throw new SumitDeclinedError();
+  }
+
+  const topSuccess =
+    status === 0 ||
+    (typeof status === 'string' && /success|\(0\)/i.test(status)) ||
+    (typeof status === 'object' && status?.IsError === false);
+  const documentId = json.Data?.DocumentID;
+  if (!topSuccess || payment?.ValidPayment !== true || !documentId) {
+    void sendSlackAlert({ level: 'warn', title: 'SUMIT credit failed', detail: 'unconfirmed', source: 'sumit', category: 'send_health' });
+    throw new SumitNetworkError('אישור הזיכוי לא התקבל ממערכת');
+  }
+  return {
+    documentId,
+    documentNumber: json.Data?.DocumentNumber ?? null,
+    documentUrl: json.Data?.DocumentDownloadURL ?? null,
+    authNumber: payment?.AuthNumber ?? null,
+    paymentId: payment?.ID ?? null,
+  };
+}

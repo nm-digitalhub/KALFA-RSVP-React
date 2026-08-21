@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('server-only', () => ({}));
 
-import { captureHeldCardSumit } from './capture';
+import { captureHeldCardSumit, creditHeldCardSumit } from './capture';
 import { SumitDeclinedError, SumitNetworkError } from './charge';
 
 const base = {
@@ -126,5 +126,60 @@ describe('captureHeldCardSumit', () => {
     await expect(captureHeldCardSumit(base)).rejects.toBeInstanceOf(
       SumitNetworkError,
     );
+  });
+});
+
+describe('creditHeldCardSumit', () => {
+  it('POSTs to the same charge endpoint with SupportCredit:true and a negative item total', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        Status: 0,
+        Data: {
+          DocumentID: 601,
+          DocumentNumber: 50201,
+          DocumentDownloadURL: 'https://pay.sumit.co.il/x?download=601',
+          Payment: { ID: 888, ValidPayment: true, AuthNumber: '0700001' },
+        },
+      }),
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const result = await creditHeldCardSumit({ ...base, amount: '24.4', customerName: 'בעל האירוע' });
+
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body as string);
+    expect(body.SupportCredit).toBe(true);
+    expect(body.Items[0].UnitPrice).toBe(-24.4);
+    expect(body.PaymentMethod.CreditCard_Token).toBe('tok-abc');
+    expect(result.documentId).toBe(601);
+    expect(result.documentUrl).toContain('download=601');
+    expect(result.paymentId).toBe(888);
+  });
+
+  it('throws SumitDeclinedError when ValidPayment is false, same as captureHeldCardSumit', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({ Status: 0, Data: { Payment: { ValidPayment: false } } }),
+      }),
+    );
+    await expect(creditHeldCardSumit(base)).rejects.toBeInstanceOf(SumitDeclinedError);
+  });
+
+  it('throws SumitNetworkError when DocumentID is missing (ambiguous)', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({ Status: 0, Data: { Payment: { ValidPayment: true } } }),
+      }),
+    );
+    await expect(creditHeldCardSumit(base)).rejects.toBeInstanceOf(SumitNetworkError);
+  });
+
+  it('throws SumitNetworkError on a non-2xx response', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false }));
+    await expect(creditHeldCardSumit(base)).rejects.toBeInstanceOf(SumitNetworkError);
   });
 });
