@@ -109,6 +109,7 @@ export default async function CampaignManagePage({
             final_charge_amount: campaign.final_charge_amount,
             credit_applied: campaign.credit_applied,
             capture_status: campaign.capture_status,
+            charge_status: campaign.charge_status,
           }}
           summary={summary}
           delivery={delivery}

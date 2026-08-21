@@ -484,6 +484,39 @@ export async function closeEvent(eventId: string): Promise<void> {
   await logActivity({ eventId, action: 'event.closed', meta: {} });
 }
 
+// Owner-facing: WHY is this event closed? Reads the single closure-cause
+// activity_log entry — closeEvent/adminCloseEvent/closeEventAfterSettlement
+// each re-check the LIVE status before writing+logging, so at most one of
+// these three actions is ever logged per event and "latest" is unambiguous.
+// RLS-scoped (al_org_read), same convention as getCancellationRequestForEvent
+// — no explicit ownership check needed. Returns null for a non-closed event
+// AND for a closed event with no matching log entry (a legacy write from
+// before this labeling existed) — both cases render identically (no extra
+// line), never a guess at the real cause.
+export type EventClosureReason = 'owner' | 'settlement' | 'cancellation';
+
+const CLOSURE_ACTIONS: Record<string, EventClosureReason> = {
+  'event.closed': 'owner',
+  'event.closed_by_settlement': 'settlement',
+  'event.closed_by_admin': 'cancellation',
+};
+
+export async function getEventClosureReason(
+  eventId: string,
+): Promise<EventClosureReason | null> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from('activity_log')
+    .select('action')
+    .eq('event_id', eventId)
+    .in('action', Object.keys(CLOSURE_ACTIONS))
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error || !data) return null;
+  return CLOSURE_ACTIONS[data.action] ?? null;
+}
+
 // Thin boolean VISIBILITY helper ONLY (NOT an auth gate).
 // FAIL-CLOSED: returns false on denied OR on any RPC/client error. The only effect is
 // hiding an optional UI section or showing a permission_limited state. Every mandatory

@@ -15,6 +15,7 @@ import {
   createEvent,
   EVENT_TYPE_LOCKED_ERROR,
   getEvent,
+  getEventClosureReason,
   isBeforeTomorrowIL,
   isPastEventDay,
   listEvents,
@@ -911,6 +912,69 @@ describe('closeEvent', () => {
     await expect(closeEvent('event-1')).rejects.toThrow(
       'יש לסגור או לבטל את הקמפיין לפני סגירת האירוע',
     );
+  });
+});
+
+describe('getEventClosureReason', () => {
+  it('maps event.closed_by_settlement to "settlement"', async () => {
+    const { client, builder } = createMockSupabase<{ action: string }>({
+      data: { action: 'event.closed_by_settlement' },
+      error: null,
+    });
+    vi.mocked(createClient).mockResolvedValue(
+      client as unknown as Awaited<ReturnType<typeof createClient>>,
+    );
+    const r = await getEventClosureReason('event-1');
+    expect(r).toBe('settlement');
+    expect(builder.eq).toHaveBeenCalledWith('event_id', 'event-1');
+  });
+
+  it('maps event.closed_by_admin to "cancellation"', async () => {
+    const { client } = createMockSupabase<{ action: string }>({
+      data: { action: 'event.closed_by_admin' },
+      error: null,
+    });
+    vi.mocked(createClient).mockResolvedValue(
+      client as unknown as Awaited<ReturnType<typeof createClient>>,
+    );
+    const r = await getEventClosureReason('event-1');
+    expect(r).toBe('cancellation');
+  });
+
+  it('maps event.closed to "owner"', async () => {
+    const { client } = createMockSupabase<{ action: string }>({
+      data: { action: 'event.closed' },
+      error: null,
+    });
+    vi.mocked(createClient).mockResolvedValue(
+      client as unknown as Awaited<ReturnType<typeof createClient>>,
+    );
+    const r = await getEventClosureReason('event-1');
+    expect(r).toBe('owner');
+  });
+
+  it('returns null when no closure entry exists (not closed, or a legacy write)', async () => {
+    const { client } = createMockSupabase<{ action: string }>({
+      data: null,
+      error: null,
+    });
+    vi.mocked(createClient).mockResolvedValue(
+      client as unknown as Awaited<ReturnType<typeof createClient>>,
+    );
+    const r = await getEventClosureReason('event-1');
+    expect(r).toBeNull();
+  });
+
+  it('returns null on a query error, never throws', async () => {
+    const { client } = createMockSupabase<{ action: string }>({
+      data: null,
+      error: { message: 'db down' },
+    });
+    vi.mocked(createClient).mockResolvedValue(
+      client as unknown as Awaited<ReturnType<typeof createClient>>,
+    );
+    const r = await getEventClosureReason('event-1');
+    expect(r).toBeNull();
   });
 });
 

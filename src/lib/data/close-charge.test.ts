@@ -39,6 +39,7 @@ vi.mock('@/lib/alerts/slack', () => ({ sendSlackAlert: vi.fn() }));
 // closeCampaignAndCharge is platform-admin only (billing op); it self-gates on
 // requireAdmin as its first statement.
 vi.mock('@/lib/auth/dal', () => ({ requireAdmin: vi.fn() }));
+vi.mock('@/lib/data/activity', () => ({ logActivity: vi.fn() }));
 
 import {
   getPaymentsEnabled,
@@ -62,22 +63,47 @@ import { SumitDeclinedError } from '@/lib/sumit/charge';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { sendSlackAlert } from '@/lib/alerts/slack';
 import { requireAdmin } from '@/lib/auth/dal';
+import { logActivity } from '@/lib/data/activity';
 import { closeCampaignAndCharge } from '@/lib/data/close-charge';
 
+// Records every `events` table status='closed' write the admin client sees, so
+// the closeEventAfterSettlement behavior can be asserted without a second mock
+// client (createAdminClient() is called more than once per run — the owner/
+// profile lookup AND the post-settlement close both go through this object).
+let eventsCloseCalls: string[] = [];
+// Lets one test force the close write to fail, to prove it's best-effort.
+let failEventClose = false;
+// Lets one test simulate the owner having already closed the event manually
+// BEFORE settlement ran — closeEventAfterSettlement's own live-status check
+// (select('status')) must see this and no-op.
+let eventAlreadyClosed = false;
+
 // Mock admin client for the owner lookups (events.owner_id → auth user email +
-// profiles.full_name for the receipt "לכבוד" line).
+// profiles.full_name for the receipt "לכבוד" line) AND the events status='closed'
+// write.
 const adminClientMock = {
   from: (table: string) => ({
-    select: () => ({
+    select: (cols?: string) => ({
       eq: () => ({
-        maybeSingle: async () => ({
-          data:
-            table === 'profiles'
-              ? { full_name: 'בעל האירוע' }
-              : { owner_id: 'u1' },
-          error: null,
-        }),
+        maybeSingle: async () => {
+          if (table === 'profiles') {
+            return { data: { full_name: 'בעל האירוע' }, error: null };
+          }
+          if (cols === 'status') {
+            return { data: { status: eventAlreadyClosed ? 'closed' : 'active' }, error: null };
+          }
+          return { data: { owner_id: 'u1' }, error: null };
+        },
       }),
+    }),
+    update: (patch: Record<string, unknown>) => ({
+      eq: async (_col: string, val: string) => {
+        if (table === 'events' && patch.status === 'closed') {
+          if (failEventClose) return { error: { message: 'boom' } };
+          eventsCloseCalls.push(val);
+        }
+        return { error: null };
+      },
     }),
   }),
   auth: {
@@ -147,7 +173,12 @@ function happy() {
   });
 }
 
-beforeEach(() => vi.clearAllMocks());
+beforeEach(() => {
+  vi.clearAllMocks();
+  eventsCloseCalls = [];
+  failEventClose = false;
+  eventAlreadyClosed = false;
+});
 
 describe('closeCampaignAndCharge', () => {
   it('rejects a non-admin caller BEFORE reading config or the campaign', async () => {
@@ -655,6 +686,77 @@ describe('closeCampaignAndCharge', () => {
         outcome: 'charged', amount: 12, paymentId: 777, billingModel: 'per_reached',
         documentId: 555, documentUrl: 'https://pay.sumit.co.il/x?download=555',
       });
+    });
+  });
+
+  // Final settlement closes the event too — the public RSVP link is gated on
+  // events.status = 'active' (get_rsvp_by_token/submit_rsvp), so once billing
+  // is final there is no reason to keep it open for guests.
+  describe('closes the event on final settlement', () => {
+    it('closes the event after a successful charge', async () => {
+      happy();
+      const r = await closeCampaignAndCharge('c1');
+      expect(r.outcome).toBe('charged');
+      expect(eventsCloseCalls).toEqual(['e1']);
+      expect(logActivity).toHaveBeenCalledWith({
+        eventId: 'e1',
+        action: 'event.closed_by_settlement',
+        meta: {},
+      });
+    });
+
+    it('closes the event after settling at nothing_to_charge (0 reached)', async () => {
+      happy();
+      m.summary.mockResolvedValue({ reachedCount: 0, accrued: 0, ceiling: 88, maxContacts: 22 });
+      const r = await closeCampaignAndCharge('c1');
+      expect(r.outcome).toBe('nothing_to_charge');
+      expect(eventsCloseCalls).toEqual(['e1']);
+      expect(logActivity).toHaveBeenCalledWith({
+        eventId: 'e1',
+        action: 'event.closed_by_settlement',
+        meta: {},
+      });
+    });
+
+    it('does NOT close the event on a declined charge — not a final settlement', async () => {
+      happy();
+      m.capture.mockRejectedValue(new SumitDeclinedError());
+      const r = await closeCampaignAndCharge('c1');
+      expect(r.outcome).toBe('declined');
+      expect(eventsCloseCalls).toEqual([]);
+      expect(logActivity).not.toHaveBeenCalled();
+    });
+
+    it('does NOT close the event on bad_state (already-terminal re-attempt)', async () => {
+      happy();
+      m.forCharge.mockResolvedValue({
+        id: 'c1', event_id: 'e1', status: 'closed', capture_status: 'authorized', charge_status: 'charged',
+        card_token_ref: 'tok-abc', card_exp_month: 7, card_exp_year: 2031, card_citizen_id: '316125434',
+        auth_external_ref: 'ext-1', max_charge_ceiling: 88,
+      });
+      const r = await closeCampaignAndCharge('c1');
+      expect(r.outcome).toBe('bad_state');
+      expect(eventsCloseCalls).toEqual([]);
+    });
+
+    it('a failed event-close write does not affect the charge outcome (best-effort)', async () => {
+      happy();
+      failEventClose = true;
+      const r = await closeCampaignAndCharge('c1');
+      expect(r).toEqual({
+        outcome: 'charged', amount: 12, paymentId: 777, billingModel: 'per_reached',
+        documentId: 555, documentUrl: 'https://pay.sumit.co.il/x?download=555',
+      });
+      expect(eventsCloseCalls).toEqual([]);
+    });
+
+    it('no-ops (no write, no log) when the owner already closed the event manually before settlement ran', async () => {
+      happy();
+      eventAlreadyClosed = true;
+      const r = await closeCampaignAndCharge('c1');
+      expect(r.outcome).toBe('charged');
+      expect(eventsCloseCalls).toEqual([]);
+      expect(logActivity).not.toHaveBeenCalled();
     });
   });
 });

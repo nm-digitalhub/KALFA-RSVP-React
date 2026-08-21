@@ -25,6 +25,7 @@ import { SumitDeclinedError } from '@/lib/sumit/charge';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { sendSlackAlert } from '@/lib/alerts/slack';
 import { requireAdmin } from '@/lib/auth/dal';
+import { logActivity } from '@/lib/data/activity';
 
 export type CloseChargeOutcome = {
   outcome:
@@ -58,6 +59,44 @@ export type CloseChargeOutcome = {
 };
 
 const CLOSEABLE = ['active', 'paused', 'approved', 'scheduled'];
+
+// Final settlement closes the event too, not just the campaign: once billing
+// is final there is no reason for the public RSVP link to keep accepting
+// responses (get_rsvp_by_token/submit_rsvp both gate on events.status =
+// 'active'). The campaign is already closed by this point (CLOSEABLE branch
+// above, or already 'closed' on retry), so the R7 trigger's operational-
+// campaign guard never blocks this. Best-effort by design — never throws —
+// because the charge/no-charge outcome above is already final and recorded;
+// a failure here must not read back to the admin as a failed settlement.
+// Re-checks the LIVE status first (mirrors event-cancellation.ts's
+// adminCloseEvent) so a campaign settled AFTER the owner already closed the
+// event themselves is a true no-op: without this, the activity log would
+// record 'event.closed_by_settlement' as the closure reason even though
+// settlement never actually closed anything — a real event never becomes
+// attributable to the wrong cause.
+async function closeEventAfterSettlement(eventId: string): Promise<void> {
+  try {
+    const admin = createAdminClient();
+    const { data: current } = await admin
+      .from('events')
+      .select('status')
+      .eq('id', eventId)
+      .maybeSingle();
+    if (current?.status === 'closed') return;
+    const { error } = await admin
+      .from('events')
+      .update({ status: 'closed' })
+      .eq('id', eventId);
+    if (error) return;
+    await logActivity({
+      eventId,
+      action: 'event.closed_by_settlement',
+      meta: {},
+    });
+  } catch {
+    // best-effort — see comment above
+  }
+}
 
 // Close a campaign and charge the held card for the flat-base + included +
 // overage total. Fail-closed; server-derives amount = base + max(0, reached −
@@ -211,6 +250,7 @@ export async function closeCampaignAndCharge(
   // ₪0, no SUMIT call.
   if (amount <= 0) {
     await markCampaignChargeOutcome(campaignId, 'nothing_to_charge', creditApplied);
+    await closeEventAfterSettlement(campaign.event_id);
     return {
       outcome: 'nothing_to_charge',
       amount: 0,
@@ -287,6 +327,7 @@ export async function closeCampaignAndCharge(
     // Osek-patur turnover-ceiling watch (fire-and-forget, fail-safe): every
     // charged shekel counts fully toward the yearly VAT-exemption ceiling.
     void checkOsekPaturCeilingAfterCharge();
+    await closeEventAfterSettlement(campaign.event_id);
     // paymentId = the provider's per-charge id — the ONLY valid analytics
     // transaction_id (campaign ids repeat across retries/refunds).
     return {

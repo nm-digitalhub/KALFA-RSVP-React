@@ -3,7 +3,7 @@ import { cache } from 'react';
 import type { Metadata } from 'next';
 
 import { buttonVariants } from '@/components/ui/button';
-import { getEvent, type EventDetail } from '@/lib/data/events';
+import { getEvent, getEventClosureReason, type EventDetail } from '@/lib/data/events';
 import { signedInviteImageUrl } from '@/lib/storage/event-media';
 import { formatIsraelDate, formatIsraelDateTime } from '@/lib/date';
 import { ilTimeInputValue } from '@/lib/data/event-date';
@@ -99,6 +99,10 @@ export default async function EventPage({
   const createCancellationAction = createCancellationRequestAction.bind(null, event.id);
   const cancellationRequest =
     event.status !== 'draft' ? await getCancellationRequestForEvent(event.id) : null;
+  // Surfaced only for the two closures the owner didn't directly trigger —
+  // a manual close ('owner') needs no explanation, they just clicked it.
+  const closureReason =
+    event.status === 'closed' ? await getEventClosureReason(event.id) : null;
 
   const summary = [
     EVENT_TYPE_LABELS[event.event_type] ?? event.event_type,
@@ -141,6 +145,14 @@ export default async function EventPage({
           </span>
         </div>
       </div>
+
+      {closureReason && closureReason !== 'owner' ? (
+        <p className="text-sm text-muted-foreground">
+          {closureReason === 'settlement'
+            ? 'האירוע נסגר אוטומטית עם השלמת גמר החשבון של הקמפיין — לא ניתן עוד לאורחים לאשר הגעה דרך הקישור.'
+            : 'האירוע נסגר בעקבות הטיפול בבקשת הביטול — לא ניתן עוד לאורחים לאשר הגעה דרך הקישור.'}
+        </p>
+      ) : null}
 
       <div className="flex flex-wrap gap-2">
         <Link

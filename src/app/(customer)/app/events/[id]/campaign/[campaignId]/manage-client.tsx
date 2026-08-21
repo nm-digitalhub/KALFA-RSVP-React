@@ -32,6 +32,7 @@ type Campaign = {
   final_charge_amount: number | null;
   credit_applied: number | null;
   capture_status: string | null;
+  charge_status: string | null;
 };
 
 type Summary = {
@@ -323,7 +324,13 @@ export function ManageClient({
   // viewerIsAdmin factor here only hides the buttons from owners/org-members.
   const canPause = viewerIsAdmin && s === 'active';
   const canClose = viewerIsAdmin && ['active', 'paused', 'approved', 'scheduled'].includes(s);
-  const canSettle = viewerIsAdmin && s === 'closed' && campaign.capture_status === 'authorized';
+  // Terminal charge outcomes ('charged'/'nothing_to_charge') are final — mirror
+  // the same guard closeCampaignAndCharge itself enforces (close-charge.ts) so
+  // a settled campaign never shows a re-clickable settle button.
+  const settled =
+    campaign.charge_status === 'charged' || campaign.charge_status === 'nothing_to_charge';
+  const canSettle =
+    viewerIsAdmin && s === 'closed' && campaign.capture_status === 'authorized' && !settled;
   // Cancel is a hard wind-down: allowed while operational or closed (before a
   // final charge lands). Terminal states (billed/paid/cancelled) can't cancel.
   const canCancel =

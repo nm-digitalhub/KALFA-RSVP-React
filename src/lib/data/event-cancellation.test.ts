@@ -30,6 +30,7 @@ import { getEmailSender } from '@/lib/email/sender';
 import { getSmsSender } from '@/lib/sms/sender';
 import { cancellationRequestResponseEmail } from '@/lib/email/templates';
 import { buildCancellationSmsText } from '@/lib/data/cancellation-sms';
+import { logActivity } from '@/lib/data/activity';
 import {
   createCancellationRequest,
   computeSuggestedCancellationAmount,
@@ -211,12 +212,23 @@ describe('resolveCancellationRequest', () => {
       data: { full_name: 'דנה', phone: '+972500000000' },
       error: null,
     });
+    // adminCloseEvent's own live-status check (events.status via maybeSingle) —
+    // the event is still 'active' at this point since closeCampaignAndCharge/
+    // creditHeldCardSumit are mocked out (their real event-closing side effect
+    // never runs here), so adminCloseEvent must proceed to actually close it.
+    const eventStatusMaybeSingle = vi.fn().mockResolvedValue({
+      data: { status: 'active' },
+      error: null,
+    });
     (createAdminClient as unknown as Mock).mockReturnValue({
       from: (table: string) => {
         if (table === 'profiles') {
           return { select: () => ({ eq: () => ({ maybeSingle: profileSingle }) }) };
         }
-        return { select: () => ({ eq: () => ({ single }) }), update };
+        return {
+          select: () => ({ eq: () => ({ single, maybeSingle: eventStatusMaybeSingle }) }),
+          update,
+        };
       },
       auth: { admin: { getUserById: async () => ({ data: { user: { email: 'dana@example.com' } } }) } },
     });
@@ -233,7 +245,7 @@ describe('resolveCancellationRequest', () => {
     (creditHeldCardSumit as unknown as Mock).mockResolvedValue({
       documentId: 701, documentNumber: 1, documentUrl: 'https://pay.sumit.co.il/x?download=701', authNumber: 'a1', paymentId: 555,
     });
-    return { send, smsSend, update };
+    return { send, smsSend, update, eventStatusMaybeSingle };
   }
 
   it('pre-charge campaign: calls closeCampaignAndCharge with overrideAmount=0 for full_cancellation', async () => {
@@ -301,6 +313,27 @@ describe('resolveCancellationRequest', () => {
     ).rejects.toThrow();
     expect(closeCampaignAndCharge).not.toHaveBeenCalled();
     expect(update).not.toHaveBeenCalled();
+  });
+
+  it('adminCloseEvent closes the event and logs it when still active', async () => {
+    happy({ chargeStatus: null });
+    await resolveCancellationRequest('r1', { resolution: 'full_cancellation', resolutionNote: 'בוטל במלואו' });
+    expect(logActivity).toHaveBeenCalledWith({ eventId: 'e1', action: 'event.closed_by_admin', meta: {} });
+  });
+
+  // closeCampaignAndCharge (real implementation, mocked out here) can ITSELF
+  // close the event on a terminal settlement outcome — resolveCancellationRequest
+  // then calls adminCloseEvent unconditionally afterward (its own `event.status`
+  // snapshot is read once, before closeCampaignAndCharge runs, so it can't see
+  // that). adminCloseEvent must re-check the LIVE status and no-op rather than
+  // write status='closed' again and log a second, misleading activity entry.
+  it('adminCloseEvent no-ops (no duplicate write/log) when the event is already closed', async () => {
+    const { eventStatusMaybeSingle } = happy({ chargeStatus: null });
+    eventStatusMaybeSingle.mockResolvedValue({ data: { status: 'closed' }, error: null });
+    await resolveCancellationRequest('r1', { resolution: 'full_cancellation', resolutionNote: 'בוטל במלואו' });
+    expect(logActivity).not.toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'event.closed_by_admin' }),
+    );
   });
 
   it('rejects resolving a request that is already resolved', async () => {

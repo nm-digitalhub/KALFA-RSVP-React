@@ -222,9 +222,24 @@ export async function getCampaignForEventAdmin(
 // Admin-mediated close, twin of events.ts closeEvent but requirePlatformPermission
 // instead of ownership — mirrors campaigns.ts cancelCampaign's admin-only
 // wind-down pattern. Same R7 DB trigger applies (operational-campaign guard).
+// Re-checks the LIVE status first (rather than trusting a caller-supplied
+// snapshot) so a redundant call is a true no-op: the caller here
+// (resolveCancellationRequest) reads the event once at the top of its run,
+// then may call closeCampaignAndCharge — which, on a terminal settlement
+// outcome, already closes the event itself. Without this check that stale
+// snapshot would make this function re-write status='closed' (harmless — the
+// DB trigger only validates real transitions) but ALSO log a second,
+// misleading 'event.closed_by_admin' activity entry right after the real
+// 'event.closed_by_settlement' one for the same closure.
 export async function adminCloseEvent(eventId: string): Promise<void> {
   await requirePlatformPermission('manage_billing');
   const admin = createAdminClient();
+  const { data: current } = await admin
+    .from('events')
+    .select('status')
+    .eq('id', eventId)
+    .maybeSingle();
+  if (current?.status === 'closed') return;
   const { error } = await admin.from('events').update({ status: 'closed' }).eq('id', eventId);
   if (error) {
     throw new Error('סגירת האירוע נכשלה — ייתכן שיש קמפיין פעיל שיש לסגור קודם');
