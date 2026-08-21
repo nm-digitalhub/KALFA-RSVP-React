@@ -42,6 +42,19 @@ export type CloseChargeOutcome = {
   // Present only on 'charged': the billing model actually applied AFTER the
   // D5 guard — a coarse analytics label, never an amount.
   billingModel?: 'base_overage' | 'per_reached';
+  // Present only on 'nothing_to_charge': how many contacts were actually
+  // reached and how much credit covered them. amount===0 alone does NOT mean
+  // nobody was reached — it also fires when credits fully cover a nonzero
+  // reached total (reachedCount>0 && creditApplied>0). Callers must not
+  // infer "no contacts reached" from amount===0 without checking reachedCount.
+  reachedCount?: number;
+  creditApplied?: number;
+  // Present only on 'charged': the receipt document captureHeldCardSumit
+  // already returns — surfaced here so a caller (the cancellation-resolve
+  // flow) can put the receipt link in a customer-facing message without a
+  // second DB read.
+  documentId?: number | null;
+  documentUrl?: string | null;
 };
 
 const CLOSEABLE = ['active', 'paused', 'approved', 'scheduled'];
@@ -53,8 +66,13 @@ const CLOSEABLE = ['active', 'paused', 'approved', 'scheduled'];
 // pre-model campaigns); charges at most once (atomic guard); retry-tolerant
 // (an already-closed campaign in a retryable charge state proceeds to charge).
 // Authorization: platform-admin only (billing operation).
+// opts.overrideAmount (cancellation-resolve flow only): replaces the computed
+// total with an admin-confirmed amount, still capped at the ceiling — every
+// other safety property (lock, terminal-state guard, receipt, D5 guard) is
+// unchanged. Every existing caller omits opts and gets byte-identical behavior.
 export async function closeCampaignAndCharge(
   campaignId: string,
+  opts?: { overrideAmount?: number; overrideReason?: string },
 ): Promise<CloseChargeOutcome> {
   await requireAdmin();
   const [paymentsOn, closeOn, sumit] = await Promise.all([
@@ -167,7 +185,7 @@ export async function closeCampaignAndCharge(
 
   // final = max(0, min(base + max(0, reached − included) × overage, ceiling) −
   // credits), rounded to agorot (§14/D5/G4).
-  const { amount, creditApplied } = computeChargeAmount({
+  const computed = computeChargeAmount({
     base: effectiveBase,
     included: effectiveIncluded,
     overage: campaign.price_per_reached ?? 0,
@@ -176,10 +194,29 @@ export async function closeCampaignAndCharge(
     credits,
   });
 
-  // 0 reached OR credits ≥ the capped total → settle at ₪0, no SUMIT call.
+  // Override path (cancellation-resolve only): an admin-confirmed amount
+  // REPLACES the computed reached×price total, but every safety property
+  // below (idempotency lock, terminal-state guard, receipt generation,
+  // Slack alert, D5 guard already applied above) still applies identically —
+  // overrideAmount only swaps WHAT gets charged, never HOW it gets charged.
+  // Never allow it to exceed the signed ceiling, regardless of the caller's
+  // request.
+  const amount =
+    opts?.overrideAmount !== undefined
+      ? Math.min(Math.max(0, opts.overrideAmount), ceiling)
+      : computed.amount;
+  const creditApplied = opts?.overrideAmount !== undefined ? 0 : computed.creditApplied;
+
+  // 0 reached OR credits ≥ the capped total OR overrideAmount===0 → settle at
+  // ₪0, no SUMIT call.
   if (amount <= 0) {
     await markCampaignChargeOutcome(campaignId, 'nothing_to_charge', creditApplied);
-    return { outcome: 'nothing_to_charge', amount: 0 };
+    return {
+      outcome: 'nothing_to_charge',
+      amount: 0,
+      reachedCount: summary?.reachedCount ?? 0,
+      creditApplied,
+    };
   }
 
   // Idempotency: only the caller that wins the atomic guard charges.
@@ -244,6 +281,7 @@ export async function closeCampaignAndCharge(
         amount,
         credit_applied: creditApplied,
         document_id: result.documentId,
+        ...(opts?.overrideReason ? { override_reason: opts.overrideReason } : {}),
       },
     });
     // Osek-patur turnover-ceiling watch (fire-and-forget, fail-safe): every
@@ -257,6 +295,8 @@ export async function closeCampaignAndCharge(
       paymentId: result.paymentId ?? null,
       billingModel:
         effectiveBase > 0 || effectiveIncluded > 0 ? 'base_overage' : 'per_reached',
+      documentId: result.documentId ?? null,
+      documentUrl: result.documentUrl ?? null,
     };
   } catch (e) {
     if (e instanceof SumitDeclinedError) {

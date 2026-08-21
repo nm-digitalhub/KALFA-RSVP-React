@@ -165,7 +165,7 @@ describe('closeCampaignAndCharge', () => {
     happy();
     const r = await closeCampaignAndCharge('c1');
     expect(requireAdmin).toHaveBeenCalled();
-    expect(r).toEqual({ outcome: 'charged', amount: 12, paymentId: 777, billingModel: 'per_reached' });
+    expect(r).toEqual({ outcome: 'charged', amount: 12, paymentId: 777, billingModel: 'per_reached', documentId: 555, documentUrl: 'https://pay.sumit.co.il/x?download=555' });
   });
 
   it('does nothing when close-charge is disabled (fail-closed)', async () => {
@@ -222,7 +222,12 @@ describe('closeCampaignAndCharge', () => {
       maxContacts: 22,
     });
     const r = await closeCampaignAndCharge('c1');
-    expect(r).toEqual({ outcome: 'nothing_to_charge', amount: 0 });
+    expect(r).toEqual({
+      outcome: 'nothing_to_charge',
+      amount: 0,
+      reachedCount: 0,
+      creditApplied: 0,
+    });
     expect(markCampaignChargeOutcome).toHaveBeenCalledWith(
       'c1',
       'nothing_to_charge',
@@ -255,7 +260,7 @@ describe('closeCampaignAndCharge', () => {
       authNumber: '0692601',
       paymentId: 777,
     });
-    expect(r).toEqual({ outcome: 'charged', amount: 12, paymentId: 777, billingModel: 'per_reached' });
+    expect(r).toEqual({ outcome: 'charged', amount: 12, paymentId: 777, billingModel: 'per_reached', documentId: 555, documentUrl: 'https://pay.sumit.co.il/x?download=555' });
     // Additive campaign_billing alert on a successful final charge.
     expect(sendSlackAlert).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -299,7 +304,7 @@ describe('closeCampaignAndCharge', () => {
       maxContacts: 22,
     });
     const r = await closeCampaignAndCharge('c1');
-    expect(r).toEqual({ outcome: 'charged', amount: 60, paymentId: 777, billingModel: 'per_reached' });
+    expect(r).toEqual({ outcome: 'charged', amount: 60, paymentId: 777, billingModel: 'per_reached', documentId: 555, documentUrl: 'https://pay.sumit.co.il/x?download=555' });
     expect(captureHeldCardSumit).toHaveBeenCalledWith(
       expect.objectContaining({ amount: '60' }),
     );
@@ -330,7 +335,7 @@ describe('closeCampaignAndCharge', () => {
       maxContacts: 22,
     });
     const r = await closeCampaignAndCharge('c1');
-    expect(r).toEqual({ outcome: 'charged', amount: 45, paymentId: 777, billingModel: 'per_reached' });
+    expect(r).toEqual({ outcome: 'charged', amount: 45, paymentId: 777, billingModel: 'per_reached', documentId: 555, documentUrl: 'https://pay.sumit.co.il/x?download=555' });
     expect(captureHeldCardSumit).toHaveBeenCalledWith(
       expect.objectContaining({ amount: '45' }),
     );
@@ -358,7 +363,7 @@ describe('closeCampaignAndCharge', () => {
     const r = await closeCampaignAndCharge('c1');
     // Base charged even though nobody was reached (plan D1 — service fee), and
     // NOT settled as nothing_to_charge.
-    expect(r).toEqual({ outcome: 'charged', amount: 200, paymentId: 777, billingModel: 'base_overage' });
+    expect(r).toEqual({ outcome: 'charged', amount: 200, paymentId: 777, billingModel: 'base_overage', documentId: 555, documentUrl: 'https://pay.sumit.co.il/x?download=555' });
     expect(captureHeldCardSumit).toHaveBeenCalledWith(
       expect.objectContaining({ amount: '200' }),
     );
@@ -369,7 +374,7 @@ describe('closeCampaignAndCharge', () => {
     // accrued 12, ceiling 88, credit ₪5 → charge 7; all ₪5 of the credit used.
     m.credits.mockResolvedValue(5);
     const r = await closeCampaignAndCharge('c1');
-    expect(r).toEqual({ outcome: 'charged', amount: 7, paymentId: 777, billingModel: 'per_reached' });
+    expect(r).toEqual({ outcome: 'charged', amount: 7, paymentId: 777, billingModel: 'per_reached', documentId: 555, documentUrl: 'https://pay.sumit.co.il/x?download=555' });
     // The pool is read for the campaign AND its event (event-level credits).
     expect(getCampaignCreditTotal).toHaveBeenCalledWith('c1', 'e1');
     expect(captureHeldCardSumit).toHaveBeenCalledWith(
@@ -385,7 +390,12 @@ describe('closeCampaignAndCharge', () => {
     happy();
     m.credits.mockResolvedValue(20); // ≥ accrued 12
     const r = await closeCampaignAndCharge('c1');
-    expect(r).toEqual({ outcome: 'nothing_to_charge', amount: 0 });
+    expect(r).toEqual({
+      outcome: 'nothing_to_charge',
+      amount: 0,
+      reachedCount: 3,
+      creditApplied: 12,
+    });
     // credit_applied records 12 (what the bill needed), NOT the ₪20 granted —
     // the ₪8 remainder stays available at the event level.
     expect(markCampaignChargeOutcome).toHaveBeenCalledWith(
@@ -525,7 +535,7 @@ describe('closeCampaignAndCharge', () => {
       m.signed.mockResolvedValue('2026-07-v4');
       m.summary.mockResolvedValue({ reachedCount: 0, accrued: 0, ceiling: 600, maxContacts: 300 });
       const r = await closeCampaignAndCharge('c1');
-      expect(r).toEqual({ outcome: 'charged', amount: 200, paymentId: 777, billingModel: 'base_overage' });
+      expect(r).toEqual({ outcome: 'charged', amount: 200, paymentId: 777, billingModel: 'base_overage', documentId: 555, documentUrl: 'https://pay.sumit.co.il/x?download=555' });
       expect(sendSlackAlert).not.toHaveBeenCalledWith(
         expect.objectContaining({ source: 'close-charge-d5-guard' }),
       );
@@ -537,7 +547,12 @@ describe('closeCampaignAndCharge', () => {
       m.signed.mockResolvedValue('draft-2026-07-v3');
       m.summary.mockResolvedValue({ reachedCount: 0, accrued: 0, ceiling: 600, maxContacts: 300 });
       const r = await closeCampaignAndCharge('c1');
-      expect(r).toEqual({ outcome: 'nothing_to_charge', amount: 0 });
+      expect(r).toEqual({
+        outcome: 'nothing_to_charge',
+        amount: 0,
+        reachedCount: 0,
+        creditApplied: 0,
+      });
       expect(captureHeldCardSumit).not.toHaveBeenCalled();
       expect(sendSlackAlert).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -558,7 +573,7 @@ describe('closeCampaignAndCharge', () => {
       m.summary.mockResolvedValue({ reachedCount: 5, accrued: 0, ceiling: 600, maxContacts: 300 });
       const r = await closeCampaignAndCharge('c1');
       // D5-suppressed billing reports the plan ACTUALLY billed: per_reached.
-      expect(r).toEqual({ outcome: 'charged', amount: 20, paymentId: 777, billingModel: 'per_reached' });
+      expect(r).toEqual({ outcome: 'charged', amount: 20, paymentId: 777, billingModel: 'per_reached', documentId: 555, documentUrl: 'https://pay.sumit.co.il/x?download=555' });
       expect(captureHeldCardSumit).toHaveBeenCalledWith(
         expect.objectContaining({ amount: '20' }),
       );
@@ -570,7 +585,12 @@ describe('closeCampaignAndCharge', () => {
       m.signed.mockResolvedValue(null);
       m.summary.mockResolvedValue({ reachedCount: 0, accrued: 0, ceiling: 600, maxContacts: 300 });
       const r = await closeCampaignAndCharge('c1');
-      expect(r).toEqual({ outcome: 'nothing_to_charge', amount: 0 });
+      expect(r).toEqual({
+        outcome: 'nothing_to_charge',
+        amount: 0,
+        reachedCount: 0,
+        creditApplied: 0,
+      });
       expect(sendSlackAlert).toHaveBeenCalledWith(
         expect.objectContaining({
           source: 'close-charge-d5-guard',
@@ -588,6 +608,53 @@ describe('closeCampaignAndCharge', () => {
       expect(r).toEqual({ outcome: 'review', amount: 0 });
       expect(markCampaignChargeOutcome).toHaveBeenCalledWith('c1', 'charge_review');
       expect(captureHeldCardSumit).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('with an override amount (cancellation-resolve path)', () => {
+    it('captures the override amount instead of the computed reached×price total', async () => {
+      happy(); // reachedCount:3, price 4 ⇒ computed total would be 12
+      const r = await closeCampaignAndCharge('c1', { overrideAmount: 30, overrideReason: 'cancellation_partial_charge' });
+      expect(captureHeldCardSumit).toHaveBeenCalledWith(expect.objectContaining({ amount: '30' }));
+      expect(r).toEqual({
+        outcome: 'charged', amount: 30, paymentId: 777, billingModel: 'per_reached',
+        documentId: 555, documentUrl: 'https://pay.sumit.co.il/x?download=555',
+      });
+    });
+
+    it('never captures MORE than the campaign ceiling, even if overrideAmount asks for more', async () => {
+      happy(); // max_charge_ceiling: 88
+      const r = await closeCampaignAndCharge('c1', { overrideAmount: 500, overrideReason: 'cancellation_partial_charge' });
+      expect(captureHeldCardSumit).toHaveBeenCalledWith(expect.objectContaining({ amount: '88' }));
+      expect(r.amount).toBe(88);
+    });
+
+    it('overrideAmount of 0 settles nothing_to_charge without calling SUMIT, same as a normal zero-reach settle', async () => {
+      happy();
+      const r = await closeCampaignAndCharge('c1', { overrideAmount: 0, overrideReason: 'cancellation_full' });
+      expect(captureHeldCardSumit).not.toHaveBeenCalled();
+      expect(r.outcome).toBe('nothing_to_charge');
+    });
+
+    it('still blocks on a terminal charge_status (already charged) even with an override', async () => {
+      happy();
+      m.forCharge.mockResolvedValue({
+        id: 'c1', event_id: 'e1', status: 'closed', capture_status: 'authorized', charge_status: 'charged',
+        card_token_ref: 'tok-abc', card_exp_month: 7, card_exp_year: 2031, card_citizen_id: '316125434',
+        auth_external_ref: 'ext-1', max_charge_ceiling: 88,
+      });
+      const r = await closeCampaignAndCharge('c1', { overrideAmount: 30, overrideReason: 'x' });
+      expect(r).toEqual({ outcome: 'bad_state', amount: 0 });
+      expect(captureHeldCardSumit).not.toHaveBeenCalled();
+    });
+
+    it('omitting the second argument reproduces the exact existing computed-amount behavior (regression guard)', async () => {
+      happy();
+      const r = await closeCampaignAndCharge('c1');
+      expect(r).toEqual({
+        outcome: 'charged', amount: 12, paymentId: 777, billingModel: 'per_reached',
+        documentId: 555, documentUrl: 'https://pay.sumit.co.il/x?download=555',
+      });
     });
   });
 });
