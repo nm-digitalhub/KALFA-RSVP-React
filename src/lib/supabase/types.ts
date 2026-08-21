@@ -170,6 +170,9 @@ export type Database = {
           billing_exposure_gate: boolean
           call_consent_required: boolean
           campaign_holds_enabled: boolean
+          cancellation_fee_cap: number
+          cancellation_fee_percent: number
+          cancellation_refund_days: number
           close_charge_enabled: boolean
           company_contact_email: string | null
           company_contact_phone: string | null
@@ -260,6 +263,9 @@ export type Database = {
           billing_exposure_gate?: boolean
           call_consent_required?: boolean
           campaign_holds_enabled?: boolean
+          cancellation_fee_cap?: number
+          cancellation_fee_percent?: number
+          cancellation_refund_days?: number
           close_charge_enabled?: boolean
           company_contact_email?: string | null
           company_contact_phone?: string | null
@@ -350,6 +356,9 @@ export type Database = {
           billing_exposure_gate?: boolean
           call_consent_required?: boolean
           campaign_holds_enabled?: boolean
+          cancellation_fee_cap?: number
+          cancellation_fee_percent?: number
+          cancellation_refund_days?: number
           close_charge_enabled?: boolean
           company_contact_email?: string | null
           company_contact_phone?: string | null
