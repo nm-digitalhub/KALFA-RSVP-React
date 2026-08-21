@@ -33,6 +33,7 @@ import { buildCancellationSmsText } from '@/lib/data/cancellation-sms';
 import {
   createCancellationRequest,
   computeSuggestedCancellationAmount,
+  getCampaignForEventAdmin,
   resolveCancellationRequest,
 } from './event-cancellation';
 
@@ -115,6 +116,52 @@ describe('computeSuggestedCancellationAmount', () => {
     });
     const amount = await computeSuggestedCancellationAmount('c1');
     expect(amount).toBeLessThanOrEqual(12);
+  });
+});
+
+describe('getCampaignForEventAdmin', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('returns the latest campaign for the event with hasCardOnFile=true when all 4 card fields are present', async () => {
+    (requirePlatformPermission as unknown as Mock).mockResolvedValue(undefined);
+    const maybeSingle = vi.fn().mockResolvedValue({
+      data: {
+        id: 'camp1', charge_status: 'charged', max_charge_ceiling: 88,
+        card_token_ref: 'tok-abc', card_exp_month: 7, card_exp_year: 2031, card_citizen_id: '316125434',
+      },
+      error: null,
+    });
+    (createAdminClient as unknown as Mock).mockReturnValue({
+      from: () => ({ select: () => ({ eq: () => ({ order: () => ({ limit: () => ({ maybeSingle }) }) }) }) }),
+    });
+    const r = await getCampaignForEventAdmin('e1');
+    expect(r).toEqual({ id: 'camp1', chargeStatus: 'charged', maxChargeCeiling: 88, hasCardOnFile: true });
+  });
+
+  it('returns hasCardOnFile=false when any of the 4 card fields is missing', async () => {
+    (requirePlatformPermission as unknown as Mock).mockResolvedValue(undefined);
+    const maybeSingle = vi.fn().mockResolvedValue({
+      data: {
+        id: 'camp1', charge_status: 'charged', max_charge_ceiling: 88,
+        card_token_ref: null, card_exp_month: null, card_exp_year: null, card_citizen_id: null,
+      },
+      error: null,
+    });
+    (createAdminClient as unknown as Mock).mockReturnValue({
+      from: () => ({ select: () => ({ eq: () => ({ order: () => ({ limit: () => ({ maybeSingle }) }) }) }) }),
+    });
+    const r = await getCampaignForEventAdmin('e1');
+    expect(r?.hasCardOnFile).toBe(false);
+  });
+
+  it('returns null when the event has no campaign', async () => {
+    (requirePlatformPermission as unknown as Mock).mockResolvedValue(undefined);
+    const maybeSingle = vi.fn().mockResolvedValue({ data: null, error: null });
+    (createAdminClient as unknown as Mock).mockReturnValue({
+      from: () => ({ select: () => ({ eq: () => ({ order: () => ({ limit: () => ({ maybeSingle }) }) }) }) }),
+    });
+    const r = await getCampaignForEventAdmin('e1');
+    expect(r).toBeNull();
   });
 });
 

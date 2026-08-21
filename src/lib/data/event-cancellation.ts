@@ -181,6 +181,44 @@ export async function getCancellationRequestForAdmin(
   return mapAdminRow(data as unknown as Parameters<typeof mapAdminRow>[0]);
 }
 
+// Admin-scoped campaign lookup for the cancellation-request detail page —
+// tells the admin UI whether resolving will CAPTURE (pre-charge) or CREDIT
+// (post-charge) money, and feeds computeSuggestedCancellationAmount /
+// getCampaignBillingSummary. No owner-scoping (admin cross-customer reach,
+// same as every other function in this file gated by manage_billing).
+export type CampaignForCancellationAdmin = {
+  id: string;
+  chargeStatus: string | null;
+  maxChargeCeiling: number | null;
+  // Whether resolveCancellationRequest can actually attempt a SUMIT
+  // capture/credit for this campaign (same 4-field check it uses internally)
+  // — lets the admin UI state the outcome definitively instead of hedging
+  // with "if card details are on file".
+  hasCardOnFile: boolean;
+};
+
+export async function getCampaignForEventAdmin(
+  eventId: string,
+): Promise<CampaignForCancellationAdmin | null> {
+  await requirePlatformPermission('manage_billing');
+  const admin = createAdminClient();
+  const { data, error } = await admin
+    .from('campaigns')
+    .select('id, charge_status, max_charge_ceiling, card_token_ref, card_exp_month, card_exp_year, card_citizen_id')
+    .eq('event_id', eventId)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (error || !data) return null;
+  return {
+    id: data.id,
+    chargeStatus: data.charge_status,
+    maxChargeCeiling: data.max_charge_ceiling,
+    hasCardOnFile: !!(data.card_token_ref && data.card_exp_month && data.card_exp_year && data.card_citizen_id),
+  };
+}
+
 // Admin-mediated close, twin of events.ts closeEvent but requirePlatformPermission
 // instead of ownership — mirrors campaigns.ts cancelCampaign's admin-only
 // wind-down pattern. Same R7 DB trigger applies (operational-campaign guard).

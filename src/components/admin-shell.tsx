@@ -6,6 +6,7 @@ import { usePathname } from 'next/navigation';
 import { DirectionProvider } from '@base-ui/react/direction-provider';
 import {
   Activity,
+  Ban,
   Bot,
   Building2,
   CalendarClock,
@@ -103,6 +104,7 @@ const NAV_GROUPS: NavGroup[] = [
       { href: '/admin/support', label: 'תמיכת לקוחות', icon: UserSearch },
       { href: '/admin/contacts', label: 'פניות', icon: MailOpen },
       { href: '/admin/callbacks', label: 'בקשות חזרה', icon: PhoneCall },
+      { href: '/admin/cancellations', label: 'בקשות ביטול', icon: Ban },
     ],
   },
   {
