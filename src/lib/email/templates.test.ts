@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { agreementEmail, inquiryReplyEmail } from '@/lib/email/templates';
+import { agreementEmail, inquiryReplyEmail, cancellationRequestResponseEmail } from '@/lib/email/templates';
 
 const URL = 'https://beta.kalfa.me/app/events/E1/campaign/C1/agreement';
 const ORIGIN = 'https://beta.kalfa.me';
@@ -139,5 +139,30 @@ describe('inquiryReplyEmail', () => {
     const { html } = reply('<script>alert(1)</script>');
     expect(html).not.toContain('<script>alert(1)</script>');
     expect(html).toContain('&lt;script&gt;');
+  });
+});
+
+describe('cancellationRequestResponseEmail', () => {
+  it('full_cancellation subject and body confirm no charge', () => {
+    const { subject, text } = cancellationRequestResponseEmail({
+      recipientName: 'דנה', requestNumber: 42, resolution: 'full_cancellation',
+      resolutionNote: 'מבטלים כי לא נשלחו הודעות', origin: ORIGIN,
+    });
+    expect(subject).toContain('42');
+    expect(text).toContain('בוצע במלואו');
+  });
+  it('partial_charge body includes the amount', () => {
+    const { text } = cancellationRequestResponseEmail({
+      recipientName: 'דנה', requestNumber: 42, resolution: 'partial_charge', resolutionAmount: 50,
+      resolutionNote: 'עבור 12 הודעות שכבר נשלחו', origin: ORIGIN,
+    });
+    expect(text).toContain('50');
+  });
+  it('declined body includes the staff note', () => {
+    const { text } = cancellationRequestResponseEmail({
+      recipientName: 'דנה', requestNumber: 42, resolution: 'declined',
+      resolutionNote: 'האירוע כבר בעיצומו', origin: ORIGIN,
+    });
+    expect(text).toContain('האירוע כבר בעיצומו');
   });
 });
