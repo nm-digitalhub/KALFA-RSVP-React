@@ -921,11 +921,17 @@ export type Database = {
         Row: {
           attempt_count: number
           calendar_item_id: string | null
+          call_outcome: string
+          consecutive_no_answer_count: number
           created_at: string
           exchange_connection_id: string | null
           excluded_dates: string[] | null
           full_name: string
           id: string
+          no_contact_sms_claimed_at: string | null
+          no_contact_sms_error: string | null
+          no_contact_sms_provider_id: string | null
+          no_contact_sms_sent_at: string | null
           not_after_min: number | null
           not_before_min: number | null
           note: string | null
@@ -933,6 +939,7 @@ export type Database = {
           requested_at: string | null
           requested_rank: string | null
           scheduled_at: string | null
+          scheduling_failure_reason: string | null
           status: string
           topic: string | null
           triage: Json | null
@@ -946,11 +953,17 @@ export type Database = {
         Insert: {
           attempt_count?: number
           calendar_item_id?: string | null
+          call_outcome?: string
+          consecutive_no_answer_count?: number
           created_at?: string
           exchange_connection_id?: string | null
           excluded_dates?: string[] | null
           full_name: string
           id?: string
+          no_contact_sms_claimed_at?: string | null
+          no_contact_sms_error?: string | null
+          no_contact_sms_provider_id?: string | null
+          no_contact_sms_sent_at?: string | null
           not_after_min?: number | null
           not_before_min?: number | null
           note?: string | null
@@ -958,6 +971,7 @@ export type Database = {
           requested_at?: string | null
           requested_rank?: string | null
           scheduled_at?: string | null
+          scheduling_failure_reason?: string | null
           status?: string
           topic?: string | null
           triage?: Json | null
@@ -971,11 +985,17 @@ export type Database = {
         Update: {
           attempt_count?: number
           calendar_item_id?: string | null
+          call_outcome?: string
+          consecutive_no_answer_count?: number
           created_at?: string
           exchange_connection_id?: string | null
           excluded_dates?: string[] | null
           full_name?: string
           id?: string
+          no_contact_sms_claimed_at?: string | null
+          no_contact_sms_error?: string | null
+          no_contact_sms_provider_id?: string | null
+          no_contact_sms_sent_at?: string | null
           not_after_min?: number | null
           not_before_min?: number | null
           note?: string | null
@@ -983,6 +1003,7 @@ export type Database = {
           requested_at?: string | null
           requested_rank?: string | null
           scheduled_at?: string | null
+          scheduling_failure_reason?: string | null
           status?: string
           topic?: string | null
           triage?: Json | null
@@ -2237,6 +2258,81 @@ export type Database = {
           },
           {
             foreignKeyName: "contacts_event_id_fkey"
+            columns: ["event_id"]
+            isOneToOne: false
+            referencedRelation: "events"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      event_cancellation_requests: {
+        Row: {
+          capture_outcome: string | null
+          created_at: string
+          event_id: string
+          id: string
+          owner_id: string
+          reason: string
+          request_number: number
+          resolution: string | null
+          resolution_amount: number | null
+          resolution_note: string | null
+          resolved_at: string | null
+          resolved_by: string | null
+          sms_consent: boolean
+          status: string
+          sumit_document_id: number | null
+          sumit_document_url: string | null
+          updated_at: string
+        }
+        Insert: {
+          capture_outcome?: string | null
+          created_at?: string
+          event_id: string
+          id?: string
+          owner_id: string
+          reason: string
+          request_number?: never
+          resolution?: string | null
+          resolution_amount?: number | null
+          resolution_note?: string | null
+          resolved_at?: string | null
+          resolved_by?: string | null
+          sms_consent?: boolean
+          status?: string
+          sumit_document_id?: number | null
+          sumit_document_url?: string | null
+          updated_at?: string
+        }
+        Update: {
+          capture_outcome?: string | null
+          created_at?: string
+          event_id?: string
+          id?: string
+          owner_id?: string
+          reason?: string
+          request_number?: never
+          resolution?: string | null
+          resolution_amount?: number | null
+          resolution_note?: string | null
+          resolved_at?: string | null
+          resolved_by?: string | null
+          sms_consent?: boolean
+          status?: string
+          sumit_document_id?: number | null
+          sumit_document_url?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "event_cancellation_requests_event_id_fkey"
+            columns: ["event_id"]
+            isOneToOne: false
+            referencedRelation: "console_events"
+            referencedColumns: ["event_id"]
+          },
+          {
+            foreignKeyName: "event_cancellation_requests_event_id_fkey"
             columns: ["event_id"]
             isOneToOne: false
             referencedRelation: "events"
@@ -4897,11 +4993,17 @@ export type Database = {
         Returns: {
           attempt_count: number
           calendar_item_id: string | null
+          call_outcome: string
+          consecutive_no_answer_count: number
           created_at: string
           exchange_connection_id: string | null
           excluded_dates: string[] | null
           full_name: string
           id: string
+          no_contact_sms_claimed_at: string | null
+          no_contact_sms_error: string | null
+          no_contact_sms_provider_id: string | null
+          no_contact_sms_sent_at: string | null
           not_after_min: number | null
           not_before_min: number | null
           note: string | null
@@ -4909,6 +5011,7 @@ export type Database = {
           requested_at: string | null
           requested_rank: string | null
           scheduled_at: string | null
+          scheduling_failure_reason: string | null
           status: string
           topic: string | null
           triage: Json | null
