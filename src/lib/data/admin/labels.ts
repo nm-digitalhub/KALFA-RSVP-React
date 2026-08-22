@@ -1,5 +1,5 @@
 import type { Database } from '@/lib/supabase/types';
-import type { CallbackStatus } from '@/lib/validation/admin';
+import type { CallbackStatus, CallOutcome, ContactStatus } from '@/lib/validation/admin';
 import type { BadgeVariant } from '@/components/ui/badge';
 
 // Pure label maps — safe to import from both Server and Client Components, so
@@ -16,13 +16,30 @@ export const APP_ROLE_LABELS: Record<AppRole, string> = {
   user: 'משתמש',
 };
 
-// callback_requests.status is free text → known tokens get a label, unknown
-// values fall back to the raw string at the call site (`LABELS[s] ?? s`).
+// callback_requests.status — SCHEDULING status, redesigned 2026-08-19/20 (see
+// the vocabulary's own comment in validation/admin.ts for the full reasoning:
+// this describes what the scheduler did, never what the owner did with the
+// call). Free text in the DB → known tokens get a label, unknown values fall
+// back to the raw string at the call site (`LABELS[s] ?? s`).
 export const CALLBACK_STATUS_LABELS: Record<CallbackStatus, string> = {
   new: 'חדש',
-  in_progress: 'בטיפול',
-  done: 'טופל',
-  cancelled: 'בוטל',
+  pending_schedule: 'ממתינה לשיבוץ',
+  scheduled: 'שובצה ביומן',
+  needs_reschedule: 'נדרש תיאום מחדש',
+  unschedulable: 'לא ניתן לתאם',
+  cancelled: 'בוטלה',
+  closed: 'הסתיימה',
+};
+
+// Semantic tone per scheduling status, for the admin list/detail badges.
+export const CALLBACK_STATUS_VARIANTS: Record<CallbackStatus, BadgeVariant> = {
+  new: 'neutral',
+  pending_schedule: 'info',
+  scheduled: 'success',
+  needs_reschedule: 'warning',
+  unschedulable: 'destructive',
+  cancelled: 'neutral',
+  closed: 'neutral',
 };
 
 // Safe label for any stored status string (handles legacy/foreign values).
@@ -30,19 +47,81 @@ export function callbackStatusLabel(status: string): string {
   return (CALLBACK_STATUS_LABELS as Record<string, string>)[status] ?? status;
 }
 
-// Contact messages share most of the callback vocabulary but add one state of
-// their own: a customer wrote back on a thread that was already answered.
-// Kept SEPARATE rather than widening CALLBACK_STATUS_LABELS — `reopened` has no
-// meaning for a callback request, and a shared map would offer it there.
-//
-// Without this the fallback above renders the raw English word `reopened` in a
-// Hebrew RTL admin, which is what the plan's own I3 finding measured.
+// Safe variant for any stored status string — same fallback shape as the
+// label above. `status` is a free-text DB column, so its generated type is
+// plain `string`, never the narrow CallbackStatus union.
+export function callbackStatusVariant(status: string): BadgeVariant {
+  return (CALLBACK_STATUS_VARIANTS as Record<string, BadgeVariant>)[status] ?? 'neutral';
+}
+
+// callback_requests.call_outcome — what happened when the owner actually made
+// the call. A fully separate dimension from `status` above (see
+// validation/admin.ts).
+export const CALL_OUTCOME_LABELS: Record<CallOutcome, string> = {
+  pending: 'טרם התקיימה',
+  completed: 'השיחה התקיימה',
+  no_answer: 'הלקוח לא ענה',
+  needs_followup: 'נדרשת שיחת המשך',
+  closed: 'נסגרה ללא המשך',
+};
+
+// 'no_contact' is deliberately NOT in CALL_OUTCOMES/CALL_OUTCOME_LABELS above
+// — it is never a pickable option in CallOutcomeForm, only system-set by
+// applyCallOutcome after three consecutive no_answer outcomes (same "system-
+// only, not offered as a choice" shape as CONTACT_ONLY_STATUS_LABELS below).
+const CALL_OUTCOME_SYSTEM_ONLY_LABELS: Record<string, string> = {
+  no_contact: 'לא נוצר קשר לאחר 3 ניסיונות',
+};
+
+export function callOutcomeLabel(outcome: string): string {
+  return (
+    CALL_OUTCOME_SYSTEM_ONLY_LABELS[outcome] ??
+    (CALL_OUTCOME_LABELS as Record<string, string>)[outcome] ??
+    outcome
+  );
+}
+
+// callback_requests.scheduling_failure_reason — the machine token
+// markUnschedulable/scheduleCallbackAppointment writes (see callback-scheduling.ts
+// and schedule-policy.ts's SlotFailureReason). Surfaced on the detail page
+// (status === 'unschedulable') — a raw English token there would be the one
+// untranslated string in an otherwise Hebrew-first admin panel.
+export const SCHEDULING_FAILURE_LABELS: Record<string, string> = {
+  unreadable_preference: 'לא ניתן היה לקרוא את המועד המבוקש',
+  invalid_constraints: 'האילוצים שחולצו מהפנייה סותרים זה את זה',
+  no_slot_within_constraints: 'לא נמצא מועד פנוי בתוך האילוצים שהתקבלו',
+  no_slot_within_horizon: 'לא נמצא מועד פנוי בטווח התזמון',
+};
+
+export function schedulingFailureLabel(reason: string): string {
+  return SCHEDULING_FAILURE_LABELS[reason] ?? reason;
+}
+
+// contact_messages.status — its own independent vocabulary (see
+// validation/admin.ts: this used to reuse the callback vocabulary directly,
+// before that vocabulary was redesigned into scheduling-specific states that
+// have no meaning for a contact-form message). `reopened` is a fifth value
+// contact_messages can carry — a customer wrote back on an already-answered
+// thread — but is system-set only, never offered as a pickable option, so it
+// stays a separate fallback layer rather than a sixth CONTACT_STATUS_LABELS
+// entry (a picklist built from Object.keys would offer it otherwise).
+export const CONTACT_STATUS_LABELS: Record<ContactStatus, string> = {
+  new: 'חדש',
+  in_progress: 'בטיפול',
+  done: 'טופל',
+  cancelled: 'בוטל',
+};
+
 const CONTACT_ONLY_STATUS_LABELS: Record<string, string> = {
   reopened: 'נפתחה מחדש',
 };
 
 export function contactStatusLabel(status: string): string {
-  return CONTACT_ONLY_STATUS_LABELS[status] ?? callbackStatusLabel(status);
+  return (
+    CONTACT_ONLY_STATUS_LABELS[status] ??
+    (CONTACT_STATUS_LABELS as Record<string, string>)[status] ??
+    status
+  );
 }
 
 // --- Webhook inspector (free-text columns → partial map + fallback) ---

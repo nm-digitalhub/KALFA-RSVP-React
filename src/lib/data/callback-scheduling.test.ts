@@ -4,6 +4,7 @@ vi.mock('server-only', () => ({}));
 vi.mock('@/lib/supabase/admin', () => ({ createAdminClient: vi.fn() }));
 vi.mock('@/lib/alerts/slack', () => ({ sendSlackAlert: vi.fn() }));
 vi.mock('@/lib/url', () => ({ getAppOrigin: vi.fn(async () => 'https://beta.kalfa.me') }));
+vi.mock('@/lib/sms/sender', () => ({ getSmsSender: vi.fn() }));
 vi.mock('@/lib/exchange-ews/calendar-provider', () => ({
   calendarProvider: {
     getAvailability: vi.fn(),
@@ -27,11 +28,15 @@ import { createMockSupabase, type MockQueryBuilder } from '@/test/supabase-mock'
 import { createAdminClient } from '@/lib/supabase/admin';
 import { calendarProvider } from '@/lib/exchange-ews/calendar-provider';
 import { buildCallbackDraft } from '@/lib/callbacks/calendar-item';
+import { getSmsSender } from '@/lib/sms/sender';
 import type { ExchangeAppointment, ExchangeAppointmentDetail } from '@/lib/exchange-ews/types';
 import {
+  applyCallOutcome,
+  closeCallbackAppointment,
   countOrphanedCalendarAppointments,
   countStrandedCallbacks,
   repairBlankCallbackBodies,
+  rescheduleCallbackRequest,
   scheduleCallbackAppointment,
   type SchedulableCallback,
 } from '@/lib/data/callback-scheduling';
@@ -136,6 +141,39 @@ describe('scheduleCallbackAppointment — empty-body guard', () => {
   });
 });
 
+// Regression for the exact bug the user found live (2026-08-19): a request
+// the scheduler had successfully booked still showed 'חדש' (new) in the admin
+// list, because the success path never wrote `status` at all. This asserts
+// the write the whole redesign exists to make happen.
+describe('scheduleCallbackAppointment — success path', () => {
+  it('books the slot and marks the row scheduled', async () => {
+    const builder = mockAdmin(
+      { data: [CONNECTION], error: null }, // loadBusinessConnection
+      { data: [], error: null }, // countScheduledPerDay
+      { data: null, error: null }, // the link-write update
+    );
+    vi.mocked(calendarProvider.getAvailability).mockResolvedValue({ ok: true, data: [] });
+    vi.mocked(calendarProvider.createAppointment).mockResolvedValue({
+      ok: true,
+      data: { appointmentId: 'item-new' },
+    });
+
+    const outcome = await scheduleCallbackAppointment(
+      { ...REQUEST, calendar_item_id: null },
+      { nowMs: NOW_MS },
+    );
+
+    expect(outcome.ok).toBe(true);
+    expect(builder.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        calendar_item_id: 'item-new',
+        status: 'scheduled',
+        scheduling_failure_reason: null,
+      }),
+    );
+  });
+});
+
 describe('repairBlankCallbackBodies', () => {
   it('fills in a blank description with exactly what a fresh create would write', async () => {
     mockAdmin(
@@ -206,7 +244,10 @@ describe('repairBlankCallbackBodies', () => {
 
     await repairBlankCallbackBodies({ nowMs: NOW_MS });
 
-    expect(builder.in).toHaveBeenCalledWith('status', ['new', 'in_progress']);
+    // 'in_progress' was retired from this column in the 2026-08-19/20 redesign
+    // (see validation/admin.ts) — a row with calendar_item_id set is
+    // 'scheduled' by construction, so only 'cancelled' is excluded now.
+    expect(builder.not).toHaveBeenCalledWith('status', 'eq', 'cancelled');
     expect(builder.gte).toHaveBeenCalledWith('scheduled_at', new Date(NOW_MS).toISOString());
     expect(builder.not).toHaveBeenCalledWith('calendar_item_id', 'is', null);
   });
@@ -240,7 +281,10 @@ describe('countStrandedCallbacks', () => {
     await countStrandedCallbacks({ nowMs: NOW_MS });
 
     expect(builder.not).toHaveBeenCalledWith('calendar_item_id', 'is', null);
-    expect(builder.not).toHaveBeenCalledWith('status', 'in', '(completed,cancelled)');
+    // Redesigned 2026-08-19/20 (see validation/admin.ts): 'done'/'in_progress'
+    // no longer exist on this column at all — excluding the one terminal
+    // value ('cancelled') instead of enumerating a closed list.
+    expect(builder.not).toHaveBeenCalledWith('status', 'eq', 'cancelled');
     expect(builder.lt).toHaveBeenCalledWith(
       'scheduled_at',
       new Date(NOW_MS - DAY_MS).toISOString(),
@@ -323,4 +367,334 @@ describe('countOrphanedCalendarAppointments', () => {
 
     await expect(countOrphanedCalendarAppointments({ nowMs: NOW_MS })).resolves.toBe(0);
   });
+});
+
+// Redesigned 2026-08-20: closing a request used to DELETE the appointment
+// outright, erasing any trace it was ever scheduled or how it ended. It now
+// MUTES the appointment in place instead — cancels the reminder, frees the
+// slot, marks the subject/category — and never deletes it again.
+describe('closeCallbackAppointment', () => {
+  it('archives the appointment in place (never deletes) and clears the link', async () => {
+    mockAdmin(
+      { data: { calendar_item_id: 'item-1' }, error: null }, // row lookup
+      { data: [CONNECTION], error: null }, // loadBusinessConnection
+      { data: null, error: null }, // clearing update
+    );
+    vi.mocked(calendarProvider.getAppointment).mockResolvedValue({ ok: true, data: appointment('') });
+    vi.mocked(calendarProvider.updateAppointment).mockResolvedValue({ ok: true, data: undefined });
+
+    await expect(closeCallbackAppointment('req-1')).resolves.toEqual({ archived: true });
+    expect(calendarProvider.deleteAppointment).not.toHaveBeenCalled();
+    const [, itemId, update] = vi.mocked(calendarProvider.updateAppointment).mock.calls[0];
+    expect(itemId).toBe('item-1');
+    expect(update.reminderMinutes).toBe(0);
+    expect(update.showAs).toBe('free');
+    expect(update.category).toBe('KALFA — שיחה שהושלמה');
+    expect(update.subject).toBe('✓ שיחה חוזרת — ישראל ישראלי');
+    // A repair/archive writes cosmetic fields only — the slot the owner has
+    // already seen must not move under them.
+    expect(update.start).toEqual(START);
+    expect(update.end).toEqual(END);
+  });
+
+  it('marks a cancellation differently from a completed call', async () => {
+    mockAdmin(
+      { data: { calendar_item_id: 'item-1' }, error: null },
+      { data: [CONNECTION], error: null },
+      { data: null, error: null },
+    );
+    vi.mocked(calendarProvider.getAppointment).mockResolvedValue({ ok: true, data: appointment('') });
+    vi.mocked(calendarProvider.updateAppointment).mockResolvedValue({ ok: true, data: undefined });
+
+    await closeCallbackAppointment('req-1', { reason: 'cancelled' });
+
+    const [, , update] = vi.mocked(calendarProvider.updateAppointment).mock.calls[0];
+    expect(update.category).toBe('KALFA — בוטל');
+    expect(update.subject).toBe('✗ בוטל: שיחה חוזרת — ישראל ישראלי');
+  });
+
+  it('re-closing an already-archived subject replaces the mark instead of stacking it', async () => {
+    mockAdmin(
+      { data: { calendar_item_id: 'item-1' }, error: null },
+      { data: [CONNECTION], error: null },
+      { data: null, error: null },
+    );
+    vi.mocked(calendarProvider.getAppointment).mockResolvedValue({
+      ok: true,
+      data: { ...appointment(''), subject: '✓ שיחה חוזרת — ישראל ישראלי' },
+    });
+    vi.mocked(calendarProvider.updateAppointment).mockResolvedValue({ ok: true, data: undefined });
+
+    await closeCallbackAppointment('req-1', { reason: 'cancelled' });
+
+    const [, , update] = vi.mocked(calendarProvider.updateAppointment).mock.calls[0];
+    expect(update.subject).toBe('✗ בוטל: שיחה חוזרת — ישראל ישראלי');
+  });
+
+  it('treats an already-gone appointment (not_found) as success without touching updateAppointment', async () => {
+    mockAdmin(
+      { data: { calendar_item_id: 'item-1' }, error: null },
+      { data: [CONNECTION], error: null },
+      { data: null, error: null },
+    );
+    vi.mocked(calendarProvider.getAppointment).mockResolvedValue({ ok: false, error: 'not_found' });
+
+    await expect(closeCallbackAppointment('req-1')).resolves.toEqual({ archived: true });
+    expect(calendarProvider.updateAppointment).not.toHaveBeenCalled();
+  });
+
+  it('does nothing when the request never had a calendar appointment', async () => {
+    mockAdmin({ data: { calendar_item_id: null }, error: null });
+
+    await expect(closeCallbackAppointment('req-1')).resolves.toEqual({ archived: false });
+    expect(calendarProvider.getAppointment).not.toHaveBeenCalled();
+  });
+
+  it('keeps the link when archiving genuinely fails, rather than losing track of it', async () => {
+    const builder = mockAdmin(
+      { data: { calendar_item_id: 'item-1' }, error: null },
+      { data: [CONNECTION], error: null },
+    );
+    vi.mocked(calendarProvider.getAppointment).mockResolvedValue({ ok: false, error: 'unreachable' });
+
+    await expect(closeCallbackAppointment('req-1')).resolves.toEqual({ archived: false });
+    expect(builder.update).not.toHaveBeenCalled();
+  });
+
+  it('does nothing when the mailbox is unreachable', async () => {
+    mockAdmin(
+      { data: { calendar_item_id: 'item-1' }, error: null },
+      { data: [], error: null }, // no verified connection
+    );
+
+    await expect(closeCallbackAppointment('req-1')).resolves.toEqual({ archived: false });
+    expect(calendarProvider.getAppointment).not.toHaveBeenCalled();
+  });
+});
+
+// Regression for the scenario raised 19.08: the caller answered and either
+// asked for a different time than originally requested, or asked to be
+// called again later ("let me think about it"). Both need the SAME thing —
+// close whatever slot exists, open a fresh one from a new instant.
+describe('rescheduleCallbackRequest', () => {
+  const NEW_ISO = '2026-09-01T10:00:00.000Z';
+
+  it('closes the existing appointment and opens a new slot from the given instant', async () => {
+    const builder = mockAdmin(
+      { data: { calendar_item_id: 'item-1' }, error: null }, // reschedule's own row lookup
+      { data: { calendar_item_id: 'item-1' }, error: null }, // closeCallbackAppointment's row lookup
+      { data: [CONNECTION], error: null }, // closeCallbackAppointment's loadBusinessConnection
+      { data: null, error: null }, // closeCallbackAppointment's clearing update
+      { data: null, error: null }, // reschedule's own final update
+    );
+    vi.mocked(calendarProvider.getAppointment).mockResolvedValue({ ok: true, data: appointment('') });
+    vi.mocked(calendarProvider.updateAppointment).mockResolvedValue({ ok: true, data: undefined });
+
+    await expect(rescheduleCallbackRequest('req-1', NEW_ISO)).resolves.toEqual({ ok: true });
+    // Distinct from 'new': the admin list needs to tell "never touched" apart
+    // from "was scheduled, now needs a fresh time" (2026-08-19/20 redesign).
+    expect(builder.update).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        status: 'needs_reschedule',
+        requested_at: NEW_ISO,
+        requested_rank: 'nearest',
+        scheduling_failure_reason: null,
+      }),
+    );
+  });
+
+  it('skips closing when there was never an appointment to begin with', async () => {
+    mockAdmin(
+      { data: { calendar_item_id: null }, error: null }, // nothing to close
+      { data: null, error: null }, // final update
+    );
+
+    await expect(rescheduleCallbackRequest('req-1', NEW_ISO)).resolves.toEqual({ ok: true });
+    expect(calendarProvider.deleteAppointment).not.toHaveBeenCalled();
+  });
+
+  it('refuses to proceed when the old appointment cannot be closed — never orphans a duplicate', async () => {
+    const builder = mockAdmin(
+      { data: { calendar_item_id: 'item-1' }, error: null },
+      { data: { calendar_item_id: 'item-1' }, error: null },
+      { data: [CONNECTION], error: null },
+    );
+    vi.mocked(calendarProvider.getAppointment).mockResolvedValue({ ok: false, error: 'unreachable' });
+
+    await expect(rescheduleCallbackRequest('req-1', NEW_ISO)).resolves.toEqual({
+      ok: false,
+      reason: 'old_appointment_not_removed',
+    });
+    // The row that would let the sweep create a second appointment is never touched.
+    expect(builder.update).not.toHaveBeenCalled();
+  });
+
+  it('reports not_found for a request that does not exist', async () => {
+    mockAdmin({ data: null, error: null });
+    await expect(rescheduleCallbackRequest('missing', NEW_ISO)).resolves.toEqual({
+      ok: false,
+      reason: 'not_found',
+    });
+  });
+});
+
+// Design settled 2026-08-20 (owner + friend's CRM-informed review, and the
+// atomicity correction that followed it): recording a call outcome archives
+// the attempt's appointment, decides whether the REQUEST itself closes or
+// re-enters scheduling, and — for the third consecutive no_answer — closes
+// the request as no_contact and sends a one-time SMS. Everything is claimed
+// in ONE update statement, guarded on calendar_item_id still matching what
+// was just read, so a duplicate submission for the SAME attempt (double
+// click, two tabs, a retried request) can never double-process.
+describe('applyCallOutcome', () => {
+  function outcomeRow(overrides: Partial<Row> = {}): Row {
+    return {
+      id: 'req-1',
+      full_name: 'ישראל ישראלי',
+      phone: '+972532743588',
+      attempt_count: 0,
+      consecutive_no_answer_count: 0,
+      calendar_item_id: 'item-1',
+      ...overrides,
+    };
+  }
+
+  it('does nothing for "pending" — no read, no write, no archive', async () => {
+    mockAdmin();
+    const result = await applyCallOutcome('req-1', 'pending');
+    expect(result).toEqual({ archived: false, requestClosed: false });
+    expect(calendarProvider.getAppointment).not.toHaveBeenCalled();
+  });
+
+  it('a duplicate submission for the same attempt does nothing — the claim fails', async () => {
+    mockAdmin(
+      { data: outcomeRow(), error: null }, // row read
+      { data: null, error: null }, // CAS claim — 0 rows matched, already handled
+    );
+
+    const result = await applyCallOutcome('req-1', 'no_answer');
+
+    expect(result).toEqual({ archived: false, requestClosed: false });
+    expect(calendarProvider.getAppointment).not.toHaveBeenCalled();
+    expect(getSmsSender).not.toHaveBeenCalled();
+  });
+
+  it('a fresh no_answer (not yet 3) archives, increments both counters, and re-enters scheduling', async () => {
+    const builder = mockAdmin(
+      { data: outcomeRow(), error: null }, // row read
+      { data: { id: 'req-1' }, error: null }, // CAS claim succeeds
+      { data: [CONNECTION], error: null }, // loadBusinessConnection
+    );
+    vi.mocked(calendarProvider.getAppointment).mockResolvedValue({ ok: true, data: appointment('') });
+    vi.mocked(calendarProvider.updateAppointment).mockResolvedValue({ ok: true, data: undefined });
+
+    const result = await applyCallOutcome('req-1', 'no_answer');
+
+    expect(result).toEqual({ archived: true, requestClosed: false });
+    expect(builder.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        call_outcome: 'no_answer',
+        consecutive_no_answer_count: 1,
+        attempt_count: 1,
+        status: 'pending_schedule',
+        calendar_item_id: null,
+        exchange_connection_id: null,
+        scheduled_at: null,
+        scheduling_failure_reason: null,
+      }),
+    );
+    expect(getSmsSender).not.toHaveBeenCalled();
+  });
+
+  it('the third consecutive no_answer closes the request as no_contact and sends the SMS exactly once', async () => {
+    const builder = mockAdmin(
+      { data: outcomeRow({ consecutive_no_answer_count: 2 }), error: null }, // row read
+      { data: { id: 'req-1' }, error: null }, // CAS claim succeeds
+      { data: [CONNECTION], error: null }, // loadBusinessConnection
+      { data: { id: 'req-1' }, error: null }, // SMS send-claim succeeds
+      { data: null, error: null }, // SMS success write (sent_at + provider_id)
+    );
+    vi.mocked(calendarProvider.getAppointment).mockResolvedValue({ ok: true, data: appointment('') });
+    vi.mocked(calendarProvider.updateAppointment).mockResolvedValue({ ok: true, data: undefined });
+    const send = vi.fn().mockResolvedValue({ id: 'sms-1' });
+    vi.mocked(getSmsSender).mockResolvedValue({ send });
+
+    const result = await applyCallOutcome('req-1', 'no_answer');
+
+    expect(result).toEqual({ archived: true, requestClosed: true });
+    expect(builder.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        call_outcome: 'no_contact',
+        status: 'closed',
+        consecutive_no_answer_count: 3,
+        calendar_item_id: null,
+      }),
+    );
+    expect(send).toHaveBeenCalledWith({
+      to: '+972532743588',
+      text: expect.stringContaining('שלום ישראל ישראלי'),
+    });
+    expect(send).toHaveBeenCalledWith(
+      expect.objectContaining({ text: expect.stringContaining('https://beta.kalfa.me/contact') }),
+    );
+    expect(builder.update).toHaveBeenLastCalledWith(
+      expect.objectContaining({ no_contact_sms_sent_at: expect.any(String), no_contact_sms_provider_id: 'sms-1' }),
+    );
+  });
+
+  it('never calls the SMS provider when the send was already claimed by an earlier run', async () => {
+    mockAdmin(
+      { data: outcomeRow({ consecutive_no_answer_count: 2 }), error: null },
+      { data: { id: 'req-1' }, error: null }, // CAS claim succeeds
+      { data: [CONNECTION], error: null },
+      { data: null, error: null }, // SMS send-claim — already taken
+    );
+    vi.mocked(calendarProvider.getAppointment).mockResolvedValue({ ok: true, data: appointment('') });
+    vi.mocked(calendarProvider.updateAppointment).mockResolvedValue({ ok: true, data: undefined });
+
+    await applyCallOutcome('req-1', 'no_answer');
+
+    expect(getSmsSender).not.toHaveBeenCalled();
+  });
+
+  it('needs_followup resets the streak and re-enters scheduling, without touching attempt_count', async () => {
+    const builder = mockAdmin(
+      { data: outcomeRow({ consecutive_no_answer_count: 2, attempt_count: 1 }), error: null },
+      { data: { id: 'req-1' }, error: null },
+      { data: [CONNECTION], error: null },
+    );
+    vi.mocked(calendarProvider.getAppointment).mockResolvedValue({ ok: true, data: appointment('') });
+    vi.mocked(calendarProvider.updateAppointment).mockResolvedValue({ ok: true, data: undefined });
+
+    const result = await applyCallOutcome('req-1', 'needs_followup');
+
+    expect(result).toEqual({ archived: true, requestClosed: false });
+    const [payload] = vi.mocked(builder.update).mock.calls[0];
+    expect(payload).toMatchObject({
+      call_outcome: 'needs_followup',
+      consecutive_no_answer_count: 0,
+      status: 'pending_schedule',
+    });
+    expect(payload).not.toHaveProperty('attempt_count');
+  });
+
+  it.each(['completed', 'closed'] as const)(
+    'a terminal outcome (%s) resets the streak and closes the request',
+    async (outcome) => {
+      const builder = mockAdmin(
+        { data: outcomeRow({ consecutive_no_answer_count: 1 }), error: null },
+        { data: { id: 'req-1' }, error: null },
+        { data: [CONNECTION], error: null },
+      );
+      vi.mocked(calendarProvider.getAppointment).mockResolvedValue({ ok: true, data: appointment('') });
+      vi.mocked(calendarProvider.updateAppointment).mockResolvedValue({ ok: true, data: undefined });
+
+      const result = await applyCallOutcome('req-1', outcome);
+
+      expect(result).toEqual({ archived: true, requestClosed: true });
+      expect(builder.update).toHaveBeenCalledWith(
+        expect.objectContaining({ call_outcome: outcome, consecutive_no_answer_count: 0, status: 'closed' }),
+      );
+    },
+  );
 });

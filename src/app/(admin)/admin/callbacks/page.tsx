@@ -3,7 +3,11 @@ import Link from 'next/link';
 
 import { requirePlatformPermission } from '@/lib/auth/dal';
 import { listCallbackRequests } from '@/lib/data/admin/callbacks';
-import { callbackStatusLabel } from '@/lib/data/admin/labels';
+import {
+  callbackStatusLabel,
+  callbackStatusVariant,
+  callOutcomeLabel,
+} from '@/lib/data/admin/labels';
 import {
   PageHeading,
   EmptyState,
@@ -12,7 +16,6 @@ import {
   formatDateTime,
   parsePageParam,
 } from '../_components';
-import { CallbackStatusForm } from './callback-status-form';
 
 export const metadata: Metadata = { title: 'בקשות חזרה' };
 
@@ -45,14 +48,22 @@ export default async function AdminCallbacksPage({
               className="flex flex-col gap-3 px-4 py-3 sm:flex-row sm:items-start sm:justify-between"
             >
               <div className="space-y-1">
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
                   <Link
                     href={`/admin/callbacks/${cb.id}`}
                     className="font-medium underline underline-offset-2"
                   >
                     {cb.full_name}
                   </Link>
-                  <Badge>{callbackStatusLabel(cb.status)}</Badge>
+                  <Badge variant={callbackStatusVariant(cb.status)}>
+                    {callbackStatusLabel(cb.status)}
+                  </Badge>
+                  {/* Only surfaced once it stops being the pending default —
+                      matches CallOutcomeForm's own "record after the call"
+                      framing rather than cluttering every fresh row. */}
+                  {cb.call_outcome !== 'pending' && (
+                    <Badge variant="outline">{callOutcomeLabel(cb.call_outcome)}</Badge>
+                  )}
                 </div>
                 <p className="text-sm text-muted-foreground" dir="ltr">
                   {cb.phone}
@@ -67,9 +78,9 @@ export default async function AdminCallbacksPage({
                 )}
                 <p className="text-xs text-muted-foreground">
                   {formatDateTime(cb.created_at)}
+                  {cb.scheduled_at && ` · שובץ ל-${formatDateTime(cb.scheduled_at)}`}
                 </p>
               </div>
-              <CallbackStatusForm id={cb.id} currentStatus={cb.status} />
             </li>
           ))}
         </ul>

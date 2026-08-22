@@ -2,45 +2,47 @@
 
 import { useActionState } from 'react';
 
-import { CONTACT_STATUSES } from '@/lib/validation/admin';
-import { CONTACT_STATUS_LABELS } from '@/lib/data/admin/labels';
+import { CALL_OUTCOMES } from '@/lib/validation/admin';
+import { CALL_OUTCOME_LABELS } from '@/lib/data/admin/labels';
 import { FieldError, FormError, FormNotice } from '@/components/forms';
-import { updateContactStatusAction } from './actions';
+import { updateCallOutcomeAction } from './actions';
 
-// Per-row status control for contact messages — same closed vocabulary and
-// same native-select pattern as the callbacks page (no portal/RTL pitfalls).
-export function ContactStatusForm({
+// Records what happened when the owner actually made the call — a dimension
+// fully separate from the request's scheduling status (see
+// validation/admin.ts). Same native <select> + submit pattern as the old
+// single-status form: small surface, no portal/RTL pitfalls.
+export function CallOutcomeForm({
   id,
-  currentStatus,
+  currentOutcome,
 }: {
   id: string;
-  currentStatus: string;
+  currentOutcome: string;
 }) {
   const [state, formAction, pending] = useActionState(
-    updateContactStatusAction,
+    updateCallOutcomeAction,
     null,
   );
 
-  const isKnown = (CONTACT_STATUSES as readonly string[]).includes(currentStatus);
-  const selectId = `contact-status-${id}`;
+  const isKnown = (CALL_OUTCOMES as readonly string[]).includes(currentOutcome);
+  const selectId = `call-outcome-${id}`;
 
   return (
     <form action={formAction} className="flex flex-col gap-1">
       <input type="hidden" name="id" value={id} />
       <div className="flex items-center gap-2">
         <label htmlFor={selectId} className="sr-only">
-          סטטוס פנייה
+          תוצאת שיחה
         </label>
         <select
           id={selectId}
-          name="status"
-          defaultValue={currentStatus}
+          name="callOutcome"
+          defaultValue={currentOutcome}
           className="rounded-md border border-border bg-background px-2 py-1 text-sm"
         >
-          {!isKnown && <option value={currentStatus}>{currentStatus}</option>}
-          {CONTACT_STATUSES.map((s) => (
-            <option key={s} value={s}>
-              {CONTACT_STATUS_LABELS[s]}
+          {!isKnown && <option value={currentOutcome}>{currentOutcome}</option>}
+          {CALL_OUTCOMES.map((o) => (
+            <option key={o} value={o}>
+              {CALL_OUTCOME_LABELS[o]}
             </option>
           ))}
         </select>
@@ -52,7 +54,7 @@ export function ContactStatusForm({
           {pending ? 'שומר…' : 'עדכון'}
         </button>
       </div>
-      <FieldError errors={state?.fieldErrors?.status} />
+      <FieldError errors={state?.fieldErrors?.callOutcome} />
       <FormError message={state?.error} />
       <FormNotice message={state?.notice} />
     </form>

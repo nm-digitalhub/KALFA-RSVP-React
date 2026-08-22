@@ -82,6 +82,18 @@ function PrivacyNote() {
   );
 }
 
+// Callback-specific: the call itself may be an automated one, unlike
+// ContactForm's email-style reply — disclosed here, not in the shared
+// PrivacyNote, so ContactForm submitters (no call involved) don't see it.
+function CallbackDisclosureNote() {
+  return (
+    <p className="text-xs text-muted-foreground">
+      החזרה עשויה להתבצע על ידי נציג אנושי או באמצעות סוכן דיגיטלי/קולי אוטומטי מטעם קלפה. בעקבות
+      השיחה ייתכן שגם תישלח הודעת WhatsApp מטעם קלפה, בכפוף לאישורך במהלך השיחה עצמה.
+    </p>
+  );
+}
+
 export function ContactForm({
   defaultTopic,
   defaultEmail,
@@ -169,8 +181,8 @@ export function ContactForm({
 const TIME_PREFERENCES = [
   { value: 'asap', label: 'בהקדם האפשרי' },
   { value: 'morning', label: 'בבוקר' },
-  { value: 'afternoon', label: 'בצהריים' },
-  { value: 'evening', label: 'אחר הצהריים' },
+  { value: 'afternoon', label: 'אחר הצהריים' },
+  { value: 'evening', label: 'בערב' },
 ] as const;
 
 function CallbackTimePreference() {
@@ -223,6 +235,9 @@ export function CallbackForm({ defaultTopic }: { defaultTopic?: string }) {
         <FieldError errors={state?.fieldErrors?.phone} />
       </div>
       <TopicSelect id="cb-topic" defaultTopic={defaultTopic} />
+      <p className="text-xs text-muted-foreground">
+        בבחירת נושא &quot;מכירות&quot; אני מבקש/ת שיחזרו אליי בנוגע לרכישת שירותי קלפה, לרבות מידע ופרטים לפני רכישה.
+      </p>
       <CallbackTimePreference />
       <div>
         <label htmlFor="cb-note" className="mb-1 block text-sm font-medium">
@@ -234,6 +249,7 @@ export function CallbackForm({ defaultTopic }: { defaultTopic?: string }) {
       <FormError message={state?.error} />
       <FormNotice message={state?.notice} />
       <SubmitButton>חזרו אליי</SubmitButton>
+      <CallbackDisclosureNote />
       <PrivacyNote />
     </form>
   );

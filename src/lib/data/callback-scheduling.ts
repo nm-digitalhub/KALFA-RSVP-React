@@ -16,13 +16,21 @@ import 'server-only';
 // resulting appointment is composed by this module from database columns. No
 // caller-supplied or model-supplied string is ever passed through.
 
+import type { PgBoss } from 'pg-boss';
+
 import { sendSlackAlert } from '@/lib/alerts/slack';
 import {
+  archiveCallbackSubject,
   buildCallbackDraft,
+  CALLBACK_CANCELLED_CATEGORY,
   CALLBACK_CATEGORY,
+  CALLBACK_CLOSED_CATEGORY,
   CALLBACK_SUBJECT_PREFIX,
   type CallbackItemInput,
 } from '@/lib/callbacks/calendar-item';
+import { buildNoContactSmsText } from '@/lib/callbacks/no-contact-sms';
+import { getSmsSender } from '@/lib/sms/sender';
+import type { CallOutcome } from '@/lib/validation/admin';
 import {
   DEFAULT_CALLBACK_POLICY,
   findCallbackSlot,
@@ -33,6 +41,8 @@ import {
   type CallerConstraints,
   type SlotRank,
 } from '@/lib/callbacks/schedule-policy';
+import { enqueueMeetingConfirmDispatch } from '@/lib/data/meeting-confirm-dispatch';
+import { enqueueSalesCallDispatch } from '@/lib/data/sales-call-dispatch';
 import { resolveMailboxPassword } from '@/lib/exchange-ews/mailbox-credential';
 import { calendarProvider } from '@/lib/exchange-ews/calendar-provider';
 import type {
@@ -139,6 +149,25 @@ async function countScheduledPerDay(
   return perDay;
 }
 
+/**
+ * Stops the sweep from silently retrying a request forever when the reason
+ * it can't be scheduled is about the CALLER's own constraints, not a
+ * transient system issue — see the two call sites in scheduleCallbackAppointment
+ * for exactly which failures this applies to. Best-effort: a write failure
+ * here just means the row keeps retrying automatically, which is the current
+ * (safe) behaviour, not a new failure mode.
+ */
+async function markUnschedulable(
+  admin: AdminClient,
+  requestId: string,
+  reason: string,
+): Promise<void> {
+  await admin
+    .from('callback_requests')
+    .update({ status: 'unschedulable', scheduling_failure_reason: reason })
+    .eq('id', requestId);
+}
+
 // ── Scheduling one request ──────────────────────────────────────────────────
 
 export type ScheduleOutcome =
@@ -218,6 +247,7 @@ export async function scheduleCallbackAppointment(
     ? Date.parse(request.requested_at)
     : preferenceToInstant('asap', nowMs, null, policy);
   if (preferredMs === null || Number.isNaN(preferredMs)) {
+    await markUnschedulable(admin, request.id, 'unreadable_preference');
     return { ok: false, reason: 'unreadable_preference' };
   }
 
@@ -261,7 +291,16 @@ export async function scheduleCallbackAppointment(
   const slot = findCallbackSlot({
     preferredMs, nowMs, busy, bookedPerDay, policy, constraints, rank,
   });
-  if (!slot.ok) return { ok: false, reason: slot.reason };
+  if (!slot.ok) {
+    // These three all mean the same thing: given what the caller asked for,
+    // there is nowhere to put them — not "try again next tick", which is why
+    // this stops the automatic retries (excluded from the sweep's candidate
+    // query below) rather than leaving it to fail silently forever. The
+    // admin's reschedule action is the way back in — it clears this and
+    // reopens the row.
+    await markUnschedulable(admin, request.id, slot.reason);
+    return { ok: false, reason: slot.reason };
+  }
 
   const draft = buildCallbackDraft(await toItemInput(request, slot.startMs, slot.endMs));
 
@@ -286,6 +325,8 @@ export async function scheduleCallbackAppointment(
       calendar_item_id: created.data.appointmentId,
       exchange_connection_id: loaded.connection.id,
       scheduled_at: startIso,
+      status: 'scheduled',
+      scheduling_failure_reason: null,
       // requested_at is deliberately NOT written here. It means "the time the
       // caller asked for"; filling it with the slot WE picked erases the only
       // distinction the column exists for, and a released row would then look
@@ -304,6 +345,369 @@ export async function scheduleCallbackAppointment(
   }
 
   return { ok: true, appointmentId: created.data.appointmentId, startIso };
+}
+
+export type CallClosureReason = 'completed' | 'cancelled';
+
+/**
+ * scheduleCallbackAppointment's counterpart: retires the calendar appointment
+ * for a request that no longer needs one — WITHOUT deleting it.
+ *
+ * Redesigned 2026-08-20: the original version called deleteAppointment,
+ * which erased every trace that a call was ever scheduled, attempted, or how
+ * it ended — an admin looking back later could not tell "this was handled"
+ * from "nothing ever happened here". This now MUTES the appointment in place
+ * instead: cancels its reminder (`isReminderOn: false` — verified against the
+ * live Microsoft Graph Event resource docs; `reminderMinutesBeforeStart`
+ * alone has no independent "disabled" meaning, and our own provider mapping
+ * already sends isReminderOn:false whenever reminderMinutes is 0), frees the
+ * slot (`showAs: 'free'` — no longer blocks scheduling or reads as an open
+ * task), and marks the subject/category so it reads as archived at a glance
+ * (archiveCallbackSubject). The appointment stays at its ORIGINAL time,
+ * permanently, as a historical record — it is never deleted again.
+ *
+ * `calendar_item_id` is still cleared from the row after archiving: the
+ * column means "the request's CURRENT active appointment", not a pointer to
+ * history — the archived item's own subject/category IS the history, living
+ * in the mailbox, not duplicated here. A row that later needs a fresh
+ * appointment (e.g. a no-answer retry) gets one with a NEW id; nothing here
+ * prevents that, because the row no longer references the archived one.
+ *
+ * Never throws on a calendar failure — the caller's actual intent (closing
+ * the request) must still succeed regardless. On failure the row KEEPS its
+ * calendar_item_id, deliberately: an appointment this could not archive must
+ * stay linked, or countOrphanedCalendarAppointments would flag it the moment
+ * the link were cleared without the appointment actually being muted.
+ */
+/**
+ * The pure Exchange-side half of archiving — no DB read or write. Split out
+ * of closeCallbackAppointment so applyCallOutcome below can archive with a
+ * calendar_item_id it already has in hand, AFTER atomically claiming the DB
+ * row itself — see that function's own comment for why the claim must
+ * happen first, in one statement, rather than this function re-reading and
+ * clearing the id itself.
+ */
+async function archiveInCalendar(
+  connection: LoadedConnection,
+  calendarItemId: string,
+  reason: CallClosureReason,
+): Promise<boolean> {
+  const detail = await calendarProvider.getAppointment(connection.config, calendarItemId);
+  if (!detail.ok) {
+    // Already gone (the owner deleted it themselves) is the desired end
+    // state. Any other read failure must not proceed to an update built on
+    // stale/absent data.
+    return detail.error === 'not_found';
+  }
+  const updated = await calendarProvider.updateAppointment(connection.config, calendarItemId, {
+    start: detail.data.start,
+    end: detail.data.end,
+    subject: archiveCallbackSubject(detail.data.subject, reason),
+    reminderMinutes: 0,
+    showAs: 'free',
+    category: reason === 'cancelled' ? CALLBACK_CANCELLED_CATEGORY : CALLBACK_CLOSED_CATEGORY,
+  });
+  return updated.ok;
+}
+
+export async function closeCallbackAppointment(
+  requestId: string,
+  opts: { reason?: CallClosureReason } = {},
+): Promise<{ archived: boolean }> {
+  const reason = opts.reason ?? 'completed';
+  const admin = createAdminClient();
+  const { data: row } = await admin
+    .from('callback_requests')
+    .select('calendar_item_id')
+    .eq('id', requestId)
+    .maybeSingle();
+  if (!row?.calendar_item_id) return { archived: false };
+
+  const loaded = await loadBusinessConnection(admin);
+  if (!loaded.ok) return { archived: false };
+
+  const ok = await archiveInCalendar(loaded.connection, row.calendar_item_id, reason);
+  if (!ok) return { archived: false };
+
+  await admin
+    .from('callback_requests')
+    .update({
+      calendar_item_id: null,
+      exchange_connection_id: null,
+      scheduled_at: null,
+      scheduling_failure_reason: null,
+    })
+    .eq('id', requestId);
+
+  return { archived: true };
+}
+
+/**
+ * Sends the one-time "we tried three times, couldn't reach you" SMS —
+ * claimed BEFORE the provider is ever called, never after.
+ *
+ * Why claim-then-send, not send-then-record: if the process died between a
+ * successful provider call and writing that down, the next run would see "no
+ * record of sending" and send a second message — the customer receives the
+ * same notice twice. Claiming first closes that window: the claim (`UPDATE
+ * ... WHERE no_contact_sms_claimed_at IS NULL`) is a single, race-free
+ * database statement, so at most one caller can ever win it, regardless of
+ * how many times this runs concurrently or how it crashes afterward. A
+ * caller that does NOT win the claim sends nothing — even if the earlier
+ * winner's own send later fails, this is a deliberate "at most once" policy,
+ * not "exactly once": a false negative (claimed, never actually sent,
+ * because the process died mid-call) is judged less harmful than a customer
+ * getting the same closing SMS twice.
+ *
+ * Never throws — a failed or skipped send must not block or reopen the
+ * request's own closure, which is the caller's real intent.
+ */
+async function sendNoContactSms(
+  admin: AdminClient,
+  request: { id: string; full_name: string; phone: string },
+): Promise<void> {
+  const { data: claimed } = await admin
+    .from('callback_requests')
+    .update({ no_contact_sms_claimed_at: new Date().toISOString() })
+    .eq('id', request.id)
+    .is('no_contact_sms_claimed_at', null)
+    .select('id')
+    .maybeSingle();
+  if (!claimed) return; // another run already claimed (or completed) this send
+
+  try {
+    const sender = await getSmsSender();
+    const text = buildNoContactSmsText({
+      fullName: request.full_name,
+      formUrl: `${await getAppOrigin()}/contact`,
+    });
+    const { id: providerId } = await sender.send({ to: request.phone, text });
+    await admin
+      .from('callback_requests')
+      .update({ no_contact_sms_sent_at: new Date().toISOString(), no_contact_sms_provider_id: providerId })
+      .eq('id', request.id);
+  } catch (err) {
+    // A certain failure (SMS disabled, bad destination, provider outage) —
+    // recorded for visibility only. The request stays closed either way.
+    await admin
+      .from('callback_requests')
+      .update({ no_contact_sms_error: err instanceof Error ? err.message : 'שגיאה לא ידועה' })
+      .eq('id', request.id);
+  }
+}
+
+export type CallOutcomeResult = {
+  /** Whether the just-finished call's appointment was archived. */
+  archived: boolean;
+  /** Whether the REQUEST reached a terminal state (vs. re-entering scheduling). */
+  requestClosed: boolean;
+};
+
+/**
+ * The single place that decides what recording a call outcome actually DOES
+ * — not just writes the column. Design settled 2026-08-20 (owner + friend's
+ * CRM-informed review): `call_outcome` and `status` are separate axes (see
+ * validation/admin.ts), and most outcomes affect BOTH — the call attempt
+ * that just happened always gets archived (never deleted; see
+ * closeCallbackAppointment), but whether the REQUEST itself is done depends
+ * on which outcome:
+ *
+ *   completed / closed  → the request is done. No further scheduling.
+ *   no_answer            → the request is NOT done — it re-enters the normal
+ *                          scheduling queue (status: 'pending_schedule') for
+ *                          another attempt, UNLESS this is the third
+ *                          consecutive no-answer, in which case the request
+ *                          closes itself as `no_contact` and a one-time SMS
+ *                          tells the caller (see sendNoContactSms). Any
+ *                          OTHER outcome resets the streak to zero — three
+ *                          non-consecutive no-answers must never trigger the
+ *                          auto-close.
+ *   needs_followup       → the call happened and connected; a further call is
+ *                          still needed. Re-enters scheduling exactly like
+ *                          no_answer's non-terminal case (no calendar slot
+ *                          exists yet) — the admin can immediately pick an
+ *                          exact time via the existing reschedule form, or
+ *                          let the ordinary sweep find the next slot, same
+ *                          as any other pending request. Does NOT increment
+ *                          attempt_count — that column tracks unreached
+ *                          attempts specifically (see buildCallbackSubject's
+ *                          own comment), and this call DID connect.
+ */
+/**
+ * Everything ONE call outcome needs written, decided from the row alone —
+ * pure, no DB or Exchange access, so applyCallOutcome's atomicity story below
+ * is easy to verify by reading it next to this.
+ */
+function buildCallOutcomeUpdate(
+  outcome: CallOutcome,
+  row: { attempt_count: number; consecutive_no_answer_count: number },
+): { fields: Record<string, unknown>; requestClosed: boolean; noContactClosure: boolean } {
+  if (outcome === 'no_answer') {
+    const consecutive = (row.consecutive_no_answer_count ?? 0) + 1;
+    if (consecutive >= 3) {
+      return {
+        fields: { call_outcome: 'no_contact', status: 'closed', consecutive_no_answer_count: consecutive },
+        requestClosed: true,
+        noContactClosure: true,
+      };
+    }
+    return {
+      fields: {
+        call_outcome: outcome,
+        consecutive_no_answer_count: consecutive,
+        attempt_count: (row.attempt_count ?? 0) + 1,
+        status: 'pending_schedule',
+      },
+      requestClosed: false,
+      noContactClosure: false,
+    };
+  }
+  if (outcome === 'needs_followup') {
+    return {
+      fields: { call_outcome: outcome, consecutive_no_answer_count: 0, status: 'pending_schedule' },
+      requestClosed: false,
+      noContactClosure: false,
+    };
+  }
+  // completed / closed: the request is fully done.
+  return {
+    fields: { call_outcome: outcome, consecutive_no_answer_count: 0, status: 'closed' },
+    requestClosed: true,
+    noContactClosure: false,
+  };
+}
+
+export async function applyCallOutcome(
+  requestId: string,
+  outcome: CallOutcome,
+): Promise<CallOutcomeResult> {
+  const admin = createAdminClient();
+
+  if (outcome === 'pending') return { archived: false, requestClosed: false };
+
+  const { data: row } = await admin
+    .from('callback_requests')
+    .select('id, full_name, phone, attempt_count, consecutive_no_answer_count, calendar_item_id')
+    .eq('id', requestId)
+    .maybeSingle();
+  if (!row) return { archived: false, requestClosed: false };
+
+  const { fields, requestClosed, noContactClosure } = buildCallOutcomeUpdate(outcome, row);
+
+  // Claim, in ONE statement, before anything else touches this row.
+  //
+  // Folds what closeCallbackAppointment's own DB write does (clearing
+  // calendar_item_id + the three columns that ride with it) into the SAME
+  // update as the outcome fields, guarded on calendar_item_id still matching
+  // what was just read above. Only the first caller to reach this while that
+  // is still true can ever match — a duplicate submission for the SAME call
+  // attempt (double-click, two open tabs, a retried request after a timeout)
+  // reads the same starting row but loses the race: by the time its own
+  // update runs, calendar_item_id no longer matches, so it affects zero rows
+  // and is treated as already-handled below.
+  //
+  // This is deliberately ONE statement, not "clear the id here, count there":
+  // splitting it across two would leave exactly the gap a duplicate could
+  // still slip through in the deciding a plain `count = count + 1` SQL
+  // increment cannot close on its own — that only prevents a LOST update
+  // (two writers silently overwriting each other), not two writers both
+  // legitimately incrementing for what was really one real event.
+  let claim = admin
+    .from('callback_requests')
+    .update({
+      ...fields,
+      calendar_item_id: null,
+      exchange_connection_id: null,
+      scheduled_at: null,
+      scheduling_failure_reason: null,
+    })
+    .eq('id', requestId);
+  claim = row.calendar_item_id
+    ? claim.eq('calendar_item_id', row.calendar_item_id)
+    : claim.is('calendar_item_id', null);
+  const { data: claimed } = await claim.select('id').maybeSingle();
+
+  if (!claimed) return { archived: false, requestClosed: false }; // duplicate — already handled
+
+  // Archive AFTER the claim, using the id already in hand — deliberately not
+  // closeCallbackAppointment (which would re-read and re-clear the row,
+  // reopening the exact window the claim above just closed). A calendar
+  // failure here is never retried by keeping the row linked, unlike
+  // closeCallbackAppointment's own contract: the claim already committed the
+  // outcome, so a left-behind un-archived appointment is a cosmetic gap the
+  // existing orphan detector (countOrphanedCalendarAppointments) already
+  // catches — reopening the row here would risk double-counting the very
+  // thing this claim exists to prevent.
+  let archived = false;
+  if (row.calendar_item_id) {
+    const loaded = await loadBusinessConnection(admin);
+    if (loaded.ok) archived = await archiveInCalendar(loaded.connection, row.calendar_item_id, 'completed');
+  }
+
+  if (noContactClosure) await sendNoContactSms(admin, row);
+
+  return { archived, requestClosed };
+}
+
+export type RescheduleOutcome = { ok: true } | { ok: false; reason: string };
+
+/**
+ * The answered-but-not-resolved case: the caller picked up, and either asked
+ * for a different time than what they originally requested, or asked to be
+ * called again later (e.g. "let me think about it"). Both are the same
+ * mechanical need — a fresh instant to search a slot from — so both go
+ * through this one path rather than two.
+ *
+ * `exactIso` is deliberately an exact instant, not a part-of-day band like the
+ * public form uses: the admin is relaying what a real person just said on the
+ * phone, not guessing on a stranger's behalf (see CALLBACK_TIME_PREFERENCES'
+ * own comment on why 'exact' is withheld from the public form — the reasoning
+ * doesn't apply here). `requested_rank: 'nearest'` follows from the same
+ * logic: search around the instant the caller named, not only forward from it.
+ *
+ * Reuses closeCallbackAppointment for the old slot rather than duplicating its
+ * safety logic. If an existing appointment fails to delete, this refuses to
+ * proceed — updating requested_at while calendar_item_id still points at a
+ * live appointment would let the next sweep tick create a SECOND one for the
+ * same request, the exact failure mode this whole feature exists to prevent.
+ */
+export async function rescheduleCallbackRequest(
+  requestId: string,
+  exactIso: string,
+): Promise<RescheduleOutcome> {
+  const admin = createAdminClient();
+
+  const { data: row } = await admin
+    .from('callback_requests')
+    .select('calendar_item_id')
+    .eq('id', requestId)
+    .maybeSingle();
+  if (!row) return { ok: false, reason: 'not_found' };
+
+  if (row.calendar_item_id) {
+    // 'completed': the caller picked up and talked — this slot served its
+    // purpose, it is being superseded by a new one, not cancelled.
+    const closed = await closeCallbackAppointment(requestId, { reason: 'completed' });
+    if (!closed.archived) return { ok: false, reason: 'old_appointment_not_removed' };
+  }
+
+  const { error } = await admin
+    .from('callback_requests')
+    .update({
+      // Distinct from 'new': this row has already been through the pipeline
+      // once (or the admin is redirecting a still-unscheduled one). The admin
+      // list needs to be able to tell "never touched" from "was scheduled,
+      // now needs a fresh time" — that distinction is the whole point of
+      // tonight's redesign.
+      status: 'needs_reschedule',
+      requested_at: exactIso,
+      requested_rank: 'nearest',
+      scheduling_failure_reason: null,
+    })
+    .eq('id', requestId);
+  if (error) return { ok: false, reason: 'update_failed' };
+
+  return { ok: true };
 }
 
 // ── Self-healing against the calendar ───────────────────────────────────────
@@ -359,7 +763,17 @@ export async function reconcileCallbacksWithCalendar(
 
   await admin
     .from('callback_requests')
-    .update({ calendar_item_id: null, exchange_connection_id: null, scheduled_at: null })
+    .update({
+      calendar_item_id: null,
+      exchange_connection_id: null,
+      scheduled_at: null,
+      // Was 'scheduled' (that's the only way it got a calendar_item_id in the
+      // first place) — 'pending_schedule', not 'new': the system detected the
+      // mismatch and is retrying on its own, which is a different admin-list
+      // story than "nobody has looked at this yet". 'needs_reschedule' is
+      // reserved for the admin's own explicit reschedule action.
+      status: 'pending_schedule',
+    })
     .in('id', stale);
 
   return { released: stale.length };
@@ -395,7 +809,17 @@ export async function countStrandedCallbacks(
     .from('callback_requests')
     .select('id', { count: 'exact', head: true })
     .not('calendar_item_id', 'is', null)
-    .not('status', 'in', '(completed,cancelled)')
+    // 'cancelled' only, not a closed list: the status vocabulary was
+    // redesigned 2026-08-19/20 (see validation/admin.ts) into a real state
+    // machine, and 'done'/'in_progress' — this line's ORIGINAL values —
+    // don't exist as `status` anymore at all (that meaning moved to
+    // call_outcome, a separate column). Hardcoding a closed list here once
+    // already meant this filter silently excluded nothing (MEASURED
+    // 2026-08-19: it checked for 'completed', which was never a valid value
+    // for THIS column either — see git history). Exclude the one terminal
+    // value instead of enumerating the rest, so a future vocabulary change
+    // can't silently break this again.
+    .not('status', 'eq', 'cancelled')
     .lt('scheduled_at', new Date(nowMs - DAY_MS).toISOString());
   // A failed read must never masquerade as "all clear" — but it must not raise
   // a false alarm either, so it reports zero and the sweep's own error handling
@@ -488,7 +912,12 @@ export async function repairBlankCallbackBodies(
       'id, full_name, phone, topic, note, requested_at, created_at, attempt_count, calendar_item_id',
     )
     .not('calendar_item_id', 'is', null)
-    .in('status', ['new', 'in_progress'])
+    // 'in_progress' was retired from this column in the 2026-08-19/20
+    // redesign (see validation/admin.ts) — a row with calendar_item_id set
+    // is 'scheduled' by construction, so exclude only the one status that
+    // can coexist with a stale calendar_item_id mid-transition
+    // ('cancelled', briefly, if closeCallbackAppointment's own write fails).
+    .not('status', 'eq', 'cancelled')
     .gte('scheduled_at', new Date(nowMs).toISOString())
     .order('scheduled_at', { ascending: true })
     .limit(opts.limit ?? 25);
@@ -545,7 +974,7 @@ export async function repairBlankCallbackBodies(
  * sweeps.
  */
 export async function runCallbackSchedulingSweep(
-  opts: { limit?: number; nowMs?: number } = {},
+  opts: { limit?: number; nowMs?: number; boss?: PgBoss } = {},
 ): Promise<{ scheduled: number; skipped: number; released: number; repaired: number }> {
   const admin = createAdminClient();
 
@@ -581,7 +1010,19 @@ export async function runCallbackSchedulingSweep(
       'id, full_name, phone, topic, note, requested_at, created_at, attempt_count, calendar_item_id, triage_status, not_before_min, not_after_min, excluded_dates, requested_rank',
     )
     .is('calendar_item_id', null)
-    .eq('status', 'new')
+    // Exclude, don't enumerate: candidates are 'new' / 'pending_schedule' /
+    // 'needs_reschedule' — but naming them is exactly the mistake that once
+    // stranded claim_callback_triage() (see that RPC's own migration
+    // comment). 'scheduled'/'cancelled' can't structurally coexist with
+    // calendar_item_id IS NULL, 'unschedulable' is what stops automatic
+    // retries once a request's own constraints rule it out, and 'closed'
+    // (2026-08-20) is a request applyCallOutcome already finished — but the
+    // predicate names all four explicitly anyway, matching
+    // callback_requests_unscheduled_idx's WHERE clause exactly (a partial
+    // index only gets used when the query's predicate is provably no wider
+    // than the index's — Postgres won't infer the calendar_item_id/status
+    // relationship on its own).
+    .not('status', 'in', '(scheduled,cancelled,unschedulable,closed)')
     // Triage finished, OR it has waited long enough that waiting costs more
     // than the constraints would have bought.
     .or(`triage_status.in.(completed,manual_review,failed),created_at.lte.${graceCutoffIso}`)
@@ -600,6 +1041,37 @@ export async function runCallbackSchedulingSweep(
     const outcome = await scheduleCallbackAppointment(row, { nowMs: opts.nowMs });
     if (outcome.ok) {
       scheduled += 1;
+      // Best-effort trigger for the meeting-confirmation call, ~24h ahead of
+      // this slot (SS2/11a). boss is optional so every existing caller/test
+      // of this sweep keeps working unchanged; a real production tick always
+      // has one. Never let an enqueue failure stop the row from having been
+      // successfully booked — the stuck-row reconciler has no visibility into
+      // pg-boss at all, so a swallowed error here would be silent, but a
+      // thrown one would incorrectly fail an appointment that WAS booked.
+      if (opts.boss) {
+        try {
+          await enqueueMeetingConfirmDispatch(opts.boss, {
+            id: row.id,
+            topic: row.topic,
+            scheduledAtIso: outcome.startIso,
+          }, opts.nowMs);
+        } catch (e) {
+          console.error('[callback-scheduling] meeting-confirm enqueue failed', row.id, (e as Error)?.message);
+        }
+        // Sales-closing dispatch trigger — mutually exclusive with the
+        // meeting-confirm one above (topic gates both; a row can only ever
+        // match one). This is THE fix for the gap where dispatchSalesCall
+        // had no caller anywhere in the codebase.
+        try {
+          await enqueueSalesCallDispatch(opts.boss, {
+            id: row.id,
+            topic: row.topic,
+            scheduledAtIso: outcome.startIso,
+          }, opts.nowMs);
+        } catch (e) {
+          console.error('[callback-scheduling] sales-call enqueue failed', row.id, (e as Error)?.message);
+        }
+      }
     } else {
       skipped += 1;
       failures.set(outcome.reason, (failures.get(outcome.reason) ?? 0) + 1);

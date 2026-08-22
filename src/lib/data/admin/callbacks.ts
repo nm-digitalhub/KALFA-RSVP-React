@@ -3,32 +3,61 @@ import 'server-only';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { requirePlatformPermission } from '@/lib/auth/dal';
 import { logActivity } from '@/lib/data/activity';
+import {
+  applyCallOutcome,
+  closeCallbackAppointment,
+  rescheduleCallbackRequest,
+  type RescheduleOutcome,
+} from '@/lib/data/callback-scheduling';
 import type { Database } from '@/lib/supabase/types';
-import type { CallbackStatus } from '@/lib/validation/admin';
+import type { CallOutcome } from '@/lib/validation/admin';
 import { resolvePage, type PageParams, type PageResult } from './shared';
 
 // Admin: callback (call-me-back) requests. Authorized by the request-scoped
 // session under the `cb_admin_all` RLS policy, plus a server-side requireAdmin()
-// gate. `status` is free text in the DB; the UI constrains writes to the
-// CALLBACK_STATUSES vocabulary and renders unknown stored values via fallback.
+// gate. `status` and `call_outcome` are free text in the DB; the UI constrains
+// writes to the closed vocabularies in validation/admin.ts and renders
+// unknown stored values via fallback.
+//
+// Two independent dimensions since the 2026-08-19/20 redesign (see
+// validation/admin.ts for the full reasoning): `status` is the SCHEDULER's
+// state (system-driven, admin only ever sets 'cancelled' — see
+// cancelCallback), `call_outcome` is what the OWNER recorded after making the
+// call (admin-set — see updateCallOutcome). Never conflate the two again.
 
 type CallbackRow = Database['public']['Tables']['callback_requests']['Row'];
 
 export type CallbackRequest = Pick<
   CallbackRow,
-  'id' | 'full_name' | 'phone' | 'topic' | 'note' | 'status' | 'created_at' | 'updated_at'
+  | 'id'
+  | 'full_name'
+  | 'phone'
+  | 'topic'
+  | 'note'
+  | 'status'
+  | 'call_outcome'
+  | 'scheduled_at'
+  | 'created_at'
+  | 'updated_at'
 >;
 
 export const CALLBACK_COLUMNS =
-  'id, full_name, phone, topic, note, status, created_at, updated_at';
+  'id, full_name, phone, topic, note, status, call_outcome, scheduled_at, created_at, updated_at';
 
 // The detail view adds the scheduling columns the list deliberately omits: a
 // list is for triage, this is the screen the calendar item links to while the
 // phone is already ringing.
 export type CallbackRequestDetail = CallbackRequest &
-  Pick<CallbackRow, 'requested_at' | 'scheduled_at' | 'calendar_item_id' | 'attempt_count'>;
+  Pick<
+    CallbackRow,
+    | 'requested_at'
+    | 'calendar_item_id'
+    | 'attempt_count'
+    | 'scheduling_failure_reason'
+    | 'consecutive_no_answer_count'
+  >;
 
-const CALLBACK_DETAIL_COLUMNS = `${CALLBACK_COLUMNS}, requested_at, scheduled_at, calendar_item_id, attempt_count`;
+const CALLBACK_DETAIL_COLUMNS = `${CALLBACK_COLUMNS}, requested_at, calendar_item_id, attempt_count, scheduling_failure_reason, consecutive_no_answer_count`;
 
 /**
  * One callback request, or null when the id does not exist.
@@ -105,14 +134,14 @@ export async function listCallbackRequests(
   };
 }
 
-// Update a single callback request's status. The `status` is validated against
-// the closed vocabulary by the caller (Server Action) before this runs. The
-// `updated_at` column is maintained by a DB trigger / default; we set it
-// explicitly to reflect the change time and keep behavior deterministic.
-export async function updateCallbackStatus(
-  id: string,
-  status: CallbackStatus,
-): Promise<void> {
+// Cancel a request outright — the ONE scheduling-status transition an admin
+// makes directly (every other `status` value is system-driven; see
+// validation/admin.ts). The `updated_at` column is maintained by a DB
+// trigger; we don't set it explicitly here, unlike the pre-redesign version
+// of this function — cb_set_updated_at (migration
+// 20260819212112_callback_status_outcome_split.sql) handles it on every
+// UPDATE now, so a second explicit write would just be redundant.
+export async function cancelCallback(id: string): Promise<void> {
   await requirePlatformPermission('view_customer_data');
 
   const supabase = createAdminClient();
@@ -123,24 +152,94 @@ export async function updateCallbackStatus(
     .maybeSingle();
 
   if (currentError) {
-    throw new Error('עדכון הסטטוס נכשל');
+    throw new Error('ביטול הבקשה נכשל');
   }
 
   const { error } = await supabase
     .from('callback_requests')
-    .update({ status, updated_at: new Date().toISOString() })
+    .update({ status: 'cancelled' })
     .eq('id', id);
 
   if (error) {
-    throw new Error('עדכון הסטטוס נכשל');
+    throw new Error('ביטול הבקשה נכשל');
   }
 
+  // A cancelled request needs no future call — its calendar appointment is
+  // archived (never deleted; see closeCallbackAppointment) so there's still a
+  // record it existed and was cancelled, not just silence. Best-effort and
+  // never blocks the cancellation itself.
+  const calendarAppointmentArchived = (
+    await closeCallbackAppointment(id, { reason: 'cancelled' })
+  ).archived;
+
   await logActivity({
-    action: 'callback.status_updated',
+    action: 'callback.cancelled',
     meta: {
       callbackRequestId: id,
       previousStatus: current?.status ?? null,
-      status,
+      calendarAppointmentArchived,
     },
   });
+}
+
+// Records what happened when the owner actually made the call — independent
+// of `status` (the scheduler's own state; see cancelCallback above and
+// validation/admin.ts). Delegates the actual state machine (archive the
+// appointment, decide whether the REQUEST closes or re-enters scheduling,
+// the three-strikes no-contact auto-close + SMS) to applyCallOutcome — same
+// gate-wraps-logic split as rescheduleCallback below wrapping
+// rescheduleCallbackRequest.
+export async function updateCallOutcome(
+  id: string,
+  callOutcome: CallOutcome,
+): Promise<void> {
+  await requirePlatformPermission('view_customer_data');
+
+  const supabase = createAdminClient();
+  const { data: current, error: currentError } = await supabase
+    .from('callback_requests')
+    .select('call_outcome')
+    .eq('id', id)
+    .maybeSingle();
+
+  if (currentError) {
+    throw new Error('עדכון תוצאת השיחה נכשל');
+  }
+
+  const result = await applyCallOutcome(id, callOutcome);
+
+  await logActivity({
+    action: 'callback.outcome_updated',
+    meta: {
+      callbackRequestId: id,
+      previousOutcome: current?.call_outcome ?? null,
+      callOutcome,
+      calendarAppointmentArchived: result.archived,
+      requestClosed: result.requestClosed,
+    },
+  });
+}
+
+/**
+ * Admin-gated wrapper around rescheduleCallbackRequest — mirrors how
+ * cancelCallback above gates its own write and then calls the request-free
+ * closeCallbackAppointment. rescheduleCallbackRequest lives in
+ * callback-scheduling.ts REQUEST-FREE (no requireUser/cookies, so the worker
+ * bundle can import that module), so it carries no authorization of its own;
+ * this is the only path a browser request can reach it through.
+ */
+export async function rescheduleCallback(
+  id: string,
+  exactIso: string,
+): Promise<RescheduleOutcome> {
+  await requirePlatformPermission('view_customer_data');
+
+  const outcome = await rescheduleCallbackRequest(id, exactIso);
+
+  await logActivity({
+    action: 'callback.rescheduled',
+    meta: { callbackRequestId: id, ok: outcome.ok, ...(outcome.ok ? {} : { reason: outcome.reason }) },
+  });
+
+  return outcome;
 }

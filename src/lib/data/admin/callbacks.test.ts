@@ -6,9 +6,16 @@ import { createAdminClient } from '@/lib/supabase/admin';
 import { requirePlatformPermission } from '@/lib/auth/dal';
 import { logActivity } from '@/lib/data/activity';
 import {
+  applyCallOutcome,
+  closeCallbackAppointment,
+  rescheduleCallbackRequest,
+} from '@/lib/data/callback-scheduling';
+import {
+  cancelCallback,
   getCallbackRequestByCalendarItem,
   listCallbackRequests,
-  updateCallbackStatus,
+  rescheduleCallback,
+  updateCallOutcome,
   CALLBACK_COLUMNS,
   type CallbackRequest,
 } from './callbacks';
@@ -17,6 +24,11 @@ vi.mock('server-only', () => ({}));
 vi.mock('@/lib/supabase/admin', () => ({ createAdminClient: vi.fn() }));
 vi.mock('@/lib/auth/dal', () => ({ requirePlatformPermission: vi.fn() }));
 vi.mock('@/lib/data/activity', () => ({ logActivity: vi.fn() }));
+vi.mock('@/lib/data/callback-scheduling', () => ({
+  applyCallOutcome: vi.fn(),
+  closeCallbackAppointment: vi.fn(),
+  rescheduleCallbackRequest: vi.fn(),
+}));
 
 function adminUser(): User {
   return { id: 'admin-1' } as unknown as User;
@@ -30,6 +42,8 @@ function row(overrides: Partial<CallbackRequest> = {}): CallbackRequest {
     topic: 'מחירים',
     note: null,
     status: 'new',
+    call_outcome: 'pending',
+    scheduled_at: null,
     created_at: '2026-06-20T10:00:00.000Z',
     updated_at: '2026-06-20T10:00:00.000Z',
     ...overrides,
@@ -39,6 +53,8 @@ function row(overrides: Partial<CallbackRequest> = {}): CallbackRequest {
 beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(requirePlatformPermission).mockResolvedValue(adminUser());
+  vi.mocked(closeCallbackAppointment).mockResolvedValue({ archived: false });
+  vi.mocked(applyCallOutcome).mockResolvedValue({ archived: false, requestClosed: false });
 });
 
 // The calendar dialog renders a dialable number and a working link from THIS
@@ -138,8 +154,11 @@ describe('listCallbackRequests', () => {
   });
 });
 
-describe('updateCallbackStatus', () => {
-  it('enforces the admin gate and updates the matching row', async () => {
+// Redesigned 2026-08-19/20: this used to be updateCallbackStatus, setting
+// `status` to any of new/in_progress/done/cancelled. Cancelling is now the
+// ONLY status transition an admin makes directly — see validation/admin.ts.
+describe('cancelCallback', () => {
+  it('enforces the admin gate and cancels the matching row', async () => {
     const { client, builder } = createMockSupabase<CallbackRequest>({
       data: row(),
       error: null,
@@ -148,22 +167,20 @@ describe('updateCallbackStatus', () => {
       client as unknown as ReturnType<typeof createAdminClient>,
     );
 
-    await updateCallbackStatus('cb-1', 'done');
+    await cancelCallback('cb-1');
 
     expect(requirePlatformPermission).toHaveBeenCalledTimes(1);
     expect(client.from).toHaveBeenCalledWith('callback_requests');
     expect(builder.update).toHaveBeenCalledWith(
-      expect.objectContaining({ status: 'done' }),
+      expect.objectContaining({ status: 'cancelled' }),
     );
     expect(builder.eq).toHaveBeenCalledWith('id', 'cb-1');
     expect(logActivity).toHaveBeenCalledWith(
-      expect.objectContaining({
-        action: 'callback.status_updated',
-      }),
+      expect.objectContaining({ action: 'callback.cancelled' }),
     );
   });
 
-  it('does NOT update when the admin gate redirects', async () => {
+  it('does NOT cancel when the admin gate redirects', async () => {
     vi.mocked(requirePlatformPermission).mockRejectedValueOnce(
       Object.assign(new Error('NEXT_REDIRECT'), { digest: 'NEXT_REDIRECT;' }),
     );
@@ -175,9 +192,7 @@ describe('updateCallbackStatus', () => {
       client as unknown as ReturnType<typeof createAdminClient>,
     );
 
-    await expect(updateCallbackStatus('cb-1', 'done')).rejects.toThrow(
-      'NEXT_REDIRECT',
-    );
+    await expect(cancelCallback('cb-1')).rejects.toThrow('NEXT_REDIRECT');
     expect(client.from).not.toHaveBeenCalled();
   });
 
@@ -190,8 +205,161 @@ describe('updateCallbackStatus', () => {
       client as unknown as ReturnType<typeof createAdminClient>,
     );
 
-    await expect(updateCallbackStatus('cb-1', 'done')).rejects.toThrow(
-      'עדכון הסטטוס נכשל',
+    await expect(cancelCallback('cb-1')).rejects.toThrow('ביטול הבקשה נכשל');
+  });
+
+  // Regression for a measured gap (2026-08-19): closing a request never used
+  // to touch its calendar appointment at all, leaving it to sit there forever.
+  // Redesigned 2026-08-20: the appointment is archived (never deleted) and
+  // marked distinctly from a completed call — see closeCallbackAppointment.
+  it('archives the calendar appointment as cancelled (not deleted)', async () => {
+    const { client } = createMockSupabase<CallbackRequest>({
+      data: row(),
+      error: null,
+    });
+    vi.mocked(createAdminClient).mockReturnValue(
+      client as unknown as ReturnType<typeof createAdminClient>,
     );
+    vi.mocked(closeCallbackAppointment).mockResolvedValue({ archived: true });
+
+    await cancelCallback('cb-1');
+
+    expect(closeCallbackAppointment).toHaveBeenCalledWith('cb-1', { reason: 'cancelled' });
+    expect(logActivity).toHaveBeenCalledWith(
+      expect.objectContaining({
+        meta: expect.objectContaining({ calendarAppointmentArchived: true }),
+      }),
+    );
+  });
+});
+
+// A fully separate dimension from `status` — what the owner recorded after
+// making the call. See validation/admin.ts. Redesigned 2026-08-20: the actual
+// state machine (archive, retry-vs-close, three-strikes no-contact) now lives
+// in applyCallOutcome (callback-scheduling.ts) — updateCallOutcome is a thin
+// gate-then-delegate wrapper, same split as rescheduleCallback below wrapping
+// rescheduleCallbackRequest. Its own coverage (retry logic, the atomic claim,
+// the SMS) lives in callback-scheduling.test.ts.
+describe('updateCallOutcome', () => {
+  it('enforces the admin gate and delegates to applyCallOutcome', async () => {
+    const { client } = createMockSupabase<CallbackRequest>({
+      data: row(),
+      error: null,
+    });
+    vi.mocked(createAdminClient).mockReturnValue(
+      client as unknown as ReturnType<typeof createAdminClient>,
+    );
+    vi.mocked(applyCallOutcome).mockResolvedValue({ archived: true, requestClosed: false });
+
+    await updateCallOutcome('cb-1', 'completed');
+
+    expect(requirePlatformPermission).toHaveBeenCalledTimes(1);
+    expect(applyCallOutcome).toHaveBeenCalledWith('cb-1', 'completed');
+    expect(logActivity).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'callback.outcome_updated',
+        meta: expect.objectContaining({
+          callbackRequestId: 'cb-1',
+          callOutcome: 'completed',
+          calendarAppointmentArchived: true,
+          requestClosed: false,
+        }),
+      }),
+    );
+  });
+
+  it('does NOT delegate when the admin gate redirects', async () => {
+    vi.mocked(requirePlatformPermission).mockRejectedValueOnce(
+      Object.assign(new Error('NEXT_REDIRECT'), { digest: 'NEXT_REDIRECT;' }),
+    );
+
+    await expect(updateCallOutcome('cb-1', 'completed')).rejects.toThrow('NEXT_REDIRECT');
+    expect(applyCallOutcome).not.toHaveBeenCalled();
+  });
+
+  it('throws a safe error when reading the current outcome fails, without delegating', async () => {
+    const { client } = createMockSupabase<CallbackRequest>({
+      data: row(),
+      error: { message: 'nope' },
+    });
+    vi.mocked(createAdminClient).mockReturnValue(
+      client as unknown as ReturnType<typeof createAdminClient>,
+    );
+
+    await expect(updateCallOutcome('cb-1', 'completed')).rejects.toThrow(
+      'עדכון תוצאת השיחה נכשל',
+    );
+    expect(applyCallOutcome).not.toHaveBeenCalled();
+  });
+
+  it('records the outcome BEFORE the change, from the row it read first', async () => {
+    const { client } = createMockSupabase<CallbackRequest>({
+      data: row({ call_outcome: 'no_answer' }),
+      error: null,
+    });
+    vi.mocked(createAdminClient).mockReturnValue(
+      client as unknown as ReturnType<typeof createAdminClient>,
+    );
+    vi.mocked(applyCallOutcome).mockResolvedValue({ archived: true, requestClosed: true });
+
+    await updateCallOutcome('cb-1', 'closed');
+
+    expect(logActivity).toHaveBeenCalledWith(
+      expect.objectContaining({
+        meta: expect.objectContaining({ previousOutcome: 'no_answer', callOutcome: 'closed' }),
+      }),
+    );
+  });
+});
+
+// Regression for the scenario raised 19.08: the caller answered and asked for
+// a different time, or asked to be called again later. rescheduleCallback is
+// the only path a browser request can reach rescheduleCallbackRequest through
+// — that function lives in the REQUEST-FREE callback-scheduling.ts and
+// carries no authorization of its own.
+describe('rescheduleCallback', () => {
+  const NEW_ISO = '2026-09-01T10:00:00.000Z';
+
+  it('enforces the admin gate before delegating', async () => {
+    vi.mocked(rescheduleCallbackRequest).mockResolvedValue({ ok: true });
+
+    await rescheduleCallback('cb-1', NEW_ISO);
+
+    expect(requirePlatformPermission).toHaveBeenCalledWith('view_customer_data');
+    expect(rescheduleCallbackRequest).toHaveBeenCalledWith('cb-1', NEW_ISO);
+  });
+
+  it('does NOT reschedule when the admin gate redirects', async () => {
+    vi.mocked(requirePlatformPermission).mockRejectedValueOnce(
+      Object.assign(new Error('NEXT_REDIRECT'), { digest: 'NEXT_REDIRECT;' }),
+    );
+
+    await expect(rescheduleCallback('cb-1', NEW_ISO)).rejects.toThrow('NEXT_REDIRECT');
+    expect(rescheduleCallbackRequest).not.toHaveBeenCalled();
+  });
+
+  it('logs the outcome either way', async () => {
+    vi.mocked(rescheduleCallbackRequest).mockResolvedValue({
+      ok: false,
+      reason: 'old_appointment_not_removed',
+    });
+
+    await rescheduleCallback('cb-1', NEW_ISO);
+
+    expect(logActivity).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'callback.rescheduled',
+        meta: expect.objectContaining({
+          callbackRequestId: 'cb-1',
+          ok: false,
+          reason: 'old_appointment_not_removed',
+        }),
+      }),
+    );
+  });
+
+  it('returns the outcome from rescheduleCallbackRequest unchanged', async () => {
+    vi.mocked(rescheduleCallbackRequest).mockResolvedValue({ ok: true });
+    await expect(rescheduleCallback('cb-1', NEW_ISO)).resolves.toEqual({ ok: true });
   });
 });

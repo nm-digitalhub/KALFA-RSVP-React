@@ -4,9 +4,16 @@ import { notFound } from 'next/navigation';
 
 import { requirePlatformPermission } from '@/lib/auth/dal';
 import { getCallbackRequest } from '@/lib/data/admin/callbacks';
-import { callbackStatusLabel } from '@/lib/data/admin/labels';
-import { PageHeading, formatDateTime } from '../../_components';
-import { CallbackStatusForm } from '../callback-status-form';
+import {
+  callbackStatusLabel,
+  callbackStatusVariant,
+  callOutcomeLabel,
+  schedulingFailureLabel,
+} from '@/lib/data/admin/labels';
+import { PageHeading, formatDateTime, Badge } from '../../_components';
+import { CancelCallbackForm } from '../cancel-callback-form';
+import { CallOutcomeForm } from '../call-outcome-form';
+import { RescheduleForm } from '../reschedule-form';
 
 export const metadata: Metadata = { title: 'פרטי בקשת חזרה' };
 
@@ -58,6 +65,14 @@ export default async function CallbackDetailPage({
             ניסיונות קודמים: {callback.attempt_count}
           </p>
         )}
+        {/* Only surfaced once it's actually building toward the 3-attempt
+            auto-close (applyCallOutcome) — zero is the ordinary state and
+            would just be noise here. */}
+        {callback.consecutive_no_answer_count > 0 && (
+          <p className="mt-1 text-sm text-warning">
+            ניסיונות רצופים ללא מענה: {callback.consecutive_no_answer_count}/3
+          </p>
+        )}
       </div>
 
       <dl className="grid gap-4 sm:grid-cols-2">
@@ -66,8 +81,17 @@ export default async function CallbackDetailPage({
           <dd className="mt-1 text-sm">{callback.topic || '—'}</dd>
         </div>
         <div>
-          <dt className="text-xs font-medium text-muted-foreground">סטטוס</dt>
-          <dd className="mt-1 text-sm">{callbackStatusLabel(callback.status)}</dd>
+          <dt className="text-xs font-medium text-muted-foreground">סטטוס שיבוץ</dt>
+          <dd className="mt-1 text-sm">
+            <Badge variant={callbackStatusVariant(callback.status)}>
+              {callbackStatusLabel(callback.status)}
+            </Badge>
+            {callback.status === 'unschedulable' && callback.scheduling_failure_reason && (
+              <p className="mt-1 text-xs text-muted-foreground">
+                סיבה: {schedulingFailureLabel(callback.scheduling_failure_reason)}
+              </p>
+            )}
+          </dd>
         </div>
         <div>
           <dt className="text-xs font-medium text-muted-foreground">התקבלה</dt>
@@ -102,9 +126,27 @@ export default async function CallbackDetailPage({
         </div>
       )}
 
+      {/* Two independent dimensions — see validation/admin.ts. "סטטוס שיבוץ"
+          above is the scheduler's own state; this is what YOU record after
+          making the call. */}
       <div className="border-t border-border pt-4">
-        <p className="mb-2 text-xs font-medium text-muted-foreground">עדכון סטטוס</p>
-        <CallbackStatusForm id={callback.id} currentStatus={callback.status} />
+        <p className="mb-2 text-xs font-medium text-muted-foreground">תוצאת שיחה</p>
+        <p className="mb-2 text-sm">{callOutcomeLabel(callback.call_outcome)}</p>
+        <CallOutcomeForm id={callback.id} currentOutcome={callback.call_outcome} />
+      </div>
+
+      {/* Answered, but not resolved: a different time was requested, or the
+          caller asked to be called again later. Closes the current slot (if
+          any) and opens a fresh one from the chosen instant. */}
+      <div className="border-t border-border pt-4">
+        <p className="mb-2 text-xs font-medium text-muted-foreground">
+          ביקש/ה לחזור במועד אחר
+        </p>
+        <RescheduleForm id={callback.id} />
+      </div>
+
+      <div className="border-t border-border pt-4">
+        <CancelCallbackForm id={callback.id} currentStatus={callback.status} />
       </div>
     </div>
   );

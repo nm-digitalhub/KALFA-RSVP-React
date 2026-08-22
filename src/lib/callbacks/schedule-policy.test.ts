@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  clampIntoCallbackWindow,
   DEFAULT_CALLBACK_POLICY,
   findCallbackSlot,
   localInstant,
@@ -772,5 +773,40 @@ describe('rank: nearest to the moment the caller asked for', () => {
     expect(got.ok).toBe(true);
     // Saturday cannot host it; the nearest workable day answers instead.
     if (got.ok) expect(day(got.startMs)).toBe(SUN);
+  });
+});
+
+describe('clampIntoCallbackWindow', () => {
+  it('returns the same instant when it already falls inside the window', () => {
+    const target = at(TUE, '11:00');
+    expect(clampIntoCallbackWindow(target)).toBe(target);
+  });
+
+  it('clamps forward to the same day\'s window start when too early', () => {
+    const target = at(TUE, '03:00');
+    expect(day(clampIntoCallbackWindow(target))).toBe(TUE);
+    expect(hhmm(clampIntoCallbackWindow(target))).toBe('09:00');
+  });
+
+  it('clamps to the NEXT day\'s window start when past today\'s window end', () => {
+    const target = at(TUE, '20:00');
+    const got = clampIntoCallbackWindow(target);
+    expect(day(got)).toBe('2026-07-29'); // Wednesday
+    expect(hhmm(got)).toBe('09:00');
+  });
+
+  it('skips a closed day (Saturday) entirely', () => {
+    const target = at(FRI, '14:00'); // past Friday's 13:00 close
+    const got = clampIntoCallbackWindow(target);
+    expect(day(got)).toBe(SUN);
+    expect(hhmm(got)).toBe('09:00');
+  });
+
+  it('honours Friday\'s shorter window end (13:00, not 18:00)', () => {
+    const target = at(FRI, '12:00');
+    expect(clampIntoCallbackWindow(target)).toBe(target);
+    const late = at(FRI, '13:30');
+    const got = clampIntoCallbackWindow(late);
+    expect(day(got)).toBe(SUN);
   });
 });

@@ -7,7 +7,7 @@ import { getEmailSender } from '@/lib/email/sender';
 import { getAppOrigin } from '@/lib/url';
 import { inquiryReplyEmail } from '@/lib/email/templates';
 import type { Database } from '@/lib/supabase/types';
-import type { CallbackStatus } from '@/lib/validation/admin';
+import type { ContactStatus } from '@/lib/validation/admin';
 import { resolvePage, type PageParams, type PageResult } from './shared';
 
 // Admin: contact-form + in-app support submissions (the single inquiry entity).
@@ -85,7 +85,7 @@ export async function listContactMessages(
 // non-terminal → cleared.
 export async function updateContactStatus(
   id: string,
-  status: CallbackStatus,
+  status: ContactStatus,
 ): Promise<void> {
   await requirePlatformPermission('view_customer_data');
 

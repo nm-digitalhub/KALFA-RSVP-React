@@ -2,31 +2,94 @@ import { describe, expect, it } from 'vitest';
 
 import {
   CALLBACK_STATUSES,
-  callbackStatusEnum,
-  updateCallbackStatusSchema,
+  CALL_OUTCOMES,
+  CONTACT_STATUSES,
+  callOutcomeEnum,
+  updateCallOutcomeSchema,
+  cancelCallbackSchema,
+  contactStatusEnum,
+  updateContactStatusSchema,
   packageBaseSchema,
   operationalFieldsSchema,
   holdBufferFractionToPercent,
   appRoleEnum,
 } from './admin';
 
-describe('callbackStatusEnum', () => {
+// Redesigned 2026-08-19/20: callback_requests.status is now a system-driven
+// scheduling state machine with no dedicated enum/schema of its own (only
+// 'cancelled' is admin-settable, via cancelCallbackSchema below). What used to
+// be callbackStatusEnum/updateCallbackStatusSchema is now split into
+// callOutcomeEnum/updateCallOutcomeSchema (what happened on the call) and
+// contactStatusEnum/updateContactStatusSchema (the unrelated contacts vocabulary).
+
+describe('callOutcomeEnum', () => {
   it('accepts every value in the closed vocabulary', () => {
-    for (const s of CALLBACK_STATUSES) {
-      expect(callbackStatusEnum.safeParse(s).success).toBe(true);
+    for (const o of CALL_OUTCOMES) {
+      expect(callOutcomeEnum.safeParse(o).success).toBe(true);
     }
   });
 
   it('rejects values outside the vocabulary', () => {
-    expect(callbackStatusEnum.safeParse('bogus').success).toBe(false);
-    expect(callbackStatusEnum.safeParse('').success).toBe(false);
+    expect(callOutcomeEnum.safeParse('bogus').success).toBe(false);
+    expect(callOutcomeEnum.safeParse('').success).toBe(false);
   });
 });
 
-describe('updateCallbackStatusSchema', () => {
-  it('accepts a uuid id with a valid status', () => {
-    const result = updateCallbackStatusSchema.safeParse({
+describe('updateCallOutcomeSchema', () => {
+  it('accepts a uuid id with a valid outcome', () => {
+    const result = updateCallOutcomeSchema.safeParse({
       // A real RFC-9562 v4 UUID (matches gen_random_uuid output shape).
+      id: 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11',
+      callOutcome: 'completed',
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('rejects a non-uuid id', () => {
+    const result = updateCallOutcomeSchema.safeParse({
+      id: 'not-a-uuid',
+      callOutcome: 'completed',
+    });
+    expect(result.success).toBe(false);
+  });
+});
+
+describe('cancelCallbackSchema', () => {
+  it('accepts a uuid id', () => {
+    const result = cancelCallbackSchema.safeParse({
+      id: 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11',
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('rejects a non-uuid id', () => {
+    const result = cancelCallbackSchema.safeParse({ id: 'not-a-uuid' });
+    expect(result.success).toBe(false);
+  });
+});
+
+describe('contactStatusEnum', () => {
+  it('accepts every value in the closed vocabulary', () => {
+    for (const s of CONTACT_STATUSES) {
+      expect(contactStatusEnum.safeParse(s).success).toBe(true);
+    }
+  });
+
+  it('rejects values outside the vocabulary, including the old scheduling states', () => {
+    expect(contactStatusEnum.safeParse('bogus').success).toBe(false);
+    expect(contactStatusEnum.safeParse('').success).toBe(false);
+    // pending_schedule/scheduled/etc. are callback-scheduling states now — a
+    // contact message must never accept them.
+    for (const s of CALLBACK_STATUSES) {
+      if ((CONTACT_STATUSES as readonly string[]).includes(s)) continue;
+      expect(contactStatusEnum.safeParse(s).success).toBe(false);
+    }
+  });
+});
+
+describe('updateContactStatusSchema', () => {
+  it('accepts a uuid id with a valid status', () => {
+    const result = updateContactStatusSchema.safeParse({
       id: 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11',
       status: 'done',
     });
@@ -34,7 +97,7 @@ describe('updateCallbackStatusSchema', () => {
   });
 
   it('rejects a non-uuid id', () => {
-    const result = updateCallbackStatusSchema.safeParse({
+    const result = updateContactStatusSchema.safeParse({
       id: 'not-a-uuid',
       status: 'done',
     });

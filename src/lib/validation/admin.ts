@@ -11,36 +11,115 @@ import { z } from 'zod';
 import { Constants } from '@/lib/supabase/types';
 import type { Database } from '@/lib/supabase/types';
 
-// --- callback_requests.status (free text in DB → app-level vocabulary) ---
-// New rows default to 'new' (the DB default is the literal string 'new' per the
-// column default; we keep the same token here). These are the statuses an admin
-// can SET via the UI. Unknown stored values still render via the label fallback.
+// --- callback_requests.status: SCHEDULING status (free text in DB, CHECK-
+// constrained as `callback_requests_status_valid` — mirrors the existing
+// triage_status pattern on the same table) ---
+//
+// Redesigned 2026-08-19/20: the old 4-value vocabulary (new/in_progress/done/
+// cancelled) conflated two unrelated things — whether the SCHEDULER booked a
+// calendar slot, and whether the OWNER finished handling the customer after
+// the call. A request the scheduler successfully booked still showed 'new'
+// in the admin list, indistinguishable from one nobody had touched yet, even
+// a month later. `status` now describes ONLY the scheduler's side; the
+// owner's side is CALL_OUTCOMES below, a fully separate column.
+//
+// System-driven, not admin-set, except 'cancelled':
+//   new             → created, nothing has touched it yet.
+//   pending_schedule → claim_callback_triage() or the scheduling sweep has
+//                      picked it up; no calendar slot exists yet.
+//   scheduled       → calendar_item_id/scheduled_at are set.
+//   needs_reschedule → an admin asked to reschedule it (rescheduleCallback);
+//                      the old slot is closed, a fresh one is pending.
+//   unschedulable   → the scheduler hit a hard failure it cannot resolve on
+//                      retry (paired with scheduling_failure_reason).
+//   cancelled       → the ONLY value an admin sets directly — the request is
+//                      no longer being pursued at all.
+//   closed          → system-set (2026-08-20): the request reached a
+//                      terminal call_outcome (completed/closed/no_contact —
+//                      see applyCallOutcome in callback-scheduling.ts).
+//                      Distinct from 'cancelled': nobody proactively stopped
+//                      pursuing this — the work is simply done.
 export const CALLBACK_STATUSES = [
   'new',
-  'in_progress',
-  'done',
+  'pending_schedule',
+  'scheduled',
+  'needs_reschedule',
+  'unschedulable',
   'cancelled',
+  'closed',
 ] as const;
 
 export type CallbackStatus = (typeof CALLBACK_STATUSES)[number];
 
-// Enum schema for the status update action. Rejects anything outside the
-// closed vocabulary with a safe Hebrew message.
-export const callbackStatusEnum = z.enum(CALLBACK_STATUSES, {
+// --- callback_requests.call_outcome: what happened when the owner actually
+// made the call — independent of scheduling status. Defaults to 'pending' on
+// every row; the admin sets it after (or instead of) making the call. ---
+export const CALL_OUTCOMES = [
+  'pending',
+  'completed',
+  'no_answer',
+  'needs_followup',
+  'closed',
+] as const;
+
+export type CallOutcome = (typeof CALL_OUTCOMES)[number];
+
+export const callOutcomeEnum = z.enum(CALL_OUTCOMES, {
+  error: 'תוצאה לא תקינה',
+});
+
+// Form payload for recording the outcome of a call.
+export const updateCallOutcomeSchema = z.object({
+  id: z.string().uuid({ error: 'מזהה לא תקין' }),
+  callOutcome: callOutcomeEnum,
+});
+
+// Form payload for cancelling a request outright — the only scheduling-status
+// transition an admin makes directly.
+export const cancelCallbackSchema = z.object({
+  id: z.string().uuid({ error: 'מזהה לא תקין' }),
+});
+
+// Form payload for rescheduling a callback to a new admin-chosen instant —
+// the caller answered but asked for a different time, or asked to be called
+// again later. `exactAt` is an ISO instant built client-side from a
+// datetime-local input (same pattern as event-form-fields.tsx: `new
+// Date(value).toISOString()`, trusting the admin's own browser is on Israel
+// time — the only browser this panel is used from). Must be in the future:
+// a past instant would search for a slot that can never be found.
+export const rescheduleCallbackSchema = z.object({
+  id: z.string().uuid({ error: 'מזהה לא תקין' }),
+  exactAt: z
+    .string()
+    .refine((v) => {
+      const ms = Date.parse(v);
+      return !Number.isNaN(ms) && ms > Date.now();
+    }, 'נא לבחור מועד עתידי תקין'),
+});
+
+// --- contact_messages.status: its own independent vocabulary ---
+//
+// Used to reuse CALLBACK_STATUSES directly ("one inquiry status system, not
+// two"). That stopped being true 2026-08-19/20 when callback_requests.status
+// was redesigned into a scheduling-specific state machine (pending_schedule/
+// scheduled/unschedulable make no sense for a contact-form message, which has
+// no scheduler at all) — so contact messages now get their own vocabulary,
+// unchanged from what callbacks used to share: the general "has anyone
+// handled this" states. `reopened` is a fifth value contact_messages can
+// carry (a customer wrote back on an already-answered thread) but is
+// system-set only — never offered as a pickable option — see
+// CONTACT_ONLY_STATUS_LABELS in labels.ts.
+export const CONTACT_STATUSES = ['new', 'in_progress', 'done', 'cancelled'] as const;
+export type ContactStatus = (typeof CONTACT_STATUSES)[number];
+
+export const contactStatusEnum = z.enum(CONTACT_STATUSES, {
   error: 'סטטוס לא תקין',
 });
 
-// Form payload for updating a single callback request's status.
-export const updateCallbackStatusSchema = z.object({
-  id: z.string().uuid({ error: 'מזהה לא תקין' }),
-  status: callbackStatusEnum,
-});
-
-// Form payload for updating a single contact message's status. Reuses the
-// SAME closed vocabulary as callbacks — one inquiry status system, not two.
+// Form payload for updating a single contact message's status.
 export const updateContactStatusSchema = z.object({
   id: z.string().uuid({ error: 'מזהה לא תקין' }),
-  status: callbackStatusEnum,
+  status: contactStatusEnum,
 });
 
 // Form payload for sending an email reply to a contact message. The reply body

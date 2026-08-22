@@ -13,6 +13,32 @@ import type { AppointmentDraft } from '@/lib/exchange-ews/types';
 /** Outlook category, so everything this feature writes is filterable there. */
 export const CALLBACK_CATEGORY = 'KALFA — שיחת לקוח';
 
+// A closed callback's appointment is never deleted — it stays in the calendar
+// as a muted historical record (see closeCallbackAppointment). These two
+// categories distinguish "the call happened / no more action needed" from
+// "cancelled before ever happening" at a glance, without touching CALLBACK_
+// CATEGORY (which still marks a LIVE, open item).
+export const CALLBACK_CLOSED_CATEGORY = 'KALFA — שיחה שהושלמה';
+export const CALLBACK_CANCELLED_CATEGORY = 'KALFA — בוטל';
+
+const ARCHIVED_MARK = '✓ ';
+const CANCELLED_MARK = '✗ בוטל: ';
+const ARCHIVE_MARK_RE = /^(✓ |✗ בוטל: )/;
+
+/**
+ * Marks an existing appointment's subject as archived, in place — the title
+ * itself is the one signal that survives even if the category has no colour
+ * assigned yet in Outlook (a fresh category name shows uncoloured until
+ * someone picks a colour for it once, in the desktop client).
+ *
+ * Idempotent: re-closing an already-marked subject (e.g. a retried close)
+ * replaces the existing mark instead of stacking a second one.
+ */
+export function archiveCallbackSubject(subject: string, reason: 'completed' | 'cancelled'): string {
+  const mark = reason === 'cancelled' ? CANCELLED_MARK : ARCHIVED_MARK;
+  return mark + subject.replace(ARCHIVE_MARK_RE, '');
+}
+
 /** Owner decision 28.07. */
 export const CALLBACK_REMINDER_MINUTES = 10;
 

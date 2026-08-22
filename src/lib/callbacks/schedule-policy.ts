@@ -86,6 +86,41 @@ export function localInstant(dateStr: string, minutes: number): number {
   return Date.parse(ilWallTimeToIso(dateStr, `${hh}:${mm}`));
 }
 
+/**
+ * The next instant at or after `targetMs` that falls inside `policy.weekday`'s
+ * business-hours window. Used to turn "~24h before the meeting" into a legal
+ * calling time for the meeting-confirmation dispatch trigger (plan §2: "אם 24
+ * שעות לפני נופל מחוץ לחלון — להזיז קדימה לתחילת החלון הבא").
+ *
+ * Deliberately does NOT consult the Shabbat/Yom-Tov calendar
+ * (buildJewishCalendar) — that engine answers "is the OWNER's calendar free",
+ * a live-Exchange concern findCallbackSlot already owns; this only answers
+ * "is this a plausible hour to dial at all". The actual dispatch gate
+ * (evaluateSharedConsentGates, DIAL_GATE_POLICY.callback) re-checks hours
+ * fresh at fire time regardless, so an imprecise clamp here (e.g. landing on
+ * a weekday that happens to be a Jewish holiday) is caught there, not silently
+ * acted on — this function only needs to get close, not be exhaustive.
+ */
+export function clampIntoCallbackWindow(
+  targetMs: number,
+  policy: CallbackPolicy = DEFAULT_CALLBACK_POLICY,
+): number {
+  let cursor = targetMs;
+  // Bounded to a generous 21 days so a policy with every day closed (a config
+  // error, never DEFAULT_CALLBACK_POLICY's own shape) cannot loop forever —
+  // it falls through to returning the last cursor checked instead.
+  for (let i = 0; i < 21; i += 1) {
+    const { date, weekday, minutes } = localParts(cursor);
+    const window = policy.weekday[weekday];
+    if (window) {
+      if (minutes < window.startMin) return localInstant(date, window.startMin);
+      if (minutes <= window.endMin) return cursor;
+    }
+    cursor = localInstant(addCalendarDays(date, 1), 0);
+  }
+  return cursor;
+}
+
 // ── The caller's stated preference ──────────────────────────────────────────
 
 /**
