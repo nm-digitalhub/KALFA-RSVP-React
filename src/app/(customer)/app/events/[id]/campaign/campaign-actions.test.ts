@@ -215,4 +215,51 @@ describe('settleCampaignAction', () => {
 
     expect(result?.error).toBeDefined();
   });
+
+  // amount===0 does NOT mean nobody was reached — credits can fully cover a
+  // nonzero reached total (production case: campaign 15a8730e, 21 reached,
+  // ₪84 owed, ₪84 credit applied). The notice must not claim "no contacts
+  // reached" when contacts WERE reached.
+  it('reports zero reached when nothing_to_charge is a true zero-reach settle', async () => {
+    vi.mocked(closeCampaignAndCharge).mockResolvedValue({
+      outcome: 'nothing_to_charge',
+      amount: 0,
+      reachedCount: 0,
+      creditApplied: 0,
+    });
+
+    const result = await settleCampaignAction('e1', 'c1', null, new FormData());
+
+    expect(result?.notice).toBe('גמר חשבון הושלם — אין אנשי קשר שהושגו, אין חיוב.');
+  });
+
+  it('reports the reached count and credit coverage when credits fully offset a nonzero reach', async () => {
+    vi.mocked(closeCampaignAndCharge).mockResolvedValue({
+      outcome: 'nothing_to_charge',
+      amount: 0,
+      reachedCount: 21,
+      creditApplied: 84,
+    });
+
+    const result = await settleCampaignAction('e1', 'c1', null, new FormData());
+
+    expect(result?.notice).toContain('21');
+    expect(result?.notice).toContain('84');
+    expect(result?.notice).not.toContain('אין אנשי קשר שהושגו');
+  });
+
+  it('reports the reached count without a credit claim when no credit was applied', async () => {
+    vi.mocked(closeCampaignAndCharge).mockResolvedValue({
+      outcome: 'nothing_to_charge',
+      amount: 0,
+      reachedCount: 5,
+      creditApplied: 0,
+    });
+
+    const result = await settleCampaignAction('e1', 'c1', null, new FormData());
+
+    expect(result?.notice).toContain('5');
+    expect(result?.notice).not.toContain('קרדיט');
+    expect(result?.notice).not.toContain('אין אנשי קשר שהושגו');
+  });
 });

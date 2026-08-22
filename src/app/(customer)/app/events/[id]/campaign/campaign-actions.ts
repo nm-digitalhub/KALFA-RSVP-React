@@ -385,8 +385,23 @@ export async function settleCampaignAction(
           }),
         },
       };
-    case 'nothing_to_charge':
-      return { notice: 'גמר חשבון הושלם — אין אנשי קשר שהושגו, אין חיוב.' };
+    case 'nothing_to_charge': {
+      // amount===0 does not mean nobody was reached — credits may have fully
+      // covered a nonzero reached total (close-charge.ts CloseChargeOutcome).
+      const reached = r.reachedCount ?? 0;
+      const credit = r.creditApplied ?? 0;
+      if (reached === 0) {
+        return { notice: 'גמר חשבון הושלם — אין אנשי קשר שהושגו, אין חיוב.' };
+      }
+      if (credit > 0) {
+        return {
+          notice: `גמר חשבון הושלם — ${reached} אנשי קשר הושגו, כוסו במלואם על ידי קרדיט קיים (₪${credit}). לא בוצע חיוב לכרטיס.`,
+        };
+      }
+      return {
+        notice: `גמר חשבון הושלם — ${reached} אנשי קשר הושגו, אין חיוב.`,
+      };
+    }
     case 'disabled':
       return { error: 'החיוב הסופי אינו מופעל עדיין במערכת.' };
     case 'declined':
