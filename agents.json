@@ -3,9 +3,21 @@
         {
             "config": "agent_configs/KALFA-RSVP.json",
             "id": "agent_9701kxj3n54ye518a3s518cexd48",
-            "version_id": "agtvrsn_0301ky068ye9fn0rmefz941esrf9",
+            "version_id": "agtvrsn_8201m0n4gwkme2sav6f4zazfh6zb",
             "branch_id": "agtbrch_4101kxj3n5tqf2kae5recbbn2rtj",
             "branches": {}
+        },
+        {
+            "config": "agent_configs/KALFA-Meeting-Confirm.json",
+            "id": "agent_3601m0mt3tf3e2cvgqwak2yg54b6",
+            "version_id": "agtvrsn_8201m0n4gz43f9cazb7z76a0g4eq",
+            "branch_id": "agtbrch_0801m0mt3w3cfgar7q5w62h1q95y"
+        },
+        {
+            "config": "agent_configs/KALFA-Sales-Close.json",
+            "id": "agent_4101m0my2f2kf4qvhegat60wrgtn",
+            "version_id": "agtvrsn_1301m0n5yjepf7nvj669dz5xnxfr",
+            "branch_id": "agtbrch_7501m0my2fxtftxa3wr4gpmkhj3d"
         }
     ]
 }

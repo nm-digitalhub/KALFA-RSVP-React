@@ -1,0 +1,26 @@
+{
+    "type": "client",
+    "name": "confirm_meeting",
+    "description": "קראי לכלי הזה מיד לאחר שהליד אישר בקול שהמועד הקיים לפגישה עדיין מתאים לו. אין פרמטרים. הכלי רק מתעד את האישור — אינו כותב ליומן ואינו יכול להיכשל בדרך שדורשת התייחסות קולית.",
+    "response_timeout_secs": 10,
+    "disable_interruptions": false,
+    "interruption_mode": "allow",
+    "force_pre_tool_speech": false,
+    "pre_tool_speech": "auto",
+    "assignments": [],
+    "tool_call_sound_behavior": "auto",
+    "tool_error_handling_mode": "auto",
+    "parameters": {
+        "description": "",
+        "dynamic_variable": "",
+        "is_omitted": false,
+        "type": "object",
+        "required": [],
+        "properties": {}
+    },
+    "expects_response": true,
+    "dynamic_variables": {
+        "dynamic_variable_placeholders": {}
+    },
+    "execution_mode": "immediate"
+}

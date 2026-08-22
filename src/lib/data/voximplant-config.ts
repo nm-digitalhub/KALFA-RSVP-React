@@ -113,6 +113,82 @@ export async function getVoximplantCallbackSecret(): Promise<string | null> {
   return cfg?.callbackSecret ?? null;
 }
 
+// Shape expected by meeting-confirm-dispatch.ts's MeetingConfirmDispatchConfig
+// and sales-call-dispatch.ts's SalesCallDispatchConfig (minus appOrigin, which
+// the caller resolves separately via getAppOrigin()) — those files take this
+// as a plain parameter rather than reading app_settings themselves (see their
+// own doc comments), so this is the resolver whoever builds the confirmation-
+// dispatch / sales-dispatch sweep should call.
+export type PersonaDispatchConfig = {
+  auth: VoximplantConfig;
+  ruleId: string;
+  callerId: string;
+  minCallReserve: number;
+  lowBalanceThreshold: number;
+  maxConcurrentCalls: number;
+  callsEnabled: boolean;
+};
+
+// Shared resolver for both new personas: same service-account/caller/balance
+// thresholds as the base RSVP config (one Voximplant account), but each
+// persona has its OWN enabled toggle and rule_id — NOT the base config's
+// voximplant_live_calls/voximplant_rule_id (RSVPAgent's OutCall rule,
+// 1494311, must never carry a different persona's calls; see CLAUDE.md).
+// Fail-closed: returns null unless the base account is configured (SA + a
+// caller id) AND this persona's own rule_id is set — no fallback to the base
+// rule_id, ever. callsEnabled is this persona's own toggle AND the env kill
+// switch AND the base voximplant_live_calls DB toggle (an admin turning off
+// the master live-calls switch must silence every persona, not just RSVP).
+async function getPersonaDispatchConfig(
+  enabledColumn: string,
+  ruleIdColumn: string,
+): Promise<PersonaDispatchConfig | null> {
+  try {
+    const admin = createAdminClient();
+    const { data, error } = await admin
+      .from('app_settings')
+      .select('*')
+      .eq('id', true)
+      .maybeSingle();
+    if (error || !data) return null;
+    const row = data as Record<string, unknown>;
+
+    const auth = parseServiceAccount(str(row, 'voximplant_service_account_json'));
+    const callerId = str(row, 'voximplant_caller_id');
+    const ruleId = str(row, ruleIdColumn);
+    if (!auth || !callerId || !ruleId) return null;
+
+    return {
+      auth,
+      ruleId,
+      callerId,
+      minCallReserve: num(row, 'voximplant_min_call_reserve', 0.1),
+      lowBalanceThreshold: num(row, 'voximplant_low_balance_threshold', 5.0),
+      maxConcurrentCalls: num(row, 'voximplant_max_concurrent_calls', 5),
+      callsEnabled:
+        envAllowsLiveCalls() &&
+        row.voximplant_live_calls === true &&
+        row[enabledColumn] === true,
+    };
+  } catch {
+    return null;
+  }
+}
+
+export async function getMeetingConfirmDispatchConfig(): Promise<PersonaDispatchConfig | null> {
+  return getPersonaDispatchConfig(
+    'voximplant_meeting_confirm_enabled',
+    'voximplant_meeting_confirm_rule_id',
+  );
+}
+
+export async function getSalesCallDispatchConfig(): Promise<PersonaDispatchConfig | null> {
+  return getPersonaDispatchConfig(
+    'voximplant_sales_calls_enabled',
+    'voximplant_sales_call_rule_id',
+  );
+}
+
 // Narrow config for the account-callback verified balance pull (B5): the
 // service-account auth + the two thresholds ONLY. Deliberately does NOT require
 // rule_id/caller_id — a balance alert must work whether or not dialing is

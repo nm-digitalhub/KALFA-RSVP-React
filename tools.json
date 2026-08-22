@@ -19,6 +19,51 @@
             "type": "client",
             "config": "tool_configs/notify_owner.json",
             "id": "tool_1901kxjzme41em68xms7w4e69m2k"
+        },
+        {
+            "type": "client",
+            "config": "tool_configs/confirm_meeting.json",
+            "id": "tool_7401m0msmd5qfs497gzw23m2bd3d"
+        },
+        {
+            "type": "client",
+            "config": "tool_configs/request_reschedule.json",
+            "id": "tool_1201m0msmfqdfwgakw4zyysj1w89"
+        },
+        {
+            "type": "client",
+            "config": "tool_configs/mark_opt_out.json",
+            "id": "tool_7801m0msmjawegz83tvkqa7crd95"
+        },
+        {
+            "type": "client",
+            "config": "tool_configs/escalate_to_queue.json",
+            "id": "tool_2301m0msmmvgft89h3nt99480az4"
+        },
+        {
+            "type": "client",
+            "config": "tool_configs/get_pricing.json",
+            "id": "tool_8301m0mxkz94emvayp27p2w82tkv"
+        },
+        {
+            "type": "client",
+            "config": "tool_configs/apply_discount_tier.json",
+            "id": "tool_4601m0mxm1t2fae8tp2nj06x65xd"
+        },
+        {
+            "type": "client",
+            "config": "tool_configs/send_signup_link.json",
+            "id": "tool_7801m0mxm498ev1aad0m11f6k1m7"
+        },
+        {
+            "type": "client",
+            "config": "tool_configs/escalate_to_human.json",
+            "id": "tool_3001m0mxm6syf84tmnerqj1zhrhk"
+        },
+        {
+            "type": "client",
+            "config": "tool_configs/log_outcome.json",
+            "id": "tool_8001m0mxm9adevp854d05p1g93kh"
         }
     ]
 }

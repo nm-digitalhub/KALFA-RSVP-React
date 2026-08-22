@@ -226,7 +226,13 @@ export const POST_EVENT_MESSAGE_KEYS = new Set(['thankyou']);
 // MM Lite optimizes delivery WITHIN the 131049 marketing-frequency cap, it
 // does not lift the cap. No `category` column exists on message_templates, so
 // (like POST_EVENT_MESSAGE_KEYS) routing is by message_key, not DB data.
-export const MARKETING_MESSAGE_KEYS = new Set(['thankyou']);
+// 'sales_signup_link' (sales-closing agent's send_signup_link tool,
+// src/app/api/voximplant/sls/tool/signup-link) is unavoidably MARKETING — a
+// cold send to a non-customer with no existing WhatsApp session (sales-
+// closing-agent-script-draft.md §5). No template with this key has been
+// submitted to/approved by Meta yet; listed here so the classification is
+// correct the moment one is.
+export const MARKETING_MESSAGE_KEYS = new Set(['thankyou', 'sales_signup_link']);
 
 // Post-event thank-you (message_key 'thankyou'). Deliberately NO venue/date —
 // the event already happened, so those positions would only ever be stale.

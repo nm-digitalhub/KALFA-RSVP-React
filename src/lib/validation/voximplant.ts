@@ -153,3 +153,127 @@ export const voxNotifyOwnerSchema = z.strictObject({
   tool_call_id: z.string().max(128).nullish(),
 });
 export type VoxNotifyOwner = z.infer<typeof voxNotifyOwnerSchema>;
+
+// --- Meeting-booking agent tools (mtg/cb/*, docs/voice-agent/plans/
+// 2026-08-22-meeting-booking-agent-plan.md §4) ---
+//
+// Unlike the RSVP agent's tools (one shared `cb/[token]` endpoint that
+// discriminates on a field already present in the payload, e.g.
+// call_status/kind), these 4 tools have no naturally-distinguishing shared
+// field — two of them (`confirm_meeting`, `mark_opt_out`) take no
+// conversational parameters at all, so a body-only discriminator would be
+// ambiguous. Each tool therefore gets its OWN URL
+// (mtg/cb/{confirm,reschedule,dnc,escalate}/[token]), mirroring the proven
+// agent-tool/{rsvp,dnc,note}/[token] convention exactly — no new ElevenLabs
+// mechanism required (verified live against the server-tools docs 2026-08-22:
+// no documented constant/non-LLM body-field type exists to discriminate a
+// single shared URL safely).
+
+// `confirm_meeting`: no conversational parameters. Log-only (§4: "לא נוגע
+// ביומן") — identity/effect come entirely from the URL-path access token.
+export const voxConfirmMeetingSchema = z.strictObject({
+  tool_call_id: z.string().max(128).nullish(),
+});
+export type VoxConfirmMeeting = z.infer<typeof voxConfirmMeetingSchema>;
+
+// `request_reschedule`: same two fields as the existing schedule_callback
+// contract (voxCallbackRequestSchema) by design (§4: "אותה סכמת strictObject
+// ... לא פונקציה חדשה"), kept as a separate type so this table's tools never
+// share a schema object with call_attempts' — a name collision on the
+// underlying literal would be a silent, hard-to-notice coupling.
+export const voxRequestRescheduleSchema = z.strictObject({
+  callback_when_text: z.string().trim().min(1).max(200),
+  callback_iso: z.string().max(40).nullish(),
+  tool_call_id: z.string().max(128).nullish(),
+});
+export type VoxRequestReschedule = z.infer<typeof voxRequestRescheduleSchema>;
+
+// `mark_opt_out`: no conversational parameters — same shape as voxMarkDncSchema
+// on purpose (§4: upserts into the SAME call_dnc_list, by normalized phone).
+export const voxMeetingOptOutSchema = z.strictObject({
+  tool_call_id: z.string().max(128).nullish(),
+});
+export type VoxMeetingOptOut = z.infer<typeof voxMeetingOptOutSchema>;
+
+// `escalate_to_queue`: reason is a closed vocabulary (§4's exact enum) so the
+// admin queue always shows a triageable label even when note_he is empty.
+// The meeting-booking scenario's OWN terminal lifecycle report (mtg/cb/[token]
+// — distinct from the 4 mtg/tool/* agent-tool schemas above). Mirrors
+// voxCallbackSchema's call_status vocabulary minus 'handed_off' /
+// 'recording_started' / rsvp_digit / rsvp_method / transcript — this persona
+// has no handoff/DTMF/RSVP concepts (plan's own non-goals). Deliberately its
+// OWN strictObject, never voxCallbackSchema itself, so a change to the RSVP
+// contract can never silently reshape this one.
+export const voxMeetingCallbackSchema = z.strictObject({
+  call_status: z.enum(['completed', 'no_answer', 'no_response', 'failed']),
+  call_duration: z
+    .number()
+    .int()
+    .min(0)
+    .max(24 * 3600)
+    .nullish(),
+  error_reason: z.string().max(256).nullish(),
+  // ADDITIVE (same pattern as voxCallbackSchema's el_conversation_id).
+  el_conversation_id: z.string().max(128).nullish(),
+});
+export type VoxMeetingCallback = z.infer<typeof voxMeetingCallbackSchema>;
+
+export const voxMeetingEscalateSchema = z.strictObject({
+  reason: z.enum([
+    'wrong_person',
+    'substantive_question',
+    'unclear_reschedule',
+    'bad_line',
+    'other',
+  ]),
+  note_he: z.string().trim().max(300).nullish(),
+  tool_call_id: z.string().max(128).nullish(),
+});
+export type VoxMeetingEscalate = z.infer<typeof voxMeetingEscalateSchema>;
+
+// The sales-closing scenario's OWN terminal lifecycle report (sls/cb) —
+// same vocabulary as voxMeetingCallbackSchema, its own strictObject for the
+// identical "never let another persona's contract change reshape this one"
+// reason.
+export const voxSalesCallbackSchema = z.strictObject({
+  call_status: z.enum(['completed', 'no_answer', 'no_response', 'failed']),
+  call_duration: z
+    .number()
+    .int()
+    .min(0)
+    .max(24 * 3600)
+    .nullish(),
+  error_reason: z.string().max(256).nullish(),
+  el_conversation_id: z.string().max(128).nullish(),
+});
+export type VoxSalesCallback = z.infer<typeof voxSalesCallbackSchema>;
+
+// apply_discount_tier — sales-closing-agent-script-draft.md §3.
+export const voxSalesDiscountSchema = z.strictObject({
+  objection_reason: z.string().trim().min(1).max(300),
+});
+export type VoxSalesDiscount = z.infer<typeof voxSalesDiscountSchema>;
+
+// send_signup_link — §3. whatsapp_consent gates the WhatsApp attempt only;
+// SMS is always the fallback (never gated on consent — see no-contact-sms.ts).
+export const voxSalesSignupLinkSchema = z.strictObject({
+  whatsapp_consent: z.boolean(),
+});
+export type VoxSalesSignupLink = z.infer<typeof voxSalesSignupLinkSchema>;
+
+// escalate_to_human — §3.
+export const voxSalesEscalateSchema = z.strictObject({
+  reason: z.string().trim().min(1).max(300),
+});
+export type VoxSalesEscalate = z.infer<typeof voxSalesEscalateSchema>;
+
+// log_outcome — §3. The enum deliberately excludes 'completed'/'no_answer'
+// (architectural-fix note, §3): those are server-computed, never agent-
+// asserted. 'escalated_to_human' is accepted here but is NOT a
+// callback_requests.call_outcome value (see the route's own comment) — it is
+// translated to 'needs_followup' before applyCallOutcome.
+export const voxSalesLogOutcomeSchema = z.strictObject({
+  outcome: z.enum(['needs_followup', 'closed', 'escalated_to_human']),
+  discount_tier_applied: z.string().max(64).nullish(),
+});
+export type VoxSalesLogOutcome = z.infer<typeof voxSalesLogOutcomeSchema>;

@@ -1,0 +1,52 @@
+{
+    "type": "client",
+    "name": "log_outcome",
+    "description": "כותב תוצאה שאינה-הצלחה על שורת בקשת השיחה: needs_followup, closed, או escalated_to_human בלבד. לעולם לא 'completed' ולעולם לא 'no_answer' — completed נקבע רק ע\"י send_signup_link כתוצאת-לוואי, ו-no_answer נקבע רק ע\"י שכבת הדיספצ'ר לפני שהשיחה התחברה לסוכן. נקרא לפני end_call בכל תרחיש שאינו הצלחה מלאה של שליחת קישור ההרשמה.",
+    "response_timeout_secs": 10,
+    "disable_interruptions": false,
+    "interruption_mode": "allow",
+    "force_pre_tool_speech": false,
+    "pre_tool_speech": "auto",
+    "assignments": [],
+    "tool_call_sound_behavior": "auto",
+    "tool_error_handling_mode": "auto",
+    "parameters": {
+        "description": "",
+        "dynamic_variable": "",
+        "is_omitted": false,
+        "type": "object",
+        "required": [
+            "outcome"
+        ],
+        "properties": {
+            "outcome": {
+                "type": "string",
+                "enum": [
+                    "needs_followup",
+                    "closed",
+                    "escalated_to_human"
+                ],
+                "description": "לעולם לא 'completed' (נכתב רק ע\"י send_signup_link) ולעולם לא 'no_answer' (נכתב רק ע\"י שכבת הדיספצ'ר — אם הסוכן פועל, השיחה נענתה).",
+                "is_system_provided": false,
+                "dynamic_variable": "",
+                "allowed_values_dynamic_variable": "",
+                "constant_value": "",
+                "is_omitted": false
+            },
+            "discount_tier_applied": {
+                "type": "string",
+                "description": "אופציונלי — מדרגת ההנחה שהוצעה בשיחה, אם הוצעה",
+                "is_system_provided": false,
+                "dynamic_variable": "",
+                "allowed_values_dynamic_variable": "",
+                "constant_value": "",
+                "is_omitted": false
+            }
+        }
+    },
+    "expects_response": true,
+    "dynamic_variables": {
+        "dynamic_variable_placeholders": {}
+    },
+    "execution_mode": "immediate"
+}

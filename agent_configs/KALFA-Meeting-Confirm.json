@@ -1,0 +1,828 @@
+{
+    "name": "KALFA Meeting Confirm",
+    "conversation_config": {
+        "asr": {
+            "quality": "high",
+            "provider": "scribe_realtime",
+            "user_input_audio_format": "pcm_16000",
+            "keywords": []
+        },
+        "turn": {
+            "turn_timeout": 4,
+            "silence_end_call_timeout": -1,
+            "mode": "turn",
+            "turn_eagerness": "eager",
+            "spelling_patience": "auto",
+            "speculative_turn": true,
+            "retranscribe_on_turn_timeout": true,
+            "turn_model": "turn_v3",
+            "interruption_ignore_terms": [
+                "כן",
+                "נכון",
+                "אהה",
+                "אה",
+                "אוקיי",
+                "אוקי",
+                "בסדר",
+                "מעולה",
+                "יופי",
+                "סבבה",
+                "בטח",
+                "ברור",
+                "הבנתי",
+                "טוב",
+                "כמובן",
+                "אמן"
+            ],
+            "interruption_ignore_term_languages": [
+                "he"
+            ],
+            "merge_with_default_ignore_terms": false,
+            "transcribe_on_disabled_interruptions": false,
+            "soft_timeout_config": {
+                "timeout_seconds": 3.0,
+                "message": "רק רגע...",
+                "additional_soft_timeout_messages": [],
+                "use_llm_generated_message": false,
+                "randomize_fillers": false,
+                "max_soft_timeouts_per_generation": 1,
+                "disable_until_first_user_message": false
+            }
+        },
+        "tts": {
+            "model_id": "eleven_v3_conversational",
+            "voice_id": "eac91g6mnNRvS4L6tF5P",
+            "supported_voices": [],
+            "expressive_mode": false,
+            "suggested_audio_tags": [],
+            "agent_output_audio_format": "pcm_16000",
+            "optimize_streaming_latency": 3,
+            "stability": 0.4,
+            "speed": 1,
+            "similarity_boost": 0.8,
+            "text_normalisation_type": "system_prompt",
+            "pronunciation_dictionary_locators": [],
+            "enable_phoneme_tags": true,
+            "audio_effects": null
+        },
+        "conversation": {
+            "text_only": false,
+            "max_duration_seconds": 300,
+            "max_duration_seconds_after_last_agent_message": null,
+            "client_events": [
+                "audio",
+                "interruption",
+                "agent_response",
+                "user_transcript",
+                "agent_response_correction",
+                "agent_tool_response",
+                "agent_chat_response_part"
+            ],
+            "file_input": {
+                "enabled": true,
+                "max_files_in_memory": 10,
+                "max_files_per_conversation": 10
+            },
+            "monitoring_enabled": false,
+            "monitoring_events": [
+                "user_transcript",
+                "agent_response",
+                "agent_response_correction"
+            ],
+            "dtmf_input_settings": null,
+            "background_sound": {
+                "volume": 0.6,
+                "crossfade_loop": false
+            },
+            "source_attribution": false
+        },
+        "language_presets": {},
+        "vad": {
+            "background_voice_detection": true
+        },
+        "realtime_model": null,
+        "agent": {
+            "first_message": "היי, {{lead_name}}? … כאן עוזר קולי אוטומטי מטעם קָלְפָה, בנוגע לבקשה שלך לשיחה חוזרת.",
+            "language": "he",
+            "hinglish_mode": false,
+            "dynamic_variables": {
+                "dynamic_variable_placeholders": {
+                    "lead_name": "",
+                    "topic_he": "",
+                    "scheduled_when_spoken": "",
+                    "scheduled_time_spoken": "",
+                    "meeting_duration_spoken": "",
+                    "caller_role": "",
+                    "kalfa_attempt_token": "",
+                    "misunderstand_count": 0
+                }
+            },
+            "disable_first_message_interruptions": false,
+            "max_conversation_duration_message": "",
+            "text_behavior_overrides": {},
+            "prompt": {
+                "prompt": "# Personality\nאתה מתאם/ת מִקָלְפָה. לא נותן/ת שם פרטי, לא מציג/ה את עצמך כאדם — אתה עוזר קולי אוטומטי מטעם קָלְפָה. עניני, קצר, נעים — זו שיחת אישור, לא שיחה חברית. כשמישהו שואל אם אתה רובוט, או \"מי אתה?\", \"זה אמיתי?\" — ענה בפשטות: \"אני עוזר קולי אוטומטי מטעם קָלְפָה, מתקשר בנוגע לבקשה שלך לשיחה חוזרת\" ומיד המשך מהנקודה שבה היית. לעולם אל תתחזה לאדם.\n\n# Environment\nשיחת טלפון יוצאת ל{{lead_name}}, שכבר פנה/תה לְקָלְפָה וכבר תואמה לו/ה שיחה אמיתית עם {{caller_role}}. {{lead_name}} לא בהכרח זוכר/ת שמילא/ה טופס. ידוע לך: {{lead_name}}, {{topic_he}}, {{scheduled_when_spoken}}, {{scheduled_time_spoken}}, {{meeting_duration_spoken}}, {{caller_role}}. שדה ריק פירושו שאין לך את המידע הזה — אל תמציא. שום פרט אחר על קָלְפָה, מחיר, או מוצר אין לך.\n\n# Tone\nעברית מדוברת, קצר מאוד — משפט או שניים לתור. בלי שפת טפסים (\"האם בכוונתך\", \"נא לאשר\") — פשוט \"זה עדיין מתאים לך?\". המטרה מושגת תוך 30–45 שניות — זו שיחת אישור קצרה, לא שיחה ארוכה. גשר תמיד: מסירת פרט יחד עם השאלה הבאה, באותה נשימה. אמור מספרים ותאריכים בקצרה, בעברית בלבד. כלל ברזל: הפלט שלך הוא אך ורק המשפט שהאורח אמור לשמוע. אל תוציא מחשבות, היגיון פנימי, תכנון, שמות כלים, אנגלית, סוגריים מרובעים או תגיות — אם צריך לחשוב, חשוב בשקט.\n\n# Goal\nיש לך נקודות דרך, לא תסריט. עבור ביניהן בזרימה טבעית.\n\n1. זיהוי. שאל בפשטות: \"מדבר/ת עם {{lead_name}}?\". אל תמסור שום פרט נוסף (נושא, זמן) לפני הזיהוי — מותר לומר רק ששמך ושאתה מטעם קָלְפָה. This step is important.\n   - לא / אדם אחר עונה -> בקש בעדינות להעביר, או ברר מתי נוח לחזור. אם צריך -> escalate_to_queue עם reason=\"wrong_person\", ואז end_call.\n   - כן -> המשך לשלב 2.\n\n2. הקשר ואישור. באותו משפט: \"בנוגע לבקשה שלך לשיחה חוזרת — קבענו לך שיחה עם נציג קָלְפָה ל{{scheduled_when_spoken}} בשעה {{scheduled_time_spoken}}, זה עדיין מתאים לך?\". This step is important.\n   - \"כן, מתאים\" -> קרא ל-confirm_meeting. לאחר תוצאה, אמור משפט חם קצר (\"מעולה, נשמח לראותך\") וקרא ל-end_call. אל תחכה לתוצאה כדי לומר משפט חם — confirm_meeting הוא log בלבד ולא נכשל בדרך שמשנה את מה שנאמר.\n   - \"לא מתאים\" ויש זמן חלופי ברור (למשל \"רק ביום שלישי\", \"אחרי הצהריים יותר טוב\") -> עבור לשלב 3.\n   - \"לא מתאים\" ואין זמן ברור, או \"תתקשרו שוב\" -> קרא ל-escalate_to_queue עם reason=\"unclear_reschedule\", אמור \"אעביר בקשה שיחזרו אליך לתאם זמן חדש\", וקרא ל-end_call.\n   - \"תסירו אותי\", בכל שלב ובכל ניסוח -> קרא מיד ל-mark_opt_out, אמור \"כמובן, הסרתי אותך — סליחה על ההפרעה\", וקרא ל-end_call. אל תנסה לשכנע. This step is important.\n   - שאלה מהותית (מחיר, מה זה קָלְפָה, פרטי המוצר) -> דחייה עדינה: \"זה בדיוק מה שנדבר עליו בשיחה עצמה\" וחזור לשאלת האישור בשלב 2. לעולם אל תענה על שאלות מהותיות — אין לך את המידע.\n\n3. reschedule עם זמן ברור. קרא ל-request_reschedule עם callback_when_text (הזמן כלשונו בעברית) ו-callback_iso (אם ניתן לחשב מ-{{system__time}}; השאר ריק אם לא בטוח). This step is important.\n   - הצלחה (\"noted\") -> **לעולם אל תאמר זמן קונקרטי חדש** — הכלי לא בחר זמן בפועל, רק תיעד בקשה. אמור רק: \"מעולה, נעדכן אותך במועד החדש\". קרא ל-end_call.\n   - כישלון (כל תוצאה אחרת) -> אל תציג את זה כהצלחה. אמור: \"לא הצלחתי לעדכן ביומן עכשיו — מישהו יחזור אליך לתאם\". קרא ל-escalate_to_queue עם reason=\"unclear_reschedule\", ואז end_call.\n\n# Tools\n- confirm_meeting\n  - מתי: מיד לאחר \"כן, מתאים\" בשלב 2.\n  - פרמטרים: אין.\n  - הכלי הוא log בלבד — אינו כותב ליומן ואינו יכול \"להיכשל\" באופן שדורש התייחסות קולית.\n\n- request_reschedule\n  - מתי: רק כשיש זמן חלופי ברור מפי האורח, לאחר \"לא מתאים\".\n  - פרמטרים:\n    - callback_when_text: הזמן כלשונו בעברית, למשל \"יום שלישי אחר הצהריים\".\n    - callback_iso: אופציונלי. הזמן הנוכחי הוא {{system__time}} (פורמט אנגלי, לחישוב בלבד — לעולם אל תקריא אותו). חשב ממנו את המועד שהאורח ציין והחזר ISO 8601. אם אינך בטוח, השאר ריק.\n  - לעולם אל תאמר בקול זמן קונקרטי חדש — ראו שלב 3.\n\n- mark_opt_out\n  - מתי: מיד כאשר מבקשים לא להתקשר יותר, בכל ניסוח.\n  - פרמטרים: אין.\n  - אל תנסה לשכנע ואל תשאל שאלות נוספות.\n\n- escalate_to_queue\n  - מתי: אדם לא נכון, שאלה שאין לך עליה תשובה שדורשת מעקב אנושי ולא רק דחייה, reschedule ללא זמן ברור, כישלון reschedule, קו גרוע/שקט חוזר.\n  - פרמטרים:\n    - reason: אחד מתוך wrong_person, substantive_question, unclear_reschedule, bad_line, other.\n    - note_he: אופציונלי, עד 300 תווים, תיאור קצר בעברית.\n  - לאחר הקריאה, סיים בנימוס ואל תבטיח פרטים על מה שיקרה הלאה.\n\n- end_call\n  - פרמטרים: reason (קצר, באנגלית, לשימוש פנימי); message — משפט הפרידה בעברית שיישמע לאורח.\n  - שים את משפט הפרידה ב-message, ואל תאמר אותו כתור נפרד לפני כן.\n  - קרא לו בסוף כל ענף, ללא יוצא מן הכלל.\n\n# Guardrails\n1. הפלט שלך הוא דיבור בלבד. אסור להוציא מחשבות, היגיון פנימי, שמות כלים, אנגלית, סוגריים מרובעים או תגיות. חשוב בשקט ודבר בעברית בלבד.\n2. \"תסירו אותי\" בכל ניסוח -> mark_opt_out מיד, בלי שכנוע.\n3. אל תמציא שום פרט שאינו במשתנים. אם שדה ריק — אל תנחש ואל תמלא מהדמיון.\n4. **לעולם אל תקריא זמן/תאריך קונקרטי חדש** לאחר request_reschedule — הכלי מעולם לא מאשר סלוט בפועל, רק מתעד בקשה. אמור רק \"נעדכן אותך\".\n5. אל תענה על שאלות מהותיות (מחיר, מוצר, \"מה זה קָלְפָה\") — דחה תמיד לשיחה עצמה.\n6. כשנשאלים מי אתה — אמור שאתה עוזר קולי אוטומטי מטעם קָלְפָה. אסור להתחזות לאדם.\n7. אל תבקש ואל תקבל פרטים אישיים מעבר לאישור/הזזת מועד. אל תדבר על תשלום או תוכן מכירתי.\n8. אל תקריא לאורח שמות משתנים, מזהים, ערכי status, שמות פרמטרים או שמות כלים.\n9. אל תבצע יותר משתי קריאות לאותו כלי עקב כשל. לאחר שני ניסיונות — escalate_to_queue וסיים.\n10. {{system__time}} מגיע בפורמט אנגלי, לחישוב בלבד — לעולם אל תקריא אותו. כשאתה מדבר על זמן, אמור אותו בעברית בלבד, מהמשתנים המדוברים ({{scheduled_when_spoken}}/{{scheduled_time_spoken}}) ולא מחישוב עצמאי.\n11. אל תניח את מינו של האורח לפי השם בלבד. העדף ניסוחים ניטרליים כאשר אפשר.\n12. אל תשתמש בלשון נקבה ביחס לעצמך — אתה עוזר דיגיטלי, כל התייחסות עצמית בלשון זכר.\n13. שיחה קצרה בכוונה — אל תמשוך אותה מעבר למה שנדרש כדי לזהות/לאשר/להזיז.\n\n# Error handling\n- שקט לאחר שאלה:\n  - בדוק שיש קו: \"הלו? שומע/ת אותי?\".\n  - אם ענו -> המשך מהנקודה שבה היית.\n  - שקט שוב -> קרא ל-update_state (מונה התקלות), ונסח את השאלה מחדש פעם אחת.\n  - שקט נוסף, או כש-misunderstand_count הגיע ל-2 -> קרא ל-escalate_to_queue עם reason=\"bad_line\", אמור \"הקו לא ברור — מישהו יחזור אליך\", וקרא ל-end_call.\n\n- אי-הבנה: קרא ל-update_state (מונה התקלות) ונסה לנסח מחדש. כאשר\n  misunderstand_count הגיע ל-2:\n  - קרא ל-escalate_to_queue עם reason=\"unclear_reschedule\" או \"other\" לפי ההקשר, אמור \"אעביר בקשה שיחזרו אליך\", וקרא ל-end_call.\n\n- קו גרוע או רעש:\n  - escalate_to_queue עם reason=\"bad_line\", אמור \"קצת קשה לי לשמוע — מישהו יחזור אליך\", end_call.\n\n- כשל כלי:\n  - אל תנחש. אל תנסה יותר מפעמיים. עבור ל-escalate_to_queue וסיים בחום.\n\n- שפה אחרת:\n  - אל תנחש תשובה ואל תשמור דבר. escalate_to_queue עם reason=\"other\", note_he=\"מחסום שפה\", end_call.",
+                "llm": "claude-haiku-4-5",
+                "opener": null,
+                "enable_reasoning_summary": false,
+                "temperature": 0.4,
+                "max_tokens": -1,
+                "tool_ids": [
+                    "tool_7401m0msmd5qfs497gzw23m2bd3d",
+                    "tool_1201m0msmfqdfwgakw4zyysj1w89",
+                    "tool_7801m0msmjawegz83tvkqa7crd95",
+                    "tool_2301m0msmmvgft89h3nt99480az4"
+                ],
+                "built_in_tools": {
+                    "update_state": {
+                        "type": "system",
+                        "name": "update_state",
+                        "description": "קרא לכלי הזה מיד אחרי כל אי-הבנה, שקט חוזר, או בעיית קו באותה שאלה — הוא סופר את התקלות. כשהמונה מגיע ל-2 ומעלה, עבור ל-escalate_to_queue.",
+                        "response_timeout_secs": 20,
+                        "disable_interruptions": false,
+                        "interruption_mode": "allow",
+                        "force_pre_tool_speech": false,
+                        "pre_tool_speech": "auto",
+                        "assignments": [
+                            {
+                                "source": "response",
+                                "dynamic_variable": "misunderstand_count",
+                                "value_path": "updates.misunderstand_count",
+                                "sanitize": false,
+                                "preserve_native_type": false
+                            }
+                        ],
+                        "tool_call_sound": null,
+                        "tool_call_sound_behavior": "auto",
+                        "tool_error_handling_mode": "auto",
+                        "params": {
+                            "system_tool_type": "update_state",
+                            "updates": [
+                                {
+                                    "type": "dynamic_variable",
+                                    "variable_name": "misunderstand_count",
+                                    "expression": {
+                                        "type": "add_operator",
+                                        "left": {
+                                            "type": "dynamic_variable",
+                                            "name": "misunderstand_count"
+                                        },
+                                        "right": {
+                                            "type": "number_literal",
+                                            "value": 1
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "memory_entry_search": null,
+                    "run_subagent": null,
+                    "request_help": null,
+                    "end_call": {
+                        "type": "system",
+                        "name": "end_call",
+                        "description": "נתק את השיחה אחרי משפט הסגירה — אחרי confirm_meeting, request_reschedule, mark_opt_out, או escalate_to_queue. לעולם אל תנתק באמצע הזיהוי או האישור, ולפני שסיימת את משפט הסיום.",
+                        "response_timeout_secs": 20,
+                        "disable_interruptions": false,
+                        "interruption_mode": "allow",
+                        "force_pre_tool_speech": false,
+                        "pre_tool_speech": "auto",
+                        "assignments": [],
+                        "tool_call_sound_behavior": "auto",
+                        "tool_error_handling_mode": "auto",
+                        "params": {
+                            "system_tool_type": "end_call"
+                        }
+                    },
+                    "language_detection": {
+                        "type": "system",
+                        "name": "language_detection",
+                        "description": "עברית היא שפת ברירת המחדל — פתח והמשך תמיד בעברית. החלף שפה רק אם האורח מדבר באופן ברור ועקבי בשפה אחרת נתמכת (אנגלית / רוסית / ערבית) — משפט שלם, לא מילה בודדת ולא עברית מעורבת. אם הדיבור בעברית, מעורב, קצר או לא ברור — הישאר בעברית ואל תחליף. אם החלפת והאורח חוזר לעברית — חזור לעברית.",
+                        "response_timeout_secs": 20,
+                        "disable_interruptions": false,
+                        "interruption_mode": "allow",
+                        "force_pre_tool_speech": false,
+                        "pre_tool_speech": "auto",
+                        "assignments": [],
+                        "tool_call_sound_behavior": "auto",
+                        "tool_error_handling_mode": "auto",
+                        "params": {
+                            "system_tool_type": "language_detection",
+                            "only_at_conversation_start": false
+                        }
+                    },
+                    "skip_turn": {
+                        "type": "system",
+                        "name": "skip_turn",
+                        "description": "כשהאורח מבקש רגע לחשוב או לבדוק עם בן/בת הזוג (\"רגע\", \"תן לי שנייה\", \"אני בודק\") — המתן בשקט תור אחד במקום למלא את השתיקה. אל תשתמש בזה כברירת מחדל לכל שתיקה רגילה.",
+                        "response_timeout_secs": 20,
+                        "disable_interruptions": false,
+                        "interruption_mode": "allow",
+                        "force_pre_tool_speech": false,
+                        "pre_tool_speech": "auto",
+                        "assignments": [],
+                        "tool_call_sound_behavior": "auto",
+                        "tool_error_handling_mode": "auto",
+                        "params": {
+                            "system_tool_type": "skip_turn"
+                        }
+                    },
+                    "voicemail_detection": {
+                        "type": "system",
+                        "name": "voicemail_detection",
+                        "description": "אם השיחה נענתה על ידי תא קולי או משיבון אוטומטי (הודעת פתיחה מוקלטת, \"השאירו הודעה אחרי הצפצוף\", טון מכני) — סיים את השיחה מיד. אל תנהל שיחה עם מכונה ואל תשאיר הודעה.",
+                        "response_timeout_secs": 20,
+                        "disable_interruptions": false,
+                        "interruption_mode": "allow",
+                        "force_pre_tool_speech": false,
+                        "pre_tool_speech": "auto",
+                        "assignments": [],
+                        "tool_call_sound_behavior": "auto",
+                        "tool_error_handling_mode": "auto",
+                        "params": {
+                            "system_tool_type": "voicemail_detection"
+                        }
+                    },
+                    "transfer_to_genesys": null,
+                    "transfer_to_genesys_chat": null,
+                    "transfer_to_genesys_bot": null
+                },
+                "enable_parallel_tool_calls": false,
+                "mcp_server_ids": [],
+                "native_mcp_server_ids": [],
+                "knowledge_base": [],
+                "bedrock_llm": null,
+                "speech_engine": null,
+                "ignore_default_personality": false,
+                "rag": {
+                    "enabled": false,
+                    "embedding_model": "e5_mistral_7b_instruct",
+                    "optional_rag_enabled": false,
+                    "max_vector_distance": 0.6,
+                    "max_documents_length": 50000,
+                    "max_retrieved_rag_chunks_count": 20,
+                    "knowledge_base_tool_info": null
+                },
+                "timezone": "Asia/Jerusalem",
+                "backup_llm_config": {
+                    "preference": "default"
+                },
+                "cascade_timeout_seconds": 4,
+                "tools": [
+                    {
+                        "type": "client",
+                        "name": "confirm_meeting",
+                        "description": "קראי לכלי הזה מיד לאחר שהליד אישר בקול שהמועד הקיים לפגישה עדיין מתאים לו. אין פרמטרים. הכלי רק מתעד את האישור — אינו כותב ליומן ואינו יכול להיכשל בדרך שדורשת התייחסות קולית.",
+                        "response_timeout_secs": 10,
+                        "disable_interruptions": false,
+                        "interruption_mode": "allow",
+                        "force_pre_tool_speech": false,
+                        "pre_tool_speech": "auto",
+                        "assignments": [],
+                        "tool_call_sound_behavior": "auto",
+                        "tool_error_handling_mode": "auto",
+                        "parameters": {
+                            "description": "",
+                            "dynamic_variable": "",
+                            "is_omitted": false,
+                            "type": "object",
+                            "required": [],
+                            "properties": {}
+                        },
+                        "expects_response": true,
+                        "dynamic_variables": {
+                            "dynamic_variable_placeholders": {}
+                        },
+                        "execution_mode": "immediate"
+                    },
+                    {
+                        "type": "client",
+                        "name": "request_reschedule",
+                        "description": "קראי לכלי הזה רק כשהליד ביקש מועד אחר לפגישה, עם זמן חלופי ברור מפיו. אם אין זמן ברור — אל תקראי לכלי הזה, עברי ל-escalate_to_queue במקום. אחרי תוצאה מוצלחת, לעולם אל תאמרי בקול זמן קונקרטי חדש — הכלי רק מתעד בקשה, לא בוחר סלוט.",
+                        "response_timeout_secs": 10,
+                        "disable_interruptions": false,
+                        "interruption_mode": "allow",
+                        "force_pre_tool_speech": false,
+                        "pre_tool_speech": "auto",
+                        "assignments": [],
+                        "tool_call_sound_behavior": "auto",
+                        "tool_error_handling_mode": "auto",
+                        "parameters": {
+                            "description": "",
+                            "dynamic_variable": "",
+                            "is_omitted": false,
+                            "type": "object",
+                            "required": [
+                                "callback_when_text"
+                            ],
+                            "properties": {
+                                "callback_when_text": {
+                                    "type": "string",
+                                    "description": "הזמן שהליד ציין למועד החדש, כלשונו בעברית (\"יום שלישי אחר הצהריים\", \"בעוד שבועיים\")",
+                                    "is_system_provided": false,
+                                    "dynamic_variable": "",
+                                    "allowed_values_dynamic_variable": "",
+                                    "constant_value": "",
+                                    "is_omitted": false
+                                },
+                                "callback_iso": {
+                                    "type": "string",
+                                    "description": "הזמן המוחלט המבוקש, ISO 8601. חשבי אותו מ-{{system__time_utc}} — הזמן הנוכחי ב-UTC, זמין לך תמיד. השאירי ריק אם אינך בטוחה בזמן המדויק — אל תנחשי.",
+                                    "is_system_provided": false,
+                                    "dynamic_variable": "",
+                                    "allowed_values_dynamic_variable": "",
+                                    "constant_value": "",
+                                    "is_omitted": false
+                                }
+                            }
+                        },
+                        "expects_response": true,
+                        "dynamic_variables": {
+                            "dynamic_variable_placeholders": {}
+                        },
+                        "execution_mode": "immediate"
+                    },
+                    {
+                        "type": "client",
+                        "name": "mark_opt_out",
+                        "description": "קראי לכלי הזה מיד כשהליד מבקש לא להתקשר אליו יותר, בכל ניסוח. אין פרמטרים. אל תנסי לשכנע ואל תשאלי שאלות נוספות.",
+                        "response_timeout_secs": 10,
+                        "disable_interruptions": false,
+                        "interruption_mode": "allow",
+                        "force_pre_tool_speech": false,
+                        "pre_tool_speech": "auto",
+                        "assignments": [],
+                        "tool_call_sound_behavior": "auto",
+                        "tool_error_handling_mode": "auto",
+                        "parameters": {
+                            "description": "",
+                            "dynamic_variable": "",
+                            "is_omitted": false,
+                            "type": "object",
+                            "required": [],
+                            "properties": {}
+                        },
+                        "expects_response": true,
+                        "dynamic_variables": {
+                            "dynamic_variable_placeholders": {}
+                        },
+                        "execution_mode": "immediate"
+                    },
+                    {
+                        "type": "client",
+                        "name": "escalate_to_queue",
+                        "description": "קראי לכלי הזה כשמדובר באדם לא נכון, שאלה מהותית שדורשת מעקב אנושי, בקשת שינוי מועד בלי זמן ברור, כישלון של request_reschedule, או קו גרוע/שקט חוזר. הכלי מנתב לתור פניות אנושי — אינו פותח שיחה חיה עם נציג.",
+                        "response_timeout_secs": 10,
+                        "disable_interruptions": false,
+                        "interruption_mode": "allow",
+                        "force_pre_tool_speech": false,
+                        "pre_tool_speech": "auto",
+                        "assignments": [],
+                        "tool_call_sound_behavior": "auto",
+                        "tool_error_handling_mode": "auto",
+                        "parameters": {
+                            "description": "",
+                            "dynamic_variable": "",
+                            "is_omitted": false,
+                            "type": "object",
+                            "required": [
+                                "reason"
+                            ],
+                            "properties": {
+                                "reason": {
+                                    "type": "string",
+                                    "description": "סיבת ההעברה לתור אנושי",
+                                    "enum": [
+                                        "wrong_person",
+                                        "substantive_question",
+                                        "unclear_reschedule",
+                                        "bad_line",
+                                        "other"
+                                    ],
+                                    "is_system_provided": false,
+                                    "dynamic_variable": "",
+                                    "allowed_values_dynamic_variable": "",
+                                    "constant_value": "",
+                                    "is_omitted": false
+                                },
+                                "note_he": {
+                                    "type": "string",
+                                    "description": "תיאור קצר בעברית להקשר, עד 300 תווים (אופציונלי)",
+                                    "is_system_provided": false,
+                                    "dynamic_variable": "",
+                                    "allowed_values_dynamic_variable": "",
+                                    "constant_value": "",
+                                    "is_omitted": false
+                                }
+                            }
+                        },
+                        "expects_response": true,
+                        "dynamic_variables": {
+                            "dynamic_variable_placeholders": {}
+                        },
+                        "execution_mode": "immediate"
+                    },
+                    {
+                        "type": "system",
+                        "name": "end_call",
+                        "description": "נתק את השיחה אחרי משפט הסגירה — אחרי confirm_meeting, request_reschedule, mark_opt_out, או escalate_to_queue. לעולם אל תנתק באמצע הזיהוי או האישור, ולפני שסיימת את משפט הסיום.",
+                        "response_timeout_secs": 20,
+                        "disable_interruptions": false,
+                        "interruption_mode": "allow",
+                        "force_pre_tool_speech": false,
+                        "pre_tool_speech": "auto",
+                        "assignments": [],
+                        "tool_call_sound_behavior": "auto",
+                        "tool_error_handling_mode": "auto",
+                        "params": {
+                            "system_tool_type": "end_call"
+                        }
+                    },
+                    {
+                        "type": "system",
+                        "name": "language_detection",
+                        "description": "עברית היא שפת ברירת המחדל — פתח והמשך תמיד בעברית. החלף שפה רק אם האורח מדבר באופן ברור ועקבי בשפה אחרת נתמכת (אנגלית / רוסית / ערבית) — משפט שלם, לא מילה בודדת ולא עברית מעורבת. אם הדיבור בעברית, מעורב, קצר או לא ברור — הישאר בעברית ואל תחליף. אם החלפת והאורח חוזר לעברית — חזור לעברית.",
+                        "response_timeout_secs": 20,
+                        "disable_interruptions": false,
+                        "interruption_mode": "allow",
+                        "force_pre_tool_speech": false,
+                        "pre_tool_speech": "auto",
+                        "assignments": [],
+                        "tool_call_sound_behavior": "auto",
+                        "tool_error_handling_mode": "auto",
+                        "params": {
+                            "system_tool_type": "language_detection",
+                            "only_at_conversation_start": false
+                        }
+                    },
+                    {
+                        "type": "system",
+                        "name": "skip_turn",
+                        "description": "כשהאורח מבקש רגע לחשוב או לבדוק עם בן/בת הזוג (\"רגע\", \"תן לי שנייה\", \"אני בודק\") — המתן בשקט תור אחד במקום למלא את השתיקה. אל תשתמש בזה כברירת מחדל לכל שתיקה רגילה.",
+                        "response_timeout_secs": 20,
+                        "disable_interruptions": false,
+                        "interruption_mode": "allow",
+                        "force_pre_tool_speech": false,
+                        "pre_tool_speech": "auto",
+                        "assignments": [],
+                        "tool_call_sound_behavior": "auto",
+                        "tool_error_handling_mode": "auto",
+                        "params": {
+                            "system_tool_type": "skip_turn"
+                        }
+                    },
+                    {
+                        "type": "system",
+                        "name": "voicemail_detection",
+                        "description": "אם השיחה נענתה על ידי תא קולי או משיבון אוטומטי (הודעת פתיחה מוקלטת, \"השאירו הודעה אחרי הצפצוף\", טון מכני) — סיים את השיחה מיד. אל תנהל שיחה עם מכונה ואל תשאיר הודעה.",
+                        "response_timeout_secs": 20,
+                        "disable_interruptions": false,
+                        "interruption_mode": "allow",
+                        "force_pre_tool_speech": false,
+                        "pre_tool_speech": "auto",
+                        "assignments": [],
+                        "tool_call_sound_behavior": "auto",
+                        "tool_error_handling_mode": "auto",
+                        "params": {
+                            "system_tool_type": "voicemail_detection"
+                        }
+                    }
+                ]
+            }
+        }
+    },
+    "platform_settings": {
+        "evaluation": {
+            "criteria": [
+                {
+                    "id": "outcome_reached",
+                    "name": "הגעה לתוצאה ברורה",
+                    "type": "prompt",
+                    "conversation_goal_prompt": "Determine whether the call reached a clear, logged outcome. Success = the agent called exactly one of confirm_meeting (lead confirmed the existing slot), request_reschedule (lead gave a clear alternative time), mark_opt_out (lead asked to be removed), or escalate_to_queue (wrong person, unclear reschedule, substantive question, bad line, or reschedule failure). Failure = the call ended with no tool called and no legitimate reason (e.g. voicemail, which is handled by the built-in voicemail_detection tool and is not a failure of this criterion).",
+                    "use_knowledge_base": false,
+                    "scope": "conversation",
+                    "llm_billed": false,
+                    "scoring_mode": "binary",
+                    "max_score": 100
+                },
+                {
+                    "id": "no_fabricated_reschedule_time",
+                    "name": "לא נקרא זמן קונקרטי אחרי reschedule",
+                    "type": "prompt",
+                    "conversation_goal_prompt": "This is the single most important check for this agent. If request_reschedule was called and returned a successful/noted result, verify the agent NEVER spoke a specific new date or time back to the lead (e.g. never said something like 'we scheduled you for Tuesday at 3pm') -- the tool only records a request, it never confirms an actual new slot. The agent should only have said something generic like 'we will update you'. Success = no concrete new time was spoken after request_reschedule, or request_reschedule was never called. Failure = the agent stated a specific new date/time as if it were confirmed.",
+                    "use_knowledge_base": false,
+                    "scope": "conversation",
+                    "llm_billed": false,
+                    "scoring_mode": "binary",
+                    "max_score": 100
+                },
+                {
+                    "id": "opt_out_honored",
+                    "name": "בקשת הסרה כובדה",
+                    "type": "prompt",
+                    "conversation_goal_prompt": "Check how removal requests were handled. Success = if at any point the lead asked, in any phrasing, not to be called again (e.g. 'תסירו אותי', 'אל תתקשרו אליי'), the agent called mark_opt_out immediately, acknowledged briefly, and ended the call with no persuasion; OR no such request was ever made, in which case score success by default. Failure = the lead asked to be removed but mark_opt_out was not called, or the agent tried to persuade before honoring the request.",
+                    "use_knowledge_base": false,
+                    "scope": "conversation",
+                    "llm_billed": false,
+                    "scoring_mode": "binary",
+                    "max_score": 100
+                },
+                {
+                    "id": "stayed_on_task",
+                    "name": "נשאר בתחום ולא בדה פרטים / לא ענה על מכירה",
+                    "type": "prompt",
+                    "conversation_goal_prompt": "Verify the agent stayed within scope. Success = the agent did not invent any detail beyond the provided variables, did not impersonate a human (admitted being a digital assistant when asked), did not discuss price or product content (deflected substantive questions to the real upcoming call instead), and did not collect any personal data beyond what is needed to confirm or reschedule. Failure = the agent fabricated a detail, claimed to be human, answered a substantive sales/product question directly, or went outside the confirm/reschedule/opt-out/escalate task.",
+                    "use_knowledge_base": false,
+                    "scope": "conversation",
+                    "llm_billed": false,
+                    "scoring_mode": "binary",
+                    "max_score": 100
+                }
+            ]
+        },
+        "widget": {
+            "variant": "full",
+            "placement": "bottom-right",
+            "expandable": "never",
+            "avatar": {
+                "type": "orb",
+                "color1": "#2792dc",
+                "color2": "#9ce6e6"
+            },
+            "feedback_mode": "during",
+            "end_feedback": {
+                "type": "rating"
+            },
+            "bg_color": "#ffffff",
+            "text_color": "#000000",
+            "btn_color": "#000000",
+            "btn_text_color": "#ffffff",
+            "border_color": "#e1e1e1",
+            "focus_color": "#000000",
+            "shareable_page_show_terms": true,
+            "terms_text": "#### Terms and conditions\n\nBy clicking \"Agree,\" and each time I interact with this AI agent, I consent to the recording, storage, and sharing of my communications with third-party service providers, and as described in the Privacy Policy.\nIf you do not wish to have your conversations recorded, please refrain from using this service.",
+            "terms_html": "<h4>Terms and conditions</h4>\n<p>By clicking &quot;Agree,&quot; and each time I interact with this AI agent, I consent to the recording, storage, and sharing of my communications with third-party service providers, and as described in the Privacy Policy.\nIf you do not wish to have your conversations recorded, please refrain from using this service.</p>\n",
+            "show_avatar_when_collapsed": false,
+            "disable_banner": false,
+            "markdown_link_allowed_hosts": [],
+            "markdown_link_include_www": true,
+            "markdown_link_allow_http": true,
+            "mic_muting_enabled": false,
+            "transcript_enabled": false,
+            "text_input_enabled": true,
+            "conversation_mode_toggle_enabled": false,
+            "default_expanded": false,
+            "always_expanded": false,
+            "dismissible": false,
+            "show_agent_status": false,
+            "show_conversation_id": true,
+            "strip_audio_tags": true,
+            "text_contents": {
+                "attach_file": null,
+                "remove_file": null,
+                "file_upload_error": null,
+                "file_type_unsupported": null,
+                "file_too_large": null,
+                "file_limit_reached": null,
+                "typing_indicator": null
+            },
+            "styles": {},
+            "show_resize_button": true,
+            "language_selector": false,
+            "supports_text_only": true,
+            "language_presets": {}
+        },
+        "data_collection": {},
+        "data_collection_scopes": {},
+        "analysis_items": {
+            "evaluation_criteria": [
+                {
+                    "source": "user",
+                    "analysis_item_id": "aitem_6001m0mt3w6ve2ysndf2y8w5xjvy",
+                    "version_id": null,
+                    "additional_version_ids": [],
+                    "scope": "conversation",
+                    "weight": null
+                },
+                {
+                    "source": "user",
+                    "analysis_item_id": "aitem_3801m0mt3w79e9js1274tp44ngrx",
+                    "version_id": null,
+                    "additional_version_ids": [],
+                    "scope": "conversation",
+                    "weight": null
+                },
+                {
+                    "source": "user",
+                    "analysis_item_id": "aitem_9101m0mt3w7ffg1rqstc3w08tdjn",
+                    "version_id": null,
+                    "additional_version_ids": [],
+                    "scope": "conversation",
+                    "weight": null
+                },
+                {
+                    "source": "user",
+                    "analysis_item_id": "aitem_5001m0mt3w7me96tmyc307m3tst0",
+                    "version_id": null,
+                    "additional_version_ids": [],
+                    "scope": "conversation",
+                    "weight": null
+                }
+            ],
+            "data_collection": []
+        },
+        "overrides": {
+            "conversation_config_override": {
+                "asr": {
+                    "keywords": false
+                },
+                "turn": {
+                    "soft_timeout_config": {
+                        "message": false,
+                        "additional_soft_timeout_messages": false
+                    }
+                },
+                "tts": {
+                    "model_id": false,
+                    "voice_id": false,
+                    "stability": false,
+                    "speed": false,
+                    "similarity_boost": false,
+                    "pronunciation_dictionary_locators": false
+                },
+                "conversation": {
+                    "text_only": false,
+                    "max_duration_seconds": false
+                },
+                "agent": {
+                    "first_message": false,
+                    "language": false,
+                    "max_conversation_duration_message": false,
+                    "prompt": {
+                        "prompt": false,
+                        "llm": false,
+                        "tool_ids": false,
+                        "native_mcp_server_ids": false,
+                        "knowledge_base": false
+                    }
+                }
+            },
+            "custom_llm_extra_body": false,
+            "enable_conversation_initiation_client_data_from_webhook": false,
+            "enable_starting_workflow_node_id_from_client": false,
+            "enable_procedure_ids_from_client": false
+        },
+        "workspace_overrides": {
+            "webhooks": {
+                "events": [
+                    "transcript"
+                ],
+                "transcript_format": "json",
+                "send_audio": false
+            }
+        },
+        "testing": {
+            "attached_tests": [],
+            "referenced_tests_ids": []
+        },
+        "archived": false,
+        "guardrails": {
+            "version": "1",
+            "focus": {
+                "is_enabled": true
+            },
+            "prompt_injection": {
+                "is_enabled": true
+            },
+            "synthetic_voice": {
+                "is_enabled": false,
+                "trigger_action": {
+                    "type": "end_call"
+                }
+            },
+            "content": {
+                "execution_mode": "streaming",
+                "config": {
+                    "sexual": {
+                        "is_enabled": false,
+                        "threshold": "medium"
+                    },
+                    "violence": {
+                        "is_enabled": false,
+                        "threshold": "medium"
+                    },
+                    "harassment": {
+                        "is_enabled": false,
+                        "threshold": "medium"
+                    },
+                    "self_harm": {
+                        "is_enabled": false,
+                        "threshold": "medium"
+                    },
+                    "profanity": {
+                        "is_enabled": false,
+                        "threshold": "medium"
+                    },
+                    "religion_or_politics": {
+                        "is_enabled": false,
+                        "threshold": "medium"
+                    },
+                    "medical_and_legal_information": {
+                        "is_enabled": false,
+                        "threshold": "medium"
+                    }
+                },
+                "trigger_action": {
+                    "type": "end_call"
+                }
+            },
+            "moderation": null,
+            "custom": {
+                "config": {
+                    "configs": [
+                        {
+                            "is_enabled": false,
+                            "name": "No concrete reschedule time spoken",
+                            "prompt": "Check whether the agent's most recent response states or implies a SPECIFIC new date or time for the meeting (e.g. \"we scheduled you for Tuesday at 3pm\", \"the new time is...\", any concrete day/date/hour presented as confirmed) after the request_reschedule tool was called earlier in this conversation. The backend system never confirms an actual new slot at the moment request_reschedule returns -- it only records a reschedule request; a real slot is chosen later, by a different process, after the call has ended. The agent must only say something generic such as \"we will update you with the new time\" -- never a specific invented date or time. Flag a violation ONLY if a specific NEW date/time is stated as if it were confirmed, after request_reschedule was called. Do NOT flag the agent repeating the ALREADY-EXISTING scheduled time it was given at the start of the call (that value is real, provided data, not invented) -- only flag a NEW time spoken after a reschedule request. Do NOT flag anything if request_reschedule was never called in this conversation.",
+                            "execution_mode": "blocking",
+                            "model": "gemini-2.5-flash",
+                            "history_message_count": 6,
+                            "history_include_tool_calls": false,
+                            "trigger_action": {
+                                "type": "retry",
+                                "feedback": "Reason: {{trigger_reason}} -- never state a specific new date or time after request_reschedule; only say the meeting time will be updated separately."
+                            },
+                            "evaluate_full_response_only": false
+                        }
+                    ]
+                }
+            }
+        },
+        "auth": {
+            "enable_auth": false,
+            "allowlist": [],
+            "require_origin_header": false
+        },
+        "call_limits": {
+            "agent_concurrency_limit": -1,
+            "daily_limit": 100000,
+            "bursting_enabled": true
+        },
+        "queueing_config": {
+            "enabled": false,
+            "wait_timeout_seconds": 180
+        },
+        "ban": null,
+        "smb_metadata": null,
+        "privacy": {
+            "record_voice": true,
+            "retention_days": -1,
+            "delete_transcript_and_pii": false,
+            "delete_audio": false,
+            "apply_to_existing_conversations": false,
+            "zero_retention_mode": false,
+            "nested_history_redaction": false,
+            "conversation_history_redaction": {
+                "enabled": false,
+                "entities": []
+            }
+        },
+        "trust_context": "unknown",
+        "analysis_llm": "gemini-2.5-flash",
+        "analysis_bedrock_llm": null,
+        "analysis_llm_billed": false,
+        "topic_discovery": {
+            "enabled": true
+        },
+        "sentiment_analysis": {
+            "enabled": true
+        },
+        "simulation_library": {
+            "enabled": false,
+            "test_ids": []
+        },
+        "alerting": null,
+        "overview_dashboard_template_id": null,
+        "safety": {
+            "is_blocked_ivc": false,
+            "is_blocked_non_ivc": false,
+            "ignore_safety_evaluation": false
+        }
+    },
+    "tags": [],
+    "workflow": {
+        "edges": {},
+        "nodes": {
+            "start_node": {
+                "type": "start",
+                "position": {
+                    "x": 0,
+                    "y": 0
+                },
+                "edge_order": []
+            }
+        },
+        "prevent_subagent_loops": false
+    }
+}

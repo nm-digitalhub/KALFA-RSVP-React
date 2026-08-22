@@ -1,0 +1,45 @@
+{
+    "type": "client",
+    "name": "request_reschedule",
+    "description": "קראי לכלי הזה רק כשהליד ביקש מועד אחר לפגישה, עם זמן חלופי ברור מפיו. אם אין זמן ברור — אל תקראי לכלי הזה, עברי ל-escalate_to_queue במקום. אחרי תוצאה מוצלחת, לעולם אל תאמרי בקול זמן קונקרטי חדש — הכלי רק מתעד בקשה, לא בוחר סלוט.",
+    "response_timeout_secs": 10,
+    "disable_interruptions": false,
+    "interruption_mode": "allow",
+    "force_pre_tool_speech": false,
+    "pre_tool_speech": "auto",
+    "assignments": [],
+    "tool_call_sound_behavior": "auto",
+    "tool_error_handling_mode": "auto",
+    "parameters": {
+        "description": "",
+        "dynamic_variable": "",
+        "is_omitted": false,
+        "type": "object",
+        "required": ["callback_when_text"],
+        "properties": {
+            "callback_when_text": {
+                "type": "string",
+                "description": "הזמן שהליד ציין למועד החדש, כלשונו בעברית (\"יום שלישי אחר הצהריים\", \"בעוד שבועיים\")",
+                "is_system_provided": false,
+                "dynamic_variable": "",
+                "allowed_values_dynamic_variable": "",
+                "constant_value": "",
+                "is_omitted": false
+            },
+            "callback_iso": {
+                "type": "string",
+                "description": "הזמן המוחלט המבוקש, ISO 8601. חשבי אותו מ-{{system__time_utc}} — הזמן הנוכחי ב-UTC, זמין לך תמיד. השאירי ריק אם אינך בטוחה בזמן המדויק — אל תנחשי.",
+                "is_system_provided": false,
+                "dynamic_variable": "",
+                "allowed_values_dynamic_variable": "",
+                "constant_value": "",
+                "is_omitted": false
+            }
+        }
+    },
+    "expects_response": true,
+    "dynamic_variables": {
+        "dynamic_variable_placeholders": {}
+    },
+    "execution_mode": "immediate"
+}

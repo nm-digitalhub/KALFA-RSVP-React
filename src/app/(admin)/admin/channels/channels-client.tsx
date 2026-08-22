@@ -30,6 +30,8 @@ import {
   updateOutreachMasterSwitchAction,
   updateVoximplantLiveCallsAction,
   updateCallConsentRequiredAction,
+  updateMeetingConfirmChannelAction,
+  updateSalesCallChannelAction,
 } from './actions';
 
 type WhatsAppConfig = {
@@ -56,6 +58,12 @@ type VoximplantConfig = {
   liveCalls: boolean; // raw admin toggle value (app_settings.voximplant_live_calls)
   liveEnabled: boolean; // effective gate (toggle AND env not force-off)
   callConsentRequired: boolean; // app_settings.call_consent_required — off = dial without prior consent
+  meetingConfirmRuleId: string;
+  meetingConfirmEnabled: boolean;
+  meetingConfirmFullyConfigured: boolean;
+  salesCallRuleId: string;
+  salesCallsEnabled: boolean;
+  salesCallFullyConfigured: boolean;
 };
 
 const inputClass =
@@ -279,6 +287,14 @@ export function ChannelsClient({
     updateCallConsentRequiredAction,
     null,
   );
+  const [meetingConfirmState, meetingConfirmAction] = useActionState(
+    updateMeetingConfirmChannelAction,
+    null,
+  );
+  const [salesCallState, salesCallAction] = useActionState(
+    updateSalesCallChannelAction,
+    null,
+  );
   const e = state?.fieldErrors;
   const ve = voxState?.fieldErrors;
 
@@ -436,6 +452,94 @@ export function ChannelsClient({
                   name="voximplant_live_calls"
                   defaultChecked={voximplant.liveCalls}
                   disabled={!voximplant.fullyConfigured && !voximplant.liveCalls}
+                  className="size-4 accent-primary"
+                />
+                מופעל
+              </label>
+              <SubmitButton className="w-auto">עדכון</SubmitButton>
+            </div>
+          </div>
+        </form>
+
+        {/* Per-persona kill switches (2026-08-22) — meeting-confirm and
+            sales-closing each dial their OWN rule_id, deliberately separate
+            from voximplant_rule_id above (RSVPAgent's OutCall rule must never
+            carry another persona's calls). Each still requires the shared
+            base config (service account + caller id) AND voximplant_live_calls
+            master toggle — see updatePersonaChannel's fail-closed guard. */}
+        <form
+          action={meetingConfirmAction}
+          className="mt-4 space-y-2 rounded-lg border border-sky-500/40 bg-sky-500/5 p-4"
+        >
+          <FormError message={meetingConfirmState?.error} />
+          <FormNotice message={meetingConfirmState?.notice} />
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+            <div className="min-w-0 flex-1 space-y-1">
+              <p className="text-sm font-semibold">שיחות אישור פגישה (Meeting-confirm)</p>
+              <p className="text-xs text-muted-foreground">
+                שיחת AI קצרה לאישור/שינוי מועד לפגישה שכבר תואמה. משתמש בחשבון
+                ובמספר היוצא המשותפים, עם Rule ID נפרד משלה.
+              </p>
+              <label htmlFor="voximplant_meeting_confirm_rule_id" className={labelClass}>
+                Rule ID
+              </label>
+              <input
+                id="voximplant_meeting_confirm_rule_id"
+                name="voximplant_meeting_confirm_rule_id"
+                dir="ltr"
+                defaultValue={voximplant.meetingConfirmRuleId}
+                placeholder="לא הוגדר"
+                className={inputClass}
+              />
+            </div>
+            <div className="flex shrink-0 items-center justify-end gap-3">
+              <label className="inline-flex cursor-pointer items-center gap-2 text-sm font-medium">
+                <input
+                  type="checkbox"
+                  name="voximplant_meeting_confirm_enabled"
+                  defaultChecked={voximplant.meetingConfirmEnabled}
+                  disabled={!voximplant.meetingConfirmFullyConfigured && !voximplant.meetingConfirmEnabled}
+                  className="size-4 accent-primary"
+                />
+                מופעל
+              </label>
+              <SubmitButton className="w-auto">עדכון</SubmitButton>
+            </div>
+          </div>
+        </form>
+
+        <form
+          action={salesCallAction}
+          className="mt-4 space-y-2 rounded-lg border border-sky-500/40 bg-sky-500/5 p-4"
+        >
+          <FormError message={salesCallState?.error} />
+          <FormNotice message={salesCallState?.notice} />
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+            <div className="min-w-0 flex-1 space-y-1">
+              <p className="text-sm font-semibold">שיחות סגירת מכירה (Sales-closing)</p>
+              <p className="text-xs text-muted-foreground">
+                שיחת AI יוצאת ללקוח שביקש חזרה בנושא &quot;מכירות&quot;, במועד
+                שנקבע. משתמש בחשבון ובמספר היוצא המשותפים, עם Rule ID נפרד משלה.
+              </p>
+              <label htmlFor="voximplant_sales_call_rule_id" className={labelClass}>
+                Rule ID
+              </label>
+              <input
+                id="voximplant_sales_call_rule_id"
+                name="voximplant_sales_call_rule_id"
+                dir="ltr"
+                defaultValue={voximplant.salesCallRuleId}
+                placeholder="לא הוגדר"
+                className={inputClass}
+              />
+            </div>
+            <div className="flex shrink-0 items-center justify-end gap-3">
+              <label className="inline-flex cursor-pointer items-center gap-2 text-sm font-medium">
+                <input
+                  type="checkbox"
+                  name="voximplant_sales_calls_enabled"
+                  defaultChecked={voximplant.salesCallsEnabled}
+                  disabled={!voximplant.salesCallFullyConfigured && !voximplant.salesCallsEnabled}
                   className="size-4 accent-primary"
                 />
                 מופעל

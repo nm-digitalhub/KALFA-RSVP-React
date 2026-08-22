@@ -226,6 +226,31 @@ export async function recordSignedAgreement(
   // the server-read active document's version (not the client-supplied one).
   await approveCampaign(campaign.id, agreementDoc.version);
 
+  // Sales-closing-agent conversion tracking (owner decision 2026-08-22):
+  // "signup completed" for that tracking means THIS moment — a signed,
+  // approved agreement — not bare account creation. Best-effort, never
+  // blocks the (already-committed) approval: a missed write here only
+  // degrades a reporting number, never the agreement itself. Claimed only
+  // once (signup_completed_at IS NULL) so a later re-sign on a different
+  // campaign never overwrites the first real conversion moment.
+  try {
+    const admin = createAdminClient();
+    const { data: signerProfile } = await admin
+      .from('profiles')
+      .select('sales_referral_attempt_id')
+      .eq('id', user.id)
+      .maybeSingle();
+    if (signerProfile?.sales_referral_attempt_id) {
+      await admin
+        .from('sales_call_attempts')
+        .update({ signup_completed_at: new Date().toISOString() })
+        .eq('id', signerProfile.sales_referral_attempt_id)
+        .is('signup_completed_at', null);
+    }
+  } catch {
+    // Best-effort — see comment above.
+  }
+
   // Additive ops alert (fire-and-forget, fail-safe): non-PII ids + version only
   // (no signer name/phone/IP/signature). Does not affect the approval or the
   // best-effort receipt email below.

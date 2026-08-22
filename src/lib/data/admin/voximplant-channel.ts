@@ -38,6 +38,18 @@ export type VoximplantChannelConfig = {
   liveCalls: boolean; // raw app_settings.voximplant_live_calls (the admin toggle's value)
   liveEnabled: boolean; // EFFECTIVE live gate: the DB toggle AND the env not force-off
   callConsentRequired: boolean; // app_settings.call_consent_required — when false, AI dials skip the prior-consent check (opt-out + DNC still apply)
+  // Per-persona kill switches (2026-08-22) — meeting-confirm and sales-closing
+  // share this SAME service account / caller_id / callback_secret (one
+  // Voximplant account), but each dials its OWN rule_id and has its OWN
+  // enabled toggle, independent of voximplant_live_calls and of each other.
+  // See getMeetingConfirmDispatchConfig/getSalesCallDispatchConfig
+  // (voximplant-config.ts) for the runtime resolver this UI state mirrors.
+  meetingConfirmRuleId: string;
+  meetingConfirmEnabled: boolean; // raw app_settings.voximplant_meeting_confirm_enabled
+  meetingConfirmFullyConfigured: boolean; // base config (SA+caller) AND this persona's own rule_id
+  salesCallRuleId: string;
+  salesCallsEnabled: boolean; // raw app_settings.voximplant_sales_calls_enabled
+  salesCallFullyConfigured: boolean; // base config (SA+caller) AND this persona's own rule_id
 };
 
 const SETTINGS_ID = true;
@@ -46,17 +58,16 @@ function s(v: unknown): string {
   return typeof v === 'string' ? v : v == null ? '' : String(v);
 }
 
+// select('*') rather than an explicit column list for the two new persona
+// columns — same forward-compatible reasoning as outreach-config.ts /
+// voximplant-config.ts: until their migration is applied, they are simply
+// absent from the row and read as '' / false (fail-closed), never an error.
 export async function getVoximplantChannelConfig(): Promise<VoximplantChannelConfig> {
   await requirePlatformPermission('manage_voice');
   const supabase = await createClient();
   const { data, error } = await supabase
     .from('app_settings')
-    .select(
-      'voximplant_service_account_json, voximplant_rule_id, voximplant_caller_id, ' +
-        'voximplant_callback_secret, voximplant_low_balance_threshold, ' +
-        'voximplant_min_call_reserve, voximplant_max_concurrent_calls, voximplant_max_calls_per_campaign_hour, ' +
-        'voximplant_live_calls, call_consent_required',
-    )
+    .select('*')
     .eq('id', SETTINGS_ID)
     .maybeSingle();
   if (error) throw new Error('טעינת הגדרות הערוץ נכשלה');
@@ -65,6 +76,9 @@ export async function getVoximplantChannelConfig(): Promise<VoximplantChannelCon
   const saConfigured = s(row.voximplant_service_account_json).trim() !== '';
   const ruleId = s(row.voximplant_rule_id);
   const callerId = s(row.voximplant_caller_id);
+  const baseConfigured = saConfigured && !!callerId;
+  const meetingConfirmRuleId = s(row.voximplant_meeting_confirm_rule_id);
+  const salesCallRuleId = s(row.voximplant_sales_call_rule_id);
   return {
     serviceAccountConfigured: saConfigured,
     voximplant_rule_id: ruleId,
@@ -86,6 +100,12 @@ export async function getVoximplantChannelConfig(): Promise<VoximplantChannelCon
     liveEnabled: envAllowsLiveCalls() && row.voximplant_live_calls === true,
     // Default SAFE: anything but an explicit false reads as "consent required".
     callConsentRequired: row.call_consent_required !== false,
+    meetingConfirmRuleId,
+    meetingConfirmEnabled: row.voximplant_meeting_confirm_enabled === true,
+    meetingConfirmFullyConfigured: baseConfigured && !!meetingConfirmRuleId,
+    salesCallRuleId,
+    salesCallsEnabled: row.voximplant_sales_calls_enabled === true,
+    salesCallFullyConfigured: baseConfigured && !!salesCallRuleId,
   };
 }
 
@@ -162,6 +182,50 @@ export async function updateVoximplantLiveCalls(enabled: boolean): Promise<void>
     .update({ voximplant_live_calls: enabled })
     .eq('id', SETTINGS_ID);
   if (error) throw new Error('עדכון מתג השיחות החיות נכשל');
+}
+
+// Per-persona kill switches (2026-08-22) — one combined rule_id+enabled write
+// per persona, unlike the base config's split between the big credentials
+// form and the separate live-calls toggle: rule_id is the ONLY persona-
+// specific field here (SA/caller/secret stay shared with the base config), so
+// one small form is proportional. ruleId is ALWAYS written as submitted
+// (blank → null) — same behavior as the base form's own voximplant_rule_id
+// field (updateVoximplantChannelConfig: `input.voximplant_rule_id || null`,
+// unconditional); the UI pre-fills the field with the current value via
+// defaultValue (not placeholder) so a normal submit never silently blanks it.
+export type UpdatePersonaChannelInput = {
+  ruleId: string;
+  enabled: boolean;
+};
+
+export async function updateMeetingConfirmChannel(
+  input: UpdatePersonaChannelInput,
+): Promise<void> {
+  await requirePlatformPermission('manage_voice');
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from('app_settings')
+    .update({
+      voximplant_meeting_confirm_enabled: input.enabled,
+      voximplant_meeting_confirm_rule_id: input.ruleId.trim() || null,
+    })
+    .eq('id', SETTINGS_ID);
+  if (error) throw new Error('עדכון הגדרות סוכן אישור הפגישה נכשל');
+}
+
+export async function updateSalesCallChannel(
+  input: UpdatePersonaChannelInput,
+): Promise<void> {
+  await requirePlatformPermission('manage_voice');
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from('app_settings')
+    .update({
+      voximplant_sales_calls_enabled: input.enabled,
+      voximplant_sales_call_rule_id: input.ruleId.trim() || null,
+    })
+    .eq('id', SETTINGS_ID);
+  if (error) throw new Error('עדכון הגדרות סוכן סגירת המכירה נכשל');
 }
 
 // Admin toggle for the AI-call CONSENT gate (app_settings.call_consent_required).

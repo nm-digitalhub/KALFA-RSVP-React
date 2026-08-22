@@ -8,6 +8,7 @@ import {
   GA_FLAG_COOKIE_NAME,
 } from '@/lib/analytics/ga-event-contracts';
 import { createClient } from '@/lib/supabase/server';
+import { createAdminClient } from '@/lib/supabase/admin';
 import { isExistingUserSignup } from '@/lib/auth/signup-helpers';
 import {
   forgotPasswordSchema,
@@ -50,13 +51,35 @@ export async function signup(
     password: formData.get('password'),
     full_name: formData.get('full_name'),
     phone: formData.get('phone'),
+    ref: formData.get('ref'),
   });
 
   if (!parsed.success) {
     return { fieldErrors: parsed.error.flatten().fieldErrors };
   }
 
-  const { email, password, full_name, phone } = parsed.data;
+  const { email, password, full_name, phone, ref } = parsed.data;
+
+  // Sales-closing-agent conversion tracking: re-verify the ref actually
+  // resolves to a real sales_call_attempts row BEFORE it ever reaches
+  // auth.signUp's metadata — never trust the query param on its own. A
+  // stale/forged/malformed ref silently degrades to "no attribution"; it
+  // must never be able to fail the signup itself (see the migration's own
+  // comment on why handle_new_user() also has no FK to violate).
+  let salesReferralAttemptId: string | undefined;
+  if (ref) {
+    try {
+      const admin = createAdminClient();
+      const { data: attempt } = await admin
+        .from('sales_call_attempts')
+        .select('id')
+        .eq('id', ref)
+        .maybeSingle();
+      if (attempt) salesReferralAttemptId = attempt.id;
+    } catch {
+      // Unreadable -> no attribution, never blocks signup.
+    }
+  }
 
   const supabase = await createClient();
   // full_name/phone go into auth user_metadata; the handle_new_user() trigger
@@ -64,7 +87,15 @@ export async function signup(
   const { data, error } = await supabase.auth.signUp({
     email,
     password,
-    options: { data: { full_name, phone: phone ?? '' } },
+    options: {
+      data: {
+        full_name,
+        phone: phone ?? '',
+        ...(salesReferralAttemptId
+          ? { sales_referral_attempt_id: salesReferralAttemptId }
+          : {}),
+      },
+    },
   });
 
   if (error) {

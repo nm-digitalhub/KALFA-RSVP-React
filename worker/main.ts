@@ -50,6 +50,19 @@ import { runThankyouSweep } from '@/lib/data/auto-thankyou';
 import { runGraphIntakeSubscriptionSweep } from '@/lib/data/inquiry-mail-intake';
 import { runCallbackSweep } from '@/lib/data/call-callbacks';
 import { runCallbackSchedulingSweep } from '@/lib/data/callback-scheduling';
+import {
+  dispatchMeetingConfirmCall,
+  type MeetingConfirmDispatchJob,
+} from '@/lib/data/meeting-confirm-dispatch';
+import {
+  dispatchSalesCall,
+  type SalesCallDispatchJob,
+} from '@/lib/data/sales-call-dispatch';
+import {
+  getMeetingConfirmDispatchConfig,
+  getSalesCallDispatchConfig,
+} from '@/lib/data/voximplant-config';
+import { getAppOrigin } from '@/lib/url';
 import { recordManualDialOutcome } from '@/lib/data/call-attempts';
 import {
   runDispatchRetention,
@@ -57,7 +70,11 @@ import {
   settleManualDispatch,
 } from '@/lib/data/call-dispatch-status';
 import { runBalanceCheck } from '@/lib/data/voximplant-balance';
-import { runCallReconcile } from '@/lib/data/voximplant-reconcile';
+import {
+  runCallReconcile,
+  runCallbackDispatchReconcile,
+  runSalesDispatchReconcile,
+} from '@/lib/data/voximplant-reconcile';
 import { runLogExport } from '@/lib/data/vox-log-export';
 import { runElevenLabsQuotaCheck } from '@/lib/data/elevenlabs-quota';
 import { runInstagramTokenRefresh } from '@/lib/data/instagram-token-refresh';
@@ -97,6 +114,8 @@ const SCHEDULE_TZ = 'Asia/Jerusalem';
 
 type StepJob = { id: string; data: OutreachStepJob };
 type CallJob = { id: string; data: OutreachCallRequest };
+type MeetingConfirmJob = { id: string; data: MeetingConfirmDispatchJob };
+type SalesCallJob = { id: string; data: SalesCallDispatchJob };
 
 // Outbound AI-call dispatch (C2). dispatchOutreachCall is fully fail-safe: only a
 // pre-dial balance-check transport failure is retryable — every other outcome
@@ -164,6 +183,61 @@ async function handleCallRequest(job: CallJob): Promise<void> {
     // closed event, and without this a gate that correctly stops every call in a
     // campaign is indistinguishable from one that is broken. All values are
     // fixed enum strings — no PII.
+    ...('reason' in result ? { reason: result.reason } : {}),
+  });
+}
+
+// Meeting-confirmation dispatch (SS2/11a) — fired by the delayed job
+// enqueueMeetingConfirmDispatch enqueues (~24h before the booked slot).
+// Mirrors handleCallRequest's own contract exactly: dispatchMeetingConfirmCall
+// is fully fail-safe (every outcome except a transport-level balance-check
+// failure COMPLETES the job), so a retry can never place a second call.
+// getMeetingConfirmDispatchConfig() re-reads app_settings fresh on every
+// firing — the kill switch and rule_id are never stale-cached across a job
+// that may sit queued for up to 24h.
+async function handleMeetingConfirmDispatch(job: MeetingConfirmJob): Promise<void> {
+  const config = await getMeetingConfirmDispatchConfig();
+  if (!config) {
+    // Not configured (no rule_id / caller_id / service account yet) or the
+    // channel is off — a normal, expected steady state pre-launch, not an
+    // error. Complete the job; the row stays 'scheduled' and simply never
+    // gets an automated reminder until the channel is turned on.
+    return;
+  }
+  const appOrigin = await getAppOrigin();
+  const result = await dispatchMeetingConfirmCall(job.data.callbackRequestId, config, appOrigin);
+  if (result.kind === 'transient_error') {
+    throw new Error(`voximplant balance check failed: ${result.reason}`);
+  }
+  console.log('[kalfa-worker] meeting-confirm dispatch resolved', {
+    jobId: job.id,
+    callbackRequestId: job.data.callbackRequestId,
+    kind: result.kind,
+    ...('reason' in result ? { reason: result.reason } : {}),
+  });
+}
+
+// Sales-closing dispatch — fired by enqueueSalesCallDispatch, at
+// scheduled_at itself (not 24h ahead, unlike the meeting-confirm job above).
+// Same fail-safe contract as handleMeetingConfirmDispatch: only a transport-
+// level balance-check failure is retryable.
+async function handleSalesCallDispatch(job: SalesCallJob): Promise<void> {
+  const config = await getSalesCallDispatchConfig();
+  if (!config) {
+    // Channel off / unconfigured — normal steady state pre-launch, not an
+    // error. Complete the job; the reconciler has no visibility into
+    // pg-boss, so no alert is needed for an intentionally-disabled channel.
+    return;
+  }
+  const appOrigin = await getAppOrigin();
+  const result = await dispatchSalesCall(job.data.callbackRequestId, config, appOrigin);
+  if (result.kind === 'transient_error') {
+    throw new Error(`voximplant balance check failed: ${result.reason}`);
+  }
+  console.log('[kalfa-worker] sales-call dispatch resolved', {
+    jobId: job.id,
+    callbackRequestId: job.data.callbackRequestId,
+    kind: result.kind,
     ...('reason' in result ? { reason: result.reason } : {}),
   });
 }
@@ -488,7 +562,7 @@ const NOTIFY_CHANNEL = 'callback_work';
 // folded into a single follow-up run rather than starting its own.
 const NOTIFY_COALESCE_MS = 3_000;
 
-function startCallbackWorkListener(): () => Promise<void> {
+function startCallbackWorkListener(boss: PgBoss): () => Promise<void> {
   let client: PgClient | null = null;
   let stopped = false;
   let sweeping = false;
@@ -506,7 +580,7 @@ function startCallbackWorkListener(): () => Promise<void> {
       // Logged because a push-triggered sweep is otherwise invisible: the
       // notification line above proves the announcement arrived, not that the
       // work ran or what it decided.
-      const r = await runCallbackSchedulingSweep();
+      const r = await runCallbackSchedulingSweep({ boss });
       console.log(
         `[callback-listen] sweep — שובצו ${r.scheduled}, נדחו ${r.skipped}, שוחררו ${r.released}, תוקנו ${r.repaired}`,
       );
@@ -712,6 +786,18 @@ async function main(): Promise<void> {
     }),
   );
   await boss.work(
+    QUEUES.meetingConfirmDispatch,
+    guardedWorker(QUEUES.meetingConfirmDispatch, async (jobs: MeetingConfirmJob[]) => {
+      for (const job of jobs) await handleMeetingConfirmDispatch(job);
+    }),
+  );
+  await boss.work(
+    QUEUES.salesCallDispatch,
+    guardedWorker(QUEUES.salesCallDispatch, async (jobs: SalesCallJob[]) => {
+      for (const job of jobs) await handleSalesCallDispatch(job);
+    }),
+  );
+  await boss.work(
     QUEUES.webhook,
     guardedWorker(QUEUES.webhook, async () => {
       await handleWebhook();
@@ -750,7 +836,7 @@ async function main(): Promise<void> {
       // Not redundant with the Slack alerts inside the sweep: those are
       // fail-open and can be switched off per category, and a chat room is not
       // something you can grep six days later while diagnosing.
-      const r = await runCallbackSchedulingSweep();
+      const r = await runCallbackSchedulingSweep({ boss });
       // Quiet ticks are the normal case, so speak only when something moved —
       // otherwise this prints every ten minutes forever and becomes the noise
       // it exists to cut through.
@@ -777,6 +863,20 @@ async function main(): Promise<void> {
     QUEUES.callReconcile,
     guardedWorker(QUEUES.callReconcile, async () => {
       await runCallReconcile();
+    }),
+  );
+  // Same H3 pattern, extended 2026-08-22 to the other two dispatch surfaces
+  // that now share this Voximplant account's concurrency ceiling.
+  await boss.work(
+    QUEUES.callbackDispatchReconcile,
+    guardedWorker(QUEUES.callbackDispatchReconcile, async () => {
+      await runCallbackDispatchReconcile();
+    }),
+  );
+  await boss.work(
+    QUEUES.salesDispatchReconcile,
+    guardedWorker(QUEUES.salesDispatchReconcile, async () => {
+      await runSalesDispatchReconcile();
     }),
   );
   // Voximplant session-log export (A4): daily — downloads logs (which expire
@@ -853,9 +953,11 @@ async function main(): Promise<void> {
   // second of a request becoming ready. This catches anything that announced
   // while nothing was listening — a restart, a dropped connection, a deploy.
   await boss.schedule(QUEUES.callbackScheduleSweep, '*/10 * * * *');
-  const stopCallbackListener = startCallbackWorkListener();
+  const stopCallbackListener = startCallbackWorkListener(boss);
   await boss.schedule(QUEUES.balanceCheck, '*/30 * * * *');
   await boss.schedule(QUEUES.callReconcile, '*/10 * * * *');
+  await boss.schedule(QUEUES.callbackDispatchReconcile, '*/10 * * * *');
+  await boss.schedule(QUEUES.salesDispatchReconcile, '*/10 * * * *');
   // Anchored to a wall-clock hour → run on Israel local time (DST-aware).
   await boss.schedule(QUEUES.logExport, '20 3 * * *', null, { tz: SCHEDULE_TZ });
   await boss.schedule(QUEUES.elevenlabsQuota, '0 */6 * * *', null, { tz: SCHEDULE_TZ });

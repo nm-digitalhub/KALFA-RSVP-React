@@ -34,6 +34,13 @@ export const QUEUES = {
   // call_attempts older than 15m. NEVER re-issues StartScenarios. See
   // src/lib/data/voximplant-reconcile.ts.
   callReconcile: 'voximplant-call-reconcile',
+  // Same H3 reconciler pattern, extended 2026-08-22 to the meeting-confirm and
+  // sales-closing dispatch surfaces (callback_request_attempts /
+  // sales_call_attempts) — separate queues so each table's edge-triggered
+  // alert-dedup state is genuinely independent, not because the underlying
+  // logic differs. See src/lib/data/voximplant-reconcile.ts.
+  callbackDispatchReconcile: 'voximplant-callback-dispatch-reconcile',
+  salesDispatchReconcile: 'voximplant-sales-dispatch-reconcile',
   // Voximplant session-log export (A4) — daily; downloads logs (which expire
   // ~1 month) into the private vox-call-logs bucket. Singleton so a manual run
   // never overlaps the cron (an atomic per-row lease is the inner guard). See
@@ -69,6 +76,28 @@ export const QUEUES = {
   // tick renews well inside the window and recreates a subscription that has
   // vanished. See src/lib/data/inquiry-mail-intake.ts.
   graphIntakeRenew: 'graph-intake-subscription-renew',
+  // Meeting-confirm dispatch trigger — event-driven, NOT a periodic scan.
+  // Enqueued by runCallbackSchedulingSweep the moment a slot is actually
+  // booked, with startAfter = scheduled_at minus ~24h (clamped into business
+  // hours by clampIntoCallbackWindow). Fires dispatchMeetingConfirmCall for
+  // exactly that row. A stale job left over from a since-rescheduled row is
+  // harmless by design: dispatchMeetingConfirmCall re-reads fresh state, and
+  // createCallbackDispatchAttempt's own per-(request,scheduled_at) uniqueness
+  // means at most one of the (possibly several) jobs for a row can ever
+  // actually dial. See enqueueMeetingConfirmDispatch in
+  // meeting-confirm-dispatch.ts.
+  meetingConfirmDispatch: 'meeting-confirm-dispatch',
+  // Sales-closing dispatch trigger — event-driven, same idiom as
+  // meetingConfirmDispatch above, with one deliberate difference: this fires
+  // AT scheduled_at itself, not 24h before it (dispatchSalesCall's own
+  // comment: "exactly replacing what a human rep does today at that slot").
+  // Enqueued by runCallbackSchedulingSweep the moment a topic='מכירות' slot
+  // is booked. A stale job from a since-rescheduled row is harmless: gate 2b
+  // in sales-call-dispatch.ts (getUnresolvedSalesAttempt) plus
+  // sales_call_attempts_request_slot_uidx's own per-(request,scheduled_at)
+  // uniqueness mean at most one job for a row can ever actually dial. See
+  // enqueueSalesCallDispatch in sales-call-dispatch.ts.
+  salesCallDispatch: 'sales-call-dispatch',
 } as const;
 
 // outreach-step retry policy: a few backed-off retries, then dead-letter. The

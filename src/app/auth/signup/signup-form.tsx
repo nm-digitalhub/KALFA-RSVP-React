@@ -6,13 +6,14 @@ import { signup } from '../actions';
 import { FieldError, FormError, FormNotice, SubmitButton } from '@/components/forms';
 import { PasswordField } from './password-field';
 
-export function SignupForm() {
+export function SignupForm({ salesRef }: { salesRef?: string }) {
   const [state, action] = useActionState(signup, null);
 
   return (
     <form action={action} className="space-y-4">
       <FormError message={state?.error} />
       <FormNotice message={state?.notice} />
+      {salesRef && <input type="hidden" name="ref" value={salesRef} />}
 
       <div>
         <label htmlFor="full_name" className="mb-1 block text-sm font-medium">

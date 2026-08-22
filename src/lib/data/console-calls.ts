@@ -533,10 +533,14 @@ export type DialTargetResolution =
 // decide-consent §2 correction: 30 days, a policy choice, not a statutory
 // figure (the exemption itself carries no expiry).
 const CALLBACK_FRESHNESS_MS = 30 * 24 * 60 * 60 * 1000;
-// decide-consent §2: counted from logged human-dial attempts against this
+// decide-consent §2: counted from logged dial attempts against this
 // callback_requests.id — NEVER callback_requests.attempt_count (that column
-// means something else and nothing in src/lib writes it).
-const CALLBACK_MAX_ATTEMPTS = 3;
+// means something else and nothing in src/lib writes it). Exported: as of the
+// meeting-confirm dispatcher, "logged dial attempts" is no longer only human
+// console dials — see meeting-confirm-dispatch.ts, which writes the same
+// CONSOLE_DIAL_AUDIT_ACTION row for an AI-dispatched call so it counts against
+// this same budget.
+export const CALLBACK_MAX_ATTEMPTS = 3;
 
 // hoursGate — a self-documenting, required-to-be-named union (NOT a bare
 // boolean, per explicit engineering decision, 12.8): a boolean disabling a
@@ -557,7 +561,14 @@ const CALLBACK_MAX_ATTEMPTS = 3;
 // stronger guarantee than a comment saying "don't skip this".
 export type HoursGate = 'apply' | 'skip_consumer_initiated';
 
-async function evaluateSharedConsentGates(
+// Exported for meeting-confirm-dispatch.ts (a callback_requests-scoped AI
+// dispatcher, not a console/human dial): it needs the exact same DNC/opt-out/
+// Shabbat/hours gates DIAL_GATE_POLICY.callback already states for a returned
+// callback, and duplicating this function's logic a second time is a far
+// worse outcome than one more exported symbol from this module. No behavior
+// change — this function is unchanged, only newly reachable from outside the
+// file.
+export async function evaluateSharedConsentGates(
   admin: AdminClient,
   phone: string,
   nowMs: number,

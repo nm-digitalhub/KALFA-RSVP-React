@@ -17,6 +17,8 @@ export const QUEUE_EXPECTED_MAX_MINUTES: Record<string, number> = {
   'call-callback-sweep': 15,
   'callback-calendar-schedule-sweep': 30,
   'voximplant-call-reconcile': 30,
+  'voximplant-callback-dispatch-reconcile': 30,
+  'voximplant-sales-dispatch-reconcile': 30,
   'voximplant-balance-check': 90,
   // Daily/6h jobs, Asia/Jerusalem — 3x their own interval is measured in
   // hours/days, not minutes; wide multiples avoid false "stale" from a job

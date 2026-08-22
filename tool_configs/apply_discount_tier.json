@@ -1,0 +1,38 @@
+{
+    "type": "client",
+    "name": "apply_discount_tier",
+    "description": "מחזיר את הנחת מדרגה-1 המוגדרת מראש (אם קיימת), רק אחרי התנגדות מחיר מפורשת (\"יקר לי\", \"יש משהו יותר זול\", \"למה זה כל כך יקר\"). אינה בוחרת אחוז — משיבה את מה שמוגדר במערכת בלבד. לעולם לא ביוזמת הסוכן, לפני שנשאלת ולפני שנאמרה התנגדות אמיתית.",
+    "response_timeout_secs": 10,
+    "disable_interruptions": false,
+    "interruption_mode": "allow",
+    "force_pre_tool_speech": false,
+    "pre_tool_speech": "auto",
+    "assignments": [],
+    "tool_call_sound_behavior": "auto",
+    "tool_error_handling_mode": "auto",
+    "parameters": {
+        "description": "",
+        "dynamic_variable": "",
+        "is_omitted": false,
+        "type": "object",
+        "required": [
+            "objection_reason"
+        ],
+        "properties": {
+            "objection_reason": {
+                "type": "string",
+                "description": "ציטוט/תמצית ההתנגדות שהובילה לקריאה, לצורך תיעוד",
+                "is_system_provided": false,
+                "dynamic_variable": "",
+                "allowed_values_dynamic_variable": "",
+                "constant_value": "",
+                "is_omitted": false
+            }
+        }
+    },
+    "expects_response": true,
+    "dynamic_variables": {
+        "dynamic_variable_placeholders": {}
+    },
+    "execution_mode": "immediate"
+}

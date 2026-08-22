@@ -240,8 +240,12 @@ export type Database = {
           voximplant_low_balance_threshold: number
           voximplant_max_calls_per_campaign_hour: number
           voximplant_max_concurrent_calls: number
+          voximplant_meeting_confirm_enabled: boolean
+          voximplant_meeting_confirm_rule_id: string | null
           voximplant_min_call_reserve: number
           voximplant_rule_id: string | null
+          voximplant_sales_call_rule_id: string | null
+          voximplant_sales_calls_enabled: boolean
           voximplant_service_account_json: string | null
           warranty_text: string | null
           whatsapp_access_token: string | null
@@ -333,8 +337,12 @@ export type Database = {
           voximplant_low_balance_threshold?: number
           voximplant_max_calls_per_campaign_hour?: number
           voximplant_max_concurrent_calls?: number
+          voximplant_meeting_confirm_enabled?: boolean
+          voximplant_meeting_confirm_rule_id?: string | null
           voximplant_min_call_reserve?: number
           voximplant_rule_id?: string | null
+          voximplant_sales_call_rule_id?: string | null
+          voximplant_sales_calls_enabled?: boolean
           voximplant_service_account_json?: string | null
           warranty_text?: string | null
           whatsapp_access_token?: string | null
@@ -426,8 +434,12 @@ export type Database = {
           voximplant_low_balance_threshold?: number
           voximplant_max_calls_per_campaign_hour?: number
           voximplant_max_concurrent_calls?: number
+          voximplant_meeting_confirm_enabled?: boolean
+          voximplant_meeting_confirm_rule_id?: string | null
           voximplant_min_call_reserve?: number
           voximplant_rule_id?: string | null
+          voximplant_sales_call_rule_id?: string | null
+          voximplant_sales_calls_enabled?: boolean
           voximplant_service_account_json?: string | null
           warranty_text?: string | null
           whatsapp_access_token?: string | null
@@ -925,6 +937,68 @@ export type Database = {
           reason?: string | null
         }
         Relationships: []
+      }
+      callback_request_attempts: {
+        Row: {
+          access_token: string
+          call_duration_sec: number | null
+          callback_request_id: string
+          confirmation_call_at: string | null
+          confirmation_call_status: string
+          created_at: string
+          dispatch_status: string
+          el_conversation_id: string | null
+          finish_reason: string | null
+          id: string
+          issued_via: string
+          scheduled_at_snapshot: string
+          token_expires_at: string
+          updated_at: string
+          vox_call_session_history_id: string | null
+        }
+        Insert: {
+          access_token: string
+          call_duration_sec?: number | null
+          callback_request_id: string
+          confirmation_call_at?: string | null
+          confirmation_call_status?: string
+          created_at?: string
+          dispatch_status?: string
+          el_conversation_id?: string | null
+          finish_reason?: string | null
+          id?: string
+          issued_via: string
+          scheduled_at_snapshot: string
+          token_expires_at: string
+          updated_at?: string
+          vox_call_session_history_id?: string | null
+        }
+        Update: {
+          access_token?: string
+          call_duration_sec?: number | null
+          callback_request_id?: string
+          confirmation_call_at?: string | null
+          confirmation_call_status?: string
+          created_at?: string
+          dispatch_status?: string
+          el_conversation_id?: string | null
+          finish_reason?: string | null
+          id?: string
+          issued_via?: string
+          scheduled_at_snapshot?: string
+          token_expires_at?: string
+          updated_at?: string
+          vox_call_session_history_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "callback_request_attempts_callback_request_id_fkey"
+            columns: ["callback_request_id"]
+            isOneToOne: false
+            referencedRelation: "callback_requests"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       callback_requests: {
         Row: {
@@ -4069,6 +4143,7 @@ export type Database = {
           full_name: string | null
           id: string
           phone: string | null
+          sales_referral_attempt_id: string | null
           updated_at: string
         }
         Insert: {
@@ -4076,6 +4151,7 @@ export type Database = {
           full_name?: string | null
           id: string
           phone?: string | null
+          sales_referral_attempt_id?: string | null
           updated_at?: string
         }
         Update: {
@@ -4083,6 +4159,7 @@ export type Database = {
           full_name?: string | null
           id?: string
           phone?: string | null
+          sales_referral_attempt_id?: string | null
           updated_at?: string
         }
         Relationships: []
@@ -4323,6 +4400,83 @@ export type Database = {
             columns: ["guest_id"]
             isOneToOne: false
             referencedRelation: "guests"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      sales_call_attempts: {
+        Row: {
+          access_token: string
+          call_duration_sec: number | null
+          callback_request_id: string
+          created_at: string
+          dispatch_status: string
+          el_conversation_id: string | null
+          finish_reason: string | null
+          id: string
+          outcome_recorded_at: string | null
+          scheduled_at_snapshot: string
+          signup_completed_at: string | null
+          token_expires_at: string
+          updated_at: string
+          vox_call_session_history_id: string | null
+          wa_consent_confirmed_at: string | null
+          wa_delivery_error_code: string | null
+          wa_delivery_status: string | null
+          wa_fallback_attempted_at: string | null
+          wa_message_id: string | null
+          wa_status_at: string | null
+        }
+        Insert: {
+          access_token: string
+          call_duration_sec?: number | null
+          callback_request_id: string
+          created_at?: string
+          dispatch_status?: string
+          el_conversation_id?: string | null
+          finish_reason?: string | null
+          id?: string
+          outcome_recorded_at?: string | null
+          scheduled_at_snapshot: string
+          signup_completed_at?: string | null
+          token_expires_at: string
+          updated_at?: string
+          vox_call_session_history_id?: string | null
+          wa_consent_confirmed_at?: string | null
+          wa_delivery_error_code?: string | null
+          wa_delivery_status?: string | null
+          wa_fallback_attempted_at?: string | null
+          wa_message_id?: string | null
+          wa_status_at?: string | null
+        }
+        Update: {
+          access_token?: string
+          call_duration_sec?: number | null
+          callback_request_id?: string
+          created_at?: string
+          dispatch_status?: string
+          el_conversation_id?: string | null
+          finish_reason?: string | null
+          id?: string
+          outcome_recorded_at?: string | null
+          scheduled_at_snapshot?: string
+          signup_completed_at?: string | null
+          token_expires_at?: string
+          updated_at?: string
+          vox_call_session_history_id?: string | null
+          wa_consent_confirmed_at?: string | null
+          wa_delivery_error_code?: string | null
+          wa_delivery_status?: string | null
+          wa_fallback_attempted_at?: string | null
+          wa_message_id?: string | null
+          wa_status_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "sales_call_attempts_callback_request_id_fkey"
+            columns: ["callback_request_id"]
+            isOneToOne: false
+            referencedRelation: "callback_requests"
             referencedColumns: ["id"]
           },
         ]

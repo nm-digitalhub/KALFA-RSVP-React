@@ -1,0 +1,46 @@
+{
+    "type": "client",
+    "name": "escalate_to_queue",
+    "description": "קראי לכלי הזה כשמדובר באדם לא נכון, שאלה מהותית שדורשת מעקב אנושי, בקשת שינוי מועד בלי זמן ברור, כישלון של request_reschedule, או קו גרוע/שקט חוזר. הכלי מנתב לתור פניות אנושי — אינו פותח שיחה חיה עם נציג.",
+    "response_timeout_secs": 10,
+    "disable_interruptions": false,
+    "interruption_mode": "allow",
+    "force_pre_tool_speech": false,
+    "pre_tool_speech": "auto",
+    "assignments": [],
+    "tool_call_sound_behavior": "auto",
+    "tool_error_handling_mode": "auto",
+    "parameters": {
+        "description": "",
+        "dynamic_variable": "",
+        "is_omitted": false,
+        "type": "object",
+        "required": ["reason"],
+        "properties": {
+            "reason": {
+                "type": "string",
+                "description": "סיבת ההעברה לתור אנושי",
+                "enum": ["wrong_person", "substantive_question", "unclear_reschedule", "bad_line", "other"],
+                "is_system_provided": false,
+                "dynamic_variable": "",
+                "allowed_values_dynamic_variable": "",
+                "constant_value": "",
+                "is_omitted": false
+            },
+            "note_he": {
+                "type": "string",
+                "description": "תיאור קצר בעברית להקשר, עד 300 תווים (אופציונלי)",
+                "is_system_provided": false,
+                "dynamic_variable": "",
+                "allowed_values_dynamic_variable": "",
+                "constant_value": "",
+                "is_omitted": false
+            }
+        }
+    },
+    "expects_response": true,
+    "dynamic_variables": {
+        "dynamic_variable_placeholders": {}
+    },
+    "execution_mode": "immediate"
+}

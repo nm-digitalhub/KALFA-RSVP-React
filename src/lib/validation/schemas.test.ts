@@ -163,6 +163,36 @@ describe('signupSchema', () => {
     });
     expect(result.success).toBe(false);
   });
+
+  it('accepts a valid v4 UUID ref (sales-agent conversion tracking)', () => {
+    const result = signupSchema.safeParse({
+      email: 'user@example.com',
+      password: '12345678',
+      full_name: 'ישראל ישראלי',
+      ref: 'a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d',
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('accepts an empty ref (optional)', () => {
+    const result = signupSchema.safeParse({
+      email: 'user@example.com',
+      password: '12345678',
+      full_name: 'ישראל ישראלי',
+      ref: '',
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('rejects a malformed ref', () => {
+    const result = signupSchema.safeParse({
+      email: 'user@example.com',
+      password: '12345678',
+      full_name: 'ישראל ישראלי',
+      ref: 'not-a-uuid',
+    });
+    expect(result.success).toBe(false);
+  });
 });
 
 describe('createEventSchema', () => {

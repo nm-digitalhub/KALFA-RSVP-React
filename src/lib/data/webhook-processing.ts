@@ -21,6 +21,8 @@ import {
   processCallRsvpRow,
   processOwnerNoteRow,
 } from '@/lib/data/call-result-processing';
+import { processMeetingOptOutRow } from '@/lib/data/callback-voice-processing';
+import { processSalesOptOutRow } from '@/lib/data/sales-voice-processing';
 import { intakeMailAsInquiry } from '@/lib/data/inquiry-mail-intake';
 import { submitRsvp } from '@/lib/data/rsvp';
 import { handleHeadcountReply, requestHeadcount } from '@/lib/data/headcount';
@@ -78,6 +80,20 @@ export async function processWebhookEvent(row: WebhookInboxRow): Promise<void> {
   }
   if (row.event_kind === 'call_owner_note') {
     await processOwnerNoteRow(row);
+    return;
+  }
+  // Meeting-booking agent's mark_opt_out (mtg/cb/dnc/[token]) — a SEPARATE
+  // kind from call_dnc on purpose (plan §7: this surface must never enter the
+  // call_attempts/RSVP/billing drain paths above). Its own dedicated
+  // processing function; never processCallDncRow.
+  if (row.event_kind === 'mtg_dnc') {
+    await processMeetingOptOutRow(row);
+    return;
+  }
+  // Sales-closing agent's mark_dnc (sls/tool/dnc/[token]) — its own kind,
+  // same isolation reasoning as mtg_dnc above; never processCallDncRow.
+  if (row.event_kind === 'sls_dnc') {
+    await processSalesOptOutRow(row);
     return;
   }
   if (row.event_kind === 'graph_mail') {

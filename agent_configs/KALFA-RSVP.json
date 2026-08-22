@@ -37,6 +37,7 @@
             "interruption_ignore_term_languages": [
                 "he"
             ],
+            "merge_with_default_ignore_terms": false,
             "transcribe_on_disabled_interruptions": false,
             "soft_timeout_config": {
                 "timeout_seconds": -1,
@@ -44,7 +45,8 @@
                 "additional_soft_timeout_messages": [],
                 "use_llm_generated_message": false,
                 "randomize_fillers": false,
-                "max_soft_timeouts_per_generation": 1
+                "max_soft_timeouts_per_generation": 1,
+                "disable_until_first_user_message": false
             }
         },
         "tts": {
@@ -61,11 +63,12 @@
             "text_normalisation_type": "system_prompt",
             "pronunciation_dictionary_locators": [],
             "enable_phoneme_tags": true,
-            "audio_filter": null
+            "audio_effects": null
         },
         "conversation": {
             "text_only": false,
             "max_duration_seconds": 600,
+            "max_duration_seconds_after_last_agent_message": null,
             "client_events": [
                 "audio",
                 "interruption",
@@ -77,6 +80,7 @@
             ],
             "file_input": {
                 "enabled": true,
+                "max_files_in_memory": 10,
                 "max_files_per_conversation": 10
             },
             "monitoring_enabled": false,
@@ -96,7 +100,8 @@
             "en": {
                 "overrides": {
                     "tts": {
-                        "model_id": null
+                        "model_id": null,
+                        "pronunciation_dictionary_locators": null
                     },
                     "agent": {
                         "first_message": "Hi {{guest_name}}? … This is Meushar, an automated voice assistant for the family, about {{event_name}}."
@@ -121,6 +126,7 @@
         "vad": {
             "background_voice_detection": false
         },
+        "realtime_model": null,
         "agent": {
             "first_message": "היי, {{guest_name}}? … כאן מאושר, עוזר קולי אוטומטי מטעם בעלי השמחה — בנוגע ל{{event_name}}.",
             "language": "he",
@@ -156,6 +162,10 @@
                     "tool_7901kxxsaw1cfhkrpe5w2mkrxxk3"
                 ],
                 "built_in_tools": {
+                    "update_state": null,
+                    "memory_entry_search": null,
+                    "run_subagent": null,
+                    "request_help": null,
                     "end_call": {
                         "type": "system",
                         "name": "end_call",
@@ -185,7 +195,8 @@
                         "tool_call_sound_behavior": "auto",
                         "tool_error_handling_mode": "auto",
                         "params": {
-                            "system_tool_type": "language_detection"
+                            "system_tool_type": "language_detection",
+                            "only_at_conversation_start": false
                         }
                     },
                     "skip_turn": {
@@ -220,23 +231,15 @@
                             "system_tool_type": "voicemail_detection"
                         }
                     },
-                    "update_state": null,
-                    "memory_entry_search": null,
-                    "memory_entry_create": null,
-                    "memory_entry_update": null,
-                    "memory_entry_delete": null,
-                    "agent_prompt_change": null,
-                    "procedure_update": null,
-                    "procedure_create": null,
-                    "procedure_delete": null,
                     "transfer_to_genesys": null,
                     "transfer_to_genesys_chat": null,
-                    "run_subagent": null
+                    "transfer_to_genesys_bot": null
                 },
                 "enable_parallel_tool_calls": false,
                 "mcp_server_ids": [],
                 "native_mcp_server_ids": [],
                 "knowledge_base": [],
+                "bedrock_llm": null,
                 "speech_engine": null,
                 "ignore_default_personality": false,
                 "rag": {
@@ -245,7 +248,8 @@
                     "optional_rag_enabled": false,
                     "max_vector_distance": 0.6,
                     "max_documents_length": 50000,
-                    "max_retrieved_rag_chunks_count": 20
+                    "max_retrieved_rag_chunks_count": 20,
+                    "knowledge_base_tool_info": null
                 },
                 "timezone": "Asia/Jerusalem",
                 "backup_llm_config": {
@@ -398,7 +402,7 @@
                     {
                         "type": "client",
                         "name": "schedule_callback",
-                        "description": "כשהאורח מבקש שנחזור אליו במועד אחר (\"תחזרו אליי מחר\", \"עכשיו לא נוח\", \"בערב\", \"אחרי החג\") — קראי לכלי עם הזמן שהאורח ציין. אחרי שהכלי חוזר, אשרי בקצרה (\"מעולה, נחזור אליך\") וסיימי ב-end_call. מחזיר noted/queued.",
+                        "description": "כשהאורח מבקש שנחזור אליו במועד אחר (\"תחזרו אליי מחר\", \"עכשיו לא נוח\", \"בערב\", \"אחרי החג\") — קראי לכלי גם עם callback_when_text (כלשונו) וגם עם callback_iso (הזמן המחושב). בלי callback_iso השיחה החוזרת לא תתבצע כלל. כשאת מאשרת לאורח בקול — אמרי את השעה בשעון ישראל בפורמט 24 שעות (\"נחזור אליך בסביבות 19:00\"). אחרי שהכלי חוזר, אשרי בקצרה וסיימי ב-end_call. מחזיר noted/queued.",
                         "response_timeout_secs": 10,
                         "disable_interruptions": false,
                         "interruption_mode": "allow",
@@ -427,7 +431,7 @@
                                 },
                                 "callback_iso": {
                                     "type": "string",
-                                    "description": "אופציונלי: הזמן ב-ISO 8601 אם ניתן להסיק במדויק, אחרת השאירי ריק",
+                                    "description": "הזמן המוחלט לחזרה, ISO 8601. חשבי אותו מ-{{system__time_utc}} — הזמן הנוכחי ב-UTC, זמין לך תמיד. דוגמאות: \"בעוד עשרים דקות\" ← system__time_utc ועוד 20 דקות. \"מחר בשמונה בערב\" ← מחר בשעה 20:00 שעון ישראל, מומר ל-UTC. שעון ישראל הוא UTC+3 בקיץ (אפריל–אוקטובר) ו-UTC+2 בחורף. השאירי ריק רק אם האורח לא נקב בזמן כלשהו (\"מתישהו\", \"תחזרו אליי\") — זמן יחסי כמו \"בעוד שעה\" או \"מחר\" הוא תמיד ניתן לחישוב.",
                                     "is_system_provided": false,
                                     "dynamic_variable": "",
                                     "allowed_values_dynamic_variable": "",
@@ -471,7 +475,8 @@
                         "tool_call_sound_behavior": "auto",
                         "tool_error_handling_mode": "auto",
                         "params": {
-                            "system_tool_type": "language_detection"
+                            "system_tool_type": "language_detection",
+                            "only_at_conversation_start": false
                         }
                     },
                     {
@@ -520,6 +525,7 @@
                     "conversation_goal_prompt": "Determine whether the call reached a clear, saved RSVP outcome. Success = the agent called the save_rsvp tool with a status of attending, declined, or maybe after an explicit verbal read-back confirmation, OR the call ended on a legitimate non-save path where skipping the save was correct: the guest asked to be removed (mark_dnc was called), the agent handed off to WhatsApp because of a bad line / language mismatch / repeated misunderstanding, the wrong person answered, or a sensitive situation arose (bereavement, illness). Failure = the call ended with no saved status and no legitimate reason to skip saving. Judge only from the Hebrew conversation and the tool calls, never from the guest's identity.",
                     "use_knowledge_base": false,
                     "scope": "conversation",
+                    "llm_billed": false,
                     "scoring_mode": "binary",
                     "max_score": 100
                 },
@@ -530,6 +536,7 @@
                     "conversation_goal_prompt": "Evaluate headcount capture, which applies only to attending guests. Success = when the guest confirmed they are attending, the agent collected a whole number of adults and, separately, children, read the totals back for confirmation, and saved only after that confirmation; OR the guest is not attending / undecided / no save occurred, in which case this criterion is not applicable and must be scored as success. Failure = the guest was attending but the agent saved a headcount that was never stated or confirmed, guessed a number, or skipped the read-back. Spoken Hebrew forms such as 'שניים'=2, 'זוג'=2, 'רק אני'=1, 'בלי ילדים'=0 count as validly captured numbers.",
                     "use_knowledge_base": false,
                     "scope": "conversation",
+                    "llm_billed": false,
                     "scoring_mode": "binary",
                     "max_score": 100
                 },
@@ -540,6 +547,7 @@
                     "conversation_goal_prompt": "Check how removal requests were handled. Success = if at any point the guest asked, in any phrasing, not to be called again or to be removed (for example 'תסירו אותי', 'אל תתקשרו אליי', 'הורידו אותי מהרשימה'), the agent called the mark_dnc tool immediately, acknowledged briefly, and ended the call with no persuasion and no 'are you sure?'; OR no such request was ever made, in which case score success by default. Failure = the guest asked to be removed but mark_dnc was not called, or the agent argued or tried to persuade before honoring the request.",
                     "use_knowledge_base": false,
                     "scope": "conversation",
+                    "llm_billed": false,
                     "scoring_mode": "binary",
                     "max_score": 100
                 },
@@ -550,6 +558,7 @@
                     "conversation_goal_prompt": "Verify the agent stayed within scope and did not fabricate. Success = the agent did not invent any event detail beyond the provided variables (no made-up start time, full address, dress code, gift information, list of other guests, or changes to the event) and instead routed unknown questions to notify_owner; did not impersonate a human, admitting it is a digital assistant when asked; and did not discuss payment or money or collect personal data beyond attendance and headcount. Failure = the agent fabricated an event detail, claimed to be a human, or went outside the RSVP task.",
                     "use_knowledge_base": false,
                     "scope": "conversation",
+                    "llm_billed": false,
                     "scoring_mode": "binary",
                     "max_score": 100
                 }
@@ -602,6 +611,7 @@
                 "typing_indicator": null
             },
             "styles": {},
+            "show_resize_button": true,
             "language_selector": false,
             "supports_text_only": true,
             "language_presets": {}
@@ -619,7 +629,8 @@
                 "dynamic_variable": "",
                 "allowed_values_dynamic_variable": "",
                 "constant_value": "",
-                "is_omitted": false
+                "is_omitted": false,
+                "llm_billed": false
             },
             "adults": {
                 "type": "integer",
@@ -628,7 +639,8 @@
                 "dynamic_variable": "",
                 "allowed_values_dynamic_variable": "",
                 "constant_value": "",
-                "is_omitted": false
+                "is_omitted": false,
+                "llm_billed": false
             },
             "children": {
                 "type": "integer",
@@ -637,13 +649,70 @@
                 "dynamic_variable": "",
                 "allowed_values_dynamic_variable": "",
                 "constant_value": "",
-                "is_omitted": false
+                "is_omitted": false,
+                "llm_billed": false
             }
         },
         "data_collection_scopes": {
             "rsvp_status": "conversation",
             "adults": "conversation",
             "children": "conversation"
+        },
+        "analysis_items": {
+            "evaluation_criteria": [
+                {
+                    "source": "user",
+                    "analysis_item_id": "aitem_6301m0hma98weatbncax2acmsvjb",
+                    "version_id": null,
+                    "additional_version_ids": [],
+                    "scope": "conversation",
+                    "weight": null
+                },
+                {
+                    "source": "user",
+                    "analysis_item_id": "aitem_2201m0hma99efr5bzgmrkjz26a9b",
+                    "version_id": null,
+                    "additional_version_ids": [],
+                    "scope": "conversation",
+                    "weight": null
+                },
+                {
+                    "source": "user",
+                    "analysis_item_id": "aitem_4601m0hma99nerhvg7daaygkar32",
+                    "version_id": null,
+                    "additional_version_ids": [],
+                    "scope": "conversation",
+                    "weight": null
+                },
+                {
+                    "source": "user",
+                    "analysis_item_id": "aitem_8901m0hma99xej5stq2rxsqstdp9",
+                    "version_id": null,
+                    "additional_version_ids": [],
+                    "scope": "conversation",
+                    "weight": null
+                }
+            ],
+            "data_collection": [
+                {
+                    "source": "user",
+                    "analysis_item_id": "aitem_7001m0hma9a5fjra8159dxxy3vx5",
+                    "version_id": null,
+                    "scope": "conversation"
+                },
+                {
+                    "source": "user",
+                    "analysis_item_id": "aitem_5401m0hma9ace5b8zdnjh442p9s1",
+                    "version_id": null,
+                    "scope": "conversation"
+                },
+                {
+                    "source": "user",
+                    "analysis_item_id": "aitem_0101m0hma9ameq0bappjp1j9cr41",
+                    "version_id": null,
+                    "scope": "conversation"
+                }
+            ]
         },
         "overrides": {
             "conversation_config_override": {
@@ -652,7 +721,8 @@
                 },
                 "turn": {
                     "soft_timeout_config": {
-                        "message": false
+                        "message": false,
+                        "additional_soft_timeout_messages": false
                     }
                 },
                 "tts": {
@@ -660,10 +730,12 @@
                     "voice_id": false,
                     "stability": false,
                     "speed": false,
-                    "similarity_boost": false
+                    "similarity_boost": false,
+                    "pronunciation_dictionary_locators": false
                 },
                 "conversation": {
-                    "text_only": true
+                    "text_only": true,
+                    "max_duration_seconds": false
                 },
                 "agent": {
                     "first_message": false,
@@ -680,7 +752,8 @@
             },
             "custom_llm_extra_body": false,
             "enable_conversation_initiation_client_data_from_webhook": false,
-            "enable_starting_workflow_node_id_from_client": false
+            "enable_starting_workflow_node_id_from_client": false,
+            "enable_procedure_ids_from_client": false
         },
         "workspace_overrides": {
             "webhooks": {
@@ -709,6 +782,12 @@
             },
             "prompt_injection": {
                 "is_enabled": true
+            },
+            "synthetic_voice": {
+                "is_enabled": false,
+                "trigger_action": {
+                    "type": "end_call"
+                }
             },
             "content": {
                 "execution_mode": "streaming",
@@ -763,6 +842,10 @@
             "daily_limit": 100000,
             "bursting_enabled": true
         },
+        "queueing_config": {
+            "enabled": false,
+            "wait_timeout_seconds": 180
+        },
         "ban": null,
         "smb_metadata": null,
         "privacy": {
@@ -772,6 +855,7 @@
             "delete_audio": false,
             "apply_to_existing_conversations": false,
             "zero_retention_mode": false,
+            "nested_history_redaction": false,
             "conversation_history_redaction": {
                 "enabled": false,
                 "entities": []
@@ -779,6 +863,8 @@
         },
         "trust_context": "unknown",
         "analysis_llm": "gemini-2.5-flash",
+        "analysis_bedrock_llm": null,
+        "analysis_llm_billed": false,
         "topic_discovery": {
             "enabled": true
         },

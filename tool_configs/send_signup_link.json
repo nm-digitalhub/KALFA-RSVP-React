@@ -1,0 +1,38 @@
+{
+    "type": "client",
+    "name": "send_signup_link",
+    "description": "שולח קישור הרשמה אמיתי (לא בשיחה עצמה), רק אחרי מחויבות מילולית ואחרי שהגילוי המשפטי (שלב 5) הושלם. מנסה וואטסאפ קודם — רק אם whatsapp_consent=true — ונופל אוטומטית ל-SMS אם וואטסאפ נכשל או שלא ניתנה הסכמה אליו. מחזיר תוצאה אחת, ללא ציון ערוץ — הסוכן אינו יודע ואינו צריך לדעת דרך איזה ערוץ נשלחה ההודעה בפועל. accepted=true פירושו שהמערכת קיבלה את ההודעה לשליחה, לא שהיא הגיעה בפועל אצל הפונה. כאשר accepted=true, השרת עצמו רושם את התוצאה כתוצאת-לוואי של הקריאה הזו — אינך קורא לכלי נפרד כדי \"לדווח\" את זה.",
+    "response_timeout_secs": 15,
+    "disable_interruptions": false,
+    "interruption_mode": "allow",
+    "force_pre_tool_speech": false,
+    "pre_tool_speech": "auto",
+    "assignments": [],
+    "tool_call_sound_behavior": "auto",
+    "tool_error_handling_mode": "auto",
+    "parameters": {
+        "description": "",
+        "dynamic_variable": "",
+        "is_omitted": false,
+        "type": "object",
+        "required": [
+            "whatsapp_consent"
+        ],
+        "properties": {
+            "whatsapp_consent": {
+                "type": "boolean",
+                "description": "true רק אם הפונה ענה כן במפורש לשאלת ההסכמה בתחילת שלב 6 (\"שאשלח לך בוואטסאפ, מטעם קלפה, את קישור ההרשמה?\") — לא ניחוש, לא הנחה משתיקה. false מנתב ישירות ל-SMS בלבד, בלי לנסות וואטסאפ כלל.",
+                "is_system_provided": false,
+                "dynamic_variable": "",
+                "allowed_values_dynamic_variable": "",
+                "constant_value": "",
+                "is_omitted": false
+            }
+        }
+    },
+    "expects_response": true,
+    "dynamic_variables": {
+        "dynamic_variable_placeholders": {}
+    },
+    "execution_mode": "immediate"
+}

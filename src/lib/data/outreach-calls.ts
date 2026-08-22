@@ -13,9 +13,9 @@ import {
   recordDialConfirmed,
   markFailedToStart,
   markStartUnknown,
-  countActiveCalls,
   countCampaignCallsSince,
 } from '@/lib/data/call-attempts';
+import { countActiveCallsAllSurfaces } from '@/lib/data/voximplant-concurrency';
 import {
   getCampaignContext,
   hasCallConsent,
@@ -207,7 +207,12 @@ export async function dispatchOutreachCall(
   //     precheck so no API call or attempt row happens when over a cap. Soft
   //     caps: a small count↔INSERT race is possible under load; the hard
   //     guarantee stays the UNIQUE(campaign,contact,touchpoint) atomic create.
-  const active = await countActiveCalls();
+  //     COMBINED cross-table count (voximplant-concurrency.ts) — one Voximplant
+  //     account's balance/concurrency ceiling is now shared by three dispatch
+  //     surfaces (RSVP campaign calls, meeting-confirm, sales-closing); a plain
+  //     countActiveCalls() here would let this surface alone blow past the cap
+  //     while the other two are also dialing.
+  const active = await countActiveCallsAllSurfaces();
   if (active >= config.maxConcurrentCalls) {
     await alert('warn', 'Voximplant max concurrency reached — deferring', {
       campaignId, active, cap: config.maxConcurrentCalls,

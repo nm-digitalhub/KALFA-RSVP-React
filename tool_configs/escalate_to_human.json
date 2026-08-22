@@ -1,0 +1,38 @@
+{
+    "type": "client",
+    "name": "escalate_to_human",
+    "description": "בודק זמינות נציג אנושי ומעביר אם קיים; אם אין, מחזיר זאת בכנות ואינו מעמיד פנים שהעברה קרתה. לקרוא כאשר הפונה מבקש לדבר עם בן אדם, או אחרי שתי אי-הבנות/שקטים חוזרים על אותה שאלה.",
+    "response_timeout_secs": 10,
+    "disable_interruptions": false,
+    "interruption_mode": "allow",
+    "force_pre_tool_speech": false,
+    "pre_tool_speech": "auto",
+    "assignments": [],
+    "tool_call_sound_behavior": "auto",
+    "tool_error_handling_mode": "auto",
+    "parameters": {
+        "description": "",
+        "dynamic_variable": "",
+        "is_omitted": false,
+        "type": "object",
+        "required": [
+            "reason"
+        ],
+        "properties": {
+            "reason": {
+                "type": "string",
+                "description": "סיבת ההעברה, בקצרה",
+                "is_system_provided": false,
+                "dynamic_variable": "",
+                "allowed_values_dynamic_variable": "",
+                "constant_value": "",
+                "is_omitted": false
+            }
+        }
+    },
+    "expects_response": true,
+    "dynamic_variables": {
+        "dynamic_variable_placeholders": {}
+    },
+    "execution_mode": "immediate"
+}

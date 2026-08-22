@@ -14,6 +14,8 @@ import {
   testVoximplantConnection,
   updateVoximplantLiveCalls,
   updateCallConsentRequired,
+  updateMeetingConfirmChannel,
+  updateSalesCallChannel,
 } from '@/lib/data/admin/voximplant-channel';
 import {
   getOutreachMasterState,
@@ -244,6 +246,117 @@ export async function updateCallConsentRequiredAction(
       ? 'דרישת ההסכמה הופעלה — שיחות AI רק לאנשי קשר עם הסכמה מתועדת'
       : 'דרישת ההסכמה בוטלה — שיחות AI ייצאו גם ללא הסכמה מוקדמת (חשיפה משפטית — ראו האזהרה)',
   };
+}
+
+// Per-persona kill switches (2026-08-22) — meeting-confirm and sales-closing
+// each get their OWN toggle+rule_id, deliberately separate from
+// voximplant_live_calls/voximplant_rule_id (RSVPAgent's OutCall rule,
+// 1494311, must never carry another persona's calls — see the migration's
+// own comment). Fail-closed exactly like updateVoximplantLiveCallsAction:
+// refuses to enable without this persona's OWN rule_id AND the shared base
+// config (service account + caller id). Checks the EFFECTIVE rule_id — the
+// one being submitted in this same request, or the already-stored one if
+// this submission leaves it blank — so "type a rule id and enable in one
+// submit" and "enable using an already-saved rule id" both work.
+const personaChannelSchema = z.object({
+  ruleId: z.string().trim().max(64).default(''),
+  enabled: z.boolean(),
+});
+
+async function updatePersonaChannel(
+  formData: FormData,
+  ruleIdField: string,
+  enabledField: string,
+  update: (input: { ruleId: string; enabled: boolean }) => Promise<void>,
+  slackSource: string,
+  errors: {
+    enableWithoutRule: string;
+    updateFailed: string;
+    onNotice: string;
+    offNotice: string;
+    onTitle: string;
+    offTitle: string;
+  },
+): Promise<FormState> {
+  const parsed = personaChannelSchema.safeParse({
+    ruleId: formData.get(ruleIdField) ?? '',
+    enabled: formData.get(enabledField) === 'on',
+  });
+  if (!parsed.success) {
+    return { fieldErrors: parsed.error.flatten().fieldErrors };
+  }
+  const { ruleId, enabled } = parsed.data;
+
+  // ruleId is ALWAYS what was submitted (the field is defaultValue-pre-filled
+  // in the UI, not blank-means-keep) — so the submitted value IS the
+  // effective one, no separate stored-value fallback needed here.
+  if (enabled) {
+    const cfg = await getVoximplantChannelConfig(); // requireAdmin inside
+    const baseConfigured = cfg.serviceAccountConfigured && !!cfg.voximplant_caller_id;
+    if (!baseConfigured || !ruleId) {
+      return { error: errors.enableWithoutRule };
+    }
+  }
+
+  try {
+    await update({ ruleId, enabled });
+  } catch (err) {
+    unstable_rethrow(err);
+    return { error: errors.updateFailed };
+  }
+  void sendSlackAlert({
+    level: enabled ? 'warn' : 'info',
+    category: 'security',
+    source: slackSource,
+    title: enabled ? errors.onTitle : errors.offTitle,
+    fields: { enabled: String(enabled) },
+  });
+  revalidatePath('/admin/channels');
+  return { notice: enabled ? errors.onNotice : errors.offNotice };
+}
+
+export async function updateMeetingConfirmChannelAction(
+  _prev: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  return updatePersonaChannel(
+    formData,
+    'voximplant_meeting_confirm_rule_id',
+    'voximplant_meeting_confirm_enabled',
+    updateMeetingConfirmChannel,
+    'voximplant-meeting-confirm-toggle',
+    {
+      enableWithoutRule:
+        'לא ניתן להפעיל שיחות אישור פגישה ללא Rule ID לסוכן זה וחשבון Voximplant בסיסי מוגדר (חשבון שירות ומספר יוצא).',
+      updateFailed: 'עדכון הגדרות סוכן אישור הפגישה נכשל. נסו שוב.',
+      onNotice: 'שיחות אישור פגישה מופעלות',
+      offNotice: 'שיחות אישור פגישה כבויות',
+      onTitle: 'Voximplant meeting-confirm calls ENABLED — real paid dialing permitted',
+      offTitle: 'Voximplant meeting-confirm calls disabled',
+    },
+  );
+}
+
+export async function updateSalesCallChannelAction(
+  _prev: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  return updatePersonaChannel(
+    formData,
+    'voximplant_sales_call_rule_id',
+    'voximplant_sales_calls_enabled',
+    updateSalesCallChannel,
+    'voximplant-sales-call-toggle',
+    {
+      enableWithoutRule:
+        'לא ניתן להפעיל שיחות סגירת מכירה ללא Rule ID לסוכן זה וחשבון Voximplant בסיסי מוגדר (חשבון שירות ומספר יוצא).',
+      updateFailed: 'עדכון הגדרות סוכן סגירת המכירה נכשל. נסו שוב.',
+      onNotice: 'שיחות סגירת מכירה מופעלות',
+      offNotice: 'שיחות סגירת מכירה כבויות',
+      onTitle: 'Voximplant sales-closing calls ENABLED — real paid dialing permitted',
+      offTitle: 'Voximplant sales-closing calls disabled',
+    },
+  );
 }
 
 // Edit ONE existing channel's display metadata (label / built-flag / show-hide /

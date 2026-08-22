@@ -1,0 +1,77 @@
+-- Replay-guard column on sales_call_attempts for the sales-closing agent's
+-- outcome write path.
+--
+-- Why: auth-authz-guardian's review (2026-08-22, for team-lead) of the
+-- planned log_outcome -> applyCallOutcome() write path found that
+-- applyCallOutcome's own duplicate-write guard (callback-scheduling.ts) is
+-- INERT for an AI-only call. Verified directly, not taken on their word:
+--
+--   let claim = admin.from('callback_requests').update({...}).eq('id', requestId);
+--   claim = row.calendar_item_id
+--     ? claim.eq('calendar_item_id', row.calendar_item_id)
+--     : claim.is('calendar_item_id', null);
+--
+-- (callback-scheduling.ts, applyCallOutcome, ~line 621). The guard branches
+-- on whether the row already carries a calendar_item_id. The sales-closing
+-- agent's call never books an Exchange appointment for ITSELF (that is what
+-- the human callback flow does) -- calendar_item_id is null on that row from
+-- the start, so every call always takes the `.is('calendar_item_id', null)`
+-- branch, which the update's own `calendar_item_id: null` write keeps true
+-- for the NEXT call too. A leaked or replayed token can therefore flip
+-- `callback_requests.call_outcome` repeatedly (e.g. closed -> completed ->
+-- closed) with zero resistance from applyCallOutcome itself -- the guard
+-- protects the human-callback path (which has a real calendar_item_id to
+-- key off of) and does nothing for this one.
+--
+-- Fix: outcome_recorded_at on sales_call_attempts (the table already scoped
+-- to exactly this call, one row per attempt), claimed in the SAME statement
+-- that then calls applyCallOutcome -- same idiom already established in this
+-- codebase for exactly this shape of problem (see
+-- callback_requests.no_contact_sms_claimed_at,
+-- 20260819233736_callback_no_contact_closure.sql: "Idempotent write: UPDATE
+-- ... SET ... = now() WHERE id = $1 AND ... IS NULL RETURNING id -- only the
+-- caller that gets a row back may call the ... provider"). Whoever
+-- implements the token-scoped route (voximplant-engineer / app layer, not
+-- schema) should:
+--   UPDATE sales_call_attempts SET outcome_recorded_at = now()
+--     WHERE id = $token_row AND outcome_recorded_at IS NULL
+--     RETURNING id;
+-- and only call applyCallOutcome() if a row comes back. Not this migration's
+-- job to build that route -- flagging the write pattern so the column's
+-- purpose is unambiguous to whoever does.
+--
+-- NOT merged into callback_request_attempts, per auth-authz-guardian's
+-- alternative suggestion -- considered and declined, reasoning recorded here
+-- rather than only in chat: that table's confirmation_call_status is a real
+-- second axis for the meeting-booking/inbound-reschedule use case because
+-- that call is a PING ahead of a separate substantive (human) call.
+-- sales_call_attempts has no such column by design -- the AI call IS the
+-- substantive interaction, its outcome lives entirely on
+-- callback_requests.call_outcome (see 20260822104725_sales_call_attempts_
+-- token_surface.sql's header). Merging would put a column meaningful only to
+-- one issued_via value onto rows where it can never apply, and the two
+-- tables already have different uniqueness-constraint semantics (dispatch-
+-- ahead ping vs. fires-at-scheduled_at substantive call) worked out
+-- separately with voximplant-engineer. Kept as two small tables with
+-- repeated-but-simple posture rather than one table with issued_via-
+-- conditional column meaning.
+--
+-- No index needed: the claim reads/writes by primary key (id), already
+-- indexed.
+--
+-- No RLS/GRANT changes: posture set in the parent migration, unaffected by
+-- adding a column.
+--
+-- Validated: run inside an explicit BEGIN/ROLLBACK against the linked
+-- project (2026-08-22), confirming the ALTER applies cleanly against the
+-- live table, then rolled back. NOT applied outside that transaction --
+-- staged pending explicit go, same process as the rest of this series.
+--
+-- Rollback: alter table public.sales_call_attempts drop column
+-- outcome_recorded_at.
+
+alter table public.sales_call_attempts
+  add column outcome_recorded_at timestamptz;
+
+comment on column public.sales_call_attempts.outcome_recorded_at is
+  'Claim-before-write guard for the log_outcome -> applyCallOutcome() write, NOT a send-confirmation. Set the instant the token-scoped route commits to writing this call''s outcome, before calling applyCallOutcome(). Required because applyCallOutcome''s own duplicate-guard (keyed on callback_requests.calendar_item_id) is inert for an AI-only call, which never has a calendar_item_id to key off of. Idempotent write: UPDATE sales_call_attempts SET outcome_recorded_at = now() WHERE id = $1 AND outcome_recorded_at IS NULL RETURNING id -- only the caller that gets a row back may call applyCallOutcome().';

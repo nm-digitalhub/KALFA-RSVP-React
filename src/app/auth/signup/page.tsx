@@ -5,7 +5,12 @@ import { SignupForm } from './signup-form';
 
 export const metadata: Metadata = { title: 'הרשמה' };
 
-export default function SignupPage() {
+export default async function SignupPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ ref?: string }>;
+}) {
+  const { ref } = await searchParams;
   return (
     <main className="mx-auto flex min-h-dvh max-w-md flex-col justify-center gap-6 px-6">
       <div className="space-y-1 text-center">
@@ -13,7 +18,7 @@ export default function SignupPage() {
         <p className="text-sm text-muted-foreground">צרו חשבון כדי להתחיל לנהל אירועים</p>
       </div>
 
-      <SignupForm />
+      <SignupForm salesRef={typeof ref === 'string' ? ref : undefined} />
 
       <p className="text-center text-sm text-muted-foreground">
         כבר יש לכם חשבון?{' '}

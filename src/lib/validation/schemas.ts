@@ -43,6 +43,12 @@ export const signupSchema = z.object({
     })
     .optional()
     .or(z.literal('')),
+  // Sales-closing-agent conversion tracking (?ref= on /auth/signup — a
+  // sales_call_attempts.id, not a credential). Optional and never
+  // user-facing; a malformed value here just means no attribution, never a
+  // signup failure — existence is re-verified server-side (see actions.ts)
+  // before it is ever trusted.
+  ref: z.uuid().optional().or(z.literal('')),
 });
 
 // Password reset (forgot-password → recovery email → set new password), built
