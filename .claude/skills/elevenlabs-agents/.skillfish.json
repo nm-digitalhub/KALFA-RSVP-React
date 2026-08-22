@@ -1,0 +1,10 @@
+{
+  "version": 2,
+  "name": "elevenlabs-agents",
+  "owner": "jezweb",
+  "repo": "claude-skills",
+  "path": "plugins/integrations/skills/elevenlabs-agents",
+  "branch": "main",
+  "sha": "a17ac1c318a95319ae02e6caf736d0d1d3bc3d91",
+  "source": "manual"
+}
