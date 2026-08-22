@@ -127,8 +127,12 @@ case law and the declared attorney-questions list. The GENERIC six-law layer
 israeli-compliance-advisor).
 
 **Measured access map from THIS server (2026-07-26):**
-- `knesset.gov.il` (HTML + OData V4 + fs PDFs) — **BLOCKED (HTTP 474**, Radware
+- `knesset.gov.il` (HTML + OData V4) — **BLOCKED (HTTP 474**, Radware
   geo/bot block; browser-UA does not help). `gov.il` — **BLOCKED (403)**.
+  **Correction 2026-08-22**: static gazette PDFs under `fs.knesset.gov.il/.../law/*.pdf`
+  are directly `curl`-able (HTTP 200, no Wayback needed) — verified live on two
+  files (ס"ח 3510, ס"ח 3569). The block is on the HTML/OData front end, not on
+  this file host. Try direct curl first; fall back to Wayback `id_` only if it fails.
 - **Gazette PDFs (ס"ח/ק"ת)** → the skill's `scripts/fetch_law_pdf.py`:
   Wayback `id_` (`web.archive.org/web/<ts>id_/<url>`) serves the ORIGINAL
   bytes; a static dated gazette publication never changes ⇒ its snapshot is

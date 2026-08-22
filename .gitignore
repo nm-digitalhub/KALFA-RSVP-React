@@ -127,3 +127,7 @@ __pycache__/
 # Snapshots of what the platform is running, not source — the source of truth is
 # voxfiles/scenarios/src/. Committing them would create a second, silently stale copy.
 scenario-*.deployed.js
+
+# Subagent-driven-development scratch workspaces (ledgers, briefs, review
+# packages) — per-plan working state, not source. See superpowers:subagent-driven-development.
+/.superpowers/
