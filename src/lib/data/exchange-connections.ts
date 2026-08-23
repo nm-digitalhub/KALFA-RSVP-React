@@ -105,16 +105,35 @@ export async function getExchangeConnectionMode(): Promise<'per_user' | 'per_org
   }
 }
 
-// The current user's own connections (self-scoped — see module note). Never
+// The connections visible to the current user (see module note). Never
 // selects the credential columns; this is a display read only.
+//
+// Mode-aware (BUG FIXED 2026-08-23): 'per_user' keeps the original self-scope.
+// 'per_org' means "shared with every admin who has manage_settings" — so this
+// drops the user_id filter entirely and returns every row, mirroring what
+// loadBusinessConnection (callback-scheduling.ts, the automated scheduler)
+// has ALWAYS done: a bare `.eq('status','verified')` with no user_id/org_id
+// filter at all. Before this fix, 'per_org' was selected in Settings but
+// every read here stayed user_id-scoped — a connection an admin created
+// under one session/account was invisible to every other admin (including,
+// sometimes, that same admin after re-auth), even though the row was
+// perfectly valid and the scheduler was reading it fine the whole time. Not
+// org_id-scoped either: `organization_members` is the CUSTOMER multi-tenant
+// layer (per-event orgs), unrelated to this business-admin, staff-gated
+// feature — matching it here would be the wrong authorization model, not a
+// fix. The real access boundary stays requirePlatformPermission above.
 export async function listMyExchangeConnections(): Promise<ExchangeConnectionView[]> {
   const user = await requireUser();
   await requirePlatformPermission('manage_settings');
+  const mode = await getExchangeConnectionMode();
   const admin = createAdminClient();
-  const { data, error } = await admin.from('exchange_connections')
+  let query = admin.from('exchange_connections')
     .select(PUBLIC_COLUMNS)
-    .eq('user_id', user.id)
     .order('created_at', { ascending: false });
+  if (mode === 'per_user') {
+    query = query.eq('user_id', user.id);
+  }
+  const { data, error } = await query;
   if (error) throw new Error('טעינת חיבורי Exchange נכשלה');
   return ((data ?? []) as ExchangeConnectionRow[]).map(toView);
 }
@@ -186,18 +205,35 @@ export async function createExchangeConnection(input: {
   // SAME id, so the AAD binding still matches), status reset to pending, and
   // the audit trail (created_at + activity log) stays continuous. An ACTIVE
   // row still refuses a duplicate connect.
-  const { data: existing } = await admin
+  //
+  // Mode-aware duplicate check (BUG FIXED 2026-08-23, same fix as
+  // listMyExchangeConnections above): in 'per_org' mode this must look across
+  // EVERY admin's rows for this mailbox, not just the caller's own. Getting
+  // this wrong is not merely a visibility gap here — it is a correctness bug:
+  // if two admins could each end up with their own 'verified' row for the
+  // same shared mailbox, loadBusinessConnection (the automated scheduler,
+  // callback-scheduling.ts) would find 2 verified rows and refuse with
+  // 'ambiguous_connection', silently halting every calendar-driven callback
+  // in the system.
+  let existingQuery = admin
     .from('exchange_connections')
     .select('id, status')
-    .eq('user_id', user.id)
-    .eq('mailbox_email', input.mailboxEmail)
-    .maybeSingle();
+    .eq('mailbox_email', input.mailboxEmail);
+  if (mode === 'per_user') {
+    existingQuery = existingQuery.eq('user_id', user.id);
+  }
+  const { data: existing } = await existingQuery.maybeSingle();
 
   if (existing) {
     if (existing.status !== 'revoked') {
-      return { ok: false, error: 'תיבת הדואר הזו כבר מחוברת לחשבון שלכם.' };
+      return {
+        ok: false,
+        error: mode === 'per_org'
+          ? 'תיבת הדואר הזו כבר מחוברת (חיבור משותף לארגון).'
+          : 'תיבת הדואר הזו כבר מחוברת לחשבון שלכם.',
+      };
     }
-    const { error: reviveError } = await admin
+    let reviveQuery = admin
       .from('exchange_connections')
       .update({
         org_id: orgId,
@@ -210,8 +246,11 @@ export async function createExchangeConnection(input: {
         last_verified_at: null,
         last_error: null,
       })
-      .eq('id', existing.id)
-      .eq('user_id', user.id);
+      .eq('id', existing.id);
+    if (mode === 'per_user') {
+      reviveQuery = reviveQuery.eq('user_id', user.id);
+    }
+    const { error: reviveError } = await reviveQuery;
     if (reviveError) throw new Error('חיבור התיבה מחדש נכשל');
     await logActivity({
       action: 'exchange.connection_reconnected',
@@ -273,12 +312,15 @@ async function loadOwnedConnectionConfig(
 > {
   const user = await requireUser();
   await requirePlatformPermission('manage_settings');
+  const mode = await getExchangeConnectionMode();
   const admin = createAdminClient();
-  const { data, error } = await admin.from('exchange_connections')
+  let query = admin.from('exchange_connections')
     .select(CREDENTIAL_COLUMNS)
-    .eq('id', connectionId)
-    .eq('user_id', user.id)
-    .maybeSingle();
+    .eq('id', connectionId);
+  if (mode === 'per_user') {
+    query = query.eq('user_id', user.id);
+  }
+  const { data, error } = await query.maybeSingle();
   if (error) return { ok: false, message: 'טעינת החיבור נכשלה' };
   if (!data) return { ok: false, message: 'החיבור לא נמצא' };
   const row = data as ExchangeConnectionRowWithCredential;
@@ -414,11 +456,15 @@ export async function deleteMyExchangeTestAppointment(
 export async function revokeExchangeConnection(connectionId: string): Promise<void> {
   const user = await requireUser();
   await requirePlatformPermission('manage_settings');
+  const mode = await getExchangeConnectionMode();
   const admin = createAdminClient();
-  const { error } = await admin.from('exchange_connections')
+  let query = admin.from('exchange_connections')
     .update({ status: 'revoked' })
-    .eq('id', connectionId)
-    .eq('user_id', user.id);
+    .eq('id', connectionId);
+  if (mode === 'per_user') {
+    query = query.eq('user_id', user.id);
+  }
+  const { error } = await query;
   if (error) throw new Error('ניתוק החיבור נכשל');
   await logActivity({ action: 'exchange.connection_revoked', meta: { connectionId } });
 }

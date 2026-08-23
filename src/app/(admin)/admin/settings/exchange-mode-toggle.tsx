@@ -28,7 +28,7 @@ export function ExchangeModeToggle({ mode }: { mode: 'per_user' | 'per_org' }) {
       </label>
       <p className="text-xs text-muted-foreground">
         קובע רק אילו חיבורים חדשים נוצרים ואיזה מסלול פעיל במסך &quot;חיבור
-        Exchange&quot; (/app/settings) — לא מוחק ולא מנתק חיבורים קיימים.
+        Exchange&quot; שמעל (/admin/settings) — לא מוחק ולא מנתק חיבורים קיימים.
       </p>
       <SubmitButton className="w-auto">שמירה</SubmitButton>
     </form>
