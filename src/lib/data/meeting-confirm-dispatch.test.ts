@@ -93,7 +93,14 @@ const acct = (balance: number) => ({
   result: { account_id: 1, account_name: 'x', account_email: 'x', active: true, currency: 'USD', balance, created: '' },
 });
 
-const SCHEDULED_ROW = { id: REQ_ID, phone: '0501234567', status: 'scheduled', scheduled_at: '2026-08-23T10:00:00+03:00' };
+// Fully deterministic clock: dispatchMeetingConfirmCall now takes an injectable
+// nowMs (added after the 218eb34 time-bomb incident — the suite shipped green
+// with a literal '2026-08-23T10:00+03:00' fixture against a hidden Date.now()
+// and 15 tests started failing the moment that instant passed). Every dispatch
+// call below passes DISPATCH_NOW_MS, so these literals can never expire.
+const DISPATCH_NOW_MS = Date.parse('2026-07-20T09:00:00+03:00');
+const SCHEDULED_AT_FUTURE_ISO = new Date(DISPATCH_NOW_MS + 48 * 60 * 60 * 1000).toISOString();
+const SCHEDULED_ROW = { id: REQ_ID, phone: '0501234567', status: 'scheduled', scheduled_at: SCHEDULED_AT_FUTURE_ISO };
 
 function mockedAdmin(row: Row | null = SCHEDULED_ROW): { admin: Admin; builder: MockQueryBuilder<Row> } {
   const { client, builder } = createMockSupabase<Row>({ data: row, error: null });
@@ -120,55 +127,55 @@ beforeEach(() => {
 
 describe('gates (no dial)', () => {
   it('calls disabled → blocked, no dial, no row read side effects beyond the gate', async () => {
-    const r = await dispatchMeetingConfirmCall(REQ_ID, { ...CONFIG, callsEnabled: false }, ORIGIN);
+    const r = await dispatchMeetingConfirmCall(REQ_ID, { ...CONFIG, callsEnabled: false }, ORIGIN, DISPATCH_NOW_MS);
     expect(r).toEqual({ kind: 'blocked', reason: 'calls_disabled' });
     expect(startScenarios).not.toHaveBeenCalled();
   });
 
   it('row not found → skipped not_scheduled', async () => {
     mockedAdmin(null);
-    expect(await dispatchMeetingConfirmCall(REQ_ID, CONFIG, ORIGIN)).toEqual({ kind: 'skipped', reason: 'not_scheduled' });
+    expect(await dispatchMeetingConfirmCall(REQ_ID, CONFIG, ORIGIN, DISPATCH_NOW_MS)).toEqual({ kind: 'skipped', reason: 'not_scheduled' });
     expect(startScenarios).not.toHaveBeenCalled();
   });
 
   it('status no longer scheduled (released between enqueue and this tick) → skipped not_scheduled', async () => {
     mockedAdmin({ ...SCHEDULED_ROW, status: 'pending_schedule' });
-    expect(await dispatchMeetingConfirmCall(REQ_ID, CONFIG, ORIGIN)).toEqual({ kind: 'skipped', reason: 'not_scheduled' });
+    expect(await dispatchMeetingConfirmCall(REQ_ID, CONFIG, ORIGIN, DISPATCH_NOW_MS)).toEqual({ kind: 'skipped', reason: 'not_scheduled' });
     expect(startScenarios).not.toHaveBeenCalled();
   });
 
   it('scheduled_at null → skipped not_scheduled (defensive — should not happen by construction)', async () => {
     mockedAdmin({ ...SCHEDULED_ROW, scheduled_at: null });
-    expect(await dispatchMeetingConfirmCall(REQ_ID, CONFIG, ORIGIN)).toEqual({ kind: 'skipped', reason: 'not_scheduled' });
+    expect(await dispatchMeetingConfirmCall(REQ_ID, CONFIG, ORIGIN, DISPATCH_NOW_MS)).toEqual({ kind: 'skipped', reason: 'not_scheduled' });
   });
 
   it('scheduled_at already in the past → skipped already_past, never dials', async () => {
     mockedAdmin({ ...SCHEDULED_ROW, scheduled_at: '2020-01-01T10:00:00+03:00' });
-    expect(await dispatchMeetingConfirmCall(REQ_ID, CONFIG, ORIGIN)).toEqual({ kind: 'skipped', reason: 'already_past' });
+    expect(await dispatchMeetingConfirmCall(REQ_ID, CONFIG, ORIGIN, DISPATCH_NOW_MS)).toEqual({ kind: 'skipped', reason: 'already_past' });
     expect(startScenarios).not.toHaveBeenCalled();
   });
 
   it('unnormalizable phone → skipped invalid_phone', async () => {
     mockedAdmin({ ...SCHEDULED_ROW, phone: 'not-a-phone' });
-    expect(await dispatchMeetingConfirmCall(REQ_ID, CONFIG, ORIGIN)).toEqual({ kind: 'skipped', reason: 'invalid_phone' });
+    expect(await dispatchMeetingConfirmCall(REQ_ID, CONFIG, ORIGIN, DISPATCH_NOW_MS)).toEqual({ kind: 'skipped', reason: 'invalid_phone' });
     expect(startScenarios).not.toHaveBeenCalled();
   });
 
   it('at the 3-attempt cap → skipped attempt_cap, before any provider call', async () => {
     vi.mocked(countRecentCallbackAuditedAttempts).mockResolvedValue(3);
-    expect(await dispatchMeetingConfirmCall(REQ_ID, CONFIG, ORIGIN)).toEqual({ kind: 'skipped', reason: 'attempt_cap' });
+    expect(await dispatchMeetingConfirmCall(REQ_ID, CONFIG, ORIGIN, DISPATCH_NOW_MS)).toEqual({ kind: 'skipped', reason: 'attempt_cap' });
     expect(getAccountInfo).not.toHaveBeenCalled();
     expect(startScenarios).not.toHaveBeenCalled();
   });
 
   it('consent gate refuses (e.g. dnc) → skipped with the gate\'s own reason', async () => {
     vi.mocked(evaluateSharedConsentGates).mockResolvedValue({ ok: false, reason: 'dnc' });
-    expect(await dispatchMeetingConfirmCall(REQ_ID, CONFIG, ORIGIN)).toEqual({ kind: 'skipped', reason: 'dnc' });
+    expect(await dispatchMeetingConfirmCall(REQ_ID, CONFIG, ORIGIN, DISPATCH_NOW_MS)).toEqual({ kind: 'skipped', reason: 'dnc' });
     expect(startScenarios).not.toHaveBeenCalled();
   });
 
   it('consent gate is evaluated with DIAL_GATE_POLICY.callback and no hours override', async () => {
-    await dispatchMeetingConfirmCall(REQ_ID, CONFIG, ORIGIN);
+    await dispatchMeetingConfirmCall(REQ_ID, CONFIG, ORIGIN, DISPATCH_NOW_MS);
     expect(evaluateSharedConsentGates).toHaveBeenCalledWith(
       expect.anything(),
       '+972501234567',
@@ -181,7 +188,7 @@ describe('gates (no dial)', () => {
 describe('concurrency', () => {
   it('at/over the combined cross-surface cap → max_concurrency, no attempt, no dial, warn', async () => {
     vi.mocked(countActiveCallsAllSurfaces).mockResolvedValue(5); // == cap
-    expect(await dispatchMeetingConfirmCall(REQ_ID, CONFIG, ORIGIN)).toEqual({ kind: 'max_concurrency' });
+    expect(await dispatchMeetingConfirmCall(REQ_ID, CONFIG, ORIGIN, DISPATCH_NOW_MS)).toEqual({ kind: 'max_concurrency' });
     expect(getAccountInfo).not.toHaveBeenCalled();
     expect(createCallbackDispatchAttempt).not.toHaveBeenCalled();
     expect(startScenarios).not.toHaveBeenCalled();
@@ -192,14 +199,14 @@ describe('concurrency', () => {
 describe('balance', () => {
   it('transport error → transient_error, no attempt, no dial', async () => {
     vi.mocked(getAccountInfo).mockRejectedValue(new VoximplantNetworkError('timeout'));
-    expect(await dispatchMeetingConfirmCall(REQ_ID, CONFIG, ORIGIN)).toEqual({ kind: 'transient_error', reason: 'balance_check_failed' });
+    expect(await dispatchMeetingConfirmCall(REQ_ID, CONFIG, ORIGIN, DISPATCH_NOW_MS)).toEqual({ kind: 'transient_error', reason: 'balance_check_failed' });
     expect(createCallbackDispatchAttempt).not.toHaveBeenCalled();
     expect(startScenarios).not.toHaveBeenCalled();
   });
 
   it('below reserve → blocked, no attempt, Slack error', async () => {
     vi.mocked(getAccountInfo).mockResolvedValue(acct(0.05) as never);
-    expect(await dispatchMeetingConfirmCall(REQ_ID, CONFIG, ORIGIN)).toEqual({ kind: 'blocked', reason: 'balance_below_reserve' });
+    expect(await dispatchMeetingConfirmCall(REQ_ID, CONFIG, ORIGIN, DISPATCH_NOW_MS)).toEqual({ kind: 'blocked', reason: 'balance_below_reserve' });
     expect(createCallbackDispatchAttempt).not.toHaveBeenCalled();
     expect(startScenarios).not.toHaveBeenCalled();
     expect(sendSlackAlert).toHaveBeenCalledWith(expect.objectContaining({ level: 'error' }));
@@ -207,7 +214,7 @@ describe('balance', () => {
 
   it('warning band (≥reserve, <low) → dials + warns', async () => {
     vi.mocked(getAccountInfo).mockResolvedValue(acct(2) as never);
-    expect((await dispatchMeetingConfirmCall(REQ_ID, CONFIG, ORIGIN)).kind).toBe('dialed');
+    expect((await dispatchMeetingConfirmCall(REQ_ID, CONFIG, ORIGIN, DISPATCH_NOW_MS)).kind).toBe('dialed');
     expect(sendSlackAlert).toHaveBeenCalledWith(expect.objectContaining({ level: 'warn' }));
   });
 });
@@ -218,7 +225,7 @@ describe('atomic-create race (reconcile)', () => {
     vi.mocked(getCallbackDispatchAttemptBySlot).mockResolvedValue(
       { id: ATTEMPT_ID, dispatch_status: 'dialing', vox_call_session_history_id: null } as never,
     );
-    expect(await dispatchMeetingConfirmCall(REQ_ID, CONFIG, ORIGIN)).toEqual({ kind: 'concurrent_owner' });
+    expect(await dispatchMeetingConfirmCall(REQ_ID, CONFIG, ORIGIN, DISPATCH_NOW_MS)).toEqual({ kind: 'concurrent_owner' });
     expect(startScenarios).not.toHaveBeenCalled();
     expect(markCallbackDispatchUnknown).not.toHaveBeenCalled(); // must NOT corrupt the winner
     expect(recordCallbackDialConfirmed).not.toHaveBeenCalled();
@@ -229,7 +236,7 @@ describe('atomic-create race (reconcile)', () => {
     vi.mocked(getCallbackDispatchAttemptBySlot).mockResolvedValue(
       { id: ATTEMPT_ID, dispatch_status: 'dialing', vox_call_session_history_id: String(HISTORY) } as never,
     );
-    expect(await dispatchMeetingConfirmCall(REQ_ID, CONFIG, ORIGIN)).toEqual({ kind: 'already_dispatched', attemptId: ATTEMPT_ID });
+    expect(await dispatchMeetingConfirmCall(REQ_ID, CONFIG, ORIGIN, DISPATCH_NOW_MS)).toEqual({ kind: 'already_dispatched', attemptId: ATTEMPT_ID });
     expect(startScenarios).not.toHaveBeenCalled();
   });
 
@@ -238,7 +245,7 @@ describe('atomic-create race (reconcile)', () => {
     vi.mocked(getCallbackDispatchAttemptBySlot).mockResolvedValue(
       { id: ATTEMPT_ID, dispatch_status: 'failed_to_start', vox_call_session_history_id: null } as never,
     );
-    expect(await dispatchMeetingConfirmCall(REQ_ID, CONFIG, ORIGIN)).toEqual({
+    expect(await dispatchMeetingConfirmCall(REQ_ID, CONFIG, ORIGIN, DISPATCH_NOW_MS)).toEqual({
       kind: 'already_concluded', attemptId: ATTEMPT_ID, dispatchStatus: 'failed_to_start',
     });
     expect(startScenarios).not.toHaveBeenCalled();
@@ -247,7 +254,7 @@ describe('atomic-create race (reconcile)', () => {
   it('lost race, no reconcile row found at all → concurrent_owner (fail-closed)', async () => {
     vi.mocked(createCallbackDispatchAttempt).mockResolvedValue(null);
     vi.mocked(getCallbackDispatchAttemptBySlot).mockResolvedValue(null);
-    expect(await dispatchMeetingConfirmCall(REQ_ID, CONFIG, ORIGIN)).toEqual({ kind: 'concurrent_owner' });
+    expect(await dispatchMeetingConfirmCall(REQ_ID, CONFIG, ORIGIN, DISPATCH_NOW_MS)).toEqual({ kind: 'concurrent_owner' });
     expect(startScenarios).not.toHaveBeenCalled();
   });
 });
@@ -255,7 +262,7 @@ describe('atomic-create race (reconcile)', () => {
 describe('provider outcomes', () => {
   it('VoximplantApiError → failed_to_start, non-retryable, alerted', async () => {
     vi.mocked(startScenarios).mockRejectedValue(new VoximplantApiError('rejected', 42));
-    const r = await dispatchMeetingConfirmCall(REQ_ID, CONFIG, ORIGIN);
+    const r = await dispatchMeetingConfirmCall(REQ_ID, CONFIG, ORIGIN, DISPATCH_NOW_MS);
     expect(r).toEqual({ kind: 'failed_to_start', attemptId: ATTEMPT_ID, code: 42 });
     expect(markCallbackDispatchFailed).toHaveBeenCalledWith(ATTEMPT_ID, 'rejected');
     expect(sendSlackAlert).toHaveBeenCalledWith(expect.objectContaining({ level: 'warn' }));
@@ -263,20 +270,20 @@ describe('provider outcomes', () => {
 
   it('VoximplantNetworkError/timeout → start_unknown, no redial, alerted', async () => {
     vi.mocked(startScenarios).mockRejectedValue(new VoximplantNetworkError('timeout'));
-    const r = await dispatchMeetingConfirmCall(REQ_ID, CONFIG, ORIGIN);
+    const r = await dispatchMeetingConfirmCall(REQ_ID, CONFIG, ORIGIN, DISPATCH_NOW_MS);
     expect(r).toEqual({ kind: 'start_unknown', attemptId: ATTEMPT_ID });
     expect(markCallbackDispatchUnknown).toHaveBeenCalledWith(ATTEMPT_ID, 'network_error_during_start');
   });
 
   it('result===1 without a history id → start_unknown', async () => {
     vi.mocked(startScenarios).mockResolvedValue({ result: 1, call_session_history_id: null } as never);
-    const r = await dispatchMeetingConfirmCall(REQ_ID, CONFIG, ORIGIN);
+    const r = await dispatchMeetingConfirmCall(REQ_ID, CONFIG, ORIGIN, DISPATCH_NOW_MS);
     expect(r).toEqual({ kind: 'start_unknown', attemptId: ATTEMPT_ID });
     expect(markCallbackDispatchUnknown).toHaveBeenCalledWith(ATTEMPT_ID, 'ambiguous_start_response');
   });
 
   it('full success → recordCallbackDialConfirmed + audit written + dialed', async () => {
-    const r = await dispatchMeetingConfirmCall(REQ_ID, CONFIG, ORIGIN);
+    const r = await dispatchMeetingConfirmCall(REQ_ID, CONFIG, ORIGIN, DISPATCH_NOW_MS);
     expect(r).toEqual({ kind: 'dialed', attemptId: ATTEMPT_ID, callSessionHistoryId: HISTORY });
     expect(recordCallbackDialConfirmed).toHaveBeenCalledWith(ATTEMPT_ID, HISTORY);
     expect(recordCallbackDialAudit).toHaveBeenCalledWith(REQ_ID);

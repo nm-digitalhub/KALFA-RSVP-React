@@ -173,6 +173,10 @@ export async function dispatchMeetingConfirmCall(
   callbackRequestId: string,
   config: MeetingConfirmDispatchConfig,
   appOrigin: string,
+  // Passed rather than read (same discipline as enqueueMeetingConfirmDispatch
+  // above): the already_past guard compares against this, and a guard on a
+  // hidden real clock is what let the 218eb34 fixture time-bomb ship green.
+  nowMs: number = Date.now(),
 ): Promise<MeetingConfirmDispatchResult> {
   // 1. The AI-calling kill switch for this channel specifically.
   if (!config.callsEnabled) return { kind: 'blocked', reason: 'calls_disabled' };
@@ -201,14 +205,14 @@ export async function dispatchMeetingConfirmCall(
   // comment: a superseded job is expected to fire and no-op, not to have been
   // cancelled). A "still confirms it's on?" call about a meeting that already
   // happened is useless at best; never place it.
-  if (Date.parse(scheduledAtSnapshot) <= Date.now()) {
+  if (Date.parse(scheduledAtSnapshot) <= nowMs) {
     return { kind: 'skipped', reason: 'already_past' };
   }
 
   // 3. The same 3-attempt cap that already protects this row against
   //    repeated human console dials — checked BEFORE any provider call, same
   //    ordering discipline as every other gate here.
-  const attempts = await countRecentCallbackAuditedAttempts(callbackRequestId, Date.now());
+  const attempts = await countRecentCallbackAuditedAttempts(callbackRequestId, nowMs);
   if (attempts >= CALLBACK_MAX_ATTEMPTS) return { kind: 'skipped', reason: 'attempt_cap' };
 
   // 4. Consent/hours — DIAL_GATE_POLICY.callback verbatim (the exact policy
@@ -217,7 +221,7 @@ export async function dispatchMeetingConfirmCall(
   //    findCallbackSlot already placed inside DEFAULT_CALLBACK_POLICY's
   //    tighter window by construction, so the general daily window is
   //    satisfied as a matter of course, never by an explicit bypass.
-  const shared = await evaluateSharedConsentGates(admin, phone, Date.now(), {
+  const shared = await evaluateSharedConsentGates(admin, phone, nowMs, {
     policy: DIAL_GATE_POLICY.callback,
   });
   if (!shared.ok) return { kind: 'skipped', reason: shared.reason };
@@ -255,7 +259,7 @@ export async function dispatchMeetingConfirmCall(
   // 7. ATOMIC create — see createCallbackDispatchAttempt's own doc comment for
   //    why this is a plain insert + 23505 catch, not upsert().
   const accessToken = randomBytes(16).toString('hex');
-  const tokenExpiresAt = new Date(Date.now() + CONFIRM_TOKEN_TTL_SEC * 1000).toISOString();
+  const tokenExpiresAt = new Date(nowMs + CONFIRM_TOKEN_TTL_SEC * 1000).toISOString();
   const created = await createCallbackDispatchAttempt({
     callbackRequestId,
     accessToken,
