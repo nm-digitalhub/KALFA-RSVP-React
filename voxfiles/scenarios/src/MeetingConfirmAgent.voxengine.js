@@ -101,7 +101,16 @@ VoxEngine.addEventListener(AppEvents.Started, function () {
     // Grace before hanging up the PSTN leg once the agent has ended the
     // conversation, so the buffered goodbye finishes draining instead of
     // being clipped. Same value and reasoning as RSVPAgent/RSVP.voxengine.js.
-    var FAREWELL_GRACE_MS = 2000;
+    // 5000, not 2000 (MEASURED 2026-08-23, conv_5301m0qd…): end_call fired
+    // ~1s after a ~3s closing sentence began playing, so the 2s grace expired
+    // while that sentence was still draining — the end_call farewell
+    // ("בהצלחה!") was synthesized but the line was already down; the lead
+    // confirmed he never heard it. The grace must outlive the WORST case of
+    // (remaining prior sentence + farewell TTS), not the typical one. The
+    // prompt now also instructs end_call with no extra message, so normally
+    // nothing needs this window — it is a safety net, and its cost is at most
+    // a few seconds of silence before teardown on an already-ended call.
+    var FAREWELL_GRACE_MS = 5000;
     var state = {
         to: '',
         from: '',
