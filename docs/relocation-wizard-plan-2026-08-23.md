@@ -127,11 +127,40 @@ wizard's state file as a read-only progress/checklist view.
    (today: gift `/g/…`, thank-you `/ty/…`, `kalfa_sales_signup_link_v1` `/auth/signup?ref=`).
 7. Produce the full dry-run change-set for review.
 
+### Stage A.1 — Prerequisite installation policy (owner directive, 2026-08-23; REVISED
+same day after live-doc research — see §Install Mode below)
+
+Preflight includes a **required-tooling check** (node, nginx, plesk CLI, pm2,
+passwordless `sudo -n`, repo node_modules) — every missing item is `blocked` with the
+exact fix command. Owner ruling: the wizard must be able to INSTALL, not only instruct.
+Live-doc research (2026-08-23, sources in §Install Mode) found an authoritative
+non-interactive command for every component, so the tiers are now:
+
+| Tier | Items | Command basis (live-verified) |
+|---|---|---|
+| auto (after confirm) | `npm ci` (repo deps; install scripts MUST run — sharp/esbuild break otherwise; surface `npm install-scripts ls`), repo clone/build | docs.npmjs.com v11 |
+| gated-auto (wizard runs behind an approval gate, `sudo -n`) | Node 24 (NodeSource apt `setup_24.x`; Plesk toolkit only offers LTS majors), pm2 (`npm i -g` + `pm2 startup systemd -u <user> --hp <home>` — run the printed command via sudo — + `pm2 save`), nginx (Plesk: `plesk installer --install-component nginx` + `plesk sbin nginxmng --enable`; bare: nginx.org apt repo), Let's Encrypt (Plesk: `plesk bin extension --exec letsencrypt cli.php -d <domain> -m <email>`; bare: snap certbot + `certonly --webroot`) | support.plesk.com / docs.plesk.com / pm2.keymetrics.io / nginx.org / certbot.eff.org |
+| genuinely non-automatable | `.env.local` secrets (exist only in the owner's vault — the wizard must never carry secrets in its state), Plesk itself + license (changes the server's management model), external-registrar DNS (instruct + poll), third-party platform state gated on external clocks (Meta review, Play review) | honesty table, §Install Mode (d) |
+
+Every gated-auto item keeps the wizard's contract: show the exact command + consequence,
+get approval, run, verify, record for rollback.
+
 ### Stage B — Async lead items (start first; longest external latency)
 1. **Meta `_v2` templates** [gate]: submit new template versions with the new base URL via
    Graph API (never delete existing — project rule). Poll approval status. The origin flip
    (Stage D) SHOULD wait for approval; the owner may override and rely on the 301 instead
    (buttons keep working via redirect — acceptable interim).
+   **Live-inventory rule (verified against Meta 2026-08-23):** the template inventory MUST
+   come from the live Graph API (`{waba}/message_templates`), never the repo spec — the
+   spec scan saw 1 line while the live registry holds **21 approved templates** baking the
+   beta origin. Also found live: the 2 OTP templates point at whatsapp.com (domain-neutral,
+   never need work), and legacy `rsvp_invite_v2` [APPROVED] points at the APEX
+   `https://kalfa.me/invitations/{{1}}` — a pre-React relic whose path the current app does
+   not serve; investigate usage and retire or repoint it as its own task. Editing an
+   approved template in place is possible at Meta but re-enters review while taking the
+   existing template out of service — `_v2`-in-addition keeps the old one working through
+   the wait, which is why the project rule stands. Preflight now performs this live
+   inventory itself (repo-spec fallback is labeled as an undercount).
 2. **Android app advisory** (verified 2026-08-23, corrects the audit's TWA inference):
    the Play app `me.kalfa.agentconsole` is a NATIVE Kotlin console app, not a TWA. Its
    coupling is a **hardcoded API base URL** — `https://beta.kalfa.me` baked into ~10 call
@@ -210,7 +239,7 @@ Three hard rules encoded from the file's own documentation:
 ### Stage F — External registrations (parameterized API calls; each with its own verify)
 | Service | Action | How |
 |---|---|---|
-| Supabase Auth | Site URL + redirect allow-list → new origin | Management API `PATCH /v1/projects/{ref}/config/auth` (precedent: `scripts/deploy-*-template.mjs`) |
+| Supabase Auth | Site URL + redirect allow-list → new origin | Management API `GET`/`PATCH /v1/projects/{ref}/config/auth` (`site_url`, `uri_allow_list`; Bearer `SUPABASE_ACCESS_TOKEN`) — live-doc-verified 2026-08-23. Stage G UPDATEs can ride the same API: `POST /v1/projects/{ref}/database/query` (`read_only` flag; dedicated `/query/read-only` variant) — the wizard's 4th Supabase door alongside REST-with-service-key, the pg pooler, and the linked CLI |
 | Supabase auth emails | re-deploy templates embedding `<origin>/auth/confirm` | re-run `scripts/deploy-recovery-email-template.mjs --apply` + `scripts/deploy-email-change-template.mjs --apply` |
 | Meta WhatsApp webhook | callback URL → `<origin>/api/webhooks/whatsapp` | `POST /{app-id}/subscriptions` (app token); verify handshake |
 | Microsoft Graph | delete + recreate subscriptions (notificationUrl embeds origin) | Graph API; code already builds URL from `getAppOrigin()` (`src/lib/microsoft/subscriptions.ts:38-40`) |
@@ -259,6 +288,41 @@ Three hard rules encoded from the file's own documentation:
 - Old-origin cert renewals continue via ACME location (beta cert expires 2026-11-19).
 
 ---
+
+## 5b. Install Mode (`relocate --install`) — bare/partial server → fully-running site
+(owner directive 2026-08-23; all commands live-doc-verified that day)
+
+The wizard's second mode: not moving an existing install, but BRINGING UP the site
+completely on a target server. Same engine, same gates, same state file — a different
+step list:
+
+| # | Step | Runs as | Class |
+|---|---|---|---|
+| 0 | OS base packages (curl, git, gnupg) | sudo | gated-auto |
+| 1 | Node 24 — NodeSource apt (`setup_24.x`); Plesk toolkit alt. (LTS-only) | sudo | gated-auto |
+| 2 | `npm i -g pm2` | sudo | gated-auto |
+| 3 | Repo clone/rsync to target path | app user | auto |
+| 4 | **`.env.local` secrets provisioning** | human | **manual** — wizard verifies presence + key names only |
+| 5 | `npm ci` (scripts allowed; report `npm install-scripts ls`) | app user | auto (confirm) |
+| 6 | `npm run build` | app user | auto |
+| 7 | scrubbed `pm2 start ecosystem.config.cjs` → `pm2 save` → `pm2 startup systemd` (run printed sudo command) | user+sudo | gated-auto |
+| 8 | nginx vhost from repo template → `nginx -t` → reload | sudo | gated-auto |
+| 9 | TLS cert — Plesk LE ext CLI (`--exec letsencrypt cli.php`) or snap certbot `certonly --webroot` | sudo | gated-auto (after #10 resolves) |
+| 10 | DNS — local Plesk zone via `plesk bin dns -a`; external registrar = instruct + poll | sudo / human | mixed |
+| 11½ | **DB-resident service settings** — WhatsApp Cloud API, SUMIT, ExtrA SMS, SMTP, Voximplant service account all live in `app_settings` (DB), NOT env; entered via the running app's /admin/settings + /admin/channels; wizard polls presence (read-only REST, service key) and waits | human via admin UI | mixed (step I12) |
+| 11 | Full verification suite (Stage H) | app user | auto |
+
+Ordering constraints: #9 (http-01) needs #10 resolving to this server; #8 must exist
+before #9 (ACME webroot location). REVISED 2026-08-23 (design §5c): #8/#10/#9
+(vhost/DNS/cert) run BEFORE #4 — the env-parameter setup form is served through that
+vhost on the real domain, WordPress-style, and the wizard auto-continues once the
+last key lands. Plesk-vs-bare is detected by `plesk version` and
+switches nginx/cert/DNS providers; never let Plesk LE and certbot manage the same
+domain. Sources: docs.plesk.com + support.plesk.com (installer/nginxmng/extension
+--exec/site/dns/nodejs CLIs), nodesource/distributions, pm2.keymetrics.io/startup,
+nginx.org/en/linux_packages, certbot.eff.org + eff-certbot readthedocs (webroot fits
+our template — certbot never mutates our conf), docs.npmjs.com (npm ci, npm 11
+`install-scripts` advisory → npm 12 enforced; our `allowScripts` already compliant).
 
 ## 6. Irreducibly manual / async steps (the honest list)
 

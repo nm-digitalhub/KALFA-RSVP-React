@@ -9,6 +9,7 @@ import {
   parseCliArgs,
   renderFindingLine,
   renderPlan,
+  runWithExecuteLatch,
 } from "./cli-support";
 import type { PreflightFinding } from "./preflight";
 
@@ -87,6 +88,32 @@ describe("rendering", () => {
 
   it("emits tab-delimited machine lines", () => {
     expect(eventLogLine("t", "dns", "blocked", "detail")).toBe("t\tdns\tblocked\tdetail");
+  });
+});
+
+describe("runWithExecuteLatch", () => {
+  it("is unset by default, becomes '1' strictly during the run, and unsets again on success", async () => {
+    expect(process.env.RELOCATE_EXECUTE).toBeUndefined();
+    let sawDuring: string | undefined;
+    const result = await runWithExecuteLatch(async () => {
+      sawDuring = process.env.RELOCATE_EXECUTE;
+      return { outcome: "completed" as const };
+    });
+    expect(sawDuring).toBe("1");
+    expect(result).toEqual({ outcome: "completed" });
+    expect(process.env.RELOCATE_EXECUTE).toBeUndefined();
+  });
+
+  it("unsets again even when the run throws (finally, not just the happy path)", async () => {
+    let sawDuring: string | undefined;
+    await expect(
+      runWithExecuteLatch(async () => {
+        sawDuring = process.env.RELOCATE_EXECUTE;
+        throw new Error("boom");
+      }),
+    ).rejects.toThrow("boom");
+    expect(sawDuring).toBe("1");
+    expect(process.env.RELOCATE_EXECUTE).toBeUndefined();
   });
 });
 

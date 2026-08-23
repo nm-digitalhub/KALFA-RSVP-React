@@ -14,7 +14,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { styleText } from "node:util";
 
-import { cancel, intro, isCancel, log, outro, spinner, text } from "@clack/prompts";
+import { cancel, confirm, intro, isCancel, log, outro, spinner, text } from "@clack/prompts";
 
 import {
   EXIT,
@@ -24,6 +24,7 @@ import {
   parseCliArgs,
   renderFindingLine,
   renderPlan,
+  runWithExecuteLatch,
   type CliOptions,
 } from "@/lib/relocation/cli-support";
 import {
@@ -35,6 +36,8 @@ import {
   repairStep,
   rollbackRun,
   runSteps,
+  type RunOutcome,
+  type StepDefinition,
   type WizardContext,
 } from "@/lib/relocation/engine";
 import {
@@ -43,9 +46,17 @@ import {
   validateTargetOrigin,
   type PreflightFinding,
 } from "@/lib/relocation/preflight";
+import { buildInstallStepDefinitions } from "@/lib/relocation/install-steps";
 import { buildStepDefinitions } from "@/lib/relocation/steps";
+import { GATE_LABELS } from "@/lib/relocation/labels";
 import { loadState, saveState } from "@/lib/relocation/state-io";
-import { GATE_IDS, type RelocationState } from "@/lib/relocation/state";
+import { GATE_IDS, type Gate, type GateId, type RelocationState } from "@/lib/relocation/state";
+
+/** Gates whose consequence is severe/irreversible enough to need the operator
+ * to type the target domain, beyond a plain yes/no (design §3 — GitHub
+ * danger-zone convention). go-live is the only one any CURRENT step actually
+ * carries; conflict-existing-site is included for when it is (design intent). */
+const TYPED_CONFIRMATION_GATES = new Set<GateId>(["go-live", "conflict-existing-site"]);
 
 function fail(message: string, code: number = EXIT.ERROR): never {
   process.stderr.write(`${message}\n`);
@@ -81,6 +92,131 @@ function applyApprovals(state: RelocationState, approvals: CliOptions["approvals
     gate.decidedAt = new Date().toISOString();
     gate.decidedBy = "flag";
     gate.choice = choice;
+  }
+}
+
+/** Interactive gate approval (design §3 gate anatomy): identity → evidence
+ * (the plan already showed it) → consequence → options, safe choice
+ * (decline) preselected; the two severe gates additionally require typing
+ * the target domain. Ctrl-C here saves state and exits resumable — never a
+ * silent default-approve. */
+async function promptGate(gate: Gate, targetOrigin: string, repoRoot: string): Promise<boolean> {
+  const meta = GATE_LABELS[gate.id];
+  log.warn(`DECISION GATE ${gate.id}`);
+  log.message(meta.label.en);
+  log.message(meta.consequence.en);
+  const approved = await confirm({ message: "Approve this gate?", initialValue: false });
+  if (isCancel(approved)) {
+    cancel("Cancelled — nothing further was changed. Resume anytime with --resume.");
+    releaseLock(repoRoot);
+    process.exit(EXIT.OK);
+  }
+  if (!approved) return false;
+  if (TYPED_CONFIRMATION_GATES.has(gate.id)) {
+    const host = new URL(targetOrigin).hostname;
+    const typed = await text({ message: `Type the target domain to confirm (${host}):` });
+    if (isCancel(typed)) {
+      cancel("Cancelled — nothing further was changed. Resume anytime with --resume.");
+      releaseLock(repoRoot);
+      process.exit(EXIT.OK);
+    }
+    if (typed.trim() !== host) {
+      log.error(`domain did not match — gate NOT approved`);
+      return false;
+    }
+  }
+  return true;
+}
+
+function nonInteractiveGateLine(gate: Gate): void {
+  process.stdout.write(
+    `${eventLogLine(new Date().toISOString(), gate.id, "needs-decision", `${GATE_LABELS[gate.id].label.en} — approve via --approve ${gate.id}[=choice] or run interactively`)}\n`,
+  );
+}
+
+/**
+ * The real (non-dry-run) execute path. Loops runSteps() — the engine stops
+ * and returns {outcome:'gate', gateId} the instant it needs an unapproved
+ * gate, never mutating past that point — approve exactly that one gate, then
+ * call runSteps() again, which resumes (already-done steps are skipped, per
+ * engine.ts's own resume discipline). RELOCATE_EXECUTE is set ONLY for the
+ * duration of each runSteps() call via runWithExecuteLatch.
+ */
+async function executeRun(opts: {
+  defs: StepDefinition[];
+  ctx: WizardContext;
+  state: RelocationState;
+  repoRoot: string;
+  interactive: boolean;
+  nonInteractive: boolean;
+}): Promise<never> {
+  const exitReleasing = (code: number): never => {
+    releaseLock(opts.repoRoot);
+    process.exit(code);
+  };
+  for (;;) {
+    const outcome: RunOutcome = await runWithExecuteLatch(() =>
+      runSteps({ defs: opts.defs, ctx: opts.ctx, state: opts.state, repoRoot: opts.repoRoot, dryRun: false }),
+    );
+
+    if (outcome.outcome === "completed") {
+      const report = `Relocation complete — ${opts.ctx.targetOrigin} is live. State: .relocation-state.json`;
+      if (opts.interactive) outro(report);
+      else process.stdout.write(`${report}\n`);
+      return exitReleasing(EXIT.OK);
+    }
+
+    if (outcome.outcome === "failed") {
+      const step = opts.state.stages.flatMap((s) => s.steps).find((s) => s.id === outcome.stepId);
+      const msg = `FAILED at step ${outcome.stepId}: ${step?.error?.message ?? "unknown error"}\nNext: fix the underlying issue then --resume, or run --rollback.`;
+      if (opts.interactive) outro(msg);
+      else process.stdout.write(`${msg}\n`);
+      return exitReleasing(EXIT.ERROR);
+    }
+
+    if (outcome.outcome === "blocked") {
+      const msg = `BLOCKED at step ${outcome.stepId} — its check() reports the precondition cannot be satisfied. Fix and --resume.`;
+      if (opts.interactive) outro(msg);
+      else process.stdout.write(`${msg}\n`);
+      return exitReleasing(EXIT.ERROR);
+    }
+
+    if (outcome.outcome === "dry-run") {
+      // Unreachable: executeRun always calls runSteps with dryRun:false.
+      // `return` (not a bare call) is required here even though fail()
+      // is typed `never`: this if-block sits inside a `for (;;)` loop, and
+      // TS's control-flow narrowing of the `outcome` discriminated union
+      // does not reliably eliminate this arm across the loop's back-edge
+      // from a bare statement-position call alone — an explicit `return`
+      // makes the block's non-completion unambiguous to the checker,
+      // matching the pattern every other arm in this function already uses
+      // (`return exitReleasing(...)`).
+      releaseLock(opts.repoRoot);
+      return fail("internal error: executeRun received a dry-run outcome");
+    }
+
+    // outcome.outcome === "gate" (the only remaining case)
+    const gate = opts.state.gates.find((g) => g.id === outcome.gateId);
+    if (!gate) {
+      releaseLock(opts.repoRoot);
+      return fail(`internal error: unknown gate ${outcome.gateId}`);
+    }
+    if (!opts.interactive || opts.nonInteractive) {
+      nonInteractiveGateLine(gate);
+      releaseLock(opts.repoRoot);
+      return fail(`gate needs a decision: ${gate.id}`, EXIT.GATE_NEEDS_DECISION);
+    }
+    const approved = await promptGate(gate, opts.ctx.targetOrigin, opts.repoRoot);
+    gate.status = approved ? "approved" : "declined";
+    gate.decidedAt = new Date().toISOString();
+    gate.decidedBy = "operator";
+    saveState(opts.repoRoot, opts.state);
+    if (!approved) {
+      const msg = `Gate ${gate.id} declined — nothing further was changed. Re-run --resume after reconsidering.`;
+      outro(msg);
+      return exitReleasing(EXIT.OK);
+    }
+    // loop: runSteps() resumes past already-done steps and re-evaluates this gate as approved
   }
 }
 
@@ -143,15 +279,31 @@ async function main(): Promise<void> {
     process.exit(EXIT.OK);
   }
 
-  const env = readEnvLocal(repoRoot);
-  const currentOrigin = currentOriginFrom(env);
-  const defs = buildStepDefinitions();
+  // Install mode targets a possibly-fresh server: .env.local may not exist
+  // yet (its provisioning is step I4). Relocation mode still hard-requires it.
+  let env: Record<string, string>;
+  let currentOrigin: string;
+  if (options.install) {
+    try {
+      env = parseEnvFile(readFileSync(join(repoRoot, ".env.local"), "utf8"));
+    } catch {
+      env = {};
+    }
+    currentOrigin = env.APP_ORIGIN?.trim() || options.target || "";
+  } else {
+    env = readEnvLocal(repoRoot);
+    currentOrigin = currentOriginFrom(env);
+  }
+  const defsFor = (install: boolean) =>
+    install ? buildInstallStepDefinitions() : buildStepDefinitions();
+  let defs = defsFor(options.install);
   const interactive = Boolean(process.stdout.isTTY) && !options.nonInteractive;
   const color = !options.noColor && Boolean(process.stdout.isTTY);
 
   if (options.rollback) {
     const loaded = loadState(repoRoot);
     if (!loaded.ok) fail(`nothing to roll back (${loaded.reason}).`);
+    defs = defsFor(loaded.state.flavor === "install");
     try {
       acquireLock(repoRoot);
     } catch (err) {
@@ -181,13 +333,17 @@ async function main(): Promise<void> {
     if (!loaded.ok) fail(`nothing to resume (${loaded.reason}).`);
     state = loaded.state;
     targetOrigin = state.target.origin;
+    defs = defsFor(state.flavor === "install");
   } else {
     let rawTarget = options.target;
     if (!rawTarget) {
       if (!interactive) fail(`--target is required in non-interactive mode.\n\n${USAGE}`);
       rawTarget = await promptForTarget(currentOrigin);
     }
-    const validated = validateTargetOrigin(rawTarget, currentOrigin);
+    // Install mode may legitimately target the CURRENT origin (fresh server,
+    // or re-install on the same domain) — only relocation forbids target ==
+    // current.
+    const validated = validateTargetOrigin(rawTarget, options.install ? "" : currentOrigin);
     if (!validated.ok) fail(`invalid --target: ${validated.reason}`);
     targetOrigin = validated.origin;
     state = initState({
@@ -195,11 +351,18 @@ async function main(): Promise<void> {
       targetOrigin,
       previousOrigin: currentOrigin,
       mode: options.dryRun ? "dry-run" : options.nonInteractive ? "non-interactive" : "interactive",
+      flavor: options.install ? "install" : "relocate",
       defs,
     });
   }
 
-  if (interactive) intro(`KALFA Relocation Wizard — ${currentOrigin} → ${targetOrigin}`);
+  if (interactive) {
+    intro(
+      options.install
+        ? `KALFA Install Wizard — bring the site fully up at ${targetOrigin}`
+        : `KALFA Relocation Wizard — ${currentOrigin} → ${targetOrigin}`,
+    );
+  }
 
   const ctx: WizardContext = {
     repoRoot,
@@ -209,7 +372,9 @@ async function main(): Promise<void> {
   };
 
   const preflightSpinner = interactive ? spinner() : null;
-  preflightSpinner?.start("Running read-only preflight checks");
+  // Shorter than any stop() message — a longer start leaves residue text in
+  // terminals whose clear-line handling is partial (seen live: "13 checksflight checks").
+  preflightSpinner?.start("Preflight…");
   const findings = await runPreflight({ repoRoot, env, currentOrigin, targetOrigin });
   preflightSpinner?.stop(`Preflight — ${findings.length} checks`);
   printFindings(findings, interactive, color);
@@ -239,11 +404,11 @@ async function main(): Promise<void> {
       process.exit(EXIT.DRY_RUN_CHANGES);
     }
 
-    const message =
-      "This build supports the read-only preflight and --dry-run only — mutating stages are plan-only and refuse to run.";
-    if (interactive) outro(message);
-    else process.stdout.write(`${message}\n`);
-    process.exit(EXIT.ERROR);
+    // Real execute mode. executeRun() always terminates via process.exit()
+    // (never returns/throws normally) and releases the lock itself right
+    // before each exit — a `finally` here would not reliably run after
+    // process.exit(), same as the dry-run branch above.
+    await executeRun({ defs, ctx, state, repoRoot, interactive, nonInteractive: options.nonInteractive });
   } finally {
     releaseLock(repoRoot);
   }

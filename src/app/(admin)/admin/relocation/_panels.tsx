@@ -146,7 +146,7 @@ export function RunHeaderCard({ run }: { run: RelocationRunView }) {
       <CardHeader>
         <CardTitle className="flex flex-wrap items-center gap-2">
           <span>
-            העברה אל{' '}
+            {run.flavor === 'install' ? 'התקנה מלאה בכתובת' : 'העברה אל'}{' '}
             <span dir="ltr" className="font-mono text-sm">
               {run.targetOrigin}
             </span>
@@ -157,12 +157,14 @@ export function RunHeaderCard({ run }: { run: RelocationRunView }) {
       </CardHeader>
       <CardContent className="space-y-3 text-sm text-muted-foreground">
         <dl className="grid gap-x-8 gap-y-1 sm:grid-cols-2">
-          <div className="flex gap-2">
-            <dt className="font-medium text-foreground">מהכתובת:</dt>
-            <dd dir="ltr" className="font-mono text-xs leading-5">
-              {run.previousOrigin}
-            </dd>
-          </div>
+          {run.flavor === 'relocate' ? (
+            <div className="flex gap-2">
+              <dt className="font-medium text-foreground">מהכתובת:</dt>
+              <dd dir="ltr" className="font-mono text-xs leading-5">
+                {run.previousOrigin}
+              </dd>
+            </div>
+          ) : null}
           <div className="flex gap-2">
             <dt className="font-medium text-foreground">מזהה ריצה:</dt>
             <dd dir="ltr" className="font-mono text-xs leading-5">

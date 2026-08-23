@@ -24,6 +24,8 @@ export const EXIT = {
 export interface CliOptions {
   command: "run" | "repair" | "help";
   target?: string;
+  /** Install mode (plan §5b): bare/partial server → fully-running site. */
+  install: boolean;
   dryRun: boolean;
   resume: boolean;
   rollback: boolean;
@@ -45,6 +47,7 @@ export function parseCliArgs(argv: string[]): ParsedCli {
       allowPositionals: true,
       options: {
         target: { type: "string" },
+        install: { type: "boolean", default: false },
         "dry-run": { type: "boolean", default: false },
         resume: { type: "boolean", default: false },
         rollback: { type: "boolean", default: false },
@@ -88,6 +91,7 @@ function baseOptions(
   command: CliOptions["command"],
   values: {
     target?: string;
+    install?: boolean;
     "dry-run"?: boolean;
     resume?: boolean;
     rollback?: boolean;
@@ -105,6 +109,7 @@ function baseOptions(
   return {
     command,
     target: values.target,
+    install: Boolean(values.install),
     dryRun: Boolean(values["dry-run"]),
     resume: Boolean(values.resume),
     rollback: Boolean(values.rollback),
@@ -118,11 +123,13 @@ export const USAGE = `KALFA Relocation Wizard (preflight + dry-run build)
 
 Usage:
   npm run relocate -- --target https://new-domain.com --dry-run [--non-interactive]
+  npm run relocate -- --install --target https://domain.com --dry-run
   npm run relocate -- --resume | --rollback
   npm run relocate -- repair --step <id> --status done|pending
 
 Flags:
   --target <origin>     bare https origin to relocate to
+  --install             install mode: bare/partial server -> fully-running site (plan 5b)
   --dry-run             preflight + full change plan; mutates nothing (exit 0/1/2)
   --resume              continue a previous run from its state file
   --rollback            walk completed steps backwards
@@ -170,4 +177,21 @@ export function renderPlan(state: RelocationState): string[] {
 /** Non-TTY machine line: no color, explicit state, no truncation (Primer). */
 export function eventLogLine(timestamp: string, id: string, status: string, detail: string): string {
   return [timestamp, id, status, detail].join("\t");
+}
+
+/**
+ * The ONLY place that sets RELOCATE_EXECUTE — every mutator across the
+ * execution layer (exec/nginx/env-rewrite/pm2/external/setup-form) refuses to
+ * run unless this is "1". Guaranteed unset before the call, "1" strictly for
+ * its duration, and unset again afterward — including on a thrown error —
+ * via `finally`. `run` is injected so tests can assert the env-var lifecycle
+ * around a mocked engine.runSteps() without touching a real system.
+ */
+export async function runWithExecuteLatch<T>(run: () => Promise<T>): Promise<T> {
+  process.env.RELOCATE_EXECUTE = "1";
+  try {
+    return await run();
+  } finally {
+    delete process.env.RELOCATE_EXECUTE;
+  }
 }

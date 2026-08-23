@@ -52,6 +52,7 @@ export const GATE_IDS = [
   "meta-approval-override",
   "dns-write-local-zone",
   "go-live",
+  "install-prereqs",
 ] as const;
 export const zGateId = z.enum(GATE_IDS);
 export type GateId = z.infer<typeof zGateId>;
@@ -60,6 +61,7 @@ export const WAITING_KINDS = [
   "dns-propagation",
   "meta-template-approval",
   "cert-issuance-retry",
+  "env-provisioning",
 ] as const;
 export const zWaitingKind = z.enum(WAITING_KINDS);
 export type WaitingKind = z.infer<typeof zWaitingKind>;
@@ -164,6 +166,9 @@ export const zRelocationState = z.object({
   target: z.object({ origin: z.string().min(1) }),
   previous: z.object({ origin: z.string().min(1) }),
   mode: zRunMode,
+  /** Which step list this run uses: relocation (default) or install (§5b).
+   * resume/rollback MUST rebuild the same list — recorded, never inferred. */
+  flavor: z.enum(["relocate", "install"]).optional(),
   phase: zRunPhase,
   stages: z.array(zStage),
   gates: z.array(zGate),

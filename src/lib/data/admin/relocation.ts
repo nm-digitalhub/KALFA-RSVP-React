@@ -74,6 +74,8 @@ export type RelocationGateView = {
 export type RelocationRunView = {
   runId: string;
   mode: RunMode;
+  /** relocation run (default) or full install run (plan §5b). */
+  flavor: 'relocate' | 'install';
   phase: RunPhase;
   targetOrigin: string;
   previousOrigin: string;
@@ -102,6 +104,7 @@ function toView(state: RelocationState, now: Date): RelocationRunView {
   return {
     runId: state.runId,
     mode: state.mode,
+    flavor: state.flavor ?? 'relocate',
     phase: state.phase,
     targetOrigin: state.target.origin,
     previousOrigin: state.previous.origin,

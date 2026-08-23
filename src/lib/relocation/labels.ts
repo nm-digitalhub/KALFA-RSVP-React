@@ -80,6 +80,16 @@ export const GATE_LABELS: Record<GateId, { label: Label; consequence: Label }> =
       he: "שלב D מפעיל מחדש את האפליקציה (שניות של השבתה).",
     },
   },
+  "install-prereqs": {
+    label: {
+      en: "Install system prerequisites",
+      he: "התקנת רכיבי מערכת נדרשים",
+    },
+    consequence: {
+      en: "Installs/updates system software (Node, pm2, nginx, TLS tooling) via sudo — each command shown before it runs.",
+      he: "מתקין/מעדכן תוכנת מערכת (Node, pm2, nginx, כלי TLS) דרך sudo — כל פקודה מוצגת לפני הרצתה.",
+    },
+  },
 };
 
 export const WAITING_LABELS: Record<WaitingKind, Label> = {
@@ -94,5 +104,9 @@ export const WAITING_LABELS: Record<WaitingKind, Label> = {
   "cert-issuance-retry": {
     en: "Waiting to retry TLS certificate issuance",
     he: "ממתין לניסיון חוזר של הנפקת תעודת TLS",
+  },
+  "env-provisioning": {
+    en: "Waiting for environment parameters via the setup form",
+    he: "ממתין להזנת פרמטרים בטופס ההגדרה",
   },
 };

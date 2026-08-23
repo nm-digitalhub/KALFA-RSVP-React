@@ -161,6 +161,16 @@ describe('getRelocationState', () => {
     await expect(getRelocationState()).resolves.toEqual({ kind: 'unsupported-version' });
   });
 
+  it('defaults flavor to relocate and passes an install flavor through', async () => {
+    mockFile(JSON.stringify(fullState()));
+    const legacy = await getRelocationState();
+    expect(legacy.kind === 'ok' && legacy.run.flavor).toBe('relocate');
+
+    mockFile(JSON.stringify({ ...fullState(), flavor: 'install' }));
+    const install = await getRelocationState();
+    expect(install.kind === 'ok' && install.run.flavor).toBe('install');
+  });
+
   it('parses a full state and never leaks path-bearing or writer-identity fields', async () => {
     mockFile(JSON.stringify(fullState()));
     const view = await getRelocationState();

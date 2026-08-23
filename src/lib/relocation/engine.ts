@@ -103,6 +103,7 @@ export function initState(opts: {
   targetOrigin: string;
   previousOrigin: string;
   mode: RunMode;
+  flavor?: "relocate" | "install";
   defs: readonly StepDefinition[];
 }): RelocationState {
   const now = new Date().toISOString();
@@ -117,6 +118,7 @@ export function initState(opts: {
     target: { origin: opts.targetOrigin },
     previous: { origin: opts.previousOrigin },
     mode: opts.mode,
+    flavor: opts.flavor ?? "relocate",
     phase: "planning",
     stages: stageIds.map((id) => ({
       id,
