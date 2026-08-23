@@ -232,9 +232,19 @@ async function timedFetch(url) {
 }
 
 export async function probeHttp() {
+  // The public-edge URL comes from APP_ORIGIN (loaded via --env-file=.env.local
+  // in the pm2 definition) — never a literal: a hardcoded domain keeps probing
+  // the OLD site after a domain move (relocation plan Phase 0 #2). Tolerate an
+  // inline comment/whitespace in the env value (same defensive split as the
+  // app); an unset/mangled value fails the probe loudly — the debug page then
+  // renders this panel's UnavailableAlert with the reason.
+  const edgeOrigin = process.env.APP_ORIGIN?.split(/[\s#]/)[0]?.trim();
+  if (!edgeOrigin) {
+    throw new Error('APP_ORIGIN is not set — cannot probe the public edge');
+  }
   const [origin, edge] = await Promise.all([
     timedFetch('http://127.0.0.1:3002/'),
-    timedFetch('https://beta.kalfa.me/'),
+    timedFetch(`${edgeOrigin}/`),
   ]);
   return { origin, edge };
 }

@@ -4,7 +4,7 @@ set -o pipefail
 umask 077
 
 ROOT="${KALFA_ROOT:-/var/www/vhosts/kalfa.me/beta}"
-DOMAIN="${KALFA_DOMAIN:-beta.kalfa.me}"
+DOMAIN="${KALFA_DOMAIN:-}"
 PORT="${KALFA_PORT:-3002}"
 NO_FETCH="${NO_FETCH:-0}"
 SKIP_SUDO="${SKIP_SUDO:-0}"
@@ -28,6 +28,17 @@ warn_if_failed() {
 
 [ -d "$ROOT/.git" ] || fail "Not a Git repository: $ROOT"
 cd "$ROOT"
+
+# Domain: explicit KALFA_DOMAIN wins; otherwise derived from APP_ORIGIN in
+# .env.local (scheme + inline comment stripped) — never a hardcoded default
+# (relocation plan Phase 0 #6: a baked-in domain silently checks the wrong
+# site after a domain move).
+if [ -z "$DOMAIN" ]; then
+  app_origin="$(sed -n 's/^APP_ORIGIN=//p' "$ROOT/.env.local" 2>/dev/null | head -n 1 | sed 's/[[:space:]#].*//')"
+  DOMAIN="${app_origin#*://}"
+  DOMAIN="${DOMAIN%%/*}"
+  [ -n "$DOMAIN" ] || fail "KALFA_DOMAIN is not set and APP_ORIGIN was not found in $ROOT/.env.local"
+fi
 
 mkdir -p ops-evidence
 chmod 700 ops-evidence

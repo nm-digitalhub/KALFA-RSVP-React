@@ -267,6 +267,23 @@ async function downloadDocument(
   }
 }
 
+// Reply-link origin, worker-safe. Worker context has no request, so the origin
+// must come from env. Defensive: tolerate an inline comment/whitespace in the
+// env value (live incident: the reply carried the comment inside the link).
+// Deliberately NO literal fallback — a reply link minted on a stale hardcoded
+// origin outlives a domain move silently (relocation plan Phase 0 #1), so an
+// unset APP_ORIGIN throws loudly instead.
+// Exported (only) so the regression test below can drive it directly.
+export function resolveReplyOrigin(): string {
+  const origin = process.env.APP_ORIGIN?.split(/[\s#]/)[0]?.trim();
+  if (!origin) {
+    throw new Error(
+      'APP_ORIGIN is required to build WhatsApp import reply links but is not set.',
+    );
+  }
+  return origin;
+}
+
 // Entry point from the webhook processor. Returns true when the inbound was
 // CONSUMED as an import (mapped owner + document/contacts) — the caller then
 // skips the campaign/billing path entirely.
@@ -284,12 +301,7 @@ export async function stageWhatsAppImport(row: InboxRow): Promise<boolean> {
   const config = await getWhatsAppConfig();
   if (!config) return true; // consumed (owner intent) but channel off
 
-  // Worker context has no request — getAppUrl's header path throws there (live
-  // incident 2026-07-05: 'Invalid URL' left the inbox row retrying). Defensive:
-  // tolerate an inline comment/whitespace in the env value (live incident: the
-  // reply carried the comment inside the link).
-  const origin =
-    process.env.APP_ORIGIN?.split(/[\s#]/)[0]?.trim() || 'https://beta.kalfa.me';
+  const origin = resolveReplyOrigin();
 
   // More than one active event the sender may manage: NEVER guess which one
   // (misroute incident 2026-07-06 — a brit guest list landed on a newer active

@@ -317,10 +317,14 @@ export function ProcessesPanel({
   processes,
   system,
   http,
+  edgeHost,
 }: {
   processes: SoftResult<ProcessesProbe> | null;
   system: SoftResult<SystemProbe> | null;
   http: SoftResult<HttpProbe> | null;
+  // Derived server-side from APP_ORIGIN (never hardcoded — relocation plan
+  // Phase 0 #7); null when the origin is unavailable.
+  edgeHost: string | null;
 }) {
   return (
     <Card>
@@ -338,7 +342,7 @@ export function ProcessesPanel({
         {http && http.ok && (
           <div className="grid gap-2 sm:grid-cols-2">
             <HttpRow label="שרת מקומי (127.0.0.1:3002)" result={http.data.origin} />
-            <HttpRow label="קצה ציבורי (beta.kalfa.me)" result={http.data.edge} />
+            <HttpRow label={`קצה ציבורי (${edgeHost ?? '—'})`} result={http.data.edge} />
           </div>
         )}
       </CardContent>

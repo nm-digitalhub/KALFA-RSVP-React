@@ -60,10 +60,19 @@ async function main(): Promise<void> {
     return;
   }
   const tok = flag('tok') && flag('tok') !== '__present__' ? (flag('tok') as string) : '0'.repeat(32);
+  // Origin for the scenario's ctx callback (`u`): --origin flag, else APP_ORIGIN
+  // from the environment — never a hardcoded domain (relocation plan Phase 0 #5).
   const origin =
     flag('origin') && flag('origin') !== '__present__'
       ? (flag('origin') as string)
-      : 'https://beta.kalfa.me';
+      : process.env.APP_ORIGIN?.split(/[\s#]/)[0]?.trim();
+  if (!origin) {
+    console.error(
+      'ERROR: --origin or APP_ORIGIN is required (run with `node --env-file=.env.local` or pass --origin).',
+    );
+    process.exitCode = 1;
+    return;
+  }
 
   const payload = JSON.stringify({ to, from, tok, u: origin });
   console.log('=== StartScenarios — LIVE TEST CALL ===');

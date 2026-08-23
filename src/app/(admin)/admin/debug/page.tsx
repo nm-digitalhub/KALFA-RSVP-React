@@ -1,5 +1,6 @@
 import { requirePlatformOwner } from '@/lib/auth/dal';
 import { PageHeading } from '../_components';
+import { getAppOrigin } from '@/lib/url';
 import { getProcessesProbe, getSystemProbe, getDeployProbe, getHttpProbe } from '@/lib/ops/agent-client';
 import { getJobHealth, getDbHealth, QUEUE_EXPECTED_MAX_MINUTES } from '@/lib/ops/db-health';
 import { getAppHealthSummary } from '@/lib/ops/app-health';
@@ -67,6 +68,12 @@ export default async function DebugPage() {
   const deploy = deployR.status === 'fulfilled' ? deployR.value : null;
   const http = httpR.status === 'fulfilled' ? httpR.value : null;
 
+  // Fail-soft like every other source on this page: a broken APP_ORIGIN must
+  // not take down the one page used to diagnose it.
+  const edgeHost = await getAppOrigin()
+    .then((origin) => new URL(origin).host)
+    .catch(() => null);
+
   const jobHealthResult = jobHealthR.status === 'fulfilled' ? jobHealthR.value : null;
   const jobHealth = jobHealthResult?.ok ? jobHealthResult.data : null;
   const jobHealthReason = jobHealthResult && !jobHealthResult.ok ? jobHealthResult.reason : null;
@@ -117,7 +124,7 @@ export default async function DebugPage() {
 
       <DeployPanel result={deploy} />
 
-      <ProcessesPanel processes={processes} system={system} http={http} />
+      <ProcessesPanel processes={processes} system={system} http={http} edgeHost={edgeHost} />
 
       <DatabasePanel result={dbHealth} reason={dbHealthReason} />
 

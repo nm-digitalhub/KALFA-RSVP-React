@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('server-only', () => ({}));
 vi.mock('@/lib/supabase/admin', () => ({ createAdminClient: vi.fn() }));
@@ -15,6 +15,7 @@ import {
   eventImportLabel,
   parseCsvToStagedRows,
   resolveOwnerActiveEvents,
+  resolveReplyOrigin,
   stageWhatsAppImport,
 } from './whatsapp-import';
 
@@ -220,6 +221,24 @@ describe('resolveOwnerActiveEvents — per-org composite key (Phase 2 regression
 
     const events = await resolveOwnerActiveEvents('+972501234567');
     expect(events.map((e) => e.id).sort()).toEqual(['evt-a', 'evt-b']);
+  });
+});
+
+describe('resolveReplyOrigin', () => {
+  const stub = (value: string | undefined) => {
+    if (value === undefined) vi.stubEnv('APP_ORIGIN', '');
+    else vi.stubEnv('APP_ORIGIN', value);
+  };
+  afterEach(() => vi.unstubAllEnvs());
+
+  it('sanitizes an inline comment/whitespace out of the env value (live incident)', () => {
+    stub('https://example.org # production origin');
+    expect(resolveReplyOrigin()).toBe('https://example.org');
+  });
+
+  it('throws (no hardcoded fallback) when APP_ORIGIN is unset — Phase 0 #1', () => {
+    stub(undefined);
+    expect(() => resolveReplyOrigin()).toThrow(/APP_ORIGIN/);
   });
 });
 
