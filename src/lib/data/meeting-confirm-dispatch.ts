@@ -18,7 +18,7 @@ import {
 } from '@/lib/data/console-calls';
 import {
   createCallbackDispatchAttempt,
-  getCallbackDispatchAttemptBySlot,
+  listCallbackDispatchAttemptsBySlot,
   recordCallbackDialConfirmed,
   markCallbackDispatchFailed,
   markCallbackDispatchUnknown,
@@ -256,8 +256,32 @@ export async function dispatchMeetingConfirmCall(
     // proceed — warn only.
   }
 
+  // 6.5. OUTCOME-AWARE slot dedup (incident 2026-08-23): the technical axis
+  //      ("a call happened and ended") must never suppress a retry on its own
+  //      — yesterday's owner-approved early call concluded with NO semantic
+  //      outcome (confirmation_call_status stayed 'not_sent'), yet its row
+  //      blocked the scheduled dispatch and the meeting went unconfirmed.
+  //      Rules, checked against ALL of the slot's attempts:
+  //      - any attempt with a REAL outcome (status !== 'not_sent') → never
+  //        redial: the guest already confirmed/rescheduled/opted out.
+  //      - any attempt still pre-terminal → a dial may be live → back off.
+  //      - only terminal, outcome-less attempts → RETRY (the step-3 audited
+  //        3-attempt cap above already bounds total volume).
+  const priorAttempts = await listCallbackDispatchAttemptsBySlot(
+    callbackRequestId,
+    scheduledAtSnapshot,
+  );
+  const withOutcome = priorAttempts.find((a) => a.confirmation_call_status !== 'not_sent');
+  if (withOutcome) return { kind: 'already_dispatched', attemptId: withOutcome.id };
+  const inFlight = priorAttempts.find((a) =>
+    (DISPATCH_PRE_TERMINAL as readonly string[]).includes(a.dispatch_status),
+  );
+  if (inFlight) return { kind: 'concurrent_owner' };
+
   // 7. ATOMIC create — see createCallbackDispatchAttempt's own doc comment for
-  //    why this is a plain insert + 23505 catch, not upsert().
+  //    why this is a plain insert + 23505 catch, not upsert(). Since the
+  //    in-flight-only unique index (2026-08-23), a 23505 here can only mean a
+  //    concurrent dispatcher is dialing this slot RIGHT NOW.
   const accessToken = randomBytes(16).toString('hex');
   const tokenExpiresAt = new Date(nowMs + CONFIRM_TOKEN_TTL_SEC * 1000).toISOString();
   const created = await createCallbackDispatchAttempt({
@@ -268,20 +292,30 @@ export async function dispatchMeetingConfirmCall(
   });
 
   if (created === null) {
-    // Lost the race — reconcile, never redial (dispatchOutreachCall's own
-    // reconcile discipline, applied identically here).
-    const existing = await getCallbackDispatchAttemptBySlot(callbackRequestId, scheduledAtSnapshot);
-    if (!existing) return { kind: 'concurrent_owner' }; // fail-closed
-    if (existing.vox_call_session_history_id) {
-      return { kind: 'already_dispatched', attemptId: existing.id };
+    // Lost the race — with the in-flight-only unique index this means a
+    // concurrent dispatcher owns a LIVE dial for this slot. Reconcile,
+    // never redial (dispatchOutreachCall's own discipline). The winner may
+    // also have concluded between our insert and this read:
+    const racers = await listCallbackDispatchAttemptsBySlot(callbackRequestId, scheduledAtSnapshot);
+    const winnerWithOutcome = racers.find((a) => a.confirmation_call_status !== 'not_sent');
+    if (winnerWithOutcome) {
+      return { kind: 'already_dispatched', attemptId: winnerWithOutcome.id };
     }
-    if ((DISPATCH_PRE_TERMINAL as readonly string[]).includes(existing.dispatch_status)) {
-      // The winner is presumably still in-flight. Do NOT touch the row, do
-      // NOT dial. A genuinely stuck row is a separate, not-yet-built,
-      // time-based reconciler's job — never this function's.
-      return { kind: 'concurrent_owner' };
+    const liveWinner = racers.find((a) =>
+      (DISPATCH_PRE_TERMINAL as readonly string[]).includes(a.dispatch_status),
+    );
+    if (liveWinner) return { kind: 'concurrent_owner' };
+    const concludedWinner = racers[0];
+    if (concludedWinner) {
+      // Concluded THIS tick, outcome not yet in — do not immediately redial;
+      // the next scheduled/manual dispatch re-evaluates with fresh state.
+      return {
+        kind: 'already_concluded',
+        attemptId: concludedWinner.id,
+        dispatchStatus: concludedWinner.dispatch_status,
+      };
     }
-    return { kind: 'already_concluded', attemptId: existing.id, dispatchStatus: existing.dispatch_status };
+    return { kind: 'concurrent_owner' }; // fail-closed
   }
   const attemptId = created.id;
 

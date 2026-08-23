@@ -33,7 +33,7 @@ import { randomBytes } from 'node:crypto';
 import { createAdminClient } from '@/lib/supabase/admin';
 import {
   createCallbackDispatchAttempt,
-  getCallbackDispatchAttemptBySlot,
+  listCallbackDispatchAttemptsBySlot,
   recordCallbackDialConfirmed,
   recordCallbackDialAudit,
   DISPATCH_PRE_TERMINAL,
@@ -141,7 +141,7 @@ async function main(): Promise<void> {
   if (created) {
     attemptId = created.id;
   } else {
-    const existing = await getCallbackDispatchAttemptBySlot(requestId, row.scheduled_at);
+    const [existing] = await listCallbackDispatchAttemptsBySlot(requestId, row.scheduled_at);
     if (!existing) {
       console.error('ERROR: attempt create lost a race and no existing row was found.');
       process.exitCode = 1;

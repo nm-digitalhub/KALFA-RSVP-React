@@ -18,7 +18,7 @@ vi.mock('@/lib/data/console-calls', () => ({
 
 vi.mock('@/lib/data/callback-request-attempts', () => ({
   createCallbackDispatchAttempt: vi.fn(),
-  getCallbackDispatchAttemptBySlot: vi.fn(),
+  listCallbackDispatchAttemptsBySlot: vi.fn(),
   recordCallbackDialConfirmed: vi.fn(),
   markCallbackDispatchFailed: vi.fn(),
   markCallbackDispatchUnknown: vi.fn(),
@@ -59,7 +59,7 @@ import {
 import { evaluateSharedConsentGates } from '@/lib/data/console-calls';
 import {
   createCallbackDispatchAttempt,
-  getCallbackDispatchAttemptBySlot,
+  listCallbackDispatchAttemptsBySlot,
   recordCallbackDialConfirmed,
   markCallbackDispatchFailed,
   markCallbackDispatchUnknown,
@@ -116,7 +116,7 @@ beforeEach(() => {
   vi.mocked(countActiveCallsAllSurfaces).mockResolvedValue(0);
   vi.mocked(getAccountInfo).mockResolvedValue(acct(50) as never);
   vi.mocked(createCallbackDispatchAttempt).mockResolvedValue({ id: ATTEMPT_ID });
-  vi.mocked(getCallbackDispatchAttemptBySlot).mockResolvedValue(null);
+  vi.mocked(listCallbackDispatchAttemptsBySlot).mockResolvedValue([]);
   vi.mocked(recordCallbackDialConfirmed).mockResolvedValue({ applied: true });
   vi.mocked(markCallbackDispatchFailed).mockResolvedValue({ applied: true });
   vi.mocked(markCallbackDispatchUnknown).mockResolvedValue({ applied: true });
@@ -219,32 +219,67 @@ describe('balance', () => {
   });
 });
 
+describe('outcome-aware slot dedup (incident 2026-08-23)', () => {
+  it('prior attempt with a REAL outcome → already_dispatched, no provider call at all', async () => {
+    vi.mocked(listCallbackDispatchAttemptsBySlot).mockResolvedValue([
+      { id: ATTEMPT_ID, dispatch_status: 'concluded', confirmation_call_status: 'confirmed' } as never,
+    ]);
+    expect(await dispatchMeetingConfirmCall(REQ_ID, CONFIG, ORIGIN, DISPATCH_NOW_MS)).toEqual({ kind: 'already_dispatched', attemptId: ATTEMPT_ID });
+    expect(createCallbackDispatchAttempt).not.toHaveBeenCalled();
+    expect(startScenarios).not.toHaveBeenCalled();
+  });
+
+  it('prior attempt still in-flight → concurrent_owner, no new attempt', async () => {
+    vi.mocked(listCallbackDispatchAttemptsBySlot).mockResolvedValue([
+      { id: ATTEMPT_ID, dispatch_status: 'dialing', confirmation_call_status: 'not_sent' } as never,
+    ]);
+    expect(await dispatchMeetingConfirmCall(REQ_ID, CONFIG, ORIGIN, DISPATCH_NOW_MS)).toEqual({ kind: 'concurrent_owner' });
+    expect(createCallbackDispatchAttempt).not.toHaveBeenCalled();
+  });
+
+  it('prior attempt concluded WITHOUT an outcome → RETRIES: creates a new attempt and dials (the 2026-08-23 09:00 regression)', async () => {
+    vi.mocked(listCallbackDispatchAttemptsBySlot).mockResolvedValue([
+      { id: ATTEMPT_ID, dispatch_status: 'concluded', finish_reason: 'completed', confirmation_call_status: 'not_sent' } as never,
+    ]);
+    const r = await dispatchMeetingConfirmCall(REQ_ID, CONFIG, ORIGIN, DISPATCH_NOW_MS);
+    expect(r.kind).toBe('dialed');
+    expect(createCallbackDispatchAttempt).toHaveBeenCalled();
+    expect(startScenarios).toHaveBeenCalled();
+  });
+});
+
 describe('atomic-create race (reconcile)', () => {
-  it('lost race, winner in-flight (pre-terminal, no history) → concurrent_owner, no dial, no status write', async () => {
+  it('lost race, winner in-flight (pre-terminal) → concurrent_owner, no dial, no status write', async () => {
     vi.mocked(createCallbackDispatchAttempt).mockResolvedValue(null);
-    vi.mocked(getCallbackDispatchAttemptBySlot).mockResolvedValue(
-      { id: ATTEMPT_ID, dispatch_status: 'dialing', vox_call_session_history_id: null } as never,
-    );
+    vi.mocked(listCallbackDispatchAttemptsBySlot)
+      .mockResolvedValueOnce([]) // pre-check: slot empty when we looked
+      .mockResolvedValueOnce([
+        { id: ATTEMPT_ID, dispatch_status: 'dialing', confirmation_call_status: 'not_sent' } as never,
+      ]);
     expect(await dispatchMeetingConfirmCall(REQ_ID, CONFIG, ORIGIN, DISPATCH_NOW_MS)).toEqual({ kind: 'concurrent_owner' });
     expect(startScenarios).not.toHaveBeenCalled();
     expect(markCallbackDispatchUnknown).not.toHaveBeenCalled(); // must NOT corrupt the winner
     expect(recordCallbackDialConfirmed).not.toHaveBeenCalled();
   });
 
-  it('lost race, winner already has a history id → already_dispatched, no dial', async () => {
+  it('lost race, winner already reached an outcome → already_dispatched, no dial', async () => {
     vi.mocked(createCallbackDispatchAttempt).mockResolvedValue(null);
-    vi.mocked(getCallbackDispatchAttemptBySlot).mockResolvedValue(
-      { id: ATTEMPT_ID, dispatch_status: 'dialing', vox_call_session_history_id: String(HISTORY) } as never,
-    );
+    vi.mocked(listCallbackDispatchAttemptsBySlot)
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([
+        { id: ATTEMPT_ID, dispatch_status: 'concluded', confirmation_call_status: 'confirmed' } as never,
+      ]);
     expect(await dispatchMeetingConfirmCall(REQ_ID, CONFIG, ORIGIN, DISPATCH_NOW_MS)).toEqual({ kind: 'already_dispatched', attemptId: ATTEMPT_ID });
     expect(startScenarios).not.toHaveBeenCalled();
   });
 
-  it('lost race, winner already concluded → already_concluded, no dial', async () => {
+  it('lost race, winner concluded this tick without an outcome yet → already_concluded, no immediate redial', async () => {
     vi.mocked(createCallbackDispatchAttempt).mockResolvedValue(null);
-    vi.mocked(getCallbackDispatchAttemptBySlot).mockResolvedValue(
-      { id: ATTEMPT_ID, dispatch_status: 'failed_to_start', vox_call_session_history_id: null } as never,
-    );
+    vi.mocked(listCallbackDispatchAttemptsBySlot)
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([
+        { id: ATTEMPT_ID, dispatch_status: 'failed_to_start', confirmation_call_status: 'not_sent' } as never,
+      ]);
     expect(await dispatchMeetingConfirmCall(REQ_ID, CONFIG, ORIGIN, DISPATCH_NOW_MS)).toEqual({
       kind: 'already_concluded', attemptId: ATTEMPT_ID, dispatchStatus: 'failed_to_start',
     });
@@ -253,7 +288,9 @@ describe('atomic-create race (reconcile)', () => {
 
   it('lost race, no reconcile row found at all → concurrent_owner (fail-closed)', async () => {
     vi.mocked(createCallbackDispatchAttempt).mockResolvedValue(null);
-    vi.mocked(getCallbackDispatchAttemptBySlot).mockResolvedValue(null);
+    vi.mocked(listCallbackDispatchAttemptsBySlot)
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([]);
     expect(await dispatchMeetingConfirmCall(REQ_ID, CONFIG, ORIGIN, DISPATCH_NOW_MS)).toEqual({ kind: 'concurrent_owner' });
     expect(startScenarios).not.toHaveBeenCalled();
   });

@@ -82,15 +82,21 @@ export async function createCallbackDispatchAttempt(
   return { id: data.id };
 }
 
-// Reconcile read for a lost createCallbackDispatchAttempt race — the exact
+// All dispatch attempts for one slot — the exact
 // (callback_request_id, scheduled_at_snapshot) pair the partial unique index
 // guards, scoped to issued_via='dispatch' so an inbound_identification row
 // for the same request (a different logical attempt, minted by the
-// inbound-answering agent) can never be mistaken for the dispatch winner.
-export async function getCallbackDispatchAttemptBySlot(
+// inbound-answering agent) can never be mistaken for a dispatch attempt.
+// A LIST since 2026-08-23: the in-flight-only unique index
+// (callback_request_attempts_dispatch_slot_inflight_uidx) allows multiple
+// TERMINAL attempts per slot — a call that concluded without any semantic
+// outcome (confirmation_call_status='not_sent') no longer occupies the slot
+// forever (that exact shape suppressed the scheduled 09:00 retry and left a
+// meeting unconfirmed, incident 2026-08-23). Newest first.
+export async function listCallbackDispatchAttemptsBySlot(
   callbackRequestId: string,
   scheduledAtSnapshot: string,
-): Promise<AttemptRow | null> {
+): Promise<AttemptRow[]> {
   const admin = createAdminClient();
   const { data, error } = await admin
     .from('callback_request_attempts')
@@ -98,9 +104,9 @@ export async function getCallbackDispatchAttemptBySlot(
     .eq('callback_request_id', callbackRequestId)
     .eq('scheduled_at_snapshot', scheduledAtSnapshot)
     .eq('issued_via', 'dispatch')
-    .maybeSingle();
-  if (error) throw new Error('טעינת ניסיון שיחת האישור נכשלה');
-  return data;
+    .order('created_at', { ascending: false });
+  if (error) throw new Error('טעינת ניסיונות שיחת האישור נכשלה');
+  return data ?? [];
 }
 
 // Record a CONFIRMED StartScenarios start (result===1 && call_session_history_id).
