@@ -17,6 +17,7 @@ import {
   ChevronsUpDown,
   FileText,
   FlaskConical,
+  Globe,
   History,
   LayoutDashboard,
   BellRing,
@@ -165,6 +166,10 @@ const NAV_GROUPS: NavGroup[] = [
       // non-owner admin who clicks it is redirected by the page itself,
       // consistent with every other admin-only link.
       { href: '/admin/debug', label: 'Debug Mode', icon: Activity },
+      // Read-only progress view of the relocation wizard (npm run relocate).
+      // Server-side gated to the platform owner (requirePlatformOwner), like
+      // Debug Mode above — the page itself redirects non-owner admins.
+      { href: '/admin/relocation', label: 'העברת דומיין', icon: Globe },
       { href: '/admin/webhooks', label: 'בדיקת Webhooks', icon: Webhook },
       { href: '/admin/sumit-test', label: 'בדיקת SUMIT', icon: FlaskConical },
       // Internal same-origin link: the pg-boss dashboard is reverse-proxied at
