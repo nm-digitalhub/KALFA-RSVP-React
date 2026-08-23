@@ -41,6 +41,7 @@
     "verify:db": "node --env-file=.env.local scripts/verify-db-contracts.mjs",
     "typecheck": "tsc --noEmit",
     "voximplant": "tsx scripts/voximplant/cli.ts",
+    "relocate": "tsx scripts/relocate/cli.ts",
     "check:control-chars": "node scripts/check-control-characters.mjs"
   },
   "dependencies": {
@@ -108,6 +109,7 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
+    "@clack/prompts": "^1.7.0",
     "@microsoft/microsoft-graph-types": "^2.43.1",
     "@next/bundle-analyzer": "^16.3.1",
     "@tailwindcss/postcss": "^4",

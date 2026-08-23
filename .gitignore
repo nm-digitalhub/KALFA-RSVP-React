@@ -131,3 +131,10 @@ scenario-*.deployed.js
 # Subagent-driven-development scratch workspaces (ledgers, briefs, review
 # packages) — per-plan working state, not source. See superpowers:subagent-driven-development.
 /.superpowers/
+
+# Relocation wizard runtime state (docs/relocation-wizard-design-2026-08-23.md §2):
+# the state ledger + its backup, and the .relocate/ dir (lock, reports, step logs).
+# Carries server paths and run history — never committed.
+/.relocation-state.json
+/.relocation-state.json.bak
+/.relocate/
