@@ -6,7 +6,7 @@ import {
   getCallbackRequestForAttempt,
 } from '@/lib/data/callback-request-attempts';
 import { rescheduleCallbackRequest } from '@/lib/data/callback-scheduling';
-import { createContactMessage } from '@/lib/data/inquiries';
+import { insertContactMessage } from '@/lib/data/inquiry-intake';
 import { INQUIRY_TOPICS } from '@/lib/validation/inquiries';
 import type { Database } from '@/lib/supabase/types';
 import type {
@@ -101,13 +101,14 @@ export async function processMeetingOptOutRow(
 
 // `escalate_to_queue`: writes into contact_messages/console_queues through the
 // SAME mechanism the public contact/callback forms already use (§4: "לא ערוץ
-// חדש") — createContactMessage resolves the queue via TOPIC_TO_QUEUE_KEY and
+// חדש") — insertContactMessage (the request-free core the forms' own
+// createContactMessage wraps) resolves the queue via TOPIC_TO_QUEUE_KEY and
 // fires the SAME (pre-existing) Slack alert that mechanism already fires; this
 // function never calls Slack directly (§4: "לא ל-Slack ישירות"). No
 // confirmation_call_status claim here on purpose — that enum has no
 // 'escalated' value (§4's table lists it as a pure queue write, not a call
 // outcome), and multiple escalations in one call are each just another
-// contact_messages row, same as createContactMessage's own no-guard behavior.
+// contact_messages row, same as insertContactMessage's own no-guard behavior.
 const ESCALATION_REASON_HE: Record<VoxMeetingEscalate['reason'], string> = {
   wrong_person: 'זוהה אדם לא נכון בשיחה',
   substantive_question: 'עלתה שאלה מהותית שהצריכה הפניה',
@@ -130,7 +131,7 @@ export async function processMeetingEscalate(
   const reasonHe = ESCALATION_REASON_HE[body.reason];
   const message = body.note_he ? `${reasonHe} — ${body.note_he}` : `${reasonHe} (מהסוכן הקולי לקביעת פגישות)`;
 
-  return createContactMessage(
+  return insertContactMessage(
     { name: ref.fullName, phone: ref.phone, topic, message },
     null,
   );

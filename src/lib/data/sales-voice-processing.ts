@@ -3,7 +3,7 @@ import 'server-only';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { getSalesRequestForAttempt } from '@/lib/data/sales-call-attempts';
 import { rescheduleCallbackRequest } from '@/lib/data/callback-scheduling';
-import { createContactMessage } from '@/lib/data/inquiries';
+import { insertContactMessage } from '@/lib/data/inquiry-intake';
 import { INQUIRY_TOPICS } from '@/lib/validation/inquiries';
 import type { Database } from '@/lib/supabase/types';
 import type {
@@ -49,7 +49,7 @@ export async function processSalesOptOutRow(
 }
 
 // `notify_owner`: relay an unanswerable question/flag. Same mechanism as
-// escalate_to_human below (createContactMessage → the existing
+// escalate_to_human below (insertContactMessage → the existing
 // TOPIC_TO_QUEUE_KEY routing + Slack alert) — the two tools differ only in
 // urgency/wording on the agent's own side, not in the server mechanism,
 // exactly like meeting-confirm's escalate_to_queue.
@@ -64,7 +64,7 @@ export async function processSalesNotifyOwner(
     ? (ref.topic as (typeof INQUIRY_TOPICS)[number])
     : 'אחר';
 
-  return createContactMessage(
+  return insertContactMessage(
     { name: ref.fullName, phone: ref.phone, topic, message: body.text },
     null,
   );
@@ -85,7 +85,7 @@ export async function processSalesEscalate(
     ? (ref.topic as (typeof INQUIRY_TOPICS)[number])
     : 'אחר';
 
-  return createContactMessage(
+  return insertContactMessage(
     { name: ref.fullName, phone: ref.phone, topic, message: `בקשה לנציג אנושי בשיחת מכירה — ${body.reason}` },
     null,
   );
