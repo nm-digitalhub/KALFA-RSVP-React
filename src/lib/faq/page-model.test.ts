@@ -105,6 +105,20 @@ describe('buildFaqPageModel structure', () => {
     ]);
   });
 
+  // Regression (owner report 2026-08-24): the public answer is buildBusinessFacts().
+  // billing_unit_he verbatim — a sentence addressed to the drafter bot must
+  // never reach the customer-facing page (or the FAQPage JSON-LD).
+  it('the public billing_unit answer carries no bot-facing instruction', () => {
+    const facts = buildBusinessFacts(true, pkg);
+    const model = buildFaqPageModel(ITEMS, facts);
+    const pricing = model.sections.find((s) => s.category === 'pricing')!;
+    const answer = pricing.entries[1].answer;
+    expect(answer).toContain('אי אפשר לגזור מחיר ממספר אורחים');
+    expect(answer).not.toContain('כשלקוח נוקב');
+    expect(answer).not.toContain('הצג לו');
+    expect(answer).not.toContain(facts.billing_unit_drafter_note_he!);
+  });
+
   it('substitutes {{channels_list}} inside a free-text DB row', () => {
     const withToken: FaqItemRow[] = [
       {

@@ -88,5 +88,18 @@ describe('billing_unit_he', () => {
 
   it('is absent when there is no package to price', () => {
     expect(buildBusinessFacts(true, null).billing_unit_he).toBeUndefined();
+    expect(buildBusinessFacts(true, null).billing_unit_drafter_note_he).toBeUndefined();
+  });
+
+  // Regression: the drafter instruction ("כשלקוח נוקב…") used to be the last
+  // sentence of billing_unit_he, and billing_unit_he is rendered verbatim on
+  // the public /faq page — so a bot-facing instruction leaked to customers
+  // (owner report 2026-08-24). The instruction lives in its own field now.
+  it('keeps the drafter instruction OUT of the customer-facing text and IN its own field', () => {
+    const facts = buildBusinessFacts(true, pkg);
+    expect(facts.billing_unit_he).not.toContain('כשלקוח נוקב');
+    expect(facts.billing_unit_he).not.toContain('הצג לו');
+    expect(facts.billing_unit_he?.trim().endsWith('.')).toBe(true);
+    expect(facts.billing_unit_drafter_note_he).toContain('כשלקוח נוקב במספר אורחים');
   });
 });

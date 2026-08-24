@@ -37,6 +37,15 @@ export interface BusinessFacts {
    * three different units that are easy to read as one.
    */
   billing_unit_he?: string;
+  /**
+   * Working instruction for the DRAFTER/AGENT only (how to apply
+   * `billing_unit_he` when a customer quotes a guest count). Kept OUT of
+   * `billing_unit_he` on purpose: that text is also rendered verbatim on the
+   * public /faq page (src/lib/faq/page-model.ts), where an instruction
+   * addressed to a bot leaked into the customer-facing answer (owner report
+   * 2026-08-24). Never render this field to customers.
+   */
+  billing_unit_drafter_note_he?: string;
 }
 
 export function buildBusinessFacts(
@@ -118,7 +127,10 @@ export function buildBusinessFacts(
     `איש קשר הוא מספר טלפון אחד, והוא עשוי לייצג יותר מאורח אחד באותו בית, ולכן אי אפשר לגזור מחיר ממספר אורחים. ` +
     `הכלל שתמיד נכון: לא ייתכן שיענו יותר אנשים ממספר הטלפונים שברשימה, ולכן ברשימה של עד ${included} מספרי טלפון ` +
     `המחיר הוא ₪${base} תמיד, בלי קשר לכמה מהם יענו בפועל. ` +
-    `רק ברשימה גדולה מ-${included} ורק אם יותר מ-${included} מהם אכן ייענו, מתווספים ₪${overage} לכל נענה מעל ${included}. ` +
+    `רק ברשימה גדולה מ-${included} ורק אם יותר מ-${included} מהם אכן ייענו, מתווספים ₪${overage} לכל נענה מעל ${included}.`;
+  // Addressed to the drafter/agent, NOT to the customer — see the field's
+  // doc comment. Customer-facing text above ends at the pricing rule.
+  const billing_unit_drafter_note_he =
     `כשלקוח נוקב במספר אורחים — הצג לו את הכלל הזה כדי שיוכל ליישם אותו על הרשימה שלו, במקום לאמוד עבורו.`;
 
   return {
@@ -132,5 +144,6 @@ export function buildBusinessFacts(
     included_reached: included,
     summary_he,
     billing_unit_he,
+    billing_unit_drafter_note_he,
   };
 }
