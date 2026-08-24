@@ -1,6 +1,5 @@
 import Link from 'next/link';
 
-import { ManageCookiesButton } from '@/components/consent/manage-cookies-button';
 import { LandingMobileNav } from '@/components/landing-mobile-nav';
 import { LandingUserMenu } from '@/components/landing-user-menu';
 import { getUser } from '@/lib/auth/dal';
@@ -115,14 +114,6 @@ const PREVIEW_GUESTS = [
   { n: 'משפחת לוי', m: '4 אורחים', label: 'אישרו', cls: 'bg-emerald-50 text-emerald-700' },
   { n: 'יואב כהן', m: '2 אורחים', label: 'ממתין', cls: 'bg-amber-50 text-amber-700' },
   { n: 'נועה אבני', m: '1 אורח', label: 'לא מגיע', cls: 'bg-rose-50 text-rose-700' },
-];
-
-// Decorative marketing columns — placeholder text, not links. The real,
-// functional links live in the header nav and the footer bottom bar.
-const FOOTER_COLS = [
-  { title: 'מוצר', links: ['יכולות', 'איך זה עובד', 'אבטחה'] },
-  { title: 'אירועים', links: ['חתונות', 'בר/בת מצווה', 'כנסים', 'אירועי חברה'] },
-  { title: 'חברה', links: ['אודות', 'יצירת קשר', 'תמיכה'] },
 ];
 
 function Eyebrow({ icon: Icon, children }: { icon: LucideIcon; children: React.ReactNode }) {
@@ -517,42 +508,9 @@ export default async function HomePage() {
           </div>
         </section>
       </main>
-
-      {/* Footer */}
-      <footer className="bg-[#0b0f1a] text-white/60">
-        <div className="mx-auto max-w-6xl px-6 py-12">
-          <div className="grid gap-8 sm:grid-cols-2 lg:grid-cols-[1.4fr_1fr_1fr_1fr]">
-            <div>
-              <div className="mb-3.5 text-xl font-extrabold text-white">KALFA</div>
-              <p className="max-w-xs text-sm leading-relaxed">
-                ניהול אישורי הגעה לאירועים פרטיים ועסקיים — במקום אחד.
-              </p>
-            </div>
-            {FOOTER_COLS.map((col) => (
-              <div key={col.title}>
-                <div className="mb-3.5 font-semibold text-white">{col.title}</div>
-                <div className="grid gap-2.5">
-                  {col.links.map((l) => (
-                    <span key={l} className="text-sm text-white/60">{l}</span>
-                  ))}
-                </div>
-              </div>
-            ))}
-          </div>
-          <div className="mt-8 flex flex-col gap-4 border-t border-white/10 pt-5 text-xs sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
-            <span>© 2026 KALFA · כל הזכויות שמורות</span>
-            <nav className="flex flex-wrap items-center gap-x-4 gap-y-2" aria-label="קישורי תחתית">
-              <Link href="/faq" className="text-white/60 hover:text-white">שאלות נפוצות</Link>
-              <Link href="/contact" className="text-white/60 hover:text-white">יצירת קשר</Link>
-              <Link href="/privacy" className="text-white/60 hover:text-white">מדיניות פרטיות</Link>
-              <Link href="/terms" className="text-white/60 hover:text-white">תקנון</Link>
-              <Link href="/cookies" className="text-white/60 hover:text-white">מדיניות עוגיות</Link>
-              <ManageCookiesButton className="text-white/60 hover:text-white">ניהול עוגיות</ManageCookiesButton>
-            </nav>
-            <span>פחות התעסקות · יותר שליטה</span>
-          </div>
-        </div>
-      </footer>
+      {/* Footer: shared SiteFooter, mounted by the (site) layout for every
+          marketing page (footer review 24.8 — the old 3-column placeholder
+          block and the duplicated slogan were removed). */}
     </div>
   );
 }

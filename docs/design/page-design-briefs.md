@@ -18,7 +18,7 @@
 - **Shell/Layout:** Root-only — owns its full header/footer, no AppShell/AdminShell
 - **Current purpose:** Public marketing/sales page for KALFA; converts visitors to signup, or routes signed-in users to `/app`
 - **Primary user goal:** Understand the product and start (sign up) or continue (go to dashboard)
-- **Main content sections:** sticky header w/ nav+CTA · Hero w/ live dashboard-preview mock · Problem/Solution split · Features grid (7 cards + 1 CTA card) · "How it works" 6-step grid · Trust section (dark) · Audiences grid · Closing CTA banner · Footer (4-col + legal line)
+- **Main content sections:** sticky header w/ nav+CTA · Hero w/ live dashboard-preview mock · Problem/Solution split · Features grid (7 cards + 1 CTA card) · "How it works" 6-step grid · Trust section (dark) · Audiences grid · Closing CTA banner · Footer (single-tier, shared `SiteFooter` from the `(site)` layout: brand line · 5 legal/support links + cookie management · ©)
 - **Actions:** primary CTA `startHref` (`/app` if signed in else `/auth/signup`), `/auth/login`, in-page anchor nav (`#features`, `#how`, `#trust`), secondary "צפו בהדגמה קצרה" anchor to `#how`
 - **Forms / fields:** — (no forms; all links)
 - **Tables / lists:** none (feature/step/trust/audience arrays rendered as card grids, not `<table>`)

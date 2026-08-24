@@ -1,5 +1,6 @@
 import { GoogleAnalyticsGated } from '@/components/consent/google-analytics-gated';
 import { CallMeNowWidgetLazy } from '@/components/site/call-me-now-widget-lazy';
+import { SiteFooter } from '@/components/site/site-footer';
 import { getCookieConsentPublicConfig } from '@/lib/consent/admin-config';
 import { getCallMeNowWidgetEnabled } from '@/lib/data/call-me-now-public-config';
 
@@ -50,6 +51,10 @@ export default async function SiteLayout({
   return (
     <>
       {children}
+      {/* Shared footer for every (site) page (footer review 24.8): the legal
+          links + cookie management must be reachable from each marketing
+          page, not only the homepage. Pages own their own header. */}
+      <SiteFooter widgetClearance={callMeNowEnabled} />
       <GoogleAnalyticsGated mechanismEnabled={cookieConsentAdminConfig.enabled} />
       {callMeNowEnabled ? <CallMeNowWidgetLazy /> : null}
     </>
