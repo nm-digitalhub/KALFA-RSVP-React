@@ -11,7 +11,16 @@ Basis: four parallel expert audits run 2026-08-23 (application code, infrastruct
 external integrations, live DB). All file:line references were read-verified; DB findings
 came from a SELECT-only sweep of all 359 text/json columns in `public`.
 
-Status: **PLAN ONLY — not build-authorized.** Nothing in this document has been implemented.
+Status (2026-08-24): **BUILT — every stage wired, execution latched behind
+`RELOCATE_EXECUTE` + owner gates; only `--dry-run` has been run on this server.**
+`npm run relocate -- --target <origin> --dry-run` produces the 24-step plan below;
+no real run has been executed. Gaps closed 2026-08-24 (all live-verified against the
+platforms, not this document): Meta template versioning (B1/B2/G2), Voximplant
+origin-secret + conditional console-scenario upload + account-callback re-arm
+(F5/F6/F6b), ElevenLabs webhook tool + knowledge-base re-attach (F8/F9), public
+token-page verification (H1). Owner-only remaining: the FIRST one-time upload of the
+console scenarios (they now read `KALFA_APP_ORIGIN`) — F6b performs it under the
+`voximplant-scenario-redeploy` gate.
 
 ---
 
@@ -243,19 +252,36 @@ Three hard rules encoded from the file's own documentation:
 | Supabase auth emails | re-deploy templates embedding `<origin>/auth/confirm` | re-run `scripts/deploy-recovery-email-template.mjs --apply` + `scripts/deploy-email-change-template.mjs --apply` |
 | Meta WhatsApp webhook | callback URL → `<origin>/api/webhooks/whatsapp` | `POST /{app-id}/subscriptions` (app token); verify handshake |
 | Microsoft Graph | delete + recreate subscriptions (notificationUrl embeds origin) | Graph API; code already builds URL from `getAppOrigin()` (`src/lib/microsoft/subscriptions.ts:38-40`) |
-| Voximplant | account callback re-arm to `<origin>/api/voximplant/…` | existing admin flow (`src/lib/data/admin/voximplant-channel.ts:287`) — API call, not raw UPDATE; then close Stage E exception |
-| Voximplant Console scenarios | after Phase 0 #4: origin arrives via custom_data — nothing to do; until then: edit + `voxengine-ci upload` [gate — live telephony] | voxengine-ci |
-| ElevenLabs | workspace post-call webhook → new origin; KB doc referencing sitemap URL | webhook: dashboard (owner-manual unless API confirmed); KB via ConvAI API + pull→edit→push workflow |
+| Voximplant | account callback re-arm to `<origin>/api/voximplant/…` (F5) | `GetAccountInfo` echoes `callback_url` (live-verified 2026-08-24; it does NOT echo `callback_salt`) → the SAME token is re-registered on the new origin via the restricted `SetAccountInfo` with the salt from `app_settings` — stored hash stays valid, no DB write; previous URL kept for rollback |
+| Voximplant Console scenarios | ConsoleDial / ConsoleInbound / ConsoleCallMeNow read the origin from the **application secret `KALFA_APP_ORIGIN`** (`VoxEngine.getSecretValue`, same mechanism as `KALFA_CONSOLE_SECRET`) — a move is a secret rotation (F6: `GetSecrets` → `AddSecret` / `SetSecretInfo{application_id, secret_id, secret_value}`, live-doc verified). F6b uploads a scenario ONLY when its DEPLOYED text (GetScenarios `with_script` parity) still pins a literal / does not read the secret — `npm run vox:upload -- --rule-name <incoming\|ConsoleInternal\|ConsoleCallMeNow>`; DTMF `OutCall` 1494311 never touched [gate — live telephony] | src/lib/relocation/voximplant-relocate.ts |
+| ElevenLabs | live inventory 2026-08-24: ONE webhook tool (`lookup_guest_rsvp` → `/api/agent/rsvp-lookup`) and the Sales-Close agent's KB (`/faq` url doc + sitemap crawl folder of 6 url docs); every other tool is `client` (no URL); no workspace post-call webhook is set | F8: `PATCH /v1/convai/tools/{id}` with the tool's own config re-based. F9: recreate url docs / a folder of url docs on the new origin (`POST /knowledge-base/url`, `/knowledge-base/folder`; old ones never deleted) → `elevenlabs agents pull --update` → swap KB ids → `elevenlabs agents push` (never PATCH the agent) [gate `elevenlabs-live-update`] |
 | GA4 | data-stream default URI | Admin API `dataStreams.patch` (or 2-min console edit) |
 | Resend / `send.kalfa.me` | **no action** — sending domain is DNS-bound, independent of app origin; body links follow `APP_ORIGIN` | optional rebrand only (full DNS/DKIM redo — out of scope) |
 | SUMIT, ExtrA SMS | **no action** — no stored URLs; everything built per-request | — |
 
-### Stage G — DB updates (automated, 2 statements)
-1. `UPDATE app_settings SET privacy_url = :origin || '/privacy', terms_url = :origin || '/terms';`
-2. Optional owner prompt (explicitly out of app-origin scope): `company_contact_email`,
+### Stage G — DB updates (automated)
+1. G1: `UPDATE app_settings SET privacy_url = :origin || '/privacy', terms_url = :origin || '/terms';`
+2. G2: `UPDATE message_templates SET name, components` → the `_vN+1` successor of every
+   template Meta has **APPROVED** (row `name` + `components.variants` / `media_variants` /
+   `media_variant`); unapproved names stay and keep working through the Stage E 301.
+   Previous rows → `.relocate/G2-prev.json`. After later approvals:
+   `npm run relocate -- repair G2 pending` then `--resume`.
+3. Optional owner prompt (explicitly out of app-origin scope): `company_contact_email`,
    `smtp_from`, Exchange mailbox identity — email identity, not app URL.
 
+### Stage B — Meta templates (automated, Meta-paced)
+B1 (gate `meta-template-submit`): live WABA inventory → every APPROVED template whose URL
+button targets the old host gets a `_vN+1` successor submitted with the new base
+(`POST /{WABA}/message_templates`; components carried verbatim, only URL buttons + their
+examples re-based; idempotent — an existing successor on the new host is recognised in any
+status). B2 (gate `meta-approval-override`): all successors APPROVED → continues; otherwise
+the owner decides whether to proceed now (G2 then switches only the approved subset).
+
 ### Stage H — Verification suite (wizard-run, blocking)
+0. Public pages (added 2026-08-24): `/privacy /terms /faq /contact /cookies` → 200; homepage
+   `rel="canonical"` on the new origin; `/r/<guest>`, `/g/<event>`, `/ty/<event>` probed with
+   ONE live token each (read via the service key, held in memory only, never logged) and
+   must render real content — not the generic "invalid link" refusal.
 1. Local probe: `HEAD http://127.0.0.1:3002/api/health` with `Host: <new>`.
 2. Public: `GET https://<new>/` (200, correct cert chain).
 3. Authenticated `/admin` request — exercises the chunked-cookie/proxy-buffer path

@@ -596,6 +596,9 @@ async function hardcodeFinding(input: PreflightInput): Promise<PreflightFinding>
         "src",
         "ops",
         "scripts",
+        // Console scenarios read the origin from the KALFA_APP_ORIGIN
+        // application secret (F6) — a literal here means an un-fixed scenario.
+        "voxfiles/scenarios/src",
       ],
       { cwd: input.repoRoot, timeout: 30_000, maxBuffer: 8 * 1024 * 1024 },
     );

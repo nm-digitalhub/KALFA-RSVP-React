@@ -210,15 +210,97 @@ export async function localBodyContains(path: string, host: string, needle: stri
   }
 }
 
-/** Public verification suite (Stage H / I11): a small set of independent
- * checks against the live target + old origin. Read-only. */
+/** Public marketing/legal pages every relocation must keep serving. */
+export const PUBLIC_STATIC_PATHS = ["/privacy", "/terms", "/faq", "/contact", "/cookies"] as const;
+
+/** The generic "invalid link" copy of the token pages — a live token must
+ * NOT render it (src/app/(public)/{r,g,ty}/[token]/page.tsx). */
+const INVALID_LINK_MARKERS = ["אינו תקף", "הקישור שגוי"] as const;
+
+/** One live token per public token surface, read via the service key
+ * (read-only). The tokens exist only in memory for the probe; they are never
+ * logged, never stored, never put in a label. */
+export async function livePublicTokens(env: Record<string, string>): Promise<{
+  rsvp: string | null;
+  gift: string | null;
+}> {
+  const base = env.NEXT_PUBLIC_SUPABASE_URL;
+  const key = env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!base || !key) return { rsvp: null, gift: null };
+  const headers = { apikey: key, authorization: `Bearer ${key}` };
+  const get = async (path: string): Promise<Record<string, unknown>[]> => {
+    try {
+      const res = await fetch(`${base}/rest/v1/${path}`, { headers, signal: AbortSignal.timeout(8000) });
+      return res.ok ? ((await res.json()) as Record<string, unknown>[]) : [];
+    } catch {
+      return [];
+    }
+  };
+  const [guests, events] = await Promise.all([
+    get("guests?select=rsvp_token,events!inner(status)&events.status=eq.active&rsvp_token_revoked_at=is.null&limit=1"),
+    get("events?select=gift_link_token&status=eq.active&gift_link_token=not.is.null&limit=1"),
+  ]);
+  const rsvp = guests[0]?.rsvp_token;
+  const gift = events[0]?.gift_link_token;
+  return {
+    rsvp: typeof rsvp === "string" && rsvp ? rsvp : null,
+    gift: typeof gift === "string" && gift ? gift : null,
+  };
+}
+
+/** Pure: a token page answered with real content (not the generic refusal). */
+export function tokenPageLooksLive(status: number, body: string): boolean {
+  return status === 200 && !INVALID_LINK_MARKERS.some((m) => body.includes(m));
+}
+
+/** Public verification suite (Stage H / I11): independent checks against the
+ * live target + old origin. Read-only. With `env`, the public token surfaces
+ * (/r, /g, /ty) are probed with one live token each. */
 export async function runVerificationSuite(opts: {
   targetOrigin: string;
   previousOrigin: string;
+  env?: Record<string, string>;
 }): Promise<{ label: string; ok: boolean; detail?: string }[]> {
   const checks: { label: string; ok: boolean; detail?: string }[] = [];
+  const targetHost = new URL(opts.targetOrigin).hostname;
 
   checks.push(await httpCheck(`${opts.targetOrigin}/`, (res) => res.status === 200, "public GET 200"));
+  checks.push(
+    await httpCheck(
+      `${opts.targetOrigin}/`,
+      async (res) => res.status === 200 && (await res.text()).includes(`rel="canonical" href="${opts.targetOrigin}`),
+      "homepage canonical points at target origin",
+    ),
+  );
+  for (const path of PUBLIC_STATIC_PATHS) {
+    checks.push(await httpCheck(`${opts.targetOrigin}${path}`, (res) => res.status === 200, `${path} 200`));
+  }
+  if (opts.env) {
+    const tokens = await livePublicTokens(opts.env);
+    const tokenCheck = async (path: string, token: string | null, label: string): Promise<void> => {
+      if (!token) {
+        checks.push({ label, ok: false, detail: "no live token available to probe (needs an active event)" });
+        return;
+      }
+      checks.push(
+        await httpCheck(
+          `${opts.targetOrigin}${path}/${encodeURIComponent(token)}`,
+          async (res) => tokenPageLooksLive(res.status, await res.text()),
+          label,
+        ),
+      );
+    };
+    await tokenCheck("/r", tokens.rsvp, "RSVP page renders for a live guest token");
+    await tokenCheck("/g", tokens.gift, "gift page renders for a live event token");
+    await tokenCheck("/ty", tokens.gift, "thank-you page renders for a live event token");
+  }
+  checks.push(
+    await httpCheck(
+      `${opts.targetOrigin}/llms.txt`,
+      async (res) => res.status === 200 && (await res.text()).includes(targetHost),
+      "llms.txt contains target origin",
+    ),
+  );
   checks.push(
     await httpCheck(
       `${opts.targetOrigin}/api/health`,

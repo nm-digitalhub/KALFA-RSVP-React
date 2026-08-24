@@ -53,6 +53,7 @@ export const GATE_IDS = [
   "dns-write-local-zone",
   "go-live",
   "install-prereqs",
+  "elevenlabs-live-update",
 ] as const;
 export const zGateId = z.enum(GATE_IDS);
 export type GateId = z.infer<typeof zGateId>;

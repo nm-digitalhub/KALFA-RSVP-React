@@ -90,6 +90,16 @@ export const GATE_LABELS: Record<GateId, { label: Label; consequence: Label }> =
       he: "מתקין/מעדכן תוכנת מערכת (Node, pm2, nginx, כלי TLS) דרך sudo — כל פקודה מוצגת לפני הרצתה.",
     },
   },
+  "elevenlabs-live-update": {
+    label: {
+      en: "Update live ElevenLabs voice agents",
+      he: "עדכון סוכני הקול החיים ב-ElevenLabs",
+    },
+    consequence: {
+      en: "Re-points the RSVP-lookup webhook tool and re-attaches knowledge-base documents on the new origin (agents pull → push). A mistake affects real calls; old documents are never deleted.",
+      he: "מכוון מחדש את כלי ה-webhook לחיפוש RSVP ומצרף מחדש מסמכי ידע על הכתובת החדשה (pull → push). טעות משפיעה על שיחות אמיתיות; מסמכים ישנים לעולם לא נמחקים.",
+    },
+  },
 };
 
 export const WAITING_LABELS: Record<WaitingKind, Label> = {

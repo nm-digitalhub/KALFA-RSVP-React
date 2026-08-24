@@ -39,6 +39,54 @@ import { deploy, cleanRestartFleet, pm2Env } from "./pm2";
 import { missingEnvKeys } from "./install-steps";
 import { parseEnvFile } from "./preflight";
 import { startSetupForm } from "./setup-form";
+import { readAppSettings } from "./app-settings";
+import {
+  createMetaTemplate,
+  listMetaTemplates,
+  planTemplateNames,
+  planTemplateRowSwitch,
+  referencedOldNames,
+  rewriteComponents,
+  templateSwitchSql,
+  type MetaCreds,
+  type TemplateNamePlan,
+  type TemplateRow,
+} from "./meta-templates";
+import {
+  APP_ORIGIN_SECRET_NAME,
+  appSecretEquals,
+  consoleScenarioParity,
+  ensureAppSecret,
+  loadVoxConfig,
+  readAccountCallback,
+  readAccountCallbackSalt,
+  rearmAccountCallback,
+  resolveVoxApplicationId,
+  restoreAccountCallback,
+  uploadConsoleScenarios,
+} from "./voximplant-relocate";
+import {
+  collectFolderUrlDocs,
+  createKbFolder,
+  createKbUrlDocument,
+  getElAgentKb,
+  getElTool,
+  getKbDocument,
+  listElTools,
+  loadElApiKey,
+  patchToolUrl,
+  pullAgentConfig,
+  pushAgentConfig,
+  readAgentConfig,
+  readAgentsJson,
+  rebaseUrl,
+  rewriteAgentKb,
+  toolUrl,
+  toolsOnHost,
+  urlOnHost,
+  writeAgentConfig,
+  type KbItem,
+} from "./elevenlabs-relocate";
 import type { Label } from "./state";
 import {
   certCoversHost,
@@ -100,6 +148,81 @@ function readEnv(repoRoot: string): Record<string, string> {
   return parseEnvFile(readFileSync(join(repoRoot, ".env.local"), "utf8"));
 }
 
+/** WhatsApp credentials live in app_settings (DB), not env. */
+async function metaCreds(repoRoot: string): Promise<MetaCreds | null> {
+  const row = await readAppSettings<{ whatsapp_waba_id: string | null; whatsapp_access_token: string | null }>(
+    readEnv(repoRoot),
+    ["whatsapp_waba_id", "whatsapp_access_token"],
+  );
+  if (!row?.whatsapp_waba_id || !row.whatsapp_access_token) return null;
+  return { wabaId: row.whatsapp_waba_id, accessToken: row.whatsapp_access_token };
+}
+
+/** Old→new template-name plan from the LIVE WABA inventory. */
+async function metaPlans(ctx: WizardContext, creds: MetaCreds): Promise<TemplateNamePlan[]> {
+  const templates = await listMetaTemplates(creds);
+  return planTemplateNames(templates, host(ctx.previousOrigin), host(ctx.targetOrigin));
+}
+
+function planSummary(plans: TemplateNamePlan[]): string {
+  const counts = new Map<string, number>();
+  for (const p of plans) {
+    const k = p.newStatus ?? "NOT SUBMITTED";
+    counts.set(k, (counts.get(k) ?? 0) + 1);
+  }
+  return [...counts.entries()].map(([k, n]) => `${n} ${k}`).join(", ") || "none";
+}
+
+/** Supabase Management-API handle for the Stage G SQL steps. */
+function mgmtHandle(repoRoot: string): { token: string; projectRef: string } | null {
+  const env = readEnv(repoRoot);
+  const resolved = supabaseMgmtToken({ env });
+  if (!resolved || !env.NEXT_PUBLIC_SUPABASE_URL) return null;
+  return { token: resolved.token, projectRef: projectRefFromSupabaseUrl(env.NEXT_PUBLIC_SUPABASE_URL) };
+}
+
+async function readTemplateRows(handle: { token: string; projectRef: string }): Promise<TemplateRow[] | null> {
+  const res = await runSupabaseSql({
+    ...handle,
+    query: "SELECT message_key, name, components FROM message_templates WHERE channel = 'whatsapp'",
+    readOnly: true,
+  });
+  if (!res.ok || !Array.isArray(res.value)) return null;
+  return res.value as TemplateRow[];
+}
+
+/** Voximplant handle shared by F5/F6/F6b. */
+async function voxHandle(repoRoot: string) {
+  const env = readEnv(repoRoot);
+  const cfg = await loadVoxConfig(repoRoot, env);
+  const appId = resolveVoxApplicationId(repoRoot);
+  return cfg && appId !== null ? { cfg, appId, env } : null;
+}
+
+/** ElevenLabs KB relocation plan for ONE agent, computed from the live agent
+ * config: which KB items still resolve to url documents on the old host. */
+async function elAgentKbPlan(
+  apiKey: string,
+  agentId: string,
+  oldHost: string,
+): Promise<{ items: KbItem[]; stale: { item: KbItem; urls: { id: string; name: string; url: string }[] }[] } | null> {
+  const items = await getElAgentKb(apiKey, agentId);
+  if (!items) return null;
+  const stale: { item: KbItem; urls: { id: string; name: string; url: string }[] }[] = [];
+  for (const item of items) {
+    if (item.type === "url") {
+      const doc = await getKbDocument(apiKey, item.id);
+      if (doc?.url && urlOnHost(doc.url, oldHost)) stale.push({ item, urls: [{ id: doc.id, name: doc.name, url: doc.url }] });
+    } else if (item.type === "folder") {
+      const docs = (await collectFolderUrlDocs(apiKey, item.id)).filter((d) => urlOnHost(d.url, oldHost));
+      if (docs.length > 0) {
+        stale.push({ item, urls: docs.map((d) => ({ id: d.id, name: d.name, url: d.url as string })) });
+      }
+    }
+  }
+  return { items, stale };
+}
+
 /** The full intended sequence (plan doc §5). Stage A runs OUTSIDE the engine
  * as the read-only preflight; stages B–H are engine steps. */
 export function buildStepDefinitions(): StepDefinition[] {
@@ -108,14 +231,93 @@ export function buildStepDefinitions(): StepDefinition[] {
       id: "B1",
       stage: "B",
       gate: "meta-template-submit",
-      label: { en: "Submit Meta _v2 templates", he: "הגשת תבניות _v2 ל-Meta" },
+      label: { en: "Submit Meta template versions on the new origin", he: "הגשת גרסאות תבנית ל-Meta על הכתובת החדשה" },
       plan: (ctx) => [
-        `submit _v2 versions of URL-button templates with base ${ctx.targetOrigin} (never delete existing)`,
-        "poll approval status; stage D SHOULD wait for approval (override = meta-approval-override gate)",
+        `live WABA inventory → every APPROVED template whose URL button targets ${host(ctx.previousOrigin)} gets a _vN+1 successor submitted with base ${ctx.targetOrigin} (POST /{waba}/message_templates; the approved original is never edited or deleted)`,
+        "idempotent: a successor already carrying the new host (any status) is not re-submitted; components (BODY/FOOTER/QUICK_REPLY + examples) are carried verbatim, only URL buttons are re-based",
       ],
-      // Template submission/approval is a multi-day, Meta-paced workflow with
-      // no safe single API call to wire here yet (owner-gated by the gate
-      // above regardless) — stays manual.
+      check: async (ctx) => {
+        const creds = await metaCreds(ctx.repoRoot);
+        if (!creds) return "blocked";
+        const plans = await metaPlans(ctx, creds);
+        return plans.every((p) => p.newStatus !== null) ? "done" : "pending";
+      },
+      apply: async (ctx) => {
+        assertExecuteLatch("B1 Meta template submit");
+        const creds = await metaCreds(ctx.repoRoot);
+        if (!creds) throw new Error("WhatsApp credentials unavailable in app_settings");
+        const templates = await listMetaTemplates(creds);
+        const plans = planTemplateNames(templates, host(ctx.previousOrigin), host(ctx.targetOrigin));
+        const byName = new Map(templates.map((t) => [t.name, t]));
+        const submitted: string[] = [];
+        for (const p of plans) {
+          if (p.newStatus !== null) continue;
+          const src = byName.get(p.oldName);
+          if (!src) continue;
+          const res = await createMetaTemplate(creds, {
+            name: p.newName,
+            language: src.language,
+            category: src.category,
+            parameter_format: src.parameter_format,
+            components: rewriteComponents(src.components, host(ctx.previousOrigin), ctx.targetOrigin),
+          });
+          if (!res.ok) throw new Error(`Meta submit ${p.newName} failed: ${res.detail}`);
+          submitted.push(p.newName);
+        }
+        savePrevValue(ctx.repoRoot, "B1", { submitted });
+      },
+      verify: async (ctx) => {
+        const creds = await metaCreds(ctx.repoRoot);
+        if (!creds) return { ok: false, checks: [{ label: { en: "WhatsApp credentials", he: "פרטי WhatsApp" }, ok: false }] };
+        const plans = await metaPlans(ctx, creds);
+        const ok = plans.every((p) => p.newStatus !== null);
+        return {
+          ok,
+          checks: [
+            {
+              label: { en: `${plans.length} successor template(s) exist on the WABA`, he: `${plans.length} תבניות-המשך קיימות ב-WABA` },
+              ok,
+              detail: planSummary(plans),
+            },
+          ],
+        };
+      },
+      // No rollback: a submitted template version is a review item on Meta's
+      // side, never deleted by the wizard (owner rule: submit in addition).
+    }),
+    step({
+      id: "B2",
+      stage: "B",
+      gate: "meta-approval-override",
+      label: { en: "Wait for Meta template approval", he: "המתנה לאישור תבניות Meta" },
+      plan: () => [
+        "poll the successors' status on the WABA: all APPROVED → continue automatically",
+        "not yet approved → the meta-approval-override gate decides whether the move proceeds now (old URL buttons keep working through the Stage E 301; G2 switches each template the moment Meta approves it — re-run `repair G2 pending` + --resume later)",
+      ],
+      check: async (ctx) => {
+        const creds = await metaCreds(ctx.repoRoot);
+        if (!creds) return "blocked";
+        const plans = await metaPlans(ctx, creds);
+        return plans.every((p) => p.newStatus === "APPROVED") ? "done" : "pending";
+      },
+      // Reached only through the override gate: nothing to mutate — the
+      // decision itself is the step.
+      apply: async () => undefined,
+      verify: async (ctx) => {
+        const creds = await metaCreds(ctx.repoRoot);
+        const plans = creds ? await metaPlans(ctx, creds) : [];
+        const approved = plans.filter((p) => p.newStatus === "APPROVED").length;
+        return {
+          ok: true,
+          checks: [
+            {
+              label: { en: `${approved}/${plans.length} successor template(s) approved`, he: `${approved}/${plans.length} תבניות-המשך אושרו` },
+              ok: approved === plans.length,
+              detail: planSummary(plans),
+            },
+          ],
+        };
+      },
     }),
     step({
       id: "C1",
@@ -525,31 +727,117 @@ export function buildStepDefinitions(): StepDefinition[] {
     step({
       id: "F5",
       stage: "F",
-      label: { en: "Voximplant account callback", he: "callback חשבון Voximplant" },
+      label: { en: "Voximplant account callback re-arm", he: "חיווט מחדש של callback החשבון ב-Voximplant" },
       plan: (ctx) => [
-        `re-arm account callback to ${ctx.targetOrigin}/api/voximplant/… via the existing admin flow (API call, not raw UPDATE)`,
-        "then close the /api/* proxy exception for voximplant paths once verified",
+        `GetAccountInfo echoes the current callback_url (embeds the raw token) → SetAccountInfo re-registers the SAME token on ${ctx.targetOrigin} with the salt stored in app_settings — the stored hash stays valid, no DB write`,
+        "previous callback_url saved to .relocate/F5-prev.json for rollback; the /api/* proxy on the old origin (E1) keeps late callbacks working meanwhile",
       ],
-      apply: async () => {
-        throw new NotImplementedError(
-          "F5 stays manual: use the existing admin re-arm flow in src/lib/data/admin/voximplant-channel.ts (run through the running app's /admin UI, not this CLI)",
-        );
+      check: async (ctx) => {
+        const h = await voxHandle(ctx.repoRoot);
+        if (!h) return "blocked";
+        const cur = await readAccountCallback(h.cfg);
+        if (!cur.echoAvailable) return "blocked";
+        if (!cur.callbackUrl) return "done";
+        if (cur.callbackUrl.startsWith(`${ctx.targetOrigin}/`)) return "done";
+        return (await readAccountCallbackSalt(h.env)) ? "pending" : "blocked";
+      },
+      apply: async (ctx) => {
+        assertExecuteLatch("F5 account callback re-arm");
+        const h = await voxHandle(ctx.repoRoot);
+        if (!h) throw new Error("Voximplant credentials/application id unavailable");
+        const salt = await readAccountCallbackSalt(h.env);
+        if (!salt) throw new Error("account-callback salt missing in app_settings — re-arm would break signature checks");
+        const res = await rearmAccountCallback(h.cfg, ctx.targetOrigin, salt);
+        savePrevValue(ctx.repoRoot, "F5", { prevUrl: res.prevUrl });
+        if (!res.ok) throw new Error(`account callback re-arm failed: ${res.detail}`);
+      },
+      verify: async (ctx) => {
+        const h = await voxHandle(ctx.repoRoot);
+        const cur = h ? await readAccountCallback(h.cfg) : null;
+        const ok = Boolean(cur && (!cur.callbackUrl || cur.callbackUrl.startsWith(`${ctx.targetOrigin}/`)));
+        return { ok, checks: [{ label: { en: "callback_url echo on target origin", he: "callback_url על הכתובת החדשה" }, ok }] };
+      },
+      rollback: async (ctx) => {
+        const h = await voxHandle(ctx.repoRoot);
+        const prev = loadPrevValue<{ prevUrl: string | null }>(ctx.repoRoot, "F5");
+        const salt = h ? await readAccountCallbackSalt(h.env) : null;
+        if (!h || !prev || !salt) return;
+        await restoreAccountCallback(h.cfg, prev.prevUrl, salt);
       },
     }),
     step({
       id: "F6",
       stage: "F",
       gate: "voximplant-scenario-redeploy",
-      label: { en: "Voximplant scenario redeploy", he: "פריסת תסריטי Voximplant" },
-      plan: () => [
-        "re-template ConsoleInbound origin constant + redeploy via vox:upload (never touch DTMF OutCall rule 1494311)",
-        "HTTP-started scenarios receive the origin via custom_data after Phase 0 #4 — no redeploy needed for them",
+      label: { en: `Voximplant ${APP_ORIGIN_SECRET_NAME} application secret`, he: `סוד האפליקציה ${APP_ORIGIN_SECRET_NAME} ב-Voximplant` },
+      plan: (ctx) => [
+        `GetSecrets on the kalfa-rsvp application → AddSecret / SetSecretInfo ${APP_ORIGIN_SECRET_NAME} = ${ctx.targetOrigin} (the console scenarios read it via VoxEngine.getSecretValue, so a move is a secret rotation, not a redeploy)`,
+        "read back via GetSecretValue to verify; the previous value is kept only in .relocate/ for rollback, never printed",
       ],
-      apply: async () => {
-        throw new NotImplementedError(
-          "F6 stays manual: requires vox:upload after Phase 0 #4/#4b lands — see plan Stage F6",
-        );
+      check: async (ctx) => {
+        const h = await voxHandle(ctx.repoRoot);
+        if (!h) return "blocked";
+        return (await appSecretEquals(h.cfg, h.appId, APP_ORIGIN_SECRET_NAME, ctx.targetOrigin)) ? "done" : "pending";
       },
+      apply: async (ctx) => {
+        assertExecuteLatch("F6 application secret");
+        const h = await voxHandle(ctx.repoRoot);
+        if (!h) throw new Error("Voximplant credentials/application id unavailable");
+        const res = await ensureAppSecret(h.cfg, h.appId, APP_ORIGIN_SECRET_NAME, ctx.targetOrigin);
+        savePrevValue(ctx.repoRoot, "F6", { op: res.op, prevValue: res.prevValue });
+      },
+      verify: async (ctx) => {
+        const h = await voxHandle(ctx.repoRoot);
+        const ok = Boolean(h && (await appSecretEquals(h.cfg, h.appId, APP_ORIGIN_SECRET_NAME, ctx.targetOrigin)));
+        return { ok, checks: [{ label: { en: "GetSecretValue read-back equals target origin", he: "קריאה חוזרת של הסוד תואמת ליעד" }, ok }] };
+      },
+      rollback: async (ctx) => {
+        const h = await voxHandle(ctx.repoRoot);
+        const prev = loadPrevValue<{ prevValue: string | null }>(ctx.repoRoot, "F6");
+        if (!h || !prev?.prevValue) return;
+        await ensureAppSecret(h.cfg, h.appId, APP_ORIGIN_SECRET_NAME, prev.prevValue);
+      },
+    }),
+    step({
+      id: "F6b",
+      stage: "F",
+      gate: "voximplant-scenario-redeploy",
+      label: { en: "Upload console scenarios (only if the deployed text still pins an origin)", he: "העלאת תסריטי הקונסול (רק אם הגרסה הפרוסה עדיין מקבעת כתובת)" },
+      plan: () => [
+        "GetScenarios with_script parity for ConsoleInbound / ConsoleDial / ConsoleCallMeNow: skipped when the DEPLOYED text already reads the secret and pins no origin literal",
+        "otherwise `npm run vox:upload -- --rule-name <incoming|ConsoleInternal|ConsoleCallMeNow>` per stale scenario (voxengine-ci; the DTMF OutCall rule 1494311 and the agent rules are never touched)",
+      ],
+      check: async (ctx) => {
+        const h = await voxHandle(ctx.repoRoot);
+        if (!h) return "blocked";
+        const parity = await consoleScenarioParity(h.cfg, ctx.repoRoot, host(ctx.previousOrigin));
+        if (parity.some((p) => !p.localReadsSecret || p.deployedReadsSecret === null)) return "blocked";
+        return parity.every((p) => p.deployedReadsSecret) ? "done" : "pending";
+      },
+      apply: async (ctx) => {
+        assertExecuteLatch("F6b console scenario upload");
+        const h = await voxHandle(ctx.repoRoot);
+        if (!h) throw new Error("Voximplant credentials/application id unavailable");
+        const parity = await consoleScenarioParity(h.cfg, ctx.repoRoot, host(ctx.previousOrigin));
+        const stale = parity.filter((p) => p.deployedReadsSecret === false).map((p) => p.scenario);
+        const results = await uploadConsoleScenarios(ctx.repoRoot, stale, (chunk) => process.stdout.write(chunk));
+        const failed = results.find((r) => !r.ok);
+        if (failed) throw new Error(`vox:upload failed (exit ${failed.code ?? "?"})`);
+      },
+      verify: async (ctx) => {
+        const h = await voxHandle(ctx.repoRoot);
+        const parity = h ? await consoleScenarioParity(h.cfg, ctx.repoRoot, host(ctx.previousOrigin)) : [];
+        const ok = parity.length > 0 && parity.every((p) => p.deployedReadsSecret === true);
+        return {
+          ok,
+          checks: parity.map((p) => ({
+            label: { en: `${p.scenario} deployed text reads the secret`, he: `${p.scenario} — הגרסה הפרוסה קוראת את הסוד` },
+            ok: p.deployedReadsSecret === true,
+          })),
+        };
+      },
+      // No rollback: the previous deployed text pinned the OLD origin; after a
+      // relocation rollback the secret (F6) is what restores behaviour.
     }),
     step({
       id: "F7",
@@ -582,6 +870,154 @@ export function buildStepDefinitions(): StepDefinition[] {
           streamId: env.GA4_STREAM_ID,
           uri: prev.defaultUri,
         });
+      },
+    }),
+    step({
+      id: "F8",
+      stage: "F",
+      gate: "elevenlabs-live-update",
+      label: { en: "ElevenLabs webhook tools", he: "כלי webhook ב-ElevenLabs" },
+      plan: (ctx) => [
+        `GET /v1/convai/tools → every webhook tool whose URL targets ${host(ctx.previousOrigin)} is PATCHed with its own tool_config re-based onto ${ctx.targetOrigin} (live today: lookup_guest_rsvp → /api/agent/rsvp-lookup; client tools carry no URL)`,
+        "previous URLs saved to .relocate/F8-prev.json for rollback",
+      ],
+      check: async (ctx) => {
+        const key = loadElApiKey(readEnv(ctx.repoRoot));
+        if (!key) return "blocked";
+        return toolsOnHost(await listElTools(key), host(ctx.previousOrigin)).length === 0 ? "done" : "pending";
+      },
+      apply: async (ctx) => {
+        assertExecuteLatch("F8 ElevenLabs webhook tools");
+        const key = loadElApiKey(readEnv(ctx.repoRoot));
+        if (!key) throw new Error("ELEVENLABS_API_KEY missing");
+        const stale = toolsOnHost(await listElTools(key), host(ctx.previousOrigin));
+        const prev: { id: string; prevUrl: string | null }[] = [];
+        for (const tool of stale) {
+          const url = toolUrl(tool);
+          if (!url) continue;
+          const res = await patchToolUrl(key, tool, rebaseUrl(url, ctx.targetOrigin));
+          prev.push({ id: tool.id, prevUrl: res.prevUrl });
+          savePrevValue(ctx.repoRoot, "F8", { tools: prev });
+          if (!res.ok) throw new Error(`tool PATCH ${tool.id} failed: ${res.detail}`);
+        }
+      },
+      verify: async (ctx) => {
+        const key = loadElApiKey(readEnv(ctx.repoRoot));
+        const tools = key ? await listElTools(key) : [];
+        const stale = toolsOnHost(tools, host(ctx.previousOrigin));
+        const ok = Boolean(key) && stale.length === 0;
+        return { ok, checks: [{ label: { en: "no webhook tool targets the old origin", he: "אין כלי webhook שמצביע לכתובת הישנה" }, ok, detail: stale.map((t) => t.tool_config.name ?? t.id).join(", ") || undefined }] };
+      },
+      rollback: async (ctx) => {
+        const key = loadElApiKey(readEnv(ctx.repoRoot));
+        const prev = loadPrevValue<{ tools: { id: string; prevUrl: string | null }[] }>(ctx.repoRoot, "F8");
+        if (!key || !prev) return;
+        for (const t of prev.tools) {
+          if (!t.prevUrl) continue;
+          const tool = await getElTool(key, t.id);
+          if (tool) await patchToolUrl(key, tool, t.prevUrl);
+        }
+      },
+    }),
+    step({
+      id: "F9",
+      stage: "F",
+      gate: "elevenlabs-live-update",
+      label: { en: "ElevenLabs knowledge-base documents + agent push", he: "מסמכי ידע ב-ElevenLabs ופריסת הסוכנים" },
+      plan: (ctx) => [
+        `for each agent in agents.json: knowledge_base items that resolve to url documents on ${host(ctx.previousOrigin)} (url docs and crawl folders) are recreated on ${ctx.targetOrigin} — POST /knowledge-base/folder + /knowledge-base/url; old documents are never deleted`,
+        "then `elevenlabs agents pull --agent <id> --update` → knowledge_base ids swapped in the pulled config → `elevenlabs agents push --agent <id>` (CLAUDE.md: never PATCH the agent directly)",
+        "agent_configs/*.json backed up first (engine backups → rollback restores + pushes the previous config)",
+      ],
+      backup: async (ctx) => {
+        assertExecuteLatch("F9 backup");
+        return readAgentsJson(ctx.repoRoot)
+          .filter((a) => existsSync(join(ctx.repoRoot, a.config)))
+          .map((a) => backupFile(join(ctx.repoRoot, a.config)));
+      },
+      check: async (ctx) => {
+        const key = loadElApiKey(readEnv(ctx.repoRoot));
+        if (!key) return "blocked";
+        const agents = readAgentsJson(ctx.repoRoot);
+        if (agents.length === 0) return "done";
+        for (const a of agents) {
+          const plan = await elAgentKbPlan(key, a.id, host(ctx.previousOrigin));
+          if (!plan) return "blocked";
+          if (plan.stale.length > 0) return "pending";
+        }
+        return "done";
+      },
+      apply: async (ctx) => {
+        assertExecuteLatch("F9 ElevenLabs knowledge base");
+        const key = loadElApiKey(readEnv(ctx.repoRoot));
+        if (!key) throw new Error("ELEVENLABS_API_KEY missing");
+        const oldHost = host(ctx.previousOrigin);
+        const newHost = host(ctx.targetOrigin);
+        const stamp = new Date().toISOString().slice(0, 10);
+        const created: { id: string; name: string; forAgent: string }[] = [];
+        // Documents are created once and reused across agents that attach the
+        // same old item (keyed by old KB id).
+        const replacementCache = new Map<string, KbItem>();
+        for (const agent of readAgentsJson(ctx.repoRoot)) {
+          const plan = await elAgentKbPlan(key, agent.id, oldHost);
+          if (!plan) throw new Error(`could not read live config of agent ${agent.id}`);
+          if (plan.stale.length === 0) continue;
+          const replacements = new Map<string, KbItem>();
+          for (const { item, urls } of plan.stale) {
+            let next = replacementCache.get(item.id);
+            if (!next) {
+              if (item.type === "url") {
+                const doc = await createKbUrlDocument(key, { url: rebaseUrl(urls[0].url, ctx.targetOrigin), name: urls[0].name });
+                next = { type: "url", name: doc.name, id: doc.id, usage_mode: item.usage_mode };
+                created.push({ id: doc.id, name: doc.name, forAgent: agent.id });
+              } else {
+                const folder = await createKbFolder(key, `${newHost} pages (relocation ${stamp})`);
+                created.push({ id: folder.id, name: folder.name, forAgent: agent.id });
+                for (const u of urls) {
+                  const doc = await createKbUrlDocument(key, { url: rebaseUrl(u.url, ctx.targetOrigin), name: u.name, parentFolderId: folder.id });
+                  created.push({ id: doc.id, name: doc.name, forAgent: agent.id });
+                }
+                next = { type: "folder", name: folder.name, id: folder.id, usage_mode: item.usage_mode };
+              }
+              replacementCache.set(item.id, next);
+            }
+            replacements.set(item.id, next);
+          }
+          savePrevValue(ctx.repoRoot, "F9", { created });
+          const pulled = await pullAgentConfig(ctx.repoRoot, agent.id);
+          if (!pulled.ok) throw new Error(`elevenlabs agents pull failed for ${agent.id} (exit ${pulled.code ?? "?"})`);
+          const { config, changed } = rewriteAgentKb(readAgentConfig(ctx.repoRoot, agent), replacements);
+          if (!changed) throw new Error(`pulled config of ${agent.id} does not list the stale knowledge-base items — refusing to push blind`);
+          writeAgentConfig(ctx.repoRoot, agent, config);
+          const pushed = await pushAgentConfig(ctx.repoRoot, agent.id, `relocation → ${ctx.targetOrigin}: knowledge base re-attached`);
+          if (!pushed.ok) throw new Error(`elevenlabs agents push failed for ${agent.id} (exit ${pushed.code ?? "?"})`);
+        }
+      },
+      verify: async (ctx) => {
+        const key = loadElApiKey(readEnv(ctx.repoRoot));
+        const checks: { label: Label; ok: boolean; detail?: string }[] = [];
+        if (!key) return { ok: false, checks: [{ label: { en: "ELEVENLABS_API_KEY", he: "מפתח ElevenLabs" }, ok: false }] };
+        for (const a of readAgentsJson(ctx.repoRoot)) {
+          const plan = await elAgentKbPlan(key, a.id, host(ctx.previousOrigin));
+          const ok = Boolean(plan && plan.stale.length === 0);
+          checks.push({
+            label: { en: `agent ${a.config.split("/").pop()} has no knowledge-base document on the old origin`, he: `לסוכן ${a.config.split("/").pop()} אין מסמך ידע על הכתובת הישנה` },
+            ok,
+            detail: plan ? plan.stale.map((s) => s.item.name).join(", ") || undefined : "live config unreadable",
+          });
+        }
+        return { ok: checks.every((c) => c.ok), checks };
+      },
+      rollback: async (ctx, saved) => {
+        for (const { path, backupPath } of saved) {
+          await runCommand({ cmd: "cp", args: [backupPath, path] });
+        }
+        const restored = new Set(saved.map((s) => s.path));
+        for (const a of readAgentsJson(ctx.repoRoot)) {
+          if (restored.has(join(ctx.repoRoot, a.config))) {
+            await pushAgentConfig(ctx.repoRoot, a.id, `relocation rollback → ${ctx.previousOrigin}`);
+          }
+        }
       },
     }),
     step({
@@ -649,13 +1085,78 @@ export function buildStepDefinitions(): StepDefinition[] {
       },
     }),
     step({
+      id: "G2",
+      stage: "G",
+      label: { en: "Switch message_templates to the approved successors", he: "מעבר שורות message_templates לתבניות-ההמשך המאושרות" },
+      plan: () => [
+        "UPDATE message_templates: name + components.variants / media_variants / media_variant → the _vN+1 successor, ONLY where Meta already APPROVED it (unapproved names stay in place and keep working through the Stage E 301)",
+        "previous rows saved to .relocate/G2-prev.json for rollback; once Meta approves the rest, re-run `npm run relocate -- repair G2 pending` then `--resume`",
+      ],
+      check: async (ctx) => {
+        const handle = mgmtHandle(ctx.repoRoot);
+        const creds = await metaCreds(ctx.repoRoot);
+        if (!handle || !creds) return "blocked";
+        const rows = await readTemplateRows(handle);
+        if (!rows) return "blocked";
+        const plans = await metaPlans(ctx, creds);
+        return referencedOldNames(rows, plans).length === 0 ? "done" : "pending";
+      },
+      apply: async (ctx) => {
+        assertExecuteLatch("G2 message_templates switch");
+        const handle = mgmtHandle(ctx.repoRoot);
+        const creds = await metaCreds(ctx.repoRoot);
+        if (!handle || !creds) throw new Error("Supabase Management token or WhatsApp credentials unavailable");
+        const rows = await readTemplateRows(handle);
+        if (!rows) throw new Error("could not read message_templates");
+        savePrevValue(ctx.repoRoot, "G2", rows);
+        const updates = planTemplateRowSwitch(rows, await metaPlans(ctx, creds));
+        for (const u of updates) {
+          const res = await runSupabaseSql({ ...handle, query: templateSwitchSql(u), readOnly: false });
+          if (!res.ok) throw new Error(`message_templates UPDATE (${u.message_key}) failed: ${res.detail}`);
+        }
+      },
+      verify: async (ctx) => {
+        const handle = mgmtHandle(ctx.repoRoot);
+        const creds = await metaCreds(ctx.repoRoot);
+        const rows = handle ? await readTemplateRows(handle) : null;
+        const plans = creds ? await metaPlans(ctx, creds) : [];
+        if (!rows) return { ok: false, checks: [{ label: { en: "message_templates readable", he: "message_templates נקראת" }, ok: false }] };
+        const pendingSwitch = planTemplateRowSwitch(rows, plans);
+        const remaining = referencedOldNames(rows, plans);
+        const ok = pendingSwitch.length === 0; // every APPROVED successor is in use
+        return {
+          ok,
+          checks: [
+            { label: { en: "every approved successor is referenced by the DB", he: "כל תבנית-המשך מאושרת בשימוש ב-DB" }, ok },
+            {
+              label: { en: `${remaining.length} old name(s) still referenced (awaiting Meta approval)`, he: `${remaining.length} שמות ישנים עדיין בשימוש (ממתינים לאישור Meta)` },
+              ok: remaining.length === 0,
+              detail: remaining.join(", ") || undefined,
+            },
+          ],
+        };
+      },
+      rollback: async (ctx) => {
+        const handle = mgmtHandle(ctx.repoRoot);
+        const prev = loadPrevValue<TemplateRow[]>(ctx.repoRoot, "G2");
+        if (!handle || !prev) return;
+        for (const row of prev) {
+          await runSupabaseSql({
+            ...handle,
+            query: templateSwitchSql({ message_key: row.message_key, name: row.name, components: row.components, switched: [] }),
+            readOnly: false,
+          });
+        }
+      },
+    }),
+    step({
       id: "H1",
       stage: "H",
       label: { en: "Verification suite", he: "חבילת אימות" },
       plan: (ctx) => [
-        "local probe with Host header; public GET; authenticated /admin (proxy-buffer path)",
-        `old-origin 301 → ${ctx.targetOrigin}; robots/sitemap/llms.txt/OG emit the new origin`,
-        "Supabase auth read-back; webhook echoes; pm2 effective-env check (fleet)",
+        "public GET /, canonical, /api/health; static pages /privacy /terms /faq /contact /cookies",
+        "public token surfaces with ONE live token each (read via the service key, never logged): /r/<guest>, /g/<event>, /ty/<event> must render real content, not the generic refusal",
+        `old-origin 301 → ${ctx.targetOrigin}; robots/sitemap/llms.txt emit the new origin`,
       ],
       // Verify-only step — apply() has nothing to mutate.
       apply: async () => undefined,
@@ -663,6 +1164,7 @@ export function buildStepDefinitions(): StepDefinition[] {
         const results = await runVerificationSuite({
           targetOrigin: ctx.targetOrigin,
           previousOrigin: ctx.previousOrigin,
+          env: readEnv(ctx.repoRoot),
         });
         const ok = results.every((r) => r.ok);
         return {
