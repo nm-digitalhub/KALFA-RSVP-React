@@ -79,6 +79,8 @@ import { runLogExport } from '@/lib/data/vox-log-export';
 import { runElevenLabsQuotaCheck } from '@/lib/data/elevenlabs-quota';
 import { runInstagramTokenRefresh } from '@/lib/data/instagram-token-refresh';
 import { runConsoleAgentCalendarPresenceSync } from '@/lib/data/console-agent-calendar-presence';
+import { runFleetExpireSweep } from '@/lib/fleet/expire';
+import { createAdminClient } from '@/lib/supabase/admin';
 import { sendSlackAlert } from '@/lib/alerts/slack';
 
 // Standalone process — load .env.local ourselves (Next is not running here).
@@ -937,6 +939,18 @@ async function main(): Promise<void> {
       await runConsoleAgentCalendarPresenceSync();
     }),
   );
+  // Fleet-request expiry sweep: pending fleet_requests past expires_at become
+  // 'expired' so /admin/fleet stops showing them as open (the answer RPC
+  // refuses expired requests by design — without this tick they are stuck
+  // until chief-of-staff's daily CLI sweep, or forever when that run is
+  // missed). Idempotent CAS update; a DB error throws into guardedWorker
+  // (alert) and the next tick retries.
+  await boss.work(
+    QUEUES.fleetExpireSweep,
+    guardedWorker(QUEUES.fleetExpireSweep, async () => {
+      await runFleetExpireSweep(createAdminClient());
+    }),
+  );
 
   await boss.schedule(QUEUES.arm, '* * * * *');
   await boss.schedule(QUEUES.sweeper, '*/5 * * * *');
@@ -976,6 +990,9 @@ async function main(): Promise<void> {
   // freshness is now the whole argument.) Same cadence family as
   // callbackScheduleSweep (also calendar-backed, also */10).
   await boss.schedule(QUEUES.calendarPresenceSync, '*/10 * * * *');
+  // Every 10 minutes — expiry windows are 72h, so minute-precision buys
+  // nothing; 10m keeps a dead request from ever looking open for long.
+  await boss.schedule(QUEUES.fleetExpireSweep, '*/10 * * * *');
 
   console.log('[kalfa-worker] started — queues + schedules up');
 

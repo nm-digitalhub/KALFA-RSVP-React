@@ -280,6 +280,7 @@ import {
 } from '@/lib/fleet/handoff';
 import { buildCompletionAnswer, isCompletableStatus } from '@/lib/fleet/complete';
 import { validateWithdrawOwnership } from '@/lib/fleet/withdraw';
+import { runFleetExpireSweep } from '@/lib/fleet/expire';
 import {
   renderExamplesMarkdown,
   summarizeMetric,
@@ -952,25 +953,16 @@ async function cmdWithdraw(args: Record<string, string | undefined>): Promise<vo
   if (!row) process.exitCode = 2;
 }
 
+// Backup path for the worker's 10-minute fleet-request-expire-sweep cron
+// (worker/main.ts) — both call the ONE shared, idempotent implementation in
+// @/lib/fleet/expire, which also owns the Slack alert.
 async function cmdExpire(): Promise<void> {
-  const admin = createAdminClient();
-  const { data, error } = await admin
-    .from('fleet_requests')
-    .update({ status: 'expired' })
-    .eq('status', 'pending')
-    .lte('expires_at', new Date().toISOString())
-    .select('id, role, title');
-  if (error) fail(`expire sweep failed: ${error.message}`);
-  if (data && data.length > 0) {
-    await sendSlackAlert({
-      level: 'warn',
-      title: `${data.length} פניות סוכנים פגו ללא מענה`,
-      detail: data.map((r) => `${r.role}: ${r.title}`).join(' · ').slice(0, 500),
-      source: 'fleet:expire-sweep',
-      category: 'errors',
-    });
+  try {
+    const result = await runFleetExpireSweep(createAdminClient());
+    console.log(JSON.stringify(result, null, 2));
+  } catch (err) {
+    fail(err instanceof Error ? err.message : 'expire sweep failed');
   }
-  console.log(JSON.stringify({ expired: data?.length ?? 0, requests: data ?? [] }, null, 2));
 }
 
 // Read-only SQL for the data-reading roles (event-health, business-ops,

@@ -87,6 +87,12 @@ export const QUEUES = {
   // actually dial. See enqueueMeetingConfirmDispatch in
   // meeting-confirm-dispatch.ts.
   meetingConfirmDispatch: 'meeting-confirm-dispatch',
+  // Fleet-request expiry sweep — every 10m mark pending fleet_requests past
+  // expires_at as 'expired'. Without this, an unanswered request past its
+  // window shows "pending" forever in /admin/fleet (the answer RPC refuses
+  // expired requests by design) until chief-of-staff's daily CLI sweep — a
+  // whole day late when that run is missed. See src/lib/fleet/expire.ts.
+  fleetExpireSweep: 'fleet-request-expire-sweep',
   // Sales-closing dispatch trigger — event-driven, same idiom as
   // meetingConfirmDispatch above, with one deliberate difference: this fires
   // AT scheduled_at itself, not 24h before it (dispatchSalesCall's own
