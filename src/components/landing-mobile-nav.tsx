@@ -71,15 +71,18 @@ export function LandingMobileNav({
             <SheetDescription className="sr-only">תפריט ניווט לעמוד הבית</SheetDescription>
           </SheetHeader>
           <nav className="flex flex-col gap-1 px-4" aria-label="ניווט בעמוד">
-            <a href="#features" onClick={close} className={NAV_LINK_CLASS}>
+            {/* Absolute section hrefs: the drawer is shared by every (site)
+                page via the layout's SiteHeader, so from /faq these must
+                navigate home and then scroll (Next.js Link "/#id"). */}
+            <Link href="/#features" onClick={close} className={NAV_LINK_CLASS}>
               יכולות
-            </a>
-            <a href="#how" onClick={close} className={NAV_LINK_CLASS}>
+            </Link>
+            <Link href="/#how" onClick={close} className={NAV_LINK_CLASS}>
               איך זה עובד
-            </a>
-            <a href="#trust" onClick={close} className={NAV_LINK_CLASS}>
+            </Link>
+            <Link href="/#trust" onClick={close} className={NAV_LINK_CLASS}>
               אמון
-            </a>
+            </Link>
             <Link href="/faq" onClick={close} className={NAV_LINK_CLASS}>
               שאלות נפוצות
             </Link>

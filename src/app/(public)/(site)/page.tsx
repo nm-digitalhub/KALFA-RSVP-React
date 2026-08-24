@@ -1,11 +1,7 @@
 import Link from 'next/link';
 
-import { LandingHeaderNav } from '@/components/landing-header-nav';
-import { LandingMobileNav } from '@/components/landing-mobile-nav';
-import { LandingUserMenu } from '@/components/landing-user-menu';
 import { getUser } from '@/lib/auth/dal';
 import { getCompanyLegal, toE164Israel } from '@/lib/data/company';
-import { getProfile } from '@/lib/data/profiles';
 import { getAppOrigin } from '@/lib/url';
 import {
   Activity,
@@ -129,11 +125,9 @@ function Eyebrow({ icon: Icon, children }: { icon: LucideIcon; children: React.R
 export default async function HomePage() {
   // Recognise a signed-in visitor (verified server-side; null when anonymous)
   // so the landing points returning users to their dashboard, not to sign-up.
+  // (getUser is React-cache()d — the (site) layout's SiteHeader already made
+  // this call for the same request.)
   const user = await getUser();
-  // Full name for the header account menu; same profile lookup and fallback
-  // rule as the customer app shell (src/app/(customer)/app/layout.tsx).
-  const profile = user ? await getProfile() : null;
-  const userName = profile?.full_name?.trim() || undefined;
   const startHref = user ? '/app' : '/auth/signup';
   const startLabel = user ? 'לאזור האישי' : 'צרו אירוע חדש';
 
@@ -202,39 +196,8 @@ export default async function HomePage() {
         // closing the script tag via DB-sourced strings.
         dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd).replace(/</g, '\\u003c') }}
       />
-      {/* Header */}
-      <header className="sticky top-0 z-50 border-b border-border bg-background/85 backdrop-blur-md backdrop-saturate-150">
-        <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-6">
-          <Link href="/" className="text-2xl font-extrabold tracking-tight">KALFA</Link>
-          {/* Desktop nav: shadcn NavigationMenu (flat links) — see
-              src/components/landing-header-nav.tsx. Hidden below md, where
-              the drawer (LandingMobileNav) carries the same five items. */}
-          <LandingHeaderNav className="hidden md:flex" />
-          <div className="flex items-center gap-3">
-            {user ? (
-              <LandingUserMenu userEmail={user.email} userName={userName} />
-            ) : (
-              // Hidden below md: these two live inside the mobile drawer
-              // instead, so the mobile header stays logo + hamburger only.
-              <div className="hidden items-center gap-3 md:flex">
-                <Link href="/auth/login" className="text-sm font-semibold hover:underline">כניסה</Link>
-                <Link
-                  href="/auth/signup"
-                  className="inline-flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground transition hover:opacity-90"
-                >
-                  צרו אירוע
-                  <ArrowLeft className="size-4" />
-                </Link>
-              </div>
-            )}
-            {/* Below md, the nav above and the CTAs/auth links are hidden —
-                this hamburger is the only way to reach #features/#how/#trust
-                and יצירת קשר (and, when anonymous, כניסה/צרו אירוע). */}
-            <LandingMobileNav showAuthCta={!user} />
-          </div>
-        </div>
-      </header>
-
+      {/* Header: shared SiteHeader, mounted by the (site) layout for every
+          marketing page (owner report 24.8 — the menu was homepage-only). */}
       <main>
         {/* Hero */}
         {/* py-10 on mobile (not the sections' py-16): the hero sits directly

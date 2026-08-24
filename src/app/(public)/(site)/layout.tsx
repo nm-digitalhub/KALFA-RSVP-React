@@ -1,6 +1,7 @@
 import { GoogleAnalyticsGated } from '@/components/consent/google-analytics-gated';
 import { CallMeNowWidgetLazy } from '@/components/site/call-me-now-widget-lazy';
 import { SiteFooter } from '@/components/site/site-footer';
+import { SiteHeader } from '@/components/site/site-header';
 import { getCookieConsentPublicConfig } from '@/lib/consent/admin-config';
 import { getCallMeNowWidgetEnabled } from '@/lib/data/call-me-now-public-config';
 
@@ -50,6 +51,9 @@ export default async function SiteLayout({
   ]);
   return (
     <>
+      {/* Shared header for every (site) page (owner report 24.8: the menu
+          existed only on the homepage). Reads the user once per request. */}
+      <SiteHeader />
       {children}
       {/* Shared footer for every (site) page (footer review 24.8): the legal
           links + cookie management must be reachable from each marketing

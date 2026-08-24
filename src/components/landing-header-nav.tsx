@@ -30,10 +30,14 @@ import { cn } from '@/lib/utils';
 // rest of Base UI (shadcn RTL guide: `rtl: true` in components.json +
 // DirectionProvider in the root layout).
 
+// Absolute hrefs ON PURPOSE: the header is shared by every (site) page, so
+// the homepage sections must be reachable from /faq, /contact, … as well.
+// Next.js <Link href="/#id"> navigates and then scrolls to the id (installed
+// docs, link.md "Scrolling to an id"); on the homepage itself it just scrolls.
 export const LANDING_NAV_ITEMS: readonly { href: string; label: string }[] = [
-  { href: '#features', label: 'יכולות' },
-  { href: '#how', label: 'איך זה עובד' },
-  { href: '#trust', label: 'אמון' },
+  { href: '/#features', label: 'יכולות' },
+  { href: '/#how', label: 'איך זה עובד' },
+  { href: '/#trust', label: 'אמון' },
   { href: '/faq', label: 'שאלות נפוצות' },
   { href: '/contact', label: 'יצירת קשר' },
 ];
@@ -48,13 +52,14 @@ export function LandingHeaderNav({ className }: { className?: string }) {
     <NavigationMenu className={cn('max-w-none', className)} aria-label="ניווט ראשי">
       <NavigationMenuList className="gap-1">
         {LANDING_NAV_ITEMS.map((item) => {
-          const isRoute = item.href.startsWith('/');
+          // Section anchors never count as "active" — only a routed page does.
+          const isSection = item.href.includes('#');
           return (
             <NavigationMenuItem key={item.href}>
               <NavigationMenuLink
                 className={navigationMenuTriggerStyle()}
-                active={isRoute && pathname === item.href}
-                render={isRoute ? <Link href={item.href} /> : <a href={item.href} />}
+                active={!isSection && pathname === item.href}
+                render={<Link href={item.href} />}
               >
                 {item.label}
               </NavigationMenuLink>

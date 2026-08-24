@@ -1,8 +1,7 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { ArrowLeft, Info, Route, ShieldCheck, Wallet, type LucideIcon } from 'lucide-react';
+import { Info, Route, ShieldCheck, Wallet, type LucideIcon } from 'lucide-react';
 
-import { getUser } from '@/lib/auth/dal';
 import { getPublishedFaqItems } from '@/lib/data/faq';
 import { getPublicBusinessFacts } from '@/lib/data/public-business-facts';
 import { buildFaqJsonLd, faqJsonLdScript } from '@/lib/faq/json-ld';
@@ -42,11 +41,9 @@ export default async function FaqPage() {
   // No getAppOrigin() call here — unlike the home page's Organization/WebSite
   // JSON-LD (which embeds absolute @id URLs), a FAQPage schema needs no site
   // origin at all (see src/lib/faq/json-ld.ts).
-  const [user, items, facts] = await Promise.all([
-    getUser(),
-    getPublishedFaqItems(),
-    getPublicBusinessFacts(),
-  ]);
+  // (The signed-in user is read by the (site) layout's SiteHeader now — this
+  // page has no user-dependent content of its own.)
+  const [items, facts] = await Promise.all([getPublishedFaqItems(), getPublicBusinessFacts()]);
   const model = buildFaqPageModel(items, facts);
   const jsonLd = buildFaqJsonLd(flattenFaqEntries(model));
 
@@ -59,21 +56,7 @@ export default async function FaqPage() {
         dangerouslySetInnerHTML={{ __html: faqJsonLdScript(jsonLd) }}
       />
 
-      <header className="border-b border-border">
-        <div className="mx-auto flex h-16 max-w-3xl items-center justify-between px-6">
-          <Link href="/" className="text-2xl font-extrabold tracking-tight">
-            KALFA
-          </Link>
-          <Link
-            href={user ? '/app' : '/'}
-            className="inline-flex items-center gap-2 text-sm font-semibold hover:underline"
-          >
-            {user ? 'לאזור האישי' : 'לעמוד הבית'}
-            <ArrowLeft className="size-4" />
-          </Link>
-        </div>
-      </header>
-
+      {/* Header: the shared SiteHeader from the (site) layout (24.8). */}
       <main className="mx-auto max-w-3xl px-4 py-10 sm:px-6 sm:py-12">
         <div>
           <h1 className="text-3xl font-extrabold tracking-tight sm:text-4xl">שאלות נפוצות</h1>

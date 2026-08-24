@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { ArrowLeft, MailOpen, PhoneCall } from 'lucide-react';
+import { MailOpen, PhoneCall } from 'lucide-react';
 
 import { getUser } from '@/lib/auth/dal';
 import { CallbackForm, ContactForm } from './inquiry-forms';
@@ -27,21 +27,7 @@ export default async function ContactPage({
 
   return (
     <div className="bg-background">
-      <header className="border-b border-border">
-        <div className="mx-auto flex h-16 max-w-3xl items-center justify-between px-6">
-          <Link href="/" className="text-2xl font-extrabold tracking-tight">
-            KALFA
-          </Link>
-          <Link
-            href={user ? '/app' : '/'}
-            className="inline-flex items-center gap-2 text-sm font-semibold hover:underline"
-          >
-            {user ? 'לאזור האישי' : 'לעמוד הבית'}
-            <ArrowLeft className="size-4" />
-          </Link>
-        </div>
-      </header>
-
+      {/* Header: the shared SiteHeader from the (site) layout (24.8). */}
       <main className="mx-auto max-w-3xl space-y-10 px-6 py-12">
         <div>
           <h1 className="text-3xl font-extrabold tracking-tight">יצירת קשר ותמיכה</h1>
