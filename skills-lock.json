@@ -82,14 +82,14 @@
     "captions-overlay": {
       "source": "heygen-com/hyperframes",
       "sourceType": "github",
-      "skillPath": ".claude/skills/captions-overlay/SKILL.md",
-      "computedHash": "f610bfb2f03d54bed5047048636936a04469a1151c336ee7bb573a18080e6ee3"
+      "skillPath": ".agents/skills/captions-overlay/SKILL.md",
+      "computedHash": "3a3a1d936a1d8a11708a7765ec784831d4819fb8ede33736c3321367f94a850b"
     },
     "changelog-video": {
       "source": "heygen-com/hyperframes",
       "sourceType": "github",
-      "skillPath": ".claude/skills/changelog-video/SKILL.md",
-      "computedHash": "b14af9fcdf6e000e4403ba4be08174088a9717f2335b52c5167e7130b433eb1c"
+      "skillPath": ".agents/skills/changelog-video/SKILL.md",
+      "computedHash": "a1ca6f82e5fec770fa08a07b84e9e3a58800f6b2ebab52324b46d380c15ee52b"
     },
     "channel-fallback-logic": {
       "source": "louisblythe/salesskills",
@@ -238,8 +238,8 @@
     "cut-the-curve": {
       "source": "heygen-com/hyperframes",
       "sourceType": "github",
-      "skillPath": ".claude/skills/cut-the-curve/SKILL.md",
-      "computedHash": "91a2c50f765c153898d48be3b42ea2e48b7b1d2eb985059d571e2348da56c380"
+      "skillPath": ".agents/skills/cut-the-curve/SKILL.md",
+      "computedHash": "0dc00f155130d001cfe6f9bfcc2da2452ad92c13275564178595ec7948414154"
     },
     "data-enrichment-integration": {
       "source": "louisblythe/salesskills",
@@ -329,7 +329,7 @@
       "source": "heygen-com/hyperframes",
       "sourceType": "github",
       "skillPath": "skills/embedded-captions/SKILL.md",
-      "computedHash": "d39a0c2ee3636f620a7c9018805dbd7f79900e93c9ca0bca6eacee513761feab"
+      "computedHash": "d0f86a829c3687376943db94a44375aa3dc98928ee534f662f1130a3a4974c3e"
     },
     "emotional-arc-management": {
       "source": "louisblythe/salesskills",
@@ -353,7 +353,7 @@
       "source": "heygen-com/hyperframes",
       "sourceType": "github",
       "skillPath": "skills/faceless-explainer/SKILL.md",
-      "computedHash": "3d42310e8dd3f01a6fa80267b301462380c8ee0f25a9da54e8f24bca513b96f6"
+      "computedHash": "3175b6301b963b62129de7460c35eee8d9ee25cad37723a044d706102fa16059"
     },
     "fallback-gracefully": {
       "source": "louisblythe/salesskills",
@@ -371,7 +371,7 @@
       "source": "heygen-com/hyperframes",
       "sourceType": "github",
       "skillPath": "skills/figma/SKILL.md",
-      "computedHash": "4dbed0611fba3ce6418a445c2cf0d3f056927c56e8b3ea91d1313f55c50be1f3"
+      "computedHash": "036ab209910487e3bfeba7423318d1c7576f3179fe4d69551621ac95c72216d3"
     },
     "follow-up-discipline": {
       "source": "louisblythe/salesskills",
@@ -383,7 +383,7 @@
       "source": "heygen-com/hyperframes",
       "sourceType": "github",
       "skillPath": "skills/general-video/SKILL.md",
-      "computedHash": "3dfc5966832f544b11a0b59a585161015eb3f67151b8cb9093ad4b415b2c0dc8"
+      "computedHash": "7647983e29041ea5d6588dadec8d0e0ab32d96c2181fb384d1a496a3b7697b67"
     },
     "ghost-recovery-sequences": {
       "source": "louisblythe/salesskills",
@@ -514,43 +514,49 @@
       "source": "heygen-com/hyperframes",
       "sourceType": "github",
       "skillPath": "skills/hyperframes/SKILL.md",
-      "computedHash": "7ddbb928a3674e5e1821b13055e784f261edcd6ff9bf61e5f1fdffaab307a58b"
+      "computedHash": "3d93b129678da8b3e6d55a6cf44679786e7ed937f622aecfae6e08b4d7e99577"
     },
     "hyperframes-animation": {
       "source": "heygen-com/hyperframes",
       "sourceType": "github",
       "skillPath": "skills/hyperframes-animation/SKILL.md",
-      "computedHash": "727ac865fec28e91e4a30e61a501fb89751bc4f7a6e8314bbcdcb001f68eeb7d"
+      "computedHash": "357717f4c6bd555f438f3561bf6832f270952630a3127fa8f958f24f8a1c7674"
+    },
+    "hyperframes-audio": {
+      "source": "heygen-com/hyperframes",
+      "sourceType": "github",
+      "skillPath": "skills/hyperframes-audio/SKILL.md",
+      "computedHash": "c0f7619c2a1f8d3c365d01eacc0998b6eade52e1ee9a5fceeef7c508ec9f9642"
     },
     "hyperframes-cli": {
       "source": "heygen-com/hyperframes",
       "sourceType": "github",
       "skillPath": "skills/hyperframes-cli/SKILL.md",
-      "computedHash": "b76dda34c940480c64a5c817379900fb387c7b896ca0c8fd62a6bb340c127a33"
+      "computedHash": "44eb159482895a85b577905c11f0f8e2942726ba379cc7244d09968b54d9fd2b"
     },
     "hyperframes-core": {
       "source": "heygen-com/hyperframes",
       "sourceType": "github",
       "skillPath": "skills/hyperframes-core/SKILL.md",
-      "computedHash": "874a8867e00987cbf30a929ce023f2b900148a20a6d3f26a909ec05c7ca32d02"
+      "computedHash": "002d1658442b34f49502701ef9b26ef34ff82b135a0a4a8151e8ee7c18b02a4f"
     },
     "hyperframes-creative": {
       "source": "heygen-com/hyperframes",
       "sourceType": "github",
       "skillPath": "skills/hyperframes-creative/SKILL.md",
-      "computedHash": "bff726d39ae4d9672a7b30d5e9e8a9a2492f0858b1d6f3c7228c2fd9f1a31881"
+      "computedHash": "956fdaedc4619bb047b6fa84f2aa7530548dcc506d795a5e70b41f3626a171a4"
     },
     "hyperframes-keyframes": {
       "source": "heygen-com/hyperframes",
       "sourceType": "github",
       "skillPath": "skills/hyperframes-keyframes/SKILL.md",
-      "computedHash": "28fab4bfffdeaafa712bc87591259885a0fe3df182dfa1d72a4e23425954054d"
+      "computedHash": "fc5657f4f5cbbeeab23f951ed739e0fe9e29a9865cdabb80d9e87840628a2a46"
     },
     "hyperframes-registry": {
       "source": "heygen-com/hyperframes",
       "sourceType": "github",
       "skillPath": "skills/hyperframes-registry/SKILL.md",
-      "computedHash": "7061c9980e85519280d3fa3bb871eaa5f6dcad9300a521945dc3fa468df42412"
+      "computedHash": "ac8a17b31cb3dcbd025e17be617a531b2be6905cb764d4b1339bca54d7bc8f33"
     },
     "ideal-customer-profile-matching": {
       "source": "louisblythe/salesskills",
@@ -614,7 +620,7 @@
       "source": "heygen-com/hyperframes",
       "sourceType": "github",
       "skillPath": "skills/media-use/SKILL.md",
-      "computedHash": "d013cc91bfa7e5e66067724bc93096a9d2c98ee01f347f795cee9459651d8208"
+      "computedHash": "da60be87c824bb2cbb473a54cdc8d2b858af757b461b39480d03925f0c43c4ac"
     },
     "meeting-confirmation-reminder-logic": {
       "source": "louisblythe/salesskills",
@@ -649,14 +655,14 @@
     "motion-doctrine": {
       "source": "heygen-com/hyperframes",
       "sourceType": "github",
-      "skillPath": ".claude/skills/motion-doctrine/SKILL.md",
-      "computedHash": "623ee3fda8adbc088ca90054fae6f2db53194a4c55d3738d9f45b13dacea5ce9"
+      "skillPath": ".agents/skills/motion-doctrine/SKILL.md",
+      "computedHash": "771cfa568b9acafd4b8d733e7733f4849f2544e88c4d469799ef67fc09603025"
     },
     "motion-graphics": {
       "source": "heygen-com/hyperframes",
       "sourceType": "github",
       "skillPath": "skills/motion-graphics/SKILL.md",
-      "computedHash": "79a65357280bcdf044843b751a79ef65878636c000aceb86aed952a8efbba3d9"
+      "computedHash": "ae6eb79b48f1f4d3c2d1e5a5cf884432e8dacc092f0db4e4f5fce258fc8b1a2a"
     },
     "multi-channel-coordination": {
       "source": "louisblythe/salesskills",
@@ -692,7 +698,7 @@
       "source": "heygen-com/hyperframes",
       "sourceType": "github",
       "skillPath": "skills/music-to-video/SKILL.md",
-      "computedHash": "7ca2624c4526b0962a45ba39ada1a7b362b5e1f982acedfcc344bdbc947a9719"
+      "computedHash": "eb78d1948d30018dcbe397c3fa110518cd5d98de63081b6741cd9e799f00ac07"
     },
     "negative-sentiment-de-escalation": {
       "source": "louisblythe/salesskills",
@@ -745,8 +751,8 @@
     "oversized-cursor": {
       "source": "heygen-com/hyperframes",
       "sourceType": "github",
-      "skillPath": ".claude/skills/oversized-cursor/SKILL.md",
-      "computedHash": "94314400e9bd497624ef114ac9dfb550b35da6beb6185ec854af23353b365a6b"
+      "skillPath": ".agents/skills/oversized-cursor/SKILL.md",
+      "computedHash": "449de00b2b6f40ba60e8626d9a8802e5481018f0a64eae3ecd3fb8ad8f4b230b"
     },
     "performance-analytics": {
       "source": "louisblythe/salesskills",
@@ -782,7 +788,7 @@
       "source": "heygen-com/hyperframes",
       "sourceType": "github",
       "skillPath": "skills/pr-to-video/SKILL.md",
-      "computedHash": "8d101fe1a58b4667f642692b6d8139024f8c51242db028a7f8f3f1a6235fe67a"
+      "computedHash": "df441bfb0667718843468a1a4539189fee1941675a3105b8eaf68d0fc7f5a132"
     },
     "presentation-skills": {
       "source": "louisblythe/salesskills",
@@ -812,7 +818,7 @@
       "source": "heygen-com/hyperframes",
       "sourceType": "github",
       "skillPath": "skills/product-launch-video/SKILL.md",
-      "computedHash": "436d08f6f934dd776e92f0a16ee07f5be47cc319e2347a4681983ea3fd48e857"
+      "computedHash": "190e193f6e173992b6e2214194813f2b878a99f940ea7e8795e0e23b6f0b41d7"
     },
     "propensity-scoring-realtime": {
       "source": "louisblythe/salesskills",
@@ -866,7 +872,7 @@
       "source": "heygen-com/hyperframes",
       "sourceType": "github",
       "skillPath": "skills/remotion-to-hyperframes/SKILL.md",
-      "computedHash": "9600c982951ef684df265dde84f63ce95b2341874fc126448f4f716abc80008b"
+      "computedHash": "34c4a5a6ec70ab072f346684664f87e9e2697c0413e94280a1e425804499a417"
     },
     "reply-prediction": {
       "source": "louisblythe/salesskills",
@@ -943,8 +949,8 @@
     "seam-craft": {
       "source": "heygen-com/hyperframes",
       "sourceType": "github",
-      "skillPath": ".claude/skills/seam-craft/SKILL.md",
-      "computedHash": "84f0b4302df13acee5f437b1f6a1cb8d169ae78a7debf2b8a8e723f5be369e1e"
+      "skillPath": ".agents/skills/seam-craft/SKILL.md",
+      "computedHash": "7469e9113cec2fbf345c22a23145a686797bcdd3fd7ba267910c8bb66d60a96a"
     },
     "sentiment-analysis": {
       "source": "louisblythe/salesskills",
@@ -980,7 +986,7 @@
       "source": "heygen-com/hyperframes",
       "sourceType": "github",
       "skillPath": "skills/slideshow/SKILL.md",
-      "computedHash": "7b31f30f522435f18a89ab447b6f7f179a6021c44c501ef3d31a513d05ddfb74"
+      "computedHash": "ac65a7ae7d5695a1d1e29f4e7295dc892e42dd4bd1222b9408cbd9f9179176cc"
     },
     "social-proof-injection": {
       "source": "louisblythe/salesskills",
@@ -1040,7 +1046,7 @@
       "source": "heygen-com/hyperframes",
       "sourceType": "github",
       "skillPath": "skills/talking-head-recut/SKILL.md",
-      "computedHash": "1313d91587a6c6e8714aaef357d744d57861ebb9a02235a661eb36c7fc54baf3"
+      "computedHash": "414bcbebc52eba6455b76a2e78bebcd8dd6929abc76fcdeb1ad8a70043d96186"
     },
     "territory-account-launch": {
       "source": "louisblythe/salesskills",
