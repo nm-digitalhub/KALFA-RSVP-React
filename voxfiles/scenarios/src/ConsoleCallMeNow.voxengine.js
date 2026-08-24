@@ -145,7 +145,16 @@ require(Modules.PushService);
 
 VoxEngine.addEventListener(AppEvents.Started, function (startedEvent) {
     // ---- Constants ---------------------------------------------------------
-    var KALFA_APP_ORIGIN = 'https://beta.kalfa.me';
+    // App origin = the APPLICATION SECRET KALFA_APP_ORIGIN (same mechanism as
+    // KALFA_CONSOLE_SECRET below; rotated by the relocation wizard on a domain
+    // move, no redeploy). The StartScenarios payload's `u` carries the same
+    // value per call, but the two fixed console URLs below are built from
+    // this constant so the platform-side source of truth is one secret.
+    // Missing secret → authorize fails → honest no-agent line (fail-closed).
+    var KALFA_APP_ORIGIN = VoxEngine.getSecretValue('KALFA_APP_ORIGIN') || '';
+    if (!KALFA_APP_ORIGIN) {
+        Logger.write('[ConsoleCallMeNow] KALFA_APP_ORIGIN secret missing — authorize will fail closed (no ring, honest no-agent line only)');
+    }
     // NEW, NOT YET owner/regulation-authorized — see file header.
     // NIQQUD on the brand name — the same fix as ConsoleDial's and
     // RSVPPreview's, applied here after the owner heard "כלפה" on a live call.

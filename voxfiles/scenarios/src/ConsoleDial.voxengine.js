@@ -73,11 +73,18 @@ VoxEngine.addEventListener(AppEvents.Started, function (startedEvent) {
     // The production app origin this scenario reports to. A CallAlerting-
     // triggered session (SDK call, not Management API StartScenarios) has no
     // customData channel to receive this per-call the way RSVP/RSVPAgent's {u}
-    // field does — it must be a scenario constant. Matches THIS deployment's
-    // APP_ORIGIN (.env.local: https://beta.kalfa.me). Move to a VoxEngine
-    // Secret if kalfa-rsvp's reporting target ever needs to differ from the
-    // app that owns this scenario's deploy.
-    var KALFA_APP_ORIGIN = 'https://beta.kalfa.me';
+    // field does — so it is an APPLICATION SECRET (KALFA_APP_ORIGIN), read the
+    // same way KALFA_CONSOLE_SECRET is below. It mirrors the app's APP_ORIGIN
+    // (.env.local); the relocation wizard (src/lib/relocation, step F6)
+    // rotates the secret on a domain move, so no redeploy is needed for one.
+    // Missing secret → every KALFA_APP_ORIGIN-based request fails, which the
+    // existing paths treat fail-closed (authorize refuses, reporting skips);
+    // logged once here so it is visible without repeating per call.
+    var KALFA_APP_ORIGIN = VoxEngine.getSecretValue('KALFA_APP_ORIGIN') || '';
+    if (!KALFA_APP_ORIGIN) {
+        Logger.write('[ConsoleDial] KALFA_APP_ORIGIN secret missing — outbound authorize will fail closed; ' +
+            'event reporting and hold/ringback audio URLs are unavailable');
+    }
     // Disclosure wording — regulation-reviewer authorized (12.8), verbatim, no
     // slash-forms (TTS reads them literally). Played on the GUEST leg only,
     // before the bridge, over recording already running.
@@ -132,7 +139,7 @@ VoxEngine.addEventListener(AppEvents.Started, function (startedEvent) {
     //
     // 60 s of it, which outlasts any no-answer timeout, so `loop` is belt not
     // braces. Voximplant caches the file after the first play.
-    var RINGBACK_URL = 'https://beta.kalfa.me/audio/ringback-il.mp3';
+    var RINGBACK_URL = KALFA_APP_ORIGIN + '/audio/ringback-il.mp3';
     var INTERNAL_UNAVAILABLE_HE = 'הנציג המבוקש אינו זמין כרגע.';
     // Hold cue (17.8; music-file swap 17.8) — an OPERATIONAL hold line, NOT
     // owner/regulation-authorized wording like DISCLOSURE_LINE_HE above (same

@@ -81,9 +81,15 @@ require(Modules.PushService);
 VoxEngine.addEventListener(AppEvents.Started, function (startedEvent) {
     // ---- Constants ---------------------------------------------------------
     // Same reasoning as ConsoleDial.voxengine.js: a CallAlerting-triggered
-    // session has no per-call customData channel for this, so it is a scenario
-    // constant. Matches THIS deployment's APP_ORIGIN (.env.local).
-    var KALFA_APP_ORIGIN = 'https://beta.kalfa.me';
+    // session has no per-call customData channel for this, so the app origin
+    // is the APPLICATION SECRET KALFA_APP_ORIGIN (read like KALFA_CONSOLE_SECRET
+    // below; rotated by the relocation wizard on a domain move). Missing
+    // secret → every route-inbound request fails → the call is rejected
+    // fail-closed, exactly like a missing console secret. Logged once.
+    var KALFA_APP_ORIGIN = VoxEngine.getSecretValue('KALFA_APP_ORIGIN') || '';
+    if (!KALFA_APP_ORIGIN) {
+        Logger.write('[ConsoleInbound] KALFA_APP_ORIGIN secret missing — every call will be rejected fail-closed');
+    }
     // Disclosure + no-agent wording — regulation-reviewer / owner authorized
     // (12.8), verbatim, no slash-forms. "מנסים לחבר" not "מעבירים לנציג" is
     // DELIBERATE (plan honest-UI principle: never claim a connection that has
