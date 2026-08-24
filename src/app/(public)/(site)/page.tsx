@@ -239,7 +239,11 @@ export default async function HomePage() {
 
       <main>
         {/* Hero */}
-        <section className="mx-auto max-w-6xl px-6 py-16 sm:py-20">
+        {/* py-10 on mobile (not the sections' py-16): the hero sits directly
+            under the 64px sticky header, so 64px more padding pushed the first
+            word ~128px down a 390px viewport (owner report 24.8). 40px keeps
+            the same rhythm as /faq's first section; desktop unchanged. */}
+        <section className="mx-auto max-w-6xl px-6 py-10 sm:py-20">
           <div className="grid items-center gap-12 lg:grid-cols-2">
             <div>
               <Eyebrow icon={Sparkles}>ניהול חכם לאירוע מושלם</Eyebrow>
