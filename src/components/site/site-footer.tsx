@@ -17,7 +17,16 @@ import { ManageCookiesButton } from '@/components/consent/manage-cookies-button'
 // to fill it — until then the header nav already covers the in-page anchors.
 //
 // Every link is a real route (sitemap.ts is the same six-page list). Links
-// are text-sm with vertical padding so the touch target is ≥44px on mobile.
+// are text-sm with min-h-11 so the touch target is ≥44px on mobile.
+//
+// Keyboard focus = a real OUTLINE, not ring+ring-offset (verified against the
+// installed Tailwind 4.3.3 source, 2026-08-24): `outline-<n>` is solid by
+// default in v4, follows `rounded-sm`, needs no fake background colour the
+// way `ring-offset-*` does (a box-shadow that must repeat the footer's hex),
+// and stays visible in forced-colors mode. `outline-none` is deliberately
+// NOT used — in v4 it is a true `outline-style: none` with no forced-colors
+// fallback (the v3 behaviour is now `outline-hidden`). White/70 on the dark
+// surface instead of the indigo `ring` token, which cannot reach contrast here.
 
 export const FOOTER_LINKS: readonly { href: string; label: string }[] = [
   { href: '/faq', label: 'שאלות נפוצות' },
@@ -27,7 +36,11 @@ export const FOOTER_LINKS: readonly { href: string; label: string }[] = [
   { href: '/cookies', label: 'מדיניות עוגיות' },
 ];
 
-const LINK_CLASS = 'inline-flex items-center py-2 text-white/60 hover:text-white';
+const LINK_CLASS = [
+  'inline-flex min-h-11 items-center rounded-sm text-sm',
+  'text-white/60 transition-colors hover:text-white',
+  'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white/70',
+].join(' ');
 
 export function SiteFooter({
   widgetClearance = false,
@@ -42,7 +55,10 @@ export function SiteFooter({
     <footer className="bg-[#0b0f1a] text-white/60">
       <div className={`mx-auto max-w-6xl px-6 pt-10 ${widgetClearance ? 'pb-24 sm:pb-10' : 'pb-10'}`}>
         <div className="flex flex-col gap-2 sm:flex-row sm:items-baseline sm:justify-between">
-          <Link href="/" className="text-xl font-extrabold text-white hover:text-white">
+          <Link
+            href="/"
+            className="inline-flex min-h-11 items-center rounded-sm text-xl font-extrabold text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white/70"
+          >
             KALFA
           </Link>
           <p className="max-w-md text-sm leading-relaxed">

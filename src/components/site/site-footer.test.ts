@@ -33,6 +33,22 @@ describe('SiteFooter', () => {
     expect(footerSrc).not.toMatch(/\b(ml|mr|pl|pr|left|right|text-left|text-right)-/);
   });
 
+  it('keyboard focus is a v4 outline (forced-colors safe), touch targets ≥44px, no outline-none / ring-offset', () => {
+    // Tailwind 4.3.3: `outline-none` is a true outline-style:none with no
+    // forced-colors fallback; `ring-offset-*` paints a fake background.
+    // Assert on CODE lines only — the header comment names the rejected
+    // utilities to explain why they are absent.
+    const code = footerSrc
+      .split('\n')
+      .filter((l) => !l.trimStart().startsWith('//'))
+      .join('\n');
+    expect(code).toContain('focus-visible:outline-2');
+    expect(code).toContain('focus-visible:outline-offset-2');
+    expect(code).toContain('min-h-11');
+    expect(code).not.toContain('outline-none');
+    expect(code).not.toContain('ring-offset');
+  });
+
   it('is mounted ONCE by the (site) layout (after children) and no longer inline in the homepage', () => {
     expect(layoutSrc).toContain("import { SiteFooter } from '@/components/site/site-footer'");
     expect(layoutSrc.indexOf('{children}')).toBeLessThan(layoutSrc.indexOf('<SiteFooter'));
