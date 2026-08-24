@@ -1,5 +1,6 @@
 import Link from 'next/link';
 
+import { LandingHeaderNav } from '@/components/landing-header-nav';
 import { LandingMobileNav } from '@/components/landing-mobile-nav';
 import { LandingUserMenu } from '@/components/landing-user-menu';
 import { getUser } from '@/lib/auth/dal';
@@ -205,13 +206,10 @@ export default async function HomePage() {
       <header className="sticky top-0 z-50 border-b border-border bg-background/85 backdrop-blur-md backdrop-saturate-150">
         <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-6">
           <Link href="/" className="text-2xl font-extrabold tracking-tight">KALFA</Link>
-          <nav className="hidden items-center gap-7 md:flex">
-            <a href="#features" className="text-sm font-medium text-muted-foreground hover:text-foreground">יכולות</a>
-            <a href="#how" className="text-sm font-medium text-muted-foreground hover:text-foreground">איך זה עובד</a>
-            <a href="#trust" className="text-sm font-medium text-muted-foreground hover:text-foreground">אמון</a>
-            <Link href="/faq" className="text-sm font-medium text-muted-foreground hover:text-foreground">שאלות נפוצות</Link>
-            <Link href="/contact" className="text-sm font-medium text-muted-foreground hover:text-foreground">יצירת קשר</Link>
-          </nav>
+          {/* Desktop nav: shadcn NavigationMenu (flat links) — see
+              src/components/landing-header-nav.tsx. Hidden below md, where
+              the drawer (LandingMobileNav) carries the same five items. */}
+          <LandingHeaderNav className="hidden md:flex" />
           <div className="flex items-center gap-3">
             {user ? (
               <LandingUserMenu userEmail={user.email} userName={userName} />

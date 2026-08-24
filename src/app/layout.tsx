@@ -6,6 +6,7 @@ import './globals.css';
 // the ssr:false client wrapper so it stays OUT of the render-blocking path —
 // see cookie-consent-lazy.tsx for the doc-mandated shape.
 import { CookieConsentBannerLazy } from '@/components/consent/cookie-consent-lazy';
+import { DirectionProvider } from '@/components/ui/direction';
 import { getCookieConsentPublicConfig } from '@/lib/consent/admin-config';
 import { getAppOrigin } from '@/lib/url';
 
@@ -71,8 +72,16 @@ export default async function RootLayout({
   return (
     <html lang="he" dir="rtl" className={`${heebo.variable} h-full font-sans`}>
       <body className="min-h-full bg-background text-foreground antialiased">
-        {children}
-        <CookieConsentBannerLazy adminConfig={cookieConsentAdminConfig} />
+        {/* shadcn RTL guide (ui.shadcn.com/docs/rtl + /docs/components/base/direction,
+            read 2026-08-24): `rtl: true` in components.json handles the class
+            transforms; Base UI's portaled parts (menus, sheets, navigation-menu
+            popups) ignore the DOM `dir` and read this provider instead, so it
+            lives here at the root alongside dir="rtl" on <html>. The per-component
+            providers that pre-date this are redundant but harmless. */}
+        <DirectionProvider direction="rtl">
+          {children}
+          <CookieConsentBannerLazy adminConfig={cookieConsentAdminConfig} />
+        </DirectionProvider>
       </body>
     </html>
   );
