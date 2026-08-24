@@ -8,6 +8,7 @@ import {
   NavigationMenuItem,
   NavigationMenuLink,
   NavigationMenuList,
+  navigationMenuTriggerStyle,
 } from '@/components/ui/navigation-menu';
 import { cn } from '@/lib/utils';
 
@@ -37,20 +38,21 @@ export const LANDING_NAV_ITEMS: readonly { href: string; label: string }[] = [
   { href: '/contact', label: 'יצירת קשר' },
 ];
 
-const LINK_CLASS =
-  'rounded-lg px-2.5 py-1.5 text-sm font-medium text-muted-foreground hover:bg-transparent hover:text-foreground focus:bg-transparent data-active:bg-transparent data-active:text-foreground';
-
+// shadcn rule: className is for layout only — the link's colours, hover,
+// active and focus treatment come from the primitive's own
+// navigationMenuTriggerStyle() (the documented "Link" pattern), not from
+// overrides that reproduce the old bare-anchor look.
 export function LandingHeaderNav({ className }: { className?: string }) {
   const pathname = usePathname();
   return (
     <NavigationMenu className={cn('max-w-none', className)} aria-label="ניווט ראשי">
-      <NavigationMenuList className="gap-4">
+      <NavigationMenuList className="gap-1">
         {LANDING_NAV_ITEMS.map((item) => {
           const isRoute = item.href.startsWith('/');
           return (
             <NavigationMenuItem key={item.href}>
               <NavigationMenuLink
-                className={LINK_CLASS}
+                className={navigationMenuTriggerStyle()}
                 active={isRoute && pathname === item.href}
                 render={isRoute ? <Link href={item.href} /> : <a href={item.href} />}
               >
