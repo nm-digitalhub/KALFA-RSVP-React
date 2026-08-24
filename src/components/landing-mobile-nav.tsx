@@ -54,9 +54,21 @@ export function LandingMobileNav({
           }
         />
         <SheetContent side="right">
-          <SheetHeader className="sr-only">
-            <SheetTitle>ניווט</SheetTitle>
-            <SheetDescription>תפריט ניווט לעמוד הבית</SheetDescription>
+          {/* Visible brand row (owner report 24.8: with the header hidden
+              behind the overlay, the open drawer showed only an X and a bare
+              list — "KALFA disappeared"). Same height and wordmark as the page
+              header, so the brand stays in place when the menu opens; the
+              Sheet's close button sits at top/end, mirroring the hamburger's
+              position in the header. The wordmark is the dialog title (a11y
+              name) AND a home link. */}
+          <SheetHeader className="h-16 flex-row items-center justify-between border-b border-border px-4 py-0">
+            <SheetTitle
+              render={<Link href="/" onClick={close} />}
+              className="text-2xl font-extrabold tracking-tight text-foreground"
+            >
+              KALFA
+            </SheetTitle>
+            <SheetDescription className="sr-only">תפריט ניווט לעמוד הבית</SheetDescription>
           </SheetHeader>
           <nav className="flex flex-col gap-1 px-4" aria-label="ניווט בעמוד">
             <a href="#features" onClick={close} className={NAV_LINK_CLASS}>
