@@ -2,8 +2,7 @@ import 'server-only';
 
 import { createClient } from '@/lib/supabase/server';
 import { requireAdmin } from '@/lib/auth/dal';
-import type { Database } from '@/lib/supabase/types';
-
+import type { Tables } from '@/lib/supabase/types';
 // Admin management surface for message_templates (/admin/templates). The
 // request-free outreach template READERS (getTemplateByKey / resolveTemplateForEvent)
 // live in @/lib/data/message-templates-resolve so the pg-boss worker can import
@@ -11,7 +10,7 @@ import type { Database } from '@/lib/supabase/types';
 // (→ next/headers|navigation) into the worker bundle. message_templates is
 // admin-only RLS; these wrappers gate on requireAdmin() before touching data.
 
-type MessageTemplateRow = Database['public']['Tables']['message_templates']['Row'];
+type MessageTemplateRow = Tables<'message_templates'>;
 
 // --- Admin management (/admin/templates) -----------------------------------
 

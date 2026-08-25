@@ -15,8 +15,7 @@ import { monitorEnabled } from '@/lib/data/console-monitor';
 // Returning a call resolves its number from VOXIMPLANT, not from our tables —
 // see fetchReturnableCall for why that is both simpler and more capable.
 import { fetchReturnableCall } from '@/lib/data/vox-call-history';
-import type { Database } from '@/lib/supabase/types';
-
+import type { TablesInsert, TablesUpdate } from '@/lib/supabase/types';
 // Service-role DAL for the browser call-center (plan stages 4/5 — internal +
 // outbound manual dial, inbound routing). Every export here runs with the
 // service-role client: there is no browser session on the three routes the
@@ -35,10 +34,10 @@ import type { Database } from '@/lib/supabase/types';
 // recordRsvpFromWhatsapp.
 
 type AdminClient = ReturnType<typeof createAdminClient>;
-type ConsoleCallInsert = Database['public']['Tables']['console_calls']['Insert'];
-type ConsoleCallUpdate = Database['public']['Tables']['console_calls']['Update'];
-type ConsoleCallPiiInsert = Database['public']['Tables']['console_call_pii']['Insert'];
-type ConsoleCallPiiUpdate = Database['public']['Tables']['console_call_pii']['Update'];
+type ConsoleCallInsert = TablesInsert<'console_calls'>;
+type ConsoleCallUpdate = TablesUpdate<'console_calls'>;
+type ConsoleCallPiiInsert = TablesInsert<'console_call_pii'>;
+type ConsoleCallPiiUpdate = TablesUpdate<'console_call_pii'>;
 
 // The exact CHECK-constraint value sets from
 // supabase/migrations/20260812154126_callcenter_s3_console_calls_schema.sql,
@@ -1868,7 +1867,7 @@ export async function recordConsoleTransferAudit(input: {
         console_call_id: input.consoleCallId,
         to_agent_id: input.toAgentId,
         request_id: input.requestId,
-      } as Database['public']['Tables']['activity_log']['Insert']['meta'],
+      } as TablesInsert<'activity_log'>['meta'],
     });
   } catch {
     // Best-effort — see recordConsoleDialAudit's identical rationale below.
@@ -1913,7 +1912,7 @@ export async function recordConsoleConsultAudit(input: {
         ...(input.externalTarget ? { external_target: true } : {}),
         request_id: input.requestId,
         phase: input.phase,
-      } as Database['public']['Tables']['activity_log']['Insert']['meta'],
+      } as TablesInsert<'activity_log'>['meta'],
     });
   } catch {
     // Best-effort — see recordConsoleDialAudit's identical rationale below.
@@ -1945,7 +1944,7 @@ export async function recordConsoleConferenceAudit(input: {
         ...(input.toAgentId ? { to_agent_id: input.toAgentId } : {}),
         ...(input.externalTarget ? { external_target: true } : {}),
         request_id: input.requestId,
-      } as Database['public']['Tables']['activity_log']['Insert']['meta'],
+      } as TablesInsert<'activity_log'>['meta'],
     });
   } catch {
     // Best-effort — see recordConsoleDialAudit's identical rationale below.
@@ -3548,7 +3547,7 @@ export async function recordConsoleDialAudit(input: {
       event_id: eventId,
       user_id: input.agentId,
       action: CONSOLE_DIAL_AUDIT_ACTION,
-      meta: meta as Database['public']['Tables']['activity_log']['Insert']['meta'],
+      meta: meta as TablesInsert<'activity_log'>['meta'],
     });
   } catch {
     // Best-effort — see module header. The console_calls row itself remains
@@ -3584,7 +3583,7 @@ export async function recordConsoleWakeRetryAudit(input: {
       meta: {
         console_call_id: input.consoleCallId,
         found_count: input.foundCount,
-      } as Database['public']['Tables']['activity_log']['Insert']['meta'],
+      } as TablesInsert<'activity_log'>['meta'],
     });
   } catch {
     // Best-effort — see module header's audit-write precedent throughout

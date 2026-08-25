@@ -7,7 +7,7 @@ import { sendSlackAlert } from '@/lib/alerts/slack';
 import { createClient } from '@/lib/supabase/server';
 import { requirePlatformPermission } from '@/lib/auth/dal';
 import { parseFleetRoleRegistry, type FleetRoleInfo } from '@/lib/fleet/handoff';
-import type { Database } from '@/lib/supabase/types';
+import type { Database, Tables } from '@/lib/supabase/types';
 import { resolvePage, type PageParams, type PageResult } from './shared';
 
 // Admin: the owner<->autonomous-fleet request ledger (public.fleet_requests).
@@ -21,7 +21,7 @@ import { resolvePage, type PageParams, type PageResult } from './shared';
 // has no UPDATE grant on the table, and the DB trigger enforces the state
 // machine and field immutability regardless of what this module does.
 
-type FleetRequestRow = Database['public']['Tables']['fleet_requests']['Row'];
+type FleetRequestRow = Tables<'fleet_requests'>;
 
 export type FleetRequestEntry = Pick<
   FleetRequestRow,
@@ -325,7 +325,7 @@ export async function answerFleetRequest(input: {
 // browser). Reads go through the cookie client + fleet_goals_admin_select RLS,
 // same second layer as fleet_requests above.
 
-type FleetGoalRow = Database['public']['Tables']['fleet_goals']['Row'];
+type FleetGoalRow = Tables<'fleet_goals'>;
 
 export type FleetGoalEntry = Pick<
   FleetGoalRow,

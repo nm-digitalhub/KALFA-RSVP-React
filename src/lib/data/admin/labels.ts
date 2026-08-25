@@ -1,4 +1,4 @@
-import type { Database } from '@/lib/supabase/types';
+import type { Enums } from '@/lib/supabase/types';
 import type { CallbackStatus, CallOutcome, ContactStatus } from '@/lib/validation/admin';
 import type { BadgeVariant } from '@/components/ui/badge';
 
@@ -9,7 +9,7 @@ import type { BadgeVariant } from '@/components/ui/badge';
 // `Record<Enum, string>` so a new enum value becomes a COMPILE error (forcing a
 // translation) rather than a silently-untranslated UI string. The free-text
 // callback status uses a partial map plus a `?? value` fallback in the UI.
-type AppRole = Database['public']['Enums']['app_role'];
+type AppRole = Enums<'app_role'>;
 
 export const APP_ROLE_LABELS: Record<AppRole, string> = {
   admin: 'מנהל',

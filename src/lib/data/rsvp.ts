@@ -1,7 +1,7 @@
 import 'server-only';
 
 import { createAdminClient } from '@/lib/supabase/admin';
-import type { Database, Json } from '@/lib/supabase/types';
+import type { Json, TablesInsert } from '@/lib/supabase/types';
 import type { RsvpStatus, RsvpSubmitInput } from '@/lib/validation/rsvp';
 
 // This module is request-FREE (service-role admin client only) so the pg-boss
@@ -206,7 +206,7 @@ async function recordRsvpAudit(
   unchanged: boolean,
 ): Promise<void> {
   type ActivityLogInsert =
-    Database['public']['Tables']['activity_log']['Insert'];
+    TablesInsert<'activity_log'>;
   try {
     const { data: guest } = await supabase
       .from('guests')

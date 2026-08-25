@@ -1,15 +1,14 @@
 import 'server-only';
 
 import { createAdminClient } from '@/lib/supabase/admin';
-import type { Database, Json } from '@/lib/supabase/types';
-
+import type { Enums, Json } from '@/lib/supabase/types';
 // Server-only resolver for the public gift landing page (`/g/[token]`). The
 // opaque per-event `gift_link_token` IS the capability — no session. Mirrors the
 // `get_rsvp_by_token` privacy stance: fail-closed gating, and the raw
 // `gift_payment_url` NEVER leaves the server (only the coarse provider tag does;
 // the redirect itself happens in `/g/[token]/go`).
 
-type EventType = Database['public']['Enums']['event_type'];
+type EventType = Enums<'event_type'>;
 export type GiftProvider = 'bit' | 'paybox' | 'other';
 
 export interface GiftView {

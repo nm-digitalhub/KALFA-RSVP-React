@@ -1,8 +1,7 @@
 import 'server-only';
 
 import { createAdminClient } from '@/lib/supabase/admin';
-import type { Database } from '@/lib/supabase/types';
-
+import type { Tables, TablesInsert } from '@/lib/supabase/types';
 // Durable intake for provider webhooks (B2). The signature-verified route
 // normalizes events and inserts them here; a pg-boss worker processes them
 // out-of-band (persist-then-process), so the economic logic never depends on the
@@ -11,9 +10,9 @@ import type { Database } from '@/lib/supabase/types';
 // hold PII (phones/names) — NEVER log a row or its payload.
 
 export type WebhookInboxInsert =
-  Database['public']['Tables']['webhook_inbox']['Insert'];
+  TablesInsert<'webhook_inbox'>;
 export type WebhookInboxRow =
-  Database['public']['Tables']['webhook_inbox']['Row'];
+  Tables<'webhook_inbox'>;
 
 // Idempotent batch insert. UNIQUE(provider, dedupe_key) + ignoreDuplicates makes
 // a Meta retry of the same event a no-op, so each provider event is persisted at

@@ -10,9 +10,8 @@ import {
 
 import { CELEBRANT_KIND_BY_EVENT_TYPE } from '@/lib/validation/schemas';
 import { EVENT_TYPE_LABELS } from '@/lib/data/event-labels';
-import type { Database, Json } from '@/lib/supabase/types';
-
-type EventType = Database['public']['Enums']['event_type'];
+import type { Enums, Json } from '@/lib/supabase/types';
+type EventType = Enums<'event_type'>;
 
 // The single per-event-type DISPLAY composer for celebrant names — used by the
 // owner's event page AND the public RSVP page. Pure + isomorphic (client and

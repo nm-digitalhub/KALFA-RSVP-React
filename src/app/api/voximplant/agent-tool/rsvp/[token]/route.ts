@@ -5,7 +5,7 @@ import { NextResponse } from 'next/server';
 import { insertWebhookEvents } from '@/lib/data/webhooks';
 import { processCallRsvp } from '@/lib/data/call-result-processing';
 import { guardAgentToolRequest } from '@/lib/voximplant/agent-tool-guard';
-import type { Database } from '@/lib/supabase/types';
+import type { TablesInsert } from '@/lib/supabase/types';
 import { voxSaveRsvpSchema, voxSaveRsvpStatus } from '@/lib/validation/voximplant';
 
 // POST /api/voximplant/agent-tool/rsvp/{token}
@@ -27,7 +27,7 @@ export const dynamic = 'force-dynamic';
 
 const MAX_BODY_BYTES = 16 * 1024; // a save_rsvp body is tiny; reject anything larger
 
-type WebhookInboxInsert = Database['public']['Tables']['webhook_inbox']['Insert'];
+type WebhookInboxInsert = TablesInsert<'webhook_inbox'>;
 type Json = WebhookInboxInsert['payload'];
 
 // D1 (value-hash dedupe): each DISTINCT answer is a distinct inbox row (a mid-call

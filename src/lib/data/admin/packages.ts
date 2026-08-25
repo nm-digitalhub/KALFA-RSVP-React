@@ -6,7 +6,7 @@ import { logActivity } from '@/lib/data/activity';
 import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { requirePlatformPermission } from '@/lib/auth/dal';
-import type { Database, Json } from '@/lib/supabase/types';
+import type { Json, Tables, TablesInsert, TablesUpdate } from '@/lib/supabase/types';
 import type {
   PackageInput,
   OperationalFieldsInput,
@@ -19,9 +19,9 @@ import type {
 // admin-only. Prices are server-validated (see validation/admin.ts) and never
 // trusted from the browser.
 
-type PackageRow = Database['public']['Tables']['packages']['Row'];
-type PackageInsert = Database['public']['Tables']['packages']['Insert'];
-type PackageUpdate = Database['public']['Tables']['packages']['Update'];
+type PackageRow = Tables<'packages'>;
+type PackageInsert = TablesInsert<'packages'>;
+type PackageUpdate = TablesUpdate<'packages'>;
 
 export type AdminPackage = Pick<
   PackageRow,

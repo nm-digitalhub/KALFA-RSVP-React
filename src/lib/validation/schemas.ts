@@ -4,9 +4,8 @@ import { ISRAELI_PHONE_RE, PROFILE_NAME_MAX } from '@/lib/constants';
 // Dependency-free leaf (no `server-only`) — safe to import from this
 // client-reachable validation module (edit-event-form.tsx is 'use client').
 import { isBeforeTomorrowIL, todayIL } from '@/lib/data/event-date';
-import type { Database } from '@/lib/supabase/types';
-
-type EventType = Database['public']['Enums']['event_type'];
+import type { Enums } from '@/lib/supabase/types';
+type EventType = Enums<'event_type'>;
 
 // Auth
 // Shared field schemas — a single source reused across login / signup / reset so

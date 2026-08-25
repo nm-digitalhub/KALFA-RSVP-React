@@ -41,8 +41,8 @@ project — there is no local stack; every apply is production.
 ## This repo — authoritative conventions (verify against migrations, not memory)
 
 - **Create migrations only via** `npx supabase migration new <name>` (14-digit
-  timestamps). Never hand-edit `src/lib/supabase/types.ts` — regenerate:
-  `npx supabase gen types typescript --linked > src/lib/supabase/types.ts`, then
+  timestamps). Never hand-edit `src/lib/supabase/types.generated.ts` — regenerate:
+  `npm run gen:types` (→ `src/lib/supabase/types.generated.ts`; `types.ts` is the hand-maintained MergeDeep override layer), then
   diff to confirm only the expected delta.
 - **Apply**: additive single-file after clean `migration list --linked` →
   `npx supabase db push --linked`. Ambiguous/destructive → explicit-transaction

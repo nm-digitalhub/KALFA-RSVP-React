@@ -21,7 +21,7 @@ Router), React 19, TypeScript, Tailwind CSS v4, and Supabase.
 3. Link to the Supabase project (its schema already exists) and regenerate types:
    ```bash
    supabase link --project-ref <your-project-ref>
-   supabase gen types typescript --linked --schema public > src/lib/supabase/types.ts
+   npm run gen:types   # = supabase gen types --linked > src/lib/supabase/types.generated.ts
    ```
 4. Run the dev server:
    ```bash

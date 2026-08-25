@@ -2,9 +2,8 @@ import 'server-only';
 
 import { createClient } from '@/lib/supabase/server';
 import { requireUser } from '@/lib/auth/dal';
-import type { Database } from '@/lib/supabase/types';
-
-type ActivityLogInsert = Database['public']['Tables']['activity_log']['Insert'];
+import type { TablesInsert } from '@/lib/supabase/types';
+type ActivityLogInsert = TablesInsert<'activity_log'>;
 
 export interface LogActivityInput {
   eventId?: string | null;

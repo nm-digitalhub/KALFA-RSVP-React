@@ -5,7 +5,7 @@ import { NextResponse } from 'next/server';
 import { insertWebhookEvents } from '@/lib/data/webhooks';
 import { processOwnerNote } from '@/lib/data/call-result-processing';
 import { guardAgentToolRequest } from '@/lib/voximplant/agent-tool-guard';
-import type { Database } from '@/lib/supabase/types';
+import type { TablesInsert } from '@/lib/supabase/types';
 import { voxNotifyOwnerSchema } from '@/lib/validation/voximplant';
 
 // POST /api/voximplant/agent-tool/note/{token}
@@ -24,7 +24,7 @@ export const dynamic = 'force-dynamic';
 
 const MAX_BODY_BYTES = 8 * 1024;
 
-type WebhookInboxInsert = Database['public']['Tables']['webhook_inbox']['Insert'];
+type WebhookInboxInsert = TablesInsert<'webhook_inbox'>;
 type Json = WebhookInboxInsert['payload'];
 
 // Token-bearing URL: explicit no-store on every response (config-layer block

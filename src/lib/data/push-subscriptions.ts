@@ -4,7 +4,7 @@ import { getOrgContext, requireUser } from '@/lib/auth/dal';
 import { logActivity } from '@/lib/data/activity';
 import { sendPushToUser } from '@/lib/data/push-delivery';
 import { createAdminClient } from '@/lib/supabase/admin';
-import type { Database } from '@/lib/supabase/types';
+import type { TablesInsert } from '@/lib/supabase/types';
 import type {
   BrowserPushSubscription,
   PushMessagePayload,
@@ -26,7 +26,7 @@ import type {
  * could, it belongs in `push-delivery` with the user passed in explicitly.
  */
 
-type PushSubscriptionInsert = Database['public']['Tables']['push_subscriptions']['Insert'];
+type PushSubscriptionInsert = TablesInsert<'push_subscriptions'>;
 
 function normalizeBrowserSubscription(subscription: BrowserPushSubscription) {
   const endpoint = subscription.endpoint?.trim();

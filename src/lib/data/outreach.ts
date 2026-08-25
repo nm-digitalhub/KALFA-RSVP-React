@@ -26,28 +26,8 @@ import {
   MARKETING_MESSAGE_KEYS,
   POST_EVENT_MESSAGE_KEYS,
 } from '@/lib/whatsapp/template-spec';
-import type { Database } from '@/lib/supabase/types';
-
+import type { Enums } from '@/lib/supabase/types';
 type AdminClient = ReturnType<typeof createAdminClient>;
-
-// Forward-compat typing for the auto-thankyou schema (pending migration
-// supabase/migrations/20260712205030_auto_thankyou_schema.sql — not yet
-// applied/gen-typed). `claim_thankyou_recipient` isn't a member of the
-// generated Functions union yet, and `message_key` isn't a column of
-// contact_interactions' generated Row type yet; both narrow casts are removed
-// once `gen types` runs post-deploy.
-type ClaimThankyouRpc = (
-  fn: 'claim_thankyou_recipient',
-  args: { p_campaign: string; p_contact: string; p_event: string },
-) => Promise<{
-  data: 'claimed' | 'already_claimed' | null;
-  error: { message: string; code?: string } | null;
-}>;
-
-type LooseContactInteractionsFilter = {
-  update: (v: unknown) => LooseContactInteractionsFilter;
-  eq: (column: string, value: unknown) => LooseContactInteractionsFilter;
-} & PromiseLike<{ error: { message: string; code?: string } | null }>;
 
 // Send ONE approved WhatsApp template to ONE contact + log the outbound,
 // non-billable interaction (idempotent on UNIQUE(channel, provider_id)). Returns
@@ -118,14 +98,11 @@ export async function sendOneWhatsApp(
         kind: 'template',
         provider_id: outcome.providerId,
         billable: false,
-        // message_key lands with a pending migration (supabase/migrations/
-        // 20260712205030_auto_thankyou_schema.sql) — forward-compat cast until
-        // `gen types` runs. Tags every send (not just thankyou) so the
-        // auto-thankyou per-guest dedup (sendCampaignWhatsApp below) can tell
-        // a thank-you apart from any other message to the same contact under
-        // the shared campaign_id.
+        // Tags every send (not just thankyou) so the auto-thankyou per-guest
+        // dedup (sendCampaignWhatsApp below) can tell a thank-you apart from
+        // any other message to the same contact under the shared campaign_id.
         message_key: messageKey,
-      } as unknown as Database['public']['Tables']['contact_interactions']['Insert'],
+      },
       { onConflict: 'channel,provider_id', ignoreDuplicates: true },
     );
   }
@@ -185,7 +162,7 @@ export async function recordTemplateFailure(
   // schedule is validated upstream (packages admin form / campaigns snapshot)
   // to only ever contain real campaign_channel values, so this is a boundary
   // cast, not an unchecked one (same pattern as `as unknown as Json` elsewhere).
-  const channelEnum = channel as Database['public']['Enums']['campaign_channel'];
+  const channelEnum = channel as Enums<'campaign_channel'>;
   const { error } = await admin.from('outreach_template_failures').upsert(
     {
       campaign_id: campaignId,
@@ -429,10 +406,11 @@ export async function sendCampaignWhatsApp(
     // so a concurrent caller skips atomically, before ever calling the
     // provider. See supabase/migrations/20260712205030_auto_thankyou_schema.sql.
     if (isThankyou) {
-      const { data: claim, error: claimErr } = await (admin.rpc as unknown as ClaimThankyouRpc)(
-        'claim_thankyou_recipient',
-        { p_campaign: campaign.id, p_contact: contact.id, p_event: campaign.event_id },
-      );
+      const { data: claim, error: claimErr } = await admin.rpc('claim_thankyou_recipient', {
+        p_campaign: campaign.id,
+        p_contact: contact.id,
+        p_event: campaign.event_id,
+      });
       if (claimErr || claim !== 'claimed') {
         skipped++;
         continue;
@@ -468,9 +446,8 @@ export async function sendCampaignWhatsApp(
       // best-effort upsert already swallows (it never checks/throws on the
       // returned error). This explicit UPDATE, not that swallowed insert, is
       // what actually persists the accepted outcome onto the claim row.
-      const { error: finalizeErr } = await (
-        admin.from('contact_interactions') as unknown as LooseContactInteractionsFilter
-      )
+      const { error: finalizeErr } = await admin
+        .from('contact_interactions')
         .update({ provider_id: ok.providerId })
         .eq('campaign_id', campaign.id)
         .eq('contact_id', contact.id)

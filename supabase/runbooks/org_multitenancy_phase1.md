@@ -114,7 +114,7 @@ rollback;  -- read‑only check; discard the set_config
 ## 6. Regenerate TypeScript types (unblocks Phase 2 code)
 
 ```bash
-npx supabase gen types typescript --linked > src/lib/supabase/types.ts
+npm run gen:types   # = supabase gen types --linked > src/lib/supabase/types.generated.ts
 ```
 Then sanity‑check the build is still green **before** any Phase 2 code:
 ```bash

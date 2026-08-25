@@ -8,8 +8,7 @@ import { z } from 'zod';
 // closed working vocabulary here and render unknown values with a
 // `LABELS[s] ?? s` fallback so legacy/foreign values never break the UI.
 
-import { Constants } from '@/lib/supabase/types';
-import type { Database } from '@/lib/supabase/types';
+import { Constants, type Enums } from '@/lib/supabase/types';
 
 // --- callback_requests.status: SCHEDULING status (free text in DB, CHECK-
 // constrained as `callback_requests_status_valid` — mirrors the existing
@@ -353,7 +352,7 @@ export type OperationalFieldsInput = z.infer<typeof operationalFieldsSchema>;
 export const appRoleEnum = z.enum(Constants.public.Enums.app_role, {
   error: 'תפקיד לא תקין',
 });
-export type AppRole = Database['public']['Enums']['app_role'];
+export type AppRole = Enums<'app_role'>;
 
 // --- app_settings (admin: clearing toggle + SUMIT provider config) ---
 // company id is numeric (digits only) but optional/empty when unset; the keys

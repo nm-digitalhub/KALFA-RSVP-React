@@ -8,7 +8,7 @@ import { getUser, requireUser, requireOrgOwner, getOrgContext } from '@/lib/auth
 import { requirePermission } from '@/lib/permissions';
 import { logActivity } from '@/lib/data/activity';
 import { sendSlackAlert } from '@/lib/alerts/slack';
-import type { Database } from '@/lib/supabase/types';
+import type { TablesInsert } from '@/lib/supabase/types';
 import type {
   InviteMemberInput,
   ChangeMemberRoleInput,
@@ -19,7 +19,7 @@ import type {
 const PERSONAL_ORG_NAME = 'הארגון שלי';
 const INVITATION_TTL_DAYS = 7;
 
-type AuditInsert = Database['public']['Tables']['organization_audit_log']['Insert'];
+type AuditInsert = TablesInsert<'organization_audit_log'>;
 
 // ---------------------------------------------------------------------------
 // DTOs

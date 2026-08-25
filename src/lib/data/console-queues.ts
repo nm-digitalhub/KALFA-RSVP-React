@@ -2,8 +2,7 @@ import 'server-only';
 
 import { createAdminClient } from '@/lib/supabase/admin';
 import { findRoutableAgents } from '@/lib/data/console-calls';
-import type { Database } from '@/lib/supabase/types';
-
+import type { Tables } from '@/lib/supabase/types';
 // Department queues (plan §10 extension point: "מחלקות (נקודת הרחבה = ring-order
 // בשרת)") — an ADDITIVE layer over the existing server-side ring-order
 // mechanism in console-calls.ts (computeRingOrder / findRoutableAgents). This
@@ -14,7 +13,7 @@ import type { Database } from '@/lib/supabase/types';
 // grouping of console_agents, and "queue routing" is just a different input to
 // the SAME computeRingOrder primitive (see computeQueueRingOrder there).
 
-type ConsoleQueueRow = Database['public']['Tables']['console_queues']['Row'];
+type ConsoleQueueRow = Tables<'console_queues'>;
 
 // ─────────────────────────────────────────────────────────────────────────
 // Queue catalog.

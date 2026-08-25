@@ -7,9 +7,8 @@
 // Tailwind v4 scans source files for complete class names — a dynamically
 // built class (e.g. `text-${color}-500`) would never be generated.
 
-import type { Database } from '@/lib/supabase/types';
-
-type EventType = Database['public']['Enums']['event_type'];
+import type { Enums } from '@/lib/supabase/types';
+type EventType = Enums<'event_type'>;
 
 export interface EventTheme {
   /** Accent text color for the heading icon (full static Tailwind class). */

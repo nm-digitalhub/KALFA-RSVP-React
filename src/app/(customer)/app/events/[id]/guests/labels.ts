@@ -1,18 +1,18 @@
-import type { Database } from '@/lib/supabase/types';
+import type { Enums } from '@/lib/supabase/types';
 import type { BadgeVariant } from '@/components/ui/badge';
 
 // Hebrew labels for the guest-domain enums. Defined as EXHAUSTIVE
 // `Record<enum, string>` maps so that adding or removing a value in the DB
-// enum (reflected in `Database['public']['Enums']`) becomes a compile error
+// enum (reflected in `Enums<'…'>`) becomes a compile error
 // here rather than a silently-missing label.
 //
 // Pure label/variant maps — NO `server-only` here: this module is imported by
 // the (server) guest list page AND by client components (e.g. the WhatsApp
 // timeline), so it must stay isomorphic. `BadgeVariant` is a type-only import.
 
-type GuestStatus = Database['public']['Enums']['guest_status'];
-type ContactStatus = Database['public']['Enums']['contact_status'];
-type ContactOpStatus = Database['public']['Enums']['contact_op_status'];
+type GuestStatus = Enums<'guest_status'>;
+type ContactStatus = Enums<'contact_status'>;
+type ContactOpStatus = Enums<'contact_op_status'>;
 
 export const GUEST_STATUS_LABELS: Record<GuestStatus, string> = {
   pending: 'ממתין',

@@ -25,7 +25,7 @@ explicitly approved a change.
 | Ad-hoc SQL (runs as postgres, CAN exec service_role SECDEF) | `npx supabase db query --linked "<sql>"` |
 | Constraints / FKs / UNIQUE | query **pg_catalog** (`pg_constraint`, `pg_indexes`) — `information_schema` returns EMPTY for real constraints here |
 | RLS policies | `select * from pg_policies where tablename='…'` |
-| Regenerate types (never hand-edit) | `npx supabase gen types typescript --linked > src/lib/supabase/types.ts` |
+| Regenerate types (never hand-edit) | `npm run gen:types` (→ `src/lib/supabase/types.generated.ts`; `types.ts` is the hand-maintained MergeDeep override layer) |
 | Post-change lint | `npx supabase db advisors --linked` |
 | Programmatic access in app code | `createAdminClient()` (service role — server-only) |
 | MCP alternative | `mcp__supabase__*` tools (list_tables, execute_sql, get_advisors) |

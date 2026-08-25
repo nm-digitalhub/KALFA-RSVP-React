@@ -278,8 +278,23 @@ npx supabase migration new <name>          # יצירת קובץ מיגרציה 
 npx supabase db query --linked "<sql>"     # שאילתות מול ה-DB החי (רץ כ-postgres)
 npx supabase migration list --linked       # השוואת מיגרציות דיסק מול DB
 npx supabase db advisors --linked          # advisors של אבטחה/ביצועים
-npx supabase gen types typescript --linked > src/lib/supabase/types.ts  # רענון טיפוסים
+npm run gen:types                          # רענון טיפוסים (supabase gen types --linked > src/lib/supabase/types.generated.ts)
+npm run types:check                        # אימות ש-types.generated.ts תואם ל-DB החי (רץ אוטומטית בתחילת npm run deploy)
 ```
+
+שני קבצים, שני תפקידים (לפי התיעוד הרשמי, "Helper types for tables and joins"):
+
+- `src/lib/supabase/types.generated.ts` — פלט גנרטור בלבד. אין לערוך ידנית
+  (הריצה הבאה של `gen:types` דורסת). אחרי כל `db push` חובה `npm run gen:types`
+  ולקמט את הקובץ; `deploy` נעצר (exit 1) אם הקובץ סוטה מה-DB החי, ו-exit 2
+  אם ה-CLI עצמו נכשל (אין link/טוקן/רשת) — כדי לא לבלבל תקלת Supabase עם drift.
+- `src/lib/supabase/types.ts` — שכבת override ידנית (`MergeDeep` מ-`type-fest`)
+  שהאפליקציה מייבאת. מתקנת רק מה שהגנרטור לא יכול להביע — כיום: ארגומנטי RPC
+  nullable (`fleet_goal_progress`, `record_step_plan`, `resolve_outreach_step`),
+  כל אחד עם ראיית SQL מתועדת בקובץ. הוספת override = אימות מול
+  `pg_get_functiondef()` ב-DB החי תחילה, ולעולם לא cast בקוד הקורא.
+  הקובץ גם מייצא את helper-types (`Tables<'x'>`, `TablesInsert`, `TablesUpdate`,
+  `Enums<'x'>`) — הצורה המועדפת בקוד על פני `Database['public']['Tables'][...]`.
 
 `db query --linked` רץ כמשתמש `postgres`, כולל יכולת להריץ פונקציות
 SECURITY DEFINER שנעולות ל-service_role. אין להשתמש בסקריפטים אד-הוק

@@ -40,14 +40,14 @@ import {
 import { isReconcileEnabled } from '@/lib/data/reconcile-config';
 import { logActivity } from '@/lib/data/activity';
 import { getGuestsPageSize } from '@/lib/constants';
-import type { Database } from '@/lib/supabase/types';
+import type { Enums, Tables, TablesUpdate } from '@/lib/supabase/types';
 import { Constants } from '@/lib/supabase/types';
 
-type GuestRow = Database['public']['Tables']['guests']['Row'];
-type GuestGroupRow = Database['public']['Tables']['guest_groups']['Row'];
-export type GuestStatus = Database['public']['Enums']['guest_status'];
-export type ContactStatus = Database['public']['Enums']['contact_status'];
-export type ContactOpStatus = Database['public']['Enums']['contact_op_status'];
+type GuestRow = Tables<'guests'>;
+type GuestGroupRow = Tables<'guest_groups'>;
+export type GuestStatus = Enums<'guest_status'>;
+export type ContactStatus = Enums<'contact_status'>;
+export type ContactOpStatus = Enums<'contact_op_status'>;
 
 // ---------------------------------------------------------------------------
 // Column projections (DTO contracts).
@@ -488,7 +488,7 @@ export async function updateGuest(
   const previous = await getGuest(eventId, guestId);
 
   // Build the update payload from the allow-listed fields only.
-  const update: Database['public']['Tables']['guests']['Update'] = {};
+  const update: TablesUpdate<'guests'> = {};
   if (patch.full_name !== undefined) update.full_name = patch.full_name;
   if (patch.phone !== undefined) update.phone = patch.phone;
   if (patch.status !== undefined) update.status = patch.status;
@@ -715,7 +715,7 @@ export async function updateGroup(
   await requireEventAccess(eventId, 'guests', 'edit');
   const supabase = await createClient();
 
-  const update: Database['public']['Tables']['guest_groups']['Update'] = {};
+  const update: TablesUpdate<'guest_groups'> = {};
   if (patch.name !== undefined) update.name = normalizeGroupName(patch.name);
   if (patch.color !== undefined) update.color = patch.color;
 
@@ -1049,7 +1049,7 @@ export async function applyGuestMerge(
   },
 ): Promise<void> {
   await requireEventAccess(eventId, 'guests', 'create');
-  const update: Database['public']['Tables']['guests']['Update'] = {};
+  const update: TablesUpdate<'guests'> = {};
   if (patch.phone && patch.phone.trim() !== '') update.phone = patch.phone;
   if (patch.full_name && patch.full_name.trim() !== '')
     update.full_name = patch.full_name.trim();

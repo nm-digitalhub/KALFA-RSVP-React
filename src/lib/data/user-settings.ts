@@ -3,9 +3,8 @@ import 'server-only';
 import { createClient } from '@/lib/supabase/server';
 import { requireUser } from '@/lib/auth/dal';
 import { logActivity } from '@/lib/data/activity';
-import type { Database } from '@/lib/supabase/types';
-
-export type UserSettingsRow = Database['public']['Tables']['user_settings']['Row'];
+import type { Tables } from '@/lib/supabase/types';
+export type UserSettingsRow = Tables<'user_settings'>;
 
 export type UserSettingsDTO = Pick<
   UserSettingsRow,

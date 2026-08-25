@@ -2,8 +2,7 @@ import 'server-only';
 
 import { createAdminClient } from '@/lib/supabase/admin';
 import { CALLBACK_MAX_ATTEMPTS, CONSOLE_DIAL_AUDIT_ACTION } from '@/lib/data/console-calls';
-import type { Database } from '@/lib/supabase/types';
-
+import type { Tables, TablesInsert, TablesUpdate } from '@/lib/supabase/types';
 // Request-FREE service-role DAL for sales_call_attempts — the Voximplant
 // token/dispatch-bookkeeping table for the sales-closing agent's outbound
 // call on a callback_requests row (topic = 'מכירות'). See that table's own
@@ -24,8 +23,8 @@ import type { Database } from '@/lib/supabase/types';
 //
 // Never logs access_token.
 
-type AttemptRow = Database['public']['Tables']['sales_call_attempts']['Row'];
-type AttemptInsert = Database['public']['Tables']['sales_call_attempts']['Insert'];
+type AttemptRow = Tables<'sales_call_attempts'>;
+type AttemptInsert = TablesInsert<'sales_call_attempts'>;
 
 // Mirrors call_attempts' own PRE_TERMINAL and callback_request_attempts'
 // DISPATCH_PRE_TERMINAL exactly.
@@ -237,7 +236,7 @@ export async function countRecentSalesAuditedAttempts(
 export async function recordSalesDialAudit(callbackRequestId: string): Promise<void> {
   try {
     const admin = createAdminClient();
-    type ActivityLogInsert = Database['public']['Tables']['activity_log']['Insert'];
+    type ActivityLogInsert = TablesInsert<'activity_log'>;
     const row: ActivityLogInsert = {
       event_id: null,
       user_id: null,
@@ -417,7 +416,7 @@ export async function recordSalesLinkSent(
 ): Promise<void> {
   try {
     const admin = createAdminClient();
-    const update: Database['public']['Tables']['sales_call_attempts']['Update'] = {
+    const update: TablesUpdate<'sales_call_attempts'> = {
       updated_at: new Date().toISOString(),
     };
     if (fields.waConsentConfirmedAt) update.wa_consent_confirmed_at = fields.waConsentConfirmedAt;

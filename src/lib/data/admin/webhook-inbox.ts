@@ -3,8 +3,7 @@ import 'server-only';
 import { requirePlatformPermission } from '@/lib/auth/dal';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { resolvePage, type PageParams, type PageResult } from '@/lib/data/admin/shared';
-import type { Database } from '@/lib/supabase/types';
-
+import type { Tables } from '@/lib/supabase/types';
 // Admin Webhook Inspector data layer. Reads the durable `webhook_inbox` intake
 // table behind requireAdmin() with the service-role client (the table is
 // admin-only RLS; service-role bypasses it — the policy is defence-in-depth).
@@ -12,7 +11,7 @@ import type { Database } from '@/lib/supabase/types';
 // PII: the raw `payload` holds phones/names. It is projected OFF the list (detail
 // only), and NOTHING here ever logs a payload, dedupe_key, message_id, or phone.
 
-type WebhookInboxRow = Database['public']['Tables']['webhook_inbox']['Row'];
+type WebhookInboxRow = Tables<'webhook_inbox'>;
 
 // List projection — display columns only; the heavy/PII `payload` is fetched on
 // demand in the detail view.

@@ -1,7 +1,7 @@
 בצע cleanup מקיף של מודל orders כי הוא dormant/legacy ולא פעיל עסקית.
 
 כללי חובה:
-1. אל תיגע ידנית בקבצים generated, במיוחד src/lib/supabase/types.ts.
+1. אל תיגע ידנית בקבצים generated, במיוחד src/lib/supabase/types.generated.ts.
 2. אל תבצע שינוי DB לפני preflight שמוכיח ש-public.orders ריקה ושאין producer פעיל.
 3. אם נדרש שינוי schema: צור migration בלבד, החל אותה, ואז הרץ supabase gen types typescript --linked כדי לעדכן טיפוסים.
 4. אין להשאיר מסכים שמציגים "הזמנות" על בסיס orders.
@@ -50,7 +50,7 @@ C. DB migration:
 
 D. Regenerate:
 - הרץ:
-  supabase gen types typescript --linked > src/lib/supabase/types.ts
+  npm run gen:types   # = supabase gen types --linked > src/lib/supabase/types.generated.ts
   או הפקודה הרשמית הקיימת בפרויקט.
 - אל תערוך את types.ts ידנית.
 

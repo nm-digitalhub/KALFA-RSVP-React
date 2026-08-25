@@ -349,10 +349,9 @@ import {
 import { getBaseOveragePricingEnabled } from '@/lib/data/payments';
 import { sendPushToUser } from '@/lib/data/push-delivery';
 import { createAdminClient } from '@/lib/supabase/admin';
-import type { Database, Json } from '@/lib/supabase/types';
-
-type FleetRequestRow = Database['public']['Tables']['fleet_requests']['Row'];
-type FleetSocialPostRow = Database['public']['Tables']['fleet_social_posts']['Row'];
+import type { Json, Tables } from '@/lib/supabase/types';
+type FleetRequestRow = Tables<'fleet_requests'>;
+type FleetSocialPostRow = Tables<'fleet_social_posts'>;
 
 const KINDS = ['approval', 'question', 'fyi'] as const;
 type Kind = (typeof KINDS)[number];
@@ -2418,12 +2417,9 @@ async function cmdGoalProgress(args: Record<string, string | undefined>): Promis
     p_id: id,
     p_step: step,
     p_state: state,
-    // `supabase gen types` drops the null variant for a required (no
-    // `default`) nullable RPC scalar arg — the generated Args type says
-    // `string`, but the SQL param is `timestamptz` with no `not null`, and
-    // the RPC body explicitly branches on `p_next_wake_at is not null`. This
-    // is a generator gap, not a real constraint.
-    p_next_wake_at: nextWakeAt as string,
+    // Nullable by contract (the RPC branches on `p_next_wake_at is not null`);
+    // typed `string | null` via the override layer in src/lib/supabase/types.ts.
+    p_next_wake_at: nextWakeAt,
     ...(args.error ? { p_error: args.error } : {}),
   });
   if (error) fail(`goal-progress failed: ${error.message}`);

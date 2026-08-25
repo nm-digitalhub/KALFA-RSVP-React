@@ -2,7 +2,7 @@ import 'server-only';
 
 import { createClient } from '@/lib/supabase/server';
 import { requirePlatformPermission } from '@/lib/auth/dal';
-import type { Database } from '@/lib/supabase/types';
+import type { Tables, TablesUpdate } from '@/lib/supabase/types';
 import { resolvePage, type PageParams, type PageResult } from './shared';
 
 // Admin: read/write the Slack ops-alerting config (app_settings singleton) and
@@ -80,7 +80,7 @@ export async function updateSlackConnection(input: {
   await requirePlatformPermission('manage_settings');
   const supabase = await createClient();
 
-  const patch: Database['public']['Tables']['app_settings']['Update'] = {
+  const patch: TablesUpdate<'app_settings'> = {
     slack_alert_channel_id: input.channelId || null,
   };
   if (input.botToken) patch.slack_bot_token = input.botToken;
@@ -99,7 +99,7 @@ export async function setSlackMention(input: {
   await requirePlatformPermission('manage_settings');
   const supabase = await createClient();
 
-  const patch: Database['public']['Tables']['app_settings']['Update'] = {
+  const patch: TablesUpdate<'app_settings'> = {
     slack_mention_user_id: input.userId || null,
     slack_mention_min_level: input.minLevel,
   };
@@ -153,7 +153,7 @@ export async function setSlackAlertCategory(
   const supabase = await createClient();
   // Literal-keyed patch (no computed key) so it typechecks against the generated
   // Update type; exhaustive over AlertCategoryKey.
-  const patch: Database['public']['Tables']['app_settings']['Update'] =
+  const patch: TablesUpdate<'app_settings'> =
     category === 'errors'
       ? { slack_alert_errors: enabled }
       : category === 'campaign_billing'
@@ -172,7 +172,7 @@ export async function setSlackAlertCategory(
 
 // --- ops_alerts history (append-only audit) --------------------------------
 
-type OpsAlertRow = Database['public']['Tables']['ops_alerts']['Row'];
+type OpsAlertRow = Tables<'ops_alerts'>;
 
 export type OpsAlertEntry = Pick<
   OpsAlertRow,

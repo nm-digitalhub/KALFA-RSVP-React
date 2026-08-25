@@ -2,8 +2,7 @@ import 'server-only';
 
 import { createAdminClient } from '@/lib/supabase/admin';
 import { normalizePhone } from '@/lib/phone';
-import type { Database } from '@/lib/supabase/types';
-
+import type { Enums, Tables, TablesInsert } from '@/lib/supabase/types';
 // This module is request-FREE (service-role admin client only) so the pg-boss
 // worker (billing → setContactOpStatus, webhook-processing) can import it without
 // dragging next/headers|navigation into the worker bundle. The two org-aware,
@@ -14,8 +13,8 @@ import type { Database } from '@/lib/supabase/types';
 // service-role (the webhook is signature-verified, not session-authed). Never
 // log the phone or payload.
 
-type Channel = Database['public']['Enums']['campaign_channel'];
-type OpStatus = Database['public']['Enums']['contact_op_status'];
+type Channel = Enums<'campaign_channel'>;
+type OpStatus = Enums<'contact_op_status'>;
 
 export type InteractionRow = {
   event_id: string;
@@ -173,7 +172,7 @@ export async function markContactRemovalRequested(
 // (worker/admin context, no session). Never logs PII.
 // GuestForContact is derived from the generated table type — never
 // hand-maintained (the columns must track the real `guests` schema).
-type GuestRow = Database['public']['Tables']['guests']['Row'];
+type GuestRow = Tables<'guests'>;
 export type GuestForContact = Pick<GuestRow, 'id' | 'full_name' | 'rsvp_token'>;
 
 export async function getGuestsForContact(
@@ -207,7 +206,7 @@ export async function recordRsvpFromWhatsapp(
   status: string,
 ): Promise<void> {
   type ActivityLogInsert =
-    Database['public']['Tables']['activity_log']['Insert'];
+    TablesInsert<'activity_log'>;
   try {
     const admin = createAdminClient();
     const meta = { guest_id: guestId, status };

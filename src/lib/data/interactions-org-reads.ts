@@ -2,9 +2,8 @@ import 'server-only';
 
 import { createClient } from '@/lib/supabase/server';
 import { requireEventAccess } from '@/lib/data/events';
-import type { Database } from '@/lib/supabase/types';
-
-type OpStatus = Database['public']['Enums']['contact_op_status'];
+import type { Enums } from '@/lib/supabase/types';
+type OpStatus = Enums<'contact_op_status'>;
 
 // ---------------------------------------------------------------------------
 // Org-aware reads for the guest-detail WhatsApp timeline.

@@ -3,9 +3,8 @@ import 'server-only';
 import { createClient } from '@/lib/supabase/server';
 import { requireUser } from '@/lib/auth/dal';
 import { logActivity } from '@/lib/data/activity';
-import type { Database } from '@/lib/supabase/types';
-
-type ProfileRow = Database['public']['Tables']['profiles']['Row'];
+import type { Tables } from '@/lib/supabase/types';
+type ProfileRow = Tables<'profiles'>;
 
 // DTO: only the columns the account screen needs. The profile row is keyed by
 // the auth user id (profiles.id === auth.users.id); ownership is therefore the

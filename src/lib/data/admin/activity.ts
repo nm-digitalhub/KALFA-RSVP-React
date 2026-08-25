@@ -3,7 +3,7 @@ import 'server-only';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { requirePlatformPermission } from '@/lib/auth/dal';
 import { callbackStatusLabel } from '@/lib/data/admin/labels';
-import type { Database } from '@/lib/supabase/types';
+import type { Tables } from '@/lib/supabase/types';
 import { resolvePage, type PageParams, type PageResult } from './shared';
 
 // Admin: read the audit trail (activity_log). Authorized by the request-scoped
@@ -15,8 +15,8 @@ import { resolvePage, type PageParams, type PageResult } from './shared';
 // summaries, ids, and timestamps, and render the raw JSON only as a fallback
 // within the admin UI.
 
-type ActivityRow = Database['public']['Tables']['activity_log']['Row'];
-type ProfileRow = Database['public']['Tables']['profiles']['Row'];
+type ActivityRow = Tables<'activity_log'>;
+type ProfileRow = Tables<'profiles'>;
 
 export type ActivityEntry = Pick<
   ActivityRow,

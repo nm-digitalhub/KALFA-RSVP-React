@@ -220,8 +220,8 @@ describe.skipIf(!RUN)('record_step_plan — service_role PostgREST rpc INVOKER p
       p_contact: randomUUID(),
       p_expected_step: 0,
       // nullable CAS params (IS NOT DISTINCT FROM) — codegen types them non-null.
-      p_expected_plan_rev: null as unknown as string,
-      p_expected_planned_at: null as unknown as string,
+      p_expected_plan_rev: null,
+      p_expected_planned_at: null,
       p_next_plan_rev: 'probe',
       p_next_planned_at: new Date().toISOString(),
     });

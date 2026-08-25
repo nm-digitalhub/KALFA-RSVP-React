@@ -1,8 +1,7 @@
 import 'server-only';
 
 import { createAdminClient } from '@/lib/supabase/admin';
-import type { Database, Json } from '@/lib/supabase/types';
-
+import type { Enums, Json } from '@/lib/supabase/types';
 // Server-only resolver for the public post-event thank-you page (`/ty/[token]`).
 // Reuses the SAME opaque per-event `gift_link_token` as the gift landing page
 // (documented reuse — the token is not bound to a purpose, just to the event)
@@ -10,7 +9,7 @@ import type { Database, Json } from '@/lib/supabase/types';
 // `getGiftByToken`'s fail-closed gating (unknown/inactive token → null, caller
 // renders one generic message, never revealing which case occurred).
 
-type EventType = Database['public']['Enums']['event_type'];
+type EventType = Enums<'event_type'>;
 
 export interface ThankyouView {
   id: string;

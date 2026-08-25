@@ -1,6 +1,5 @@
-import type { Database } from '@/lib/supabase/types';
-
-export type CampaignStatus = Database['public']['Enums']['campaign_status'];
+import type { Enums } from '@/lib/supabase/types';
+export type CampaignStatus = Enums<'campaign_status'>;
 
 // TypeScript-level shared definition of the OPERATIONAL (non-terminal) campaign
 // statuses: a campaign in any of these remains operational for lifecycle and

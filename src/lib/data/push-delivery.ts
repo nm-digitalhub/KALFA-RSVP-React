@@ -1,7 +1,7 @@
 import 'server-only';
 
 import { createAdminClient } from '@/lib/supabase/admin';
-import type { Database } from '@/lib/supabase/types';
+import type { Tables, TablesInsert } from '@/lib/supabase/types';
 import {
   getWebPushStatusCode,
   pushRowToWebPushSubscription,
@@ -32,8 +32,8 @@ import type { PushMessagePayload, PushSendSummary } from '@/lib/push/types';
  * without the rule firing again.
  */
 
-type PushSubscriptionRow = Database['public']['Tables']['push_subscriptions']['Row'];
-type PushDeliveryLogInsert = Database['public']['Tables']['push_delivery_log']['Insert'];
+type PushSubscriptionRow = Tables<'push_subscriptions'>;
+type PushDeliveryLogInsert = TablesInsert<'push_delivery_log'>;
 
 const PUSH_SUBSCRIPTION_COLUMNS =
   'id, user_id, org_id, endpoint, p256dh_key, auth_key, expiration_time, user_agent, created_at, updated_at, last_seen_at, revoked_at, failure_count, last_error';

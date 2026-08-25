@@ -9,7 +9,7 @@ import {
 import { advanceLegStatus } from '@/lib/data/console-monitor';
 import { getClientIp, rateLimit } from '@/lib/security/rate-limit';
 import { tokenFingerprint } from '@/lib/security/token-fingerprint';
-import type { Database } from '@/lib/supabase/types';
+import type { TablesInsert } from '@/lib/supabase/types';
 import {
   voxCallbackRequestSchema,
   voxCallbackSchema,
@@ -34,7 +34,7 @@ export const dynamic = 'force-dynamic';
 const CB_RATE = { limit: 30, windowMs: 5 * 60 * 1000 } as const;
 const MAX_BODY_BYTES = 256 * 1024; // reject anything larger than a real transcript needs
 
-type WebhookInboxInsert = Database['public']['Tables']['webhook_inbox']['Insert'];
+type WebhookInboxInsert = TablesInsert<'webhook_inbox'>;
 type Json = WebhookInboxInsert['payload'];
 
 // Explicit no-store on every response — the URL carries a bearer token

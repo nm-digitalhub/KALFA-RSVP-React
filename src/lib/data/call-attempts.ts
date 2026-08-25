@@ -1,14 +1,13 @@
 import 'server-only';
 
 import { createAdminClient } from '@/lib/supabase/admin';
-import type { Database, Json } from '@/lib/supabase/types';
-
+import type { Enums, Json, Tables, TablesInsert, TablesUpdate } from '@/lib/supabase/types';
 // Local alias of events.ts's EventType (same Database enum). Deliberately NOT
 // imported from '@/lib/data/events': that module is request-scoped (notFound,
 // requireUser → next/headers), and this file is in the worker's dependency
 // graph — depcruise (worker-no-request-scoped-next, tsPreCompilationDeps)
 // rightly flags even a type-only edge into it.
-type EventType = Database['public']['Enums']['event_type'];
+type EventType = Enums<'event_type'>;
 
 // Request-FREE service-role DAL for the Voximplant AI-call `call_attempts` table.
 // Imported by the ctx/cb route handlers + the call-result processor (and, later,
@@ -17,8 +16,8 @@ type EventType = Database['public']['Enums']['event_type'];
 // the attempt id, or (Branch B) the row's opaque access_token — never from
 // client-supplied ids in a callback body.
 
-type CallAttemptRow = Database['public']['Tables']['call_attempts']['Row'];
-type CallAttemptInsert = Database['public']['Tables']['call_attempts']['Insert'];
+type CallAttemptRow = Tables<'call_attempts'>;
+type CallAttemptInsert = TablesInsert<'call_attempts'>;
 
 // Terminal call outcomes — an older/out-of-order callback must never downgrade a
 // row that already reached one of these (requirement D). Exported so the log
@@ -310,7 +309,7 @@ export async function getGuestRsvpToken(guestId: string): Promise<string | null>
 export type CallOutcomePatch = {
   status: CallAttemptRow['status'];
   recording_url?: string | null;
-  transcript?: Database['public']['Tables']['call_attempts']['Update']['transcript'];
+  transcript?: TablesUpdate<'call_attempts'>['transcript'];
   rsvp_digit?: string | null;
   rsvp_method?: string | null;
   call_duration_sec?: number | null;
@@ -350,7 +349,7 @@ export async function recordRsvpFromCall(
   status: string,
   callAttemptId: string,
 ): Promise<void> {
-  type ActivityLogInsert = Database['public']['Tables']['activity_log']['Insert'];
+  type ActivityLogInsert = TablesInsert<'activity_log'>;
   try {
     const admin = createAdminClient();
     const meta = { guest_id: guestId, status, call_attempt_id: callAttemptId };
@@ -380,7 +379,7 @@ export async function recordRsvpCallRejected(
   reason: string,
   callAttemptId: string,
 ): Promise<void> {
-  type ActivityLogInsert = Database['public']['Tables']['activity_log']['Insert'];
+  type ActivityLogInsert = TablesInsert<'activity_log'>;
   try {
     const admin = createAdminClient();
     const meta = { guest_id: guestId, status, reason, call_attempt_id: callAttemptId };
@@ -595,7 +594,7 @@ export async function recordManualDialOutcome(args: {
 }): Promise<void> {
   try {
     const admin = createAdminClient();
-    type ActivityLogInsert = Database['public']['Tables']['activity_log']['Insert'];
+    type ActivityLogInsert = TablesInsert<'activity_log'>;
     const meta = {
       dispatch_id: args.dispatchId,
       contact_id: args.contactId,
@@ -625,7 +624,7 @@ export async function recordCallbackRequest(
   if (!attempt) return { applied: false };
 
   // Durable record that works before the migration lands (activity_log exists).
-  type ActivityLogInsert = Database['public']['Tables']['activity_log']['Insert'];
+  type ActivityLogInsert = TablesInsert<'activity_log'>;
   const meta = { call_attempt_id: id, when_text: whenText, callback_iso: callbackIso };
   const logRow: ActivityLogInsert = {
     event_id: attempt.event_id,

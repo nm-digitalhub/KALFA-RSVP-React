@@ -1,7 +1,7 @@
 import 'server-only';
 
 import { createAdminClient } from '@/lib/supabase/admin';
-import type { Database } from '@/lib/supabase/types';
+import type { TablesInsert } from '@/lib/supabase/types';
 // Type-only import — erased at compile time, so this module never pulls the
 // dispatcher's runtime graph (voximplant mutations etc.) into the web bundle.
 import type { CallDispatchResult } from '@/lib/data/outreach-calls';
@@ -131,7 +131,7 @@ export function mapDispatchResult(result: FinalDispatchResult): DispatchSettleme
   }
 }
 
-type DispatchInsert = Database['public']['Tables']['call_dispatch_status']['Insert'];
+type DispatchInsert = TablesInsert<'call_dispatch_status'>;
 
 /**
  * Route-side: create the 'accepted' row BEFORE boss.send. Returns false on

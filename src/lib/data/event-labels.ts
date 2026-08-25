@@ -1,4 +1,4 @@
-import type { Database } from '@/lib/supabase/types';
+import type { Enums } from '@/lib/supabase/types';
 import type { CelebrantFieldLabels, HostComposition } from '@/lib/validation/schemas';
 import type { BadgeVariant } from '@/components/ui/badge';
 
@@ -10,9 +10,9 @@ import type { BadgeVariant } from '@/components/ui/badge';
 // server pages (events list, event detail, dashboard) AND by client forms
 // (new/edit event), so it must stay isomorphic.
 
-type EventType = Database['public']['Enums']['event_type'];
-type EventStatus = Database['public']['Enums']['event_status'];
-type CampaignStatus = Database['public']['Enums']['campaign_status'];
+type EventType = Enums<'event_type'>;
+type EventStatus = Enums<'event_status'>;
+type CampaignStatus = Enums<'campaign_status'>;
 
 export const EVENT_TYPE_LABELS: Record<EventType, string> = {
   wedding: 'חתונה',

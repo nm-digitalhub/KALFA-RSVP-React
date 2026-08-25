@@ -1,6 +1,6 @@
 import 'server-only';
 
-import type { Database } from '@/lib/supabase/types';
+import type { Enums, Tables, TablesInsert, TablesUpdate } from '@/lib/supabase/types';
 import {
   getCallAttemptById,
   recordRsvpCallRejected,
@@ -24,7 +24,7 @@ import {
   type VoxSaveRsvp,
 } from '@/lib/validation/voximplant';
 
-type WebhookInboxRow = Database['public']['Tables']['webhook_inbox']['Row'];
+type WebhookInboxRow = Tables<'webhook_inbox'>;
 
 // Process ONE persisted Voximplant call-result callback (event_kind==='call_result').
 // Called by processWebhookEvent (the existing webhook drain) AND, best-effort,
@@ -79,7 +79,7 @@ export async function processCallResult(row: WebhookInboxRow): Promise<void> {
       status: body.call_status,
       recording_url: recording.url,
       transcript: (body.transcript ??
-        null) as Database['public']['Tables']['call_attempts']['Update']['transcript'],
+        null) as TablesUpdate<'call_attempts'>['transcript'],
       rsvp_digit: body.rsvp_digit ?? null,
       rsvp_method: body.rsvp_method ?? null,
       call_duration_sec: duration,
@@ -161,7 +161,7 @@ export async function processCallResult(row: WebhookInboxRow): Promise<void> {
   // only when we actually advanced the row (guards out-of-order). No billing/RSVP —
   // call_status is NOT an RSVP answer, and a recording_url is not proof of success.
   const opFor: Partial<
-    Record<typeof body.call_status, Database['public']['Enums']['contact_op_status']>
+    Record<typeof body.call_status, Enums<'contact_op_status'>>
   > = { no_answer: 'no_answer', no_response: 'no_answer' };
   // EVERY side effect is gated on the CAS: a stale / out-of-order callback whose
   // status transition the CAS REJECTS (applied=false) performs a FULL no-op — the
@@ -300,7 +300,7 @@ export async function processOwnerNote(
   const attempt = await getCallAttemptById(attemptId);
   if (!attempt) return { ok: false };
 
-  type ActivityLogInsert = Database['public']['Tables']['activity_log']['Insert'];
+  type ActivityLogInsert = TablesInsert<'activity_log'>;
   const admin = createAdminClient();
   const meta = {
     kind: body.kind,

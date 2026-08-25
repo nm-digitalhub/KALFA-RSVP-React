@@ -16,9 +16,8 @@ import {
   type CampaignDeliveryBreakdown,
 } from '@/lib/data/campaign-delivery';
 import { getCampaignBillingSummary, type BillingSummary } from '@/lib/data/billing';
-import type { Database } from '@/lib/supabase/types';
-
-type EventStatus = Database['public']['Enums']['event_status'];
+import type { Enums } from '@/lib/supabase/types';
+type EventStatus = Enums<'event_status'>;
 
 export type SectionState = 'visible' | 'permission_limited' | 'empty' | 'error';
 

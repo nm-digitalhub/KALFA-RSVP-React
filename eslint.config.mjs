@@ -20,6 +20,9 @@ const eslintConfig = defineConfig([
     "next-env.d.ts",
     // The bundled pg-boss worker artifact (esbuild output, not source).
     "dist/**",
+    // Supabase schema types — generator output (`npm run gen:types`), never
+    // hand-edited; `npm run types:check` guards it against the live DB instead.
+    "src/lib/supabase/types.generated.ts",
     // Harness session data (not application source).
     ".remember/**",
     // Local agent/skill config — subagent defs, references, and VoxEngine template

@@ -4,7 +4,7 @@ import { randomBytes } from 'node:crypto';
 
 import { createClient } from '@/lib/supabase/server';
 import { requirePlatformPermission } from '@/lib/auth/dal';
-import type { Database } from '@/lib/supabase/types';
+import type { TablesUpdate } from '@/lib/supabase/types';
 import {
   getVoximplantConfig,
   envAllowsLiveCalls,
@@ -136,7 +136,7 @@ export async function updateVoximplantChannelConfig(
   // existing DB value / default). The write-only service-account JSON is also
   // omitted when blank ("leave as-is") and written only on a fresh non-empty
   // value.
-  const patch: Database['public']['Tables']['app_settings']['Update'] = {
+  const patch: TablesUpdate<'app_settings'> = {
     voximplant_rule_id: input.voximplant_rule_id || null,
     voximplant_caller_id: input.voximplant_caller_id || null,
     voximplant_callback_secret: input.voximplant_callback_secret || null,
@@ -287,10 +287,10 @@ export async function wireVoximplantAccountCallback(): Promise<WireAccountCallba
   const callbackUrl = await getAppUrl(`/api/voximplant/account-callback/${rawToken}`);
 
   // 1. Persist hash+salt+prev+state='pending' FIRST (before the provider call).
-  const pendingPatch: Database['public']['Tables']['app_settings']['Update'] = {
+  const pendingPatch: TablesUpdate<'app_settings'> = {
     voximplant_account_callback_token_hash: tokenHash,
     voximplant_account_callback_salt: salt,
-    voximplant_account_callback_prev: prev as unknown as Database['public']['Tables']['app_settings']['Update']['voximplant_account_callback_prev'],
+    voximplant_account_callback_prev: prev as unknown as TablesUpdate<'app_settings'>['voximplant_account_callback_prev'],
     voximplant_account_callback_state: 'pending',
   };
   const { error: persistErr } = await supabase

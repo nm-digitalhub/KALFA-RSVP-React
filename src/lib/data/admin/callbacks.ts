@@ -9,7 +9,7 @@ import {
   rescheduleCallbackRequest,
   type RescheduleOutcome,
 } from '@/lib/data/callback-scheduling';
-import type { Database } from '@/lib/supabase/types';
+import type { Tables } from '@/lib/supabase/types';
 import type { CallOutcome } from '@/lib/validation/admin';
 import { resolvePage, type PageParams, type PageResult } from './shared';
 
@@ -25,7 +25,7 @@ import { resolvePage, type PageParams, type PageResult } from './shared';
 // cancelCallback), `call_outcome` is what the OWNER recorded after making the
 // call (admin-set — see updateCallOutcome). Never conflate the two again.
 
-type CallbackRow = Database['public']['Tables']['callback_requests']['Row'];
+type CallbackRow = Tables<'callback_requests'>;
 
 export type CallbackRequest = Pick<
   CallbackRow,

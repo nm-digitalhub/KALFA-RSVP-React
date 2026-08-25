@@ -1,10 +1,10 @@
 import 'server-only';
 
 import { createAdminClient } from '@/lib/supabase/admin';
-import type { Database } from '@/lib/supabase/types';
+import type { TablesInsert } from '@/lib/supabase/types';
 import type { NormalizedCallAnalysis } from '@/lib/validation/elevenlabs-payloads';
 
-type CallAnalysisInsert = Database['public']['Tables']['call_analysis']['Insert'];
+type CallAnalysisInsert = TablesInsert<'call_analysis'>;
 
 // Persist a metadata-only ElevenLabs call-analysis signal (QA + billing). Written
 // by the HMAC-authed webhook route via the service-role client (the request is

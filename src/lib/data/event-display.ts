@@ -12,9 +12,8 @@ import {
 } from '@/lib/date';
 import { ilTimeInputValue } from '@/lib/data/event-date';
 import { EVENT_TYPES } from '@/lib/validation/schemas';
-import type { Database } from '@/lib/supabase/types';
-
-type EventType = Database['public']['Enums']['event_type'];
+import type { Enums } from '@/lib/supabase/types';
+type EventType = Enums<'event_type'>;
 
 // Official payment-brand marks for the gift CTA (public/brands — bit's is the
 // favicon from bitpay.co.il, PayBox's is its official App Store icon). An

@@ -6,7 +6,7 @@ import { logActivity } from '@/lib/data/activity';
 import { getEmailSender } from '@/lib/email/sender';
 import { getAppOrigin } from '@/lib/url';
 import { inquiryReplyEmail } from '@/lib/email/templates';
-import type { Database } from '@/lib/supabase/types';
+import type { Tables } from '@/lib/supabase/types';
 import type { ContactStatus } from '@/lib/validation/admin';
 import { resolvePage, type PageParams, type PageResult } from './shared';
 
@@ -15,7 +15,7 @@ import { resolvePage, type PageParams, type PageResult } from './shared';
 // RLS policy (has_role admin). We additionally gate with
 // requirePlatformPermission() server-side so a non-admin never reaches the query.
 
-type ContactMessageRow = Database['public']['Tables']['contact_messages']['Row'];
+type ContactMessageRow = Tables<'contact_messages'>;
 
 // DTO: exactly the columns the admin list needs. The select string IS the
 // contract — rows are returned pass-through. `status`/`topic`/`user_id`/

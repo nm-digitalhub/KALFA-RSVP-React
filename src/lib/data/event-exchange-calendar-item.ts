@@ -9,9 +9,8 @@
 import { escapeHtml } from '@/lib/callbacks/calendar-item';
 import { eventHeadingFor } from '@/lib/data/celebrant-display';
 import type { AppointmentDraft, AppointmentUpdate } from '@/lib/exchange-ews/types';
-import type { Database, Json } from '@/lib/supabase/types';
-
-type EventType = Database['public']['Enums']['event_type'];
+import type { Enums, Json } from '@/lib/supabase/types';
+type EventType = Enums<'event_type'>;
 
 /** Outlook category for a synced, still-active event (owner decision). */
 export const EVENT_EXCHANGE_CATEGORY = 'KALFA — אירוע לקוח';

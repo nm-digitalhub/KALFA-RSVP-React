@@ -12,15 +12,14 @@ import { createAdminClient } from '@/lib/supabase/admin';
 import { sendSlackAlert } from '@/lib/alerts/slack';
 import { getBaseOveragePricingEnabled } from '@/lib/data/payments';
 import { celebrantsCompleteFor } from '@/lib/validation/schemas';
-import type { Database, Json } from '@/lib/supabase/types';
-
+import type { Enums, Json, Tables, TablesUpdate } from '@/lib/supabase/types';
 // Campaign = "campaign approval for an event" (outcome-billing). Owner sets the
 // commercial terms; the charge ceiling is computed server-side. Reads are
 // owner-scoped via RLS (owns_event); writes go through the service-role admin
 // client after an explicit ownership check (no client-side billing writes, §18).
 
-type CampaignRow = Database['public']['Tables']['campaigns']['Row'];
-type Channel = Database['public']['Enums']['campaign_channel'];
+type CampaignRow = Tables<'campaigns'>;
+type Channel = Enums<'campaign_channel'>;
 
 export type OwnerCampaign = Pick<
   CampaignRow,
@@ -717,7 +716,7 @@ export async function markCampaignChargeOutcome(
   creditApplied?: number,
 ): Promise<void> {
   const admin = createAdminClient();
-  const payload: Database['public']['Tables']['campaigns']['Update'] = {
+  const payload: TablesUpdate<'campaigns'> = {
     charge_status: outcome,
   };
   if (outcome === 'nothing_to_charge') {
@@ -744,7 +743,7 @@ export async function markCampaignChargeOutcome(
 // final reached-contact total) is intentionally NOT here — it depends on
 // billed_results (B2) and is a separate, gated step.
 
-export type CampaignStatus = Database['public']['Enums']['campaign_status'];
+export type CampaignStatus = Enums<'campaign_status'>;
 
 // WHO is performing a campaign transition.
 //
@@ -897,11 +896,9 @@ export async function activateCampaign(
   const seeded = defaultThankyouSendAt(eventDate);
   if (seeded) {
     const admin = createAdminClient();
-    // thankyou_send_at lands with supabase/migrations/20260712205030_auto_
-    // thankyou_schema.sql — forward-compat cast until `gen types` runs.
     await admin
       .from('campaigns')
-      .update({ thankyou_send_at: seeded } as unknown as Database['public']['Tables']['campaigns']['Update'])
+      .update({ thankyou_send_at: seeded })
       .eq('id', campaignId)
       .is('thankyou_send_at', null);
   }
@@ -931,12 +928,13 @@ export async function pauseCampaign(
 }
 
 // --- Auto-thankyou owner controls -------------------------------------------
-// thankyou_auto_enabled / thankyou_send_at / thankyou_sent_at land with
-// supabase/migrations/20260712205030_auto_thankyou_schema.sql — forward-compat
-// select('*') + runtime narrowing until `gen types` runs (same stance as the
-// gift columns in outreach.ts). The sweep itself (src/lib/data/auto-thankyou.ts)
-// reads these via its own admin-scoped query; these are the OWNER-FACING
-// read/write, RLS-scoped like the rest of this file's getters/setters.
+// thankyou_auto_enabled / thankyou_send_at / thankyou_sent_at (migration
+// 20260712205030_auto_thankyou_schema.sql, applied + gen-typed). The read below
+// keeps its select('*') + runtime narrowing as a fail-open guard (an absent
+// column must read as the plan's default, not "disabled"); the write is typed.
+// The sweep itself (src/lib/data/auto-thankyou.ts) reads these via its own
+// admin-scoped query; these are the OWNER-FACING read/write, RLS-scoped like
+// the rest of this file's getters/setters.
 
 export type ThankyouSchedule = {
   autoEnabled: boolean;
@@ -984,7 +982,7 @@ export async function updateThankyouSchedule(
   }
   await requireOwnedEvent(campaign.event_id); // ownership, defense-in-depth beyond RLS
 
-  const update: Record<string, unknown> = {};
+  const update: TablesUpdate<'campaigns'> = {};
   if (patch.autoEnabled !== undefined) update.thankyou_auto_enabled = patch.autoEnabled;
   if (patch.sendAt !== undefined) update.thankyou_send_at = patch.sendAt;
   if (Object.keys(update).length === 0) return;
@@ -992,7 +990,7 @@ export async function updateThankyouSchedule(
   const admin = createAdminClient();
   const { data: updated, error: upErr } = await admin
     .from('campaigns')
-    .update(update as unknown as Database['public']['Tables']['campaigns']['Update'])
+    .update(update)
     .eq('id', campaignId)
     .is('thankyou_sent_at', null)
     .select('id')

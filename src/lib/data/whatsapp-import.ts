@@ -9,9 +9,8 @@ import { importRowSchema } from '@/lib/validation/guests';
 import { guestImportHeaderKey } from '@/lib/data/guest-import-shared';
 import { ISRAELI_PHONE_RE } from '@/lib/constants';
 import { EVENT_TYPE_LABELS } from '@/lib/data/event-labels';
-import type { Database, Json } from '@/lib/supabase/types';
-
-type EventType = Database['public']['Enums']['event_type'];
+import type { Enums, Json } from '@/lib/supabase/types';
+type EventType = Enums<'event_type'>;
 
 // The minimum an owner's active event needs for import routing + the reply
 // label. `name` is the owner's free-text title (may be empty → type label).

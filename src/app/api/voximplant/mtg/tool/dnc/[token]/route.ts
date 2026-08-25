@@ -3,7 +3,7 @@ import { NextResponse } from 'next/server';
 import { insertWebhookEvents } from '@/lib/data/webhooks';
 import { processMeetingOptOut } from '@/lib/data/callback-voice-processing';
 import { guardMeetingToolRequest } from '@/lib/voximplant/agent-tool-guard';
-import type { Database } from '@/lib/supabase/types';
+import type { TablesInsert } from '@/lib/supabase/types';
 import { voxMeetingOptOutSchema } from '@/lib/validation/voximplant';
 
 // POST /api/voximplant/mtg/tool/dnc/{token}
@@ -23,7 +23,7 @@ export const dynamic = 'force-dynamic';
 
 const MAX_BODY_BYTES = 4 * 1024;
 
-type WebhookInboxInsert = Database['public']['Tables']['webhook_inbox']['Insert'];
+type WebhookInboxInsert = TablesInsert<'webhook_inbox'>;
 type Json = WebhookInboxInsert['payload'];
 
 const NO_STORE = { 'Cache-Control': 'no-store' } as const;

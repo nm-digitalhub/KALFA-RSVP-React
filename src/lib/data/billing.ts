@@ -2,9 +2,8 @@ import 'server-only';
 
 import { createAdminClient } from '@/lib/supabase/admin';
 import { setContactOpStatus } from '@/lib/data/interactions';
-import type { Database } from '@/lib/supabase/types';
-
-type Channel = Database['public']['Enums']['campaign_channel'];
+import type { Enums } from '@/lib/supabase/types';
+type Channel = Enums<'campaign_channel'>;
 
 // All billing writes go through the try_record_billed_result RPC — the cap +
 // window + one-per-(event,contact) dedup live in that locked txn, never in JS.

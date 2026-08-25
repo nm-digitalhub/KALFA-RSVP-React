@@ -2,10 +2,10 @@ import 'server-only';
 
 import webpush, { type PushSubscription } from 'web-push';
 
-import type { Database } from '@/lib/supabase/types';
+import type { Tables } from '@/lib/supabase/types';
 import type { PushMessagePayload } from './types';
 
-type PushSubscriptionRow = Database['public']['Tables']['push_subscriptions']['Row'];
+type PushSubscriptionRow = Tables<'push_subscriptions'>;
 
 let vapidConfigured = false;
 

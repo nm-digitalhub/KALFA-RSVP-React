@@ -6,14 +6,13 @@ import { createAdminClient } from '@/lib/supabase/admin';
 import { normalizePhone } from '@/lib/phone';
 import { isReconcileEnabled } from '@/lib/data/reconcile-config';
 import { resolveSendableContacts } from '@/lib/data/sendable-contacts';
-import type { Database } from '@/lib/supabase/types';
-
+import type { Tables } from '@/lib/supabase/types';
 // "Contacts" = unique reachable phones per event (§2–3). Built from the event's
 // guests by normalizing to E.164 and de-duplicating; many guests may share one
 // phone → one contact. Access is enforced (requireEventAccess); contact writes
 // go through the service-role admin client (contacts are admin-write under RLS).
 
-type ContactRow = Database['public']['Tables']['contacts']['Row'];
+type ContactRow = Tables<'contacts'>;
 export type EventContact = Pick<
   ContactRow,
   'id' | 'normalized_phone' | 'op_status' | 'removal_requested'

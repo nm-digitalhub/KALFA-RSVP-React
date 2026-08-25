@@ -1,8 +1,7 @@
 import 'server-only';
 
 import { createAdminClient } from '@/lib/supabase/admin';
-import type { Database, Json } from '@/lib/supabase/types';
-
+import type { Enums, Json, Tables } from '@/lib/supabase/types';
 // Request-free CORE of template resolution — the campaign outreach engine's
 // internal template readers (service-role, read-only, active-only). It lives in
 // its OWN module (not message-templates.ts) so the worker send path can import it
@@ -15,7 +14,7 @@ import type { Database, Json } from '@/lib/supabase/types';
 // intentionally NONE — they are non-admin, active-only reads; the admin surface
 // lives in message-templates.ts and IS gated.
 
-type MessageTemplateRow = Database['public']['Tables']['message_templates']['Row'];
+type MessageTemplateRow = Tables<'message_templates'>;
 
 export type ResolvedTemplate = Pick<MessageTemplateRow, 'name' | 'language' | 'channel'> & {
   // Optional IMAGE-header sibling template (components.media_variant, admin
@@ -51,7 +50,7 @@ export async function getTemplateByKey(
 
 // --- Event-type variant resolution ------------------------------------------
 
-type EventType = Database['public']['Enums']['event_type'];
+type EventType = Enums<'event_type'>;
 
 // The `components` jsonb may carry a data-driven variant mapping (set by an
 // admin, e.g. `{"variants": {"wedding": "kalfa_wedding_invite_v1"}}`) that

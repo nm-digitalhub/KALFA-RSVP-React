@@ -2,8 +2,7 @@ import 'server-only';
 
 import { createClient } from '@/lib/supabase/server';
 import { requirePlatformPermission } from '@/lib/auth/dal';
-import type { Database } from '@/lib/supabase/types';
-
+import type { TablesUpdate } from '@/lib/supabase/types';
 // Admin editor DAL for the outreach-channel catalog (public.channels — Stage 1 of
 // plans/channels-data-driven-plan.md). Reads/writes the DISPLAY metadata only:
 // label, built-flag, active (show/hide in the package form), and order. Gated by
@@ -50,7 +49,7 @@ export async function updateChannelMetadata(
 ): Promise<void> {
   await requirePlatformPermission('manage_settings');
   const supabase = await createClient();
-  const patch: Database['public']['Tables']['channels']['Update'] = {
+  const patch: TablesUpdate<'channels'> = {
     display_name: input.display_name,
     is_built: input.is_built,
     active: input.active,

@@ -2,8 +2,7 @@ import 'server-only';
 
 import { requireEventAccess } from '@/lib/data/events';
 import { createClient } from '@/lib/supabase/server';
-import type { Database } from '@/lib/supabase/types';
-
+import type { Enums } from '@/lib/supabase/types';
 // B8 — the WhatsApp/Meta webhook breakdown for a campaign, shown BESIDE (never
 // replacing) the existing billing summary on the campaign board. Every figure is
 // a reflection of an inbound Meta signal:
@@ -14,7 +13,7 @@ import type { Database } from '@/lib/supabase/types';
 // and the campaign's event ownership is re-asserted (defense-in-depth). The
 // billing summary (reached/accrued/ceiling) is a separate RPC and is untouched.
 
-type OpStatus = Database['public']['Enums']['contact_op_status'];
+type OpStatus = Enums<'contact_op_status'>;
 
 export type CampaignDeliveryBreakdown = {
   // Distinct contacts targeted by the campaign (the denominator for every bucket).

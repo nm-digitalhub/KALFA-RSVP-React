@@ -496,9 +496,10 @@ export async function cancelOutreachForContact(
 // The four RPCs below are SECURITY INVOKER / service_role-only (createAdminClient
 // runs as service_role). Each returns the RPC's text verdict; a transport error
 // surfaces as 'error' (the caller decides — never silently advance). Some SQL
-// params are NULLABLE (the CAS uses IS NOT DISTINCT FROM) but supabase codegen
-// types them non-null, so we assert `as string` at exactly those call sites —
-// this bridges a codegen nullability gap, it does not suppress a real type bug.
+// params are NULLABLE (the CAS uses IS NOT DISTINCT FROM); the generated Args
+// type them non-null, and src/lib/supabase/types.ts (MergeDeep override layer)
+// restores `string | null` for exactly those params, so the calls below are
+// fully typed — no casts.
 // ─────────────────────────────────────────────────────────────────────────────
 
 export async function recordPlan(input: {
@@ -515,8 +516,8 @@ export async function recordPlan(input: {
     p_campaign: input.campaignId,
     p_contact: input.contactId,
     p_expected_step: input.expectedStepIndex,
-    p_expected_plan_rev: input.expectedPlanRev as string,
-    p_expected_planned_at: input.expectedPlannedAt as string,
+    p_expected_plan_rev: input.expectedPlanRev,
+    p_expected_planned_at: input.expectedPlannedAt,
     p_next_plan_rev: input.nextPlanRev,
     p_next_planned_at: input.nextPlannedAtIso,
   });
@@ -584,9 +585,9 @@ export async function resolveStep(input: {
     p_contact: input.contactId,
     p_step: input.stepIndex,
     p_expected_plan_rev: input.planRev,
-    p_job_id: input.jobId as string,
+    p_job_id: input.jobId,
     p_advance: input.advance,
-    p_terminal_status: input.terminalStatus as string,
+    p_terminal_status: input.terminalStatus,
     p_reason: input.reason,
     p_event_id: input.eventId,
     p_audit_id: input.auditId,

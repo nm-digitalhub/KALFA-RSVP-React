@@ -2,8 +2,7 @@ import 'server-only';
 
 import { createAdminClient } from '@/lib/supabase/admin';
 import { CALLBACK_MAX_ATTEMPTS, CONSOLE_DIAL_AUDIT_ACTION } from '@/lib/data/console-calls';
-import type { Database } from '@/lib/supabase/types';
-
+import type { Tables, TablesInsert } from '@/lib/supabase/types';
 // Request-FREE service-role DAL for callback_request_attempts — the
 // Voximplant token/dispatch-bookkeeping table parallel to call_attempts, but
 // scoped to callback_requests (meeting-confirmation/reschedule calls; see
@@ -20,8 +19,8 @@ import type { Database } from '@/lib/supabase/types';
 // migration's own comment for the full reasoning; this file only ever touches
 // dispatch_status.
 
-type AttemptRow = Database['public']['Tables']['callback_request_attempts']['Row'];
-type AttemptInsert = Database['public']['Tables']['callback_request_attempts']['Insert'];
+type AttemptRow = Tables<'callback_request_attempts'>;
+type AttemptInsert = TablesInsert<'callback_request_attempts'>;
 
 // Mirrors call_attempts' own PRE_TERMINAL exactly (call-attempts.ts) — the
 // dispatch_status CHECK constraint's pre-terminal subset. Used for the
@@ -295,7 +294,7 @@ export async function countRecentCallbackAuditedAttempts(
 export async function recordCallbackDialAudit(callbackRequestId: string): Promise<void> {
   try {
     const admin = createAdminClient();
-    type ActivityLogInsert = Database['public']['Tables']['activity_log']['Insert'];
+    type ActivityLogInsert = TablesInsert<'activity_log'>;
     const row: ActivityLogInsert = {
       event_id: null,
       user_id: null,

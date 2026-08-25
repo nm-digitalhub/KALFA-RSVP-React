@@ -3,7 +3,6 @@ import 'server-only';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { sendCampaignWhatsApp } from '@/lib/data/outreach';
 import { sendSlackAlert } from '@/lib/alerts/slack';
-import type { Database } from '@/lib/supabase/types';
 
 // The auto-thankyou periodic sweep (docs/plans auto-thankyou-post-event,
 // decisions confirmed 2026-07-12): a pg-boss cron job (worker/main.ts) calls
@@ -15,11 +14,10 @@ import type { Database } from '@/lib/supabase/types';
 // construction).
 //
 // campaigns.thankyou_auto_enabled / thankyou_send_at / thankyou_sent_at and
-// contact_interactions.message_key land with a pending migration
-// (supabase/migrations/20260712205030_auto_thankyou_schema.sql) — every read
-// below goes through select('*') + runtime narrowing (forward-compat, same
-// stance as outreach-config.ts / payments.ts) until `gen types` runs post-
-// deploy; writes use a documented `as unknown as` cast for the same reason.
+// contact_interactions.message_key come from migration
+// 20260712205030_auto_thankyou_schema.sql (applied + gen-typed). The read below
+// keeps select('*') + runtime narrowing as a fail-closed guard — a malformed or
+// missing value skips the campaign rather than sending; the write is typed.
 
 type AdminClient = ReturnType<typeof createAdminClient>;
 
@@ -70,9 +68,7 @@ export async function listDueThankyouCampaigns(
 async function markThankyouProcessed(admin: AdminClient, campaignId: string): Promise<void> {
   const { error } = await admin
     .from('campaigns')
-    .update({
-      thankyou_sent_at: new Date().toISOString(),
-    } as unknown as Database['public']['Tables']['campaigns']['Update'])
+    .update({ thankyou_sent_at: new Date().toISOString() })
     .eq('id', campaignId);
   if (error) {
     console.error('[auto-thankyou] failed to mark campaign processed', campaignId, error.code);

@@ -3,8 +3,7 @@ import 'server-only';
 import { randomUUID } from 'node:crypto';
 
 import { createAdminClient } from '@/lib/supabase/admin';
-import type { Database } from '@/lib/supabase/types';
-
+import type { TablesUpdate } from '@/lib/supabase/types';
 // Data layer for human-agent monitor / takeover — the "attach a listening or
 // speaking human leg to a live AI call" flow.
 //
@@ -126,7 +125,7 @@ export async function advanceLegStatus(
   failureCode?: string,
 ): Promise<void> {
   const admin = createAdminClient();
-  const patch: Database['public']['Tables']['human_agent_call_legs']['Update'] = {
+  const patch: TablesUpdate<'human_agent_call_legs'> = {
     status: legStatus,
   };
   const stamp = LEG_STATUS_STAMP[legStatus];

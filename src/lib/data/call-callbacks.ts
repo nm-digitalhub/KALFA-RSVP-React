@@ -2,7 +2,7 @@ import 'server-only';
 
 import { sendSlackAlert } from '@/lib/alerts/slack';
 import { createAdminClient } from '@/lib/supabase/admin';
-import type { Database } from '@/lib/supabase/types';
+import type { TablesUpdate } from '@/lib/supabase/types';
 import { QUEUES, type OutreachCallRequest } from '@/lib/queue/queues';
 import type { PgBoss } from 'pg-boss';
 
@@ -22,7 +22,7 @@ import type { PgBoss } from 'pg-boss';
 // Request-FREE (service-role only) so the worker bundle can import it.
 
 type AdminClient = ReturnType<typeof createAdminClient>;
-type CallAttemptUpdate = Database['public']['Tables']['call_attempts']['Update'];
+type CallAttemptUpdate = TablesUpdate<'call_attempts'>;
 
 // call_attempts is UNIQUE(campaign_id, contact_id, touchpoint_index). A
 // callback re-dial needs an index that can never collide with a real campaign

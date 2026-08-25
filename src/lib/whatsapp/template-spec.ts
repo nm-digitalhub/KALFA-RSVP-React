@@ -29,15 +29,15 @@ import {
   type CelebrantFieldKey,
   type HostComposition,
 } from '@/lib/validation/schemas';
-import type { Database, Json } from '@/lib/supabase/types';
+import type { Enums, Json, Tables } from '@/lib/supabase/types';
 import {
   ISRAEL_TIME_ZONE,
   formatIsraelHebrewDate,
   formatIsraelWeekday,
 } from '@/lib/date';
 
-type EventRow = Database['public']['Tables']['events']['Row'];
-type EventType = Database['public']['Enums']['event_type'];
+type EventRow = Tables<'events'>;
+type EventType = Enums<'event_type'>;
 
 // Which template family the resolved template name belongs to. The generic
 // family works for all nine event types; `wedding` is selected data-driven via

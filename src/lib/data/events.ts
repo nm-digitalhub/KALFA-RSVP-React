@@ -10,13 +10,13 @@ import { logActivity } from '@/lib/data/activity';
 import { ensurePersonalOrg } from '@/lib/data/orgs';
 import { OPERATIONAL_CAMPAIGN_STATUSES } from '@/lib/data/campaign-status';
 import { isBeforeTomorrowIL, todayIL } from '@/lib/data/event-date';
-import type { Database, Json } from '@/lib/supabase/types';
+import type { Enums, Json, Tables, TablesUpdate } from '@/lib/supabase/types';
 import { celebrantsCompleteFor } from '@/lib/validation/schemas';
 import type { CelebrantsInput } from '@/lib/validation/schemas';
 
-type EventRow = Database['public']['Tables']['events']['Row'];
-export type EventType = Database['public']['Enums']['event_type'];
-export type EventStatus = Database['public']['Enums']['event_status'];
+type EventRow = Tables<'events'>;
+export type EventType = Enums<'event_type'>;
+export type EventStatus = Enums<'event_status'>;
 
 // Event scoped to the current owner, for nested domains (guests, reports, …).
 // owner is derived server-side from the session — never from the browser.
@@ -340,7 +340,7 @@ export async function updateEvent(
 
   const datesPresent = 'event_date' in input || 'rsvp_deadline' in input;
 
-  const update: Database['public']['Tables']['events']['Update'] = {
+  const update: TablesUpdate<'events'> = {
     name: input.name,
     event_type: input.event_type,
     venue_name: input.venue_name,

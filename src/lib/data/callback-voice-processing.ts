@@ -8,7 +8,7 @@ import {
 import { rescheduleCallbackRequest } from '@/lib/data/callback-scheduling';
 import { insertContactMessage } from '@/lib/data/inquiry-intake';
 import { INQUIRY_TOPICS } from '@/lib/validation/inquiries';
-import type { Database } from '@/lib/supabase/types';
+import type { Tables } from '@/lib/supabase/types';
 import type {
   VoxMeetingEscalate,
   VoxRequestReschedule,
@@ -93,7 +93,7 @@ export async function processMeetingOptOut(attemptId: string): Promise<{ ok: boo
 }
 
 export async function processMeetingOptOutRow(
-  row: Database['public']['Tables']['webhook_inbox']['Row'],
+  row: Tables<'webhook_inbox'>,
 ): Promise<void> {
   if (!row.message_id) return;
   await processMeetingOptOut(row.message_id);

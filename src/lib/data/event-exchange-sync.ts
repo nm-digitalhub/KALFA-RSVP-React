@@ -33,11 +33,11 @@ import { resolveMailboxPassword } from '@/lib/exchange-ews/mailbox-credential';
 import { calendarProvider } from '@/lib/exchange-ews/calendar-provider';
 import type { ExchangeConnectionConfig } from '@/lib/exchange-ews/types';
 import { createAdminClient } from '@/lib/supabase/admin';
-import type { Database } from '@/lib/supabase/types';
+import type { Enums, Tables } from '@/lib/supabase/types';
 import { getAppUrl } from '@/lib/url';
 
 type AdminClient = ReturnType<typeof createAdminClient>;
-type EventType = Database['public']['Enums']['event_type'];
+type EventType = Enums<'event_type'>;
 
 // ── The business connection ─────────────────────────────────────────────────
 
@@ -95,7 +95,7 @@ type EventForSync = {
   event_type: EventType;
   event_date: string | null;
   rsvp_deadline: string | null;
-  celebrants: Database['public']['Tables']['events']['Row']['celebrants'];
+  celebrants: Tables<'events'>['celebrants'];
   notes: string | null;
 };
 

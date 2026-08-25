@@ -12,7 +12,7 @@ import {
   getGuestTotals,
   type GuestListItem,
 } from '@/lib/data/guests';
-import type { Database } from '@/lib/supabase/types';
+import type { Enums } from '@/lib/supabase/types';
 import {
   GUEST_STATUS_LABELS,
   OP_STATUS_LABELS,
@@ -25,8 +25,8 @@ import {
 
 export const metadata: Metadata = { title: 'רשימת מוזמנים' };
 
-type GuestStatus = Database['public']['Enums']['guest_status'];
-type ContactOpStatus = Database['public']['Enums']['contact_op_status'];
+type GuestStatus = Enums<'guest_status'>;
+type ContactOpStatus = Enums<'contact_op_status'>;
 
 // Guest status → Badge variant. Exhaustive so a new enum value is a compile error.
 const GUEST_STATUS_VARIANTS: Record<GuestStatus, BadgeVariant> = {
