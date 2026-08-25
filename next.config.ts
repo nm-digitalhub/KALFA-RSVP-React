@@ -116,6 +116,12 @@ const nextConfig: NextConfig = {
           { key: 'X-Content-Type-Options', value: 'nosniff' },
           { key: 'X-Frame-Options', value: 'DENY' },
           { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
+          // HSTS (owner decision 2026-08-24). nginx already 301s http→https for
+          // beta.kalfa.me; this tells browsers to never try http first. Value
+          // per node_modules/next/dist/docs/.../headers.md §Strict-Transport-Security
+          // (2 years), WITHOUT `preload` — preload is effectively irreversible.
+          // Measured 24.8: no Strict-Transport-Security anywhere on beta before this.
+          { key: 'Strict-Transport-Security', value: 'max-age=63072000; includeSubDomains' },
         ],
       },
       // Public RSVP pages carry a per-guest bearer token in the path. A Server

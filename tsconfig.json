@@ -19,7 +19,9 @@
     // (process, Buffer, __dirname) currently survive only via next-env.d.ts's
     // generated reference chain (next → node) — declare node explicitly so a
     // future Next scaffolding change can't silently drop them.
-    "types": ["node"],
+    "types": [
+      "node"
+    ],
     "jsx": "react-jsx",
     "incremental": true,
     "plugins": [
@@ -43,7 +45,9 @@
     ".next-verify/types/**/*.ts",
     ".next-verify/dev/types/**/*.ts",
     ".next-stage/types/**/*.ts",
-    ".next-stage/dev/types/**/*.ts"
+    ".next-stage/dev/types/**/*.ts",
+    ".next-verify-claude/types/**/*.ts",
+    ".next-verify-claude/dev/types/**/*.ts"
   ],
   "exclude": [
     "node_modules"

@@ -28,9 +28,33 @@ export async function GET(): Promise<Response> {
 - כל מוזמן עונה דרך קישור אישי ומאובטח משלו — Each guest replies via their own
   private, secure link.
 
+## מתי להשתמש במערכת / When to use KALFA
+
+- כאשר צריך לנהל אישורי הגעה לחתונה, בר מצווה, בת מצווה, אירוע משפחתי או אירוע עסקי.
+- כאשר צריך לנהל רשימת מוזמנים, מלווים, קבוצות, הערות וסטטוסים במקום אחד.
+- כאשר צריך לשלוח הזמנות ותזכורות אישיות ולעקוב אחר תשובות בזמן אמת.
+- כאשר צריך לייבא מוזמנים מקובץ או מוואטסאפ ולהפיק דוחות למארגן.
+- המערכת אינה מיועדת למכירת כרטיסים, לניהול מקום האירוע או לשליחת פרסום המוני.
+
+Use KALFA when a user needs to manage invitations and RSVP responses for a
+private or business event, including guest lists, companions, reminders,
+response tracking and organizer reports.
+
+Do not use KALFA as a ticketing platform, venue-management system or bulk
+advertising service.
+
+## כיצד להשתמש במערכת / How to use KALFA
+
+- למידע על היכולות יש להפנות לדף הבית ולשאלות הנפוצות.
+- ליצירת אירוע חדש יש להפנות לעמוד ההרשמה.
+- לקבלת עזרה יש להפנות לעמוד יצירת הקשר.
+- אין לנסות לגשת לאזורי לקוחות, אורחים או ממשקי API ללא הרשאה מפורשת.
+
 ## עמודים / Pages
 
 - [דף הבית / Home](${origin}/)
+- [שאלות נפוצות / FAQ](${origin}/faq)
+- [הרשמה ויצירת אירוע / Sign up](${origin}/auth/signup)
 - [יצירת קשר / Contact](${origin}/contact)
 - [תקנון / Terms](${origin}/terms)
 - [מדיניות פרטיות / Privacy](${origin}/privacy)

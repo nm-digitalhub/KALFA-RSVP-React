@@ -139,10 +139,14 @@ export default async function HomePage() {
   const origin = await getAppOrigin();
   let orgLegalName = '';
   let orgPhone = '';
+  let orgEmail = '';
+  let orgAddress = '';
   try {
     const company = await getCompanyLegal();
     orgLegalName = company.name.trim();
     orgPhone = toE164Israel(company.contactPhone);
+    orgEmail = company.contactEmail.trim();
+    orgAddress = company.address.trim();
   } catch {
     // omit optional org fields
   }
@@ -156,13 +160,30 @@ export default async function HomePage() {
         ...(orgLegalName ? { legalName: orgLegalName } : {}),
         url: `${origin}/`,
         logo: `${origin}/icons/icon.svg`,
-        ...(orgPhone
+        ...(orgPhone || orgEmail
           ? {
               contactPoint: {
                 '@type': 'ContactPoint',
-                telephone: orgPhone,
+                ...(orgPhone ? { telephone: orgPhone } : {}),
+                ...(orgEmail ? { email: orgEmail } : {}),
                 contactType: 'customer support',
                 availableLanguage: ['he'],
+              },
+            }
+          : {}),
+        // The same address disclosed in the signed agreement (§14ג) —
+        // admin-managed via /admin/company, never invented here. Only
+        // `streetAddress` is set: the DB stores one free-text field (no
+        // separate locality/postal-code columns), and guessing a split would
+        // risk publishing a wrong structured address, which is worse than
+        // omitting it. `addressCountry` is a safe structural fact (this is an
+        // Israeli business throughout the app), not admin-sourced data.
+        ...(orgAddress
+          ? {
+              address: {
+                '@type': 'PostalAddress',
+                streetAddress: orgAddress,
+                addressCountry: 'IL',
               },
             }
           : {}),

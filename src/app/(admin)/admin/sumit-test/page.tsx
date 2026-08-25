@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import Link from 'next/link';
 import { requirePlatformPermission } from '@/lib/auth/dal';
 import { getSumitPublicConfig } from '@/lib/data/payments';
 
@@ -41,9 +42,9 @@ export default async function SumitTestPage() {
       ) : (
         <p className="rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-800">
           הגדרות SUMIT (company id / public key) חסרות. עדכנו ב-
-          <a href="/admin/settings" className="underline">
+          <Link href="/admin/settings" className="underline">
             /admin/settings
-          </a>
+          </Link>
           .
         </p>
       )}

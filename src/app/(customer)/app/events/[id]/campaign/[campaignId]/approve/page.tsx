@@ -159,9 +159,9 @@ export default async function ApproveCampaignPage({
         <p className="rounded-md bg-warning/10 px-3 py-2 text-sm text-warning">
           כדי לחתום נדרש מספר טלפון בפרופיל (לאימות בקוד חד‑פעמי). הוסיפו טלפון
           ב{' '}
-          <a href="/app/settings" className="underline">
+          <Link href="/app/settings" className="underline">
             הגדרות החשבון
-          </a>
+          </Link>
           .
         </p>
       )}

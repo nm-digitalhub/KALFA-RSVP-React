@@ -58,3 +58,83 @@ describe('proxy — malformed Server Action ids', () => {
     expect(updateSession).toHaveBeenCalledOnce();
   });
 });
+
+function get(path: string, headers?: Record<string, string>): NextRequest {
+  return new NextRequest(`https://beta.kalfa.me${path}`, { method: 'GET', headers });
+}
+
+describe('proxy — markdown content negotiation (public allowlisted pages only)', () => {
+  beforeEach(() => updateSession.mockClear());
+
+  it('adds Vary: Accept to the ordinary HTML response on an allowlisted page, without changing anything else', async () => {
+    const res = await proxy(get('/faq'));
+    expect(updateSession).toHaveBeenCalledOnce();
+    expect(res.status).toBe(200);
+    await expect(res.text()).resolves.toBe('session');
+    expect(res.headers.get('vary')).toBe('Accept');
+  });
+
+  it('never touches negotiation for a path outside the allowlist, even with Accept: text/markdown', async () => {
+    const res = await proxy(get('/app', { accept: 'text/markdown' }));
+    expect(updateSession).toHaveBeenCalledOnce();
+    expect(res.headers.get('vary')).toBeNull();
+  });
+
+  it('never touches negotiation for a non-GET/HEAD request to an allowlisted page', async () => {
+    const req = new NextRequest('https://beta.kalfa.me/faq', {
+      method: 'POST',
+      headers: { accept: 'text/markdown' },
+    });
+    const res = await proxy(req);
+    expect(updateSession).toHaveBeenCalledOnce();
+    expect(res.headers.get('vary')).toBeNull();
+  });
+
+  it('returns 406 when the client rejects both representations, without invoking the session refresh', async () => {
+    const res = await proxy(get('/', { accept: 'text/markdown;q=0, text/html;q=0' }));
+    expect(updateSession).not.toHaveBeenCalled();
+    expect(res.status).toBe(406);
+    expect(res.headers.get('content-type')).toBe('text/plain; charset=utf-8');
+    expect(res.headers.get('vary')).toBe('Accept');
+  });
+
+  it('serves Markdown for Accept: text/markdown via the documented self-fetch pattern, bypassing updateSession on this leg', async () => {
+    vi.stubEnv('APP_ORIGIN', 'https://beta.kalfa.me');
+    const fetchMock = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+      const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+      // The trusted origin (APP_ORIGIN), never the incoming request's Host —
+      // proven by requesting a DIFFERENT host below and still landing here.
+      expect(url).toBe('https://beta.kalfa.me/faq');
+      void init;
+      return new Response('<html><body><h1>שאלות נפוצות</h1><p>תוכן.</p></body></html>', {
+        status: 200,
+        headers: { 'content-type': 'text/html; charset=utf-8' },
+      });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    try {
+      // The incoming request carries a HOST/origin an attacker fully
+      // controls on a self-hosted server — the internal fetch must ignore
+      // it entirely and use APP_ORIGIN, which is exactly what the mock above
+      // asserts (`https://beta.kalfa.me/faq`, not `https://evil.example/faq`).
+      const spoofed = new NextRequest('https://evil.example/faq', {
+        method: 'GET',
+        headers: { accept: 'text/markdown' },
+      });
+      const res = await proxy(spoofed);
+      expect(updateSession).not.toHaveBeenCalled();
+      expect(fetchMock).toHaveBeenCalledOnce();
+      // The inner fetch carries nothing from the original request but a
+      // synthetic Accept: text/html — no Cookie/Authorization/etc.
+      const [, init] = fetchMock.mock.calls[0];
+      expect(Object.fromEntries(new Headers(init?.headers).entries())).toEqual({ accept: 'text/html' });
+      expect(res.status).toBe(200);
+      expect(res.headers.get('content-type')).toBe('text/markdown; charset=utf-8');
+      expect(res.headers.get('vary')).toContain('Accept');
+      await expect(res.text()).resolves.toContain('שאלות נפוצות');
+    } finally {
+      vi.unstubAllGlobals();
+      vi.unstubAllEnvs();
+    }
+  });
+});
