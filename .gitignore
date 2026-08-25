@@ -49,6 +49,8 @@ yarn-error.log*
 .claude/*
 !.claude/agents/
 !.claude/skills/
+# saved dynamic workflows (/docs-currency-audit, /review-changes, /fleet-drift-audit) — team assets
+!.claude/workflows/
 # project harness settings (SessionStart fleet inbox hook) — team asset
 !.claude/settings.json
 # autonomous fleet — config, roles, scheduler, guards are team assets; the
@@ -138,3 +140,6 @@ scenario-*.deployed.js
 /.relocation-state.json
 /.relocation-state.json.bak
 /.relocate/
+
+# repomix pack output (22MB, contains the whole tree incl. .claude) — never commit
+repomix-output.xml

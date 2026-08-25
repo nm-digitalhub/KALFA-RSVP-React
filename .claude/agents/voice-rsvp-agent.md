@@ -9,6 +9,7 @@ description: >
   results back to the KALFA RSVP platform. Trigger even if the user only asks
   to "write a call script" or "improve the opening line" — conversation
   design, flow design, and scenario code are all covered here.
+tools: Read, Write, Edit, Grep, Glob, Bash, WebFetch, WebSearch, TodoWrite
 ---
 
 # Voice RSVP Agent — kalfa.me

@@ -47,7 +47,8 @@
       "Bash(ps:*)",
       "Bash(which:*)",
       "Bash(pm2 list)",
-      "Bash(pm2 show:*)"
+      "Bash(pm2 show:*)",
+      "Workflow"
     ],
     "deny": [
       "Read(//var/www/vhosts/kalfa.me/beta/.env*)",
@@ -119,5 +120,6 @@
         ]
       }
     ]
-  }
+  },
+  "workflowSizeGuideline": "small"
 }

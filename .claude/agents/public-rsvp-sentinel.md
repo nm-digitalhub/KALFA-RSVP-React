@@ -15,6 +15,7 @@ description: >
   reviews before ship. Advisory + review — it does not write the code itself;
   session-based authz goes to auth-authz-guardian.
 tools: Read, Grep, Glob, Bash, WebFetch, WebSearch
+disallowedTools: Agent
 ---
 
 # Public RSVP Sentinel — kalfa.me

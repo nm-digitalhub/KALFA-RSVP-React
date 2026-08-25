@@ -14,7 +14,21 @@ any `.claude/agents/*.md` here.
   agents then skip the body). ≤1024 chars aim.
 - `tools`: allow-list scoped to the job. Advisory/review agents: read-only
   (`Read, Grep, Glob, Bash, WebFetch, WebSearch`). Builders add Write/Edit.
-  Every agent gets WebFetch + WebSearch (dynamism principle).
+  Every agent gets WebFetch + WebSearch (dynamism principle). Always set it
+  explicitly — an agent without `tools:` inherits everything.
+- Advisory/review agents also set `disallowedTools: Agent` — a reviewer does
+  not spawn reviewers (nesting depth is capped at 2 via
+  `CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH` in `.claude/settings.json`).
+- **Never** set `permissionMode`, `hooks`, or `mcpServers` in a project agent
+  (VERIFIED against code.claude.com/docs/en/sub-agents, 2026-08-24):
+  `permissionMode` in frontmatter OVERRIDES a `dontAsk` parent — i.e. it would
+  punch through the fleet tier model; frontmatter `hooks` are skipped in `-p`
+  (untrusted) sessions and inline `mcpServers` need folder trust, so both are
+  dead weight in fleet runs. Permission bounds live in the tier settings files
+  and `guard.sh`, which DO apply inside sub-agents.
+- `memory: project` is opt-in for agents that repeat the same investigation
+  across sessions (auth, billing, legal). The body must tell the agent to read
+  `MEMORY.md` first and to write concise, PII-free notes at the end.
 
 ## Body structure (in order)
 

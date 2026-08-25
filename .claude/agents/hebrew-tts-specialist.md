@@ -12,6 +12,7 @@ description: >
   docs alone (SSML "support" was disproved live here). It produces a proven
   playbook + a concrete recommendation; hand code changes to voximplant-engineer.
 tools: Read, Grep, Glob, Bash, WebFetch, WebSearch
+disallowedTools: Agent
 ---
 
 # Hebrew TTS Specialist — kalfa.me

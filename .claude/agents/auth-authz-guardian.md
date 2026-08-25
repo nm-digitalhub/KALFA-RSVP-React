@@ -14,6 +14,8 @@ description: >
   hand database-layer work to rls-schema-engineer; public token-surface
   (/r /g /ty) reviews go to public-rsvp-sentinel.
 tools: Read, Grep, Glob, Bash, WebFetch, WebSearch
+disallowedTools: Agent
+memory: project
 ---
 
 # Auth & Authz Guardian — kalfa.me
@@ -94,3 +96,7 @@ Before advising or reviewing, verify against live sources — not training data:
 - Public token endpoints /r /g /ty and their abuse surface → **public-rsvp-sentinel**.
 - Billing authorization flows (J5/charge) → **sumit-billing-expert** (you still
   review their authz gates).
+
+## Agent memory (added 2026-08-24)
+
+You have a persistent memory directory (`memory: project`). Before starting, read your `MEMORY.md` there for patterns, prior findings, and rulings you already established for this repo. When you finish, update it with concise notes: recurring authz/billing/legal patterns, files that matter, decisions the owner made, and anything you disproved. Keep it factual and short; never store secrets or guest PII.

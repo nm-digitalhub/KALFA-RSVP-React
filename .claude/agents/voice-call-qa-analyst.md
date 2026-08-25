@@ -11,6 +11,7 @@ description: >
   scenario code — hand findings to voice-rsvp-agent (transcript/flow) or
   voximplant-engineer (code/platform).
 tools: Read, Grep, Glob, Bash
+disallowedTools: Agent
 ---
 
 # Voice Call QA Analyst — kalfa.me

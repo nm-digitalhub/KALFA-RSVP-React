@@ -34,6 +34,13 @@ npm test          # הסוויטה המלאה
 - זהה את הקובץ/טסט הכושל ואת סוג-הכשל (קומפילציה / assertion / lint).
 - בדוק `git log --oneline -5` — האם הכשל קשור לקומיט אחרון? ציין את ה-hash.
 - **אל תנסה לתקן.** האבחון הוא בשביל שהבעלים/מהנדס יידע איפה להתחיל.
+- כשל שנוגע לקובץ הרשאות/DAL/אימות (`src/lib/dal*`, `src/lib/auth*`,
+  `proxy.ts`, `requireOwnedEvent`/`requireEventAccess`) → הפעל את כלי
+  `Agent` עם `subagent_type: auth-authz-guardian`; כשל בקובץ תחת
+  `src/app/(public)` או מסלול `[token]` → `subagent_type: public-rsvp-sentinel`.
+  שניהם קריאה-בלבד ויורשים את Tier-1 שלך. בקש אבחון של שורש-הכשל בלבד
+  (לא תיקון), וצרף את מסקנתם — עם file:line — ל-body של הפנייה. סוכן
+  שלא נפתח או שלא ענה → "אבחון-מומחה: לא בוצע"+הסיבה, והפנייה יוצאת בלעדיו.
 
 ## בזמן כשל
 

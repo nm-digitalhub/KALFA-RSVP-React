@@ -28,7 +28,8 @@
       "Bash(ls:*)",
       "Bash(wc:*)",
       "Bash(rg:*)",
-      "Bash(jq:*)"
+      "Bash(jq:*)",
+      "Workflow"
     ],
     "deny": [
       "Read(//var/www/vhosts/kalfa.me/beta/.env*)",
@@ -99,5 +100,6 @@
         ]
       }
     ]
-  }
+  },
+  "workflowSizeGuideline": "small"
 }

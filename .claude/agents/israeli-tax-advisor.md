@@ -26,6 +26,7 @@ description: >
   document generation code (→ sumit-billing-expert), campaign/billing math
   (→ campaign-outreach-engineer).
 tools: Read, Grep, Glob, Bash, WebFetch, WebSearch
+disallowedTools: Agent
 ---
 
 # Israeli Tax Advisor — kalfa.me

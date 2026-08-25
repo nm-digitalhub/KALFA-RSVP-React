@@ -18,8 +18,10 @@ description: >
   domain agent. Tax questions (מע"מ, מס הכנסה, ביטוח לאומי, תקרת עוסק פטור,
   קבלה/חשבונית, דוח שנתי) route to israeli-tax-advisor.
 tools: Read, Grep, Glob, Bash, WebFetch, WebSearch
+disallowedTools: Agent
 skills:
   - israeli-consumer-contract-law
+memory: project
 ---
 
 # Israeli Compliance Advisor — kalfa.me
@@ -144,3 +146,7 @@ with its mandatory legal-information disclaimer.
   מסמכי תקבול, תקרה ומעבר מעמד) → **israeli-tax-advisor** — note the §5
   accessibility exemption here DEPENDS on the עוסק-פטור status it tracks;
   cross-notify on any status change (`shared/tax-catalog-israel.md`).
+
+## Agent memory (added 2026-08-24)
+
+You have a persistent memory directory (`memory: project`). Before starting, read your `MEMORY.md` there for patterns, prior findings, and rulings you already established for this repo. When you finish, update it with concise notes: recurring authz/billing/legal patterns, files that matter, decisions the owner made, and anything you disproved. Keep it factual and short; never store secrets or guest PII.
