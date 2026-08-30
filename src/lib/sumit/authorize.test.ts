@@ -46,7 +46,7 @@ function okBody(over: Record<string, unknown> = {}) {
 afterEach(() => vi.unstubAllGlobals());
 
 describe('authorizeHoldSumit', () => {
-  it('sends a J5 hold (AutoCapture:false, AuthorizeAmount=ceiling, Item.Name, PreventDocumentCreation) and returns AuthNumber + token', async () => {
+  it('sends a J5 hold (AutoCapture:false, AuthorizeAmount=ceiling, Item.Name, no PreventDocumentCreation so SUMIT issues a trackable Order document) and returns AuthNumber + token', async () => {
     mockFetch(200, okBody());
 
     const r = await authorizeHoldSumit(base);
@@ -56,7 +56,10 @@ describe('authorizeHoldSumit', () => {
     );
     expect(sent.AutoCapture).toBe(false);
     expect(sent.AuthorizeAmount).toBe(1400);
-    expect(sent.PreventDocumentCreation).toBe(true);
+    // Deliberately omitted (not set to any value) — see authorize.ts's comment:
+    // SUMIT's J5 flow issues a draft Order document per hold only when this
+    // flag is absent, which is what makes the hold traceable/reconcilable.
+    expect(sent.PreventDocumentCreation).toBeUndefined();
     expect(sent.Items[0].Item.Name).toBeTruthy();
     expect(sent.SingleUseToken).toBe('og-1');
     expect(r.authNumber).toBe('A123');

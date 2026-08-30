@@ -89,7 +89,7 @@
 1. `createCampaign(eventId)` הוא **create‑or‑continue אידמפוטנטי**: אם קיים קמפיין לא‑מבוטל לאירוע — הוא מוחזר כמות שהוא, ולא נוצר שני (`campaigns.ts:129-181`, ובפרט 142‑144).
 2. `getCampaignForEvent` מחזיר את הקמפיין הלא‑מבוטל האחרון (`.neq('status','cancelled')`, `campaigns.ts:216-231`) — ביטול משחרר את האירוע לקמפיין עתידי.
 
-**אילוץ DB — מתוכנן, טרם מומש:** ה‑spec (`plans/campaign-rework-spec.md` §7.2) מגדיר `CREATE UNIQUE INDEX ... ON campaigns(event_id) WHERE status <> 'cancelled'`, אך אימות מול ה‑DB החי (`pg_indexes`, `pg_constraint`, 2026‑07‑02) מראה שעל `campaigns` קיימים רק `campaigns_pkey` ושני FK — **האינדקס החלקי לא הוחל**. ההערה ב‑`campaigns.ts:215` ("mirrors the partial UNIQUE") מתארת את הכוונה, לא את המצב החי. מרוץ בין שתי לשוניות מוגן כיום רק ברמת ה‑read‑then‑insert האפליקטיבי.
+**אילוץ DB — ממומש (עודכן 2026‑08‑30):** ה‑spec (`plans/campaign-rework-spec.md` §7.2) הגדיר `CREATE UNIQUE INDEX ... ON campaigns(event_id) WHERE status <> 'cancelled'`; נכון ל‑2026‑07‑02 האינדקס עדיין לא הוחל (רק `campaigns_pkey` ושני FK). המיגרציה `supabase/migrations/20260830130737_add_campaigns_one_active_per_event_unique_index.sql` הוסיפה אותו בפועל — אומת מול ה‑DB המקושר (`supabase migration list --linked`, 2026‑08‑30: local=remote). ההערה ב‑`campaigns.ts:215` ("mirrors the partial UNIQUE") מתארת כעת את המצב החי, לא רק כוונה. מרוץ בין שתי לשוניות מוגן כעת גם ברמת ה‑DB (constraint violation), בנוסף לבדיקת ה‑read‑then‑insert האפליקטיבית.
 
 ### 2.4 טבלאות נלוות
 
@@ -290,7 +290,7 @@ Spec: `plans/outreach-engine-c1-spec.md` (ממומש). חלוקת אחריות:
 | רכיב | מצב |
 |---|---|
 | קמפיין יחיד‑לאירוע (create‑or‑continue, CTA יחיד, מסע מודרך) | **ממומש** (rework שלב 1) |
-| אינדקס חלקי `UNIQUE(event_id) WHERE status <> 'cancelled'` | **מתוכנן, טרם מומש** — לא קיים ב‑DB החי (§2.3) |
+| אינדקס חלקי `UNIQUE(event_id) WHERE status <> 'cancelled'` | **ממומש** — הוחל ב‑`20260830130737`, אומת חי (§2.3) |
 | חתימה + OTP + הסכם PDF + אישור קמפיין | **ממומש וחי** |
 | J5 hold (`campaign_holds_enabled`) | **פעיל** ב‑DB החי |
 | מנוע ה‑outreach (`outreach_enabled`) + קונפיג WhatsApp | **פעיל** ב‑DB החי; ה‑worker רץ תחת pm2 `kalfa-worker` |
