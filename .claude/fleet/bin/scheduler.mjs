@@ -253,6 +253,16 @@ function resolveTriggerQuery(query, role) {
 
 const REACTIVE_COOLDOWN_MS = 4 * 60_000;
 
+// Same cooldown window as REACTIVE_COOLDOWN_MS, same reason: run-role.sh's
+// flock is non-blocking, and spawn()+unref() is deliberately fire-and-forget
+// (this process never learns whether the child actually ran or lock-skipped).
+// A verdict spawn can therefore lose the race for the global lock to some
+// OTHER role's scheduled/reactive tick landing in the same 60s window — bug
+// found live 2026-08-30: two verdicts answered back-to-back both fired their
+// spawn on the same tick, one lock-skipped, and with a PERMANENT marker (the
+// original design here) that verdict would never have been retried, ever.
+const VERDICT_RETRY_COOLDOWN_MS = 4 * 60_000;
+
 function runCli(args) {
   return new Promise((resolve) => {
     execFile(
@@ -305,10 +315,20 @@ async function answerWatcherTick(config) {
       continue;
     }
 
-    // Non-auto-ack role: spawn its run so it can ACT on the verdict. One spawn
-    // per request id ever (marker file) — the run itself acks after acting.
+    // Non-auto-ack role: spawn its run so it can ACT on the verdict. Marker
+    // is a COOLDOWN, not a permanent one-shot flag (see VERDICT_RETRY_COOLDOWN_MS):
+    // a spawn can lock-skip without this process ever finding out, so treating
+    // "spawned" as "handled forever" strands the verdict on any lock race. The
+    // cooldown is comfortably shorter than every observed run duration (1-7
+    // minutes, runs/index.ndjson), so a genuinely still-running role just loses
+    // the next retry to run-role.sh's own flock again — harmless — while a
+    // lock-skipped one gets a real second attempt within a few minutes instead
+    // of never.
     const marker = join(LOCKS_DIR, `verdict-${v.id}`);
-    if (existsSync(marker)) continue;
+    if (existsSync(marker)) {
+      const last = Number(readFileSync(marker, 'utf8').trim()) || 0;
+      if (Date.now() - last < VERDICT_RETRY_COOLDOWN_MS) continue;
+    }
 
     // A cap applies here too, but a SEPARATE one from the shared
     // daily_run_cap (see dailyCount's own comment for why): this path only
@@ -323,18 +343,17 @@ async function answerWatcherTick(config) {
     // on this path is "how many distinct verdicts exist right now", which
     // the shared cap already constrains upstream.
     //
-    // Checked BEFORE the marker is written, deliberately: the marker means
-    // "this verdict has been spawned, never again". Writing it and then
-    // declining to spawn would strand the verdict permanently. Leaving it
-    // unwritten means the next tick (or tomorrow, once the count rolls over)
-    // picks the same verdict up again.
+    // Checked BEFORE the marker is written, deliberately: a cap-decline should
+    // not start the cooldown clock — leaving the marker unwritten means the
+    // very next tick (once the count rolls over) retries immediately instead
+    // of waiting out VERDICT_RETRY_COOLDOWN_MS for no reason.
     const cap = config.answer_daily_run_cap ?? 50;
     if (dailyCount(now.dateKey, 'answer') >= cap) {
       log(`answer-watcher: answer cap ${cap} reached — deferring "${v.title}" (${v.role})`);
       break;
     }
 
-    writeFileSync(marker, 'spawned');
+    writeFileSync(marker, String(Date.now()));
     log(`answer-watcher: spawning ${v.role} to consume "${v.title}"`);
     bumpDailyCount(now.dateKey, 'answer');
     const out = openSync(join(LOCKS_DIR, `spawn-${v.role}.log`), 'a');
