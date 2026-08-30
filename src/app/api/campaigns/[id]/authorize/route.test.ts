@@ -17,10 +17,17 @@ vi.mock('@/lib/data/payments', () => ({
   getSumitServerConfig: vi.fn(),
 }));
 vi.mock('@/lib/sumit/authorize', () => ({ authorizeHoldSumit: vi.fn() }));
+vi.mock('@/lib/data/profiles', () => ({ getProfile: vi.fn() }));
+vi.mock('@/lib/data/sumit-customers', () => ({
+  getSumitCustomerId: vi.fn(),
+  recordSumitCustomerId: vi.fn(),
+}));
+vi.mock('@/lib/data/activity', () => ({ logActivity: vi.fn() }));
 
 import { POST } from './route';
 import { requireUser } from '@/lib/auth/dal';
 import { requireOwnedEvent } from '@/lib/data/events';
+import { getProfile } from '@/lib/data/profiles';
 import {
   getCampaignForHold,
   lockCampaignForHold,
@@ -33,6 +40,8 @@ import {
   getSumitServerConfig,
 } from '@/lib/data/payments';
 import { authorizeHoldSumit } from '@/lib/sumit/authorize';
+import { getSumitCustomerId, recordSumitCustomerId } from '@/lib/data/sumit-customers';
+import { logActivity } from '@/lib/data/activity';
 
 const APP_ORIGIN = 'https://kalfa.test';
 const CAMPAIGN_ID = '11111111-1111-4111-8111-111111111111';
@@ -65,6 +74,12 @@ describe('POST /api/campaigns/[id]/authorize — CSRF origin gate', () => {
       id: 'user-1',
       email: 'user@test.com',
     } as never);
+    vi.mocked(getProfile).mockResolvedValue({
+      id: 'user-1',
+      full_name: 'ישראל ישראלי',
+      phone: null,
+      updated_at: null,
+    } as never);
     vi.mocked(getCampaignForHold).mockResolvedValue({
       id: CAMPAIGN_ID,
       event_id: EVENT_ID,
@@ -87,6 +102,9 @@ describe('POST /api/campaigns/[id]/authorize — CSRF origin gate', () => {
       apiKey: 'k',
     });
     vi.mocked(lockCampaignForHold).mockResolvedValue(true);
+    vi.mocked(getSumitCustomerId).mockResolvedValue(null);
+    vi.mocked(recordSumitCustomerId).mockResolvedValue(undefined);
+    vi.mocked(logActivity).mockResolvedValue(undefined);
     vi.mocked(prepareCampaignHold).mockResolvedValue({
       holdAmount: 80,
       ceiling: 100,
@@ -99,6 +117,10 @@ describe('POST /api/campaigns/[id]/authorize — CSRF origin gate', () => {
       expMonth: 1,
       expYear: 2030,
       citizenId: '123456789',
+      orderDocumentId: 555,
+      orderDocumentNumber: 1001,
+      orderDocumentUrl: 'https://api.sumit.co.il/docs/555',
+      sumitCustomerId: 777,
     });
     vi.mocked(recordCampaignHold).mockResolvedValue(undefined);
   });

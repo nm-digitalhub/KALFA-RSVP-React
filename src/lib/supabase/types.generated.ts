@@ -198,7 +198,9 @@ export type Database = {
           extreme_threshold_contacts: number
           handoff_enabled: boolean
           id: boolean
+          inbound_ai_answer_enabled: boolean
           inbound_calls_enabled: boolean
+          inquiry_followup_enabled: boolean
           monitor_enabled: boolean
           outreach_enabled: boolean
           payments_enabled: boolean
@@ -295,7 +297,9 @@ export type Database = {
           extreme_threshold_contacts?: number
           handoff_enabled?: boolean
           id?: boolean
+          inbound_ai_answer_enabled?: boolean
           inbound_calls_enabled?: boolean
+          inquiry_followup_enabled?: boolean
           monitor_enabled?: boolean
           outreach_enabled?: boolean
           payments_enabled?: boolean
@@ -392,7 +396,9 @@ export type Database = {
           extreme_threshold_contacts?: number
           handoff_enabled?: boolean
           id?: boolean
+          inbound_ai_answer_enabled?: boolean
           inbound_calls_enabled?: boolean
+          inquiry_followup_enabled?: boolean
           monitor_enabled?: boolean
           outreach_enabled?: boolean
           payments_enabled?: boolean
@@ -1272,6 +1278,9 @@ export type Database = {
           event_id: string
           final_charge_amount: number | null
           final_invoice_document_id: number | null
+          hold_order_document_id: number | null
+          hold_order_document_number: number | null
+          hold_order_document_url: string | null
           id: string
           included_reached: number | null
           max_charge_ceiling: number | null
@@ -1283,6 +1292,7 @@ export type Database = {
           status: Database["public"]["Enums"]["campaign_status"]
           steps: Json
           sumit_charge_document_id: number | null
+          sumit_customer_id: number | null
           sumit_order_document_id: number | null
           template_id: string | null
           thankyou_auto_enabled: boolean
@@ -1320,6 +1330,9 @@ export type Database = {
           event_id: string
           final_charge_amount?: number | null
           final_invoice_document_id?: number | null
+          hold_order_document_id?: number | null
+          hold_order_document_number?: number | null
+          hold_order_document_url?: string | null
           id?: string
           included_reached?: number | null
           max_charge_ceiling?: number | null
@@ -1331,6 +1344,7 @@ export type Database = {
           status?: Database["public"]["Enums"]["campaign_status"]
           steps?: Json
           sumit_charge_document_id?: number | null
+          sumit_customer_id?: number | null
           sumit_order_document_id?: number | null
           template_id?: string | null
           thankyou_auto_enabled?: boolean
@@ -1368,6 +1382,9 @@ export type Database = {
           event_id?: string
           final_charge_amount?: number | null
           final_invoice_document_id?: number | null
+          hold_order_document_id?: number | null
+          hold_order_document_number?: number | null
+          hold_order_document_url?: string | null
           id?: string
           included_reached?: number | null
           max_charge_ceiling?: number | null
@@ -1379,6 +1396,7 @@ export type Database = {
           status?: Database["public"]["Enums"]["campaign_status"]
           steps?: Json
           sumit_charge_document_id?: number | null
+          sumit_customer_id?: number | null
           sumit_order_document_id?: number | null
           template_id?: string | null
           thankyou_auto_enabled?: boolean
@@ -2225,6 +2243,8 @@ export type Database = {
       }
       contact_messages: {
         Row: {
+          auto_closed_at: string | null
+          closing_warning_sent_at: string | null
           created_at: string
           draft_created_at: string | null
           draft_reply: string | null
@@ -2237,6 +2257,13 @@ export type Database = {
           name: string
           phone: string | null
           queue_id: string | null
+          rating_at: string | null
+          rating_comment: string | null
+          rating_requested_at: string | null
+          rating_score: number | null
+          rating_token: string | null
+          ref_code: string
+          reminder_sent_at: string | null
           replied_at: string | null
           reply_needed_at: string | null
           sent_reply: string | null
@@ -2248,6 +2275,8 @@ export type Database = {
           user_id: string | null
         }
         Insert: {
+          auto_closed_at?: string | null
+          closing_warning_sent_at?: string | null
           created_at?: string
           draft_created_at?: string | null
           draft_reply?: string | null
@@ -2260,6 +2289,13 @@ export type Database = {
           name: string
           phone?: string | null
           queue_id?: string | null
+          rating_at?: string | null
+          rating_comment?: string | null
+          rating_requested_at?: string | null
+          rating_score?: number | null
+          rating_token?: string | null
+          ref_code?: string
+          reminder_sent_at?: string | null
           replied_at?: string | null
           reply_needed_at?: string | null
           sent_reply?: string | null
@@ -2271,6 +2307,8 @@ export type Database = {
           user_id?: string | null
         }
         Update: {
+          auto_closed_at?: string | null
+          closing_warning_sent_at?: string | null
           created_at?: string
           draft_created_at?: string | null
           draft_reply?: string | null
@@ -2283,6 +2321,13 @@ export type Database = {
           name?: string
           phone?: string | null
           queue_id?: string | null
+          rating_at?: string | null
+          rating_comment?: string | null
+          rating_requested_at?: string | null
+          rating_score?: number | null
+          rating_token?: string | null
+          ref_code?: string
+          reminder_sent_at?: string | null
           replied_at?: string | null
           reply_needed_at?: string | null
           sent_reply?: string | null
@@ -3263,6 +3308,103 @@ export type Database = {
           },
         ]
       }
+      inbound_agent_attempts: {
+        Row: {
+          call_duration_sec: number | null
+          console_call_id: string
+          contact_id: string
+          conversation_started_at: string | null
+          created_at: string
+          el_conversation_id: string | null
+          event_id: string
+          finish_reason: string | null
+          guest_id: string
+          id: string
+          revoked_at: string | null
+          status: string
+          token_expires_at: string
+          token_hash: string
+          updated_at: string
+        }
+        Insert: {
+          call_duration_sec?: number | null
+          console_call_id: string
+          contact_id: string
+          conversation_started_at?: string | null
+          created_at?: string
+          el_conversation_id?: string | null
+          event_id: string
+          finish_reason?: string | null
+          guest_id: string
+          id?: string
+          revoked_at?: string | null
+          status?: string
+          token_expires_at: string
+          token_hash: string
+          updated_at?: string
+        }
+        Update: {
+          call_duration_sec?: number | null
+          console_call_id?: string
+          contact_id?: string
+          conversation_started_at?: string | null
+          created_at?: string
+          el_conversation_id?: string | null
+          event_id?: string
+          finish_reason?: string | null
+          guest_id?: string
+          id?: string
+          revoked_at?: string | null
+          status?: string
+          token_expires_at?: string
+          token_hash?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "inbound_agent_attempts_console_call_id_fkey"
+            columns: ["console_call_id"]
+            isOneToOne: false
+            referencedRelation: "console_calls"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "inbound_agent_attempts_contact_id_fkey"
+            columns: ["contact_id"]
+            isOneToOne: false
+            referencedRelation: "contacts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "inbound_agent_attempts_event_id_fkey"
+            columns: ["event_id"]
+            isOneToOne: false
+            referencedRelation: "console_events"
+            referencedColumns: ["event_id"]
+          },
+          {
+            foreignKeyName: "inbound_agent_attempts_event_id_fkey"
+            columns: ["event_id"]
+            isOneToOne: false
+            referencedRelation: "events"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "inbound_agent_attempts_guest_id_fkey"
+            columns: ["guest_id"]
+            isOneToOne: false
+            referencedRelation: "console_event_guests"
+            referencedColumns: ["guest_id"]
+          },
+          {
+            foreignKeyName: "inbound_agent_attempts_guest_id_fkey"
+            columns: ["guest_id"]
+            isOneToOne: false
+            referencedRelation: "guests"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       inquiry_messages: {
         Row: {
           author_id: string | null
@@ -3305,40 +3447,67 @@ export type Database = {
         Row: {
           active: boolean
           body: string | null
+          category: string | null
           channel: Database["public"]["Enums"]["campaign_channel"]
           components: Json | null
           created_at: string
           id: string
           label: string | null
           language: string
+          last_synced_at: string | null
           message_key: string
+          meta_status: string | null
+          meta_template_id: string | null
           name: string
+          pending_category_change_at: string | null
+          pending_correct_category: string | null
+          quality_score: string | null
+          rejected_reason: string | null
+          requested_category: string
           updated_at: string
         }
         Insert: {
           active?: boolean
           body?: string | null
+          category?: string | null
           channel: Database["public"]["Enums"]["campaign_channel"]
           components?: Json | null
           created_at?: string
           id?: string
           label?: string | null
           language?: string
+          last_synced_at?: string | null
           message_key: string
+          meta_status?: string | null
+          meta_template_id?: string | null
           name?: string
+          pending_category_change_at?: string | null
+          pending_correct_category?: string | null
+          quality_score?: string | null
+          rejected_reason?: string | null
+          requested_category?: string
           updated_at?: string
         }
         Update: {
           active?: boolean
           body?: string | null
+          category?: string | null
           channel?: Database["public"]["Enums"]["campaign_channel"]
           components?: Json | null
           created_at?: string
           id?: string
           label?: string | null
           language?: string
+          last_synced_at?: string | null
           message_key?: string
+          meta_status?: string | null
+          meta_template_id?: string | null
           name?: string
+          pending_category_change_at?: string | null
+          pending_correct_category?: string | null
+          quality_score?: string | null
+          rejected_reason?: string | null
+          requested_category?: string
           updated_at?: string
         }
         Relationships: []
@@ -4564,6 +4733,45 @@ export type Database = {
           },
         ]
       }
+      sumit_customers: {
+        Row: {
+          created_at: string
+          first_seen_campaign_id: string | null
+          sumit_customer_id: number
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          first_seen_campaign_id?: string | null
+          sumit_customer_id: number
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          first_seen_campaign_id?: string | null
+          sumit_customer_id?: number
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "sumit_customers_first_seen_campaign_id_fkey"
+            columns: ["first_seen_campaign_id"]
+            isOneToOne: false
+            referencedRelation: "campaigns"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "sumit_customers_first_seen_campaign_id_fkey"
+            columns: ["first_seen_campaign_id"]
+            isOneToOne: false
+            referencedRelation: "console_campaigns"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       support_access_log: {
         Row: {
           accessed_at: string
@@ -5577,6 +5785,7 @@ export type Database = {
         | "other"
       faq_category: "about" | "pricing" | "how_it_works" | "legal_support"
       guest_status: "pending" | "attending" | "declined" | "maybe"
+      order_status: "pending" | "paid"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -5764,6 +5973,7 @@ export const Constants = {
       ],
       faq_category: ["about", "pricing", "how_it_works", "legal_support"],
       guest_status: ["pending", "attending", "declined", "maybe"],
+      order_status: ["pending", "paid"],
     },
   },
 } as const

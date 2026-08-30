@@ -273,24 +273,70 @@ describe('prepareCampaignHold (freeze set + size hold + recompute ceiling)', () 
     expect(r.ceiling).toBe(1400); // ceiling still full × price
   });
 
-  it('throws (and snapshots nothing) when the event has no valid contacts', async () => {
+  it('places a zero-amount hold (no throw) for a legacy base=0 campaign with no valid contacts — route.ts is what rejects holdAmount<=0', async () => {
     const { builder } = adminWith<Record<string, unknown>>({
       data: null,
       error: null,
     });
-    // The campaign loads fine, but the current unique-contact count is 0.
-    vi.spyOn(builder, 'then').mockImplementationOnce((f) =>
-      f({
-        data: { event_id: 'e1', price_per_reached: 4, template_id: null },
-        error: null,
-      }),
-    );
     vi.mocked(countUniqueContactsForEvent).mockResolvedValue(0);
+    vi.mocked(snapshotAuthorizedSet).mockResolvedValue(0);
+    vi.spyOn(builder, 'then')
+      // 1. load the campaign (event_id, price, template_id) — no packages
+      //    lookup follows because template_id is null.
+      .mockImplementationOnce((f) =>
+        f({
+          data: { event_id: 'e1', price_per_reached: 4, template_id: null },
+          error: null,
+        }),
+      )
+      // 2. app_settings.reasonable_coverage_contacts
+      .mockImplementationOnce((f) =>
+        f({ data: { reasonable_coverage_contacts: 300 }, error: null }),
+      )
+      // 3. the campaigns update (recompute ceiling + max_contacts)
+      .mockImplementationOnce((f) => f({ data: null, error: null }));
 
-    await expect(prepareCampaignHold('c1')).rejects.toThrow(
-      'אין אנשי קשר תקינים',
-    );
-    expect(snapshotAuthorizedSet).not.toHaveBeenCalled();
+    const r = await prepareCampaignHold('c1');
+
+    expect(r.full).toBe(0);
+    expect(r.ceiling).toBe(0); // base=0/included=0 on this legacy campaign
+    expect(r.holdAmount).toBe(0);
+    expect(snapshotAuthorizedSet).toHaveBeenCalledWith('e1', 'c1', 0);
+  });
+
+  it('places a ₪base-fee hold for a base+overage campaign with no valid contacts yet — signing before finishing the guest list is allowed', async () => {
+    const { builder } = adminWith<Record<string, unknown>>({
+      data: null,
+      error: null,
+    });
+    vi.mocked(countUniqueContactsForEvent).mockResolvedValue(0);
+    vi.mocked(snapshotAuthorizedSet).mockResolvedValue(0);
+    vi.spyOn(builder, 'then')
+      .mockImplementationOnce((f) =>
+        f({
+          data: {
+            event_id: 'e1',
+            price_per_reached: 4,
+            template_id: 'pkg1',
+            base_price: 200,
+            included_reached: 200,
+          },
+          error: null,
+        }),
+      )
+      .mockImplementationOnce((f) =>
+        f({ data: { reasonable_coverage_contacts: 300 }, error: null }),
+      )
+      .mockImplementationOnce((f) =>
+        f({ data: { min_hold_floor: 0, hold_buffer_pct: 0 }, error: null }),
+      )
+      .mockImplementationOnce((f) => f({ data: null, error: null }));
+
+    const r = await prepareCampaignHold('c1');
+
+    expect(r.full).toBe(0);
+    expect(r.ceiling).toBe(200); // 200 + max(0, 0−200)×4 — the base fee alone
+    expect(r.holdAmount).toBe(200); // the flat base fee prices a 0-contact hold
   });
 
   it('live-reads min_hold_floor/hold_buffer_pct on EVERY attempt — a retry reflects the NEW package values (§5.5#5ב)', async () => {
@@ -456,6 +502,58 @@ describe('createCampaign (§5.5#5א — snapshot locked from the canonical templ
     // ceiling = 200 + max(0, 100 − 200) × 4 = 200 (fewer contacts than included).
     expect(inserted.max_charge_ceiling).toBe(200);
   });
+
+  it('creates a campaign with ZERO contacts — the flat base fee prices it, so the guest list is no longer required up front (prepareCampaignHold now also allows a hold at 0)', async () => {
+    vi.mocked(getBaseOveragePricingEnabled).mockResolvedValueOnce(true);
+    vi.mocked(requireOwnedEvent).mockResolvedValue(ownedEvent());
+    vi.mocked(countUniqueContactsForEvent).mockResolvedValue(0);
+
+    const server = serverWith<Record<string, unknown>>({ data: null, error: null });
+    vi.spyOn(server.builder, 'then')
+      .mockImplementationOnce((f) =>
+        f({
+          data: {
+            event_type: 'wedding',
+            celebrants: { groom: 'דוד לוי', bride: 'שרה כהן' },
+            venue_name: 'אולמי הגן',
+          },
+          error: null,
+        }),
+      )
+      .mockImplementationOnce((f) => f({ data: null, error: null }));
+
+    const { builder } = adminWith<unknown>({ data: null, error: null });
+    vi.spyOn(builder, 'then')
+      .mockImplementationOnce((f) =>
+        f({
+          data: [
+            {
+              id: 'pkg1',
+              name: 'x',
+              price_per_reached: 4,
+              base_price: 200,
+              included_reached: 200,
+              description: null,
+              channels: ['whatsapp'],
+              outreach_schedule: [],
+            },
+          ],
+          error: null,
+        }),
+      )
+      .mockImplementationOnce((f) => f({ data: { id: 'c-new' }, error: null }));
+
+    const r = await createCampaign('e1');
+
+    expect(r.id).toBe('c-new');
+    const inserted = vi.mocked(builder.insert).mock.calls[0][0] as Record<
+      string,
+      unknown
+    >;
+    expect(inserted.max_contacts).toBe(0);
+    // ceiling = 200 + max(0, 0 − 200) × 4 = 200 (the base fee alone).
+    expect(inserted.max_charge_ceiling).toBe(200);
+  });
 });
 
 describe('createCampaign — celebrants gate (בעלי השמחה)', () => {
@@ -505,7 +603,7 @@ describe('createCampaign — celebrants gate (בעלי השמחה)', () => {
     );
   });
 
-  it('complete couple celebrants pass the gate — the flow proceeds to the NEXT validation (contacts)', async () => {
+  it('complete couple celebrants pass the gate — the flow proceeds to the NEXT validation (template resolution), even with zero contacts', async () => {
     const { builder } = serverWith<Record<string, unknown>>({
       data: null,
       error: null,
@@ -523,14 +621,18 @@ describe('createCampaign — celebrants gate (בעלי השמחה)', () => {
       )
       // getCampaignForEvent → no existing campaign
       .mockImplementationOnce((f) => f({ data: null, error: null }));
+    // No template configured (data: null → listCampaignTemplates → []).
     adminWith({ data: null, error: null });
+    // Zero contacts no longer blocks creation (the base+overage flat fee prices
+    // a 0-contact campaign) — the gate that DOES still fire is the next one.
     vi.mocked(countUniqueContactsForEvent).mockResolvedValue(0);
 
-    // Rejects on the next gate (no valid contacts) — the celebrants gate passed.
-    await expect(createCampaign('e1')).rejects.toThrow('אין אנשי קשר תקינים');
+    await expect(createCampaign('e1')).rejects.toThrow(
+      'שירות אישורי ההגעה אינו מוגדר כעת',
+    );
   });
 
-  it('parents kind: parents + host_composition is complete (child optional) — the gate passes', async () => {
+  it('parents kind: parents + host_composition is complete (child optional) — the gate passes, even with zero contacts', async () => {
     const { builder } = serverWith<Record<string, unknown>>({
       data: null,
       error: null,
@@ -550,7 +652,9 @@ describe('createCampaign — celebrants gate (בעלי השמחה)', () => {
     adminWith({ data: null, error: null });
     vi.mocked(countUniqueContactsForEvent).mockResolvedValue(0);
 
-    await expect(createCampaign('e1')).rejects.toThrow('אין אנשי קשר תקינים');
+    await expect(createCampaign('e1')).rejects.toThrow(
+      'שירות אישורי ההגעה אינו מוגדר כעת',
+    );
   });
 
   it('blocks enablement when the event has no event_date — sends could never derive day/date/time', async () => {
@@ -653,6 +757,10 @@ describe('recordCampaignHold', () => {
       expYear: 2031,
       citizenId: '316125434',
       authExternalRef: 'ext-1',
+      orderDocumentId: 999,
+      orderDocumentNumber: 1002,
+      orderDocumentUrl: 'https://api.sumit.co.il/docs/999',
+      sumitCustomerId: 888,
     });
 
     const payload = vi.mocked(builder.update).mock.calls[0][0] as Record<
@@ -664,6 +772,10 @@ describe('recordCampaignHold', () => {
       auth_number: 'A1',
       auth_amount: 1400,
       card_token_ref: 'tok',
+      hold_order_document_id: 999,
+      hold_order_document_number: 1002,
+      hold_order_document_url: 'https://api.sumit.co.il/docs/999',
+      sumit_customer_id: 888,
     });
     expect(payload.authorized_at).toBeTruthy();
     expect(builder.eq).toHaveBeenCalledWith('id', 'c1');

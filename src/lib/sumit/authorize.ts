@@ -13,6 +13,12 @@ export interface SumitAuthorizeParams {
   vatRate: string;
   authRef: string; // Customer.ExternalIdentifier — reconciliation anchor
   customerEmail: string;
+  customerName?: string;
+  // The paying account's known SUMIT customer number (sumit_customers), if
+  // any. Present → send Customer.ID so this hold reuses that customer instead
+  // of creating a new one (SearchMode defaults to None = always-create when
+  // ID is absent). Absent → the one-time create/bridge path.
+  customerId?: number | null;
 }
 
 export interface SumitAuthorizeResult {
@@ -26,6 +32,25 @@ export interface SumitAuthorizeResult {
   // Card-holder CitizenID — SUMIT requires it on the saved-token charge. PII;
   // retention is anchored in the signed agreement.
   citizenId: string | null;
+  // The draft "Order" document SUMIT creates for this hold (Data.DocumentID on
+  // the charge response — same field capture.ts reads for the receipt). Not
+  // sensitive; persisted so the hold is traceable in the SUMIT UI.
+  orderDocumentId: number | null;
+  // Data.DocumentNumber — the human-readable number shown in the SUMIT UI
+  // ("הזמנה / 1002"), distinct from the internal DocumentID. Mirrors
+  // capture.ts/close-charge's documentNumber for the receipt (same pattern).
+  orderDocumentNumber: number | null;
+  // Data.DocumentDownloadURL — direct link to the document itself (verified
+  // 2026-08-30: NOT the same ID space as the SUMIT UI's browsable CRM entity
+  // URL, f<folder>/c<entityId> — that entity ID is not returned by this
+  // endpoint at all). This is the reliable admin-facing "view" link.
+  orderDocumentUrl: string | null;
+  // Data.CustomerID (top-level — NOT Data.Payment.CustomerID, which is 0 on a
+  // hold, verified live 2026-08-30). Pass back as Customer.ID at close-charge
+  // so the final charge reuses THIS SUMIT customer instead of creating a new
+  // one — a real bug reproduced today: a saved-token charge without it created
+  // a brand-new customer despite reusing the same card token.
+  sumitCustomerId: number | null;
 }
 
 // J5 authorization HOLD (no capture, no document). Mirrors charge.ts error
@@ -40,6 +65,8 @@ export async function authorizeHoldSumit(
   const body = {
     Credentials: { CompanyID: p.companyId, APIKey: p.apiKey },
     Customer: {
+      ID: p.customerId ?? undefined,
+      Name: p.customerName || undefined,
       EmailAddress: p.customerEmail || undefined,
       ExternalIdentifier: p.authRef,
     },
@@ -58,7 +85,12 @@ export async function authorizeHoldSumit(
     SingleUseToken: p.ogToken,
     AutoCapture: false, // J5 = authorize / hold only (no capture)
     AuthorizeAmount: parseFloat(p.ceiling),
-    PreventDocumentCreation: true, // hold → no Order document to balance
+    // Deliberately NOT setting PreventDocumentCreation — SUMIT's documented J5
+    // flow issues a draft "Order" document per hold (verified live 2026-08-30,
+    // help.sumit.co.il/he/articles/5832974: the "תפיסות מסגרת" screen tracks each
+    // hold via this document, with an explicit charge/release action against it).
+    // We keep and persist its DocumentID so a hold is traceable/reconcilable in
+    // the SUMIT UI, not just in our own DB.
     SendDocumentByEmail: false,
     DraftDocument: false,
   };
@@ -104,6 +136,10 @@ export async function authorizeHoldSumit(
       Payment?: Payment;
       PaymentMethod?: PaymentMethod;
       CreditCard_Token?: string | null;
+      DocumentID?: number | null;
+      DocumentNumber?: number | null;
+      DocumentDownloadURL?: string | null;
+      CustomerID?: number | null;
     } | null;
   };
   let json: Resp;
@@ -154,5 +190,9 @@ export async function authorizeHoldSumit(
     expMonth: toInt(pm?.CreditCard_ExpirationMonth),
     expYear: toInt(pm?.CreditCard_ExpirationYear),
     citizenId: pm?.CreditCard_CitizenID ?? null,
+    orderDocumentId: json.Data?.DocumentID ?? null,
+    orderDocumentNumber: json.Data?.DocumentNumber ?? null,
+    orderDocumentUrl: json.Data?.DocumentDownloadURL ?? null,
+    sumitCustomerId: json.Data?.CustomerID ?? null,
   };
 }

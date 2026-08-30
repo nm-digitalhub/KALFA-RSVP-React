@@ -54,6 +54,15 @@ export type BuildContactsResult = {
   withValidPhone: number;
   uniqueContacts: number;
   invalid: number;
+  // Verified gap (30.8): bulk import (CSV/WhatsApp) never called
+  // reconcileCampaignSetForContact — a contact imported into an event whose
+  // campaign was ALREADY approved/scheduled/active/paused was silently
+  // excluded from that campaign forever (no automatic path ever picked it
+  // up; a stale comment claimed otherwise). Every unique contact id this
+  // call touched, so callers can reconcile each one (best-effort, cheap
+  // no-op for already-authorized/no-campaign events — see
+  // reconcileCampaignSetForContact).
+  contactIds: string[];
 };
 
 // Build/refresh the contacts for an event from its guests, and link
@@ -105,6 +114,7 @@ export async function buildContactsForEvent(
     withValidPhone: derived.withValidPhone,
     uniqueContacts: derived.uniquePhones.length,
     invalid: derived.invalid,
+    contactIds: [...phoneToContactId.values()],
   };
 }
 
@@ -203,9 +213,10 @@ export async function pruneOrphanContact(
 
   // P0-1 (A6): a member of a campaign's frozen authorized set must never be
   // hard-deleted here — the FK's ON DELETE would silently evict it from the set
-  // (the root of the repoint/orphan mis-charge bug). Kill-switch gated: with
-  // reconciliation off, behavior is exactly as before. reconcile_authorized_set
-  // is the ONLY path that removes a contact from the set.
+  // (the root of the repoint/orphan mis-charge bug). Kill-switch gated — LIVE
+  // in production since 2026-07-21 (see reconcile-config.ts), so this guard is
+  // ACTIVE. reconcile_authorized_set is the ONLY path that removes a contact
+  // from the set.
   if (isReconcileEnabled()) {
     const { count: setMember } = await admin
       .from('campaign_authorized_contacts')
@@ -228,11 +239,13 @@ export async function pruneOrphanContact(
 // mutation (add / repoint / delete of a contact). Delegates the money-safe
 // decision (admit within funded_cap, exposed-or-billed pin, audit) to the
 // reconcile_authorized_set RPC, which runs under the same campaigns FOR UPDATE
-// lock as billing. KILL-SWITCH: inert unless RECONCILE_AUTHORIZED_SET_ENABLED —
-// so the default build behaves exactly as before P0-1. Best-effort (the guest
-// mutation is already committed): errors and ceiling_full/not_eligible are
-// logged (no PII), never thrown. Callers must have already verified event
-// access (this is an internal service-role helper, like pruneOrphanContact).
+// lock as billing. KILL-SWITCH: inert unless RECONCILE_AUTHORIZED_SET_ENABLED
+// (env var, not app_settings — see reconcile-config.ts) — LIVE in production
+// since 2026-07-21, so this path is ACTIVE, not the inert default. Best-effort
+// (the guest mutation is already committed): errors and ceiling_full/
+// not_eligible are logged (no PII), never thrown. Callers must have already
+// verified event access (this is an internal service-role helper, like
+// pruneOrphanContact).
 export async function reconcileCampaignSetForContact(
   eventId: string,
   op: 'add' | 'repoint' | 'delete',

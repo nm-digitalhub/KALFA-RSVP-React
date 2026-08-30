@@ -40,10 +40,15 @@ export type OwnerCampaign = Pick<
   | 'capture_status'
   | 'charge_status'
   | 'created_at'
+  // The REAL J5 hold amount, sized to `covered` (min(max_contacts,
+  // reasonable_coverage_contacts)) — NOT the same as max_charge_ceiling when
+  // max_contacts exceeds the reasonable-coverage cap (300 today). Needed to
+  // show what was actually authorized, not the (possibly larger) ceiling.
+  | 'auth_amount'
 >;
 
 const CAMPAIGN_COLUMNS =
-  'id, event_id, status, price_per_reached, max_contacts, max_charge_ceiling, base_price, included_reached, allowed_channels, start_at, close_at, approved_at, final_charge_amount, credit_applied, capture_status, charge_status, created_at';
+  'id, event_id, status, price_per_reached, max_contacts, max_charge_ceiling, base_price, included_reached, allowed_channels, start_at, close_at, approved_at, final_charge_amount, credit_applied, capture_status, charge_status, created_at, auth_amount';
 
 // Pure: the approved charge ceiling = price-per-reached × max contacts, rounded
 // to agorot. The ceiling is the maximum the system may ever bill (§7); it is
@@ -221,10 +226,12 @@ export async function createCampaign(eventId: string): Promise<{ id: string }> {
   if (existing) return { id: existing.id };
 
   // max_contacts is DERIVED from the unique-contact count, not owner input (§7).
+  // May be 0 at creation — the base+overage flat fee prices a 0-contact campaign
+  // just fine (ceiling = base_price), and prepareCampaignHold re-derives the real
+  // count (and independently refuses to place a hold at 0) before any money moves.
+  // Letting creation proceed lets the owner sign the agreement before finishing
+  // their guest list, instead of being blocked at the very first step.
   const maxContacts = await countUniqueContactsForEvent(eventId);
-  if (maxContacts < 1) {
-    throw new Error('אין אנשי קשר תקינים ברשימת המוזמנים — הוסיפו מוזמנים עם מספר טלפון תקין');
-  }
 
   // The single active commercial template (the owner does not choose).
   const template = await resolveCanonicalTemplate();
@@ -440,6 +447,14 @@ export async function recordCampaignHold(
     citizenId: string | null;
     // SUMIT Customer.ExternalIdentifier — reconciliation anchor on the charge.
     authExternalRef: string;
+    // The draft "Order" document SUMIT creates for this hold — traceable in the
+    // SUMIT "תפיסות מסגרת" screen. Null if SUMIT omitted it (never blocks the hold).
+    orderDocumentId: number | null;
+    orderDocumentNumber: number | null; // human-readable ("הזמנה / 1002")
+    orderDocumentUrl: string | null; // direct download link
+    // SUMIT numeric Customer.ID — passed back at close-charge so it reuses the
+    // SAME customer instead of creating a new one (verified gap 30.8).
+    sumitCustomerId: number | null;
   },
 ): Promise<void> {
   // Only reached behind the payments config gate.
@@ -455,6 +470,10 @@ export async function recordCampaignHold(
       card_exp_year: hold.expYear, // card expiry year — required at capture
       card_citizen_id: hold.citizenId, // holder CitizenID — required at capture (PII)
       auth_external_ref: hold.authExternalRef, // reconciliation anchor
+      hold_order_document_id: hold.orderDocumentId,
+      hold_order_document_number: hold.orderDocumentNumber,
+      hold_order_document_url: hold.orderDocumentUrl,
+      sumit_customer_id: hold.sumitCustomerId,
       authorized_at: new Date().toISOString(),
     })
     .eq('id', campaignId);
@@ -575,8 +594,10 @@ export async function prepareCampaignHold(
   const included = Number(campaign.included_reached ?? 0);
 
   // full = the CURRENT unique-contact count (verifies ownership server-side).
+  // May be 0 — same reasoning as createCampaign: the flat base fee prices a
+  // 0-contact hold just fine. A legacy (base=0) campaign still can't place a
+  // ₪0 hold — route.ts's own `holdAmount <= 0` check is the guard for that.
   const full = await countUniqueContactsForEvent(campaign.event_id);
-  if (full < 1) throw new Error('אין אנשי קשר תקינים לפניה');
 
   const { reasonableCoverage, minHoldFloor, holdBufferPct } =
     await getHoldSizingKnobs(campaign.template_id, full);
@@ -636,6 +657,7 @@ export type CampaignChargeState = Pick<
   | 'card_exp_year'
   | 'card_citizen_id'
   | 'auth_external_ref'
+  | 'sumit_customer_id'
   | 'max_charge_ceiling'
   // Flat-base + included + overage snapshot (S2 charge math; S3 populates at
   // authorize). price_per_reached is the per-reached overage rate.
@@ -645,7 +667,7 @@ export type CampaignChargeState = Pick<
 >;
 
 const CHARGE_COLUMNS =
-  'id, event_id, status, capture_status, charge_status, card_token_ref, card_exp_month, card_exp_year, card_citizen_id, auth_external_ref, max_charge_ceiling, base_price, included_reached, price_per_reached';
+  'id, event_id, status, capture_status, charge_status, card_token_ref, card_exp_month, card_exp_year, card_citizen_id, auth_external_ref, sumit_customer_id, max_charge_ceiling, base_price, included_reached, price_per_reached';
 
 // Read the charge-relevant fields. Service-role (the charge writes bypass RLS);
 // the caller (the Route Handler) has already verified ownership.

@@ -30,6 +30,11 @@ export interface SumitRawChargeParams {
   preventDocumentCreation?: boolean; // J5 hold: skip the Order doc (no payment to balance)
   customerEmail?: string;
   externalId: string; // Customer.ExternalIdentifier (reconciliation anchor)
+  // Accounting_Typed_Customer.ID ("SUMIT identifier... leave empty to create a
+  // new entity"). Set this to charge under an EXISTING SUMIT customer record
+  // instead of creating a new one — omitting it (the previous, only, behavior)
+  // silently creates a fresh customer even when reusing the same card token.
+  customerId?: number;
 }
 
 export interface SumitRawResult {
@@ -44,6 +49,7 @@ export async function chargeRaw(p: SumitRawChargeParams): Promise<SumitRawResult
   const body: Record<string, unknown> = {
     Credentials: { CompanyID: p.companyId, APIKey: p.apiKey },
     Customer: {
+      ID: p.customerId, // present → reuse that SUMIT customer; absent → create/search
       EmailAddress: p.customerEmail || undefined,
       ExternalIdentifier: p.externalId,
     },

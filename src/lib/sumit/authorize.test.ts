@@ -63,6 +63,22 @@ describe('authorizeHoldSumit', () => {
     expect(r.cardToken).toBe('tok_9');
   });
 
+  it('sends Customer.Name when customerName is given, and omits it when not', async () => {
+    mockFetch(200, okBody());
+    await authorizeHoldSumit({ ...base, customerName: 'ישראל ישראלי' });
+    const sent = JSON.parse(
+      (vi.mocked(fetch).mock.calls[0][1] as RequestInit).body as string,
+    );
+    expect(sent.Customer.Name).toBe('ישראל ישראלי');
+
+    mockFetch(200, okBody());
+    await authorizeHoldSumit(base);
+    const sentNoName = JSON.parse(
+      (vi.mocked(fetch).mock.calls[0][1] as RequestInit).body as string,
+    );
+    expect(sentNoName.Customer.Name).toBeUndefined();
+  });
+
   it('accepts the enum-string Status form ("Success (0)")', async () => {
     mockFetch(200, okBody({ Status: 'Success (0)' }));
     await expect(authorizeHoldSumit(base)).resolves.toMatchObject({

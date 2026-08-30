@@ -15,7 +15,7 @@ import {
   type BulkGuestInput,
   type ImportMatch,
 } from '@/lib/data/guests';
-import { buildContactsForEvent } from '@/lib/data/contacts';
+import { buildContactsForEvent, reconcileCampaignSetForContact } from '@/lib/data/contacts';
 import { logActivity } from '@/lib/data/activity';
 import { normalizeGroupName } from '@/lib/data/guest-import-shared';
 import type { StagedRow } from '@/lib/data/whatsapp-import';
@@ -149,7 +149,14 @@ export async function confirmWhatsappImportAction(
     const imported = inserts.length ? await bulkInsertGuests(eventId, inserts) : 0;
 
     try {
-      await buildContactsForEvent(eventId);
+      // Verified gap (30.8): see import-actions.ts's identical fix — nothing
+      // previously reconciled contacts imported here into an already-
+      // operational campaign's authorized set. reconcileCampaignSetForContact
+      // is itself best-effort/never-throws, so this cannot fail the import.
+      const { contactIds } = await buildContactsForEvent(eventId);
+      for (const contactId of contactIds) {
+        await reconcileCampaignSetForContact(eventId, 'add', contactId);
+      }
     } catch (err) {
       unstable_rethrow(err);
     }

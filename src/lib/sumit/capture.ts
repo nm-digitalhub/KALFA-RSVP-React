@@ -18,6 +18,14 @@ export interface SumitCaptureParams {
   // Receipt "לכבוד" line — without it SUMIT prints "כרטיס ללא שם"
   // (observed on the live doc-check receipt 40106).
   customerName?: string;
+  // The hold's SUMIT customer number (campaigns.sumit_customer_id), when
+  // known. Belt-and-braces: the saved token already resolves to the right
+  // customer via its own PaymentMethod link, but sending Customer.ID too
+  // removes any dependency on that being reliable in every case (verified gap
+  // 2026-08-30: a fresh charge with the SAME token but no Customer.ID DID
+  // create a new customer in one live test — see
+  // plans/sumit-customer-id-reconciliation.md §5a).
+  customerId?: number | null;
 }
 
 export interface SumitCaptureResult {
@@ -47,6 +55,7 @@ export async function captureHeldCardSumit(
   const body = {
     Credentials: { CompanyID: p.companyId, APIKey: p.apiKey },
     Customer: {
+      ID: p.customerId ?? undefined,
       Name: p.customerName || undefined,
       EmailAddress: p.customerEmail || undefined,
       ExternalIdentifier: p.externalRef, // reconciliation anchor

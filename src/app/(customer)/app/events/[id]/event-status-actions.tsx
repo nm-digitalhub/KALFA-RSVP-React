@@ -2,43 +2,44 @@
 
 import { useActionState } from 'react';
 
+import { Button, type buttonVariants } from '@/components/ui/button';
 import { FormError, FormNotice } from '@/components/forms';
 import type { FormState } from '@/lib/validation/result';
 import type { EventStatus } from '@/lib/data/events';
+import type { VariantProps } from 'class-variance-authority';
 
 type BoundAction = (
   prevState: FormState,
   formData: FormData,
 ) => Promise<FormState>;
 
-// Mirrors campaign/[campaignId]/manage-client.tsx's ActionButton, plus a
+// Shared Button/buttonVariants — same component the page's nav links (ניהול
+// מוזמנים/סטטיסטיקות) already use — so every action on this page shares one
+// height/radius/variant system instead of two subtly mismatched ones
+// (verified gap, 2026-08-30: this used to hand-roll its own className,
+// rounded-md instead of the shared rounded-lg, no fixed height). Plus a
 // disabled state with an explanatory hint (R7's "close blocked" case).
 function ActionButton({
   action,
   label,
   confirm,
-  variant = 'default',
+  variant = 'outline',
   disabled,
   disabledHint,
 }: {
   action: BoundAction;
   label: string;
   confirm?: string;
-  variant?: 'default' | 'primary' | 'danger';
+  variant?: VariantProps<typeof buttonVariants>['variant'];
   disabled?: boolean;
   disabledHint?: string;
 }) {
   const [state, formAction] = useActionState(action, null);
-  const cls =
-    variant === 'primary'
-      ? 'bg-primary text-primary-foreground hover:opacity-90'
-      : variant === 'danger'
-        ? 'border border-destructive/40 text-destructive hover:bg-destructive/10'
-        : 'border border-border hover:bg-accent/40';
   return (
     <form action={formAction} className="space-y-2">
-      <button
+      <Button
         type="submit"
+        variant={variant}
         disabled={disabled}
         onClick={
           confirm
@@ -47,10 +48,9 @@ function ActionButton({
               }
             : undefined
         }
-        className={`rounded-md px-4 py-2 text-sm font-medium transition disabled:cursor-not-allowed disabled:opacity-50 ${cls}`}
       >
         {label}
-      </button>
+      </Button>
       {disabled && disabledHint ? (
         <p className="text-xs text-muted-foreground">{disabledHint}</p>
       ) : null}
@@ -83,7 +83,7 @@ export function EventStatusActions({
         <ActionButton
           action={publishAction}
           label="פרסום האירוע"
-          variant="primary"
+          variant="default"
           disabled={!canPublish}
           disabledHint={!canPublish ? 'יש להגדיר תאריך אירוע עתידי לפני הפרסום' : undefined}
         />
@@ -92,7 +92,7 @@ export function EventStatusActions({
         <ActionButton
           action={closeAction}
           label="סגירת האירוע"
-          variant="danger"
+          variant="destructive"
           confirm="לסגור את האירוע? לא ניתן לבטל פעולה זו."
           disabled={hasBlockingCampaign}
           disabledHint={

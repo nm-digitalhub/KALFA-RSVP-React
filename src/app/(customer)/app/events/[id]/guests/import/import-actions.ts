@@ -15,7 +15,7 @@ import {
   bulkInsertGuests,
   type BulkGuestInput,
 } from '@/lib/data/guests';
-import { buildContactsForEvent } from '@/lib/data/contacts';
+import { buildContactsForEvent, reconcileCampaignSetForContact } from '@/lib/data/contacts';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { CSV_MAX_ROWS, CSV_MAX_BYTES } from '@/lib/constants';
 
@@ -271,10 +271,20 @@ export async function importGuestsAction(
 
   // Materialize the contacts table (billing source-of-truth) from the imported
   // guests — the bulk path, so a one-time whole-event rebuild is appropriate.
-  // Best-effort: the guests are already committed; a failure must not report the
-  // import as failed (contacts reconcile on the next mutation / campaign build).
+  // Best-effort: the guests are already committed; a failure must not report
+  // the import as failed.
   try {
-    await buildContactsForEvent(eventId);
+    const { contactIds } = await buildContactsForEvent(eventId);
+    // Verified gap (30.8): nothing previously reconciled bulk-imported
+    // contacts into an already-operational campaign's authorized set — they
+    // were silently excluded forever. reconcileCampaignSetForContact is
+    // itself best-effort/never-throws (a cheap no-op when there is no
+    // operational campaign or the contact is already a member), so this loop
+    // cannot fail the import; it only ever helps a contact that is eligible
+    // and within funded_cap get admitted.
+    for (const contactId of contactIds) {
+      await reconcileCampaignSetForContact(eventId, 'add', contactId);
+    }
   } catch (err) {
     unstable_rethrow(err);
     // Derived secondary effect — never blocks a completed import, but log (no

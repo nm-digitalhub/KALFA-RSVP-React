@@ -299,6 +299,7 @@ export async function closeCampaignAndCharge(
       amount: amount.toString(),
       customerEmail: ownerEmail, // non-empty → SendDocumentByEmail:true (receipt)
       customerName: ownerName,
+      customerId: campaign.sumit_customer_id,
     });
     await recordCampaignCharge(campaignId, {
       amount,

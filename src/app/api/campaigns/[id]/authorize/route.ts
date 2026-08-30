@@ -15,7 +15,10 @@ import {
   getCampaignHoldsEnabled,
   getSumitServerConfig,
 } from '@/lib/data/payments';
+import { getProfile } from '@/lib/data/profiles';
 import { authorizeHoldSumit } from '@/lib/sumit/authorize';
+import { getSumitCustomerId, recordSumitCustomerId } from '@/lib/data/sumit-customers';
+import { logActivity } from '@/lib/data/activity';
 import { SumitDeclinedError } from '@/lib/sumit/charge';
 import { authorizeHoldSchema } from '@/lib/validation/campaigns';
 import { VAT_RATE_PERCENT } from '@/lib/agreements/template';
@@ -146,9 +149,16 @@ export async function POST(
   let holdAmount: number;
   try {
     ({ holdAmount } = await prepareCampaignHold(campaignId));
-  } catch {
+  } catch (err) {
+    // Every throw inside prepareCampaignHold is one of its own short, PII-free
+    // Hebrew strings (bad campaign state / invalid price / DB write failure) —
+    // safe to log verbatim. Without this, a failure here was previously a
+    // black box: the log said only "it failed", never WHY (verified 2026-08-30
+    // — the 2026-08-27 hold_review incident on d36add3d... left no diagnosable
+    // cause).
     console.error('[hold] failed to freeze the authorized set / size the hold', {
       campaignId,
+      error: err instanceof Error ? err.message : String(err),
     });
     await markCampaignHoldFailed(campaignId, 'hold_review');
     return r303(payUrl(ERROR.BAD_STATE));
@@ -159,7 +169,16 @@ export async function POST(
     return r303(payUrl(ERROR.BAD_STATE));
   }
 
+  // Cardholder name on the hold — same fallback chain as the signed agreement
+  // and the close-charge receipt (profiles.full_name → email → generic);
+  // without a Name, SUMIT prints "כרטיס ללא שם" on the held card record.
+  const profile = await getProfile();
+  const customerName = profile?.full_name?.trim() || user.email || 'לקוח KALFA';
+
   const authRef = crypto.randomUUID();
+  // The paying account's known SUMIT customer, if any — present → this hold
+  // reuses it (Customer.ID) instead of creating a duplicate.
+  const knownCustomerId = await getSumitCustomerId(user.id);
   let holdResult: Awaited<ReturnType<typeof authorizeHoldSumit>>;
   try {
     holdResult = await authorizeHoldSumit({
@@ -171,6 +190,8 @@ export async function POST(
       vatRate: String(VAT_RATE_PERCENT),
       authRef,
       customerEmail: user.email ?? '',
+      customerName,
+      customerId: knownCustomerId,
     });
   } catch (err) {
     if (err instanceof SumitDeclinedError) {
@@ -210,7 +231,30 @@ export async function POST(
       expYear: holdResult.expYear,
       citizenId: holdResult.citizenId,
       authExternalRef: authRef, // reconciliation anchor on the charge
+      orderDocumentId: holdResult.orderDocumentId,
+      orderDocumentNumber: holdResult.orderDocumentNumber,
+      orderDocumentUrl: holdResult.orderDocumentUrl,
+      sumitCustomerId: holdResult.sumitCustomerId,
     });
+    // Audit trail for the hold itself — verified gap (2026-08-30): nothing
+    // previously logged a successful authorization to activity_log at all,
+    // so campaigns.authorized_at had no independent corroborating record.
+    // Best-effort (never blocks the hold's own success) — no PII/card data,
+    // only reconciliation anchors already safe to log elsewhere in this route.
+    try {
+      await logActivity({
+        eventId: campaign.event_id,
+        action: 'campaign.hold_authorized',
+        meta: {
+          campaignId,
+          authAmount: holdAmount,
+          authNumber: holdResult.authNumber,
+          holdOrderDocumentNumber: holdResult.orderDocumentNumber,
+        },
+      });
+    } catch (err) {
+      console.error('[hold] logActivity failed (non-fatal)', { campaignId, err });
+    }
   } catch (err) {
     console.error(
       '[hold] CONFIRMED SUMIT hold could not be persisted — manual reconciliation required',
@@ -233,6 +277,24 @@ export async function POST(
       },
     });
     return r303(payUrl(ERROR.REVIEW));
+  }
+
+  // Best-effort anchor write (insert-if-absent) — the hold is already
+  // confirmed + persisted above; this only improves dedup on the user's NEXT
+  // hold and must never affect this request's outcome.
+  if (holdResult.sumitCustomerId != null) {
+    try {
+      await recordSumitCustomerId({
+        userId: user.id,
+        sumitCustomerId: holdResult.sumitCustomerId,
+        campaignId,
+      });
+    } catch (err) {
+      console.error('[hold] sumit_customers anchor write failed (non-fatal)', {
+        campaignId,
+        err,
+      });
+    }
   }
 
   return r303(payUrl());

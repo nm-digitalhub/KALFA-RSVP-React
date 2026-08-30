@@ -72,6 +72,15 @@ export interface AdminCampaignListItem {
   chargeStatus: string | null;
   finalChargeAmount: number | null;
   creditApplied: number;
+  // Hold-tracking (verified gap, 2026-08-30): capture_status was previously
+  // invisible on this screen entirely, and a stuck hold (pending/hold_failed/
+  // hold_review) never even reaches status='active', so it never appeared in
+  // WINDDOWN_STATUSES-filtered results — see the STUCK_CAPTURE_STATUSES query
+  // below. captureStatus itself is text, not a typed enum (types.generated.ts
+  // reflects capture_status as bare string — no DB enum backs it).
+  captureStatus: string | null;
+  holdOrderDocumentNumber: number | null;
+  holdOrderDocumentUrl: string | null;
 }
 
 // Statuses that may still need a wind-down action (close/pause/settle/cancel).
@@ -84,19 +93,32 @@ export const WINDDOWN_STATUSES: readonly CampaignStatus[] = [
   'closed',
 ];
 
-// List campaigns that may need an admin wind-down action, newest first. Reads
-// via the service-role client (camp_admin_all RLS also covers this) under
-// requireAdmin(). Returns only what the list needs — charge OUTCOME fields
-// (status/amount/credit), never card/token fields.
+// A campaign whose hold never went through never leaves status='approved'
+// (activateCampaign requires capture_status='authorized' — campaigns.ts:889),
+// so on its own it would never satisfy WINDDOWN_STATUSES above and would stay
+// permanently invisible on this screen. These are exactly the states an admin
+// needs to see: a stuck lock (pending, e.g. a crash between the hold request
+// and its outcome), a declined hold, or an ambiguous/needs-manual-reconciliation
+// outcome. Matches the same three values markCampaignHoldFailed/
+// lockCampaignForHold already use (campaigns.ts / authorize/route.ts).
+const STUCK_CAPTURE_STATUSES = ['pending', 'hold_failed', 'hold_review'] as const;
+
+// List campaigns that may need admin attention — either a wind-down action
+// (close/pause/settle/cancel) or a stuck hold that never activated. Reads via
+// the service-role client (camp_admin_all RLS also covers this) under
+// requireAdmin(). Returns only what the list needs — charge/hold OUTCOME
+// fields, never card/token fields.
 export async function listCampaignsForAdmin(): Promise<AdminCampaignListItem[]> {
   await requirePlatformPermission('manage_billing');
   const admin = createAdminClient();
   const { data, error } = await admin
     .from('campaigns')
     .select(
-      'id, status, event_id, created_at, charge_status, final_charge_amount, credit_applied, events(name, event_date)',
+      'id, status, event_id, created_at, charge_status, final_charge_amount, credit_applied, capture_status, hold_order_document_number, hold_order_document_url, events(name, event_date)',
     )
-    .in('status', [...WINDDOWN_STATUSES])
+    .or(
+      `status.in.(${WINDDOWN_STATUSES.join(',')}),and(status.eq.approved,capture_status.in.(${STUCK_CAPTURE_STATUSES.join(',')}))`,
+    )
     .order('created_at', { ascending: false });
   if (error) {
     throw new Error('טעינת הקמפיינים נכשלה');
@@ -110,5 +132,8 @@ export async function listCampaignsForAdmin(): Promise<AdminCampaignListItem[]> 
     chargeStatus: c.charge_status,
     finalChargeAmount: c.final_charge_amount,
     creditApplied: Number(c.credit_applied ?? 0),
+    captureStatus: c.capture_status,
+    holdOrderDocumentNumber: c.hold_order_document_number,
+    holdOrderDocumentUrl: c.hold_order_document_url,
   }));
 }

@@ -26,9 +26,13 @@ vi.mock('@/lib/data/guests', () => ({
   createGroup: vi.fn(),
   bulkInsertGuests: vi.fn(),
 }));
-vi.mock('@/lib/data/contacts', () => ({ buildContactsForEvent: vi.fn() }));
+vi.mock('@/lib/data/contacts', () => ({
+  buildContactsForEvent: vi.fn(),
+  reconcileCampaignSetForContact: vi.fn(),
+}));
 
 import { bulkInsertGuests, createGroup, listGroups } from '@/lib/data/guests';
+import { buildContactsForEvent } from '@/lib/data/contacts';
 import { importGuestsAction } from './import-actions';
 import { buildTemplateCsv } from './template-content';
 
@@ -53,7 +57,18 @@ function fd(file: File): FormData {
   return f;
 }
 
-beforeEach(() => vi.clearAllMocks());
+beforeEach(() => {
+  vi.clearAllMocks();
+  // Default shape matching the real return (contactIds added 30.8 — the
+  // reconcile-wiring fix); individual tests override when they care about it.
+  vi.mocked(buildContactsForEvent).mockResolvedValue({
+    guests: 0,
+    withValidPhone: 0,
+    uniqueContacts: 0,
+    invalid: 0,
+    contactIds: [],
+  });
+});
 
 describe('importGuestsAction — Next.js control-flow signals from the ownership gate (listGroups)', () => {
   it('propagates a NEXT_REDIRECT from listGroups instead of returning { error }', async () => {
