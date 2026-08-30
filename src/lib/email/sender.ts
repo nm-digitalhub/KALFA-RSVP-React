@@ -38,6 +38,22 @@ export interface EmailSender {
     html: string;
     text?: string;
     attachments?: EmailAttachment[];
+    /**
+     * Outbound-only defense in depth (docs/inquiry-email-threading-fix-plan-
+     * 2026-08-25.md §2.4) — NOT a matching tier. The real matching signal is the
+     * `[KLF-XXXXXXXX]` subject token; these headers just give a mail client's own
+     * threading a second, independent chance to group the conversation.
+     */
+    inReplyTo?: string;
+    references?: string[];
+    /**
+     * Resend-only (§2.6): closes the outbound duplicate-send gap when a sweep
+     * crashes between sending and persisting its completion stamp. Remembered
+     * for 24 hours by Resend, not indefinitely — see §2.6 for the bounded,
+     * low-probability residual this leaves. Silently ignored by `smtpSender`;
+     * nodemailer/SMTP has no protocol-level equivalent.
+     */
+    idempotencyKey?: string;
   }): Promise<void>;
 }
 
@@ -85,29 +101,46 @@ async function emailSettings() {
 function resendSender(apiKey: string, from: string): EmailSender {
   const client = new Resend(apiKey);
   return {
-    async send({ to, subject, html, text, attachments }) {
+    async send({ to, subject, html, text, attachments, inReplyTo, references, idempotencyKey }) {
       // The SDK reports failures in `error` rather than by throwing, so a
       // bare await would silently succeed on a rejected send.
-      const { error } = await client.emails.send({
-        from,
-        to,
-        replyTo: from,
-        subject,
-        html,
-        ...(text ? { text } : {}),
-        ...(attachments?.length
-          ? {
-              attachments: attachments.map((a) => ({
-                filename: a.filename,
-                content: Buffer.from(a.content),
-                contentType: a.contentType,
-              })),
-            }
-          : {}),
-      });
+      const { error } = await client.emails.send(
+        {
+          from,
+          to,
+          replyTo: from,
+          subject,
+          html,
+          ...(text ? { text } : {}),
+          ...(inReplyTo
+            ? {
+                headers: {
+                  'In-Reply-To': inReplyTo,
+                  References: (references ?? [inReplyTo]).join(' '),
+                },
+              }
+            : {}),
+          ...(attachments?.length
+            ? {
+                attachments: attachments.map((a) => ({
+                  filename: a.filename,
+                  content: Buffer.from(a.content),
+                  contentType: a.contentType,
+                })),
+              }
+            : {}),
+        },
+        idempotencyKey ? { idempotencyKey } : undefined,
+      );
       // The message never carries the provider's wording — it can name the
       // recipient or the reason, and neither belongs in a user-facing string.
-      if (error) throw new EmailSendError('שליחת הדואר נכשלה');
+      // The real reason is still worth having server-side: log it here (per
+      // Resend's own documented pattern — console.error(error) at the point
+      // { data, error } is destructured) before it's discarded below.
+      if (error) {
+        console.error(`[email] resend send failed: ${error.name} — ${error.message}`);
+        throw new EmailSendError('שליחת הדואר נכשלה');
+      }
     },
   };
 }
@@ -137,7 +170,7 @@ function smtpSender(
     auth: { user: cfg.smtp_user, pass: cfg.smtp_password },
   });
   return {
-    async send({ to, subject, html, text, attachments }) {
+    async send({ to, subject, html, text, attachments, inReplyTo, references }) {
       try {
         await transporter.sendMail({
           from,
@@ -146,13 +179,19 @@ function smtpSender(
           subject,
           html,
           text, // plain-text alternative → multipart, better deliverability
+          ...(inReplyTo ? { inReplyTo, references: references ?? [inReplyTo] } : {}),
           attachments: attachments?.map((a) => ({
             filename: a.filename,
             content: Buffer.from(a.content),
             contentType: a.contentType,
           })),
         });
-      } catch {
+      } catch (err) {
+        // Same rationale as resendSender above: log the real reason server-side
+        // before collapsing it into the generic user-facing message.
+        console.error(
+          `[email] smtp send failed: ${err instanceof Error ? err.message : String(err)}`,
+        );
         throw new EmailSendError('שליחת הדואר נכשלה');
       }
     },
