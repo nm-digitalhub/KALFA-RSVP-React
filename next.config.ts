@@ -122,6 +122,15 @@ const nextConfig: NextConfig = {
           // (2 years), WITHOUT `preload` — preload is effectively irreversible.
           // Measured 24.8: no Strict-Transport-Security anywhere on beta before this.
           { key: 'Strict-Transport-Security', value: 'max-age=63072000; includeSubDomains' },
+          // Verified gap (30.8): beta-proxy.conf never set proxy_buffering off,
+          // so nginx defaults to buffering the ENTIRE response before sending
+          // anything to the client — silently defeating the streaming that the
+          // app's loading.tsx/Suspense boundaries (8 routes) depend on for a
+          // fast first paint. Per node_modules/next/dist/docs/.../self-hosting.md
+          // §Streaming and Suspense, this header is nginx's own documented
+          // per-response override (nginx.org proxy_buffering: X-Accel-Buffering)
+          // — no nginx config change needed.
+          { key: 'X-Accel-Buffering', value: 'no' },
         ],
       },
       // Public RSVP pages carry a per-guest bearer token in the path. A Server
@@ -179,6 +188,16 @@ const nextConfig: NextConfig = {
       // keep out of search indexes.
       {
         source: '/ty/:token*',
+        headers: [
+          { key: 'Cache-Control', value: 'no-store, max-age=0' },
+          { key: 'Referrer-Policy', value: 'no-referrer' },
+          { key: 'X-Robots-Tag', value: 'noindex, nofollow' },
+        ],
+      },
+      // Public inquiry-rating (CSAT) page — same posture as /g//ty above: never
+      // cache, never leak via Referer, keep out of search indexes.
+      {
+        source: '/rate/:token*',
         headers: [
           { key: 'Cache-Control', value: 'no-store, max-age=0' },
           { key: 'Referrer-Policy', value: 'no-referrer' },
