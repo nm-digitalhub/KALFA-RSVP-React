@@ -99,6 +99,22 @@ export async function insertContactMessage(
     return { ok: false };
   }
 
+  // Mirrors the flat `message` column into the thread table so the admin
+  // detail view's InquiryThread shows the original question, not just
+  // replies — mail intake already does this (inquiry-mail-intake.ts); this was
+  // the missing half for web-form submissions, which never got an initial
+  // `inbound` row. Best-effort: the inquiry itself (inserted above) is the
+  // thing that must not be lost, so a thread-mirror failure must not fail
+  // the submission — the flat `message` column still holds the text either way.
+  const { error: threadError } = await supabase.from('inquiry_messages').insert({
+    inquiry_id: data.id,
+    direction: 'inbound',
+    body: input.message,
+  });
+  if (threadError) {
+    console.error('[inquiry-intake] thread mirror insert failed', data.id, threadError.code);
+  }
+
   void sendSlackAlert({
     category: 'customer_inquiry',
     level: 'info',

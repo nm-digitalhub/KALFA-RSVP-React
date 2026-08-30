@@ -381,6 +381,14 @@ export const appSettingsSchema = z.object({
   smtp_user: z.string().trim(),
   smtp_password: z.string().trim(),
   smtp_from: z.string().trim(),
+  // Inquiry silence follow-up sweep (reminder → warning → auto-close on an
+  // inquiry the admin replied to and the customer went quiet on) — its OWN
+  // switch, deliberately not sharing outreach_enabled (campaign/WhatsApp
+  // master switch — an unrelated system) or email_enabled (would also kill
+  // agreement mail and inquiry replies). `.default(false)` on top of the
+  // column's own DB default: a fail-closed value even if the field is ever
+  // omitted from the submitted form (e.g. mid-rollout of the UI toggle).
+  inquiry_followup_enabled: z.boolean().default(false),
 });
 export type AppSettingsInput = z.infer<typeof appSettingsSchema>;
 

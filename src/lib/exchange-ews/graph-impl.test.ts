@@ -167,6 +167,27 @@ describe('graph-impl listAppointments pagination + id format', () => {
     expect(result.error).toBe('unreachable');
   });
 
+  it('classifies statusCode=-1 (the Graph SDK\'s own "no response received" default) as unreachable, not provider_error', async () => {
+    // Verified against the installed @microsoft/microsoft-graph-client (3.0.7)
+    // source: GraphRequest.send()'s catch branch omits statusCode entirely
+    // when no rawResponse exists (a fetch-level failure — DNS/timeout/reset),
+    // and GraphErrorHandler/GraphError both default an omitted statusCode to
+    // -1. A finite-but-fake status must not fall into the generic
+    // provider_error bucket.
+    const networkError = Object.assign(new Error('fetch failed'), { statusCode: -1 });
+    const { client } = makeFakeClient([networkError]);
+
+    const graphProvider = await freshGraphProvider(client);
+    const result = await graphProvider.listAppointments(cfg, {
+      start: new Date('2026-08-17T00:00:00Z'),
+      end: new Date('2026-09-01T00:00:00Z'),
+    });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error).toBe('unreachable');
+  });
+
   it('does not page past 1000 accumulated events even if nextLink keeps coming', async () => {
     // Two big pages already exceed the 1000 cap on their own — the loop must
     // stop after the second `get()` rather than requesting a third page.

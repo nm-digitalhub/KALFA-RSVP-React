@@ -97,10 +97,23 @@ function classifyGraphError(err: unknown): ExchangeErrorCode {
   // it still surfaces, the retry budget is spent and the service is, for our
   // purposes, unreachable.
   if (status === 429 || (status >= 500 && status <= 599)) return 'unreachable';
+  // -1 is @microsoft/microsoft-graph-client's OWN default (GraphError/
+  // GraphErrorHandler, verified against the installed 3.0.7 source): it is
+  // what GraphRequest.send() passes when the fetch itself never produced a
+  // response — no HTTP exchange happened at all (DNS failure, connect
+  // timeout, socket reset). It is not a real "the API answered -1" status,
+  // so it must be checked BEFORE the generic finite-number fallback below.
+  if (status === -1) return 'unreachable';
   if (Number.isFinite(status)) return 'provider_error';
 
-  // No HTTP status at all — DNS failure, connect timeout, socket reset. Same
-  // reasoning as ews-impl's hasRequestNoResponse branch.
+  // No HTTP status at all AND no statusCode key either — same network-failure
+  // reasoning as the status===-1 branch above, kept as a defensive fallback.
+  // NOTE: in practice this regex rarely matches once an error has already
+  // been wrapped into a GraphError — GraphErrorHandler.constructError copies
+  // the ORIGINAL error's `.name` (e.g. "TypeError") into `.code`, not its
+  // `.code` (e.g. "ECONNRESET") — verified against the installed SDK source.
+  // The status===-1 check above is what actually catches this case for
+  // Graph-SDK errors; this stays only for a raw, unwrapped network error.
   const code = typeof err === 'object' && err !== null && 'code' in err ? String((err as { code: unknown }).code) : '';
   if (/ENOTFOUND|ECONNREFUSED|ETIMEDOUT|ECONNRESET|EAI_AGAIN|UND_ERR/i.test(code)) return 'unreachable';
   if (err instanceof Error && err.message === 'graph_config_missing') return 'auth_failed';

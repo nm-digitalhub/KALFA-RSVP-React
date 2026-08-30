@@ -34,7 +34,19 @@ export type AdminWebhookRow = Pick<
 export type AdminWebhookDetail = WebhookInboxRow;
 
 export interface WebhookFilter extends PageParams {
-  kind?: string; // event_kind: 'message' | 'status'
+  // Which integration sent the event: whatsapp | graph | voximplant | resend.
+  // This is the COARSE endpoint filter. It is deliberately not called
+  // "endpoint", because provider is NOT 1:1 with a route — VERIFIED 2026-08-26
+  // by enumerating every insert site: 'voximplant' is written by six different
+  // routes (cb, agent-tool/{rsvp,note,dnc}, mtg/tool/dnc, sls/tool/dnc).
+  // `event_kind` is what identifies the individual route; the two together are
+  // the endpoint. The column was always selected and displayed but could not be
+  // filtered on, so one provider's traffic could not be isolated.
+  provider?: string;
+  // event_kind — the FINE endpoint filter, 1:1 with a route except
+  // /api/webhooks/whatsapp, which emits both 'message' and 'status'.
+  // NOT limited to 'message' | 'status': those are only WhatsApp's.
+  kind?: string;
   state?: string; // pending | processed | error
   from?: string; // received_at >=
   to?: string; // received_at <=
@@ -57,6 +69,7 @@ export async function listWebhookInbox(
     .from('webhook_inbox')
     .select(LIST_COLUMNS, { count: 'exact' });
 
+  if (filter.provider) query = query.eq('provider', filter.provider);
   if (filter.kind) query = query.eq('event_kind', filter.kind);
   if (filter.state === 'pending') {
     query = query.is('processed_at', null).is('last_error', null);

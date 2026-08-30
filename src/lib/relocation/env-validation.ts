@@ -99,6 +99,17 @@ export const ENV_KEY_SPECS: readonly EnvKeySpec[] = [
   // Email
   { key: "EMAIL_PROVIDER", kind: "format", format: z.enum(["resend", "smtp"]) },
   { key: "RESEND_API_KEY", kind: "probe", format: nonEmpty, probe: "resend" },
+  // Signing secret for /api/webhooks/resend. Optional because a fresh
+  // deployment has no webhook registered yet — but when it IS absent the
+  // route answers 200 "not configured" and DROPS every delivery event, so a
+  // relocation that skips it loses bounce visibility silently. Not probeable:
+  // Resend returns the signing secret only at creation, never on read.
+  {
+    key: "RESEND_WEBHOOK_SECRET",
+    kind: "format",
+    format: z.string().min(1),
+    optional: true,
+  },
   // ElevenLabs
   { key: "ELEVENLABS_API_KEY", kind: "probe", format: nonEmpty, probe: "elevenlabs" },
   { key: "ELEVENLABS_WEBHOOK", kind: "format", format: nonEmpty },

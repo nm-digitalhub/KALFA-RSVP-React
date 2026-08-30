@@ -15,6 +15,8 @@ import {
   webhookProcessState,
   deliveryStatusVariant,
   webhookKindLabel,
+  webhookProviderLabel,
+  WEBHOOK_KIND_VARIANTS,
 } from '@/lib/data/admin/labels';
 
 beforeEach(() => vi.clearAllMocks());
@@ -45,8 +47,51 @@ describe('label helpers (free-text → map + fallback)', () => {
     expect(deliveryStatusVariant(null)).toBe('neutral');
   });
   it('kind label falls back to the raw value', () => {
-    expect(webhookKindLabel('message')).toBe('הודעה');
+    // 'הודעה נכנסת', not 'הודעה': four integrations now share this table, so an
+    // inbound WhatsApp message has to be distinguishable from a delivery status
+    // and from inbound mail at a glance.
+    expect(webhookKindLabel('message')).toBe('הודעה נכנסת');
     expect(webhookKindLabel('foo')).toBe('foo');
+  });
+
+  // Regression guard for the actual defect: seven of the nine endpoints had no
+  // Hebrew label, so their badge rendered the raw English slug (graph_mail,
+  // call_owner_note) inside an RTL Hebrew admin. Every kind that any route can
+  // write MUST be named here — a new endpoint without a label fails this test.
+  it('names EVERY event_kind a route can write, in Hebrew', () => {
+    const ALL_KINDS = [
+      'message',
+      'status',
+      'graph_mail',
+      'email_delivery',
+      'call_result',
+      'call_rsvp',
+      'call_owner_note',
+      'call_dnc',
+      'mtg_dnc',
+      'sls_dnc',
+    ];
+    for (const kind of ALL_KINDS) {
+      const label = webhookKindLabel(kind);
+      expect(label, `${kind} has no Hebrew label`).not.toBe(kind);
+      expect(label, `${kind} label is not Hebrew`).toMatch(/[\u0590-\u05FF]/);
+      expect(WEBHOOK_KIND_VARIANTS[kind], `${kind} has no badge variant`).toBeDefined();
+    }
+  });
+
+  // A DNC row is an opt-out request — a legal obligation under the Israeli spam
+  // law. It must not render as a routine neutral row in the list.
+  it('flags every opt-out kind with a warning badge', () => {
+    for (const kind of ['call_dnc', 'mtg_dnc', 'sls_dnc']) {
+      expect(WEBHOOK_KIND_VARIANTS[kind], kind).toBe('warning');
+    }
+  });
+
+  it('names every provider in Hebrew and falls back to the raw value', () => {
+    for (const provider of ['whatsapp', 'graph', 'voximplant', 'resend']) {
+      expect(webhookProviderLabel(provider), provider).not.toBe(provider);
+    }
+    expect(webhookProviderLabel('unknown')).toBe('unknown');
   });
 });
 
@@ -84,6 +129,30 @@ describe('listWebhookInbox', () => {
     });
     expect(res).toMatchObject({ total: 1, page: 1 });
     expect(res.items).toHaveLength(1);
+  });
+
+  // The provider filter. Four integrations share webhook_inbox, so without this
+  // one integration's traffic could not be isolated at all — the column was
+  // selected and displayed but never filterable.
+  it('filters by provider, in the DB and not in the browser', async () => {
+    const { builder } = mock([{ id: 'a1' }], 1);
+    await listWebhookInbox({ provider: 'resend' });
+    expect(builder.eq).toHaveBeenCalledWith('provider', 'resend');
+  });
+
+  // provider is COARSE (integration) and kind is FINE (route). 'voximplant' is
+  // written by six routes, so the two must compose rather than override.
+  it('composes provider AND kind to isolate a single voximplant route', async () => {
+    const { builder } = mock([], 0);
+    await listWebhookInbox({ provider: 'voximplant', kind: 'call_dnc' });
+    expect(builder.eq).toHaveBeenCalledWith('provider', 'voximplant');
+    expect(builder.eq).toHaveBeenCalledWith('event_kind', 'call_dnc');
+  });
+
+  it('applies no provider predicate when the filter is absent', async () => {
+    const { builder } = mock([], 0);
+    await listWebhookInbox({});
+    expect(builder.eq).not.toHaveBeenCalledWith('provider', expect.anything());
   });
 
   it('pending state filters on both nulls', async () => {

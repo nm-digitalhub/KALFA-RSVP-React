@@ -130,6 +130,21 @@ function stripDuplicateFraming(body: string): string {
   return body.replace(LEADING_GREETING, '').replace(TRAILING_SIGNOFF, '').trim();
 }
 
+// Shared subject builder for every outbound send on an inquiry thread (admin
+// reply, reminder, closing warning, rating request). `[KLF-XXXXXXXX]` is the
+// contact_messages.ref_code matching token intakeMailAsInquiry parses out of a
+// reply's subject (docs/inquiry-email-threading-fix-plan-2026-08-25.md §2.1/§2.3).
+const THREAD_SUBJECT = 'תגובה לפנייתך — KALFA';
+
+function threadSubject(refCode: string, isFirst: boolean): string {
+  const tag = `[KLF-${refCode}]`;
+  // `Re:` at the very front, not after the tag — matches Resend's own documented
+  // example, and gives a mail client's own leading-"Re:" detection the best
+  // chance of actually firing instead of double-prefixing a genuine customer
+  // reply (§2.2).
+  return isFirst ? `${tag} ${THREAD_SUBJECT}` : `Re: ${tag} ${THREAD_SUBJECT}`;
+}
+
 export function inquiryReplyEmail(input: {
   recipientName: string;
   replyText: string;
@@ -140,9 +155,16 @@ export function inquiryReplyEmail(input: {
    * same getAppOrigin() every other absolute link goes through.
    */
   origin: string;
+  refCode: string;
+  /**
+   * Caller-computed, not derived here (§2.2/§3.1): a hardcoded literal would be
+   * wrong for a genuine first admin reply after a reopen, or a second admin
+   * reply sent before the customer has replied even once.
+   */
+  isFirst: boolean;
 }): { subject: string; html: string; text: string } {
   const name = input.recipientName.trim() || 'לקוח יקר';
-  const subject = 'תגובה לפנייתך — KALFA';
+  const subject = threadSubject(input.refCode, input.isFirst);
   const body = stripDuplicateFraming(input.replyText);
   // Plain-text alternative: emphasis markers are left as-is. `**` reads fine as
   // emphasis in a text-only client, and stripping it would lose the structure
@@ -218,6 +240,147 @@ ${inlineMarkdownToText(note, input.origin)}
     <p style="margin:8px 0">שלום ${esc(name)},</p>
     <p style="margin:8px 0">${esc(copy.opening)}</p>
     <div style="margin:12px 0;white-space:pre-line">${inlineMarkdownToHtml(esc(note), esc(input.origin))}</div>
+    <hr style="border:none;border-top:1px solid #eee;margin:18px 0 14px">
+    <p style="margin:0 0 6px;color:#888;font-size:12px">בברכה,</p>
+    <img src="${esc(input.origin)}/brand/kalfa-signature.png" width="200" height="63"
+         alt="נתנאל ק׳ — KALFA"
+         style="display:block;width:200px;height:63px;border:0;outline:none;max-width:100%">
+  </div>
+</body>
+</html>`;
+  return { subject, html, text };
+}
+
+// Two-stage silence follow-up on an inquiry the admin already replied to and
+// the customer went quiet on (inquiry-followup.ts's sweep). Both are
+// transactional/responsive on the SAME reasoning `inquiryReplyEmail` already
+// rests on above: the recipient is the one who opened this conversation, this
+// is a continuation of it, not new outreach. Neither offers a self-service
+// "close this" link on purpose — replying is the only action either asks for,
+// and the sweep decides the outcome either way.
+export function inquiryReminderEmail(input: {
+  recipientName: string;
+  origin: string;
+  refCode: string;
+}): { subject: string; html: string; text: string } {
+  const name = input.recipientName.trim() || 'לקוח יקר';
+  // Always a reply on an existing thread by definition — never the first
+  // message (§2.2).
+  const subject = threadSubject(input.refCode, /* isFirst */ false);
+  const text = `שלום ${name},
+
+לפני כמה ימים ענינו לפנייה שלך. רצינו לוודא שהכול הסתדר.
+
+אם עדיין צריך עזרה — פשוט השב/י למייל הזה. אם הכול טופל, אין צורך לעשות דבר.
+
+בברכה,
+צוות KALFA`;
+  const html = `<!doctype html>
+<html lang="he" dir="rtl">
+<body lang="he" dir="rtl" style="font-family:Arial,Helvetica,sans-serif;direction:rtl;color:#1a1a1a;line-height:1.7;margin:0;padding:24px;background:#f5f5f7">
+  <div style="max-width:560px;margin:0 auto;background:#ffffff;border-radius:10px;padding:24px;border:1px solid #e3e3e8">
+    <h1 style="font-size:20px;margin:0 0 12px">עדיין צריך עזרה?</h1>
+    <p style="margin:8px 0">שלום ${esc(name)},</p>
+    <p style="margin:8px 0">לפני כמה ימים ענינו לפנייה שלך. רצינו לוודא שהכול הסתדר.</p>
+    <p style="margin:8px 0">אם עדיין צריך עזרה — פשוט השיבו למייל הזה. אם הכול טופל, אין צורך לעשות דבר.</p>
+    <hr style="border:none;border-top:1px solid #eee;margin:18px 0 14px">
+    <p style="margin:0 0 6px;color:#888;font-size:12px">בברכה,</p>
+    <img src="${esc(input.origin)}/brand/kalfa-signature.png" width="200" height="63"
+         alt="נתנאל ק׳ — KALFA"
+         style="display:block;width:200px;height:63px;border:0;outline:none;max-width:100%">
+  </div>
+</body>
+</html>`;
+  return { subject, html, text };
+}
+
+export function inquiryClosingWarningEmail(input: {
+  recipientName: string;
+  origin: string;
+  refCode: string;
+}): { subject: string; html: string; text: string } {
+  const name = input.recipientName.trim() || 'לקוח יקר';
+  const subject = threadSubject(input.refCode, /* isFirst */ false);
+  const text = `שלום ${name},
+
+לא שמענו ממך זמן רב לגבי הפנייה שענינו לה. פניות שלא נענות זמן רב מסומנות אצלנו כטופלות.
+
+אם עדיין צריך עזרה — פשוט השב/י למייל הזה, ונחזור לטפל בזה.
+
+בברכה,
+צוות KALFA`;
+  const html = `<!doctype html>
+<html lang="he" dir="rtl">
+<body lang="he" dir="rtl" style="font-family:Arial,Helvetica,sans-serif;direction:rtl;color:#1a1a1a;line-height:1.7;margin:0;padding:24px;background:#f5f5f7">
+  <div style="max-width:560px;margin:0 auto;background:#ffffff;border-radius:10px;padding:24px;border:1px solid #e3e3e8">
+    <h1 style="font-size:20px;margin:0 0 12px">הפנייה שלך תיסגר בקרוב</h1>
+    <p style="margin:8px 0">שלום ${esc(name)},</p>
+    <p style="margin:8px 0">לא שמענו ממך זמן רב לגבי הפנייה שענינו לה. פניות שלא נענות זמן רב מסומנות אצלנו כטופלות.</p>
+    <p style="margin:8px 0">אם עדיין צריך עזרה — פשוט השיבו למייל הזה, ונחזור לטפל בזה.</p>
+    <hr style="border:none;border-top:1px solid #eee;margin:18px 0 14px">
+    <p style="margin:0 0 6px;color:#888;font-size:12px">בברכה,</p>
+    <img src="${esc(input.origin)}/brand/kalfa-signature.png" width="200" height="63"
+         alt="נתנאל ק׳ — KALFA"
+         style="display:block;width:200px;height:63px;border:0;outline:none;max-width:100%">
+  </div>
+</body>
+</html>`;
+  return { subject, html, text };
+}
+
+// CSAT request sent once the followup sweep auto-closes an inquiry on
+// sustained silence (inquiry-followup.ts). Three emoji LINKS, not buttons —
+// each takes the customer straight to /rate/{token}?score=N with that score
+// pre-selected; the page (a public, unauthenticated surface keyed by the
+// opaque token alone) still lets them change it and add a comment before
+// submitting. Unicode emoji, not inline SVG/images: email clients render
+// emoji far more reliably than embedded graphics (confirmed against the
+// design mockup built for this feature) — the public PAGE itself uses real
+// lucide icons instead, since a real web page doesn't have email's rendering
+// constraints.
+export function inquiryRatingRequestEmail(input: {
+  recipientName: string;
+  ratingToken: string;
+  origin: string;
+  refCode: string;
+}): { subject: string; html: string; text: string } {
+  const name = input.recipientName.trim() || 'לקוח יקר';
+  const subject = threadSubject(input.refCode, /* isFirst */ false);
+  const rateUrl = (score: 1 | 2 | 3) =>
+    `${input.origin}/rate/${encodeURIComponent(input.ratingToken)}?score=${score}`;
+  const text = `שלום ${name},
+
+הפנייה שלך סומנה כטופלה. נשמח לדעת איך היה — לחיצה אחת מספיקה:
+
+לא היה טוב: ${rateUrl(1)}
+בסדר: ${rateUrl(2)}
+מצוין: ${rateUrl(3)}
+
+בברכה,
+צוות KALFA`;
+  const html = `<!doctype html>
+<html lang="he" dir="rtl">
+<body lang="he" dir="rtl" style="font-family:Arial,Helvetica,sans-serif;direction:rtl;color:#1a1a1a;line-height:1.7;margin:0;padding:24px;background:#f5f5f7">
+  <div style="max-width:560px;margin:0 auto;background:#ffffff;border-radius:10px;padding:24px;border:1px solid #e3e3e8">
+    <h1 style="font-size:20px;margin:0 0 12px">תודה שפנית אלינו 🙂</h1>
+    <p style="margin:8px 0">שלום ${esc(name)},</p>
+    <p style="margin:8px 0">הפנייה שלך סומנה כטופלה. נשמח לדעת איך היה — לחיצה אחת מספיקה:</p>
+    <table role="presentation" style="margin:20px auto 6px;border-collapse:collapse">
+      <tr>
+        <td style="padding:0 8px;text-align:center">
+          <a href="${esc(rateUrl(1))}" style="display:block;width:52px;height:52px;line-height:52px;border-radius:14px;border:2px solid #e3e3e8;background:#f8f8fb;font-size:26px;text-decoration:none">😕</a>
+          <span style="display:block;margin-top:6px;font-size:11px;color:#4b4b55">לא היה טוב</span>
+        </td>
+        <td style="padding:0 8px;text-align:center">
+          <a href="${esc(rateUrl(2))}" style="display:block;width:52px;height:52px;line-height:52px;border-radius:14px;border:2px solid #e3e3e8;background:#f8f8fb;font-size:26px;text-decoration:none">😐</a>
+          <span style="display:block;margin-top:6px;font-size:11px;color:#4b4b55">בסדר</span>
+        </td>
+        <td style="padding:0 8px;text-align:center">
+          <a href="${esc(rateUrl(3))}" style="display:block;width:52px;height:52px;line-height:52px;border-radius:14px;border:2px solid #e3e3e8;background:#f8f8fb;font-size:26px;text-decoration:none">😊</a>
+          <span style="display:block;margin-top:6px;font-size:11px;color:#4b4b55">מצוין</span>
+        </td>
+      </tr>
+    </table>
     <hr style="border:none;border-top:1px solid #eee;margin:18px 0 14px">
     <p style="margin:0 0 6px;color:#888;font-size:12px">בברכה,</p>
     <img src="${esc(input.origin)}/brand/kalfa-signature.png" width="200" height="63"

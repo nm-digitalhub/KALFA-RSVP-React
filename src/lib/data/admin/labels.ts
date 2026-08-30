@@ -113,7 +113,17 @@ export const CONTACT_STATUS_LABELS: Record<ContactStatus, string> = {
 };
 
 const CONTACT_ONLY_STATUS_LABELS: Record<string, string> = {
-  reopened: 'נפתחה מחדש',
+  // NOT "נפתחה מחדש" (reopened) — the underlying status value is set on ANY
+  // customer reply to a non-cancelled row, whether it was previously 'done'
+  // (a genuine reopen) or still 'new'/'in_progress' (never closed at all,
+  // just a reply on an active thread). Since the code doesn't track which of
+  // the two applies (attachReplyToInquiry sets this status unconditionally),
+  // the label has to describe what's true in both cases: a customer reply is
+  // waiting on an admin response — not that something was "reopened."
+  // Verified live 2026-08-26: before this label change every real occurrence
+  // of this status was a thread that had never been closed (in_progress →
+  // reopened), so "reopened" was actively misleading, not just imprecise.
+  reopened: 'הלקוח השיב — ממתינה למענה',
 };
 
 export function contactStatusLabel(status: string): string {
@@ -121,6 +131,29 @@ export function contactStatusLabel(status: string): string {
     CONTACT_ONLY_STATUS_LABELS[status] ??
     (CONTACT_STATUS_LABELS as Record<string, string>)[status] ??
     status
+  );
+}
+
+// Semantic tone per inquiry status, for the admin list/detail badges — same
+// shape as CALLBACK_STATUS_VARIANTS above. `reopened` gets its own entry
+// (not in CONTACT_STATUS_LABELS's closed picklist) since it is a real,
+// filterable status a row can carry, just never one an admin sets directly.
+export const CONTACT_STATUS_VARIANTS: Record<ContactStatus, BadgeVariant> = {
+  new: 'info',
+  in_progress: 'warning',
+  done: 'success',
+  cancelled: 'neutral',
+};
+
+const CONTACT_ONLY_STATUS_VARIANTS: Record<string, BadgeVariant> = {
+  reopened: 'destructive',
+};
+
+export function contactStatusVariant(status: string): BadgeVariant {
+  return (
+    CONTACT_ONLY_STATUS_VARIANTS[status] ??
+    (CONTACT_STATUS_VARIANTS as Record<string, BadgeVariant>)[status] ??
+    'neutral'
   );
 }
 
@@ -151,9 +184,34 @@ export const WEBHOOK_PROCESS_VARIANTS: Record<WebhookState, BadgeVariant> = {
   error: 'destructive',
 };
 
+// webhook_inbox rows come from FOUR integrations across NINE routes. VERIFIED
+// 2026-08-26 by enumerating every insertWebhookEvents call site — the labels
+// below cover all of them, so no badge falls back to a raw English slug in a
+// Hebrew RTL admin (7 of the 9 previously did).
+export const WEBHOOK_PROVIDER_LABELS: Record<string, string> = {
+  whatsapp: 'וואטסאפ',
+  graph: 'דואר Microsoft',
+  voximplant: 'שיחות קוליות',
+  resend: 'דואר יוצא (Resend)',
+};
+
+export function webhookProviderLabel(provider: string): string {
+  return WEBHOOK_PROVIDER_LABELS[provider] ?? provider;
+}
+
+// event_kind identifies the individual route (1:1, except /api/webhooks/whatsapp
+// which emits both 'message' and 'status').
 export const WEBHOOK_KIND_LABELS: Record<string, string> = {
-  message: 'הודעה',
-  status: 'סטטוס',
+  message: 'הודעה נכנסת',
+  status: 'סטטוס מסירה',
+  graph_mail: 'דואר נכנס',
+  email_delivery: 'מסירת דואר יוצא',
+  call_result: 'תוצאת שיחה',
+  call_rsvp: 'אישור הגעה בשיחה',
+  call_owner_note: 'הערה מהשיחה',
+  call_dnc: 'בקשת הסרה (RSVP)',
+  mtg_dnc: 'בקשת הסרה (פגישות)',
+  sls_dnc: 'בקשת הסרה (מכירות)',
 };
 
 export function webhookKindLabel(kind: string): string {
@@ -163,6 +221,16 @@ export function webhookKindLabel(kind: string): string {
 export const WEBHOOK_KIND_VARIANTS: Record<string, BadgeVariant> = {
   message: 'info',
   status: 'neutral',
+  graph_mail: 'info',
+  email_delivery: 'neutral',
+  call_result: 'neutral',
+  call_rsvp: 'success',
+  call_owner_note: 'info',
+  // Every DNC kind is an opt-out request — a legal obligation under the Israeli
+  // spam law, so it must stand out in the list rather than read as routine.
+  call_dnc: 'warning',
+  mtg_dnc: 'warning',
+  sls_dnc: 'warning',
 };
 
 // contact_interactions.delivery_status holds Meta's status values (free text).

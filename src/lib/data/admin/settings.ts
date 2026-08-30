@@ -29,6 +29,7 @@ export type AppSettings = {
   smtp_user: string;
   smtp_password: string; // '' when unset — masked + reveal (secret)
   smtp_from: string;
+  inquiry_followup_enabled: boolean; // reminder → warning → auto-close sweep on quiet inquiries
   updated_at: string;
 };
 
@@ -41,7 +42,7 @@ export async function getAppSettings(): Promise<AppSettings> {
   const { data, error } = await supabase
     .from('app_settings')
     .select(
-      'payments_enabled, close_charge_enabled, sumit_company_id, sumit_api_public_key, sumit_api_key, sms_enabled, extra_sms_sender, extra_sms_token, email_enabled, smtp_host, smtp_port, smtp_secure, smtp_user, smtp_password, smtp_from, updated_at',
+      'payments_enabled, close_charge_enabled, sumit_company_id, sumit_api_public_key, sumit_api_key, sms_enabled, extra_sms_sender, extra_sms_token, email_enabled, smtp_host, smtp_port, smtp_secure, smtp_user, smtp_password, smtp_from, inquiry_followup_enabled, updated_at',
     )
     .eq('id', SETTINGS_ID)
     .maybeSingle();
@@ -66,6 +67,7 @@ export async function getAppSettings(): Promise<AppSettings> {
     smtp_user: data?.smtp_user ?? '',
     smtp_password: data?.smtp_password ?? '',
     smtp_from: data?.smtp_from ?? '',
+    inquiry_followup_enabled: data?.inquiry_followup_enabled ?? false,
     updated_at: data?.updated_at ?? '',
   };
 }
@@ -86,6 +88,7 @@ export type UpdateAppSettingsInput = {
   smtp_user: string;
   smtp_password: string;
   smtp_from: string;
+  inquiry_followup_enabled: boolean;
 };
 
 export async function updateAppSettings(
@@ -115,6 +118,7 @@ export async function updateAppSettings(
       smtp_user: input.smtp_user || null,
       smtp_password: input.smtp_password || null,
       smtp_from: input.smtp_from || null,
+      inquiry_followup_enabled: input.inquiry_followup_enabled,
     })
     .eq('id', SETTINGS_ID);
 
@@ -199,8 +203,9 @@ export async function updateCompanySettings(
   if (error) throw new Error('עדכון פרטי החברה נכשל');
 }
 
-// Exchange (IONOS Hosted EWS) ownership-model switch (plan §3.1,
-// plans/exchange-ews-stage1.md). Admin-only write; the non-gated reader used
+// Exchange (Microsoft Graph — the IONOS-hosted mailbox's calendar, reached
+// via Graph, not the retired EWS/SOAP path) ownership-model switch (plan
+// §3.1, plans/exchange-ews-stage1.md). Admin-only write; the non-gated reader used
 // by the connect screen itself is getExchangeConnectionMode() in
 // src/lib/data/exchange-connections.ts (that module also documents WHY the
 // reader must not require an admin permission — a non-admin user connecting

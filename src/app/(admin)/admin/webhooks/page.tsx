@@ -15,6 +15,7 @@ import {
   deliveryStatusVariant,
   webhookKindLabel,
   webhookProcessState,
+  webhookProviderLabel,
 } from '@/lib/data/admin/labels';
 import {
   Badge,
@@ -33,6 +34,7 @@ export const metadata = { title: 'בדיקת Webhooks' };
 
 type SearchParams = {
   page?: string | string[];
+  provider?: string | string[];
   kind?: string | string[];
   state?: string | string[];
   from?: string | string[];
@@ -42,6 +44,7 @@ type SearchParams = {
 };
 
 interface CurrentFilters {
+  provider?: string;
   kind?: string;
   state?: string;
   from?: string;
@@ -49,9 +52,52 @@ interface CurrentFilters {
   q?: string;
 }
 
-const KIND_OPTIONS = [
-  { value: 'message', label: 'הודעה' },
-  { value: 'status', label: 'סטטוס' },
+// Four integrations write to webhook_inbox. `provider` is the COARSE filter;
+// `event_kind` below is the fine one. Provider is NOT 1:1 with a route —
+// 'voximplant' alone is written by six routes — so the kind options are grouped
+// by provider to make the actual endpoint structure legible, and to make a
+// contradictory provider+kind pair visible instead of a silent empty list.
+const PROVIDER_OPTIONS = [
+  { value: 'whatsapp', label: 'וואטסאפ' },
+  { value: 'graph', label: 'דואר Microsoft' },
+  { value: 'voximplant', label: 'שיחות קוליות' },
+  { value: 'resend', label: 'דואר יוצא (Resend)' },
+];
+
+// VERIFIED 2026-08-26 against every insertWebhookEvents call site. Previously
+// this list held only WhatsApp's two kinds, so seven of the nine endpoints could
+// not be filtered at all.
+const KIND_GROUPS = [
+  {
+    provider: 'whatsapp',
+    label: 'וואטסאפ — ‎/api/webhooks/whatsapp',
+    options: [
+      { value: 'message', label: 'הודעה נכנסת' },
+      { value: 'status', label: 'סטטוס מסירה' },
+    ],
+  },
+  {
+    provider: 'graph',
+    label: 'דואר Microsoft — ‎/api/webhooks/microsoft-graph',
+    options: [{ value: 'graph_mail', label: 'דואר נכנס' }],
+  },
+  {
+    provider: 'resend',
+    label: 'דואר יוצא — ‎/api/webhooks/resend',
+    options: [{ value: 'email_delivery', label: 'מסירת דואר יוצא' }],
+  },
+  {
+    provider: 'voximplant',
+    label: 'שיחות קוליות — ‎/api/voximplant/…',
+    options: [
+      { value: 'call_result', label: 'תוצאת שיחה' },
+      { value: 'call_rsvp', label: 'אישור הגעה בשיחה' },
+      { value: 'call_owner_note', label: 'הערה מהשיחה' },
+      { value: 'call_dnc', label: 'בקשת הסרה (RSVP)' },
+      { value: 'mtg_dnc', label: 'בקשת הסרה (פגישות)' },
+      { value: 'sls_dnc', label: 'בקשת הסרה (מכירות)' },
+    ],
+  },
 ];
 const STATE_OPTIONS = [
   { value: 'pending', label: 'ממתין' },
@@ -111,19 +157,39 @@ function WebhookFilters({
         />
       </label>
 
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-6">
         <label className="flex flex-col gap-1 text-sm">
-          <span className="text-xs text-muted-foreground">סוג</span>
+          <span className="text-xs text-muted-foreground">מקור</span>
+          <select
+            name="provider"
+            defaultValue={current.provider ?? ''}
+            className="rounded-md border border-border bg-transparent px-3 py-2 text-sm"
+          >
+            <option value="">הכל</option>
+            {PROVIDER_OPTIONS.map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.label}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <label className="flex flex-col gap-1 text-sm">
+          <span className="text-xs text-muted-foreground">סוג אירוע</span>
           <select
             name="kind"
             defaultValue={current.kind ?? ''}
             className="rounded-md border border-border bg-transparent px-3 py-2 text-sm"
           >
             <option value="">הכל</option>
-            {KIND_OPTIONS.map((o) => (
-              <option key={o.value} value={o.value}>
-                {o.label}
-              </option>
+            {KIND_GROUPS.map((g) => (
+              <optgroup key={g.provider} label={g.label}>
+                {g.options.map((o) => (
+                  <option key={o.value} value={o.value}>
+                    {o.label}
+                  </option>
+                ))}
+              </optgroup>
             ))}
           </select>
         </label>
@@ -184,6 +250,7 @@ export default async function AdminWebhooksPage({
   const sp = await searchParams;
   const page = parsePageParam(sp.page);
   const current: CurrentFilters = {
+    provider: firstParam(sp.provider),
     kind: firstParam(sp.kind),
     state: firstParam(sp.state),
     from: firstParam(sp.from),
@@ -245,9 +312,14 @@ export default async function AdminWebhooksPage({
 
       {result.items.length === 0 ? (
         <EmptyState>
-          {current.kind || current.state || current.q || current.from || current.to
+          {current.provider ||
+          current.kind ||
+          current.state ||
+          current.q ||
+          current.from ||
+          current.to
             ? 'אין אירועי webhook התואמים לסינון.'
-            : 'אין אירועי webhook עדיין. הם יופיעו כאן ברגע ש-Meta תשלח קריאה.'}
+            : 'אין אירועי webhook עדיין. הם יופיעו כאן ברגע שאחת המערכות המחוברות תשלח קריאה.'}
         </EmptyState>
       ) : (
         <ul className="space-y-3">
@@ -271,6 +343,7 @@ export default async function AdminWebhooksPage({
                 >
                   <div className="space-y-1.5">
                     <div className="flex flex-wrap items-center gap-2">
+                      <Badge variant="outline">{webhookProviderLabel(row.provider)}</Badge>
                       <Badge variant={WEBHOOK_KIND_VARIANTS[row.event_kind] ?? 'neutral'}>
                         {webhookKindLabel(row.event_kind)}
                       </Badge>

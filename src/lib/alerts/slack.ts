@@ -12,6 +12,7 @@ import {
   type WebAPIHTTPError,
 } from '@slack/web-api';
 
+import { formatIsraelDateTime } from '@/lib/date';
 import { rateLimit } from '@/lib/security/rate-limit';
 import { createAdminClient } from '@/lib/supabase/admin';
 import {
@@ -219,8 +220,11 @@ function compose(
 ): ComposedMessage {
   const deployId = readDeployId();
   const env = process.env.NODE_ENV ?? 'unknown';
+  // Israel wall-clock, not raw UTC — this footer is read by ops staff in
+  // Slack, not machine-parsed, and every other timestamp this Hebrew-first
+  // product shows a human is Israel time (src/lib/date.ts).
   const contextText =
-    `env: ${env}${deployId ? ` · ${deployId}` : ''} · ${new Date().toISOString()}` +
+    `env: ${env}${deployId ? ` · ${deployId}` : ''} · ${formatIsraelDateTime(new Date())}` +
     (suppressedFromPrev > 0 ? ` · (+${suppressedFromPrev} suppressed)` : '');
 
   // Plain-text fallback.

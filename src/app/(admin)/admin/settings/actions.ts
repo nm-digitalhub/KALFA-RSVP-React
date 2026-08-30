@@ -36,6 +36,7 @@ export async function updateSettingsAction(
     smtp_user: formData.get('smtp_user') ?? '',
     smtp_password: formData.get('smtp_password') ?? '',
     smtp_from: formData.get('smtp_from') ?? '',
+    inquiry_followup_enabled: formData.get('inquiry_followup_enabled') === 'on',
   });
 
   if (!parsed.success) {

@@ -291,6 +291,30 @@ export function SettingsForm({
         errors={fieldErrors?.smtp_from}
       />
 
+      <hr className="border-border" />
+
+      {/* Silence-based follow-up on inquiries the admin already replied to:
+          reminder → closing warning → auto-close if the customer stays quiet.
+          Its OWN switch — deliberately independent of "הפעלת דואר עסקי" above
+          (which also gates agreement mail and inquiry replies) and of the
+          campaign/WhatsApp outreach switch (an unrelated system). */}
+      <label className="flex items-start gap-3">
+        <input
+          type="checkbox"
+          name="inquiry_followup_enabled"
+          defaultChecked={settings.inquiry_followup_enabled}
+          className="mt-1 size-4 accent-primary"
+        />
+        <span>
+          <span className="block text-sm font-medium">מעקב שקט אחר פניות</span>
+          <span className="block text-xs text-muted-foreground">
+            כשמופעל: פנייה שנענתה ואין תגובה מהלקוח מקבלת תזכורת אחרי יום, אזהרה
+            אחרי 3 ימים, ונסגרת אוטומטית אחרי 4 ימים. כשכבוי (ברירת המחדל) —
+            שום מייל לא נשלח ואף פנייה לא נסגרת אוטומטית.
+          </span>
+        </span>
+      </label>
+
       <SubmitButton>שמירה</SubmitButton>
     </form>
   );

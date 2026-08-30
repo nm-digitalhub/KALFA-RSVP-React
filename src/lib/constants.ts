@@ -49,6 +49,10 @@ export const RSVP_SUBMIT_RATE = { limit: intEnv('RSVP_SUBMIT_LIMIT', 5), windowM
 // --- Public inquiry abuse protection (contact form + call-me-back) ---
 export const INQUIRY_SUBMIT_RATE = { limit: intEnv('INQUIRY_SUBMIT_LIMIT', 3), windowMs: 60_000 };
 
+// --- Public inquiry-rating abuse protection (/rate/[token]) ---
+export const RATING_VIEW_RATE = { limit: intEnv('RATING_VIEW_LIMIT', 30), windowMs: 60_000 };
+export const RATING_SUBMIT_RATE = { limit: intEnv('RATING_SUBMIT_LIMIT', 10), windowMs: 60_000 };
+
 // The three RSVP states a guest may choose. Single source of truth, kept here
 // (zod-free) so both the server Zod schema and the client form import it
 // without pulling validation/zod into the browser bundle. Mirrors the
