@@ -52,7 +52,7 @@
         }
       ]
     },
-    "$support_drafter_comment": "UNBLOCKED (data source shipped 2026-07-23): contact_messages is the free-text inquiry table. Role reads status='new', draft_reply IS NULL rows (id/topic/message only — no name/email/phone) and writes a proposed reply to draft_reply via `npm run fleet:agent -- draft-reply --id --body` (the CLI's only customer-table write; idempotent on the IS NULL guard). It NEVER emails — a human reviews/sends the draft in /admin/contacts. Prompt: roles/support-drafter.md. Kept enabled:false; ACTIVATION (flip to true) also requires the draft_reply length-cap migration — see roles/support-drafter.md 'הפעלה'.",
+    "$support_drafter_comment": "ACTIVE (corrected 2026-08-25 — this comment previously said 'Kept enabled:false' after the role was already flipped to enabled:true; the draft_reply length-cap migration it was waiting on, 20260726093000_contact_messages_draft_reply_length.sql, shipped 2026-07-26). contact_messages is the free-text inquiry table. Role reads status='new', draft_reply IS NULL rows (id/topic/message only — no name/email/phone) and writes a proposed reply to draft_reply via `npm run fleet:agent -- draft-reply --id --body` (the CLI's only customer-table write; idempotent on the IS NULL guard). It NEVER emails — a human reviews/sends the draft in /admin/contacts. Prompt: roles/support-drafter.md. KNOWN GAP (see docs/inquiry-email-threading-fix-plan-2026-08-25.md §6): the trigger query never matches status='reopened', so a reopened inquiry is silently never drafted for.",
     "support-drafter": {
       "enabled": true,
       "reactive": ["owner_direct_request", "contact_messages_new", "goal_due"],
