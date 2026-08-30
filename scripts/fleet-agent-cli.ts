@@ -980,11 +980,27 @@ async function cmdExpire(): Promise<void> {
 //      single SELECT or WITH…SELECT, no stacked statements, no write keyword.
 //   Plus statement_timeout + a hard row cap so a runaway/huge read can't hang
 //   or flood the run.
-// The connection uses the same session-pooler creds as the worker
-// (SUPABASE_DB_* — pooler.supabase.com:5432, IPv4). Guests' PII lives behind
-// these tables; roles are instructed to aggregate, not dump raw PII.
+// Connection: same host/user/password as the worker's SUPABASE_DB_* creds,
+// but on the TRANSACTION-mode pooler port (6543) instead of the worker's
+// session-mode port (5432) — deliberately different, not a typo. Each call
+// here is a one-shot process (spawned fresh per scheduler tick / role query)
+// that opens one connection, runs one self-contained READ ONLY transaction,
+// and exits — no advisory locks, no LISTEN/NOTIFY, no state carried between
+// calls. Session mode reserves a backend connection EXCLUSIVELY per client
+// and this project's session pool is capped at 15 total clients, SHARED with
+// the worker's persistent pg-boss pool; every extra one-shot `sql` process
+// competed for that same tiny cap and periodically exhausted it
+// (EMAXCONNSESSION, measured 2026-08-30 — also took down kalfa-pgboss-ui's
+// own session-mode connection in the same burst). Transaction mode shares a
+// much larger backend pool across many short-lived clients instead, which is
+// exactly this workload's shape (verified live against both ports before
+// switching: identical query result, comparable latency). The worker keeps
+// SUPABASE_DB_PORT (5432/session) unchanged — pg-boss genuinely needs session
+// state. Guests' PII lives behind these tables; roles are instructed to
+// aggregate, not dump raw PII.
 const SQL_ROW_CAP = 200;
 const SQL_TIMEOUT_MS = 15_000;
+const SQL_TRANSACTION_POOLER_PORT = Number(process.env.SUPABASE_DB_TRANSACTION_PORT || 6543);
 
 function assertReadOnlySql(sql: string): void {
   const trimmed = sql.trim().replace(/;\s*$/, '');
@@ -1010,7 +1026,7 @@ async function cmdSql(args: Record<string, string | undefined>): Promise<void> {
 
   const client = new PgClient({
     host: process.env.SUPABASE_DB_HOST,
-    port: Number(process.env.SUPABASE_DB_PORT || 5432),
+    port: SQL_TRANSACTION_POOLER_PORT,
     user: process.env.SUPABASE_DB_USER,
     password: process.env.SUPABASE_DB_PASSWORD,
     database: process.env.SUPABASE_DB_NAME || 'postgres',
