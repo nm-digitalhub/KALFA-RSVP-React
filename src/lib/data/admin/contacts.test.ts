@@ -6,8 +6,10 @@ import { createAdminClient } from '@/lib/supabase/admin';
 import { requirePlatformPermission } from '@/lib/auth/dal';
 import { logActivity } from '@/lib/data/activity';
 import { getEmailSender } from '@/lib/email/sender';
+import { inquiryReplyEmail } from '@/lib/email/templates';
 import {
   listContactMessages,
+  getContactMessage,
   updateContactStatus,
   sendInquiryReply,
   resolveInquiryUrgency,
@@ -46,6 +48,10 @@ function row(overrides: Partial<ContactMessage> = {}): ContactMessage {
     sent_reply: null,
     replied_at: null,
     last_activity_at: '2026-06-20T10:00:00.000Z',
+    reminder_sent_at: null,
+    closing_warning_sent_at: null,
+    auto_closed_at: null,
+    ref_code: 'A1B2C3D4',
     ...overrides,
   };
 }
@@ -106,6 +112,55 @@ describe('listContactMessages', () => {
     });
     expect(result.items).toEqual([row()]);
     expect(result.total).toBe(1);
+  });
+
+  it('search matches name/email/phone/topic and strips PostgREST-grammar characters', async () => {
+    const { client, builder } = createMockSupabase<ContactMessage[]>({
+      data: [],
+      error: null,
+      count: 0,
+    });
+    vi.mocked(createAdminClient).mockReturnValue(
+      client as unknown as ReturnType<typeof createAdminClient>,
+    );
+
+    await listContactMessages({ search: 'דנה,(%test)' });
+
+    expect(builder.or).toHaveBeenCalledWith(
+      'name.ilike.%דנהtest%,email.ilike.%דנהtest%,phone.ilike.%דנהtest%,topic.ilike.%דנהtest%',
+    );
+  });
+
+  it('a real status value filters with .eq', async () => {
+    const { client, builder } = createMockSupabase<ContactMessage[]>({
+      data: [],
+      error: null,
+      count: 0,
+    });
+    vi.mocked(createAdminClient).mockReturnValue(
+      client as unknown as ReturnType<typeof createAdminClient>,
+    );
+
+    await listContactMessages({ status: 'cancelled' });
+
+    expect(builder.eq).toHaveBeenCalledWith('status', 'cancelled');
+    expect(builder.in).not.toHaveBeenCalled();
+  });
+
+  it('the "open" shortcut expands to new/in_progress/reopened via .in', async () => {
+    const { client, builder } = createMockSupabase<ContactMessage[]>({
+      data: [],
+      error: null,
+      count: 0,
+    });
+    vi.mocked(createAdminClient).mockReturnValue(
+      client as unknown as ReturnType<typeof createAdminClient>,
+    );
+
+    await listContactMessages({ status: 'open' });
+
+    expect(builder.in).toHaveBeenCalledWith('status', ['new', 'in_progress', 'reopened']);
+    expect(builder.eq).not.toHaveBeenCalledWith('status', expect.anything());
   });
 
   it('paginates: page 2 ranges over the second page window', async () => {
@@ -193,27 +248,73 @@ describe('sendInquiryReply', () => {
     return send;
   }
 
-  it('sends the email THEN stamps sent_reply/replied_at/status=done and logs', async () => {
-    const send = mockSend();
-    const { client, builder } = createMockSupabase<{ email: string; name: string }>({
-      data: { email: 'dana@example.com', name: 'דנה' },
-      error: null,
-    });
+  // sendInquiryReply now runs up to FOUR sequential queries against the same
+  // admin client: (1) the contact_messages row (email/name/status/ref_code),
+  // (2) the most recent INBOUND inquiry_messages row for that inquiry (to
+  // compute isFirst / In-Reply-To), (3) the inquiry_messages insert recording
+  // the outbound reply, (4) the contact_messages update. createMockSupabase
+  // gives every `.from()` call the SAME builder, so — same technique as
+  // resolveInquiryUrgency's mockTwoReads above — `builder.then` is stubbed
+  // once per query, in call order, via mockImplementationOnce. A test whose
+  // code path throws early (cancelled/no-email/send failure) simply never
+  // consumes the later, unused implementations.
+  //
+  // Default: no prior inbound message (message_id null) — matches the
+  // production default for a fresh inquiry (isFirst=true, no inReplyTo).
+  // Pass `lastInboundMessageId` to exercise the reopened-thread path instead.
+  function mockSendChain(
+    msg: { email: string | null; name: string; status?: string; ref_code?: string },
+    opts: {
+      lastInboundMessageId?: string;
+      insertError?: { message: string } | null;
+      updateError?: { message: string } | null;
+    } = {},
+  ) {
+    const { client, builder } = createMockSupabase<unknown>({ data: null, error: null });
+    const then = vi.spyOn(builder, 'then');
+    then.mockImplementationOnce((f) => (f as (v: unknown) => unknown)({ data: msg, error: null }));
+    then.mockImplementationOnce((f) =>
+      (f as (v: unknown) => unknown)({
+        data: opts.lastInboundMessageId ? { message_id: opts.lastInboundMessageId } : null,
+        error: null,
+      }),
+    );
+    then.mockImplementationOnce((f) =>
+      (f as (v: unknown) => unknown)({ data: null, error: opts.insertError ?? null }),
+    );
+    then.mockImplementationOnce((f) =>
+      (f as (v: unknown) => unknown)({ data: null, error: opts.updateError ?? null }),
+    );
     vi.mocked(createAdminClient).mockReturnValue(
       client as unknown as ReturnType<typeof createAdminClient>,
     );
+    return { client, builder };
+  }
+
+  it('sends the email THEN stamps sent_reply/replied_at/status=in_progress and logs', async () => {
+    const send = mockSend();
+    const { builder } = mockSendChain({
+      email: 'dana@example.com',
+      name: 'דנה',
+      status: 'new',
+      ref_code: 'A1B2C3D4',
+    });
 
     await sendInquiryReply(ID, 'שלום, תודה על פנייתך.');
 
     expect(send).toHaveBeenCalledWith(
       expect.objectContaining({ to: 'dana@example.com', subject: 's' }),
     );
+    // A reply no longer auto-closes the inquiry to 'done' — it advances to
+    // 'in_progress' (someone is actively working the thread), and clears
+    // handled_at since in_progress is never terminal. 'done' is now reachable
+    // only via an explicit admin status change.
     expect(builder.update).toHaveBeenCalledWith(
       expect.objectContaining({
         sent_reply: 'שלום, תודה על פנייתך.',
-        status: 'done',
+        status: 'in_progress',
         replied_at: expect.any(String),
-        handled_at: expect.any(String),
+        handled_at: null,
       }),
     );
     expect(logActivity).toHaveBeenCalledWith({
@@ -222,15 +323,38 @@ describe('sendInquiryReply', () => {
     });
   });
 
+  it('clears a stale handled_at when replying to a previously-done inquiry', async () => {
+    mockSend();
+    const { builder } = mockSendChain({
+      email: 'dana@example.com',
+      name: 'דנה',
+      status: 'done',
+      ref_code: 'B2C3D4E5',
+    });
+
+    await sendInquiryReply(ID, 'עוד תשובה');
+
+    expect(builder.update).toHaveBeenCalledWith(
+      expect.objectContaining({ status: 'in_progress', handled_at: null }),
+    );
+  });
+
+  it('throws (and never sends) when the inquiry is cancelled', async () => {
+    const send = mockSend();
+    mockSendChain({
+      email: 'dana@example.com',
+      name: 'דנה',
+      status: 'cancelled',
+      ref_code: 'C3D4E5F6',
+    });
+
+    await expect(sendInquiryReply(ID, 'תשובה')).rejects.toThrow('הפנייה בוטלה');
+    expect(send).not.toHaveBeenCalled();
+  });
+
   it('throws (and never sends) when the inquiry has no email', async () => {
     const send = mockSend();
-    const { client } = createMockSupabase<{ email: string | null; name: string }>({
-      data: { email: null, name: 'דנה' },
-      error: null,
-    });
-    vi.mocked(createAdminClient).mockReturnValue(
-      client as unknown as ReturnType<typeof createAdminClient>,
-    );
+    mockSendChain({ email: null, name: 'דנה', status: 'new', ref_code: 'D4E5F6A7' });
 
     await expect(sendInquiryReply(ID, 'תשובה')).rejects.toThrow('אין כתובת אימייל');
     expect(send).not.toHaveBeenCalled();
@@ -242,13 +366,12 @@ describe('sendInquiryReply', () => {
     vi.mocked(getEmailSender).mockResolvedValue(
       { send } as unknown as Awaited<ReturnType<typeof getEmailSender>>,
     );
-    const { client, builder } = createMockSupabase<{ email: string; name: string }>({
-      data: { email: 'dana@example.com', name: 'דנה' },
-      error: null,
+    const { builder } = mockSendChain({
+      email: 'dana@example.com',
+      name: 'דנה',
+      status: 'new',
+      ref_code: 'E5F6A7B8',
     });
-    vi.mocked(createAdminClient).mockReturnValue(
-      client as unknown as ReturnType<typeof createAdminClient>,
-    );
 
     // Actionable, not generic: tells the admin exactly where/what to check.
     await expect(sendInquiryReply(ID, 'תשובה')).rejects.toThrow('בדקו במסך ההגדרות');
@@ -259,16 +382,89 @@ describe('sendInquiryReply', () => {
   it('turns an unconfigured mail service into an actionable "set up SMTP" error', async () => {
     const cfgErr = Object.assign(new Error('שירות הדואר אינו מוגדר'), { name: 'EmailConfigError' });
     vi.mocked(getEmailSender).mockRejectedValue(cfgErr);
-    const { client, builder } = createMockSupabase<{ email: string; name: string }>({
-      data: { email: 'dana@example.com', name: 'דנה' },
+    const { builder } = mockSendChain({
+      email: 'dana@example.com',
+      name: 'דנה',
+      status: 'new',
+      ref_code: 'F6A7B8C9',
+    });
+
+    await expect(sendInquiryReply(ID, 'תשובה')).rejects.toThrow('הגדירו SMTP');
+    expect(builder.update).not.toHaveBeenCalled();
+  });
+
+  // §2.2/§2.4 of docs/inquiry-email-threading-fix-plan-2026-08-25.md: isFirst
+  // is derived from whether a prior INBOUND message exists on the thread, and
+  // In-Reply-To is only set on the outbound send when one does.
+  it('computes isFirst=true and omits inReplyTo when no prior inbound message exists', async () => {
+    const send = mockSend();
+    mockSendChain({
+      email: 'dana@example.com',
+      name: 'דנה',
+      status: 'new',
+      ref_code: 'A1B2C3D4',
+    });
+    // No lastInboundMessageId passed → mockSendChain's default: no prior
+    // inbound row, message_id null.
+
+    await sendInquiryReply(ID, 'תשובה ראשונה');
+
+    expect(inquiryReplyEmail).toHaveBeenCalledWith(
+      expect.objectContaining({ refCode: 'A1B2C3D4', isFirst: true }),
+    );
+    expect(send).toHaveBeenCalledTimes(1);
+    const [sendArgs] = send.mock.calls[0] as [Record<string, unknown>];
+    expect(sendArgs.inReplyTo).toBeUndefined();
+  });
+
+  it('computes isFirst=false and includes inReplyTo when a prior inbound message exists', async () => {
+    const send = mockSend();
+    mockSendChain(
+      { email: 'dana@example.com', name: 'דנה', status: 'reopened', ref_code: 'A1B2C3D4' },
+      { lastInboundMessageId: '<inbound-msg-id@kalfa.me>' },
+    );
+
+    await sendInquiryReply(ID, 'תשובה שנייה');
+
+    expect(inquiryReplyEmail).toHaveBeenCalledWith(
+      expect.objectContaining({ refCode: 'A1B2C3D4', isFirst: false }),
+    );
+    expect(send).toHaveBeenCalledWith(
+      expect.objectContaining({ inReplyTo: '<inbound-msg-id@kalfa.me>' }),
+    );
+  });
+});
+
+// Independent of listContactMessages's pagination/search/status filter — the
+// detail pane must still resolve an inquiry that isn't (or is no longer) on
+// the currently filtered/paginated list.
+describe('getContactMessage', () => {
+  it('enforces the admin gate and looks up by id', async () => {
+    const { client, builder } = createMockSupabase<ContactMessage>({
+      data: row(),
       error: null,
     });
     vi.mocked(createAdminClient).mockReturnValue(
       client as unknown as ReturnType<typeof createAdminClient>,
     );
 
-    await expect(sendInquiryReply(ID, 'תשובה')).rejects.toThrow('הגדירו SMTP');
-    expect(builder.update).not.toHaveBeenCalled();
+    const result = await getContactMessage('c-1');
+
+    expect(requirePlatformPermission).toHaveBeenCalledTimes(1);
+    expect(builder.eq).toHaveBeenCalledWith('id', 'c-1');
+    expect(result).toEqual(row());
+  });
+
+  it('returns null on a DB error rather than throwing', async () => {
+    const { client } = createMockSupabase<ContactMessage>({
+      data: null,
+      error: { message: 'boom' },
+    });
+    vi.mocked(createAdminClient).mockReturnValue(
+      client as unknown as ReturnType<typeof createAdminClient>,
+    );
+
+    await expect(getContactMessage('missing')).resolves.toBeNull();
   });
 });
 

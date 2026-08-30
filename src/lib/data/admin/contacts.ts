@@ -11,9 +11,10 @@ import type { ContactStatus } from '@/lib/validation/admin';
 import { resolvePage, type PageParams, type PageResult } from './shared';
 
 // Admin: contact-form + in-app support submissions (the single inquiry entity).
-// Access is authorized by the request-scoped session under the `cm_admin_all`
-// RLS policy (has_role admin). We additionally gate with
-// requirePlatformPermission() server-side so a non-admin never reaches the query.
+// `contact_messages` carries no admin-facing RLS policy (deny-by-default —
+// dropped 2026-07-20 when the staff axis moved off customer tables). Access is
+// authorized entirely by requirePlatformPermission('view_customer_data') below,
+// server-side, before createAdminClient() (service-role) ever touches the row.
 
 type ContactMessageRow = Tables<'contact_messages'>;
 
@@ -21,6 +22,9 @@ type ContactMessageRow = Tables<'contact_messages'>;
 // contract — rows are returned pass-through. `status`/`topic`/`user_id`/
 // `handled_at` drive the workflow + source badge; `draft_reply` surfaces the
 // support-drafter's proposed reply (draft only — never auto-sent).
+// `reminder_sent_at`/`closing_warning_sent_at`/`auto_closed_at` surface the
+// silence-followup cascade's progress (inquiry-followup.ts) so the detail/
+// list panes can show it — the sweep itself never reads this DTO.
 export type ContactMessage = Pick<
   ContactMessageRow,
   | 'id'
@@ -38,27 +42,66 @@ export type ContactMessage = Pick<
   | 'sent_reply'
   | 'replied_at'
   | 'last_activity_at'
+  | 'reminder_sent_at'
+  | 'closing_warning_sent_at'
+  | 'auto_closed_at'
+  | 'ref_code'
 >;
 
 // `draft_created_at` is here for the composer gate, which compares TIMES rather
 // than testing whether a reply ever happened — see ContactReplyForm. Without it
 // a re-drafted reply on a reopened thread is written to the database and never
-// shown to anyone.
+// shown to anyone. `ref_code` is the [KLF-XXXXXXXX] token embedded in every
+// outbound subject on this thread (docs/inquiry-email-threading-fix-plan-
+// 2026-08-25.md §2.1) — surfaced here so the admin pane can show it for
+// reference.
 export const CONTACT_COLUMNS =
-  'id, name, email, phone, message, created_at, status, topic, user_id, handled_at, draft_reply, draft_created_at, sent_reply, replied_at, last_activity_at';
+  'id, name, email, phone, message, created_at, status, topic, user_id, handled_at, draft_reply, draft_created_at, sent_reply, replied_at, last_activity_at, reminder_sent_at, closing_warning_sent_at, auto_closed_at, ref_code';
+
+// The two coarse shortcuts the search bar's status dropdown offers alongside
+// every real status value — 'open' groups everything still needing eyes,
+// 'closed' groups everything settled. Not stored anywhere; expanded to a real
+// `.in('status', …)` filter here only.
+const STATUS_FILTER_GROUPS: Record<string, readonly string[]> = {
+  open: ['new', 'in_progress', 'reopened'],
+  closed: ['done', 'cancelled'],
+};
 
 // List contact messages, newest first, with exact total for pagination.
+// `search` matches name/email/phone/topic (ilike, same escaping discipline as
+// listAllUsers's profile search — strips PostgREST .or()-grammar characters so
+// a free-text term can neither inject a wildcard nor break the filter).
+// `status` accepts a real status value or one of STATUS_FILTER_GROUPS's
+// shortcuts.
 export async function listContactMessages(
-  { page }: PageParams = {},
+  { page, search, status }: PageParams & { search?: string; status?: string } = {},
 ): Promise<PageResult<ContactMessage>> {
   await requirePlatformPermission('view_customer_data');
 
   const { page: safePage, pageSize, from, to } = resolvePage(page);
 
   const supabase = createAdminClient();
-  const { data, error, count } = await supabase
+  let query = supabase
     .from('contact_messages')
-    .select(CONTACT_COLUMNS, { count: 'exact' })
+    .select(CONTACT_COLUMNS, { count: 'exact' });
+
+  const term = search?.trim();
+  if (term) {
+    const filterTerm = term.replace(/[%_,()"*\\]/g, '').trim();
+    if (filterTerm) {
+      const like = `%${filterTerm}%`;
+      query = query.or(
+        `name.ilike.${like},email.ilike.${like},phone.ilike.${like},topic.ilike.${like}`,
+      );
+    }
+  }
+
+  if (status) {
+    const group = STATUS_FILTER_GROUPS[status];
+    query = group ? query.in('status', group) : query.eq('status', status);
+  }
+
+  const { data, error, count } = await query
     // A reopened inquiry is MORE urgent than a new one — the customer already
     // waited once. Ordering by created_at buried it at its original date, so a
     // July thread answered today sank below everything on the first page.
@@ -77,6 +120,26 @@ export async function listContactMessages(
     page: safePage,
     pageSize,
   };
+}
+
+// One inquiry, by id, for the detail pane — deliberately independent of
+// listContactMessages's pagination/search/status filter. A selected inquiry
+// must stay viewable even after the admin changes the search or filter (or
+// the row's own last_activity_at moves it off the current page); looking it
+// up only inside the already-filtered list would make the detail pane go
+// blank out from under an open selection.
+export async function getContactMessage(id: string): Promise<ContactMessage | null> {
+  await requirePlatformPermission('view_customer_data');
+
+  const supabase = createAdminClient();
+  const { data, error } = await supabase
+    .from('contact_messages')
+    .select(CONTACT_COLUMNS)
+    .eq('id', id)
+    .maybeSingle();
+
+  if (error) return null;
+  return data;
 }
 
 // Update a single contact message's status. Same closed vocabulary as
@@ -121,33 +184,61 @@ export async function updateContactStatus(
 }
 
 // Send a staff-authored email reply to a contact message, record it, and
-// resolve the inquiry. SEND-THEN-PERSIST: the email is the primary effect, so
+// advance the inquiry. SEND-THEN-PERSIST: the email is the primary effect, so
 // it goes out FIRST — if the send throws (EmailConfigError/EmailSendError,
 // let them propagate), nothing is persisted and the admin can retry safely.
-// Only after a successful send do we stamp sent_reply/replied_at and close the
-// inquiry (status='done'). If that stamp fails, the customer already received
-// the reply, so the error explicitly says so — a blind retry would double-mail.
+// Only after a successful send do we stamp sent_reply/replied_at. If that
+// stamp fails, the customer already received the reply, so the error
+// explicitly says so — a blind retry would double-mail.
 export async function sendInquiryReply(id: string, replyText: string): Promise<void> {
   await requirePlatformPermission('view_customer_data');
 
   const supabase = createAdminClient();
   const { data: msg, error } = await supabase
     .from('contact_messages')
-    .select('email, name')
+    .select('email, name, status, ref_code')
     .eq('id', id)
     .maybeSingle();
 
   if (error || !msg) {
     throw new Error('הפנייה לא נמצאה');
   }
+  // A cancelled inquiry is closed on purpose — sending a reply to it would
+  // both email a customer the admin decided not to pursue AND (below) flip
+  // the row back to an active status, silently undoing the cancellation.
+  if (msg.status === 'cancelled') {
+    throw new Error('הפנייה בוטלה — לא ניתן לשלוח מענה. שנו את הסטטוס תחילה אם ברצונכם להמשיך בטיפול.');
+  }
   if (!msg.email) {
     throw new Error('לפנייה זו אין כתובת אימייל — לא ניתן לשלוח מענה');
+  }
+
+  const { data: lastInbound, error: lastInboundError } = await supabase
+    .from('inquiry_messages')
+    .select('message_id')
+    .eq('inquiry_id', id)
+    .eq('direction', 'inbound')
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  // Non-fatal by design: In-Reply-To is a defense-in-depth header (§2.4), not
+  // part of the ref_code matching path — a failed lookup here should degrade to
+  // "no header set," not block the admin's reply from sending.
+  if (lastInboundError) {
+    console.error('[sendInquiryReply] lastInbound lookup failed', lastInboundError);
   }
 
   const { subject, html, text } = inquiryReplyEmail({
     recipientName: msg.name,
     replyText,
     origin: await getAppOrigin(),
+    refCode: msg.ref_code,
+    // Approximation, not exact: "no prior inbound customer message" is used as
+    // a proxy for "this is the first outbound message on this thread." It also
+    // reports true for a second admin reply sent before the customer has
+    // replied even once, which still gets a bare (non-Re:) subject in that
+    // narrow case — accepted as the minimal fix (§2.2/§3.1).
+    isFirst: !lastInbound,
   });
 
   // Actionable errors: the admin is the operator who CAN fix these, so say
@@ -156,7 +247,13 @@ export async function sendInquiryReply(id: string, replyText: string): Promise<v
   // even when the module is mocked. Nothing is persisted yet, so a retry is safe.
   try {
     const sender = await getEmailSender();
-    await sender.send({ to: msg.email, subject, html, text });
+    await sender.send({
+      to: msg.email,
+      subject,
+      html,
+      text,
+      ...(lastInbound?.message_id ? { inReplyTo: lastInbound.message_id } : {}),
+    });
   } catch (err) {
     const name = err instanceof Error ? err.name : '';
     if (name === 'EmailConfigError') {
@@ -189,13 +286,23 @@ export async function sendInquiryReply(id: string, replyText: string): Promise<v
     body: replyText,
   });
 
+  // A reply no longer auto-closes the inquiry. It used to jump straight to
+  // 'done', which meant "done" could mean either "actually resolved" or
+  // "we replied once, who knows if that settled it" — indistinguishable in
+  // the UI. A reply now means "in progress": someone is actively working the
+  // thread, whether or not this is the final word. 'done' is reachable only
+  // by an explicit admin choice (updateContactStatus) or the future silence-
+  // based auto-close sweep — never as a side effect of sending mail.
+  // handled_at is cleared unconditionally: in_progress is never terminal, and
+  // a stale handled_at from a PRIOR done/cancelled round-trip would otherwise
+  // keep showing a "handled" timestamp for a thread that is open again.
   const { error: updateError } = await supabase
     .from('contact_messages')
     .update({
       sent_reply: replyText,
       replied_at: now,
-      status: 'done',
-      handled_at: now,
+      status: 'in_progress',
+      handled_at: null,
       // Keeps the admin list ordered by real activity rather than by the date
       // the inquiry first arrived.
       last_activity_at: now,

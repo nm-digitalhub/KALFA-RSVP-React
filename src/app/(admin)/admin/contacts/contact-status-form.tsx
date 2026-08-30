@@ -3,7 +3,7 @@
 import { useActionState } from 'react';
 
 import { CONTACT_STATUSES } from '@/lib/validation/admin';
-import { CONTACT_STATUS_LABELS } from '@/lib/data/admin/labels';
+import { CONTACT_STATUS_LABELS, contactStatusLabel } from '@/lib/data/admin/labels';
 import { FieldError, FormError, FormNotice } from '@/components/forms';
 import { updateContactStatusAction } from './actions';
 
@@ -37,7 +37,9 @@ export function ContactStatusForm({
           defaultValue={currentStatus}
           className="rounded-md border border-border bg-background px-2 py-1 text-sm"
         >
-          {!isKnown && <option value={currentStatus}>{currentStatus}</option>}
+          {!isKnown && (
+            <option value={currentStatus}>{contactStatusLabel(currentStatus)}</option>
+          )}
           {CONTACT_STATUSES.map((s) => (
             <option key={s} value={s}>
               {CONTACT_STATUS_LABELS[s]}
