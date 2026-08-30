@@ -143,3 +143,4 @@ scenario-*.deployed.js
 
 # repomix pack output (22MB, contains the whole tree incl. .claude) — never commit
 repomix-output.xml
+.repomix/
