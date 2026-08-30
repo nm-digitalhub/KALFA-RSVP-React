@@ -29,7 +29,7 @@ import { ilWallTimeToIso } from '@/lib/data/event-date';
 import { closeCampaignAndCharge } from '@/lib/data/close-charge';
 import { recordSignedAgreement } from '@/lib/data/agreements';
 import { getProfile } from '@/lib/data/profiles';
-import { requestOtp } from '@/lib/data/otp';
+import { requestOtp, verifyOtp } from '@/lib/data/otp';
 import { getActiveAgreementDoc } from '@/lib/data/agreements-doc';
 import { approveCampaignSchema, thankyouScheduleSchema } from '@/lib/validation/campaigns';
 import type { FormState } from '@/lib/validation/result';
@@ -89,6 +89,58 @@ export async function requestSigningOtpAction(
     return { error: res.error ?? 'שליחת קוד האימות נכשלה.' };
   }
   return { notice: 'קוד אימות נשלח בהודעת SMS לטלפון שבפרופיל.' };
+}
+
+// FormState superset carrying the one extra bit the signing form needs: whether
+// the code just checked out, so it can unlock the signature step. Structural
+// superset (mirrors SettleFormState below) — generic FormState consumers
+// (FormError/FieldError) keep working unchanged.
+export type VerifyOtpFormState =
+  | {
+      error?: string;
+      notice?: string;
+      fieldErrors?: Record<string, string[] | undefined>;
+      verified?: boolean;
+      // The exact code this result belongs to, so the client can derive
+      // "still verified" purely from state (verified && code === current
+      // field value) instead of tracking a mirrored copy separately.
+      code?: string;
+    }
+  | null;
+
+// Step 1.5: confirm the OTP code BEFORE the signature step unlocks, without
+// spending it — a non-consuming check (verifyOtp's `consume:false`) against the
+// SAME challenge signAgreementAction will authoritatively re-verify (and
+// actually consume) at final submit. This is a UX gate only: the client-side
+// "unlocked" state is never trusted on its own — a stale or expired code here
+// still fails cleanly at the real, consuming check later.
+export async function verifySigningOtpAction(
+  _prevState: VerifyOtpFormState,
+  formData: FormData,
+): Promise<VerifyOtpFormState> {
+  let phone: string | null;
+  try {
+    await requireUser();
+    const profile = await getProfile();
+    phone = profile?.phone ?? null;
+  } catch (err) {
+    unstable_rethrow(err);
+    return { error: 'נדרשת התחברות.' };
+  }
+  if (!phone) {
+    return { error: 'לא נמצא מספר טלפון בפרופיל. עדכנו טלפון בהגדרות החשבון.' };
+  }
+
+  const code = String(formData.get('otp_code') ?? '').trim();
+  if (!/^\d{6}$/.test(code)) {
+    return { fieldErrors: { otp_code: ['יש להזין קוד בן 6 ספרות'] } };
+  }
+
+  const ok = await verifyOtp(phone, OTP_PURPOSE, code, { consume: false });
+  if (!ok) {
+    return { fieldErrors: { otp_code: ['קוד האימות שגוי או שפג תוקפו. שלחו קוד חדש.'] } };
+  }
+  return { verified: true, code, notice: 'הקוד אומת — ניתן לחתום.' };
 }
 
 // Step 2: verify OTP + sign the agreement + record consents, then approve the

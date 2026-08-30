@@ -73,13 +73,24 @@ export async function requestOtp(
 }
 
 // Verify a submitted code against the latest unconsumed challenge. Consumes the
-// challenge on success; increments attempts on failure. Returns true only on a
-// fresh, in-window, attempt-allowed, matching code.
+// challenge on success (unless `consume: false`); increments attempts on
+// failure either way — a non-consuming "peek" check still spends the same
+// attempt budget as a real one, so it can't be used to double the effective
+// brute-force allowance. Returns true only on a fresh, in-window,
+// attempt-allowed, matching code.
+//
+// `consume: false` exists for a two-phase flow (e.g. unlock a form's next step
+// once the code is confirmed, before the step that actually needs it runs):
+// the same challenge stays valid for one later `consume: true` call, so the
+// authoritative check at the point of use is unchanged and still independently
+// re-verifies — never trust that an earlier peek happened.
 export async function verifyOtp(
   rawPhone: string,
   purpose: string,
   code: string,
+  options?: { consume?: boolean },
 ): Promise<boolean> {
+  const consume = options?.consume ?? true;
   const phone = normalizePhone(rawPhone);
   if (!phone) return false;
 
@@ -105,9 +116,11 @@ export async function verifyOtp(
     return false;
   }
 
-  await admin
-    .from('otp_challenges')
-    .update({ consumed_at: new Date().toISOString() })
-    .eq('id', challenge.id);
+  if (consume) {
+    await admin
+      .from('otp_challenges')
+      .update({ consumed_at: new Date().toISOString() })
+      .eq('id', challenge.id);
+  }
   return true;
 }

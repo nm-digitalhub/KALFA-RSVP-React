@@ -32,18 +32,22 @@ vi.mock('@/lib/data/campaigns', () => ({
 vi.mock('@/lib/data/close-charge', () => ({ closeCampaignAndCharge: vi.fn() }));
 vi.mock('@/lib/data/agreements', () => ({ recordSignedAgreement: vi.fn() }));
 vi.mock('@/lib/data/profiles', () => ({ getProfile: vi.fn() }));
-vi.mock('@/lib/data/otp', () => ({ requestOtp: vi.fn() }));
+vi.mock('@/lib/data/otp', () => ({ requestOtp: vi.fn(), verifyOtp: vi.fn() }));
 vi.mock('@/lib/data/agreements-doc', () => ({ getActiveAgreementDoc: vi.fn() }));
 
 import { publishEvent, closeEvent, requireOwnedEvent } from '@/lib/data/events';
 import { syncEventToExchange, markEventExchangeCancelled } from '@/lib/data/event-exchange-sync';
 import { cancelCampaign, getCampaignForHold } from '@/lib/data/campaigns';
 import { closeCampaignAndCharge } from '@/lib/data/close-charge';
+import { getProfile } from '@/lib/data/profiles';
+import { verifyOtp } from '@/lib/data/otp';
+import { requireUser } from '@/lib/auth/dal';
 import {
   publishEventAction,
   closeEventAction,
   cancelCampaignAction,
   settleCampaignAction,
+  verifySigningOtpAction,
 } from './campaign-actions';
 
 // Real notFound() digest format (verified against node_modules/next/dist/client/
@@ -261,5 +265,60 @@ describe('settleCampaignAction', () => {
     expect(result?.notice).toContain('5');
     expect(result?.notice).not.toContain('קרדיט');
     expect(result?.notice).not.toContain('אין אנשי קשר שהושגו');
+  });
+});
+
+describe('verifySigningOtpAction', () => {
+  beforeEach(() => {
+    vi.mocked(requireUser).mockResolvedValue(
+      { id: 'u1', email: 'u@x.co' } as unknown as Awaited<ReturnType<typeof requireUser>>,
+    );
+    vi.mocked(getProfile).mockResolvedValue(
+      { phone: '0501234567' } as unknown as Awaited<ReturnType<typeof getProfile>>,
+    );
+  });
+
+  function fd(otp_code: string) {
+    const f = new FormData();
+    f.set('otp_code', otp_code);
+    return f;
+  }
+
+  it('rejects a malformed code before ever calling verifyOtp', async () => {
+    const result = await verifySigningOtpAction(null, fd('12ab'));
+
+    expect(result?.fieldErrors?.otp_code).toBeTruthy();
+    expect(verifyOtp).not.toHaveBeenCalled();
+  });
+
+  it('calls verifyOtp with consume:false and returns verified:true on a correct code', async () => {
+    vi.mocked(verifyOtp).mockResolvedValue(true);
+
+    const result = await verifySigningOtpAction(null, fd('123456'));
+
+    expect(verifyOtp).toHaveBeenCalledWith('0501234567', 'agreement_signing', '123456', {
+      consume: false,
+    });
+    expect(result?.verified).toBe(true);
+  });
+
+  it('surfaces a field error and no verified flag on a wrong/expired code', async () => {
+    vi.mocked(verifyOtp).mockResolvedValue(false);
+
+    const result = await verifySigningOtpAction(null, fd('123456'));
+
+    expect(result?.verified).toBeUndefined();
+    expect(result?.fieldErrors?.otp_code).toBeTruthy();
+  });
+
+  it('requires a profile phone', async () => {
+    vi.mocked(getProfile).mockResolvedValue(
+      { phone: null } as unknown as Awaited<ReturnType<typeof getProfile>>,
+    );
+
+    const result = await verifySigningOtpAction(null, fd('123456'));
+
+    expect(result?.error).toBeTruthy();
+    expect(verifyOtp).not.toHaveBeenCalled();
   });
 });

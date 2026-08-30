@@ -124,8 +124,6 @@ export default async function ApproveCampaignPage({
           <dd>
             <strong>{ils(campaign.max_charge_ceiling)}</strong>
           </dd>
-          <dt className="text-muted-foreground">אנשי קשר</dt>
-          <dd>{campaign.max_contacts ?? '—'}</dd>
           <dt className="text-muted-foreground">ערוצים</dt>
           <dd>
             {campaign.allowed_channels
