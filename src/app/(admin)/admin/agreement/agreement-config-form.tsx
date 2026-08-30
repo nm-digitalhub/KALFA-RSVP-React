@@ -22,7 +22,7 @@ import {
   SubmitButton,
 } from '@/components/forms';
 import { saveAgreementConfigAction } from './config-actions';
-import { HelpTip } from './help-tip';
+import { HelpTip } from '@/components/help-tip';
 
 // The 7 raw string values, keyed exactly as getAgreementConfigForAdmin() returns
 // them. All values are plain strings (form-friendly); validation/coercion lives

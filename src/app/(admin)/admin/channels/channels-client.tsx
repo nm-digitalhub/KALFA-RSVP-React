@@ -15,7 +15,7 @@ import {
   AccordionTrigger,
   AccordionPanel,
 } from '@/components/ui/accordion';
-import { HelpTip } from '@/app/(admin)/admin/agreement/help-tip';
+import { HelpTip } from '@/components/help-tip';
 import {
   FieldError,
   FormError,
