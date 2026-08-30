@@ -3,10 +3,14 @@
 import { useVersionSkewReload } from '@/components/use-version-skew-reload';
 import { isVersionSkewError } from '@/lib/version-skew';
 
-// Error boundary for the customer area. Shows a generic, privacy-safe message —
-// never the raw error/stack — and offers a retry. A stale-deployment Server
-// Action error triggers a one-time reload instead (useVersionSkewReload).
-export default function CustomerError({
+// Error boundary for every unauthenticated token surface (/r, /g, /ty, /rate,
+// /join) that has no more specific boundary of its own. No session exists
+// here, so there is nothing to sign back into and nowhere on the site the
+// guest was "navigating" from — a single retry action is the whole recovery
+// surface. (public)/(site) overrides this with its own error.tsx (site
+// visitors DO have a home to return to). Same generic, privacy-safe message
+// and version-skew handling as the admin/customer boundaries.
+export default function PublicError({
   error,
   retry,
 }: {

@@ -8,10 +8,10 @@ import { isVersionSkewError } from '@/lib/version-skew';
 // Action error triggers a one-time reload instead (useVersionSkewReload).
 export default function AdminError({
   error,
-  unstable_retry,
+  retry,
 }: {
   error: Error & { digest?: string };
-  unstable_retry: () => void;
+  retry: () => void;
 }) {
   useVersionSkewReload(error);
   if (isVersionSkewError(error)) {
@@ -30,7 +30,7 @@ export default function AdminError({
       </p>
       <button
         type="button"
-        onClick={() => unstable_retry()}
+        onClick={() => retry()}
         className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:opacity-90"
       >
         נסו שוב

@@ -10,10 +10,10 @@ import { isVersionSkewError } from '@/lib/version-skew';
 // Action error triggers a one-time reload instead (useVersionSkewReload).
 export default function GlobalError({
   error,
-  unstable_retry,
+  retry,
 }: {
   error: Error & { digest?: string };
-  unstable_retry: () => void;
+  retry: () => void;
 }) {
   useVersionSkewReload(error);
   const skew = isVersionSkewError(error);
@@ -41,7 +41,7 @@ export default function GlobalError({
           {skew ? null : (
           <button
             type="button"
-            onClick={() => unstable_retry()}
+            onClick={() => retry()}
             style={{
               borderRadius: 6,
               background: '#4f46e5',
