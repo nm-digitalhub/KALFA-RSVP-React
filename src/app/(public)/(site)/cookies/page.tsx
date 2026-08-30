@@ -12,9 +12,10 @@ export const metadata = {
 // in /admin — matching the /privacy and /terms convention (both force-dynamic).
 export const dynamic = 'force-dynamic';
 
-// Public cookie policy (beta.kalfa.me/cookies). Hebrew, RTL. DRAFT per Privacy
-// Protection Law + Amendment 13; lawyer review required before go-live. Content
-// describes only the services actually present in the app — no generic boilerplate.
+// Public cookie policy (beta.kalfa.me/cookies). Hebrew, RTL. Legal wording per
+// Privacy Protection Law + Amendment 13 — reviewed and approved (no draft
+// banner, 2026-08-30). Content describes only the services actually present in
+// the app — no generic boilerplate.
 export default async function CookiesPage() {
   const [company, consentAdmin] = await Promise.all([
     getCompanyLegal(),
@@ -24,7 +25,7 @@ export default async function CookiesPage() {
   return (
     <LegalShell
       title="מדיניות עוגיות"
-      updatedText="עודכן לאחרונה: יולי 2026 · גרסת טיוטה"
+      updatedText="עודכן לאחרונה: יולי 2026"
       company={company}
     >
       <LegalSection title="1. כללי">

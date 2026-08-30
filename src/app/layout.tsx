@@ -56,7 +56,7 @@ export async function generateMetadata(): Promise<Metadata> {
 // via getUser()→cookies(); /contact /terms /cookies /privacy and the guest
 // token routes via their own `dynamic = 'force-dynamic'`; customer/admin via
 // cookies() in their layouts). See plans/cookie-consent-admin-control.md §9
-// for the full reasoning (Next.js 16.2.11, cacheComponents NOT enabled — the
+// for the full reasoning (Next.js 16.3.1, cacheComponents NOT enabled — the
 // classic model applies, confirmed against node_modules/next/dist/docs).
 // `revalidatePath('/', 'layout')` in every admin write
 // (src/app/(admin)/admin/cookie-consent/actions.ts) gives near-immediate

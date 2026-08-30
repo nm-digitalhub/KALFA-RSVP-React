@@ -11,15 +11,15 @@ export const metadata = {
 export const dynamic = 'force-dynamic';
 
 // Public terms of service (beta.kalfa.me/terms). Hebrew, RTL, reads company
-// identity from config. DRAFT per Consumer Protection Law §14ג; lawyer review
-// required before go-live.
+// identity from config. Legal wording per Consumer Protection Law §14ג —
+// reviewed and approved (no draft banner, 2026-08-30).
 export default async function TermsPage() {
   const company = await getCompanyLegal();
 
   return (
     <LegalShell
       title="תקנון ותנאי שירות"
-      updatedText="עודכן לאחרונה: אוגוסט 2026 · גרסת טיוטה"
+      updatedText="עודכן לאחרונה: אוגוסט 2026"
       company={company}
     >
       <LegalSection title="1. כללי והגדרות">

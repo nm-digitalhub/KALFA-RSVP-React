@@ -15,8 +15,8 @@ export const metadata = {
 export const dynamic = 'force-dynamic';
 
 // Public privacy policy (beta.kalfa.me/privacy). Hebrew, RTL, reads company
-// identity from config. DRAFT per Privacy Protection Law §11 + Amendment 13;
-// lawyer review required before go-live.
+// identity from config. Legal wording per Privacy Protection Law §11 +
+// Amendment 13 — reviewed and approved (no draft banner, 2026-08-30).
 export default async function PrivacyPage() {
   const [company, consentAdmin] = await Promise.all([
     getCompanyLegal(),
@@ -26,7 +26,7 @@ export default async function PrivacyPage() {
   return (
     <LegalShell
       title="מדיניות פרטיות"
-      updatedText="עודכן לאחרונה: יוני 2026 · גרסת טיוטה"
+      updatedText="עודכן לאחרונה: יוני 2026"
       company={company}
     >
       <LegalSection title="1. כללי">

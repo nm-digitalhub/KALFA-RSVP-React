@@ -4,7 +4,7 @@ import type { CompanyLegal } from '@/lib/data/company';
 
 // Shared shell for the public legal pages (privacy policy, terms). RTL Hebrew,
 // reads the company identity from config so it stays in sync with the agreement.
-// DRAFT content — a licensed Israeli lawyer must approve before go-live.
+// Legal wording reviewed and approved — no draft banner (removed 2026-08-30).
 
 export function LegalShell({
   title,
@@ -31,13 +31,6 @@ export function LegalShell({
 
       <h1 className="mt-4 text-2xl font-bold">{title}</h1>
       <p className="mt-1 text-xs text-muted-foreground">{updatedText}</p>
-
-      <p
-        role="note"
-        className="mt-4 rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-800"
-      >
-        טיוטה — הנוסח ממתין לאישור עו״ד. אין לראות בו ייעוץ משפטי.
-      </p>
 
       <div className="mt-6 space-y-6">{children}</div>
 
