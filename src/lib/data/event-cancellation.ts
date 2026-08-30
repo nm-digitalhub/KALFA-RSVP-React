@@ -195,6 +195,12 @@ export type CampaignForCancellationAdmin = {
   // — lets the admin UI state the outcome definitively instead of hedging
   // with "if card details are on file".
   hasCardOnFile: boolean;
+  // Needed to compute the live accrued preview with computeChargeAmount —
+  // the campaign_billing_summary RPC's own `accrued` is base/overage-blind
+  // (verified gap, 2026-08-28), so callers must fold these in themselves.
+  basePrice: number;
+  includedReached: number;
+  pricePerReached: number;
 };
 
 export async function getCampaignForEventAdmin(
@@ -204,7 +210,9 @@ export async function getCampaignForEventAdmin(
   const admin = createAdminClient();
   const { data, error } = await admin
     .from('campaigns')
-    .select('id, charge_status, max_charge_ceiling, card_token_ref, card_exp_month, card_exp_year, card_citizen_id')
+    .select(
+      'id, charge_status, max_charge_ceiling, card_token_ref, card_exp_month, card_exp_year, card_citizen_id, base_price, included_reached, price_per_reached',
+    )
     .eq('event_id', eventId)
     .order('created_at', { ascending: false })
     .limit(1)
@@ -216,6 +224,9 @@ export async function getCampaignForEventAdmin(
     chargeStatus: data.charge_status,
     maxChargeCeiling: data.max_charge_ceiling,
     hasCardOnFile: !!(data.card_token_ref && data.card_exp_month && data.card_exp_year && data.card_citizen_id),
+    basePrice: Number(data.base_price ?? 0),
+    includedReached: Number(data.included_reached ?? 0),
+    pricePerReached: Number(data.price_per_reached ?? 0),
   };
 }
 
@@ -454,6 +465,26 @@ export async function resolveCancellationRequest(
       });
       sumitDocumentId = result.documentId;
       sumitDocumentUrl = result.documentUrl;
+
+      // The SUMIT credit above already moved real money back to the customer's
+      // card — campaigns.final_charge_amount must reflect that net amount too,
+      // or the customer's own campaign page and the admin campaigns list keep
+      // showing the pre-refund gross forever (verified gap, 2026-08-28).
+      // charge_status/credit_applied are deliberately left untouched: the
+      // original charge is still a historical fact (charge_status stays
+      // 'charged', preserving the settle-guard's terminal-state check), and
+      // credit_applied is a distinct pre-charge concept (credit netted in at
+      // the ORIGINAL charge, per close-charge.ts) — reusing it for a post-charge
+      // refund would corrupt that figure.
+      const { error: refundSyncError } = await admin
+        .from('campaigns')
+        .update({ final_charge_amount: charged - creditAmount })
+        .eq('id', campaign!.id);
+      if (refundSyncError) {
+        throw new Error(
+          'הזיכוי בוצע בפועל מול SUMIT, אך עדכון הסכום בכרטיס הקמפיין נכשל — נא לתעד ידנית ולבדוק שוב',
+        );
+      }
     }
   }
 

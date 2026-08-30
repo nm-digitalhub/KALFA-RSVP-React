@@ -8,6 +8,7 @@ import {
   computeSuggestedCancellationAmount,
 } from '@/lib/data/event-cancellation';
 import { getCampaignBillingSummary } from '@/lib/data/billing';
+import { computeChargeAmount } from '@/lib/data/close-charge-amount';
 import { PageHeading, Badge, formatCurrency, formatDateTime } from '../../_components';
 import { ResolveForm } from './resolve-form';
 
@@ -45,6 +46,21 @@ export default async function AdminCancellationDetailPage({
       : 'manual';
   const billingSummary = campaign ? await getCampaignBillingSummary(campaign.id) : null;
   const suggestedAmount = campaign ? await computeSuggestedCancellationAmount(campaign.id) : 0;
+  // The RPC's own `accrued` is base/overage-blind (verified gap, 2026-08-28) —
+  // fold in the campaign's actual base/included/overage terms via the same
+  // pure formula close-charge.ts uses at settlement, same fix as the
+  // customer's campaign-manage page.
+  const accrued =
+    billingSummary && campaign
+      ? computeChargeAmount({
+          base: campaign.basePrice,
+          included: campaign.includedReached,
+          overage: campaign.pricePerReached,
+          reached: billingSummary.reachedCount,
+          ceiling: billingSummary.ceiling,
+          credits: 0,
+        }).amount
+      : 0;
 
   return (
     <div className="space-y-6">
@@ -65,7 +81,7 @@ export default async function AdminCancellationDetailPage({
         </p>
         {billingSummary ? (
           <p className="text-sm text-muted-foreground">
-            {billingSummary.reachedCount} אנשי קשר הושגו · נצבר {formatCurrency(billingSummary.accrued)} מתוך
+            {billingSummary.reachedCount} אנשי קשר הושגו · נצבר {formatCurrency(accrued)} מתוך
             תקרה {formatCurrency(billingSummary.ceiling)}
           </p>
         ) : null}

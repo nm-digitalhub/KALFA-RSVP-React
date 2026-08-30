@@ -17,6 +17,8 @@ import {
 } from '@/app/(customer)/app/events/[id]/guests/labels';
 import { CAMPAIGN_STATUS_LABELS } from '@/lib/data/event-labels';
 import type { CampaignStatus } from '@/lib/data/campaigns';
+import { computeChargeAmount } from '@/lib/data/close-charge-amount';
+import { HelpTip } from '@/components/help-tip';
 
 type BoundAction = (
   prevState: FormState,
@@ -33,6 +35,8 @@ type Campaign = {
   credit_applied: number | null;
   capture_status: string | null;
   charge_status: string | null;
+  base_price: number | null;
+  included_reached: number | null;
 };
 
 type Summary = {
@@ -312,8 +316,23 @@ export function ManageClient({
 }) {
   const s = campaign.status;
   const reached = summary?.reachedCount ?? 0;
-  const accrued = Number(summary?.accrued ?? 0);
   const ceiling = Number(campaign.max_charge_ceiling ?? summary?.ceiling ?? 0);
+  const basePrice = Number(campaign.base_price ?? 0);
+  const includedReached = Number(campaign.included_reached ?? 0);
+  const overageRate = Number(campaign.price_per_reached ?? 0);
+  // Live preview of "what would be charged if settled right now" — the SAME
+  // pure formula close-charge.ts uses at actual settlement (base + overage
+  // above the included count, capped at the ceiling), not a separate
+  // approximation. credits are intentionally 0 here: available credit is
+  // applied only at settle time and shown as "זיכוי שקוזז" once that happens.
+  const accrued = computeChargeAmount({
+    base: basePrice,
+    included: includedReached,
+    overage: overageRate,
+    reached,
+    ceiling,
+    credits: 0,
+  }).amount;
   const balance = Math.max(0, ceiling - accrued);
 
   // A past event can no longer BEGIN outreach (activate), but pause/close/settle
@@ -363,6 +382,16 @@ export function ManageClient({
       </div>
 
       {/* §15 owner board */}
+      <div className="flex items-center gap-1.5">
+        <span className="text-sm font-medium">תוכנית החיוב</span>
+        <HelpTip
+          text={
+            basePrice > 0
+              ? `דמי הפעלה קבועים של ${nis(basePrice)} — נגבים במלואם ללא תלות בתוצאה, כולל אם אף איש קשר לא השיב. ${includedReached} אנשי הקשר הראשונים שהשיבו כלולים בדמי ההפעלה; מעבר לכך נוסף ${nis(overageRate)} לכל איש קשר נוסף שהשיב, עד לתקרה של ${nis(ceiling)}.`
+              : `מחיר לכל איש קשר ייחודי שהשיב בפועל: ${nis(overageRate)}, עד לתקרה של ${nis(ceiling)}. אין דמי הפעלה קבועים בתוכנית הזו.`
+          }
+        />
+      </div>
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <Stat label="מחיר לאיש קשר שהושג" value={nis(campaign.price_per_reached)} />
         <Stat

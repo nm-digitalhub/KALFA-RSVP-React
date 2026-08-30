@@ -136,7 +136,15 @@ describe('getCampaignForEventAdmin', () => {
       from: () => ({ select: () => ({ eq: () => ({ order: () => ({ limit: () => ({ maybeSingle }) }) }) }) }),
     });
     const r = await getCampaignForEventAdmin('e1');
-    expect(r).toEqual({ id: 'camp1', chargeStatus: 'charged', maxChargeCeiling: 88, hasCardOnFile: true });
+    expect(r).toEqual({
+      id: 'camp1',
+      chargeStatus: 'charged',
+      maxChargeCeiling: 88,
+      hasCardOnFile: true,
+      basePrice: 0,
+      includedReached: 0,
+      pricePerReached: 0,
+    });
   });
 
   it('returns hasCardOnFile=false when any of the 4 card fields is missing', async () => {
@@ -267,13 +275,21 @@ describe('resolveCancellationRequest', () => {
     expect(closeCampaignAndCharge).not.toHaveBeenCalled();
     expect(creditHeldCardSumit).toHaveBeenCalledWith(expect.objectContaining({ amount: '84' }));
     expect(update).toHaveBeenCalledWith(expect.objectContaining({ capture_outcome: 'refunded' }));
+    // Verified gap fix (2026-08-28): the campaigns row must reflect the net
+    // amount after the SUMIT credit, or the customer's own page and the admin
+    // campaigns list keep showing the stale pre-refund gross forever.
+    // full refund of the entire ₪84 charge ⇒ net final_charge_amount = 0.
+    expect(update).toHaveBeenCalledWith({ final_charge_amount: 0 });
   });
 
   it('post-charge campaign WITH a card on file: credits only the difference for partial_charge', async () => {
-    happy({ chargeStatus: 'charged', finalChargeAmount: 84 });
+    const { update } = happy({ chargeStatus: 'charged', finalChargeAmount: 84 });
     await resolveCancellationRequest('r1', { resolution: 'partial_charge', resolutionAmount: 30, resolutionNote: 'חלק נשאר' });
     // credit = charged(84) - keep(30) = 54
     expect(creditHeldCardSumit).toHaveBeenCalledWith(expect.objectContaining({ amount: '54' }));
+    // net final_charge_amount after a ₪54 credit off the original ₪84 = 30 —
+    // matches the amount the customer was told they'd keep being charged.
+    expect(update).toHaveBeenCalledWith({ final_charge_amount: 30 });
   });
 
   it('post-charge campaign WITHOUT a card on file: falls back to manual_refund_required, never calls creditHeldCardSumit', async () => {
