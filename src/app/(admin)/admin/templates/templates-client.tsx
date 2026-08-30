@@ -2,7 +2,7 @@
 
 import { useActionState } from 'react';
 
-import { HelpTip } from '@/app/(admin)/admin/agreement/help-tip';
+import { HelpTip } from '@/components/help-tip';
 import {
   FieldError,
   FormError,
@@ -20,11 +20,92 @@ type Template = {
   language: string;
   body: string | null;
   active: boolean;
+  category: string | null;
+  requested_category: string;
+  quality_score: string | null;
+  meta_status: string | null;
+  rejected_reason: string | null;
+  pending_category_change_at: string | null;
+  pending_correct_category: string | null;
+  last_synced_at: string | null;
 };
 
 const inputClass =
   'w-full rounded-md border border-border bg-background px-3 py-2 text-sm outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/15';
 const labelClass = 'mb-1 flex items-center gap-1 text-sm font-medium';
+
+const CATEGORY_LABELS: Record<string, string> = {
+  UTILITY: 'Utility (זול)',
+  MARKETING: 'Marketing (יקר)',
+  AUTHENTICATION: 'Authentication',
+};
+
+const QUALITY_STYLE: Record<string, string> = {
+  GREEN: 'bg-emerald-500',
+  YELLOW: 'bg-amber-500',
+  RED: 'bg-red-500',
+  UNKNOWN: 'bg-muted-foreground/40',
+};
+
+function formatDateTimeIL(iso: string): string {
+  return new Date(iso).toLocaleString('he-IL', {
+    day: '2-digit',
+    month: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
+
+function TemplateHealth({ t }: { t: Template }) {
+  const downgraded = !!t.category && t.category !== t.requested_category;
+  return (
+    <div className="flex flex-col gap-2 rounded-md border border-border bg-muted/30 p-3 text-xs">
+      <div className="flex flex-wrap items-center gap-2">
+        <span
+          className={`rounded-full border px-2 py-0.5 font-medium ${
+            !t.category
+              ? 'border-border text-muted-foreground'
+              : downgraded
+                ? 'border-red-500/30 bg-red-500/10 text-red-600'
+                : 'border-emerald-500/30 bg-emerald-500/10 text-emerald-600'
+          }`}
+        >
+          {t.category ? (CATEGORY_LABELS[t.category] ?? t.category) : 'טרם סונכרן'}
+        </span>
+        {t.quality_score ? (
+          <span className="inline-flex items-center gap-1.5 text-muted-foreground">
+            <span
+              className={`size-2 rounded-full ${QUALITY_STYLE[t.quality_score] ?? 'bg-muted-foreground/40'}`}
+            />
+            איכות: {t.quality_score}
+          </span>
+        ) : null}
+        {t.meta_status && t.meta_status !== 'APPROVED' ? (
+          <span className="rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 font-medium text-amber-600">
+            {t.meta_status}
+          </span>
+        ) : null}
+      </div>
+      {downgraded ? (
+        <p className="text-red-600">
+          ⚠ ירדה בקטגוריה — התבקש {CATEGORY_LABELS[t.requested_category] ?? t.requested_category}
+        </p>
+      ) : null}
+      {t.pending_category_change_at ? (
+        <p className="text-amber-600">
+          ⏳ צפויה לרדת ל-{t.pending_correct_category ?? '?'} סביב{' '}
+          {formatDateTimeIL(t.pending_category_change_at)}
+        </p>
+      ) : null}
+      {t.rejected_reason ? (
+        <p className="text-muted-foreground">סיבת דחייה: {t.rejected_reason}</p>
+      ) : null}
+      {t.last_synced_at ? (
+        <p className="text-muted-foreground">סונכרן לאחרונה: {formatDateTimeIL(t.last_synced_at)}</p>
+      ) : null}
+    </div>
+  );
+}
 
 function TemplateForm({ template }: { template: Template }) {
   const [state, action] = useActionState(updateTemplateAction, null);
@@ -60,6 +141,8 @@ function TemplateForm({ template }: { template: Template }) {
 
       <FormError message={state?.error} />
       <FormNotice message={state?.notice} />
+
+      {isCall ? null : <TemplateHealth t={template} />}
 
       <div className="grid gap-3 sm:grid-cols-2">
         <div>
