@@ -82,6 +82,7 @@ import { runTemplateHealthSync } from '@/lib/data/template-health-sync';
 import { runInstagramTokenRefresh } from '@/lib/data/instagram-token-refresh';
 import { runConsoleAgentCalendarPresenceSync } from '@/lib/data/console-agent-calendar-presence';
 import { runFleetExpireSweep } from '@/lib/fleet/expire';
+import { runSumitHoldReconcile } from '@/lib/data/sumit-hold-reconcile';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { sendSlackAlert } from '@/lib/alerts/slack';
 
@@ -986,6 +987,16 @@ async function main(): Promise<void> {
     }),
   );
 
+  // SUMIT has no release API and no release webhook — this is the only way we
+  // ever find out a hold was released manually in their dashboard. Read-only
+  // against SUMIT; the only write is release_status on our own campaigns.
+  await boss.work(
+    QUEUES.sumitHoldReconcile,
+    guardedWorker(QUEUES.sumitHoldReconcile, async () => {
+      await runSumitHoldReconcile();
+    }),
+  );
+
   await boss.schedule(QUEUES.arm, '* * * * *');
   await boss.schedule(QUEUES.sweeper, '*/5 * * * *');
   await boss.schedule(QUEUES.webhook, '* * * * *');
@@ -1029,6 +1040,10 @@ async function main(): Promise<void> {
   // Every 10 minutes — expiry windows are 72h, so minute-precision buys
   // nothing; 10m keeps a dead request from ever looking open for long.
   await boss.schedule(QUEUES.fleetExpireSweep, '*/10 * * * *');
+  // Every 30 minutes — a manual dashboard release is not time-sensitive to
+  // detect; this only exists to stop it going unnoticed forever, not to catch
+  // it within seconds.
+  await boss.schedule(QUEUES.sumitHoldReconcile, '*/30 * * * *');
 
   console.log('[kalfa-worker] started — queues + schedules up');
 

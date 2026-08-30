@@ -118,6 +118,18 @@ export const QUEUES = {
   // on. Gated by app_settings.inquiry_followup_enabled (its own switch, off
   // by default). See src/lib/data/inquiry-followup.ts.
   inquiryFollowupSweep: 'inquiry-followup-sweep',
+  // SUMIT hold-release reconciler — every 30m, read-only against SUMIT's CRM
+  // (crm/data/listentities on the "תפיסות מסגרת" folder), syncs
+  // campaigns.release_status for holds SUMIT reports as released (manual
+  // dashboard release, since SUMIT exposes no release API) but our own DB
+  // still shows open. Correlates by campaigns.hold_order_document_id ↔
+  // Billing_OrderDocument.ID — only covers holds authorized after 2026-08-30
+  // (when authorize.ts started persisting that id); earlier rows need a
+  // one-time manual backfill. Ignores Billing_Status=2 (charged elsewhere) by
+  // design — charging always goes through closeCampaignAndCharge, never
+  // discovered after the fact from SUMIT. See
+  // src/lib/data/sumit-hold-reconcile.ts.
+  sumitHoldReconcile: 'sumit-hold-reconcile',
 } as const;
 
 // outreach-step retry policy: a few backed-off retries, then dead-letter. The
