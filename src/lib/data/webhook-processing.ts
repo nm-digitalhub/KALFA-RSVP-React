@@ -23,7 +23,14 @@ import {
 } from '@/lib/data/call-result-processing';
 import { processMeetingOptOutRow } from '@/lib/data/callback-voice-processing';
 import { processSalesOptOutRow } from '@/lib/data/sales-voice-processing';
-import { intakeMailAsInquiry } from '@/lib/data/inquiry-mail-intake';
+import { intakeMailAsInquiry, REF_CODE_RE } from '@/lib/data/inquiry-mail-intake';
+import {
+  processTemplateStatusRow,
+  processTemplateCategoryRow,
+  processTemplateCategoryMisuseRow,
+  processTemplateQualityRow,
+} from '@/lib/data/template-health-processing';
+import { sendSlackAlert } from '@/lib/alerts/slack';
 import { submitRsvp } from '@/lib/data/rsvp';
 import { handleHeadcountReply, requestHeadcount } from '@/lib/data/headcount';
 import { stageWhatsAppImport } from '@/lib/data/whatsapp-import';
@@ -98,6 +105,26 @@ export async function processWebhookEvent(row: WebhookInboxRow): Promise<void> {
   }
   if (row.event_kind === 'graph_mail') {
     await processGraphMail(row);
+    return;
+  }
+  if (row.event_kind === 'email_delivery') {
+    await processEmailDelivery(row);
+    return;
+  }
+  if (row.event_kind === 'template_status') {
+    await processTemplateStatusRow(row);
+    return;
+  }
+  if (row.event_kind === 'template_category') {
+    await processTemplateCategoryRow(row);
+    return;
+  }
+  if (row.event_kind === 'template_category_misuse') {
+    await processTemplateCategoryMisuseRow(row);
+    return;
+  }
+  if (row.event_kind === 'template_quality') {
+    await processTemplateQualityRow(row);
     return;
   }
   // Unknown kind — nothing to do; caller marks it processed (no retry storm).
@@ -262,4 +289,84 @@ async function processStatus(row: WebhookInboxRow): Promise<void> {
   if (errorCode && contactId && WRONG_NUMBER_CODES.has(errorCode)) {
     await setContactOpStatus(contactId, 'wrong_number');
   }
+}
+
+// ---------------------------------------------------------------------------
+// Resend delivery outcomes.
+//
+// SCOPE, and why it is this small. MEASURED 2026-08-26: 10 inquiries exist in
+// total, and the follow-up cascade has never fired once (0 reminders, 0
+// warnings, 0 rating requests, 0 auto-closes). Google/Yahoo's bulk-sender rules
+// begin at 5,000 messages a day — four orders of magnitude above us — and Resend
+// already runs its own suppression list, so the deliverability-reputation work
+// the industry guidance is about is both inapplicable at this volume and already
+// done by the provider. What is NOT covered by any of that is the one thing that
+// actually matters here: at ten inquiries, one customer who never received our
+// reply is 10% of the book. So this alerts a human and does nothing else.
+//
+// Deliberately NOT built (revisit on real volume, not on speculation): stopping
+// the cascade, an `email_undeliverable_at` column, per-address or per-person
+// suppression, send-time tagging to join events back to an inquiry.
+//
+// `email.complained` is stored and otherwise IGNORED on purpose. Its payload
+// carries no feedback type, no source, and nothing else that would show whether
+// a person deliberately reported the mail or a filter classified it — and every
+// mail in this flow concerns an inquiry the person opened themselves, so there
+// is no unsolicited list to remove anyone from.
+type BouncePayload = {
+  type?: string;
+  data?: {
+    subject?: string;
+    bounce?: { type?: string; subType?: string };
+  };
+};
+
+// Resend's own docs disagree with each other on this vocabulary: the webhook
+// payload reference gives `Permanent` / `Temporary` with subtypes `Suppressed`
+// and `MessageRejected`, while the bounce reference gives `Permanent` /
+// `Transient` / `Undetermined` with an entirely different subtype list. Neither
+// page contains the other's values (both read 2026-08-26). So this does not
+// match a closed list of "bad" values: it names only the types that are known to
+// be non-actionable, and anything unrecognised still raises an alert. A soft
+// bounce stays silent; a hard bounce, or a value the docs never mentioned, does
+// not pass unnoticed.
+const NON_ACTIONABLE_BOUNCE_TYPES = new Set(['Transient', 'Temporary', 'Undetermined']);
+
+async function processEmailDelivery(row: WebhookInboxRow): Promise<void> {
+  const payload = (row.payload ?? {}) as BouncePayload;
+  // sent / delivered / delivery_delayed / complained are recorded by the route
+  // and acted on by nobody. Only a bounce means a customer got nothing.
+  if (payload.type !== 'email.bounced') return;
+
+  const bounceType = payload.data?.bounce?.type;
+  if (bounceType && NON_ACTIONABLE_BOUNCE_TYPES.has(bounceType)) return;
+
+  // The [KLF-XXXXXXXX] token, never the recipient address: Slack alerts in this
+  // codebase carry no personal data (inquiry-followup's sweep alert posts counts
+  // only). The ref code is enough to find the inquiry in the admin, where the
+  // address is already visible to an authorised operator. The SMTP
+  // diagnosticCode is excluded for the same reason — it routinely quotes the
+  // recipient address back verbatim.
+  const refCode = payload.data?.subject?.match(REF_CODE_RE)?.[1] ?? null;
+  const recognised = bounceType === 'Permanent';
+
+  await sendSlackAlert({
+    level: recognised ? 'warn' : 'info',
+    category: 'customer_inquiry',
+    source: 'resend-bounce',
+    title: recognised
+      ? 'מייל לפנייה לא נמסר — כתובת הלקוח דוחה'
+      : 'דחיית מייל עם סוג שאינו מוכר',
+    detail: recognised
+      ? (refCode
+          ? `הפנייה ${refCode}: המייל האחרון אליה נדחה סופית. הלקוח לא קיבל אותו — כדאי ליצור קשר בדרך אחרת.`
+          : 'מייל יוצא נדחה סופית. אין קוד פנייה בנושא, אז יש לאתר אותו ב-/admin/webhooks.')
+      : `סוג הדחייה שהתקבל (${bounceType ?? 'חסר'}) אינו מופיע בתיעוד של Resend. ` +
+        'ההתראה נשלחת כדי שדחייה סופית לא תיבלע בגלל ערך שלא ציפינו לו.',
+    fields: {
+      ...(refCode ? { refCode } : {}),
+      bounceType: bounceType ?? 'missing',
+      ...(payload.data?.bounce?.subType ? { subType: payload.data.bounce.subType } : {}),
+    },
+  });
 }

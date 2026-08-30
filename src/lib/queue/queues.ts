@@ -50,6 +50,13 @@ export const QUEUES = {
   // subscription and Slack at ≥80% (warn) / ≥95% (error). Config-gated (no key
   // → no-op), read-only, never throws. See src/lib/data/elevenlabs-quota.ts.
   elevenlabsQuota: 'elevenlabs-quota-check',
+  // WhatsApp template health reconciliation — daily poll of category/
+  // quality_score/status for every whatsapp-channel message_templates row
+  // against Meta's live message_templates fields. Safety net for the webhook
+  // path (template-health-processing.ts) and the initial backfill; needs no
+  // Meta App webhook-subscription config to function. See
+  // src/lib/data/template-health-sync.ts.
+  templateHealthSync: 'whatsapp-template-health-sync',
   // call_dispatch_status retention — daily delete of rows older than 30 days.
   // The table is a status channel, not an audit log (activity_log keeps the
   // durable record); this also clears version-skew stragglers. See
@@ -104,6 +111,13 @@ export const QUEUES = {
   // uniqueness mean at most one job for a row can ever actually dial. See
   // enqueueSalesCallDispatch in sales-call-dispatch.ts.
   salesCallDispatch: 'sales-call-dispatch',
+  // Contact-inquiry silence follow-up sweep — same periodic-tick idiom as
+  // thankyouSweep above: reads fresh eligibility from contact_messages every
+  // 5 minutes rather than a per-row delayed job. Reminder → closing warning →
+  // auto-close on an inquiry the admin replied to and the customer went quiet
+  // on. Gated by app_settings.inquiry_followup_enabled (its own switch, off
+  // by default). See src/lib/data/inquiry-followup.ts.
+  inquiryFollowupSweep: 'inquiry-followup-sweep',
 } as const;
 
 // outreach-step retry policy: a few backed-off retries, then dead-letter. The

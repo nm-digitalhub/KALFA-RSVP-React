@@ -17,6 +17,7 @@ vi.mock('@/lib/data/interactions', () => ({
 }));
 vi.mock('@/lib/data/billing', () => ({ recordReached: vi.fn() }));
 vi.mock('@/lib/data/rsvp', () => ({ submitRsvp: vi.fn() }));
+vi.mock('@/lib/alerts/slack', () => ({ sendSlackAlert: vi.fn() }));
 
 import { processWebhookEvent } from '@/lib/data/webhook-processing';
 import type { WebhookInboxRow } from '@/lib/data/webhooks';
@@ -32,6 +33,7 @@ import {
 } from '@/lib/data/interactions';
 import { recordReached } from '@/lib/data/billing';
 import { submitRsvp } from '@/lib/data/rsvp';
+import { sendSlackAlert } from '@/lib/alerts/slack';
 
 function messageRow(overrides: Partial<WebhookInboxRow> = {}): WebhookInboxRow {
   return {
@@ -406,4 +408,99 @@ describe('processWebhookEvent — status', () => {
     expect(setDeliveryStatus).toHaveBeenCalledWith('wamid.out', 'failed', '131047');
     expect(setContactOpStatus).not.toHaveBeenCalled();
   });
+});
+
+// ---------------------------------------------------------------------------
+// Resend delivery outcomes. The handler's entire job is to raise ONE alert when
+// a customer did not receive our mail, and to stay silent otherwise.
+describe('email_delivery (Resend)', () => {
+  const RECIPIENT = 'dana@example.com';
+
+  function deliveryRow(payload: unknown): WebhookInboxRow {
+    return {
+      id: 'row-e',
+      provider: 'resend',
+      event_kind: 'email_delivery',
+      dedupe_key: 'msg_abc',
+      message_id: '<010201@eu-west-1.amazonses.com>',
+      context_message_id: null,
+      phone_number_id: null,
+      event_at: null,
+      payload: payload as WebhookInboxRow['payload'],
+      received_at: '2026-08-26T13:00:00Z',
+      processed_at: null,
+      attempts: 0,
+      last_error: null,
+    };
+  }
+
+  const bounce = (bounceObj: unknown, subject = 'Re: [KLF-1A2B3C4D] פנייה חדשה') =>
+    deliveryRow({
+      type: 'email.bounced',
+      data: { subject, to: [RECIPIENT], bounce: bounceObj },
+    });
+
+  it('alerts on a permanent bounce, naming the inquiry by ref code', async () => {
+    await processWebhookEvent(bounce({ type: 'Permanent', subType: 'General' }));
+    expect(sendSlackAlert).toHaveBeenCalledTimes(1);
+    const alert = vi.mocked(sendSlackAlert).mock.calls[0][0];
+    expect(alert.level).toBe('warn');
+    expect(alert.category).toBe('customer_inquiry');
+    expect(alert.fields).toMatchObject({ refCode: '1A2B3C4D', bounceType: 'Permanent' });
+  });
+
+  // The codebase rule: Slack alerts carry no personal data. The recipient address
+  // sits in the payload and in the SMTP diagnostic, so it is easy to leak by
+  // accident — this asserts it appears nowhere in what we post.
+  it('never puts the recipient address in the alert', async () => {
+    await processWebhookEvent(
+      bounce({
+        type: 'Permanent',
+        subType: 'General',
+        message: `550 5.1.1 <${RECIPIENT}> user unknown`,
+        diagnosticCode: [`smtp; 550 5.1.1 <${RECIPIENT}> user unknown`],
+      }),
+    );
+    expect(JSON.stringify(vi.mocked(sendSlackAlert).mock.calls[0][0])).not.toContain(RECIPIENT);
+  });
+
+  // Resend's two doc pages disagree: one says Temporary, the other Transient.
+  // Both mean "may still arrive", so both must stay silent.
+  it.each(['Transient', 'Temporary', 'Undetermined'])(
+    'stays silent on a %s (soft) bounce',
+    async (type) => {
+      await processWebhookEvent(bounce({ type }));
+      expect(sendSlackAlert).not.toHaveBeenCalled();
+    },
+  );
+
+  // The reason the check is not a closed list of "bad" values: the published
+  // vocabularies are inconsistent, so a real hard bounce could arrive wearing a
+  // string neither page mentions. It must not pass unnoticed.
+  it.each([['Bounced'], ['unknown-future-value'], [undefined]])(
+    'still alerts when the bounce type is %s (never silently dropped)',
+    async (type) => {
+      await processWebhookEvent(bounce(type === undefined ? {} : { type }));
+      expect(sendSlackAlert).toHaveBeenCalledTimes(1);
+      expect(vi.mocked(sendSlackAlert).mock.calls[0][0].level).toBe('info');
+    },
+  );
+
+  it('alerts and points at the inspector when the subject carries no ref code', async () => {
+    await processWebhookEvent(bounce({ type: 'Permanent' }, 'no reference here'));
+    const alert = vi.mocked(sendSlackAlert).mock.calls[0][0];
+    expect(alert.detail).toContain('/admin/webhooks');
+    expect(alert.fields).not.toHaveProperty('refCode');
+  });
+
+  // Deliberate no-ops. A complaint carries no evidence of who or what triggered
+  // it, and every mail in this flow is about an inquiry the person opened, so it
+  // is recorded and nothing more.
+  it.each(['email.sent', 'email.delivered', 'email.delivery_delayed', 'email.complained'])(
+    'records %s without alerting',
+    async (type) => {
+      await processWebhookEvent(deliveryRow({ type, data: { to: [RECIPIENT] } }));
+      expect(sendSlackAlert).not.toHaveBeenCalled();
+    },
+  );
 });

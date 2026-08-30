@@ -47,6 +47,7 @@ import {
 } from '@/lib/data/webhooks';
 import { processWebhookEvent } from '@/lib/data/webhook-processing';
 import { runThankyouSweep } from '@/lib/data/auto-thankyou';
+import { runInquiryFollowupSweep, getInquiryFollowupEnabled } from '@/lib/data/inquiry-followup';
 import { runGraphIntakeSubscriptionSweep } from '@/lib/data/inquiry-mail-intake';
 import { runCallbackSweep } from '@/lib/data/call-callbacks';
 import { runCallbackSchedulingSweep } from '@/lib/data/callback-scheduling';
@@ -77,6 +78,7 @@ import {
 } from '@/lib/data/voximplant-reconcile';
 import { runLogExport } from '@/lib/data/vox-log-export';
 import { runElevenLabsQuotaCheck } from '@/lib/data/elevenlabs-quota';
+import { runTemplateHealthSync } from '@/lib/data/template-health-sync';
 import { runInstagramTokenRefresh } from '@/lib/data/instagram-token-refresh';
 import { runConsoleAgentCalendarPresenceSync } from '@/lib/data/console-agent-calendar-presence';
 import { runFleetExpireSweep } from '@/lib/fleet/expire';
@@ -531,6 +533,17 @@ async function handleThankyouSweep(): Promise<void> {
   await runThankyouSweep();
 }
 
+// Inquiry silence follow-up sweep — same periodic-tick idiom as
+// handleThankyouSweep above. Its OWN kill-switch
+// (app_settings.inquiry_followup_enabled), deliberately NOT outreach_enabled:
+// this sweep emails inquiry senders, not campaign contacts, and an unrelated
+// campaign incident must not silently stop support follow-ups (or vice
+// versa).
+async function handleInquiryFollowupSweep(): Promise<void> {
+  if (!(await getInquiryFollowupEnabled())) return;
+  await runInquiryFollowupSweep();
+}
+
 
 // ── Push instead of poll ────────────────────────────────────────────────────
 // A dedicated LISTEN connection so a callback request is scheduled the moment
@@ -753,7 +766,14 @@ async function main(): Promise<void> {
       // that is missing or near expiry and each create one, leaving a
       // duplicate that delivers every message twice. ensureIntakeSubscription
       // prunes duplicates on the next pass, but not creating them is better.
-      q === QUEUES.graphIntakeRenew;
+      q === QUEUES.graphIntakeRenew ||
+      // Singleton too, for the same reason as thankyouSweep: an overlapping cron
+      // tick could re-select a row whose stamp the previous tick hasn't written
+      // yet, and (unlike thankyouSweep) there is no atomic per-row claim here to
+      // fall back on — see docs/inquiry-email-threading-fix-plan-2026-08-25.md
+      // §2.6 for the send-level idempotency key that covers the *sequential*
+      // retry-after-crash case this singleton policy alone does not.
+      q === QUEUES.inquiryFollowupSweep;
     await boss.createQueue(q, singleton ? { policy: 'singleton' } : undefined);
   }
 
@@ -809,6 +829,12 @@ async function main(): Promise<void> {
     QUEUES.thankyouSweep,
     guardedWorker(QUEUES.thankyouSweep, async () => {
       await handleThankyouSweep();
+    }),
+  );
+  await boss.work(
+    QUEUES.inquiryFollowupSweep,
+    guardedWorker(QUEUES.inquiryFollowupSweep, async () => {
+      await handleInquiryFollowupSweep();
     }),
   );
   // Callback re-dials. runCallbackSweep only ENQUEUES — every dial gate is
@@ -900,6 +926,14 @@ async function main(): Promise<void> {
       await runElevenLabsQuotaCheck();
     }),
   );
+  // WhatsApp template health reconciliation — daily. Read-only against Meta,
+  // config-gated (no-op without whatsapp_waba_id/access token), never throws.
+  await boss.work(
+    QUEUES.templateHealthSync,
+    guardedWorker(QUEUES.templateHealthSync, async () => {
+      await runTemplateHealthSync();
+    }),
+  );
   // call_dispatch_status retention: daily delete of rows older than 30 days
   // (status channel, not audit — activity_log keeps the durable record).
   // runDispatchRetention never throws.
@@ -956,6 +990,7 @@ async function main(): Promise<void> {
   await boss.schedule(QUEUES.sweeper, '*/5 * * * *');
   await boss.schedule(QUEUES.webhook, '* * * * *');
   await boss.schedule(QUEUES.thankyouSweep, '*/5 * * * *');
+  await boss.schedule(QUEUES.inquiryFollowupSweep, '*/5 * * * *');
   // Every 5 minutes: close enough that "מחר בערב" lands when the guest expects,
   // coarse enough that it is not polling. A callback is due at a time the guest
   // chose, so precision beyond a few minutes buys nothing.
@@ -975,6 +1010,7 @@ async function main(): Promise<void> {
   // Anchored to a wall-clock hour → run on Israel local time (DST-aware).
   await boss.schedule(QUEUES.logExport, '20 3 * * *', null, { tz: SCHEDULE_TZ });
   await boss.schedule(QUEUES.elevenlabsQuota, '0 */6 * * *', null, { tz: SCHEDULE_TZ });
+  await boss.schedule(QUEUES.templateHealthSync, '35 3 * * *', null, { tz: SCHEDULE_TZ });
   await boss.schedule(QUEUES.dispatchRetention, '40 3 * * *', null, { tz: SCHEDULE_TZ });
   // Weekly, off-peak, deliberately non-round (04:17) — a 60-day token refreshed
   // once a week has ample margin even if a run is missed for a while.

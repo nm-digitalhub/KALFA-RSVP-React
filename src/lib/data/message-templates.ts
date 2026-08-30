@@ -16,11 +16,26 @@ type MessageTemplateRow = Tables<'message_templates'>;
 
 export type MessageTemplate = Pick<
   MessageTemplateRow,
-  'id' | 'message_key' | 'channel' | 'label' | 'name' | 'language' | 'body' | 'active'
+  | 'id'
+  | 'message_key'
+  | 'channel'
+  | 'label'
+  | 'name'
+  | 'language'
+  | 'body'
+  | 'active'
+  | 'category'
+  | 'requested_category'
+  | 'quality_score'
+  | 'meta_status'
+  | 'rejected_reason'
+  | 'pending_category_change_at'
+  | 'pending_correct_category'
+  | 'last_synced_at'
 >;
 
 const TEMPLATE_COLUMNS =
-  'id, message_key, channel, label, name, language, body, active';
+  'id, message_key, channel, label, name, language, body, active, category, requested_category, quality_score, meta_status, rejected_reason, pending_category_change_at, pending_correct_category, last_synced_at';
 
 export async function listMessageTemplates(): Promise<MessageTemplate[]> {
   await requireAdmin();

@@ -27,6 +27,68 @@ function tsToIso(ts: string | undefined): string | null {
   return new Date(seconds * 1000).toISOString();
 }
 
+// Template-health webhook fields (message_template_status_update,
+// template_category_update, template_correct_category_detection,
+// message_template_quality_update) are NOT part of whatsapp-api-js's typed
+// PostData union (it only models "messages"/"calls") — live-doc-verified
+// shapes (2026-08-27), read generically off the raw parsed JSON rather than
+// hand-invented. See src/lib/data/template-health-processing.ts for how each
+// is applied to message_templates.
+interface RawChange {
+  field: string;
+  value: Record<string, unknown>;
+}
+interface RawEntry {
+  id?: string;
+  time?: number;
+  changes?: RawChange[];
+}
+type RawPostData = { entry?: RawEntry[] };
+
+const TEMPLATE_HEALTH_FIELDS = new Set([
+  'message_template_status_update',
+  'template_category_update',
+  'template_correct_category_detection',
+  'message_template_quality_update',
+]);
+
+// event_kind naming mirrors the Meta field name 1:1, minus the common prefix,
+// so the worker dispatcher (webhook-processing.ts) reads as a direct map.
+const TEMPLATE_EVENT_KIND: Record<string, string> = {
+  message_template_status_update: 'template_status',
+  template_category_update: 'template_category',
+  template_correct_category_detection: 'template_category_misuse',
+  message_template_quality_update: 'template_quality',
+};
+
+function normalizeTemplateHealthRows(raw: RawPostData): WebhookInboxInsert[] {
+  const rows: WebhookInboxInsert[] = [];
+  for (const entry of raw.entry ?? []) {
+    const entryTime = entry.time;
+    for (const change of entry.changes ?? []) {
+      if (!TEMPLATE_HEALTH_FIELDS.has(change.field)) continue;
+      const templateId = change.value.message_template_id;
+      if (templateId == null) continue;
+      const kind = TEMPLATE_EVENT_KIND[change.field];
+      rows.push({
+        provider: 'whatsapp',
+        event_kind: kind,
+        // Keyed by (template, delivery time): a genuine Meta retry of the
+        // SAME delivery repeats `time` (→ no-op via ON CONFLICT); a later,
+        // real state change (re-approval after a fix, a new quality dip)
+        // carries a new `time` and is kept.
+        dedupe_key: `wa-tmpl:${kind}:${templateId}:${entryTime ?? 'na'}`,
+        message_id: null,
+        context_message_id: null,
+        phone_number_id: null,
+        event_at: tsToIso(entryTime != null ? String(entryTime) : undefined),
+        payload: change.value as unknown as WebhookInboxInsert['payload'],
+      });
+    }
+  }
+  return rows;
+}
+
 // Flatten the verified PostData into webhook_inbox rows. We DON'T use the
 // library's emitter/`post()` dispatch on purpose: it only reads
 // entry[0].changes[0] and messages[0]/statuses[0], silently dropping the rest of
@@ -74,6 +136,7 @@ function normalizeWebhookRows(data: PostData): WebhookInboxInsert[] {
       }
     }
   }
+  rows.push(...normalizeTemplateHealthRows(data as unknown as RawPostData));
   return rows;
 }
 

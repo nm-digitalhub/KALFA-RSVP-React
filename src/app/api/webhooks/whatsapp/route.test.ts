@@ -270,3 +270,101 @@ describe('POST /api/webhooks/whatsapp — persist-then-process intake', () => {
     expect(insertWebhookEvents).not.toHaveBeenCalled();
   });
 });
+
+// Template-health fields (message_template_status_update / template_category_update /
+// template_correct_category_detection / message_template_quality_update) are
+// NOT in whatsapp-api-js's typed PostData union — normalizeTemplateHealthRows
+// reads them off the raw payload, so these are exercised directly through the
+// signed HTTP round-trip (same as every other event kind here), not a
+// separate unit-level entry point.
+function templateDelivery(field: string, value: Record<string, unknown>) {
+  return {
+    object: 'whatsapp_business_account',
+    entry: [{ id: 'waba-1', time: 1700000000, changes: [{ field, value }] }],
+  };
+}
+
+describe('POST /api/webhooks/whatsapp — template-health fields', () => {
+  it('persists message_template_status_update with its own event_kind + dedupe key', async () => {
+    const res = await POST(
+      signed(
+        templateDelivery('message_template_status_update', {
+          event: 'REJECTED',
+          message_template_id: 123456789,
+          message_template_name: 'rsvp_invite_he',
+          message_template_language: 'he',
+          rejection_info: { reason: 'INVALID_FORMAT', recommendation: 'fix it' },
+        }),
+      ),
+    );
+    expect(res.status).toBe(200);
+    const rows = rowsArg();
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      provider: 'whatsapp',
+      event_kind: 'template_status',
+      dedupe_key: 'wa-tmpl:template_status:123456789:1700000000',
+    });
+    expect(rows[0].payload).toMatchObject({ event: 'REJECTED' });
+  });
+
+  it('persists template_category_update (impending) with its own event_kind', async () => {
+    const res = await POST(
+      signed(
+        templateDelivery('template_category_update', {
+          message_template_id: 42,
+          message_template_name: 'reminder_1',
+          message_template_language: 'he',
+          new_category: 'UTILITY',
+          correct_category: 'MARKETING',
+          category_update_timestamp: 1700086400,
+        }),
+      ),
+    );
+    expect(res.status).toBe(200);
+    expect(rowsArg()[0]).toMatchObject({
+      event_kind: 'template_category',
+      dedupe_key: 'wa-tmpl:template_category:42:1700000000',
+    });
+  });
+
+  it('persists template_correct_category_detection with its own event_kind', async () => {
+    const res = await POST(
+      signed(
+        templateDelivery('template_correct_category_detection', {
+          message_template_id: 7,
+          message_template_name: 'final',
+          message_template_language: 'he',
+          category: 'UTILITY',
+          correct_category: 'MARKETING',
+        }),
+      ),
+    );
+    expect(res.status).toBe(200);
+    expect(rowsArg()[0]).toMatchObject({ event_kind: 'template_category_misuse' });
+  });
+
+  it('persists message_template_quality_update with its own event_kind', async () => {
+    const res = await POST(
+      signed(
+        templateDelivery('message_template_quality_update', {
+          message_template_id: 9,
+          message_template_name: 'invite',
+          message_template_language: 'he',
+          previous_quality_score: 'GREEN',
+          new_quality_score: 'RED',
+        }),
+      ),
+    );
+    expect(res.status).toBe(200);
+    expect(rowsArg()[0]).toMatchObject({ event_kind: 'template_quality' });
+  });
+
+  it('ignores an unrecognized field (no row written, no crash)', async () => {
+    const res = await POST(
+      signed(templateDelivery('some_future_field_we_do_not_handle', { foo: 'bar' })),
+    );
+    expect(res.status).toBe(200);
+    expect(insertWebhookEvents).not.toHaveBeenCalled();
+  });
+});
