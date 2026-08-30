@@ -10,6 +10,7 @@ import {
   getCampaignHoldsEnabled,
   getSumitPublicConfig,
 } from '@/lib/data/payments';
+import { getProfile } from '@/lib/data/profiles';
 import { CampaignHoldForm } from './hold-form';
 import { HeldAnalytics } from './_held-analytics';
 
@@ -111,12 +112,21 @@ export default async function CampaignPaymentPage({
   // Already held → done, no form. HeldAnalytics fires payment_authorized once
   // when arriving here via the hold redirect (?held=1) and strips the param.
   if (campaign.capture_status === 'authorized') {
+    // Verified gap (30.8): auth_amount (the REAL J5 hold, sized to `covered` =
+    // min(max_contacts, reasonable_coverage_contacts)) can be LESS than
+    // max_charge_ceiling once max_contacts exceeds the coverage cap (300
+    // today) — this confirmation must show what was actually authorized on
+    // the card, not the ceiling, which no longer means "the hold amount"
+    // once the two diverge. Fall back to the ceiling only if auth_amount is
+    // unexpectedly missing (should not happen once authorized).
+    const heldAmount = campaign.auth_amount ?? campaign.max_charge_ceiling;
     return (
       <div className="mx-auto max-w-2xl space-y-4">
         {header}
         <p className="rounded-md bg-green-50 px-3 py-2 text-sm text-green-700">
-          ✓ נתפסה מסגרת אשראי עד {ils(campaign.max_charge_ceiling)}. החיוב בפועל
-          ייעשה בסגירת הקמפיין, לפי מספר אנשי הקשר שהושגו.
+          ✓ נתפסה מסגרת אשראי בסך {ils(heldAmount)}. החיוב בפועל ייעשה
+          בסגירת הקמפיין, לפי מספר אנשי הקשר שהושגו, ולכל היותר עד תקרת החיוב
+          ({ils(campaign.max_charge_ceiling)}).
         </p>
         <HeldAnalytics />
       </div>
@@ -139,12 +149,37 @@ export default async function CampaignPaymentPage({
   }
 
   // Fail-closed gate: only render the live card form when everything is on.
-  const [paymentsEnabled, holdsEnabled, publicConfig] = await Promise.all([
+  const [paymentsEnabled, holdsEnabled, publicConfig, profile] = await Promise.all([
     getPaymentsEnabled(),
     getCampaignHoldsEnabled(),
     getSumitPublicConfig(),
+    getProfile(),
   ]);
-  const canHold = paymentsEnabled && holdsEnabled && publicConfig !== null;
+  // max_charge_ceiling is nullable at the schema level, but the same fail-closed
+  // gate already covers it: a campaign that reaches 'approved' without one is not
+  // in a state we can render a hold form for anyway.
+  const canHold =
+    paymentsEnabled &&
+    holdsEnabled &&
+    publicConfig !== null &&
+    campaign.max_charge_ceiling != null;
+
+  // Verified gap (30.8): the ceiling line here never said the base fee is
+  // charged regardless of outcome — a customer on a base+overage campaign
+  // could read "לפי מספר אנשי הקשר שהושגו" as "no contacts reached → no
+  // charge," which is false (the base is owed even at 0 reached; this is the
+  // exact page where they commit their card). manage-client.tsx's HelpTip
+  // already states this correctly for the SAME campaign fields — mirrored
+  // here, not invented.
+  const basePrice = Number(campaign.base_price ?? 0);
+  const baseFeeNote =
+    basePrice > 0 ? (
+      <>
+        {' '}
+        מתוך זה, <strong>{ils(basePrice)}</strong> הם דמי הפעלה קבועים
+        שנגבים במלואם ללא תלות בתוצאה — גם אם אף איש קשר לא השיב.
+      </>
+    ) : null;
 
   const summary = (
     <section className="space-y-3 rounded-lg border border-border bg-card p-4 text-sm">
@@ -153,7 +188,7 @@ export default async function CampaignPaymentPage({
         להפעלת הקמפיין נתפוס מסגרת אשראי עד{' '}
         <strong>{ils(campaign.max_charge_ceiling)}</strong> (תקרת החיוב). זוהי
         תפיסה בלבד — <strong>החיוב בפועל</strong> ייעשה בסגירת הקמפיין, לפי מספר
-        אנשי הקשר שהושגו בפועל, ולכל היותר עד התקרה.
+        אנשי הקשר שהושגו בפועל, ולכל היותר עד התקרה.{baseFeeNote}
       </p>
     </section>
   );
@@ -176,13 +211,15 @@ export default async function CampaignPaymentPage({
         </p>
       ) : null}
 
-      {canHold && publicConfig ? (
+      {canHold && publicConfig && campaign.max_charge_ceiling != null ? (
         <section className="space-y-4 rounded-lg border border-border bg-card p-4">
           <h2 className="text-sm font-semibold">פרטי כרטיס אשראי</h2>
           <CampaignHoldForm
             campaignId={campaignId}
             companyId={publicConfig.companyId}
             apiPublicKey={publicConfig.apiPublicKey}
+            ceilingAmount={campaign.max_charge_ceiling}
+            signerName={profile?.full_name?.trim() || 'לקוח KALFA'}
           />
         </section>
       ) : (

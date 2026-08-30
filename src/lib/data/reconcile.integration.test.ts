@@ -39,7 +39,16 @@ describe.skipIf(!RUN)('reconcile_authorized_set — rollback-isolated', () => {
   // no real event chain is needed; reconcile only reads campaigns/contacts/guests
   // and writes campaign_authorized_contacts + the audit.
   async function withCampaign(
-    cfg: { max: number; auth: number | null; price: number | null; status?: string },
+    cfg: {
+      max: number;
+      auth: number | null;
+      price: number | null;
+      status?: string;
+      // Omitted → both null → coalesced to 0 in the RPC → legacy formula
+      // (funded_cap = floor(auth/price)), unchanged from before this fix.
+      base?: number;
+      included?: number;
+    },
     fn: (ctx: {
       event: string;
       campaign: string;
@@ -54,9 +63,18 @@ describe.skipIf(!RUN)('reconcile_authorized_set — rollback-isolated', () => {
       await q('set local session_replication_role = replica');
       await q(
         `insert into public.campaigns
-           (id, event_id, status, max_contacts, auth_amount, price_per_reached)
-         values ($1,$2,$3,$4,$5,$6)`,
-        [campaign, event, cfg.status ?? 'active', cfg.max, cfg.auth, cfg.price],
+           (id, event_id, status, max_contacts, auth_amount, price_per_reached, base_price, included_reached)
+         values ($1,$2,$3,$4,$5,$6,$7,$8)`,
+        [
+          campaign,
+          event,
+          cfg.status ?? 'active',
+          cfg.max,
+          cfg.auth,
+          cfg.price,
+          cfg.base ?? null,
+          cfg.included ?? null,
+        ],
       );
       await fn({ event, campaign, q });
     } finally {
@@ -144,6 +162,52 @@ describe.skipIf(!RUN)('reconcile_authorized_set — rollback-isolated', () => {
       );
       expect(await setSize(q, campaign)).toBe(1);
     });
+  });
+
+  it('base+overage: funded_cap = included + floor(max(0,auth-base)/price), not floor(auth/price)', async () => {
+    // Fix under test (30.8): base=200, included=200, price=4, auth=200 (a
+    // fully-funded hold with zero overage headroom) — the OLD formula gave
+    // floor(200/4)=50, rejecting real contacts the base fee already covers.
+    // The fix: 200 + floor(max(0,200-200)/4) = 200.
+    await withCampaign(
+      { max: 1000, auth: 200, price: 4, base: 200, included: 200 },
+      async ({ event, campaign, q }) => {
+        // Admit 200 contacts — every one must succeed under the fixed cap.
+        for (let i = 0; i < 200; i++) {
+          const c = await eligibleContact(q, event);
+          expect(
+            await rpc(q, 'reconcile_authorized_set', [event, campaign, 'add', c, null, null]),
+          ).toBe('added');
+        }
+        expect(await setSize(q, campaign)).toBe(200);
+        // The 201st (beyond the fully-funded 200-included, zero overage room) → ceiling_full.
+        const over = await eligibleContact(q, event);
+        expect(
+          await rpc(q, 'reconcile_authorized_set', [event, campaign, 'add', over, null, null]),
+        ).toBe('ceiling_full');
+        expect(await setSize(q, campaign)).toBe(200);
+      },
+    );
+  });
+
+  it('base+overage: extra overage headroom beyond auth-base is admitted too', async () => {
+    // base=200, included=200, price=4, auth=240 → 40 of headroom beyond the
+    // base buys 10 more contacts: funded_cap = 200 + floor((240-200)/4) = 210.
+    await withCampaign(
+      { max: 1000, auth: 240, price: 4, base: 200, included: 200 },
+      async ({ event, campaign, q }) => {
+        for (let i = 0; i < 210; i++) {
+          const c = await eligibleContact(q, event);
+          expect(
+            await rpc(q, 'reconcile_authorized_set', [event, campaign, 'add', c, null, null]),
+          ).toBe('added');
+        }
+        const over = await eligibleContact(q, event);
+        expect(
+          await rpc(q, 'reconcile_authorized_set', [event, campaign, 'add', over, null, null]),
+        ).toBe('ceiling_full');
+      },
+    );
   });
 
   it('funded_cap FAIL-CLOSED: null price → cap 0 → ceiling_full even for the first add', async () => {
