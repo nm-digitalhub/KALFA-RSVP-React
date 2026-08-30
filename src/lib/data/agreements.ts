@@ -247,8 +247,14 @@ export async function recordSignedAgreement(
         .eq('id', signerProfile.sales_referral_attempt_id)
         .is('signup_completed_at', null);
     }
-  } catch {
-    // Best-effort — see comment above.
+  } catch (err) {
+    // Best-effort — see comment above. Still worth a trace: without this, a
+    // real failure here was previously undiagnosable (the same blind spot
+    // fixed for the campaign-hold path on 2026-08-30).
+    console.error('[agreement] sales-conversion tracking write failed', {
+      campaignId: campaign.id,
+      error: err instanceof Error ? err.message : String(err),
+    });
   }
 
   // Additive ops alert (fire-and-forget, fail-safe): non-PII ids + version only
@@ -283,8 +289,17 @@ export async function recordSignedAgreement(
       });
       // Link, not attachment — avoids recipient attachment scanners flagging it.
       await sender.send({ to: user.email, subject, html, text });
-    } catch {
+    } catch (err) {
       // best-effort; the signed agreement remains stored and retrievable.
+      // Still worth a trace — see the sales-tracking catch above. The deeper
+      // provider-specific reason (Resend/SMTP) is already logged inside
+      // getEmailSender()'s sender; this records WHICH step failed (config,
+      // URL, template render, or send) with campaign context — never the
+      // signer's name/phone/email.
+      console.error('[agreement] receipt email failed', {
+        campaignId: campaign.id,
+        error: err instanceof Error ? err.message : String(err),
+      });
     }
   }
 
