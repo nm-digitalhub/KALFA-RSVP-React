@@ -75,7 +75,16 @@ export async function POST(request: NextRequest) {
   // Both are present on all six events we subscribe to.
   let event: { type?: string; data?: { email_id?: string; message_id?: string } };
   try {
-    event = new Resend().webhooks.verify({
+    // A placeholder key, not RESEND_API_KEY: verified against resend/dist's own
+    // source (Webhooks.verify(), 2026-08-30) that it never touches this.key or
+    // makes any API call — it only builds a Webhook(payload.webhookSecret)
+    // instance internally. The Resend constructor's own "Missing API key" throw
+    // only fires when BOTH the constructor arg AND process.env.RESEND_API_KEY
+    // are absent, so any non-empty string here fully decouples signature
+    // verification from that unrelated env var (bug found by qa-runner
+    // 2026-08-29: a test env without RESEND_API_KEY set failed every case with
+    // a misleading "invalid signature" instead of the real cause).
+    event = new Resend('unused-webhook-verify-only').webhooks.verify({
       payload: raw,
       headers,
       webhookSecret: secret,
