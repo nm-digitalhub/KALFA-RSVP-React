@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 // contacts.ts begins with `import 'server-only'` (and pulls in server-only deps);
 // that throws outside Next's RSC context. deriveContacts itself is pure.
@@ -22,6 +22,10 @@ import {
   computeCoveredContacts,
   snapshotAuthorizedSet,
 } from '@/lib/data/contacts';
+
+// Env stubs must not leak into the next test: vi.stubEnv is reverted by
+// vi.unstubAllEnvs(), which restores the value captured before the first stub.
+afterEach(() => vi.unstubAllEnvs());
 
 describe('deriveContacts', () => {
   it('de-duplicates guests sharing one phone into a single contact (§13)', () => {
@@ -124,12 +128,30 @@ describe('linkGuestContact', () => {
 
 describe('pruneOrphanContact', () => {
   // Per-table builders so each count query (guests/billed_results/
-  // contact_interactions) resolves to a DIFFERENT count, and contacts.delete is
-  // observable. (The shared createMockSupabase returns one count for all awaits.)
+  // contact_interactions/campaign_authorized_contacts) resolves to a DIFFERENT
+  // count, and contacts.delete is observable. (The shared createMockSupabase
+  // returns one count for all awaits.)
+  //
+  // campaign_authorized_contacts is queried ONLY when
+  // RECONCILE_AUTHORIZED_SET_ENABLED is on (P0-1/A6 guard). It is stubbed
+  // regardless: without a count builder for that table the fall-through returned
+  // the delete builder, which has no `.select`, so the suite failed with
+  // "admin.from(...).select is not a function" whenever the flag was on.
+  // Defaulting it to 0 keeps every existing case meaning what it says under
+  // BOTH flag states.
+  //
+  // The flag itself is NEVER read from the ambient environment. Vitest does not
+  // load .env files into process.env unless the config opts in with Vite's
+  // loadEnv (VERIFIED 2026-08-26 against the Vitest docs and by running the file
+  // with and without the variable exported). vitest.config.mts deliberately does
+  // NOT opt in, so a suite cannot depend on one machine's .env.local. Each test
+  // below therefore declares the flag state it is testing with vi.stubEnv —
+  // which is also why both states are covered instead of only the deployed one.
   function mockPrune(counts: {
     guests: number;
     billed: number;
     interactions: number;
+    authorizedSet?: number;
   }) {
     const mkCount = (count: number) => {
       const b: Record<string, unknown> = {};
@@ -146,6 +168,8 @@ describe('pruneOrphanContact', () => {
       if (table === 'guests') return mkCount(counts.guests);
       if (table === 'billed_results') return mkCount(counts.billed);
       if (table === 'contact_interactions') return mkCount(counts.interactions);
+      if (table === 'campaign_authorized_contacts')
+        return mkCount(counts.authorizedSet ?? 0);
       return del; // contacts
     });
     vi.mocked(createAdminClient).mockReturnValue({
@@ -160,6 +184,40 @@ describe('pruneOrphanContact', () => {
     const deleted = await pruneOrphanContact('e1', 'c1');
     expect(deleted).toBe(true);
     expect(from).toHaveBeenCalledWith('contacts');
+    expect(del.delete).toHaveBeenCalled();
+  });
+
+  it('KEEPS a member of a frozen authorized set (P0-1/A6 guard, flag ON)', async () => {
+    // The whole point of the reconcile guard: hard-deleting a contact that sits
+    // in a campaign's frozen authorized set would let the FK's ON DELETE evict
+    // it silently — the root of the repoint/orphan mis-charge bug.
+    vi.stubEnv('RECONCILE_AUTHORIZED_SET_ENABLED', 'true');
+    const { del } = mockPrune({
+      guests: 0,
+      billed: 0,
+      interactions: 0,
+      authorizedSet: 1,
+    });
+    const deleted = await pruneOrphanContact('e1', 'c1');
+    expect(deleted).toBe(false);
+    expect(del.delete).not.toHaveBeenCalled();
+  });
+
+  // The mirror case. isReconcileEnabled() is a kill-switch, so the OFF state is
+  // real production behaviour (it is the documented default), not a hypothetical
+  // — with the switch off the set-member guard is inert by design and the orphan
+  // is pruned. Asserting only the ON state would let a change that silently
+  // disabled the switch pass every test.
+  it('PRUNES the same set member when the reconcile flag is OFF', async () => {
+    vi.stubEnv('RECONCILE_AUTHORIZED_SET_ENABLED', 'false');
+    const { del } = mockPrune({
+      guests: 0,
+      billed: 0,
+      interactions: 0,
+      authorizedSet: 1,
+    });
+    const deleted = await pruneOrphanContact('e1', 'c1');
+    expect(deleted).toBe(true);
     expect(del.delete).toHaveBeenCalled();
   });
 
