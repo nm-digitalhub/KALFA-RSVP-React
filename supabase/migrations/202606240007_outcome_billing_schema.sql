@@ -32,6 +32,88 @@ do $$ begin
     'wrong_number','removal_requested','reached_billed','not_reached');
 exception when duplicate_object then null; end $$;
 
+-- Shadow-DB replay repair (27.8.2026): `public.campaigns` itself was never
+-- created by any migration (same drift as events/packages/app_role above) —
+-- this is the first file that ALTERs it. Bootstrapped minimal (id + event_id
+-- only), matching `supabase db dump`'s own campaigns definition exactly at
+-- this point — every other column below is added by this file's own ADD
+-- COLUMN IF NOT EXISTS statements, so no further columns are needed here.
+create table if not exists public.campaigns (
+  id uuid primary key default gen_random_uuid(),
+  event_id uuid not null references public.events (id)
+);
+
+alter table public.campaigns enable row level security;
+
+create policy camp_admin_all on public.campaigns for all
+  using (public.has_role(auth.uid(), 'admin'::public.app_role))
+  with check (public.has_role(auth.uid(), 'admin'::public.app_role));
+
+-- Same drift, same fix: owns_event() is used by camp_owner_select below but
+-- was never created by any migration. Verbatim from `supabase db dump`.
+create or replace function public.owns_event(_event_id uuid)
+returns boolean
+language sql stable security definer
+set search_path to 'public'
+as $$
+  select exists(select 1 from public.events where id = _event_id and owner_id = auth.uid());
+$$;
+
+-- Same drift, same fix: `public.guests` (+ its guest_status/contact_status
+-- enums) were never created by any migration, and this file is the first to
+-- ALTER it (the "link guests → contact" step below). Verbatim from
+-- `supabase db dump`, full current shape (including contact_id) — the later
+-- ADD COLUMN IF NOT EXISTS in this same file simply no-ops on it.
+do $$ begin
+  create type public.guest_status as enum ('pending', 'attending', 'declined', 'maybe');
+exception when duplicate_object then null; end $$;
+
+do $$ begin
+  create type public.contact_status as enum (
+    'not_contacted', 'contacted', 'responded', 'wrong_number',
+    'unclear', 'unavailable', 'callback');
+exception when duplicate_object then null; end $$;
+
+create table if not exists public.guests (
+  id uuid primary key default gen_random_uuid(),
+  event_id uuid not null references public.events (id),
+  group_id uuid,
+  rsvp_token text not null default encode(extensions.gen_random_bytes(16), 'hex'),
+  full_name text not null,
+  phone text,
+  language text default 'he',
+  expected_count integer default 1,
+  status public.guest_status not null default 'pending',
+  confirmed_adults integer default 0,
+  confirmed_kids integer default 0,
+  meal_pref text,
+  note text,
+  contact_status public.contact_status not null default 'not_contacted',
+  callback_requested boolean not null default false,
+  extras jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  contact_id uuid,
+  rsvp_token_revoked_at timestamptz,
+  confirmed_headcount integer not null default 0,
+  headcount_requested_at timestamptz,
+  headcount_answered_at timestamptz,
+  headcount_attempts integer not null default 0,
+  rsvp_note text,
+  show_in_guest_list boolean not null default false
+  -- guests_confirmed_adults_nonneg / guests_confirmed_headcount_range /
+  -- guests_confirmed_kids_nonneg / guests_expected_count_positive
+  -- deliberately NOT included here — all four are added later by their own
+  -- real migrations via plain `ADD CONSTRAINT` (no guard); including them
+  -- here too would collide on replay.
+);
+
+alter table public.guests enable row level security;
+
+create policy guests_admin_all on public.guests for all
+  using (public.has_role(auth.uid(), 'admin'::public.app_role))
+  with check (public.has_role(auth.uid(), 'admin'::public.app_role));
+
 -- ---------- 1. campaigns: expand to "campaign approval" + billing ----------
 alter table public.campaigns
   add column if not exists status                 campaign_status not null default 'draft',

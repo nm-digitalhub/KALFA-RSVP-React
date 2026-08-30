@@ -69,6 +69,47 @@ alter table public.guests
 alter table public.guests
   alter column rsvp_token set default encode(extensions.gen_random_bytes(16), 'hex');
 
+-- Shadow-DB replay repair (27.8.2026): `public.event_questions` and
+-- `public.rsvp_responses` were never created by any migration (same drift as
+-- the rest bootstrapped this session) — this is the first file to reference
+-- either. Verbatim from `supabase db dump`.
+create table if not exists public.event_questions (
+  id uuid primary key default gen_random_uuid(),
+  event_id uuid not null,
+  q_key text not null,
+  label text not null,
+  q_type text not null default 'text',
+  required boolean not null default false,
+  enabled boolean not null default true,
+  sort_order integer not null default 0,
+  options jsonb,
+  created_at timestamptz not null default now()
+);
+
+alter table public.event_questions enable row level security;
+
+create policy eq_admin_all on public.event_questions for all
+  using (public.has_role(auth.uid(), 'admin'::public.app_role))
+  with check (public.has_role(auth.uid(), 'admin'::public.app_role));
+
+create table if not exists public.rsvp_responses (
+  id uuid primary key default gen_random_uuid(),
+  guest_id uuid not null,
+  event_id uuid not null,
+  attending boolean,
+  adults integer default 0,
+  kids integer default 0,
+  meal_pref text,
+  note text,
+  extras jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now()
+);
+
+alter table public.rsvp_responses enable row level security;
+
+create policy rsvp_admin_read on public.rsvp_responses for select
+  using (public.has_role(auth.uid(), 'admin'::public.app_role));
+
 -- ---------------------------------------------------------------------------
 -- 1) Drop the over-broad / inert anon & authenticated policies. With the read
 --    function as the sole public gate, anon never needs direct table reads; and

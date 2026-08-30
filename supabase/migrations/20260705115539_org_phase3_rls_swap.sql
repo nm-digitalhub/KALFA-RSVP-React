@@ -24,6 +24,42 @@
 -- GRANT UPDATE ON public.events TO authenticated (and anon). No data loss.
 -- =============================================================================
 
+-- Shadow-DB replay repair (27.8.2026): `public.guest_groups` was never
+-- created by any migration (same drift as the rest bootstrapped this
+-- session) — this is the first file to reference it. Verbatim from
+-- `supabase db dump`.
+create table if not exists public.guest_groups (
+  id uuid primary key default gen_random_uuid(),
+  event_id uuid not null references public.events (id),
+  name text not null,
+  color text,
+  created_at timestamptz not null default now()
+);
+
+alter table public.guest_groups enable row level security;
+
+-- Same drift, same fix: `public.activity_log` was never created either.
+create table if not exists public.activity_log (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid,
+  event_id uuid,
+  action text not null,
+  meta jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now()
+);
+
+alter table public.activity_log enable row level security;
+
+-- al_admin_all / al_owner_insert: same drift, original text from
+-- 20260713143941_gap1_rls_initplan_optimization.sql's own comments.
+-- (al_org_read is NOT added here — this file creates it itself, below.)
+create policy al_admin_all on public.activity_log for all
+  using (public.has_role(auth.uid(), 'admin'::public.app_role))
+  with check (public.has_role(auth.uid(), 'admin'::public.app_role));
+
+create policy al_owner_insert on public.activity_log for insert
+  with check (user_id = auth.uid());
+
 -- -----------------------------------------------------------------------------
 -- events (was: events_owner_all — ALL, owner_id = auth.uid())
 -- SELECT -> ('events','view'); UPDATE -> ('events','edit') USING + WITH CHECK;
