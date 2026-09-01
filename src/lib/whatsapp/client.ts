@@ -214,8 +214,10 @@ export async function sendWhatsAppTemplate(
     return { kind: 'unknown', reason: 'url_and_rsvp_buttons_conflict' };
   }
   // secure:false avoids requiring the appSecret for SENDING (the secret is only
-  // needed to verify INBOUND webhooks, handled in B2).
-  const api = new WhatsAppAPI({ token: cfg.accessToken, secure: false });
+  // needed to verify INBOUND webhooks, handled in B2). v pinned explicitly —
+  // same reasoning as sendWhatsAppMarketingTemplate below (never ride the
+  // library's own default silently).
+  const api = new WhatsAppAPI({ token: cfg.accessToken, secure: false, v: DEFAULT_API_VERSION });
   const message = buildTemplateMessage(params);
 
   try {
@@ -294,7 +296,7 @@ export async function sendWhatsAppText(
   cfg: { phoneNumberId: string; accessToken: string; appSecret: string | null },
   params: { to: string; body: string },
 ): Promise<DeliveryOutcome> {
-  const api = new WhatsAppAPI({ token: cfg.accessToken, secure: false });
+  const api = new WhatsAppAPI({ token: cfg.accessToken, secure: false, v: DEFAULT_API_VERSION });
   try {
     const res = await api.sendMessage(cfg.phoneNumberId, params.to, new Text(params.body));
     return classifyResponse(res);
