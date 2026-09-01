@@ -219,11 +219,11 @@
         }
       ]
     },
-    "$fleet_maintainer_comment": "Self-maintenance role for the FLEET's own code/prompts/config/docs (NOT the KALFA app). Tier 0 always — even its one write path (housekeeping-pr) runs git/gh as trusted server-side code inside fleet-agent-cli.ts, never as a Bash-tool grant to this role. Ships enabled:false; owner flips after reviewing the role prompt + known-issues.json catalog (see plans/fleet-maintenance-capability-plan.md §7 for the staged rollout).",
+    "$fleet_maintainer_comment": "Self-maintenance role for the FLEET's own code/prompts/config/docs (NOT the KALFA app). Tier 2 always — even its one write path (housekeeping-pr) runs git/gh as trusted server-side code inside fleet-agent-cli.ts, never as a Bash-tool grant to this role. Ships enabled:false; owner flips after reviewing the role prompt + known-issues.json catalog (see plans/fleet-maintenance-capability-plan.md §7 for the staged rollout).",
     "fleet-maintainer": {
-      "enabled": false,
+      "enabled": true,
       "reactive": ["owner_direct_request", "goal_due"],
-      "tier": 0,
+      "tier": 2,
       "model": "sonnet",
       "timeout_minutes": 30,
       "schedule": [

@@ -20,7 +20,7 @@
 // Subcommands:
 //   request --role R --kind approval|question|fyi --title T --body B
 //           [--tier 0..2] [--payload JSON] [--run-id ID] [--request-key K]
-//           [--attach PATH]...
+//           [--attach PATH]... [--related-to ID]
 //     Inserts a pending request, then notifies: web push to every admin
 //     (existing sendPushToUser pipeline) + Slack mirror (sendSlackAlert).
 //     --role must be a role DEFINED in fleet.json (enabled or not): a request
@@ -40,6 +40,16 @@
 //     plan.md §4.5 item 2). It is what `publish-social` later pins its
 //     --caption-file/--image-path content against, so a batch file edited
 //     after the owner's approval is detected rather than silently published.
+//     --related-to UUID: links this NEW request into an EXISTING request's
+//     conversation (payload.thread_root) even though it isn't a reply — for a
+//     role that opens a fresh question OF ITS OWN INITIATIVE because of an
+//     earlier request (e.g. "that approval was denied over X, fix + re-request
+//     or leave blocked?"). Without this the connection exists only as prose in
+//     --body, invisible to /admin/fleet's "same conversation" grouping (found
+//     2026-08-31: the owner had to hand-query the DB to find the request a
+//     question's body merely described). Resolves the target's OWN
+//     payload.thread_root if it has one (so this joins the whole existing
+//     thread, not just the one message), else roots on the target's id.
 //   handoff --to R|main --from-request UUID [--note TEXT]
 //     Forwards an existing request to another role as a NEW pending request
 //     (same kind/tier, provenance + attachments carried in payload). The owner
@@ -224,6 +234,20 @@
 //     mismatch/grounding failed/REVIEW.md not ready/retry ceiling
 //     reached/missing credential/Meta API error/post-publish ledger-write
 //     failure).
+//   render-image --html TEXT --out PATH [--width N] [--height N]
+//     social-manager's actual image-production path: it authors a small
+//     HTML+CSS mockup itself (--html, or --html-file for a large one — see
+//     the free-text-flag note above) and this command screenshots it with a
+//     local headless browser (Puppeteer, src/lib/data/social-image-render.ts
+//     — the same tool and launch args as renderAgreementPdf). No external
+//     image-generation API, no account/billing dependency, no network at
+//     render time at all: an ElevenLabs Flows attempt was tried and rejected
+//     live (402, "requires a Pro plan or above" — the project's account is
+//     Creator tier), and this replaces it with the mechanism actually
+//     verified from a real past batch's session transcript (2026-08-23):
+//     author HTML, render it, done. --out must resolve under
+//     .fleet-logs/drafts/ (same boundary as --attach). --width/--height
+//     default to 1080x1080 (a square feed post).
 //
 // PII rule: requests are owner-facing internal ops traffic. Callers must not
 // put guest personal data in title/body; the Slack layer redacts as
@@ -347,6 +371,7 @@ import {
   type RunReportResponse,
 } from '@/lib/analytics/ga4-types';
 import { getBaseOveragePricingEnabled } from '@/lib/data/payments';
+import { renderHtmlToImage } from '@/lib/data/social-image-render';
 import { sendPushToUser } from '@/lib/data/push-delivery';
 import { createAdminClient } from '@/lib/supabase/admin';
 import type { Json, Tables } from '@/lib/supabase/types';
@@ -387,6 +412,7 @@ const FILE_FLAG_BASE: Record<string, string> = {
   'reason-file': 'reason',
   'error-file': 'error',
   'evidence-file': 'evidence',
+  'html-file': 'html',
 };
 
 // Same containment boundary as --attach (cmdRequest): every tier's Edit/Write
@@ -641,6 +667,25 @@ async function cmdRequest(
     payload = { ...(payload as Record<string, Json>), attachments: list };
   }
 
+  if (args['related-to']) {
+    const relatedId = args['related-to'].trim();
+    const admin = createAdminClient();
+    const { data: relatedRow, error: relatedError } = await admin
+      .from('fleet_requests')
+      .select('payload')
+      .eq('id', relatedId)
+      .maybeSingle();
+    if (relatedError) fail(`--related-to lookup failed: ${relatedError.message}`);
+    if (!relatedRow) fail(`--related-to request not found: ${relatedId}`);
+    const relatedPayload = relatedRow.payload;
+    const existingRoot =
+      relatedPayload && typeof relatedPayload === 'object' && !Array.isArray(relatedPayload)
+        ? (relatedPayload as Record<string, unknown>).thread_root
+        : undefined;
+    const threadRoot = typeof existingRoot === 'string' ? existingRoot : relatedId;
+    payload = { ...(payload as Record<string, Json>), thread_root: threadRoot };
+  }
+
   const requestKey = args['request-key']?.trim() || deriveRequestKey({ role, kind, title, body });
   const result = await insertAndNotify({
     requestKey,
@@ -875,9 +920,51 @@ async function cmdPoll(args: Record<string, string | undefined>): Promise<void> 
   console.log(JSON.stringify({ role, inbox, verdicts, open }, null, 2));
 }
 
+// The ack-trap (social-manager.md's own name for it, first hit 2026-08-23,
+// hit AGAIN 2026-08-30 despite being written into the role's instructions
+// after the first time): a publish_social verdict acked instead of run
+// through publish-social lands in 'consumed' with nothing ever published,
+// and — verified live 2026-08-30 against fleet_requests_guard() — 'consumed'
+// is a TERMINAL state in the DB's append-only state machine with NO legal
+// transition back to 'approved'. There is no undo; the only fix once it
+// happens is filing a brand-new request with a different request_key (the
+// dead row stays forever as an honest audit record of the mistake). A prompt
+// instruction alone was not enough to prevent a repeat, so this is a real
+// code-level refusal, not documentation: never touches or slows down
+// publish-social/complete, which are unrelated code paths — this ONLY blocks
+// `ack` itself from being called on a publish_social verdict, one specific
+// mis-invocation.
+async function assertNotPublishSocialVerdict(
+  admin: ReturnType<typeof createAdminClient>,
+  id: string,
+): Promise<void> {
+  const { data } = await admin
+    .from('fleet_requests')
+    .select('status, payload')
+    .eq('id', id)
+    .maybeSingle();
+  // Only the APPROVED case is the trap (social-manager.md's own documented
+  // split: denied -> ack is correct and intentional, approved -> publish-
+  // social is required). Gating on status too means a denied publish_social
+  // verdict still acks normally — this never touches that legitimate path.
+  if (data?.status !== 'approved') return;
+  const payload = data.payload;
+  const action =
+    payload && typeof payload === 'object' && !Array.isArray(payload)
+      ? (payload as Record<string, unknown>).action
+      : undefined;
+  if (action === 'publish_social') {
+    fail(
+      `ack refused: this is an APPROVED publish_social verdict — acking it consumes it ` +
+        `WITHOUT publishing (the 2026-08-23/2026-08-30 ack-trap). Run publish-social instead.`,
+    );
+  }
+}
+
 async function cmdAck(args: Record<string, string | undefined>): Promise<void> {
   const id = requireOption(args.id, 'id');
   const admin = createAdminClient();
+  await assertNotPublishSocialVerdict(admin, id);
 
   const { data, error } = await admin.rpc('fleet_consume_request', { p_id: id });
   if (error) fail(`ack failed: ${error.message}`);
@@ -2363,6 +2450,56 @@ async function cmdPublishSocial(
   );
 }
 
+// The only "creative production" capability a Tier-0 role (social-manager)
+// has: it cannot call any external image-generation API itself (no network —
+// WebFetch/WebSearch/curl/wget denied at every tier, and even a configured
+// one would need a billing tier this project's ElevenLabs account does not
+// have — verified live 2026-08-30, GET /v1/user/subscription: "creator", and
+// POST /v1/flows/image: 402 "requires a Pro plan or above"). Instead it
+// authors a small HTML+CSS mockup itself (already part of its job — see
+// --html-file's ordinary use) and asks THIS command to screenshot it — a
+// local, offline, headless-browser render (Puppeteer, already a project
+// dependency — src/lib/data/social-image-render.ts), no external account or
+// network dependency at all. Matches the real mechanism verified from the
+// 2026-08-23 interactive-session transcript that produced the last real post
+// images: an authored HTML file rendered to PNG, not an AI image model.
+async function cmdRenderImage(args: Record<string, string | undefined>): Promise<void> {
+  const html = requireOption(args.html, 'html');
+  const outRaw = requireOption(args.out, 'out');
+  const width = Number(args.width ?? '1080');
+  const height = Number(args.height ?? '1080');
+  if (!Number.isInteger(width) || width <= 0 || !Number.isInteger(height) || height <= 0) {
+    fail('--width/--height must be positive integers');
+  }
+
+  // Same boundary as --attach (cmdRequest): a role's tier only grants it
+  // Edit/Write under .fleet-logs/**, so drafts/ is the only place it could
+  // have gotten a path from in the first place.
+  const draftsRoot = resolve(process.cwd(), '.fleet-logs', 'drafts');
+  const outAbs = resolve(process.cwd(), outRaw);
+  if (outAbs !== draftsRoot && !outAbs.startsWith(draftsRoot + sep)) {
+    fail(`--out must point under .fleet-logs/drafts/ (got: ${outRaw})`);
+  }
+
+  let bytes: Buffer;
+  try {
+    bytes = await renderHtmlToImage({ html, width, height });
+  } catch (err) {
+    return fail(`render-image failed: ${err instanceof Error ? err.message : 'unknown error'}`);
+  }
+
+  mkdirSync(dirname(outAbs), { recursive: true });
+  writeFileSync(outAbs, bytes);
+
+  console.log(
+    JSON.stringify(
+      { written: true, path: relative(process.cwd(), outAbs), bytes: bytes.length },
+      null,
+      2,
+    ),
+  );
+}
+
 // ── Fleet goals ──────────────────────────────────────────────────────────────
 // The autonomy loop: goal-poll (mirrors cmdPoll — runs unconditionally, "0
 // due" is a normal outcome, no exitCode games) and goal-progress/goal-close
@@ -2583,6 +2720,7 @@ async function main(): Promise<void> {
       attach: { type: 'string', multiple: true },
       'run-id': { type: 'string' },
       'request-key': { type: 'string' },
+      'related-to': { type: 'string' },
       to: { type: 'string' },
       'from-request': { type: 'string' },
       note: { type: 'string' },
@@ -2611,6 +2749,10 @@ async function main(): Promise<void> {
       'caption-file': { type: 'string' },
       'image-path': { type: 'string' },
       'dry-run': { type: 'boolean' },
+      html: { type: 'string' },
+      out: { type: 'string' },
+      width: { type: 'string' },
+      height: { type: 'string' },
       'body-file': { type: 'string' },
       'summary-file': { type: 'string' },
       'note-file': { type: 'string' },
@@ -2619,6 +2761,7 @@ async function main(): Promise<void> {
       'reason-file': { type: 'string' },
       'error-file': { type: 'string' },
       'evidence-file': { type: 'string' },
+      'html-file': { type: 'string' },
       'landing-pages': { type: 'boolean' },
     },
   });
@@ -2680,9 +2823,11 @@ async function main(): Promise<void> {
       return cmdHousekeepingPr(scalarValues);
     case 'publish-social':
       return cmdPublishSocial(scalarValues, !!dryRun);
+    case 'render-image':
+      return cmdRenderImage(scalarValues);
     default:
       fail(
-        'usage: fleet-agent-cli <request|handoff|complete|poll|verdicts|ack|expire|withdraw|digest|sql|draft-reply|distill-corrections|business-facts|faq|style|triage-claim|triage-finish|goal-poll|goal-progress|goal-close|analytics-summary|housekeeping-pr|publish-social> [options]',
+        'usage: fleet-agent-cli <request|handoff|complete|poll|verdicts|ack|expire|withdraw|digest|sql|draft-reply|distill-corrections|business-facts|faq|style|triage-claim|triage-finish|goal-poll|goal-progress|goal-close|analytics-summary|housekeeping-pr|publish-social|render-image> [options]',
       );
   }
 }

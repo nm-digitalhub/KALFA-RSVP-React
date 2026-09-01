@@ -88,8 +88,11 @@ export async function createFleetRequestAction(
     return { error: err instanceof Error ? err.message : 'פתיחת הפנייה נכשלה' };
   }
 
+  // /admin/fleet is now one unified page (?id=&type= selects the detail pane)
+  // rather than a distinct /admin/fleet/[id] route, so revalidating PATH alone
+  // covers every query-string variant of it — Next's revalidation is by path,
+  // not full URL.
   revalidatePath(PATH);
-  revalidatePath(`${PATH}/${result.id}`);
   return {
     notice: result.deduplicated
       ? 'פנייה זהה כבר נשלחה היום — לא נוצרה כפילות.'
@@ -142,10 +145,9 @@ export async function answerFleetRequestAction(
     return { error: err instanceof Error ? err.message : 'שמירת המענה נכשלה' };
   }
 
+  // Covers the detail pane too (same path, ?id= selects it) — see the note in
+  // createFleetRequestAction above.
   revalidatePath(PATH);
-  // The detail page renders the same request — refresh it too so the timeline
-  // reflects the verdict without a manual reload.
-  revalidatePath(`${PATH}/${parsed.data.id}`);
   return { notice: 'המענה נשמר — הסוכן יקלוט אותו בריצה הבאה' };
 }
 

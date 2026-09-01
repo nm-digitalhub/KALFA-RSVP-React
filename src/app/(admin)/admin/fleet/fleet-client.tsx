@@ -1,6 +1,5 @@
 'use client';
 
-import Link from 'next/link';
 import { useActionState, useId, useState } from 'react';
 import { useFormStatus } from 'react-dom';
 import { ChevronDown } from 'lucide-react';
@@ -103,24 +102,34 @@ const TONE_CLASS: Record<'ok' | 'warn' | 'blocked', string> = {
   blocked: 'text-destructive',
 };
 
-// Owner -> agent. The counterpart to PendingRequestCard: that one answers a
-// conversation an agent started, this one starts one.
+// Owner -> agent. The counterpart to PendingRequestCard/GoalCard: those answer
+// a conversation an agent started or advance one already running, this one
+// starts something new. A "בקשה" (one answer, done) and a "מטרה" (persistent,
+// the role advances it between runs) used to be two separate cards with two
+// separate forms — merged here into one control with a type toggle, since to
+// the owner they are the same action ("start something with an agent") that
+// differs only in whether it's one-shot or standing. Two real useActionState
+// hooks (rules-of-hooks: both must be called unconditionally), one visible
+// form at a time.
 //
 // Native <select> on purpose — same choice as the contacts/callbacks admin
 // forms: no portal, so no Base UI DirectionProvider dependency and no RTL
 // pitfalls. Double submission is not guarded here by disabling the button
-// alone: the request_key UNIQUE index makes an identical same-day ask
-// idempotent in the DATABASE, and the action reports which of the two happened.
-export function ComposeRequestCard({ roles }: { roles: FleetRoleInfo[] }) {
-  const [state, action] = useActionState(createFleetRequestAction, null);
+// alone: the request_key UNIQUE index (requests) / the goal RPC (goals) make
+// re-submission safe server-side.
+export function ComposeActivityCard({ roles }: { roles: FleetRoleInfo[] }) {
+  const [activityType, setActivityType] = useState<'request' | 'goal'>('request');
+  const [requestState, requestAction] = useActionState(createFleetRequestAction, null);
+  const [goalState, goalAction] = useActionState(createFleetGoalAction, null);
   const [selected, setSelected] = useState('');
   const uid = useId();
   const role = roles.find((r) => r.name === selected);
   const reach = reachability(
     selected ? role : undefined,
-    'owner_direct_request',
-    'הפנייה',
+    activityType === 'goal' ? 'goal_due' : 'owner_direct_request',
+    activityType === 'goal' ? 'המטרה' : 'הפנייה',
   );
+  const state = activityType === 'goal' ? goalState : requestState;
 
   return (
     <Collapsible
@@ -129,10 +138,11 @@ export function ComposeRequestCard({ roles }: { roles: FleetRoleInfo[] }) {
     >
       <CollapsibleTrigger className="group/trigger flex w-full items-start justify-between gap-4 p-5 text-start">
         <div>
-          <h2 className="text-lg font-semibold">פנייה ישירה לסוכן</h2>
+          <h2 className="text-lg font-semibold">פעולה חדשה</h2>
           <p className="mt-1 text-sm text-muted-foreground">
-            הסוכן יענה, יבקש הבהרה או יפתח בקשת אישור — בגבולות ההרשאות של הדרגה
-            שלו. פעולה רגישה תמשיך לדרוש את אישורך.
+            בקשה חד-פעמית מקבלת מענה אחד ונסגרת; מטרה נשארת פתוחה והסוכן ממשיך
+            בה בין ריצות עד שהיא מסתיימת. שתיהן בגבולות ההרשאות של הדרגה שלו —
+            פעולה רגישה תמשיך לדרוש את אישורך.
           </p>
         </div>
         <ChevronDown className="mt-1 size-4 shrink-0 text-muted-foreground transition-transform group-data-[panel-open]/trigger:rotate-180" />
@@ -144,125 +154,194 @@ export function ComposeRequestCard({ roles }: { roles: FleetRoleInfo[] }) {
             לא ניתן לקרוא את רשימת הסוכנים מ-fleet.json
           </p>
         ) : (
-          <form action={action} className="space-y-4">
-            <div className="grid gap-4 sm:grid-cols-3">
-              <div>
-                <label
-                  htmlFor={`${uid}-role`}
-                  className="mb-1 block text-sm font-medium"
-                >
-                  סוכן
-                </label>
-                <select
-                  id={`${uid}-role`}
-                  name="role"
-                  required
-                  value={selected}
-                  onChange={(e) => setSelected(e.target.value)}
-                  className={selectClass}
-                >
-                  <option value="">בחר…</option>
-                  {roles.map((r) => (
-                    <option key={r.name} value={r.name}>
-                      {r.name}
-                      {r.enabled ? '' : ' (כבוי)'} · דרגה {r.tier}
-                    </option>
-                  ))}
-                </select>
-                <FieldError errors={state?.fieldErrors?.role} />
-              </div>
+          <div className="space-y-4">
+            <div className="flex gap-2">
+              <Button
+                type="button"
+                variant={activityType === 'request' ? 'default' : 'outline'}
+                onClick={() => setActivityType('request')}
+              >
+                בקשה חד-פעמית
+              </Button>
+              <Button
+                type="button"
+                variant={activityType === 'goal' ? 'default' : 'outline'}
+                onClick={() => setActivityType('goal')}
+              >
+                מטרה מתמשכת
+              </Button>
+            </div>
 
-              <div>
-                <label
-                  htmlFor={`${uid}-kind`}
-                  className="mb-1 block text-sm font-medium"
-                >
-                  סוג פנייה
-                </label>
-                <select
-                  id={`${uid}-kind`}
-                  name="kind"
-                  defaultValue="question"
-                  className={selectClass}
-                >
-                  <option value="question">שאלה — מצפה לתשובה</option>
-                  <option value="approval">בקשת אישור</option>
-                  <option value="fyi">עדכון — לידיעה</option>
-                </select>
-                <FieldError errors={state?.fieldErrors?.kind} />
-              </div>
-
-              <div>
-                <label
-                  htmlFor={`${uid}-tier`}
-                  className="mb-1 block text-sm font-medium"
-                >
-                  דרגת רגישות
-                </label>
-                <select
-                  id={`${uid}-tier`}
-                  name="tier"
-                  defaultValue="0"
-                  className={selectClass}
-                >
-                  <option value="0">0 — דיווח</option>
-                  <option value="1">1 — קוד/בטא</option>
-                  <option value="2">2 — רגיש</option>
-                </select>
-                <FieldError errors={state?.fieldErrors?.tier} />
-              </div>
+            <div>
+              <label
+                htmlFor={`${uid}-role`}
+                className="mb-1 block text-sm font-medium"
+              >
+                סוכן
+              </label>
+              <select
+                id={`${uid}-role`}
+                value={selected}
+                onChange={(e) => setSelected(e.target.value)}
+                className={selectClass}
+              >
+                <option value="">בחר…</option>
+                {roles.map((r) => (
+                  <option key={r.name} value={r.name}>
+                    {r.name}
+                    {r.enabled ? '' : ' (כבוי)'} · דרגה {r.tier}
+                  </option>
+                ))}
+              </select>
+              <FieldError errors={state?.fieldErrors?.role} />
             </div>
 
             <p className={`text-xs ${TONE_CLASS[reach.tone]}`}>{reach.text}</p>
 
-            <div>
-              <label
-                htmlFor={`${uid}-title`}
-                className="mb-1 block text-sm font-medium"
-              >
-                כותרת
-              </label>
-              <input
-                id={`${uid}-title`}
-                name="title"
-                required
-                maxLength={200}
-                className={inputClass}
-                placeholder="במשפט אחד — מה נדרש מהסוכן"
-              />
-              <FieldError errors={state?.fieldErrors?.title} />
-            </div>
+            {activityType === 'request' ? (
+              <form action={requestAction} className="space-y-4">
+                <input type="hidden" name="role" value={selected} />
 
-            <div>
-              <label
-                htmlFor={`${uid}-body`}
-                className="mb-1 block text-sm font-medium"
-              >
-                תוכן
-              </label>
-              <textarea
-                id={`${uid}-body`}
-                name="body"
-                rows={5}
-                required
-                maxLength={8000}
-                className={inputClass}
-                placeholder="ההקשר המלא, הגבולות, ומה נחשב 'סיימת'…"
-              />
-              <FieldError errors={state?.fieldErrors?.body} />
-            </div>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div>
+                    <label
+                      htmlFor={`${uid}-kind`}
+                      className="mb-1 block text-sm font-medium"
+                    >
+                      סוג פנייה
+                    </label>
+                    <select
+                      id={`${uid}-kind`}
+                      name="kind"
+                      defaultValue="question"
+                      className={selectClass}
+                    >
+                      <option value="question">שאלה — מצפה לתשובה</option>
+                      <option value="approval">בקשת אישור</option>
+                      <option value="fyi">עדכון — לידיעה</option>
+                    </select>
+                    <FieldError errors={requestState?.fieldErrors?.kind} />
+                  </div>
 
-            <p className="text-xs text-muted-foreground">
-              דרגת הרגישות היא תיוג לפנייה — היא אינה מרחיבה את הרשאות הסוכן. מה
-              שמותר לו נקבע בדרגה שלו ב-fleet.json וב-guard, ולא כאן.
-            </p>
+                  <div>
+                    <label
+                      htmlFor={`${uid}-tier`}
+                      className="mb-1 block text-sm font-medium"
+                    >
+                      דרגת רגישות
+                    </label>
+                    <select
+                      id={`${uid}-tier`}
+                      name="tier"
+                      defaultValue="0"
+                      className={selectClass}
+                    >
+                      <option value="0">0 — דיווח</option>
+                      <option value="1">1 — קוד/בטא</option>
+                      <option value="2">2 — רגיש</option>
+                    </select>
+                    <FieldError errors={requestState?.fieldErrors?.tier} />
+                  </div>
+                </div>
 
-            <SubmitComposeButton disabled={reach.tone === 'blocked'}>
-              שלח לסוכן
-            </SubmitComposeButton>
-            <FormError message={state?.error} />
-            <FormNotice message={state?.notice} />
-          </form>
+                <div>
+                  <label
+                    htmlFor={`${uid}-title`}
+                    className="mb-1 block text-sm font-medium"
+                  >
+                    כותרת
+                  </label>
+                  <input
+                    id={`${uid}-title`}
+                    name="title"
+                    required
+                    maxLength={200}
+                    className={inputClass}
+                    placeholder="במשפט אחד — מה נדרש מהסוכן"
+                  />
+                  <FieldError errors={requestState?.fieldErrors?.title} />
+                </div>
+
+                <div>
+                  <label
+                    htmlFor={`${uid}-body`}
+                    className="mb-1 block text-sm font-medium"
+                  >
+                    תוכן
+                  </label>
+                  <textarea
+                    id={`${uid}-body`}
+                    name="body"
+                    rows={5}
+                    required
+                    maxLength={8000}
+                    className={inputClass}
+                    placeholder="ההקשר המלא, הגבולות, ומה נחשב 'סיימת'…"
+                  />
+                  <FieldError errors={requestState?.fieldErrors?.body} />
+                </div>
+
+                <p className="text-xs text-muted-foreground">
+                  דרגת הרגישות היא תיוג לפנייה — היא אינה מרחיבה את הרשאות
+                  הסוכן. מה שמותר לו נקבע בדרגה שלו ב-fleet.json וב-guard, ולא
+                  כאן.
+                </p>
+
+                <SubmitComposeButton disabled={reach.tone === 'blocked' || !selected}>
+                  שלח לסוכן
+                </SubmitComposeButton>
+                <FormError message={requestState?.error} />
+                <FormNotice message={requestState?.notice} />
+              </form>
+            ) : (
+              <form action={goalAction} className="space-y-4">
+                <input type="hidden" name="role" value={selected} />
+
+                <div>
+                  <label
+                    htmlFor={`${uid}-goal-title`}
+                    className="mb-1 block text-sm font-medium"
+                  >
+                    כותרת
+                  </label>
+                  <input
+                    id={`${uid}-goal-title`}
+                    name="title"
+                    required
+                    maxLength={200}
+                    className={inputClass}
+                    placeholder="במשפט אחד — מה המטרה"
+                  />
+                  <FieldError errors={goalState?.fieldErrors?.title} />
+                </div>
+
+                <div>
+                  <label
+                    htmlFor={`${uid}-goal-body`}
+                    className="mb-1 block text-sm font-medium"
+                  >
+                    תיאור
+                  </label>
+                  <textarea
+                    id={`${uid}-goal-body`}
+                    name="body"
+                    rows={5}
+                    required
+                    maxLength={8000}
+                    className={inputClass}
+                    placeholder='ההקשר המלא, הגבולות, ומה נחשב "הושלם"…'
+                  />
+                  <FieldError errors={goalState?.fieldErrors?.body} />
+                </div>
+
+                <SubmitComposeButton disabled={reach.tone === 'blocked' || !selected}>
+                  צור מטרה
+                </SubmitComposeButton>
+                <FormError message={goalState?.error} />
+                <FormNotice message={goalState?.notice} />
+              </form>
+            )}
+          </div>
         )}
       </CollapsiblePanel>
     </Collapsible>
@@ -410,6 +489,32 @@ export const KIND_VARIANT: Record<string, BadgeVariant> = {
   fyi: 'neutral',
 };
 
+// Single source for request status label/tone — previously duplicated (and
+// drifted: the list page's copy was missing 'pending' entirely) between this
+// file's callers and the old per-id detail page. Kept separate from the goal
+// equivalents below rather than merged into one combined map: 'completed'
+// takes a different Hebrew grammatical form for a בקשה ("הושלם") vs a מטרה
+// ("הושלמה"), and a merged map can only hold one of the two under that key.
+export const STATUS_LABEL: Record<string, string> = {
+  pending: 'ממתינה למענה',
+  approved: 'אושר',
+  denied: 'נדחה',
+  answered: 'נענה',
+  expired: 'פג תוקף',
+  consumed: 'נקלט אצל הסוכן',
+  completed: 'הושלם',
+};
+
+export const STATUS_VARIANT: Record<string, BadgeVariant> = {
+  pending: 'warning',
+  approved: 'success',
+  denied: 'destructive',
+  answered: 'info',
+  expired: 'neutral',
+  consumed: 'success',
+  completed: 'success',
+};
+
 const TIER_LABEL: Record<number, string> = {
   0: 'דרגה 0 — דיווח',
   1: 'דרגה 1 — קוד/בטא',
@@ -419,16 +524,10 @@ const TIER_LABEL: Record<number, string> = {
 const inputClass =
   'w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring';
 
-// `linkToDetail`: PendingRequestCard is reused verbatim on the detail page
-// itself (/admin/fleet/[id]) for a still-pending request — there, the title
-// linking to the very page you're already on was a dead self-link.
-export function PendingRequestCard({
-  request,
-  linkToDetail = true,
-}: {
-  request: FleetRequestEntry;
-  linkToDetail?: boolean;
-}) {
+// Renders a still-pending request's answer form. Its only call site is inside
+// RequestDetailPanel — that page's own heading already shows the title, so
+// this never needs to link anywhere.
+export function PendingRequestCard({ request }: { request: FleetRequestEntry }) {
   const [state, action] = useActionState(answerFleetRequestAction, null);
   // react-hooks/purity: Date.now() may not run during render. useState's lazy
   // initializer is React's sanctioned impure-init boundary — captured once per
@@ -477,18 +576,7 @@ export function PendingRequestCard({
       </header>
 
       <div className="space-y-2">
-        <h3 className="wrap-anywhere text-base font-semibold">
-          {linkToDetail ? (
-            <Link
-              href={`/admin/fleet/${request.id}`}
-              className="hover:underline"
-            >
-              {request.title}
-            </Link>
-          ) : (
-            request.title
-          )}
-        </h3>
+        <h3 className="wrap-anywhere text-base font-semibold">{request.title}</h3>
         {/* wrap-anywhere (not break-words): agent-authored bodies carry long
             unbreakable tokens (hashes/paths); only overflow-wrap:anywhere is
             factored into intrinsic sizing, so it stops the flex row from
@@ -555,116 +643,9 @@ export function PendingRequestCard({
 }
 
 // ── Fleet goals ──────────────────────────────────────────────────────────────
-
-// Owner -> agent, persistent. Structure mirrors ComposeRequestCard, including
-// reuse of reachability() and SubmitComposeButton.
-export function GoalComposeCard({ roles }: { roles: FleetRoleInfo[] }) {
-  const [state, action] = useActionState(createFleetGoalAction, null);
-  const [selected, setSelected] = useState('');
-  const uid = useId();
-  const role = roles.find((r) => r.name === selected);
-  const reach = reachability(selected ? role : undefined, 'goal_due', 'המטרה');
-
-  return (
-    <Collapsible
-      defaultOpen={false}
-      className="rounded-lg border border-border bg-card"
-    >
-      <CollapsibleTrigger className="group/trigger flex w-full items-start justify-between gap-4 p-5 text-start">
-        <div>
-          <h2 className="text-lg font-semibold">מטרה חדשה</h2>
-          <p className="mt-1 text-sm text-muted-foreground">
-            הסוכן ישמור מצב בין ריצות, יחליט על הצעד הבא, ויתזמן את עצמו עד
-            שהמטרה תסתיים — בגבולות ההרשאות של הדרגה שלו. התיאור למטה הוא ההוראה
-            היחידה שהוא יקבל, כולל מה נחשב &quot;הושלם&quot;.
-          </p>
-        </div>
-        <ChevronDown className="mt-1 size-4 shrink-0 text-muted-foreground transition-transform group-data-[panel-open]/trigger:rotate-180" />
-      </CollapsibleTrigger>
-
-      <CollapsiblePanel className="space-y-4 px-5 pb-5">
-        {roles.length === 0 ? (
-          <p className="text-sm text-destructive">
-            לא ניתן לקרוא את רשימת הסוכנים מ-fleet.json
-          </p>
-        ) : (
-          <form action={action} className="space-y-4">
-            <div>
-              <label
-                htmlFor={`${uid}-goal-role`}
-                className="mb-1 block text-sm font-medium"
-              >
-                סוכן
-              </label>
-              <select
-                id={`${uid}-goal-role`}
-                name="role"
-                required
-                value={selected}
-                onChange={(e) => setSelected(e.target.value)}
-                className={selectClass}
-              >
-                <option value="">בחר…</option>
-                {roles.map((r) => (
-                  <option key={r.name} value={r.name}>
-                    {r.name}
-                    {r.enabled ? '' : ' (כבוי)'} · דרגה {r.tier}
-                  </option>
-                ))}
-              </select>
-              <FieldError errors={state?.fieldErrors?.role} />
-            </div>
-
-            <p className={`text-xs ${TONE_CLASS[reach.tone]}`}>{reach.text}</p>
-
-            <div>
-              <label
-                htmlFor={`${uid}-goal-title`}
-                className="mb-1 block text-sm font-medium"
-              >
-                כותרת
-              </label>
-              <input
-                id={`${uid}-goal-title`}
-                name="title"
-                required
-                maxLength={200}
-                className={inputClass}
-                placeholder="במשפט אחד — מה המטרה"
-              />
-              <FieldError errors={state?.fieldErrors?.title} />
-            </div>
-
-            <div>
-              <label
-                htmlFor={`${uid}-goal-body`}
-                className="mb-1 block text-sm font-medium"
-              >
-                תיאור
-              </label>
-              <textarea
-                id={`${uid}-goal-body`}
-                name="body"
-                rows={5}
-                required
-                maxLength={8000}
-                className={inputClass}
-                placeholder='ההקשר המלא, הגבולות, ומה נחשב "הושלם"…'
-              />
-              <FieldError errors={state?.fieldErrors?.body} />
-            </div>
-
-            <SubmitComposeButton disabled={reach.tone === 'blocked'}>
-              צור מטרה
-            </SubmitComposeButton>
-            <FormError message={state?.error} />
-            <FormNotice message={state?.notice} />
-          </form>
-        )}
-      </CollapsiblePanel>
-    </Collapsible>
-  );
-}
+// Goal creation now lives in ComposeActivityCard above (unified with request
+// creation); this section is the ongoing-goal lifecycle: pause/resume/abandon
+// and the GoalCard detail rendering.
 
 // Not VerdictButton (that needs name="verdict" to distinguish buttons WITHIN
 // one form) and not the shared SubmitButton (no variant). The three goal
@@ -882,14 +863,17 @@ export function ReplyToGoalForm({
   );
 }
 
-const GOAL_STATUS_LABEL: Record<string, string> = {
+// Exported (unlike the note/box tone maps below, which only GoalCard needs):
+// the unified activity list in page.tsx renders a status badge for goal rows
+// too, and must use these exact labels/tones rather than a third drifted copy.
+export const GOAL_STATUS_LABEL: Record<string, string> = {
   active: 'פעילה',
   paused: 'מושהית',
   completed: 'הושלמה',
   failed: 'נכשלה',
 };
 
-const GOAL_STATUS_VARIANT: Record<string, BadgeVariant> = {
+export const GOAL_STATUS_VARIANT: Record<string, BadgeVariant> = {
   active: 'info',
   paused: 'warning',
   completed: 'success',

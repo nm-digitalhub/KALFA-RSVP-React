@@ -3,27 +3,27 @@
         {
             "config": "agent_configs/KALFA-RSVP.json",
             "id": "agent_9701kxj3n54ye518a3s518cexd48",
-            "version_id": "agtvrsn_2301m0qfdz53eahrrfj0e052p5tf",
             "branch_id": "agtbrch_4101kxj3n5tqf2kae5recbbn2rtj",
+            "version_id": "agtvrsn_2301m0qfdz53eahrrfj0e052p5tf",
             "branches": {}
         },
         {
             "config": "agent_configs/KALFA-Meeting-Confirm.json",
             "id": "agent_3601m0mt3tf3e2cvgqwak2yg54b6",
-            "version_id": "agtvrsn_5001m0qg1ksre5zvndjccg4fyrg9",
-            "branch_id": "agtbrch_0801m0mt3w3cfgar7q5w62h1q95y"
+            "branch_id": "agtbrch_0801m0mt3w3cfgar7q5w62h1q95y",
+            "version_id": "agtvrsn_5001m0qg1ksre5zvndjccg4fyrg9"
         },
         {
             "config": "agent_configs/KALFA-Sales-Close.json",
             "id": "agent_4101m0my2f2kf4qvhegat60wrgtn",
-            "version_id": "agtvrsn_4801m0qfe8vdf7tvdnsf2d8tars5",
-            "branch_id": "agtbrch_7501m0my2fxtftxa3wr4gpmkhj3d"
+            "branch_id": "agtbrch_7501m0my2fxtftxa3wr4gpmkhj3d",
+            "version_id": "agtvrsn_0301m1ehb8qte6mv3hekh6bmt8zq"
         },
         {
             "config": "agent_configs/KALFA-RSVP-שירות-לקוחות.json",
             "id": "agent_8801m0d6pgwkfw1rtw3ba25h1q50",
-            "version_id": "agtvrsn_2301m0qfwp1qf6majbstgc6m9b8e",
-            "branch_id": "agtbrch_4001m0d6phmafhavdr0d4vcznnpz"
+            "branch_id": "agtbrch_4001m0d6phmafhavdr0d4vcznnpz",
+            "version_id": "agtvrsn_2301m0qfwp1qf6majbstgc6m9b8e"
         }
     ]
 }

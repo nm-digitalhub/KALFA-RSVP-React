@@ -43,46 +43,6 @@ export type FleetRequestEntry = Pick<
 const FLEET_REQUEST_COLUMNS =
   'id, role, run_id, kind, tier, title, body, payload, status, answer, created_at, answered_at, expires_at';
 
-// Open requests awaiting the owner, oldest first (answer in arrival order).
-export async function listPendingFleetRequests(): Promise<FleetRequestEntry[]> {
-  await requirePlatformPermission('manage_settings');
-  const supabase = await createClient();
-
-  const { data, error } = await supabase
-    .from('fleet_requests')
-    .select(FLEET_REQUEST_COLUMNS)
-    .eq('status', 'pending')
-    .order('created_at', { ascending: true });
-
-  if (error) throw new Error('טעינת פניות הסוכנים נכשלה');
-  return (data ?? []) as FleetRequestEntry[];
-}
-
-// Everything that is no longer pending, newest first, server-paginated.
-export async function listFleetRequestHistory(
-  params: PageParams = {},
-): Promise<PageResult<FleetRequestEntry>> {
-  await requirePlatformPermission('manage_settings');
-  const supabase = await createClient();
-  const { page, pageSize, from, to } = resolvePage(params.page);
-
-  const { data, error, count } = await supabase
-    .from('fleet_requests')
-    .select(FLEET_REQUEST_COLUMNS, { count: 'exact' })
-    .neq('status', 'pending')
-    .order('created_at', { ascending: false })
-    .range(from, to);
-
-  if (error) throw new Error('טעינת היסטוריית הפניות נכשלה');
-
-  return {
-    items: (data ?? []) as FleetRequestEntry[],
-    total: count ?? 0,
-    page,
-    pageSize,
-  };
-}
-
 // Single request for the detail page (/admin/fleet/[id]), plus the answering
 // admin's display name when available. Returns null for unknown ids so the
 // page can 404 instead of leaking errors.
@@ -350,16 +310,147 @@ export type FleetGoalEntry = Pick<
 const FLEET_GOAL_COLUMNS =
   'id, role, title, body, status, state, next_wake_at, step_count, consecutive_failures, last_error, created_at, closed_at';
 
-export async function listFleetGoals(): Promise<FleetGoalEntry[]> {
+// A request or a goal, shaped identically enough for one unified list row and
+// one unified detail-pane dispatch (/admin/fleet). `data` keeps the full,
+// type-specific row for whichever renderer needs it; the flat id/role/title/
+// status/displayAt fields exist so the shared list row never has to branch on
+// entryKind just to read them. Two label maps stay separate downstream
+// (fleet-client.tsx) rather than merging into this type — 'completed' takes a
+// different Hebrew grammatical form for a בקשה vs a מטרה, and flattening that
+// away would silently reintroduce the wrong gender agreement.
+export type FleetActivityEntry =
+  | { entryKind: 'request'; id: string; role: string; title: string; status: string; displayAt: string; data: FleetRequestEntry }
+  | { entryKind: 'goal'; id: string; role: string; title: string; status: string; displayAt: string; data: FleetGoalEntry };
+
+function toRequestActivityEntry(r: FleetRequestEntry, displayAt: string): FleetActivityEntry {
+  return { entryKind: 'request', id: r.id, role: r.role, title: r.title, status: r.status, displayAt, data: r };
+}
+
+function toGoalActivityEntry(g: FleetGoalEntry, displayAt: string): FleetActivityEntry {
+  return { entryKind: 'goal', id: g.id, role: g.role, title: g.title, status: g.status, displayAt, data: g };
+}
+
+// Everything the owner must act on or is watching right now: pending requests
+// (blocking a role) ahead of active/paused goals — both already small by
+// nature, so this stays unpaginated. Reuses the two existing list functions
+// rather than a new query; the only new work here is shaping them into one
+// list for /admin/fleet's unified "needs attention" section.
+// `kind` stays a plain string (not the approval|question|fyi union) — it
+// comes straight from an admin-typed ?kind= query param, and an unrecognized
+// value should just match nothing (a plain .eq() against real rows), the same
+// as /admin/contacts' own unvalidated ?status= filter — not get lied to via
+// an `as` cast into a union it might not actually satisfy.
+export type FleetActivityFilters = { role?: string; kind?: string };
+
+// The unified /admin/fleet feed: ONE priority-first, paginated list — no
+// separate "needs attention" section. "Priority" (pending requests +
+// active/paused goals — always small by nature) is fetched in full and always
+// sorts ahead of everything else, so in the common case it simply occupies
+// the top of page 1; only if it ever exceeds a page's worth does it spill
+// onto page 2, still first there too. "Rest" (resolved requests + finished
+// goals) uses the same over-fetch-to-page-depth merge as a real cross-table
+// UNION would give: each source is fetched to the SAME depth (page*pageSize
+// rows, newest first) and merged here. That is exact, not approximate — the
+// true top `page*pageSize` rows are guaranteed to be a subset of what was
+// just fetched, because each source only ever contributes MORE recent rows
+// nearer the top. Cost grows with page depth, not table size — the right
+// trade for an internal ops list rarely paged more than a few pages deep.
+//
+// `kind` excludes goals entirely: kind (question/approval/fyi) is a
+// request-only concept, so filtering by it means "requests of this kind",
+// not "requests of this kind, plus every goal".
+export async function listFleetActivity(
+  params: PageParams & FleetActivityFilters = {},
+): Promise<PageResult<FleetActivityEntry>> {
+  await requirePlatformPermission('manage_settings');
+  const supabase = await createClient();
+  const { page, pageSize } = resolvePage(params.page);
+  const upTo = page * pageSize;
+  const { role, kind } = params;
+
+  let pendingQuery = supabase
+    .from('fleet_requests')
+    .select(FLEET_REQUEST_COLUMNS)
+    .eq('status', 'pending')
+    .order('created_at', { ascending: true });
+  if (role) pendingQuery = pendingQuery.eq('role', role);
+  if (kind) pendingQuery = pendingQuery.eq('kind', kind);
+
+  let restReqQuery = supabase
+    .from('fleet_requests')
+    .select(FLEET_REQUEST_COLUMNS, { count: 'exact' })
+    .neq('status', 'pending')
+    .order('created_at', { ascending: false })
+    .range(0, upTo - 1);
+  if (role) restReqQuery = restReqQuery.eq('role', role);
+  if (kind) restReqQuery = restReqQuery.eq('kind', kind);
+
+  let goalsAttnQuery = supabase
+    .from('fleet_goals')
+    .select(FLEET_GOAL_COLUMNS)
+    .in('status', ['active', 'paused']);
+  if (role) goalsAttnQuery = goalsAttnQuery.eq('role', role);
+
+  let restGoalQuery = supabase
+    .from('fleet_goals')
+    .select(FLEET_GOAL_COLUMNS, { count: 'exact' })
+    .not('closed_at', 'is', null)
+    .order('closed_at', { ascending: false })
+    .range(0, upTo - 1);
+  if (role) restGoalQuery = restGoalQuery.eq('role', role);
+
+  const [pendingRes, restReqRes, goalsAttnRes, restGoalRes] = await Promise.all([
+    pendingQuery,
+    restReqQuery,
+    goalsAttnQuery,
+    restGoalQuery,
+  ]);
+
+  if (pendingRes.error || restReqRes.error || goalsAttnRes.error || restGoalRes.error) {
+    throw new Error('טעינת פעילות הסוכנים נכשלה');
+  }
+
+  const pending = (pendingRes.data ?? []) as FleetRequestEntry[];
+  const activeGoals = kind ? [] : ((goalsAttnRes.data ?? []) as FleetGoalEntry[]);
+  const priority = [
+    ...pending.map((r) => toRequestActivityEntry(r, r.created_at)),
+    ...activeGoals.map((g) => toGoalActivityEntry(g, g.created_at)),
+  ].sort((a, b) => (a.displayAt < b.displayAt ? 1 : a.displayAt > b.displayAt ? -1 : 0));
+
+  const restRequests = (restReqRes.data ?? []) as FleetRequestEntry[];
+  const restGoals = kind ? [] : ((restGoalRes.data ?? []) as FleetGoalEntry[]);
+  const rest = [
+    ...restRequests.map((r) => toRequestActivityEntry(r, r.answered_at ?? r.created_at)),
+    ...restGoals.map((g) => toGoalActivityEntry(g, g.closed_at ?? g.created_at)),
+  ].sort((a, b) => (a.displayAt < b.displayAt ? 1 : a.displayAt > b.displayAt ? -1 : 0));
+
+  // Priority unconditionally ranks ahead of rest (not merged into one sort by
+  // date) — that is the whole point: "needs attention" outranks recency.
+  const merged = [...priority, ...rest];
+  const from = (page - 1) * pageSize;
+  const total = priority.length + (restReqRes.count ?? 0) + (kind ? 0 : (restGoalRes.count ?? 0));
+
+  return {
+    items: merged.slice(from, from + pageSize),
+    total,
+    page,
+    pageSize,
+  };
+}
+
+// Single goal for the unified detail pane (/admin/fleet?id=...&type=goal).
+// Returns null for an unknown id — same "let the pane render an empty state,
+// don't crash the page" contract as getFleetRequest above.
+export async function getFleetGoalById(id: string): Promise<FleetGoalEntry | null> {
   await requirePlatformPermission('manage_settings');
   const supabase = await createClient();
   const { data, error } = await supabase
     .from('fleet_goals')
     .select(FLEET_GOAL_COLUMNS)
-    .order('closed_at', { ascending: true, nullsFirst: true }) // active first
-    .order('next_wake_at', { ascending: true, nullsFirst: false });
-  if (error) throw new Error('טעינת המטרות נכשלה');
-  return (data ?? []) as FleetGoalEntry[];
+    .eq('id', id)
+    .maybeSingle();
+  if (error) throw new Error('טעינת המטרה נכשלה');
+  return (data ?? null) as FleetGoalEntry | null;
 }
 
 // INSERT is impossible from here: authenticated holds SELECT only and RLS is
