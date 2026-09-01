@@ -41,8 +41,13 @@ import {
   type CallerConstraints,
   type SlotRank,
 } from '@/lib/callbacks/schedule-policy';
-import { enqueueMeetingConfirmDispatch } from '@/lib/data/meeting-confirm-dispatch';
-import { enqueueSalesCallDispatch } from '@/lib/data/sales-call-dispatch';
+import {
+  enqueueMeetingConfirmDispatch,
+  meetingConfirmDispatchJobId,
+} from '@/lib/data/meeting-confirm-dispatch';
+import { enqueueSalesCallDispatch, salesCallDispatchJobId } from '@/lib/data/sales-call-dispatch';
+import { getCallbackPolicy } from '@/lib/callbacks/policy-config';
+import { QUEUES } from '@/lib/queue/queues';
 import { resolveMailboxPassword } from '@/lib/exchange-ews/mailbox-credential';
 import { calendarProvider } from '@/lib/exchange-ews/calendar-provider';
 import type {
@@ -724,59 +729,168 @@ export async function rescheduleCallbackRequest(
  * Same rule and same shape as reconcileBlocksWithCalendar in
  * exchange-availability.ts (measured 28.07): whatever the calendar says, wins.
  * Cheap — one range read, and a write only when something actually vanished.
+ *
+ * ALSO detects the appointment being MOVED rather than deleted (found
+ * 2026-08-31: existence-only checking left `scheduled_at` stale after an
+ * owner moved the appointment in Outlook/365, so the already-enqueued AI-call
+ * job kept firing at the OLD instant — a real wrong-time call, not a
+ * hypothetical). A >60s gap between the live item's `start` and the stored
+ * `scheduled_at` is treated as a move — sub-minute drift is Graph/Postgres
+ * serialization noise, not an owner-initiated change. On a move: the row's
+ * `scheduled_at` is corrected to match the calendar (same "whatever the
+ * calendar says, wins" rule as the delete case above), and — when a `boss`
+ * instance is supplied — the stale dispatch job for the OLD instant is
+ * cancelled and a fresh one enqueued for the NEW instant, through the exact
+ * same enqueueMeetingConfirmDispatch/enqueueSalesCallDispatch functions
+ * runCallbackSchedulingSweep already uses below for a newly-scheduled row —
+ * never a second, parallel scheduling path. `boss` is optional (a tick with
+ * none just corrects the DB; the NEXT tick, which will have one, re-enqueues)
+ * so every existing caller/test of this function keeps working unchanged.
  */
 export async function reconcileCallbacksWithCalendar(
-  opts: { nowMs?: number } = {},
-): Promise<{ released: number }> {
+  opts: { nowMs?: number; boss?: PgBoss; policy?: CallbackPolicy } = {},
+): Promise<{ released: number; moved: number }> {
   const nowMs = opts.nowMs ?? Date.now();
+  const policy = opts.policy ?? DEFAULT_CALLBACK_POLICY;
   const admin = createAdminClient();
 
   const { data: rows } = await admin
     .from('callback_requests')
-    .select('id, calendar_item_id, scheduled_at')
+    .select('id, calendar_item_id, scheduled_at, topic')
     .not('calendar_item_id', 'is', null)
     .gte('scheduled_at', new Date(nowMs - DAY_MS).toISOString());
 
-  if (!rows || rows.length === 0) return { released: 0 };
+  if (!rows || rows.length === 0) return { released: 0, moved: 0 };
 
   const loaded = await loadBusinessConnection(admin);
   // Cannot see the calendar → assume nothing. Releasing rows on a failed read
   // would double-book every one of them on the next sweep.
-  if (!loaded.ok) return { released: 0 };
+  if (!loaded.ok) return { released: 0, moved: 0 };
 
   const scheduledTimes = rows
     .map((r) => (r.scheduled_at ? Date.parse(r.scheduled_at) : NaN))
     .filter((n) => !Number.isNaN(n));
-  if (scheduledTimes.length === 0) return { released: 0 };
+  if (scheduledTimes.length === 0) return { released: 0, moved: 0 };
 
   const listed = await calendarProvider.listAppointments(loaded.connection.config, {
     start: new Date(Math.min(...scheduledTimes) - DAY_MS),
     end: new Date(Math.max(...scheduledTimes) + DAY_MS),
   });
-  if (!listed.ok) return { released: 0 };
+  if (!listed.ok) return { released: 0, moved: 0 };
 
-  const liveIds = new Set(listed.data.map((item: ExchangeAppointment) => item.id));
+  const liveById = new Map(listed.data.map((item: ExchangeAppointment) => [item.id, item]));
   const stale = rows
-    .filter((r) => r.calendar_item_id && !liveIds.has(r.calendar_item_id))
+    .filter((r) => r.calendar_item_id && !liveById.has(r.calendar_item_id))
     .map((r) => r.id);
-  if (stale.length === 0) return { released: 0 };
 
-  await admin
-    .from('callback_requests')
-    .update({
-      calendar_item_id: null,
-      exchange_connection_id: null,
-      scheduled_at: null,
-      // Was 'scheduled' (that's the only way it got a calendar_item_id in the
-      // first place) — 'pending_schedule', not 'new': the system detected the
-      // mismatch and is retrying on its own, which is a different admin-list
-      // story than "nobody has looked at this yet". 'needs_reschedule' is
-      // reserved for the admin's own explicit reschedule action.
-      status: 'pending_schedule',
-    })
-    .in('id', stale);
+  const MOVE_TOLERANCE_MS = 60_000;
+  const moved = rows.flatMap((r) => {
+    if (!r.calendar_item_id || !r.scheduled_at) return [];
+    const live = liveById.get(r.calendar_item_id);
+    if (!live) return []; // gone entirely — handled by `stale` above
+    const storedMs = Date.parse(r.scheduled_at);
+    if (Number.isNaN(storedMs)) return [];
+    const liveMs = live.start.getTime();
+    if (Math.abs(liveMs - storedMs) <= MOVE_TOLERANCE_MS) return [];
+    return [
+      { id: r.id, topic: r.topic, oldScheduledMs: storedMs, newStartIso: live.start.toISOString() },
+    ];
+  });
 
-  return { released: stale.length };
+  if (stale.length > 0) {
+    await admin
+      .from('callback_requests')
+      .update({
+        calendar_item_id: null,
+        exchange_connection_id: null,
+        scheduled_at: null,
+        // Was 'scheduled' (that's the only way it got a calendar_item_id in the
+        // first place) — 'pending_schedule', not 'new': the system detected the
+        // mismatch and is retrying on its own, which is a different admin-list
+        // story than "nobody has looked at this yet". 'needs_reschedule' is
+        // reserved for the admin's own explicit reschedule action.
+        status: 'pending_schedule',
+      })
+      .in('id', stale);
+  }
+
+  for (const m of moved) {
+    const { error: updateErr } = await admin
+      .from('callback_requests')
+      .update({ scheduled_at: m.newStartIso })
+      .eq('id', m.id);
+    if (updateErr) {
+      console.error(
+        '[callback-scheduling] moved-appointment scheduled_at update failed',
+        m.id,
+        updateErr.message,
+      );
+      continue; // did not correct the DB — do not touch pg-boss for this row
+    }
+    if (!opts.boss) continue; // next tick (which will have a boss) re-enqueues instead
+
+    // Remove the stale job for the OLD instant, via the SAME id-derivation
+    // each dispatch module exports for exactly this purpose — never a second
+    // hand-typed copy of the `meeting-confirm:`/`sales-call-dispatch:` prefix.
+    //
+    // DELETE, not cancel(): the fresh enqueue below derives its job id from
+    // (request id, NEW instant) via the exact same deterministic function —
+    // and an appointment moved away and later moved BACK to a previously-used
+    // instant (a realistic "undo the move" edit, confirmed live 2026-08-31 on
+    // a real request) recomputes that SAME id. pg-boss's send() is a plain
+    // `INSERT ... ON CONFLICT DO NOTHING`, so if the old row for that id is
+    // merely cancelled (not gone), the re-enqueue silently inserts nothing —
+    // the row is left cancelled forever and the corrected time never dials.
+    // deleteJob() removes the row outright regardless of its state (unlike
+    // cancel(), which only transitions a non-terminal job and leaves a
+    // terminal one — 'completed', as this one had already fired and run —
+    // untouched), so the id is free for the fresh insert to claim.
+    const isSales = m.topic === 'מכירות';
+    const oldId = isSales
+      ? salesCallDispatchJobId(m.id, m.oldScheduledMs)
+      : meetingConfirmDispatchJobId(m.id, m.oldScheduledMs);
+    const oldQueue = isSales ? QUEUES.salesCallDispatch : QUEUES.meetingConfirmDispatch;
+    try {
+      await opts.boss.deleteJob(oldQueue, oldId);
+    } catch (e) {
+      // Not fatal — the dispatcher's own fresh-row-read + status/consent gates
+      // (dispatchMeetingConfirmCall/dispatchSalesCall) still stand between a
+      // stale job and an actual dial. A failed delete means the id-collision
+      // risk above stays open for this row, not that the call is now
+      // guaranteed to go out at the wrong time.
+      console.error(
+        '[callback-scheduling] stale dispatch-job delete failed',
+        m.id,
+        (e as Error)?.message,
+      );
+    }
+
+    // Enqueue fresh for the NEW instant — through the same two functions
+    // runCallbackSchedulingSweep calls below for a newly-scheduled row; each
+    // no-ops by topic on its own, so calling both here (rather than
+    // branching on `isSales`) matches that call site exactly.
+    try {
+      await enqueueMeetingConfirmDispatch(
+        opts.boss,
+        { id: m.id, topic: m.topic, scheduledAtIso: m.newStartIso },
+        nowMs,
+        policy,
+      );
+      await enqueueSalesCallDispatch(
+        opts.boss,
+        { id: m.id, topic: m.topic, scheduledAtIso: m.newStartIso },
+        nowMs,
+      );
+    } catch (e) {
+      console.error(
+        '[callback-scheduling] moved-appointment re-enqueue failed',
+        m.id,
+        (e as Error)?.message,
+      );
+    }
+  }
+
+  return { released: stale.length, moved: moved.length };
 }
 
 /**
@@ -849,9 +963,10 @@ export async function countStrandedCallbacks(
  * guessing.
  */
 export async function countOrphanedCalendarAppointments(
-  opts: { nowMs?: number } = {},
+  opts: { nowMs?: number; policy?: CallbackPolicy } = {},
 ): Promise<number> {
   const nowMs = opts.nowMs ?? Date.now();
+  const policy = opts.policy ?? DEFAULT_CALLBACK_POLICY;
   const admin = createAdminClient();
 
   const loaded = await loadBusinessConnection(admin);
@@ -870,7 +985,7 @@ export async function countOrphanedCalendarAppointments(
   // does.
   const listed = await calendarProvider.listAppointments(loaded.connection.config, {
     start: new Date(nowMs - 31 * DAY_MS),
-    end: new Date(nowMs + DEFAULT_CALLBACK_POLICY.horizonMs + DAY_MS),
+    end: new Date(nowMs + policy.horizonMs + DAY_MS),
   });
   if (!listed.ok) return 0;
 
@@ -975,12 +1090,20 @@ export async function repairBlankCallbackBodies(
  */
 export async function runCallbackSchedulingSweep(
   opts: { limit?: number; nowMs?: number; boss?: PgBoss } = {},
-): Promise<{ scheduled: number; skipped: number; released: number; repaired: number }> {
+): Promise<{ scheduled: number; skipped: number; released: number; repaired: number; moved: number }> {
   const admin = createAdminClient();
 
+  // Loaded once per tick and threaded everywhere below — every read of "the
+  // policy" in this sweep must see the SAME admin-configured values, not a
+  // second independent DB read that could race an admin's save mid-tick.
+  const policy = await getCallbackPolicy();
+
   // Heal first: a request whose appointment the owner deleted is released back
-  // into the queue and re-scheduled in THIS tick, not the next one.
-  const healed = await reconcileCallbacksWithCalendar({ nowMs: opts.nowMs });
+  // into the queue and re-scheduled in THIS tick, not the next one. `boss` is
+  // passed through so a MOVED (not deleted) appointment can also have its
+  // stale dispatch job cancelled and a fresh one enqueued in this same tick —
+  // see reconcileCallbacksWithCalendar's own doc comment.
+  const healed = await reconcileCallbacksWithCalendar({ nowMs: opts.nowMs, boss: opts.boss, policy });
   // Then repair what survived but arrived blank. Runs before scheduling so an
   // item the owner is about to open is fixed at the earliest possible tick.
   const bodies = await repairBlankCallbackBodies({ nowMs: opts.nowMs });
@@ -1030,7 +1153,13 @@ export async function runCallbackSchedulingSweep(
     .limit(opts.limit ?? 25);
 
   if (error || !data || data.length === 0) {
-    return { scheduled: 0, skipped: 0, released: healed.released, repaired: bodies.repaired };
+    return {
+      scheduled: 0,
+      skipped: 0,
+      released: healed.released,
+      repaired: bodies.repaired,
+      moved: healed.moved,
+    };
   }
 
   let scheduled = 0;
@@ -1038,7 +1167,7 @@ export async function runCallbackSchedulingSweep(
   const failures = new Map<string, number>();
 
   for (const row of data) {
-    const outcome = await scheduleCallbackAppointment(row, { nowMs: opts.nowMs });
+    const outcome = await scheduleCallbackAppointment(row, { nowMs: opts.nowMs, policy });
     if (outcome.ok) {
       scheduled += 1;
       // Best-effort trigger for the meeting-confirmation call, ~24h ahead of
@@ -1054,7 +1183,7 @@ export async function runCallbackSchedulingSweep(
             id: row.id,
             topic: row.topic,
             scheduledAtIso: outcome.startIso,
-          }, opts.nowMs);
+          }, opts.nowMs, policy);
         } catch (e) {
           console.error('[callback-scheduling] meeting-confirm enqueue failed', row.id, (e as Error)?.message);
         }
@@ -1126,7 +1255,7 @@ export async function runCallbackSchedulingSweep(
 
   // The mirror check — see countOrphanedCalendarAppointments' own comment for
   // why this exists and what it catches that the reconcile above cannot.
-  const orphaned = await countOrphanedCalendarAppointments({ nowMs: opts.nowMs });
+  const orphaned = await countOrphanedCalendarAppointments({ nowMs: opts.nowMs, policy });
   if (orphaned > 0) {
     await sendSlackAlert({
       level: 'warn',
@@ -1137,7 +1266,7 @@ export async function runCallbackSchedulingSweep(
     });
   }
 
-  return { scheduled, skipped, released: healed.released, repaired: bodies.repaired };
+  return { scheduled, skipped, released: healed.released, repaired: bodies.repaired, moved: healed.moved };
 }
 
 export { CALLBACK_CATEGORY };

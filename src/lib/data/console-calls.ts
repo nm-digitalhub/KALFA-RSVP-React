@@ -15,6 +15,8 @@ import { monitorEnabled } from '@/lib/data/console-monitor';
 // Returning a call resolves its number from VOXIMPLANT, not from our tables —
 // see fetchReturnableCall for why that is both simpler and more capable.
 import { fetchReturnableCall } from '@/lib/data/vox-call-history';
+import { getCallbackPolicy } from '@/lib/callbacks/policy-config';
+import { DEFAULT_CALLBACK_POLICY, type CallbackPolicy, type DayWindow } from '@/lib/callbacks/schedule-policy';
 import type { TablesInsert, TablesUpdate } from '@/lib/supabase/types';
 // Service-role DAL for the browser call-center (plan stages 4/5 — internal +
 // outbound manual dial, inbound routing). Every export here runs with the
@@ -140,11 +142,6 @@ export const LIVE_CUSTOMER_CALL_KINDS: ReadonlySet<ConsoleCallKind> = new Set(['
 // reason). The Shabbat/Yom-Tov block IS reused, from jewish-calendar.ts.
 // ─────────────────────────────────────────────────────────────────────────
 
-const HUMAN_CALL_WINDOW = {
-  sunThu: { startMin: 8 * 60, endMin: 19 * 60 }, // 08:00–19:00
-  friday: { startMin: 8 * 60, endMin: 13 * 60 }, // 08:00–13:00
-} as const;
-
 const IL_DATE_FMT = new Intl.DateTimeFormat('en-CA', {
   timeZone: 'Asia/Jerusalem',
   year: 'numeric',
@@ -191,22 +188,34 @@ export function isShabbatOrYomTovBlocked(nowMs: number): boolean {
  * from). Not exported: every caller needs the Shabbat gate too, so nothing
  * outside this file should call this half alone — evaluateSharedConsentGates
  * is the one place that composes them, selectively, via `hoursGate`.
+ *
+ * `dialWeekday` is CallbackPolicy.dialWeekday — admin-editable as of 31.8
+ * (/admin/callbacks/policy, "חיוג" tab); the live gate (evaluateSharedConsentGates)
+ * always passes the DB-backed value, never this function's own default.
  */
-function isWithinDailyCallWindow(nowMs: number): boolean {
+function isWithinDailyCallWindow(
+  nowMs: number,
+  dialWeekday: readonly DayWindow[] = DEFAULT_CALLBACK_POLICY.dialWeekday,
+): boolean {
   const { weekday, minutes } = israelWeekdayAndMinutes(nowMs);
-  const window = weekday === 5 ? HUMAN_CALL_WINDOW.friday : HUMAN_CALL_WINDOW.sunThu;
+  const window = dialWeekday[weekday];
+  if (!window) return false;
   return minutes >= window.startMin && minutes < window.endMin;
 }
 
 /**
- * Convenience combinator — UNCHANGED behavior and signature from before the
- * split (12.8), so its own pure-function test suite (Sun-Thu/Friday/Saturday
- * cases) keeps passing untouched. Equivalent to
- * `!isShabbatOrYomTovBlocked(nowMs) && isWithinDailyCallWindow(nowMs)`.
+ * Convenience combinator over the DEFAULT policy's dial window — for callers
+ * with no live policy row to hand it (there are none in-repo today; kept as
+ * public API). The live gate (evaluateSharedConsentGates) fetches
+ * getCallbackPolicy() itself and does NOT call this. Equivalent to
+ * `!isShabbatOrYomTovBlocked(nowMs) && isWithinDailyCallWindow(nowMs, dialWeekday)`.
  * Sunday=0 … Saturday=6.
  */
-export function isWithinHumanCallWindow(nowMs: number): boolean {
-  return !isShabbatOrYomTovBlocked(nowMs) && isWithinDailyCallWindow(nowMs);
+export function isWithinHumanCallWindow(
+  nowMs: number,
+  dialWeekday: readonly DayWindow[] = DEFAULT_CALLBACK_POLICY.dialWeekday,
+): boolean {
+  return !isShabbatOrYomTovBlocked(nowMs) && isWithinDailyCallWindow(nowMs, dialWeekday);
 }
 
 // NO INBOUND HOURS GATE — deliberately removed (compliance ruling, 2026-08-12).
@@ -530,16 +539,23 @@ export type DialTargetResolution =
     };
 
 // decide-consent §2 correction: 30 days, a policy choice, not a statutory
-// figure (the exemption itself carries no expiry).
+// figure (the exemption itself carries no expiry). Governs staleness of the
+// callback_requests row itself and returned-call freshness — a DIFFERENT
+// concern from the attempt-cap window below, even though the two happened to
+// share a value before the admin policy page (31.8) made the attempt-cap
+// window independently editable.
 const CALLBACK_FRESHNESS_MS = 30 * 24 * 60 * 60 * 1000;
 // decide-consent §2: counted from logged dial attempts against this
 // callback_requests.id — NEVER callback_requests.attempt_count (that column
-// means something else and nothing in src/lib writes it). Exported: as of the
-// meeting-confirm dispatcher, "logged dial attempts" is no longer only human
-// console dials — see meeting-confirm-dispatch.ts, which writes the same
-// CONSOLE_DIAL_AUDIT_ACTION row for an AI-dispatched call so it counts against
-// this same budget.
-export const CALLBACK_MAX_ATTEMPTS = 3;
+// means something else and nothing in src/lib writes it). "Logged dial
+// attempts" is not only human console dials — see meeting-confirm-dispatch.ts
+// and sales-call-dispatch.ts, which write the same CONSOLE_DIAL_AUDIT_ACTION
+// row for an AI-dispatched call so it counts against this same budget.
+//
+// The count/window themselves are ADMIN-EDITABLE (CallbackPolicy.maxAttempts/
+// attemptWindowMs, /admin/callbacks/policy) as of 31.8 — no more hardcoded
+// constant here. Every caller fetches getCallbackPolicy() once and threads it
+// through, rather than each of the three counting functions re-fetching it.
 
 // hoursGate — a self-documenting, required-to-be-named union (NOT a bare
 // boolean, per explicit engineering decision, 12.8): a boolean disabling a
@@ -633,12 +649,16 @@ export async function evaluateSharedConsentGates(
   //
   // The override is recorded by the caller (dial-intent's audit), so "who decided to
   // ring someone after hours, and when" stays answerable.
-  if (
-    (opts.hoursGate ?? 'apply') === 'apply' &&
-    !opts.allowOutsideHours &&
-    !isWithinDailyCallWindow(nowMs)
-  ) {
-    return { ok: false, reason: 'outside_hours' };
+  //
+  // The live dial window is fetched here (not a hardcoded constant) — admin-
+  // editable as of 31.8 (CallbackPolicy.dialWeekday, /admin/callbacks/policy
+  // "חיוג" tab). Fetched lazily, only once every earlier gate has already
+  // passed, to avoid the extra query on the (common) skip/allowOutsideHours paths.
+  if ((opts.hoursGate ?? 'apply') === 'apply' && !opts.allowOutsideHours) {
+    const dialPolicy = await getCallbackPolicy();
+    if (!isWithinDailyCallWindow(nowMs, dialPolicy.dialWeekday)) {
+      return { ok: false, reason: 'outside_hours' };
+    }
   }
 
   return { ok: true };
@@ -648,15 +668,16 @@ async function countRecentCallbackDialAttempts(
   admin: AdminClient,
   callbackRequestId: string,
   nowMs: number,
+  policy: CallbackPolicy,
 ): Promise<number> {
-  const sinceIso = new Date(nowMs - CALLBACK_FRESHNESS_MS).toISOString();
+  const sinceIso = new Date(nowMs - policy.attemptWindowMs).toISOString();
   const { count, error } = await admin
     .from('activity_log')
     .select('id', { count: 'exact', head: true })
     .eq('action', CONSOLE_DIAL_AUDIT_ACTION)
     .eq('meta->>callback_request_id', callbackRequestId)
     .gte('created_at', sinceIso);
-  if (error) return CALLBACK_MAX_ATTEMPTS; // unreadable ⇒ treat as capped (fail-closed)
+  if (error) return policy.maxAttempts; // unreadable ⇒ treat as capped (fail-closed)
   return count ?? 0;
 }
 
@@ -732,8 +753,9 @@ export async function resolveDialTarget(
       return { ok: false, reason: 'quiet_hours' };
     }
 
-    const attempts = await countRecentCallbackDialAttempts(admin, data.id, nowMs);
-    if (attempts >= CALLBACK_MAX_ATTEMPTS) return { ok: false, reason: 'attempt_cap' };
+    const policy = await getCallbackPolicy();
+    const attempts = await countRecentCallbackDialAttempts(admin, data.id, nowMs, policy);
+    if (attempts >= policy.maxAttempts) return { ok: false, reason: 'attempt_cap' };
 
     const shared = await evaluateSharedConsentGates(admin, phone, nowMs, {
       allowOutsideHours: opts.allowOutsideHours,

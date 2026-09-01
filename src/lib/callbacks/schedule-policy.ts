@@ -24,6 +24,15 @@ export type DayWindow = { startMin: number; endMin: number } | null;
 export type CallbackPolicy = {
   /** Index 0 = Sunday … 6 = Saturday. `null` = no callbacks that day. */
   readonly weekday: readonly DayWindow[];
+  /**
+   * Index 0 = Sunday … 6 = Saturday. `null` = no dialing that day. Governs
+   * when a call may actually be PLACED (console-calls.ts's
+   * evaluateSharedConsentGates) — a separate concern from `weekday` above,
+   * which only governs when a NEW callback may be scheduled onto the
+   * calendar. The two happened to share the same hours before 31.8, when
+   * this became independently admin-editable.
+   */
+  readonly dialWeekday: readonly DayWindow[];
   /** Nothing may be booked sooner than this from now. */
   readonly minNoticeMs: number;
   /** Nothing may be booked further out than this. */
@@ -34,6 +43,15 @@ export type CallbackPolicy = {
   readonly dailyCap: number;
   /** Minutes after havdalah before scheduling resumes. */
   readonly motzashResumeMs: number;
+  /**
+   * Ceiling on dial attempts per callback_request_id (or sales-call target)
+   * within attemptWindowMs, shared by console-calls.ts, callback-request-
+   * attempts.ts and sales-call-attempts.ts — all three count the same
+   * CONSOLE_DIAL_AUDIT_ACTION activity_log rows against this one budget.
+   */
+  readonly maxAttempts: number;
+  /** Rolling lookback window for counting attempts toward maxAttempts. */
+  readonly attemptWindowMs: number;
 };
 
 const H = (h: number) => h * 60;
@@ -48,11 +66,23 @@ export const DEFAULT_CALLBACK_POLICY: CallbackPolicy = {
     { startMin: H(9), endMin: H(13) }, // Friday
     null, // Saturday
   ],
+  // Matches console-calls.ts's former HUMAN_CALL_WINDOW constant verbatim.
+  dialWeekday: [
+    { startMin: H(8), endMin: H(19) }, // Sunday
+    { startMin: H(8), endMin: H(19) },
+    { startMin: H(8), endMin: H(19) },
+    { startMin: H(8), endMin: H(19) },
+    { startMin: H(8), endMin: H(19) }, // Thursday
+    { startMin: H(8), endMin: H(13) }, // Friday
+    null, // Saturday
+  ],
   minNoticeMs: 2 * 60 * MIN_MS,
   horizonMs: 14 * DAY_MS,
   durationMs: 15 * MIN_MS,
   dailyCap: 8,
   motzashResumeMs: 30 * MIN_MS,
+  maxAttempts: 3,
+  attemptWindowMs: 30 * DAY_MS,
 };
 
 // ── Israel wall-clock primitives ────────────────────────────────────────────

@@ -35,11 +35,14 @@ import {
   closeCallbackAppointment,
   countOrphanedCalendarAppointments,
   countStrandedCallbacks,
+  reconcileCallbacksWithCalendar,
   repairBlankCallbackBodies,
   rescheduleCallbackRequest,
   scheduleCallbackAppointment,
   type SchedulableCallback,
 } from '@/lib/data/callback-scheduling';
+import { salesCallDispatchJobId } from '@/lib/data/sales-call-dispatch';
+import { meetingConfirmDispatchJobId } from '@/lib/data/meeting-confirm-dispatch';
 
 type Row = Record<string, unknown>;
 type Admin = ReturnType<typeof createAdminClient>;
@@ -366,6 +369,129 @@ describe('countOrphanedCalendarAppointments', () => {
     });
 
     await expect(countOrphanedCalendarAppointments({ nowMs: NOW_MS })).resolves.toBe(0);
+  });
+});
+
+// Regression for a measured gap (2026-08-31): reconcileCallbacksWithCalendar
+// used to check ONLY whether the calendar item still existed — an owner who
+// moved (not deleted) the appointment in Outlook/365 left `scheduled_at`
+// stale, so the already-enqueued AI-call job kept firing at the OLD instant.
+// A fake boss (send/deleteJob spies) stands in for pg-boss — these assertions
+// are about WHICH job gets removed and WHICH gets (re-)enqueued, not about
+// pg-boss's own wire format. deleteJob, not cancel: see reconcileCallbacksWithCalendar's
+// own comment on the moved-appointment path — a deterministic job id derived
+// from (request id, instant) collides with an earlier job's id when an
+// appointment is moved away and later moved back to a previously-used
+// instant, and pg-boss's send() silently no-ops on an id already present in
+// ANY state (cancel() only clears a non-terminal one) — deleteJob() is the
+// only one of the two that frees the id unconditionally.
+const fakeBoss = () => ({
+  send: vi.fn().mockResolvedValue('job-id'),
+  deleteJob: vi.fn().mockResolvedValue(undefined),
+});
+
+const MOVED_ROW: Row = {
+  id: 'req-moved-1',
+  calendar_item_id: 'cal-item-1',
+  scheduled_at: START.toISOString(),
+  topic: 'מכירות',
+};
+
+describe('reconcileCallbacksWithCalendar — moved (not deleted) appointments', () => {
+  it('corrects scheduled_at and re-enqueues the dispatch job at the new instant', async () => {
+    const newStart = new Date(START.getTime() + 2 * 60 * 60 * 1000); // +2h
+    mockAdmin(
+      { data: [MOVED_ROW], error: null }, // rows with a calendar_item_id
+      { data: [CONNECTION], error: null }, // loadBusinessConnection
+      { data: null, error: null }, // scheduled_at correction UPDATE
+    );
+    vi.mocked(calendarProvider.listAppointments).mockResolvedValue({
+      ok: true,
+      data: [calItem({ id: 'cal-item-1', start: newStart })],
+    });
+    const boss = fakeBoss();
+
+    const result = await reconcileCallbacksWithCalendar({ nowMs: NOW_MS, boss: boss as never });
+
+    expect(result).toEqual({ released: 0, moved: 1 });
+
+    // The stale job (keyed to the OLD instant) is deleted by the exact id
+    // enqueueSalesCallDispatch itself derives — not a hand-typed duplicate.
+    const oldMs = START.getTime();
+    expect(boss.deleteJob).toHaveBeenCalledWith(
+      'sales-call-dispatch',
+      salesCallDispatchJobId('req-moved-1', oldMs),
+    );
+
+    // A fresh job is enqueued for the NEW instant, through the real
+    // enqueueSalesCallDispatch (topic='מכירות' — meeting-confirm's own topic
+    // gate means it never calls boss.send for this row).
+    expect(boss.send).toHaveBeenCalledTimes(1);
+    const [queueName, , sendOpts] = boss.send.mock.calls[0];
+    expect(queueName).toBe('sales-call-dispatch');
+    expect((sendOpts as { id: string }).id).toBe(
+      salesCallDispatchJobId('req-moved-1', newStart.getTime()),
+    );
+  });
+
+  it('routes a meeting-booking (non-sales) row to the meeting-confirm queue', async () => {
+    const newStart = new Date(START.getTime() + 2 * 60 * 60 * 1000);
+    const row: Row = { ...MOVED_ROW, topic: 'אחר' };
+    mockAdmin(
+      { data: [row], error: null },
+      { data: [CONNECTION], error: null },
+      { data: null, error: null },
+    );
+    vi.mocked(calendarProvider.listAppointments).mockResolvedValue({
+      ok: true,
+      data: [calItem({ id: 'cal-item-1', start: newStart })],
+    });
+    const boss = fakeBoss();
+
+    await reconcileCallbacksWithCalendar({ nowMs: NOW_MS, boss: boss as never });
+
+    expect(boss.deleteJob).toHaveBeenCalledWith(
+      'meeting-confirm-dispatch',
+      meetingConfirmDispatchJobId('req-moved-1', START.getTime()),
+    );
+    expect(boss.send).toHaveBeenCalledTimes(1);
+    expect(boss.send.mock.calls[0][0]).toBe('meeting-confirm-dispatch');
+  });
+
+  it('ignores sub-minute drift — that is serialization noise, not a real move', async () => {
+    const barelyMoved = new Date(START.getTime() + 30_000); // +30s
+    mockAdmin(
+      { data: [MOVED_ROW], error: null },
+      { data: [CONNECTION], error: null },
+    );
+    vi.mocked(calendarProvider.listAppointments).mockResolvedValue({
+      ok: true,
+      data: [calItem({ id: 'cal-item-1', start: barelyMoved })],
+    });
+    const boss = fakeBoss();
+
+    const result = await reconcileCallbacksWithCalendar({ nowMs: NOW_MS, boss: boss as never });
+
+    expect(result).toEqual({ released: 0, moved: 0 });
+    expect(boss.deleteJob).not.toHaveBeenCalled();
+    expect(boss.send).not.toHaveBeenCalled();
+  });
+
+  it('corrects the DB but touches no pg-boss job when no boss is supplied', async () => {
+    const newStart = new Date(START.getTime() + 2 * 60 * 60 * 1000);
+    mockAdmin(
+      { data: [MOVED_ROW], error: null },
+      { data: [CONNECTION], error: null },
+      { data: null, error: null }, // scheduled_at correction still happens
+    );
+    vi.mocked(calendarProvider.listAppointments).mockResolvedValue({
+      ok: true,
+      data: [calItem({ id: 'cal-item-1', start: newStart })],
+    });
+
+    const result = await reconcileCallbacksWithCalendar({ nowMs: NOW_MS });
+
+    expect(result).toEqual({ released: 0, moved: 1 });
   });
 });
 
