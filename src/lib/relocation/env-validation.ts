@@ -113,6 +113,7 @@ export const ENV_KEY_SPECS: readonly EnvKeySpec[] = [
   // ElevenLabs
   { key: "ELEVENLABS_API_KEY", kind: "probe", format: nonEmpty, probe: "elevenlabs" },
   { key: "ELEVENLABS_WEBHOOK", kind: "format", format: nonEmpty },
+  { key: "ELEVENLABS_SALES_WEBHOOK", kind: "format", format: nonEmpty },
   // Meta
   { key: "META_APP_ID", kind: "probe", format: numeric, probe: "meta-token" },
   { key: "META_APP_SECRET", kind: "probe", format: nonEmpty, probe: "meta-token" },

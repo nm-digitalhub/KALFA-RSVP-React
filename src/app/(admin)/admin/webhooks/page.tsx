@@ -52,7 +52,7 @@ interface CurrentFilters {
   q?: string;
 }
 
-// Four integrations write to webhook_inbox. `provider` is the COARSE filter;
+// Five integrations write to webhook_inbox. `provider` is the COARSE filter;
 // `event_kind` below is the fine one. Provider is NOT 1:1 with a route —
 // 'voximplant' alone is written by six routes — so the kind options are grouped
 // by provider to make the actual endpoint structure legible, and to make a
@@ -62,6 +62,7 @@ const PROVIDER_OPTIONS = [
   { value: 'graph', label: 'דואר Microsoft' },
   { value: 'voximplant', label: 'שיחות קוליות' },
   { value: 'resend', label: 'דואר יוצא (Resend)' },
+  { value: 'elevenlabs', label: 'ניתוח שיחות AI' },
 ];
 
 // VERIFIED 2026-08-26 against every insertWebhookEvents call site. Previously
@@ -85,6 +86,14 @@ const KIND_GROUPS = [
     provider: 'resend',
     label: 'דואר יוצא — ‎/api/webhooks/resend',
     options: [{ value: 'email_delivery', label: 'מסירת דואר יוצא' }],
+  },
+  {
+    provider: 'elevenlabs',
+    label: 'ניתוח שיחות AI — ‎/api/elevenlabs/…',
+    options: [
+      { value: 'el_analysis_rsvp', label: 'ניתוח שיחה (אישורי הגעה)' },
+      { value: 'el_analysis_sales', label: 'ניתוח שיחה (מכירות)' },
+    ],
   },
   {
     provider: 'voximplant',

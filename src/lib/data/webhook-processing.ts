@@ -23,6 +23,15 @@ import {
 } from '@/lib/data/call-result-processing';
 import { processMeetingOptOutRow } from '@/lib/data/callback-voice-processing';
 import { processSalesOptOutRow } from '@/lib/data/sales-voice-processing';
+import { recordSalesWaDeliveryStatus } from '@/lib/data/sales-call-attempts';
+import {
+  processElevenLabsRsvpAnalysisRow,
+  processElevenLabsSalesAnalysisRow,
+} from '@/lib/data/elevenlabs-analysis-processing';
+import {
+  EL_ANALYSIS_RSVP_KIND,
+  EL_ANALYSIS_SALES_KIND,
+} from '@/lib/data/elevenlabs-webhook-intake';
 import { intakeMailAsInquiry, REF_CODE_RE } from '@/lib/data/inquiry-mail-intake';
 import {
   processTemplateStatusRow,
@@ -101,6 +110,17 @@ export async function processWebhookEvent(row: WebhookInboxRow): Promise<void> {
   // same isolation reasoning as mtg_dnc above; never processCallDncRow.
   if (row.event_kind === 'sls_dnc') {
     await processSalesOptOutRow(row);
+    return;
+  }
+  // ElevenLabs post-call analysis, one kind per persona — same isolation
+  // reasoning as mtg_dnc/sls_dnc above: the sales kind also resolves a stuck
+  // sales attempt, and must never run for an RSVP conversation.
+  if (row.event_kind === EL_ANALYSIS_RSVP_KIND) {
+    await processElevenLabsRsvpAnalysisRow(row);
+    return;
+  }
+  if (row.event_kind === EL_ANALYSIS_SALES_KIND) {
+    await processElevenLabsSalesAnalysisRow(row);
     return;
   }
   if (row.event_kind === 'graph_mail') {
@@ -279,12 +299,19 @@ async function processStatus(row: WebhookInboxRow): Promise<void> {
 
   if (status !== 'failed') {
     await setDeliveryStatus(messageId, status, null);
+    await recordSalesWaDeliveryStatus(messageId, status, null, row.event_at);
     return;
   }
 
   const rawCode = payload.errors?.[0]?.code;
   const errorCode = rawCode != null ? String(rawCode) : null;
   const { contactId } = await setDeliveryStatus(messageId, status, errorCode);
+  // Additive second destination: a signup link sent from a SALES call has no
+  // contact_interactions row to advance (see recordSalesWaDeliveryStatus for
+  // why), so without this the report is processed successfully and changes
+  // nothing. Runs for both branches; a wamid belonging to a guest message
+  // simply matches no sales attempt.
+  await recordSalesWaDeliveryStatus(messageId, status, errorCode, row.event_at);
 
   if (errorCode && contactId && WRONG_NUMBER_CODES.has(errorCode)) {
     await setContactOpStatus(contactId, 'wrong_number');
