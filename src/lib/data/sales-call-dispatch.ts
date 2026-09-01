@@ -12,9 +12,9 @@ import { deterministicJobId } from '@/lib/queue/deterministic-id';
 import {
   evaluateSharedConsentGates,
   DIAL_GATE_POLICY,
-  CALLBACK_MAX_ATTEMPTS,
   type DialTargetFailureReason,
 } from '@/lib/data/console-calls';
+import { getCallbackPolicy } from '@/lib/callbacks/policy-config';
 import {
   createSalesDispatchAttempt,
   getSalesDispatchAttemptBySlot,
@@ -190,6 +190,14 @@ const SALES_DISPATCH_MIN_DELAY_MS = 60 * 1000;
 // SAME place enqueueMeetingConfirmDispatch is called (runCallbackSchedulingSweep,
 // right after a slot is booked) — the two are mutually exclusive by topic,
 // never both enqueued for the same row.
+// Exported for the same reason as meeting-confirm-dispatch.ts's
+// meetingConfirmDispatchJobId — the calendar-move reconciler in
+// callback-scheduling.ts needs to cancel a previously-enqueued job by its
+// exact id, derived once here rather than duplicated by hand.
+export function salesCallDispatchJobId(requestId: string, scheduledMs: number): string {
+  return deterministicJobId(`sales-call-dispatch:${requestId}:${scheduledMs}`);
+}
+
 export async function enqueueSalesCallDispatch(
   boss: PgBoss,
   request: { id: string; topic: string | null; scheduledAtIso: string },
@@ -208,7 +216,7 @@ export async function enqueueSalesCallDispatch(
   // deterministicJobId, never pass it raw (throws 22P02 at insert time;
   // this exact bug was live in enqueueMeetingConfirmDispatch, caught via
   // the worker's own error log 2026-08-22, before this call ever shipped).
-  const id = deterministicJobId(`sales-call-dispatch:${request.id}:${scheduledMs}`);
+  const id = salesCallDispatchJobId(request.id, scheduledMs);
   const job: SalesCallDispatchJob = { callbackRequestId: request.id };
   await boss.send(QUEUES.salesCallDispatch, job, { id, startAfter: new Date(targetMs), ...CALL_RETRY });
 }
@@ -248,10 +256,11 @@ export async function dispatchSalesCall(
   const unresolved = await getUnresolvedSalesAttempt(callbackRequestId);
   if (unresolved) return { kind: 'skipped', reason: 'prior_call_unresolved' };
 
-  // 3. Same 3-attempt cap shared with human dials and the meeting-confirm
-  //    dispatcher — checked before any provider call.
-  const attempts = await countRecentSalesAuditedAttempts(callbackRequestId, Date.now());
-  if (attempts >= CALLBACK_MAX_ATTEMPTS) return { kind: 'skipped', reason: 'attempt_cap' };
+  // 3. Same admin-editable attempt cap shared with human dials and the
+  //    meeting-confirm dispatcher — checked before any provider call.
+  const policy = await getCallbackPolicy();
+  const attempts = await countRecentSalesAuditedAttempts(callbackRequestId, Date.now(), policy);
+  if (attempts >= policy.maxAttempts) return { kind: 'skipped', reason: 'attempt_cap' };
 
   // 4. Consent/hours — DIAL_GATE_POLICY.callback verbatim, same reasoning as
   //    meeting-confirm-dispatch.ts: this is a returned callback, findCallbackSlot

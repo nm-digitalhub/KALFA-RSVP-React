@@ -6,7 +6,6 @@ import { describe, expect, it, vi } from 'vitest';
 // imports from it rather than pull the real module into a unit test.
 vi.mock('server-only', () => ({}));
 vi.mock('@/lib/data/console-calls', () => ({
-  CALLBACK_MAX_ATTEMPTS: 3,
   CONSOLE_DIAL_AUDIT_ACTION: 'console_call.dial_intent',
 }));
 

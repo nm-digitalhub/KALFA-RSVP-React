@@ -1,7 +1,8 @@
 import 'server-only';
 
 import { createAdminClient } from '@/lib/supabase/admin';
-import { CALLBACK_MAX_ATTEMPTS, CONSOLE_DIAL_AUDIT_ACTION } from '@/lib/data/console-calls';
+import { CONSOLE_DIAL_AUDIT_ACTION } from '@/lib/data/console-calls';
+import type { CallbackPolicy } from '@/lib/callbacks/schedule-policy';
 import type { Tables, TablesInsert } from '@/lib/supabase/types';
 // Request-FREE service-role DAL for callback_request_attempts — the
 // Voximplant token/dispatch-bookkeeping table parallel to call_attempts, but
@@ -245,40 +246,43 @@ export async function countActiveCallbackDispatches(): Promise<number> {
   return count ?? 0;
 }
 
-const CALLBACK_ATTEMPT_CAP_WINDOW_MS = 30 * 24 * 60 * 60 * 1000; // matches console-calls.ts's CALLBACK_FRESHNESS_MS
-
-// The same 3-attempt cap that already protects this callback_requests row
+// The same attempt cap that already protects this callback_requests row
 // against repeated human console dials (console-calls.ts's module-private
 // countRecentCallbackDialAttempts, counting activity_log rows with
-// action=CONSOLE_DIAL_AUDIT_ACTION and meta->>callback_request_id, capped by
-// the now-exported CALLBACK_MAX_ATTEMPTS). This is a SEPARATE query against
-// the identical action string and window — imported, not duplicated logic —
-// so a row written by recordCallbackDialAudit below is visible to it.
+// action=CONSOLE_DIAL_AUDIT_ACTION and meta->>callback_request_id). This is a
+// SEPARATE query against the identical action string and window — imported,
+// not duplicated logic — so a row written by recordCallbackDialAudit below is
+// visible to it.
+//
+// cap/window are admin-editable (CallbackPolicy.maxAttempts/attemptWindowMs,
+// /admin/callbacks/policy as of 31.8) — the caller fetches the policy once
+// and passes it in, rather than this function re-fetching it per call.
 //
 // CONFIRMED (team-lead, 2026-08-22): the admin's tel: link on
 // /admin/callbacks/[id] is a plain browser `<a href="tel:...">` — zero server
 // round-trip when clicked, structurally cannot write CONSOLE_DIAL_AUDIT_ACTION
 // (that write only happens via recordConsoleDialAudit, called only from the
 // browser-softphone dial-intent flow). A staff member manually dialing via
-// that link today is NOT counted toward the 3-attempt cap at all — only
+// that link today is NOT counted toward the attempt cap at all — only
 // softphone-flow calls are. This dispatcher writes the row regardless (the
-// safer default for the AI-dial path this file owns), but the 3-strikes
+// safer default for the AI-dial path this file owns), but the attempt
 // counter is operationally undercounting real human attempts today wherever
 // staff use the tel: link instead of the softphone — independent of anything
 // AI-related, not something this file can fix.
 export async function countRecentCallbackAuditedAttempts(
   callbackRequestId: string,
   nowMs: number,
+  policy: CallbackPolicy,
 ): Promise<number> {
   const admin = createAdminClient();
-  const sinceIso = new Date(nowMs - CALLBACK_ATTEMPT_CAP_WINDOW_MS).toISOString();
+  const sinceIso = new Date(nowMs - policy.attemptWindowMs).toISOString();
   const { count, error } = await admin
     .from('activity_log')
     .select('id', { count: 'exact', head: true })
     .eq('action', CONSOLE_DIAL_AUDIT_ACTION)
     .eq('meta->>callback_request_id', callbackRequestId)
     .gte('created_at', sinceIso);
-  if (error) return CALLBACK_MAX_ATTEMPTS; // unreadable ⇒ treat as capped (fail-closed, matches console-calls.ts)
+  if (error) return policy.maxAttempts; // unreadable ⇒ treat as capped (fail-closed, matches console-calls.ts)
   return count ?? 0;
 }
 

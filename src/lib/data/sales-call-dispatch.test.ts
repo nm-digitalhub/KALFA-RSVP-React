@@ -10,7 +10,10 @@ vi.mock('@/lib/data/console-calls', () => ({
   DIAL_GATE_POLICY: {
     callback: { dnc: true, optOut: true, shabbat: true, dailyWindow: 'overridable' },
   },
-  CALLBACK_MAX_ATTEMPTS: 3,
+}));
+
+vi.mock('@/lib/callbacks/policy-config', () => ({
+  getCallbackPolicy: vi.fn().mockResolvedValue({ maxAttempts: 3, attemptWindowMs: 30 * 24 * 60 * 60 * 1000 }),
 }));
 
 vi.mock('@/lib/data/sales-call-attempts', () => ({

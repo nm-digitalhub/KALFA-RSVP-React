@@ -9,13 +9,13 @@ import { sendSlackAlert } from '@/lib/alerts/slack';
 import { normalizePhone } from '@/lib/phone';
 import { QUEUES, CALL_RETRY } from '@/lib/queue/queues';
 import { deterministicJobId } from '@/lib/queue/deterministic-id';
-import { clampIntoCallbackWindow } from '@/lib/callbacks/schedule-policy';
+import { clampIntoCallbackWindow, DEFAULT_CALLBACK_POLICY, type CallbackPolicy } from '@/lib/callbacks/schedule-policy';
 import {
   evaluateSharedConsentGates,
   DIAL_GATE_POLICY,
-  CALLBACK_MAX_ATTEMPTS,
   type DialTargetFailureReason,
 } from '@/lib/data/console-calls';
+import { getCallbackPolicy } from '@/lib/callbacks/policy-config';
 import {
   createCallbackDispatchAttempt,
   listCallbackDispatchAttemptsBySlot,
@@ -136,10 +136,20 @@ const MEETING_CONFIRM_MIN_DELAY_MS = 5 * 60 * 1000;
 // callback_requests rows opened for a sales conversation are the
 // sales-closing agent's own future dispatch surface, not this one — dialling
 // both personas for the same row would double-call the lead.
+// Exported so a caller that needs to CANCEL a previously-enqueued job (the
+// calendar-move reconciler in callback-scheduling.ts) derives the exact same
+// id from the same (request, scheduled instant) pair, rather than
+// re-deriving the `meeting-confirm:` prefix by hand in a second place —
+// one string literal, not two copies that could silently drift apart.
+export function meetingConfirmDispatchJobId(requestId: string, scheduledMs: number): string {
+  return deterministicJobId(`meeting-confirm:${requestId}:${scheduledMs}`);
+}
+
 export async function enqueueMeetingConfirmDispatch(
   boss: PgBoss,
   request: { id: string; topic: string | null; scheduledAtIso: string },
   nowMs: number = Date.now(),
+  policy: CallbackPolicy = DEFAULT_CALLBACK_POLICY,
 ): Promise<void> {
   if (request.topic === 'מכירות') return;
 
@@ -149,18 +159,20 @@ export async function enqueueMeetingConfirmDispatch(
   const rawTargetMs = scheduledMs - MEETING_CONFIRM_LEAD_MS;
   const clampedMs = clampIntoCallbackWindow(
     Math.max(rawTargetMs, nowMs + MEETING_CONFIRM_MIN_DELAY_MS),
+    policy,
   );
 
   // Deterministic id keyed on (request, scheduled instant): a reschedule
   // books a NEW instant and therefore gets its OWN job — the prior job for
-  // the earlier instant is left in place rather than cancelled (this
-  // codebase has no cancel-by-id precedent to reuse), safe to fire late per
-  // the module comment above. pgboss.job.id is a strict uuid column — hash
-  // the composite key through deterministicJobId rather than passing it raw
-  // (a raw composite string throws 22P02 at insert time; found live
-  // 2026-08-22 via the worker's own error log — this call had been silently
-  // failing on every single invocation since it was built).
-  const id = deterministicJobId(`meeting-confirm:${request.id}:${scheduledMs}`);
+  // the earlier instant is left in place rather than cancelled by default
+  // (safe to fire late per the module comment above), UNLESS a caller
+  // explicitly cancels it first (the calendar-move reconciler now does,
+  // via meetingConfirmDispatchJobId above). pgboss.job.id is a strict uuid
+  // column — hash the composite key through deterministicJobId rather than
+  // passing it raw (a raw composite string throws 22P02 at insert time;
+  // found live 2026-08-22 via the worker's own error log — this call had
+  // been silently failing on every single invocation since it was built).
+  const id = meetingConfirmDispatchJobId(request.id, scheduledMs);
   const job: MeetingConfirmDispatchJob = { callbackRequestId: request.id };
   await boss.send(QUEUES.meetingConfirmDispatch, job, {
     id,
@@ -209,11 +221,12 @@ export async function dispatchMeetingConfirmCall(
     return { kind: 'skipped', reason: 'already_past' };
   }
 
-  // 3. The same 3-attempt cap that already protects this row against
-  //    repeated human console dials — checked BEFORE any provider call, same
-  //    ordering discipline as every other gate here.
-  const attempts = await countRecentCallbackAuditedAttempts(callbackRequestId, nowMs);
-  if (attempts >= CALLBACK_MAX_ATTEMPTS) return { kind: 'skipped', reason: 'attempt_cap' };
+  // 3. The same admin-editable attempt cap that already protects this row
+  //    against repeated human console dials — checked BEFORE any provider
+  //    call, same ordering discipline as every other gate here.
+  const policy = await getCallbackPolicy();
+  const attempts = await countRecentCallbackAuditedAttempts(callbackRequestId, nowMs, policy);
+  if (attempts >= policy.maxAttempts) return { kind: 'skipped', reason: 'attempt_cap' };
 
   // 4. Consent/hours — DIAL_GATE_POLICY.callback verbatim (the exact policy
   //    row resolveDialTarget's own callback branch uses), no hoursGate

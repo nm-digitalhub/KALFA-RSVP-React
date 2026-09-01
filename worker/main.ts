@@ -578,6 +578,81 @@ const NOTIFY_CHANNEL = 'callback_work';
 // folded into a single follow-up run rather than starting its own.
 const NOTIFY_COALESCE_MS = 3_000;
 
+// Postgres advisory lock guarding runCallbackSchedulingSweep against its two
+// INDEPENDENT trigger paths below racing each other — the NOTIFY-driven
+// drain() in startCallbackWorkListener, and the separate pg-boss cron worker
+// further down in main(). Neither shares any state with the other (drain()'s
+// own `sweeping` flag only guards against ITSELF re-entering), so both could
+// call the sweep at nearly the same instant. Found 2026-08-31: the sweep's
+// dailyCap check (scheduleCallbackAppointment → countScheduledPerDay) is a
+// plain COUNT-then-decide with no DB-level atomicity of its own — two
+// overlapping sweeps could both read "7/8 booked" and both proceed to book,
+// exceeding the cap.
+//
+// pg_try_advisory_lock (non-blocking) on purpose, never the blocking variant:
+// the loser must return immediately, not hang — a stuck NOTIFY-driven drain()
+// would delay every later notification, and a stuck pg-boss job ties up a
+// worker slot every OTHER queue also needs. Losing the race is the expected,
+// benign outcome (the winner's tick does the work); reported as `null`
+// (skipped), never thrown. Every error in this function — a bad connection,
+// a query failure, anything — is caught and turned into `null` too, same as
+// losing the lock: this is a best-effort guard against a race, not a
+// correctness-critical write path in its own right, and a transient DB blip
+// here must never crash the worker process (the two call sites already run
+// on their own retry/reconnect/next-tick cadence regardless).
+//
+// A fresh, dedicated connection per attempt — not the shared pg-boss pool,
+// not a long-lived reconnecting client like the LISTEN one below — always
+// closed in `finally`, so nothing accumulates. The two triggers fire rarely
+// (a NOTIFY on a new lead, or a several-minute cron tick), so one extra
+// short-lived connection per tick is not the "many small spawns" shape that
+// caused the session-pooler exhaustion this same DB saw earlier this session
+// (fleet-agent-cli.ts / SUMIT) — bounded to at most a handful of connections
+// a minute, every one of them released.
+const CALLBACK_SCHEDULING_LOCK_KEY = 847_291_063; // arbitrary, fixed — do not reuse for another lock.
+
+// Distinguishes "someone else has the lock" (worth a quick retry — the other
+// side is about to finish the same work in seconds) from "something actually
+// broke" (retrying every few seconds against a broken DB connection would just
+// be a tight failure loop) — the two used to collapse into the same `null`,
+// which is exactly what made a real error retry-storm indistinguishable from
+// contention politely backing off.
+type LockAttempt<T> = { ok: true; value: T } | { ok: false; contended: boolean };
+
+async function withCallbackSchedulingLock<T>(fn: () => Promise<T>): Promise<LockAttempt<T>> {
+  let client: PgClient | null = null;
+  try {
+    client = new PgClient({
+      host: process.env.SUPABASE_DB_HOST,
+      port: Number(process.env.SUPABASE_DB_PORT || 5432),
+      user: process.env.SUPABASE_DB_USER,
+      password: process.env.SUPABASE_DB_PASSWORD,
+      database: process.env.SUPABASE_DB_NAME || 'postgres',
+      ssl: { rejectUnauthorized: false },
+      application_name: 'kalfa-worker-callback-lock',
+    });
+    await client.connect();
+    const { rows } = await client.query('select pg_try_advisory_lock($1) as locked', [
+      CALLBACK_SCHEDULING_LOCK_KEY,
+    ]);
+    if (!rows[0]?.locked) return { ok: false, contended: true }; // another tick already holds it — skip, do not wait
+    try {
+      return { ok: true, value: await fn() };
+    } finally {
+      await client
+        .query('select pg_advisory_unlock($1)', [CALLBACK_SCHEDULING_LOCK_KEY])
+        .catch((e) => {
+          console.error('[callback-scheduling-lock] unlock failed:', (e as Error)?.message);
+        });
+    }
+  } catch (e) {
+    console.error('[callback-scheduling-lock] failed — skipping this tick:', (e as Error)?.message);
+    return { ok: false, contended: false };
+  } finally {
+    if (client) await client.end().catch(() => {});
+  }
+}
+
 function startCallbackWorkListener(boss: PgBoss): () => Promise<void> {
   let client: PgClient | null = null;
   let stopped = false;
@@ -596,10 +671,32 @@ function startCallbackWorkListener(boss: PgBoss): () => Promise<void> {
       // Logged because a push-triggered sweep is otherwise invisible: the
       // notification line above proves the announcement arrived, not that the
       // work ran or what it decided.
-      const r = await runCallbackSchedulingSweep({ boss });
-      console.log(
-        `[callback-listen] sweep — שובצו ${r.scheduled}, נדחו ${r.skipped}, שוחררו ${r.released}, תוקנו ${r.repaired}`,
-      );
+      const r = await withCallbackSchedulingLock(() => runCallbackSchedulingSweep({ boss }));
+      if (r.ok) {
+        console.log(
+          `[callback-listen] sweep — שובצו ${r.value.scheduled}, נדחו ${r.value.skipped}, שוחררו ${r.value.released}, תוקנו ${r.value.repaired}, הוזזו ${r.value.moved}`,
+        );
+      } else if (r.contended) {
+        // Benign — the cron-triggered sweep (or another notification's drain)
+        // holds the lock right now; whichever one wins does the same work.
+        // `sweeping` alone would NOT retry this: it only re-runs drain() when
+        // a NEW notification arrives while drain() ITSELF is mid-flight, a
+        // different case from losing the cross-process DB lock. Without this,
+        // a request that arrives exactly while the cron sweep holds the lock
+        // would wait for the cron's own next tick (`*/10 * * * *`) — up to
+        // ten minutes — instead of the few seconds a retry costs. Reusing
+        // `pending` (rather than a second flag) is deliberate: the existing
+        // finally-block retry below already does exactly what this needs.
+        console.log('[callback-listen] sweep skipped — scheduling lock held elsewhere, retrying shortly');
+        pending = true;
+      } else {
+        // A genuine error already logged inside withCallbackSchedulingLock —
+        // deliberately NOT retried here (unlike the contended branch above).
+        // Retrying a real failure every NOTIFY_COALESCE_MS would turn one bad
+        // tick into a tight failure loop; the next real trigger (a new NOTIFY,
+        // or the cron's own next run) is a better next attempt than "now, again".
+        console.log('[callback-listen] sweep skipped — lock acquisition failed, not retrying');
+      }
     } catch (e) {
       console.error('[callback-listen] sweep failed:', e instanceof Error ? e.message : e);
     } finally {
@@ -865,13 +962,17 @@ async function main(): Promise<void> {
       // Not redundant with the Slack alerts inside the sweep: those are
       // fail-open and can be switched off per category, and a chat room is not
       // something you can grep six days later while diagnosing.
-      const r = await runCallbackSchedulingSweep({ boss });
+      // r.ok is false when the NOTIFY-driven drain() holds the lock right now
+      // (contended) or a genuine error occurred (already logged inside
+      // withCallbackSchedulingLock) — benign either way for this cron tick,
+      // which just yields to whoever's doing the work or to its own next run.
+      const r = await withCallbackSchedulingLock(() => runCallbackSchedulingSweep({ boss }));
       // Quiet ticks are the normal case, so speak only when something moved —
       // otherwise this prints every ten minutes forever and becomes the noise
       // it exists to cut through.
-      if (r.scheduled || r.released || r.repaired) {
+      if (r.ok && (r.value.scheduled || r.value.released || r.value.repaired || r.value.moved)) {
         console.log(
-          `[callback-cron] sweep — שובצו ${r.scheduled}, נדחו ${r.skipped}, שוחררו ${r.released}, תוקנו ${r.repaired}`,
+          `[callback-cron] sweep — שובצו ${r.value.scheduled}, נדחו ${r.value.skipped}, שוחררו ${r.value.released}, תוקנו ${r.value.repaired}, הוזזו ${r.value.moved}`,
         );
       }
     }),
