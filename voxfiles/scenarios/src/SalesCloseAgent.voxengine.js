@@ -450,7 +450,7 @@ VoxEngine.addEventListener(AppEvents.Started, function () {
                     send_signup_link: {
                         path: 'signup-link',
                         body: function (args) {
-                            return { whatsapp_consent: args.whatsapp_consent === true };
+                            return { wa_consent: args.wa_consent === true };
                         },
                         resultFrom: function (ok, body) {
                             return { accepted: ok && !!body && body.accepted === true };
@@ -515,11 +515,28 @@ VoxEngine.addEventListener(AppEvents.Started, function () {
                     log('CLIENT_TOOL_CALL: ' + safeStringify(payload));
                     function reply(result, isError) {
                         try {
+                            // ElevenLabs' client_tool_result schema requires `result` to be
+                            // a STRING (verified against the live WebSocket API reference,
+                            // 2026-09-01). Every OTHER agent in this codebase (RSVPAgent,
+                            // MeetingConfirmAgent) only ever passed a plain string here —
+                            // this is the one place that started passing raw objects
+                            // (get_pricing/apply_discount_tier/send_signup_link/
+                            // escalate_to_human's resultFrom all return `{...}`), and those
+                            // are exactly, and only, the tools observed timing out in
+                            // production (session 8118882324 and others): the WebSocket-level
+                            // AgentToolResponse still arrives, but the LLM/conversation layer
+                            // reports "Tool call timed out" — consistent with ElevenLabs
+                            // failing to parse a non-string result rather than a genuine
+                            // platform delay. Stringify unconditionally here rather than in
+                            // each resultFrom, so no future tool can reintroduce this.
+                            var resultStr = typeof result === 'string' ? result : safeStringify(result);
                             agent.clientToolResult({
                                 tool_call_id: toolCallId,
-                                result: result,
+                                result: resultStr,
                                 is_error: isError === true
                             });
+                            log('CLIENT_TOOL_RESULT_SEND: tool_call_id=' + toolCallId +
+                                ' is_error=' + (isError === true) + ' result_length=' + resultStr.length);
                         }
                         catch (err) {
                             log('clientToolResult failed: ' + err);
