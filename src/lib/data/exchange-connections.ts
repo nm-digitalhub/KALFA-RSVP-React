@@ -10,7 +10,10 @@ import {
   requireUser,
   getOrgContext,
 } from '@/lib/auth/dal';
-import { getCallbackRequestByCalendarItem } from '@/lib/data/admin/callbacks';
+import {
+  getCallbackRequestByCalendarItem,
+  type SalesCallCrmSummary,
+} from '@/lib/data/admin/callbacks';
 import { logActivity } from '@/lib/data/activity';
 import { resolveMailboxPassword } from '@/lib/exchange-ews/mailbox-credential';
 import { calendarProvider } from '@/lib/exchange-ews/calendar-provider';
@@ -687,6 +690,19 @@ export type LinkedCallbackDTO = {
   note: string | null;
   createdAtIso: string;
   attemptCount: number;
+  latestSalesCall: Pick<
+    SalesCallCrmSummary,
+    | 'dispatchStatus'
+    | 'hasAnalysis'
+    | 'callSuccessful'
+    | 'callSuccessScore'
+    | 'callDurationSecs'
+    | 'costCredits'
+    | 'agentTurns'
+    | 'userTurns'
+    | 'likelyVoicemail'
+    | 'analysisAt'
+  > | null;
 };
 
 /** Full detail of one appointment, for the edit dialog. */
@@ -754,6 +770,20 @@ export async function getMyExchangeCalendarEvent(
             note: callbackRow.note,
             createdAtIso: callbackRow.created_at,
             attemptCount: callbackRow.attempt_count,
+            latestSalesCall: callbackRow.latestSalesCall
+              ? {
+                  dispatchStatus: callbackRow.latestSalesCall.dispatchStatus,
+                  hasAnalysis: callbackRow.latestSalesCall.hasAnalysis,
+                  callSuccessful: callbackRow.latestSalesCall.callSuccessful,
+                  callSuccessScore: callbackRow.latestSalesCall.callSuccessScore,
+                  callDurationSecs: callbackRow.latestSalesCall.callDurationSecs,
+                  costCredits: callbackRow.latestSalesCall.costCredits,
+                  agentTurns: callbackRow.latestSalesCall.agentTurns,
+                  userTurns: callbackRow.latestSalesCall.userTurns,
+                  likelyVoicemail: callbackRow.latestSalesCall.likelyVoicemail,
+                  analysisAt: callbackRow.latestSalesCall.analysisAt,
+                }
+              : null,
           }
         : null,
     },

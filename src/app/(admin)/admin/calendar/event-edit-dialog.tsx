@@ -28,6 +28,10 @@ import type {
   CalendarEventDetailDTO,
   LinkedCallbackDTO,
 } from '@/lib/data/exchange-connections';
+import {
+  callAnalysisSuccessfulLabel,
+  salesDispatchStatusLabel,
+} from '@/lib/data/admin/labels';
 import { formatPhoneForDisplay } from '@/lib/callbacks/calendar-item';
 import { categoryColorHex } from '@/lib/exchange-ews/category-colors';
 import type { ExchangeCategory } from '@/lib/exchange-ews/types';
@@ -121,6 +125,39 @@ function toLocalInput(iso: string): string {
 
 function fromLocalInput(value: string): Date {
   return new Date(value);
+}
+
+function formatSalesSeconds(secs: number | null): string {
+  return secs === null ? '—' : `${secs} שנ׳`;
+}
+
+function formatSalesCredits(credits: number | null): string {
+  return credits === null ? '—' : `${credits} credits`;
+}
+
+function voicemailSummary(value: boolean | null): string {
+  if (value === true) return 'כנראה משיבון';
+  if (value === false) return 'שיחה עם לקוח';
+  return 'משיבון לא ידוע';
+}
+
+function salesCallSummaryText(callback: LinkedCallbackDTO): string {
+  const salesCall = callback.latestSalesCall;
+  if (!salesCall) return 'טרם בוצעה שיחת AI מכירות';
+  if (!salesCall.hasAnalysis) return 'השיחה נרשמה, ניתוח ElevenLabs טרם התקבל';
+
+  const parts = [
+    salesDispatchStatusLabel(salesCall.dispatchStatus),
+    callAnalysisSuccessfulLabel(salesCall.callSuccessful),
+  ];
+  if (salesCall.callSuccessScore !== null) parts.push(`ציון ${salesCall.callSuccessScore}`);
+  if (salesCall.callDurationSecs !== null) parts.push(formatSalesSeconds(salesCall.callDurationSecs));
+  if (salesCall.costCredits !== null) parts.push(formatSalesCredits(salesCall.costCredits));
+  if (salesCall.userTurns !== null || salesCall.agentTurns !== null) {
+    parts.push(`תורים ${salesCall.agentTurns ?? '—'}/${salesCall.userTurns ?? '—'}`);
+  }
+  parts.push(voicemailSummary(salesCall.likelyVoicemail));
+  return parts.join(' · ');
 }
 
 
@@ -273,6 +310,10 @@ function CallbackPanel({ callback }: { callback: LinkedCallbackDTO }) {
           <p className="wrap-anywhere whitespace-pre-wrap leading-relaxed">{callback.note}</p>
         </Section>
       ) : null}
+
+      <Section label="שיחת AI מכירות">
+        <p className="wrap-anywhere leading-relaxed">{salesCallSummaryText(callback)}</p>
+      </Section>
 
       <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
         <span>התקבלה {formatIsraelDateTime(callback.createdAtIso)}</span>

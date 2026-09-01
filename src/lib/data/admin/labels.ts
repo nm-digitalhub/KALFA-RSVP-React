@@ -193,6 +193,7 @@ export const WEBHOOK_PROVIDER_LABELS: Record<string, string> = {
   graph: 'דואר Microsoft',
   voximplant: 'שיחות קוליות',
   resend: 'דואר יוצא (Resend)',
+  elevenlabs: 'ניתוח שיחות AI',
 };
 
 export function webhookProviderLabel(provider: string): string {
@@ -212,10 +213,117 @@ export const WEBHOOK_KIND_LABELS: Record<string, string> = {
   call_dnc: 'בקשת הסרה (RSVP)',
   mtg_dnc: 'בקשת הסרה (פגישות)',
   sls_dnc: 'בקשת הסרה (מכירות)',
+  el_analysis_rsvp: 'ניתוח שיחה (אישורי הגעה)',
+  el_analysis_sales: 'ניתוח שיחה (מכירות)',
 };
 
 export function webhookKindLabel(kind: string): string {
   return WEBHOOK_KIND_LABELS[kind] ?? kind;
+}
+
+// --- Sales AI call analysis ---
+
+export const CALL_ANALYSIS_SUCCESSFUL_LABELS: Record<string, string> = {
+  success: 'הצליחה',
+  failure: 'נכשלה',
+  unknown: 'לא ידוע',
+};
+
+export function callAnalysisSuccessfulLabel(value: string | null): string {
+  return value ? CALL_ANALYSIS_SUCCESSFUL_LABELS[value] ?? value : 'לא ידוע';
+}
+
+export const CALL_ANALYSIS_STATUS_LABELS: Record<string, string> = {
+  done: 'הסתיים',
+  failed: 'נכשל',
+  unknown: 'לא ידוע',
+};
+
+export function callAnalysisStatusLabel(value: string | null): string {
+  return value ? CALL_ANALYSIS_STATUS_LABELS[value] ?? value : 'לא ידוע';
+}
+
+export const SALES_DISPATCH_STATUS_LABELS: Record<string, string> = {
+  queued: 'בתור',
+  dialing: 'מחייג',
+  in_progress: 'בשיחה',
+  concluded: 'הסתיימה',
+  failed_to_start: 'נכשלה בהתחלה',
+  start_unknown: 'מצב התחלה לא ידוע',
+};
+
+export function salesDispatchStatusLabel(value: string): string {
+  return SALES_DISPATCH_STATUS_LABELS[value] ?? value;
+}
+
+// sales_call_attempts.finish_reason — the TELEPHONY's verdict, written by
+// Voximplant the moment the call ends (voxSalesCallbackSchema's call_status,
+// or its free-text error_reason when the scenario reports one). A different
+// thing from call_analysis.termination_reason, which is ElevenLabs' English
+// sentence about why the CONVERSATION ended and only arrives with the post-call
+// analysis — the screen falls back from that to this (see mapSalesCall), so
+// this map must pass an unrecognised value through unchanged: an ElevenLabs
+// sentence is exactly what arrives here on the other branch.
+//
+// 'no_response' is not 'no_answer': the call connected, nobody spoke. Both feed
+// the same reachability signal (call-result-processing.ts) but they are
+// different facts to whoever is deciding whether to dial again.
+export const SALES_FINISH_REASON_LABELS: Record<string, string> = {
+  completed: 'הסתיימה תקין',
+  no_answer: 'אין מענה',
+  no_response: 'נענתה, ללא תגובה',
+  failed: 'נכשלה',
+};
+
+export function salesFinishReasonLabel(value: string): string {
+  return SALES_FINISH_REASON_LABELS[value] ?? value;
+}
+
+// call_analysis.sentiment_label — ElevenLabs' read of how the CALLER sounded,
+// constrained to this closed set by the column's own CHECK.
+// Which persona placed an AI call. Shown per card because the same screen now
+// lists both, and "the AI called" means something different in each.
+export const AI_CALL_SOURCE_LABELS: Record<string, string> = {
+  sales: 'שיחת מכירות',
+  meeting_confirm: 'אישור פגישה',
+};
+
+export function aiCallSourceLabel(value: string): string {
+  return AI_CALL_SOURCE_LABELS[value] ?? value;
+}
+
+// callback_request_attempts.confirmation_call_status — the confirmation call's
+// own answer, which no other persona has.
+export const CONFIRMATION_CALL_STATUS_LABELS: Record<string, string> = {
+  confirmed: 'הלקוח אישר',
+  cancelled: 'הלקוח ביטל',
+  reschedule_requested: 'ביקש מועד אחר',
+  no_answer: 'לא ענה',
+  pending: 'טרם נענה',
+};
+
+export function confirmationCallStatusLabel(value: string): string {
+  return CONFIRMATION_CALL_STATUS_LABELS[value] ?? value;
+}
+
+export const SENTIMENT_LABELS: Record<string, string> = {
+  positive: 'הלקוח נשמע חיובי',
+  neutral: 'הלקוח נשמע ניטרלי',
+  negative: 'הלקוח נשמע שלילי',
+};
+
+export function sentimentLabel(value: string): string {
+  return SENTIMENT_LABELS[value] ?? value;
+}
+
+export const EVALUATION_RESULT_LABELS: Record<string, string> = {
+  success: 'עבר',
+  failure: 'נכשל',
+  unknown: 'לא ידוע',
+};
+
+export function evaluationResultLabel(value: string): string {
+  return EVALUATION_RESULT_LABELS[value] ?? value;
 }
 
 export const WEBHOOK_KIND_VARIANTS: Record<string, BadgeVariant> = {

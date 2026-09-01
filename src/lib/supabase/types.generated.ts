@@ -619,19 +619,25 @@ export type Database = {
           call_successful: string | null
           conversation_id: string
           cost_credits: number | null
+          cost_fiat: number | null
           el_call_score: number | null
           el_data: Json | null
           el_eval: Json | null
           event_id: string | null
+          frustration_score: number | null
           id: string
           linked_at: string | null
           overall_score: number | null
           provider: string
           received_at: string
           rsvp_persisted: boolean | null
+          sentiment_label: string | null
           status: string | null
+          summary_title: string | null
           termination_reason: string | null
+          transcript_summary: string | null
           user_turns: number | null
+          voicemail_detected: boolean | null
         }
         Insert: {
           agent_id?: string | null
@@ -642,19 +648,25 @@ export type Database = {
           call_successful?: string | null
           conversation_id: string
           cost_credits?: number | null
+          cost_fiat?: number | null
           el_call_score?: number | null
           el_data?: Json | null
           el_eval?: Json | null
           event_id?: string | null
+          frustration_score?: number | null
           id?: string
           linked_at?: string | null
           overall_score?: number | null
           provider?: string
           received_at?: string
           rsvp_persisted?: boolean | null
+          sentiment_label?: string | null
           status?: string | null
+          summary_title?: string | null
           termination_reason?: string | null
+          transcript_summary?: string | null
           user_turns?: number | null
+          voicemail_detected?: boolean | null
         }
         Update: {
           agent_id?: string | null
@@ -665,19 +677,25 @@ export type Database = {
           call_successful?: string | null
           conversation_id?: string
           cost_credits?: number | null
+          cost_fiat?: number | null
           el_call_score?: number | null
           el_data?: Json | null
           el_eval?: Json | null
           event_id?: string | null
+          frustration_score?: number | null
           id?: string
           linked_at?: string | null
           overall_score?: number | null
           provider?: string
           received_at?: string
           rsvp_persisted?: boolean | null
+          sentiment_label?: string | null
           status?: string | null
+          summary_title?: string | null
           termination_reason?: string | null
+          transcript_summary?: string | null
           user_turns?: number | null
+          voicemail_detected?: boolean | null
         }
         Relationships: [
           {
@@ -961,6 +979,35 @@ export type Database = {
           token_expires_at: string
           updated_at: string
           vox_call_session_history_id: string | null
+          call_analysis: {
+            agent_id: string | null
+            agent_turns: number | null
+            analysis_at: string | null
+            call_attempt_id: string | null
+            call_duration_secs: number | null
+            call_successful: string | null
+            conversation_id: string
+            cost_credits: number | null
+            cost_fiat: number | null
+            el_call_score: number | null
+            el_data: Json | null
+            el_eval: Json | null
+            event_id: string | null
+            frustration_score: number | null
+            id: string
+            linked_at: string | null
+            overall_score: number | null
+            provider: string
+            received_at: string
+            rsvp_persisted: boolean | null
+            sentiment_label: string | null
+            status: string | null
+            summary_title: string | null
+            termination_reason: string | null
+            transcript_summary: string | null
+            user_turns: number | null
+            voicemail_detected: boolean | null
+          } | null
         }
         Insert: {
           access_token: string
@@ -1119,6 +1166,126 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      callback_schedule_policies: {
+        Row: {
+          attempt_window_days: number
+          daily_cap: number
+          dial_fri_end_min: number | null
+          dial_fri_start_min: number | null
+          dial_mon_end_min: number | null
+          dial_mon_start_min: number | null
+          dial_sat_end_min: number | null
+          dial_sat_start_min: number | null
+          dial_sun_end_min: number | null
+          dial_sun_start_min: number | null
+          dial_thu_end_min: number | null
+          dial_thu_start_min: number | null
+          dial_tue_end_min: number | null
+          dial_tue_start_min: number | null
+          dial_wed_end_min: number | null
+          dial_wed_start_min: number | null
+          duration_minutes: number
+          fri_end_min: number | null
+          fri_start_min: number | null
+          horizon_days: number
+          id: boolean
+          max_attempts: number
+          min_notice_minutes: number
+          mon_end_min: number | null
+          mon_start_min: number | null
+          motzash_resume_minutes: number
+          sat_end_min: number | null
+          sat_start_min: number | null
+          sun_end_min: number | null
+          sun_start_min: number | null
+          thu_end_min: number | null
+          thu_start_min: number | null
+          tue_end_min: number | null
+          tue_start_min: number | null
+          updated_at: string
+          wed_end_min: number | null
+          wed_start_min: number | null
+        }
+        Insert: {
+          attempt_window_days?: number
+          daily_cap?: number
+          dial_fri_end_min?: number | null
+          dial_fri_start_min?: number | null
+          dial_mon_end_min?: number | null
+          dial_mon_start_min?: number | null
+          dial_sat_end_min?: number | null
+          dial_sat_start_min?: number | null
+          dial_sun_end_min?: number | null
+          dial_sun_start_min?: number | null
+          dial_thu_end_min?: number | null
+          dial_thu_start_min?: number | null
+          dial_tue_end_min?: number | null
+          dial_tue_start_min?: number | null
+          dial_wed_end_min?: number | null
+          dial_wed_start_min?: number | null
+          duration_minutes?: number
+          fri_end_min?: number | null
+          fri_start_min?: number | null
+          horizon_days?: number
+          id?: boolean
+          max_attempts?: number
+          min_notice_minutes?: number
+          mon_end_min?: number | null
+          mon_start_min?: number | null
+          motzash_resume_minutes?: number
+          sat_end_min?: number | null
+          sat_start_min?: number | null
+          sun_end_min?: number | null
+          sun_start_min?: number | null
+          thu_end_min?: number | null
+          thu_start_min?: number | null
+          tue_end_min?: number | null
+          tue_start_min?: number | null
+          updated_at?: string
+          wed_end_min?: number | null
+          wed_start_min?: number | null
+        }
+        Update: {
+          attempt_window_days?: number
+          daily_cap?: number
+          dial_fri_end_min?: number | null
+          dial_fri_start_min?: number | null
+          dial_mon_end_min?: number | null
+          dial_mon_start_min?: number | null
+          dial_sat_end_min?: number | null
+          dial_sat_start_min?: number | null
+          dial_sun_end_min?: number | null
+          dial_sun_start_min?: number | null
+          dial_thu_end_min?: number | null
+          dial_thu_start_min?: number | null
+          dial_tue_end_min?: number | null
+          dial_tue_start_min?: number | null
+          dial_wed_end_min?: number | null
+          dial_wed_start_min?: number | null
+          duration_minutes?: number
+          fri_end_min?: number | null
+          fri_start_min?: number | null
+          horizon_days?: number
+          id?: boolean
+          max_attempts?: number
+          min_notice_minutes?: number
+          mon_end_min?: number | null
+          mon_start_min?: number | null
+          motzash_resume_minutes?: number
+          sat_end_min?: number | null
+          sat_start_min?: number | null
+          sun_end_min?: number | null
+          sun_start_min?: number | null
+          thu_end_min?: number | null
+          thu_start_min?: number | null
+          tue_end_min?: number | null
+          tue_start_min?: number | null
+          updated_at?: string
+          wed_end_min?: number | null
+          wed_start_min?: number | null
+        }
+        Relationships: []
       }
       campaign_authorized_contacts: {
         Row: {
@@ -4313,6 +4480,7 @@ export type Database = {
           id: string
           phone: string | null
           sales_referral_attempt_id: string | null
+          terms_accepted_at: string | null
           updated_at: string
         }
         Insert: {
@@ -4321,6 +4489,7 @@ export type Database = {
           id: string
           phone?: string | null
           sales_referral_attempt_id?: string | null
+          terms_accepted_at?: string | null
           updated_at?: string
         }
         Update: {
@@ -4329,6 +4498,7 @@ export type Database = {
           id?: string
           phone?: string | null
           sales_referral_attempt_id?: string | null
+          terms_accepted_at?: string | null
           updated_at?: string
         }
         Relationships: []
@@ -4595,6 +4765,35 @@ export type Database = {
           wa_fallback_attempted_at: string | null
           wa_message_id: string | null
           wa_status_at: string | null
+          call_analysis: {
+            agent_id: string | null
+            agent_turns: number | null
+            analysis_at: string | null
+            call_attempt_id: string | null
+            call_duration_secs: number | null
+            call_successful: string | null
+            conversation_id: string
+            cost_credits: number | null
+            cost_fiat: number | null
+            el_call_score: number | null
+            el_data: Json | null
+            el_eval: Json | null
+            event_id: string | null
+            frustration_score: number | null
+            id: string
+            linked_at: string | null
+            overall_score: number | null
+            provider: string
+            received_at: string
+            rsvp_persisted: boolean | null
+            sentiment_label: string | null
+            status: string | null
+            summary_title: string | null
+            termination_reason: string | null
+            transcript_summary: string | null
+            user_turns: number | null
+            voicemail_detected: boolean | null
+          } | null
         }
         Insert: {
           access_token: string
@@ -5351,6 +5550,87 @@ export type Database = {
     }
     Functions: {
       accept_invitation: { Args: { _token: string }; Returns: string }
+      call_analysis:
+        | {
+            Args: {
+              "": Database["public"]["Tables"]["callback_request_attempts"]["Row"]
+            }
+            Returns: {
+              agent_id: string | null
+              agent_turns: number | null
+              analysis_at: string | null
+              call_attempt_id: string | null
+              call_duration_secs: number | null
+              call_successful: string | null
+              conversation_id: string
+              cost_credits: number | null
+              cost_fiat: number | null
+              el_call_score: number | null
+              el_data: Json | null
+              el_eval: Json | null
+              event_id: string | null
+              frustration_score: number | null
+              id: string
+              linked_at: string | null
+              overall_score: number | null
+              provider: string
+              received_at: string
+              rsvp_persisted: boolean | null
+              sentiment_label: string | null
+              status: string | null
+              summary_title: string | null
+              termination_reason: string | null
+              transcript_summary: string | null
+              user_turns: number | null
+              voicemail_detected: boolean | null
+            }
+            SetofOptions: {
+              from: "callback_request_attempts"
+              to: "call_analysis"
+              isOneToOne: true
+              isSetofReturn: true
+            }
+          }
+        | {
+            Args: {
+              "": Database["public"]["Tables"]["sales_call_attempts"]["Row"]
+            }
+            Returns: {
+              agent_id: string | null
+              agent_turns: number | null
+              analysis_at: string | null
+              call_attempt_id: string | null
+              call_duration_secs: number | null
+              call_successful: string | null
+              conversation_id: string
+              cost_credits: number | null
+              cost_fiat: number | null
+              el_call_score: number | null
+              el_data: Json | null
+              el_eval: Json | null
+              event_id: string | null
+              frustration_score: number | null
+              id: string
+              linked_at: string | null
+              overall_score: number | null
+              provider: string
+              received_at: string
+              rsvp_persisted: boolean | null
+              sentiment_label: string | null
+              status: string | null
+              summary_title: string | null
+              termination_reason: string | null
+              transcript_summary: string | null
+              user_turns: number | null
+              voicemail_detected: boolean | null
+            }
+            SetofOptions: {
+              from: "sales_call_attempts"
+              to: "call_analysis"
+              isOneToOne: true
+              isSetofReturn: true
+            }
+          }
       campaign_billing_summary: {
         Args: { p_campaign: string }
         Returns: {

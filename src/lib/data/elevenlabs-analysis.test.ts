@@ -21,7 +21,7 @@ vi.mock('@/lib/supabase/admin', () => ({
   }),
 }));
 
-import { storeCallAnalysis } from './elevenlabs-analysis';
+import { storeCallAnalysis, storeSalesCallAnalysis } from './elevenlabs-analysis';
 import type { NormalizedCallAnalysis } from '@/lib/validation/elevenlabs-payloads';
 
 const base: NormalizedCallAnalysis = {
@@ -38,6 +38,12 @@ const base: NormalizedCallAnalysis = {
   callSuccessScore: 0.8,
   evaluation: { rsvp_captured: 'success' },
   dataCollection: { status: 'attending', adults: 2, children: 0 },
+  transcriptSummary: null,
+  summaryTitle: null,
+  voicemailDetected: null,
+  sentimentLabel: null,
+  frustrationScore: null,
+  costFiat: null,
   agentTurns: 8,
   userTurns: 5,
 };
@@ -101,6 +107,52 @@ describe('storeCallAnalysis (dual-link + QA persist)', () => {
   it('returns error when the upsert fails', async () => {
     upsertMock.mockResolvedValue({ error: { message: 'boom' } });
     expect(await storeCallAnalysis(base)).toBe('error');
+  });
+});
+
+describe('storeSalesCallAnalysis', () => {
+  it('stores sales analysis without the RSVP call_attempts linker', async () => {
+    const res = await storeSalesCallAnalysis({
+      ...base,
+      conversationId: 'conv_sales_1',
+      evaluation: { pricing_grounded: 'success', no_false_close: 'failure' },
+      dataCollection: {
+        call_outcome: 'needs_followup',
+        event_type: 'חתונה',
+        estimated_guest_count: 180,
+        whatsapp_consent: true,
+        objection_reason: 'יקר לי',
+      },
+    });
+    expect(res).toBe('stored');
+    expect(attemptMock).not.toHaveBeenCalled();
+    expect(guestMock).not.toHaveBeenCalled();
+    const row = upsertMock.mock.calls[0][0];
+    expect(row).toMatchObject({
+      provider: 'elevenlabs',
+      conversation_id: 'conv_sales_1',
+      call_attempt_id: null,
+      event_id: null,
+      linked_at: null,
+      rsvp_persisted: null,
+      el_eval: { pricing_grounded: 'success', no_false_close: 'failure' },
+      el_data: {
+        call_outcome: 'needs_followup',
+        event_type: 'חתונה',
+        estimated_guest_count: 180,
+        whatsapp_consent: true,
+        objection_reason: 'יקר לי',
+      },
+    });
+    expect(upsertMock).toHaveBeenCalledWith(row, {
+      onConflict: 'provider,conversation_id',
+      ignoreDuplicates: true,
+    });
+  });
+
+  it('returns error when the sales analysis upsert fails', async () => {
+    upsertMock.mockResolvedValue({ error: { message: 'boom' } });
+    expect(await storeSalesCallAnalysis(base)).toBe('error');
   });
 });
 

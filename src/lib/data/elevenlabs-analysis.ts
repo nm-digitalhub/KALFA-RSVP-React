@@ -6,6 +6,63 @@ import type { NormalizedCallAnalysis } from '@/lib/validation/elevenlabs-payload
 
 type CallAnalysisInsert = TablesInsert<'call_analysis'>;
 
+type CallAnalysisLink = {
+  callAttemptId?: string | null;
+  eventId?: string | null;
+  rsvpPersisted?: boolean | null;
+};
+
+export function buildCallAnalysisInsert(
+  a: NormalizedCallAnalysis,
+  link: CallAnalysisLink = {},
+): CallAnalysisInsert {
+  const callAttemptId = link.callAttemptId ?? null;
+  return {
+    provider: 'elevenlabs',
+    conversation_id: a.conversationId,
+    agent_id: a.agentId,
+    call_successful: a.callSuccessful,
+    status: a.status,
+    overall_score: a.overallScore,
+    call_duration_secs: a.callDurationSecs,
+    cost_credits: a.costCredits,
+    termination_reason: a.terminationReason,
+    analysis_at: a.analysisAt,
+    call_attempt_id: callAttemptId,
+    event_id: link.eventId ?? null,
+    linked_at: callAttemptId ? new Date().toISOString() : null,
+    // QA (bounded / PII-minimized): numeric score, criterion→pass/fail map, and
+    // configured data-collection scalar values. Rationale, transcript, summary,
+    // audio, and raw dynamic variables never reach this layer.
+    el_call_score: a.callSuccessScore,
+    el_eval: a.evaluation,
+    el_data: a.dataCollection as CallAnalysisInsert['el_data'],
+    // Engagement counters derived from the transcript the normalizer discarded.
+    agent_turns: a.agentTurns,
+    user_turns: a.userTurns,
+    // Owner-approved 2026-09-01 for BOTH personas. The summary describes the
+    // people on the call; the rest is scalar. voicemail_detected stays NULL
+    // when the detector never ran, which is why the turn-count inference is
+    // kept as the fallback rather than replaced outright.
+    transcript_summary: a.transcriptSummary,
+    summary_title: a.summaryTitle,
+    voicemail_detected: a.voicemailDetected,
+    sentiment_label: a.sentimentLabel,
+    frustration_score: a.frustrationScore,
+    cost_fiat: a.costFiat,
+    // RSVP-only measured cross-check. Sales analysis leaves this null.
+    rsvp_persisted: link.rsvpPersisted ?? null,
+  };
+}
+
+async function upsertCallAnalysis(row: CallAnalysisInsert): Promise<'stored' | 'error'> {
+  const admin = createAdminClient();
+  const { error } = await admin
+    .from('call_analysis')
+    .upsert(row, { onConflict: 'provider,conversation_id', ignoreDuplicates: true });
+  return error ? 'error' : 'stored';
+}
+
 // Persist a metadata-only ElevenLabs call-analysis signal (QA + billing). Written
 // by the HMAC-authed webhook route via the service-role client (the request is
 // signature-authed, not session-authed). IDEMPOTENT: upsert on the unique
@@ -67,7 +124,8 @@ export async function storeCallAnalysis(a: NormalizedCallAnalysis): Promise<'sto
     // read. null means "not checked", and the column comment says so, because a
     // false negative here would accuse a working call of losing data.
     let rsvpPersisted: boolean | null = null;
-    const reportedStatus = a.dataCollection?.status ?? null;
+    const reportedStatus =
+      typeof a.dataCollection?.status === 'string' ? a.dataCollection.status : null;
     if (reportedStatus && guestId && attemptStartedAt) {
       try {
         const { data: guest } = await admin
@@ -83,39 +141,29 @@ export async function storeCallAnalysis(a: NormalizedCallAnalysis): Promise<'sto
       }
     }
 
-    const row: CallAnalysisInsert = {
-      provider: 'elevenlabs',
-      conversation_id: a.conversationId,
-      agent_id: a.agentId,
-      call_successful: a.callSuccessful,
-      status: a.status,
-      overall_score: a.overallScore,
-      call_duration_secs: a.callDurationSecs,
-      cost_credits: a.costCredits,
-      termination_reason: a.terminationReason,
-      analysis_at: a.analysisAt,
-      call_attempt_id: callAttemptId,
-      event_id: eventId,
-      linked_at: callAttemptId ? new Date().toISOString() : null,
-      // QA (PII-safe): numeric score, criterion→pass/fail map, structured RSVP read.
-      el_call_score: a.callSuccessScore,
-      el_eval: a.evaluation,
-      el_data: a.dataCollection,
-      // Engagement counters derived from the transcript the normalizer discarded.
-      // user_turns = 0 with agent_turns > 0 is the voicemail / no-engagement
-      // signature: the bridge bills a `completed` call as a reached contact the
-      // moment media starts, so this is the only stored evidence that separates a
-      // real conversation from the agent talking at a machine.
-      agent_turns: a.agentTurns,
-      user_turns: a.userTurns,
-      // Measured, unlike every el_* field above: those are ElevenLabs reading the
-      // transcript, this is whether the guest row actually moved.
-      rsvp_persisted: rsvpPersisted,
-    };
+    const row = buildCallAnalysisInsert(a, {
+      callAttemptId,
+      eventId,
+      rsvpPersisted,
+    });
     const { error } = await admin
       .from('call_analysis')
       .upsert(row, { onConflict: 'provider,conversation_id', ignoreDuplicates: true });
     return error ? 'error' : 'stored';
+  } catch {
+    return 'error';
+  }
+}
+
+// Sales-close calls are not call_attempts/RSVP rows, so do not run the RSVP
+// linker or rsvp_persisted check. The CRM links sales_call_attempts to this row
+// at read time via sales_call_attempts.el_conversation_id =
+// call_analysis.conversation_id. Still idempotent on (provider, conversation_id).
+export async function storeSalesCallAnalysis(
+  a: NormalizedCallAnalysis,
+): Promise<'stored' | 'error'> {
+  try {
+    return await upsertCallAnalysis(buildCallAnalysisInsert(a));
   } catch {
     return 'error';
   }

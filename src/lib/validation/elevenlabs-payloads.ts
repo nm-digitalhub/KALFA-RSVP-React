@@ -19,9 +19,16 @@ function asObject(v: unknown): Record<string, unknown> {
 
 export type CallSuccessful = 'success' | 'failure' | 'unknown';
 export type CallStatus = 'done' | 'failed' | 'unknown';
+export type DataCollectionValue = string | number | boolean | null;
+export type DataCollection = Record<string, DataCollectionValue>;
 
-// The metadata-only shape that is safe to persist. NO transcript, NO summary, NO
-// guest dynamic_variables, NO evaluation/data-collection results (all PII-bearing).
+// The shape that is safe to persist. NO transcript turns, NO guest
+// dynamic_variables, NO free-text rationales.
+//
+// It DOES now carry ElevenLabs' own written summary (owner-approved 2026-09-01,
+// for both personas). A summary is not a transcript — no turns, no quoted
+// speech — but it does describe the people on the call, so it is the one field
+// here that is not pure metadata. Everything else stays scalar.
 export interface NormalizedCallAnalysis {
   conversationId: string;
   agentId: string | null;
@@ -38,12 +45,14 @@ export interface NormalizedCallAnalysis {
   // resolves it to a call_attempts FK. Null when absent (e.g. preview sessions).
   correlationToken: string | null;
   // QA analysis — populated once the agent has evaluation/data-collection enabled.
-  // ALL PII-safe: a numeric score; a criterion→pass/fail map (the free-text
-  // rationale that may name the guest is DROPPED); and a STRUCTURED RSVP read
-  // (status/adults/children only — never names/notes) for cross-checking save_rsvp.
+  // Keep only criterion→pass/fail and configured data-collection VALUES. Drop
+  // every free-text rationale. RSVP's historical rsvp_status field is normalized
+  // to status for its persistence cross-check; sales fields keep their configured
+  // keys (call_outcome/event_type/estimated_guest_count/whatsapp_consent/
+  // objection_reason).
   callSuccessScore: number | null;
   evaluation: Record<string, string> | null;
-  dataCollection: { status: string | null; adults: number | null; children: number | null } | null;
+  dataCollection: DataCollection | null;
   // Engagement counters DERIVED from the transcript and then thrown away with it.
   // The provider exposes message_count only on the LIST endpoint, not in this
   // payload — but the transcript is here, so the counts are computed before the
@@ -53,6 +62,23 @@ export interface NormalizedCallAnalysis {
   // engaged" from "the agent talked at a machine".
   agentTurns: number;
   userTurns: number;
+  // ElevenLabs' written account of the call, and its short title. The most
+  // useful thing on a CRM screen and the only free text kept: the rationales
+  // attached to every evaluation criterion are still dropped.
+  transcriptSummary: string | null;
+  summaryTitle: string | null;
+  // The provider's OWN voicemail verdict, from metadata.features_usage. Two
+  // distinct facts, so it cannot be a single boolean: the detector may not have
+  // run at all (enabled=false → null here), which is not the same as "no
+  // voicemail". Only `enabled && !used` is a real negative. Replaces the
+  // turn-count inference in data/admin/callbacks.ts, which reads a person who
+  // answered and stayed silent exactly like an answering machine.
+  voicemailDetected: boolean | null;
+  // sentiment_analysis. Absent on short calls, hence nullable throughout.
+  sentimentLabel: string | null;
+  frustrationScore: number | null;
+  // metadata.cost_fiat — real money, beside costCredits' provider-internal unit.
+  costFiat: number | null;
 }
 
 // A webhook envelope reduced to its type + (only for post_call_transcription with
@@ -64,6 +90,22 @@ export interface NormalizedWebhook {
 }
 
 const TERMINATION_MAX = 120;
+// Generous but bounded: the observed summary runs ~700 characters and a longer
+// call produces a longer one, while an unbounded provider string must never
+// decide how big our row is.
+const SUMMARY_MAX = 4000;
+const SUMMARY_TITLE_MAX = 200;
+const SENTIMENT_LABELS = new Set(['positive', 'neutral', 'negative']);
+const DATA_COLLECTION_FIELDS = new Set([
+  'rsvp_status',
+  'adults',
+  'children',
+  'call_outcome',
+  'event_type',
+  'estimated_guest_count',
+  'whatsapp_consent',
+  'objection_reason',
+]);
 
 function coerceSuccessful(v: unknown): CallSuccessful {
   return v === 'success' || v === 'failure' ? v : 'unknown';
@@ -99,24 +141,72 @@ function extractEvaluation(analysis: Record<string, unknown>): Record<string, st
   return Object.keys(out).length > 0 ? out : null;
 }
 
-// data_collection_results: { <field>: { value, rationale } } → the STRUCTURED
-// value only (rationale DROPPED). Surfaces just the RSVP cross-check fields.
-function extractDataCollection(
-  analysis: Record<string, unknown>,
-): { status: string | null; adults: number | null; children: number | null } | null {
+function asBoolean(v: unknown): boolean | null {
+  if (typeof v === 'boolean') return v;
+  if (typeof v === 'string') {
+    const s = v.trim().toLowerCase();
+    if (s === 'true') return true;
+    if (s === 'false') return false;
+  }
+  return null;
+}
+
+function scalarValue(field: string, v: unknown): DataCollectionValue {
+  if (field === 'adults' || field === 'children' || field === 'estimated_guest_count') {
+    return asNumber(v);
+  }
+  if (field === 'whatsapp_consent') {
+    return asBoolean(v);
+  }
+  const s = asString(v);
+  return s ? s.slice(0, 300) : null;
+}
+
+// data_collection_results: { <field>: { value, rationale } } → configured
+// scalar values only. The rationale is free text that may name the customer, so
+// it is DROPPED. Keep the value under its configured key, except the legacy RSVP
+// rsvp_status → status alias required by rsvp_persisted.
+function extractDataCollection(analysis: Record<string, unknown>): DataCollection | null {
   const raw = asObject(analysis.data_collection_results);
-  const value = (field: string): unknown => asObject(raw[field]).value;
-  const status = asString(value('rsvp_status'));
-  const adults = asNumber(value('adults'));
-  const children = asNumber(value('children'));
-  if (status === null && adults === null && children === null) return null;
-  return { status, adults, children };
+  const out: DataCollection = {};
+  for (const [rawField, entry] of Object.entries(raw)) {
+    if (!DATA_COLLECTION_FIELDS.has(rawField)) continue;
+    const field = rawField === 'rsvp_status' ? 'status' : rawField.slice(0, 64);
+    const value = scalarValue(field, asObject(entry).value);
+    if (value !== null) out[field] = value;
+  }
+  return Object.keys(out).length > 0 ? out : null;
 }
 
 // Count turns per role WITHOUT retaining a single character of what was said.
 // The transcript is the payload's heaviest PII (guest speech verbatim); this
 // reduces it to two integers on the way past. Anything that is not an array of
 // objects yields 0/0, keeping the normalizer total.
+// features_usage.voicemail_detection: {enabled, used}. `used` alone is
+// meaningless — false means "no voicemail" only when the detector was actually
+// on. A disabled detector yields null so the caller falls back to inference
+// rather than recording a negative nobody established.
+function voicemailVerdict(metadata: Record<string, unknown>): boolean | null {
+  const vm = asObject(asObject(metadata.features_usage).voicemail_detection);
+  if (vm.enabled !== true) return null;
+  return vm.used === true;
+}
+
+// Anything outside the closed vocabulary is dropped rather than stored: the DB
+// CHECK would reject it anyway, and losing a label beats failing the whole
+// write over a value the provider added.
+function coerceSentiment(raw: unknown): string | null {
+  const value = asString(raw);
+  return value && SENTIMENT_LABELS.has(value) ? value : null;
+}
+
+// The column's CHECK is 0..1. A provider value outside it is clamped rather
+// than rejected — the score is a display signal, never worth losing the row.
+function clamp01(value: number | null): number | null {
+  if (value === null) return null;
+  return Math.min(1, Math.max(0, value));
+}
+
 function countTurns(raw: unknown): { agentTurns: number; userTurns: number } {
   if (!Array.isArray(raw)) return { agentTurns: 0, userTurns: 0 };
   let agentTurns = 0;
@@ -170,6 +260,14 @@ export function normalizeCallAnalysisWebhook(raw: unknown): NormalizedWebhook {
       dataCollection: extractDataCollection(analysis),
       agentTurns: turns.agentTurns,
       userTurns: turns.userTurns,
+      transcriptSummary: capped(analysis.transcript_summary, SUMMARY_MAX),
+      summaryTitle: capped(analysis.call_summary_title, SUMMARY_TITLE_MAX),
+      voicemailDetected: voicemailVerdict(metadata),
+      sentimentLabel: coerceSentiment(asObject(analysis.sentiment_analysis).overall_label),
+      frustrationScore: clamp01(
+        asNumber(asObject(analysis.sentiment_analysis).overall_frustration_score),
+      ),
+      costFiat: asNumber(metadata.cost_fiat),
     },
   };
 }

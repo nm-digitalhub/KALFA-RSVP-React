@@ -1,7 +1,8 @@
 import 'server-only';
 
 import { createAdminClient } from '@/lib/supabase/admin';
-import { CALLBACK_MAX_ATTEMPTS, CONSOLE_DIAL_AUDIT_ACTION } from '@/lib/data/console-calls';
+import { CONSOLE_DIAL_AUDIT_ACTION } from '@/lib/data/console-calls';
+import type { CallbackPolicy } from '@/lib/callbacks/schedule-policy';
 import type { Tables, TablesInsert, TablesUpdate } from '@/lib/supabase/types';
 // Request-FREE service-role DAL for sales_call_attempts — the Voximplant
 // token/dispatch-bookkeeping table for the sales-closing agent's outbound
@@ -193,6 +194,29 @@ export async function getUnresolvedSalesAttempt(
   return data;
 }
 
+// Looks up the attempt for a given ElevenLabs conversation id — the sales
+// post-call webhook's own link vector (see that route's doc comment: it is
+// the fifth, catch-all outcome-write path for a call that telephony-
+// connected but never reached send_signup_link/log_outcome). Most recent
+// match wins in the pathological case of a duplicate el_conversation_id
+// (should not happen — ElevenLabs conversation ids are unique — but this
+// avoids .single()'s hard failure if it ever does). Returns null when no
+// attempt matches (e.g. the conversation belongs to a different persona).
+export async function getSalesAttemptIdByConversationId(
+  elConversationId: string,
+): Promise<{ id: string; callbackRequestId: string } | null> {
+  const admin = createAdminClient();
+  const { data, error } = await admin
+    .from('sales_call_attempts')
+    .select('id, callback_request_id')
+    .eq('el_conversation_id', elConversationId)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) throw new Error('אחזור ניסיון שיחת מכירה לפי מזהה שיחה נכשל');
+  return data ? { id: data.id, callbackRequestId: data.callback_request_id } : null;
+}
+
 // Durable concurrency counter — the sales-dispatch half of the combined
 // cross-table count. Never call this alone to enforce a concurrency cap; see
 // voximplant-concurrency.ts.
@@ -206,26 +230,29 @@ export async function countActiveSalesDispatches(): Promise<number> {
   return count ?? 0;
 }
 
-const CALLBACK_ATTEMPT_CAP_WINDOW_MS = 30 * 24 * 60 * 60 * 1000; // matches console-calls.ts's CALLBACK_FRESHNESS_MS
-
-// Same 3-attempt cap / same audit-action shape as
-// callback-request-attempts.ts's countRecentCallbackAuditedAttempts — see
-// that function's own doc comment for the identical reasoning, including the
-// CONFIRMED gap that today's admin tel:-link dial (a plain <a href="tel:">,
-// zero server round-trip) is not counted toward this cap at all.
+// Same attempt cap / same audit-action shape as callback-request-attempts.ts's
+// countRecentCallbackAuditedAttempts — see that function's own doc comment for
+// the identical reasoning, including the CONFIRMED gap that today's admin
+// tel:-link dial (a plain <a href="tel:">, zero server round-trip) is not
+// counted toward this cap at all.
+//
+// cap/window are admin-editable (CallbackPolicy.maxAttempts/attemptWindowMs,
+// /admin/callbacks/policy as of 31.8) — the caller fetches the policy once
+// and passes it in, rather than this function re-fetching it per call.
 export async function countRecentSalesAuditedAttempts(
   callbackRequestId: string,
   nowMs: number,
+  policy: CallbackPolicy,
 ): Promise<number> {
   const admin = createAdminClient();
-  const sinceIso = new Date(nowMs - CALLBACK_ATTEMPT_CAP_WINDOW_MS).toISOString();
+  const sinceIso = new Date(nowMs - policy.attemptWindowMs).toISOString();
   const { count, error } = await admin
     .from('activity_log')
     .select('id', { count: 'exact', head: true })
     .eq('action', CONSOLE_DIAL_AUDIT_ACTION)
     .eq('meta->>callback_request_id', callbackRequestId)
     .gte('created_at', sinceIso);
-  if (error) return CALLBACK_MAX_ATTEMPTS; // unreadable ⇒ treat as capped (fail-closed)
+  if (error) return policy.maxAttempts; // unreadable ⇒ treat as capped (fail-closed)
   return count ?? 0;
 }
 
@@ -406,13 +433,27 @@ export async function claimSalesOutcome(
   return data ? { callbackRequestId: data.callback_request_id } : null;
 }
 
-// Best-effort bookkeeping for a successful send_signup_link call — never
-// gates the tool's own response (see the route's own comment). A lost write
-// here only degrades future WhatsApp-delivery-webhook correlation, which is
-// out of this build's scope (see sales-closing script draft §7).
+// Best-effort bookkeeping for a send_signup_link call — never gates the
+// tool's own response (see the route's own comment). A lost write here only
+// degrades future WhatsApp-delivery-webhook correlation, which is out of
+// this build's scope (see sales-closing script draft §7).
+//
+// waDeliveryStatus/waDeliveryErrorCode/waFallbackAttemptedAt capture WHY a
+// WhatsApp attempt did not yield a message id (sendWhatsAppMarketingTemplate's
+// own DeliveryOutcome.kind/reason/providerCode) — until 31.8 this was computed
+// and then discarded by the route on every non-accepted outcome, so a silent
+// WhatsApp rejection (e.g. a Meta error code) left zero trace anywhere: not
+// Slack (alertWhatsAppThrow deliberately only fires on a THROW, never on a
+// classified provider error — see that function's own comment), not the DB.
 export async function recordSalesLinkSent(
   id: string,
-  fields: { waConsentConfirmedAt?: string; waMessageId?: string },
+  fields: {
+    waConsentConfirmedAt?: string;
+    waMessageId?: string;
+    waDeliveryStatus?: string;
+    waDeliveryErrorCode?: string;
+    waFallbackAttemptedAt?: string;
+  },
 ): Promise<void> {
   try {
     const admin = createAdminClient();
@@ -421,8 +462,62 @@ export async function recordSalesLinkSent(
     };
     if (fields.waConsentConfirmedAt) update.wa_consent_confirmed_at = fields.waConsentConfirmedAt;
     if (fields.waMessageId) update.wa_message_id = fields.waMessageId;
+    if (fields.waDeliveryStatus) update.wa_delivery_status = fields.waDeliveryStatus;
+    if (fields.waDeliveryErrorCode) update.wa_delivery_error_code = fields.waDeliveryErrorCode;
+    if (fields.waFallbackAttemptedAt) update.wa_fallback_attempted_at = fields.waFallbackAttemptedAt;
     await admin.from('sales_call_attempts').update(update).eq('id', id);
   } catch {
     // Deliberately swallowed — bookkeeping only, never blocks the tool response.
+  }
+}
+
+// Meta's ASYNCHRONOUS delivery report (sent/delivered/read/failed) for a signup
+// link already sent. A different event from recordSalesLinkSent above, which
+// stores what Meta answered SYNCHRONOUSLY at send time: the message id proves
+// Meta accepted the message, never that a person received or read it.
+//
+// MEASURED 2026-09-01, on the first sales call that ever sent a link: Meta
+// delivered all three reports (sent 01:24:26, delivered 01:24:43, read
+// 01:24:53), the inbox stored all three, and processStatus marked all three
+// processed with no error — while wa_status_at stayed NULL, because NOTHING in
+// the codebase wrote that column. The reports were received and then landed
+// nowhere.
+//
+// Why this lives here rather than routing sales sends through
+// contact_interactions like every guest message does: that table is the
+// guest-messaging ledger. Its rows carry contact_id/event_id and feed campaign
+// delivery state and reached-contact billing (campaign-delivery.ts,
+// guests.ts). A sales lead is not a contact and has no event — callback_requests
+// and contacts share no key at all — so a sales send there would be a
+// contact-less, event-less row inside a ledger that billing reads. This is the
+// additive alternative: the same webhook, one extra lookup by wamid, no shared
+// table touched.
+//
+// Last-write-wins, deliberately matching setDeliveryStatus's behaviour for
+// guest messages rather than inventing different semantics for the same kind of
+// event: a retry arriving out of order can move the display backwards.
+// wa_status_at carries the EVENT's own instant (not now()), so the screen shows
+// when Meta says it happened.
+export async function recordSalesWaDeliveryStatus(
+  messageId: string,
+  status: string,
+  errorCode: string | null,
+  eventAt: string | null,
+): Promise<void> {
+  try {
+    const admin = createAdminClient();
+    await admin
+      .from('sales_call_attempts')
+      .update({
+        wa_delivery_status: status,
+        wa_delivery_error_code: errorCode,
+        wa_status_at: eventAt ?? new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      })
+      .eq('wa_message_id', messageId);
+  } catch {
+    // Bookkeeping only. A sales attempt this status does not belong to simply
+    // matches no row — the ordinary case, since most statuses are guest
+    // messages — and must never fail the webhook for everyone else.
   }
 }

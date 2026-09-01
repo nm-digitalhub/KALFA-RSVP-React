@@ -4,9 +4,11 @@ import Link from 'next/link';
 import { requirePlatformPermission } from '@/lib/auth/dal';
 import { listCallbackRequests } from '@/lib/data/admin/callbacks';
 import {
+  callAnalysisSuccessfulLabel,
   callbackStatusLabel,
   callbackStatusVariant,
   callOutcomeLabel,
+  salesDispatchStatusLabel,
 } from '@/lib/data/admin/labels';
 import {
   PageHeading,
@@ -18,6 +20,34 @@ import {
 } from '../_components';
 
 export const metadata: Metadata = { title: 'בקשות חזרה' };
+
+function formatSeconds(secs: number | null): string | null {
+  if (secs === null) return null;
+  return `${secs} שניות`;
+}
+
+function formatCredits(credits: number | null): string | null {
+  if (credits === null) return null;
+  return `${credits} credits`;
+}
+
+function salesSummaryText(cb: Awaited<ReturnType<typeof listCallbackRequests>>['items'][number]): string {
+  const sales = cb.latestSalesCall;
+  if (!sales) return 'AI מכירות: טרם בוצעה שיחה';
+  if (!sales.hasAnalysis) return 'AI מכירות: השיחה נרשמה, ניתוח טרם התקבל';
+
+  return [
+    'AI מכירות:',
+    salesDispatchStatusLabel(sales.dispatchStatus),
+    callAnalysisSuccessfulLabel(sales.callSuccessful),
+    sales.callSuccessScore !== null ? `ציון ${sales.callSuccessScore}` : null,
+    formatSeconds(sales.callDurationSecs),
+    formatCredits(sales.costCredits),
+    sales.likelyVoicemail === true ? 'כנראה משיבון' : null,
+  ]
+    .filter(Boolean)
+    .join(' · ');
+}
 
 // Admin: callback (call-me-back) requests, paginated server-side. Each row
 // shows the request details, the current status (via free-text-safe label) and
@@ -36,7 +66,15 @@ export default async function AdminCallbacksPage({
 
   return (
     <div className="space-y-6">
-      <PageHeading>בקשות חזרה</PageHeading>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <PageHeading>בקשות חזרה</PageHeading>
+        <Link
+          href="/admin/callbacks/policy"
+          className="text-sm font-medium text-primary underline underline-offset-2"
+        >
+          מדיניות תזמון
+        </Link>
+      </div>
 
       {result.items.length === 0 ? (
         <EmptyState>אין בקשות חזרה עדיין.</EmptyState>
@@ -80,6 +118,7 @@ export default async function AdminCallbacksPage({
                   {formatDateTime(cb.created_at)}
                   {cb.scheduled_at && ` · שובץ ל-${formatDateTime(cb.scheduled_at)}`}
                 </p>
+                <p className="text-xs text-muted-foreground">{salesSummaryText(cb)}</p>
               </div>
             </li>
           ))}

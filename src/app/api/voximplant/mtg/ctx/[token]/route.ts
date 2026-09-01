@@ -2,10 +2,11 @@ import { NextResponse } from 'next/server';
 
 import { getCallbackVoiceContextByAccessToken } from '@/lib/data/callback-request-attempts';
 import { getCompanyLegal } from '@/lib/data/company';
-import { DEFAULT_CALLBACK_POLICY } from '@/lib/callbacks/schedule-policy';
+import { getCallbackPolicy } from '@/lib/callbacks/policy-config';
 import { formatIsraelSpokenDate, formatIsraelTime } from '@/lib/date';
 import { getClientIp, rateLimit } from '@/lib/security/rate-limit';
 import { tokenFingerprint } from '@/lib/security/token-fingerprint';
+import { isTerminalCallbackStatus } from '@/lib/validation/admin';
 
 // GET /api/voximplant/mtg/ctx/{token}
 //
@@ -71,13 +72,18 @@ export async function GET(
   // call. Re-check against the LIVE row, not just the snapshot taken at
   // token-issuance time — a stale appointment must return the same bare 404
   // as an unknown token, not a distinguishing status code.
-  const terminal = ['cancelled', 'closed'];
+  //
+  // The terminal test is subsumed by the `!== 'scheduled'` test above and
+  // cannot fire on its own today. It is kept as the explicit statement of the
+  // rule (and survives any future loosening of the exact-status test), but it
+  // asks CALLBACK_STATUS_KIND rather than carrying its own copy of the
+  // terminal list — a second copy is what drifts.
   if (
     ctx.request.status !== 'scheduled' ||
     !ctx.request.calendar_item_id ||
     !ctx.request.scheduled_at ||
     ctx.request.scheduled_at !== ctx.attempt.scheduled_at_snapshot ||
-    terminal.includes(ctx.request.status)
+    isTerminalCallbackStatus(ctx.request.status)
   ) {
     return notFound();
   }
@@ -105,7 +111,7 @@ export async function GET(
       topic_he: ctx.request.topic ?? '',
       scheduled_when_spoken: formatIsraelSpokenDate(ctx.request.scheduled_at),
       scheduled_time_spoken: formatIsraelTime(ctx.request.scheduled_at),
-      meeting_duration_spoken: spokenDuration(DEFAULT_CALLBACK_POLICY.durationMs),
+      meeting_duration_spoken: spokenDuration((await getCallbackPolicy()).durationMs),
       caller_role: companyName,
       // Non-authorizing correlation id (same pattern as ctx/[token]'s
       // kalfa_attempt_token) — the ElevenLabs-bridge scenario injects this so
