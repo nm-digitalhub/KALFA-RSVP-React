@@ -21,12 +21,12 @@
         "properties": {
             "outcome": {
                 "type": "string",
+                "description": "לעולם לא 'completed' (נכתב רק ע\"י send_signup_link) ולעולם לא 'no_answer' (נכתב רק ע\"י שכבת הדיספצ'ר — אם הסוכן פועל, השיחה נענתה).",
                 "enum": [
                     "needs_followup",
                     "closed",
                     "escalated_to_human"
                 ],
-                "description": "לעולם לא 'completed' (נכתב רק ע\"י send_signup_link) ולעולם לא 'no_answer' (נכתב רק ע\"י שכבת הדיספצ'ר — אם הסוכן פועל, השיחה נענתה).",
                 "is_system_provided": false,
                 "dynamic_variable": "",
                 "allowed_values_dynamic_variable": "",

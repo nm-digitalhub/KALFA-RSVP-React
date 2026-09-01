@@ -2,22 +2,14 @@
     "type": "client",
     "name": "get_pricing",
     "description": "קורא נתוני תמחור חיים מטבלת packages. לקרוא בכל פעם שעולה נושא מחיר/חבילה/מה כלול. לעולם לא לנחש בלי לקרוא, גם אם נדמה שזוכרים ממחיר קודם באותה שיחה. מחזיר package_name, base_price, included_reached, price_per_reached, price_with_vat.",
-    "response_timeout_secs": 10,
-    "disable_interruptions": false,
-    "interruption_mode": "allow",
+    "response_timeout_secs": 28,
+    "disable_interruptions": true,
+    "interruption_mode": "disable_during_tool",
     "force_pre_tool_speech": false,
-    "pre_tool_speech": "auto",
+    "pre_tool_speech": "off",
     "assignments": [],
     "tool_call_sound_behavior": "auto",
     "tool_error_handling_mode": "auto",
-    "parameters": {
-        "description": "",
-        "dynamic_variable": "",
-        "is_omitted": false,
-        "type": "object",
-        "required": [],
-        "properties": {}
-    },
     "expects_response": true,
     "dynamic_variables": {
         "dynamic_variable_placeholders": {}

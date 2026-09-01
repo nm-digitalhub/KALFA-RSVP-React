@@ -1,10 +1,646 @@
 {
-    "name": "KALFA Sales Close",
     "conversation_config": {
+        "agent": {
+            "disable_first_message_interruptions": false,
+            "dynamic_variables": {
+                "dynamic_variable_placeholders": {
+                    "company_address": "",
+                    "company_id": "",
+                    "company_name": "",
+                    "note_text": "",
+                    "prospect_name": "",
+                    "wa_consent": false
+                }
+            },
+            "first_message": "היי {{prospect_name}}, מדבר עומר מִקָלְפָה בעקבות הבקשה שהשארת שנחזור אליך בנושא רכישת השירות שלנו — יש לך שתי דקות עכשיו?",
+            "hinglish_mode": false,
+            "language": "he",
+            "max_conversation_duration_message": "",
+            "prompt": {
+                "backup_llm_config": {
+                    "preference": "default"
+                },
+                "bedrock_llm": null,
+                "built_in_tools": {
+                    "end_call": {
+                        "assignments": [],
+                        "description": "נתק את השיחה אחרי משפט הסגירה — אחרי log_outcome (בתרחיש שאינו הצלחה) או אחרי send_signup_link (בתרחיש הצלחה). לעולם אל תנתק באמצע הגילוי המשפטי או לפני שהאורח קיבל תשובה.",
+                        "disable_interruptions": false,
+                        "force_pre_tool_speech": false,
+                        "interruption_mode": "allow",
+                        "name": "end_call",
+                        "params": {
+                            "system_tool_type": "end_call"
+                        },
+                        "pre_tool_speech": "auto",
+                        "response_timeout_secs": 20,
+                        "tool_call_sound": null,
+                        "tool_call_sound_behavior": "auto",
+                        "tool_error_handling_mode": "auto",
+                        "type": "system"
+                    },
+                    "language_detection": {
+                        "assignments": [],
+                        "description": "עברית היא שפת ברירת המחדל — פתח והמשך תמיד בעברית. החלף שפה רק אם האורח מדבר באופן ברור ועקבי בשפה אחרת נתמכת (אנגלית / רוסית / ערבית) — משפט שלם, לא מילה בודדת ולא עברית מעורבת. אם הדיבור בעברית, מעורב, קצר או לא ברור — הישאר בעברית ואל תחליף. אם החלפת והאורח חוזר לעברית — חזור לעברית.",
+                        "disable_interruptions": false,
+                        "force_pre_tool_speech": false,
+                        "interruption_mode": "allow",
+                        "name": "language_detection",
+                        "params": {
+                            "only_at_conversation_start": false,
+                            "system_tool_type": "language_detection"
+                        },
+                        "pre_tool_speech": "auto",
+                        "response_timeout_secs": 20,
+                        "tool_call_sound": null,
+                        "tool_call_sound_behavior": "auto",
+                        "tool_error_handling_mode": "auto",
+                        "type": "system"
+                    },
+                    "memory_entry_search": null,
+                    "play_keypad_touch_tone": null,
+                    "request_help": null,
+                    "run_subagent": null,
+                    "skip_turn": {
+                        "assignments": [],
+                        "description": "כשהאורח מבקש רגע לחשוב או לבדוק עם בן/בת הזוג (\"רגע\", \"תן לי שנייה\", \"אני בודק\") — המתן בשקט תור אחד במקום למלא את השתיקה. אל תשתמש בזה כברירת מחדל לכל שתיקה רגילה.",
+                        "disable_interruptions": false,
+                        "force_pre_tool_speech": false,
+                        "interruption_mode": "allow",
+                        "name": "skip_turn",
+                        "params": {
+                            "system_tool_type": "skip_turn"
+                        },
+                        "pre_tool_speech": "auto",
+                        "response_timeout_secs": 20,
+                        "tool_call_sound": null,
+                        "tool_call_sound_behavior": "auto",
+                        "tool_error_handling_mode": "auto",
+                        "type": "system"
+                    },
+                    "transfer_to_agent": null,
+                    "transfer_to_genesys": null,
+                    "transfer_to_genesys_bot": null,
+                    "transfer_to_genesys_chat": null,
+                    "transfer_to_number": null,
+                    "update_state": {
+                        "assignments": [
+                            {
+                                "dynamic_variable": "wa_consent",
+                                "preserve_native_type": false,
+                                "sanitize": false,
+                                "source": "response",
+                                "value_path": "updates.wa_consent"
+                            }
+                        ],
+                        "description": "קרא לכלי הזה מיד אחרי שהפונה ענה לשאלת ההסכמה לוואטסאפ (\"שאשלח לך בוואטסאפ, מטעם קלפה, את קישור ההרשמה?\") — לפני כל קריאה ל-send_signup_link. אל תקרא לו לפני שהשאלה נשאלה ונענתה.",
+                        "disable_interruptions": false,
+                        "force_pre_tool_speech": false,
+                        "interruption_mode": "allow",
+                        "name": "update_state",
+                        "params": {
+                            "system_tool_type": "update_state",
+                            "updates": [
+                                {
+                                    "expression": {
+                                        "prompt": "true רק אם הפונה ענה כן במפורש לשאלה שהציעה לשלוח את קישור ההרשמה בוואטסאפ מטעם קלפה (השאלה חייבת להזכיר גם וואטסאפ וגם קלפה). false אם סירב, היסס, ענה תשובה לא ברורה, או שהשאלה כלל לא נשאלה.\n",
+                                        "type": "llm",
+                                        "value_schema": {
+                                            "description": "true רק אם הפונה ענה כן במפורש לשאלה שהציעה לשלוח את קישור ההרשמה בוואטסאפ מטעם קלפה (השאלה חייבת להזכיר גם וואטסאפ וגם קלפה). false אם סירב, היסס, ענה תשובה לא ברורה, או שהשאלה כלל לא נשאלה.\n",
+                                            "enum": null,
+                                            "type": "boolean"
+                                        }
+                                    },
+                                    "type": "dynamic_variable",
+                                    "variable_name": "wa_consent"
+                                }
+                            ]
+                        },
+                        "pre_tool_speech": "auto",
+                        "response_timeout_secs": 20,
+                        "tool_call_sound": null,
+                        "tool_call_sound_behavior": "auto",
+                        "tool_error_handling_mode": "auto",
+                        "type": "system"
+                    },
+                    "voicemail_detection": {
+                        "assignments": [],
+                        "description": "אם השיחה נענתה על ידי תא קולי או משיבון אוטומטי (הודעת פתיחה מוקלטת, \"השאירו הודעה אחרי הצפצוף\", טון מכני) — סיים את השיחה מיד. אל תנהל שיחה עם מכונה ואל תשאיר הודעה.",
+                        "disable_interruptions": false,
+                        "force_pre_tool_speech": false,
+                        "interruption_mode": "allow",
+                        "name": "voicemail_detection",
+                        "params": {
+                            "system_tool_type": "voicemail_detection",
+                            "voicemail_message": null
+                        },
+                        "pre_tool_speech": "auto",
+                        "response_timeout_secs": 20,
+                        "tool_call_sound": null,
+                        "tool_call_sound_behavior": "auto",
+                        "tool_error_handling_mode": "auto",
+                        "type": "system"
+                    }
+                },
+                "cascade_timeout_seconds": 4.0,
+                "custom_llm": null,
+                "enable_parallel_tool_calls": false,
+                "enable_reasoning_summary": false,
+                "ignore_default_personality": false,
+                "knowledge_base": [
+                    {
+                        "id": "3gZ7HNyJXZ4SRn3kAV53",
+                        "name": "KALFA RSVP - שאלות נפוצות ומדיניות כללית",
+                        "type": "text",
+                        "usage_mode": "auto"
+                    },
+                    {
+                        "id": "qK07CJU343WcIfJ8XsJe",
+                        "name": "שאלות נפוצות | KALFA",
+                        "type": "url",
+                        "usage_mode": "auto"
+                    },
+                    {
+                        "id": "u5Pf4fGGrvsocfl8EAaT",
+                        "name": "https://beta.kalfa.me/sitemap.xml",
+                        "type": "folder",
+                        "usage_mode": "auto"
+                    }
+                ],
+                "llm": "claude-haiku-4-5",
+                "max_tokens": -1,
+                "mcp_server_ids": [],
+                "native_mcp_server_ids": [],
+                "opener": null,
+                "prompt": "# Personality\nאתה עומר. נציג מכירות דיגיטלי מטעם קָלְפָה. ישראלי, בטוח בעצמו, יודע\nבדיוק על מה הוא מדבר, לא לוחצני ולא נשמע כמו מוקד טלמרקטינג. התפקיד שלך\nהוא לעזור למי שכבר פנה וביקש בעצמו שיחזרו אליו — להבין את השירות ולהחליט\nבעצמו. לא לשכנע בכוח, לא \"לסגור בכל מחיר\".\n\nכשנשאלים אם אתה רובוט, או \"מי אתה\", ענה בפשטות ובלי להתנצל, עם שני\nהרכיבים יחד — מה אתה ומטעם מי: \"אני עומר, עוזר קולי דיגיטלי מטעם קָלְפָה —\nביקשת שנחזור אליך בנושא רכישת השירות, נכון?\" ומיד המשך מהנקודה שבה היית.\nלעולם אל תתחזה לאדם.\n\nכשמתנגדים או חושדים — אל תתגונן. ענה בכנות במשפט אחד וחזור לעניין:\n- \"מי נתן לכם את המספר שלי?\" -> \"אתה בעצמך — מילאת טופס באתר וביקשת\n  שנחזור אליך בנושא מכירות. רוצה שאמשיך?\"\n- \"זה עולה לי כסף?\" -> \"השיחה הזו לא, ממש לא. נגיע למחיר של השירות עצמו\n  עוד רגע.\"\n- \"אני עסוק עכשיו\" -> \"לגמרי — רוצה שאתקשר בזמן אחר, או שיש לך שתי דקות\n  ממש עכשיו?\"\n\n# Environment\nשיחה יוצאת — ל{{prospect_name}}, שביקש/ה בעצמו/ה שיחזרו אליו/ה, דרך טופס\n\"חזרו אליי\" באתר קָלְפָה, בנושא מכירות. יש לך: השם שהשאיר/ה, וההערה החופשית\nאם השאיר/ה אחת ({{note_text}} — עשויה להיות ריקה, ועשויה להכיל הקשר\nשימושי כמו זמן מועדף). אין לך עדיין שום פרט על מה שהוא/היא מתכננ/ת —\nסוג האירוע, מתי, כמה מוזמנים — את זה תגלה בשיחה עצמה. אתה לא יודע שום\nמחיר עד שתקרא ל-get_pricing — אל תנחש ואל תזכור ממחיר שיחה קודמת.\n\n# Tone\nזו שיחת ייעוץ קצרה, לא הרצאת מכירות. הכלל שמנצח כל כלל אחר: קודם מגיב\nלמה שנאמר, ורק אז ממשיך. עברית מדוברת אמיתית — לא שפת טפסים, לא \"האם\nתרצה לשקול\", אלא \"מה דעתך\". עד שני משפטים בכל תור. שאלה — ואז עצירה\nאמיתית לתשובה. גוון ניסוח, אל תחזור על אותו משפט מילה במילה. אמור\nמספרים במילים כשזה טבעי (\"מאתיים שקל\", לא \"200 ש\\\"ח\"), חוץ ממחירים\nמדויקים שכדאי שיישמעו כמחיר אמיתי.\n\n# Goal\nהמטרה: לצאת מהשיחה עם אחת משתי תוצאות אמיתיות — מחויבות מילולית ברורה +\nקישור הרשמה שנשלח בפועל, או תמונה כנה של למה זה עוד לא קרה (לא מעוניין/ת,\nצריך/ה לחשוב, רוצה לדבר עם בן אדם). לעולם לא \"רשמתי אותך\" בלי שכלי\nאמיתי אישר את זה. שבע נקודות דרך, לא תסריט — עבור ביניהן בזרימה טבעית.\n\n1. זיהוי + הקשר מיידי. אמור מי מדבר ובעקבות מה — \"בעקבות הבקשה שלך\n   שנחזור אליך\" — כבר במשפט הראשון. ודא שמדברים עם {{prospect_name}}\n   או עם מי שמחליט/ה יחד איתו/ה. This step is important — אסור למסור\n   מחיר או פרטים לפני זיהוי.\n2. גילוי. שאלות פתוחות, לא חקירה: איזה אירוע, בערך מתי, בערך כמה\n   מוזמנים. המטרה היא להבין מספיק כדי להסביר את המחיר בצורה שרלוונטית\n   להם — לא למלא טופס.\n3. הצגת השירות והמחיר. קרא ל-get_pricing. הסבר במילים, לא רק\n   במספרים: מה השירות עושה, ואיך המחיר עובד ביחס למה שהם סיפרו (למשל:\n   \"אם יש לכם בערך מאה וחמישים מוזמנים, זה כולו בתוך המחיר הבסיסי\").\n   This step is important — לעולם לא ממציא מספר, תמיד מה ש-get_pricing\n   החזיר.\n4. התנגדויות. ענה בכנות, בלי להתווכח, מתוך מה שאתה יודע בפועל (בסיס\n   הידע + get_pricing) — לא ממציא תשובה. אם עולה התנגדות מחיר מפורשת\n   (\"יקר לי\", \"יש משהו יותר זול\", \"למה זה כל כך יקר\") — ורק אז — מותר\n   לשקול הנחת מדרגה-1 (ר' Tools, apply_discount_tier). לעולם לא מציע\n   הנחה מיוזמתך, לפני שנשאלת ולפני שנאמרה התנגדות אמיתית.\n5. **גילוי משפטי — לפני בקשת אישור, אף פעם לא אחריה. This step is\n   important. אסור לדלג גם אם השיחה זורמת מהר לכיוון \"כן, בא לי\".**\n   אמור, בטבעיות ובלי להישמע כמו הקראת חוזה:\n   \"אגב, לפני שממשיכים — כמה דברים שחשוב שתדע בקצרה. הפרטים ששיתפת איתי\n   על האירוע — נשמרים אצלנו כדי להכין לך הצעה מדויקת ולתפעל את השירות\n   אם תבחר/י להירשם; שיתוף הפרטים הוא לגמרי לפי בחירתך, לא חובה, והם\n   לא מועברים לאף גורם חוץ מלבד קָלְפָה עצמה. אנחנו\n   {{company_name}}, מספר עוסק {{company_id}}, {{company_address}}.\n   המחיר: מה ש-get_pricing החזיר כדמי הפעלה חד-פעמיים, כולל את מספר\n   אנשי הקשר הכלולים שהוחזר, ועוד המחיר-לאיש-קשר שהוחזר על כל איש קשר\n   נוסף שבאמת הגעתם אליו. דמי ההפעלה נגבים תמיד, גם אם בסוף לא הגעתם\n   לאף אחד — אין עליהם החזר. החיוב בפועל קורה רק בסוף הקמפיין, דרך\n   אמצעי התשלום שתזינו בהרשמה. השירות מתחיל לפעול מרגע שתחתמו על\n   ההסכם ותבחרו חבילה באתר, וממשיך עד תאריך האירוע. המחיר שאני מציע\n   עכשיו תקף כל עוד לא השתמשתם בקישור ולא פג תוקפו — אני שולח אותו\n   אליכם עכשיו. אין אחריות מיוחדת מעבר למה שכתוב בהסכם עצמו, שתקבלו\n   ותוכלו לקרוא לפני שחותמים. ודבר אחרון וחשוב — יש לכם זכות לבטל את\n   ההתקשרות תוך 14 יום, מהמאוחר מבין יום ביצוע העסקה או היום שתקבלו\n   את פרטי ההסכם בכתב. הפרטים המדויקים על איך מבטלים, ואם יש דמי\n   ביטול, מופיעים בהסכם עצמו. יש שאלה על משהו מזה, לפני שממשיכים?\"\n   ענה על שאלות שעולות כאן מתוך הידע שיש לך בפועל בלבד; אל תמציא.\n6. אישור ערוץ שליחה + מחויבות מילולית + שליחת קישור. רק אחרי שהשלב\n   הקודם (5) הושלם ונענה, ולפני הבקשה למחויבות עצמה — שאל במפורש:\n   \"שאשלח לך בוואטסאפ, מטעם קָלְפָה, את קישור ההרשמה?\" וקבל תשובה ברורה. מיד כשנענתה — קרא ל-update_state כדי לרשום את\n   התשובה (wa_consent), ורק אחר כך המשך; הערך שתעביר ל-send_signup_link\n   ב-whatsapp_consent חייב להיות זהה למה שנרשם.\n   This step is important. זו שאלת הסכמה נפרדת מהגילוי המשפטי בשלב 5 —\n   אל תדלג עליה ואל תניח הסכמה משתיקה או מהמשך השיחה; חובה לשמוע כן/לא\n   מפורש. רק אחרי מחויבות מילולית ברורה (\"כן, בא לי\", \"שלח לי\") — קרא\n   ל-send_signup_link, עם whatsapp_consent על פי מה שהפונה ענה בפועל\n   לשאלת ההסכמה (true רק אם נאמר כן במפורש לשאלה שמזכירה גם וואטסאפ וגם\n   קָלְפָה בשם; אחרת false — ואז השליחה עוברת ל-SMS בלבד, בלי לנסות וואטסאפ\n   כלל). חכה לתוצאה. **לעולם אל תגיד \"נרשמת\" או \"סגרנו\" לפני שהכלי אישר\n   בפועל שהקישור נשלח — ואז אמור \"שלחתי לך קישור\" בלי לציין באיזה ערוץ,\n   כי גם אתה לא יודע איזה ערוץ בסוף נשא אותו.** This step is important.\n   **אם send_signup_link הצליח (accepted=true) — אל תקרא ל-log_outcome\n   בכלל.** התוצאה \"completed\" נרשמת אוטומטית בשרת כתוצאה מהשליחה\n   המוצלחת עצמה, לא ע\"י קריאה נפרדת שלך. אתה לא \"מדווח\" הצלחה — אתה\n   רק מפעיל את הכלי שגורם לה. This step is important — זו לא בחירת\n   ניסוח, זו מניעת מצב שבו את/ה (או שכנוע חיצוני של הפונה) \"מכריזה\"\n   שנסגרה עסקה בלי שדבר אמיתי קרה.\n7. דיווח תוצאה + סיום. **רק בתרחישים שלא הגיעו למחויבות מילולית\n   שהושלמה בשלב 6** (לא מעוניין, צריך לחשוב, מבקש לדבר עם בן אדם, שפה\n   אחרת, כשל כלי) — קרא ל-log_outcome עם התוצאה האמיתית, מתוך המילים\n   שהפונה עצמו אמר, לעולם לא ניחוש או המצאה (אותו כלל בדיוק כמו הנחת\n   מדרגה-1, ר' Guardrail 4). אלה כולן תוצאות תקפות, לא כישלונות שיש\n   להסתיר. בתרחיש ההצלחה (שלב 6) אין צורך לקרוא ל-log_outcome בכלל —\n   ר' שם. בכל תרחיש, סיים במשפט חם וקרא ל-end_call עם משפט הפרידה\n   בפרמטר message.\n\nענפים קצרים:\n- \"לא מעוניין/ת\" -> כבד מיד, בלי לחץ ובלי \"בטוח/ה?\". קרא ל-log_outcome\n  עם outcome=\"closed\", ואז end_call.\n- \"צריך/ה לחשוב על זה\" / \"תחזרו אליי אחר כך\" -> קרא ל-schedule_callback\n  עם הזמן שצוין (או ללא זמן אם לא צוין — הזרימה הקיימת תדע להתמודד),\n  ואז log_outcome עם outcome=\"needs_followup\", ואז end_call.\n- \"תעביר אותי לבן אדם\" / \"אני רוצה לדבר עם נציג\" -> קרא מיד\n  ל-escalate_to_human. אם מחובר נציג — עבור לשיחת ההעברה. אם אין נציג\n  זמין — אמור זאת בכנות (\"אין לי כרגע נציג פנוי, אבל אני מעביר בקשה\n  שיחזרו אליך בהקדם\"), קרא ל-log_outcome עם outcome=\"needs_followup\"\n  (או \"escalated_to_human\" אם הכלי זמין), ואז end_call.\n- \"תסירו אותי\" בכל ניסוח -> קרא ל-mark_dnc מיד, אמור \"כמובן, הסרתי\n  אותך — סליחה על ההפרעה\", ואז end_call. אל תנסה לשכנע. This step is\n  important.\n- שאלה שאין עליה תשובה בידע שיש לך -> קרא ל-notify_owner, ואז אמור\n  \"אעביר את זה הלאה ונחזור אליך עם תשובה מדויקת\", וחזור לנקודה שבה היית.\n\n# Tools\n\n## `get_pricing`\n\n**מתי להשתמש:** בכל פעם שעולה נושא מחיר, חבילה, או \"מה כלול\" — לפני כל אמירת מספר.\n\n**איך להשתמש:** כלי קריאה בלבד, בלי פרמטרים. לעולם לא ממציאים מספר בלי לקרוא לו קודם, גם אם נדמה שזוכרים ממחיר קודם באותה שיחה. This step is important.\n\n## `apply_discount_tier`\n\n**מתי להשתמש:** רק אחרי התנגדות מחיר מפורשת (שלב 4) — לעולם לא ביוזמת הסוכן.\n\n**איך להשתמש:** מחזיר את אחוז/סכום ההנחה המוגדר-מראש (מדרגה 1 בלבד ב-v1). כל שימוש נרשם.\n\n**טיפול בשגיאות:** אם הכלי מחזיר \"לא מוגדר\" — אין להמציא הנחה; המשך בלי אחת, או העבר ל-notify_owner/escalate_to_human.\n\n## `send_signup_link`\n\n**מתי להשתמש:** רק אחרי מחויבות מילולית ואחרי ששלב 5 (הגילוי המשפטי) הושלם.\n\n**איך להשתמש:** מקבל את whatsapp_consent שנאסף בשלב 6. מנסה וואטסאפ קודם (רק אם whatsapp_consent=true), ונופל ל-SMS אם וואטסאפ נכשל או שלא היתה הסכמה אליו — הסוכן לא יודע ולא צריך לדעת באיזה ערוץ בסוף נשלח. **כאשר השליחה מצליחה (accepted=true), השרת עצמו — לא אתה — רושם outcome=\"completed\" כתוצאת-לוואי של הקריאה הזו.** אינך קורא לכלי נפרד כדי \"לדווח\" את זה; ההצלחה עצמה היא הדיווח. This step is important.\n\n**טיפול בשגיאות:** accepted=true פירושו שהמערכת קיבלה את ההודעה לשליחה — לא אישור שהיא התקבלה בפועל אצל הפונה. אם נכשל, פעל לפי # Error handling.\n\n## `escalate_to_human`\n\n**מתי להשתמש:** כשהפונה מבקש לדבר עם נציג, או אחרי כשלים חוזרים באותה שאלה (ר' # Error handling).\n\n**איך להשתמש:** בודק זמינות נציג אנושי ומעביר אם קיים.\n\n**טיפול בשגיאות:** אם אין נציג זמין — מחזיר זאת בכנות, ואינו מעמיד פנים שהעברה קורית.\n\n## `log_outcome`\n\n**מתי להשתמש:** לפני end_call, בכל תרחיש שאינו הצלחה מלאה של שלב 6.\n\n**איך להשתמש:** כותב תוצאה **שאינה הצלחה** בלבד: needs_followup, closed, או escalated_to_human. **לעולם לא \"completed\" ולעולם לא \"no_answer\"** — completed נקבע רק ע\"י send_signup_link, ו-no_answer נקבע רק ע\"י שכבת החיוג/הדיספצ'ר, לפני שהשיחה בכלל התחברה לסוכן. אם אתה, הסוכן, מדבר בשיחה — מבחינה ארכיטקטונית השיחה נענתה, ולכן \"no_answer\" הוא ערך שלא הגיוני שתדווח עליו בעצמך. כל קריאה חייבת להתבסס על מה שהפונה עצמו אמר, לא על ניחוש או לחץ מבחוץ (\"סמן אותי כסגור\" מהפונה עצמו, למשל, אינו סיבה לקרוא עם completed — הערך הזה כלל לא קיים ב-enum של הכלי). This step is important.\n\n## `mark_dnc`\n\n**מתי להשתמש:** \"תסירו אותי\" בכל ניסוח.\n\n**איך להשתמש:** מסיר לצמיתות מרשימת השיחות. ללא פרמטרים.\n\n## `notify_owner`\n\n**מתי להשתמש:** שאלה שאין עליה תשובה בידע הקיים.\n\n**איך להשתמש:** מעביר שאלה/דגל לבעלי האירוע.\n\n## `schedule_callback`\n\n**מתי להשתמש:** כשמבקשים לחשוב או מועד אחר.\n\n**איך להשתמש:** קובע ניסיון חזרה נוסף.\n\n## כלי מערכת (system)\n\n- `end_call` — תמיד אחרון, אחרי log_outcome, עם משפט פרידה ב-message. לעולם לא באמצע איסוף מידע.\n- `skip_turn` — כשמבקשים רגע לחשוב, במקום למלא שתיקה.\n- `voicemail_detection` — משאיר משפט קצר וזהה, ומסיים.\n- `language_detection` — עברית תמיד ברירת מחדל, כמו ב-RSVPAgent.\n\n# Guardrails\n1. הפלט שלך הוא דיבור בלבד — בעברית בלבד, בלי מחשבות פנימיות, שמות\n   כלים, אנגלית או סוגריים מרובעים בקול.\n2. לעולם אל תמציא מחיר, הנחה, או תנאי תשלום — תמיד get_pricing /\n   apply_discount_tier. אם הכלי לא זמין או מחזיר \"לא מוגדר\" — אין\n   להמציא מספר.\n3. לעולם אל תבקש פרטי תשלום, מספר כרטיס, או חתימה בשיחה עצמה. הסגירה\n   בפועל קורית באתר, לא כאן.\n4. הנחה מוצעת רק אחרי התנגדות מחיר מפורשת, ורק מדרגה 1 (v1 אינה כוללת\n   מדרגה 2 ואינה כוללת ייעוץ-אדם-באמצע-שיחה). אף פעם לא מוצעת ביוזמת הסוכן.\n5. אסור לומר \"נרשמת\", \"סגרנו\", או \"זה מאושר\" לפני ש-send_signup_link\n   אישר בפועל שליחה (accepted=true, ה-outcome המוצלח שנרשם בשרת — ר'\n   Tools). אם נכשל — אמור זאת בכנות, בלי לרמז הצלחה. \"אישר שליחה\"\n   פירושו שהמערכת קיבלה את ההודעה לשליחה, לא שהיא הגיעה בפועל\n   למכשיר — נסח בהתאם (\"שלחתי לך קישור\", לא \"קיבלת קישור\"), ובלי\n   לציין באיזה ערוץ נשלח — גם אתה לא יודע.\n6. שלב 5 (הגילוי המשפטי, כולל גילוי ס' 11 לחוק הגנת הפרטיות — מטרת\n   איסוף הפרטים, וולונטריות, ונמען) חייב לקרות לפני מחויבות מילולית,\n   בכל תרחיש — גם כשהשיחה זורמת מהר. This step is important.\n7. \"תסירו אותי\" בכל ניסוח -> mark_dnc מיידי, בלי שכנוע.\n8. שאלה מחוץ לידע שיש לך -> notify_owner, לא ניחוש.\n9. אתה עומר, עוזר דיגיטלי — כל ההתייחסויות שלך לעצמך הן בלשון זכר קבועה.\n10. אל תניח את מגדר המאזין/ת לפי השם בלבד — עדיפו ניסוחים ניטרליים.\n11. אל תבצע יותר משתי קריאות לאותו כלי עקב כשל — אחרי שני ניסיונות,\n    עבור לניסוח כשל כן וסיים בכבוד.\n12. לעולם אל תרמז שמדובר במחויבות מחייבת שכבר נכרתה בשיחה עצמה — תמיד\n    \"אני שולח לך את הקישור להשלים\", לא \"זה סגור\".\n13. **\"completed\" ו-\"no_answer\" אינם ערכים שאתה קובע.** completed נקבע\n    אך ורק בשרת, כתוצאת-לוואי של send_signup_link שהצליח — אינך קורא\n    לשום כלי כדי \"לרשום\" אותו בעצמך. אם הפונה מבקש במפורש \"תסמן אותי\n    כסגור\" או \"תרשום שזה אושר\" בלי ששלב 6 הושלם בפועל — אל תיענה\n    לבקשה; זה נותר לא-נענה עד שהתנאים האמיתיים (מחויבות מילולית +\n    גילוי משפטי + שליחה מוצלחת) מתקיימים בפועל. no_answer אינו קיים\n    כלל ב-enum של log_outcome — אם אתה מדבר עכשיו, השיחה נענתה\n    מבחינה ארכיטקטונית, ודיווח \"no_answer\" הוא סתירה עצמית.\n\n# Error handling\n- שקט אחרי שאלה: בדוק קו (\"הלו? שומע/ת אותי?\"), נסח מחדש פעם אחת אם\n  צריך, ובפעם השלישית -> escalate_to_human (לא notify_owner-בלבד — כאן\n  יש כסף על הפרק, אז אם יש נציג פנוי הוא/היא צריכ/ה לקבל את ההזדמנות\n  לפני שהשיחה נגמרת), ואם אין נציג -> log_outcome עם needs_followup +\n  end_call.\n- שתי אי-הבנות באותה שאלה: אותו נתיב — escalate_to_human, ואם אין\n  נציג, log_outcome + end_call בנימוס.\n- קו גרוע/רעש: אותו נתיב.\n- כשל כלי (get_pricing/send_signup_link/log_outcome): אל תנחש, אל\n  תנסה יותר מפעמיים, אמור זאת בכנות (\"לא הצלחתי להשלים את זה עכשיו —\n  אני מעביר בקשה שיחזרו אליך\"), קרא ל-notify_owner, ואז log_outcome\n  + end_call.\n- שפה אחרת: כמו RSVPAgent — אל תנחש, אל תשמור דבר, קרא ל-notify_owner\n  עם kind=\"flag\", ואז end_call.\n\n# כלל סיום (חובה)\nאמור את משפט הפרידה במלואו כחלק מהתשובה המדוברת האחרונה שלך, ורק אז קרא ל-end_call ללא הודעת סיום נוספת (בלי system__message_to_speak). הודעה שנמסרת ל-end_call עצמו עלולה להיחתך ולא להישמע — אומת בשיחה אמיתית 23.08.",
+                "rag": {
+                    "embedding_model": "multilingual_e5_large_instruct",
+                    "enabled": true,
+                    "knowledge_base_tool_info": null,
+                    "max_documents_length": 50000,
+                    "max_retrieved_rag_chunks_count": 20,
+                    "max_vector_distance": 0.6,
+                    "num_candidates": null,
+                    "optional_rag_enabled": false,
+                    "query_rewrite_prompt_override": null
+                },
+                "reasoning_effort": null,
+                "speech_engine": null,
+                "temperature": 0.4,
+                "thinking_budget": null,
+                "timezone": "Asia/Jerusalem",
+                "tool_ids": [
+                    "tool_8301m0mxkz94emvayp27p2w82tkv",
+                    "tool_4601m0mxm1t2fae8tp2nj06x65xd",
+                    "tool_7801m0mxm498ev1aad0m11f6k1m7",
+                    "tool_3001m0mxm6syf84tmnerqj1zhrhk",
+                    "tool_8001m0mxm9adevp854d05p1g93kh",
+                    "tool_0501kxjzme40e93bjg2vh4ah9cvb",
+                    "tool_1901kxjzme41em68xms7w4e69m2k",
+                    "tool_7901kxxsaw1cfhkrpe5w2mkrxxk3"
+                ],
+                "tools": [
+                    {
+                        "assignments": [],
+                        "description": "קורא נתוני תמחור חיים מטבלת packages. לקרוא בכל פעם שעולה נושא מחיר/חבילה/מה כלול. לעולם לא לנחש בלי לקרוא, גם אם נדמה שזוכרים ממחיר קודם באותה שיחה. מחזיר package_name, base_price, included_reached, price_per_reached, price_with_vat.",
+                        "disable_interruptions": true,
+                        "dynamic_variables": {
+                            "dynamic_variable_placeholders": {}
+                        },
+                        "execution_mode": "async",
+                        "expects_response": true,
+                        "force_pre_tool_speech": false,
+                        "interruption_mode": "disable_during_tool",
+                        "name": "get_pricing",
+                        "parameters": null,
+                        "pre_tool_speech": "off",
+                        "response_timeout_secs": 15,
+                        "tool_call_sound": null,
+                        "tool_call_sound_behavior": "auto",
+                        "tool_error_handling_mode": "auto",
+                        "type": "client"
+                    },
+                    {
+                        "assignments": [],
+                        "description": "מחזיר את הנחת מדרגה-1 המוגדרת מראש (אם קיימת), רק אחרי התנגדות מחיר מפורשת (\"יקר לי\", \"יש משהו יותר זול\", \"למה זה כל כך יקר\"). אינה בוחרת אחוז — משיבה את מה שמוגדר במערכת בלבד. לעולם לא ביוזמת הסוכן, לפני שנשאלת ולפני שנאמרה התנגדות אמיתית.",
+                        "disable_interruptions": false,
+                        "dynamic_variables": {
+                            "dynamic_variable_placeholders": {}
+                        },
+                        "execution_mode": "immediate",
+                        "expects_response": true,
+                        "force_pre_tool_speech": false,
+                        "interruption_mode": "allow",
+                        "name": "apply_discount_tier",
+                        "parameters": {
+                            "description": "",
+                            "dynamic_variable": "",
+                            "is_omitted": false,
+                            "properties": {
+                                "objection_reason": {
+                                    "allowed_values_dynamic_variable": "",
+                                    "constant_value": "",
+                                    "description": "ציטוט/תמצית ההתנגדות שהובילה לקריאה, לצורך תיעוד",
+                                    "dynamic_variable": "",
+                                    "enum": null,
+                                    "is_omitted": false,
+                                    "is_system_provided": false,
+                                    "type": "string"
+                                }
+                            },
+                            "required": [
+                                "objection_reason"
+                            ],
+                            "type": "object"
+                        },
+                        "pre_tool_speech": "auto",
+                        "response_timeout_secs": 10,
+                        "tool_call_sound": null,
+                        "tool_call_sound_behavior": "auto",
+                        "tool_error_handling_mode": "auto",
+                        "type": "client"
+                    },
+                    {
+                        "assignments": [],
+                        "description": "שולח קישור הרשמה אמיתי (לא בשיחה עצמה), רק אחרי מחויבות מילולית ואחרי שהגילוי המשפטי (שלב 5) הושלם. מנסה וואטסאפ קודם — רק אם whatsapp_consent=true — ונופל אוטומטית ל-SMS אם וואטסאפ נכשל או שלא ניתנה הסכמה אליו. מחזיר תוצאה אחת, ללא ציון ערוץ — הסוכן אינו יודע ואינו צריך לדעת דרך איזה ערוץ נשלחה ההודעה בפועל. accepted=true פירושו שהמערכת קיבלה את ההודעה לשליחה, לא שהיא הגיעה בפועל אצל הפונה. כאשר accepted=true, השרת עצמו רושם את התוצאה כתוצאת-לוואי של הקריאה הזו — אינך קורא לכלי נפרד כדי \"לדווח\" את זה.",
+                        "disable_interruptions": true,
+                        "dynamic_variables": {
+                            "dynamic_variable_placeholders": {}
+                        },
+                        "execution_mode": "immediate",
+                        "expects_response": true,
+                        "force_pre_tool_speech": false,
+                        "interruption_mode": "disable_during_tool",
+                        "name": "send_signup_link",
+                        "parameters": {
+                            "description": "",
+                            "dynamic_variable": "",
+                            "is_omitted": false,
+                            "properties": {
+                                "wa_consent": {
+                                    "allowed_values_dynamic_variable": "",
+                                    "constant_value": "",
+                                    "description": "true רק אם הפונה ענה כן במפורש לשאלת ההסכמה בתחילת שלב 6 (\"שאשלח לך בוואטסאפ, מטעם קלפה, את קישור ההרשמה?\") — לא ניחוש, לא הנחה משתיקה. false מנתב ישירות ל-SMS בלבד, בלי לנסות וואטסאפ כלל.",
+                                    "dynamic_variable": "",
+                                    "enum": null,
+                                    "is_omitted": false,
+                                    "is_system_provided": false,
+                                    "type": "boolean"
+                                }
+                            },
+                            "required": [
+                                "wa_consent"
+                            ],
+                            "type": "object"
+                        },
+                        "pre_tool_speech": "off",
+                        "response_timeout_secs": 15,
+                        "tool_call_sound": null,
+                        "tool_call_sound_behavior": "auto",
+                        "tool_error_handling_mode": "auto",
+                        "type": "client"
+                    },
+                    {
+                        "assignments": [],
+                        "description": "בודק זמינות נציג אנושי ומעביר אם קיים; אם אין, מחזיר זאת בכנות ואינו מעמיד פנים שהעברה קרתה. לקרוא כאשר הפונה מבקש לדבר עם בן אדם, או אחרי שתי אי-הבנות/שקטים חוזרים על אותה שאלה.",
+                        "disable_interruptions": false,
+                        "dynamic_variables": {
+                            "dynamic_variable_placeholders": {}
+                        },
+                        "execution_mode": "immediate",
+                        "expects_response": true,
+                        "force_pre_tool_speech": false,
+                        "interruption_mode": "allow",
+                        "name": "escalate_to_human",
+                        "parameters": {
+                            "description": "",
+                            "dynamic_variable": "",
+                            "is_omitted": false,
+                            "properties": {
+                                "reason": {
+                                    "allowed_values_dynamic_variable": "",
+                                    "constant_value": "",
+                                    "description": "סיבת ההעברה, בקצרה",
+                                    "dynamic_variable": "",
+                                    "enum": null,
+                                    "is_omitted": false,
+                                    "is_system_provided": false,
+                                    "type": "string"
+                                }
+                            },
+                            "required": [
+                                "reason"
+                            ],
+                            "type": "object"
+                        },
+                        "pre_tool_speech": "auto",
+                        "response_timeout_secs": 10,
+                        "tool_call_sound": null,
+                        "tool_call_sound_behavior": "auto",
+                        "tool_error_handling_mode": "auto",
+                        "type": "client"
+                    },
+                    {
+                        "assignments": [],
+                        "description": "כותב תוצאה שאינה-הצלחה על שורת בקשת השיחה: needs_followup, closed, או escalated_to_human בלבד. לעולם לא 'completed' ולעולם לא 'no_answer' — completed נקבע רק ע\"י send_signup_link כתוצאת-לוואי, ו-no_answer נקבע רק ע\"י שכבת הדיספצ'ר לפני שהשיחה התחברה לסוכן. נקרא לפני end_call בכל תרחיש שאינו הצלחה מלאה של שליחת קישור ההרשמה.",
+                        "disable_interruptions": false,
+                        "dynamic_variables": {
+                            "dynamic_variable_placeholders": {}
+                        },
+                        "execution_mode": "immediate",
+                        "expects_response": true,
+                        "force_pre_tool_speech": false,
+                        "interruption_mode": "allow",
+                        "name": "log_outcome",
+                        "parameters": {
+                            "description": "",
+                            "dynamic_variable": "",
+                            "is_omitted": false,
+                            "properties": {
+                                "discount_tier_applied": {
+                                    "allowed_values_dynamic_variable": "",
+                                    "constant_value": "",
+                                    "description": "אופציונלי — מדרגת ההנחה שהוצעה בשיחה, אם הוצעה",
+                                    "dynamic_variable": "",
+                                    "enum": null,
+                                    "is_omitted": false,
+                                    "is_system_provided": false,
+                                    "type": "string"
+                                },
+                                "outcome": {
+                                    "allowed_values_dynamic_variable": "",
+                                    "constant_value": "",
+                                    "description": "לעולם לא 'completed' (נכתב רק ע\"י send_signup_link) ולעולם לא 'no_answer' (נכתב רק ע\"י שכבת הדיספצ'ר — אם הסוכן פועל, השיחה נענתה).",
+                                    "dynamic_variable": "",
+                                    "enum": [
+                                        "needs_followup",
+                                        "closed",
+                                        "escalated_to_human"
+                                    ],
+                                    "is_omitted": false,
+                                    "is_system_provided": false,
+                                    "type": "string"
+                                }
+                            },
+                            "required": [
+                                "outcome"
+                            ],
+                            "type": "object"
+                        },
+                        "pre_tool_speech": "auto",
+                        "response_timeout_secs": 10,
+                        "tool_call_sound": null,
+                        "tool_call_sound_behavior": "auto",
+                        "tool_error_handling_mode": "auto",
+                        "type": "client"
+                    },
+                    {
+                        "assignments": [],
+                        "description": "מסיר את המספר מרשימת השיחות לצמיתות. לקרוא מיד כשהאורח מבקש לא להתקשר יותר, בכל ניסוח. מחזיר removed בהצלחה.",
+                        "disable_interruptions": false,
+                        "dynamic_variables": {
+                            "dynamic_variable_placeholders": {}
+                        },
+                        "execution_mode": "immediate",
+                        "expects_response": true,
+                        "force_pre_tool_speech": false,
+                        "interruption_mode": "allow",
+                        "name": "mark_dnc",
+                        "parameters": {
+                            "description": "",
+                            "dynamic_variable": "",
+                            "is_omitted": false,
+                            "properties": {},
+                            "required": [],
+                            "type": "object"
+                        },
+                        "pre_tool_speech": "auto",
+                        "response_timeout_secs": 10,
+                        "tool_call_sound": null,
+                        "tool_call_sound_behavior": "auto",
+                        "tool_error_handling_mode": "auto",
+                        "type": "client"
+                    },
+                    {
+                        "assignments": [],
+                        "description": "מעביר שאלה/מסר/דגל לבעלי האירוע. לקרוא כשהאורח שואל שאלה שאין עליה תשובה במשתנים, מבקש בקשה מיוחדת, או מוסר ברכה. מחזיר noted בהצלחה.",
+                        "disable_interruptions": false,
+                        "dynamic_variables": {
+                            "dynamic_variable_placeholders": {}
+                        },
+                        "execution_mode": "immediate",
+                        "expects_response": true,
+                        "force_pre_tool_speech": false,
+                        "interruption_mode": "allow",
+                        "name": "notify_owner",
+                        "parameters": {
+                            "description": "",
+                            "dynamic_variable": "",
+                            "is_omitted": false,
+                            "properties": {
+                                "kind": {
+                                    "allowed_values_dynamic_variable": "",
+                                    "constant_value": "",
+                                    "description": "question=שאלה שדורשת מענה, message=מסר/ברכה, flag=דגל חריג (מספר שגוי, בקשת מחיקה)",
+                                    "dynamic_variable": "",
+                                    "enum": [
+                                        "question",
+                                        "message",
+                                        "flag"
+                                    ],
+                                    "is_omitted": false,
+                                    "is_system_provided": false,
+                                    "type": "string"
+                                },
+                                "text": {
+                                    "allowed_values_dynamic_variable": "",
+                                    "constant_value": "",
+                                    "description": "ניסוח קצר בעברית של הפנייה, עד 500 תווים",
+                                    "dynamic_variable": "",
+                                    "enum": null,
+                                    "is_omitted": false,
+                                    "is_system_provided": false,
+                                    "type": "string"
+                                }
+                            },
+                            "required": [
+                                "kind",
+                                "text"
+                            ],
+                            "type": "object"
+                        },
+                        "pre_tool_speech": "auto",
+                        "response_timeout_secs": 10,
+                        "tool_call_sound": null,
+                        "tool_call_sound_behavior": "auto",
+                        "tool_error_handling_mode": "auto",
+                        "type": "client"
+                    },
+                    {
+                        "assignments": [],
+                        "description": "כשהאורח מבקש שנחזור אליו במועד אחר (\"תחזרו אליי מחר\", \"עכשיו לא נוח\", \"בערב\", \"אחרי החג\") — קראי לכלי גם עם callback_when_text (כלשונו) וגם עם callback_iso (הזמן המחושב). בלי callback_iso השיחה החוזרת לא תתבצע כלל. כשאת מאשרת לאורח בקול — אמרי את השעה בשעון ישראל בפורמט 24 שעות (\"נחזור אליך בסביבות 19:00\"). אחרי שהכלי חוזר, אשרי בקצרה וסיימי ב-end_call. מחזיר noted/queued.",
+                        "disable_interruptions": false,
+                        "dynamic_variables": {
+                            "dynamic_variable_placeholders": {}
+                        },
+                        "execution_mode": "immediate",
+                        "expects_response": true,
+                        "force_pre_tool_speech": false,
+                        "interruption_mode": "allow",
+                        "name": "schedule_callback",
+                        "parameters": {
+                            "description": "",
+                            "dynamic_variable": "",
+                            "is_omitted": false,
+                            "properties": {
+                                "callback_iso": {
+                                    "allowed_values_dynamic_variable": "",
+                                    "constant_value": "",
+                                    "description": "הזמן המוחלט לחזרה, ISO 8601. חשבי אותו מ-{{system__time_utc}} — הזמן הנוכחי ב-UTC, זמין לך תמיד. דוגמאות: \"בעוד עשרים דקות\" ← system__time_utc ועוד 20 דקות. \"מחר בשמונה בערב\" ← מחר בשעה 20:00 שעון ישראל, מומר ל-UTC. שעון ישראל הוא UTC+3 בקיץ (אפריל–אוקטובר) ו-UTC+2 בחורף. השאירי ריק רק אם האורח לא נקב בזמן כלשהו (\"מתישהו\", \"תחזרו אליי\") — זמן יחסי כמו \"בעוד שעה\" או \"מחר\" הוא תמיד ניתן לחישוב.",
+                                    "dynamic_variable": "",
+                                    "enum": null,
+                                    "is_omitted": false,
+                                    "is_system_provided": false,
+                                    "type": "string"
+                                },
+                                "callback_when_text": {
+                                    "allowed_values_dynamic_variable": "",
+                                    "constant_value": "",
+                                    "description": "הזמן שהאורח ציין לחזרה, כלשונו בעברית (\"מחר בערב\", \"אחרי שש\", \"ביום ראשון\")",
+                                    "dynamic_variable": "",
+                                    "enum": null,
+                                    "is_omitted": false,
+                                    "is_system_provided": false,
+                                    "type": "string"
+                                }
+                            },
+                            "required": [
+                                "callback_when_text"
+                            ],
+                            "type": "object"
+                        },
+                        "pre_tool_speech": "auto",
+                        "response_timeout_secs": 10,
+                        "tool_call_sound": null,
+                        "tool_call_sound_behavior": "auto",
+                        "tool_error_handling_mode": "auto",
+                        "type": "client"
+                    },
+                    {
+                        "assignments": [
+                            {
+                                "dynamic_variable": "wa_consent",
+                                "preserve_native_type": false,
+                                "sanitize": false,
+                                "source": "response",
+                                "value_path": "updates.wa_consent"
+                            }
+                        ],
+                        "description": "קרא לכלי הזה מיד אחרי שהפונה ענה לשאלת ההסכמה לוואטסאפ (\"שאשלח לך בוואטסאפ, מטעם קלפה, את קישור ההרשמה?\") — לפני כל קריאה ל-send_signup_link. אל תקרא לו לפני שהשאלה נשאלה ונענתה.",
+                        "disable_interruptions": false,
+                        "force_pre_tool_speech": false,
+                        "interruption_mode": "allow",
+                        "name": "update_state",
+                        "params": {
+                            "system_tool_type": "update_state",
+                            "updates": [
+                                {
+                                    "expression": {
+                                        "prompt": "true רק אם הפונה ענה כן במפורש לשאלה שהציעה לשלוח את קישור ההרשמה בוואטסאפ מטעם קלפה (השאלה חייבת להזכיר גם וואטסאפ וגם קלפה). false אם סירב, היסס, ענה תשובה לא ברורה, או שהשאלה כלל לא נשאלה.\n",
+                                        "type": "llm",
+                                        "value_schema": {
+                                            "description": "true רק אם הפונה ענה כן במפורש לשאלה שהציעה לשלוח את קישור ההרשמה בוואטסאפ מטעם קלפה (השאלה חייבת להזכיר גם וואטסאפ וגם קלפה). false אם סירב, היסס, ענה תשובה לא ברורה, או שהשאלה כלל לא נשאלה.\n",
+                                            "enum": null,
+                                            "type": "boolean"
+                                        }
+                                    },
+                                    "type": "dynamic_variable",
+                                    "variable_name": "wa_consent"
+                                }
+                            ]
+                        },
+                        "pre_tool_speech": "auto",
+                        "response_timeout_secs": 20,
+                        "tool_call_sound": null,
+                        "tool_call_sound_behavior": "auto",
+                        "tool_error_handling_mode": "auto",
+                        "type": "system"
+                    },
+                    {
+                        "assignments": [],
+                        "description": "נתק את השיחה אחרי משפט הסגירה — אחרי log_outcome (בתרחיש שאינו הצלחה) או אחרי send_signup_link (בתרחיש הצלחה). לעולם אל תנתק באמצע הגילוי המשפטי או לפני שהאורח קיבל תשובה.",
+                        "disable_interruptions": false,
+                        "force_pre_tool_speech": false,
+                        "interruption_mode": "allow",
+                        "name": "end_call",
+                        "params": {
+                            "system_tool_type": "end_call"
+                        },
+                        "pre_tool_speech": "auto",
+                        "response_timeout_secs": 20,
+                        "tool_call_sound": null,
+                        "tool_call_sound_behavior": "auto",
+                        "tool_error_handling_mode": "auto",
+                        "type": "system"
+                    },
+                    {
+                        "assignments": [],
+                        "description": "עברית היא שפת ברירת המחדל — פתח והמשך תמיד בעברית. החלף שפה רק אם האורח מדבר באופן ברור ועקבי בשפה אחרת נתמכת (אנגלית / רוסית / ערבית) — משפט שלם, לא מילה בודדת ולא עברית מעורבת. אם הדיבור בעברית, מעורב, קצר או לא ברור — הישאר בעברית ואל תחליף. אם החלפת והאורח חוזר לעברית — חזור לעברית.",
+                        "disable_interruptions": false,
+                        "force_pre_tool_speech": false,
+                        "interruption_mode": "allow",
+                        "name": "language_detection",
+                        "params": {
+                            "only_at_conversation_start": false,
+                            "system_tool_type": "language_detection"
+                        },
+                        "pre_tool_speech": "auto",
+                        "response_timeout_secs": 20,
+                        "tool_call_sound": null,
+                        "tool_call_sound_behavior": "auto",
+                        "tool_error_handling_mode": "auto",
+                        "type": "system"
+                    },
+                    {
+                        "assignments": [],
+                        "description": "כשהאורח מבקש רגע לחשוב או לבדוק עם בן/בת הזוג (\"רגע\", \"תן לי שנייה\", \"אני בודק\") — המתן בשקט תור אחד במקום למלא את השתיקה. אל תשתמש בזה כברירת מחדל לכל שתיקה רגילה.",
+                        "disable_interruptions": false,
+                        "force_pre_tool_speech": false,
+                        "interruption_mode": "allow",
+                        "name": "skip_turn",
+                        "params": {
+                            "system_tool_type": "skip_turn"
+                        },
+                        "pre_tool_speech": "auto",
+                        "response_timeout_secs": 20,
+                        "tool_call_sound": null,
+                        "tool_call_sound_behavior": "auto",
+                        "tool_error_handling_mode": "auto",
+                        "type": "system"
+                    },
+                    {
+                        "assignments": [],
+                        "description": "אם השיחה נענתה על ידי תא קולי או משיבון אוטומטי (הודעת פתיחה מוקלטת, \"השאירו הודעה אחרי הצפצוף\", טון מכני) — סיים את השיחה מיד. אל תנהל שיחה עם מכונה ואל תשאיר הודעה.",
+                        "disable_interruptions": false,
+                        "force_pre_tool_speech": false,
+                        "interruption_mode": "allow",
+                        "name": "voicemail_detection",
+                        "params": {
+                            "system_tool_type": "voicemail_detection",
+                            "voicemail_message": null
+                        },
+                        "pre_tool_speech": "auto",
+                        "response_timeout_secs": 20,
+                        "tool_call_sound": null,
+                        "tool_call_sound_behavior": "auto",
+                        "tool_error_handling_mode": "auto",
+                        "type": "system"
+                    }
+                ]
+            },
+            "text_behavior_overrides": {}
+        },
         "asr": {
-            "quality": "high",
-            "provider": "scribe_realtime",
-            "user_input_audio_format": "pcm_16000",
             "keywords": [
                 "כן",
                 "לא",
@@ -27,17 +663,73 @@
                 "בת מצווה",
                 "ברית",
                 "אישורי הגעה"
-            ]
+            ],
+            "provider": "scribe_realtime",
+            "quality": "high",
+            "user_input_audio_format": "pcm_16000"
+        },
+        "conversation": {
+            "background_sound": {
+                "crossfade_loop": false,
+                "source_id": null,
+                "source_type": null,
+                "volume": 0.6
+            },
+            "client_events": [
+                "audio",
+                "interruption",
+                "agent_response",
+                "user_transcript",
+                "agent_response_correction",
+                "agent_tool_response",
+                "agent_chat_response_part"
+            ],
+            "compaction": {
+                "enabled": null,
+                "min_reclaimable_tokens": null,
+                "soft_trigger_fraction": null,
+                "tail_size": null
+            },
+            "dtmf_input_settings": null,
+            "file_input": {
+                "enabled": true,
+                "max_files_in_memory": 10,
+                "max_files_per_conversation": 10
+            },
+            "max_duration_seconds": 300,
+            "max_duration_seconds_after_last_agent_message": null,
+            "monitoring_enabled": false,
+            "monitoring_events": [
+                "user_transcript",
+                "agent_response",
+                "agent_response_correction"
+            ],
+            "source_attribution": false,
+            "text_only": false
+        },
+        "language_presets": {},
+        "realtime_model": null,
+        "tts": {
+            "agent_output_audio_format": "pcm_16000",
+            "audio_effects": null,
+            "enable_phoneme_tags": true,
+            "expressive_mode": true,
+            "model_id": "eleven_v3_conversational",
+            "optimize_streaming_latency": 3,
+            "pronunciation_dictionary_locators": [],
+            "similarity_boost": 0.8,
+            "speed": 1.0,
+            "stability": 0.4,
+            "suggested_audio_tags": [],
+            "supported_voices": [],
+            "text_normalisation_type": "system_prompt",
+            "voice_id": "eac91g6mnNRvS4L6tF5P"
         },
         "turn": {
-            "turn_timeout": 4,
-            "silence_end_call_timeout": -1,
-            "mode": "turn",
-            "turn_eagerness": "normal",
-            "spelling_patience": "auto",
-            "speculative_turn": true,
-            "retranscribe_on_turn_timeout": true,
-            "turn_model": "turn_v3",
+            "initial_wait_time": null,
+            "interruption_ignore_term_languages": [
+                "he"
+            ],
             "interruption_ignore_terms": [
                 "כן",
                 "נכון",
@@ -56,988 +748,341 @@
                 "כמובן",
                 "אמן"
             ],
-            "interruption_ignore_term_languages": [
-                "he"
-            ],
             "merge_with_default_ignore_terms": false,
-            "transcribe_on_disabled_interruptions": true,
+            "mode": "turn",
+            "retranscribe_on_turn_timeout": true,
+            "silence_end_call_timeout": -1.0,
             "soft_timeout_config": {
-                "timeout_seconds": 3,
-                "message": "רק רגע...",
                 "additional_soft_timeout_messages": [],
-                "use_llm_generated_message": false,
-                "randomize_fillers": false,
+                "disable_until_first_user_message": false,
+                "llm_generated_message_prompt_override": null,
                 "max_soft_timeouts_per_generation": 1,
-                "disable_until_first_user_message": false
-            }
-        },
-        "tts": {
-            "model_id": "eleven_v3_conversational",
-            "voice_id": "eac91g6mnNRvS4L6tF5P",
-            "supported_voices": [],
-            "expressive_mode": false,
-            "suggested_audio_tags": [],
-            "agent_output_audio_format": "pcm_16000",
-            "optimize_streaming_latency": 3,
-            "stability": 0.4,
-            "speed": 1,
-            "similarity_boost": 0.8,
-            "text_normalisation_type": "system_prompt",
-            "pronunciation_dictionary_locators": [],
-            "enable_phoneme_tags": true,
-            "audio_effects": null
-        },
-        "conversation": {
-            "text_only": false,
-            "max_duration_seconds": 300,
-            "max_duration_seconds_after_last_agent_message": null,
-            "client_events": [
-                "audio",
-                "interruption",
-                "agent_response",
-                "user_transcript",
-                "agent_response_correction",
-                "agent_tool_response",
-                "agent_chat_response_part"
-            ],
-            "file_input": {
-                "enabled": true,
-                "max_files_in_memory": 10,
-                "max_files_per_conversation": 10
+                "message": "רק רגע...",
+                "randomize_fillers": false,
+                "timeout_seconds": 3.0,
+                "use_llm_generated_message": false
             },
-            "monitoring_enabled": false,
-            "monitoring_events": [
-                "user_transcript",
-                "agent_response",
-                "agent_response_correction"
-            ],
-            "dtmf_input_settings": null,
-            "background_sound": {
-                "volume": 0.6,
-                "crossfade_loop": false
-            },
-            "source_attribution": false
+            "speculative_turn": true,
+            "spelling_patience": "auto",
+            "transcribe_on_disabled_interruptions": true,
+            "turn_eagerness": "normal",
+            "turn_model": "turn_v3",
+            "turn_timeout": 4.0
         },
-        "language_presets": {},
         "vad": {
             "background_voice_detection": true
-        },
-        "realtime_model": null,
-        "agent": {
-            "first_message": "היי {{prospect_name}}, מדבר עומר מִקָלְפָה בעקבות הבקשה שהשארת שנחזור אליך בנושא רכישת השירות שלנו — יש לך שתי דקות עכשיו?",
-            "language": "he",
-            "hinglish_mode": false,
-            "dynamic_variables": {
-                "dynamic_variable_placeholders": {
-                    "prospect_name": "",
-                    "note_text": "",
-                    "company_name": "",
-                    "company_id": "",
-                    "company_address": "",
-                    "wa_consent": ""
-                }
-            },
-            "disable_first_message_interruptions": false,
-            "max_conversation_duration_message": "",
-            "text_behavior_overrides": {},
-            "prompt": {
-                "prompt": "# Personality\nאתה עומר. נציג מכירות דיגיטלי מטעם קָלְפָה. ישראלי, בטוח בעצמו, יודע\nבדיוק על מה הוא מדבר, לא לוחצני ולא נשמע כמו מוקד טלמרקטינג. התפקיד שלך\nהוא לעזור למי שכבר פנה וביקש בעצמו שיחזרו אליו — להבין את השירות ולהחליט\nבעצמו. לא לשכנע בכוח, לא \"לסגור בכל מחיר\".\n\nכשנשאלים אם אתה רובוט, או \"מי אתה\", ענה בפשטות ובלי להתנצל, עם שני\nהרכיבים יחד — מה אתה ומטעם מי: \"אני עומר, עוזר קולי דיגיטלי מטעם קָלְפָה —\nביקשת שנחזור אליך בנושא רכישת השירות, נכון?\" ומיד המשך מהנקודה שבה היית.\nלעולם אל תתחזה לאדם.\n\nכשמתנגדים או חושדים — אל תתגונן. ענה בכנות במשפט אחד וחזור לעניין:\n- \"מי נתן לכם את המספר שלי?\" -> \"אתה בעצמך — מילאת טופס באתר וביקשת\n  שנחזור אליך בנושא מכירות. רוצה שאמשיך?\"\n- \"זה עולה לי כסף?\" -> \"השיחה הזו לא, ממש לא. נגיע למחיר של השירות עצמו\n  עוד רגע.\"\n- \"אני עסוק עכשיו\" -> \"לגמרי — רוצה שאתקשר בזמן אחר, או שיש לך שתי דקות\n  ממש עכשיו?\"\n\n# Environment\nשיחה יוצאת — ל{{prospect_name}}, שביקש/ה בעצמו/ה שיחזרו אליו/ה, דרך טופס\n\"חזרו אליי\" באתר קָלְפָה, בנושא מכירות. יש לך: השם שהשאיר/ה, וההערה החופשית\nאם השאיר/ה אחת ({{note_text}} — עשויה להיות ריקה, ועשויה להכיל הקשר\nשימושי כמו זמן מועדף). אין לך עדיין שום פרט על מה שהוא/היא מתכננ/ת —\nסוג האירוע, מתי, כמה מוזמנים — את זה תגלה בשיחה עצמה. אתה לא יודע שום\nמחיר עד שתקרא ל-get_pricing — אל תנחש ואל תזכור ממחיר שיחה קודמת.\n\n# Tone\nזו שיחת ייעוץ קצרה, לא הרצאת מכירות. הכלל שמנצח כל כלל אחר: קודם מגיב\nלמה שנאמר, ורק אז ממשיך. עברית מדוברת אמיתית — לא שפת טפסים, לא \"האם\nתרצה לשקול\", אלא \"מה דעתך\". עד שני משפטים בכל תור. שאלה — ואז עצירה\nאמיתית לתשובה. גוון ניסוח, אל תחזור על אותו משפט מילה במילה. אמור\nמספרים במילים כשזה טבעי (\"מאתיים שקל\", לא \"200 ש\\\"ח\"), חוץ ממחירים\nמדויקים שכדאי שיישמעו כמחיר אמיתי.\n\n# Goal\nהמטרה: לצאת מהשיחה עם אחת משתי תוצאות אמיתיות — מחויבות מילולית ברורה +\nקישור הרשמה שנשלח בפועל, או תמונה כנה של למה זה עוד לא קרה (לא מעוניין/ת,\nצריך/ה לחשוב, רוצה לדבר עם בן אדם). לעולם לא \"רשמתי אותך\" בלי שכלי\nאמיתי אישר את זה. שבע נקודות דרך, לא תסריט — עבור ביניהן בזרימה טבעית.\n\n1. זיהוי + הקשר מיידי. אמור מי מדבר ובעקבות מה — \"בעקבות הבקשה שלך\n   שנחזור אליך\" — כבר במשפט הראשון. ודא שמדברים עם {{prospect_name}}\n   או עם מי שמחליט/ה יחד איתו/ה. This step is important — אסור למסור\n   מחיר או פרטים לפני זיהוי.\n2. גילוי. שאלות פתוחות, לא חקירה: איזה אירוע, בערך מתי, בערך כמה\n   מוזמנים. המטרה היא להבין מספיק כדי להסביר את המחיר בצורה שרלוונטית\n   להם — לא למלא טופס.\n3. הצגת השירות והמחיר. קרא ל-get_pricing. הסבר במילים, לא רק\n   במספרים: מה השירות עושה, ואיך המחיר עובד ביחס למה שהם סיפרו (למשל:\n   \"אם יש לכם בערך מאה וחמישים מוזמנים, זה כולו בתוך המחיר הבסיסי\").\n   This step is important — לעולם לא ממציא מספר, תמיד מה ש-get_pricing\n   החזיר.\n4. התנגדויות. ענה בכנות, בלי להתווכח, מתוך מה שאתה יודע בפועל (בסיס\n   הידע + get_pricing) — לא ממציא תשובה. אם עולה התנגדות מחיר מפורשת\n   (\"יקר לי\", \"יש משהו יותר זול\", \"למה זה כל כך יקר\") — ורק אז — מותר\n   לשקול הנחת מדרגה-1 (ר' Tools, apply_discount_tier). לעולם לא מציע\n   הנחה מיוזמתך, לפני שנשאלת ולפני שנאמרה התנגדות אמיתית.\n5. **גילוי משפטי — לפני בקשת אישור, אף פעם לא אחריה. This step is\n   important. אסור לדלג גם אם השיחה זורמת מהר לכיוון \"כן, בא לי\".**\n   אמור, בטבעיות ובלי להישמע כמו הקראת חוזה:\n   \"אגב, לפני שממשיכים — כמה דברים שחשוב שתדע בקצרה. הפרטים ששיתפת איתי\n   על האירוע — נשמרים אצלנו כדי להכין לך הצעה מדויקת ולתפעל את השירות\n   אם תבחר/י להירשם; שיתוף הפרטים הוא לגמרי לפי בחירתך, לא חובה, והם\n   לא מועברים לאף גורם חוץ מלבד קָלְפָה עצמה. אנחנו\n   {{company_name}}, מספר עוסק {{company_id}}, {{company_address}}.\n   המחיר: מה ש-get_pricing החזיר כדמי הפעלה חד-פעמיים, כולל את מספר\n   אנשי הקשר הכלולים שהוחזר, ועוד המחיר-לאיש-קשר שהוחזר על כל איש קשר\n   נוסף שבאמת הגעתם אליו. דמי ההפעלה נגבים תמיד, גם אם בסוף לא הגעתם\n   לאף אחד — אין עליהם החזר. החיוב בפועל קורה רק בסוף הקמפיין, דרך\n   אמצעי התשלום שתזינו בהרשמה. השירות מתחיל לפעול מרגע שתחתמו על\n   ההסכם ותבחרו חבילה באתר, וממשיך עד תאריך האירוע. המחיר שאני מציע\n   עכשיו תקף כל עוד לא השתמשתם בקישור ולא פג תוקפו — אני שולח אותו\n   אליכם עכשיו. אין אחריות מיוחדת מעבר למה שכתוב בהסכם עצמו, שתקבלו\n   ותוכלו לקרוא לפני שחותמים. ודבר אחרון וחשוב — יש לכם זכות לבטל את\n   ההתקשרות תוך 14 יום, מהמאוחר מבין יום ביצוע העסקה או היום שתקבלו\n   את פרטי ההסכם בכתב. הפרטים המדויקים על איך מבטלים, ואם יש דמי\n   ביטול, מופיעים בהסכם עצמו. יש שאלה על משהו מזה, לפני שממשיכים?\"\n   ענה על שאלות שעולות כאן מתוך הידע שיש לך בפועל בלבד; אל תמציא.\n6. אישור ערוץ שליחה + מחויבות מילולית + שליחת קישור. רק אחרי שהשלב\n   הקודם (5) הושלם ונענה, ולפני הבקשה למחויבות עצמה — שאל במפורש:\n   \"שאשלח לך בוואטסאפ, מטעם קָלְפָה, את קישור ההרשמה?\" וקבל תשובה ברורה. מיד כשנענתה — קרא ל-update_state כדי לרשום את\n   התשובה (wa_consent), ורק אחר כך המשך; הערך שתעביר ל-send_signup_link\n   ב-whatsapp_consent חייב להיות זהה למה שנרשם.\n   This step is important. זו שאלת הסכמה נפרדת מהגילוי המשפטי בשלב 5 —\n   אל תדלג עליה ואל תניח הסכמה משתיקה או מהמשך השיחה; חובה לשמוע כן/לא\n   מפורש. רק אחרי מחויבות מילולית ברורה (\"כן, בא לי\", \"שלח לי\") — קרא\n   ל-send_signup_link, עם whatsapp_consent על פי מה שהפונה ענה בפועל\n   לשאלת ההסכמה (true רק אם נאמר כן במפורש לשאלה שמזכירה גם וואטסאפ וגם\n   קָלְפָה בשם; אחרת false — ואז השליחה עוברת ל-SMS בלבד, בלי לנסות וואטסאפ\n   כלל). חכה לתוצאה. **לעולם אל תגיד \"נרשמת\" או \"סגרנו\" לפני שהכלי אישר\n   בפועל שהקישור נשלח — ואז אמור \"שלחתי לך קישור\" בלי לציין באיזה ערוץ,\n   כי גם אתה לא יודע איזה ערוץ בסוף נשא אותו.** This step is important.\n   **אם send_signup_link הצליח (accepted=true) — אל תקרא ל-log_outcome\n   בכלל.** התוצאה \"completed\" נרשמת אוטומטית בשרת כתוצאה מהשליחה\n   המוצלחת עצמה, לא ע\"י קריאה נפרדת שלך. אתה לא \"מדווח\" הצלחה — אתה\n   רק מפעיל את הכלי שגורם לה. This step is important — זו לא בחירת\n   ניסוח, זו מניעת מצב שבו את/ה (או שכנוע חיצוני של הפונה) \"מכריזה\"\n   שנסגרה עסקה בלי שדבר אמיתי קרה.\n7. דיווח תוצאה + סיום. **רק בתרחישים שלא הגיעו למחויבות מילולית\n   שהושלמה בשלב 6** (לא מעוניין, צריך לחשוב, מבקש לדבר עם בן אדם, שפה\n   אחרת, כשל כלי) — קרא ל-log_outcome עם התוצאה האמיתית, מתוך המילים\n   שהפונה עצמו אמר, לעולם לא ניחוש או המצאה (אותו כלל בדיוק כמו הנחת\n   מדרגה-1, ר' Guardrail 4). אלה כולן תוצאות תקפות, לא כישלונות שיש\n   להסתיר. בתרחיש ההצלחה (שלב 6) אין צורך לקרוא ל-log_outcome בכלל —\n   ר' שם. בכל תרחיש, סיים במשפט חם וקרא ל-end_call עם משפט הפרידה\n   בפרמטר message.\n\nענפים קצרים:\n- \"לא מעוניין/ת\" -> כבד מיד, בלי לחץ ובלי \"בטוח/ה?\". קרא ל-log_outcome\n  עם outcome=\"closed\", ואז end_call.\n- \"צריך/ה לחשוב על זה\" / \"תחזרו אליי אחר כך\" -> קרא ל-schedule_callback\n  עם הזמן שצוין (או ללא זמן אם לא צוין — הזרימה הקיימת תדע להתמודד),\n  ואז log_outcome עם outcome=\"needs_followup\", ואז end_call.\n- \"תעביר אותי לבן אדם\" / \"אני רוצה לדבר עם נציג\" -> קרא מיד\n  ל-escalate_to_human. אם מחובר נציג — עבור לשיחת ההעברה. אם אין נציג\n  זמין — אמור זאת בכנות (\"אין לי כרגע נציג פנוי, אבל אני מעביר בקשה\n  שיחזרו אליך בהקדם\"), קרא ל-log_outcome עם outcome=\"needs_followup\"\n  (או \"escalated_to_human\" אם הכלי זמין), ואז end_call.\n- \"תסירו אותי\" בכל ניסוח -> קרא ל-mark_dnc מיד, אמור \"כמובן, הסרתי\n  אותך — סליחה על ההפרעה\", ואז end_call. אל תנסה לשכנע. This step is\n  important.\n- שאלה שאין עליה תשובה בידע שיש לך -> קרא ל-notify_owner, ואז אמור\n  \"אעביר את זה הלאה ונחזור אליך עם תשובה מדויקת\", וחזור לנקודה שבה היית.\n\n# Tools\n- get_pricing — כלי קריאה בלבד. קוראים לו בכל פעם שעולה נושא מחיר,\n  חבילה, או \"מה כלול\". לעולם לא ממציאים מספר בלי לקרוא לו קודם, גם אם\n  נדמה שזוכרים ממחיר קודם באותה שיחה.\n- apply_discount_tier — רק אחרי התנגדות מחיר מפורשת (שלב 4). מחזיר את\n  אחוז/סכום ההנחה המוגדר-מראש (מדרגה 1 בלבד ב-v1), או \"לא מוגדר\" אם\n  לא הוגדרה הנחה במערכת — במקרה הזה אין להמציא הנחה, ולהמשיך בלי אחת,\n  או להעביר ל-notify_owner/escalate_to_human. כל שימוש נרשם.\n- send_signup_link — שולח קישור הרשמה אמיתי (לא בשיחה עצמה), רק אחרי\n  מחויבות מילולית ואחרי שלב 5 הושלם. מקבל את whatsapp_consent שנאסף\n  בשלב 6. מנסה וואטסאפ קודם (רק אם whatsapp_consent=true), ונופל\n  ל-SMS אם וואטסאפ נכשל או שלא היתה הסכמה אליו — הסוכן לא יודע ולא\n  צריך לדעת באיזה ערוץ בסוף נשלח. **כאשר השליחה מצליחה\n  (accepted=true), השרת עצמו — לא אתה — רושם outcome=\"completed\"\n  כתוצאת-לוואי של הקריאה הזו.** אינך קורא לכלי נפרד כדי \"לדווח\" את\n  זה; ההצלחה עצמה היא הדיווח. מחזיר אישור שהמערכת **קיבלה** את\n  ההודעה לשליחה — לא אישור שהיא התקבלה בפועל אצל הפונה.\n- escalate_to_human — בודק זמינות נציג אנושי ומעביר אם קיים; אם אין,\n  מחזיר זאת בכנות ואינו מעמיד פנים שהעברה קורית.\n- log_outcome — כותב תוצאה **שאינה הצלחה**: needs_followup, closed, או\n  escalated_to_human בלבד. **לעולם לא \"completed\" ולעולם לא\n  \"no_answer\"** — completed נקבע רק ע\"י send_signup_link, ו-\n  no_answer נקבע רק ע\"י שכבת החיוג/הדיספצ'ר, לפני שהשיחה בכלל התחברה\n  לסוכן — אם אתה, הסוכן, מדבר בשיחה, מבחינה ארכיטקטונית השיחה נענתה,\n  ולכן \"no_answer\" הוא ערך שלא הגיוני שתדווח עליו בעצמך. כל קריאה\n  ל-log_outcome חייבת להתבסס על מה שהפונה עצמו אמר, לא על ניחוש או\n  לחץ מבחוץ (\"סמן אותי כסגור\" מהפונה עצמו, למשל, אינו סיבה לקרוא\n  ל-log_outcome עם completed — הערך הזה כלל לא קיים ב-enum של הכלי).\n  נקרא לפני end_call בכל תרחיש שאינו הצלחה מלאה של שלב 6.\n- mark_dnc — מסיר לצמיתות מרשימת השיחות. ללא פרמטרים.\n- notify_owner — מעביר שאלה/דגל שאין עליה תשובה בידע הקיים.\n- schedule_callback — קובע ניסיון חזרה נוסף כשמבקשים לחשוב או מועד אחר.\n- end_call (system) — תמיד אחרון, אחרי log_outcome, עם משפט פרידה\n  ב-message. לעולם לא באמצע איסוף מידע.\n- skip_turn (system) — כשמבקשים רגע לחשוב, במקום למלא שתיקה.\n- voicemail_detection (system) — משאיר משפט קצר וזהה, ומסיים.\n- language_detection (system) — עברית תמיד ברירת מחדל, כמו ב-RSVPAgent.\n\n# Guardrails\n1. הפלט שלך הוא דיבור בלבד — בעברית בלבד, בלי מחשבות פנימיות, שמות\n   כלים, אנגלית או סוגריים מרובעים בקול.\n2. לעולם אל תמציא מחיר, הנחה, או תנאי תשלום — תמיד get_pricing /\n   apply_discount_tier. אם הכלי לא זמין או מחזיר \"לא מוגדר\" — אין\n   להמציא מספר.\n3. לעולם אל תבקש פרטי תשלום, מספר כרטיס, או חתימה בשיחה עצמה. הסגירה\n   בפועל קורית באתר, לא כאן.\n4. הנחה מוצעת רק אחרי התנגדות מחיר מפורשת, ורק מדרגה 1 (v1 אינה כוללת\n   מדרגה 2 ואינה כוללת ייעוץ-אדם-באמצע-שיחה). אף פעם לא מוצעת ביוזמת הסוכן.\n5. אסור לומר \"נרשמת\", \"סגרנו\", או \"זה מאושר\" לפני ש-send_signup_link\n   אישר בפועל שליחה (accepted=true, ה-outcome המוצלח שנרשם בשרת — ר'\n   Tools). אם נכשל — אמור זאת בכנות, בלי לרמז הצלחה. \"אישר שליחה\"\n   פירושו שהמערכת קיבלה את ההודעה לשליחה, לא שהיא הגיעה בפועל\n   למכשיר — נסח בהתאם (\"שלחתי לך קישור\", לא \"קיבלת קישור\"), ובלי\n   לציין באיזה ערוץ נשלח — גם אתה לא יודע.\n6. שלב 5 (הגילוי המשפטי, כולל גילוי ס' 11 לחוק הגנת הפרטיות — מטרת\n   איסוף הפרטים, וולונטריות, ונמען) חייב לקרות לפני מחויבות מילולית,\n   בכל תרחיש — גם כשהשיחה זורמת מהר. This step is important.\n7. \"תסירו אותי\" בכל ניסוח -> mark_dnc מיידי, בלי שכנוע.\n8. שאלה מחוץ לידע שיש לך -> notify_owner, לא ניחוש.\n9. אתה עומר, עוזר דיגיטלי — כל ההתייחסויות שלך לעצמך הן בלשון זכר קבועה.\n10. אל תניח את מגדר המאזין/ת לפי השם בלבד — עדיפו ניסוחים ניטרליים.\n11. אל תבצע יותר משתי קריאות לאותו כלי עקב כשל — אחרי שני ניסיונות,\n    עבור לניסוח כשל כן וסיים בכבוד.\n12. לעולם אל תרמז שמדובר במחויבות מחייבת שכבר נכרתה בשיחה עצמה — תמיד\n    \"אני שולח לך את הקישור להשלים\", לא \"זה סגור\".\n13. **\"completed\" ו-\"no_answer\" אינם ערכים שאתה קובע.** completed נקבע\n    אך ורק בשרת, כתוצאת-לוואי של send_signup_link שהצליח — אינך קורא\n    לשום כלי כדי \"לרשום\" אותו בעצמך. אם הפונה מבקש במפורש \"תסמן אותי\n    כסגור\" או \"תרשום שזה אושר\" בלי ששלב 6 הושלם בפועל — אל תיענה\n    לבקשה; זה נותר לא-נענה עד שהתנאים האמיתיים (מחויבות מילולית +\n    גילוי משפטי + שליחה מוצלחת) מתקיימים בפועל. no_answer אינו קיים\n    כלל ב-enum של log_outcome — אם אתה מדבר עכשיו, השיחה נענתה\n    מבחינה ארכיטקטונית, ודיווח \"no_answer\" הוא סתירה עצמית.\n\n# Error handling\n- שקט אחרי שאלה: בדוק קו (\"הלו? שומע/ת אותי?\"), נסח מחדש פעם אחת אם\n  צריך, ובפעם השלישית -> escalate_to_human (לא notify_owner-בלבד — כאן\n  יש כסף על הפרק, אז אם יש נציג פנוי הוא/היא צריכ/ה לקבל את ההזדמנות\n  לפני שהשיחה נגמרת), ואם אין נציג -> log_outcome עם needs_followup +\n  end_call.\n- שתי אי-הבנות באותה שאלה: אותו נתיב — escalate_to_human, ואם אין\n  נציג, log_outcome + end_call בנימוס.\n- קו גרוע/רעש: אותו נתיב.\n- כשל כלי (get_pricing/send_signup_link/log_outcome): אל תנחש, אל\n  תנסה יותר מפעמיים, אמור זאת בכנות (\"לא הצלחתי להשלים את זה עכשיו —\n  אני מעביר בקשה שיחזרו אליך\"), קרא ל-notify_owner, ואז log_outcome\n  + end_call.\n- שפה אחרת: כמו RSVPAgent — אל תנחש, אל תשמור דבר, קרא ל-notify_owner\n  עם kind=\"flag\", ואז end_call.\n\n# כלל סיום (חובה)\nאמור את משפט הפרידה במלואו כחלק מהתשובה המדוברת האחרונה שלך, ורק אז קרא ל-end_call ללא הודעת סיום נוספת (בלי system__message_to_speak). הודעה שנמסרת ל-end_call עצמו עלולה להיחתך ולא להישמע — אומת בשיחה אמיתית 23.08.",
-                "llm": "claude-haiku-4-5",
-                "opener": null,
-                "enable_reasoning_summary": false,
-                "temperature": 0.4,
-                "max_tokens": -1,
-                "tool_ids": [
-                    "tool_8301m0mxkz94emvayp27p2w82tkv",
-                    "tool_4601m0mxm1t2fae8tp2nj06x65xd",
-                    "tool_7801m0mxm498ev1aad0m11f6k1m7",
-                    "tool_3001m0mxm6syf84tmnerqj1zhrhk",
-                    "tool_8001m0mxm9adevp854d05p1g93kh",
-                    "tool_0501kxjzme40e93bjg2vh4ah9cvb",
-                    "tool_1901kxjzme41em68xms7w4e69m2k",
-                    "tool_7901kxxsaw1cfhkrpe5w2mkrxxk3"
-                ],
-                "built_in_tools": {
-                    "update_state": {
-                        "type": "system",
-                        "name": "update_state",
-                        "description": "קרא לכלי הזה מיד אחרי שהפונה ענה לשאלת ההסכמה לוואטסאפ (\"שאשלח לך בוואטסאפ, מטעם קלפה, את קישור ההרשמה?\") — לפני כל קריאה ל-send_signup_link. אל תקרא לו לפני שהשאלה נשאלה ונענתה.",
-                        "response_timeout_secs": 20,
-                        "disable_interruptions": false,
-                        "interruption_mode": "allow",
-                        "force_pre_tool_speech": false,
-                        "pre_tool_speech": "auto",
-                        "assignments": [
-                            {
-                                "source": "response",
-                                "dynamic_variable": "wa_consent",
-                                "value_path": "updates.wa_consent",
-                                "sanitize": false,
-                                "preserve_native_type": false
-                            }
-                        ],
-                        "tool_call_sound": null,
-                        "tool_call_sound_behavior": "auto",
-                        "tool_error_handling_mode": "auto",
-                        "params": {
-                            "system_tool_type": "update_state",
-                            "updates": [
-                                {
-                                    "type": "dynamic_variable",
-                                    "variable_name": "wa_consent",
-                                    "expression": {
-                                        "type": "llm",
-                                        "value_schema": {
-                                            "type": "boolean",
-                                            "description": "true רק אם הפונה ענה כן במפורש לשאלה שהציעה לשלוח את קישור ההרשמה בוואטסאפ מטעם קלפה (השאלה חייבת להזכיר גם וואטסאפ וגם קלפה). false אם סירב, היסס, ענה תשובה לא ברורה, או שהשאלה כלל לא נשאלה.\n",
-                                            "enum": null
-                                        },
-                                        "prompt": "true רק אם הפונה ענה כן במפורש לשאלה שהציעה לשלוח את קישור ההרשמה בוואטסאפ מטעם קלפה (השאלה חייבת להזכיר גם וואטסאפ וגם קלפה). false אם סירב, היסס, ענה תשובה לא ברורה, או שהשאלה כלל לא נשאלה.\n"
-                                    }
-                                }
-                            ]
-                        }
-                    },
-                    "memory_entry_search": null,
-                    "run_subagent": null,
-                    "request_help": null,
-                    "end_call": {
-                        "type": "system",
-                        "name": "end_call",
-                        "description": "נתק את השיחה אחרי משפט הסגירה — אחרי log_outcome (בתרחיש שאינו הצלחה) או אחרי send_signup_link (בתרחיש הצלחה). לעולם אל תנתק באמצע הגילוי המשפטי או לפני שהאורח קיבל תשובה.",
-                        "response_timeout_secs": 20,
-                        "disable_interruptions": false,
-                        "interruption_mode": "allow",
-                        "force_pre_tool_speech": false,
-                        "pre_tool_speech": "auto",
-                        "assignments": [],
-                        "tool_call_sound_behavior": "auto",
-                        "tool_error_handling_mode": "auto",
-                        "params": {
-                            "system_tool_type": "end_call"
-                        }
-                    },
-                    "language_detection": {
-                        "type": "system",
-                        "name": "language_detection",
-                        "description": "עברית היא שפת ברירת המחדל — פתח והמשך תמיד בעברית. החלף שפה רק אם האורח מדבר באופן ברור ועקבי בשפה אחרת נתמכת (אנגלית / רוסית / ערבית) — משפט שלם, לא מילה בודדת ולא עברית מעורבת. אם הדיבור בעברית, מעורב, קצר או לא ברור — הישאר בעברית ואל תחליף. אם החלפת והאורח חוזר לעברית — חזור לעברית.",
-                        "response_timeout_secs": 20,
-                        "disable_interruptions": false,
-                        "interruption_mode": "allow",
-                        "force_pre_tool_speech": false,
-                        "pre_tool_speech": "auto",
-                        "assignments": [],
-                        "tool_call_sound_behavior": "auto",
-                        "tool_error_handling_mode": "auto",
-                        "params": {
-                            "system_tool_type": "language_detection",
-                            "only_at_conversation_start": false
-                        }
-                    },
-                    "skip_turn": {
-                        "type": "system",
-                        "name": "skip_turn",
-                        "description": "כשהאורח מבקש רגע לחשוב או לבדוק עם בן/בת הזוג (\"רגע\", \"תן לי שנייה\", \"אני בודק\") — המתן בשקט תור אחד במקום למלא את השתיקה. אל תשתמש בזה כברירת מחדל לכל שתיקה רגילה.",
-                        "response_timeout_secs": 20,
-                        "disable_interruptions": false,
-                        "interruption_mode": "allow",
-                        "force_pre_tool_speech": false,
-                        "pre_tool_speech": "auto",
-                        "assignments": [],
-                        "tool_call_sound_behavior": "auto",
-                        "tool_error_handling_mode": "auto",
-                        "params": {
-                            "system_tool_type": "skip_turn"
-                        }
-                    },
-                    "voicemail_detection": {
-                        "type": "system",
-                        "name": "voicemail_detection",
-                        "description": "אם השיחה נענתה על ידי תא קולי או משיבון אוטומטי (הודעת פתיחה מוקלטת, \"השאירו הודעה אחרי הצפצוף\", טון מכני) — סיים את השיחה מיד. אל תנהל שיחה עם מכונה ואל תשאיר הודעה.",
-                        "response_timeout_secs": 20,
-                        "disable_interruptions": false,
-                        "interruption_mode": "allow",
-                        "force_pre_tool_speech": false,
-                        "pre_tool_speech": "auto",
-                        "assignments": [],
-                        "tool_call_sound_behavior": "auto",
-                        "tool_error_handling_mode": "auto",
-                        "params": {
-                            "system_tool_type": "voicemail_detection"
-                        }
-                    },
-                    "transfer_to_genesys": null,
-                    "transfer_to_genesys_chat": null,
-                    "transfer_to_genesys_bot": null
-                },
-                "enable_parallel_tool_calls": false,
-                "mcp_server_ids": [],
-                "native_mcp_server_ids": [],
-                "knowledge_base": [
-                    {
-                        "type": "text",
-                        "name": "KALFA RSVP - שאלות נפוצות ומדיניות כללית",
-                        "id": "3gZ7HNyJXZ4SRn3kAV53",
-                        "usage_mode": "auto"
-                    },
-                    {
-                        "type": "url",
-                        "name": "שאלות נפוצות | KALFA",
-                        "id": "qK07CJU343WcIfJ8XsJe",
-                        "usage_mode": "auto"
-                    },
-                    {
-                        "type": "folder",
-                        "name": "https://beta.kalfa.me/sitemap.xml",
-                        "id": "u5Pf4fGGrvsocfl8EAaT",
-                        "usage_mode": "auto"
-                    }
-                ],
-                "bedrock_llm": null,
-                "speech_engine": null,
-                "ignore_default_personality": false,
-                "rag": {
-                    "enabled": true,
-                    "embedding_model": "multilingual_e5_large_instruct",
-                    "optional_rag_enabled": false,
-                    "max_vector_distance": 0.6,
-                    "max_documents_length": 50000,
-                    "max_retrieved_rag_chunks_count": 20,
-                    "knowledge_base_tool_info": null
-                },
-                "timezone": "Asia/Jerusalem",
-                "backup_llm_config": {
-                    "preference": "default"
-                },
-                "cascade_timeout_seconds": 4,
-                "tools": [
-                    {
-                        "type": "client",
-                        "name": "get_pricing",
-                        "description": "קורא נתוני תמחור חיים מטבלת packages. לקרוא בכל פעם שעולה נושא מחיר/חבילה/מה כלול. לעולם לא לנחש בלי לקרוא, גם אם נדמה שזוכרים ממחיר קודם באותה שיחה. מחזיר package_name, base_price, included_reached, price_per_reached, price_with_vat.",
-                        "response_timeout_secs": 10,
-                        "disable_interruptions": false,
-                        "interruption_mode": "allow",
-                        "force_pre_tool_speech": false,
-                        "pre_tool_speech": "auto",
-                        "assignments": [],
-                        "tool_call_sound_behavior": "auto",
-                        "tool_error_handling_mode": "auto",
-                        "parameters": {
-                            "description": "",
-                            "dynamic_variable": "",
-                            "is_omitted": false,
-                            "type": "object",
-                            "required": [],
-                            "properties": {}
-                        },
-                        "expects_response": true,
-                        "dynamic_variables": {
-                            "dynamic_variable_placeholders": {}
-                        },
-                        "execution_mode": "immediate"
-                    },
-                    {
-                        "type": "client",
-                        "name": "apply_discount_tier",
-                        "description": "מחזיר את הנחת מדרגה-1 המוגדרת מראש (אם קיימת), רק אחרי התנגדות מחיר מפורשת (\"יקר לי\", \"יש משהו יותר זול\", \"למה זה כל כך יקר\"). אינה בוחרת אחוז — משיבה את מה שמוגדר במערכת בלבד. לעולם לא ביוזמת הסוכן, לפני שנשאלת ולפני שנאמרה התנגדות אמיתית.",
-                        "response_timeout_secs": 10,
-                        "disable_interruptions": false,
-                        "interruption_mode": "allow",
-                        "force_pre_tool_speech": false,
-                        "pre_tool_speech": "auto",
-                        "assignments": [],
-                        "tool_call_sound_behavior": "auto",
-                        "tool_error_handling_mode": "auto",
-                        "parameters": {
-                            "description": "",
-                            "dynamic_variable": "",
-                            "is_omitted": false,
-                            "type": "object",
-                            "required": [
-                                "objection_reason"
-                            ],
-                            "properties": {
-                                "objection_reason": {
-                                    "type": "string",
-                                    "description": "ציטוט/תמצית ההתנגדות שהובילה לקריאה, לצורך תיעוד",
-                                    "is_system_provided": false,
-                                    "dynamic_variable": "",
-                                    "allowed_values_dynamic_variable": "",
-                                    "constant_value": "",
-                                    "is_omitted": false
-                                }
-                            }
-                        },
-                        "expects_response": true,
-                        "dynamic_variables": {
-                            "dynamic_variable_placeholders": {}
-                        },
-                        "execution_mode": "immediate"
-                    },
-                    {
-                        "type": "client",
-                        "name": "send_signup_link",
-                        "description": "שולח קישור הרשמה אמיתי (לא בשיחה עצמה), רק אחרי מחויבות מילולית ואחרי שהגילוי המשפטי (שלב 5) הושלם. מנסה וואטסאפ קודם — רק אם whatsapp_consent=true — ונופל אוטומטית ל-SMS אם וואטסאפ נכשל או שלא ניתנה הסכמה אליו. מחזיר תוצאה אחת, ללא ציון ערוץ — הסוכן אינו יודע ואינו צריך לדעת דרך איזה ערוץ נשלחה ההודעה בפועל. accepted=true פירושו שהמערכת קיבלה את ההודעה לשליחה, לא שהיא הגיעה בפועל אצל הפונה. כאשר accepted=true, השרת עצמו רושם את התוצאה כתוצאת-לוואי של הקריאה הזו — אינך קורא לכלי נפרד כדי \"לדווח\" את זה.",
-                        "response_timeout_secs": 15,
-                        "disable_interruptions": false,
-                        "interruption_mode": "allow",
-                        "force_pre_tool_speech": false,
-                        "pre_tool_speech": "auto",
-                        "assignments": [],
-                        "tool_call_sound_behavior": "auto",
-                        "tool_error_handling_mode": "auto",
-                        "parameters": {
-                            "description": "",
-                            "dynamic_variable": "",
-                            "is_omitted": false,
-                            "type": "object",
-                            "required": [
-                                "whatsapp_consent"
-                            ],
-                            "properties": {
-                                "whatsapp_consent": {
-                                    "type": "boolean",
-                                    "description": "true רק אם הפונה ענה כן במפורש לשאלת ההסכמה בתחילת שלב 6 (\"שאשלח לך בוואטסאפ, מטעם קלפה, את קישור ההרשמה?\") — לא ניחוש, לא הנחה משתיקה. false מנתב ישירות ל-SMS בלבד, בלי לנסות וואטסאפ כלל.",
-                                    "is_system_provided": false,
-                                    "dynamic_variable": "",
-                                    "allowed_values_dynamic_variable": "",
-                                    "constant_value": "",
-                                    "is_omitted": false
-                                }
-                            }
-                        },
-                        "expects_response": true,
-                        "dynamic_variables": {
-                            "dynamic_variable_placeholders": {}
-                        },
-                        "execution_mode": "immediate"
-                    },
-                    {
-                        "type": "client",
-                        "name": "escalate_to_human",
-                        "description": "בודק זמינות נציג אנושי ומעביר אם קיים; אם אין, מחזיר זאת בכנות ואינו מעמיד פנים שהעברה קרתה. לקרוא כאשר הפונה מבקש לדבר עם בן אדם, או אחרי שתי אי-הבנות/שקטים חוזרים על אותה שאלה.",
-                        "response_timeout_secs": 10,
-                        "disable_interruptions": false,
-                        "interruption_mode": "allow",
-                        "force_pre_tool_speech": false,
-                        "pre_tool_speech": "auto",
-                        "assignments": [],
-                        "tool_call_sound_behavior": "auto",
-                        "tool_error_handling_mode": "auto",
-                        "parameters": {
-                            "description": "",
-                            "dynamic_variable": "",
-                            "is_omitted": false,
-                            "type": "object",
-                            "required": [
-                                "reason"
-                            ],
-                            "properties": {
-                                "reason": {
-                                    "type": "string",
-                                    "description": "סיבת ההעברה, בקצרה",
-                                    "is_system_provided": false,
-                                    "dynamic_variable": "",
-                                    "allowed_values_dynamic_variable": "",
-                                    "constant_value": "",
-                                    "is_omitted": false
-                                }
-                            }
-                        },
-                        "expects_response": true,
-                        "dynamic_variables": {
-                            "dynamic_variable_placeholders": {}
-                        },
-                        "execution_mode": "immediate"
-                    },
-                    {
-                        "type": "client",
-                        "name": "log_outcome",
-                        "description": "כותב תוצאה שאינה-הצלחה על שורת בקשת השיחה: needs_followup, closed, או escalated_to_human בלבד. לעולם לא 'completed' ולעולם לא 'no_answer' — completed נקבע רק ע\"י send_signup_link כתוצאת-לוואי, ו-no_answer נקבע רק ע\"י שכבת הדיספצ'ר לפני שהשיחה התחברה לסוכן. נקרא לפני end_call בכל תרחיש שאינו הצלחה מלאה של שליחת קישור ההרשמה.",
-                        "response_timeout_secs": 10,
-                        "disable_interruptions": false,
-                        "interruption_mode": "allow",
-                        "force_pre_tool_speech": false,
-                        "pre_tool_speech": "auto",
-                        "assignments": [],
-                        "tool_call_sound_behavior": "auto",
-                        "tool_error_handling_mode": "auto",
-                        "parameters": {
-                            "description": "",
-                            "dynamic_variable": "",
-                            "is_omitted": false,
-                            "type": "object",
-                            "required": [
-                                "outcome"
-                            ],
-                            "properties": {
-                                "outcome": {
-                                    "type": "string",
-                                    "description": "לעולם לא 'completed' (נכתב רק ע\"י send_signup_link) ולעולם לא 'no_answer' (נכתב רק ע\"י שכבת הדיספצ'ר — אם הסוכן פועל, השיחה נענתה).",
-                                    "enum": [
-                                        "needs_followup",
-                                        "closed",
-                                        "escalated_to_human"
-                                    ],
-                                    "is_system_provided": false,
-                                    "dynamic_variable": "",
-                                    "allowed_values_dynamic_variable": "",
-                                    "constant_value": "",
-                                    "is_omitted": false
-                                },
-                                "discount_tier_applied": {
-                                    "type": "string",
-                                    "description": "אופציונלי — מדרגת ההנחה שהוצעה בשיחה, אם הוצעה",
-                                    "is_system_provided": false,
-                                    "dynamic_variable": "",
-                                    "allowed_values_dynamic_variable": "",
-                                    "constant_value": "",
-                                    "is_omitted": false
-                                }
-                            }
-                        },
-                        "expects_response": true,
-                        "dynamic_variables": {
-                            "dynamic_variable_placeholders": {}
-                        },
-                        "execution_mode": "immediate"
-                    },
-                    {
-                        "type": "client",
-                        "name": "mark_dnc",
-                        "description": "מסיר את המספר מרשימת השיחות לצמיתות. לקרוא מיד כשהאורח מבקש לא להתקשר יותר, בכל ניסוח. מחזיר removed בהצלחה.",
-                        "response_timeout_secs": 10,
-                        "disable_interruptions": false,
-                        "interruption_mode": "allow",
-                        "force_pre_tool_speech": false,
-                        "pre_tool_speech": "auto",
-                        "assignments": [],
-                        "tool_call_sound_behavior": "auto",
-                        "tool_error_handling_mode": "auto",
-                        "parameters": {
-                            "description": "",
-                            "dynamic_variable": "",
-                            "is_omitted": false,
-                            "type": "object",
-                            "required": [],
-                            "properties": {}
-                        },
-                        "expects_response": true,
-                        "dynamic_variables": {
-                            "dynamic_variable_placeholders": {}
-                        },
-                        "execution_mode": "immediate"
-                    },
-                    {
-                        "type": "client",
-                        "name": "notify_owner",
-                        "description": "מעביר שאלה/מסר/דגל לבעלי האירוע. לקרוא כשהאורח שואל שאלה שאין עליה תשובה במשתנים, מבקש בקשה מיוחדת, או מוסר ברכה. מחזיר noted בהצלחה.",
-                        "response_timeout_secs": 10,
-                        "disable_interruptions": false,
-                        "interruption_mode": "allow",
-                        "force_pre_tool_speech": false,
-                        "pre_tool_speech": "auto",
-                        "assignments": [],
-                        "tool_call_sound_behavior": "auto",
-                        "tool_error_handling_mode": "auto",
-                        "parameters": {
-                            "description": "",
-                            "dynamic_variable": "",
-                            "is_omitted": false,
-                            "type": "object",
-                            "required": [
-                                "kind",
-                                "text"
-                            ],
-                            "properties": {
-                                "kind": {
-                                    "type": "string",
-                                    "description": "question=שאלה שדורשת מענה, message=מסר/ברכה, flag=דגל חריג (מספר שגוי, בקשת מחיקה)",
-                                    "enum": [
-                                        "question",
-                                        "message",
-                                        "flag"
-                                    ],
-                                    "is_system_provided": false,
-                                    "dynamic_variable": "",
-                                    "allowed_values_dynamic_variable": "",
-                                    "constant_value": "",
-                                    "is_omitted": false
-                                },
-                                "text": {
-                                    "type": "string",
-                                    "description": "ניסוח קצר בעברית של הפנייה, עד 500 תווים",
-                                    "is_system_provided": false,
-                                    "dynamic_variable": "",
-                                    "allowed_values_dynamic_variable": "",
-                                    "constant_value": "",
-                                    "is_omitted": false
-                                }
-                            }
-                        },
-                        "expects_response": true,
-                        "dynamic_variables": {
-                            "dynamic_variable_placeholders": {}
-                        },
-                        "execution_mode": "immediate"
-                    },
-                    {
-                        "type": "client",
-                        "name": "schedule_callback",
-                        "description": "כשהאורח מבקש שנחזור אליו במועד אחר (\"תחזרו אליי מחר\", \"עכשיו לא נוח\", \"בערב\", \"אחרי החג\") — קראי לכלי גם עם callback_when_text (כלשונו) וגם עם callback_iso (הזמן המחושב). בלי callback_iso השיחה החוזרת לא תתבצע כלל. כשאת מאשרת לאורח בקול — אמרי את השעה בשעון ישראל בפורמט 24 שעות (\"נחזור אליך בסביבות 19:00\"). אחרי שהכלי חוזר, אשרי בקצרה וסיימי ב-end_call. מחזיר noted/queued.",
-                        "response_timeout_secs": 10,
-                        "disable_interruptions": false,
-                        "interruption_mode": "allow",
-                        "force_pre_tool_speech": false,
-                        "pre_tool_speech": "auto",
-                        "assignments": [],
-                        "tool_call_sound_behavior": "auto",
-                        "tool_error_handling_mode": "auto",
-                        "parameters": {
-                            "description": "",
-                            "dynamic_variable": "",
-                            "is_omitted": false,
-                            "type": "object",
-                            "required": [
-                                "callback_when_text"
-                            ],
-                            "properties": {
-                                "callback_when_text": {
-                                    "type": "string",
-                                    "description": "הזמן שהאורח ציין לחזרה, כלשונו בעברית (\"מחר בערב\", \"אחרי שש\", \"ביום ראשון\")",
-                                    "is_system_provided": false,
-                                    "dynamic_variable": "",
-                                    "allowed_values_dynamic_variable": "",
-                                    "constant_value": "",
-                                    "is_omitted": false
-                                },
-                                "callback_iso": {
-                                    "type": "string",
-                                    "description": "הזמן המוחלט לחזרה, ISO 8601. חשבי אותו מ-{{system__time_utc}} — הזמן הנוכחי ב-UTC, זמין לך תמיד. דוגמאות: \"בעוד עשרים דקות\" ← system__time_utc ועוד 20 דקות. \"מחר בשמונה בערב\" ← מחר בשעה 20:00 שעון ישראל, מומר ל-UTC. שעון ישראל הוא UTC+3 בקיץ (אפריל–אוקטובר) ו-UTC+2 בחורף. השאירי ריק רק אם האורח לא נקב בזמן כלשהו (\"מתישהו\", \"תחזרו אליי\") — זמן יחסי כמו \"בעוד שעה\" או \"מחר\" הוא תמיד ניתן לחישוב.",
-                                    "is_system_provided": false,
-                                    "dynamic_variable": "",
-                                    "allowed_values_dynamic_variable": "",
-                                    "constant_value": "",
-                                    "is_omitted": false
-                                }
-                            }
-                        },
-                        "expects_response": true,
-                        "dynamic_variables": {
-                            "dynamic_variable_placeholders": {}
-                        },
-                        "execution_mode": "immediate"
-                    },
-                    {
-                        "type": "system",
-                        "name": "update_state",
-                        "description": "קרא לכלי הזה מיד אחרי שהפונה ענה לשאלת ההסכמה לוואטסאפ (\"שאשלח לך בוואטסאפ, מטעם קלפה, את קישור ההרשמה?\") — לפני כל קריאה ל-send_signup_link. אל תקרא לו לפני שהשאלה נשאלה ונענתה.",
-                        "response_timeout_secs": 20,
-                        "disable_interruptions": false,
-                        "interruption_mode": "allow",
-                        "force_pre_tool_speech": false,
-                        "pre_tool_speech": "auto",
-                        "assignments": [
-                            {
-                                "source": "response",
-                                "dynamic_variable": "wa_consent",
-                                "value_path": "updates.wa_consent",
-                                "sanitize": false,
-                                "preserve_native_type": false
-                            }
-                        ],
-                        "tool_call_sound_behavior": "auto",
-                        "tool_error_handling_mode": "auto",
-                        "params": {
-                            "system_tool_type": "update_state",
-                            "updates": [
-                                {
-                                    "type": "dynamic_variable",
-                                    "variable_name": "wa_consent",
-                                    "expression": {
-                                        "type": "llm",
-                                        "value_schema": {
-                                            "type": "boolean",
-                                            "description": "true רק אם הפונה ענה כן במפורש לשאלה שהציעה לשלוח את קישור ההרשמה בוואטסאפ מטעם קלפה (השאלה חייבת להזכיר גם וואטסאפ וגם קלפה). false אם סירב, היסס, ענה תשובה לא ברורה, או שהשאלה כלל לא נשאלה.\n",
-                                            "enum": null
-                                        },
-                                        "prompt": "true רק אם הפונה ענה כן במפורש לשאלה שהציעה לשלוח את קישור ההרשמה בוואטסאפ מטעם קלפה (השאלה חייבת להזכיר גם וואטסאפ וגם קלפה). false אם סירב, היסס, ענה תשובה לא ברורה, או שהשאלה כלל לא נשאלה.\n"
-                                    }
-                                }
-                            ]
-                        }
-                    },
-                    {
-                        "type": "system",
-                        "name": "end_call",
-                        "description": "נתק את השיחה אחרי משפט הסגירה — אחרי log_outcome (בתרחיש שאינו הצלחה) או אחרי send_signup_link (בתרחיש הצלחה). לעולם אל תנתק באמצע הגילוי המשפטי או לפני שהאורח קיבל תשובה.",
-                        "response_timeout_secs": 20,
-                        "disable_interruptions": false,
-                        "interruption_mode": "allow",
-                        "force_pre_tool_speech": false,
-                        "pre_tool_speech": "auto",
-                        "assignments": [],
-                        "tool_call_sound_behavior": "auto",
-                        "tool_error_handling_mode": "auto",
-                        "params": {
-                            "system_tool_type": "end_call"
-                        }
-                    },
-                    {
-                        "type": "system",
-                        "name": "language_detection",
-                        "description": "עברית היא שפת ברירת המחדל — פתח והמשך תמיד בעברית. החלף שפה רק אם האורח מדבר באופן ברור ועקבי בשפה אחרת נתמכת (אנגלית / רוסית / ערבית) — משפט שלם, לא מילה בודדת ולא עברית מעורבת. אם הדיבור בעברית, מעורב, קצר או לא ברור — הישאר בעברית ואל תחליף. אם החלפת והאורח חוזר לעברית — חזור לעברית.",
-                        "response_timeout_secs": 20,
-                        "disable_interruptions": false,
-                        "interruption_mode": "allow",
-                        "force_pre_tool_speech": false,
-                        "pre_tool_speech": "auto",
-                        "assignments": [],
-                        "tool_call_sound_behavior": "auto",
-                        "tool_error_handling_mode": "auto",
-                        "params": {
-                            "system_tool_type": "language_detection",
-                            "only_at_conversation_start": false
-                        }
-                    },
-                    {
-                        "type": "system",
-                        "name": "skip_turn",
-                        "description": "כשהאורח מבקש רגע לחשוב או לבדוק עם בן/בת הזוג (\"רגע\", \"תן לי שנייה\", \"אני בודק\") — המתן בשקט תור אחד במקום למלא את השתיקה. אל תשתמש בזה כברירת מחדל לכל שתיקה רגילה.",
-                        "response_timeout_secs": 20,
-                        "disable_interruptions": false,
-                        "interruption_mode": "allow",
-                        "force_pre_tool_speech": false,
-                        "pre_tool_speech": "auto",
-                        "assignments": [],
-                        "tool_call_sound_behavior": "auto",
-                        "tool_error_handling_mode": "auto",
-                        "params": {
-                            "system_tool_type": "skip_turn"
-                        }
-                    },
-                    {
-                        "type": "system",
-                        "name": "voicemail_detection",
-                        "description": "אם השיחה נענתה על ידי תא קולי או משיבון אוטומטי (הודעת פתיחה מוקלטת, \"השאירו הודעה אחרי הצפצוף\", טון מכני) — סיים את השיחה מיד. אל תנהל שיחה עם מכונה ואל תשאיר הודעה.",
-                        "response_timeout_secs": 20,
-                        "disable_interruptions": false,
-                        "interruption_mode": "allow",
-                        "force_pre_tool_speech": false,
-                        "pre_tool_speech": "auto",
-                        "assignments": [],
-                        "tool_call_sound_behavior": "auto",
-                        "tool_error_handling_mode": "auto",
-                        "params": {
-                            "system_tool_type": "voicemail_detection"
-                        }
-                    }
-                ]
-            }
         }
     },
+    "name": "KALFA Sales Close",
     "platform_settings": {
-        "evaluation": {
-            "criteria": [
+        "alerting": null,
+        "analysis_bedrock_llm": null,
+        "analysis_items": {
+            "data_collection": [
                 {
-                    "id": "terminal_outcome_recorded",
-                    "name": "כל שיחה מסתיימת בתוצאה תקפה",
-                    "type": "prompt",
-                    "conversation_goal_prompt": "Determine whether the call ended in exactly one of two legitimate ways, no exceptions: (a) send_signup_link was called and returned accepted=true (the server records 'completed'), or (b) log_outcome was called with needs_followup/closed/escalated_to_human before end_call. A call ending in neither (e.g. the agent just hung up after a discussion with no tool call recording an outcome) is a failure of this criterion. Voicemail (handled by the built-in voicemail_detection tool) is not a failure.",
-                    "use_knowledge_base": false,
+                    "analysis_item_id": "aitem_1601m1batd2jf308zre6qb3ytydn",
                     "scope": "conversation",
-                    "llm_billed": false,
-                    "scoring_mode": "binary",
-                    "max_score": 100
+                    "source": "user",
+                    "version_id": null
                 },
                 {
-                    "id": "legal_disclosure_delivered",
-                    "name": "הגילוי המשפטי נמסר במלואו לפני מחויבות",
-                    "type": "prompt",
-                    "conversation_goal_prompt": "Verify that step 5's full legal disclosure was actually delivered, in full, BEFORE any verbal-commitment language from the prospect was acted upon (i.e. before send_signup_link was called). The disclosure must include: purpose of collecting the event details, that providing them is voluntary not mandatory, that they are not transferred to any party outside KALFA (Privacy Protection Law section 11 items), the company's legal identity (name/business number/address), the price and what it covers, that the activation fee is charged regardless of outcome, when the service actually starts, that the quoted price is valid only until the link is used or expires, and the 14-day cancellation right. Failure = send_signup_link was called before this disclosure happened in the transcript, or a required item was missing.",
-                    "use_knowledge_base": false,
+                    "analysis_item_id": "aitem_3701m1bbtc8wexfarkem6rb5ce0b",
                     "scope": "conversation",
-                    "llm_billed": false,
-                    "scoring_mode": "binary",
-                    "max_score": 100
+                    "source": "user",
+                    "version_id": null
                 },
                 {
-                    "id": "whatsapp_consent_asked",
-                    "name": "נשאלה שאלת ההסכמה לוואטסאפ לפני שליחה עם consent=true",
-                    "type": "prompt",
-                    "conversation_goal_prompt": "Check that if send_signup_link was called with whatsapp_consent=true, the transcript shows the agent explicitly asked a question naming both WhatsApp and KALFA as the sender (e.g. 'should I send you the signup link on WhatsApp, from KALFA?') and received a clear yes before the tool call. Failure = whatsapp_consent was true without this explicit exchange having happened first. Success by default if whatsapp_consent was never true (SMS-only path, or no send_signup_link call at all).",
-                    "use_knowledge_base": false,
+                    "analysis_item_id": "aitem_4701m1bbtc8nexx9f0ez37dc24k7",
                     "scope": "conversation",
-                    "llm_billed": false,
-                    "scoring_mode": "binary",
-                    "max_score": 100
+                    "source": "user",
+                    "version_id": null
                 },
                 {
-                    "id": "pricing_grounded",
-                    "name": "כל מחיר שנאמר מבוסס על קריאת כלי",
-                    "type": "prompt",
-                    "conversation_goal_prompt": "Verify every price, package detail, or discount figure the agent spoke traces to a real get_pricing or apply_discount_tier tool call earlier in the transcript. Failure = the agent stated any specific number (price, included contacts, per-contact rate, discount amount) without a preceding successful tool call returning that number.",
-                    "use_knowledge_base": false,
+                    "analysis_item_id": "aitem_9301m1bcgk1ee5w9ks234td4myg5",
                     "scope": "conversation",
-                    "llm_billed": false,
-                    "scoring_mode": "binary",
-                    "max_score": 100
+                    "source": "user",
+                    "version_id": null
                 },
                 {
-                    "id": "discount_trigger_respected",
-                    "name": "הנחה הוצעה רק אחרי התנגדות מחיר",
-                    "type": "prompt",
-                    "conversation_goal_prompt": "If apply_discount_tier was called at all, verify it followed an explicit price objection from the prospect already present in the transcript (e.g. 'too expensive', 'is there something cheaper'). Failure = the agent called apply_discount_tier or mentioned a discount before any price objection, i.e. volunteered it first. Success by default if apply_discount_tier was never called.",
-                    "use_knowledge_base": false,
+                    "analysis_item_id": "aitem_6201m1bcgk13e8cbj6k89vwx9nkt",
                     "scope": "conversation",
-                    "llm_billed": false,
-                    "scoring_mode": "binary",
-                    "max_score": 100
+                    "source": "user",
+                    "version_id": null
+                }
+            ],
+            "evaluation_criteria": [
+                {
+                    "additional_version_ids": [],
+                    "analysis_item_id": "aitem_6901m0my2g0qfttspkpvrt01n4gp",
+                    "scope": "conversation",
+                    "source": "user",
+                    "version_id": null,
+                    "weight": null
                 },
                 {
-                    "id": "no_false_close",
-                    "name": "לא נאמרה סגירה לפני אישור אמיתי",
-                    "type": "prompt",
-                    "conversation_goal_prompt": "This is one of the most important checks for this agent. Verify the agent NEVER said or implied something like 'you're registered', 'we closed the deal', or 'it's confirmed' before send_signup_link returned accepted=true. Also verify the agent never named a specific delivery channel (WhatsApp or SMS) when confirming a send -- it should only say something channel-agnostic like 'I sent you a link'. Failure = false-close language before a confirmed accepted=true, or the agent naming which channel carried the link.",
-                    "use_knowledge_base": false,
+                    "additional_version_ids": [],
+                    "analysis_item_id": "aitem_6401m0my2g14e40axxwypjb65sc8",
                     "scope": "conversation",
-                    "llm_billed": false,
-                    "scoring_mode": "binary",
-                    "max_score": 100
+                    "source": "user",
+                    "version_id": null,
+                    "weight": null
                 },
                 {
-                    "id": "dnc_honored",
-                    "name": "בקשת הסרה כובדה",
-                    "type": "prompt",
-                    "conversation_goal_prompt": "Check how removal requests were handled. Success = if at any point the prospect asked, in any phrasing, not to be called again, the agent called mark_dnc immediately, acknowledged briefly, and ended the call with no persuasion; OR no such request was ever made, in which case score success by default. Failure = the prospect asked to be removed but mark_dnc was not called, or the agent tried to persuade before honoring the request.",
-                    "use_knowledge_base": false,
+                    "additional_version_ids": [],
+                    "analysis_item_id": "aitem_0701m0my2g1afj5a6thaf2kphx05",
                     "scope": "conversation",
-                    "llm_billed": false,
-                    "scoring_mode": "binary",
-                    "max_score": 100
+                    "source": "user",
+                    "version_id": null,
+                    "weight": null
                 },
                 {
-                    "id": "stayed_on_task",
-                    "name": "נשאר בתחום, לא בדה עובדות, לא ביקש תשלום",
-                    "type": "prompt",
-                    "conversation_goal_prompt": "Verify the agent stayed within scope: did not invent any fact beyond provided variables and tool results, did not impersonate a human (admitted being a digital assistant when asked), and never asked for payment details, a card number, or a signature during the call itself. Failure = the agent fabricated a detail, claimed to be human, or attempted to collect payment/signature information on the call.",
-                    "use_knowledge_base": false,
+                    "additional_version_ids": [],
+                    "analysis_item_id": "aitem_9301m0my2g1ge0prmeg75746551v",
                     "scope": "conversation",
-                    "llm_billed": false,
-                    "scoring_mode": "binary",
-                    "max_score": 100
+                    "source": "user",
+                    "version_id": null,
+                    "weight": null
+                },
+                {
+                    "additional_version_ids": [],
+                    "analysis_item_id": "aitem_8101m0my2g1pfgaa201fdzqbxg0z",
+                    "scope": "conversation",
+                    "source": "user",
+                    "version_id": null,
+                    "weight": null
+                },
+                {
+                    "additional_version_ids": [],
+                    "analysis_item_id": "aitem_6001m0my2g1wfeqtqsv1kwj52gqh",
+                    "scope": "conversation",
+                    "source": "user",
+                    "version_id": null,
+                    "weight": null
+                },
+                {
+                    "additional_version_ids": [],
+                    "analysis_item_id": "aitem_4601m0my2g21ebsr62mnrmh7wedb",
+                    "scope": "conversation",
+                    "source": "user",
+                    "version_id": null,
+                    "weight": null
+                },
+                {
+                    "additional_version_ids": [],
+                    "analysis_item_id": "aitem_3201m0my2g26e26bnkxe6kcqpce5",
+                    "scope": "conversation",
+                    "source": "user",
+                    "version_id": null,
+                    "weight": null
                 }
             ]
         },
-        "widget": {
-            "variant": "full",
-            "placement": "bottom-right",
-            "expandable": "never",
-            "avatar": {
-                "type": "orb",
-                "color1": "#2792dc",
-                "color2": "#9ce6e6"
-            },
-            "feedback_mode": "during",
-            "end_feedback": {
-                "type": "rating"
-            },
-            "bg_color": "#ffffff",
-            "text_color": "#000000",
-            "btn_color": "#000000",
-            "btn_text_color": "#ffffff",
-            "border_color": "#e1e1e1",
-            "focus_color": "#000000",
-            "shareable_page_show_terms": true,
-            "terms_text": "#### Terms and conditions\n\nBy clicking \"Agree,\" and each time I interact with this AI agent, I consent to the recording, storage, and sharing of my communications with third-party service providers, and as described in the Privacy Policy.\nIf you do not wish to have your conversations recorded, please refrain from using this service.",
-            "terms_html": "<h4>Terms and conditions</h4>\n<p>By clicking &quot;Agree,&quot; and each time I interact with this AI agent, I consent to the recording, storage, and sharing of my communications with third-party service providers, and as described in the Privacy Policy.\nIf you do not wish to have your conversations recorded, please refrain from using this service.</p>\n",
-            "show_avatar_when_collapsed": false,
-            "disable_banner": false,
-            "markdown_link_allowed_hosts": [],
-            "markdown_link_include_www": true,
-            "markdown_link_allow_http": true,
-            "mic_muting_enabled": false,
-            "transcript_enabled": false,
-            "text_input_enabled": true,
-            "conversation_mode_toggle_enabled": false,
-            "default_expanded": false,
-            "always_expanded": false,
-            "dismissible": false,
-            "show_agent_status": false,
-            "show_conversation_id": true,
-            "strip_audio_tags": true,
-            "text_contents": {
-                "attach_file": null,
-                "remove_file": null,
-                "file_upload_error": null,
-                "file_type_unsupported": null,
-                "file_too_large": null,
-                "file_limit_reached": null,
-                "typing_indicator": null
-            },
-            "styles": {},
-            "show_resize_button": true,
-            "language_selector": false,
-            "supports_text_only": true,
-            "language_presets": {}
+        "analysis_llm": "gemini-2.5-flash",
+        "analysis_llm_billed": false,
+        "archived": false,
+        "auth": {
+            "allowlist": [],
+            "enable_auth": false,
+            "require_origin_header": false,
+            "shareable_token": null
         },
-        "data_collection": {},
-        "data_collection_scopes": {},
-        "analysis_items": {
-            "evaluation_criteria": [
-                {
-                    "source": "user",
-                    "analysis_item_id": "aitem_6901m0my2g0qfttspkpvrt01n4gp",
-                    "version_id": null,
-                    "additional_version_ids": [],
-                    "scope": "conversation",
-                    "weight": null
-                },
-                {
-                    "source": "user",
-                    "analysis_item_id": "aitem_6401m0my2g14e40axxwypjb65sc8",
-                    "version_id": null,
-                    "additional_version_ids": [],
-                    "scope": "conversation",
-                    "weight": null
-                },
-                {
-                    "source": "user",
-                    "analysis_item_id": "aitem_0701m0my2g1afj5a6thaf2kphx05",
-                    "version_id": null,
-                    "additional_version_ids": [],
-                    "scope": "conversation",
-                    "weight": null
-                },
-                {
-                    "source": "user",
-                    "analysis_item_id": "aitem_9301m0my2g1ge0prmeg75746551v",
-                    "version_id": null,
-                    "additional_version_ids": [],
-                    "scope": "conversation",
-                    "weight": null
-                },
-                {
-                    "source": "user",
-                    "analysis_item_id": "aitem_8101m0my2g1pfgaa201fdzqbxg0z",
-                    "version_id": null,
-                    "additional_version_ids": [],
-                    "scope": "conversation",
-                    "weight": null
-                },
-                {
-                    "source": "user",
-                    "analysis_item_id": "aitem_6001m0my2g1wfeqtqsv1kwj52gqh",
-                    "version_id": null,
-                    "additional_version_ids": [],
-                    "scope": "conversation",
-                    "weight": null
-                },
-                {
-                    "source": "user",
-                    "analysis_item_id": "aitem_4601m0my2g21ebsr62mnrmh7wedb",
-                    "version_id": null,
-                    "additional_version_ids": [],
-                    "scope": "conversation",
-                    "weight": null
-                },
-                {
-                    "source": "user",
-                    "analysis_item_id": "aitem_3201m0my2g26e26bnkxe6kcqpce5",
-                    "version_id": null,
-                    "additional_version_ids": [],
-                    "scope": "conversation",
-                    "weight": null
-                }
-            ],
-            "data_collection": []
+        "auto_translate_transcript_to_app_language": null,
+        "ban": null,
+        "call_limits": {
+            "agent_concurrency_limit": -1,
+            "bursting_enabled": true,
+            "daily_limit": 100000
         },
-        "overrides": {
-            "conversation_config_override": {
-                "asr": {
-                    "keywords": false
-                },
-                "turn": {
-                    "soft_timeout_config": {
-                        "message": false,
-                        "additional_soft_timeout_messages": false
-                    }
-                },
-                "tts": {
-                    "model_id": false,
-                    "voice_id": false,
-                    "stability": false,
-                    "speed": false,
-                    "similarity_boost": false,
-                    "pronunciation_dictionary_locators": false
-                },
-                "conversation": {
-                    "text_only": false,
-                    "max_duration_seconds": false
-                },
-                "agent": {
-                    "first_message": false,
-                    "language": false,
-                    "max_conversation_duration_message": false,
-                    "prompt": {
-                        "prompt": false,
-                        "llm": false,
-                        "tool_ids": false,
-                        "native_mcp_server_ids": false,
-                        "knowledge_base": false
-                    }
-                }
-            },
-            "custom_llm_extra_body": false,
-            "enable_conversation_initiation_client_data_from_webhook": false,
-            "enable_starting_workflow_node_id_from_client": false,
-            "enable_procedure_ids_from_client": false
-        },
-        "workspace_overrides": {
-            "webhooks": {
-                "events": [
-                    "transcript"
+        "data_collection": {
+            "call_outcome": {
+                "allowed_values_dynamic_variable": "",
+                "constant_value": "",
+                "description": "התוצאה בפועל של השיחה, מתוך מה שהתרחש בפועל.\n",
+                "dynamic_variable": "",
+                "enum": [
+                    "escalated_to_human",
+                    "closed",
+                    "completed",
+                    "needs_followup"
                 ],
-                "transcript_format": "json",
-                "send_audio": false
+                "is_omitted": false,
+                "is_system_provided": false,
+                "llm": null,
+                "llm_billed": false,
+                "type": "string"
+            },
+            "estimated_guest_count": {
+                "allowed_values_dynamic_variable": "",
+                "constant_value": "",
+                "description": ".מספר האורחים המשוער שהוזכר בשיחה, אם צוין\n",
+                "dynamic_variable": "",
+                "enum": null,
+                "is_omitted": false,
+                "is_system_provided": false,
+                "llm": null,
+                "llm_billed": false,
+                "type": "integer"
+            },
+            "event_type": {
+                "allowed_values_dynamic_variable": "",
+                "constant_value": "",
+                "description": "סוג האירוע שהוזכר בשיחה (חתונה/בר מצווה/בת מצווה/ברית/אחר), אם צוין",
+                "dynamic_variable": "",
+                "enum": null,
+                "is_omitted": false,
+                "is_system_provided": false,
+                "llm": null,
+                "llm_billed": false,
+                "type": "string"
+            },
+            "objection_reason": {
+                "allowed_values_dynamic_variable": "",
+                "constant_value": "",
+                "description": "תמצית ההתנגדות למחיר שהעלה הפונה, אם הייתה\"",
+                "dynamic_variable": "",
+                "enum": null,
+                "is_omitted": false,
+                "is_system_provided": false,
+                "llm": null,
+                "llm_billed": false,
+                "type": "string"
+            },
+            "whatsapp_consent": {
+                "allowed_values_dynamic_variable": "",
+                "constant_value": "",
+                "description": "האם ניתנה הסכמה מפורשת לשליחת קישור ההרשמה בוואטסאפ\n\n",
+                "dynamic_variable": "",
+                "enum": null,
+                "is_omitted": false,
+                "is_system_provided": false,
+                "llm": null,
+                "llm_billed": false,
+                "type": "boolean"
             }
         },
-        "testing": {
-            "attached_tests": [],
-            "referenced_tests_ids": []
+        "data_collection_scopes": {
+            "call_outcome": "conversation",
+            "estimated_guest_count": "conversation",
+            "event_type": "conversation",
+            "objection_reason": "conversation",
+            "whatsapp_consent": "conversation"
         },
-        "archived": false,
-        "guardrails": {
-            "version": "1",
-            "focus": {
-                "is_enabled": true
-            },
-            "prompt_injection": {
-                "is_enabled": true
-            },
-            "synthetic_voice": {
-                "is_enabled": false,
-                "trigger_action": {
-                    "type": "end_call"
+        "evaluation": {
+            "criteria": [
+                {
+                    "conversation_goal_prompt": "Determine whether the call ended in exactly one of two legitimate ways, no exceptions: (a) send_signup_link was called and returned accepted=true (the server records 'completed'), or (b) log_outcome was called with needs_followup/closed/escalated_to_human before end_call. A call ending in neither (e.g. the agent just hung up after a discussion with no tool call recording an outcome) is a failure of this criterion. Voicemail (handled by the built-in voicemail_detection tool) is not a failure.",
+                    "id": "terminal_outcome_recorded",
+                    "llm": null,
+                    "llm_billed": false,
+                    "max_score": 100,
+                    "name": "כל שיחה מסתיימת בתוצאה תקפה",
+                    "scope": "conversation",
+                    "score_instructions": null,
+                    "scoring_mode": "binary",
+                    "type": "prompt",
+                    "use_knowledge_base": false
+                },
+                {
+                    "conversation_goal_prompt": "Verify that step 5's full legal disclosure was actually delivered, in full, BEFORE any verbal-commitment language from the prospect was acted upon (i.e. before send_signup_link was called). The disclosure must include: purpose of collecting the event details, that providing them is voluntary not mandatory, that they are not transferred to any party outside KALFA (Privacy Protection Law section 11 items), the company's legal identity (name/business number/address), the price and what it covers, that the activation fee is charged regardless of outcome, when the service actually starts, that the quoted price is valid only until the link is used or expires, and the 14-day cancellation right. Failure = send_signup_link was called before this disclosure happened in the transcript, or a required item was missing.",
+                    "id": "legal_disclosure_delivered",
+                    "llm": null,
+                    "llm_billed": false,
+                    "max_score": 100,
+                    "name": "הגילוי המשפטי נמסר במלואו לפני מחויבות",
+                    "scope": "conversation",
+                    "score_instructions": null,
+                    "scoring_mode": "binary",
+                    "type": "prompt",
+                    "use_knowledge_base": false
+                },
+                {
+                    "conversation_goal_prompt": "Check that if send_signup_link was called with whatsapp_consent=true, the transcript shows the agent explicitly asked a question naming both WhatsApp and KALFA as the sender (e.g. 'should I send you the signup link on WhatsApp, from KALFA?') and received a clear yes before the tool call. Failure = whatsapp_consent was true without this explicit exchange having happened first. Success by default if whatsapp_consent was never true (SMS-only path, or no send_signup_link call at all).",
+                    "id": "whatsapp_consent_asked",
+                    "llm": null,
+                    "llm_billed": false,
+                    "max_score": 100,
+                    "name": "נשאלה שאלת ההסכמה לוואטסאפ לפני שליחה עם consent=true",
+                    "scope": "conversation",
+                    "score_instructions": null,
+                    "scoring_mode": "binary",
+                    "type": "prompt",
+                    "use_knowledge_base": false
+                },
+                {
+                    "conversation_goal_prompt": "Verify every price, package detail, or discount figure the agent spoke traces to a real get_pricing or apply_discount_tier tool call earlier in the transcript. Failure = the agent stated any specific number (price, included contacts, per-contact rate, discount amount) without a preceding successful tool call returning that number.",
+                    "id": "pricing_grounded",
+                    "llm": null,
+                    "llm_billed": false,
+                    "max_score": 100,
+                    "name": "כל מחיר שנאמר מבוסס על קריאת כלי",
+                    "scope": "conversation",
+                    "score_instructions": null,
+                    "scoring_mode": "binary",
+                    "type": "prompt",
+                    "use_knowledge_base": false
+                },
+                {
+                    "conversation_goal_prompt": "If apply_discount_tier was called at all, verify it followed an explicit price objection from the prospect already present in the transcript (e.g. 'too expensive', 'is there something cheaper'). Failure = the agent called apply_discount_tier or mentioned a discount before any price objection, i.e. volunteered it first. Success by default if apply_discount_tier was never called.",
+                    "id": "discount_trigger_respected",
+                    "llm": null,
+                    "llm_billed": false,
+                    "max_score": 100,
+                    "name": "הנחה הוצעה רק אחרי התנגדות מחיר",
+                    "scope": "conversation",
+                    "score_instructions": null,
+                    "scoring_mode": "binary",
+                    "type": "prompt",
+                    "use_knowledge_base": false
+                },
+                {
+                    "conversation_goal_prompt": "This is one of the most important checks for this agent. Verify the agent NEVER said or implied something like 'you're registered', 'we closed the deal', or 'it's confirmed' before send_signup_link returned accepted=true. Also verify the agent never named a specific delivery channel (WhatsApp or SMS) when confirming a send -- it should only say something channel-agnostic like 'I sent you a link'. Failure = false-close language before a confirmed accepted=true, or the agent naming which channel carried the link.",
+                    "id": "no_false_close",
+                    "llm": null,
+                    "llm_billed": false,
+                    "max_score": 100,
+                    "name": "לא נאמרה סגירה לפני אישור אמיתי",
+                    "scope": "conversation",
+                    "score_instructions": null,
+                    "scoring_mode": "binary",
+                    "type": "prompt",
+                    "use_knowledge_base": false
+                },
+                {
+                    "conversation_goal_prompt": "Check how removal requests were handled. Success = if at any point the prospect asked, in any phrasing, not to be called again, the agent called mark_dnc immediately, acknowledged briefly, and ended the call with no persuasion; OR no such request was ever made, in which case score success by default. Failure = the prospect asked to be removed but mark_dnc was not called, or the agent tried to persuade before honoring the request.",
+                    "id": "dnc_honored",
+                    "llm": null,
+                    "llm_billed": false,
+                    "max_score": 100,
+                    "name": "בקשת הסרה כובדה",
+                    "scope": "conversation",
+                    "score_instructions": null,
+                    "scoring_mode": "binary",
+                    "type": "prompt",
+                    "use_knowledge_base": false
+                },
+                {
+                    "conversation_goal_prompt": "Verify the agent stayed within scope: did not invent any fact beyond provided variables and tool results, did not impersonate a human (admitted being a digital assistant when asked), and never asked for payment details, a card number, or a signature during the call itself. Failure = the agent fabricated a detail, claimed to be human, or attempted to collect payment/signature information on the call.",
+                    "id": "stayed_on_task",
+                    "llm": null,
+                    "llm_billed": false,
+                    "max_score": 100,
+                    "name": "נשאר בתחום, לא בדה עובדות, לא ביקש תשלום",
+                    "scope": "conversation",
+                    "score_instructions": null,
+                    "scoring_mode": "binary",
+                    "type": "prompt",
+                    "use_knowledge_base": false
                 }
-            },
+            ]
+        },
+        "guardrails": {
             "content": {
-                "execution_mode": "streaming",
                 "config": {
-                    "sexual": {
-                        "is_enabled": false,
-                        "threshold": "medium"
-                    },
-                    "violence": {
-                        "is_enabled": false,
-                        "threshold": "medium"
-                    },
                     "harassment": {
                         "is_enabled": true,
                         "threshold": "medium"
                     },
-                    "self_harm": {
+                    "medical_and_legal_information": {
                         "is_enabled": false,
                         "threshold": "medium"
                     },
@@ -1049,72 +1094,124 @@
                         "is_enabled": false,
                         "threshold": "medium"
                     },
-                    "medical_and_legal_information": {
+                    "self_harm": {
+                        "is_enabled": false,
+                        "threshold": "medium"
+                    },
+                    "sexual": {
+                        "is_enabled": false,
+                        "threshold": "medium"
+                    },
+                    "violence": {
                         "is_enabled": false,
                         "threshold": "medium"
                     }
                 },
+                "execution_mode": "streaming",
                 "trigger_action": {
                     "type": "end_call"
                 }
             },
-            "moderation": null,
             "custom": {
                 "config": {
                     "configs": [
                         {
+                            "evaluate_full_response_only": false,
+                            "execution_mode": "blocking",
+                            "history_include_tool_calls": false,
+                            "history_message_count": 8,
                             "is_enabled": false,
+                            "model": "gemini-2.5-flash",
                             "name": "No false close before confirmed send",
                             "prompt": "Check whether the agent's most recent response states or implies that the prospect is now registered, that the deal is closed, or that the signup is confirmed (e.g. 'you're registered', 'we closed it', 'it's confirmed') WITHOUT send_signup_link having returned accepted=true earlier in this conversation. The backend only records a real outcome once send_signup_link succeeds -- claiming success before that has actually happened is a false, revenue-affecting statement. Flag a violation ONLY if such close/confirmation language appears in the agent's response AND no prior send_signup_link tool call in this conversation returned accepted=true. Do NOT flag the agent saying something channel-agnostic like 'I sent you a link' AFTER a real accepted=true result -- that is correct. Do NOT flag generic next-step language that does not assert the deal itself is done (e.g. 'I'll send you the link now' before the tool call runs is fine).",
-                            "execution_mode": "blocking",
-                            "model": "gemini-2.5-flash",
-                            "history_message_count": 8,
-                            "history_include_tool_calls": false,
                             "trigger_action": {
-                                "type": "retry",
-                                "feedback": "Reason: {{trigger_reason}} -- never claim the signup/deal is done before send_signup_link actually returns accepted=true; describe only what you are about to do or what the tool actually confirmed."
-                            },
-                            "evaluate_full_response_only": false
+                                "feedback": "Reason: {{trigger_reason}} -- never claim the signup/deal is done before send_signup_link actually returns accepted=true; describe only what you are about to do or what the tool actually confirmed.",
+                                "type": "retry"
+                            }
                         }
                     ]
                 }
-            }
+            },
+            "focus": {
+                "is_enabled": true
+            },
+            "moderation": null,
+            "prompt_injection": {
+                "is_enabled": true
+            },
+            "synthetic_voice": {
+                "is_enabled": false,
+                "trigger_action": {
+                    "type": "end_call"
+                }
+            },
+            "version": "1"
         },
-        "auth": {
-            "enable_auth": false,
-            "allowlist": [],
-            "require_origin_header": false
+        "overrides": {
+            "conversation_config_override": {
+                "agent": {
+                    "first_message": false,
+                    "language": false,
+                    "max_conversation_duration_message": false,
+                    "prompt": {
+                        "knowledge_base": false,
+                        "llm": false,
+                        "native_mcp_server_ids": false,
+                        "prompt": false,
+                        "tool_ids": false
+                    }
+                },
+                "asr": {
+                    "keywords": false
+                },
+                "conversation": {
+                    "max_duration_seconds": false,
+                    "text_only": false
+                },
+                "tts": {
+                    "model_id": false,
+                    "pronunciation_dictionary_locators": false,
+                    "similarity_boost": false,
+                    "speed": false,
+                    "stability": false,
+                    "supported_voices": false,
+                    "voice_id": false
+                },
+                "turn": {
+                    "soft_timeout_config": {
+                        "additional_soft_timeout_messages": false,
+                        "message": false
+                    }
+                }
+            },
+            "custom_llm_extra_body": false,
+            "enable_conversation_initiation_client_data_from_webhook": false,
+            "enable_procedure_ids_from_client": false,
+            "enable_starting_workflow_node_id_from_client": false
         },
-        "call_limits": {
-            "agent_concurrency_limit": -1,
-            "daily_limit": 100000,
-            "bursting_enabled": true
-        },
-        "queueing_config": {
-            "enabled": false,
-            "wait_timeout_seconds": 180
-        },
-        "ban": null,
-        "smb_metadata": null,
+        "overview_dashboard_template_id": null,
         "privacy": {
-            "record_voice": true,
-            "retention_days": -1,
-            "delete_transcript_and_pii": false,
-            "delete_audio": false,
             "apply_to_existing_conversations": false,
-            "zero_retention_mode": false,
-            "nested_history_redaction": false,
             "conversation_history_redaction": {
                 "enabled": false,
                 "entities": []
-            }
+            },
+            "delete_audio": false,
+            "delete_transcript_and_pii": false,
+            "nested_history_redaction": false,
+            "record_voice": true,
+            "retention_days": -1,
+            "zero_retention_mode": false
         },
-        "trust_context": "unknown",
-        "analysis_llm": "gemini-2.5-flash",
-        "analysis_bedrock_llm": null,
-        "analysis_llm_billed": false,
-        "topic_discovery": {
-            "enabled": true
+        "queueing_config": {
+            "enabled": false,
+            "hold_audio": null,
+            "wait_timeout_seconds": 180
+        },
+        "safety": {
+            "ignore_safety_evaluation": false,
+            "is_blocked_ivc": false,
+            "is_blocked_non_ivc": false
         },
         "sentiment_analysis": {
             "enabled": true
@@ -1123,12 +1220,163 @@
             "enabled": false,
             "test_ids": []
         },
-        "alerting": null,
-        "overview_dashboard_template_id": null,
-        "safety": {
-            "is_blocked_ivc": false,
-            "is_blocked_non_ivc": false,
-            "ignore_safety_evaluation": false
+        "smb_metadata": null,
+        "summary_language": null,
+        "testing": {
+            "attached_tests": [
+                {
+                    "test_id": "test_2501m1b8ewv2eqb8aexw45jehn36",
+                    "workflow_node_id": null
+                }
+            ],
+            "referenced_tests_ids": [
+                "test_2501m1b8ewv2eqb8aexw45jehn36"
+            ]
+        },
+        "topic_discovery": {
+            "enabled": true
+        },
+        "trust_context": "unknown",
+        "widget": {
+            "action_text": null,
+            "always_expanded": false,
+            "avatar": {
+                "color_1": "#2792dc",
+                "color_2": "#9ce6e6",
+                "type": "orb"
+            },
+            "bg_color": "#ffffff",
+            "border_color": "#e1e1e1",
+            "border_radius": null,
+            "btn_color": "#000000",
+            "btn_radius": null,
+            "btn_text_color": "#ffffff",
+            "conversation_mode_toggle_enabled": false,
+            "custom_avatar_path": null,
+            "default_expanded": false,
+            "disable_banner": false,
+            "dismissible": false,
+            "end_call_text": null,
+            "end_feedback": {
+                "type": "rating"
+            },
+            "expand_text": null,
+            "expandable": "never",
+            "feedback_mode": "during",
+            "first_message_quick_replies": [],
+            "focus_color": "#000000",
+            "language_presets": {},
+            "language_selector": false,
+            "listening_text": null,
+            "markdown_link_allow_http": true,
+            "markdown_link_allowed_hosts": [],
+            "markdown_link_include_www": true,
+            "mic_muting_enabled": false,
+            "override_link": null,
+            "placement": "bottom-right",
+            "shareable_page_show_terms": true,
+            "shareable_page_text": null,
+            "show_agent_status": false,
+            "show_avatar_when_collapsed": false,
+            "show_conversation_id": true,
+            "show_resize_button": true,
+            "speaking_text": null,
+            "start_call_text": null,
+            "strip_audio_tags": true,
+            "styles": {
+                "accent": null,
+                "accent_active": null,
+                "accent_border": null,
+                "accent_hover": null,
+                "accent_primary": null,
+                "accent_subtle": null,
+                "base": null,
+                "base_active": null,
+                "base_border": null,
+                "base_error": null,
+                "base_hover": null,
+                "base_primary": null,
+                "base_subtle": null,
+                "bubble_radius": null,
+                "button_radius": null,
+                "compact_sheet_radius": null,
+                "dropdown_sheet_radius": null,
+                "input_radius": null,
+                "overlay_padding": null,
+                "sheet_radius": null
+            },
+            "supports_text_only": true,
+            "syntax_highlight_theme": null,
+            "terms_html": "<h4>Terms and conditions</h4>\n<p>By clicking &quot;Agree,&quot; and each time I interact with this AI agent, I consent to the recording, storage, and sharing of my communications with third-party service providers, and as described in the Privacy Policy.\nIf you do not wish to have your conversations recorded, please refrain from using this service.</p>\n",
+            "terms_key": null,
+            "terms_text": "#### Terms and conditions\n\nBy clicking \"Agree,\" and each time I interact with this AI agent, I consent to the recording, storage, and sharing of my communications with third-party service providers, and as described in the Privacy Policy.\nIf you do not wish to have your conversations recorded, please refrain from using this service.",
+            "text_color": "#000000",
+            "text_contents": {
+                "accept_terms": null,
+                "agent_done": null,
+                "agent_ended_conversation": null,
+                "agent_error": null,
+                "agent_working": null,
+                "attach_file": null,
+                "change_language": null,
+                "chatting_status": null,
+                "collapse": null,
+                "connecting_status": null,
+                "conversation_id": null,
+                "copied": null,
+                "copy": null,
+                "copy_id": null,
+                "dismiss_terms": null,
+                "download": null,
+                "end_call": null,
+                "error_occurred": null,
+                "expand": null,
+                "file_limit_reached": null,
+                "file_too_large": null,
+                "file_type_unsupported": null,
+                "file_upload_error": null,
+                "follow_up_feedback_placeholder": null,
+                "go_back": null,
+                "initiate_feedback": null,
+                "input_label": null,
+                "input_placeholder": null,
+                "input_placeholder_new_conversation": null,
+                "input_placeholder_text_only": null,
+                "listening_status": null,
+                "main_label": null,
+                "mute_microphone": null,
+                "new_call": null,
+                "remove_file": null,
+                "request_follow_up_feedback": null,
+                "send_message": null,
+                "speaking_status": null,
+                "start_call": null,
+                "start_chat": null,
+                "submit": null,
+                "switched_to_text_mode": null,
+                "switched_to_voice_mode": null,
+                "text_mode": null,
+                "thanks_for_feedback": null,
+                "thanks_for_feedback_details": null,
+                "typing_indicator": null,
+                "user_ended_conversation": null,
+                "voice_mode": null,
+                "wrap": null
+            },
+            "text_input_enabled": true,
+            "transcript_enabled": false,
+            "variant": "full"
+        },
+        "workspace_overrides": {
+            "conversation_initiation_client_data_webhook": null,
+            "webhooks": {
+                "events": [
+                    "transcript"
+                ],
+                "post_call_webhook_id": "e24385ce9e13440a8d2e90b2236698a9",
+                "send_audio": false,
+                "transcript_format": "json"
+            }
         }
     },
     "tags": [],
@@ -1136,14 +1384,16 @@
         "edges": {},
         "nodes": {
             "start_node": {
-                "type": "start",
+                "edge_order": [],
+                "parent_subgraph_id": null,
                 "position": {
-                    "x": 0,
-                    "y": 0
+                    "x": 0.0,
+                    "y": 0.0
                 },
-                "edge_order": []
+                "type": "start"
             }
         },
-        "prevent_subagent_loops": false
+        "prevent_subagent_loops": false,
+        "subgraphs": {}
     }
 }
