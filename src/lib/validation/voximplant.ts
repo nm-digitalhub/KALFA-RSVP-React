@@ -249,21 +249,38 @@ export const voxSalesCallbackSchema = z.strictObject({
 export type VoxSalesCallback = z.infer<typeof voxSalesCallbackSchema>;
 
 // apply_discount_tier — sales-closing-agent-script-draft.md §3.
+//
+// tool_call_id is required here (verified live 2026-08-31, a real call):
+// SalesCloseAgent.voxengine.js's ClientToolCall handler unconditionally
+// appends tool_call_id to EVERY tool POST body, for all 8 client tools, with
+// no opt-out. Without it in the strictObject, Zod's unrecognized_keys check
+// rejects the real payload outright (400) before this tool ever runs —
+// confirmed by parsing the actual request body captured from a live call.
 export const voxSalesDiscountSchema = z.strictObject({
   objection_reason: z.string().trim().min(1).max(300),
+  tool_call_id: z.string().max(128).nullish(),
 });
 export type VoxSalesDiscount = z.infer<typeof voxSalesDiscountSchema>;
 
-// send_signup_link — §3. whatsapp_consent gates the WhatsApp attempt only;
+// send_signup_link — §3. wa_consent gates the WhatsApp attempt only;
 // SMS is always the fallback (never gated on consent — see no-contact-sms.ts).
+// Field renamed from whatsapp_consent -> wa_consent (31.8) to match the live
+// ElevenLabs tool's own parameter identifier (owner renamed it in the
+// Dashboard to match update_state's wa_consent dynamic variable) — the two
+// had silently drifted apart, and the VoxEngine bridge blindly forwards
+// whatever the tool call's argument key is, so keeping this schema in sync
+// with the LIVE tool identifier is load-bearing, not cosmetic.
+// tool_call_id — same reason as voxSalesDiscountSchema above.
 export const voxSalesSignupLinkSchema = z.strictObject({
-  whatsapp_consent: z.boolean(),
+  wa_consent: z.boolean(),
+  tool_call_id: z.string().max(128).nullish(),
 });
 export type VoxSalesSignupLink = z.infer<typeof voxSalesSignupLinkSchema>;
 
-// escalate_to_human — §3.
+// escalate_to_human — §3. tool_call_id — same reason as voxSalesDiscountSchema above.
 export const voxSalesEscalateSchema = z.strictObject({
   reason: z.string().trim().min(1).max(300),
+  tool_call_id: z.string().max(128).nullish(),
 });
 export type VoxSalesEscalate = z.infer<typeof voxSalesEscalateSchema>;
 
@@ -272,8 +289,12 @@ export type VoxSalesEscalate = z.infer<typeof voxSalesEscalateSchema>;
 // asserted. 'escalated_to_human' is accepted here but is NOT a
 // callback_requests.call_outcome value (see the route's own comment) — it is
 // translated to 'needs_followup' before applyCallOutcome.
+// tool_call_id — same reason as voxSalesDiscountSchema above (this is the
+// exact tool that surfaced the bug live: callback_request_id 35eab495…,
+// 2026-08-31, 400 on every real call, verified against the actual payload).
 export const voxSalesLogOutcomeSchema = z.strictObject({
   outcome: z.enum(['needs_followup', 'closed', 'escalated_to_human']),
   discount_tier_applied: z.string().max(64).nullish(),
+  tool_call_id: z.string().max(128).nullish(),
 });
 export type VoxSalesLogOutcome = z.infer<typeof voxSalesLogOutcomeSchema>;

@@ -18,7 +18,7 @@ import { voxSalesSignupLinkSchema } from '@/lib/validation/voximplant';
 // POST /api/voximplant/sls/tool/signup-link/{token}
 //
 // The sales-closing agent's `send_signup_link` tool (script draft §3) —
-// tries WhatsApp first (only if whatsapp_consent=true AND an active
+// tries WhatsApp first (only if wa_consent=true AND an active
 // `sales_signup_link` message_templates row exists — Meta template
 // submission/approval is out of this build's scope, see below), falling
 // back to SMS (src/lib/callbacks/no-contact-sms.ts's precedent: a service
@@ -47,11 +47,15 @@ import { voxSalesSignupLinkSchema } from '@/lib/validation/voximplant';
 // stricter delivered/read design is wanted later, it is a new, explicit
 // increment — not a silent assumption baked in here.
 //
-// A cold WhatsApp send with no approved template is EXPECTED to fail today
-// (no `sales_signup_link` template has been submitted to Meta) — every call
-// currently falls through to SMS. This is a known, flagged limitation, not
-// a bug: WhatsApp becomes real the moment an admin creates + Meta approves
-// that template row; no code change is needed then.
+// The `sales_signup_link` template is Meta-approved and active as of 31.8,
+// but live sends still fall through to SMS — the WhatsApp attempt returns a
+// non-'accepted' DeliveryOutcome every time, and until 31.8 that outcome's
+// own reason/providerCode was computed by sendWhatsAppMarketingTemplate and
+// then silently discarded here (not logged, not persisted — see
+// recordSalesLinkSent's own comment). It is now captured into
+// wa_delivery_status/wa_delivery_error_code so the actual Meta rejection
+// reason is visible on the row instead of requiring live re-instrumentation
+// to diagnose.
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -102,15 +106,32 @@ export async function POST(
   const nowIso = new Date().toISOString();
 
   let waMessageId: string | undefined;
+  // Why the WhatsApp attempt did NOT yield a message id — undefined when
+  // wa_consent was false (no attempt made at all), otherwise always set
+  // (either from a classified DeliveryOutcome or from a thrown error).
+  let waFailureStatus: string | undefined;
+  let waFailureCode: string | undefined;
 
   // 1. WhatsApp attempt — only with consent AND a real, active template.
-  if (parsed.data.whatsapp_consent) {
+  if (parsed.data.wa_consent) {
     try {
       const [template, waConfig] = await Promise.all([
         getTemplateByKey(SALES_SIGNUP_MESSAGE_KEY),
         getWhatsAppConfig(),
       ]);
-      if (template && waConfig) {
+      // The approved template's BODY is "שלום {{1}}, ..." — ONE positional
+      // body variable, the recipient's name (verified directly against
+      // Meta's live template definition, 31.8: GET /{waba_id}/message_templates
+      // ?name=kalfa_sales_signup_link_v1 → components[0].text). Every send
+      // before 31.8 omitted bodyParams entirely, which Meta rejects outright
+      // with error code 132000 ("template param count mismatch") — a
+      // synchronous, deterministic rejection on EVERY attempt, not a
+      // transient failure; every real WhatsApp send silently fell through to
+      // SMS. A blank/whitespace name can't fill a required WhatsApp template
+      // variable (fails the same way as a missing one), so it also skips to
+      // SMS rather than sending a doomed request.
+      const fullName = ref.fullName.trim();
+      if (template && waConfig && fullName) {
         const outcome = await sendWhatsAppMarketingTemplate(
           {
             phoneNumberId: waConfig.phoneNumberId,
@@ -121,6 +142,7 @@ export async function POST(
             to: ref.phone,
             templateName: template.name,
             language: template.language,
+            bodyParams: [fullName],
             // The template's URL button base is
             // "https://beta.kalfa.me/auth/signup?ref=" with a {{1}} dynamic
             // suffix (submitted to Meta as kalfa_sales_signup_link_v1) —
@@ -133,10 +155,21 @@ export async function POST(
         );
         if (outcome.kind === 'accepted') {
           waMessageId = outcome.providerId;
+        } else {
+          waFailureStatus = outcome.kind;
+          waFailureCode = outcome.providerCode ?? outcome.reason;
         }
+      } else {
+        waFailureStatus = 'not_attempted';
+        waFailureCode = !template
+          ? 'no_active_template'
+          : !waConfig
+            ? 'no_whatsapp_config'
+            : 'missing_recipient_name';
       }
     } catch {
       // Falls through to SMS — never let a WhatsApp throw block the fallback.
+      waFailureStatus = 'threw';
     }
   }
 
@@ -146,7 +179,7 @@ export async function POST(
     accepted = true;
   } else {
     // 2. SMS fallback — always attempted when WhatsApp wasn't accepted,
-    //    regardless of whatsapp_consent (consent only gates the WhatsApp
+    //    regardless of wa_consent (consent only gates the WhatsApp
     //    attempt itself; SMS needs no separate consent — see file header).
     try {
       const sender = await getSmsSender();
@@ -158,16 +191,23 @@ export async function POST(
     }
   }
 
+  // Best-effort — captures the WhatsApp outcome (success or the specific
+  // rejection reason) regardless of whether the overall call ends up
+  // accepted via SMS, so a silent WhatsApp failure is never lost even when
+  // the customer still got their link some other way.
+  await recordSalesLinkSent(attemptId, {
+    waConsentConfirmedAt: parsed.data.wa_consent ? nowIso : undefined,
+    waMessageId,
+    waDeliveryStatus: waFailureStatus,
+    waDeliveryErrorCode: waFailureCode,
+    waFallbackAttemptedAt: waFailureStatus && !waMessageId ? nowIso : undefined,
+  });
+
   if (!accepted) {
     // Neither channel confirmed — no outcome claim. The agent's own
     // error-handling branch (§1) calls notify_owner + log_outcome next.
     return NextResponse.json({ accepted: false }, { status: 200, headers: NO_STORE });
   }
-
-  await recordSalesLinkSent(attemptId, {
-    waConsentConfirmedAt: parsed.data.whatsapp_consent ? nowIso : undefined,
-    waMessageId,
-  });
 
   try {
     const claimed = await claimSalesOutcome(attemptId);
