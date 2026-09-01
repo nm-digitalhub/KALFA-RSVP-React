@@ -3,12 +3,16 @@
 import { useActionState } from 'react';
 
 import { FormError, FormNotice } from '@/components/forms';
+import { isCancellableCallbackStatus } from '@/lib/validation/admin';
 import { cancelCallbackAction } from './actions';
 
 // The ONE scheduling-status transition an admin makes directly — every other
-// `status` value is system-driven (see validation/admin.ts). Hidden once the
-// request is already cancelled: there is nothing left to cancel, and a live
-// button there would just invite a confusing no-op resubmission.
+// `status` value is system-driven (see validation/admin.ts).
+//
+// Hidden on a terminal request, using the SAME predicate the server refuses
+// with (isCancellableCallbackStatus) rather than a second copy of the rule
+// that can drift from it. This is presentation, not protection: cancelCallback
+// refuses on its own, and the filter is repeated inside its UPDATE.
 export function CancelCallbackForm({
   id,
   currentStatus,
@@ -21,7 +25,7 @@ export function CancelCallbackForm({
     null,
   );
 
-  if (currentStatus === 'cancelled') return null;
+  if (!isCancellableCallbackStatus(currentStatus)) return null;
 
   return (
     <form action={formAction} className="flex flex-col gap-1">

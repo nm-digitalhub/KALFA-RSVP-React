@@ -50,6 +50,63 @@ export const CALLBACK_STATUSES = [
 
 export type CallbackStatus = (typeof CALLBACK_STATUSES)[number];
 
+// Is this request still going somewhere, or is it over?
+//
+// 'terminal' means nothing further will happen to it. The two terminal values
+// are terminal in opposite ways — 'cancelled' is someone stopping the pursuit,
+// 'closed' is the work being finished — and neither can be cancelled. For
+// 'cancelled' there is simply nothing left to cancel; for 'closed' it would be
+// actively destructive: cancelCallback flips the badge to 'בוטלה', archives
+// the calendar appointment with reason 'cancelled' and writes a
+// callback.cancelled activity row, so a call that DID happen would be
+// rewritten as one that was called off, with no undo. The legitimate ways back
+// out of 'closed' are recording a different call_outcome or rescheduling —
+// both re-enter scheduling without falsifying the record.
+//
+// A full MAP rather than a list of the terminal ones: `Record<CallbackStatus,
+// …>` makes an unclassified status a COMPILE ERROR, so a new value cannot be
+// added to CALLBACK_STATUSES without someone answering "is it over?". The
+// alternative — a list of terminal values plus a comment asking you to
+// remember — is exactly the kind of rule that gets skipped. Same idiom as
+// CALLBACK_STATUS_LABELS and CALLBACK_STATUS_VARIANTS in data/admin/labels.ts,
+// which already force a Hebrew label and a badge tone on every new status;
+// this is a third forced answer on the same form.
+export const CALLBACK_STATUS_KIND: Record<CallbackStatus, 'live' | 'terminal'> = {
+  new: 'live',
+  pending_schedule: 'live',
+  scheduled: 'live',
+  needs_reschedule: 'live',
+  unschedulable: 'live',
+  cancelled: 'terminal',
+  closed: 'terminal',
+};
+
+/** Derived, never hand-maintained — one source of truth with the map above. */
+export const CALLBACK_TERMINAL_STATUSES = CALLBACK_STATUSES.filter(
+  (s) => CALLBACK_STATUS_KIND[s] === 'terminal',
+);
+
+/**
+ * Is this request over? Takes `string`, not CallbackStatus, and treats an
+ * unclassified value as NOT terminal: the column is text (CHECK-constrained,
+ * not a PG enum), so a status added by a migration BEFORE this vocabulary is
+ * redeployed must stay workable rather than leave a row with no way out — the
+ * same graceful fallback the labels use.
+ */
+export function isTerminalCallbackStatus(status: string): boolean {
+  return (CALLBACK_STATUS_KIND as Record<string, string | undefined>)[status] === 'terminal';
+}
+
+/**
+ * Named for the decision it drives (cancelCallback and the button that shows
+ * it) while the underlying question stays "is it over?" — so a caller asking
+ * something else, like whether a diary slot is still upcoming, reads
+ * isTerminalCallbackStatus directly instead of borrowing this name.
+ */
+export function isCancellableCallbackStatus(status: string): boolean {
+  return !isTerminalCallbackStatus(status);
+}
+
 // --- callback_requests.call_outcome: what happened when the owner actually
 // made the call — independent of scheduling status. Defaults to 'pending' on
 // every row; the admin sets it after (or instead of) making the call. ---

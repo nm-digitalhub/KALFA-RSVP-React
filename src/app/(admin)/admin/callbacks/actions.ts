@@ -34,12 +34,27 @@ export async function cancelCallbackAction(
     return { fieldErrors: parsed.error.flatten().fieldErrors };
   }
 
+  let outcome;
   try {
-    await cancelCallback(parsed.data.id);
+    outcome = await cancelCallback(parsed.data.id);
   } catch (err) {
     // Re-throw Next.js control-flow signals (e.g. redirect from requireAdmin);
     // catching them would silently break the redirect.
     if (isNextRedirect(err)) throw err;
+    return { error: 'ביטול הבקשה נכשל. נסו שוב.' };
+  }
+
+  // A refused cancellation is not a failure to retry — the same shape as
+  // rescheduleCallbackAction below. "נסו שוב" would be false advice here:
+  // retrying a terminal request can never succeed.
+  if (!outcome.ok) {
+    if (outcome.reason === 'already_cancelled') return { error: 'הבקשה כבר בוטלה.' };
+    if (outcome.reason === 'already_closed') {
+      return {
+        error:
+          'לא ניתן לבטל בקשה שכבר הסתיימה. אפשר לשנות את תוצאת השיחה או לתאם מועד חדש.',
+      };
+    }
     return { error: 'ביטול הבקשה נכשל. נסו שוב.' };
   }
 

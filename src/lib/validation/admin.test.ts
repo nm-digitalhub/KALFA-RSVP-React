@@ -2,6 +2,9 @@ import { describe, expect, it } from 'vitest';
 
 import {
   CALLBACK_STATUSES,
+  CALLBACK_STATUS_KIND,
+  CALLBACK_TERMINAL_STATUSES,
+  isCancellableCallbackStatus,
   CALL_OUTCOMES,
   CONTACT_STATUSES,
   callOutcomeEnum,
@@ -21,6 +24,48 @@ import {
 // be callbackStatusEnum/updateCallbackStatusSchema is now split into
 // callOutcomeEnum/updateCallOutcomeSchema (what happened on the call) and
 // contactStatusEnum/updateContactStatusSchema (the unrelated contacts vocabulary).
+
+describe('CALLBACK_STATUS_KIND', () => {
+  // The real guarantee is the compile error from Record<CallbackStatus, …>:
+  // a new status cannot be added without classifying it. This asserts the
+  // runtime half — that the derived terminal list actually follows the map,
+  // rather than being a second hand-written copy that can drift from it.
+  it('classifies every status in the vocabulary', () => {
+    for (const status of CALLBACK_STATUSES) {
+      expect(CALLBACK_STATUS_KIND[status]).toMatch(/^(live|terminal)$/);
+    }
+  });
+
+  it('derives the terminal list from the map', () => {
+    expect([...CALLBACK_TERMINAL_STATUSES]).toEqual(
+      CALLBACK_STATUSES.filter((s) => CALLBACK_STATUS_KIND[s] === 'terminal'),
+    );
+    expect([...CALLBACK_TERMINAL_STATUSES]).toEqual(['cancelled', 'closed']);
+  });
+});
+
+describe('isCancellableCallbackStatus', () => {
+  it('refuses the two statuses that mean the request is over', () => {
+    expect(isCancellableCallbackStatus('cancelled')).toBe(false);
+    expect(isCancellableCallbackStatus('closed')).toBe(false);
+  });
+
+  it('allows every live status', () => {
+    for (const status of CALLBACK_STATUSES.filter(
+      (s) => CALLBACK_STATUS_KIND[s] === 'live',
+    )) {
+      expect(isCancellableCallbackStatus(status)).toBe(true);
+    }
+  });
+
+  // A migration can widen the CHECK constraint before this vocabulary is
+  // redeployed. Such a row must stay cancellable — the alternative is a
+  // request stuck with no way out, which is worse than an extra cancel button.
+  it('treats an unknown status as live rather than stranding the row', () => {
+    expect(isCancellableCallbackStatus('some_future_status')).toBe(true);
+    expect(isCancellableCallbackStatus('')).toBe(true);
+  });
+});
 
 describe('callOutcomeEnum', () => {
   it('accepts every value in the closed vocabulary', () => {
