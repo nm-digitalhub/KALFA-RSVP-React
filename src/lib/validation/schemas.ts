@@ -13,10 +13,26 @@ type EventType = Enums<'event_type'>;
 // first so a stray leading/trailing space is not rejected. Login only needs a
 // non-empty password, so it keeps its own min(1) rule below.
 const emailField = z.string().trim().pipe(z.email({ error: 'כתובת אימייל לא תקינה' }));
+// Mirrors Supabase Auth's live project config (password_min_length +
+// password_required_characters, verified via the Management API — the
+// project's own auth.signUp() rejects anything weaker regardless of this
+// schema). Kept here so a violation surfaces as a field error before the
+// request ever reaches Supabase, instead of a generic "signup failed".
+// Exported so the signup UI's live requirements checklist (password-strength.ts)
+// checks the exact same set instead of drifting from it independently.
+export const PASSWORD_SPECIAL_CHARS = new Set(
+  '!@#$%^&*()_+-=[]{};\'\\:"|<>?,./`~'.split(''),
+);
 const newPasswordField = z
   .string()
   .min(8, { error: 'הסיסמה חייבת לכלול לפחות 8 תווים' })
-  .max(72, { error: 'הסיסמה ארוכה מדי' });
+  .max(72, { error: 'הסיסמה ארוכה מדי' })
+  .refine((v) => /[a-z]/.test(v), { error: 'הסיסמה חייבת לכלול אות קטנה (a-z)' })
+  .refine((v) => /[A-Z]/.test(v), { error: 'הסיסמה חייבת לכלול אות גדולה (A-Z)' })
+  .refine((v) => /[0-9]/.test(v), { error: 'הסיסמה חייבת לכלול ספרה' })
+  .refine((v) => [...v].some((c) => PASSWORD_SPECIAL_CHARS.has(c)), {
+    error: 'הסיסמה חייבת לכלול תו מיוחד (למשל !@#$%)',
+  });
 
 export const loginSchema = z.object({
   email: emailField,
@@ -48,6 +64,14 @@ export const signupSchema = z.object({
   // signup failure — existence is re-verified server-side (see actions.ts)
   // before it is ever trusted.
   ref: z.uuid().optional().or(z.literal('')),
+  // A checkbox is absent from FormData entirely when unchecked (not "off"),
+  // so an unset field is what makes this required — the client-side
+  // `required` attribute is a UX nicety, this is the real gate.
+  terms_accepted: z
+    .string()
+    .refine((v) => v === 'on', {
+      error: 'יש לאשר את תנאי השימוש ומדיניות הפרטיות כדי להמשיך',
+    }),
 });
 
 // Password reset (forgot-password → recovery email → set new password), built

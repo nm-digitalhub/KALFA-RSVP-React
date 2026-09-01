@@ -52,6 +52,7 @@ export async function signup(
     full_name: formData.get('full_name'),
     phone: formData.get('phone'),
     ref: formData.get('ref'),
+    terms_accepted: formData.get('terms_accepted'),
   });
 
   if (!parsed.success) {
@@ -82,8 +83,13 @@ export async function signup(
   }
 
   const supabase = await createClient();
-  // full_name/phone go into auth user_metadata; the handle_new_user() trigger
-  // copies them into the profiles row on insert (no separate write needed).
+  // full_name/phone/terms_accepted go into auth user_metadata; the
+  // handle_new_user() trigger copies them into the profiles row on insert
+  // (no separate write needed). terms_accepted is only ever sent here,
+  // already validated 'on' by the schema above — the trigger stamps
+  // terms_accepted_at from its mere presence, never unconditionally (see the
+  // migration's own comment on why: an admin-created user via
+  // auth.admin.createUser() must never be recorded as having consented).
   const { data, error } = await supabase.auth.signUp({
     email,
     password,
@@ -91,6 +97,7 @@ export async function signup(
       data: {
         full_name,
         phone: phone ?? '',
+        terms_accepted: true,
         ...(salesReferralAttemptId
           ? { sales_referral_attempt_id: salesReferralAttemptId }
           : {}),

@@ -1,6 +1,7 @@
 'use client';
 
 import { useActionState } from 'react';
+import Link from 'next/link';
 
 import { signup } from '../actions';
 import { FieldError, FormError, FormNotice, SubmitButton } from '@/components/forms';
@@ -25,7 +26,7 @@ export function SignupForm({ salesRef }: { salesRef?: string }) {
           type="text"
           autoComplete="name"
           required
-          className="w-full rounded-md border border-border bg-transparent px-3 py-2"
+          className="w-full rounded-md border border-border bg-transparent px-3 py-3"
         />
         <FieldError errors={state?.fieldErrors?.full_name} />
       </div>
@@ -41,7 +42,7 @@ export function SignupForm({ salesRef }: { salesRef?: string }) {
           autoComplete="email"
           required
           dir="ltr"
-          className="w-full rounded-md border border-border bg-transparent px-3 py-2"
+          className="w-full rounded-md border border-border bg-transparent px-3 py-3"
         />
         <FieldError errors={state?.fieldErrors?.email} />
       </div>
@@ -56,14 +57,36 @@ export function SignupForm({ salesRef }: { salesRef?: string }) {
           type="tel"
           autoComplete="tel"
           dir="ltr"
-          className="w-full rounded-md border border-border bg-transparent px-3 py-2"
+          className="w-full rounded-md border border-border bg-transparent px-3 py-3"
         />
         <FieldError errors={state?.fieldErrors?.phone} />
       </div>
 
       <PasswordField fieldErrors={state?.fieldErrors?.password} />
 
-      <SubmitButton>הרשמה</SubmitButton>
+      <div>
+        <label className="flex items-start gap-2 text-sm">
+          <input
+            type="checkbox"
+            name="terms_accepted"
+            required
+            className="mt-0.5 size-4 rounded border-input"
+          />
+          <span>
+            קראתי ואני מסכים/ה ל
+            <Link href="/terms" target="_blank" className="font-medium text-primary hover:underline">
+              תנאי השימוש
+            </Link>{' '}
+            ול
+            <Link href="/privacy" target="_blank" className="font-medium text-primary hover:underline">
+              מדיניות הפרטיות
+            </Link>
+          </span>
+        </label>
+        <FieldError errors={state?.fieldErrors?.terms_accepted} />
+      </div>
+
+      <SubmitButton size="lg">הרשמה</SubmitButton>
     </form>
   );
 }

@@ -43,10 +43,10 @@ describe('forgotPasswordSchema (item 5a)', () => {
 });
 
 describe('resetPasswordSchema (item 5a)', () => {
-  it('accepts a valid matching password (>= 8 chars)', () => {
+  it('accepts a valid matching password (>= 8 chars, all character classes)', () => {
     const r = resetPasswordSchema.safeParse({
-      password: 'aVeryGoodPass',
-      confirm: 'aVeryGoodPass',
+      password: 'aVeryGoodPass1!',
+      confirm: 'aVeryGoodPass1!',
     });
     expect(r.success).toBe(true);
   });
@@ -58,7 +58,7 @@ describe('resetPasswordSchema (item 5a)', () => {
 
   it('rejects when confirm does not match, keyed to `confirm`', () => {
     const r = resetPasswordSchema.safeParse({
-      password: 'aVeryGoodPass',
+      password: 'aVeryGoodPass1!',
       confirm: 'different1234',
     });
     expect(r.success).toBe(false);
@@ -101,8 +101,9 @@ describe('signupSchema', () => {
   it('accepts an 8+ character password with a full name', () => {
     const result = signupSchema.safeParse({
       email: 'user@example.com',
-      password: '12345678',
+      password: 'Aa123456!',
       full_name: 'ישראל ישראלי',
+      terms_accepted: 'on',
     });
     expect(result.success).toBe(true);
   });
@@ -112,6 +113,7 @@ describe('signupSchema', () => {
       email: 'user@example.com',
       password: '1234567',
       full_name: 'ישראל ישראלי',
+      terms_accepted: 'on',
     });
     expect(result.success).toBe(false);
   });
@@ -121,6 +123,7 @@ describe('signupSchema', () => {
       email: 'user@example.com',
       password: 'a'.repeat(73),
       full_name: 'ישראל ישראלי',
+      terms_accepted: 'on',
     });
     expect(result.success).toBe(false);
   });
@@ -128,8 +131,9 @@ describe('signupSchema', () => {
   it('requires a full name', () => {
     const result = signupSchema.safeParse({
       email: 'user@example.com',
-      password: '12345678',
+      password: 'Aa123456!',
       full_name: '',
+      terms_accepted: 'on',
     });
     expect(result.success).toBe(false);
   });
@@ -137,9 +141,10 @@ describe('signupSchema', () => {
   it('accepts a valid Israeli phone', () => {
     const result = signupSchema.safeParse({
       email: 'user@example.com',
-      password: '12345678',
+      password: 'Aa123456!',
       full_name: 'ישראל ישראלי',
       phone: '050-123-4567',
+      terms_accepted: 'on',
     });
     expect(result.success).toBe(true);
   });
@@ -147,9 +152,10 @@ describe('signupSchema', () => {
   it('accepts an empty phone (optional)', () => {
     const result = signupSchema.safeParse({
       email: 'user@example.com',
-      password: '12345678',
+      password: 'Aa123456!',
       full_name: 'ישראל ישראלי',
       phone: '',
+      terms_accepted: 'on',
     });
     expect(result.success).toBe(true);
   });
@@ -157,9 +163,10 @@ describe('signupSchema', () => {
   it('rejects an invalid phone', () => {
     const result = signupSchema.safeParse({
       email: 'user@example.com',
-      password: '12345678',
+      password: 'Aa123456!',
       full_name: 'ישראל ישראלי',
       phone: '123',
+      terms_accepted: 'on',
     });
     expect(result.success).toBe(false);
   });
@@ -167,9 +174,10 @@ describe('signupSchema', () => {
   it('accepts a valid v4 UUID ref (sales-agent conversion tracking)', () => {
     const result = signupSchema.safeParse({
       email: 'user@example.com',
-      password: '12345678',
+      password: 'Aa123456!',
       full_name: 'ישראל ישראלי',
       ref: 'a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d',
+      terms_accepted: 'on',
     });
     expect(result.success).toBe(true);
   });
@@ -177,9 +185,10 @@ describe('signupSchema', () => {
   it('accepts an empty ref (optional)', () => {
     const result = signupSchema.safeParse({
       email: 'user@example.com',
-      password: '12345678',
+      password: 'Aa123456!',
       full_name: 'ישראל ישראלי',
       ref: '',
+      terms_accepted: 'on',
     });
     expect(result.success).toBe(true);
   });
@@ -187,9 +196,69 @@ describe('signupSchema', () => {
   it('rejects a malformed ref', () => {
     const result = signupSchema.safeParse({
       email: 'user@example.com',
-      password: '12345678',
+      password: 'Aa123456!',
       full_name: 'ישראל ישראלי',
       ref: 'not-a-uuid',
+      terms_accepted: 'on',
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects a missing terms_accepted (checkbox absent from FormData when unchecked)', () => {
+    const result = signupSchema.safeParse({
+      email: 'user@example.com',
+      password: 'Aa123456!',
+      full_name: 'ישראל ישראלי',
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects a password missing a lowercase letter', () => {
+    const result = signupSchema.safeParse({
+      email: 'user@example.com',
+      password: 'AA123456!',
+      full_name: 'ישראל ישראלי',
+      terms_accepted: 'on',
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects a password missing an uppercase letter', () => {
+    const result = signupSchema.safeParse({
+      email: 'user@example.com',
+      password: 'aa123456!',
+      full_name: 'ישראל ישראלי',
+      terms_accepted: 'on',
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects a password missing a digit', () => {
+    const result = signupSchema.safeParse({
+      email: 'user@example.com',
+      password: 'AaAaAaAa!',
+      full_name: 'ישראל ישראלי',
+      terms_accepted: 'on',
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects a password missing a special character', () => {
+    const result = signupSchema.safeParse({
+      email: 'user@example.com',
+      password: 'Aa1234567',
+      full_name: 'ישראל ישראלי',
+      terms_accepted: 'on',
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects a terms_accepted value other than "on"', () => {
+    const result = signupSchema.safeParse({
+      email: 'user@example.com',
+      password: 'Aa123456!',
+      full_name: 'ישראל ישראלי',
+      terms_accepted: 'true',
     });
     expect(result.success).toBe(false);
   });

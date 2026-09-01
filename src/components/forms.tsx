@@ -2,7 +2,7 @@
 
 import { useFormStatus } from 'react-dom';
 
-import { Button } from '@/components/ui/button';
+import { Button, buttonVariants } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 
 // Unified submit control: renders via the shared Button (Base UI defaults to
@@ -13,13 +13,15 @@ import { cn } from '@/lib/utils';
 export function SubmitButton({
   children,
   className,
+  size,
 }: {
   children: React.ReactNode;
   className?: string;
+  size?: NonNullable<Parameters<typeof buttonVariants>[0]>['size'];
 }) {
   const { pending } = useFormStatus();
   return (
-    <Button type="submit" disabled={pending} className={cn('w-full', className)}>
+    <Button type="submit" disabled={pending} size={size} className={cn('w-full', className)}>
       {pending ? 'רגע…' : children}
     </Button>
   );

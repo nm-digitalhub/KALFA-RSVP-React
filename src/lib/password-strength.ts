@@ -1,48 +1,28 @@
-// Password-strength UI helper. This is feedback ONLY — the server-side Zod
-// `min(8)` check in signupSchema remains the real gate. The zxcvbn-ts engine is
-// heavy (~50KB), so it is imported DYNAMICALLY (inside loadPasswordScorer) and
-// stays out of the initial client bundle; it loads on the first password
-// keystroke. Strength labels/colors are UI content (data), not hardcoded policy.
+// Live signup password-requirements checklist. This mirrors newPasswordField
+// (src/lib/validation/schemas.ts) exactly — which itself mirrors Supabase
+// Auth's live project config (password_min_length + password_required_characters,
+// verified via the Management API) — so what the user sees checked off is
+// always what the server will actually accept, never a separate heuristic
+// score (an earlier zxcvbn-ts entropy meter could show "strong" for a
+// password Supabase would reject outright, e.g. a long all-lowercase
+// passphrase, and vice versa for a short-but-complex one).
 
-export type PasswordScore = 0 | 1 | 2 | 3 | 4;
+import { PASSWORD_SPECIAL_CHARS } from '@/lib/validation/schemas';
 
-export const STRENGTH_LABELS: readonly string[] = [
-  'חלשה מאוד',
-  'חלשה',
-  'בינונית',
-  'חזקה',
-  'חזקה מאוד',
+export type PasswordRequirement = {
+  id: string;
+  label: string;
+  test: (password: string) => boolean;
+};
+
+export const PASSWORD_REQUIREMENTS: readonly PasswordRequirement[] = [
+  { id: 'length', label: 'לפחות 8 תווים', test: (v) => v.length >= 8 },
+  { id: 'lower', label: 'אות קטנה (a-z)', test: (v) => /[a-z]/.test(v) },
+  { id: 'upper', label: 'אות גדולה (A-Z)', test: (v) => /[A-Z]/.test(v) },
+  { id: 'digit', label: 'ספרה', test: (v) => /[0-9]/.test(v) },
+  {
+    id: 'special',
+    label: 'תו מיוחד (למשל !@#$%)',
+    test: (v) => [...v].some((c) => PASSWORD_SPECIAL_CHARS.has(c)),
+  },
 ];
-
-// Tailwind classes are kept as literals so the JIT scanner includes them.
-export const STRENGTH_BAR_COLORS: readonly string[] = [
-  'bg-red-500',
-  'bg-orange-500',
-  'bg-yellow-500',
-  'bg-green-400',
-  'bg-green-600',
-];
-
-type Scorer = (password: string) => PasswordScore;
-
-// Created once and reused. The dynamic imports keep zxcvbn-ts off the initial
-// bundle (lazy-loaded on first use).
-let scorerPromise: Promise<Scorer> | null = null;
-
-export function loadPasswordScorer(): Promise<Scorer> {
-  if (!scorerPromise) {
-    scorerPromise = (async () => {
-      const [{ ZxcvbnFactory }, common] = await Promise.all([
-        import('@zxcvbn-ts/core'),
-        import('@zxcvbn-ts/language-common'),
-      ]);
-      const factory = new ZxcvbnFactory({
-        dictionary: { ...common.dictionary },
-        graphs: common.adjacencyGraphs,
-      });
-      return (password: string): PasswordScore =>
-        factory.check(password).score as PasswordScore;
-    })();
-  }
-  return scorerPromise;
-}

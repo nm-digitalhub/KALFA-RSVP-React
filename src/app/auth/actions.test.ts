@@ -31,7 +31,7 @@ function fd(fields: Record<string, string>): FormData {
   for (const [k, v] of Object.entries(fields)) f.set(k, v);
   return f;
 }
-const VALID = { password: 'aVeryGoodPass1', confirm: 'aVeryGoodPass1' };
+const VALID = { password: 'aVeryGoodPass1!', confirm: 'aVeryGoodPass1!' };
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -50,7 +50,7 @@ describe('updatePassword', () => {
   it('validation fails (confirm mismatch) → fieldErrors.confirm; updateUser NOT called', async () => {
     const res = await updatePassword(
       null,
-      fd({ password: 'aVeryGoodPass1', confirm: 'different12345' }),
+      fd({ password: 'aVeryGoodPass1!', confirm: 'different12345' }),
     );
     expect(updateUser).not.toHaveBeenCalled();
     expect(res?.fieldErrors?.confirm?.[0]).toBe('הסיסמאות אינן תואמות');
