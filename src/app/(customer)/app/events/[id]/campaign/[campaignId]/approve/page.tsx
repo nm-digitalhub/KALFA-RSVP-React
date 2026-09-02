@@ -7,6 +7,7 @@ import { getCompanyLegal } from '@/lib/data/company';
 import { requireOwnedEvent } from '@/lib/data/events';
 import { isPastEventDay } from '@/lib/data/event-date';
 import { getProfile } from '@/lib/data/profiles';
+import { maskPhoneForDisplay } from '@/lib/phone';
 import {
   renderAgreementBody,
   AGREEMENT_CSS,
@@ -17,7 +18,7 @@ import { SignAgreementForm } from './sign-agreement-form';
 import { AgreementSheet } from './agreement-sheet';
 import { formatIsraelDate } from '@/lib/date';
 
-export const metadata: Metadata = { title: 'אישור קמפיין' };
+export const metadata: Metadata = { title: 'חתימה על ההסכם' };
 
 const CHANNEL_LABELS: Record<string, string> = {
   whatsapp: 'וואטסאפ',
@@ -67,12 +68,12 @@ export default async function ApproveCampaignPage({
     return (
       <div className="mx-auto max-w-2xl space-y-4">
         <div className="flex items-center justify-between">
-          <h1 className="text-2xl font-bold">אישור קמפיין</h1>
+          <h1 className="text-2xl font-bold">חתימה על ההסכם</h1>
           {backLink}
         </div>
         <p className="rounded-md bg-success/10 px-3 py-2 text-sm text-success">
           {campaign.status === 'approved'
-            ? 'ההסכם נחתם והקמפיין אושר.'
+            ? 'ההסכם נחתם בהצלחה. כעת יש להשלים אמצעי תשלום.'
             : 'הקמפיין אינו ממתין לאישור ולכן לא ניתן לחתום עליו כעת.'}
         </p>
         {campaign.status === 'approved' ? (
@@ -151,7 +152,7 @@ export default async function ApproveCampaignPage({
           eventId={id}
           campaignId={campaignId}
           signerName={profile.full_name?.trim() || 'לקוח KALFA'}
-          phone={profile.phone}
+          phone={maskPhoneForDisplay(profile.phone)}
         />
       ) : (
         <p className="rounded-md bg-warning/10 px-3 py-2 text-sm text-warning">
