@@ -31,7 +31,7 @@ export default async function DashboardPage() {
           <p className="mt-2 text-3xl font-bold">{totalEvents}</p>
         </div>
         <div className="rounded-lg border border-border bg-card p-5">
-          <p className="text-sm text-muted-foreground">אירועים פעילים</p>
+          <p className="text-sm text-muted-foreground">אירועים שאושרו</p>
           <p className="mt-2 text-3xl font-bold">{activeEvents}</p>
         </div>
         <Link
