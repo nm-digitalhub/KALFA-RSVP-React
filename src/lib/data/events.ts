@@ -9,6 +9,7 @@ import { requireUser, getUser } from '@/lib/auth/dal';
 import { logActivity } from '@/lib/data/activity';
 import { ensurePersonalOrg } from '@/lib/data/orgs';
 import { OPERATIONAL_CAMPAIGN_STATUSES } from '@/lib/data/campaign-status';
+import type { EventClosureReason } from '@/lib/data/event-labels';
 import { isBeforeTomorrowIL, todayIL } from '@/lib/data/event-date';
 import type { Enums, Json, Tables, TablesUpdate } from '@/lib/supabase/types';
 import { celebrantsCompleteFor } from '@/lib/validation/schemas';
@@ -493,7 +494,9 @@ export async function closeEvent(eventId: string): Promise<void> {
 // AND for a closed event with no matching log entry (a legacy write from
 // before this labeling existed) — both cases render identically (no extra
 // line), never a guess at the real cause.
-export type EventClosureReason = 'owner' | 'settlement' | 'cancellation';
+// Defined in event-labels.ts (a worker-safe leaf) and re-exported here so the
+// existing imports keep working.
+export type { EventClosureReason };
 
 const CLOSURE_ACTIONS: Record<string, EventClosureReason> = {
   'event.closed': 'owner',

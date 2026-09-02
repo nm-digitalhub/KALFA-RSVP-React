@@ -1,9 +1,14 @@
 import type { Enums } from '@/lib/supabase/types';
 import type { CelebrantFieldLabels, HostComposition } from '@/lib/validation/schemas';
 import type { BadgeVariant } from '@/components/ui/badge';
-// type-only: erased at runtime, so this module stays isomorphic even though
-// events.ts is `server-only`.
-import type { EventClosureReason } from '@/lib/data/events';
+
+// WHY the closure reason lives here and not in events.ts: this module is a
+// LEAF the worker bundle reaches (template-spec.ts → event-labels.ts), and
+// dependency-cruiser treats even a type-only import of events.ts as a path to
+// next/headers (worker-no-request-scoped-next). events.ts re-exports this type.
+// 'owner' = the owner closed it; 'settlement' = closed with the final charge;
+// 'cancellation' = closed by an admin handling a cancellation request.
+export type EventClosureReason = 'owner' | 'settlement' | 'cancellation';
 
 // Hebrew labels for the events-domain enums. Defined as EXHAUSTIVE
 // `Record<enum, string>` maps so that adding or removing a value in the DB
