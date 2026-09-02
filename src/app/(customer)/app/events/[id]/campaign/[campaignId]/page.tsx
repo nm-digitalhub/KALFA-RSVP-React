@@ -3,41 +3,36 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { ChevronRight } from 'lucide-react';
 
-import { requireEventAccess } from '@/lib/data/events';
-import { getEventForAdminView } from '@/lib/data/admin/campaigns';
 import { isAdmin } from '@/lib/auth/dal';
-import { isPastEventDay } from '@/lib/data/event-date';
-import { getCampaign, getThankyouSchedule } from '@/lib/data/campaigns';
+import { getEventForAdminView } from '@/lib/data/admin/campaigns';
 import { getCampaignBillingSummary } from '@/lib/data/billing';
 import { getCampaignDeliveryBreakdown } from '@/lib/data/campaign-delivery';
+import { getCampaign, getThankyouSchedule } from '@/lib/data/campaigns';
 import { countAuthorizedContacts, countUniqueContactsForEvent } from '@/lib/data/contacts';
+import { isPastEventDay } from '@/lib/data/event-date';
+import { requireEventAccess } from '@/lib/data/events';
 import {
   activateCampaignAction,
-  pauseCampaignAction,
-  closeCampaignAction,
-  settleCampaignAction,
   cancelCampaignAction,
-  sendGiftReminderAction,
+  closeCampaignAction,
+  pauseCampaignAction,
   sendEventDayReminderAction,
+  sendGiftReminderAction,
   sendThankyouAction,
+  settleCampaignAction,
   updateThankyouScheduleAction,
 } from '../campaign-actions';
 import { ManageClient } from './manage-client';
 
 export const metadata: Metadata = { title: 'ניהול קמפיין' };
 
-// Campaign management (§9 lifecycle + §15 owner board). Wires the previously
-// orphaned activate/pause/close + final settlement. Ownership enforced server-side.
 export default async function CampaignManagePage({
   params,
 }: {
   params: Promise<{ id: string; campaignId: string }>;
 }) {
   const { id: eventId, campaignId } = await params;
-  // The four wind-down controls (close/pause/settle/cancel) are platform-admin-
-  // only, so an admin who is NOT the owner must still be able to view this page.
-  // Owners/org-members go through requireEventAccess (can_access_event); admins
-  // reach it via an admin-scoped getter that authorizes on has_role('admin').
+
   const admin = await isAdmin();
   const event = admin
     ? await getEventForAdminView(eventId)
@@ -47,8 +42,6 @@ export default async function CampaignManagePage({
   const campaign = await getCampaign(campaignId);
   if (campaign.event_id !== eventId) notFound();
 
-  // The summary RPC is the source of reached/accrued; tolerate it being
-  // unavailable (returns null → the board shows zeros, never crashes the page).
   let summary = null;
   try {
     summary = await getCampaignBillingSummary(campaignId);
@@ -56,9 +49,6 @@ export default async function CampaignManagePage({
     summary = null;
   }
 
-  // The webhook delivery/outcome breakdown (B8) — shown BESIDE the billing
-  // summary, not replacing it. Tolerate failure: the board degrades to hiding the
-  // block rather than crashing the page.
   let delivery = null;
   try {
     delivery = await getCampaignDeliveryBreakdown(campaignId);
@@ -66,9 +56,6 @@ export default async function CampaignManagePage({
     delivery = null;
   }
 
-  // Owner-facing auto-thankyou schedule (opt-in + send time) — degrade to
-  // hiding the section rather than crashing the page, same stance as summary/
-  // delivery above.
   let thankyou = null;
   try {
     thankyou = await getThankyouSchedule(campaignId);
@@ -76,10 +63,6 @@ export default async function CampaignManagePage({
     thankyou = null;
   }
 
-  // Audit §7: the board must lead with "who is in the campaign" when nobody is.
-  // authorizedCount = the campaign's set; uniqueContacts = the event's reachable
-  // list. Both degrade to null (hide the banner) rather than crash — an admin
-  // viewer who is not the owner fails countUniqueContactsForEvent's gate.
   let authorizedCount: number | null = null;
   let uniqueContacts: number | null = null;
   try {
@@ -98,57 +81,61 @@ export default async function CampaignManagePage({
   const sendGift = sendGiftReminderAction.bind(null, eventId, campaignId);
   const sendEventDay = sendEventDayReminderAction.bind(null, eventId, campaignId);
   const sendThankyou = sendThankyouAction.bind(null, eventId, campaignId);
-  const updateThankyouSchedule = updateThankyouScheduleAction.bind(null, eventId, campaignId);
+  const updateThankyouSchedule = updateThankyouScheduleAction.bind(
+    null,
+    eventId,
+    campaignId,
+  );
 
   return (
-    <div className="space-y-6">
-      <div>
+    <div className="mx-auto w-full max-w-7xl space-y-6">
+      <header>
         <Link
           href={`/app/events/${eventId}`}
-          className="inline-flex items-center gap-1 text-sm text-muted-foreground transition hover:text-foreground"
+          className="inline-flex min-h-11 items-center gap-1 text-sm text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
         >
-          <ChevronRight className="size-4" aria-hidden />
+          <ChevronRight className="size-4" aria-hidden="true" />
           חזרה לאירוע
         </Link>
-        <h1 className="mt-2 text-2xl font-bold">ניהול קמפיין</h1>
-      </div>
+        <h1 className="mt-2 text-2xl font-bold tracking-tight sm:text-3xl">
+          ניהול קמפיין
+        </h1>
+      </header>
 
-      <section className="rounded-lg border border-border bg-card p-5">
-        <ManageClient
-          campaign={{
-            id: campaign.id,
-            status: campaign.status,
-            price_per_reached: campaign.price_per_reached,
-            max_contacts: campaign.max_contacts,
-            max_charge_ceiling: campaign.max_charge_ceiling,
-            final_charge_amount: campaign.final_charge_amount,
-            credit_applied: campaign.credit_applied,
-            capture_status: campaign.capture_status,
-            charge_status: campaign.charge_status,
-            base_price: campaign.base_price,
-            included_reached: campaign.included_reached,
-          }}
-          summary={summary}
-          delivery={delivery}
-          thankyou={thankyou}
-          actions={{
-            activate,
-            pause,
-            close,
-            settle,
-            cancel,
-            sendGift,
-            sendEventDay,
-            sendThankyou,
-            updateThankyouSchedule,
-          }}
-          eventId={eventId}
-          authorizedCount={authorizedCount}
-          uniqueContacts={uniqueContacts}
-          isPast={isPast}
-          viewerIsAdmin={admin}
-        />
-      </section>
+      <ManageClient
+        campaign={{
+          id: campaign.id,
+          status: campaign.status,
+          price_per_reached: campaign.price_per_reached,
+          max_contacts: campaign.max_contacts,
+          max_charge_ceiling: campaign.max_charge_ceiling,
+          final_charge_amount: campaign.final_charge_amount,
+          credit_applied: campaign.credit_applied,
+          capture_status: campaign.capture_status,
+          charge_status: campaign.charge_status,
+          base_price: campaign.base_price,
+          included_reached: campaign.included_reached,
+        }}
+        summary={summary}
+        delivery={delivery}
+        thankyou={thankyou}
+        actions={{
+          activate,
+          pause,
+          close,
+          settle,
+          cancel,
+          sendGift,
+          sendEventDay,
+          sendThankyou,
+          updateThankyouSchedule,
+        }}
+        eventId={eventId}
+        authorizedCount={authorizedCount}
+        uniqueContacts={uniqueContacts}
+        isPast={isPast}
+        viewerIsAdmin={admin}
+      />
     </div>
   );
 }
