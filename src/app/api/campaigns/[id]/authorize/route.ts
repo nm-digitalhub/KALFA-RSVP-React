@@ -22,7 +22,6 @@ import { getSumitCustomerId, recordSumitCustomerId } from '@/lib/data/sumit-cust
 import { logActivity } from '@/lib/data/activity';
 import { SumitDeclinedError } from '@/lib/sumit/charge';
 import { authorizeHoldSchema } from '@/lib/validation/campaigns';
-import { VAT_RATE_PERCENT } from '@/lib/agreements/template';
 import { isAllowedOrigin } from '@/lib/http/allowed-origin';
 import { sendSlackAlert } from '@/lib/alerts/slack';
 
@@ -188,7 +187,6 @@ export async function POST(
       ogToken: parsed.data['og-token'],
       // The J5 hold amount (security) — covered-sized, NOT the full ceiling.
       ceiling: String(holdAmount), // numeric → string only at the SUMIT boundary
-      vatRate: String(VAT_RATE_PERCENT),
       authRef,
       customerEmail: user.email ?? '',
       customerName,

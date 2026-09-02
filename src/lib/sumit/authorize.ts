@@ -10,7 +10,6 @@ export interface SumitAuthorizeParams {
   apiKey: string;
   ogToken: string;
   ceiling: string; // Postgres numeric as string — the J5 hold amount
-  vatRate: string;
   authRef: string; // Customer.ExternalIdentifier — reconciliation anchor
   customerEmail: string;
   customerName?: string;
@@ -70,8 +69,11 @@ export async function authorizeHoldSumit(
       EmailAddress: p.customerEmail || undefined,
       ExternalIdentifier: p.authRef,
     },
-    VATIncluded: true,
-    VATRate: parseFloat(p.vatRate),
+    // No VATIncluded/VATRate (owner decision 2.9.2026): KALFA is an עוסק פטור —
+    // the amount is FINAL with no VAT component, and SUMIT's company default
+    // applies, exactly as the final charge (capture.ts) already does. Sending an
+    // explicit 18% here made the hold's "Order" document split the amount into
+    // net + VAT.
     Items: [
       {
         Quantity: 1,

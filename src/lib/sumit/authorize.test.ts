@@ -10,7 +10,6 @@ const base = {
   apiKey: 'k',
   ogToken: 'og-1',
   ceiling: '1400.00',
-  vatRate: '18',
   authRef: 'ref-1',
   customerEmail: '',
 };
@@ -139,5 +138,22 @@ describe('authorizeHoldSumit', () => {
     await expect(authorizeHoldSumit(base)).rejects.toBeInstanceOf(
       SumitNetworkError,
     );
+  });
+});
+
+describe('authorizeHoldSumit — VAT fields', () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('sends NO VATIncluded/VATRate — עוסק פטור, the SUMIT company default applies (owner decision 2.9.2026)', async () => {
+    mockFetch(200, okBody());
+
+    await authorizeHoldSumit(base);
+
+    const init = vi.mocked(fetch).mock.calls[0][1] as RequestInit;
+    const body = JSON.parse(String(init.body)) as Record<string, unknown>;
+    expect(body).not.toHaveProperty('VATRate');
+    expect(body).not.toHaveProperty('VATIncluded');
+    // The hold's own shape is untouched.
+    expect(body).toMatchObject({ AutoCapture: false, AuthorizeAmount: 1400, SingleUseToken: 'og-1' });
   });
 });

@@ -50,10 +50,12 @@ export function isBaseFeeAgreementVersion(
 // Standard Israeli VAT rate (18% since 2025-01-01). The business operates as an
 // עוסק פטור (VAT-exempt dealer, VAT Law §31(3)) and does NOT charge VAT —
 // consumer prices are FINAL with no VAT component, and customer-facing wording
-// must never claim "כולל מע"מ". This constant remains only because the SUMIT
-// wire calls (authorize/charge/raw-charge) still send VATRate/VATIncluded;
-// aligning those is a separate money-path change pending a SUMIT account-config
-// check (see .claude/agents/shared/tax-catalog-israel.md §2).
+// must never claim "כולל מע"מ". The J5 hold (authorize.ts) and the final
+// charge (capture.ts) send NO VAT fields — SUMIT's company default applies
+// (hold aligned 2.9.2026). This constant remains only for the legacy
+// single-use-token charge (charge.ts) and the admin raw-charge tool
+// (raw-charge.ts); aligning those is pending a SUMIT account-config check
+// (see .claude/agents/shared/tax-catalog-israel.md §2).
 export const VAT_RATE_PERCENT = 18;
 
 export type AgreementStatus = 'draft' | 'approved';
