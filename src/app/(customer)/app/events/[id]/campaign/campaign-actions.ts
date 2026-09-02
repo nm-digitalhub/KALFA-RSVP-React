@@ -36,12 +36,19 @@ import type { FormState } from '@/lib/validation/result';
 
 const OTP_PURPOSE = 'agreement_signing';
 
-// "הפעלת אישורי הגעה" — the single entry that creates-or-continues the event's
-// campaign. eventId is bound on the client (setupCampaignAction.bind(null,
-// eventId)); there is NO form input — the canonical template and the derived
-// window are resolved server-side. On success → straight to approval/signing.
-// createCampaign throws only our own safe Hebrew messages (e.g. "add guests
-// first"), so surfacing err.message is safe and useful.
+// "אישור פרטי האירוע והמשך" — ONE owner decision that (audit §2 / recommended
+// flow step 5): confirms the event details (the former "publish" — locks
+// event_date/rsvp_deadline per R5, moves draft → active so R9 lets a campaign
+// exist), then creates-or-continues the event's single campaign, then lands
+// straight on the agreement. eventId is bound on the client; there is NO form
+// input — the canonical template and the derived window are resolved
+// server-side. On an already-confirmed event this is a plain continue.
+// publishEvent/createCampaign throw only our own safe Hebrew messages, so
+// surfacing err.message is safe and useful. If createCampaign refuses AFTER a
+// successful confirm (its own gates: celebrants/venue/date), the event stays
+// confirmed — the owner fixes the detail and clicks again (now a continue).
+// The setup page (setup-steps.ts) shows those prerequisites up front so this
+// is the rare path, not the normal one.
 export async function setupCampaignAction(
   eventId: string,
   _prevState: FormState,
@@ -49,17 +56,24 @@ export async function setupCampaignAction(
 ): Promise<FormState> {
   let created: Awaited<ReturnType<typeof createCampaign>>;
   try {
+    const event = await requireOwnedEvent(eventId);
+    if (event.status === 'draft') {
+      await publishEvent(eventId);
+      // Best-effort Exchange calendar sync (Layer 2) — syncEventToExchange never
+      // throws (see its own module note), so a mailbox/connection failure here
+      // must never surface as a confirm failure to the customer.
+      await syncEventToExchange(eventId);
+    }
     created = await createCampaign(eventId);
   } catch (err) {
     unstable_rethrow(err);
     return {
       error:
-        err instanceof Error
-          ? err.message
-          : 'הפעלת אישורי ההגעה נכשלה. נסו שוב.',
+        err instanceof Error ? err.message : 'אישור פרטי האירוע נכשל. נסו שוב.',
     };
   }
 
+  revalidatePath(`/app/events/${eventId}`);
   revalidatePath(`/app/events/${eventId}/campaign`);
   redirect(`/app/events/${eventId}/campaign/${created.id}/approve`);
 }
@@ -469,31 +483,12 @@ export async function settleCampaignAction(
   }
 }
 
-// --- Event lifecycle (R3/R6/R7) — Publish/Close, S2.5a -----------------------
-// Ownership + every R1–R9 rule is enforced inside publishEvent/closeEvent
-// (events.ts) and the DB triggers; these are thin wrappers surfacing the
-// data layer's own safe Hebrew error message.
-
-export async function publishEventAction(
-  eventId: string,
-  _prevState: FormState,
-  _formData: FormData,
-): Promise<FormState> {
-  try {
-    await publishEvent(eventId);
-  } catch (err) {
-    unstable_rethrow(err);
-    return {
-      error: err instanceof Error ? err.message : 'פרסום האירוע נכשל. נסו שוב.',
-    };
-  }
-  // Best-effort Exchange calendar sync (Layer 2) — syncEventToExchange never
-  // throws (see its own module note), so a mailbox/connection failure here
-  // must never surface as a publish failure to the customer.
-  await syncEventToExchange(eventId);
-  revalidatePath(`/app/events/${eventId}`);
-  return { notice: 'האירוע פורסם' };
-}
+// --- Event lifecycle (R6/R7) — Close, S2.5a ---------------------------------
+// Confirming the details (draft → active, the former "publish") lives in
+// setupCampaignAction above as the first step of the RSVP flow. Ownership +
+// every R1–R9 rule is enforced inside closeEvent (events.ts) and the DB
+// triggers; this is a thin wrapper surfacing the data layer's own safe Hebrew
+// error message.
 
 export async function closeEventAction(
   eventId: string,
