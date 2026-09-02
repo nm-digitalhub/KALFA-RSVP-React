@@ -65,7 +65,11 @@ export default async function WhatsappImportPage({ params }: PageProps) {
 
       {pendingList.map((s) => {
         const rows = (s.rows ?? []) as StagedRow[];
-        const errorCount = Array.isArray(s.error_rows) ? s.error_rows.length : 0;
+        // error_rows shape is fixed by whatsapp-import.ts (Array<{ row, message }>);
+        // messages are schema texts, never the row's values.
+        const errorRows = Array.isArray(s.error_rows)
+          ? (s.error_rows as Array<{ row: number; message: string }>)
+          : [];
         return (
           <section key={s.id} className="space-y-3 rounded-lg border border-border p-4">
             <div className="flex flex-wrap items-baseline justify-between gap-2">
@@ -75,7 +79,8 @@ export default async function WhatsappImportPage({ params }: PageProps) {
                   : 'אנשי קשר ששותפו'}
               </h2>
               <span className="text-xs text-muted-foreground">
-                {s.row_count} שורות{errorCount ? ` · ${errorCount} שגיאות` : ''}
+                {s.row_count} שורות תקינות
+                {errorRows.length ? ` · ${errorRows.length} שורות שגויות` : ''}
               </span>
             </div>
 
@@ -112,6 +117,28 @@ export default async function WhatsappImportPage({ params }: PageProps) {
                 </p>
               ) : null}
             </div>
+
+            {errorRows.length > 0 ? (
+              <details className="text-xs text-muted-foreground">
+                <summary className="cursor-pointer">
+                  שורות שלא ייובאו ({errorRows.length})
+                </summary>
+                <ul className="mt-1 list-inside list-disc">
+                  {errorRows.slice(0, 20).map((e) => (
+                    <li key={e.row}>
+                      שורה {e.row}: {e.message}
+                    </li>
+                  ))}
+                </ul>
+                {errorRows.length > 20 ? <p className="mt-1">מוצגות 20 הראשונות.</p> : null}
+              </details>
+            ) : null}
+
+            <p className="text-xs text-muted-foreground">
+              לחיצה על ״אישור ייבוא״ תוסיף את השורות התקינות לרשימת המוזמנים: כפילויות לפי טלפון
+              ידולגו, והתאמות לפי שם יאוחדו לפי הבחירה למעלה. ״מחיקה״ מוחקת את הרשימה בלי לייבא
+              ואינה ניתנת לשחזור.
+            </p>
 
             <StagingActions
               confirm={confirmWhatsappImportAction.bind(null, eventId, s.id)}
