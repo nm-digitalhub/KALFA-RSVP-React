@@ -3,12 +3,10 @@
 import { useActionState, useState } from 'react';
 
 import { createEventAction } from '../actions';
+import { CelebrantFields } from '../celebrant-fields';
 import { EVENT_TYPES } from '@/lib/validation/schemas';
-import {
-  CELEBRANT_FIELD_LABELS,
-  EVENT_TYPE_LABELS,
-  HOST_COMPOSITION_LABELS,
-} from '@/lib/data/event-labels';
+import { EVENT_TYPE_LABELS } from '@/lib/data/event-labels';
+import { INVITE_IMAGE_MAX_BYTES } from '@/lib/constants';
 import { FieldError, FormError, SubmitButton } from '@/components/forms';
 import { TimeSelect24 } from '@/components/time-select-24';
 import { DateSelectIL } from '@/components/date-select-il';
@@ -26,69 +24,23 @@ function RequiredMark() {
   );
 }
 
-// Celebrant (בעלי שמחה) inputs for the selected event type: plain named
-// inputs (celebrants.groom, celebrants.bride, ...) that the server action
-// reads per the submitted event_type's kind. Uncontrolled — the parent
-// remounts the group via key={eventType} whenever the type changes, so no
-// stale value from another kind ever lingers. Every field is optional here
-// (no RequiredMark): completeness is enforced only at campaign enablement.
-function CelebrantFields({
-  eventType,
-  errors,
-}: {
-  eventType: EventType;
-  errors?: Record<string, string[] | undefined>;
-}) {
-  return (
-    <fieldset className="space-y-4">
-      <legend className="mb-2 text-sm font-medium">בעלי השמחה</legend>
-      <p className="text-xs text-muted-foreground">
-        יש למלא לפני הפעלת אישורי הגעה
-      </p>
-      {Object.entries(CELEBRANT_FIELD_LABELS[eventType]).map(([field, label]) => (
-        <div key={field}>
-          <label
-            htmlFor={`celebrants.${field}`}
-            className="mb-1 block text-sm font-medium"
-          >
-            {label}
-          </label>
-          {field === 'host_composition' ? (
-            <select
-              id={`celebrants.${field}`}
-              name={`celebrants.${field}`}
-              className={inputClass}
-              defaultValue=""
-            >
-              <option value="" disabled>
-                בחרו…
-              </option>
-              {Object.entries(HOST_COMPOSITION_LABELS).map(([value, optLabel]) => (
-                <option key={value} value={value}>
-                  {optLabel}
-                </option>
-              ))}
-            </select>
-          ) : (
-            <input
-              id={`celebrants.${field}`}
-              name={`celebrants.${field}`}
-              type="text"
-              className={inputClass}
-            />
-          )}
-          <FieldError errors={errors?.[`celebrants.${field}`]} />
-        </div>
-      ))}
-    </fieldset>
-  );
-}
-
+// The create form carries the SAME fields as the event page's edit form
+// (owner ruling 2026-09-02: 1:1 — every owner-editable detail can be entered up
+// front, not discovered later on the event page). What it deliberately lacks
+// are the edit form's locks (dates after confirmation, type/celebrants/venue
+// while a campaign is in process) — none apply to a brand-new draft — and the
+// prefilled values. Both forms validate against the one eventFormSchema and
+// share CelebrantFields, so they cannot drift apart.
 export function NewEventForm() {
   const [state, action] = useActionState(createEventAction, null);
 
   // Controlled so the celebrant field group below follows the selected type.
   const [eventType, setEventType] = useState<EventType>('wedding');
+
+  // Client-side pre-check of the image size cap: a pick above the Server
+  // Action body limit (6mb) is rejected by the framework BEFORE the action
+  // runs, so the server's friendly Hebrew error would never show.
+  const [imageError, setImageError] = useState<string | null>(null);
 
   return (
     <form action={action} className="space-y-4">
@@ -132,11 +84,7 @@ export function NewEventForm() {
       </div>
 
       {/* key={eventType}: remount the uncontrolled group on type change. */}
-      <CelebrantFields
-        key={eventType}
-        eventType={eventType}
-        errors={state?.fieldErrors}
-      />
+      <CelebrantFields key={eventType} eventType={eventType} errors={state?.fieldErrors} />
 
       <div>
         <label htmlFor="event_date" className="mb-1 block text-sm font-medium">
@@ -160,11 +108,95 @@ export function NewEventForm() {
       </div>
 
       <div>
+        <label htmlFor="rsvp_deadline" className="mb-1 block text-sm font-medium">
+          מועד אחרון לאישור הגעה
+        </label>
+        <DateSelectIL id="rsvp_deadline" name="rsvp_deadline" />
+        <p className="mt-1 text-xs text-muted-foreground">
+          רשות — עד יום האירוע, כולל
+        </p>
+        <FieldError errors={state?.fieldErrors?.rsvp_deadline} />
+      </div>
+
+      <div>
         <label htmlFor="venue_name" className="mb-1 block text-sm font-medium">
-          שם המקום
+          מיקום
         </label>
         <input id="venue_name" name="venue_name" type="text" className={inputClass} />
+        <p className="mt-1 text-xs text-muted-foreground">
+          מופיע בהזמנות ובתזכורות — יש למלא לפני הפעלת אישורי הגעה
+        </p>
         <FieldError errors={state?.fieldErrors?.venue_name} />
+      </div>
+
+      <div>
+        <label htmlFor="venue_address" className="mb-1 block text-sm font-medium">
+          כתובת המקום
+        </label>
+        <input id="venue_address" name="venue_address" type="text" className={inputClass} />
+        <FieldError errors={state?.fieldErrors?.venue_address} />
+      </div>
+
+      <div>
+        <label htmlFor="gift_payment_url" className="mb-1 block text-sm font-medium">
+          קישור למתנה (פייבוקס/ביט)
+        </label>
+        <input
+          id="gift_payment_url"
+          name="gift_payment_url"
+          type="url"
+          dir="ltr"
+          placeholder="https://…"
+          className="w-full rounded-md border border-border bg-background px-3 py-2"
+        />
+        <p className="mt-1 text-xs text-muted-foreground">
+          יופיע בתזכורת המתנה בוואטסאפ — האורחים יועברו אליו בלחיצה.
+        </p>
+        <FieldError errors={state?.fieldErrors?.gift_payment_url} />
+      </div>
+
+      <div>
+        <label className="flex items-start gap-2 text-sm font-medium">
+          <input
+            type="checkbox"
+            name="show_meal_pref"
+            defaultChecked
+            className="mt-0.5 size-4 accent-primary"
+          />
+          <span>
+            איסוף העדפת תפריט מהאורחים
+            <span className="mt-0.5 block text-xs font-normal text-muted-foreground">
+              כשמופעל, טופס אישור ההגעה יציג לאורחים שמאשרים הגעה שדה חופשי
+              להעדפת תפריט (כשר, צמחוני וכדומה). ניתן לשינוי בכל שלב.
+            </span>
+          </span>
+        </label>
+      </div>
+
+      <div>
+        <label htmlFor="invite_image" className="mb-1 block text-sm font-medium">
+          תמונת הזמנה (רשות)
+        </label>
+        <input
+          id="invite_image"
+          name="invite_image"
+          type="file"
+          accept="image/jpeg,image/png,image/webp"
+          className="block w-full text-sm"
+          onChange={(e) => {
+            const f = e.target.files?.[0];
+            if (f && f.size > INVITE_IMAGE_MAX_BYTES) {
+              setImageError('הקובץ גדול מדי (מעל 5MB) — נא לכווץ את התמונה.');
+              e.target.value = '';
+            } else {
+              setImageError(null);
+            }
+          }}
+        />
+        <FieldError errors={imageError ? [imageError] : undefined} />
+        <p className="mt-1 text-xs text-muted-foreground">
+          JPG / PNG / WebP עד 5MB — תופיע בראש הזמנת הוואטסאפ.
+        </p>
       </div>
 
       <SubmitButton>יצירת אירוע</SubmitButton>

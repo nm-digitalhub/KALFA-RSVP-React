@@ -185,6 +185,10 @@ describe('createEvent', () => {
     event_type: 'birthday' as const,
     event_date: '2026-12-01',
     venue_name: 'Somewhere',
+    venue_address: null,
+    rsvp_deadline: null,
+    gift_payment_url: null,
+    show_meal_pref: true,
     celebrants: null,
   };
 

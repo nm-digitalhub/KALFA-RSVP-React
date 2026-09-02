@@ -4,17 +4,13 @@ import Image from 'next/image';
 import { useActionState, useState } from 'react';
 
 import { updateEventAction } from './actions';
+import { CelebrantFields } from '../celebrant-fields';
 import {
   CELEBRANT_KIND_BY_EVENT_TYPE,
   CELEBRANT_REQUIRED_FIELD_KEYS_BY_KIND,
   EVENT_TYPES,
-  type CelebrantFieldKey,
 } from '@/lib/validation/schemas';
-import {
-  CELEBRANT_FIELD_LABELS,
-  EVENT_TYPE_LABELS,
-  HOST_COMPOSITION_LABELS,
-} from '@/lib/data/event-labels';
+import { EVENT_TYPE_LABELS } from '@/lib/data/event-labels';
 import type { EventDetail } from '@/lib/data/events';
 import { ilDateInputValue, ilTimeInputValue } from '@/lib/data/event-date';
 import { INVITE_IMAGE_MAX_BYTES } from '@/lib/constants';
@@ -47,78 +43,6 @@ function celebrantDefaults(value: EventDetail['celebrants']): Record<string, str
     if (typeof entry === 'string') defaults[key] = entry;
   }
   return defaults;
-}
-
-// Celebrant (בעלי שמחה) inputs for the selected event type: plain named
-// inputs (celebrants.groom, celebrants.bride, ...) that the server action
-// reads per the submitted event_type's kind. Uncontrolled — the parent
-// remounts the group via key={eventType} whenever the type changes, so no
-// stale value from another kind ever lingers. Every field is optional here:
-// completeness is enforced only at campaign enablement.
-function CelebrantFields({
-  eventType,
-  defaults,
-  errors,
-  requiredKeys,
-}: {
-  eventType: EventType;
-  defaults: Record<string, string>;
-  errors?: Record<string, string[] | undefined>;
-  // While an operational campaign exists these fields are `required` (they are
-  // bound into every pending invite/reminder — the browser must block a save that
-  // empties them). Empty otherwise: at draft/no-campaign all fields stay
-  // optional (completeness is only the campaign gate's concern).
-  requiredKeys?: readonly CelebrantFieldKey[];
-}) {
-  const required = new Set<string>(requiredKeys ?? []);
-  return (
-    <fieldset className="space-y-4">
-      <legend className="mb-2 text-sm font-medium">בעלי השמחה</legend>
-      <p className="text-xs text-muted-foreground">
-        {required.size > 0
-          ? 'כל עוד קמפיין אישורי-הגעה פעיל — הפרטים מופיעים בהזמנות ובתזכורות ולכן חייבים להישאר מלאים.'
-          : 'יש למלא לפני הפעלת אישורי הגעה'}
-      </p>
-      {Object.entries(CELEBRANT_FIELD_LABELS[eventType]).map(([field, label]) => (
-        <div key={field}>
-          <label
-            htmlFor={`celebrants.${field}`}
-            className="mb-1 block text-sm font-medium"
-          >
-            {label}
-          </label>
-          {field === 'host_composition' ? (
-            <select
-              id={`celebrants.${field}`}
-              name={`celebrants.${field}`}
-              defaultValue={defaults[field] ?? ''}
-              required={required.has(field)}
-              className={inputClass}
-            >
-              <option value="" disabled>
-                בחרו…
-              </option>
-              {Object.entries(HOST_COMPOSITION_LABELS).map(([value, optLabel]) => (
-                <option key={value} value={value}>
-                  {optLabel}
-                </option>
-              ))}
-            </select>
-          ) : (
-            <input
-              id={`celebrants.${field}`}
-              name={`celebrants.${field}`}
-              type="text"
-              defaultValue={defaults[field] ?? ''}
-              required={required.has(field)}
-              className={inputClass}
-            />
-          )}
-          <FieldError errors={errors?.[`celebrants.${field}`]} />
-        </div>
-      ))}
-    </fieldset>
-  );
 }
 
 export function EditEventForm({
@@ -235,7 +159,7 @@ export function EditEventForm({
           <>
             <input type="hidden" name="event_type" value={event.event_type} />
             <p className="mt-1 text-xs text-muted-foreground">
-              נעול כל עוד קמפיין אישורי-הגעה פעיל
+              נעול כל עוד קיים קמפיין אישורי הגעה בתהליך
             </p>
           </>
         ) : null}
@@ -325,7 +249,7 @@ export function EditEventForm({
         />
         {hasOperationalCampaign ? (
           <p className="mt-1 text-xs text-muted-foreground">
-            המיקום מופיע בהזמנות ובתזכורות ולכן אינו יכול להישאר ריק כל עוד קמפיין פעיל.
+            המיקום מופיע בהזמנות ובתזכורות ולכן אינו יכול להישאר ריק כל עוד קיים קמפיין אישורי הגעה בתהליך.
           </p>
         ) : null}
         <FieldError errors={state?.fieldErrors?.venue_name} />
