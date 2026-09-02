@@ -5,15 +5,24 @@ import { z } from 'zod';
 // server-side (§17/§18.7/§7) — so there is no create-terms schema. The schemas
 // below cover the approval + outreach actions only.
 
-// Approval requires the three consents (§18) + the ToS version that was shown.
+// Approval requires the consents + the ToS version that was shown.
+//
+// The billing authorization used to be a THIRD checkbox here
+// ("אני מאשר/ת חיוב לפי אנשי הקשר שהושגו בפועל, עד לתקרה שאושרה"). Removed on
+// owner instruction 2026-09-02: the agreement being signed already carries it
+// as §4 ("אמצעי תשלום, מועד חיוב והרשאת חיוב"), with §3 covering the ceiling —
+// and the signature, content_hash and PDF are what actually record consent.
+// The checkbox was never persisted (signed_agreements has no column for it),
+// so it added friction without adding evidence.
+//
+// The old comment here cited "§18" as the source of a three-consent
+// requirement; the active document (2026-07-v4) has nine sections and no §18,
+// so that reference was already stale.
 export const approveCampaignSchema = z.object({
   campaign_id: z.string().uuid({ error: 'מזהה קמפיין לא תקין' }),
   tos_version: z.string().trim().min(1, { error: 'גרסת תנאי שירות חסרה' }),
   terms_accepted: z.literal(true, { error: 'יש לאשר את התקנון' }),
   privacy_accepted: z.literal(true, { error: 'יש לאשר את מדיניות הפרטיות' }),
-  authorization_accepted: z.literal(true, {
-    error: 'יש לאשר את הרשאת החיוב',
-  }),
 });
 export type ApproveCampaignInput = z.infer<typeof approveCampaignSchema>;
 

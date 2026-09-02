@@ -664,6 +664,20 @@ export async function getGuestTotals(eventId: string): Promise<GuestTotals> {
   return data as unknown as GuestTotals;
 }
 
+// Head count of the event's guest rows (RLS-scoped, like listGuests). The setup
+// page's "any guests yet?" signal. Deliberately NOT gated with requireEventAccess:
+// the event page has already passed its own gate, and a member without
+// guests.view simply sees 0 through RLS rather than a 404 on the whole page.
+export async function countGuests(eventId: string): Promise<number> {
+  const supabase = await createClient();
+  const { count, error } = await supabase
+    .from('guests')
+    .select('id', { count: 'exact', head: true })
+    .eq('event_id', eventId);
+  if (error) throw new Error('טעינת מונה המוזמנים נכשלה');
+  return count ?? 0;
+}
+
 export interface GroupWriteInput {
   name: string;
   color?: string | null;

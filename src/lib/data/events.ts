@@ -9,6 +9,7 @@ import { requireUser, getUser } from '@/lib/auth/dal';
 import { logActivity } from '@/lib/data/activity';
 import { ensurePersonalOrg } from '@/lib/data/orgs';
 import { OPERATIONAL_CAMPAIGN_STATUSES } from '@/lib/data/campaign-status';
+import type { EventClosureReason } from '@/lib/data/event-labels';
 import { isBeforeTomorrowIL, todayIL } from '@/lib/data/event-date';
 import type { Enums, Json, Tables, TablesUpdate } from '@/lib/supabase/types';
 import { celebrantsCompleteFor } from '@/lib/validation/schemas';
@@ -153,10 +154,24 @@ export async function getEventCounts(): Promise<EventCounts> {
 }
 
 export interface CreateEventInput {
+  // Optional server-generated id (crypto.randomUUID()). The create action
+  // supplies it when an invitation image was uploaded AHEAD of the row (the
+  // storage path is keyed by event id), so upload and insert agree on the id.
+  // Omitted → the DB default gen_random_uuid() applies.
+  id?: string;
   name: string;
   event_type: EventType;
   event_date: string | null;
   venue_name: string | null;
+  // The create form mirrors the edit form 1:1 (owner ruling 2026-09-02), so
+  // every owner-editable column is settable at create too.
+  venue_address: string | null;
+  rsvp_deadline: string | null;
+  gift_payment_url: string | null;
+  show_meal_pref: boolean;
+  // Storage path set by the SERVER after a verified upload — never a raw form
+  // value. Optional: absent/null = no invitation image yet.
+  invite_image_path?: string | null;
   // Per-event-type celebrant names (בעלי שמחה) — optional at create (partial
   // is legal too); null means "none given" and stores SQL NULL, never {}.
   celebrants: CelebrantsInput | null;
@@ -179,6 +194,11 @@ export async function createEvent(input: CreateEventInput): Promise<EventListIte
   // layers): event_date is NULL (a date-less draft, legal) or >= tomorrow.
   if (input.event_date && isBeforeTomorrowIL(input.event_date)) {
     throw new Error('מועד האירוע חייב להיות החל ממחר');
+  }
+  // R2b mirror (same as the draft path of updateEvent): a deadline in the past
+  // is refused before touching the DB.
+  if (input.rsvp_deadline && input.rsvp_deadline < todayIL()) {
+    throw new Error('המועד האחרון לאישור הגעה לא יכול להיות בעבר');
   }
   // Anchor the event to the user's active org (creating a personal org on first
   // use). owner_id is kept for backward compatibility and as the legacy owner.
@@ -306,11 +326,11 @@ export interface UpdateEventInput {
 // remove / re-type" invariants — the guards a user can reach through ENABLED UI,
 // exported so the action surfaces the actionable message, not the generic text.
 export const CELEBRANTS_LOCKED_ERROR =
-  'לא ניתן להשאיר את פרטי בעלי השמחה חסרים כל עוד קמפיין אישורי-הגעה פעיל — הם מופיעים בהזמנות ובתזכורות. השלימו את השדות המסומנים ונסו שוב.';
+  'לא ניתן להשאיר את פרטי בעלי השמחה חסרים כל עוד קיים קמפיין אישורי הגעה בתהליך — הם מופיעים בהזמנות ובתזכורות. השלימו את השדות המסומנים ונסו שוב.';
 export const EVENT_TYPE_LOCKED_ERROR =
-  'לא ניתן לשנות את סוג האירוע כל עוד קמפיין אישורי-הגעה פעיל.';
+  'לא ניתן לשנות את סוג האירוע כל עוד קיים קמפיין אישורי הגעה בתהליך.';
 export const VENUE_REQUIRED_WHILE_CAMPAIGN_ERROR =
-  'לא ניתן להשאיר את המיקום ריק כל עוד קמפיין אישורי-הגעה פעיל — המיקום מופיע בהזמנות ובתזכורות.';
+  'לא ניתן להשאיר את המיקום ריק כל עוד קיים קמפיין אישורי הגעה בתהליך — המיקום מופיע בהזמנות ובתזכורות.';
 
 // Update an event the current user may edit — the OWNER or an org member holding
 // events.edit. The org-aware gate (requireEventAccess → can_access_event) runs
@@ -355,7 +375,7 @@ export async function updateEvent(
 
   if (cur.status !== 'draft') {
     if (datesPresent) {
-      throw new Error('לא ניתן לשנות מועד לאחר פרסום האירוע');
+      throw new Error('לא ניתן לשנות מועד לאחר אישור פרטי האירוע');
     }
     // Neither key present — omit them from the patch entirely (never null).
   } else {
@@ -432,12 +452,12 @@ export async function updateEvent(
 export async function publishEvent(eventId: string): Promise<void> {
   const cur = await requireOwnedEvent(eventId);
   if (!cur.event_date || isBeforeTomorrowIL(cur.event_date)) {
-    throw new Error('יש להגדיר מועד עתידי לפני פרסום');
+    throw new Error('יש להגדיר מועד עתידי לפני אישור פרטי האירוע');
   }
   // R2b mirror: today_IL may have moved forward since the deadline was saved
   // while draft, even though the date values themselves are unchanged here.
   if (cur.rsvp_deadline && cur.rsvp_deadline < todayIL()) {
-    throw new Error('המועד האחרון לאישור הגעה כבר חלף — קבעו מועד חדש לפני הפרסום');
+    throw new Error('המועד האחרון לאישור הגעה כבר חלף — קבעו מועד חדש לפני האישור');
   }
   const user = await requireUser();
   // Service-role write: M1 (phase-3 RLS migration) removes the `status` column
@@ -455,7 +475,7 @@ export async function publishEvent(eventId: string): Promise<void> {
     .eq('status', 'draft');
 
   if (error) {
-    throw new Error('פרסום האירוע נכשל');
+    throw new Error('אישור פרטי האירוע נכשל');
   }
 
   await logActivity({ eventId, action: 'event.published', meta: {} });
@@ -493,7 +513,9 @@ export async function closeEvent(eventId: string): Promise<void> {
 // AND for a closed event with no matching log entry (a legacy write from
 // before this labeling existed) — both cases render identically (no extra
 // line), never a guess at the real cause.
-export type EventClosureReason = 'owner' | 'settlement' | 'cancellation';
+// Defined in event-labels.ts (a worker-safe leaf) and re-exported here so the
+// existing imports keep working.
+export type { EventClosureReason };
 
 const CLOSURE_ACTIONS: Record<string, EventClosureReason> = {
   'event.closed': 'owner',

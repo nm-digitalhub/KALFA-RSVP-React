@@ -60,48 +60,32 @@ function ActionButton({
   );
 }
 
-// R6: status changes only through these two explicit transitions — never a
-// free dropdown. `closed` is terminal (R6) — no actions once closed.
+// R6: the owner's only direct status transition here is the close (destructive).
+// Confirming the details (draft → active) lives in the setup steps above, as
+// the first step of the RSVP flow. `closed` is terminal — no actions once closed.
 export function EventStatusActions({
   status,
-  canPublish,
   hasBlockingCampaign,
-  publishAction,
   closeAction,
 }: {
   status: EventStatus;
-  canPublish: boolean;
   hasBlockingCampaign: boolean;
-  publishAction: BoundAction;
   closeAction: BoundAction;
 }) {
-  if (status === 'closed') return null;
+  if (status !== 'active') return null;
 
   return (
     <div className="flex flex-wrap items-center gap-2">
-      {status === 'draft' ? (
-        <ActionButton
-          action={publishAction}
-          label="פרסום האירוע"
-          variant="default"
-          disabled={!canPublish}
-          disabledHint={!canPublish ? 'יש להגדיר תאריך אירוע עתידי לפני הפרסום' : undefined}
-        />
-      ) : null}
-      {status === 'active' ? (
-        <ActionButton
-          action={closeAction}
-          label="סגירת האירוע"
-          variant="destructive"
-          confirm="לסגור את האירוע? לא ניתן לבטל פעולה זו."
-          disabled={hasBlockingCampaign}
-          disabledHint={
-            hasBlockingCampaign
-              ? 'יש לסגור או לבטל את הקמפיין לפני סגירת האירוע'
-              : undefined
-          }
-        />
-      ) : null}
+      <ActionButton
+        action={closeAction}
+        label="סגירת האירוע"
+        variant="destructive"
+        confirm="לסגור את האירוע? לא ניתן לבטל פעולה זו."
+        disabled={hasBlockingCampaign}
+        disabledHint={
+          hasBlockingCampaign ? 'יש לסגור או לבטל את הקמפיין לפני סגירת האירוע' : undefined
+        }
+      />
     </div>
   );
 }

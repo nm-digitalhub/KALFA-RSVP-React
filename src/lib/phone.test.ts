@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
-import { normalizePhone, isValidPhone, repairIsraeliLocalPhone } from '@/lib/phone';
+import {
+  isValidPhone,
+  maskPhoneForDisplay,
+  normalizePhone,
+  repairIsraeliLocalPhone,
+} from '@/lib/phone';
 
 describe('normalizePhone', () => {
   it('normalizes an Israeli local mobile to E.164', () => {
@@ -56,5 +61,22 @@ describe('repairIsraeliLocalPhone', () => {
     expect(repairIsraeliLocalPhone('5.01E+08')).toBe(null);
     expect(repairIsraeliLocalPhone('abc')).toBe(null);
     expect(repairIsraeliLocalPhone('+14155552671')).toBe(null);
+  });
+});
+
+describe('maskPhoneForDisplay (signing page — audit §5)', () => {
+  it('shows an Israeli mobile as 050***4567 — recognisable, not exposed', () => {
+    expect(maskPhoneForDisplay('+972501234567')).toBe('050***4567');
+    expect(maskPhoneForDisplay('050-123-4567')).toBe('050***4567');
+  });
+
+  it('keeps only the last 4 digits of a non-Israeli number', () => {
+    expect(maskPhoneForDisplay('+14155552671')).toBe('+14***2671');
+  });
+
+  it('falls back to a dash for missing / invalid input', () => {
+    expect(maskPhoneForDisplay(null)).toBe('—');
+    expect(maskPhoneForDisplay('')).toBe('—');
+    expect(maskPhoneForDisplay('123')).toBe('—');
   });
 });

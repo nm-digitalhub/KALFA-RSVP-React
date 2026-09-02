@@ -11,6 +11,19 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 // guests-actions.test.ts pattern (this directory's precedent for action tests).
 vi.mock('server-only', () => ({}));
 vi.mock('next/cache', () => ({ revalidatePath: vi.fn() }));
+// redirect() throws a NEXT_REDIRECT control-flow signal in real Next; model it
+// (same as guests-actions.test.ts) so the happy path is observable.
+vi.mock('next/navigation', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('next/navigation')>();
+  return {
+    ...actual,
+    redirect: vi.fn(() => {
+      throw Object.assign(new Error('NEXT_REDIRECT'), {
+        digest: 'NEXT_REDIRECT;replace;/x;307;',
+      });
+    }),
+  };
+});
 vi.mock('@/lib/auth/dal', () => ({ requireUser: vi.fn() }));
 vi.mock('@/lib/data/events', () => ({
   requireOwnedEvent: vi.fn(),
@@ -37,13 +50,14 @@ vi.mock('@/lib/data/agreements-doc', () => ({ getActiveAgreementDoc: vi.fn() }))
 
 import { publishEvent, closeEvent, requireOwnedEvent } from '@/lib/data/events';
 import { syncEventToExchange, markEventExchangeCancelled } from '@/lib/data/event-exchange-sync';
-import { cancelCampaign, getCampaignForHold } from '@/lib/data/campaigns';
+import { cancelCampaign, createCampaign, getCampaignForHold } from '@/lib/data/campaigns';
+import { redirect } from 'next/navigation';
 import { closeCampaignAndCharge } from '@/lib/data/close-charge';
 import { getProfile } from '@/lib/data/profiles';
 import { verifyOtp } from '@/lib/data/otp';
 import { requireUser } from '@/lib/auth/dal';
 import {
-  publishEventAction,
+  setupCampaignAction,
   closeEventAction,
   cancelCampaignAction,
   settleCampaignAction,
@@ -61,59 +75,6 @@ const NEXT_REDIRECT = Object.assign(new Error('NEXT_REDIRECT'), {
 });
 
 beforeEach(() => vi.clearAllMocks());
-
-describe('publishEventAction', () => {
-  it('calls publishEvent and returns a notice on success', async () => {
-    vi.mocked(publishEvent).mockResolvedValue(undefined);
-
-    const result = await publishEventAction('e1', null, new FormData());
-
-    expect(publishEvent).toHaveBeenCalledWith('e1');
-    expect(result?.notice).toBeDefined();
-  });
-
-  it('syncs the event to Exchange (Layer 2) after a successful publish', async () => {
-    vi.mocked(publishEvent).mockResolvedValue(undefined);
-
-    await publishEventAction('e1', null, new FormData());
-
-    expect(syncEventToExchange).toHaveBeenCalledWith('e1');
-  });
-
-  it('surfaces the data layer\'s Hebrew error message', async () => {
-    vi.mocked(publishEvent).mockRejectedValue(
-      new Error('יש להגדיר מועד עתידי לפני פרסום'),
-    );
-
-    const result = await publishEventAction('e1', null, new FormData());
-
-    expect(result?.error).toBe('יש להגדיר מועד עתידי לפני פרסום');
-  });
-
-  it('re-throws a Next.js control-flow signal instead of swallowing it', async () => {
-    vi.mocked(publishEvent).mockRejectedValue(NEXT_NOT_FOUND);
-
-    await expect(publishEventAction('e1', null, new FormData())).rejects.toThrow(
-      'NEXT_NOT_FOUND',
-    );
-  });
-
-  it('re-throws a NEXT_REDIRECT (e.g. session expired) instead of returning { error }', async () => {
-    vi.mocked(publishEvent).mockRejectedValue(NEXT_REDIRECT);
-
-    await expect(publishEventAction('e1', null, new FormData())).rejects.toThrow(
-      'NEXT_REDIRECT',
-    );
-  });
-
-  it('does not sync to Exchange when publishEvent fails', async () => {
-    vi.mocked(publishEvent).mockRejectedValue(new Error('יש להגדיר מועד עתידי לפני פרסום'));
-
-    await publishEventAction('e1', null, new FormData());
-
-    expect(syncEventToExchange).not.toHaveBeenCalled();
-  });
-});
 
 describe('closeEventAction', () => {
   it('calls closeEvent and returns a notice on success', async () => {
@@ -320,5 +281,76 @@ describe('verifySigningOtpAction', () => {
 
     expect(result?.error).toBeTruthy();
     expect(verifyOtp).not.toHaveBeenCalled();
+  });
+});
+
+describe('setupCampaignAction — "אישור פרטי האירוע והמשך" (audit §2)', () => {
+  const e1 = {
+    id: 'e1',
+    name: 'x',
+    status: 'draft',
+    event_type: 'wedding',
+    event_date: '2999-01-01T00:00:00Z',
+    rsvp_deadline: null,
+  } as const;
+
+  it('on a DRAFT event: confirms (publishEvent), syncs Exchange, creates the campaign, redirects to /approve', async () => {
+    vi.mocked(requireOwnedEvent).mockResolvedValue(e1 as never);
+    vi.mocked(publishEvent).mockResolvedValue(undefined);
+    vi.mocked(createCampaign).mockResolvedValue({ id: 'c1' });
+
+    await expect(setupCampaignAction('e1', null, new FormData())).rejects.toThrow('NEXT_REDIRECT');
+
+    expect(publishEvent).toHaveBeenCalledWith('e1');
+    expect(syncEventToExchange).toHaveBeenCalledWith('e1');
+    expect(createCampaign).toHaveBeenCalledWith('e1');
+    expect(vi.mocked(publishEvent).mock.invocationCallOrder[0]).toBeLessThan(
+      vi.mocked(createCampaign).mock.invocationCallOrder[0],
+    );
+    expect(redirect).toHaveBeenCalledWith('/app/events/e1/campaign/c1/approve');
+  });
+
+  it('on an already-confirmed (active) event: skips publish, creates-or-continues, redirects', async () => {
+    vi.mocked(requireOwnedEvent).mockResolvedValue({ ...e1, status: 'active' } as never);
+    vi.mocked(createCampaign).mockResolvedValue({ id: 'c1' });
+
+    await expect(setupCampaignAction('e1', null, new FormData())).rejects.toThrow('NEXT_REDIRECT');
+
+    expect(publishEvent).not.toHaveBeenCalled();
+    expect(createCampaign).toHaveBeenCalledWith('e1');
+  });
+
+  it("surfaces the data layer's Hebrew message when confirming fails, and never creates a campaign", async () => {
+    vi.mocked(requireOwnedEvent).mockResolvedValue(e1 as never);
+    vi.mocked(publishEvent).mockRejectedValue(
+      new Error('יש להגדיר מועד עתידי לפני אישור פרטי האירוע'),
+    );
+
+    const result = await setupCampaignAction('e1', null, new FormData());
+
+    expect(result?.error).toBe('יש להגדיר מועד עתידי לפני אישור פרטי האירוע');
+    expect(createCampaign).not.toHaveBeenCalled();
+  });
+
+  it("surfaces createCampaign's own gate message (e.g. celebrants) without redirecting", async () => {
+    vi.mocked(requireOwnedEvent).mockResolvedValue({ ...e1, status: 'active' } as never);
+    vi.mocked(createCampaign).mockRejectedValue(
+      new Error('יש למלא את פרטי בעלי השמחה בעריכת האירוע לפני הפעלת אישורי הגעה'),
+    );
+
+    const result = await setupCampaignAction('e1', null, new FormData());
+
+    expect(result?.error).toBe(
+      'יש למלא את פרטי בעלי השמחה בעריכת האירוע לפני הפעלת אישורי הגעה',
+    );
+    expect(redirect).not.toHaveBeenCalled();
+  });
+
+  it('re-throws a Next.js control-flow signal from the ownership gate', async () => {
+    vi.mocked(requireOwnedEvent).mockRejectedValue(NEXT_NOT_FOUND);
+
+    await expect(setupCampaignAction('e1', null, new FormData())).rejects.toThrow(
+      'NEXT_NOT_FOUND',
+    );
   });
 });

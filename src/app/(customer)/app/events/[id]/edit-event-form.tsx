@@ -4,23 +4,21 @@ import Image from 'next/image';
 import { useActionState, useState } from 'react';
 
 import { updateEventAction } from './actions';
+import { CelebrantFields } from '../celebrant-fields';
 import {
   CELEBRANT_KIND_BY_EVENT_TYPE,
   CELEBRANT_REQUIRED_FIELD_KEYS_BY_KIND,
   EVENT_TYPES,
-  type CelebrantFieldKey,
 } from '@/lib/validation/schemas';
-import {
-  CELEBRANT_FIELD_LABELS,
-  EVENT_TYPE_LABELS,
-  HOST_COMPOSITION_LABELS,
-} from '@/lib/data/event-labels';
+import { EVENT_TYPE_LABELS } from '@/lib/data/event-labels';
 import type { EventDetail } from '@/lib/data/events';
 import { ilDateInputValue, ilTimeInputValue } from '@/lib/data/event-date';
 import { INVITE_IMAGE_MAX_BYTES } from '@/lib/constants';
 import { FieldError, FormError, FormNotice, SubmitButton } from '@/components/forms';
+import { PlacesAutocomplete } from '@/components/places-autocomplete';
 import { TimeSelect24 } from '@/components/time-select-24';
 import { DateSelectIL } from '@/components/date-select-il';
+import { cn } from '@/lib/utils';
 
 type EventType = (typeof EVENT_TYPES)[number];
 
@@ -47,78 +45,6 @@ function celebrantDefaults(value: EventDetail['celebrants']): Record<string, str
     if (typeof entry === 'string') defaults[key] = entry;
   }
   return defaults;
-}
-
-// Celebrant (בעלי שמחה) inputs for the selected event type: plain named
-// inputs (celebrants.groom, celebrants.bride, ...) that the server action
-// reads per the submitted event_type's kind. Uncontrolled — the parent
-// remounts the group via key={eventType} whenever the type changes, so no
-// stale value from another kind ever lingers. Every field is optional here:
-// completeness is enforced only at campaign enablement.
-function CelebrantFields({
-  eventType,
-  defaults,
-  errors,
-  requiredKeys,
-}: {
-  eventType: EventType;
-  defaults: Record<string, string>;
-  errors?: Record<string, string[] | undefined>;
-  // While an operational campaign exists these fields are `required` (they are
-  // bound into every pending invite/reminder — the browser must block a save that
-  // empties them). Empty otherwise: at draft/no-campaign all fields stay
-  // optional (completeness is only the campaign gate's concern).
-  requiredKeys?: readonly CelebrantFieldKey[];
-}) {
-  const required = new Set<string>(requiredKeys ?? []);
-  return (
-    <fieldset className="space-y-4">
-      <legend className="mb-2 text-sm font-medium">בעלי השמחה</legend>
-      <p className="text-xs text-muted-foreground">
-        {required.size > 0
-          ? 'כל עוד קמפיין אישורי-הגעה פעיל — הפרטים מופיעים בהזמנות ובתזכורות ולכן חייבים להישאר מלאים.'
-          : 'יש למלא לפני הפעלת אישורי הגעה'}
-      </p>
-      {Object.entries(CELEBRANT_FIELD_LABELS[eventType]).map(([field, label]) => (
-        <div key={field}>
-          <label
-            htmlFor={`celebrants.${field}`}
-            className="mb-1 block text-sm font-medium"
-          >
-            {label}
-          </label>
-          {field === 'host_composition' ? (
-            <select
-              id={`celebrants.${field}`}
-              name={`celebrants.${field}`}
-              defaultValue={defaults[field] ?? ''}
-              required={required.has(field)}
-              className={inputClass}
-            >
-              <option value="" disabled>
-                בחרו…
-              </option>
-              {Object.entries(HOST_COMPOSITION_LABELS).map(([value, optLabel]) => (
-                <option key={value} value={value}>
-                  {optLabel}
-                </option>
-              ))}
-            </select>
-          ) : (
-            <input
-              id={`celebrants.${field}`}
-              name={`celebrants.${field}`}
-              type="text"
-              defaultValue={defaults[field] ?? ''}
-              required={required.has(field)}
-              className={inputClass}
-            />
-          )}
-          <FieldError errors={errors?.[`celebrants.${field}`]} />
-        </div>
-      ))}
-    </fieldset>
-  );
 }
 
 export function EditEventForm({
@@ -153,6 +79,11 @@ export function EditEventForm({
   // Action body limit (6mb) is rejected by the framework BEFORE the action
   // runs, so the server's friendly Hebrew error would never show.
   const [imageError, setImageError] = useState<string | null>(null);
+
+  // Controlled so a Places pick on "מיקום" can fill it; still freely editable.
+  // Re-seeded from the server on every successful save — the <form key> below
+  // remounts this component, so useState's initial value is read again.
+  const [venueAddress, setVenueAddress] = useState(event.venue_address ?? '');
 
   // Fingerprint of the SERVER's copy of every field rendered below as an
   // uncontrolled input. It keys the <form>, so the inputs remount — and pick up
@@ -235,7 +166,7 @@ export function EditEventForm({
           <>
             <input type="hidden" name="event_type" value={event.event_type} />
             <p className="mt-1 text-xs text-muted-foreground">
-              נעול כל עוד קמפיין אישורי-הגעה פעיל
+              נעול כל עוד קיים קמפיין אישורי הגעה בתהליך
             </p>
           </>
         ) : null}
@@ -269,7 +200,7 @@ export function EditEventForm({
           disabled={!isDraft}
         />
         {!isDraft ? (
-          <p className="mt-1 text-xs text-muted-foreground">נעול לאחר פרסום</p>
+          <p className="mt-1 text-xs text-muted-foreground">נעול לאחר אישור פרטי האירוע</p>
         ) : null}
         <FieldError errors={state?.fieldErrors?.event_date} />
       </div>
@@ -287,7 +218,7 @@ export function EditEventForm({
         <p className="mt-1 text-xs text-muted-foreground">
           {isDraft
             ? 'תופיע בהזמנות ובתזכורות (שעון ישראל)'
-            : 'נעול לאחר פרסום'}
+            : 'נעול לאחר אישור פרטי האירוע'}
         </p>
         <FieldError errors={state?.fieldErrors?.event_time} />
       </div>
@@ -303,7 +234,7 @@ export function EditEventForm({
           disabled={!isDraft}
         />
         {!isDraft ? (
-          <p className="mt-1 text-xs text-muted-foreground">נעול לאחר פרסום</p>
+          <p className="mt-1 text-xs text-muted-foreground">נעול לאחר אישור פרטי האירוע</p>
         ) : null}
         <FieldError errors={state?.fieldErrors?.rsvp_deadline} />
       </div>
@@ -312,20 +243,22 @@ export function EditEventForm({
         <label htmlFor="venue_name" className="mb-1 block text-sm font-medium">
           מיקום
         </label>
-        <input
+        {/* Google Places on the venue NAME; a pick also fills the address below
+            (which stays editable). Bound into every pending invite/reminder
+            ({{…}} venue line) — while an operational campaign exists it may
+            change but must not be emptied, else the next send skips as
+            params_incomplete. Server-enforced too. */}
+        <PlacesAutocomplete
           id="venue_name"
           name="venue_name"
-          type="text"
-          // Bound into every pending invite/reminder ({{…}} venue line) — while an
-          // operational campaign exists it may change but must not be emptied, else
-          // the next send skips as params_incomplete. Server-enforced too.
           required={hasOperationalCampaign}
           defaultValue={event.venue_name ?? ''}
-          className={inputClass}
+          inputClassName={cn(inputClass, 'h-auto')}
+          onPlaceSelect={(place) => setVenueAddress(place.address)}
         />
         {hasOperationalCampaign ? (
           <p className="mt-1 text-xs text-muted-foreground">
-            המיקום מופיע בהזמנות ובתזכורות ולכן אינו יכול להישאר ריק כל עוד קמפיין פעיל.
+            המיקום מופיע בהזמנות ובתזכורות ולכן אינו יכול להישאר ריק כל עוד קיים קמפיין אישורי הגעה בתהליך.
           </p>
         ) : null}
         <FieldError errors={state?.fieldErrors?.venue_name} />
@@ -339,7 +272,8 @@ export function EditEventForm({
           id="venue_address"
           name="venue_address"
           type="text"
-          defaultValue={event.venue_address ?? ''}
+          value={venueAddress}
+          onChange={(e) => setVenueAddress(e.target.value)}
           className={inputClass}
         />
         <FieldError errors={state?.fieldErrors?.venue_address} />

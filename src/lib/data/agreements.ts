@@ -143,7 +143,7 @@ export async function recordSignedAgreement(
   if (event.status !== 'active') {
     return {
       ok: false,
-      error: 'האירוע טרם פורסם — לא ניתן לחתום על הסכם לפני פרסום האירוע',
+      error: 'פרטי האירוע טרם אושרו — לא ניתן לחתום על ההסכם לפני אישור הפרטים',
     };
   }
 

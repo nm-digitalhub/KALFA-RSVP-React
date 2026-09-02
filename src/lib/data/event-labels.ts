@@ -2,6 +2,14 @@ import type { Enums } from '@/lib/supabase/types';
 import type { CelebrantFieldLabels, HostComposition } from '@/lib/validation/schemas';
 import type { BadgeVariant } from '@/components/ui/badge';
 
+// WHY the closure reason lives here and not in events.ts: this module is a
+// LEAF the worker bundle reaches (template-spec.ts → event-labels.ts), and
+// dependency-cruiser treats even a type-only import of events.ts as a path to
+// next/headers (worker-no-request-scoped-next). events.ts re-exports this type.
+// 'owner' = the owner closed it; 'settlement' = closed with the final charge;
+// 'cancellation' = closed by an admin handling a cancellation request.
+export type EventClosureReason = 'owner' | 'settlement' | 'cancellation';
+
 // Hebrew labels for the events-domain enums. Defined as EXHAUSTIVE
 // `Record<enum, string>` maps so that adding or removing a value in the DB
 // enum becomes a compile error here rather than a silently-missing label.
@@ -28,18 +36,33 @@ export const EVENT_TYPE_LABELS: Record<EventType, string> = {
 
 export const EVENT_STATUS_LABELS: Record<EventStatus, string> = {
   draft: 'טיוטה',
-  active: 'פעיל',
-  closed: 'סגור',
+  // Audit §2/§3: an `active` EVENT only means its details are confirmed and the
+  // dates are locked (R5). "פעיל" is reserved for the CAMPAIGN, so an owner
+  // never reads "פעיל" while nothing is being sent yet.
+  active: 'פרטי האירוע אושרו',
+  closed: 'הסתיים',
 };
+
+// The owner-facing event status line. `closed` has two faces: a normal end
+// ("הסתיים") and a close that came from a cancellation request ("בוטל") — the
+// enum has no `cancelled`, so the distinction rides on the closure reason the
+// activity log already records (getEventClosureReason).
+export function eventStatusLabel(
+  status: EventStatus,
+  closureReason: EventClosureReason | null,
+): string {
+  if (status === 'closed' && closureReason === 'cancellation') return 'בוטל';
+  return EVENT_STATUS_LABELS[status];
+}
 
 // Hebrew labels for the campaign lifecycle enum, same exhaustive-Record
 // discipline as EVENT_STATUS_LABELS above — a new campaign_status value is a
-// compile error here rather than a silently-missing label. This is the single
-// source for both the campaign lifecycle screen and the event's campaign
-// summary card (previously two hand-maintained, string-keyed duplicates).
+// compile error here rather than a silently-missing label. Used by the admin
+// campaigns table and the stats page; owner-facing screens use the DERIVED
+// campaignStage below instead.
 export const CAMPAIGN_STATUS_LABELS: Record<CampaignStatus, string> = {
   draft: 'טיוטה',
-  pending_approval: 'ממתין לאישור',
+  pending_approval: 'ממתין לחתימה', // audit §4: what is actually pending is the owner's signature
   approved: 'מאושר',
   scheduled: 'מתוזמן',
   active: 'פעיל',
@@ -66,6 +89,75 @@ export const CAMPAIGN_STATUS_VARIANTS: Record<CampaignStatus, BadgeVariant> = {
   paid: 'success',
   cancelled: 'destructive',
 };
+
+// --- Owner-facing campaign STAGE (audit §3) -----------------------------------
+// The lifecycle enum alone cannot tell the owner what to do next: `approved`
+// means "signed" BEFORE the card hold and "ready to start" AFTER it. The stage
+// is derived from status + capture_status — a pure function, no new enum value,
+// no migration — and is the ONLY campaign state owner screens show.
+export type CampaignStage =
+  | 'not_set' // no campaign yet
+  | 'awaiting_signature' // created, agreement not signed
+  | 'awaiting_payment' // signed, no confirmed card hold yet
+  | 'awaiting_activation' // held; activation did not happen (auto-activation refused / pre-change campaign)
+  | 'active'
+  | 'paused'
+  | 'closed' // closed / awaiting_invoice / billed / paid
+  | 'cancelled';
+
+export const CAMPAIGN_STAGE_LABELS: Record<CampaignStage, string> = {
+  not_set: 'טרם הוגדר',
+  awaiting_signature: 'ממתין לחתימה',
+  awaiting_payment: 'ממתין לתשלום',
+  awaiting_activation: 'ממתין להפעלה',
+  active: 'פעיל',
+  paused: 'מושהה',
+  closed: 'נסגר',
+  cancelled: 'בוטל',
+};
+
+export const CAMPAIGN_STAGE_VARIANTS: Record<CampaignStage, BadgeVariant> = {
+  not_set: 'neutral',
+  awaiting_signature: 'warning',
+  awaiting_payment: 'warning',
+  awaiting_activation: 'warning',
+  active: 'success',
+  paused: 'warning',
+  closed: 'neutral',
+  cancelled: 'destructive',
+};
+
+export function campaignStage(
+  campaign: { status: CampaignStatus; capture_status: string | null } | null,
+): CampaignStage {
+  if (!campaign) return 'not_set';
+  switch (campaign.status) {
+    case 'draft':
+    case 'pending_approval':
+      return 'awaiting_signature';
+    case 'approved':
+    case 'scheduled':
+      // capture_status vocabulary (campaigns.ts): null | pending | authorized |
+      // hold_failed | hold_review — only `authorized` is a confirmed hold.
+      return campaign.capture_status === 'authorized' ? 'awaiting_activation' : 'awaiting_payment';
+    case 'active':
+      return 'active';
+    case 'paused':
+      return 'paused';
+    case 'closed':
+    case 'awaiting_invoice':
+    case 'billed':
+    case 'paid':
+      return 'closed';
+    case 'cancelled':
+      return 'cancelled';
+    default: {
+      // Exhaustiveness: a new campaign_status value fails to compile here.
+      const exhaustive: never = campaign.status;
+      return exhaustive;
+    }
+  }
+}
 
 // Hebrew labels for the celebrant (בעלי שמחה) inputs, per event type — used
 // as the form labels AND the field-error vocabulary. CelebrantFieldLabels is

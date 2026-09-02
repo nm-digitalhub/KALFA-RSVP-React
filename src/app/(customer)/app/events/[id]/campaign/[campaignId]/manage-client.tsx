@@ -19,6 +19,8 @@ import { CAMPAIGN_STATUS_LABELS } from '@/lib/data/event-labels';
 import type { CampaignStatus } from '@/lib/data/campaigns';
 import { computeChargeAmount } from '@/lib/data/close-charge-amount';
 import { HelpTip } from '@/components/help-tip';
+import Link from 'next/link';
+import { buttonVariants } from '@/components/ui/button';
 
 type BoundAction = (
   prevState: FormState,
@@ -289,6 +291,9 @@ export function ManageClient({
   delivery,
   thankyou,
   actions,
+  eventId,
+  authorizedCount,
+  uniqueContacts,
   isPast = false,
   viewerIsAdmin,
 }: {
@@ -307,6 +312,11 @@ export function ManageClient({
     sendThankyou: BoundAction;
     updateThankyouSchedule: BoundAction;
   };
+  eventId: string;
+  // The campaign's authorized set size and the event's reachable-contact count
+  // (null = unavailable to this viewer; the empty state / banner then hide).
+  authorizedCount: number | null;
+  uniqueContacts: number | null;
   isPast?: boolean;
   // The four wind-down controls (pause/close/settle/cancel) are platform-admin-
   // only. This flag only HIDES them for non-admins; the real enforcement is
@@ -335,10 +345,30 @@ export function ManageClient({
   }).amount;
   const balance = Math.max(0, ceiling - accrued);
 
+  // Audit §7 — "אין עדיין מוזמנים בקמפיין": the set is empty on a campaign the
+  // owner already committed money to. Shown ONLY after the hold (before it the
+  // set is empty by design). Reached contacts are always ⊆ the set, so an empty
+  // set with reached > 0 cannot happen; guard anyway.
+  const heldOrLive =
+    campaign.capture_status === 'authorized' &&
+    ['approved', 'scheduled', 'active', 'paused'].includes(s);
+  const showEmptyState = heldOrLive && authorizedCount === 0 && reached === 0;
+  // Guests on the list that the campaign will NOT reach (funded_cap reached —
+  // reconcile_authorized_set returned ceiling_full). Surfaced instead of the
+  // console.warn-only signal the P0-2 note describes.
+  const excluded =
+    heldOrLive && authorizedCount != null && uniqueContacts != null
+      ? Math.max(0, uniqueContacts - authorizedCount)
+      : 0;
+
   // A past event can no longer BEGIN outreach (activate), but pause/close/settle
   // remain so the owner can wind the campaign down and settle what was reached.
+  // Activation requires a CONFIRMED hold (activateCampaign's capture_status
+  // guard) — without one the right next step is the payment page, not a button
+  // that fails server-side. A paused campaign is already held by construction.
   const activatableState = ['approved', 'scheduled', 'paused'].includes(s);
-  const canActivate = !isPast && activatableState;
+  const canActivate = !isPast && activatableState && campaign.capture_status === 'authorized';
+  const needsPayment = !isPast && s === 'approved' && campaign.capture_status !== 'authorized';
   // pause/close/settle/cancel are platform-admin-only (server-enforced). The
   // viewerIsAdmin factor here only hides the buttons from owners/org-members.
   const canPause = viewerIsAdmin && s === 'active';
@@ -360,7 +390,13 @@ export function ManageClient({
   // the send-* controls remain owner-visible.
   const showLifecycleWarning = isPast && activatableState;
   const anyLifecycleControl =
-    canActivate || canPause || canClose || canCancel || canSettle || s === 'active';
+    canActivate ||
+    needsPayment ||
+    canPause ||
+    canClose ||
+    canCancel ||
+    canSettle ||
+    s === 'active';
 
   return (
     <div className="space-y-6">
@@ -381,6 +417,43 @@ export function ManageClient({
         ) : null}
       </div>
 
+      {showEmptyState ? (
+        <section className="space-y-3 rounded-lg border border-primary/30 bg-primary/5 p-4">
+          <p className="font-semibold">אין עדיין מוזמנים בקמפיין.</p>
+          <p className="text-sm text-muted-foreground">
+            הפניות יישלחו רק למוזמנים שברשימה. הוסיפו מוזמנים כדי שהקמפיין יתחיל לעבוד.
+          </p>
+          <div className="flex flex-wrap gap-2">
+            <Link href={`/app/events/${eventId}/guests/import`} className={buttonVariants()}>
+              ייבוא מוזמנים
+            </Link>
+            <Link
+              href={`/app/events/${eventId}/guests/new`}
+              className={buttonVariants({ variant: 'outline' })}
+            >
+              הוספת מוזמן
+            </Link>
+            <Link
+              href={`/app/events/${eventId}/guests/import/whatsapp`}
+              className={buttonVariants({ variant: 'outline' })}
+            >
+              שליחה דרך וואטסאפ
+            </Link>
+          </div>
+        </section>
+      ) : null}
+
+      {excluded > 0 ? (
+        <p
+          role="status"
+          className="rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-sm text-warning"
+        >
+          {excluded.toLocaleString('he-IL')} אנשי קשר ברשימה אינם כלולים בקמפיין — מכסת הקמפיין (
+          {(authorizedCount ?? 0).toLocaleString('he-IL')} אנשי קשר) מלאה. להגדלת המכסה פנו
+          לתמיכה.
+        </p>
+      ) : null}
+
       {/* §15 owner board */}
       <div className="flex items-center gap-1.5">
         <span className="text-sm font-medium">תוכנית החיוב</span>
@@ -400,7 +473,10 @@ export function ManageClient({
         />
         <Stat label="תקרת חיוב" value={nis(ceiling)} />
         <Stat label="אנשי קשר שהושגו" value={String(reached)} />
-        <Stat label="חיוב מצטבר" value={nis(accrued)} />
+        <Stat
+          label={reached === 0 && basePrice > 0 ? 'דמי הפעלה' : 'חיוב מצטבר'}
+          value={nis(accrued)}
+        />
         <Stat label="יתרה עד התקרה" value={nis(balance)} />
       </div>
       <p className="text-xs text-muted-foreground">
@@ -434,6 +510,14 @@ export function ManageClient({
         ) : null}
         {canActivate ? (
           <ActionButton action={actions.activate} label="הפעלת קמפיין" variant="primary" />
+        ) : null}
+        {needsPayment ? (
+          <Link
+            href={`/app/events/${eventId}/campaign/${campaign.id}/payment`}
+            className={buttonVariants()}
+          >
+            המשך לאמצעי תשלום
+          </Link>
         ) : null}
         {canPause ? (
           <ActionButton action={actions.pause} label="השהיה" />

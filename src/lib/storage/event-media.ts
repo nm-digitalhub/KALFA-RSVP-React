@@ -38,6 +38,22 @@ export async function uploadInviteImage(
   return path;
 }
 
+// Best-effort cleanup for a file uploaded AHEAD of a row that then failed to
+// insert (the create flow uploads first, so a failed upload creates nothing;
+// this covers the opposite order of failure). Never throws — an orphaned file
+// is a storage cost, not a correctness issue. The path carries only the event
+// id, no PII.
+export async function removeInviteImage(path: string): Promise<void> {
+  const admin = createAdminClient();
+  const { error } = await admin.storage.from(BUCKET).remove([path]);
+  if (error) {
+    console.error('[event-media] orphan invite image cleanup failed', {
+      path,
+      error: error.message,
+    });
+  }
+}
+
 // Short-lived signed URL for SEND time only (Meta fetches the header image
 // once per message). One hour comfortably covers a full send batch.
 export async function signedInviteImageUrl(

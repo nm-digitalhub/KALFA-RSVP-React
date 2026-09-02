@@ -26,10 +26,10 @@ vi.mock('@/lib/data/events', () => ({
   // Real values re-declared in the factory (hoisted above imports, so it cannot
   // reference the actual module): the action compares err.message against these.
   CELEBRANTS_LOCKED_ERROR:
-    'לא ניתן להשאיר את פרטי בעלי השמחה חסרים כל עוד קמפיין אישורי-הגעה פעיל — הם מופיעים בהזמנות ובתזכורות. השלימו את השדות המסומנים ונסו שוב.',
-  EVENT_TYPE_LOCKED_ERROR: 'לא ניתן לשנות את סוג האירוע כל עוד קמפיין אישורי-הגעה פעיל.',
+    'לא ניתן להשאיר את פרטי בעלי השמחה חסרים כל עוד קיים קמפיין אישורי הגעה בתהליך — הם מופיעים בהזמנות ובתזכורות. השלימו את השדות המסומנים ונסו שוב.',
+  EVENT_TYPE_LOCKED_ERROR: 'לא ניתן לשנות את סוג האירוע כל עוד קיים קמפיין אישורי הגעה בתהליך.',
   VENUE_REQUIRED_WHILE_CAMPAIGN_ERROR:
-    'לא ניתן להשאיר את המיקום ריק כל עוד קמפיין אישורי-הגעה פעיל — המיקום מופיע בהזמנות ובתזכורות.',
+    'לא ניתן להשאיר את המיקום ריק כל עוד קיים קמפיין אישורי הגעה בתהליך — המיקום מופיע בהזמנות ובתזכורות.',
 }));
 vi.mock('@/lib/data/event-cancellation', () => ({
   createCancellationRequest: vi.fn(),

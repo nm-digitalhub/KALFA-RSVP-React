@@ -26,4 +26,5 @@ export const QUEUE_EXPECTED_MAX_MINUTES: Record<string, number> = {
   'elevenlabs-quota-check': 18 * 60,
   'voximplant-log-export': 3 * 24 * 60,
   'call-dispatch-retention': 3 * 24 * 60,
+  'auth-phone-change-cleanup': 3 * 24 * 60,
 };

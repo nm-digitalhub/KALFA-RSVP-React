@@ -11,16 +11,15 @@ describe('approveCampaignSchema', () => {
     tos_version: 'v1',
     terms_accepted: true,
     privacy_accepted: true,
-    authorization_accepted: true,
   };
 
-  it('accepts all three consents + a ToS version', () => {
+  it('accepts both consents + a ToS version', () => {
     expect(approveCampaignSchema.safeParse(base).success).toBe(true);
   });
 
   it('rejects when any consent is missing/false', () => {
     expect(
-      approveCampaignSchema.safeParse({ ...base, authorization_accepted: false }).success,
+      approveCampaignSchema.safeParse({ ...base, privacy_accepted: false }).success,
     ).toBe(false);
     expect(
       approveCampaignSchema.safeParse({ ...base, terms_accepted: false }).success,

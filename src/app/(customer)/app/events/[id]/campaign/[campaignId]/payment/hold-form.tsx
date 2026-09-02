@@ -108,13 +108,15 @@ export function CampaignHoldForm({
   campaignId,
   companyId,
   apiPublicKey,
-  ceilingAmount,
+  holdAmount,
   signerName,
 }: {
   campaignId: string;
   companyId: number;
   apiPublicKey: string;
-  ceilingAmount: number;
+  // The J5 amount that will actually be held (previewCampaignHoldSizing) — NOT
+  // the charge ceiling, which can be larger once the list exceeds coverage.
+  holdAmount: number;
   // Read-only, for the card preview only — SUMIT never needs a name-on-card
   // field (customerName is sent server-side from the profile), so this adds
   // no new input and collects nothing new from the user.
@@ -143,7 +145,7 @@ export function CampaignHoldForm({
   const [previewFocus, setPreviewFocus] = useState<Focused>('');
   const previewExpiry = expMonth && expYear ? `${expMonth.padStart(2, '0')}/${expYear.slice(-2)}` : '';
   const formRef = useRef<HTMLFormElement>(null);
-  const formattedCeiling = ceilingAmount.toLocaleString('he-IL', {
+  const formattedHold = holdAmount.toLocaleString('he-IL', {
     style: 'currency',
     currency: 'ILS',
     maximumFractionDigits: 0,
@@ -222,7 +224,7 @@ export function CampaignHoldForm({
           only the group order flipped, the signature of RTL flex reversal,
           not a data bug). A card face is always read LTR regardless of the
           page language, so this is the correct fix, not a workaround. */}
-      <div dir="ltr" className="mb-5 flex justify-center">
+      <div dir="ltr" className="mb-5 hidden justify-center sm:flex">
         <CreditCard
           number={previewNumber}
           name={formatCardholderName(signerName)}
@@ -390,7 +392,7 @@ export function CampaignHoldForm({
               state={stage === 'verifying' ? 'current' : 'done'}
             />
             <StageRow
-              label={`תופסים מסגרת אשראי עד ${formattedCeiling}`}
+              label={`תופסים מסגרת אשראי בסך ${formattedHold}`}
               state={stage === 'placing' ? 'current' : 'pending'}
             />
           </ol>

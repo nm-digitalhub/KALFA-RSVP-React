@@ -10,6 +10,7 @@ import { isPastEventDay } from '@/lib/data/event-date';
 import { getCampaign, getThankyouSchedule } from '@/lib/data/campaigns';
 import { getCampaignBillingSummary } from '@/lib/data/billing';
 import { getCampaignDeliveryBreakdown } from '@/lib/data/campaign-delivery';
+import { countAuthorizedContacts, countUniqueContactsForEvent } from '@/lib/data/contacts';
 import {
   activateCampaignAction,
   pauseCampaignAction,
@@ -75,6 +76,20 @@ export default async function CampaignManagePage({
     thankyou = null;
   }
 
+  // Audit §7: the board must lead with "who is in the campaign" when nobody is.
+  // authorizedCount = the campaign's set; uniqueContacts = the event's reachable
+  // list. Both degrade to null (hide the banner) rather than crash — an admin
+  // viewer who is not the owner fails countUniqueContactsForEvent's gate.
+  let authorizedCount: number | null = null;
+  let uniqueContacts: number | null = null;
+  try {
+    authorizedCount = await countAuthorizedContacts(campaignId);
+    uniqueContacts = admin ? null : await countUniqueContactsForEvent(eventId);
+  } catch {
+    authorizedCount = null;
+    uniqueContacts = null;
+  }
+
   const activate = activateCampaignAction.bind(null, eventId, campaignId);
   const pause = pauseCampaignAction.bind(null, eventId, campaignId);
   const close = closeCampaignAction.bind(null, eventId, campaignId);
@@ -127,6 +142,9 @@ export default async function CampaignManagePage({
             sendThankyou,
             updateThankyouSchedule,
           }}
+          eventId={eventId}
+          authorizedCount={authorizedCount}
+          uniqueContacts={uniqueContacts}
           isPast={isPast}
           viewerIsAdmin={admin}
         />

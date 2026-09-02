@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { CalendarDays, Plus } from 'lucide-react';
+import { redirect } from 'next/navigation';
 
 import { listEvents, getEventCounts } from '@/lib/data/events';
 import { EVENT_TYPE_LABELS, EVENT_STATUS_LABELS } from '@/lib/data/event-labels';
@@ -16,6 +17,11 @@ export default async function DashboardPage() {
     listEvents({ limit: 5 }),
   ]);
   const totalEvents = counts.total;
+  // Audit (recommended flow, step 2): a brand-new owner has nothing to look at
+  // on a dashboard — take them straight to the create-event form. Counts are
+  // RLS-scoped (own + shared-org events), so a member with shared events is not
+  // redirected.
+  if (totalEvents === 0) redirect('/app/events/new');
   const activeEvents = counts.active;
 
   return (
@@ -31,7 +37,7 @@ export default async function DashboardPage() {
           <p className="mt-2 text-3xl font-bold">{totalEvents}</p>
         </div>
         <div className="rounded-lg border border-border bg-card p-5">
-          <p className="text-sm text-muted-foreground">אירועים פעילים</p>
+          <p className="text-sm text-muted-foreground">אירועים שאושרו</p>
           <p className="mt-2 text-3xl font-bold">{activeEvents}</p>
         </div>
         <Link

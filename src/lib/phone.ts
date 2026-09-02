@@ -29,3 +29,15 @@ export function repairIsraeliLocalPhone(raw: string): string | null {
   if (!e164 || !e164.startsWith('+972')) return null;
   return `0${e164.slice(4)}`;
 }
+
+// Display-only mask for a phone the signer must RECOGNISE but that should not
+// sit in full on a screen others may glance at (audit §5): the local Israeli
+// form with the middle hidden — "+972501234567" → "050***4567". A non-Israeli
+// number keeps its country code + last 4. Unparseable → a dash. Never used for
+// anything but rendering; OTP delivery still uses the stored E.164.
+export function maskPhoneForDisplay(raw: string | null | undefined): string {
+  const e164 = normalizePhone(raw);
+  if (!e164) return '—';
+  const local = e164.startsWith('+972') ? `0${e164.slice(4)}` : e164;
+  return `${local.slice(0, 3)}***${local.slice(-4)}`;
+}

@@ -10,6 +10,7 @@ vi.mock('@/lib/supabase/admin', () => ({ createAdminClient: vi.fn() }));
 // narrowing and every guard). Here the contract under test is that the route
 // DELEGATES to it with the right actor and maps its refusals to HTTP.
 vi.mock('@/lib/data/campaigns', () => ({
+  EVENT_NOT_CONFIRMED_ERROR: 'יש לאשר את פרטי האירוע לפני אישורי הגעה',
   activateCampaign: vi.fn(),
   pauseCampaign: vi.fn(),
 }));
@@ -137,7 +138,7 @@ describe('POST /api/campaigns/[id]/status', () => {
   it.each([
     'לא ניתן לשנות את מצב הקמפיין במצבו הנוכחי',
     'האירוע כבר חלף — לא ניתן לבצע פעולה זו עבור אירוע שמועדו עבר',
-    'יש לפרסם את האירוע לפני אישורי הגעה',
+    'יש לאשר את פרטי האירוע לפני אישורי הגעה',
   ])('maps "%s" to 409 with the reason intact', async (message) => {
     authOk();
     campaignRow(FOUND);

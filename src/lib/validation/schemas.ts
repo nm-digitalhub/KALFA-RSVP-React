@@ -103,45 +103,17 @@ export const EVENT_TYPES = [
   'other',
 ] as const;
 
-export const createEventSchema = z
-  .object({
-    name: z
-      .string()
-      .trim()
-      .min(1, { error: 'נא להזין שם אירוע' })
-      .max(200, { error: 'שם האירוע ארוך מדי' }),
-    event_type: z.enum(EVENT_TYPES, { error: 'נא לבחור סוג אירוע' }),
-    event_date: z.string().trim().optional().or(z.literal('')),
-    event_time: z
-      .string()
-      .trim()
-      .regex(/^([01]\d|2[0-3]):[0-5]\d$/, { error: 'שעה לא תקינה' })
-      .optional()
-      .or(z.literal('')),
-
-    venue_name: z
-      .string()
-      .trim()
-      .max(200, { error: 'שם המקום ארוך מדי' })
-      .optional()
-      .or(z.literal('')),
-  })
-  // R2: event_date is NULL/'' (legal, a date-less draft) or >= tomorrow
-  // (Israel calendar day) — mirrors the DB trigger events_before_insert.
-  .refine((v) => !v.event_date || !isBeforeTomorrowIL(v.event_date), {
-    error: 'מועד האירוע חייב להיות החל ממחר',
-    path: ['event_date'],
-  });
-
-export type CreateEventInput = z.infer<typeof createEventSchema>;
 
 // event_status matches the public.event_status enum in the live schema.
 export const EVENT_STATUSES = ['draft', 'active', 'closed'] as const;
 
-// Edit form for an existing event. Adds venue_address, rsvp_deadline and status
-// on top of the create fields. Optional text/date fields accept an empty string
-// (the action maps '' to null); id/owner are derived server-side, never here.
-export const updateEventSchema = z.object({
+// The ONE event form schema. The create form and the edit form carry the SAME
+// fields (owner ruling 2026-09-02: the create form mirrors the edit form 1:1),
+// so both validate against this single definition — a field added here reaches
+// both forms, and the two can never drift apart. Optional text/date fields
+// accept an empty string (the actions map '' to null); id/owner/status are
+// derived server-side, never here.
+export const eventFormSchema = z.object({
   name: z
     .string()
     .trim()
@@ -223,6 +195,10 @@ export const updateEventSchema = z.object({
     path: ['rsvp_deadline'],
   });
 
+// Named aliases kept for the two call sites' readability; both ARE eventFormSchema.
+export const createEventSchema = eventFormSchema;
+export const updateEventSchema = eventFormSchema;
+export type CreateEventInput = z.infer<typeof createEventSchema>;
 export type UpdateEventInput = z.infer<typeof updateEventSchema>;
 
 // --- Celebrants (בעלי שמחה) ---

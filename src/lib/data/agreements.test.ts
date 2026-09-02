@@ -111,7 +111,7 @@ describe('recordSignedAgreement — R9 active-event guard', () => {
     const result = await recordSignedAgreement(input);
 
     expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.error).toContain('טרם פורסם');
+    if (!result.ok) expect(result.error).toContain('טרם אושרו');
     expect(verifyOtp).not.toHaveBeenCalled();
   });
 });

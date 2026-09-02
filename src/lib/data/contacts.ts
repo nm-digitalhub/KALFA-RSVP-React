@@ -286,6 +286,20 @@ export async function reconcileCampaignSetForContact(
   }
 }
 
+// Size of the campaign's authorized set — "how many contacts the campaign will
+// actually reach out to". Service-role read (the table is not owner-readable
+// under RLS); callers must have passed their own access gate first (the manage
+// page does). Used for the empty state and the "not included" banner.
+export async function countAuthorizedContacts(campaignId: string): Promise<number> {
+  const admin = createAdminClient();
+  const { count, error } = await admin
+    .from('campaign_authorized_contacts')
+    .select('contact_id', { count: 'exact', head: true })
+    .eq('campaign_id', campaignId);
+  if (error) throw new Error('טעינת מונה אנשי הקשר בקמפיין נכשלה');
+  return count ?? 0;
+}
+
 // Count of unique reachable contacts for an event, derived from the current
 // guest list (dedup by E.164). This is a DATA fact — it drives max_contacts and
 // the ceiling (§7), and is never entered by the owner. Verifies ownership
