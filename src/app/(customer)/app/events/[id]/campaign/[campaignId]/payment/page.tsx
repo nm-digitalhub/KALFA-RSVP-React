@@ -36,7 +36,7 @@ const ERROR_MESSAGES: Record<string, string> = {
   hold_review:
     'התקבלה תשובה לא חד-משמעית מחברת האשראי. בדקו מול חברת האשראי או נסו שוב.',
   event_past: 'מועד האירוע כבר חלף — לא ניתן לתפוס מסגרת אשראי עבור אירוע שעבר.',
-  event_not_active: 'האירוע אינו פעיל כעת — לא ניתן לתפוס מסגרת אשראי לפני פרסום האירוע.',
+  event_not_active: 'פרטי האירוע עוד לא אושרו — יש לאשר אותם לפני תפיסת מסגרת האשראי.',
 };
 
 // R9/whitelist: the live card form may render ONLY for a campaign in this exact
@@ -197,7 +197,7 @@ export default async function CampaignPaymentPage({
     <div className="mx-auto max-w-2xl space-y-6">
       {header}
       <p className="rounded-md bg-green-50 px-3 py-2 text-sm text-green-700">
-        ✓ ההסכם נחתם והקמפיין אושר.
+        ✓ ההסכם נחתם בהצלחה. כעת יש להשלים אמצעי תשלום.
       </p>
 
       {summary}

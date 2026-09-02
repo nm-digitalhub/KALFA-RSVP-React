@@ -42,7 +42,7 @@ function SignButton({ disabled }: { disabled: boolean }) {
       disabled={pending || disabled}
       className="w-full rounded-md bg-primary px-4 py-2 font-medium text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-60"
     >
-      {pending ? 'רגע…' : 'חתימה ואישור הקמפיין'}
+      {pending ? 'רגע…' : 'חתימה והמשך לאמצעי תשלום'}
     </button>
   );
 }

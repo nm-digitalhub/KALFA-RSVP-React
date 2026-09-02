@@ -3,7 +3,7 @@ import { z } from 'zod';
 
 import { callerHasPlatformPermission, requireConsoleAgent } from '@/lib/auth/console-agent';
 import { recordStaffAccess } from '@/lib/data/admin/access-log';
-import { activateCampaign, pauseCampaign } from '@/lib/data/campaigns';
+import { EVENT_NOT_CONFIRMED_ERROR, activateCampaign, pauseCampaign } from '@/lib/data/campaigns';
 import { createAdminClient } from '@/lib/supabase/admin';
 
 // POST /api/campaigns/{id}/status   body: { action: 'activate' | 'pause' }
@@ -51,7 +51,7 @@ function json(body: unknown, status: number) {
 const CONFLICT_MESSAGES = new Set([
   'לא ניתן לשנות את מצב הקמפיין במצבו הנוכחי',
   'האירוע כבר חלף — לא ניתן לבצע פעולה זו עבור אירוע שמועדו עבר',
-  'יש לפרסם את האירוע לפני אישורי הגעה',
+  EVENT_NOT_CONFIRMED_ERROR,
 ]);
 
 export async function POST(

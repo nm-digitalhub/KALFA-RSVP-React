@@ -487,7 +487,7 @@ describe('updateEvent', () => {
 
     await expect(
       updateEvent('event-1', { ...baseInput, event_date: '2026-12-01' }),
-    ).rejects.toThrow('לא ניתן לשנות מועד לאחר פרסום האירוע');
+    ).rejects.toThrow('לא ניתן לשנות מועד לאחר אישור פרטי האירוע');
     expect(builder.update).not.toHaveBeenCalled();
   });
 
@@ -836,7 +836,7 @@ describe('publishEvent', () => {
     );
 
     await expect(publishEvent('event-1')).rejects.toThrow(
-      'יש להגדיר מועד עתידי לפני פרסום',
+      'יש להגדיר מועד עתידי לפני אישור פרטי האירוע',
     );
     expect(builder.update).not.toHaveBeenCalled();
   });

@@ -269,7 +269,7 @@ export function EditEventForm({
           disabled={!isDraft}
         />
         {!isDraft ? (
-          <p className="mt-1 text-xs text-muted-foreground">נעול לאחר פרסום</p>
+          <p className="mt-1 text-xs text-muted-foreground">נעול לאחר אישור פרטי האירוע</p>
         ) : null}
         <FieldError errors={state?.fieldErrors?.event_date} />
       </div>
@@ -287,7 +287,7 @@ export function EditEventForm({
         <p className="mt-1 text-xs text-muted-foreground">
           {isDraft
             ? 'תופיע בהזמנות ובתזכורות (שעון ישראל)'
-            : 'נעול לאחר פרסום'}
+            : 'נעול לאחר אישור פרטי האירוע'}
         </p>
         <FieldError errors={state?.fieldErrors?.event_time} />
       </div>
@@ -303,7 +303,7 @@ export function EditEventForm({
           disabled={!isDraft}
         />
         {!isDraft ? (
-          <p className="mt-1 text-xs text-muted-foreground">נעול לאחר פרסום</p>
+          <p className="mt-1 text-xs text-muted-foreground">נעול לאחר אישור פרטי האירוע</p>
         ) : null}
         <FieldError errors={state?.fieldErrors?.rsvp_deadline} />
       </div>

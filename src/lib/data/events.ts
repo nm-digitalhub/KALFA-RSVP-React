@@ -355,7 +355,7 @@ export async function updateEvent(
 
   if (cur.status !== 'draft') {
     if (datesPresent) {
-      throw new Error('לא ניתן לשנות מועד לאחר פרסום האירוע');
+      throw new Error('לא ניתן לשנות מועד לאחר אישור פרטי האירוע');
     }
     // Neither key present — omit them from the patch entirely (never null).
   } else {
@@ -432,12 +432,12 @@ export async function updateEvent(
 export async function publishEvent(eventId: string): Promise<void> {
   const cur = await requireOwnedEvent(eventId);
   if (!cur.event_date || isBeforeTomorrowIL(cur.event_date)) {
-    throw new Error('יש להגדיר מועד עתידי לפני פרסום');
+    throw new Error('יש להגדיר מועד עתידי לפני אישור פרטי האירוע');
   }
   // R2b mirror: today_IL may have moved forward since the deadline was saved
   // while draft, even though the date values themselves are unchanged here.
   if (cur.rsvp_deadline && cur.rsvp_deadline < todayIL()) {
-    throw new Error('המועד האחרון לאישור הגעה כבר חלף — קבעו מועד חדש לפני הפרסום');
+    throw new Error('המועד האחרון לאישור הגעה כבר חלף — קבעו מועד חדש לפני האישור');
   }
   const user = await requireUser();
   // Service-role write: M1 (phase-3 RLS migration) removes the `status` column
@@ -455,7 +455,7 @@ export async function publishEvent(eventId: string): Promise<void> {
     .eq('status', 'draft');
 
   if (error) {
-    throw new Error('פרסום האירוע נכשל');
+    throw new Error('אישור פרטי האירוע נכשל');
   }
 
   await logActivity({ eventId, action: 'event.published', meta: {} });

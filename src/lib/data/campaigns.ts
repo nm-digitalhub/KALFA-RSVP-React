@@ -50,6 +50,11 @@ export type OwnerCampaign = Pick<
 const CAMPAIGN_COLUMNS =
   'id, event_id, status, price_per_reached, max_contacts, max_charge_ceiling, base_price, included_reached, allowed_channels, start_at, close_at, approved_at, final_charge_amount, credit_applied, capture_status, charge_status, created_at, auth_amount';
 
+// R9 refusal, in the owner's vocabulary (audit §2): the event step is
+// "אישור פרטי האירוע", never "פרסום". Exported so the console status route can
+// classify it as a 409 without duplicating the string.
+export const EVENT_NOT_CONFIRMED_ERROR = 'יש לאשר את פרטי האירוע לפני אישורי הגעה';
+
 // Pure: the approved charge ceiling = price-per-reached × max contacts, rounded
 // to agorot. The ceiling is the maximum the system may ever bill (§7); it is
 // derived server-side and never accepted from the client.
@@ -187,7 +192,7 @@ export async function createCampaign(eventId: string): Promise<{ id: string }> {
   // defense-in-depth — the DB trigger (campaigns_require_active_event) is the
   // REST-proof authority.
   if (event.status !== 'active') {
-    throw new Error('יש לפרסם את האירוע לפני אישורי הגעה');
+    throw new Error(EVENT_NOT_CONFIRMED_ERROR);
   }
 
   // Celebrants gate: the outreach sends bind the celebrant names (בעלי השמחה)
@@ -367,7 +372,7 @@ export async function approveCampaign(
   assertEventNotPast(event.event_date); // L1: no approval for a past event
   // R9: every commercial campaign action requires event.status='active'.
   if (event.status !== 'active') {
-    throw new Error('יש לפרסם את האירוע לפני אישורי הגעה');
+    throw new Error(EVENT_NOT_CONFIRMED_ERROR);
   }
 
   if (campaign.status !== 'pending_approval') {
@@ -823,7 +828,7 @@ async function transitionCampaignStatus(
   const applyEventGuards = (event: { event_date: string | null; status: string }) => {
     if (opts?.rejectPastEvent) assertEventNotPast(event.event_date);
     if (opts?.requireActiveEvent && event.status !== 'active') {
-      throw new Error('יש לפרסם את האירוע לפני אישורי הגעה');
+      throw new Error(EVENT_NOT_CONFIRMED_ERROR);
     }
   };
 
