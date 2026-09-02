@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
 
-import { getCampaign } from '@/lib/data/campaigns';
+import { getCampaign, previewCampaignHoldSizing } from '@/lib/data/campaigns';
 import { requireOwnedEvent } from '@/lib/data/events';
 import { isPastEventDay } from '@/lib/data/event-date';
 import {
@@ -164,32 +164,87 @@ export default async function CampaignPaymentPage({
     publicConfig !== null &&
     campaign.max_charge_ceiling != null;
 
-  // Verified gap (30.8): the ceiling line here never said the base fee is
-  // charged regardless of outcome — a customer on a base+overage campaign
-  // could read "לפי מספר אנשי הקשר שהושגו" as "no contacts reached → no
-  // charge," which is false (the base is owed even at 0 reached; this is the
-  // exact page where they commit their card). manage-client.tsx's HelpTip
-  // already states this correctly for the SAME campaign fields — mirrored
-  // here, not invented.
+  // Audit §6: one short, explicit summary instead of a paragraph the customer
+  // has to parse. Every number is data — the campaign's pricing snapshot and the
+  // LIVE sizing preview (the same helpers the authorize route will use) — never
+  // a hardcoded price. The preview is best-effort: if it fails, the page still
+  // renders with the snapshot ceiling and no "current hold" line, and the
+  // authorize route recomputes authoritatively on submit anyway. The base-fee
+  // line keeps the 30.8 fix: the base is owed even at 0 reached, said plainly on
+  // the exact page where the customer commits a card.
+  let sizing: Awaited<ReturnType<typeof previewCampaignHoldSizing>> | null = null;
+  if (canHold) {
+    try {
+      sizing = await previewCampaignHoldSizing(campaignId);
+    } catch (err) {
+      console.error('[payment] hold sizing preview failed', {
+        campaignId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
   const basePrice = Number(campaign.base_price ?? 0);
-  const baseFeeNote =
-    basePrice > 0 ? (
-      <>
-        {' '}
-        מתוך זה, <strong>{ils(basePrice)}</strong> הם דמי הפעלה קבועים
-        שנגבים במלואם ללא תלות בתוצאה — גם אם אף איש קשר לא השיב.
-      </>
-    ) : null;
+  const included = Number(campaign.included_reached ?? 0);
+  const overage = Number(campaign.price_per_reached ?? 0);
+  const holdAmount = sizing?.holdAmount ?? campaign.max_charge_ceiling;
+  const ceiling = sizing?.ceiling ?? campaign.max_charge_ceiling;
 
   const summary = (
     <section className="space-y-3 rounded-lg border border-border bg-card p-4 text-sm">
-      <h2 className="font-semibold">תפיסת מסגרת אשראי</h2>
-      <p>
-        להפעלת הקמפיין נתפוס מסגרת אשראי עד{' '}
-        <strong>{ils(campaign.max_charge_ceiling)}</strong> (תקרת החיוב). זוהי
-        תפיסה בלבד — <strong>החיוב בפועל</strong> ייעשה בסגירת הקמפיין, לפי מספר
-        אנשי הקשר שהושגו בפועל, ולכל היותר עד התקרה.{baseFeeNote}
-      </p>
+      <h2 className="font-semibold">מה נתפוס עכשיו ומה נחייב</h2>
+      <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5">
+        {basePrice > 0 ? (
+          <>
+            <dt className="text-muted-foreground">דמי הפעלה</dt>
+            <dd>
+              <strong>{ils(basePrice)}</strong> — נגבים בכל מקרה, גם אם אף איש קשר לא השיב
+            </dd>
+          </>
+        ) : null}
+        {included > 0 ? (
+          <>
+            <dt className="text-muted-foreground">כלולים בדמי ההפעלה</dt>
+            <dd>עד {included.toLocaleString('he-IL')} אנשי קשר שהושגו</dd>
+          </>
+        ) : null}
+        <dt className="text-muted-foreground">
+          {included > 0 ? 'מעבר לכך' : 'מחיר לאיש קשר שהושג'}
+        </dt>
+        <dd>{ils(overage)} לכל איש קשר שהושג</dd>
+        {sizing ? (
+          <>
+            <dt className="text-muted-foreground">אנשי קשר ברשימה כעת</dt>
+            <dd>{sizing.full.toLocaleString('he-IL')}</dd>
+          </>
+        ) : null}
+        <dt className="text-muted-foreground">סכום תפיסת המסגרת כעת</dt>
+        <dd>
+          <strong>{ils(holdAmount)}</strong> — תפיסה בלבד, לא חיוב
+        </dd>
+        <dt className="text-muted-foreground">תקרת החיוב</dt>
+        <dd>{ils(ceiling)}</dd>
+        <dt className="text-muted-foreground">מתי מתבצע החיוב</dt>
+        <dd>
+          לאחר האירוע, עם סגירת הקמפיין וגמר החשבון — לפי התוצאות בפועל ולכל היותר עד
+          התקרה
+        </dd>
+        <dt className="text-muted-foreground">אם אף איש קשר לא משיב</dt>
+        <dd>
+          {basePrice > 0 ? `תחויבו בדמי ההפעלה (${ils(basePrice)}) בלבד.` : 'לא תחויבו כלל.'}
+        </dd>
+      </dl>
+      {sizing && sizing.full === 0 ? (
+        <p className="rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-xs text-warning">
+          הרשימה ריקה כעת. תקרת החיוב ומסגרת האשראי נקבעות לפי המוזמנים שברשימה ברגע
+          התפיסה
+          {included > 0
+            ? ` — אחרי ההפעלה תוכלו להוסיף עד ${included.toLocaleString('he-IL')} אנשי קשר במסגרת דמי ההפעלה.`
+            : '.'}{' '}
+          <Link href={`/app/events/${id}/guests`} className="underline">
+            להוספת מוזמנים לפני
+          </Link>
+        </p>
+      ) : null}
     </section>
   );
 
@@ -218,7 +273,7 @@ export default async function CampaignPaymentPage({
             campaignId={campaignId}
             companyId={publicConfig.companyId}
             apiPublicKey={publicConfig.apiPublicKey}
-            ceilingAmount={campaign.max_charge_ceiling}
+            holdAmount={holdAmount ?? campaign.max_charge_ceiling}
             signerName={profile?.full_name?.trim() || 'לקוח KALFA'}
           />
         </section>

@@ -562,26 +562,22 @@ export type CampaignHoldSizing = {
   covered: number; // min(full, reasonable_coverage) — the set + hold basis
 };
 
-// Phase-2 hold preparation. Run at the J5 step AFTER the hold slot is locked and
-// BEFORE the card hold is placed. In one coherent step it:
-//   1. recomputes `full` = the CURRENT unique-contact count (the guest list may
-//      have grown since create) and resolves the admin knobs,
-//   2. FREEZES the authorized SET to the COVERED contacts (min(full, reasonable))
-//      — reached ⊆ set by construction (the money-leak guard); the set MUST exist
-//      before any billing, so this precedes the hold,
-//   3. recomputes + persists max_contacts = full (NON-NULL — closes the nullable-
-//      uncapped flag) and max_charge_ceiling = full × price (D1=No — closes the
-//      create→approval growth gap; the ceiling is NEVER lowered to covered),
-//   4. returns holdAmount = max(min_hold_floor, covered × price × (1 + buffer)).
-// The hold may be < ceiling — safe ONLY because the SET caps reached at covered.
-// CROSS-AGENT CONTRACT: snapshotAuthorizedSet MUST yield set == the current
-// top-`covered` contacts (REPLACE semantics), so a retry after the list / coverage
-// shrinks cannot leave a stale, larger set above the lowered hold.
-export async function prepareCampaignHold(
-  campaignId: string,
-): Promise<CampaignHoldSizing> {
+// Everything hold sizing depends on, read ONCE and shared by the read-only
+// PREVIEW (payment page, before the card) and the real prepareCampaignHold
+// (after the lock). One code path ⇒ the number the customer sees before
+// entering a card is the number the route will hold, barring a guest-list
+// change in between. Throws the same short, PII-free Hebrew strings as before.
+async function loadHoldSizingInputs(campaignId: string): Promise<{
+  eventId: string;
+  price: number;
+  base: number;
+  included: number;
+  full: number;
+  covered: number;
+  minHoldFloor: number;
+  holdBufferPct: number;
+}> {
   const admin = createAdminClient();
-
   const { data: campaign, error } = await admin
     .from('campaigns')
     .select('event_id, price_per_reached, template_id, base_price, included_reached')
@@ -603,10 +599,67 @@ export async function prepareCampaignHold(
   // 0-contact hold just fine. A legacy (base=0) campaign still can't place a
   // ₪0 hold — route.ts's own `holdAmount <= 0` check is the guard for that.
   const full = await countUniqueContactsForEvent(campaign.event_id);
-
   const { reasonableCoverage, minHoldFloor, holdBufferPct } =
     await getHoldSizingKnobs(campaign.template_id, full);
   const covered = computeCovered(full, reasonableCoverage);
+
+  return {
+    eventId: campaign.event_id,
+    price,
+    base,
+    included,
+    full,
+    covered,
+    minHoldFloor,
+    holdBufferPct,
+  };
+}
+
+// Read-only preview for the payment page (audit §6 — "סכום תפיסת המסגרת כעת").
+// No snapshot, no write. The basis is `covered`; prepareCampaignHold uses
+// max(covered, frozenSetSize), which equals covered on the happy path.
+export async function previewCampaignHoldSizing(
+  campaignId: string,
+): Promise<CampaignHoldSizing> {
+  const i = await loadHoldSizingInputs(campaignId);
+  return {
+    holdAmount: computeHoldAmountBaseOverage(
+      i.base,
+      i.included,
+      i.price,
+      i.covered,
+      i.minHoldFloor,
+      i.holdBufferPct,
+    ),
+    ceiling: computeCeilingBaseOverage(i.base, i.included, i.price, i.full),
+    full: i.full,
+    covered: i.covered,
+  };
+}
+
+// Phase-2 hold preparation. Run at the J5 step AFTER the hold slot is locked and
+// BEFORE the card hold is placed. In one coherent step it:
+//   1. recomputes `full` = the CURRENT unique-contact count (the guest list may
+//      have grown since create) and resolves the admin knobs,
+//   2. FREEZES the authorized SET to the COVERED contacts (min(full, reasonable))
+//      — reached ⊆ set by construction (the money-leak guard); the set MUST exist
+//      before any billing, so this precedes the hold,
+//   3. recomputes + persists max_contacts = full (NON-NULL — closes the nullable-
+//      uncapped flag) and max_charge_ceiling = full × price (D1=No — closes the
+//      create→approval growth gap; the ceiling is NEVER lowered to covered),
+//   4. returns holdAmount = max(min_hold_floor, covered × price × (1 + buffer)).
+// The hold may be < ceiling — safe ONLY because the SET caps reached at covered.
+// CROSS-AGENT CONTRACT: snapshotAuthorizedSet MUST yield set == the current
+// top-`covered` contacts (REPLACE semantics), so a retry after the list / coverage
+// shrinks cannot leave a stale, larger set above the lowered hold.
+// NOTE: the set is no longer a hard freeze — reconcile_authorized_set (live since
+// 2026-07-21) admits later guests up to funded_cap, floored at `included` since
+// 2026-09-02 (a 0-guest hold used to cap the set at 0).
+export async function prepareCampaignHold(
+  campaignId: string,
+): Promise<CampaignHoldSizing> {
+  const admin = createAdminClient();
+  const i = await loadHoldSizingInputs(campaignId);
 
   // FREEZE the authorized set BEFORE any billing — the binding cap on `reached`.
   // snapshotAuthorizedSet has REPLACE semantics (set == current top-`covered`
@@ -615,33 +668,29 @@ export async function prepareCampaignHold(
   // max(covered, frozenSetSize) as belt-and-suspenders: the hold always covers the
   // actual frozen set even if they ever diverge. reached ⊆ set ⇒
   // charge ≤ frozenSetSize × price ≤ hold — the SAFETY INVARIANT holds.
-  const frozenSetSize = await snapshotAuthorizedSet(
-    campaign.event_id,
-    campaignId,
-    covered,
-  );
-  const holdBasis = Math.max(covered, frozenSetSize);
+  const frozenSetSize = await snapshotAuthorizedSet(i.eventId, campaignId, i.covered);
+  const holdBasis = Math.max(i.covered, frozenSetSize);
 
   // Recompute + persist the ceiling and max_contacts (= full, NON-NULL) from the
   // CURRENT full count. Base+overage ceiling = base + max(0, full − included) ×
   // overage (with base/included 0 this is full × price — unchanged); never
   // lowered to covered, and always ≥ base so the flat fee is never capped away.
-  const ceiling = computeCeilingBaseOverage(base, included, price, full);
+  const ceiling = computeCeilingBaseOverage(i.base, i.included, i.price, i.full);
   const { error: upErr } = await admin
     .from('campaigns')
-    .update({ max_contacts: full, max_charge_ceiling: ceiling })
+    .update({ max_contacts: i.full, max_charge_ceiling: ceiling })
     .eq('id', campaignId);
   if (upErr) throw new Error('עדכון תקרת החיוב נכשל');
 
   const holdAmount = computeHoldAmountBaseOverage(
-    base,
-    included,
-    price,
+    i.base,
+    i.included,
+    i.price,
     holdBasis,
-    minHoldFloor,
-    holdBufferPct,
+    i.minHoldFloor,
+    i.holdBufferPct,
   );
-  return { holdAmount, ceiling, full, covered };
+  return { holdAmount, ceiling, full: i.full, covered: i.covered };
 }
 
 // --- B4 close-charge data layer ---------------------------------------------
