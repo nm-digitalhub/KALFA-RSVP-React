@@ -12,7 +12,7 @@
 //
 // Pure: no DB, no clock. The page supplies the DTO, this returns the list.
 
-import type { SalesCallCrmSummary } from '@/lib/data/admin/callbacks';
+import type { CallbackAuditEntry, SalesCallCrmSummary } from '@/lib/data/admin/callbacks';
 import {
   aiCallSourceLabel,
   callAnalysisSuccessfulLabel,
@@ -28,6 +28,16 @@ export type ActivityEntry = {
   at: string;
   title: string;
   detail?: string;
+  /**
+   * A time change carried as two INSTANTS, never as a pre-built string: this
+   * module is pure and has no locale or timezone, and the one it built by hand
+   * shipped raw ISO into a Hebrew RTL screen (measured 2026-09-01). The page
+   * formats them, and phrases the direction in WORDS — an arrow between two
+   * timestamps is reordered by RTL and reads as the exact opposite of what
+   * happened.
+   */
+  movedFrom?: string;
+  movedTo?: string;
   /**
    * A slot in the diary, not something that already happened. The list mixes
    * the two on purpose (an upcoming call belongs in the story of the lead), so
@@ -48,6 +58,9 @@ export type TimelineSalesCall = Pick<
   | 'waDeliveryErrorCode'
   | 'waStatusAt'
   | 'signupCompletedAt'
+  | 'signedUpAt'
+  | 'firstCampaignAt'
+  | 'holdAuthorizedAt'
   | 'outcomeRecordedAt'
   | 'hasAnalysis'
   | 'callSuccessful'
@@ -61,6 +74,25 @@ export type TimelineInput = {
   /** callback_requests.status — free text in the DB, hence `string`. */
   status: string;
   salesCalls: TimelineSalesCall[];
+  /**
+   * Rows from activity_log. Everything else here is derived from a column, so
+   * an event that only OVERWRITES one — a calendar move rewrites scheduled_at,
+   * a release clears it — leaves the timeline showing the new state as though
+   * it had always been so. These are the events that would otherwise vanish.
+   */
+  audit?: CallbackAuditEntry[];
+};
+
+// Deliberately phrased as observations, not as deeds. A move detected from the
+// calendar has no discoverable actor (Graph exposes no last-modifier and the
+// mailbox is reached with one application identity), so "הועבר ביומן" is what
+// can honestly be said — never "X moved it".
+const AUDIT_TITLES: Record<string, string> = {
+  'callback.calendar_moved': 'מועד השיחה הועבר ביומן',
+  'callback.calendar_released': 'הפגישה הוסרה מהיומן — הבקשה חזרה לשיבוץ',
+  'callback.rescheduled': 'נקבע מועד חדש',
+  'callback.outcome_updated': 'תוצאת השיחה עודכנה',
+  'callback.cancelled': 'הבקשה בוטלה',
 };
 
 // closeCallbackAppointment clears scheduled_at, but only once Exchange has
@@ -91,6 +123,20 @@ export function buildCallbackActivity(input: TimelineInput): ActivityEntry[] {
       at: input.scheduledAt,
       title: stillPlanned ? 'מועד השיחה ביומן' : 'שובצה ביומן',
       planned: stillPlanned || undefined,
+    });
+  }
+
+  for (const a of input.audit ?? []) {
+    const title = AUDIT_TITLES[a.action];
+    // An action with no Hebrew title is one nobody decided how to phrase yet —
+    // better absent than shown as a raw slug in an otherwise Hebrew list.
+    if (!title) continue;
+    entries.push({
+      key: `audit:${a.id}`,
+      at: a.createdAt,
+      title,
+      ...(a.previousScheduledAt ? { movedFrom: a.previousScheduledAt } : {}),
+      ...(a.newScheduledAt ? { movedTo: a.newScheduledAt } : {}),
     });
   }
 
@@ -125,11 +171,40 @@ export function buildCallbackActivity(input: TimelineInput): ActivityEntry[] {
       });
     }
 
+    // What the lead did after hanging up. Each has a real instant behind it
+    // (loadSalesFunnel); none is inferred from the others, so a gap in the
+    // middle stays visible instead of being smoothed over.
+    if (call.signedUpAt) {
+      push({
+        key: `${call.attemptId}:signed-up`,
+        at: call.signedUpAt,
+        title: `נפתח חשבון בעקבות שיחה #${n}`,
+      });
+    }
+
+    if (call.firstCampaignAt) {
+      push({
+        key: `${call.attemptId}:campaign`,
+        at: call.firstCampaignAt,
+        title: `הוקם קמפיין — ליד בשל`,
+      });
+    }
+
     if (call.signupCompletedAt) {
       push({
         key: `${call.attemptId}:signup`,
         at: call.signupCompletedAt,
-        title: `הרשמה הושלמה בעקבות שיחה #${n}`,
+        title: `ההסכם נחתם והקמפיין אושר`,
+      });
+    }
+
+    // Separate from the signature on purpose: a declined card leaves the
+    // agreement signed and nothing held, and that lead needs a call TODAY.
+    if (call.holdAuthorizedAt) {
+      push({
+        key: `${call.attemptId}:hold`,
+        at: call.holdAuthorizedAt,
+        title: `מסגרת אשראי נתפסה`,
       });
     }
 

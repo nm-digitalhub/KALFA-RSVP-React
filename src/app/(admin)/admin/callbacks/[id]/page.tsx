@@ -77,6 +77,71 @@ function signupLinkLabel(salesCall: SalesCall): string {
   return 'לא נשלח';
 }
 
+// The ONE stage a lead has reached — the furthest milestone with a real
+// instant behind it, phrased as what is still missing so the row answers
+// "what do I say when I call". Read top-down so a later step always wins: a
+// cleared hold IS the closed deal, whatever the steps below it look like.
+//
+// Sales only. A meeting-confirmation call sends no link and has no deal to
+// close, so it never reaches this row.
+function leadStageLabel(call: SalesCall): string {
+  if (call.holdAuthorizedAt) return 'עסקה נסגרה';
+  if (call.signupCompletedAt) return 'ההסכם נחתם — ממתין לתפיסת מסגרת';
+  if (call.firstCampaignAt) return 'הוקם קמפיין — ממתין לחתימה';
+  if (call.signedUpAt) return 'נפתח חשבון — ממתין להקמת קמפיין';
+  if (call.linkSent) return 'קישור נשלח — ממתין לפתיחת חשבון';
+  // The call is what this row hangs off, so "no link yet" is only meaningful
+  // once the call actually concluded. A dial that never connected is already
+  // stated by the dispatch badge above; repeating it here as a stalled funnel
+  // would read as a lead who ignored us.
+  if (call.dispatchStatus === 'concluded') return 'שיחה בוצעה — קישור טרם נשלח';
+  return '—';
+}
+
+// The whole path on one line. The row above names the CURRENT stage; this
+// shows every step to the deal, so a skipped one in the middle stays visible
+// instead of being implied by the stage that follows it.
+//
+// "Created an event" is deliberately absent: it happens moments after signup,
+// so it separates no two real states and would only add a dot.
+//
+// Every step reads its own instant — a later step being done never marks an
+// earlier one done.
+function SalesFunnel({ salesCall }: { salesCall: SalesCall }) {
+  const steps = [
+    { label: 'שיחה', at: salesCall.attemptCreatedAt },
+    { label: 'קישור נשלח', at: salesCall.linkSent ? (salesCall.waStatusAt ?? salesCall.attemptUpdatedAt) : null },
+    { label: 'נרשם', at: salesCall.signedUpAt },
+    { label: 'קמפיין', at: salesCall.firstCampaignAt },
+    { label: 'חתם', at: salesCall.signupCompletedAt },
+    { label: 'מסגרת', at: salesCall.holdAuthorizedAt },
+  ];
+  const reached = steps.filter((s) => s.at).length;
+
+  return (
+    <ol className="flex flex-wrap items-center gap-x-1 gap-y-2" aria-label={`התקדמות הליד — ${reached} מתוך ${steps.length}`}>
+      {steps.map((step, i) => (
+        <li key={step.label} className="flex items-center gap-1">
+          {i > 0 && <span aria-hidden="true" className="text-muted-foreground/40">·</span>}
+          <span
+            title={step.at ? formatDateTime(step.at) : undefined}
+            className={
+              step.at
+                ? 'rounded-full bg-success/10 px-2 py-0.5 text-xs font-medium text-success'
+                : 'rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground'
+            }
+          >
+            {step.label}
+            {/* Not colour alone: the tick is what a colour-blind reader sees. */}
+            <span aria-hidden="true">{step.at ? ' ✓' : ' ○'}</span>
+            <span className="sr-only">{step.at ? ' — בוצע' : ' — טרם'}</span>
+          </span>
+        </li>
+      ))}
+    </ol>
+  );
+}
+
 function SalesCallCard({ salesCall, index }: { salesCall: SalesCall; index: number }) {
   const data = salesCall.dataCollection;
   return (
@@ -101,6 +166,11 @@ function SalesCallCard({ salesCall, index }: { salesCall: SalesCall; index: numb
           )}
         </div>
       </div>
+
+      {/* Sales only: a meeting-confirmation call sends no signup link and has
+          no funnel to report — an all-empty strip would read as a stalled lead
+          rather than an inapplicable one. */}
+      {salesCall.source === 'sales' && <SalesFunnel salesCall={salesCall} />}
 
       {/* First, above every number: what actually happened on the call, in
           ElevenLabs' own words. A score tells you how it went; only this tells
@@ -180,9 +250,14 @@ function SalesCallCard({ salesCall, index }: { salesCall: SalesCall; index: numb
               <dt className="text-xs font-medium text-muted-foreground">תוצאה נרשמה</dt>
               <dd>{formatNullableDateTime(salesCall.outcomeRecordedAt)}</dd>
             </div>
+            {/* Was "הרשמה הושלמה", printing signupCompletedAt as a date. The
+                label was actively wrong — that column is stamped at AGREEMENT
+                SIGNING, not at account creation, so a lead who had just opened
+                an account read as not-registered. Same row, same place; the
+                value is now the stage the lead has actually reached. */}
             <div>
-              <dt className="text-xs font-medium text-muted-foreground">הרשמה הושלמה</dt>
-              <dd>{formatNullableDateTime(salesCall.signupCompletedAt)}</dd>
+              <dt className="text-xs font-medium text-muted-foreground">שלב הליד</dt>
+              <dd>{leadStageLabel(salesCall)}</dd>
             </div>
           </>
         )}
@@ -297,6 +372,7 @@ export default async function CallbackDetailPage({
     scheduledAt: callback.scheduled_at,
     status: callback.status,
     salesCalls: callback.salesCalls,
+    audit: callback.audit,
   });
 
   return (
@@ -467,6 +543,17 @@ export default async function CallbackDetailPage({
                 </div>
                 {entry.detail && (
                   <p className="wrap-anywhere text-xs text-muted-foreground">{entry.detail}</p>
+                )}
+                {/* Words, not an arrow: RTL reorders the two timestamps around
+                    a "←" so the line reads as the opposite move. Formatted
+                    here because the timeline builder is pure — it has neither
+                    locale nor timezone. */}
+                {(entry.movedFrom || entry.movedTo) && (
+                  <p className="text-xs text-muted-foreground">
+                    {entry.movedFrom ? `מ-${formatDateTime(entry.movedFrom)}` : ''}
+                    {entry.movedFrom && entry.movedTo ? ' אל ' : ''}
+                    {entry.movedTo ? formatDateTime(entry.movedTo) : ''}
+                  </p>
                 )}
               </div>
               <span className="shrink-0 text-xs text-muted-foreground">

@@ -165,7 +165,31 @@ export type SalesCallCrmSummary = {
   voxCallSessionHistoryId: string | null;
   elConversationId: string | null;
   outcomeRecordedAt: string | null;
+  /**
+   * The agreement was signed and the campaign approved. Written by
+   * agreements.ts, NOT at account creation — an owner ruling (2026-08-22):
+   * "'signup completed' … means a signed, approved agreement, not bare
+   * account creation".
+   */
   signupCompletedAt: string | null;
+  /**
+   * What the lead did AFTER the call, reconstructed from existing rows — no
+   * column on the attempt records any of it. See loadSalesFunnel.
+   *
+   * Each is an instant or null, and null always means "has not happened",
+   * never "we could not tell": the whole chain hangs off one explicit link
+   * (profiles.sales_referral_attempt_id), so a lead with no attributed profile
+   * simply has no funnel.
+   */
+  signedUpAt: string | null;
+  firstCampaignAt: string | null;
+  /**
+   * The J5 hold cleared (campaigns.authorized_at). The step AFTER signing, and
+   * the one that can still fail on its own — a declined card leaves a signed
+   * agreement, an approved campaign, and no money held. Without this the lead
+   * reads as fully converted while it is actually stuck at the till.
+   */
+  holdAuthorizedAt: string | null;
   /**
    * A signup link reached Meta and was accepted (wa_message_id is set). The id
    * itself stays server-side — the screen only needs the fact, and a provider
@@ -210,6 +234,8 @@ export type CallbackRequestWithSalesSummary = CallbackRequest & {
 export type CallbackRequestDetailWithSalesCalls = CallbackRequestDetail & {
   latestSalesCall: SalesCallCrmSummary | null;
   salesCalls: SalesCallCrmSummary[];
+  /** Events with no column of their own — see loadCallbackAudit. */
+  audit: CallbackAuditEntry[];
 };
 
 const CALLBACK_DETAIL_COLUMNS = `${CALLBACK_COLUMNS}, requested_at, calendar_item_id, attempt_count, scheduling_failure_reason, consecutive_no_answer_count`;
@@ -361,6 +387,13 @@ function mapAiCall(
     elConversationId: attempt.el_conversation_id ?? null,
     outcomeRecordedAt: attempt.outcome_recorded_at ?? null,
     signupCompletedAt: attempt.signup_completed_at ?? null,
+    // Post-call funnel. These live on OTHER tables (profiles / campaigns) and
+    // are filled in by loadSalesFunnel after the attempts are mapped — see the
+    // chain documented there. Null means "did not happen (yet)", never
+    // "unknown": a lead with no attributed profile has no funnel to report.
+    signedUpAt: null,
+    firstCampaignAt: null,
+    holdAuthorizedAt: null,
     // Sales-only. A confirmation call sends no signup link, so this is false
     // there because it genuinely did not happen — not because we failed to look.
     linkSent: Boolean(attempt.wa_message_id),
@@ -492,6 +525,152 @@ async function loadAiCallsForCallbacks(
   return byCallback;
 }
 
+
+/**
+ * Audit rows that belong to one callback's timeline.
+ *
+ * These are the events that leave no column behind: a calendar move overwrites
+ * scheduled_at, and a released appointment clears it — after either one the row
+ * shows the new state as though it had always been so. Read from activity_log
+ * by the same `meta->>callback_request_id` key countRecentSalesAuditedAttempts
+ * already uses.
+ *
+ * user_id comes back as-is and may be NULL: a move detected from the calendar
+ * has no discoverable actor (see recordCalendarSyncAudit). The screen must
+ * therefore never present these as "someone did X".
+ */
+export type CallbackAuditEntry = {
+  id: string;
+  action: string;
+  createdAt: string;
+  hasActor: boolean;
+  previousScheduledAt: string | null;
+  newScheduledAt: string | null;
+};
+
+const TIMELINE_ACTIONS = [
+  'callback.calendar_moved',
+  'callback.calendar_released',
+  'callback.rescheduled',
+  'callback.outcome_updated',
+  'callback.cancelled',
+] as const;
+
+async function loadCallbackAudit(
+  supabase: ReturnType<typeof createAdminClient>,
+  callbackRequestId: string,
+): Promise<CallbackAuditEntry[]> {
+  const { data, error } = await supabase
+    .from('activity_log')
+    .select('id, action, created_at, user_id, meta')
+    .eq('meta->>callback_request_id', callbackRequestId)
+    .in('action', TIMELINE_ACTIONS as unknown as string[])
+    .order('created_at', { ascending: false })
+    .limit(50);
+  // Best-effort: the timeline's column-derived entries are the load-bearing
+  // part, and an unreadable audit table must not blank the whole page.
+  if (error || !Array.isArray(data)) return [];
+  return data.map((r) => {
+    const meta = jsonObject(r.meta) ?? {};
+    return {
+      id: r.id,
+      action: r.action,
+      createdAt: r.created_at,
+      hasActor: r.user_id !== null,
+      previousScheduledAt: stringValue(meta.previous_scheduled_at),
+      newScheduledAt: stringValue(meta.new_scheduled_at),
+    };
+  });
+}
+
+/**
+ * Fills in the post-call funnel on already-mapped sales calls, in place.
+ *
+ * Nothing on sales_call_attempts records what a lead did after hanging up, but
+ * ONE explicit link makes the rest reachable — `profiles.sales_referral_attempt_id`,
+ * written at signup from the `?ref=` the agent's WhatsApp link carries:
+ *
+ *   attempt.id → profiles.sales_referral_attempt_id   (created an account)
+ *              → events.owner_id                       (their events)
+ *              → campaigns.event_id                    (built a campaign,
+ *                                                       and authorized_at =
+ *                                                       the J5 hold cleared)
+ *
+ * Three set-based queries, never one per row: the fan-out is bounded by the
+ * attempts of a SINGLE callback request (in practice one or two).
+ *
+ * Best-effort throughout — the call itself is the load-bearing part of the
+ * page, and an unreadable profiles/events/campaigns table must leave the
+ * timeline standing rather than blank it.
+ *
+ * Deliberately NOT matched on phone or email: a lead who called and later
+ * signed up on their own, without the link, has no provable connection to this
+ * attempt. Guessing one would attribute a stranger's conversion to a sales
+ * call. Absent is the honest answer.
+ */
+async function loadSalesFunnel(
+  supabase: ReturnType<typeof createAdminClient>,
+  calls: SalesCallCrmSummary[],
+): Promise<void> {
+  const attemptIds = calls.filter((c) => c.source === 'sales').map((c) => c.attemptId);
+  if (attemptIds.length === 0) return;
+
+  const { data: profiles, error: profErr } = await supabase
+    .from('profiles')
+    .select('id, created_at, sales_referral_attempt_id')
+    .in('sales_referral_attempt_id', attemptIds);
+  if (profErr || !Array.isArray(profiles) || profiles.length === 0) return;
+
+  // profile id -> the attempt that referred it, and the reverse for the fold.
+  const attemptByProfile = new Map<string, string>();
+  const signedUpByAttempt = new Map<string, string>();
+  for (const p of profiles) {
+    if (!p.sales_referral_attempt_id) continue;
+    attemptByProfile.set(p.id, p.sales_referral_attempt_id);
+    signedUpByAttempt.set(p.sales_referral_attempt_id, p.created_at);
+  }
+
+  const { data: events } = await supabase
+    .from('events')
+    .select('id, owner_id')
+    .in('owner_id', [...attemptByProfile.keys()]);
+
+  const attemptByEvent = new Map<string, string>();
+  for (const e of events ?? []) {
+    const attemptId = e.owner_id ? attemptByProfile.get(e.owner_id) : undefined;
+    if (attemptId) attemptByEvent.set(e.id, attemptId);
+  }
+
+  // EARLIEST campaign and EARLIEST cleared hold per attempt: the funnel asks
+  // "did they get this far, and when", so a later campaign never moves the
+  // milestone backwards.
+  const firstCampaign = new Map<string, string>();
+  const firstHold = new Map<string, string>();
+  if (attemptByEvent.size > 0) {
+    const { data: campaigns } = await supabase
+      .from('campaigns')
+      .select('event_id, created_at, authorized_at')
+      .in('event_id', [...attemptByEvent.keys()]);
+    for (const c of campaigns ?? []) {
+      const attemptId = attemptByEvent.get(c.event_id);
+      if (!attemptId) continue;
+      const earlier = (map: Map<string, string>, at: string | null) => {
+        if (!at) return;
+        const cur = map.get(attemptId);
+        if (!cur || Date.parse(at) < Date.parse(cur)) map.set(attemptId, at);
+      };
+      earlier(firstCampaign, c.created_at);
+      earlier(firstHold, c.authorized_at);
+    }
+  }
+
+  for (const call of calls) {
+    call.signedUpAt = signedUpByAttempt.get(call.attemptId) ?? null;
+    call.firstCampaignAt = firstCampaign.get(call.attemptId) ?? null;
+    call.holdAuthorizedAt = firstHold.get(call.attemptId) ?? null;
+  }
+}
+
 /**
  * One callback request, or null when the id does not exist.
  *
@@ -514,9 +693,15 @@ export async function getCallbackRequest(
   if (error) throw new Error('טעינת בקשת החזרה נכשלה');
   if (!data) return null;
 
-  const salesByCallback = await loadAiCallsForCallbacks(supabase, [data.id]);
+  const [salesByCallback, audit] = await Promise.all([
+    loadAiCallsForCallbacks(supabase, [data.id]),
+    loadCallbackAudit(supabase, data.id),
+  ]);
   const salesCalls = salesByCallback.get(data.id) ?? [];
-  return { ...data, latestSalesCall: salesCalls[0] ?? null, salesCalls };
+  // After the attempts are known, not in parallel with them: the funnel is
+  // keyed on attempt ids this query is what produces.
+  await loadSalesFunnel(supabase, salesCalls);
+  return { ...data, latestSalesCall: salesCalls[0] ?? null, salesCalls, audit };
 }
 
 /**
@@ -547,7 +732,9 @@ export async function getCallbackRequestByCalendarItem(
 
   const salesByCallback = await loadAiCallsForCallbacks(supabase, [data.id]);
   const salesCalls = salesByCallback.get(data.id) ?? [];
-  return { ...data, latestSalesCall: salesCalls[0] ?? null, salesCalls };
+  // The calendar dialog renders a compact panel, not the timeline — it has no
+  // use for the audit rows and should not pay for the extra query.
+  return { ...data, latestSalesCall: salesCalls[0] ?? null, salesCalls, audit: [] };
 }
 
 // List callback requests, newest first, with exact total for pagination.

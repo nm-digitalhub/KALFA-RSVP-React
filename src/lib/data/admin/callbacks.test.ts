@@ -71,6 +71,7 @@ function chainResult<Row>(result: { data: Row | null; error: { message: string }
     in: vi.fn(() => builder),
     order: vi.fn(() => builder),
     range: vi.fn(() => builder),
+    limit: vi.fn(() => builder),
     maybeSingle: vi.fn(() => builder),
     then: (onFulfilled: (value: typeof result) => unknown) => onFulfilled(result),
   };
@@ -87,6 +88,12 @@ function mockCallbackSalesClient(args: {
   callbackCount?: number;
   /** Rows of `{ id, sales_call_attempts: [...], callback_request_attempts: [...] }`. */
   aiCalls?: unknown[];
+  /** activity_log rows for the detail timeline. */
+  audit?: unknown[];
+  /** The post-call funnel chain (loadSalesFunnel): profiles → events → campaigns. */
+  funnelProfiles?: unknown[];
+  funnelEvents?: unknown[];
+  funnelCampaigns?: unknown[];
 }) {
   const callbacksBuilder = chainResult({
     data: args.callbacks,
@@ -94,9 +101,23 @@ function mockCallbackSalesClient(args: {
     count: args.callbackCount ?? (Array.isArray(args.callbacks) ? args.callbacks.length : null),
   });
   const aiCallsBuilder = chainResult({ data: args.aiCalls ?? [], error: null });
+  // The detail read also pulls the callback's activity_log rows — the events
+  // that overwrite a column instead of adding one (a calendar move, a release).
+  const auditBuilder = chainResult({ data: args.audit ?? [], error: null });
+  // loadSalesFunnel walks profiles → events → campaigns to recover what the
+  // lead did after the call. Empty by default: most fixtures are about the
+  // call itself, and an empty chain is the real shape for a lead who never
+  // signed up — the loader must return early rather than fail.
+  const funnelBuilders: Record<string, ReturnType<typeof chainResult>> = {
+    profiles: chainResult({ data: args.funnelProfiles ?? [], error: null }),
+    events: chainResult({ data: args.funnelEvents ?? [], error: null }),
+    campaigns: chainResult({ data: args.funnelCampaigns ?? [], error: null }),
+  };
   let callbackSelects = 0;
   const client = {
     from: vi.fn((table: string) => {
+      if (table === 'activity_log') return auditBuilder;
+      if (table in funnelBuilders) return funnelBuilders[table];
       if (table === 'callback_requests') {
         callbackSelects += 1;
         return callbackSelects === 1 ? callbacksBuilder : aiCallsBuilder;
@@ -108,7 +129,7 @@ function mockCallbackSalesClient(args: {
   vi.mocked(createAdminClient).mockReturnValue(
     client as unknown as ReturnType<typeof createAdminClient>,
   );
-  return { client, callbacksBuilder, aiCallsBuilder };
+  return { client, callbacksBuilder, aiCallsBuilder, auditBuilder };
 }
 
 beforeEach(() => {
@@ -319,6 +340,85 @@ describe('listCallbackRequests', () => {
 });
 
 describe('getCallbackRequest', () => {
+  // The funnel is the ONLY way the page can tell a lead that signed up from
+  // one that vanished — nothing on sales_call_attempts records any of it. This
+  // walks the real chain: the attempt is referenced by a profile, that profile
+  // owns an event, that event has a campaign, and the campaign's authorized_at
+  // is the cleared J5 hold.
+  it('reconstructs what the lead did after the call, from three linked tables', async () => {
+    mockCallbackSalesClient({
+      callbacks: detailRow({ id: 'cb-1' }),
+      aiCalls: [{ id: 'cb-1', sales_call_attempts: [{
+        id: 'sales-1',
+        callback_request_id: 'cb-1',
+        dispatch_status: 'concluded',
+        scheduled_at_snapshot: null,
+        created_at: '2026-09-01T08:01:00.000Z',
+        updated_at: '2026-09-01T08:02:00.000Z',
+        vox_call_session_history_id: null,
+        finish_reason: null,
+        call_duration_sec: null,
+        el_conversation_id: null,
+        outcome_recorded_at: null,
+        signup_completed_at: '2026-09-02T10:00:00.000Z',
+        wa_delivery_status: null,
+        wa_delivery_error_code: null,
+        wa_status_at: null,
+        call_analysis: [],
+      }], callback_request_attempts: [] }],
+      funnelProfiles: [
+        { id: 'prof-1', created_at: '2026-09-01T12:00:00.000Z', sales_referral_attempt_id: 'sales-1' },
+      ],
+      funnelEvents: [{ id: 'ev-1', owner_id: 'prof-1' }],
+      funnelCampaigns: [
+        // Two campaigns on purpose: the funnel reports the EARLIEST of each
+        // milestone, so a later campaign never drags the date forward.
+        { event_id: 'ev-1', created_at: '2026-09-03T09:00:00.000Z', authorized_at: null },
+        { event_id: 'ev-1', created_at: '2026-09-02T09:00:00.000Z', authorized_at: '2026-09-02T10:05:00.000Z' },
+      ],
+    });
+
+    const detail = await getCallbackRequest('cb-1');
+    expect(detail?.salesCalls[0]).toMatchObject({
+      signedUpAt: '2026-09-01T12:00:00.000Z',
+      firstCampaignAt: '2026-09-02T09:00:00.000Z',
+      holdAuthorizedAt: '2026-09-02T10:05:00.000Z',
+    });
+  });
+
+  // A lead who never used the link has NO row tying them to this attempt, and
+  // the funnel must say so rather than guess from a phone or an email.
+  it('reports an empty funnel when no profile references the attempt', async () => {
+    mockCallbackSalesClient({
+      callbacks: detailRow({ id: 'cb-1' }),
+      aiCalls: [{ id: 'cb-1', sales_call_attempts: [{
+        id: 'sales-1',
+        callback_request_id: 'cb-1',
+        dispatch_status: 'concluded',
+        scheduled_at_snapshot: null,
+        created_at: '2026-09-01T08:01:00.000Z',
+        updated_at: '2026-09-01T08:02:00.000Z',
+        vox_call_session_history_id: null,
+        finish_reason: null,
+        call_duration_sec: null,
+        el_conversation_id: null,
+        outcome_recorded_at: null,
+        signup_completed_at: null,
+        wa_delivery_status: null,
+        wa_delivery_error_code: null,
+        wa_status_at: null,
+        call_analysis: [],
+      }], callback_request_attempts: [] }],
+    });
+
+    const detail = await getCallbackRequest('cb-1');
+    expect(detail?.salesCalls[0]).toMatchObject({
+      signedUpAt: null,
+      firstCampaignAt: null,
+      holdAuthorizedAt: null,
+    });
+  });
+
   it('returns every sales call for the callback and marks voicemail-shaped analysis', async () => {
     mockCallbackSalesClient({
       callbacks: detailRow({ id: 'cb-1' }),
