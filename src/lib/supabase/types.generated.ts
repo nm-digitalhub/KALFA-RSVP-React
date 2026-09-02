@@ -4479,6 +4479,8 @@ export type Database = {
           full_name: string | null
           id: string
           phone: string | null
+          phone_verified_at: string | null
+          phone_verified_e164: string | null
           sales_referral_attempt_id: string | null
           terms_accepted_at: string | null
           updated_at: string
@@ -4488,6 +4490,8 @@ export type Database = {
           full_name?: string | null
           id: string
           phone?: string | null
+          phone_verified_at?: string | null
+          phone_verified_e164?: string | null
           sales_referral_attempt_id?: string | null
           terms_accepted_at?: string | null
           updated_at?: string
@@ -4497,6 +4501,8 @@ export type Database = {
           full_name?: string | null
           id?: string
           phone?: string | null
+          phone_verified_at?: string | null
+          phone_verified_e164?: string | null
           sales_referral_attempt_id?: string | null
           terms_accepted_at?: string | null
           updated_at?: string
@@ -5925,6 +5931,7 @@ export type Database = {
         Returns: boolean
       }
       owns_event: { Args: { _event_id: string }; Returns: boolean }
+      purge_stale_phone_change: { Args: { p_grace?: string }; Returns: number }
       reconcile_authorized_set: {
         Args: {
           p_actor?: string

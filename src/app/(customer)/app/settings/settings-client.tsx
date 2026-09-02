@@ -1,12 +1,14 @@
 'use client';
 
-import { useActionState } from 'react';
+import { useActionState, useRef, useState } from 'react';
 import {
   Bell,
   KeyRound,
   Mail,
+  Pencil,
   Settings,
   ShieldCheck,
+  Smartphone,
   UserRound,
 } from 'lucide-react';
 
@@ -18,11 +20,20 @@ import {
   FormNotice,
   SubmitButton,
 } from '@/components/forms';
+import { Button } from '@/components/ui/button';
+import { REGEXP_ONLY_DIGITS } from 'input-otp';
+import {
+  InputOTP,
+  InputOTPGroup,
+  InputOTPSlot,
+} from '@/components/ui/input-otp';
 import {
   requestEmailChangeAction,
+  requestPhoneChangeAction,
   sendPasswordResetAction,
   updateProfileAction,
   updateSettingsAction,
+  verifyPhoneChangeAction,
 } from './actions';
 import { formatIsraelDate } from '@/lib/date';
 import { PasskeyManager } from './passkey-manager';
@@ -96,23 +107,6 @@ function ProfileSection({ profile }: { profile: ProfileDTO | null }) {
             <FieldError errors={state?.fieldErrors?.full_name} />
           </div>
 
-          <div>
-            <label htmlFor="phone" className="mb-1 block text-sm font-medium">
-              טלפון
-            </label>
-            <input
-              id="phone"
-              name="phone"
-              type="tel"
-              dir="ltr"
-              inputMode="tel"
-              autoComplete="tel"
-              placeholder="050-000-0000"
-              defaultValue={profile?.phone ?? ''}
-              className={`${inputClass} text-start`}
-            />
-            <FieldError errors={state?.fieldErrors?.phone} />
-          </div>
         </div>
 
         <div className="max-w-44">
@@ -305,8 +299,10 @@ function AccountSection({
         </div>
         <FormNotice message={emailState?.notice} />
         <FormError message={emailState?.error} />
-        <p className="text-sm text-muted-foreground" dir="ltr">
-          {userEmail ?? 'לא זמין'}
+        {/* The fallback is Hebrew, so the line cannot be LTR — only the
+            address is. Same fix as the signing form's phone line. */}
+        <p className="text-sm text-muted-foreground">
+          {userEmail ? <bdi dir="ltr">{userEmail}</bdi> : 'לא זמין'}
         </p>
         <div>
           <label htmlFor="new_email" className="mb-1 block text-sm font-medium">
@@ -336,9 +332,11 @@ function AccountSection({
       <dl className="grid gap-3 text-sm sm:grid-cols-2">
         <div className="rounded-md border border-border p-3">
           <dt className="text-muted-foreground">אימייל</dt>
-          <dd className="mt-1 flex items-center gap-2 font-medium" dir="ltr">
+          {/* Dropping dir="ltr" also puts the icon back at the RTL start
+              (right), matching every other icon+label pair on this page. */}
+          <dd className="mt-1 flex items-center gap-2 font-medium">
             <Mail className="size-4" aria-hidden />
-            {userEmail ?? 'לא זמין'}
+            {userEmail ? <bdi dir="ltr">{userEmail}</bdi> : 'לא זמין'}
           </dd>
         </div>
         <div className="rounded-md border border-border p-3">
@@ -358,6 +356,215 @@ function AccountSection({
           </dd>
         </div>
       </dl>
+    </section>
+  );
+}
+
+
+// Phone verification, owned end to end by Supabase Auth.
+//
+// Two forms, not one: Auth's flow is genuinely two round trips —
+// updateUser({phone}) makes it mint and send a code, verifyOtp redeems it —
+// and a single form would have to guess which half the submit meant.
+//
+// The number is a controlled value shared by BOTH forms: verifyOtp must be
+// given the same number updateUser was, or Auth has no pending change to
+// match. Editing it after a code was sent resets the step, so a code can
+// never be redeemed against a number it was not sent to.
+function PhoneVerification({ profile }: { profile: ProfileDTO | null }) {
+  const [phone, setPhone] = useState(profile?.phone ?? '');
+  const [sendState, sendAction] = useActionState(requestPhoneChangeAction, null);
+  const [verifyState, verifyAction] = useActionState(verifyPhoneChangeAction, null);
+  // Derived from the SEND actually succeeding, not from the click: a failed
+  // send must not offer a code field there is no code for. `dirty` clears it
+  // when the number is edited, so a code can never be redeemed against a
+  // number it was not sent to.
+  const [dirty, setDirty] = useState(false);
+
+  // A proved number is not free text. The field is FROZEN while it holds one,
+  // and the pencil is the only way out — so "שליחת קוד" cannot be offered for a
+  // number there is nothing to prove.
+  const [editing, setEditing] = useState(false);
+  const phoneInput = useRef<HTMLInputElement>(null);
+
+  const justVerified = verifyState?.notice != null;
+  const storedVerified = Boolean(profile?.phone_verified_at);
+  // justVerified locks immediately, without waiting for the revalidated
+  // profile to arrive — otherwise the field would sit unlocked and editable in
+  // the moment right after the owner proved it.
+  const locked = justVerified || (storedVerified && !editing);
+
+  // `dirty` clears it when the number is edited, so a code can never be
+  // redeemed against a number it was not sent to; `locked` closes it once the
+  // proof lands.
+  const codeSent = sendState?.notice != null && !dirty && !locked;
+  const otpInvalid = Boolean(verifyState?.fieldErrors?.otp_code?.length);
+
+  function beginEditing() {
+    setEditing(true);
+    // The pencil is a promise that the field is now writable — put the caret
+    // in it rather than making the owner tap twice.
+    requestAnimationFrame(() => phoneInput.current?.focus());
+  }
+
+  function cancelEditing() {
+    setPhone(profile?.phone ?? '');
+    setDirty(false);
+    setEditing(false);
+  }
+
+  return (
+    <section id="phone" className={sectionClass}>
+      <div className={sectionHeaderClass}>
+        <Smartphone className="mt-0.5 size-5 shrink-0 text-primary" aria-hidden />
+        <div>
+          <h2 className="font-semibold">טלפון נייד</h2>
+          <p className="text-sm text-muted-foreground">
+            נדרש לאימות בעת חתימה על הסכם, ולזיהוי רשימות מוזמנים שתשלחו בוואטסאפ.
+          </p>
+        </div>
+      </div>
+
+      {/* Clearing `dirty` on SUBMIT, not on the action's return: whatever is in
+          the field at submit time IS the number being sent to, so editing it
+          before submitting is not a mismatch. Without this the flag latched on
+          the first keystroke and the code field could never open — the send
+          succeeded and the step stayed shut (measured 2026-09-02). */}
+      <form action={sendAction} onSubmit={() => setDirty(false)} className="space-y-4">
+        <div className="max-w-sm">
+          <label htmlFor="phone" className="mb-1 block text-sm font-medium">
+            מספר טלפון
+          </label>
+          <div className="flex items-center gap-2">
+            <input
+              ref={phoneInput}
+              id="phone"
+              name="phone"
+              type="tel"
+              dir="ltr"
+              inputMode="tel"
+              autoComplete="tel"
+              placeholder="050-000-0000"
+              value={phone}
+              readOnly={locked}
+              // readOnly, NOT disabled: a disabled input is skipped by form
+              // serialization, so the number would never reach the action, and
+              // it drops out of the tab order and reads as broken to a screen
+              // reader. readOnly keeps it announced and submitted.
+              aria-describedby={locked ? 'phone-verified' : undefined}
+              onChange={(e) => {
+                setPhone(e.target.value);
+                // A code already sent belongs to the OLD number.
+                setDirty(true);
+              }}
+              className={`${inputClass} text-start ${
+                locked ? 'bg-muted/50 text-muted-foreground' : ''
+              }`}
+            />
+            {locked ? (
+              <>
+                <span
+                  id="phone-verified"
+                  className="shrink-0 rounded-full border border-success/20 bg-success/10 px-3 py-1 text-xs font-medium text-success"
+                >
+                  מאומת
+                </span>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  onClick={beginEditing}
+                  className="shrink-0"
+                  aria-label="שינוי מספר הטלפון"
+                  title="שינוי מספר הטלפון"
+                >
+                  <Pencil className="size-4" aria-hidden />
+                </Button>
+              </>
+            ) : null}
+          </div>
+          <FieldError errors={sendState?.fieldErrors?.phone} />
+        </div>
+
+        <FormError message={sendState?.error} />
+        {locked ? null : <FormNotice message={sendState?.notice} />}
+
+        {/* No send button while the field is frozen: there is nothing to prove
+            about a number already proved, and offering it was how "נשלח קוד"
+            came to be shown for an SMS Auth never dispatched. */}
+        {locked ? null : (
+          <div className="flex items-center gap-3">
+            <div className="max-w-44 grow">
+              <SubmitButton>{codeSent ? 'שליחת קוד מחדש' : 'שליחת קוד'}</SubmitButton>
+            </div>
+            {/* Only when there is a proved number to fall back to. */}
+            {editing && storedVerified ? (
+              <Button type="button" variant="ghost" onClick={cancelEditing}>
+                ביטול
+              </Button>
+            ) : null}
+          </div>
+        )}
+      </form>
+
+      {codeSent ? (
+        <form action={verifyAction} className="space-y-4 border-t border-border pt-5">
+          {/* The number travels with the code — Auth matches the two. */}
+          <input type="hidden" name="phone" value={phone} />
+          <div className="max-w-sm">
+            <label htmlFor="otp_code" className="mb-1 block text-sm font-medium">
+              הזינו את הקוד שנשלח לנייד
+            </label>
+            {/* dir="ltr" sits on the GROUP, deliberately.
+                `components.json` has `"rtl": true`, and that DID fire on this
+                component — the CLI rewrote the registry's physical classes to
+                logical ones on install (border-l/r -> border-s/e,
+                rounded-l/r-lg -> rounded-s/e-lg; diffed against
+                ui.shadcn.com/r/styles/base-nova/input-otp.json). But that
+                transform only mirrors borders and radii. It cannot fix ORDER,
+                and input-otp itself has no direction handling whatsoever
+                (its dist contains no `dir`, `rtl` or `direction`, and the
+                published docs never mention RTL). So under the page's
+                dir="rtl" the slot row still reverses and slot 0 renders on the
+                RIGHT: 538395 would read as 593835.
+                Forcing the group LTR fixes the order AND makes the logical
+                classes resolve the way the registry drew them. The label and
+                the field's place in the page stay RTL — the same treatment
+                the card-number fields already get. */}
+            <InputOTP
+              id="otp_code"
+              name="otp_code"
+              maxLength={6}
+              pattern={REGEXP_ONLY_DIGITS}
+              inputMode="numeric"
+              autoFocus
+              aria-invalid={otpInvalid || undefined}
+              containerClassName="justify-start"
+            >
+              <InputOTPGroup dir="ltr">
+                {[0, 1, 2, 3, 4, 5].map((index) => (
+                  <InputOTPSlot
+                    key={index}
+                    index={index}
+                    aria-invalid={otpInvalid || undefined}
+                    // size-8 is the registry default; every other control in
+                    // this form is h-10, and 44px keeps a real touch target.
+                    className="size-11 text-base"
+                  />
+                ))}
+              </InputOTPGroup>
+            </InputOTP>
+            <FieldError errors={verifyState?.fieldErrors?.otp_code} />
+          </div>
+
+          <FormError message={verifyState?.error} />
+          <FormNotice message={verifyState?.notice} />
+
+          <div className="max-w-44">
+            <SubmitButton>אימות מספר</SubmitButton>
+          </div>
+        </form>
+      ) : null}
     </section>
   );
 }
@@ -412,6 +619,7 @@ export function SettingsPageClient({
 
         <div className="space-y-5">
           <ProfileSection profile={profile} />
+          <PhoneVerification profile={profile} />
           <NotificationsSection settings={settings} />
           <SummarySection profile={profile} settings={settings} />
           <SecuritySection />

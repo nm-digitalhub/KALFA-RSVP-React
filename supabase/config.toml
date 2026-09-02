@@ -285,6 +285,36 @@ max_frequency = "5s"
 # enabled = true
 # uri = "pg-functions://<database>/<schema>/<hook_name>"
 
+# Send SMS hook — routes EVERY auth SMS through ExtrA (exm.co.il) instead of
+# Supabase's built-in senders. ExtrA is not one of the five providers listed
+# below, and this hook is the documented way to use a regional provider
+# (docs/guides/auth/auth-hooks/send-sms-hook).
+#
+# An Edge Function rather than pg-functions:// on purpose: the SQL variant in
+# those docs QUEUES the message (job_queue + pg_cron) because pg_net is
+# asynchronous, and a delayed OTP is not an OTP. The function returns 200 only
+# once ExtrA accepted the message.
+#
+# Deployed with --no-verify-jwt: Auth calls the hook WITHOUT an apiKey, and
+# authenticity comes from the Standard Webhooks signature instead.
+#
+# SECRETS is plural per the docs ("plans to allow for asymmetric signing and
+# multiple hook secrets") — the same page's Twilio sample uses the singular,
+# so the plural is the one to follow and the function reads that exact name.
+# NOTE: the CLI VALIDATES this block on every `functions deploy`, even when
+# deploying an unrelated function — an unset SEND_SMS_HOOK_SECRETS resolves to
+# empty and the deploy fails with "must be formatted as v1,whsec_… with a
+# minimum length of 32 characters". Export it in the shell (or put it in the
+# project .env) before deploying; it must be the SAME value as the project
+# secret of the same name, or signature verification rejects every call.
+#
+# The uri here is the LOCAL one. Production is configured in the Dashboard
+# (Authentication → Hooks), which is what hook_send_sms_uri reflects.
+[auth.hook.send_sms]
+enabled = true
+uri = "http://host.docker.internal:54321/functions/v1/sms-hook"
+secrets = "env(SEND_SMS_HOOK_SECRETS)"
+
 # Configure one of the supported SMS providers: `twilio`, `twilio_verify`, `messagebird`, `textlocal`, `vonage`.
 [auth.sms.twilio]
 enabled = false
@@ -412,3 +442,14 @@ enabled = true
 # declarative_schema_path = "./database"
 # JSON string passed through to pg-delta SQL formatting.
 # format_options = "{\"keywordCase\":\"upper\",\"indent\":2,\"maxWidth\":80,\"commaStyle\":\"trailing\"}"
+
+[functions.sms-hook]
+enabled = true
+verify_jwt = false
+import_map = "./functions/sms-hook/deno.json"
+# Uncomment to specify a custom file path to the entrypoint.
+# Supported file extensions are: .ts, .js, .mjs, .jsx, .tsx
+entrypoint = "./functions/sms-hook/index.ts"
+# Specifies static files to be bundled with the function. Supports glob patterns.
+# For example, if you want to serve static HTML pages in your function:
+# static_files = [ "./functions/sms-hook/*.html" ]

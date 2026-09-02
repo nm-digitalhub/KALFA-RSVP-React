@@ -1,6 +1,7 @@
 import 'server-only';
 
 import { createClient } from '@/lib/supabase/server';
+import { normalizePhone } from '@/lib/phone';
 import { requireUser } from '@/lib/auth/dal';
 import { logActivity } from '@/lib/data/activity';
 import type { Tables } from '@/lib/supabase/types';
@@ -9,10 +10,27 @@ type ProfileRow = Tables<'profiles'>;
 // DTO: only the columns the account screen needs. The profile row is keyed by
 // the auth user id (profiles.id === auth.users.id); ownership is therefore the
 // id itself, derived server-side from the verified session.
-export type ProfileDTO = Pick<ProfileRow, 'id' | 'full_name' | 'phone' | 'updated_at'>;
+export type ProfileDTO = Pick<
+  ProfileRow,
+  'id' | 'full_name' | 'phone' | 'updated_at' | 'phone_verified_e164' | 'phone_verified_at'
+>;
+
+/**
+ * Whether the phone CURRENTLY on the profile is the one an OTP proved.
+ *
+ * A comparison, not a stored flag: editing `phone` un-verifies it by
+ * construction, so there is no flag to forget to clear. Both sides go through
+ * the same normalizer, so 052-374-3588 and +972532743588 compare equal.
+ */
+export function isProfilePhoneVerified(profile: ProfileDTO | null): boolean {
+  const e164 = profile?.phone_verified_e164;
+  if (!e164 || !profile?.phone_verified_at) return false;
+  return normalizePhone(profile.phone ?? '') === e164;
+}
 
 // This string IS the DTO contract — the data functions return rows as-is.
-const PROFILE_COLUMNS = 'id, full_name, phone, updated_at';
+const PROFILE_COLUMNS =
+  'id, full_name, phone, updated_at, phone_verified_e164, phone_verified_at';
 
 // Load the current user's profile. The row is created automatically at signup by
 // the `on_auth_user_created` trigger (`handle_new_user()`, SECURITY DEFINER), which

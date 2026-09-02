@@ -18,7 +18,7 @@ vi.mock('@/lib/data/activity', () => ({ logActivity: vi.fn() }));
 
 // The exact column projection profiles.ts requests — this string IS the DTO
 // contract; the data functions return rows pass-through.
-const PROFILE_COLUMNS = 'id, full_name, phone, updated_at';
+const PROFILE_COLUMNS = 'id, full_name, phone, updated_at, phone_verified_e164, phone_verified_at';
 
 const USER_ID = 'user-123';
 
@@ -32,6 +32,9 @@ function sampleRow(overrides: Partial<ProfileDTO> = {}): ProfileDTO {
     full_name: 'דנה כהן',
     phone: '050-123-4567',
     updated_at: '2026-06-23T00:00:00.000Z',
+    // Unverified by default: the phone is free text until an OTP proves it.
+    phone_verified_e164: null,
+    phone_verified_at: null,
     ...overrides,
   };
 }
