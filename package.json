@@ -42,6 +42,7 @@
     "test:watch": "vitest",
     "verify:db": "node --env-file=.env.local scripts/verify-db-contracts.mjs",
     "typecheck": "tsc --noEmit",
+    "transcribe": "node scripts/transcribe-he.mjs",
     "voximplant": "tsx scripts/voximplant/cli.ts",
     "relocate": "tsx scripts/relocate/cli.ts",
     "check:control-chars": "node scripts/check-control-characters.mjs"
@@ -84,6 +85,7 @@
     "date-fns": "^4.4.0",
     "dayjs": "^1.11.21",
     "google-ads-api": "^24.1.0",
+    "input-otp": "^1.5.0",
     "jsonwebtoken": "^9.0.3",
     "libphonenumber-js": "^1.13.7",
     "lucide-react": "^1.21.0",
@@ -111,7 +113,7 @@
     "web-push": "^3.6.7",
     "whatsapp-api-js": "^6.2.1",
     "windows-iana": "^5.1.0",
-    "zod": "^4.4.3"
+    "zod": "^4.5.4"
   },
   "devDependencies": {
     "@clack/prompts": "^1.7.0",
