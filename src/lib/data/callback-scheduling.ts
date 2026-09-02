@@ -56,6 +56,7 @@ import type {
   ExchangeConnectionConfig,
 } from '@/lib/exchange-ews/types';
 import { createAdminClient } from '@/lib/supabase/admin';
+import type { TablesInsert } from '@/lib/supabase/types';
 import { formatIsraelDate, formatIsraelTime } from '@/lib/date';
 import { getAppOrigin } from '@/lib/url';
 
@@ -717,6 +718,38 @@ export async function rescheduleCallbackRequest(
 
 // ── Self-healing against the calendar ───────────────────────────────────────
 
+
+// Worker-side audit rows for the two things this reconciler does to a
+// callback's time. logActivity() cannot be used here — it resolves the actor
+// through requireUser(), and there is no session in a cron tick — so this
+// writes the row directly with user_id NULL, the same shape and the same
+// swallow-on-failure discipline as recordSalesDialAudit.
+//
+// user_id is NULL on purpose and MUST stay that way: a move made in Outlook has
+// no discoverable actor (Graph exposes no last-modifier on a calendar event,
+// and the mailbox is reached with one application identity), so attributing it
+// to anyone would be an invention. The row says WHAT changed and WHEN, and the
+// action name says the change was detected from the calendar rather than
+// performed by a person.
+async function recordCalendarSyncAudit(
+  action: 'callback.calendar_moved' | 'callback.calendar_released',
+  callbackRequestId: string,
+  meta: Record<string, string>,
+): Promise<void> {
+  try {
+    const admin = createAdminClient();
+    type ActivityLogInsert = TablesInsert<'activity_log'>;
+    await admin.from('activity_log').insert({
+      event_id: null,
+      user_id: null,
+      action,
+      meta: { callback_request_id: callbackRequestId, ...meta } as ActivityLogInsert['meta'],
+    } satisfies ActivityLogInsert);
+  } catch {
+    // Audit only — a lost row must never stop the reconciliation itself.
+  }
+}
+
 /**
  * The other direction of the sync, and the price of notify-not-ask: the owner's
  * undo IS deleting the appointment, and Exchange notifies us of nothing.
@@ -812,6 +845,12 @@ export async function reconcileCallbacksWithCalendar(
         status: 'pending_schedule',
       })
       .in('id', stale);
+    for (const id of stale) {
+      const was = rows.find((r) => r.id === id)?.scheduled_at ?? null;
+      await recordCalendarSyncAudit('callback.calendar_released', id, {
+        ...(was ? { previous_scheduled_at: was } : {}),
+      });
+    }
   }
 
   for (const m of moved) {
@@ -827,6 +866,10 @@ export async function reconcileCallbacksWithCalendar(
       );
       continue; // did not correct the DB — do not touch pg-boss for this row
     }
+    await recordCalendarSyncAudit('callback.calendar_moved', m.id, {
+      previous_scheduled_at: new Date(m.oldScheduledMs).toISOString(),
+      new_scheduled_at: m.newStartIso,
+    });
     if (!opts.boss) continue; // next tick (which will have a boss) re-enqueues instead
 
     // Remove the stale job for the OLD instant, via the SAME id-derivation

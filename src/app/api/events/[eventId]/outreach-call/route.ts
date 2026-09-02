@@ -1,13 +1,13 @@
 import { randomUUID } from 'node:crypto';
 
 import { NextResponse } from 'next/server';
-import { PgBoss } from 'pg-boss';
 import { z } from 'zod';
 
 import { callerHasPlatformPermission, requireConsoleAgent } from '@/lib/auth/console-agent';
 import { recordDispatchAccepted, settleDispatchFailure } from '@/lib/data/call-dispatch-status';
 import { isContactReached } from '@/lib/data/outreach-engine';
 import { CALL_RETRY, QUEUES, type OutreachCallRequest } from '@/lib/queue/queues';
+import { getWebJobSender } from '@/lib/queue/web-sender';
 import { createAdminClient } from '@/lib/supabase/admin';
 
 // POST /api/events/{eventId}/outreach-call   body: { guest_id }
@@ -34,9 +34,9 @@ import { createAdminClient } from '@/lib/supabase/admin';
 //        callback (isCallback), which is enqueued by the callback sweep and
 //        never passes through this route.
 // ── OPEN DECISIONS ───────────────────────────────────────────────────────────
-// [ARCH] The web tier has NO pg-boss instance elsewhere — every other
-//        boss.send() lives in the worker. Enqueuing from a route therefore
-//        opens a SEND-ONLY PgBoss (below). 'pg-boss' is already in
+// [ARCH] Enqueuing from the web tier goes through the shared SEND-ONLY
+//        PgBoss in lib/queue/web-sender.ts; every supervising boss.send()
+//        lives in the worker. 'pg-boss' is already in
 //        next.config serverExternalPackages, so it is not bundled into the
 //        server build.
 // [D1]   scriptKey — dispatchOutreachCall forwards it as the touchpoint script.
@@ -59,43 +59,6 @@ function json(body: unknown, status: number) {
   return NextResponse.json(body, { status, headers: NO_STORE });
 }
 
-// [ARCH] Send-only pg-boss for the web tier. Same connection as the worker
-// (worker/main.ts:373-388) but with supervise+schedule OFF so a route never runs
-// maintenance or cron — it only calls .send(). Module singleton: connect once.
-let sender: PgBoss | null = null;
-async function getSender(): Promise<PgBoss> {
-  if (sender) return sender;
-  const boss = new PgBoss({
-    host: process.env.SUPABASE_DB_HOST,
-    port: Number(process.env.SUPABASE_DB_PORT || 5432),
-    user: process.env.SUPABASE_DB_USER,
-    password: process.env.SUPABASE_DB_PASSWORD,
-    database: process.env.SUPABASE_DB_NAME || 'postgres',
-    ssl: { rejectUnauthorized: false },
-    schema: 'pgboss',
-    application_name: 'kalfa-web-sender',
-    max: 2,
-    supervise: false,
-    schedule: false,
-    // The load-bearing flag. pg-boss defaults migrate to TRUE, and start()
-    // branches on it: migrate -> contractor.start() (creates the schema if
-    // absent, migrates it if older), otherwise contractor.check() (verifies
-    // only, and THROWS on a missing or mismatched schema).
-    //
-    // Without this the web tier would attempt a pg-boss schema migration on
-    // every cold start, racing the worker that owns it. With it, a deployment
-    // whose web bundle expects a different schema version fails loudly at
-    // boss.start() instead of sending jobs against a schema it does not match.
-    //
-    // createSchema (also defaulting to true) is deliberately NOT set: it is
-    // only read inside contractor.create(), which check() never reaches. Adding
-    // it would document the wrong mechanism — the gate is migrate.
-    migrate: false,
-  });
-  await boss.start();
-  sender = boss;
-  return boss;
-}
 
 export async function POST(
   request: Request,
@@ -202,7 +165,7 @@ export async function POST(
   // dispatch stays idempotent per attempt row; CALL_RETRY only retries the pre-dial
   // transport check, never a placed call.
   try {
-    const boss = await getSender();
+    const boss = await getWebJobSender();
     await boss.send(QUEUES.callRequest, job, { id: dispatchId, ...CALL_RETRY });
   } catch {
     // No job exists, so no worker will ever settle this row — settle it here

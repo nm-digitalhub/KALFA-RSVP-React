@@ -307,6 +307,14 @@ describe('outreach-call route stays enqueue-only (source guard)', () => {
     join(__dirname, 'route.ts'),
     'utf8',
   );
+  // The pg-boss connection moved to the shared web sender on 2026-09-01, when a
+  // second caller (the admin calendar actions) needed to enqueue. The flags
+  // below are asserted where they now live — the guard follows the code rather
+  // than passing vacuously against a file that no longer opens a connection.
+  const senderSrc = readFileSync(
+    join(__dirname, '..', '..', '..', '..', '..', 'lib', 'queue', 'web-sender.ts'),
+    'utf8',
+  );
 
   it('never imports the mutations module or names StartScenarios', () => {
     expect(src).not.toMatch(/from ['"].*voximplant\/mutations['"]/);
@@ -339,7 +347,11 @@ describe('outreach-call route stays enqueue-only (source guard)', () => {
     // Matches an ASSIGNMENT, not the word: the comment above the option
     // deliberately explains why it is absent, and that explanation is worth
     // more than a grep-clean file. This test failed on the word when written.
-    expect(src).not.toMatch(/createSchema\s*:/);
-    expect(src).toMatch(/migrate:\s*false/);
+    expect(senderSrc).not.toMatch(/createSchema\s*:/);
+    expect(senderSrc).toMatch(/migrate:\s*false/);
+    // And supervise/schedule stay off: a request must never run maintenance or
+    // fire cron, which is the whole reason this connection is separate.
+    expect(senderSrc).toMatch(/supervise:\s*false/);
+    expect(senderSrc).toMatch(/schedule:\s*false/);
   });
 });

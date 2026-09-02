@@ -13,6 +13,9 @@ import {
   type CalendarEventDetailDTO,
 } from '@/lib/data/exchange-connections';
 import type { ExchangeCategory } from '@/lib/exchange-ews/types';
+import { logActivity } from '@/lib/data/activity';
+import { QUEUES } from '@/lib/queue/queues';
+import { getWebJobSender } from '@/lib/queue/web-sender';
 import {
   calendarConnectionSchema,
   calendarCreateEventSchema,
@@ -154,6 +157,48 @@ export async function fetchCalendarEventAction(input: {
   }
 }
 
+
+// An appointment edited here can BE a scheduled callback, and moving it moves
+// when the AI actually dials. Two things follow, and neither used to happen.
+//
+// 1. RECORD IT. The same change made from the callback page logs
+//    `callback.rescheduled` with the admin who made it; made here it left no
+//    trace at all. The one thing this channel can offer that Outlook never
+//    can is WHO — Graph exposes no last-modifier on a calendar event, and the
+//    mailbox is reached with one application identity anyway, so a move made
+//    in Outlook is unattributable by construction. Recorded from here it is
+//    not.
+//
+// 2. WAKE THE SWEEP. reconcileCallbacksWithCalendar stays the SINGLE writer of
+//    callback_requests.scheduled_at — a second writer here would mean two
+//    sources of truth for one fact, and a half-written edit (Exchange ok, DB
+//    not) would diverge permanently instead of converging on the next tick.
+//    What the sweep lacked was timeliness: on its own it runs every 10 minutes,
+//    so a meeting moved to sooner than that could still be dialled against the
+//    old instant. Nudging it costs one enqueue and keeps the single-writer
+//    design. The queue is created `policy: 'singleton'` (worker/main.ts), so a
+//    nudge while it is already running cannot start a second pass.
+//
+// Both are best-effort AFTER the Exchange write has succeeded: the appointment
+// really did move, and neither an audit row nor a nudge is worth failing that
+// back to the admin. A missed nudge is picked up by the ordinary tick.
+async function noteCalendarWrite(
+  action: 'calendar.event_updated' | 'calendar.event_deleted',
+  meta: Record<string, string>,
+): Promise<void> {
+  try {
+    await logActivity({ action, meta });
+  } catch {
+    /* audit only — never fails the edit the admin already completed */
+  }
+  try {
+    const boss = await getWebJobSender();
+    await boss.send(QUEUES.callbackScheduleSweep, {});
+  } catch {
+    /* the 10-minute tick still reconciles this */
+  }
+}
+
 export async function updateCalendarEventAction(input: {
   connectionId: string;
   appointmentId: string;
@@ -195,6 +240,12 @@ export async function updateCalendarEventAction(input: {
       ...(parsed.data.category !== undefined ? { category: parsed.data.category } : {}),
       ...(parsed.data.attendees !== undefined ? { attendees: parsed.data.attendees } : {}),
     });
+    if (result.ok) {
+      await noteCalendarWrite('calendar.event_updated', {
+        appointment_id: parsed.data.appointmentId,
+        start_iso: parsed.data.startIso,
+      });
+    }
     return result.ok ? { ok: true } : { ok: false, message: result.message };
   } catch (err) {
     unstable_rethrow(err);
@@ -215,6 +266,11 @@ export async function deleteCalendarEventAction(input: {
       parsed.data.connectionId,
       parsed.data.appointmentId,
     );
+    if (result.ok) {
+      await noteCalendarWrite('calendar.event_deleted', {
+        appointment_id: parsed.data.appointmentId,
+      });
+    }
     return result.ok ? { ok: true } : { ok: false, message: result.message };
   } catch (err) {
     unstable_rethrow(err);
