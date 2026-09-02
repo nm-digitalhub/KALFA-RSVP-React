@@ -9,7 +9,11 @@ vi.mock('@/lib/data/console-calls', () => ({
 vi.mock('@/lib/supabase/admin', () => ({ createAdminClient: vi.fn() }));
 
 import { createAdminClient } from '@/lib/supabase/admin';
-import { DISPATCH_PRE_TERMINAL, recordSalesWaDeliveryStatus } from './sales-call-attempts';
+import {
+  DISPATCH_PRE_TERMINAL,
+  getSalesAttemptIdByConversationId,
+  recordSalesWaDeliveryStatus,
+} from './sales-call-attempts';
 
 // Mirrors call_attempts.PRE_TERMINAL and callback_request_attempts'
 // DISPATCH_PRE_TERMINAL exactly — see sales_call_attempts_dispatch_status_valid
@@ -82,5 +86,41 @@ describe('recordSalesWaDeliveryStatus', () => {
     await expect(
       recordSalesWaDeliveryStatus('wamid.ABC', 'sent', null, '2026-08-31T22:24:26+00:00'),
     ).resolves.toBeUndefined();
+  });
+});
+
+describe('getSalesAttemptIdByConversationId', () => {
+  it('prefers the injected non-authorizing sales attempt id when present', async () => {
+    const attemptId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+    const { client, builder } = createMockSupabase({
+      data: { id: attemptId, callback_request_id: 'req-1' },
+      error: null,
+    });
+    vi.mocked(createAdminClient).mockReturnValue(
+      client as unknown as ReturnType<typeof createAdminClient>,
+    );
+
+    await expect(getSalesAttemptIdByConversationId('conv_1', attemptId)).resolves.toEqual({
+      id: attemptId,
+      callbackRequestId: 'req-1',
+    });
+
+    expect(builder.eq).toHaveBeenCalledWith('id', attemptId);
+    expect(builder.eq).not.toHaveBeenCalledWith('el_conversation_id', 'conv_1');
+  });
+
+  it('falls back to the ElevenLabs conversation id when no usable correlation token exists', async () => {
+    const { client, builder } = createMockSupabase({
+      data: null,
+      error: null,
+    });
+    vi.mocked(createAdminClient).mockReturnValue(
+      client as unknown as ReturnType<typeof createAdminClient>,
+    );
+
+    await expect(getSalesAttemptIdByConversationId('conv_1', 'not-a-uuid')).resolves.toBeNull();
+
+    expect(builder.eq).toHaveBeenCalledWith('el_conversation_id', 'conv_1');
+    expect(builder.eq).not.toHaveBeenCalledWith('id', 'not-a-uuid');
   });
 });

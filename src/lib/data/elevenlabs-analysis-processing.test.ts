@@ -3,11 +3,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Tables } from '@/lib/supabase/types';
 
 vi.mock('server-only', () => ({}));
-const { storeRsvpMock, storeSalesMock, lookupMock, claimMock, applyOutcomeMock } = vi.hoisted(
+const { storeRsvpMock, storeSalesMock, lookupMock, setConversationMock, claimMock, applyOutcomeMock } = vi.hoisted(
   () => ({
     storeRsvpMock: vi.fn(),
     storeSalesMock: vi.fn(),
     lookupMock: vi.fn(),
+    setConversationMock: vi.fn(),
     claimMock: vi.fn(),
     applyOutcomeMock: vi.fn(),
   }),
@@ -18,6 +19,7 @@ vi.mock('@/lib/data/elevenlabs-analysis', () => ({
 }));
 vi.mock('@/lib/data/sales-call-attempts', () => ({
   getSalesAttemptIdByConversationId: lookupMock,
+  setSalesAttemptElConversationId: setConversationMock,
   claimSalesOutcome: claimMock,
 }));
 vi.mock('@/lib/data/callback-scheduling', () => ({ applyCallOutcome: applyOutcomeMock }));
@@ -64,6 +66,7 @@ beforeEach(() => {
   storeRsvpMock.mockReset().mockResolvedValue('stored');
   storeSalesMock.mockReset().mockResolvedValue('stored');
   lookupMock.mockReset().mockResolvedValue(null);
+  setConversationMock.mockReset().mockResolvedValue({ applied: true });
   claimMock.mockReset().mockResolvedValue(null);
   applyOutcomeMock.mockReset().mockResolvedValue({ archived: false, requestClosed: false });
 });
@@ -103,7 +106,8 @@ describe('processElevenLabsSalesAnalysisRow', () => {
     await processElevenLabsSalesAnalysisRow(row());
 
     expect(storeSalesMock).toHaveBeenCalledOnce();
-    expect(lookupMock).toHaveBeenCalledWith('conv_1');
+    expect(lookupMock).toHaveBeenCalledWith('conv_1', null);
+    expect(setConversationMock).toHaveBeenCalledWith('attempt-1', 'conv_1');
     expect(claimMock).toHaveBeenCalledWith('attempt-1');
     expect(applyOutcomeMock).toHaveBeenCalledWith('req-1', 'needs_followup');
   });
@@ -114,6 +118,33 @@ describe('processElevenLabsSalesAnalysisRow', () => {
     expect(storeSalesMock).toHaveBeenCalledOnce();
     expect(claimMock).not.toHaveBeenCalled();
     expect(applyOutcomeMock).not.toHaveBeenCalled();
+  });
+
+  it('passes the injected sales attempt correlation token to the lookup', async () => {
+    const attemptId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+    lookupMock.mockResolvedValue({ id: attemptId, callbackRequestId: 'req-1' });
+
+    await processElevenLabsSalesAnalysisRow(
+      row({
+        payload: {
+          type: 'post_call_transcription',
+          event_timestamp: 1_784_500_000,
+          data: {
+            conversation_id: 'conv_1',
+            agent_id: 'a',
+            status: 'done',
+            transcript: [],
+            metadata: { call_duration_secs: 10, cost: 5 },
+            conversation_initiation_client_data: {
+              dynamic_variables: { kalfa_attempt_token: attemptId },
+            },
+            analysis: { call_successful: 'success' },
+          },
+        },
+      }),
+    );
+
+    expect(lookupMock).toHaveBeenCalledWith('conv_1', attemptId);
   });
 
   it('writes no outcome when another path already claimed the attempt', async () => {

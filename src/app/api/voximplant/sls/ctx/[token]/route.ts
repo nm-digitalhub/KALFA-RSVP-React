@@ -82,7 +82,11 @@ export async function GET(
       company_name: companyName,
       company_id: companyId,
       company_address: companyAddress,
-      kalfa_attempt_token: ctx.attempt.el_conversation_id ?? '',
+      // Non-authorizing correlation id. The scenario injects this into
+      // ElevenLabs dynamic variables so post-call analysis can still resolve
+      // the sales attempt even if the terminal cb carrying conversation_id is
+      // missed.
+      kalfa_attempt_token: ctx.attempt.id,
     },
     { headers: NO_STORE },
   );

@@ -6,6 +6,7 @@ import { storeCallAnalysis, storeSalesCallAnalysis } from '@/lib/data/elevenlabs
 import {
   getSalesAttemptIdByConversationId,
   claimSalesOutcome,
+  setSalesAttemptElConversationId,
 } from '@/lib/data/sales-call-attempts';
 import { applyCallOutcome } from '@/lib/data/callback-scheduling';
 
@@ -82,8 +83,16 @@ export async function processElevenLabsSalesAnalysisRow(row: WebhookInboxRow): P
   // A conversation belonging to another persona simply matches no attempt —
   // the ordinary case, not an error. An already-resolved attempt is caught by
   // claimSalesOutcome's own atomic claim.
-  const attempt = await getSalesAttemptIdByConversationId(analysis.conversationId);
+  const attempt = await getSalesAttemptIdByConversationId(
+    analysis.conversationId,
+    analysis.correlationToken,
+  );
   if (!attempt) return;
+  try {
+    await setSalesAttemptElConversationId(attempt.id, analysis.conversationId);
+  } catch {
+    // Best-effort CRM linkage; the catch-all outcome write below is the load-bearing part.
+  }
   const claimed = await claimSalesOutcome(attempt.id);
   if (claimed) await applyCallOutcome(claimed.callbackRequestId, 'needs_followup');
 }

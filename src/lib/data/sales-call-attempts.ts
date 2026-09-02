@@ -194,21 +194,30 @@ export async function getUnresolvedSalesAttempt(
   return data;
 }
 
-// Looks up the attempt for a given ElevenLabs conversation id — the sales
-// post-call webhook's own link vector (see that route's doc comment: it is
-// the fifth, catch-all outcome-write path for a call that telephony-
-// connected but never reached send_signup_link/log_outcome). Most recent
-// match wins in the pathological case of a duplicate el_conversation_id
-// (should not happen — ElevenLabs conversation ids are unique — but this
-// avoids .single()'s hard failure if it ever does). Returns null when no
-// attempt matches (e.g. the conversation belongs to a different persona).
+// Looks up the attempt for a given ElevenLabs conversation id, falling back to
+// the non-authorizing sales attempt id injected as kalfa_attempt_token. The
+// fallback keeps the post-call webhook's catch-all outcome path working even if
+// Voximplant misses the terminal cb that writes el_conversation_id.
 export async function getSalesAttemptIdByConversationId(
   elConversationId: string,
+  correlationToken?: string | null,
 ): Promise<{ id: string; callbackRequestId: string } | null> {
   const admin = createAdminClient();
+  const select = 'id, callback_request_id';
+
+  if (correlationToken && /^[0-9a-f-]{36}$/i.test(correlationToken)) {
+    const { data, error } = await admin
+      .from('sales_call_attempts')
+      .select(select)
+      .eq('id', correlationToken)
+      .maybeSingle();
+    if (error) throw new Error('אחזור ניסיון שיחת מכירה לפי מזהה קורלציה נכשל');
+    if (data) return { id: data.id, callbackRequestId: data.callback_request_id };
+  }
+
   const { data, error } = await admin
     .from('sales_call_attempts')
-    .select('id, callback_request_id')
+    .select(select)
     .eq('el_conversation_id', elConversationId)
     .order('created_at', { ascending: false })
     .limit(1)
