@@ -1,6 +1,6 @@
 'use client';
 
-import { useActionState } from 'react';
+import { useActionState, useMemo } from 'react';
 import Link from 'next/link';
 
 import { signup } from '../actions';
@@ -8,13 +8,28 @@ import { FieldError, FormError, FormNotice, SubmitButton } from '@/components/fo
 import { PasswordField } from './password-field';
 
 export function SignupForm({ salesRef }: { salesRef?: string }) {
-  const [state, action] = useActionState(signup, null);
+  // The sales-attribution ref travels via `bind`, NOT a hidden input. Both put
+  // the value in the client bundle, but only bind protects its INTEGRITY:
+  // "Variables captured by an inline action are encrypted before being sent to
+  // the client" (node_modules/next/dist/docs/01-app/02-guides/server-actions.md),
+  // whereas the docs warn a hidden field's "value will be part of the rendered
+  // HTML and will not be encoded" (02-guides/forms.md). With a hidden field a
+  // viewer could retype the token as ANOTHER lead's real attempt id and claim
+  // their conversion; encrypted, it cannot be edited at all.
+  //
+  // Confidentiality is NOT the point — the ref is in the URL either way. This
+  // is about tamper-resistance, and it does not replace the server-side
+  // re-verification in actions.ts ("Framework protections are not a substitute
+  // for application-level checks", same docs page).
+  //
+  // Memoized so the action identity stays stable across re-renders.
+  const boundSignup = useMemo(() => signup.bind(null, salesRef), [salesRef]);
+  const [state, action] = useActionState(boundSignup, null);
 
   return (
     <form action={action} className="space-y-4">
       <FormError message={state?.error} />
       <FormNotice message={state?.notice} />
-      {salesRef && <input type="hidden" name="ref" value={salesRef} />}
 
       <div>
         <label htmlFor="full_name" className="mb-1 block text-sm font-medium">

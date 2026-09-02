@@ -42,7 +42,13 @@ export async function login(
   redirect('/app');
 }
 
+// `salesRef` is BOUND (signup.bind(null, ref) in signup-form.tsx), not a form
+// field: bound closure variables are encrypted by Next before reaching the
+// client, so a viewer cannot retype the token as another lead's attempt id.
+// It is still validated and re-verified below — encryption proves the value
+// was not edited in transit, never that it should be trusted.
 export async function signup(
+  salesRef: string | undefined,
   _prevState: FormState,
   formData: FormData,
 ): Promise<FormState> {
@@ -51,7 +57,7 @@ export async function signup(
     password: formData.get('password'),
     full_name: formData.get('full_name'),
     phone: formData.get('phone'),
-    ref: formData.get('ref'),
+    ref: salesRef ?? '',
     terms_accepted: formData.get('terms_accepted'),
   });
 
@@ -76,7 +82,21 @@ export async function signup(
         .select('id')
         .eq('id', ref)
         .maybeSingle();
-      if (attempt) salesReferralAttemptId = attempt.id;
+      // "The row exists" is NOT enough on its own: an attempt id travels in a
+      // WhatsApp link and a URL, so anyone holding one could otherwise pin
+      // their signup onto a lead they never were. One attempt is one lead, so
+      // it may be claimed exactly ONCE — a second profile carrying the same id
+      // would silently double-count that call in the conversion metric
+      // (signup_completed_at, which agreements.ts stamps per attempt).
+      // Already-claimed degrades to "no attribution", never a signup failure,
+      // exactly like a malformed ref.
+      if (attempt) {
+        const { count } = await admin
+          .from('profiles')
+          .select('id', { count: 'exact', head: true })
+          .eq('sales_referral_attempt_id', attempt.id);
+        if (!count) salesReferralAttemptId = attempt.id;
+      }
     } catch {
       // Unreadable -> no attribution, never blocks signup.
     }

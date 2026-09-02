@@ -27,9 +27,21 @@ export function SubmitButton({
   );
 }
 
+// A per-field error appears only AFTER a submit round-trip, so nothing else
+// moves focus or announces it: without a live region a screen-reader user
+// presses submit, hears silence, and never learns which field was refused.
+// `role="alert"` (assertive) is right for the whole-form failure below; a
+// field-level message is secondary, so it uses the polite region the docs
+// show for form messages (01-app/02-guides/forms.md) — it is read after the
+// current utterance instead of cutting it off, and several fields failing at
+// once queue rather than trample each other.
 export function FieldError({ errors }: { errors?: string[] }) {
   if (!errors || errors.length === 0) return null;
-  return <p className="mt-1 text-sm text-destructive">{errors[0]}</p>;
+  return (
+    <p aria-live="polite" className="mt-1 text-sm text-destructive">
+      {errors[0]}
+    </p>
+  );
 }
 
 export function FormError({ message }: { message?: string }) {
