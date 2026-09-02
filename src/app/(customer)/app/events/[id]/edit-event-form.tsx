@@ -15,8 +15,10 @@ import type { EventDetail } from '@/lib/data/events';
 import { ilDateInputValue, ilTimeInputValue } from '@/lib/data/event-date';
 import { INVITE_IMAGE_MAX_BYTES } from '@/lib/constants';
 import { FieldError, FormError, FormNotice, SubmitButton } from '@/components/forms';
+import { PlacesAutocomplete } from '@/components/places-autocomplete';
 import { TimeSelect24 } from '@/components/time-select-24';
 import { DateSelectIL } from '@/components/date-select-il';
+import { cn } from '@/lib/utils';
 
 type EventType = (typeof EVENT_TYPES)[number];
 
@@ -77,6 +79,11 @@ export function EditEventForm({
   // Action body limit (6mb) is rejected by the framework BEFORE the action
   // runs, so the server's friendly Hebrew error would never show.
   const [imageError, setImageError] = useState<string | null>(null);
+
+  // Controlled so a Places pick on "מיקום" can fill it; still freely editable.
+  // Re-seeded from the server on every successful save — the <form key> below
+  // remounts this component, so useState's initial value is read again.
+  const [venueAddress, setVenueAddress] = useState(event.venue_address ?? '');
 
   // Fingerprint of the SERVER's copy of every field rendered below as an
   // uncontrolled input. It keys the <form>, so the inputs remount — and pick up
@@ -236,16 +243,18 @@ export function EditEventForm({
         <label htmlFor="venue_name" className="mb-1 block text-sm font-medium">
           מיקום
         </label>
-        <input
+        {/* Google Places on the venue NAME; a pick also fills the address below
+            (which stays editable). Bound into every pending invite/reminder
+            ({{…}} venue line) — while an operational campaign exists it may
+            change but must not be emptied, else the next send skips as
+            params_incomplete. Server-enforced too. */}
+        <PlacesAutocomplete
           id="venue_name"
           name="venue_name"
-          type="text"
-          // Bound into every pending invite/reminder ({{…}} venue line) — while an
-          // operational campaign exists it may change but must not be emptied, else
-          // the next send skips as params_incomplete. Server-enforced too.
           required={hasOperationalCampaign}
           defaultValue={event.venue_name ?? ''}
-          className={inputClass}
+          inputClassName={cn(inputClass, 'h-auto')}
+          onPlaceSelect={(place) => setVenueAddress(place.address)}
         />
         {hasOperationalCampaign ? (
           <p className="mt-1 text-xs text-muted-foreground">
@@ -263,7 +272,8 @@ export function EditEventForm({
           id="venue_address"
           name="venue_address"
           type="text"
-          defaultValue={event.venue_address ?? ''}
+          value={venueAddress}
+          onChange={(e) => setVenueAddress(e.target.value)}
           className={inputClass}
         />
         <FieldError errors={state?.fieldErrors?.venue_address} />

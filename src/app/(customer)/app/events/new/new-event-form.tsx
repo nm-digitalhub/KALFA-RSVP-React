@@ -8,8 +8,10 @@ import { EVENT_TYPES } from '@/lib/validation/schemas';
 import { EVENT_TYPE_LABELS } from '@/lib/data/event-labels';
 import { INVITE_IMAGE_MAX_BYTES } from '@/lib/constants';
 import { FieldError, FormError, SubmitButton } from '@/components/forms';
+import { PlacesAutocomplete } from '@/components/places-autocomplete';
 import { TimeSelect24 } from '@/components/time-select-24';
 import { DateSelectIL } from '@/components/date-select-il';
+import { cn } from '@/lib/utils';
 
 type EventType = (typeof EVENT_TYPES)[number];
 
@@ -41,6 +43,9 @@ export function NewEventForm() {
   // Action body limit (6mb) is rejected by the framework BEFORE the action
   // runs, so the server's friendly Hebrew error would never show.
   const [imageError, setImageError] = useState<string | null>(null);
+
+  // Controlled so a Places pick on "מיקום" can fill it; still freely editable.
+  const [venueAddress, setVenueAddress] = useState('');
 
   return (
     <form action={action} className="space-y-4">
@@ -122,7 +127,14 @@ export function NewEventForm() {
         <label htmlFor="venue_name" className="mb-1 block text-sm font-medium">
           מיקום
         </label>
-        <input id="venue_name" name="venue_name" type="text" className={inputClass} />
+        {/* Google Places on the venue NAME; a pick also fills the address below
+            (which stays editable). Free typing without a pick works as before. */}
+        <PlacesAutocomplete
+          id="venue_name"
+          name="venue_name"
+          inputClassName={cn(inputClass, 'h-auto')}
+          onPlaceSelect={(place) => setVenueAddress(place.address)}
+        />
         <p className="mt-1 text-xs text-muted-foreground">
           מופיע בהזמנות ובתזכורות — יש למלא לפני הפעלת אישורי הגעה
         </p>
@@ -133,7 +145,14 @@ export function NewEventForm() {
         <label htmlFor="venue_address" className="mb-1 block text-sm font-medium">
           כתובת המקום
         </label>
-        <input id="venue_address" name="venue_address" type="text" className={inputClass} />
+        <input
+          id="venue_address"
+          name="venue_address"
+          type="text"
+          value={venueAddress}
+          onChange={(e) => setVenueAddress(e.target.value)}
+          className={inputClass}
+        />
         <FieldError errors={state?.fieldErrors?.venue_address} />
       </div>
 
