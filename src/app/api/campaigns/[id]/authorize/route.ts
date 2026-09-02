@@ -4,6 +4,7 @@ import { requireUser } from '@/lib/auth/dal';
 import { requireOwnedEvent } from '@/lib/data/events';
 import { isPastEventDay } from '@/lib/data/event-date';
 import {
+  activateCampaign,
   getCampaignForHold,
   lockCampaignForHold,
   prepareCampaignHold,
@@ -295,6 +296,28 @@ export async function POST(
         err,
       });
     }
+  }
+
+  // Audit §1: the hold was the customer's LAST real decision. Everything
+  // activateCampaign checks is already true here — signed (status approved),
+  // held (capture_status authorized, just persisted), future event (L1 above),
+  // confirmed event (R9 above), owner session (requireUser above) — so the
+  // campaign starts now instead of asking for one more click on another page.
+  // FAIL-SAFE: the hold is real and persisted whatever happens below. If the
+  // transition is refused (a concurrent status change, a guard tripping), the
+  // customer lands on the SAME page with an explicit "הפעלת הקמפיין עכשיו"
+  // button — never a silent bounce back to the event page. Status is written
+  // ONLY by activateCampaign (lifecycle parity test), never here.
+  try {
+    await activateCampaign(campaignId);
+  } catch (err) {
+    console.error('[hold] auto-activation after a confirmed hold was refused', {
+      campaignId,
+      error: err instanceof Error ? err.message : String(err),
+    });
+    const url = payUrl();
+    url.searchParams.set('activate', 'failed');
+    return r303(url);
   }
 
   return r303(payUrl());

@@ -10,6 +10,7 @@ import {
 import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { sendSlackAlert } from '@/lib/alerts/slack';
+import { logActivity } from '@/lib/data/activity';
 import { getBaseOveragePricingEnabled } from '@/lib/data/payments';
 import { celebrantsCompleteFor } from '@/lib/validation/schemas';
 import type { Enums, Json, Tables, TablesUpdate } from '@/lib/supabase/types';
@@ -963,6 +964,31 @@ export async function activateCampaign(
     title: 'קמפיין הופעל — הפניות מתחילות',
     fields: { campaign_id: campaignId },
   });
+
+  // Auditability (CLAUDE.md): the commercial start of the campaign, previously
+  // unlogged. Best-effort like the hold's own log — never fails the activation.
+  // Needs event_id; the transition helper returns only the date, so one narrow
+  // read. No PII: ids + actor kind only.
+  try {
+    const admin = createAdminClient();
+    const { data: row } = await admin
+      .from('campaigns')
+      .select('event_id')
+      .eq('id', campaignId)
+      .maybeSingle();
+    if (row?.event_id) {
+      await logActivity({
+        eventId: row.event_id,
+        action: 'campaign.activated',
+        meta: { campaignId, actor: actor.kind },
+      });
+    }
+  } catch (err) {
+    console.error('[campaign-lifecycle] logActivity(campaign.activated) failed (non-fatal)', {
+      campaignId,
+      err,
+    });
+  }
 
   // Auto-thankyou (§4 auto-thankyou-post-event plan): seed the default
   // schedule ONLY the first time this campaign activates — `.is(...null)`

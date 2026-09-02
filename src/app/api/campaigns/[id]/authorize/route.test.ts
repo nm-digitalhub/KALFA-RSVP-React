@@ -5,6 +5,7 @@ vi.mock('server-only', () => ({}));
 vi.mock('@/lib/auth/dal', () => ({ requireUser: vi.fn() }));
 vi.mock('@/lib/data/events', () => ({ requireOwnedEvent: vi.fn() }));
 vi.mock('@/lib/data/campaigns', () => ({
+  activateCampaign: vi.fn(),
   getCampaignForHold: vi.fn(),
   lockCampaignForHold: vi.fn(),
   prepareCampaignHold: vi.fn(),
@@ -29,11 +30,14 @@ import { requireUser } from '@/lib/auth/dal';
 import { requireOwnedEvent } from '@/lib/data/events';
 import { getProfile } from '@/lib/data/profiles';
 import {
+  activateCampaign,
   getCampaignForHold,
   lockCampaignForHold,
+  markCampaignHoldFailed,
   prepareCampaignHold,
   recordCampaignHold,
 } from '@/lib/data/campaigns';
+import { SumitDeclinedError } from '@/lib/sumit/charge';
 import {
   getPaymentsEnabled,
   getCampaignHoldsEnabled,
@@ -66,8 +70,9 @@ function callPost(req: NextRequest) {
   return POST(req, { params: Promise.resolve({ id: CAMPAIGN_ID }) });
 }
 
-describe('POST /api/campaigns/[id]/authorize — CSRF origin gate', () => {
-  beforeEach(() => {
+// The happy-path wiring every describe below starts from: same-origin, owner
+// session, approved future-dated campaign, all gates on, SUMIT confirms the hold.
+function happyPath() {
     vi.clearAllMocks();
     process.env.APP_ORIGIN = APP_ORIGIN;
     vi.mocked(requireUser).mockResolvedValue({
@@ -123,7 +128,11 @@ describe('POST /api/campaigns/[id]/authorize — CSRF origin gate', () => {
       sumitCustomerId: 777,
     });
     vi.mocked(recordCampaignHold).mockResolvedValue(undefined);
-  });
+    vi.mocked(activateCampaign).mockResolvedValue(undefined);
+}
+
+describe('POST /api/campaigns/[id]/authorize — CSRF origin gate', () => {
+  beforeEach(happyPath);
 
   it('reaches authorizeHoldSumit for a same-origin POST', async () => {
     const res = await callPost(
@@ -145,5 +154,62 @@ describe('POST /api/campaigns/[id]/authorize — CSRF origin gate', () => {
     const res = await callPost(request({ 'og-token': 'og-123' }, {}));
     expect(res.status).toBe(403);
     expect(authorizeHoldSumit).not.toHaveBeenCalled();
+  });
+});
+
+describe('POST /api/campaigns/[id]/authorize — auto-activation after a confirmed hold (audit §1)', () => {
+  beforeEach(happyPath);
+
+  it('activates the campaign right after the hold is persisted and lands on ?held=1', async () => {
+    const res = await callPost(request({ 'og-token': 'og-123' }));
+
+    expect(recordCampaignHold).toHaveBeenCalledTimes(1);
+    expect(activateCampaign).toHaveBeenCalledWith(CAMPAIGN_ID);
+    // The hold is the source of truth — it must be persisted BEFORE activation.
+    expect(vi.mocked(recordCampaignHold).mock.invocationCallOrder[0]).toBeLessThan(
+      vi.mocked(activateCampaign).mock.invocationCallOrder[0],
+    );
+    expect(res.status).toBe(303);
+    expect(res.headers.get('location')).toBe(
+      `${APP_ORIGIN}/app/events/${EVENT_ID}/campaign/${CAMPAIGN_ID}/payment?held=1`,
+    );
+  });
+
+  it('keeps the confirmed hold and lands on ?held=1&activate=failed when activation is refused', async () => {
+    vi.mocked(activateCampaign).mockRejectedValue(
+      new Error('לא ניתן לשנות את מצב הקמפיין במצבו הנוכחי'),
+    );
+
+    const res = await callPost(request({ 'og-token': 'og-123' }));
+
+    expect(res.status).toBe(303);
+    const loc = new URL(res.headers.get('location') as string);
+    expect(loc.pathname).toBe(`/app/events/${EVENT_ID}/campaign/${CAMPAIGN_ID}/payment`);
+    expect(loc.searchParams.get('held')).toBe('1');
+    expect(loc.searchParams.get('activate')).toBe('failed');
+    // The hold itself is NOT rolled back or marked failed — it is real at SUMIT.
+    expect(markCampaignHoldFailed).not.toHaveBeenCalled();
+  });
+
+  it('never activates when the card hold was declined', async () => {
+    vi.mocked(authorizeHoldSumit).mockRejectedValue(new SumitDeclinedError());
+
+    const res = await callPost(request({ 'og-token': 'og-123' }));
+
+    expect(activateCampaign).not.toHaveBeenCalled();
+    expect(new URL(res.headers.get('location') as string).searchParams.get('error')).toBe(
+      'hold_declined',
+    );
+  });
+
+  it('never activates when persisting the confirmed hold fails', async () => {
+    vi.mocked(recordCampaignHold).mockRejectedValue(new Error('שמירת תפיסת המסגרת נכשלה'));
+
+    const res = await callPost(request({ 'og-token': 'og-123' }));
+
+    expect(activateCampaign).not.toHaveBeenCalled();
+    expect(new URL(res.headers.get('location') as string).searchParams.get('error')).toBe(
+      'hold_review',
+    );
   });
 });

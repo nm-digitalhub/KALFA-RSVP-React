@@ -22,6 +22,9 @@ vi.mock('@/lib/data/contacts', () => ({
 // Ops alerting is additive + fail-safe; stub it so lifecycle emits are assertable
 // and the real Slack WebClient is never loaded in unit tests.
 vi.mock('@/lib/alerts/slack', () => ({ sendSlackAlert: vi.fn() }));
+// Activation now writes an activity_log row (auditability); stub the logger so
+// lifecycle tests assert the call without touching the activity module.
+vi.mock('@/lib/data/activity', () => ({ logActivity: vi.fn() }));
 // Base+overage gate (plan S3): default OFF so createCampaign snapshots 0/0 =
 // today's pure per-reached. Per-test override for the gate-ON path.
 vi.mock('@/lib/data/payments', () => ({
@@ -34,6 +37,7 @@ import { createClient } from '@/lib/supabase/server';
 import { requireOwnedEvent } from '@/lib/data/events';
 import { requireUser, requireAdmin } from '@/lib/auth/dal';
 import { sendSlackAlert } from '@/lib/alerts/slack';
+import { logActivity } from '@/lib/data/activity';
 
 // A future-dated, active owned event so the L1 past-event guard and the R9
 // active-event guard never trip for the generic lifecycle tests (only the
@@ -1445,5 +1449,23 @@ describe('previewCampaignHoldSizing (read-only — the payment page summary)', (
     const r = await previewCampaignHoldSizing('c1');
 
     expect(r).toEqual({ holdAmount: 1200, ceiling: 1400, full: 350, covered: 300 });
+  });
+});
+
+describe('activateCampaign — auditability', () => {
+  it('writes a campaign.activated activity row with the actor kind', async () => {
+    const { builder } = adminWith({ data: { id: 'c1', event_id: 'e1' }, error: null });
+    vi.mocked(requireOwnedEvent).mockResolvedValue(ownedEvent());
+    vi.spyOn(builder, 'then').mockImplementation((f) =>
+      f({ data: { id: 'c1', event_id: 'e1' }, error: null }),
+    );
+
+    await activateCampaign('c1');
+
+    expect(logActivity).toHaveBeenCalledWith({
+      eventId: 'e1',
+      action: 'campaign.activated',
+      meta: { campaignId: 'c1', actor: 'owner' },
+    });
   });
 });
