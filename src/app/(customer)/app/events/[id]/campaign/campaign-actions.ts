@@ -241,7 +241,11 @@ export async function activateCampaignAction(
           : 'הפעלת הקמפיין נכשלה — נדרשת תפיסת מסגרת מאושרת.',
     };
   }
+  // The button lives on three screens (event setup page, payment page, manage
+  // page) — refresh whichever one the owner clicked from.
+  revalidatePath(`/app/events/${eventId}`);
   revalidatePath(`/app/events/${eventId}/campaign/${campaignId}`);
+  revalidatePath(`/app/events/${eventId}/campaign/${campaignId}/payment`);
   return { notice: 'הקמפיין הופעל — הפניות יחלו לפי לוח הזמנים.' };
 }
 

@@ -11,7 +11,10 @@ import {
   getSumitPublicConfig,
 } from '@/lib/data/payments';
 import { getProfile } from '@/lib/data/profiles';
+import { buttonVariants } from '@/components/ui/button';
+import { activateCampaignAction } from '../../campaign-actions';
 import { CampaignHoldForm } from './hold-form';
+import { ActivateNowForm } from './activate-now-form';
 import { HeldAnalytics } from './_held-analytics';
 
 export const metadata: Metadata = { title: 'תשלום קמפיין' };
@@ -51,10 +54,10 @@ export default async function CampaignPaymentPage({
   searchParams,
 }: {
   params: Promise<{ id: string; campaignId: string }>;
-  searchParams: Promise<{ error?: string; held?: string }>;
+  searchParams: Promise<{ error?: string; held?: string; activate?: string }>;
 }) {
   const { id, campaignId } = await params;
-  const { error } = await searchParams;
+  const { error, activate } = await searchParams;
   const campaign = await getCampaign(campaignId);
   if (campaign.event_id !== id) notFound();
   const event = await requireOwnedEvent(id);
@@ -109,25 +112,77 @@ export default async function CampaignPaymentPage({
     );
   }
 
-  // Already held → done, no form. HeldAnalytics fires payment_authorized once
-  // when arriving here via the hold redirect (?held=1) and strips the param.
+  // Held. Two faces:
+  //  • ACTIVE — auto-activation succeeded → the success screen (audit §1/§7):
+  //    the next task is adding guests, not "managing the campaign".
+  //  • NOT active — auto-activation was refused, or the hold predates it →
+  //    activate HERE, in place; never send the owner back to the event page.
+  // HeldAnalytics fires payment_authorized once when arriving via ?held=1 and
+  // strips only that param (activate=failed survives for this render).
   if (campaign.capture_status === 'authorized') {
     // Verified gap (30.8): auth_amount (the REAL J5 hold, sized to `covered` =
     // min(max_contacts, reasonable_coverage_contacts)) can be LESS than
     // max_charge_ceiling once max_contacts exceeds the coverage cap (300
-    // today) — this confirmation must show what was actually authorized on
-    // the card, not the ceiling, which no longer means "the hold amount"
-    // once the two diverge. Fall back to the ceiling only if auth_amount is
-    // unexpectedly missing (should not happen once authorized).
+    // today) — show what was actually authorized on the card, not the
+    // ceiling. Fall back to the ceiling only if auth_amount is unexpectedly
+    // missing (should not happen once authorized).
     const heldAmount = campaign.auth_amount ?? campaign.max_charge_ceiling;
+
+    if (campaign.status === 'active') {
+      return (
+        <div className="mx-auto max-w-2xl space-y-6">
+          {header}
+          <section className="space-y-4 rounded-lg border border-success/40 bg-success/10 p-6 text-center">
+            <p className="text-2xl font-bold text-success">הקמפיין פעיל</p>
+            <p className="text-sm">
+              נתפסה מסגרת אשראי בסך {ils(heldAmount)}. הפניות לאורחים יישלחו לפי לוח
+              הזמנים; החיוב בפועל ייעשה לאחר האירוע, לפי התוצאות, ולכל היותר עד{' '}
+              {ils(campaign.max_charge_ceiling)}.
+            </p>
+            <div className="flex flex-col gap-2 sm:flex-row sm:justify-center">
+              <Link href={`/app/events/${id}/guests`} className={buttonVariants()}>
+                הוספת מוזמנים
+              </Link>
+              <Link
+                href={`/app/events/${id}/campaign/${campaignId}`}
+                className={buttonVariants({ variant: 'outline' })}
+              >
+                מעבר לניהול הקמפיין
+              </Link>
+            </div>
+          </section>
+          <HeldAnalytics />
+        </div>
+      );
+    }
+
+    const canActivateHere =
+      !isPast && ['approved', 'scheduled', 'paused'].includes(campaign.status);
     return (
       <div className="mx-auto max-w-2xl space-y-4">
         {header}
         <p className="rounded-md bg-green-50 px-3 py-2 text-sm text-green-700">
-          ✓ נתפסה מסגרת אשראי בסך {ils(heldAmount)}. החיוב בפועל ייעשה
-          בסגירת הקמפיין, לפי מספר אנשי הקשר שהושגו, ולכל היותר עד תקרת החיוב
-          ({ils(campaign.max_charge_ceiling)}).
+          ✓ נתפסה מסגרת אשראי בסך {ils(heldAmount)}. החיוב בפועל ייעשה לאחר האירוע,
+          לפי התוצאות, ולכל היותר עד {ils(campaign.max_charge_ceiling)}.
         </p>
+        {activate === 'failed' ? (
+          <p
+            role="alert"
+            className="rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-sm text-warning"
+          >
+            הקמפיין עוד לא הופעל אוטומטית. אפשר להפעיל אותו כעת.
+          </p>
+        ) : null}
+        {canActivateHere ? (
+          <ActivateNowForm action={activateCampaignAction.bind(null, id, campaignId)} />
+        ) : (
+          <Link
+            href={`/app/events/${id}/campaign/${campaignId}`}
+            className={buttonVariants({ variant: 'outline' })}
+          >
+            מעבר לניהול הקמפיין
+          </Link>
+        )}
         <HeldAnalytics />
       </div>
     );
