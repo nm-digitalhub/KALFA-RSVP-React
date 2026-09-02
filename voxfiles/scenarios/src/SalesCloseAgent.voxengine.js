@@ -506,12 +506,29 @@ VoxEngine.addEventListener(AppEvents.Started, function () {
                         resultFrom: function (ok) { return ok ? 'noted' : 'failed'; }
                     }
                 };
+                function normalizedToolArgs(rawArgs) {
+                    if (!rawArgs)
+                        return {};
+                    if (typeof rawArgs === 'string') {
+                        try {
+                            var parsed = JSON.parse(rawArgs);
+                            return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+                                ? parsed
+                                : {};
+                        }
+                        catch (err) {
+                            log('Failed to parse client tool args string: ' + err);
+                            return {};
+                        }
+                    }
+                    return typeof rawArgs === 'object' && !Array.isArray(rawArgs) ? rawArgs : {};
+                }
                 agent.addEventListener(ElevenLabs.AgentsEvents.ClientToolCall, function (e) {
                     var payload = (e && e.data && e.data.payload) || {};
                     var ctc = payload.client_tool_call || payload;
-                    var toolName = ctc.tool_name || ctc.name;
-                    var toolCallId = ctc.tool_call_id || ctc.id;
-                    var args = ctc.parameters || ctc.arguments || {};
+                    var toolName = ctc.tool_name || ctc.name || ctc.toolName || '';
+                    var toolCallId = ctc.tool_call_id || ctc.id || ctc.toolCallId || '';
+                    var args = normalizedToolArgs(ctc.parameters || ctc.arguments || ctc.args || {});
                     log('CLIENT_TOOL_CALL: ' + safeStringify(payload));
                     function reply(result, isError) {
                         try {
@@ -530,12 +547,15 @@ VoxEngine.addEventListener(AppEvents.Started, function () {
                             // platform delay. Stringify unconditionally here rather than in
                             // each resultFrom, so no future tool can reintroduce this.
                             var resultStr = typeof result === 'string' ? result : safeStringify(result);
-                            agent.clientToolResult({
+                            var response = {
                                 tool_call_id: toolCallId,
+                                tool_name: toolName,
                                 result: resultStr,
                                 is_error: isError === true
-                            });
+                            };
+                            agent.clientToolResult(response);
                             log('CLIENT_TOOL_RESULT_SEND: tool_call_id=' + toolCallId +
+                                ' tool_name=' + toolName +
                                 ' is_error=' + (isError === true) + ' result_length=' + resultStr.length);
                         }
                         catch (err) {
@@ -549,7 +569,9 @@ VoxEngine.addEventListener(AppEvents.Started, function () {
                     }
                     var route = TOOL_ROUTES[toolName];
                     if (!route) {
-                        return; // unknown tool — ignore (never fabricate a result)
+                        log('Unsupported client tool: ' + toolName);
+                        reply('unsupported_tool', true);
+                        return;
                     }
                     var postBody = route.body(args);
                     postBody.tool_call_id = toolCallId;
