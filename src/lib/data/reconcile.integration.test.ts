@@ -210,6 +210,42 @@ describe.skipIf(!RUN)('reconcile_authorized_set — rollback-isolated', () => {
     );
   });
 
+  it('base+overage: max_contacts frozen at 0 (signed before adding guests) still admits up to `included`', async () => {
+    // Fix under test (2.9): max_contacts is persisted at HOLD time as the
+    // unique-contact count. A customer who signs + holds before adding guests
+    // (allowed since 26.7) therefore gets max_contacts=0, and the OLD cap
+    // least(0, 200 + floor(0/4)) = 0 rejected EVERY later guest — an "active"
+    // campaign that never sends (one live campaign was in exactly this state).
+    // The base fee already covers `included` contacts, so the cap must never
+    // fall below it: least(greatest(0, 200), 200) = 200.
+    await withCampaign(
+      { max: 0, auth: 200, price: 4, base: 200, included: 200 },
+      async ({ event, campaign, q }) => {
+        const c = await eligibleContact(q, event);
+        expect(
+          await rpc(q, 'reconcile_authorized_set', [event, campaign, 'add', c, null, null]),
+        ).toBe('added');
+        expect(await setSize(q, campaign)).toBe(1);
+      },
+    );
+  });
+
+  it('legacy (base=0/included=0): max_contacts still caps exactly as before', async () => {
+    // greatest(max, 0) = max → identical to the pre-fix formula for every
+    // campaign created before the base+overage gate went live.
+    await withCampaign({ max: 1, auth: 40, price: 4 }, async ({ event, campaign, q }) => {
+      const c1 = await eligibleContact(q, event);
+      expect(await rpc(q, 'reconcile_authorized_set', [event, campaign, 'add', c1, null, null])).toBe(
+        'added',
+      );
+      const c2 = await eligibleContact(q, event);
+      expect(await rpc(q, 'reconcile_authorized_set', [event, campaign, 'add', c2, null, null])).toBe(
+        'ceiling_full',
+      );
+      expect(await setSize(q, campaign)).toBe(1);
+    });
+  });
+
   it('funded_cap FAIL-CLOSED: null price → cap 0 → ceiling_full even for the first add', async () => {
     await withCampaign({ max: 10, auth: 40, price: null }, async ({ event, campaign, q }) => {
       const c = await eligibleContact(q, event);
