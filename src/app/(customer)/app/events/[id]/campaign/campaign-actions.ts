@@ -156,13 +156,13 @@ export async function signAgreementAction(
   // (DB-managed) — never trusted from the client.
   const { version: agreementVersion } = await getActiveAgreementDoc();
 
-  // Consents (the three explicit affirmations).
+  // Consents (the explicit affirmations). The billing authorization is NOT one
+  // of them any more — it lives in §4 of the signed agreement itself.
   const consents = approveCampaignSchema.safeParse({
     campaign_id: campaignId,
     tos_version: agreementVersion,
     terms_accepted: formData.get('terms_accepted') === 'on',
     privacy_accepted: formData.get('privacy_accepted') === 'on',
-    authorization_accepted: formData.get('authorization_accepted') === 'on',
   });
   if (!consents.success) {
     return { fieldErrors: consents.error.flatten().fieldErrors };

@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import SignaturePad from 'signature_pad';
 import { useActionState, useEffect, useRef, useState } from 'react';
 import { useFormStatus } from 'react-dom';
@@ -187,8 +188,12 @@ export function SignAgreementForm({
         <p>
           החותם/ת: <strong>{signerName}</strong>
         </p>
-        <p className="mt-1 text-muted-foreground" dir="ltr">
-          טלפון לאימות: {phone}
+        {/* dir goes on the NUMBER, never on the line. With dir="ltr" on the
+            <p> the Hebrew label was laid out left-to-right too, so this line
+            sat left-aligned directly under a right-aligned one in the same
+            box. <bdi> isolates the number without touching the sentence. */}
+        <p className="mt-1 text-muted-foreground">
+          טלפון לאימות: <bdi dir="ltr">{phone}</bdi>
         </p>
       </div>
 
@@ -287,23 +292,37 @@ export function SignAgreementForm({
         <fieldset className="space-y-2 rounded-md border border-border p-3">
           <label className="flex items-start gap-2 text-sm">
             <input type="checkbox" name="terms_accepted" className="mt-1" />
-            <span>קראתי ואני מאשר/ת את תנאי השירות והתחייבות התשלום.</span>
+            {/* Linked, and target="_blank" — the same pattern the signup form
+                already uses. A consent to a document the signer cannot open
+                from where they are consenting is not much of a consent. */}
+            <span>
+              קראתי ואני מאשר/ת את{' '}
+              <Link
+                href="/terms"
+                target="_blank"
+                className="font-medium text-primary hover:underline"
+              >
+                תנאי השירות
+              </Link>{' '}
+              ואת התחייבות התשלום.
+            </span>
           </label>
           <FieldError errors={state?.fieldErrors?.terms_accepted} />
           <label className="flex items-start gap-2 text-sm">
             <input type="checkbox" name="privacy_accepted" className="mt-1" />
-            <span>אני מאשר/ת את מדיניות הפרטיות.</span>
+            <span>
+              אני מאשר/ת את{' '}
+              <Link
+                href="/privacy"
+                target="_blank"
+                className="font-medium text-primary hover:underline"
+              >
+                מדיניות הפרטיות
+              </Link>
+              .
+            </span>
           </label>
           <FieldError errors={state?.fieldErrors?.privacy_accepted} />
-          <label className="flex items-start gap-2 text-sm">
-            <input
-              type="checkbox"
-              name="authorization_accepted"
-              className="mt-1"
-            />
-            <span>אני מאשר/ת חיוב לפי אנשי הקשר שהושגו בפועל, עד לתקרה שאושרה.</span>
-          </label>
-          <FieldError errors={state?.fieldErrors?.authorization_accepted} />
         </fieldset>
 
         <SignButton disabled={!signature || !otpVerified} />
