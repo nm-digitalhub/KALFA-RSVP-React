@@ -2339,6 +2339,18 @@ git commit -m "docs: record the onboarding-flow decisions and the funded_cap flo
 - [x] F9: ראו טבלה — activate לא מתזמן; ה-`arm` cron זורע מה-set.
 - [x] בדיקות שנשברות: המחרוזות ב-Task 3 (מלא). נוספות שיישברו **אם** ינוסחו מחדש (לא בתוכנית): 'יש לסגור או לבטל את הקמפיין לפני סגירת האירוע' (`campaign-actions.test.ts:138,156,161`, `events.test.ts:913`); שערי `createCampaign` (`campaigns.test.ts:578,602,678,699`); 'לא ניתן לשנות את מצב הקמפיין' (`campaigns.test.ts:940`, `status/route.test.ts:138`). `EVENT_STATUS_LABELS`/`CAMPAIGN_STATUS_LABELS` — אף בדיקה לא מאשרת אותן (Task 1 מוסיף).
 
+## סטטוס ביצוע Tasks 1–12 (2.9.2026 10:45)
+
+**הכול מיושם על הענף `feat/onboarding-activation-flow`** (13 commits מ-main; 36 קבצים, +1542/−361). שערים: `npm run lint` ✓, `npx tsc --noEmit` ✓, `npm test` ✓ (3,951 עברו, 23 מדולגים — gated DB suites), `npm run build` ✓. **לא מוזג, לא נפרס, אין PR.**
+
+חריגות מהתוכנית שהתגלו בביצוע:
+- `event-labels.ts` הוא עלה של bundle ה-worker (`template-spec.ts → event-labels.ts`); dependency-cruiser מסמן גם `import type` של `events.ts` כנתיב ל-`next/headers`. הפתרון: `EventClosureReason` מוגדר ב-`event-labels.ts` ו-`events.ts` מייצא אותו מחדש.
+- `status/route.test.ts` ממקק את `@/lib/data/campaigns` — נדרש להוסיף `EVENT_NOT_CONFIRMED_ERROR` ל-mock.
+- `agreements.test.ts:114` אישר את הניסוח הישן ("טרם פורסם") — לא היה ברשימת הסוכן; תוקן.
+- Task 6: הכפתור "המשך לאמצעי תשלום" בעמוד הניהול (F11) נוסף יחד עם דגל `needsPayment` ב-`anyLifecycleControl`.
+
+נותר לבעלים: בדיקת ריצה בדפדפן אחרי deploy (Task 12 Step 3), G3 (ייעוץ משפטי לפני deploy של ההפעלה האוטומטית), החלטת מיזוג.
+
 ## Task 0 — סטטוס ביצוע (2.9.2026)
 
 - [x] מיגרציה `20260902062917_reconcile_funded_cap_floor_included.sql` נכתבה: `reconcile_authorized_set` (עותק 30.8 + `greatest(v_max, v_included)`) **וגם** `try_record_billed_result` (עותק `20260712115459` + `v_base/v_included` + אותה נוסחה בשני הענפים, `coalesce` ל-0). `diff` מול המקורות: 1 שורה ב-reconcile; 6 שורות ב-billed_result.
