@@ -115,6 +115,8 @@ const DAY_MS = 86_400_000;
 // quota-check at 0/6/12/18). pg-boss defaults schedules to UTC; KALFA operates in
 // Israel, so those run on Israel local time (DST-aware via the IANA zone). The
 // interval crons (*/N) are timezone-independent and left as-is.
+import { runPhoneChangeCleanup } from '@/lib/data/auth-phone-change-cleanup';
+
 const SCHEDULE_TZ = 'Asia/Jerusalem';
 
 type StepJob = { id: string; data: OutreachStepJob };
@@ -1045,6 +1047,16 @@ async function main(): Promise<void> {
       await runDispatchRetention();
     }),
   );
+  // Abandoned auth.users.phone_change cleanup: daily, per Supabase's
+  // troubleshooting guide for the ambiguous phone_change lookup. All the work
+  // is a SECURITY DEFINER RPC — auth.users is not reachable from PostgREST and
+  // service_role holds no UPDATE on it. runPhoneChangeCleanup never throws.
+  await boss.work(
+    QUEUES.phoneChangeCleanup,
+    guardedWorker(QUEUES.phoneChangeCleanup, async () => {
+      await runPhoneChangeCleanup();
+    }),
+  );
   // Instagram long-lived access-token self-refresh — weekly. Keeps
   // META_IG_ACCESS_TOKEN (.env.local) from reaching its 60-day expiry with no
   // human OAuth step. runInstagramTokenRefresh never throws (every branch
@@ -1124,6 +1136,7 @@ async function main(): Promise<void> {
   await boss.schedule(QUEUES.elevenlabsQuota, '0 */6 * * *', null, { tz: SCHEDULE_TZ });
   await boss.schedule(QUEUES.templateHealthSync, '35 3 * * *', null, { tz: SCHEDULE_TZ });
   await boss.schedule(QUEUES.dispatchRetention, '40 3 * * *', null, { tz: SCHEDULE_TZ });
+  await boss.schedule(QUEUES.phoneChangeCleanup, '45 3 * * *', null, { tz: SCHEDULE_TZ });
   // Weekly, off-peak, deliberately non-round (04:17) — a 60-day token refreshed
   // once a week has ample margin even if a run is missed for a while.
   await boss.schedule(QUEUES.igTokenRefresh, '17 4 * * 2', null, { tz: SCHEDULE_TZ });

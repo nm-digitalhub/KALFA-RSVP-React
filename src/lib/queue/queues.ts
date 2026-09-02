@@ -130,6 +130,15 @@ export const QUEUES = {
   // discovered after the fact from SUMIT. See
   // src/lib/data/sumit-hold-reconcile.ts.
   sumitHoldReconcile: 'sumit-hold-reconcile',
+  // Abandoned phone-change cleanup — daily. Supabase's own troubleshooting
+  // guide prescribes it: phone verification finds the user by SEARCHING
+  // auth.users for the number in `phone_change`, which carries no uniqueness
+  // constraint, so two rows holding the same pending number let a successful
+  // OTP attach it to the WRONG account. Nothing in Auth ever expires
+  // `phone_change`. Clears only attempts older than 24h — above Supabase's own
+  // 86400s cap on OTP validity, so it can never truncate a live challenge.
+  // See src/lib/data/auth-phone-change-cleanup.ts.
+  phoneChangeCleanup: 'auth-phone-change-cleanup',
 } as const;
 
 // outreach-step retry policy: a few backed-off retries, then dead-letter. The
