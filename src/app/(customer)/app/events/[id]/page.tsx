@@ -6,17 +6,17 @@ import { buttonVariants } from '@/components/ui/button';
 import { getEvent, getEventClosureReason, type EventDetail } from '@/lib/data/events';
 import { signedInviteImageUrl } from '@/lib/storage/event-media';
 import { formatIsraelDate, formatIsraelDateTime } from '@/lib/date';
-import { ilTimeInputValue } from '@/lib/data/event-date';
-import { isPastEventDay, isBeforeTomorrowIL } from '@/lib/data/event-date';
+import { ilTimeInputValue, isPastEventDay } from '@/lib/data/event-date';
 import { getCampaignForEvent, listCampaignsForEvent } from '@/lib/data/campaigns';
 import { hasAnyOperationalCampaign } from '@/lib/data/campaign-status';
-import { EVENT_TYPE_LABELS, EVENT_STATUS_LABELS } from '@/lib/data/event-labels';
+import { EVENT_TYPE_LABELS, eventStatusLabel } from '@/lib/data/event-labels';
 import { celebrantsTextFor } from '@/lib/data/celebrant-display';
 import { getCancellationRequestForEvent } from '@/lib/data/event-cancellation';
+import { countGuests } from '@/lib/data/guests';
 import { EditEventForm } from './edit-event-form';
 import { EventStatusActions } from './event-status-actions';
-import { publishEventAction, closeEventAction } from './campaign/campaign-actions';
-import { CampaignSection } from './campaign-section';
+import { closeEventAction } from './campaign/campaign-actions';
+import { SetupSteps } from './setup-steps';
 import { CancellationRequestForm } from './cancellation-request-form';
 import { createCancellationRequestAction } from './actions';
 
@@ -91,18 +91,16 @@ export default async function EventPage({
   // with both. NEVER derive this from getCampaignForEvent (newest-non-cancelled):
   // with a newer terminal + older operational campaign that would disagree.
   const hasOperationalCampaign = hasAnyOperationalCampaign(allCampaigns);
-  const canPublish = Boolean(
-    event.event_date && !isBeforeTomorrowIL(event.event_date),
-  );
-  const publishAction = publishEventAction.bind(null, event.id);
   const closeAction = closeEventAction.bind(null, event.id);
   const createCancellationAction = createCancellationRequestAction.bind(null, event.id);
-  const cancellationRequest =
-    event.status !== 'draft' ? await getCancellationRequestForEvent(event.id) : null;
-  // Surfaced only for the two closures the owner didn't directly trigger —
-  // a manual close ('owner') needs no explanation, they just clicked it.
-  const closureReason =
-    event.status === 'closed' ? await getEventClosureReason(event.id) : null;
+  // guestCount feeds the setup steps' soft "add guests" recommendation;
+  // closureReason is surfaced only for the two closures the owner didn't
+  // directly trigger — a manual close ('owner') needs no explanation.
+  const [guestCount, cancellationRequest, closureReason] = await Promise.all([
+    countGuests(id),
+    event.status !== 'draft' ? getCancellationRequestForEvent(event.id) : Promise.resolve(null),
+    event.status === 'closed' ? getEventClosureReason(event.id) : Promise.resolve(null),
+  ]);
 
   const summary = [
     EVENT_TYPE_LABELS[event.event_type] ?? event.event_type,
@@ -141,7 +139,7 @@ export default async function EventPage({
             </span>
           ) : null}
           <span className="rounded-full border border-border px-3 py-1 text-xs text-muted-foreground">
-            {EVENT_STATUS_LABELS[event.status] ?? event.status}
+            {eventStatusLabel(event.status, closureReason)}
           </span>
         </div>
       </div>
@@ -169,15 +167,13 @@ export default async function EventPage({
         </Link>
       </div>
 
+      <SetupSteps event={event} campaign={campaign} guestCount={guestCount} isPast={isPast} />
+
       <EventStatusActions
         status={event.status}
-        canPublish={canPublish}
         hasBlockingCampaign={hasOperationalCampaign}
-        publishAction={publishAction}
         closeAction={closeAction}
       />
-
-      <CampaignSection eventId={event.id} campaign={campaign} isPast={isPast} />
 
       {event.status !== 'draft' ? (
         <CancellationRequestForm
