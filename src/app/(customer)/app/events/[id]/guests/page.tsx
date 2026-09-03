@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { Badge, type BadgeVariant } from '@/components/ui/badge';
 import { Pagination } from '@/components/pagination';
 import { buttonVariants } from '@/components/ui/button';
+import { getCampaignStageForEvent } from '@/lib/data/campaigns';
 import { requireEventAccess } from '@/lib/data/events';
 import {
   listGuests,
@@ -12,6 +13,8 @@ import {
   getGuestTotals,
   type GuestListItem,
 } from '@/lib/data/guests';
+import { AddGuestsOnboarding } from './add-guests-onboarding';
+import { guestsView } from './guest-list-view';
 import type { Enums } from '@/lib/supabase/types';
 import {
   GUEST_STATUS_LABELS,
@@ -245,11 +248,29 @@ export default async function GuestsPage({ params, searchParams }: PageProps) {
   ]);
 
   const { items, total, pageSize } = result;
-  const groupName = new Map(groups.map((g) => [g.id, g.name]));
 
   const hasActiveFilters = Boolean(
     search || status || contactStatus || groupId || overInvited,
   );
+
+  // Which of the four screens this is — see guest-list-view.ts for why
+  // `items.length === 0` alone cannot decide it.
+  const view = guestsView({
+    totalRows: totals.rows,
+    pageItems: items.length,
+    hasActiveFilters,
+  });
+
+  // FIRST RUN: the whole content area becomes "how do you want to add guests?".
+  // The campaign is loaded ONLY here, so the populated list costs no extra query.
+  if (view === 'onboarding') {
+    const stage = await getCampaignStageForEvent(eventId);
+    return (
+      <AddGuestsOnboarding eventId={eventId} eventName={event.name} stage={stage} />
+    );
+  }
+
+  const groupName = new Map(groups.map((g) => [g.id, g.name]));
 
   return (
     <div className="space-y-6">
@@ -258,12 +279,18 @@ export default async function GuestsPage({ params, searchParams }: PageProps) {
           <h1 className="text-2xl font-bold">מוזמנים</h1>
           <p className="text-sm text-muted-foreground">{event.name}</p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2 sm:justify-end">
           <Link
             href={`/app/events/${eventId}/guests/import`}
             className={buttonVariants({ variant: 'outline' })}
           >
             ייבוא מקובץ
+          </Link>
+          <Link
+            href={`/app/events/${eventId}/guests/import/whatsapp`}
+            className={buttonVariants({ variant: 'outline' })}
+          >
+            ייבוא דרך WhatsApp
           </Link>
           <Link
             href={`/app/events/${eventId}/guests/new`}
@@ -325,11 +352,17 @@ export default async function GuestsPage({ params, searchParams }: PageProps) {
         {total > 0 ? `${total} רשומות ברשימה` : null}
       </p>
 
-      {items.length === 0 ? (
-        <div className="rounded-lg border border-dashed border-border p-10 text-center text-muted-foreground">
-          {hasActiveFilters
-            ? 'אין מוזמנים התואמים לסינון.'
-            : 'עדיין אין מוזמנים. הוסיפו מוזמן או ייבאו מקובץ.'}
+      {/* Reaching here with no rows means the EVENT still has guests — the
+          first-run case returned the onboarding screen above. So this box never
+          offers "add guests" CTAs (the header already carries them) and never
+          claims the list is empty: it says why THIS view is. */}
+      {view !== 'list' ? (
+        <div className="rounded-lg border border-dashed border-border p-10 text-center">
+          <p className="text-muted-foreground">
+            {view === 'no-matches'
+              ? 'אין מוזמנים התואמים לסינון.'
+              : 'אין מוזמנים בעמוד זה.'}
+          </p>
         </div>
       ) : (
         <>

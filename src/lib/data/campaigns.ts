@@ -7,6 +7,7 @@ import {
   countUniqueContactsForEvent,
   snapshotAuthorizedSet,
 } from '@/lib/data/contacts';
+import { campaignStage, type CampaignStage } from '@/lib/data/event-labels';
 import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { sendSlackAlert } from '@/lib/alerts/slack';
@@ -332,6 +333,40 @@ export async function getCampaignForEvent(
     .maybeSingle();
   if (error) throw new Error('טעינת הקמפיין נכשלה');
   return (data ?? null) as OwnerCampaign | null;
+}
+
+// The event's campaign STAGE only, for surfaces that show it next to ANOTHER
+// resource (the guests page's "add guests" empty state). Two deliberate
+// differences from getCampaignForEvent above:
+//   1. Minimal DTO — the caller renders one badge, so it gets the derived stage
+//      and never the OwnerCampaign row (pricing, ceiling, capture fields).
+//   2. Returns null instead of notFound()-ing when the viewer lacks
+//      ('campaigns','view'). Permissions are per-role and admin-configurable
+//      (20260713203826_org_role_permissions_per_role), so a member may hold
+//      ('guests','view') WITHOUT campaigns access; 404-ing the whole guests page
+//      over a decorative badge would be a regression. The RPC below IS the authz
+//      gate for this read — the function is self-gating, not caller-dependent.
+export async function getCampaignStageForEvent(
+  eventId: string,
+): Promise<CampaignStage | null> {
+  await requireUser();
+  const supabase = await createClient();
+  const { data: allowed } = await supabase.rpc('can_access_event', {
+    _event_id: eventId,
+    _resource: 'campaigns',
+    _action: 'view',
+  });
+  if (allowed !== true) return null;
+  const { data, error } = await supabase
+    .from('campaigns')
+    .select('status, capture_status')
+    .eq('event_id', eventId)
+    .neq('status', 'cancelled')
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) throw new Error('טעינת הקמפיין נכשלה');
+  return campaignStage(data ?? null);
 }
 
 // The single active commercial template ("canonical") — the owner no longer

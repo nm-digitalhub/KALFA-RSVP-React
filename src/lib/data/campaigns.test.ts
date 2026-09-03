@@ -83,6 +83,7 @@ import {
   markCampaignChargeOutcome,
   getThankyouSchedule,
   updateThankyouSchedule,
+  getCampaignStageForEvent,
 } from '@/lib/data/campaigns';
 import { getBaseOveragePricingEnabled } from '@/lib/data/payments';
 
@@ -1467,5 +1468,60 @@ describe('activateCampaign — auditability', () => {
       action: 'campaign.activated',
       meta: { campaignId: 'c1', actor: 'owner' },
     });
+  });
+});
+
+// The guests page's first-run screen shows the campaign stage next to a resource
+// the viewer may hold WITHOUT ('campaigns','view'), so this reader degrades to
+// null instead of notFound()-ing the page around it.
+describe('getCampaignStageForEvent', () => {
+  it('returns null and reads nothing when the viewer lacks campaigns.view', async () => {
+    const { client } = serverWith({ data: null, error: null });
+    client.rpc.mockResolvedValue({ data: false, error: null });
+
+    expect(await getCampaignStageForEvent('e1')).toBeNull();
+    // The RPC is the gate: a denied viewer must not reach the campaigns table.
+    expect(client.from).not.toHaveBeenCalled();
+  });
+
+  it('gates on ("campaigns","view") for the event', async () => {
+    const { client } = serverWith({ data: null, error: null });
+    client.rpc.mockResolvedValue({ data: true, error: null });
+
+    await getCampaignStageForEvent('e1');
+
+    expect(client.rpc).toHaveBeenCalledWith('can_access_event', {
+      _event_id: 'e1',
+      _resource: 'campaigns',
+      _action: 'view',
+    });
+  });
+
+  it('derives the stage rather than returning the raw status', async () => {
+    // approved + an authorized hold is "ממתין להפעלה", not "מאושר".
+    const { client } = serverWith({
+      data: { status: 'approved', capture_status: 'authorized' },
+      error: null,
+    });
+    client.rpc.mockResolvedValue({ data: true, error: null });
+
+    expect(await getCampaignStageForEvent('e1')).toBe('awaiting_activation');
+  });
+
+  it('returns not_set when the event has no campaign yet', async () => {
+    const { client } = serverWith({ data: null, error: null });
+    client.rpc.mockResolvedValue({ data: true, error: null });
+
+    expect(await getCampaignStageForEvent('e1')).toBe('not_set');
+  });
+
+  it('excludes cancelled campaigns, like getCampaignForEvent', async () => {
+    const { client, builder } = serverWith({ data: null, error: null });
+    client.rpc.mockResolvedValue({ data: true, error: null });
+
+    await getCampaignStageForEvent('e1');
+
+    expect(builder.eq).toHaveBeenCalledWith('event_id', 'e1');
+    expect(builder.neq).toHaveBeenCalledWith('status', 'cancelled');
   });
 });
