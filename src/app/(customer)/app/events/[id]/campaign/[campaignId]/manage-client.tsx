@@ -14,12 +14,17 @@ import { DateSelectIL } from '@/components/date-select-il';
 import { FormError, FormNotice } from '@/components/forms';
 import { HelpTip } from '@/components/help-tip';
 import { TimeSelect24 } from '@/components/time-select-24';
+import { Badge } from '@/components/ui/badge';
 import { buttonVariants } from '@/components/ui/button';
 import type { GaActionEvent } from '@/lib/analytics/ga-event-contracts';
 import type { CampaignStatus } from '@/lib/data/campaigns';
 import { computeChargeAmount } from '@/lib/data/close-charge-amount';
 import { ilDateInputValue, ilTimeInputValue } from '@/lib/data/event-date';
-import { CAMPAIGN_STATUS_LABELS } from '@/lib/data/event-labels';
+import {
+  CAMPAIGN_STAGE_LABELS,
+  CAMPAIGN_STAGE_VARIANTS,
+  campaignStage,
+} from '@/lib/data/event-labels';
 import { formatIsraelDateTime } from '@/lib/date';
 import type { FormState } from '@/lib/validation/result';
 
@@ -245,19 +250,26 @@ function DeliveryBar({
 
 function CampaignSummary({
   status,
+  captureStatus,
   reached,
   accrued,
   ceiling,
+  basePrice,
   finalCharge,
   creditApplied,
 }: {
   status: CampaignStatus;
+  captureStatus: string | null;
   reached: number;
   accrued: number;
   ceiling: number;
+  basePrice: number;
   finalCharge: number | null;
   creditApplied: number | null;
 }) {
+  const stage = campaignStage({ status, capture_status: captureStatus });
+  const primaryChargeLabel = reached === 0 && basePrice > 0 ? 'דמי הפעלה' : 'חיוב נוכחי';
+
   return (
     <section
       aria-labelledby="campaign-summary-title"
@@ -269,9 +281,12 @@ function CampaignSummary({
             מצב הקמפיין
           </p>
           <div className="mt-2 flex items-center gap-2">
-            <span className="inline-flex min-h-8 items-center rounded-full bg-primary/10 px-3 text-sm font-semibold text-primary">
-              {CAMPAIGN_STATUS_LABELS[status]}
-            </span>
+            <Badge
+              variant={CAMPAIGN_STAGE_VARIANTS[stage]}
+              className="h-8 px-3 text-sm font-semibold"
+            >
+              {CAMPAIGN_STAGE_LABELS[stage]}
+            </Badge>
           </div>
         </div>
 
@@ -291,7 +306,7 @@ function CampaignSummary({
 
       <dl className="grid grid-cols-3 divide-x divide-x-reverse divide-border p-5 sm:p-6">
         <SummaryMetric label="הושגו" value={reached.toLocaleString('he-IL')} />
-        <SummaryMetric label="חיוב נוכחי" value={nis(accrued)} emphasized />
+        <SummaryMetric label={primaryChargeLabel} value={nis(accrued)} emphasized />
         <SummaryMetric label="תקרת חיוב" value={nis(ceiling)} />
       </dl>
     </section>
@@ -786,9 +801,11 @@ export function ManageClient({
     <div className="space-y-6 pb-6">
       <CampaignSummary
         status={status}
+        captureStatus={campaign.capture_status}
         reached={reached}
         accrued={accrued}
         ceiling={ceiling}
+        basePrice={basePrice}
         finalCharge={campaign.final_charge_amount}
         creditApplied={campaign.credit_applied}
       />

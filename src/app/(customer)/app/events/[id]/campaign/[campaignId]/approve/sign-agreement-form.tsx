@@ -80,12 +80,12 @@ export function SignAgreementForm({
   eventId,
   campaignId,
   signerName,
-  phone,
+  phoneDisplay,
 }: {
   eventId: string;
   campaignId: string;
   signerName: string;
-  phone: string;
+  phoneDisplay: string;
 }) {
   const signAction = signAgreementAction.bind(null, eventId, campaignId);
   const [state, formAction] = useActionState(signAction, null);
@@ -193,7 +193,7 @@ export function SignAgreementForm({
             sat left-aligned directly under a right-aligned one in the same
             box. <bdi> isolates the number without touching the sentence. */}
         <p className="mt-1 text-muted-foreground">
-          טלפון לאימות: <bdi dir="ltr">{phone}</bdi>
+          טלפון לאימות: <bdi dir="ltr">{phoneDisplay}</bdi>
         </p>
       </div>
 

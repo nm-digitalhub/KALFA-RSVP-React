@@ -5,7 +5,11 @@ import { buttonVariants } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { getEventStats, type EventStatsResult } from '@/lib/data/event-stats';
 import { requireEventAccess } from '@/lib/data/events';
-import { EVENT_STATUS_LABELS, CAMPAIGN_STATUS_LABELS } from '@/lib/data/event-labels';
+import {
+  CAMPAIGN_STAGE_LABELS,
+  EVENT_STATUS_LABELS,
+  campaignStage,
+} from '@/lib/data/event-labels';
 import { StatsRefreshButton } from './stats-refresh-button';
 
 export const dynamic = 'force-dynamic';
@@ -68,6 +72,12 @@ export default async function EventStatsPage({
   // Mandatory page gate — throws notFound() if reports.view is absent.
   await requireEventAccess(id, 'reports', 'view');
   const stats = await getEventStats(id);
+  const campaignDisplayStage = stats.campaign.status
+    ? campaignStage({
+        status: stats.campaign.status,
+        capture_status: stats.campaign.captureStatus,
+      })
+    : null;
 
   return (
     <div className="mx-auto max-w-3xl space-y-6 p-6">
@@ -168,7 +178,7 @@ export default async function EventStatsPage({
               <div>
                 <dt className="text-muted-foreground">סטטוס</dt>
                 <dd className="font-medium">
-                  {stats.campaign.status ? CAMPAIGN_STATUS_LABELS[stats.campaign.status] : '—'}
+                  {campaignDisplayStage ? CAMPAIGN_STAGE_LABELS[campaignDisplayStage] : '—'}
                 </dd>
               </div>
               <div>

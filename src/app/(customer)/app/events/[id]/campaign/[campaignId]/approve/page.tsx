@@ -152,7 +152,7 @@ export default async function ApproveCampaignPage({
           eventId={id}
           campaignId={campaignId}
           signerName={profile.full_name?.trim() || 'לקוח KALFA'}
-          phone={maskPhoneForDisplay(profile.phone)}
+          phoneDisplay={maskPhoneForDisplay(profile.phone)}
         />
       ) : (
         <p className="rounded-md bg-warning/10 px-3 py-2 text-sm text-warning">
