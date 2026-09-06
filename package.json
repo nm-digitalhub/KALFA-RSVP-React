@@ -60,7 +60,6 @@
     "@google-analytics/data": "^7.0.0",
     "@hebcal/core": "^6.6.0",
     "@hookform/resolvers": "^5.4.0",
-    "@lacspace/seo": "^1.7.2",
     "@mantine/core": "^9.5.0",
     "@mantine/dates": "^9.5.0",
     "@mantine/form": "^9.5.0",
@@ -120,6 +119,7 @@
   },
   "devDependencies": {
     "@clack/prompts": "^1.7.0",
+    "@lacspace/seo": "^1.7.2",
     "@microsoft/microsoft-graph-types": "^2.43.1",
     "@next/bundle-analyzer": "16.3.4",
     "@tailwindcss/postcss": "^4",
