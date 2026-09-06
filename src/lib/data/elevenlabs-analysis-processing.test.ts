@@ -46,6 +46,7 @@ function row(overrides: Record<string, unknown> = {}): Tables<'webhook_inbox'> {
     processed_at: null,
     attempts: 0,
     last_error: null,
+    delivery_id: null,
     payload: {
       type: 'post_call_transcription',
       event_timestamp: 1_784_500_000,

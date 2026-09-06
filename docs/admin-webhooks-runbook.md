@@ -93,6 +93,30 @@ processed_at = null,  last_error = null,  attempts = 0
 `contact_interactions` מונע חיוב-כפול. נרשם `logActivity('webhook.reprocess', {webhookId})`
 (לא-PII — רק ה-id).
 
+**הודעות ייבוא מוזמנים (CSV / כרטיסי קשר) — מאז 4.9.2026:** ה-importer אידמפוטנטי לפי ה-wamid
+(`guest_import_staging.source_message_id`, unique). עיבוד-מחדש של הודעה שכבר הניבה רשימה =
+no-op (בלי רשימה כפולה ובלי תשובה נוספת לבעל האירוע). הדיאלוג (AlertDialog, לא
+`window.confirm`) אומר זאת במפורש. אם הרשימה נמחקה בינתיים — היא תיווצר מחדש.
+
+---
+
+## מה הפופאפ (detail) מציג — מאז 4.9.2026
+
+| סעיף | תוכן | מקור |
+|---|---|---|
+| תגיות | סוג אירוע · מצב עיבוד · **"הגיע ללא מספר טלפון (BSUID בלבד)"** כשאין `from`/`wa_id` | `webhook_inbox` + payload |
+| סיכום | זמני Meta/קליטה **עם שניות** · סוג · טקסט/כפתור/קובץ/מס' כרטיסי קשר · **איזה מספר עסקי קיבל** (שם מ-`/admin/channels`, לא רק id) · dedupe_key | payload, `app_settings.whatsapp_phone_number_id` |
+| זהות השולח/הנמען | טלפון (מוסווה) או "לא נמסר ע"י Meta" · **BSUID** · Parent BSUID · שם פרופיל · username | `from`/`recipient_id`, `from_user_id`/`recipient_user_id`, `sender_contact`/`recipient_contact` |
+| מסירה (סטטוס) | סטטוס · קוד + **תיאור** השגיאה · **תמחור Meta** (billable/category/type) · לאיזה אירוע שייכת ההודעה היוצאת | payload, `contact_interactions` (out) |
+| **תוצאה — מה המערכת עשתה** (הודעה) | אירוע + סטטוסו · סטטוס קמפיין · סיווג billable · **חיוב בפועל** (`billed_results` / `billing_outcome` עם הסבר) · הסרה · **ייבוא מוזמנים** (רשימה שנקלטה, כמה שורות, סטטוס) | `contact_interactions.billing_outcome`, `billed_results.provider_ref`, `guest_import_staging.source_message_id` |
+| עיבוד | ניסיונות · זמן · שגיאה · wamid/context | `webhook_inbox` |
+| האירוע כפי שנשמר (מנורמל) | עץ JSON (`react-json-view-lite`), reveal-gated | `webhook_inbox.payload` |
+| **מה ש-Meta שלחה בפועל** | המעטפה המלאה + גודל + זמן קליטה; "לא נשמרה" לשורות מלפני 3.9.2026 | `webhook_deliveries` דרך `delivery_id` |
+
+הפרשנות של "חיוב בפועל": `billed` = נוצרה שורת `billed_results`; כל ערך אחר = ה-RPC סירב והסיבה
+מוצגת (קמפיין לא פעיל, לא ברשימת הנמענים, כבר חויב, …). `billable=true` בלי `billing_outcome`
+= שורה שעובדה לפני 4.9.2026.
+
 ---
 
 ## PII ואיסור-לוגינג

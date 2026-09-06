@@ -215,10 +215,55 @@ export const WEBHOOK_KIND_LABELS: Record<string, string> = {
   sls_dnc: 'בקשת הסרה (מכירות)',
   el_analysis_rsvp: 'ניתוח שיחה (אישורי הגעה)',
   el_analysis_sales: 'ניתוח שיחה (מכירות)',
+  // Generic Meta fields the WhatsApp route persists under their raw field name
+  // (see normalizeOtherFieldRows). Unlisted kinds fall back to the raw name.
+  template_status: 'סטטוס תבנית',
+  template_category: 'קטגוריית תבנית',
+  template_category_misuse: 'זיהוי קטגוריה שגויה',
+  template_quality: 'איכות תבנית',
+  messages_other: 'אירוע messages ללא הודעה/סטטוס',
+  account_update: 'עדכון חשבון WABA',
+  account_alerts: 'התראת חשבון',
+  account_review_update: 'עדכון סקירת חשבון',
+  account_settings_update: 'עדכון הגדרות חשבון',
+  business_status_update: 'עדכון סטטוס עסק',
+  business_username_updates: 'עדכון שם משתמש עסקי',
+  phone_number_quality_update: 'עדכון איכות מספר',
+  phone_number_name_update: 'עדכון שם תצוגה',
+  payment_configuration_update: 'עדכון הגדרת תשלום',
+  user_preferences: 'העדפות משתמש (שיווק)',
+  security: 'אירוע אבטחה',
+  calls: 'אירוע שיחת WhatsApp',
 };
 
 export function webhookKindLabel(kind: string): string {
   return WEBHOOK_KIND_LABELS[kind] ?? kind;
+}
+
+// try_record_billed_result outcomes, as recorded on contact_interactions.
+// billing_outcome for the inbound message that triggered the RPC.
+export const BILLING_OUTCOME_LABELS: Record<string, string> = {
+  billed: 'חויב',
+  already_billed: 'לא חויב — כבר חויב על איש הקשר באירוע',
+  not_active: 'לא חויב — הקמפיין אינו פעיל',
+  event_not_active: 'לא חויב — האירוע אינו פעיל',
+  event_passed: 'לא חויב — האירוע כבר עבר',
+  not_authorized: 'לא חויב — איש הקשר אינו ברשימת הנמענים של הקמפיין',
+  no_exposure: 'לא חויב — לא נחשף לשליחה בקמפיין',
+  ceiling_reached: 'לא חויב — הגיע לתקרת הקמפיין',
+  closed_window: 'לא חויב — אחרי חלון השליחה',
+  before_window: 'לא חויב — לפני חלון השליחה',
+  removal_requested: 'לא חויב — איש הקשר ביקש הסרה',
+  event_mismatch: 'לא חויב — אי-התאמה בין אירוע לקמפיין',
+  no_campaign: 'לא חויב — הקמפיין לא נמצא',
+};
+
+export function billingOutcomeLabel(outcome: string): string {
+  return BILLING_OUTCOME_LABELS[outcome] ?? outcome;
+}
+
+export function billingOutcomeVariant(outcome: string): BadgeVariant {
+  return outcome === 'billed' ? 'success' : 'neutral';
 }
 
 // --- Sales AI call analysis ---

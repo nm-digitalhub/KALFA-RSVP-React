@@ -101,6 +101,7 @@
     "react-day-picker": "^10.0.1",
     "react-dom": "19.2.8",
     "react-hook-form": "^7.80.0",
+    "react-json-view-lite": "^2.5.0",
     "react-svg-credit-card-payment-icons": "^6.0.4",
     "recharts": "^3.8.0",
     "resend": "^6.22.1",
@@ -111,7 +112,7 @@
     "typescript-language-server": "^5.3.0",
     "vanilla-cookieconsent": "^3.1.0",
     "web-push": "^3.6.7",
-    "whatsapp-api-js": "^6.2.1",
+    "whatsapp-api-js": "^6.2.2",
     "windows-iana": "^5.1.0",
     "zod": "^4.5.4"
   },

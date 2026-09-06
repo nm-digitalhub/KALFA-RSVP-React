@@ -45,6 +45,26 @@ export async function insertInteraction(row: InteractionRow): Promise<boolean> {
   return data !== null;
 }
 
+// Record what the billing RPC actually decided for the inbound interaction that
+// triggered it ('billed' | 'not_active' | 'not_authorized' | …). `billable=true`
+// on the row is only the classification; without this the inspector could not
+// tell a billed reach from one the RPC refused (closed campaign, not in the
+// frozen set, already billed …). Idempotent (last write wins).
+export async function setInteractionBillingOutcome(input: {
+  channel: Channel;
+  providerId: string;
+  outcome: string;
+}): Promise<void> {
+  const admin = createAdminClient();
+  const { error } = await admin
+    .from('contact_interactions')
+    .update({ billing_outcome: input.outcome.slice(0, 64) })
+    .eq('channel', input.channel)
+    .eq('provider_id', input.providerId)
+    .eq('direction', 'in');
+  if (error) throw new Error('עדכון תוצאת החיוב נכשל');
+}
+
 // Resolve an inbound message (sender phone) to the (event, campaign, contact) it
 // belongs to, via the most-recent PRIOR OUTBOUND interaction for that contact's
 // normalized phone. contacts is unique on (event_id, phone) — a global phone is

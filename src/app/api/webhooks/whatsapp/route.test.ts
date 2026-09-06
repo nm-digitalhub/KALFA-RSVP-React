@@ -8,7 +8,11 @@ vi.mock('@/lib/data/outreach-config', () => ({
   getOutreachEnabled: vi.fn(),
   getWhatsAppConfig: vi.fn(),
 }));
-vi.mock('@/lib/data/webhooks', () => ({ insertWebhookEvents: vi.fn() }));
+vi.mock('@/lib/data/webhooks', () => ({
+  insertWebhookEvents: vi.fn(),
+  insertWebhookDelivery: vi.fn(),
+}));
+vi.mock('@/lib/alerts/slack', () => ({ sendSlackAlert: vi.fn() }));
 
 import { POST } from './route';
 import {
@@ -16,9 +20,11 @@ import {
   getWhatsAppConfig,
 } from '@/lib/data/outreach-config';
 import {
+  insertWebhookDelivery,
   insertWebhookEvents,
   type WebhookInboxInsert,
 } from '@/lib/data/webhooks';
+import { sendSlackAlert } from '@/lib/alerts/slack';
 
 // The HMAC signature IS the auth. The library verifies over escapeUnicode(raw)
 // (non-ASCII → \uXXXX, mirroring Meta's ASCII-safe JSON), so the signer must too.
@@ -94,6 +100,40 @@ beforeEach(() => {
     verifyToken: null,
   });
   vi.mocked(insertWebhookEvents).mockResolvedValue();
+  vi.mocked(insertWebhookDelivery).mockResolvedValue('del-1');
+});
+
+describe('POST /api/webhooks/whatsapp — the verified envelope is stored verbatim', () => {
+  it('stores the raw body once per accepted POST and links every row to it', async () => {
+    const body = delivery({
+      messages: [
+        { id: 'wamid.a', from: '972500000001', timestamp: '1700000000', type: 'text' },
+        { id: 'wamid.b', from: '972500000001', timestamp: '1700000001', type: 'text' },
+      ],
+    });
+    const raw = JSON.stringify(body);
+    const res = await POST(request(raw, sign(raw)));
+    expect(res.status).toBe(200);
+    expect(insertWebhookDelivery).toHaveBeenCalledTimes(1);
+    expect(insertWebhookDelivery).toHaveBeenCalledWith({ provider: 'whatsapp', raw, body });
+    expect(rowsArg().map((r) => r.delivery_id)).toEqual(['del-1', 'del-1']);
+  });
+
+  it('still persists the events (without a link) when the delivery store fails', async () => {
+    vi.mocked(insertWebhookDelivery).mockResolvedValueOnce(null);
+    await POST(
+      signed(delivery({ messages: [{ id: 'wamid.a', from: '972500000001', timestamp: '1700000000', type: 'text' }] })),
+    );
+    expect(rowsArg()).toHaveLength(1);
+    expect(rowsArg()[0].delivery_id).toBeNull();
+  });
+
+  it('never stores an unverified or malformed body', async () => {
+    const raw = JSON.stringify(delivery({ messages: [] }));
+    await POST(request(raw, 'sha256=deadbeef'));
+    await POST(request('{not json', sign('{not json')));
+    expect(insertWebhookDelivery).not.toHaveBeenCalled();
+  });
 });
 
 describe('POST /api/webhooks/whatsapp — persist-then-process intake', () => {
@@ -360,11 +400,309 @@ describe('POST /api/webhooks/whatsapp — template-health fields', () => {
     expect(rowsArg()[0]).toMatchObject({ event_kind: 'template_quality' });
   });
 
-  it('ignores an unrecognized field (no row written, no crash)', async () => {
+  it('persists a template-health field that lacks message_template_id under its raw field name', async () => {
     const res = await POST(
-      signed(templateDelivery('some_future_field_we_do_not_handle', { foo: 'bar' })),
+      signed(templateDelivery('message_template_status_update', { event: 'APPROVED' })),
     );
     expect(res.status).toBe(200);
+    const rows = rowsArg();
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      event_kind: 'message_template_status_update',
+      message_id: null,
+      phone_number_id: null,
+    });
+  });
+});
+
+// Every other subscribed field (account_update, business_username_updates,
+// phone_number_quality_update, user_preferences, calls, …) is persisted
+// generically under its Meta field name so nothing Meta delivers is invisible
+// in /admin/webhooks. The worker has no handler for these kinds and marks them
+// processed untouched.
+describe('POST /api/webhooks/whatsapp — every other subscribed field is persisted', () => {
+  it('persists an unrecognized field under its raw field name with a stable dedupe key', async () => {
+    const body = templateDelivery('business_username_updates', {
+      display_phone_number: '15550000000',
+      username: 'kalfa.event',
+      status: 'approved',
+    });
+    const res = await POST(signed(body));
+    expect(res.status).toBe(200);
+    const rows = rowsArg();
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      provider: 'whatsapp',
+      event_kind: 'business_username_updates',
+      message_id: null,
+      context_message_id: null,
+      phone_number_id: null,
+      event_at: new Date(1700000000 * 1000).toISOString(),
+    });
+    expect(rows[0].payload).toMatchObject({ username: 'kalfa.event', status: 'approved' });
+    expect(rows[0].dedupe_key).toMatch(
+      /^wa-field:business_username_updates:waba-1:1700000000:[0-9a-f]{16}$/,
+    );
+
+    // A Meta retry of the SAME delivery must produce the SAME key (→ DB no-op).
+    vi.mocked(insertWebhookEvents).mockClear();
+    await POST(signed(body));
+    expect(rowsArg()[0].dedupe_key).toBe(rows[0].dedupe_key);
+  });
+
+  it('keeps phone_number_id when the field value carries metadata', async () => {
+    const res = await POST(
+      signed(
+        templateDelivery('phone_number_quality_update', {
+          metadata: { display_phone_number: '15550000000', phone_number_id: 'p1' },
+          display_phone_number: '15550000000',
+          event: 'FLAGGED',
+          current_limit: 'TIER_1K',
+        }),
+      ),
+    );
+    expect(res.status).toBe(200);
+    expect(rowsArg()[0]).toMatchObject({
+      event_kind: 'phone_number_quality_update',
+      phone_number_id: 'p1',
+    });
+  });
+
+  it('persists a `messages` change that carries neither messages nor statuses as messages_other', async () => {
+    const res = await POST(
+      signed(
+        delivery({
+          errors: [{ code: 130429, title: 'Rate limit hit' }],
+        }),
+      ),
+    );
+    expect(res.status).toBe(200);
+    const rows = rowsArg();
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      event_kind: 'messages_other',
+      phone_number_id: 'p1',
+      message_id: null,
+    });
+    expect(rows[0].dedupe_key).toMatch(/^wa-field:messages_other:waba-1:na:[0-9a-f]{16}$/);
+  });
+
+  it('does not double-persist a handled `messages` change alongside the generic row', async () => {
+    const res = await POST(
+      signed(
+        delivery({
+          messages: [{ id: 'wamid.a', from: '972500000001', timestamp: '1700000000', type: 'text' }],
+        }),
+      ),
+    );
+    expect(res.status).toBe(200);
+    const rows = rowsArg();
+    expect(rows).toHaveLength(1);
+    expect(rows[0].event_kind).toBe('message');
+  });
+
+  it('persists a mixed delivery: one message row + one generic row per other change', async () => {
+    const res = await POST(
+      signed({
+        object: 'whatsapp_business_account',
+        entry: [
+          {
+            id: 'waba-1',
+            time: 1700000001,
+            changes: [
+              {
+                field: 'messages',
+                value: {
+                  messaging_product: 'whatsapp',
+                  metadata: { display_phone_number: '15550000000', phone_number_id: 'p1' },
+                  messages: [{ id: 'wamid.m1', from: '972500000001', timestamp: '1700000000', type: 'text' }],
+                },
+              },
+              { field: 'account_update', value: { event: 'VERIFIED_ACCOUNT' } },
+              { field: 'security', value: { event: 'PIN_CHANGED' } },
+            ],
+          },
+        ],
+      }),
+    );
+    expect(res.status).toBe(200);
+    const rows = rowsArg();
+    expect(rows.map((r) => r.event_kind)).toEqual(['message', 'account_update', 'security']);
+  });
+});
+
+// Meta's App Dashboard "Test" button sends the SAME sample payload every click
+// (entry.id "0", phone_number_id "123456123", wamid "ABGGFlA5Fpa"). With the
+// production dedupe key each click after the first is a silent DB no-op, so the
+// username/BSUID test scenarios were never inspectable. Sandbox deliveries get a
+// per-request suffix instead; real deliveries keep the exact production key.
+function sandboxDelivery(value: Record<string, unknown>) {
+  return {
+    object: 'whatsapp_business_account',
+    entry: [
+      {
+        id: '0',
+        changes: [
+          {
+            field: 'messages',
+            value: {
+              messaging_product: 'whatsapp',
+              metadata: { display_phone_number: '16505551111', phone_number_id: '123456123' },
+              ...value,
+            },
+          },
+        ],
+      },
+    ],
+  };
+}
+
+describe('POST /api/webhooks/whatsapp — Meta sandbox test payloads persist on every click', () => {
+  it('gives a sandbox message a per-delivery dedupe key so two identical Test clicks both persist', async () => {
+    const body = sandboxDelivery({
+      contacts: [{ profile: { name: 'test user name' }, wa_id: '16315551181' }],
+      messages: [
+        { from: '16315551181', id: 'ABGGFlA5Fpa', timestamp: '1504902988', type: 'text', text: { body: 'hi' } },
+      ],
+    });
+    await POST(signed(body));
+    const first = rowsArg()[0];
+    expect(first.event_kind).toBe('message');
+    expect(first.dedupe_key).toMatch(/^wa-msg:ABGGFlA5Fpa:test:\d+$/);
+
+    vi.mocked(insertWebhookEvents).mockClear();
+    await new Promise((r) => setTimeout(r, 2));
+    await POST(signed(body));
+    expect(rowsArg()[0].dedupe_key).not.toBe(first.dedupe_key);
+  });
+
+  it('gives a sandbox status a per-delivery dedupe key too', async () => {
+    await POST(
+      signed(
+        sandboxDelivery({
+          statuses: [{ id: 'ABGGFlA5Fpa', status: 'delivered', timestamp: '1504902988', recipient_id: '16315551181' }],
+        }),
+      ),
+    );
+    expect(rowsArg()[0].dedupe_key).toMatch(/^wa-status:ABGGFlA5Fpa:delivered:test:\d+$/);
+  });
+
+  it('leaves the production dedupe key untouched for a real WABA delivery', async () => {
+    await POST(
+      signed(delivery({ messages: [{ id: 'wamid.real', from: '972500000001', timestamp: '1700000000', type: 'text' }] })),
+    );
+    expect(rowsArg()[0].dedupe_key).toBe('wa-msg:wamid.real');
+  });
+});
+
+// The value-level `contacts[]` block is where Meta puts the sender's profile
+// name, `wa_id`, and — per the BSUID/usernames rollout — `user_id` and
+// `username`. It is not part of the message object, so it used to be dropped.
+// It is now carried on the persisted row under a key that cannot collide with a
+// message field (`contacts` is itself a message type).
+describe('POST /api/webhooks/whatsapp — sender/recipient contact block is kept', () => {
+  it('attaches sender_contact (profile + wa_id + user_id + username) to an inbound message row', async () => {
+    await POST(
+      signed(
+        delivery({
+          contacts: [
+            {
+              profile: { name: 'Sheena Nelson', username: 'realsheenanelson' },
+              wa_id: '972500000001',
+              user_id: 'IL.13491208655302741918',
+            },
+          ],
+          messages: [
+            { from: '972500000001', from_user_id: 'IL.13491208655302741918', id: 'wamid.u1', timestamp: '1700000000', type: 'text', text: { body: 'hi' } },
+          ],
+        }),
+      ),
+    );
+    const row = rowsArg()[0];
+    expect(row.event_kind).toBe('message');
+    expect(row.payload).toMatchObject({
+      from_user_id: 'IL.13491208655302741918',
+      sender_contact: {
+        profile: { name: 'Sheena Nelson', username: 'realsheenanelson' },
+        wa_id: '972500000001',
+        user_id: 'IL.13491208655302741918',
+      },
+    });
+  });
+
+  it('does not invent sender_contact when the delivery carries no contacts block', async () => {
+    await POST(
+      signed(delivery({ messages: [{ id: 'wamid.n1', from: '972500000001', timestamp: '1700000000', type: 'text' }] })),
+    );
+    expect(rowsArg()[0].payload).not.toHaveProperty('sender_contact');
+  });
+
+  it('does not clobber a shared-contact-card message (type contacts) — the card stays under `contacts`', async () => {
+    await POST(
+      signed(
+        delivery({
+          contacts: [{ profile: { name: 'Owner' }, wa_id: '972500000002', user_id: 'IL.1' }],
+          messages: [
+            {
+              from: '972500000002',
+              id: 'wamid.c1',
+              timestamp: '1700000000',
+              type: 'contacts',
+              contacts: [{ name: { formatted_name: 'Jane Doe' }, phones: [{ phone: '+972 50-123-4567' }] }],
+            },
+          ],
+        }),
+      ),
+    );
+    const payload = rowsArg()[0].payload as Record<string, unknown>;
+    expect(payload.contacts).toEqual([{ name: { formatted_name: 'Jane Doe' }, phones: [{ phone: '+972 50-123-4567' }] }]);
+    expect(payload.sender_contact).toMatchObject({ wa_id: '972500000002', user_id: 'IL.1' });
+  });
+
+  it('attaches recipient_contact to a status row when Meta includes the contacts block', async () => {
+    await POST(
+      signed(
+        delivery({
+          contacts: [{ profile: { name: 'Pablo M.', username: 'pablomorales' }, wa_id: '972500000003', user_id: 'IL.2' }],
+          statuses: [
+            { id: 'wamid.s1', status: 'delivered', timestamp: '1700000000', recipient_id: '972500000003', recipient_user_id: 'IL.2' },
+          ],
+        }),
+      ),
+    );
+    expect(rowsArg()[0].payload).toMatchObject({
+      status: 'delivered',
+      recipient_user_id: 'IL.2',
+      recipient_contact: { profile: { username: 'pablomorales' }, user_id: 'IL.2' },
+    });
+  });
+});
+
+describe('POST /api/webhooks/whatsapp — rejected deliveries are visible (ids only)', () => {
+  it('raises an ids-only ops alert on an invalid signature (no body, no phone)', async () => {
+    const raw = JSON.stringify(delivery({ messages: [] }));
+    const res = await POST(request(raw, 'sha256=deadbeef'));
+    expect(res.status).toBe(401);
     expect(insertWebhookEvents).not.toHaveBeenCalled();
+    expect(sendSlackAlert).toHaveBeenCalledTimes(1);
+    const alert = vi.mocked(sendSlackAlert).mock.calls[0][0];
+    expect(alert.level).toBe('warn');
+    expect(alert.fields).toMatchObject({ reason: 'invalid_signature', bytes: raw.length });
+    expect(JSON.stringify(alert)).not.toContain('15550000000');
+  });
+
+  it('raises an ids-only ops alert on a signed but malformed body', async () => {
+    const raw = '{not json';
+    const res = await POST(request(raw, sign(raw)));
+    expect(res.status).toBe(400);
+    expect(sendSlackAlert).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(sendSlackAlert).mock.calls[0][0].fields).toMatchObject({
+      reason: 'malformed_body',
+    });
+  });
+
+  it('does not alert on an accepted delivery', async () => {
+    await POST(signed(delivery({ messages: [] })));
+    expect(sendSlackAlert).not.toHaveBeenCalled();
   });
 });

@@ -289,7 +289,12 @@ export function resolveReplyOrigin(): string {
 export async function stageWhatsAppImport(row: InboxRow): Promise<boolean> {
   const payload = row.payload;
   if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return false;
-  const p = payload as { type?: string; from?: string; document?: { id?: string; filename?: string } };
+  const p = payload as {
+    id?: string;
+    type?: string;
+    from?: string;
+    document?: { id?: string; filename?: string };
+  };
   if (p.type !== 'document' && p.type !== 'contacts') return false;
 
   const sender = typeof p.from === 'string' ? normalizePhone(p.from) : null;
@@ -312,6 +317,21 @@ export async function stageWhatsAppImport(row: InboxRow): Promise<boolean> {
   }
 
   const ownerEvent = events[0];
+  const admin = createAdminClient();
+
+  // Idempotent by inbound wamid: a manual "reprocess" from /admin/webhooks (or a
+  // late Meta retry) of a message that ALREADY produced a staged list is a
+  // no-op — no second download, no duplicate pending list, no second owner
+  // reply. Enforced at the DB too (UNIQUE source_message_id WHERE NOT NULL).
+  const wamid = typeof p.id === 'string' && p.id ? p.id : null;
+  if (wamid) {
+    const { data: already } = await admin
+      .from('guest_import_staging')
+      .select('id')
+      .eq('source_message_id', wamid)
+      .maybeSingle();
+    if (already) return true;
+  }
 
   let staged: StagedRow[] = [];
   let errors: Array<{ row: number; message: string }> = [];
@@ -337,7 +357,6 @@ export async function stageWhatsAppImport(row: InboxRow): Promise<boolean> {
     if (staged.length === 0) return true;
   }
 
-  const admin = createAdminClient();
   // Retry-safe: identical pending content from the same sender is the same
   // inbox message being retried — reply with the link again, insert nothing.
   const { data: dupes } = await admin
@@ -358,6 +377,7 @@ export async function stageWhatsAppImport(row: InboxRow): Promise<boolean> {
     rows: staged as unknown as Json,
     row_count: staged.length,
     error_rows: errors as unknown as Json,
+    source_message_id: wamid,
   });
   if (error) {
     await safeReply(config, sender, 'קליטת הרשימה נכשלה — נסו שוב בעוד רגע.');

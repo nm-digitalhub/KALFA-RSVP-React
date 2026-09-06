@@ -12,6 +12,7 @@ vi.mock('@/lib/data/interactions', () => ({
   markContactRemovalRequested: vi.fn(),
   setContactOpStatus: vi.fn(),
   setDeliveryStatus: vi.fn(),
+  setInteractionBillingOutcome: vi.fn(),
   getGuestsForContact: vi.fn(),
   recordRsvpFromWhatsapp: vi.fn(),
 }));
@@ -30,6 +31,7 @@ import {
   resolveInboundContact,
   setContactOpStatus,
   setDeliveryStatus,
+  setInteractionBillingOutcome,
 } from '@/lib/data/interactions';
 import { recordReached } from '@/lib/data/billing';
 import { submitRsvp } from '@/lib/data/rsvp';
@@ -50,6 +52,7 @@ function messageRow(overrides: Partial<WebhookInboxRow> = {}): WebhookInboxRow {
     processed_at: null,
     attempts: 0,
     last_error: null,
+    delivery_id: null,
     ...overrides,
   };
 }
@@ -69,6 +72,7 @@ function statusRow(overrides: Partial<WebhookInboxRow> = {}): WebhookInboxRow {
     processed_at: null,
     attempts: 0,
     last_error: null,
+    delivery_id: null,
     ...overrides,
   };
 }
@@ -126,6 +130,23 @@ describe('processWebhookEvent — message', () => {
     // A plain typed reply carries no button id → it never records an RSVP.
     expect(submitRsvp).not.toHaveBeenCalled();
     expect(getGuestsForContact).not.toHaveBeenCalled();
+  });
+
+  it('records the billing RPC verdict on the inbound interaction (billed or why not)', async () => {
+    vi.mocked(recordReached).mockResolvedValueOnce('not_active');
+    await processWebhookEvent(messageRow());
+    expect(setInteractionBillingOutcome).toHaveBeenCalledWith({
+      channel: 'whatsapp',
+      providerId: 'wamid.in',
+      outcome: 'not_active',
+    });
+  });
+
+  it('does not touch the billing verdict when the interaction was a duplicate (no RPC call)', async () => {
+    vi.mocked(insertInteraction).mockResolvedValueOnce(false);
+    await processWebhookEvent(messageRow());
+    expect(recordReached).not.toHaveBeenCalled();
+    expect(setInteractionBillingOutcome).not.toHaveBeenCalled();
   });
 
   it('a removal reply bills FIRST, then sets removal_requested', async () => {
@@ -376,6 +397,34 @@ describe('processWebhookEvent — RSVP from a quick-reply button (C9)', () => {
   });
 });
 
+// Generic Meta fields persisted by the route (account_update,
+// business_username_updates, phone_number_quality_update, …) have no economic
+// meaning: the worker must leave them untouched (no interaction, no billing,
+// no alert) so the caller marks them processed and they stay visible in
+// /admin/webhooks.
+describe('processWebhookEvent — generic provider fields', () => {
+  it.each(['business_username_updates', 'account_update', 'messages_other'])(
+    'resolves %s without any side effect',
+    async (kind) => {
+      await expect(
+        processWebhookEvent(
+          messageRow({
+            event_kind: kind,
+            dedupe_key: `wa-field:${kind}:waba-1:na:0123456789abcdef`,
+            message_id: null,
+            context_message_id: null,
+            payload: { event: 'SOMETHING' },
+          }),
+        ),
+      ).resolves.toBeUndefined();
+      expect(insertInteraction).not.toHaveBeenCalled();
+      expect(recordReached).not.toHaveBeenCalled();
+      expect(resolveInboundContact).not.toHaveBeenCalled();
+      expect(sendSlackAlert).not.toHaveBeenCalled();
+    },
+  );
+});
+
 describe('processWebhookEvent — status', () => {
   it('records a delivery status without touching op_status or billing', async () => {
     await processWebhookEvent(statusRow());
@@ -431,6 +480,7 @@ describe('email_delivery (Resend)', () => {
       processed_at: null,
       attempts: 0,
       last_error: null,
+      delivery_id: null,
     };
   }
 

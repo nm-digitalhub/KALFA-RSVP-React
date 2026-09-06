@@ -20,13 +20,13 @@ WhatsApp/Meta תחילה. הדפוס הוא **persist-then-process**: ה-route �
 |---|---|---|---|
 | `id` | `uuid` | לא (PK) | מזהה שורה. ברירת-מחדל `gen_random_uuid()`. |
 | `provider` | `text` | לא | מזהה הספק. ברירת-מחדל `'whatsapp'`. חלק מ-UNIQUE. |
-| `event_kind` | `text` | לא | סוג האירוע: `'message'` (הודעה נכנסת) או `'status'` (status callback של הודעה יוצאת). |
+| `event_kind` | `text` | לא | סוג האירוע. וואטסאפ: `'message'` (הודעה נכנסת), `'status'` (status callback של הודעה יוצאת), ארבעת סוגי ה-template-health (`template_status` / `template_category` / `template_category_misuse` / `template_quality`), ו**כל שדה Meta אחר שהאפליקציה מנויה עליו — נשמר גנרית תחת שם השדה כפי שהוא** (`account_update`, `business_username_updates`, `phone_number_quality_update`, `user_preferences`, `security`, `calls`, …; שינוי `messages` ללא `messages`/`statuses` נשמר כ-`messages_other`). מאז 2026-09-03 שום שדה חתום שמגיע מ-Meta לא נזרק. ל-worker אין handler לסוגים הגנריים — הוא מסמן אותם `processed` ללא פעולה. |
 | `dedupe_key` | `text` | לא | מפתח אידמפוטנטיות לכל אירוע. חלק מ-UNIQUE. ראה תבניות למטה. |
 | `message_id` | `text` | כן | ה-wamid של ההודעה. בנכנס — ה-wamid הנכנס; ב-status — ה-wamid של ההודעה היוצאת שעליה הסטטוס. |
 | `context_message_id` | `text` | כן | רק לנכנס: `context.id` — ה-wamid היוצא שאליו ההודעה הנכנסת מגיבה (יעד-התגובה). בסיס לזיהוי-תגובה מדויק. |
 | `phone_number_id` | `text` | כן | מזהה מספר-הטלפון העסקי ב-WABA שקיבל את האירוע. **מזהה טכני, לא PII** — ניתן לחיפוש. |
 | `event_at` | `timestamptz` | כן | חותמת-הזמן שדיווחה Meta על האירוע (לא תמיד קיימת). |
-| `payload` | `jsonb` | לא | האירוע הגולמי כפי שהתקבל מ-Meta. **PII** → admin-only RLS, לא נלוגג, מוקרן רק ב-detail. |
+| `payload` | `jsonb` | לא | האירוע הגולמי כפי שהתקבל מ-Meta. **PII** → admin-only RLS, לא נלוגג, מוקרן רק ב-detail. **מאז 2026-09-03:** לשורות `message` מצורף גם `sender_contact` ולשורות `status` — `recipient_contact`: האיבר הראשון של בלוק `value.contacts[]` של Meta (`profile.name`, `profile.username`, `wa_id`, `user_id` = BSUID, `parent_user_id`), כשהוא קיים. המפתחות נבחרו כך שלא יתנגשו ב-`contacts` של הודעה מסוג כרטיס-קשר. |
 | `received_at` | `timestamptz` | לא | מתי השורה נקלטה אצלנו. ברירת-מחדל `now()`. מפתח-המיון של הרשימה ושל ה-drain. |
 | `processed_at` | `timestamptz` | כן | מתי ה-worker סיים לעבד. `NULL` = טרם עובד (תנאי-ה-claim). |
 | `attempts` | `int` | לא | מונה ניסיונות-עיבוד. ברירת-מחדל `0`. תקרת dead-letter = `5` (`attempts < 5` ב-claim). |
@@ -43,6 +43,11 @@ WhatsApp/Meta תחילה. הדפוס הוא **persist-then-process**: ה-route �
 |---|---|---|---|
 | `message` | `wa-msg:<wamid>` | `wa-msg:wamid.HBgL...` | הודעה נכנסת אחת = wamid אחד = שורה אחת. |
 | `status` | `wa-status:<wamid>:<status>` | `wa-status:wamid.HBgL...:delivered` | אותו wamid מקבל כמה סטטוסים (`sent`→`delivered`→`read`). ה-`<status>` במפתח הופך כל מעבר לשורה נפרדת — אחרת ה-UNIQUE היה בולע את ההיסטוריה. |
+| `message`/`status` **ממסירת Test של ה-App Dashboard** (`entry.id = "0"` או `phone_number_id = "123456123"`) | המפתח הרגיל + `:test:<Date.now()>` | `wa-msg:ABGGFlA5Fpa:test:1756930000000` | ה-payload לדוגמה של Meta זהה בכל לחיצה (אותו wamid); בלי הסיומת כל לחיצה אחרי הראשונה הייתה no-op שקט ותרחישי ה-usernames/BSUID לא היו ניתנים לבדיקה. מסירות אמיתיות לעולם לא נושאות את המזהים האלה. |
+| `template_*` | `wa-tmpl:<kind>:<template_id>:<entry.time>` | `wa-tmpl:template_status:123:1700000000` | retry של אותה מסירה חוזר על `time` → no-op; שינוי מצב אמיתי מאוחר יותר נושא `time` חדש ונשמר. |
+| כל שדה אחר (גנרי) | `wa-field:<kind>:<entry.id>:<entry.time\|na>:<sha256(value)[0:16]>` | `wa-field:business_username_updates:9909...:1756900000:3f2a9c1e7b4d0a5c` | ה-hash של ערך השינוי הופך retry של אותה מסירה ל-no-op, ושני אירועים שונים שחולקים `time` נשמרים שניהם. |
+
+> **מסירות שנדחו** (חתימה לא תקינה → 401, גוף לא-JSON → 400) **לא נכתבות** לטבלה (fail-closed, הגוף לא מאומת) — אבל מאז 2026-09-03 הן מייצרות התראת Slack ids-only (`reason`, `bytes`; לעולם לא הגוף/טלפון/חתימה), כדי שאי-התאמת secret או שולח זר לא ייראו כ"שקט".
 
 ערכי `status` אפשריים: `sent` · `delivered` · `read` · `failed`.
 
@@ -51,6 +56,36 @@ WhatsApp/Meta תחילה. הדפוס הוא **persist-then-process**: ה-route �
 > - `contact_interactions` → **`UNIQUE(channel, provider_id)`** (שכבת-העיבוד, **טבלה אחרת**; מונע חיוב-כפול כש-worker מעבד אותה הודעה פעמיים).
 
 ---
+
+## המעטפה הגולמית — `webhook_deliveries` (מאז 2026-09-03)
+
+`webhook_inbox` מחזיק **אירוע מנורמל אחד לשורה** (הודעה / סטטוס / תבנית / שדה גנרי). המעטפה של
+Meta מסביב (`object`, `entry[].id` = WABA, `entry[].time`, `metadata.display_phone_number`,
+`contacts[]`, `messaging_product`) נשמרת בנפרד, **פעם אחת לכל POST מאומת**, ב-`webhook_deliveries`:
+
+| עמודה | טיפוס | משמעות |
+|---|---|---|
+| `id` | `uuid` PK | |
+| `provider` | `text` | `'whatsapp'` |
+| `body` | `jsonb` | גוף ה-POST כפי שהתקבל, אחרי אימות חתימה. **PII**. |
+| `body_sha256` | `text` | `UNIQUE(provider, body_sha256)` — retry זהה של Meta = no-op, אותה שורה. |
+| `byte_length` | `int` | אורך הגוף בבייטים. |
+| `received_at` | `timestamptz` | |
+
+`webhook_inbox.delivery_id uuid null → webhook_deliveries(id) on delete set null` מקשר כל שורה
+מנורמלת למעטפה שלה. `NULL` = שורה מלפני 3.9.2026, או כשל בשמירת המעטפה (המעטפה היא עותק
+אבחוני; כשל בה לעולם לא חוסם את האירועים עצמם). RLS: קריאה ל-admin בלבד (`has_role`),
+כתיבה service_role. מסירות שנדחו (401/400) **לא** נשמרות — גוף לא מאומת הוא קלט לא אמין.
+
+הפופאפ ב-`/admin/webhooks` מציג את שניהם: "האירוע כפי שנשמר (מנורמל)" ו"מה ש-Meta שלחה בפועל".
+
+## עמודות נלוות שנוספו במיגרציה `20260903214126`
+
+- `contact_interactions.billing_outcome text` — תוצאת ה-RPC `try_record_billed_result` על
+  ההודעה הנכנסת שהפעילה אותו (`billed` / `not_active` / `not_authorized` / `already_billed` / …).
+  `billable=true` הוא הסיווג; זו התוצאה בפועל. `NULL` = לא טריגר לחיוב, או נרשם לפני 4.9.2026.
+- `guest_import_staging.source_message_id text` (+ unique partial index) — ה-wamid הנכנס שממנו
+  נקלטה רשימת מוזמנים. עיבוד-מחדש של אותה הודעה = no-op (בלי רשימה כפולה, בלי תשובה נוספת).
 
 ## אינדקסים
 

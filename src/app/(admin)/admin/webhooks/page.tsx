@@ -3,7 +3,7 @@ import { requirePlatformPermission } from '@/lib/auth/dal';
 
 import {
   getWebhookHealth,
-  getWebhookInboxItem,
+  getWebhookInboxDetail,
   listWebhookInbox,
   resolveWebhookAssociations,
 } from '@/lib/data/admin/webhook-inbox';
@@ -277,7 +277,7 @@ export default async function AdminWebhooksPage({
 
   // Detail drawer (server-rendered body) when ?inspect is present.
   const inspectId = firstParam(sp.inspect);
-  const detail = inspectId ? await getWebhookInboxItem(inspectId) : null;
+  const detail = inspectId ? await getWebhookInboxDetail(inspectId) : null;
 
   function listHref(): string {
     const params = new URLSearchParams();
@@ -405,9 +405,9 @@ export default async function AdminWebhooksPage({
       {detail ? (
         <InspectorDrawer
           closeHref={listHref()}
-          title={`אירוע webhook · ${webhookKindLabel(detail.event_kind)}`}
+          title={`אירוע webhook · ${webhookKindLabel(detail.item.event_kind)}`}
         >
-          <WebhookDetail item={detail} />
+          <WebhookDetail detail={detail} />
         </InspectorDrawer>
       ) : null}
     </div>

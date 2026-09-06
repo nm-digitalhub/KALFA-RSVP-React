@@ -1,7 +1,9 @@
 import 'server-only';
 
+import { createHash } from 'node:crypto';
+
 import { createAdminClient } from '@/lib/supabase/admin';
-import type { Tables, TablesInsert } from '@/lib/supabase/types';
+import type { Json, Tables, TablesInsert } from '@/lib/supabase/types';
 // Durable intake for provider webhooks (B2). The signature-verified route
 // normalizes events and inserts them here; a pg-boss worker processes them
 // out-of-band (persist-then-process), so the economic logic never depends on the
@@ -26,6 +28,44 @@ export async function insertWebhookEvents(
     .from('webhook_inbox')
     .upsert(rows, { onConflict: 'provider,dedupe_key', ignoreDuplicates: true });
   if (error) throw new Error('שמירת אירועי הוובהוק נכשלה', { cause: error });
+}
+
+// The verified POST body, stored verbatim (the full provider envelope around
+// the normalized events). UNIQUE(provider, body_sha256) makes a provider retry
+// of the identical body a no-op — the existing row's id is returned so the
+// retried events still point at it. Returns null (and the caller persists its
+// events WITHOUT a delivery link) if the store itself fails: the envelope is a
+// diagnostic copy, never the source of truth, so it must not cost the events.
+// PII inside — never log the body.
+export async function insertWebhookDelivery(input: {
+  provider: string;
+  raw: string;
+  body: Json;
+}): Promise<string | null> {
+  const bodySha256 = createHash('sha256').update(input.raw).digest('hex');
+  const admin = createAdminClient();
+  const { data: inserted, error } = await admin
+    .from('webhook_deliveries')
+    .upsert(
+      {
+        provider: input.provider,
+        body: input.body,
+        body_sha256: bodySha256,
+        byte_length: Buffer.byteLength(input.raw),
+      },
+      { onConflict: 'provider,body_sha256', ignoreDuplicates: true },
+    )
+    .select('id')
+    .maybeSingle();
+  if (error) return null;
+  if (inserted?.id) return inserted.id;
+  const { data: existing } = await admin
+    .from('webhook_deliveries')
+    .select('id')
+    .eq('provider', input.provider)
+    .eq('body_sha256', bodySha256)
+    .maybeSingle();
+  return existing?.id ?? null;
 }
 
 // The worker's claim: oldest unprocessed rows that have not exhausted their retry

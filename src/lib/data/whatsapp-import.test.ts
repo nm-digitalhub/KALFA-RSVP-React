@@ -7,6 +7,8 @@ vi.mock('@/lib/whatsapp/client', () => ({ sendWhatsAppText: vi.fn() }));
 vi.mock('@/lib/url', () => ({ getAppUrl: vi.fn(async (p: string) => `https://beta.kalfa.me${p}`) }));
 
 import { createAdminClient } from '@/lib/supabase/admin';
+import { getWhatsAppConfig } from '@/lib/data/outreach-config';
+import { sendWhatsAppText } from '@/lib/whatsapp/client';
 import { createMockSupabase } from '@/test/supabase-mock';
 import {
   buildAmbiguousEventReply,
@@ -127,8 +129,32 @@ describe('resolveOwnerActiveEvents — per-org composite key (Phase 2 regression
     eventsByOrg: Record<string, EventLike[]>;
     grantedOrgIds: string[];
     memberships: { organization_id: string; role_id: string }[];
+    // guest_import_staging double: which inbound wamids were ALREADY staged
+    // (source_message_id lookup) + a spy on insert.
+    stagedWamids?: string[];
+    stagingInsert?: ReturnType<typeof vi.fn>;
   }) {
     const from = vi.fn((table: string) => {
+      if (table === 'guest_import_staging') {
+        const state: { wamid: string | null } = { wamid: null };
+        const builder: Record<string, unknown> = {
+          select: vi.fn(() => builder),
+          eq: vi.fn((col: string, val: string) => {
+            if (col === 'source_message_id') state.wamid = val;
+            return builder;
+          }),
+          maybeSingle: vi.fn(async () => ({
+            data:
+              state.wamid && (opts.stagedWamids ?? []).includes(state.wamid)
+                ? { id: 'staging-existing' }
+                : null,
+            error: null,
+          })),
+          insert: opts.stagingInsert ?? vi.fn(async () => ({ error: null })),
+          then: (ok: (v: unknown) => unknown) => ok({ data: [], error: null }),
+        };
+        return builder;
+      }
       if (table === 'profiles') {
         return {
           select: vi.fn().mockReturnThis(),
@@ -211,6 +237,77 @@ describe('resolveOwnerActiveEvents — per-org composite key (Phase 2 regression
 
     const events = await resolveOwnerActiveEvents('+972501234567');
     expect(events.map((e) => e.id)).toEqual(['evt-a']);
+  });
+
+  it('stageWhatsAppImport is idempotent by inbound wamid: an already-staged message is a no-op (no insert, no reply)', async () => {
+    const stagingInsert = vi.fn(async () => ({ error: null }));
+    wireClient({
+      ownedEvents: [{ id: 'evt-a', name: 'A', event_type: 'wedding', created_at: '2026-01-01T00:00:00Z' }],
+      eventsByOrg: {},
+      grantedOrgIds: [],
+      memberships: [],
+      stagedWamids: ['wamid.already'],
+      stagingInsert,
+    });
+    vi.mocked(getWhatsAppConfig).mockResolvedValue({
+      phoneNumberId: 'p1',
+      wabaId: null,
+      accessToken: 't',
+      appSecret: null,
+      verifyToken: null,
+    });
+    process.env.APP_ORIGIN = 'https://beta.kalfa.me';
+
+    const consumed = await stageWhatsAppImport({
+      payload: {
+        id: 'wamid.already',
+        type: 'contacts',
+        from: '972501234567',
+        contacts: [{ name: { formatted_name: 'Jane Doe' }, phones: [{ phone: '+972501234567' }] }],
+      } as never,
+    });
+
+    expect(consumed).toBe(true);
+    expect(stagingInsert).not.toHaveBeenCalled();
+    expect(sendWhatsAppText).not.toHaveBeenCalled();
+  });
+
+  it('stageWhatsAppImport stamps the inbound wamid on the staged list (source_message_id)', async () => {
+    const stagingInsert = vi.fn(async (_row: Record<string, unknown>) => ({ error: null }));
+    wireClient({
+      ownedEvents: [{ id: 'evt-a', name: 'A', event_type: 'wedding', created_at: '2026-01-01T00:00:00Z' }],
+      eventsByOrg: {},
+      grantedOrgIds: [],
+      memberships: [],
+      stagedWamids: [],
+      stagingInsert,
+    });
+    vi.mocked(getWhatsAppConfig).mockResolvedValue({
+      phoneNumberId: 'p1',
+      wabaId: null,
+      accessToken: 't',
+      appSecret: null,
+      verifyToken: null,
+    });
+    process.env.APP_ORIGIN = 'https://beta.kalfa.me';
+
+    await stageWhatsAppImport({
+      payload: {
+        id: 'wamid.fresh',
+        type: 'contacts',
+        from: '972501234567',
+        contacts: [{ name: { formatted_name: 'Jane Doe' }, phones: [{ phone: '+972501234567' }] }],
+      } as never,
+    });
+
+    expect(stagingInsert).toHaveBeenCalledTimes(1);
+    expect(stagingInsert.mock.calls[0][0]).toMatchObject({
+      event_id: 'evt-a',
+      source: 'whatsapp_contacts',
+      source_message_id: 'wamid.fresh',
+      row_count: 1,
+    });
+    expect(sendWhatsAppText).toHaveBeenCalledTimes(1);
   });
 
   it('reflects a customization change: when BOTH orgs grant the permission, BOTH events route', async () => {

@@ -3,7 +3,7 @@ import 'server-only';
 import { requirePlatformPermission } from '@/lib/auth/dal';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { resolvePage, type PageParams, type PageResult } from '@/lib/data/admin/shared';
-import type { Tables } from '@/lib/supabase/types';
+import type { Json, Tables } from '@/lib/supabase/types';
 // Admin Webhook Inspector data layer. Reads the durable `webhook_inbox` intake
 // table behind requireAdmin() with the service-role client (the table is
 // admin-only RLS; service-role bypasses it — the policy is defence-in-depth).
@@ -32,6 +32,204 @@ export type AdminWebhookRow = Pick<
 >;
 
 export type AdminWebhookDetail = WebhookInboxRow;
+
+// What the worker DID with the event — the inspector's "תוצאה" section.
+// Inbound message: the interaction it became (event / campaign / billable +
+// the RPC verdict + whether a billed_results row exists), the staged import it
+// produced, the opt-out it carried. Status: the outbound interaction it updated.
+export interface WebhookOutcome {
+  inbound: {
+    eventName: string | null;
+    eventStatus: string | null;
+    campaignStatus: string | null;
+    billable: boolean;
+    billingOutcome: string | null;
+    billed: boolean;
+    removalRequested: boolean;
+  } | null;
+  outbound: {
+    eventName: string | null;
+    deliveryStatus: string | null;
+    deliveryErrorCode: string | null;
+  } | null;
+  staging: {
+    id: string;
+    status: string;
+    rowCount: number;
+    eventId: string;
+    eventName: string | null;
+  } | null;
+}
+
+export interface WebhookDeliveryView {
+  id: string;
+  body: Json;
+  receivedAt: string;
+  byteLength: number;
+}
+
+export interface AdminWebhookDetailView {
+  item: AdminWebhookDetail;
+  // The verified envelope exactly as Meta sent it (null for rows persisted
+  // before deliveries were stored, or when the store failed).
+  delivery: WebhookDeliveryView | null;
+  outcome: WebhookOutcome;
+  // Which of OUR business numbers received it — resolved against the admin
+  // config, never hardcoded. null = not one of the configured numbers.
+  businessNumber: { label: string; phoneNumberId: string } | null;
+}
+
+async function loadEventNames(
+  admin: ReturnType<typeof createAdminClient>,
+  ids: string[],
+): Promise<Map<string, { name: string | null; status: string | null }>> {
+  const out = new Map<string, { name: string | null; status: string | null }>();
+  const unique = [...new Set(ids.filter(Boolean))];
+  if (unique.length === 0) return out;
+  const { data } = await admin.from('events').select('id, name, status').in('id', unique);
+  for (const e of data ?? []) out.set(e.id, { name: e.name, status: e.status });
+  return out;
+}
+
+// Detail view: the row + its raw delivery + what became of it. A handful of
+// point lookups by primary/unique key (no scans), all admin-client.
+export async function getWebhookInboxDetail(
+  id: string,
+): Promise<AdminWebhookDetailView | null> {
+  await requirePlatformPermission('view_webhooks');
+  const admin = createAdminClient();
+  const { data: item, error } = await admin
+    .from('webhook_inbox')
+    .select('*')
+    .eq('id', id)
+    .maybeSingle();
+  if (error) throw new Error('טעינת אירוע הוובהוק נכשלה');
+  if (!item) return null;
+
+  const messageId = item.message_id;
+  const [deliveryRes, inboundRes, outboundRes, stagingRes, billedRes, settingsRes] =
+    await Promise.all([
+      item.delivery_id
+        ? admin
+            .from('webhook_deliveries')
+            .select('id, body, received_at, byte_length')
+            .eq('id', item.delivery_id)
+            .maybeSingle()
+        : Promise.resolve({ data: null }),
+      messageId && item.event_kind === 'message'
+        ? admin
+            .from('contact_interactions')
+            .select('event_id, campaign_id, contact_id, billable, billing_outcome')
+            .eq('provider_id', messageId)
+            .eq('direction', 'in')
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .maybeSingle()
+        : Promise.resolve({ data: null }),
+      messageId && item.event_kind === 'status'
+        ? admin
+            .from('contact_interactions')
+            .select('event_id, delivery_status, delivery_error_code')
+            .eq('provider_id', messageId)
+            .eq('direction', 'out')
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .maybeSingle()
+        : Promise.resolve({ data: null }),
+      messageId && item.event_kind === 'message'
+        ? admin
+            .from('guest_import_staging')
+            .select('id, status, row_count, event_id')
+            .eq('source_message_id', messageId)
+            .maybeSingle()
+        : Promise.resolve({ data: null }),
+      messageId && item.event_kind === 'message'
+        ? admin
+            .from('billed_results')
+            .select('id', { count: 'exact', head: true })
+            .eq('provider_ref', messageId)
+        : Promise.resolve({ count: 0 }),
+      item.provider === 'whatsapp'
+        ? admin
+            .from('app_settings')
+            .select('whatsapp_phone_number_id')
+            .eq('id', true)
+            .maybeSingle()
+        : Promise.resolve({ data: null }),
+    ]);
+
+  const inbound = inboundRes.data;
+  const outbound = outboundRes.data;
+  const staging = stagingRes.data;
+
+  const [eventNames, campaignRes, contactRes] = await Promise.all([
+    loadEventNames(admin, [
+      inbound?.event_id ?? '',
+      outbound?.event_id ?? '',
+      staging?.event_id ?? '',
+    ]),
+    inbound?.campaign_id
+      ? admin.from('campaigns').select('status').eq('id', inbound.campaign_id).maybeSingle()
+      : Promise.resolve({ data: null }),
+    inbound?.contact_id
+      ? admin
+          .from('contacts')
+          .select('removal_requested')
+          .eq('id', inbound.contact_id)
+          .maybeSingle()
+      : Promise.resolve({ data: null }),
+  ]);
+
+  const rsvpPhoneNumberId = settingsRes.data?.whatsapp_phone_number_id ?? null;
+  const businessNumber =
+    item.phone_number_id && rsvpPhoneNumberId && item.phone_number_id === rsvpPhoneNumberId
+      ? { label: 'מספר אישורי ההגעה (RSVP)', phoneNumberId: item.phone_number_id }
+      : null;
+
+  return {
+    item,
+    delivery: deliveryRes.data
+      ? {
+          id: deliveryRes.data.id,
+          body: deliveryRes.data.body,
+          receivedAt: deliveryRes.data.received_at,
+          byteLength: deliveryRes.data.byte_length,
+        }
+      : null,
+    outcome: {
+      inbound: inbound
+        ? {
+            eventName: inbound.event_id ? (eventNames.get(inbound.event_id)?.name ?? null) : null,
+            eventStatus: inbound.event_id
+              ? (eventNames.get(inbound.event_id)?.status ?? null)
+              : null,
+            campaignStatus: campaignRes.data?.status ?? null,
+            billable: inbound.billable,
+            billingOutcome: inbound.billing_outcome,
+            billed: (billedRes.count ?? 0) > 0,
+            removalRequested: contactRes.data?.removal_requested === true,
+          }
+        : null,
+      outbound: outbound
+        ? {
+            eventName: outbound.event_id ? (eventNames.get(outbound.event_id)?.name ?? null) : null,
+            deliveryStatus: outbound.delivery_status,
+            deliveryErrorCode: outbound.delivery_error_code,
+          }
+        : null,
+      staging: staging
+        ? {
+            id: staging.id,
+            status: staging.status,
+            rowCount: staging.row_count,
+            eventId: staging.event_id,
+            eventName: eventNames.get(staging.event_id)?.name ?? null,
+          }
+        : null,
+    },
+    businessNumber,
+  };
+}
 
 export interface WebhookFilter extends PageParams {
   // Which integration sent the event: whatsapp | graph | voximplant | resend.

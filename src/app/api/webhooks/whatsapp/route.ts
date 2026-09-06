@@ -1,9 +1,13 @@
+import { createHash } from 'node:crypto';
+
 import { type NextRequest, NextResponse } from 'next/server';
 import { WhatsAppAPI } from 'whatsapp-api-js';
 import type { PostData } from 'whatsapp-api-js/types';
 
+import { sendSlackAlert } from '@/lib/alerts/slack';
 import { getOutreachEnabled, getWhatsAppConfig } from '@/lib/data/outreach-config';
 import {
+  insertWebhookDelivery,
   insertWebhookEvents,
   type WebhookInboxInsert,
 } from '@/lib/data/webhooks';
@@ -89,6 +93,56 @@ function normalizeTemplateHealthRows(raw: RawPostData): WebhookInboxInsert[] {
   return rows;
 }
 
+// Every OTHER change in a verified delivery — any subscribed field the two
+// normalizers above do not model (account_update, business_username_updates,
+// phone_number_quality_update, user_preferences, calls, security, …), a
+// template-health change without a template id, or a `messages` change that
+// carries neither `messages` nor `statuses` (e.g. an `errors` block) — is
+// persisted generically under the Meta field name. Nothing Meta signs and
+// delivers is allowed to vanish: it stays inspectable in /admin/webhooks and the
+// worker, which has no handler for these kinds, marks it processed untouched.
+// The dedupe key hashes the change value so a Meta retry of the SAME delivery
+// is a DB no-op while two distinct events sharing an entry `time` both persist.
+function normalizeOtherFieldRows(raw: RawPostData): WebhookInboxInsert[] {
+  const rows: WebhookInboxInsert[] = [];
+  for (const entry of raw.entry ?? []) {
+    const entryTime = entry.time;
+    for (const change of entry.changes ?? []) {
+      const value = change.value ?? {};
+      let kind: string;
+      if (change.field === 'messages') {
+        if ('messages' in value || 'statuses' in value) continue; // typed path above
+        kind = 'messages_other';
+      } else if (
+        TEMPLATE_HEALTH_FIELDS.has(change.field) &&
+        value.message_template_id != null
+      ) {
+        continue; // template-health path above
+      } else {
+        kind = change.field;
+      }
+      const metadata = value.metadata as { phone_number_id?: unknown } | undefined;
+      const phoneNumberId =
+        typeof metadata?.phone_number_id === 'string' ? metadata.phone_number_id : null;
+      const digest = createHash('sha256')
+        .update(JSON.stringify(value))
+        .digest('hex')
+        .slice(0, 16);
+      rows.push({
+        provider: 'whatsapp',
+        event_kind: kind,
+        dedupe_key: `wa-field:${kind}:${entry.id ?? 'na'}:${entryTime ?? 'na'}:${digest}`,
+        message_id: null,
+        context_message_id: null,
+        phone_number_id: phoneNumberId,
+        event_at: tsToIso(entryTime != null ? String(entryTime) : undefined),
+        payload: value as unknown as WebhookInboxInsert['payload'],
+      });
+    }
+  }
+  return rows;
+}
+
 // Flatten the verified PostData into webhook_inbox rows. We DON'T use the
 // library's emitter/`post()` dispatch on purpose: it only reads
 // entry[0].changes[0] and messages[0]/statuses[0], silently dropping the rest of
@@ -103,18 +157,44 @@ function normalizeWebhookRows(data: PostData): WebhookInboxInsert[] {
       const value = change.value;
       const phoneNumberId = value.metadata?.phone_number_id ?? null;
 
+      // Meta's App Dashboard "Test" button replays one fixed sample (entry.id
+      // "0", phone_number_id "123456123", wamid "ABGGFlA5Fpa") on every click.
+      // Under the production key every click after the first would be a silent
+      // DB no-op, so sandbox deliveries get a per-request suffix — each test
+      // scenario (username adopted, phone unavailable, …) stays inspectable.
+      // Real WABA deliveries never carry these ids and keep the exact key.
+      const sandbox = entry.id === '0' || phoneNumberId === '123456123';
+      const testSuffix = sandbox ? `:test:${Date.now()}` : '';
+
+      // The value-level contacts[] block is where Meta puts the sender's
+      // profile name, wa_id and — with the BSUID/usernames rollout — user_id
+      // and username. It is not part of the message/status object, so it is
+      // carried on the row under keys that cannot collide with a message field
+      // (`contacts` is itself a message type: a shared contact card).
+      const contactBlock = (value as unknown as { contacts?: unknown }).contacts;
+      const contact =
+        Array.isArray(contactBlock) &&
+        contactBlock.length > 0 &&
+        typeof contactBlock[0] === 'object' &&
+        contactBlock[0] !== null
+          ? (contactBlock[0] as Record<string, unknown>)
+          : null;
+
       if ('messages' in value) {
         for (const message of value.messages) {
           if (!message?.id) continue;
           rows.push({
             provider: 'whatsapp',
             event_kind: 'message',
-            dedupe_key: `wa-msg:${message.id}`,
+            dedupe_key: `wa-msg:${message.id}${testSuffix}`,
             message_id: message.id,
             context_message_id: message.context?.id ?? null,
             phone_number_id: phoneNumberId,
             event_at: tsToIso(message.timestamp),
-            payload: message as unknown as WebhookInboxInsert['payload'],
+            payload: {
+              ...(message as unknown as Record<string, unknown>),
+              ...(contact ? { sender_contact: contact } : {}),
+            } as unknown as WebhookInboxInsert['payload'],
           });
         }
       } else if ('statuses' in value) {
@@ -125,19 +205,48 @@ function normalizeWebhookRows(data: PostData): WebhookInboxInsert[] {
             event_kind: 'status',
             // status is keyed by (id, status) so each lifecycle transition
             // (sent→delivered→read) persists once without colliding.
-            dedupe_key: `wa-status:${status.id}:${status.status}`,
+            dedupe_key: `wa-status:${status.id}:${status.status}${testSuffix}`,
             message_id: status.id,
             context_message_id: null,
             phone_number_id: phoneNumberId,
             event_at: tsToIso(status.timestamp),
-            payload: status as unknown as WebhookInboxInsert['payload'],
+            payload: {
+              ...(status as unknown as Record<string, unknown>),
+              ...(contact ? { recipient_contact: contact } : {}),
+            } as unknown as WebhookInboxInsert['payload'],
           });
         }
       }
     }
   }
   rows.push(...normalizeTemplateHealthRows(data as unknown as RawPostData));
+  rows.push(...normalizeOtherFieldRows(data as unknown as RawPostData));
   return rows;
+}
+
+// A rejected delivery writes nothing (fail-closed) but must not be invisible:
+// an ids-only ops alert (reason + byte length — never the body, a phone or the
+// signature) so a secret mismatch or a broken sender shows up in Slack instead
+// of as a silent gap in /admin/webhooks. sendSlackAlert is fail-safe, deduped
+// and rate-limited, so a retry storm cannot flood the channel.
+async function alertRejectedDelivery(
+  reason: 'invalid_signature' | 'malformed_body',
+  bytes: number,
+): Promise<void> {
+  await sendSlackAlert({
+    level: 'warn',
+    category: 'send_health',
+    source: 'whatsapp-webhook',
+    title:
+      reason === 'invalid_signature'
+        ? 'WhatsApp webhook נדחה — חתימה לא תקינה'
+        : 'WhatsApp webhook נדחה — גוף לא תקין',
+    detail:
+      reason === 'invalid_signature'
+        ? 'X-Hub-Signature-256 לא תואם ל-app secret שב-/admin/channels. שום דבר לא נכתב. אם זו שליחה שלנו — לבדוק את ה-secret; אם לא — מקור זר.'
+        : 'הבקשה חתומה נכון אבל הגוף אינו JSON תקין. שום דבר לא נכתב.',
+    fields: { reason, bytes },
+  });
 }
 
 // GET: Meta's subscription verification challenge. Gate on the configured verify
@@ -188,6 +297,7 @@ export async function POST(request: NextRequest) {
     verified = false;
   }
   if (!verified) {
+    await alertRejectedDelivery('invalid_signature', raw.length);
     return new NextResponse('invalid signature', { status: 401 });
   }
 
@@ -195,10 +305,24 @@ export async function POST(request: NextRequest) {
   try {
     data = JSON.parse(raw) as PostData;
   } catch {
+    await alertRejectedDelivery('malformed_body', raw.length);
     return new NextResponse('bad request', { status: 400 });
   }
 
-  const rows = normalizeWebhookRows(data);
+  // The verified envelope, verbatim, so the admin can always see what Meta
+  // actually sent next to what we normalized out of it. Stored before the
+  // events so each row can point at it; a null id (store failure / duplicate
+  // race) never blocks the events themselves.
+  const deliveryId = await insertWebhookDelivery({
+    provider: 'whatsapp',
+    raw,
+    body: data as unknown as Parameters<typeof insertWebhookDelivery>[0]['body'],
+  });
+
+  const rows = normalizeWebhookRows(data).map((row) => ({
+    ...row,
+    delivery_id: deliveryId,
+  }));
   if (rows.length > 0) {
     await insertWebhookEvents(rows);
   }

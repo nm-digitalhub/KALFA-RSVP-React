@@ -13,6 +13,7 @@ import {
   resolveInboundContact,
   setContactOpStatus,
   setDeliveryStatus,
+  setInteractionBillingOutcome,
 } from '@/lib/data/interactions';
 import { recordReached } from '@/lib/data/billing';
 import {
@@ -212,7 +213,7 @@ async function processMessage(row: WebhookInboxRow): Promise<void> {
   });
 
   if (fresh) {
-    await recordReached({
+    const outcome = await recordReached({
       eventId: resolved.eventId,
       campaignId: resolved.campaignId,
       contactId: resolved.contactId,
@@ -223,6 +224,15 @@ async function processMessage(row: WebhookInboxRow): Promise<void> {
         : 'whatsapp_inbound_message',
       providerRef: messageId,
     });
+    // Keep the RPC's verdict next to the classification so the inspector shows
+    // "billed" vs "refused: not_active / not_authorized / …" per inbound message.
+    if (typeof outcome === 'string') {
+      await setInteractionBillingOutcome({
+        channel: 'whatsapp',
+        providerId: messageId,
+        outcome,
+      });
+    }
   }
 
   // D4: an opt-out reply BILLS (it is a human reach) and only THEN stops future

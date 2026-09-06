@@ -2304,6 +2304,7 @@ export type Database = {
       contact_interactions: {
         Row: {
           billable: boolean
+          billing_outcome: string | null
           campaign_id: string | null
           channel: Database["public"]["Enums"]["campaign_channel"]
           contact_id: string | null
@@ -2322,6 +2323,7 @@ export type Database = {
         }
         Insert: {
           billable?: boolean
+          billing_outcome?: string | null
           campaign_id?: string | null
           channel: Database["public"]["Enums"]["campaign_channel"]
           contact_id?: string | null
@@ -2340,6 +2342,7 @@ export type Database = {
         }
         Update: {
           billable?: boolean
+          billing_outcome?: string | null
           campaign_id?: string | null
           channel?: Database["public"]["Enums"]["campaign_channel"]
           contact_id?: string | null
@@ -3234,6 +3237,7 @@ export type Database = {
           rows: Json
           sender_phone: string
           source: string
+          source_message_id: string | null
           status: string
         }
         Insert: {
@@ -3247,6 +3251,7 @@ export type Database = {
           rows: Json
           sender_phone: string
           source: string
+          source_message_id?: string | null
           status?: string
         }
         Update: {
@@ -3260,6 +3265,7 @@ export type Database = {
           rows?: Json
           sender_phone?: string
           source?: string
+          source_message_id?: string | null
           status?: string
         }
         Relationships: [
@@ -5158,11 +5164,39 @@ export type Database = {
           },
         ]
       }
+      webhook_deliveries: {
+        Row: {
+          body: Json
+          body_sha256: string
+          byte_length: number
+          id: string
+          provider: string
+          received_at: string
+        }
+        Insert: {
+          body: Json
+          body_sha256: string
+          byte_length: number
+          id?: string
+          provider?: string
+          received_at?: string
+        }
+        Update: {
+          body?: Json
+          body_sha256?: string
+          byte_length?: number
+          id?: string
+          provider?: string
+          received_at?: string
+        }
+        Relationships: []
+      }
       webhook_inbox: {
         Row: {
           attempts: number
           context_message_id: string | null
           dedupe_key: string
+          delivery_id: string | null
           event_at: string | null
           event_kind: string
           id: string
@@ -5178,6 +5212,7 @@ export type Database = {
           attempts?: number
           context_message_id?: string | null
           dedupe_key: string
+          delivery_id?: string | null
           event_at?: string | null
           event_kind: string
           id?: string
@@ -5193,6 +5228,7 @@ export type Database = {
           attempts?: number
           context_message_id?: string | null
           dedupe_key?: string
+          delivery_id?: string | null
           event_at?: string | null
           event_kind?: string
           id?: string
@@ -5204,7 +5240,15 @@ export type Database = {
           provider?: string
           received_at?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "webhook_inbox_delivery_id_fkey"
+            columns: ["delivery_id"]
+            isOneToOne: false
+            referencedRelation: "webhook_deliveries"
+            referencedColumns: ["id"]
+          },
+        ]
       }
     }
     Views: {
@@ -5703,6 +5747,7 @@ export type Database = {
           attempts: number
           context_message_id: string | null
           dedupe_key: string
+          delivery_id: string | null
           event_at: string | null
           event_kind: string
           id: string
