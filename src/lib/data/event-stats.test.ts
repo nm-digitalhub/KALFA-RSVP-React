@@ -73,18 +73,48 @@ describe('derivePercentages (pure)', () => {
 });
 
 describe('deriveStatsAlerts (pure)', () => {
-  it('high_pending when pending/rows ≥ 0.5', () => {
-    const alerts = deriveStatsAlerts({ totals: mkTotals({ rows: 10, pending_rows: 6, maybe_rows: 0 }) });
+  const asked = { failed: 0, wrongNumber: 0, outreachStarted: true };
+
+  it('high_pending when pending/rows ≥ 0.5 AND people were actually asked', () => {
+    const alerts = deriveStatsAlerts({
+      totals: mkTotals({ rows: 10, pending_rows: 6, maybe_rows: 0 }),
+      delivery: asked,
+    });
     expect(alerts.map((a) => a.id)).toContain('high_pending');
   });
 
   it('no high_pending when below threshold', () => {
-    const alerts = deriveStatsAlerts({ totals: mkTotals({ rows: 10, pending_rows: 2, maybe_rows: 1 }) });
+    const alerts = deriveStatsAlerts({
+      totals: mkTotals({ rows: 10, pending_rows: 2, maybe_rows: 1 }),
+      delivery: asked,
+    });
+    expect(alerts.map((a) => a.id)).not.toContain('high_pending');
+  });
+
+  // The live QA event was showing this alert with two guests, zero sends, and
+  // the first outreach three days away. Every guest is pending before anyone is
+  // asked, so the ratio alone says nothing.
+  it('never high_pending before the first outreach, even at 100% pending', () => {
+    const alerts = deriveStatsAlerts({
+      totals: mkTotals({ rows: 2, pending_rows: 2, maybe_rows: 0 }),
+      delivery: { failed: 0, wrongNumber: 0, outreachStarted: false },
+    });
+    expect(alerts.map((a) => a.id)).not.toContain('high_pending');
+  });
+
+  it('stays silent when the outreach state is unknown rather than guessing', () => {
+    // No campaign, or a viewer without campaigns.view. A missing alert is a
+    // smaller error than a false one.
+    const alerts = deriveStatsAlerts({
+      totals: mkTotals({ rows: 2, pending_rows: 2, maybe_rows: 0 }),
+    });
     expect(alerts.map((a) => a.id)).not.toContain('high_pending');
   });
 
   it('failed_deliveries and wrong_numbers when counts > 0', () => {
-    const alerts = deriveStatsAlerts({ delivery: { failed: 2, wrongNumber: 1 } });
+    const alerts = deriveStatsAlerts({
+      delivery: { failed: 2, wrongNumber: 1, outreachStarted: true },
+    });
     expect(alerts.map((a) => a.id)).toEqual(expect.arrayContaining(['failed_deliveries', 'wrong_numbers']));
   });
 

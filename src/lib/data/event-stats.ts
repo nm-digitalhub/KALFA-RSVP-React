@@ -62,6 +62,8 @@ export type EventStatsResult = {
       reached: number;
       wrongNumber: number;
       optedOut: number;
+      /** Any evidence of outbound contact, message OR call. */
+      outreachStarted: boolean;
     } | null;
     billing: {
       reachedCount: number;
@@ -113,7 +115,15 @@ export function derivePercentages(t: GuestTotals): EventStatsPercentages {
 
 export function deriveStatsAlerts(input: {
   totals?: GuestTotals;
-  delivery?: { failed: number; wrongNumber: number } | null;
+  delivery?: {
+    failed: number;
+    wrongNumber: number;
+    // Has the campaign actually contacted anybody yet, through ANY channel?
+    // Without this the high_pending alert below fires on every new event: a
+    // guest who was never asked is "pending" by definition, so one guest and a
+    // fresh campaign is already 100% pending.
+    outreachStarted: boolean;
+  } | null;
   billing?: { accrued: number; ceiling: number } | null;
   // The raw status cannot answer "is this campaign over": campaignStage() folds
   // awaiting_invoice | billed | paid into the same 'closed' stage, and the DB
@@ -129,8 +139,17 @@ export function deriveStatsAlerts(input: {
   const alerts: EventStatsAlert[] = [];
   const t = input.totals;
   if (t) {
+    // "A lot of people have not replied" is only a finding once people have
+    // been ASKED. Before the first send every guest is pending, so this fired
+    // the moment an event had a single guest — on the live QA event it was
+    // showing while the first outreach was still three days away.
+    //
+    // Silent when outreach state is unknown (no campaign, or a viewer without
+    // campaigns.view): with no evidence anyone was contacted, "nobody answered"
+    // is not something to claim. A missing alert is a smaller error than a
+    // false one.
     const pending = (t.pending_rows ?? 0) + (t.maybe_rows ?? 0);
-    if (t.rows > 0 && pending / t.rows >= 0.5) {
+    if (input.delivery?.outreachStarted && t.rows > 0 && pending / t.rows >= 0.5) {
       alerts.push({ id: 'high_pending', label: 'מספר גבוה של מוזמנים טרם השיבו' });
     }
     if ((t.over_invited_rows ?? 0) > 0) {
@@ -250,6 +269,20 @@ export async function getEventStats(eventId: string): Promise<EventStatsResult> 
             reached: d.outcome.reached,
             wrongNumber: d.outcome.wrongNumber,
             optedOut: d.outcome.optedOut,
+            // Computed HERE, from the full breakdown, because the call buckets
+            // are not carried on the flattened shape above — an AI-call
+            // campaign that has dialled but sent no WhatsApp has started
+            // outreach just as much as one that messaged.
+            outreachStarted:
+              d.delivery.sent > 0 ||
+              d.delivery.failed > 0 ||
+              d.outcome.reached > 0 ||
+              d.outcome.wrongNumber > 0 ||
+              d.call.dialed +
+                d.call.noAnswer +
+                d.call.voicemail +
+                d.call.humanInteraction >
+                0,
           };
           campaign.reachedCount = d.outcome.reached; // operational reached from delivery
         }
@@ -291,7 +324,11 @@ export async function getEventStats(eventId: string): Promise<EventStatsResult> 
   const alerts = deriveStatsAlerts({
     totals: totals ?? undefined,
     delivery: campaign.delivery
-      ? { failed: campaign.delivery.failed, wrongNumber: campaign.delivery.wrongNumber }
+      ? {
+          failed: campaign.delivery.failed,
+          wrongNumber: campaign.delivery.wrongNumber,
+          outreachStarted: campaign.delivery.outreachStarted,
+        }
       : null,
     billing: campaign.billing
       ? { accrued: campaign.billing.accrued, ceiling: campaign.billing.ceiling }
