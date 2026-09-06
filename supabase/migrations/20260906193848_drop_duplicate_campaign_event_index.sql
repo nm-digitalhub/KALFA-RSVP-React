@@ -1,0 +1,22 @@
+-- Two byte-identical partial unique indexes guarded the same rule on
+-- public.campaigns:
+--
+--   campaigns_event_noncancelled_uidx  (event_id) WHERE status <> 'cancelled'
+--     created 2026-07-26 by …_pricing_base_overage_and_one_campaign_per_event
+--   campaigns_one_active_per_event     (event_id) WHERE status <> 'cancelled'
+--     created 2026-08-30 by …_add_campaigns_one_active_per_event_unique_index
+--
+-- Same column, same predicate, same uniqueness. The August one was added a
+-- month later by someone who did not notice the rule was already enforced, so
+-- every write to campaigns has been maintaining two copies of one index.
+--
+-- Dropping the NEWER duplicate and keeping the original, which has enforced the
+-- rule since July. Verified before writing this: neither index backs a
+-- constraint (pg_constraint.conindid is null for both), so nothing depends on
+-- the name being dropped, and the invariant — one non-cancelled campaign per
+-- event — stays enforced by campaigns_event_noncancelled_uidx.
+--
+-- Plain DROP rather than CONCURRENTLY: a migration runs inside a transaction,
+-- where CONCURRENTLY is illegal, and the index is 16 kB over a handful of rows,
+-- so the exclusive lock is momentary.
+drop index if exists public.campaigns_one_active_per_event;
