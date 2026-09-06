@@ -283,11 +283,15 @@ function CampaignSummary({
           finalCharge != null ? ' sm:justify-between' : ''
         }`}
       >
-        <div>
+        {/* Label and badge on ONE line. Stacked, this pair was two lines tall
+            while filling about a fifth of the row, which read as a large empty
+            panel next to it — the metric row below only looks right because
+            three items fill the width. */}
+        <div className="flex items-center gap-3">
           <p id="campaign-summary-title" className="text-sm text-muted-foreground">
             מצב הקמפיין
           </p>
-          <div className="mt-2 flex items-center gap-2">
+          <div className="flex items-center gap-2">
             <Badge
               variant={CAMPAIGN_STAGE_VARIANTS[stage]}
               className="h-8 px-3 text-sm font-semibold"
