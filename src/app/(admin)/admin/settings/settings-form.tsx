@@ -330,8 +330,11 @@ export function SettingsForm({
           <span className="block text-sm font-medium">ארכיון הסכמים חתומים ב-SharePoint</span>
           <span className="block text-xs text-muted-foreground">
             כשמופעל: פעם בלילה כל הסכם לקוח שנחתם ועדיין לא יוצא מועתק (PDF מאומת
-            hash + פרטי הראיות) לספריית Customer-Agreements באתר KALFA RSVP. כשכבוי
-            (ברירת המחדל) — שום קובץ לא נשלח. לא מוחק דבר ב-Supabase.
+            hash + פרטי הראיות) לספריית Customer-Agreements באתר KALFA RSVP, ופעם
+            בשבוע (יום ראשון 04:10) רצה בדיקת שלמות של הארכיון: אימות SHA-256,
+            השלמת hash לחוזים שהועלו ידנית, סימון Expired, ודוח ביעור/פקיעה
+            ל-Slack. כשכבוי (ברירת המחדל) — שום קובץ לא נשלח ושום בדיקה לא רצה.
+            לא מוחק דבר, לא ב-Supabase ולא ב-SharePoint.
           </span>
         </span>
       </label>

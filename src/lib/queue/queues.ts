@@ -127,6 +127,13 @@ export const QUEUES = {
   // src/lib/data/agreement-archive.ts and
   // docs/sharepoint-contracts-archive-plan-2026-09-06.md.
   agreementArchiveSweep: 'agreement-archive-sweep',
+  // Weekly archive maintenance (Sunday 04:10 IL): SHA-256 fixity check of
+  // every archived file, hash fill-in for hand-uploaded contracts, Active →
+  // Expired upkeep, and the due-for-disposition / expiring-soon report to
+  // Slack. Reads and writes metadata only — never touches a file. Same switch
+  // as the export (agreement_archive_enabled). See
+  // src/lib/data/archive-maintenance.ts.
+  archiveMaintenanceSweep: 'archive-maintenance-sweep',
   // SUMIT hold-release reconciler — every 30m, read-only against SUMIT's CRM
   // (crm/data/listentities on the "תפיסות מסגרת" folder), syncs
   // campaigns.release_status for holds SUMIT reports as released (manual

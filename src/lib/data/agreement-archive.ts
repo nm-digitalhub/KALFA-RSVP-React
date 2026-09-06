@@ -238,13 +238,18 @@ function graphStatus(err: unknown): number {
   return NaN;
 }
 
-type ArchiveTarget = {
+export type ArchiveTarget = {
   driveId: string;
   /** Logical column name (as in archiveFields) → the library's internal field name. */
   fieldNames: Map<string, string>;
 };
 
-let cachedTarget: ArchiveTarget | null = null;
+const cachedTargets = new Map<string, ArchiveTarget>();
+
+/** Test hook: forget resolved libraries (the cache is per process). */
+export function resetArchiveTargetCache(): void {
+  cachedTargets.clear();
+}
 
 /**
  * SharePoint escapes characters it dislikes in a LIST column's internal name
@@ -269,15 +274,20 @@ export function translateFields(
   return out;
 }
 
-/** The drive behind ARCHIVE_LIBRARY on the archive site plus its field-name map. Resolved once per process. */
-async function resolveArchiveTarget(): Promise<ArchiveTarget> {
-  if (cachedTarget) return cachedTarget;
+/**
+ * The drive behind a library on the archive site plus its field-name map.
+ * Resolved once per process per library; shared with the maintenance sweep
+ * (archive-maintenance.ts).
+ */
+export async function resolveLibraryTarget(libraryName: string): Promise<ArchiveTarget> {
+  const cached = cachedTargets.get(libraryName);
+  if (cached) return cached;
   const g = graphClient();
   const site = (await g.api(`/sites/${archiveSiteRef()}?$select=id`).get()) as { id: string };
   const lists = (await g.api(`/sites/${site.id}/lists?$select=id,displayName&$top=200`).get()) as {
     value: Array<{ id: string; displayName: string }>;
   };
-  const list = lists.value.find((l) => l.displayName === ARCHIVE_LIBRARY);
+  const list = lists.value.find((l) => l.displayName === libraryName);
   if (!list) throw new Error('archive_library_missing');
   const drive = (await g.api(`/sites/${site.id}/lists/${list.id}/drive?$select=id`).get()) as {
     id: string;
@@ -291,8 +301,14 @@ async function resolveArchiveTarget(): Promise<ArchiveTarget> {
     fieldNames.set(c.name, c.name);
     fieldNames.set(decodeInternalName(c.name), c.name);
   }
-  cachedTarget = { driveId: drive.id, fieldNames };
-  return cachedTarget;
+  const target = { driveId: drive.id, fieldNames };
+  cachedTargets.set(libraryName, target);
+  return target;
+}
+
+/** Exported for the graph-status check shared with the maintenance sweep. */
+export function graphStatusOf(err: unknown): number {
+  return graphStatus(err);
 }
 
 async function ensureYearFolder(driveId: string, year: string): Promise<void> {
@@ -404,7 +420,7 @@ export async function runAgreementArchiveSweep(nowMs: number = Date.now()): Prom
     }
   }
 
-  const target = await resolveArchiveTarget();
+  const target = await resolveLibraryTarget(ARCHIVE_LIBRARY);
   const { driveId } = target;
   const failures: string[] = [];
 
