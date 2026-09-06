@@ -10,10 +10,30 @@
 // a regression dressed up as a fix. The docs' own answer is to pull the shared
 // fields into a variable and spread them, which is what this is.
 //
-// og:image is deliberately absent: the file convention
-// (src/app/opengraph-image.png + .alt.txt) emits it and takes priority, so
-// naming it here would only create a second place to keep in sync.
+// og:image MUST be listed here, and that is the non-obvious half.
+//
+// The file convention (src/app/opengraph-image.png + .alt.txt) injects the
+// image into the openGraph object a page INHERITS. The moment a page declares
+// its own openGraph, the whole inherited object is replaced — the file
+// convention's image included. Shipping page-specific descriptions without
+// this line silently stripped og:image from all 11 child pages while the home
+// page (which declares no openGraph of its own) kept it; caught by an external
+// auditor, not by us, on 2026-09-06. Its own og-check wants title +
+// description + image.
+//
+// Dimensions and alt are restated because they travel with the image entry,
+// and the alt text is the same string as opengraph-image.alt.txt — that file
+// still serves the home page, so the two must say the same thing.
+const OG_IMAGE = {
+  url: '/opengraph-image.png',
+  width: 1200,
+  height: 630,
+  alt: 'KALFA — אישורי הגעה, במקום אחד',
+} as const;
 
+// Used by the ROOT LAYOUT, which deliberately omits `images`: nothing replaces
+// its openGraph object, so the file convention still injects the image there.
+// Declaring it in both places risks emitting og:image twice on the home page.
 export const OPEN_GRAPH_BASE = {
   type: 'website',
   locale: 'he_IL',
@@ -29,5 +49,8 @@ export const OPEN_GRAPH_BASE = {
  * would render "KALFA · Page | KALFA".
  */
 export function pageOpenGraph(title: string, description: string) {
-  return { ...OPEN_GRAPH_BASE, title, description };
+  // `images` is restated here and NOT in OPEN_GRAPH_BASE — see OG_IMAGE above.
+  // A page replaces the inherited openGraph wholesale, so it must carry the
+  // image itself; the root layout must not, or the home page emits it twice.
+  return { ...OPEN_GRAPH_BASE, images: [OG_IMAGE], title, description };
 }

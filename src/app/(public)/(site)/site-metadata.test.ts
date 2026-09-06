@@ -126,6 +126,26 @@ describe('public site metadata', () => {
     }
   });
 
+  it('the shared helper carries og:image — a page openGraph replaces the file convention', () => {
+    // The regression this pins: src/app/opengraph-image.png is injected into
+    // the openGraph object a page INHERITS, so the moment a page declares its
+    // own, the image is gone unless the helper restates it. Shipped broken on
+    // 2026-09-06 and found by an external auditor, not by these tests.
+    const helper = readFileSync(
+      join(siteDir, '..', '..', '..', 'lib', 'seo', 'open-graph.ts'),
+      'utf8',
+    );
+    expect(helper).toContain('opengraph-image.png');
+    // ...and only from pageOpenGraph, never from the base the ROOT layout
+    // spreads, or the home page emits og:image twice.
+    const base = helper.slice(
+      helper.indexOf('export const OPEN_GRAPH_BASE'),
+      helper.indexOf('export function pageOpenGraph'),
+    );
+    expect(base).not.toContain('images');
+    expect(helper.slice(helper.indexOf('export function pageOpenGraph'))).toContain('images:');
+  });
+
   it('every page pins its own canonical', () => {
     for (const p of pages) {
       expect(p.src, p.route).toContain('canonical');
