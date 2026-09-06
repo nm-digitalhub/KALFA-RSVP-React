@@ -50,6 +50,7 @@ import { runThankyouSweep } from '@/lib/data/auto-thankyou';
 import { runInquiryFollowupSweep, getInquiryFollowupEnabled } from '@/lib/data/inquiry-followup';
 import { runAgreementArchiveSweep, getAgreementArchiveEnabled } from '@/lib/data/agreement-archive';
 import { runArchiveMaintenanceSweep } from '@/lib/data/archive-maintenance';
+import { runArchiveBackupSweep } from '@/lib/data/archive-backup';
 import { runGraphIntakeSubscriptionSweep } from '@/lib/data/inquiry-mail-intake';
 import { runCallbackSweep } from '@/lib/data/call-callbacks';
 import { runCallbackSchedulingSweep } from '@/lib/data/callback-scheduling';
@@ -565,6 +566,13 @@ async function handleArchiveMaintenanceSweep(): Promise<void> {
   await runArchiveMaintenanceSweep();
 }
 
+// Monthly independent backup — same switch again: one archive automation, one
+// arming decision.
+async function handleArchiveBackupSweep(): Promise<void> {
+  if (!(await getAgreementArchiveEnabled())) return;
+  await runArchiveBackupSweep();
+}
+
 
 // ── Push instead of poll ────────────────────────────────────────────────────
 // A dedicated LISTEN connection so a callback request is scheduled the moment
@@ -899,7 +907,12 @@ async function main(): Promise<void> {
       q === QUEUES.agreementArchiveSweep ||
       // Singleton too: a weekly walk that downloads every archived file; two
       // overlapping runs would double the Graph traffic for no benefit.
-      q === QUEUES.archiveMaintenanceSweep;
+      q === QUEUES.archiveMaintenanceSweep ||
+      // Singleton too: it downloads every archived file and every object in the
+      // source bucket; two overlapping runs would double that for no benefit
+      // (the content-addressed store makes a duplicate write harmless, just
+      // wasteful).
+      q === QUEUES.archiveBackupSweep;
     await boss.createQueue(q, singleton ? { policy: 'singleton' } : undefined);
   }
 
@@ -973,6 +986,12 @@ async function main(): Promise<void> {
     QUEUES.archiveMaintenanceSweep,
     guardedWorker(QUEUES.archiveMaintenanceSweep, async () => {
       await handleArchiveMaintenanceSweep();
+    }),
+  );
+  await boss.work(
+    QUEUES.archiveBackupSweep,
+    guardedWorker(QUEUES.archiveBackupSweep, async () => {
+      await handleArchiveBackupSweep();
     }),
   );
   // Callback re-dials. runCallbackSweep only ENQUEUES — every dial gate is
@@ -1178,6 +1197,9 @@ async function main(): Promise<void> {
   await boss.schedule(QUEUES.agreementArchiveSweep, '50 3 * * *', null, { tz: SCHEDULE_TZ });
   // Weekly (Sunday 04:10 IL) — the plan's annual fixity check, done every week instead.
   await boss.schedule(QUEUES.archiveMaintenanceSweep, '10 4 * * 0', null, { tz: SCHEDULE_TZ });
+  // Monthly, 1st at 04:40 IL — after the nightly export, so the month's
+  // agreements are already in the library when the snapshot is taken.
+  await boss.schedule(QUEUES.archiveBackupSweep, '40 4 1 * *', null, { tz: SCHEDULE_TZ });
   // Weekly, off-peak, deliberately non-round (04:17) — a 60-day token refreshed
   // once a week has ample margin even if a run is missed for a while.
   await boss.schedule(QUEUES.igTokenRefresh, '17 4 * * 2', null, { tz: SCHEDULE_TZ });

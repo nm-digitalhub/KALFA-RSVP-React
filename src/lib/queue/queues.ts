@@ -134,6 +134,14 @@ export const QUEUES = {
   // as the export (agreement_archive_enabled). See
   // src/lib/data/archive-maintenance.ts.
   archiveMaintenanceSweep: 'archive-maintenance-sweep',
+  // Monthly independent backup (1st of the month, 04:40 IL) of everything the
+  // archive depends on: the three SharePoint libraries AND the signed PDFs /
+  // signatures already sitting in the id-documents bucket. Writes a
+  // content-addressed store plus a dated manifest into the private
+  // archive-backup bucket; never deletes. SharePoint's only safety net is a
+  // 93-day recycle bin and supplier contracts exist nowhere else. Same switch
+  // as the export. See src/lib/data/archive-backup.ts.
+  archiveBackupSweep: 'archive-backup-sweep',
   // SUMIT hold-release reconciler — every 30m, read-only against SUMIT's CRM
   // (crm/data/listentities on the "תפיסות מסגרת" folder), syncs
   // campaigns.release_status for holds SUMIT reports as released (manual
