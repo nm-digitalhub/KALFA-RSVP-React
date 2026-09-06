@@ -1,4 +1,15 @@
-import { Banknote, Clock3, Eye, Gauge, TrendingUp, UserPlus, Users } from 'lucide-react';
+import {
+  Banknote,
+  Clock3,
+  Eye,
+  Gauge,
+  MousePointerClick,
+  Search,
+  Target,
+  TrendingUp,
+  UserPlus,
+  Users,
+} from 'lucide-react';
 
 import { EmptyState, PageHeading, formatDateTime } from '../_components';
 import { AutoRefresh } from './_auto-refresh';
@@ -10,6 +21,7 @@ import {
   NotConfiguredCard,
   QuotaBanner,
   RealtimeCard,
+  SearchConsoleNotConfiguredCard,
   SectionCard,
   StatDelta,
   StatTile,
@@ -21,6 +33,7 @@ import {
   getAnalyticsDashboard,
   getRealtimeSnapshot,
 } from '@/lib/data/admin/analytics';
+import { getSearchConsoleDashboard } from '@/lib/data/admin/search-console';
 import { formatCurrency } from '@/lib/format';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { getCookieConsentPublicConfig } from '@/lib/consent/admin-config';
@@ -39,10 +52,11 @@ export default async function AdminAnalyticsPage({
   searchParams: Promise<{ range?: string | string[] }>;
 }) {
   const range = parseRange((await searchParams).range);
-  const [dash, realtime, consent] = await Promise.all([
+  const [dash, realtime, consent, search] = await Promise.all([
     getAnalyticsDashboard(range),
     getRealtimeSnapshot(),
     getCookieConsentPublicConfig(),
+    getSearchConsoleDashboard(range),
   ]);
 
   if (dash === null) {
@@ -201,6 +215,93 @@ export default async function AdminAnalyticsPage({
         </div>
         <RealtimeCard realtime={realtime} />
       </div>
+
+      {/* Organic search (Google Search Console).
+          Deliberately its OWN block rather than a card in the grid below: it
+          answers a question GA4 structurally cannot. GA4 reports the visits a
+          site received; Search Console reports whether Google showed the site
+          at all, for which query and at what position — the only way to tell
+          "nobody can find us" apart from "nobody searched". */}
+      {search === null ? null : !search.configured ? (
+        <SearchConsoleNotConfiguredCard issue={search.configIssue} />
+      ) : (
+        <div className="space-y-4">
+          <SectionCard title="חיפוש אורגני בגוגל" section={search.totals}>
+            <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+              <StatTile
+                label="חשיפות"
+                value={search.totals.data?.impressions ?? 0}
+                icon={Eye}
+              />
+              <StatTile
+                label="קליקים"
+                value={search.totals.data?.clicks ?? 0}
+                icon={MousePointerClick}
+              />
+              <StatTile
+                label="שיעור הקלקה"
+                value={
+                  search.totals.data?.ctr === null || search.totals.data === null
+                    ? '—'
+                    : `${(search.totals.data.ctr * 100).toFixed(1)}%`
+                }
+                icon={Target}
+              />
+              <StatTile
+                label="מיקום ממוצע"
+                value={
+                  search.totals.data?.position === null || search.totals.data === null
+                    ? '—'
+                    : search.totals.data.position.toFixed(1)
+                }
+                icon={Search}
+              />
+            </div>
+            <p className="text-xs text-muted-foreground">
+              {search.window.startDate} — {search.window.endDate} · הנתונים של גוגל
+              מתעכבים כיומיים, ולכן הטווח אינו מגיע להיום. מדד ההצלחה בשלב הזה הוא
+              חשיפות, לא קליקים.
+            </p>
+            <p className="text-xs text-muted-foreground">
+              מקור הנתונים הוא גוגל עצמה ולא מדידה באתר — הוא ממשיך להתעדכן גם
+              כשמנגנון ההסכמה כבוי, ולכן אינו מושפע מההודעה שלמעלה.
+            </p>
+          </SectionCard>
+
+          <div className="grid gap-8 lg:grid-cols-2">
+            <SectionCard title="שאילתות חיפוש" section={search.queries}>
+              <DataTable
+                headers={['שאילתה', 'חשיפות', 'קליקים', 'מיקום']}
+                rows={(search.queries.data ?? []).map((r) => ({
+                  key: r.key,
+                  cells: [r.key, r.impressions, r.clicks, r.position.toFixed(1)],
+                }))}
+                emptyText="גוגל לא הציגה את האתר על אף שאילתה בטווח הזה."
+              />
+              <p className="text-xs text-muted-foreground">
+                גוגל מסתירה שאילתות נדירות מטעמי פרטיות, ולכן הסכום כאן קטן
+                מסך החשיפות.
+              </p>
+            </SectionCard>
+
+            <SectionCard title="עמודים בתוצאות החיפוש" section={search.pages}>
+              <DataTable
+                headers={['עמוד', 'חשיפות', 'קליקים', 'מיקום']}
+                rows={(search.pages.data ?? []).map((r) => ({
+                  key: r.key,
+                  cells: [
+                    r.key.replace(/^https?:\/\/[^/]+/, '') || '/',
+                    r.impressions,
+                    r.clicks,
+                    r.position.toFixed(1),
+                  ],
+                }))}
+                emptyText="אף עמוד לא הופיע בתוצאות בטווח הזה."
+              />
+            </SectionCard>
+          </div>
+        </div>
+      )}
 
       <div className="grid gap-8 lg:grid-cols-2">
         <FunnelCard section={dash.funnel} />

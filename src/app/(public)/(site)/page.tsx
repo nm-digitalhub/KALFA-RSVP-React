@@ -98,13 +98,20 @@ const TRUST: { icon: LucideIcon; t: string; d: string }[] = [
   { icon: Gauge, t: 'שליטה מלאה', d: 'אתם רואים הכול ומחליטים הכול — בכל רגע נתון.' },
 ];
 
-const AUDIENCES: { icon: LucideIcon; t: string }[] = [
-  { icon: Heart, t: 'חתונות' },
-  { icon: Star, t: 'בר/בת מצווה' },
+// The four entries with an `href` are the strongest internal links on the
+// site: they sit on the highest-authority page, in the section a visitor
+// already scans for their own kind of event. The two without one have no page
+// of their own yet — they stay plain, never a link to a near-duplicate page
+// (the reason the old footer's placeholder columns were removed).
+// 'ברית' replaced the vaguer 'אירועים פרטיים' here: it is a real, distinct
+// event type with its own page and its own search demand.
+const AUDIENCES: { icon: LucideIcon; t: string; href?: string }[] = [
+  { icon: Heart, t: 'חתונות', href: '/wedding' },
+  { icon: Star, t: 'בר/בת מצווה', href: '/bar-mitzva' },
+  { icon: Gift, t: 'ברית', href: '/brit' },
+  { icon: Presentation, t: 'כנסים', href: '/event' },
   { icon: House, t: 'אירועים משפחתיים' },
-  { icon: Presentation, t: 'כנסים' },
   { icon: Building2, t: 'אירועי חברה' },
-  { icon: Gift, t: 'אירועים פרטיים' },
 ];
 
 const PREVIEW_GUESTS = [
@@ -452,15 +459,25 @@ export default async function HomePage() {
               </p>
             </div>
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-              {AUDIENCES.map(({ icon: Icon, t }) => (
-                <div
-                  key={t}
-                  className="flex items-center gap-3 rounded-lg border border-border bg-background px-4 py-4 transition hover:-translate-y-1 hover:border-primary hover:shadow-sm"
-                >
-                  <Icon className="size-5 text-primary" />
-                  <span className="text-sm font-semibold">{t}</span>
-                </div>
-              ))}
+              {AUDIENCES.map(({ icon: Icon, t, href }) => {
+                const body = (
+                  <>
+                    <Icon className="size-5 text-primary" />
+                    <span className="text-sm font-semibold">{t}</span>
+                  </>
+                );
+                const shell =
+                  'flex items-center gap-3 rounded-lg border border-border bg-background px-4 py-4 transition hover:-translate-y-1 hover:border-primary hover:shadow-sm';
+                return href ? (
+                  <Link key={t} href={href} className={shell}>
+                    {body}
+                  </Link>
+                ) : (
+                  <div key={t} className={shell}>
+                    {body}
+                  </div>
+                );
+              })}
             </div>
           </div>
         </section>

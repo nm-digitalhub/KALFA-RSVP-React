@@ -9,10 +9,26 @@ import type { NextRequest } from 'next/server';
 // otherwise land on an allowlisted path (a soft-nav RSC fetch of `/faq`, a
 // prefetch of `/`).
 
+// Listed as literals ON PURPOSE, even though the event-type paths also live in
+// src/lib/marketing/event-types.ts. This module is imported by src/proxy.ts,
+// which runs for every request — deriving the list here would pull the whole
+// marketing copy catalogue into the proxy bundle to obtain four strings.
+// markdown-negotiation.test.ts asserts this set against that catalogue instead,
+// so a new event type still cannot be forgotten here; it fails the test run
+// rather than the request path.
+//
+// Adding a path costs nothing per page: serve-markdown.ts converts the page's
+// rendered HTML, so there is no hand-written Markdown body to maintain.
 export const MARKDOWN_NEGOTIABLE_PATHS = new Set<string>([
   '/',
   '/faq',
   '/contact',
+  '/wedding',
+  '/bar-mitzva',
+  '/brit',
+  '/event',
+  '/whatsapp',
+  '/guest-list-template',
   '/terms',
   '/privacy',
   '/cookies',

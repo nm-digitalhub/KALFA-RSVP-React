@@ -34,7 +34,7 @@ vi.mock('@/lib/data/contacts', () => ({
 import { bulkInsertGuests, createGroup, listGroups } from '@/lib/data/guests';
 import { buildContactsForEvent } from '@/lib/data/contacts';
 import { importGuestsAction } from './import-actions';
-import { buildTemplateCsv } from './template-content';
+import { buildTemplateCsv } from '@/lib/guests/import-template';
 
 const NEXT_REDIRECT = Object.assign(new Error('NEXT_REDIRECT'), {
   digest: 'NEXT_REDIRECT;replace;/auth/login;307;',

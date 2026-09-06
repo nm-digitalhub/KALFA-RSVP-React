@@ -3,6 +3,10 @@ import { join } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
+import { EVENT_TYPES } from '@/lib/marketing/event-types';
+
+import { FOOTER_LINKS, FOOTER_PAGE_LINKS } from './site-footer';
+
 // Source-level guards for the shared marketing footer (footer review
 // 2026-08-24). Component tests run in a Node environment (vitest.config), so
 // these pin the structure through the files rather than a DOM render.
@@ -14,20 +18,43 @@ const layoutSrc = readFileSync(join(siteDir, 'layout.tsx'), 'utf8');
 const homeSrc = readFileSync(join(siteDir, 'page.tsx'), 'utf8');
 
 describe('SiteFooter', () => {
-  it('every footer link points at a real (site) route', () => {
-    const hrefs = [...footerSrc.matchAll(/href: '(\/[a-z-]+)'/g)].map((m) => m[1]);
-    expect(hrefs).toEqual(['/faq', '/contact', '/privacy', '/terms', '/cookies']);
+  it('every footer link — legal tier and page tier alike — points at a real (site) route', () => {
+    const hrefs = [
+      ...FOOTER_LINKS.map((l) => l.href),
+      ...FOOTER_PAGE_LINKS.map((l) => l.href),
+    ];
+    expect(FOOTER_LINKS.map((l) => l.href)).toEqual([
+      '/faq',
+      '/contact',
+      '/privacy',
+      '/terms',
+      '/cookies',
+    ]);
     for (const href of hrefs) {
       expect(existsSync(join(siteDir, href.slice(1), 'page.tsx')), href).toBe(true);
     }
   });
 
-  it('is a single tier: brand link, one nav landmark with the cookie control, copyright — no placeholder columns', () => {
+  it('the page tier covers every event type in the catalogue, so a new type cannot go unlinked', () => {
+    const pageHrefs = FOOTER_PAGE_LINKS.map((l) => l.href);
+    for (const e of EVENT_TYPES) {
+      expect(pageHrefs, e.slug).toContain(e.path);
+    }
+    expect(pageHrefs).toContain('/whatsapp');
+    expect(pageHrefs).toContain('/guest-list-template');
+    // Labels are real text, never blank — a nav of empty links is worse than none.
+    for (const l of FOOTER_PAGE_LINKS) expect(l.label.trim()).not.toBe('');
+  });
+
+  it('is two tiers of LINKS: brand, page nav, legal nav with the cookie control, copyright — no placeholder columns', () => {
     expect(footerSrc).toContain('<footer');
+    expect(footerSrc).toContain('aria-label="אישורי הגעה לפי סוג אירוע"');
     expect(footerSrc).toContain('aria-label="משפטי ותמיכה"');
     expect(footerSrc).toContain('<ManageCookiesButton');
     expect(footerSrc).toContain('כל הזכויות שמורות');
     expect(footerSrc).not.toContain('FOOTER_COLS');
+    // The 2026-08-24 rule that brought the old columns down still holds: a
+    // marketing tier may exist only as real links, never as inert labels.
     expect(footerSrc).not.toMatch(/<span[^>]*>[^<]*(חתונות|אודות|תמיכה)/);
     // no physical-direction utilities — RTL stays logical
     expect(footerSrc).not.toMatch(/\b(ml|mr|pl|pr|left|right|text-left|text-right)-/);

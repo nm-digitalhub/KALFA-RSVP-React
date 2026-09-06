@@ -2,6 +2,7 @@ import { ArrowDown, ArrowUp } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 
 import { Badge, EmptyState, formatDateTime } from '../_components';
+import type { SearchConsoleConfigIssue } from '@/lib/analytics/search-console';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import {
   Card,
@@ -312,6 +313,30 @@ export function NotConfiguredCard({ issue }: { issue: Ga4ConfigIssue | null }) {
       <AlertTitle>חיבור Google Analytics אינו מוגדר</AlertTitle>
       <AlertDescription>
         {issue ? CONFIG_ISSUE_TEXT[issue] : 'תצורת החיבור חסרה.'}
+      </AlertDescription>
+    </Alert>
+  );
+}
+
+// Same rule as above — a code, never a path or a property URL.
+const SEARCH_CONSOLE_ISSUE_TEXT: Record<SearchConsoleConfigIssue, string> = {
+  missing_site_url:
+    'נכס ה-Search Console (SEARCH_CONSOLE_SITE_URL) אינו מוגדר בסביבת השרת. ' +
+    'הערך הוא נכס דומיין בצורת sc-domain:example.com או כתובת מלאה.',
+  missing_credentials_path: 'נתיב קובץ האישורים (GOOGLE_APPLICATION_CREDENTIALS) אינו מוגדר.',
+  credentials_unreadable: 'קובץ האישורים אינו קיים או אינו קריא לשרת.',
+};
+
+export function SearchConsoleNotConfiguredCard({
+  issue,
+}: {
+  issue: SearchConsoleConfigIssue | undefined;
+}) {
+  return (
+    <Alert>
+      <AlertTitle>חיבור Search Console אינו מוגדר</AlertTitle>
+      <AlertDescription>
+        {issue ? SEARCH_CONSOLE_ISSUE_TEXT[issue] : 'תצורת החיבור חסרה.'}
       </AlertDescription>
     </Alert>
   );

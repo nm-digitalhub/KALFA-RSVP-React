@@ -1,7 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import { NextRequest } from 'next/server';
 
-import { addVary, isEligibleRequestMethod, isNegotiableRequest, negotiateMarkdown } from './markdown-negotiation';
+import { EVENT_TYPES } from '@/lib/marketing/event-types';
+
+import {
+  addVary,
+  isEligibleRequestMethod,
+  isNegotiableRequest,
+  MARKDOWN_NEGOTIABLE_PATHS,
+  negotiateMarkdown,
+} from './markdown-negotiation';
 
 function request(
   path: string,
@@ -155,5 +163,45 @@ describe('addVary', () => {
     const headers = new Headers({ vary: 'accept, Accept-Encoding' });
     addVary(headers, 'Accept');
     expect(headers.get('vary')).toBe('accept, Accept-Encoding');
+  });
+});
+
+// The allowlist is written as literals so src/proxy.ts — which imports this
+// module and runs on every request — does not pull the marketing copy
+// catalogue into its bundle for four strings. That trade is only safe if a new
+// event type still cannot be forgotten here, which is what this asserts.
+describe('MARKDOWN_NEGOTIABLE_PATHS', () => {
+  it('covers every event-type page in the catalogue', () => {
+    for (const e of EVENT_TYPES) {
+      expect(MARKDOWN_NEGOTIABLE_PATHS.has(e.path), e.slug).toBe(true);
+    }
+  });
+
+  it('covers the standalone marketing pages and the original six', () => {
+    for (const path of [
+      '/',
+      '/faq',
+      '/contact',
+      '/terms',
+      '/privacy',
+      '/cookies',
+      '/whatsapp',
+      '/guest-list-template',
+    ]) {
+      expect(MARKDOWN_NEGOTIABLE_PATHS.has(path), path).toBe(true);
+    }
+  });
+
+  it('never lists a token surface, the app, or the download endpoint', () => {
+    for (const path of [
+      '/app',
+      '/admin',
+      '/auth/login',
+      '/r/abc',
+      '/g/abc',
+      '/guest-list-template.csv',
+    ]) {
+      expect(MARKDOWN_NEGOTIABLE_PATHS.has(path), path).toBe(false);
+    }
   });
 });

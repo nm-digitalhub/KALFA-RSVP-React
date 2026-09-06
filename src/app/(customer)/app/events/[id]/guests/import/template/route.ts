@@ -6,7 +6,7 @@ import { requireEventAccess } from '@/lib/data/events';
 import {
   buildTemplateCsv,
   TEMPLATE_DOWNLOAD_FILENAME,
-} from '../template-content';
+} from '@/lib/guests/import-template';
 
 // GET /app/events/[id]/guests/import/template — the ready-made import
 // template. No guest data leaves the server here; ownership is still enforced

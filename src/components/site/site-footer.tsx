@@ -1,6 +1,7 @@
 import Link from 'next/link';
 
 import { ManageCookiesButton } from '@/components/consent/manage-cookies-button';
+import { EVENT_TYPES } from '@/lib/marketing/event-types';
 
 // Shared footer for the public MARKETING pages — mounted once in
 // src/app/(public)/(site)/layout.tsx (a nested layout: it wraps every page of
@@ -9,15 +10,22 @@ import { ManageCookiesButton } from '@/components/consent/manage-cookies-button'
 // legal links + the cookie-management control the homepage had, and the guest
 // token surfaces (/r /g /ty /join, outside the group) never do.
 //
-// Single tier ON PURPOSE (footer review 2026-08-24): the previous homepage
-// footer stacked three "marketing" columns of non-clickable placeholder text
-// (no /about, no /support, no event-type pages exist) above the only row that
-// worked, duplicating "יצירת קשר" and repeating the CTA banner's slogan. A
-// multi-column footer earns its place only once there are real destinations
-// to fill it — until then the header nav already covers the in-page anchors.
+// TWO tiers as of 2026-09-06, and the first tier is new. The 2026-08-24 review
+// removed three "marketing" columns because they were non-clickable
+// placeholder text — "no /about, no /support, no event-type pages exist" — and
+// set the bar for bringing a tier back: real destinations. The event-type
+// pages (/wedding, /bar-mitzva, /brit, /event), /whatsapp and
+// /guest-list-template now exist, so the tier is links, never labels.
 //
-// Every link is a real route (sitemap.ts is the same six-page list). Links
-// are text-sm with min-h-11 so the touch target is ≥44px on mobile.
+// It also does real work rather than decoration: a page reachable only from
+// sitemap.xml carries a weak signal, and these pages are the reason the site
+// has anything to rank for beyond the brand name.
+//
+// Event-type labels are DERIVED from the catalogue so a fifth type cannot
+// appear on the site while silently missing from the footer.
+//
+// Every link is a real route (sitemap.ts lists the same pages). Links are
+// text-sm with min-h-11 so the touch target is ≥44px on mobile.
 //
 // Keyboard focus = a real OUTLINE, not ring+ring-offset (verified against the
 // installed Tailwind 4.3.3 source, 2026-08-24): `outline-<n>` is solid by
@@ -34,6 +42,12 @@ export const FOOTER_LINKS: readonly { href: string; label: string }[] = [
   { href: '/privacy', label: 'מדיניות פרטיות' },
   { href: '/terms', label: 'תקנון' },
   { href: '/cookies', label: 'מדיניות עוגיות' },
+];
+
+export const FOOTER_PAGE_LINKS: readonly { href: string; label: string }[] = [
+  ...EVENT_TYPES.map((e) => ({ href: e.path, label: e.navLabel })),
+  { href: '/whatsapp', label: 'שליחה בוואטסאפ' },
+  { href: '/guest-list-template', label: 'תבנית רשימת מוזמנים' },
 ];
 
 const LINK_CLASS = [
@@ -67,6 +81,16 @@ export function SiteFooter({
         </div>
         <nav
           className="mt-4 flex flex-wrap items-center gap-x-5 gap-y-0 border-t border-white/10 pt-3 text-sm"
+          aria-label="אישורי הגעה לפי סוג אירוע"
+        >
+          {FOOTER_PAGE_LINKS.map((l) => (
+            <Link key={l.href} href={l.href} className={LINK_CLASS}>
+              {l.label}
+            </Link>
+          ))}
+        </nav>
+        <nav
+          className="flex flex-wrap items-center gap-x-5 gap-y-0 border-t border-white/10 pt-3 text-sm"
           aria-label="משפטי ותמיכה"
         >
           {FOOTER_LINKS.map((l) => (
