@@ -11,8 +11,10 @@ import {
   listGuests,
   listGroups,
   getGuestTotals,
+  countGuestsMissingExpectedCount,
   type GuestListItem,
 } from '@/lib/data/guests';
+import { fillMissingExpectedCountAction } from './guests-actions';
 import { AddGuestsOnboarding } from './add-guests-onboarding';
 import { guestsView } from './guest-list-view';
 import type { Enums } from '@/lib/supabase/types';
@@ -47,6 +49,7 @@ const HIDDEN_OP_STATUS: ReadonlySet<ContactOpStatus> = new Set<ContactOpStatus>(
   'pending_contact',
   'not_eligible',
 ]);
+import { FillExpectedCount } from './fill-expected-count';
 import { GuestListControls } from './guest-list-controls';
 import { GroupsManager } from './groups-manager';
 import { GuestRowActions } from './guest-row-actions';
@@ -272,6 +275,12 @@ export default async function GuestsPage({ params, searchParams }: PageProps) {
 
   const groupName = new Map(groups.map((g) => [g.id, g.name]));
 
+  // Only asked about when there is something to fill: an import whose source had
+  // no count column leaves every row NULL, and a NULL invited size lets the
+  // public RSVP form accept any number up to its 50 fallback cap.
+  const missingExpectedCount = await countGuestsMissingExpectedCount(eventId);
+  const fillExpectedCount = fillMissingExpectedCountAction.bind(null, eventId);
+
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-4">
@@ -300,6 +309,10 @@ export default async function GuestsPage({ params, searchParams }: PageProps) {
           </Link>
         </div>
       </div>
+
+      {missingExpectedCount > 0 ? (
+        <FillExpectedCount missing={missingExpectedCount} action={fillExpectedCount} />
+      ) : null}
 
       <GuestListControls
         eventId={eventId}

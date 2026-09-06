@@ -478,6 +478,55 @@ export async function createGuest(
  * and id, and the patch never includes event_id/id/rsvp_token, so those cannot
  * be changed via this path.
  */
+// How many guests have no invited size. Drives the back-fill prompt on the
+// guest list, which must appear only when there is something to fix — a
+// permanent "set a default" control would be noise on a fully-filled list.
+// `head: true` so this costs a count, not a page of rows.
+export async function countGuestsMissingExpectedCount(eventId: string): Promise<number> {
+  await requireEventAccess(eventId, 'guests', 'view');
+  const supabase = await createClient();
+  const { count, error } = await supabase
+    .from('guests')
+    .select('id', { count: 'exact', head: true })
+    .eq('event_id', eventId)
+    .is('expected_count', null);
+  if (error) {
+    throw new Error('ספירת המוזמנים ללא כמות נכשלה');
+  }
+  return count ?? 0;
+}
+
+// Fill in the invited size for guests that have none — the follow-up to an
+// import whose source had no count column at all (a venue list, a WhatsApp
+// group). Touches ONLY rows where expected_count is null: a guest whose count
+// is already known, including one deliberately set to 0, is never overwritten.
+//
+// This is not cosmetic. With expected_count null the public RSVP form falls back
+// to a cap of 50 (COUNT_FALLBACK_CAP), so a couple invited as two can confirm
+// fifty; `over_invited` cannot be computed at all; and the headcount counts the
+// guest as 1 until they answer.
+//
+// Returns how many rows were filled, so the caller can say so rather than claim
+// a number it did not verify.
+export async function fillMissingExpectedCount(
+  eventId: string,
+  count: number,
+): Promise<number> {
+  await requireEventAccess(eventId, 'guests', 'edit');
+  const supabase = await createClient();
+
+  const { data, error } = await supabase
+    .from('guests')
+    .update({ expected_count: count })
+    .eq('event_id', eventId)
+    .is('expected_count', null)
+    .select('id');
+  if (error) {
+    throw new Error('עדכון כמות המוזמנים נכשל');
+  }
+  return data?.length ?? 0;
+}
+
 export async function updateGuest(
   eventId: string,
   guestId: string,

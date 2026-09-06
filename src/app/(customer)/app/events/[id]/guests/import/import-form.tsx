@@ -67,6 +67,30 @@ export function ImportForm({ action }: { action: ImportAction }) {
           <FieldError errors={fileError ? [fileError] : undefined} />
         </div>
 
+        <div>
+          <label
+            htmlFor="default_expected_count"
+            className="mb-1 block text-sm font-medium"
+          >
+            כמות מוזמנים ברירת מחדל <span className="font-normal text-muted-foreground">(אופציונלי)</span>
+          </label>
+          <input
+            id="default_expected_count"
+            name="default_expected_count"
+            type="number"
+            min={0}
+            step={1}
+            inputMode="numeric"
+            placeholder="למשל 2"
+            className="w-32 rounded-md border border-border bg-transparent px-3 py-2 text-sm"
+          />
+          <p className="mt-1 text-sm leading-6 text-muted-foreground">
+            חל רק על שורות שבהן העמודה ריקה או שאינה קיימת בקובץ. בלי ערך כאן,
+            מוזמן ללא כמות יוכל לאשר הגעה לכל מספר, ולא נדע לסמן חריגה מהכמות
+            שהוזמנה.
+          </p>
+        </div>
+
         <UploadButton />
       </form>
 

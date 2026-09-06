@@ -9,6 +9,7 @@ import {
   createGuest,
   updateGuest,
   deleteGuest,
+  fillMissingExpectedCount,
   updateContactStatus,
   createGroup,
   updateGroup,
@@ -317,4 +318,37 @@ export async function regenerateRsvpTokenAction(
   }
   revalidatePath(`/app/events/${eventId}/guests/${guestId}`);
   return { notice: 'נוצר קישור חדש' };
+}
+
+// Fill the invited size for every guest of this event that has none — offered on
+// the guest list only while such guests exist. The count is validated through
+// the SAME schema field the guest form uses, so this back-fill cannot store a
+// value the form would have rejected.
+export async function fillMissingExpectedCountAction(
+  eventId: string,
+  _prevState: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  const parsed = createGuestSchema.shape.expected_count.safeParse(
+    (formData.get('expected_count') ?? '').toString().trim(),
+  );
+  if (!parsed.success || parsed.data === undefined) {
+    return { fieldErrors: { expected_count: ['נא להזין מספר מוזמנים'] } };
+  }
+
+  let filled: number;
+  try {
+    filled = await fillMissingExpectedCount(eventId, parsed.data);
+  } catch (err) {
+    unstable_rethrow(err);
+    return { error: 'עדכון כמות המוזמנים נכשל. נסו שוב.' };
+  }
+
+  revalidatePath(`/app/events/${eventId}/guests`);
+  return {
+    notice:
+      filled === 0
+        ? 'לא נמצאו מוזמנים ללא כמות.'
+        : `הושלמה כמות עבור ${filled.toLocaleString('he-IL')} מוזמנים.`,
+  };
 }

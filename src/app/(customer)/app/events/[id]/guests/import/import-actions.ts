@@ -102,6 +102,20 @@ export async function importGuestsAction(
     return { error: 'הקובץ ריק או חסר שורות נתונים.' };
   }
 
+  // Optional fallback for rows whose count is missing. Validated through the
+  // SAME schema field the rows use, so the form cannot introduce a value a row
+  // would have been rejected for. Absent or blank → unchanged behaviour: the
+  // count stays NULL rather than becoming 0, which would import every family as
+  // "0 מוזמנים".
+  const rawDefault = (formData.get('default_expected_count') ?? '').toString().trim();
+  if (rawDefault !== '') {
+    const check = importRowSchema.shape.expected_count.safeParse(rawDefault);
+    if (!check.success) {
+      return { error: 'כמות המוזמנים שהוזנה כברירת מחדל אינה תקינה.' };
+    }
+  }
+  const defaultCount = rawDefault;
+
   // First row is the header. Map columns by name.
   const header = grid[0];
   const colIndex: Record<
@@ -178,11 +192,19 @@ export async function importGuestsAction(
         ? repairIsraeliLocalPhone(rawPhone) ?? rawPhone
         : rawPhone;
 
-    const rawCount = (
+    // The file's own value when it has one; otherwise the default the owner
+    // typed on the import form. A list exported from a venue or a WhatsApp
+    // group routinely has no count column at all, and without this every row
+    // lands with expected_count NULL — which the public RSVP form reads as "no
+    // invited size" and falls back to a cap of 50, so a couple invited as two
+    // can confirm fifty. `over_invited` also cannot be computed, and the
+    // headcount counts them as 1 until they answer.
+    const rawFromFile = (
       colIndex.expected_count === -1
         ? ''
         : cells[colIndex.expected_count] ?? ''
     ).trim();
+    const rawCount = rawFromFile === '' ? defaultCount : rawFromFile;
 
     const candidate = {
       full_name: cells[colIndex.full_name] ?? '',
