@@ -23,6 +23,8 @@
  *   node scripts/sharepoint-archive-provision.cjs             # provision
  */
 
+const path = require('node:path');
+
 const { ClientCertificateCredential } = require('@azure/identity');
 
 const TENANT = '11926da5-9d16-45e3-947b-27b2909ba6c5';
@@ -226,6 +228,89 @@ const NAV_NODES = [
   ['Disposition-Log — יומן ביעור', `https://${SP_HOST}${SITE_PATH}/Lists/DispositionLog`],
   ['פורטל KALFA', `https://${SP_HOST}/sites/allcompany`],
 ];
+
+// Column formatting (live docs: declarative-customization/column-formatting,
+// v2 schema, predefined sp-field-severity classes + Fluent iconName). Applied
+// per library through the field's CustomFormatter property — display only,
+// never changes data.
+const FMT_SCHEMA = 'https://developer.microsoft.com/json-schemas/sp/v2/column-formatting.schema.json';
+const COLUMN_FORMATS = {
+  Status: {
+    $schema: FMT_SCHEMA,
+    elmType: 'div',
+    attributes: {
+      class:
+        "=if(@currentField == 'Active', 'sp-field-severity--good', if(@currentField == 'Expired', 'sp-field-severity--low', if(@currentField == 'Superseded', 'sp-field-severity--warning', if(@currentField == 'Terminated', 'sp-field-severity--blocked', '')))) + ' ms-fontColor-neutralSecondary'",
+    },
+    children: [
+      {
+        elmType: 'span',
+        style: { display: 'inline-block', padding: '0 4px' },
+        attributes: {
+          iconName:
+            "=if(@currentField == 'Active', 'CheckMark', if(@currentField == 'Expired', 'Clock', if(@currentField == 'Superseded', 'History', if(@currentField == 'Terminated', 'Cancel', ''))))",
+        },
+      },
+      { elmType: 'span', txtContent: '@currentField' },
+    ],
+  },
+  // Retention date passed → red (blocked) unless under legal hold.
+  RetentionUntil: {
+    $schema: FMT_SCHEMA,
+    elmType: 'div',
+    attributes: {
+      class: "=if(@currentField != '' && @currentField <= @now && [$LegalHold] != true, 'sp-field-severity--blocked', '')",
+    },
+    children: [
+      {
+        elmType: 'span',
+        style: { display: 'inline-block', padding: '0 4px' },
+        attributes: { iconName: "=if(@currentField != '' && @currentField <= @now && [$LegalHold] != true, 'Delete', '')" },
+      },
+      { elmType: 'span', txtContent: "=if(@currentField == '', '', toLocaleDateString(@currentField))" },
+    ],
+  },
+  // Expiry within 90 days on an active contract → warning.
+  ExpiryDate: {
+    $schema: FMT_SCHEMA,
+    elmType: 'div',
+    attributes: {
+      class: "=if(@currentField != '' && [$Status] == 'Active' && @currentField <= @now + 7776000000, 'sp-field-severity--warning', '')",
+    },
+    children: [
+      {
+        elmType: 'span',
+        style: { display: 'inline-block', padding: '0 4px' },
+        attributes: { iconName: "=if(@currentField != '' && [$Status] == 'Active' && @currentField <= @now + 7776000000, 'Warning', '')" },
+      },
+      { elmType: 'span', txtContent: "=if(@currentField == '', '', toLocaleDateString(@currentField))" },
+    ],
+  },
+  LegalHold: {
+    $schema: FMT_SCHEMA,
+    elmType: 'div',
+    attributes: { class: "=if(@currentField == true, 'sp-field-severity--severeWarning', '')" },
+    children: [
+      { elmType: 'span', style: { display: 'inline-block', padding: '0 4px' }, attributes: { iconName: "=if(@currentField == true, 'Lock', '')" } },
+      { elmType: 'span', txtContent: "=if(@currentField == true, 'הקפאה', '')" },
+    ],
+  },
+  DataClass: {
+    $schema: FMT_SCHEMA,
+    elmType: 'div',
+    attributes: { class: "=if(@currentField == 'Personal-Data', 'sp-field-severity--severeWarning', if(@currentField == 'Confidential', 'sp-field-severity--warning', ''))" },
+    children: [
+      { elmType: 'span', style: { display: 'inline-block', padding: '0 4px' }, attributes: { iconName: "=if(@currentField == 'Personal-Data', 'Contact', if(@currentField == 'Confidential', 'Lock', 'Globe'))" } },
+      { elmType: 'span', txtContent: '@currentField' },
+    ],
+  },
+};
+
+// Required at intake — only on Contracts (manual uploads). Not on
+// Customer-Agreements: a required column leaves an API-uploaded file checked
+// out until the metadata lands, which would trip the nightly export; the job
+// fills these itself anyway. Not on Contracts-Working: drafts.
+const REQUIRED_ON_CONTRACTS = ['Counterparty', 'ContractType', 'EffectiveDate'];
 
 // Columns added to the default "All Documents" view of each library.
 const DEFAULT_VIEW_FIELDS = ['Counterparty', 'ContractType', 'EffectiveDate', 'ExpiryDate', 'Status', 'RetentionUntil', 'DataClass'];
@@ -525,6 +610,36 @@ async function configureLibrary(sp, lib, ctId) {
   return true;
 }
 
+// Column formatting + required flags on the LIST fields (site-column pushes do
+// not carry CustomFormatter). Internal names on a list may be escaped
+// (SHA256 → _x0053_HA256); the ones formatted here are plain.
+async function ensureFieldSettings(sp, lib) {
+  const base = `/web/lists/getbytitle('${q(lib.displayName)}')`;
+  let fields;
+  try {
+    fields = (await sp.get(`${base}/fields?$select=InternalName,Required,CustomFormatter&$filter=Hidden eq false`)).value;
+  } catch (e) {
+    log('  REST fields unavailable for', lib.displayName, '-', e.message);
+    return;
+  }
+  const byName = new Map(fields.map((f) => [f.InternalName, f]));
+  for (const [name, fmt] of Object.entries(COLUMN_FORMATS)) {
+    const f = byName.get(name);
+    if (!f) continue;
+    const want = JSON.stringify(fmt);
+    if (f.CustomFormatter === want) continue;
+    plan(`format column ${lib.displayName}/${name}`);
+    if (!DRY_RUN) await sp.merge(`${base}/fields/getbyinternalnameortitle('${name}')`, { CustomFormatter: want });
+  }
+  if (lib.displayName !== 'Contracts') return;
+  for (const name of REQUIRED_ON_CONTRACTS) {
+    const f = byName.get(name);
+    if (!f || f.Required) continue;
+    plan(`require ${lib.displayName}/${name} at intake`);
+    if (!DRY_RUN) await sp.merge(`${base}/fields/getbyinternalnameortitle('${name}')`, { Required: true });
+  }
+}
+
 async function ensureViews(sp, lib) {
   const base = `/web/lists/getbytitle('${q(lib.displayName)}')`;
   let views;
@@ -574,6 +689,98 @@ async function ensureNavigation(sp) {
   }
 }
 
+// ─── Home page + brand for the archive site ─────────────────────────────────
+// The team site's default Home.aspx (news / quick links / documents) showed
+// none of the archive. Archive.aspx becomes the welcome page: what lives here,
+// the libraries, the working views (URLs read from the live lists so they
+// never drift), an intake checklist and the standing rules. Same brand as the
+// portal (tenant theme "KALFA Coral", K logo, Compact/Strong header). The old
+// Home.aspx is left in place — this script never deletes site content.
+
+const shared = require('./lib/sharepoint.cjs');
+const HOME_PAGE = 'Archive.aspx';
+const HOME_TITLE = 'ארכיון החוזים';
+const PORTAL_URL = `https://${SP_HOST}/sites/allcompany`;
+
+async function ensureArchiveHome() {
+  const ctx = { log, plan, dryRun: DRY_RUN };
+  const { g, sp: rest, site } = await shared.connect({ host: SP_HOST, sitePath: SITE_PATH });
+  const base = `https://${SP_HOST}`;
+
+  // Working views, from the live lists (server-relative URLs).
+  const viewLinks = [];
+  for (const [lib, icon] of [['Contracts', 'Certificate'], ['Customer-Agreements', 'People']]) {
+    let views = [];
+    try {
+      views = (await rest.get(`/web/lists/getbytitle('${q(lib)}')/Views?$select=Title,ServerRelativeUrl,Hidden`)).value;
+    } catch (e) {
+      log(`  views of ${lib} unreadable:`, e.message.slice(0, 120));
+    }
+    const wanted = {
+      Active: 'חוזים פעילים',
+      'Expiring-90d': 'מסתיימים ב-90 יום',
+      'Due-for-disposition': 'לביעור — תאריך השימור עבר, ללא הקפאה',
+      'Legal-Hold': 'בהקפאה משפטית',
+    };
+    for (const v of views) {
+      if (!wanted[v.Title] || v.Hidden) continue;
+      viewLinks.push([`${lib} · ${v.Title}`, base + v.ServerRelativeUrl, icon, wanted[v.Title]]);
+    }
+  }
+
+  const libraryLinks = [
+    ['Contracts', `${base}${SITE_PATH}/Contracts`, 'Certificate', 'חוזים חתומים של העסק — ארכיון הרשומה'],
+    ['Contracts-Working', `${base}${SITE_PATH}/ContractsWorking`, 'Edit', 'טיוטות ומו"מ בלבד'],
+    ['Customer-Agreements', `${base}${SITE_PATH}/CustomerAgreements`, 'People', 'עותקי הסכמי לקוחות שנחתמו במערכת (ייצוא לילי אוטומטי)'],
+    ['Disposition-Log', `${base}${SITE_PATH}/Lists/DispositionLog`, 'Delete', 'יומן ביעור — שורה לפני כל מחיקה'],
+    ['כללי הארכיון', `${base}${SITE_PATH}/Contracts/_ARCHIVE-RULES.md`, 'ReadingMode', 'התקציר שיושב בתוך הארכיון'],
+    ['פורטל KALFA', PORTAL_URL, 'Home', 'המערכות, הנהלים ולוח התפעול'],
+  ];
+
+  const { linkList, textPart, quickLinksPart, section, column } = shared;
+  const HTML_INTRO = `<h2>ארכיון החוזים של KALFA</h2><p>כאן נשמרים החוזים החתומים של העסק ועותקי הסכמי הלקוחות, עם מטא-דאטה של שימור ו-SHA-256. מערכת הרשומה להסכמי לקוחות היא Supabase; הארכיון מחזיק עותק. הנהלים המלאים בפורטל.</p>`;
+  const HTML_LIBS = `<h3>ספריות</h3>${linkList(libraryLinks)}`;
+  const HTML_VIEWS = `<h3>תצוגות עבודה</h3>${linkList(viewLinks)}`;
+  const HTML_INTAKE = `<h3>קליטת חוזה ספק</h3><ol>
+<li>להוריד את הגרסה החתומה הסופית כ-PDF.</li>
+<li>לחשב SHA-256 (<code>sha256sum</code>).</li>
+<li>להעלות לתיקיית הספק ב-Contracts בשם <code>YYYY-MM-DD_Counterparty_DocType_vN_signed.pdf</code>.</li>
+<li>למלא: צד שני, סוג מסמך, תאריך חתימה, תאריך סיום, שימור עד (31.12 של שנת הסיום + 7), מזהה חיצוני, SHA-256, סיווג מידע.</li>
+<li>למחוק או להשאיר את הטיוטה ב-Contracts-Working — לא ב-Contracts.</li>
+</ol>`;
+  const HTML_RULES = `<h3>כללים שאין עליהם ויכוח</h3><ul>
+<li>PDF חתום לא נערך לעולם. תיקון = קובץ חדש עם "מתקן את".</li>
+<li>ביעור רק דרך "Due-for-disposition", אחרי בדיקת הקפאה משפטית, ועם שורה ב-Disposition-Log לפני המחיקה.</li>
+<li>הקפאה משפטית מסירים רק בכתב.</li>
+<li>בלי שמות או טלפונים בשמות קבצים; פרטי הלקוח במטא-דאטה בלבד.</li>
+</ul>`;
+
+  const build = (useQuickLinks) => ({
+    horizontalSections: [
+      section(1, 'oneColumn', 'strong', [column(1, 12, [textPart(HTML_INTRO)])]),
+      section(2, 'twoColumns', 'none', [
+        column(1, 6, [useQuickLinks ? quickLinksPart('ספריות', libraryLinks, 'List') : textPart(HTML_LIBS)]),
+        column(2, 6, [useQuickLinks ? quickLinksPart('תצוגות עבודה', viewLinks, 'List') : textPart(HTML_VIEWS)]),
+      ]),
+      section(3, 'twoColumns', 'soft', [column(1, 6, [textPart(HTML_INTAKE)]), column(2, 6, [textPart(HTML_RULES)])]),
+    ],
+  });
+
+  await shared.ensureLogo(g, rest, { siteId: site.id, sitePath: SITE_PATH, svgPath: path.join(__dirname, '..', 'public', 'icons', 'icon.svg'), fileName: 'kalfa-logo.png', ...ctx });
+  await shared.ensureTheme(rest, { name: 'KALFA Coral', primary: shared.accessiblePrimary('#FF5A3C'), ...ctx });
+  await shared.ensureHeaderAndNav(rest, { want: { HeaderLayout: 1, HeaderEmphasis: 3 }, ...ctx });
+  await shared.ensurePage(g, {
+    siteId: site.id,
+    name: HOME_PAGE,
+    title: HOME_TITLE,
+    build,
+    expectedQuickLinkCounts: [libraryLinks.length, viewLinks.length],
+    textOnly: process.argv.includes('--text-only'),
+    ...ctx,
+  });
+  await shared.ensureWelcomePage(rest, { pageName: HOME_PAGE, ...ctx });
+}
+
 // ─── Main ───────────────────────────────────────────────────────────────────
 
 (async () => {
@@ -606,11 +813,16 @@ async function ensureNavigation(sp) {
   log('\n[5] library settings, content type, views (SharePoint REST)');
   for (const lib of LIBRARIES) {
     const ok = await configureLibrary(sp, lib, ctId);
-    if (ok && lib.views) await ensureViews(sp, lib);
+    if (!ok) continue;
+    await ensureFieldSettings(sp, lib);
+    if (lib.views) await ensureViews(sp, lib);
   }
 
   log('\n[6] site navigation (SharePoint REST)');
   await ensureNavigation(sp);
+
+  log('\n[7] site home page + brand (shared helpers)');
+  await ensureArchiveHome();
 
   log('\ndone.', DRY_RUN ? 'Re-run without --dry-run to apply.' : '');
 })().catch((e) => {

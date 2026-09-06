@@ -87,6 +87,8 @@ Graph לא יוצר עמודת קישור (400) ולכן `Amends` הוא טקס�
 
 הגדרות ספרייה: ניהול content types מופעל; גרסאות מז'וריות בלבד, עד 50; סל מחזור 93 יום (ברירת מחדל של SharePoint).
 
+**עיצוב עמודות** (column formatting, סכמה v2, תצוגה בלבד): Status כתגית (Active ירוק, Expired ניטרלי, Superseded ענבר, Terminated אדום); "שימור עד" אדום עם אייקון מחיקה כשעבר ואין הקפאה; "תאריך סיום" צהוב כשחוזה פעיל מסתיים תוך 90 יום; "הקפאה משפטית" מנעול; "סיווג מידע" Personal-Data כתום. **שדות חובה ב-Contracts בלבד:** צד שני, סוג מסמך, תאריך חתימה (SHA-256 לא חובה: המשימה השבועית משלימה אותו). לא ב-Customer-Agreements, כי שדה חובה משאיר קובץ שהועלה ב-API במצב checked-out עד למילוי.
+
 `Disposition-Log` (רשימה): Title (נתיב הפריט), Library, DisposedAt, RetentionUntil, Reason (Retention-expired, Superseded, Duplicate, Legal-request, Data-subject-request), DisposedBy, RecordRef (מזהה רשומה / גרסה; לעולם לא שם או טלפון), SHA256 לפני מחיקה, Notes. הערה: SharePoint קידד את השם הפנימי של עמודת ה-SHA ל-`_x0053_HA256` בכל רשימה או ספרייה שקיבלה אותה (עמודת האתר עצמה נשארה `SHA256`); התווית תקינה. הריצה הראשונה של הייצוא נכשלה על זה ("Field 'SHA256' is not recognized"), ולכן המודול קורא את שמות העמודות של הספרייה בזמן ריצה ומתרגם (`decodeInternalName`/`translateFields`). כל קוד שכותב מטא-דאטה לספריות האלה חייב לעשות אותו דבר.
 
 ## 4. כללי הארכיון
@@ -143,12 +145,19 @@ Graph לא יוצר עמודת קישור (400) ולכן `Amends` הוא טקס�
 
 **הקפאה משפטית.** הליך תלוי או דרישת רשות → `LegalHold` = כן + הסבר ב-ArchiveNotes. הפריט יוצא מ-`Due-for-disposition` ונכנס ל-`Legal-Hold`. מסירים הקפאה רק בכתב, ורושמים ב-ArchiveNotes מי ומתי.
 
-## 8. בדיקה שנתית (ינואר, יחד עם §7)
+## 8. בדיקה שוטפת — אוטומטית (שבועית) + שנתית
 
-- fixity: לחשב SHA-256 לכל קובץ ב-Contracts ו-Customer-Agreements ולהשוות לעמודה. אי-התאמה = אירוע (לתעד, לשחזר מגרסה קודמת או מ-Supabase).
-- מידע עודף (תק' 2(ג)): לעבור על Customer-Agreements ולוודא שאין פריטים מעבר לתקופה.
+**אוטומטי, כל יום ראשון 04:10** (משימת worker ‏`archive-maintenance-sweep`, `src/lib/data/archive-maintenance.ts`, אותו מתג כמו הייצוא):
+- fixity: הורדת כל קובץ ב-Contracts וב-Customer-Agreements, חישוב SHA-256 והשוואה לעמודה. אי-התאמה **מדווחת ולעולם לא "מתוקנת"** (זה אירוע: לתעד, לשחזר מגרסה קודמת או מ-Supabase).
+- חוזה שהועלה ידנית ל-Contracts בלי SHA-256 מקבל אותו אוטומטית (השלמת שלב הקליטה).
+- Status ‏Active עם תאריך סיום שעבר → Expired (מטא-דאטה בלבד).
+- דוח ל-Slack (קטגוריית security): נסרקו/אומתו, אי-התאמות, פריטים "לביעור" (שימור עבר, בלי הקפאה), חוזים פעילים שמסתיימים ב-90 יום. עד 300 קבצים לריצה, קובץ מעל 25MB מדולג ומדווח.
+- הרצה ידנית: /admin/jobs, תור `archive-maintenance-sweep`.
+
+**ידני, ינואר** (יחד עם §7):
+- מידע עודף (תק' 2(ג)): לעבור על Customer-Agreements ולוודא שאין פריטים מעבר לתקופה (הדוח השבועי כבר מסמן אותם).
 - Contracts-Working: למחוק טיוטות של חוזים שכבר נחתמו.
-- לוודא שהסקריפט ב-`--dry-run` מדפיס רק "exists/ok" (המבנה לא נסחף).
+- לוודא ששני סקריפטי ההקמה ב-`--dry-run` מדפיסים רק "exists/ok" (המבנה לא נסחף).
 
 ## 9. פתוח, מחוץ להיקף הזה
 
@@ -168,7 +177,11 @@ Graph לא יוצר עמודת קישור (400) ולכן `Amends` הוא טקס�
 - Header: פריסה Compact, הדגשה Strong (פס בצבע הנושא). ניווט אופקי (HorizontalQuickLaunch) עם הצמתים: ארכיון חוזים, הסכמי לקוחות, יומן ביעור, אתר הצוות KALFA RSVP.
 - הדף (Graph, פריסת home): מקטע פתיחה ברקע Strong (תחליף ל-Hero, שקיים רק ב-Communication site); שתי עמודות Quick Links: "מערכות" בפריסת Compact עם אייקוני Fluent, "ארכיון חוזים" בפריסת List עם תיאור לכל פריט; מקטע שליש ברקע Soft: נהלים קבועים (רחב) ולוח תפעולי (צר).
 
-**Teams:** הפורטל מוצמד כלשונית "פורטל KALFA" בערוץ General של הצוות KALFA RSVP (סקריפט הפורטל, שלב 7). הלשונית היא מסוג "SharePoint pages" (‏teamsApp ‏2a527703) ומוצגת בתוך Teams; לשונית Website רגילה פותחת דפי SharePoint בדפדפן חיצוני. ההגדרה זהה למה ש-PnP PowerShell שולח: ‏contentUrl = ‏`<site>/_layouts/15/teamslogon.aspx?spfx=true&dest=<page url>`.
+**דף הבית של אתר הארכיון:** `Archive.aspx` (סקריפט הארכיון, שלב 7): מקטע פתיחה, Quick Links לספריות ולתצוגות העבודה (כתובות התצוגות נקראות מהרשימות החיות), צ'קליסט קליטה, וכללי היסוד. אותו מיתוג כמו הפורטל. Home.aspx המקורי נשאר.
+
+**קישורי תיעוד בפורטל:** תיקיית docs במאגר, מסמך זה, מחברת NotebookLM של הפרויקט, README.
+
+**Teams:** הפורטל מוצמד כלשונית "פורטל KALFA" בערוץ General של הצוות KALFA RSVP, ולצדה לשוניות ספרייה "ארכיון חוזים" (Contracts) ו"הסכמי לקוחות" (Customer-Agreements) (סקריפט הפורטל, שלב 7). הלשונית היא מסוג "SharePoint pages" (‏teamsApp ‏2a527703) ומוצגת בתוך Teams; לשונית Website רגילה פותחת דפי SharePoint בדפדפן חיצוני. ההגדרה זהה למה ש-PnP PowerShell שולח: ‏contentUrl = ‏`<site>/_layouts/15/teamslogon.aspx?spfx=true&dest=<page url>`.
 
 **ניווט באתר הארכיון:** סקריפט הארכיון (שלב 6) מוסיף לניווט של אתר KALFA RSVP את ארבע הספריות וקישור לפורטל; בלעדיו הן היו נגישות רק דרך "תוכן אתר".
 
@@ -187,6 +200,8 @@ Graph לא יוצר עמודת קישור (400) ולכן `Amends` הוא טקס�
 - 6 תצוגות + עמודות הליבה בתצוגות ברירת המחדל.
 - הרשאת SharePoint `Sites.FullControl.All` (application) על KALFA-RSVP עם הסכמת מנהל.
 - ייצוא אוטומטי: מיגרציה `20260906085345_agreement_archive_export.sql` (מוחלת), מודול `src/lib/data/agreement-archive.ts` + 16 בדיקות, תור `agreement-archive-sweep` (singleton, 03:50), מתג ב-/admin/settings (הופעל 6.9), `SHAREPOINT_ARCHIVE_SITE` ב-.env.local.
+- משימת התחזוקה השבועית (`archive-maintenance-sweep`, `src/lib/data/archive-maintenance.ts` + 12 בדיקות): ריצה ראשונה 6.9.2026 13:59 — נסרקו 5, אומתו 5, 0 אי-התאמות, 0 שגיאות.
+- עיצוב עמודות ושדות חובה, דף הבית Archive.aspx, קישורי תיעוד ולשוניות ספרייה ב-Teams: הוקמו 6.9 אחה"צ (ראו §3, §9א).
 - ריצה ראשונה 6.9.2026 12:19: 5 קבצים הועלו, המטא-דאטה נכשלה על שם העמודה המקודד (§3). אחרי התיקון, ריצה שנייה 12:23: `exported: 5, failed: 0`; חמשת ההסכמים ב-`Customer-Agreements/2026/` עם Title, Counterparty, תאריכים, RetentionUntil (2033/2036), SHA256 ו-DataClass=Personal-Data, וכל שורות `signed_agreements` מסומנות. הריצה השנייה אימצה את הקבצים הקיימים (409 + התאמת גודל) בלי העלאה כפולה.
 
 תקלות בדרך, לידיעת מי שמריץ שוב: Graph לא יוצר עמודת hyperlink (400) ודורש `base` ולא `parentId` ביצירת content type; SharePoint REST דורש הרשאת SharePoint Online נפרדת מהרשאות Graph (401 בלעדיה).
