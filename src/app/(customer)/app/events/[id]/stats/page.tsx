@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
+import { ChevronRight } from 'lucide-react';
 import { formatIsraelDateTime } from '@/lib/date';
 import { buttonVariants } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -80,14 +81,29 @@ export default async function EventStatsPage({
     : null;
 
   return (
-    <div className="mx-auto max-w-3xl space-y-6 p-6">
-      <div className="flex items-center justify-between">
+    // No padding and no width of its own: the app shell already wraps every
+    // page in `mx-auto max-w-5xl px-4 py-6 sm:px-6 sm:py-8`. This page was the
+    // only one adding `p-6` on top of that, which doubled the top gap and
+    // squeezed the content, and the only one narrowing to max-w-3xl. Every
+    // other page here is a bare `space-y-6`.
+    <div className="space-y-6">
+      {/* items-start, not items-center: the left block is two lines tall, so
+          centring left the refresh button floating between the back link and
+          the title instead of level with the heading. */}
+      <div className="flex items-start justify-between gap-4">
         <div>
+          {/* The house back-link, matching the campaign board: a quiet text
+              link, not a ghost BUTTON whose padding was most of the empty space
+              above the title. ChevronRight — in Hebrew "back" points RIGHT, and
+              an icon is not reordered by the bidi algorithm the way a bare "←"
+              was, which is why that arrow ended up on the far side of the
+              phrase pointing away from it. */}
           <Link
             href={`/app/events/${id}`}
-            className={buttonVariants({ variant: 'ghost' })}
+            className="inline-flex min-h-11 items-center gap-1 text-sm text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
           >
-            ← חזרה לאירוע
+            <ChevronRight className="size-4" aria-hidden="true" />
+            חזרה לאירוע
           </Link>
           <h1 className="mt-2 text-2xl font-bold">סטטיסטיקות אירוע</h1>
         </div>
@@ -96,8 +112,11 @@ export default async function EventStatsPage({
 
       {/* Event header */}
       <SectionCard title="פרטי האירוע" state={stats.eventState}>
+        {/* Three items, so two columns always left the last one alone beside an
+            empty half — the blank patch inside this card. One column on a
+            phone, three across from sm: an exact fit at both. */}
         {stats.event ? (
-          <dl className="grid grid-cols-2 gap-3 text-sm">
+          <dl className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-3">
             <div>
               <dt className="text-muted-foreground">שם</dt>
               <dd className="font-medium">{stats.event.name}</dd>
@@ -122,7 +141,9 @@ export default async function EventStatsPage({
       <SectionCard title="הזמנות ותשובות (RSVP)" state={stats.totalsState}>
         {stats.totals ? (
           <div className="space-y-4">
-            <dl className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
+            {/* Six items: 3×2 on a phone, 2×3 from sm. Four columns split them
+                4+2 and left two empty cells on the second row. */}
+            <dl className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-3">
               <div>
                 <dt className="text-muted-foreground">סה״כ מוזמנים</dt>
                 <dd className="text-xl font-bold">{stats.totals.invited_people}</dd>
@@ -174,7 +195,10 @@ export default async function EventStatsPage({
       <SectionCard title="קמפיין יצירת הקשר" state={stats.campaign.state}>
         {stats.campaign.id ? (
           <div className="space-y-4">
-            <dl className="grid grid-cols-2 gap-3 text-sm">
+            {/* Two or three items depending on whether reachedCount is
+                present, so any fixed column count leaves a hole at one of them.
+                Wrapping packs them either way. */}
+            <dl className="flex flex-wrap gap-x-10 gap-y-3 text-sm">
               <div>
                 <dt className="text-muted-foreground">סטטוס</dt>
                 <dd className="font-medium">
@@ -193,7 +217,7 @@ export default async function EventStatsPage({
               ) : null}
             </dl>
             {stats.campaign.delivery ? (
-              <div className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
+              <div className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-3">
                 <div>
                   <dt className="text-muted-foreground">נשלח</dt>
                   <dd className="font-medium">{stats.campaign.delivery.sent}</dd>
