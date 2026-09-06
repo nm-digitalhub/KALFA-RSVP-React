@@ -92,7 +92,10 @@ const EXPECTED_PERMISSION: Record<string, string> = {
 // support.ts's own two event-view readers audit via a direct support_access_log
 // insert (pre-dating the helper); the rest go through recordStaffAccess.
 const AUDIT_REQUIRED: Record<string, string[]> = {
-  'src/lib/data/admin/campaigns.ts': ['getEventForAdminView'],
+  // Both gate on requirePlatformPermission('manage_billing') — STRICTER than
+  // requireAdmin() — and each writes a fail-closed recordStaffAccess row before
+  // the cross-tenant read, which requireAdmin() alone would not.
+  'src/lib/data/admin/campaigns.ts': ['getEventForAdminView', 'getCampaignForAdminView'],
   'src/lib/data/admin/voice-ops.ts': ['listCallAttemptsForEvent'],
   // Viewing another user's full detail is a break-glass customer-data read. The
   // audit is conditional on it being a cross-user view (self-view is exempt),

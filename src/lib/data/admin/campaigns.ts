@@ -5,6 +5,7 @@ import { notFound } from 'next/navigation';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { requirePlatformPermission } from '@/lib/auth/dal';
 import { recordStaffAccess } from '@/lib/data/admin/access-log';
+import { CAMPAIGN_COLUMNS, type OwnerCampaign } from '@/lib/data/campaigns';
 import type { OwnedEvent } from '@/lib/data/events';
 import type { CampaignStatus } from '@/lib/data/campaign-status';
 
@@ -58,6 +59,62 @@ export async function getEventForAdminView(eventId: string): Promise<OwnedEvent>
     notFound();
   }
   return data;
+}
+
+// Fetch ONE campaign for a platform admin who is not the owner.
+//
+// Without this the admin "manage" button was a dead end: the page already
+// branched to getEventForAdminView for the event, but then read the campaign
+// through the owner path, whose only SELECT policy on `campaigns` is
+// can_access_event(...) -> events.owner_id = auth.uid(). RLS returned zero rows
+// for staff and the page rendered notFound() with nothing explaining why.
+//
+// Fixed the same way the event read is, NOT by adding an admin RLS policy.
+// A policy would grant the access silently; Supabase's own guidance is that the
+// service-role identifies WHAT is connecting and carries no user identity, so
+// the "who looked at this customer's data" answer has to come from the
+// application. recordStaffAccess supplies it, fail-closed, BEFORE the read —
+// which an RLS grant could never do.
+//
+// Selects CAMPAIGN_COLUMNS, the same list the owner path uses, so an admin sees
+// exactly what the owner sees and the two cannot drift.
+export async function getCampaignForAdminView(campaignId: string): Promise<OwnerCampaign> {
+  const staff = await requirePlatformPermission('manage_billing');
+  const admin = createAdminClient();
+
+  // Resolve the owning event first: it supplies both the ownerId the audit row
+  // needs and the existence check. A campaign whose event vanished is a 404,
+  // not a crash.
+  const { data: link } = await admin
+    .from('campaigns')
+    .select('event_id, events!inner(owner_id)')
+    .eq('id', campaignId)
+    .maybeSingle<{ event_id: string; events: { owner_id: string } }>();
+  if (!link) {
+    notFound();
+  }
+
+  await recordStaffAccess({
+    staffId: staff.id,
+    permission: 'manage_billing',
+    subjectType: 'campaign',
+    subjectId: campaignId,
+    ownerId: link.events.owner_id,
+    eventId: link.event_id,
+  });
+
+  const { data, error } = await admin
+    .from('campaigns')
+    .select(CAMPAIGN_COLUMNS)
+    .eq('id', campaignId)
+    .maybeSingle();
+  if (error) {
+    throw new Error('טעינת הקמפיין נכשלה');
+  }
+  if (!data) {
+    notFound();
+  }
+  return data as OwnerCampaign;
 }
 
 // A campaign row for the admin wind-down list: the campaign, its status, the

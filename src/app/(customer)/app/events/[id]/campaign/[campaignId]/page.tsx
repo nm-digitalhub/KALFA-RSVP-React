@@ -4,7 +4,7 @@ import { notFound } from 'next/navigation';
 import { ChevronRight } from 'lucide-react';
 
 import { isAdmin } from '@/lib/auth/dal';
-import { getEventForAdminView } from '@/lib/data/admin/campaigns';
+import { getCampaignForAdminView, getEventForAdminView } from '@/lib/data/admin/campaigns';
 import { getCampaignBillingSummary } from '@/lib/data/billing';
 import { getCampaignDeliveryBreakdown } from '@/lib/data/campaign-delivery';
 import { getCampaign, getThankyouSchedule } from '@/lib/data/campaigns';
@@ -39,7 +39,12 @@ export default async function CampaignManagePage({
     : await requireEventAccess(eventId, 'campaigns', 'view');
   const isPast = isPastEventDay(event.event_date);
 
-  const campaign = await getCampaign(campaignId);
+  // Same admin branch the event read above takes. The owner path reads through
+  // RLS, whose only SELECT policy on `campaigns` resolves to
+  // events.owner_id = auth.uid() — so staff got zero rows and a bare 404.
+  const campaign = admin
+    ? await getCampaignForAdminView(campaignId)
+    : await getCampaign(campaignId);
   if (campaign.event_id !== eventId) notFound();
 
   let summary = null;

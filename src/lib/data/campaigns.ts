@@ -49,7 +49,10 @@ export type OwnerCampaign = Pick<
   | 'auth_amount'
 >;
 
-const CAMPAIGN_COLUMNS =
+// Exported so the admin cross-tenant reader (src/lib/data/admin/campaigns.ts)
+// selects the SAME shape — an admin viewing a campaign must see exactly what
+// the owner sees, and a second column list here would drift.
+export const CAMPAIGN_COLUMNS =
   'id, event_id, status, price_per_reached, max_contacts, max_charge_ceiling, base_price, included_reached, allowed_channels, start_at, close_at, approved_at, final_charge_amount, credit_applied, capture_status, charge_status, created_at, auth_amount';
 
 // R9 refusal, in the owner's vocabulary (audit §2): the event step is
