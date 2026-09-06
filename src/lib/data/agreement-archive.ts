@@ -4,7 +4,7 @@ import { createHash } from 'node:crypto';
 
 import { createAdminClient } from '@/lib/supabase/admin';
 import { downloadLegalDoc } from '@/lib/storage/legal-docs';
-import { graphClient, graphConfigured } from '@/lib/microsoft/graph-client';
+import { archiveGraphClient, archiveIdentity, graphConfigured } from '@/lib/microsoft/graph-client';
 import { sendSlackAlert } from '@/lib/alerts/slack';
 import { ISRAEL_TIME_ZONE } from '@/lib/date';
 
@@ -282,7 +282,7 @@ export function translateFields(
 export async function resolveLibraryTarget(libraryName: string): Promise<ArchiveTarget> {
   const cached = cachedTargets.get(libraryName);
   if (cached) return cached;
-  const g = graphClient();
+  const g = archiveGraphClient();
   const site = (await g.api(`/sites/${archiveSiteRef()}?$select=id`).get()) as { id: string };
   const lists = (await g.api(`/sites/${site.id}/lists?$select=id,displayName&$top=200`).get()) as {
     value: Array<{ id: string; displayName: string }>;
@@ -312,7 +312,7 @@ export function graphStatusOf(err: unknown): number {
 }
 
 async function ensureYearFolder(driveId: string, year: string): Promise<void> {
-  const g = graphClient();
+  const g = archiveGraphClient();
   try {
     await g.api(`/drives/${driveId}/root:/${year}?$select=id`).get();
     return;
@@ -343,7 +343,7 @@ async function uploadPdf(
   bytes: Uint8Array,
   hash: string,
 ): Promise<{ id: string; existed: boolean }> {
-  const g = graphClient();
+  const g = archiveGraphClient();
   const { driveId } = target;
   const path = `/drives/${driveId}/root:/${year}/${name}:/content?@microsoft.graph.conflictBehavior=fail`;
   try {
@@ -472,7 +472,7 @@ export async function runAgreementArchiveSweep(nowMs: number = Date.now()): Prom
 
       await ensureYearFolder(driveId, year);
       const item = await uploadPdf(target, year, name, bytes, hash);
-      await graphClient()
+      await archiveGraphClient()
         .api(`/drives/${driveId}/items/${item.id}/listItem/fields`)
         .patch(translateFields(archiveFields(row, ctx), target.fieldNames));
 
@@ -497,7 +497,7 @@ export async function runAgreementArchiveSweep(nowMs: number = Date.now()): Prom
     }
   }
 
-  console.log('[agreement-archive] sweep', { ...result, batch: pending.length });
+  console.log('[agreement-archive] sweep', { ...result, batch: pending.length, identity: archiveIdentity() });
   if (result.failed > 0) {
     void sendSlackAlert({
       level: 'error',

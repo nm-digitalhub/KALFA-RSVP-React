@@ -6,12 +6,13 @@ vi.mock('server-only', () => ({}));
 vi.mock('@/lib/supabase/admin', () => ({ createAdminClient: vi.fn() }));
 vi.mock('@/lib/storage/legal-docs', () => ({ downloadLegalDoc: vi.fn() }));
 vi.mock('@/lib/microsoft/graph-client', () => ({
-  graphClient: vi.fn(),
+  archiveGraphClient: vi.fn(),
+  archiveIdentity: vi.fn(() => 'dedicated'),
   graphConfigured: vi.fn(() => true),
 }));
 vi.mock('@/lib/alerts/slack', () => ({ sendSlackAlert: vi.fn() }));
 
-import { graphClient, graphConfigured } from '@/lib/microsoft/graph-client';
+import { archiveGraphClient, graphConfigured } from '@/lib/microsoft/graph-client';
 import { sendSlackAlert } from '@/lib/alerts/slack';
 import { resetArchiveTargetCache, type ArchiveTarget } from '@/lib/data/agreement-archive';
 import {
@@ -95,7 +96,7 @@ function mockGraph(routes: Array<[method: string, match: string | RegExp, reply:
     };
     return req;
   };
-  vi.mocked(graphClient).mockReturnValue({ api } as unknown as ReturnType<typeof graphClient>);
+  vi.mocked(archiveGraphClient).mockReturnValue({ api } as unknown as ReturnType<typeof archiveGraphClient>);
   return calls;
 }
 

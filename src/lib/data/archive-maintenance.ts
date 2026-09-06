@@ -1,6 +1,6 @@
 import 'server-only';
 
-import { graphClient, graphConfigured } from '@/lib/microsoft/graph-client';
+import { archiveGraphClient, archiveIdentity, graphConfigured } from '@/lib/microsoft/graph-client';
 import { sendSlackAlert } from '@/lib/alerts/slack';
 import {
   archiveSiteRef,
@@ -110,7 +110,7 @@ type DriveChild = {
 
 /** Every file under the drive root (recursive), with its list-item fields. Names starting with "_" are archive notes, not records. */
 export async function listArchiveFiles(driveId: string, path = ''): Promise<ArchiveFile[]> {
-  const g = graphClient();
+  const g = archiveGraphClient();
   const base = path ? `/drives/${driveId}/root:/${encodeURI(path)}:/children` : `/drives/${driveId}/root/children`;
   const out: ArchiveFile[] = [];
   let next: string | null = `${base}?$select=id,name,size,folder,file&$expand=listItem($expand=fields)&$top=200`;
@@ -131,7 +131,7 @@ export async function listArchiveFiles(driveId: string, path = ''): Promise<Arch
 }
 
 async function downloadBytes(driveId: string, itemId: string): Promise<Uint8Array> {
-  const buf = (await graphClient()
+  const buf = (await archiveGraphClient()
     .api(`/drives/${driveId}/items/${itemId}/content`)
     .responseType('arraybuffer' as never)
     .get()) as ArrayBuffer;
@@ -198,7 +198,7 @@ export async function runArchiveMaintenanceSweep(nowMs: number = Date.now()): Pr
           } else {
             const hash = sha256Hex(await downloadBytes(target.driveId, file.id));
             if (d.fillHash) {
-              await graphClient()
+              await archiveGraphClient()
                 .api(`/drives/${target.driveId}/items/${file.id}/listItem/fields`)
                 .patch(translateFields({ SHA256: hash }, target.fieldNames));
               result.hashesFilled++;
@@ -210,7 +210,7 @@ export async function runArchiveMaintenanceSweep(nowMs: number = Date.now()): Pr
           }
         }
         if (d.markExpired) {
-          await graphClient()
+          await archiveGraphClient()
             .api(`/drives/${target.driveId}/items/${file.id}/listItem/fields`)
             .patch(translateFields({ Status: 'Expired' }, target.fieldNames));
           result.expiredMarked++;
@@ -228,6 +228,7 @@ export async function runArchiveMaintenanceSweep(nowMs: number = Date.now()): Pr
   }
 
   console.log('[archive-maintenance] sweep', {
+    identity: archiveIdentity(),
     ...result,
     mismatches: result.mismatches.length,
     missingHashes: result.missingHashes.length,

@@ -56,6 +56,42 @@ export function graphConfigured(): boolean {
   );
 }
 
+let cachedArchiveClient: Client | null = null;
+
+/**
+ * The LEAST-PRIVILEGE identity for the SharePoint contracts archive jobs
+ * (scripts/sharepoint-archive-identity.cjs). That app holds a single Graph
+ * permission, `Sites.Selected`, which grants nothing on its own — access is
+ * granted per site, and only on the two archive sites. The main identity
+ * above holds Sites.FullControl.All and directory-write roles, so the
+ * unattended nightly job that touches customer PII should not use it.
+ *
+ * Falls back to graphClient() when MS_ARCHIVE_* is not configured, so the
+ * jobs keep working before/while the identity is rolled out. Callers do not
+ * branch: the fallback is the safe default, not a silent downgrade of intent.
+ */
+export function archiveGraphClient(): Client {
+  if (cachedArchiveClient) return cachedArchiveClient;
+  const tenantId = env('MS_ARCHIVE_TENANT_ID');
+  const clientId = env('MS_ARCHIVE_CLIENT_ID');
+  const certPath = env('MS_ARCHIVE_CERT_PATH');
+  if (!tenantId || !clientId || !certPath) return graphClient();
+  const credential = new ClientCertificateCredential(tenantId, clientId, certPath);
+  cachedArchiveClient = Client.initWithMiddleware({
+    authProvider: new TokenCredentialAuthenticationProvider(credential, {
+      scopes: ['https://graph.microsoft.com/.default'],
+    }),
+  });
+  return cachedArchiveClient;
+}
+
+/** Which identity the archive jobs will actually use — for logs and health surfaces. */
+export function archiveIdentity(): 'dedicated' | 'shared' {
+  return env('MS_ARCHIVE_TENANT_ID') && env('MS_ARCHIVE_CLIENT_ID') && env('MS_ARCHIVE_CERT_PATH')
+    ? 'dedicated'
+    : 'shared';
+}
+
 /**
  * The mailbox this deployment reads. Named separately from the calendar's
  * `exchange_connections` row because mail intake is not a per-connection
