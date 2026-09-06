@@ -4,15 +4,17 @@ import type { User } from '@supabase/supabase-js';
 import { createMockSupabase } from '@/test/supabase-mock';
 import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
-import { requireUser } from '@/lib/auth/dal';
+import { requireUser, isStaff } from '@/lib/auth/dal';
 import { logActivity } from '@/lib/data/activity';
 import type { EventDetail, EventListItem } from '@/lib/data/events';
 import { OPERATIONAL_CAMPAIGN_STATUSES } from '@/lib/data/campaign-status';
 import {
   assertEventNotPast,
+  canCreateEvent,
   CELEBRANTS_LOCKED_ERROR,
   closeEvent,
   createEvent,
+  ONE_EVENT_PER_ACCOUNT_ERROR,
   EVENT_TYPE_LOCKED_ERROR,
   getEvent,
   getEventClosureReason,
@@ -42,7 +44,7 @@ vi.mock('server-only', () => ({}));
 // (bare vi.fn()), then configure resolved values in beforeEach.
 vi.mock('@/lib/supabase/server', () => ({ createClient: vi.fn() }));
 vi.mock('@/lib/supabase/admin', () => ({ createAdminClient: vi.fn() }));
-vi.mock('@/lib/auth/dal', () => ({ requireUser: vi.fn() }));
+vi.mock('@/lib/auth/dal', () => ({ requireUser: vi.fn(), isStaff: vi.fn() }));
 vi.mock('@/lib/data/activity', () => ({ logActivity: vi.fn() }));
 // createEvent now anchors the event to the caller's active org; stub the
 // org-resolution helper so these tests stay focused on event ownership.
@@ -111,6 +113,11 @@ beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(requireUser).mockResolvedValue(mockUser());
   vi.mocked(ensurePersonalOrg).mockResolvedValue('org-1');
+  // Staff by default so the createEvent tests below keep testing what they were
+  // written for — the insert's shape, ownership and error handling — instead of
+  // tripping over R10's account check. R10 has its own block at the end, where
+  // isStaff is false on purpose.
+  vi.mocked(isStaff).mockResolvedValue(true);
 });
 
 describe('listEvents', () => {
@@ -1147,5 +1154,79 @@ describe('isBeforeTomorrowIL', () => {
 
   it('is false for a null event_date (NULL never gates)', () => {
     expect(isBeforeTomorrowIL(null, NOW)).toBe(false);
+  });
+});
+
+// R10 — a customer account holds ONE event, for the life of the account. The
+// authority is the events_before_insert trigger (migration 20260906213903); this
+// layer refuses first so the customer reads a sentence instead of a constraint
+// violation, and so the UI can ask the same question before offering a button.
+describe('R10 — one event per customer account', () => {
+  // `input` in the createEvent block above is scoped to it; this block carries
+  // its own minimal fixture rather than reaching across.
+  const input = {
+    name: 'New Event',
+    event_type: 'birthday' as const,
+    event_date: '2026-12-01',
+    venue_name: 'Somewhere',
+    venue_address: null,
+    rsvp_deadline: null,
+    gift_payment_url: null,
+    show_meal_pref: true,
+    celebrants: null,
+  };
+
+  function withEventCount(count: number) {
+    const { client, builder } = createMockSupabase<EventListItem>({
+      data: sampleRow(),
+      error: null,
+    });
+    // canCreateEvent reads a head:true count; createMockSupabase resolves every
+    // await with the same object, so the count rides on it.
+    (builder as unknown as { then: unknown }).then = (onFulfilled: (v: unknown) => unknown) =>
+      onFulfilled({ data: sampleRow(), error: null, count });
+    vi.mocked(createClient).mockResolvedValue(
+      client as unknown as Awaited<ReturnType<typeof createClient>>,
+    );
+    client.rpc.mockResolvedValue({ data: true, error: null });
+    return { client, builder };
+  }
+
+  it('refuses a second event for a customer, before touching the insert', async () => {
+    vi.mocked(isStaff).mockResolvedValue(false);
+    const { builder } = withEventCount(1);
+
+    await expect(createEvent(input)).rejects.toThrow(ONE_EVENT_PER_ACCOUNT_ERROR);
+    expect(builder.insert).not.toHaveBeenCalled();
+  });
+
+  it('allows a customer their first event', async () => {
+    vi.mocked(isStaff).mockResolvedValue(false);
+    const { builder } = withEventCount(0);
+
+    await createEvent(input);
+    expect(builder.insert).toHaveBeenCalled();
+  });
+
+  it('exempts staff — the platform account carries the test events', async () => {
+    vi.mocked(isStaff).mockResolvedValue(true);
+    const { builder } = withEventCount(4);
+
+    await createEvent(input);
+    expect(builder.insert).toHaveBeenCalled();
+  });
+
+  it('canCreateEvent fails CLOSED when the count cannot be read', async () => {
+    vi.mocked(isStaff).mockResolvedValue(false);
+    const { client } = createMockSupabase<EventListItem>({
+      data: null,
+      error: { message: 'boom' },
+    });
+    vi.mocked(createClient).mockResolvedValue(
+      client as unknown as Awaited<ReturnType<typeof createClient>>,
+    );
+    // Unknown is not permission. The trigger would refuse the insert anyway;
+    // this path must not be the one that decides to try.
+    await expect(canCreateEvent()).resolves.toBe(false);
   });
 });

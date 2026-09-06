@@ -3,7 +3,7 @@
 import { redirect, unstable_rethrow } from 'next/navigation';
 import { revalidatePath } from 'next/cache';
 
-import { createEvent } from '@/lib/data/events';
+import { createEvent, ONE_EVENT_PER_ACCOUNT_ERROR } from '@/lib/data/events';
 import {
   celebrantsSchemaFor,
   createEventSchema,
@@ -143,6 +143,12 @@ export async function createEventAction(
     unstable_rethrow(err);
     // The row never landed — do not leave its image behind.
     if (inviteImagePath) await removeInviteImage(inviteImagePath);
+    // R10 is a rule the customer can act on ("call us"), not a failure. Passed
+    // through verbatim; everything else stays a generic message so no provider
+    // or database text reaches the browser.
+    if (err instanceof Error && err.message === ONE_EVENT_PER_ACCOUNT_ERROR) {
+      return { error: ONE_EVENT_PER_ACCOUNT_ERROR };
+    }
     return { error: 'יצירת האירוע נכשלה. נסו שוב.' };
   }
 

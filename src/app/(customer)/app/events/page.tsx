@@ -3,7 +3,7 @@ import Link from 'next/link';
 
 import { Badge } from '@/components/ui/badge';
 import { buttonVariants } from '@/components/ui/button';
-import { getEventClosureReasons, listEvents } from '@/lib/data/events';
+import { canCreateEvent, getEventClosureReasons, listEvents } from '@/lib/data/events';
 import { EVENT_TYPE_LABELS, eventStatusLabel } from '@/lib/data/event-labels';
 import type { EventClosureReason } from '@/lib/data/event-labels';
 import type { Enums } from '@/lib/supabase/types';
@@ -45,6 +45,7 @@ export default async function EventsPage() {
   // no extra query, no campaign lookup. See event-list-sort.ts for the
   // declared limitation of ordering by events.status alone.
   const events = sortEventsForList(await listEvents());
+  const canCreate = await canCreateEvent();
 
   // ONE batched query for the whole page (getEventClosureReasons), never one
   // per row: that N+1 is exactly what kept this list on the raw status label.
@@ -59,9 +60,14 @@ export default async function EventsPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between gap-4">
         <h1 className="text-2xl font-bold">האירועים שלי</h1>
-        <Link href="/app/events/new" className={buttonVariants()}>
-          אירוע חדש
-        </Link>
+        {/* R10: a customer account holds one event. The button is hidden rather
+            than shown-and-refused — the same rule the write enforces, asked
+            once. Staff keep it (the test events live on a staff account). */}
+        {canCreate ? (
+          <Link href="/app/events/new" className={buttonVariants()}>
+            אירוע חדש
+          </Link>
+        ) : null}
       </div>
 
       {events.length === 0 ? (

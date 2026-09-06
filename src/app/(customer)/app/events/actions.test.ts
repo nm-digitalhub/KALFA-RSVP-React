@@ -5,7 +5,13 @@ vi.mock('next/navigation', async (importOriginal) => {
   const actual = await importOriginal<typeof import('next/navigation')>();
   return { ...actual, redirect: vi.fn() };
 });
-vi.mock('@/lib/data/events', () => ({ createEvent: vi.fn() }));
+vi.mock('@/lib/data/events', () => ({
+  createEvent: vi.fn(),
+  // The R10 refusal the action passes through verbatim. A constant, not a spy —
+  // the action compares against it, so the mock must carry the real string.
+  ONE_EVENT_PER_ACCOUNT_ERROR:
+    'לחשבון שלכם כבר קיים אירוע. לפתיחת אירוע נוסף פנו אלינו.',
+}));
 vi.mock('@/lib/storage/event-media', () => ({
   INVITE_IMAGE_MAX_BYTES: 5 * 1024 * 1024,
   INVITE_IMAGE_TYPES: { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp' },
@@ -236,5 +242,29 @@ describe('createEventAction — the edit-form fields at create time', () => {
 
     expect(uploadInviteImage).not.toHaveBeenCalled();
     expect(removeInviteImage).not.toHaveBeenCalled();
+  });
+});
+
+// R10 — the only createEvent failure the customer can act on. Everything else
+// stays a generic message so no provider or database text reaches the browser.
+describe('createEventAction — the one-event refusal', () => {
+  it('passes the R10 message through instead of the generic failure', async () => {
+    vi.mocked(createEvent).mockRejectedValue(
+      new Error('לחשבון שלכם כבר קיים אירוע. לפתיחת אירוע נוסף פנו אלינו.'),
+    );
+
+    const result = await createEventAction(null, fd(FIELDS));
+
+    expect(result).toEqual({
+      error: 'לחשבון שלכם כבר קיים אירוע. לפתיחת אירוע נוסף פנו אלינו.',
+    });
+  });
+
+  it('still hides an unexpected failure behind the generic message', async () => {
+    vi.mocked(createEvent).mockRejectedValue(new Error('duplicate key value violates …'));
+
+    const result = await createEventAction(null, fd(FIELDS));
+
+    expect(result).toEqual({ error: 'יצירת האירוע נכשלה. נסו שוב.' });
   });
 });

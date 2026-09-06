@@ -5,7 +5,7 @@ import { cache } from 'react';
 
 import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
-import { requireUser, getUser } from '@/lib/auth/dal';
+import { requireUser, getUser, isStaff } from '@/lib/auth/dal';
 import { logActivity } from '@/lib/data/activity';
 import { ensurePersonalOrg } from '@/lib/data/orgs';
 import { OPERATIONAL_CAMPAIGN_STATUSES } from '@/lib/data/campaign-status';
@@ -158,8 +158,40 @@ function celebrantsJson(celebrants: CelebrantsInput | null): Json | null {
 // Create an event owned by the current user. R1 (status forced to 'draft') is
 // structurally guaranteed: CreateEventInput has no status field, and the DB
 // trigger (events_before_insert) is the REST-proof authority regardless.
+// R10 — a customer account holds ONE event, for the life of the account. Staff
+// are exempt: the platform owner's account carries the test events.
+//
+// Enforced authoritatively by events_before_insert (migration 20260906213903),
+// which keys on the row's owner_id rather than the session so a staff member
+// cannot create an unlimited number of events owned by a customer. This check
+// runs first only so the refusal is a sentence the customer can read instead of
+// a raw constraint violation.
+export const ONE_EVENT_PER_ACCOUNT_ERROR =
+  'לחשבון שלכם כבר קיים אירוע. לפתיחת אירוע נוסף פנו אלינו.';
+
+// May the current user open a NEW event? One question, one answer, used by the
+// write, by the page that hosts the form, and by the button that links to it —
+// so the three can never disagree and offer a control that is certain to fail.
+export async function canCreateEvent(): Promise<boolean> {
+  const user = await requireUser();
+  if (await isStaff()) return true;
+  const supabase = await createClient();
+  const { count, error } = await supabase
+    .from('events')
+    .select('id', { count: 'exact', head: true })
+    .eq('owner_id', user.id);
+  // A failed count must not open the gate. The DB trigger would refuse the
+  // insert anyway; this path should not be the one that decides to try.
+  if (error) return false;
+  return (count ?? 0) === 0;
+}
+
 export async function createEvent(input: CreateEventInput): Promise<EventListItem> {
   const user = await requireUser();
+
+  if (!(await canCreateEvent())) {
+    throw new Error(ONE_EVENT_PER_ACCOUNT_ERROR);
+  }
   // R2 (defense-in-depth — the DB trigger + Zod refine are the other two
   // layers): event_date is NULL (a date-less draft, legal) or >= tomorrow.
   if (input.event_date && isBeforeTomorrowIL(input.event_date)) {
