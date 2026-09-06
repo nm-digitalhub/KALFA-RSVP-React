@@ -10,9 +10,21 @@ import {
   flattenFaqEntries,
   type FaqCategory,
 } from '@/lib/faq/page-model';
+import { pageOpenGraph } from '@/lib/seo/open-graph';
+
+// Title and description are declared once and reused for the Open Graph
+// block — the share preview and the search snippet must not drift apart.
+const TITLE = 'שאלות נפוצות';
+const DESCRIPTION =
+  'תשובות על KALFA במקום אחד: מה המערכת עושה, איך מנהלים אירוע מההתחלה ועד הסוף, איך בנוי התמחור והחיוב, ומה קורה במקרה של ביטול.';
 
 export const metadata: Metadata = {
-  title: 'שאלות נפוצות',
+  title: TITLE,
+  description: DESCRIPTION,
+  // Nested metadata objects are REPLACED, not merged: a page that sets no
+  // openGraph inherits the root layout's wholesale, so its share preview
+  // would show the site-wide blurb instead of this page's.
+  openGraph: pageOpenGraph(TITLE, DESCRIPTION),
   alternates: { canonical: '/faq' },
 };
 

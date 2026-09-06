@@ -9,6 +9,7 @@ import { CookieConsentBannerLazy } from '@/components/consent/cookie-consent-laz
 import { DirectionProvider } from '@/components/ui/direction';
 import { getCookieConsentPublicConfig } from '@/lib/consent/admin-config';
 import { getAppOrigin } from '@/lib/url';
+import { OPEN_GRAPH_BASE } from '@/lib/seo/open-graph';
 
 // Heebo is the primary font (Hebrew + Latin) and drives shadcn's --font-sans.
 const heebo = Heebo({
@@ -36,9 +37,10 @@ export async function generateMetadata(): Promise<Metadata> {
     description:
       'מערכת אישורי הגעה לחתונה ולכל אירוע: ניהול רשימת מוזמנים ומלווים, שליחת הזמנות ותזכורות בוואטסאפ, מעקב תשובות בזמן אמת ודוחות — הכול במקום אחד.',
     openGraph: {
-      type: 'website',
-      locale: 'he_IL',
-      siteName: 'KALFA',
+      // Shared base (type/locale/siteName) lives in src/lib/seo/open-graph.ts
+      // so a page can spread it: setting `openGraph` on a page REPLACES this
+      // whole object rather than merging into it.
+      ...OPEN_GRAPH_BASE,
       title: 'KALFA — ניהול אישורי הגעה',
       description:
         'ניהול מוזמנים, הזמנות ותזכורות, מעקב תשובות בזמן אמת ודוחות — הכול במקום אחד.',

@@ -8,6 +8,7 @@ import {
   TEMPLATE_HEADER,
   TEMPLATE_SAMPLE_ROWS,
 } from '@/lib/guests/import-template';
+import { pageOpenGraph } from '@/lib/seo/open-graph';
 
 // Public landing page for the downloadable guest-list template.
 //
@@ -18,10 +19,19 @@ import {
 // BOM-prefixed CSV and not .xlsx, and why it lives at a dot-suffixed route
 // (the same shape as src/app/llms.txt/route.ts).
 
+// Title and description are declared once and reused for the Open Graph
+// block — the share preview and the search snippet must not drift apart.
+const TITLE = 'רשימת מוזמנים לחתונה — תבנית לאקסל להורדה';
+const DESCRIPTION =
+  'תבנית מוכנה לניהול רשימת מוזמנים לחתונה או לכל אירוע: נפתחת באקסל ובגוגל שיטס, עם עמודות לשם, טלפון, כמות וקבוצה — והורדה חינם.';
+
 export const metadata: Metadata = {
-  title: 'רשימת מוזמנים לחתונה — תבנית לאקסל להורדה',
-  description:
-    'תבנית מוכנה לניהול רשימת מוזמנים לחתונה או לכל אירוע: נפתחת באקסל ובגוגל שיטס, עם עמודות לשם, טלפון, כמות וקבוצה — והורדה חינם.',
+  title: TITLE,
+  description: DESCRIPTION,
+  // Nested metadata objects are REPLACED, not merged: a page that sets no
+  // openGraph inherits the root layout's wholesale, so its share preview
+  // would show the site-wide blurb instead of this page's.
+  openGraph: pageOpenGraph(TITLE, DESCRIPTION),
   alternates: { canonical: '/guest-list-template' },
 };
 

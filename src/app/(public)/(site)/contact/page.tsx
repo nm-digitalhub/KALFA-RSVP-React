@@ -3,9 +3,21 @@ import { MailOpen, PhoneCall } from 'lucide-react';
 
 import { getUser } from '@/lib/auth/dal';
 import { CallbackForm, ContactForm } from './inquiry-forms';
+import { pageOpenGraph } from '@/lib/seo/open-graph';
+
+// Title and description are declared once and reused for the Open Graph
+// block — the share preview and the search snippet must not drift apart.
+const TITLE = 'יצירת קשר ותמיכה';
+const DESCRIPTION =
+  'יצירת קשר עם KALFA: שליחת פנייה לתמיכה או שאלה לפני הרשמה, או בקשת חזרה טלפונית מהצוות.';
 
 export const metadata = {
-  title: 'יצירת קשר ותמיכה',
+  title: TITLE,
+  description: DESCRIPTION,
+  // Nested metadata objects are REPLACED, not merged: a page that sets no
+  // openGraph inherits the root layout's wholesale, so its share preview
+  // would show the site-wide blurb instead of this page's.
+  openGraph: pageOpenGraph(TITLE, DESCRIPTION),
   alternates: { canonical: '/contact' },
 };
 

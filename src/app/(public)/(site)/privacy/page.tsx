@@ -4,9 +4,21 @@ import { getCompanyLegal } from '@/lib/data/company';
 import { ManageCookiesButton } from '@/components/consent/manage-cookies-button';
 import { getCookieConsentPublicConfig } from '@/lib/consent/admin-config';
 import { LegalShell, LegalSection, CategoryStatusBadge } from '../_legal';
+import { pageOpenGraph } from '@/lib/seo/open-graph';
+
+// Title and description are declared once and reused for the Open Graph
+// block — the share preview and the search snippet must not drift apart.
+const TITLE = 'מדיניות פרטיות';
+const DESCRIPTION =
+  'מדיניות הפרטיות של KALFA: איזה מידע נאסף על בעלי האירוע ועל המוזמנים, מטרות העיבוד, שיתוף עם ספקי שירות, משך השמירה והזכויות שלכם.';
 
 export const metadata = {
-  title: 'מדיניות פרטיות',
+  title: TITLE,
+  description: DESCRIPTION,
+  // Nested metadata objects are REPLACED, not merged: a page that sets no
+  // openGraph inherits the root layout's wholesale, so its share preview
+  // would show the site-wide blurb instead of this page's.
+  openGraph: pageOpenGraph(TITLE, DESCRIPTION),
   alternates: { canonical: '/privacy' },
 };
 

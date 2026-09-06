@@ -4,6 +4,7 @@ import { ArrowLeft, ListChecks, MessageCircle, ShieldCheck } from 'lucide-react'
 
 import { getUser } from '@/lib/auth/dal';
 import { buildFaqJsonLd, faqJsonLdScript } from '@/lib/faq/json-ld';
+import { pageOpenGraph } from '@/lib/seo/open-graph';
 
 // Public page for the WhatsApp channel — the one channel term with measurable
 // and RISING search demand ("אישורי הגעה בוואטסאפ").
@@ -16,10 +17,19 @@ import { buildFaqJsonLd, faqJsonLdScript } from '@/lib/faq/json-ld';
 // contacts. Nothing here promises free-form bulk messaging, marketing blasts,
 // or delivery guarantees — Meta gates all three.
 
+// Title and description are declared once and reused for the Open Graph
+// block — the share preview and the search snippet must not drift apart.
+const TITLE = 'אישורי הגעה בוואטסאפ';
+const DESCRIPTION =
+  'שליחת הזמנות ותזכורות לאישורי הגעה בוואטסאפ דרך הפלטפורמה הרשמית: הודעה אישית לכל מוזמן, תשובה בלחיצה ומעקב אוטומטי אחר התגובות.';
+
 export const metadata: Metadata = {
-  title: 'אישורי הגעה בוואטסאפ',
-  description:
-    'שליחת הזמנות ותזכורות לאישורי הגעה בוואטסאפ דרך הפלטפורמה הרשמית: הודעה אישית לכל מוזמן, תשובה בלחיצה ומעקב אוטומטי אחר התגובות.',
+  title: TITLE,
+  description: DESCRIPTION,
+  // Nested metadata objects are REPLACED, not merged: a page that sets no
+  // openGraph inherits the root layout's wholesale, so its share preview
+  // would show the site-wide blurb instead of this page's.
+  openGraph: pageOpenGraph(TITLE, DESCRIPTION),
   alternates: { canonical: '/whatsapp' },
 };
 

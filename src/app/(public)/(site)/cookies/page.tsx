@@ -2,9 +2,21 @@ import { getCompanyLegal } from '@/lib/data/company';
 import { ManageCookiesButton } from '@/components/consent/manage-cookies-button';
 import { getCookieConsentPublicConfig } from '@/lib/consent/admin-config';
 import { LegalShell, LegalSection, CategoryStatusBadge } from '../_legal';
+import { pageOpenGraph } from '@/lib/seo/open-graph';
+
+// Title and description are declared once and reused for the Open Graph
+// block — the share preview and the search snippet must not drift apart.
+const TITLE = 'מדיניות עוגיות';
+const DESCRIPTION =
+  'מדיניות העוגיות של KALFA: אילו עוגיות חיוניות, אנליטיקה ושיווק פועלות באתר, מי הספקים, ואיך לנהל או לבטל את ההסכמה בכל רגע.';
 
 export const metadata = {
-  title: 'מדיניות עוגיות',
+  title: TITLE,
+  description: DESCRIPTION,
+  // Nested metadata objects are REPLACED, not merged: a page that sets no
+  // openGraph inherits the root layout's wholesale, so its share preview
+  // would show the site-wide blurb instead of this page's.
+  openGraph: pageOpenGraph(TITLE, DESCRIPTION),
   alternates: { canonical: '/cookies' },
 };
 

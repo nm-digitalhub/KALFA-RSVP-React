@@ -1,8 +1,20 @@
 import { getCompanyLegal } from '@/lib/data/company';
 import { LegalShell, LegalSection } from '../_legal';
+import { pageOpenGraph } from '@/lib/seo/open-graph';
+
+// Title and description are declared once and reused for the Open Graph
+// block — the share preview and the search snippet must not drift apart.
+const TITLE = 'תקנון ותנאי שירות';
+const DESCRIPTION =
+  'תנאי השימוש בשירות KALFA: תיאור השירות, תמחור וחיוב, אישור קמפיין והסכם, זכות הביטול לפי חוק הגנת הצרכן וחלוקת האחריות בין הצדדים.';
 
 export const metadata = {
-  title: 'תקנון ותנאי שירות',
+  title: TITLE,
+  description: DESCRIPTION,
+  // Nested metadata objects are REPLACED, not merged: a page that sets no
+  // openGraph inherits the root layout's wholesale, so its share preview
+  // would show the site-wide blurb instead of this page's.
+  openGraph: pageOpenGraph(TITLE, DESCRIPTION),
   alternates: { canonical: '/terms' },
 };
 
