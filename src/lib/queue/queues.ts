@@ -118,6 +118,15 @@ export const QUEUES = {
   // on. Gated by app_settings.inquiry_followup_enabled (its own switch, off
   // by default). See src/lib/data/inquiry-followup.ts.
   inquiryFollowupSweep: 'inquiry-followup-sweep',
+  // Nightly archive of signed customer agreements to SharePoint
+  // (Customer-Agreements library) — a tick that reads
+  // signed_agreements.sharepoint_exported_at IS NULL, hash-verifies each PDF
+  // against content_hash and uploads it with its evidence metadata. Copies
+  // only; Supabase stays the system of record. Gated by
+  // app_settings.agreement_archive_enabled (own switch, off by default). See
+  // src/lib/data/agreement-archive.ts and
+  // docs/sharepoint-contracts-archive-plan-2026-09-06.md.
+  agreementArchiveSweep: 'agreement-archive-sweep',
   // SUMIT hold-release reconciler — every 30m, read-only against SUMIT's CRM
   // (crm/data/listentities on the "תפיסות מסגרת" folder), syncs
   // campaigns.release_status for holds SUMIT reports as released (manual

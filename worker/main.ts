@@ -48,6 +48,7 @@ import {
 import { processWebhookEvent } from '@/lib/data/webhook-processing';
 import { runThankyouSweep } from '@/lib/data/auto-thankyou';
 import { runInquiryFollowupSweep, getInquiryFollowupEnabled } from '@/lib/data/inquiry-followup';
+import { runAgreementArchiveSweep, getAgreementArchiveEnabled } from '@/lib/data/agreement-archive';
 import { runGraphIntakeSubscriptionSweep } from '@/lib/data/inquiry-mail-intake';
 import { runCallbackSweep } from '@/lib/data/call-callbacks';
 import { runCallbackSchedulingSweep } from '@/lib/data/callback-scheduling';
@@ -547,6 +548,15 @@ async function handleInquiryFollowupSweep(): Promise<void> {
   await runInquiryFollowupSweep();
 }
 
+// Nightly SharePoint archive of signed customer agreements — same periodic-tick
+// idiom, its OWN kill-switch (app_settings.agreement_archive_enabled): records
+// archiving must not stop with an outreach incident, and vice versa. Copies
+// only — the sweep never deletes anything in Supabase.
+async function handleAgreementArchiveSweep(): Promise<void> {
+  if (!(await getAgreementArchiveEnabled())) return;
+  await runAgreementArchiveSweep();
+}
+
 
 // ── Push instead of poll ────────────────────────────────────────────────────
 // A dedicated LISTEN connection so a callback request is scheduled the moment
@@ -873,7 +883,12 @@ async function main(): Promise<void> {
       // fall back on — see docs/inquiry-email-threading-fix-plan-2026-08-25.md
       // §2.6 for the send-level idempotency key that covers the *sequential*
       // retry-after-crash case this singleton policy alone does not.
-      q === QUEUES.inquiryFollowupSweep;
+      q === QUEUES.inquiryFollowupSweep ||
+      // Singleton too: two overlapping ticks would both read the same
+      // unexported rows and race two uploads of the same file.
+      // conflictBehavior=fail plus the hash check already make a duplicate
+      // impossible, but the overlap has no value and costs Graph calls.
+      q === QUEUES.agreementArchiveSweep;
     await boss.createQueue(q, singleton ? { policy: 'singleton' } : undefined);
   }
 
@@ -935,6 +950,12 @@ async function main(): Promise<void> {
     QUEUES.inquiryFollowupSweep,
     guardedWorker(QUEUES.inquiryFollowupSweep, async () => {
       await handleInquiryFollowupSweep();
+    }),
+  );
+  await boss.work(
+    QUEUES.agreementArchiveSweep,
+    guardedWorker(QUEUES.agreementArchiveSweep, async () => {
+      await handleAgreementArchiveSweep();
     }),
   );
   // Callback re-dials. runCallbackSweep only ENQUEUES — every dial gate is
@@ -1137,6 +1158,7 @@ async function main(): Promise<void> {
   await boss.schedule(QUEUES.templateHealthSync, '35 3 * * *', null, { tz: SCHEDULE_TZ });
   await boss.schedule(QUEUES.dispatchRetention, '40 3 * * *', null, { tz: SCHEDULE_TZ });
   await boss.schedule(QUEUES.phoneChangeCleanup, '45 3 * * *', null, { tz: SCHEDULE_TZ });
+  await boss.schedule(QUEUES.agreementArchiveSweep, '50 3 * * *', null, { tz: SCHEDULE_TZ });
   // Weekly, off-peak, deliberately non-round (04:17) — a 60-day token refreshed
   // once a week has ample margin even if a run is missed for a while.
   await boss.schedule(QUEUES.igTokenRefresh, '17 4 * * 2', null, { tz: SCHEDULE_TZ });

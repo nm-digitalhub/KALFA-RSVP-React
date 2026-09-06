@@ -166,6 +166,7 @@ export type Database = {
           agr_record_retention_months: string | null
           agr_retention_days: string | null
           agr_service_activation_window: string | null
+          agreement_archive_enabled: boolean
           base_overage_pricing_enabled: boolean
           billing_exposure_gate: boolean
           call_consent_required: boolean
@@ -265,6 +266,7 @@ export type Database = {
           agr_record_retention_months?: string | null
           agr_retention_days?: string | null
           agr_service_activation_window?: string | null
+          agreement_archive_enabled?: boolean
           base_overage_pricing_enabled?: boolean
           billing_exposure_gate?: boolean
           call_consent_required?: boolean
@@ -364,6 +366,7 @@ export type Database = {
           agr_record_retention_months?: string | null
           agr_retention_days?: string | null
           agr_service_activation_window?: string | null
+          agreement_archive_enabled?: boolean
           base_overage_pricing_enabled?: boolean
           billing_exposure_gate?: boolean
           call_consent_required?: boolean
@@ -4873,6 +4876,8 @@ export type Database = {
           ip: string | null
           otp_verified_at: string | null
           pdf_ref: string | null
+          sharepoint_exported_at: string | null
+          sharepoint_item_id: string | null
           signature_ref: string | null
           signed_at: string
           signer_user_id: string
@@ -4890,6 +4895,8 @@ export type Database = {
           ip?: string | null
           otp_verified_at?: string | null
           pdf_ref?: string | null
+          sharepoint_exported_at?: string | null
+          sharepoint_item_id?: string | null
           signature_ref?: string | null
           signed_at?: string
           signer_user_id: string
@@ -4907,6 +4914,8 @@ export type Database = {
           ip?: string | null
           otp_verified_at?: string | null
           pdf_ref?: string | null
+          sharepoint_exported_at?: string | null
+          sharepoint_item_id?: string | null
           signature_ref?: string | null
           signed_at?: string
           signer_user_id?: string

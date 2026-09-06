@@ -446,6 +446,10 @@ export const appSettingsSchema = z.object({
   // column's own DB default: a fail-closed value even if the field is ever
   // omitted from the submitted form (e.g. mid-rollout of the UI toggle).
   inquiry_followup_enabled: z.boolean().default(false),
+  // Daily SharePoint archive of signed customer agreements — its OWN switch
+  // (records archiving must not stop with an outreach incident, or vice
+  // versa). Same fail-closed `.default(false)` as above.
+  agreement_archive_enabled: z.boolean().default(false),
 });
 export type AppSettingsInput = z.infer<typeof appSettingsSchema>;
 

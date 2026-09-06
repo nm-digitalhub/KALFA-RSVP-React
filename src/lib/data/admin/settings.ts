@@ -30,6 +30,7 @@ export type AppSettings = {
   smtp_password: string; // '' when unset — masked + reveal (secret)
   smtp_from: string;
   inquiry_followup_enabled: boolean; // reminder → warning → auto-close sweep on quiet inquiries
+  agreement_archive_enabled: boolean; // nightly SharePoint archive of signed customer agreements
   updated_at: string;
 };
 
@@ -42,7 +43,7 @@ export async function getAppSettings(): Promise<AppSettings> {
   const { data, error } = await supabase
     .from('app_settings')
     .select(
-      'payments_enabled, close_charge_enabled, sumit_company_id, sumit_api_public_key, sumit_api_key, sms_enabled, extra_sms_sender, extra_sms_token, email_enabled, smtp_host, smtp_port, smtp_secure, smtp_user, smtp_password, smtp_from, inquiry_followup_enabled, updated_at',
+      'payments_enabled, close_charge_enabled, sumit_company_id, sumit_api_public_key, sumit_api_key, sms_enabled, extra_sms_sender, extra_sms_token, email_enabled, smtp_host, smtp_port, smtp_secure, smtp_user, smtp_password, smtp_from, inquiry_followup_enabled, agreement_archive_enabled, updated_at',
     )
     .eq('id', SETTINGS_ID)
     .maybeSingle();
@@ -68,6 +69,7 @@ export async function getAppSettings(): Promise<AppSettings> {
     smtp_password: data?.smtp_password ?? '',
     smtp_from: data?.smtp_from ?? '',
     inquiry_followup_enabled: data?.inquiry_followup_enabled ?? false,
+    agreement_archive_enabled: data?.agreement_archive_enabled ?? false,
     updated_at: data?.updated_at ?? '',
   };
 }
@@ -89,6 +91,7 @@ export type UpdateAppSettingsInput = {
   smtp_password: string;
   smtp_from: string;
   inquiry_followup_enabled: boolean;
+  agreement_archive_enabled: boolean;
 };
 
 export async function updateAppSettings(
@@ -119,6 +122,7 @@ export async function updateAppSettings(
       smtp_password: input.smtp_password || null,
       smtp_from: input.smtp_from || null,
       inquiry_followup_enabled: input.inquiry_followup_enabled,
+      agreement_archive_enabled: input.agreement_archive_enabled,
     })
     .eq('id', SETTINGS_ID);
 

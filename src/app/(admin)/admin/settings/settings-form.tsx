@@ -315,6 +315,27 @@ export function SettingsForm({
         </span>
       </label>
 
+      {/* Nightly copy of every signed customer agreement (PDF + evidence
+          metadata) to the SharePoint archive. Its OWN switch: an outreach or
+          mail incident must not stop records archiving, and vice versa. Copies
+          only — nothing is ever deleted from Supabase by this job. */}
+      <label className="flex items-start gap-3">
+        <input
+          type="checkbox"
+          name="agreement_archive_enabled"
+          defaultChecked={settings.agreement_archive_enabled}
+          className="mt-1 size-4 accent-primary"
+        />
+        <span>
+          <span className="block text-sm font-medium">ארכיון הסכמים חתומים ב-SharePoint</span>
+          <span className="block text-xs text-muted-foreground">
+            כשמופעל: פעם בלילה כל הסכם לקוח שנחתם ועדיין לא יוצא מועתק (PDF מאומת
+            hash + פרטי הראיות) לספריית Customer-Agreements באתר KALFA RSVP. כשכבוי
+            (ברירת המחדל) — שום קובץ לא נשלח. לא מוחק דבר ב-Supabase.
+          </span>
+        </span>
+      </label>
+
       <SubmitButton>שמירה</SubmitButton>
     </form>
   );
