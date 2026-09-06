@@ -1,6 +1,7 @@
 import 'server-only';
 
-import { requireUser, requireAdmin } from '@/lib/auth/dal';
+import { requireUser, requireAdmin, requirePlatformPermission } from '@/lib/auth/dal';
+import { recordStaffAccess } from '@/lib/data/admin/access-log';
 import { requireOwnedEvent, requireEventAccess } from '@/lib/data/events';
 import { assertEventNotPast, defaultThankyouSendAt } from '@/lib/data/event-date';
 import {
@@ -1082,6 +1083,29 @@ export type ThankyouSchedule = {
   sentAt: string | null;
 };
 
+// Does the CURRENT viewer own the campaign's event? Mirrors the exact rule the
+// write enforces (updateThankyouSchedule -> requireOwnedEvent), so the page can
+// render the thank-you form only where submitting it can actually succeed.
+//
+// Deliberately NOT requireEventAccess: that gate is org-aware, and an org member
+// holding campaigns:view passes it while the owner-only write still refuses —
+// which is precisely the case that produced a visible button guaranteed to fail.
+//
+// Uses the service-role client on purpose: the answer is a boolean about the
+// VIEWER's own relationship to the campaign, so it discloses nothing about the
+// customer and needs no audit row. It reads no customer data at all.
+export async function viewerOwnsCampaignEvent(campaignId: string): Promise<boolean> {
+  const user = await requireUser();
+  const admin = createAdminClient();
+  const { data, error } = await admin
+    .from('campaigns')
+    .select('events!inner(owner_id)')
+    .eq('id', campaignId)
+    .maybeSingle<{ events: { owner_id: string } }>();
+  if (error) throw new Error('בדיקת הבעלות על הקמפיין נכשלה');
+  return data?.events.owner_id === user.id;
+}
+
 export async function getThankyouSchedule(
   campaignId: string,
 ): Promise<ThankyouSchedule | null> {
@@ -1102,25 +1126,56 @@ export async function getThankyouSchedule(
   };
 }
 
-// Owner edits the opt-in flag and/or the scheduled time. Blocked once
+// Edits the opt-in flag and/or the scheduled time. Blocked once
 // thankyou_sent_at is set — the plan's "cancel window" is explicitly BEFORE
 // the sweep/manual send fires, not after (nothing to cancel once it's out).
+//
+// AUTHORIZATION — owner OR platform staff holding manage_billing, the same
+// owner/admin split the rest of this module already uses (CampaignActor).
+// Staff who may pause, close, CANCEL and settle-and-charge a customer's
+// campaign could not move its thank-you time by an hour. That was not a
+// security boundary, just an inconsistency: the four heavier operations are
+// requireAdmin-authorized a few lines from here, and manage_billing is exactly
+// the permission the admin controls on this page already demand.
+//
+// The branch is decided HERE, from the caller's own identity — never from a
+// flag the page passes in. An org member who is neither owner nor staff is
+// still refused, precisely as before: this widens nothing beyond platform
+// staff, who could already end the campaign outright.
 export async function updateThankyouSchedule(
   campaignId: string,
   patch: { autoEnabled?: boolean; sendAt?: string | null },
 ): Promise<void> {
-  const supabase = await createClient();
-  const { data: campaign, error } = await supabase
+  const service = createAdminClient();
+  const { data: campaign, error } = await service
     .from('campaigns')
-    .select('id, event_id')
+    .select('id, event_id, events!inner(owner_id)')
     .eq('id', campaignId)
-    .maybeSingle();
+    .maybeSingle<{ id: string; event_id: string; events: { owner_id: string } }>();
   if (error) throw new Error('טעינת הקמפיין נכשלה');
   if (!campaign) {
     const { notFound } = await import('next/navigation');
     return notFound();
   }
-  await requireOwnedEvent(campaign.event_id); // ownership, defense-in-depth beyond RLS
+
+  const user = await requireUser();
+  if (campaign.events.owner_id === user.id) {
+    await requireOwnedEvent(campaign.event_id); // ownership, defense-in-depth beyond RLS
+  } else {
+    // A cross-tenant WRITE by staff. service_role carries no user identity, so
+    // the fail-closed audit row before it is the only thing that can answer
+    // "who changed this customer's schedule" — the same reason the admin
+    // readers on this page audit rather than relying on an RLS grant.
+    const staff = await requirePlatformPermission('manage_billing');
+    await recordStaffAccess({
+      staffId: staff.id,
+      permission: 'manage_billing',
+      subjectType: 'campaign',
+      subjectId: campaignId,
+      ownerId: campaign.events.owner_id,
+      eventId: campaign.event_id,
+    });
+  }
 
   const update: TablesUpdate<'campaigns'> = {};
   if (patch.autoEnabled !== undefined) update.thankyou_auto_enabled = patch.autoEnabled;

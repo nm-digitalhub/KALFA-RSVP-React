@@ -1,8 +1,10 @@
 import 'server-only';
 
+import type { SupabaseClient } from '@supabase/supabase-js';
+
 import { requireEventAccess } from '@/lib/data/events';
 import { createClient } from '@/lib/supabase/server';
-import type { Enums } from '@/lib/supabase/types';
+import type { Database, Enums } from '@/lib/supabase/types';
 // B8 — the WhatsApp/Meta webhook breakdown for a campaign, shown BESIDE (never
 // replacing) the existing billing summary on the campaign board. Every figure is
 // a reflection of an inbound Meta signal:
@@ -120,26 +122,24 @@ export function aggregateDeliveryBreakdown(
   return { totalContacts: contacts.length, delivery, outcome, call };
 }
 
-// Owner-gated reader. Returns null only when the campaign isn't visible to the
-// caller (RLS) — the page already establishes ownership, so this is belt-and-
-// suspenders; on the happy path it returns an all-zeros breakdown until the
-// outreach engine starts producing webhook signals. Batched (never N+1):
-// one read each for the outbound interactions, the engine state, and the
-// contacts — no per-contact round-trips.
-export async function getCampaignDeliveryBreakdown(
+// The three reads plus the aggregation, parameterised by CLIENT.
+//
+// Both callers share this one definition so they cannot drift: the owner path
+// below passes the cookie client (RLS-scoped), and the admin path
+// (getCampaignDeliveryForAdminView) passes the service-role client after its
+// own permission check and audit row. AUTHORIZATION IS THE CALLER'S JOB — this
+// function deliberately performs no gate, which is why it is not exported to
+// pages and why every caller must gate before calling it.
+//
+// Batched (never N+1): one read each for the outbound interactions, the engine
+// state, and the contacts — no per-contact round-trips. THROWS on a read
+// failure; it never returns zeros for an error, because a zeroed breakdown is
+// indistinguishable from a campaign that genuinely has no activity yet.
+export async function fetchDeliveryBreakdown(
+  client: SupabaseClient<Database>,
   campaignId: string,
-): Promise<CampaignDeliveryBreakdown | null> {
-  const supabase = await createClient();
-
-  // Resolve the campaign's event under owner RLS; a non-owner sees null.
-  const { data: campaign, error: cErr } = await supabase
-    .from('campaigns')
-    .select('event_id')
-    .eq('id', campaignId)
-    .maybeSingle();
-  if (cErr) throw new Error('טעינת הקמפיין נכשלה');
-  if (!campaign?.event_id) return null;
-  await requireEventAccess(campaign.event_id, 'campaigns', 'view'); // org-aware, not owner-only
+): Promise<CampaignDeliveryBreakdown> {
+  const supabase = client;
 
   // Outbound delivery rows for the campaign — also seeds part of the contact set.
   const { data: interactions, error: iErr } = await supabase
@@ -177,4 +177,29 @@ export async function getCampaignDeliveryBreakdown(
   }
 
   return aggregateDeliveryBreakdown(interactions ?? [], contacts);
+}
+
+// Owner/org-member reader. Returns null ONLY when the campaign is invisible to
+// the caller under RLS — which the page treats as "could not load", never as
+// "no contacts yet". Those two are different facts and the UI must not conflate
+// them: a platform admin viewing a customer's campaign lands here with zero
+// visible rows, and the page used to render that as "add contacts and start
+// activity" over a campaign that had both. Staff go through
+// getCampaignDeliveryForAdminView instead.
+export async function getCampaignDeliveryBreakdown(
+  campaignId: string,
+): Promise<CampaignDeliveryBreakdown | null> {
+  const supabase = await createClient();
+
+  // Resolve the campaign's event under owner RLS; a non-owner sees null.
+  const { data: campaign, error: cErr } = await supabase
+    .from('campaigns')
+    .select('event_id')
+    .eq('id', campaignId)
+    .maybeSingle();
+  if (cErr) throw new Error('טעינת הקמפיין נכשלה');
+  if (!campaign?.event_id) return null;
+  await requireEventAccess(campaign.event_id, 'campaigns', 'view'); // org-aware, not owner-only
+
+  return fetchDeliveryBreakdown(supabase, campaignId);
 }

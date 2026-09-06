@@ -5618,6 +5618,10 @@ export type Database = {
     }
     Functions: {
       accept_invitation: { Args: { _token: string }; Returns: string }
+      admin_reschedule_event: {
+        Args: { _event_date: string; _event_id: string }
+        Returns: string
+      }
       call_analysis:
         | {
             Args: {

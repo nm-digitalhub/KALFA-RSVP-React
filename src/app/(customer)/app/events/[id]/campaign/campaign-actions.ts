@@ -31,7 +31,12 @@ import { recordSignedAgreement } from '@/lib/data/agreements';
 import { getProfile } from '@/lib/data/profiles';
 import { requestOtp, verifyOtp } from '@/lib/data/otp';
 import { getActiveAgreementDoc } from '@/lib/data/agreements-doc';
-import { approveCampaignSchema, thankyouScheduleSchema } from '@/lib/validation/campaigns';
+import {
+  approveCampaignSchema,
+  rescheduleEventSchema,
+  thankyouScheduleSchema,
+} from '@/lib/validation/campaigns';
+import { rescheduleEventForAdmin } from '@/lib/data/admin/events';
 import type { FormState } from '@/lib/validation/result';
 
 const OTP_PURPOSE = 'agreement_signing';
@@ -566,4 +571,50 @@ export async function updateThankyouScheduleAction(
   }
   revalidatePath(`/app/events/${eventId}/campaign/${campaignId}`);
   return { notice: 'לוח הזמנים לתודה עודכן' };
+}
+
+// Staff-only: move a live event's date. Everything that authorizes this lives
+// deeper — rescheduleEventForAdmin checks manage_billing and writes the audit
+// row, and the database function beneath it re-checks the permission itself.
+// This layer parses the form and turns the outcome into a message.
+export async function rescheduleEventAction(
+  eventId: string,
+  campaignId: string,
+  _prevState: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  const parsed = rescheduleEventSchema.safeParse({
+    event_date: formData.get('new_event_date') ?? '',
+    event_time: formData.get('new_event_time') ?? '',
+    reason: formData.get('reschedule_reason') ?? '',
+  });
+  if (!parsed.success) {
+    return { fieldErrors: parsed.error.flatten().fieldErrors };
+  }
+
+  // The owner's own date fields are stored as an Israel wall-clock instant; a
+  // staff edit must produce the identical shape, or the same wall time would
+  // land an hour out across a DST boundary.
+  const iso = ilWallTimeToIso(parsed.data.event_date, parsed.data.event_time);
+
+  let clamped = false;
+  try {
+    const result = await rescheduleEventForAdmin(eventId, iso, parsed.data.reason);
+    clamped = result.deadlineClamped;
+  } catch (err) {
+    unstable_rethrow(err);
+    return {
+      error: err instanceof Error ? err.message : 'שינוי מועד האירוע נכשל. נסו שוב.',
+    };
+  }
+
+  // Both pages show the date; the campaign board also shows the billing window
+  // that the database trigger has just moved with it.
+  revalidatePath(`/app/events/${eventId}`);
+  revalidatePath(`/app/events/${eventId}/campaign/${campaignId}`);
+  return {
+    notice: clamped
+      ? 'מועד האירוע עודכן. המועד האחרון לאישור הגעה הוצמד ליום האירוע החדש.'
+      : 'מועד האירוע עודכן, וחלון החיוב של הקמפיין עודכן איתו.',
+  };
 }

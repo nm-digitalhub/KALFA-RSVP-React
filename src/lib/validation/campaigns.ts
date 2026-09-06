@@ -56,3 +56,18 @@ export const thankyouScheduleSchema = z
     path: ['send_date'],
   });
 export type ThankyouScheduleInput = z.infer<typeof thankyouScheduleSchema>;
+
+// Staff reschedule of a live event (admin surface on the campaign board). The
+// reason is REQUIRED and is not a formality: it is the only human account of why
+// a customer's date moved, and it lands in the support access log beside the
+// staff id.
+export const rescheduleEventSchema = z.object({
+  event_date: z.string().trim().min(1, { error: 'יש לבחור תאריך' }),
+  event_time: z.string().trim().min(1, { error: 'יש לבחור שעה' }),
+  reason: z
+    .string()
+    .trim()
+    .min(10, { error: 'יש לפרט את הסיבה לשינוי המועד (10 תווים לפחות)' })
+    .max(500, { error: 'הסיבה ארוכה מדי' }),
+});
+export type RescheduleEventInput = z.infer<typeof rescheduleEventSchema>;

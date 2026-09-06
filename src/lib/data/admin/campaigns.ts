@@ -5,7 +5,15 @@ import { notFound } from 'next/navigation';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { requirePlatformPermission } from '@/lib/auth/dal';
 import { recordStaffAccess } from '@/lib/data/admin/access-log';
-import { CAMPAIGN_COLUMNS, type OwnerCampaign } from '@/lib/data/campaigns';
+import {
+  fetchDeliveryBreakdown,
+  type CampaignDeliveryBreakdown,
+} from '@/lib/data/campaign-delivery';
+import {
+  CAMPAIGN_COLUMNS,
+  type OwnerCampaign,
+  type ThankyouSchedule,
+} from '@/lib/data/campaigns';
 import type { OwnedEvent } from '@/lib/data/events';
 import type { CampaignStatus } from '@/lib/data/campaign-status';
 
@@ -78,7 +86,19 @@ export async function getEventForAdminView(eventId: string): Promise<OwnedEvent>
 //
 // Selects CAMPAIGN_COLUMNS, the same list the owner path uses, so an admin sees
 // exactly what the owner sees and the two cannot drift.
-export async function getCampaignForAdminView(campaignId: string): Promise<OwnerCampaign> {
+// Gate + audit for ONE cross-tenant campaign read, resolving the owning event on
+// the way through. Every admin campaign reader below starts here, so the
+// invariant "permission checked, then audit row written, THEN the customer's
+// data is read" holds for each of them individually rather than only for
+// whichever one happened to run first.
+//
+// That does mean a single admin page view writes several audit rows — one per
+// targeted read. Deliberate: the alternative is a reader that can be called
+// from somewhere else without leaving a trace, and an over-full log is a far
+// smaller problem than a silent path.
+async function auditedCampaignAccess(
+  campaignId: string,
+): Promise<{ eventId: string; ownerId: string }> {
   const staff = await requirePlatformPermission('manage_billing');
   const admin = createAdminClient();
 
@@ -103,6 +123,13 @@ export async function getCampaignForAdminView(campaignId: string): Promise<Owner
     eventId: link.event_id,
   });
 
+  return { eventId: link.event_id, ownerId: link.events.owner_id };
+}
+
+export async function getCampaignForAdminView(campaignId: string): Promise<OwnerCampaign> {
+  await auditedCampaignAccess(campaignId);
+  const admin = createAdminClient();
+
   const { data, error } = await admin
     .from('campaigns')
     .select(CAMPAIGN_COLUMNS)
@@ -115,6 +142,60 @@ export async function getCampaignForAdminView(campaignId: string): Promise<Owner
     notFound();
   }
   return data as OwnerCampaign;
+}
+
+// The delivery/outcome breakdown for a campaign a platform admin does not own.
+//
+// The other half of the same fix as getCampaignForAdminView. Reaching the page
+// was never enough: the owner-path reader resolves the campaign under RLS,
+// whose only SELECT policy is can_access_event(...) -> owner_id = auth.uid().
+// For staff that returns NO ROW AND NO ERROR, so the reader returned null and
+// the page rendered "נתוני המסירה יוצגו לאחר הוספת אנשי קשר" over a customer's
+// campaign that had contacts and outreach — beside a billing panel showing that
+// same campaign's real numbers, because the billing summary reads through the
+// service-role client and worked all along. Two panels, one screen, opposite
+// claims.
+//
+// Same shared fetch the owner path uses, so the two cannot diverge; the only
+// difference is which client executes it and that this one is audited first.
+export async function getCampaignDeliveryForAdminView(
+  campaignId: string,
+): Promise<CampaignDeliveryBreakdown> {
+  await auditedCampaignAccess(campaignId);
+  return fetchDeliveryBreakdown(createAdminClient(), campaignId);
+}
+
+// The thank-you schedule for a campaign a platform admin does not own — read
+// only. getThankyouSchedule uses the cookie client, so for staff it returned
+// null and the panel simply vanished with nothing said.
+//
+// Read only is not a limitation to route around: updateThankyouSchedule gates
+// on requireOwnedEvent, so a form rendered for a non-owner would be a control
+// whose submit is guaranteed to fail. The page decides what to render from
+// ownership (viewerOwnsCampaignEvent), not from this reader.
+export async function getThankyouScheduleForAdminView(
+  campaignId: string,
+): Promise<ThankyouSchedule> {
+  await auditedCampaignAccess(campaignId);
+  const admin = createAdminClient();
+  const { data, error } = await admin
+    .from('campaigns')
+    .select('thankyou_auto_enabled, thankyou_send_at, thankyou_sent_at')
+    .eq('id', campaignId)
+    .maybeSingle();
+  if (error) {
+    throw new Error('טעינת לוח הזמנים לתודה נכשלה');
+  }
+  if (!data) {
+    notFound();
+  }
+  return {
+    // Same fail-open-to-the-default reading as the owner path: an absent column
+    // must not read as "disabled".
+    autoEnabled: data.thankyou_auto_enabled !== false,
+    sendAt: data.thankyou_send_at,
+    sentAt: data.thankyou_sent_at,
+  };
 }
 
 // A campaign row for the admin wind-down list: the campaign, its status, the

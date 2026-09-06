@@ -242,6 +242,124 @@ export async function syncEventToExchange(eventId: string): Promise<void> {
   }
 }
 
+// ── Moving an already-synced event ──────────────────────────────────────────
+
+/**
+ * Best-effort: move the event's already-synced Exchange appointment(s) to a new
+ * date.
+ *
+ * syncEventToExchange above CREATES and nothing else — it returns at
+ * `already_synced` the moment a link row exists. That was correct while an
+ * event's date was immutable after publication; now that platform staff can
+ * reschedule a live event (admin_reschedule_event, migration 20260906203901),
+ * calling it after a move is a silent no-op and the calendar keeps showing the
+ * old date. This is the update half.
+ *
+ * PATCHes rather than delete-and-recreate: the appointment id is the identity
+ * the owner's calendar (and any attendee) holds, and recreating it would read
+ * as a cancellation followed by a new invitation.
+ *
+ * A no-op when the event was never synced. Never throws — see module note.
+ */
+export async function rescheduleEventExchangeAppointment(eventId: string): Promise<void> {
+  try {
+    const admin = createAdminClient();
+
+    const { data: link, error: linkError } = await admin
+      .from('exchange_calendar_links')
+      .select('id, appointment_id, rsvp_deadline_appointment_id')
+      .eq('event_id', eventId)
+      .maybeSingle();
+    if (linkError) {
+      logSync('reschedule_link_lookup_failed', { eventId });
+      return;
+    }
+    if (!link?.appointment_id) {
+      // Never synced (no connection at publish time, say) — nothing to move.
+      logSync('reschedule_not_synced', { eventId });
+      return;
+    }
+
+    const event = await loadEventForSync(admin, eventId);
+    if (!event?.event_date) {
+      logSync('reschedule_event_unusable', { eventId });
+      return;
+    }
+
+    const connection = await loadBusinessExchangeConnection(admin);
+    if (!connection.ok) {
+      logSync('reschedule_no_connection', { eventId, reason: connection.reason });
+      return;
+    }
+
+    const detailUrl = await getAppUrl(`/app/events/${eventId}`);
+    const headingInput = {
+      eventType: event.event_type,
+      celebrants: event.celebrants,
+      eventName: event.name,
+    };
+
+    // The same builder the create path uses, so a moved item is byte-identical
+    // to one created fresh at the new date — subject, body and duration
+    // included, not just the start time.
+    const draft = buildEventAppointmentDraft({
+      ...headingInput,
+      eventDateIso: event.event_date,
+      notes: event.notes,
+      detailUrl,
+    });
+
+    const moved = await calendarProvider.updateAppointment(
+      connection.connection.config,
+      link.appointment_id,
+      {
+        start: draft.start,
+        end: draft.end,
+        subject: draft.subject,
+        body: draft.body,
+        bodyIsHtml: true,
+      },
+    );
+    if (!moved.ok) {
+      logSync('reschedule_update_failed', { eventId, error: moved.error });
+      return;
+    }
+
+    // The RSVP-deadline marker is a separate all-day item. The deadline may have
+    // been clamped down with the event (admin_reschedule_event does that when the
+    // move is earlier), so it moves too — and only when the event still has one.
+    let deadlineMoved = false;
+    if (link.rsvp_deadline_appointment_id && event.rsvp_deadline) {
+      const startIsoMidnight = ilWallTimeToIso(event.rsvp_deadline, '00:00');
+      const rsvpDraft = buildRsvpDeadlineDraft({ ...headingInput, startIsoMidnight });
+      const rsvpMoved = await calendarProvider.updateAppointment(
+        connection.connection.config,
+        link.rsvp_deadline_appointment_id,
+        { start: rsvpDraft.start, end: rsvpDraft.end, subject: rsvpDraft.subject },
+      );
+      if (rsvpMoved.ok) deadlineMoved = true;
+      else logSync('reschedule_rsvp_update_failed', { eventId, error: rsvpMoved.error });
+    }
+
+    await admin
+      .from('exchange_calendar_links')
+      .update({ subject_synced: draft.subject })
+      .eq('id', link.id);
+
+    await logActivity({
+      eventId,
+      action: 'exchange.event_rescheduled',
+      meta: {
+        connectionId: connection.connection.id,
+        movedTo: event.event_date,
+        rsvpDeadlineItemMoved: deadlineMoved,
+      },
+    });
+  } catch (err) {
+    logSync('unexpected_error', { eventId, message: err instanceof Error ? err.message : 'unknown' });
+  }
+}
+
 // ── Cancellation marking on close ───────────────────────────────────────────
 
 /**

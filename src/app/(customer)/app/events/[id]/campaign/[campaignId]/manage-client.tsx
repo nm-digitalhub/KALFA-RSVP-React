@@ -12,7 +12,6 @@ import {
 import { sendBusinessEvent } from '@/components/consent/send-ga-event';
 import { DateSelectIL } from '@/components/date-select-il';
 import { FormError, FormNotice } from '@/components/forms';
-import { HelpTip } from '@/components/help-tip';
 import { TimeSelect24 } from '@/components/time-select-24';
 import { Badge } from '@/components/ui/badge';
 import { buttonVariants } from '@/components/ui/button';
@@ -91,6 +90,7 @@ type Actions = {
   sendEventDay: BoundAction;
   sendThankyou: BoundAction;
   updateThankyouSchedule: BoundAction;
+  rescheduleEvent: BoundAction;
 };
 
 function nis(value: number | null | undefined): string {
@@ -194,15 +194,6 @@ function SummaryMetric({
   );
 }
 
-function CompactMetric({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded-xl bg-muted/45 p-3 sm:p-4">
-      <dt className="text-xs text-muted-foreground">{label}</dt>
-      <dd className="mt-1 text-lg font-bold tabular-nums">{value}</dd>
-    </div>
-  );
-}
-
 function DetailRow({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex items-center justify-between gap-4 py-3">
@@ -248,27 +239,50 @@ function DeliveryBar({
   );
 }
 
-function CampaignSummary({
+// Status and money in ONE card, because they are one question: what state is
+// this campaign in and what will it cost. They were two cards (מצב הקמפיין and
+// תוכנית החיוב) that repeated the same three figures — reached, accrued,
+// ceiling — in two different visual languages, one as headline metrics and one
+// as a progress bar with tiles.
+//
+// The rows below are a plain list, NOT tiles. Every figure here used to sit in
+// its own rounded box inside a rounded box inside this card; at mobile width
+// that stacked into a column of nested frames with a couple of words in each.
+// A list of label/value pairs says the same thing and reads faster.
+function CampaignStatusAndBilling({
+  campaign,
   status,
   captureStatus,
   reached,
   accrued,
   ceiling,
+  balance,
   basePrice,
+  includedReached,
+  overageRate,
   finalCharge,
   creditApplied,
 }: {
+  campaign: Campaign;
   status: CampaignStatus;
   captureStatus: string | null;
   reached: number;
   accrued: number;
   ceiling: number;
+  balance: number;
   basePrice: number;
+  includedReached: number;
+  overageRate: number;
   finalCharge: number | null;
   creditApplied: number | null;
 }) {
   const stage = campaignStage({ status, capture_status: captureStatus });
   const primaryChargeLabel = reached === 0 && basePrice > 0 ? 'דמי הפעלה' : 'חיוב נוכחי';
+  const percentage = ceiling > 0 ? Math.min(100, Math.round((accrued / ceiling) * 100)) : 0;
+  const pricingExplanation =
+    basePrice > 0
+      ? `דמי הפעלה קבועים של ${nis(basePrice)}. ${includedReached.toLocaleString('he-IL')} אנשי הקשר הראשונים שהשיבו כלולים בדמי ההפעלה. לאחר מכן נוסף ${nis(overageRate)} לכל איש קשר נוסף שהשיב, עד לתקרה של ${nis(ceiling)}.`
+      : `החיוב הוא ${nis(overageRate)} לכל איש קשר ייחודי שהשיב בפועל, עד לתקרה של ${nis(ceiling)}.`;
 
   return (
     <section
@@ -288,17 +302,15 @@ function CampaignSummary({
             panel next to it — the metric row below only looks right because
             three items fill the width. */}
         <div className="flex items-center gap-3">
-          <p id="campaign-summary-title" className="text-sm text-muted-foreground">
-            מצב הקמפיין
-          </p>
-          <div className="flex items-center gap-2">
-            <Badge
-              variant={CAMPAIGN_STAGE_VARIANTS[stage]}
-              className="h-8 px-3 text-sm font-semibold"
-            >
-              {CAMPAIGN_STAGE_LABELS[stage]}
-            </Badge>
-          </div>
+          <h2 id="campaign-summary-title" className="text-sm text-muted-foreground">
+            מצב הקמפיין וחיוב
+          </h2>
+          <Badge
+            variant={CAMPAIGN_STAGE_VARIANTS[stage]}
+            className="h-8 px-3 text-sm font-semibold"
+          >
+            {CAMPAIGN_STAGE_LABELS[stage]}
+          </Badge>
         </div>
 
         {finalCharge != null ? (
@@ -326,115 +338,59 @@ function CampaignSummary({
         <SummaryMetric label={primaryChargeLabel} value={nis(accrued)} emphasized />
         <SummaryMetric label="תקרת חיוב" value={nis(ceiling)} />
       </dl>
-    </section>
-  );
-}
 
-function BillingOverview({
-  campaign,
-  reached,
-  accrued,
-  ceiling,
-  balance,
-  basePrice,
-  includedReached,
-  overageRate,
-}: {
-  campaign: Campaign;
-  reached: number;
-  accrued: number;
-  ceiling: number;
-  balance: number;
-  basePrice: number;
-  includedReached: number;
-  overageRate: number;
-}) {
-  const percentage = ceiling > 0 ? Math.min(100, Math.round((accrued / ceiling) * 100)) : 0;
-  const pricingExplanation =
-    basePrice > 0
-      ? `דמי הפעלה קבועים של ${nis(basePrice)}. ${includedReached.toLocaleString('he-IL')} אנשי הקשר הראשונים שהשיבו כלולים בדמי ההפעלה. לאחר מכן נוסף ${nis(overageRate)} לכל איש קשר נוסף שהשיב, עד לתקרה של ${nis(ceiling)}.`
-      : `החיוב הוא ${nis(overageRate)} לכל איש קשר ייחודי שהשיב בפועל, עד לתקרה של ${nis(ceiling)}.`;
-
-  return (
-    <section aria-labelledby="billing-title" className="rounded-2xl border border-border bg-card p-5 sm:p-6">
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <h2 id="billing-title" className="text-lg font-bold">
-            תוכנית החיוב
-          </h2>
-          <p className="mt-1 text-sm text-muted-foreground">
-            תמונת מצב עדכנית של החיוב ומסגרת הקמפיין.
-          </p>
-        </div>
-        <HelpTip text={pricingExplanation} />
-      </div>
-
-      <div className="mt-5 rounded-xl bg-primary/5 p-4 sm:p-5">
-        <div className="flex items-end justify-between gap-4">
-          <div>
-            <p className="text-sm text-muted-foreground">חיוב אם הקמפיין ייסגר עכשיו</p>
-            <p className="mt-1 text-2xl font-bold tabular-nums text-primary sm:text-3xl">
-              {nis(accrued)}
-            </p>
-          </div>
-          <p className="text-sm text-muted-foreground">
-            מתוך <strong className="text-foreground">{nis(ceiling)}</strong>
-          </p>
-        </div>
-
+      {/* The bar sits directly on the card. It used to have its own tinted,
+          rounded panel — a frame around a frame, whose only content was a
+          number the metric row above already showed. */}
+      <div className="border-t border-border px-5 pb-5 pt-4 sm:px-6 sm:pb-6">
         <div
           role="progressbar"
           aria-label="ניצול מסגרת החיוב"
           aria-valuemin={0}
           aria-valuemax={ceiling}
           aria-valuenow={Math.min(accrued, ceiling)}
-          className="mt-4 h-2.5 overflow-hidden rounded-full bg-primary/15"
+          className="h-2.5 overflow-hidden rounded-full bg-primary/15"
         >
           <div
             className="h-full rounded-full bg-primary transition-[inline-size]"
             style={{ inlineSize: `${percentage}%` }}
           />
         </div>
-
         <div className="mt-2 flex items-center justify-between text-xs text-muted-foreground">
           <span>{percentage}% מהמסגרת</span>
           <span>נותרו {nis(balance)}</span>
         </div>
+
+        <dl className="mt-4 divide-y divide-border">
+          <DetailRow label="דמי הפעלה" value={nis(basePrice)} />
+          <DetailRow
+            label="כלולים במחיר"
+            value={includedReached.toLocaleString('he-IL')}
+          />
+          <DetailRow
+            label={basePrice > 0 ? 'עלות לכל מענה נוסף' : 'מחיר לכל מענה'}
+            value={nis(overageRate)}
+          />
+          <DetailRow
+            label="מכסת אנשי קשר"
+            value={campaign.max_contacts?.toLocaleString('he-IL') ?? '—'}
+          />
+          <DetailRow label="יתרה עד התקרה" value={nis(balance)} />
+        </dl>
+
+        <details className="group mt-2 border-t border-border pt-3">
+          <summary className="cursor-pointer list-none text-sm font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+            איך מחושב החיוב
+          </summary>
+          <div className="mt-3 space-y-2 text-sm leading-6 text-muted-foreground">
+            <p>{pricingExplanation}</p>
+            <p>
+              אין חיוב על הודעה שנקראה בלבד, ניסיון ללא מענה, תא קולי, מספר שגוי או
+              תגובה כפולה. כל איש קשר ייחודי מחויב פעם אחת בלבד לאחר שהשיב בפועל.
+            </p>
+          </div>
+        </details>
       </div>
-
-      <dl className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <CompactMetric label="דמי הפעלה" value={nis(basePrice)} />
-        <CompactMetric
-          label="כלולים במחיר"
-          value={includedReached.toLocaleString('he-IL')}
-        />
-        <CompactMetric
-          label={basePrice > 0 ? 'עלות לכל מענה נוסף' : 'מחיר לכל מענה'}
-          value={nis(overageRate)}
-        />
-        <CompactMetric
-          label="מכסת אנשי קשר"
-          value={campaign.max_contacts?.toLocaleString('he-IL') ?? '—'}
-        />
-      </dl>
-
-      <dl className="mt-5 divide-y divide-border rounded-xl border border-border px-4">
-        <DetailRow label="אנשי קשר שהושגו" value={reached.toLocaleString('he-IL')} />
-        <DetailRow label="יתרה עד התקרה" value={nis(balance)} />
-      </dl>
-
-      <details className="group mt-4 rounded-xl border border-border px-4 py-3">
-        <summary className="cursor-pointer list-none text-sm font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
-          איך מחושב החיוב
-        </summary>
-        <div className="mt-3 space-y-2 text-sm leading-6 text-muted-foreground">
-          <p>{pricingExplanation}</p>
-          <p>
-            אין חיוב על הודעה שנקראה בלבד, ניסיון ללא מענה, תא קולי, מספר שגוי או
-            תגובה כפולה. כל איש קשר ייחודי מחויב פעם אחת בלבד לאחר שהשיב בפועל.
-          </p>
-        </div>
-      </details>
     </section>
   );
 }
@@ -461,7 +417,10 @@ function DeliveryBreakdown({ delivery }: { delivery: NonNullable<Delivery> }) {
       </div>
 
       <div className="mt-5 grid gap-6 xl:grid-cols-2">
-        <div className="space-y-4 rounded-xl border border-border p-4">
+        {/* No inner frame: four labelled bars are already a visual group, and
+            boxing them inside this card produced a border a few pixels from a
+            border. */}
+        <div className="space-y-4">
           <h3 className="text-sm font-semibold">מסירת הודעות WhatsApp</h3>
           <DeliveryBar
             label={deliveryStatusLabel('sent')}
@@ -491,20 +450,20 @@ function DeliveryBreakdown({ delivery }: { delivery: NonNullable<Delivery> }) {
 
         <div>
           <h3 className="text-sm font-semibold">תוצאות אנשי קשר</h3>
-          <dl className="mt-3 grid grid-cols-2 gap-3">
-            <CompactMetric
+          <dl className="mt-1 divide-y divide-border">
+            <DetailRow
               label={OP_STATUS_LABELS.reached_billed}
               value={outcome.reached.toLocaleString('he-IL')}
             />
-            <CompactMetric
+            <DetailRow
               label={OP_STATUS_LABELS.wrong_number}
               value={outcome.wrongNumber.toLocaleString('he-IL')}
             />
-            <CompactMetric
+            <DetailRow
               label={REMOVAL_REQUESTED_LABEL}
               value={outcome.optedOut.toLocaleString('he-IL')}
             />
-            <CompactMetric
+            <DetailRow
               label="סך אנשי קשר"
               value={totalContacts.toLocaleString('he-IL')}
             />
@@ -515,20 +474,20 @@ function DeliveryBreakdown({ delivery }: { delivery: NonNullable<Delivery> }) {
       {hasCalls ? (
         <div className="mt-6 border-t border-border pt-5">
           <h3 className="text-sm font-semibold">שיחות AI</h3>
-          <dl className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
-            <CompactMetric
+          <dl className="mt-1 divide-y divide-border sm:grid sm:grid-cols-2 sm:gap-x-8 sm:divide-y-0">
+            <DetailRow
               label={OP_STATUS_LABELS.call_dialed}
               value={call.dialed.toLocaleString('he-IL')}
             />
-            <CompactMetric
+            <DetailRow
               label={OP_STATUS_LABELS.no_answer}
               value={call.noAnswer.toLocaleString('he-IL')}
             />
-            <CompactMetric
+            <DetailRow
               label={OP_STATUS_LABELS.voicemail}
               value={call.voicemail.toLocaleString('he-IL')}
             />
-            <CompactMetric
+            <DetailRow
               label={OP_STATUS_LABELS.human_interaction_call}
               value={call.humanInteraction.toLocaleString('he-IL')}
             />
@@ -536,6 +495,55 @@ function DeliveryBreakdown({ delivery }: { delivery: NonNullable<Delivery> }) {
         </div>
       ) : null}
     </section>
+  );
+}
+
+// Shown where a panel's data was expected but could not be read. It says the
+// read failed — it never invents a reason, and above all never reports a failed
+// read as an empty campaign, which is the confusion this component exists to
+// end. role="status" so a screen reader announces it like the other notices.
+function LoadFailureNotice({ title, what }: { title: string; what: string }) {
+  return (
+    <section
+      role="status"
+      className="rounded-2xl border border-warning/40 bg-warning/10 p-5 sm:p-6"
+    >
+      <h2 className="text-base font-bold text-warning">{title}</h2>
+      <p className="mt-1 text-sm leading-6 text-warning">
+        לא הצלחנו לטעון כרגע את {what}. רעננו את הדף; אם זה חוזר, פנו לתמיכה.
+      </p>
+    </section>
+  );
+}
+
+// The schedule as information, for a viewer who may not change it (platform
+// staff, or an org member without ownership). The alternative — rendering the
+// form anyway — is a button whose submit requireOwnedEvent is certain to reject.
+function ThankyouScheduleReadOnly({
+  thankyou,
+}: {
+  thankyou: NonNullable<ThankyouSchedule>;
+}) {
+  return (
+    <div>
+      <h3 className="text-sm font-bold">תודה אוטומטית</h3>
+      <p className="mt-1 text-sm leading-6 text-muted-foreground">
+        רק בעל האירוע יכול לשנות את לוח הזמנים.
+      </p>
+      <dl className="mt-2 divide-y divide-border">
+        <DetailRow
+          label="שליחה אוטומטית"
+          value={thankyou.autoEnabled ? 'פעילה' : 'כבויה'}
+        />
+        <DetailRow
+          label="מועד מתוכנן"
+          value={thankyou.sendAt ? formatIsraelDateTime(thankyou.sendAt) : 'לא נקבע'}
+        />
+        {thankyou.sentAt ? (
+          <DetailRow label="נשלחה בפועל" value={formatIsraelDateTime(thankyou.sentAt)} />
+        ) : null}
+      </dl>
+    </div>
   );
 }
 
@@ -550,11 +558,8 @@ function ThankyouScheduleForm({
   const alreadySent = thankyou.sentAt != null;
 
   return (
-    <form
-      action={formAction}
-      className="rounded-2xl border border-border bg-card p-5"
-    >
-      <h2 className="text-base font-bold">תודה אוטומטית</h2>
+    <form action={formAction}>
+      <h3 className="text-sm font-bold">תודה אוטומטית</h3>
       <p className="mt-1 text-sm leading-6 text-muted-foreground">
         הודעת תודה למי שאישרו הגעה, במועד שתבחרו.
       </p>
@@ -612,13 +617,130 @@ function ThankyouScheduleForm({
   );
 }
 
-function OwnerActions({
+// Staff-only: move a live event's date.
+//
+// The date is locked once an event leaves draft, and that lock is a database
+// trigger, not a UI rule — so this control is not "the disabled field, enabled".
+// It posts to a separate action that reaches a separate SECURITY DEFINER
+// function, the only thing permitted to lift the lock. The owner's own form
+// keeps refusing exactly as before.
+//
+// Collapsed by default: this is the rarest thing on the page and the most
+// consequential, and an always-open date picker beside "cancel campaign" invites
+// the accident it is trying to serve.
+function RescheduleEventForm({
+  action,
+  eventDate,
+  alreadyNotified,
+}: {
+  action: BoundAction;
+  eventDate: string | null;
+  /** Guests already sent a message carrying the OLD date. */
+  alreadyNotified: number;
+}) {
+  const [state, formAction] = useActionState(action, null);
+
+  return (
+    <details className="group mt-3 rounded-xl border border-border px-4 py-3">
+      <summary className="cursor-pointer list-none text-sm font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+        שינוי מועד האירוע
+      </summary>
+
+      <form action={formAction} className="mt-3 space-y-3">
+        <p className="text-sm leading-6 text-muted-foreground">
+          המועד הנוכחי:{' '}
+          <strong className="text-foreground">
+            {eventDate ? formatIsraelDateTime(eventDate) : '—'}
+          </strong>
+        </p>
+
+        {alreadyNotified > 0 ? (
+          <p
+            role="status"
+            className="rounded-lg border border-warning/40 bg-warning/10 px-3 py-2 text-sm leading-6 text-warning"
+          >
+            {alreadyNotified.toLocaleString('he-IL')} מוזמנים כבר קיבלו הודעה עם
+            המועד הקיים. שינוי המועד <strong>אינו</strong> שולח להם עדכון — יש
+            להודיע להם בנפרד.
+          </p>
+        ) : null}
+
+        <label className="block text-sm">
+          <span className="mb-1.5 block text-muted-foreground">מועד חדש</span>
+          <DateSelectIL id="new_event_date" name="new_event_date" />
+        </label>
+        <FieldErrors errors={state?.fieldErrors?.event_date} />
+
+        <label className="block text-sm">
+          <span className="mb-1.5 block text-muted-foreground">שעה</span>
+          <TimeSelect24 id="new_event_time" name="new_event_time" />
+        </label>
+        <FieldErrors errors={state?.fieldErrors?.event_time} />
+
+        <label className="block text-sm">
+          <span className="mb-1.5 block text-muted-foreground">
+            סיבת השינוי (נרשמת ביומן הביקורת)
+          </span>
+          <textarea
+            id="reschedule_reason"
+            name="reschedule_reason"
+            rows={2}
+            required
+            minLength={10}
+            className="w-full rounded-md border border-border bg-transparent px-3 py-2 text-sm"
+          />
+        </label>
+        <FieldErrors errors={state?.fieldErrors?.reason} />
+
+        <SubmitButton
+          label="עדכון מועד האירוע"
+          variant="danger"
+          confirm="לשנות את מועד האירוע? חלון החיוב של הקמפיין יזוז איתו, ומוזמנים שכבר קיבלו הודעה לא יעודכנו אוטומטית."
+        />
+
+        <FormError message={state?.error} />
+        <FormNotice message={state?.notice} />
+      </form>
+    </details>
+  );
+}
+
+function FieldErrors({ errors }: { errors?: string[] }) {
+  if (!errors?.length) return null;
+  return (
+    <p role="alert" className="text-sm text-destructive">
+      {errors[0]}
+    </p>
+  );
+}
+
+// One actions card, three sections. It was three cards — פעולות הקמפיין,
+// תודה אוטומטית, פעולות מנהל — each a bordered panel holding one to three
+// buttons, stacking on mobile into a column of frames.
+//
+// They are kept apart WITHIN the card, by a rule and a heading, because the
+// distinction is real: the admin group ends a campaign's life and settles money.
+// What it does not need is a second border around it. The destructive buttons
+// keep their own red outline, which is what actually marks them.
+function ActionsPanel({
   campaign,
   actions,
   eventId,
   canActivate,
   needsPayment,
   isPast,
+  canPause,
+  canClose,
+  canSettle,
+  canCancel,
+  thankyou,
+  thankyouRelevant,
+  thankyouFailed,
+  canEditThankyou,
+  updateThankyouSchedule,
+  canReschedule,
+  eventDate,
+  alreadyNotified,
 }: {
   campaign: Campaign;
   actions: Actions;
@@ -626,117 +748,147 @@ function OwnerActions({
   canActivate: boolean;
   needsPayment: boolean;
   isPast: boolean;
-}) {
-  const isActive = campaign.status === 'active';
-  const hasActions = canActivate || needsPayment || isActive;
-
-  if (!hasActions) return null;
-
-  return (
-    <section aria-labelledby="owner-actions-title" className="rounded-2xl border border-border bg-card p-5">
-      <h2 id="owner-actions-title" className="text-base font-bold">
-        פעולות הקמפיין
-      </h2>
-      <p className="mt-1 text-sm text-muted-foreground">
-        הפעולות הזמינות בהתאם למצב הנוכחי.
-      </p>
-
-      <div className="mt-4 space-y-3">
-        {canActivate ? (
-          <ActionButton action={actions.activate} label="הפעלת קמפיין" variant="primary" />
-        ) : null}
-
-        {needsPayment ? (
-          <Link
-            href={`/app/events/${eventId}/campaign/${campaign.id}/payment`}
-            className={`${buttonVariants()} min-h-11 w-full justify-center rounded-lg`}
-          >
-            המשך לאמצעי תשלום
-          </Link>
-        ) : null}
-
-        {isActive ? (
-          <ActionButton
-            action={actions.sendGift}
-            label="שליחת תזכורת מתנה"
-            confirm="לשלוח תזכורת מתנה עם קישור הפייבוקס או הביט לכל המוזמנים עם הסכמה?"
-          />
-        ) : null}
-
-        {isActive ? (
-          <ActionButton
-            action={actions.sendEventDay}
-            label="תזכורת יום האירוע ותשלום"
-            confirm="לשלוח תזכורת יום האירוע עם קישור לתשלום בביט רק למי שאישרו הגעה?"
-          />
-        ) : null}
-
-        {isActive && isPast ? (
-          <ActionButton
-            action={actions.sendThankyou}
-            label="שליחת הודעת תודה"
-            confirm="לשלוח הודעת תודה לכל המוזמנים עם הסכמה?"
-          />
-        ) : null}
-      </div>
-    </section>
-  );
-}
-
-function AdminActions({
-  actions,
-  canPause,
-  canClose,
-  canSettle,
-  canCancel,
-}: {
-  actions: Actions;
   canPause: boolean;
   canClose: boolean;
   canSettle: boolean;
   canCancel: boolean;
+  thankyou?: ThankyouSchedule;
+  thankyouRelevant: boolean;
+  thankyouFailed: boolean;
+  canEditThankyou: boolean;
+  updateThankyouSchedule: BoundAction;
+  /** Staff only, and only while the EVENT is active — a draft uses the owner form. */
+  canReschedule: boolean;
+  eventDate: string | null;
+  alreadyNotified: number;
 }) {
-  if (!canPause && !canClose && !canSettle && !canCancel) return null;
+  const isActive = campaign.status === 'active';
+  const hasOwnerActions = canActivate || needsPayment || isActive;
+  const hasAdminActions = canPause || canClose || canSettle || canCancel;
+  const showThankyou = Boolean(thankyou) && thankyouRelevant;
+  const showThankyouFailure = thankyouFailed && thankyouRelevant;
+  const showAdminSection = hasAdminActions || canReschedule;
+
+  // Nothing to act on — render nothing rather than an empty titled box.
+  if (!hasOwnerActions && !showAdminSection && !showThankyou && !showThankyouFailure) {
+    return null;
+  }
 
   return (
-    <section aria-labelledby="admin-actions-title" className="rounded-2xl border border-destructive/25 bg-card p-5">
-      <h2 id="admin-actions-title" className="text-base font-bold">
-        פעולות מנהל
+    <section
+      aria-labelledby="actions-title"
+      className="rounded-2xl border border-border bg-card p-5"
+    >
+      <h2 id="actions-title" className="text-base font-bold">
+        פעולות
       </h2>
-      <p className="mt-1 text-sm text-muted-foreground">
-        פעולות תפעוליות שמשנות את מחזור החיים של הקמפיין.
-      </p>
 
-      <div className="mt-4 space-y-3">
-        {canPause ? <ActionButton action={actions.pause} label="השהיית קמפיין" /> : null}
+      {hasOwnerActions ? (
+        <div className="mt-4 space-y-3">
+          {canActivate ? (
+            <ActionButton action={actions.activate} label="הפעלת קמפיין" variant="primary" />
+          ) : null}
 
-        {canClose ? (
-          <ActionButton
-            action={actions.close}
-            label="סגירת קמפיין"
-            variant="danger"
-            confirm="לסגור את הקמפיין? לא יישלחו פניות נוספות."
-          />
-        ) : null}
+          {needsPayment ? (
+            <Link
+              href={`/app/events/${eventId}/campaign/${campaign.id}/payment`}
+              className={`${buttonVariants()} min-h-11 w-full justify-center rounded-lg`}
+            >
+              המשך לאמצעי תשלום
+            </Link>
+          ) : null}
 
-        {canSettle ? (
-          <ActionButton
-            action={actions.settle}
-            label="גמר חשבון וחיוב"
-            variant="primary"
-            confirm="לבצע גמר חשבון ולחייב את הכרטיס עבור אנשי הקשר שהושגו?"
-          />
-        ) : null}
+          {isActive ? (
+            <ActionButton
+              action={actions.sendGift}
+              label="שליחת תזכורת מתנה"
+              confirm="לשלוח תזכורת מתנה עם קישור הפייבוקס או הביט לכל המוזמנים עם הסכמה?"
+            />
+          ) : null}
 
-        {canCancel ? (
-          <ActionButton
-            action={actions.cancel}
-            label="ביטול קמפיין"
-            variant="danger"
-            confirm="לבטל את הקמפיין לצמיתות? הפעולה עוצרת כל פנייה נוספת ולא ניתנת לשחזור."
-          />
-        ) : null}
-      </div>
+          {isActive ? (
+            <ActionButton
+              action={actions.sendEventDay}
+              label="תזכורת יום האירוע ותשלום"
+              confirm="לשלוח תזכורת יום האירוע עם קישור לתשלום בביט רק למי שאישרו הגעה?"
+            />
+          ) : null}
+
+          {isActive && isPast ? (
+            <ActionButton
+              action={actions.sendThankyou}
+              label="שליחת הודעת תודה"
+              confirm="לשלוח הודעת תודה לכל המוזמנים עם הסכמה?"
+            />
+          ) : null}
+        </div>
+      ) : null}
+
+      {showThankyouFailure ? (
+        <div className="mt-5 border-t border-border pt-4">
+          <h3 className="text-sm font-bold">תודה אוטומטית</h3>
+          <p role="status" className="mt-1 text-sm leading-6 text-warning">
+            לא הצלחנו לטעון כרגע את לוח הזמנים לתודה. רעננו את הדף; אם זה חוזר,
+            פנו לתמיכה.
+          </p>
+        </div>
+      ) : showThankyou && thankyou ? (
+        <div className="mt-5 border-t border-border pt-4">
+          {canEditThankyou ? (
+            <ThankyouScheduleForm thankyou={thankyou} action={updateThankyouSchedule} />
+          ) : (
+            <ThankyouScheduleReadOnly thankyou={thankyou} />
+          )}
+        </div>
+      ) : null}
+
+      {showAdminSection ? (
+        <div className="mt-5 border-t border-border pt-4">
+          <h3 className="text-sm font-bold">פעולות מנהל</h3>
+          <p className="mt-1 text-sm text-muted-foreground">
+            פעולות תפעוליות שמשנות את מחזור החיים של הקמפיין.
+          </p>
+
+          <div className="mt-3 space-y-3">
+            {canPause ? <ActionButton action={actions.pause} label="השהיית קמפיין" /> : null}
+
+            {canClose ? (
+              <ActionButton
+                action={actions.close}
+                label="סגירת קמפיין"
+                variant="danger"
+                confirm="לסגור את הקמפיין? לא יישלחו פניות נוספות."
+              />
+            ) : null}
+
+            {canSettle ? (
+              <ActionButton
+                action={actions.settle}
+                label="גמר חשבון וחיוב"
+                variant="primary"
+                confirm="לבצע גמר חשבון ולחייב את הכרטיס עבור אנשי הקשר שהושגו?"
+              />
+            ) : null}
+
+            {canCancel ? (
+              <ActionButton
+                action={actions.cancel}
+                label="ביטול קמפיין"
+                variant="danger"
+                confirm="לבטל את הקמפיין לצמיתות? הפעולה עוצרת כל פנייה נוספת ולא ניתנת לשחזור."
+              />
+            ) : null}
+          </div>
+
+          {canReschedule ? (
+            <RescheduleEventForm
+              action={actions.rescheduleEvent}
+              eventDate={eventDate}
+              alreadyNotified={alreadyNotified}
+            />
+          ) : null}
+        </div>
+      ) : null}
     </section>
   );
 }
@@ -745,8 +897,14 @@ export function ManageClient({
   campaign,
   summary,
   delivery,
+  summaryFailed = false,
+  deliveryFailed = false,
   thankyou,
+  thankyouFailed = false,
+  canEditThankyou,
   actions,
+  eventDate = null,
+  eventIsActive = false,
   eventId,
   authorizedCount,
   uniqueContacts,
@@ -755,9 +913,18 @@ export function ManageClient({
 }: {
   campaign: Campaign;
   summary: Summary;
+  /** The read failed or was not permitted — NOT "the campaign has no activity". */
+  summaryFailed?: boolean;
   delivery: Delivery;
+  deliveryFailed?: boolean;
   thankyou?: ThankyouSchedule;
+  thankyouFailed?: boolean;
+  /** Only the event's owner may write the schedule; everyone else reads it. */
+  canEditThankyou: boolean;
   actions: Actions;
+  eventDate?: string | null;
+  /** The EVENT's own status — a draft's date is edited on the owner form. */
+  eventIsActive?: boolean;
   eventId: string;
   authorizedCount: number | null;
   uniqueContacts: number | null;
@@ -810,19 +977,25 @@ export function ManageClient({
     viewerIsAdmin &&
     ['active', 'paused', 'approved', 'scheduled', 'closed'].includes(status);
   const showLifecycleWarning = isPast && activatableState;
-  const showThankyou =
-    thankyou &&
-    !['draft', 'pending_approval', 'approved', 'scheduled'].includes(status);
+  // Split from showThankyou so a failed load only warns where the panel would
+  // have appeared anyway — a draft campaign has no schedule to miss.
+  const thankyouRelevant = !['draft', 'pending_approval', 'approved', 'scheduled'].includes(
+    status,
+  );
 
   return (
     <div className="space-y-6 pb-6">
-      <CampaignSummary
+      <CampaignStatusAndBilling
+        campaign={campaign}
         status={status}
         captureStatus={campaign.capture_status}
         reached={reached}
         accrued={accrued}
         ceiling={ceiling}
+        balance={balance}
         basePrice={basePrice}
+        includedReached={includedReached}
+        overageRate={overageRate}
         finalCharge={campaign.final_charge_amount}
         creditApplied={campaign.credit_applied}
       />
@@ -878,54 +1051,62 @@ export function ManageClient({
         </p>
       ) : null}
 
+      {/* Three cards, not six. On mobile they simply stack in reading order —
+          what the campaign is and costs, how it is performing, what you can do
+          about it — so the old `order-*` swap that pushed the action buttons
+          above the numbers is gone. */}
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_22rem] lg:items-start">
-        <div className="order-2 space-y-6 lg:order-1">
-          <BillingOverview
-            campaign={campaign}
-            reached={reached}
-            accrued={accrued}
-            ceiling={ceiling}
-            balance={balance}
-            basePrice={basePrice}
-            includedReached={includedReached}
-            overageRate={overageRate}
-          />
+        <div className="space-y-6">
+          {/* The figures below default to 0 when the summary is missing, and a
+              zeroed bill reads as a fact. Say the read failed instead. */}
+          {summaryFailed ? (
+            <LoadFailureNotice title="סיכום החיוב" what="נתוני החיוב המעודכנים" />
+          ) : null}
 
-          {delivery && delivery.totalContacts > 0 ? (
+          {deliveryFailed ? (
+            <LoadFailureNotice
+              title="ביצועי הקמפיין"
+              what="נתוני המסירה והתוצאות"
+            />
+          ) : delivery && delivery.totalContacts > 0 ? (
             <DeliveryBreakdown delivery={delivery} />
           ) : (
             <section className="rounded-2xl border border-dashed border-border bg-card p-5 text-center sm:p-6">
               <h2 className="text-base font-bold">ביצועי הקמפיין</h2>
               <p className="mt-1 text-sm text-muted-foreground">
-                נתוני המסירה והתוצאות יוצגו לאחר הוספת אנשי קשר ותחילת הפעילות.
+                {/* The page already knows how many contacts are in the campaign,
+                    so it should not ask for contacts that are already there. */}
+                {authorizedCount != null && authorizedCount > 0
+                  ? 'נתוני המסירה והתוצאות יוצגו כאן ברגע שהקמפיין יתחיל לפעול.'
+                  : 'נתוני המסירה והתוצאות יוצגו לאחר הוספת אנשי קשר ותחילת הפעילות.'}
               </p>
             </section>
           )}
         </div>
 
-        <aside className="order-1 space-y-4 lg:order-2 lg:sticky lg:top-6">
-          <OwnerActions
+        <aside className="lg:sticky lg:top-6">
+          <ActionsPanel
             campaign={campaign}
             actions={actions}
             eventId={eventId}
             canActivate={canActivate}
             needsPayment={needsPayment}
             isPast={isPast}
-          />
-
-          {showThankyou ? (
-            <ThankyouScheduleForm
-              thankyou={thankyou}
-              action={actions.updateThankyouSchedule}
-            />
-          ) : null}
-
-          <AdminActions
-            actions={actions}
             canPause={canPause}
             canClose={canClose}
             canSettle={canSettle}
             canCancel={canCancel}
+            thankyou={thankyou}
+            thankyouRelevant={thankyouRelevant}
+            thankyouFailed={thankyouFailed}
+            canEditThankyou={canEditThankyou}
+            updateThankyouSchedule={actions.updateThankyouSchedule}
+            canReschedule={viewerIsAdmin && eventIsActive}
+            eventDate={eventDate}
+            // Contacts whose most recent message actually went out — the people
+            // holding the OLD date. Not totalContacts: someone queued but never
+            // messaged has nothing to be corrected about.
+            alreadyNotified={delivery?.delivery.sent ?? 0}
           />
         </aside>
       </div>

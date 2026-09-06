@@ -92,10 +92,17 @@ const EXPECTED_PERMISSION: Record<string, string> = {
 // support.ts's own two event-view readers audit via a direct support_access_log
 // insert (pre-dating the helper); the rest go through recordStaffAccess.
 const AUDIT_REQUIRED: Record<string, string[]> = {
-  // Both gate on requirePlatformPermission('manage_billing') — STRICTER than
+  // All four gate on requirePlatformPermission('manage_billing') — STRICTER than
   // requireAdmin() — and each writes a fail-closed recordStaffAccess row before
-  // the cross-tenant read, which requireAdmin() alone would not.
-  'src/lib/data/admin/campaigns.ts': ['getEventForAdminView', 'getCampaignForAdminView'],
+  // the cross-tenant read, which requireAdmin() alone would not. The three
+  // campaign readers reach it through auditedCampaignAccess (see AUDIT_DELEGATES):
+  // one gate+audit, applied per read, so none of them can be called untraced.
+  'src/lib/data/admin/campaigns.ts': [
+    'getEventForAdminView',
+    'getCampaignForAdminView',
+    'getCampaignDeliveryForAdminView',
+    'getThankyouScheduleForAdminView',
+  ],
   'src/lib/data/admin/voice-ops.ts': ['listCallAttemptsForEvent'],
   // Viewing another user's full detail is a break-glass customer-data read. The
   // audit is conditional on it being a cross-user view (self-view is exempt),
@@ -103,17 +110,39 @@ const AUDIT_REQUIRED: Record<string, string[]> = {
   'src/lib/data/admin/users.ts': ['getUserDetail'],
 };
 
+// Module-private wrappers that perform the gate AND the audit, so a reader
+// delegating to one is audited exactly as if it called recordStaffAccess itself.
+// A name earns a place here only if its own body does the permission check and
+// writes the row before returning — verified below, not assumed, so this list
+// cannot become a way to wave a reader through.
+const AUDIT_DELEGATES: Record<string, string[]> = {
+  'src/lib/data/admin/campaigns.ts': ['auditedCampaignAccess'],
+};
+
 describe('targeted admin readers record a staff-access audit', () => {
   for (const [relPath, fns] of Object.entries(AUDIT_REQUIRED)) {
     const source = readFileSync(join(ROOT, relPath), 'utf8');
     const blocks = splitIntoFunctionBlocks(source);
+    const delegates = AUDIT_DELEGATES[relPath] ?? [];
+
+    for (const delegate of delegates) {
+      it(`${relPath}: ${delegate} really gates and audits before returning`, () => {
+        const at = source.indexOf(`async function ${delegate}(`);
+        expect(at, `${delegate} not found in ${relPath}`).toBeGreaterThan(-1);
+        const body = source.slice(at, source.indexOf('\n}\n', at));
+        expect(body).toMatch(/require(Admin|PlatformOwner|PlatformPermission)/);
+        expect(body).toContain('recordStaffAccess');
+      });
+    }
+
     for (const fn of fns) {
       it(`${relPath}: ${fn} calls recordStaffAccess before returning data`, () => {
         const block = blocks.find((b) => b.name === fn);
         expect(block, `${fn} not found in ${relPath}`).toBeDefined();
         expect(
           block!.body.includes('recordStaffAccess') ||
-            block!.body.includes('support_access_log'),
+            block!.body.includes('support_access_log') ||
+            delegates.some((d) => block!.body.includes(`await ${d}(`)),
         ).toBe(true);
       });
     }

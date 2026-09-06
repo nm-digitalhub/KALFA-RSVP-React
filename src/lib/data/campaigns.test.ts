@@ -12,7 +12,14 @@ vi.mock('@/lib/data/events', () => ({
   requireEventAccess: vi.fn(),
 }));
 // approveCampaign reads the session user; wind-down transitions require admin.
-vi.mock('@/lib/auth/dal', () => ({ requireUser: vi.fn(), requireAdmin: vi.fn() }));
+vi.mock('@/lib/auth/dal', () => ({
+  requireUser: vi.fn(),
+  requireAdmin: vi.fn(),
+  requirePlatformPermission: vi.fn(),
+}));
+// The staff branch of updateThankyouSchedule writes a fail-closed audit row;
+// stub it so the tests can assert it happened without a database.
+vi.mock('@/lib/data/admin/access-log', () => ({ recordStaffAccess: vi.fn() }));
 // contacts.ts is owned by another module; stub the two functions prepareCampaignHold
 // consumes so this suite runs independently of that module's wiring.
 vi.mock('@/lib/data/contacts', () => ({
@@ -35,7 +42,8 @@ import { createMockSupabase, type QueryResult } from '@/test/supabase-mock';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { createClient } from '@/lib/supabase/server';
 import { requireOwnedEvent } from '@/lib/data/events';
-import { requireUser, requireAdmin } from '@/lib/auth/dal';
+import { requireUser, requireAdmin, requirePlatformPermission } from '@/lib/auth/dal';
+import { recordStaffAccess } from '@/lib/data/admin/access-log';
 import { sendSlackAlert } from '@/lib/alerts/slack';
 import { logActivity } from '@/lib/data/activity';
 
@@ -1062,24 +1070,106 @@ describe('getThankyouSchedule / updateThankyouSchedule', () => {
     expect(await getThankyouSchedule('missing')).toBeNull();
   });
 
-  it('updateThankyouSchedule verifies ownership before writing', async () => {
-    serverWith({ data: { id: 'c1', event_id: 'e1' }, error: null });
+  // updateThankyouSchedule reads the campaign (+ its owner) through the SERVICE
+  // client and then writes through it, so these tests hand the mock a two-step
+  // sequence: the lookup first, the guarded update second. A single fixed result
+  // cannot express "found the campaign, but the update matched no rows".
+  function adminSequence(results: { data: unknown; error: unknown }[]) {
+    const { client, builder } = adminWith<never>({ data: null, error: null });
+    let call = 0;
+    builder.then = ((onFulfilled: (v: unknown) => unknown) =>
+      onFulfilled(results[Math.min(call++, results.length - 1)])) as never;
+    return { client, builder };
+  }
+
+  const CAMPAIGN_ROW = {
+    id: 'c1',
+    event_id: 'e1',
+    events: { owner_id: 'u1' },
+  };
+
+  function asOwner() {
+    vi.mocked(requireUser).mockResolvedValue(
+      { id: 'u1' } as unknown as Awaited<ReturnType<typeof requireUser>>,
+    );
     vi.mocked(requireOwnedEvent).mockResolvedValue(ownedEvent());
-    const { builder: adminBuilder } = adminWith({ data: { id: 'c1' }, error: null });
+  }
+
+  it('updateThankyouSchedule verifies ownership before writing', async () => {
+    asOwner();
+    const { builder } = adminSequence([
+      { data: CAMPAIGN_ROW, error: null },
+      { data: { id: 'c1' }, error: null },
+    ]);
 
     await updateThankyouSchedule('c1', { autoEnabled: false });
 
     expect(requireOwnedEvent).toHaveBeenCalledWith('e1');
-    expect(adminBuilder.update).toHaveBeenCalledWith(
+    // The owner path must NOT reach for a staff permission — that branch exists
+    // for platform staff, and an owner silently taking it would mean every
+    // owner edit of their own campaign wrote a support-access audit row.
+    expect(requirePlatformPermission).not.toHaveBeenCalled();
+    expect(recordStaffAccess).not.toHaveBeenCalled();
+    expect(builder.update).toHaveBeenCalledWith(
       expect.objectContaining({ thankyou_auto_enabled: false }),
     );
-    expect(adminBuilder.is).toHaveBeenCalledWith('thankyou_sent_at', null);
+    expect(builder.is).toHaveBeenCalledWith('thankyou_sent_at', null);
+  });
+
+  // Platform staff may pause, close, cancel and settle-and-charge someone
+  // else's campaign; refusing them an hour's change to its thank-you time was an
+  // inconsistency, not a boundary. The write is allowed — and audited.
+  it('updateThankyouSchedule lets platform staff edit a campaign they do not own', async () => {
+    vi.mocked(requireUser).mockResolvedValue(
+      { id: 'staff-1' } as unknown as Awaited<ReturnType<typeof requireUser>>,
+    );
+    vi.mocked(requirePlatformPermission).mockResolvedValue(
+      { id: 'staff-1' } as unknown as Awaited<ReturnType<typeof requirePlatformPermission>>,
+    );
+    const { builder } = adminSequence([
+      { data: CAMPAIGN_ROW, error: null },
+      { data: { id: 'c1' }, error: null },
+    ]);
+
+    await updateThankyouSchedule('c1', { autoEnabled: false });
+
+    expect(requirePlatformPermission).toHaveBeenCalledWith('manage_billing');
+    // Ownership is NOT required of staff — and must not be silently demanded,
+    // which would 404 them instead of authorizing them.
+    expect(requireOwnedEvent).not.toHaveBeenCalled();
+    // service_role carries no user identity, so this row is the only record of
+    // who changed a customer's schedule. It must name the customer, not just the
+    // staff member, or "was my account touched" is unanswerable.
+    expect(recordStaffAccess).toHaveBeenCalledWith(
+      expect.objectContaining({
+        staffId: 'staff-1',
+        permission: 'manage_billing',
+        subjectType: 'campaign',
+        subjectId: 'c1',
+        ownerId: 'u1',
+      }),
+    );
+    expect(builder.update).toHaveBeenCalled();
+  });
+
+  it('updateThankyouSchedule refuses a signed-in stranger who is neither owner nor staff', async () => {
+    vi.mocked(requireUser).mockResolvedValue(
+      { id: 'someone-else' } as unknown as Awaited<ReturnType<typeof requireUser>>,
+    );
+    // requirePlatformPermission redirects (throws) for a user without the key.
+    vi.mocked(requirePlatformPermission).mockRejectedValue(new Error('NEXT_REDIRECT'));
+    const { builder } = adminSequence([{ data: CAMPAIGN_ROW, error: null }]);
+
+    await expect(updateThankyouSchedule('c1', { autoEnabled: false })).rejects.toThrow();
+    expect(builder.update).not.toHaveBeenCalled();
   });
 
   it('updateThankyouSchedule throws a friendly error once the thank-you already fired (no rows updated)', async () => {
-    serverWith({ data: { id: 'c1', event_id: 'e1' }, error: null });
-    vi.mocked(requireOwnedEvent).mockResolvedValue(ownedEvent());
-    adminWith({ data: null, error: null }); // the guarded update matches 0 rows
+    asOwner();
+    adminSequence([
+      { data: CAMPAIGN_ROW, error: null },
+      { data: null, error: null }, // the guarded update matches 0 rows
+    ]);
 
     await expect(
       updateThankyouSchedule('c1', { sendAt: '2026-07-14T10:00:00+03:00' }),
@@ -1087,13 +1177,13 @@ describe('getThankyouSchedule / updateThankyouSchedule', () => {
   });
 
   it('updateThankyouSchedule is a no-op when the patch is empty', async () => {
-    serverWith({ data: { id: 'c1', event_id: 'e1' }, error: null });
-    vi.mocked(requireOwnedEvent).mockResolvedValue(ownedEvent());
-    const { client: adminClient } = adminWith({ data: { id: 'c1' }, error: null });
+    asOwner();
+    const { builder } = adminSequence([{ data: CAMPAIGN_ROW, error: null }]);
 
     await updateThankyouSchedule('c1', {});
 
-    expect(adminClient.from).not.toHaveBeenCalled();
+    // The lookup happens; the WRITE must not.
+    expect(builder.update).not.toHaveBeenCalled();
   });
 });
 

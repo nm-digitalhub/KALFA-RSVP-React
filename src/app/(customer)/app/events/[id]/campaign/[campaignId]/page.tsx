@@ -1,13 +1,25 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { notFound } from 'next/navigation';
+import { notFound, unstable_rethrow } from 'next/navigation';
 import { ChevronRight } from 'lucide-react';
 
 import { isAdmin } from '@/lib/auth/dal';
-import { getCampaignForAdminView, getEventForAdminView } from '@/lib/data/admin/campaigns';
+import {
+  getCampaignDeliveryForAdminView,
+  getCampaignForAdminView,
+  getEventForAdminView,
+  getThankyouScheduleForAdminView,
+} from '@/lib/data/admin/campaigns';
 import { getCampaignBillingSummary } from '@/lib/data/billing';
-import { getCampaignDeliveryBreakdown } from '@/lib/data/campaign-delivery';
-import { getCampaign, getThankyouSchedule } from '@/lib/data/campaigns';
+import {
+  getCampaignDeliveryBreakdown,
+  type CampaignDeliveryBreakdown,
+} from '@/lib/data/campaign-delivery';
+import {
+  getCampaign,
+  getThankyouSchedule,
+  viewerOwnsCampaignEvent,
+} from '@/lib/data/campaigns';
 import { countAuthorizedContacts, countUniqueContactsForEvent } from '@/lib/data/contacts';
 import { isPastEventDay } from '@/lib/data/event-date';
 import { requireEventAccess } from '@/lib/data/events';
@@ -16,6 +28,7 @@ import {
   cancelCampaignAction,
   closeCampaignAction,
   pauseCampaignAction,
+  rescheduleEventAction,
   sendEventDayReminderAction,
   sendGiftReminderAction,
   sendThankyouAction,
@@ -47,33 +60,64 @@ export default async function CampaignManagePage({
     : await getCampaign(campaignId);
   if (campaign.event_id !== eventId) notFound();
 
+  // Each panel below reports THREE outcomes the page used to collapse into one:
+  // loaded, could-not-load, and genuinely-empty. Collapsing them is how a staff
+  // view of a customer's live campaign came to read "add contacts and start
+  // activity" — the read had simply returned nothing, and "nothing" was rendered
+  // as a claim about the customer's data. `unstable_rethrow` keeps Next's own
+  // control-flow throws (notFound/redirect) from being swallowed as failures.
   let summary = null;
+  let summaryFailed = false;
   try {
     summary = await getCampaignBillingSummary(campaignId);
-  } catch {
-    summary = null;
+  } catch (err) {
+    unstable_rethrow(err);
+    summaryFailed = true;
   }
 
-  let delivery = null;
+  let delivery: CampaignDeliveryBreakdown | null = null;
+  let deliveryFailed = false;
   try {
-    delivery = await getCampaignDeliveryBreakdown(campaignId);
-  } catch {
-    delivery = null;
+    // Same admin branch the event and campaign reads take above. Without it the
+    // owner-path reader hits RLS, sees no row, and returns null.
+    delivery = admin
+      ? await getCampaignDeliveryForAdminView(campaignId)
+      : await getCampaignDeliveryBreakdown(campaignId);
+    // null means invisible-to-this-reader, never "this campaign has no contacts".
+    if (!delivery) deliveryFailed = true;
+  } catch (err) {
+    unstable_rethrow(err);
+    deliveryFailed = true;
   }
 
+  // Mirrors exactly who updateThankyouSchedule accepts: the event's owner, or
+  // platform staff. `admin` is enough on its own here — reaching this page as
+  // staff already required manage_billing (getCampaignForAdminView above), which
+  // is the same permission that write demands. What stays read-only is the third
+  // case: an org member with campaigns:view who owns nothing, for whom a form
+  // would be a control whose submit is certain to be refused.
+  const canEditThankyou = admin || (await viewerOwnsCampaignEvent(campaignId));
   let thankyou = null;
+  let thankyouFailed = false;
   try {
-    thankyou = await getThankyouSchedule(campaignId);
-  } catch {
-    thankyou = null;
+    thankyou = admin
+      ? await getThankyouScheduleForAdminView(campaignId)
+      : await getThankyouSchedule(campaignId);
+    if (!thankyou) thankyouFailed = true;
+  } catch (err) {
+    unstable_rethrow(err);
+    thankyouFailed = true;
   }
 
+  // A null count is already safe to render: it suppresses both the "no invitees
+  // yet" panel and the over-quota warning rather than asserting a number.
   let authorizedCount: number | null = null;
   let uniqueContacts: number | null = null;
   try {
     authorizedCount = await countAuthorizedContacts(campaignId);
     uniqueContacts = admin ? null : await countUniqueContactsForEvent(eventId);
-  } catch {
+  } catch (err) {
+    unstable_rethrow(err);
     authorizedCount = null;
     uniqueContacts = null;
   }
@@ -91,6 +135,7 @@ export default async function CampaignManagePage({
     eventId,
     campaignId,
   );
+  const rescheduleEvent = rescheduleEventAction.bind(null, eventId, campaignId);
 
   return (
     <div className="mx-auto w-full max-w-7xl space-y-6">
@@ -122,8 +167,12 @@ export default async function CampaignManagePage({
           included_reached: campaign.included_reached,
         }}
         summary={summary}
+        summaryFailed={summaryFailed}
         delivery={delivery}
+        deliveryFailed={deliveryFailed}
         thankyou={thankyou}
+        thankyouFailed={thankyouFailed}
+        canEditThankyou={canEditThankyou}
         actions={{
           activate,
           pause,
@@ -134,7 +183,10 @@ export default async function CampaignManagePage({
           sendEventDay,
           sendThankyou,
           updateThankyouSchedule,
+          rescheduleEvent,
         }}
+        eventDate={event.event_date}
+        eventIsActive={event.status === 'active'}
         eventId={eventId}
         authorizedCount={authorizedCount}
         uniqueContacts={uniqueContacts}
