@@ -118,7 +118,14 @@ export default async function AdminCampaignsPage() {
             <TableBody>
               {items.map((c) => (
                 <TableRow key={c.id}>
-                  <TableCell className="font-medium">{c.eventName}</TableCell>
+                  <TableCell className="font-medium">
+                    <Link
+                      href={`/admin/events/${c.eventId}`}
+                      className="hover:underline"
+                    >
+                      {c.eventName}
+                    </Link>
+                  </TableCell>
                   <TableCell className="text-muted-foreground">
                     {c.eventDate ? formatIsraelDate(c.eventDate) : '—'}
                   </TableCell>

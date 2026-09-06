@@ -162,7 +162,11 @@ export async function syncEventToExchange(eventId: string): Promise<void> {
       return;
     }
 
-    const detailUrl = await getAppUrl(`/app/events/${eventId}`);
+    // The staff page, not /app/events/{id}: this appointment lives in the
+    // BUSINESS mailbox and only staff open it, and /app/events/{id}
+    // authorizes on ownership alone — it 404s for every staff member, the
+    // platform owner included. /admin/events/{id} gates on 'view_events'.
+    const detailUrl = await getAppUrl(`/admin/events/${eventId}`);
     const headingInput = {
       eventType: event.event_type,
       celebrants: event.celebrants,
@@ -292,7 +296,11 @@ export async function rescheduleEventExchangeAppointment(eventId: string): Promi
       return;
     }
 
-    const detailUrl = await getAppUrl(`/app/events/${eventId}`);
+    // The staff page, not /app/events/{id}: this appointment lives in the
+    // BUSINESS mailbox and only staff open it, and /app/events/{id}
+    // authorizes on ownership alone — it 404s for every staff member, the
+    // platform owner included. /admin/events/{id} gates on 'view_events'.
+    const detailUrl = await getAppUrl(`/admin/events/${eventId}`);
     const headingInput = {
       eventType: event.event_type,
       celebrants: event.celebrants,

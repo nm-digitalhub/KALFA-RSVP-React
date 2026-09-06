@@ -28,6 +28,8 @@ const EXEMPT: Record<string, string[]> = {
   'src/lib/data/admin/channels.ts': [],
   'src/lib/data/admin/contacts.ts': [],
   'src/lib/data/admin/dashboard.ts': [],
+  'src/lib/data/admin/event-view.ts': [],
+  'src/lib/data/admin/events.ts': [],
   'src/lib/data/admin/packages.ts': [],
   'src/lib/data/admin/settings.ts': [],
   'src/lib/data/admin/users.ts': [],
@@ -79,6 +81,13 @@ const EXPECTED_PERMISSION: Record<string, string> = {
   'src/lib/data/admin/callbacks.ts': 'view_customer_data',
   'src/lib/data/admin/channels.ts': 'manage_settings',
   'src/lib/data/admin/contacts.ts': 'view_customer_data',
+  // Two SEPARATE modules on purpose, one key each — the split the owner asked
+  // for on 2026-09-07. event-view.ts answers 'which event is this' and may
+  // never grow a billing field; events.ts moves a live event's date and may
+  // never become the way to read one. Pinning both here is what stops either
+  // from quietly absorbing the other's authority.
+  'src/lib/data/admin/event-view.ts': 'view_events',
+  'src/lib/data/admin/events.ts': 'manage_billing',
   'src/lib/data/admin/packages.ts': 'manage_billing',
   'src/lib/data/admin/settings.ts': 'manage_settings',
   'src/lib/data/admin/users.ts': 'manage_staff',
@@ -104,6 +113,10 @@ const AUDIT_REQUIRED: Record<string, string[]> = {
     'getThankyouScheduleForAdminView',
   ],
   'src/lib/data/admin/voice-ops.ts': ['listCallAttemptsForEvent'],
+  // Cross-tenant reads of ONE named event: identity under 'view_events'
+  // (not break-glass, so no reason) and the date move under 'manage_billing'.
+  'src/lib/data/admin/event-view.ts': ['getEventForStaffView'],
+  'src/lib/data/admin/events.ts': ['rescheduleEventForAdmin'],
   // Viewing another user's full detail is a break-glass customer-data read. The
   // audit is conditional on it being a cross-user view (self-view is exempt),
   // but the call must be present.

@@ -14,7 +14,7 @@ import {
 import type { LucideIcon } from 'lucide-react';
 
 import { formatIsraelDate } from '@/lib/date';
-import { getEventForAdminView } from '@/lib/data/admin/campaigns';
+import { getEventForStaffView } from '@/lib/data/admin/event-view';
 import { listCallAttemptsForEvent } from '@/lib/data/admin/voice-ops';
 import {
   Table,
@@ -46,12 +46,16 @@ import { StatusDonut } from '../../_donut';
 // body share ONE query. Supabase reads are not `fetch`, so Next's automatic
 // request memoization does not apply — the generate-metadata docs prescribe
 // React `cache` for exactly this case. (requireAdmin inside is already cached.)
-const getEventCached = cache(getEventForAdminView);
+// 'view_events', NOT the campaign board's getEventForAdminView: that reader
+// demands manage_billing, so this page — gated on manage_voice — redirected
+// any viewer holding voice but not billing straight off a page they are
+// entitled to. A voice operator needs the event's NAME, not its money.
+const getEventCached = cache(getEventForStaffView);
 
 // Dynamic <title>: the event's name instead of a fixed string, so a browser tab
 // says WHICH event is being supervised. A static `metadata` export cannot
 // coexist with generateMetadata in the same segment (docs), so this replaces it;
-// getEventForAdminView calls notFound() on a missing event, which the docs
+// getEventForStaffView calls notFound() on a missing event, which the docs
 // explicitly allow inside generateMetadata.
 export async function generateMetadata({
   params,
@@ -121,24 +125,32 @@ export default async function EventVoicePage({
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <PageHeading>שיחות AI — {event.name}</PageHeading>
-        <Link href="/admin/voice" className="text-sm font-medium text-primary hover:underline">
-          ← חזרה למוקד
-        </Link>
+        <div className="flex flex-wrap items-center gap-4">
+          <Link
+            href={`/admin/events/${eventId}`}
+            className="text-sm font-medium text-primary hover:underline"
+          >
+            לעמוד האירוע
+          </Link>
+          <Link href="/admin/voice" className="text-sm font-medium text-primary hover:underline">
+            חזרה למוקד
+          </Link>
+        </div>
       </div>
 
       <section className={sectionClass}>
         <dl className="grid gap-3 text-sm sm:grid-cols-3">
           <div>
             <dt className="text-muted-foreground">תאריך האירוע</dt>
-            <dd>{event.event_date ? formatIsraelDate(event.event_date) : '—'}</dd>
+            <dd>{event.eventDate ? formatIsraelDate(event.eventDate) : '—'}</dd>
           </div>
           <div>
             <dt className="text-muted-foreground">סטטוס אירוע</dt>
-            <dd>{event.status}</dd>
+            <dd>{event.statusLabel}</dd>
           </div>
           <div>
             <dt className="text-muted-foreground">סוג אירוע</dt>
-            <dd>{event.event_type ?? '—'}</dd>
+            <dd>{event.eventTypeLabel}</dd>
           </div>
         </dl>
       </section>
