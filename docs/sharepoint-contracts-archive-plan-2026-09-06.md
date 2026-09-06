@@ -168,6 +168,10 @@ Graph לא יוצר עמודת קישור (400) ולכן `Amends` הוא טקס�
 - Header: פריסה Compact, הדגשה Strong (פס בצבע הנושא). ניווט אופקי (HorizontalQuickLaunch) עם הצמתים: ארכיון חוזים, הסכמי לקוחות, יומן ביעור, אתר הצוות KALFA RSVP.
 - הדף (Graph, פריסת home): מקטע פתיחה ברקע Strong (תחליף ל-Hero, שקיים רק ב-Communication site); שתי עמודות Quick Links: "מערכות" בפריסת Compact עם אייקוני Fluent, "ארכיון חוזים" בפריסת List עם תיאור לכל פריט; מקטע שליש ברקע Soft: נהלים קבועים (רחב) ולוח תפעולי (צר).
 
+**Teams:** הפורטל מוצמד כלשונית "פורטל KALFA" בערוץ General של הצוות KALFA RSVP (סקריפט הפורטל, שלב 7). הלשונית היא מסוג "SharePoint pages" (‏teamsApp ‏2a527703) ומוצגת בתוך Teams; לשונית Website רגילה פותחת דפי SharePoint בדפדפן חיצוני. ההגדרה זהה למה ש-PnP PowerShell שולח: ‏contentUrl = ‏`<site>/_layouts/15/teamslogon.aspx?spfx=true&dest=<page url>`.
+
+**ניווט באתר הארכיון:** סקריפט הארכיון (שלב 6) מוסיף לניווט של אתר KALFA RSVP את ארבע הספריות וקישור לפורטל; בלעדיו הן היו נגישות רק דרך "תוכן אתר".
+
 **מלכודות שנמצאו, לידיעת מי שמריץ שוב:**
 - `thememanager/ApplyTheme` מחיל ערכה **מקטלוג הטננט לפי שם**; שם שלא קיים מעדכן רק את ThemeData הקלאסי, והדף המודרני נשאר על ברירת המחדל Teal. חובה `AddTenantTheme`/`UpdateTenantTheme` לפני `ApplyTheme`.
 - Graph: PATCH לדף שומר רכיבי טקסט אבל **מפיל בשקט** רכיבים סטנדרטיים (Quick Links). דף עם Quick Links נוצר מחדש (מחיקה + יצירה) בכל ריצה; רשימות טקסט מתעדכנות במקום. הערת `@odata.type` על רכיב ב-PATCH גורמת לשגיאת OData.

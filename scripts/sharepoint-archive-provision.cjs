@@ -217,6 +217,16 @@ const VIEWS = {
   ],
 };
 
+// Left navigation of the archive site: the libraries are otherwise reachable
+// only through "Site contents" — the site's own nav showed just Documents.
+const NAV_NODES = [
+  ['Contracts — חוזים חתומים', `https://${SP_HOST}${SITE_PATH}/Contracts`],
+  ['Contracts-Working — טיוטות', `https://${SP_HOST}${SITE_PATH}/ContractsWorking`],
+  ['Customer-Agreements — הסכמי לקוחות', `https://${SP_HOST}${SITE_PATH}/CustomerAgreements`],
+  ['Disposition-Log — יומן ביעור', `https://${SP_HOST}${SITE_PATH}/Lists/DispositionLog`],
+  ['פורטל KALFA', `https://${SP_HOST}/sites/allcompany`],
+];
+
 // Columns added to the default "All Documents" view of each library.
 const DEFAULT_VIEW_FIELDS = ['Counterparty', 'ContractType', 'EffectiveDate', 'ExpiryDate', 'Status', 'RetentionUntil', 'DataClass'];
 
@@ -546,6 +556,24 @@ async function ensureViews(sp, lib) {
   }
 }
 
+async function ensureNavigation(sp) {
+  let nodes;
+  try {
+    nodes = (await sp.get('/web/Navigation/QuickLaunch?$select=Id,Title,Url')).value;
+  } catch (e) {
+    log('  REST navigation unavailable -', e.message);
+    return;
+  }
+  for (const [title, url] of NAV_NODES) {
+    if (nodes.some((n) => n.Title === title)) {
+      log('  nav exists:', title);
+      continue;
+    }
+    plan(`add nav node "${title}"`);
+    if (!DRY_RUN) await sp.post('/web/Navigation/QuickLaunch', { Title: title, Url: url, IsExternal: true });
+  }
+}
+
 // ─── Main ───────────────────────────────────────────────────────────────────
 
 (async () => {
@@ -580,6 +608,9 @@ async function ensureViews(sp, lib) {
     const ok = await configureLibrary(sp, lib, ctId);
     if (ok && lib.views) await ensureViews(sp, lib);
   }
+
+  log('\n[6] site navigation (SharePoint REST)');
+  await ensureNavigation(sp);
 
   log('\ndone.', DRY_RUN ? 'Re-run without --dry-run to apply.' : '');
 })().catch((e) => {

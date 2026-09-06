@@ -96,6 +96,19 @@ const ARCHIVE_LINKS = [
   ['הצוות ב-Teams', TEAMS_CHANNEL, 'TeamsLogo', 'ערוץ General'],
 ];
 
+// Teams: pin the portal as a tab in the KALFA RSVP team's General channel.
+// A Website tab (com.microsoft.teamspace.tab.web) cannot frame a SharePoint
+// page — Teams pops it out to the browser (seen 2026-09-06). The "SharePoint
+// pages and lists" tab app renders it inline; Graph's docs call it
+// non-configurable, but the configuration PnP PowerShell sends works
+// (pnp/powershell src/Commands/Teams/AddTeamsTab.cs, read 2026-09-06):
+// contentUrl = <site>/_layouts/15/teamslogon.aspx?spfx=true&dest=<page url>.
+const TEAMS_TEAM_ID = '60cdfb5b-6907-4063-834d-e82f8016bbde';
+const TEAMS_CHANNEL_ID = '19:ZnlsI5sCanAniiupgMRmediu_tsGhFbjCJGW4Dctdi41@thread.tacv2';
+const TEAMS_WEBSITE_APP = 'com.microsoft.teamspace.tab.web';
+const TEAMS_SHAREPOINT_APP = '2a527703-1f6f-4559-a332-d8a7d288cd88';
+const TEAMS_TAB_NAME = 'פורטל KALFA';
+
 const NAV_NODES = [
   ['ארכיון חוזים', `${ARCHIVE}/Contracts`],
   ['הסכמי לקוחות', `${ARCHIVE}/CustomerAgreements`],
@@ -543,6 +556,46 @@ async function ensureNavigation(sp) {
   }
 }
 
+async function ensureTeamsTab(g, siteUrl, portalUrl) {
+  const tabsPath = `/teams/${TEAMS_TEAM_ID}/channels/${encodeURIComponent(TEAMS_CHANNEL_ID)}/tabs`;
+  const tabs = (await g.get(`${tabsPath}?$select=id,displayName&$expand=teamsApp($select=id)`)).value;
+  const ours = tabs.filter((t) => t.displayName === TEAMS_TAB_NAME);
+  const good = ours.find((t) => t.teamsApp && t.teamsApp.id === TEAMS_SHAREPOINT_APP);
+  const stale = ours.filter((t) => !t.teamsApp || t.teamsApp.id !== TEAMS_SHAREPOINT_APP);
+  for (const t of stale) {
+    // Our own earlier Website-type tab (pops out to the browser) — replace it.
+    plan(`remove stale "${TEAMS_TAB_NAME}" tab (${t.teamsApp ? t.teamsApp.id : 'unknown app'})`);
+    if (!DRY_RUN) await g.delete(`${tabsPath}/${t.id}`);
+  }
+  if (good) {
+    log(`  Teams tab exists (SharePoint pages app): ${TEAMS_TAB_NAME}`);
+    return;
+  }
+  plan(`pin Teams tab "${TEAMS_TAB_NAME}" (SharePoint pages app) → ${portalUrl} in KALFA RSVP / General`);
+  if (DRY_RUN) return;
+  const body = {
+    displayName: TEAMS_TAB_NAME,
+    'teamsApp@odata.bind': `${GRAPH}/appCatalogs/teamsApps/${TEAMS_SHAREPOINT_APP}`,
+    configuration: {
+      entityId: null,
+      contentUrl: `${siteUrl}/_layouts/15/teamslogon.aspx?spfx=true&dest=${encodeURIComponent(portalUrl)}`,
+      websiteUrl: portalUrl,
+      removeUrl: null,
+    },
+  };
+  try {
+    await g.post(tabsPath, body);
+  } catch (e) {
+    // The tab app must be installed in the team first.
+    if (!/install/i.test(e.message)) throw e;
+    log('  SharePoint pages tab app not installed in the team — installing, then retrying');
+    await g.post(`/teams/${TEAMS_TEAM_ID}/installedApps`, {
+      'teamsApp@odata.bind': `${GRAPH}/appCatalogs/teamsApps/${TEAMS_SHAREPOINT_APP}`,
+    });
+    await g.post(tabsPath, body);
+  }
+}
+
 // ─── Main ───────────────────────────────────────────────────────────────────
 
 (async () => {
@@ -571,6 +624,9 @@ async function ensureNavigation(sp) {
 
   log('\n[6] navigation nodes (REST)');
   await ensureNavigation(sp);
+
+  log('\n[7] Teams tab (Graph)');
+  await ensureTeamsTab(g, site.webUrl, `${site.webUrl}/SitePages/${PAGE_NAME}`);
 
   log('\ndone.', DRY_RUN ? 'Re-run without --dry-run to apply.' : `Open: ${site.webUrl}/SitePages/${PAGE_NAME}`);
 })().catch((e) => {
