@@ -142,6 +142,13 @@ export const QUEUES = {
   // 93-day recycle bin and supplier contracts exist nowhere else. Same switch
   // as the export. See src/lib/data/archive-backup.ts.
   archiveBackupSweep: 'archive-backup-sweep',
+  // Daily one-shot reminder to a signup that never confirmed its email — the
+  // account is unusable until the link is clicked, and nothing else in the
+  // product notices. Re-sends the confirmation mail ONCE (latched on
+  // profiles.signup_reminder_sent_at), skipping addresses that already
+  // hard-bounced. Gated by app_settings.signup_reminder_enabled (own switch,
+  // off by default). See src/lib/data/signup-confirmation-reminder.ts.
+  signupReminderSweep: 'signup-reminder-sweep',
   // SUMIT hold-release reconciler — every 30m, read-only against SUMIT's CRM
   // (crm/data/listentities on the "תפיסות מסגרת" folder), syncs
   // campaigns.release_status for holds SUMIT reports as released (manual

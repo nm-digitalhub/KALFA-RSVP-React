@@ -51,6 +51,10 @@ import { runInquiryFollowupSweep, getInquiryFollowupEnabled } from '@/lib/data/i
 import { runAgreementArchiveSweep, getAgreementArchiveEnabled } from '@/lib/data/agreement-archive';
 import { runArchiveMaintenanceSweep } from '@/lib/data/archive-maintenance';
 import { runArchiveBackupSweep } from '@/lib/data/archive-backup';
+import {
+  runSignupReminderSweep,
+  getSignupReminderEnabled,
+} from '@/lib/data/signup-confirmation-reminder';
 import { runGraphIntakeSubscriptionSweep } from '@/lib/data/inquiry-mail-intake';
 import { runCallbackSweep } from '@/lib/data/call-callbacks';
 import { runCallbackSchedulingSweep } from '@/lib/data/callback-scheduling';
@@ -573,6 +577,15 @@ async function handleArchiveBackupSweep(): Promise<void> {
   await runArchiveBackupSweep();
 }
 
+// Its OWN kill-switch (signup_reminder_enabled), read fresh on every tick, so
+// the owner can disarm it without a deploy. Mail to people who have not yet
+// confirmed an address is the most bounce-prone traffic we send, which is
+// exactly why it gets a switch of its own rather than riding another one.
+async function handleSignupReminderSweep(): Promise<void> {
+  if (!(await getSignupReminderEnabled())) return;
+  await runSignupReminderSweep();
+}
+
 
 // ── Push instead of poll ────────────────────────────────────────────────────
 // A dedicated LISTEN connection so a callback request is scheduled the moment
@@ -912,7 +925,12 @@ async function main(): Promise<void> {
       // source bucket; two overlapping runs would double that for no benefit
       // (the content-addressed store makes a duplicate write harmless, just
       // wasteful).
-      q === QUEUES.archiveBackupSweep;
+      q === QUEUES.archiveBackupSweep ||
+      // Singleton too: two overlapping ticks would each read the same
+      // not-yet-latched candidates. The latch is a conditional UPDATE, so a
+      // duplicate mail is already impossible — this just avoids the wasted
+      // round-trips.
+      q === QUEUES.signupReminderSweep;
     await boss.createQueue(q, singleton ? { policy: 'singleton' } : undefined);
   }
 
@@ -992,6 +1010,12 @@ async function main(): Promise<void> {
     QUEUES.archiveBackupSweep,
     guardedWorker(QUEUES.archiveBackupSweep, async () => {
       await handleArchiveBackupSweep();
+    }),
+  );
+  await boss.work(
+    QUEUES.signupReminderSweep,
+    guardedWorker(QUEUES.signupReminderSweep, async () => {
+      await handleSignupReminderSweep();
     }),
   );
   // Callback re-dials. runCallbackSweep only ENQUEUES — every dial gate is
@@ -1200,6 +1224,9 @@ async function main(): Promise<void> {
   // Monthly, 1st at 04:40 IL — after the nightly export, so the month's
   // agreements are already in the library when the snapshot is taken.
   await boss.schedule(QUEUES.archiveBackupSweep, '40 4 1 * *', null, { tz: SCHEDULE_TZ });
+  // Daily at 10:20 IL — a waking hour, so the reminder lands when the recipient
+  // can act on it rather than overnight where it is buried by morning.
+  await boss.schedule(QUEUES.signupReminderSweep, '20 10 * * *', null, { tz: SCHEDULE_TZ });
   // Weekly, off-peak, deliberately non-round (04:17) — a 60-day token refreshed
   // once a week has ample margin even if a run is missed for a while.
   await boss.schedule(QUEUES.igTokenRefresh, '17 4 * * 2', null, { tz: SCHEDULE_TZ });

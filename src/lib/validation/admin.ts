@@ -450,6 +450,7 @@ export const appSettingsSchema = z.object({
   // (records archiving must not stop with an outreach incident, or vice
   // versa). Same fail-closed `.default(false)` as above.
   agreement_archive_enabled: z.boolean().default(false),
+  signup_reminder_enabled: z.boolean().default(false),
 });
 export type AppSettingsInput = z.infer<typeof appSettingsSchema>;
 

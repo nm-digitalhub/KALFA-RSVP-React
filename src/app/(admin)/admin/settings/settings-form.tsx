@@ -339,6 +339,31 @@ export function SettingsForm({
         </span>
       </label>
 
+      {/* One reminder, once, to a signup that never clicked the confirmation
+          link — until then the account exists but cannot be used, and nothing
+          else in the product notices. Its OWN switch because this is the most
+          bounce-prone mail we send: unconfirmed addresses are where typos and
+          throwaways concentrate, and the bounces land on the same Resend domain
+          that carries the signed agreements. */}
+      <label className="flex items-start gap-3">
+        <input
+          type="checkbox"
+          name="signup_reminder_enabled"
+          defaultChecked={settings.signup_reminder_enabled}
+          className="mt-1 size-4 accent-primary"
+        />
+        <span>
+          <span className="block text-sm font-medium">תזכורת אימות מייל להרשמות שלא הושלמו</span>
+          <span className="block text-xs text-muted-foreground">
+            כשמופעל: כל יום ב-10:20 נשלחת פעם אחת בלבד תזכורת למי שנרשם לפני
+            יממה ועדיין לא אישר את כתובת המייל (עד 7 ימים אחורה, עד 25 בהרצה).
+            כתובת שמייל האישור אליה כבר נדחה בעבר מדולגת, ואף אחד לא מקבל
+            תזכורת שנייה. תוכן המייל הוא מייל האישור הרגיל, בלי תוכן שיווקי.
+            כשכבוי (ברירת המחדל) — שום תזכורת לא נשלחת.
+          </span>
+        </span>
+      </label>
+
       <SubmitButton>שמירה</SubmitButton>
     </form>
   );

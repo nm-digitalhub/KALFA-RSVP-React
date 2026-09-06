@@ -31,6 +31,7 @@ export type AppSettings = {
   smtp_from: string;
   inquiry_followup_enabled: boolean; // reminder → warning → auto-close sweep on quiet inquiries
   agreement_archive_enabled: boolean; // nightly SharePoint archive of signed customer agreements
+  signup_reminder_enabled: boolean; // daily one-shot "confirm your email" reminder to unconfirmed signups
   updated_at: string;
 };
 
@@ -43,7 +44,7 @@ export async function getAppSettings(): Promise<AppSettings> {
   const { data, error } = await supabase
     .from('app_settings')
     .select(
-      'payments_enabled, close_charge_enabled, sumit_company_id, sumit_api_public_key, sumit_api_key, sms_enabled, extra_sms_sender, extra_sms_token, email_enabled, smtp_host, smtp_port, smtp_secure, smtp_user, smtp_password, smtp_from, inquiry_followup_enabled, agreement_archive_enabled, updated_at',
+      'payments_enabled, close_charge_enabled, sumit_company_id, sumit_api_public_key, sumit_api_key, sms_enabled, extra_sms_sender, extra_sms_token, email_enabled, smtp_host, smtp_port, smtp_secure, smtp_user, smtp_password, smtp_from, inquiry_followup_enabled, agreement_archive_enabled, signup_reminder_enabled, updated_at',
     )
     .eq('id', SETTINGS_ID)
     .maybeSingle();
@@ -70,6 +71,7 @@ export async function getAppSettings(): Promise<AppSettings> {
     smtp_from: data?.smtp_from ?? '',
     inquiry_followup_enabled: data?.inquiry_followup_enabled ?? false,
     agreement_archive_enabled: data?.agreement_archive_enabled ?? false,
+    signup_reminder_enabled: data?.signup_reminder_enabled ?? false,
     updated_at: data?.updated_at ?? '',
   };
 }
@@ -92,6 +94,7 @@ export type UpdateAppSettingsInput = {
   smtp_from: string;
   inquiry_followup_enabled: boolean;
   agreement_archive_enabled: boolean;
+  signup_reminder_enabled: boolean;
 };
 
 export async function updateAppSettings(
@@ -123,6 +126,7 @@ export async function updateAppSettings(
       smtp_from: input.smtp_from || null,
       inquiry_followup_enabled: input.inquiry_followup_enabled,
       agreement_archive_enabled: input.agreement_archive_enabled,
+      signup_reminder_enabled: input.signup_reminder_enabled,
     })
     .eq('id', SETTINGS_ID);
 

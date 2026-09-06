@@ -38,6 +38,7 @@ export async function updateSettingsAction(
     smtp_from: formData.get('smtp_from') ?? '',
     inquiry_followup_enabled: formData.get('inquiry_followup_enabled') === 'on',
     agreement_archive_enabled: formData.get('agreement_archive_enabled') === 'on',
+    signup_reminder_enabled: formData.get('signup_reminder_enabled') === 'on',
   });
 
   if (!parsed.success) {

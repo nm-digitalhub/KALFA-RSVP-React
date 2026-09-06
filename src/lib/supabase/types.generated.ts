@@ -207,6 +207,7 @@ export type Database = {
           payments_enabled: boolean
           privacy_url: string | null
           reasonable_coverage_contacts: number
+          signup_reminder_enabled: boolean
           slack_alert_campaign_billing: boolean
           slack_alert_channel_id: string | null
           slack_alert_customer_inquiry: boolean
@@ -307,6 +308,7 @@ export type Database = {
           payments_enabled?: boolean
           privacy_url?: string | null
           reasonable_coverage_contacts?: number
+          signup_reminder_enabled?: boolean
           slack_alert_campaign_billing?: boolean
           slack_alert_channel_id?: string | null
           slack_alert_customer_inquiry?: boolean
@@ -407,6 +409,7 @@ export type Database = {
           payments_enabled?: boolean
           privacy_url?: string | null
           reasonable_coverage_contacts?: number
+          signup_reminder_enabled?: boolean
           slack_alert_campaign_billing?: boolean
           slack_alert_channel_id?: string | null
           slack_alert_customer_inquiry?: boolean
@@ -4491,6 +4494,7 @@ export type Database = {
           phone_verified_at: string | null
           phone_verified_e164: string | null
           sales_referral_attempt_id: string | null
+          signup_reminder_sent_at: string | null
           terms_accepted_at: string | null
           updated_at: string
         }
@@ -4502,6 +4506,7 @@ export type Database = {
           phone_verified_at?: string | null
           phone_verified_e164?: string | null
           sales_referral_attempt_id?: string | null
+          signup_reminder_sent_at?: string | null
           terms_accepted_at?: string | null
           updated_at?: string
         }
@@ -4513,6 +4518,7 @@ export type Database = {
           phone_verified_at?: string | null
           phone_verified_e164?: string | null
           sales_referral_attempt_id?: string | null
+          signup_reminder_sent_at?: string | null
           terms_accepted_at?: string | null
           updated_at?: string
         }
@@ -6044,6 +6050,14 @@ export type Database = {
           p_terminal_status: string
         }
         Returns: string
+      }
+      signup_reminder_candidates: {
+        Args: { max_age_days?: number; min_age_hours?: number }
+        Returns: {
+          created_at: string
+          email: string
+          user_id: string
+        }[]
       }
       submit_rsvp: {
         Args: {

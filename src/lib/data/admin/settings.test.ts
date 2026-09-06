@@ -57,9 +57,14 @@ describe('getAppSettings / updateAppSettings — inquiry_followup_enabled', () =
       smtp_from: '',
       inquiry_followup_enabled: true,
       agreement_archive_enabled: true,
+      signup_reminder_enabled: true,
     });
     expect(builder.update).toHaveBeenCalledWith(
-      expect.objectContaining({ inquiry_followup_enabled: true, agreement_archive_enabled: true }),
+      expect.objectContaining({
+        inquiry_followup_enabled: true,
+        agreement_archive_enabled: true,
+        signup_reminder_enabled: true,
+      }),
     );
   });
 });
