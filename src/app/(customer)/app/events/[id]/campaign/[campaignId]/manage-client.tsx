@@ -275,7 +275,14 @@ function CampaignSummary({
       aria-labelledby="campaign-summary-title"
       className="overflow-hidden rounded-2xl border border-border bg-card"
     >
-      <div className="flex flex-col gap-3 border-b border-border p-5 sm:flex-row sm:items-center sm:justify-between sm:p-6">
+      {/* justify-between only earns its place when the second child exists.
+          finalCharge is null for every campaign before settlement, and
+          spreading a lone status badge left a wide empty gap beside it. */}
+      <div
+        className={`flex flex-col gap-3 border-b border-border p-5 sm:flex-row sm:items-center sm:p-6${
+          finalCharge != null ? ' sm:justify-between' : ''
+        }`}
+      >
         <div>
           <p id="campaign-summary-title" className="text-sm text-muted-foreground">
             מצב הקמפיין
