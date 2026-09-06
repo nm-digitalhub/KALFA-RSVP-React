@@ -33,6 +33,20 @@ export type AppSettings = {
   agreement_archive_enabled: boolean; // nightly SharePoint archive of signed customer agreements
   signup_reminder_enabled: boolean; // daily one-shot "confirm your email" reminder to unconfirmed signups
   unconfirmed_cleanup_enabled: boolean; // daily deletion of signups still unconfirmed after 30 days
+  // Below: columns the runtime already read but nothing could WRITE — they had
+  // no admin control anywhere, so the only way to flip one was direct SQL.
+  campaign_holds_enabled: boolean;
+  billing_exposure_gate: boolean;
+  monitor_enabled: boolean;
+  inbound_calls_enabled: boolean;
+  handoff_enabled: boolean;
+  console_softphone_enabled: boolean;
+  console_widget_enabled: boolean;
+  console_manual_dial_enabled: boolean;
+  console_wake_enabled: boolean;
+  console_call_me_now_enabled: boolean;
+  console_consult_conference_enabled: boolean;
+  console_dtmf_handoff_enabled: boolean;
   updated_at: string;
 };
 
@@ -45,7 +59,7 @@ export async function getAppSettings(): Promise<AppSettings> {
   const { data, error } = await supabase
     .from('app_settings')
     .select(
-      'payments_enabled, close_charge_enabled, sumit_company_id, sumit_api_public_key, sumit_api_key, sms_enabled, extra_sms_sender, extra_sms_token, email_enabled, smtp_host, smtp_port, smtp_secure, smtp_user, smtp_password, smtp_from, inquiry_followup_enabled, agreement_archive_enabled, signup_reminder_enabled, unconfirmed_cleanup_enabled, updated_at',
+      'payments_enabled, close_charge_enabled, sumit_company_id, sumit_api_public_key, sumit_api_key, sms_enabled, extra_sms_sender, extra_sms_token, email_enabled, smtp_host, smtp_port, smtp_secure, smtp_user, smtp_password, smtp_from, inquiry_followup_enabled, agreement_archive_enabled, signup_reminder_enabled, unconfirmed_cleanup_enabled, campaign_holds_enabled, billing_exposure_gate, monitor_enabled, inbound_calls_enabled, handoff_enabled, console_softphone_enabled, console_widget_enabled, console_manual_dial_enabled, console_wake_enabled, console_call_me_now_enabled, console_consult_conference_enabled, console_dtmf_handoff_enabled, updated_at',
     )
     .eq('id', SETTINGS_ID)
     .maybeSingle();
@@ -74,6 +88,18 @@ export async function getAppSettings(): Promise<AppSettings> {
     agreement_archive_enabled: data?.agreement_archive_enabled ?? false,
     signup_reminder_enabled: data?.signup_reminder_enabled ?? false,
     unconfirmed_cleanup_enabled: data?.unconfirmed_cleanup_enabled ?? false,
+    campaign_holds_enabled: data?.campaign_holds_enabled ?? false,
+    billing_exposure_gate: data?.billing_exposure_gate ?? false,
+    monitor_enabled: data?.monitor_enabled ?? false,
+    inbound_calls_enabled: data?.inbound_calls_enabled ?? false,
+    handoff_enabled: data?.handoff_enabled ?? false,
+    console_softphone_enabled: data?.console_softphone_enabled ?? false,
+    console_widget_enabled: data?.console_widget_enabled ?? false,
+    console_manual_dial_enabled: data?.console_manual_dial_enabled ?? false,
+    console_wake_enabled: data?.console_wake_enabled ?? false,
+    console_call_me_now_enabled: data?.console_call_me_now_enabled ?? false,
+    console_consult_conference_enabled: data?.console_consult_conference_enabled ?? false,
+    console_dtmf_handoff_enabled: data?.console_dtmf_handoff_enabled ?? false,
     updated_at: data?.updated_at ?? '',
   };
 }
@@ -98,6 +124,18 @@ export type UpdateAppSettingsInput = {
   agreement_archive_enabled: boolean;
   signup_reminder_enabled: boolean;
   unconfirmed_cleanup_enabled: boolean;
+  campaign_holds_enabled: boolean;
+  billing_exposure_gate: boolean;
+  monitor_enabled: boolean;
+  inbound_calls_enabled: boolean;
+  handoff_enabled: boolean;
+  console_softphone_enabled: boolean;
+  console_widget_enabled: boolean;
+  console_manual_dial_enabled: boolean;
+  console_wake_enabled: boolean;
+  console_call_me_now_enabled: boolean;
+  console_consult_conference_enabled: boolean;
+  console_dtmf_handoff_enabled: boolean;
 };
 
 export async function updateAppSettings(
@@ -131,6 +169,18 @@ export async function updateAppSettings(
       agreement_archive_enabled: input.agreement_archive_enabled,
       signup_reminder_enabled: input.signup_reminder_enabled,
       unconfirmed_cleanup_enabled: input.unconfirmed_cleanup_enabled,
+      campaign_holds_enabled: input.campaign_holds_enabled,
+      billing_exposure_gate: input.billing_exposure_gate,
+      monitor_enabled: input.monitor_enabled,
+      inbound_calls_enabled: input.inbound_calls_enabled,
+      handoff_enabled: input.handoff_enabled,
+      console_softphone_enabled: input.console_softphone_enabled,
+      console_widget_enabled: input.console_widget_enabled,
+      console_manual_dial_enabled: input.console_manual_dial_enabled,
+      console_wake_enabled: input.console_wake_enabled,
+      console_call_me_now_enabled: input.console_call_me_now_enabled,
+      console_consult_conference_enabled: input.console_consult_conference_enabled,
+      console_dtmf_handoff_enabled: input.console_dtmf_handoff_enabled,
     })
     .eq('id', SETTINGS_ID);
 

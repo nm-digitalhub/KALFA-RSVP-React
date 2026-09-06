@@ -40,6 +40,18 @@ export async function updateSettingsAction(
     agreement_archive_enabled: formData.get('agreement_archive_enabled') === 'on',
     signup_reminder_enabled: formData.get('signup_reminder_enabled') === 'on',
     unconfirmed_cleanup_enabled: formData.get('unconfirmed_cleanup_enabled') === 'on',
+    campaign_holds_enabled: formData.get('campaign_holds_enabled') === 'on',
+    billing_exposure_gate: formData.get('billing_exposure_gate') === 'on',
+    monitor_enabled: formData.get('monitor_enabled') === 'on',
+    inbound_calls_enabled: formData.get('inbound_calls_enabled') === 'on',
+    handoff_enabled: formData.get('handoff_enabled') === 'on',
+    console_softphone_enabled: formData.get('console_softphone_enabled') === 'on',
+    console_widget_enabled: formData.get('console_widget_enabled') === 'on',
+    console_manual_dial_enabled: formData.get('console_manual_dial_enabled') === 'on',
+    console_wake_enabled: formData.get('console_wake_enabled') === 'on',
+    console_call_me_now_enabled: formData.get('console_call_me_now_enabled') === 'on',
+    console_consult_conference_enabled: formData.get('console_consult_conference_enabled') === 'on',
+    console_dtmf_handoff_enabled: formData.get('console_dtmf_handoff_enabled') === 'on',
   });
 
   if (!parsed.success) {

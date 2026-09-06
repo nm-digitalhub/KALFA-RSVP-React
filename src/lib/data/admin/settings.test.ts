@@ -59,6 +59,18 @@ describe('getAppSettings / updateAppSettings — inquiry_followup_enabled', () =
       agreement_archive_enabled: true,
       signup_reminder_enabled: true,
       unconfirmed_cleanup_enabled: true,
+      campaign_holds_enabled: true,
+      billing_exposure_gate: true,
+      monitor_enabled: true,
+      inbound_calls_enabled: true,
+      handoff_enabled: true,
+      console_softphone_enabled: true,
+      console_widget_enabled: true,
+      console_manual_dial_enabled: true,
+      console_wake_enabled: true,
+      console_call_me_now_enabled: true,
+      console_consult_conference_enabled: true,
+      console_dtmf_handoff_enabled: true,
     });
     expect(builder.update).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -66,6 +78,18 @@ describe('getAppSettings / updateAppSettings — inquiry_followup_enabled', () =
         agreement_archive_enabled: true,
         signup_reminder_enabled: true,
         unconfirmed_cleanup_enabled: true,
+        campaign_holds_enabled: true,
+        billing_exposure_gate: true,
+        monitor_enabled: true,
+        inbound_calls_enabled: true,
+        handoff_enabled: true,
+        console_softphone_enabled: true,
+        console_widget_enabled: true,
+        console_manual_dial_enabled: true,
+        console_wake_enabled: true,
+        console_call_me_now_enabled: true,
+        console_consult_conference_enabled: true,
+        console_dtmf_handoff_enabled: true,
       }),
     );
   });

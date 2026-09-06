@@ -452,6 +452,18 @@ export const appSettingsSchema = z.object({
   agreement_archive_enabled: z.boolean().default(false),
   signup_reminder_enabled: z.boolean().default(false),
   unconfirmed_cleanup_enabled: z.boolean().default(false),
+  campaign_holds_enabled: z.boolean().default(false),
+  billing_exposure_gate: z.boolean().default(false),
+  monitor_enabled: z.boolean().default(false),
+  inbound_calls_enabled: z.boolean().default(false),
+  handoff_enabled: z.boolean().default(false),
+  console_softphone_enabled: z.boolean().default(false),
+  console_widget_enabled: z.boolean().default(false),
+  console_manual_dial_enabled: z.boolean().default(false),
+  console_wake_enabled: z.boolean().default(false),
+  console_call_me_now_enabled: z.boolean().default(false),
+  console_consult_conference_enabled: z.boolean().default(false),
+  console_dtmf_handoff_enabled: z.boolean().default(false),
 });
 export type AppSettingsInput = z.infer<typeof appSettingsSchema>;
 
