@@ -19,10 +19,16 @@ import {
 import { getAppUrl } from '@/lib/url';
 import type { FormState } from '@/lib/validation/result';
 
+// The login form needs one thing the shared FormState cannot express: WHICH
+// address is awaiting confirmation, so the form can offer to resend to it
+// without asking the user to retype it (React resets the inputs after a form
+// action). Kept local rather than widening FormState for every other form.
+export type LoginState = (NonNullable<FormState> & { unconfirmedEmail?: string }) | null;
+
 export async function login(
-  _prevState: FormState,
+  _prevState: LoginState,
   formData: FormData,
-): Promise<FormState> {
+): Promise<LoginState> {
   const parsed = loginSchema.safeParse({
     email: formData.get('email'),
     password: formData.get('password'),
@@ -36,10 +42,58 @@ export async function login(
   const { error } = await supabase.auth.signInWithPassword(parsed.data);
 
   if (error) {
+    // The generic message is deliberate anti-enumeration: a wrong password and
+    // an address that was never registered must look identical. `email_not_confirmed`
+    // is the one safe exception — GoTrue returns it only once the password has
+    // ALREADY matched. Verified against the live project: an unconfirmed account
+    // probed with a WRONG password answers invalid_credentials, exactly like an
+    // address that does not exist. So naming this case tells nothing to anyone
+    // who is not already holding valid credentials, and it is the difference
+    // between a signed-up customer retyping a correct password forever and
+    // being told to go check their inbox.
+    if (error.code === 'email_not_confirmed') {
+      return {
+        error:
+          'החשבון עדיין לא אומת. שלחנו לכם מייל אישור בעת ההרשמה — בדקו את תיבת הדואר, וגם את תיקיית הספאם.',
+        unconfirmedEmail: parsed.data.email,
+      };
+    }
     return { error: 'אימייל או סיסמה שגויים' };
   }
 
   redirect('/app');
+}
+
+// Offered by the login form after an `email_not_confirmed` failure (see above),
+// but callable on its own — so it stays enumeration-safe by construction: the
+// SAME notice comes back whether the address is unknown, already confirmed, or
+// genuinely re-sent. auth.resend() is not enumeration-safe on its own (it
+// answers 422 for an already-confirmed user), which is exactly why its outcome
+// is never reflected back to the caller.
+//
+// emailRedirectTo becomes {{ .RedirectTo }} in the confirmation template, the
+// same contract the recovery email uses: the link host comes from OUR
+// APP_ORIGIN and /auth/confirm stays the authority that verifies the OTP.
+export async function resendConfirmationEmail(
+  _prevState: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  const parsed = forgotPasswordSchema.safeParse({ email: formData.get('email') });
+  if (!parsed.success) {
+    return { fieldErrors: parsed.error.flatten().fieldErrors };
+  }
+
+  const supabase = await createClient();
+  await supabase.auth.resend({
+    type: 'signup',
+    email: parsed.data.email,
+    options: { emailRedirectTo: await getAppUrl('/auth/confirm') },
+  });
+
+  return {
+    notice:
+      'אם קיים חשבון שטרם אומת עם כתובת זו, נשלח אליו מייל אישור חדש. בדקו את תיבת הדואר (וגם את תיקיית הספאם).',
+  };
 }
 
 // `salesRef` is BOUND (signup.bind(null, ref) in signup-form.tsx), not a form
@@ -114,6 +168,10 @@ export async function signup(
     email,
     password,
     options: {
+      // Becomes {{ .RedirectTo }} in the confirmation email template, so the
+      // link's host comes from our own APP_ORIGIN and lands on /auth/confirm
+      // (which verifies the OTP on POST) rather than on GoTrue's SiteURL.
+      emailRedirectTo: await getAppUrl('/auth/confirm'),
       data: {
         full_name,
         phone: phone ?? '',

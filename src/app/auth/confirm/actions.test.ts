@@ -54,12 +54,23 @@ describe('confirmOtp — POST verification', () => {
     expect(verifyOtp).toHaveBeenCalledWith({ token_hash: 'good', type: 'recovery' });
   });
 
-  it('wrong / expired OTP → /auth/login', async () => {
+  it('wrong / expired OTP → the expired page, carrying the type so it can offer the right recovery', async () => {
     verifyOtp.mockResolvedValue({ error: { message: 'Token has expired or is invalid' } });
     await expect(
       confirmOtp(fd({ token_hash: 'bad', type: 'recovery', next: '/auth/reset-password' })),
-    ).rejects.toMatchObject({ digest: expect.stringContaining('/auth/login') });
+    ).rejects.toMatchObject({
+      digest: expect.stringContaining('/auth/confirm/expired?type=recovery'),
+    });
     expect(verifyOtp).toHaveBeenCalledWith({ token_hash: 'bad', type: 'recovery' });
+  });
+
+  it('an expired SIGNUP link keeps its own type — the page must not offer a password reset', async () => {
+    verifyOtp.mockResolvedValue({ error: { message: 'Token has expired or is invalid' } });
+    await expect(
+      confirmOtp(fd({ token_hash: 'bad', type: 'signup', next: '/app' })),
+    ).rejects.toMatchObject({
+      digest: expect.stringContaining('/auth/confirm/expired?type=signup'),
+    });
   });
 
   it('invalid type → /auth/login; NO client created, NO verifyOtp', async () => {
