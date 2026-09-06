@@ -304,7 +304,13 @@ function CampaignSummary({
         ) : null}
       </div>
 
-      <dl className="grid grid-cols-3 divide-x divide-x-reverse divide-border p-5 sm:p-6">
+      {/* No `divide-x-reverse`: Tailwind 4 compiles divide-x to border-inline-*,
+          which is already direction-aware, so the divider lands between the
+          items on its own. Adding the v3 RTL work-around flips it to
+          inline-start — the RIGHT side in Hebrew — which drew a stray rule on
+          the outer edge of the first metric ("הושגו"). Verified against the
+          compiled stylesheet, not assumed. */}
+      <dl className="grid grid-cols-3 divide-x divide-border p-5 sm:p-6">
         <SummaryMetric label="הושגו" value={reached.toLocaleString('he-IL')} />
         <SummaryMetric label={primaryChargeLabel} value={nis(accrued)} emphasized />
         <SummaryMetric label="תקרת חיוב" value={nis(ceiling)} />

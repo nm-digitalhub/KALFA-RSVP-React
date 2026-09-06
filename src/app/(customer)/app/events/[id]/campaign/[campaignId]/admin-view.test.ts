@@ -62,3 +62,23 @@ describe('campaign page — admin cross-tenant view', () => {
     expect(adminLayerSrc).toContain("from '@/lib/data/campaigns'");
   });
 });
+
+// Tailwind 4 compiles `divide-x` to border-inline-start/end, which already
+// respects direction. `divide-x-reverse` was the v3 work-around for RTL and is
+// actively wrong here: it moves the rule to inline-start — the RIGHT side in
+// Hebrew — so the FIRST metric gained a stray vertical rule on the outer edge
+// of the row. Verified in the compiled stylesheet before removing it.
+describe('RTL: divide utilities', () => {
+  it('never pairs divide-x with the v3 reverse work-around', () => {
+    // Asserts on className VALUES, not on any occurrence of the string: the
+    // comment above the fixed line names the utility on purpose, to explain why
+    // it is absent, and a naive text search would flag that explanation.
+    const manage = readFileSync(join(__dirname, 'manage-client.tsx'), 'utf8');
+    for (const src of [pageSrc, manage]) {
+      const classNames = [...src.matchAll(/className="([^"]*)"/g)].map((m) => m[1]);
+      for (const cls of classNames) {
+        expect(cls, cls).not.toMatch(/\bdivide-[xy]-reverse\b/);
+      }
+    }
+  });
+});
