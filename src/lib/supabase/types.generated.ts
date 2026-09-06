@@ -229,6 +229,7 @@ export type Database = {
           sumit_api_public_key: string | null
           sumit_company_id: string | null
           terms_url: string | null
+          unconfirmed_cleanup_enabled: boolean
           updated_at: string
           voximplant_account_callback_prev: Json | null
           voximplant_account_callback_salt: string | null
@@ -330,6 +331,7 @@ export type Database = {
           sumit_api_public_key?: string | null
           sumit_company_id?: string | null
           terms_url?: string | null
+          unconfirmed_cleanup_enabled?: boolean
           updated_at?: string
           voximplant_account_callback_prev?: Json | null
           voximplant_account_callback_salt?: string | null
@@ -431,6 +433,7 @@ export type Database = {
           sumit_api_public_key?: string | null
           sumit_company_id?: string | null
           terms_url?: string | null
+          unconfirmed_cleanup_enabled?: boolean
           updated_at?: string
           voximplant_account_callback_prev?: Json | null
           voximplant_account_callback_salt?: string | null
@@ -6053,6 +6056,14 @@ export type Database = {
       }
       signup_reminder_candidates: {
         Args: { max_age_days?: number; min_age_hours?: number }
+        Returns: {
+          created_at: string
+          email: string
+          user_id: string
+        }[]
+      }
+      stale_unconfirmed_signups: {
+        Args: { max_age_days?: number }
         Returns: {
           created_at: string
           email: string

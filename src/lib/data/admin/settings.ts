@@ -32,6 +32,7 @@ export type AppSettings = {
   inquiry_followup_enabled: boolean; // reminder → warning → auto-close sweep on quiet inquiries
   agreement_archive_enabled: boolean; // nightly SharePoint archive of signed customer agreements
   signup_reminder_enabled: boolean; // daily one-shot "confirm your email" reminder to unconfirmed signups
+  unconfirmed_cleanup_enabled: boolean; // daily deletion of signups still unconfirmed after 30 days
   updated_at: string;
 };
 
@@ -44,7 +45,7 @@ export async function getAppSettings(): Promise<AppSettings> {
   const { data, error } = await supabase
     .from('app_settings')
     .select(
-      'payments_enabled, close_charge_enabled, sumit_company_id, sumit_api_public_key, sumit_api_key, sms_enabled, extra_sms_sender, extra_sms_token, email_enabled, smtp_host, smtp_port, smtp_secure, smtp_user, smtp_password, smtp_from, inquiry_followup_enabled, agreement_archive_enabled, signup_reminder_enabled, updated_at',
+      'payments_enabled, close_charge_enabled, sumit_company_id, sumit_api_public_key, sumit_api_key, sms_enabled, extra_sms_sender, extra_sms_token, email_enabled, smtp_host, smtp_port, smtp_secure, smtp_user, smtp_password, smtp_from, inquiry_followup_enabled, agreement_archive_enabled, signup_reminder_enabled, unconfirmed_cleanup_enabled, updated_at',
     )
     .eq('id', SETTINGS_ID)
     .maybeSingle();
@@ -72,6 +73,7 @@ export async function getAppSettings(): Promise<AppSettings> {
     inquiry_followup_enabled: data?.inquiry_followup_enabled ?? false,
     agreement_archive_enabled: data?.agreement_archive_enabled ?? false,
     signup_reminder_enabled: data?.signup_reminder_enabled ?? false,
+    unconfirmed_cleanup_enabled: data?.unconfirmed_cleanup_enabled ?? false,
     updated_at: data?.updated_at ?? '',
   };
 }
@@ -95,6 +97,7 @@ export type UpdateAppSettingsInput = {
   inquiry_followup_enabled: boolean;
   agreement_archive_enabled: boolean;
   signup_reminder_enabled: boolean;
+  unconfirmed_cleanup_enabled: boolean;
 };
 
 export async function updateAppSettings(
@@ -127,6 +130,7 @@ export async function updateAppSettings(
       inquiry_followup_enabled: input.inquiry_followup_enabled,
       agreement_archive_enabled: input.agreement_archive_enabled,
       signup_reminder_enabled: input.signup_reminder_enabled,
+      unconfirmed_cleanup_enabled: input.unconfirmed_cleanup_enabled,
     })
     .eq('id', SETTINGS_ID);
 

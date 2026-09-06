@@ -364,6 +364,29 @@ export function SettingsForm({
         </span>
       </label>
 
+      {/* Deleting accounts is irreversible, so it gets a switch of its own
+          rather than riding the reminder's: an owner must be able to stop the
+          destructive half without stopping the mail. */}
+      <label className="flex items-start gap-3">
+        <input
+          type="checkbox"
+          name="unconfirmed_cleanup_enabled"
+          defaultChecked={settings.unconfirmed_cleanup_enabled}
+          className="mt-1 size-4 accent-primary"
+        />
+        <span>
+          <span className="block text-sm font-medium">מחיקת הרשמות שלא אומתו אחרי 30 יום</span>
+          <span className="block text-xs text-muted-foreground">
+            כשמופעל: כל יום ב-04:50 נמחקת כל הרשמה שלא אושרה במשך 30 יום, כולל
+            השם והטלפון שנשמרו בה. זו לא רק תחזוקה: כתובת שהוקלדה בטעות היא לרוב
+            תו אחד מתיבה אמיתית, ו-Supabase אינה חוסמת איפוס סיסמה לחשבון שלא
+            אומת — כלומר זר שקיבל את המייל יכול להשתלט על החשבון ולראות את פרטי
+            מי שנרשם. חשבון שיש בבעלותו אירוע לעולם לא נמחק. המחיקה בלתי הפיכה.
+            כשכבוי (ברירת המחדל) — שום חשבון לא נמחק.
+          </span>
+        </span>
+      </label>
+
       <SubmitButton>שמירה</SubmitButton>
     </form>
   );

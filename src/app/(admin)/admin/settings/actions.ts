@@ -39,6 +39,7 @@ export async function updateSettingsAction(
     inquiry_followup_enabled: formData.get('inquiry_followup_enabled') === 'on',
     agreement_archive_enabled: formData.get('agreement_archive_enabled') === 'on',
     signup_reminder_enabled: formData.get('signup_reminder_enabled') === 'on',
+    unconfirmed_cleanup_enabled: formData.get('unconfirmed_cleanup_enabled') === 'on',
   });
 
   if (!parsed.success) {

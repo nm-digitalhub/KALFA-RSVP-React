@@ -451,6 +451,7 @@ export const appSettingsSchema = z.object({
   // versa). Same fail-closed `.default(false)` as above.
   agreement_archive_enabled: z.boolean().default(false),
   signup_reminder_enabled: z.boolean().default(false),
+  unconfirmed_cleanup_enabled: z.boolean().default(false),
 });
 export type AppSettingsInput = z.infer<typeof appSettingsSchema>;
 

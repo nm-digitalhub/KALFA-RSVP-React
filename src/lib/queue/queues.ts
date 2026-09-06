@@ -149,6 +149,14 @@ export const QUEUES = {
   // hard-bounced. Gated by app_settings.signup_reminder_enabled (own switch,
   // off by default). See src/lib/data/signup-confirmation-reminder.ts.
   signupReminderSweep: 'signup-reminder-sweep',
+  // Daily deletion of signups still unconfirmed after 30 days. A mistyped
+  // address is usually one character off a real inbox, and Supabase does not
+  // gate password recovery on a confirmed email — so a stranger holding that
+  // inbox can take an account carrying the real signer's name and phone. 30
+  // days follows Supabase's own documented anonymous-user cleanup. Gated by
+  // app_settings.unconfirmed_cleanup_enabled (own switch, off by default).
+  // See src/lib/data/unconfirmed-signup-cleanup.ts.
+  unconfirmedCleanupSweep: 'unconfirmed-cleanup-sweep',
   // SUMIT hold-release reconciler — every 30m, read-only against SUMIT's CRM
   // (crm/data/listentities on the "תפיסות מסגרת" folder), syncs
   // campaigns.release_status for holds SUMIT reports as released (manual

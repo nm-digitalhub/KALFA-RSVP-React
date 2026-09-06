@@ -14,15 +14,31 @@ import { PasswordInput } from '@/components/password-input';
 function ResendConfirmation({ email }: { email: string }) {
   const [state, action] = useActionState(resendConfirmationEmail, null);
 
-  if (state?.notice) return <FormNotice message={state.notice} />;
-
   return (
-    <form action={action} className="mt-3">
-      <input type="hidden" name="email" value={email} />
-      <SubmitButton className="w-auto" size="sm">
-        שליחת מייל האישור מחדש
-      </SubmitButton>
-    </form>
+    <>
+      {state?.notice ? (
+        <FormNotice message={state.notice} />
+      ) : (
+        <form action={action} className="mt-3">
+          <input type="hidden" name="email" value={email} />
+          <SubmitButton className="w-auto" size="sm">
+            שליחת מייל האישור מחדש
+          </SubmitButton>
+        </form>
+      )}
+
+      {/* Supabase exposes no way to change an unconfirmed account's address:
+          updateUser needs a session, and an unconfirmed account has none. So
+          signing up again IS the supported route — the person just has to be
+          told it exists, which is the whole reason this line is here. */}
+      <p className="mt-2 text-sm text-muted-foreground">
+        טעיתם בכתובת המייל?{' '}
+        <Link href="/auth/signup" className="font-medium text-primary hover:underline">
+          הירשמו שוב עם הכתובת הנכונה
+        </Link>
+        .
+      </p>
+    </>
   );
 }
 

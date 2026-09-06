@@ -46,7 +46,18 @@ export default async function ConfirmExpiredPage({
         </p>
       </div>
 
-      {isSignupLike ? <ResendConfirmationForm /> : null}
+      {isSignupLike ? (
+        <div>
+          <ResendConfirmationForm />
+      <p className="mt-2 text-sm text-muted-foreground">
+            טעיתם בכתובת המייל?{' '}
+            <Link href="/auth/signup" className="font-medium text-primary hover:underline">
+              הירשמו שוב עם הכתובת הנכונה
+            </Link>
+            .
+          </p>
+        </div>
+      ) : null}
 
       {isRecovery ? (
         <Link

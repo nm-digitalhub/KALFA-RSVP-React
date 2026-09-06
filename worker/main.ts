@@ -55,6 +55,10 @@ import {
   runSignupReminderSweep,
   getSignupReminderEnabled,
 } from '@/lib/data/signup-confirmation-reminder';
+import {
+  runUnconfirmedCleanupSweep,
+  getUnconfirmedCleanupEnabled,
+} from '@/lib/data/unconfirmed-signup-cleanup';
 import { runGraphIntakeSubscriptionSweep } from '@/lib/data/inquiry-mail-intake';
 import { runCallbackSweep } from '@/lib/data/call-callbacks';
 import { runCallbackSchedulingSweep } from '@/lib/data/callback-scheduling';
@@ -586,6 +590,14 @@ async function handleSignupReminderSweep(): Promise<void> {
   await runSignupReminderSweep();
 }
 
+// Its OWN kill-switch (unconfirmed_cleanup_enabled), separate from the reminder
+// above: one sends mail, this one deletes accounts irreversibly, and an owner
+// must be able to stop the destructive half without stopping the other.
+async function handleUnconfirmedCleanupSweep(): Promise<void> {
+  if (!(await getUnconfirmedCleanupEnabled())) return;
+  await runUnconfirmedCleanupSweep();
+}
+
 
 // ── Push instead of poll ────────────────────────────────────────────────────
 // A dedicated LISTEN connection so a callback request is scheduled the moment
@@ -930,7 +942,10 @@ async function main(): Promise<void> {
       // not-yet-latched candidates. The latch is a conditional UPDATE, so a
       // duplicate mail is already impossible — this just avoids the wasted
       // round-trips.
-      q === QUEUES.signupReminderSweep;
+      q === QUEUES.signupReminderSweep ||
+      // Singleton too: two overlapping ticks would read the same candidates and
+      // race on deleting them, turning a benign duplicate into a failed run.
+      q === QUEUES.unconfirmedCleanupSweep;
     await boss.createQueue(q, singleton ? { policy: 'singleton' } : undefined);
   }
 
@@ -1016,6 +1031,12 @@ async function main(): Promise<void> {
     QUEUES.signupReminderSweep,
     guardedWorker(QUEUES.signupReminderSweep, async () => {
       await handleSignupReminderSweep();
+    }),
+  );
+  await boss.work(
+    QUEUES.unconfirmedCleanupSweep,
+    guardedWorker(QUEUES.unconfirmedCleanupSweep, async () => {
+      await handleUnconfirmedCleanupSweep();
     }),
   );
   // Callback re-dials. runCallbackSweep only ENQUEUES — every dial gate is
@@ -1227,6 +1248,9 @@ async function main(): Promise<void> {
   // Daily at 10:20 IL — a waking hour, so the reminder lands when the recipient
   // can act on it rather than overnight where it is buried by morning.
   await boss.schedule(QUEUES.signupReminderSweep, '20 10 * * *', null, { tz: SCHEDULE_TZ });
+  // Daily at 04:50 IL — off-peak, and after the nightly jobs above rather than
+  // alongside them, so a deletion never races a sweep still reading those rows.
+  await boss.schedule(QUEUES.unconfirmedCleanupSweep, '50 4 * * *', null, { tz: SCHEDULE_TZ });
   // Weekly, off-peak, deliberately non-round (04:17) — a 60-day token refreshed
   // once a week has ample margin even if a run is missed for a while.
   await boss.schedule(QUEUES.igTokenRefresh, '17 4 * * 2', null, { tz: SCHEDULE_TZ });
