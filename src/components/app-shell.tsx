@@ -6,7 +6,6 @@ import { DirectionProvider } from '@base-ui/react/direction-provider';
 import {
   CalendarDays,
   ChevronsUpDown,
-  LayoutDashboard,
   LifeBuoy,
   LogOut,
   Menu,
@@ -55,19 +54,25 @@ import { getInitials } from '@/lib/utils';
 
 type NavItem = { href: string; label: string; icon: LucideIcon };
 
-const NAV: NavItem[] = [
-  { href: '/app', label: 'לוח בקרה', icon: LayoutDashboard },
+// Two groups rather than one array sliced by index: the conditional links are
+// spliced between them, and a hard-coded slice boundary silently shifts the
+// moment an item is added or removed. There is deliberately no '/app' entry —
+// it is a server-side routing hop that never renders, so a link to it could
+// never light up or land anywhere.
+const NAV_PRIMARY: NavItem[] = [
   { href: '/app/events', label: 'האירועים שלי', icon: CalendarDays },
+];
+
+const NAV_SECONDARY: NavItem[] = [
   { href: '/app/settings', label: 'הגדרות', icon: Settings },
   { href: '/contact?t=support', label: 'עזרה ותמיכה', icon: LifeBuoy },
 ];
 
-// '/app' is active only on an exact match; the rest match their subtree so
-// e.g. /app/events/new keeps "האירועים שלי" highlighted.
+// Every link matches its own subtree, so e.g. /app/events/new keeps
+// "האירועים שלי" highlighted. No remaining href is a prefix of another, so the
+// subtree rule cannot highlight two items at once.
 function isActive(pathname: string, href: string): boolean {
-  return href === '/app'
-    ? pathname === '/app'
-    : pathname === href || pathname.startsWith(`${href}/`);
+  return pathname === href || pathname.startsWith(`${href}/`);
 }
 
 // Hamburger that opens the sidebar Sheet on mobile only. The desktop sidebar is
@@ -140,15 +145,15 @@ export function AppShell({
   const displayName = userName || userEmail || '';
   const initials = getInitials(displayName);
 
-  // dashboard/events, then the team link (if permitted), then settings, then
+  // Events, then the team link (if permitted), then the secondary group, then
   // the admin link (admins only). The /app/team and /admin routes re-check
   // their own authorization server-side.
   const nav: NavItem[] = [
-    ...NAV.slice(0, 2),
+    ...NAV_PRIMARY,
     ...(showTeam
       ? [{ href: '/app/team', label: 'ניהול משתמשים', icon: Users }]
       : []),
-    ...NAV.slice(2),
+    ...NAV_SECONDARY,
     ...(isAdmin ? [{ href: '/admin', label: 'ניהול', icon: Shield }] : []),
   ];
 

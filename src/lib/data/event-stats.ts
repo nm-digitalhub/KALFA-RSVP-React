@@ -16,6 +16,7 @@ import {
   type CampaignDeliveryBreakdown,
 } from '@/lib/data/campaign-delivery';
 import { getCampaignBillingSummary, type BillingSummary } from '@/lib/data/billing';
+import { campaignStage } from '@/lib/data/event-labels';
 import type { Enums } from '@/lib/supabase/types';
 type EventStatus = Enums<'event_status'>;
 
@@ -38,6 +39,7 @@ export type EventStatsResult = {
     name: string;
     eventType: string | null;
     eventDate: string | null;
+    venue: string | null;
     rsvpDeadline: string | null;
     status: EventStatus | null;
   } | null;
@@ -66,6 +68,20 @@ export type EventStatsResult = {
       accrued: number;
       ceiling: number;
       maxContacts: number;
+    } | null;
+    // The commercial terms + settlement outcome, read off the campaign row that
+    // is ALREADY in memory (zero extra queries). Separate from `billing` above
+    // because that one is the campaign_billing_summary RPC, which returns
+    // exactly four columns and can legitimately come back null. Both sit behind
+    // the same billing.view gate; null here means "no campaign, or no
+    // billing.view", exactly like `billing`.
+    billingDetail: {
+      basePrice: number | null;
+      includedReached: number | null;
+      pricePerReached: number | null;
+      finalChargeAmount: number | null;
+      creditApplied: number;
+      chargeStatus: string | null;
     } | null;
   };
   alerts: EventStatsAlert[];
@@ -99,7 +115,16 @@ export function deriveStatsAlerts(input: {
   totals?: GuestTotals;
   delivery?: { failed: number; wrongNumber: number } | null;
   billing?: { accrued: number; ceiling: number } | null;
-  campaign?: { status: string; finalChargeAmount: number | null } | null;
+  // The raw status cannot answer "is this campaign over": campaignStage() folds
+  // awaiting_invoice | billed | paid into the same 'closed' stage, and the DB
+  // close guard (events_guard_update) does not list those three — so an event
+  // can legally close while the campaign sits in one of them with no final
+  // charge. captureStatus rides along so the STAGE, not the raw status, decides.
+  campaign?: {
+    status: CampaignStatus | null;
+    captureStatus?: string | null;
+    finalChargeAmount: number | null;
+  } | null;
 }): EventStatsAlert[] {
   const alerts: EventStatsAlert[] = [];
   const t = input.totals;
@@ -123,12 +148,18 @@ export function deriveStatsAlerts(input: {
       alerts.push({ id: 'ceiling_near_usage', label: 'קירבה לתקרת החיוב' });
     }
   }
-  if (
-    input.campaign &&
-    input.campaign.status === 'closed' &&
-    input.campaign.finalChargeAmount == null
-  ) {
-    alerts.push({ id: 'campaign_closed_not_settled', label: 'קמפיין סגור וטרם נסגר חשבונית' });
+  if (input.campaign && input.campaign.finalChargeAmount == null) {
+    const stage = campaignStage(
+      input.campaign.status
+        ? {
+            status: input.campaign.status,
+            capture_status: input.campaign.captureStatus ?? null,
+          }
+        : null,
+    );
+    if (stage === 'closed') {
+      alerts.push({ id: 'campaign_closed_not_settled', label: 'קמפיין סגור וטרם נסגר חשבונית' });
+    }
   }
   return alerts;
 }
@@ -153,6 +184,7 @@ export async function getEventStats(eventId: string): Promise<EventStatsResult> 
         name: e.name,
         eventType: e.event_type ?? null,
         eventDate: e.event_date ?? null,
+        venue: e.venue_name ?? null,
         rsvpDeadline: e.rsvp_deadline ?? null,
         status: e.status ?? null,
       };
@@ -188,6 +220,7 @@ export async function getEventStats(eventId: string): Promise<EventStatsResult> 
     reachedCount: null,
     delivery: null,
     billing: null,
+    billingDetail: null,
   };
   const campaignsOk = await canAccessEvent(eventId, 'campaigns', 'view');
   let c: OwnerCampaign | null = null;
@@ -226,6 +259,18 @@ export async function getEventStats(eventId: string): Promise<EventStatsResult> 
       // 5) billing (campaigns.view AND billing.view)
       const billingOk = await canAccessEvent(eventId, 'billing', 'view');
       if (billingOk) {
+        // Field-by-field, never a spread of `c`: the campaign row also carries
+        // card_token_ref / card_citizen_id / charge_document_url, which must
+        // never reach the DTO. Assigned OUTSIDE the try below because it needs
+        // no query and must survive an RPC failure.
+        campaign.billingDetail = {
+          basePrice: c.base_price,
+          includedReached: c.included_reached,
+          pricePerReached: c.price_per_reached,
+          finalChargeAmount: c.final_charge_amount,
+          creditApplied: c.credit_applied,
+          chargeStatus: c.charge_status,
+        };
         try {
           const b: BillingSummary | null = await getCampaignBillingSummary(c.id);
           if (b)
@@ -251,8 +296,15 @@ export async function getEventStats(eventId: string): Promise<EventStatsResult> 
     billing: campaign.billing
       ? { accrued: campaign.billing.accrued, ceiling: campaign.billing.ceiling }
       : null,
+    // finalChargeAmount stays sourced from `c` (campaigns.view), NOT from
+    // campaign.billingDetail — that one is behind billing.view, and reading it
+    // here would silently mute the banner for a member without billing.view.
     campaign: campaign.id
-      ? { status: campaign.status ?? '', finalChargeAmount: c?.final_charge_amount ?? null }
+      ? {
+          status: campaign.status,
+          captureStatus: campaign.captureStatus,
+          finalChargeAmount: c?.final_charge_amount ?? null,
+        }
       : null,
   });
 

@@ -1,101 +1,66 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { CalendarDays, Plus } from 'lucide-react';
 import { redirect } from 'next/navigation';
 
-import { listEvents, getEventCounts } from '@/lib/data/events';
-import { EVENT_TYPE_LABELS, EVENT_STATUS_LABELS } from '@/lib/data/event-labels';
-import { formatIsraelDate } from '@/lib/date';
+import { buttonVariants } from '@/components/ui/button';
+import { listEvents } from '@/lib/data/events';
+import { cn } from '@/lib/utils';
 
-export const metadata: Metadata = { title: 'לוח בקרה' };
+// The only state this route ever renders is the welcome screen — every other
+// case is a server-side redirect that never paints.
+export const metadata: Metadata = { title: 'ברוכים הבאים' };
 
-export default async function DashboardPage() {
-  // Counts come from head queries (ALL events), independent of the recent-events
-  // preview page size; the preview loads just the 5 most recent.
-  const [counts, recentEvents] = await Promise.all([
-    getEventCounts(),
-    listEvents({ limit: 5 }),
-  ]);
-  const totalEvents = counts.total;
-  // Audit (recommended flow, step 2): a brand-new owner has nothing to look at
-  // on a dashboard — take them straight to the create-event form. Counts are
-  // RLS-scoped (own + shared-org events), so a member with shared events is not
-  // redirected.
-  if (totalEvents === 0) redirect('/app/events/new');
-  const activeEvents = counts.active;
+// /app is a routing node, not a dashboard. A per-event B2C product has no
+// portfolio to survey: the customer belongs on their event, and a counters
+// screen in front of it is an extra click on every single visit.
+//
+// The redirect is thrown during the server render and returned as a 303 before
+// any HTML reaches the browser, so there is no intermediate paint and no
+// client-side navigation to flicker.
+export default async function AppEntryPage() {
+  // ONE query decides all three branches: `limit: 2` distinguishes 0 / 1 / 2+
+  // AND carries the id the single-event redirect needs. No count query, and no
+  // campaign query — the destination never depends on campaign state.
+  //
+  // This decision must stay ahead of every other await, so the common case
+  // (customer with one event) costs exactly one query.
+  //
+  // "How many events" means how many are VISIBLE AFTER RLS, not how many are
+  // owned: listEvents deliberately does not filter by owner_id, because an
+  // app-side owner filter would blank the list for an org member whom RLS does
+  // allow. Verified against live data: a user who owns nothing but sees 4
+  // shared events must land on "האירועים שלי", not on the welcome screen.
+  const rows = await listEvents({ limit: 2 });
 
+  // Exactly one visible event → that event IS the workspace, whatever its
+  // status. The event page is the single canonical URL and picks its own mode
+  // (setup / work / summary); routing must not fork on status.
+  if (rows.length === 1) redirect(`/app/events/${rows[0].id}`);
+  if (rows.length >= 2) redirect('/app/events');
+
+  // Nothing visible → stay here and ask the one question that matters.
+  //
+  // Deliberately no further data access. Beyond the wasted query, any call that
+  // reaches requireActiveOrg (dal.ts) redirects to /app and would loop forever:
+  // a user without an active org is a real state, since the personal org is
+  // created only by ensurePersonalOrg when the first event is created.
   return (
-    <div className="space-y-8">
-      <header className="space-y-1">
-        <h1 className="text-2xl font-bold">לוח בקרה</h1>
-        <p className="text-muted-foreground">ברוכים הבאים ל-KALFA. הנה תמונת מצב של האירועים שלכם.</p>
-      </header>
+    <div className="mx-auto flex w-full max-w-md flex-col items-center gap-6 py-10 text-center">
+      <div className="flex flex-col gap-2">
+        <h1 className="text-2xl font-bold">בואו נתחיל</h1>
+        {/* Addressed to the moment, not to the reader: an org member with no
+            shared events reaches this screen too, so nothing here may assume
+            "new user". */}
+        <p className="text-sm text-muted-foreground">
+          כל אירוע מתנהל בעמוד אחד — הוספת מוזמנים, שליחת הזמנות ומעקב אחר אישורי הגעה.
+        </p>
+      </div>
 
-      <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        <div className="rounded-lg border border-border bg-card p-5">
-          <p className="text-sm text-muted-foreground">סך האירועים</p>
-          <p className="mt-2 text-3xl font-bold">{totalEvents}</p>
-        </div>
-        <div className="rounded-lg border border-border bg-card p-5">
-          <p className="text-sm text-muted-foreground">אירועים שאושרו</p>
-          <p className="mt-2 text-3xl font-bold">{activeEvents}</p>
-        </div>
-        <Link
-          href="/app/events/new"
-          className="flex flex-col justify-center gap-2 rounded-lg border border-dashed border-border bg-card p-5 transition-colors hover:border-primary hover:bg-accent"
-        >
-          <span className="flex items-center gap-2 font-medium text-primary">
-            <Plus className="size-5" aria-hidden />
-            אירוע חדש
-          </span>
-          <span className="text-sm text-muted-foreground">צרו אירוע והתחילו לאסוף אישורי הגעה.</span>
-        </Link>
-      </section>
-
-      <section className="space-y-3">
-        <div className="flex items-center justify-between gap-4">
-          <h2 className="text-lg font-semibold">אירועים אחרונים</h2>
-          <Link href="/app/events" className="text-sm font-medium text-primary hover:underline">
-            לכל האירועים
-          </Link>
-        </div>
-
-        {totalEvents === 0 ? (
-          <div className="flex flex-col items-center gap-3 rounded-lg border border-dashed border-border p-10 text-center">
-            <CalendarDays className="size-8 text-muted-foreground" aria-hidden />
-            <p className="text-muted-foreground">עדיין אין אירועים. צרו את האירוע הראשון שלכם.</p>
-            <Link
-              href="/app/events/new"
-              className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:opacity-90"
-            >
-              אירוע חדש
-            </Link>
-          </div>
-        ) : (
-          <ul className="divide-y divide-border rounded-lg border border-border">
-            {recentEvents.map((event) => (
-              <li key={event.id} className="flex items-center justify-between gap-4 px-4 py-3">
-                <Link href={`/app/events/${event.id}`} className="min-w-0">
-                  <p className="truncate font-medium">{event.name}</p>
-                  <p className="truncate text-sm text-muted-foreground">
-                    {[
-                      EVENT_TYPE_LABELS[event.event_type] ?? event.event_type,
-                      // Israel calendar date — timeZone-pinned, never a UTC slice.
-                      event.event_date ? formatIsraelDate(event.event_date) : null,
-                      event.venue_name,
-                    ]
-                      .filter(Boolean)
-                      .join(' · ') || 'ללא פרטים'}
-                  </p>
-                </Link>
-                <span className="shrink-0 rounded-full border border-border px-3 py-1 text-xs text-muted-foreground">
-                  {EVENT_STATUS_LABELS[event.status] ?? event.status}
-                </span>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
+      {/* cn(), not buttonVariants({ className }): the exported cva fn
+          concatenates without tailwind-merge (see components/ui/button.tsx). */}
+      <Link href="/app/events/new" className={cn(buttonVariants(), 'h-11 w-full')}>
+        יצירת האירוע הראשון
+      </Link>
     </div>
   );
 }

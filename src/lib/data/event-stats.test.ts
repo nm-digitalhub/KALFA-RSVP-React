@@ -98,13 +98,37 @@ describe('deriveStatsAlerts (pure)', () => {
     expect(alerts.map((a) => a.id)).toContain('ceiling_near_usage');
   });
 
-  it('campaign_closed_not_settled when status=closed && finalChargeAmount==null', () => {
-    const alerts = deriveStatsAlerts({ campaign: { status: 'closed', finalChargeAmount: null } });
-    expect(alerts.map((a) => a.id)).toContain('campaign_closed_not_settled');
-  });
+  // ח2: campaignStage() folds all four of these into the 'closed' stage, and the
+  // DB close guard lets an event close while the campaign sits in the last three
+  // — so comparing the RAW status missed a reachable unsettled state.
+  const STAGE_CLOSED_STATUSES = ['closed', 'awaiting_invoice', 'billed', 'paid'] as const;
+
+  it.each([...STAGE_CLOSED_STATUSES])(
+    'campaign_closed_not_settled when status=%s (stage closed) && finalChargeAmount==null',
+    (status) => {
+      const alerts = deriveStatsAlerts({
+        campaign: { status, captureStatus: null, finalChargeAmount: null },
+      });
+      expect(alerts.map((a) => a.id)).toContain('campaign_closed_not_settled');
+    },
+  );
 
   it('no campaign_closed_not_settled when settled', () => {
-    const alerts = deriveStatsAlerts({ campaign: { status: 'closed', finalChargeAmount: 50 } });
+    const alerts = deriveStatsAlerts({
+      campaign: { status: 'closed', captureStatus: null, finalChargeAmount: 50 },
+    });
+    expect(alerts.map((a) => a.id)).not.toContain('campaign_closed_not_settled');
+  });
+
+  it('no campaign_closed_not_settled while the campaign is still operational', () => {
+    const alerts = deriveStatsAlerts({
+      campaign: { status: 'active', captureStatus: 'authorized', finalChargeAmount: null },
+    });
+    expect(alerts.map((a) => a.id)).not.toContain('campaign_closed_not_settled');
+  });
+
+  it('no campaign_closed_not_settled without a campaign status', () => {
+    const alerts = deriveStatsAlerts({ campaign: { status: null, finalChargeAmount: null } });
     expect(alerts.map((a) => a.id)).not.toContain('campaign_closed_not_settled');
   });
 });
@@ -168,6 +192,8 @@ describe('getEventStats orchestration', () => {
     const r = await getEventStats('evt-1');
     expect(r.campaign.state).toBe('visible');
     expect(r.campaign.billing).toBeNull();
+    // the zero-query billing breakdown sits behind the SAME billing.view gate
+    expect(r.campaign.billingDetail).toBeNull();
     expect(getCampaignBillingSummary).not.toHaveBeenCalled();
     // operational reached still derived from delivery (campaigns.view only)
     expect(r.campaign.reachedCount).toBe(1);
@@ -177,12 +203,70 @@ describe('getEventStats orchestration', () => {
     vi.mocked(canAccessEvent).mockResolvedValue(true);
     getEventMock.mockResolvedValue({ id: 'evt-1', name: 'E', event_type: 'wedding', event_date: null, rsvp_deadline: null, status: 'active' });
     getGuestTotalsMock.mockResolvedValue(mkTotals({ rows: 4 }));
-    getCampaignForEventMock.mockResolvedValue({ id: 'c-1', status: 'closed', capture_status: 'captured', max_contacts: 100, final_charge_amount: null });
+    getCampaignForEventMock.mockResolvedValue({
+      id: 'c-1',
+      status: 'closed',
+      capture_status: 'captured',
+      max_contacts: 100,
+      base_price: 350,
+      included_reached: 100,
+      price_per_reached: 2.5,
+      final_charge_amount: 420,
+      credit_applied: 0,
+      charge_status: 'nothing_to_charge',
+    });
     getCampaignDeliveryBreakdownMock.mockResolvedValue({ delivery: { sent: 2, delivered: 2, read: 1, failed: 0 }, outcome: { reached: 2, wrongNumber: 0, optedOut: 0 } });
     getCampaignBillingSummaryMock.mockResolvedValue({ reachedCount: 2, accrued: 90, ceiling: 100, maxContacts: 100 });
     const r = await getEventStats('evt-1');
     expect(getCampaignBillingSummary).toHaveBeenCalledWith('c-1');
     expect(r.campaign.billing).toEqual({ reachedCount: 2, accrued: 90, ceiling: 100, maxContacts: 100 });
+    // the six-field breakdown comes off the already-loaded campaign row
+    expect(r.campaign.billingDetail).toEqual({
+      basePrice: 350,
+      includedReached: 100,
+      pricePerReached: 2.5,
+      finalChargeAmount: 420,
+      creditApplied: 0,
+      chargeStatus: 'nothing_to_charge',
+    });
+  });
+
+  // ח2 end-to-end: an event that closed legally with the campaign still in
+  // awaiting_invoice and no final charge. The raw-status comparison missed it.
+  it('awaiting_invoice campaign with no final charge still raises campaign_closed_not_settled', async () => {
+    vi.mocked(canAccessEvent).mockResolvedValue(true);
+    getEventMock.mockResolvedValue({
+      id: 'evt-1',
+      name: 'E',
+      event_type: 'wedding',
+      event_date: null,
+      venue_name: 'אולם הדקל',
+      rsvp_deadline: null,
+      status: 'closed',
+    });
+    getGuestTotalsMock.mockResolvedValue(mkTotals({ rows: 4 }));
+    getCampaignForEventMock.mockResolvedValue({
+      id: 'c-1',
+      status: 'awaiting_invoice',
+      capture_status: 'authorized',
+      max_contacts: 100,
+      base_price: 350,
+      included_reached: 100,
+      price_per_reached: 2.5,
+      final_charge_amount: null,
+      credit_applied: 0,
+      charge_status: null,
+    });
+    getCampaignDeliveryBreakdownMock.mockResolvedValue({ delivery: { sent: 2, delivered: 2, read: 1, failed: 0 }, outcome: { reached: 2, wrongNumber: 0, optedOut: 0 } });
+    // the summary RPC can legitimately come back null…
+    getCampaignBillingSummaryMock.mockResolvedValue(null);
+    const r = await getEventStats('evt-1');
+    expect(r.alerts.map((a) => a.id)).toContain('campaign_closed_not_settled');
+    expect(r.event?.venue).toBe('אולם הדקל');
+    expect(r.campaign.billing).toBeNull();
+    // …without taking the zero-query breakdown down with it
+    expect(r.campaign.billingDetail?.basePrice).toBe(350);
+    expect(r.campaign.billingDetail?.chargeStatus).toBeNull();
   });
 
   it('operational failure after auth → error flag, no raw error exposed', async () => {

@@ -123,36 +123,6 @@ export async function listEvents(
   return data ?? [];
 }
 
-export interface EventCounts {
-  total: number;
-  active: number;
-}
-
-// RLS-scoped event counts (owner + shared-org, like listEvents) via head queries
-// (count only, no rows loaded) — the dashboard cards must reflect ALL visible
-// events, independent of the recent-events page size (which previously capped
-// both counts at the list limit).
-export async function getEventCounts(): Promise<EventCounts> {
-  await requireUser();
-  const supabase = await createClient();
-
-  const [totalRes, activeRes] = await Promise.all([
-    supabase
-      .from('events')
-      .select('id', { count: 'exact', head: true }),
-    supabase
-      .from('events')
-      .select('id', { count: 'exact', head: true })
-      .eq('status', 'active'),
-  ]);
-
-  if (totalRes.error || activeRes.error) {
-    throw new Error('טעינת מונה האירועים נכשלה');
-  }
-
-  return { total: totalRes.count ?? 0, active: activeRes.count ?? 0 };
-}
-
 export interface CreateEventInput {
   // Optional server-generated id (crypto.randomUUID()). The create action
   // supplies it when an invitation image was uploaded AHEAD of the row (the
@@ -537,6 +507,57 @@ export async function getEventClosureReason(
     .maybeSingle();
   if (error || !data) return null;
   return CLOSURE_ACTIONS[data.action] ?? null;
+}
+
+// Batched sibling of getEventClosureReason, for LIST screens (entry-routing
+// plan §7): ONE query for every event on the page instead of one per row.
+// The `.in('event_id', …)` shape is the established data-layer precedent
+// (admin/users.ts:270,275 · admin/callbacks.ts:653).
+//
+// AUTHORIZATION — unchanged from the single-event helper, no new surface: the
+// ids come from listEvents (already RLS-scoped), and the activity_log read is
+// itself RLS-scoped (al_org_read), so an id the caller may not see simply
+// returns no row. Nothing here is decided from a browser-supplied identifier.
+//
+// SEMANTICS — identical to getEventClosureReason, per event: an event with no
+// matching log row is ABSENT from the map, which the caller reads as null. A
+// non-closed event and a closed event whose log entry predates this labeling
+// therefore render the same way, never a guess at the real cause.
+export async function getEventClosureReasons(
+  eventIds: readonly string[],
+): Promise<Map<string, EventClosureReason>> {
+  const byEvent = new Map<string, EventClosureReason>();
+  // No ids → no round trip at all (a list holding no closed event pays nothing).
+  if (eventIds.length === 0) return byEvent;
+
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from('activity_log')
+    .select('event_id, action')
+    .in('event_id', [...eventIds])
+    // The SAME action→reason map the single-event helper uses — one source of
+    // truth for which actions close an event and what each one means.
+    .in('action', Object.keys(CLOSURE_ACTIONS))
+    .order('created_at', { ascending: false });
+
+  // Fail-soft, like getEventClosureReason: a failed read renders as "reason
+  // unknown" (an unadorned status label), never an error page over a badge.
+  if (error || !data) return byEvent;
+
+  for (const row of data) {
+    if (!row.event_id) continue; // activity_log.event_id is nullable in the schema
+    // Newest-first above ⇒ the FIRST row seen per event is the latest one, and
+    // an older row for the same event must not overwrite it. This is the
+    // batched equivalent of the single-event helper's `.limit(1)`, not a new
+    // assumption: the three closing actions each re-check the live status
+    // before writing, so a second row per event is not expected in the first
+    // place.
+    if (byEvent.has(row.event_id)) continue;
+    const reason = CLOSURE_ACTIONS[row.action];
+    if (reason) byEvent.set(row.event_id, reason);
+  }
+
+  return byEvent;
 }
 
 // Thin boolean VISIBILITY helper ONLY (NOT an auth gate).

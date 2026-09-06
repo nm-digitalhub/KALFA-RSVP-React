@@ -16,6 +16,7 @@ import {
   EVENT_TYPE_LOCKED_ERROR,
   getEvent,
   getEventClosureReason,
+  getEventClosureReasons,
   isBeforeTomorrowIL,
   isPastEventDay,
   listEvents,
@@ -979,6 +980,98 @@ describe('getEventClosureReason', () => {
     );
     const r = await getEventClosureReason('event-1');
     expect(r).toBeNull();
+  });
+});
+
+// The BATCHED loader the events list uses (entry-routing plan §7). Its whole
+// reason to exist is that the list must not call getEventClosureReason once per
+// row, so "how many queries" is part of the contract, not an implementation
+// detail — assert it like one.
+describe('getEventClosureReasons (batched)', () => {
+  // The rows the batched select returns: the id to key by plus the action to map.
+  type ClosureRow = { event_id: string | null; action: string };
+
+  it('resolves the whole list in ONE query — .in() on the ids and on all three closing actions', async () => {
+    const { client, builder } = createMockSupabase<ClosureRow[]>({
+      data: [
+        { event_id: 'event-1', action: 'event.closed_by_admin' },
+        { event_id: 'event-2', action: 'event.closed' },
+      ],
+      error: null,
+    });
+    vi.mocked(createClient).mockResolvedValue(
+      client as unknown as Awaited<ReturnType<typeof createClient>>,
+    );
+
+    const reasons = await getEventClosureReasons(['event-1', 'event-2', 'event-3']);
+
+    // ONE round trip for the whole page — the N+1 this loader exists to avoid.
+    expect(client.from).toHaveBeenCalledTimes(1);
+    expect(client.from).toHaveBeenCalledWith('activity_log');
+    expect(builder.in).toHaveBeenCalledWith('event_id', ['event-1', 'event-2', 'event-3']);
+    // All three closing actions ride that same query — dropping one would
+    // silently turn its events back into "no reason known".
+    expect(builder.in).toHaveBeenCalledWith('action', [
+      'event.closed',
+      'event.closed_by_settlement',
+      'event.closed_by_admin',
+    ]);
+
+    expect(reasons.get('event-1')).toBe('cancellation');
+    expect(reasons.get('event-2')).toBe('owner');
+    // An id with no closure row is ABSENT, which the caller reads as null —
+    // the same rendering as a legacy close, never a guessed cause.
+    expect(reasons.get('event-3')).toBeUndefined();
+  });
+
+  it('keeps the LATEST row per event, and asks the DB for newest-first', async () => {
+    const { client, builder } = createMockSupabase<ClosureRow[]>({
+      // Two closure rows for one event, newest first — the order the query asks for.
+      data: [
+        { event_id: 'event-1', action: 'event.closed_by_admin' },
+        { event_id: 'event-1', action: 'event.closed' },
+      ],
+      error: null,
+    });
+    vi.mocked(createClient).mockResolvedValue(
+      client as unknown as Awaited<ReturnType<typeof createClient>>,
+    );
+
+    const reasons = await getEventClosureReasons(['event-1']);
+
+    // The older 'owner' row must not overwrite the newer 'cancellation' one.
+    expect(reasons.get('event-1')).toBe('cancellation');
+    // "Latest" only means anything if the QUERY sorts: the mock replays the
+    // array exactly as given, so without this assertion the expectation above
+    // would still pass with no ordering at all and production would take an
+    // arbitrary row. Same ordering as getEventClosureReason's .limit(1).
+    expect(builder.order).toHaveBeenCalledWith('created_at', { ascending: false });
+  });
+
+  it('makes NO query at all for an empty id list (a list with no closed event)', async () => {
+    const { client } = createMockSupabase<ClosureRow[]>({ data: [], error: null });
+    vi.mocked(createClient).mockResolvedValue(
+      client as unknown as Awaited<ReturnType<typeof createClient>>,
+    );
+
+    const reasons = await getEventClosureReasons([]);
+
+    expect(reasons.size).toBe(0);
+    expect(client.from).not.toHaveBeenCalled();
+  });
+
+  it('returns an empty map on a query error, never throws (a badge is not an error page)', async () => {
+    const { client } = createMockSupabase<ClosureRow[]>({
+      data: null,
+      error: { message: 'db down' },
+    });
+    vi.mocked(createClient).mockResolvedValue(
+      client as unknown as Awaited<ReturnType<typeof createClient>>,
+    );
+
+    const reasons = await getEventClosureReasons(['event-1']);
+
+    expect(reasons.size).toBe(0);
   });
 });
 
