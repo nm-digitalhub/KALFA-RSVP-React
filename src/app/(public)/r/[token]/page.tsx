@@ -8,6 +8,7 @@ import { getClientIp, rateLimit } from '@/lib/security/rate-limit';
 import { tokenFingerprint } from '@/lib/security/token-fingerprint';
 
 import { RsvpForm } from './rsvp-form';
+import { GuestShell } from '@/components/guest/guest-shell';
 
 // Always render per-request: the response is guest-specific and must never be
 // cached or prerendered. Response headers (no-store, no-referrer) are set for
@@ -31,14 +32,6 @@ function looksLikeToken(token: string): boolean {
   );
 }
 
-function Shell({ children }: { children: React.ReactNode }) {
-  return (
-    <main className="mx-auto flex min-h-svh max-w-md flex-col justify-center gap-6 px-4 py-12">
-      {children}
-    </main>
-  );
-}
-
 export default async function RsvpPage({
   params,
 }: {
@@ -54,14 +47,14 @@ export default async function RsvpPage({
   const gate = rateLimit(`rsvp:read:${fp}:${ip}`, RSVP_READ_RATE);
   if (!gate.allowed) {
     return (
-      <Shell>
+      <GuestShell width="md">
         <p
           role="alert"
           className="rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-800"
         >
           נשלחו יותר מדי בקשות. נא לנסות שוב בעוד רגע.
         </p>
-      </Shell>
+      </GuestShell>
     );
   }
 
@@ -70,14 +63,14 @@ export default async function RsvpPage({
     // One generic message for unknown / revoked / expired / inactive — never
     // reveal which, to avoid leaking token validity.
     return (
-      <Shell>
+      <GuestShell width="md">
         <p
           role="alert"
           className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700"
         >
           קישור אישור ההגעה אינו תקף, פג תוקפו או בוטל.
         </p>
-      </Shell>
+      </GuestShell>
     );
   }
 
@@ -112,13 +105,13 @@ export default async function RsvpPage({
   }
 
   return (
-    <Shell>
+    <GuestShell width="md">
       <RsvpForm
         token={token}
         view={view}
         inviteImageUrl={inviteImageUrl}
         attendees={attendees}
       />
-    </Shell>
+    </GuestShell>
   );
 }

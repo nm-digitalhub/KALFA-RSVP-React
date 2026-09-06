@@ -7,6 +7,7 @@ import { tokenFingerprint } from '@/lib/security/token-fingerprint';
 import { RATING_VIEW_RATE } from '@/lib/constants';
 
 import { RatingForm } from './rating-form';
+import { GuestShell } from '@/components/guest/guest-shell';
 
 // Always render per-request: the response depends on the token and must
 // never be cached or prerendered. Response headers (no-store, no-referrer,
@@ -23,14 +24,6 @@ export const metadata: Metadata = {
 // no legacy generation path to tolerate, unlike guests.rsvp_token, so the
 // strict shape (not r/[token]'s lenient one) applies from day one.
 const TOKEN_RE = /^[0-9a-f]{32}$/;
-
-function Shell({ children }: { children: React.ReactNode }) {
-  return (
-    <main className="mx-auto flex min-h-svh max-w-lg flex-col justify-center gap-6 px-4 py-10">
-      {children}
-    </main>
-  );
-}
 
 const VALID_SCORES = new Set(['1', '2', '3']);
 
@@ -56,11 +49,11 @@ export default async function RatingPage({
   const gate = rateLimit(`rating:view:${fp}:${ip}`, RATING_VIEW_RATE);
   if (!gate.allowed) {
     return (
-      <Shell>
+      <GuestShell>
         <p role="alert" className="rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-800">
           נשלחו יותר מדי בקשות. נא לנסות שוב בעוד רגע.
         </p>
-      </Shell>
+      </GuestShell>
     );
   }
 
@@ -69,17 +62,17 @@ export default async function RatingPage({
     // One generic message for unknown / never-requested / DB error — never
     // reveal which, to avoid leaking token validity.
     return (
-      <Shell>
+      <GuestShell>
         <p role="alert" className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">
           הקישור אינו תקף או שאינו זמין עוד.
         </p>
-      </Shell>
+      </GuestShell>
     );
   }
 
   return (
-    <Shell>
+    <GuestShell>
       <RatingForm token={token} initialScore={initialScore} />
-    </Shell>
+    </GuestShell>
   );
 }
