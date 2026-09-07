@@ -37,6 +37,13 @@ const GRAPH = 'https://graph.microsoft.com/v1.0';
 const REST = `https://${SP_HOST}${SITE_PATH}/_api`;
 
 const DRY_RUN = process.argv.includes('--dry-run');
+// _ARCHIVE-RULES.md is created once and then never touched again, so a
+// correction to the README constant above reaches the repo and NOT the archive
+// — which is exactly how the live copy drifted (its filename templates were
+// rendering empty in SharePoint for anyone reading them). Overwriting a file in
+// a contracts library is not something a routine provisioning run should ever
+// do by itself, so it stays opt-in and explicit.
+const FORCE_RULES = process.argv.includes('--force-rules');
 const YEAR = new Date().getFullYear().toString();
 
 // ─── File plan ──────────────────────────────────────────────────────────────
@@ -315,17 +322,76 @@ const REQUIRED_ON_CONTRACTS = ['Counterparty', 'ContractType', 'EffectiveDate'];
 // Columns added to the default "All Documents" view of each library.
 const DEFAULT_VIEW_FIELDS = ['Counterparty', 'ContractType', 'EffectiveDate', 'ExpiryDate', 'Status', 'RetentionUntil', 'DataClass'];
 
+// The short rules that live inside the archive itself (Contracts/_ARCHIVE-RULES.md).
+//
+// EVERY FILENAME TEMPLATE IS WRAPPED IN BACKTICKS, and that is load-bearing, not
+// cosmetic. SharePoint renders this file as Markdown, and two separate mechanisms
+// silently destroyed the templates in the rendered view (measured 2026-09-07 in
+// the live library, source pane intact, preview pane wrong):
+//
+//   1. Angle-bracket placeholders that look like VALID HTML tag names were parsed
+//      as tags and dropped. `<agreement_version>` survived on the same line — an
+//      underscore is illegal in a tag name, so that one stayed text. That
+//      contrast is what identified the mechanism.
+//   2. `_` is our FIELD SEPARATOR and Markdown's emphasis marker, so `_v<N>_`
+//      rendered italic and the underscores themselves vanished.
+//
+// Hence BOTH defences, and both are needed:
+//   * The code span kills the emphasis (and the tag parsing in this renderer).
+//   * {braces} instead of <angle brackets> kill the tag parsing everywhere else.
+//
+// The braces are not belt-and-braces paranoia. Backticks alone fixed SharePoint's
+// document preview and did NOT fix Copilot, which reads the raw Markdown and
+// re-emits it into its own HTML chat pane — measured 2026-09-07: the preview
+// showed the full template while Copilot's generated FAQ, from the same file,
+// still printed `YYYY-MM-DD___v_.pdf`. No source formatting can reach a consumer
+// that strips tags on OUTPUT; removing the angle brackets is what survives it.
+// Anyone editing this text must keep both the backticks and the braces.
+//
+// Escaped as \` because this is a template literal.
 const README = `# כללי הארכיון — Contracts
 
 מסמך התכנון המלא: docs/sharepoint-contracts-archive-plan-2026-09-06.md במאגר הקוד.
+במקרה של סתירה — המסמך המלא גובר.
 
 1. רשומה אחת, מקום אחד: חוזה חתום קיים רק כאן. טיוטות ומו"מ ב-Contracts-Working בלבד.
+
 2. אי-שינוי: PDF חתום לא נערך לעולם. תיקון = קובץ חדש, עם "מתקן את" שמצביע על הקובץ המקורי.
-3. שם קובץ: YYYY-MM-DD_<Counterparty>_<DocType>_v<N>_<status>.pdf — תאריך החתימה (לא ההעלאה), ASCII בלבד, "_" בין שדות, "-" בתוך שדה.
-4. בקליטה ממלאים: צד שני, סוג מסמך, תאריך חתימה, תאריך סיום, שימור עד, SHA-256, סיווג מידע.
-5. שימור עד = 31 בדצמבר של שנת סיום החוזה + 7 שנים (הסכמי לקוחות: שנת המס של האירוע). ביעור רק דרך התצוגה "Due-for-disposition", אחרי בדיקת "הקפאה משפטית", ועם רישום ב-Disposition-Log.
-7. הקפאה משפטית (LegalHold) עוצרת ביעור בלי קשר לתאריך השימור. מסירים אותה רק בכתב.
-6. עומק תיקיות: קטגוריה / צד שני. בלי תיקיות שנה, בלי תיקיות "פעיל/סגור" — סטטוס הוא מטא-דאטה.
+
+3. שם קובץ — חוזי ספקים ותאגיד:
+   \`YYYY-MM-DD_{Counterparty}_{DocType}_v{N}_{status}.pdf\`
+   התאריך הוא תאריך החתימה או התחילה, לא ההעלאה.
+   status הוא אחד מתוך: signed, countersigned, amendment, termination.
+   ב-Contracts-Working הסיומת היא \`_draft-v{N}\`.
+
+4. שם קובץ — הסכמי לקוחות (Customer-Agreements), בלי שם ובלי טלפון:
+   \`YYYY-MM-DD_CA_{campaign-id-8}_v{agreement_version}_{sha256-8}.pdf\`
+   שם הקובץ עובר ב-URL ובלוגים, ולכן הוא מבוסס מזהים בלבד. פרטי הלקוח נשמרים
+   במטא-דאטה, לא בשם. campaign-id-8 = 8 התווים הראשונים של מזהה הקמפיין;
+   sha256-8 = 8 התווים הראשונים של ה-hash של הקובץ.
+
+5. תווים: ASCII בלבד, "_" בין שדות, "-" בתוך שדה. בלי רווחים, עד 100 תווים,
+   ובלי התווים: \`# % & * : < > ? / \\ { | } ~\`
+
+6. שדות בקליטה. חובה (ב-Contracts בלבד): צד שני, סוג מסמך, תאריך חתימה.
+   ממלאים גם, כשידוע: תאריך סיום, שימור עד, סיווג מידע, מזהה חיצוני.
+   SHA-256 אינו שדה חובה — המשימה השבועית משלימה אותו.
+   ב-Customer-Agreements אין שדות חובה בכוונה: שדה חובה משאיר קובץ שהועלה
+   ב-API במצב checked-out, וזה עוצר את הייצוא האוטומטי.
+
+7. שימור עד = 31 בדצמבר של שנת הסיום + 7 שנים.
+   הסכם לקוח: שנת הסיום היא שנת האירוע או שנת הסליקה — המאוחרת מביניהן.
+   חוזה ספק בלי מועד סיום: משאירים את השדה ריק, וממלאים אותו כשההתקשרות מסתיימת.
+
+8. ביעור רק דרך התצוגה "Due-for-disposition", אחרי בדיקת "הקפאה משפטית",
+   ורק אחרי רישום שורה ב-Disposition-Log. היומן עצמו נשמר 24 חודשים לפחות
+   אחרי הביעור האחרון שנרשם בו.
+
+9. הקפאה משפטית (LegalHold) עוצרת ביעור בלי קשר לתאריך השימור.
+   מסירים אותה רק בכתב, ורושמים ב-ArchiveNotes מי ומתי.
+
+10. עומק תיקיות: קטגוריה / צד שני. בלי תיקיות שנה, בלי תיקיות "פעיל/סגור" —
+    סטטוס הוא מטא-דאטה.
 `;
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
@@ -540,8 +606,14 @@ async function ensureReadme(g, driveId, libName) {
   }
   try {
     await g.get(`/drives/${driveId}/root:/_ARCHIVE-RULES.md?$select=id`);
-    log(`  ${libName}/_ARCHIVE-RULES.md exists`);
-    return;
+    if (!FORCE_RULES) {
+      log(`  ${libName}/_ARCHIVE-RULES.md exists (use --force-rules to refresh it)`);
+      return;
+    }
+    // The PUT below replaces the content in place, so the library keeps the item
+    // and its version history — the previous text stays recoverable rather than
+    // being deleted and re-created under a new id.
+    log(`  ${libName}/_ARCHIVE-RULES.md exists — refreshing (--force-rules)`);
   } catch (e) {
     if (e.status !== 404) throw e;
   }
