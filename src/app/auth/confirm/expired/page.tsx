@@ -4,7 +4,10 @@ import Link from 'next/link';
 import { isConfirmOtpType } from '../otp-types';
 import { ResendConfirmationForm } from './resend-form';
 
-export const metadata: Metadata = { title: 'הקישור פג תוקף' };
+export const metadata: Metadata = {
+  title: 'הקישור פג תוקף',
+  description: 'קישור ההתחברות ל‑KALFA פג תוקף; אפשר לבקש קישור חדש.',
+};
 
 // Where a dead auth link lands, instead of dumping the user on /auth/login with
 // no explanation of what just happened.

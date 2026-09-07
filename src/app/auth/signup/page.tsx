@@ -5,7 +5,10 @@ import { BarChart3, CircleCheck, Send } from 'lucide-react';
 
 import { SignupForm } from './signup-form';
 
-export const metadata: Metadata = { title: 'הרשמה' };
+export const metadata: Metadata = {
+  title: 'הרשמה',
+  description: 'פתיחת חשבון KALFA ויצירת האירוע הראשון לניהול אישורי הגעה.',
+};
 
 // Panel copy/feature list are a working draft carried over from the approved
 // design canvas — not yet signed off as final product copy.

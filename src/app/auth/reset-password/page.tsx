@@ -4,7 +4,10 @@ import Link from 'next/link';
 import { createClient } from '@/lib/supabase/server';
 import { ResetPasswordForm } from './reset-password-form';
 
-export const metadata: Metadata = { title: 'איפוס סיסמה' };
+export const metadata: Metadata = {
+  title: 'איפוס סיסמה',
+  description: 'בחירת סיסמה חדשה לחשבון KALFA.',
+};
 
 // Reached after /auth/confirm (verifyOtp type=recovery) has established a session.
 // getUser() verifies that session with the Auth server; without a valid one the

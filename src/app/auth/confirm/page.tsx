@@ -6,7 +6,10 @@ import { resolveAppRedirectPath } from '@/lib/url';
 import { confirmOtp } from './actions';
 import { isConfirmOtpType } from './otp-types';
 
-export const metadata: Metadata = { title: 'אימות התחברות' };
+export const metadata: Metadata = {
+  title: 'אימות התחברות',
+  description: 'אימות קישור ההתחברות לחשבון KALFA.',
+};
 
 // Interstitial landing for Supabase auth email links (recovery / magic-link /
 // invite / email-change / email confirmation). We deliberately do NOT verify the

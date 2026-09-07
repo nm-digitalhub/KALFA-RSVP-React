@@ -3,7 +3,10 @@ import Link from 'next/link';
 
 import { ForgotPasswordForm } from './forgot-password-form';
 
-export const metadata: Metadata = { title: 'שכחתי סיסמה' };
+export const metadata: Metadata = {
+  title: 'שכחתי סיסמה',
+  description: 'שליחת קישור לאיפוס הסיסמה לחשבון KALFA.',
+};
 
 export default function ForgotPasswordPage() {
   return (

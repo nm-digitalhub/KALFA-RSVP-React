@@ -5,7 +5,10 @@ import { GaFlagListener } from '@/components/consent/ga-flag-listener';
 import { GoogleAnalyticsGated } from '@/components/consent/google-analytics-gated';
 import { getCookieConsentPublicConfig } from '@/lib/consent/admin-config';
 
-export const metadata = { title: 'ההרשמה הצליחה' };
+export const metadata = {
+  title: 'ההרשמה הצליחה',
+  description: 'החשבון ב‑KALFA נוצר; נשלח אליכם מייל לאימות הכתובת.',
+};
 
 // Post-signup interstitial shown after a successful registration that requires
 // email confirmation. The signup action redirects here instead of showing an

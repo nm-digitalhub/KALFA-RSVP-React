@@ -4,7 +4,10 @@ import Link from 'next/link';
 import { LoginForm } from './login-form';
 import { PasskeySignInButton } from './passkey-sign-in-button';
 
-export const metadata: Metadata = { title: 'התחברות' };
+export const metadata: Metadata = {
+  title: 'התחברות',
+  description: 'כניסה לחשבון KALFA לניהול אישורי ההגעה של האירוע שלכם.',
+};
 
 export default function LoginPage() {
   return (
