@@ -3,7 +3,7 @@ import Link from 'next/link';
 import { notFound, unstable_rethrow } from 'next/navigation';
 import { ChevronRight } from 'lucide-react';
 
-import { isAdmin } from '@/lib/auth/dal';
+import { hasPlatformPermission } from '@/lib/auth/dal';
 import {
   getCampaignDeliveryForAdminView,
   getCampaignForAdminView,
@@ -46,7 +46,16 @@ export default async function CampaignManagePage({
 }) {
   const { id: eventId, campaignId } = await params;
 
-  const admin = await isAdmin();
+  // The branch key is the SAME permission the admin readers below actually
+  // enforce (getEventForAdminView / getCampaignForAdminView both gate on
+  // requirePlatformPermission('manage_billing')) — NOT the legacy coarse
+  // isAdmin(). Keying the branch on isAdmin() misaligned the two layers both
+  // ways: a legacy admin without platform manage_billing chose the admin branch
+  // and was redirected by the reader, while a manage_billing staffer without
+  // the legacy flag fell to the owner branch and 404'd on RLS. (Verified live
+  // 2026-09-07: every legacy admin currently holds a platform_staff row, so
+  // nobody loses access in the rekey.)
+  const admin = await hasPlatformPermission('manage_billing');
   const event = admin
     ? await getEventForAdminView(eventId)
     : await requireEventAccess(eventId, 'campaigns', 'view');
@@ -140,8 +149,13 @@ export default async function CampaignManagePage({
   return (
     <div className="mx-auto w-full max-w-7xl space-y-6">
       <header>
+        {/* Staff enter through the admin door (/admin/campaigns, /admin/events)
+            and must leave through it too: /app/events/[id] is the CUSTOMER
+            page, whose requireEventAccess has no staff branch — for staff the
+            old link was a guaranteed 404. The staff event page's own gate is
+            view_events, which every role holding manage_billing also holds. */}
         <Link
-          href={`/app/events/${eventId}`}
+          href={admin ? `/admin/events/${eventId}` : `/app/events/${eventId}`}
           className="inline-flex min-h-11 items-center gap-1 text-sm text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
         >
           <ChevronRight className="size-4" aria-hidden="true" />
