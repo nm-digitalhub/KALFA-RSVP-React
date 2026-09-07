@@ -218,10 +218,11 @@ export type CompanySettings = {
   privacy_url: string;
   terms_url: string;
   warranty_text: string;
+  company_instagram_url: string;
 };
 
 const COMPANY_COLUMNS =
-  'company_legal_name, company_legal_id, company_legal_address, company_contact_phone, company_contact_email, privacy_url, terms_url, warranty_text';
+  'company_legal_name, company_legal_id, company_legal_address, company_contact_phone, company_contact_email, privacy_url, terms_url, warranty_text, company_instagram_url';
 
 export async function getCompanySettings(): Promise<CompanySettings> {
   await requirePlatformPermission('manage_settings');
@@ -241,6 +242,7 @@ export async function getCompanySettings(): Promise<CompanySettings> {
     privacy_url: data?.privacy_url ?? '',
     terms_url: data?.terms_url ?? '',
     warranty_text: data?.warranty_text ?? '',
+    company_instagram_url: data?.company_instagram_url ?? '',
   };
 }
 
@@ -260,6 +262,7 @@ export async function updateCompanySettings(
       privacy_url: input.privacy_url || null,
       terms_url: input.terms_url || null,
       warranty_text: input.warranty_text || null,
+      company_instagram_url: input.company_instagram_url || null,
     })
     .eq('id', SETTINGS_ID);
   if (error) throw new Error('עדכון פרטי החברה נכשל');

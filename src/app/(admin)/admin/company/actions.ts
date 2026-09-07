@@ -30,6 +30,7 @@ export async function updateCompanyAction(
     privacy_url: formData.get('privacy_url') ?? '',
     terms_url: formData.get('terms_url') ?? '',
     warranty_text: formData.get('warranty_text') ?? '',
+    company_instagram_url: formData.get('company_instagram_url') ?? '',
   });
 
   if (!parsed.success) {

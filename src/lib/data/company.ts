@@ -15,6 +15,9 @@ export type CompanyLegal = {
   privacyUrl: string;
   termsUrl: string;
   warrantyText: string;
+  // Public Instagram profile URL → Organization.sameAs in the site JSON-LD.
+  // '' = omitted from the graph (never a placeholder).
+  instagramUrl: string;
 };
 
 // "033301505" / "03-330-1505" / "+972 3 3301505" → "+97233301505" for
@@ -33,7 +36,7 @@ export async function getCompanyLegal(): Promise<CompanyLegal> {
   const { data, error } = await admin
     .from('app_settings')
     .select(
-      'company_legal_name, company_legal_id, company_legal_address, company_contact_phone, company_contact_email, privacy_url, terms_url, warranty_text',
+      'company_legal_name, company_legal_id, company_legal_address, company_contact_phone, company_contact_email, privacy_url, terms_url, warranty_text, company_instagram_url',
     )
     .eq('id', true)
     .maybeSingle();
@@ -47,5 +50,6 @@ export async function getCompanyLegal(): Promise<CompanyLegal> {
     privacyUrl: data?.privacy_url ?? '',
     termsUrl: data?.terms_url ?? '',
     warrantyText: data?.warranty_text ?? '',
+    instagramUrl: data?.company_instagram_url ?? '',
   };
 }

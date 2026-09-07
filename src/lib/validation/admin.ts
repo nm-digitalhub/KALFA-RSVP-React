@@ -478,6 +478,16 @@ export const companySettingsSchema = z.object({
   privacy_url: z.string().trim(),
   terms_url: z.string().trim(),
   warranty_text: z.string().trim(),
+  // Emitted verbatim as Organization.sameAs, so it must be a real profile URL
+  // on instagram.com — an arbitrary string here would publish a bogus entity
+  // link in structured data. Empty is fine (field omitted).
+  company_instagram_url: z
+    .string()
+    .trim()
+    .refine(
+      (v) => v === '' || /^https:\/\/(www\.)?instagram\.com\/[A-Za-z0-9._]{1,30}\/?$/.test(v),
+      { error: 'כתובת פרופיל אינסטגרם לא תקינה (https://www.instagram.com/שם_משתמש/)' },
+    ),
 });
 export type CompanySettingsInput = z.infer<typeof companySettingsSchema>;
 

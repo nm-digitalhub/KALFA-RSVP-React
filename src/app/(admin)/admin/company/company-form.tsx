@@ -19,6 +19,7 @@ type CompanySettings = {
   privacy_url: string;
   terms_url: string;
   warranty_text: string;
+  company_instagram_url: string;
 };
 
 const inputClass =
@@ -131,6 +132,16 @@ export function CompanyForm({ settings }: { settings: CompanySettings }) {
           errors={e?.terms_url}
         />
       </div>
+
+      <Field
+        name="company_instagram_url"
+        label="פרופיל אינסטגרם"
+        defaultValue={settings.company_instagram_url}
+        type="url"
+        placeholder="https://www.instagram.com/kalfarsvp/"
+        hint="מתפרסם כ-sameAs בנתונים המובנים של האתר — כך Google מקשרת בין הפרופיל לאתר (נכס פלטפורמה ב-Search Console, Knowledge Graph). ריק = לא מתפרסם."
+        errors={e?.company_instagram_url}
+      />
 
       <div>
         <label htmlFor="warranty_text" className={labelClass}>

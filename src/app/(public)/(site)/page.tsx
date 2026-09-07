@@ -148,12 +148,14 @@ export default async function HomePage() {
   let orgPhone = '';
   let orgEmail = '';
   let orgAddress = '';
+  let orgInstagram = '';
   try {
     const company = await getCompanyLegal();
     orgLegalName = company.name.trim();
     orgPhone = toE164Israel(company.contactPhone);
     orgEmail = company.contactEmail.trim();
     orgAddress = company.address.trim();
+    orgInstagram = company.instagramUrl.trim();
   } catch {
     // omit optional org fields
   }
@@ -167,6 +169,11 @@ export default async function HomePage() {
         ...(orgLegalName ? { legalName: orgLegalName } : {}),
         url: `${origin}/`,
         logo: `${origin}/icons/icon.svg`,
+        // Entity identity: the same organization on other platforms. Google
+        // uses it for the Knowledge Graph and for linking a Search Console
+        // platform property (Instagram) to this verified site. Admin-managed
+        // (/admin/company) and omitted when unset — never a placeholder.
+        ...(orgInstagram ? { sameAs: [orgInstagram] } : {}),
         ...(orgPhone || orgEmail
           ? {
               contactPoint: {

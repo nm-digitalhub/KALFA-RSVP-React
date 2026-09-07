@@ -177,6 +177,7 @@ export type Database = {
           close_charge_enabled: boolean
           company_contact_email: string | null
           company_contact_phone: string | null
+          company_instagram_url: string | null
           company_legal_address: string | null
           company_legal_id: string | null
           company_legal_name: string | null
@@ -279,6 +280,7 @@ export type Database = {
           close_charge_enabled?: boolean
           company_contact_email?: string | null
           company_contact_phone?: string | null
+          company_instagram_url?: string | null
           company_legal_address?: string | null
           company_legal_id?: string | null
           company_legal_name?: string | null
@@ -381,6 +383,7 @@ export type Database = {
           close_charge_enabled?: boolean
           company_contact_email?: string | null
           company_contact_phone?: string | null
+          company_instagram_url?: string | null
           company_legal_address?: string | null
           company_legal_id?: string | null
           company_legal_name?: string | null
@@ -759,6 +762,7 @@ export type Database = {
           recording_url: string | null
           rsvp_digit: string | null
           rsvp_method: string | null
+          rsvp_outcome: string | null
           status: string
           token_expires_at: string
           touchpoint_index: number
@@ -794,6 +798,7 @@ export type Database = {
           recording_url?: string | null
           rsvp_digit?: string | null
           rsvp_method?: string | null
+          rsvp_outcome?: string | null
           status?: string
           token_expires_at: string
           touchpoint_index: number
@@ -829,6 +834,7 @@ export type Database = {
           recording_url?: string | null
           rsvp_digit?: string | null
           rsvp_method?: string | null
+          rsvp_outcome?: string | null
           status?: string
           token_expires_at?: string
           touchpoint_index?: number
