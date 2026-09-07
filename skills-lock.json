@@ -582,6 +582,11 @@
       "skillPath": "israeli-ai-compliance-kit/SKILL.md",
       "computedHash": "396dd919940bc643898b298dc08cc2e8d825c213f1ad557d04fb0341c33766d9"
     },
+    "israeli-chatbot-analytics": {
+      "source": "skills-il/developer-tools",
+      "sourceType": "github",
+      "computedHash": "0900caed1602b61023bac7df4d767049a2194e3cdb2a2690189c6fd8f5d59538"
+    },
     "israeli-content-marketing": {
       "source": "skills-il/marketing-growth",
       "sourceType": "github",
@@ -987,6 +992,12 @@
       "sourceType": "github",
       "skillPath": "skills/sentiment-trend-tracking/SKILL.md",
       "computedHash": "a245f37e41161a5c9eb9d20367b99276fd54bc9fe77068e4b23f23845de3a22e"
+    },
+    "seo": {
+      "source": "iannuttall/seo",
+      "sourceType": "github",
+      "skillPath": "skills/seo/SKILL.md",
+      "computedHash": "ef02b011f3c29b559bd46fa69c65f0db8822278e70f072a6503db356fb5114f7"
     },
     "setup-api-key": {
       "source": "elevenlabs/skills",
