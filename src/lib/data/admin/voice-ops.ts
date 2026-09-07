@@ -64,11 +64,25 @@ export interface EventActivityAgg {
   completed: number;
   noAnswer: number;
   failed: number;
-  rsvpFromCall: number;
+  // RSVP answers captured on calls, split by answer. Two capture paths feed
+  // these: the DTMF digit ('1'/'2') and the agent bridge's rsvp_outcome
+  // (attending/declined/maybe, written by save_rsvp). Until 2026-09-07 only
+  // the digit was counted — production agent calls showed 0 here while the
+  // guest list showed the RSVPs — and '2' (declined) was even counted under
+  // the "אישרו" column.
+  confirmedFromCall: number;
+  declinedFromCall: number;
+  maybeFromCall: number;
   lastActivityAt: string;
 }
 export function aggregateEventActivity(
-  rows: Array<{ event_id: string; status: string; rsvp_digit: string | null; created_at: string }>,
+  rows: Array<{
+    event_id: string;
+    status: string;
+    rsvp_digit: string | null;
+    rsvp_outcome: string | null;
+    created_at: string;
+  }>,
 ): EventActivityAgg[] {
   const byEvent = new Map<string, EventActivityAgg>();
   for (const a of rows) {
@@ -80,18 +94,39 @@ export function aggregateEventActivity(
         completed: 0,
         noAnswer: 0,
         failed: 0,
-        rsvpFromCall: 0,
+        confirmedFromCall: 0,
+        declinedFromCall: 0,
+        maybeFromCall: 0,
         lastActivityAt: a.created_at,
       };
     cur.attempts += 1;
     if (a.status === 'completed') cur.completed += 1;
     if (a.status === 'no_answer') cur.noAnswer += 1;
     if (a.status === 'failed') cur.failed += 1;
-    if (a.rsvp_digit === '1' || a.rsvp_digit === '2') cur.rsvpFromCall += 1;
+    const answer = callRsvpAnswer(a.rsvp_digit, a.rsvp_outcome);
+    if (answer === 'attending') cur.confirmedFromCall += 1;
+    if (answer === 'declined') cur.declinedFromCall += 1;
+    if (answer === 'maybe') cur.maybeFromCall += 1;
     if (a.created_at > cur.lastActivityAt) cur.lastActivityAt = a.created_at;
     byEvent.set(a.event_id, cur);
   }
   return [...byEvent.values()].sort((x, y) => y.lastActivityAt.localeCompare(x.lastActivityAt));
+}
+
+// The ONE definition of "what did this call's RSVP conclude", merging the two
+// capture paths. rsvp_outcome (the agent bridge, real answer incl. maybe) wins
+// over the digit — when both exist they describe the same conversation and the
+// agent's is the richer record. Exported so the admin pages and tests share it.
+export function callRsvpAnswer(
+  rsvpDigit: string | null,
+  rsvpOutcome: string | null,
+): 'attending' | 'declined' | 'maybe' | null {
+  if (rsvpOutcome === 'attending' || rsvpOutcome === 'declined' || rsvpOutcome === 'maybe') {
+    return rsvpOutcome;
+  }
+  if (rsvpDigit === '1') return 'attending';
+  if (rsvpDigit === '2') return 'declined';
+  return null;
 }
 
 export async function getVoiceDashboardSummary(
@@ -155,7 +190,9 @@ export interface EventCallActivity {
   completed: number;
   noAnswer: number;
   failed: number;
-  rsvpFromCall: number;
+  confirmedFromCall: number;
+  declinedFromCall: number;
+  maybeFromCall: number;
   lastActivityAt: string;
 }
 
@@ -172,7 +209,7 @@ export async function listEventsWithCallActivity(
 
   const { data: rows } = await admin
     .from('call_attempts')
-    .select('event_id, status, rsvp_digit, created_at')
+    .select('event_id, status, rsvp_digit, rsvp_outcome, created_at')
     .gte('created_at', since)
     .order('created_at', { ascending: false })
     .limit(AGG_ROW_CAP);
@@ -181,6 +218,7 @@ export async function listEventsWithCallActivity(
     event_id: string;
     status: string;
     rsvp_digit: string | null;
+    rsvp_outcome: string | null;
     created_at: string;
   }>;
   const truncated = attempts.length >= AGG_ROW_CAP;
@@ -241,10 +279,15 @@ export interface EventCallAttemptRow {
   createdAt: string;
   durationSec: number | null;
   rsvpDigit: string | null;
+  rsvpOutcome: string | null;
   rsvpMethod: string | null;
   finishReason: string | null;
   hasRecording: boolean;
   hasTranscript: boolean;
+  // A linked ElevenLabs post-call analysis exists for this attempt (metadata
+  // row in call_analysis) — a transcript summary is inspectable even when the
+  // attempt row itself carries no transcript.
+  hasAnalysis: boolean;
   sessionHistoryId: string | null;
 }
 
@@ -278,12 +321,26 @@ export async function listCallAttemptsForEvent(
   const { data, count } = await admin
     .from('call_attempts')
     .select(
-      'id, status, created_at, call_duration_sec, rsvp_digit, rsvp_method, finish_reason, vox_call_session_history_id, recording_url, transcript',
+      'id, status, created_at, call_duration_sec, rsvp_digit, rsvp_outcome, rsvp_method, finish_reason, vox_call_session_history_id, recording_url, transcript',
       { count: 'exact' },
     )
     .eq('event_id', eventId)
     .order('created_at', { ascending: false })
     .range(from, to);
+
+  // Analysis presence for the page's attempts only — ids in, booleans out
+  // (no analysis content crosses this seam).
+  const pageIds = ((data ?? []) as Array<{ id: string }>).map((r) => r.id);
+  const analyzed = new Set<string>();
+  if (pageIds.length > 0) {
+    const { data: an } = await admin
+      .from('call_analysis')
+      .select('call_attempt_id')
+      .in('call_attempt_id', pageIds);
+    for (const a of (an ?? []) as Array<{ call_attempt_id: string | null }>) {
+      if (a.call_attempt_id) analyzed.add(a.call_attempt_id);
+    }
+  }
 
   const items: EventCallAttemptRow[] = ((data ?? []) as Array<Record<string, unknown>>).map((r) => ({
     id: r.id as string,
@@ -291,10 +348,12 @@ export async function listCallAttemptsForEvent(
     createdAt: r.created_at as string,
     durationSec: (r.call_duration_sec as number | null) ?? null,
     rsvpDigit: (r.rsvp_digit as string | null) ?? null,
+    rsvpOutcome: (r.rsvp_outcome as string | null) ?? null,
     rsvpMethod: (r.rsvp_method as string | null) ?? null,
     finishReason: (r.finish_reason as string | null) ?? null,
     hasRecording: typeof r.recording_url === 'string' && r.recording_url.length > 0,
     hasTranscript: r.transcript != null,
+    hasAnalysis: analyzed.has(r.id as string),
     sessionHistoryId: (r.vox_call_session_history_id as string | null) ?? null,
   }));
 

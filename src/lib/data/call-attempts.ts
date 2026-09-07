@@ -321,6 +321,23 @@ export type CallOutcomePatch = {
 // out-of-order callback cannot downgrade a row that already reached a terminal
 // state. Returns { applied } — false means the write was a safe no-op (already
 // terminal / not in a valid prior state). No read-then-write.
+// Stamp what THIS call's save_rsvp concluded (attending/declined/maybe) on the
+// attempt row — display/audit only, deliberately OUTSIDE recordCallOutcome's
+// CAS: the answer arrives mid-call (before any terminal status) and a mid-call
+// correction is a later write that should win. processCallRsvp is the only
+// writer.
+export async function setCallAttemptRsvpOutcome(
+  attemptId: string,
+  outcome: 'attending' | 'declined' | 'maybe',
+): Promise<void> {
+  const admin = createAdminClient();
+  const { error } = await admin
+    .from('call_attempts')
+    .update({ rsvp_outcome: outcome })
+    .eq('id', attemptId);
+  if (error) throw new Error('עדכון תוצאת ה-RSVP על ניסיון השיחה נכשל');
+}
+
 export async function recordCallOutcome(
   id: string,
   patch: CallOutcomePatch,

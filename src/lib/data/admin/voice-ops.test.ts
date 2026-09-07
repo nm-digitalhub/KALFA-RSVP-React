@@ -34,21 +34,29 @@ describe('computeAnswerRate (binding formula)', () => {
 describe('aggregateEventActivity (JS-first grouping)', () => {
   it('groups by event, tallies statuses + rsvp, tracks last activity, sorts desc', () => {
     const agg = aggregateEventActivity([
-      { event_id: 'e1', status: 'completed', rsvp_digit: '1', created_at: '2026-07-10T10:00:00Z' },
-      { event_id: 'e1', status: 'no_answer', rsvp_digit: null, created_at: '2026-07-11T10:00:00Z' },
-      { event_id: 'e2', status: 'failed', rsvp_digit: null, created_at: '2026-07-19T09:00:00Z' },
-      { event_id: 'e1', status: 'completed', rsvp_digit: '2', created_at: '2026-07-09T10:00:00Z' },
+      { event_id: 'e1', status: 'completed', rsvp_digit: '1', rsvp_outcome: null, created_at: '2026-07-10T10:00:00Z' },
+      { event_id: 'e1', status: 'no_answer', rsvp_digit: null, rsvp_outcome: null, created_at: '2026-07-11T10:00:00Z' },
+      { event_id: 'e2', status: 'failed', rsvp_digit: null, rsvp_outcome: null, created_at: '2026-07-19T09:00:00Z' },
+      { event_id: 'e1', status: 'completed', rsvp_digit: '2', rsvp_outcome: null, created_at: '2026-07-09T10:00:00Z' },
+      // The agent bridge writes rsvp_outcome and NO digit — the exact class of
+      // production call the counters were blind to until 2026-09-07.
+      { event_id: 'e1', status: 'completed', rsvp_digit: null, rsvp_outcome: 'attending', created_at: '2026-07-12T10:00:00Z' },
+      { event_id: 'e1', status: 'completed', rsvp_digit: null, rsvp_outcome: 'maybe', created_at: '2026-07-12T11:00:00Z' },
     ]);
     // e2 has the most recent activity → sorted first.
     expect(agg.map((a) => a.eventId)).toEqual(['e2', 'e1']);
     const e1 = agg.find((a) => a.eventId === 'e1')!;
     expect(e1).toMatchObject({
-      attempts: 3,
-      completed: 2,
+      attempts: 5,
+      completed: 4,
       noAnswer: 1,
       failed: 0,
-      rsvpFromCall: 2,
-      lastActivityAt: '2026-07-11T10:00:00Z',
+      // digit '1' + agent 'attending' → 2 confirmations; digit '2' is DECLINED
+      // (the old rsvpFromCall lumped it under "אישרו"); agent 'maybe' separate.
+      confirmedFromCall: 2,
+      declinedFromCall: 1,
+      maybeFromCall: 1,
+      lastActivityAt: '2026-07-12T11:00:00Z',
     });
   });
   it('returns an empty array for no rows', () => {
@@ -99,9 +107,18 @@ describe('listCallAttemptsForEvent — requirePlatformPermission + PII column gu
       eq: vi.fn(() => eventsBuilder),
       maybeSingle: vi.fn(async () => ({ data: { owner_id: 'o1' }, error: null })),
     };
+    // Analysis-presence lookup (ids in → linked ids out; content never crosses).
+    const analysisBuilder = {
+      select: vi.fn(() => analysisBuilder),
+      in: vi.fn(async () => ({ data: [{ call_attempt_id: 'a1' }], error: null })),
+    };
     vi.mocked(createAdminClient).mockReturnValue({
       from: vi.fn((table: string) =>
-        table === 'events' ? eventsBuilder : builder,
+        table === 'events'
+          ? eventsBuilder
+          : table === 'call_analysis'
+            ? analysisBuilder
+            : builder,
       ),
     } as unknown as ReturnType<typeof createAdminClient>);
 
@@ -112,6 +129,7 @@ describe('listCallAttemptsForEvent — requirePlatformPermission + PII column gu
     const row = res.items[0];
     expect(row.hasRecording).toBe(true);
     expect(row.hasTranscript).toBe(true);
+    expect(row.hasAnalysis).toBe(true);
     // The raw recording URL / transcript content must never surface on the DTO.
     expect(JSON.stringify(res.items)).not.toContain('https://secret/rec');
     expect(JSON.stringify(res.items)).not.toContain('speaker');

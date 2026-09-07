@@ -3,11 +3,16 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 vi.mock('server-only', () => ({}));
 vi.mock('@/lib/supabase/admin', () => ({ createAdminClient: vi.fn() }));
 vi.mock('@/lib/alerts/slack', () => ({ sendSlackAlert: vi.fn() }));
+// Dial-hours deferral (checked before claiming). Default: inside the window.
+vi.mock('@/lib/callbacks/policy-config', () => ({ getCallbackPolicy: vi.fn() }));
+vi.mock('@/lib/data/console-calls', () => ({ isWithinHumanCallWindow: vi.fn() }));
 
 import { CALLBACK_TOUCHPOINT_BASE, runCallbackSweep } from './call-callbacks';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { sendSlackAlert } from '@/lib/alerts/slack';
 import { QUEUES } from '@/lib/queue/queues';
+import { getCallbackPolicy } from '@/lib/callbacks/policy-config';
+import { isWithinHumanCallWindow } from '@/lib/data/console-calls';
 
 const ATTEMPT = '11111111-1111-4111-8111-111111111111';
 const CAMPAIGN = '22222222-2222-4222-8222-222222222222';
@@ -81,9 +86,26 @@ const boss = { send: vi.fn() };
 beforeEach(() => {
   vi.clearAllMocks();
   boss.send = vi.fn(async () => 'job-id');
+  vi.mocked(getCallbackPolicy).mockResolvedValue({ dialWeekday: [] } as never);
+  vi.mocked(isWithinHumanCallWindow).mockReturnValue(true);
 });
 
 describe('runCallbackSweep', () => {
+  it('outside the dial window → defers the WHOLE tick before claiming, so no callback is consumed', async () => {
+    vi.mocked(isWithinHumanCallWindow).mockReturnValue(false);
+    const { admin, updateCalls } = stubAdmin({ count: 0 });
+    vi.mocked(createAdminClient).mockReturnValue(admin);
+
+    const res = await runCallbackSweep(boss as never);
+
+    expect(res.enqueued).toBe(0);
+    expect(boss.send).not.toHaveBeenCalled();
+    // The ordering is the contract: claims are never released, so claiming and
+    // then skipping at the dispatcher would lose the callback forever. Deferring
+    // before the claim leaves the row due for the first in-window tick.
+    expect(updateCalls).toHaveLength(0);
+  });
+
   it('enqueues a callRequest flagged as a callback, in the reserved touchpoint band', async () => {
     const { admin } = stubAdmin({ count: 0 });
     vi.mocked(createAdminClient).mockReturnValue(admin);

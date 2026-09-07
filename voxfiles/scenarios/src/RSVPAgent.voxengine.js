@@ -140,6 +140,27 @@ VoxEngine.addEventListener(AppEvents.Started, function () {
         eventAddress: '',
         eventCelebrants: '',
         eventRsvpDeadline: '',
+        // The event-type NOUN ("חתונה" / "ברית" / "בר מצווה"). Same '' default
+        // discipline as the fields above.
+        eventKind: '',
+        // Disposition of a COMPLETED call ('agent_end_call' | 'guest_hangup' |
+        // null). Until 2026-09-07 finish_reason was only ever written for
+        // failures (SIP codes via error_reason), so every completed row showed
+        // "—" in /admin/voice. Set once, first writer wins: end_call's
+        // AgentToolResponse claims it; a Disconnected that arrives with it
+        // still unset means the far end hung up first.
+        finishReason: null,
+        // Rolling transcript of the conversation, built from the SAME
+        // UserTranscript/AgentResponse frames the log listeners print. Sent on
+        // the terminal callback in the cb schema's turn shape
+        // ({speaker,text,at}); capped to 200 turns / 4000 chars each there.
+        // Until now the bridge sent NO transcript at all, so the admin column
+        // could never show one for an agent call.
+        transcriptTurns: [],
+        // Per-call ASR keyword bias from ctx. NOT a dynamic variable — it rides
+        // in conversation_config_override.asr.keywords (see the init frame).
+        // [] rather than '' because it is forwarded as an array.
+        asrKeywords: [],
         // NON-authorizing correlation nonce from ctx (ctx.kalfa_attempt_token).
         // Injected as the `kalfa_attempt_token` dynamic variable so ElevenLabs
         // echoes it in the post-call webhook and KALFA links conversation→attempt.
@@ -266,6 +287,27 @@ VoxEngine.addEventListener(AppEvents.Started, function () {
     // After the grace delay call.hangup() fires CallEvents.Disconnected, which
     // funnels into cleanupAndTerminate — so this never calls terminate() itself
     // except as a fallback when hangup() throws (mirrors RSVP.voxengine.js).
+    // Append one conversation turn for the terminal callback's transcript.
+    // Defensive on shape (payload root vs typed sub-event), capped to the cb
+    // schema's limits (200 turns, 4000 chars/turn) so the callback can never
+    // outgrow the endpoint's 256KB body cap.
+    function captureTurn(speaker, e, eventKey, textKey) {
+        try {
+            if (state.transcriptTurns.length >= 200)
+                return;
+            var payload = (e && e.data && e.data.payload) || {};
+            var inner = payload[eventKey] || payload;
+            var text = inner && inner[textKey];
+            if (typeof text !== 'string' || text === '')
+                return;
+            state.transcriptTurns.push({
+                speaker: speaker,
+                text: text.slice(0, 4000),
+                at: new Date().toISOString()
+            });
+        }
+        catch (_e) { /* transcript is best-effort — never break the call */ }
+    }
     function scheduleHangup(call, delayMs) {
         if (state.terminated || state.hangupScheduled)
             return;
@@ -375,6 +417,17 @@ VoxEngine.addEventListener(AppEvents.Started, function () {
         state.callbackSent = true;
         payload.rsvp_method = 'agent';
         payload.recording_url = state.recordingUrl || null;
+        // Disposition + transcript ride on whichever terminal path fires —
+        // this is the ONE funnel every terminal callback passes through.
+        // finish_reason: never clobber an explicit error_reason path; for a
+        // clean completed call, agent_end_call (the agent hung up) beats
+        // guest_hangup (the far end dropped first).
+        if (!payload.error_reason && !payload.finish_reason && state.finishReason) {
+            payload.finish_reason = state.finishReason;
+        }
+        if (state.transcriptTurns.length > 0 && !payload.transcript) {
+            payload.transcript = state.transcriptTurns;
+        }
         if (state.elConversationId) {
             payload.el_conversation_id = state.elConversationId;
         }
@@ -1000,7 +1053,8 @@ VoxEngine.addEventListener(AppEvents.Started, function () {
                 // must reach 11labs before it emits conversation_initiation_metadata and
                 // generates the first_message, otherwise {{guest_name}} etc. resolve
                 // empty. (See the timing note at the top of this file.)
-                // dynamic_variables ONLY — deliberately no conversation_config_override.
+                // dynamic_variables + ONE deliberate override (asr.keywords).
+                //
                 // Voximplant's guide says "if you want to use the
                 // conversationInitiationClientData method, you should allow the override
                 // functionality", which reads as though this whole call needs
@@ -1010,16 +1064,30 @@ VoxEngine.addEventListener(AppEvents.Started, function () {
                 // variables just fill {{placeholders}} and need no permission — proven
                 // live, since the agent speaks the guest's name.
                 //
-                // The trap is for later: adding an override here without first enabling
-                // that exact field on the agent gets it SILENTLY DROPPED — no error, no
-                // log, the agent simply uses its configured value. If an override ever
-                // appears not to work, check platform_settings.overrides before
-                // debugging anything in this file.
+                // THE TRAP, and it applies to the override below: sending an override
+                // whose field is not enabled on the agent gets it SILENTLY DROPPED — no
+                // error, no log, the agent just uses its configured value. asr.keywords
+                // is worse than the others, because the live docs call it out as a "soft
+                // disallow": with the Security toggle off the conversation continues and
+                // the keywords are simply ignored. So a broken keyword bias looks exactly
+                // like a working one. platform_settings.overrides.conversation_config_
+                // override.asr.keywords MUST stay true on the agent, and if transcription
+                // ever stops improving, verify that flag before touching this file.
+                //
+                // WHY asr.keywords AT ALL: a measured call (2026-09-07) transcribed the
+                // guest at 39% WER — "נכון" came back as "רכון", and a headcount answer
+                // was rewritten into its opposite meaning. Proper nouns are where a
+                // general Hebrew model has no prior, and they are exactly what changes
+                // per call. The list is composed SERVER-SIDE (ctx route) because the
+                // override REPLACES the agent's configured keyword list rather than
+                // merging with it — so whoever sends it owns the whole vocabulary, and
+                // splitting it across two repos would drift on the first edit.
                 try {
                     agent.conversationInitiationClientData({
                         dynamic_variables: {
                             guest_name: state.guestName,
                             event_name: state.eventName,
+                            event_kind: state.eventKind,
                             event_date: state.eventDate,
                             event_venue: state.eventVenue,
                             event_time: state.eventTime,
@@ -1030,9 +1098,15 @@ VoxEngine.addEventListener(AppEvents.Started, function () {
                             // conversation_initiation_client_data.dynamic_variables
                             // → KALFA links conversation → call_attempt (item 2).
                             kalfa_attempt_token: state.attemptToken
-                        }
+                        },
+                        // Omitted entirely when ctx gave us nothing, so a failed ctx
+                        // fetch falls back to the agent's own configured keywords
+                        // rather than overriding them with an empty list.
+                        conversation_config_override: state.asrKeywords.length
+                            ? { asr: { keywords: state.asrKeywords } }
+                            : undefined
                     });
-                    log('Injected dynamic_variables');
+                    log('Injected dynamic_variables (asr_keywords=' + state.asrKeywords.length + ')');
                 }
                 catch (err) {
                     log('conversationInitiationClientData failed: ' + err);
@@ -1043,9 +1117,11 @@ VoxEngine.addEventListener(AppEvents.Started, function () {
                 // --- transcript / lifecycle logging ---
                 agent.addEventListener(ElevenLabs.AgentsEvents.UserTranscript, function (e) {
                     log('USER: ' + safeStringify(e && e.data));
+                    captureTurn('guest', e, 'user_transcription_event', 'user_transcript');
                 });
                 agent.addEventListener(ElevenLabs.AgentsEvents.AgentResponse, function (e) {
                     log('AGENT: ' + safeStringify(e && e.data));
+                    captureTurn('agent', e, 'agent_response_event', 'agent_response');
                 });
                 agent.addEventListener(ElevenLabs.AgentsEvents.AgentResponseCorrection, function (e) {
                     log('AGENT_CORRECTION: ' + safeStringify(e && e.data));
@@ -1234,6 +1310,8 @@ VoxEngine.addEventListener(AppEvents.Started, function () {
                     // clipping it.
                     if (name === 'end_call' && !isErr && executed) {
                         log('agent called end_call — hanging up after the farewell drains');
+                        if (!state.finishReason)
+                            state.finishReason = 'agent_end_call';
                         scheduleHangup(call, FAREWELL_GRACE_MS);
                     }
                 });
@@ -1458,6 +1536,12 @@ VoxEngine.addEventListener(AppEvents.Started, function () {
         call.addEventListener(CallEvents.Disconnected, function (ev) {
             log('Call disconnected: ' + safeStringify(ev));
             var duration = ev && ev.duration ? ev.duration : 0;
+            // First writer wins: if end_call already claimed the disposition,
+            // this is our own hangup finishing; otherwise the far end dropped
+            // the line mid-conversation.
+            if (!state.finishReason && state.conversationStarted) {
+                state.finishReason = 'guest_hangup';
+            }
             if (!state.callbackSent) {
                 // completed = the ElevenLabs conversation actually ran (billed as a
                 // reached human — the RSVP itself was already written by save_rsvp);
@@ -1487,21 +1571,14 @@ VoxEngine.addEventListener(AppEvents.Started, function () {
                 // Raw values — ElevenLabs runs its own TTS, so no speech
                 // normalization (unlike the say()-based RSVP scenario).
                 //
-                // PRONUNCIATION HYPOTHESIS TEST (A.2, scenario-side only, no DB
-                // touch): the live call heard "זהבה" as "זה אבא" (dropped medial
-                // /h/ + lost final stress). Docs say phoneme/IPA is unreliable on
-                // eleven_v3_conversational; the scalable fix is injecting a
-                // niqqud-vocalized name — but whether ElevenLabs Hebrew HONORS
-                // niqqud is UNVERIFIED (proven only for Google he-IL say()).
-                // This one-entry map is the minimal falsifier: if the next call
-                // says "Zehava" correctly, we build the auto-niqqud ctx pipeline;
-                // if not, we fall back to an alias dictionary.
-                var NIQQUD_TEST_MAP = { 'זהבה': 'זְהָבָה' };
+                // A one-entry niqqud probe ({ 'זהבה': 'זְהָבָה' }) sat here from
+                // 2026-07 to test whether ElevenLabs Hebrew honours vocalization.
+                // REMOVED 2026-09-07: it never reached a verdict, and in the
+                // meantime it silently rewrote one real guest's name on every
+                // production call that matched. If the niqqud question is
+                // reopened it belongs in the ctx pipeline, applied to every name
+                // from data — never as a hardcoded literal in the scenario.
                 state.guestName = ctx.guest_name || '';
-                if (NIQQUD_TEST_MAP[state.guestName]) {
-                    log('Niqqud test: injecting vocalized guest name');
-                    state.guestName = NIQQUD_TEST_MAP[state.guestName];
-                }
                 state.eventName = ctx.event_name || '';
                 state.eventDate = ctx.event_date || '';
                 state.eventVenue = ctx.event_venue || '';
@@ -1510,6 +1587,14 @@ VoxEngine.addEventListener(AppEvents.Started, function () {
                 state.eventTime = ctx.event_time || '';
                 state.eventAddress = ctx.event_address || '';
                 state.eventCelebrants = ctx.event_celebrants || '';
+                // The noun that tells the guest what the call is about. Its
+                // absence cost 42 of 123 seconds on the 2026-09-07 call, where
+                // the opening carried only the owner's free-text title.
+                state.eventKind = ctx.event_kind || '';
+                // Composed server-side (ctx route) because the override REPLACES
+                // the agent's configured keyword list rather than merging with
+                // it — one owner for the whole vocabulary, no drift.
+                state.asrKeywords = Array.isArray(ctx.asr_keywords) ? ctx.asr_keywords : [];
                 state.eventRsvpDeadline = ctx.event_rsvp_deadline || '';
                 // Correlation nonce (additive ctx field) — carried through to the
                 // agent init below so the post-call webhook can link back. Never

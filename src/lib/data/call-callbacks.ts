@@ -1,6 +1,8 @@
 import 'server-only';
 
 import { sendSlackAlert } from '@/lib/alerts/slack';
+import { getCallbackPolicy } from '@/lib/callbacks/policy-config';
+import { isWithinHumanCallWindow } from '@/lib/data/console-calls';
 import { createAdminClient } from '@/lib/supabase/admin';
 import type { TablesUpdate } from '@/lib/supabase/types';
 import { QUEUES, type OutreachCallRequest } from '@/lib/queue/queues';
@@ -134,6 +136,21 @@ async function currentCallbackCount(
  * OutreachCallRequest.isCallback).
  */
 export async function runCallbackSweep(boss: PgBoss): Promise<{ enqueued: number }> {
+  // Dial-hours deferral — checked BEFORE claiming, and that ordering is the
+  // whole point. dispatchOutreachCall now carries the actual dial-hours gate
+  // (gate 3b, same admin policy), but claims here are deliberately never
+  // released ("re-ringing a guest is worse than not ringing" — claimCallback's
+  // contract), so a row claimed at 23:00 and then refused by the dispatcher
+  // would be a callback lost forever. Deferring the whole tick instead leaves
+  // every row unclaimed and still due (listDueCallbacks has no upper age
+  // bound), and the first tick inside tomorrow's window picks them up. This is
+  // a scheduling decision, not a second copy of the gate: the dispatcher
+  // remains the enforcement point for every dial path.
+  const policy = await getCallbackPolicy();
+  if (!isWithinHumanCallWindow(Date.now(), policy.dialWeekday)) {
+    return { enqueued: 0 };
+  }
+
   const admin = createAdminClient();
   const due = await listDueCallbacks(admin);
   let enqueued = 0;

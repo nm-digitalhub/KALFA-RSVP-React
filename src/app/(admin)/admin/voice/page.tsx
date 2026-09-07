@@ -175,6 +175,7 @@ export default async function VoiceOverviewPage({
                     <TableHead>אין מענה</TableHead>
                     <TableHead>נכשלו</TableHead>
                     <TableHead>אישרו בשיחה</TableHead>
+                    <TableHead>סירבו בשיחה</TableHead>
                     <TableHead>
                       <span className="sr-only">פעולות</span>
                     </TableHead>
@@ -190,7 +191,11 @@ export default async function VoiceOverviewPage({
                       <TableCell>{e.completed}</TableCell>
                       <TableCell>{e.noAnswer}</TableCell>
                       <TableCell>{e.failed}</TableCell>
-                      <TableCell>{e.rsvpFromCall}</TableCell>
+                      <TableCell>{e.confirmedFromCall}</TableCell>
+                      <TableCell>
+                        {e.declinedFromCall}
+                        {e.maybeFromCall > 0 ? ` (+${e.maybeFromCall} אולי)` : ''}
+                      </TableCell>
                       <TableCell>
                         <Link
                           href={`/admin/voice/events/${e.eventId}`}

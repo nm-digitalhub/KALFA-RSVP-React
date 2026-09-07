@@ -5,6 +5,8 @@ import type { Metadata } from 'next';
 import {
   Ban,
   CheckCircle2,
+  FileQuestion,
+  HelpCircle,
   PhoneCall,
   PhoneMissed,
   ThumbsDown,
@@ -15,7 +17,7 @@ import type { LucideIcon } from 'lucide-react';
 
 import { formatIsraelDate } from '@/lib/date';
 import { getEventForStaffView } from '@/lib/data/admin/event-view';
-import { listCallAttemptsForEvent } from '@/lib/data/admin/voice-ops';
+import { callRsvpAnswer, listCallAttemptsForEvent } from '@/lib/data/admin/voice-ops';
 import {
   Table,
   TableBody,
@@ -69,6 +71,33 @@ export async function generateMetadata({
 
 const sectionClass = 'space-y-3 rounded-lg border border-border bg-card p-5';
 
+// The RSVP answer of one attempt row, merged across both capture paths
+// (callRsvpAnswer) and labeled with its source — the agent bridge writes
+// rsvp_outcome, the DTMF path writes the digit.
+function rsvpAnswerLabel(r: {
+  rsvpDigit: string | null;
+  rsvpOutcome: string | null;
+  rsvpMethod: string | null;
+}): string {
+  const answer = callRsvpAnswer(r.rsvpDigit, r.rsvpOutcome);
+  if (!answer) return '—';
+  const word = answer === 'attending' ? 'אישר' : answer === 'declined' ? 'סירב' : 'אולי';
+  const source = r.rsvpOutcome ? 'סוכן' : r.rsvpMethod === 'dtmf' ? 'הקשה' : r.rsvpMethod;
+  return source ? `${word} (${source})` : word;
+}
+
+// Hebrew labels for the disposition column. sip_* codes pass through raw —
+// they are the diagnostic (408 no-answer vs 486 busy vs 603 decline).
+const FINISH_REASON_LABELS: Record<string, string> = {
+  agent_end_call: 'הסוכן סיים',
+  guest_hangup: 'האורח ניתק',
+  session_terminating: 'נסגר בפירוק סשן',
+};
+function finishReasonLabel(reason: string | null): string {
+  if (!reason) return '—';
+  return FINISH_REASON_LABELS[reason] ?? reason;
+}
+
 export default async function EventVoicePage({
   params,
   searchParams,
@@ -90,25 +119,45 @@ export default async function EventVoicePage({
 
   // Aggregate the page's rows for the stat tiles (full-history counts would need
   // a separate query; the visible page's tallies are shown as "בעמוד זה").
+  //
+  // TWO tile groups, deliberately: telephony outcomes (did the call connect)
+  // and RSVP answers (what the guest said). They used to share one row, and an
+  // answer was counted ONLY off the DTMF digit — so a completed agent call
+  // that saved a real RSVP via save_rsvp showed "אישרו 0" right next to
+  // "הושלמו 2" with nothing explaining the gap. callRsvpAnswer merges both
+  // capture paths, and "הושלמו ללא רישום" makes the remaining gap EXPLICIT:
+  // a completed conversation whose answer never landed (the exact class the
+  // 2026-09-06 lost-RSVP call belonged to) is now a number, not a mystery.
   const rows = attempts.items;
+  const answers = rows.map((r) => callRsvpAnswer(r.rsvpDigit, r.rsvpOutcome));
   const tally = {
-    completed: rows.filter((r) => r.status === 'completed').length,
-    noAnswer: rows.filter((r) => r.status === 'no_answer').length,
-    failed: rows.filter((r) => ['failed', 'failed_to_start', 'no_response'].includes(r.status))
-      .length,
+    completed: rows.filter((r) => ['completed', 'handed_off'].includes(r.status)).length,
+    noAnswer: rows.filter((r) => ['no_answer', 'no_response'].includes(r.status)).length,
+    failed: rows.filter((r) => ['failed', 'failed_to_start'].includes(r.status)).length,
     cancelled: rows.filter((r) => r.status === 'cancelled').length,
-    confirmed: rows.filter((r) => r.rsvpDigit === '1').length,
-    declined: rows.filter((r) => r.rsvpDigit === '2').length,
+    confirmed: answers.filter((a) => a === 'attending').length,
+    declined: answers.filter((a) => a === 'declined').length,
+    maybe: answers.filter((a) => a === 'maybe').length,
   };
+  const unrecorded = Math.max(
+    0,
+    rows.filter((r, i) => ['completed', 'handed_off'].includes(r.status) && answers[i] === null)
+      .length,
+  );
 
-  const tiles: Array<{ label: string; value: string; icon: LucideIcon; tone: MeterTone }> = [
+  type Tile = { label: string; value: string; icon: LucideIcon; tone: MeterTone };
+  const telephonyTiles: Tile[] = [
     { label: 'ניסיונות (סה״כ)', value: String(attempts.total), icon: PhoneCall, tone: 'info' },
     { label: 'הושלמו (בעמוד)', value: String(tally.completed), icon: CheckCircle2, tone: 'success' },
     { label: 'אין מענה (בעמוד)', value: String(tally.noAnswer), icon: PhoneMissed, tone: 'warning' },
     { label: 'נכשלו (בעמוד)', value: String(tally.failed), icon: XCircle, tone: 'destructive' },
     { label: 'בוטלו (בעמוד)', value: String(tally.cancelled), icon: Ban, tone: 'neutral' },
+  ];
+  const rsvpTiles: Tile[] = [
     { label: 'אישרו (בעמוד)', value: String(tally.confirmed), icon: ThumbsUp, tone: 'success' },
     { label: 'סירבו (בעמוד)', value: String(tally.declined), icon: ThumbsDown, tone: 'destructive' },
+    { label: 'אולי (בעמוד)', value: String(tally.maybe), icon: HelpCircle, tone: 'warning' },
+    { label: 'הושלמו ללא רישום (בעמוד)', value: String(unrecorded), icon: FileQuestion, tone: 'neutral' },
   ];
 
   // The same page tallies as a part-to-whole mix — completed/no-answer/
@@ -155,20 +204,41 @@ export default async function EventVoicePage({
         </dl>
       </section>
 
-      <div className="grid grid-cols-2 gap-4 md:grid-cols-4 lg:grid-cols-7">
-        {tiles.map((t) => {
-          const Icon = t.icon;
-          return (
-            <div key={t.label} className="flex flex-col gap-2 rounded-lg border border-border p-4">
-              <span className={`inline-flex size-7 items-center justify-center rounded-full ${toneChipClass(t.tone)}`}>
-                <Icon className="size-4" aria-hidden />
-              </span>
-              <span className="text-sm text-muted-foreground">{t.label}</span>
-              <span className="text-2xl font-bold">{t.value}</span>
-            </div>
-          );
-        })}
-      </div>
+      <section className="space-y-3">
+        <h2 className="text-sm font-semibold text-muted-foreground">תוצאות טלפוניה</h2>
+        <div className="grid grid-cols-2 gap-4 md:grid-cols-5">
+          {telephonyTiles.map((t) => {
+            const Icon = t.icon;
+            return (
+              <div key={t.label} className="flex flex-col gap-2 rounded-lg border border-border p-4">
+                <span className={`inline-flex size-7 items-center justify-center rounded-full ${toneChipClass(t.tone)}`}>
+                  <Icon className="size-4" aria-hidden />
+                </span>
+                <span className="text-sm text-muted-foreground">{t.label}</span>
+                <span className="text-2xl font-bold">{t.value}</span>
+              </div>
+            );
+          })}
+        </div>
+      </section>
+
+      <section className="space-y-3">
+        <h2 className="text-sm font-semibold text-muted-foreground">תשובות RSVP מהשיחות</h2>
+        <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+          {rsvpTiles.map((t) => {
+            const Icon = t.icon;
+            return (
+              <div key={t.label} className="flex flex-col gap-2 rounded-lg border border-border p-4">
+                <span className={`inline-flex size-7 items-center justify-center rounded-full ${toneChipClass(t.tone)}`}>
+                  <Icon className="size-4" aria-hidden />
+                </span>
+                <span className="text-sm text-muted-foreground">{t.label}</span>
+                <span className="text-2xl font-bold">{t.value}</span>
+              </div>
+            );
+          })}
+        </div>
+      </section>
 
       <section className={sectionClass}>
         <h2 className="text-lg font-semibold">פילוח תוצאות שיחה (בעמוד)</h2>
@@ -210,14 +280,8 @@ export default async function EventVoicePage({
                         </Badge>
                       </TableCell>
                       <TableCell>{r.durationSec ?? '—'}</TableCell>
-                      <TableCell>
-                        {r.rsvpDigit === '1'
-                          ? `אישר${r.rsvpMethod ? ` (${r.rsvpMethod})` : ''}`
-                          : r.rsvpDigit === '2'
-                            ? 'סירב'
-                            : '—'}
-                      </TableCell>
-                      <TableCell>{r.finishReason ?? '—'}</TableCell>
+                      <TableCell>{rsvpAnswerLabel(r)}</TableCell>
+                      <TableCell>{finishReasonLabel(r.finishReason)}</TableCell>
                       <TableCell>
                         {r.hasRecording && r.sessionHistoryId ? (
                           <Link
@@ -234,7 +298,9 @@ export default async function EventVoicePage({
                           '—'
                         )}
                       </TableCell>
-                      <TableCell>{r.hasTranscript ? 'קיים' : '—'}</TableCell>
+                      <TableCell>
+                        {r.hasTranscript ? 'קיים' : r.hasAnalysis ? 'סיכום ניתוח' : '—'}
+                      </TableCell>
                     </TableRow>
                   ))}
                 </TableBody>

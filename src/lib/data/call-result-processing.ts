@@ -7,6 +7,7 @@ import {
   getContactNormalizedPhone,
   getGuestRsvpToken,
   recordCallOutcome,
+  setCallAttemptRsvpOutcome,
   recordRsvpFromCall,
 } from '@/lib/data/call-attempts';
 import { createAdminClient } from '@/lib/supabase/admin';
@@ -83,6 +84,10 @@ export async function processCallResult(row: WebhookInboxRow): Promise<void> {
       rsvp_digit: body.rsvp_digit ?? null,
       rsvp_method: body.rsvp_method ?? null,
       call_duration_sec: duration,
+      // Disposition (agent_end_call/guest_hangup). Until 2026-09-07 the
+      // completed branch never wrote finish_reason at all — only the failure
+      // branch did (SIP codes) — so every completed row rendered "—".
+      finish_reason: body.finish_reason ?? null,
     });
 
     // Audit row (idempotent: UNIQUE(channel,provider_id)). We deliberately do NOT
@@ -224,7 +229,21 @@ export async function processCallRsvp(
   // Written ONLY when the contact was bound to exactly one guest at dial time.
   // An attempt with no bound guest can never gain one, so this is terminal, not
   // a transient miss the drain could recover from.
-  if (!attempt?.guest_id) return { status: 'rejected', reason: 'not_found' };
+  if (!attempt) return { status: 'rejected', reason: 'not_found' };
+
+  // Audit/display: what THIS call concluded, stamped on the attempt row itself
+  // BEFORE any apply gate — a validated answer was given even when the apply is
+  // later refused (closed event) or the guest binding is missing, and losing it
+  // is what made every agent call invisible to /admin/voice until 2026-09-07.
+  // Last write wins: a mid-call correction arrives as a later body and should
+  // win. Best-effort — the RSVP apply below must never fail on a display stamp.
+  try {
+    await setCallAttemptRsvpOutcome(attemptId, voxSaveRsvpStatus(body));
+  } catch {
+    /* display-only stamp; the durable inbox row still allows a later backfill */
+  }
+
+  if (!attempt.guest_id) return { status: 'rejected', reason: 'not_found' };
   const rsvpToken = await getGuestRsvpToken(attempt.guest_id);
   if (!rsvpToken) return { status: 'rejected', reason: 'not_found' };
 

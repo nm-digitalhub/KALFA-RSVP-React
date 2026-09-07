@@ -12,6 +12,7 @@ vi.mock('@/lib/data/call-attempts', () => ({
   recordCallOutcome: vi.fn(),
   recordRsvpFromCall: vi.fn(),
   recordRsvpCallRejected: vi.fn(),
+  setCallAttemptRsvpOutcome: vi.fn(),
 }));
 // createAdminClient is used by the DNC upsert + owner-note insert. A minimal
 // chainable stub: from(table).upsert/insert resolve {error:null} by default.
@@ -41,6 +42,7 @@ import {
 } from './call-result-processing';
 import {
   getCallAttemptById,
+  setCallAttemptRsvpOutcome,
   getContactNormalizedPhone,
   getGuestRsvpToken,
   recordCallOutcome,
@@ -279,6 +281,23 @@ describe('processCallResult', () => {
 });
 
 describe('processCallRsvp (Tier 2 save_rsvp)', () => {
+  it('stamps rsvp_outcome on the attempt row — the display column /admin/voice reads', async () => {
+    await processCallRsvp(AID, { attending: true, adults: 2, children: 3 });
+    expect(setCallAttemptRsvpOutcome).toHaveBeenCalledWith(AID, 'attending');
+  });
+
+  it('stamps the outcome EVEN when the apply is refused — an answer was given', async () => {
+    vi.mocked(submitRsvp).mockResolvedValue({ ok: false, reason: 'closed' } as never);
+    await processCallRsvp(AID, { status: 'maybe', adults: 0, children: 0 });
+    expect(setCallAttemptRsvpOutcome).toHaveBeenCalledWith(AID, 'maybe');
+  });
+
+  it('a failing stamp never fails the RSVP apply (display-only, best-effort)', async () => {
+    vi.mocked(setCallAttemptRsvpOutcome).mockRejectedValueOnce(new Error('db down'));
+    const r = await processCallRsvp(AID, { attending: true, adults: 1, children: 0 });
+    expect(r).toEqual({ status: 'saved' });
+  });
+
   it('attending → submitRsvp with REAL adult/child counts (kids ← children) + source marker; ok:true', async () => {
     const r = await processCallRsvp(AID, { attending: true, adults: 2, children: 3 });
     expect(submitRsvp).toHaveBeenCalledWith('tok', { status: 'attending', adults: 2, kids: 3 });

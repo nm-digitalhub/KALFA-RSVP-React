@@ -3,6 +3,7 @@ import 'server-only';
 import type { Tables } from '@/lib/supabase/types';
 import { normalizeCallAnalysisWebhook } from '@/lib/validation/elevenlabs-payloads';
 import { storeCallAnalysis, storeSalesCallAnalysis } from '@/lib/data/elevenlabs-analysis';
+import { createAdminClient } from '@/lib/supabase/admin';
 import {
   getSalesAttemptIdByConversationId,
   claimSalesOutcome,
@@ -48,6 +49,43 @@ async function normalized(row: WebhookInboxRow) {
   return parsed.type === 'post_call_transcription' ? parsed.analysis : null;
 }
 
+// Which persona does a delivery actually belong to? BY DATA, not by URL.
+//
+// Since ~2026-08-19 the ElevenLabs workspace has delivered EVERY post-call
+// webhook to the sales endpoint, so the arrival kind stopped meaning anything:
+// all RSVP analyses were stored by the sales path — which deliberately skips
+// the RSVP linker — and none was linked to its call_attempts row again (0
+// el_analysis_rsvp inbox rows since then, measured live 2026-09-07). The
+// conversation itself knows its persona: an RSVP conversation matches a
+// call_attempts row by correlation nonce or conversation id; a sales one
+// matches sales_call_attempts. Classify by that, so the webhook wiring can
+// point anywhere without silently unlinking a persona again.
+async function isRsvpConversation(a: {
+  conversationId: string;
+  correlationToken: string | null;
+}): Promise<boolean> {
+  try {
+    const admin = createAdminClient();
+    const byCol = async (
+      col: 'el_correlation_nonce' | 'el_conversation_id',
+      val: string | null,
+    ) => {
+      if (!val) return false;
+      const { count } = await admin
+        .from('call_attempts')
+        .select('id', { count: 'exact', head: true })
+        .eq(col, val);
+      return (count ?? 0) > 0;
+    };
+    return (
+      (await byCol('el_correlation_nonce', a.correlationToken)) ||
+      (await byCol('el_conversation_id', a.conversationId))
+    );
+  } catch {
+    return false; // unknown → fall through to the sales path (current behaviour)
+  }
+}
+
 /** RSVP persona (/api/elevenlabs/rsvp/update). Metadata + summary; no mutation. */
 export async function processElevenLabsRsvpAnalysisRow(row: WebhookInboxRow): Promise<void> {
   const analysis = await normalized(row);
@@ -73,6 +111,20 @@ export async function processElevenLabsRsvpAnalysisRow(row: WebhookInboxRow): Pr
 export async function processElevenLabsSalesAnalysisRow(row: WebhookInboxRow): Promise<void> {
   const analysis = await normalized(row);
   if (!analysis) return;
+
+  // Cross-persona rescue: a delivery that ARRIVED on the sales endpoint but
+  // matches an RSVP call_attempts row is an RSVP conversation — run the RSVP
+  // store (which links + computes rsvp_persisted) instead of the sales one.
+  // Replays are safe: both stores upsert on (provider, conversation_id) with
+  // ignoreDuplicates, so a conversation the sales path already stored is a
+  // no-op here — historical unlinked rows are repaired by the 20260907153904
+  // migration backfill, not by this branch.
+  if (await isRsvpConversation(analysis)) {
+    if ((await storeCallAnalysis(analysis)) === 'error') {
+      throw new Error(`storeCallAnalysis failed for ${analysis.conversationId}`);
+    }
+    return;
+  }
 
   // Analysis first: if this write fails the row is retried, and the one-shot
   // claim below stays untaken so the retry can still make it.

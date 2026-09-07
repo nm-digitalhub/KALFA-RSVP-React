@@ -364,6 +364,45 @@ VoxEngine.addEventListener(AppEvents.Started, function () {
                     log('conversationInitiationClientData failed: ' + err);
                 }
                 VoxEngine.sendMediaBetween(call, agent);
+                // --- diagnostic listeners (added 2026-09-07) ---
+                // These six carry NO behaviour: they only write to the session
+                // log. Without them a failed call produces nothing at all on the
+                // Voximplant side -- no transcript, no error -- which is exactly
+                // why the last complaint about this agent had to be reconstructed
+                // from the ElevenLabs conversation record instead of from our own
+                // logs. RSVPAgent has carried these since day one; that is the
+                // whole reason its failures were diagnosable and these were not.
+                //
+                // UserTranscript is the important one. It records what the ASR
+                // BELIEVES the caller said. The owner reports that most of the
+                // caller-side transcript did not match what was actually spoken,
+                // and this listener is the only way to see that divergence from
+                // the telephony side, per call, against the audio we sent.
+                agent.addEventListener(ElevenLabs.AgentsEvents.UserTranscript, function (e) {
+                    log('USER: ' + safeStringify(e && e.data));
+                });
+                agent.addEventListener(ElevenLabs.AgentsEvents.AgentResponse, function (e) {
+                    log('AGENT: ' + safeStringify(e && e.data));
+                });
+                // The truncated text after a barge-in. The delta between this and
+                // the matching AgentResponse is precisely how much of the agent's
+                // speech the caller never heard.
+                agent.addEventListener(ElevenLabs.AgentsEvents.AgentResponseCorrection, function (e) {
+                    log('AGENT_CORRECTION: ' + safeStringify(e && e.data));
+                });
+                agent.addEventListener(ElevenLabs.AgentsEvents.WebSocketError, function (e) {
+                    log('AGENT_WS_ERROR: ' + safeStringify(e && e.data));
+                });
+                agent.addEventListener(ElevenLabs.AgentsEvents.Ping, function () {
+                    log('PING (auto-handled by connector)');
+                });
+                // Logged raw and unparsed: the typings give this the generic
+                // untyped payload and the JSDoc says only "Contains information
+                // about connector", so there is no documented schema to parse
+                // against and inventing one would be guessing.
+                agent.addEventListener(ElevenLabs.AgentsEvents.ConnectorInformation, function (e) {
+                    log('CONNECTOR_INFO: ' + safeStringify((e && e.data) || {}));
+                });
                 agent.addEventListener(ElevenLabs.AgentsEvents.ConversationInitiationMetadata, function (e) {
                     var payload = (e && e.data && e.data.payload) || {};
                     var meta = payload.conversation_initiation_metadata_event || payload;

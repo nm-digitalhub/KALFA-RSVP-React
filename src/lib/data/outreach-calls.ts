@@ -25,7 +25,9 @@ import {
 import {
   consoleDtmfHandoffEnabled,
   findRoutableAgentVoxUsernames,
+  isWithinHumanCallWindow,
 } from '@/lib/data/console-calls';
+import { getCallbackPolicy } from '@/lib/callbacks/policy-config';
 import { getGuestsForContact, insertInteraction, setContactOpStatus } from '@/lib/data/interactions';
 import { rsvpClosedReason } from '@/lib/data/event-date';
 import {
@@ -54,7 +56,7 @@ const BALANCE_TIMEOUT_MS = 10_000;
 const START_TIMEOUT_MS = 25_000;
 
 export type CallDispatchResult =
-  | { kind: 'skipped'; reason: 'outreach_disabled' | 'no_call_consent' | 'dnc_listed' | 'already_reached' | 'campaign_not_active' | 'event_closed' | 'concurrent_owner' | 'max_concurrency' | 'campaign_hour_cap' }
+  | { kind: 'skipped'; reason: 'outreach_disabled' | 'outside_dial_window' | 'no_call_consent' | 'dnc_listed' | 'already_reached' | 'campaign_not_active' | 'event_closed' | 'concurrent_owner' | 'max_concurrency' | 'campaign_hour_cap' }
   | { kind: 'blocked'; reason: 'config_missing' | 'live_calls_disabled' | 'balance_below_reserve' }
   | { kind: 'transient_error'; reason: 'balance_check_failed' } // the ONLY retryable kind
   | { kind: 'already_dispatched'; attemptId: string }
@@ -153,6 +155,26 @@ export async function dispatchOutreachCall(
   //    (config.liveCallsEnabled). Filling credentials must NEVER by itself dial —
   //    an admin must explicitly enable live calls. No alert — expected steady state.
   if (!config.liveCallsEnabled) return { kind: 'blocked', reason: 'live_calls_disabled' };
+
+  // 3b. Dial-hours gate — the admin-managed per-weekday dialing window
+  //     (/admin/callbacks/policy, "חיוג" tab) plus the Shabbat/Yom-Tov block.
+  //     This is the SAME policy the meeting-confirm and sales-close dispatchers
+  //     already honour; until 2026-09-07 the RSVP path was the only dial
+  //     surface that ignored it, so a mis-transcribed callback_iso or a manual
+  //     dispatch could ring a guest at 03:00 (the ops launcher even documented
+  //     it). One copy of the gate, HERE, covers every caller that funnels
+  //     through this dispatcher: the drip engine, the console on-demand route,
+  //     the ops script and the callback sweep. The sweep ALSO defers claiming
+  //     outside the window (see runCallbackSweep) — not a duplicate gate but a
+  //     scheduling decision, because a callback claimed and then skipped here
+  //     would be lost forever (claims are deliberately never released).
+  //     Fail-safe: getCallbackPolicy falls back to the default windows on any
+  //     read error, and isWithinHumanCallWindow treats calendar errors as
+  //     blocked — an outage can delay calls, never place one at night.
+  const policy = await getCallbackPolicy();
+  if (!isWithinHumanCallWindow(Date.now(), policy.dialWeekday)) {
+    return { kind: 'skipped', reason: 'outside_dial_window' };
+  }
 
   // 4. Fresh gating (never trust the enqueue-time snapshot).
   if (!(await hasCallConsent(contactId))) return { kind: 'skipped', reason: 'no_call_consent' };

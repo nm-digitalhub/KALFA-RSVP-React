@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 
 import { celebrantsTextFor } from '@/lib/data/celebrant-display';
+import { EVENT_TYPE_LABELS } from '@/lib/data/event-labels';
 import { getCallContextByAccessToken } from '@/lib/data/call-attempts';
 import { formatIsraelSpokenDate, formatIsraelTime } from '@/lib/date';
 import { getClientIp, rateLimit } from '@/lib/security/rate-limit';
@@ -68,6 +69,71 @@ const nameSpeechForm = (text: string | null): string =>
     .replace(/^[,\s]+|[,\s]+$/g, '')
     .trim();
 
+// Speech form of the event TYPE — the single word that tells the guest what the
+// call is about ("חתונה", "ברית", "בר מצווה").
+//
+// It was never sent. A live call (conv_3001m1xxjh80f938yh3jenrpb3xc, 2026-09-07)
+// opened with only `event_name`, which is the owner's free-text title — for that
+// event, "שלומית קאקון ואייל מלכה". Two names and no noun: the guest asked what
+// the call was about four separate times and 42 of the call's 123 seconds went
+// to establishing something the opening line should have carried.
+//
+// EVENT_TYPE_LABELS is owner-facing FORM copy, so `other` is "אחר" — a valid
+// dropdown option and an impossible sentence ("בנוגע לאחר של..."). It degrades
+// to the generic noun instead. Every other label reads correctly after "ל".
+const eventKindSpeechForm = (
+  eventType: keyof typeof EVENT_TYPE_LABELS | null,
+): string => (!eventType || eventType === 'other' ? 'אירוע' : EVENT_TYPE_LABELS[eventType]);
+
+// Per-call ASR keyword list, sent to ElevenLabs as
+// conversation_config_override.asr.keywords.
+//
+// WHY IT IS BUILT HERE AND NOT IN THE SCENARIO. The live override docs are
+// explicit that "ASR keyword overrides REPLACE the agent's default keyword list
+// for that conversation (maximum 50 keywords)" — they do not merge. So whoever
+// sends the override owns the whole vocabulary, and splitting it between the
+// agent config and the VoxEngine scenario would guarantee drift the first time
+// either side is edited. The server already holds every per-call name, so it
+// composes the complete list and the scenario forwards it verbatim.
+//
+// BASE is the agent's own configured vocabulary, mirrored so an override never
+// silently drops it. Keep the two in sync when either changes.
+//
+// The proper nouns are the point: a live call heard "נכון" as "רכון" and lost a
+// guest's own name, and names are exactly what a general Hebrew model has no
+// prior for. Order matters only for the 50-cap — names first, then the closed
+// RSVP vocabulary, so a long celebrant list can never push out "כן"/"לא".
+const ASR_BASE_KEYWORDS = [
+  'כן', 'לא', 'מגיעים', 'לא מגיעים', 'נגיע', 'לא נגיע', 'מאשר', 'מאשרת',
+  'אישור', 'כמה', 'אחד', 'שניים', 'שלושה', 'ארבעה', 'חמישה', 'שישה',
+  'ילדים', 'מבוגרים', 'אולי', 'עדיין לא יודע', 'תסירו אותי',
+] as const;
+
+const ASR_KEYWORD_CAP = 50;
+
+// A Hebrew keyword is worth boosting only if it is a real word: single letters
+// and stray punctuation add noise to the bias and burn cap slots.
+const asrKeywordsFor = (parts: readonly (string | null)[]): string[] => {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  const push = (raw: string) => {
+    const w = raw.trim();
+    if (w.length < 2 || seen.has(w) || out.length >= ASR_KEYWORD_CAP) return;
+    seen.add(w);
+    out.push(w);
+  };
+  // Names first: both the full phrase (so a two-word name biases as a unit) and
+  // its individual tokens (so a partly-heard name still gets help).
+  for (const part of parts) {
+    const clean = (part ?? '').replace(/[^\p{L}\p{N}\s'"״׳-]/gu, ' ').replace(/\s+/g, ' ').trim();
+    if (!clean) continue;
+    push(clean);
+    for (const tok of clean.split(' ')) push(tok);
+  }
+  for (const w of ASR_BASE_KEYWORDS) push(w);
+  return out;
+};
+
 export async function GET(
   req: Request,
   { params }: { params: Promise<{ token: string }> },
@@ -104,16 +170,25 @@ export async function GET(
     return notFound();
   }
 
-  // First name only for the greeting (the scenario's normalizeForSpeech handles
-  // the rest). Never leak the full contact/guest record.
-  const guestName = ctx.guestFullName
-    ? ctx.guestFullName.trim().split(/\s+/)[0] || ''
-    : '';
+  // The FULL name, whitespace-normalized.
+  //
+  // This was the first token until 2026-09-07 ("first name only for the
+  // greeting"), which silently assumed given-name-first ordering. `guests` stores
+  // one free-text `full_name` and nothing else, so a row entered surname-first
+  // made the agent greet a real guest by their family name on a live call
+  // ("קלפה נתנאל" -> "מדבר עם קלפה?"). 35 of 47 guest rows are multi-token and
+  // no field says which token is the given name, so the heuristic cannot be
+  // repaired — only dropped. The full name is never wrong, just more formal.
+  //
+  // Still leaks nothing else from the guest/contact record.
+  const guestName = (ctx.guestFullName ?? '').trim().replace(/\s+/g, ' ');
 
   return NextResponse.json(
     {
       guest_name: guestName,
       event_name: nameSpeechForm(ctx.event.name),
+      // The noun the opening line needs — see eventKindSpeechForm above.
+      event_kind: eventKindSpeechForm(ctx.event.event_type),
       event_date: formatIsraelSpokenDate(ctx.event.event_date ?? ''),
       // Wall-clock start time ('17:30'). events.event_date is timestamptz, so the
       // time was always there — it was simply dropped by the date-only formatter,
@@ -139,6 +214,16 @@ export async function GET(
       // (every non-bridge call, incl. all of Branch B — which ignores this field).
       // Non-authorizing by design, so serving it here leaks no capability.
       kalfa_attempt_token: ctx.attempt.el_correlation_nonce ?? '',
+      // Per-call ASR keyword bias (see asrKeywordsFor above). The scenario
+      // forwards this verbatim as conversation_config_override.asr.keywords.
+      // Not personalization: these words are already spoken aloud on the call,
+      // so this adds no disclosure beyond what the guest hears anyway.
+      asr_keywords: asrKeywordsFor([
+        guestName,
+        celebrantsSpeechForm(celebrantsTextFor(ctx.event.event_type, ctx.event.celebrants)),
+        nameSpeechForm(ctx.event.name),
+        ctx.event.venue_name,
+      ]),
     },
     { headers: NO_STORE },
   );

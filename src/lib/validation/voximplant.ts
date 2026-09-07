@@ -54,6 +54,11 @@ export const voxCallbackSchema = z
     // The scenario sends an array of turns, or (legacy) a plain string.
     transcript: z.union([z.array(transcriptTurn).max(200), z.string().max(20000)]).nullish(),
     error_reason: z.string().max(256).nullish(),
+    // Disposition of a COMPLETED call, sent by the bridge scenario since
+    // 2026-09-07: 'agent_end_call' (the agent hung up after its farewell) or
+    // 'guest_hangup' (the far end dropped first). Kept separate from
+    // error_reason, which carries FAILURE codes (sip_*, session_terminating).
+    finish_reason: z.enum(['agent_end_call', 'guest_hangup']).nullish(),
     // ADDITIVE (item-2 second link vector): the ElevenLabs conversation_id, sent by
     // the bridge scenario (VoiceAgentTest) on its recording_started callback. Branch
     // B's RSVP.voxengine.js never sends it (nullish → no effect on the DTMF path).

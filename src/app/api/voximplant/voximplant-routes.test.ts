@@ -92,7 +92,13 @@ const CTX = {
     contact_id: 'ct1',
     el_correlation_nonce: 'nonce_test_abc',
   },
-  event: { status: 'active', name: 'חתונה', event_date: '2026-07-14T15:00:00Z', venue_name: 'אולם הגן' },
+  event: {
+    status: 'active',
+    name: 'חתונה',
+    event_type: 'wedding',
+    event_date: '2026-07-14T15:00:00Z',
+    venue_name: 'אולם הגן',
+  },
   guestFullName: 'ישראל ישראלי',
 };
 
@@ -117,9 +123,11 @@ describe('ctx GET', () => {
     expect(res.headers.get('cache-control')).toBe('no-store');
     const json = await res.json();
     expect(Object.keys(json).sort()).toEqual([
+      'asr_keywords',
       'event_address',
       'event_celebrants',
       'event_date',
+      'event_kind',
       'event_name',
       'event_rsvp_deadline',
       'event_time',
@@ -127,11 +135,32 @@ describe('ctx GET', () => {
       'guest_name',
       'kalfa_attempt_token',
     ]);
-    expect(json.guest_name).toBe('ישראל'); // first name only
+    // Full name, not the first token: `guests.full_name` is free text with no
+    // reliable name ordering, so the first-token heuristic greeted surname-first
+    // rows by their family name.
+    expect(json.guest_name).toBe('ישראל ישראלי');
     expect(json.event_name).toBe('חתונה');
+    // The event-type noun the opening line needs. Without it the agent says only
+    // the owner's free-text title, which on a live call was two names and no noun.
+    expect(json.event_kind).toBe('חתונה');
     expect(json.event_venue).toBe('אולם הגן');
     // Additive item-2 link field: the row's non-authorizing correlation nonce.
     expect(json.kalfa_attempt_token).toBe('nonce_test_abc');
+    // Per-call ASR bias: the proper nouns FIRST (a long celebrant list must never
+    // push out "כן"/"לא"), then the agent's base RSVP vocabulary, deduped, capped
+    // at the documented 50. The full phrase and its tokens both appear so a
+    // partly-heard name still gets boosted.
+    expect(json.asr_keywords.slice(0, 5)).toEqual([
+      'ישראל ישראלי',
+      'ישראל',
+      'ישראלי',
+      'חתונה',
+      'אולם הגן',
+    ]);
+    expect(json.asr_keywords).toContain('כן');
+    expect(json.asr_keywords).toContain('תסירו אותי');
+    expect(json.asr_keywords.length).toBeLessThanOrEqual(50);
+    expect(new Set(json.asr_keywords).size).toBe(json.asr_keywords.length);
     expect(JSON.stringify(json)).not.toContain('rsvp_token');
     expect(JSON.stringify(json)).not.toMatch(/phone|contact_id|ct1|g1/);
   });

@@ -263,6 +263,17 @@ describe('vocabulary contract with migration 20260722170740', () => {
     join(__dirname, '../../../supabase/migrations/20260722170740_call_dispatch_status.sql'),
     'utf8',
   );
+  // The reason CHECK was recreated (verbatim + 'outside_dial_window') by
+  // 20260907152244 when dial-hours gate 3b landed; for `reason` the LATEST
+  // recreation is the live contract, so that is the file the reason test must
+  // read. `status` still lives only in the original migration.
+  const reasonSql = readFileSync(
+    join(
+      __dirname,
+      '../../../supabase/migrations/20260907152244_dispatch_reason_outside_dial_window.sql',
+    ),
+    'utf8',
+  );
 
   function checkListFor(column: 'status' | 'reason'): string[] {
     // Grab the CHECK (...) that governs the column and pull its quoted values.
@@ -272,7 +283,7 @@ describe('vocabulary contract with migration 20260722170740', () => {
       column === 'status'
         ? /status in\s*\(([^)]+)\)/
         : /reason in\s*\(([\s\S]+?)\)\)/;
-    const m = sql.match(re);
+    const m = (column === 'reason' ? reasonSql : sql).match(re);
     expect(m, `CHECK for ${column} not found in migration`).toBeTruthy();
     return [...m![1].matchAll(/'([a-z_]+)'/g)].map((x) => x[1]);
   }

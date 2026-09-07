@@ -42,6 +42,7 @@ export const DISPATCH_STATUS_VALUES: readonly DispatchPublicStatus[] = [
 
 export type DispatchPublicReason =
   | 'already_reached'
+  | 'outside_dial_window'
   | 'no_call_consent'
   | 'dnc_listed'
   | 'campaign_not_active'
@@ -61,6 +62,7 @@ export type DispatchPublicReason =
 
 export const DISPATCH_REASON_VALUES: readonly DispatchPublicReason[] = [
   'already_reached',
+  'outside_dial_window',
   'no_call_consent',
   'dnc_listed',
   'campaign_not_active',

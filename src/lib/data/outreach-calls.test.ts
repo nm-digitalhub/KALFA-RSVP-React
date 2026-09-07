@@ -35,7 +35,11 @@ vi.mock('@/lib/data/interactions', () => ({
 vi.mock('@/lib/data/console-calls', () => ({
   findRoutableAgentVoxUsernames: vi.fn(),
   consoleDtmfHandoffEnabled: vi.fn(),
+  isWithinHumanCallWindow: vi.fn(),
 }));
+// Dial-hours policy read (gate 3b). Mocked so beforeEach can default every test
+// to "inside the window" — the gate's own behaviour gets dedicated tests below.
+vi.mock('@/lib/callbacks/policy-config', () => ({ getCallbackPolicy: vi.fn() }));
 // startScenarios moved to the separated mutations module (plan stage 1).
 vi.mock('@/lib/voximplant/mutations', () => ({ startScenarios: vi.fn() }));
 vi.mock('@/lib/voximplant/core', () => ({
@@ -76,7 +80,8 @@ import {
   isDncListed,
 } from '@/lib/data/outreach-engine';
 import { getGuestsForContact, insertInteraction, setContactOpStatus } from '@/lib/data/interactions';
-import { findRoutableAgentVoxUsernames, consoleDtmfHandoffEnabled } from '@/lib/data/console-calls';
+import { findRoutableAgentVoxUsernames, consoleDtmfHandoffEnabled, isWithinHumanCallWindow } from '@/lib/data/console-calls';
+import { getCallbackPolicy } from '@/lib/callbacks/policy-config';
 // Deliberately NOT mocked: gate 4b must be exercised against the same shared L1
 // date rule the DB guard mirrors, not a stub that could agree with a wrong gate.
 import { todayIL } from '@/lib/data/event-date';
@@ -117,6 +122,10 @@ const CCTX = {
 beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(getOutreachEnabled).mockResolvedValue(true);
+  // Gate 3b defaults: policy read succeeds and the clock is inside the window,
+  // so every pre-existing test exercises its own gate undisturbed.
+  vi.mocked(getCallbackPolicy).mockResolvedValue({ dialWeekday: [] } as never);
+  vi.mocked(isWithinHumanCallWindow).mockReturnValue(true);
   vi.mocked(getVoximplantConfig).mockResolvedValue(CONFIG as never);
   vi.mocked(hasCallConsent).mockResolvedValue(true);
   vi.mocked(isDncListed).mockResolvedValue(false);
@@ -141,6 +150,24 @@ beforeEach(() => {
 });
 
 describe('gates (no dial)', () => {
+  it('outside the dial window → skipped/outside_dial_window, before any attempt row or API call', async () => {
+    vi.mocked(isWithinHumanCallWindow).mockReturnValue(false);
+    const res = await dispatchOutreachCall(job());
+    expect(res).toEqual({ kind: 'skipped', reason: 'outside_dial_window' });
+    expect(createCallAttempt).not.toHaveBeenCalled();
+    expect(getAccountInfo).not.toHaveBeenCalled();
+    expect(startScenarios).not.toHaveBeenCalled();
+    // The gate consults the ADMIN policy (/admin/callbacks/policy), not a default.
+    expect(getCallbackPolicy).toHaveBeenCalled();
+  });
+
+  it('the dial-window gate also covers callbacks — isCallback exempts only already_reached', async () => {
+    vi.mocked(isWithinHumanCallWindow).mockReturnValue(false);
+    const res = await dispatchOutreachCall(job({ isCallback: true }));
+    expect(res).toEqual({ kind: 'skipped', reason: 'outside_dial_window' });
+    expect(createCallAttempt).not.toHaveBeenCalled();
+  });
+
   it('1. config null → blocked, no dial', async () => {
     vi.mocked(getVoximplantConfig).mockResolvedValue(null);
     expect((await dispatchOutreachCall(job())).kind).toBe('blocked');
