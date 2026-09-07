@@ -27,4 +27,6 @@ export const QUEUE_EXPECTED_MAX_MINUTES: Record<string, number> = {
   'voximplant-log-export': 3 * 24 * 60,
   'call-dispatch-retention': 3 * 24 * 60,
   'auth-phone-change-cleanup': 3 * 24 * 60,
+  // Weekly (Monday 09:00 IL): flag only after a whole missed week plus slack.
+  'seo-technical-watch': 10 * 24 * 60,
 };

@@ -127,6 +127,7 @@ const DAY_MS = 86_400_000;
 // Israel, so those run on Israel local time (DST-aware via the IANA zone). The
 // interval crons (*/N) are timezone-independent and left as-is.
 import { runPhoneChangeCleanup } from '@/lib/data/auth-phone-change-cleanup';
+import { runSeoTechnicalWatch } from '@/lib/seo/technical-watch';
 
 const SCHEDULE_TZ = 'Asia/Jerusalem';
 
@@ -945,7 +946,10 @@ async function main(): Promise<void> {
       q === QUEUES.signupReminderSweep ||
       // Singleton too: two overlapping ticks would read the same candidates and
       // race on deleting them, turning a benign duplicate into a failed run.
-      q === QUEUES.unconfirmedCleanupSweep;
+      q === QUEUES.unconfirmedCleanupSweep ||
+      // Singleton: two overlapping runs would both diff against the same saved
+      // crawl and both spend URL Inspection quota on the same 12 URLs.
+      q === QUEUES.seoTechnicalWatch;
     await boss.createQueue(q, singleton ? { policy: 'singleton' } : undefined);
   }
 
@@ -1037,6 +1041,15 @@ async function main(): Promise<void> {
     QUEUES.unconfirmedCleanupSweep,
     guardedWorker(QUEUES.unconfirmedCleanupSweep, async () => {
       await handleUnconfirmedCleanupSweep();
+    }),
+  );
+  // No kill-switch of its own: the run is read-only against the site and its
+  // only side effect is a Slack alert. It self-skips when the Search Console
+  // config the app already depends on is absent (same gate as /admin/analytics).
+  await boss.work(
+    QUEUES.seoTechnicalWatch,
+    guardedWorker(QUEUES.seoTechnicalWatch, async () => {
+      await runSeoTechnicalWatch();
     }),
   );
   // Callback re-dials. runCallbackSweep only ENQUEUES — every dial gate is
@@ -1251,6 +1264,9 @@ async function main(): Promise<void> {
   // Daily at 04:50 IL — off-peak, and after the nightly jobs above rather than
   // alongside them, so a deletion never races a sweep still reading those rows.
   await boss.schedule(QUEUES.unconfirmedCleanupSweep, '50 4 * * *', null, { tz: SCHEDULE_TZ });
+  // Weekly, Monday 09:00 IL — a working hour on purpose: an SEO regression
+  // alert is something a person acts on, not an overnight batch.
+  await boss.schedule(QUEUES.seoTechnicalWatch, '0 9 * * 1', null, { tz: SCHEDULE_TZ });
   // Weekly, off-peak, deliberately non-round (04:17) — a 60-day token refreshed
   // once a week has ample margin even if a run is missed for a while.
   await boss.schedule(QUEUES.igTokenRefresh, '17 4 * * 2', null, { tz: SCHEDULE_TZ });

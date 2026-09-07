@@ -178,6 +178,13 @@ export const QUEUES = {
   // 86400s cap on OTP validity, so it can never truncate a live challenge.
   // See src/lib/data/auth-phone-change-cleanup.ts.
   phoneChangeCleanup: 'auth-phone-change-cleanup',
+  // Weekly SEO technical watch (Monday 09:00 IL): runs the `seo` CLI's
+  // crawl-diff + Google URL Inspection + link-recovery workflow against the
+  // live site and posts to Slack only when something regressed since the
+  // saved baseline. Read-only against the site; the deploy-time gate
+  // (scripts/seo-audit.mjs) grades pages at deploy, this watches BETWEEN
+  // deploys. See src/lib/seo/technical-watch.ts.
+  seoTechnicalWatch: 'seo-technical-watch',
 } as const;
 
 // outreach-step retry policy: a few backed-off retries, then dead-letter. The
