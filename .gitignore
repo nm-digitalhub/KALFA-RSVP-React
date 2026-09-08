@@ -144,3 +144,10 @@ scenario-*.deployed.js
 # repomix pack output (22MB, contains the whole tree incl. .claude) — never commit
 repomix-output.xml
 .repomix/
+
+# Meta's published OpenAPI spec, cloned from github.com/facebook/openapi for
+# reference (1.4MB, carries its own .git). Reproduce with:
+#   git clone --depth 1 https://github.com/facebook/openapi meta-openapi
+# The types we actually build against are generated FROM it and ARE committed,
+# at src/lib/whatsapp/generated/meta-schema.d.ts.
+/meta-openapi/
