@@ -11,6 +11,7 @@ import {
   insertWebhookEvents,
   type WebhookInboxInsert,
 } from '@/lib/data/webhooks';
+import { GRAPH_API_VERSION } from '@/lib/whatsapp/graph-version';
 
 // Meta WhatsApp inbound webhook — persist-then-process (B2). Server-to-server:
 // the X-Hub-Signature-256 HMAC IS the auth (no session/CSRF). This route does
@@ -287,6 +288,7 @@ export async function POST(request: NextRequest) {
     token: config.accessToken,
     appSecret: config.appSecret,
     secure: true,
+    v: GRAPH_API_VERSION,
   });
   let verified = false;
   try {

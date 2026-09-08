@@ -1,8 +1,8 @@
 import 'server-only';
 
 import { sendSlackAlert } from '@/lib/alerts/slack';
+import { GRAPH_API_VERSION } from '@/lib/whatsapp/graph-version';
 import { WhatsAppAPI } from 'whatsapp-api-js';
-import { DEFAULT_API_VERSION } from 'whatsapp-api-js/types';
 import {
   Text,
   Template,
@@ -217,7 +217,7 @@ export async function sendWhatsAppTemplate(
   // needed to verify INBOUND webhooks, handled in B2). v pinned explicitly —
   // same reasoning as sendWhatsAppMarketingTemplate below (never ride the
   // library's own default silently).
-  const api = new WhatsAppAPI({ token: cfg.accessToken, secure: false, v: DEFAULT_API_VERSION });
+  const api = new WhatsAppAPI({ token: cfg.accessToken, secure: false, v: GRAPH_API_VERSION });
   const message = buildTemplateMessage(params);
 
   try {
@@ -253,7 +253,7 @@ export async function sendWhatsAppMarketingTemplate(
   // `v` is a private field on WhatsAppAPI (unlike sendMessage, we build the
   // URL ourselves) — pin the SAME version explicitly here, both for the
   // constructor and the URL, rather than reading a private property.
-  const api = new WhatsAppAPI({ token: cfg.accessToken, secure: false, v: DEFAULT_API_VERSION });
+  const api = new WhatsAppAPI({ token: cfg.accessToken, secure: false, v: GRAPH_API_VERSION });
   const message = buildTemplateMessage(params);
   // Same request shape as `/messages` (messaging_product/recipient_type/to/
   // type/[type]) plus `product_policy` — verified against Meta's Marketing
@@ -271,7 +271,7 @@ export async function sendWhatsAppMarketingTemplate(
   };
   try {
     const res = await api.$$apiFetch$$(
-      `https://graph.facebook.com/${DEFAULT_API_VERSION}/${cfg.phoneNumberId}/marketing_messages`,
+      `https://graph.facebook.com/${GRAPH_API_VERSION}/${cfg.phoneNumberId}/marketing_messages`,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -296,7 +296,7 @@ export async function sendWhatsAppText(
   cfg: { phoneNumberId: string; accessToken: string; appSecret: string | null },
   params: { to: string; body: string },
 ): Promise<DeliveryOutcome> {
-  const api = new WhatsAppAPI({ token: cfg.accessToken, secure: false, v: DEFAULT_API_VERSION });
+  const api = new WhatsAppAPI({ token: cfg.accessToken, secure: false, v: GRAPH_API_VERSION });
   try {
     const res = await api.sendMessage(cfg.phoneNumberId, params.to, new Text(params.body));
     return classifyResponse(res);
