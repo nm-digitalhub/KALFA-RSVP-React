@@ -1,13 +1,14 @@
 import type { Metadata } from 'next';
 import { headers } from 'next/headers';
 
-import { RSVP_READ_RATE, RSVP_TOKEN_MIN_LENGTH } from '@/lib/constants';
-import { getEventAttendeesPublic, getRsvpByToken } from '@/lib/data/rsvp';
+import { RSVP_READ_RATE } from '@/lib/constants';
+import { getEventAttendeesPublic, getRsvpByToken, looksLikeRsvpToken } from '@/lib/data/rsvp';
 import { signedInviteImageUrl } from '@/lib/storage/event-media';
 import { getClientIp, rateLimit } from '@/lib/security/rate-limit';
 import { tokenFingerprint } from '@/lib/security/token-fingerprint';
 
 import { RsvpForm } from './rsvp-form';
+import { AddToCalendar } from '@/components/add-to-calendar';
 import { GuestShell } from '@/components/guest/guest-shell';
 
 // Always render per-request: the response is guest-specific and must never be
@@ -20,17 +21,6 @@ export const metadata: Metadata = {
   // Personal, link-only page — keep it out of search indexes.
   robots: { index: false, follow: false },
 };
-
-// Cheap shape guard so obviously-malformed tokens are rejected before any DB
-// work. The canonical token is 32 hex chars; we stay lenient (length + opaque
-// charset) to tolerate any legacy value while still blocking junk input.
-function looksLikeToken(token: string): boolean {
-  return (
-    token.length >= RSVP_TOKEN_MIN_LENGTH &&
-    token.length <= 128 &&
-    /^[A-Za-z0-9_-]+$/.test(token)
-  );
-}
 
 export default async function RsvpPage({
   params,
@@ -58,7 +48,7 @@ export default async function RsvpPage({
     );
   }
 
-  const view = looksLikeToken(token) ? await getRsvpByToken(token) : null;
+  const view = looksLikeRsvpToken(token) ? await getRsvpByToken(token) : null;
   if (!view) {
     // One generic message for unknown / revoked / expired / inactive — never
     // reveal which, to avoid leaking token validity.
@@ -111,6 +101,22 @@ export default async function RsvpPage({
         view={view}
         inviteImageUrl={inviteImageUrl}
         attendees={attendees}
+        // Server-rendered here (SSR helper is server-only); the form shows it
+        // in the success state once the guest confirms attendance. Same event
+        // fields the form already renders — nothing new reaches the browser.
+        calendar={
+          <AddToCalendar
+            icsHref={`/r/${token}/event.ics`}
+            event={{
+              name: view.event.name,
+              event_type: view.event.event_type,
+              event_date: view.event.event_date,
+              venue_name: view.event.venue_name,
+              venue_address: view.event.venue_address,
+              celebrants: view.event.celebrants,
+            }}
+          />
+        }
       />
     </GuestShell>
   );

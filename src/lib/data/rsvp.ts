@@ -1,5 +1,6 @@
 import 'server-only';
 
+import { RSVP_TOKEN_MIN_LENGTH } from '@/lib/constants';
 import { createAdminClient } from '@/lib/supabase/admin';
 import type { Json, TablesInsert } from '@/lib/supabase/types';
 import type { RsvpStatus, RsvpSubmitInput } from '@/lib/validation/rsvp';
@@ -76,6 +77,18 @@ export interface RsvpGuestInfo {
   call_consent: boolean | null;
   /** Prior answers, already filtered to the currently-enabled questions. */
   answers: Record<string, string>;
+}
+
+// Cheap shape guard so obviously-malformed tokens are rejected before any DB
+// work. The canonical token is 32 hex chars; lenient (length + opaque charset)
+// to tolerate any legacy value while still blocking junk input. Shared by the
+// RSVP page and its ICS route so the two can never drift.
+export function looksLikeRsvpToken(token: string): boolean {
+  return (
+    token.length >= RSVP_TOKEN_MIN_LENGTH &&
+    token.length <= 128 &&
+    /^[A-Za-z0-9_-]+$/.test(token)
+  );
 }
 
 export interface RsvpView {

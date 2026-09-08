@@ -1,86 +1,77 @@
-import { CalendarPlus } from 'lucide-react';
-import { google, ics, outlook } from 'calendar-link';
+import {
+  buildCalendarEvent,
+  buildCalendarLinks,
+  type CalendarEventInput,
+  type CalendarWebLinks,
+} from '@/lib/calendar/event-calendar';
 
-import { eventHeadingFor } from '@/lib/data/celebrant-display';
-import { asEventType } from '@/lib/data/event-display';
-import type { Json } from '@/lib/supabase/types';
+import { AddToCalendarIsland } from './add-to-calendar-island';
 
-// Isomorphic (client + server) "add to calendar" links, shown to a guest after
-// they confirm attendance (rsvp-form.tsx) and on the gift landing page
-// (gift-landing.tsx). Iron rule: no hand-rolled RFC 5545/.ics or calendar
-// query-string building — `calendar-link` generates every href below.
+// THE "add to calendar" control for guests — one component, two call sites:
+// the gift card's back face (g/[token]/gift-landing.tsx, a Server Component)
+// and the RSVP success box (r/[token]/rsvp-form.tsx, which receives the
+// rendered element from its page as the `calendar` prop, because the link
+// generation below is server-side).
 //
-// No duration column exists on events — every event defaults to a 3h block
-// (DEFAULT_DURATION_HOURS). This is a guess, not a real end time; documented
-// here since it's the one non-obvious assumption in this file.
-const DEFAULT_DURATION_HOURS = 3;
+// Division of labour:
+//   server (here + src/lib/calendar) — event config, the three web deep links
+//   (calendar-link) and, in the ICS routes, the .ics file (`ics`);
+//   client (AddToCalendarIsland) — KALFA's own button + bottom-sheet menu whose
+//   rows carry the best hand-off each platform supports: the Android intent
+//   that opens the Google Calendar APP, the inline https ICS that iOS Safari
+//   opens as the Calendar preview, plain downloads elsewhere.
+// The island receives ready-made hrefs only — no event data, no tokens beyond
+// the ICS path the page already exposes.
+//
+// NEVER-FAIL BOUNDARY: this control is an extra. If anything in the generation
+// throws, the page renders WITHOUT the calendar menu (a redacted warning is
+// logged — no token, no guest data) — the payment CTA / RSVP form must never
+// go down with it (live incident 2026-09-08: a generator race 500'd a wedding's
+// gift page).
+export type AddToCalendarEvent = CalendarEventInput;
 
-export interface AddToCalendarEvent {
-  name: string;
-  event_type: string | null;
-  event_date: string | null;
-  venue_name: string | null;
-  venue_address: string | null;
-  celebrants: Json | null;
+export type AddToCalendarVariant = 'primary' | 'outline';
+
+/** Config + links, or null (no date, or a generation failure — logged). */
+export function safeCalendarLinks(
+  event: AddToCalendarEvent,
+): { links: CalendarWebLinks; fileName: string } | null {
+  try {
+    const built = buildCalendarEvent(event);
+    if (!built) return null;
+    return { links: buildCalendarLinks(built), fileName: built.fileName };
+  } catch (err) {
+    console.warn(
+      `[add-to-calendar] link generation failed, rendering without the menu: ${
+        err instanceof Error ? err.message : 'unknown error'
+      }`,
+    );
+    return null;
+  }
 }
 
-export interface CalendarLinkSet {
-  google: string;
-  outlook: string;
-  /** `data:text/calendar` URI — Apple Calendar (and any other .ics reader)
-      opens this via a plain download, there is no apple.com web endpoint. */
-  apple: string;
-}
-
-/**
- * Pure link-generation, split out from the component so it is unit-testable
- * without rendering JSX (this repo's vitest config runs `.test.ts` files in a
- * node environment — no jsdom). Returns null when there's no event_date to
- * anchor a calendar entry on (mirrors the null-safety of formatEventDateLine).
- */
-export function buildCalendarLinks(event: AddToCalendarEvent): CalendarLinkSet | null {
-  const start = event.event_date ? new Date(event.event_date) : null;
-  if (!start || Number.isNaN(start.getTime())) return null;
-
-  const end = new Date(start.getTime() + DEFAULT_DURATION_HOURS * 60 * 60 * 1000);
-  const heading = eventHeadingFor(asEventType(event.event_type), event.celebrants, event.name);
-  const location = [event.venue_name, event.venue_address].filter(Boolean).join(', ');
-
-  const calendarEvent = {
-    title: heading.title,
-    start,
-    end,
-    location: location || undefined,
-  };
-
-  return {
-    google: google(calendarEvent),
-    outlook: outlook(calendarEvent),
-    apple: ics(calendarEvent),
-  };
-}
-
-const LINK_CLASS =
-  'inline-flex items-center gap-1 text-primary underline-offset-4 hover:underline';
-
-export function AddToCalendar({ event }: { event: AddToCalendarEvent }) {
-  const links = buildCalendarLinks(event);
-  if (!links) return null;
+export function AddToCalendar({
+  event,
+  icsHref,
+  variant = 'primary',
+  className,
+}: {
+  event: AddToCalendarEvent;
+  /** Same-origin path of the token-gated ICS route (`/g/<token>/event.ics`). */
+  icsHref: string;
+  /** `outline` where the page already has one primary CTA (the gift card). */
+  variant?: AddToCalendarVariant;
+  className?: string;
+}) {
+  const built = safeCalendarLinks(event);
+  if (!built) return null;
 
   return (
-    <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-1 text-sm">
-      <a href={links.google} target="_blank" rel="noopener noreferrer" className={LINK_CLASS}>
-        <CalendarPlus aria-hidden className="size-4" />
-        Google יומן
-      </a>
-      <a href={links.apple} download="event.ics" className={LINK_CLASS}>
-        <CalendarPlus aria-hidden className="size-4" />
-        Apple
-      </a>
-      <a href={links.outlook} target="_blank" rel="noopener noreferrer" className={LINK_CLASS}>
-        <CalendarPlus aria-hidden className="size-4" />
-        Outlook
-      </a>
-    </div>
+    <AddToCalendarIsland
+      links={built.links}
+      ics={{ href: icsHref, filename: `${built.fileName}.ics` }}
+      variant={variant}
+      className={className}
+    />
   );
 }
