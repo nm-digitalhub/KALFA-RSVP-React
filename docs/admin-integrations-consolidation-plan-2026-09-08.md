@@ -1,0 +1,992 @@
+# איחוד עמודי הספקים בפאנל הניהול (Integrations) — תוכנית יישום
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+
+**תאריך:** 2026-09-08 · **סטטוס:** תוכנית בלבד — לא שונו קוד, DB או הגדרות. לא בוצעו שליחות, שיחות, רכישות או קריאות כתיבה לספקים.
+
+**Goal:** עמוד אחד לכל ספק (Meta/WhatsApp, Voximplant, ExtrA, Resend, Microsoft, SUMIT, Slack) תחת `/admin/integrations`, מודול "מספרים" משותף שמציג כל מספר טלפון מחובר ומאפשר להוסיף/לאמת/לקשר מספרים מהפאנל, והצפה של הנתונים שחסרים היום (בריאות וריאנטים, כיסוי webhooks, תוקף טוקן, גרסת Graph, מדיניות שליחה).
+
+**Architecture:** Server Components שמרכיבים את רכיבי הלקוח הקיימים (מועברים, לא נכתבים מחדש), Server Actions דקים עם Zod, DAL תחת `src/lib/data/admin/integrations/*` עם `requirePlatformPermission`. שתי טבלאות חדשות (`provider_numbers`, `provider_number_roles`) במקום ארבע עמודות בודדות ב-`app_settings`. כל פעולה שעולה כסף או בלתי-הפיכה (רכישת מספר, register/deregister) מאחורי `requirePlatformOwner` + דיאלוג אישור שמציג מחיר/תוצאה + `logActivity` + התראת Slack.
+
+**Tech Stack:** Next.js 16 App Router, shadcn על `@base-ui/react`, Tailwind v4, Supabase (RLS `has_role`), pg-boss worker, `whatsapp-api-js` 6.2.2, Voximplant Management API דרך `src/lib/voximplant/{core,mutations}.ts`, Zod 4, Vitest 4.
+
+**Spec:** הודעת team-lead 2026-09-08 (המסמך הזה הוא ה-spec המאומת שלה). מסמכים משלימים שהתוכנית מסתמכת עליהם ואינה מחליפה: `docs/whatsapp-import-number-split-plan-2026-09-03.md`, `docs/whatsapp-api-js-capability-audit-2026-09-03.md`, `docs/voximplant/digest-management-api.md`, `docs/voice-agent/production-wiring-audit-2026-07-20.md`.
+
+## תיוג ראיות
+
+| תג | משמעות |
+|---|---|
+| **MEASURED** | נקרא מקוד הריפו (`file:line`), מה-DB החי (`npx supabase db query --linked`, 2026-09-08), או מ-Meta MCP (`devtools_*`) היום |
+| **INFERRED** | מסקנה מהקוד/מהנתונים, לא נמדדה ישירות |
+| **DOCS-ONLY** | מתיעוד רשמי (Meta דרך ctx7/WebFetch, Voximplant דרך `voximplant.com/api/v2/getDoc`) — לא אומת חי |
+
+## Global Constraints
+
+- `package.json` הוא מקור האמת (`next 16.x`, `whatsapp-api-js ^6.2.2`, `zod ^4`, `vitest ^4`). אין SDK חדש, אין חבילות חדשות.
+- Server Components כברירת מחדל; `"use client"` רק לטפסים/state. Server Actions: Zod → `requirePlatformPermission` → DAL → `FormState`.
+- הרשאות: `manage_settings` לעמודי Meta/ExtrA/Resend/Microsoft/SUMIT/Slack ולאינדקס; `manage_voice` לעמוד Voximplant (שני המפתחות קיימים ב-`platform_permission_definitions`, MEASURED). `requirePlatformOwner` (קיים, `src/lib/auth/dal.ts`, בשימוש ב-`/admin/debug`) לכל פעולה שעולה כסף/בלתי-הפיכה. **לא** מוסיפים `manage_integrations` (ראו §3.6).
+- סודות: הדפוס הקיים "מוסך + כפתור חשיפה" נשאר (הכרעת בעלים 24.8). ה-Service-Account JSON של Voximplant, טוקן Slack ומפתח ElevenLabs נשארים write-only (presence only) כפי שהם היום. שום סוד לא מגיע ל-client component כ-prop חדש.
+- מתגי הכיבוי שומרים על כותב יחיד: `outreach_enabled` נכתב **רק** ב-`updateOutreachMasterSwitchAction` (`src/app/(admin)/admin/channels/actions.ts:147-169`); `voximplant_live_calls` **רק** ב-`updateVoximplantLiveCallsAction`. התוכנית מעבירה את הרכיבים, לא את הבעלות.
+- אין רכישה אוטומטית. `AttachPhoneNumber` (Voximplant) ו-`register` (Meta) רצים רק אחרי אישור מפורש בדיאלוג עם המחיר/התוצאה, ורק ע"י Platform Owner.
+- ללא שינויי צבע/עיצוב; שימוש בפרימיטיבים הקיימים ב-`src/components/ui/` (Tabs, Accordion, Sheet, AlertDialog, Switch, Table, Badge, Card — כולם קיימים, MEASURED `ls src/components/ui`). פרימיטיב חסר = `npx shadcn@latest add`, לא hand-roll.
+- RTL: מאפיינים לוגיים בלבד (`ps-*/pe-*`, `start/end`); מזהים ומספרי טלפון ב-`dir="ltr"`; תאריכים דרך `src/lib/date.ts`.
+- מיגרציות: `npx supabase migration new <name>` → `npx supabase db push --linked` (הרצה = אישור בעלים). `types.generated.ts` רק דרך `npm run gen:types`; `npm run deploy` נחסם על drift.
+- אין `@ts-ignore`/`as any`/השתקת בדיקות. שערים לכל משימה: `npx tsc --noEmit` · `npm run lint` · `npm test -- --run <file>` · ובסוף כל פאזה `npm run build`.
+- אין לוגים של payload/טלפון אורח/טוקן. `phone_number_id`, `phone_id`, E.164 של **מספרי העסק** אינם PII ומותרים בתצוגה ובהתראות.
+- הודעות commit בסגנון הריפו (`feat(admin): …`), עם הטריילרים `Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>` ו-`Claude-Session: https://claude.ai/code/session_01WkmCcfqA4BWzWh1xQk2gJe`. commit/deploy רק בהוראת הבעלים.
+
+---
+
+## 0. תקציר והחלטות נדרשות מהבעלים
+
+**מה קורה היום.** הגדרות ספק אחד מפוזרות על 6–7 עמודים: WhatsApp ב-`/admin/channels` (credentials, webhook) + `/admin/templates` (תבניות) + `/admin/webhooks` (inspector) + `/admin/debug` (Integrations panel); Voximplant ב-`/admin/channels` (SA, rule ids, caller id, 4 מתגי persona/consent) + `/admin/voice/platform` (יתרה, wiring, ElevenLabs) + `/admin/settings` › שיחות (11 מתגי console/inbound) + `/admin/voice/queues`; ExtrA ו-SMTP ב-`/admin/settings` › הודעות; SUMIT ב-`/admin/settings` › תשלומים + `/admin/sumit-test`; Slack ב-`/admin/alerts`; Microsoft ב-`/admin/settings` (Exchange) + `/admin/calendar`. פירוט מלא ב-§1.
+
+**מה חסר היום (MEASURED, §2).** אין תצוגה של "המספרים המחוברים": ארבעה שדות בודדים (`whatsapp_phone_number_id`, `voximplant_caller_id`, `extra_sms_sender`, `company_contact_phone`) בלי מספר לתצוגה, בלי איכות/tier, בלי מי משתמש במה. **מספר WhatsApp שני (`1298694319994421`, +972 3-330-1505) כבר קיבל 38 אירועים אמיתיים ל-inbox ואינו מוגדר בשום מקום** — ב-`/admin/webhooks` הוא מוצג כ"לא מוגדר ב-/admin/channels". אותו `03-3301505` הוא גם **הקו הווירטואלי היחיד של ExtrA** (שיחות נכנסות מועברות למכשיר הבעלים, 7 שיחות שלא נענו לא מגיעות ל-KALFA), שולח ה-SMS וטלפון החברה בהסכם — "מספר אחד, ארבעה כובעים". מפתח ה-API של ExtrA פוקע 2027-10-27 ואין לו ניטור; הקוד מממש 1 מתוך 11 operations במפרט הרשמי (§5.3). כל ארבע פרסונות השיחות משתמשות ב-caller id **אחד**. 28 שמות וריאנטים של תבניות (`components.variants/media_variants`) אינם מנוטרים — הסנכרון היומי משווה רק לפי `name+language` של שורת המצביע. האפליקציה מנויה ל-28 שדות webhook (+ topic `catalog` זר) והקוד מטפל ב-6. גרסת Graph מפוזרת (v21/v23/v24, Meta ב-v26). אין בדיקת תוקף לטוקן. `whatsapp_send_policy` ניתן לעריכה רק ב-SQL. `whatsapp-template-health-sync` לא מופיע ב-`QUEUE_EXPECTED_MAX_MINUTES`, ו-`/admin/debug` מכריז "אין בדיקת בריאות" ל-WhatsApp. שלוש תבניות (לא שתיים) עם drift של קטגוריה (`gift`, `thankyou`, `sales_signup_link`: התבקש UTILITY, Meta = MARKETING).
+
+**החלטות נדרשות (ברירת המחדל המומלצת מודגשת):**
+
+| # | החלטה | מומלץ | חלופה |
+|---|---|---|---|
+| D1 | היכן חיים המספרים | **שתי טבלאות חדשות** `provider_numbers` + `provider_number_roles` (§4). per-persona caller id = שורה לכל תפקיד → חייב טבלה, לא עמודה. | להוסיף 4 עמודות `voximplant_caller_id_<persona>` ל-`app_settings` — לא מכסה DIDs/מספר WA שני/היסטוריה; נדחה. |
+| D2 | יחס לתוכנית פיצול מספר הייבוא (3.9) | **התוכנית הזו מספקת את התשתית**: תפקיד `whatsapp_import_sender` בטבלת התפקידים מחליף את שתי העמודות `whatsapp_import_*` שהתוכנית ההיא הציעה (§3.2 שם). הלוגיקה של ניתוב ההודעות (`classifyInboundChannel`) נשארת שם ומקבלת את המזהה מהתפקיד. | להריץ את תוכנית 3.9 כפי שהיא (עמודות) ולהעביר אחר כך — עבודה כפולה. |
+| D3 | גרסת Graph אחת | **`GRAPH_API_VERSION = 'v24.0'`** (מוכח לשליחה על ה-WABA הזה — `docs/whatsapp-import-number-split-plan-2026-09-03.md` §1.1; פקיעה 2028-02-18 DOCS-ONLY) בקובץ אחד, מוצג בעמוד Meta מול "Meta latest" (v26.0). | לקפוץ ל-v26.0 עכשיו — לא נבדק על ה-WABA; דורש מעבר שדות ב-`statuses` (conversation/pricing שונו ב-v24+). |
+| D4 | drift קטגוריה ב-3 תבניות | **כפתור "אשר קטגוריה נוכחית"** שמעדכן `requested_category` ל-MARKETING (מפסיק את האזהרה האדומה + מתיעד). | להגיש מחדש כ-UTILITY — הכרעת whatsapp-meta-expert, לא של הפאנל. |
+| D5 | topic `catalog` במנוי ה-webhook | **להציג כ"מנוי זר" ולהציע הסרה** (DELETE subscription) מאחורי אישור; ההסרה עצמה DOCS-ONLY עד אימות ב-ctx7 במשימה 5.4. | להשאיר; לא מזיק (fields ריקים). |
+| D6 | מי רשאי לרכוש מספר Voximplant / לבצע register ב-Meta | **Platform Owner בלבד** (`requirePlatformOwner`), אישור מוקלד של המספר, מחיר מוצג. | `manage_voice` — מרחיב חשיפה כספית לכל staff עם ההרשאה. |
+| D7 | הפניות מנתיבים ישנים | **redirect 307 (זמני) ב-`next.config.ts`** ל-`/admin/channels`, `/admin/templates`, `/admin/alerts`; `/admin/settings`, `/admin/voice/*`, `/admin/webhooks`, `/admin/company` נשארים (ראו §3.4). | להשאיר את העמודים הישנים חיים במקביל — שני מקורות אמת ל-UI. |
+| D8 | `/admin/settings` › תשלומים | **המפתחות של SUMIT עוברים** לעמוד SUMIT; **מתגי הכסף** (`payments_enabled`, `close_charge_enabled`, `campaign_holds_enabled`, `billing_exposure_gate`, תמחור מדורג) **נשארים** ב-`/admin/settings` כי הם מדיניות עסקית, לא חיבור ספק. | להעביר גם את מתגי הכסף — מערבב "האם הספק מחובר" עם "האם אנחנו מחייבים". |
+| D9 | שיחות שלא נענו בקו ExtrA (7 היום, לא מגיעות ל-KALFA) → בקשת חזרה + סיכום AI + הקלטה (Phase 6) | **כן, ב-polling** (`getCallsHistory`), אחרי אישור israeli-compliance-advisor; ללא webhook נכנס חדש בשלב זה. | webhook automations של ExtrA — לא מתועד במפרט; דורש משטח ציבורי חדש. |
+
+**מה לא בהיקף:** שינוי לוגיקת שליחה/חיוב, שינוי מתגים/כותבים, פיצול ניתוב הייבוא (תוכנית 3.9), Meta App Review, שינויי צבע, מיגרציה של `message_templates.components` למבנה אחר.
+
+---
+
+## 1. מצב קיים (Inventory)
+
+כל השורות MEASURED מקריאה מלאה של הקבצים המצוינים ומ-`information_schema.columns` החי (2026-09-08).
+
+### 1.1 עמודים → סקציות → שדות → מקור → הרשאה → מי עורך
+
+| עמוד | סקציה | שדות / פעולות | מקור נתונים | הרשאה (DAL) | עורך |
+|---|---|---|---|---|---|
+| `/admin/channels` (`channels/page.tsx`, `channels-client.tsx`) | מתג פנייה ראשי | `outreach_enabled` | `app_settings` דרך `outreach-master.ts` | `manage_settings` | admin |
+| | WhatsApp › פרטי התחברות | `whatsapp_phone_number_id`, `whatsapp_waba_id`, `whatsapp_access_token` (מוסך), `whatsapp_app_secret` (מוסך), `whatsapp_verify_token` | `channels.ts:25-76` | `manage_settings` | admin |
+| | WhatsApp › חיווט Webhook | Callback URL (`/api/webhooks/whatsapp`), Verify Token להעתקה | `getAppUrl` | — | קריאה |
+| | WhatsApp › בדיקת חיבור | `GET /{pnid}?fields=display_phone_number,verified_name` (גרסה `WHATSAPP_GRAPH_VERSION \|\| 'v23.0'`) | `channels.ts:83-113` | `manage_settings` | admin |
+| | שיחות AI › סטטוס + Live calls | `voximplant_live_calls` (fail-closed על `fullyConfigured`) + Slack security | `voximplant-channel.ts:177-185`; action `actions.ts:177-213` | `manage_voice` | admin |
+| | שיחות AI › Meeting-confirm | `voximplant_meeting_confirm_enabled`, `voximplant_meeting_confirm_rule_id` | `voximplant-channel.ts:201-214` | `manage_voice` | admin |
+| | שיחות AI › Sales-closing | `voximplant_sales_calls_enabled`, `voximplant_sales_call_rule_id` | `voximplant-channel.ts:216-229` | `manage_voice` | admin |
+| | שיחות AI › דרישת הסכמה | `call_consent_required` (אדום; Slack security) | `voximplant-channel.ts:237-245` | `manage_voice` | admin |
+| | שיחות AI › פרטי חשבון וחיוג | `voximplant_service_account_json` (write-only), `voximplant_rule_id`, `voximplant_caller_id`, `voximplant_callback_secret` (מוסך) | `voximplant-channel.ts:65-171` | `manage_voice` | admin |
+| | שיחות AI › מגבלות ותקציב | `voximplant_low_balance_threshold`, `voximplant_min_call_reserve`, `voximplant_max_concurrent_calls`, `voximplant_max_calls_per_campaign_hour` | שם | `manage_voice` | admin |
+| | שיחות AI › כתובות התרחיש | ctx/cb base URLs (קריאה) | `getAppUrl` | — | קריאה |
+| | שיחות AI › בדיקת חיבור | `GetAccountInfo` → יתרה | `voximplant-channel.ts:381-396` | `manage_voice` | admin |
+| | קטלוג הערוצים | `channels.{display_name,is_built,active,sort_order}` | `channel-catalog.ts` | `manage_settings` | admin |
+| `/admin/settings` (`settings/page.tsx`, `settings-form.tsx`) | תשלומים | `payments_enabled`, `close_charge_enabled`, `campaign_holds_enabled`, `billing_exposure_gate`, `sumit_company_id`, `sumit_api_public_key` (מוסך), `sumit_api_key` (מוסך) | `settings.ts:55-190`, schema `validation/admin.ts:417-467` | `manage_settings` | admin |
+| | הודעות | `sms_enabled`, `extra_sms_sender`, `extra_sms_token` (מוסך); `email_enabled`, `smtp_host/port/secure/user/password/from` + הצגת `EMAIL_PROVIDER` (env) | שם; `email/sender.ts:80` | `manage_settings` | admin |
+| | אוטומציות | `inquiry_followup_enabled`, `agreement_archive_enabled`, `signup_reminder_enabled`, `unconfirmed_cleanup_enabled` | שם | `manage_settings` | admin |
+| | שיחות | `console_softphone_enabled`, `console_wake_enabled`, `console_manual_dial_enabled`, `console_consult_conference_enabled`, `handoff_enabled`, `console_dtmf_handoff_enabled`, `monitor_enabled`, `console_widget_enabled`, `console_call_me_now_enabled`, `inbound_calls_enabled` | שם | `manage_settings` | admin |
+| | מודל תמחור מדורג | `base_overage_pricing_enabled` (fail-closed על הסכם v4) | `settings.ts:197-207`, `payments.ts` | `manage_settings` | admin |
+| | חיבור יומן Exchange | `exchange_connections` (create/test/list/revoke/test-appointment), `exchange_connection_mode` | `exchange-connections.ts`, `settings.ts:280-290` | `manage_settings` (mode) / self-scoped | admin |
+| | תצורת תשתית (env) | `SUPABASE_SERVICE_ROLE_KEY`, `APP_ORIGIN` — presence | `settings.ts:297-315` | `manage_settings` | קריאה |
+| `/admin/company` | זהות החברה | `company_legal_name/_id/_address`, `company_contact_phone`, `company_contact_email`, `privacy_url`, `terms_url`, `warranty_text`, `company_instagram_url` | `settings.ts:227-269`; נקרא ציבורית דרך `company.ts` | `manage_settings` | admin |
+| `/admin/templates` | תוכן הפניות | לכל שורת `message_templates`: `name`, `language`, `body`, `active` + תצוגת בריאות (`category/requested_category/quality_score/meta_status/rejected_reason/pending_*`) | `message-templates.ts` (`requireAdmin`) | `requireAdmin` | admin |
+| `/admin/webhooks` | Health strip + רשימה מסוננת + Sheet | `webhook_inbox` (provider/kind/state/date/q), detail: identity, outcome, delivery envelope, reprocess | `webhook-inbox.ts` (service-role תחת `view_webhooks`) | `view_webhooks`; reprocess `requireAdmin` | admin |
+| `/admin/alerts` | חיבור Slack | `slack_bot_token` (write-only, presence), `slack_alert_channel_id`; test; disconnect | `alerts.ts` | `manage_settings` (actions: `requireAdmin`) | admin |
+| | אזכור אישי | `slack_mention_user_id`, `slack_mention_min_level` | שם | | |
+| | מתגי התראות | `slack_alerts_enabled` + 5 קטגוריות (`errors`, `send_health`, `campaign_billing`, `security`, `customer_inquiry`) | שם | | |
+| | היסטוריה | `ops_alerts` (paginated) | שם | | קריאה |
+| `/admin/voice` | tiles + אירועים | יתרה (cache), פעילות שיחות | `voice-ops.ts`, `voice-balance-cache.ts` | `manage_voice` | קריאה |
+| `/admin/voice/platform` | יתרה וחיווט | `GetAccountInfo`, מצב `voximplant_account_callback_state`, wire/rollback (`SetAccountInfo` מוגבל) | `voice-ops.ts:479-562`, `voximplant-channel.ts:263-374` | `manage_voice`; actions `requireAdmin` | admin |
+| | רשימות חיוג / audit / allowlist / log export | `GetCallLists`, `GetAuditLog`, IPs, `runLogExport` | שם | | |
+| | צי ElevenLabs | agents.json + API status + quota; `elevenlabs_api_key` (write-only) | `elevenlabs-status.ts` | `requireAdmin` | admin |
+| `/admin/voice/queues` | מחלקות | `console_queues.is_active`, `console_agent_queues` | `console-queues.ts` | `manage_voice` | admin |
+| `/admin/voice/console` | התחברות SDK (dev) | node/login | `console_me` | `requireUser` (membership) | agent |
+| `/admin/debug` (הכוונה ב-brief ל-"ops") | Integrations panel | ElevenLabs, Voximplant, Slack, WhatsApp, SUMIT, ExtrA, GA4 — configured + lastChecked (מ-pg-boss) | `ops/integrations.ts` | `requirePlatformOwner` | קריאה |
+| Nav (`admin-shell.tsx:98-180`) | קמפיינים ושליחה / מערכת ותפעול / כלי בדיקה | קישורים ל-channels, templates, settings, alerts, webhooks, voice… | — | — | — |
+
+**הערה:** אין עמוד `/admin/ops` בריפו (MEASURED `find`); הפאנל שה-brief מתייחס אליו הוא `/admin/debug` (`src/app/(admin)/admin/debug/page.tsx`, `_panels.tsx`).
+
+### 1.2 עמודות `app_settings` הרלוונטיות (MEASURED, live)
+
+WhatsApp: `whatsapp_phone_number_id`, `whatsapp_waba_id`, `whatsapp_access_token`, `whatsapp_app_secret`, `whatsapp_verify_token`, `whatsapp_send_policy jsonb`, `outreach_enabled`. **אין** `whatsapp_app_id`, **אין** `whatsapp_import_*` (תוכנית 3.9 לא יושמה).
+Voximplant: `voximplant_service_account_json`, `voximplant_rule_id`, `voximplant_caller_id`, `voximplant_callback_secret`, 4 עמודות תקציב, `voximplant_live_calls`, `voximplant_account_callback_{token_hash,salt,state,prev,wired_at}`, `voximplant_balance_callback_at`, `voximplant_application_id`, `voximplant_call_me_now_rule_id`, `voximplant_meeting_confirm_{enabled,rule_id}`, `voximplant_sales_{calls_enabled,call_rule_id}`, `call_consent_required`, `inbound_ai_answer_enabled`, 10 מתגי console.
+ExtrA: `sms_enabled`, `extra_sms_token`, `extra_sms_sender`. SMTP: 6 עמודות. SUMIT: 3. Slack: 9. Company: 9. ElevenLabs: `elevenlabs_api_key`. Exchange: `exchange_connection_mode`.
+
+ערכים חיים (לא סודות, MEASURED): `voximplant_caller_id` מסתיים ב-`9347`; `whatsapp_phone_number_id` מסתיים ב-`8430` (= `1018741517998430`); `extra_sms_sender = '03-3301505'`; `whatsapp_send_policy` **מוגדר** (לא null); rule ids: RSVP `1520915` (OutCallAgent), call-me-now `1523124`, meeting-confirm `1523903`, sales `1523906`; `company_contact_phone` מוגדר.
+
+### 1.3 טבלאות נוספות (MEASURED)
+
+- `channels(key, display_name, is_built, active, sort_order, …)` — 2 שורות (`whatsapp`, `call`). RLS: `channels_admin_all` (ALL) + `channels_auth_read` (SELECT).
+- `message_templates` — 9 שורות; `components jsonb` עם מפתחות `variants`, `media_variants`, `media_variant`, `param_contract`, `rsvp_quick_reply`; **28** ערכי וריאנט בסה"כ. RLS `message_templates_admin_all` (authenticated). ⚠️ grants ל-`anon` = ALL (RLS חוסם, אבל היגיינה — §8).
+- `webhook_inbox` — לפי `phone_number_id` (provider=whatsapp): `1018741517998430` n=686; **`1298694319994421` n=38 (אחרון 2026-09-07 22:41)**; `123456123` (sandbox) n=9; `<null>` n=9 (אירועי תבניות/security). לפי kind: `whatsapp/status` 642, `message` 91, `template_status` 2, `template_quality` 1, **`security` 3, `business_username_updates` 3** (נשמרים גנרית, לא מטופלים).
+- `platform_permission_definitions` — 12 מפתחות; רלוונטיים: `manage_settings` (platform), `manage_voice` (ops), `view_webhooks` (ops).
+- `console_queues` — 4 (sales/support/events/billing); `console_agents` — 3, כולם עם `vox_username`.
+
+### 1.4 Voximplant — יישום ותקנות (MEASURED מ-`voxfiles/`)
+
+אפליקציה `kalfa-rsvp` (11107202). Rules (`rules.metadata.config.json`): `incoming` 1494687 pattern `97237219347` → `ConsoleInbound` (919510); `ConsoleInternal`/`ConsoleOut` → `ConsoleDial`; `ConsoleCallMeNow` 1523124; `OutCall` 1494311 → `RSVP`; `OutCallAgent` 1520915 → `RSVPAgent`; `OutCallMeetingConfirm` 1523903; `OutCallSalesClose` 1523906. **INFERRED:** ה-DID היחיד של Voximplant הוא `+972 3-721-9347` (הסיומת `9347` של `voximplant_caller_id` + ה-pattern של rule `incoming` + מספר ה-RSVP של WhatsApp לפי `docs/whatsapp-import-number-split-plan-2026-09-03.md`) — כלומר **אותו מספר** משמש caller id יוצא, DID נכנס ומספר WhatsApp RSVP. `src/lib/voximplant/core.ts:332` כבר עוטף `GetPhoneNumbers` (read-only); אין עטיפה ל-`AttachPhoneNumber`/`BindPhoneNumberToApplication`.
+
+---
+
+## 2. פערים (עם ראיות)
+
+| # | פער | ראיה | תג |
+|---|---|---|---|
+| G1 | אין תצוגת "מספרים מחוברים" | ארבעה שדות טקסט בודדים: `channels.ts:15`, `voximplant-channel.ts:30`, `settings.ts:23`, `settings.ts:216`. אין `display_phone_number`, `verified_name`, איכות, tier, שיוך לתפקיד. | MEASURED |
+| G2 | מספר WhatsApp שני לא מוגדר | `webhook_inbox`: `phone_number_id=1298694319994421` n=38, אחרון 2026-09-07; `webhook-inbox.ts:183-187` מזהה רק את `whatsapp_phone_number_id`; `webhook-detail.tsx:175` מציג "לא מוגדר ב-/admin/channels". המספר = `+972 3-330-1505` = גם `extra_sms_sender` = גם `company_contact_phone` (לפי תוכנית 3.9 §1.1). | MEASURED |
+| G3 | caller id אחד לכל הפרסונות | `voximplant-config.ts:97,157` — RSVP, meeting-confirm, sales קוראים את אותו `voximplant_caller_id`; call-me-now (`ConsoleCallMeNow`) — אין caller id נפרד בסכמה. | MEASURED |
+| G4 | וריאנטים לא מנוטרים | `template-health-sync.ts:58-65` מתאים `metaTemplates.find(t => t.name === row.name && t.language === row.language)` — רק שם המצביע; 28 וריאנטים ב-`components` לא נבדקים. `fetchTemplateHealth` **כבר מוריד את כל התבניות של ה-WABA** (`template-health.ts:45-69`) — הנתון קיים, לא נשמר. | MEASURED |
+| G5 | גרסת Graph מפוזרת | `channels.ts:89` v23 (fallback), `template-health.ts:16` v23, `whatsapp-import.ts:253` v23, `relocation/meta-templates.ts:34` v23, `relocation/preflight.ts:720` v21, `relocation/external.ts:201` v21, `client.ts` `DEFAULT_API_VERSION` של ה-SDK = v24.0 (`node_modules/whatsapp-api-js/lib/types.js:1`). Meta latest v26.0 (29.7.2026); v21 פוקע 21.1.2027, v23 8.10.2027, v24 18.2.2028. | MEASURED + DOCS-ONLY (changelog) |
+| G6 | מנוי webhook רחב, טיפול צר | MCP `devtools_webhook_list`: topic `whatsapp_business_account` עם **28** שדות + topic **`catalog`** (fields ריקים, זר). מטופלים ב-`webhook-processing.ts:78-150`: `message`, `status`, `template_status`, `template_category`, `template_category_misuse`, `template_quality` (6). השאר נשמרים גנרית (`route.ts:106-144`) ומסומנים processed בלי טיפול. | MEASURED |
+| G7 | אין בדיקת תוקף טוקן | אין קריאה ל-`debug_token` על `whatsapp_access_token` בשום מקום (grep `debug_token`: רק `relocation/env-validation.ts:238` על טוקן Ads). | MEASURED |
+| G8 | סטטוס אפליקציית Meta לא מוצג | MCP `devtools_app basic_settings` (היום): `contact_email_verified: false`, `data_deletion_url: null`, `support_url: null`, `privacy_policy_url: http://www.kalfa.me/en/privacy` (http), `terms_of_service_url: http://www.kalfa.me/terms`, `app_status: dev_mode`, `is_live: false`. Graph API אינו חושף mode/review (זיכרון `meta-devtools-mcp-app-status`). | MEASURED (MCP) |
+| G9 | `whatsapp_send_policy` ללא UI | העמודה קיימת ומוגדרת; אין קורא/כותב ב-`src/app/(admin)`; `parseSendPolicy` (`send-policy.ts:79-102`) מספק את הגדרות הבטיחות. | MEASURED |
+| G10 | template-health-sync לא מנוטר | `QUEUES.templateHealthSync = 'whatsapp-template-health-sync'` (`queue/queues.ts:59`), מתוזמן `35 3 * * *` (`worker/main.ts:1369`); **חסר** ב-`ops/queue-schedule.ts:12-32`; `ops/integrations.ts:81-87` — WhatsApp `healthCheckAvailable: false`. | MEASURED |
+| G11 | drift קטגוריה | live: `gift`, `thankyou`, `sales_signup_link` — `requested_category=UTILITY`, `category=MARKETING` (3, לא 2). ה-UI מציג "ירדה בקטגוריה" בלי דרך לאשר/לסגור. | MEASURED |
+| G12 | תכלית ה-SMS לא מוצגת; ExtrA ידוע לקוד רק כ-`/sms/send/` | `getSmsSender` נקרא מ-`otp.ts`, `event-cancellation.ts`, `callback-scheduling.ts`, `sls/tool/signup-link/[token]/route.ts` — OTP, SMS ביטול, תזמון חזרה, קישור הרשמה למכירות. ה-sender הוא מספר (`03-3301505`), לא שם. `sender.ts` מממש endpoint אחד מתוך 11 ב-OpenAPI הרשמי (§5.3): אין בדיקת מפתח (`getAuthKey`), אין ניטור תפוגה (המפתח החי פוקע **2027-10-27**, MEASURED team-lead), אין תצוגת קו העסק. | MEASURED |
+| G16 | קו ExtrA "חובש ארבעה כובעים" בלי תיעוד | MEASURED (team-lead, קריאות read-only ל-`/auth/key/` ו-`/calls/`, 2026-09-08): החשבון מחזיק **קו וירטואלי אחד** `03-3301505` (`line_type: vn`, `own_type: VNUM`, ללא IVR). 62 שיחות מאז 2025-03: 39 נכנסות מועברות למכשיר פיזי שמסתיים ב-`…3588`, 23 יוצאות מאותו מכשיר דרך ExtrA, **7 `incoming_missed` שלא מגיעות ל-KALFA** בשום צורה. אותו מספר = שולח SMS = מספר WhatsApp ייבוא (`1298694319994421`) = `company_contact_phone`. Verified IDs/מכשירים **אינם חשופים ב-API** (פורטל `/my/verified-ids/` בלבד). | MEASURED + DOCS-ONLY |
+| G13 | קטגוריות Slack לפי ספק לא ממופות | `send_health` נפלט מ-`whatsapp`, `sms`, `sumit`, `whatsapp-template-*`; `security` מ-`voximplant-*-toggle`, `call-consent-toggle`, `admin-voice`; אין תצוגה "מה יישלח לספק X". | MEASURED |
+| G14 | DIDs נכנסים של Voximplant רק בפלטפורמה | rule `incoming` pattern `97237219347` ב-`rules.config.json`; אין קריאה ל-`getPhoneNumbers` מהפאנל (grep: מוגדר ב-`core.ts:332`, לא בשימוש ב-`src/app`). | MEASURED |
+| G15 | `security`/`business_username_updates` בלי label | `labels.ts:205+` — אין תוויות ל-kinds הגנריים; מוצגים בשם הגולמי. | MEASURED |
+
+---
+
+## 3. ארכיטקטורת יעד
+
+### 3.1 מפת ניווט (IA)
+
+```
+/admin/integrations                       אינדקס: כרטיס-סטטוס לכל ספק (מוגדר? חי? בדיקה אחרונה? מספרים?)
+/admin/integrations/meta-whatsapp         Meta / WhatsApp Cloud API
+/admin/integrations/meta-whatsapp/templates   תבניות + בריאות וריאנטים (מחליף /admin/templates)
+/admin/integrations/voximplant            Voximplant (שיחות AI + מוקד)
+/admin/integrations/extra-sms             ExtrA SMS
+/admin/integrations/resend-email          Resend / SMTP
+/admin/integrations/microsoft             Microsoft Graph / Exchange
+/admin/integrations/sumit                 SUMIT / OfficeGuy
+/admin/integrations/slack                 Slack (התראות תפעול; מחליף /admin/alerts)
+/admin/integrations/numbers               מודול המספרים המאוחד (כל הספקים)
+```
+
+Nav: בקבוצת "מערכת ותפעול" פריט אחד **"אינטגרציות"** (`Plug` מ-lucide) במקום `ערוצי תקשורת`, `תבניות פנייה`, `התראות תפעול`. `הגדרות`, `יומן Exchange`, `בדיקת Webhooks`, `בדיקת SUMIT`, `מוקד שיחות AI` נשארים.
+
+### 3.2 תבנית עמוד ספק (wireframe)
+
+כל עמוד ספק = Server Component שמרכיב:
+
+1. **כרטיס סטטוס** — Badge (מוגדר/פעיל/כבוי), "בדיקה אחרונה" (מ-pg-boss `lastCompletedOn` או מה-DAL), כפתור "בדיקת חיבור" (ה-actions הקיימים).
+2. **מספרים/נכסים** — טבלת המספרים של הספק מתוך `provider_numbers` (Phase 1), עם התפקידים (`provider_number_roles`), snapshot מהספק (איכות/tier/verification/renewal), כפתור "סנכרן מהספק" ו-"הוסף מספר" (Phase 2/3).
+3. **פרטי התחברות** — הטופס הקיים (מועבר), מוסך+חשיפה, write-only היכן שכבר כך.
+4. **Webhooks** — Callback URL + verify token (Meta), wiring state (Voximplant), קישור ל-`/admin/webhooks?provider=<x>`; ב-Meta: טבלת "שדות מנויים ↔ מטופלים" (Phase 5).
+5. **תבניות / פרסונות** — Meta: קישור לעמוד התבניות + סיכום בריאות; Voximplant: ארבע הפרסונות (RSVP/meeting-confirm/sales/call-me-now) עם rule id, caller id (Phase 4), מתג.
+6. **בריאות ומשימות** — תורי pg-boss הרלוונטיים לספק + התראות Slack מה-30 יום האחרונים (`ops_alerts` לפי `source`).
+7. **אזור מסוכן** — מתגי כיבוי (בכותב הקיים), ניתוק, deregister/deactivate (Owner).
+
+### 3.3 מיפוי "מה עובר לאן"
+
+| היום | יעד | מה משתנה בקוד |
+|---|---|---|
+| `/admin/channels` › מתג פנייה ראשי | `/admin/integrations` (כרטיס עליון) **וגם** בראש עמוד Meta ו-Voximplant (אותו רכיב `OutreachMasterSwitch`, אותו action) | העברת קומפוננטה; `revalidatePath` מתעדכן לנתיבים החדשים |
+| `/admin/channels` › WhatsApp | `/admin/integrations/meta-whatsapp` › פרטי התחברות + Webhooks | פיצול `channels-client.tsx` ל-`whatsapp-credentials-form.tsx`, `whatsapp-webhook-card.tsx` |
+| `/admin/channels` › שיחות AI | `/admin/integrations/voximplant` › פרטי התחברות, פרסונות, אזור מסוכן | פיצול ל-`voximplant-credentials-form.tsx`, `voximplant-personas.tsx`, `voximplant-danger-zone.tsx` |
+| `/admin/channels` › קטלוג הערוצים | `/admin/integrations` › סקציה "קטלוג ערוצים" (תחתית) | העברה כפי שהוא |
+| `/admin/templates` | `/admin/integrations/meta-whatsapp/templates` | העברה + Phase 5 (וריאנטים) |
+| `/admin/alerts` | `/admin/integrations/slack` | העברה כפי שהוא |
+| `/admin/settings` › הודעות (ExtrA) | `/admin/integrations/extra-sms` | schema נפרד `extraSmsSchema`; טופס נפרד |
+| `/admin/settings` › הודעות (SMTP/Resend) | `/admin/integrations/resend-email` | schema נפרד `emailTransportSchema`; טופס נפרד; שורת סטטוס `EMAIL_PROVIDER` |
+| `/admin/settings` › תשלומים (3 מפתחות SUMIT) | `/admin/integrations/sumit` | schema נפרד `sumitCredentialsSchema`; מתגי הכסף נשארים ב-settings (D8) |
+| `/admin/settings` › Exchange | `/admin/integrations/microsoft` | העברת `ExchangeManager` + `ExchangeModeToggle`; `/admin/calendar` נשאר |
+| `/admin/settings` › שיחות (10 מתגי console) | **נשאר** ב-settings (מדיניות מוקד, לא חיבור); עמוד Voximplant מקשר אליו | ללא שינוי |
+| `/admin/voice/platform` | **נשאר** (תפעול מוקד); עמוד Voximplant מציג יתרה+wiring בכרטיס הסטטוס ומקשר | שימוש חוזר ב-`getVoicePlatformView` |
+| `/admin/webhooks` | **נשאר** (inspector חוצה-ספקים) | Phase 1: "המספר העסקי שקיבל" נפתר מול `provider_numbers` במקום עמודה אחת |
+| `/admin/debug` › Integrations | **נשאר**; מקבל WhatsApp health check (G10) | `integrations.ts` |
+| `/admin/company` | **נשאר** (חוזה/משפטי); `company_contact_phone` מוצג במודול המספרים כתפקיד `company_contact` (קריאה בלבד, עריכה ב-company) | ללא שינוי בטופס |
+
+### 3.4 redirects
+
+`next.config.ts` אין היום `redirects()` (MEASURED grep). מוסיפים:
+
+```ts
+async redirects() {
+  return [
+    { source: '/admin/channels', destination: '/admin/integrations/meta-whatsapp', permanent: false },
+    { source: '/admin/templates', destination: '/admin/integrations/meta-whatsapp/templates', permanent: false },
+    { source: '/admin/alerts', destination: '/admin/integrations/slack', permanent: false },
+  ];
+},
+```
+
+הקבצים הישנים נמחקים באותה משימה (Phase 0.7) כדי שלא יהיו שני מקורות UI. כל `revalidatePath('/admin/channels')` וכו' בקוד מוחלף לנתיב החדש (grep מלא במשימה).
+
+### 3.5 מודול המספרים
+
+`/admin/integrations/numbers` — טבלה אחת: מספר (E.164, `dir="ltr"`) · ספק · מזהה ספק · תפקידים (chips) · סטטוס ספק (snapshot) · סונכרן · פעולות. אותו מספר E.164 יכול להופיע בכמה שורות (ספק שונה) — זה **המצב האמיתי** (G2, §1.4). קיבוץ ויזואלי לפי E.164 עם `rowspan` לא נדרש; מסננים לפי ספק.
+
+### 3.6 הרשאות
+
+- אינדקס + Meta/ExtrA/Resend/Microsoft/SUMIT/Slack: `requirePlatformPermission('manage_settings')` (כמו היום).
+- Voximplant: `manage_voice` (כמו היום). מודול המספרים: קריאה `manage_settings`; כתיבת שורות Voximplant `manage_voice`, שורות Meta/ExtrA `manage_settings`.
+- רכישה (`AttachPhoneNumber`), `DeactivatePhoneNumber`, `register`/`deregister`, הסרת מנוי webhook: `requirePlatformOwner` (D6).
+- `manage_integrations` חדש — **לא**. שני המפתחות הקיימים כבר מבחינים בין "הגדרות מערכת" ל"מוקד"; מפתח שלישי היה מייצר מטריצת הרשאות בלי צורך מוכח. אם הבעלים ירצה staff שרואה סטטוס בלי לערוך — זה מפתח `view_integrations` נפרד ולא בהיקף.
+
+---
+
+## 4. מודל נתונים ומיגרציה
+
+### 4.1 החלטה: טבלאות, לא עמודות
+
+per-persona caller id = 4 תפקידים (RSVP, meeting-confirm, sales, call-me-now) + DID נכנס + שני מספרי WhatsApp (RSVP, ייבוא) + SMS sender + טלפון החברה = **9 תפקידים על ≥3 מספרים פיזיים משלושה ספקים**. `app_settings` הוא singleton — כל תפקיד היה עמודה, וכל snapshot מהספק עוד עמודות. טבלה עם שורה למספר ושורה לתפקיד היא המודל הטבעי, ומאפשרת היסטוריה (`created_at`, `source`) ו-snapshot לכל מספר.
+
+### 4.2 SQL (מיגרציה `provider_numbers_and_roles`)
+
+```sql
+-- provider_numbers: every business phone number / sender identity KALFA holds at a
+-- provider, one row per (provider, provider_ref). The same E.164 may legitimately
+-- appear under several providers (verified live 2026-09-08: +972 3-721-9347 is the
+-- Voximplant DID/caller id AND the WhatsApp RSVP sender). Snapshot = non-secret
+-- provider status fields (quality, tier, verification, renewal…), never a token.
+create table public.provider_numbers (
+  id            uuid primary key default gen_random_uuid(),
+  provider      text not null
+                constraint provider_numbers_provider_chk
+                check (provider in ('meta_whatsapp','voximplant','extra_sms','company')),
+  provider_ref  text,                              -- Meta phone_number_id / Voximplant phone_id / ExtrA sender / 'contact'
+  e164          text
+                constraint provider_numbers_e164_chk
+                check (e164 is null or e164 ~ '^\+[1-9][0-9]{6,14}$'),
+  display_label text,                              -- admin-facing label ("מספר RSVP", "מספר ייבוא")
+  is_active     boolean not null default true,
+  snapshot      jsonb,                             -- provider status fields only (no secrets)
+  snapshot_at   timestamptz,
+  source        text not null default 'admin'
+                constraint provider_numbers_source_chk check (source in ('admin','backfill','sync')),
+  created_at    timestamptz not null default now(),
+  updated_at    timestamptz not null default now(),
+  constraint provider_numbers_ref_or_e164 check (provider_ref is not null or e164 is not null)
+);
+create unique index provider_numbers_provider_ref_uq
+  on public.provider_numbers (provider, provider_ref) where provider_ref is not null;
+create index provider_numbers_e164_idx on public.provider_numbers (e164);
+
+comment on table public.provider_numbers is
+  'Business phone numbers / sender identities per provider. Replaces the four single fields on app_settings (whatsapp_phone_number_id, voximplant_caller_id, extra_sms_sender, company_contact_phone) which stay as read-fallbacks until the cleanup migration. Snapshot holds non-secret provider status only.';
+
+-- provider_number_roles: exactly ONE number per role (role is the PK); a number may
+-- hold many roles. The runtime resolvers read this first and fall back to the legacy
+-- app_settings column while the backfill is verified.
+create table public.provider_number_roles (
+  role       text primary key
+             constraint provider_number_roles_role_chk
+             check (role in (
+               'whatsapp_rsvp_sender','whatsapp_import_sender',
+               'voice_caller_id_rsvp','voice_caller_id_meeting_confirm',
+               'voice_caller_id_sales','voice_caller_id_call_me_now',
+               'voice_inbound_did','sms_sender','company_contact','business_line_inbound')),
+  number_id  uuid not null references public.provider_numbers(id) on delete restrict,
+  updated_at timestamptz not null default now()
+);
+create index provider_number_roles_number_idx on public.provider_number_roles (number_id);
+
+comment on table public.provider_number_roles is
+  'Which provider_numbers row serves which runtime role. One row per role. Voice caller ids are per persona (RSVP / meeting-confirm / sales / call-me-now) — the four personas shared app_settings.voximplant_caller_id before this table. business_line_inbound = the ExtrA virtual line that forwards inbound calls to the owner''s device (display/ops role, no runtime reader).';
+
+create trigger provider_numbers_set_updated_at
+  before update on public.provider_numbers
+  for each row execute function public.set_updated_at();
+create trigger provider_number_roles_set_updated_at
+  before update on public.provider_number_roles
+  for each row execute function public.set_updated_at();
+
+-- RLS: mirrors channels_admin_all (20260726111038). Admin writes go through the
+-- cookie client (has_role admin); the worker/runtime reads via service_role.
+alter table public.provider_numbers enable row level security;
+alter table public.provider_number_roles enable row level security;
+revoke all on public.provider_numbers from anon, authenticated;
+revoke all on public.provider_number_roles from anon, authenticated;
+grant select, insert, update, delete on public.provider_numbers to authenticated;
+grant select, insert, update, delete on public.provider_number_roles to authenticated;
+
+create policy provider_numbers_admin_all on public.provider_numbers for all
+  using ((select public.has_role((select auth.uid()), 'admin'::app_role)))
+  with check ((select public.has_role((select auth.uid()), 'admin'::app_role)));
+create policy provider_number_roles_admin_all on public.provider_number_roles for all
+  using ((select public.has_role((select auth.uid()), 'admin'::app_role)))
+  with check ((select public.has_role((select auth.uid()), 'admin'::app_role)));
+
+-- Backfill from the four legacy fields (idempotent). E.164 for the WhatsApp row is
+-- filled by the first "sync from Meta" (display_phone_number), not guessed here.
+insert into public.provider_numbers (provider, provider_ref, display_label, source)
+select 'meta_whatsapp', whatsapp_phone_number_id, 'מספר אישורי הגעה (RSVP)', 'backfill'
+  from public.app_settings where whatsapp_phone_number_id is not null
+on conflict do nothing;
+insert into public.provider_numbers (provider, provider_ref, e164, display_label, source)
+select 'voximplant', null,
+       case when voximplant_caller_id ~ '^\+[1-9][0-9]{6,14}$' then voximplant_caller_id else null end,
+       'מספר יוצא (Caller ID)', 'backfill'
+  from public.app_settings where voximplant_caller_id is not null
+on conflict do nothing;
+-- ExtrA: provider_ref = the verified sender id string as stored today ('03-3301505').
+-- e164 is filled by the first ExtrA sync (Phase 1.3) from /calls/ numbers.own.e164 —
+-- the only API surface that exposes the account's own lines (no numbers endpoint).
+insert into public.provider_numbers (provider, provider_ref, display_label, source)
+select 'extra_sms', extra_sms_sender, 'קו העסק / שולח SMS (ExtrA)', 'backfill'
+  from public.app_settings where extra_sms_sender is not null
+on conflict do nothing;
+insert into public.provider_numbers (provider, provider_ref, display_label, source)
+select 'company', 'contact', 'טלפון החברה (הסכם)', 'backfill'
+  from public.app_settings where company_contact_phone is not null
+on conflict do nothing;
+
+insert into public.provider_number_roles (role, number_id)
+select 'whatsapp_rsvp_sender', id from public.provider_numbers where provider='meta_whatsapp' and source='backfill'
+union all select 'voice_caller_id_rsvp', id from public.provider_numbers where provider='voximplant' and source='backfill'
+union all select 'voice_caller_id_meeting_confirm', id from public.provider_numbers where provider='voximplant' and source='backfill'
+union all select 'voice_caller_id_sales', id from public.provider_numbers where provider='voximplant' and source='backfill'
+union all select 'voice_caller_id_call_me_now', id from public.provider_numbers where provider='voximplant' and source='backfill'
+union all select 'sms_sender', id from public.provider_numbers where provider='extra_sms' and source='backfill'
+union all select 'business_line_inbound', id from public.provider_numbers where provider='extra_sms' and source='backfill'
+union all select 'company_contact', id from public.provider_numbers where provider='company' and source='backfill'
+on conflict (role) do nothing;
+
+-- ROLLBACK:
+--   drop table public.provider_number_roles; drop table public.provider_numbers;
+-- Legacy app_settings columns are untouched by this migration, so rollback restores
+-- the exact pre-migration runtime (resolvers fall back to the columns).
+```
+
+**הערות למיגרציה:** ה-Voximplant `phone_id` (מספרי) לא ידוע בזמן ה-backfill — ממולא ב-Phase 3 מסנכרון `GetPhoneNumbers` (התאמה לפי E.164 → `provider_ref = phone_id`). `voximplant_caller_id` החי אולי אינו ב-E.164 עם `+` (הפורמט לא נמדד; רק סיומת) — לכן ה-`case`; אם null, המסך מציג "השלימו E.164" והסנכרון של Phase 3 ממלא. יש להריץ ב-`begin; … rollback;` מול ה-DB החי לפני `db push` (התקדים של 20260822114850).
+
+### 4.3 טבלת בריאות וריאנטים (Phase 5)
+
+```sql
+create table public.message_template_variant_health (
+  template_id     uuid not null references public.message_templates(id) on delete cascade,
+  variant_name    text not null,           -- the Meta template name (pointer name or a components.* variant)
+  language        text not null,
+  variant_kind    text not null check (variant_kind in ('pointer','variants','media_variants','media_variant')),
+  event_type      text,                    -- key inside components.variants / media_variants; null for pointer/media_variant
+  meta_template_id text,
+  category        text,
+  quality_score   text,
+  meta_status     text,
+  rejected_reason text,
+  last_synced_at  timestamptz not null default now(),
+  primary key (template_id, variant_name, language)
+);
+alter table public.message_template_variant_health enable row level security;
+revoke all on public.message_template_variant_health from anon, authenticated;
+grant select on public.message_template_variant_health to authenticated;
+create policy mtvh_admin_select on public.message_template_variant_health for select
+  using ((select public.has_role((select auth.uid()), 'admin'::app_role)));
+-- writes: worker only (service_role). ROLLBACK: drop table.
+```
+
+### 4.4 עמודה חדשה ב-`app_settings`: `whatsapp_app_id text` (Phase 5)
+
+נדרשת ל-`GET /{app-id}/subscriptions` ול-`debug_token` (app access token = `APP_ID|APP_SECRET`; DOCS-ONLY ctx7 `/websites/developers_facebook_graph-api` "app access token or an app developer's user access token… is required"). לא סוד. נכתבת בטופס Meta › פרטי התחברות.
+
+---
+
+## 5. חיבור/הוספת מספרים לפי ספק
+
+### 5.1 Meta WhatsApp Cloud API
+
+**רשימת מספרים ב-WABA** — DOCS-ONLY (ctx7 `phone-number-management-api`, WebFetch `cloud-api/reference/phone-numbers`):
+`GET /{API_VERSION}/{WABA_ID}/phone_numbers?fields=id,display_phone_number,verified_name,status,quality_rating,code_verification_status,name_status,messaging_limit_tier,throughput,platform_type,account_mode,is_official_business_account,last_onboarded_time`. סינון `account_mode` (SANDBOX/LIVE, beta), מיון `last_onboarded_time`. `name_status ∈ {APPROVED, AVAILABLE_WITHOUT_REVIEW, DECLINED, EXPIRED, PENDING_REVIEW, NONE}`. tier דרך `GET /{pnid}?fields=whatsapp_business_manager_messaging_limit` → `TIER_250`… (ctx7 `messaging-limits`).
+
+**הוספת מספר** — DOCS-ONLY, **שתי גרסאות תיעוד סותרות**: (א) reference `phone-number-management-api`: `POST /{WABA_ID}/phone_numbers` body `phone_number` (E.164 בלי `+`, required), `verified_name` (required), `cc` (optional), `migrate_phone_number`, `preverified_id`; (ב) מדריך המיגרציה: `cc` + `phone_number` (בלי קידומת) + `verified_name` כולם required. **משימה 2.1 חייבת לאמת מול העמוד החי לפני קידוד**; המימוש ישלח `cc`, `phone_number` (ספרות לאומיות), `verified_name` — הצורה שמופיעה בדוגמה המלאה. תגובה: `{ id }` = `phone_number_id` החדש. עמוד `cloud-api/reference/phone-numbers` **אינו** מתעד POST כזה ומפנה ל-WhatsApp Manager/Embedded Signup — עוד סיבה לאימות.
+
+**אימות בעלות** — DOCS-ONLY: `POST /{PHONE_NUMBER_ID}/request_code` body `code_method ∈ {SMS, VOICE}`, `language` (2 תווים, למשל `he`/`en`); `POST /{PHONE_NUMBER_ID}/verify_code` body `code` (מספרי). "Authenticate yourself with a system user access token."
+
+**רישום ל-Cloud API** — DOCS-ONLY (`cloud-api/reference/registration`): `POST /{PHONE_NUMBER_ID}/register` body `{ messaging_product: "whatsapp", pin: "<6 digits>" }`. "If your verified business phone number already has two-step verification enabled, set this value to your number's 6-digit two-step verification PIN"; אחרת ה-PIN שנשלח **מפעיל** אימות דו-שלבי. `POST /{PHONE_NUMBER_ID}/deregister`. **מגבלה:** "limited to 10 requests per business number in a 72-hour moving window" → שגיאה `133016` וחסימה ל-72 שעות (שני ה-endpoints).
+
+**שם תצוגה** — DOCS-ONLY (`display-names`): `POST /{pnid}?new_display_name=…` (עד 10 שינויים ב-30 יום, דורש סקירה); מעקב `GET /{pnid}?fields=new_display_name,new_name_status`.
+
+**הרשאות/טוקן** — DOCS-ONLY: `whatsapp_business_management` + `whatsapp_business_messaging`; טוקן System-User (הטוקן שכבר ב-`whatsapp_access_token`). "Advanced Access" נדרש רק בפעולה בשם עסק אחר.
+
+**אילוצים** — DOCS-ONLY (`cloud-api/phone-numbers`): המספר לא יכול להיות בשימוש ב-WhatsApp Messenger/Business App ("Numbers already in use with WhatsApp cannot be registered unless they are deleted first"); חייב לקבל SMS/שיחה; לא short code; "New business portfolios are initially capped at two registered business phone numbers" → 20 אחרי אימות עסקי או tier 2K. שם התצוגה מחויב סקירה (`name_status`).
+
+**תוקף טוקן** — DOCS-ONLY (ctx7 `/websites/developers_facebook_graph-api` → `GET /v26.0/debug_token?input_token=…`): דורש app access token (`{APP_ID}|{APP_SECRET}`) או טוקן של מפתח האפליקציה; תגובה `data.{is_valid, expires_at, data_access_expires_at, issued_at, scopes[], granular_scopes[], app_id, type, user_id}`. INFERRED: לטוקן System-User "never expires" `expires_at = 0`. דורש `whatsapp_app_id` (§4.4).
+
+**מנויי webhook** — MEASURED (MCP): `GET /{app-id}/subscriptions` (בשימוש כבר ב-`relocation/external.ts:201`, v21.0) מחזיר topics + fields. הסרת topic זר: `DELETE /{app-id}/subscriptions` עם `object=catalog` — **DOCS-ONLY, לא אומת היום**; משימה 5.4 מאמתת ב-ctx7 לפני קידוד.
+
+### 5.2 Voximplant Management API
+
+כל השורות DOCS-ONLY מ-`voximplant.com/api/v2/getDoc?fqdn=references.httpapi.*` (נשלף 2026-09-08), אלא אם צוין. Roles = תפקידי ה-service account שנדרשים.
+
+| שלב | מתודה | פרמטרים עיקריים | Roles | הערות |
+|---|---|---|---|---|
+| רשימת המספרים שלנו | `GetPhoneNumbers` (**קיים** `core.ts:332`) | סינון `application_id`, `is_bound_to_application`, `is_bound_to_rule`, `activation_status`, `phone_number` | Owner/Admin/Developer/Supervisor/Accountant/Support/Payer | תגובה `AttachedPhoneInfoType`: `phone_id`, `phone_number`, `activation_status`, `verification_status ∈ {REQUIRED,IN_PROGRESS,VERIFIED}`, `unverified_hold_until` (**"The number is detached on that day automatically!"**), `phone_next_renewal`, `phone_price`, `phone_purchase_date`, `application_id/name`, `rule_id/name`, `is_sms_supported`, `deactivated`, `canceled` |
+| שייכות זולה | `IsAccountPhoneNumber` | `phone_number` (בלי `+`) | כל התפקידים | לבדיקת caller id שהוקלד ידנית |
+| קטלוג | `GetPhoneNumberCategories` → `GetPhoneNumberRegions(country_code, phone_category_name)` | | Owner/Admin/Accountant/Payer | `PhoneNumberCountryRegionInfoType`: `account_price`, `account_installation_price`, `account_currency`, `phone_count` (מלאי), **`is_need_regulation_address`**, `regulation_address_type ∈ {LOCAL,NATIONAL,WORLDWIDE}` |
+| מלאי | `GetNewPhoneNumbers(country_code, phone_category_name, phone_region_id[, phone_number_mask])` | | Owner/Admin/Accountant | `NewPhoneInfoType`: `phone_number`, `phone_id`, `phone_price` (+`phone_tax_reserve`), `phone_installation_price` (+`phone_installation_tax_reserve`), `phone_period` |
+| רגולציה (IL) | `GetAvailableRegulations(country_code='IL', phone_category_name)` | | Owner/Accountant | `result=false` ⇒ "the regulations address needs to be created"; `GetRegulationsAddress` מחזיר `RegulationAddress{status ∈ IN_PROGRESS,VERIFIED,DECLINED, reject_message}`. יצירת כתובת רגולציה — **לא נמצאה מתודה ב-getDoc היום (UNVERIFIED)**; עד לאימות: הפאנל מציג הוראה לבצע ב-Control Panel |
+| **רכישה** | `AttachPhoneNumber` | מצב קטלוג: `country_code+phone_category_name+phone_region_id`; מצב ספציפי: `phone_number` (מ-GetNewPhoneNumbers); `regulation_address_id`; `phone_count` | Owner/Admin/Accountant | **עולה כסף**: לפי `digest-management-api.md:136` "הרכישה שומרת מראש את דמי המנוי של החודש הבא + מסים" (DOCS-ONLY מהקורפוס). תגובה `NewAttachedPhoneInfoType[]` |
+| קישור לאפליקציה | `BindPhoneNumberToApplication(phone_id\|phone_number, application_id\|application_name, bind=true, rule_id\|rule_name)` | | Owner/Admin/Developer | `application_id` = `app_settings.voximplant_application_id` (קיים; `console-agent-provisioning.ts:412-426`) |
+| SMS callback | `SetPhoneNumberInfo(phone_id, incoming_sms_callback_url)` | | Owner/Admin/Accountant | לא בהיקף |
+| ביטול | `DeactivatePhoneNumber(phone_id)` | | **Owner בלבד** | סביר שה-service account אינו Owner → הפאנל מציג "ב-Control Panel בלבד" עד שמשימה 3.1 מודדת |
+| Caller ID ממספר חיצוני | `GetCallerIDs` (`verified_until`, ניסיונות) | | Owner/Admin | `AddCallerID/VerifyCallerID/ActivateCallerID` **אינם קיימים ב-HTTP API** (getDoc החזיר `{}`; גם `digest-management-api.md:143`). אימות CLI חיצוני = Control Panel בלבד |
+
+**כלל ה-CLI:** `mutations.ts` לעולם לא מיובא ע"י ה-CLI (`cli-guard.test.ts` מצמיד). כל העטיפות החדשות שמשנות מצב (`attachPhoneNumber`, `bindPhoneNumberToApplication`, `deactivatePhoneNumber`) נכנסות ל-`mutations.ts`; הקריאה בלבד (`getNewPhoneNumbers`, `getPhoneNumberRegions`, `getPhoneNumberCategories`, `isAccountPhoneNumber`, `getAvailableRegulations`, `getRegulationsAddress`) ל-`core.ts`.
+
+**איך מספר חדש מגיע ל-route-inbound** — MEASURED + INFERRED: היום rule `incoming` (1494687) עם pattern `97237219347` מפנה ל-`ConsoleInbound` (919510), שקורא ל-`POST /api/voximplant/console/route-inbound` (`route-inbound/route.ts:30-51`). Rules מנוהלים ב-`voxfiles/applications/kalfa-rsvp…/rules.config.json` + `voxengine-ci upload` (בעלים). INFERRED מתיעוד `BindPhoneNumberToApplication` ("bind… to the application… rule_name"): קישור מספר חדש ל-rule 1494687 מנתב שיחות אליו ל-`ConsoleInbound` **בלי לשנות pattern**, אבל זה לא נמדד. משימה 3.4 מאמתת בשיחה נכנסת אחת (הבעלים מחייג) לפני שהפאנל מציע bind ל-rule; עד אז הפאנל מציע bind לאפליקציה בלבד + הוראה לעדכן `rules.config.json`.
+
+### 5.3 ExtrA (exm.co.il)
+
+**מקור:** OpenAPI 3.0.3 רשמי "extra API" v1.0.0 שהבעלים העלה (`.claude/uploads/…/3c74c4ae-api1_1.json`, 78 KB, 11 operations). כל השורות DOCS-ONLY מהמפרט אלא אם צוין; מספרי operationId מצוטטים. **הצעה:** לקבע את המפרט בריפו כ-`docs/extra/openapi-extra-v1.json` (Phase 0, Task 0.5) — `src/lib/sms/sender.ts` מממש היום `smsSend` בלבד.
+
+**כללי:** servers `https://api.exm.co.il/v1` ו-`https://www.exm.co.il/api/v1` (הקוד משתמש בשני); `Authorization: Bearer <API key>` מ-`/my/api/`; "The key grants access to the whole account - keep it server-side only". שגיאות עסקיות חוזרות **HTTP 200 עם `success:false`** — הקוד הקיים כבר מתייחס לזה (`sender.ts:92-101`). זמנים ISO 8601 עם offset (Asia/Jerusalem).
+
+| שימוש בפאנל | operationId | פרטים | הערות |
+|---|---|---|---|
+| **בדיקת חיבור + ניטור תפוגת מפתח** | `getAuthKey` — `GET /auth/key/` | תגובה `AuthKeySuccess{ key, scopes (null = legacy/unscoped key "which may do everything"), times.{created,expire} (Y-m-d), user.{id,email_address} }`; 401 = מפתח לא תקין. | ⚠️ התגובה **מחזירה את המפתח עצמו** — הקליינט חייב להשליך את `key` ולא להעביר/לרשום אותו. MEASURED (team-lead): המפתח החי תקין, `scopes: null`, נוצר 2025-10-27, **פוקע 2027-10-27**. |
+| **שליחת SMS (קיים)** | `smsSend` — `POST /sms/send/` | `SmsSendRequest{message, destination (050-… או 972…), sender}` → `SmsSendSuccess{id, messages_count.{sent,charged}}` או `ApiErrors{errors[]{id,code,description}}`. | **"The sender must be one of the account's verified IDs (managed at /my/verified-ids/) with the `sms_sender` permission granted."** אין operation ליצירה/אימות/רשימה של verified IDs → **פורטל בלבד** (DOCS-ONLY, מאשר את ההנחה הקודמת). |
+| מיפוי שגיאות ל-UI | `smsSend` | 7321 message חסר · 7526/7520 destination לא תקין · **9404 אין כרטיס אשראי** · **1214 אין פרופיל חיוב API-SMS** ("Contact support") · **1215 sender לא מאומת** · 7521 sender נדחה אצל הספק · 7462 טלפון כשר · 7404 שגיאת ספק לא מתועדת. | היום `sender.ts:92-101` זורק הודעה כללית עם `JSON.stringify(errors)`; הפאנל ימפה 1215/7521 → "השולח אינו verified ID — הוסיפו ב-/my/verified-ids/", 9404/1214 → "חיוב: פנו ל-ExtrA". |
+| **רשימת קווי החשבון (עקיף)** | `getCallsHistory` — `POST /calls/` | body: `call_types[]`, `line_types[]` (1=vn, 2=ivr, 5=mobile, 7=sip), `time.{from,to}`, `pagination.{items 20..100, next}`; **לא** `direction` (מסומן deprecated/מקולקל). תגובה `Call[]` עם `numbers.own.{e164, friendly, line_type}`, `numbers.caller`, `numbers.destination`, `type`, `duration`, `recording`, `AI`. | אין endpoint ייעודי למספרים; `distinct numbers.own.e164` מ-N העמודים האחרונים = קווי החשבון. token עימוד קשור לפילטר (5010). |
+| הקלטה / AI (Phase 6) | `downloadCallRecording` (`GET /calls/recording/?call_id=`), `getRecordingUrls` (`POST /calls/get-recording-urls/`, `config.ttl` 1..10 דק' signed, 0 = **ציבורי לצמיתות**), `getCallAi` (`GET /calls/ai/?id=`: `summary.{gist,body,next_steps}`, `transcription`) | `Call` = "the same shape as the automations webhook POST payload"; `AI` = "the same canonical shape delivered in the `AI-DONE` webhook payload". | לעולם לא `ttl: 0` (URL ציבורי לצמיתות של שיחת לקוח). |
+| Click2Call (הערה בלבד) | `click2call` — `GET /click2call/?caller_id&physical&destination` | שתי רגליים: `physical` (מכשיר מאומת) מקבל שיחה, ואז `destination` רואה `caller_id`; "billing-agnostic - it makes the call regardless of your billing preferences"; `already_dialing` idempotency 45 שנ'; 93039 מחוץ לשעות פעילות. | אפשרות עתידית לקונסולה; **לא בהיקף**. |
+| When (יומנים) | `listCalendars`, `listWhenBookings`, `cancelWhenBooking` | דורש When Pro (403 `when_pro_required`). | לא בהיקף. |
+
+**מה זה אומר לפאנל (עמוד ExtrA):**
+1. **כרטיס סטטוס** = `getAuthKey`: תקין/לא, `expire`, ימים לתפוגה (אדום < 60 יום), `scopes` ("מפתח מלא ללא scopes" כשהוא null), חשבון (`user.email_address`, לא PII של לקוח). **ניטור:** תור pg-boss יומי `extra-key-check` (עם רשומה ב-`QUEUE_EXPECTED_MAX_MINUTES`) → Slack `send_health` כשהמפתח לא תקין או < 30 יום לתפוגה; `integrations.ts` ExtrA → `healthCheckAvailable: true`.
+2. **Sender** = שדה `extra_sms_sender` (קיים) + כפתור **"אמת ב-SMS בדיקה"** (`manage_settings`, יעד = מספר שהאדמין מקליד, 3/שעה דרך `rateLimit` הקיים, `logActivity`, ללא PII בהודעה) + קישור ל-`https://www.exm.co.il/my/verified-ids/` להוספת verified IDs. תוצאה 1215/7521 מוצגת כשגיאת שדה על `extra_sms_sender`.
+3. **קווי החשבון (קריאה בלבד)** = `syncExtraLines()`: `POST /calls/` עם `pagination.items: 100`, עד 3 עמודים, `distinct numbers.own` → upsert ל-`provider_numbers` (`provider:'extra_sms'`, `provider_ref` = `e164` בלי `+` אם אין sender תואם, snapshot `{friendly, line_type, last_call_at, inbound_30d, missed_30d, forwards_to_last4}` — `forwards_to_last4` נגזר מ-`numbers.destination.e164` של שיחות `incoming`, **4 ספרות אחרונות בלבד**, זה מכשיר של הבעלים). התוצאה המצופה: שורה אחת, `03-3301505`, עם התפקידים `sms_sender` + `business_line_inbound`, ולידה — באותו E.164 — שורת Meta (`whatsapp_import_sender` כשישויך) ושורת `company_contact`. במודול המספרים זה מוצג כקבוצה: **"מספר אחד, ארבעה כובעים"**.
+4. **"verified device"** מוצג כ-"מנוהל בפורטל" — אין API.
+
+### 5.4 Resend / SMTP, Microsoft Graph, SUMIT, Slack — קריאה בלבד
+
+- **Resend:** `EMAIL_PROVIDER` (env) + `email_enabled` + `smtp_from`. שורת סטטוס "דומיין שליחה `send.kalfa.me`" נגזרת מ-`smtp_from`; אין קריאת API לרשימת דומיינים (לא בהיקף; אפשר בעתיד עם `resend.domains.list()` — DOCS-ONLY, לא נבדק).
+- **Microsoft:** `exchange_connections` (status/lastVerifiedAt) + `exchange_connection_mode`; שורות קריאה; הפעולות הקיימות (test/list/revoke) מועברות כפי שהן.
+- **SUMIT:** מפתחות (מוסך) + קישור ל-`/admin/sumit-test`; מתגי הכסף נשארים ב-settings (D8).
+- **Slack:** כל `/admin/alerts` כפי שהוא + טבלת "קטגוריה ↔ מקורות" (G13) סטטית מהקוד.
+
+---
+
+## 6. שלבי ביצוע
+
+כל פאזה ניתנת לפריסה בנפרד ומסתיימת ב-`npm run build` + בדיקת דפדפן ב-RTL בשני הנושאים (skill `verifying-kalfa-changes`). שמות קבצים מלאים; `(admin)` = `src/app/(admin)/admin`.
+
+### Phase 0 — איחוד קריאה-בלבד (הזזת רכיבים, אפס שינוי התנהגות) · **M**
+
+**File Structure**
+
+| קובץ | פעולה |
+|---|---|
+| `(admin)/integrations/page.tsx` | חדש — אינדקס |
+| `(admin)/integrations/_components/provider-card.tsx` | חדש — כרטיס סטטוס משותף (Server) |
+| `(admin)/integrations/_components/provider-page-shell.tsx` | חדש — heading + tabs-less סקציות |
+| `(admin)/integrations/meta-whatsapp/page.tsx` + `whatsapp-credentials-form.tsx` + `whatsapp-webhook-card.tsx` | חדש (תוכן מ-`channels-client.tsx:319-410`) |
+| `(admin)/integrations/meta-whatsapp/templates/page.tsx` + `templates-client.tsx` + `actions.ts` | הועבר מ-`(admin)/templates/*` |
+| `(admin)/integrations/voximplant/page.tsx` + `voximplant-credentials-form.tsx` + `voximplant-personas.tsx` + `voximplant-danger-zone.tsx` | חדש (תוכן מ-`channels-client.tsx:412-717`) |
+| `(admin)/integrations/_actions/outreach-master.ts`, `whatsapp.ts`, `voximplant.ts`, `channel-catalog.ts` | הועבר מ-`(admin)/channels/actions.ts` (מפוצל לפי ספק; **הלוגיקה זהה**) |
+| `(admin)/integrations/extra-sms/page.tsx` + `extra-sms-form.tsx` + `actions.ts` | חדש |
+| `(admin)/integrations/resend-email/page.tsx` + `email-transport-form.tsx` + `actions.ts` | חדש |
+| `(admin)/integrations/sumit/page.tsx` + `sumit-credentials-form.tsx` + `actions.ts` | חדש |
+| `(admin)/integrations/microsoft/page.tsx` | חדש (מרכיב `ExchangeManager`, `ExchangeModeToggle` המועברים) |
+| `(admin)/integrations/slack/page.tsx` + `alerts-client.tsx` + `actions.ts` | הועבר מ-`(admin)/alerts/*` |
+| `src/lib/data/admin/settings.ts` | `AppSettings`/`updateAppSettings` **בלי** שדות SUMIT/ExtrA/SMTP; 3 DAL חדשים `getSumitCredentials/updateSumitCredentials`, `getExtraSmsConfig/updateExtraSmsConfig`, `getEmailTransportConfig/updateEmailTransportConfig` |
+| `src/lib/validation/admin.ts` | `appSettingsSchema` מצומצם + `sumitCredentialsSchema`, `extraSmsSchema`, `emailTransportSchema` |
+| `(admin)/settings/settings-form.tsx` + `actions.ts` | הסרת פאנל "הודעות" ושלושת שדות SUMIT; 3 טאבים |
+| `src/components/admin-shell.tsx` | nav |
+| `next.config.ts` | `redirects()` |
+| `(admin)/channels/**`, `(admin)/templates/**`, `(admin)/alerts/**` | **נמחקים** (הבדיקות שלהם מועברות ליד הקבצים החדשים) |
+
+**Interfaces (Produces):** `ProviderCard({ title, href, configured, enabled?, lastCheckedAt?, note? })`; `IntegrationKey = 'meta-whatsapp'|'voximplant'|'extra-sms'|'resend-email'|'microsoft'|'sumit'|'slack'`.
+
+#### Task 0.1: אינדקס + כרטיס סטטוס
+
+- [ ] **Step 1: בדיקת רינדור נכשלת** — `(admin)/integrations/page.test.ts` (דפוס `src/app/(customer)/app/page.test.ts:46-55` — קריאה ישירה ל-Server Component + `collect()` **מקומי** לקובץ הבדיקה; אין מודול משותף לזה, MEASURED):
+
+```ts
+import { describe, expect, it, vi } from 'vitest';
+vi.mock('server-only', () => ({}));
+vi.mock('@/lib/auth/dal', () => ({ requirePlatformPermission: vi.fn() }));
+vi.mock('@/lib/data/admin/integrations/index', () => ({
+  getIntegrationsOverview: vi.fn().mockResolvedValue([
+    { key: 'meta-whatsapp', title: 'Meta / WhatsApp', configured: true, enabled: true, lastCheckedAt: null },
+    { key: 'voximplant', title: 'Voximplant', configured: true, enabled: false, lastCheckedAt: null },
+  ]),
+}));
+import IntegrationsIndexPage from './page';
+
+// Same walker as src/app/(customer)/app/page.test.ts:46-55 — flattens the React
+// element tree into its element props so text/href assertions need no DOM.
+function collect(node: unknown, out: Array<Record<string, unknown>> = []) {
+  if (!node || typeof node !== 'object') return out;
+  if (Array.isArray(node)) { node.forEach((n) => collect(n, out)); return out; }
+  const el = node as { props?: Record<string, unknown> & { children?: unknown } };
+  if (el.props) out.push(el.props);
+  collect(el.props?.children, out);
+  return out;
+}
+const textOf = (tree: unknown) =>
+  collect(tree).map((p) => (typeof p.children === 'string' ? p.children : '')).join(' ');
+
+describe('/admin/integrations', () => {
+  it('renders one card per provider with its status badge', async () => {
+    const tree = await IntegrationsIndexPage();
+    const text = textOf(tree);
+    expect(text).toContain('Meta / WhatsApp');
+    expect(text).toContain('Voximplant');
+    expect(text).toContain('פעיל');
+    expect(text).toContain('מוגדר · כבוי');
+  });
+});
+```
+
+- [ ] **Step 2:** `npm test -- --run "src/app/(admin)/admin/integrations/page.test.ts"` → FAIL (module not found).
+- [ ] **Step 3: DAL** `src/lib/data/admin/integrations/index.ts`:
+
+```ts
+import 'server-only';
+import { requirePlatformPermission } from '@/lib/auth/dal';
+import { getWhatsAppChannelConfig } from '@/lib/data/admin/channels';
+import { getVoximplantChannelConfig } from '@/lib/data/admin/voximplant-channel';
+import { getOutreachMasterState } from '@/lib/data/admin/outreach-master';
+import { getExtraSmsConfig, getEmailTransportConfig, getSumitCredentials } from '@/lib/data/admin/settings';
+import { getSlackAlertsView } from '@/lib/data/admin/alerts';
+import { listMyExchangeConnections } from '@/lib/data/exchange-connections';
+import { selectedEmailProvider } from '@/lib/email/sender';
+
+export type IntegrationKey =
+  | 'meta-whatsapp' | 'voximplant' | 'extra-sms' | 'resend-email' | 'microsoft' | 'sumit' | 'slack';
+
+export interface IntegrationOverviewRow {
+  key: IntegrationKey;
+  title: string;
+  configured: boolean;
+  enabled: boolean;      // the provider's own gate (outreach master / live calls / sms_enabled …)
+  lastCheckedAt: string | null;
+  note?: string;
+}
+
+export async function getIntegrationsOverview(): Promise<IntegrationOverviewRow[]> {
+  await requirePlatformPermission('manage_settings');
+  const [wa, vox, master, sms, email, sumit, slack, exchange] = await Promise.all([
+    getWhatsAppChannelConfig(), getVoximplantChannelConfig(), getOutreachMasterState(),
+    getExtraSmsConfig(), getEmailTransportConfig(), getSumitCredentials(), getSlackAlertsView(),
+    listMyExchangeConnections(),
+  ]);
+  return [
+    { key: 'meta-whatsapp', title: 'Meta / WhatsApp', configured: wa.configured, enabled: master.enabled && wa.configured, lastCheckedAt: null },
+    { key: 'voximplant', title: 'Voximplant', configured: vox.configured, enabled: vox.liveEnabled, lastCheckedAt: null },
+    { key: 'extra-sms', title: 'ExtrA SMS', configured: sms.configured, enabled: sms.sms_enabled, lastCheckedAt: null },
+    { key: 'resend-email', title: `דואר (${selectedEmailProvider() === 'resend' ? 'Resend' : 'SMTP'})`, configured: email.configured, enabled: email.email_enabled, lastCheckedAt: null },
+    { key: 'microsoft', title: 'Microsoft Graph / Exchange', configured: exchange.some((c) => c.status === 'verified'), enabled: exchange.some((c) => c.status === 'verified'), lastCheckedAt: exchange.find((c) => c.lastVerifiedAt)?.lastVerifiedAt ?? null },
+    { key: 'sumit', title: 'SUMIT', configured: sumit.configured, enabled: sumit.configured, lastCheckedAt: null, note: 'מתגי החיוב ב-/admin/settings' },
+    { key: 'slack', title: 'Slack', configured: slack.connected, enabled: slack.enabled, lastCheckedAt: null },
+  ];
+}
+```
+
+`getVoximplantChannelConfig` דורש `manage_voice` — לאינדקס משתמש עם `manage_settings` בלבד: עוטפים ב-`try/catch` שמחזיר `{configured:false, enabled:false, note:'אין הרשאת manage_voice'}` (זהה לדפוס `navCounts` null ב-`admin-shell.tsx:291-296`).
+
+- [ ] **Step 4: הרכיב** `_components/provider-card.tsx` (Server; מחזיר `<Link>` עם `Badge` מ-`@/components/ui/badge`; טקסטי הסטטוס זהים ל-`StatusBadge` הקיים: `פעיל` / `מוגדר · כבוי` / `לא מוגדר`). `page.tsx`: `requirePlatformPermission('manage_settings')` → `getIntegrationsOverview()` → grid `grid gap-4 sm:grid-cols-2 lg:grid-cols-3` → למטה `OutreachMasterSwitch` (מועבר) + `ChannelCatalogEditor` (מועבר).
+- [ ] **Step 5:** בדיקה עוברת; `npx tsc --noEmit`; `npm run lint`.
+- [ ] **Step 6:** commit `feat(admin): integrations index + provider status cards`.
+
+#### Task 0.2: פיצול `appSettingsSchema` ו-DAL לספקים
+
+- [ ] **Step 1: בדיקות נכשלות** ב-`src/lib/data/admin/settings.test.ts` (קיים) — להוסיף:
+
+```ts
+it('updateExtraSmsConfig writes only the three ExtrA columns', async () => {
+  const { builder } = mock(null);
+  await updateExtraSmsConfig({ sms_enabled: true, extra_sms_sender: '03-3301505', extra_sms_token: 'T' });
+  expect(vi.mocked(builder.update).mock.calls[0][0]).toEqual({
+    sms_enabled: true, extra_sms_sender: '03-3301505', extra_sms_token: 'T',
+  });
+});
+it('updateAppSettings no longer touches provider credential columns', async () => {
+  const { builder } = mock(null);
+  await updateAppSettings(baseInput); // baseInput = the reduced AppSettingsInput fixture
+  const patch = vi.mocked(builder.update).mock.calls[0][0] as Record<string, unknown>;
+  for (const k of ['sumit_api_key','sumit_company_id','sumit_api_public_key','extra_sms_token','extra_sms_sender','sms_enabled','smtp_host','smtp_password','smtp_from','email_enabled']) {
+    expect(patch).not.toHaveProperty(k);
+  }
+});
+```
+
+- [ ] **Step 2:** הרצה → FAIL.
+- [ ] **Step 3:** ב-`validation/admin.ts` — להסיר מ-`appSettingsSchema` את 13 שדות הספקים ולהוסיף:
+
+```ts
+export const sumitCredentialsSchema = z.object({
+  sumit_company_id: z.string().trim().regex(/^\d*$/, { error: 'מזהה חברה חייב להכיל ספרות בלבד' }),
+  sumit_api_public_key: z.string().trim(),
+  sumit_api_key: z.string().trim(),
+});
+export const extraSmsSchema = z.object({
+  sms_enabled: z.boolean(),
+  extra_sms_sender: z.string().trim().max(32),
+  extra_sms_token: z.string().trim(),
+});
+export const emailTransportSchema = z.object({
+  email_enabled: z.boolean(),
+  smtp_host: z.string().trim(),
+  smtp_port: z.string().trim().regex(/^\d*$/, { error: 'פורט חייב להכיל ספרות בלבד' }),
+  smtp_secure: z.boolean(),
+  smtp_user: z.string().trim(),
+  smtp_password: z.string().trim(),
+  smtp_from: z.string().trim(),
+});
+```
+
+ב-`settings.ts`: `AppSettings`/`UpdateAppSettingsInput`/`getAppSettings`/`updateAppSettings` מצומצמים; שלושה זוגות get/update חדשים (אותו דפוס `.select(...)`/`.update(...)`, `manage_settings`, `'' → null`), עם `configured` נגזר: SUMIT = `company_id && api_key`; ExtrA = `token && sender`; Email = `smtp_from && (provider==='resend' || smtp_host)`.
+- [ ] **Step 4:** `settings-form.tsx` — להסיר את `Panel value="messaging"` ואת שלושת `EditableField` של SUMIT; `TabsList` ל-3 טאבים (`grid-cols-3`). `settings/actions.ts` — להסיר 13 השדות מהקריאה ל-`safeParse`. `settings/page.tsx` — להסיר `ExchangeManager`/`ExchangeModeToggle`/`emailProvider` (עוברים ל-microsoft/resend). **לשמור על `keepMounted`** בפאנלים שנותרו (הכלל ב-`settings-form.tsx:135-145`).
+- [ ] **Step 5:** בדיקות עוברות; `tsc`; lint. **בדיקת רגרסיה חובה:** `settings/actions.test.ts` — לעדכן את ה-fixture; לוודא שאין בדיקה שמצפה לשדות שהוסרו.
+- [ ] **Step 6:** commit `refactor(admin): split provider credentials out of appSettingsSchema`.
+
+#### Task 0.3: עמוד Meta/WhatsApp (credentials + webhook + master switch)
+
+- [ ] **Step 1:** להעביר את `channels/actions.ts` ל-`integrations/_actions/{outreach-master,whatsapp,voximplant,channel-catalog}.ts` **ללא שינוי לוגיקה**; `revalidatePath` → `/admin/integrations`, `/admin/integrations/meta-whatsapp`, `/admin/integrations/voximplant`. להעביר `channels/actions.test.ts`, `outreach-master.test.ts` בהתאמה (רק נתיבי import ו-`revalidatePath` משתנים בבדיקות).
+- [ ] **Step 2:** `whatsapp-credentials-form.tsx` = `channels-client.tsx:320-409` כפי שהוא (Field/SecretField/CopyRow מועברים ל-`_components/form-fields.tsx` משותף). `whatsapp-webhook-card.tsx` = האקורדיון `webhook` + קישור `/admin/webhooks?provider=whatsapp`.
+- [ ] **Step 3:** `meta-whatsapp/page.tsx`:
+
+```tsx
+export const metadata: Metadata = { title: 'Meta / WhatsApp — אינטגרציות' };
+export default async function MetaWhatsAppPage() {
+  await requirePlatformPermission('manage_settings');
+  const [whatsapp, master, callbackUrl] = await Promise.all([
+    getWhatsAppChannelConfig(), getOutreachMasterState(), getAppUrl('/api/webhooks/whatsapp'),
+  ]);
+  return (
+    <ProviderPageShell title="Meta / WhatsApp Cloud API" backHref="/admin/integrations">
+      <OutreachMasterSwitch enabled={master.enabled} anyChannelReady={master.anyChannelReady} />
+      <Section title="סטטוס"><StatusBadge configured={whatsapp.configured} enabled={master.enabled && whatsapp.configured} /> …</Section>
+      <Section title="פרטי התחברות"><WhatsAppCredentialsForm whatsapp={whatsapp} /></Section>
+      <Section title="Webhooks"><WhatsAppWebhookCard callbackUrl={callbackUrl} verifyToken={whatsapp.whatsapp_verify_token} /></Section>
+      <Section title="תבניות"><Link href="/admin/integrations/meta-whatsapp/templates">ניהול תבניות ובריאותן</Link></Section>
+    </ProviderPageShell>
+  );
+}
+```
+
+- [ ] **Step 4:** בדיקת רינדור `meta-whatsapp/page.test.ts` (דפוס Task 0.1): כותרות הסקציות + `callbackUrl` מופיעים.
+- [ ] **Step 5:** `tsc`, lint, test. commit `feat(admin): /admin/integrations/meta-whatsapp`.
+
+#### Task 0.4: עמוד Voximplant
+
+- [ ] **Step 1:** `voximplant-credentials-form.tsx` = `channels-client.tsx:592-716`; `voximplant-personas.tsx` = ארבעת הטפסים (live calls, meeting-confirm, sales, consent) `channels-client.tsx:432-590` — **טפסים אחים, לא מקוננים** (ההערה ב-`:413-415`); `voximplant-danger-zone.tsx` = consent (אדום) + קישור ל-`/admin/voice/platform` (wiring) ול-`/admin/settings` (מתגי מוקד).
+- [ ] **Step 2:** `voximplant/page.tsx` — `requirePlatformPermission('manage_voice')`; כרטיס סטטוס משתמש ב-`getVoicePlatformView().balance/wiring` (קיים, `voice-ops.ts:479`) + `StatusBadge liveGateOff`.
+- [ ] **Step 3:** בדיקת רינדור; `tsc`; lint. commit `feat(admin): /admin/integrations/voximplant`.
+
+#### Task 0.5: ExtrA, Resend/SMTP, SUMIT, Microsoft, Slack
+
+- [ ] **Step 1:** לכל אחד `page.tsx` + טופס (Client, `useActionState`, `EditableField` המועבר מ-`settings-form.tsx:22-94` ל-`_components/form-fields.tsx`) + `actions.ts` דק:
+
+```ts
+export async function updateExtraSmsAction(_p: FormState, fd: FormData): Promise<FormState> {
+  const parsed = extraSmsSchema.safeParse({
+    sms_enabled: fd.get('sms_enabled') === 'on',
+    extra_sms_sender: fd.get('extra_sms_sender') ?? '',
+    extra_sms_token: fd.get('extra_sms_token') ?? '',
+  });
+  if (!parsed.success) return { fieldErrors: parsed.error.flatten().fieldErrors };
+  try { await updateExtraSmsConfig(parsed.data); } catch (err) { unstable_rethrow(err); return { error: 'עדכון הגדרות ה-SMS נכשל. נסו שוב.' }; }
+  revalidatePath('/admin/integrations/extra-sms');
+  return { notice: 'הגדרות ה-SMS נשמרו' };
+}
+```
+
+- [ ] **Step 2:** עמוד ExtrA: (א) לקבע את המפרט — `cp <upload> docs/extra/openapi-extra-v1.json` + `docs/extra/README.md` (מקור, תאריך, 11 operations, "sender.ts מממש smsSend בלבד"); (ב) `src/lib/sms/extra-client.ts` חדש עם `getAuthKey(token)` (משליך את `key` מהתגובה; מחזיר `{ valid, scopes, createdAt, expireAt, accountEmail }`) ו-`mapSmsError(code)` לתוויות עברית (1215/7521/9404/1214/7520/7462); בדיקות עם `fetch` ממוקק: המפתח לא מופיע בערך המוחזר ולא בהודעות שגיאה; (ג) כרטיס סטטוס מ-`getAuthKey` (ימים לתפוגה, scopes); (ד) "למה משמש": רשימה סטטית של 4 המקורות (G12); (ה) כפתור "אמת ב-SMS בדיקה" (action `sendExtraTestSmsAction`, Zod יעד E.164 ישראלי, `rateLimit` 3/שעה, `logActivity('admin.extra.test_sms', { ok, code })`); (ו) קישור ל-`/my/verified-ids/` (§5.3). סנכרון הקווים (`syncExtraLines`) — Phase 1.3. עמוד Resend מציג `selectedEmailProvider()` (המשפט מ-`settings-form.tsx:282-286`). עמוד SUMIT: 3 שדות + קישור `/admin/sumit-test` + הערה "מתגי החיוב ב-/admin/settings". Microsoft: `ExchangeManager` + `ExchangeModeToggle` (קבצים מועברים; `revalidatePath` מתעדכן; `exchange-actions.ts` עובר איתם). Slack: `alerts/*` מועבר; `PATH = '/admin/integrations/slack'`.
+- [ ] **Step 3:** בדיקות action לכל טופס (העתקת דפוס `settings/actions.test.ts`), `tsc`, lint. commit אחד לכל ספק.
+
+#### Task 0.6: Nav + redirects + מחיקת העמודים הישנים
+
+- [ ] **Step 1:** `admin-shell.tsx` — להסיר 3 פריטים, להוסיף `{ href: '/admin/integrations', label: 'אינטגרציות', icon: Plug }` ב"מערכת ותפעול" אחרי "הגדרות". `isActive` כבר מטפל בתת-עץ.
+- [ ] **Step 2:** `next.config.ts` — `redirects()` (§3.4).
+- [ ] **Step 3:** grep מלא: `revalidatePath('/admin/channels'|'/admin/templates'|'/admin/alerts')`, `href="/admin/channels"` (למשל `voice/page.tsx:101`, `webhook-detail.tsx:175` הטקסט "לא מוגדר ב-/admin/channels" → "לא מוגדר ב-/admin/integrations/numbers"), `docs/routes-webhooks.md`, `docs/admin-webhooks-runbook.md`.
+- [ ] **Step 4:** מחיקת `(admin)/channels/**`, `(admin)/templates/**`, `(admin)/alerts/**`. `npm run build` (webpack, לפי הזיכרון) — לוודא 3 ה-redirects ברשימת ה-routes.
+- [ ] **Step 5:** בדיקת דפדפן: 8 העמודים ב-RTL, שני נושאים, טאב-פוקוס; `/admin/channels` מפנה. commit `feat(admin): integrations nav, redirects, retire channels/templates/alerts pages`.
+
+**Gate Phase 0:** `tsc` · lint · `npm test` מלא · build · דפדפן · `admin-data-layer-coverage.test.ts` (קיים ב-`src/lib/auth/`) ירוק — כל פונקציית DAL חדשה מגודרת.
+
+---
+
+### Phase 1 — טבלת המספרים + רשימה קריאה-בלבד · **M**
+
+**Files:** `supabase/migrations/<ts>_provider_numbers_and_roles.sql` (§4.2) · `src/lib/data/admin/integrations/provider-numbers.ts` (DAL admin) · `src/lib/data/provider-numbers-resolve.ts` (runtime, service-role, request-free) · `src/lib/validation/provider-numbers.ts` · `(admin)/integrations/numbers/page.tsx` + `numbers-table.tsx` · `src/lib/data/admin/webhook-inbox.ts:152-187` (resolve business number מול הטבלה) · `src/lib/whatsapp/graph-version.ts` · `src/lib/whatsapp/phone-numbers.ts` (Graph GET) · `src/lib/voximplant/core.ts` (`isAccountPhoneNumber`).
+
+**Interfaces (Produces):**
+```ts
+export type ProviderKey = 'meta_whatsapp' | 'voximplant' | 'extra_sms' | 'company';
+export type NumberRole = 'whatsapp_rsvp_sender' | 'whatsapp_import_sender' | 'voice_caller_id_rsvp'
+  | 'voice_caller_id_meeting_confirm' | 'voice_caller_id_sales' | 'voice_caller_id_call_me_now'
+  | 'voice_inbound_did' | 'sms_sender' | 'company_contact';
+export interface ProviderNumber { id: string; provider: ProviderKey; providerRef: string | null; e164: string | null; displayLabel: string | null; isActive: boolean; snapshot: Record<string, unknown> | null; snapshotAt: string | null; source: 'admin'|'backfill'|'sync'; roles: NumberRole[] }
+export async function listProviderNumbers(): Promise<ProviderNumber[]>            // manage_settings
+export async function upsertProviderNumber(input: UpsertProviderNumberInput): Promise<string> // manage_settings | manage_voice by provider
+export async function assignRole(role: NumberRole, numberId: string): Promise<void>
+export async function resolveNumberForRole(role: NumberRole): Promise<{ e164: string | null; providerRef: string | null } | null> // service-role, no auth (runtime)
+export const GRAPH_API_VERSION: string  // 'v24.0' unless WHATSAPP_GRAPH_VERSION overrides (validated /^v\d+\.\d+$/)
+```
+
+#### Task 1.1: מיגרציה
+
+- [ ] **Step 1:** `npx supabase migration new provider_numbers_and_roles` → להדביק §4.2.
+- [ ] **Step 2:** בדיקה יבשה: `npx supabase db query --linked -f <file-wrapped-in-begin-rollback>`; לוודא 0 שגיאות ו-`select count(*) from provider_number_roles` = 7 בתוך הטרנזקציה.
+- [ ] **Step 3:** **אישור בעלים** → `npx supabase db push --linked` → `npm run gen:types` → commit `feat(db): provider_numbers + provider_number_roles (backfill from app_settings)`.
+
+#### Task 1.2: DAL + resolver
+
+- [ ] **Step 1: בדיקה נכשלת** `provider-numbers.test.ts`:
+
+```ts
+it('listProviderNumbers joins roles onto numbers', async () => {
+  mock([{ id: 'n1', provider: 'voximplant', provider_ref: null, e164: '+97237219347', display_label: 'x', is_active: true, snapshot: null, snapshot_at: null, source: 'backfill',
+          provider_number_roles: [{ role: 'voice_caller_id_rsvp' }, { role: 'voice_inbound_did' }] }]);
+  const rows = await listProviderNumbers();
+  expect(rows[0].roles).toEqual(['voice_caller_id_rsvp', 'voice_inbound_did']);
+});
+it('upsertProviderNumber rejects a non-E.164 value', async () => {
+  await expect(upsertProviderNumber({ provider: 'voximplant', e164: '03-7219347', displayLabel: null, providerRef: null }))
+    .rejects.toThrow('E.164');
+});
+```
+
+- [ ] **Step 2:** FAIL. **Step 3:** מימוש: `select('*, provider_number_roles(role)')` דרך `createClient()` (cookie, RLS); `upsert` על `(provider, provider_ref)`; Zod `e164 = z.string().regex(/^\+[1-9]\d{6,14}$/, 'נא להזין מספר בפורמט E.164 (+972…)')`. `resolveNumberForRole` ב-`provider-numbers-resolve.ts` — `createAdminClient`, `select('provider_numbers(e164, provider_ref)').eq('role', role).maybeSingle()`, מחזיר null על שגיאה (fail-safe, כמו `outreach-config.ts`). **ללא `next/headers`** (worker bundle; `.dependency-cruiser.cjs`).
+- [ ] **Step 4:** PASS; `tsc`; lint. commit.
+
+#### Task 1.3: קבוע גרסת Graph + GET מספרים מ-Meta
+
+- [ ] **Step 1:** `src/lib/whatsapp/graph-version.ts`:
+
+```ts
+const PINNED = 'v24.0'; // proven on this WABA (sent/read statuses 2026-09-03); Meta latest v26.0; v24 sunset 2028-02-18
+const override = process.env.WHATSAPP_GRAPH_VERSION;
+export const GRAPH_API_VERSION: string = override && /^v\d{2}\.\d$/.test(override) ? override : PINNED;
+export const META_LATEST_GRAPH_VERSION = 'v26.0'; // DOCS-ONLY changelog 2026-09-08; display only
+```
+
++ בדיקה. **תיאום:** תוכנית 3.9 מציעה את אותו קובץ; מי שנוחת ראשון — השני משתמש בו. להחליף ב-`channels.ts:89`, `template-health.ts:16`, `whatsapp-import.ts:253`, `client.ts` (4 מקומות) ל-`GRAPH_API_VERSION`. `relocation/*` (v21) — **לא נוגעים** (מחוץ להיקף; רשום ב-§8).
+- [ ] **Step 2:** `src/lib/whatsapp/phone-numbers.ts`:
+
+```ts
+import 'server-only';
+import { GRAPH_API_VERSION } from './graph-version';
+export const WABA_PHONE_FIELDS = 'id,display_phone_number,verified_name,status,quality_rating,code_verification_status,name_status,messaging_limit_tier,throughput,platform_type,account_mode,is_official_business_account,last_onboarded_time';
+export interface WabaPhoneNumber { id: string; display_phone_number: string; verified_name?: string; status?: string; quality_rating?: string; code_verification_status?: string; name_status?: string; messaging_limit_tier?: string; throughput?: { level?: string }; platform_type?: string; account_mode?: string; is_official_business_account?: boolean; last_onboarded_time?: string }
+export async function listWabaPhoneNumbers(creds: { wabaId: string; accessToken: string }): Promise<WabaPhoneNumber[]> {
+  const res = await fetch(`https://graph.facebook.com/${GRAPH_API_VERSION}/${encodeURIComponent(creds.wabaId)}/phone_numbers?fields=${WABA_PHONE_FIELDS}&limit=50`,
+    { headers: { authorization: `Bearer ${creds.accessToken}` }, signal: AbortSignal.timeout(15_000) });
+  if (!res.ok) throw new Error(`Meta phone_numbers fetch failed: HTTP ${res.status}`); // status only, never the body
+  const body = (await res.json()) as { data?: WabaPhoneNumber[] };
+  return body.data ?? [];
+}
+```
+
+בדיקה עם `fetch` ממוקק: URL כולל `GRAPH_API_VERSION` ו-`fields`; שגיאה לא כוללת גוף.
+- [ ] **Step 3:** `syncMetaNumbers()` ב-DAL: לכל מספר מ-`listWabaPhoneNumbers` → `upsertProviderNumber({provider:'meta_whatsapp', providerRef:id, e164: '+'+display_phone_number.replace(/\D/g,''), snapshot:{verified_name, quality_rating, code_verification_status, name_status, messaging_limit_tier, throughput, platform_type, account_mode, status}, source:'sync'})`. המספר השני (`1298694319994421`) נכנס כך לטבלה **בלי תפקיד** — מוצג "ללא תפקיד" עד שהאדמין משייך `whatsapp_import_sender` (Phase 1.5 בלבד UI; הניתוב עצמו = תוכנית 3.9).
+- [ ] **Step 4:** `syncVoximplantNumbers()`: `getPhoneNumbers(cfg.auth)` (קיים) → upsert `provider:'voximplant', providerRef: String(phone_id), e164: '+'+phone_number, snapshot:{activation_status, verification_status, unverified_hold_until, phone_next_renewal, phone_price, application_name, rule_name, is_sms_supported, deactivated, canceled}`. שורת ה-backfill ללא `provider_ref` ממוזגת לפי E.164 (עדכון `provider_ref` על השורה הקיימת כדי שהתפקידים לא יאבדו).
+- [ ] **Step 4b:** `syncExtraLines()` (§5.3 סעיף 3): `POST /calls/` דרך `extra-client.ts` (`getCallsHistory`, `pagination.items:100`, עד 3 עמודים עם `next`), `distinct numbers.own.e164` → upsert `provider:'extra_sms'`; מיזוג עם שורת ה-backfill לפי `provider_ref` שווה ל-`friendly`/`e164` מנורמל (`toE164Israel` מ-`company.ts:27`); snapshot בלי PII (רק `forwards_to_last4`). בדיקה: 2 עמודים ממוקקים עם אותו קו → שורה אחת.
+- [ ] **Step 5:** actions `syncProviderNumbersAction(provider)` (`manage_settings` / `manage_voice`), `logActivity({action:'admin.integrations.numbers_synced', meta:{provider, count}})`.
+
+#### Task 1.4: עמוד המספרים + שילוב ב-`/admin/webhooks`
+
+- [ ] **Step 1:** `numbers/page.tsx` (`manage_settings`) + `numbers-table.tsx` (Server; `Table` מ-ui; מספרים `dir="ltr"`; chips תפקידים; snapshot כ-`dl` מקופל ב-`Accordion`; כפתורי "סנכרן" לכל ספק). מסנן `?provider=`.
+- [ ] **Step 2:** `webhook-inbox.ts:152-187` — להחליף את קריאת `app_settings.whatsapp_phone_number_id` ב-`select provider_numbers where provider='meta_whatsapp' and provider_ref = item.phone_number_id` → `businessNumber = { label: display_label ?? roles.join(', ') ?? 'מספר ללא תפקיד', phoneNumberId }`; ללא התאמה → `null` (הטקסט "לא מוגדר ב-/admin/integrations/numbers" — G2 נסגר).
+- [ ] **Step 3:** `labels.ts` — תוויות ל-`security` ("אירוע אבטחה (Meta)"), `business_username_updates` ("עדכון username"), `messages_other` (G15).
+- [ ] **Step 4:** בדיקות (`webhook-inbox.test.ts` קיים — להוסיף מקרה "unknown number"), `tsc`, lint, build, דפדפן. commit.
+
+**Gate Phase 1:** אחרי deploy — לחיצה על "סנכרן מ-Meta" מציגה 2 מספרים עם `display_phone_number`; "סנכרן מ-Voximplant" מציג את ה-DID עם `phone_next_renewal`; `/admin/webhooks?inspect=<row of 1298…>` מציג את התווית החדשה.
+
+---
+
+### Phase 2 — WhatsApp: הוספה, אימות, רישום · **M**
+
+**Files:** `src/lib/whatsapp/phone-numbers.ts` (+ `addWabaPhoneNumber`, `requestCode`, `verifyCode`, `registerNumber`, `deregisterNumber`, `setDisplayName`, `debugToken`) · `src/lib/data/admin/integrations/whatsapp-numbers.ts` · `(admin)/integrations/meta-whatsapp/numbers-wizard.tsx` + `numbers-actions.ts` · `src/lib/validation/whatsapp-numbers.ts`.
+
+#### Task 2.1: אימות תיעוד לפני קידוד (חובה)
+
+- [ ] `npx ctx7@latest docs /websites/developers_facebook_business-messaging_whatsapp "POST WABA_ID phone_numbers request body cc phone_number verified_name required"` — לתעד בקובץ הזה (§5.1) איזו צורה נכונה; אם עדיין סותר → `cc`+`phone_number`+`verified_name` (הדוגמה המלאה). לוודא גם `request_code`/`verify_code`/`register` (מאומתים היום ב-WebFetch).
+
+#### Task 2.2: לקוח Graph
+
+```ts
+export async function addWabaPhoneNumber(creds, input: { cc: string; nationalNumber: string; verifiedName: string }): Promise<{ id: string }>
+export async function requestCode(creds, phoneNumberId: string, input: { codeMethod: 'SMS'|'VOICE'; language: string }): Promise<void>
+export async function verifyCode(creds, phoneNumberId: string, code: string): Promise<void>
+export async function registerNumber(creds, phoneNumberId: string, pin: string): Promise<void>   // body { messaging_product:'whatsapp', pin }
+export async function deregisterNumber(creds, phoneNumberId: string): Promise<void>
+export async function setDisplayName(creds, phoneNumberId: string, newDisplayName: string): Promise<void> // POST /{pnid}?new_display_name=
+export async function debugToken(input: { appId: string; appSecret: string; token: string }): Promise<{ isValid: boolean; expiresAt: number | null; dataAccessExpiresAt: number | null; scopes: string[] }>
+```
+
+- [ ] בדיקות עם `fetch` ממוקק לכל פונקציה: URL/גוף מדויקים; PIN ו-token לעולם לא בהודעת שגיאה; `133016` ממופה ל-`'RATE_LIMITED_72H'`.
+- [ ] `debugToken` — Authorization = `Bearer ${appId}|${appSecret}` (app access token, DOCS-ONLY). דורש `whatsapp_app_id` (§4.4) — מיגרציה קטנה `app_settings add column whatsapp_app_id text` + שדה בטופס Meta (Zod `^\d{10,20}$`).
+
+#### Task 2.3: Zod + actions (Owner-gated היכן שצריך)
+
+```ts
+export const addNumberSchema = z.object({
+  cc: z.string().regex(/^\d{1,3}$/, 'קידומת מדינה (972)'),
+  nationalNumber: z.string().regex(/^\d{7,12}$/, 'ספרות בלבד, בלי קידומת'),
+  verifiedName: z.string().trim().min(1).max(512),
+});
+export const requestCodeSchema = z.object({ phoneNumberId: z.string().regex(/^\d+$/), codeMethod: z.enum(['SMS','VOICE']), language: z.enum(['he','en']) });
+export const verifyCodeSchema = z.object({ phoneNumberId: z.string().regex(/^\d+$/), code: z.string().regex(/^\d{6}$/, '6 ספרות') });
+export const registerSchema = z.object({ phoneNumberId: z.string().regex(/^\d+$/), pin: z.string().regex(/^\d{6}$/, 'PIN של 6 ספרות'), confirm: z.literal('REGISTER') });
+```
+
+- `addNumberAction`, `requestCodeAction`, `verifyCodeAction`: `manage_settings`; `registerAction`, `deregisterAction`, `setDisplayNameAction`: `requirePlatformOwner()`. כל אחד: `logActivity({ action: 'admin.whatsapp.number_<op>', meta: { phoneNumberId } })` + Slack `security` (register/deregister). אחרי `add`/`verify`/`register`: `syncMetaNumbers()`.
+- **PIN:** לא נשמר לעולם; ההודעה למשתמש מסבירה שזה PIN האימות הדו-שלבי של המספר ושכישלון PIN ×N נועל את המספר אצל Meta.
+
+#### Task 2.4: אשף UI
+
+Client component ב-Sheet (`side="right"`, DirectionProvider כבר ב-`AdminShell`): שלבים **הוסף → קבל קוד (SMS/VOICE, שפה) → אמת קוד → רשום (PIN + הקלדת `REGISTER`)**; כל שלב `useActionState` נפרד; שלב "רשום" מוצג רק ל-Owner (prop `isOwner` מהשרת — `isPlatformOwner()` הקיים ב-`src/lib/auth/dal.ts:74`, MEASURED; ה-action עצמו נשאר מגודר ב-`requirePlatformOwner` — הסתרת ה-UI אינה השער). הצגת האילוצים (§5.1) כ-`Alert` לפני "הוסף". מגבלת `133016` מוצגת כשגיאת שדה עם "נסו שוב בעוד 72 שעות".
+
+#### Task 2.5: כרטיס סטטוס Meta מורחב
+
+`getMetaStatus()` (DAL, `manage_settings`): `debugToken` (cache 10 דק' ב-`unstable_cache`? — לא; קריאה ישירה, הכרטיס נטען בעמוד אחד בלבד) → `is_valid`, `expires_at` ("ללא תפוגה" כשהערך 0), `scopes` (בדיקה ש-`whatsapp_business_management`, `whatsapp_business_messaging`, `business_management` קיימים — הרשימה מ-`channels-client.tsx:358`) + `GRAPH_API_VERSION` מול `META_LATEST_GRAPH_VERSION` + שורת "אפליקציית Meta": `GET /{app-id}?fields=name,privacy_policy_url,terms_of_service_url,user_support_email,app_domains` (DOCS-ONLY; לאמת ב-ctx7) ורשימה סטטית "נבדק ידנית ב-Meta Dashboard/MCP: contact email verified, data deletion URL, App Review" עם הערכים שנמדדו היום ב-§2 G8 כ-placeholder שהבעלים מעדכן? — **לא** (כלל "אין placeholder שמזדקן"). מציגים רק מה שנקרא חי + קישור לדשבורד.
+
+**Gate Phase 2:** בדיקה חיה = הוספת המספר **הקיים** `+972 3-330-1505` תיכשל צפוי ("already in use") — זה בסדר; בדיקת `debugToken` על הטוקן החי מציגה `is_valid=true`. **אין** register/deregister בבדיקה (מגבלת 10/72h).
+
+---
+
+### Phase 3 — Voximplant: רשימה, קישור, רכישה מאחורי אישור · **L**
+
+**Files:** `src/lib/voximplant/core.ts` (+ `getNewPhoneNumbers`, `getPhoneNumberCategories`, `getPhoneNumberRegions`, `getPhoneNumberCountryStates`, `isAccountPhoneNumber`, `getAvailableRegulations`, `getRegulationsAddress`) · `src/lib/voximplant/mutations.ts` (+ `attachPhoneNumber`, `bindPhoneNumberToApplication`, `deactivatePhoneNumber`) · `src/lib/voximplant/cli-guard.test.ts` (מצמיד שהחדשים ב-mutations לא נגישים ל-CLI) · `src/lib/data/admin/integrations/voximplant-numbers.ts` · `(admin)/integrations/voximplant/numbers-panel.tsx` + `buy-number-dialog.tsx` + `numbers-actions.ts`.
+
+#### Task 3.1: מדידת תפקיד ה-service account (לפני UI)
+
+- [ ] `testVoximplantCapabilities()` (DAL, `manage_voice`): קורא `GetPhoneNumbers` (כל התפקידים), `GetPhoneNumberCategories` (Payer+), `GetNewPhoneNumbers` בלי locators (Owner/Admin/Accountant), `GetAvailableRegulations('IL','GEOGRAPHIC')` (Owner/Accountant). כל תשובה `403`/error code → `capability: false`. התוצאה נשמרת ב-snapshot של הספק (`app_settings`? לא — ב-`provider_numbers`? לא) — **ב-`unstable_cache` ל-10 דקות + כפתור רענון**; ה-UI מציג לכל פעולה "זמין / דורש תפקיד Owner בפאנל Voximplant".
+
+#### Task 3.2: עטיפות API
+
+`core.ts` (read-only, אותו סגנון של `getPhoneNumbers`):
+
+```ts
+export interface NewPhoneInfo { phone_id: number; phone_number: string; phone_price: number; phone_tax_reserve: number; phone_installation_price: number; phone_installation_tax_reserve: number; phone_period: string; phone_category_name: string; phone_country_code: string; phone_region_name: string }
+export function getNewPhoneNumbers(config, params: { country_code?: string; phone_category_name?: string; phone_region_id?: number; phone_number_mask?: string; count?: number }, timeoutMs?)
+export interface PhoneRegionInfo { phone_region_id: number; phone_region_name: string; phone_region_code: string; account_price?: number; account_installation_price?: number; account_currency?: string; phone_count: number; is_need_regulation_address?: boolean; regulation_address_type?: string; is_sms_supported: boolean }
+export function getPhoneNumberRegions(config, params: { country_code: string; phone_category_name: string }, timeoutMs?)
+export function isAccountPhoneNumber(config, phoneNumberNoPlus: string, timeoutMs?): Promise<{ result: boolean }>
+export function getAvailableRegulations(config, params: { country_code: string; phone_category_name: string; phone_region_code?: string })
+```
+
+`mutations.ts` (body בנוי inline, אין spread של קלט — כמו `setAccountCallbackUrl`):
+
+```ts
+export function attachPhoneNumber(config, params: { phone_number: string; regulation_address_id?: number }, timeoutMs?) // specific-number mode ONLY — never the catalog mode (platform picks a number = untyped purchase)
+export function bindPhoneNumberToApplication(config, params: { phone_id: number; application_id: number; bind: boolean; rule_id?: number }, timeoutMs?)
+export function deactivatePhoneNumber(config, phoneId: number, timeoutMs?)
+```
+
+- [ ] בדיקות: `cli-guard.test.ts` — הרשימה החדשה; `mutations.test.ts` — גוף מדויק לכל אחת; `attachPhoneNumber` **אינו מקבל** `phone_count`/`country_code` (הגנה מרכישה קטלוגית).
+
+#### Task 3.3: זרימת רכישה מאחורי אישור
+
+DAL (`manage_voice` לקריאה; `requirePlatformOwner` ל-`purchase`):
+1. `quoteNumber(regionId, mask?)` → `getPhoneNumberRegions('IL', category)` + `getNewPhoneNumbers(...)` → מחזיר לכל מועמד `{ e164, monthly: phone_price + phone_tax_reserve, installation: phone_installation_price + phone_installation_tax_reserve, currency: account_currency, needsRegulation: is_need_regulation_address, regulationStatus }` — **הצגת המחיר היא תנאי לכפתור**.
+2. אם `needsRegulation && !getAvailableRegulations().result` → הכפתור נעול עם "יש ליצור כתובת רגולציה ב-Control Panel" (§5.2 UNVERIFIED).
+3. `purchaseNumberAction(fd)` — Zod `{ e164, confirmE164 (חובה זהה), acknowledgeCost: z.literal('on'), regulationAddressId? }`; `requirePlatformOwner`; `attachPhoneNumber({ phone_number: e164NoPlus, regulation_address_id })`; upsert ל-`provider_numbers` (`source:'admin'`, snapshot מהתשובה); `logActivity('admin.voximplant.number_purchased', { e164, monthly, installation, currency })`; Slack `security` warn "Voximplant number PURCHASED".
+4. `bindNumberAction` — `manage_voice`; `bindPhoneNumberToApplication({ phone_id, application_id: Number(app_settings.voximplant_application_id), bind: true })` **בלי `rule_id`** עד Task 3.4; snapshot מתעדכן.
+5. `deactivateNumberAction` — `requirePlatformOwner`; מוצג רק אם Task 3.1 מדד יכולת; AlertDialog עם הקלדת המספר.
+
+UI: `AlertDialog` (קיים) עם טבלת מחיר, checkbox "אני מאשר חיוב של X ₪/חודש + Y ₪ התקנה", שדה הקלדת המספר. **לא** `window.confirm`.
+
+#### Task 3.4: DID חדש → route-inbound (אימות חי, לא קוד)
+
+- [ ] אחרי bind של מספר בדיקה (או שימוש במספר הקיים): הבעלים מחייג ל-DID; לבדוק ב-`console_calls` שנוצרה שורה דרך `route-inbound`. אם לא — להוסיף rule pattern ב-`rules.config.json` ו-`voxengine-ci upload` (בעלים). התוצאה מתועדת כאן; רק אז הפאנל מציע `rule_id: 1494687` ב-bind.
+
+**Gate Phase 3:** `npm test` (כולל cli-guard) · build · **אין** רכישה בבדיקה; ה-`quote` מוצג ומראה מחיר אמיתי; ה-`bind` נבדק על ה-DID הקיים (idempotent).
+
+---
+
+### Phase 4 — caller id לכל פרסונה · **M**
+
+**Files:** `src/lib/data/voximplant-config.ts` (`getVoximplantConfig`, `getPersonaDispatchConfig`) · `src/lib/data/console-calls.ts` / `call-me-now` (היכן שנקרא caller id — grep `callerId` במשימה) · `(admin)/integrations/voximplant/voximplant-personas.tsx` (select מספר לכל פרסונה) · `src/lib/data/admin/integrations/provider-numbers.ts` (`assignRole`).
+
+- [ ] **Step 1 (בדיקה):** `voximplant-config.test.ts` — כאשר `resolveNumberForRole('voice_caller_id_sales')` מחזיר `+972…B`, `getSalesCallDispatchConfig().callerId === '+972…B'`; כאשר מחזיר null → fallback ל-`voximplant_caller_id`.
+- [ ] **Step 2:** ב-`getVoximplantConfig`: `const callerId = (await resolveNumberForRole('voice_caller_id_rsvp'))?.e164 ?? str(row,'voximplant_caller_id')`; ב-`getPersonaDispatchConfig(enabledColumn, ruleIdColumn, role)` — אותו דפוס. **Fail-closed נשמר:** אם שניהם ריקים → `null` (הערוץ כבוי).
+- [ ] **Step 3:** UI: בכל כרטיס פרסונה `select` (native, `compactSelectClass`) של מספרי `voximplant` פעילים; action `assignCallerIdAction(persona, numberId)` (`manage_voice`; Zod enum על 4 הפרסונות; בודק שהמספר `provider='voximplant'` ו-`is_active`); `logActivity` + Slack `security` info.
+- [ ] **Step 4:** בדיקת שיחה אחת לכל פרסונה שהשתנתה (הבעלים) — ה-`from` בשיחה = המספר שנבחר.
+- [ ] **Step 5 (ניקוי, מיגרציה נפרדת, ≥2 שבועות אחרי):** `voximplant_caller_id` → מסומן deprecated ב-comment; מחיקה רק אחרי שהבעלים מאשר שאין fallback בשימוש (`activity_log` לא הראה fallback).
+
+---
+
+### Phase 5 — בריאות וריאנטים, כיסוי webhooks, מדיניות שליחה, drift · **M**
+
+#### Task 5.1: בריאות וריאנטים
+- [ ] מיגרציה §4.3. `template-health-sync.ts`: אחרי `fetchTemplateHealth` — לכל שורה לבנות רשימת `{variant_name, language, kind, event_type}` מ-`name` + `components.variants[*]` + `media_variants[*]` + `media_variant`; להתאים מול `metaTemplates` (name+language); `upsert` ל-`message_template_variant_health`; התראה `send_health` על **מעבר** ל-`category !== requested_category`/`RED`/`REJECTED|DISABLED` לפי הערך הקודם בטבלה (אותו כלל של המצביע, `template-health-sync.ts:86-101`). וריאנט שלא נמצא ב-Meta → `meta_status='NOT_FOUND'` + התראה (זה בדיוק המקרה שנשלח לתבנית שלא קיימת → `132001`).
+- [ ] `templates-client.tsx`: מתחת ל-`TemplateHealth` טבלה קטנה של הוריאנטים (`listVariantHealth(templateId)`).
+- [ ] בדיקות: `template-health-sync.test.ts` (קיים) — מקרה עם 2 וריאנטים, אחד חסר.
+
+#### Task 5.2: תור הסנכרון ב-ops
+- [ ] `queue-schedule.ts` — `'whatsapp-template-health-sync': 3 * 24 * 60`; `integrations.ts` WhatsApp → `lastCheckedAt: lastCompletedFor(jobHealth, 'whatsapp-template-health-sync'), healthCheckAvailable: true`. בדיקה ב-`summary.test.ts`.
+
+#### Task 5.3: מדיניות שליחה (`whatsapp_send_policy`)
+- [ ] DAL `getSendPolicyForAdmin/updateSendPolicy` (`manage_settings`); action עם `sendPolicySchema` ואז `parseSendPolicy` (זורק על חריגה מהתקרות → `fieldErrors._root`). UI: 7 שורות (א׳–ש׳) עם `start/end` (`type="time"`), `hardCap`, `motzashPlusMin`, `preferredTimeByDaysBefore` (3 שורות), `spreadSpanMs` בדקות. שבת נעולה `null`.
+
+#### Task 5.4: כיסוי webhooks + topic זר
+- [ ] `getWebhookSubscriptions()` — `GET /{whatsapp_app_id}/subscriptions` עם app token (`appId|appSecret`); טבלה: שדה · מנוי? · מטופל (`HANDLED_WHATSAPP_KINDS` = הרשימה מ-`webhook-processing.ts` + מיפוי `field→kind` מ-`route.ts:61-66`) · "נשמר גנרית". topic שאינו `whatsapp_business_account` → Badge "מנוי זר" + כפתור "הסר מנוי" (Owner) — **לפני קידוד ה-DELETE: אימות ctx7** של `DELETE /{app-id}/subscriptions?object=…`.
+
+#### Task 5.5: אישור drift קטגוריה (D4)
+- [ ] action `acknowledgeCategoryAction(templateId)` (`manage_settings`): `requested_category = category` + `logActivity('admin.templates.category_acknowledged', { message_key, from, to })`. כפתור מופיע רק כאשר `downgraded`.
+
+#### Task 5.6: ניטור מפתח ExtrA
+- [ ] תור `extra-key-check` (`QUEUES.extraKeyCheck = 'extra-key-check'`, יומי `10 3 * * *` Asia/Jerusalem) → `getAuthKey`; Slack `send_health` כאשר `valid=false` או `expireAt - now < 30d`; `queue-schedule.ts` `'extra-key-check': 3 * 24 * 60`; `integrations.ts` ExtrA → `healthCheckAvailable: true, lastCheckedAt: lastCompletedFor(jobHealth,'extra-key-check')`. בדיקה: expire בעוד 20 יום → התראה; 200 יום → שקט.
+
+**Gate Phase 5:** `npm test` מלא · build · הרצה ידנית של `runTemplateHealthSync` דרך כפתור "הרץ סנכרון עכשיו" (action חדש, `manage_settings`) ובדיקה ש-28 שורות נכנסו ל-`message_template_variant_health`; כרטיס ExtrA מציג "פוקע 2027-10-27".
+
+---
+
+### Phase 6 (אופציונלי, דורש החלטה D9) — שיחות שלא נענו בקו העסק → פנייה/בקשת חזרה · **M**
+
+**מוטיבציה (MEASURED, team-lead):** 7 שיחות `incoming_missed` לקו `03-3301505` לא מגיעות ל-KALFA בשום צורה; 39 נכנסות עונות במכשיר של הבעלים בלי רישום במערכת.
+
+**שתי דרכים לקלט (DOCS-ONLY):** (א) **polling** — `getCallsHistory` עם `call_types: ['incoming_missed']`, `time.from = last_seen`, תור pg-boss כל 10 דק' (`extra-missed-calls-sweep`, ב-`QUEUE_EXPECTED_MAX_MINUTES` 30); (ב) **automations webhook** — המפרט מציין ש-`Call` הוא "the same shape as the automations webhook POST payload" ו-`AI` מגיע ב-`AI-DONE` webhook, אבל **אינו מתעד** את הגדרת ה-webhook (URL, חתימה, retry) → הגדרה בפורטל, ואימות המקור חייב להיות טוקן סודי ב-path (דפוס `/api/voximplant/account-callback/[token]` הקיים). **מומלץ להתחיל ב-(א)** — אין תלות בפורטל, ואין משטח ציבורי חדש.
+
+- [ ] Task 6.1: `provider:'extra_sms'` snapshot כבר סופר `missed_30d` (Phase 1.3); כרטיס ExtrA מציג "שיחות שלא נענו (30 יום)" + קישור לפאנל השיחות.
+- [ ] Task 6.2 (D9): sweep → לכל `incoming_missed` חדשה: `numbers.caller.e164` (PII — לא בלוגים; `ANONYMOUS` נדחה), יצירת `callback_requests` בערוץ חדש `source:'extra_missed_call'` דרך ה-DAL הקיים של הפניות (`callback-scheduling.ts` — לאמת חתימה במשימה), dedupe לפי `call.id` (עמודה `external_ref`), `contact_messages` לא נוצר. Slack `customer_inquiry` (כבר קיים לבקשות חזרה).
+- [ ] Task 6.3 (D9): לשיחות שנענו במכשיר עם `AI !== false`: `getCallAi(id)` → `summary.gist/body/next_steps` לשרשור הפנייה; קישור הקלטה דרך `getRecordingUrls` עם `ttl: 10` (signed) **בזמן צפייה בלבד**, לעולם לא `ttl: 0`, לעולם לא נשמר URL.
+- [ ] גבולות: ספאם/פרטיות — שיחה נכנסת של לקוח אינה הסכמה לשיווק; הפנייה שנוצרת היא "בקשת חזרה" (עסקית, לא דבר פרסומת) — לאישור israeli-compliance-advisor לפני D9.
+
+---
+
+## 7. אימות
+
+| פאזה | בדיקות יחידה | בדיקה חיה (בעלים/דפדפן) | נקודות ביקורת אבטחה |
+|---|---|---|---|
+| 0 | כל `actions.test.ts` שהועברו + 8 בדיקות רינדור עמודים + `settings.test.ts` מצומצם + `admin-data-layer-coverage.test.ts` | 8 עמודים ב-RTL/2 נושאים; redirects; שמירה בכל טופס משנה רק את השדות שלו (לבדוק ב-DB שאין איפוס של מתגים אחרים — הסיכון של `keepMounted`) | אין סוד חדש ב-props; `outreach_enabled` עדיין כותב יחיד (grep `outreach_enabled:` ב-`src/lib/data/admin` = קובץ אחד) |
+| 1 | DAL + resolver + `graph-version` + `phone-numbers` (fetch ממוקק) + `webhook-inbox` unknown-number | סנכרון Meta/Voximplant; `/admin/webhooks` על שורה של המספר השני | `provider-numbers-resolve.ts` request-free (dependency-cruiser); RLS: `select` כ-`authenticated` שאינו admin מחזיר 0 שורות (`npx supabase db query` עם `set role authenticated; set request.jwt.claims…` — לפי skill `querying-live-supabase`) |
+| 2 | 7 פונקציות Graph (URL/גוף/מיפוי שגיאות) + Zod + actions (Owner gate נבדק: מוקק `requirePlatformOwner` זורק → action מחזיר error) | `debugToken` על הטוקן החי; ניסיון "הוסף" של מספר קיים נכשל בחן | PIN/טוקן לא בלוגים/הודעות; `register` מוגבל Owner; מגבלת 10/72h מוצגת |
+| 3 | `cli-guard` + `mutations` + `core` + quote/purchase actions (mock) | Task 3.1 capabilities; quote אמיתי; bind על DID קיים; Task 3.4 שיחה נכנסת | `attachPhoneNumber` ללא מצב קטלוג; Owner gate; `logActivity` + Slack על רכישה |
+| 4 | `voximplant-config.test.ts` fallback | שיחה אחת לכל פרסונה | fail-closed נשמר (null כששניהם ריקים) |
+| 5 | `template-health-sync` וריאנטים; `summary.test.ts`; `send-policy` action (חריגה מהתקרה נדחית); subscriptions parse | סנכרון ידני; עריכת חלון שליחה → `parseSendPolicy` דוחה 21:30 | app token = `appId|appSecret` נשאר בשרת; אין שינוי בנתיבי הטוקן הציבוריים (`/r`, `/g`, `/ty`, ctx/cb) — **לא נוגעים בהם בכלל** |
+
+**כללי:** לפני כל פאזה `git status` נקי; אחרי — `npx tsc --noEmit && npm run lint && npm test && npm run build`; deploy ע"י הבעלים בלבד; אימות חי ב-beta.
+
+---
+
+## 8. סיכונים ומגבלות
+
+1. **כסף:** `AttachPhoneNumber` שומר מראש דמי חודש הבא + מסים (DOCS-ONLY); מגודר Owner + הקלדה + מחיר. אין undo — `DeactivatePhoneNumber` הוא Owner-only ואולי לא זמין ל-service account.
+2. **נעילת מספר ב-Meta:** `register`/`deregister` — 10 בקשות/72 שעות (`133016`); PIN שגוי חוזר נועל. לכן Owner-only, הקלדת `REGISTER`, ואין בדיקה חיה של register.
+3. **פיצול הטופס היחיד של settings:** `keepMounted` היה load-bearing — checkbox לא-מוצג נקרא כ-false. הפיצול ל-4 טפסים נפרדים מבטל את הסיכון הזה **בתוך** כל טופס, אבל כל schema חדש חייב לכלול את **כל** השדות של הטופס שלו (בדיקה 0.2 מצמידה).
+4. **תפקיד ה-service account ב-Voximplant לא ידוע** (Attach = Owner/Admin/Accountant; Deactivate = Owner). Task 3.1 מודד לפני שה-UI מבטיח.
+5. **אותו E.164 בכמה ספקים** — המודל מאפשר (unique על `(provider, provider_ref)`); UI חייב להבהיר שזה מכוון (INFERRED: `+972 3-721-9347` = Voximplant DID/caller id = WhatsApp RSVP).
+6. **תיעוד Meta סותר** על גוף `POST /{waba}/phone_numbers` — Task 2.1 חובה. `DELETE subscriptions` — UNVERIFIED.
+7. **טוקן אישי ולא System-User?** תוכנית 3.9 §0 D מזכירה `data_access_expires_at = 2026-12-02` על הטוקן הנוכחי — `debugToken` יחשוף זאת מיד (וזה בדיוק הערך של Phase 2.5).
+8. **רגולציה IL:** `is_need_regulation_address` לא נמדד ל-IL; יצירת כתובת רגולציה — אין מתודה ידועה → Control Panel.
+9. **היגיינת grants:** `message_templates` מעניקה ל-`anon` ALL (RLS חוסם; אין policy ל-anon) — לא בהיקף, להעביר ל-rls-schema-engineer.
+10. **`relocation/*` ב-v21.0** (פקיעה 21.1.2027) — לא בהיקף; לרשום ב-`docs/product-debt.md`.
+11. **Redirect 307 ולא 308** — כדי לא לקבע בדפדפנים לפני שהבעלים מאשר את ה-IA הסופית.
+12. **Nav visibility ≠ gate** — כמו היום (`admin-shell.tsx:162-167`): כל admin רואה "אינטגרציות"; העמודים עצמם מגודרים.
+13. **מפתח ExtrA:** `getAuthKey` מחזיר את המפתח בגוף התגובה — הקליינט חייב להשליכו (בדיקה מצמידה). המפתח החי הוא legacy ללא scopes ("may do everything the account may") ופוקע 2027-10-27 — ניטור ב-Task 5.6.
+14. **הקלטות ExtrA:** `getRecordingUrls` עם `ttl: 0` יוצר URL ציבורי לצמיתות — אסור; רק signed (≤10 דק') בזמן צפייה.
+15. **`Call.numbers.caller.e164` הוא PII של לקוח** (Phase 6) — לא בלוגים, לא ב-snapshot; רק `forwards_to_last4` של מכשיר הבעלים נשמר.
+
+---
+
+## 9. שאלות פתוחות לבעלים
+
+1. D1–D8 לעיל (ברירות המחדל מסומנות).
+2. האם המספר `+972 3-330-1505` אמור להיות **גם** מספר הייבוא ב-WhatsApp **וגם** שולח ה-SMS **וגם** טלפון החברה בהסכם — או שזה מקרי? (משפיע על תוויות ב-`provider_numbers` ועל D2.)
+3. האם ה-DID של Voximplant הוא אכן `+972 3-721-9347` (INFERRED מסיומת+pattern) — לאשר לפני ה-backfill.
+4. איזה תפקיד יש ל-service account של Voximplant (Owner/Admin/Accountant/Developer)? קובע אם רכישה/ביטול אפשריים מהפאנל בכלל.
+5. האם להוסיף `whatsapp_app_id` ל-`app_settings` (נדרש ל-`debug_token` ולכיסוי webhooks) — או להשאיר את ה-`META_APP_ID_WA` שב-`.env.local` (שאף קוד לא קורא היום)?
+6. תוכנית 3.9 (פיצול ניתוב ייבוא): לבצע **אחרי** Phase 1 עם תפקיד `whatsapp_import_sender` (מומלץ), או במקביל עם העמודות שהוצעו שם?
+7. הצד המשפטי: caller id שונה לפרסונת המכירות — האם צריך להופיע בהסכם/מדיניות (israeli-compliance-advisor)?

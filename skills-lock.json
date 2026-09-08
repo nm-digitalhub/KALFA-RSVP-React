@@ -765,6 +765,12 @@
       "skillPath": "skills/objection-recognition/SKILL.md",
       "computedHash": "620657c9e797e3d9115ebd9e8cab359493c18d932da79b5bad814063d0d9ce17"
     },
+    "optimized-nextjs-typescript": {
+      "source": "mindrally/skills",
+      "sourceType": "github",
+      "skillPath": "optimized-nextjs-typescript/SKILL.md",
+      "computedHash": "1cfd6d976ac071cde9ae8b303a2a26a7800dedf73d1ef0fd1b2dfa9be059d385"
+    },
     "out-of-scope-request-handling": {
       "source": "louisblythe/salesskills",
       "sourceType": "github",
