@@ -30,8 +30,12 @@ vi.mock('@/lib/data/contacts', () => ({
   buildContactsForEvent: vi.fn(),
   reconcileCampaignSetForContact: vi.fn(),
 }));
+// The action's OWN authorization gate (added 2026-09-08). Mocked as a pass-through
+// by default; the dedicated describe below flips it to prove it runs first.
+vi.mock('@/lib/data/events', () => ({ requireEventAccess: vi.fn() }));
 
 import { bulkInsertGuests, createGroup, listGroups } from '@/lib/data/guests';
+import { requireEventAccess } from '@/lib/data/events';
 import { buildContactsForEvent } from '@/lib/data/contacts';
 import { importGuestsAction } from './import-actions';
 import { buildTemplateCsv } from '@/lib/guests/import-template';
@@ -59,6 +63,9 @@ function fd(file: File): FormData {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  // clearAllMocks keeps implementations: re-arm the gate as a pass-through so a
+  // rejecting gate in one test never leaks into the next.
+  vi.mocked(requireEventAccess).mockResolvedValue(undefined as never);
   // Default shape matching the real return (contactIds added 30.8 — the
   // reconcile-wiring fix); individual tests override when they care about it.
   vi.mocked(buildContactsForEvent).mockResolvedValue({
@@ -67,6 +74,32 @@ beforeEach(() => {
     uniqueContacts: 0,
     invalid: 0,
     contactIds: [],
+  });
+});
+
+describe('importGuestsAction — its own authorization gate runs before any data access', () => {
+  it('calls requireEventAccess(eventId, guests, create) before listGroups and before the service-role read', async () => {
+    const order: string[] = [];
+    vi.mocked(requireEventAccess).mockImplementation(async () => {
+      order.push('gate');
+      return undefined as never;
+    });
+    vi.mocked(listGroups).mockImplementation(async () => {
+      order.push('listGroups');
+      return [];
+    });
+    vi.mocked(bulkInsertGuests).mockResolvedValue(0);
+    await importGuestsAction('e-1', null, fd(csvFile()));
+    expect(requireEventAccess).toHaveBeenCalledWith('e-1', 'guests', 'create');
+    expect(order[0]).toBe('gate');
+  });
+
+  it('a NEXT_NOT_FOUND from the gate propagates and nothing else runs', async () => {
+    vi.mocked(requireEventAccess).mockRejectedValue(NEXT_NOT_FOUND);
+    await expect(
+      importGuestsAction('e-1', null, fd(csvFile())),
+    ).rejects.toThrow('NEXT_NOT_FOUND');
+    expect(listGroups).not.toHaveBeenCalled();
   });
 });
 

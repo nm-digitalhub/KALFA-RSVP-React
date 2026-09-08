@@ -17,6 +17,7 @@ import {
 } from '@/lib/data/guests';
 import { buildContactsForEvent, reconcileCampaignSetForContact } from '@/lib/data/contacts';
 import { createAdminClient } from '@/lib/supabase/admin';
+import { requireEventAccess } from '@/lib/data/events';
 import { CSV_MAX_ROWS, CSV_MAX_BYTES } from '@/lib/constants';
 
 // A single row that failed validation, reported back to the user in Hebrew.
@@ -60,6 +61,13 @@ export async function importGuestsAction(
   _prevState: ImportState,
   formData: FormData,
 ): Promise<ImportState> {
+  // Own authorization gate, first. Until 2026-09-08 the only thing standing
+  // between a browser-supplied eventId and the service-role `guests` read
+  // below was listGroups() throwing a few lines later — an order-dependent
+  // guard a refactor could silently remove. 'create': an import WRITES guests,
+  // so it carries the same key the import page itself gates on.
+  await requireEventAccess(eventId, 'guests', 'create');
+
   const file = formData.get('file');
   if (!(file instanceof File) || file.size === 0) {
     return { error: 'נא לבחור קובץ CSV.' };
