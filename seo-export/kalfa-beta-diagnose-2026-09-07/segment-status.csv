@@ -1,0 +1,5 @@
+dimension,data_status,matched_rows,unmatched_rows,before_rows_fetched,after_rows_fetched,possibly_truncated,verdict,warnings
+page,partial,4,2,4,6,false,4 of 4 matched retained segments returned. 2 one-window rows were kept as unmatched evidence and not converted to zero.,2 segments appeared in only one retained response. They are not treated as zero traffic or ranked as winners or losers.
+query,unavailable,0,1,0,1,false,"No segment was retained in both windows, so no movement delta was inferred.",1 segments appeared in only one retained response. They are not treated as zero traffic or ranked as winners or losers.
+device,complete,2,0,2,2,false,2 of 2 matched retained segments returned.,
+country,partial,2,1,2,3,false,2 of 2 matched retained segments returned. 1 one-window rows were kept as unmatched evidence and not converted to zero.,1 segments appeared in only one retained response. They are not treated as zero traffic or ranked as winners or losers.

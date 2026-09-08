@@ -723,6 +723,12 @@
       "skillPath": "skills/negotiation/SKILL.md",
       "computedHash": "4b1111679061d6472f490a521f42a542db421076d4a128b2c89428305479c3be"
     },
+    "nextjs-code-review": {
+      "source": "giuseppe-trisciuoglio/developer-kit",
+      "sourceType": "github",
+      "skillPath": "plugins/developer-kit-typescript/skills/nextjs-code-review/SKILL.md",
+      "computedHash": "859a556486183d25d3dd5f41526bf034b868eb02e13a7f881ed2d48014e94ecf"
+    },
     "nextjs-developer": {
       "source": "jeffallan/claude-skills",
       "sourceType": "github",
@@ -734,6 +740,12 @@
       "sourceType": "github",
       "skillPath": "nextjs-react-typescript/SKILL.md",
       "computedHash": "eb995cc826bf48498e0e90969fc7dadfa2ec634002c26cfcfde565134cefa738"
+    },
+    "nextjs-typescript-tailwindcss-supabase": {
+      "source": "mindrally/skills",
+      "sourceType": "github",
+      "skillPath": "nextjs-typescript-tailwindcss-supabase/SKILL.md",
+      "computedHash": "b866ca1d166d1e9140c236a839550c1c46853113de0905d107593f3b50800a22"
     },
     "objection-handling": {
       "source": "louisblythe/salesskills",

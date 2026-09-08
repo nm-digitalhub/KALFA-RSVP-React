@@ -1,0 +1,3 @@
+rank,dimension,data_status,evidence_scope,key,before_clicks,after_clicks,click_delta,before_impressions,after_impressions,impression_delta,before_position,after_position,position_delta
+1,device,complete,matched-retained-segment,DESKTOP,0,0,0,2,1,-1,1.5,1,-0.5
+2,device,complete,matched-retained-segment,MOBILE,0,0,0,4,2,-2,1.5,17.5,16

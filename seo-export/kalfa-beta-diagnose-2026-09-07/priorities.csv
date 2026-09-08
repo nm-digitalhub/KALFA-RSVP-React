@@ -1,0 +1,2 @@
+rank,label,confidence,reason,action
+1,Investigate largest page movement,low,https://beta.kalfa.me/ gained 0 clicks.,"Open the page and check the queries that moved, whether the URL is still canonical/indexable, and whether the title, H1, or body changed recently."
