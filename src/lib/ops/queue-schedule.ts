@@ -29,4 +29,8 @@ export const QUEUE_EXPECTED_MAX_MINUTES: Record<string, number> = {
   'auth-phone-change-cleanup': 3 * 24 * 60,
   // Weekly (Monday 09:00 IL): flag only after a whole missed week plus slack.
   'seo-technical-watch': 10 * 24 * 60,
+  // Weekly (Sunday 05:20 IL). Same 10-day allowance as the other weekly job:
+  // a missed CLI upgrade is not urgent, but a job that silently stopped running
+  // means the toolchain quietly rots, which is exactly what this watches for.
+  'supabase-cli-update': 10 * 24 * 60,
 };

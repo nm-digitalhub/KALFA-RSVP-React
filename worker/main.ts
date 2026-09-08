@@ -129,6 +129,7 @@ const DAY_MS = 86_400_000;
 // interval crons (*/N) are timezone-independent and left as-is.
 import { runPhoneChangeCleanup } from '@/lib/data/auth-phone-change-cleanup';
 import { runSeoTechnicalWatch } from '@/lib/seo/technical-watch';
+import { runSupabaseCliUpdate } from '@/lib/ops/supabase-cli-update';
 
 const SCHEDULE_TZ = 'Asia/Jerusalem';
 
@@ -1030,7 +1031,11 @@ async function main(): Promise<void> {
       q === QUEUES.unconfirmedCleanupSweep ||
       // Singleton: two overlapping runs would both diff against the same saved
       // crawl and both spend URL Inspection quota on the same 12 URLs.
-      q === QUEUES.seoTechnicalWatch;
+      q === QUEUES.seoTechnicalWatch ||
+      // Singleton, and this one is not an optimisation: two overlapping runs
+      // would both drive the installer into ~/.supabase/bin and both run
+      // `npm install` in the same tree. Concurrency here corrupts a toolchain.
+      q === QUEUES.supabaseCliUpdate;
     const expire = SWEEP_QUEUES.has(q) ? SWEEP_EXPIRE_SECONDS : undefined;
     const existing = existingQueues.get(q);
     if (!existing) {
@@ -1151,6 +1156,20 @@ async function main(): Promise<void> {
     POLL_SLOW_CRON,
     guardedWorker(QUEUES.seoTechnicalWatch, async () => {
       await runSeoTechnicalWatch();
+    }),
+  );
+  // Supabase CLI keep-current. The only job here that runs an external script
+  // rather than talking to a provider: the upgrade is installer + npm + git +
+  // tsc, which is shell work, and keeping it in scripts/update-supabase-cli.sh
+  // means the owner can run the exact same thing by hand. runSupabaseCliUpdate
+  // never throws and posts to Slack only when the version actually moved or the
+  // run failed — a weekly "still current" message would just train people to
+  // ignore the channel.
+  await boss.work(
+    QUEUES.supabaseCliUpdate,
+    POLL_SLOW_CRON,
+    guardedWorker(QUEUES.supabaseCliUpdate, async () => {
+      await runSupabaseCliUpdate();
     }),
   );
   // Callback re-dials. runCallbackSweep only ENQUEUES — every dial gate is
@@ -1384,6 +1403,11 @@ async function main(): Promise<void> {
   // Weekly, Monday 09:00 IL — a working hour on purpose: an SEO regression
   // alert is something a person acts on, not an overnight batch.
   await boss.schedule(QUEUES.seoTechnicalWatch, '0 9 * * 1', null, { tz: SCHEDULE_TZ });
+  // Weekly, Sunday 05:20 IL — deliberately the quietest hour of the quietest
+  // day, because this one rewrites node_modules and may run a full tsc. It is
+  // also far from Monday 09:00, so a CLI upgrade and the SEO watch never
+  // compete for the same worker slot.
+  await boss.schedule(QUEUES.supabaseCliUpdate, '20 5 * * 0', null, { tz: SCHEDULE_TZ });
   // Weekly, off-peak, deliberately non-round (04:17) — a 60-day token refreshed
   // once a week has ample margin even if a run is missed for a while.
   await boss.schedule(QUEUES.igTokenRefresh, '17 4 * * 2', null, { tz: SCHEDULE_TZ });

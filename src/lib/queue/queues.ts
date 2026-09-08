@@ -185,6 +185,13 @@ export const QUEUES = {
   // (scripts/seo-audit.mjs) grades pages at deploy, this watches BETWEEN
   // deploys. See src/lib/seo/technical-watch.ts.
   seoTechnicalWatch: 'seo-technical-watch',
+  // Supabase CLI keep-current — weekly. The CLI only NOTIFIES about new
+  // versions, and this account has no system cron (Plesk denies crontab), so
+  // the upgrade runs here: official installer for the binary, the same exact
+  // version pinned onto npm, and regenerated types parked on a review branch
+  // when they change. Slack only when something actually happened.
+  // See src/lib/ops/supabase-cli-update.ts + scripts/update-supabase-cli.sh.
+  supabaseCliUpdate: 'supabase-cli-update',
 } as const;
 
 // outreach-step retry policy: a few backed-off retries, then dead-letter. The
