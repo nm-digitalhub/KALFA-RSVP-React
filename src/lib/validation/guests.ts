@@ -1,7 +1,8 @@
 import { z } from 'zod';
 
 import { Constants } from '@/lib/supabase/types';
-import { GUEST_NAME_MAX, NOTE_MAX, ISRAELI_PHONE_RE } from '@/lib/constants';
+import { GUEST_NAME_MAX, NOTE_MAX, PHONE_INPUT_MAX } from '@/lib/constants';
+import { isAcceptablePhoneInput } from '@/lib/phone';
 
 // Enum vocabularies come from the generated `Constants` (single source of
 // truth), so adding/removing a DB enum value surfaces here as a type error
@@ -10,14 +11,16 @@ const GUEST_STATUS_VALUES = Constants.public.Enums.guest_status;
 const CONTACT_STATUS_VALUES = Constants.public.Enums.contact_status;
 
 // An optional phone field: empty string passes (phone is optional), otherwise
-// it must look like an Israeli number. Normalisation of spaces/hyphens is
-// handled by the regex tolerance, not by mutating the value here.
+// it must be a dialable Israeli OR international number. Separators are
+// tolerated by the validator, not stripped here — the value is stored as the
+// user typed it, and E.164 normalisation happens at the contact boundary
+// (src/lib/data/contacts.ts).
 const optionalPhone = z
   .string()
   .trim()
-  .max(20, { error: 'מספר הטלפון ארוך מדי' })
-  .refine((v) => v === '' || ISRAELI_PHONE_RE.test(v), {
-    error: 'מספר טלפון לא תקין',
+  .max(PHONE_INPUT_MAX, { error: 'מספר הטלפון ארוך מדי' })
+  .refine((v) => v === '' || isAcceptablePhoneInput(v), {
+    error: 'מספר טלפון לא תקין. למספר בחו״ל יש להוסיף קידומת מדינה, למשל ‎+33',
   });
 
 // A non-negative integer guest count (adults/kids), optional. Coerced from the
@@ -66,9 +69,9 @@ export const importRowSchema = z.object({
   phone: z
     .string()
     .trim()
-    .max(20, { error: 'מספר הטלפון ארוך מדי' })
-    .refine((v) => v === '' || ISRAELI_PHONE_RE.test(v), {
-      error: 'מספר טלפון לא תקין',
+    .max(PHONE_INPUT_MAX, { error: 'מספר הטלפון ארוך מדי' })
+    .refine((v) => v === '' || isAcceptablePhoneInput(v), {
+      error: 'מספר טלפון לא תקין. למספר בחו״ל יש להוסיף קידומת מדינה, למשל ‎+33',
     })
     .optional()
     .or(z.literal('')),

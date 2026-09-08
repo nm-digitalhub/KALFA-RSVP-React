@@ -1,5 +1,7 @@
 import { parsePhoneNumberFromString } from 'libphonenumber-js';
 
+import { ISRAELI_PHONE_RE } from '@/lib/constants';
+
 // Phone normalization for the outcome-billing model. A "contact" (§2–3 of the
 // billing spec) is a UNIQUE reachable phone per event; the canonical dedup key
 // is the E.164 form. Israeli numbers default to the 'IL' region so users may
@@ -17,6 +19,28 @@ export function normalizePhone(raw: string | null | undefined): string | null {
 
 export function isValidPhone(raw: string | null | undefined): boolean {
   return normalizePhone(raw) !== null;
+}
+
+// Input gate for the user-entered phone fields (guest form, CSV import,
+// WhatsApp import). Guests are not always Israeli — a wedding invites family
+// abroad — so an international number written in +CC or 00CC form must be
+// accepted and validated against ITS OWN country's numbering plan, which is
+// exactly what libphonenumber-js does once the value carries a country code.
+//
+// Deliberately ADDITIVE over ISRAELI_PHONE_RE rather than a replacement: every
+// value that passed before still passes, so no existing guest list, import
+// file, or saved form can start failing because the parser is stricter than
+// the hand-written regex on some Israeli edge case. The regex is checked
+// first; only a value it rejects is handed to the parser.
+//
+// Returns false for an empty value — callers treat "" as "no phone" BEFORE
+// reaching this function, because phone is optional throughout the product.
+export function isAcceptablePhoneInput(raw: string | null | undefined): boolean {
+  if (!raw) return false;
+  const trimmed = raw.trim();
+  if (trimmed === '') return false;
+  if (ISRAELI_PHONE_RE.test(trimmed)) return true;
+  return normalizePhone(trimmed) !== null;
 }
 
 // Spreadsheet repair: Excel silently strips the leading 0 from a numeric

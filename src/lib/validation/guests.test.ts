@@ -128,3 +128,37 @@ describe('groupSchema', () => {
     expect(groupSchema.safeParse({ name: '' }).success).toBe(false);
   });
 });
+
+describe('guest phone — international numbers', () => {
+  it('accepts a French mobile with its country code on create and update', () => {
+    expect(
+      createGuestSchema.safeParse({ full_name: 'דנה', phone: '+33 7 56 98 23 70' })
+        .success,
+    ).toBe(true);
+    expect(
+      updateGuestSchema.safeParse({ phone: '+33756982370' }).success,
+    ).toBe(true);
+  });
+
+  it('accepts an international number in a CSV import row', () => {
+    expect(
+      importRowSchema.safeParse({ full_name: 'דנה', phone: '+33756982370' })
+        .success,
+    ).toBe(true);
+  });
+
+  it('still rejects a mistyped international number', () => {
+    expect(
+      createGuestSchema.safeParse({ full_name: 'דנה', phone: '+3375698237' })
+        .success,
+    ).toBe(false);
+  });
+
+  it('accepts a formatted international number longer than 20 characters', () => {
+    // "+1 (415) 555-2671" style grouping used to blow the old 20-char cap.
+    expect(
+      createGuestSchema.safeParse({ full_name: 'דנה', phone: '+1 (415) 555-2671' })
+        .success,
+    ).toBe(true);
+  });
+});
