@@ -45,7 +45,10 @@ export const LANDING_NAV_ITEMS: readonly { href: string; label: string }[] = [
 // shadcn rule: className is for layout only — the link's colours, hover,
 // active and focus treatment come from the primitive's own
 // navigationMenuTriggerStyle() (the documented "Link" pattern), not from
-// overrides that reproduce the old bare-anchor look.
+// overrides that reproduce the old bare-anchor look. `min-h-11` IS layout:
+// the style's h-9 (36px) is fine for a mouse, but this nav is visible from
+// `md`, i.e. on touch tablets too, where the 44px target applies (min-height
+// beats height, so the pill grows to 44px inside the 64px header).
 export function LandingHeaderNav({ className }: { className?: string }) {
   const pathname = usePathname();
   return (
@@ -57,7 +60,7 @@ export function LandingHeaderNav({ className }: { className?: string }) {
           return (
             <NavigationMenuItem key={item.href}>
               <NavigationMenuLink
-                className={navigationMenuTriggerStyle()}
+                className={cn(navigationMenuTriggerStyle(), 'min-h-11')}
                 active={!isSection && pathname === item.href}
                 render={<Link href={item.href} />}
               >

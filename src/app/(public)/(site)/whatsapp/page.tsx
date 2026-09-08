@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { ArrowLeft, ListChecks, MessageCircle, ShieldCheck } from 'lucide-react';
 
+import { siteCta } from '@/components/site/cta';
 import { getUser } from '@/lib/auth/dal';
 import { buildFaqJsonLd, faqJsonLdScript } from '@/lib/faq/json-ld';
 import { pageOpenGraph } from '@/lib/seo/open-graph';
@@ -86,43 +87,47 @@ export default async function WhatsappRsvpPage() {
       />
 
       <main>
-        <section className="mx-auto max-w-6xl px-6 py-10 sm:py-16">
-          <span className="inline-flex items-center gap-2 text-sm font-bold uppercase tracking-wide text-primary">
-            <MessageCircle className="size-4" aria-hidden />
-            ערוץ השליחה
-          </span>
-          <h1 className="mt-4 max-w-3xl text-4xl font-extrabold leading-tight tracking-tight sm:text-5xl">
-            אישורי הגעה בוואטסאפ
-          </h1>
-          <p className="mt-5 max-w-prose text-lg text-muted-foreground">
-            הזמנה אישית לכל מוזמן דרך הפלטפורמה העסקית הרשמית של וואטסאפ — לא קבוצה, לא רשימת תפוצה,
-            ולא שליחה ידנית מהטלפון שלכם.
-          </p>
-          <div className="mt-7 flex flex-wrap gap-3">
-            <Link
-              href={startHref}
-              className="inline-flex items-center gap-2 rounded-md bg-primary px-6 py-3 font-semibold text-primary-foreground transition hover:opacity-90"
-            >
-              {startLabel}
-              <ArrowLeft className="size-5" aria-hidden />
-            </Link>
-            <Link
-              href="/guest-list-template"
-              className="inline-flex items-center gap-2 rounded-md border border-border px-6 py-3 font-semibold transition hover:bg-[#f9fafb]"
-            >
-              תבנית רשימת מוזמנים
-            </Link>
+        {/* Hero: same treatment as the homepage — primary-tinted radial wash and
+            fluid `text-title` (see docs/design/public-pages-tailwind-v4-upgrade.md). */}
+        <section className="relative isolate mx-auto max-w-6xl px-6 py-10 before:pointer-events-none before:absolute before:inset-0 before:-z-10 before:bg-radial-[at_top_end] before:from-primary/10 before:via-transparent before:to-transparent sm:py-16">
+          <div>
+            <span className="inline-flex items-center gap-2 text-sm font-bold uppercase tracking-wide text-primary transition-[opacity,translate] duration-700 ease-k-out motion-safe:starting:opacity-0 motion-safe:starting:translate-y-3">
+              <MessageCircle className="size-4" aria-hidden />
+              ערוץ השליחה
+            </span>
+            <h1 className="mt-4 max-w-3xl text-balance text-title font-extrabold tracking-tight transition-[opacity,translate] duration-700 ease-k-out motion-safe:starting:opacity-0 motion-safe:starting:translate-y-3 k-delay-100">
+              אישורי הגעה בוואטסאפ
+            </h1>
+            <p className="mt-5 max-w-prose text-pretty text-lg text-muted-foreground transition-[opacity,translate] duration-700 ease-k-out motion-safe:starting:opacity-0 motion-safe:starting:translate-y-3 k-delay-200">
+              הזמנה אישית לכל מוזמן דרך הפלטפורמה העסקית הרשמית של וואטסאפ — לא קבוצה, לא רשימת תפוצה,
+              ולא שליחה ידנית מהטלפון שלכם.
+            </p>
+            <div className="mt-7 flex flex-wrap gap-3 transition-[opacity,translate] duration-700 ease-k-out motion-safe:starting:opacity-0 motion-safe:starting:translate-y-3 k-delay-300">
+              <Link
+                href={startHref}
+                className={siteCta()}
+              >
+                {startLabel}
+                <ArrowLeft className="size-5" aria-hidden />
+              </Link>
+              <Link
+                href="/guest-list-template"
+                className={siteCta({ variant: 'outline' })}
+              >
+                תבנית רשימת מוזמנים
+              </Link>
+            </div>
           </div>
         </section>
 
         <section className="border-y border-border bg-[#f9fafb]">
           <div className="mx-auto max-w-6xl px-6 py-16">
-            <h2 className="max-w-2xl text-3xl font-bold tracking-tight sm:text-4xl">
+            <h2 className="max-w-2xl text-balance text-display font-bold tracking-tight">
               למה דווקא בערוץ הזה
             </h2>
-            <div className="mt-10 grid gap-4 sm:grid-cols-2">
+            <div className="k-reveal-group mt-10 grid gap-4 sm:grid-cols-2">
               {POINTS.map(({ t, d }) => (
-                <div key={t} className="rounded-xl border border-border bg-background p-6">
+                <div key={t} className="k-card rounded-xl border border-border bg-background p-6 hover:shadow-md">
                   <h3 className="text-lg font-bold">{t}</h3>
                   <p className="mt-1.5 text-sm leading-relaxed text-muted-foreground">{d}</p>
                 </div>
@@ -134,7 +139,7 @@ export default async function WhatsappRsvpPage() {
         {/* The limits, stated plainly. A page that only sells the channel and
             hides Meta's rules produces disappointed users on day one. */}
         <section className="mx-auto max-w-6xl px-6 py-16">
-          <div className="rounded-2xl bg-[#0b0f1a] p-8 text-white sm:p-10">
+          <div className="k-reveal rounded-2xl bg-[#0b0f1a] p-8 text-white inset-ring-1 inset-ring-white/10 sm:p-10">
             <span className="inline-flex items-center gap-2 text-sm font-bold uppercase tracking-wide text-indigo-300">
               <ShieldCheck className="size-4" aria-hidden />
               מה שחשוב לדעת מראש
@@ -166,10 +171,10 @@ export default async function WhatsappRsvpPage() {
               <ListChecks className="size-4" aria-hidden />
               שאלות נפוצות
             </span>
-            <h2 className="mt-3 text-3xl font-bold tracking-tight sm:text-4xl">
+            <h2 className="mt-3 text-balance text-display font-bold tracking-tight">
               שליחה בוואטסאפ — שאלות שחוזרות
             </h2>
-            <div className="mt-8 space-y-8">
+            <div className="k-reveal-group mt-8 space-y-8">
               {FAQ.map((f) => (
                 <div key={f.q} className="border-b border-border pb-6 last:border-b-0 last:pb-0">
                   <h3 className="text-lg font-bold">{f.q}</h3>

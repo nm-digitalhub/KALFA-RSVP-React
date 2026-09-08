@@ -4,8 +4,10 @@ import { ArrowLeft } from 'lucide-react';
 import { LandingHeaderNav } from '@/components/landing-header-nav';
 import { LandingMobileNav } from '@/components/landing-mobile-nav';
 import { LandingUserMenu } from '@/components/landing-user-menu';
+import { siteCta } from '@/components/site/cta';
 import { getUser } from '@/lib/auth/dal';
 import { getProfile } from '@/lib/data/profiles';
+import { cn } from '@/lib/utils';
 
 // Shared header for the public MARKETING pages — mounted once in
 // src/app/(public)/(site)/layout.tsx, the same nested-layout pattern as
@@ -31,9 +33,12 @@ export async function SiteHeader() {
   const userName = profile?.full_name?.trim() || undefined;
 
   return (
-    <header className="sticky top-0 z-50 border-b border-border bg-background/85 backdrop-blur-md backdrop-saturate-150">
+    <header className="k-scroll-shadow sticky top-0 z-50 border-b border-border bg-background/85 backdrop-blur-md backdrop-saturate-150">
       <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-6">
-        <Link href="/" className="text-2xl font-extrabold tracking-tight">
+        <Link
+          href="/"
+          className="inline-flex min-h-11 items-center rounded-sm text-2xl font-extrabold tracking-tight focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+        >
           KALFA
         </Link>
         {/* Desktop nav: shadcn NavigationMenu (flat links). Hidden below md,
@@ -45,16 +50,19 @@ export async function SiteHeader() {
           ) : (
             // Hidden below md: these two live inside the mobile drawer
             // instead, so the mobile header stays logo + hamburger only.
+            // From md they are visible on touch tablets as well, so both keep
+            // a 44px target (`min-h-11`; cn() replaces the `sm` size's
+            // min-h-10) — the 64px header has the room.
             <div className="hidden items-center gap-3 md:flex">
-              <Link href="/auth/login" className="text-sm font-semibold hover:underline">
+              <Link
+                href="/auth/login"
+                className="inline-flex min-h-11 items-center rounded-sm px-1 text-sm font-semibold hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+              >
                 כניסה
               </Link>
-              <Link
-                href="/auth/signup"
-                className="inline-flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground transition hover:opacity-90"
-              >
+              <Link href="/auth/signup" className={cn(siteCta({ size: 'sm' }), 'min-h-11')}>
                 צרו אירוע
-                <ArrowLeft className="size-4" />
+                <ArrowLeft className="size-4" aria-hidden />
               </Link>
             </div>
           )}

@@ -9,7 +9,7 @@ describe('EVENT_THEME', () => {
       const theme = EVENT_THEME[type];
       expect(theme, type).toBeDefined();
       expect(theme.accent, type).toMatch(/^text-/);
-      expect(theme.banner, type).toContain('bg-gradient-to-b');
+      expect(theme.banner, type).toContain('bg-linear-to-b');
       expect(theme.greeting.trim().length, type).toBeGreaterThan(0);
     }
   });

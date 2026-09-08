@@ -1,5 +1,8 @@
 import Link from 'next/link';
 
+import { HeroParallax, ParallaxLayer } from '@/components/motion/hero-parallax';
+import { TiltCard } from '@/components/motion/tilt-card';
+import { siteCta } from '@/components/site/cta';
 import { getUser } from '@/lib/auth/dal';
 import { getCompanyLegal, toE164Israel } from '@/lib/data/company';
 import { getAppOrigin } from '@/lib/url';
@@ -120,9 +123,19 @@ const PREVIEW_GUESTS = [
   { n: 'נועה אבני', m: '1 אורח', label: 'לא מגיע', cls: 'bg-rose-50 text-rose-700' },
 ];
 
-function Eyebrow({ icon: Icon, children }: { icon: LucideIcon; children: React.ReactNode }) {
+function Eyebrow({
+  icon: Icon,
+  className,
+  children,
+}: {
+  icon: LucideIcon;
+  className?: string;
+  children: React.ReactNode;
+}) {
   return (
-    <span className="inline-flex items-center gap-2 text-sm font-bold uppercase tracking-wide text-primary">
+    <span
+      className={`inline-flex items-center gap-2 text-sm font-bold uppercase tracking-wide text-primary${className ? ` ${className}` : ''}`}
+    >
       <Icon className="size-4" />
       {children}
     </span>
@@ -224,7 +237,14 @@ export default async function HomePage() {
   };
 
   return (
-    <div className="bg-background">
+    // `overflow-x-clip` (not `hidden`: clip creates no scroll container, so the
+    // `view()` scroll timelines and the sticky header are unaffected): the hero
+    // glow's `k-glow-drift` scales its `before:` layer to 1.08, and a transformed
+    // absolute box DOES extend the page's scrollable overflow — 4% of the hero
+    // width past the inline-end edge, i.e. a slowly growing horizontal scroll on
+    // every viewport narrower than ~1244px. Clipping here (viewport width) hides
+    // nothing visible; clipping the section itself would cut the blurred blob.
+    <div className="overflow-x-clip bg-background">
       <script
         type="application/ld+json"
         // JSON.stringify output with `<` escaped — standard guard against
@@ -239,48 +259,86 @@ export default async function HomePage() {
             under the 64px sticky header, so 64px more padding pushed the first
             word ~128px down a 390px viewport (owner report 24.8). 40px keeps
             the same rhythm as /faq's first section; desktop unchanged. */}
-        <section className="mx-auto max-w-6xl px-6 py-10 sm:py-20">
+        {/* `isolate` + the `before:` radial wash: a soft primary-tinted glow
+            behind the hero copy (existing --primary token at 10%, fading to
+            transparent — no new colour). Painted as a pseudo-element so it
+            never affects layout and stays out of the DOM. Its 14s drift loop
+            runs only for hover-capable fine pointers (`pointer-fine-hover:`,
+            motion.css) — on phones/tablets the glow is static (battery).
+            Entrance/reveal motion for this page lives in the motion layer
+            (src/app/motion.css).
+            JS islands (src/components/motion/*): HeroParallax/ParallaxLayer =
+            scroll-linked depth (copy, mockup, glow blob at three speeds);
+            TiltCard = pointer-following 3D tilt on the mockup and the feature
+            cards — cursor on fine pointers, finger on touch (+ device tilt on
+            the mockup, Android only), inert under reduced motion. */}
+        <HeroParallax>
+        <section className="relative isolate mx-auto max-w-6xl px-6 py-10 before:pointer-events-none before:absolute before:inset-0 before:-z-10 before:bg-radial-[at_top_end] before:from-primary/10 before:via-transparent before:to-transparent motion-safe:pointer-fine-hover:before:animate-k-glow-drift sm:py-20">
           <div className="grid items-center gap-12 lg:grid-cols-2">
-            <div>
-              <Eyebrow icon={Sparkles}>ניהול חכם לאירוע מושלם</Eyebrow>
-              <h1 className="mt-4 text-4xl font-extrabold leading-tight tracking-tight sm:text-6xl">
+            <ParallaxLayer depth={-16}>
+              <Eyebrow icon={Sparkles} className="transition-[opacity,translate] duration-700 ease-k-out motion-safe:starting:opacity-0 motion-safe:starting:translate-y-3">ניהול חכם לאירוע מושלם</Eyebrow>
+              <h1 className="mt-4 text-balance text-hero font-extrabold tracking-tight transition-[opacity,translate] duration-700 ease-k-out motion-safe:starting:opacity-0 motion-safe:starting:translate-y-3 k-delay-100">
                 אישורי הגעה,
                 <br />
                 <span className="text-primary">במקום אחד.</span>
               </h1>
-              <p className="mt-5 max-w-prose text-lg text-muted-foreground">
+              <p className="mt-5 max-w-prose text-pretty text-lg text-muted-foreground transition-[opacity,translate] duration-700 ease-k-out motion-safe:starting:opacity-0 motion-safe:starting:translate-y-3 k-delay-200">
                 שלחו הזמנות, עקבו אחר התגובות בזמן אמת ונהלו את רשימת המוזמנים והמלווים — בלי גיליונות, בלי הודעות מפוזרות, בלי בלגן.
               </p>
-              <div className="mt-7 flex flex-wrap gap-3">
-                <Link
-                  href={startHref}
-                  className="inline-flex items-center gap-2 rounded-md bg-primary px-6 py-3 font-semibold text-primary-foreground transition hover:opacity-90"
-                >
+              <div className="mt-7 flex flex-wrap gap-3 transition-[opacity,translate] duration-700 ease-k-out motion-safe:starting:opacity-0 motion-safe:starting:translate-y-3 k-delay-300">
+                <Link href={startHref} className={siteCta()}>
                   {startLabel}
-                  <ArrowLeft className="size-5" />
+                  <ArrowLeft className="size-5" aria-hidden />
                 </Link>
-                <a
-                  href="#how"
-                  className="inline-flex items-center gap-2 rounded-md border border-border px-6 py-3 font-semibold transition hover:bg-[#f9fafb]"
-                >
-                  <Play className="size-4" />
+                <a href="#how" className={siteCta({ variant: 'outline' })}>
+                  <Play className="size-4" aria-hidden />
                   צפו בהדגמה קצרה
                 </a>
               </div>
-              <div className="mt-6 flex flex-wrap items-center gap-5 text-sm text-muted-foreground">
-                <span className="inline-flex items-center gap-2"><ShieldCheck className="size-4" /> פרטי ומאובטח</span>
-                <span className="inline-flex items-center gap-2"><Clock className="size-4" /> מוכן תוך דקות</span>
+              <div className="mt-6 flex flex-wrap items-center gap-5 text-sm text-muted-foreground transition-[opacity,translate] duration-700 ease-k-out motion-safe:starting:opacity-0 motion-safe:starting:translate-y-3 k-delay-400">
+                <span className="inline-flex items-center gap-2"><ShieldCheck className="size-4" aria-hidden /> פרטי ומאובטח</span>
+                <span className="inline-flex items-center gap-2"><Clock className="size-4" aria-hidden /> מוכן תוך דקות</span>
               </div>
-            </div>
+            </ParallaxLayer>
 
-            {/* Dashboard preview */}
-            <div className="overflow-hidden rounded-2xl border border-border bg-background shadow-xl">
-              <div className="flex items-center justify-between border-b border-border px-4 py-3">
+            {/* Dashboard preview. `@container/preview`: this card is ~half the
+                row on lg and the full column on mobile, so its internals
+                respond to the CARD's width, not the viewport — the stat
+                numbers step down below ~22rem (a 320px phone) and the header
+                row stacks below 20rem, where three tiles + a pill no longer
+                fit on one line. */}
+            {/* The entrance (`starting:` opacity/translate) lives on this
+                layer, OUTSIDE TiltCard: TiltCard switches from its static
+                <div> to the <Tilt> island once the pointer-fine media query
+                resolves after hydration, which remounts its children — an
+                entrance on the card itself would replay (fade in twice) on
+                every desktop load. motion only writes `transform` here, so the
+                CSS `translate`/`opacity` transition is untouched. */}
+            {/* Touch (motion spec §10): below `lg` the card rests at -3° (same
+                RTL sign as the desktop -6°, so `perspective-distant` is needed
+                at every width — without a perspective a rotateY is an invisible
+                squash); a finger drag tilts it, and on Android the device's own
+                tilt drives it (`gyroscope`, decorative, in-view only — TiltCard
+                never triggers the iOS permission dialog). */}
+            <ParallaxLayer
+              depth={-40}
+              className="perspective-distant transition-[opacity,translate] duration-700 ease-k-out motion-safe:starting:opacity-0 motion-safe:starting:translate-y-4 k-delay-200"
+            >
+              <TiltCard
+                restAngleY={-6}
+                restAngleYNarrow={-3}
+                fallbackClassName="-rotate-y-3 lg:-rotate-y-6"
+                maxAngle={7}
+                scale={1.02}
+                gyroscope
+              >
+            <div className="@container/preview overflow-hidden rounded-2xl border border-border bg-background shadow-xl">
+              <div className="flex flex-col gap-2 border-b border-border px-4 py-3 @[20rem]/preview:flex-row @[20rem]/preview:items-center @[20rem]/preview:justify-between">
                 <div>
                   <div className="font-bold">חתונה · דנה ויואב</div>
                   <div className="text-xs text-muted-foreground">14.06.2026 · אולמי השרון</div>
                 </div>
-                <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700">248 אישרו</span>
+                <span className="w-fit rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700">248 אישרו</span>
               </div>
               <div className="grid gap-4 p-4">
                 <div className="grid grid-cols-3 gap-3">
@@ -290,7 +348,7 @@ export default async function HomePage() {
                     { l: 'היענות', v: '82%', c: 'text-primary' },
                   ].map((s) => (
                     <div key={s.l} className="rounded-lg border border-border p-3 text-center">
-                      <div className={`text-2xl font-extrabold ${s.c}`}>{s.v}</div>
+                      <div className={`text-xl font-extrabold tabular-nums @[22rem]/preview:text-2xl ${s.c}`}>{s.v}</div>
                       <div className="mt-1 text-xs text-muted-foreground">{s.l}</div>
                     </div>
                   ))}
@@ -322,25 +380,35 @@ export default async function HomePage() {
                 </div>
               </div>
             </div>
+              </TiltCard>
+            </ParallaxLayer>
           </div>
+          {/* Third depth layer: a soft blob of the primary token that LAGS the
+              scroll (background), behind the static `before:` wash. */}
+          <ParallaxLayer
+            depth={48}
+            decorative
+            className="pointer-events-none absolute end-0 top-1/3 -z-10 size-72 rounded-full bg-primary/10 blur-3xl"
+          />
         </section>
+        </HeroParallax>
 
         {/* Problem / Solution */}
         <section className="mx-auto max-w-6xl px-6 py-16">
           <div className="grid items-center gap-10 lg:grid-cols-2">
             <div>
               <Eyebrow icon={TriangleAlert}>המצב היום</Eyebrow>
-              <h2 className="mt-4 text-3xl font-bold tracking-tight sm:text-4xl">
+              <h2 className="mt-4 text-balance text-display font-bold tracking-tight">
                 ניהול אירוע לא צריך להרגיש כמו עבודה במשרה מלאה
               </h2>
-              <p className="mt-3 text-lg text-muted-foreground">
+              <p className="mt-3 text-pretty text-lg text-muted-foreground">
                 בעלי אירועים נתקלים שוב ושוב באותן בעיות — והן מתנקזות ללחץ מיותר.
               </p>
-              <div className="mt-6 grid gap-4">
+              <div className="k-reveal-group mt-6 grid gap-4">
                 {PROBLEMS.map(({ icon: Icon, t, d }) => (
                   <div key={t} className="flex items-start gap-4">
                     <span className="grid size-10 shrink-0 place-items-center rounded-lg bg-[#f3f4f6] text-foreground">
-                      <Icon className="size-5" />
+                      <Icon className="size-5" aria-hidden />
                     </span>
                     <div>
                       <div className="font-bold">{t}</div>
@@ -350,18 +418,18 @@ export default async function HomePage() {
                 ))}
               </div>
             </div>
-            <div className="rounded-2xl bg-[#0b0f1a] p-7 text-white">
+            <div className="k-reveal rounded-2xl bg-[#0b0f1a] p-7 text-white inset-ring-1 inset-ring-white/10">
               <span className="inline-flex items-center gap-2 text-sm font-bold uppercase tracking-wide text-indigo-300">
-                <CheckCheck className="size-4" /> הפתרון
+                <CheckCheck className="size-4" aria-hidden /> הפתרון
               </span>
-              <h3 className="mt-3 text-2xl font-extrabold tracking-tight">KALFA מרכזת את הכול במקום אחד</h3>
-              <p className="mt-2 leading-relaxed text-white/70">
+              <h3 className="mt-3 text-balance text-2xl font-extrabold tracking-tight">KALFA מרכזת את הכול במקום אחד</h3>
+              <p className="mt-2 text-pretty leading-relaxed text-white/70">
                 אורחים, הזמנות, אישורי הגעה, תזכורות, סטטוסים ועדכונים — מערכת אחת מסודרת שנותנת לכם שליטה מלאה.
               </p>
               <div className="mt-6 grid gap-2.5">
                 {SOLUTIONS.map((s) => (
                   <div key={s} className="flex items-center gap-3 rounded-lg border border-white/10 bg-white/5 px-3.5 py-3">
-                    <CircleCheck className="size-5 shrink-0 text-indigo-300" />
+                    <CircleCheck className="size-5 shrink-0 text-indigo-300" aria-hidden />
                     <span className="text-sm font-semibold">{s}</span>
                   </div>
                 ))}
@@ -371,18 +439,23 @@ export default async function HomePage() {
         </section>
 
         {/* Features */}
-        <section id="features" className="border-y border-border bg-[#f9fafb]">
+        {/* `scroll-mt-16` on every in-page anchor target: the header is
+            sticky and 64px tall, so without it a nav click landed with the
+            section title hidden under the header. */}
+        <section id="features" className="scroll-mt-16 border-y border-border bg-[#f9fafb]">
           <div className="mx-auto max-w-6xl px-6 py-16">
-            <div className="mx-auto mb-11 max-w-2xl text-center">
+            <div className="k-reveal mx-auto mb-11 max-w-2xl text-center">
               <Eyebrow icon={Layers}>יכולות מרכזיות</Eyebrow>
-              <h2 className="mt-3 text-3xl font-bold tracking-tight sm:text-4xl">כל מה שצריך כדי לנהל אישורי הגעה</h2>
-              <p className="mt-2.5 text-lg text-muted-foreground">שבע יכולות שעובדות יחד — מרשימת האורחים ועד הדוח הסופי.</p>
+              <h2 className="mt-3 text-balance text-display font-bold tracking-tight">כל מה שצריך כדי לנהל אישורי הגעה</h2>
+              <p className="mt-2.5 text-pretty text-lg text-muted-foreground">שבע יכולות שעובדות יחד — מרשימת האורחים ועד הדוח הסופי.</p>
             </div>
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {/* `k-reveal-3d` (= k-reveal-group + a 6° stand-up on touch devices)
+                and `k-press` (touch press-in on the card) — motion spec §10. */}
+            <div className="k-reveal-3d grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
               {FEATURES.map(({ n, icon: Icon, t, d, anim, iconAnim }) => (
+                <TiltCard key={n} maxAngle={5} scale={1.01} glare={false}>
                 <div
-                  key={n}
-                  className="rounded-xl border border-border bg-background p-6 transition hover:-translate-y-1 hover:shadow-md"
+                  className="k-card k-press rounded-xl border border-border bg-background p-6 hover:shadow-md"
                 >
                   <div className="mb-4 flex items-center justify-between">
                     <span
@@ -395,15 +468,16 @@ export default async function HomePage() {
                   <h3 className="text-lg font-bold">{t}</h3>
                   <p className="mt-1.5 text-sm leading-relaxed text-muted-foreground">{d}</p>
                 </div>
+                </TiltCard>
               ))}
               <div className="flex flex-col justify-center gap-4 rounded-xl border border-indigo-100 bg-indigo-50 p-6">
-                <h3 className="text-lg font-bold text-indigo-700">הכול מחובר. שום דבר לא הולך לאיבוד.</h3>
+                <h3 className="text-balance text-lg font-bold text-indigo-700">הכול מחובר. שום דבר לא הולך לאיבוד.</h3>
                 <Link
                   href={user ? '/app/events/new' : '/auth/signup'}
-                  className="inline-flex w-fit items-center gap-2 rounded-md bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground transition hover:opacity-90"
+                  className={siteCta({ size: 'md', className: 'w-fit' })}
                 >
                   {user ? 'אירוע חדש' : 'התחילו עכשיו'}
-                  <ArrowLeft className="size-4" />
+                  <ArrowLeft className="size-4" aria-hidden />
                 </Link>
               </div>
             </div>
@@ -411,18 +485,18 @@ export default async function HomePage() {
         </section>
 
         {/* How it works */}
-        <section id="how" className="mx-auto max-w-6xl px-6 py-16">
-          <div className="mx-auto mb-12 max-w-2xl text-center">
+        <section id="how" className="mx-auto max-w-6xl scroll-mt-16 px-6 py-16">
+          <div className="k-reveal mx-auto mb-12 max-w-2xl text-center">
             <Eyebrow icon={Route}>איך זה עובד</Eyebrow>
-            <h2 className="mt-3 text-3xl font-bold tracking-tight sm:text-4xl">שישה צעדים פשוטים, מהרעיון ועד האירוע</h2>
-            <p className="mt-2.5 text-lg text-muted-foreground">בלי הדרכות מסובכות. בונים אירוע ומתחילים לעבוד.</p>
+            <h2 className="mt-3 text-balance text-display font-bold tracking-tight">שישה צעדים פשוטים, מהרעיון ועד האירוע</h2>
+            <p className="mt-2.5 text-pretty text-lg text-muted-foreground">בלי הדרכות מסובכות. בונים אירוע ומתחילים לעבוד.</p>
           </div>
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="k-reveal-3d grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {STEPS.map(({ n, icon: Icon, t, d }) => (
-              <div key={n} className="rounded-xl border border-border bg-background p-6 transition hover:-translate-y-1 hover:shadow-md">
+              <div key={n} className="k-card rounded-xl border border-border bg-background p-6 hover:shadow-md">
                 <div className="mb-3.5 flex items-center gap-3.5">
                   <span className="grid size-8 place-items-center rounded-full bg-[#0b0f1a] text-sm font-semibold text-white">{n}</span>
-                  <Icon className="size-5 text-primary" />
+                  <Icon className="size-5 text-primary" aria-hidden />
                 </div>
                 <h3 className="text-lg font-bold">{t}</h3>
                 <p className="mt-1.5 text-sm leading-relaxed text-muted-foreground">{d}</p>
@@ -432,21 +506,21 @@ export default async function HomePage() {
         </section>
 
         {/* Trust */}
-        <section id="trust" className="bg-[#0b0f1a]">
+        <section id="trust" className="scroll-mt-16 bg-[#0b0f1a]">
           <div className="mx-auto max-w-6xl px-6 py-16">
-            <div className="mx-auto mb-11 max-w-2xl text-center">
+            <div className="k-reveal mx-auto mb-11 max-w-2xl text-center">
               <span className="inline-flex items-center gap-2 text-sm font-bold uppercase tracking-wide text-indigo-300">
-                <Lock className="size-4" /> אמון
+                <Lock className="size-4" aria-hidden /> אמון
               </span>
-              <h2 className="mt-3 text-3xl font-bold tracking-tight text-white sm:text-4xl">נבנתה כדי להפחית לחץ — לא להוסיף אותו</h2>
-              <p className="mt-2.5 text-lg text-white/70">
+              <h2 className="mt-3 text-balance text-display font-bold tracking-tight text-white">נבנתה כדי להפחית לחץ — לא להוסיף אותו</h2>
+              <p className="mt-2.5 text-pretty text-lg text-white/70">
                 המטרה פשוטה: למנוע בלבול, לחסוך זמן ולתת למארגן האירוע שליטה מלאה ושקטה בתהליך.
               </p>
             </div>
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <div className="k-reveal-3d grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
               {TRUST.map(({ icon: Icon, t, d }) => (
-                <div key={t} className="rounded-xl border border-white/10 bg-white/5 p-6">
-                  <Icon className="mb-3.5 size-6 text-indigo-300" />
+                <div key={t} className="k-card rounded-xl border border-white/10 bg-white/5 p-6 hover:bg-white/10">
+                  <Icon className="mb-3.5 size-6 text-indigo-300" aria-hidden />
                   <h3 className="font-bold text-white">{t}</h3>
                   <p className="mt-1.5 text-sm leading-relaxed text-white/60">{d}</p>
                 </div>
@@ -460,21 +534,24 @@ export default async function HomePage() {
           <div className="grid items-center gap-10 lg:grid-cols-[0.8fr_1.2fr]">
             <div>
               <Eyebrow icon={UsersRound}>למי זה מתאים</Eyebrow>
-              <h2 className="mt-4 text-3xl font-bold tracking-tight sm:text-4xl">אירוע אחד או מאות — אותה שליטה</h2>
-              <p className="mt-3 text-lg text-muted-foreground">
+              <h2 className="mt-4 text-balance text-display font-bold tracking-tight">אירוע אחד או מאות — אותה שליטה</h2>
+              <p className="mt-3 text-pretty text-lg text-muted-foreground">
                 מאירוע משפחתי אינטימי ועד כנס חברה גדול — KALFA מתאימה את עצמה לגודל ולסגנון שלכם.
               </p>
             </div>
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+            {/* Tiles that are links get the shared focus outline (they had
+                none) and `min-h-11`; the two non-link tiles keep the same box
+                so the grid stays even. */}
+            <div className="k-reveal-group grid grid-cols-2 gap-3 sm:grid-cols-3">
               {AUDIENCES.map(({ icon: Icon, t, href }) => {
                 const body = (
                   <>
-                    <Icon className="size-5 text-primary" />
+                    <Icon className="size-5 shrink-0 text-primary" aria-hidden />
                     <span className="text-sm font-semibold">{t}</span>
                   </>
                 );
                 const shell =
-                  'flex items-center gap-3 rounded-lg border border-border bg-background px-4 py-4 transition hover:-translate-y-1 hover:border-primary hover:shadow-sm';
+                  'k-card flex min-h-11 items-center gap-3 rounded-lg border border-border bg-background px-4 py-4 hover:border-primary hover:shadow-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring';
                 return href ? (
                   <Link key={t} href={href} className={shell}>
                     {body}
@@ -491,26 +568,26 @@ export default async function HomePage() {
 
         {/* Closing CTA */}
         <section className="mx-auto max-w-6xl px-6 pb-16">
-          <div className="overflow-hidden rounded-3xl bg-primary px-8 py-14 text-center sm:py-16">
-            <h2 className="text-3xl font-extrabold leading-tight tracking-tight text-primary-foreground sm:text-5xl">
+          {/* Closing banner: flat bg-primary + a radial highlight in the top
+              start corner (white at 15%, the same white/15 the secondary
+              button already uses) — depth without a second colour. */}
+          <div className="k-reveal k-sheen relative isolate overflow-hidden rounded-3xl bg-primary px-8 py-14 text-center before:pointer-events-none before:absolute before:inset-0 before:-z-10 before:bg-radial-[at_top_start] before:from-white/15 before:to-transparent sm:py-16">
+            <h2 className="text-balance text-3xl font-extrabold leading-tight tracking-tight text-primary-foreground sm:text-5xl">
               פחות התעסקות, יותר שליטה.
               <br />
               אירוע מסודר יותר.
             </h2>
-            <p className="mx-auto mt-4 max-w-xl text-primary-foreground/90">
+            <p className="mx-auto mt-4 max-w-xl text-pretty text-primary-foreground/90">
               התחילו לנהל את אישורי ההגעה לאירוע שלכם עוד היום — מסודר, ברור ובמקום אחד.
             </p>
             <div className="mt-7 flex flex-wrap justify-center gap-3">
-              <Link
-                href={startHref}
-                className="inline-flex items-center gap-2 rounded-md bg-[#0b0f1a] px-7 py-3.5 font-semibold text-white transition hover:opacity-90"
-              >
+              <Link href={startHref} className={siteCta({ variant: 'dark', size: 'xl' })}>
                 {startLabel}
-                <ArrowLeft className="size-5" />
+                <ArrowLeft className="size-5" aria-hidden />
               </Link>
               <Link
                 href={user ? '/app/events/new' : '/auth/login'}
-                className="inline-flex items-center rounded-md border border-white/40 bg-white/15 px-7 py-3.5 font-semibold text-primary-foreground transition hover:bg-white/25"
+                className={siteCta({ variant: 'onPrimary', size: 'xl' })}
               >
                 {user ? 'אירוע חדש' : 'כניסה לחשבון'}
               </Link>

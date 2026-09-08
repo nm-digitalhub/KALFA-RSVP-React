@@ -67,7 +67,9 @@ export function LandingUserMenu({
             <Button
               variant="ghost"
               size="icon"
-              className="rounded-full"
+              // 44px hit area around the 32px avatar (the `icon` size is 32px;
+              // this is the only account control in the public header).
+              className="size-11 rounded-full"
               aria-label="תפריט משתמש"
             >
               <Avatar>

@@ -51,9 +51,9 @@ export function RatingForm({
 
   if (state?.notice) {
     return (
-      <Card className="mx-auto w-full max-w-sm">
+      <Card className="mx-auto w-full max-w-sm motion-safe:animate-in motion-safe:fade-in motion-safe:zoom-in-95 duration-500 ease-k-out">
         <CardContent className="flex flex-col items-center gap-2 py-8 text-center">
-          <div className="flex size-11 items-center justify-center rounded-full bg-success/15 text-success">
+          <div className="flex size-11 items-center justify-center rounded-full bg-success/15 text-success motion-safe:animate-k-pop k-delay-150">
             ✓
           </div>
           <h1 className="text-base font-semibold">תודה על הדירוג!</h1>
@@ -76,7 +76,7 @@ export function RatingForm({
                 aria-pressed={selected === score}
                 aria-label={label}
                 onClick={() => setSelected(score)}
-                className={`flex size-16 items-center justify-center rounded-xl border-2 text-muted-foreground transition-all ${
+                className={`flex size-16 items-center justify-center rounded-xl border-2 text-muted-foreground transition-all duration-200 ease-k-out outline-none touch-manipulation motion-safe:active:scale-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring ${
                   selected === score
                     ? `scale-110 ${TONE_CLASS[tone]}`
                     : 'border-border hover:bg-muted'
@@ -87,7 +87,7 @@ export function RatingForm({
             ))}
           </div>
           {selected && (
-            <p className="text-xs font-medium text-muted-foreground">{FEEDBACK[selected]}</p>
+<p className="text-xs font-medium text-muted-foreground">{FEEDBACK[selected]}</p>
           )}
         </div>
 

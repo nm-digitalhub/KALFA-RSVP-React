@@ -71,8 +71,8 @@ export default async function FaqPage() {
       {/* Header: the shared SiteHeader from the (site) layout (24.8). */}
       <main className="mx-auto max-w-3xl px-4 py-10 sm:px-6 sm:py-12">
         <div>
-          <h1 className="text-3xl font-extrabold tracking-tight sm:text-4xl">שאלות נפוצות</h1>
-          <p className="mt-2 max-w-prose text-lg text-muted-foreground">
+          <h1 className="text-balance text-display font-extrabold tracking-tight transition-[opacity,translate] duration-700 ease-k-out motion-safe:starting:opacity-0 motion-safe:starting:translate-y-3">שאלות נפוצות</h1>
+          <p className="mt-2 max-w-prose text-pretty text-lg text-muted-foreground transition-[opacity,translate] duration-700 ease-k-out motion-safe:starting:opacity-0 motion-safe:starting:translate-y-3 k-delay-100">
             כל מה שצריך לדעת על KALFA — מה זה, איך זה עובד, כמה זה עולה ומה קורה אם רוצים לבטל.
           </p>
         </div>
@@ -89,12 +89,16 @@ export default async function FaqPage() {
 
         {model.sections.length > 0 ? (
           <>
+            {/* Category chips: 44px touch target (they were ~34px) and the
+                shared keyboard focus outline; the sections they jump to carry
+                `scroll-mt-20` so the title lands below the 64px sticky
+                header instead of under it. */}
             <nav aria-label="קטגוריות שאלות" className="mt-8 flex flex-wrap gap-2">
               {model.sections.map((section) => (
                 <a
                   key={section.category}
                   href={`#section-${section.category}`}
-                  className="rounded-full border border-border px-3 py-1.5 text-sm font-medium text-muted-foreground transition hover:border-primary hover:text-foreground"
+                  className="inline-flex min-h-11 items-center rounded-full border border-border px-4 py-1.5 text-sm font-medium text-muted-foreground transition hover:border-primary hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
                 >
                   {section.title}
                 </a>
@@ -107,7 +111,7 @@ export default async function FaqPage() {
                 <section
                   key={section.category}
                   id={`section-${section.category}`}
-                  className={`py-12 sm:py-14 ${index > 0 ? 'border-t border-border' : 'mt-2'}`}
+                  className={`scroll-mt-20 py-12 sm:py-14 ${index > 0 ? 'border-t border-border' : 'mt-2'}`}
                 >
                   <span className="inline-flex items-center gap-2 text-sm font-bold uppercase tracking-wide text-primary">
                     <Icon className="size-4" aria-hidden />
@@ -115,7 +119,7 @@ export default async function FaqPage() {
                   </span>
                   <h2 className="mt-2 text-xl font-bold sm:text-2xl">{section.title}</h2>
 
-                  <div className="mt-6 space-y-8 sm:space-y-10">
+                  <div className="k-reveal-group mt-6 space-y-8 sm:space-y-10">
                     {section.entries.map((entry, entryIndex) => (
                       <div
                         key={`${section.category}-${entryIndex}`}

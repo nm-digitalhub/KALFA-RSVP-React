@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { DirectionProvider } from '@base-ui/react/direction-provider';
 import { ArrowLeft, Menu } from 'lucide-react';
 
+import { siteCta } from '@/components/site/cta';
 import { Button } from '@/components/ui/button';
 import {
   Sheet,
@@ -15,6 +16,7 @@ import {
   SheetTitle,
   SheetTrigger,
 } from '@/components/ui/sheet';
+import { cn } from '@/lib/utils';
 
 // Mobile nav drawer for the public landing header. The header's in-page nav
 // (#features/#how/#trust), "שאלות נפוצות" and "יצירת קשר" are `hidden md:flex`
@@ -28,8 +30,10 @@ import {
 // clicks can close the drawer immediately instead of leaving it open behind
 // the navigation/scroll.
 
+// min-h-11 = a 44px row per item (they were ~42px) + the shared v4 focus
+// outline, so the drawer is fully keyboard-legible and thumb-sized.
 const NAV_LINK_CLASS =
-  'rounded-md px-2 py-2.5 text-base font-medium text-foreground hover:bg-muted';
+  'flex min-h-11 items-center rounded-md px-2 py-2.5 text-base font-medium text-foreground transition-colors hover:bg-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring';
 
 export function LandingMobileNav({
   // Anonymous visitors also get כניסה/צרו אירוע inside the drawer — on mobile
@@ -48,7 +52,10 @@ export function LandingMobileNav({
       <Sheet open={open} onOpenChange={setOpen}>
         <SheetTrigger
           render={
-            <Button variant="ghost" size="icon" className="md:hidden" aria-label="תפריט">
+            // `size-11`: the shared `icon` size is 32px; this is the ONLY way
+            // into the nav on a phone, so it gets the 44px target (cn() lets
+            // size-11 win over the variant's size-8).
+            <Button variant="ghost" size="icon" className="size-11 md:hidden" aria-label="תפריט">
               <Menu />
             </Button>
           }
@@ -95,17 +102,17 @@ export function LandingMobileNav({
               <Link
                 href="/auth/login"
                 onClick={close}
-                className="rounded-md px-2 py-2.5 text-center text-base font-semibold hover:bg-muted"
+                className="inline-flex min-h-11 items-center justify-center rounded-md px-2 py-2.5 text-base font-semibold transition-colors hover:bg-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
               >
                 כניסה
               </Link>
               <Link
                 href="/auth/signup"
                 onClick={close}
-                className="inline-flex items-center justify-center gap-2 rounded-md bg-primary px-4 py-2.5 text-base font-semibold text-primary-foreground transition hover:opacity-90"
+                className={cn(siteCta({ size: 'md' }), 'text-base')}
               >
                 צרו אירוע
-                <ArrowLeft className="size-4" />
+                <ArrowLeft className="size-4" aria-hidden />
               </Link>
             </SheetFooter>
           ) : null}

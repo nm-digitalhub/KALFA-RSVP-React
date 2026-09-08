@@ -201,8 +201,10 @@ export default async function CookiesPage() {
           ניתן לפתוח את הודעת העוגיות בכל עת, לצפות בפירוט הקטגוריות, ולאשר או לבטל כל
           אחת מקטגוריות האנליטיקה והשיווק בנפרד:
         </p>
+        {/* Standalone control (alone in its paragraph, unlike the inline
+            mention on /privacy) → 44px target. */}
         <p>
-          <ManageCookiesButton className="text-primary hover:text-primary/80">
+          <ManageCookiesButton className="inline-flex min-h-11 items-center text-primary hover:text-primary/80">
             פתיחת הודעת העוגיות
           </ManageCookiesButton>
         </p>

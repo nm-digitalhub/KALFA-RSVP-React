@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 
+import { SubmitButton } from '@/components/forms';
 import { getUser } from '@/lib/auth/dal';
 import { getInvitationPreview } from '@/lib/data/orgs';
 
@@ -43,7 +44,7 @@ export default async function JoinPage({
           </p>
           <Link
             href="/app"
-            className="text-sm text-primary underline-offset-4 hover:underline"
+            className="inline-flex min-h-11 items-center rounded-sm text-sm text-primary underline-offset-4 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
           >
             חזרה לאזור האישי
           </Link>
@@ -64,12 +65,10 @@ export default async function JoinPage({
           </p>
           <form action={acceptInvitationAction}>
             <input type="hidden" name="token" value={token} />
-            <button
-              type="submit"
-              className="w-full rounded-md bg-primary px-4 py-2 font-medium text-primary-foreground transition-opacity hover:opacity-90"
-            >
-              הצטרפות
-            </button>
+            {/* Shared pending-aware submit (design audit: this was the one
+                public form hand-rolling a bare <button> with no pending state,
+                i.e. a double-submit risk on a slow network). */}
+            <SubmitButton size="lg">הצטרפות</SubmitButton>
           </form>
         </div>
       )}

@@ -1,6 +1,7 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
+@import "./motion.css";
 
 @custom-variant dark (&:is(.dark *));
 
@@ -101,6 +102,31 @@
   --radius-4xl: calc(var(--radius) * 2.6);
 }
 
+/* Public-site typography tokens (Tailwind v4 `@theme`, verified against the
+   installed 4.3.3 by compiling the generated utilities —
+   docs/design/public-pages-tailwind-v4-upgrade.md).
+
+   `--text-*` follows the built-in `--text-4xl` / `--text-4xl--line-height`
+   pair shape in node_modules/tailwindcss/theme.css, so `text-hero` etc. emit
+   font-size + line-height like any core text utility. Fluid clamp() replaces
+   the `text-4xl sm:text-6xl` breakpoint jumps on the marketing headings:
+     hero    36px → 60px (homepage h1; was 36 then 60 from `sm`)
+     title   36px → 48px (sub-page h1s; was 36 then 48 from `sm`)
+     display 30px → 36px (section h2s; was 30 then 36 from `sm`)
+   The endpoints are the OLD sizes, so nothing gets bigger or smaller at the
+   extremes — the middle just stops jumping at 640px.
+
+   Motion (entrances, scroll reveals, hover lifts) for the public pages is a
+   separate layer, src/app/motion.css — nothing animated is defined here. */
+@theme {
+  --text-hero: clamp(2.25rem, 1.5rem + 3vw, 3.75rem);
+  --text-hero--line-height: 1.08;
+  --text-title: clamp(2.25rem, 1.65rem + 2vw, 3rem);
+  --text-title--line-height: 1.1;
+  --text-display: clamp(1.875rem, 1.4rem + 1.5vw, 2.25rem);
+  --text-display--line-height: 1.15;
+}
+
 body {
   font-family: var(--font-sans), system-ui, sans-serif;
 }
@@ -146,30 +172,9 @@ body {
   --sidebar-ring: oklch(0.556 0 0);
 }
 
-/* Landing feature-icon animations (real-time status + reports). */
-@keyframes k-ico-pulse {
-  0% { transform: scale(1); box-shadow: 0 0 0 0 rgba(79, 70, 229, 0.5); }
-  70% { transform: scale(1.06); box-shadow: 0 0 0 12px rgba(79, 70, 229, 0); }
-  100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(79, 70, 229, 0); }
-}
-.k-ico-pulse { animation: k-ico-pulse 1.8s ease-out infinite; will-change: transform, box-shadow; }
-
-/* Reports icon: animate only the chart BARS (the <rect>s), each from its own
-   base — not the whole icon. transform-box:fill-box makes the origin local. */
-@keyframes k-bar {
-  0%, 100% { transform: scaleY(0.5); }
-  50% { transform: scaleY(1); }
-}
-.k-ico-bars rect {
-  transform-box: fill-box;
-  transform-origin: 50% 100%;
-  animation: k-bar 1.2s cubic-bezier(0.45, 0, 0.55, 1) infinite;
-}
-.k-ico-bars rect:nth-of-type(2) { animation-delay: 0.28s; }
-
-@media (prefers-reduced-motion: reduce) {
-  .k-ico-pulse, .k-ico-bars rect { animation: none !important; }
-}
+/* The homepage feature-icon loops (`k-ico-pulse`, `k-ico-bars`) moved to
+   src/app/motion.css on 2026-09-08 — one motion system; they now run only
+   while their card is hovered (owner decision, option 2). */
 
 @layer base {
   * {

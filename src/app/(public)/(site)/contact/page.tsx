@@ -40,10 +40,10 @@ export default async function ContactPage({
   return (
     <div className="bg-background">
       {/* Header: the shared SiteHeader from the (site) layout (24.8). */}
-      <main className="mx-auto max-w-3xl space-y-10 px-6 py-12">
+      <main className="mx-auto max-w-3xl space-y-10 px-4 py-10 sm:px-6 sm:py-12">
         <div>
-          <h1 className="text-3xl font-extrabold tracking-tight">יצירת קשר ותמיכה</h1>
-          <p className="mt-2 text-muted-foreground">
+          <h1 className="text-balance text-display font-extrabold tracking-tight transition-[opacity,translate] duration-700 ease-k-out motion-safe:starting:opacity-0 motion-safe:starting:translate-y-3">יצירת קשר ותמיכה</h1>
+          <p className="mt-2 text-pretty text-lg text-muted-foreground transition-[opacity,translate] duration-700 ease-k-out motion-safe:starting:opacity-0 motion-safe:starting:translate-y-3 k-delay-100">
             יש לכם שאלה, בקשה או תקלה? כתבו לנו או השאירו מספר — ונחזור אליכם.
           </p>
           <p className="mt-2 text-sm text-muted-foreground">
@@ -58,7 +58,7 @@ export default async function ContactPage({
         <section
           id="contact"
           aria-labelledby="contact-heading"
-          className="rounded-xl border border-border p-6"
+          className="@container/form scroll-mt-20 rounded-xl border border-border p-4 sm:p-6"
         >
           <h2 id="contact-heading" className="mb-4 flex items-center gap-2 text-xl font-bold">
             <MailOpen className="size-5 text-primary" />
@@ -74,7 +74,7 @@ export default async function ContactPage({
         <section
           id="callback"
           aria-labelledby="callback-heading"
-          className="rounded-xl border border-border p-6"
+          className="@container/form scroll-mt-20 rounded-xl border border-border p-4 sm:p-6"
         >
           <h2 id="callback-heading" className="mb-4 flex items-center gap-2 text-xl font-bold">
             <PhoneCall className="size-5 text-primary" />

@@ -12,6 +12,8 @@ import {
   SubmitButton,
 } from '@/components/forms';
 import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
 import {
   submitCallbackAction,
   submitContactAction,
@@ -34,8 +36,22 @@ function useLeadEvent(state: InquiryFormState) {
 // required/type attributes here are UX hints only. The "company" field is a
 // honeypot — visually hidden, ignored by real users, checked server-side.
 
-const FIELD_CLS =
-  'w-full rounded-md border border-border bg-background px-3 py-2 text-sm';
+// Field sizing on this PUBLIC form (live-beta measurement 2026-09-08: inputs
+// and select were 32px tall, the submit 40px, at every viewport). Same bar the
+// /r RSVP form sets: every control ≥44px (`min-h-11` — min-height beats the
+// primitives' `h-8`/`h-11 md:h-9`) and 16px text at every width (`text-base`,
+// replacing the primitives' `md:text-sm` via cn()) so iOS never auto-zooms
+// into a focused control. ui/input has no size variant (read 2026-09-08), so
+// the override is a className, merged by the primitive's own cn().
+const FIELD_CLS = 'min-h-11 text-base md:text-base';
+
+// The native <select> mirrors ui/input's field styling (radius, border token,
+// focus ring) plus the same FIELD_CLS sizing, so the three field types on these
+// forms read as one set. A native select rather than ui/select ON PURPOSE: a
+// closed list of six topics needs no portal, and the OS picker is the better
+// control on a phone. Textareas use the ui/textarea primitive directly.
+const SELECT_CLS =
+  'min-h-11 w-full min-w-0 rounded-lg border border-input bg-transparent px-2.5 py-1 text-base transition-colors outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 dark:bg-input/30';
 
 function Honeypot() {
   return (
@@ -56,11 +72,9 @@ function TopicSelect({
   defaultTopic?: string;
 }) {
   return (
-    <div>
-      <label htmlFor={id} className="mb-1 block text-sm font-medium">
-        נושא הפנייה
-      </label>
-      <select id={id} name="topic" defaultValue={defaultTopic ?? INQUIRY_TOPICS[0]} className={FIELD_CLS}>
+    <div className="grid gap-1.5">
+      <Label htmlFor={id}>נושא הפנייה</Label>
+      <select id={id} name="topic" defaultValue={defaultTopic ?? INQUIRY_TOPICS[0]} className={SELECT_CLS}>
         {INQUIRY_TOPICS.map((t) => (
           <option key={t} value={t}>
             {t}
@@ -109,18 +123,14 @@ export function ContactForm({
   return (
     <form action={formAction} className="relative space-y-4">
       <Honeypot />
-      <div>
-        <label htmlFor="contact-name" className="mb-1 block text-sm font-medium">
-          שם מלא
-        </label>
-        <Input id="contact-name" name="name" required defaultValue={defaultName} autoComplete="name" />
+      <div className="grid gap-1.5">
+        <Label htmlFor="contact-name">שם מלא</Label>
+        <Input id="contact-name" name="name" required defaultValue={defaultName} autoComplete="name" className={FIELD_CLS} />
         <FieldError errors={state?.fieldErrors?.name} />
       </div>
-      <div className="grid gap-4 sm:grid-cols-2">
-        <div>
-          <label htmlFor="contact-email" className="mb-1 block text-sm font-medium">
-            אימייל
-          </label>
+      <div className="grid gap-4 @md/form:grid-cols-2">
+        <div className="grid gap-1.5">
+          <Label htmlFor="contact-email">אימייל</Label>
           <Input
             id="contact-email"
             name="email"
@@ -128,35 +138,25 @@ export function ContactForm({
             dir="ltr"
             defaultValue={defaultEmail}
             autoComplete="email"
+            className={FIELD_CLS}
           />
           <FieldError errors={state?.fieldErrors?.email} />
         </div>
-        <div>
-          <label htmlFor="contact-phone" className="mb-1 block text-sm font-medium">
-            טלפון
-          </label>
-          <Input id="contact-phone" name="phone" type="tel" dir="ltr" autoComplete="tel" />
+        <div className="grid gap-1.5">
+          <Label htmlFor="contact-phone">טלפון</Label>
+          <Input id="contact-phone" name="phone" type="tel" dir="ltr" autoComplete="tel" className={FIELD_CLS} />
           <FieldError errors={state?.fieldErrors?.phone} />
         </div>
       </div>
       <TopicSelect id="contact-topic" defaultTopic={defaultTopic} />
-      <div>
-        <label htmlFor="contact-message" className="mb-1 block text-sm font-medium">
-          תוכן הפנייה
-        </label>
-        <textarea
-          id="contact-message"
-          name="message"
-          required
-          rows={5}
-          maxLength={2000}
-          className={FIELD_CLS}
-        />
+      <div className="grid gap-1.5">
+        <Label htmlFor="contact-message">תוכן הפנייה</Label>
+        <Textarea id="contact-message" name="message" required rows={5} maxLength={2000} className={FIELD_CLS} />
         <FieldError errors={state?.fieldErrors?.message} />
       </div>
       <FormError message={state?.error} />
       <FormNotice message={state?.notice} />
-      <SubmitButton>שליחת פנייה</SubmitButton>
+      <SubmitButton size="lg" className="min-h-11">שליחת פנייה</SubmitButton>
       <PrivacyNote />
     </form>
   );
@@ -193,14 +193,17 @@ function CallbackTimePreference() {
         {TIME_PREFERENCES.map((option, index) => (
           <label
             key={option.value}
-            className="inline-flex cursor-pointer items-center gap-2 rounded-md border border-input px-3 py-2 text-sm transition has-checked:border-primary has-checked:bg-primary/10 has-checked:font-medium hover:bg-muted"
+            className="inline-flex min-h-11 cursor-pointer items-center gap-2 rounded-md border border-input px-3 py-2 text-sm transition has-checked:border-primary has-checked:bg-primary/10 has-checked:font-medium has-focus-visible:outline-2 has-focus-visible:outline-offset-2 has-focus-visible:outline-ring hover:bg-muted"
           >
             <input
               type="radio"
               name="preference"
               value={option.value}
               defaultChecked={index === 0}
-              className="size-4 accent-primary"
+              // The chip (the label) draws the focus outline via
+              // `has-focus-visible:`; `outline-hidden` (not v4's `outline-none`)
+              // keeps a forced-colors fallback on the radio itself.
+              className="size-4 accent-primary outline-hidden"
             />
             {option.label}
           </label>
@@ -220,18 +223,14 @@ export function CallbackForm({ defaultTopic }: { defaultTopic?: string }) {
   return (
     <form action={formAction} className="relative space-y-4">
       <Honeypot />
-      <div>
-        <label htmlFor="cb-name" className="mb-1 block text-sm font-medium">
-          שם מלא
-        </label>
-        <Input id="cb-name" name="full_name" required autoComplete="name" />
+      <div className="grid gap-1.5">
+        <Label htmlFor="cb-name">שם מלא</Label>
+        <Input id="cb-name" name="full_name" required autoComplete="name" className={FIELD_CLS} />
         <FieldError errors={state?.fieldErrors?.full_name} />
       </div>
-      <div>
-        <label htmlFor="cb-phone" className="mb-1 block text-sm font-medium">
-          טלפון
-        </label>
-        <Input id="cb-phone" name="phone" type="tel" required dir="ltr" autoComplete="tel" />
+      <div className="grid gap-1.5">
+        <Label htmlFor="cb-phone">טלפון</Label>
+        <Input id="cb-phone" name="phone" type="tel" required dir="ltr" autoComplete="tel" className={FIELD_CLS} />
         <FieldError errors={state?.fieldErrors?.phone} />
       </div>
       <TopicSelect id="cb-topic" defaultTopic={defaultTopic} />
@@ -239,16 +238,14 @@ export function CallbackForm({ defaultTopic }: { defaultTopic?: string }) {
         בבחירת נושא &quot;מכירות&quot; אני מבקש/ת שיחזרו אליי בנוגע לרכישת שירותי קלפה, לרבות מידע ופרטים לפני רכישה.
       </p>
       <CallbackTimePreference />
-      <div>
-        <label htmlFor="cb-note" className="mb-1 block text-sm font-medium">
-          הערה (לא חובה)
-        </label>
-        <textarea id="cb-note" name="note" rows={2} maxLength={500} className={FIELD_CLS} />
+      <div className="grid gap-1.5">
+        <Label htmlFor="cb-note">הערה (לא חובה)</Label>
+        <Textarea id="cb-note" name="note" rows={2} maxLength={500} className={FIELD_CLS} />
         <FieldError errors={state?.fieldErrors?.note} />
       </div>
       <FormError message={state?.error} />
       <FormNotice message={state?.notice} />
-      <SubmitButton>חזרו אליי</SubmitButton>
+      <SubmitButton size="lg" className="min-h-11">חזרו אליי</SubmitButton>
       <CallbackDisclosureNote />
       <PrivacyNote />
     </form>

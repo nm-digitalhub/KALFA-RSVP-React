@@ -1,10 +1,16 @@
 import Link from 'next/link';
+import { ArrowRight } from 'lucide-react';
 
 import type { CompanyLegal } from '@/lib/data/company';
 
 // Shared shell for the public legal pages (privacy policy, terms). RTL Hebrew,
 // reads the company identity from config so it stays in sync with the agreement.
 // Legal wording reviewed and approved — no draft banner (removed 2026-08-30).
+//
+// Back link: a lucide ArrowRight, not the literal "←" glyph the responsive/RTL
+// audit flagged (docs/design/responsive-rtl-audit.md §3). In RTL "back" points
+// toward the reading START, i.e. right — the mirror of the ArrowLeft the
+// marketing CTAs use for "forward". The glyph pointed the wrong way.
 
 export function LegalShell({
   title,
@@ -21,18 +27,23 @@ export function LegalShell({
     v.trim() ? v.trim() : '[יושלם בהגדרות פרטי החברה]';
 
   return (
-    <div className="mx-auto max-w-3xl px-4 py-10">
+    // <main>, like every other (site) page: the header/footer come from the
+    // layout, and the legal pages were the only ones without a main landmark.
+    <main className="mx-auto max-w-3xl px-4 py-10 sm:px-6 sm:py-12">
       <Link
         href="/"
-        className="text-sm text-muted-foreground hover:text-foreground"
+        className="inline-flex min-h-11 items-center gap-1.5 rounded-sm text-sm text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
       >
-        ← לדף הבית
+        <ArrowRight className="size-4" aria-hidden />
+        לדף הבית
       </Link>
 
-      <h1 className="mt-4 text-2xl font-bold">{title}</h1>
-      <p className="mt-1 text-xs text-muted-foreground">{updatedText}</p>
+      {/* Same heading scale + rhythm as /faq and /contact (they were a smaller
+          text-2xl with no responsive step). */}
+      <h1 className="mt-2 text-balance text-display font-extrabold tracking-tight">{title}</h1>
+      <p className="mt-2 text-xs text-muted-foreground">{updatedText}</p>
 
-      <div className="mt-6 space-y-6">{children}</div>
+      <div className="mt-8 space-y-8">{children}</div>
 
       <hr className="my-8 border-border" />
       <section className="space-y-1 text-sm text-muted-foreground">
@@ -48,7 +59,7 @@ export function LegalShell({
           {company.contactEmail ? `דוא״ל: ${company.contactEmail}` : ''}
         </p>
       </section>
-    </div>
+    </main>
   );
 }
 

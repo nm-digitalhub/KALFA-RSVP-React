@@ -1,0 +1,358 @@
+/*
+ * KALFA — motion & effects layer for the PUBLIC surfaces (marketing pages,
+ * guest token pages). Imported ONCE from globals.css.
+ *
+ * Rules this file enforces by construction:
+ *  - Compositor-only motion: opacity, translate, scale, transform (rotate),
+ *    filter opacity. Nothing here animates layout (width/height/margin) or
+ *    paints per frame except the two hover-only shadow transitions and the
+ *    hover-only icon pulse ring (`k-ico-pulse`, box-shadow while hovered).
+ *  - Every animation is INERT under prefers-reduced-motion: the @utility
+ *    bodies below are wrapped in `@media (prefers-reduced-motion:
+ *    no-preference)`; the `--animate-*` / `--ease-*` theme tokens are used
+ *    in markup only behind Tailwind's `motion-safe:` variant.
+ *  - Logical direction only. Horizontal movement is never written here;
+ *    tw-animate-css's `slide-in-from-start/end` (verified: `:dir()`-aware)
+ *    is the only horizontal slide allowed in markup.
+ *  - A scroll-driven animation with `animation-fill-mode: both` stays ACTIVE
+ *    at 100% for as long as the element exists, and an animated property
+ *    beats any hover declaration. So the reveal keyframes own `opacity` +
+ *    `translate` (+ the individual `rotate` for `k-reveal-3d`), and every
+ *    hover effect on a revealed element must live on `transform` (see
+ *    `k-card`) — never on `translate`/`opacity`/`rotate`. Touch press-in
+ *    (`k-press`) owns `scale`. The TiltCard island writes an inline
+ *    `transform` on its OWN wrapper element — a different element from the
+ *    card, so the four systems never meet on one property.
+ *
+ * Verified against tailwindcss 4.3.3 (`node_modules/tailwindcss/theme.css`,
+ * `dist/lib.js`) and tw-animate-css 1.4.0 (`dist/tw-animate.css`), 2026-09-08.
+ * Scroll-driven animation utilities are NOT native to Tailwind 4.3 — they
+ * are defined here with @utility + @supports so unsupported browsers simply
+ * show the resting state.
+ */
+
+/* `pointer-fine-hover:` — a real hover-capable fine pointer (mouse/trackpad),
+   the same test TiltCard's FINE_POINTER media query makes in JS. Used to keep
+   the hero's ambient glow loop off touch devices (owner, 2026-09-08: battery),
+   where it would otherwise run for as long as the tab is open. Compiles to a
+   nested `@media (hover: hover) and (pointer: fine)` block (verified against
+   the installed 4.3.3 `compile()`). */
+@custom-variant pointer-fine-hover (@media (hover: hover) and (pointer: fine));
+
+@theme {
+  /* Easing tokens → `ease-k-out`, `ease-k-spring` utilities (also feed
+     tw-animate-css's `animate-in` via --tw-ease). */
+  --ease-k-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-k-spring: cubic-bezier(0.34, 1.3, 0.64, 1);
+
+  /* One-shot animations → `animate-k-pop`, `animate-k-rise`.
+     `k-glow-drift` is the single permitted ambient loop (hero glow) — applied
+     in markup as `motion-safe:pointer-fine-hover:before:animate-k-glow-drift`,
+     i.e. only for hover-capable fine pointers; touch devices get the static
+     glow (owner decision 2026-09-08). */
+  --animate-k-pop: k-pop 480ms var(--ease-k-spring) both;
+  --animate-k-rise: k-rise 600ms var(--ease-k-out) both;
+  --animate-k-glow-drift: k-glow-drift 14s ease-in-out infinite alternate;
+
+  @keyframes k-pop {
+    0% {
+      opacity: 0;
+      scale: 0.6;
+    }
+    60% {
+      opacity: 1;
+      scale: 1.06;
+    }
+    100% {
+      opacity: 1;
+      scale: 1;
+    }
+  }
+  @keyframes k-rise {
+    from {
+      opacity: 0;
+      translate: 0 1rem;
+    }
+    to {
+      opacity: 1;
+      translate: 0 0;
+    }
+  }
+  @keyframes k-glow-drift {
+    from {
+      translate: 0 0;
+      scale: 1;
+    }
+    to {
+      translate: 0 -6%;
+      scale: 1.08;
+    }
+  }
+}
+
+/* Keyframes used by @utility rules live OUTSIDE @theme so they are always
+   emitted (inside @theme they are only emitted when a linked --animate-*
+   variable is used — Tailwind docs, theme.mdx "Defining animation keyframes"). */
+@keyframes k-reveal {
+  from {
+    opacity: 0;
+    translate: 0 1.25rem;
+  }
+  to {
+    opacity: 1;
+    translate: 0 0;
+  }
+}
+/* Touch-device variant of k-reveal: the card also stands up from a 6° lean-back
+   (rotateX(6deg): top edge away from the viewer) as it enters. Written on the
+   INDIVIDUAL `rotate` property, not `transform`, so it never collides with
+   `k-card`'s hover transform or the TiltCard wrapper's inline transform. */
+@keyframes k-reveal-3d {
+  from {
+    opacity: 0;
+    translate: 0 1.25rem;
+    rotate: x 6deg;
+  }
+  to {
+    opacity: 1;
+    translate: 0 0;
+    rotate: x 0deg;
+  }
+}
+@keyframes k-shadow-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 0.22;
+  }
+}
+
+/* k-delay-<ms>: one delay utility that drives BOTH transitions and animations
+   (Tailwind's core `delay-*` is transition-only; tw-animate-css redefines it
+   for animations — this avoids depending on which one wins). */
+@utility k-delay-* {
+  transition-delay: calc(--value(integer) * 1ms);
+  animation-delay: calc(--value(integer) * 1ms);
+}
+
+/* Scroll-driven reveal for a single block (section header, CTA band).
+   Rest state = fully visible: a browser without scroll timelines, a
+   reduced-motion user, or a deep-link straight to the section all see the
+   finished state. Entry runs over the first 45% of the element entering the
+   viewport (animation-range), so content is never hidden once it is in view. */
+@utility k-reveal {
+  @media (prefers-reduced-motion: no-preference) {
+    @supports (animation-timeline: view()) {
+      animation-name: k-reveal;
+      animation-timing-function: var(--ease-k-out);
+      animation-fill-mode: both;
+      animation-timeline: view();
+      animation-range: entry 0% entry 45%;
+    }
+  }
+}
+
+/* Same, applied to the CHILDREN of a grid with a positional stagger:
+   columns 2 and 3 start a little later (right→left in RTL = reading order).
+   Each child owns its own view() timeline, so rows below stagger naturally. */
+@utility k-reveal-group {
+  @media (prefers-reduced-motion: no-preference) {
+    @supports (animation-timeline: view()) {
+      & > * {
+        animation-name: k-reveal;
+        animation-timing-function: var(--ease-k-out);
+        animation-fill-mode: both;
+        animation-timeline: view();
+        animation-range: entry 0% entry 40%;
+      }
+      & > :nth-child(3n + 2) {
+        animation-range: entry 8% entry 48%;
+      }
+      & > :nth-child(3n + 3) {
+        animation-range: entry 16% entry 56%;
+      }
+    }
+  }
+}
+
+/* k-reveal-group for the card grids that also get DEPTH on touch devices
+   (homepage features / steps / trust — motion spec §10). Identical to
+   k-reveal-group on fine pointers (desktop already has the hover tilt); on a
+   coarse pointer the grid gets a perspective and the children run
+   `k-reveal-3d` (opacity + translate + `rotate: x 6deg → 0`). A STANDALONE
+   utility rather than a modifier stacked on k-reveal-group: Tailwind orders
+   same-property utilities by name, so `k-reveal-3d > *` would sort before
+   `k-reveal-group > *` and lose the `animation-name` fight. The second
+   @supports term keeps browsers without the 3D `rotate` syntax on the flat
+   resting state. Verified with the installed 4.3.3 compile() before editing. */
+@utility k-reveal-3d {
+  @media (prefers-reduced-motion: no-preference) {
+    @supports (animation-timeline: view()) and (rotate: x 1deg) {
+      & > * {
+        animation-name: k-reveal;
+        animation-timing-function: var(--ease-k-out);
+        animation-fill-mode: both;
+        animation-timeline: view();
+        animation-range: entry 0% entry 40%;
+      }
+      & > :nth-child(3n + 2) {
+        animation-range: entry 8% entry 48%;
+      }
+      & > :nth-child(3n + 3) {
+        animation-range: entry 16% entry 56%;
+      }
+      @media (pointer: coarse) {
+        perspective: 1200px;
+        & > * {
+          animation-name: k-reveal-3d;
+        }
+      }
+    }
+  }
+}
+
+/* Marketing card hover: lift + a 1.5° perspective tilt on `transform`
+   (self-contained perspective(), no wrapper needed). Only for real hover
+   pointers and only when motion is allowed; touch devices get the plain card
+   (or, on the homepage feature cards, the `k-press` press-in below — `scale`
+   is in the transition list so the press shares the family's 320ms ease). */
+@utility k-card {
+  transition-property: transform, scale, box-shadow, border-color, background-color;
+  transition-duration: 320ms;
+  transition-timing-function: var(--ease-k-out);
+  @media (prefers-reduced-motion: no-preference) and (hover: hover) {
+    &:hover {
+      transform: perspective(900px) translate3d(0, -4px, 0) rotateX(1.5deg);
+    }
+  }
+}
+
+/* Touch press-in (homepage feature cards): 2% scale while the finger is down,
+   coarse pointers only — a mouse click on a card that is not a link must not
+   look like a button. Chrome drops `:active` as soon as a scroll starts, so a
+   thumb scrolling over the grid never presses the cards. CSS `:active` rather
+   than motion's `whileTap`: the latter would pull the motion runtime into every
+   TiltCard route (incl. /ty) for a 2% press. Owns `scale` only (see header). */
+@utility k-press {
+  @media (prefers-reduced-motion: no-preference) and (pointer: coarse) {
+    &:active {
+      scale: 0.98;
+    }
+  }
+}
+
+/* Homepage feature-icon loops (cards 04 "real-time status" and 07 "reports").
+   Owner decision 2026-09-08, option 2: the loops run ONLY while the enclosing
+   `k-card` is hovered by a real hover pointer with motion allowed, and are
+   inert otherwise — no infinite animation at rest, no `will-change` at rest.
+   They hang off `.k-card:hover` so the card's hover system stays the single
+   source of "this card is active" (no extra `group` marker in the markup).
+   The keyframes live outside @theme so they are always emitted (see above). */
+@keyframes k-ico-pulse {
+  0% {
+    transform: scale(1);
+    box-shadow: 0 0 0 0 rgba(79, 70, 229, 0.5);
+  }
+  70% {
+    transform: scale(1.06);
+    box-shadow: 0 0 0 12px rgba(79, 70, 229, 0);
+  }
+  100% {
+    transform: scale(1);
+    box-shadow: 0 0 0 0 rgba(79, 70, 229, 0);
+  }
+}
+@keyframes k-bar {
+  0%,
+  100% {
+    transform: scaleY(0.5);
+  }
+  50% {
+    transform: scaleY(1);
+  }
+}
+
+/* Icon container pulse (scale + a fading ring). The resting transition softens
+   the snap back to scale(1) when the pointer leaves mid-cycle. */
+@utility k-ico-pulse {
+  transition: transform 320ms var(--ease-k-out);
+  @media (prefers-reduced-motion: no-preference) and (hover: hover) and (pointer: fine) {
+    .k-card:hover & {
+      animation: k-ico-pulse 1.8s ease-out infinite;
+      will-change: transform, box-shadow;
+    }
+  }
+}
+
+/* Reports icon: animate only the chart BARS (the <rect>s of lucide's
+   ChartColumnBig), each from its own base — transform-box:fill-box makes the
+   origin local to each rect. The origin/box setup is static and stays at rest. */
+@utility k-ico-bars {
+  & rect {
+    transform-box: fill-box;
+    transform-origin: 50% 100%;
+  }
+  @media (prefers-reduced-motion: no-preference) and (hover: hover) and (pointer: fine) {
+    .k-card:hover & rect {
+      animation: k-bar 1.2s cubic-bezier(0.45, 0, 0.55, 1) infinite;
+    }
+    .k-card:hover & rect:nth-of-type(2) {
+      animation-delay: 0.28s;
+    }
+  }
+}
+
+/* Header: a soft shadow that fades in over the first 96px of page scroll —
+   pure CSS scroll timeline on a pseudo-element's OPACITY (compositor), no
+   scroll listener. The header keeps its own sticky positioning; the
+   pseudo-element is positioned against it. */
+@utility k-scroll-shadow {
+  &::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    /* Full-strength ink shadow, faded by OPACITY (compositor-only) rather
+       than by a color-mix() — Tailwind would otherwise emit a solid fallback. */
+    box-shadow: 0 10px 30px -14px var(--foreground);
+    opacity: 0;
+  }
+  @media (prefers-reduced-motion: no-preference) {
+    @supports (animation-timeline: scroll()) {
+      &::after {
+        animation-name: k-shadow-in;
+        animation-timing-function: linear;
+        animation-fill-mode: both;
+        animation-timeline: scroll(root block);
+        animation-range: 0px 96px;
+      }
+    }
+  }
+}
+
+/* CTA band sheen: a soft radial highlight (the primary-foreground token at
+   16% via opacity) that drifts down the band on hover. The bands are
+   `relative isolate overflow-hidden` and already spend `::before` on a static
+   radial wash, so this uses `::after` and sits under the content with a
+   negative z-index inside the band's own stacking context. */
+@utility k-sheen {
+  &::after {
+    content: '';
+    position: absolute;
+    inset: -40%;
+    z-index: -1;
+    pointer-events: none;
+    background: radial-gradient(closest-side, var(--primary-foreground), transparent 70%);
+    opacity: 0.16;
+    translate: 0 -25%;
+  }
+  @media (prefers-reduced-motion: no-preference) and (hover: hover) {
+    &::after {
+      transition: translate 1100ms var(--ease-k-out);
+    }
+    &:hover::after {
+      translate: 0 20%;
+    }
+  }
+}
