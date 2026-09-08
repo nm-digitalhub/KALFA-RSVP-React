@@ -92,9 +92,23 @@ function mediaVariantNameFor(
 
 // Whether the RSVP quick-reply buttons are enabled for THIS event type (admin
 // data: components.rsvp_quick_reply is a per-event-type map, e.g. {"brit": true},
-// mirroring variants). Scoped by event type ON PURPOSE — only variants whose
-// approved Meta layout was VERIFIED to carry the 3 buttons are enabled, so a
-// non-verified variant (e.g. wedding) never injects payloads Meta would reject.
+// mirroring variants). Scoped by event type so a variant whose approved Meta
+// layout does NOT carry the 3 buttons never injects payloads Meta would reject.
+//
+// The flag being OFF is NOT cosmetic: without the injected payloads a tap comes
+// back as button.payload = the Hebrew LABEL ("מגיע/ה"), RSVP_BUTTON_MAP misses
+// it, and the guest stays "pending" while believing they answered.
+//
+// The layout gate is now MEASURED, not assumed. Verified against Meta 2026-09-08
+// (GET /{waba}/message_templates?fields=components) — every one of these carries
+// the SAME 3 QUICK_REPLY buttons in the SAME order as RSVP_QUICK_REPLY
+// (מגיע/ה · לא מגיע/ה · אולי), all APPROVED: kalfa_event_invite_v2,
+// kalfa_event_invite_media_v1, kalfa_event_reminder_v1, kalfa_event_reminder2_v1,
+// kalfa_event_final_v1, kalfa_brit_invite_trad_v4. So there is no longer a
+// layout reason to withhold the flag from the non-brit event types; what gates
+// them is the admin jsonb, which still reads {"brit": true} on all four
+// button-bearing rows (invite, reminder_1, reminder_2, final).
+//
 // Defensive walk like variantNameFor — anything malformed/absent means "off".
 function rsvpQuickReplyFlag(components: Json | null, eventType: EventType): boolean {
   if (!components || typeof components !== 'object' || Array.isArray(components)) {
