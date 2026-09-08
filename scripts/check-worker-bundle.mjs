@@ -37,9 +37,11 @@ const BUNDLE = 'dist/worker.cjs';
 const SHIM = 'var import_meta = {}';
 
 // A bundle far below this is a truncated or failed build, not a small one:
-// the real artifact is ~3.4MB. Catches a disk-full or interrupted esbuild that
-// still exited 0.
-const MIN_BYTES = 500_000;
+// the real artifact is ~6.8MB unminified (MEASURED 2026-09-08; 93% of it is
+// bundled node_modules). Catches a disk-full or interrupted esbuild that still
+// exited 0. Kept well under the real size so a legitimately smaller build
+// (a dropped dependency) does not trip it.
+const MIN_BYTES = 4_000_000;
 
 let size;
 try {

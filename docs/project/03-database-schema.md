@@ -755,7 +755,7 @@
 
 ה‑worker ‏(`worker/main.ts`, תהליך pm2 ‏`kalfa-worker`) משתמש ב‑**pg‑boss ‏v12** ‏(`pg-boss@^12.21.2`) עם `schema: 'pgboss'` — סכמה נפרדת באותו מסד Supabase, שמנוהלת כולה ע"י הספרייה (לא ע"י מיגרציות הפרויקט). טבלאות בפועל ב‑DB החי: ‏`job`, ‏`job_common`, ‏`job_dependency`, ‏`queue`, ‏`schedule`, ‏`subscription`, ‏`version`, ‏`warning`, ‏`bam`.
 
-- **חיבור**: ה‑worker מתחבר ישירות ל‑Postgres דרך משתני `SUPABASE_DB_*` (ה‑session pooler של Supabase, פורט 5432 — המארח הישיר הוא IPv6‑only ולא נגיש מהשרת), עם `application_name: 'kalfa-worker'` ו‑`max: 4`.
+- **חיבור**: ה‑worker מתחבר ישירות ל‑Postgres דרך משתני `SUPABASE_DB_*` (ה‑session pooler של Supabase, פורט 5432 — המארח הישיר הוא IPv6‑only ולא נגיש מהשרת), עם `application_name: 'kalfa-worker'` ו‑`max: 8` (הוגדל מ‑4 ב‑3.8.2026).
 - **תורים** (מוגדרים ב‑`src/lib/queue/queues.ts`): ‏`outreach-arm` ‏(cron כל דקה — זריעה/הזרוע של הצעד הנוכחי), ‏`outreach-step` (צעד בודד; ‏retryLimit 3 עם backoff ו‑dead‑letter ל‑`outreach-dead`), ‏`outreach-call-request`, ‏`outreach-sweeper` (כל 5 דקות — self‑heal), ‏`webhook-process` (כל דקה — ניקוז `webhook_inbox`).
 - **הקשר לסכמת `public`**: העבודות נושאות מזהים בלבד (`campaignId`/`contactId`/`eventId`/`stepIndex`); כל המצב העמיד חי ב‑`public` — הסמן ב‑`outreach_state` (compare‑and‑advance + מזהי job דטרמיניסטיים ⇒ אידמפוטנטיות), הקליטה ב‑`webhook_inbox` (הטעינה דרך `claim_webhook_events`), והחיוב אך ורק דרך `try_record_billed_result`. שערי ההפעלה (`outreach_enabled` וכו') נבדקים בכל צעד, כך שה‑worker אינרטי עד go‑live.
 

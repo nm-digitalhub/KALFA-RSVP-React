@@ -8,6 +8,8 @@
 
 הממשק הרשמי `@pg-boss/dashboard` (מאת timgit, מחבר pg-boss עצמו) הוא **שרת web עצמאי** שמותקן מ-npm ורץ כתהליך נפרד — מתאים בדיוק לדפוס הקיים אצלנו (pm2 + nginx). הוא מתחבר ישירות לסכימת `pgboss` הקיימת ב-Supabase, **בטוח מול הפרודקשן** (ללא מיגרציות, ללא polling, לא מפריע ל-`kalfa-worker`), ותומך ב-Basic Auth מובנה.
 
+> **עדכון 2026-09-08:** הפורט בפועל של `kalfa-pgboss-ui` הוא **3011** (ר' `ecosystem.config.cjs` ו-`.env.pgboss-ui`), לא 3010 כפי שנכתב בתכנון שלהלן; הגישה היום דרך `src/app/(admin)/admin/jobs/[[...path]]/route.ts` עם `requireAdmin()` ולא Basic Auth. המסמך נשאר כתיעוד היסטורי של ההחלטה.
+
 **הארכיטקטורה שהוכרעה (סופי, 2026-07-06):** בדיוק לפי הסכימה המובנית של החבילה, אפס קוד ידני — build רשמי מהמקור (תג `dashboard-1.6.1`) עם `PGBOSS_DASHBOARD_BASE_PATH=/admin/jobs`; תהליך pm2 נפרד **`kalfa-pgboss-ui`** על `127.0.0.1:3010`; ‏nginx מעביר את `/admin/jobs` ישירות ל-3010 בלי להסיר את ה-prefix; הגנה: ‏Basic Auth המובנה + TLS (+IP allowlist אופציונלי); פריט ניווט "משימות מתוזמנות" בפאנל האדמין. פירוט והסיכון המקובל: ‏§5.3.1.
 
 ---

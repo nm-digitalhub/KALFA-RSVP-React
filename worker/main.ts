@@ -1,9 +1,10 @@
 // KALFA outreach worker — the long-lived pg-boss process (pm2 `kalfa-worker`).
 // Drives the §10 schedule across contacts with the §12 FINAL serial flow:
 // cursor-first evaluate → reserve → send → resolve, one step at a time, at most
-// once. The web tier stays pg-boss-free; this process owns all send/work/
-// schedule. Inert until outreach_enabled is on (stepGate + the arm fail-close),
-// so it is safe to run before go-live.
+// once. This process owns all work()/schedule(); the web tier holds only a
+// send-only connection (src/lib/queue/web-sender.ts, migrate:false) for the
+// handful of routes that enqueue. Inert until outreach_enabled is on (stepGate
+// + the arm fail-close), so it is safe to run before go-live.
 //
 // Built with esbuild → dist/worker.cjs (server-only / next/headers / next/cache
 // aliased to an empty stub; node_modules kept external). Run: node dist/worker.cjs.
@@ -837,6 +838,39 @@ function startCallbackWorkListener(boss: PgBoss): () => Promise<void> {
   };
 }
 
+// Polling cadence per work() loop. pg-boss polls each queue on its own timer
+// (default 2s). MEASURED 2026-09-08: 33 loops × 2s = ~16 fetches/s, ~1.4M a
+// day, which is what kept the whole pool (max 8) permanently busy — an
+// idle connection never got the 10s of silence pg-pool needs to close it, so
+// 8 of the role's 15 session-mode slots were held 24/7 for polling. The CPU
+// cost was nil (mean 0.04ms per fetch in pg_stat_statements); the cost was
+// the connections. Cron-driven queues gain nothing from a 2s poll: the job
+// appears once per minute (or per 5/10/30 minutes), and a poll interval adds
+// at most that much latency to a tick that has no deadline. Event-driven
+// queues (a step's timed send, a call request, a dispatch, dead-letter) keep
+// the default so a due job is picked up within ~2s.
+const POLL_MINUTE_CRON = { pollingIntervalSeconds: 10 };
+const POLL_SLOW_CRON = { pollingIntervalSeconds: 30 };
+
+// Queues whose jobs are short periodic sweeps (p95 runtime ≈ 4s, MEASURED):
+// a job still `active` after 5 minutes here is a dead process, not a long run.
+// pg-boss's default is 15 minutes — that is how long a job killed mid-flight
+// stayed stuck before it was retried (4 cases in 48h before kill_timeout was
+// fixed). The archive/SUMIT/log-export jobs keep the default: one SUMIT
+// reconcile has legitimately taken 181s.
+const SWEEP_EXPIRE_SECONDS = 300;
+const SWEEP_QUEUES = new Set<string>([
+  QUEUES.arm,
+  QUEUES.webhook,
+  QUEUES.sweeper,
+  QUEUES.thankyouSweep,
+  QUEUES.inquiryFollowupSweep,
+  QUEUES.callbackSweep,
+  QUEUES.callReconcile,
+  QUEUES.callbackDispatchReconcile,
+  QUEUES.salesDispatchReconcile,
+]);
+
 async function main(): Promise<void> {
   const boss = new PgBoss({
     host: process.env.SUPABASE_DB_HOST,
@@ -847,21 +881,35 @@ async function main(): Promise<void> {
     ssl: { rejectUnauthorized: false },
     schema: 'pgboss',
     application_name: 'kalfa-worker',
-    // Raised from the original 4 (measured, 03.08): 14 queues now share this
-    // pool, several on the same "* * * * *" tick, and pg-pool's own connect()
-    // rejects with "timeout exceeded when trying to connect" once a burst
-    // exceeds `max` and waits past `connectionTimeoutMillis` — confirmed via
-    // pgboss.job that every one of those bursts' jobs still completed a few
-    // seconds later, i.e. genuine contention, not a dead DB. Doubling both
-    // gives a same-minute burst realistic room without holding many more
-    // connections open at rest (idle ones still close per idleTimeoutMillis).
+    // max was raised 4 → 8 on 03.08 on the theory that "timeout exceeded when
+    // trying to connect" bursts were pool contention. Re-measured 2026-09-08
+    // over every burst since 3.8 (12 of them): all 33 queues fail in the same
+    // second — including daily queues with no work — and Slack HTTPS times
+    // out in those same seconds, while pg_stat_statements shows no slow
+    // query. That is an outbound-network freeze on this host (~35–40s), not
+    // contention, and no sweep tick was missed by it. 8 stays because the
+    // pool is bounded by the role's 15 session slots, not by need; with the
+    // slower cron polling above it now idles most of the time.
     max: 8,
     connectionTimeoutMillis: 20_000,
+    // Not set: pg's `keepAlive` / `query_timeout`. pg-boss does hand its config
+    // to `new pg.Pool` at runtime, but its typed ConstructorOptions (12.30)
+    // does not admit those keys, and an unsupported passthrough is exactly the
+    // kind of undocumented reliance that bit the calendar generator today. If a
+    // frozen-socket hang is ever observed (none measured — every burst so far
+    // failed fast at connect), the supported route is the `db` option with our
+    // own pg.Pool.
     // Both off by default in pg-boss; required for the ops dashboard's
-    // metrics-history/sparklines (queue_stats, 7-day retention) and
-    // Warning History tabs to populate.
+    // metrics-history/sparklines (queue_stats) and Warning History tabs.
     persistQueueStats: true,
     persistWarnings: true,
+    // The stats snapshot ran every 60s (default) → 26k queue_stats rows a day,
+    // ~57MB of the 86MB pgboss schema (MEASURED). Sparklines at 5-minute
+    // resolution are enough for an ops dashboard; this is a fifth of the rows.
+    monitorIntervalSeconds: 300,
+    // Without it pgboss.warning is never pruned (it is empty today; this keeps
+    // it from growing unbounded the first time something does warn).
+    warningRetentionDays: 30,
   });
   boss.on('error', (e: Error) => {
     console.error('[pgboss]', e.message);
@@ -874,7 +922,40 @@ async function main(): Promise<void> {
       category: 'errors',
     });
   });
+
+  // Signal handlers are registered BEFORE boss.start(), not after the ~12s of
+  // queue/schedule setup below. MEASURED 2026-09-08: two restarts 4s apart
+  // (7.9 18:52) hit the process inside that window — the workers were already
+  // fetching jobs but no handler existed yet, so the second SIGINT killed the
+  // process with no graceful stop and left two jobs orphaned for 15 minutes.
+  // boss.stop() itself waits for an in-flight start() (pg-boss index.js), so
+  // calling it early is safe. pm2 sends SIGINT (its default kill signal);
+  // SIGTERM is kept for a manual `kill`.
+  let stopCallbackListener: (() => Promise<void>) | null = null;
+  let stopping = false;
+  const shutdown = async (signal: NodeJS.Signals): Promise<void> => {
+    if (stopping) return;
+    stopping = true;
+    console.log(`[kalfa-worker] ${signal} — stopping gracefully`);
+    if (stopCallbackListener) await stopCallbackListener();
+    // Waits up to 30s for in-flight jobs, then fails what is left so it retries
+    // immediately in the next process (pg-boss failWip). pm2's kill_timeout
+    // (ecosystem.config.cjs) must exceed this or the wait is cut short.
+    await boss.stop({ graceful: true, timeout: 30000 });
+    await closeJobMetaPool();
+    process.exit(0);
+  };
+  process.on('SIGTERM', () => void shutdown('SIGTERM'));
+  process.on('SIGINT', () => void shutdown('SIGINT'));
+
   await boss.start();
+
+  // Queue setup is idempotent in pg-boss (createQueue is INSERT … ON CONFLICT
+  // DO NOTHING), but each call is still a round trip to a pooler ~134ms away,
+  // and 33 of them ran serially on every start. Read the existing queues once,
+  // create only the missing ones, and align expireInSeconds on the sweep
+  // queues (createQueue never updates an existing row — updateQueue does).
+  const existingQueues = new Map((await boss.getQueues()).map((q) => [q.name, q]));
 
   for (const q of Object.values(QUEUES)) {
     // thankyouSweep: 'singleton' policy — only 1 job may be ACTIVE at a time
@@ -950,7 +1031,16 @@ async function main(): Promise<void> {
       // Singleton: two overlapping runs would both diff against the same saved
       // crawl and both spend URL Inspection quota on the same 12 URLs.
       q === QUEUES.seoTechnicalWatch;
-    await boss.createQueue(q, singleton ? { policy: 'singleton' } : undefined);
+    const expire = SWEEP_QUEUES.has(q) ? SWEEP_EXPIRE_SECONDS : undefined;
+    const existing = existingQueues.get(q);
+    if (!existing) {
+      await boss.createQueue(q, {
+        ...(singleton ? { policy: 'singleton' as const } : {}),
+        ...(expire ? { expireInSeconds: expire } : {}),
+      });
+    } else if (expire && existing.expireInSeconds !== expire) {
+      await boss.updateQueue(q, { expireInSeconds: expire });
+    }
   }
 
   await boss.work(
@@ -967,12 +1057,14 @@ async function main(): Promise<void> {
   );
   await boss.work(
     QUEUES.arm,
+    POLL_MINUTE_CRON,
     guardedWorker(QUEUES.arm, async () => {
       await handleArm(boss);
     }),
   );
   await boss.work(
     QUEUES.sweeper,
+    POLL_SLOW_CRON,
     guardedWorker(QUEUES.sweeper, async () => {
       await handleArm(boss);
     }),
@@ -997,48 +1089,56 @@ async function main(): Promise<void> {
   );
   await boss.work(
     QUEUES.webhook,
+    POLL_MINUTE_CRON,
     guardedWorker(QUEUES.webhook, async () => {
       await handleWebhook();
     }),
   );
   await boss.work(
     QUEUES.thankyouSweep,
+    POLL_SLOW_CRON,
     guardedWorker(QUEUES.thankyouSweep, async () => {
       await handleThankyouSweep();
     }),
   );
   await boss.work(
     QUEUES.inquiryFollowupSweep,
+    POLL_SLOW_CRON,
     guardedWorker(QUEUES.inquiryFollowupSweep, async () => {
       await handleInquiryFollowupSweep();
     }),
   );
   await boss.work(
     QUEUES.agreementArchiveSweep,
+    POLL_SLOW_CRON,
     guardedWorker(QUEUES.agreementArchiveSweep, async () => {
       await handleAgreementArchiveSweep();
     }),
   );
   await boss.work(
     QUEUES.archiveMaintenanceSweep,
+    POLL_SLOW_CRON,
     guardedWorker(QUEUES.archiveMaintenanceSweep, async () => {
       await handleArchiveMaintenanceSweep();
     }),
   );
   await boss.work(
     QUEUES.archiveBackupSweep,
+    POLL_SLOW_CRON,
     guardedWorker(QUEUES.archiveBackupSweep, async () => {
       await handleArchiveBackupSweep();
     }),
   );
   await boss.work(
     QUEUES.signupReminderSweep,
+    POLL_SLOW_CRON,
     guardedWorker(QUEUES.signupReminderSweep, async () => {
       await handleSignupReminderSweep();
     }),
   );
   await boss.work(
     QUEUES.unconfirmedCleanupSweep,
+    POLL_SLOW_CRON,
     guardedWorker(QUEUES.unconfirmedCleanupSweep, async () => {
       await handleUnconfirmedCleanupSweep();
     }),
@@ -1048,6 +1148,7 @@ async function main(): Promise<void> {
   // config the app already depends on is absent (same gate as /admin/analytics).
   await boss.work(
     QUEUES.seoTechnicalWatch,
+    POLL_SLOW_CRON,
     guardedWorker(QUEUES.seoTechnicalWatch, async () => {
       await runSeoTechnicalWatch();
     }),
@@ -1059,6 +1160,7 @@ async function main(): Promise<void> {
   // time, not here.
   await boss.work(
     QUEUES.callbackSweep,
+    POLL_SLOW_CRON,
     guardedWorker(QUEUES.callbackSweep, async () => {
       await runCallbackSweep(boss);
     }),
@@ -1069,6 +1171,7 @@ async function main(): Promise<void> {
   // ambiguous one, or a failed calendar read all end the tick without writing.
   await boss.work(
     QUEUES.callbackScheduleSweep,
+    POLL_SLOW_CRON,
     guardedWorker(QUEUES.callbackScheduleSweep, async () => {
       // Logged for the same reason the LISTEN path above logs its own result:
       // a sweep that reports nothing cannot be told apart from a sweep that did
@@ -1100,6 +1203,7 @@ async function main(): Promise<void> {
   // throws/dials, so no extra gate is needed here.
   await boss.work(
     QUEUES.balanceCheck,
+    POLL_SLOW_CRON,
     guardedWorker(QUEUES.balanceCheck, async () => {
       await runBalanceCheck();
     }),
@@ -1108,6 +1212,7 @@ async function main(): Promise<void> {
   // call_attempts older than 15m. NEVER re-issues StartScenarios.
   await boss.work(
     QUEUES.callReconcile,
+    POLL_SLOW_CRON,
     guardedWorker(QUEUES.callReconcile, async () => {
       await runCallReconcile();
     }),
@@ -1116,12 +1221,14 @@ async function main(): Promise<void> {
   // that now share this Voximplant account's concurrency ceiling.
   await boss.work(
     QUEUES.callbackDispatchReconcile,
+    POLL_SLOW_CRON,
     guardedWorker(QUEUES.callbackDispatchReconcile, async () => {
       await runCallbackDispatchReconcile();
     }),
   );
   await boss.work(
     QUEUES.salesDispatchReconcile,
+    POLL_SLOW_CRON,
     guardedWorker(QUEUES.salesDispatchReconcile, async () => {
       await runSalesDispatchReconcile();
     }),
@@ -1132,6 +1239,7 @@ async function main(): Promise<void> {
   // policy plus an atomic per-row lease prevent double-processing.
   await boss.work(
     QUEUES.logExport,
+    POLL_SLOW_CRON,
     guardedWorker(QUEUES.logExport, async () => {
       await runLogExport();
     }),
@@ -1141,6 +1249,7 @@ async function main(): Promise<void> {
   // (no-op when no ElevenLabs key is configured), read-only, and never throws.
   await boss.work(
     QUEUES.elevenlabsQuota,
+    POLL_SLOW_CRON,
     guardedWorker(QUEUES.elevenlabsQuota, async () => {
       await runElevenLabsQuotaCheck();
     }),
@@ -1149,6 +1258,7 @@ async function main(): Promise<void> {
   // config-gated (no-op without whatsapp_waba_id/access token), never throws.
   await boss.work(
     QUEUES.templateHealthSync,
+    POLL_SLOW_CRON,
     guardedWorker(QUEUES.templateHealthSync, async () => {
       await runTemplateHealthSync();
     }),
@@ -1158,6 +1268,7 @@ async function main(): Promise<void> {
   // runDispatchRetention never throws.
   await boss.work(
     QUEUES.dispatchRetention,
+    POLL_SLOW_CRON,
     guardedWorker(QUEUES.dispatchRetention, async () => {
       await runDispatchRetention();
     }),
@@ -1168,6 +1279,7 @@ async function main(): Promise<void> {
   // service_role holds no UPDATE on it. runPhoneChangeCleanup never throws.
   await boss.work(
     QUEUES.phoneChangeCleanup,
+    POLL_SLOW_CRON,
     guardedWorker(QUEUES.phoneChangeCleanup, async () => {
       await runPhoneChangeCleanup();
     }),
@@ -1178,6 +1290,7 @@ async function main(): Promise<void> {
   // alerts or no-ops and returns).
   await boss.work(
     QUEUES.igTokenRefresh,
+    POLL_SLOW_CRON,
     guardedWorker(QUEUES.igTokenRefresh, async () => {
       await runInstagramTokenRefresh();
     }),
@@ -1187,6 +1300,7 @@ async function main(): Promise<void> {
   // app identity or the intake mailbox is not configured for this deployment.
   await boss.work(
     QUEUES.graphIntakeRenew,
+    POLL_SLOW_CRON,
     guardedWorker(QUEUES.graphIntakeRenew, async () => {
       await runGraphIntakeSubscriptionSweep();
     }),
@@ -1198,6 +1312,7 @@ async function main(): Promise<void> {
   // is a no-op when no console agent has a verified Exchange connection.
   await boss.work(
     QUEUES.calendarPresenceSync,
+    POLL_SLOW_CRON,
     guardedWorker(QUEUES.calendarPresenceSync, async () => {
       await runConsoleAgentCalendarPresenceSync();
     }),
@@ -1210,6 +1325,7 @@ async function main(): Promise<void> {
   // (alert) and the next tick retries.
   await boss.work(
     QUEUES.fleetExpireSweep,
+    POLL_SLOW_CRON,
     guardedWorker(QUEUES.fleetExpireSweep, async () => {
       await runFleetExpireSweep(createAdminClient());
     }),
@@ -1220,6 +1336,7 @@ async function main(): Promise<void> {
   // against SUMIT; the only write is release_status on our own campaigns.
   await boss.work(
     QUEUES.sumitHoldReconcile,
+    POLL_SLOW_CRON,
     guardedWorker(QUEUES.sumitHoldReconcile, async () => {
       await runSumitHoldReconcile();
     }),
@@ -1241,7 +1358,7 @@ async function main(): Promise<void> {
   // second of a request becoming ready. This catches anything that announced
   // while nothing was listening — a restart, a dropped connection, a deploy.
   await boss.schedule(QUEUES.callbackScheduleSweep, '*/10 * * * *');
-  const stopCallbackListener = startCallbackWorkListener(boss);
+  stopCallbackListener = startCallbackWorkListener(boss);
   await boss.schedule(QUEUES.balanceCheck, '*/30 * * * *');
   await boss.schedule(QUEUES.callReconcile, '*/10 * * * *');
   await boss.schedule(QUEUES.callbackDispatchReconcile, '*/10 * * * *');
@@ -1291,15 +1408,6 @@ async function main(): Promise<void> {
 
   console.log('[kalfa-worker] started — queues + schedules up');
 
-  const shutdown = async (): Promise<void> => {
-    console.log('[kalfa-worker] SIGTERM — stopping gracefully');
-    await stopCallbackListener();
-    await boss.stop({ graceful: true, timeout: 30000 });
-    await closeJobMetaPool();
-    process.exit(0);
-  };
-  process.on('SIGTERM', shutdown);
-  process.on('SIGINT', shutdown);
 }
 
 main().catch(async (e) => {

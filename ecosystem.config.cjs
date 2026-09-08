@@ -49,6 +49,19 @@ module.exports = {
       // Wrapper, not the bundle directly — see worker/start.mjs's header for why.
       script: 'worker/start.mjs',
       log_date_format: 'YYYY-MM-DD HH:mm:ss.SSS Z',
+      // pm2 sends SIGINT, then SIGKILL after kill_timeout (default 1600ms —
+      // pm2 lib/constants.js). worker/main.ts answers SIGINT with
+      // boss.stop({ graceful: true, timeout: 30000 }): pg-boss waits up to 30s
+      // for in-flight jobs and then fails whatever is left so it retries at
+      // once. With the default, that shutdown never finished — MEASURED
+      // 2026-09-08 in ~/.pm2/pm2.log: 4× "still alive after 1600ms, sending it
+      // SIGKILL", each leaving an in-flight job `active` until pg-boss expired
+      // it 900s later and re-ran it. 45s = the 30s grace + pool/LISTEN
+      // teardown, with margin. Cost: a deploy waits up to 45s only when a job
+      // is genuinely mid-flight (p95 job runtime is ~4s).
+      // Adopting this option needs the one-time clean restart at the top of
+      // this file — a plain `pm2 restart` keeps the options pm2 captured.
+      kill_timeout: 45000,
       env: { NODE_ENV: 'production', TZ: 'Asia/Jerusalem' },
     },
     // pg-boss ops dashboard, base-path build (source build, base "/admin/jobs"),

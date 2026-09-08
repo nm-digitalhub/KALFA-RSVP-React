@@ -21,7 +21,7 @@ nginx  — /etc/nginx/conf.d/beta-proxy.conf
    │    proxy_pass → http://127.0.0.1:3002
    ▼
 pm2 "kalfa-beta"  — next start -H 127.0.0.1 -p 3002   (Next.js 16, webpack build)
-pm2 "kalfa-worker" — node dist/worker.cjs             (pg-boss, outreach + webhooks)
+pm2 "kalfa-worker" — node worker/start.mjs → dist/worker.cjs (pg-boss, 33 queues: outreach, webhooks, sweeps)
    │
    ▼
 Supabase (PostgreSQL + Auth, פרויקט חי מקושר, region ap-south-1)
@@ -41,7 +41,7 @@ Supabase (PostgreSQL + Auth, פרויקט חי מקושר, region ap-south-1)
 | process | script | args | interpreter |
 |---|---|---|---|
 | `kalfa-beta` | `node_modules/.bin/next` | `start -H 127.0.0.1 -p 3002` | — |
-| `kalfa-worker` | `dist/worker.cjs` | — | `/opt/plesk/node/24/bin/node` (Node 24) |
+| `kalfa-worker` | `worker/start.mjs` (env + bundle-integrity gate, then loads `dist/worker.cjs`) | — | `/opt/plesk/node/24/bin/node` (Node 24); `kill_timeout: 45000` so `boss.stop` (30s grace) completes |
 
 האפליקציה מאזינה **רק** על `127.0.0.1:3002` — אין חשיפה ישירה לאינטרנט;
 כל התעבורה עוברת דרך nginx. פקודות pm2 נוחות מוגדרות ב-`package.json`:
@@ -100,9 +100,13 @@ proxy_busy_buffers_size 64k;
   כשל בשורה אחת לא חוסם את השאר, ולעולם לא נרשם payload ללוג).
 - Arm/Sweep עצמי-מרפא: תזמון אידמפוטנטי דרך deterministic job ids.
 
-תורים (מוגדרים ב-`src/lib/queue/queues.ts`): `outreach-arm`, `outreach-step`,
-`outreach-call-request`, `outreach-sweeper`, `outreach-dead` (dead-letter),
-`webhook-process`. תזמוני cron: `arm` ו-`webhook` כל דקה, `sweeper` כל 5 דקות.
+תורים (מוגדרים ב-`src/lib/queue/queues.ts`, 33 נכון ל-8.9.2026): ליבת ה-outreach
+(`outreach-arm`, `outreach-step`, `outreach-call-request`, `outreach-sweeper`,
+`outreach-dead`), `webhook-process`, ועוד ~27 תורי sweep/cron (thank-you, פניות,
+callbacks, Voximplant, ארכיון, SEO ועוד — הרשימה המלאה בקובץ). תזמוני cron:
+`arm` ו-`webhook` כל דקה, `sweeper` כל 5 דקות; שאר ה-crons מתועדים ב-`worker/main.ts`.
+דגימה (polling): תורי cron נדגמים כל 10–30 שניות, תורים מונעי-אירוע כל 2 שניות
+(ברירת המחדל) — ראה `POLL_MINUTE_CRON`/`POLL_SLOW_CRON` ב-`worker/main.ts`.
 מדיניות retry לצעדים: 3 ניסיונות עם backoff ואז dead-letter.
 ה-worker אינרטי עד שהדגל `outreach_enabled` דולק (`stepGate` נכשל-סגור),
 ולכן בטוח להריץ אותו לפני go-live. כיבוי חינני: SIGTERM/SIGINT →
@@ -126,13 +130,19 @@ esbuild worker/main.ts --bundle --platform=node --format=cjs --target=node20 \
 
 המודולים `server-only` / `next/headers` / `next/cache` ממופים ל-stub ריק
 (`worker/empty.js`) כדי שקוד דומיין משותף מ-`src/lib/` יעבוד מחוץ ל-Next.
-הרצה: `worker:start` = `node dist/worker.cjs` (בפועל דרך pm2).
+הרצה: דרך pm2 עם `worker/start.mjs` (טוען `.env.local`, מריץ את שער השלמות של
+הבאנדל, ואז טוען את `dist/worker.cjs`). ב-deploy, `scripts/worker-build-restart.mjs`
+בונה מחדש ומריץ `pm2 restart kalfa-worker` **רק אם ה-sha256 של הבאנדל השתנה**
+(build דטרמיניסטי) או אם ה-worker אינו online — שינוי ב-`.env.local` בלבד דורש
+`pm2 restart kalfa-worker` ידני.
 
 ### 3.3 חיבור ה-DB — חובה session pooler (IPv4)
 
 ה-worker מתחבר ל-Postgres ישירות (לא דרך supabase-js) עם
 `SUPABASE_DB_HOST/PORT/USER/PASSWORD/NAME`, סכימת `pgboss`,
-`application_name: 'kalfa-worker'`, ומקסימום 4 חיבורים.
+`application_name: 'kalfa-worker'`, ומקסימום 8 חיבורים (`max: 8`,
+`connectionTimeoutMillis: 20000`; `monitorIntervalSeconds: 300`,
+`warningRetentionDays: 30` לניהול גודל סכמת pgboss).
 
 **אילוץ תפעולי קריטי** (ידע תפעולי מאומת, לא ניתן לאימות מקוד כי הערכים
 ב-`.env.local`): החיבור **חייב** לעבור דרך ה-session pooler של Supabase —
@@ -161,10 +171,9 @@ NEXT_DIST_DIR=.next-stage next build --webpack \
   && rm -rf .next.old \
   && mv .next .next.old \
   && mv .next-stage .next \
-  && pm2 restart kalfa-beta --update-env \
+  && pm2 restart kalfa-beta \
   && rm -rf .next.old \
-  && npm run worker:build \
-  && pm2 restart kalfa-worker --update-env
+  && node scripts/worker-build-restart.mjs
 ```
 
 כלומר: בנייה מבוימת ל-`.next-stage` בזמן שהאתר החי ממשיך לרוץ מ-`.next`,
