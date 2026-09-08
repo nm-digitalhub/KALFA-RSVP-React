@@ -31,7 +31,12 @@ function assertExecuteLatch(): void {
   if (process.env.RELOCATE_EXECUTE !== "1") throw new RelocateExecuteLatchError();
 }
 
-const GRAPH = "https://graph.facebook.com/v23.0";
+import { GRAPH_API_VERSION } from "@/lib/whatsapp/graph-version";
+
+// One pinned Graph version for the whole system (G5). Safe to import from this
+// tsx-run CLI module: graph-version.ts is a bare constant with no imports and
+// no `server-only` marker, so it carries nothing that cannot load outside Next.
+const GRAPH = `https://graph.facebook.com/${GRAPH_API_VERSION}`;
 const TIMEOUT_MS = 15_000;
 
 export interface MetaCreds {

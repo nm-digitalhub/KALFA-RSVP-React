@@ -2,6 +2,7 @@ import 'server-only';
 
 import { createClient } from '@/lib/supabase/server';
 import { requirePlatformPermission } from '@/lib/auth/dal';
+import { GRAPH_API_VERSION } from '@/lib/whatsapp/graph-version';
 
 // Admin: guest-OUTREACH provider config (WhatsApp Cloud API; Voximplant ships
 // with C2). Stored on the app_settings singleton (admin-only RLS). Secrets
@@ -86,10 +87,14 @@ export async function testWhatsAppConnection(): Promise<ConnectionTestResult> {
   if (!cfg.configured) {
     return { ok: false, message: 'חסרים מזהה מספר או טוקן' };
   }
-  const version = process.env.WHATSAPP_GRAPH_VERSION || 'v23.0';
+  // One pinned version for the whole system (G5). The former
+  // WHATSAPP_GRAPH_VERSION env override is gone on purpose: it was never set
+  // (verified 2026-09-09), and an override here could make the admin's "test
+  // connection" pass on a version the send path does not use — the exact
+  // false-confidence this check exists to prevent.
   try {
     const res = await fetch(
-      `https://graph.facebook.com/${version}/${encodeURIComponent(
+      `https://graph.facebook.com/${GRAPH_API_VERSION}/${encodeURIComponent(
         cfg.whatsapp_phone_number_id,
       )}?fields=display_phone_number,verified_name`,
       { headers: { Authorization: `Bearer ${cfg.whatsapp_access_token}` } },

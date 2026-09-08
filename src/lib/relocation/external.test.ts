@@ -4,6 +4,8 @@ import { join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { GRAPH_API_VERSION } from "@/lib/whatsapp/graph-version";
+
 import {
   RelocateExecuteLatchError,
   patchSupabaseAuthConfig,
@@ -191,7 +193,8 @@ describe("subscribeMetaWebhook", () => {
     });
     expect(r.ok).toBe(true);
     const [url, init] = fetchSpy.mock.calls[0] as unknown as [string, RequestInit];
-    expect(url).toBe("https://graph.facebook.com/v21.0/123456/subscriptions");
+    // Asserts the SHARED constant, not a literal — see meta-templates.test.ts.
+    expect(url).toBe(`https://graph.facebook.com/${GRAPH_API_VERSION}/123456/subscriptions`);
     expect(url).not.toContain("APPSECRETVALUE");
     const body = init.body as URLSearchParams;
     expect(body.get("object")).toBe("whatsapp_business_account");

@@ -13,7 +13,9 @@ import 'server-only';
 // the CURRENT one — so a downgrade is detected by comparing the live `category`
 // against our own stored `requested_category` snapshot, not a Meta field.
 
-const GRAPH = 'https://graph.facebook.com/v23.0';
+import { GRAPH_API_VERSION } from '@/lib/whatsapp/graph-version';
+
+const GRAPH = `https://graph.facebook.com/${GRAPH_API_VERSION}`;
 const TIMEOUT_MS = 15_000;
 
 export interface TemplateHealthCreds {

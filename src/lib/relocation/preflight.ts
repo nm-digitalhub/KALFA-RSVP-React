@@ -18,6 +18,8 @@ import { join } from "node:path";
 import { connect as tlsConnect } from "node:tls";
 import { promisify } from "node:util";
 
+import { GRAPH_API_VERSION } from "@/lib/whatsapp/graph-version";
+
 import type { Label } from "./state";
 
 const execFileAsync = promisify(execFile);
@@ -717,7 +719,7 @@ async function metaTemplateFinding(input: PreflightInput): Promise<PreflightFind
   if (creds) {
     try {
       const res = await fetch(
-        `https://graph.facebook.com/v21.0/${creds.wabaId}/message_templates?fields=name,status,components&limit=200`,
+        `https://graph.facebook.com/${GRAPH_API_VERSION}/${creds.wabaId}/message_templates?fields=name,status,components&limit=200`,
         {
           headers: { authorization: `Bearer ${creds.accessToken}` },
           signal: AbortSignal.timeout(10_000),

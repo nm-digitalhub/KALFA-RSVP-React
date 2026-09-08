@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { GRAPH_API_VERSION } from "@/lib/whatsapp/graph-version";
+
 import {
   RelocateExecuteLatchError,
   affectedTemplates,
@@ -171,7 +173,9 @@ describe("createMetaTemplate latch", () => {
     );
     const res = await createMetaTemplate({ wabaId: "W", accessToken: "SECRET" }, tpl("a_v2", `${NEW_ORIGIN}/g/{{1}}`));
     expect(res.ok).toBe(true);
-    expect(calls[0].url).toBe("https://graph.facebook.com/v23.0/W/message_templates");
+    // Asserts the SHARED constant, not a literal: pinning the version twice is
+    // how the six call sites drifted apart in the first place (G5).
+    expect(calls[0].url).toBe(`https://graph.facebook.com/${GRAPH_API_VERSION}/W/message_templates`);
     expect(calls[0].url).not.toContain("SECRET");
     const body = JSON.parse(String(calls[0].init?.body)) as Record<string, unknown>;
     expect(body).toMatchObject({ name: "a_v2", language: "he", category: "MARKETING", parameter_format: "POSITIONAL" });

@@ -8,6 +8,7 @@ import { normalizePhone, repairIsraeliLocalPhone } from '@/lib/phone';
 import { importRowSchema } from '@/lib/validation/guests';
 import { guestImportHeaderKey } from '@/lib/data/guest-import-shared';
 import { ISRAELI_PHONE_RE } from '@/lib/constants';
+import { GRAPH_API_VERSION } from '@/lib/whatsapp/graph-version';
 import { EVENT_TYPE_LABELS } from '@/lib/data/event-labels';
 import type { Enums, Json } from '@/lib/supabase/types';
 type EventType = Enums<'event_type'>;
@@ -250,7 +251,7 @@ async function downloadDocument(
 ): Promise<Uint8Array | null> {
   try {
     const meta = (await (
-      await fetch(`https://graph.facebook.com/v23.0/${mediaId}`, {
+      await fetch(`https://graph.facebook.com/${GRAPH_API_VERSION}/${mediaId}`, {
         headers: { Authorization: `Bearer ${accessToken}` },
       })
     ).json()) as { url?: string; file_size?: number };

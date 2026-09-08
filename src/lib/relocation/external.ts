@@ -23,6 +23,8 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
+import { GRAPH_API_VERSION } from "@/lib/whatsapp/graph-version";
+
 export class RelocateExecuteLatchError extends Error {
   constructor() {
     super("execute latch is off — set RELOCATE_EXECUTE=1 to allow external mutations");
@@ -198,7 +200,7 @@ export async function subscribeMetaWebhook(opts: {
       fields: "messages",
       access_token: opts.appToken,
     });
-    const res = await fetch(`https://graph.facebook.com/v21.0/${opts.appId}/subscriptions`, {
+    const res = await fetch(`https://graph.facebook.com/${GRAPH_API_VERSION}/${opts.appId}/subscriptions`, {
       method: "POST",
       body,
       signal: AbortSignal.timeout(TIMEOUT_MS),
