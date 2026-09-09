@@ -157,3 +157,14 @@ repomix-output.xml
 storage/
 workflowbuilder*.json
 wb_*.json
+
+# One-off artifacts from the WorkflowBuilder documentation capture (2026-09-10).
+# All regenerable: the readable result is committed under docs/workflowbuilder/,
+# and scripts/scraper-v1.mjs + scripts/docs-json-to-md.mjs produce it.
+kalfa-workflow-*.tar.gz
+kalfa-workflow-*.txt
+workflowbuilder-sdk-tree.txt
+docs/workflowbuilder-blog.xlsx
+# Earlier drafts of that crawler, superseded by scripts/scraper-v1.mjs.
+scripts/scraper.mjs
+scripts/extract_docs.py
