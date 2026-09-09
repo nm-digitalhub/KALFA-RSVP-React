@@ -192,7 +192,43 @@ export const QUEUES = {
   // when they change. Slack only when something actually happened.
   // See src/lib/ops/supabase-cli-update.ts + scripts/update-supabase-cli.sh.
   supabaseCliUpdate: 'supabase-cli-update',
+  // One admin-authored workflow execution. Event-driven, enqueued by the
+  // webhook drain the moment an inbound message matches an armed workflow —
+  // never a periodic scan. The payload is the run id and nothing else: the row
+  // already exists (created with its dedupe_key, so a Meta retry of the same
+  // delivery yields one run) and the handler reads the definition and the
+  // trigger payload fresh from it.
+  //
+  // The whole graph runs inside ONE job. The vendored runGraph has no
+  // pause/resume seam, so there is no per-node job and no wait node; a retry
+  // replays every node, and workflow_run_steps' unique (run_id, node_id) is what
+  // stops the second side effect. See src/lib/workflow/engine/activity-runner.ts.
+  workflowRun: 'workflow-run',
 } as const;
+
+// workflow-run retry policy. Deliberately NO `deadLetter`, for the same reason
+// CALL_RETRY omits it: QUEUES.dead's consumer (handleDead) hard-assumes an
+// OutreachStepJob shape and would crash on a payload of any other kind. A
+// workflow job is { runId }, so routing it there would turn a failed run into a
+// crashed dead-letter worker. guardedWorker already Slack-alerts on the final
+// throw, and the run row carries status='failed' with its message.
+//
+// Two attempts, not three: a workflow's steps are claimed in an idempotent
+// ledger, so a retry re-runs only what genuinely did not finish — but every
+// retry still walks the whole graph, and a permanently broken graph should stop
+// being walked quickly.
+export const WORKFLOW_RETRY = {
+  retryLimit: 2,
+  retryBackoff: true,
+  retryDelayMax: 120,
+} as const;
+
+// The workflow-run job payload. The run id ONLY — never the message, never a
+// phone, never a name. Everything the handler needs is on the row, which keeps
+// guest PII out of pg-boss's own job table and out of its retry history.
+export type WorkflowRunJob = {
+  runId: string;
+};
 
 // outreach-step retry policy: a few backed-off retries, then dead-letter. The
 // compare-and-advance + deterministic job id make retries at-most-once-effective.

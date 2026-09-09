@@ -14,7 +14,9 @@ import path from 'node:path';
 import { PgBoss } from 'pg-boss';
 import { Client as PgClient } from 'pg';
 
-import { QUEUES, type OutreachCallRequest, type OutreachStepJob } from '@/lib/queue/queues';
+import { QUEUES, type OutreachCallRequest, type OutreachStepJob,
+  type WorkflowRunJob,
+} from '@/lib/queue/queues';
 import { dispatchOutreachCall } from '@/lib/data/outreach-calls';
 import {
   listActiveCampaigns,
@@ -46,7 +48,10 @@ import {
   markWebhookEventProcessed,
   markWebhookEventFailed,
 } from '@/lib/data/webhooks';
+import type { WebhookInboxRow } from '@/lib/data/webhooks';
 import { processWebhookEvent } from '@/lib/data/webhook-processing';
+import { enqueueWorkflowRun, handleWorkflowRun } from '@/lib/workflow/enqueue';
+import { createRunsForInboundMessage } from '@/lib/workflow/inbound';
 import { runThankyouSweep } from '@/lib/data/auto-thankyou';
 import { runInquiryFollowupSweep, getInquiryFollowupEnabled } from '@/lib/data/inquiry-followup';
 import { runAgreementArchiveSweep, getAgreementArchiveEnabled } from '@/lib/data/agreement-archive';
@@ -494,15 +499,45 @@ async function handleDead(job: { data: OutreachStepJob }): Promise<void> {
   });
 }
 
+// Create and enqueue the workflow runs an inbound message starts.
+//
+// Fully swallowed. The run rows are created first and the enqueue follows, so
+// the worst case of a failure here is a run row sitting 'pending' with no job —
+// visible in /admin, recoverable, and harmless. The alternative (letting this
+// throw) would mark a perfectly-processed webhook row as failed and re-run the
+// billing path on the next drain.
+async function startWorkflowRuns(boss: PgBoss, row: WebhookInboxRow): Promise<void> {
+  try {
+    const runIds = await createRunsForInboundMessage(row);
+    for (const runId of runIds) await enqueueWorkflowRun(boss, runId);
+  } catch (e) {
+    await sendSlackAlert({
+      level: 'warn',
+      title: 'workflow enqueue failed',
+      detail: errorDetail(e),
+      source: 'workflow',
+      // Row id only — the message text is guest content and never logged.
+      fields: { rowId: row.id },
+      category: 'errors',
+    });
+  }
+}
+
 // Drain webhook_inbox: claim the oldest unprocessed rows and run the economic
 // logic out-of-band. Each row is independent — a failure on one bumps its attempt
 // counter (and keeps last_error) without blocking the rest; the DB-level dedupe
 // + recordReached gating make re-processing safe. Never log a payload.
-async function handleWebhook(): Promise<void> {
+async function handleWebhook(boss: PgBoss): Promise<void> {
   const rows = await claimUnprocessedWebhookEvents(50);
   for (const row of rows) {
     try {
       await processWebhookEvent(row);
+      // Workflows are an ADDITIONAL consumer of the same inbound event, and a
+      // deliberately subordinate one: they run only after the economic logic
+      // above has succeeded, and they are wrapped so that a broken automation
+      // can never fail the webhook row it belongs to. Billing and opt-out are
+      // not allowed to depend on a graph an admin drew.
+      await startWorkflowRuns(boss, row);
       await markWebhookEventProcessed(row.id);
     } catch (e) {
       const message = e instanceof Error ? e.message : 'unknown error';
@@ -1092,11 +1127,40 @@ async function main(): Promise<void> {
       for (const job of jobs) await handleSalesCallDispatch(job);
     }),
   );
+  // One job runs one whole workflow graph. The vendored runner has no
+  // pause/resume seam, so there is no per-node job; workflow_run_steps'
+  // unique (run_id, node_id) plus the singletonKey on the send are what make a
+  // retry safe. See src/lib/workflow/engine/activity-runner.ts.
+  await boss.work(
+    QUEUES.workflowRun,
+    guardedWorker(QUEUES.workflowRun, async (jobs: { data: WorkflowRunJob }[]) => {
+      for (const job of jobs) {
+        const outcome = await handleWorkflowRun(job.data);
+        // A failed run does NOT throw — the failure is recorded on the row and
+        // the graph stopped cleanly. guardedWorker only alerts on a throw, so
+        // without this an armed workflow that fails on every single message
+        // would write failed rows quietly forever: discoverable in /admin,
+        // noticed by nobody.
+        if (outcome.status === 'failed') {
+          await sendSlackAlert({
+            level: 'warn',
+            title: 'workflow run failed',
+            // The message is the adapter's own Hebrew validation text or a step
+            // error — never guest content.
+            detail: outcome.message,
+            source: 'workflow',
+            fields: { runId: job.data.runId },
+            category: 'errors',
+          });
+        }
+      }
+    }),
+  );
   await boss.work(
     QUEUES.webhook,
     POLL_MINUTE_CRON,
     guardedWorker(QUEUES.webhook, async () => {
-      await handleWebhook();
+      await handleWebhook(boss);
     }),
   );
   await boss.work(
