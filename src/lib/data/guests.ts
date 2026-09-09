@@ -31,7 +31,7 @@ function throwFriendlyGuestError(error: { code?: string; message?: string; detai
   throw new Error(fallback);
 }
 import { normalizeGroupName, normalizeGuestName } from '@/lib/data/guest-import-shared';
-import { normalizePhone, repairIsraeliLocalPhone } from '@/lib/phone';
+import { normalizePhone, phoneSearchVariants } from '@/lib/phone';
 import {
   pruneOrphanContact,
   linkGuestContact,
@@ -200,14 +200,30 @@ function isContactStatus(v: string): v is ContactStatus {
 // wildcard, so it must go too — then wrap the remainder in `*…*` so it becomes
 // a contains-match.
 //
-// Phone search is format-agnostic: guests.phone is stored in LOCAL form
-// (0502223333), but a user may type the international form (972502223333 /
-// +972502223333). If the cleaned term parses as a full, valid Israeli phone
-// number, reuse the project's existing normalizer (repairIsraeliLocalPhone,
-// src/lib/phone.ts — the same one behind contacts.normalized_phone) to add an
-// extra ilike clause against the local-form variant. Known limitation left
-// as-is: a partial/mid-typed international number that doesn't parse as valid
-// yet (e.g. "97250") only matches via the raw digits clause, same as before.
+// Phone search is format-agnostic in BOTH directions: guests.phone is stored
+// exactly as the owner typed it — an Israeli local form (0502223333), an E.164
+// international form (+33756982370), or anything in between — while the person
+// searching may type a different form of the same number.
+//
+// phoneSearchVariants derives every form worth matching from ONE parse, using
+// the project's parser rather than country-specific string surgery. It replaced
+// repairIsraeliLocalPhone here (2026-09-09): that helper returns null for any
+// non-Israeli number by design, so once international guests became storable a
+// French guest could only be found by retyping the exact stored characters.
+//
+// The variants are DIGITS ONLY, never the "+" form, and that is deliberate:
+// they are matched against guests.phone_digits (a stored generated column that
+// strips every non-digit from guests.phone), so both sides of the comparison
+// are digits and no "+" ever reaches the raw PostgREST `.or()` filter string.
+//
+// phone_digits is what closes the separator gap. Matching guests.phone alone
+// could never find a guest saved as "+33 7 56 98 23 70" from a search typed as
+// "+33756982370", because ILIKE compares stored characters as they are and
+// nothing in the application can normalise the column. The generated column
+// normalises it in the database, on every write, for every writer.
+//
+// The raw-term clauses stay: they are what matches a NAME, and what still
+// matches a partial / mid-typed number that does not parse yet.
 // ---------------------------------------------------------------------------
 function buildSearchFilter(search: string): string | null {
   const cleaned = search.replace(/[,()*%"_\\]/g, '').trim();
@@ -215,9 +231,16 @@ function buildSearchFilter(search: string): string | null {
   const pattern = `*${cleaned}*`;
   const clauses = [`full_name.ilike.${pattern}`, `phone.ilike.${pattern}`];
 
-  const localVariant = repairIsraeliLocalPhone(cleaned);
-  if (localVariant && localVariant !== cleaned) {
-    clauses.push(`phone.ilike.*${localVariant}*`);
+  // A digits-only search term is matched against the normalised column too, so
+  // "0501234567" finds a guest stored as "050-123-4567" without needing the
+  // term to parse as a valid number first.
+  const rawDigits = cleaned.replace(/\D/g, '');
+  const seen = new Set<string>();
+  for (const variant of [rawDigits, ...phoneSearchVariants(cleaned)]) {
+    if (variant && !seen.has(variant)) {
+      seen.add(variant);
+      clauses.push(`phone_digits.ilike.*${variant}*`);
+    }
   }
 
   return clauses.join(',');

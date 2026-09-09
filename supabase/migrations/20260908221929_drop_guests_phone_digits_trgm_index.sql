@@ -1,0 +1,48 @@
+-- Drop guests_phone_digits_trgm_idx (added minutes earlier in 20260908221127).
+--
+-- It cannot be used by the query it was built for, and that is a property of
+-- RLS, not of the data volume — so no amount of growth will make it start
+-- working.
+--
+-- MEASURED 2026-09-09, running as the role the panel actually uses:
+--   set local role authenticated;
+--   set local enable_seqscan = off;
+--   explain select id from guests where phone_digits ilike '%33756982370%';
+--   → Seq Scan on guests
+--       Filter: (can_access_event(...) AND (phone_digits ~~* '%…%'))
+-- With sequential scans DISABLED the planner still sequential-scans, which is
+-- how Postgres reports "this index is unusable here", not "this index is
+-- merely more expensive".
+--
+-- WHY. guests has RLS, and its policy calls can_access_event() — verified
+-- `prosecdef = true`, `provolatile = 's'`. Postgres treats a policy as a
+-- security barrier and refuses to evaluate a NON-LEAKPROOF operator before it,
+-- because doing so could reveal something about rows the caller may not see.
+-- The ILIKE operator's function `texticlike` is `proleakproof = false`
+-- (verified). So the pattern match runs AFTER the policy, above the scan, where
+-- no index can serve it. The index would only ever help a caller that bypasses
+-- RLS (service_role) — and the guest search deliberately does not.
+--
+-- The alternative — moving the search into a SECURITY DEFINER RPC so the scan
+-- happens beneath the policy — was considered and rejected. That pattern IS
+-- used in this project, but for narrow, single-purpose surfaces
+-- (submit_rsvp, reached from a public token where there is no session at all).
+-- listGuests is pagination + sorting + three filters + an embedded contacts
+-- join + a computed column, and rewriting it as a privileged function would
+-- replace a database-enforced ownership check with one this code has to get
+-- right, to speed up a scan of 47 rows. The closest existing precedent,
+-- guest_totals, is NOT security definer for exactly that reason.
+--
+-- guests.phone_digits STAYS. The generated column is what makes the search
+-- format-agnostic (a guest stored as "+33 7 56 98 23 70" is found by
+-- "+33756982370"); it never needed an index to do that.
+--
+-- pg_trgm is intentionally left installed: dropping an extension is a
+-- database-wide change, it is harmless where it sits (the `extensions` schema),
+-- and it is the right tool the day a service_role search path appears.
+drop index if exists public.guests_phone_digits_trgm_idx;
+
+-- ROLLBACK:
+--   create index guests_phone_digits_trgm_idx
+--     on public.guests using gin (phone_digits extensions.gin_trgm_ops);
+--   (…which would restore an index the planner cannot use — see above.)

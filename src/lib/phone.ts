@@ -65,3 +65,31 @@ export function maskPhoneForDisplay(raw: string | null | undefined): string {
   const local = e164.startsWith('+972') ? `0${e164.slice(4)}` : e164;
   return `${local.slice(0, 3)}***${local.slice(-4)}`;
 }
+
+// Every written form of ONE number worth matching in a `phone LIKE` search.
+// guests.phone stores whatever the owner typed — an Israeli local form
+// (0502223333), an E.164 international form (+33756982370), or anything
+// between — while the person searching may type a different form of the same
+// number, so search has to bridge the two.
+//
+// Returns DIGITS ONLY and never the "+" form, deliberately: "33756982370" is a
+// substring of a stored "+33756982370", so a contains-match finds it either
+// way, and no "+" ever reaches the raw PostgREST `.or()` filter string.
+//
+// Country-agnostic by construction. It replaced repairIsraeliLocalPhone in the
+// guest search (2026-09-09) because that helper returns null for anything
+// non-Israeli by design — so once international guests became storable, a
+// French guest could only be found by retyping the exact stored characters.
+// formatNational() gives each country its OWN local form (0502223333 for IL,
+// 0756982370 for FR), which keeps the previous Israeli behaviour identical.
+//
+// [] when the term does not parse as a valid number — a name, or a half-typed
+// number — so the caller adds no phone clause at all.
+export function phoneSearchVariants(raw: string | null | undefined): string[] {
+  if (!raw) return [];
+  const parsed = parsePhoneNumberFromString(raw.trim(), 'IL');
+  if (!parsed || !parsed.isValid()) return [];
+  const e164Digits = parsed.number.slice(1);
+  const national = parsed.formatNational().replace(/\D/g, '');
+  return [...new Set([e164Digits, national])].filter(Boolean);
+}

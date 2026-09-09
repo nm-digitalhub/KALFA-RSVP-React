@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   isAcceptablePhoneInput,
+  phoneSearchVariants,
   isValidPhone,
   maskPhoneForDisplay,
   normalizePhone,
@@ -130,5 +131,47 @@ describe('isAcceptablePhoneInput (guest phone field — IL + international)', ()
     expect(isAcceptablePhoneInput(undefined)).toBe(false);
     expect(isAcceptablePhoneInput('12')).toBe(false);
     expect(isAcceptablePhoneInput('abc')).toBe(false);
+  });
+});
+
+describe('phoneSearchVariants (guest search — every country)', () => {
+  it('keeps the Israeli behaviour the old helper had', () => {
+    // repairIsraeliLocalPhone used to produce exactly this local form; the
+    // replacement must not narrow what an Israeli search already matched.
+    expect(phoneSearchVariants('972502223333')).toContain('0502223333');
+    expect(phoneSearchVariants('+972502223333')).toContain('0502223333');
+    expect(phoneSearchVariants('0502223333')).toContain('972502223333');
+  });
+
+  it('derives the same variants for a non-Israeli number', () => {
+    // The case that motivated the change: before this, a French guest was only
+    // findable by retyping the exact stored characters.
+    const fr = phoneSearchVariants('+33756982370');
+    expect(fr).toContain('33756982370'); // E.164 digits
+    expect(fr).toContain('0756982370'); // France's own local form
+  });
+
+  it('reaches the same variants from every written form of one number', () => {
+    const canonical = phoneSearchVariants('+33756982370').sort();
+    expect(phoneSearchVariants('+33 7 56 98 23 70').sort()).toEqual(canonical);
+    expect(phoneSearchVariants('0033756982370').sort()).toEqual(canonical);
+  });
+
+  it('never returns a "+" form — it must not reach the PostgREST filter string', () => {
+    for (const term of ['+33756982370', '0502223333', '+14155552671']) {
+      for (const v of phoneSearchVariants(term)) {
+        expect(v).not.toContain('+');
+        expect(v).toMatch(/^\d+$/);
+      }
+    }
+  });
+
+  it('returns nothing for a name or a half-typed number', () => {
+    // No parse → the caller adds no phone clause, so a name search stays a
+    // name search.
+    expect(phoneSearchVariants('דנה')).toEqual([]);
+    expect(phoneSearchVariants('97250')).toEqual([]);
+    expect(phoneSearchVariants('')).toEqual([]);
+    expect(phoneSearchVariants(null)).toEqual([]);
   });
 });

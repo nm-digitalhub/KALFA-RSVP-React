@@ -251,18 +251,33 @@ describe('listGuests', () => {
     expect(builder.or).not.toHaveBeenCalled();
   });
 
-  // guests.phone is stored in LOCAL form (0502223333); a user searching with
-  // the international form should still find it, via the project's existing
-  // phone normalizer (repairIsraeliLocalPhone).
-  it('adds a local-form phone clause when the search is a valid international IL number', async () => {
+  // guests.phone keeps the owner's own formatting; guests.phone_digits (stored
+  // generated) holds only its digits. A search in ANY written form must reach
+  // the same guest, so the digit variants are matched against phone_digits.
+  it('adds digit clauses when the search is a valid international IL number', async () => {
     const { builder } = wire([]);
     await listGuests(EVENT_ID, { search: '972502223333' });
 
     expect(builder.or).toHaveBeenCalledTimes(1);
     const filter = builder.or.mock.calls[0][0] as string;
     expect(filter).toBe(
-      'full_name.ilike.*972502223333*,phone.ilike.*972502223333*,phone.ilike.*0502223333*',
+      'full_name.ilike.*972502223333*,phone.ilike.*972502223333*,phone_digits.ilike.*972502223333*,phone_digits.ilike.*0502223333*',
     );
+  });
+
+  // The case the whole change exists for: a French guest is stored as
+  // "+33 7 56 98 23 70" (verified live), and must be findable by a search typed
+  // without separators. Only the phone_digits clauses can do that.
+  it('finds a non-Israeli number typed in a different form', async () => {
+    const { builder } = wire([]);
+    await listGuests(EVENT_ID, { search: '+33756982370' });
+
+    const filter = builder.or.mock.calls[0][0] as string;
+    // digits of the term itself, plus France's own local form
+    expect(filter).toContain('phone_digits.ilike.*33756982370*');
+    expect(filter).toContain('phone_digits.ilike.*0756982370*');
+    // and never a "+" inside the raw PostgREST filter string
+    expect(filter.split('phone_digits')[1]).not.toContain('+');
   });
 
   it('does not add a phone-variant clause for a plain name search', async () => {
@@ -270,6 +285,7 @@ describe('listGuests', () => {
     await listGuests(EVENT_ID, { search: 'דנה' });
 
     const filter = builder.or.mock.calls[0][0] as string;
+    // A name has no digits, so no phone_digits clause is added at all.
     expect(filter).toBe('full_name.ilike.*דנה*,phone.ilike.*דנה*');
   });
 
