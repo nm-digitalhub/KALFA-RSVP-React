@@ -25,6 +25,7 @@ import { applyHebrewToSdk } from '@/lib/workflow/i18n-he';
 
 import { ExecutionHighlighting } from './highlighting';
 import { ExecutionLogPanel } from './log-panel';
+import { useAutoSave } from './use-autosave';
 import { executionMarkersPlugin } from './node-markers';
 import { resetExecution } from './use-execution-store';
 
@@ -349,6 +350,15 @@ function EditorToolbar({
       setSaving(false);
     }
   }, [actions]);
+
+  // Restores what replacing `WorkflowBuilder.TopBar` with this toolbar silently
+  // removed: the SDK's auto-save and its save-on-unload both live inside the
+  // TopBar's own Save button, so they left with it. See use-autosave.ts.
+  //
+  // Gated on the same two conditions as the manual button below — an editor in
+  // read-only mode must not write, and a workflow with no name must not be
+  // persisted while the owner is being shown that the name is required.
+  useAutoSave(save, !isReadOnly && Boolean(documentName?.trim()));
 
   return (
     <header className="kalfa-workflow-toolbar">
