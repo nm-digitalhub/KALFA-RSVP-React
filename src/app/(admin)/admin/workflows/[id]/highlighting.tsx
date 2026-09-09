@@ -12,7 +12,7 @@
 // matching, silently, with no error and no failing test. The browser check on
 // this page is the only thing that catches it — recorded here because the next
 // person to bump the SDK needs to know to look.
-import { getStoreEdges } from '@workflowbuilder/sdk';
+import { useStore } from '@workflowbuilder/sdk';
 import { useEffect, useMemo } from 'react';
 
 import './highlighting.css';
@@ -45,6 +45,11 @@ function appendCSS(styleContent: string) {
 
 export function ExecutionHighlighting() {
   const nodeStates = useExecutionStore((s) => s.nodeStates);
+  // Subscribed, not read imperatively. `getStoreEdges()` inside a memo keyed
+  // only on `nodeStates` produced a stale highlight: rewiring the diagram after
+  // a run left the previous run's edges lit, because nothing told this memo the
+  // edge set had changed. The store is the SDK's own, so this re-runs on rewire.
+  const edges = useStore((s) => s.edges);
 
   const cssContent = useMemo(() => {
     const byStatus = { running: [] as string[], completed: [] as string[], failed: [] as string[] };
@@ -74,7 +79,7 @@ export function ExecutionHighlighting() {
     // An edge lights only when BOTH ends ran.
     const activeEdgeIds: string[] = [];
     if (nonIdleNodes.size > 0) {
-      for (const edge of getStoreEdges()) {
+      for (const edge of edges) {
         if (nonIdleNodes.has(edge.source) && nonIdleNodes.has(edge.target)) {
           activeEdgeIds.push(edge.id);
         }
@@ -100,7 +105,7 @@ export function ExecutionHighlighting() {
     }
 
     return css;
-  }, [nodeStates]);
+  }, [nodeStates, edges]);
 
   useEffect(() => {
     appendCSS(cssContent);

@@ -1,31 +1,44 @@
 /* Ported from the reference app's components/execution/highlighting.css.
  *
- * Every --ax-* token below was checked against the shipped
- * @workflowbuilder/sdk/dist/style.css, which the editor page already imports —
- * all eight are defined there, so these resolve rather than falling back to
- * nothing. Using the SDK's own tokens (rather than mapping to KALFA's) keeps the
- * canvas internally consistent: the node bodies beside these outlines are drawn
- * from the same palette.
+ * WHERE THE SDK DEFINES ITS TOKENS, and why this file uses :root.
  *
- * The SDK's theme switch is the `data-theme` attribute on <html>, which is also
- * what KALFA's theme toggle writes, so the two blocks below activate correctly
- * without extra wiring.
+ * The SDK splits its --ax-* tokens across two kinds of selector. Measured
+ * 2026-09-09 against dist/style.css at 2.3.0:
+ *
+ *   :root                            857 tokens — includes --ax-colors-green-400
+ *                                    / -200, --ax-colors-red-400,
+ *                                    --ax-colors-orange-300, --ax-token-shadow-*
+ *   html[data-theme='light'|'dark']  174 tokens, and NONE of them also at :root —
+ *                                    includes --ax-txt-warning-default,
+ *                                    --ax-txt-success-default,
+ *                                    --ax-txt-error-default, used below
+ *
+ * `data-theme` is set by the SDK ITSELF, not by KALFA: <WorkflowBuilder.Root>
+ * runs `document.documentElement.dataset.theme = <persisted theme, default
+ * "light">` inside a useLayoutEffect on mount — before the first paint. So on
+ * this page all 1031 tokens resolve, and they resolve without a flash.
+ *
+ * TWO EARLIER VERSIONS OF THIS COMMENT WERE WRONG, both in the same direction:
+ * they read the stylesheet, saw no `data-theme` anywhere in src/, and concluded
+ * the tokens were undefined and the highlighting "silently dead". It was not.
+ * Reading static CSS cannot see an attribute a layout effect writes; the SDK
+ * bundle had to be read to settle it. Recorded here because the same mistake is
+ * easy to repeat on any token that looks orphaned.
+ *
+ * Given that, defining our own tokens at :root is not a bug fix — it is a
+ * narrowing of the dependency. These four values are ours, they are not
+ * theme-specific, and at :root they no longer rely on the SDK's mount-time side
+ * effect having run. The values we take FROM the SDK still do, which is correct:
+ * they should follow the SDK's theme.
+ *
+ * Using the SDK's own tokens (rather than mapping to KALFA's) keeps the canvas
+ * internally consistent: the node bodies beside these outlines are drawn from
+ * the same palette.
  */
 
-html[data-theme='light'] {
+:root {
   --kalfa-wf-edge-color--active: var(--ax-colors-green-400);
   --kalfa-wf-status-color--incomplete: var(--ax-txt-warning-default);
-}
-
-html[data-theme='dark'] {
-  --kalfa-wf-edge-color--active: var(--ax-colors-green-200);
-  /* No dark warning-accent token exists — --ax-txt-warning-default is the
-     orange-100 body-text cream, which is unreadable as an accent here. Same
-     substitution the reference app makes, and for the same reason. */
-  --kalfa-wf-status-color--incomplete: var(--ax-colors-orange-300);
-}
-
-:root {
   --kalfa-wf-status-color--completed: var(--ax-txt-success-default);
   --kalfa-wf-status-color--failed: var(--ax-txt-error-default);
 
@@ -60,4 +73,29 @@ html[data-theme='dark'] {
   --kalfa-wf-node-shadow--failed: var(--ax-token-shadow-focus-node-active-x)
     var(--ax-token-shadow-focus-node-active-y) var(--ax-token-shadow-focus-node-active-blur)
     var(--ax-token-shadow-focus-node-active-spread) var(--kalfa-wf-node-shadow-color--failed);
+}
+
+/* Dark overrides, matching both switches that can arrive.
+
+   `data-theme` is the SDK's, and it IS live: the SDK's own theme toggle
+   (`useWorkflowBuilderActions().toggleDarkMode`, or the app-bar switch) writes
+   `wb-theme` to localStorage and sets the attribute, and Root re-applies the
+   persisted value on every mount. So an owner who flips the SDK's toggle lands
+   here, and the canvas follows.
+
+   `.dark` is this app's Tailwind variant (`@custom-variant dark (&:is(.dark *))`
+   in globals.css). KALFA has no theme toggle of its own yet, so that half is
+   inert today — it is here so that when one ships, the canvas follows that too
+   without a second edit.
+
+   Placed after :root because `.dark` and `:root` have equal specificity and
+   source order is what settles them. `html[data-theme='dark']` outranks both
+   on its own. */
+html[data-theme='dark'],
+.dark {
+  --kalfa-wf-edge-color--active: var(--ax-colors-green-200);
+  /* No dark warning-accent token exists — --ax-txt-warning-default is the
+     orange-100 body-text cream, which is unreadable as an accent here. Same
+     substitution the reference app makes, and for the same reason. */
+  --kalfa-wf-status-color--incomplete: var(--ax-colors-orange-300);
 }

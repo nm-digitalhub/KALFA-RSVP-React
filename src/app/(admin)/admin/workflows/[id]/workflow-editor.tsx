@@ -10,8 +10,8 @@ import {
   type OnSaveParams,
   type WorkflowBuilderIsValidConnection,
 } from '@workflowbuilder/sdk';
-import { Eye, GitBranch, ListTree, Save, Settings2, X } from 'lucide-react';
-import { useCallback, useEffect, useState } from 'react';
+import { Eye, GitBranch, ListTree, Maximize, Pencil, Save, Settings2, X } from 'lucide-react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 import '@workflowbuilder/sdk/style.css';
 // Immediately after, so its unlayered counters land on top of the SDK's reset.
@@ -20,17 +20,21 @@ import './sdk-overrides.css';
 import { Button } from '@/components/ui/button';
 import { isTriggerType } from '@/lib/workflow/catalogue/nodes';
 import { PALETTE_ITEMS } from '@/lib/workflow/catalogue/schemas';
+import { DIAGRAM_TEMPLATES } from '@/lib/workflow/catalogue/templates';
 import { applyHebrewToSdk } from '@/lib/workflow/i18n-he';
 
 import { ExecutionHighlighting } from './highlighting';
 import { ExecutionLogPanel } from './log-panel';
 import { executionMarkersPlugin } from './node-markers';
+import { resetExecution } from './use-execution-store';
 
 type Props = {
   workflowId: string;
   name: string;
   initialNodes: IntegrationDataFormat['nodes'];
   initialEdges: IntegrationDataFormat['edges'];
+  layoutDirection?: IntegrationDataFormat['layoutDirection'];
+  initialGlobalVariables?: IntegrationDataFormat['globalVariables'];
   /**
    * A Server Action. It carries `requireAdmin` and the ownership check on its
    * own side — nothing here is authorization, and the browser's copy of the id
@@ -70,8 +74,18 @@ export function WorkflowEditor({
   name,
   initialNodes,
   initialEdges,
+  layoutDirection,
+  initialGlobalVariables,
   saveAction,
 }: Props) {
+  // Root 2.3.0 omits globalVariables from its props. Its child effects load
+  // nodes/edges first; this parent effect restores the remaining persisted field.
+  useEffect(() => {
+    useStore.setState({ globalVariables: initialGlobalVariables ?? {} });
+    resetExecution();
+    return resetExecution;
+  }, [workflowId, initialGlobalVariables]);
+
   return (
     // THE POSITIONING CONTEXT, and the whole reason this file was rewritten.
     // The SDK's own root is
@@ -80,10 +94,16 @@ export function WorkflowEditor({
     // escapes to the viewport and covers the admin shell. The height must be
     // explicit for the same reason: `height: 100%` against an auto-height
     // parent resolves to nothing.
-    <div className="relative h-[calc(100vh-14rem)] min-h-[30rem] overflow-hidden rounded-lg border border-border">
+    <div className="kalfa-workflow-frame relative h-[calc(100dvh-14rem)] min-h-[32rem] overflow-hidden rounded-lg border border-border">
       <WorkflowBuilder.Root
+        key={workflowId}
         name={name}
+        layoutDirection={layoutDirection}
         nodeTypes={PALETTE_ITEMS}
+        // Populates the "בחירת תבנית" modal, which offered only "קנבס ריק"
+        // because this prop defaults to []. Module-scope array — upstream
+        // requires a stable reference, same as nodeTypes.
+        diagramTemplates={DIAGRAM_TEMPLATES}
         initialNodes={initialNodes}
         initialEdges={initialEdges}
         isValidConnection={isValidConnection}
@@ -116,60 +136,119 @@ export function WorkflowEditor({
  * work for the SDK demo page but crowd this RTL admin route on phones.
  */
 function WorkflowEditorLayout() {
+  const frameRef = useRef<HTMLDivElement>(null);
   const toggleSidebar = useStore((s) => s.toggleSidebar);
   const isPaletteExpanded = useStore((s) => s.isSidebarExpanded);
   const selected = useSingleSelectedElement();
   const hasSelection = Boolean(selected?.node || selected?.edge);
+  const [isCompact, setCompact] = useState(false);
   const [isPropertiesOpen, setPropertiesOpen] = useState(false);
 
+  // Measure the editor, since the admin sidebar also consumes viewport width.
   useEffect(() => {
-    if (globalThis.matchMedia?.('(max-width: 800px)').matches) {
-      toggleSidebar(false);
-    }
+    const frame = frameRef.current;
+    if (!frame) return;
+    let previous: boolean | undefined;
+    const observer = new ResizeObserver(() => {
+      const compact = frame.clientWidth <= 900;
+      if (compact === previous) return;
+      previous = compact;
+      setCompact(compact);
+      toggleSidebar(!compact);
+      setPropertiesOpen(false);
+    });
+    observer.observe(frame);
+    return () => observer.disconnect();
   }, [toggleSidebar]);
 
-  // Adjust the panel when the SELECTION changes, done during render rather than
-  // in an effect. React's own guidance for "reset state when a prop changes" is
-  // this compare-with-previous pattern, and `react-hooks/set-state-in-effect`
-  // flags the effect form — rightly: an effect would paint the stale panel
-  // first, then correct it.
-  //
-  // `matchMedia` is absent on the server, so the optional call yields undefined
-  // and the panel renders closed there. The first client render has no selection
-  // either, so both agree and hydration is clean.
   const selectionKey = selected?.node?.id ?? selected?.edge?.id ?? null;
   const [lastSelectionKey, setLastSelectionKey] = useState(selectionKey);
   if (selectionKey !== lastSelectionKey) {
     setLastSelectionKey(selectionKey);
-    setPropertiesOpen(
-      hasSelection && Boolean(globalThis.matchMedia?.('(max-width: 800px)').matches),
-    );
+    setPropertiesOpen(hasSelection);
   }
 
+  useEffect(() => {
+    if (isCompact && selectionKey) toggleSidebar(false);
+  }, [isCompact, selectionKey, toggleSidebar]);
+
+  const closePanels = useCallback(() => {
+    toggleSidebar(false);
+    setPropertiesOpen(false);
+  }, [toggleSidebar]);
+
+  // Escape is bound to the DOCUMENT, not to the container.
+  //
+  // React's onKeyDown only fires for events that bubble through the element, and
+  // a keydown is dispatched at `document.activeElement`. On a fresh load — or
+  // after a tap on empty canvas, which is exactly the phone case these overlays
+  // exist for — nothing inside the editor holds focus, so activeElement is
+  // <body>, which is not a descendant, and the handler never ran.
+  //
+  // Bound only while an overlay is actually open, so this never swallows Escape
+  // from a dialog or menu elsewhere on the admin page.
+  const hasOpenOverlay = isCompact && (isPaletteExpanded || isPropertiesOpen);
+  useEffect(() => {
+    if (!hasOpenOverlay) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') closePanels();
+    };
+    document.addEventListener('keydown', onKeyDown);
+    return () => document.removeEventListener('keydown', onKeyDown);
+  }, [hasOpenOverlay, closePanels]);
+
   return (
-    <div className="workflow-builder-root kalfa-workflow-editor">
-      <div className="kalfa-workflow-canvas-layer">
-        <WorkflowBuilder.Canvas />
-      </div>
-
-      <div id="viewport-bounds" className="kalfa-workflow-viewport-bounds" />
-
+    <div ref={frameRef} className="workflow-builder-root kalfa-workflow-editor">
+      <EditorToolbar
+        canOpenProperties={hasSelection}
+        paletteOpen={isPaletteExpanded}
+        propertiesOpen={isPropertiesOpen && hasSelection}
+        onOpenPalette={() => {
+          toggleSidebar(!isPaletteExpanded);
+          if (isCompact) setPropertiesOpen(false);
+        }}
+        onOpenProperties={() => {
+          setPropertiesOpen(!isPropertiesOpen);
+          if (isCompact) toggleSidebar(false);
+        }}
+      />
       <div
-        className="kalfa-workflow-panel-layer"
-        data-palette-expanded={isPaletteExpanded ? 'true' : 'false'}
-        data-has-selection={hasSelection ? 'true' : 'false'}
-        data-properties-open={isPropertiesOpen ? 'true' : 'false'}
+        className="kalfa-workflow-workspace"
+        data-palette-expanded={isPaletteExpanded}
+        data-properties-open={isPropertiesOpen && hasSelection}
       >
-        <aside className="kalfa-workflow-palette-panel" aria-label="ספריית צעדים">
+        <aside id="workflow-palette" className="kalfa-workflow-palette-panel" aria-label="ספריית צעדים">
           <WorkflowBuilder.Palette />
         </aside>
+        <div
+          className="kalfa-workflow-canvas-layer"
+          onPointerDownCapture={() => { if (isCompact) closePanels(); }}
+        >
+          <WorkflowBuilder.Canvas />
+          {/*
+            DefaultLayout renders a hidden `#viewport-bounds` spacer between its
+            palette and properties panels, and the SDK reads it with a GLOBAL
+            `document.querySelector("#viewport-bounds")` to compute fitView
+            padding — see `q7()`, whose only caller is the SDK's own useFitView.
+            Replacing DefaultLayout removed the element, so that lookup returned
+            null and the SDK fell back to a uniform padding, fitting content
+            underneath our overlay panels.
 
-        <aside className="kalfa-workflow-properties-panel" aria-label="מאפיינים">
+            It does NOT affect dragging a node from the palette: drop position
+            comes from `reactFlowInstance.screenToFlowPosition(clientX, clientY)`.
+
+            Our toolbar's "הצגת הכול" calls instance.fitView() directly and never
+            consults this, but two SDK-internal paths do — loading a diagram
+            template, and the keyboard command hook — so the element has to exist.
+          */}
+          <div id="viewport-bounds" aria-hidden="true" className="kalfa-workflow-viewport-bounds" />
+        </div>
+        <aside id="workflow-properties" className="kalfa-workflow-properties-panel" aria-label="מאפיינים">
           <Button
             type="button"
             variant="ghost"
-            size="icon-sm"
-            className="kalfa-workflow-mobile-panel-close"
+            size="icon"
+            className="kalfa-workflow-panel-close"
             aria-label="סגירת מאפיינים"
             onClick={() => setPropertiesOpen(false)}
           >
@@ -178,23 +257,8 @@ function WorkflowEditorLayout() {
           <WorkflowBuilder.PropertiesPanel />
         </aside>
       </div>
-
-      {/* Reads the execution store and renders nothing until a run has
-          produced something — a test run or a real one, indistinguishable to it
-          by design. Inside <Root> because it reads the canvas's edges. */}
       <ExecutionHighlighting />
-
-      {/* One bottom stack, so the log and toolbar never overlap on mobile. */}
-      <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 flex flex-col items-center gap-2 p-3">
-        <div className="pointer-events-auto w-full max-w-xl bg-card">
-          <ExecutionLogPanel />
-        </div>
-        <EditorToolbar
-          canOpenProperties={hasSelection}
-          onOpenPalette={() => toggleSidebar(true)}
-          onOpenProperties={() => setPropertiesOpen(true)}
-        />
-      </div>
+      <div className="kalfa-workflow-log"><ExecutionLogPanel /></div>
     </div>
   );
 }
@@ -249,72 +313,80 @@ function makeSaveHandler(
  */
 function EditorToolbar({
   canOpenProperties,
+  paletteOpen,
+  propertiesOpen,
   onOpenPalette,
   onOpenProperties,
 }: {
   canOpenProperties: boolean;
+  paletteOpen: boolean;
+  propertiesOpen: boolean;
   onOpenPalette: () => void;
   onOpenProperties: () => void;
 }) {
   const actions = useWorkflowBuilderActions();
+  const instance = useStore((s) => s.reactFlowInstance);
+  const documentName = useStore((s) => s.documentName);
+  const setDocumentName = useStore((s) => s.setDocumentName);
+  const isReadOnly = useStore((s) => s.isReadOnlyMode);
   const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState(false);
+
+  // Use canvas-relative bounds. The SDK's useFitView calculates padding from
+  // window coordinates, which is incorrect inside an embedded admin editor.
+  const fitView = useCallback(() => {
+    void instance?.fitView({ padding: 0.2, maxZoom: 1, duration: 200 });
+  }, [instance]);
 
   const save = useCallback(async () => {
     setSaving(true);
+    setSaveError(false);
     try {
-      await actions.save();
+      setSaveError((await actions.save()) === 'error');
+    } catch {
+      setSaveError(true);
     } finally {
       setSaving(false);
     }
   }, [actions]);
 
   return (
-    // A plain flex child of the bottom stack above — no positioning of its own,
-    // which is what stopped it colliding with the log panel.
-    //
-    // `flex-wrap` because three Hebrew labels do not fit one line on a narrow
-    // phone; they wrap to a second row instead of overflowing the viewport.
-    <header className="pointer-events-none flex w-full justify-center">
-      <span className="pointer-events-auto flex max-w-full flex-wrap items-center justify-center gap-2 rounded-lg border border-border bg-card p-2 shadow-lg">
-        <Button
-          type="button"
-          variant="outline"
-          className="kalfa-workflow-mobile-tool"
-          onClick={onOpenPalette}
-        >
-          <ListTree aria-hidden="true" />
-          צעדים
+    <header className="kalfa-workflow-toolbar">
+      <label className="kalfa-workflow-name">
+        <span className="text-xs text-muted-foreground">שם התהליך</span>
+        <input
+          aria-label="שם התהליך"
+          value={documentName ?? ''}
+          onChange={(event) => setDocumentName(event.target.value)}
+          readOnly={isReadOnly}
+          className="min-h-11 min-w-0 rounded-md border border-input bg-background px-3 text-sm"
+        />
+      </label>
+      <div className="kalfa-workflow-tools" role="group" aria-label="כלי עריכת תהליך">
+        <Button type="button" variant="outline" aria-expanded={paletteOpen} aria-controls="workflow-palette" onClick={onOpenPalette}>
+          <ListTree aria-hidden="true" />צעדים
         </Button>
-        <Button
-          type="button"
-          variant="outline"
-          className="kalfa-workflow-mobile-tool"
-          onClick={onOpenProperties}
-          disabled={!canOpenProperties}
-        >
-          <Settings2 aria-hidden="true" />
-          מאפיינים
+        <Button type="button" variant="outline" aria-expanded={propertiesOpen} aria-controls="workflow-properties" onClick={onOpenProperties} disabled={!canOpenProperties}>
+          <Settings2 aria-hidden="true" />מאפיינים
         </Button>
-        <Button type="button" onClick={save} disabled={saving}>
-          <Save aria-hidden="true" />
-          {saving ? 'שומר…' : 'שמירה'}
+        <Button type="button" onClick={save} disabled={saving || !documentName?.trim()}>
+          <Save aria-hidden="true" />{saving ? 'שומר…' : 'שמירה'}
         </Button>
-        <Button type="button" variant="outline" onClick={actions.toggleReadOnly}>
-          <Eye aria-hidden="true" />
-          מצב צפייה
+        <Button type="button" variant="outline" onClick={actions.toggleReadOnly} aria-pressed={isReadOnly}>
+          {isReadOnly ? <Pencil aria-hidden="true" /> : <Eye aria-hidden="true" />}
+          {isReadOnly ? 'חזרה לעריכה' : 'מצב צפייה'}
         </Button>
-        <Button
-          type="button"
-          variant="outline"
-          // flipPositions is a naive x/y axis swap that ignores node sizes, which
-          // is exactly why the SDK exposes it only on the toggle and why it is
-          // paired with fitView here.
-          onClick={() => actions.toggleLayoutDirection({ flipPositions: true, fitView: true })}
-        >
-          <GitBranch aria-hidden="true" />
-          כיוון הזרימה
+        <Button type="button" variant="outline" disabled={isReadOnly} onClick={() => {
+          actions.toggleLayoutDirection({ flipPositions: true });
+          requestAnimationFrame(fitView);
+        }}>
+          <GitBranch aria-hidden="true" />כיוון הזרימה
         </Button>
-      </span>
+        <Button type="button" variant="outline" onClick={fitView}>
+          <Maximize aria-hidden="true" />הצגת הכול
+        </Button>
+      </div>
+      {saveError && <p role="alert" className="w-full text-sm text-destructive">השמירה נכשלה. נסו שוב.</p>}
     </header>
   );
 }

@@ -113,7 +113,7 @@ const HE = {
     loadDiagramError: 'טעינת התהליך נכשלה',
     loadDiagramSuccess: 'התהליך נטען',
     saveDiagramError: 'שמירת התהליך נכשלה',
-    restoreDiagramSuccess: 'שוחזרה טיוטה מקומית',
+    restoreDiagramSuccess: 'התהליך נטען',
     restoreDiagramError: 'שחזור הטיוטה נכשל',
     aiConnectionError: 'שגיאה בחיבור לשרת ה-AI',
     wrongDiagramFormat: 'מבנה התהליך אינו תקין',

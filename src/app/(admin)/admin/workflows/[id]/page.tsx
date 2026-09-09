@@ -9,6 +9,9 @@ import { getWorkflow, listWorkflowRuns } from '@/lib/data/admin/workflows';
 
 import { saveWorkflowAction } from '../actions';
 
+import { CancelRunButton } from '../row-actions';
+
+import { RunWatchButton } from './run-watcher';
 import { TestPanel } from './test-panel';
 import { WorkflowEditor } from './workflow-editor';
 
@@ -51,8 +54,11 @@ export default async function AdminWorkflowPage({
       </div>
 
       <WorkflowEditor
+        key={workflow.id}
         workflowId={workflow.id}
         name={workflow.name}
+        layoutDirection={parsed.success ? parsed.data.layoutDirection : undefined}
+        initialGlobalVariables={parsed.success ? parsed.data.globalVariables : undefined}
         initialNodes={nodes as never}
         initialEdges={edges as never}
         saveAction={saveWorkflowAction}
@@ -76,6 +82,7 @@ export default async function AdminWorkflowPage({
                   <th className="p-3 text-start font-medium">התחיל</th>
                   <th className="p-3 text-start font-medium">הסתיים</th>
                   <th className="p-3 text-start font-medium">שגיאה</th>
+                  <th className="p-3 text-start font-medium">מעקב</th>
                 </tr>
               </thead>
               <tbody>
@@ -88,6 +95,17 @@ export default async function AdminWorkflowPage({
                       {run.finishedAt ? formatDateTime(run.finishedAt) : '—'}
                     </td>
                     <td className="p-3 text-destructive">{run.errorMessage ?? ''}</td>
+                    <td className="p-3">
+                      <div className="flex flex-wrap items-start gap-2">
+                        <RunWatchButton runId={run.id} />
+                        {/* Only a queued run. `cancelRun` refuses anything else,
+                            because the vendored runner cannot be interrupted
+                            once it is inside runGraph. */}
+                        {run.status === 'pending' && (
+                          <CancelRunButton workflowId={workflow.id} runId={run.id} />
+                        )}
+                      </div>
+                    </td>
                   </tr>
                 ))}
               </tbody>

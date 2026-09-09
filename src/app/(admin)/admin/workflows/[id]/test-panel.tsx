@@ -45,6 +45,8 @@ export function TestPanel({ workflowId }: { workflowId: string }) {
 
   const run = () => {
     setError(null);
+    setResult(null);
+    resetExecution();
     startTransition(async () => {
       try {
         const next = await testWorkflowAction(workflowId, {
@@ -79,38 +81,38 @@ export function TestPanel({ workflowId }: { workflowId: string }) {
       <div className="flex flex-wrap items-center gap-2">
         <h2 className="text-lg font-semibold">הרצת בדיקה</h2>
         <span className="text-sm text-muted-foreground">
-          לא נשלחת הודעה, לא משתנה אף אורח, ולא נרשמת הרצה.
+          הבדיקה משתמשת בגרסה השמורה. שמרו את השינויים לפני הרצה. לא נשלחת הודעה ולא משתנים אורחים.
         </span>
       </div>
 
       <div className="flex flex-wrap items-end gap-3">
-        <label className="flex flex-col gap-1">
+        <label className="flex min-w-0 max-w-full flex-col gap-1">
           <span className="text-sm text-muted-foreground">תוכן ההודעה</span>
           <input
             value={messageText}
             onChange={(e) => setMessageText(e.target.value)}
             maxLength={4096}
-            className="min-h-11 w-64 rounded-md border border-input bg-background px-3"
+            className="min-h-11 w-64 max-w-full rounded-md border border-input bg-background px-3"
           />
         </label>
 
-        <label className="flex flex-col gap-1">
+        <label className="flex min-w-0 max-w-full flex-col gap-1">
           <span className="text-sm text-muted-foreground">כפתור שנלחץ</span>
           <input
             value={buttonPayload}
             onChange={(e) => setButtonPayload(e.target.value)}
             maxLength={256}
             placeholder="rsvp_attending"
-            className="min-h-11 w-48 rounded-md border border-input bg-background px-3"
+            className="min-h-11 w-48 max-w-full rounded-md border border-input bg-background px-3"
           />
         </label>
 
-        <label className="flex flex-col gap-1">
+        <label className="flex min-w-0 max-w-full flex-col gap-1">
           <span className="text-sm text-muted-foreground">תרחיש</span>
           <select
             value={guestCase}
             onChange={(e) => setGuestCase(e.target.value as DryRunGuestCase)}
-            className="min-h-11 w-64 rounded-md border border-input bg-background px-3"
+            className="min-h-11 w-64 max-w-full rounded-md border border-input bg-background px-3"
           >
             {DRY_RUN_GUEST_CASES.map((c) => (
               <option key={c} value={c}>
@@ -124,7 +126,7 @@ export function TestPanel({ workflowId }: { workflowId: string }) {
           {pending ? 'רץ…' : 'הרצה'}
         </Button>
         {result && (
-          <Button type="button" variant="outline" onClick={clear}>
+          <Button type="button" variant="outline" onClick={clear} disabled={pending}>
             ניקוי
           </Button>
         )}

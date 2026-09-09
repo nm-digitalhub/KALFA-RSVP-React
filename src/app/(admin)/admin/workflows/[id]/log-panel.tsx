@@ -115,13 +115,22 @@ function EventRow({
     <div
       data-node-id={isNode ? event.nodeId : undefined}
       onClick={toggle}
+      role={hasDetail ? 'button' : undefined}
+      tabIndex={hasDetail ? 0 : undefined}
+      aria-expanded={hasDetail ? isExpanded : undefined}
+      onKeyDown={(event) => {
+        if (hasDetail && (event.key === 'Enter' || event.key === ' ')) {
+          event.preventDefault();
+          setIsExpanded((value) => !value);
+        }
+      }}
       className={[
         'border-b border-border/60 px-3 py-2 text-xs',
         hasDetail ? 'cursor-pointer' : '',
         isHighlighted ? 'bg-muted' : '',
       ].join(' ')}
     >
-      <div className="flex items-baseline gap-2">
+      <div className="flex min-w-0 flex-wrap items-baseline gap-2">
         <span className="shrink-0 tabular-nums text-muted-foreground">
           {formatIsraelTime(event.timestamp)}
         </span>
@@ -205,7 +214,8 @@ export function ExecutionLogPanel() {
         <div
           ref={bodyRef}
           onScroll={handleScroll}
-          className="max-h-64 overflow-y-auto border-t border-border"
+          data-log-body
+          className="max-h-64 overflow-auto border-t border-border"
         >
           {events.map((event) => (
             <EventRow key={`${event.seq}`} event={event} selectedNodeId={selectedNodeId} />
