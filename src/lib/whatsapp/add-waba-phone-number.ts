@@ -1,6 +1,9 @@
 import 'server-only';
 
-import type { components } from '@/lib/whatsapp/generated/meta-schema';
+import type {
+  components,
+  paths,
+} from '@/lib/whatsapp/generated/phone-number-management';
 import { createMetaGraphClient } from '@/lib/whatsapp/graph-client';
 import { GRAPH_API_VERSION } from '@/lib/whatsapp/graph-version';
 
@@ -126,7 +129,7 @@ export async function addWabaPhoneNumber(
     body.preverified_id = preverifiedId;
   }
 
-  const client = createMetaGraphClient(normalizedAccessToken);
+  const client = createMetaGraphClient<paths>(normalizedAccessToken);
   const { data, error, response } = await client.POST(
     '/{Version}/{WABA-ID}/phone_numbers',
     {
