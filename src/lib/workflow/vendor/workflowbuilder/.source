@@ -1,0 +1,4 @@
+repo: https://github.com/synergycodes/workflowbuilder
+commit: 2d987d3b01618306eef898c0eb0c0d08ee207016
+date: 2026-09-04
+paths: packages/execution-core/src, packages/types/src
