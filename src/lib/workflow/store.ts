@@ -224,7 +224,29 @@ export function createRunStore(): RunStorePort {
           // signature rather than an ordinary state.
           ...(terminal ? { finished_at: new Date().toISOString() } : {}),
         })
-        .eq('id', runId);
+        .eq('id', runId)
+        // TERMINAL IS FINAL. A run that has already ended cannot be moved by a
+        // later write — the first terminal status wins and its finished_at
+        // stands.
+        //
+        // Added 2026-09-09, and not defensively: the race is documented
+        // upstream. `packages/temporal/.../cancellation-handling.decision-log.md`
+        // lists it as a known con — "if runGraph has already emitted
+        // execution_failed and is mid-updateStatus('failed') when the cancel
+        // arrives … updateExecutionStatus overwrites 'failed' -> 'cancelled'" —
+        // and records the close: "the terminal-state guard in database.ts; the
+        // overwrite is now a no-op." We vendored their runner without their
+        // guard.
+        //
+        // It is reachable here through pg-boss, not only through a cancel: the
+        // job carries `singletonKey`, but a worker that loses its lease mid-run
+        // while still executing lets a retry start a second attempt, and the
+        // slower of the two would otherwise stamp the row last.
+        //
+        // A no-op update is NOT an error in PostgREST — zero rows matched
+        // returns success — so a losing writer simply does nothing, which is
+        // exactly what it should do.
+        .not('status', 'in', `(${TERMINAL_RUN_STATUSES.join(',')})`);
 
       if (error) throw new Error(`setRunStatus failed: ${error.message}`);
     },

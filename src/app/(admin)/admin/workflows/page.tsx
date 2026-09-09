@@ -8,6 +8,7 @@ import { listWorkflows } from '@/lib/data/admin/workflows';
 
 import { createWorkflowAction } from './actions';
 import { ArmToggle } from './arm-toggle';
+import { DeleteWorkflowButton } from './row-actions';
 
 export const metadata: Metadata = { title: 'תהליכי אוטומציה' };
 
@@ -73,7 +74,10 @@ export default async function AdminWorkflowsPage() {
                   <td className="p-3 tabular-nums">{workflow.version}</td>
                   <td className="p-3">{formatDateTime(workflow.updatedAt)}</td>
                   <td className="p-3">
-                    <ArmToggle id={workflow.id} isActive={workflow.isActive} />
+                    <div className="flex flex-wrap items-start gap-2">
+                      <ArmToggle id={workflow.id} isActive={workflow.isActive} />
+                      <DeleteWorkflowButton id={workflow.id} name={workflow.name} />
+                    </div>
                   </td>
                 </tr>
               ))}

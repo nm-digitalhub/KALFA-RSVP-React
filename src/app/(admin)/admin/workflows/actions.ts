@@ -5,11 +5,15 @@ import { redirect } from 'next/navigation';
 import { z } from 'zod';
 
 import {
+  type ArmResult,
+  type CancelRunResult,
+  type DeleteResult,
+  cancelRun,
   createWorkflow,
+  deleteWorkflow,
   saveWorkflowDefinition,
   setWorkflowActive,
   testWorkflow,
-  type ArmResult,
 } from '@/lib/data/admin/workflows';
 import {
   DRY_RUN_GUEST_CASES,
@@ -56,6 +60,32 @@ export async function setWorkflowActiveAction(
   const result = await setWorkflowActive(id, isActive);
   revalidatePath('/admin/workflows');
   revalidatePath(`/admin/workflows/${id}`);
+  return result;
+}
+
+/**
+ * Delete a workflow.
+ *
+ * Returns the refusal rather than throwing it: "armed" and "has runs" are
+ * ordinary answers the owner needs to read, not failures. Only an unexpected
+ * database error throws.
+ */
+export async function deleteWorkflowAction(formData: FormData): Promise<DeleteResult> {
+  const id = idSchema.parse(String(formData.get('id') ?? ''));
+  const result = await deleteWorkflow(id);
+  if (result.ok) revalidatePath('/admin/workflows');
+  return result;
+}
+
+/** Cancel a run that has not been picked up yet. */
+export async function cancelRunAction(formData: FormData): Promise<CancelRunResult> {
+  const workflowId = idSchema.parse(String(formData.get('workflowId') ?? ''));
+  const runId = idSchema.parse(String(formData.get('runId') ?? ''));
+
+  const result = await cancelRun(runId);
+  // Revalidated even on refusal: a refusal means the row moved on without the
+  // page noticing, so the table is stale either way.
+  revalidatePath(`/admin/workflows/${workflowId}`);
   return result;
 }
 

@@ -195,6 +195,106 @@ export async function setWorkflowActive(
   return { ok: true };
 }
 
+export type DeleteResult = { ok: true } | { ok: false; errors: string[] };
+
+/**
+ * Remove a workflow.
+ *
+ * TWO refusals, and both are the point of the feature rather than friction.
+ *
+ * ARMED. A live automation is switched off before it is removed. Deleting one
+ * in a single press would end an automation the owner may only have meant to
+ * pause, and the disarm is already one click away.
+ *
+ * HAS RUNS. `workflow_runs.workflow_id` is declared `on delete restrict`, and
+ * the table comment says why: "The audit record of what an automation did —
+ * workflow deletion is RESTRICTed against it rather than cascading." A run
+ * records that a guest's status was changed by an automation, so it outlives
+ * the automation. We ask BEFORE attempting the delete rather than translating
+ * a 23503 afterwards: the count is what the owner needs to hear, and Postgres's
+ * error carries a constraint name instead.
+ */
+export async function deleteWorkflow(id: string): Promise<DeleteResult> {
+  await requireAdmin();
+
+  const supabase = createAdminClient();
+
+  const workflow = await supabase
+    .from('workflows')
+    .select('is_active')
+    .eq('id', id)
+    .maybeSingle();
+
+  if (workflow.error) throw new Error('קריאת התהליך נכשלה');
+  if (!workflow.data) return { ok: false, errors: ['התהליך לא נמצא.'] };
+
+  if (workflow.data.is_active) {
+    return { ok: false, errors: ['התהליך פעיל. יש לכבות אותו לפני מחיקה.'] };
+  }
+
+  const runs = await supabase
+    .from('workflow_runs')
+    .select('id', { count: 'exact', head: true })
+    .eq('workflow_id', id);
+
+  if (runs.error) throw new Error('בדיקת ההרצות נכשלה');
+  if ((runs.count ?? 0) > 0) {
+    return {
+      ok: false,
+      errors: [
+        `לתהליך יש ${runs.count} הרצות שמורות והן תיעוד של מה שהאוטומציה עשתה, ` +
+          'לכן אי אפשר למחוק אותו. אפשר להשאיר אותו כבוי.',
+      ],
+    };
+  }
+
+  const { error } = await supabase.from('workflows').delete().eq('id', id);
+  if (error) throw new Error('מחיקת התהליך נכשלה');
+  return { ok: true };
+}
+
+export type CancelRunResult = { ok: true } | { ok: false; errors: string[] };
+
+/**
+ * Cancel a run that has not started yet.
+ *
+ * DELIBERATELY PENDING-ONLY. The vendored `runGraph` has no cancellation seam —
+ * it never polls for a cancel signal, and it cannot, because it is written to
+ * be replay-deterministic (see replay-audit.md rules 1-3: no clock, no I/O, no
+ * ambient state). Upstream gets cancellation from Temporal, which injects a
+ * `CancelledFailure` at the next activity boundary; pg-boss has no equivalent,
+ * so a run already inside `runGraph` will finish whatever it is doing.
+ *
+ * Offering a button that claims to stop a running graph and does not would be
+ * worse than offering none. What this does stop is the gap between enqueue and
+ * pickup, which for a queued backlog is the window that matters.
+ *
+ * The status filter is the whole concurrency story: the update matches only
+ * while the row is still `pending`, so a worker that claimed the job first
+ * simply leaves zero rows matched, and `handleWorkflowRun` refuses to execute a
+ * run whose status is no longer pending or running.
+ */
+export async function cancelRun(runId: string): Promise<CancelRunResult> {
+  await requireAdmin();
+
+  const supabase = createAdminClient();
+  const { data, error } = await supabase
+    .from('workflow_runs')
+    .update({ status: 'cancelled', finished_at: new Date().toISOString() })
+    .eq('id', runId)
+    .eq('status', 'pending')
+    .select('id');
+
+  if (error) throw new Error('ביטול ההרצה נכשל');
+  if ((data ?? []).length === 0) {
+    return {
+      ok: false,
+      errors: ['ההרצה כבר יצאה לדרך או הסתיימה, ולא ניתן לבטל אותה.'],
+    };
+  }
+  return { ok: true };
+}
+
 /**
  * Run a workflow against nothing, and report what it would have done.
  *
@@ -263,37 +363,5 @@ export async function listWorkflowRuns(
     createdAt: row.created_at,
     finishedAt: row.finished_at,
     errorMessage: row.error_message,
-  }));
-}
-
-export type RunStepSummary = {
-  nodeId: string;
-  nodeType: string;
-  status: string;
-  errorMessage: string | null;
-  startedAt: string;
-  finishedAt: string | null;
-};
-
-/** The per-node ledger for one run — what the run history could not show. */
-export async function listRunSteps(runId: string): Promise<RunStepSummary[]> {
-  await requireAdmin();
-
-  const supabase = createAdminClient();
-  const { data, error } = await supabase
-    .from('workflow_run_steps')
-    .select('node_id, node_type, status, error_message, started_at, finished_at')
-    .eq('run_id', runId)
-    .order('started_at', { ascending: true });
-
-  if (error) throw new Error('טעינת צעדי ההרצה נכשלה');
-
-  return (data ?? []).map((row) => ({
-    nodeId: row.node_id,
-    nodeType: row.node_type,
-    status: row.status,
-    errorMessage: row.error_message,
-    startedAt: row.started_at,
-    finishedAt: row.finished_at,
   }));
 }
