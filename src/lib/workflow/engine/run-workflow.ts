@@ -47,6 +47,7 @@ export async function runWorkflow(args: RunWorkflowArgs): Promise<RunWorkflowOut
     trigger,
     ledger: deps.ledger,
     guests: deps.guests,
+    alerts: deps.alerts,
   });
 
   // The runner's own event stream, appended to the execution log when one is
@@ -88,8 +89,21 @@ export async function runWorkflow(args: RunWorkflowArgs): Promise<RunWorkflowOut
       executionId: runId,
       definition: converted.definition,
       triggerPayload: { ...trigger },
+      // `variables` is the SERVER-side secrets bag in the vendored
+      // `ExecutionContext`, injected by the backend. KALFA injects none, so it
+      // stays empty — not an oversight, a different bag.
       variables: {},
-      global: {},
+      // `global` is the other one: "global variables defined manually in the
+      // builder". It was `{}` while the editor's variables panel was happily
+      // accepting definitions and persisting them, which made this input
+      // factually wrong about the diagram it came from.
+      //
+      // Filling it does not yet make the panel USABLE: reading a global from a
+      // node config needs `{{global.x}}`, and `resolve-template.ts` is
+      // deliberately not vendored, so the adapter still blocks that syntax.
+      // What it does is make the runner's input honest, so the resolver — when
+      // it lands — has nothing left to wire on this side.
+      global: converted.globals,
     },
     runner,
     events,

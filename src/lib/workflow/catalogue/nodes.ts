@@ -12,6 +12,9 @@ export const CATALOGUE: readonly CatalogueEntry[] = [
   { type: 'trigger.whatsapp_inbound', isTrigger: true },
   { type: 'logic.condition', isTrigger: false },
   { type: 'action.update_guest_status', isTrigger: false },
+  { type: 'action.send_whatsapp', isTrigger: false },
+  { type: 'action.notify_team', isTrigger: false },
+  { type: 'logic.set_value', isTrigger: false },
 ];
 
 // Lookup by the string stored in the diagram. `undefined` is rule 5: an unknown

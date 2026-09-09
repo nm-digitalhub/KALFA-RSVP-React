@@ -10,6 +10,7 @@ import { QUEUES, WORKFLOW_RETRY, type WorkflowRunJob } from '@/lib/queue/queues'
 
 import { runWorkflow, type RunWorkflowOutcome } from './engine/run-workflow';
 import { createGuestActions } from './guest-actions';
+import { createTeamAlerts } from './team-alerts';
 import type { WorkflowTriggerPayload } from './steps';
 import { createExecutionLog, createRunStore, createStepLedger, loadRunForExecution } from './store';
 
@@ -67,6 +68,7 @@ export async function handleWorkflowRun(
       ledger: createStepLedger(),
       runs: createRunStore(),
       guests: createGuestActions(),
+      alerts: createTeamAlerts(),
       // Only the real path logs. A dry run passes no log and returns its trace
       // directly — nothing to stream, and nothing to write.
       log: createExecutionLog(),

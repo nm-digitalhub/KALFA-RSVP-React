@@ -19,6 +19,7 @@ import type {
   StepClaim,
   StepLedgerPort,
   RunStorePort,
+  TeamAlertsPort,
 } from './ports';
 import { runWorkflow, type RunWorkflowOutcome } from './run-workflow';
 
@@ -59,9 +60,15 @@ export type DryRunStep = {
   errorMessage?: string;
 };
 
-/** Something the workflow would have done to real data, had this not been a test. */
+/**
+ * Something the workflow would have done to real data, had this not been a test.
+ *
+ * A closed union rather than a string: every kind here is an OUTWARD effect —
+ * a guest's row changed, a message left the building — and adding one should be
+ * a deliberate edit to this line, not something a new handler can do quietly.
+ */
 export type DryRunEffect = {
-  kind: 'submit_rsvp';
+  kind: 'submit_rsvp' | 'send_whatsapp' | 'notify_team';
   description: string;
 };
 
@@ -157,10 +164,39 @@ function createRecordingPorts(scenario: DryRunScenario) {
     async recordRsvpFromWhatsapp() {
       // The audit marker for a change that did not happen. Nothing to record.
     },
+
+    async sendWhatsAppReply(_contactId, body) {
+      // The whole point of the dry run: the owner sees the exact text that
+      // WOULD reach a guest, and no guest receives anything. Quoted in full
+      // rather than summarised — a message is judged by its wording.
+      effects.push({
+        kind: 'send_whatsapp',
+        description: `היה שולח לאורח בוואטסאפ: "${body}"`,
+      });
+      return { ok: true };
+    },
+  };
+
+  const alerts: TeamAlertsPort = {
+    async notifyTeam({ level, title, detail }) {
+      // Recorded, never posted. Without this the "test" button in the editor
+      // would put a real message in the team's Slack channel — an outward
+      // effect from the one control that promises none.
+      effects.push({
+        kind: 'notify_team',
+        description: `היה שולח התראה לצוות (${level}): "${title}"${detail === '' ? '' : ` — ${detail}`}`,
+      });
+      // `true`, because a dry run reports what the graph WOULD do. Answering
+      // `false` here would model the alert layer's suppression, which depends
+      // on live settings and on what was already sent today — an owner testing
+      // a diagram must not see their node "skipped" for a reason that belongs
+      // to a different run.
+      return { sent: true };
+    },
   };
 
   return {
-    deps: { ledger, runs, guests },
+    deps: { ledger, runs, guests, alerts },
     steps,
     effects,
     getStatus: () => status,
@@ -189,6 +225,17 @@ export async function dryRunWorkflow(args: {
     contactId: 'dry-run-contact',
     message_text: scenario.messageText,
     button_payload: scenario.buttonPayload,
+    // Recognisable stand-ins, for the same reason as the ids above. An owner
+    // testing `שלום {{trigger.guest_name}}` must SEE the substitution happen —
+    // an empty string would look identical to a broken reference, which is the
+    // one thing a dry run exists to tell apart.
+    //
+    // 'several' mirrors the live rule: with more than one guest behind a phone
+    // there is no answer to "whose name", so the field is empty and a template
+    // greeting silently loses its name. Seeing that in a test is the point.
+    guest_name: scenario.guestCase === 'one' ? 'דנה' : '',
+    event_name: 'אירוע לדוגמה',
+    event_date: '01.01.2027',
   };
 
   const outcome = await runWorkflow({

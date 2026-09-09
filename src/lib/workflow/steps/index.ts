@@ -8,13 +8,16 @@
 import { RSVP_STATUSES, type RsvpStatus } from '@/lib/constants';
 
 import {
+  CONDITION_BRANCH_HANDLES,
   CONDITION_FIELDS,
   CONDITION_OPERATORS,
+  NOTIFY_LEVELS,
   type ConditionField,
   type ConditionOperator,
   type KalfaNodeType,
 } from '../catalogue/types';
-import type { GuestActionsPort } from '../engine/ports';
+
+import type { GuestActionsPort, TeamAlertsPort } from '../engine/ports';
 import { PermanentNodeExecutionError } from '../vendor/workflowbuilder/execution-core/errors';
 import type { NodeExecutionResult } from '../vendor/workflowbuilder/execution-core/ports/activity-runner.port';
 
@@ -25,16 +28,47 @@ import type { NodeExecutionResult } from '../vendor/workflowbuilder/execution-co
 // What the webhook drain hands a run. Narrow and explicit: the condition node's
 // readable fields (CONDITION_FIELDS) are exactly the keys here, so the two
 // cannot drift without a type error.
+/**
+ * What a run starts with, and — since the template resolver landed — the whole
+ * of what `{{trigger.…}}` can name.
+ *
+ * The first four fields are the message. The last three are CONTEXT, added
+ * 2026-09-10 because a resolver with nothing to resolve is not a feature: the
+ * pipe was open and `{{trigger.message_text}}` was the only interesting thing
+ * in it, so a personalised reply still could not say the guest's name.
+ *
+ * `guest_name` is a FIRST name, through `deriveGuestFirstName` — the same
+ * derivation both WhatsApp send paths already use, so an automated greeting
+ * reads exactly like a manual one, household rows included ("משפחת כהן" yields
+ * nothing rather than greeting "שלום משפחת,").
+ *
+ * It is EMPTY when the phone backs more than one guest. That is the same
+ * refusal `action.update_guest_status` makes, for the same reason: with several
+ * guests behind one contact there is no answer to "whose name", and greeting
+ * the wrong person by name is worse than not greeting at all.
+ *
+ * ON PII. These land in `workflow_runs.trigger_payload` and in the
+ * `node_started` event payload. That store already holds `message_text` — the
+ * guest's own words — so a first name and the event they were invited to add no
+ * new CATEGORY of exposure. `redact.ts` is key-based and will not mask them, by
+ * design: a workflow that cannot see a name cannot personalise a message, which
+ * is the entire point of the field.
+ */
 export type WorkflowTriggerPayload = {
   eventId: string;
   contactId: string;
   message_text: string;
   button_payload: string;
+  /** First name of the single linked guest, or '' when there is not exactly one. */
+  guest_name: string;
+  event_name: string;
+  /** dd.MM.yyyy in Israel time — display-ready, never re-parsed. */
+  event_date: string;
 };
 
 export type StepContext = {
   trigger: WorkflowTriggerPayload;
-  deps: { guests: GuestActionsPort };
+  deps: { guests: GuestActionsPort; alerts: TeamAlertsPort };
 };
 
 export type StepHandler = (
@@ -119,20 +153,38 @@ export function evaluateCondition(
 }
 
 // Branches by naming a port. `isEdgeLive` in the runner fires the outgoing edge
-// whose `sourceHandle` matches, and prunes the rest — so the editor's two
-// branches must be drawn with handles 'true' and 'false'.
+// whose `sourceHandle` matches — by `===`, with no normalisation on either side —
+// and prunes the rest.
 //
-// Naming a port is a promise of a live route: if no edge carries that handle the
-// run ends `incomplete` with a DeadEnd naming this node. That is the intended
-// reading — a condition wired to only one branch genuinely has a dead end on the
-// other — and it surfaces to the owner instead of passing silently.
+// CORRECTED 2026-09-09. This returned 'true' / 'false', and the comment here
+// asserted that "the editor's two branches must be drawn with handles 'true' and
+// 'false'" as though that were arrangeable. It was not: those strings are not
+// handle ids and the editor could never emit one. A node drawn from the palette
+// carried a single source handle spelled 'source', so BOTH outgoing edges
+// matched neither port, every condition pruned both branches, and the run ended
+// `execution_incomplete` with a DeadEnd. The unit tests hand-built their edges
+// with `sourceHandle: 'true'` and so agreed with the comment rather than with
+// the editor — which is why tsc, eslint, the suite and the build all passed over
+// a node type that could not work.
+//
+// The ports are now `CONDITION_BRANCH_HANDLES`, the same ids the palette seeds
+// into `decisionBranches` and the SDK's decision renderer puts on the handles.
+//
+// Naming a port is still a promise of a live route: if no edge carries that
+// handle the run ends `incomplete` with a DeadEnd naming this node. That is the
+// intended reading — a condition wired to only one branch genuinely has a dead
+// end on the other — and it surfaces to the owner instead of passing silently.
+
 const condition: StepHandler = async (config, ctx) => {
   const field = readEnum(config, 'field', CONDITION_FIELDS, 'logic.condition');
   const operator = readEnum(config, 'operator', CONDITION_OPERATORS, 'logic.condition');
   const operand = readString(config, 'value');
 
   const result = evaluateCondition(field, operator, operand, ctx.trigger);
-  return { output: { result }, nextPort: result ? 'true' : 'false' };
+  return {
+    output: { result },
+    nextPort: result ? CONDITION_BRANCH_HANDLES.true : CONDITION_BRANCH_HANDLES.false,
+  };
 };
 
 // ---------------------------------------------------------------------------
@@ -204,8 +256,121 @@ const updateGuestStatus: StepHandler = async (config, ctx) => {
 
 // Total over KalfaNodeType: adding a type to the catalogue without a handler is
 // a compile error, not a run-time surprise.
+// ---------------------------------------------------------------------------
+// action.send_whatsapp
+// ---------------------------------------------------------------------------
+
+// The first step that speaks to a guest, and the first whose failure is visible
+// to someone outside this system.
+//
+// THE RECIPIENT IS NOT CONFIGURABLE. It is `ctx.trigger.contactId` — the
+// contact whose message started this run. There is no "to" field on the node
+// and there is deliberately no way to add one: an automation that could name
+// its own recipient is a broadcast tool, and the consent story for a broadcast
+// is nothing like the one for a reply.
+//
+// WHY A FREE-TEXT SEND IS LEGAL HERE. Meta allows a non-template message only
+// inside the 24-hour customer-service window a guest opens by writing to us.
+// Every path into this handler begins at `trigger.whatsapp_inbound`, so the
+// guest wrote moments ago and the window is open by construction. That is also
+// why 131049 — the per-user MARKETING cap — does not apply: this is a session
+// reply inside a conversation the guest started.
+//
+// The reasoning is load-bearing and it is tied to the trigger, not to this
+// node. A scheduled trigger or a delay step would break it, and the send would
+// come back 131047 ("re-engagement required"). When either lands, this handler
+// needs a template fallback — not a comment.
+//
+// A refusal is a COMPLETED step with `skipped: true`, matching
+// `action.update_guest_status`: nothing went wrong in the graph, the message
+// simply had nowhere to go, and the run log says which of the three reasons it
+// was.
+const sendWhatsapp: StepHandler = async (config, ctx) => {
+  const body = readString(config, 'body').trim();
+  if (body === '') {
+    return { output: { skipped: true, reason: 'empty_body' } };
+  }
+
+  const outcome = await ctx.deps.guests.sendWhatsAppReply(ctx.trigger.contactId, body);
+  if (!outcome.ok) {
+    return { output: { skipped: true, reason: outcome.reason ?? 'send_failed' } };
+  }
+
+  // The body is NOT echoed into the output. Step outputs land in
+  // `workflow_run_events`, which is append-only and read by the SSE stream —
+  // the message text is already in the node's own config, and copying it into
+  // the event log would duplicate guest-facing content into a second store for
+  // no gain.
+  return { output: { sent: true, length: body.length } };
+};
+
+// ---------------------------------------------------------------------------
+// action.notify_team
+// ---------------------------------------------------------------------------
+
+// The only action pointed INWARD. It crosses `TeamAlertsPort` rather than calling
+// the Slack module directly — see that port's comment for the two reasons
+// (`server-only` leaking into the worker bundle, and a dry run posting for real).
+//
+// The implementation behind the port is already fail-soft, deduped and
+// rate-limited, so a workflow firing on every inbound message cannot flood the
+// channel: the same title within the dedup window is suppressed by the alert
+// layer, not by anything here.
+//
+// `detail` passes through the template resolver like every other field, so an
+// alert can quote the guest. That is a deliberate widening of what reaches
+// Slack: the channel is staff-only and already carries `workflow run failed`
+// details, but an owner writing `{{trigger.message_text}}` here is choosing to
+// put a guest's words there. Worth knowing; not worth forbidding.
+const notifyTeam: StepHandler = async (config, ctx) => {
+  // The schema marks `title` required, so the FORM will not let an owner leave
+  // it blank. That constrains the form, not the row: a diagram saved before the
+  // field existed, or one arriving through the import modal, can still carry an
+  // empty title — and the SDK's validation plugin, which would catch it on the
+  // canvas, is Enterprise and not licensed here. An alert with no title tells a
+  // reader nothing, so it is skipped rather than sent as a blank line.
+  const title = readString(config, 'title').trim();
+  if (title === '') {
+    return { output: { skipped: true, reason: 'empty_title' } };
+  }
+
+  const { sent } = await ctx.deps.alerts.notifyTeam({
+    level: readEnum(config, 'level', NOTIFY_LEVELS, 'action.notify_team'),
+    title,
+    detail: readString(config, 'detail'),
+  });
+
+  // `sent: false` is an ordinary answer, not a failure — alerts disabled, the
+  // category switched off, a duplicate inside the dedup window, or the global
+  // per-minute cap. None of those is a reason to fail a guest's run, and the
+  // reason is on the output so the log says which happened.
+  return sent
+    ? { output: { sent: true } }
+    : { output: { sent: false, skipped: true, reason: 'alert_suppressed' } };
+};
+
+// ---------------------------------------------------------------------------
+// logic.set_value
+// ---------------------------------------------------------------------------
+
+// No I/O, and that is the feature.
+//
+// The value arrives here ALREADY RESOLVED — `resolveConfigTemplates` ran over
+// the whole config before this handler was called — so this returns it as an
+// output and downstream nodes read it as `{{nodes.<id>.value}}`.
+//
+// One line of code for a real composition primitive: define a greeting once and
+// use it in every branch, instead of repeating the same expression in three
+// message bodies and fixing a typo in two of them.
+const setValue: StepHandler = async (config) => ({
+  output: { value: readString(config, 'value') },
+});
+
 export const STEP_HANDLERS: Record<KalfaNodeType, StepHandler> = {
   'trigger.whatsapp_inbound': whatsappInbound,
   'logic.condition': condition,
   'action.update_guest_status': updateGuestStatus,
+  'action.send_whatsapp': sendWhatsapp,
+  'action.notify_team': notifyTeam,
+  'logic.set_value': setValue,
 };

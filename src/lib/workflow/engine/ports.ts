@@ -8,6 +8,8 @@
 // implementations; the tests wire fakes and assert on what was called.
 import type { RsvpStatus } from '@/lib/constants';
 
+import type { NotifyLevel } from '../catalogue/types';
+
 // ---------------------------------------------------------------------------
 // The execution ledger
 // ---------------------------------------------------------------------------
@@ -179,6 +181,58 @@ export interface GuestActionsPort {
     guestId: string,
     status: RsvpStatus,
   ): Promise<void>;
+
+  /**
+   * Reply to the guest who started this run, over WhatsApp.
+   *
+   * A FREE-TEXT session message, and that is only legal inside the 24-hour
+   * customer-service window a guest opens by writing to us. Every workflow that
+   * can reach this handler was started BY an inbound message, so the window is
+   * open by construction — the guest wrote a moment ago. `sendWhatsAppText`'s
+   * own comment states the rule: "allowed ONLY inside the 24h customer-service
+   * window a guest opened by replying … No template, no marketing cap."
+   *
+   * That also settles the compliance question: this is a session reply to a
+   * conversation the guest started, not a marketing send, so the 131049
+   * per-user marketing cap does not apply and no separate consent is required
+   * beyond the message they just sent us.
+   *
+   * The moment a scheduled trigger or a delay node exists, that reasoning stops
+   * holding — a send hours later can fall outside the window and Meta answers
+   * 131047. The outcome below is what makes that visible rather than silent.
+   */
+  sendWhatsAppReply(
+    contactId: string,
+    body: string,
+  ): Promise<{ ok: boolean; reason?: string }>;
+}
+
+/**
+ * An alert to the KALFA team — the one action whose audience is us, not a guest.
+ *
+ * A PORT rather than a direct `sendSlackAlert` call, and the reason is the rule
+ * at the top of this file: everything downstream of it stays free of
+ * `server-only`. `@/lib/alerts/slack` is server-only, reads a file, and builds a
+ * Supabase admin client — importing it from a step handler pulled all three into
+ * the module the WORKER bundles and the tests import, and every test that
+ * touches a handler failed at import with "This module cannot be imported from a
+ * Client Component module". Measured, not predicted: that is how this port came
+ * to exist.
+ *
+ * The second reason is the dry run. Without a seam here, pressing "test" in the
+ * editor would post a REAL message to the team's Slack channel — an outward
+ * effect from a button whose entire promise is that it has none.
+ *
+ * `sent: false` is an ORDINARY answer, not a failure: alerts disabled, the
+ * category switched off, a duplicate inside the dedup window, or the global
+ * per-minute cap. None of those is a reason to fail a guest's run.
+ */
+export interface TeamAlertsPort {
+  notifyTeam(input: {
+    level: NotifyLevel;
+    title: string;
+    detail: string;
+  }): Promise<{ sent: boolean }>;
 }
 
 /**
@@ -210,6 +264,12 @@ export type WorkflowEngineDeps = {
   ledger: StepLedgerPort;
   runs: RunStorePort;
   guests: GuestActionsPort;
+  /**
+   * Required, not optional. An optional alerts port would mean a workflow
+   * carrying `action.notify_team` runs to "completed" while the alert silently
+   * goes nowhere — the exact failure that node exists to prevent.
+   */
+  alerts: TeamAlertsPort;
   /** Omitted by the dry run, which returns its trace directly. */
   log?: ExecutionLogPort;
 };

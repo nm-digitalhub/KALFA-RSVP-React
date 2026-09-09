@@ -8,6 +8,8 @@
 // second pass returns the first pass's output and touches nothing.
 import { describe, expect, it, vi } from 'vitest';
 
+import { CONDITION_BRANCH_HANDLES } from '../catalogue/types';
+
 import {
   STEP_LEASE_MS,
   type GuestActionsPort,
@@ -67,11 +69,27 @@ function fakeGuests(guestCount = 1) {
       submitted.push({ token, status: input.status });
       return { ok: true };
     }),
+    sendWhatsAppReply: vi.fn(async () => ({ ok: true })),
     recordRsvpFromWhatsapp: vi.fn(async (_e, guestId) => {
       logged.push(guestId);
     }),
   };
   return { port, submitted, logged };
+}
+
+function fakeAlerts() {
+  const sent: { level: string; title: string; detail: string }[] = [];
+  return {
+    port: {
+      notifyTeam: vi.fn(
+        async (input: { level: string; title: string; detail: string }) => {
+          sent.push(input);
+          return { sent: true };
+        },
+      ),
+    },
+    sent,
+  };
 }
 
 function fakeRuns() {
@@ -90,17 +108,21 @@ function deps(guestCount = 1): WorkflowEngineDeps & {
   _guests: ReturnType<typeof fakeGuests>;
   _ledger: ReturnType<typeof fakeLedger>;
   _runs: ReturnType<typeof fakeRuns>;
+  _alerts: ReturnType<typeof fakeAlerts>;
 } {
   const ledger = fakeLedger();
   const guests = fakeGuests(guestCount);
   const runs = fakeRuns();
+  const alerts = fakeAlerts();
   return {
     ledger: ledger.port,
     guests: guests.port,
     runs: runs.port,
+    alerts: alerts.port,
     _ledger: ledger,
     _guests: guests,
     _runs: runs,
+    _alerts: alerts,
   };
 }
 
@@ -109,6 +131,9 @@ const TRIGGER = {
   contactId: 'contact-1',
   message_text: 'כן אני מגיע',
   button_payload: '',
+  guest_name: 'דנה',
+  event_name: 'אירוע בדיקה',
+  event_date: '01.01.2027',
 };
 
 // The slice, as the editor would save it: trigger → condition → action.
@@ -160,7 +185,7 @@ function slice(keyword = 'כן'): Fixture {
     ],
     edges: [
       { id: 'e1', source: 't', target: 'c', sourceHandle: null },
-      { id: 'e2', source: 'c', target: 'a', sourceHandle: 'true' },
+      { id: 'e2', source: 'c', target: 'a', sourceHandle: CONDITION_BRANCH_HANDLES.true },
     ],
   };
 }
@@ -198,7 +223,11 @@ describe('runWorkflow', () => {
 
     expect(outcome.status).toBe('incomplete');
     if (outcome.status !== 'incomplete') return;
-    expect(outcome.deadEnds).toEqual([{ nodeId: 'c', port: 'false' }]);
+    // The DeadEnd names the HANDLE the condition asked for, so the owner can
+    // match it to the handle on the canvas rather than to a word.
+    expect(outcome.deadEnds).toEqual([
+      { nodeId: 'c', port: CONDITION_BRANCH_HANDLES.false },
+    ]);
     expect(d._guests.submitted).toHaveLength(0);
   });
 
@@ -342,7 +371,21 @@ describe('a graph that fails the contract never executes', () => {
     expect(d._runs.statuses).toEqual(['failed']);
   });
 
-  it('blocks a template reference before anything runs', async () => {
+  it('fails the step, not the conversion, on an unresolvable reference', async () => {
+    // This used to assert the opposite: that the graph was refused before a
+    // single node ran. That was the right contract while `{{…}}` could not be
+    // resolved at all — passing it through would have sent the raw characters
+    // to a guest.
+    //
+    // With the resolver vendored the check MOVED rather than disappeared, and
+    // it had to: `{{trigger.guest.name}}` is unresolvable, but
+    // `{{trigger.message_text}}` is perfectly valid and equally unresolvable at
+    // save time, because no message has arrived while the owner is drawing.
+    // Only a live context can tell the two apart.
+    //
+    // So the run now STARTS, and the step raises
+    // `PermanentNodeExecutionError('unresolved_template_reference')` — which is
+    // permanent on purpose: a typo does not fix itself on the second attempt.
     const d = deps();
     const withReference = slice();
     withReference.nodes[2]!.data.properties = {
@@ -353,6 +396,10 @@ describe('a graph that fails the contract never executes', () => {
     const outcome = await run(withReference, d);
 
     expect(outcome.status).toBe('failed');
-    expect(d.ledger.claimStep).not.toHaveBeenCalled();
+    // The ledger IS reached now — the graph is valid, one step in it is not.
+    expect(d.ledger.claimStep).toHaveBeenCalled();
+    // And nothing was written for the guest: the throw happens before the
+    // handler, so no side effect landed.
+    expect(d._guests.submitted).toHaveLength(0);
   });
 });
