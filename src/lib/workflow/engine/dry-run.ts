@@ -244,6 +244,11 @@ export async function dryRunWorkflow(args: {
     workflowId,
     storedDefinition,
     trigger,
+    // The server-injected bag, with a stand-in for the same reason the trigger
+    // ids above have one: an owner writing `{{variables.app_url}}` must SEE the
+    // substitution happen. A real origin here would also invite copying a live
+    // link out of a test trace.
+    variables: { app_url: 'https://dry-run.example' },
     deps: recording.deps,
   });
 

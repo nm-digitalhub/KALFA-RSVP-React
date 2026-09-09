@@ -7,6 +7,7 @@ import type { PgBoss } from 'pg-boss';
 
 import { deterministicJobId } from '@/lib/queue/deterministic-id';
 import { QUEUES, WORKFLOW_RETRY, type WorkflowRunJob } from '@/lib/queue/queues';
+import { getAppOrigin } from '@/lib/url';
 
 import { runWorkflow, type RunWorkflowOutcome } from './engine/run-workflow';
 import { createGuestActions } from './guest-actions';
@@ -64,6 +65,16 @@ export async function handleWorkflowRun(
     workflowId: run.workflowId,
     storedDefinition: run.storedDefinition,
     trigger: run.triggerPayload as unknown as WorkflowTriggerPayload,
+    // The server-injected bag, resolved HERE because `getAppOrigin` is
+    // `server-only` and the engine deliberately is not — see
+    // `RunWorkflowArgs.variables`.
+    //
+    // `app_url` is the one value that must not come from the builder. It is the
+    // origin every shareable KALFA link is built on, validated from the
+    // APP_ORIGIN server var and never from a request header, so a workflow can
+    // put a link in a guest's message without an owner typing a URL that a typo
+    // or a paste could redirect.
+    variables: { app_url: await getAppOrigin() },
     deps: {
       ledger: createStepLedger(),
       runs: createRunStore(),

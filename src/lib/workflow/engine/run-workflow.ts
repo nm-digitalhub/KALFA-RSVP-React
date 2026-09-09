@@ -17,6 +17,26 @@ export type RunWorkflowArgs = {
   /** `workflows.definition` exactly as stored. Parsed and validated by the adapter. */
   storedDefinition: unknown;
   trigger: WorkflowTriggerPayload;
+  /**
+   * The SERVER-side bag, reachable from a node config as `{{variables.<name>}}`.
+   *
+   * Passed IN rather than computed here, and that is the whole design. The only
+   * value worth putting in it today is the app's canonical origin, which lives
+   * behind `getAppOrigin()` in a `server-only` module — importing that here
+   * would drag `server-only`, a file read and a Supabase client into the module
+   * the worker bundles and every engine test imports. That mistake was made once
+   * already this session with the Slack alert, and the whole suite failed at
+   * import. So the caller supplies it: `enqueue.ts` on the live path, the dry run
+   * on the test path.
+   *
+   * WHY THIS BAG EXISTS AT ALL, given `global` already does. Trust. `global` is
+   * whatever an owner typed into the variables panel — forgeable by anyone who
+   * can edit the diagram. `variables` is injected by the server and an owner
+   * cannot reach it. Anything a message must not get wrong belongs here: with
+   * this empty, an owner wanting to link to the site had to type the URL into a
+   * global, so a typo or a paste silently changed where guests were sent.
+   */
+  variables?: Record<string, unknown>;
   deps: WorkflowEngineDeps;
 };
 
@@ -136,20 +156,32 @@ export async function runWorkflow(args: RunWorkflowArgs): Promise<RunWorkflowOut
       executionId: runId,
       definition: converted.definition,
       triggerPayload: { ...trigger },
-      // `variables` is the SERVER-side secrets bag in the vendored
-      // `ExecutionContext`, injected by the backend. KALFA injects none, so it
-      // stays empty — not an oversight, a different bag.
-      variables: {},
-      // `global` is the other one: "global variables defined manually in the
-      // builder". It was `{}` while the editor's variables panel was happily
-      // accepting definitions and persisting them, which made this input
-      // factually wrong about the diagram it came from.
+      // `variables` is the SERVER-side bag in the vendored `ExecutionContext`,
+      // injected by the backend and unreachable from the builder. See
+      // `RunWorkflowArgs.variables` for why it is passed in rather than built
+      // here, and why it is not the same thing as `global` below.
       //
-      // Filling it does not yet make the panel USABLE: reading a global from a
-      // node config needs `{{global.x}}`, and `resolve-template.ts` is
-      // deliberately not vendored, so the adapter still blocks that syntax.
-      // What it does is make the runner's input honest, so the resolver — when
-      // it lands — has nothing left to wire on this side.
+      // `run_id` and `workflow_id` are added rather than taken from the caller:
+      // this function already knows them, and a caller free to supply its own
+      // could put a different run's id in a team alert. They are also the two
+      // values that make an alert traceable back to the run that raised it.
+      variables: {
+        ...args.variables,
+        run_id: runId,
+        workflow_id: workflowId,
+      },
+      // `global` is the other one: "global variables defined manually in the
+      // builder" — whatever the owner typed into the variables panel. It was
+      // `{}` while that panel was happily accepting definitions and persisting
+      // them, which made this input factually wrong about the diagram it came
+      // from.
+      //
+      // Both bags are live: `resolve-template.ts` is vendored, imported by
+      // `activity-runner.ts`, and runs over every field of every node config
+      // before its handler sees it. All four namespaces resolve —
+      // `{{trigger.…}}`, `{{nodes.<id>.…}}`, `{{global.…}}` and
+      // `{{variables.…}}` — with `?` for safe navigation and
+      // `| default:'…'` for a fallback.
       global: converted.globals,
     },
     runner,

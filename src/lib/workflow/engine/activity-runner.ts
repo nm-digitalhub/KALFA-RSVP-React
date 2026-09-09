@@ -189,12 +189,24 @@ export function createActivityRunner<TNode extends RunnableNode>(
       }
 
       const rawConfig = isConfigObject(node.config) ? node.config : {};
-      // Resolved AFTER the ledger claim, so a replay of an already-completed
-      // node returns its stored result without re-resolving — and BEFORE the
-      // handler, which therefore never has to know templates exist.
-      const config = resolveConfigTemplates(rawConfig, context) as Record<string, unknown>;
 
       try {
+        // INSIDE the try, and that placement is the whole point of this block.
+        //
+        // Resolution sat outside it and threw past `failStep`, which cost two
+        // things at once. The owner got a failed run with no line naming the
+        // step or the token — the resolver's message is specific and it was
+        // being discarded. And the row this attempt had just CLAIMED stayed
+        // `running`, so a pg-boss retry met it, read `in_flight`, and aborted;
+        // the run was then stuck for the full 15-minute lease over an error that
+        // is permanent and will never succeed on a retry.
+        //
+        // Still AFTER the claim, which is the ordering that matters for
+        // correctness: a replay of an already-completed node returns its stored
+        // result without re-resolving. And still BEFORE the handler, which
+        // therefore never has to know templates exist.
+        const config = resolveConfigTemplates(rawConfig, context) as Record<string, unknown>;
+
         const result = await handler(config, { trigger, deps: { guests, alerts } });
         // Persisted AFTER the side effect and BEFORE the runner propagates, so a
         // crash between the two leaves the row 'running' — visible as stuck

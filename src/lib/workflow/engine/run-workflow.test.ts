@@ -202,6 +202,19 @@ function run(storedDefinition: unknown, d: WorkflowEngineDeps, runId = 'run-1') 
 
 // --- the happy path --------------------------------------------------------
 
+/** An ExecutionLogPort that keeps every event, so a test can read the run log. */
+function collectingLog() {
+  const rows: { type: string; nodeId?: string; payload?: unknown }[] = [];
+  return {
+    port: {
+      appendEvent: async (args: { type: string; nodeId?: string; payload?: unknown }) => {
+        rows.push(args);
+      },
+    },
+    rows,
+  };
+}
+
 describe('runWorkflow', () => {
   it('runs the slice and actually changes the guest', async () => {
     const d = deps();
@@ -408,18 +421,6 @@ describe('the execution log names steps the way the owner does', () => {
   // The log used to render every row — and the dead-end line, which is the one
   // that tells an owner what to FIX — with the node's uuid. `label` was already
   // on BaseNode, lifted out of the properties by the adapter; nothing read it.
-  function collectingLog() {
-    const rows: { type: string; nodeId?: string; payload?: unknown }[] = [];
-    return {
-      port: {
-        appendEvent: async (args: { type: string; nodeId?: string; payload?: unknown }) => {
-          rows.push(args);
-        },
-      },
-      rows,
-    };
-  }
-
   it('puts the label on every node event, and on a dead end', async () => {
     const log = collectingLog();
     const d = deps();
@@ -530,5 +531,87 @@ describe('the execution log names steps the way the owner does', () => {
 
     const started = log.rows.find((row) => row.type === 'node_started');
     expect((started?.payload as { nodeLabel?: string } | undefined)?.nodeLabel).toBeUndefined();
+  });
+});
+
+describe('a template failure leaves a usable trace', () => {
+  // A trigger AND the failing node. The first version of this omitted the
+  // trigger, so the adapter rejected the graph with `no_start_node` before
+  // `runGraph` ever ran — the run "failed" and both assertions passed without
+  // the code under test being reached at all.
+  const graph = {
+    name: 'בדיקה',
+    layoutDirection: 'DOWN',
+    nodes: [
+      {
+        id: 't',
+        type: 'node',
+        position: { x: 0, y: 0 },
+        data: {
+          type: 'trigger.whatsapp_inbound',
+          icon: 'Lightning',
+          properties: { label: 'הודעה נכנסת' },
+        },
+      },
+      {
+        id: 'n',
+        type: 'node',
+        position: { x: 0, y: 0 },
+        data: {
+          type: 'action.send_whatsapp',
+          icon: 'Lightning',
+          properties: { label: 'שליחה לאורח', body: '{{trigger.no_such_field}}' },
+        },
+      },
+    ],
+    edges: [{ id: 'e1', source: 't', target: 'n', sourceHandle: null }],
+  };
+
+  it('records the step as failed instead of abandoning its claimed row', async () => {
+    // The defect: `resolveConfigTemplates` threw from OUTSIDE the try that calls
+    // `failStep`. Two costs at once — no failure line for the owner, and a row
+    // left `running` that made a pg-boss retry read `in_flight` and abort, so a
+    // permanent error held the run for the full 15-minute lease.
+    const d = deps();
+
+    const outcome = await runWorkflow({
+      runId: 'run-tmpl',
+      workflowId: 'wf-tmpl',
+      storedDefinition: graph,
+      trigger: TRIGGER,
+      deps: d,
+    });
+
+    expect(outcome.status).toBe('failed');
+
+    // This fake DELETES on failStep (a failed step is retryable), so an absent
+    // row is the proof that failStep ran. Before the fix the row was still
+    // sitting there as `running` — which is what made a retry read `in_flight`.
+    expect(d._ledger.rows.has('run-tmpl:n')).toBe(false);
+    // The trigger before it did complete, so an empty ledger would not prove it.
+    expect(d._ledger.rows.get('run-tmpl:t')?.status).toBe('done');
+  });
+
+  it('puts the offending token in the log, where the owner reads it', async () => {
+    const log = collectingLog();
+    const d = deps();
+
+    await runWorkflow({
+      runId: 'run-tmpl2',
+      workflowId: 'wf-tmpl2',
+      storedDefinition: graph,
+      trigger: TRIGGER,
+      deps: { ...d, log: log.port },
+    });
+
+    const failure = log.rows.find((row) => row.type === 'node_failed');
+    const payload = failure?.payload as
+      | { error?: { message?: string }; nodeLabel?: string }
+      | undefined;
+
+    // The resolver's message is specific, and it was being discarded. Both
+    // halves matter: WHICH step, and WHICH token.
+    expect(payload?.nodeLabel).toBe('שליחה לאורח');
+    expect(payload?.error?.message).toContain('{{trigger.no_such_field}}');
   });
 });
