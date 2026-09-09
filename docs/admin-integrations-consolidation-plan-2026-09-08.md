@@ -2,7 +2,90 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**תאריך:** 2026-09-08 · **סטטוס:** תוכנית בלבד — לא שונו קוד, DB או הגדרות. לא בוצעו שליחות, שיחות, רכישות או קריאות כתיבה לספקים.
+**תאריך:** 2026-09-08 · **עודכן:** 2026-09-09 · **סטטוס:** ⚠️ **כבר לא "תוכנית בלבד".** חלקים בוצעו, נפרסו ואומתו בייצור בלילה שבין 8 ל-9.9. ראו §0.0.
+
+---
+
+## 0.0 עדכון 2026-09-09 — מה כבר בוצע, ומה שהתוכנית כתבה ולא נכון עוד
+
+התוכנית נכתבה כמסמך מדידה, אבל מאז נעשו עליה עבודות. הסעיף הזה הוא הדלתא. **כל שורה למטה היא MEASURED מהלילה הזה** (קריאות חיות ל-Meta, ל-Voximplant ול-DB, ושליחות אמיתיות).
+
+### בוצע ונפרס
+
+| # | מה | מצב |
+|---|---|---|
+| G5 | **גרסת Graph אוחדה** — קבוע יחיד `GRAPH_API_VERSION` (`src/lib/whatsapp/graph-version.ts`). שישה מקומות שקיבעו גרסה בעצמם (v21 ×2, v23 ×4) + ברירת המחדל של ה-SDK מייבאים אותו עכשיו. `WHATSAPP_GRAPH_VERSION` בוטל (מעולם לא הוגדר). `graph-version.test.ts` סורק את עץ הקוד ומפיל כל גרסה קשיחה חדשה. | **סגור** |
+| — | **מספרי טלפון בינלאומיים לאורחים** — `isAcceptablePhoneInput` (תוספת מעל `ISRAELI_PHONE_RE`, לא החלפה). אומת חי: הזמנה נמסרה ונקראה ב-‎+33756982370. לא היה בתוכנית. | **חדש** |
+| — | **כפתורי אישור הגעה לכל סוגי האירועים** — `components.rsvp_quick_reply` היה `{"brit":true}` בארבע התבניות נושאות-הכפתורים, ולכן כל לחיצה בחתונה/בר מצווה/… נבלעה. מיגרציה `20260908194853`. אומת: לחיצה חיה → `rsvp_attending` → אורח עבר ל-`attending`. | **חדש** |
+| — | **תשתית מוקלדת ל-Meta Graph — נכתבה, לא מחוברת.** שלושה מודולים חדשים, כולם `server-only`, **אפס צרכנים כרגע**: `whatsapp-client.ts` (מפעל ל-`@kapso/whatsapp-cloud-api@0.3.0` שמעביר `graphVersion: GRAPH_API_VERSION` במקום ברירת המחדל v23.0 של החבילה) · `graph-client.ts` (לקוח `openapi-fetch@0.17.0` מוקלד מול `paths` של המפרט) · `add-waba-phone-number.ts` (Task 2.1). בנוסף `generated/meta-schema.d.ts` — 1.06MB טיפוסים שנוצרו מ-`meta-openapi/business-messaging-api_v23.0.yaml` (facebook/openapi). זו הקרקע ל-Phase 2, ולא התנהגות שנפרסה. | **תשתית** |
+| — | **מתג `whatsapp_consent_required`** ב-`/admin/channels` (לשונית WhatsApp) — תאום מדויק של `call_consent_required`, כולל אזהרת סעיף 30א והתראת `security` ב-Slack. מיגרציה `20260908212916`. **הבעלים כיבה אותו 9.9 00:37.** לא היה בתוכנית. | **חדש** |
+
+### מה שהתוכנית כתבה ואינו נכון עוד
+
+- **D3 — הגרסה היא `v25.0`, לא `v24.0`.** מדוד: קריאות ל-v24.0 ול-v25.0 מחזירות תוצאה זהה על WABA `990921550130385`, וארבע הזמנות אמיתיות נשלחו, נמסרו ונקראו על v25.0 משני המספרים העסקיים.
+- **Task 1.3 כבר קיים** (`graph-version.ts`), אבל **בלי** override מ-env — בניגוד לחתימה שבשורה ~723. הקבוע הוא `as const` ובלי ייבואים בכוונה, כדי שגם ה-CLI שרץ ב-tsx וגם חבילת ה-worker יוכלו לטעון אותו.
+- **Task 2.1 (אימות גוף `POST /{waba}/phone_numbers`) — נסגר.** המפרט הרשמי של Meta (facebook/openapi, commit `e96a1c9`) קובע: `phone_number` + `verified_name` חובה, `cc` אופציונלי, המספר בפורמט E.164 בלי `+` **עם** קידומת מדינה, ו-`verified_name` באורך 2–75. שימו לב: **75, לא 512** כפי שכתוב ב-Zod ב-Task 2.3. `src/lib/whatsapp/add-waba-phone-number.ts` כבר מממש את זה.
+- **Task 2.2 — ארבע מתוך שבע הפונקציות כבר קיימות בחבילה, והחבילה כבר מותקנת.** `@kapso/whatsapp-cloud-api@0.3.0` מספקת `requestCode` / `verifyCode` / `register` / `deregister` + `GraphApiError` ממוין. היא **אינה** מכסה רשימת/הוספת מספרים, `debug_token` או מנויי webhook — אלה נשארים fetch ידני (ולכן `graph-client.ts` המוקלד קיים לצדה). ברירת המחדל שלה היא v23.0; `createWhatsAppManagementClient()` ב-`whatsapp-client.ts` הוא נקודת הכניסה היחידה, והוא מעביר `graphVersion: GRAPH_API_VERSION` — אין לבנות `new WhatsAppClient` ישירות. **המפעל עדיין ללא קוראים**; החיווט הוא Phase 2.
+- **✅ פער הגרסאות בוטל מהשורש — מטא כן מפרסמת מפרט OpenAPI ל-v25.0.** קודם כתבתי כאן שאין כזה. זו הייתה טעות שנבעה מהסתמכות על תוויות: `info.version: v23.0` בריפו `facebook/openapi`, `Version: v18.0` ב-environment של Postman, `example: v22.0` בכותרת תגובה. מטא לא מפרסמת מונוליט מעודכן — היא מפרסמת **מסמך OpenAPI לכל API ולכל גרסה**, ישירות מעמודי ה-reference:
+  `…/reference/<resource>/<api>/<version>.openapi.yaml`
+  MEASURED 2026-09-09: v25.0 מחזיר 200 לשישה ממשקים; v26.0 מחזיר 500 לכולם — ראיה עצמאית לכך ש-v25.0 הוא החדש שפורסם, ואישור להחלטת D3. `npm run meta:types` נכתב מחדש: הוא קורא את `GRAPH_API_VERSION`, מוריד את ששת המפרטים לאותה גרסה אל `openapi/meta/` (מקומטים — קלון נקי חייב לייצר בלי רשת), מאמת ש-`info.version` שחזר תואם למה שביקשנו, ומייצר טיפוסים נפרדים לכל ממשק. **המונוליט של v23.0 (1.06MB) נמחק**; במקומו שישה קבצים ממוקדים, 121KB בסך הכול, כולם v25.0.
+  | ממשק | מה הוא פותח |
+  |---|---|
+  | `phone-number-management` | Task 2.1 — רשימת והוספת מספרים |
+  | `subscribed-apps` | **מנויי webhook** — התוכנית רשמה אותם כ"fetch ידני" |
+  | `whatsapp-business-account` | משאב ה-WABA |
+  | `account-number` | ישות מספר החשבון |
+  | `add-phone-numbers` | זרימת ההוספה שמתחילה בצומת ה-business |
+  | `client-wabas` | חשבונות לקוח (BSP) |
+  ממשקים שאין להם מפרט באף גרסה שנוסתה: `message-template-management`, `messages`, `media`, `debug_token` — אלה נשארים fetch ידני, וזו רשימה מדודה ולא הערכה. `createMetaGraphClient` הפך לגנרי (`<paths>`), כך שכל מודול מביא את הטיפוסים של הממשק שהוא מדבר איתו ואין קובץ אחד שמקבע גרסה לכולם.
+- **`unified_cert_status` הוא תקלה במפרט של מטא — השדה פשוט לא קיים.** עברתי כאן שתי מסקנות שגויות לפני שמדדתי: קודם "v25.0 הסירה את השדה", אחר כך "הוא לא זמין לחשבון הזה". שתיהן היו הסקה מתוויות. המדידה, `npm run meta:verify`, שואלת ארבעה שדות על ארבע גרסאות:
+  | שדה | v23.0 | v24.0 | v25.0 | v26.0 |
+  |---|---|---|---|---|
+  | `unified_cert_status` | נדחה #100 | נדחה #100 | נדחה #100 | נדחה #100 |
+  | `name_status` | יש ערך | יש ערך | יש ערך | יש ערך |
+  | `username` | התקבל | התקבל | התקבל | התקבל |
+  | `code_verification_status` (ביקורת) | יש ערך | יש ערך | יש ערך | יש ערך |
+  מה שסוגר את זה הוא `name_status`: עמוד השדות הקנוני של מטא (`…/business-phone-numbers/phone-numbers`) מפרט `account_mode, code_method, code_verification_status, identity_key_hash, last_onboarded_time, max_phone_numbers_per_business, name_status, recipient_identity_key_hash, status` — **ו-`unified_cert_status` אינו שם כלל**. השדה שמחזיק את סטטוס ההסמכה הוא `name_status`, וה-enum שלו הוא זה שנושא `EXPIRED` ("the phone number's certificate has expired") ו-`NONE`. הוא עובד בכל ארבע הגרסאות; `unified_cert_status` נכשל בכולן. כלומר `unified_cert_status` מופיע **רק במפרטי ה-OpenAPI** — במונוליט v23 וגם במפרט הרשמי של v25.0 — ובשום מקום בתיעוד של מטא. זו תקלה במפרט, ולא סחיפת גרסה או הגבלת חשבון. אין מה "לתקן" אצלנו מעבר להחרגתו; אם Phase 2 צריך סטטוס הסמכה, השדה הוא `name_status`.
+  **אומת משלושה כיוונים בלתי-תלויים (2026-09-09):** על ארבע גרסאות (v23–v26); על שני WABA נפרדים (`990921550130385` הפרודקשן ו-`1643175460059621`); ובשני טוקנים שונים — טוקן ה-System User שב-`app_settings` וטוקן USER של אפליקציית KALFA-RSVP עם `whatsapp_business_management` + `whatsapp_business_messaging`. בכל שנים-עשר הצירופים `unified_cert_status` נדחה ב-#100 ו-`name_status` החזיר `APPROVED`. זה שולל גרסה, חשבון והרשאה כאחד.
+
+- **`host_platform` ו-`platform_type` הם אליאסים — לא פער.** תשובה חיה מחזירה `platform_type`, בעוד המפרט מצהיר `host_platform`; MEASURED: **שניהם מתקבלים ושניהם מחזירים `CLOUD_API`**. נבדק לפני שנרשם כפער, וזה לא כזה. רשום כאן כדי שלא ייפתח שוב.
+- **`messaging_limit_tier` ו-`username` מתקבלים אך אינם מוחזרים** על אף אחד משלושת ה-WABA שנבדקו. הם אינם שגיאה — פשוט ריקים כאן. אין להסיק מהם מצב, ואין לצפות להם בטיפוס ללא `| undefined`.
+- **החוזה המדוד של `GET /{WABA-ID}/phone_numbers` — מה שמתועד מול מה שעובד.** כל שורה נמדדה חי מול v25.0 ב-`npm run meta:verify`. זה החוזה שעליו Phase 2 בונה, ולא זה שכתוב במפרט.
+  | יכולת | מטא אומרת | בפועל |
+  |---|---|---|
+  | שדה `unified_cert_status` | קיים (מפרט v23 **וגם** v25 הרשמי) | ❌ לא קיים — נשלל על 4 גרסאות, 2 WABA, 2 טוקנים |
+  | שדה `name_status` | לא במפרט ה-OpenAPI, כן בתיעוד הפרוזה | ✅ זה השדה האמיתי לסטטוס הסמכה |
+  | שדה `username` | לא ברשימת v25.0 | ✅ מתקבל (ריק אצלנו) |
+  | `host_platform` / `platform_type` | המפרט אומר `host_platform` | ✅ **אליאסים** — שניהם מחזירים `CLOUD_API` |
+  | `filtering` על `account_mode` | נתמך | ✅ |
+  | `filtering` על `is_official_business_account` | נתמך | ✅ — **אבל רק עם `value: false` בוליאני**. `"false"` כמחרוזת נדחה |
+  | `filtering` על `messaging_limit_tier` | נתמך | ✅ |
+  | `sort=<field>.asc` / `.desc` | הפורמט המתועד, וגם היחיד שה-Graph API Explorer של מטא מציע | ❌ נדחה |
+  | `sort=<field>_ascending` / `_descending` | **כן מתועד** — בעמוד business-phone-numbers: `sort=['last_onboarded_time_ascending']`. שני מסמכי מטא סותרים | ✅ עובד גם חשוף, גם כמערך |
+  שני שדות המיון (`creation_time`, `last_onboarded_time`) ניתנים למיון אך **אינם ניתנים לקריאה** כשדות. הפורמט האמיתי חולץ מהודעת השגיאה: Graph מחזיר `Cannot sort by last_onboarded_time.desc_ascending` — כלומר הוא משרשר `_ascending` לערך שנשלח, מה שחושף את הסיומת הנכונה. **מלכודת שתפסה אותי:** הכישלון הראשון של סינון OBA היה **שלי** — שלחתי `"value":"false"` כמחרוזת. השגיאה הטעתה במפורש (`Filtering field … with operation 'equal' is not supported`) כי היא מאשימה את האופרטור בעוד הבעיה בטיפוס הערך. עם `"value":false` בוליאני זה עובד. הלקח לכל שאר הסינונים: השגיאה של Graph אינה מצביעה בהכרח על החלק השבור.
+  **מסקנה ל-Phase 2:** גם מיון וגם שלושת הסינונים אפשריים בשרת.
+  **ההגנה מיושמת בצינור:** `npm run meta:types` מתקן את המפרט בזיכרון לפני הייצור — מחליף את ה-enum של `sort` ל-`_ascending`/`_descending`, מסיר את `unified_cert_status` מהסכימה, ומחליף את אזכורו בהערת ה-`fields` באזהרה מנומקת. התיקון נעשה **בזיכרון בלבד**: הקובץ ב-`openapi/meta/` נשאר עותק נאמן של מה שמטא שירתה, כך ש-`git diff` בהרצה הבאה מראה מה מטא שינתה ולא מה הסקריפט עשה. **לכן `meta:verify`, שקורא את הקובץ הגולמי, ימשיך לדווח על `unified_cert_status` כאי-התאמה כל עוד מטא לא תיקנה — וזה מכוון:** השער מודד את מטא, לא את התיקון שלנו. הסרת השדה מהערת ה-`fields` חשובה במיוחד — היא הופכת ל-JSDoc, ומפתח שיעתיק ממנה את השם יקבל בקשה מתה. הדוח למטא: `docs/meta-api-discrepancies-report-2026-09-09.md`.
+- **הכלל שנגזר: רשימת השדות במפרט אינה מנבאת מה ה-API מקבל, בשני הכיוונים.** `unified_cert_status` מוצהר ונדחה; `username` אינו מוצהר ב-v25.0 ומתקבל. ולכן Graph דוחה את **כל** הבקשה על שדה אחד שאינו זמין — בניית `fields=` מהטיפוסים בלי סינון מייצרת קריאה מתה. `npm run meta:verify` הוא השער: להריץ אחרי כל `meta:types` ולפני חיווט Phase 2.
+- **v26.0 עונה לקריאות, אך אין לו מפרט OpenAPI.** MEASURED: שלושת השדות שנבדקו עובדים על v26.0, בעוד `…/v26.0.openapi.yaml` מחזיר 500 בכל ששת הממשקים. כלומר קפיצה ל-v26.0 אפשרית טכנית אך תשאיר את הטיפוסים מאחור — סיבה נוספת להישאר על v25.0 עד שמטא תפרסם.
+
+- **G2 — המספר השני מוגדר אצל Meta, לא "לא מוגדר".** מדוד: `1298694319994421` (‎+972 3-330-1505) — `CONNECTED`, `LIVE`, איכות `GREEN`, שם `APPROVED`, ואף שלח בהצלחה הזמנה אמיתית הערב. מה שחסר הוא **חיווט בצד קלפא** (אין תפקיד, אין טיפול ב-webhook ממנו), לא רישום אצל Meta. זה מקטין את Phase 1 ומחזק את הצורך בתפקיד `business_line_inbound`.
+- **§4.2 — ה-backfill של `voximplant_caller_id` ייכשל כפי שנכתב.** הערך החי הוא 11 ספרות **בלי** `+` (`97237219347`), וה-`case` שבמיגרציה מסנן לפי `^\+…` ולכן היה כותב `null`. יש להוסיף `+` כשהערך ספרות בלבד.
+- **§5.2 — רכישת מספר גיאוגרפי בישראל אינה יכולה לעבוד ב"מצב מספר ספציפי".** מדוד: `GetPhoneNumberCategories(IL)` מחזיר `can_list_phone_numbers: false` לכל הקטגוריות פרט ל-MOBILE, ו-`GetNewPhoneNumbers` נכשל עם שגיאה 529. הפלטפורמה בוחרת את המספר. ההגנה שהתוכנית מציעה ("לעולם לא מצב קטלוג") חייבת להתחלף בהצגת מחיר + אישור מוקלד לפני `AttachPhoneNumber` במצב קטלוג.
+
+### שאלות §9 שנסגרו
+
+- **Q3 — כן.** ה-DID היחיד בחשבון Voximplant הוא `97237219347`, `phone_id` 2303422, אזור TEL AVIV, ACTIVE, מקושר לאפליקציה 11107202 ו**לא** מקושר ל-rule (הניתוב לפי pattern). חידוש הבא: 2026-09-14, 5$ לחודש, `auto_charge` פעיל.
+- **Q4 — Owner** (`GetKeyRoles` → `role_id` 1). כלומר רכישה, קישור וביטול מספר אפשריים מהפאנל. `GetRegulationsAddress` הצליח, מה שמאשר את התפקיד בפועל.
+- **Q5 — `whatsapp_app_id` אינו קיים** ב-`app_settings` (מדוד). `META_APP_ID_WA` קיים ב-`.env.local` ואף קוד לא קורא אותו. ההחלטה עדיין פתוחה.
+
+### סיכונים §8 שנסגרו או השתנו
+
+- **סיכון 7 (טוקן) — חמור יותר ממה שנכתב, ושייך ל-Phase 0.** מדוד ב-`debug_token`: הטוקן הוא **USER ולא System User**, `expires_at: 0` (לא פוקע), אבל `data_access_expires_at = 2026-12-07` (התוכנית כתבה 2.12). ההרשאות רחבות מדי: `ads_management`, `ads_read`, `pages_*`. כל פעולת כתיבה ב-Phase 1 תיפול על טוקן כזה בעוד שלושה חודשים.
+- **סיכון 8 (רגולציה IL) — סגור.** לחשבון כבר יש כתובת רגולציה מאומתת: `regulation_address_id` 1418, `status: VERIFIED`. אין צורך בצעד ב-Control Panel.
+- **חדש — `code_verification_status: EXPIRED` על `1018741517998430` אינו תקלה.** הערך אינו מתועד כלל לשדה הזה (המפרט והתיעוד מגדירים רק VERIFIED/UNVERIFIED/NOT_VERIFIED). **כרטיס בריאות המספר חייב להתבסס על `health_status.can_send_message`** — הוא מוחזר לכל ארבע הישויות (מספר, WABA, עסק, אפליקציה) וכולן `AVAILABLE`. השדה `health_status` אינו במפרט הרשמי אך מוחזר חי.
+- **חדש — SIP calling אינו מוגדר** לשני המספרים (שגיאות 138024/138025 ב-`can_receive_call_sip`). לא משפיע על הודעות. מחוץ להיקף.
+
+---
 
 **Goal:** עמוד אחד לכל ספק (Meta/WhatsApp, Voximplant, ExtrA, Resend, Microsoft, SUMIT, Slack) תחת `/admin/integrations`, מודול "מספרים" משותף שמציג כל מספר טלפון מחובר ומאפשר להוסיף/לאמת/לקשר מספרים מהפאנל, והצפה של הנתונים שחסרים היום (בריאות וריאנטים, כיסוי webhooks, תוקף טוקן, גרסת Graph, מדיניות שליחה).
 
@@ -49,7 +132,7 @@
 |---|---|---|---|
 | D1 | היכן חיים המספרים | **שתי טבלאות חדשות** `provider_numbers` + `provider_number_roles` (§4). per-persona caller id = שורה לכל תפקיד → חייב טבלה, לא עמודה. | להוסיף 4 עמודות `voximplant_caller_id_<persona>` ל-`app_settings` — לא מכסה DIDs/מספר WA שני/היסטוריה; נדחה. |
 | D2 | יחס לתוכנית פיצול מספר הייבוא (3.9) | **התוכנית הזו מספקת את התשתית**: תפקיד `whatsapp_import_sender` בטבלת התפקידים מחליף את שתי העמודות `whatsapp_import_*` שהתוכנית ההיא הציעה (§3.2 שם). הלוגיקה של ניתוב ההודעות (`classifyInboundChannel`) נשארת שם ומקבלת את המזהה מהתפקיד. | להריץ את תוכנית 3.9 כפי שהיא (עמודות) ולהעביר אחר כך — עבודה כפולה. |
-| D3 | גרסת Graph אחת | **`GRAPH_API_VERSION = 'v24.0'`** (מוכח לשליחה על ה-WABA הזה — `docs/whatsapp-import-number-split-plan-2026-09-03.md` §1.1; פקיעה 2028-02-18 DOCS-ONLY) בקובץ אחד, מוצג בעמוד Meta מול "Meta latest" (v26.0). | לקפוץ ל-v26.0 עכשיו — לא נבדק על ה-WABA; דורש מעבר שדות ב-`statuses` (conversation/pricing שונו ב-v24+). |
+| D3 | גרסת Graph אחת | ✅ **בוצע — `v25.0`** (לא v24.0; ראו §0.0). `GRAPH_API_VERSION` (מוכח לשליחה על ה-WABA הזה — `docs/whatsapp-import-number-split-plan-2026-09-03.md` §1.1; פקיעה 2028-02-18 DOCS-ONLY) בקובץ אחד, מוצג בעמוד Meta מול "Meta latest" (v26.0). | לקפוץ ל-v26.0 עכשיו — לא נבדק על ה-WABA; דורש מעבר שדות ב-`statuses` (conversation/pricing שונו ב-v24+). |
 | D4 | drift קטגוריה ב-3 תבניות | **כפתור "אשר קטגוריה נוכחית"** שמעדכן `requested_category` ל-MARKETING (מפסיק את האזהרה האדומה + מתיעד). | להגיש מחדש כ-UTILITY — הכרעת whatsapp-meta-expert, לא של הפאנל. |
 | D5 | topic `catalog` במנוי ה-webhook | **להציג כ"מנוי זר" ולהציע הסרה** (DELETE subscription) מאחורי אישור; ההסרה עצמה DOCS-ONLY עד אימות ב-ctx7 במשימה 5.4. | להשאיר; לא מזיק (fields ריקים). |
 | D6 | מי רשאי לרכוש מספר Voximplant / לבצע register ב-Meta | **Platform Owner בלבד** (`requirePlatformOwner`), אישור מוקלד של המספר, מחיר מוצג. | `manage_voice` — מרחיב חשיפה כספית לכל staff עם ההרשאה. |
@@ -137,7 +220,7 @@ ExtrA: `sms_enabled`, `extra_sms_token`, `extra_sms_sender`. SMTP: 6 עמודו�
 | G2 | מספר WhatsApp שני לא מוגדר | `webhook_inbox`: `phone_number_id=1298694319994421` n=38, אחרון 2026-09-07; `webhook-inbox.ts:183-187` מזהה רק את `whatsapp_phone_number_id`; `webhook-detail.tsx:175` מציג "לא מוגדר ב-/admin/channels". המספר = `+972 3-330-1505` = גם `extra_sms_sender` = גם `company_contact_phone` (לפי תוכנית 3.9 §1.1). | MEASURED |
 | G3 | caller id אחד לכל הפרסונות | `voximplant-config.ts:97,157` — RSVP, meeting-confirm, sales קוראים את אותו `voximplant_caller_id`; call-me-now (`ConsoleCallMeNow`) — אין caller id נפרד בסכמה. | MEASURED |
 | G4 | וריאנטים לא מנוטרים | `template-health-sync.ts:58-65` מתאים `metaTemplates.find(t => t.name === row.name && t.language === row.language)` — רק שם המצביע; 28 וריאנטים ב-`components` לא נבדקים. `fetchTemplateHealth` **כבר מוריד את כל התבניות של ה-WABA** (`template-health.ts:45-69`) — הנתון קיים, לא נשמר. | MEASURED |
-| G5 | גרסת Graph מפוזרת | `channels.ts:89` v23 (fallback), `template-health.ts:16` v23, `whatsapp-import.ts:253` v23, `relocation/meta-templates.ts:34` v23, `relocation/preflight.ts:720` v21, `relocation/external.ts:201` v21, `client.ts` `DEFAULT_API_VERSION` של ה-SDK = v24.0 (`node_modules/whatsapp-api-js/lib/types.js:1`). Meta latest v26.0 (29.7.2026); v21 פוקע 21.1.2027, v23 8.10.2027, v24 18.2.2028. | MEASURED + DOCS-ONLY (changelog) |
+| G5 | ✅ **נסגר 9.9** — גרסת Graph מפוזרת (היה) | `channels.ts:89` v23 (fallback), `template-health.ts:16` v23, `whatsapp-import.ts:253` v23, `relocation/meta-templates.ts:34` v23, `relocation/preflight.ts:720` v21, `relocation/external.ts:201` v21, `client.ts` `DEFAULT_API_VERSION` של ה-SDK = v24.0 (`node_modules/whatsapp-api-js/lib/types.js:1`). Meta latest v26.0 (29.7.2026); v21 פוקע 21.1.2027, v23 8.10.2027, v24 18.2.2028. | MEASURED + DOCS-ONLY (changelog) |
 | G6 | מנוי webhook רחב, טיפול צר | MCP `devtools_webhook_list`: topic `whatsapp_business_account` עם **28** שדות + topic **`catalog`** (fields ריקים, זר). מטופלים ב-`webhook-processing.ts:78-150`: `message`, `status`, `template_status`, `template_category`, `template_category_misuse`, `template_quality` (6). השאר נשמרים גנרית (`route.ts:106-144`) ומסומנים processed בלי טיפול. | MEASURED |
 | G7 | אין בדיקת תוקף טוקן | אין קריאה ל-`debug_token` על `whatsapp_access_token` בשום מקום (grep `debug_token`: רק `relocation/env-validation.ts:238` על טוקן Ads). | MEASURED |
 | G8 | סטטוס אפליקציית Meta לא מוצג | MCP `devtools_app basic_settings` (היום): `contact_email_verified: false`, `data_deletion_url: null`, `support_url: null`, `privacy_policy_url: http://www.kalfa.me/en/privacy` (http), `terms_of_service_url: http://www.kalfa.me/terms`, `app_status: dev_mode`, `is_live: false`. Graph API אינו חושף mode/review (זיכרון `meta-devtools-mcp-app-status`). | MEASURED (MCP) |
@@ -754,6 +837,7 @@ it('upsertProviderNumber rejects a non-E.164 value', async () => {
 - [ ] **Step 1:** `src/lib/whatsapp/graph-version.ts`:
 
 ```ts
+// ⚠️ מיושן — הקובץ שנכתב בפועל שונה: קבוע `as const`, v25.0, בלי override.
 const PINNED = 'v24.0'; // proven on this WABA (sent/read statuses 2026-09-03); Meta latest v26.0; v24 sunset 2028-02-18
 const override = process.env.WHATSAPP_GRAPH_VERSION;
 export const GRAPH_API_VERSION: string = override && /^v\d{2}\.\d$/.test(override) ? override : PINNED;
@@ -823,7 +907,7 @@ export async function debugToken(input: { appId: string; appSecret: string; toke
 export const addNumberSchema = z.object({
   cc: z.string().regex(/^\d{1,3}$/, 'קידומת מדינה (972)'),
   nationalNumber: z.string().regex(/^\d{7,12}$/, 'ספרות בלבד, בלי קידומת'),
-  verifiedName: z.string().trim().min(1).max(512),
+  verifiedName: z.string().trim().min(2).max(75), // 2–75 לפי המפרט הרשמי (לא 512)
 });
 export const requestCodeSchema = z.object({ phoneNumberId: z.string().regex(/^\d+$/), codeMethod: z.enum(['SMS','VOICE']), language: z.enum(['he','en']) });
 export const verifyCodeSchema = z.object({ phoneNumberId: z.string().regex(/^\d+$/), code: z.string().regex(/^\d{6}$/, '6 ספרות') });
@@ -969,8 +1053,8 @@ UI: `AlertDialog` (קיים) עם טבלת מחיר, checkbox "אני מאשר �
 4. **תפקיד ה-service account ב-Voximplant לא ידוע** (Attach = Owner/Admin/Accountant; Deactivate = Owner). Task 3.1 מודד לפני שה-UI מבטיח.
 5. **אותו E.164 בכמה ספקים** — המודל מאפשר (unique על `(provider, provider_ref)`); UI חייב להבהיר שזה מכוון (INFERRED: `+972 3-721-9347` = Voximplant DID/caller id = WhatsApp RSVP).
 6. **תיעוד Meta סותר** על גוף `POST /{waba}/phone_numbers` — Task 2.1 חובה. `DELETE subscriptions` — UNVERIFIED.
-7. **טוקן אישי ולא System-User?** תוכנית 3.9 §0 D מזכירה `data_access_expires_at = 2026-12-02` על הטוקן הנוכחי — `debugToken` יחשוף זאת מיד (וזה בדיוק הערך של Phase 2.5).
-8. **רגולציה IL:** `is_need_regulation_address` לא נמדד ל-IL; יצירת כתובת רגולציה — אין מתודה ידועה → Control Panel.
+7. ⚠️ **טוקן אישי ולא System-User — אומת, וזה חוסם Phase 0.** תוכנית 3.9 §0 D מזכירה `data_access_expires_at = 2026-12-02` על הטוקן הנוכחי — `debugToken` יחשוף זאת מיד (וזה בדיוק הערך של Phase 2.5).
+8. ✅ **נסגר — רגולציה IL:** כתובת מאומתת קיימת (id 1418, VERIFIED). ההערה המקורית: `is_need_regulation_address` לא נמדד ל-IL; יצירת כתובת רגולציה — אין מתודה ידועה → Control Panel.
 9. **היגיינת grants:** `message_templates` מעניקה ל-`anon` ALL (RLS חוסם; אין policy ל-anon) — לא בהיקף, להעביר ל-rls-schema-engineer.
 10. **`relocation/*` ב-v21.0** (פקיעה 21.1.2027) — לא בהיקף; לרשום ב-`docs/product-debt.md`.
 11. **Redirect 307 ולא 308** — כדי לא לקבע בדפדפנים לפני שהבעלים מאשר את ה-IA הסופית.
@@ -985,8 +1069,10 @@ UI: `AlertDialog` (קיים) עם טבלת מחיר, checkbox "אני מאשר �
 
 1. D1–D8 לעיל (ברירות המחדל מסומנות).
 2. האם המספר `+972 3-330-1505` אמור להיות **גם** מספר הייבוא ב-WhatsApp **וגם** שולח ה-SMS **וגם** טלפון החברה בהסכם — או שזה מקרי? (משפיע על תוויות ב-`provider_numbers` ועל D2.)
-3. האם ה-DID של Voximplant הוא אכן `+972 3-721-9347` (INFERRED מסיומת+pattern) — לאשר לפני ה-backfill.
-4. איזה תפקיד יש ל-service account של Voximplant (Owner/Admin/Accountant/Developer)? קובע אם רכישה/ביטול אפשריים מהפאנל בכלל.
-5. האם להוסיף `whatsapp_app_id` ל-`app_settings` (נדרש ל-`debug_token` ולכיסוי webhooks) — או להשאיר את ה-`META_APP_ID_WA` שב-`.env.local` (שאף קוד לא קורא היום)?
+3. ✅ **נענה 9.9 — כן.** `GetPhoneNumbers` מחזיר מספר יחיד: `97237219347`, `phone_id` 2303422, TEL AVIV, ACTIVE, אפליקציה 11107202, ללא `rule_id`. חידוש 14.9.2026, 5$/חודש.
+4. ✅ **נענה 9.9 — Owner** (`GetKeyRoles` → role_id 1). רכישה, קישור וביטול אפשריים מהפאנל. אושר בפועל: `GetRegulationsAddress` (Owner/Accountant) הצליח.
+5. **עדיין פתוח.** מדוד 9.9: העמודה `whatsapp_app_id` אינה קיימת ב-`app_settings`, ו-`META_APP_ID_WA` אכן יושב ב-`.env.local` בלי אף קורא.
 6. תוכנית 3.9 (פיצול ניתוב ייבוא): לבצע **אחרי** Phase 1 עם תפקיד `whatsapp_import_sender` (מומלץ), או במקביל עם העמודות שהוצעו שם?
 7. הצד המשפטי: caller id שונה לפרסונת המכירות — האם צריך להופיע בהסכם/מדיניות (israeli-compliance-advisor)?
+8. **הסכמת וואטסאפ — מה המדיניות מכאן?** מדוד 9.9: ל-38 אנשי קשר יש `whatsapp_consent_at`, **כולם עם חותמת זמן זהה** (2026-07-07 11:19:15) — כלומר כתיבה אחת בכמות לפני קמפיין הברית, לא 38 אירועי הסכמה. `recordWhatsAppConsent` קיימת ואין לה אף קורא. מאז 9.9 יש מתג `whatsapp_consent_required` (כבוי כרגע), אבל השאלה נשארת: לחווט הסכמה אמיתית לנקודה בזרימה, להמשיך ברישום ידני לפני כל קמפיין, או לקבוע שההזמנה עצמה מהווה הסכמה. **שאלה עסקית-משפטית — לא טכנית.**
+9. **האם לקבע גם את גרסת ה-Graph של הפרסום החברתי?** `src/lib/fleet/publish-social.ts` מקבע `v26.0` בשתי מחרוזות נפרדות — אותו מבנה שהוליד את G5. הוא מוחרג במפורש מ-`graph-version.test.ts` כי זה משטח מוצר אחר (Facebook Page / Instagram) עם אימות גרסה נפרד. קבוע `FACEBOOK_GRAPH_API_VERSION` משלו ייתן לו את אותה הגנה בלי לערבב.

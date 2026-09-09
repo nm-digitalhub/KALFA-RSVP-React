@@ -107,7 +107,8 @@
 | `rsvp_token` | `text` | לא | **UNIQUE**; default `encode(gen_random_bytes(16),'hex')` — טוקן bearer של 128 ביט (32 hex), CSPRNG; הוגבה מ‑12 בייט (96 ביט) במיגרציה `202606290034`. הקוד לעולם לא קובע אותו — רק ברירת המחדל ב‑DB |
 | `rsvp_token_revoked_at` | `timestamptz` | כן | ביטול/רוטציה של טוקן; טוקן מבוטל מתנהג כלא‑קיים בשתי פונקציות ה‑RSVP |
 | `full_name` | `text` | לא | PII |
-| `phone` | `text` | כן | PII |
+| `phone` | `text` | כן | PII. נשמר **כפי שהבעלים הקליד** — צורה ישראלית מקומית, E.164 בינלאומית, עם או בלי מפרידים |
+| `phone_digits` | `text` | כן | **stored generated** (9.9.2026): `regexp_replace(phone,'[^0-9]','','g')`, ו‑`nullif` לריק. קיימת אך ורק כדי שחיפוש האורחים יתאים מספר בלי תלות במפרידים או במדינה. פוסטגרס מתחזק אותה בכל כתיבה — אין טריגר ואין קוד אפליקציה. **לא לחייג ולא לשלוח ממנה** — לשליחה יש `contacts.normalized_phone` ב‑E.164 |
 | `language` | `text` | כן | default `'he'` |
 | `expected_count` | `integer` | כן | default `1`; NULL = לא הוגדר (ואז אין תקרה ב‑`submit_rsvp`) |
 | `status` | `guest_status` | לא | default `'pending'` |

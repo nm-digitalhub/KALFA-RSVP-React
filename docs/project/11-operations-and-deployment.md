@@ -240,7 +240,6 @@ mismatch. התאוששות: להריץ `npm run deploy` מחדש (לא restart �
 | `SUPABASE_DB_USER` | משתמש בפורמט `postgres.<project-ref>` (דרישת ה-pooler) | worker |
 | `SUPABASE_DB_PASSWORD` | סיסמת ה-DB | worker |
 | `SUPABASE_DB_NAME` | שם ה-DB (ברירת מחדל `postgres`) | worker |
-| `WHATSAPP_GRAPH_VERSION` | דריסת גרסת Graph API של Meta (ברירת מחדל `v23.0`) | שרת |
 | `NODE_ENV` | סביבת ריצה סטנדרטית | הכל |
 | `NEXT_DIST_DIR` | תיקיית פלט הבנייה (build-time בלבד, `next.config.ts`) | build |
 
@@ -459,8 +458,12 @@ capture, כולל הפקת מסמכים ושליחתם במייל. הקוד ב-`
 ### Meta WABA (WhatsApp Cloud API)
 
 ערוץ ה-outreach הראשי — שליחת תבניות וקבלת webhooks דרך הספרייה
-`whatsapp-api-js` מול Graph API (גרסה נשלטת ב-`WHATSAPP_GRAPH_VERSION`,
-ברירת מחדל `v23.0`). קונפיגורציה ב-`app_settings`: `whatsapp_phone_number_id`,
+`whatsapp-api-js` מול Graph API. הגרסה היא קבוע יחיד בקוד,
+`GRAPH_API_VERSION` (`src/lib/whatsapp/graph-version.ts`, כיום `v25.0`) — לא
+משתנה סביבה, ולא ברירת המחדל של הספרייה. הוא מוזן במפורש לכל קריאה, כולל
+`client.ts`, ה-webhook, הורדת מדיה, בדיקת החיבור ואשף ההעברה, ו-
+`graph-version.test.ts` מפיל כל גרסה קשיחה חדשה שתיכנס לקוד.
+קונפיגורציה ב-`app_settings`: `whatsapp_phone_number_id`,
 `whatsapp_waba_id`, `whatsapp_access_token`, `whatsapp_app_secret`
 (אימות חתימת `X-Hub-Signature-256`), `whatsapp_verify_token`, ומתג-העל
 `outreach_enabled`. ה-webhooks נקלטים בדפוס persist-then-process

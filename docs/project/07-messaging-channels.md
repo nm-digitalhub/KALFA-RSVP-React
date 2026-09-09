@@ -336,7 +336,12 @@
   `settings.ts:10-13`).
 - `/admin/channels` כולל בדיקת חיבור read-only — `testWhatsAppConnection`
   (`channels.ts:83-113`): GET ל-Graph API על שדות התצוגה בלבד, בלי לשלוח הודעה;
-  גרסת ה-Graph נשלטת ב-env `WHATSAPP_GRAPH_VERSION` (ברירת מחדל `v23.0`).
+  גרסת ה-Graph היא הקבוע המשותף `GRAPH_API_VERSION`
+  (`src/lib/whatsapp/graph-version.ts`, כיום `v25.0`) — אותו קבוע שכל שאר
+  קריאות ה-WhatsApp משתמשות בו. הדריסה מ-env `WHATSAPP_GRAPH_VERSION` **בוטלה**
+  (9.9.2026): היא מעולם לא הוגדרה, ודריסה כאן הייתה מאפשרת לבדיקת החיבור לעבור
+  על גרסה שנתיב השליחה אינו משתמש בה. `graph-version.test.ts` סורק את עץ הקוד
+  ומפיל כל גרסה קשיחה חדשה.
 - הקוראים ב-`outreach-config.ts` משתמשים ב-`select('*')` בכוונה — עמידים לעמודות
   שטרם הוגרו (fail-closed ל-off), בעוד שקוראי האדמין בוחרים עמודות מפורשות.
 - שני מפתחות תשתית נשארים ב-env בלבד (מוצגים כ"מוגדר/לא מוגדר" בלבד):
