@@ -56,6 +56,17 @@ export default defineConfig({
     environment: 'node',
     include: ['src/**/*.test.ts'],
     env: { TZ: 'Asia/Jerusalem', NODE_ENV: 'test' },
+    // @workflowbuilder/sdk is browser ESM and imports @xyflow/react's
+    // stylesheet. Node's loader refuses a .css file outright
+    // ("Unknown file extension .css"), and a package left EXTERNAL is loaded by
+    // Node rather than transformed by Vite — so the import fails before any test
+    // runs. Inlining hands it to Vite, which stubs CSS imports to an empty
+    // module because `test.css` is off.
+    //
+    // Scoped to this one package on purpose: it is the only dependency a test
+    // needs to import for browser-side code (catalogue/branch-handles.test.ts,
+    // which pins the condition handle ids to the SDK's own getHandleId).
+    server: { deps: { inline: ['@workflowbuilder/sdk'] } },
   },
   resolve: {
     alias: {

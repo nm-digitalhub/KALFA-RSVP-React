@@ -30,8 +30,9 @@ import type {
 } from '@/lib/workflow/vendor/workflowbuilder/types/workflow-execution/execution-model';
 
 import { findCatalogueEntry, isTriggerType } from '../catalogue/nodes';
+import { ERROR_POLICIES, type ErrorPolicy } from '../catalogue/types';
 
-import { editorDiagramSchema } from './editor-schema';
+import { editorDiagramSchema, type EditorDiagram } from './editor-schema';
 
 // ---------------------------------------------------------------------------
 // The node the runner sees
@@ -74,7 +75,25 @@ export type ConversionError = {
 };
 
 export type ConversionResult =
-  | { ok: true; definition: WorkflowDefinition<KalfaNode> }
+  | {
+      ok: true;
+      definition: WorkflowDefinition<KalfaNode>;
+      /**
+       * `ExecutionContext.global`, built from the diagram's own variables panel.
+       *
+       * The vendored `execution-context.ts` names the two bags apart:
+       * `variables` is "server-side globals/secrets the backend injects",
+       * `global` is "global variables defined manually in the builder". This is
+       * the second one, and it is keyed by NAME because `{{global.<name>}}` is
+       * how a reference spells it — the panel's own `id` never appears in a
+       * template.
+       *
+       * Carried on the result rather than fetched again by the caller: this
+       * module already parsed the row, and a second parse would be a second
+       * place for the shape to drift.
+       */
+      globals: Record<string, string>;
+    }
   | { ok: false; errors: ConversionError[] };
 
 // ---------------------------------------------------------------------------
@@ -82,34 +101,36 @@ export type ConversionResult =
 // ---------------------------------------------------------------------------
 
 // The editor's variable picker writes `{{nodes.<id>.<path>}}` into a property
-// and the SDK stores it as plain text; `trigger.*` and `variables.*` are
-// documented as manual entry, so they can land in ANY text field. The component
-// that resolves them upstream — resolve-template.ts — was deliberately not
-// vendored (it needs target: ES2018 and is not a dependency of runGraph), so
-// nothing here reads them. Passed through, the characters themselves would be
-// sent: a guest receiving a WhatsApp message that says
-// `{{trigger.customer.name}}`.
+// and the SDK stores it as plain text. `trigger.*`, `variables.*` and
+// `global.*` can land in any text field the same way.
 //
-// Anchored on the NAMESPACE, not on `{{`. Every form the editor can produce
-// carries one, and the `?` / `| default:` modifiers sit after the path inside
-// the same expression. Meta's positional placeholders — `{{1}}`, `{{2}}` — match
-// none of it, which is the point: this codebase has 85 of those in its message
-// bodies and they must keep working.
-const TEMPLATE_REFERENCE = /\{\{\s*(nodes|trigger|variables)\./;
+// UNBLOCKED 2026-09-10. This module used to REFUSE any diagram containing such
+// a reference, and the refusal was correct while it stood: `resolve-template.ts`
+// was not vendored, so the characters themselves would have been sent — a guest
+// receiving a WhatsApp message reading `{{trigger.customer.name}}`.
+//
+// The reason it was not vendored — "it needs target: ES2018" — was half true
+// and outlived its accuracy. `replaceAll` compiles fine here (`lib: esnext`,
+// and `redact.ts` from the same package already uses it); only the four NAMED
+// capture groups were rejected, and converting those to numbered positions is
+// mechanical. The vendored file now carries that one divergence, and upstream's
+// own 32 tests pass against it unchanged.
+//
+// Resolution happens ONCE, in `activity-runner.ts`, over the whole config
+// before the handler runs. A reference the context cannot satisfy raises
+// `PermanentNodeExecutionError` at that point — loud, on the first attempt,
+// with the offending token in the message.
+//
+// What is deliberately NOT re-added here: a save-time check that every
+// reference resolves. It cannot be done honestly — `{{trigger.message_text}}`
+// is valid and unresolvable at save time, because no message has arrived yet.
 
-function nodeLabel(properties: Record<string, unknown>, fallbackId: string): string {
-  const label = properties.label;
-  return typeof label === 'string' && label.trim() !== '' ? label : fallbackId;
+function readErrorPolicy(value: unknown): ErrorPolicy | undefined {
+  return typeof value === 'string' && (ERROR_POLICIES as readonly string[]).includes(value)
+    ? (value as ErrorPolicy)
+    : undefined;
 }
 
-function findTemplateReference(
-  properties: Record<string, unknown>,
-): string | undefined {
-  for (const [key, value] of Object.entries(properties)) {
-    if (typeof value === 'string' && TEMPLATE_REFERENCE.test(value)) return key;
-  }
-  return undefined;
-}
 
 // ---------------------------------------------------------------------------
 // Conversion
@@ -171,23 +192,6 @@ export function toWorkflowDefinition(
 
     const properties = editorNode.data.properties;
 
-    const templateField = findTemplateReference(properties);
-    if (templateField !== undefined) {
-      errors.push({
-        code: 'unresolved_template_reference',
-        message:
-          // The node's own label if it set one, else its id — the catalogue is
-          // metadata only and carries no display name, because the worker reads
-          // it and must not load the SDK to do so.
-          `השדה "${templateField}" בצעד "${nodeLabel(properties, editorNode.id)}" מכיל הפניה למשתנה ` +
-          '({{…}}). הפניות למשתנים אינן נתמכות עדיין ויישלחו כטקסט גולמי, ' +
-          'ולכן ההרצה נחסמת.',
-        nodeId: editorNode.id,
-        field: templateField,
-      });
-      continue;
-    }
-
     // RULES 2 and 3, in one expression, and this is the ONLY place `role` is
     // assigned anywhere in KALFA. `editorNode.data` may well carry a `role`
     // key — from a hand-edited row, a crafted request, or a future SDK — and it
@@ -198,6 +202,16 @@ export function toWorkflowDefinition(
     // 6 and 7; it is never an input to this decision.
     const role = isTriggerType(nodeType) ? ('start' as const) : undefined;
 
+    // Lifted OUT of `config` and onto the node, because the runner reads it as
+    // a sibling of `config` — `BaseNode.errorPolicy`, not `config.errorPolicy`.
+    // Validated against the closed set rather than passed through: the value
+    // arrives from a browser via jsonb, and an unrecognised string would make
+    // `policy === 'fail'` false in the runner's own comparison and silently
+    // absorb a failure the owner asked to be fatal. Anything unknown, absent,
+    // or non-string falls back to no field at all, which is the runner's
+    // documented default of 'fail'.
+    const errorPolicy = readErrorPolicy(properties.errorPolicy);
+
     const node: KalfaNode = {
       id: editorNode.id,
       type: nodeType,
@@ -206,6 +220,7 @@ export function toWorkflowDefinition(
         ? { label: properties.label }
         : {}),
       ...(role ? { role } : {}),
+      ...(errorPolicy ? { errorPolicy } : {}),
     };
     nodes.push(node);
   }
@@ -298,5 +313,27 @@ export function toWorkflowDefinition(
 
   if (errors.length > 0) return { ok: false, errors };
 
-  return { ok: true, definition: { workflowId, nodes, edges } };
+  return { ok: true, definition: { workflowId, nodes, edges }, globals: toGlobals(diagram) };
+}
+
+/**
+ * The variables panel's definitions, reduced to the name→value map the runner
+ * takes. `defaultValue` is the only value a definition carries — there is no
+ * separate runtime value in `VariableDefinition` — so it IS the value.
+ *
+ * A blank name is dropped: `{{global.}}` is not a reference any grammar
+ * accepts, so a nameless variable can never be read and keeping it would only
+ * put an empty key in the context. Two variables sharing a name collapse to the
+ * later one, which is what a name lookup has to do; the panel does not stop the
+ * owner from creating the collision.
+ */
+function toGlobals(diagram: EditorDiagram): Record<string, string> {
+  const globals: Record<string, string> = {};
+  for (const definition of Object.values(diagram.globalVariables ?? {})) {
+    if (!definition) continue;
+    const name = definition.name.trim();
+    if (name === '') continue;
+    globals[name] = definition.defaultValue;
+  }
+  return globals;
 }

@@ -12,7 +12,10 @@ import 'server-only';
 // through it to reach an enqueue would put automation concerns inside the
 // billing path. This module does its own (read-only) resolve instead, and the
 // worker calls it after the existing processing has succeeded.
+import { formatIsraelDate } from '@/lib/date';
 import { resolveByContextId, resolveInboundContact } from '@/lib/data/interactions';
+import { createAdminClient } from '@/lib/supabase/admin';
+import { deriveGuestFirstName } from '@/lib/whatsapp/template-spec';
 import type { WebhookInboxRow } from '@/lib/data/webhooks';
 import { classifyMessagePayload } from '@/lib/whatsapp/inbound';
 import type { InboundMessagePayload } from '@/lib/whatsapp/inbound';
@@ -65,10 +68,15 @@ export async function createRunsForInboundMessage(
   const armed = await listArmedWorkflows();
   if (armed.length === 0) return [];
 
+  // Resolved ONCE per message, before any workflow is matched: three armed
+  // workflows firing on the same message share this lookup.
+  const context = await resolveTriggerContext(resolved.eventId, resolved.contactId);
+
   const planned = planRuns(
     {
       eventId: resolved.eventId,
       contactId: resolved.contactId,
+      ...context,
       // The inbox ROW id, not the provider message id: the row is what the
       // drain is at-least-once over, and it is what a reprocess re-reads.
       inboxRowId: row.id,
@@ -93,4 +101,49 @@ export async function createRunsForInboundMessage(
 function readTextBody(payload: { text?: { body?: string } }): string {
   const body = payload.text?.body;
   return typeof body === 'string' ? body : '';
+}
+
+/**
+ * The context a `{{trigger.…}}` reference can name, beyond the message itself.
+ *
+ * FAIL-SOFT BY CONSTRUCTION. Every field falls back to `''`, and the whole
+ * thing is wrapped so a failed lookup cannot stop a run from being created. The
+ * trade is deliberate: a greeting that loses a name is a smaller failure than an
+ * automation that does not fire, and an unresolvable `{{trigger.guest_name}}`
+ * already fails loudly at the step (see `resolveConfigTemplates`) — an empty
+ * string is a value, so it resolves and the message simply reads without it.
+ *
+ * `guestName` is empty when the phone backs more than one guest. Same refusal
+ * `action.update_guest_status` makes: with several guests behind one contact,
+ * "whose name" has no answer, and greeting the wrong person by name is worse
+ * than not greeting at all.
+ */
+async function resolveTriggerContext(
+  eventId: string,
+  contactId: string,
+): Promise<{ guestName: string; eventName: string; eventDate: string }> {
+  const empty = { guestName: '', eventName: '', eventDate: '' };
+  try {
+    const admin = createAdminClient();
+
+    const [guests, event] = await Promise.all([
+      admin.from('guests').select('full_name').eq('event_id', eventId).eq('contact_id', contactId),
+      admin.from('events').select('name, event_date').eq('id', eventId).maybeSingle(),
+    ]);
+
+    const rows = guests.data ?? [];
+    // Exactly one, or no name at all.
+    const guestName =
+      rows.length === 1 ? (deriveGuestFirstName(rows[0]?.full_name) ?? '') : '';
+
+    return {
+      guestName,
+      eventName: event.data?.name ?? '',
+      // Through the project's own formatter: `events.event_date` is timestamptz
+      // and slicing it is forbidden (see src/lib/date.ts).
+      eventDate: event.data?.event_date ? formatIsraelDate(event.data.event_date) : '',
+    };
+  } catch {
+    return empty;
+  }
 }

@@ -23,6 +23,20 @@ export type InboundMessage = {
   inboxRowId: string;
   messageText: string;
   buttonPayload: string;
+  /**
+   * Context resolved ONCE by the caller, before any workflow is matched.
+   *
+   * It belongs here rather than inside `planRuns` because this module is pure —
+   * it takes a message and a list of armed workflows and returns plans, with no
+   * I/O of its own, which is what makes it testable without a database. The
+   * lookups live in `inbound.ts`, which is already holding an admin client.
+   *
+   * Resolved once per MESSAGE, not once per matched workflow: three armed
+   * workflows firing on the same message share one guest lookup.
+   */
+  guestName: string;
+  eventName: string;
+  eventDate: string;
 };
 
 export type PlannedRun = {
@@ -37,11 +51,20 @@ export type PlannedRun = {
    * produce a single row.
    */
   dedupeKey: string;
+  /**
+   * Structurally `WorkflowTriggerPayload`, restated rather than imported: this
+   * module is read by the webhook drain and must not pull in ./steps, which
+   * carries the handlers and their dependencies. `tsc` still catches a drift
+   * between the two, because the worker assigns one to the other.
+   */
   triggerPayload: {
     eventId: string;
     contactId: string;
     message_text: string;
     button_payload: string;
+    guest_name: string;
+    event_name: string;
+    event_date: string;
   };
 };
 
@@ -116,11 +139,18 @@ export function planRuns(
       workflowId: workflow.id,
       eventId: message.eventId,
       dedupeKey: `whatsapp_inbound:${message.inboxRowId}:${workflow.id}`,
+      // The frozen record of what started this run. `{{trigger.…}}` names
+      // exactly these keys, so the snake_case is a contract with every saved
+      // workflow — not a style choice — and renaming one breaks references an
+      // owner already typed.
       triggerPayload: {
         eventId: message.eventId,
         contactId: message.contactId,
         message_text: message.messageText,
         button_payload: message.buttonPayload,
+        guest_name: message.guestName,
+        event_name: message.eventName,
+        event_date: message.eventDate,
       },
     });
   }

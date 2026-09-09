@@ -53,6 +53,13 @@ export const editorEdgeSchema = z.looseObject({
 export const editorDiagramSchema = z.looseObject({
   name: z.string().optional(),
   layoutDirection: z.enum(['DOWN', 'RIGHT']).optional(),
+  globalVariables: z.record(z.string(), z.looseObject({
+    id: z.string(),
+    name: z.string(),
+    type: z.enum(['string', 'number', 'boolean', 'datetime', 'date']),
+    defaultValue: z.string(),
+    description: z.string(),
+  }).optional()).optional(),
   nodes: z.array(editorNodeSchema).default([]),
   edges: z.array(editorEdgeSchema).default([]),
 });

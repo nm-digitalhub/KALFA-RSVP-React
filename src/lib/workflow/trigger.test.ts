@@ -32,6 +32,9 @@ const MESSAGE = {
   inboxRowId: 'inbox-9',
   messageText: 'כן אני מגיע',
   buttonPayload: '',
+    guestName: 'דנה',
+    eventName: 'אירוע בדיקה',
+    eventDate: '01.01.2027',
 };
 
 function armed(over: Partial<ArmedWorkflow> = {}): ArmedWorkflow {
@@ -130,9 +133,14 @@ describe('planRuns', () => {
 
   it('carries the payload the condition node reads', () => {
     const [run] = planRuns({ ...MESSAGE, buttonPayload: 'rsvp_attending' }, [armed()]);
+    // Every key here is a `{{trigger.<key>}}` an owner can type, so this
+    // assertion is the payload's public contract and not an incidental snapshot.
     expect(run!.triggerPayload).toEqual({
       eventId: 'event-1',
       contactId: 'contact-1',
+      guest_name: 'דנה',
+      event_name: 'אירוע בדיקה',
+      event_date: '01.01.2027',
       message_text: 'כן אני מגיע',
       button_payload: 'rsvp_attending',
     });

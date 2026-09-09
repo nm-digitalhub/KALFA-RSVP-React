@@ -20,19 +20,22 @@
 import { isKnownNodeType } from '../catalogue/nodes';
 import type { KalfaNodeType } from '../catalogue/types';
 import { STEP_HANDLERS, type WorkflowTriggerPayload } from '../steps';
+import type { ExecutionContext } from '../vendor/workflowbuilder/execution-core/execution-context';
 import { PermanentNodeExecutionError } from '../vendor/workflowbuilder/execution-core/errors';
+import { resolveTemplate } from '../vendor/workflowbuilder/execution-core/templates/resolve-template';
 import type {
   ActivityRunnerPort,
   NodeExecutionResult,
 } from '../vendor/workflowbuilder/execution-core/ports/activity-runner.port';
 
-import type { GuestActionsPort, StepLedgerPort } from './ports';
+import type { GuestActionsPort, StepLedgerPort, TeamAlertsPort } from './ports';
 
 export type ActivityRunnerArgs = {
   runId: string;
   trigger: WorkflowTriggerPayload;
   ledger: StepLedgerPort;
   guests: GuestActionsPort;
+  alerts: TeamAlertsPort;
 };
 
 // The shape the runner sees. Structural rather than an import of KalfaNode, so
@@ -43,18 +46,77 @@ type RunnableNode = {
   config: unknown;
 };
 
+/**
+ * Resolve every `{{…}}` reference in a node's config, once, before the handler
+ * runs.
+ *
+ * ONE PLACE, not one per handler. `executeNode` already receives the full
+ * `ExecutionContext` — trigger payload, global variables, and every completed
+ * node's output — so resolving here means a handler never sees a template and
+ * every field of every node type gets references for free, including node types
+ * nobody has written yet.
+ *
+ * Strings only, recursively through objects and arrays. A number, a boolean and
+ * a null are returned untouched: a template is text by definition, and walking
+ * into non-strings would only cost time.
+ *
+ * An unresolved reference is PERMANENT. `resolveTemplate` throws for a path the
+ * context does not carry, and no amount of retrying will make `{{trigger.typo}}`
+ * exist — so it is raised as `PermanentNodeExecutionError` and the node stops on
+ * its first attempt rather than burning the queue's retry budget on a typo.
+ * That is the behaviour upstream chose too, and for the same stated reason: a
+ * broken reference should fail loudly on the first run, not silently resolve to
+ * an empty string and reach a guest.
+ */
+function resolveConfigTemplates(value: unknown, context: ExecutionContext): unknown {
+  if (typeof value === 'string') {
+    try {
+      return resolveTemplate(value, context);
+    } catch (error) {
+      throw new PermanentNodeExecutionError(
+        'unresolved_template_reference',
+        error instanceof Error ? error.message : String(error),
+      );
+    }
+  }
+  if (Array.isArray(value)) {
+    return value.map((item) => resolveConfigTemplates(item, context));
+  }
+  if (value !== null && typeof value === 'object') {
+    const out: Record<string, unknown> = {};
+    for (const [key, item] of Object.entries(value as Record<string, unknown>)) {
+      out[key] = resolveConfigTemplates(item, context);
+    }
+    return out;
+  }
+  return value;
+}
+
 export function createActivityRunner<TNode extends RunnableNode>(
   args: ActivityRunnerArgs,
 ): ActivityRunnerPort<TNode> {
-  const { runId, trigger, ledger, guests } = args;
+  const { runId, trigger, ledger, guests, alerts } = args;
 
   return {
-    async executeNode(node): Promise<NodeExecutionResult> {
+    // `context` was ignored until templates landed — the handlers took only
+    // their own config and the trigger. It carries nodeOutputs, variables and
+    // global, which is everything a reference can name.
+    async executeNode(node, context): Promise<NodeExecutionResult> {
       // Rule 5 again, at the last possible moment. The adapter already rejected
       // unknown types before this graph became a run — this is the assertion
       // that the two layers agree, and it fails closed if they ever stop
       // agreeing (a catalogue entry removed while a saved workflow still uses
       // it, say).
+      //
+      // It also closes a prototype-pollution vector, which is why it must stay
+      // AHEAD of the index below. `node.type` is an arbitrary string that came
+      // from a browser via jsonb, and `STEP_HANDLERS` is an object literal — so
+      // a node typed `constructor` or `toString` would resolve off
+      // Object.prototype and be called as a handler. Upstream documents exactly
+      // this hazard (packages/execution-core/README.md) and prescribes a
+      // membership test rather than a bare index. `isKnownNodeType` is a
+      // Map-backed `.has`, which has no prototype chain to walk, so the lookup
+      // that follows is unreachable with a polluting key.
       if (!isKnownNodeType(node.type)) {
         throw new PermanentNodeExecutionError(
           'unknown_node_type',
@@ -87,10 +149,14 @@ export function createActivityRunner<TNode extends RunnableNode>(
         );
       }
 
-      const config = isConfigObject(node.config) ? node.config : {};
+      const rawConfig = isConfigObject(node.config) ? node.config : {};
+      // Resolved AFTER the ledger claim, so a replay of an already-completed
+      // node returns its stored result without re-resolving — and BEFORE the
+      // handler, which therefore never has to know templates exist.
+      const config = resolveConfigTemplates(rawConfig, context) as Record<string, unknown>;
 
       try {
-        const result = await handler(config, { trigger, deps: { guests } });
+        const result = await handler(config, { trigger, deps: { guests, alerts } });
         // Persisted AFTER the side effect and BEFORE the runner propagates, so a
         // crash between the two leaves the row 'running' — visible as stuck
         // rather than invisible as never-attempted.
