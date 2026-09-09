@@ -106,12 +106,15 @@ function readTextBody(payload: { text?: { body?: string } }): string {
 /**
  * The context a `{{trigger.…}}` reference can name, beyond the message itself.
  *
- * FAIL-SOFT BY CONSTRUCTION. Every field falls back to `''`, and the whole
- * thing is wrapped so a failed lookup cannot stop a run from being created. The
- * trade is deliberate: a greeting that loses a name is a smaller failure than an
- * automation that does not fire, and an unresolvable `{{trigger.guest_name}}`
- * already fails loudly at the step (see `resolveConfigTemplates`) — an empty
- * string is a value, so it resolves and the message simply reads without it.
+ * FAIL-SOFT BY CONSTRUCTION. A failed lookup cannot stop a run from being
+ * created: a greeting that loses a name is a smaller failure than an automation
+ * that does not fire.
+ *
+ * Every unknown field comes back UNDEFINED rather than `''`, and that is not a
+ * detail. `resolveTemplate` fires `?` and `| default:'…'` only for a strictly
+ * undefined value — an empty string is a real value and resolves — so returning
+ * `''` here silently defeated the fallback an owner had written. See the note on
+ * `WorkflowTriggerPayload`.
  *
  * `guestName` is empty when the phone backs more than one guest. Same refusal
  * `action.update_guest_status` makes: with several guests behind one contact,
@@ -121,8 +124,8 @@ function readTextBody(payload: { text?: { body?: string } }): string {
 async function resolveTriggerContext(
   eventId: string,
   contactId: string,
-): Promise<{ guestName: string; eventName: string; eventDate: string }> {
-  const empty = { guestName: '', eventName: '', eventDate: '' };
+): Promise<{ guestName?: string; eventName?: string; eventDate?: string }> {
+  const empty = {};
   try {
     const admin = createAdminClient();
 
@@ -133,15 +136,17 @@ async function resolveTriggerContext(
 
     const rows = guests.data ?? [];
     // Exactly one, or no name at all.
+    // Exactly one guest, or no answer at all — `undefined`, so a template's
+    // `| default:'אורח יקר'` is what fills the gap.
     const guestName =
-      rows.length === 1 ? (deriveGuestFirstName(rows[0]?.full_name) ?? '') : '';
+      rows.length === 1 ? (deriveGuestFirstName(rows[0]?.full_name) ?? undefined) : undefined;
 
     return {
       guestName,
-      eventName: event.data?.name ?? '',
+      eventName: event.data?.name ?? undefined,
       // Through the project's own formatter: `events.event_date` is timestamptz
       // and slicing it is forbidden (see src/lib/date.ts).
-      eventDate: event.data?.event_date ? formatIsraelDate(event.data.event_date) : '',
+      eventDate: event.data?.event_date ? formatIsraelDate(event.data.event_date) : undefined,
     };
   } catch {
     return empty;

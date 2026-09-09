@@ -542,9 +542,12 @@ export const PALETTE_ITEMS: PaletteItem[] = [
     //     we did not vendor — an owner typing `{{trigger.x}}` there would get
     //     literal text. Our condition evaluates server-side from
     //     `field`/`operator`/`value` instead, so the branches are fixed.
-    //   * We omit `outputSchema` for the reason recorded at the top of this
-    //     file: it is what puts a node in the variable picker, and the picker
-    //     would suggest references nothing can resolve.
+    //   * `outputSchema` USED to be withheld here, on the reasoning that "the
+    //     picker would suggest references nothing can resolve". That held only
+    //     while `resolve-template.ts` was unvendored; it is vendored and wired
+    //     into `activity-runner.ts`, and the node has declared its output ever
+    //     since. This bullet remained as a description of a state that no longer
+    //     existed — see the declaration below.
     //
     // The starter (examples/workflow-builder-starter) has a node also called
     // "condition", and it is NOT this pattern — it is a single-output node with

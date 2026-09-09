@@ -3,56 +3,81 @@
 
 # PropertiesBarProps
 
-**PropertiesBarProps** = `PropertiesBarBaseProps` & `object`
+API Reference
+>
+Components
+>
+PropertiesBarProps
+PropertiesBarProps
+
+PropertiesBarProps = PropertiesBarBaseProps & object
 
 Props accepted by PropertiesBar.
 
-Provide localized labels (`headerLabel`, `deleteNodeLabel`, `deleteEdgeLabel`), the active tab + change handler, the delete handler, and an optional `tabs` array for extra tabs alongside the default “Properties” tab.
+Provide localized labels (headerLabel, deleteNodeLabel, deleteEdgeLabel), the active tab + change handler, the delete handler, and an optional tabs array for extra tabs alongside the default “Properties” tab.
 
-## Type Declaration
+Type Declaration
+Section titled “Type Declaration”
+deleteEdgeLabel
+Section titled “deleteEdgeLabel”
 
-### deleteEdgeLabel
+deleteEdgeLabel: string
 
-**deleteEdgeLabel**: `string`
+deleteNodeLabel
+Section titled “deleteNodeLabel”
 
-### deleteNodeLabel
+deleteNodeLabel: string
 
-**deleteNodeLabel**: `string`
+headerLabel
+Section titled “headerLabel”
 
-### headerLabel
+headerLabel: string
 
-**headerLabel**: `string`
+onDeleteClick
+Section titled “onDeleteClick”
 
-### onDeleteClick
+onDeleteClick: () => void
 
-**onDeleteClick**: () => `void`
+Returns
+Section titled “Returns”
 
-#### Returns
+void
 
-`void`
+onMenuHeaderClick?
+Section titled “onMenuHeaderClick?”
 
-### onMenuHeaderClick?
+optional onMenuHeaderClick?: () => void
 
-`optional` **onMenuHeaderClick?**: () => `void`
+Returns
+Section titled “Returns”
 
-#### Returns
+void
 
-`void`
+onTabChange
+Section titled “onTabChange”
 
-### onTabChange
+onTabChange: (tab) => void
 
-**onTabChange**: (`tab`) => `void`
+Parameters
+Section titled “Parameters”
+tab
+Section titled “tab”
 
-#### Parameters
+string
 
-##### tab
+Returns
+Section titled “Returns”
 
-`string`
+void
 
-#### Returns
+tabs?
+Section titled “tabs?”
 
-`void`
+optional tabs?: PropertiesBarTab[]
 
-### tabs?
+## קישורים חיצוניים
 
-`optional` **tabs?**: `PropertiesBarTab`[]
+- [GitHub](https://github.com/synergycodes/workflowbuilder)
+- [YouTube](https://www.youtube.com/@workflowbuilder)
+- [Discord](https://discord.com/invite/FDMjRuarFb)
+- [Contact Us](https://www.workflowbuilder.io/contact)

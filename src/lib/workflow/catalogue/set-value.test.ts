@@ -129,12 +129,16 @@ describe('logic.set_value as a composition primitive', () => {
     }
   });
 
-  it('an empty guest name leaves a gap rather than failing the run', async () => {
+  it('an unknown guest name fails the run loudly instead of sending a hole', async () => {
     // `guestCase: 'several'` is the live rule: two guests behind one phone, so
-    // there is no answer to "whose name" and `guest_name` is empty. The
-    // reference still RESOLVES — to an empty string — because the key exists.
-    // An owner needs to see that this degrades to a gap in the sentence and
-    // does not stop the workflow.
+    // there is no answer to "whose name".
+    //
+    // This assertion is INVERTED from what it used to be, deliberately. The
+    // field was normalised to `''`, the strict reference resolved, and the guest
+    // received `שלום , נתראה…` — a sentence with a hole, from a run that
+    // reported success. The key is now ABSENT, so a strict reference throws and
+    // the owner is told. The next test is the other half: an owner who expects
+    // the name to be missing sometimes says so, and gets their own wording.
     const run = await dryRunWorkflow({
       workflowId: 'wf-set-value',
       storedDefinition: diagram,
@@ -142,9 +146,46 @@ describe('logic.set_value as a composition primitive', () => {
       scenario: { messageText: 'כן', buttonPayload: '', guestCase: 'several' },
     });
 
+    expect(run.outcome.status).toBe('failed');
+    const failed = run.steps.find((step) => step.status === 'failed');
+    expect(failed?.errorMessage).toContain('{{trigger.guest_name}}');
+    // And nothing reached the guest.
+    expect(run.effects).toEqual([]);
+  });
+
+  it('and `| default` now actually fires for that same case', async () => {
+    // The reason the change above was worth making. `resolveTemplate` fires a
+    // fallback only for a strictly undefined value — the vendor's own suite pins
+    // that `''` is a real value — so while the field was emptied, this template
+    // produced `שלום ` and the owner's fallback never ran.
+    const withFallback = {
+      ...diagram,
+      nodes: diagram.nodes.map((n) =>
+        n.id !== SET
+          ? n
+          : {
+              ...n,
+              data: {
+                ...n.data,
+                properties: {
+                  ...n.data.properties,
+                  value: "שלום {{trigger.guest_name | default:'אורח יקר'}}, נתראה!",
+                },
+              },
+            },
+      ),
+    };
+
+    const run = await dryRunWorkflow({
+      workflowId: 'wf-set-value',
+      storedDefinition: withFallback,
+      allNodeIds: [TRIGGER, SET, SEND],
+      scenario: { messageText: 'כן', buttonPayload: '', guestCase: 'several' },
+    });
+
     expect(run.outcome.status).toBe('completed');
     expect(run.steps.find((s) => s.nodeId === SET)?.output).toEqual({
-      value: 'שלום , נתראה באירוע לדוגמה!',
+      value: 'שלום אורח יקר, נתראה!',
     });
   });
 });

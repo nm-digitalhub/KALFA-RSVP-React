@@ -34,9 +34,14 @@ export type InboundMessage = {
    * Resolved once per MESSAGE, not once per matched workflow: three armed
    * workflows firing on the same message share one guest lookup.
    */
-  guestName: string;
-  eventName: string;
-  eventDate: string;
+  /**
+   * Absent, never `''`, when the phone backs anything other than exactly one
+   * guest — so a template's `| default:'…'` fires. See the note on
+   * `WorkflowTriggerPayload`.
+   */
+  guestName?: string;
+  eventName?: string;
+  eventDate?: string;
 };
 
 export type PlannedRun = {
@@ -62,9 +67,11 @@ export type PlannedRun = {
     contactId: string;
     message_text: string;
     button_payload: string;
-    guest_name: string;
-    event_name: string;
-    event_date: string;
+    // Optional for the same reason as on `WorkflowTriggerPayload`: omitted, not
+    // emptied, so `| default:'…'` in a template actually fires.
+    guest_name?: string;
+    event_name?: string;
+    event_date?: string;
   };
 };
 
@@ -148,9 +155,13 @@ export function planRuns(
         contactId: message.contactId,
         message_text: message.messageText,
         button_payload: message.buttonPayload,
-        guest_name: message.guestName,
-        event_name: message.eventName,
-        event_date: message.eventDate,
+        // Spread-when-present. Writing `guest_name: undefined` would put the
+        // key in the jsonb row as null, and null is a REAL value to the
+        // resolver — the fallback would not fire and we would be back where we
+        // started.
+        ...(message.guestName === undefined ? {} : { guest_name: message.guestName }),
+        ...(message.eventName === undefined ? {} : { event_name: message.eventName }),
+        ...(message.eventDate === undefined ? {} : { event_date: message.eventDate }),
       },
     });
   }

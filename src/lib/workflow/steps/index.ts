@@ -59,11 +59,29 @@ export type WorkflowTriggerPayload = {
   contactId: string;
   message_text: string;
   button_payload: string;
-  /** First name of the single linked guest, or '' when there is not exactly one. */
-  guest_name: string;
-  event_name: string;
+  /**
+   * The three below are OMITTED when unknown, never set to `''`, and the
+   * difference is the whole behaviour of the fallback modifiers.
+   *
+   * `resolveTemplate` fires `?` and `| default:'…'` only when the resolved value
+   * is strictly `undefined` — `''`, `null` and `0` are real values, which the
+   * vendor's own suite pins (resolve-template.test.ts, "the modifier only fires
+   * for undefined"). So normalising an unknown name to `''` did not merely lose
+   * the name: it silently defeated the owner's own fallback. Someone writing
+   *
+   *     שלום {{trigger.guest_name | default:'אורח יקר'}}
+   *
+   * got `שלום ` — a sentence with a hole — because the empty string resolved.
+   * Absent, the same template reads `שלום אורח יקר`.
+   *
+   * A strict `{{trigger.guest_name}}` now throws when the name is unknown, which
+   * is the documented contract and the loud half of the same choice.
+   */
+  /** First name of the single linked guest. Absent when there is not exactly one. */
+  guest_name?: string;
+  event_name?: string;
   /** dd.MM.yyyy in Israel time — display-ready, never re-parsed. */
-  event_date: string;
+  event_date?: string;
 };
 
 export type StepContext = {

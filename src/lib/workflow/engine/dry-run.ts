@@ -230,10 +230,12 @@ export async function dryRunWorkflow(args: {
     // an empty string would look identical to a broken reference, which is the
     // one thing a dry run exists to tell apart.
     //
-    // 'several' mirrors the live rule: with more than one guest behind a phone
-    // there is no answer to "whose name", so the field is empty and a template
-    // greeting silently loses its name. Seeing that in a test is the point.
-    guest_name: scenario.guestCase === 'one' ? 'דנה' : '',
+    // 'several' mirrors the live rule exactly, down to the ABSENCE: with more
+    // than one guest behind a phone there is no answer to "whose name", so the
+    // key is omitted rather than emptied — which is what lets an owner's
+    // `| default:'אורח יקר'` fire here just as it would in production. Emptying
+    // it would make the dry run report a passing template that fails live.
+    ...(scenario.guestCase === 'one' ? { guest_name: 'דנה' } : {}),
     event_name: 'אירוע לדוגמה',
     event_date: '01.01.2027',
   };
