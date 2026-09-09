@@ -6,6 +6,7 @@ import { Loader2, Phone, X } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { PhoneInput } from '@/components/ui/phone-input';
 
 // Floating call-center widget — capability A, THIRD design (owner-directed
 // pivot, 12.8, follow-on to the widget's OWN pivot): OTP-verified,
@@ -178,9 +179,7 @@ export function CallMeNowWidget() {
                 <>
                   <label className="block space-y-1">
                     <span className="text-muted-foreground">מספר טלפון</span>
-                    <Input
-                      type="tel"
-                      inputMode="tel"
+                    <PhoneInput
                       value={phone}
                       onChange={(e) => setPhone(e.target.value)}
                       placeholder="050-1234567"

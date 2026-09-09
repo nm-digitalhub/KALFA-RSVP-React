@@ -12,6 +12,7 @@ import {
   SubmitButton,
 } from '@/components/forms';
 import { Input } from '@/components/ui/input';
+import { PhoneInput } from '@/components/ui/phone-input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import {
@@ -144,7 +145,7 @@ export function ContactForm({
         </div>
         <div className="grid gap-1.5">
           <Label htmlFor="contact-phone">טלפון</Label>
-          <Input id="contact-phone" name="phone" type="tel" dir="ltr" autoComplete="tel" className={FIELD_CLS} />
+          <PhoneInput id="contact-phone" name="phone" className={FIELD_CLS} />
           <FieldError errors={state?.fieldErrors?.phone} />
         </div>
       </div>
@@ -230,7 +231,7 @@ export function CallbackForm({ defaultTopic }: { defaultTopic?: string }) {
       </div>
       <div className="grid gap-1.5">
         <Label htmlFor="cb-phone">טלפון</Label>
-        <Input id="cb-phone" name="phone" type="tel" required dir="ltr" autoComplete="tel" className={FIELD_CLS} />
+        <PhoneInput id="cb-phone" name="phone" required className={FIELD_CLS} />
         <FieldError errors={state?.fieldErrors?.phone} />
       </div>
       <TopicSelect id="cb-topic" defaultTopic={defaultTopic} />
