@@ -30,7 +30,14 @@ import type {
 } from '@/lib/workflow/vendor/workflowbuilder/types/workflow-execution/execution-model';
 
 import { findCatalogueEntry, isTriggerType } from '../catalogue/nodes';
-import { ERROR_POLICIES, type ErrorPolicy } from '../catalogue/types';
+import {
+  ACTION_BRANCH_HANDLES,
+  ERROR_POLICIES,
+  NODE_STATUSES,
+  RUNNER_ERROR_PORT,
+  type ErrorPolicy,
+  type NodeStatus,
+} from '../catalogue/types';
 
 import { editorDiagramSchema, type EditorDiagram } from './editor-schema';
 
@@ -44,6 +51,12 @@ import { editorDiagramSchema, type EditorDiagram } from './editor-schema';
 // entry for its own type.
 export type KalfaNode = BaseNode & {
   config: Record<string, unknown>;
+  /**
+   * The node's own lifecycle, lifted out of the properties like `label` and
+   * `errorPolicy`. Absent means `active`, which is also what an unrecognised
+   * value falls back to — the vocabulary is ours, the row is not.
+   */
+  status?: NodeStatus;
 };
 
 // ---------------------------------------------------------------------------
@@ -124,6 +137,22 @@ export type ConversionResult =
 // What is deliberately NOT re-added here: a save-time check that every
 // reference resolves. It cannot be done honestly — `{{trigger.message_text}}`
 // is valid and unresolvable at save time, because no message has arrived yet.
+
+/**
+ * The node's Active / Draft / Disabled switch.
+ *
+ * Anything unrecognised is treated as ABSENT, not as an error. That matters for
+ * one concrete case: `action.update_guest_status` used to spell the guest's RSVP
+ * value under this same key, so a diagram saved before the rename carries
+ * `status: 'attending'` here. Rejecting it would break those diagrams; reading it
+ * as a lifecycle value would silently disable a live node. Falling back to
+ * `active` does neither.
+ */
+function readNodeStatus(value: unknown): NodeStatus | undefined {
+  return typeof value === 'string' && (NODE_STATUSES as readonly string[]).includes(value)
+    ? (value as NodeStatus)
+    : undefined;
+}
 
 function readErrorPolicy(value: unknown): ErrorPolicy | undefined {
   return typeof value === 'string' && (ERROR_POLICIES as readonly string[]).includes(value)
@@ -221,6 +250,10 @@ export function toWorkflowDefinition(
         : {}),
       ...(role ? { role } : {}),
       ...(errorPolicy ? { errorPolicy } : {}),
+      ...(() => {
+        const status = readNodeStatus(properties.status);
+        return status ? { status } : {};
+      })(),
     };
     nodes.push(node);
   }
@@ -256,10 +289,22 @@ export function toWorkflowDefinition(
       id,
       sourceNodeId: editorEdge.source,
       targetNodeId: editorEdge.target,
-      // Preserved verbatim so decision branches and the reserved 'errorRoute'
-      // handle work (test 9). `null` from React Flow becomes absent, which is
-      // what `isEdgeLive` treats as "no handle".
-      ...(editorEdge.sourceHandle ? { sourceHandle: editorEdge.sourceHandle } : {}),
+      // Preserved verbatim so decision branches work (test 9), with ONE
+      // rewrite: the action node's error branch. The editor mints that handle
+      // through `getHandleId` as `source:inner:error`, and the runner tests
+      // against the bare literal `errorRoute` — this is the seam where the two
+      // vocabularies meet, and it is the only place that knows both.
+      //
+      // `null` from React Flow becomes absent, which is what `isEdgeLive` treats
+      // as "no handle" — every non-error edge live.
+      ...(editorEdge.sourceHandle
+        ? {
+            sourceHandle:
+              editorEdge.sourceHandle === ACTION_BRANCH_HANDLES.error
+                ? RUNNER_ERROR_PORT
+                : editorEdge.sourceHandle,
+          }
+        : {}),
     });
 
     inDegree.set(editorEdge.target, (inDegree.get(editorEdge.target) ?? 0) + 1);

@@ -95,7 +95,7 @@ const rsvpByKeyword: DiagramModel = {
           properties: {
             label: 'סמן כמגיע/ה',
             description: 'קובע את אישור ההגעה של האורח ששלח את ההודעה',
-            status: 'attending',
+            rsvpStatus: 'attending',
             errorPolicy: 'fail',
           },
         },
@@ -111,7 +111,7 @@ const rsvpByKeyword: DiagramModel = {
           properties: {
             label: 'סמן כלא מגיע/ה',
             description: 'קובע את אישור ההגעה של האורח ששלח את ההודעה',
-            status: 'declined',
+            rsvpStatus: 'declined',
             errorPolicy: 'fail',
           },
         },
@@ -218,7 +218,7 @@ const rsvpWithReply: DiagramModel = {
           properties: {
             label: 'סמן כמגיע/ה',
             description: 'קובע את אישור ההגעה של האורח ששלח את ההודעה',
-            status: 'attending',
+            rsvpStatus: 'attending',
             errorPolicy: 'fail',
           },
         },
@@ -234,7 +234,7 @@ const rsvpWithReply: DiagramModel = {
           properties: {
             label: 'סמן כלא מגיע/ה',
             description: 'קובע את אישור ההגעה של האורח ששלח את ההודעה',
-            status: 'declined',
+            rsvpStatus: 'declined',
             errorPolicy: 'fail',
           },
         },

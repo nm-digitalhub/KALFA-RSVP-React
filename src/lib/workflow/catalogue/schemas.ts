@@ -27,16 +27,19 @@
 //
 // Every entry ends in `satisfies NodeSchema` / typed as `PaletteItem`, so a
 // mistake here is a compile error rather than an empty properties panel.
-import { NodeType, getScope, sharedProperties } from '@workflowbuilder/sdk';
+import { NodeType, getScope, sharedProperties, statusOptions } from '@workflowbuilder/sdk';
 import type { NodeSchema, PaletteItem, UISchema } from '@workflowbuilder/sdk';
 
 import { RSVP_STATUSES } from '@/lib/constants';
 
 import {
   CONDITION_BRANCH_HANDLES,
-  CONDITION_FIELDS,
-  CONDITION_OPERATORS,
+  ACTION_BRANCH_HANDLES,
   ERROR_POLICIES,
+  NODE_STATUSES,
+  UNARY_CONDITION_OPERATORS,
+  type ConditionField,
+  type ConditionOperator,
   type KalfaNodeType,
 } from './types';
 
@@ -44,17 +47,91 @@ import {
 // Option sets — the same `{ label, value }` shape the SDK's own statusOptions use
 // ---------------------------------------------------------------------------
 
-const conditionFieldOptions = {
-  message_text: { label: 'תוכן ההודעה', value: CONDITION_FIELDS[0] },
-  button_payload: { label: 'כפתור שנלחץ', value: CONDITION_FIELDS[1] },
+// Indexed by NAME, not by position in the tuple. The previous form read
+// `CONDITION_FIELDS[0]`, `[1]`, `[2]` … which is correct exactly as long as
+// nobody inserts an entry — and this list just grew from two to seven. Naming
+// the member makes a reorder a type error instead of a silently relabelled
+// dropdown.
+// Per-step Active / Draft / Disabled.
+//
+// `NODE_STATUSES` was declared early and then wired to nothing — the field
+// existed in the vocabulary, appeared in no form, and was read by no runner.
+// Every built-in node in the vendor's library carries it (`nodes/decision.md`,
+// `nodes/delay.md`: "Status  Dropdown  Active / Draft / Disabled"), and the SDK
+// exports the canonical option set WITH its status icons, which is why the
+// `value` and `icon` here are taken from `statusOptions` rather than retyped.
+// Only the labels are ours, for the same reason as the error policy: the SDK
+// ships English inside the JSON schema, where i18n cannot reach.
+const nodeStatusOptions = {
+  active: { label: 'פעיל', value: statusOptions.active.value, icon: statusOptions.active.icon },
+  draft: { label: 'טיוטה', value: statusOptions.draft.value, icon: statusOptions.draft.icon },
+  disabled: {
+    label: 'מושבת',
+    value: statusOptions.disabled.value,
+    icon: statusOptions.disabled.icon,
+  },
+} as const satisfies Record<(typeof NODE_STATUSES)[number], { label: string; value: string; icon: string }>;
+
+// The two handles an action node draws, as DATA — the same mechanism already
+// proven on `logic.condition`, whose branches were verified rendering on a live
+// canvas. `templateType: NodeType.DecisionNode` on the palette entry turns each
+// array member into a labelled handle.
+//
+// The error handle is what makes `errorPolicy: 'errorRoute'` reachable at all.
+// It leaves the editor as `source:inner:error` and the adapter rewrites it to
+// the runner's reserved `errorRoute` — see ACTION_BRANCH_HANDLES.
+const actionBranches = [
+  { id: 'ok', sourceHandle: ACTION_BRANCH_HANDLES.ok, label: 'הצליח' },
+  { id: 'error', sourceHandle: ACTION_BRANCH_HANDLES.error, label: 'נכשל' },
+] as const;
+
+const actionBranchesProperty = {
+  decisionBranches: {
+    type: 'array',
+    items: {
+      type: 'object',
+      properties: {
+        id: { type: 'string' },
+        sourceHandle: { type: 'string' },
+        label: { type: 'string' },
+      },
+    },
+  },
 } as const;
 
-const conditionOperatorOptions = {
-  contains: { label: 'מכיל', value: CONDITION_OPERATORS[0] },
-  equals: { label: 'שווה ל־', value: CONDITION_OPERATORS[1] },
-  not_equals: { label: 'שונה מ־', value: CONDITION_OPERATORS[2] },
-  is_empty: { label: 'ריק', value: CONDITION_OPERATORS[3] },
+const statusProperty = {
+  status: { type: 'string', options: Object.values(nodeStatusOptions) },
 } as const;
+
+// The one control, spelled once. Every node's uischema ends with it, so the
+// switch sits in the same place on every panel.
+function statusControl(scope: string): UISchema {
+  return { type: 'Select', scope, label: 'מצב הצעד' };
+}
+
+const conditionFieldOptions = {
+  message_text: { label: 'תוכן ההודעה', value: 'message_text' },
+  button_payload: { label: 'כפתור שנלחץ', value: 'button_payload' },
+  guest_name: { label: 'שם האורח', value: 'guest_name' },
+  event_name: { label: 'שם האירוע', value: 'event_name' },
+  event_date: { label: 'תאריך האירוע', value: 'event_date' },
+  contactId: { label: 'מזהה איש קשר', value: 'contactId' },
+  eventId: { label: 'מזהה אירוע', value: 'eventId' },
+} as const satisfies Record<ConditionField, { label: string; value: ConditionField }>;
+
+const conditionOperatorOptions = {
+  contains: { label: 'מכיל', value: 'contains' },
+  not_contains: { label: 'לא מכיל', value: 'not_contains' },
+  equals: { label: 'שווה ל־', value: 'equals' },
+  not_equals: { label: 'שונה מ־', value: 'not_equals' },
+  starts_with: { label: 'מתחיל ב־', value: 'starts_with' },
+  ends_with: { label: 'מסתיים ב־', value: 'ends_with' },
+  is_empty: { label: 'ריק', value: 'is_empty' },
+  is_not_empty: { label: 'אינו ריק', value: 'is_not_empty' },
+} as const satisfies Record<
+  ConditionOperator,
+  { label: string; value: ConditionOperator }
+>;
 
 // Hebrew labels, authored here rather than taken from the SDK's exported
 // `errorPolicyProperty`. That fragment ships English strings ("Fail workflow")
@@ -64,6 +141,7 @@ const conditionOperatorOptions = {
 const errorPolicyOptions = {
   fail: { label: 'עצור את כל התהליך', value: ERROR_POLICIES[0] },
   continue: { label: 'המשך, וסמן את ההרצה כהושלמה', value: ERROR_POLICIES[1] },
+  errorRoute: { label: 'המשך במסלול השגיאה', value: ERROR_POLICIES[2] },
 } as const;
 
 const rsvpStatusOptions = {
@@ -81,6 +159,7 @@ const triggerSchema = {
   required: ['label', 'description'],
   properties: {
     ...sharedProperties,
+    ...statusProperty,
     keyword: { type: 'string', placeholder: 'השאירו ריק כדי להפעיל על כל הודעה' },
   },
 } satisfies NodeSchema;
@@ -96,6 +175,7 @@ const triggerUiSchema: UISchema = {
       scope: triggerScope('properties.keyword'),
       label: 'הפעל רק אם ההודעה מכילה',
     },
+    statusControl(triggerScope('properties.status')),
   ],
 };
 
@@ -108,6 +188,8 @@ const conditionSchema = {
   required: ['label', 'description', 'field', 'operator'],
   properties: {
     ...sharedProperties,
+    ...statusProperty,
+    left: { type: 'string' },
     field: { type: 'string', options: Object.values(conditionFieldOptions) },
     operator: { type: 'string', options: Object.values(conditionOperatorOptions) },
     value: { type: 'string' },
@@ -144,21 +226,37 @@ const conditionUiSchema: UISchema = {
   elements: [
     { type: 'Text', scope: conditionScope('properties.label'), label: 'שם הצעד' },
     { type: 'Select', scope: conditionScope('properties.field'), label: 'בדוק את' },
+    {
+      // The escape hatch from the dropdown, and the reason the dropdown is no
+      // longer a ceiling. `nodes/conditional.md` describes both sides of a
+      // comparison as free values that may reference earlier nodes; this is that
+      // side. Left blank, the dropdown above is used — which is how every
+      // diagram saved before this keeps behaving.
+      type: 'VariableText',
+      scope: conditionScope('properties.left'),
+      label: 'או השוו ערך משלכם (גובר על הבחירה למעלה)',
+      placeholder: "למשל {{nodes.<id>.value}} או {{trigger.guest_name}}",
+    },
     { type: 'Select', scope: conditionScope('properties.operator'), label: 'התנאי' },
     {
-      type: 'Text',
+      // Also a VariableText: the right-hand side is as free as the left, so a
+      // condition can compare one node's output against another's.
+      type: 'VariableText',
       scope: conditionScope('properties.value'),
       label: 'ערך',
-      // 'is_empty' takes no operand. Hiding the box is the difference between a
-      // form that explains itself and one that invites a value it will ignore.
+      // The unary operators take no operand. Hiding the box is the difference
+      // between a form that explains itself and one that invites a value it will
+      // ignore. Spelled as an enum rather than a const because there are now two
+      // such operators and a `const` rule would only ever hide for one of them.
       rule: {
         effect: 'HIDE',
         condition: {
           scope: conditionScope('properties.operator'),
-          schema: { const: conditionOperatorOptions.is_empty.value },
+          schema: { enum: [...UNARY_CONDITION_OPERATORS] },
         },
       },
     },
+    statusControl(conditionScope('properties.status')),
   ],
 };
 
@@ -168,10 +266,19 @@ const conditionUiSchema: UISchema = {
 
 const updateGuestStatusSchema = {
   type: 'object',
-  required: ['label', 'description', 'status'],
+  // `rsvpStatus`, not `status`. The SDK reserves `status` for the node's own
+  // Active/Draft/Disabled lifecycle — it is in `statusOptions` and drives the
+  // status badge — and this node happened to have picked the same word for the
+  // guest's RSVP. Two different meanings under one key in one object is a bug
+  // waiting for whoever reads it next, so ours moved. `readRsvpStatus` in the
+  // handler still accepts the old key, because diagrams saved before this carry
+  // it.
+  required: ['label', 'description', 'rsvpStatus'],
   properties: {
     ...sharedProperties,
-    status: { type: 'string', options: Object.values(rsvpStatusOptions) },
+    ...statusProperty,
+    ...actionBranchesProperty,
+    rsvpStatus: { type: 'string', options: Object.values(rsvpStatusOptions) },
     // Surfaced on THIS node only. Upstream's guidance is to spread the fragment
     // "on node types that should surface the choice; omit it elsewhere — the
     // runner defaults to 'fail' when the field is absent."
@@ -193,7 +300,7 @@ const updateGuestStatusUiSchema: UISchema = {
     { type: 'Text', scope: updateGuestStatusScope('properties.label'), label: 'שם הצעד' },
     {
       type: 'Select',
-      scope: updateGuestStatusScope('properties.status'),
+      scope: updateGuestStatusScope('properties.rsvpStatus'),
       label: 'הסטטוס החדש',
     },
     {
@@ -209,6 +316,7 @@ const updateGuestStatusUiSchema: UISchema = {
       type: 'Label',
       text: 'בחירה ב"המשך" לא כותבת את הסטטוס — היא רק מונעת מהכשל לסמן את ההרצה ככושלת. הכשל עצמו עדיין נרשם ביומן.',
     },
+    statusControl(updateGuestStatusScope('properties.status')),
   ],
 };
 
@@ -221,6 +329,8 @@ const sendWhatsappSchema = {
   required: ['label', 'description', 'body'],
   properties: {
     ...sharedProperties,
+    ...statusProperty,
+    ...actionBranchesProperty,
     body: { type: 'string' },
     errorPolicy: { type: 'string', options: Object.values(errorPolicyOptions) },
   },
@@ -255,6 +365,7 @@ const sendWhatsappUiSchema: UISchema = {
       scope: sendWhatsappScope('properties.errorPolicy'),
       label: 'אם השליחה נכשלת',
     },
+    statusControl(sendWhatsappScope('properties.status')),
   ],
 };
 
@@ -273,6 +384,8 @@ const notifyTeamSchema = {
   required: ['label', 'description', 'title'],
   properties: {
     ...sharedProperties,
+    ...statusProperty,
+    ...actionBranchesProperty,
     title: { type: 'string' },
     detail: { type: 'string' },
     level: { type: 'string', options: Object.values(notifyLevelOptions) },
@@ -308,6 +421,7 @@ const notifyTeamUiSchema: UISchema = {
       text: 'ההתראה נשלחת לערוץ הצוות בלבד ולא לאורח. כותרת זהה שחוזרת נדחסת לפי חלון הכיווץ של ההתראות.',
     },
     { type: 'Select', scope: notifyTeamScope('properties.errorPolicy'), label: 'אם ההתראה נכשלת' },
+    statusControl(notifyTeamScope('properties.status')),
   ],
 };
 
@@ -320,6 +434,7 @@ const setValueSchema = {
   required: ['label', 'description', 'value'],
   properties: {
     ...sharedProperties,
+    ...statusProperty,
     value: { type: 'string' },
   },
 } satisfies NodeSchema;
@@ -341,6 +456,7 @@ const setValueUiSchema: UISchema = {
       type: 'Label',
       text: 'הצעד לא שולח ולא כותב דבר — הוא מחשב ערך אחד שצעדים אחרי־כן יכולים לצטט.',
     },
+    statusControl(setValueScope('properties.status')),
   ],
 };
 
@@ -395,6 +511,7 @@ export const PALETTE_ITEMS: PaletteItem[] = [
       },
     },
     defaultPropertiesData: {
+      status: nodeStatusOptions.active.value,
       label: 'הודעת וואטסאפ נכנסת',
       description: 'מתחיל את התהליך כשאורח שולח הודעה',
       keyword: '',
@@ -452,6 +569,7 @@ export const PALETTE_ITEMS: PaletteItem[] = [
       },
     },
     defaultPropertiesData: {
+      status: nodeStatusOptions.active.value,
       label: 'תנאי',
       description: 'מפצל את התהליך לשני מסלולים',
       field: conditionFieldOptions.message_text.value,
@@ -469,6 +587,10 @@ export const PALETTE_ITEMS: PaletteItem[] = [
   },
   {
     type: 'action.update_guest_status' satisfies KalfaNodeType,
+    // Rendered as a decision node so the failure branch has a handle to leave
+    // from. Without it `errorPolicy: 'errorRoute'` names a port no edge carries,
+    // which is a guaranteed dead end — the reason the option was withheld.
+    templateType: NodeType.DecisionNode,
     label: 'עדכון סטטוס אורח',
     description: 'קובע את אישור ההגעה של האורח ששלח את ההודעה',
     icon: 'UserCheck',
@@ -482,14 +604,20 @@ export const PALETTE_ITEMS: PaletteItem[] = [
       },
     },
     defaultPropertiesData: {
+      decisionBranches: actionBranches.map((branch) => ({ ...branch })),
+      status: nodeStatusOptions.active.value,
       label: 'עדכון סטטוס אורח',
       description: 'קובע את אישור ההגעה של האורח ששלח את ההודעה',
-      status: rsvpStatusOptions.attending.value,
+      rsvpStatus: rsvpStatusOptions.attending.value,
       errorPolicy: errorPolicyOptions.fail.value,
     },
   },
   {
     type: 'action.send_whatsapp' satisfies KalfaNodeType,
+    // Rendered as a decision node so the failure branch has a handle to leave
+    // from. Without it `errorPolicy: 'errorRoute'` names a port no edge carries,
+    // which is a guaranteed dead end — the reason the option was withheld.
+    templateType: NodeType.DecisionNode,
     label: 'שליחת הודעת וואטסאפ',
     description: 'משיב לאורח ששלח את ההודעה',
     icon: 'WhatsappLogo',
@@ -502,6 +630,8 @@ export const PALETTE_ITEMS: PaletteItem[] = [
       },
     },
     defaultPropertiesData: {
+      decisionBranches: actionBranches.map((branch) => ({ ...branch })),
+      status: nodeStatusOptions.active.value,
       label: 'שליחת הודעת וואטסאפ',
       description: 'משיב לאורח ששלח את ההודעה',
       body: '',
@@ -510,6 +640,10 @@ export const PALETTE_ITEMS: PaletteItem[] = [
   },
   {
     type: 'action.notify_team' satisfies KalfaNodeType,
+    // Rendered as a decision node so the failure branch has a handle to leave
+    // from. Without it `errorPolicy: 'errorRoute'` names a port no edge carries,
+    // which is a guaranteed dead end — the reason the option was withheld.
+    templateType: NodeType.DecisionNode,
     label: 'התראה לצוות',
     description: 'שולח הודעה לערוץ הצוות',
     icon: 'Bell',
@@ -522,6 +656,8 @@ export const PALETTE_ITEMS: PaletteItem[] = [
       },
     },
     defaultPropertiesData: {
+      decisionBranches: actionBranches.map((branch) => ({ ...branch })),
+      status: nodeStatusOptions.active.value,
       label: 'התראה לצוות',
       description: 'שולח הודעה לערוץ הצוות',
       title: '',
@@ -544,6 +680,7 @@ export const PALETTE_ITEMS: PaletteItem[] = [
       },
     },
     defaultPropertiesData: {
+      status: nodeStatusOptions.active.value,
       label: 'קביעת ערך',
       description: 'מחשב ערך אחד לשימוש בצעדים הבאים',
       value: '',

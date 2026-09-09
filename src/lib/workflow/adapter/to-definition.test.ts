@@ -294,12 +294,34 @@ describe('conversion contract', () => {
     expect(result.definition.nodes.find((n) => n.id === 'a')?.errorPolicy).toBe('continue');
   });
 
+  it('accepts errorRoute, which it used to drop', () => {
+    // This assertion was inverted. `errorRoute` sat in the rejected list because
+    // nothing in the editor could draw an edge carrying the runner's reserved
+    // port — true of the SDK's handle minting, and never true of the adapter,
+    // which rewrites `source:inner:error` into it. See unblocked.test.ts for the
+    // routing itself; here it is only that the policy survives conversion.
+    const result = toWorkflowDefinition(
+      'wf1',
+      diagram(
+        [
+          node('t', TRIGGER),
+          node('a', ACTION, { rsvpStatus: 'attending', errorPolicy: 'errorRoute' }),
+        ],
+        [edge('t', 'a')],
+      ),
+    );
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.definition.nodes.find((n) => n.id === 'a')?.errorPolicy).toBe('errorRoute');
+  });
+
   it('drops an errorPolicy it does not recognise rather than trusting it', () => {
     // The value arrives from a browser through jsonb. An unrecognised string
     // would make the runner's `policy === 'fail'` comparison false and absorb a
     // failure the owner never asked to absorb; absent means the documented
     // default, which is 'fail'.
-    for (const injected of ['errorRoute', 'CONTINUE', '', 42]) {
+    for (const injected of ['ERROR_ROUTE', 'CONTINUE', '', 42]) {
       const result = toWorkflowDefinition(
         'wf1',
         diagram(

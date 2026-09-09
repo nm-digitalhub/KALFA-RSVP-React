@@ -130,26 +130,60 @@ const whatsappInbound: StepHandler = async (_config, ctx) => ({
 // logic.condition
 // ---------------------------------------------------------------------------
 
+/**
+ * Compare two already-resolved strings.
+ *
+ * Takes the LEFT-HAND VALUE, not a field name. That is the whole opening: the
+ * left side used to be an index into the trigger payload, so a condition could
+ * only ever ask about the inbound message. Now `resolveConfigTemplates` has
+ * already turned `{{nodes.<id>.value}}` — or any other reference — into text by
+ * the time this runs, and this function no longer knows or cares where the
+ * string came from.
+ */
+export function compareValues(
+  actual: string,
+  operator: ConditionOperator,
+  operand: string,
+): boolean {
+  // Case-insensitive throughout. Hebrew has no case, but a keyword may be Latin
+  // ("YES", "ok") and an owner typing one should not have to match the guest's
+  // shift key.
+  const a = actual.trim().toLowerCase();
+  const b = operand.trim().toLowerCase();
+  switch (operator) {
+    case 'contains':
+      // An empty needle would match everything, which is never what an owner
+      // who left the box blank meant.
+      return b !== '' && a.includes(b);
+    case 'not_contains':
+      return b === '' || !a.includes(b);
+    case 'equals':
+      return a === b;
+    case 'not_equals':
+      return a !== b;
+    case 'starts_with':
+      return b !== '' && a.startsWith(b);
+    case 'ends_with':
+      return b !== '' && a.endsWith(b);
+    case 'is_empty':
+      return a === '';
+    case 'is_not_empty':
+      return a !== '';
+  }
+}
+
+/**
+ * @deprecated Kept because it is the shape the pre-`left` diagrams evaluate
+ * under, and because `dry-run`'s trace and two test files name it. Reads a field
+ * off the trigger payload and defers to {@link compareValues}.
+ */
 export function evaluateCondition(
   field: ConditionField,
   operator: ConditionOperator,
   operand: string,
   trigger: WorkflowTriggerPayload,
 ): boolean {
-  const actual = trigger[field] ?? '';
-  switch (operator) {
-    case 'contains':
-      // Case-insensitive: Hebrew has no case, but a keyword may be Latin
-      // ("YES", "ok") and an owner typing one should not have to match the
-      // guest's shift key.
-      return operand !== '' && actual.toLowerCase().includes(operand.toLowerCase());
-    case 'equals':
-      return actual.trim() === operand.trim();
-    case 'not_equals':
-      return actual.trim() !== operand.trim();
-    case 'is_empty':
-      return actual.trim() === '';
-  }
+  return compareValues(trigger[field] ?? '', operator, operand);
 }
 
 // Branches by naming a port. `isEdgeLive` in the runner fires the outgoing edge
@@ -176,11 +210,23 @@ export function evaluateCondition(
 // end on the other — and it surfaces to the owner instead of passing silently.
 
 const condition: StepHandler = async (config, ctx) => {
-  const field = readEnum(config, 'field', CONDITION_FIELDS, 'logic.condition');
   const operator = readEnum(config, 'operator', CONDITION_OPERATORS, 'logic.condition');
   const operand = readString(config, 'value');
 
-  const result = evaluateCondition(field, operator, operand, ctx.trigger);
+  // `left` arrives ALREADY RESOLVED — `resolveConfigTemplates` walked the whole
+  // config before this handler was called — so an owner comparing
+  // `{{nodes.<id>.value}}` gets the computed text here, not the reference.
+  //
+  // Falling back to `field` rather than requiring `left` is what keeps every
+  // diagram saved before this working unchanged: those carry a field name and no
+  // left-hand expression, and they must keep evaluating identically.
+  const left = readString(config, 'left').trim();
+  const actual =
+    left === ''
+      ? (ctx.trigger[readEnum(config, 'field', CONDITION_FIELDS, 'logic.condition')] ?? '')
+      : left;
+
+  const result = compareValues(actual, operator, operand);
   return {
     output: { result },
     nextPort: result ? CONDITION_BRANCH_HANDLES.true : CONDITION_BRANCH_HANDLES.false,
@@ -195,9 +241,13 @@ const condition: StepHandler = async (config, ctx) => {
 // it changes a row we own. `send_whatsapp` is the next node, once this chain is
 // proven end to end.
 const updateGuestStatus: StepHandler = async (config, ctx) => {
+  // `rsvpStatus` first, `status` second. The key was renamed when the SDK's own
+  // node-lifecycle `status` — Active / Draft / Disabled — moved into the same
+  // properties object; every diagram saved before that carries the old name and
+  // has to keep working untouched.
   const status: RsvpStatus = readEnum(
-    config,
-    'status',
+    'rsvpStatus' in config ? config : { ...config, rsvpStatus: config.status },
+    'rsvpStatus',
     RSVP_STATUSES,
     'action.update_guest_status',
   );

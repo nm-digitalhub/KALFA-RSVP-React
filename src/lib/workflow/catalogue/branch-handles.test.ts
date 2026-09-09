@@ -16,7 +16,7 @@
 import { getHandleId } from '@workflowbuilder/sdk';
 import { describe, expect, it } from 'vitest';
 
-import { CONDITION_BRANCH_HANDLES } from './types';
+import { ACTION_BRANCH_HANDLES, CONDITION_BRANCH_HANDLES, RUNNER_ERROR_PORT } from './types';
 
 describe('condition branch handles', () => {
   it('match what the SDK itself would mint for these inner ids', () => {
@@ -41,5 +41,24 @@ describe('condition branch handles', () => {
     // `isEdgeLive` tests the error route BEFORE the equality, so a branch id of
     // 'errorRoute' would be routed as an error edge and never as a branch.
     expect(Object.values(CONDITION_BRANCH_HANDLES)).not.toContain('errorRoute');
+  });
+});
+
+describe('action branch handles', () => {
+  it('match what the SDK itself would mint', () => {
+    expect(getHandleId({ handleType: 'source', innerId: 'ok' })).toBe(ACTION_BRANCH_HANDLES.ok);
+    expect(getHandleId({ handleType: 'source', innerId: 'error' })).toBe(
+      ACTION_BRANCH_HANDLES.error,
+    );
+  });
+
+  it('are NOT the runner’s reserved port — the adapter is what bridges them', () => {
+    // The whole reason error routing was thought impossible. The editor cannot
+    // mint the bare literal, so the two vocabularies never meet on the canvas;
+    // they meet in `to-definition.ts`, which rewrites one into the other. If a
+    // future SDK ever DID mint 'errorRoute' directly, this test fails and the
+    // rewrite becomes redundant rather than wrong.
+    expect(ACTION_BRANCH_HANDLES.error).not.toBe(RUNNER_ERROR_PORT);
+    expect(getHandleId({ handleType: 'source', innerId: 'error' })).not.toBe(RUNNER_ERROR_PORT);
   });
 });

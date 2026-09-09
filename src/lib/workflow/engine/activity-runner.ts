@@ -44,6 +44,7 @@ type RunnableNode = {
   id: string;
   type: string;
   config: unknown;
+  status?: string;
 };
 
 /**
@@ -124,6 +125,44 @@ export function createActivityRunner<TNode extends RunnableNode>(
         );
       }
       const handler = STEP_HANDLERS[node.type as KalfaNodeType];
+
+      // Active / Draft / Disabled, honoured here rather than in the graph.
+      //
+      // The node still RUNS — it claims its row, records a step, and lets the
+      // graph continue through it — but its handler is never called, so it
+      // performs no side effect. That is a deliberate choice between two
+      // possible meanings of "off":
+      //
+      //   * remove the node and rewire its edges through. Surgery on a graph the
+      //     owner drew, and a disabled node in a branch would silently change
+      //     which branch fires.
+      //   * pass through. `nextPort` is undefined, so every non-error outgoing
+      //     edge stays live and the rest of the workflow behaves as if this step
+      //     had succeeded and done nothing.
+      //
+      // The second is what an owner switching one step off is asking for, and it
+      // is the same behaviour n8n's node-disable has. `draft` is treated
+      // identically and reported separately, so the log says which it was: a
+      // step nobody finished writing is not the same as one deliberately
+      // switched off, even though neither should touch a guest.
+      if (node.status === 'draft' || node.status === 'disabled') {
+        const result: NodeExecutionResult = {
+          output: { skipped: true, reason: `node_${node.status}` },
+        };
+        // Claimed and completed anyway, so the replay path and the run log see
+        // the same node list whether it was on or off. A skipped step that left
+        // no row would look like a crash on the next retry.
+        const skipClaim = await ledger.claimStep({
+          runId,
+          nodeId: node.id,
+          nodeType: node.type,
+        });
+        if (skipClaim.kind === 'already_done') return skipClaim.result as NodeExecutionResult;
+        if (skipClaim.kind === 'claimed') {
+          await ledger.completeStep({ runId, nodeId: node.id, result });
+        }
+        return result;
+      }
 
       const claim = await ledger.claimStep({
         runId,

@@ -34,20 +34,53 @@ export type KalfaNodeType = (typeof NODE_TYPES)[number];
 // Per-type configuration, narrowed by `type`
 // ---------------------------------------------------------------------------
 
-// Fields of the trigger payload a condition may read. A closed set rather than a
-// free path: the payload's shape is ours, and an unbounded accessor would be an
-// invitation to reach into something that is not there and fail at run time
-// instead of at save time.
-export const CONDITION_FIELDS = ['message_text', 'button_payload'] as const;
+// Trigger fields offered in the condition's dropdown.
+//
+// This list used to hold two entries and to be the ONLY thing a condition could
+// look at, on the reasoning that "an unbounded accessor would invite reaching
+// into something that is not there and failing at run time instead of at save
+// time". Two things make that reasoning obsolete:
+//
+//   1. the trigger payload grew from two fields to seven, so the closed set was
+//      hiding five values a workflow was already carrying; and
+//   2. `resolveConfigTemplates` now runs over every field of every config before
+//      the handler sees it, and an unresolvable reference raises
+//      `PermanentNodeExecutionError` naming the offending token. The failure the
+//      closed set was protecting against is now loud, immediate and specific —
+//      which was the only thing wrong with it.
+//
+// So the dropdown stays as the convenient path and is complete, while `left`
+// below opens the door the docs describe: `nodes/conditional.md` specifies X and
+// Y as free values that "support referencing data from earlier nodes and the
+// trigger payload". A condition can now compare `{{nodes.<id>.value}}` to
+// anything, which is what makes multi-step logic expressible at all.
+export const CONDITION_FIELDS = [
+  'message_text',
+  'button_payload',
+  'guest_name',
+  'event_name',
+  'event_date',
+  'contactId',
+  'eventId',
+] as const;
 export type ConditionField = (typeof CONDITION_FIELDS)[number];
 
 export const CONDITION_OPERATORS = [
   'contains',
+  'not_contains',
   'equals',
   'not_equals',
+  'starts_with',
+  'ends_with',
   'is_empty',
+  'is_not_empty',
 ] as const;
 export type ConditionOperator = (typeof CONDITION_OPERATORS)[number];
+
+// Operators that take no right-hand value. Named once, because THREE places have
+// to agree — the form's HIDE rule, the handler's evaluation, and any reader
+// asking why 'ערך' vanished.
+export const UNARY_CONDITION_OPERATORS = ['is_empty', 'is_not_empty'] as const;
 
 export type WhatsappInboundConfig = {
   // Optional pre-filter: run only when the message contains this text. Empty or
@@ -84,10 +117,19 @@ export type ConditionBranchHandle =
   (typeof CONDITION_BRANCH_HANDLES)[keyof typeof CONDITION_BRANCH_HANDLES];
 
 export type ConditionConfig = {
+  /**
+   * The left-hand side, as a free expression.
+   *
+   * Empty or absent means "use `field`", which is what every diagram saved
+   * before this existed contains — so old workflows keep evaluating exactly as
+   * they did, and the fallback is a compatibility path rather than a second way
+   * to write a new condition.
+   */
+  left?: string;
   field: ConditionField;
   operator: ConditionOperator;
-  // Unused by 'is_empty'. Kept optional rather than a union so the property form
-  // can show one shape and hide the field with a JSONForms rule.
+  // Unused by the unary operators. Kept optional rather than a union so the
+  // property form can show one shape and hide the field with a JSONForms rule.
   value?: string;
 };
 
@@ -117,10 +159,21 @@ export type NodeStatus = (typeof NODE_STATUSES)[number];
 
 // What the runner does when a step throws.
 //
-// `BaseNode.errorPolicy` in the vendored runner accepts THREE values —
-// 'fail' | 'continue' | 'errorRoute' — and the SDK exports a ready-made schema
-// fragment (`errorPolicyProperty`) offering all three in a Select. We expose
-// two, deliberately.
+// All THREE values the vendored runner accepts. Two of them used to be exposed,
+// and the comment here argued that the third could not work: "'errorRoute' tells
+// the runner to fire only outgoing edges whose sourceHandle is the reserved
+// literal 'errorRoute'. Nothing in this editor can draw such an edge."
+//
+// The premise was right and the conclusion was wrong. Nothing in the editor
+// MINTS that literal — `getHandleId` always produces `source:inner:<id>` — but
+// nothing has to. The adapter already rewrites the diagram into the runner's
+// vocabulary, so it rewrites this too: an edge drawn from the action node's
+// error branch leaves the editor as `source:inner:error` and enters the
+// definition as `errorRoute`. See `ACTION_BRANCH_HANDLES` below.
+//
+// The mechanism that makes the branch drawable is the one already proven on
+// `logic.condition`: `templateType: NodeType.DecisionNode` plus a
+// `decisionBranches` array renders one labelled handle per entry.
 //
 // 'errorRoute' tells the runner to fire only outgoing edges whose
 // `sourceHandle` is the reserved literal 'errorRoute'. Nothing in this editor
@@ -134,11 +187,44 @@ export type NodeStatus = (typeof NODE_STATUSES)[number];
 //
 // The two we do expose keep the SDK's own value spelling, because that string
 // is what the runner compares against.
-export const ERROR_POLICIES = ['fail', 'continue'] as const;
+export const ERROR_POLICIES = ['fail', 'continue', 'errorRoute'] as const;
 export type ErrorPolicy = (typeof ERROR_POLICIES)[number];
 
+/**
+ * The port the vendored runner reserves for error routing.
+ *
+ * `RESERVED_ERROR_HANDLE` in graph-runner.ts, a bare literal rather than a
+ * handle id. An edge must carry EXACTLY this string as its `sourceHandle` to
+ * fire when a node error-routes; `isEdgeLive` tests it before anything else.
+ */
+export const RUNNER_ERROR_PORT = 'errorRoute';
+
+/**
+ * The two outgoing handles an ACTION node draws, as the editor spells them.
+ *
+ * Why a translation exists at all: the runner wants the bare literal
+ * `'errorRoute'`, and the editor mints every handle through `getHandleId`, which
+ * produces `source:inner:<id>`. The two vocabularies cannot meet without one
+ * side moving, so the ADAPTER moves — it rewrites `source:inner:error` to
+ * `RUNNER_ERROR_PORT` on the way into a definition. That keeps the whole
+ * translation in the one module whose job is translation, and means nothing
+ * depends on how the SDK happens to mint a handle today.
+ *
+ * `ok` is a named branch rather than the bare 'source' for a reason that only
+ * shows up when the node fails: with the error edge present, the success edge
+ * needs its own handle so the two can be told apart on the canvas. Diagrams
+ * saved before this carry the bare 'source' and keep firing, because
+ * `isEdgeLive` treats an unset `nextPort` as "every non-error edge is live".
+ */
+export const ACTION_BRANCH_HANDLES = {
+  ok: 'source:inner:ok',
+  error: 'source:inner:error',
+} as const;
+
 export type UpdateGuestStatusConfig = {
-  status: RsvpStatus;
+  // `rsvpStatus`, not `status`: the SDK reserves `status` for the node's own
+  // Active / Draft / Disabled lifecycle. See the schema for the full note.
+  rsvpStatus: RsvpStatus;
 };
 
 // The reply the workflow sends back to the guest who wrote in.
