@@ -5280,6 +5280,194 @@ export type Database = {
           },
         ]
       }
+      workflow_run_events: {
+        Row: {
+          created_at: string
+          node_id: string | null
+          payload: Json | null
+          run_id: string
+          seq: number
+          type: string
+        }
+        Insert: {
+          created_at?: string
+          node_id?: string | null
+          payload?: Json | null
+          run_id: string
+          seq?: number
+          type: string
+        }
+        Update: {
+          created_at?: string
+          node_id?: string | null
+          payload?: Json | null
+          run_id?: string
+          seq?: number
+          type?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "workflow_run_events_run_id_fkey"
+            columns: ["run_id"]
+            isOneToOne: false
+            referencedRelation: "workflow_runs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      workflow_run_steps: {
+        Row: {
+          error_message: string | null
+          finished_at: string | null
+          id: string
+          node_id: string
+          node_type: string
+          output: Json | null
+          run_id: string
+          started_at: string
+          status: string
+        }
+        Insert: {
+          error_message?: string | null
+          finished_at?: string | null
+          id?: string
+          node_id: string
+          node_type: string
+          output?: Json | null
+          run_id: string
+          started_at?: string
+          status?: string
+        }
+        Update: {
+          error_message?: string | null
+          finished_at?: string | null
+          id?: string
+          node_id?: string
+          node_type?: string
+          output?: Json | null
+          run_id?: string
+          started_at?: string
+          status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "workflow_run_steps_run_id_fkey"
+            columns: ["run_id"]
+            isOneToOne: false
+            referencedRelation: "workflow_runs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      workflow_runs: {
+        Row: {
+          created_at: string
+          dedupe_key: string | null
+          error_message: string | null
+          event_id: string | null
+          finished_at: string | null
+          id: string
+          status: string
+          trigger_payload: Json
+          trigger_source: string
+          workflow_id: string
+        }
+        Insert: {
+          created_at?: string
+          dedupe_key?: string | null
+          error_message?: string | null
+          event_id?: string | null
+          finished_at?: string | null
+          id?: string
+          status?: string
+          trigger_payload?: Json
+          trigger_source: string
+          workflow_id: string
+        }
+        Update: {
+          created_at?: string
+          dedupe_key?: string | null
+          error_message?: string | null
+          event_id?: string | null
+          finished_at?: string | null
+          id?: string
+          status?: string
+          trigger_payload?: Json
+          trigger_source?: string
+          workflow_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "workflow_runs_event_id_fkey"
+            columns: ["event_id"]
+            isOneToOne: false
+            referencedRelation: "console_events"
+            referencedColumns: ["event_id"]
+          },
+          {
+            foreignKeyName: "workflow_runs_event_id_fkey"
+            columns: ["event_id"]
+            isOneToOne: false
+            referencedRelation: "events"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "workflow_runs_workflow_id_fkey"
+            columns: ["workflow_id"]
+            isOneToOne: false
+            referencedRelation: "workflows"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      workflows: {
+        Row: {
+          created_at: string
+          definition: Json
+          event_id: string | null
+          id: string
+          is_active: boolean
+          name: string
+          updated_at: string
+          version: number
+        }
+        Insert: {
+          created_at?: string
+          definition?: Json
+          event_id?: string | null
+          id?: string
+          is_active?: boolean
+          name: string
+          updated_at?: string
+          version?: number
+        }
+        Update: {
+          created_at?: string
+          definition?: Json
+          event_id?: string | null
+          id?: string
+          is_active?: boolean
+          name?: string
+          updated_at?: string
+          version?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "workflows_event_id_fkey"
+            columns: ["event_id"]
+            isOneToOne: false
+            referencedRelation: "console_events"
+            referencedColumns: ["event_id"]
+          },
+          {
+            foreignKeyName: "workflows_event_id_fkey"
+            columns: ["event_id"]
+            isOneToOne: false
+            referencedRelation: "events"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       console_agents_roster: {
