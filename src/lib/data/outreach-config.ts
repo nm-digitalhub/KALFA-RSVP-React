@@ -97,3 +97,35 @@ export async function getWhatsAppConfig(): Promise<WhatsAppConfig | null> {
     return null;
   }
 }
+
+// Whether a WhatsApp send still requires a recorded contacts.whatsapp_consent_at.
+// The admin switch app_settings.whatsapp_consent_required (channels UI) governs
+// it — the exact twin of callConsentRequired() in outreach-engine.ts for the
+// AI-call channel.
+//
+// FAIL-SAFE: anything but an explicit false — including a read error, a missing
+// column before the migration lands, or a null row — reads as "required", so a
+// hiccup can never silently drop the consent requirement and start sending to
+// contacts who never gave one.
+//
+// Lifting the requirement skips ONLY the whatsapp_consent_at check. Opt-out
+// (contacts.removal_requested) and the frozen campaign_authorized_contacts set
+// are enforced separately and are never affected by this flag.
+//
+// Reads with `select('*')` deliberately, matching getOutreachEnabled above: the
+// column is read defensively out of the row so this resolves to the SAFE value
+// on a database that has not run the migration yet, instead of erroring.
+export async function getWhatsAppConsentRequired(): Promise<boolean> {
+  try {
+    const admin = createAdminClient();
+    const { data, error } = await admin
+      .from('app_settings')
+      .select('*')
+      .eq('id', true)
+      .maybeSingle();
+    if (error || !data) return true;
+    return (data as Record<string, unknown>).whatsapp_consent_required !== false;
+  } catch {
+    return true;
+  }
+}

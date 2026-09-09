@@ -24,6 +24,7 @@ import {
 } from '@/components/forms';
 import {
   updateWhatsAppChannelAction,
+  updateWhatsAppConsentRequiredAction,
   testWhatsAppConnectionAction,
   updateVoximplantChannelAction,
   testVoximplantConnectionAction,
@@ -42,6 +43,9 @@ type WhatsAppConfig = {
   whatsapp_app_secret: string;
   whatsapp_verify_token: string;
   configured: boolean;
+  // app_settings.whatsapp_consent_required — false = sends skip the
+  // contacts.whatsapp_consent_at check (legal exposure, warned at the toggle).
+  consentRequired: boolean;
 };
 
 type VoximplantConfig = {
@@ -271,6 +275,10 @@ export function ChannelsClient({
     testWhatsAppConnectionAction,
     null,
   );
+  const [waConsentState, waConsentAction] = useActionState(
+    updateWhatsAppConsentRequiredAction,
+    null,
+  );
   const [voxState, voxAction] = useActionState(
     updateVoximplantChannelAction,
     null,
@@ -395,6 +403,48 @@ export function ChannelsClient({
           </Accordion>
 
           <SubmitButton>שמירה</SubmitButton>
+        </form>
+
+        {/* WhatsApp CONSENT toggle — a SIBLING form, never nested (a <form>
+            inside a <form> caused a "React form was unexpectedly submitted"
+            error here before). Mirrors the AI-call consent toggle in the
+            Voximplant panel: same shape, same wording, same red warning, so the
+            two channels stay recognisably one mechanism. It lives beside the
+            channel it governs rather than in /admin/settings, because it is a
+            per-channel gate — the same reason its twin lives in this file. */}
+        <form action={waConsentAction} className="mt-4 space-y-2 rounded-lg border border-border bg-card p-4">
+          <FormError message={waConsentState?.error} />
+          <FormNotice message={waConsentState?.notice} />
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="min-w-0 space-y-1">
+              <p className="text-sm font-semibold">דרישת הסכמה לוואטסאפ</p>
+              <p className="text-xs text-muted-foreground">
+                כשמסומן (ברירת מחדל) — הודעות וואטסאפ יוצאות רק לאנשי קשר עם הסכמה
+                מתועדת (<code>whatsapp_consent_at</code>). ביטול הסימון מאפשר שליחה
+                גם ללא הסכמה מוקדמת. הסרת נמענים (opt-out), רשימת הנמענים הקפואה של
+                הקמפיין וכשל־סגור נשמרים בכל מקרה.
+              </p>
+              {whatsapp.consentRequired ? null : (
+                <p className="text-xs font-semibold text-red-600 dark:text-red-400">
+                  ⚠️ דרישת ההסכמה כבויה — הודעות וואטסאפ ייצאו לאנשי קשר ללא הסכמה
+                  מוקדמת. זו חשיפה משפטית תחת סעיף 30א (חוק הספאם) והחלטה משפטית,
+                  לא טכנית.
+                </p>
+              )}
+            </div>
+            <div className="flex shrink-0 items-center justify-end gap-3">
+              <label className="inline-flex cursor-pointer items-center gap-2 text-sm font-medium">
+                <input
+                  type="checkbox"
+                  name="whatsapp_consent_required"
+                  defaultChecked={whatsapp.consentRequired}
+                  className="size-4 accent-primary"
+                />
+                דרוש הסכמה
+              </label>
+              <SubmitButton className="w-auto">עדכון</SubmitButton>
+            </div>
+          </div>
         </form>
 
         <form action={testAction} className="mt-4 space-y-2">

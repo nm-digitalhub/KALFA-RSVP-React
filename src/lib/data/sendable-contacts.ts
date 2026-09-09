@@ -1,6 +1,7 @@
 import 'server-only';
 
 import { createAdminClient } from '@/lib/supabase/admin';
+import { getWhatsAppConsentRequired } from '@/lib/data/outreach-config';
 
 // Request-free core of the "sendable contacts" read — the SAME service-role query
 // used by the UI wrapper (listSendableContacts in contacts.ts) but with NO cookie
@@ -29,19 +30,27 @@ export async function resolveSendableContacts(
   campaignId?: string,
 ): Promise<Array<{ id: string; normalized_phone: string }>> {
   const admin = createAdminClient();
+  // The consent filter is the ONLY part of this query an admin can lift
+  // (app_settings.whatsapp_consent_required — the twin of the AI-call switch).
+  // Fail-safe: getWhatsAppConsentRequired resolves to TRUE on any read error, so
+  // a hiccup keeps the filter on rather than widening the recipient list.
+  // removal_requested and the frozen authorized-set JOIN are NOT negotiable and
+  // stay applied in both branches regardless of the flag.
+  const consentRequired = await getWhatsAppConsentRequired();
 
   if (campaignId) {
     // INNER JOIN the frozen authorized set: only contacts authorized for THIS
     // campaign survive (campaign_authorized_contacts.contact_id = contacts.id).
-    const { data, error } = await admin
+    let query = admin
       .from('contacts')
       .select(
         'id, normalized_phone, campaign_authorized_contacts!inner(campaign_id)',
       )
       .eq('event_id', eventId)
       .eq('removal_requested', false)
-      .not('whatsapp_consent_at', 'is', null)
       .eq('campaign_authorized_contacts.campaign_id', campaignId);
+    if (consentRequired) query = query.not('whatsapp_consent_at', 'is', null);
+    const { data, error } = await query;
     if (error) throw new Error('טעינת אנשי הקשר לשליחה נכשלה');
     return (data ?? []).map((c) => ({
       id: c.id,
@@ -49,12 +58,13 @@ export async function resolveSendableContacts(
     }));
   }
 
-  const { data, error } = await admin
+  let query = admin
     .from('contacts')
     .select('id, normalized_phone')
     .eq('event_id', eventId)
-    .eq('removal_requested', false)
-    .not('whatsapp_consent_at', 'is', null);
+    .eq('removal_requested', false);
+  if (consentRequired) query = query.not('whatsapp_consent_at', 'is', null);
+  const { data, error } = await query;
   if (error) throw new Error('טעינת אנשי הקשר לשליחה נכשלה');
   return (data ?? []).map((c) => ({
     id: c.id,

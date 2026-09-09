@@ -19,6 +19,11 @@ vi.mock('@/lib/supabase/admin', () => ({ createAdminClient: vi.fn() }));
 vi.mock('@/lib/data/outreach-config', () => ({
   getOutreachEnabled: vi.fn(),
   getWhatsAppConfig: vi.fn(),
+  // sendable-contacts reads the WhatsApp consent switch through this module, so
+  // the mock has to carry it too. Resolves TRUE — the SAFE default — so this
+  // test keeps exercising the consent-filtered recipient query it was written
+  // for, rather than silently drifting onto the lifted-gate path.
+  getWhatsAppConsentRequired: vi.fn().mockResolvedValue(true),
 }));
 vi.mock('@/lib/data/message-templates-resolve', () => ({ resolveTemplateForEvent: vi.fn() }));
 vi.mock('@/lib/whatsapp/client', () => ({

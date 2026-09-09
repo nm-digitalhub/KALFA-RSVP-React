@@ -6,6 +6,7 @@ import { z } from 'zod';
 
 import {
   updateWhatsAppChannelConfig,
+  updateWhatsAppConsentRequired,
   testWhatsAppConnection,
 } from '@/lib/data/admin/channels';
 import {
@@ -395,4 +396,46 @@ export async function updateChannelCatalogAction(
   }
   revalidatePath('/admin/channels');
   return { notice: `הערוץ "${parsed.data.display_name}" נשמר` };
+}
+
+// Admin toggle for the WhatsApp CONSENT gate
+// (app_settings.whatsapp_consent_required). The exact twin of
+// updateCallConsentRequiredAction above, deliberately mirrored so the two
+// outreach channels cannot drift in behaviour, wording, or audit trail.
+//
+// The checkbox is "require explicit consent"; DEFAULT is on (SAFE). Turning it
+// OFF permits WhatsApp templates to contacts with NO recorded
+// contacts.whatsapp_consent_at — Israeli spam-law exposure, an owner/legal
+// decision, not a technical one. Opt-out (removal_requested), the frozen
+// campaign_authorized_contacts set, and fail-closed reads still apply.
+// Emits a SECURITY Slack audit on every flip. requireAdmin is enforced inside
+// updateWhatsAppConsentRequired (manage_settings).
+export async function updateWhatsAppConsentRequiredAction(
+  _prev: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  const required = formData.get('whatsapp_consent_required') === 'on';
+  try {
+    await updateWhatsAppConsentRequired(required);
+  } catch (err) {
+    unstable_rethrow(err);
+    return { error: 'עדכון מתג ההסכמה לוואטסאפ נכשל. נסו שוב.' };
+  }
+  // Turning the requirement OFF is the security-relevant event — alert on both,
+  // but make the lifted-consent case unmistakable.
+  void sendSlackAlert({
+    level: required ? 'info' : 'warn',
+    category: 'security',
+    source: 'whatsapp-consent-toggle',
+    title: required
+      ? 'WhatsApp consent requirement RE-ENABLED'
+      : 'WhatsApp consent requirement LIFTED — sending without prior consent permitted',
+    fields: { consent_required: String(required) },
+  });
+  revalidatePath('/admin/channels');
+  return {
+    notice: required
+      ? 'דרישת ההסכמה הופעלה — הודעות וואטסאפ רק לאנשי קשר עם הסכמה מתועדת'
+      : 'דרישת ההסכמה בוטלה — הודעות וואטסאפ ייצאו גם ללא הסכמה מוקדמת (חשיפה משפטית — ראו האזהרה)',
+  };
 }

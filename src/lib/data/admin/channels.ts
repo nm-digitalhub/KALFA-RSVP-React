@@ -19,6 +19,9 @@ export type WhatsAppChannelConfig = {
   whatsapp_app_secret: string; // '' when unset — webhook X-Hub-Signature-256
   whatsapp_verify_token: string; // '' when unset — webhook GET challenge
   configured: boolean; // derived: the minimum to send (phone id + token)
+  // app_settings.whatsapp_consent_required — when false, a send skips the
+  // contacts.whatsapp_consent_at check. Twin of voximplant's callConsentRequired.
+  consentRequired: boolean;
 };
 
 const SETTINGS_ID = true;
@@ -29,7 +32,7 @@ export async function getWhatsAppChannelConfig(): Promise<WhatsAppChannelConfig>
   const { data, error } = await supabase
     .from('app_settings')
     .select(
-      'outreach_enabled, whatsapp_phone_number_id, whatsapp_waba_id, whatsapp_access_token, whatsapp_app_secret, whatsapp_verify_token',
+      'outreach_enabled, whatsapp_phone_number_id, whatsapp_waba_id, whatsapp_access_token, whatsapp_app_secret, whatsapp_verify_token, whatsapp_consent_required',
     )
     .eq('id', SETTINGS_ID)
     .maybeSingle();
@@ -45,7 +48,35 @@ export async function getWhatsAppChannelConfig(): Promise<WhatsAppChannelConfig>
     whatsapp_app_secret: data?.whatsapp_app_secret ?? '',
     whatsapp_verify_token: data?.whatsapp_verify_token ?? '',
     configured: !!phoneNumberId && !!accessToken,
+    // Fail-SAFE, exactly like the runtime reader: anything but an explicit
+    // false shows as "required", so a missing row can never render the toggle
+    // as already lifted.
+    consentRequired: data?.whatsapp_consent_required !== false,
   };
+}
+
+// Admin toggle for the WhatsApp CONSENT gate
+// (app_settings.whatsapp_consent_required). When required (the default, SAFE),
+// a send needs a recorded contacts.whatsapp_consent_at — enforced in three
+// places: the recipient query (sendable-contacts.ts), the per-contact gate and
+// the terminal re-check (outreach-engine.ts). Setting it false lifts ONLY that
+// check; opt-out (removal_requested), the frozen campaign_authorized_contacts
+// set, and fail-closed reads still apply.
+//
+// Turning it off carries Israeli spam-law exposure surfaced at the toggle; the
+// action layer audits every flip to Slack. Admin-only (RLS + manage_settings).
+// Deliberately its OWN writer rather than a field on updateWhatsAppChannelConfig:
+// a legal switch must not be flippable as a side effect of saving credentials.
+export async function updateWhatsAppConsentRequired(
+  required: boolean,
+): Promise<void> {
+  await requirePlatformPermission('manage_settings');
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from('app_settings')
+    .update({ whatsapp_consent_required: required })
+    .eq('id', SETTINGS_ID);
+  if (error) throw new Error('עדכון מתג ההסכמה לוואטסאפ נכשל');
 }
 
 export type UpdateWhatsAppChannelInput = {

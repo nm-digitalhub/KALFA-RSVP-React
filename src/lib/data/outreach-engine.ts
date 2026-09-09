@@ -5,6 +5,7 @@ import {
   getOutreachEnabled,
   getWhatsAppConfig,
   getSendPolicy,
+  getWhatsAppConsentRequired,
 } from '@/lib/data/outreach-config';
 import { resolveTemplateForEvent } from '@/lib/data/message-templates-resolve';
 import { recordTemplateFailure, resolveTemplateMedia, sendOneWhatsApp } from '@/lib/data/outreach';
@@ -373,7 +374,15 @@ export async function executeStep(
     .eq('id', contactId)
     .maybeSingle();
   if (!contact || contact.removal_requested) return { action: 'skipped' };
-  if (tp.channel === 'whatsapp' && !contact.whatsapp_consent_at) {
+  // Same admin switch the recipient query honours (whatsapp_consent_required).
+  // Read here too rather than trusted from upstream: this function is also the
+  // crash-recovery entry point, and a step re-entered after a restart must make
+  // the same decision as the first attempt.
+  if (
+    tp.channel === 'whatsapp' &&
+    !contact.whatsapp_consent_at &&
+    (await getWhatsAppConsentRequired())
+  ) {
     return { action: 'skipped' };
   }
   if (tp.channel === 'call' && !ctx.allowed_channels.includes('call')) {
@@ -634,9 +643,16 @@ export async function loadOutreachRow(
 export function terminalReasonFor(
   contact: { removal_requested: boolean | null; whatsapp_consent_at: string | null },
   channel: string,
+  // Whether the WhatsApp consent gate is currently ARMED
+  // (app_settings.whatsapp_consent_required). Defaults to true so every existing
+  // caller and test keeps the pre-switch behaviour, and so an omitted argument
+  // can never be the thing that lifts a consent requirement.
+  whatsAppConsentRequired = true,
 ): string | null {
   if (contact.removal_requested) return 'removal_requested';
-  if (channel === 'whatsapp' && !contact.whatsapp_consent_at) return 'no_whatsapp_consent';
+  if (channel === 'whatsapp' && !contact.whatsapp_consent_at && whatsAppConsentRequired) {
+    return 'no_whatsapp_consent';
+  }
   return null;
 }
 
@@ -658,7 +674,11 @@ export async function checkStepTerminal(
     .eq('id', contactId)
     .maybeSingle();
   if (!contact) return null;
-  const reason = terminalReasonFor(contact, tp.channel);
+  const reason = terminalReasonFor(
+    contact,
+    tp.channel,
+    await getWhatsAppConsentRequired(),
+  );
   return reason ? { reason } : null;
 }
 
@@ -680,7 +700,11 @@ export async function prepareAndSendStep(
     .eq('id', contactId)
     .maybeSingle();
   if (!contact) return { kind: 'skip', reason: 'contact_missing' };
-  const terminal = terminalReasonFor(contact, tp.channel);
+  const terminal = terminalReasonFor(
+    contact,
+    tp.channel,
+    await getWhatsAppConsentRequired(),
+  );
   if (terminal) return { kind: 'terminal', reason: terminal };
 
   // P0-1 (A6): a contact PINNED in the authorized set (exposed/billed) but no

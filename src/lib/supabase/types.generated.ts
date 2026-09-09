@@ -256,6 +256,7 @@ export type Database = {
           warranty_text: string | null
           whatsapp_access_token: string | null
           whatsapp_app_secret: string | null
+          whatsapp_consent_required: boolean
           whatsapp_phone_number_id: string | null
           whatsapp_send_policy: Json | null
           whatsapp_verify_token: string | null
@@ -359,6 +360,7 @@ export type Database = {
           warranty_text?: string | null
           whatsapp_access_token?: string | null
           whatsapp_app_secret?: string | null
+          whatsapp_consent_required?: boolean
           whatsapp_phone_number_id?: string | null
           whatsapp_send_policy?: Json | null
           whatsapp_verify_token?: string | null
@@ -462,6 +464,7 @@ export type Database = {
           warranty_text?: string | null
           whatsapp_access_token?: string | null
           whatsapp_app_secret?: string | null
+          whatsapp_consent_required?: boolean
           whatsapp_phone_number_id?: string | null
           whatsapp_send_policy?: Json | null
           whatsapp_verify_token?: string | null
@@ -3322,6 +3325,7 @@ export type Database = {
           meal_pref: string | null
           note: string | null
           phone: string | null
+          phone_digits: string | null
           rsvp_note: string | null
           rsvp_token: string
           rsvp_token_revoked_at: string | null
@@ -3350,6 +3354,7 @@ export type Database = {
           meal_pref?: string | null
           note?: string | null
           phone?: string | null
+          phone_digits?: string | null
           rsvp_note?: string | null
           rsvp_token?: string
           rsvp_token_revoked_at?: string | null
@@ -3378,6 +3383,7 @@ export type Database = {
           meal_pref?: string | null
           note?: string | null
           phone?: string | null
+          phone_digits?: string | null
           rsvp_note?: string | null
           rsvp_token?: string
           rsvp_token_revoked_at?: string | null
