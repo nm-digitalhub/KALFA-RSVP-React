@@ -57,6 +57,53 @@ export async function runWorkflow(args: RunWorkflowArgs): Promise<RunWorkflowOut
   // already happened; losing one costs a line in a replay, while throwing would
   // abort a run whose side effects have landed. The vendored runner takes the
   // same position on its own `node_skipped` emit, and for the same reason.
+  // The name the owner typed on each node, by id.
+  //
+  // Built here because this is the last place that holds BOTH the definition and
+  // the event stream. The vendored runner deals only in ids — correctly, since it
+  // knows nothing about our vocabulary — so a log fed straight from it names every
+  // step by a uuid the owner has never seen. `label` is already on `BaseNode`,
+  // lifted out of the properties by the adapter, so nothing about the execution
+  // contract has to change to read it.
+  const labelById = new Map(
+    converted.definition.nodes.flatMap((node) =>
+      node.label === undefined ? [] : [[node.id, node.label] as const],
+    ),
+  );
+
+  // Attach the label to the event's own payload rather than to a column.
+  //
+  // The payload is jsonb and already carries per-event detail, so this needs no
+  // migration and no change to rows already written — an old run simply has no
+  // label and the panel falls back to the id, which is what it showed before.
+  //
+  // `execution_incomplete` gets the same treatment one level down: its payload is
+  // a list of dead ends, and that list produces the single most useful line in
+  // the whole log — "this step routed somewhere and nothing is wired to it". It
+  // was the line most in need of a name.
+  function withLabels(type: string, payload: unknown, nodeId?: string): unknown {
+    const label = nodeId === undefined ? undefined : labelById.get(nodeId);
+
+    if (type === 'execution_incomplete') {
+      const deadEnds = (payload as { deadEnds?: { nodeId: string; port: string }[] } | undefined)
+        ?.deadEnds;
+      if (Array.isArray(deadEnds)) {
+        return {
+          ...(payload as object),
+          deadEnds: deadEnds.map((end) => ({
+            ...end,
+            ...(labelById.has(end.nodeId) ? { nodeLabel: labelById.get(end.nodeId) } : {}),
+          })),
+        };
+      }
+    }
+
+    if (label === undefined) return payload;
+    return payload === undefined || payload === null || typeof payload !== 'object'
+      ? { nodeLabel: label, ...(payload === undefined ? {} : { value: payload }) }
+      : { ...(payload as object), nodeLabel: label };
+  }
+
   const events: EventEmitterPort = {
     emitEvent: async (executionId, type, payload, nodeId) => {
       if (!deps.log) return;
@@ -65,7 +112,7 @@ export async function runWorkflow(args: RunWorkflowArgs): Promise<RunWorkflowOut
           runId: executionId,
           type,
           ...(nodeId ? { nodeId } : {}),
-          payload,
+          payload: withLabels(type, payload, nodeId),
         });
       } catch {
         // Deliberately swallowed — see above.

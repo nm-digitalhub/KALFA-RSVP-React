@@ -57,7 +57,7 @@ function detailFor(event: StreamEvent): string | undefined {
     | {
         output?: unknown;
         error?: { message?: string };
-        deadEnds?: { nodeId: string; port: string }[];
+        deadEnds?: { nodeId: string; nodeLabel?: string; port: string }[];
         reason?: string;
       }
     | undefined;
@@ -71,9 +71,14 @@ function detailFor(event: StreamEvent): string | undefined {
     case 'execution_incomplete':
       // The most useful message in the whole log: a node promised a route and
       // nothing was wired to it. Without spelling that out, "incomplete" reads
-      // as a mystery.
+      // as a mystery — and named by uuid it was still close to one, since the
+      // owner has never seen that string. `nodeLabel` is attached upstream in
+      // run-workflow.ts; a run recorded before that falls back to the id.
       return payload?.deadEnds
-        ?.map(({ nodeId, port }) => `הצעד "${nodeId}" פנה למסלול "${port}" ואין אליו חיבור`)
+        ?.map(
+          ({ nodeId, nodeLabel, port }) =>
+            `הצעד "${nodeLabel ?? nodeId}" פנה למסלול "${port}" ואין אליו חיבור`,
+        )
         .join('\n');
     default:
       return undefined;
@@ -95,6 +100,11 @@ function EventRow({
     event.type === 'node_skipped'
       ? SKIP_REASON_LABEL[(event.payload as { reason?: string } | undefined)?.reason ?? '']
       : undefined;
+
+  // The name the owner typed, falling back to the id. Both are shown: the label
+  // reads, the id is what a bug report needs — so the id stays in the `title`
+  // rather than being replaced by the label.
+  const nodeLabel = (event.payload as { nodeLabel?: string } | undefined)?.nodeLabel;
 
   const detail = detailFor(event);
   const hasDetail = Boolean(detail);
@@ -137,7 +147,7 @@ function EventRow({
         <span className="font-medium">{EVENT_LABEL[event.type] ?? event.type}</span>
         {isNode && (
           <span className="truncate text-muted-foreground" title={event.nodeId}>
-            {event.nodeId}
+            {nodeLabel ?? event.nodeId}
           </span>
         )}
         {skipReason && <span className="text-muted-foreground">— {skipReason}</span>}

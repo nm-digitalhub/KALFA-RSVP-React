@@ -403,3 +403,132 @@ describe('a graph that fails the contract never executes', () => {
     expect(d._guests.submitted).toHaveLength(0);
   });
 });
+
+describe('the execution log names steps the way the owner does', () => {
+  // The log used to render every row — and the dead-end line, which is the one
+  // that tells an owner what to FIX — with the node's uuid. `label` was already
+  // on BaseNode, lifted out of the properties by the adapter; nothing read it.
+  function collectingLog() {
+    const rows: { type: string; nodeId?: string; payload?: unknown }[] = [];
+    return {
+      port: {
+        appendEvent: async (args: { type: string; nodeId?: string; payload?: unknown }) => {
+          rows.push(args);
+        },
+      },
+      rows,
+    };
+  }
+
+  it('puts the label on every node event, and on a dead end', async () => {
+    const log = collectingLog();
+    const d = deps();
+
+    // A condition wired on ONE branch only. The other port is named by the
+    // handler and carries no edge, which is exactly the dead end the log has to
+    // explain.
+    const definition = {
+      name: 'בדיקה',
+      layoutDirection: 'DOWN',
+      nodes: [
+        {
+          id: 'n-trigger',
+          type: 'node',
+          position: { x: 0, y: 0 },
+          data: {
+            type: 'trigger.whatsapp_inbound',
+            icon: 'Lightning',
+            properties: { label: 'הודעה נכנסת' },
+          },
+        },
+        {
+          id: 'n-cond',
+          type: 'node',
+          position: { x: 0, y: 0 },
+          data: {
+            type: 'logic.condition',
+            icon: 'Lightning',
+            properties: {
+              label: 'האם אישר הגעה?',
+              field: 'message_text',
+              operator: 'contains',
+              value: 'לא-יימצא-לעולם',
+            },
+          },
+        },
+        {
+          id: 'n-yes',
+          type: 'node',
+          position: { x: 0, y: 0 },
+          data: {
+            type: 'action.update_guest_status',
+            icon: 'Lightning',
+            properties: { label: 'סמן כמגיע/ה', status: 'attending' },
+          },
+        },
+      ],
+      edges: [
+        { id: 'e1', source: 'n-trigger', target: 'n-cond', sourceHandle: null },
+        {
+          id: 'e2',
+          source: 'n-cond',
+          target: 'n-yes',
+          sourceHandle: CONDITION_BRANCH_HANDLES.true,
+        },
+      ],
+    };
+
+    const outcome = await runWorkflow({
+      runId: 'run-labels',
+      workflowId: 'wf-labels',
+      storedDefinition: definition,
+      trigger: TRIGGER,
+      deps: { ...d, log: log.port },
+    });
+
+    // The condition says "false"; nothing carries that port. That is the dead end.
+    expect(outcome.status).toBe('incomplete');
+
+    const started = log.rows.find(
+      (row) => row.type === 'node_started' && row.nodeId === 'n-cond',
+    );
+    expect((started?.payload as { nodeLabel?: string })?.nodeLabel).toBe('האם אישר הגעה?');
+
+    const incomplete = log.rows.find((row) => row.type === 'execution_incomplete');
+    const deadEnds = (
+      incomplete?.payload as { deadEnds?: { nodeId: string; nodeLabel?: string }[] }
+    )?.deadEnds;
+    expect(deadEnds?.[0]).toMatchObject({
+      nodeId: 'n-cond',
+      nodeLabel: 'האם אישר הגעה?',
+    });
+  });
+
+  it('leaves an unlabelled node as its id rather than inventing one', async () => {
+    const log = collectingLog();
+    const d = deps();
+
+    await runWorkflow({
+      runId: 'run-nolabel',
+      workflowId: 'wf-nolabel',
+      storedDefinition: {
+        name: 'בדיקה',
+        layoutDirection: 'DOWN',
+        nodes: [
+          {
+            id: 'bare',
+            type: 'node',
+            position: { x: 0, y: 0 },
+            data: { type: 'trigger.whatsapp_inbound', icon: 'Lightning', properties: {} },
+          },
+        ],
+        edges: [],
+      },
+      trigger: TRIGGER,
+      deps: { ...d, log: log.port },
+    });
+
+    const started = log.rows.find((row) => row.type === 'node_started');
+    expect((started?.payload as { nodeLabel?: string } | undefined)?.nodeLabel).toBeUndefined();
+  });
+});
