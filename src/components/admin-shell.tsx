@@ -38,6 +38,7 @@ import {
   UserSearch,
   Voicemail,
   Webhook,
+  Workflow,
   type LucideIcon,
 } from 'lucide-react';
 
@@ -131,6 +132,7 @@ const NAV_GROUPS: NavGroup[] = [
       { href: '/admin/voice', label: 'מוקד שיחות AI', icon: Bot },
       { href: '/admin/channels', label: 'ערוצי תקשורת', icon: MessagesSquare },
       { href: '/admin/templates', label: 'תבניות פנייה', icon: Megaphone },
+      { href: '/admin/workflows', label: 'תהליכי אוטומציה', icon: Workflow },
       { href: '/admin/recordings', label: 'הקלטות שיחות', icon: Voicemail },
       // Console audit 12.8 — the page (src/app/(admin)/admin/voice/console-history)
       // was fully built and server-side gated (requirePlatformPermission

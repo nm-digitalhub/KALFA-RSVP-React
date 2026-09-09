@@ -1,0 +1,183 @@
+/* Counters to the SDK's global reset.
+ *
+ * `@workflowbuilder/sdk/style.css` is written for an app where the editor IS
+ * the page. Ours embeds it in a scrolling admin route, so two of its global
+ * rules have to be answered. Imported immediately after it in
+ * workflow-editor.tsx, so this loads on exactly the routes with the problem.
+ *
+ * Both rules below are UNLAYERED on purpose. The SDK's are inside
+ * `@layer reset`, and an unlayered declaration beats a layered one whatever its
+ * specificity — that is the whole mechanism here, and it is also where an
+ * earlier note in the plan went wrong: it read "they are in @layer reset, so our
+ * rules win automatically", which is only true where we HAVE a rule. A layer
+ * resolves a conflict; it invents nothing when the other side is silent.
+ */
+
+/* 1. THE SCROLL BUG (mobile: the page would not scroll at all).
+ *
+ * The SDK ships `body { margin:0; background-color:…; overflow:hidden }`.
+ * KALFA's own body rule sets `font-family` and the background and never
+ * mentions `overflow`, so `hidden` applied unopposed and the admin page lost
+ * its scroll — on every route that loads this stylesheet.
+ *
+ * Only the vertical axis is restored. Leaving `overflow-x` clamped is what this
+ * project wants anyway: an RTL page leaks horizontal scroll easily (the
+ * SidebarInset `overflow-x-clip` fix is the same problem).
+ */
+body {
+  overflow-y: auto;
+}
+
+/* 2. THE FONT.
+ *
+ * The same reset carries `* { font-family: var(--wb-font-family) }`, and
+ * `--wb-font-family` resolves to `"Poppins", system-ui, …`. Poppins has no
+ * Hebrew glyphs, so Hebrew outside the editor fell through to `system-ui` —
+ * legible, but not Heebo, and visibly different from every other admin page.
+ *
+ * `inherit` rather than a font stack: everything outside the editor takes its
+ * font from `body`, which our own unlayered rule already sets correctly. One
+ * source of truth, and it keeps working if the app font ever changes.
+ *
+ * The editor's own subtree is excluded — Poppins is part of how the SDK's
+ * canvas is designed, and its node labels are Latin anyway.
+ */
+*:not(.workflow-builder-root):not(.workflow-builder-root *) {
+  font-family: inherit;
+}
+
+/* 3. EMBEDDED EDITOR LAYOUT.
+ *
+ * The SDK's DefaultLayout is for a full-page app: top bar, left palette, right
+ * properties bar, and a canvas under both. In this admin route the shell already
+ * owns the page header and the editor owns only the framed work area, so
+ * workflow-editor.tsx composes the SDK's compound components directly.
+ *
+ * The SDK CSS still matters: Canvas renders a hashed `diagram-container`, and
+ * both Palette and PropertiesPanel render hashed `sidebar` components. Matched
+ * by class prefix because those names are CSS-module hashes.
+ */
+.kalfa-workflow-editor {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  background: hsl(var(--background));
+}
+
+.kalfa-workflow-canvas-layer,
+.kalfa-workflow-editor [class*='diagram-container'] {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.kalfa-workflow-canvas-layer {
+  z-index: 0;
+}
+
+.kalfa-workflow-viewport-bounds {
+  position: absolute;
+  inset: 1rem;
+  pointer-events: none;
+  visibility: hidden;
+}
+
+.kalfa-workflow-panel-layer {
+  position: absolute;
+  inset: 1rem 1rem 5.75rem;
+  z-index: 2;
+  display: flex;
+  gap: 1rem;
+  justify-content: space-between;
+  pointer-events: none;
+}
+
+.kalfa-workflow-palette-panel,
+.kalfa-workflow-properties-panel {
+  position: relative;
+  display: flex;
+  min-width: 0;
+  max-width: min(24rem, 42vw);
+  height: 100%;
+  min-height: 0;
+  pointer-events: auto;
+}
+
+.kalfa-workflow-palette-panel {
+  --wb-sidebar-expanded-width: min(20rem, 38vw);
+}
+
+.kalfa-workflow-properties-panel {
+  --wb-sidebar-expanded-width: min(24rem, 40vw);
+  margin-inline-start: auto;
+}
+
+.kalfa-workflow-palette-panel [class*='sidebar'],
+.kalfa-workflow-properties-panel [class*='sidebar'] {
+  max-height: 100%;
+}
+
+.kalfa-workflow-mobile-panel-close,
+.kalfa-workflow-mobile-tool {
+  display: none !important;
+}
+
+@media screen and (max-width: 800px) {
+  .kalfa-workflow-panel-layer {
+    inset: 0 0 5.75rem;
+    display: block;
+    z-index: 11;
+  }
+
+  .kalfa-workflow-palette-panel,
+  .kalfa-workflow-properties-panel {
+    --wb-sidebar-expanded-width: min(22rem, calc(100vw - 2rem));
+    position: absolute;
+    width: min(22rem, calc(100% - 2rem));
+    max-width: none;
+    height: auto;
+    max-height: calc(100% - 2rem);
+  }
+
+  .kalfa-workflow-palette-panel {
+    inset-block: 1rem 0;
+    inset-inline-start: 1rem;
+  }
+
+  .kalfa-workflow-panel-layer[data-palette-expanded='false'] .kalfa-workflow-palette-panel {
+    display: none;
+  }
+
+  .kalfa-workflow-properties-panel {
+    inset-inline: 1rem;
+    bottom: 0;
+    width: auto;
+  }
+
+  .kalfa-workflow-panel-layer:not([data-has-selection='true']) .kalfa-workflow-properties-panel,
+  .kalfa-workflow-panel-layer:not([data-properties-open='true']) .kalfa-workflow-properties-panel {
+    display: none;
+  }
+
+  .kalfa-workflow-properties-panel [class*='sidebar'] {
+    width: 100%;
+    max-height: min(34rem, calc(100vh - 16rem));
+  }
+
+  .kalfa-workflow-properties-panel [class*='content'] {
+    max-height: min(24rem, calc(100vh - 24rem));
+  }
+
+  .kalfa-workflow-mobile-panel-close {
+    position: absolute;
+    inset-block-start: 0.5rem;
+    inset-inline-end: 0.5rem;
+    z-index: 3;
+    display: inline-flex !important;
+  }
+
+  .kalfa-workflow-mobile-tool {
+    display: inline-flex !important;
+  }
+}

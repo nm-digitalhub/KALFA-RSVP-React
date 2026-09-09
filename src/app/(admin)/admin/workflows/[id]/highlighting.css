@@ -1,0 +1,63 @@
+/* Ported from the reference app's components/execution/highlighting.css.
+ *
+ * Every --ax-* token below was checked against the shipped
+ * @workflowbuilder/sdk/dist/style.css, which the editor page already imports —
+ * all eight are defined there, so these resolve rather than falling back to
+ * nothing. Using the SDK's own tokens (rather than mapping to KALFA's) keeps the
+ * canvas internally consistent: the node bodies beside these outlines are drawn
+ * from the same palette.
+ *
+ * The SDK's theme switch is the `data-theme` attribute on <html>, which is also
+ * what KALFA's theme toggle writes, so the two blocks below activate correctly
+ * without extra wiring.
+ */
+
+html[data-theme='light'] {
+  --kalfa-wf-edge-color--active: var(--ax-colors-green-400);
+  --kalfa-wf-status-color--incomplete: var(--ax-txt-warning-default);
+}
+
+html[data-theme='dark'] {
+  --kalfa-wf-edge-color--active: var(--ax-colors-green-200);
+  /* No dark warning-accent token exists — --ax-txt-warning-default is the
+     orange-100 body-text cream, which is unreadable as an accent here. Same
+     substitution the reference app makes, and for the same reason. */
+  --kalfa-wf-status-color--incomplete: var(--ax-colors-orange-300);
+}
+
+:root {
+  --kalfa-wf-status-color--completed: var(--ax-txt-success-default);
+  --kalfa-wf-status-color--failed: var(--ax-txt-error-default);
+
+  --kalfa-wf-status-bg--completed: color-mix(
+    in srgb,
+    var(--kalfa-wf-status-color--completed),
+    transparent 85%
+  );
+  --kalfa-wf-status-bg--incomplete: color-mix(
+    in srgb,
+    var(--kalfa-wf-status-color--incomplete),
+    transparent 85%
+  );
+  --kalfa-wf-status-bg--failed: color-mix(
+    in srgb,
+    var(--kalfa-wf-status-color--failed),
+    transparent 85%
+  );
+
+  --kalfa-wf-node-shadow-color--active: var(--kalfa-wf-edge-color--active);
+  --kalfa-wf-node-shadow-color--completed: var(--kalfa-wf-edge-color--active);
+  --kalfa-wf-node-shadow-color--failed: var(--ax-colors-red-400);
+
+  --kalfa-wf-node-shadow--active: var(--ax-token-shadow-focus-node-active-x)
+    var(--ax-token-shadow-focus-node-active-y) var(--ax-token-shadow-focus-node-active-blur)
+    var(--ax-token-shadow-focus-node-active-spread) var(--kalfa-wf-node-shadow-color--active);
+
+  --kalfa-wf-node-shadow--completed: var(--ax-token-shadow-focus-node-active-x)
+    var(--ax-token-shadow-focus-node-active-y) var(--ax-token-shadow-focus-node-active-blur)
+    var(--ax-token-shadow-focus-node-active-spread) var(--kalfa-wf-node-shadow-color--completed);
+
+  --kalfa-wf-node-shadow--failed: var(--ax-token-shadow-focus-node-active-x)
+    var(--ax-token-shadow-focus-node-active-y) var(--ax-token-shadow-focus-node-active-blur)
+    var(--ax-token-shadow-focus-node-active-spread) var(--kalfa-wf-node-shadow-color--failed);
+}
