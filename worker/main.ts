@@ -19,6 +19,7 @@ import { QUEUES, type OutreachCallRequest, type OutreachStepJob,
 } from '@/lib/queue/queues';
 import { runWhatsAppHealthCheck } from '@/lib/whatsapp/run-health-check';
 import { runEmailHealthCheck } from '@/lib/email/run-health-check';
+import { runExtraKeyCheck } from '@/lib/sms/run-key-check';
 import { dispatchOutreachCall } from '@/lib/data/outreach-calls';
 import {
   listActiveCampaigns,
@@ -1316,6 +1317,16 @@ async function main(): Promise<void> {
       await runEmailHealthCheck();
     }),
   );
+  // ExtrA API-key deadline monitor. One read-only GET, no SMS. Alerts when the key
+  // is rejected or within 30 days of expiry; never on "not configured" or on a
+  // single unreachable day.
+  await boss.work(
+    QUEUES.extraKeyCheck,
+    POLL_SLOW_CRON,
+    guardedWorker(QUEUES.extraKeyCheck, async () => {
+      await runExtraKeyCheck();
+    }),
+  );
   // Voximplant stuck-row reconciler (H3): ALERT-ONLY — surfaces pre-terminal
   // call_attempts older than 15m. NEVER re-issues StartScenarios.
   await boss.work(
@@ -1477,6 +1488,9 @@ async function main(): Promise<void> {
   // share a minute. DNS propagation and Resend's own verification move on the order of
   // hours; an hourly read costs two GETs.
   await boss.schedule(QUEUES.emailHealthCheck, '40 * * * *');
+  // Daily at 04:20 IL — a key expiry moves once a day at most, and the alert it
+  // raises is a plan-ahead deadline, not something to wake anyone at night for.
+  await boss.schedule(QUEUES.extraKeyCheck, '20 4 * * *', null, { tz: SCHEDULE_TZ });
   await boss.schedule(QUEUES.callbackDispatchReconcile, '*/10 * * * *');
   await boss.schedule(QUEUES.salesDispatchReconcile, '*/10 * * * *');
   // Anchored to a wall-clock hour → run on Israel local time (DST-aware).

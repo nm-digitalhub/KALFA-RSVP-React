@@ -30,6 +30,9 @@ export const QUEUE_EXPECTED_MAX_MINUTES: Record<string, number> = {
   // hours/days, not minutes; wide multiples avoid false "stale" from a job
   // that simply hasn't reached its next scheduled tick yet.
   'elevenlabs-quota-check': 18 * 60,
+  // Daily. Same 3x-ish allowance as its neighbours — a daily job flagged after four
+  // hours is "stale" by breakfast every single day.
+  'extra-key-check': 3 * 24 * 60,
   'voximplant-log-export': 3 * 24 * 60,
   'call-dispatch-retention': 3 * 24 * 60,
   'auth-phone-change-cleanup': 3 * 24 * 60,

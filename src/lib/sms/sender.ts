@@ -104,21 +104,50 @@ export function createExtraSmsSender(config: {
   };
 }
 
-// Build a configured sender from the admin-managed app_settings (server-only).
-// Throws SmsConfigError when SMS is disabled or not configured.
-export async function getSmsSender(): Promise<SmsSender> {
+export type SmsSettingsRead =
+  | { kind: 'ok'; token: string; sender: string; enabled: boolean }
+  /** The row could not be read at all — infrastructure, not an SMS fault. */
+  | { kind: 'unreadable' }
+  /** Read fine; no credentials stored. A valid state for an install that has none. */
+  | { kind: 'unconfigured' };
+
+/**
+ * The admin-managed row, as a result rather than an exception.
+ *
+ * ⚠️ `enabled` IS RETURNED SEPARATELY AND IS NOT PART OF `unconfigured`. This is the
+ * exact bug that made /admin/debug report ExtrA as NOT CONFIGURED whenever the SMS
+ * switch was off: getSmsSender() throws on `!sms_enabled`, so anything asking it
+ * "are we configured" got "no" for a switched-off but perfectly configured account.
+ * The key-expiry check has to run whether or not sending is switched on — an expiring
+ * key is worth knowing about while the channel is dark, and finding out on the day
+ * someone switches it back on is exactly the failure this monitor exists to prevent.
+ */
+export async function readSmsSettings(): Promise<SmsSettingsRead> {
   const admin = createAdminClient();
   const { data, error } = await admin
     .from('app_settings')
     .select('sms_enabled, extra_sms_token, extra_sms_sender')
     .eq('id', true)
     .maybeSingle();
-  if (error) throw new SmsConfigError('טעינת הגדרות ה-SMS נכשלה');
-  if (!data?.sms_enabled || !data.extra_sms_token || !data.extra_sms_sender) {
-    throw new SmsConfigError('שירות ה-SMS אינו מוגדר');
-  }
-  return createExtraSmsSender({
+  if (error) return { kind: 'unreadable' };
+  if (!data?.extra_sms_token || !data.extra_sms_sender) return { kind: 'unconfigured' };
+  return {
+    kind: 'ok',
     token: data.extra_sms_token,
     sender: data.extra_sms_sender,
-  });
+    enabled: data.sms_enabled === true,
+  };
+}
+
+// Build a configured sender from the admin-managed app_settings (server-only).
+// Throws SmsConfigError when SMS is disabled or not configured — for a caller about
+// to send, "switched off" and "not set up" are the same answer. Only the health
+// check needs them apart; see readSmsSettings above.
+export async function getSmsSender(): Promise<SmsSender> {
+  const read = await readSmsSettings();
+  if (read.kind === 'unreadable') throw new SmsConfigError('טעינת הגדרות ה-SMS נכשלה');
+  if (read.kind === 'unconfigured' || !read.enabled) {
+    throw new SmsConfigError('שירות ה-SMS אינו מוגדר');
+  }
+  return createExtraSmsSender({ token: read.token, sender: read.sender });
 }

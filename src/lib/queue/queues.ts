@@ -41,6 +41,12 @@ export const QUEUES = {
   // SPF/DKIM breaking while every send call keeps returning success. See
   // src/lib/email/health.ts.
   emailHealthCheck: 'email-health-check',
+  // ExtrA API-key DEADLINE monitor — one read-only GET a day, no SMS sent. Not a
+  // liveness check like its siblings: the live key expires 2027-10-27 and nothing
+  // else watches that date. On the day it passes, OTP, cancellation SMS, callback
+  // scheduling and the sales signup link all stop at once. See
+  // src/lib/sms/run-key-check.ts.
+  extraKeyCheck: 'extra-key-check',
   // Voximplant stuck-row reconciler (H3) — every 10m alert (ONLY) on pre-terminal
   // call_attempts older than 15m. NEVER re-issues StartScenarios. See
   // src/lib/data/voximplant-reconcile.ts.

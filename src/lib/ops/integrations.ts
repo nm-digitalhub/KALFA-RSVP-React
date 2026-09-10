@@ -180,9 +180,14 @@ export async function getIntegrationsStatus(jobHealth: JobHealthRow[]): Promise<
       label: 'ExtrA SMS',
       configured: flags.extra_sms_configured,
       enabled: flags.extra_sms_enabled,
-      lastCheckedAt: null,
-      healthCheckAvailable: false,
-      note: 'אין בדיקת בריאות זמינה — send-only',
+      // Was `false` with the note "send-only" until 2026-09-10 — the same claim that
+      // was wrong for WhatsApp, for the same reason. ExtrA's own OpenAPI document
+      // (docs/extra/openapi-extra-v1.json) offers GET /auth/key/ and describes it as
+      // exactly this: "verify that your Bearer token is valid and see what it may
+      // do". What it mostly answers here is FOR HOW MUCH LONGER — the live key
+      // expires 2027-10-27 and nothing else watches that date.
+      lastCheckedAt: lastCompletedFor(jobHealth, 'extra-key-check'),
+      healthCheckAvailable: true,
     },
     {
       key: 'resend-email',
