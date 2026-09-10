@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**תאריך:** 2026-09-08 · **עודכן:** 2026-09-10 (ערב) · **סטטוס:** ✅ **Phase 0 מוכנה ליישום.** §0.0 = מה שנפרס בלילה 8→9.9 · §0.1 = מדידת מצב 10.9 · §0.2 = סקירת שני מומחים · **§0.3 = ציר ההרשאות אוחד ונפרס 10.9, ושתי המיגרציות של התוכנית חייבות להשתנות בגללו.** קראו את §0.2 **ו-§0.3** לפני שמתחילים משימה.
+**תאריך:** 2026-09-08 · **עודכן:** 2026-09-10 (סוף יום) · **§0.5 = מה בוצע בפועל היום ומה הבא בתור** · **סטטוס:** ✅ **Phase 0 מוכנה ליישום.** §0.0 = מה שנפרס בלילה 8→9.9 · §0.1 = מדידת מצב 10.9 · §0.2 = סקירת שני מומחים · **§0.3 = ציר ההרשאות אוחד ונפרס 10.9, ושתי המיגרציות של התוכנית חייבות להשתנות בגללו.** קראו את §0.2 **ו-§0.3** לפני שמתחילים משימה.
 
 ---
 
@@ -289,6 +289,53 @@
 
 ---
 
+## 0.5 סטטוס 2026-09-10 (סוף יום) — Task 0.1 בוצעה, והשלב הבא הוא 0.2
+
+**Phase 0: משימה אחת מתוך שש.** כל שורה מדודה מהעץ (`ls`) ומהמסד, לא מהזיכרון.
+
+| משימה | מצב |
+|---|---|
+| **0.1 אינדקס + כרטיסי סטטוס** | ✅ **בוצע** — `(admin)/admin/integrations/page.tsx` חי ופרוס |
+| 0.2 פיצול `appSettingsSchema` ו-DAL לספקים | ⬜ לא התחיל — אפס מהשלושה (`sumitCredentialsSchema`, `extraSmsSchema`, `emailTransportSchema`) |
+| 0.3 עמוד Meta/WhatsApp | ⬜ |
+| 0.4 עמוד Voximplant | ⬜ |
+| 0.5 ExtrA · Resend · SUMIT · Microsoft · Slack | ⬜ |
+| 0.6 Nav + redirects + מחיקת הישנים | 🟡 **פריט הניווט נוסף**; אין `redirects()`, שלושת העמודים הישנים במקומם |
+
+### שלוש סטיות מ-Task 0.1 כפי שנוסחה, כולן מכוונות
+
+1. **ה-DAL אינו `getIntegrationsOverview` חדש** — הוא מרחיב את `getIntegrationsStatus` הקיימת (§0.4). זה מה שמונע שתי רשימות סותרות באתר.
+2. **הכרטיסים מקשרים למקום שבו ההגדרות יושבות היום** (`/admin/channels`, `/admin/settings`, `/admin/alerts`), ולא לעמודי `/admin/integrations/<provider>` שטרם קיימים. כך העמוד שימושי מהקומיט הראשון במקום קיר של אריחים מתים. כל href יופנה מחדש כשהעמוד שלו נוחת ב-0.3–0.5.
+3. **המתג הראשי וקטלוג הערוצים מקושרים, לא מוטמעים.** הטמעה דורשת לחלץ רכיבים מ-`channels-client.tsx` — שזו בדיוק העבודה של Task 0.3/0.6, ואין טעם לגעת בקובץ ההוא פעמיים.
+
+**מה שלא נעשה מ-0.1 ושווה להשלים:** בדיקת רינדור לעמוד (`integrations/page.test.ts`). ה-DAL מכוסה ב-15 בדיקות, אבל אין בדיקה שמצמידה שהעמוד באמת מרנדר כרטיס נעול כ"אין הרשאה" ולא כקישור — וזו בדיוק הרגרסיה שהייתה מחזירה את הבאג.
+
+### מה שנסגר היום מחוץ ל-Phase 0
+
+- **G10 — בדיקת בריאות ל-WhatsApp.** נסגר. `whatsapp-health-check` רץ כל שעה (`25 * * * *`), שתי קריאות GET ואפס הודעות, עם מיפוי שגיאות Graph לעברית ואבחנה נפרדת ל"המספר אינו משויך ל-WABA". רשומה ב-`QUEUE_EXPECTED_MAX_MINUTES`, ו-`integrations.ts` הפך ל-`healthCheckAvailable: true`. אומת חי: עבודה ידנית הושלמה ב-2.04 שניות, ללא התראה.
+- **ציר ההרשאות** (§0.3), **הרשימה הכפולה** (§0.4), ותקלות הבדיקות ב-Debug Mode.
+
+### ⚠️ תיקון ל-Task 1.3 Step 0 — הצעד החוסם נשען על טענה שגויה
+
+Step 0 מורה להסיר את `last_onboarded_time` מרשימת ה-`fields` **כי בקשתו תפיל את כל הקריאה**, בהסתמך על §0.0 ("ניתן למיון אך לא לקריאה"). **מדוד 2026-09-10 ב-`npm run meta:verify`, אחרי שהשדה נוסף ל-`FIELD_MATRIX`:**
+
+| שדה | v23.0 | v24.0 | v25.0 | v26.0 |
+|---|---|---|---|---|
+| `quality_rating` | יש ערך | יש ערך | יש ערך | יש ערך |
+| `account_mode` · `is_official_business_account` · `throughput` · `status` | יש ערך | יש ערך | יש ערך | יש ערך |
+| **`last_onboarded_time`** | **התקבל, ריק** | **התקבל, ריק** | **התקבל, ריק** | **התקבל, ריק** |
+| `unified_cert_status` | נדחה | נדחה | נדחה | נדחה |
+
+**הוא מתקבל.** הוא פשוט תמיד ריק כאן — בדיוק כמו `username`. הסיווג "סיכון גבוה" היה שגוי, ובכיוון הבטוח.
+
+**להשאיר אותו מחוץ לרשימה, מסיבה אחרת:** שדה שתמיד ריק הוא רעש, לא כישלון. Step 0 יכול להפסיק להיות **חוסם** ולהפוך להערה. **Step 0b בוצע** — ששת השדות שהוא דורש נוספו ל-`FIELD_MATRIX` ונבדקו חי.
+
+### השלב הבא: Task 0.2
+
+זו הדלת לכל 0.3–0.5: כל עמוד ספק צריך סכמת Zod משלו וזוג `get`/`update` משלו, אחרת שמירה בטופס אחד מאפסת שדות של טופס אחר. היא גם **המשימה היחידה ב-Phase 0 שנוגעת בקוד קיים בלי להוסיף עמוד**, ולכן הסיכון בה גבוה יותר מהשאר — סעיף 8 סיכון 3 (`keepMounted` שהיה load-bearing) מדבר בדיוק עליה.
+
+---
+
 **Goal:** עמוד אחד לכל ספק (Meta/WhatsApp, Voximplant, ExtrA, Resend, Microsoft, SUMIT, Slack) תחת `/admin/integrations`, מודול "מספרים" משותף שמציג כל מספר טלפון מחובר ומאפשר להוסיף/לאמת/לקשר מספרים מהפאנל, והצפה של הנתונים שחסרים היום (בריאות וריאנטים, כיסוי webhooks, תוקף טוקן, גרסת Graph, מדיניות שליחה).
 
 **Architecture:** Server Components שמרכיבים את רכיבי הלקוח הקיימים (מועברים, לא נכתבים מחדש), Server Actions דקים עם Zod, DAL תחת `src/lib/data/admin/integrations/*` עם `requirePlatformPermission`. שתי טבלאות חדשות (`provider_numbers`, `provider_number_roles`) במקום ארבע עמודות בודדות ב-`app_settings`. כל פעולה שעולה כסף או בלתי-הפיכה (רכישת מספר, register/deregister) מאחורי `requirePlatformOwner` + דיאלוג אישור שמציג מחיר/תוצאה + `logActivity` + התראת Slack.
@@ -428,7 +475,7 @@ ExtrA: `sms_enabled`, `extra_sms_token`, `extra_sms_sender`. SMTP: 6 עמודו�
 | G7 | אין בדיקת תוקף טוקן | אין קריאה ל-`debug_token` על `whatsapp_access_token` בשום מקום (grep `debug_token`: רק `relocation/env-validation.ts:238` על טוקן Ads). | MEASURED |
 | G8 | סטטוס אפליקציית Meta לא מוצג | MCP `devtools_app basic_settings` (היום): `contact_email_verified: false`, `data_deletion_url: null`, `support_url: null`, `privacy_policy_url: http://www.kalfa.me/en/privacy` (http), `terms_of_service_url: http://www.kalfa.me/terms`, `app_status: dev_mode`, `is_live: false`. Graph API אינו חושף mode/review (זיכרון `meta-devtools-mcp-app-status`). | MEASURED (MCP) |
 | G9 | `whatsapp_send_policy` ללא UI | העמודה קיימת ומוגדרת; אין קורא/כותב ב-`src/app/(admin)`; `parseSendPolicy` (`send-policy.ts:79-102`) מספק את הגדרות הבטיחות. | MEASURED |
-| G10 | template-health-sync לא מנוטר | `QUEUES.templateHealthSync = 'whatsapp-template-health-sync'` (`queue/queues.ts:59`), מתוזמן `35 3 * * *` (`worker/main.ts:1369`); **חסר** ב-`ops/queue-schedule.ts:12-32`; `ops/integrations.ts:81-87` — WhatsApp `healthCheckAvailable: false`. | MEASURED |
+| G10 | ✅ **נסגר 10.9** — WhatsApp קיבל בדיקת בריאות (`whatsapp-health-check`, שעתי, שתי קריאות GET). היה: template-health-sync לא מנוטר | `QUEUES.templateHealthSync = 'whatsapp-template-health-sync'` (`queue/queues.ts:59`), מתוזמן `35 3 * * *` (`worker/main.ts:1369`); **חסר** ב-`ops/queue-schedule.ts:12-32`; `ops/integrations.ts:81-87` — WhatsApp `healthCheckAvailable: false`. | MEASURED |
 | G11 | drift קטגוריה | live: `gift`, `thankyou`, `sales_signup_link` — `requested_category=UTILITY`, `category=MARKETING` (3, לא 2). ה-UI מציג "ירדה בקטגוריה" בלי דרך לאשר/לסגור. | MEASURED |
 | G12 | תכלית ה-SMS לא מוצגת; ExtrA ידוע לקוד רק כ-`/sms/send/` | `getSmsSender` נקרא מ-`otp.ts`, `event-cancellation.ts`, `callback-scheduling.ts`, `sls/tool/signup-link/[token]/route.ts` — OTP, SMS ביטול, תזמון חזרה, קישור הרשמה למכירות. ה-sender הוא מספר (`03-3301505`), לא שם. `sender.ts` מממש endpoint אחד מתוך 11 ב-OpenAPI הרשמי (§5.3): אין בדיקת מפתח (`getAuthKey`), אין ניטור תפוגה (המפתח החי פוקע **2027-10-27**, MEASURED team-lead), אין תצוגת קו העסק. | MEASURED |
 | G16 | קו ExtrA "חובש ארבעה כובעים" בלי תיעוד | MEASURED (team-lead, קריאות read-only ל-`/auth/key/` ו-`/calls/`, 2026-09-08): החשבון מחזיק **קו וירטואלי אחד** `03-3301505` (`line_type: vn`, `own_type: VNUM`, ללא IVR). 62 שיחות מאז 2025-03: 39 נכנסות מועברות למכשיר פיזי שמסתיים ב-`…3588`, 23 יוצאות מאותו מכשיר דרך ExtrA, **7 `incoming_missed` שלא מגיעות ל-KALFA** בשום צורה. אותו מספר = שולח SMS = מספר WhatsApp ייבוא (`1298694319994421`) = `company_contact_phone`. Verified IDs/מכשירים **אינם חשופים ב-API** (פורטל `/my/verified-ids/` בלבד). | MEASURED + DOCS-ONLY |
@@ -1090,8 +1137,8 @@ const vox = canVoice
 ```
 
 - [ ] **Step 4: הרכיב** `_components/provider-card.tsx` (Server; מחזיר `<Link>` עם `Badge` מ-`@/components/ui/badge`; טקסטי הסטטוס זהים ל-`StatusBadge` הקיים: `פעיל` / `מוגדר · כבוי` / `לא מוגדר`). `page.tsx`: `requirePlatformPermission('manage_settings')` → `getIntegrationsOverview()` → grid `grid gap-4 sm:grid-cols-2 lg:grid-cols-3` → למטה `OutreachMasterSwitch` (מועבר) + `ChannelCatalogEditor` (מועבר).
-- [ ] **Step 5:** בדיקה עוברת; `npx tsc --noEmit`; `npm run lint`.
-- [ ] **Step 6:** commit `feat(admin): integrations index + provider status cards`.
+- [x] **Step 5:** בדיקות עוברות (15 על ה-DAL); `tsc`; `lint`. ⬜ בדיקת רינדור לעמוד עצמה עדיין חסרה — ראו §0.5.
+- [x] **Step 6:** commit `0d3123a` + `da579ea` (תיקון כפילות נוסח).
 
 #### Task 0.2: פיצול `appSettingsSchema` ו-DAL לספקים
 
@@ -1296,8 +1343,10 @@ it('upsertProviderNumber rejects a non-E.164 value', async () => {
 
 #### Task 1.3: קבוע גרסת Graph + GET מספרים מ-Meta
 
-- [ ] **Step 0 (חוסם — לפני שורת קוד):** **`last_onboarded_time` הוסר מרשימת ה-`fields`.** שתי ראיות בלתי-תלויות: (א) §0.0 מדד ששני שדות המיון (`creation_time`, `last_onboarded_time`) ניתנים למיון אך **אינם ניתנים לקריאה כשדות**; (ב) במפרט הרשמי המקומי `openapi/meta/phone-number-management.v25.0.yaml` הוא מופיע **חמש פעמים, כולן תחת פרמטר `sort` בלבד** (שורות 184, 270, 275-278, 279) — ואף לא פעם אחת בסכמת התגובה. אין דרך לקבל את הערך: `sort` מסדר שורות, לא מחזיר שדה. אם צריך את הסדר בלבד — `sort=last_onboarded_time_descending` (הצורה `.desc` שבמפרט **נדחית**, §0.0). **סייג:** עמוד הפרוזה של מטא, שגם הוא מצוטט ב-§0.0, כן מונה אותו כשדה; הסתירה נסגרת בפרוב ולא בהכרעה על הנייר.
-- [ ] **Step 0b (חוסם):** **תשעה מתוך 13 השדות ברשימה מעולם לא נבדקו חי** — `scripts/verify-meta-schema.ts:39-54` מכיל ארבעה בלבד. להוסיף ל-`FIELD_MATRIX` שישה — `last_onboarded_time`, `throughput`, `account_mode`, `is_official_business_account`, `status`, `quality_rating` — ולהריץ `npm run meta:verify`. דירוג סיכון: `last_onboarded_time` **גבוה** (רק תחת `sort`); `throughput` **בינוני** (0 מופעים במפרט, אובייקט מקונן, לא נמדד); `account_mode`/`is_official_business_account` בינוני-נמוך (נמדד עליהם **סינון**, לא קריאה כשדה); `status`/`quality_rating`/`messaging_limit_tier` נמוך; `display_phone_number`/`verified_name` **אפס** (רצים בפרודקשן, `channels.ts:128`); `name_status` אפס (נמדד למרות שאינו מוצהר); `platform_type` נמוך (אליאס מדוד של `host_platform`). זכרו את הכלל של §0.0: **Graph דוחה את כל הבקשה על שדה אחד, והשגיאה מאשימה את החלק הלא נכון.**
+- [x] **Step 0 — ✅ בוצע 10.9, ואינו חוסם עוד. הטענה שביסודו הופרכה:** `last_onboarded_time` **מתקבל** בכל ארבע הגרסאות, פשוט חוזר ריק (`npm run meta:verify` אחרי שנוסף ל-`FIELD_MATRIX`). הוא נשאר מחוץ לרשימת ה-`fields` — אבל כי שדה שתמיד ריק הוא רעש, לא כי הוא מפיל את הקריאה. הטקסט המקורי נשמר למטה כתיעוד של ההנמקה שהוחלפה. ראו §0.5.
+- [ ] ~~**Step 0 (חוסם — לפני שורת קוד):**~~ **`last_onboarded_time` הוסר מרשימת ה-`fields`.** שתי ראיות בלתי-תלויות: (א) §0.0 מדד ששני שדות המיון (`creation_time`, `last_onboarded_time`) ניתנים למיון אך **אינם ניתנים לקריאה כשדות**; (ב) במפרט הרשמי המקומי `openapi/meta/phone-number-management.v25.0.yaml` הוא מופיע **חמש פעמים, כולן תחת פרמטר `sort` בלבד** (שורות 184, 270, 275-278, 279) — ואף לא פעם אחת בסכמת התגובה. אין דרך לקבל את הערך: `sort` מסדר שורות, לא מחזיר שדה. אם צריך את הסדר בלבד — `sort=last_onboarded_time_descending` (הצורה `.desc` שבמפרט **נדחית**, §0.0). **סייג:** עמוד הפרוזה של מטא, שגם הוא מצוטט ב-§0.0, כן מונה אותו כשדה; הסתירה נסגרת בפרוב ולא בהכרעה על הנייר.
+- [x] **Step 0b — ✅ בוצע 10.9.** ששת השדות נוספו ל-`FIELD_MATRIX` ב-`scripts/verify-meta-schema.ts` ונבדקו חי מול v23–v26. התוצאה: `quality_rating`, `account_mode`, `is_official_business_account`, `throughput`, `status` — כולם מחזירים ערך; `last_onboarded_time` מתקבל וריק. **אף אחד מהם אינו חוסם.** `quality_rating` הוא הבסיס לבדיקת הבריאות שנבנתה (G10). הטקסט המקורי:
+- [ ] ~~**Step 0b (חוסם):**~~ **תשעה מתוך 13 השדות ברשימה מעולם לא נבדקו חי** — `scripts/verify-meta-schema.ts:39-54` מכיל ארבעה בלבד. להוסיף ל-`FIELD_MATRIX` שישה — `last_onboarded_time`, `throughput`, `account_mode`, `is_official_business_account`, `status`, `quality_rating` — ולהריץ `npm run meta:verify`. דירוג סיכון: `last_onboarded_time` **גבוה** (רק תחת `sort`); `throughput` **בינוני** (0 מופעים במפרט, אובייקט מקונן, לא נמדד); `account_mode`/`is_official_business_account` בינוני-נמוך (נמדד עליהם **סינון**, לא קריאה כשדה); `status`/`quality_rating`/`messaging_limit_tier` נמוך; `display_phone_number`/`verified_name` **אפס** (רצים בפרודקשן, `channels.ts:128`); `name_status` אפס (נמדד למרות שאינו מוצהר); `platform_type` נמוך (אליאס מדוד של `host_platform`). זכרו את הכלל של §0.0: **Graph דוחה את כל הבקשה על שדה אחד, והשגיאה מאשימה את החלק הלא נכון.**
 - [ ] **Step 0c:** `listWabaPhoneNumbers` נכשלת **רכה**: אם Graph מחזיר `#100` על ה-`fields=` המלא — לנסות שוב עם ליבה מצומצמת (`id,display_phone_number,verified_name,status`) ולהחזיר `{ numbers, degraded: true }` שהעמוד מציג כהערה. מטא הסירה שדות בעבר; שדה אחד שנעלם לא צריך להפיל עמוד שלם.
 
 - [ ] **Step 1:** `src/lib/whatsapp/graph-version.ts`:
