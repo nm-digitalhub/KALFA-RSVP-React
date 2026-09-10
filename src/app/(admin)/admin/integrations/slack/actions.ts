@@ -16,7 +16,21 @@ import {
 import { sendSlackTestAlert } from '@/lib/alerts/slack';
 import type { FormState } from '@/lib/validation/result';
 
-const PATH = '/admin/alerts';
+// ─── WHERE A SAVE HAS TO BE REFLECTED ────────────────────────────────────────
+// These actions render on THREE surfaces now: this provider page, the legacy
+// /admin/alerts page that imports the same components back, and the integrations
+// index whose Slack card prints the very `configured`/`enabled` columns written
+// here. `revalidatePath` invalidates exactly the path it is handed — revalidating
+// only the legacy one is the defect that shipped with Task 0.3 and was fixed in
+// 0.4. Revalidating a path nobody is rendering costs nothing, so there is no
+// condition. Task 0.6 drops LEGACY_ALERTS together with the page itself.
+const SLACK = '/admin/integrations/slack';
+const LEGACY_ALERTS = '/admin/alerts';
+const INDEX = '/admin/integrations';
+
+function revalidateAll(): void {
+  for (const path of [SLACK, LEGACY_ALERTS, INDEX]) revalidatePath(path);
+}
 
 // Bot token: optional (blank = keep existing); when present must be a Slack bot
 // token (`xoxb-…`). Channel id: required, Slack channel-id shape (`C…`).
@@ -58,7 +72,7 @@ export async function saveSlackConnectionAction(
     return { error: 'שמירת החיבור נכשלה. נסו שוב.' };
   }
 
-  revalidatePath(PATH);
+  revalidateAll();
   // NEVER echo the token back — return only a neutral notice.
   return { notice: 'החיבור נשמר' };
 }
@@ -100,7 +114,7 @@ export async function saveSlackMentionAction(
     return { error: 'שמירת הגדרות האזכור נכשלה. נסו שוב.' };
   }
 
-  revalidatePath(PATH);
+  revalidateAll();
   return { notice: 'הגדרות האזכור נשמרו' };
 }
 
@@ -115,7 +129,7 @@ export async function clearSlackConnectionAction(
     unstable_rethrow(err);
     return { error: 'ניתוק החיבור נכשל. נסו שוב.' };
   }
-  revalidatePath(PATH);
+  revalidateAll();
   return { notice: 'החיבור נותק וההתראות כובו' };
 }
 
@@ -174,6 +188,6 @@ export async function setAlertToggleAction(input: {
     unstable_rethrow(err);
     return { error: 'עדכון המתג נכשל. נסו שוב.' };
   }
-  revalidatePath(PATH);
+  revalidateAll();
   return { notice: 'נשמר' };
 }

@@ -62,7 +62,7 @@ const CARDS: CardSpec[] = [
   { statusKey: 'extra-sms', key: 'extra-sms', permission: 'manage_settings', href: '/admin/integrations/extra-sms' },
   { statusKey: 'resend-email', key: 'resend-email', permission: 'manage_settings', href: '/admin/integrations/resend-email' },
   { statusKey: 'sumit', key: 'sumit', permission: 'manage_settings', href: '/admin/integrations/sumit' },
-  { statusKey: 'slack', key: 'slack', permission: 'manage_settings', href: '/admin/alerts' },
+  { statusKey: 'slack', key: 'slack', permission: 'manage_settings', href: '/admin/integrations/slack' },
 ];
 
 // GA4 is deliberately absent. getIntegrationsStatus() reports it because Debug Mode

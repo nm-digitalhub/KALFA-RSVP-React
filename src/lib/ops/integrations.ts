@@ -149,7 +149,7 @@ export async function getIntegrationsStatus(jobHealth: JobHealthRow[]): Promise<
       // scheduled job existed and had never fired. MEASURED on the live panel
       // 2026-09-10. The invariant is now asserted in integrations.test.ts.
       healthCheckAvailable: false,
-      note: 'בדיקה ידנית בלבד — כפתור "שליחת בדיקה" ב-/admin/alerts',
+      note: 'בדיקה ידנית בלבד — כפתור "שליחת בדיקה" ב-/admin/integrations/slack',
     },
     {
       key: 'whatsapp',
