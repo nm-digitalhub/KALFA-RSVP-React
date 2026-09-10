@@ -379,6 +379,57 @@ Step 0 מורה להסיר את `last_onboarded_time` מרשימת ה-`fields` *
 
 **Spec:** הודעת team-lead 2026-09-08 (המסמך הזה הוא ה-spec המאומת שלה). מסמכים משלימים שהתוכנית מסתמכת עליהם ואינה מחליפה: `docs/whatsapp-api-js-capability-audit-2026-09-03.md`, `docs/voximplant/digest-management-api.md`, `docs/voice-agent/production-wiring-audit-2026-07-20.md`. **נקלטה והוחלפה:** `docs/whatsapp-import-number-split-plan-2026-09-03.md` → Phase 1.5 כאן.
 
+## 0.7 סטטוס 2026-09-11 (לילה) — Phase 0 הושלמה, Phase 1 בנויה, והתוכנית טעתה בשני מקומות
+
+**Phase 0: שש מתוך שש** (למעט המחיקה, שהיא Step 4b בכוונה). **Phase 1: Tasks 1.1–1.4 בנויות.**
+
+| משימה | מצב |
+|---|---|
+| 0.1–0.4 | ✅ (נרשמו ב-§0.5, §0.6) |
+| **0.5** ExtrA · Resend · SUMIT · **Slack** · **Microsoft** | ✅ **5/5** |
+| **0.6** ניווט + redirects + grep | ✅ **צעדים 1–3**; המחיקה (4b) ממתינה לפריסה נקייה |
+| **1.1** מיגרציה | ✅ הוחלה |
+| **1.2** DAL + resolver | ✅ + `upsert_provider_number` RPC |
+| **1.3** קריאה מהספקים | ✅ `listWabaPhoneNumbers` + שני סנכרונים |
+| **1.4** עמוד המספרים + webhook-inbox | ✅ — **G2 סגור** |
+
+### ⛔ שתי טעויות בתוכנית, שנמדדו ולא הוסקו
+
+**1. ה-upsert שב-Task 1.2 Step 3 אינו יכול לעבוד.** `.upsert({ onConflict: 'provider,provider_ref' })` פולט `ON CONFLICT (provider, provider_ref)`, וה-**אינדקס חלקי**: `WHERE provider_ref IS NOT NULL`. Postgres משתמש באינדקס חלקי ל-ON CONFLICT רק כשהמשפט חוזר על התנאי, ו-PostgREST אינו יכול לשלוח WHERE. נמדד בטרנזקציה שגולגלה לאחור:
+
+```
+ON CONFLICT (provider, provider_ref)                                → 42P10
+ON CONFLICT (provider, provider_ref) WHERE provider_ref IS NOT NULL → SUCCEEDED
+```
+
+הפתרון: `public.upsert_provider_number` — `SECURITY INVOKER` (ה-RLS של הטבלה ממשיך להכריע), `EXECUTE` נשלל מ-`PUBLIC` ולא רק מ-`anon`. הוא גם הבית של **כלל המיזוג**: שורת ה-backfill של Voximplant חסרת `provider_ref` מחזיקה חמישה תפקידים, וסנכרון ראשון היה מפצל קו אחד לשתי שורות ומשאיר את התפקידים על היתומה — בזמן ש-`resolveNumberForRole` ממשיך לענות ממנה. הרצה יבשה אימתה את שבעת הענפים.
+
+**2. `/admin/channels` מפנה ל-meta-whatsapp, וזו אינה הבחירה שנוסחה ב-§3.4 מטעם הנכון.** §3.4 קבעה את היעד הזה; הנימוק שנמצא בפועל הוא שהאינדקס עצמו עדיין מקשר ל-`/admin/channels` בשביל קטלוג הערוצים, ולכן הפניה לאינדקס הייתה נוחתת על העמוד שכבר פתוח.
+
+### מה שנמדד ושינה את הבנייה
+
+- **`provider_number_roles` PK הוא `role` בלבד** — תפקיד מוחזק ע"י מספר אחד **מעצם המבנה**. `assignRole` הוא upsert על המפתח, אין מצב ששני מספרים טוענים לאותו תפקיד, ו-`maybeSingle()` ב-resolver אינו יכול להיות מופתע.
+- **מפתח הרשאה כמשתנה בלתי-נראה לשער** — `admin-data-layer-coverage.test.ts` מצמיד הרשאות בקריאת `requirePlatformPermission('…')` כטקסט. `requirePlatformPermission(MAP[key])` מגדר נכון בזמן ריצה ו**שקוף** לשער, כך שהחלשה מאוחרת של תפקיד קולי הייתה נשלחת ירוקה. הבדיקה תפסה זאת בהרצה הראשונה.
+- **Meta מחזירה `+972 33 301505` עם רווחים** — בלי נרמול היא נכשלת ב-`provider_numbers_e164_chk` **וגם** מונעת מה-RPC לזהות את שורת ה-backfill.
+- **`code_verification_status`** של השולח המוגדר הוא EXPIRED בעוד של מספר הייבוא VERIFIED — שדה ש**הטבלה של Meta עצמה אינה מציגה**.
+
+### Microsoft — למה לא היה לו כרטיס, ומה פתר
+
+שני הקוראים של `exchange_connections` פסולים לכרטיס מצב: אחד מחזיר רק את החיבורים של הקורא, והשני מגודר `requirePlatformOwner()` **שמפנה החוצה**. Graph הוא המקור שחסר — האפליקציה מזדהה כעצמה בתעודה. שלוש ההרשאות אומתו חי: `Organization.Read.All`, `User.Read.All`, `Application.Read.All`.
+
+**התעודה היא הסיבה לעמוד:** הכל אצל מיקרוסופט תלוי בתעודה אחת ואיש לא עקב אחרי תפוגתה; כשהיא פגה, סנכרון היומן וקליטת הדואר נעצרים כ-`auth_failed` בלוג. נמדד: תעודה אחת (`CN=KALFA Calendar Service`, עד 2031-08-14), **אפס** סודות סיסמה. התוקף נקרא מ-Graph ולא מה-PEM המקומי — תעודה שהוחלפה על הדיסק ולא הועלתה עדיין נקראת מקומית ונכשלת בכל בקשת טוקן.
+
+### מה שנשאר, ומה שהמחיקה חייבת לפתור קודם
+
+- **Task 0.6 Step 4b** — מחיקת `(admin)/channels/**` ו-`(admin)/alerts/**`. **שני חוסמים שנרשמים כאן כדי שלא יתגלו באמצע ה-`rm`:** רכיבי הספקים המורמים עדיין מייבאים את ה-actions מ-`(admin)/admin/channels/actions.ts`, ו**לקטלוג הערוצים אין בית מחוץ לעמוד ההוא**.
+- **שיוך תפקיד מהעמוד** — ה-DAL מוכן (`assignRole`/`clearRole`), אין UI.
+- **Phase 1.5** — ניתוב הודעות נכנסות לפי המספר שקיבל. `getWebhookInboxDetail` כבר קורא מהטבלה; הניתוב עצמו לא.
+- ספירת שלמות (Step 3b) שנמדדה עכשיו: **5 אקורדיונים** תחת `integrations/`, **אפס** טפסים ב-`channels-client.tsx`.
+
+**שערים:** `tsc` · lint · `worker:deps` · build · **4893 בדיקות עוברות, 23 מדולגות**.
+
+---
+
 ## תיוג ראיות
 
 | תג | משמעות |
