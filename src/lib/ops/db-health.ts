@@ -21,6 +21,14 @@ export interface JobHealthRow {
   isScheduled: boolean;
   cron: string | null;
   scheduleTz: string | null;
+  /**
+   * When this cron schedule was REGISTERED with pg-boss.
+   *
+   * The reference point for "has a run been missed". Without it, a queue that has
+   * never completed is indistinguishable from one whose first fire is still ahead —
+   * and the staleness check reported the second as the first (see isQueueStale).
+   */
+  scheduleCreatedOn: string | null;
   queuedCount: number;
   activeCount: number;
   failedCount: number;
@@ -38,6 +46,7 @@ export async function getJobHealth(): Promise<SoftResult<JobHealthRow[]>> {
     isScheduled: r.is_scheduled,
     cron: r.cron,
     scheduleTz: r.schedule_tz,
+    scheduleCreatedOn: r.schedule_created_on,
     queuedCount: r.queued_count,
     activeCount: r.active_count,
     failedCount: r.failed_count,

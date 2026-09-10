@@ -1,4 +1,6 @@
 import type { SoftResult, ProcessesProbe, SystemProbe } from './agent-client';
+import { CronExpressionParser } from 'cron-parser';
+
 import type { JobHealthRow, DbHealthRow } from './db-health';
 import { QUEUE_EXPECTED_MAX_MINUTES } from './queue-schedule';
 
@@ -64,11 +66,52 @@ export function worseSeverity(a: Severity, b: Severity): Severity {
 // summary rollup below AND by the Jobs panel's per-row badge (_panels.tsx),
 // which must NOT call Date.now() directly inside a component body (React's
 // purity rule flags that as an impure render).
+/**
+ * When would this cron FIRST have fired after the schedule was registered?
+ *
+ * Uses cron-parser — the very library pg-boss uses to decide when to fire — so there
+ * is no drift between "when we think it runs" and when it actually runs. It arrives
+ * as a pg-boss dependency rather than a direct one; the test asserts it resolves, so
+ * a future pg-boss that drops it fails CI instead of silently changing this answer.
+ *
+ * Returns null when the queue has no cron (not scheduled) or the expression will not
+ * parse — the caller must NOT read that as "excused".
+ */
+function firstFireAfterRegistration(row: JobHealthRow): Date | null {
+  if (!row.cron || !row.scheduleCreatedOn) return null;
+  try {
+    return CronExpressionParser.parse(row.cron, {
+      tz: row.scheduleTz ?? 'Asia/Jerusalem',
+      currentDate: new Date(row.scheduleCreatedOn),
+    })
+      .next()
+      .toDate();
+  } catch {
+    return null;
+  }
+}
+
 export function isQueueStale(row: JobHealthRow, expectedMaxMinutes: number | undefined): boolean {
   if (expectedMaxMinutes == null) return false; // not on the known-schedule catalog — never flagged
-  if (!row.lastCompletedOn) return true;
-  const ageMinutes = (Date.now() - new Date(row.lastCompletedOn).getTime()) / 60_000;
-  return ageMinutes > expectedMaxMinutes;
+
+  if (row.lastCompletedOn) {
+    const ageMinutes = (Date.now() - new Date(row.lastCompletedOn).getTime()) / 60_000;
+    return ageMinutes > expectedMaxMinutes;
+  }
+
+  // ⚠️ NEVER COMPLETED IS NOT THE SAME AS LATE, and treating it as such is what made
+  // the Debug Mode badge red on 2026-09-10 for two queues that were perfectly
+  // healthy: seo-technical-watch (Mondays 09:00, registered Monday EVENING) and
+  // supabase-cli-update (Sundays 05:20, registered a Tuesday). Neither weekday had
+  // come round yet — zero runs missed — but `!lastCompletedOn → true` reported both
+  // as overdue. A weekly queue is unreportable for its whole first week under that
+  // rule, and a badge that is red while nothing is wrong stops being read.
+  //
+  // So: a queue that has never completed is late only once a scheduled fire has
+  // ACTUALLY PASSED, plus the same grace every other queue gets.
+  const firstDue = firstFireAfterRegistration(row);
+  if (firstDue === null) return true; // no schedule to excuse it with — fail closed
+  return Date.now() - firstDue.getTime() > expectedMaxMinutes * 60_000;
 }
 
 function staleQueues(jobHealth: JobHealthRow[]): string[] {

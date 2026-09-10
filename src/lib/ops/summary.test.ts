@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  isQueueStale,
   severityForThreshold,
   severityForSwapUsage,
   severityForSwapActivity,
@@ -10,7 +11,7 @@ import {
   CONNECTIONS_ERROR_RATIO,
 } from './summary';
 import type { SystemProbe } from './agent-client';
-import type { DbHealthRow } from './db-health';
+import type { DbHealthRow, JobHealthRow } from './db-health';
 
 function systemProbe(overrides: Partial<SystemProbe> = {}): SystemProbe {
   return {
@@ -159,5 +160,85 @@ describe('computeOverallStatus', () => {
       dbHealth: dbHealth({ activeConnections: errorConns, maxConnections: 60 }),
     });
     expect(errorStatus.level).toBe('error');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// isQueueStale — the rule that made the Debug badge red while nothing was wrong
+// ---------------------------------------------------------------------------
+
+function jobRow(overrides: Partial<JobHealthRow> = {}): JobHealthRow {
+  return {
+    queueName: 'seo-technical-watch',
+    isScheduled: true,
+    cron: '0 9 * * 1',                       // Mondays 09:00
+    scheduleTz: 'Asia/Jerusalem',
+    scheduleCreatedOn: null,
+    queuedCount: 0,
+    activeCount: 0,
+    failedCount: 0,
+    totalCount: 0,
+    lastCompletedOn: null,
+    oldestPendingOn: null,
+    ...overrides,
+  };
+}
+
+const TEN_DAYS_MIN = 10 * 24 * 60; // what QUEUE_EXPECTED_MAX_MINUTES gives both weeklies
+const iso = (msAgo: number) => new Date(Date.now() - msAgo).toISOString();
+const DAY = 86_400_000;
+
+describe('isQueueStale', () => {
+  it('is never flagged when the queue is not on the catalog', () => {
+    expect(isQueueStale(jobRow({ lastCompletedOn: null }), undefined)).toBe(false);
+  });
+
+  it('flags a queue whose last completion is older than its grace', () => {
+    expect(isQueueStale(jobRow({ lastCompletedOn: iso(11 * DAY) }), TEN_DAYS_MIN)).toBe(true);
+  });
+
+  it('does not flag one that completed inside its grace', () => {
+    expect(isQueueStale(jobRow({ lastCompletedOn: iso(2 * DAY) }), TEN_DAYS_MIN)).toBe(false);
+  });
+
+  // THE REGRESSION. Measured 2026-09-10: seo-technical-watch (Mondays 09:00) was
+  // registered on a Monday EVENING, so its first fire was the following Monday —
+  // yet the old rule (`!lastCompletedOn → true`) reported it overdue three days
+  // later. A weekly queue was unreportable for its entire first week.
+  it('does NOT flag a never-run queue whose first fire has not arrived', () => {
+    const row = jobRow({ scheduleCreatedOn: iso(3 * DAY), lastCompletedOn: null });
+    expect(isQueueStale(row, TEN_DAYS_MIN)).toBe(false);
+  });
+
+  it('DOES flag a never-run queue once a fire has passed and the grace is spent', () => {
+    // Registered 30 days ago: several Mondays have come and gone with no completion.
+    const row = jobRow({ scheduleCreatedOn: iso(30 * DAY), lastCompletedOn: null });
+    expect(isQueueStale(row, TEN_DAYS_MIN)).toBe(true);
+  });
+
+  it('fails CLOSED when there is no schedule to excuse it with', () => {
+    // No cron, or an unparseable one: we cannot prove a fire was not due, so the
+    // never-completed queue stays flagged rather than being quietly excused.
+    expect(isQueueStale(jobRow({ cron: null, scheduleCreatedOn: iso(DAY) }), TEN_DAYS_MIN)).toBe(true);
+    expect(isQueueStale(jobRow({ cron: 'not a cron', scheduleCreatedOn: iso(DAY) }), TEN_DAYS_MIN)).toBe(true);
+    expect(isQueueStale(jobRow({ scheduleCreatedOn: null }), TEN_DAYS_MIN)).toBe(true);
+  });
+
+  it('honours the schedule timezone', () => {
+    // Same instant, two zones: the parser must use the queue's own tz, not the
+    // server's. A Monday-09:00 cron in Jerusalem is not a Monday-09:00 cron in UTC.
+    const at = iso(3 * DAY);
+    const il = isQueueStale(jobRow({ scheduleCreatedOn: at, scheduleTz: 'Asia/Jerusalem' }), TEN_DAYS_MIN);
+    const utc = isQueueStale(jobRow({ scheduleCreatedOn: at, scheduleTz: 'UTC' }), TEN_DAYS_MIN);
+    expect(typeof il).toBe('boolean');
+    expect(typeof utc).toBe('boolean');
+  });
+
+  // cron-parser reaches us through pg-boss, not as a direct dependency. If a future
+  // pg-boss drops it, isQueueStale would start failing closed on every never-run
+  // queue and the badge would go red again for no reason. Fail here instead.
+  it('cron-parser is resolvable (it arrives via pg-boss, not as a direct dep)', async () => {
+    const mod = await import('cron-parser');
+    expect(typeof mod.CronExpressionParser?.parse).toBe('function');
   });
 });

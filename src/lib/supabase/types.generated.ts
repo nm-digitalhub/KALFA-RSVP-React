@@ -6207,6 +6207,7 @@ export type Database = {
           oldest_pending_on: string
           queue_name: string
           queued_count: number
+          schedule_created_on: string
           schedule_tz: string
           total_count: number
         }[]

@@ -61,7 +61,16 @@ export async function probeProcesses(repoRoot) {
   }));
 
   const runningNames = new Set(pm2.map((p) => p.name));
-  const undeclared = pm2.filter((p) => !declaredNames.has(p.name)).map((p) => p.name);
+  // pm2 MODULES are excluded. A module (`pm2 install pm2-server-monit`) lives in
+  // ~/.pm2/modules and CANNOT be listed in ecosystem.config.cjs — pm2 manages it on a
+  // separate track. Comparing pm2's process list to our app list without that
+  // distinction flagged pm2-server-monit as "an undeclared process running on the
+  // server" permanently, which is not a finding, it is how modules work. Measured
+  // 2026-09-10: pm2_env.axm_options.isModule === true for it, false for all six of
+  // ours. A genuinely unexpected APP still shows up here, which is the check's point.
+  const undeclared = raw
+    .filter((p) => !declaredNames.has(p.name) && p.pm2_env?.axm_options?.isModule !== true)
+    .map((p) => p.name);
   const missing = [...declaredNames].filter((name) => !runningNames.has(name));
 
   return { pm2, declared: [...declaredNames], undeclared, missing };
