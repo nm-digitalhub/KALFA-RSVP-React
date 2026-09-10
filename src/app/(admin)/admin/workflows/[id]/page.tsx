@@ -11,6 +11,7 @@ import { saveWorkflowAction } from '../actions';
 
 import { CancelRunButton } from '../row-actions';
 
+import { RunNowPanel } from './run-now-panel';
 import { RunWatchButton } from './run-watcher';
 import { TestPanel } from './test-panel';
 import { WorkflowEditor } from './workflow-editor';
@@ -63,6 +64,8 @@ export default async function AdminWorkflowPage({
         initialEdges={edges as never}
         saveAction={saveWorkflowAction}
       />
+
+      <RunNowPanel workflowId={workflow.id} scopedEventId={workflow.eventId} />
 
       <TestPanel workflowId={workflow.id} />
 

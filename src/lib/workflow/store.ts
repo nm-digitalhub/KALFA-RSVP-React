@@ -321,6 +321,28 @@ export async function listArmedWorkflows(): Promise<ArmedWorkflow[]> {
 }
 
 /**
+ * One workflow, by id, in the shape the trigger layer already speaks.
+ *
+ * The sibling of `listArmedWorkflows`, and deliberately WITHOUT its
+ * `is_active` filter: arming decides whether a guest's message may start a
+ * workflow, which is a different question from whether an admin may run one
+ * on purpose. See the note in manual-run.ts.
+ */
+export async function loadWorkflowForRun(id: string): Promise<ArmedWorkflow | undefined> {
+  const supabase = createAdminClient();
+  const { data, error } = await supabase
+    .from('workflows')
+    .select('id, event_id, definition')
+    .eq('id', id)
+    .maybeSingle();
+
+  if (error) throw new Error(`loadWorkflowForRun failed: ${error.message}`);
+  if (!data) return undefined;
+
+  return { id: data.id, eventId: data.event_id, definition: data.definition };
+}
+
+/**
  * Create the run row for a planned run, or return the id of the one that
  * already exists.
  *
@@ -340,7 +362,11 @@ export async function createRunIfNew(planned: PlannedRun): Promise<string | unde
     .insert({
       workflow_id: planned.workflowId,
       event_id: planned.eventId,
-      trigger_source: 'whatsapp_inbound',
+      // From the PLAN, not a literal. This used to read 'whatsapp_inbound',
+      // which made the store the one file every new way of starting a workflow
+      // had to edit — for a column whose own comment says the set is meant to
+      // grow. See `PlannedRun.triggerSource`.
+      trigger_source: planned.triggerSource,
       trigger_payload: planned.triggerPayload as unknown as Json,
       dedupe_key: planned.dedupeKey,
       status: 'pending',

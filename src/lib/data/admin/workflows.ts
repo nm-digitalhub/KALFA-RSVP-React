@@ -3,7 +3,28 @@ import 'server-only';
 // Admin reads and writes for workflows. Authorization lives here, at the data
 // layer, exactly as it does for channels and the rest of /admin — a Server
 // Action is a thin wrapper over these, never a second gate.
-import { requireAdmin } from '@/lib/auth/dal';
+//
+// EVERY function gates on a NAMED PLATFORM PERMISSION, not on requireAdmin().
+//
+// It used to gate on `requireAdmin()` alone — the coarse `has_role('admin')`
+// flag, which is a DIFFERENT axis from the platform-permission matrix and is
+// held by anyone with the admin role. That was measured on 2026-09-10 and it is
+// the widest possible staff gate: `support_agent` and `auditor` — roles built
+// deliberately WITHOUT `manage_voice` and WITHOUT `campaigns.runstate` — would
+// have been able to arm an automation and place a real call to a guest.
+//
+// The split follows what each function actually does, not which page it serves:
+//
+//   configuration (create/save/arm/delete/cancel/dry-run/list) → manage_settings
+//   reads that return GUEST NAMES (the manual-run pickers)     → view_customer_data
+//   starting a real run (startManualRun, in manual-run.ts)     → view_customer_data
+//                                                              + manage_voice
+//
+// The last one requires BOTH on purpose: it reads a guest's identity AND dials a
+// phone, so neither permission alone should be enough. `voice-ops.ts` already
+// requires manage_voice + view_recordings merely to LOOK at call history; it
+// would be incoherent for placing a call to ask for less.
+import { requirePlatformPermission } from '@/lib/auth/dal';
 import { createAdminClient } from '@/lib/supabase/admin';
 import type { Json } from '@/lib/supabase/types';
 import { editorDiagramSchema } from '@/lib/workflow/adapter/editor-schema';
@@ -28,7 +49,7 @@ export type WorkflowDetail = WorkflowSummary & {
 };
 
 export async function listWorkflows(): Promise<WorkflowSummary[]> {
-  await requireAdmin();
+  await requirePlatformPermission('manage_settings');
 
   const supabase = createAdminClient();
   const { data, error } = await supabase
@@ -49,7 +70,7 @@ export async function listWorkflows(): Promise<WorkflowSummary[]> {
 }
 
 export async function getWorkflow(id: string): Promise<WorkflowDetail | null> {
-  await requireAdmin();
+  await requirePlatformPermission('manage_settings');
 
   const supabase = createAdminClient();
   const { data, error } = await supabase
@@ -73,7 +94,7 @@ export async function getWorkflow(id: string): Promise<WorkflowDetail | null> {
 }
 
 export async function createWorkflow(name: string): Promise<string> {
-  await requireAdmin();
+  await requirePlatformPermission('manage_settings');
 
   const trimmed = name.trim();
   if (trimmed === '') throw new Error('שם התהליך לא יכול להיות ריק');
@@ -107,7 +128,7 @@ export async function saveWorkflowDefinition(
   id: string,
   definition: unknown,
 ): Promise<void> {
-  await requireAdmin();
+  await requirePlatformPermission('manage_settings');
 
   const parsed = editorDiagramSchema.safeParse(definition);
   if (!parsed.success) throw new Error('מבנה התהליך שהתקבל אינו תקין');
@@ -167,7 +188,7 @@ export async function setWorkflowActive(
   id: string,
   isActive: boolean,
 ): Promise<ArmResult> {
-  await requireAdmin();
+  await requirePlatformPermission('manage_settings');
 
   const supabase = createAdminClient();
 
@@ -215,7 +236,7 @@ export type DeleteResult = { ok: true } | { ok: false; errors: string[] };
  * error carries a constraint name instead.
  */
 export async function deleteWorkflow(id: string): Promise<DeleteResult> {
-  await requireAdmin();
+  await requirePlatformPermission('manage_settings');
 
   const supabase = createAdminClient();
 
@@ -275,7 +296,7 @@ export type CancelRunResult = { ok: true } | { ok: false; errors: string[] };
  * run whose status is no longer pending or running.
  */
 export async function cancelRun(runId: string): Promise<CancelRunResult> {
-  await requireAdmin();
+  await requirePlatformPermission('manage_settings');
 
   const supabase = createAdminClient();
   const { data, error } = await supabase
@@ -308,7 +329,7 @@ export async function testWorkflow(
   id: string,
   scenario: DryRunScenario,
 ): Promise<DryRunResult> {
-  await requireAdmin();
+  await requirePlatformPermission('manage_settings');
 
   const supabase = createAdminClient();
   const { data, error } = await supabase
@@ -344,7 +365,7 @@ export async function listWorkflowRuns(
   workflowId: string,
   limit = 50,
 ): Promise<RunSummary[]> {
-  await requireAdmin();
+  await requirePlatformPermission('manage_settings');
 
   const supabase = createAdminClient();
   const { data, error } = await supabase
@@ -363,5 +384,89 @@ export async function listWorkflowRuns(
     createdAt: row.created_at,
     finishedAt: row.finished_at,
     errorMessage: row.error_message,
+  }));
+}
+
+// ---------------------------------------------------------------------------
+// Picking what a manual run acts on
+// ---------------------------------------------------------------------------
+
+export type ManualRunEvent = { id: string; name: string; eventDate: string | null };
+
+export type ManualRunContact = {
+  id: string;
+  /** Last four digits only. Enough to recognise a person, not a phone book. */
+  phoneTail: string;
+  /** Every guest behind this phone. A phone may back several — see the note in
+   *  webhook-processing.ts — and the admin has to see which people they are
+   *  about to act on before a real run places a call. */
+  guestNames: string[];
+};
+
+/**
+ * Events a manual run may target, newest first.
+ *
+ * Capped rather than paginated: this feeds a picker in one panel, and an admin
+ * choosing what to test against is looking at recent events, not browsing an
+ * archive.
+ */
+export async function listEventsForManualRun(limit = 50): Promise<ManualRunEvent[]> {
+  await requirePlatformPermission('view_customer_data');
+
+  const supabase = createAdminClient();
+  const { data, error } = await supabase
+    .from('events')
+    .select('id, name, event_date')
+    .order('event_date', { ascending: false })
+    .limit(limit);
+
+  if (error) throw new Error('טעינת האירועים נכשלה');
+
+  return (data ?? []).map((row) => ({
+    id: row.id,
+    name: row.name,
+    eventDate: row.event_date,
+  }));
+}
+
+/**
+ * Contacts of one event, with the guest names behind each phone.
+ *
+ * The phone is truncated to its last four digits on the SERVER. A real run can
+ * place a call, so the admin must be able to tell one person from another — but
+ * that is a recognition need, not a reason to ship a full guest phone list into
+ * a browser bundle.
+ */
+export async function listContactsForManualRun(
+  eventId: string,
+  limit = 200,
+): Promise<ManualRunContact[]> {
+  await requirePlatformPermission('view_customer_data');
+
+  const supabase = createAdminClient();
+  const [contacts, guests] = await Promise.all([
+    supabase
+      .from('contacts')
+      .select('id, normalized_phone')
+      .eq('event_id', eventId)
+      .order('created_at', { ascending: true })
+      .limit(limit),
+    supabase.from('guests').select('contact_id, full_name').eq('event_id', eventId),
+  ]);
+
+  if (contacts.error) throw new Error('טעינת אנשי הקשר נכשלה');
+
+  const namesByContact = new Map<string, string[]>();
+  for (const guest of guests.data ?? []) {
+    if (!guest.contact_id) continue;
+    const list = namesByContact.get(guest.contact_id) ?? [];
+    if (guest.full_name) list.push(guest.full_name);
+    namesByContact.set(guest.contact_id, list);
+  }
+
+  return (contacts.data ?? []).map((row) => ({
+    id: row.id,
+    phoneTail: (row.normalized_phone ?? '').slice(-4),
+    guestNames: namesByContact.get(row.id) ?? [],
   }));
 }

@@ -21,7 +21,7 @@ import { classifyMessagePayload } from '@/lib/whatsapp/inbound';
 import type { InboundMessagePayload } from '@/lib/whatsapp/inbound';
 
 import { listArmedWorkflows, createRunIfNew } from './store';
-import { planRuns } from './trigger';
+import { type TriggerContext, planRuns } from './trigger';
 
 /**
  * Create a run row for every armed workflow this message starts, and return the
@@ -121,10 +121,10 @@ function readTextBody(payload: { text?: { body?: string } }): string {
  * "whose name" has no answer, and greeting the wrong person by name is worse
  * than not greeting at all.
  */
-async function resolveTriggerContext(
+export async function resolveTriggerContext(
   eventId: string,
   contactId: string,
-): Promise<{ guestName?: string; eventName?: string; eventDate?: string }> {
+): Promise<TriggerContext> {
   const empty = {};
   try {
     const admin = createAdminClient();
