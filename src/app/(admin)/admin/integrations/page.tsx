@@ -48,16 +48,13 @@ function CardBody({ card, showsLastChecked }: { card: IntegrationCard; showsLast
 
       {card.note ? <p className="mt-2 text-xs text-muted-foreground">{card.note}</p> : null}
 
-      {showsLastChecked ? (
+      {/* Only where a health check actually exists. A provider without one already
+          says so in its note, and printing "נבדק לאחרונה: אין בדיקת בריאות זמינה"
+          underneath repeated the same sentence twice on the same card. */}
+      {showsLastChecked && card.healthCheckAvailable ? (
         <p className="mt-2 text-xs text-muted-foreground">
           נבדק לאחרונה:{' '}
-          {card.lastCheckedAt ? (
-            <LocalDateTime iso={card.lastCheckedAt} />
-          ) : card.healthCheckAvailable ? (
-            '—'
-          ) : (
-            'אין בדיקת בריאות זמינה'
-          )}
+          {card.lastCheckedAt ? <LocalDateTime iso={card.lastCheckedAt} /> : 'טרם רץ'}
         </p>
       ) : null}
     </>
