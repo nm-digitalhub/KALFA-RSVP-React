@@ -12,12 +12,31 @@ import { Resend } from 'resend';
 // From header actually uses. The SMTP fallback has nodemailer's verify(), which
 // connects and authenticates without sending.
 //
-// ⚠️ WHY THIS CHECK MATTERS MORE THAN THE WHATSAPP ONE. Outgoing mail dies SILENTLY.
-// A send keeps returning 200 while SPF or DKIM is broken; the recipient's provider
-// quietly files it as spam, and nothing in this system ever hears about it. Resend
-// names that exact state `temporary_failure` — "a previously verified domain that is
-// currently missing required DNS records" (resend.com/docs/dashboard/domains/
-// introduction). Catching it is the whole point.
+// ⚠️ WHY THIS CHECK EARNS ITS KEEP — corrected 2026-09-10 after checking the docs.
+//
+// The first version of this comment claimed outgoing mail "dies silently: a send keeps
+// returning 200 while SPF or DKIM is broken". Half of that is wrong. Resend REFUSES a
+// send whose From domain is not verified, or does not match a verified one, with a 403
+// (resend.com/docs/knowledge-base/403-error-domain-mismatch) — and resendSender turns
+// that into a logged, thrown EmailSendError. That path is loud.
+//
+// Two real reasons remain, and they are enough:
+//
+//  1. LOUD BUT LATE. This transport carries agreements and invoices — event-driven, low
+//     volume. A 403 surfaces the next time a customer signs something, which may be days
+//     away, and it surfaces AT the customer. An hourly probe moves discovery from "the
+//     next signature" to "within the hour", before anyone is standing in front of it.
+//  2. GENUINELY SILENT, at the recipient. If the DKIM CNAME is pulled while Resend still
+//     considers the domain verified, sends keep succeeding and mail is delivered
+//     UNSIGNED; the receiving provider files it as spam and nothing reports back to us.
+//     Resend names the state it eventually settles into `temporary_failure` — "a
+//     previously verified domain that is currently missing required DNS records"
+//     (resend.com/docs/dashboard/domains/introduction). This check reads the SPF/DKIM
+//     rows directly rather than waiting for that roll-up.
+//
+// [INFERRED, not in the docs] whether Resend keeps ACCEPTING sends while a domain sits
+// in `temporary_failure`. The docs do not say. Reason 2 does not depend on it — the
+// window before Resend notices is silent either way.
 //
 // ⚠️ THE DOMAIN STATUS IS TREATED AS A STRING, DELIBERATELY. Measured against the
 // installed SDK (resend 6.26.0, 2026-09-10):
@@ -125,10 +144,12 @@ const HEALTHY_STATUSES = new Set(['verified', 'partially_verified']);
 /**
  * Only SPF and DKIM decide health.
  *
- * Resend also returns Tracking and CAA rows for open/click tracking, a feature this
- * system does not use. Their `pending` state is permanent here and would page someone
- * hourly, forever, about a feature nobody enabled — which is how an alert channel gets
- * muted. Filtering them out is the difference between a signal and a nuisance.
+ * Resend's record list can also carry Tracking and CAA rows, which belong to open/click
+ * tracking — a feature this system does not use. [MEASURED 2026-09-10] this account
+ * returns none of them: the live probe came back with DKIM and two SPF rows (SPF has an
+ * MX and a TXT row, hence two) and nothing else. So this filter removes nothing today;
+ * it is here so that enabling tracking later cannot turn a permanently-pending optional
+ * record into an hourly page about a feature nobody is relying on.
  */
 const DELIVERABILITY_RECORDS = new Set(['SPF', 'DKIM']);
 
@@ -149,8 +170,22 @@ export function domainFromSender(from: string): string | null {
   return domain.includes('.') ? domain : null;
 }
 
-/** Map a Resend error name onto one of our kinds. The name is the stable part. */
-function classifyResend(name: string | undefined): EmailHealthFailure {
+/**
+ * Map a Resend error onto one of our kinds.
+ *
+ * The `name` is the stable part and is matched first. `statusCode` is the fallback,
+ * and its default direction is deliberate: an UNRECOGNISED 401/403 resolves to
+ * `key_invalid`, which alerts, rather than to `key_restricted`, which does not. Both
+ * are key problems and the name alone cannot separate them — but a falsely quiet dead
+ * key means business mail stops with no warning, while a false page about a key costs
+ * someone one look. Fail toward the noise.
+ *
+ * ⚠️ This check has only ever run against a FULL-ACCESS key (measured 2026-09-10). The
+ * `restricted_api_key` branch is read from the SDK's own error union, not observed —
+ * Resend's public error reference does not list it. If a sending-only key is ever put
+ * in place and this starts paging, that branch is where to look.
+ */
+function classifyResend(name: string | undefined, statusCode?: number | null): EmailHealthFailure {
   switch (name) {
     case 'missing_api_key':
     case 'invalid_api_key':
@@ -165,6 +200,8 @@ function classifyResend(name: string | undefined): EmailHealthFailure {
     case 'monthly_quota_exceeded':
       return 'rate_limited';
     default:
+      if (statusCode === 429) return 'rate_limited';
+      if (statusCode === 401 || statusCode === 403) return 'key_invalid';
       return 'unreachable';
   }
 }
@@ -202,7 +239,7 @@ async function checkResendHealth(apiKey: string, from: string): Promise<EmailHea
     return { ok: false, kind: 'unreachable', message: MESSAGES.unreachable };
   }
   if (list.error || !list.data) {
-    const kind = classifyResend(list.error?.name);
+    const kind = classifyResend(list.error?.name, list.error?.statusCode);
     return { ok: false, kind, message: MESSAGES[kind] };
   }
 

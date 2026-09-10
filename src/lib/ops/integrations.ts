@@ -184,8 +184,10 @@ export async function getIntegrationsStatus(jobHealth: JobHealthRow[]): Promise<
       // looked: Resend exposes its domain registry read-only, and reading it exercises
       // the API key AND the DNS state of the domain the From header actually uses. The
       // SMTP fallback has nodemailer's verify() — connect + AUTH, no message composed.
-      // This is the one integration whose failure is otherwise SILENT: a send keeps
-      // returning success while SPF/DKIM is broken. See src/lib/email/health.ts.
+      // Worth it not because the failure is silent — Resend 403s a send from an
+      // unverified domain — but because this transport is event-driven and low volume:
+      // that 403 surfaces at the NEXT customer signature, days later. The DKIM-pulled-
+      // while-still-marked-verified window IS silent. See src/lib/email/health.ts.
       lastCheckedAt: lastCompletedFor(jobHealth, 'email-health-check'),
       healthCheckAvailable: true,
     },

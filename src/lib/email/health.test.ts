@@ -129,6 +129,27 @@ describe('checkResendHealth', () => {
     expect(r.ok === false && r.kind).toBe('key_restricted');
   });
 
+  it('fails LOUD on an unrecognised auth error rather than silently skipping', async () => {
+    // Resend's public error reference does not list every name the SDK's union carries.
+    // An unknown 401/403 is a key problem either way; resolving it to key_restricted
+    // (which never alerts) would let a dead key stop business mail in silence.
+    listMock.mockResolvedValue({
+      data: null,
+      error: { name: 'some_future_auth_error', message: 'x', statusCode: 403 },
+    });
+    const r = await checkResendHealth('re_x', 'noreply@send.kalfa.me');
+    expect(r.ok === false && r.kind).toBe('key_invalid');
+  });
+
+  it('still treats an unrecognised 429 as throttling', async () => {
+    listMock.mockResolvedValue({
+      data: null,
+      error: { name: 'some_future_quota_error', message: 'x', statusCode: 429 },
+    });
+    const r = await checkResendHealth('re_x', 'noreply@send.kalfa.me');
+    expect(r.ok === false && r.kind).toBe('rate_limited');
+  });
+
   it('separates a dead key from throttling', async () => {
     listMock.mockResolvedValue({ data: null, error: { name: 'invalid_api_key', message: 'x', statusCode: 401 } });
     expect((await checkResendHealth('re_x', 'a@b.co')).ok === false).toBe(true);
