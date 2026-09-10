@@ -22,7 +22,6 @@ import {
   Icon,
   getStoreLayoutDirection,
   getStoreNodes,
-  hasRegisteredComponentDecorator,
   registerComponentDecorator,
   registerFunctionDecorator,
   setStoreLayoutDirection,
@@ -30,6 +29,7 @@ import {
   useSingleSelectedElement,
   useStore,
 } from '@workflowbuilder/sdk';
+import { useEffect, useRef } from 'react';
 
 import { setPropertiesOpen, usePanelsStore } from './use-panels-store';
 
@@ -67,6 +67,7 @@ function toggleLayoutDirection() {
 }
 
 function KalfaAppBarControls() {
+  const anchor = useRef<HTMLButtonElement>(null);
   const toggleSidebar = useStore((s) => s.toggleSidebar);
   const isPaletteExpanded = useStore((s) => s.isSidebarExpanded);
   const isPropertiesOpen = usePanelsStore((s) => s.isPropertiesOpen);
@@ -74,9 +75,18 @@ function KalfaAppBarControls() {
   const selected = useSingleSelectedElement();
   const hasSelection = Boolean(selected?.node || selected?.edge);
 
+  // No dependency array on purpose: this re-sweeps after every render of ours,
+  // which makes it self-healing if the SDK ever remounts its own subtree. The
+  // body is a handful of DOM reads over six elements and exits on the first
+  // mismatch, so running it often costs nothing.
+  useEffect(() => {
+    hideVendorLanguageSwitcher(anchor.current);
+  });
+
   return (
     <>
       <button
+        ref={anchor}
         type="button"
         className="kalfa-workflow-appbar-button"
         aria-label="ספריית צעדים"
@@ -114,35 +124,64 @@ function KalfaAppBarControls() {
 }
 
 /**
- * The SDK's own language switcher, and why it has to go.
+ * Hides the SDK's own language switcher, which reads "EN" over a Hebrew editor.
  *
- * The bundle registers it at MODULE LOAD — `WA()` runs on import, decorating
- * `OptionalAppBarControls` with priority 10 — so it is not something the
- * `plugins` prop opts into and there is no flag that turns it off. It offers
- * exactly two languages, `[{en}, {pl}]`, and renders the current one as
- * `pc.find(l => l.code === language) || pc[0]`.
+ * It is registered at MODULE LOAD (`WA()` runs on import, decorating
+ * `OptionalAppBarControls` with priority 10), offers exactly `[{en}, {pl}]`, and
+ * labels itself `pc.find(l => l.code === language) || pc[0]`. Ours is `he`, which
+ * matches neither, so it announces English — and both of the things it offers to
+ * switch to would leave Hebrew permanently, since the detector caches the choice
+ * in localStorage.
  *
- * Our language is `he`. It is in neither entry, so the lookup falls through to
- * the fallback and the button reads "EN" over a fully Hebrew editor — and both
- * of the things it offers to switch to would leave Hebrew for good, since the
- * detector caches the choice in localStorage. A control that misreports the
- * state and whose every option is wrong is worse than no control.
+ * WHY NOT THE REGISTRY. The obvious removal is to re-register its key, since an
+ * entry is keyed by `plugin.name ?? content.name` and a match replaces. That was
+ * tried and it DOES NOT SURVIVE THE PRODUCTION BUILD. In the SDK's own dist the
+ * component is `function jA()`, so the key is `"jA"` — but our bundler inlines it
+ * into an anonymous function expression:
  *
- * REMOVED BY NAME, which is the registry's only supported removal path:
- * `registerComponentDecorator` keys an entry by `plugin.name ?? content.name`
- * and REPLACES on a match, so re-registering that key with a component that
- * renders nothing takes the slot. The vendor passes no `name`, so the key is
- * the minified function name of their component.
+ *   H("OptionalAppBarControls", { content: function(){…}, priority:10, place:"before" })
  *
- * That identifier is minifier output and WILL change on an SDK rebuild. Hence
- * the probe: `hasRegisteredComponentDecorator` is public API, and on a miss we
- * register nothing and say so in dev. The failure mode is then exactly today's
- * behaviour — a cosmetically wrong button — rather than a blank app bar.
+ * `content.name` is then `""`, which `Xd()` treats as absent and falls back to
+ * `__auto_<hash of the function's own minified source text>`. That key is
+ * unreproducible by us and changes on every build of either package. Verified in
+ * `.next/static/chunks` on a deployed build — and note the trap it set: a test
+ * asserting the name resolves against `node_modules`, where it is still "jA", so
+ * it passed while the shipped app was unaffected.
+ *
+ * WHAT THIS DOES INSTEAD. It hides the element by what it IS rather than by what
+ * it is called: inside the app bar's controls row, an element that is a menu
+ * trigger AND whose entire visible text is a two-letter code. That is the shape
+ * of `code.toUpperCase()` for any language they ever add, and it is carried by
+ * nothing else in the bar — verified against the live DOM, where the predicate
+ * matches exactly one element out of six.
+ *
+ * If the SDK changes shape the predicate simply stops matching and the button
+ * comes back — the same cosmetic wrongness as before, not a broken bar — and dev
+ * gets a warning. Elements carrying our own class are excluded so this can never
+ * hide the controls it ships alongside.
  */
-const SDK_LANGUAGE_SWITCHER = 'jA';
+const LANGUAGE_CODE = /^[A-Za-z]{2}$/;
 
-function NoLanguageSwitcher(): null {
-  return null;
+function hideVendorLanguageSwitcher(anchor: HTMLElement | null): void {
+  const row = anchor?.parentElement;
+  if (!row) return;
+
+  let found = 0;
+  for (const element of row.children) {
+    if (element.classList.contains('kalfa-workflow-appbar-button')) continue;
+    if (!LANGUAGE_CODE.test(element.textContent?.trim() ?? '')) continue;
+    if (!element.querySelector('[aria-haspopup="menu"]')) continue;
+    found += 1;
+    (element as HTMLElement).style.display = 'none';
+  }
+
+  if (found === 0 && process.env.NODE_ENV !== 'production') {
+    console.warn(
+      "[kalfa] Could not find the SDK's language switcher in the app bar. If an " +
+        '"EN" button is showing over the Hebrew editor, re-derive the predicate in ' +
+        'app-bar.tsx from the live DOM of the controls row.',
+    );
+  }
 }
 
 /**
@@ -161,23 +200,6 @@ export function appBarPlugin(): void {
     place: 'before',
     name: 'kalfa-app-bar-controls',
   });
-
-  if (hasRegisteredComponentDecorator('OptionalAppBarControls', SDK_LANGUAGE_SWITCHER)) {
-    registerComponentDecorator('OptionalAppBarControls', {
-      content: NoLanguageSwitcher,
-      name: SDK_LANGUAGE_SWITCHER,
-      // Theirs, matched so the replacement keeps the same slot position.
-      priority: 10,
-      place: 'before',
-    });
-  } else if (process.env.NODE_ENV !== 'production') {
-    console.warn(
-      `[kalfa] The SDK app bar's language switcher is no longer registered as ` +
-        `"${SDK_LANGUAGE_SWITCHER}". Re-derive the name from the shipped bundle ` +
-        `(search for \`registerComponentDecorator("OptionalAppBarControls"\`) — ` +
-        `until then the bar shows an "EN" button over a Hebrew editor.`,
-    );
-  }
 
   registerFunctionDecorator('getControlsDotsItems', {
     place: 'after',

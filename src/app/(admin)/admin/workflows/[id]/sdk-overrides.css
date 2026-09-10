@@ -172,10 +172,27 @@ code, kbd, samp, pre {
   .kalfa-workflow-properties-panel {
     position: absolute;
     inset-block: 0;
-    inset-inline-end: 0;
     width: min(20rem, 100%);
     max-width: 100%;
     z-index: 5;
     filter: drop-shadow(0 4px 8px rgb(0 0 0 / .12));
   }
+  /* Each overlay keeps the side its column occupies on a wide screen, which is
+     also the side its button sits on in the app bar.
+
+     This mirrors the SDK rather than inventing a placement. `DefaultLayout` lays
+     `_content_` out as `display:flex; justify-content:space-between` with the
+     palette first, `#viewport-bounds` between, and the properties bar last —
+     inside a wrapper they named `right-panel`. So: palette at the inline start,
+     properties at the inline end. Our DOM order is theirs, so the wide layout
+     already does this on its own; only these absolutely-positioned overlays,
+     which the SDK has no equivalent of, have to say it out loud.
+
+     LOGICAL properties, and that part is NOT copied from them: their sheet
+     carries 99 physical `left`/`right`/`margin-left` declarations and zero
+     logical ones, and neither the stylesheet nor a single page of their
+     documentation mentions RTL. Writing `right: 0` here would put the palette on
+     the correct side in their world and the wrong one in ours. */
+  .kalfa-workflow-palette-panel { inset-inline-start: 0; }
+  .kalfa-workflow-properties-panel { inset-inline-end: 0; }
 }
