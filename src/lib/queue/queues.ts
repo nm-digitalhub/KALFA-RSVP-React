@@ -30,6 +30,11 @@ export const QUEUES = {
   // when balance dips below reserve/low-threshold. Read-only; never dials. Inert
   // while VOXIMPLANT_LIVE_CALLS is off. See src/lib/data/voximplant-balance.ts.
   balanceCheck: 'voximplant-balance-check',
+  // Passive WhatsApp connection check — two Graph GETs, no message ever sent.
+  // Closes the "אין בדיקת בריאות זמינה" that /admin/debug reported for WhatsApp
+  // (plan gap G10): "send-only" described how we MESSAGE guests, not whether the
+  // integration can be examined. See src/lib/whatsapp/health.ts.
+  whatsappHealthCheck: 'whatsapp-health-check',
   // Voximplant stuck-row reconciler (H3) — every 10m alert (ONLY) on pre-terminal
   // call_attempts older than 15m. NEVER re-issues StartScenarios. See
   // src/lib/data/voximplant-reconcile.ts.

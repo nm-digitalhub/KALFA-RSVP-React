@@ -146,9 +146,13 @@ export async function getIntegrationsStatus(jobHealth: JobHealthRow[]): Promise<
       // The GLOBAL outreach master switch, not a WhatsApp-only one — the same column
       // that gates every outbound channel.
       enabled: flags.whatsapp_enabled,
-      lastCheckedAt: null,
-      healthCheckAvailable: false,
-      note: 'אין בדיקת בריאות זמינה — send-only',
+      // Was `false` with the note "אין בדיקת בריאות זמינה — send-only" until
+      // 2026-09-10. "Send-only" described how we MESSAGE GUESTS, and was mistaken for
+      // a statement about whether the integration can be examined at all: Meta exposes
+      // the phone-number node and the WABA's number list, and reading both exercises
+      // the exact token and ids the send path needs. No message is sent.
+      lastCheckedAt: lastCompletedFor(jobHealth, 'whatsapp-health-check'),
+      healthCheckAvailable: true,
     },
     {
       key: 'sumit',

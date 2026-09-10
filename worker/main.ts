@@ -17,6 +17,7 @@ import { Client as PgClient } from 'pg';
 import { QUEUES, type OutreachCallRequest, type OutreachStepJob,
   type WorkflowRunJob,
 } from '@/lib/queue/queues';
+import { runWhatsAppHealthCheck } from '@/lib/whatsapp/run-health-check';
 import { dispatchOutreachCall } from '@/lib/data/outreach-calls';
 import {
   listActiveCampaigns,
@@ -1291,6 +1292,17 @@ async function main(): Promise<void> {
       await runBalanceCheck();
     }),
   );
+  // WhatsApp connection health (plan gap G10). Two Graph GETs, no message ever
+  // sent — see src/lib/whatsapp/health.ts for why "send-only" was never a reason
+  // to have no health check. Never throws; alerts only on a real failure or a RED
+  // quality rating, never on "not configured" or on Meta throttling us.
+  await boss.work(
+    QUEUES.whatsappHealthCheck,
+    POLL_SLOW_CRON,
+    guardedWorker(QUEUES.whatsappHealthCheck, async () => {
+      await runWhatsAppHealthCheck();
+    }),
+  );
   // Voximplant stuck-row reconciler (H3): ALERT-ONLY — surfaces pre-terminal
   // call_attempts older than 15m. NEVER re-issues StartScenarios.
   await boss.work(
@@ -1444,6 +1456,10 @@ async function main(): Promise<void> {
   stopCallbackListener = startCallbackWorkListener(boss);
   await boss.schedule(QUEUES.balanceCheck, '*/30 * * * *');
   await boss.schedule(QUEUES.callReconcile, '*/10 * * * *');
+  // Hourly. Meta's quality rating and number status move on the order of hours, and
+  // a passive check costs two GETs — often enough to be useful, rare enough not to
+  // spend the app's Graph budget on watching itself.
+  await boss.schedule(QUEUES.whatsappHealthCheck, '25 * * * *');
   await boss.schedule(QUEUES.callbackDispatchReconcile, '*/10 * * * *');
   await boss.schedule(QUEUES.salesDispatchReconcile, '*/10 * * * *');
   // Anchored to a wall-clock hour → run on Israel local time (DST-aware).

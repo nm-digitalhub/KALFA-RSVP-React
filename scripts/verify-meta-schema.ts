@@ -52,6 +52,33 @@ const FIELD_MATRIX = [
   'username',
   // Control: uncontroversial, must behave identically everywhere.
   'code_verification_status',
+
+  // ---------------------------------------------------------------------------
+  // Added 2026-09-10 — the six the plan's Task 1.3 Step 0b names as NEVER probed
+  // live, because a WhatsApp health check is about to request them.
+  // ---------------------------------------------------------------------------
+  // Graph refuses the WHOLE request over one unavailable field, and its error
+  // blames the wrong part (the OBA filter failed with "operation not supported"
+  // when the real fault was a string where a boolean belonged). So a health check
+  // built on an unverified field list does not degrade — it returns nothing, every
+  // time, and the message points elsewhere.
+  //
+  // `quality_rating` is the one that matters most: it is the whole point of a
+  // passive health check (GREEN/YELLOW/RED without sending anything), and it has
+  // never been read here.
+  'quality_rating',
+  // Measured as a FILTER in §0.0, never as a readable field — a different thing.
+  'account_mode',
+  'is_official_business_account',
+  // Zero occurrences in the local spec, nested object, never measured.
+  'throughput',
+  // Expected to work; included so the health check's exact field list is proven
+  // as a set, not field by field.
+  'status',
+  // HIGH RISK, and expected to FAIL: §0.0 measured it as sortable but not
+  // readable, and it appears in the official v25.0 spec five times, all under
+  // `sort`. Listed so the failure is recorded rather than rediscovered.
+  'last_onboarded_time',
 ];
 
 // The resources the spec covers AND this codebase already reads in production,
