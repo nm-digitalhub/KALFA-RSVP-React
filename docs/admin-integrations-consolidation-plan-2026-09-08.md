@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**תאריך:** 2026-09-08 · **עודכן:** 2026-09-10 · **סטטוס:** ✅ **Phase 0 מוכנה ליישום.** §0.0 = מה שנפרס בלילה 8→9.9 · §0.1 = מדידת מצב 10.9 · **§0.2 = סקירת שני מומחים (10.9), 34 תיקונים הוחלו, ומה שעדיין חסום.** קראו את §0.2 לפני שמתחילים משימה.
+**תאריך:** 2026-09-08 · **עודכן:** 2026-09-10 (ערב) · **סטטוס:** ✅ **Phase 0 מוכנה ליישום.** §0.0 = מה שנפרס בלילה 8→9.9 · §0.1 = מדידת מצב 10.9 · §0.2 = סקירת שני מומחים · **§0.3 = ציר ההרשאות אוחד ונפרס 10.9, ושתי המיגרציות של התוכנית חייבות להשתנות בגללו.** קראו את §0.2 **ו-§0.3** לפני שמתחילים משימה.
 
 ---
 
@@ -165,7 +165,7 @@
 ### שלוש מלכודות שקטות שתוקנו
 
 - **`try/catch` סביב `requirePlatformPermission`** היה בולע `NEXT_REDIRECT` — והדפוס שצוטט כאסמכתא (`nav-counts`) אינו try/catch כלל אלא `hasPlatformPermission`.
-- **שער Phase 0 היה ירוק בשקר:** `admin-data-layer-coverage.test.ts` סורק מפה קשיחה, וקובץ שאינו בה אינו נבדק.
+- **שער Phase 0 היה ירוק בשקר:** `admin-data-layer-coverage.test.ts` סרק מפה קשיחה, וקובץ שאינו בה לא נבדק. ✅ **תוקן 10.9** — `readdirSync` + נפילה סגורה, והסריקה הורחבה ל-Server Actions ול-route handlers (§0.3).
 - **`call_1` (`channel='call'`) היה מייצר התראת `NOT_FOUND` בכל סנכרון לנצח**, כי Task 5.1 לא ירש את הסינון הקיים.
 
 ### הקיבעון — מה שהפך לשאלה לבעלים
@@ -184,11 +184,69 @@
 
 ---
 
+## 0.3 עדכון 2026-09-10 (ערב) — ציר ההרשאות אוחד, נפרס, ומשנה את התוכנית בארבעה מקומות
+
+שאלה 9.10 ("האם `requireAdmin` מצמצם גישה?") נענתה בתשובה חזקה מהצפוי: **שני צירי ההרשאה מוזגו לאחד.** מיגרציה `20260910090301_platform_staff_is_the_admin_floor.sql` הוחלה ע"י הבעלים, ושבעה קומיטים נפרסו ב-14:22 (`.deploy-id = mtvftwmb`, אומת חי).
+
+**מדוד 10.9 אחרי הפריסה:**
+
+| | |
+|---|---|
+| מדיניות RLS על `has_role` | **0** |
+| מדיניות RLS על `is_platform_staff()` | **21** |
+| `await requireAdmin()` בקוד (מחוץ לבדיקות) | **0** |
+| `requireAdmin` עצמה | `@deprecated` ב-`dal.ts`, נשארת רק כדי שלא תישבר קריאה חיצונית |
+
+### ⛔ חוסם — §4.2 ו-§4.3 מייצרות מדיניות על הציר שפרש
+
+שלוש המדיניות ב-SQL של התוכנית כתובות `public.has_role((select auth.uid()), 'admin'::app_role)`. הרצתן היום **תחזיר את הציר הישן לבסיס נתונים שהרגע ניקה אותו מ-21 מדיניות**, ותיצור שתי טבלאות שאף אחד מהשומרים החדשים אינו מכסה.
+
+**התיקון (שלוש החלפות, אין שינוי סמנטי — שתי הקבוצות זהות היום):**
+
+```sql
+-- provider_numbers_admin_all, provider_number_roles_admin_all, mtvh_admin_select
+-  using ((select public.has_role((select auth.uid()), 'admin'::app_role)))
++  using ((select public.is_platform_staff()))
+```
+
+`is_platform_staff()` היא `SECURITY DEFINER`/`STABLE` עם `search_path` מקובע — אותה חתימה בדיוק שהמיגרציה של 10.9 השתמשה בה ב-21 המדיניות, וה-`( SELECT … )` העוטף נשמר כדי שההערכה תישאר פעם-אחת-לשאילתה ולא פעם-לשורה.
+
+⚠️ **הדריסה היבשה של §4.2–§4.4 (10.9 בוקר) בוצעה על ה-SQL הישן.** אחרי ההחלפה **יש להריץ אותה שוב** ב-`begin; … rollback;` — כולל בדיקת ה-RLS תחת `authenticated` שאינו staff. זה מצטבר עם האזהרה הזהה ב-Task 1.1 Step 4 (אימוץ enum): אם שניהם מאומצים — הרצה יבשה **אחת** אחרי שניהם.
+
+### שער Phase 0 — האזהרה התיישנה, אבל לא במלואה
+
+§0.2 רשמה: *"שער Phase 0 היה ירוק בשקר: `admin-data-layer-coverage.test.ts` סורק מפה קשיחה"*. **תוקן 10.9.** הבדיקה כותבת עכשיו `MODULES = readdirSync('src/lib/data/admin')` ו**נופלת סגור** על כל קובץ חדש שאינו מסווג. נוספו שני שומרים:
+
+- **אין מודול תחת `src/lib/data/admin` שקורא `requireAdmin()`** — הציר הפרוש מחוץ לתיקייה לתמיד;
+- **שום דבר שהלייאאוט ממתין לו אינו בודק את הציר הפרוש** — הרגרסיה שנתפסה בפועל: `getAdminNavCounts` קרא `requireAdmin()` ולכן זרק חבר צוות שאינו owner אל `/app` **אחרי** שהלייאאוט כבר הכניס אותו.
+
+**מה שנשאר נכון מהאזהרה:** קובץ חדש עדיין חייב רשומה מפורשת ב-`EXPECTED_PERMISSION` (מפתח) או ב-`COARSE_GATE_ALLOWED` (פטור מנומק). ההבדל: פעם השתיקה עברה, היום היא נופלת.
+
+**בנוסף — הסריקה הורחבה מעבר לתיקיית ה-DAL:** כל `actions.ts` ו-`route.ts` תחת עץ האדמין נבדקים, כי **Server Action היא endpoint בפני עצמה** ושער העמוד אינו רץ עבור מי שקורא לה ישירות. זה נמצא בפועל: 16 פעולות ב-`voice/`, `alerts/` ו-`fleet/` היו על הרצפה הגסה, ביניהן כותבת מפתח ElevenLabs וכותבת webhook secret של Slack. **כל `actions.ts` חדש ב-Phase 0 נכנס לסריקה אוטומטית.**
+
+### §3.6 — `requireAdmin()` לאינדקס כבר אינו אפשרות
+
+התוכנית כותבת *"אינדקס `/admin/integrations`: `requireAdmin()` בלבד"*. הפונקציה `@deprecated` ואפס קוראים. **הרצפה היא `requirePlatformStaff()`** — אותה כוונה בדיוק ("כל חבר צוות נכנס, כל כרטיס נבדק בנפרד ב-`hasPlatformPermission`"), על הציר הנכון. שאר §3.6 עומד כפי שהוא.
+
+### הניווט מסונן — סיכון 12 התהפך
+
+סיכון 12 קבע: *"Nav visibility ≠ gate — כמו היום: כל admin רואה 'אינטגרציות'"*. **זה כבר לא המצב.** `NAV_GROUPS` נושא היום `permission` לכל פריט, `getAdminNavGrants()` פותר בשרת, והלקוח מסנן. אומת חי על `billing_clerk`: 8 קישורים במקום 33.
+
+**מה זה אומר ל-Task 0.6 Step 1:** פריט התפריט החדש **חייב** `permission: 'manage_settings'`, אחרת `src/components/admin-nav-coverage.test.ts` מפיל את הבנייה. אותה בדיקה גם מצמידה שהמפתח בתפריט **שווה** למפתח שהעמוד אוכף — כלומר `integrations/page.tsx` על `requirePlatformStaff()` (בלי מפתח) מחייב רישום ב-`NO_PERMISSION_BY_DESIGN`, בדיוק כמו `/admin` ו-`/admin/analytics`.
+
+**הסינון אינו שער.** הקישור המוסתר עדיין ניתן להקלדה, והעמוד הוא שמסרב — זה מה ש-§3.6 כבר אומר, וזה לא השתנה.
+
+### §9 שאלה 10 — נענתה אחרת ממה שנרשם
+
+הרישום הקודם: *"0 שיאבדו גישה, 0 שיקבלו… השאלה נותרת רלוונטית רק כשיתווסף חבר צוות שאינו owner"*. **זה קרה באותו יום.** הבעלים הקצה `חיוב וגבייה` ל-`yaakov7676@gmail.com`, והוא בפועל **חבר הצוות הראשון שאינו owner**. הפער שהמדידה לא ראתה: `assignStaffRole` כותב רק ל-`platform_staff`, `setPlatformAdmin` כתב רק ל-`user_roles`, ואף מנגנון לא סנכרן — כלומר כל ארבעת התפקידים הלא-owner היו **בלתי שמישים כפי שנשלחו**. זה מה שהכריח את המיזוג.
+
+---
+
 **Goal:** עמוד אחד לכל ספק (Meta/WhatsApp, Voximplant, ExtrA, Resend, Microsoft, SUMIT, Slack) תחת `/admin/integrations`, מודול "מספרים" משותף שמציג כל מספר טלפון מחובר ומאפשר להוסיף/לאמת/לקשר מספרים מהפאנל, והצפה של הנתונים שחסרים היום (בריאות וריאנטים, כיסוי webhooks, תוקף טוקן, גרסת Graph, מדיניות שליחה).
 
 **Architecture:** Server Components שמרכיבים את רכיבי הלקוח הקיימים (מועברים, לא נכתבים מחדש), Server Actions דקים עם Zod, DAL תחת `src/lib/data/admin/integrations/*` עם `requirePlatformPermission`. שתי טבלאות חדשות (`provider_numbers`, `provider_number_roles`) במקום ארבע עמודות בודדות ב-`app_settings`. כל פעולה שעולה כסף או בלתי-הפיכה (רכישת מספר, register/deregister) מאחורי `requirePlatformOwner` + דיאלוג אישור שמציג מחיר/תוצאה + `logActivity` + התראת Slack.
 
-**Tech Stack:** Next.js 16 App Router, shadcn על `@base-ui/react`, Tailwind v4, Supabase (RLS `has_role`), pg-boss worker, `whatsapp-api-js` 6.2.2, Voximplant Management API דרך `src/lib/voximplant/{core,mutations}.ts`, Zod 4, Vitest 4.
+**Tech Stack:** Next.js 16 App Router, shadcn על `@base-ui/react`, Tailwind v4, Supabase (RLS `is_platform_staff()` — §0.3), pg-boss worker, `whatsapp-api-js` 6.2.2, Voximplant Management API דרך `src/lib/voximplant/{core,mutations}.ts`, Zod 4, Vitest 4.
 
 **Spec:** הודעת team-lead 2026-09-08 (המסמך הזה הוא ה-spec המאומת שלה). מסמכים משלימים שהתוכנית מסתמכת עליהם ואינה מחליפה: `docs/whatsapp-import-number-split-plan-2026-09-03.md`, `docs/whatsapp-api-js-capability-audit-2026-09-03.md`, `docs/voximplant/digest-management-api.md`, `docs/voice-agent/production-wiring-audit-2026-07-20.md`.
 
@@ -271,16 +329,16 @@
 | | חיבור יומן Exchange | `exchange_connections` (create/test/list/revoke/test-appointment), `exchange_connection_mode` | `exchange-connections.ts`, `settings.ts:280-290` | `manage_settings` (mode) / self-scoped | admin |
 | | תצורת תשתית (env) | `SUPABASE_SERVICE_ROLE_KEY`, `APP_ORIGIN` — presence | `settings.ts:297-315` | `manage_settings` | קריאה |
 | `/admin/company` | זהות החברה | `company_legal_name/_id/_address`, `company_contact_phone`, `company_contact_email`, `privacy_url`, `terms_url`, `warranty_text`, `company_instagram_url` | `settings.ts:227-269`; נקרא ציבורית דרך `company.ts` | `manage_settings` | admin |
-| `/admin/templates` | תוכן הפניות | לכל שורת `message_templates`: `name`, `language`, `body`, `active` + תצוגת בריאות (`category/requested_category/quality_score/meta_status/rejected_reason/pending_*`) | `message-templates.ts` (`requireAdmin`) | `requireAdmin` | admin |
-| `/admin/webhooks` | Health strip + רשימה מסוננת + Sheet | `webhook_inbox` (provider/kind/state/date/q), detail: identity, outcome, delivery envelope, reprocess | `webhook-inbox.ts` (service-role תחת `view_webhooks`) | `view_webhooks`; reprocess `requireAdmin` | admin |
-| `/admin/alerts` | חיבור Slack | `slack_bot_token` (write-only, presence), `slack_alert_channel_id`; test; disconnect | `alerts.ts` | `manage_settings` (actions: `requireAdmin`) | admin |
+| `/admin/templates` | תוכן הפניות | לכל שורת `message_templates`: `name`, `language`, `body`, `active` + תצוגת בריאות (`category/requested_category/quality_score/meta_status/rejected_reason/pending_*`) | `message-templates.ts` | `manage_settings` (היה `requireAdmin` עד 10.9) | admin |
+| `/admin/webhooks` | Health strip + רשימה מסוננת + Sheet | `webhook_inbox` (provider/kind/state/date/q), detail: identity, outcome, delivery envelope, reprocess | `webhook-inbox.ts` (service-role תחת `view_webhooks`) | `view_webhooks` (reprocess כלול — היה `requireAdmin`) | admin |
+| `/admin/alerts` | חיבור Slack | `slack_bot_token` (write-only, presence), `slack_alert_channel_id`; test; disconnect | `alerts.ts` | `manage_settings` — **גם ה-actions** (חמש פעולות הועברו 10.9; §0.3) | admin |
 | | אזכור אישי | `slack_mention_user_id`, `slack_mention_min_level` | שם | | |
 | | מתגי התראות | `slack_alerts_enabled` + 5 קטגוריות (`errors`, `send_health`, `campaign_billing`, `security`, `customer_inquiry`) | שם | | |
 | | היסטוריה | `ops_alerts` (paginated) | שם | | קריאה |
 | `/admin/voice` | tiles + אירועים | יתרה (cache), פעילות שיחות | `voice-ops.ts`, `voice-balance-cache.ts` | `manage_voice` | קריאה |
-| `/admin/voice/platform` | יתרה וחיווט | `GetAccountInfo`, מצב `voximplant_account_callback_state`, wire/rollback (`SetAccountInfo` מוגבל) | `voice-ops.ts:479-562`, `voximplant-channel.ts:263-374` | `manage_voice`; actions `requireAdmin` | admin |
+| `/admin/voice/platform` | יתרה וחיווט | `GetAccountInfo`, מצב `voximplant_account_callback_state`, wire/rollback (`SetAccountInfo` מוגבל) | `voice-ops.ts:479-562`, `voximplant-channel.ts:263-374` | `manage_voice` — **גם ה-actions** (חמש פעולות הועברו 10.9, כולל כתיבת מפתח ElevenLabs; §0.3) | admin |
 | | רשימות חיוג / audit / allowlist / log export | `GetCallLists`, `GetAuditLog`, IPs, `runLogExport` | שם | | |
-| | צי ElevenLabs | agents.json + API status + quota; `elevenlabs_api_key` (write-only) | `elevenlabs-status.ts` | `requireAdmin` | admin |
+| | צי ElevenLabs | agents.json + API status + quota; `elevenlabs_api_key` (write-only) | `elevenlabs-status.ts` | `manage_voice` (דרך `saveElevenLabsKeyAction`; §0.3) | admin |
 | `/admin/voice/queues` | מחלקות | `console_queues.is_active`, `console_agent_queues` | `console-queues.ts` | `manage_voice` | admin |
 | `/admin/voice/console` | התחברות SDK (dev) | node/login | `console_me` | `requireUser` (membership) | agent |
 | `/admin/debug` (הכוונה ב-brief ל-"ops") | Integrations panel | ElevenLabs, Voximplant, Slack, WhatsApp, SUMIT, ExtrA, GA4 — configured + lastChecked (מ-pg-boss) | `ops/integrations.ts` | `requirePlatformOwner` | קריאה |
@@ -428,7 +486,7 @@ async redirects() {
 
 ### 3.6 הרשאות
 
-- **אינדקס `/admin/integrations`: `requireAdmin()` בלבד**, ולכל כרטיס `hasPlatformPermission(<key>)` שקובע אם הוא לחיץ או מוצג כ"אין הרשאה". **לא** `requirePlatformPermission('manage_settings')` על העמוד עצמו: הוא **מפנה ל-`/app`** ואינו מציג הודעה, כך שאיש תפעול עם `manage_voice` בלבד — קהל היעד של עמוד Voximplant — יועף מהפאנל ברגע שילחץ על פריט התפריט. עמודי Meta/ExtrA/Resend/Microsoft/SUMIT/Slack נשארים מגודרים `manage_settings` כפי שנכתב.
+- **אינדקס `/admin/integrations`: `requirePlatformStaff()` בלבד** (`requireAdmin` פרשה — §0.3), ולכל כרטיס `hasPlatformPermission(<key>)` שקובע אם הוא לחיץ או מוצג כ"אין הרשאה". **לא** `requirePlatformPermission('manage_settings')` על העמוד עצמו: הוא **מפנה ל-`/app`** ואינו מציג הודעה, כך שאיש תפעול עם `manage_voice` בלבד — קהל היעד של עמוד Voximplant — יועף מהפאנל ברגע שילחץ על פריט התפריט. עמודי Meta/ExtrA/Resend/Microsoft/SUMIT/Slack נשארים מגודרים `manage_settings` כפי שנכתב.
 - Voximplant: `manage_voice` (כמו היום). מודול המספרים: קריאה `manage_settings`; כתיבת שורות Voximplant `manage_voice`, שורות Meta/ExtrA `manage_settings`.
 - רכישה (`AttachPhoneNumber`), `DeactivatePhoneNumber`, `register`/`deregister`, הסרת מנוי webhook: `requirePlatformOwner` (D6).
 - `manage_integrations` חדש — **לא**. שני המפתחות הקיימים כבר מבחינים בין "הגדרות מערכת" ל"מוקד"; מפתח שלישי היה מייצר מטריצת הרשאות בלי צורך מוכח. אם הבעלים ירצה staff שרואה סטטוס בלי לערוך — זה מפתח `view_integrations` נפרד ולא בהיקף.
@@ -466,12 +524,17 @@ per-persona caller id = 4 תפקידים (RSVP, meeting-confirm, sales, call-me-
 -- ארבעה כובעים" view of §5.3-3.
 --
 -- Access model mirrors channels_admin_all (20260726111038): admin writes go through
--- the cookie client (authenticated + has_role admin); the worker/runtime reads via
+-- the cookie client (authenticated + platform staff); the worker/runtime reads via
 -- service_role, which keeps the schema-default ALL grant (VERIFIED-LIVE: the ACL
 -- this file produces is byte-identical to channels' —
 -- {postgres=arwdDxtm,service_role=arwdDxtm,authenticated=arwd}).
--- has_role signature VERIFIED-LIVE 2026-09-10: public.has_role(uuid, app_role)
--- returns boolean [SECDEF, STABLE, search_path=public]; app_role labels: admin,user.
+-- ⚠️ THE PREDICATE CHANGED 2026-09-10 (evening) — see §0.3. It was
+-- has_role(uid,'admin') on user_roles; migration 20260910090301 moved all 21 existing
+-- policies to is_platform_staff() and left ZERO on has_role. Creating these two tables
+-- on the retired axis would put it straight back into a database just cleaned of it.
+-- is_platform_staff() VERIFIED-LIVE: SECURITY DEFINER, STABLE, search_path=public,
+-- returns boolean — the same shape has_role had, and the two sets are identical
+-- today, so the swap is semantically a no-op on day one.
 -- public.set_updated_at() VERIFIED-LIVE: trigger fn, sets new.updated_at = now().
 -- Policies use the post-audit initplan-wrapped form so auth is evaluated once per
 -- statement, not per row.
@@ -569,13 +632,13 @@ grant select, insert, update, delete on public.provider_number_roles to authenti
 drop policy if exists provider_numbers_admin_all on public.provider_numbers;
 create policy provider_numbers_admin_all on public.provider_numbers for all
   to authenticated
-  using ((select public.has_role((select auth.uid()), 'admin'::app_role)))
-  with check ((select public.has_role((select auth.uid()), 'admin'::app_role)));
+  using ((select public.is_platform_staff()))
+  with check ((select public.is_platform_staff()));
 drop policy if exists provider_number_roles_admin_all on public.provider_number_roles;
 create policy provider_number_roles_admin_all on public.provider_number_roles for all
   to authenticated
-  using ((select public.has_role((select auth.uid()), 'admin'::app_role)))
-  with check ((select public.has_role((select auth.uid()), 'admin'::app_role)));
+  using ((select public.is_platform_staff()))
+  with check ((select public.is_platform_staff()));
 
 -- Backfill from the four legacy fields. Idempotent: every insert has an arbiter index
 -- (see provider_numbers_backfill_uq above) — re-running the block leaves 4 / 9 rows.
@@ -722,7 +785,7 @@ grant select on public.message_template_variant_health to authenticated;
 drop policy if exists mtvh_admin_select on public.message_template_variant_health;
 create policy mtvh_admin_select on public.message_template_variant_health for select
   to authenticated
-  using ((select public.has_role((select auth.uid()), 'admin'::app_role)));
+  using ((select public.is_platform_staff()));
 -- writes: worker only (service_role). The sync must set last_synced_at explicitly in
 -- the upsert — the default only applies on INSERT.
 -- No index beyond the PK: listVariantHealth(templateId) is a prefix scan of it.
@@ -737,7 +800,8 @@ create policy mtvh_admin_select on public.message_template_variant_health for se
 
 ```sql
 -- app_settings is a singleton settings row with admin-only RLS
--- (app_settings_admin_all, to authenticated, has_role admin) — adding a column does
+-- (app_settings_admin_all, to authenticated — on is_platform_staff() since 20260910090301,
+-- one of the 21 policies that migration converted) — adding a column does
 -- not touch it. VERIFIED-LIVE 2026-09-10: app_settings has TABLE-level grants only
 -- (authenticated=rw, service_role=arwdDxtm) and zero column-level ACLs, so the new
 -- column inherits SELECT/UPDATE — no 42501 of the show_meal_pref kind. No CHECK: the
@@ -1089,7 +1153,13 @@ export async function updateExtraSmsAction(_p: FormState, fd: FormData): Promise
 
 #### Task 0.6: Nav + redirects + מחיקת העמודים הישנים
 
-- [ ] **Step 1:** `admin-shell.tsx` — להסיר **שני** פריטים (`ערוצי תקשורת` מ"קמפיינים ושליחה", `התראות תפעול` מ"מערכת ותפעול"); **`תבניות פנייה` נשאר** במקומו. להוסיף `{ href: '/admin/integrations', label: 'אינטגרציות', icon: Plug }` ב"מערכת ותפעול" אחרי "הגדרות". `isActive` כבר מטפל בתת-עץ.
+- [ ] **Step 1:** `admin-shell.tsx` — להסיר **שני** פריטים (`ערוצי תקשורת` מ"קמפיינים ושליחה", `התראות תפעול` מ"מערכת ותפעול"); **`תבניות פנייה` נשאר** במקומו. להוסיף ב"מערכת ותפעול" אחרי "הגדרות":
+
+```ts
+{ href: '/admin/integrations', label: 'אינטגרציות', icon: Plug, permission: 'manage_settings' },
+```
+
+⚠️ **`permission` חובה מאז 10.9 (§0.3).** `src/components/admin-nav-coverage.test.ts` מפיל פריט ניווט בלי מפתח, מפיל מפתח ש-`getAdminNavGrants()` אינו פותר, ו**מצמיד שהמפתח בתפריט שווה למפתח שהעמוד אוכף לעצמו**. כלומר אם `integrations/page.tsx` ייגמר על `requirePlatformStaff()` בלי מפתח (§3.6) — הפריט חייב להיכנס ל-`NO_PERMISSION_BY_DESIGN` באותה בדיקה, כמו `/admin` ו-`/admin/analytics`, **ולא** לשאת `manage_settings`. הכריעו לפני שכותבים את שניהם, אחרת הבדיקה תתפוס את הסתירה. `isActive` כבר מטפל בתת-עץ.
 - [ ] **Step 2:** `next.config.ts` — `redirects()` (§3.4).
 - [ ] **Step 3:** grep מלא: `revalidatePath('/admin/channels'|'/admin/templates'|'/admin/alerts')`, `href="/admin/channels"` (למשל `voice/page.tsx:101`, `webhook-detail.tsx:175` הטקסט "לא מוגדר ב-/admin/channels" → "לא מוגדר ב-/admin/integrations/numbers"), `docs/routes-webhooks.md`, `docs/admin-webhooks-runbook.md`.
 - [ ] **Step 3b (ספירת שלמות לפני מחיקה):** `grep -c '<AccordionItem' src/app/\(admin\)/admin/channels/channels-client.tsx` = **5**, וספירת `<form>` שאינם בתוך הערות = **10** (`grep -c '<form'` מחזיר 13; שלושה — שורות 408, 409, 464 — יושבים בתוך הערות שמסבירות למה אסור לקנן). לוודא שסך הטפסים והאקורדיונים בקבצים החדשים תואם **לפני** ה-`rm`. חמש שניות שמכסות בדיוק את מחלקת הבאג של `b09240b`.
@@ -1099,7 +1169,9 @@ export async function updateExtraSmsAction(_p: FormState, fd: FormData): Promise
 
 **Gate Phase 0:** `tsc` · lint · `npm test` מלא · build · דפדפן · **הרחבה ידנית של `admin-data-layer-coverage.test.ts`**.
 
-⚠️ הבדיקה הזו **אינה סורקת קבצים חדשים מעצמה.** היא עוברת על מפות `EXEMPT` (`src/lib/auth/admin-data-layer-coverage.test.ts:24-50`) ו-`EXPECTED_PERMISSION` (`:76-95`) **קשיחות**, והלולאה היא `Object.entries()` עליהן — קובץ שאינו במפה פשוט לא נבדק, ו"ירוק" על מודול חדש הוא ירוק ריק. להוסיף במפורש: `src/lib/data/admin/integrations/index.ts` → `manage_settings`; `…/provider-numbers.ts` → `manage_settings`; `…/whatsapp-numbers.ts` → `manage_settings`; `…/voximplant-numbers.ts` → `manage_voice`. `src/lib/data/provider-numbers-resolve.ts` נשאר **מחוץ** למפות בכוונה — הוא runtime service-role חסר-בקשה, ומגודר ע"י `worker:deps` (רץ אוטומטית ב-`pretest`, `package.json:46`, כלל `worker-no-request-scoped-next` ב-`.dependency-cruiser.cjs:3-6`).
+⚠️ **התיישן חלקית 10.9 (§0.3).** הבדיקה **כן** סורקת קבצים חדשים מעצמה מאז: `MODULES = readdirSync('src/lib/data/admin')`, והיא **נופלת סגור** על מודול לא מסווג. גם כל `actions.ts` ו-`route.ts` תחת עץ האדמין נסרקים — Server Action היא endpoint בפני עצמה, ושער העמוד אינו רץ עבורה.
+
+**מה שנשאר נכון:** הסיווג עצמו עדיין ידני. כל קובץ חדש חייב רשומה — מפתח ב-`EXPECTED_PERMISSION` או פטור מנומק ב-`COARSE_GATE_ALLOWED`. ההבדל מול הניסוח הישן: פעם השתיקה עברה בירוק, היום היא מפילה. להוסיף במפורש: `src/lib/data/admin/integrations/index.ts` → `manage_settings`; `…/provider-numbers.ts` → `manage_settings`; `…/whatsapp-numbers.ts` → `manage_settings`; `…/voximplant-numbers.ts` → `manage_voice`. `src/lib/data/provider-numbers-resolve.ts` נשאר **מחוץ** למפות בכוונה — הוא runtime service-role חסר-בקשה, ומגודר ע"י `worker:deps` (רץ אוטומטית ב-`pretest`, `package.json:46`, כלל `worker-no-request-scoped-next` ב-`.dependency-cruiser.cjs:3-6`).
 
 ---
 
@@ -1408,7 +1480,7 @@ UI: `AlertDialog` (קיים) עם טבלת מחיר, checkbox "אני מאשר �
 9. **היגיינת grants:** `message_templates` מעניקה ל-`anon` ALL (RLS חוסם; אין policy ל-anon) — לא בהיקף, להעביר ל-rls-schema-engineer.
 10. ✅ **נסגר — `relocation/*` כבר על `GRAPH_API_VERSION`.** מדוד 10.9: `preflight.ts:722` ו-`external.ts:203` מייבאים את הקבוע (v25.0) מאז G5. אין חוב לרשום ב-`docs/product-debt.md`.
 11. **Redirect 307 ולא 308** — כדי לא לקבע בדפדפנים לפני שהבעלים מאשר את ה-IA הסופית.
-12. **Nav visibility ≠ gate** — כמו היום (`admin-shell.tsx:162-167`): כל admin רואה "אינטגרציות"; העמודים עצמם מגודרים.
+12. **Nav visibility ≠ gate — ומ-10.9 הניווט גם מסונן.** ההצהרה הקודמת ("כל admin רואה אינטגרציות") אינה נכונה עוד: כל פריט ב-`NAV_GROUPS` נושא `permission`, `getAdminNavGrants()` פותר בשרת והלקוח מסנן (§0.3). **הכלל עצמו לא השתנה** — קישור מוסתר עדיין ניתן להקלדה והעמוד הוא שמסרב. מה שהשתנה: מי שאין לו הרשאה כבר לא רואה קישור שרק יעיף אותו מהפאנל אל `/app`.
 13. **מפתח ExtrA:** `getAuthKey` מחזיר את המפתח בגוף התגובה — הקליינט חייב להשליכו (בדיקה מצמידה). המפתח החי הוא legacy ללא scopes ("may do everything the account may") ופוקע 2027-10-27 — ניטור ב-Task 5.6.
 14. **הקלטות ExtrA:** `getRecordingUrls` עם `ttl: 0` יוצר URL ציבורי לצמיתות — אסור; רק signed (≤10 דק') בזמן צפייה.
 15. **`Call.numbers.caller.e164` הוא PII של לקוח** (Phase 6) — לא בלוגים, לא ב-snapshot; רק `forwards_to_last4` של מכשיר הבעלים נשמר.
@@ -1426,7 +1498,7 @@ UI: `AlertDialog` (קיים) עם טבלת מחיר, checkbox "אני מאשר �
 7. הצד המשפטי: caller id שונה לפרסונת המכירות — האם צריך להופיע בהסכם/מדיניות (israeli-compliance-advisor)?
 8. **הסכמת וואטסאפ — מה המדיניות מכאן?** מדוד 9.9: ל-38 אנשי קשר יש `whatsapp_consent_at`, **כולם עם חותמת זמן זהה** (2026-07-07 11:19:15) — כלומר כתיבה אחת בכמות לפני קמפיין הברית, לא 38 אירועי הסכמה. `recordWhatsAppConsent` קיימת ואין לה אף קורא. מאז 9.9 יש מתג `whatsapp_consent_required` (כבוי כרגע), אבל השאלה נשארת: לחווט הסכמה אמיתית לנקודה בזרימה, להמשיך ברישום ידני לפני כל קמפיין, או לקבוע שההזמנה עצמה מהווה הסכמה. **שאלה עסקית-משפטית — לא טכנית.**
 9. ✅ **נענה 10.9 — התוכן נשאר, הבריאות עוברת.** ההנמקה והמדידות בסוף §3.3. נותרה החלטת נתונים אחת: האם למחוק את שורת `call_1` הריקה והכבויה (מומלץ) — **שינוי בייצור, דורש אישור.**
-10. ✅ **נענה 10.9 — לא צמצום, ציר אחר; ואיש אינו מושפע.** `requireAdmin()` בודק `has_role(uid,'admin')` על `user_roles`; `requirePlatformPermission` בודק `has_platform_permission` דרך `platform_staff → platform_roles → platform_role_permissions → platform_permission_definitions`. ההערה ב-`dal.ts:61-63` אומרת זאת מפורשות: *"A SECOND platform role layer, **orthogonal** to the coarse has_role('admin') flag"*. מדוד 10.9: 3 משתמשים עם `admin`, 3 חברי `platform_staff` (כולם `owner`), 3 מחזיקי `manage_settings` — **0 שיאבדו גישה, 0 שיקבלו**. השאלה נותרת רלוונטית רק כשיתווסף חבר צוות שאינו `owner`.
+10. ✅ **נענה 10.9 — ואז השתנה באותו יום: שני הצירים מוזגו.** התשובה הראשונה (למטה) הייתה נכונה למדידה שלה ושגויה בהמשכה — "השאלה נותרת רלוונטית רק כשיתווסף חבר צוות שאינו owner" **קרה כמה שעות אחר כך**. הבעלים הקצה `חיוב וגבייה` ל-`yaakov7676@gmail.com`, וזה חשף ש-`assignStaffRole` כותב רק ל-`platform_staff` בעוד `setPlatformAdmin` כתב רק ל-`user_roles` ואיש לא סנכרן — כלומר **ארבעת התפקידים הלא-owner היו בלתי שמישים כפי שנשלחו**. המסקנה: `user_roles` פרשה כרצפה, `platform_staff` היא הרצפה היחידה, ו-21 מדיניות ה-RLS הועברו. הפירוט ב-§0.3. **הרישום המקורי, לתיעוד:** `requireAdmin()` בודק `has_role(uid,'admin')` על `user_roles`; `requirePlatformPermission` בודק `has_platform_permission` דרך `platform_staff → platform_roles → platform_role_permissions → platform_permission_definitions`. ההערה ב-`dal.ts:61-63` אומרת זאת מפורשות: *"A SECOND platform role layer, **orthogonal** to the coarse has_role('admin') flag"*. מדוד 10.9: 3 משתמשים עם `admin`, 3 חברי `platform_staff` (כולם `owner`), 3 מחזיקי `manage_settings` — **0 שיאבדו גישה, 0 שיקבלו**. השאלה נותרת רלוונטית רק כשיתווסף חבר צוות שאינו `owner`.
 11. **האם להשוות בכלל מול "Meta latest"?** `META_LATEST_GRAPH_VERSION` **אינו קיים בקוד** (מדוד 10.9), ו-Task 2.5 עצמו פוסל רשימות סטטיות בנימוק "אין placeholder שמזדקן" — ואז מקבע מחרוזת שמטא תיישן. חלופות: לגזור מהפרוב של `meta:types` (v26.0 = 500 בשישה ממשקים), או להסיר את ההשוואה ולהציג קישור ל-changelog.
 12. **האם להוציא את רשימת הספקים לרישום נתוני?** הוספת ספק שמיני נוגעת **בחמישה** מקומות: `IntegrationKey` (union סגור), המערך ב-`getIntegrationsOverview`, תיקיית route, `redirects()`, ו-`NAV_GROUPS` — בזמן שטבלת `channels` כבר קיימת עם RLS ועורך UI. **מומלץ:** `src/lib/integrations/registry.ts` — מערך descriptors אחד (`{ key, title, permission, href }`) שממנו נגזרים האינדקס, פריט התפריט ובדיקת הרינדור. **לא** route דינמי `[provider]` — over-engineering לשבעה ספקים ידועים שכל אחד מרכיב רכיבים שונים.
 13. **האם לקבע גם את גרסת ה-Graph של הפרסום החברתי?** `src/lib/fleet/publish-social.ts` מקבע `v26.0` בשתי מחרוזות נפרדות — אותו מבנה שהוליד את G5. הוא מוחרג במפורש מ-`graph-version.test.ts` כי זה משטח מוצר אחר (Facebook Page / Instagram) עם אימות גרסה נפרד. קבוע `FACEBOOK_GRAPH_API_VERSION` משלו ייתן לו את אותה הגנה בלי לערבב.
