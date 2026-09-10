@@ -18,6 +18,7 @@ import { QUEUES, type OutreachCallRequest, type OutreachStepJob,
   type WorkflowRunJob,
 } from '@/lib/queue/queues';
 import { runWhatsAppHealthCheck } from '@/lib/whatsapp/run-health-check';
+import { runEmailHealthCheck } from '@/lib/email/run-health-check';
 import { dispatchOutreachCall } from '@/lib/data/outreach-calls';
 import {
   listActiveCampaigns,
@@ -1303,6 +1304,18 @@ async function main(): Promise<void> {
       await runWhatsAppHealthCheck();
     }),
   );
+  // Passive outgoing-mail check — Resend's read-only domain registry, or an SMTP
+  // connect+AUTH. No message is composed and none is sent. It exists for the failure
+  // that is otherwise INVISIBLE: SPF/DKIM breaking while every send keeps returning
+  // success. Never throws; alerts only on a genuinely broken sending domain or a dead
+  // key, never on "not configured", a sending-only key, or provider throttling.
+  await boss.work(
+    QUEUES.emailHealthCheck,
+    POLL_SLOW_CRON,
+    guardedWorker(QUEUES.emailHealthCheck, async () => {
+      await runEmailHealthCheck();
+    }),
+  );
   // Voximplant stuck-row reconciler (H3): ALERT-ONLY — surfaces pre-terminal
   // call_attempts older than 15m. NEVER re-issues StartScenarios.
   await boss.work(
@@ -1460,6 +1473,10 @@ async function main(): Promise<void> {
   // a passive check costs two GETs — often enough to be useful, rare enough not to
   // spend the app's Graph budget on watching itself.
   await boss.schedule(QUEUES.whatsappHealthCheck, '25 * * * *');
+  // Hourly at :40, offset from the WhatsApp check so the two passive probes do not
+  // share a minute. DNS propagation and Resend's own verification move on the order of
+  // hours; an hourly read costs two GETs.
+  await boss.schedule(QUEUES.emailHealthCheck, '40 * * * *');
   await boss.schedule(QUEUES.callbackDispatchReconcile, '*/10 * * * *');
   await boss.schedule(QUEUES.salesDispatchReconcile, '*/10 * * * *');
   // Anchored to a wall-clock hour → run on Israel local time (DST-aware).

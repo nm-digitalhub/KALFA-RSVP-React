@@ -180,9 +180,14 @@ export async function getIntegrationsStatus(jobHealth: JobHealthRow[]): Promise<
       // a presence check.
       configured: flags.email_configured,
       enabled: flags.email_enabled,
-      lastCheckedAt: null,
-      healthCheckAvailable: false,
-      note: 'אין בדיקת בריאות זמינה',
+      // Was `false` with the note "אין בדיקת בריאות זמינה" until 2026-09-10. Nobody had
+      // looked: Resend exposes its domain registry read-only, and reading it exercises
+      // the API key AND the DNS state of the domain the From header actually uses. The
+      // SMTP fallback has nodemailer's verify() — connect + AUTH, no message composed.
+      // This is the one integration whose failure is otherwise SILENT: a send keeps
+      // returning success while SPF/DKIM is broken. See src/lib/email/health.ts.
+      lastCheckedAt: lastCompletedFor(jobHealth, 'email-health-check'),
+      healthCheckAvailable: true,
     },
     {
       key: 'ga4',

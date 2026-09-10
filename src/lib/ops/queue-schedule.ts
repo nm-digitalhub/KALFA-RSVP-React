@@ -23,6 +23,9 @@ export const QUEUE_EXPECTED_MAX_MINUTES: Record<string, number> = {
   // Runs hourly; flagged only after four missed runs, because a Meta blip should
   // not turn the badge red on its own.
   'whatsapp-health-check': 4 * 60,
+  // Hourly, same allowance and same reason: a provider blip should not turn the
+  // badge red on its own.
+  'email-health-check': 4 * 60,
   // Daily/6h jobs, Asia/Jerusalem — 3x their own interval is measured in
   // hours/days, not minutes; wide multiples avoid false "stale" from a job
   // that simply hasn't reached its next scheduled tick yet.

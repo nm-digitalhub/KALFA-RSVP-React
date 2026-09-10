@@ -35,6 +35,12 @@ export const QUEUES = {
   // (plan gap G10): "send-only" described how we MESSAGE guests, not whether the
   // integration can be examined. See src/lib/whatsapp/health.ts.
   whatsappHealthCheck: 'whatsapp-health-check',
+  // Passive outgoing-mail check — Resend's read-only domain registry, or an SMTP
+  // connect+AUTH with no message composed. Closes the same "אין בדיקת בריאות זמינה"
+  // the WhatsApp card used to show. It exists mainly to catch the SILENT failure:
+  // SPF/DKIM breaking while every send call keeps returning success. See
+  // src/lib/email/health.ts.
+  emailHealthCheck: 'email-health-check',
   // Voximplant stuck-row reconciler (H3) — every 10m alert (ONLY) on pre-terminal
   // call_attempts older than 15m. NEVER re-issues StartScenarios. See
   // src/lib/data/voximplant-reconcile.ts.
