@@ -40,10 +40,15 @@ export default async function AdminSettingsPage() {
 
       <section className={sectionClass}>
         <div>
-          <h2 className="text-lg font-semibold">סליקה (SUMIT)</h2>
+          {/* Was "סליקה (SUMIT)" with a promise of masked keys and a reveal
+              toggle. Wrong twice after Task 0.2: the SUMIT keys moved to their own
+              provider form, and this heading was never only about SUMIT anyway —
+              it wraps the whole three-tab form, which also holds the automations
+              and the call-centre switches. Named for what it actually is. */}
+          <h2 className="text-lg font-semibold">מדיניות והפעלה</h2>
           <p className="text-sm text-muted-foreground">
-            מתג ראשי להפעלת תשלומים, ומפתחות שירות הסליקה. כל ערך ניתן לעריכה
-            בנפרד; המפתחות מוצגים מוסכים עם כפתור חשיפה.
+            מתגי הפעלה בלבד — סליקה וחיוב, אוטומציות ומוקד השיחות. פרטי ההתחברות
+            של הספקים (SUMIT, SMS, דואר) עברו לעמודים שלהם תחת אינטגרציות.
           </p>
         </div>
         <SettingsForm settings={settings} />
