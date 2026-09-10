@@ -37,8 +37,8 @@ vi.mock('@/lib/data/tax-ceiling', () => ({
 vi.mock('@/lib/supabase/admin', () => ({ createAdminClient: vi.fn() }));
 vi.mock('@/lib/alerts/slack', () => ({ sendSlackAlert: vi.fn() }));
 // closeCampaignAndCharge is platform-admin only (billing op); it self-gates on
-// requireAdmin as its first statement.
-vi.mock('@/lib/auth/dal', () => ({ requireAdmin: vi.fn() }));
+// requirePlatformPermission('manage_billing') as its first statement.
+vi.mock('@/lib/auth/dal', () => ({ requirePlatformPermission: vi.fn() }));
 vi.mock('@/lib/data/activity', () => ({ logActivity: vi.fn() }));
 
 import {
@@ -62,7 +62,7 @@ import { getSignedAgreementVersion } from '@/lib/data/agreements';
 import { SumitDeclinedError } from '@/lib/sumit/charge';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { sendSlackAlert } from '@/lib/alerts/slack';
-import { requireAdmin } from '@/lib/auth/dal';
+import { requirePlatformPermission } from '@/lib/auth/dal';
 import { logActivity } from '@/lib/data/activity';
 import { closeCampaignAndCharge } from '@/lib/data/close-charge';
 
@@ -130,7 +130,7 @@ const m = {
 };
 
 function happy() {
-  (requireAdmin as unknown as Mock).mockResolvedValue({ id: 'admin' });
+  (requirePlatformPermission as unknown as Mock).mockResolvedValue({ id: 'admin' });
   m.payments.mockResolvedValue(true);
   m.close.mockResolvedValue(true);
   m.sumit.mockResolvedValue({ companyId: 1, apiKey: 'k' });
@@ -184,7 +184,7 @@ describe('closeCampaignAndCharge', () => {
   it('rejects a non-admin caller BEFORE reading config or the campaign', async () => {
     happy();
     const redirected = Object.assign(new Error('NEXT_REDIRECT'), { digest: 'NEXT_REDIRECT;replace;/app;307;' });
-    vi.mocked(requireAdmin).mockRejectedValue(redirected);
+    vi.mocked(requirePlatformPermission).mockRejectedValue(redirected);
 
     await expect(closeCampaignAndCharge('c1')).rejects.toThrow('NEXT_REDIRECT');
     expect(getPaymentsEnabled).not.toHaveBeenCalled();
@@ -192,10 +192,10 @@ describe('closeCampaignAndCharge', () => {
     expect(captureHeldCardSumit).not.toHaveBeenCalled();
   });
 
-  it('proceeds for a platform admin (requireAdmin resolves) and charges', async () => {
+  it('proceeds for a holder of manage_billing and charges', async () => {
     happy();
     const r = await closeCampaignAndCharge('c1');
-    expect(requireAdmin).toHaveBeenCalled();
+    expect(requirePlatformPermission).toHaveBeenCalledWith('manage_billing');
     expect(r).toEqual({ outcome: 'charged', amount: 12, paymentId: 777, billingModel: 'per_reached', documentId: 555, documentUrl: 'https://pay.sumit.co.il/x?download=555' });
   });
 

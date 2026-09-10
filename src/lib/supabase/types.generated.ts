@@ -6161,6 +6161,7 @@ export type Database = {
       is_org_member: { Args: { _org_id: string }; Returns: boolean }
       is_org_owner: { Args: { _org_id: string }; Returns: boolean }
       is_platform_owner: { Args: never; Returns: boolean }
+      is_platform_staff: { Args: never; Returns: boolean }
       is_staff: { Args: never; Returns: boolean }
       next_manual_touchpoint: {
         Args: { p_campaign: string; p_contact: string }

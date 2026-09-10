@@ -1,7 +1,7 @@
 import 'server-only';
 
 import { createClient } from '@/lib/supabase/server';
-import { requireAdmin } from '@/lib/auth/dal';
+import { requirePlatformPermission } from '@/lib/auth/dal';
 import type { Tables } from '@/lib/supabase/types';
 // Admin management surface for message_templates (/admin/templates). The
 // request-free outreach template READERS (getTemplateByKey / resolveTemplateForEvent)
@@ -38,7 +38,9 @@ const TEMPLATE_COLUMNS =
   'id, message_key, channel, label, name, language, body, active, category, requested_category, quality_score, meta_status, rejected_reason, pending_category_change_at, pending_correct_category, last_synced_at';
 
 export async function listMessageTemplates(): Promise<MessageTemplate[]> {
-  await requireAdmin();
+  // `manage_settings`, not `requireAdmin()`. These are the message bodies sent to
+// guests; editing one changes what every future campaign says.
+  await requirePlatformPermission('manage_settings');
   const supabase = await createClient();
   const { data, error } = await supabase
     .from('message_templates')
@@ -62,7 +64,7 @@ export async function updateMessageTemplate(
   id: string,
   input: UpdateMessageTemplateInput,
 ): Promise<void> {
-  await requireAdmin();
+  await requirePlatformPermission('manage_settings');
   const supabase = await createClient();
   const { error } = await supabase
     .from('message_templates')

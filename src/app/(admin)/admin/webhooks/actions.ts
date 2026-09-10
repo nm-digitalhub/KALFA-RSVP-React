@@ -3,7 +3,7 @@
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 
-import { requireAdmin } from '@/lib/auth/dal';
+import { requirePlatformPermission } from '@/lib/auth/dal';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { logActivity } from '@/lib/data/activity';
 
@@ -17,7 +17,11 @@ const reprocessSchema = z.object({ id: z.uuid() });
 export async function reprocessWebhookEventAction(
   formData: FormData,
 ): Promise<void> {
-  await requireAdmin();
+  // `manage_settings`, NOT `view_webhooks`. Reprocessing re-runs the pipeline's
+// side effects — RSVP writes and billing among them — so a VIEW permission is
+// the wrong shape for it, even though this surface is otherwise pinned to
+// `view_webhooks` for reading.
+  await requirePlatformPermission('manage_settings');
 
   const parsed = reprocessSchema.safeParse({ id: formData.get('id') });
   if (!parsed.success) {

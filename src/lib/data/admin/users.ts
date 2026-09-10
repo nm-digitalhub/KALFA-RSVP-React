@@ -15,7 +15,6 @@ import { resolvePage, type PageParams, type PageResult } from './shared';
 // platform role layer — orthogonal to the customer org-role layer). Sensitive
 // mutations carry last-admin + no-self-lockout guards and are audited.
 
-const PLATFORM_ADMIN = 'admin' as const;
 // Supabase auth ban sentinels: a long duration to "suspend", 'none' to restore.
 const BAN_FOREVER = '876000h';
 const UNBAN = 'none';
@@ -36,7 +35,7 @@ export interface AdminUser {
   fullName: string | null;
   createdAt: string | null;
   lastSignInAt: string | null;
-  isPlatformAdmin: boolean;
+  isPlatformStaff: boolean;
   orgCount: number;
   suspended: boolean;
 }
@@ -101,7 +100,11 @@ async function enrichUsers(users: User[]): Promise<AdminUser[]> {
   const ids = users.map((u) => u.id);
   const [profilesRes, rolesRes, membersRes] = await Promise.all([
     admin.from('profiles').select('id, full_name').in('id', ids),
-    admin.from('user_roles').select('user_id').eq('role', PLATFORM_ADMIN).in('user_id', ids),
+    // platform_staff, NOT user_roles. The badge this feeds says "מנהל מערכת",
+    // and since 2026-09-10 admin-panel access is platform_staff membership —
+    // reading the retired axis would badge people who cannot get in, and leave
+    // unbadged people who can.
+    admin.from('platform_staff').select('user_id').in('user_id', ids),
     admin.from('organization_members').select('user_id').in('user_id', ids),
   ]);
   const nameById = new Map((profilesRes.data ?? []).map((p) => [p.id, p.full_name]));
@@ -116,7 +119,7 @@ async function enrichUsers(users: User[]): Promise<AdminUser[]> {
     fullName: nameById.get(u.id) ?? null,
     createdAt: u.created_at ?? null,
     lastSignInAt: u.last_sign_in_at ?? null,
-    isPlatformAdmin: adminIds.has(u.id),
+    isPlatformStaff: adminIds.has(u.id),
     orgCount: orgCountById.get(u.id) ?? 0,
     suspended: isSuspended(u.banned_until),
   }));
@@ -250,7 +253,8 @@ export async function getUserDetail(
 
   const [profileRes, roleRes, membersRes, eventsRes] = await Promise.all([
     admin.from('profiles').select('full_name, phone').eq('id', userId).maybeSingle(),
-    admin.from('user_roles').select('id').eq('user_id', userId).eq('role', PLATFORM_ADMIN).maybeSingle(),
+    // platform_staff, not user_roles — see the note in listUsers.
+    admin.from('platform_staff').select('user_id').eq('user_id', userId).maybeSingle(),
     admin
       .from('organization_members')
       .select('organization_id, organizations(name), org_roles(label)')
@@ -332,7 +336,7 @@ export async function getUserDetail(
     phone: profileRes.data?.phone ?? null,
     createdAt: u.created_at ?? null,
     lastSignInAt: u.last_sign_in_at ?? null,
-    isPlatformAdmin: Boolean(roleRes.data),
+    isPlatformStaff: Boolean(roleRes.data),
     orgCount: orgs.length,
     suspended: isSuspended(u.banned_until),
     orgs,
@@ -347,64 +351,27 @@ export async function getUserDetail(
   };
 }
 
-// How many users currently hold the platform admin role.
-async function platformAdminCount(): Promise<number> {
+// How many people are platform staff. Counted from platform_staff, not
+// user_roles: since 2026-09-10 staff membership is what grants admin access, so
+// suspending the last STAFF member is what would lock everyone out — the old
+// count guarded an axis that no longer controls anything.
+async function platformStaffCount(): Promise<number> {
   const admin = createAdminClient();
   const { count } = await admin
-    .from('user_roles')
-    .select('id', { count: 'exact', head: true })
-    .eq('role', PLATFORM_ADMIN);
+    .from('platform_staff')
+    .select('user_id', { count: 'exact', head: true });
   return count ?? 0;
 }
+// `setPlatformAdmin` was removed 2026-09-10 along with its two Server Actions.
+// It wrote `user_roles.admin`, which stopped controlling anything when the admin
+// floor moved to platform_staff — leaving a "revoke admin" endpoint that reported
+// success and removed no access. Staff membership is granted and revoked in
+// src/lib/data/admin/platform-roles.ts, the one path that carries the owner gate,
+// the last-owner guard, the audit row and the Slack alert.
 
-// Grant or revoke the platform admin role. Revoke is guarded: the final admin
-// can never be demoted (which also prevents self-lockout).
-export async function setPlatformAdmin(userId: string, grant: boolean): Promise<void> {
-  const actor = await requirePlatformPermission('manage_staff');
-  const admin = createAdminClient();
-
-  if (grant) {
-    const { data: existing } = await admin
-      .from('user_roles')
-      .select('id')
-      .eq('user_id', userId)
-      .eq('role', PLATFORM_ADMIN)
-      .maybeSingle();
-    if (!existing) {
-      const { error } = await admin
-        .from('user_roles')
-        .insert({ user_id: userId, role: PLATFORM_ADMIN });
-      if (error) throw new Error('הענקת ההרשאה נכשלה');
-    }
-  } else {
-    if ((await platformAdminCount()) <= 1) {
-      throw new Error('חייב להישאר לפחות מנהל מערכת אחד');
-    }
-    const { error } = await admin
-      .from('user_roles')
-      .delete()
-      .eq('user_id', userId)
-      .eq('role', PLATFORM_ADMIN);
-    if (error) throw new Error('שלילת ההרשאה נכשלה');
-  }
-
-  await logActivity({
-    action: grant ? 'admin.user.admin_granted' : 'admin.user.admin_revoked',
-    meta: { targetUserId: userId },
-  });
-  // Additive security ops alert (fire-and-forget, fail-safe): constant title per
-  // branch (dedup-friendly), non-PII actor/target ids only.
-  void sendSlackAlert({
-    level: 'warn',
-    category: 'security',
-    source: 'admin-users',
-    title: grant ? 'הוענקה הרשאת מנהל מערכת' : 'נשללה הרשאת מנהל מערכת',
-    fields: { actorUserId: actor.id, targetUserId: userId },
-  });
-}
 
 // Suspend (ban) or restore a user's login. Cannot suspend yourself or the last
-// platform admin.
+// staff member.
 export async function setUserSuspended(userId: string, suspend: boolean): Promise<void> {
   const actor = await requirePlatformPermission('manage_staff');
   if (suspend && userId === actor.id) {
@@ -413,14 +380,13 @@ export async function setUserSuspended(userId: string, suspend: boolean): Promis
   const admin = createAdminClient();
 
   if (suspend) {
-    const { data: isAdminRow } = await admin
-      .from('user_roles')
-      .select('id')
+    const { data: staffRow } = await admin
+      .from('platform_staff')
+      .select('user_id')
       .eq('user_id', userId)
-      .eq('role', PLATFORM_ADMIN)
       .maybeSingle();
-    if (isAdminRow && (await platformAdminCount()) <= 1) {
-      throw new Error('לא ניתן להשהות את מנהל המערכת האחרון');
+    if (staffRow && (await platformStaffCount()) <= 1) {
+      throw new Error('לא ניתן להשהות את חבר הצוות האחרון');
     }
   }
 

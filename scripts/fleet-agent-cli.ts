@@ -464,10 +464,11 @@ async function notifyAdmins(row: FleetRequestRow): Promise<{
   slackThreadTs: string | null;
 }> {
   const admin = createAdminClient();
+  // platform_staff, not user_roles: since 2026-09-10 staff membership is the one
+  // definition of "our people", and this is who a fleet push should reach.
   const { data: admins, error } = await admin
-    .from('user_roles')
-    .select('user_id')
-    .eq('role', 'admin');
+    .from('platform_staff')
+    .select('user_id');
   if (error) {
     console.error('[fleet-agent] admin lookup for push failed:', error.message);
     return { pushAttempted: 0, pushSent: 0, pushFailed: 0, slackThreadTs: null };
@@ -790,7 +791,7 @@ async function cmdComplete(args: Record<string, string | undefined>): Promise<vo
   // Push to every admin (same pipeline as new-request pushes) + Slack thread
   // reply. Best-effort: the ledger transition above is the source of truth.
   let pushSent = 0;
-  const { data: admins } = await admin.from('user_roles').select('user_id').eq('role', 'admin');
+  const { data: admins } = await admin.from('platform_staff').select('user_id');
   for (const { user_id } of admins ?? []) {
     try {
       const s = await sendPushToUser(user_id, {

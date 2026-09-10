@@ -1,6 +1,6 @@
 import type { NextRequest } from 'next/server';
 
-import { requireAdmin } from '@/lib/auth/dal';
+import { requirePlatformPermission } from '@/lib/auth/dal';
 
 // Shared authenticated reverse-proxy for the pg-boss ops dashboard.
 //
@@ -55,7 +55,10 @@ export async function proxyToDashboard(
   upstreamPath: string,
 ): Promise<Response> {
   // Redirects unauthenticated users and non-admins (server-side, trusted).
-  await requireAdmin();
+  // `manage_settings`, not `requireAdmin()`. The proxied dashboard can retry,
+// delete and purge pg-boss jobs — the queue that sends messages and places
+// calls.
+  await requirePlatformPermission('manage_settings');
 
   const target = `${UPSTREAM}${upstreamPath}${request.nextUrl.search}`;
 

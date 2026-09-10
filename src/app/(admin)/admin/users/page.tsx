@@ -62,7 +62,7 @@ export default async function AdminUsersPage({
                   </p>
                 </div>
                 <div className="flex items-center gap-2">
-                  {u.isPlatformAdmin ? <Badge>מנהל מערכת</Badge> : null}
+                  {u.isPlatformStaff ? <Badge>חבר צוות</Badge> : null}
                   {u.suspended ? <Badge>מושהה</Badge> : null}
                   <Badge>{u.orgCount} ארגונים</Badge>
                 </div>

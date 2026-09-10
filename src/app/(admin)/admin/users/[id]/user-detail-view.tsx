@@ -126,7 +126,7 @@ export function UserDetailView({
       <section className={sectionClass}>
         <div className="flex items-center gap-2">
           <h2 className="text-lg font-semibold">פרטי משתמש</h2>
-          {user.isPlatformAdmin ? <Badge>מנהל מערכת</Badge> : null}
+          {user.isPlatformStaff ? <Badge>חבר צוות</Badge> : null}
           {user.suspended ? <Badge>מושהה</Badge> : null}
         </div>
         <dl className="grid gap-3 text-sm sm:grid-cols-2">
@@ -216,7 +216,6 @@ export function UserDetailView({
 
       <UserActions
         userId={user.id}
-        isPlatformAdmin={user.isPlatformAdmin}
         suspended={user.suspended}
         isSelf={user.id === actorId}
         events={user.events}

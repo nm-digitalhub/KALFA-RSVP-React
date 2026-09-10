@@ -24,7 +24,7 @@ import { captureHeldCardSumit } from '@/lib/sumit/capture';
 import { SumitDeclinedError } from '@/lib/sumit/charge';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { sendSlackAlert } from '@/lib/alerts/slack';
-import { requireAdmin } from '@/lib/auth/dal';
+import { requirePlatformPermission } from '@/lib/auth/dal';
 import { logActivity } from '@/lib/data/activity';
 
 export type CloseChargeOutcome = {
@@ -113,7 +113,12 @@ export async function closeCampaignAndCharge(
   campaignId: string,
   opts?: { overrideAmount?: number; overrideReason?: string },
 ): Promise<CloseChargeOutcome> {
-  await requireAdmin();
+  // `manage_billing`, not `requireAdmin()`. This function CLOSES A CAMPAIGN AND
+// CHARGES THE SAVED CARD. `requireAdmin()` is the coarse `has_role('admin')`
+// flag, which `support_agent` and `auditor` also hold — neither of which is
+// meant to move money. `events.ts` and `packages.ts` already pin the same key
+// for far less than a charge.
+  await requirePlatformPermission('manage_billing');
   const [paymentsOn, closeOn, sumit] = await Promise.all([
     getPaymentsEnabled(),
     getCloseChargeEnabled(),

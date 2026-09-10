@@ -17,7 +17,7 @@
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 
-import { requireAdmin } from '@/lib/auth/dal';
+import { requirePlatformPermission } from '@/lib/auth/dal';
 import { createClient } from '@/lib/supabase/server';
 import type { FormState } from '@/lib/validation/result';
 
@@ -69,7 +69,9 @@ export async function saveAgreementConfigAction(
   }
 
   try {
-    await requireAdmin();
+    // `manage_settings`, not `requireAdmin()`. The agreement config decides the
+// terms a customer signs.
+  await requirePlatformPermission('manage_settings');
     const supabase = await createClient();
 
     // The form is prefilled with current values, so every save submits all 7

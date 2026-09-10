@@ -11,7 +11,6 @@ import {
   getUserDetail,
   grantBillingCredit,
   listAllUsers,
-  setPlatformAdmin,
   setUserSuspended,
   voidBillingCredit,
 } from './users';
@@ -47,49 +46,12 @@ beforeEach(() => {
   vi.mocked(requirePlatformPermission).mockResolvedValue(adminUser());
 });
 
-describe('setPlatformAdmin', () => {
-  it('blocks revoking the last platform admin', async () => {
-    wireAdminClient({ data: null, error: null, count: 1 });
-    await expect(setPlatformAdmin('u-2', false)).rejects.toThrow('חייב להישאר');
-    expect(logActivity).not.toHaveBeenCalled();
-  });
+// `setPlatformAdmin` and its tests were removed 2026-09-10 with the function.
+// The "must remain at least one" protection it carried lives on the new axis and
+// is stronger there: `platform_staff_prevent_last_owner` is a DB trigger (so it
+// holds against any writer, not just this one) and `assignStaffRole` adds the
+// role-change case the trigger cannot see, since the trigger fires on DELETE.
 
-  it('allows revoking when more than one admin exists', async () => {
-    wireAdminClient({ data: null, error: null, count: 3 });
-    await expect(setPlatformAdmin('u-2', false)).resolves.toBeUndefined();
-    expect(logActivity).toHaveBeenCalled();
-    // Additive security alert with the REVOKE title.
-    expect(sendSlackAlert).toHaveBeenCalledWith(
-      expect.objectContaining({
-        level: 'warn',
-        category: 'security',
-        title: 'נשללה הרשאת מנהל מערכת',
-        fields: { actorUserId: 'admin-1', targetUserId: 'u-2' },
-      }),
-    );
-  });
-
-  it('grants admin to a user that does not have it', async () => {
-    wireAdminClient({ data: null, error: null });
-    await expect(setPlatformAdmin('u-2', true)).resolves.toBeUndefined();
-    expect(logActivity).toHaveBeenCalled();
-    // Additive security alert with the GRANT title (constant, branch-selected).
-    expect(sendSlackAlert).toHaveBeenCalledWith(
-      expect.objectContaining({
-        level: 'warn',
-        category: 'security',
-        title: 'הוענקה הרשאת מנהל מערכת',
-        fields: { actorUserId: 'admin-1', targetUserId: 'u-2' },
-      }),
-    );
-  });
-
-  it('does not alert when the last admin revoke is blocked', async () => {
-    wireAdminClient({ data: null, error: null, count: 1 });
-    await expect(setPlatformAdmin('u-2', false)).rejects.toThrow('חייב להישאר');
-    expect(sendSlackAlert).not.toHaveBeenCalled();
-  });
-});
 
 describe('getUserDetail — break-glass audit', () => {
   const REASON = 'בירור פנייה בנושא חיוב עבור החשבון של המשתמש';

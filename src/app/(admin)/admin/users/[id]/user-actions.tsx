@@ -7,8 +7,6 @@ import { FieldError, FormError, FormNotice } from '@/components/forms';
 import type { FormState } from '@/lib/validation/result';
 
 import {
-  grantAdminAction,
-  revokeAdminAction,
   suspendUserAction,
   reactivateUserAction,
   grantCreditAction,
@@ -289,14 +287,12 @@ function ConsoleAgentSection({
 
 export function UserActions({
   userId,
-  isPlatformAdmin,
   suspended,
   isSelf,
   events,
   platformStaff,
 }: {
   userId: string;
-  isPlatformAdmin: boolean;
   suspended: boolean;
   isSelf: boolean;
   events: { id: string; name: string; campaignId: string | null }[];
@@ -306,10 +302,6 @@ export function UserActions({
   // in exactly one place.
   platformStaff?: PlatformStaffPanel | null;
 }) {
-  const [adminState, adminAction] = useActionState(
-    isPlatformAdmin ? revokeAdminAction : grantAdminAction,
-    null,
-  );
   const [suspendState, suspendAction] = useActionState(
     suspended ? reactivateUserAction : suspendUserAction,
     null,
@@ -329,12 +321,17 @@ export function UserActions({
       <section className={sectionClass}>
         <h3 className="font-medium">הרשאות וסטטוס</h3>
         <div className="flex flex-wrap items-center gap-3">
-          <form action={adminAction}>
-            <input type="hidden" name="user_id" value={userId} />
-            <RowSubmit variant={isPlatformAdmin ? 'danger' : undefined}>
-              {isPlatformAdmin ? 'שלילת הרשאת מנהל' : 'הענקת הרשאת מנהל'}
-            </RowSubmit>
-          </form>
+          {/*
+            The "grant/revoke admin" button lived here and was REMOVED 2026-09-10.
+            It wrote user_roles, which stopped controlling admin access when the
+            floor moved to platform_staff — so "שלילת הרשאת מנהל" would have
+            reported success while leaving the person fully inside the panel.
+            False assurance on a revoke control is worse than no control.
+
+            Staff access is granted and revoked by the role selector below, which
+            is the one path that carries the owner gate, the last-owner guard,
+            the audit row and the Slack alert.
+          */}
 
           {isSelf ? null : (
             <form action={suspendAction}>
@@ -345,8 +342,6 @@ export function UserActions({
             </form>
           )}
         </div>
-        {adminState?.error ? <FormError message={adminState.error} /> : null}
-        {adminState?.notice ? <FormNotice message={adminState.notice} /> : null}
         {suspendState?.error ? <FormError message={suspendState.error} /> : null}
         {suspendState?.notice ? <FormNotice message={suspendState.notice} /> : null}
       </section>

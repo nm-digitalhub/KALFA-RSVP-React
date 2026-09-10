@@ -1,4 +1,4 @@
-import { requireAdmin } from '@/lib/auth/dal';
+import { requirePlatformStaff } from '@/lib/auth/dal';
 import { getProfile } from '@/lib/data/profiles';
 import { getMyActiveExchangeConnection } from '@/lib/data/exchange-connections';
 import {
@@ -19,16 +19,29 @@ import { createClient } from '@/lib/supabase/server';
 import { AdminShell } from '@/components/admin-shell';
 import type { SoftphoneGateInfo } from '@/components/console/softphone-panel';
 
-// Admin area layout. requireAdmin() enforces authentication AND the admin role
-// server-side on every request (redirecting non-admins). This is the
-// authorization boundary for the entire /admin subtree; the nav link in the
-// customer shell is a convenience only.
+// Admin area layout. requirePlatformStaff() enforces authentication AND
+// platform-staff membership server-side, redirecting anyone else to /app.
+//
+// ⚠️ THIS IS NOT THE AUTHORIZATION BOUNDARY, and it used to claim it was.
+// Next's own guidance is explicit: "A layout does not control whether the rest
+// of the route renders… Instead, you should do the checks close to your data
+// source" (node_modules/next/dist/docs/01-app/02-guides/authentication.md,
+// "Layouts and auth checks"). Route segments below still render, and still emit
+// an RSC payload, even where this would have redirected. The real boundary is
+// the permission gate inside each data-layer function — see
+// src/lib/data/admin/*, every module of which is pinned to a permission by
+// admin-data-layer-coverage.test.ts. Treat this as defense in depth.
+//
+// It reads platform_staff, not user_roles. Before 2026-09-10 it asked the other
+// axis, which meant a `billing_clerk` added through /admin/roles was bounced
+// from the panel they had just been given a role in. See the note in
+// src/lib/auth/dal.ts.
 export default async function AdminLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
-  const user = await requireAdmin();
+  const user = await requirePlatformStaff();
   // Full name for the account menu (profile row is created at signup by the
   // handle_new_user trigger); falls back to the email in the shell when empty.
   // navCounts (per-item sidebar badges) is independent of the profile read —

@@ -3,7 +3,6 @@
 import { revalidatePath } from 'next/cache';
 
 import {
-  setPlatformAdmin,
   setUserSuspended,
   grantBillingCredit,
   voidBillingCredit,
@@ -38,38 +37,6 @@ function safeMessage(err: unknown, fallback: string): string {
 // Revalidate the whole /admin/users subtree (list + the open detail page).
 function revalidateUsers(): void {
   revalidatePath('/admin/users', 'layout');
-}
-
-export async function grantAdminAction(
-  _prev: FormState,
-  formData: FormData,
-): Promise<FormState> {
-  const parsed = adminUserIdSchema.safeParse({ user_id: formData.get('user_id') });
-  if (!parsed.success) return { fieldErrors: parsed.error.flatten().fieldErrors };
-  try {
-    await setPlatformAdmin(parsed.data.user_id, true);
-  } catch (err) {
-    if (isNextRedirect(err)) throw err;
-    return { error: safeMessage(err, 'הפעולה נכשלה') };
-  }
-  revalidateUsers();
-  return { notice: 'הוענקה הרשאת מנהל מערכת' };
-}
-
-export async function revokeAdminAction(
-  _prev: FormState,
-  formData: FormData,
-): Promise<FormState> {
-  const parsed = adminUserIdSchema.safeParse({ user_id: formData.get('user_id') });
-  if (!parsed.success) return { fieldErrors: parsed.error.flatten().fieldErrors };
-  try {
-    await setPlatformAdmin(parsed.data.user_id, false);
-  } catch (err) {
-    if (isNextRedirect(err)) throw err;
-    return { error: safeMessage(err, 'הפעולה נכשלה') };
-  }
-  revalidateUsers();
-  return { notice: 'הרשאת מנהל המערכת נשללה' };
 }
 
 export async function suspendUserAction(

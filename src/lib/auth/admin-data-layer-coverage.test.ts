@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 
 // Regression guard, not a unit test of behavior: proves every admin-only
@@ -18,9 +18,15 @@ import { join } from 'node:path';
 
 const ROOT = join(__dirname, '..', '..', '..');
 
-// Functions intentionally NOT gated by requireAdmin(), with the reason a
-// reviewer needs to accept before adding an entry here. Every other exported
-// async function in these files MUST call requireAdmin().
+// Functions intentionally NOT gated, with the reason a reviewer needs to accept
+// before adding an entry here. Every other exported async function in these
+// files MUST call one of GATES.
+//
+// ⚠️ This map is NOT the list of files that get checked. It used to be: the
+// suite looped over its keys, so a module absent from it was never scanned and
+// "green" on a new file meant nothing was looked at. Measured 2026-09-10: 36
+// modules under src/lib/data/admin/, 15 in this map. The scan is now driven by
+// readdir (see MODULES below) and this map only records EXEMPTIONS.
 const EXEMPT: Record<string, string[]> = {
   'src/lib/data/admin/activity.ts': [],
   'src/lib/data/admin/agreements.ts': [],
@@ -74,8 +80,10 @@ const GATES = [
 // only "some gate exists") is what makes a SILENT downgrade fail CI: swapping a
 // module from `manage_staff` to `view_activity_log`, or back to a bare
 // requireAdmin, now breaks the build instead of quietly widening access.
-// A module absent from this map may use any gate in GATES.
-const EXPECTED_PERMISSION: Record<string, string> = {
+// A module absent from this map must appear in COARSE_GATE_ALLOWED below, with
+// a reason — there is no third state. That is what makes a new module fail
+// closed instead of slipping through unexamined.
+const EXPECTED_PERMISSION: Record<string, string | string[]> = {
   'src/lib/data/admin/activity.ts': 'view_activity_log',
   'src/lib/data/admin/agreements.ts': 'manage_settings',
   'src/lib/data/admin/callbacks.ts': 'view_customer_data',
@@ -93,7 +101,88 @@ const EXPECTED_PERMISSION: Record<string, string> = {
   'src/lib/data/admin/users.ts': 'manage_staff',
   'src/lib/data/admin/webhook-inbox.ts': 'view_webhooks',
   'src/lib/data/admin/access-log-view.ts': 'manage_staff',
+  // Pinned 2026-09-10. All of these already enforced a permission; none was
+  // recorded here, so a silent downgrade to bare requireAdmin() would have gone
+  // unnoticed — which is exactly what happened to workflows.ts.
+  'src/lib/data/admin/alerts.ts': 'manage_settings',
+  'src/lib/data/admin/channel-catalog.ts': 'manage_settings',
+  'src/lib/data/admin/cookie-consent.ts': 'manage_settings',
+  'src/lib/data/admin/faq.ts': 'manage_settings',
+  'src/lib/data/admin/fleet.ts': 'manage_settings',
+  'src/lib/data/admin/outreach-master.ts': 'manage_settings',
+  'src/lib/data/admin/campaigns.ts': 'manage_billing',
+  'src/lib/data/admin/call-dnc.ts': 'manage_voice',
+  'src/lib/data/admin/voximplant-channel.ts': 'manage_voice',
+  'src/lib/data/admin/support.ts': 'view_customer_data',
+  // Owner-only surfaces: they gate on requirePlatformOwner and name no key.
+  'src/lib/data/admin/platform-roles.ts': [],
+  'src/lib/data/admin/relocation.ts': [],
+  // Two keys each, and the pair is the point — listing call history needs the
+  // voice permission, and hearing a recording needs its own on top.
+  'src/lib/data/admin/console-history.ts': ['manage_voice', 'view_recordings'],
+  'src/lib/data/admin/voice-ops.ts': ['manage_voice', 'view_recordings'],
+  // Split by what the function does, not by which page it serves. See the header
+  // of workflows.ts for why the manual run additionally needs manage_voice.
+  'src/lib/data/admin/workflows.ts': ['manage_settings', 'view_customer_data'],
 };
+
+// Modules that write but are correctly exempt from naming a permission, with the
+// reason. Kept separate from COARSE_GATE_ALLOWED so "it does not write" and "it
+// writes, and here is why that is fine" stay distinguishable.
+const WRITE_EXEMPT: Record<string, string> = {
+  'src/lib/data/admin/access-log.ts':
+    'The audit writer itself, called by readers that have already gated. Gating it again would make the audit trail depend on the permission being audited.',
+};
+
+// Every module under src/lib/data/admin, read from disk. The suite is driven by
+// THIS, not by a hand-maintained list, so module 37 is examined the day it lands.
+const ADMIN_DAL_DIR = 'src/lib/data/admin';
+const MODULES = readdirSync(join(ROOT, ADMIN_DAL_DIR))
+  .filter((f) => f.endsWith('.ts') && !f.endsWith('.test.ts'))
+  .map((f) => `${ADMIN_DAL_DIR}/${f}`)
+  .sort();
+
+// Modules allowed to gate on the coarse requireAdmin() alone, each with the
+// reason. requireAdmin() checks has_role('admin') on user_roles — a DIFFERENT
+// axis from the platform-permission matrix, and the widest staff gate there is.
+// A module earns a place here only if it neither writes nor returns customer
+// data; anything else must name a permission in EXPECTED_PERMISSION.
+const COARSE_GATE_ALLOWED: Record<string, string> = {
+  'src/lib/data/admin/analytics.ts':
+    'GA4 traffic aggregates for our own property. Read-only (verified 2026-09-10: no writes, no rpc, no enqueue, no side effect of any kind), no customer data, and the permission catalogue has no analytics key to name.',
+  'src/lib/data/admin/search-console.ts':
+    'Search Console aggregates for our own domain. Read-only (verified 2026-09-10), no customer data, and no matching key in the catalogue.',
+  'src/lib/data/admin/dashboard.ts':
+    'Counts for the admin home tiles. Read-only (verified 2026-09-10: no insert/update/upsert/delete, no rpc, no enqueue). It DOES use createAdminClient, so it bypasses RLS and the app gate is the only protection — acceptable while it returns aggregates and no customer row.',
+  'src/lib/data/admin/nav-counts.ts':
+    'Badge counts for the nav. Read-only (verified 2026-09-10), and already calls hasPlatformPermission internally so a viewer is never counted what they may not see. Uses createAdminClient, so it bypasses RLS — acceptable for counts.',
+  'src/lib/data/admin/labels.ts': 'Pure label maps. No I/O at all.',
+  'src/lib/data/admin/shared.ts': 'Shared types and helpers. No I/O at all.',
+  'src/lib/data/admin/access-log.ts': 'Write-side audit helper called BY gated readers; gating it again would double-count.',
+  'src/lib/data/admin/webhook-identity.ts': 'Pure derivation from a payload already fetched by a gated reader.',
+  'src/lib/data/admin/voice-balance-cache.ts':
+    'In-process memo of one non-customer number (the Voximplant balance), read by gated voice readers. Verified 2026-09-10: no database access at all — it exports a getter and a test reset, nothing more.',
+};
+
+// The permission catalogue as seeded in platform_permission_definitions,
+// MEASURED against the live database 2026-09-10. Pinned rather than queried so
+// the suite stays hermetic; a key used in code that is not here is either a typo
+// or a permission nobody created, and both mean the gate never matches and the
+// user is redirected with no explanation.
+const PERMISSION_CATALOGUE = [
+  'campaigns.runstate',
+  'manage_billing',
+  'manage_settings',
+  'manage_staff',
+  'manage_voice',
+  'roles.manage',
+  'view_activity_log',
+  'view_billing',
+  'view_customer_data',
+  'view_events',
+  'view_recordings',
+  'view_webhooks',
+] as const;
 
 // Targeted readers of an identified customer subject that MUST record a
 // staff-access audit row (Step-2 audit layer). A new such reader shipping without
@@ -162,11 +251,75 @@ describe('targeted admin readers record a staff-access audit', () => {
   }
 });
 
+describe('every admin data-layer module is accounted for', () => {
+  // THE fail-closed assertion. A new file under src/lib/data/admin/ must be
+  // classified — a named permission, or an explicit coarse-gate exemption with a
+  // reason — before it can ship. Silence is no longer a pass.
+  for (const relPath of MODULES) {
+    it(`${relPath} is classified (permission or documented exemption)`, () => {
+      const pinned = relPath in EXPECTED_PERMISSION;
+      const excused = relPath in COARSE_GATE_ALLOWED;
+      expect(
+        pinned || excused,
+        `${relPath} is neither pinned in EXPECTED_PERMISSION nor excused in ` +
+          `COARSE_GATE_ALLOWED. Decide which permission it enforces, or record ` +
+          `why the coarse requireAdmin() gate is enough for it.`,
+      ).toBe(true);
+      expect(pinned && excused, `${relPath} is in BOTH maps — pick one`).toBe(false);
+    });
+  }
+
+  it('no map names a module that no longer exists', () => {
+    for (const relPath of [...Object.keys(COARSE_GATE_ALLOWED), ...Object.keys(EXPECTED_PERMISSION)]) {
+      if (!relPath.startsWith(ADMIN_DAL_DIR)) continue;
+      expect(MODULES, `${relPath} is mapped but not on disk`).toContain(relPath);
+    }
+  });
+
+  it('every exemption carries a reason', () => {
+    for (const [relPath, reason] of Object.entries(COARSE_GATE_ALLOWED)) {
+      expect(reason.length, `${relPath} needs a real reason`).toBeGreaterThan(30);
+    }
+  });
+
+  // A permission key that is not in the catalogue never matches, so the gate
+  // silently redirects instead of authorizing. A typo is indistinguishable from
+  // a lockout until someone reports it.
+  it('every permission key used in the admin data layer exists in the catalogue', () => {
+    for (const relPath of MODULES) {
+      const used = [
+        ...readFileSync(join(ROOT, relPath), 'utf8').matchAll(
+          /requirePlatformPermission\('([a-z_.]+)'\)/g,
+        ),
+      ].map((m) => m[1]);
+      for (const key of used) {
+        expect(PERMISSION_CATALOGUE, `${relPath} uses unknown permission '${key}'`).toContain(key);
+      }
+    }
+  });
+
+  // The rule the workflows.ts gap broke: a module that WRITES must name what it
+  // is allowed to write, not lean on "is this person staff at all".
+  it('no module that writes to the database gates on requireAdmin alone', () => {
+    for (const relPath of MODULES) {
+      const source = readFileSync(join(ROOT, relPath), 'utf8');
+      const writes = /\.(insert|update|upsert|delete)\(\s*\{/.test(source);
+      if (!writes || relPath in WRITE_EXEMPT) continue;
+      const fine =
+        /requirePlatformPermission\('/.test(source) || source.includes('requirePlatformOwner(');
+      expect(
+        fine,
+        `${relPath} writes to the database but gates only on requireAdmin(). ` +
+          `requireAdmin() is has_role('admin') — support_agent and auditor hold it too.`,
+      ).toBe(true);
+    }
+  });
+});
+
 describe('admin data-layer functions are gated', () => {
   for (const [relPath, exempt] of Object.entries(EXEMPT)) {
     const source = readFileSync(join(ROOT, relPath), 'utf8');
     const blocks = splitIntoFunctionBlocks(source);
-    const expectedKey = EXPECTED_PERMISSION[relPath];
 
     it(`${relPath} exports at least one async function to check`, () => {
       expect(blocks.length).toBeGreaterThan(0);
@@ -184,20 +337,39 @@ describe('admin data-layer functions are gated', () => {
       });
     }
 
-    if (expectedKey) {
-      it(`${relPath}: enforces '${expectedKey}' and no other permission`, () => {
-        const used = [
-          ...source.matchAll(/requirePlatformPermission\('([a-z_.]+)'\)/g),
-        ].map((m) => m[1]);
-        expect(used.length).toBeGreaterThan(0);
-        expect([...new Set(used)]).toEqual([expectedKey]);
-      });
-    }
-
     it(`${relPath}: every EXEMPT entry still exists as a real function (no stale allowlist)`, () => {
       const names = blocks.map((b) => b.name);
       for (const name of exempt) {
         expect(names).toContain(name);
+      }
+    });
+  }
+});
+
+
+describe('pinned modules enforce exactly the permission they are pinned to', () => {
+  // Driven by EXPECTED_PERMISSION, NOT nested inside the EXEMPT loop.
+  //
+  // It used to be nested, which meant a module pinned here but absent from EXEMPT
+  // was never actually asserted — pinning it did nothing. Caught 2026-09-10 by
+  // downgrading workflows.ts back to requireAdmin() and watching the suite stay
+  // green; the two other injected faults fired, this one did not.
+  for (const [relPath, expectedKey] of Object.entries(EXPECTED_PERMISSION)) {
+    const source = readFileSync(join(ROOT, relPath), 'utf8');
+    const expected = (Array.isArray(expectedKey) ? expectedKey : [expectedKey]).sort();
+
+    it(`${relPath}: enforces exactly ${expected.length ? expected.join(' + ') : 'owner-only (no key)'}`, () => {
+      const used = [
+        ...new Set(
+          [...source.matchAll(/requirePlatformPermission\('([a-z_.]+)'\)/g)].map((m) => m[1]),
+        ),
+      ].sort();
+      // An empty expectation means owner-only: no key, but a gate all the same.
+      if (expected.length === 0) {
+        expect(used).toEqual([]);
+        expect(source).toContain('requirePlatformOwner(');
+      } else {
+        expect(used).toEqual(expected);
       }
     });
   }
@@ -216,17 +388,26 @@ describe('admin route handlers gate on requireAdmin()', () => {
   }
 });
 
-describe('the admin layout gates every page.tsx under (admin)/admin', () => {
-  it('layout.tsx awaits requireAdmin() before rendering children', () => {
-    const source = readFileSync(
-      join(ROOT, 'src/app/(admin)/admin/layout.tsx'),
-      'utf8',
-    );
-    expect(source).toMatch(/await requireAdmin\(\)/);
-    // The gate must run before children render, not conditionally after.
-    const requireAdminIndex = source.indexOf('await requireAdmin()');
+describe('the admin layout applies the staff floor', () => {
+  // Defense in depth, NOT the authorization boundary — Next's own guidance says
+  // a layout "does not control whether the rest of the route renders". The
+  // boundary is the per-module permission gate asserted above. This only pins
+  // that the floor is present, runs before children, and asks the RIGHT axis.
+  it('awaits requirePlatformStaff() before rendering children', () => {
+    const source = readFileSync(join(ROOT, 'src/app/(admin)/admin/layout.tsx'), 'utf8');
+    expect(source).toMatch(/await requirePlatformStaff\(\)/);
+    const gateIndex = source.indexOf('await requirePlatformStaff()');
     const childrenIndex = source.indexOf('{children}');
-    expect(requireAdminIndex).toBeGreaterThan(-1);
-    expect(childrenIndex).toBeGreaterThan(requireAdminIndex);
+    expect(gateIndex).toBeGreaterThan(-1);
+    expect(childrenIndex).toBeGreaterThan(gateIndex);
   });
-});
+
+  // The floor moved from user_roles.admin to platform_staff on 2026-09-10,
+  // because the two axes were written by separate flows and a non-owner role
+  // added through /admin/roles was bounced from the panel. Asking the old axis
+  // here would silently restore that bug.
+  it('does not fall back to the retired user_roles axis', () => {
+    const source = readFileSync(join(ROOT, 'src/app/(admin)/admin/layout.tsx'), 'utf8');
+    expect(source).not.toMatch(/await requireAdmin\(\)/);
+  });
+});;

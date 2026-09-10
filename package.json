@@ -54,7 +54,8 @@
     "check:control-chars": "node scripts/check-control-characters.mjs",
     "meta:types": "node scripts/meta-types.mjs",
     "meta:verify": "tsx --env-file=.env.local scripts/verify-meta-schema.ts",
-    "flags:sync": "rm -rf public/country-flags && mkdir -p public/country-flags && find node_modules/circle-flags/flags -maxdepth 1 -type f -regextype posix-extended -regex '.*/[a-z]{2}\\.svg' -exec cp -a {} public/country-flags/ \\;"
+    "flags:sync": "rm -rf public/country-flags && mkdir -p public/country-flags && find node_modules/circle-flags/flags -maxdepth 1 -type f -regextype posix-extended -regex '.*/[a-z]{2}\\.svg' -exec cp -a {} public/country-flags/ \\;",
+    "check:permissions": "supabase db query --linked -f scripts/check-permission-deny-matrix.sql"
   },
   "dependencies": {
     "@ai-sdk/openai": "^4.0.22",

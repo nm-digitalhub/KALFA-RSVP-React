@@ -18,7 +18,7 @@
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 
-import { requireAdmin } from '@/lib/auth/dal';
+import { requirePlatformPermission } from '@/lib/auth/dal';
 import { createClient } from '@/lib/supabase/server';
 import type { FormState } from '@/lib/validation/result';
 
@@ -180,7 +180,9 @@ export async function saveCallbackPolicyAction(
   }
 
   try {
-    await requireAdmin();
+    // `manage_settings`, not `requireAdmin()`. Callback policy governs when the
+// system calls people back.
+  await requirePlatformPermission('manage_settings');
     const supabase = await createClient();
     const { error } = await supabase
       .from('callback_schedule_policies')
