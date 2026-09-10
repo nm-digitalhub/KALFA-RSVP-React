@@ -131,12 +131,21 @@ describe('/admin/integrations/resend-email', () => {
     expect(card?.health).toMatchObject({ ok: true, domain: 'kalfa.me' });
   });
 
-  it('warns that Supabase Auth mail is a SECOND path this page does not cover', async () => {
-    // Same From address, different sender, unaffected by EMAIL_PROVIDER — which is
-    // exactly why someone would assume this page covers it.
+  it('describes the Supabase Auth path with the overlap, not as fully separate', async () => {
+    // MEASURED 2026-09-10 against the Management API: Supabase Auth sends through
+    // smtp.resend.com:465 as user `resend`, from netanel.kalfa@kalfa.me — the SAME
+    // Resend account, domain and From address the app's API path uses.
+    //
+    // The first version of this page said the two paths were simply separate, and
+    // this test pinned that wording. It was too coarse in the direction that matters:
+    // the domain verdict above DOES cover auth mail's deliverability. What it cannot
+    // see is Supabase's own SMTP password — which is the failure someone would
+    // otherwise debug against a green card.
     const text = textOf(await render());
     expect(text).toContain('Supabase Auth');
-    expect(text).toContain('אינם נבדקים כאן');
+    expect(text).toContain('smtp.resend.com:465');
+    expect(text).toContain('אינן נערכות כאן');
+    expect(text).toContain('ימשיך להיות ירוק');
   });
 
   it('never renders the smtp password as page text', async () => {

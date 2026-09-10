@@ -104,10 +104,21 @@ export default async function ResendEmailPage() {
       <section className={sectionClass}>
         <h2 className="text-lg font-semibold">מסלול שני, שאינו מנוהל כאן</h2>
         <p className="text-sm text-muted-foreground">
-          מיילי ההתחברות, אימות ההרשמה ואיפוס הסיסמה נשלחים ע&quot;י Supabase Auth
-          מהגדרות SMTP משלה, מאותה כתובת שולח. <code dir="ltr">EMAIL_PROVIDER</code>{' '}
-          אינו משפיע עליהם, והם אינם נבדקים כאן — מה שקל לפספס בדיוק משום ששתי הדרכים
-          נראות זהות לנמען.
+          מיילי ההתחברות, אימות ההרשמה ואיפוס הסיסמה נשלחים ע&quot;י{' '}
+          <strong>Supabase Auth</strong>, מהגדרות SMTP משלה שיושבות בהגדרות הפרויקט
+          ב-Supabase ולא ב-<code dir="ltr">app_settings</code>.{' '}
+          <code dir="ltr">EMAIL_PROVIDER</code> אינו משפיע עליהן, והן אינן נערכות כאן.
+        </p>
+        <p className="text-sm text-muted-foreground">
+          {/* MEASURED 2026-09-10 מול Management API: smtp_host=smtp.resend.com,
+              port 465, user=resend, admin_email=netanel.kalfa@kalfa.me. הפירוט הזה
+              הוא מה שהופך את המשפט מ"שני מסלולים נפרדים" למשהו מדויק יותר. */}
+          <strong>אבל החפיפה אמיתית:</strong> Supabase שולחת דרך ממסר ה-SMTP של Resend
+          (<code dir="ltr">smtp.resend.com:465</code>) בזמן שהאפליקציה משתמשת ב-API של
+          Resend — אותו ספק, אותו חשבון, אותו דומיין מאומת, ואותה כתובת שולח. לכן{' '}
+          <em>בדיקת הדומיין שלמעלה כן מעידה גם על כשירות המסירה שלהן</em>. מה שהיא
+          אינה מכסה הוא פרטי ההזדהות של Supabase עצמה: אם הסיסמה שם תפוג, מיילי
+          ההתחברות ייעצרו והכרטיס כאן ימשיך להיות ירוק.
         </p>
       </section>
     </div>
