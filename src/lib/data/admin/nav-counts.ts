@@ -1,7 +1,7 @@
 import 'server-only';
 
 import { createAdminClient } from '@/lib/supabase/admin';
-import { hasPlatformPermission, requireAdmin } from '@/lib/auth/dal';
+import { hasPlatformPermission, requirePlatformStaff } from '@/lib/auth/dal';
 import { WINDDOWN_STATUSES } from './campaigns';
 
 // Sidebar nav badges: how many items in each domain are actionable right now.
@@ -67,13 +67,21 @@ async function countPendingFleetRequests(supabase: AdminClient): Promise<number>
 }
 
 export async function getAdminNavCounts(): Promise<AdminNavCounts> {
-  await requireAdmin();
+  await requirePlatformStaff();
   const supabase = createAdminClient();
 
+  // ⚠️ THE FLOOR HERE IS requirePlatformStaff(), NOT requireAdmin(), and the
+  // difference was a live blocker. This function is called by the ADMIN LAYOUT
+  // on every admin page render. While it asked requireAdmin() it read user_roles
+  // — the retired axis — and redirect()ed on a miss, so a billing_clerk who had
+  // just cleared requirePlatformStaff() at the top of that same layout was
+  // ejected to /app three lines later. Exactly the defect the 2026-09-10 axis
+  // merge existed to remove, still alive in the one module every admin page
+  // loads. Fixed 2026-09-10.
+  //
   // Resolve permissions once (cache()-memoized) and only run a count the
-  // caller is entitled to see — an admin can legitimately hold none of these
-  // platform permissions (has_role('admin') and platform permissions are
-  // orthogonal), so this must never redirect, only omit.
+  // caller is entitled to see — a staff member can legitimately hold none of
+  // these, so this must never redirect, only omit.
   const [canCustomer, canBilling, canSettings] = await Promise.all([
     hasPlatformPermission('view_customer_data'),
     hasPlatformPermission('manage_billing'),

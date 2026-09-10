@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 vi.mock('server-only', () => ({}));
 
 vi.mock('@/lib/auth/dal', () => ({
-  requireAdmin: vi.fn(async () => ({ id: 'admin-user' })),
+  requirePlatformStaff: vi.fn(async () => ({ id: 'admin-user' })),
   hasPlatformPermission: vi.fn(async () => true),
 }));
 

@@ -1,7 +1,7 @@
 import 'server-only';
 
 import { createAdminClient } from '@/lib/supabase/admin';
-import { hasPlatformPermission, requireAdmin } from '@/lib/auth/dal';
+import { hasPlatformPermission, requirePlatformStaff } from '@/lib/auth/dal';
 import { countNewCallbacks, countNewContacts } from './nav-counts';
 
 // Admin dashboard: headline counts. Each is a count-only query (head: true,
@@ -45,7 +45,7 @@ async function countTable(
 }
 
 export async function getDashboardCounts(): Promise<DashboardCounts> {
-  await requireAdmin();
+  await requirePlatformStaff();
   const supabase = createAdminClient();
 
   // Resolve permissions once (cache()-memoized) and only run a count the caller

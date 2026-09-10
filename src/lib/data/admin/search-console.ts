@@ -10,7 +10,7 @@ import {
   type SearchAnalyticsApiRow,
   type SearchConsoleConfigIssue,
 } from '@/lib/analytics/search-console';
-import { hasPlatformPermission, requireAdmin } from '@/lib/auth/dal';
+import { hasPlatformPermission, requirePlatformStaff } from '@/lib/auth/dal';
 
 // Search Console DAL. Same contract as the GA4 dashboard DAL next door:
 // authorization → safe-config gate → cached fetch, and failures NEVER throw
@@ -154,7 +154,7 @@ const EMPTY: Sectioned<never> = { state: 'not_configured', data: null, fetchedAt
 export async function getSearchConsoleDashboard(
   range: AnalyticsRange,
 ): Promise<SearchConsoleDashboard | null> {
-  await requireAdmin();
+  await requirePlatformStaff();
   if (!(await hasPlatformPermission('view_customer_data'))) return null;
 
   const window = rangeToSearchConsoleDates(range);

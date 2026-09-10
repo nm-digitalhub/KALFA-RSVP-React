@@ -1,6 +1,6 @@
 import 'server-only';
 
-import { hasPlatformPermission, isPlatformOwner, requireAdmin } from '@/lib/auth/dal';
+import { hasPlatformPermission, isPlatformOwner, requirePlatformStaff } from '@/lib/auth/dal';
 
 // Which sidebar links this viewer should be shown. Sibling of ./nav-counts.ts —
 // same shape, same discipline: resolve the caller's own permissions server-side,
@@ -51,18 +51,24 @@ export interface AdminNavGrants {
 /**
  * Resolve the viewer's nav grants.
  *
- * `requireAdmin()` here is the coarse floor on purpose and is recorded as such
+ * `requirePlatformStaff()` here is the floor on purpose and is recorded as such
  * in COARSE_GATE_ALLOWED: this function writes nothing and returns no customer
  * data — nine booleans about the caller's own role. Naming a finer permission
  * would be circular, since its whole job is to answer which permissions the
  * caller has.
+ *
+ * It must NOT be requireAdmin(). That reads user_roles, the retired axis, and
+ * redirects on a miss — so a billing_clerk who cleared requirePlatformStaff() at
+ * the top of the layout would be thrown out of the panel by the very call that
+ * decides which links to show them. See the note on the same swap in
+ * ./nav-counts.ts.
  *
  * Every check is `cache()`-memoized in the DAL, and the layout already calls
  * some of them through getAdminNavCounts(), so the shared render pass collapses
  * the duplicates into one RPC per key.
  */
 export async function getAdminNavGrants(): Promise<AdminNavGrants> {
-  await requireAdmin();
+  await requirePlatformStaff();
 
   const [owner, ...held] = await Promise.all([
     isPlatformOwner(),

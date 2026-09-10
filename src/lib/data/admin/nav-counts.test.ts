@@ -3,13 +3,13 @@ import type { User } from '@supabase/supabase-js';
 
 import { createMockSupabase } from '@/test/supabase-mock';
 import { createAdminClient } from '@/lib/supabase/admin';
-import { hasPlatformPermission, requireAdmin } from '@/lib/auth/dal';
+import { hasPlatformPermission, requirePlatformStaff } from '@/lib/auth/dal';
 import { getAdminNavCounts } from './nav-counts';
 
 vi.mock('server-only', () => ({}));
 vi.mock('@/lib/supabase/admin', () => ({ createAdminClient: vi.fn() }));
 vi.mock('@/lib/auth/dal', () => ({
-  requireAdmin: vi.fn(),
+  requirePlatformStaff: vi.fn(),
   hasPlatformPermission: vi.fn(),
 }));
 
@@ -26,7 +26,7 @@ function grant(...keys: string[]) {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  vi.mocked(requireAdmin).mockResolvedValue(adminUser());
+  vi.mocked(requirePlatformStaff).mockResolvedValue(adminUser());
 });
 
 describe('getAdminNavCounts — per-domain permission gating', () => {
@@ -43,7 +43,7 @@ describe('getAdminNavCounts — per-domain permission gating', () => {
 
     const counts = await getAdminNavCounts();
 
-    expect(requireAdmin).toHaveBeenCalled();
+    expect(requirePlatformStaff).toHaveBeenCalled();
     expect(counts).toEqual({ contacts: 4, callbacks: 4, campaigns: 4, fleet: 4 });
 
     const tables = client.from.mock.calls.map((c) => c[0]);
@@ -122,7 +122,7 @@ describe('getAdminNavCounts — per-domain permission gating', () => {
   });
 
   it('does NOT touch data when the admin gate redirects', async () => {
-    vi.mocked(requireAdmin).mockRejectedValueOnce(
+    vi.mocked(requirePlatformStaff).mockRejectedValueOnce(
       Object.assign(new Error('NEXT_REDIRECT'), { digest: 'NEXT_REDIRECT;' }),
     );
     const { client } = createMockSupabase<null>({ data: null, error: null });

@@ -67,11 +67,15 @@ function splitIntoFunctionBlocks(source: string): { name: string; body: string }
   }));
 }
 
-// The gates a data-layer function may use. `requireAdmin` is the coarse "is this
-// person staff at all" check; `requirePlatformPermission` is the fine-grained
-// capability from the /admin/roles matrix; `requirePlatformOwner` is owner-only.
+// The gates a data-layer function may use. `requirePlatformStaff` is the floor
+// ("is this person staff at all"); `requirePlatformPermission` is the
+// fine-grained capability from the /admin/roles matrix; `requirePlatformOwner`
+// is owner-only. `requireAdmin` is the RETIRED axis — still listed so a module
+// that has not been migrated is reported as coarse rather than as ungated, but
+// nothing under src/lib/data/admin uses it any more (checked below).
 const GATES = [
   'requireAdmin',
+  'requirePlatformStaff',
   'requirePlatformOwner',
   'requirePlatformPermission',
 ] as const;
@@ -142,11 +146,16 @@ const MODULES = readdirSync(join(ROOT, ADMIN_DAL_DIR))
   .map((f) => `${ADMIN_DAL_DIR}/${f}`)
   .sort();
 
-// Modules allowed to gate on the coarse requireAdmin() alone, each with the
-// reason. requireAdmin() checks has_role('admin') on user_roles — a DIFFERENT
-// axis from the platform-permission matrix, and the widest staff gate there is.
-// A module earns a place here only if it neither writes nor returns customer
-// data; anything else must name a permission in EXPECTED_PERMISSION.
+// Modules allowed to gate on the FLOOR alone — requirePlatformStaff(), "is this
+// person staff at all" — each with the reason. A module earns a place here only
+// if it neither writes nor returns customer data; anything else must name a
+// permission in EXPECTED_PERMISSION.
+//
+// These said requireAdmin() until 2026-09-10, which was not merely untidy:
+// nav-counts.ts is loaded by the ADMIN LAYOUT on every page, and requireAdmin()
+// redirects when user_roles has no row — so a non-owner staff member was ejected
+// from the panel by the module that draws its sidebar. The assertion below keeps
+// the retired axis out of this directory for good.
 const COARSE_GATE_ALLOWED: Record<string, string> = {
   'src/lib/data/admin/analytics.ts':
     'GA4 traffic aggregates for our own property. Read-only (verified 2026-09-10: no writes, no rpc, no enqueue, no side effect of any kind), no customer data, and the permission catalogue has no analytics key to name.',
@@ -278,6 +287,22 @@ describe('every admin data-layer module is accounted for', () => {
     }
   });
 
+  // The retired axis, kept out. requireAdmin() reads user_roles and REDIRECTS on
+  // a miss; anything in this directory that calls it can eject a legitimate
+  // staff member, and nav-counts.ts proved that is not hypothetical — it runs in
+  // the admin layout. The floor is requirePlatformStaff().
+  it('no module gates on the retired requireAdmin()', () => {
+    for (const relPath of MODULES) {
+      const source = readFileSync(join(ROOT, relPath), 'utf8');
+      expect(
+        /await requireAdmin\(\)/.test(source),
+        `${relPath} still calls requireAdmin(), which reads the retired user_roles ` +
+          `axis and redirects a staff member who has no row there. Use ` +
+          `requirePlatformStaff() for the floor, or name a permission.`,
+      ).toBe(false);
+    }
+  });
+
   it('every exemption carries a reason', () => {
     for (const [relPath, reason] of Object.entries(COARSE_GATE_ALLOWED)) {
       expect(reason.length, `${relPath} needs a real reason`).toBeGreaterThan(30);
@@ -389,6 +414,31 @@ describe('the admin layout applies the staff floor', () => {
     const childrenIndex = source.indexOf('{children}');
     expect(gateIndex).toBeGreaterThan(-1);
     expect(childrenIndex).toBeGreaterThan(gateIndex);
+  });
+
+  // THE REGRESSION THAT ACTUALLY BIT. Clearing the floor at the top of the
+  // layout is worthless if something the layout then AWAITS re-checks the
+  // retired axis and redirects. That is exactly what happened: getAdminNavCounts
+  // (nav-counts.ts) called requireAdmin(), so a billing_clerk passed
+  // requirePlatformStaff() and was ejected to /app by the module drawing their
+  // sidebar. Every admin module the layout imports must clear the same floor it
+  // does.
+  it('nothing the layout awaits re-checks the retired axis', () => {
+    const layout = readFileSync(join(ROOT, 'src/app/(admin)/admin/layout.tsx'), 'utf8');
+    const imported = [...layout.matchAll(/from '@\/lib\/data\/admin\/([\w-]+)'/g)].map(
+      (m) => `src/lib/data/admin/${m[1]}.ts`,
+    );
+    expect(imported.length, 'the layout imports no admin module — did the path shape change?')
+      .toBeGreaterThan(0);
+    for (const relPath of imported) {
+      const source = readFileSync(join(ROOT, relPath), 'utf8');
+      expect(
+        /await requireAdmin\(\)/.test(source),
+        `${relPath} is awaited by the admin layout and calls requireAdmin(), which ` +
+          `redirects a staff member with no user_roles row — locking them out of ` +
+          `every admin page after the layout already let them in.`,
+      ).toBe(false);
+    }
   });
 
   // The floor moved from user_roles.admin to platform_staff on 2026-09-10,

@@ -3,13 +3,13 @@ import type { User } from '@supabase/supabase-js';
 
 import { createMockSupabase } from '@/test/supabase-mock';
 import { createAdminClient } from '@/lib/supabase/admin';
-import { hasPlatformPermission, requireAdmin } from '@/lib/auth/dal';
+import { hasPlatformPermission, requirePlatformStaff } from '@/lib/auth/dal';
 import { getDashboardCounts } from './dashboard';
 
 vi.mock('server-only', () => ({}));
 vi.mock('@/lib/supabase/admin', () => ({ createAdminClient: vi.fn() }));
 vi.mock('@/lib/auth/dal', () => ({
-  requireAdmin: vi.fn(),
+  requirePlatformStaff: vi.fn(),
   hasPlatformPermission: vi.fn(),
 }));
 
@@ -26,7 +26,7 @@ function grant(...keys: string[]) {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  vi.mocked(requireAdmin).mockResolvedValue(adminUser());
+  vi.mocked(requirePlatformStaff).mockResolvedValue(adminUser());
 });
 
 describe('getDashboardCounts — per-domain permission gating', () => {
@@ -43,7 +43,7 @@ describe('getDashboardCounts — per-domain permission gating', () => {
 
     const counts = await getDashboardCounts();
 
-    expect(requireAdmin).toHaveBeenCalled();
+    expect(requirePlatformStaff).toHaveBeenCalled();
     // Count-only: head true, exact count.
     expect(builder.select).toHaveBeenCalledWith('id', {
       count: 'exact',
@@ -136,7 +136,7 @@ describe('getDashboardCounts — per-domain permission gating', () => {
   });
 
   it('does NOT touch data when the admin gate redirects', async () => {
-    vi.mocked(requireAdmin).mockRejectedValueOnce(
+    vi.mocked(requirePlatformStaff).mockRejectedValueOnce(
       Object.assign(new Error('NEXT_REDIRECT'), { digest: 'NEXT_REDIRECT;' }),
     );
     const { client } = createMockSupabase<null>({ data: null, error: null });

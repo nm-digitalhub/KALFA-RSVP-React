@@ -48,7 +48,7 @@ import type {
   SectionState,
   Sectioned,
 } from '@/lib/analytics/ga4-types';
-import { hasPlatformPermission, requireAdmin } from '@/lib/auth/dal';
+import { hasPlatformPermission, requirePlatformStaff } from '@/lib/auth/dal';
 
 // Admin GA4 dashboard DAL: authorization → safe-config gate → cached fetch.
 // Failures NEVER throw out of here — they map to per-section states so one
@@ -188,7 +188,7 @@ async function fetchCoreBatch(
 export async function getAnalyticsDashboard(
   range: AnalyticsRange,
 ): Promise<AnalyticsDashboard | null> {
-  await requireAdmin();
+  await requirePlatformStaff();
   if (!(await hasPlatformPermission('view_customer_data'))) return null;
 
   const config = await getGa4ConfigStatus();
@@ -269,7 +269,7 @@ export async function getAnalyticsDashboard(
 }
 
 export async function getRealtimeSnapshot(): Promise<RealtimeResult> {
-  await requireAdmin();
+  await requirePlatformStaff();
   if (!(await hasPlatformPermission('view_customer_data'))) {
     return { section: { state: 'error', data: null, fetchedAt: null }, quota: null };
   }
