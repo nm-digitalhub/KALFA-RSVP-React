@@ -33,6 +33,7 @@ export const QUEUE_EXPECTED_MAX_MINUTES: Record<string, number> = {
   // Daily. Same 3x-ish allowance as its neighbours — a daily job flagged after four
   // hours is "stale" by breakfast every single day.
   'extra-key-check': 3 * 24 * 60,
+  'sumit-health-check': 3 * 24 * 60,
   'voximplant-log-export': 3 * 24 * 60,
   'call-dispatch-retention': 3 * 24 * 60,
   'auth-phone-change-cleanup': 3 * 24 * 60,

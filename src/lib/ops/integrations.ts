@@ -171,9 +171,12 @@ export async function getIntegrationsStatus(jobHealth: JobHealthRow[]): Promise<
       label: 'SUMIT / OfficeGuy',
       configured: flags.sumit_configured,
       enabled: flags.sumit_enabled,
-      lastCheckedAt: null,
-      healthCheckAvailable: false,
-      note: 'אין בדיקת בריאות זמינה — בדיקה ידנית ב-/admin/sumit-test',
+      // Was `false` with the note "אין בדיקת בריאות זמינה" until 2026-09-10 — the
+      // third provider where that sentence meant "nobody looked". SUMIT's OpenAPI
+      // lists 84 operations; website/companies/getdetails/ takes nothing but the
+      // credentials and answers with the company they resolve to.
+      lastCheckedAt: lastCompletedFor(jobHealth, 'sumit-health-check'),
+      healthCheckAvailable: true,
     },
     {
       key: 'extra-sms',

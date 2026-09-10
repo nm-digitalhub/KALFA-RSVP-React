@@ -20,6 +20,7 @@ import { QUEUES, type OutreachCallRequest, type OutreachStepJob,
 import { runWhatsAppHealthCheck } from '@/lib/whatsapp/run-health-check';
 import { runEmailHealthCheck } from '@/lib/email/run-health-check';
 import { runExtraKeyCheck } from '@/lib/sms/run-key-check';
+import { runSumitHealthCheck } from '@/lib/sumit/run-health-check';
 import { dispatchOutreachCall } from '@/lib/data/outreach-calls';
 import {
   listActiveCampaigns,
@@ -1327,6 +1328,16 @@ async function main(): Promise<void> {
       await runExtraKeyCheck();
     }),
   );
+  // SUMIT liveness. Read-only; alerts ONLY on a rejected credential pair, never on a
+  // technical error at SUMIT or an unreachable network — neither says anything about
+  // our configuration.
+  await boss.work(
+    QUEUES.sumitHealthCheck,
+    POLL_SLOW_CRON,
+    guardedWorker(QUEUES.sumitHealthCheck, async () => {
+      await runSumitHealthCheck();
+    }),
+  );
   // Voximplant stuck-row reconciler (H3): ALERT-ONLY — surfaces pre-terminal
   // call_attempts older than 15m. NEVER re-issues StartScenarios.
   await boss.work(
@@ -1491,6 +1502,7 @@ async function main(): Promise<void> {
   // Daily at 04:20 IL — a key expiry moves once a day at most, and the alert it
   // raises is a plan-ahead deadline, not something to wake anyone at night for.
   await boss.schedule(QUEUES.extraKeyCheck, '20 4 * * *', null, { tz: SCHEDULE_TZ });
+  await boss.schedule(QUEUES.sumitHealthCheck, '30 4 * * *', null, { tz: SCHEDULE_TZ });
   await boss.schedule(QUEUES.callbackDispatchReconcile, '*/10 * * * *');
   await boss.schedule(QUEUES.salesDispatchReconcile, '*/10 * * * *');
   // Anchored to a wall-clock hour → run on Israel local time (DST-aware).

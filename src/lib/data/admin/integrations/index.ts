@@ -61,7 +61,7 @@ const CARDS: CardSpec[] = [
   { statusKey: 'elevenlabs', key: 'elevenlabs', permission: 'manage_voice', href: '/admin/voice/platform' },
   { statusKey: 'extra-sms', key: 'extra-sms', permission: 'manage_settings', href: '/admin/integrations/extra-sms' },
   { statusKey: 'resend-email', key: 'resend-email', permission: 'manage_settings', href: '/admin/integrations/resend-email' },
-  { statusKey: 'sumit', key: 'sumit', permission: 'manage_settings', href: '/admin/sumit-test' },
+  { statusKey: 'sumit', key: 'sumit', permission: 'manage_settings', href: '/admin/integrations/sumit' },
   { statusKey: 'slack', key: 'slack', permission: 'manage_settings', href: '/admin/alerts' },
 ];
 

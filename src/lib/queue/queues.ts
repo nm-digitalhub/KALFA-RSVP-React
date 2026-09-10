@@ -47,6 +47,11 @@ export const QUEUES = {
   // scheduling and the sales signup link all stop at once. See
   // src/lib/sms/run-key-check.ts.
   extraKeyCheck: 'extra-key-check',
+  // SUMIT liveness — one read-only POST a day (website/companies/getdetails/), which
+  // takes nothing but the credentials. No expiry to count down here, unlike ExtrA:
+  // it earns a queue on consequence. If the pair stops resolving, every charge stops,
+  // and today that surfaces as a customer stuck at a payment form.
+  sumitHealthCheck: 'sumit-health-check',
   // Voximplant stuck-row reconciler (H3) — every 10m alert (ONLY) on pre-terminal
   // call_attempts older than 15m. NEVER re-issues StartScenarios. See
   // src/lib/data/voximplant-reconcile.ts.

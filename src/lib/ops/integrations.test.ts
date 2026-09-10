@@ -192,6 +192,7 @@ describe('getIntegrationsStatus', () => {
       'whatsapp-health-check',
       'email-health-check',
       'extra-key-check',
+      'sumit-health-check',
     ].map((queueName) => ({ queueName, lastCompletedOn: '2026-09-10T09:00:00Z' })) as JobHealthRow[];
 
     const items = await byKey([ALL_ON], everyQueue);
