@@ -98,7 +98,7 @@ export default async function VoiceOverviewPage({
             {liveOn ? 'שיחות חיות פעילות' : 'שיחות חיות מושבתות'}
           </Badge>
           <Link
-            href="/admin/channels"
+            href="/admin/integrations/voximplant"
             className="text-sm font-medium text-primary hover:underline"
           >
             הגדרות ערוץ

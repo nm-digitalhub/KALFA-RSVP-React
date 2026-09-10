@@ -31,6 +31,28 @@ function supabaseHostname(): string {
 }
 
 const nextConfig: NextConfig = {
+  // Phase 0 of the integrations consolidation retires two admin pages. The
+  // redirect ships in its OWN commit, BEFORE the pages are deleted, and that
+  // separation is the whole reversibility story: a failure in production is undone
+  // by removing three lines here, not by reverting a phase.
+  //
+  // /admin/channels goes to meta-whatsapp rather than to the index, and the reason
+  // is concrete: the index still links to /admin/channels for the channel catalog,
+  // so sending the redirect there would make that link land on the page you are
+  // already on. The cost is that a bookmark meaning "the channels page" arrives at
+  // one of its two tabs; the Voximplant half is one click away on the index.
+  //
+  // `permanent: false` (307): a permanent redirect is cached by the browser and
+  // would survive a rollback, which is exactly the property we do not want while
+  // the old pages still exist in the tree.
+  async redirects() {
+    return [
+      { source: '/admin/channels', destination: '/admin/integrations/meta-whatsapp', permanent: false },
+      { source: '/admin/alerts', destination: '/admin/integrations/slack', permanent: false },
+      // No redirect for /admin/templates — it stays its own page (§3.3).
+    ];
+  },
+
   deploymentId: readDeployId(),
   // Build output directory. Defaults to `.next`, but verification and deploy
   // builds set NEXT_DIST_DIR to an ISOLATED directory so a build never

@@ -4,6 +4,13 @@ import { requirePlatformPermission } from '@/lib/auth/dal';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { resolvePage, type PageParams, type PageResult } from '@/lib/data/admin/shared';
 import type { Json, Tables } from '@/lib/supabase/types';
+// The role vocabulary is a Postgres enum, so these labels are keyed by the generated
+// type — a role added to the database without a label here is a tsc error, not a raw
+// snake_case string leaking onto an admin's screen.
+import {
+  ROLE_LABELS as NUMBER_ROLE_LABELS,
+  type NumberRole,
+} from '@/lib/validation/provider-numbers';
 // Admin Webhook Inspector data layer. Reads the durable `webhook_inbox` intake
 // table behind requireAdmin() with the service-role client (the table is
 // admin-only RLS; service-role bypasses it — the policy is defence-in-depth).
@@ -149,11 +156,17 @@ export async function getWebhookInboxDetail(
             .select('id', { count: 'exact', head: true })
             .eq('provider_ref', messageId)
         : Promise.resolve({ count: 0 }),
-      item.provider === 'whatsapp'
+      // Resolved against provider_numbers, not app_settings.whatsapp_phone_number_id.
+      // That column names ONE number — the RSVP sender — so every message that
+      // arrived on any other number of ours rendered as "not configured", which is
+      // gap G2. This WABA holds two (measured 2026-09-10), and the second one has
+      // been receiving guest-list files the whole time.
+      item.provider === 'whatsapp' && item.phone_number_id
         ? admin
-            .from('app_settings')
-            .select('whatsapp_phone_number_id')
-            .eq('id', true)
+            .from('provider_numbers')
+            .select('display_label, provider_number_roles(role)')
+            .eq('provider', 'meta_whatsapp')
+            .eq('provider_ref', item.phone_number_id)
             .maybeSingle()
         : Promise.resolve({ data: null }),
     ]);
@@ -180,11 +193,27 @@ export async function getWebhookInboxDetail(
       : Promise.resolve({ data: null }),
   ]);
 
-  const rsvpPhoneNumberId = settingsRes.data?.whatsapp_phone_number_id ?? null;
+  // Three states, kept distinct because they send a reader to three places: a number
+  // we know and have named, a number we know but nobody has given a job, and a number
+  // that is not in the table at all (sync it, or it is not ours).
+  const numberRow = settingsRes.data as
+    | { display_label: string | null; provider_number_roles?: Array<{ role: NumberRole }> }
+    | null;
   const businessNumber =
-    item.phone_number_id && rsvpPhoneNumberId && item.phone_number_id === rsvpPhoneNumberId
-      ? { label: 'מספר אישורי ההגעה (RSVP)', phoneNumberId: item.phone_number_id }
+    item.phone_number_id && numberRow
+      ? {
+          label:
+            numberRow.display_label ??
+            (numberRow.provider_number_roles ?? [])
+              .map((r) => NUMBER_ROLE_LABELS[r.role] ?? r.role)
+              .join(', ') ??
+            '',
+          phoneNumberId: item.phone_number_id,
+        }
       : null;
+  if (businessNumber && businessNumber.label === '') {
+    businessNumber.label = 'מספר ללא תפקיד';
+  }
 
   return {
     item,

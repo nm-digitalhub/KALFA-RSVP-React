@@ -8,6 +8,7 @@ import { createMockSupabase } from '@/test/supabase-mock';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { requirePlatformPermission } from '@/lib/auth/dal';
 import {
+  getWebhookInboxDetail,
   listWebhookInbox,
   resolveWebhookAssociations,
 } from '@/lib/data/admin/webhook-inbox';
@@ -196,5 +197,99 @@ describe('resolveWebhookAssociations', () => {
     const result = await resolveWebhookAssociations([]);
     expect(requirePlatformPermission).toHaveBeenCalledTimes(1);
     expect(result.size).toBe(0);
+  });
+});
+
+// ── which of OUR numbers received this message (gap G2) ──────────────────────
+// createMockSupabase returns ONE builder for every .from(), which cannot express a
+// detail read that fans out over six tables. This double routes by table name.
+describe('getWebhookInboxDetail — the business number', () => {
+  function routed(tables: Record<string, unknown>) {
+    const from = vi.fn((table: string) => {
+      const result = { data: tables[table] ?? null, error: null };
+      const chain: Record<string, unknown> = {};
+      for (const m of ['select', 'eq', 'order', 'limit', 'in']) {
+        chain[m] = () => chain;
+      }
+      chain.maybeSingle = async () => result;
+      chain.then = (onFulfilled: (v: unknown) => unknown) =>
+        onFulfilled({ ...result, count: 0 });
+      return chain;
+    });
+    vi.mocked(createAdminClient).mockReturnValue(
+      { from } as unknown as ReturnType<typeof createAdminClient>,
+    );
+    return from;
+  }
+
+  const ITEM = {
+    id: 'w1',
+    provider: 'whatsapp',
+    phone_number_id: '1018741517998430',
+    event_kind: 'message',
+    message_id: null,
+    delivery_id: null,
+    processed_at: null,
+    last_error: null,
+  };
+
+  beforeEach(() => {
+    vi.mocked(requirePlatformPermission).mockResolvedValue({ id: 'u1' } as never);
+  });
+
+  it('reads provider_numbers, NOT app_settings', async () => {
+    // app_settings.whatsapp_phone_number_id names ONE number — the RSVP sender — so
+    // every message that arrived on any other number of ours read as "not
+    // configured". That is gap G2, and this WABA holds two numbers.
+    const from = routed({
+      webhook_inbox: ITEM,
+      provider_numbers: { display_label: 'מספר אישורי הגעה (RSVP)', provider_number_roles: [] },
+    });
+    const detail = await getWebhookInboxDetail('w1');
+    const tables = from.mock.calls.map((c) => c[0]);
+    expect(tables).toContain('provider_numbers');
+    expect(tables).not.toContain('app_settings');
+    expect(detail?.businessNumber).toEqual({
+      label: 'מספר אישורי הגעה (RSVP)',
+      phoneNumberId: '1018741517998430',
+    });
+  });
+
+  it('falls back to the ROLE names when nobody typed a label', async () => {
+    routed({
+      webhook_inbox: ITEM,
+      provider_numbers: {
+        display_label: null,
+        provider_number_roles: [{ role: 'whatsapp_import_sender' }],
+      },
+    });
+    const detail = await getWebhookInboxDetail('w1');
+    expect(detail?.businessNumber?.label).toBe('קליטת קובץ אורחים (WhatsApp)');
+  });
+
+  it('says the number holds no role rather than rendering an empty label', async () => {
+    routed({
+      webhook_inbox: ITEM,
+      provider_numbers: { display_label: null, provider_number_roles: [] },
+    });
+    const detail = await getWebhookInboxDetail('w1');
+    expect(detail?.businessNumber?.label).toBe('מספר ללא תפקיד');
+  });
+
+  it('returns null for a number that is not in the table at all', async () => {
+    // Distinct from "no role": this one tells the reader to run a sync, or that the
+    // message did not arrive on a number of ours.
+    routed({ webhook_inbox: ITEM, provider_numbers: null });
+    const detail = await getWebhookInboxDetail('w1');
+    expect(detail?.businessNumber).toBeNull();
+  });
+
+  it('does not query the numbers table for a non-WhatsApp provider', async () => {
+    const from = routed({
+      webhook_inbox: { ...ITEM, provider: 'voximplant' },
+      provider_numbers: { display_label: 'x', provider_number_roles: [] },
+    });
+    await getWebhookInboxDetail('w1');
+    expect(from.mock.calls.map((c) => c[0])).not.toContain('provider_numbers');
   });
 });

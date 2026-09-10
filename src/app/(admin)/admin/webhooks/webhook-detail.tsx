@@ -172,7 +172,9 @@ export function WebhookDetail({ detail }: { detail: AdminWebhookDetailView }) {
               {businessNumber ? (
                 <span>{businessNumber.label}</span>
               ) : (
-                <span className="text-warning-foreground">לא מוגדר ב-/admin/channels</span>
+                <span className="text-warning-foreground">
+                  לא מופיע ב-/admin/integrations/numbers
+                </span>
               )}
               <Technical value={item.phone_number_id} />
             </span>

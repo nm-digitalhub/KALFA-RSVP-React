@@ -173,12 +173,12 @@ function TouchpointRow({
         ) : callChannelStatus === 'configured_off' ? (
           <p className="text-xs text-amber-600">
             ערוץ שיחת ה-AI (Voximplant) מוגדר אך כבוי כרגע — שלב זה לא יבצע שיחה עד
-            שהערוץ יודלק תחת /admin/channels.
+            שהערוץ יודלק תחת /admin/integrations.
           </p>
         ) : (
           <p className="text-xs text-amber-600">
             ערוץ שיחת ה-AI (Voximplant) טרם הוגדר במערכת — הגדירו אותו תחת
-            /admin/channels לפני שילוב שלב שיחה. שלב זה לא יבצע שיחה.
+            /admin/integrations לפני שילוב שלב שיחה. שלב זה לא יבצע שיחה.
           </p>
         ))}
       <FieldError errors={errors} />
