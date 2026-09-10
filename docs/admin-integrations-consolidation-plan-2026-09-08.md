@@ -377,7 +377,7 @@ Step 0 מורה להסיר את `last_onboarded_time` מרשימת ה-`fields` *
 
 **Tech Stack:** Next.js 16 App Router, shadcn על `@base-ui/react`, Tailwind v4, Supabase (RLS `is_platform_staff()` — §0.3), pg-boss worker, `whatsapp-api-js` 6.2.2, Voximplant Management API דרך `src/lib/voximplant/{core,mutations}.ts`, Zod 4, Vitest 4.
 
-**Spec:** הודעת team-lead 2026-09-08 (המסמך הזה הוא ה-spec המאומת שלה). מסמכים משלימים שהתוכנית מסתמכת עליהם ואינה מחליפה: `docs/whatsapp-import-number-split-plan-2026-09-03.md`, `docs/whatsapp-api-js-capability-audit-2026-09-03.md`, `docs/voximplant/digest-management-api.md`, `docs/voice-agent/production-wiring-audit-2026-07-20.md`.
+**Spec:** הודעת team-lead 2026-09-08 (המסמך הזה הוא ה-spec המאומת שלה). מסמכים משלימים שהתוכנית מסתמכת עליהם ואינה מחליפה: `docs/whatsapp-api-js-capability-audit-2026-09-03.md`, `docs/voximplant/digest-management-api.md`, `docs/voice-agent/production-wiring-audit-2026-07-20.md`. **נקלטה והוחלפה:** `docs/whatsapp-import-number-split-plan-2026-09-03.md` → Phase 1.5 כאן.
 
 ## תיוג ראיות
 
@@ -416,7 +416,7 @@ Step 0 מורה להסיר את `last_onboarded_time` מרשימת ה-`fields` *
 | # | החלטה | מומלץ | חלופה |
 |---|---|---|---|
 | D1 | היכן חיים המספרים | **שתי טבלאות חדשות** `provider_numbers` + `provider_number_roles` (§4). per-persona caller id = שורה לכל תפקיד → חייב טבלה, לא עמודה. | להוסיף 4 עמודות `voximplant_caller_id_<persona>` ל-`app_settings` — לא מכסה DIDs/מספר WA שני/היסטוריה; נדחה. |
-| D2 | יחס לתוכנית פיצול מספר הייבוא (3.9) | **התוכנית הזו מספקת את התשתית**: תפקיד `whatsapp_import_sender` בטבלת התפקידים מחליף את שתי העמודות `whatsapp_import_*` שהתוכנית ההיא הציעה (§3.2 שם). הלוגיקה של ניתוב ההודעות (`classifyInboundChannel`) נשארת שם ומקבלת את המזהה מהתפקיד. | להריץ את תוכנית 3.9 כפי שהיא (עמודות) ולהעביר אחר כך — עבודה כפולה. |
+| D2 | יחס לתוכנית פיצול מספר הייבוא (3.9) | ✅ **הוכרע ובוצע 10.9: התוכנית ההיא נקלטה לכאן כ-Phase 1.5 והוכרזה superseded.** תפקיד `whatsapp_import_sender` מחליף את שתי העמודות `whatsapp_import_*`; תשעה מרכיבים נוספים שם התיישנו (טבלת הדלתא ב-§1.5.0). | להריץ את 3.9 כפי שהיא — היה מייצר שתי עמודות מיותרות, ממשק בעמוד שנסגר ב-0.6, וגלגול-לאחור דרך env שכבר לא קיים. |
 | D3 | גרסת Graph אחת | ✅ **בוצע — `v25.0`** (לא v24.0; ראו §0.0). `GRAPH_API_VERSION` (מוכח לשליחה על ה-WABA הזה — `docs/whatsapp-import-number-split-plan-2026-09-03.md` §1.1; פקיעה 2028-02-18 DOCS-ONLY) בקובץ אחד, מוצג בעמוד Meta מול "Meta latest" (v26.0). | לקפוץ ל-v26.0 עכשיו — לא נבדק על ה-WABA; דורש מעבר שדות ב-`statuses` (conversation/pricing שונו ב-v24+). |
 | D4 | drift קטגוריה ב-3 תבניות | **כפתור "אשר קטגוריה נוכחית"** שמעדכן `requested_category` ל-MARKETING (מפסיק את האזהרה האדומה + מתיעד). | להגיש מחדש כ-UTILITY — הכרעת whatsapp-meta-expert, לא של הפאנל. |
 | D5 | topic `catalog` במנוי ה-webhook | **להציג כ"מנוי זר" ולהציע הסרה** (DELETE subscription) מאחורי אישור; ההסרה עצמה DOCS-ONLY עד אימות ב-ctx7 במשימה 5.4. | להשאיר; לא מזיק (fields ריקים). |
@@ -425,7 +425,7 @@ Step 0 מורה להסיר את `last_onboarded_time` מרשימת ה-`fields` *
 | D8 | `/admin/settings` › תשלומים | **המפתחות של SUMIT עוברים** לעמוד SUMIT; **מתגי הכסף** (`payments_enabled`, `close_charge_enabled`, `campaign_holds_enabled`, `billing_exposure_gate`, תמחור מדורג) **נשארים** ב-`/admin/settings` כי הם מדיניות עסקית, לא חיבור ספק. | להעביר גם את מתגי הכסף — מערבב "האם הספק מחובר" עם "האם אנחנו מחייבים". |
 | D9 | שיחות שלא נענו בקו ExtrA (7 היום, לא מגיעות ל-KALFA) → בקשת חזרה + סיכום AI + הקלטה (Phase 6) | **כן, ב-polling** (`getCallsHistory`), אחרי אישור israeli-compliance-advisor; ללא webhook נכנס חדש בשלב זה. | webhook automations של ExtrA — לא מתועד במפרט; דורש משטח ציבורי חדש. |
 
-**מה לא בהיקף:** שינוי לוגיקת שליחה/חיוב, שינוי מתגים/כותבים, פיצול ניתוב הייבוא (תוכנית 3.9), Meta App Review, שינויי צבע, מיגרציה של `message_templates.components` למבנה אחר.
+**מה לא בהיקף:** שינוי לוגיקת שליחה/חיוב, שינוי מתגים/כותבים, Meta App Review, שינויי צבע, מיגרציה של `message_templates.components` למבנה אחר.
 
 ---
 
@@ -1412,7 +1412,7 @@ export async function listWabaPhoneNumbers(creds: { wabaId: string; accessToken:
 ```
 
 בדיקה עם `fetch` ממוקק: URL כולל `GRAPH_API_VERSION` ו-`fields`; שגיאה לא כוללת גוף.
-- [ ] **Step 3:** `syncMetaNumbers()` ב-DAL: לכל מספר מ-`listWabaPhoneNumbers` → `upsertProviderNumber({provider:'meta_whatsapp', providerRef:id, e164: '+'+display_phone_number.replace(/\D/g,''), snapshot:{verified_name, quality_rating, code_verification_status, name_status, messaging_limit_tier, throughput, platform_type, account_mode, status}, source:'sync'})`. המספר השני (`1298694319994421`) נכנס כך לטבלה **בלי תפקיד** — מוצג "ללא תפקיד" עד שהאדמין משייך `whatsapp_import_sender` (Phase 1.5 בלבד UI; הניתוב עצמו = תוכנית 3.9).
+- [ ] **Step 3:** `syncMetaNumbers()` ב-DAL: לכל מספר מ-`listWabaPhoneNumbers` → `upsertProviderNumber({provider:'meta_whatsapp', providerRef:id, e164: '+'+display_phone_number.replace(/\D/g,''), snapshot:{verified_name, quality_rating, code_verification_status, name_status, messaging_limit_tier, throughput, platform_type, account_mode, status}, source:'sync'})`. המספר השני (`1298694319994421`) נכנס כך לטבלה **בלי תפקיד** — מוצג "ללא תפקיד" עד שהאדמין משייך `whatsapp_import_sender` (השיוך עצמו ב-Task 1.4; **הניתוב = Phase 1.5 להלן**, שקלטה את תוכנית 3.9 במלואה 10.9).
 - [ ] **Step 4:** `syncVoximplantNumbers()`: `getPhoneNumbers(cfg.auth)` (קיים) → upsert `provider:'voximplant', providerRef: String(phone_id), e164: '+'+phone_number, snapshot:{activation_status, verification_status, unverified_hold_until, phone_next_renewal, phone_price, application_name, rule_name, is_sms_supported, deactivated, canceled}`. שורת ה-backfill ללא `provider_ref` ממוזגת לפי E.164 (עדכון `provider_ref` על השורה הקיימת כדי שהתפקידים לא יאבדו).
 - [ ] **Step 4b:** `syncExtraLines()` (§5.3 סעיף 3): `POST /calls/` דרך `extra-client.ts` (`getCallsHistory`, `pagination.items:100`, עד 3 עמודים עם `next`), `distinct numbers.own.e164` → upsert `provider:'extra_sms'`; מיזוג עם שורת ה-backfill לפי `provider_ref` שווה ל-`friendly`/`e164` מנורמל (`toE164Israel` מ-`company.ts:27`); snapshot בלי PII (רק `forwards_to_last4`). בדיקה: 2 עמודים ממוקקים עם אותו קו → שורה אחת.
 - [ ] **Step 5:** actions `syncProviderNumbersAction(provider)` (`manage_settings` / `manage_voice`), `logActivity({action:'admin.integrations.numbers_synced', meta:{provider, count}})`.
@@ -1425,6 +1425,118 @@ export async function listWabaPhoneNumbers(creds: { wabaId: string; accessToken:
 - [ ] **Step 4:** בדיקות (`webhook-inbox.test.ts` קיים — להוסיף מקרה "unknown number"), `tsc`, lint, build, דפדפן. commit.
 
 **Gate Phase 1:** אחרי deploy — לחיצה על "סנכרן מ-Meta" מציגה 2 מספרים עם `display_phone_number`; "סנכרן מ-Voximplant" מציג את ה-DID עם `phone_next_renewal`; `/admin/webhooks?inspect=<row of 1298…>` מציג את התווית החדשה.
+
+---
+
+### Phase 1.5 — ניתוב הודעות נכנסות לפי המספר שקיבל · **M**
+
+**מקור:** `docs/whatsapp-import-number-split-plan-2026-09-03.md`, שנקלטה לכאן במלואה 2026-09-10 והוכרזה שם **superseded**. המסמך המקורי נשאר קריא כתיעוד ההנמקה ואימותי ה-DB שלו (§1.1 שם), אבל **אין להריץ אותו** — תשעה מרכיבים בו כבר אינם נכונים, ואחד מהם נסגר באותו ערב.
+
+**Goal:** הודעה שמגיעה למספר הייבוא נכנסת רק למסלול הייבוא; הודעה שמגיעה למספר ה-RSVP נכנסת רק למסלול ה-RSVP; מספר לא מוכר מתועד ומתעלמים ממנו. תשובות הייבוא יוצאות מהמספר שקיבל את הרשימה.
+
+**למה זו לא משימת נוחות.** MEASURED 2026-09-03: הודעה שנשלחה למספר החדש נרשמה כ-`contact_interactions` עם `billable = true` על קמפיין הברית **הסגור**. היום ה-worker אינו יודע לאיזה מספר הגיעה הודעה — `webhook_inbox.phone_number_id` נשמר בכל שורה, ו**אפס קוד קורא אותו בעיבוד** (אומת מחדש 10.9: `inbound.ts` לא מזכיר אותו כלל). המסלול היחיד עם השלכה כספית הוא מסלול ה-RSVP, ולכן ניתוב שגוי הוא חיוב שגוי.
+
+---
+
+#### 1.5.0 מה השתנה מאז 2026-09-03 — הדלתא המחייבת
+
+| # | תוכנית 3.9 קבעה | המצב היום | מה זה משנה |
+|---|---|---|---|
+| 1 | שתי עמודות `app_settings`: `whatsapp_import_phone_number_id`, `whatsapp_import_display_number` (§3.2 שם) | **מיותר.** `provider_numbers` + `provider_number_roles` יושמו במסד החי 10.9 (מיגרציה `20260910185730`), והתפקיד `whatsapp_import_sender` כבר קיים ב-enum | **המיגרציה של Task 1 שם מבוטלת.** מזהה מספר הייבוא נקרא מהתפקיד, לא מעמודה |
+| 2 | `getWhatsAppConfig()` יקבל שדה `importPhoneNumberId` מ-`app_settings` | הוא יקבל אותו מ-`resolveNumberForRole('whatsapp_import_sender')` (Task 1.2) | חתימת `WhatsAppConfig` משתנה כמתוכנן, אבל **המקור** אחר. חמשת קובצי הבדיקה שבונים את הליטרל המלא (§1.2 שם, סעיף 5) עדיין נשברים ב-`tsc` — זה נשאר נכון |
+| 3 | Task 2b: ליצור `graph-version.ts` עם override מ-`WHATSAPP_GRAPH_VERSION` | ✅ **בוצע** — אבל **בלי ה-override**. `WHATSAPP_GRAPH_VERSION` נמחק מהקוד לגמרי, והקבוע הוא `as const` | ⚠️ **גלגול לאחור אחד ב-§12 שם כבר לא קיים**: "`WHATSAPP_GRAPH_VERSION=v23.0` ב-env + restart, בלי deploy". שינוי גרסה = שינוי קוד + פריסה |
+| 4 | הגרסה מוצמדת ל-`v24.0` | **`v25.0`**, ותשעה מודולים מייבאים אותה; `graph-version.test.ts` סורק את העץ ומפיל כל גרסה קשיחה חדשה | ההנמקה של 3.9 ("v24 מוכח על ה-WABA הזה") הוחלפה ב-§0.0 כאן |
+| 5 | ממשק האדמין: אקורדיון "מספר ייבוא מוזמנים" ב-`/admin/channels` (Tasks 6–7 שם) | `/admin/channels` **נסגר** ב-Task 0.6. אין שדות ייבוא בטופס | **Tasks 6–7 שם מבוטלות.** השיוך נעשה ב-`/admin/integrations/numbers` (Task 1.4) — בחירת תפקיד על שורת מספר, לא שני שדות טקסט |
+| 6 | "בדיקת חיבור — מספר ייבוא" ככפתור שני בטופס | מיותר: `syncMetaNumbers()` (Task 1.3 Step 3) מביא את **שני** המספרים עם `display_phone_number` ישירות מ-Graph | אין צורך להקליד מספר לתצוגה ואין צורך לאמת אותו ידנית — הוא נסנכרן |
+| 7 | RLS: `has_role(auth.uid(),'admin')` (§1.1 שם) | `is_platform_staff()` — מיגרציה `20260910090301` העבירה את כל 21 המדיניות ואפס נשארו על `has_role` | תיאור ה-RLS שם מיושן; הטבלאות החדשות כבר על הציר הנכון |
+| 8 | `company_contact_phone = 033301505` מוצג כעובדה נפרדת | אותו E.164 מקבץ היום **שלוש** שורות ב-`provider_numbers`: `sms_sender`, `business_line_inbound`, `company_contact` | "מספר אחד, ארבעה כובעים" הוא כבר נתון שאילתה, לא הערה במסמך |
+| 9 | Decision B: "איפה חי המספר לתצוגה" | **נענתה מעצמה** — `provider_numbers.e164`, ממולא מהסנכרון | ההחלטה נסגרת; החלופות שנדחו שם (גזירה מ-Graph בזמן רינדור, שימוש ב-`company_contact_phone`) נדחות מאותן סיבות |
+
+**החלטות שנשארות פתוחות מ-3.9:** A (הפרדה קשיחה + הפניה — **מומלץ, וזו ברירת המחדל כאן**), C (ניקוי 5 שורות env), D (מעבר לטוקן System-User; דדליין טבעי `data_access_expires_at` = 2026-12-02).
+
+---
+
+#### 1.5.1 מה שנמדד חי 2026-09-10 ולא היה בידי 3.9
+
+`GET /{waba}/phone_numbers` דרך הטוקן החי, v25.0:
+
+| מספר | `phone_number_id` | quality | status | name_status | code_verification |
+|---|---|---|---|---|---|
+| `+972 3-721-9347` ← **השולח המוגדר** | `1018741517998430` | GREEN | CONNECTED | APPROVED | **EXPIRED** |
+| `+972 3-330-1505` | `1298694319994421` | GREEN | CONNECTED | APPROVED | VERIFIED |
+
+שלוש מסקנות:
+
+1. **ה-WABA מחזיק שני מספרים** — §1.4 כאן סימנה כ-INFERRED ש-`+972 3-721-9347` הוא DID של Voximplant בלבד. הוא **גם** שולח ה-RSVP. הקיבוץ הסופי אחרי `syncMetaNumbers`: `+97237219347` ×2 (Voximplant + WhatsApp RSVP), `+97233301505` ×3 (ExtrA, חברה, WhatsApp ייבוא).
+2. **`code_verification_status` של השולח הפעיל הוא EXPIRED.** הטבלה של Meta עצמה אינה מציגה את השדה הזה — שני המספרים נראים שם "מחובר · גבוהה". שליחות עובדות (`status=CONNECTED`), ולכן זו **אינה** תקלה חוסמת — אבל היא ראויה לעמודה בעמוד המספרים, וזו דוגמה לכך שהערך של העמוד אינו בחיקוי מה שכבר רואים ב-Meta.
+3. **ל-`1298694319994421` אין שורה ב-`provider_numbers`** — ה-backfill יצר שורות רק לארבעת השדות הישנים, והשדה הישן מחזיק את שולח ה-RSVP בלבד. הוא מצטרף בסנכרון הראשון (Task 1.3 Step 3), ואז — ורק אז — אפשר לשייך לו `whatsapp_import_sender`.
+
+**סדר תלות מחייב:** `syncMetaNumbers` → שיוך התפקיד → הפעלת הניתוב. שיוך תפקיד למספר שאין לו שורה הוא בלתי אפשרי (FK), ולכן אין דרך לעקוף את הסדר בטעות.
+
+---
+
+#### 1.5.2 כלל הניתוב — הגרסה המתוקנת
+
+```
+classifyInboundChannel(row.phone_number_id, channel)
+  channel.importPhoneNumberId == null                → 'rsvp'     (legacy: הכל כמו היום)
+  row.phone_number_id == importPhoneNumberId         → 'import'
+  row.phone_number_id == null או == phoneNumberId    → 'rsvp'
+  אחרת                                                → 'unknown'
+```
+
+זהה ל-§3.1 של 3.9 **מלבד מקור `importPhoneNumberId`**: `resolveNumberForRole('whatsapp_import_sender')` במקום `config.importPhoneNumberId` מ-`app_settings`. הטבלה מ-§3.1 שם (מה רץ ומה לא רץ בכל ערוץ) נשארת נכונה מילה במילה, כולל ההנמקה ש**"מספר לא מוכר" = התעלמות ולא מסלול RSVP** — המסלול היחיד עם השלכה כספית הוא ה-RSVP, ומספר שלישי עתידי או מזהה שגוי לא אמור לחייב איש בשקט.
+
+**`resolveNumberForRole` רץ ב-worker.** הוא service-role וחסר-בקשה (Task 1.2), ולכן מותר לו להיארז ל-`dist/worker.cjs` — הכלל `worker-no-request-scoped-next` ב-`.dependency-cruiser.cjs` נאכף ב-`pretest`. **תוצאתו חייבת להיות ממוטמנת per-message-batch** ולא להיקרא פעם לכל הודעה: זו הסיבה ש-3.9 העבירה את ה-config מבחוץ ל-`stageWhatsAppImport` (§3.1 שם), והנימוק לא השתנה — רק המקור.
+
+---
+
+#### 1.5.3 המשימות, אחרי הקיזוז
+
+| מ-3.9 | מצב | מה נשאר לעשות |
+|---|---|---|
+| Task 1 — מיגרציה + regen | ❌ **מבוטלת** | הוחלפה במיגרציה `20260910185730` (Task 1.1 כאן), שכבר יושמה |
+| Task 2 — `channel-routing.ts` (`classifyInboundChannel`, `importSender`, `waMeUrl`) | ✅ **נשארת כלשונה** | לוגיקה טהורה, ללא תלות במקור המזהה |
+| Task 2b — `graph-version.ts` | ✅ **בוצעה** | ללא override; v25.0 |
+| Task 3 — `WhatsAppConfig` מכיר את מספר הייבוא | 🔄 **משתנה** | המקור הוא התפקיד, לא עמודה. חמשת קובצי הבדיקה עדיין נשברים ב-`tsc` — זה השער |
+| Task 4 — מודול הייבוא (שולח לפי המספר, `replyImportPointer`, `downloadDocument` דרך ה-SDK) | ✅ **נשארת כלשונה** | כולל ההגבלה של הורדת המדיה ל-`phone_number_id` של השורה (§13 שם) |
+| Task 5 — הניתוב ב-`processMessage` | ✅ **נשארת כלשונה** | |
+| Tasks 6–7 — אדמין ב-`/admin/channels` | ❌ **מבוטלות** | השיוך ב-`/admin/integrations/numbers` (Task 1.4) |
+| Task 8 — `getWhatsAppImportChannel` (קורא ללקוח, נטול סודות) | 🔄 **משתנה** | קורא מ-`provider_numbers` לפי התפקיד; העיקרון נשאר — בחירת עמודות מפורשת, הטוקן לעולם לא נטען למודול שמזין רכיב לקוח |
+| Tasks 9–10 — מסכי הלקוח מציגים את המספר + `wa.me` | ✅ **נשארות כלשונן** | |
+| Task 11 — תיעוד | 🔄 | + לתקן את `docs/project/03-database-schema.md:639` (§1.2 שם, סעיף 3) |
+| Task 12 — שער, פריסה, אימות חי | ✅ **נשארת**, ראו למטה | |
+
+---
+
+#### 1.5.4 אימות חי — ארבע הבדיקות, מעודכנות
+
+ארבע הבדיקות של §12.4 ב-3.9 נשארות **כלשונן** על כל שאילתות ה-SQL שלהן: (i) טקסט חופשי למספר הייבוא → אפס אינטראקציות; (ii) CSV למספר הייבוא → שורת staging + סטטוסי מסירה עם `phone_number_id = 1298694319994421`; (iii) CSV למספר ה-RSVP → אפס staging + הפניה אחת; (iv) תשובת RSVP → כמו קודם. בנוסף בקרת ה-`unknown` דרך שורות ה-QA עם `phone_number_id = 123456123`.
+
+**מה שמשתנה בהכנה אליהן:** Step 3 שם ("למלא ב-`/admin/channels` את מזהה מספר הייבוא ואת המספר לתצוגה, ללחוץ בדיקת חיבור") מוחלף ב:
+
+1. `/admin/integrations/numbers` → "סנכרן מ-Meta" → שני המספרים מופיעים עם `display_phone_number` אמיתי.
+2. על שורת `+972 3-330-1505` → לשייך את התפקיד `whatsapp_import_sender`.
+3. אימות ב-DB:
+```sql
+select r.role::text, pn.provider::text, pn.provider_ref, pn.e164
+  from provider_number_roles r join provider_numbers pn on pn.id = r.number_id
+ where r.role in ('whatsapp_rsvp_sender','whatsapp_import_sender');
+-- whatsapp_import_sender | meta_whatsapp | 1298694319994421 | +97233301505
+-- whatsapp_rsvp_sender   | meta_whatsapp | 1018741517998430 | +97237219347
+```
+
+**גלגול לאחור גלובלי, ללא פריסה** — נשמר, ורק המנגנון שונה: ב-3.9 ריקון שני שדות ב-`/admin/channels`; כאן **הסרת השיוך `whatsapp_import_sender`** ב-`/admin/integrations/numbers`. `classifyInboundChannel` מחזיר `rsvp` לכל שורה, וההתנהגות חוזרת למה שהיא היום. שורת המספר נשארת בטבלה.
+
+---
+
+#### 1.5.5 מה שנשאר נכון ב-3.9 ואין לחזור עליו כאן
+
+§13 (אבטחה) ו-§14 (F1–F8 follow-ups) של 3.9 נשארים בתוקף במלואם ואינם משוכפלים לכאן. שלושה מהם ראויים לתשומת לב מיוחדת:
+
+- **F2** — פיני `v21.0` ב-`relocation/*` פוקעים **2027-01-21**, המועד הקרוב ביותר מכל הפינים. לתזמן לפני ינואר 2027.
+- **F7** — שער `Content-Length > 3MB` לפני `request.text()` ב-route ה-webhook. שימו לב לסייג שנרשם שם: 413 ≠ 200 ⇒ Meta מנסה שוב עד 7 ימים.
+- **F8** — BSUID: אם Meta תתחיל להעביר מזהי משתמש עסקיים במקום E.164 ב-`payload.from`, `normalizePhone` יחזיר null והודעות ייפלו **בשקט**. אין שינוי בפועל היום; ראוי למטריקה.
 
 ---
 
@@ -1628,7 +1740,7 @@ UI: `AlertDialog` (קיים) עם טבלת מחיר, checkbox "אני מאשר �
 3. ✅ **נענה 9.9 — כן.** `GetPhoneNumbers` מחזיר מספר יחיד: `97237219347`, `phone_id` 2303422, TEL AVIV, ACTIVE, אפליקציה 11107202, ללא `rule_id`. חידוש 14.9.2026, 5$/חודש.
 4. ✅ **נענה 9.9 — Owner** (`GetKeyRoles` → role_id 1). רכישה, קישור וביטול אפשריים מהפאנל. אושר בפועל: `GetRegulationsAddress` (Owner/Accountant) הצליח.
 5. **עדיין פתוח — וזה חוסם שלוש משימות, לא שתיים.** מדוד שוב 10.9: `whatsapp_app_id` אינה קיימת ב-`app_settings`; `META_APP_ID_WA` יושב ב-`.env.local` בלי אף קורא. תלויות: Task 2.2 (`debugToken`), **Task 2.5 (כרטיס סטטוס Meta — נשען כולו על `debugToken` ועל `GET /{app-id}`)**, ו-Task 5.4 (מנויי webhook). **מומלץ:** עמודה ב-`app_settings` + שדה בטופס Meta — עקבי עם `whatsapp_waba_id` שגם הוא מזהה ולא סוד, וניתן להחלפה בלי פריסה. החלופה: קריאה מ-env.
-6. תוכנית 3.9 (פיצול ניתוב ייבוא): לבצע **אחרי** Phase 1 עם תפקיד `whatsapp_import_sender` (מומלץ), או במקביל עם העמודות שהוצעו שם?
+6. ~~תוכנית 3.9~~ — ✅ **נסגרה 10.9.** נקלטה כ-Phase 1.5, מבוצעת אחרי Phase 1 עם תפקיד `whatsapp_import_sender`. העמודות שהוצעו שם בוטלו.
 7. הצד המשפטי: caller id שונה לפרסונת המכירות — האם צריך להופיע בהסכם/מדיניות (israeli-compliance-advisor)?
 8. **הסכמת וואטסאפ — מה המדיניות מכאן?** מדוד 9.9: ל-38 אנשי קשר יש `whatsapp_consent_at`, **כולם עם חותמת זמן זהה** (2026-07-07 11:19:15) — כלומר כתיבה אחת בכמות לפני קמפיין הברית, לא 38 אירועי הסכמה. `recordWhatsAppConsent` קיימת ואין לה אף קורא. מאז 9.9 יש מתג `whatsapp_consent_required` (כבוי כרגע), אבל השאלה נשארת: לחווט הסכמה אמיתית לנקודה בזרימה, להמשיך ברישום ידני לפני כל קמפיין, או לקבוע שההזמנה עצמה מהווה הסכמה. **שאלה עסקית-משפטית — לא טכנית.**
 9. ✅ **נענה 10.9 — התוכן נשאר, הבריאות עוברת.** ההנמקה והמדידות בסוף §3.3. נותרה החלטת נתונים אחת: האם למחוק את שורת `call_1` הריקה והכבויה (מומלץ) — **שינוי בייצור, דורש אישור.**

@@ -3,7 +3,20 @@
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **תאריך:** 2026-09-03
-**סטטוס:** תוכנית בלבד — לא בוצעו שינויי קוד, לא הופעלו מיגרציות, לא נשלחו הודעות, לא הותקנו חבילות.
+**סטטוס:** ⛔ **SUPERSEDED 2026-09-10 — אל תריצו את המסמך הזה.**
+
+התוכנית נקלטה במלואה ל-`docs/admin-integrations-consolidation-plan-2026-09-08.md` **§Phase 1.5**, שם היא מתוחזקת. המסמך הזה נשאר קריא כתיעוד ההנמקה ואימותי ה-DB החיים של 3.9 (§1.1 בפרט) — הם עדיין המקור לעובדות ההן.
+
+**תשעה מרכיבים כאן כבר אינם נכונים**, וטבלת הדלתא המלאה נמצאת ב-§1.5.0 של תוכנית 09-08. הארבעה שיזיקו אם ירוצו כלשונם:
+
+| כאן | המצב מאז |
+|---|---|
+| **Task 1** — שתי עמודות `app_settings` (`whatsapp_import_*`) | מבוטלת. `provider_numbers` + `provider_number_roles` יושמו במסד החי (מיגרציה `20260910185730`); התפקיד `whatsapp_import_sender` קיים ב-enum |
+| **Tasks 6–7** — ממשק אדמין ב-`/admin/channels` | מבוטלות. העמוד נסגר ב-Task 0.6; השיוך נעשה ב-`/admin/integrations/numbers` |
+| **Task 2b** — `graph-version.ts` עם override מ-`WHATSAPP_GRAPH_VERSION` | בוצעה **בלי** ה-override, על `v25.0` (לא v24.0). ⚠️ לכן **הגלגול-לאחור ב-§12 דרך משתנה סביבה כבר לא קיים** |
+| **§1.1** — RLS `has_role(auth.uid(),'admin')` | הציר פרש; הכל על `is_platform_staff()` (מיגרציה `20260910090301`) |
+
+§13 (אבטחה) ו-§14 (F1–F8) **נשארים בתוקף במלואם** ואינם משוכפלים בתוכנית החדשה.
 
 **Goal:** מספר ה-Cloud API השני (`+972 3-330-1505`, `phone_number_id = 1298694319994421`) הופך לערוץ הייבוא היחיד של רשימות מוזמנים, בעוד המספר הקיים (`+972 3-721-9347`, `1018741517998430`) ממשיך לשרת אך ורק את פניות ה-RSVP — וה-worker מנתב כל הודעה נכנסת לפי המספר שקיבל אותה.
 
