@@ -6388,6 +6388,18 @@ export type Database = {
         }
         Returns: string
       }
+      upsert_provider_number: {
+        Args: {
+          p_display_label?: string
+          p_e164?: string
+          p_is_active?: boolean
+          p_provider: Database["public"]["Enums"]["provider_key"]
+          p_provider_ref?: string
+          p_snapshot?: Json
+          p_source?: string
+        }
+        Returns: string
+      }
     }
     Enums: {
       agreement_status: "draft" | "approved"

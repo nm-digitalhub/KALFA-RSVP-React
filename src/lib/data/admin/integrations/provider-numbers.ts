@@ -2,10 +2,13 @@ import 'server-only';
 
 import { requirePlatformPermission } from '@/lib/auth/dal';
 import { createClient } from '@/lib/supabase/server';
+import type { Json } from '@/lib/supabase/types';
 import {
   assignRoleSchema,
+  upsertProviderNumberSchema,
   type NumberRole,
   type ProviderKey,
+  type UpsertProviderNumberInput,
 } from '@/lib/validation/provider-numbers';
 
 // The admin side of the provider-numbers module: read every connected line, and
@@ -107,6 +110,81 @@ async function requireRolePermission(role: NumberRole): Promise<void> {
     return;
   }
   await requirePlatformPermission('manage_settings');
+}
+
+// Which permission it takes to write a number, by the provider that owns the line.
+// Same principle as ROLE_PERMISSION: the gate describes the RESOURCE. Adding or
+// re-syncing a Voximplant line changes voice configuration; the others are settings.
+const PROVIDER_PERMISSION: Record<ProviderKey, 'manage_settings' | 'manage_voice'> = {
+  meta_whatsapp: 'manage_settings',
+  voximplant: 'manage_voice',
+  extra_sms: 'manage_settings',
+  company: 'manage_settings',
+};
+
+// Literal call sites, for the reason spelled out on requireRolePermission.
+async function requireProviderPermission(provider: ProviderKey): Promise<void> {
+  if (PROVIDER_PERMISSION[provider] === 'manage_voice') {
+    await requirePlatformPermission('manage_voice');
+    return;
+  }
+  await requirePlatformPermission('manage_settings');
+}
+
+/**
+ * Insert or update one number, returning its id.
+ *
+ * ⚠️ GOES THROUGH AN RPC, NOT `.upsert()`, AND NOT BY PREFERENCE. The unique index
+ * this table needs is PARTIAL — `(provider, provider_ref) WHERE provider_ref IS NOT
+ * NULL` — and Postgres only uses a partial index for ON CONFLICT when the statement
+ * repeats the predicate, which PostgREST cannot send. Measured live: the plain form
+ * returns 42P10. `upsert_provider_number` also owns the rule that a sync carrying a
+ * provider_ref ADOPTS the ref-less backfill row for the same E.164 instead of
+ * splitting one phone line into two rows and stranding its roles on the orphan.
+ *
+ * NULLS ARE OMITTED RATHER THAN SENT. The generated Args type declares the optional
+ * parameters as `string` (not `string | null`), and the function reads a missing
+ * argument as "leave what is stored" via coalesce. Sending an explicit null would
+ * both fail tsc and, if forced through, mean the opposite of what the caller wants:
+ * a sync that does not carry a label would blank the one an admin typed.
+ */
+export async function upsertProviderNumber(
+  input: UpsertProviderNumberInput,
+): Promise<string> {
+  const parsed = upsertProviderNumberSchema.parse(input);
+  await requireProviderPermission(parsed.provider);
+
+  const args: {
+    p_provider: ProviderKey;
+    p_is_active: boolean;
+    p_source: string;
+    p_provider_ref?: string;
+    p_e164?: string;
+    p_display_label?: string;
+    p_snapshot?: Json;
+  } = {
+    p_provider: parsed.provider,
+    p_is_active: parsed.isActive,
+    p_source: parsed.source,
+  };
+  if (parsed.providerRef !== null) args.p_provider_ref = parsed.providerRef;
+  if (parsed.e164 !== null) args.p_e164 = parsed.e164;
+  if (parsed.displayLabel !== null) args.p_display_label = parsed.displayLabel;
+  if (parsed.snapshot !== null) args.p_snapshot = parsed.snapshot;
+
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc('upsert_provider_number', args);
+
+  if (error) {
+    // 23514 is the E.164 CHECK and 22023 the function's own "needs an identifier".
+    // Both are the caller's input and both have a field to point at; anything else
+    // is ours.
+    if (error.code === '23514') throw new Error('מספר לא תקין — נדרש פורמט E.164');
+    if (error.code === '22023') throw new Error('צריך לפחות מזהה אצל הספק או מספר');
+    throw new Error('שמירת המספר נכשלה');
+  }
+  if (!data) throw new Error('שמירת המספר נכשלה');
+  return data;
 }
 
 /**

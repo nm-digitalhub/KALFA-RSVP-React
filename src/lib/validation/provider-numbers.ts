@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-import { Constants, type Enums } from '@/lib/supabase/types';
+import { Constants, type Enums, type Json } from '@/lib/supabase/types';
 
 // Validation for the provider-numbers module (plan §4.2, Phase 1).
 //
@@ -38,6 +38,25 @@ export const numberRoleSchema = z.enum(NUMBER_ROLES, {
   error: 'תפקיד לא מוכר',
 });
 
+// The provider snapshot is stored in a `jsonb` column and handed to an RPC whose
+// generated parameter type is `Json`. Validating it AS Json — rather than as
+// `Record<string, unknown>` plus a cast at the call site — means a value that cannot
+// survive the round trip (a Date, a function, undefined nested in an array) is
+// refused at this boundary with a field error, instead of becoming a cast that
+// compiles and a 22P02 at 3am. It also removes the only `as` in the DAL.
+const jsonValueSchema: z.ZodType<Json> = z.lazy(() =>
+  z.union([
+    z.string(),
+    z.number(),
+    z.boolean(),
+    z.null(),
+    z.array(jsonValueSchema),
+    z.record(z.string(), jsonValueSchema),
+  ]),
+);
+
+export const snapshotSchema = z.record(z.string(), jsonValueSchema);
+
 // provider_numbers_ref_or_e164: CHECK (provider_ref IS NOT NULL OR e164 IS NOT NULL).
 // A row identified by neither is unreachable — it can never be matched by a sync
 // (which keys on provider_ref) nor by a human reading the list (who reads e164).
@@ -48,7 +67,7 @@ export const upsertProviderNumberSchema = z
     e164: e164Schema.nullable().default(null),
     displayLabel: z.string().trim().max(120).nullable().default(null),
     isActive: z.boolean().default(true),
-    snapshot: z.record(z.string(), z.unknown()).nullable().default(null),
+    snapshot: snapshotSchema.nullable().default(null),
     source: z.enum(['admin', 'backfill', 'sync']).default('admin'),
   })
   .refine((v) => v.providerRef !== null || v.e164 !== null, {
