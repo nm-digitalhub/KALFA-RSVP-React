@@ -34,48 +34,57 @@ export interface EmailHealthSummary {
 /** Failures that describe OUR ability to ask, not the integration's health. */
 const NOT_A_FAULT = new Set(['key_restricted', 'rate_limited']);
 
-export async function runEmailHealthCheck(): Promise<EmailHealthSummary> {
+/**
+ * Read the settings, pick the transport, run the probe. NO alerting.
+ *
+ * Split out of runEmailHealthCheck so /admin/integrations/outgoing-email can show the
+ * same verdict without a page render firing Slack. One definition of "which transport
+ * is live and is it healthy" — the scheduled job below adds the alerting policy on top
+ * rather than re-deriving the answer.
+ *
+ * Returns null when there is nothing configured to probe, which the caller must render
+ * as "not set up" and never as "broken".
+ */
+export async function probeEmailHealth(): Promise<EmailHealth | null> {
   const settings = await readEmailSettings();
-  // Both non-ok cases return 'skipped', for different reasons: 'unreadable' is a
-  // database problem the DB panels already show, and alerting here would double-report
-  // it under a heading that sends someone to look at the wrong system.
-  if (settings.kind !== 'ok') return { outcome: 'skipped', health: null };
+  if (settings.kind !== 'ok') return null;
 
   const from = settings.data.smtp_from as string;
   const provider = selectedEmailProvider();
 
-  let health: EmailHealth;
   if (provider === 'resend') {
     const apiKey = process.env.RESEND_API_KEY;
     // EMAIL_PROVIDER says resend and the key is absent: that IS a fault — the send path
     // would throw on the next business email. It is not "unconfigured", because someone
     // deliberately selected this transport.
     if (!apiKey) {
-      health = {
+      return {
         ok: false,
         kind: 'key_invalid',
         message: 'EMAIL_PROVIDER=resend אך RESEND_API_KEY חסר',
       };
-    } else {
-      health = await checkResendHealth(apiKey, from);
     }
-  } else {
-    const { smtp_host, smtp_port, smtp_user, smtp_password, smtp_secure } = settings.data;
-    if (!smtp_host || !smtp_port || !smtp_user || !smtp_password) {
-      // The SMTP path with half a config is genuinely unconfigured, not broken.
-      return { outcome: 'skipped', health: null };
-    }
-    health = await checkSmtpHealth(
-      {
-        smtp_host,
-        smtp_port,
-        smtp_secure: smtp_secure ?? false,
-        smtp_user,
-        smtp_password,
-      },
-      from,
-    );
+    return checkResendHealth(apiKey, from);
   }
+
+  const { smtp_host, smtp_port, smtp_user, smtp_password, smtp_secure } = settings.data;
+  // The SMTP path with half a config is genuinely unconfigured, not broken.
+  if (!smtp_host || !smtp_port || !smtp_user || !smtp_password) return null;
+  return checkSmtpHealth(
+    { smtp_host, smtp_port, smtp_secure: smtp_secure ?? false, smtp_user, smtp_password },
+    from,
+  );
+}
+
+export async function runEmailHealthCheck(): Promise<EmailHealthSummary> {
+  // null covers both "mail switched off / no From address" and "half an SMTP config":
+  // valid states, never alerted. An unreadable settings row lands here too, and that
+  // is deliberate — it is a database problem the DB panels already show, and alerting
+  // on it here would send someone to look at the wrong system.
+  const health = await probeEmailHealth();
+  if (!health) return { outcome: 'skipped', health: null };
+
+  const provider = selectedEmailProvider();
 
   if (!health.ok) {
     if (NOT_A_FAULT.has(health.kind)) {
