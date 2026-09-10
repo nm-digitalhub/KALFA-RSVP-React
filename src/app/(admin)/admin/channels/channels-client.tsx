@@ -16,6 +16,9 @@ import {
   AccordionPanel,
 } from '@/components/ui/accordion';
 import { HelpTip } from '@/components/help-tip';
+import { WhatsAppCredentialsForm } from '@/app/(admin)/admin/integrations/meta-whatsapp/whatsapp-credentials-form';
+import { WhatsAppConsentToggle } from '@/app/(admin)/admin/integrations/meta-whatsapp/whatsapp-consent-toggle';
+import { WhatsAppConnectionTest } from '@/app/(admin)/admin/integrations/meta-whatsapp/whatsapp-connection-test';
 import {
   FieldError,
   FormError,
@@ -23,9 +26,6 @@ import {
   SubmitButton,
 } from '@/components/forms';
 import {
-  updateWhatsAppChannelAction,
-  updateWhatsAppConsentRequiredAction,
-  testWhatsAppConnectionAction,
   updateVoximplantChannelAction,
   testVoximplantConnectionAction,
   updateOutreachMasterSwitchAction,
@@ -270,15 +270,9 @@ export function ChannelsClient({
   outreachEnabled: boolean;
   anyChannelReady: boolean;
 }) {
-  const [state, action] = useActionState(updateWhatsAppChannelAction, null);
-  const [testState, testAction] = useActionState(
-    testWhatsAppConnectionAction,
-    null,
-  );
-  const [waConsentState, waConsentAction] = useActionState(
-    updateWhatsAppConsentRequiredAction,
-    null,
-  );
+  // The three WhatsApp bindings moved into the extracted components in Task 0.3 —
+  // each now owns its own useActionState, which is why this tab renders them as
+  // siblings rather than threading state down.
   const [voxState, voxAction] = useActionState(
     updateVoximplantChannelAction,
     null,
@@ -303,7 +297,6 @@ export function ChannelsClient({
     updateSalesCallChannelAction,
     null,
   );
-  const e = state?.fieldErrors;
   const ve = voxState?.fieldErrors;
 
   return (
@@ -325,138 +318,17 @@ export function ChannelsClient({
         </TabsList>
 
       <TabsPanel value="whatsapp">
-        <form action={action} className="space-y-4">
-          <FormError message={state?.error} />
-          <FormNotice message={state?.notice} />
-
-          <div className="flex items-center gap-3 rounded-lg border border-border bg-card p-4">
-            <StatusBadge
-              configured={whatsapp.configured}
-              enabled={outreachEnabled && whatsapp.configured}
-            />
-            <span className="text-sm text-muted-foreground">
-              מצב ערוץ WhatsApp. הפעלה/כיבוי דרך מתג הפנייה הראשי שמעל.
-            </span>
-          </div>
-
-          <Accordion defaultValue={['creds']}>
-            <AccordionItem value="creds">
-              <AccordionTrigger>פרטי התחברות</AccordionTrigger>
-              <AccordionPanel>
-                <div className="space-y-4 text-foreground">
-                  <Field
-                    name="whatsapp_phone_number_id"
-                    label="Phone Number ID"
-                    defaultValue={whatsapp.whatsapp_phone_number_id}
-                    placeholder="מזהה מספר העסק ב-WhatsApp"
-                    errors={e?.whatsapp_phone_number_id}
-                  />
-                  <Field
-                    name="whatsapp_waba_id"
-                    label="WhatsApp Business Account ID"
-                    defaultValue={whatsapp.whatsapp_waba_id}
-                    placeholder="מזהה חשבון ה-WABA"
-                    help="מזהה חשבון ה-WhatsApp Business (WABA) — היעד לניהול תבניות ההודעה ושליחתן לאישור Meta. נמצא ב-WhatsApp Manager › Account tools, או ב-Meta App › WhatsApp › API Setup."
-                    errors={e?.whatsapp_waba_id}
-                  />
-                  <SecretField
-                    name="whatsapp_access_token"
-                    label="Access Token"
-                    defaultValue={whatsapp.whatsapp_access_token}
-                    help="חובה טוקן System-User קבוע (לא הטוקן הזמני ל-24ש'), עם ההרשאות whatsapp_business_messaging + whatsapp_business_management + business_management."
-                    hint="נשמר מוצפן בשרת; לעולם לא נחשף בלוגים."
-                  />
-                  <SecretField
-                    name="whatsapp_app_secret"
-                    label="App Secret"
-                    defaultValue={whatsapp.whatsapp_app_secret}
-                    help="ה-App Secret של אפליקציית Meta — משמש לאימות חתימת ה-Webhook (X-Hub-Signature-256)."
-                  />
-                  <Field
-                    name="whatsapp_verify_token"
-                    label="Verify Token"
-                    defaultValue={whatsapp.whatsapp_verify_token}
-                    help="מחרוזת שאתם ממציאים — מדביקים אותה גם כאן וגם בהגדרת ה-Webhook ב-Meta (אימות GET)."
-                    placeholder="מחרוזת אקראית שתבחרו"
-                  />
-                </div>
-              </AccordionPanel>
-            </AccordionItem>
-
-            <AccordionItem value="webhook">
-              <AccordionTrigger>חיווט Webhook (להדבקה ב-Meta)</AccordionTrigger>
-              <AccordionPanel>
-                <div className="space-y-3">
-                  <CopyRow label="Callback URL" value={callbackUrl} />
-                  <CopyRow
-                    label="Verify Token"
-                    value={whatsapp.whatsapp_verify_token}
-                  />
-                  <ol className="list-inside list-decimal space-y-1 text-xs text-muted-foreground">
-                    <li>Meta App → WhatsApp → Configuration → Webhook.</li>
-                    <li>הדביקו את ה-Callback URL ואת ה-Verify Token.</li>
-                    <li>הירשמו לשדה messages.</li>
-                  </ol>
-                </div>
-              </AccordionPanel>
-            </AccordionItem>
-          </Accordion>
-
-          <SubmitButton>שמירה</SubmitButton>
-        </form>
-
-        {/* WhatsApp CONSENT toggle — a SIBLING form, never nested (a <form>
-            inside a <form> caused a "React form was unexpectedly submitted"
-            error here before). Mirrors the AI-call consent toggle in the
-            Voximplant panel: same shape, same wording, same red warning, so the
-            two channels stay recognisably one mechanism. It lives beside the
-            channel it governs rather than in /admin/settings, because it is a
-            per-channel gate — the same reason its twin lives in this file. */}
-        <form action={waConsentAction} className="mt-4 space-y-2 rounded-lg border border-border bg-card p-4">
-          <FormError message={waConsentState?.error} />
-          <FormNotice message={waConsentState?.notice} />
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <div className="min-w-0 space-y-1">
-              <p className="text-sm font-semibold">דרישת הסכמה לוואטסאפ</p>
-              <p className="text-xs text-muted-foreground">
-                כשמסומן (ברירת מחדל) — הודעות וואטסאפ יוצאות רק לאנשי קשר עם הסכמה
-                מתועדת (<code>whatsapp_consent_at</code>). ביטול הסימון מאפשר שליחה
-                גם ללא הסכמה מוקדמת. הסרת נמענים (opt-out), רשימת הנמענים הקפואה של
-                הקמפיין וכשל־סגור נשמרים בכל מקרה.
-              </p>
-              {whatsapp.consentRequired ? null : (
-                <p className="text-xs font-semibold text-red-600 dark:text-red-400">
-                  ⚠️ דרישת ההסכמה כבויה — הודעות וואטסאפ ייצאו לאנשי קשר ללא הסכמה
-                  מוקדמת. זו חשיפה משפטית תחת סעיף 30א (חוק הספאם) והחלטה משפטית,
-                  לא טכנית.
-                </p>
-              )}
-            </div>
-            <div className="flex shrink-0 items-center justify-end gap-3">
-              <label className="inline-flex cursor-pointer items-center gap-2 text-sm font-medium">
-                <input
-                  type="checkbox"
-                  name="whatsapp_consent_required"
-                  defaultChecked={whatsapp.consentRequired}
-                  className="size-4 accent-primary"
-                />
-                דרוש הסכמה
-              </label>
-              <SubmitButton className="w-auto">עדכון</SubmitButton>
-            </div>
-          </div>
-        </form>
-
-        <form action={testAction} className="mt-4 space-y-2">
-          <FormError message={testState?.error} />
-          <FormNotice message={testState?.notice} />
-          <button
-            type="submit"
-            className="rounded-md border border-border px-4 py-2 text-sm font-medium transition hover:bg-accent/40"
-          >
-            בדיקת חיבור
-          </button>
-        </form>
+        {/* Lifted into src/app/(admin)/admin/integrations/meta-whatsapp/ in Task 0.3
+            and imported back here, so this tab and the new provider page render ONE
+            definition and cannot drift while both exist. This page is retired in Task
+            0.6 as its own commit. */}
+        <WhatsAppCredentialsForm
+          whatsapp={whatsapp}
+          callbackUrl={callbackUrl}
+          outreachEnabled={outreachEnabled}
+        />
+        <WhatsAppConsentToggle consentRequired={whatsapp.consentRequired} />
+        <WhatsAppConnectionTest />
       </TabsPanel>
 
       <TabsPanel value="voximplant">

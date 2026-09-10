@@ -56,7 +56,7 @@ interface CardSpec {
 }
 
 const CARDS: CardSpec[] = [
-  { statusKey: 'whatsapp', key: 'meta-whatsapp', permission: 'manage_settings', href: '/admin/channels' },
+  { statusKey: 'whatsapp', key: 'meta-whatsapp', permission: 'manage_settings', href: '/admin/integrations/meta-whatsapp' },
   { statusKey: 'voximplant', key: 'voximplant', permission: 'manage_voice', href: '/admin/channels' },
   { statusKey: 'elevenlabs', key: 'elevenlabs', permission: 'manage_voice', href: '/admin/voice/platform' },
   { statusKey: 'extra-sms', key: 'extra-sms', permission: 'manage_settings', href: '/admin/settings' },
