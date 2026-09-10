@@ -128,6 +128,12 @@ const EXPECTED_PERMISSION: Record<string, string | string[]> = {
   // Split by what the function does, not by which page it serves. See the header
   // of workflows.ts for why the manual run additionally needs manage_voice.
   'src/lib/data/admin/workflows.ts': ['manage_settings', 'view_customer_data'],
+  // Two keys because the module gates on WHAT A ROLE CONTROLS, not on one floor for
+  // the whole file: reads span every provider under manage_settings, while pointing
+  // voice_caller_id_* or voice_inbound_did at a different line is voice configuration
+  // and takes manage_voice. ROLE_PERMISSION in that file is keyed by the generated
+  // enum, so a role added to the database without a decision here is a tsc error.
+  'src/lib/data/admin/integrations/provider-numbers.ts': ['manage_settings', 'manage_voice'],
 };
 
 // Modules that write but are correctly exempt from naming a permission, with the
