@@ -37,6 +37,13 @@
 // Keys below were extracted from the shipped `en` resource, not guessed. Any
 // key omitted here falls back to English by `fallbackLng`, which is the right
 // failure mode: a missing translation shows English rather than a raw key.
+//
+// COVERAGE, and the two families deliberately left out. Diffing this bundle
+// against the shipped `en` resource leaves exactly `node.*` (12 keys) and
+// `aiTools.*` (4). Neither is dead weight by guesswork: `t('node.trigger.label')`
+// and `t('aiTools.title')` appear ZERO times in the shipped bundle. They
+// describe the vendor demo's own node data, and our palette comes from
+// `PALETTE_ITEMS`. Everything the SDK can actually render is translated here.
 import i18next from 'i18next';
 
 const HE = {
@@ -75,7 +82,11 @@ const HE = {
     deleteEdge: 'מחיקת חיבור',
   },
   header: {
-    folderName: 'שם התיקייה',
+    // NOT "folder name". `ProjectSelection` renders this immediately before a
+    // hardcoded " /" and then the workflow name, so it is a breadcrumb root, and
+    // KALFA has no folders. An empty string is not an option — the separator is
+    // a JSX literal and would be left dangling.
+    folderName: 'תהליך',
     projectSelection: {
       rename: 'שינוי שם',
       duplicateToDrafts: 'שכפול לטיוטות',
@@ -134,6 +145,88 @@ const HE = {
     import: 'ייבוא',
     ignoreAndImport: 'התעלמות וייבוא',
     importTip: 'הדרך הפשוטה לראות את המבנה הצפוי היא לבנות תהליך ולייצא אותו.',
+  },
+  decisionBranches: {
+    // Reachable: `action.*` and `logic.condition` use `NodeType.DecisionNode`,
+    // whose BODY renders the branch cards — not only the properties panel.
+    branch: 'ענף #{{index}}',
+    branches: 'ענפים',
+    addBranch: 'הוספת ענף',
+    label: 'כותרת',
+  },
+  conditions: {
+    title: 'עורך התנאים',
+    subtitle: 'הגדירו את כללי התנאי',
+    cancel: 'ביטול',
+    confirm: 'אישור',
+    // i18next picks the suffix from `Intl.PluralRules('he')`, whose categories
+    // are one / two / other — there is NO zero category in Hebrew, so the SDK's
+    // own `totalNumber_zero` can never be selected here and is not translated.
+    // A count of 0 lands on `_other`, which is why that string reads naturally
+    // with a leading number.
+    totalNumber: '{{count}} תנאים',
+    totalNumber_one: 'תנאי אחד',
+    totalNumber_two: 'שני תנאים',
+    totalNumber_other: '{{count}} תנאים',
+    dependencies: 'תלויות',
+    compare: {
+      or: 'או',
+      and: 'וגם',
+      one: 'אחד',
+      all: 'הכול',
+      isEqual: 'שווה ל',
+      isNotEqual: 'אינו שווה ל',
+      isGreaterThan: 'גדול מ',
+      isLessThan: 'קטן מ',
+      isLessThanOrEqual: 'קטן או שווה ל',
+      isGreaterThanOrEqual: 'גדול או שווה ל',
+      isContaining: 'מכיל',
+      isNotContaining: 'אינו מכיל',
+      isBefore: 'לפני',
+      isAfter: 'אחרי',
+    },
+  },
+  variables: {
+    variablesListIsEmptyHint: 'בדקו שהצעד מחובר לתרשים.',
+    // Mirrors the SDK's own string, unclosed braces included: it is telling the
+    // owner what to TYPE, and `{{` with no closing pair is left literal by
+    // i18next's interpolation regex rather than being substituted.
+    placeholderForStringOrVariable: 'הקלידו ערך או בחרו משתנה באמצעות {{...',
+    placeholderTypeNumber: 'הקלידו ערך מספרי',
+    placeholderTypeString: 'הקלידו ערך טקסט',
+    typeValue: 'הקלידו ערך',
+    pickVariable: 'בחירת משתנה',
+    clickToPickVariable: 'לחצו כדי לבחור משתנה',
+    defaultValue: 'ערך ברירת מחדל',
+    variableNotFound: 'המשתנה לא נמצא.',
+    removeVariableWarning: 'מחיקת המשתנה תסיר לצמיתות את ההגדרות שלו.',
+    removeVariableIsBlocked: 'המשתנה בשימוש בצעדים הבאים ולכן אי אפשר למחוק אותו.',
+  },
+  workflowsSettings: {
+    // Unreachable until the app bar was restored: the modal opens from
+    // `ProjectSelection`'s kebab, and the previous hand-rolled toolbar had no
+    // route to `openSettings` at all.
+    modalTitle: 'הגדרות',
+    modalDescription: 'ניהול מאפייני התהליך',
+    tab: {
+      general: 'כללי',
+      generalDescription: 'הגדרות כלליות',
+      globalVariables: 'משתנים גלובליים',
+      globalVariablesDescription: 'ניהול משתנים לשימוש חוזר בתהליך',
+      addVariable: 'הוספת משתנה',
+      editVariable: 'עריכת משתנה',
+      removeVariable: 'מחיקת משתנה',
+      emptyVariablesList: 'לא הוגדרו משתנים.',
+    },
+  },
+  validation: {
+    // Surfaced by the import modal, which reached the UI for the first time
+    // with the app bar's dots menu.
+    error: {
+      notJSONObject: 'הערך שהוזן אינו אובייקט JSON תקין.',
+      nodesWithoutDefinition: 'צעדים שאינם נתמכים: {{nodesIds}}',
+      nodesWithErrors: 'צעדים עם שגיאות: {{nodesIds}}',
+    },
   },
   deleteConfirmation: {
     text: 'האם למחוק?',

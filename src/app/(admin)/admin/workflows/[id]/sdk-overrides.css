@@ -40,19 +40,50 @@ code, kbd, samp, pre {
   overflow: hidden;
   background: var(--background);
 }
-.kalfa-workflow-toolbar {
-  flex: none;
-  display: flex;
+/* ------------------------------------------------------------------------
+   The SDK's own app bar, mounted in our header.
+
+   `<WorkflowBuilder.TopBar />` is the un-Suspended `AppBarContainer` (verified
+   in dist/index.js: the export resolves to `Lb`, not the lazy wrapper the
+   DefaultLayout uses), so its root `<div>` is the DIRECT child of our header —
+   which is what makes `> div` a precise, hash-free handle on it.
+   ------------------------------------------------------------------------ */
+.kalfa-workflow-toolbar { flex: none; padding: .5rem; }
+.kalfa-workflow-toolbar > div {
+  /* The bar declares no `position`, and its middle child — the workflow name —
+     is `position:absolute; left:50%; transform:translate(-50%)`. In the SDK's
+     own DefaultLayout that resolves against a full-width absolutely-positioned
+     root, so it happens to land centred. Here it would resolve against
+     `.kalfa-workflow-editor`, i.e. the whole editor including the canvas and the
+     log panel. One line makes the anchor the bar itself, as intended. */
+  position: relative;
+  /* The bar is `display:flex` with no wrap. Nothing forced it to overflow while
+     it was hidden behind DefaultLayout's full-page width; in an admin route
+     beside a sidebar it does. */
   flex-wrap: wrap;
-  align-items: end;
-  gap: .75rem;
-  padding: .75rem;
-  border-bottom: 1px solid var(--border);
-  background: var(--card);
+  row-gap: .5rem;
 }
-.kalfa-workflow-name { display: flex; flex-direction: column; gap: .25rem; width: 12rem; min-width: 0; }
-.kalfa-workflow-tools { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; }
-.kalfa-workflow-tools button { min-height: 2.75rem; }
+/* The two controls injected into `OptionalAppBarControls`. Icon-sized to match
+   the read-only and dark-mode toggles beside them — a Hebrew text label here is
+   what made the previous hand-rolled toolbar overflow on a phone. */
+.kalfa-workflow-appbar-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: inherit;
+  border-radius: var(--ax-token-radius-button-l, .5rem);
+  cursor: pointer;
+  transition: background-color var(--wb-transition, .15s);
+}
+.kalfa-workflow-appbar-button:hover:not(:disabled) { background: color-mix(in oklab, currentColor 12%, transparent); }
+.kalfa-workflow-appbar-button[aria-pressed='true'] { background: color-mix(in oklab, currentColor 20%, transparent); }
+.kalfa-workflow-appbar-button:disabled { opacity: .4; cursor: not-allowed; }
+.kalfa-workflow-appbar-button:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
 .kalfa-workflow-workspace {
   position: relative;
   display: flex;
@@ -94,7 +125,14 @@ code, kbd, samp, pre {
    need updating."
    So these break on the next minor — silently, as CSS always does. On upgrade,
    re-derive them from the shipped markup before assuming the panel still
-   sizes. Nothing in tsc, lint or the build can see this. */
+   sizes. Nothing in tsc, lint or the build can see this.
+
+   The container query at the bottom of this file matches three more by
+   substring — 'toolbar', 'project-selection' and 'title'. Those belong to the
+   SDK's OWN app-bar CSS module rather than to overflow-ui, so the library swap
+   does not touch them, but the module hash changes on any rebuild and a rename
+   upstream would be just as silent. Same rule: re-derive from the shipped
+   markup, and re-check the phone. */
 .kalfa-workflow-palette-panel > [class*='_sidebar_'],
 .kalfa-workflow-properties-panel > [class*='_sidebar_'] { width: 100%; max-height: 100%; min-height: 0; }
 .kalfa-workflow-palette-panel > [class*='_sidebar_'] > [class*='_content_'],
@@ -106,10 +144,30 @@ code, kbd, samp, pre {
 .kalfa-workflow-log [data-log-body] { max-height: min(12rem, 22dvh); }
 
 @container workflow (max-width: 900px) {
-  .kalfa-workflow-toolbar { gap: .5rem; padding: .5rem; }
-  .kalfa-workflow-name { width: 100%; }
-  .kalfa-workflow-tools { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); width: 100%; gap: .375rem; }
-  .kalfa-workflow-tools button { min-width: 0; padding-inline: .25rem; gap: .25rem; font-size: .75rem; white-space: normal; }
+  .kalfa-workflow-toolbar { padding: .375rem; }
+  .kalfa-workflow-toolbar > div { padding: .5rem; }
+  /* Their 2rem gap between the logo and the Save button, which buys nothing at
+     this width. */
+  .kalfa-workflow-editor .kalfa-workflow-toolbar [class*='toolbar'] { gap: .75rem; }
+  /* ⚠️ THE SDK DELETES THE WORKFLOW NAME ON A PHONE. This undoes that.
+     `@media screen and (max-width:800px) { ._container_ ._project-selection_
+     { display:none } }` is how the vendor's demo avoids an overflowing app bar
+     — and it is why their screenshots look clean where ours did not. We cannot
+     take that trade: the name is also the only route to the Settings menu, and
+     an admin who cannot see which workflow they are editing is worse off than
+     one with a two-row bar.
+     Their rule keys off the VIEWPORT; everything else in this editor keys off
+     the CONTAINER (the admin sidebar eats width the viewport does not know
+     about). Re-expressing it here puts both under one breakpoint. */
+  .kalfa-workflow-editor .kalfa-workflow-toolbar [class*='project-selection'] {
+    display: flex;
+    position: static;
+    transform: none;
+    order: -1;
+    flex: 1 1 100%;
+    min-width: 0;
+  }
+  .kalfa-workflow-editor .kalfa-workflow-toolbar [class*='title'] { margin-inline-start: .5rem; margin-left: 0; }
   .kalfa-workflow-palette-panel,
   .kalfa-workflow-properties-panel {
     position: absolute;

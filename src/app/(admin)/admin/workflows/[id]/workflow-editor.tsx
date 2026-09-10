@@ -1,17 +1,17 @@
 'use client';
 
 import {
+  Icon,
   WorkflowBuilder,
   useSingleSelectedElement,
   useStore,
-  useWorkflowBuilderActions,
   type DidSaveStatus,
   type IntegrationDataFormat,
   type OnSaveParams,
   type WorkflowBuilderIsValidConnection,
 } from '@workflowbuilder/sdk';
-import { Eye, GitBranch, ListTree, Maximize, Pencil, Save, Settings2, X } from 'lucide-react';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { X } from 'lucide-react';
+import { useCallback, useEffect, useRef } from 'react';
 
 import '@workflowbuilder/sdk/style.css';
 // Immediately after, so its unlayered counters land on top of the SDK's reset.
@@ -23,11 +23,12 @@ import { PALETTE_ITEMS } from '@/lib/workflow/catalogue/schemas';
 import { DIAGRAM_TEMPLATES } from '@/lib/workflow/catalogue/templates';
 import { applyHebrewToSdk } from '@/lib/workflow/i18n-he';
 
+import { appBarPlugin } from './app-bar';
 import { ExecutionHighlighting } from './highlighting';
 import { ExecutionLogPanel } from './log-panel';
-import { useAutoSave } from './use-autosave';
 import { executionMarkersPlugin } from './node-markers';
 import { resetExecution } from './use-execution-store';
+import { resetPanels, setEditorCompact, setPropertiesOpen, usePanelsStore } from './use-panels-store';
 
 type Props = {
   workflowId: string;
@@ -61,7 +62,7 @@ type Props = {
 const isValidConnection: WorkflowBuilderIsValidConnection = ({ targetNode }) =>
   !isTriggerType(targetNode.data.type);
 
-const PLUGINS = [executionMarkersPlugin];
+const PLUGINS = [executionMarkersPlugin, appBarPlugin];
 
 // Applied at module scope, which runs AFTER the SDK's own import has
 // initialised i18next (the import above is evaluated first, in source order).
@@ -84,7 +85,11 @@ export function WorkflowEditor({
   useEffect(() => {
     useStore.setState({ globalVariables: initialGlobalVariables ?? {} });
     resetExecution();
-    return resetExecution;
+    resetPanels();
+    return () => {
+      resetExecution();
+      resetPanels();
+    };
   }, [workflowId, initialGlobalVariables]);
 
   return (
@@ -99,6 +104,12 @@ export function WorkflowEditor({
       <WorkflowBuilder.Root
         key={workflowId}
         name={name}
+        // Replaces the vendor's "Workflow Builder" wordmark, which is their
+        // branding on our admin page. An element is rendered as-is (the prop
+        // also takes an image URL or a { light, dark } pair, neither of which
+        // we need), and an icon costs a quarter of the wordmark's width — which
+        // is what the app bar runs out of first on a phone.
+        logo={<Icon name="FlowArrow" size="large" aria-label="עורך התהליכים" />}
         layoutDirection={layoutDirection}
         nodeTypes={PALETTE_ITEMS}
         // Populates the "בחירת תבנית" modal, which offered only "קנבס ריק"
@@ -131,21 +142,37 @@ export function WorkflowEditor({
 /**
  * Custom layout for the embedded admin editor.
  *
- * The SDK docs explicitly allow composing Canvas / Palette / PropertiesPanel as
- * children of Root. That is the right integration point here: the built-in
- * DefaultLayout brings an English app bar, logo, and permanent side panels that
- * work for the SDK demo page but crowd this RTL admin route on phones.
+ * The SDK docs explicitly allow composing TopBar / Canvas / Palette /
+ * PropertiesPanel as children of Root, and that is what this is. What it does
+ * NOT do any more is replace the app bar.
+ *
+ * The reason it once did — "TopBar ships English controls" — stopped being true
+ * the moment `i18n-he.ts` landed: the bar renders entirely through `t(...)`, and
+ * that file now supplies Hebrew for every key it reaches. What the app bar is
+ * NOT is an overlay: `._container_` is a plain `display:flex; height:auto;
+ * width:100%` div in normal flow (verified in the shipped stylesheet), unlike
+ * Palette and PropertiesPanel, which the SDK sizes from its own row and which
+ * are the reason DefaultLayout could not simply be dropped into hand-rolled
+ * columns. So the bar composes here and the panels still do not.
+ *
+ * Mounting it back returns the SDK's auto-save and save-on-unload — both live
+ * inside its Save button — plus Settings, Import and Export, which existed in
+ * `useWorkflowBuilderActions` all along with nothing wired to them.
  */
 function WorkflowEditorLayout() {
   const frameRef = useRef<HTMLDivElement>(null);
   const toggleSidebar = useStore((s) => s.toggleSidebar);
   const isPaletteExpanded = useStore((s) => s.isSidebarExpanded);
+  const isPropertiesOpen = usePanelsStore((s) => s.isPropertiesOpen);
+  const isCompact = usePanelsStore((s) => s.isCompact);
   const selected = useSingleSelectedElement();
   const hasSelection = Boolean(selected?.node || selected?.edge);
-  const [isCompact, setCompact] = useState(false);
-  const [isPropertiesOpen, setPropertiesOpen] = useState(false);
 
   // Measure the editor, since the admin sidebar also consumes viewport width.
+  //
+  // Published to the panels store rather than kept local: the buttons that read
+  // it are injected into the app bar at module scope and have no props path
+  // back to here. See use-panels-store.ts.
   useEffect(() => {
     const frame = frameRef.current;
     if (!frame) return;
@@ -154,7 +181,7 @@ function WorkflowEditorLayout() {
       const compact = frame.clientWidth <= 900;
       if (compact === previous) return;
       previous = compact;
-      setCompact(compact);
+      setEditorCompact(compact);
       toggleSidebar(!compact);
       setPropertiesOpen(false);
     });
@@ -163,11 +190,16 @@ function WorkflowEditorLayout() {
   }, [toggleSidebar]);
 
   const selectionKey = selected?.node?.id ?? selected?.edge?.id ?? null;
-  const [lastSelectionKey, setLastSelectionKey] = useState(selectionKey);
-  if (selectionKey !== lastSelectionKey) {
-    setLastSelectionKey(selectionKey);
-    setPropertiesOpen(hasSelection);
-  }
+
+  // An EFFECT, not the render-phase `if (key !== lastKey)` this used to be.
+  //
+  // That pattern is only sound for a component's own `useState`. `isPropertiesOpen`
+  // now lives in a module store, so writing it during render mutates state outside
+  // React — which tears under a double-render and is a side effect in the render
+  // phase besides. It has to move here.
+  useEffect(() => {
+    setPropertiesOpen(Boolean(selectionKey));
+  }, [selectionKey]);
 
   useEffect(() => {
     if (isCompact && selectionKey) toggleSidebar(false);
@@ -200,19 +232,9 @@ function WorkflowEditorLayout() {
 
   return (
     <div ref={frameRef} className="workflow-builder-root kalfa-workflow-editor">
-      <EditorToolbar
-        canOpenProperties={hasSelection}
-        paletteOpen={isPaletteExpanded}
-        propertiesOpen={isPropertiesOpen && hasSelection}
-        onOpenPalette={() => {
-          toggleSidebar(!isPaletteExpanded);
-          if (isCompact) setPropertiesOpen(false);
-        }}
-        onOpenProperties={() => {
-          setPropertiesOpen(!isPropertiesOpen);
-          if (isCompact) toggleSidebar(false);
-        }}
-      />
+      <header className="kalfa-workflow-toolbar">
+        <WorkflowBuilder.TopBar />
+      </header>
       <div
         className="kalfa-workflow-workspace"
         data-palette-expanded={isPaletteExpanded}
@@ -302,101 +324,4 @@ function makeSaveHandler(
 
     return 'success';
   };
-}
-
-/**
- * Replaces `<WorkflowBuilder.TopBar />`, which ships English controls.
- *
- * `useWorkflowBuilderActions` MUST be called from a descendant of `<Root>`:
- * outside it, `save()` resolves `'error'` and only logs a warning — the button
- * would look like it worked and save nothing. This component is rendered as a
- * child of Root above, which is what makes it correct.
- */
-function EditorToolbar({
-  canOpenProperties,
-  paletteOpen,
-  propertiesOpen,
-  onOpenPalette,
-  onOpenProperties,
-}: {
-  canOpenProperties: boolean;
-  paletteOpen: boolean;
-  propertiesOpen: boolean;
-  onOpenPalette: () => void;
-  onOpenProperties: () => void;
-}) {
-  const actions = useWorkflowBuilderActions();
-  const instance = useStore((s) => s.reactFlowInstance);
-  const documentName = useStore((s) => s.documentName);
-  const setDocumentName = useStore((s) => s.setDocumentName);
-  const isReadOnly = useStore((s) => s.isReadOnlyMode);
-  const [saving, setSaving] = useState(false);
-  const [saveError, setSaveError] = useState(false);
-
-  // Use canvas-relative bounds. The SDK's useFitView calculates padding from
-  // window coordinates, which is incorrect inside an embedded admin editor.
-  const fitView = useCallback(() => {
-    void instance?.fitView({ padding: 0.2, maxZoom: 1, duration: 200 });
-  }, [instance]);
-
-  const save = useCallback(async () => {
-    setSaving(true);
-    setSaveError(false);
-    try {
-      setSaveError((await actions.save()) === 'error');
-    } catch {
-      setSaveError(true);
-    } finally {
-      setSaving(false);
-    }
-  }, [actions]);
-
-  // Restores what replacing `WorkflowBuilder.TopBar` with this toolbar silently
-  // removed: the SDK's auto-save and its save-on-unload both live inside the
-  // TopBar's own Save button, so they left with it. See use-autosave.ts.
-  //
-  // Gated on the same two conditions as the manual button below — an editor in
-  // read-only mode must not write, and a workflow with no name must not be
-  // persisted while the owner is being shown that the name is required.
-  useAutoSave(save, !isReadOnly && Boolean(documentName?.trim()));
-
-  return (
-    <header className="kalfa-workflow-toolbar">
-      <label className="kalfa-workflow-name">
-        <span className="text-xs text-muted-foreground">שם התהליך</span>
-        <input
-          aria-label="שם התהליך"
-          value={documentName ?? ''}
-          onChange={(event) => setDocumentName(event.target.value)}
-          readOnly={isReadOnly}
-          className="min-h-11 min-w-0 rounded-md border border-input bg-background px-3 text-sm"
-        />
-      </label>
-      <div className="kalfa-workflow-tools" role="group" aria-label="כלי עריכת תהליך">
-        <Button type="button" variant="outline" aria-expanded={paletteOpen} aria-controls="workflow-palette" onClick={onOpenPalette}>
-          <ListTree aria-hidden="true" />צעדים
-        </Button>
-        <Button type="button" variant="outline" aria-expanded={propertiesOpen} aria-controls="workflow-properties" onClick={onOpenProperties} disabled={!canOpenProperties}>
-          <Settings2 aria-hidden="true" />מאפיינים
-        </Button>
-        <Button type="button" onClick={save} disabled={saving || !documentName?.trim()}>
-          <Save aria-hidden="true" />{saving ? 'שומר…' : 'שמירה'}
-        </Button>
-        <Button type="button" variant="outline" onClick={actions.toggleReadOnly} aria-pressed={isReadOnly}>
-          {isReadOnly ? <Pencil aria-hidden="true" /> : <Eye aria-hidden="true" />}
-          {isReadOnly ? 'חזרה לעריכה' : 'מצב צפייה'}
-        </Button>
-        <Button type="button" variant="outline" disabled={isReadOnly} onClick={() => {
-          actions.toggleLayoutDirection({ flipPositions: true });
-          requestAnimationFrame(fitView);
-        }}>
-          <GitBranch aria-hidden="true" />כיוון הזרימה
-        </Button>
-        <Button type="button" variant="outline" onClick={fitView}>
-          <Maximize aria-hidden="true" />הצגת הכול
-        </Button>
-      </div>
-      {saveError && <p role="alert" className="w-full text-sm text-destructive">השמירה נכשלה. נסו שוב.</p>}
-    </header>
-  );
 }
