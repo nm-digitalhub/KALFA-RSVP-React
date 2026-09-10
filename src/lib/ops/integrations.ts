@@ -3,6 +3,7 @@ import 'server-only';
 import { createClient } from '@/lib/supabase/server';
 import { envAllowsLiveCalls } from '@/lib/data/voximplant-config';
 import { getGa4ConfigStatus } from '@/lib/analytics/ga4-config';
+import { graphConfigured } from '@/lib/microsoft/graph-client';
 import type { JobHealthRow } from './db-health';
 
 // Provider status for the admin Integrations panel. Makes ZERO live calls to any
@@ -22,10 +23,18 @@ import type { JobHealthRow } from './db-health';
 // in process memory for no reason. `integrations_configured_flags()` answers the same
 // question in SQL and returns booleans only.
 //
-// Exchange (IONOS EWS) is NOT here — it has its own dedicated panel showing EVERY
-// admin's connection, while listMyExchangeConnections() returns only the caller's
-// own. A row here could never be more than the weaker of the two. Anything composing
-// a Microsoft card must read the dedicated source, not this list.
+// Microsoft IS here now, and the reason it was not is worth keeping. The candidate
+// source used to be exchange_connections, whose two readers are both wrong for a
+// status row: listMyExchangeConnections() returns only the CALLER's connections, and
+// the org-wide reader is gated on requirePlatformOwner(), which REDIRECTS. A row
+// built on either could never be more than the weaker of the two.
+//
+// Graph replaced that source (2026-09-10). The app authenticates as ITSELF with a
+// certificate, so `graphConfigured()` is an env-only, credential-free, network-free
+// answer about the deployment rather than about whoever is looking — the same shape
+// as the GA4 row below. The DEEP check (tenant, mailbox, certificate expiry) lives in
+// src/lib/microsoft/health.ts and runs on its own page, not here: this file makes no
+// live third-party call, and that rule did not change.
 
 export interface IntegrationStatus {
   key: string;
@@ -210,6 +219,23 @@ export async function getIntegrationsStatus(jobHealth: JobHealthRow[]): Promise<
       // while-still-marked-verified window IS silent. See src/lib/email/health.ts.
       lastCheckedAt: lastCompletedFor(jobHealth, 'email-health-check'),
       healthCheckAvailable: true,
+    },
+    {
+      key: 'microsoft',
+      label: 'Microsoft 365',
+      // Env-only: the app identity is a tenant id, a client id and a certificate
+      // path, none of which is a row in app_settings. No network call, no credential
+      // read — graphConfigured() only tests the three for presence.
+      configured: graphConfigured(),
+      // No switch column exists, and inventing one would be worse than saying so.
+      enabled: graphConfigured(),
+      lastCheckedAt: null,
+      // `false`, and the two fields have to agree — the Slack lesson. There is no
+      // cron queue for Microsoft (queue-schedule.ts lists six, none of them this),
+      // so `true` would print "נבדק לאחרונה: טרם רץ" and claim a scheduled job that
+      // has never fired. The real check runs when someone opens the provider page.
+      healthCheckAvailable: false,
+      note: 'בדיקה מלאה בעמוד הספק — תוקף התעודה, התיבה והדומיינים',
     },
     {
       key: 'ga4',

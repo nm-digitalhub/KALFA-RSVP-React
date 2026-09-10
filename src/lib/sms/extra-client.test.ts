@@ -5,7 +5,8 @@ import { describe, expect, it, vi, beforeEach } from 'vitest';
 
 vi.mock('server-only', () => ({}));
 
-import { daysUntil, getAuthKey, mapSmsErrors } from './extra-client';
+import { daysUntil } from '@/lib/date';
+import { getAuthKey, mapSmsErrors } from './extra-client';
 
 const KEY = 'EXTRA-KEY-SECRET';
 

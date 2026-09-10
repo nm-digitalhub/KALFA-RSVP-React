@@ -36,6 +36,7 @@ export type IntegrationKey =
   | 'resend-email'
   | 'sumit'
   | 'slack'
+  | 'microsoft'
   | 'elevenlabs';
 
 interface CardSpec {
@@ -63,6 +64,7 @@ const CARDS: CardSpec[] = [
   { statusKey: 'resend-email', key: 'resend-email', permission: 'manage_settings', href: '/admin/integrations/resend-email' },
   { statusKey: 'sumit', key: 'sumit', permission: 'manage_settings', href: '/admin/integrations/sumit' },
   { statusKey: 'slack', key: 'slack', permission: 'manage_settings', href: '/admin/integrations/slack' },
+  { statusKey: 'microsoft', key: 'microsoft', permission: 'manage_settings', href: '/admin/integrations/microsoft' },
 ];
 
 // GA4 is deliberately absent. getIntegrationsStatus() reports it because Debug Mode

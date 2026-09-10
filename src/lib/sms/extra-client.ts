@@ -1,6 +1,6 @@
 import 'server-only';
 
-import { ISRAEL_TIME_ZONE } from '@/lib/date';
+import { daysUntil } from '@/lib/date';
 
 // The read-only half of the ExtrA (exm.co.il) API: verify the key, and turn a
 // rejected send into something an operator can act on.
@@ -58,40 +58,6 @@ const KEY_MESSAGES: Record<ExtraKeyFailure, string> = {
   unreachable: 'לא ניתן להגיע ל-ExtrA',
 };
 
-/**
- * Whole days from today to a Y-m-d expiry date, both read as CALENDAR DATES in
- * Asia/Jerusalem.
- *
- * Three decisions, each of which was wrong on the first attempt:
- *
- *  1. Date-only arithmetic. The API gives a date with no time; subtracting it from
- *     `Date.now()` would make "expires today" read as a fraction and floor to -1 for
- *     most of the day.
- *  2. Asia/Jerusalem explicitly, NOT the process's local zone. ExtrA is an Israeli
- *     provider and its dates are Israeli calendar dates. The first version used
- *     `now.getFullYear()/getMonth()/getDate()`, which is the SERVER's zone — correct
- *     only by luck on a machine set to Israel time, and silently off by a day on one
- *     that is not. The worker and the app need not share a timezone with the vendor.
- *  3. null for anything unparseable, never a number. An expiry we cannot read must
- *     not become "expires soon" OR "expires never" — both are claims.
- */
-export function daysUntil(ymd: string | null | undefined, now: Date = new Date()): number | null {
-  if (typeof ymd !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(ymd)) return null;
-  const [y, m, d] = ymd.split('-').map(Number);
-  const target = Date.UTC(y, m - 1, d);
-
-  // `en-CA` renders as Y-m-d, which is the format we already have on the other side.
-  const todayInIsrael = new Intl.DateTimeFormat('en-CA', {
-    timeZone: ISRAEL_TIME_ZONE,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).format(now);
-  const [ty, tm, td] = todayInIsrael.split('-').map(Number);
-  const today = Date.UTC(ty, tm - 1, td);
-
-  return Math.round((target - today) / 86_400_000);
-}
 
 /**
  * `GET /auth/key/` — the spec's own suggested connectivity check: "Call with no
