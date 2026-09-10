@@ -207,7 +207,12 @@ export function createActivityRunner<TNode extends RunnableNode>(
         // therefore never has to know templates exist.
         const config = resolveConfigTemplates(rawConfig, context) as Record<string, unknown>;
 
-        const result = await handler(config, { trigger, deps: { guests, alerts } });
+        const result = await handler(config, {
+          runId,
+          nodeId: node.id,
+          trigger,
+          deps: { guests, alerts },
+        });
         // Persisted AFTER the side effect and BEFORE the runner propagates, so a
         // crash between the two leaves the row 'running' — visible as stuck
         // rather than invisible as never-attempted.

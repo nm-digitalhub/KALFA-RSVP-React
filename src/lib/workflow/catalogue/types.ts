@@ -24,6 +24,7 @@ export const NODE_TYPES = [
   'logic.condition',
   'action.update_guest_status',
   'action.send_whatsapp',
+  'action.start_rsvp_ai_callback',
   'action.notify_team',
   'logic.set_value',
 ] as const;
@@ -236,6 +237,10 @@ export type SendWhatsappConfig = {
   body: string;
 };
 
+// Starts the existing RSVP voice agent through KALFA's production dispatcher.
+// Agent/provider/model/knowledge configuration deliberately lives outside the diagram.
+export type StartRsvpAiCallbackConfig = Record<string, unknown>;
+
 // An internal alert to the KALFA team — never to a guest.
 //
 // The one action here whose audience is us. It exists because an automation
@@ -278,6 +283,7 @@ export type KalfaNodeConfig =
   | { type: 'logic.condition'; config: ConditionConfig }
   | { type: 'action.update_guest_status'; config: UpdateGuestStatusConfig }
   | { type: 'action.send_whatsapp'; config: SendWhatsappConfig }
+  | { type: 'action.start_rsvp_ai_callback'; config: StartRsvpAiCallbackConfig }
   | { type: 'action.notify_team'; config: NotifyTeamConfig }
   | { type: 'logic.set_value'; config: SetValueConfig };
 

@@ -13,6 +13,7 @@ export const CATALOGUE: readonly CatalogueEntry[] = [
   { type: 'logic.condition', isTrigger: false },
   { type: 'action.update_guest_status', isTrigger: false },
   { type: 'action.send_whatsapp', isTrigger: false },
+  { type: 'action.start_rsvp_ai_callback', isTrigger: false },
   { type: 'action.notify_team', isTrigger: false },
   { type: 'logic.set_value', isTrigger: false },
 ];

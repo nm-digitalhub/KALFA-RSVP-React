@@ -85,6 +85,8 @@ export type WorkflowTriggerPayload = {
 };
 
 export type StepContext = {
+  runId: string;
+  nodeId: string;
   trigger: WorkflowTriggerPayload;
   deps: { guests: GuestActionsPort; alerts: TeamAlertsPort };
 };
@@ -325,6 +327,45 @@ const updateGuestStatus: StepHandler = async (config, ctx) => {
 // Total over KalfaNodeType: adding a type to the catalogue without a handler is
 // a compile error, not a run-time surprise.
 // ---------------------------------------------------------------------------
+// action.start_rsvp_ai_callback
+// ---------------------------------------------------------------------------
+
+const startRsvpAiCallback: StepHandler = async (_config, ctx) => {
+  const dispatch = ctx.deps.guests.startRsvpAiCallback;
+  if (!dispatch) {
+    throw new PermanentNodeExecutionError(
+      'voice_agent_not_wired',
+      'צומת סוכן הקול אינו מחובר למימוש השרת.',
+    );
+  }
+
+  const outcome = await dispatch({
+    runId: ctx.runId,
+    nodeId: ctx.nodeId,
+    eventId: ctx.trigger.eventId,
+    contactId: ctx.trigger.contactId,
+  });
+
+  if (!outcome.ok) {
+    throw new PermanentNodeExecutionError(
+      'voice_agent_dispatch_refused',
+      `הפעלת שיחת הסוכן נדחתה (${outcome.reason ?? outcome.status}).`,
+    );
+  }
+
+  return {
+    output: {
+      started: true,
+      status: outcome.status,
+      ...(outcome.attemptId ? { attemptId: outcome.attemptId } : {}),
+      ...(outcome.callSessionHistoryId !== undefined
+        ? { callSessionHistoryId: outcome.callSessionHistoryId }
+        : {}),
+    },
+  };
+};
+
+// ---------------------------------------------------------------------------
 // action.send_whatsapp
 // ---------------------------------------------------------------------------
 
@@ -439,6 +480,7 @@ export const STEP_HANDLERS: Record<KalfaNodeType, StepHandler> = {
   'logic.condition': condition,
   'action.update_guest_status': updateGuestStatus,
   'action.send_whatsapp': sendWhatsapp,
+  'action.start_rsvp_ai_callback': startRsvpAiCallback,
   'action.notify_team': notifyTeam,
   'logic.set_value': setValue,
 };

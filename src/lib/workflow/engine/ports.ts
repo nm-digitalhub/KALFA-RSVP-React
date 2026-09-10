@@ -167,6 +167,24 @@ export interface GuestActionsPort {
   ): Promise<{ id: string; rsvp_token: string }[]>;
 
   /**
+   * Start the existing production RSVP voice agent for the contact that owns
+   * this workflow run. Optional only so recording/test ports that predate the
+   * node fail closed rather than gaining any network capability implicitly.
+   */
+  startRsvpAiCallback?(input: {
+    runId: string;
+    nodeId: string;
+    eventId: string;
+    contactId: string;
+  }): Promise<{
+    ok: boolean;
+    status: string;
+    reason?: string;
+    attemptId?: string;
+    callSessionHistoryId?: number;
+  }>;
+
+  /**
    * Record an RSVP through the same atomic `submit_rsvp` gate the public form
    * uses. No RSVP rule is reimplemented in a workflow step.
    */

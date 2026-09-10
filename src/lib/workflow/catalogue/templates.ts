@@ -323,6 +323,65 @@ const rsvpWithReply: DiagramModel = {
   },
 };
 
+// ---------------------------------------------------------------------------
+// Template 3 — guest-initiated RSVP voice callback
+// ---------------------------------------------------------------------------
+
+const rsvpAiVoiceCallback: DiagramModel = {
+  name: 'בקשת שיחה עם סוכן RSVP קולי',
+  layoutDirection: 'RIGHT',
+  diagram: {
+    nodes: [
+      {
+        id: 'voice-trigger',
+        type: 'start-node',
+        position: { x: 0, y: 120 },
+        data: {
+          segments: [],
+          type: 'trigger.whatsapp_inbound',
+          icon: 'WhatsappLogo',
+          properties: {
+            label: 'בקשת שיחה נכנסת',
+            description: 'מתחיל רק כשהודעת האורח מכילה את מילת ההפעלה',
+            keyword: 'שיחה',
+          },
+        },
+      },
+      {
+        id: 'voice-agent-call',
+        type: 'decision-node',
+        position: { x: 420, y: 120 },
+        data: {
+          segments: [],
+          type: 'action.start_rsvp_ai_callback',
+          icon: 'PhoneCall',
+          properties: {
+            label: 'הפעלת סוכן RSVP קולי',
+            description: 'מפעיל שיחה חוזרת דרך Voximplant אל סוכן ה-RSVP הקיים ב-ElevenLabs',
+            status: 'active',
+            errorPolicy: 'fail',
+            decisionBranches: [
+              { id: 'ok', sourceHandle: 'source:inner:ok', label: 'הצליח' },
+              { id: 'error', sourceHandle: 'source:inner:error', label: 'נכשל' },
+            ],
+          },
+        },
+      },
+    ],
+    edges: [
+      {
+        id: 'voice-e1',
+        source: 'voice-trigger',
+        sourceHandle: SOURCE,
+        target: 'voice-agent-call',
+        targetHandle: TARGET,
+        type: 'labelEdge',
+      },
+    ],
+    viewport: { x: 0, y: 0, zoom: 1 },
+  },
+};
+
 /**
  * Built at MODULE SCOPE, the same requirement as `PALETTE_ITEMS`: upstream
  * documents `diagramTemplates` as needing a stable reference, and a fresh array
@@ -340,5 +399,11 @@ export const DIAGRAM_TEMPLATES: TemplateModel[] = [
     name: 'אישור הגעה עם תשובה לאורח',
     value: rsvpWithReply,
     icon: 'WhatsappLogo',
+  },
+  {
+    id: 3,
+    name: 'בקשת שיחה עם סוכן RSVP קולי',
+    value: rsvpAiVoiceCallback,
+    icon: 'PhoneCall',
   },
 ];

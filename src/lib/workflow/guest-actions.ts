@@ -15,9 +15,14 @@ import { createAdminClient } from '@/lib/supabase/admin';
 import { sendWhatsAppText } from '@/lib/whatsapp/client';
 
 import type { GuestActionsPort } from './engine/ports';
+import { dispatchWorkflowRsvpAiCallback } from './voice-agent-actions';
 
 export function createGuestActions(): GuestActionsPort {
   return {
+    async startRsvpAiCallback(input) {
+      return dispatchWorkflowRsvpAiCallback(input);
+    },
+
     async getGuestsForContact(eventId, contactId) {
       // `full_name` is dropped here deliberately: the port's shape is the whole
       // set of guest data a step handler can reach, and a handler has no reason

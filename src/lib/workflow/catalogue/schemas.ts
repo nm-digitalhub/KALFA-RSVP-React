@@ -461,6 +461,42 @@ const setValueUiSchema: UISchema = {
 };
 
 // ---------------------------------------------------------------------------
+// action.start_rsvp_ai_callback
+// ---------------------------------------------------------------------------
+
+const startRsvpAiCallbackSchema = {
+  type: 'object',
+  required: ['label', 'description'],
+  properties: {
+    ...sharedProperties,
+    ...statusProperty,
+    ...actionBranchesProperty,
+    errorPolicy: { type: 'string', options: Object.values(errorPolicyOptions) },
+  },
+} satisfies NodeSchema;
+const startRsvpAiCallbackScope = getScope<typeof startRsvpAiCallbackSchema>;
+const startRsvpAiCallbackUiSchema: UISchema = {
+  type: 'VerticalLayout',
+  elements: [
+    { type: 'Text', scope: startRsvpAiCallbackScope('properties.label'), label: 'שם הצעד' },
+    {
+      type: 'Label',
+      text: 'מפעיל את סוכן RSVP הקולי הקיים דרך Voximplant ו-ElevenLabs. המודל, מאגר הידע והכלים מוגדרים בסוכן ואינם נשמרים בתהליך.',
+    },
+    {
+      type: 'Label',
+      text: 'השיחה אסינכרונית. הצעד מחזיר את תוצאת ההפעלה; ניתוח השיחה נשמר לאחר מכן דרך ה-webhook הקיים של ElevenLabs.',
+    },
+    {
+      type: 'Select',
+      scope: startRsvpAiCallbackScope('properties.errorPolicy'),
+      label: 'אם הפעלת השיחה נכשלת',
+    },
+    statusControl(startRsvpAiCallbackScope('properties.status')),
+  ],
+};
+
+// ---------------------------------------------------------------------------
 // The palette
 // ---------------------------------------------------------------------------
 
@@ -638,6 +674,32 @@ export const PALETTE_ITEMS: PaletteItem[] = [
       label: 'שליחת הודעת וואטסאפ',
       description: 'משיב לאורח ששלח את ההודעה',
       body: '',
+      errorPolicy: errorPolicyOptions.fail.value,
+    },
+  },
+  {
+    type: 'action.start_rsvp_ai_callback' satisfies KalfaNodeType,
+    templateType: NodeType.DecisionNode,
+    label: 'הפעלת סוכן RSVP קולי',
+    description: 'מפעיל שיחה חוזרת באמצעות סוכן ה-RSVP הקולי הקיים',
+    icon: 'PhoneCall',
+    schema: startRsvpAiCallbackSchema,
+    uischema: startRsvpAiCallbackUiSchema,
+    outputSchema: {
+      type: 'default',
+      properties: {
+        started: { type: 'boolean', label: 'הופעלה' },
+        status: { type: 'string', label: 'סטטוס הפעלה' },
+        reason: { type: 'string', label: 'סיבה' },
+        attemptId: { type: 'string', label: 'מזהה ניסיון שיחה' },
+        callSessionHistoryId: { type: 'number', label: 'מזהה שיחת Voximplant' },
+      },
+    },
+    defaultPropertiesData: {
+      decisionBranches: actionBranches.map((branch) => ({ ...branch })),
+      status: nodeStatusOptions.active.value,
+      label: 'הפעלת סוכן RSVP קולי',
+      description: 'מפעיל שיחה חוזרת באמצעות סוכן ה-RSVP הקולי הקיים',
       errorPolicy: errorPolicyOptions.fail.value,
     },
   },

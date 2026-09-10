@@ -68,7 +68,7 @@ export type DryRunStep = {
  * a deliberate edit to this line, not something a new handler can do quietly.
  */
 export type DryRunEffect = {
-  kind: 'submit_rsvp' | 'send_whatsapp' | 'notify_team';
+  kind: 'submit_rsvp' | 'send_whatsapp' | 'notify_team' | 'start_rsvp_ai_callback';
   description: string;
 };
 
@@ -134,6 +134,14 @@ function createRecordingPorts(scenario: DryRunScenario) {
   };
 
   const guests: GuestActionsPort = {
+    async startRsvpAiCallback() {
+      effects.push({
+        kind: 'start_rsvp_ai_callback',
+        description: 'היה מפעיל שיחה חוזרת באמצעות סוכן RSVP הקולי הקיים.',
+      });
+      return { ok: true, status: 'dry_run' };
+    },
+
     async getGuestsForContact() {
       // Synthetic, and deliberately so. A test must not read a real guest's
       // token: the token is the credential on their public RSVP link, and a
