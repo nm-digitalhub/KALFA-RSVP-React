@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**תאריך:** 2026-09-08 · **עודכן:** 2026-09-09 · **סטטוס:** ⚠️ **כבר לא "תוכנית בלבד".** חלקים בוצעו, נפרסו ואומתו בייצור בלילה שבין 8 ל-9.9. ראו §0.0.
+**תאריך:** 2026-09-08 · **עודכן:** 2026-09-10 · **סטטוס:** ✅ **Phase 0 מוכנה ליישום.** §0.0 = מה שנפרס בלילה 8→9.9 · §0.1 = מדידת מצב 10.9 · **§0.2 = סקירת שני מומחים (10.9), 34 תיקונים הוחלו, ומה שעדיין חסום.** קראו את §0.2 לפני שמתחילים משימה.
 
 ---
 
@@ -87,6 +87,103 @@
 
 ---
 
+## 0.1 עדכון 2026-09-10 — מדידת מצב, ושלוש טענות שצריך לתקן
+
+כל שורה כאן **MEASURED היום** (`ls`, `git log`, ושאילתות ל-DB החי). הסעיף הזה נכתב אחרי קריאה מלאה של המסמך, ומטרתו למנוע ממי שיתחיל משימה להניח שמשהו כבר קיים.
+
+### תיקון 1 — הענף כבר לא מתאר את עצמו
+
+`feat/admin-integrations-consolidation` מחזיק **39 קומיטים**, ורובם המכריע הם פיצ'ר **אוטומציית תהליכים** (עורך, מנוע, קטלוג, runner על pg-boss) שאין לו קשר לתוכנית הזו. מה שכן שייך לתוכנית הוא בדיוק התשתית שב-§0.0.
+
+**Phase 0 לא התחילה.** מדוד:
+
+| מה התוכנית מבטיחה | בפועל |
+|---|---|
+| `(admin)/integrations/**` | ❌ הספרייה אינה קיימת |
+| מחיקת `(admin)/channels`, `templates`, `alerts` | ❌ שלושתם קיימים |
+| `redirects()` ב-`next.config.ts` | ❌ אין (המופע היחיד של המילה הוא הערה על `/g/:token`) |
+
+לכן הכותרת "כבר לא תוכנית בלבד" הייתה מטעה: **התשתית** בוצעה, **הפאזות** לא.
+
+### תיקון 2 — Phase 1 ו-Phase 5 לא נגעו ב-DB
+
+| טבלה / קובץ | פאזה | קיים? |
+|---|---|---|
+| `provider_numbers` · `provider_number_roles` | 1 (§4.2) | ❌ |
+| `message_template_variant_health` | 5 (§4.3) | ❌ |
+| `app_settings.whatsapp_app_id` | 2 (§4.4) | ❌ — Q5 עדיין פתוחה, וזה **חוסם** את `debugToken` (Task 2.2) ואת מנויי ה-webhook (Task 5.4) |
+| `src/lib/whatsapp/phone-numbers.ts` | 1.3 | ❌ |
+| `src/lib/sms/extra-client.ts` · `docs/extra/openapi-extra-v1.json` | 0.5 | ❌ |
+
+מה ש-§0.0 הכריז כבוצע **אומת שוב היום וכולו במקומו**: `graph-version.ts` (`'v25.0' as const`, בלי override מ-env — כפי ש-§0.0 תיקן), `whatsapp-client.ts`, `graph-client.ts`, `add-waba-phone-number.ts` (שלושתם עדיין **ללא צרכנים**), ששת מפרטי v25.0 ב-`openapi/meta/`, ו-`meta:types` + `meta:verify` ב-`package.json`.
+
+### תיקון 3 — המספרים ב-§2 ו-§1.3 התיישנו, וG2 החמיר
+
+| נתון | התוכנית (8.9) | מדוד 10.9 |
+|---|---|---|
+| `webhook_inbox` למספר **הלא-מוגדר** `1298694319994421` | 38 | **48** (אחרון 2026-09-08 19:55) |
+| `webhook_inbox` למספר ה-RSVP `1018741517998430` | 686 | **707** |
+
+עשרה אירועים נוספים הגיעו למספר שאיש אינו יודע עליו. **G2 אינו סטטי — הוא צובר.**
+
+**D4 / G11 ללא שינוי:** עדיין בדיוק שלוש תבניות ב-drift, ואותן שלוש — `kalfa_sales_signup_link_v1`, `kalfa_event_thankyou_v1`, `kalfa_event_gift_v1`, כולן `UTILITY → MARKETING`. מתוך 9 תבניות.
+
+**סיכון 7 (טוקן) — ספירה לאחור:** `data_access_expires_at = 2026-12-07`, כלומר **88 יום** מהיום. עדיין חוסם כל כתיבה ב-Phase 1+.
+
+### הערת תכנון שנרכשה ביוקר היום, ורלוונטית ל-§4.2
+
+מנוע התהליכים שנבנה בענף הזה נכשל בדיוק בכשל ש-§4.1 מנסה למנוע, ובכיוון ההפוך ממה שהתוכנית שומרת מפניו. `workflow_runs.trigger_source` הוא **טקסט חופשי** וההערה שלו במיגרציה אומרת מפורשות "the set grows with every new trigger node type" — אבל **הקוד** כתב ליטרל `'whatsapp_inbound'`. הסכמה הייתה פתוחה והקוד סגר אותה, ולכן כל דרך חדשה להתחיל תהליך הייתה מחייבת לגעת בקובץ ה-store. **התוצאה הנמדדת: 20 תהליכים שמורים, אחד מחומש, ו-0 הרצות אי-פעם** — עד שנוסף מסלול הפעלה שני (10.9).
+
+**מה זה אומר ל-§4.2:** `provider_number_roles.role` הוא `CHECK` סגור על עשרה ערכים. זו החלטה סבירה (תפקיד הוא חוזה עם קוד ריצה, לא תווית לוג — בניגוד ל-`trigger_source`), אבל היא אומרת שהוספת תפקיד = מיגרציה. כשמגיעים ל-Task 1.1 כדאי לוודא שעשרת הערכים באמת מכסים את מה שידוע היום, כי §5.3 כבר הוסיף אחד (`business_line_inbound`) אחרי הניסוח הראשון — סימן שהרשימה עוד זזה.
+
+---
+
+## 0.2 סקירת מוכנוּת 2026-09-10 — שני מומחים, 34 תיקונים
+
+שני סוכנים מומחים קראו את המסמך במלואו ובחנו אותו מול הקוד ומול ה-DB החי. **כל התיקונים שלהם כבר מוחלים בגוף המסמך** — הסעיף הזה הוא מה שנמצא ומה שנשאר פתוח.
+
+**מה נעשה:** אימות של 37 ציטוטי `file:line` מול הקוד (26 תואמים, 11 התיישנו) · 11 שאילתות קריאה ל-DB · **הרצה יבשה מלאה של §4.2–§4.4 ב-`begin; … rollback;` מול הפרויקט החי**, כולל בדיקת RLS בפועל תחת `authenticated` לא-admin ותחת `anon`. ה-DB לא נגע: `to_regclass` של שלוש הטבלאות = null אחרי, ו-`migration list --linked` = אפס drift.
+
+### פסק דין לפי פאזה
+
+| פאזה | מצב |
+|---|---|
+| **0** | ✅ **מוכנה.** כל החוסמים היו תיקוני מסמך והוחלו |
+| **1** | ✅ **מוכנה** אחרי תיקון §4.2 (ראו למטה) ואחרי `meta:verify` על שישה שדות (Task 1.3 Step 0b) |
+| **2** | ⛔ **חסומה** על §9 שאלה 5 — הכרעת בעלים על `whatsapp_app_id` |
+| **3** | ⚠️ **פתוחה אחרי הכרעה** — ההגנה שנוסחה מבטלת את הפאזה בישראל; החלופה בגוף §5.2 |
+| **4–5** | ✅ מוכנות |
+| **6** | פתוחה על D9 (compliance) |
+
+### ארבעה באגים שהיו מפילים את המיגרציה או את הפאזה
+
+1. **§4.2 נפלה בהרצה היבשה** — `ERROR 23514`, הפרת `provider_numbers_ref_or_e164`. `voximplant_caller_id` הוא `97237219347` (11 ספרות בלי `+`), ה-`case` החזיר null, ו-`provider_ref` היה null בכוונה. `on conflict do nothing` **אינו** תופס הפרת CHECK. וחשוב מזה: Task 1.3 ממזג את השורה **לפי E.164**, כך ששורה בלי e164 אינה ניתנת למיזוג לעולם וארבעת תפקידי הקול היו נתקעים. **תוקן:** נרמול E.164 לכל ארבעת המקורות.
+2. **המיגרציה לא הייתה אידמפוטנטית** למרות שההערה הבטיחה שכן — האינדקס הייחודי חלקי (`where provider_ref is not null`) ושורת Voximplant נכנסת בלי `provider_ref`. **תוקן:** `unique index … (provider) where source='backfill'`.
+3. **הקריאה הראשונה ל-Meta הייתה מחזירה שגיאה** — `last_onboarded_time` ברשימת ה-`fields`, בזמן ש-§0.0 עצמו מדד שהוא ניתן למיון אך **לא לקריאה**, ושגרף דוחה את כל הבקשה על שדה אחד. אושר עצמאית: במפרט הרשמי המקומי הוא מופיע חמש פעמים, **כולן תחת `sort` בלבד**. **תוקן:** הוסר, ונוספו שלושה צעדים חוסמים ל-Task 1.3.
+4. **טופס הסכמת הוואטסאפ היה נמחק בשקט** — המתג נוסף 8.9 (חשיפת סעיף 30א) אחרי כתיבת התוכנית, וטווחי ההעתקה ב-Task 0.3/0.4 לא כללו אותו. **תוקן:** חמישה רכיבים יתומים קיבלו קבצי יעד, כל הטווחים אומתו מחדש, ונוספה ספירת שלמות לפני המחיקה.
+
+### שלוש מלכודות שקטות שתוקנו
+
+- **`try/catch` סביב `requirePlatformPermission`** היה בולע `NEXT_REDIRECT` — והדפוס שצוטט כאסמכתא (`nav-counts`) אינו try/catch כלל אלא `hasPlatformPermission`.
+- **שער Phase 0 היה ירוק בשקר:** `admin-data-layer-coverage.test.ts` סורק מפה קשיחה, וקובץ שאינו בה אינו נבדק.
+- **`call_1` (`channel='call'`) היה מייצר התראת `NOT_FOUND` בכל סנכרון לנצח**, כי Task 5.1 לא ירש את הסינון הקיים.
+
+### הקיבעון — מה שהפך לשאלה לבעלים
+
+המשוב על סכמות סגורות נבדק מול התוכנית ונמצא בחמישה מקומות. שניים הפכו לשאלות פתוחות (§9 שאלות 9 ו-12: מיקום עמוד התבניות, ורישום נתוני לספקים), אחד לתיקון (§5.2, מצב הקטלוג בישראל), ואחד למנגנון: **בדיקת drift של ~20 שורות** שמצמידה את ה-`CHECK` ל-union ב-TS (Task 1.1 Step 4). ה-`CHECK` עצמו נשאר — תפקיד וספק הם חוזה עם קוד ריצה, לא תווית לוג — אבל הרשימה כבר זזה פעם אחת בתוך המסמך והטיפוס לא עקב, וזה בדיוק הפער של `trigger_source`.
+
+### הכרעה אחת שנשארה פתוחה — ואינה דחופה
+
+`provider_number_roles.role` הוא היום `text + CHECK`. המומחה שהריץ את המיגרציה ממליץ להפוך אותו (ואת `provider.provider`) ל-**enum של Postgres**, כי אז המנגנון שמונע את פער-הטיפוס **כבר קיים ואינו עולה שורת קוד**: `gen:types` פולט את ה-enum, ו-`scripts/check-supabase-types.mjs` — הצעד הראשון ב-`npm run deploy` (MEASURED) — חוסם פריסה על drift. זה גם דפוס הבית (`app_role`, `campaign_channel` ועוד שמונה). הפירוט והחלופה ב-Task 1.1 Step 4. **אימוץ ההמלצה מחייב להריץ את הדריסה היבשה שוב**, כי היא משנה SQL שכבר אומת.
+
+### שתי הסתייגויות שנרשמות במפורש
+
+- `meta:verify` **לא הורץ** בסקירה. הראיה ל-`last_onboarded_time` היא מדידת §0.0 + ספירת מופעים במפרט המקומי — חזקה, אך לא פרוב חי. Task 1.3 Step 0b סוגר את זה.
+- ההרצה היבשה כיסתה את §4.2–§4.4 בלבד. שאר התיקונים הם תיקוני מסמך שלא ניתן להריץ.
+- הראיה ל-`ERROR 23514` הגיעה משתי דרכים בלתי-תלויות: הרצה יבשה בפועל (מומחה המיגרציות) והערכת תנאי ה-CHECK מול הערך החי ב-`SELECT` (מומחה המוכנוּת). שתיהן הצביעו על אותה שורה.
+
+---
+
 **Goal:** עמוד אחד לכל ספק (Meta/WhatsApp, Voximplant, ExtrA, Resend, Microsoft, SUMIT, Slack) תחת `/admin/integrations`, מודול "מספרים" משותף שמציג כל מספר טלפון מחובר ומאפשר להוסיף/לאמת/לקשר מספרים מהפאנל, והצפה של הנתונים שחסרים היום (בריאות וריאנטים, כיסוי webhooks, תוקף טוקן, גרסת Graph, מדיניות שליחה).
 
 **Architecture:** Server Components שמרכיבים את רכיבי הלקוח הקיימים (מועברים, לא נכתבים מחדש), Server Actions דקים עם Zod, DAL תחת `src/lib/data/admin/integrations/*` עם `requirePlatformPermission`. שתי טבלאות חדשות (`provider_numbers`, `provider_number_roles`) במקום ארבע עמודות בודדות ב-`app_settings`. כל פעולה שעולה כסף או בלתי-הפיכה (רכישת מספר, register/deregister) מאחורי `requirePlatformOwner` + דיאלוג אישור שמציג מחיר/תוצאה + `logActivity` + התראת Slack.
@@ -101,7 +198,8 @@
 |---|---|
 | **MEASURED** | נקרא מקוד הריפו (`file:line`), מה-DB החי (`npx supabase db query --linked`, 2026-09-08), או מ-Meta MCP (`devtools_*`) היום |
 | **INFERRED** | מסקנה מהקוד/מהנתונים, לא נמדדה ישירות |
-| **DOCS-ONLY** | מתיעוד רשמי (Meta דרך ctx7/WebFetch, Voximplant דרך `voximplant.com/api/v2/getDoc`) — לא אומת חי |
+| **DOCS-ONLY (נסבל)** | מתיעוד רשמי, לא אומת חי — **בנתיב Voximplant**. ה-API מחזיר שגיאה ממוקדת על פרמטר לא תקין, כך שטעות עולה סבב אחד |
+| **DOCS-ONLY (חוסם)** | מתיעוד רשמי, לא אומת חי — **בנתיב Meta**. §0.0 מדד שני כללים שהופכים את זה למחלקת סיכון אחרת לגמרי: Graph דוחה את **כל** הבקשה על שדה אחד שאינו זמין, ו**השגיאה אינה מצביעה בהכרח על החלק השבור** (מלכודת ה-`"false"` כמחרוזת). כל DOCS-ONLY בנתיב Meta הוא חוסם עד `npm run meta:verify` |
 
 ## Global Constraints
 
@@ -116,7 +214,7 @@
 - מיגרציות: `npx supabase migration new <name>` → `npx supabase db push --linked` (הרצה = אישור בעלים). `types.generated.ts` רק דרך `npm run gen:types`; `npm run deploy` נחסם על drift.
 - אין `@ts-ignore`/`as any`/השתקת בדיקות. שערים לכל משימה: `npx tsc --noEmit` · `npm run lint` · `npm test -- --run <file>` · ובסוף כל פאזה `npm run build`.
 - אין לוגים של payload/טלפון אורח/טוקן. `phone_number_id`, `phone_id`, E.164 של **מספרי העסק** אינם PII ומותרים בתצוגה ובהתראות.
-- הודעות commit בסגנון הריפו (`feat(admin): …`), עם הטריילרים `Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>` ו-`Claude-Session: https://claude.ai/code/session_01WkmCcfqA4BWzWh1xQk2gJe`. commit/deploy רק בהוראת הבעלים.
+- הודעות commit בסגנון הריפו (`feat(admin): …`), עם הטריילרים `Co-Authored-By:` ו-`Claude-Session:` **שהסשן הפעיל מכריז עליהם** — אין להעתיק את השמות שהופיעו כאן במקור (`Claude Fable 5.1`, ומזהה סשן מ-8.9): הם נכונים לסשן שכתב את המסמך בלבד, ומאז נכתבו קומיטים בענף הזה תחת ייחוס אחר. commit/deploy רק בהוראת הבעלים.
 
 ---
 
@@ -242,7 +340,7 @@ ExtrA: `sms_enabled`, `extra_sms_token`, `extra_sms_sender`. SMTP: 6 עמודו�
 ```
 /admin/integrations                       אינדקס: כרטיס-סטטוס לכל ספק (מוגדר? חי? בדיקה אחרונה? מספרים?)
 /admin/integrations/meta-whatsapp         Meta / WhatsApp Cloud API
-/admin/integrations/meta-whatsapp/templates   תבניות + בריאות וריאנטים (מחליף /admin/templates)
+/admin/integrations/meta-whatsapp             ↳ סקציית "בריאות התבניות" בתוך עמוד Meta (לא עמוד נפרד)
 /admin/integrations/voximplant            Voximplant (שיחות AI + מוקד)
 /admin/integrations/extra-sms             ExtrA SMS
 /admin/integrations/resend-email          Resend / SMTP
@@ -252,7 +350,7 @@ ExtrA: `sms_enabled`, `extra_sms_token`, `extra_sms_sender`. SMTP: 6 עמודו�
 /admin/integrations/numbers               מודול המספרים המאוחד (כל הספקים)
 ```
 
-Nav: בקבוצת "מערכת ותפעול" פריט אחד **"אינטגרציות"** (`Plug` מ-lucide) במקום `ערוצי תקשורת`, `תבניות פנייה`, `התראות תפעול`. `הגדרות`, `יומן Exchange`, `בדיקת Webhooks`, `בדיקת SUMIT`, `מוקד שיחות AI` נשארים.
+Nav: פריט אחד **"אינטגרציות"** (`Plug` מ-lucide) במקום `ערוצי תקשורת`, `תבניות פנייה` ו-`התראות תפעול`. **תיקון (מדוד 10.9, `admin-shell.tsx:128-144`):** שלושת הפריטים אינם באותה קבוצה — `ערוצי תקשורת` ו-`תבניות פנייה` יושבים ב**"קמפיינים ושליחה"**, ורק `התראות תפעול` ב"מערכת ותפעול". ההסרה נוגעת אפוא בשתי קבוצות, ויש להכריע לאיזו מהן נכנס הפריט החדש. **בנוסף:** `/admin/workflows` ("תהליכי אוטומציה") נוסף לקבוצת "קמפיינים ושליחה" מאז כתיבת התוכנית ואינו מוזכר בה כלל — הוא אינו עמוד ספק ואינו בהיקף, אך יש לוודא שהוא אינו נמחק או מוסתר בשינוי ה-nav. `הגדרות`, `יומן Exchange`, `בדיקת Webhooks`, `בדיקת SUMIT`, `מוקד שיחות AI` נשארים.
 
 ### 3.2 תבנית עמוד ספק (wireframe)
 
@@ -274,7 +372,7 @@ Nav: בקבוצת "מערכת ותפעול" פריט אחד **"אינטגרצי�
 | `/admin/channels` › WhatsApp | `/admin/integrations/meta-whatsapp` › פרטי התחברות + Webhooks | פיצול `channels-client.tsx` ל-`whatsapp-credentials-form.tsx`, `whatsapp-webhook-card.tsx` |
 | `/admin/channels` › שיחות AI | `/admin/integrations/voximplant` › פרטי התחברות, פרסונות, אזור מסוכן | פיצול ל-`voximplant-credentials-form.tsx`, `voximplant-personas.tsx`, `voximplant-danger-zone.tsx` |
 | `/admin/channels` › קטלוג הערוצים | `/admin/integrations` › סקציה "קטלוג ערוצים" (תחתית) | העברה כפי שהוא |
-| `/admin/templates` | `/admin/integrations/meta-whatsapp/templates` | העברה + Phase 5 (וריאנטים) |
+| `/admin/templates` | **נשאר** (ראו ההכרעה בסוף §3.3); עמוד Meta מקבל סקציית *בריאות* בלבד + קישור | הבריאות (drift, quality, status, וריאנטים, כפתור "אשר קטגוריה") עוברת ל-Meta; טופס התוכן נשאר |
 | `/admin/alerts` | `/admin/integrations/slack` | העברה כפי שהוא |
 | `/admin/settings` › הודעות (ExtrA) | `/admin/integrations/extra-sms` | schema נפרד `extraSmsSchema`; טופס נפרד |
 | `/admin/settings` › הודעות (SMTP/Resend) | `/admin/integrations/resend-email` | schema נפרד `emailTransportSchema`; טופס נפרד; שורת סטטוס `EMAIL_PROVIDER` |
@@ -286,6 +384,28 @@ Nav: בקבוצת "מערכת ותפעול" פריט אחד **"אינטגרצי�
 | `/admin/debug` › Integrations | **נשאר**; מקבל WhatsApp health check (G10) | `integrations.ts` |
 | `/admin/company` | **נשאר** (חוזה/משפטי); `company_contact_phone` מוצג במודול המספרים כתפקיד `company_contact` (קריאה בלבד, עריכה ב-company) | ללא שינוי בטופס |
 
+**הכרעה 2026-09-10 — עמוד התבניות נשאר, והבריאות היא זו שעוברת.**
+
+הטיוטה הראשונה העבירה את `/admin/templates` כמקשה אחת ל-`meta-whatsapp/templates`. סקירה מדדה מה יש בטבלה בפועל:
+
+| | מדוד 10.9 |
+|---|---|
+| שורות `channel='whatsapp'` | **8**, כולן `active`, עם שם Meta, קטגוריה וסנכרון בריאות |
+| שורות `channel='call'` | **1** — `call_1`, `name=''`, **`active=false`**, בלי components/קטגוריה |
+| קוד שמבקש את `call_1` | **אפס אזכורים**. וגם אם היה — `getTemplateByKey` מסנן `.eq('active', true)` |
+| היכן באמת יושב תסריט שיחת ה-AI | `agent_configs/*.json` מול ElevenLabs — מקור אמת מתועד שאסור לערוך ביד |
+
+כלומר תמיכת שני-הערוצים בעמוד (`isCall ? null : <TemplateHealth/>`, המיון לפי `channel`, נוסח הפסקה) היא **כוונת תכנון שלא מומשה** — הערוץ השני נזרע ונזנח כשהתשובה התבררה כ-ElevenLabs.
+
+**מה שכן נכון:** הטבלה מחזיקה **שני סוגי מידע**, ורק אחד מהם שייך לעמוד ספק —
+
+- **תוכן** (מה אומרים לאורח): עריכה שוטפת, תדירה, של מי שכותב. **נשאר** `/admin/templates` בקבוצת "קמפיינים ושליחה". מי שכותב הודעה לאורחים לא צריך להיכנס לעמוד תצורה של ספק.
+- **בריאות מול מטא** (`category`/`requested_category`, `quality_score`, `meta_status`, `rejected_reason`, ניטור וריאנטים, כפתור "אשר קטגוריה"): קריאה בלבד, ספציפי לוואטסאפ, מסונכרן ע"י worker. **עובר** לסקציה בעמוד Meta, ליד הטוקן והמספרים.
+
+**`call_1` — לסגור.** שורה ריקה וכבויה שגרמה לסוקר זהיר להסיק שהעמוד חוצה-ערוצים. מומלץ למחוק אותה ולהסיר את ענפי `isCall`, ולשים בטקסט העמוד מצביע ל-ElevenLabs. **שינוי נתונים בייצור — דורש אישור בעלים.**
+
+**ולעתיד, וזו הסיבה העיקרית להשאיר את עמוד התוכן עצמאי:** תוכן ה-SMS **קשיח היום ב-TypeScript** — `src/lib/data/otp.ts:60` מחזיק `` `קוד האימות שלך ל-KALFA: ${code}` `` בתוך הקוד, וכך גם ביטול אירוע ותזמון חזרה. אם התוכן הזה יעבור ל-DB — וכנראה שכן, כי מחרוזת עברית בקוד דורשת פריסה כדי לשנות — העמוד יהפוך לחוצה-ערוצים **באמת**, ואז הבית שלו כבר קיים.
+
 ### 3.4 redirects
 
 `next.config.ts` אין היום `redirects()` (MEASURED grep). מוסיפים:
@@ -294,13 +414,13 @@ Nav: בקבוצת "מערכת ותפעול" פריט אחד **"אינטגרצי�
 async redirects() {
   return [
     { source: '/admin/channels', destination: '/admin/integrations/meta-whatsapp', permanent: false },
-    { source: '/admin/templates', destination: '/admin/integrations/meta-whatsapp/templates', permanent: false },
     { source: '/admin/alerts', destination: '/admin/integrations/slack', permanent: false },
+    // אין redirect ל-/admin/templates — הוא נשאר עמוד תוכן עצמאי.
   ];
 },
 ```
 
-הקבצים הישנים נמחקים באותה משימה (Phase 0.7) כדי שלא יהיו שני מקורות UI. כל `revalidatePath('/admin/channels')` וכו' בקוד מוחלף לנתיב החדש (grep מלא במשימה).
+`(admin)/channels/**` ו-`(admin)/alerts/**` נמחקים (Task 0.6 Step 4b) כדי שלא יהיו שני מקורות UI. **`(admin)/templates/**` אינו נמחק** — ראו ההכרעה בסוף §3.3. כל `revalidatePath('/admin/channels')` / `'/admin/alerts'` מוחלף לנתיב החדש (grep מלא במשימה).
 
 ### 3.5 מודול המספרים
 
@@ -308,7 +428,7 @@ async redirects() {
 
 ### 3.6 הרשאות
 
-- אינדקס + Meta/ExtrA/Resend/Microsoft/SUMIT/Slack: `requirePlatformPermission('manage_settings')` (כמו היום).
+- **אינדקס `/admin/integrations`: `requireAdmin()` בלבד**, ולכל כרטיס `hasPlatformPermission(<key>)` שקובע אם הוא לחיץ או מוצג כ"אין הרשאה". **לא** `requirePlatformPermission('manage_settings')` על העמוד עצמו: הוא **מפנה ל-`/app`** ואינו מציג הודעה, כך שאיש תפעול עם `manage_voice` בלבד — קהל היעד של עמוד Voximplant — יועף מהפאנל ברגע שילחץ על פריט התפריט. עמודי Meta/ExtrA/Resend/Microsoft/SUMIT/Slack נשארים מגודרים `manage_settings` כפי שנכתב.
 - Voximplant: `manage_voice` (כמו היום). מודול המספרים: קריאה `manage_settings`; כתיבת שורות Voximplant `manage_voice`, שורות Meta/ExtrA `manage_settings`.
 - רכישה (`AttachPhoneNumber`), `DeactivatePhoneNumber`, `register`/`deregister`, הסרת מנוי webhook: `requirePlatformOwner` (D6).
 - `manage_integrations` חדש — **לא**. שני המפתחות הקיימים כבר מבחינים בין "הגדרות מערכת" ל"מוקד"; מפתח שלישי היה מייצר מטריצת הרשאות בלי צורך מוכח. אם הבעלים ירצה staff שרואה סטטוס בלי לערוך — זה מפתח `view_integrations` נפרד ולא בהיקף.
@@ -319,17 +439,53 @@ async redirects() {
 
 ### 4.1 החלטה: טבלאות, לא עמודות
 
-per-persona caller id = 4 תפקידים (RSVP, meeting-confirm, sales, call-me-now) + DID נכנס + שני מספרי WhatsApp (RSVP, ייבוא) + SMS sender + טלפון החברה = **9 תפקידים על ≥3 מספרים פיזיים משלושה ספקים**. `app_settings` הוא singleton — כל תפקיד היה עמודה, וכל snapshot מהספק עוד עמודות. טבלה עם שורה למספר ושורה לתפקיד היא המודל הטבעי, ומאפשרת היסטוריה (`created_at`, `source`) ו-snapshot לכל מספר.
+per-persona caller id = 4 תפקידים (RSVP, meeting-confirm, sales, call-me-now) + DID נכנס + שני מספרי WhatsApp (RSVP, ייבוא) + SMS sender + קו העסק הנכנס (`business_line_inbound`, §5.3) + טלפון החברה = **10 תפקידים על ≥3 מספרים פיזיים משלושה ספקים** (מתוכם 9 משויכים כבר ב-backfill; `whatsapp_import_sender` מחכה ל-`syncMetaNumbers`). `app_settings` הוא singleton — כל תפקיד היה עמודה, וכל snapshot מהספק עוד עמודות. טבלה עם שורה למספר ושורה לתפקיד היא המודל הטבעי, ומאפשרת היסטוריה (`created_at`, `source`) ו-snapshot לכל מספר.
 
 ### 4.2 SQL (מיגרציה `provider_numbers_and_roles`)
 
 ```sql
+-- =====================================================================
+-- provider_numbers + provider_number_roles
+--
 -- provider_numbers: every business phone number / sender identity KALFA holds at a
 -- provider, one row per (provider, provider_ref). The same E.164 may legitimately
--- appear under several providers (verified live 2026-09-08: +972 3-721-9347 is the
--- Voximplant DID/caller id AND the WhatsApp RSVP sender). Snapshot = non-secret
--- provider status fields (quality, tier, verification, renewal…), never a token.
-create table public.provider_numbers (
+-- appear under several providers (VERIFIED-LIVE 2026-09-10: the backfill below
+-- produces +972 3-330-1505 twice — once as the ExtrA line, once as the company
+-- contact phone). Snapshot = non-secret provider status fields (quality, tier,
+-- verification, renewal…), never a token.
+--
+-- Grouping by E.164 in the numbers module (§3.5) on day one: the ExtrA row and the
+-- company row both normalize to +97233301505 below, so they group immediately. The
+-- meta_whatsapp row is the ONE row this backfill deliberately leaves with e164 = null
+-- — display_phone_number comes from the first syncMetaNumbers() call (Task 1.3
+-- Step 3) and is not guessed here, so the Meta numbers join their groups only after
+-- that sync. VERIFIED-LIVE 2026-09-10 (simulated syncs, same rolled-back txn): after
+-- syncMetaNumbers + syncVoximplantNumbers the groups are +97233301505 ×3
+-- (ExtrA line, company contact, WhatsApp import number 1298694319994421) and
+-- +97237219347 ×2 (Voximplant DID/caller id, WhatsApp RSVP sender) — the "מספר אחד,
+-- ארבעה כובעים" view of §5.3-3.
+--
+-- Access model mirrors channels_admin_all (20260726111038): admin writes go through
+-- the cookie client (authenticated + has_role admin); the worker/runtime reads via
+-- service_role, which keeps the schema-default ALL grant (VERIFIED-LIVE: the ACL
+-- this file produces is byte-identical to channels' —
+-- {postgres=arwdDxtm,service_role=arwdDxtm,authenticated=arwd}).
+-- has_role signature VERIFIED-LIVE 2026-09-10: public.has_role(uuid, app_role)
+-- returns boolean [SECDEF, STABLE, search_path=public]; app_role labels: admin,user.
+-- public.set_updated_at() VERIFIED-LIVE: trigger fn, sets new.updated_at = now().
+-- Policies use the post-audit initplan-wrapped form so auth is evaluated once per
+-- statement, not per row.
+--
+-- VERIFIED-LIVE 2026-09-10 — this file was executed inside `begin; … rollback;`
+-- against the linked project (precedent 20260822114850). Result inside the txn:
+--   provider_numbers = 4 rows, provider_number_roles = 9 rows (NOT 7);
+--   re-running the whole backfill block a second time in the same txn left it at
+--   4 / 9; authenticated+admin sees 4 rows, authenticated non-admin sees 0,
+--   non-admin INSERT = 42501, anon SELECT = 42501; both updated_at triggers fire.
+--
+-- ROLLBACK (at the bottom of this file as well): drop the roles table first (FK).
+-- =====================================================================
+create table if not exists public.provider_numbers (
   id            uuid primary key default gen_random_uuid(),
   provider      text not null
                 constraint provider_numbers_provider_chk
@@ -340,7 +496,11 @@ create table public.provider_numbers (
                 check (e164 is null or e164 ~ '^\+[1-9][0-9]{6,14}$'),
   display_label text,                              -- admin-facing label ("מספר RSVP", "מספר ייבוא")
   is_active     boolean not null default true,
-  snapshot      jsonb,                             -- provider status fields only (no secrets)
+  snapshot      jsonb,                             -- provider status fields only. DELIBERATELY untyped:
+                                                   -- the one open surface here, so a provider adding a
+                                                   -- status field needs no migration. Do not "improve" it
+                                                   -- into a rigid type. NEVER a token, PIN or app secret —
+                                                   -- it is written straight from a provider response.
   snapshot_at   timestamptz,
   source        text not null default 'admin'
                 constraint provider_numbers_source_chk check (source in ('admin','backfill','sync')),
@@ -348,9 +508,22 @@ create table public.provider_numbers (
   updated_at    timestamptz not null default now(),
   constraint provider_numbers_ref_or_e164 check (provider_ref is not null or e164 is not null)
 );
-create unique index provider_numbers_provider_ref_uq
+create unique index if not exists provider_numbers_provider_ref_uq
   on public.provider_numbers (provider, provider_ref) where provider_ref is not null;
-create index provider_numbers_e164_idx on public.provider_numbers (e164);
+-- FIX 2026-09-10 (bug 2): the Voximplant backfill row carries provider_ref = null, so
+-- the partial index above does not cover it — `on conflict do nothing` had no arbiter
+-- for that row and a second execution inserted a DUPLICATE Voximplant number. This
+-- second partial index makes "at most one backfill row per provider" a real DB
+-- invariant, which is also exactly the assumption the role backfill's
+-- `source='backfill'` join makes (bug 3): with it, that join can never match two rows.
+-- Known interaction, documented rather than designed around: Phase 1.3 upserts the
+-- synced row with source='sync', which moves it out of this index's scope; a backfill
+-- re-run after that point could insert a fresh 'backfill' row, and
+-- `on conflict (role) do nothing` would keep the OLD role pointer. Migrations do not
+-- re-run, so this only matters if someone replays the block by hand.
+create unique index if not exists provider_numbers_backfill_uq
+  on public.provider_numbers (provider) where source = 'backfill';
+create index if not exists provider_numbers_e164_idx on public.provider_numbers (e164);
 
 comment on table public.provider_numbers is
   'Business phone numbers / sender identities per provider. Replaces the four single fields on app_settings (whatsapp_phone_number_id, voximplant_caller_id, extra_sms_sender, company_contact_phone) which stay as read-fallbacks until the cleanup migration. Snapshot holds non-secret provider status only.';
@@ -358,7 +531,7 @@ comment on table public.provider_numbers is
 -- provider_number_roles: exactly ONE number per role (role is the PK); a number may
 -- hold many roles. The runtime resolvers read this first and fall back to the legacy
 -- app_settings column while the backfill is verified.
-create table public.provider_number_roles (
+create table if not exists public.provider_number_roles (
   role       text primary key
              constraint provider_number_roles_role_chk
              check (role in (
@@ -369,20 +542,23 @@ create table public.provider_number_roles (
   number_id  uuid not null references public.provider_numbers(id) on delete restrict,
   updated_at timestamptz not null default now()
 );
-create index provider_number_roles_number_idx on public.provider_number_roles (number_id);
+create index if not exists provider_number_roles_number_idx on public.provider_number_roles (number_id);
 
 comment on table public.provider_number_roles is
   'Which provider_numbers row serves which runtime role. One row per role. Voice caller ids are per persona (RSVP / meeting-confirm / sales / call-me-now) — the four personas shared app_settings.voximplant_caller_id before this table. business_line_inbound = the ExtrA virtual line that forwards inbound calls to the owner''s device (display/ops role, no runtime reader).';
 
+drop trigger if exists provider_numbers_set_updated_at on public.provider_numbers;
 create trigger provider_numbers_set_updated_at
   before update on public.provider_numbers
   for each row execute function public.set_updated_at();
+drop trigger if exists provider_number_roles_set_updated_at on public.provider_number_roles;
 create trigger provider_number_roles_set_updated_at
   before update on public.provider_number_roles
   for each row execute function public.set_updated_at();
 
--- RLS: mirrors channels_admin_all (20260726111038). Admin writes go through the
--- cookie client (has_role admin); the worker/runtime reads via service_role.
+-- RLS: mirrors channels_admin_all (20260726111038), with `to authenticated` added —
+-- the app_settings_admin_all form (VERIFIED-LIVE: polroles = {authenticated}). anon
+-- has every privilege revoked, so it never reaches policy evaluation at all.
 alter table public.provider_numbers enable row level security;
 alter table public.provider_number_roles enable row level security;
 revoke all on public.provider_numbers from anon, authenticated;
@@ -390,40 +566,98 @@ revoke all on public.provider_number_roles from anon, authenticated;
 grant select, insert, update, delete on public.provider_numbers to authenticated;
 grant select, insert, update, delete on public.provider_number_roles to authenticated;
 
+drop policy if exists provider_numbers_admin_all on public.provider_numbers;
 create policy provider_numbers_admin_all on public.provider_numbers for all
+  to authenticated
   using ((select public.has_role((select auth.uid()), 'admin'::app_role)))
   with check ((select public.has_role((select auth.uid()), 'admin'::app_role)));
+drop policy if exists provider_number_roles_admin_all on public.provider_number_roles;
 create policy provider_number_roles_admin_all on public.provider_number_roles for all
+  to authenticated
   using ((select public.has_role((select auth.uid()), 'admin'::app_role)))
   with check ((select public.has_role((select auth.uid()), 'admin'::app_role)));
 
--- Backfill from the four legacy fields (idempotent). E.164 for the WhatsApp row is
--- filled by the first "sync from Meta" (display_phone_number), not guessed here.
+-- Backfill from the four legacy fields. Idempotent: every insert has an arbiter index
+-- (see provider_numbers_backfill_uq above) — re-running the block leaves 4 / 9 rows.
+--
+-- E.164 normalization is a ONE-TIME expression over the four values measured
+-- 2026-09-10, not a runtime rule and not a country assumption for new numbers
+-- (the admin form validates E.164 in Zod):
+--   whatsapp_phone_number_id = '1018741517998430'  (a Meta id, not a phone number)
+--   voximplant_caller_id     = '97237219347'       (11 digits, NO '+')
+--   extra_sms_sender         = '03-3301505'        (Israeli local, punctuated)
+--   company_contact_phone    = '033301505'         (Israeli local, digits only)
+-- Digits-only with a country code get a '+'; a leading '0' is the Israeli local form
+-- of the two lines this account actually holds; anything else stays null, the screen
+-- says "השלימו E.164", and the Phase 1.3 sync fills it.
 insert into public.provider_numbers (provider, provider_ref, display_label, source)
 select 'meta_whatsapp', whatsapp_phone_number_id, 'מספר אישורי הגעה (RSVP)', 'backfill'
   from public.app_settings where whatsapp_phone_number_id is not null
 on conflict do nothing;
+
+-- FIX 2026-09-10 (bug 1 — this is the one that aborted the whole migration).
+-- MEASURED: voximplant_caller_id = '97237219347', so the original
+-- `case when … ~ '^\+…' then … else null end` wrote e164 = null on a row whose
+-- provider_ref is also null, and provider_numbers_ref_or_e164 raised
+--   ERROR: 23514 new row for relation "provider_numbers" violates check constraint
+--          "provider_numbers_ref_or_e164"
+-- (reproduced verbatim in a begin/rollback dry run). Two changes: normalize
+-- digits → '+digits', and only insert when the result IS a valid E.164 — Phase 1.3
+-- Step 4 merges this row BY E.164, so a null-e164 row would also be unmergeable and
+-- would strand its four voice roles on a number the sync can never complete. If the
+-- value is ever unnormalizable, no row is created, no voice role is assigned, and the
+-- resolvers keep falling back to app_settings.voximplant_caller_id (fail-safe).
 insert into public.provider_numbers (provider, provider_ref, e164, display_label, source)
-select 'voximplant', null,
-       case when voximplant_caller_id ~ '^\+[1-9][0-9]{6,14}$' then voximplant_caller_id else null end,
-       'מספר יוצא (Caller ID)', 'backfill'
-  from public.app_settings where voximplant_caller_id is not null
-on conflict do nothing;
--- ExtrA: provider_ref = the verified sender id string as stored today ('03-3301505').
--- e164 is filled by the first ExtrA sync (Phase 1.3) from /calls/ numbers.own.e164 —
--- the only API surface that exposes the account's own lines (no numbers endpoint).
-insert into public.provider_numbers (provider, provider_ref, display_label, source)
-select 'extra_sms', extra_sms_sender, 'קו העסק / שולח SMS (ExtrA)', 'backfill'
-  from public.app_settings where extra_sms_sender is not null
-on conflict do nothing;
-insert into public.provider_numbers (provider, provider_ref, display_label, source)
-select 'company', 'contact', 'טלפון החברה (הסכם)', 'backfill'
-  from public.app_settings where company_contact_phone is not null
+select 'voximplant', null, '+' || d.digits, 'מספר יוצא (Caller ID)', 'backfill'
+  from public.app_settings s
+  cross join lateral (select regexp_replace(coalesce(s.voximplant_caller_id,''), '[^0-9]', '', 'g') as digits) d
+ where s.voximplant_caller_id is not null
+   and d.digits ~ '^[1-9][0-9]{6,14}$'
 on conflict do nothing;
 
+-- ExtrA: provider_ref = the verified sender id string as stored today ('03-3301505').
+-- The e164 CASE is SEPARABLE from the fix above — the insert cannot fail without it
+-- (provider_ref is not null). It is here because §3.5 and §5.3-3 group the numbers
+-- module by E.164, and MEASURED both this line and company_contact_phone normalize to
+-- +97233301505 — that is what makes "מספר אחד, ארבעה כובעים" render on day one
+-- instead of after the first Phase 1.3 sync.
+insert into public.provider_numbers (provider, provider_ref, e164, display_label, source)
+select 'extra_sms', s.extra_sms_sender,
+       case when d.digits ~ '^0[1-9][0-9]{6,12}$' then '+972' || substring(d.digits from 2)
+            when d.digits ~ '^[1-9][0-9]{6,14}$'  then '+' || d.digits
+            else null end,
+       'קו העסק / שולח SMS (ExtrA)', 'backfill'
+  from public.app_settings s
+  cross join lateral (select regexp_replace(coalesce(s.extra_sms_sender,''), '[^0-9]', '', 'g') as digits) d
+ where s.extra_sms_sender is not null
+on conflict do nothing;
+
+-- Company: same separable normalization; provider_ref stays the literal 'contact'
+-- (this row is a pointer to the agreement field, edited in /admin/company).
+insert into public.provider_numbers (provider, provider_ref, e164, display_label, source)
+select 'company', 'contact',
+       case when d.digits ~ '^0[1-9][0-9]{6,12}$' then '+972' || substring(d.digits from 2)
+            when d.digits ~ '^[1-9][0-9]{6,14}$'  then '+' || d.digits
+            else null end,
+       'טלפון החברה (הסכם)', 'backfill'
+  from public.app_settings s
+  cross join lateral (select regexp_replace(coalesce(s.company_contact_phone,''), '[^0-9]', '', 'g') as digits) d
+ where s.company_contact_phone is not null
+on conflict do nothing;
+
+-- 9 roles, not 7. Each branch matches at most one row thanks to
+-- provider_numbers_backfill_uq; a provider whose backfill row was not created simply
+-- contributes no role, and its resolver keeps the legacy fallback.
+-- voice_inbound_did is assigned here and not left to Phase 3, because §0.0 Q3 measured
+-- that the account holds exactly ONE DID — 97237219347, phone_id 2303422 — and it is
+-- the very number this backfill just inserted as the caller id. The role is
+-- descriptive (nothing dials "the inbound DID"; Voximplant routes by rule pattern), so
+-- assigning it cannot break a runtime reader, and if a second DID is ever bought the
+-- Phase 3 UI repoints the role with a one-row UPDATE.
 insert into public.provider_number_roles (role, number_id)
 select 'whatsapp_rsvp_sender', id from public.provider_numbers where provider='meta_whatsapp' and source='backfill'
 union all select 'voice_caller_id_rsvp', id from public.provider_numbers where provider='voximplant' and source='backfill'
+union all select 'voice_inbound_did', id from public.provider_numbers where provider='voximplant' and source='backfill'
 union all select 'voice_caller_id_meeting_confirm', id from public.provider_numbers where provider='voximplant' and source='backfill'
 union all select 'voice_caller_id_sales', id from public.provider_numbers where provider='voximplant' and source='backfill'
 union all select 'voice_caller_id_call_me_now', id from public.provider_numbers where provider='voximplant' and source='backfill'
@@ -434,16 +668,41 @@ on conflict (role) do nothing;
 
 -- ROLLBACK:
 --   drop table public.provider_number_roles; drop table public.provider_numbers;
--- Legacy app_settings columns are untouched by this migration, so rollback restores
--- the exact pre-migration runtime (resolvers fall back to the columns).
+-- (roles first — the FK is `on delete restrict`. Indexes, triggers and policies drop
+-- with their tables.) Legacy app_settings columns are untouched by this migration, so
+-- rollback restores the exact pre-migration runtime (resolvers fall back to the
+-- columns).
 ```
 
-**הערות למיגרציה:** ה-Voximplant `phone_id` (מספרי) לא ידוע בזמן ה-backfill — ממולא ב-Phase 3 מסנכרון `GetPhoneNumbers` (התאמה לפי E.164 → `provider_ref = phone_id`). `voximplant_caller_id` החי אולי אינו ב-E.164 עם `+` (הפורמט לא נמדד; רק סיומת) — לכן ה-`case`; אם null, המסך מציג "השלימו E.164" והסנכרון של Phase 3 ממלא. יש להריץ ב-`begin; … rollback;` מול ה-DB החי לפני `db push` (התקדים של 20260822114850).
+**מצב הדריסה היבשה (VERIFIED-LIVE 2026-09-10).** הבלוק לעיל הורץ במלואו בתוך `begin; … rollback;` מול הפרויקט המקושר (תקדים `20260822114850`). התוצאה בתוך הטרנזקציה:
+
+| בדיקה | תוצאה |
+|---|---|
+| `provider_numbers` | 4 שורות: `meta_whatsapp/1018741517998430` (e164 null — ממולא בסנכרון Meta), `voximplant/+97237219347`, `extra_sms/03-3301505/+97233301505`, `company/contact/+97233301505` |
+| `provider_number_roles` | **9** שורות (לא 7 — Task 1.1 Step 2 עדיין כתוב 7; `voice_inbound_did` נוסף 10.9) |
+| הרצה שנייה של כל בלוק ה-backfill באותה טרנזקציה | נשאר 4 / 9 |
+| `authenticated` + admin | רואה 4 שורות |
+| `authenticated` שאינו admin | 0 שורות; `insert` → `42501` |
+| `anon` | `select` → `42501` (ה-grants נשללו) |
+| ACL של שתי הטבלאות | זהה ל-`channels`: `{postgres=arwdDxtm, service_role=arwdDxtm, authenticated=arwd}` |
+| שני טריגרי `updated_at` | דרסו `updated_at` שנשתל כ-2000-01-01 → הטריגר מחווט |
+
+**אזהרת מחיקה:** `provider_number_roles.number_id` הוא `on delete restrict`. מחיקת מספר שמחזיק תפקיד תיכשל בשגיאת foreign key — **ה-DAL חייב לתפוס אותה** ולהחזיר "לא ניתן למחוק מספר המשויך לתפקיד; הסירו את השיוך תחילה", ולא להעביר את הודעת Postgres למשתמש (Global Constraint: אין לחשוף פרטי DB).
+
+**הערות למיגרציה:** ה-Voximplant `phone_id` (מספרי) לא ידוע בזמן ה-backfill — ממולא ב-Phase 3 מסנכרון `GetPhoneNumbers` (התאמה לפי E.164 → `provider_ref = phone_id`); לכן ה-`e164` של אותה שורה חייב להיות מלא כבר עכשיו, וזה מה שה-fix מבטיח. שורת ה-WhatsApp נשארת בלי `e164` בכוונה — `display_phone_number` מגיע מהסנכרון הראשון מול Meta ולא מנוחש כאן.
 
 ### 4.3 טבלת בריאות וריאנטים (Phase 5)
 
 ```sql
-create table public.message_template_variant_health (
+-- message_template_variant_health: one row per Meta template name we actually send —
+-- the pointer row's own name plus every name hiding in message_templates.components
+-- (variants / media_variants / media_variant). VERIFIED-LIVE 2026-09-10:
+-- message_templates.id is a uuid PRIMARY KEY, so the FK below resolves; the table has
+-- 9 rows and 28 variant names.
+-- Read = admin (cookie client). Writes = worker only: service_role keeps the
+-- schema-default ALL grant and bypasses RLS, while `authenticated` gets SELECT and
+-- nothing else — VERIFIED-LIVE in the dry run, an admin INSERT is rejected 42501.
+create table if not exists public.message_template_variant_health (
   template_id     uuid not null references public.message_templates(id) on delete cascade,
   variant_name    text not null,           -- the Meta template name (pointer name or a components.* variant)
   language        text not null,
@@ -460,14 +719,39 @@ create table public.message_template_variant_health (
 alter table public.message_template_variant_health enable row level security;
 revoke all on public.message_template_variant_health from anon, authenticated;
 grant select on public.message_template_variant_health to authenticated;
+drop policy if exists mtvh_admin_select on public.message_template_variant_health;
 create policy mtvh_admin_select on public.message_template_variant_health for select
+  to authenticated
   using ((select public.has_role((select auth.uid()), 'admin'::app_role)));
--- writes: worker only (service_role). ROLLBACK: drop table.
+-- writes: worker only (service_role). The sync must set last_synced_at explicitly in
+-- the upsert — the default only applies on INSERT.
+-- No index beyond the PK: listVariantHealth(templateId) is a prefix scan of it.
+-- ROLLBACK: drop table public.message_template_variant_health;
 ```
+
+**דריסה יבשה (VERIFIED-LIVE 2026-09-10):** רץ באותה טרנזקציה עם §4.2 והוחזר לאחור. ה-FK, ה-PK וה-CHECK נוצרו כמצופה; ACL = `{postgres=arwdDxtm, service_role=arwdDxtm, authenticated=r}`; `anon` → `42501`; admin `insert` → `42501` (רק ה-worker כותב).
 
 ### 4.4 עמודה חדשה ב-`app_settings`: `whatsapp_app_id text` (Phase 5)
 
 נדרשת ל-`GET /{app-id}/subscriptions` ול-`debug_token` (app access token = `APP_ID|APP_SECRET`; DOCS-ONLY ctx7 `/websites/developers_facebook_graph-api` "app access token or an app developer's user access token… is required"). לא סוד. נכתבת בטופס Meta › פרטי התחברות.
+
+```sql
+-- app_settings is a singleton settings row with admin-only RLS
+-- (app_settings_admin_all, to authenticated, has_role admin) — adding a column does
+-- not touch it. VERIFIED-LIVE 2026-09-10: app_settings has TABLE-level grants only
+-- (authenticated=rw, service_role=arwdDxtm) and zero column-level ACLs, so the new
+-- column inherits SELECT/UPDATE — no 42501 of the show_meal_pref kind. No CHECK: the
+-- Meta app id is validated in Zod (^\d{10,20}$) at the form boundary, like every other
+-- credential column here.
+alter table public.app_settings add column if not exists whatsapp_app_id text;
+
+comment on column public.app_settings.whatsapp_app_id is
+  'Meta app id (numeric string, NOT a secret) for the WhatsApp app. Needed to build the app access token "{app_id}|{app_secret}" used by GET /{app-id}/subscriptions and debug_token. The secret half already lives in whatsapp_app_secret.';
+
+-- ROLLBACK: alter table public.app_settings drop column whatsapp_app_id;
+```
+
+**דריסה יבשה (VERIFIED-LIVE 2026-09-10):** רץ באותה טרנזקציה והוחזר לאחור — העמודה נוצרה, ה-ACL של `app_settings` נשאר `{postgres=arwdDxtm, service_role=arwdDxtm, authenticated=rw}`, ולא נוצר ACL ברמת עמודה. שימו לב שה-`ALTER` נוטל `ACCESS EXCLUSIVE` על `app_settings` — טבלה שנקראת כמעט בכל בקשה; זה שינוי קטלוג בלבד (בלי `default`, בלי rewrite) ולכן מיידי, אבל אין להריץ אותו יחד עם עבודה ארוכה באותה טרנזקציה.
 
 ---
 
@@ -476,7 +760,7 @@ create policy mtvh_admin_select on public.message_template_variant_health for se
 ### 5.1 Meta WhatsApp Cloud API
 
 **רשימת מספרים ב-WABA** — DOCS-ONLY (ctx7 `phone-number-management-api`, WebFetch `cloud-api/reference/phone-numbers`):
-`GET /{API_VERSION}/{WABA_ID}/phone_numbers?fields=id,display_phone_number,verified_name,status,quality_rating,code_verification_status,name_status,messaging_limit_tier,throughput,platform_type,account_mode,is_official_business_account,last_onboarded_time`. סינון `account_mode` (SANDBOX/LIVE, beta), מיון `last_onboarded_time`. `name_status ∈ {APPROVED, AVAILABLE_WITHOUT_REVIEW, DECLINED, EXPIRED, PENDING_REVIEW, NONE}`. tier דרך `GET /{pnid}?fields=whatsapp_business_manager_messaging_limit` → `TIER_250`… (ctx7 `messaging-limits`).
+`GET /{API_VERSION}/{WABA_ID}/phone_numbers?fields=id,display_phone_number,verified_name,status,quality_rating,code_verification_status,name_status,messaging_limit_tier,throughput,platform_type,account_mode,is_official_business_account` — **בלי `last_onboarded_time`**, שאינו ניתן לקריאה כשדה (Task 1.3 Step 0). סינון `account_mode` (SANDBOX/LIVE, beta), מיון `last_onboarded_time`. `name_status ∈ {APPROVED, AVAILABLE_WITHOUT_REVIEW, DECLINED, EXPIRED, PENDING_REVIEW, NONE}`. tier דרך `GET /{pnid}?fields=whatsapp_business_manager_messaging_limit` → `TIER_250`… (ctx7 `messaging-limits`).
 
 **הוספת מספר** — DOCS-ONLY, **שתי גרסאות תיעוד סותרות**: (א) reference `phone-number-management-api`: `POST /{WABA_ID}/phone_numbers` body `phone_number` (E.164 בלי `+`, required), `verified_name` (required), `cc` (optional), `migrate_phone_number`, `preverified_id`; (ב) מדריך המיגרציה: `cc` + `phone_number` (בלי קידומת) + `verified_name` כולם required. **משימה 2.1 חייבת לאמת מול העמוד החי לפני קידוד**; המימוש ישלח `cc`, `phone_number` (ספרות לאומיות), `verified_name` — הצורה שמופיעה בדוגמה המלאה. תגובה: `{ id }` = `phone_number_id` החדש. עמוד `cloud-api/reference/phone-numbers` **אינו** מתעד POST כזה ומפנה ל-WhatsApp Manager/Embedded Signup — עוד סיבה לאימות.
 
@@ -505,7 +789,7 @@ create policy mtvh_admin_select on public.message_template_variant_health for se
 | קטלוג | `GetPhoneNumberCategories` → `GetPhoneNumberRegions(country_code, phone_category_name)` | | Owner/Admin/Accountant/Payer | `PhoneNumberCountryRegionInfoType`: `account_price`, `account_installation_price`, `account_currency`, `phone_count` (מלאי), **`is_need_regulation_address`**, `regulation_address_type ∈ {LOCAL,NATIONAL,WORLDWIDE}` |
 | מלאי | `GetNewPhoneNumbers(country_code, phone_category_name, phone_region_id[, phone_number_mask])` | | Owner/Admin/Accountant | `NewPhoneInfoType`: `phone_number`, `phone_id`, `phone_price` (+`phone_tax_reserve`), `phone_installation_price` (+`phone_installation_tax_reserve`), `phone_period` |
 | רגולציה (IL) | `GetAvailableRegulations(country_code='IL', phone_category_name)` | | Owner/Accountant | `result=false` ⇒ "the regulations address needs to be created"; `GetRegulationsAddress` מחזיר `RegulationAddress{status ∈ IN_PROGRESS,VERIFIED,DECLINED, reject_message}`. יצירת כתובת רגולציה — **לא נמצאה מתודה ב-getDoc היום (UNVERIFIED)**; עד לאימות: הפאנל מציג הוראה לבצע ב-Control Panel |
-| **רכישה** | `AttachPhoneNumber` | מצב קטלוג: `country_code+phone_category_name+phone_region_id`; מצב ספציפי: `phone_number` (מ-GetNewPhoneNumbers); `regulation_address_id`; `phone_count` | Owner/Admin/Accountant | **עולה כסף**: לפי `digest-management-api.md:136` "הרכישה שומרת מראש את דמי המנוי של החודש הבא + מסים" (DOCS-ONLY מהקורפוס). תגובה `NewAttachedPhoneInfoType[]` |
+| **רכישה** | `AttachPhoneNumber` | מצב קטלוג: `country_code+phone_category_name+phone_region_id`; מצב ספציפי: `phone_number` (מ-GetNewPhoneNumbers); `regulation_address_id`; `phone_count` | Owner/Admin/Accountant | **עולה כסף**: `digest-management-api.md:136` — "הרכישה שומרת מראש את דמי המנוי של החודש הבא + מסים" (DOCS-ONLY). ⚠️ **מצב "מספר ספציפי" אינו זמין בישראל** (MEASURED §0.0: `GetPhoneNumberCategories(IL)` → `can_list_phone_numbers: false` לכל הקטגוריות פרט ל-MOBILE; `GetNewPhoneNumbers` נכשל ב-529). הפלטפורמה בוחרת את המספר, **ולכן ההגנה "לעולם לא מצב קטלוג" מבטלת את Phase 3 בישראל.** ההגנה החלופית אינה על המצב אלא על מה שמוצג לפני הכפתור: מחיר חודשי + התקנה + מטבע מ-`GetPhoneNumberRegions`, `phone_count` **מקובע ל-1 בקוד** ולא נגזר מהקלט, והקלדת מחרוזת אישור. אותה בטיחות כספית, בלי לסגור את המדינה היחידה שבה אנחנו פועלים. |
 | קישור לאפליקציה | `BindPhoneNumberToApplication(phone_id\|phone_number, application_id\|application_name, bind=true, rule_id\|rule_name)` | | Owner/Admin/Developer | `application_id` = `app_settings.voximplant_application_id` (קיים; `console-agent-provisioning.ts:412-426`) |
 | SMS callback | `SetPhoneNumberInfo(phone_id, incoming_sms_callback_url)` | | Owner/Admin/Accountant | לא בהיקף |
 | ביטול | `DeactivatePhoneNumber(phone_id)` | | **Owner בלבד** | סביר שה-service account אינו Owner → הפאנל מציג "ב-Control Panel בלבד" עד שמשימה 3.1 מודדת |
@@ -559,8 +843,14 @@ create policy mtvh_admin_select on public.message_template_variant_health for se
 | `(admin)/integrations/page.tsx` | חדש — אינדקס |
 | `(admin)/integrations/_components/provider-card.tsx` | חדש — כרטיס סטטוס משותף (Server) |
 | `(admin)/integrations/_components/provider-page-shell.tsx` | חדש — heading + tabs-less סקציות |
-| `(admin)/integrations/meta-whatsapp/page.tsx` + `whatsapp-credentials-form.tsx` + `whatsapp-webhook-card.tsx` | חדש (תוכן מ-`channels-client.tsx:319-410`) |
-| `(admin)/integrations/meta-whatsapp/templates/page.tsx` + `templates-client.tsx` + `actions.ts` | הועבר מ-`(admin)/templates/*` |
+| `(admin)/integrations/meta-whatsapp/page.tsx` + `whatsapp-credentials-form.tsx` + `whatsapp-webhook-card.tsx` | חדש — תוכן מ-`channels-client.tsx:328-405` (**הטווח 319-410 שהופיע כאן קודם שגוי; אומת 10.9**) |
+| `(admin)/integrations/_components/outreach-master-switch.tsx` | חדש — **מ-`channels-client.tsx:214-252`**. הרכיב מוגדר בתוך הקובץ שנמחק ונדרש בשלושה מקומות (אינדקס + ראש עמוד Meta + ראש עמוד Voximplant). §3.3 מבטיח "אותו רכיב, אותו action" אך לא הקצה לו קובץ |
+| `(admin)/integrations/meta-whatsapp/whatsapp-consent-toggle.tsx` | חדש — **מ-`channels-client.tsx:408-448`** (הערה 408-414 + טופס 415-448), action `updateWhatsAppConsentRequiredAction` (`channels/actions.ts:413`). מתג `whatsapp_consent_required` + אזהרת סעיף 30א. נוסף 8.9 (מיגרציה `20260908212916`) **אחרי** כתיבת התוכנית ולכן נפל מחוץ לכל טווח. **חשיפה משפטית — אסור שייעלם** |
+| `(admin)/integrations/meta-whatsapp/whatsapp-connection-test.tsx` | חדש — מ-`channels-client.tsx:450-459`, action `testWhatsAppConnectionAction` (`channels/actions.ts:69`) |
+| `(admin)/integrations/voximplant/voximplant-scenario-urls.tsx` | חדש — מ-`channels-client.tsx:739-751` (אקורדיון "כתובות התרחיש (לעיון)"). דורש `voxCtxBase`/`voxCbBase`, שמחושבים ב-`channels/page.tsx:24-26` דרך `getAppUrl` — להעביר את שתי הקריאות לעמוד החדש |
+| `(admin)/integrations/voximplant/voximplant-connection-test.tsx` | חדש — מ-`channels-client.tsx:757-766`, action `testVoximplantConnectionAction` (`channels/actions.ts:133`) |
+| שתי פסקאות ההסבר ב-`channels/page.tsx` | **להעביר, לא לאבד**: `:35-40` ("הפעלת ערוץ מתחילה שליחות חיות בתשלום…") לראש עמוד Meta; `:58-63` ("הוספת ערוץ חדש אינה עריכת-תצוגה אלא שינוי סכמה וקוד") לצד `ChannelCatalogEditor` באינדקס — זו ההנחיה שמונעת מאדמין לנסות להוסיף ערוץ מה-UI |
+| `(admin)/integrations/meta-whatsapp/template-health-card.tsx` | חדש — **סקציית בריאות בלבד** בעמוד Meta: סיכום drift/quality/status, ניטור וריאנטים (Phase 5) וכפתור "אשר קטגוריה", + קישור ל-`/admin/templates`. `(admin)/templates/**` **אינו זז ואינו נמחק** |
 | `(admin)/integrations/voximplant/page.tsx` + `voximplant-credentials-form.tsx` + `voximplant-personas.tsx` + `voximplant-danger-zone.tsx` | חדש (תוכן מ-`channels-client.tsx:412-717`) |
 | `(admin)/integrations/_actions/outreach-master.ts`, `whatsapp.ts`, `voximplant.ts`, `channel-catalog.ts` | הועבר מ-`(admin)/channels/actions.ts` (מפוצל לפי ספק; **הלוגיקה זהה**) |
 | `(admin)/integrations/extra-sms/page.tsx` + `extra-sms-form.tsx` + `actions.ts` | חדש |
@@ -573,7 +863,7 @@ create policy mtvh_admin_select on public.message_template_variant_health for se
 | `(admin)/settings/settings-form.tsx` + `actions.ts` | הסרת פאנל "הודעות" ושלושת שדות SUMIT; 3 טאבים |
 | `src/components/admin-shell.tsx` | nav |
 | `next.config.ts` | `redirects()` |
-| `(admin)/channels/**`, `(admin)/templates/**`, `(admin)/alerts/**` | **נמחקים** (הבדיקות שלהם מועברות ליד הקבצים החדשים) |
+| `(admin)/channels/**`, `(admin)/alerts/**` | **נמחקים** (הבדיקות שלהם מועברות ליד הקבצים החדשים). `(admin)/templates/**` נשאר במקומו |
 
 **Interfaces (Produces):** `ProviderCard({ title, href, configured, enabled?, lastCheckedAt?, note? })`; `IntegrationKey = 'meta-whatsapp'|'voximplant'|'extra-sms'|'resend-email'|'microsoft'|'sumit'|'slack'`.
 
@@ -663,7 +953,27 @@ export async function getIntegrationsOverview(): Promise<IntegrationOverviewRow[
 }
 ```
 
-`getVoximplantChannelConfig` דורש `manage_voice` — לאינדקס משתמש עם `manage_settings` בלבד: עוטפים ב-`try/catch` שמחזיר `{configured:false, enabled:false, note:'אין הרשאת manage_voice'}` (זהה לדפוס `navCounts` null ב-`admin-shell.tsx:291-296`).
+**אין להשתמש ב-`getSumitCredentials()` וב-`getExtraSmsConfig()` באינדקס.** שתיהן מחזירות סודות (`sumit_api_key`, `extra_sms_token`), והשימוש היחיד בהן כאן הוא לגזור בוליאני `configured`. ההערה ב-`settings.ts` מנמקת את החזרת הסוד ב**טופס** המסכה — ולאינדקס אין טופס. במקומן `getIntegrationsConfiguredFlags()`: קריאה **אחת** שמחזירה נוכחות בלבד, ומחליפה גם את שש הנסיעות הנפרדות לאותה שורת singleton (`app_settings` הוא `.eq('id', true)`).
+
+```sql
+select (whatsapp_access_token is not null and whatsapp_phone_number_id is not null) as wa_configured,
+       (sumit_api_key is not null and sumit_company_id is not null)                 as sumit_configured,
+       (extra_sms_token is not null and extra_sms_sender is not null)               as extra_configured,
+       (smtp_from is not null)                                                      as email_configured,
+       outreach_enabled, sms_enabled, email_enabled, voximplant_live_calls
+  from app_settings where id = true
+```
+
+שש נסיעות → אחת, ואפס סודות בזיכרון עבור שבעה כרטיסי סטטוס.
+
+`getVoximplantChannelConfig` דורש `manage_voice`, והאינדקס נטען גם למי שאין לו אותו. **אין לעטוף ב-`try/catch`:** `requirePlatformPermission` קורא `redirect('/app')` (`src/lib/auth/dal.ts:135-139`), כלומר זורק `NEXT_REDIRECT` — `catch` עירום יבלע ניווט של הפריימוורק, לא שגיאת הרשאה. הדפוס הנכון הוא הפרדיקט שאינו זורק, `hasPlatformPermission` (`dal.ts:117`), וזה בדיוק מה ש-`nav-counts.ts:78-80` עושה — הקובץ שצוטט כאן קודם כ"אותו דפוס", בטעות: אין בו `try/catch` כלל.
+
+```ts
+const canVoice = await hasPlatformPermission('manage_voice');
+const vox = canVoice
+  ? await getVoximplantChannelConfig()
+  : { configured: false, liveEnabled: false, note: 'אין הרשאת manage_voice' };
+```
 
 - [ ] **Step 4: הרכיב** `_components/provider-card.tsx` (Server; מחזיר `<Link>` עם `Badge` מ-`@/components/ui/badge`; טקסטי הסטטוס זהים ל-`StatusBadge` הקיים: `פעיל` / `מוגדר · כבוי` / `לא מוגדר`). `page.tsx`: `requirePlatformPermission('manage_settings')` → `getIntegrationsOverview()` → grid `grid gap-4 sm:grid-cols-2 lg:grid-cols-3` → למטה `OutreachMasterSwitch` (מועבר) + `ChannelCatalogEditor` (מועבר).
 - [ ] **Step 5:** בדיקה עוברת; `npx tsc --noEmit`; `npm run lint`.
@@ -717,14 +1027,15 @@ export const emailTransportSchema = z.object({
 ```
 
 ב-`settings.ts`: `AppSettings`/`UpdateAppSettingsInput`/`getAppSettings`/`updateAppSettings` מצומצמים; שלושה זוגות get/update חדשים (אותו דפוס `.select(...)`/`.update(...)`, `manage_settings`, `'' → null`), עם `configured` נגזר: SUMIT = `company_id && api_key`; ExtrA = `token && sender`; Email = `smtp_from && (provider==='resend' || smtp_host)`.
-- [ ] **Step 4:** `settings-form.tsx` — להסיר את `Panel value="messaging"` ואת שלושת `EditableField` של SUMIT; `TabsList` ל-3 טאבים (`grid-cols-3`). `settings/actions.ts` — להסיר 13 השדות מהקריאה ל-`safeParse`. `settings/page.tsx` — להסיר `ExchangeManager`/`ExchangeModeToggle`/`emailProvider` (עוברים ל-microsoft/resend). **לשמור על `keepMounted`** בפאנלים שנותרו (הכלל ב-`settings-form.tsx:135-145`).
+- [ ] **Step 4:** `settings-form.tsx` — להסיר את `Panel value="messaging"` ואת שלושת `EditableField` של SUMIT. **ה-`TabsList` נשאר `grid w-full grid-cols-2 sm:inline-flex sm:w-auto` — אל תשנו ל-`grid-cols-3`:** ההערה ב-`settings-form.tsx:161-165` מתעדת שרשת 2×2 נבחרה כי ארבע תוויות עבריות לא נכנסות בשורה אחת בנייד, ו-`grid-cols-3` מחזיר בדיוק את הבעיה. לעדכן את ההערה עצמה מ-"Four Hebrew labels" ל-"Three". `settings/actions.ts` — להסיר 13 השדות מהקריאה ל-`safeParse`. `settings/page.tsx` — להסיר `ExchangeManager`/`ExchangeModeToggle`/`emailProvider` (עוברים ל-microsoft/resend). **לשמור על `keepMounted`** בפאנלים שנותרו (הכלל ב-`settings-form.tsx:135-145`).
 - [ ] **Step 5:** בדיקות עוברות; `tsc`; lint. **בדיקת רגרסיה חובה:** `settings/actions.test.ts` — לעדכן את ה-fixture; לוודא שאין בדיקה שמצפה לשדות שהוסרו.
 - [ ] **Step 6:** commit `refactor(admin): split provider credentials out of appSettingsSchema`.
 
 #### Task 0.3: עמוד Meta/WhatsApp (credentials + webhook + master switch)
 
 - [ ] **Step 1:** להעביר את `channels/actions.ts` ל-`integrations/_actions/{outreach-master,whatsapp,voximplant,channel-catalog}.ts` **ללא שינוי לוגיקה**; `revalidatePath` → `/admin/integrations`, `/admin/integrations/meta-whatsapp`, `/admin/integrations/voximplant`. להעביר `channels/actions.test.ts`, `outreach-master.test.ts` בהתאמה (רק נתיבי import ו-`revalidatePath` משתנים בבדיקות).
-- [ ] **Step 2:** `whatsapp-credentials-form.tsx` = `channels-client.tsx:320-409` כפי שהוא (Field/SecretField/CopyRow מועברים ל-`_components/form-fields.tsx` משותף). `whatsapp-webhook-card.tsx` = האקורדיון `webhook` + קישור `/admin/webhooks?provider=whatsapp`.
+- [ ] **Step 2:** לפצל את `TabsPanel value="whatsapp"` (`channels-client.tsx:327-460`) ל-**שלושה** קבצים. **הטווחים אומתו 10.9 — אל תסתמכו על טווחים ישנים במסמך:** `whatsapp-credentials-form.tsx` ← `:328-405` (מכיל את אקורדיוני `creds` 343-384 ו-`webhook` 386-402); `whatsapp-consent-toggle.tsx` ← `:408-448` (**כולל בלוק ההערה 408-414** — הוא הראיה לבאג שהוא מונע: `<form>` מקונן גרם ל-"React form was unexpectedly submitted"); `whatsapp-connection-test.tsx` ← `:450-459`. `Field`/`SecretField`/`CopyRow` (`:157+`) → `_components/form-fields.tsx`. `whatsapp-webhook-card.tsx` = האקורדיון `webhook` שנחתך מהטופס + קישור `/admin/webhooks?provider=whatsapp`.
+- [ ] **Step 2b (רגרסיה, חובה):** `meta-whatsapp/page.test.ts` מצמידה ששלושת הרכיבים נוכחים — לכל הפחות `expect(text).toContain('דרישת הסכמה')` ו-`expect(text).toContain('בדיקת חיבור')`. **הענף הזה כבר איבד רכיב בהעברה** (`b09240b` — "restore the auto-save that replacing the TopBar silently removed"); בדיקה היא ההבדל בין הזזה למחיקה שקטה.
 - [ ] **Step 3:** `meta-whatsapp/page.tsx`:
 
 ```tsx
@@ -751,7 +1062,7 @@ export default async function MetaWhatsAppPage() {
 
 #### Task 0.4: עמוד Voximplant
 
-- [ ] **Step 1:** `voximplant-credentials-form.tsx` = `channels-client.tsx:592-716`; `voximplant-personas.tsx` = ארבעת הטפסים (live calls, meeting-confirm, sales, consent) `channels-client.tsx:432-590` — **טפסים אחים, לא מקוננים** (ההערה ב-`:413-415`); `voximplant-danger-zone.tsx` = consent (אדום) + קישור ל-`/admin/voice/platform` (wiring) ול-`/admin/settings` (מתגי מוקד).
+- [ ] **Step 1:** לפצל את `TabsPanel value="voximplant"` (`channels-client.tsx:462-767`). **טווחים מאומתים 10.9 — הטווחים הקודמים (`592-716`, `432-590`) שגויים: שורה 432 נופלת בתוך טופס ההסכמה של וואטסאפ, בפאנל אחר לגמרי, ו-`592-716` מתחיל באמצע טופס המכירות ונגמר לפני אקורדיון כתובות התרחיש.** `voximplant-personas.tsx` ← ארבעת הטפסים `482-509` (live calls), `520-556` (meeting-confirm), `561-597` (sales), `606-637` (consent) — **טפסים אחים, לא מקוננים** (ההערה ב-`:464-478`); `voximplant-credentials-form.tsx` ← `642-754`, כולל אקורדיון `vox-creds` (647-699) ו-`vox-tuning` (701-737); `voximplant-scenario-urls.tsx` ← אקורדיון `vox-urls` (739-751) + שני ה-props; `voximplant-connection-test.tsx` ← `757-766`; `voximplant-danger-zone.tsx` = טופס ההסכמה (606-637, אדום) + קישור ל-`/admin/voice/platform` ול-`/admin/settings`.
 - [ ] **Step 2:** `voximplant/page.tsx` — `requirePlatformPermission('manage_voice')`; כרטיס סטטוס משתמש ב-`getVoicePlatformView().balance/wiring` (קיים, `voice-ops.ts:479`) + `StatusBadge liveGateOff`.
 - [ ] **Step 3:** בדיקת רינדור; `tsc`; lint. commit `feat(admin): /admin/integrations/voximplant`.
 
@@ -778,13 +1089,17 @@ export async function updateExtraSmsAction(_p: FormState, fd: FormData): Promise
 
 #### Task 0.6: Nav + redirects + מחיקת העמודים הישנים
 
-- [ ] **Step 1:** `admin-shell.tsx` — להסיר 3 פריטים, להוסיף `{ href: '/admin/integrations', label: 'אינטגרציות', icon: Plug }` ב"מערכת ותפעול" אחרי "הגדרות". `isActive` כבר מטפל בתת-עץ.
+- [ ] **Step 1:** `admin-shell.tsx` — להסיר **שני** פריטים (`ערוצי תקשורת` מ"קמפיינים ושליחה", `התראות תפעול` מ"מערכת ותפעול"); **`תבניות פנייה` נשאר** במקומו. להוסיף `{ href: '/admin/integrations', label: 'אינטגרציות', icon: Plug }` ב"מערכת ותפעול" אחרי "הגדרות". `isActive` כבר מטפל בתת-עץ.
 - [ ] **Step 2:** `next.config.ts` — `redirects()` (§3.4).
 - [ ] **Step 3:** grep מלא: `revalidatePath('/admin/channels'|'/admin/templates'|'/admin/alerts')`, `href="/admin/channels"` (למשל `voice/page.tsx:101`, `webhook-detail.tsx:175` הטקסט "לא מוגדר ב-/admin/channels" → "לא מוגדר ב-/admin/integrations/numbers"), `docs/routes-webhooks.md`, `docs/admin-webhooks-runbook.md`.
-- [ ] **Step 4:** מחיקת `(admin)/channels/**`, `(admin)/templates/**`, `(admin)/alerts/**`. `npm run build` (webpack, לפי הזיכרון) — לוודא 3 ה-redirects ברשימת ה-routes.
+- [ ] **Step 3b (ספירת שלמות לפני מחיקה):** `grep -c '<AccordionItem' src/app/\(admin\)/admin/channels/channels-client.tsx` = **5**, וספירת `<form>` שאינם בתוך הערות = **10** (`grep -c '<form'` מחזיר 13; שלושה — שורות 408, 409, 464 — יושבים בתוך הערות שמסבירות למה אסור לקנן). לוודא שסך הטפסים והאקורדיונים בקבצים החדשים תואם **לפני** ה-`rm`. חמש שניות שמכסות בדיוק את מחלקת הבאג של `b09240b`.
+- [ ] **Step 4a:** `npm run build` (webpack) — לוודא 3 ה-redirects ברשימת ה-routes. **העמודים הישנים נשארים בעץ.** commit `feat(admin): integrations nav + redirects`.
+- [ ] **Step 4b (commit נפרד, אחרי פריסה מוצלחת אחת לפחות):** מחיקת `(admin)/channels/**` ו-`(admin)/alerts/**` (10 קבצים; `templates/**` נשאר). הפרדת המחיקה מה-redirect היא מה שהופך את Phase 0 להפיכה בעלות אפס: כשל בפרודקשן נפתר בהסרת שלוש שורות מ-`next.config.ts`, לא ב-revert של פאזה שלמה.
 - [ ] **Step 5:** בדיקת דפדפן: 8 העמודים ב-RTL, שני נושאים, טאב-פוקוס; `/admin/channels` מפנה. commit `feat(admin): integrations nav, redirects, retire channels/templates/alerts pages`.
 
-**Gate Phase 0:** `tsc` · lint · `npm test` מלא · build · דפדפן · `admin-data-layer-coverage.test.ts` (קיים ב-`src/lib/auth/`) ירוק — כל פונקציית DAL חדשה מגודרת.
+**Gate Phase 0:** `tsc` · lint · `npm test` מלא · build · דפדפן · **הרחבה ידנית של `admin-data-layer-coverage.test.ts`**.
+
+⚠️ הבדיקה הזו **אינה סורקת קבצים חדשים מעצמה.** היא עוברת על מפות `EXEMPT` (`src/lib/auth/admin-data-layer-coverage.test.ts:24-50`) ו-`EXPECTED_PERMISSION` (`:76-95`) **קשיחות**, והלולאה היא `Object.entries()` עליהן — קובץ שאינו במפה פשוט לא נבדק, ו"ירוק" על מודול חדש הוא ירוק ריק. להוסיף במפורש: `src/lib/data/admin/integrations/index.ts` → `manage_settings`; `…/provider-numbers.ts` → `manage_settings`; `…/whatsapp-numbers.ts` → `manage_settings`; `…/voximplant-numbers.ts` → `manage_voice`. `src/lib/data/provider-numbers-resolve.ts` נשאר **מחוץ** למפות בכוונה — הוא runtime service-role חסר-בקשה, ומגודר ע"י `worker:deps` (רץ אוטומטית ב-`pretest`, `package.json:46`, כלל `worker-no-request-scoped-next` ב-`.dependency-cruiser.cjs:3-6`).
 
 ---
 
@@ -797,20 +1112,45 @@ export async function updateExtraSmsAction(_p: FormState, fd: FormData): Promise
 export type ProviderKey = 'meta_whatsapp' | 'voximplant' | 'extra_sms' | 'company';
 export type NumberRole = 'whatsapp_rsvp_sender' | 'whatsapp_import_sender' | 'voice_caller_id_rsvp'
   | 'voice_caller_id_meeting_confirm' | 'voice_caller_id_sales' | 'voice_caller_id_call_me_now'
-  | 'voice_inbound_did' | 'sms_sender' | 'company_contact';
+  | 'voice_inbound_did' | 'sms_sender' | 'company_contact' | 'business_line_inbound';
+// עשרה ערכים — בדיוק כמו ה-CHECK ב-§4.2. `business_line_inbound` נוסף ב-§5.3 אחרי
+// הניסוח הראשון והטיפוס לא עקב, בעוד ה-backfill כותב את השורה הזו: בלי התיקון
+// `listProviderNumbers` מחזירה ביום הראשון ערך שאינו בטיפוס, `tsc` נשאר ירוק,
+// וכל מפת תוויות ממצה משמיטה אותו בשקט. §4.1 ("9 תפקידים") עודכנה ל-10.
 export interface ProviderNumber { id: string; provider: ProviderKey; providerRef: string | null; e164: string | null; displayLabel: string | null; isActive: boolean; snapshot: Record<string, unknown> | null; snapshotAt: string | null; source: 'admin'|'backfill'|'sync'; roles: NumberRole[] }
 export async function listProviderNumbers(): Promise<ProviderNumber[]>            // manage_settings
 export async function upsertProviderNumber(input: UpsertProviderNumberInput): Promise<string> // manage_settings | manage_voice by provider
 export async function assignRole(role: NumberRole, numberId: string): Promise<void>
 export async function resolveNumberForRole(role: NumberRole): Promise<{ e164: string | null; providerRef: string | null } | null> // service-role, no auth (runtime)
-export const GRAPH_API_VERSION: string  // 'v24.0' unless WHATSAPP_GRAPH_VERSION overrides (validated /^v\d+\.\d+$/)
+// ⚠️ כבר קיים ונפרס — אין מה לייצר כאן. `export const GRAPH_API_VERSION = 'v25.0' as const`
+// ב-src/lib/whatsapp/graph-version.ts: בלי override מ-env, בלי ולידציה, בלי ייבואים
+// (מכוון — גם ה-CLI ב-tsx וגם חבילת ה-worker טוענים אותו). **Task 1.3 Step 1 בוצעה
+// במלואה:** תשעה מודולים מייבאים היום, ו-graph-version.test.ts סורק את העץ ומפיל כל
+// גרסה קשיחה חדשה. `WHATSAPP_GRAPH_VERSION` נמחק מהקוד לגמרי.
 ```
 
 #### Task 1.1: מיגרציה
 
 - [ ] **Step 1:** `npx supabase migration new provider_numbers_and_roles` → להדביק §4.2.
-- [ ] **Step 2:** בדיקה יבשה: `npx supabase db query --linked -f <file-wrapped-in-begin-rollback>`; לוודא 0 שגיאות ו-`select count(*) from provider_number_roles` = 7 בתוך הטרנזקציה.
+- [ ] **Step 2:** בדיקה יבשה: `npx supabase db query --linked -f <file-wrapped-in-begin-rollback>`; לוודא 0 שגיאות ו-`select count(*) from provider_number_roles` = **9** בתוך הטרנזקציה (1 whatsapp + 4 קול + `voice_inbound_did` + `sms_sender` + `business_line_inbound` + `company_contact`). **הערך 7 שהופיע כאן במקור נוסח לפני ש-§5.3 הוסיף את `business_line_inbound`, ולפני ש-`voice_inbound_did` שויך ב-backfill** — קריטריון קבלה שהיה נכשל דווקא מול מיגרציה נכונה, הסוג הגרוע ביותר של שער מיושן. אומת בהרצה יבשה 10.9: **4** שורות ב-`provider_numbers`, **9** ב-`provider_number_roles`.
 - [ ] **Step 3:** **אישור בעלים** → `npx supabase db push --linked` → `npm run gen:types` → commit `feat(db): provider_numbers + provider_number_roles (backfill from app_settings)`.
+- [ ] **Step 4 (הכרעה לפני `db push` — איך מונעים את פער הטיפוס מלחזור).** הרשימה כבר זזה פעם אחת בתוך המסמך הזה: §5.3 הוסיף `business_line_inbound`, ה-backfill כותב את השורה, והטיפוס ב-TS נשאר על 9. זה בדיוק הפער של `workflow_runs.trigger_source` שתועד ב-§0.1 — סכמה שמזמינה הרחבה, בלי מנגנון שאוכף שהקוד יעקוב. שתי דרכים, **הראשונה מומלצת**:
+
+  **(א) `role` כ-enum של Postgres במקום `text + CHECK`** — `create type public.provider_number_role as enum (…)`, ואותו דבר ל-`provider`. אז המנגנון קיים כבר ואינו עולה שורת קוד: `npm run gen:types` פולט את ה-enum ל-`types.generated.ts`, ו-`scripts/check-supabase-types.mjs` — **הצעד הראשון ב-`npm run deploy`** (MEASURED 10.9) — חוסם פריסה על drift. ה-union ב-TS מפסיק להיות מתוחזק ביד: `type NumberRole = Enums<'provider_number_role'>`. זה גם דפוס הבית: `public.app_role`, `public.campaign_channel` ו-8 נוספים הם enums (MEASURED). המחיר זהה ל-CHECK — הוספת ערך היא מיגרציה — וזה **נכון** לחוזה ריצה. ⚠️ אימוץ (א) משנה את ה-SQL ב-§4.2 שכבר עבר הרצה יבשה מאומתת; **יש להריץ אותה שוב** ב-`begin; … rollback;` לפני `db push`.
+
+  **(ב) להישאר ב-CHECK + בדיקת drift** — ריאלי רק כשלב **deploy-time עם גישה ל-DB**: בדיקת vitest הרמטית אינה רואה `CHECK`, כי הוא לא מופיע בטיפוסים הנוצרים. השאילתה, **בדוקה בפועל** (הוחזרו בדיוק עשרת הערכים):
+
+```sql
+select array_agg(m[1] order by m[1]) as roles
+  from pg_constraint c,
+       lateral regexp_matches(pg_get_constraintdef(c.oid), '''([a-z_]+)''::text', 'g') as m
+ where c.conrelid = 'public.provider_number_roles'::regclass
+   and c.conname  = 'provider_number_roles_role_chk';
+```
+
+  (`pg_get_constraintdef` מרנדר `CHECK ((role = ANY (ARRAY['a'::text, …])))`, ולכן ה-regex מכוון ל-`'…'::text`. `pg_catalog`, לא `information_schema` — ראו [[sb-query-use-pg-catalog-for-constraints]].)
+
+  **חריג שמצדיק מעקב:** `business_line_inbound` הוא תווית תצוגה/תפעול **ללא קורא ריצה**, בניגוד לתשעת האחרים. אם תוויות כאלה יצטברו — לפצל: תפקידי ריצה ב-enum, תגיות תצוגה בעמודה חופשית או ב-`snapshot`. **לא** לפתוח את כל הסט.
 
 #### Task 1.2: DAL + resolver
 
@@ -834,6 +1174,10 @@ it('upsertProviderNumber rejects a non-E.164 value', async () => {
 
 #### Task 1.3: קבוע גרסת Graph + GET מספרים מ-Meta
 
+- [ ] **Step 0 (חוסם — לפני שורת קוד):** **`last_onboarded_time` הוסר מרשימת ה-`fields`.** שתי ראיות בלתי-תלויות: (א) §0.0 מדד ששני שדות המיון (`creation_time`, `last_onboarded_time`) ניתנים למיון אך **אינם ניתנים לקריאה כשדות**; (ב) במפרט הרשמי המקומי `openapi/meta/phone-number-management.v25.0.yaml` הוא מופיע **חמש פעמים, כולן תחת פרמטר `sort` בלבד** (שורות 184, 270, 275-278, 279) — ואף לא פעם אחת בסכמת התגובה. אין דרך לקבל את הערך: `sort` מסדר שורות, לא מחזיר שדה. אם צריך את הסדר בלבד — `sort=last_onboarded_time_descending` (הצורה `.desc` שבמפרט **נדחית**, §0.0). **סייג:** עמוד הפרוזה של מטא, שגם הוא מצוטט ב-§0.0, כן מונה אותו כשדה; הסתירה נסגרת בפרוב ולא בהכרעה על הנייר.
+- [ ] **Step 0b (חוסם):** **תשעה מתוך 13 השדות ברשימה מעולם לא נבדקו חי** — `scripts/verify-meta-schema.ts:39-54` מכיל ארבעה בלבד. להוסיף ל-`FIELD_MATRIX` שישה — `last_onboarded_time`, `throughput`, `account_mode`, `is_official_business_account`, `status`, `quality_rating` — ולהריץ `npm run meta:verify`. דירוג סיכון: `last_onboarded_time` **גבוה** (רק תחת `sort`); `throughput` **בינוני** (0 מופעים במפרט, אובייקט מקונן, לא נמדד); `account_mode`/`is_official_business_account` בינוני-נמוך (נמדד עליהם **סינון**, לא קריאה כשדה); `status`/`quality_rating`/`messaging_limit_tier` נמוך; `display_phone_number`/`verified_name` **אפס** (רצים בפרודקשן, `channels.ts:128`); `name_status` אפס (נמדד למרות שאינו מוצהר); `platform_type` נמוך (אליאס מדוד של `host_platform`). זכרו את הכלל של §0.0: **Graph דוחה את כל הבקשה על שדה אחד, והשגיאה מאשימה את החלק הלא נכון.**
+- [ ] **Step 0c:** `listWabaPhoneNumbers` נכשלת **רכה**: אם Graph מחזיר `#100` על ה-`fields=` המלא — לנסות שוב עם ליבה מצומצמת (`id,display_phone_number,verified_name,status`) ולהחזיר `{ numbers, degraded: true }` שהעמוד מציג כהערה. מטא הסירה שדות בעבר; שדה אחד שנעלם לא צריך להפיל עמוד שלם.
+
 - [ ] **Step 1:** `src/lib/whatsapp/graph-version.ts`:
 
 ```ts
@@ -850,7 +1194,7 @@ export const META_LATEST_GRAPH_VERSION = 'v26.0'; // DOCS-ONLY changelog 2026-09
 ```ts
 import 'server-only';
 import { GRAPH_API_VERSION } from './graph-version';
-export const WABA_PHONE_FIELDS = 'id,display_phone_number,verified_name,status,quality_rating,code_verification_status,name_status,messaging_limit_tier,throughput,platform_type,account_mode,is_official_business_account,last_onboarded_time';
+export const WABA_PHONE_FIELDS = 'id,display_phone_number,verified_name,status,quality_rating,code_verification_status,name_status,messaging_limit_tier,throughput,platform_type,account_mode,is_official_business_account';
 export interface WabaPhoneNumber { id: string; display_phone_number: string; verified_name?: string; status?: string; quality_rating?: string; code_verification_status?: string; name_status?: string; messaging_limit_tier?: string; throughput?: { level?: string }; platform_type?: string; account_mode?: string; is_official_business_account?: boolean; last_onboarded_time?: string }
 export async function listWabaPhoneNumbers(creds: { wabaId: string; accessToken: string }): Promise<WabaPhoneNumber[]> {
   const res = await fetch(`https://graph.facebook.com/${GRAPH_API_VERSION}/${encodeURIComponent(creds.wabaId)}/phone_numbers?fields=${WABA_PHONE_FIELDS}&limit=50`,
@@ -953,12 +1297,16 @@ export function getAvailableRegulations(config, params: { country_code: string; 
 `mutations.ts` (body בנוי inline, אין spread של קלט — כמו `setAccountCallbackUrl`):
 
 ```ts
-export function attachPhoneNumber(config, params: { phone_number: string; regulation_address_id?: number }, timeoutMs?) // specific-number mode ONLY — never the catalog mode (platform picks a number = untyped purchase)
+// Israel supports the CATALOG mode only (§5.2). `phone_count` is pinned to 1 in the
+// body and never derived from input — that, plus the quoted price and the typed
+// confirmation, is the money guard. Refusing the catalog mode outright would refuse
+// the only country we operate in.
+export function attachPhoneNumber(config, params: { country_code: string; phone_category_name: string; phone_region_id: number; regulation_address_id?: number }, timeoutMs?)
 export function bindPhoneNumberToApplication(config, params: { phone_id: number; application_id: number; bind: boolean; rule_id?: number }, timeoutMs?)
 export function deactivatePhoneNumber(config, phoneId: number, timeoutMs?)
 ```
 
-- [ ] בדיקות: `cli-guard.test.ts` — הרשימה החדשה; `mutations.test.ts` — גוף מדויק לכל אחת; `attachPhoneNumber` **אינו מקבל** `phone_count`/`country_code` (הגנה מרכישה קטלוגית).
+- [ ] בדיקות: `cli-guard.test.ts` — הרשימה החדשה; `mutations.test.ts` — גוף מדויק לכל אחת; `attachPhoneNumber` **מקבע `phone_count: 1`** בגוף הבקשה ואינו גוזר אותו מהקלט (הגנה מרכישת כמות).
 
 #### Task 3.3: זרימת רכישה מאחורי אישור
 
@@ -975,7 +1323,7 @@ UI: `AlertDialog` (קיים) עם טבלת מחיר, checkbox "אני מאשר �
 
 - [ ] אחרי bind של מספר בדיקה (או שימוש במספר הקיים): הבעלים מחייג ל-DID; לבדוק ב-`console_calls` שנוצרה שורה דרך `route-inbound`. אם לא — להוסיף rule pattern ב-`rules.config.json` ו-`voxengine-ci upload` (בעלים). התוצאה מתועדת כאן; רק אז הפאנל מציע `rule_id: 1494687` ב-bind.
 
-**Gate Phase 3:** `npm test` (כולל cli-guard) · build · **אין** רכישה בבדיקה; ה-`quote` מוצג ומראה מחיר אמיתי; ה-`bind` נבדק על ה-DID הקיים (idempotent).
+**Gate Phase 3:** `npm test` (כולל cli-guard) · build · **אין** רכישה בבדיקה; ה-`quote` מוצג ומראה מחיר אמיתי; ה-`bind` נבדק על ה-DID הקיים (idempotent); בדיקת יחידה שמצמידה `phone_count: 1` בגוף של `attachPhoneNumber`.
 
 ---
 
@@ -994,6 +1342,7 @@ UI: `AlertDialog` (קיים) עם טבלת מחיר, checkbox "אני מאשר �
 ### Phase 5 — בריאות וריאנטים, כיסוי webhooks, מדיניות שליחה, drift · **M**
 
 #### Task 5.1: בריאות וריאנטים
+- [ ] **בניית רשימת הווריאנטים יורשת את הסינון הקיים** של `runTemplateHealthSync`: `.eq('channel','whatsapp').neq('name','')` (`src/lib/data/template-health-sync.ts:29-33` — הנתיב הוא `src/lib/data/`, **לא** `src/lib/whatsapp/`). מדוד 10.9: מתוך תשע השורות ב-`message_templates` אחת היא `channel='call'` (`call_1`, `name=''`); בלי הסינון היא נכנסת ל-`message_template_variant_health` עם `variant_name=''`, לא נמצאת אצל מטא, ומייצרת התראת `NOT_FOUND` **בכל סנכרון, לנצח**.
 - [ ] מיגרציה §4.3. `template-health-sync.ts`: אחרי `fetchTemplateHealth` — לכל שורה לבנות רשימת `{variant_name, language, kind, event_type}` מ-`name` + `components.variants[*]` + `media_variants[*]` + `media_variant`; להתאים מול `metaTemplates` (name+language); `upsert` ל-`message_template_variant_health`; התראה `send_health` על **מעבר** ל-`category !== requested_category`/`RED`/`REJECTED|DISABLED` לפי הערך הקודם בטבלה (אותו כלל של המצביע, `template-health-sync.ts:86-101`). וריאנט שלא נמצא ב-Meta → `meta_status='NOT_FOUND'` + התראה (זה בדיוק המקרה שנשלח לתבנית שלא קיימת → `132001`).
 - [ ] `templates-client.tsx`: מתחת ל-`TemplateHealth` טבלה קטנה של הוריאנטים (`listVariantHealth(templateId)`).
 - [ ] בדיקות: `template-health-sync.test.ts` (קיים) — מקרה עם 2 וריאנטים, אחד חסר.
@@ -1013,7 +1362,7 @@ UI: `AlertDialog` (קיים) עם טבלת מחיר, checkbox "אני מאשר �
 #### Task 5.6: ניטור מפתח ExtrA
 - [ ] תור `extra-key-check` (`QUEUES.extraKeyCheck = 'extra-key-check'`, יומי `10 3 * * *` Asia/Jerusalem) → `getAuthKey`; Slack `send_health` כאשר `valid=false` או `expireAt - now < 30d`; `queue-schedule.ts` `'extra-key-check': 3 * 24 * 60`; `integrations.ts` ExtrA → `healthCheckAvailable: true, lastCheckedAt: lastCompletedFor(jobHealth,'extra-key-check')`. בדיקה: expire בעוד 20 יום → התראה; 200 יום → שקט.
 
-**Gate Phase 5:** `npm test` מלא · build · הרצה ידנית של `runTemplateHealthSync` דרך כפתור "הרץ סנכרון עכשיו" (action חדש, `manage_settings`) ובדיקה ש-28 שורות נכנסו ל-`message_template_variant_health`; כרטיס ExtrA מציג "פוקע 2027-10-27".
+**Gate Phase 5:** `npm test` מלא · build · הרצה ידנית של `runTemplateHealthSync` דרך כפתור "הרץ סנכרון עכשיו" (action חדש, `manage_settings`) ובדיקה ש-**36** שורות נכנסו ל-`message_template_variant_health` (מדוד 10.9: 8 מצביעי whatsapp — מתוך 9 שורות, `call_1` מסונן — ועוד 24 מפתחות `variants`, 3 `media_variants` ו-1 `media_variant`. הערך 28 שהופיע כאן קודם ספר את הווריאנטים בלבד, בלי המצביעים); כרטיס ExtrA מציג "פוקע 2027-10-27".
 
 ---
 
@@ -1034,11 +1383,12 @@ UI: `AlertDialog` (קיים) עם טבלת מחיר, checkbox "אני מאשר �
 
 | פאזה | בדיקות יחידה | בדיקה חיה (בעלים/דפדפן) | נקודות ביקורת אבטחה |
 |---|---|---|---|
-| 0 | כל `actions.test.ts` שהועברו + 8 בדיקות רינדור עמודים + `settings.test.ts` מצומצם + `admin-data-layer-coverage.test.ts` | 8 עמודים ב-RTL/2 נושאים; redirects; שמירה בכל טופס משנה רק את השדות שלו (לבדוק ב-DB שאין איפוס של מתגים אחרים — הסיכון של `keepMounted`) | אין סוד חדש ב-props; `outreach_enabled` עדיין כותב יחיד (grep `outreach_enabled:` ב-`src/lib/data/admin` = קובץ אחד) |
-| 1 | DAL + resolver + `graph-version` + `phone-numbers` (fetch ממוקק) + `webhook-inbox` unknown-number | סנכרון Meta/Voximplant; `/admin/webhooks` על שורה של המספר השני | `provider-numbers-resolve.ts` request-free (dependency-cruiser); RLS: `select` כ-`authenticated` שאינו admin מחזיר 0 שורות (`npx supabase db query` עם `set role authenticated; set request.jwt.claims…` — לפי skill `querying-live-supabase`) |
+| 0 | כל `actions.test.ts` שהועברו + 8 בדיקות רינדור עמודים + `settings.test.ts` מצומצם + `admin-data-layer-coverage.test.ts` | 8 עמודים ב-RTL/2 נושאים; redirects; שמירה בכל טופס משנה רק את השדות שלו (לבדוק ב-DB שאין איפוס של מתגים אחרים — הסיכון של `keepMounted`) | אין סוד חדש ב-props; `outreach_enabled` עדיין כותב יחיד (grep `outreach_enabled:` ב-`src/lib/data/admin` = קובץ אחד); **כל DAL חדש נרשם ב-`EXPECTED_PERMISSION`** — בלעדיו השער אינו סורק אותו כלל; **האינדקס אינו מושך סודות** כדי לגזור בוליאני |
+| 1 | DAL + resolver + `graph-version` + `phone-numbers` (fetch ממוקק) + `webhook-inbox` unknown-number | סנכרון Meta/Voximplant; `/admin/webhooks` על שורה של המספר השני | **מחיקת מספר שמחזיק תפקיד מוחזרת כשגיאה ידידותית, לא כהודעת foreign key**; `provider-numbers-resolve.ts` request-free (dependency-cruiser); RLS: `select` כ-`authenticated` שאינו admin מחזיר 0 שורות (`npx supabase db query` עם `set role authenticated; set request.jwt.claims…` — לפי skill `querying-live-supabase`) |
 | 2 | 7 פונקציות Graph (URL/גוף/מיפוי שגיאות) + Zod + actions (Owner gate נבדק: מוקק `requirePlatformOwner` זורק → action מחזיר error) | `debugToken` על הטוקן החי; ניסיון "הוסף" של מספר קיים נכשל בחן | PIN/טוקן לא בלוגים/הודעות; `register` מוגבל Owner; מגבלת 10/72h מוצגת |
 | 3 | `cli-guard` + `mutations` + `core` + quote/purchase actions (mock) | Task 3.1 capabilities; quote אמיתי; bind על DID קיים; Task 3.4 שיחה נכנסת | `attachPhoneNumber` ללא מצב קטלוג; Owner gate; `logActivity` + Slack על רכישה |
-| 4 | `voximplant-config.test.ts` fallback | שיחה אחת לכל פרסונה | fail-closed נשמר (null כששניהם ריקים) |
+| 4 | `voximplant-config.test.ts` fallback | שיחה אחת לכל פרסונה | fail-closed נשמר (null כששניהם ריקים); **`npm run worker:deps`** (רץ אוטומטית ב-`pretest`) — Phase 4 מכניסה את `resolveNumberForRole` ל-`voximplant-config.ts`, מודול שה-worker מגיע אליו |
+| 6 | sweep dedupe לפי `call.id`; מיפוי `incoming_missed` → `callback_requests` | שיחה שלא נענתה אחת מקצה לקצה | `numbers.caller.e164` לא בלוגים ולא ב-snapshot; `getRecordingUrls` לעולם לא `ttl: 0` |
 | 5 | `template-health-sync` וריאנטים; `summary.test.ts`; `send-policy` action (חריגה מהתקרה נדחית); subscriptions parse | סנכרון ידני; עריכת חלון שליחה → `parseSendPolicy` דוחה 21:30 | app token = `appId|appSecret` נשאר בשרת; אין שינוי בנתיבי הטוקן הציבוריים (`/r`, `/g`, `/ty`, ctx/cb) — **לא נוגעים בהם בכלל** |
 
 **כללי:** לפני כל פאזה `git status` נקי; אחרי — `npx tsc --noEmit && npm run lint && npm test && npm run build`; deploy ע"י הבעלים בלבד; אימות חי ב-beta.
@@ -1053,10 +1403,10 @@ UI: `AlertDialog` (קיים) עם טבלת מחיר, checkbox "אני מאשר �
 4. **תפקיד ה-service account ב-Voximplant לא ידוע** (Attach = Owner/Admin/Accountant; Deactivate = Owner). Task 3.1 מודד לפני שה-UI מבטיח.
 5. **אותו E.164 בכמה ספקים** — המודל מאפשר (unique על `(provider, provider_ref)`); UI חייב להבהיר שזה מכוון (INFERRED: `+972 3-721-9347` = Voximplant DID/caller id = WhatsApp RSVP).
 6. **תיעוד Meta סותר** על גוף `POST /{waba}/phone_numbers` — Task 2.1 חובה. `DELETE subscriptions` — UNVERIFIED.
-7. ⚠️ **טוקן אישי ולא System-User — אומת, וזה חוסם Phase 0.** תוכנית 3.9 §0 D מזכירה `data_access_expires_at = 2026-12-02` על הטוקן הנוכחי — `debugToken` יחשוף זאת מיד (וזה בדיוק הערך של Phase 2.5).
+7. ⚠️ **טוקן אישי ולא System-User — אומת, וחוסם את Task 1.3 ואילך, לא את Phase 0.** Phase 0 היא הזזת רכיבים ופיצול סכמות ואינה פונה ל-Meta ולו פעם אחת; הקריאה הראשונה היא `syncMetaNumbers` ב-Task 1.3. הניסוח הקודם ("חוסם Phase 0", וגם ב-§0.0) הוביל לאחת משתי טעויות: המתנה לשווא, או פסילת התוכנית כולה. מדוד ב-`debug_token`: הטוקן הוא USER ולא System User, `expires_at: 0`, `data_access_expires_at = 2026-12-07` (לא 2.12) — **88 יום מ-10.9**. ההרשאות רחבות מדי (`ads_management`, `ads_read`, `pages_*`).
 8. ✅ **נסגר — רגולציה IL:** כתובת מאומתת קיימת (id 1418, VERIFIED). ההערה המקורית: `is_need_regulation_address` לא נמדד ל-IL; יצירת כתובת רגולציה — אין מתודה ידועה → Control Panel.
 9. **היגיינת grants:** `message_templates` מעניקה ל-`anon` ALL (RLS חוסם; אין policy ל-anon) — לא בהיקף, להעביר ל-rls-schema-engineer.
-10. **`relocation/*` ב-v21.0** (פקיעה 21.1.2027) — לא בהיקף; לרשום ב-`docs/product-debt.md`.
+10. ✅ **נסגר — `relocation/*` כבר על `GRAPH_API_VERSION`.** מדוד 10.9: `preflight.ts:722` ו-`external.ts:203` מייבאים את הקבוע (v25.0) מאז G5. אין חוב לרשום ב-`docs/product-debt.md`.
 11. **Redirect 307 ולא 308** — כדי לא לקבע בדפדפנים לפני שהבעלים מאשר את ה-IA הסופית.
 12. **Nav visibility ≠ gate** — כמו היום (`admin-shell.tsx:162-167`): כל admin רואה "אינטגרציות"; העמודים עצמם מגודרים.
 13. **מפתח ExtrA:** `getAuthKey` מחזיר את המפתח בגוף התגובה — הקליינט חייב להשליכו (בדיקה מצמידה). המפתח החי הוא legacy ללא scopes ("may do everything the account may") ופוקע 2027-10-27 — ניטור ב-Task 5.6.
@@ -1071,8 +1421,12 @@ UI: `AlertDialog` (קיים) עם טבלת מחיר, checkbox "אני מאשר �
 2. האם המספר `+972 3-330-1505` אמור להיות **גם** מספר הייבוא ב-WhatsApp **וגם** שולח ה-SMS **וגם** טלפון החברה בהסכם — או שזה מקרי? (משפיע על תוויות ב-`provider_numbers` ועל D2.)
 3. ✅ **נענה 9.9 — כן.** `GetPhoneNumbers` מחזיר מספר יחיד: `97237219347`, `phone_id` 2303422, TEL AVIV, ACTIVE, אפליקציה 11107202, ללא `rule_id`. חידוש 14.9.2026, 5$/חודש.
 4. ✅ **נענה 9.9 — Owner** (`GetKeyRoles` → role_id 1). רכישה, קישור וביטול אפשריים מהפאנל. אושר בפועל: `GetRegulationsAddress` (Owner/Accountant) הצליח.
-5. **עדיין פתוח.** מדוד 9.9: העמודה `whatsapp_app_id` אינה קיימת ב-`app_settings`, ו-`META_APP_ID_WA` אכן יושב ב-`.env.local` בלי אף קורא.
+5. **עדיין פתוח — וזה חוסם שלוש משימות, לא שתיים.** מדוד שוב 10.9: `whatsapp_app_id` אינה קיימת ב-`app_settings`; `META_APP_ID_WA` יושב ב-`.env.local` בלי אף קורא. תלויות: Task 2.2 (`debugToken`), **Task 2.5 (כרטיס סטטוס Meta — נשען כולו על `debugToken` ועל `GET /{app-id}`)**, ו-Task 5.4 (מנויי webhook). **מומלץ:** עמודה ב-`app_settings` + שדה בטופס Meta — עקבי עם `whatsapp_waba_id` שגם הוא מזהה ולא סוד, וניתן להחלפה בלי פריסה. החלופה: קריאה מ-env.
 6. תוכנית 3.9 (פיצול ניתוב ייבוא): לבצע **אחרי** Phase 1 עם תפקיד `whatsapp_import_sender` (מומלץ), או במקביל עם העמודות שהוצעו שם?
 7. הצד המשפטי: caller id שונה לפרסונת המכירות — האם צריך להופיע בהסכם/מדיניות (israeli-compliance-advisor)?
 8. **הסכמת וואטסאפ — מה המדיניות מכאן?** מדוד 9.9: ל-38 אנשי קשר יש `whatsapp_consent_at`, **כולם עם חותמת זמן זהה** (2026-07-07 11:19:15) — כלומר כתיבה אחת בכמות לפני קמפיין הברית, לא 38 אירועי הסכמה. `recordWhatsAppConsent` קיימת ואין לה אף קורא. מאז 9.9 יש מתג `whatsapp_consent_required` (כבוי כרגע), אבל השאלה נשארת: לחווט הסכמה אמיתית לנקודה בזרימה, להמשיך ברישום ידני לפני כל קמפיין, או לקבוע שההזמנה עצמה מהווה הסכמה. **שאלה עסקית-משפטית — לא טכנית.**
-9. **האם לקבע גם את גרסת ה-Graph של הפרסום החברתי?** `src/lib/fleet/publish-social.ts` מקבע `v26.0` בשתי מחרוזות נפרדות — אותו מבנה שהוליד את G5. הוא מוחרג במפורש מ-`graph-version.test.ts` כי זה משטח מוצר אחר (Facebook Page / Instagram) עם אימות גרסה נפרד. קבוע `FACEBOOK_GRAPH_API_VERSION` משלו ייתן לו את אותה הגנה בלי לערבב.
+9. ✅ **נענה 10.9 — התוכן נשאר, הבריאות עוברת.** ההנמקה והמדידות בסוף §3.3. נותרה החלטת נתונים אחת: האם למחוק את שורת `call_1` הריקה והכבויה (מומלץ) — **שינוי בייצור, דורש אישור.**
+10. ✅ **נענה 10.9 — לא צמצום, ציר אחר; ואיש אינו מושפע.** `requireAdmin()` בודק `has_role(uid,'admin')` על `user_roles`; `requirePlatformPermission` בודק `has_platform_permission` דרך `platform_staff → platform_roles → platform_role_permissions → platform_permission_definitions`. ההערה ב-`dal.ts:61-63` אומרת זאת מפורשות: *"A SECOND platform role layer, **orthogonal** to the coarse has_role('admin') flag"*. מדוד 10.9: 3 משתמשים עם `admin`, 3 חברי `platform_staff` (כולם `owner`), 3 מחזיקי `manage_settings` — **0 שיאבדו גישה, 0 שיקבלו**. השאלה נותרת רלוונטית רק כשיתווסף חבר צוות שאינו `owner`.
+11. **האם להשוות בכלל מול "Meta latest"?** `META_LATEST_GRAPH_VERSION` **אינו קיים בקוד** (מדוד 10.9), ו-Task 2.5 עצמו פוסל רשימות סטטיות בנימוק "אין placeholder שמזדקן" — ואז מקבע מחרוזת שמטא תיישן. חלופות: לגזור מהפרוב של `meta:types` (v26.0 = 500 בשישה ממשקים), או להסיר את ההשוואה ולהציג קישור ל-changelog.
+12. **האם להוציא את רשימת הספקים לרישום נתוני?** הוספת ספק שמיני נוגעת **בחמישה** מקומות: `IntegrationKey` (union סגור), המערך ב-`getIntegrationsOverview`, תיקיית route, `redirects()`, ו-`NAV_GROUPS` — בזמן שטבלת `channels` כבר קיימת עם RLS ועורך UI. **מומלץ:** `src/lib/integrations/registry.ts` — מערך descriptors אחד (`{ key, title, permission, href }`) שממנו נגזרים האינדקס, פריט התפריט ובדיקת הרינדור. **לא** route דינמי `[provider]` — over-engineering לשבעה ספקים ידועים שכל אחד מרכיב רכיבים שונים.
+13. **האם לקבע גם את גרסת ה-Graph של הפרסום החברתי?** `src/lib/fleet/publish-social.ts` מקבע `v26.0` בשתי מחרוזות נפרדות — אותו מבנה שהוליד את G5. הוא מוחרג במפורש מ-`graph-version.test.ts` כי זה משטח מוצר אחר (Facebook Page / Instagram) עם אימות גרסה נפרד. קבוע `FACEBOOK_GRAPH_API_VERSION` משלו ייתן לו את אותה הגנה בלי לערבב.
