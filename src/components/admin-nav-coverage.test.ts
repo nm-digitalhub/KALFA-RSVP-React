@@ -32,7 +32,11 @@ describe('every sidebar link is classified', () => {
   // COARSE_GATE_ALLOWED read-only surfaces whose data layer gates on the staff
   // floor and for which the catalogue has no key to name — so every staff member
   // sees them, which is exactly what their own gate allows.
-  const NO_PERMISSION_BY_DESIGN = new Set(['/admin', '/admin/analytics']);
+  // /admin and /admin/analytics: COARSE_GATE_ALLOWED read-only surfaces with no key in
+  // the catalogue. /admin/integrations: navigation + read-only status on the staff
+  // floor, where each CARD carries the permission its destination enforces — naming one
+  // key here would hide the whole page from staff who can open part of it.
+  const NO_PERMISSION_BY_DESIGN = new Set(['/admin', '/admin/analytics', '/admin/integrations']);
 
   for (const item of ITEMS) {
     it(`${item.href} names a permission or is a documented exception`, () => {

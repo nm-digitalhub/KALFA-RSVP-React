@@ -141,10 +141,23 @@ const WRITE_EXEMPT: Record<string, string> = {
 // Every module under src/lib/data/admin, read from disk. The suite is driven by
 // THIS, not by a hand-maintained list, so module 37 is examined the day it lands.
 const ADMIN_DAL_DIR = 'src/lib/data/admin';
-const MODULES = readdirSync(join(ROOT, ADMIN_DAL_DIR))
-  .filter((f) => f.endsWith('.ts') && !f.endsWith('.test.ts'))
-  .map((f) => `${ADMIN_DAL_DIR}/${f}`)
-  .sort();
+// RECURSIVE. It was a flat readdir until 2026-09-10, which was fine while every
+// module sat directly in the directory — and stopped being fine the moment the first
+// SUBDIRECTORY appeared (data/admin/integrations/). A flat scan returns that entry as
+// a directory, the `.endsWith('.ts')` filter drops it, and every module inside is
+// silently unscanned: the fail-closed guarantee this suite exists for would have gone
+// green over a whole folder. Found while adding that folder, not by it failing.
+function walkModules(rel: string): string[] {
+  const out: string[] = [];
+  for (const entry of readdirSync(join(ROOT, rel), { withFileTypes: true })) {
+    const child = `${rel}/${entry.name}`;
+    if (entry.isDirectory()) out.push(...walkModules(child));
+    else if (entry.name.endsWith('.ts') && !entry.name.endsWith('.test.ts')) out.push(child);
+  }
+  return out;
+}
+
+const MODULES = walkModules(ADMIN_DAL_DIR).sort();
 
 // Modules allowed to gate on the FLOOR alone — requirePlatformStaff(), "is this
 // person staff at all" — each with the reason. A module earns a place here only
@@ -165,6 +178,8 @@ const COARSE_GATE_ALLOWED: Record<string, string> = {
     'Counts for the admin home tiles. Read-only (verified 2026-09-10: no insert/update/upsert/delete, no rpc, no enqueue). It DOES use createAdminClient, so it bypasses RLS and the app gate is the only protection — acceptable while it returns aggregates and no customer row.',
   'src/lib/data/admin/nav-counts.ts':
     'Badge counts for the nav. Read-only (verified 2026-09-10), and already calls hasPlatformPermission internally so a viewer is never counted what they may not see. Uses createAdminClient, so it bypasses RLS — acceptable for counts.',
+  'src/lib/data/admin/integrations/index.ts':
+    'The /admin/integrations index. Read-only: it composes getIntegrationsStatus (itself credential-free since the flags RPC) with per-card hasPlatformPermission checks and returns booleans plus hrefs. Its floor is requirePlatformStaff because the page is navigation + status; the CARDS carry the permission each destination enforces, and the write surfaces it links to keep their own gates. Naming one key for the whole module would be the mistake the header of that file documents.',
   'src/lib/data/admin/nav-visibility.ts':
     'Which sidebar links to show. Read-only and touches no table at all — it returns nine booleans about the CALLER\'s own role. Naming a finer permission would be circular: answering "which permissions do you hold" cannot itself require one of them. Nav visibility is convenience, never authorization; the page keeps the gate.',
   'src/lib/data/admin/labels.ts': 'Pure label maps. No I/O at all.',

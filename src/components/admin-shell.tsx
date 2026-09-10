@@ -33,6 +33,7 @@ import {
   PhoneCall,
   PhoneOff,
   Settings,
+  Plug,
   ShieldCheck,
   Users,
   UserSearch,
@@ -166,6 +167,13 @@ export const NAV_GROUPS: NavGroup[] = [
     label: 'מערכת ותפעול',
     items: [
       { href: '/admin/settings', label: 'הגדרות', icon: Settings, permission: 'manage_settings' },
+      // No `permission` on purpose — the page itself is on the staff floor
+      // (requirePlatformStaff inside getIntegrationsIndex) because it is navigation
+      // plus read-only status. Each CARD is gated by the permission its own
+      // destination enforces, and a card the viewer cannot use renders as
+      // "no permission" rather than a link that would eject them. Registered in
+      // admin-nav-coverage.test.ts's NO_PERMISSION_BY_DESIGN with the same reason.
+      { href: '/admin/integrations', label: 'אינטגרציות', icon: Plug },
       { href: '/admin/calendar', label: 'יומן Exchange', icon: CalendarDays, permission: 'manage_settings' },
       { href: '/admin/fleet', label: 'פניות סוכנים', icon: Bot, permission: 'manage_settings' },
       { href: '/admin/alerts', label: 'התראות תפעול', icon: BellRing, permission: 'manage_settings' },
