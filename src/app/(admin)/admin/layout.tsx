@@ -8,6 +8,7 @@ import {
   type PresenceSnapshot,
 } from '@/lib/data/exchange-availability';
 import { getAdminNavCounts } from '@/lib/data/admin/nav-counts';
+import { getAdminNavGrants } from '@/lib/data/admin/nav-visibility';
 import {
   consoleConsultConferenceEnabled,
   consoleHandoffEnabled,
@@ -44,9 +45,16 @@ export default async function AdminLayout({
   const user = await requirePlatformStaff();
   // Full name for the account menu (profile row is created at signup by the
   // handle_new_user trigger); falls back to the email in the shell when empty.
-  // navCounts (per-item sidebar badges) is independent of the profile read —
-  // fetched in parallel rather than as a second sequential await.
-  const [profile, navCounts] = await Promise.all([getProfile(), getAdminNavCounts()]);
+  // navCounts (per-item sidebar badges) and navGrants (which links this viewer
+  // is shown at all) are independent of the profile read — fetched in parallel
+  // rather than as sequential awaits. Both resolve the caller's permissions
+  // through the same cache()-memoized DAL helpers, so the overlapping keys cost
+  // one RPC each for the whole render pass, not one per caller.
+  const [profile, navCounts, navGrants] = await Promise.all([
+    getProfile(),
+    getAdminNavCounts(),
+    getAdminNavGrants(),
+  ]);
   const userName = profile?.full_name?.trim() || undefined;
 
   // Availability presence for the account menu. Read here so the avatar's
@@ -148,6 +156,7 @@ export default async function AdminLayout({
       availabilityPresence={availabilityPresence}
       hasExchangeConnection={hasExchangeConnection}
       navCounts={navCounts}
+      navGrants={navGrants}
       softphone={softphone}
     >
       {children}

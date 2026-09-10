@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { DirectionProvider } from '@base-ui/react/direction-provider';
@@ -59,6 +59,7 @@ import {
   useSidebar,
 } from '@/components/ui/sidebar';
 import type { AdminNavCounts } from '@/lib/data/admin/nav-counts';
+import type { AdminNavGrants } from '@/lib/data/admin/nav-visibility';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -87,7 +88,24 @@ import { cn, getInitials } from '@/lib/utils';
 // Base UI defaults to LTR and ignores the DOM `dir`, so DirectionProvider is
 // required for the menu/sheet to position correctly in RTL.
 
-type NavItem = { href: string; label: string; icon: LucideIcon };
+type NavItem = {
+  href: string;
+  label: string;
+  icon: LucideIcon;
+  /**
+   * The permission gating this item's DESTINATION — `'OWNER'` for an owner-only
+   * page, `undefined` for one every staff member may open.
+   *
+   * ⚠️ This is NOT the gate. The page's own requirePlatformPermission is, and a
+   * hidden link is still reachable by typing the URL. What it fixes is the
+   * reverse: since the two auth axes merged (2026-09-10) every platform_staff
+   * row can enter /admin, so a support_agent saw 33 links of which 4 worked —
+   * and the other 29 redirect('/app'), ejecting them from the panel rather than
+   * saying "no access". Keep this in step with the page; the value must be a key
+   * listed in NAV_PERMISSION_KEYS (admin-nav-coverage.test.ts enforces that).
+   */
+  permission?: string | 'OWNER';
+};
 
 // Groups are ordered by workflow, top to bottom. The first group is unlabelled
 // (the pinned overview, always shown). Every labelled group is collapsible via
@@ -96,65 +114,65 @@ type NavItem = { href: string; label: string; icon: LucideIcon };
 // (domain / job-to-be-done), not by its label.
 type NavGroup = { label?: string; defaultOpen?: boolean; items: NavItem[] };
 
-const NAV_GROUPS: NavGroup[] = [
+export const NAV_GROUPS: NavGroup[] = [
   {
     items: [{ href: '/admin', label: 'סקירה', icon: LayoutDashboard }],
   },
   {
     label: 'לקוחות ופניות',
     items: [
-      { href: '/admin/support', label: 'תמיכת לקוחות', icon: UserSearch },
-      { href: '/admin/contacts', label: 'פניות', icon: MailOpen },
-      { href: '/admin/callbacks', label: 'בקשות חזרה', icon: PhoneCall },
-      { href: '/admin/cancellations', label: 'בקשות ביטול', icon: Ban },
+      { href: '/admin/support', label: 'תמיכת לקוחות', icon: UserSearch, permission: 'view_customer_data' },
+      { href: '/admin/contacts', label: 'פניות', icon: MailOpen, permission: 'view_customer_data' },
+      { href: '/admin/callbacks', label: 'בקשות חזרה', icon: PhoneCall, permission: 'view_customer_data' },
+      { href: '/admin/cancellations', label: 'בקשות ביטול', icon: Ban, permission: 'manage_billing' },
     ],
   },
   {
     label: 'חשבונות והרשאות',
     items: [
-      { href: '/admin/users', label: 'משתמשים', icon: Users },
-      { href: '/admin/roles', label: 'תפקידי צוות', icon: ShieldCheck },
+      { href: '/admin/users', label: 'משתמשים', icon: Users, permission: 'manage_staff' },
+      { href: '/admin/roles', label: 'תפקידי צוות', icon: ShieldCheck, permission: 'OWNER' },
     ],
   },
   {
     label: 'מוצר וחוזה',
     items: [
-      { href: '/admin/packages', label: 'חבילות', icon: Package },
-      { href: '/admin/agreement', label: 'חוזה', icon: FileText },
-      { href: '/admin/company', label: 'פרטי חברה', icon: Building2 },
-      { href: '/admin/faq', label: 'שאלות נפוצות', icon: CircleQuestionMark },
+      { href: '/admin/packages', label: 'חבילות', icon: Package, permission: 'manage_billing' },
+      { href: '/admin/agreement', label: 'חוזה', icon: FileText, permission: 'manage_settings' },
+      { href: '/admin/company', label: 'פרטי חברה', icon: Building2, permission: 'manage_settings' },
+      { href: '/admin/faq', label: 'שאלות נפוצות', icon: CircleQuestionMark, permission: 'manage_settings' },
     ],
   },
   {
     label: 'קמפיינים ושליחה',
     items: [
-      { href: '/admin/campaigns', label: 'קמפיינים', icon: Send },
-      { href: '/admin/voice', label: 'מוקד שיחות AI', icon: Bot },
-      { href: '/admin/channels', label: 'ערוצי תקשורת', icon: MessagesSquare },
-      { href: '/admin/templates', label: 'תבניות פנייה', icon: Megaphone },
-      { href: '/admin/workflows', label: 'תהליכי אוטומציה', icon: Workflow },
-      { href: '/admin/recordings', label: 'הקלטות שיחות', icon: Voicemail },
+      { href: '/admin/campaigns', label: 'קמפיינים', icon: Send, permission: 'manage_billing' },
+      { href: '/admin/voice', label: 'מוקד שיחות AI', icon: Bot, permission: 'manage_voice' },
+      { href: '/admin/channels', label: 'ערוצי תקשורת', icon: MessagesSquare, permission: 'manage_settings' },
+      { href: '/admin/templates', label: 'תבניות פנייה', icon: Megaphone, permission: 'manage_settings' },
+      { href: '/admin/workflows', label: 'תהליכי אוטומציה', icon: Workflow, permission: 'manage_settings' },
+      { href: '/admin/recordings', label: 'הקלטות שיחות', icon: Voicemail, permission: 'view_recordings' },
       // Console audit 12.8 — the page (src/app/(admin)/admin/voice/console-history)
       // was fully built and server-side gated (requirePlatformPermission
       // 'manage_voice') but had no nav entry anywhere, making it reachable
       // only by typing the URL directly. Placed beside recordings — its own
       // header comment distinguishes it from both /admin/recordings
       // (call_attempts, the AI ledger) and /admin/voice/events/[id].
-      { href: '/admin/voice/console-history', label: 'היסטוריית מוקד', icon: History },
-      { href: '/admin/dnc', label: 'חסימת שיחות (DNC)', icon: PhoneOff },
+      { href: '/admin/voice/console-history', label: 'היסטוריית מוקד', icon: History, permission: 'manage_voice' },
+      { href: '/admin/dnc', label: 'חסימת שיחות (DNC)', icon: PhoneOff, permission: 'manage_voice' },
     ],
   },
   {
     label: 'מערכת ותפעול',
     items: [
-      { href: '/admin/settings', label: 'הגדרות', icon: Settings },
-      { href: '/admin/calendar', label: 'יומן Exchange', icon: CalendarDays },
-      { href: '/admin/fleet', label: 'פניות סוכנים', icon: Bot },
-      { href: '/admin/alerts', label: 'התראות תפעול', icon: BellRing },
+      { href: '/admin/settings', label: 'הגדרות', icon: Settings, permission: 'manage_settings' },
+      { href: '/admin/calendar', label: 'יומן Exchange', icon: CalendarDays, permission: 'manage_settings' },
+      { href: '/admin/fleet', label: 'פניות סוכנים', icon: Bot, permission: 'manage_settings' },
+      { href: '/admin/alerts', label: 'התראות תפעול', icon: BellRing, permission: 'manage_settings' },
       { href: '/admin/analytics', label: 'אנליטיקת אתר', icon: ChartColumn },
-      { href: '/admin/cookie-consent', label: 'הסכמת עוגיות', icon: Cookie },
-      { href: '/admin/activity', label: 'יומן פעילות', icon: ListChecks },
-      { href: '/admin/access-log', label: 'יומן גישת צוות', icon: ShieldCheck },
+      { href: '/admin/cookie-consent', label: 'הסכמת עוגיות', icon: Cookie, permission: 'manage_settings' },
+      { href: '/admin/activity', label: 'יומן פעילות', icon: ListChecks, permission: 'view_activity_log' },
+      { href: '/admin/access-log', label: 'יומן גישת צוות', icon: ShieldCheck, permission: 'manage_staff' },
     ],
   },
   {
@@ -162,21 +180,19 @@ const NAV_GROUPS: NavGroup[] = [
     defaultOpen: false,
     items: [
       // Server-side gated to the platform owner (requirePlatformOwner), not
-      // just admin — surfaces raw process/server internals. Visible to every
-      // admin here regardless (nav visibility is convenience only, never a
-      // gate — see requireAdmin's own comment in src/lib/auth/dal.ts); a
-      // non-owner admin who clicks it is redirected by the page itself,
-      // consistent with every other admin-only link.
-      { href: '/admin/debug', label: 'Debug Mode', icon: Activity },
+      // just admin — surfaces raw process/server internals. Marked 'OWNER' so a
+      // non-owner is not shown a link that would only bounce them out of the
+      // panel; the page's own requirePlatformOwner remains the gate.
+      { href: '/admin/debug', label: 'Debug Mode', icon: Activity, permission: 'OWNER' },
       // Read-only progress view of the relocation wizard (npm run relocate).
-      // Server-side gated to the platform owner (requirePlatformOwner), like
-      // Debug Mode above — the page itself redirects non-owner admins.
-      { href: '/admin/relocation', label: 'העברת דומיין', icon: Globe },
-      { href: '/admin/webhooks', label: 'בדיקת Webhooks', icon: Webhook },
-      { href: '/admin/sumit-test', label: 'בדיקת SUMIT', icon: FlaskConical },
+      // Owner-gated exactly like Debug Mode above.
+      { href: '/admin/relocation', label: 'העברת דומיין', icon: Globe, permission: 'OWNER' },
+      { href: '/admin/webhooks', label: 'בדיקת Webhooks', icon: Webhook, permission: 'view_webhooks' },
+      { href: '/admin/sumit-test', label: 'בדיקת SUMIT', icon: FlaskConical, permission: 'manage_billing' },
       // Internal same-origin link: the pg-boss dashboard is reverse-proxied at
-      // /admin/jobs behind requireAdmin (no separate login). See that route.
-      { href: '/admin/jobs', label: 'משימות מתוזמנות', icon: CalendarClock },
+      // /admin/jobs behind manage_settings (dashboard-proxy.ts) — no separate
+      // login. See that route.
+      { href: '/admin/jobs', label: 'משימות מתוזמנות', icon: CalendarClock, permission: 'manage_settings' },
     ],
   },
 ];
@@ -275,6 +291,7 @@ export function AdminShell({
   availabilityPresence,
   hasExchangeConnection,
   navCounts,
+  navGrants,
   softphone,
   children,
 }: {
@@ -296,6 +313,9 @@ export function AdminShell({
   // that domain's permission — NAV_COUNT_KEY lookups against it stay
   // undefined, so no badge renders rather than showing a stale 0).
   navCounts: AdminNavCounts;
+  // Which links this viewer is shown, resolved server-side (nav-visibility.ts).
+  // Convenience, never authorization — see the note on NavItem.permission.
+  navGrants: AdminNavGrants;
   // Browser call-center softphone gate (call-center stage 3). Optional so any
   // other future caller of AdminShell renders byte-identically without it;
   // the layout always supplies it today. The panel component itself decides
@@ -307,11 +327,33 @@ export function AdminShell({
   const displayName = userName || userEmail || '';
   const initials = getInitials(displayName);
 
+  // The nav this viewer actually gets. An item with no `permission` is shown to
+  // every staff member; 'OWNER' asks the owner flag; anything else must be
+  // present AND true in the grants map, so an unknown key hides the item rather
+  // than exposing it. A group whose every item was filtered out is dropped, so
+  // no empty section header is left behind.
+  const visibleGroups = useMemo(
+    () =>
+      NAV_GROUPS.map((group) => ({
+        ...group,
+        items: group.items.filter((item) =>
+          !item.permission
+            ? true
+            : item.permission === 'OWNER'
+              ? navGrants.owner
+              : navGrants.permissions[item.permission] === true,
+        ),
+      })).filter((group) => group.items.length > 0),
+    [navGrants],
+  );
+
   // Expanded/collapsed state for every labelled group, keyed by label. Each
-  // group starts from its `defaultOpen` (open unless explicitly false).
+  // group starts from its `defaultOpen` (open unless explicitly false). Driven
+  // by `visibleGroups`, not NAV_GROUPS — a group this viewer never sees must not
+  // occupy a key here.
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>(() =>
     Object.fromEntries(
-      NAV_GROUPS.flatMap((group) =>
+      visibleGroups.flatMap((group) =>
         group.label ? [[group.label, group.defaultOpen ?? true]] : [],
       ),
     ),
@@ -328,7 +370,7 @@ export function AdminShell({
             </Link>
           </SidebarHeader>
           <SidebarContent>
-            {NAV_GROUPS.map((group, index) => {
+            {visibleGroups.map((group, index) => {
               const menu = (
                 <SidebarMenu>
                   {group.items.map((item) => {

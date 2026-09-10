@@ -34,8 +34,10 @@ const BASE_PATH = '/admin/fleet';
 // separate boxed section) and one detail pane. Desktop shows the list and the
 // selected item side by side; mobile shows one pane at a time, switched by
 // whether `id` is present — same pure CSS/data-attribute split `contacts`
-// already uses. Authorization: the (admin) layout requireAdmin() boundary +
-// manage_settings in the data layer + RLS.
+// already uses. Authorization: `manage_settings` in the data layer + RLS. The
+// (admin) layout's requirePlatformStaff() is defense in depth on top of that,
+// not the boundary — Next is explicit that "a layout does not control whether
+// the rest of the route renders" (see src/lib/auth/dal.ts).
 export default async function AdminFleetPage({
   searchParams,
 }: {

@@ -4,13 +4,29 @@ import { EmptyState, PageHeading, formatDateTime } from '../_components';
 
 export const metadata = { title: 'הקלטות שיחות AI' };
 
-// §1F — read-only ADMIN surface for Voximplant call recordings. Reads
-// `call_attempts` through the cookie client, which is gated by the admin RLS
-// policy `call_attempts_admin_read` (has_role admin). Owners NEVER see this:
-// the route lives under the (admin) group whose layout enforces requirePlatformPermission,
-// and requirePlatformPermission is re-asserted here (defense-in-depth). `recording_url` is
-// already host-allowlist-validated on write; it is re-validated here before it
-// is rendered as a link, and it is never exposed to any owner-facing surface.
+// §1F — read-only ADMIN surface for Voximplant call recordings.
+//
+// ⚠️ THE APP GATE IS THE ONLY PROTECTION HERE. Every clause of the previous
+// version of this comment was wrong, measured against the live database on
+// 2026-09-10, and wrong in the direction that invites someone to remove the one
+// thing that actually works:
+//
+//   * It said the read goes "through the cookie client". It does not —
+//     listCallRecordings (src/lib/data/admin/voice-ops.ts) uses
+//     createAdminClient(), the service role, which BYPASSES RLS entirely.
+//   * It named an RLS policy `call_attempts_admin_read` as the gate. No such
+//     policy exists. `call_attempts` has RLS enabled and ZERO policies — it is
+//     deny-all to `authenticated` and has been since migration 20260720030121.
+//     There is no backstop under the app gate; there is nothing under it.
+//   * It said a permission is "re-asserted here". It is not asserted here at
+//     all. The single gate is requirePlatformPermission('view_recordings')
+//     inside voice-ops.ts.
+//
+// So: guest call audio is protected by that one call and nothing else. Do not
+// remove it, and do not add a reader to this page that skips the data layer.
+//
+// `recording_url` is host-allowlist-validated on write, re-validated here before
+// it is rendered as a link, and never exposed to any owner-facing surface.
 //
 // Dark-safe: while `VOXIMPLANT_LIVE_CALLS` is off no call rows are produced, so
 // this page simply renders the empty state.

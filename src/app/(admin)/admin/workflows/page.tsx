@@ -12,8 +12,10 @@ import { DeleteWorkflowButton } from './row-actions';
 
 export const metadata: Metadata = { title: 'תהליכי אוטומציה' };
 
-// Admin: the automation graphs an owner draws and arms. requireAdmin() is
-// enforced in the data layer (src/lib/data/admin/workflows.ts), not here.
+// Admin: the automation graphs an owner draws and arms. Authorization is in the
+// data layer (src/lib/data/admin/workflows.ts), not here — `manage_settings` to
+// read and arm one, `view_customer_data` for the readers that hand guest names
+// to the manual-run picker. It was a bare requireAdmin() until 2026-09-10.
 //
 // "Armed" is the only word that matters on this page. A workflow that is drawn
 // but not armed does nothing at all; an armed one runs on every inbound WhatsApp

@@ -515,10 +515,13 @@ export async function closeEventAction(
   return { notice: 'האירוע נסגר' };
 }
 
-// R8 — minimal Cancel-campaign action. Ownership is enforced inside
-// cancelCampaign (campaigns.ts) via getCampaignForHold → requireOwnedEvent,
-// BEFORE the RPC is ever called — campaignId is never trusted from the browser
-// to imply authorization.
+// R8 — minimal Cancel-campaign action. NOT an ownership check, despite living on
+// a customer page: cancelCampaign (campaigns.ts) requires
+// `campaigns.runstate` — staff only, never the event owner — BEFORE the RPC is
+// ever called, and campaignId is never trusted from the browser to imply
+// authorization. The button matches: manage-client.tsx renders it under
+// `canCancel = viewerIsAdmin && …`. This comment claimed requireOwnedEvent until
+// 2026-09-10 and flatly contradicted campaigns.ts's own header a screen away.
 export async function cancelCampaignAction(
   eventId: string,
   campaignId: string,

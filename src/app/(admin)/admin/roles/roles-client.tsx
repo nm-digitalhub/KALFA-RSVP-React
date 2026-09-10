@@ -135,7 +135,8 @@ function CreateRoleForm() {
       <div>
         <h2 className="text-lg font-semibold">תפקיד חדש</h2>
         <p className="text-sm text-muted-foreground">
-          תפקיד חדש נוצר ללא הרשאות. לאחר היצירה סמנו את ההרשאות שלו במטריצה.
+          תפקיד חדש נוצר ללא הרשאות — מי שיוקצה לו ייכנס לפאנל הניהול אך יראה בו רק
+          את מסך הסקירה, עד שתסמנו לו הרשאות במטריצה.
         </p>
       </div>
 

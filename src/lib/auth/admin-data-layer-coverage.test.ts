@@ -156,6 +156,8 @@ const COARSE_GATE_ALLOWED: Record<string, string> = {
     'Counts for the admin home tiles. Read-only (verified 2026-09-10: no insert/update/upsert/delete, no rpc, no enqueue). It DOES use createAdminClient, so it bypasses RLS and the app gate is the only protection — acceptable while it returns aggregates and no customer row.',
   'src/lib/data/admin/nav-counts.ts':
     'Badge counts for the nav. Read-only (verified 2026-09-10), and already calls hasPlatformPermission internally so a viewer is never counted what they may not see. Uses createAdminClient, so it bypasses RLS — acceptable for counts.',
+  'src/lib/data/admin/nav-visibility.ts':
+    'Which sidebar links to show. Read-only and touches no table at all — it returns nine booleans about the CALLER\'s own role. Naming a finer permission would be circular: answering "which permissions do you hold" cannot itself require one of them. Nav visibility is convenience, never authorization; the page keeps the gate.',
   'src/lib/data/admin/labels.ts': 'Pure label maps. No I/O at all.',
   'src/lib/data/admin/shared.ts': 'Shared types and helpers. No I/O at all.',
   'src/lib/data/admin/access-log.ts': 'Write-side audit helper called BY gated readers; gating it again would double-count.',
