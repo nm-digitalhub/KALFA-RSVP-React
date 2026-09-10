@@ -242,6 +242,53 @@
 
 ---
 
+## 0.4 עדכון 2026-09-10 (ערב) — רשימת האינטגרציות כבר קיימת, ויש בה תקלת סודות
+
+הבעלים הצביע על `/admin/debug`. **הפאנל שם כבר עושה את מה ש-Task 0.1 מבקש לבנות מאפס** — `getIntegrationsStatus()` (`src/lib/ops/integrations.ts`) מחזיר שבעה ספקים עם `configured` · `lastCheckedAt` · `healthCheckAvailable` · `note`.
+
+### חפיפה מדודה
+
+| | `/admin/debug` (קיים) | Task 0.1 (מתוכנן) |
+|---|---|---|
+| מקור | `src/lib/ops/integrations.ts` | `integrations/index.ts` — קובץ חדש |
+| שדות | configured · lastCheckedAt · healthCheckAvailable · note | configured · **enabled** · lastCheckedAt · note |
+| ספקים | ElevenLabs · Voximplant · Slack · WhatsApp · SUMIT · ExtrA · **GA4** | WhatsApp · Voximplant · ExtrA · **דואר** · **Microsoft** · SUMIT · Slack |
+| שער | `requirePlatformOwner()` (בעמוד) | חבר צוות |
+| תצוגה | רשימה לקריאה | כרטיסים לחיצים |
+
+**חמישה ספקים חופפים.** התוכנית גם קובעת ש-`/admin/debug` **נשאר** (§3.3), כלומר Task 0.1 כפי שנכתב מייצר **שתי רשימות אינטגרציות** משתי פונקציות עצמאיות — שתיהן יכולות להראות תשובה אחרת על אותו ספק. זה בדיוק הכשל שהתוכנית באה לתקן.
+
+### ⛔ מה שהמדידה חשפה: חמישה סודות כדי לחשב חמישה בוליאנים
+
+§0.2 כבר קבעה לגבי האינדקס החדש: *"אין להשתמש ב-`getSumitCredentials()` וב-`getExtraSmsConfig()` — שתיהן מחזירות סודות, והשימוש היחיד בהן כאן הוא לגזור בוליאני `configured`."* התיקון שנקבע: `getIntegrationsConfiguredFlags()` — שאילתה אחת שמחזירה נוכחות בלבד.
+
+**MEASURED 10.9: הפונקציה הקיימת סובלת בדיוק מאותה בעיה, ובהיקף גדול יותר.**
+
+| ספק | מה `getIntegrationsStatus` טוענת לזיכרון | למה |
+|---|---|---|
+| WhatsApp | `accessToken` + `appSecret` (`WhatsAppConfig`) | `!== null` |
+| Voximplant | ה-service account JSON (`auth: VoximplantConfig`) | `!== null` |
+| ElevenLabs | המפתח עצמו (`{ key }`) | `key !== null` |
+| Slack | ה-bot token (`botToken`) | `!== null` |
+| SUMIT | ה-API key (`{ companyId, apiKey }`) | `!== null` |
+
+חמישה סודות נקראים דרך `createAdminClient()` (service-role, עוקף RLS) כדי להציג חמישה סימני ✔/✘. הם אינם דולפים החוצה — הפאנל מרנדר בוליאנים בלבד — אבל הם **בזיכרון התהליך על כל טעינה של `/admin/debug`**, בלי צורך.
+
+### ההכרעה: להרחיב את הקיימת, לא לכתוב תאומה
+
+**Task 0.1 מוחלף.** במקום `getIntegrationsOverview()` חדש:
+
+1. **`getIntegrationsConfiguredFlags()`** — שאילתה **אחת** ל-`app_settings` שמחזירה נוכחות + מתגים, ואפס סודות. גם מחליפה שבע נסיעות נפרדות לאותה שורת singleton.
+2. **`getIntegrationsStatus()` מקבלת ממנה את `configured`** במקום מחמשת ה-resolvers — הפאנל ב-`/admin/debug` ממשיך לעבוד בדיוק כמו היום, בלי סוד אחד בזיכרון.
+3. **נוסף `enabled`** לכל שורה — המתג של הספק עצמו. מדוד, כל אחד עמודה ב-`app_settings`:
+   `outreach_enabled` (WhatsApp) · `voximplant_live_calls` · `sms_enabled` · `email_enabled` · `payments_enabled` (SUMIT) · `slack_alerts_enabled`. ל-ElevenLabs ול-GA4 **אין מתג** — `enabled = configured`, ונאמר כך במפורש ולא בשקט.
+4. **נוספים שני ספקים** שהתוכנית דורשת ו-debug אינו מציג: דואר (`smtp_from` + `email_enabled`) ו-Microsoft. **Exchange מוחרג ב-debug בכוונה** — יש לו פאנל ייעודי שמציג את החיבורים של **כל** האדמינים, בעוד `listMyExchangeConnections()` מחזיר את של הקורא בלבד. העמוד החדש חייב להשתמש באותו מקור של הפאנל הייעודי, לא בגרסת ה-"שלי".
+5. **הרשאה.** הפונקציה היום אינה מגדרת את עצמה כלל — היא נשענת על `requirePlatformOwner()` שבעמוד. משנפתחת לכל חבר צוות היא **חייבת שער משלה**. הרצפה: `requirePlatformStaff()` (§0.3), ולכל כרטיס `hasPlatformPermission` שקובע אם הוא לחיץ — בדיוק כפי ש-§3.6 כבר קובע.
+
+**GA4 נשאר ב-debug ואינו עולה לעמוד האינטגרציות**: הוא אינו ספק שמישהו "מחבר" מהפאנל, ואין לו עמוד יעד. הוא נשאר שורה באבחון.
+
+---
+
 **Goal:** עמוד אחד לכל ספק (Meta/WhatsApp, Voximplant, ExtrA, Resend, Microsoft, SUMIT, Slack) תחת `/admin/integrations`, מודול "מספרים" משותף שמציג כל מספר טלפון מחובר ומאפשר להוסיף/לאמת/לקשר מספרים מהפאנל, והצפה של הנתונים שחסרים היום (בריאות וריאנטים, כיסוי webhooks, תוקף טוקן, גרסת Graph, מדיניות שליחה).
 
 **Architecture:** Server Components שמרכיבים את רכיבי הלקוח הקיימים (מועברים, לא נכתבים מחדש), Server Actions דקים עם Zod, DAL תחת `src/lib/data/admin/integrations/*` עם `requirePlatformPermission`. שתי טבלאות חדשות (`provider_numbers`, `provider_number_roles`) במקום ארבע עמודות בודדות ב-`app_settings`. כל פעולה שעולה כסף או בלתי-הפיכה (רכישת מספר, register/deregister) מאחורי `requirePlatformOwner` + דיאלוג אישור שמציג מחיר/תוצאה + `logActivity` + התראת Slack.
@@ -932,6 +979,9 @@ comment on column public.app_settings.whatsapp_app_id is
 **Interfaces (Produces):** `ProviderCard({ title, href, configured, enabled?, lastCheckedAt?, note? })`; `IntegrationKey = 'meta-whatsapp'|'voximplant'|'extra-sms'|'resend-email'|'microsoft'|'sumit'|'slack'`.
 
 #### Task 0.1: אינדקס + כרטיס סטטוס
+
+> ⚠️ **שוכתב 10.9 ערב — ראו §0.4.** ה-DAL ב-Step 3 (`getIntegrationsOverview`) **אינו נכתב**: הרשימה כבר קיימת ב-`src/lib/ops/integrations.ts` ומזינה את `/admin/debug`, והתוכנית גם משאירה את העמוד ההוא חי — כלומר הקוד כפי שנכתב כאן היה מייצר שתי רשימות שיכולות לסתור זו את זו. במקומו: `getIntegrationsConfiguredFlags()` (שאילתה אחת, אפס סודות) → `getIntegrationsStatus()` הקיימת מקבלת ממנה `configured` + `enabled` חדש → **שני העמודים נשענים על אותה פונקציה**. הבלוק למטה נשמר כתיעוד של מה שתוכנן, לא כהוראה.
+
 
 - [ ] **Step 1: בדיקת רינדור נכשלת** — `(admin)/integrations/page.test.ts` (דפוס `src/app/(customer)/app/page.test.ts:46-55` — קריאה ישירה ל-Server Component + `collect()` **מקומי** לקובץ הבדיקה; אין מודול משותף לזה, MEASURED):
 
