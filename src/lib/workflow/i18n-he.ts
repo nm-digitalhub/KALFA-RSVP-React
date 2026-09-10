@@ -22,7 +22,14 @@
 //
 // The public API cannot supply it: `registerPluginTranslation` reads only
 // `resource[lang].translation.plugins` (verified in the bundle) and the package
-// `exports` map is closed to everything but `.` and `./style.css`. What makes
+// `exports` map is closed to everything but `.` and `./style.css`. Upstream now
+// documents the same limit in its own words — "every plugin's strings live under
+// `translation.plugins.<pluginName>` to namespace away from SDK keys"
+// (docs/workflowbuilder/api/plugins/plugintranslationresource.md) — so this is
+// the vendor's design, not a gap we are routing around. The same page describes
+// exactly the mechanism used below: "each call also issues
+// `i18n.addResourceBundle(...)` so newly registered strings surface live, even
+// when the plugin registers after the SDK has already initialised i18next. What makes
 // this file work instead is that the SDK's bundle imports `from "i18next"` as a
 // BARE EXTERNAL specifier. Declaring i18next as our own dependency at the same
 // version deduped the tree — `npm ls i18next` now shows one copy with both SDK
@@ -37,6 +44,15 @@
 // Keys below were extracted from the shipped `en` resource, not guessed. Any
 // key omitted here falls back to English by `fallbackLng`, which is the right
 // failure mode: a missing translation shows English rather than a raw key.
+//
+// COVERAGE IS TESTED, in i18n-he.test.ts, and it has to be tested at RUNTIME.
+// The SDK exports a `TranslationKey` type documented as the "union of every valid
+// translation key" — it would have been the compile-time gate for this file. It
+// does not work in 2.3.0: `dist/index.d.ts:45` imports it from
+// `./features/i18n/i18next`, which the package does not ship (`dist/` holds only
+// `index.d.ts`, `style.css` and `.js` chunks). Under our `skipLibCheck: true`
+// that resolution failure is swallowed and the type is `any`, so a garbage key
+// annotated with it compiles clean. Measured, not assumed.
 //
 // COVERAGE, and the two families deliberately left out. Diffing this bundle
 // against the shipped `en` resource leaves exactly `node.*` (12 keys) and
