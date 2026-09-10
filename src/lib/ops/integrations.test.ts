@@ -175,6 +175,31 @@ describe('getIntegrationsStatus', () => {
     expect(items.whatsapp.lastCheckedAt).toBeNull();
   });
 
+  it('never claims a health check for a provider no queue feeds', async () => {
+    // The invariant this pins: `healthCheckAvailable` gates whether the card prints
+    // "נבדק לאחרונה", so a provider with no scheduled job printed "טרם רץ" forever —
+    // asserting a check exists and has never fired. Slack shipped that way and it was
+    // visible on the live panel on 2026-09-10, right under its own note saying the
+    // check is manual only.
+    //
+    // A provider IS allowed to have a queue that has not run yet (lastCheckedAt null,
+    // healthCheckAvailable true) — that is what "טרם רץ" is for. What is forbidden is
+    // the pair being true with NO queue behind it, so the test feeds a completion for
+    // every known queue: anything still null while claiming a check has no queue.
+    const everyQueue: JobHealthRow[] = [
+      'elevenlabs-quota-check',
+      'voximplant-balance-check',
+      'whatsapp-health-check',
+      'email-health-check',
+    ].map((queueName) => ({ queueName, lastCompletedOn: '2026-09-10T09:00:00Z' })) as JobHealthRow[];
+
+    const items = await byKey([ALL_ON], everyQueue);
+    const claimingButUnfed = Object.entries(items)
+      .filter(([, row]) => row.healthCheckAvailable && row.lastCheckedAt === null)
+      .map(([key]) => key);
+    expect(claimingButUnfed).toEqual([]);
+  });
+
   it('covers every provider the panel expects, plus the two the plan adds', async () => {
     const items = await byKey();
     expect(Object.keys(items).sort()).toEqual(

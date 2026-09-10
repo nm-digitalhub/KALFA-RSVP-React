@@ -46,6 +46,12 @@ export interface IntegrationStatus {
    */
   enabled: boolean;
   lastCheckedAt: string | null;
+  /**
+   * True ONLY when a scheduled job actually feeds `lastCheckedAt`. It gates whether
+   * the card prints "נבדק לאחרונה", so setting it without a queue prints "טרם רץ"
+   * forever — a claim that a scheduled check exists and has never run. A manual test
+   * button is not a health check; say so in `note` instead.
+   */
   healthCheckAvailable: boolean;
   note?: string;
 }
@@ -136,7 +142,13 @@ export async function getIntegrationsStatus(jobHealth: JobHealthRow[]): Promise<
       configured: flags.slack_configured,
       enabled: flags.slack_enabled,
       lastCheckedAt: null,
-      healthCheckAvailable: true,
+      // `false`, and the two fields have to agree. Slack has NO scheduled queue —
+      // only the manual "send a test" button — so with `true` the card printed
+      // "נבדק לאחרונה: טרם רץ" directly under a note saying the check is manual only.
+      // Two contradictory sentences on one card, and the "טרם רץ" one implied a
+      // scheduled job existed and had never fired. MEASURED on the live panel
+      // 2026-09-10. The invariant is now asserted in integrations.test.ts.
+      healthCheckAvailable: false,
       note: 'בדיקה ידנית בלבד — כפתור "שליחת בדיקה" ב-/admin/alerts',
     },
     {
