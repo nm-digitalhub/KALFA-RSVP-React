@@ -5,16 +5,27 @@ import { createMockSupabase } from '@/test/supabase-mock';
 import { createClient } from '@/lib/supabase/server';
 import { requirePlatformPermission } from '@/lib/auth/dal';
 
+import { getWhatsAppConfig } from '@/lib/data/outreach-config';
+import { getVoximplantConfig } from '@/lib/data/voximplant-config';
+import { getPhoneNumbers } from '@/lib/voximplant/core';
+import { listWabaPhoneNumbers } from '@/lib/whatsapp/phone-numbers';
+
 import {
   assignRole,
   clearRole,
   listProviderNumbers,
+  syncMetaNumbers,
+  syncVoximplantNumbers,
   upsertProviderNumber,
 } from './provider-numbers';
 
 vi.mock('server-only', () => ({}));
 vi.mock('@/lib/supabase/server', () => ({ createClient: vi.fn() }));
 vi.mock('@/lib/auth/dal', () => ({ requirePlatformPermission: vi.fn() }));
+vi.mock('@/lib/data/outreach-config', () => ({ getWhatsAppConfig: vi.fn() }));
+vi.mock('@/lib/data/voximplant-config', () => ({ getVoximplantConfig: vi.fn() }));
+vi.mock('@/lib/voximplant/core', () => ({ getPhoneNumbers: vi.fn() }));
+vi.mock('@/lib/whatsapp/phone-numbers', () => ({ listWabaPhoneNumbers: vi.fn() }));
 
 function staff(): User {
   return { id: 'staff-1' } as unknown as User;
@@ -252,5 +263,167 @@ describe('upsertProviderNumber', () => {
     await expect(
       upsertProviderNumber({ provider: 'extra_sms', e164: '+97233301505' }),
     ).resolves.toBe('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa');
+  });
+});
+
+describe('syncMetaNumbers', () => {
+  function rpcClient() {
+    const { client } = createMockSupabase({ data: null, error: null });
+    client.rpc.mockResolvedValue({ data: 'id-1', error: null });
+    vi.mocked(createClient).mockResolvedValue(
+      client as unknown as Awaited<ReturnType<typeof createClient>>,
+    );
+    return client;
+  }
+
+  beforeEach(() => {
+    vi.mocked(getWhatsAppConfig).mockResolvedValue({
+      phoneNumberId: '1018741517998430',
+      wabaId: '990921550130385',
+      accessToken: 'EAA-TOKEN',
+      appSecret: null,
+      verifyToken: null,
+    });
+  });
+
+  it('refuses before calling Meta when the WABA id or token is missing', async () => {
+    vi.mocked(getWhatsAppConfig).mockResolvedValue(null);
+    await expect(syncMetaNumbers()).rejects.toThrow('חסרים פרטי חיבור ל-Meta');
+    expect(listWabaPhoneNumbers).not.toHaveBeenCalled();
+  });
+
+  it('normalises Meta\'s spaced display number into E.164', async () => {
+    // Meta returns "+972 33 301505". Unnormalised it fails provider_numbers_e164_chk
+    // AND stops the RPC recognising the backfill row for the same line.
+    const client = rpcClient();
+    vi.mocked(listWabaPhoneNumbers).mockResolvedValue({
+      numbers: [
+        {
+          id: '1018741517998430',
+          display_phone_number: '+972 33 301505',
+          verified_name: 'KALFA',
+          code_verification_status: 'EXPIRED',
+        },
+      ],
+      degraded: false,
+    });
+
+    const result = await syncMetaNumbers();
+
+    const args = client.rpc.mock.calls[0][1] as Record<string, unknown>;
+    expect(args.p_e164).toBe('+97233301505');
+    expect(args.p_provider_ref).toBe('1018741517998430');
+    expect(args.p_source).toBe('sync');
+    expect(result).toEqual({ count: 1, degraded: false });
+  });
+
+  it('carries code_verification_status into the snapshot', async () => {
+    // The field Meta's own WhatsApp Manager table does not show. Measured live
+    // 2026-09-10: the configured sender is EXPIRED, the import number VERIFIED.
+    const client = rpcClient();
+    vi.mocked(listWabaPhoneNumbers).mockResolvedValue({
+      numbers: [
+        {
+          id: 'x',
+          display_phone_number: '+972 50 0000000',
+          code_verification_status: 'EXPIRED',
+        },
+      ],
+      degraded: false,
+    });
+    await syncMetaNumbers();
+    const args = client.rpc.mock.calls[0][1] as { p_snapshot: Record<string, unknown> };
+    expect(args.p_snapshot.code_verification_status).toBe('EXPIRED');
+  });
+
+  it('writes a number that holds NO role rather than skipping it', async () => {
+    // The second number on this WABA predates the table. Invisible is worse than
+    // "ללא תפקיד" — an admin cannot assign a role to a row that was never written.
+    const client = rpcClient();
+    vi.mocked(listWabaPhoneNumbers).mockResolvedValue({
+      numbers: [
+        { id: '1018741517998430', display_phone_number: '+972 33 301505' },
+        { id: '1298694319994421', display_phone_number: '+972 37 219347' },
+      ],
+      degraded: false,
+    });
+    const result = await syncMetaNumbers();
+    expect(client.rpc).toHaveBeenCalledTimes(2);
+    expect(result.count).toBe(2);
+  });
+
+  it('reports a degraded read instead of swallowing it', async () => {
+    rpcClient();
+    vi.mocked(listWabaPhoneNumbers).mockResolvedValue({
+      numbers: [{ id: 'x', display_phone_number: '+972 50 0000000' }],
+      degraded: true,
+    });
+    await expect(syncMetaNumbers()).resolves.toEqual({ count: 1, degraded: true });
+  });
+});
+
+describe('syncVoximplantNumbers', () => {
+  function rpcClient() {
+    const { client } = createMockSupabase({ data: null, error: null });
+    client.rpc.mockResolvedValue({ data: 'id-1', error: null });
+    vi.mocked(createClient).mockResolvedValue(
+      client as unknown as Awaited<ReturnType<typeof createClient>>,
+    );
+    return client;
+  }
+
+  beforeEach(() => {
+    vi.mocked(getVoximplantConfig).mockResolvedValue({
+      auth: { accountId: 1, keyId: 'k', privateKey: 'p' },
+      ruleId: '1',
+      callerId: '+97237219347',
+    } as unknown as Awaited<ReturnType<typeof getVoximplantConfig>>);
+  });
+
+  it('gates on manage_voice', async () => {
+    rpcClient();
+    vi.mocked(getPhoneNumbers).mockResolvedValue({ result: [], total_count: 0 });
+    await syncVoximplantNumbers();
+    expect(requirePlatformPermission).toHaveBeenCalledWith('manage_voice');
+  });
+
+  it('sends the phone_id as provider_ref, which is what lets the RPC adopt the backfill row', async () => {
+    const client = rpcClient();
+    vi.mocked(getPhoneNumbers).mockResolvedValue({
+      result: [
+        {
+          phone_id: 4242,
+          phone_number: '97237219347',
+          phone_name: null,
+          deactivated: false,
+          rule_name: 'OutCallAgent',
+        },
+      ],
+      total_count: 1,
+    } as unknown as Awaited<ReturnType<typeof getPhoneNumbers>>);
+
+    await syncVoximplantNumbers();
+
+    const args = client.rpc.mock.calls[0][1] as Record<string, unknown>;
+    expect(args.p_provider_ref).toBe('4242');
+    expect(args.p_e164).toBe('+97237219347');
+    expect(args.p_is_active).toBe(true);
+  });
+
+  it('a number Voximplant deactivated becomes inactive without anyone editing the panel', async () => {
+    const client = rpcClient();
+    vi.mocked(getPhoneNumbers).mockResolvedValue({
+      result: [{ phone_id: 1, phone_number: '97237219347', deactivated: true }],
+      total_count: 1,
+    } as unknown as Awaited<ReturnType<typeof getPhoneNumbers>>);
+    await syncVoximplantNumbers();
+    const args = client.rpc.mock.calls[0][1] as Record<string, unknown>;
+    expect(args.p_is_active).toBe(false);
+  });
+
+  it('refuses before calling Voximplant when nothing is configured', async () => {
+    vi.mocked(getVoximplantConfig).mockResolvedValue(null);
+    await expect(syncVoximplantNumbers()).rejects.toThrow('חסרים פרטי חיבור ל-Voximplant');
+    expect(getPhoneNumbers).not.toHaveBeenCalled();
   });
 });

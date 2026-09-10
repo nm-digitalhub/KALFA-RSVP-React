@@ -3,6 +3,10 @@ import 'server-only';
 import { requirePlatformPermission } from '@/lib/auth/dal';
 import { createClient } from '@/lib/supabase/server';
 import type { Json } from '@/lib/supabase/types';
+import { getWhatsAppConfig } from '@/lib/data/outreach-config';
+import { getVoximplantConfig } from '@/lib/data/voximplant-config';
+import { getPhoneNumbers } from '@/lib/voximplant/core';
+import { listWabaPhoneNumbers } from '@/lib/whatsapp/phone-numbers';
 import {
   assignRoleSchema,
   upsertProviderNumberSchema,
@@ -229,4 +233,118 @@ export async function clearRole(role: NumberRole): Promise<void> {
   const supabase = await createClient();
   const { error } = await supabase.from('provider_number_roles').delete().eq('role', parsed);
   if (error) throw new Error('ביטול שיוך התפקיד נכשל');
+}
+
+// ─── SYNC ─────────────────────────────────────────────────────────────────────
+// Pull the numbers each provider believes it has, and write them into the table.
+// Read-only against the provider: one GET each, nothing purchased, nothing bound,
+// no message sent.
+
+export interface SyncResult {
+  /** How many numbers the provider reported. */
+  count: number;
+  /**
+   * True when a provider answered, but with less than was asked for. Surfaced
+   * rather than swallowed: "3 numbers, some columns blank" and "3 numbers" are
+   * different facts, and only one of them explains an empty cell.
+   */
+  degraded: boolean;
+}
+
+/**
+ * Sync from Meta. Every number on the WABA lands in the table — including ones with
+ * no role, which is the point: the second number on this WABA has existed since
+ * before the table did, and until an admin gives it `whatsapp_import_sender` it
+ * shows as "ללא תפקיד" rather than being invisible.
+ *
+ * E.164 is derived from `display_phone_number`, which Meta returns formatted with
+ * spaces ("+972 33 301505"). Stripping every non-digit and prefixing '+' is what
+ * makes it match provider_numbers_e164_chk — and what lets the RPC recognise the
+ * backfill row for the same line instead of inserting beside it.
+ */
+export async function syncMetaNumbers(): Promise<SyncResult> {
+  await requirePlatformPermission('manage_settings');
+
+  const cfg = await getWhatsAppConfig();
+  if (!cfg?.wabaId || !cfg.accessToken) {
+    throw new Error('חסרים פרטי חיבור ל-Meta (WABA ID או טוקן)');
+  }
+
+  const { numbers, degraded } = await listWabaPhoneNumbers({
+    wabaId: cfg.wabaId,
+    accessToken: cfg.accessToken,
+  });
+
+  for (const n of numbers) {
+    const digits = (n.display_phone_number ?? '').replace(/\D/g, '');
+    await upsertProviderNumber({
+      provider: 'meta_whatsapp',
+      providerRef: n.id,
+      e164: digits ? `+${digits}` : null,
+      // Meta's own display name, and only as a FALLBACK: the RPC coalesces, so a
+      // label an admin typed survives every future sync.
+      displayLabel: n.verified_name ?? null,
+      snapshot: {
+        verified_name: n.verified_name ?? null,
+        status: n.status ?? null,
+        quality_rating: n.quality_rating ?? null,
+        code_verification_status: n.code_verification_status ?? null,
+        name_status: n.name_status ?? null,
+        messaging_limit_tier: n.messaging_limit_tier ?? null,
+        throughput: n.throughput?.level ?? null,
+        platform_type: n.platform_type ?? null,
+        account_mode: n.account_mode ?? null,
+        is_official_business_account: n.is_official_business_account ?? null,
+      },
+      source: 'sync',
+    });
+  }
+
+  return { count: numbers.length, degraded };
+}
+
+/**
+ * Sync from Voximplant. The backfill row for this provider carries no provider_ref
+ * (app_settings stored a caller id, not a phone_id) and holds FIVE roles, so the
+ * first run of this is exactly the adoption case the RPC exists for: same E.164,
+ * ref filled in, roles intact. Verified in the migration's dry run.
+ *
+ * `deactivated` from the provider becomes `isActive`, so a number Voximplant has
+ * turned off stops resolving at runtime without anyone editing the panel — and the
+ * role assignment is KEPT, because it is still the admin's stated intent.
+ */
+export async function syncVoximplantNumbers(): Promise<SyncResult> {
+  await requirePlatformPermission('manage_voice');
+
+  const cfg = await getVoximplantConfig();
+  if (!cfg) {
+    throw new Error('חסרים פרטי חיבור ל-Voximplant');
+  }
+
+  const res = await getPhoneNumbers(cfg.auth);
+  const numbers = res.result ?? [];
+
+  for (const n of numbers) {
+    const digits = String(n.phone_number ?? '').replace(/\D/g, '');
+    await upsertProviderNumber({
+      provider: 'voximplant',
+      providerRef: String(n.phone_id),
+      e164: digits ? `+${digits}` : null,
+      displayLabel: n.phone_name ?? null,
+      isActive: n.deactivated !== true,
+      snapshot: {
+        phone_name: n.phone_name ?? null,
+        phone_country_code: n.phone_country_code ?? null,
+        deactivated: n.deactivated ?? null,
+        can_be_used: n.can_be_used ?? null,
+        application_id: n.application_id ?? null,
+        application_name: n.application_name ?? null,
+        rule_id: n.rule_id ?? null,
+        rule_name: n.rule_name ?? null,
+      },
+      source: 'sync',
+    });
+  }
+
+  return { count: numbers.length, degraded: false };
 }
