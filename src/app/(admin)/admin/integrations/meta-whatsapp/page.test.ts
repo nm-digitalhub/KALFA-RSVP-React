@@ -78,6 +78,14 @@ describe('/admin/integrations/meta-whatsapp', () => {
     expect(names).toContain('WhatsAppConnectionTest');
   });
 
+  it('renders the master switch the credentials form points at', async () => {
+    // WhatsAppCredentialsForm's status line reads "הפעלה/כיבוי דרך מתג הפנייה הראשי
+    // שמעל". Until 2026-09-10 there was nothing above it on this page and the sentence
+    // referred to nothing — a silent-reference defect. Dropping the switch again would
+    // reintroduce it without breaking any render, so it is pinned here.
+    expect(componentNames(await render())).toContain('OutreachMasterSwitch');
+  });
+
   it('keeps the sentence that stops "configured" reading as "ready to send"', async () => {
     expect(textOf(await render())).toContain('שליחות חיות בתשלום');
   });

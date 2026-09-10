@@ -413,9 +413,10 @@ export interface VoicePlatformView {
 // AND on every background RSC prefetch of /admin/voice from the sidebar link
 // present on every other admin page, so an uncached live call here was an
 // unbounded-latency external dependency in a very hot render path. This
-// function does NOT self-gate (unlike its siblings in this file) — both
-// callers (VoiceOverviewPage and getVoicePlatformView, below) already run
-// requirePlatformPermission('manage_voice') before reaching it.
+// function does NOT self-gate (unlike its siblings in this file) — all three
+// callers (VoiceOverviewPage, getVoicePlatformView below, and the Voximplant
+// integrations page) already run requirePlatformPermission('manage_voice') before
+// reaching it.
 export async function getVoiceBalanceTile(): Promise<VoiceBalanceSection> {
   const cfg = await getVoximplantConfig();
   if (!cfg) {
@@ -476,9 +477,43 @@ export async function getLogExportStatus(): Promise<LogExportStatus> {
   };
 }
 
+// The account-callback wiring state (B5) — never returns the token or its hash,
+// only whether one is set. Extracted out of getVoicePlatformView so
+// /admin/integrations/voximplant can show it WITHOUT paying for that function's
+// three live Voximplant round-trips (call lists, audit log, media resources): this
+// is one indexed single-row read, and the integrations page renders on every visit.
+// Same no-self-gate convention as getVoiceBalanceTile above, for the same reason —
+// both callers (getVoicePlatformView below, and the Voximplant integrations page)
+// run requirePlatformPermission('manage_voice') before reaching it. Never call it
+// from a surface that does not.
+export async function getVoximplantWiringTile(): Promise<VoiceWiringSection> {
+  const admin = createAdminClient();
+  try {
+    const { data } = await admin
+      .from('app_settings')
+      .select(
+        'voximplant_account_callback_state, voximplant_account_callback_token_hash, voximplant_account_callback_wired_at, voximplant_balance_callback_at',
+      )
+      .eq('id', true)
+      .maybeSingle();
+    const row = (data ?? {}) as Record<string, unknown>;
+    return {
+      state: typeof row.voximplant_account_callback_state === 'string'
+        ? row.voximplant_account_callback_state
+        : 'unwired',
+      tokenSet: typeof row.voximplant_account_callback_token_hash === 'string'
+        && (row.voximplant_account_callback_token_hash as string).length > 0,
+      wiredAt: (row.voximplant_account_callback_wired_at as string | null) ?? null,
+      lastCallbackAt: (row.voximplant_balance_callback_at as string | null) ?? null,
+    };
+  } catch {
+    // Fail SAFE: an unreadable row reads as "not wired", never as wired.
+    return { state: 'unwired', tokenSet: false, wiredAt: null, lastCallbackAt: null };
+  }
+}
+
 export async function getVoicePlatformView(nowMs: number = Date.now()): Promise<VoicePlatformView> {
   await requirePlatformPermission('manage_voice');
-  const admin = createAdminClient();
   const cfg = await getVoximplantConfig();
 
   const balance = await getVoiceBalanceTile();
@@ -530,34 +565,7 @@ export async function getVoicePlatformView(nowMs: number = Date.now()): Promise<
     allowlist = { status: 'unavailable', ips: [] };
   }
 
-  // --- wiring status (B5) — never returns the token/hash, only its presence ---
-  let wiring: VoiceWiringSection = {
-    state: 'unwired',
-    tokenSet: false,
-    wiredAt: null,
-    lastCallbackAt: null,
-  };
-  try {
-    const { data } = await admin
-      .from('app_settings')
-      .select(
-        'voximplant_account_callback_state, voximplant_account_callback_token_hash, voximplant_account_callback_wired_at, voximplant_balance_callback_at',
-      )
-      .eq('id', true)
-      .maybeSingle();
-    const row = (data ?? {}) as Record<string, unknown>;
-    wiring = {
-      state: typeof row.voximplant_account_callback_state === 'string'
-        ? row.voximplant_account_callback_state
-        : 'unwired',
-      tokenSet: typeof row.voximplant_account_callback_token_hash === 'string'
-        && (row.voximplant_account_callback_token_hash as string).length > 0,
-      wiredAt: (row.voximplant_account_callback_wired_at as string | null) ?? null,
-      lastCallbackAt: (row.voximplant_balance_callback_at as string | null) ?? null,
-    };
-  } catch {
-    /* keep the safe default */
-  }
+  const wiring = await getVoximplantWiringTile();
 
   return { balance, callLists, audit, allowlist, wiring };
 }

@@ -1,39 +1,45 @@
 'use client';
 
-import { useActionState, useState } from 'react';
-import { Check, Copy, Eye, EyeOff } from 'lucide-react';
-
 import {
   Tabs,
   TabsList,
   TabsTab,
   TabsPanel,
 } from '@/components/ui/tabs';
-import {
-  Accordion,
-  AccordionItem,
-  AccordionTrigger,
-  AccordionPanel,
-} from '@/components/ui/accordion';
-import { HelpTip } from '@/components/help-tip';
+import { OutreachMasterSwitch } from '@/app/(admin)/admin/integrations/_components/outreach-master-switch';
 import { WhatsAppCredentialsForm } from '@/app/(admin)/admin/integrations/meta-whatsapp/whatsapp-credentials-form';
 import { WhatsAppConsentToggle } from '@/app/(admin)/admin/integrations/meta-whatsapp/whatsapp-consent-toggle';
 import { WhatsAppConnectionTest } from '@/app/(admin)/admin/integrations/meta-whatsapp/whatsapp-connection-test';
+import { VoximplantStatusCard } from '@/app/(admin)/admin/integrations/voximplant/voximplant-status-card';
 import {
-  FieldError,
-  FormError,
-  FormNotice,
-  SubmitButton,
-} from '@/components/forms';
-import {
-  updateVoximplantChannelAction,
-  testVoximplantConnectionAction,
-  updateOutreachMasterSwitchAction,
-  updateVoximplantLiveCallsAction,
-  updateCallConsentRequiredAction,
-  updateMeetingConfirmChannelAction,
-  updateSalesCallChannelAction,
-} from './actions';
+  VoximplantLiveCallsToggle,
+  VoximplantMeetingConfirmToggle,
+  VoximplantSalesCallToggle,
+} from '@/app/(admin)/admin/integrations/voximplant/voximplant-personas';
+import { VoximplantConsentToggle } from '@/app/(admin)/admin/integrations/voximplant/voximplant-consent-toggle';
+import { VoximplantCredentialsForm } from '@/app/(admin)/admin/integrations/voximplant/voximplant-credentials-form';
+import { VoximplantConnectionTest } from '@/app/(admin)/admin/integrations/voximplant/voximplant-connection-test';
+
+// WHAT IS LEFT OF THIS FILE, AND WHY.
+//
+// Every control that used to be defined here now lives under
+// src/app/(admin)/admin/integrations/ and is IMPORTED BACK. Lifted, not copied: one
+// definition, two surfaces, so this page and the new provider pages cannot drift while
+// both exist. The page itself is retired in Task 0.6 — as its own commit, after a clean
+// deploy, which is what keeps Phase 0 reversible by removing three redirect lines
+// instead of reverting a phase.
+//
+// The imports point INTO integrations/ rather than out into src/components/, and the
+// direction is deliberate: these components belong to the surface that survives. Moving
+// them to a neutral shared home would mean a third location to maintain and a second
+// move once this page is gone. src/components/ is for primitives used across domains;
+// these are one provider's controls.
+//
+// Nothing here owns state or markup any more: it is the tab shell and the composition.
+// The field primitives (Field/SecretField/CopyRow/StatusBadge) that used to be declared
+// in this file were deleted with the last extraction — they are in
+// integrations/_components/form-fields.tsx, and keeping local twins was the drift this
+// whole task exists to remove.
 
 type WhatsAppConfig = {
   outreach_enabled: boolean;
@@ -70,189 +76,6 @@ type VoximplantConfig = {
   salesCallFullyConfigured: boolean;
 };
 
-const inputClass =
-  'w-full rounded-md border border-border bg-background px-3 py-2 text-sm outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/15';
-const labelClass = 'mb-1 flex items-center gap-1 text-sm font-medium';
-
-function Field({
-  name,
-  label,
-  defaultValue,
-  placeholder,
-  hint,
-  help,
-  errors,
-}: {
-  name: string;
-  label: string;
-  defaultValue: string;
-  placeholder?: string;
-  hint?: string;
-  help?: string;
-  errors?: string[];
-}) {
-  return (
-    <div>
-      <label htmlFor={name} className={labelClass}>
-        {label}
-        {help ? <HelpTip text={help} /> : null}
-      </label>
-      <input
-        id={name}
-        name={name}
-        defaultValue={defaultValue}
-        placeholder={placeholder}
-        autoComplete="off"
-        className={inputClass}
-      />
-      {hint ? <p className="mt-1 text-xs text-muted-foreground">{hint}</p> : null}
-      <FieldError errors={errors} />
-    </div>
-  );
-}
-
-function SecretField({
-  name,
-  label,
-  defaultValue,
-  hint,
-  help,
-}: {
-  name: string;
-  label: string;
-  defaultValue: string;
-  hint?: string;
-  help?: string;
-}) {
-  const [show, setShow] = useState(false);
-  return (
-    <div>
-      <label htmlFor={name} className={labelClass}>
-        {label}
-        {help ? <HelpTip text={help} /> : null}
-      </label>
-      <div className="relative">
-        <input
-          id={name}
-          name={name}
-          type={show ? 'text' : 'password'}
-          defaultValue={defaultValue}
-          autoComplete="off"
-          className={`${inputClass} pe-10`}
-        />
-        <button
-          type="button"
-          onClick={() => setShow((v) => !v)}
-          aria-label={show ? 'הסתר' : 'הצג'}
-          className="absolute inset-y-0 end-0 flex items-center px-3 text-muted-foreground transition hover:text-foreground"
-        >
-          {show ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
-        </button>
-      </div>
-      {hint ? <p className="mt-1 text-xs text-muted-foreground">{hint}</p> : null}
-    </div>
-  );
-}
-
-function CopyRow({ label, value }: { label: string; value: string }) {
-  const [copied, setCopied] = useState(false);
-  return (
-    <div>
-      <p className={labelClass}>{label}</p>
-      <div className="flex items-center gap-2">
-        <code className="min-w-0 flex-1 truncate rounded-md border border-border bg-muted/40 px-3 py-2 text-xs">
-          {value || '—'}
-        </code>
-        <button
-          type="button"
-          disabled={!value}
-          onClick={() => {
-            navigator.clipboard.writeText(value).then(() => {
-              setCopied(true);
-              setTimeout(() => setCopied(false), 1500);
-            });
-          }}
-          aria-label="העתק"
-          className="inline-flex items-center gap-1 rounded-md border border-border px-2.5 py-2 text-xs transition hover:bg-accent/40 disabled:opacity-50"
-        >
-          {copied ? <Check className="size-4" /> : <Copy className="size-4" />}
-        </button>
-      </div>
-    </div>
-  );
-}
-
-function StatusBadge({
-  configured,
-  enabled,
-  liveGateOff,
-}: {
-  configured: boolean;
-  enabled: boolean;
-  liveGateOff?: boolean;
-}) {
-  const [text, cls] =
-    enabled && liveGateOff
-      ? [
-          'מוגדר · דלוק · שיחות מושבתות',
-          'bg-amber-500/10 text-amber-600 border-amber-500/30',
-        ]
-      : enabled
-        ? ['פעיל', 'bg-emerald-500/10 text-emerald-600 border-emerald-500/30']
-        : configured
-          ? ['מוגדר · כבוי', 'bg-amber-500/10 text-amber-600 border-amber-500/30']
-          : ['לא מוגדר', 'bg-muted text-muted-foreground border-border'];
-  return (
-    <span
-      className={`inline-flex items-center rounded-full border px-3 py-1 text-xs font-medium ${cls}`}
-    >
-      {text}
-    </span>
-  );
-}
-
-function OutreachMasterSwitch({
-  enabled,
-  anyChannelReady,
-}: {
-  enabled: boolean;
-  anyChannelReady: boolean;
-}) {
-  const [state, action] = useActionState(
-    updateOutreachMasterSwitchAction,
-    null,
-  );
-  return (
-    <form
-      action={action}
-      className="flex flex-col gap-4 rounded-lg border border-border bg-card p-4 sm:flex-row sm:items-center sm:justify-between"
-    >
-      <div className="min-w-0 space-y-1">
-        <p className="text-sm font-semibold">מתג פנייה ראשי (כל הערוצים)</p>
-        <p className="text-xs text-muted-foreground">
-          מפעיל שליחות/שיחות חיות בכל ערוץ מוגדר. שיחות Voximplant דורשות בנוסף
-          את מתג השרת VOXIMPLANT_LIVE_CALLS.
-        </p>
-        <FormError message={state?.error} />
-        <FormNotice message={state?.notice} />
-      </div>
-      <div className="flex shrink-0 items-center justify-end gap-3">
-        <label className="inline-flex cursor-pointer items-center gap-2 text-sm font-medium">
-          <input
-            type="checkbox"
-            name="outreach_enabled"
-            defaultChecked={enabled}
-            disabled={!enabled && !anyChannelReady}
-            className="size-4 accent-primary"
-          />
-          מופעל
-        </label>
-        <SubmitButton className="w-auto">עדכון</SubmitButton>
-      </div>
-    </form>
-  );
-}
-
 export function ChannelsClient({
   whatsapp,
   callbackUrl,
@@ -270,35 +93,6 @@ export function ChannelsClient({
   outreachEnabled: boolean;
   anyChannelReady: boolean;
 }) {
-  // The three WhatsApp bindings moved into the extracted components in Task 0.3 —
-  // each now owns its own useActionState, which is why this tab renders them as
-  // siblings rather than threading state down.
-  const [voxState, voxAction] = useActionState(
-    updateVoximplantChannelAction,
-    null,
-  );
-  const [voxTestState, voxTestAction] = useActionState(
-    testVoximplantConnectionAction,
-    null,
-  );
-  const [voxLiveState, voxLiveAction] = useActionState(
-    updateVoximplantLiveCallsAction,
-    null,
-  );
-  const [consentState, consentAction] = useActionState(
-    updateCallConsentRequiredAction,
-    null,
-  );
-  const [meetingConfirmState, meetingConfirmAction] = useActionState(
-    updateMeetingConfirmChannelAction,
-    null,
-  );
-  const [salesCallState, salesCallAction] = useActionState(
-    updateSalesCallChannelAction,
-    null,
-  );
-  const ve = voxState?.fieldErrors;
-
   return (
     <div className="space-y-6">
       {/* single global master switch — ABOVE the tabs (§1.0) */}
@@ -317,326 +111,47 @@ export function ChannelsClient({
           </TabsTab>
         </TabsList>
 
-      <TabsPanel value="whatsapp">
-        {/* Lifted into src/app/(admin)/admin/integrations/meta-whatsapp/ in Task 0.3
-            and imported back here, so this tab and the new provider page render ONE
-            definition and cannot drift while both exist. This page is retired in Task
-            0.6 as its own commit. */}
-        <WhatsAppCredentialsForm
-          whatsapp={whatsapp}
-          callbackUrl={callbackUrl}
-          outreachEnabled={outreachEnabled}
-        />
-        <WhatsAppConsentToggle consentRequired={whatsapp.consentRequired} />
-        <WhatsAppConnectionTest />
-      </TabsPanel>
-
-      <TabsPanel value="voximplant">
-        {/* Status badge + LIVE-CALLS toggle — SIBLINGS above the config form.
-            A <form> must NEVER nest inside another <form> (nesting caused a
-            "React form was unexpectedly submitted" error). */}
-        <div className="flex items-center gap-3 rounded-lg border border-border bg-card p-4">
-          <StatusBadge
-            configured={voximplant.configured}
-            enabled={outreachEnabled && voximplant.configured}
-            liveGateOff={!voximplant.liveEnabled}
+        <TabsPanel value="whatsapp">
+          <WhatsAppCredentialsForm
+            whatsapp={whatsapp}
+            callbackUrl={callbackUrl}
+            outreachEnabled={outreachEnabled}
           />
-          <span className="text-sm text-muted-foreground">
-            {voximplant.liveEnabled
-              ? 'שיחות חיות מופעלות — שיחות בתשלום יוצאות בפועל.'
-              : 'שיחות חיות כבויות (מצב dark). הפעילו במתג שיחות חיות.'}
-          </span>
-        </div>
+          <WhatsAppConsentToggle consentRequired={whatsapp.consentRequired} />
+          <WhatsAppConnectionTest />
+        </TabsPanel>
 
-        {/* LIVE-CALLS toggle — permits REAL paid dialing. Admin-only page.
-            Fail-closed: cannot enable without the full config. The env
-            VOXIMPLANT_LIVE_CALLS='false' still hard-overrides (ops kill switch). */}
-        <form
-          action={voxLiveAction}
-          className="mt-4 space-y-2 rounded-lg border border-amber-500/40 bg-amber-500/5 p-4"
-        >
-          <FormError message={voxLiveState?.error} />
-          <FormNotice message={voxLiveState?.notice} />
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <div className="min-w-0 space-y-1">
-              <p className="text-sm font-semibold">שיחות חיות (Live calls)</p>
-              <p className="text-xs text-muted-foreground">
-                הפעלה = שיחות טלפון אמיתיות בתשלום, לאנשי קשר שנתנו הסכמה בלבד.
-                {voximplant.fullyConfigured
-                  ? ''
-                  : ' יש להשלים את כל פרטי החשבון והחיוג לפני הפעלה.'}
-              </p>
-            </div>
-            <div className="flex shrink-0 items-center justify-end gap-3">
-              <label className="inline-flex cursor-pointer items-center gap-2 text-sm font-medium">
-                <input
-                  type="checkbox"
-                  name="voximplant_live_calls"
-                  defaultChecked={voximplant.liveCalls}
-                  disabled={!voximplant.fullyConfigured && !voximplant.liveCalls}
-                  className="size-4 accent-primary"
-                />
-                מופעל
-              </label>
-              <SubmitButton className="w-auto">עדכון</SubmitButton>
-            </div>
-          </div>
-        </form>
-
-        {/* Per-persona kill switches (2026-08-22) — meeting-confirm and
-            sales-closing each dial their OWN rule_id, deliberately separate
-            from voximplant_rule_id above (RSVPAgent's OutCall rule must never
-            carry another persona's calls). Each still requires the shared
-            base config (service account + caller id) AND voximplant_live_calls
-            master toggle — see updatePersonaChannel's fail-closed guard. */}
-        <form
-          action={meetingConfirmAction}
-          className="mt-4 space-y-2 rounded-lg border border-sky-500/40 bg-sky-500/5 p-4"
-        >
-          <FormError message={meetingConfirmState?.error} />
-          <FormNotice message={meetingConfirmState?.notice} />
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-            <div className="min-w-0 flex-1 space-y-1">
-              <p className="text-sm font-semibold">שיחות אישור פגישה (Meeting-confirm)</p>
-              <p className="text-xs text-muted-foreground">
-                שיחת AI קצרה לאישור/שינוי מועד לפגישה שכבר תואמה. משתמש בחשבון
-                ובמספר היוצא המשותפים, עם Rule ID נפרד משלה.
-              </p>
-              <label htmlFor="voximplant_meeting_confirm_rule_id" className={labelClass}>
-                Rule ID
-              </label>
-              <input
-                id="voximplant_meeting_confirm_rule_id"
-                name="voximplant_meeting_confirm_rule_id"
-                dir="ltr"
-                defaultValue={voximplant.meetingConfirmRuleId}
-                placeholder="לא הוגדר"
-                className={inputClass}
-              />
-            </div>
-            <div className="flex shrink-0 items-center justify-end gap-3">
-              <label className="inline-flex cursor-pointer items-center gap-2 text-sm font-medium">
-                <input
-                  type="checkbox"
-                  name="voximplant_meeting_confirm_enabled"
-                  defaultChecked={voximplant.meetingConfirmEnabled}
-                  disabled={!voximplant.meetingConfirmFullyConfigured && !voximplant.meetingConfirmEnabled}
-                  className="size-4 accent-primary"
-                />
-                מופעל
-              </label>
-              <SubmitButton className="w-auto">עדכון</SubmitButton>
-            </div>
-          </div>
-        </form>
-
-        <form
-          action={salesCallAction}
-          className="mt-4 space-y-2 rounded-lg border border-sky-500/40 bg-sky-500/5 p-4"
-        >
-          <FormError message={salesCallState?.error} />
-          <FormNotice message={salesCallState?.notice} />
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-            <div className="min-w-0 flex-1 space-y-1">
-              <p className="text-sm font-semibold">שיחות סגירת מכירה (Sales-closing)</p>
-              <p className="text-xs text-muted-foreground">
-                שיחת AI יוצאת ללקוח שביקש חזרה בנושא &quot;מכירות&quot;, במועד
-                שנקבע. משתמש בחשבון ובמספר היוצא המשותפים, עם Rule ID נפרד משלה.
-              </p>
-              <label htmlFor="voximplant_sales_call_rule_id" className={labelClass}>
-                Rule ID
-              </label>
-              <input
-                id="voximplant_sales_call_rule_id"
-                name="voximplant_sales_call_rule_id"
-                dir="ltr"
-                defaultValue={voximplant.salesCallRuleId}
-                placeholder="לא הוגדר"
-                className={inputClass}
-              />
-            </div>
-            <div className="flex shrink-0 items-center justify-end gap-3">
-              <label className="inline-flex cursor-pointer items-center gap-2 text-sm font-medium">
-                <input
-                  type="checkbox"
-                  name="voximplant_sales_calls_enabled"
-                  defaultChecked={voximplant.salesCallsEnabled}
-                  disabled={!voximplant.salesCallFullyConfigured && !voximplant.salesCallsEnabled}
-                  className="size-4 accent-primary"
-                />
-                מופעל
-              </label>
-              <SubmitButton className="w-auto">עדכון</SubmitButton>
-            </div>
-          </div>
-        </form>
-
-        {/* CONSENT gate toggle — the checkbox REQUIRES explicit prior consent
-            (default on, SAFE). Turning it OFF permits AI dialing to contacts with
-            no recorded consent — a legal (spam-law) decision, surfaced in red.
-            opt-out + DNC + fail-closed still apply regardless. */}
-        <form
-          action={consentAction}
-          className="mt-4 space-y-2 rounded-lg border border-red-500/50 bg-red-500/5 p-4"
-        >
-          <FormError message={consentState?.error} />
-          <FormNotice message={consentState?.notice} />
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <div className="min-w-0 space-y-1">
-              <p className="text-sm font-semibold">דרישת הסכמה לשיחות AI</p>
-              <p className="text-xs text-muted-foreground">
-                כשמסומן (ברירת מחדל) — שיחות AI יוצאות רק לאנשי קשר עם הסכמה מתועדת
-                (<code>call_consent_at</code>). ביטול הסימון מאפשר חיוג גם ללא הסכמה
-                מוקדמת. הסרת נמענים (opt-out), רשימת DNL וכשל־סגור נשמרים בכל מקרה.
-              </p>
-              {voximplant.callConsentRequired ? null : (
-                <p className="text-xs font-semibold text-red-600 dark:text-red-400">
-                  ⚠️ דרישת ההסכמה כבויה — שיחות AI ייצאו לאנשי קשר ללא הסכמה מוקדמת.
-                  זו חשיפה משפטית תחת סעיף 30א (חוק הספאם) והחלטה משפטית, לא טכנית.
-                </p>
-              )}
-            </div>
-            <div className="flex shrink-0 items-center justify-end gap-3">
-              <label className="inline-flex cursor-pointer items-center gap-2 text-sm font-medium">
-                <input
-                  type="checkbox"
-                  name="call_consent_required"
-                  defaultChecked={voximplant.callConsentRequired}
-                  className="size-4 accent-primary"
-                />
-                דרוש הסכמה
-              </label>
-              <SubmitButton className="w-auto">עדכון</SubmitButton>
-            </div>
-          </div>
-        </form>
-
-        <form action={voxAction} className="mt-4 space-y-4">
-          <FormError message={voxState?.error} />
-          <FormNotice message={voxState?.notice} />
-
-          <Accordion defaultValue={['vox-creds']}>
-            <AccordionItem value="vox-creds">
-              <AccordionTrigger>פרטי חשבון וחיוג</AccordionTrigger>
-              <AccordionPanel>
-                <div className="space-y-4 text-foreground">
-                  <div>
-                    <label
-                      htmlFor="voximplant_service_account_json"
-                      className={labelClass}
-                    >
-                      Service Account JSON
-                      <HelpTip text="קובץ ה-JSON של חשבון השירות (account_id / key_id / private_key) מ-Voximplant Control Panel › Service accounts. נשמר מוצפן בשרת ולעולם לא נשלף חזרה לדפדפן." />
-                    </label>
-                    <textarea
-                      id="voximplant_service_account_json"
-                      name="voximplant_service_account_json"
-                      rows={4}
-                      autoComplete="off"
-                      placeholder={
-                        '{"account_id":…,"key_id":"…","private_key":"…"}'
-                      }
-                      className={`${inputClass} font-mono`}
-                    />
-                    <p className="mt-1 text-xs text-muted-foreground">
-                      {voximplant.serviceAccountConfigured
-                        ? '✓ חשבון שירות שמור. השאירו ריק כדי לשמור על הקיים; הדביקו JSON חדש כדי להחליף.'
-                        : 'לא הוגדר עדיין — הדביקו את ה-JSON.'}
-                    </p>
-                  </div>
-                  <Field
-                    name="voximplant_rule_id"
-                    label="Rule ID"
-                    defaultValue={voximplant.voximplant_rule_id}
-                    placeholder="1494311"
-                    errors={ve?.voximplant_rule_id}
-                    help="מזהה ה-OutCall rule של תרחיש ה-RSVP ב-Voximplant (StartScenarios)."
-                  />
-                  <Field
-                    name="voximplant_caller_id"
-                    label="מספר יוצא (Caller ID)"
-                    defaultValue={voximplant.voximplant_caller_id}
-                    placeholder="+972…"
-                    errors={ve?.voximplant_caller_id}
-                    help="מספר Voximplant שנרכש/אומת — משמש כ-from בשיחה היוצאת."
-                  />
-                  <SecretField
-                    name="voximplant_callback_secret"
-                    label="Callback Secret"
-                    defaultValue={voximplant.voximplant_callback_secret}
-                    help="סוד ה-?k= שחותם על כתובות ה-ctx/cb. סובב אותו כדי לפסול טוקנים ישנים."
-                  />
-                </div>
-              </AccordionPanel>
-            </AccordionItem>
-
-            <AccordionItem value="vox-tuning">
-              <AccordionTrigger>מגבלות ותקציב</AccordionTrigger>
-              <AccordionPanel>
-                <div className="grid grid-cols-2 gap-4">
-                  <Field
-                    name="voximplant_low_balance_threshold"
-                    label="סף יתרה נמוכה ($)"
-                    defaultValue={voximplant.voximplant_low_balance_threshold}
-                    placeholder="5"
-                    errors={ve?.voximplant_low_balance_threshold}
-                  />
-                  <Field
-                    name="voximplant_min_call_reserve"
-                    label="רזרבה מינ׳ לחיוג ($)"
-                    defaultValue={voximplant.voximplant_min_call_reserve}
-                    placeholder="0.1"
-                    errors={ve?.voximplant_min_call_reserve}
-                  />
-                  <Field
-                    name="voximplant_max_concurrent_calls"
-                    label="מקס׳ שיחות במקביל"
-                    defaultValue={voximplant.voximplant_max_concurrent_calls}
-                    placeholder="5"
-                    errors={ve?.voximplant_max_concurrent_calls}
-                  />
-                  <Field
-                    name="voximplant_max_calls_per_campaign_hour"
-                    label="מקס׳ שיחות לקמפיין/שעה"
-                    defaultValue={
-                      voximplant.voximplant_max_calls_per_campaign_hour
-                    }
-                    placeholder="200"
-                    errors={ve?.voximplant_max_calls_per_campaign_hour}
-                  />
-                </div>
-              </AccordionPanel>
-            </AccordionItem>
-
-            <AccordionItem value="vox-urls">
-              <AccordionTrigger>כתובות התרחיש (לעיון)</AccordionTrigger>
-              <AccordionPanel>
-                <div className="space-y-3">
-                  <CopyRow label="Context base (ctx)" value={voxCtxBase} />
-                  <CopyRow label="Callback base (cb)" value={voxCbBase} />
-                  <p className="text-xs text-muted-foreground">
-                    הכתובות המלאות נבנות בזמן החיוג עם טוקן חתום פר-שיחה; אלו
-                    בסיסי הייחוס בלבד.
-                  </p>
-                </div>
-              </AccordionPanel>
-            </AccordionItem>
-          </Accordion>
-
-          <SubmitButton>שמירה</SubmitButton>
-        </form>
-
-        <form action={voxTestAction} className="mt-4 space-y-2">
-          <FormError message={voxTestState?.error} />
-          <FormNotice message={voxTestState?.notice} />
-          <button
-            type="submit"
-            className="rounded-md border border-border px-4 py-2 text-sm font-medium transition hover:bg-accent/40"
-          >
-            בדיקת חיבור (יתרה)
-          </button>
-        </form>
-      </TabsPanel>
+        <TabsPanel value="voximplant">
+          {/* This page always has the master switch above, so the state is never
+              unknown here — the null branch exists for the Voximplant provider page,
+              whose gate is manage_voice rather than manage_settings. */}
+          <VoximplantStatusCard
+            configured={voximplant.configured}
+            liveEnabled={voximplant.liveEnabled}
+            outreachEnabled={outreachEnabled}
+          />
+          <VoximplantLiveCallsToggle
+            liveCalls={voximplant.liveCalls}
+            fullyConfigured={voximplant.fullyConfigured}
+          />
+          <VoximplantMeetingConfirmToggle
+            ruleId={voximplant.meetingConfirmRuleId}
+            enabled={voximplant.meetingConfirmEnabled}
+            fullyConfigured={voximplant.meetingConfirmFullyConfigured}
+          />
+          <VoximplantSalesCallToggle
+            ruleId={voximplant.salesCallRuleId}
+            enabled={voximplant.salesCallsEnabled}
+            fullyConfigured={voximplant.salesCallFullyConfigured}
+          />
+          <VoximplantConsentToggle consentRequired={voximplant.callConsentRequired} />
+          <VoximplantCredentialsForm
+            voximplant={voximplant}
+            voxCtxBase={voxCtxBase}
+            voxCbBase={voxCbBase}
+          />
+          <VoximplantConnectionTest />
+        </TabsPanel>
       </Tabs>
     </div>
   );

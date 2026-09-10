@@ -296,9 +296,9 @@
 | משימה | מצב |
 |---|---|
 | **0.1 אינדקס + כרטיסי סטטוס** | ✅ **בוצע** — `(admin)/admin/integrations/page.tsx` חי ופרוס |
-| 0.2 פיצול `appSettingsSchema` ו-DAL לספקים | ⬜ לא התחיל — אפס מהשלושה (`sumitCredentialsSchema`, `extraSmsSchema`, `emailTransportSchema`) |
-| 0.3 עמוד Meta/WhatsApp | ⬜ |
-| 0.4 עמוד Voximplant | ⬜ |
+| **0.2 פיצול `appSettingsSchema` ו-DAL לספקים** | ✅ **בוצע** — שלושת זוגות ה-`get`/`update` קיימים; `configured` הוא credentials בלבד, לעולם לא המתג |
+| **0.3 עמוד Meta/WhatsApp** | ✅ **בוצע** — `integrations/meta-whatsapp/`, שלושה רכיבים מורמים, `page.test.ts` |
+| **0.4 עמוד Voximplant** | ✅ **בוצע** — `integrations/voximplant/`, שבעה רכיבים מורמים, 11 בדיקות (3 fault-injections אומתו) |
 | 0.5 ExtrA · Resend · SUMIT · Microsoft · Slack | ⬜ |
 | 0.6 Nav + redirects + מחיקת הישנים | 🟡 **פריט הניווט נוסף**; אין `redirects()`, שלושת העמודים הישנים במקומם |
 
@@ -333,6 +333,41 @@ Step 0 מורה להסיר את `last_onboarded_time` מרשימת ה-`fields` *
 ### השלב הבא: Task 0.2
 
 זו הדלת לכל 0.3–0.5: כל עמוד ספק צריך סכמת Zod משלו וזוג `get`/`update` משלו, אחרת שמירה בטופס אחד מאפסת שדות של טופס אחר. היא גם **המשימה היחידה ב-Phase 0 שנוגעת בקוד קיים בלי להוסיף עמוד**, ולכן הסיכון בה גבוה יותר מהשאר — סעיף 8 סיכון 3 (`keepMounted` שהיה load-bearing) מדבר בדיוק עליה.
+
+---
+
+## 0.6 סטטוס 2026-09-10 (לילה) — Task 0.4 בוצעה, וארבע סטיות מכוונות
+
+`channels-client.tsx` ירד מ-771 שורות ל-**152**: אין בו יותר טופס אחד, אקורדיון אחד, או `useActionState` אחד. הוא מעטפת הטאבים והרכבה, וכל השאר מיובא חזרה מ-`integrations/`. **הורם, לא הועתק** — הגדרה אחת, שני משטחים, אפס דריפט כל עוד שניהם קיימים.
+
+### ספירת שלמות (מחליפה את המספרים ב-Task 0.6 Step 3b — הם נמדדו לפני 0.3)
+
+| | לפני | אחרי, בעץ החדש |
+|---|---|---|
+| `<form>` אמיתיים (לא בהערות) | 10 ב-`channels-client.tsx` | **10** — master 1 · WhatsApp 3 · Voximplant 6 |
+| `<AccordionItem>` | 5 ב-`channels-client.tsx` | **5** — WhatsApp 2 · Voximplant 3 |
+| `<form>` ב-`channels-client.tsx` | 10 | **0** |
+
+הספירה נסגרת בדיוק. **Step 3b עדיין נדרש לפני ה-`rm`**, אבל היעד שלו השתנה: הוא כבר לא סופר את `channels-client.tsx` (שם הכל אפס), אלא מוודא שהעץ תחת `integrations/` עדיין מחזיק 10 ו-5.
+
+### באג חי שנמצא ותוקן — `revalidatePath` הצביע רק על העמוד הישן
+
+כל שמונת ה-actions ב-`channels/actions.ts` סיימו ב-`revalidatePath('/admin/channels')` בלבד. מאז 0.3 אותם actions רצים גם מ-`/admin/integrations/meta-whatsapp` — כלומר **שמירה מהעמוד החדש החזירה אותו עם הערכים שלפני השמירה**. זה נשלח עם 0.3, לא תיאורטי. תוקן ב-`revalidateAll(...)`: כל action מרענן עכשיו את הנתיב הישן, את עמוד הספק שלו, ואת האינדקס (הכרטיסים שם מדפיסים בדיוק את העמודות שה-actions כותבים). ריענון נתיב שאיש אינו מרנדר עולה אפס, ולכן אין תנאי.
+
+### ארבע סטיות מ-Task 0.4 כפי שנוסחה
+
+1. **המתג הראשי מותנה בהרשאה, ומועבר כ-`null` ולא כ-`false`.** שורה 523 מבקשת את `OutreachMasterSwitch` בראש שני עמודי הספקים. המתג דורש `manage_settings`; עמוד Voximplant מגודר `manage_voice`. `requirePlatformPermission` **מפנה** — קריאה ל-`getOutreachMasterState()` עבור צופה עם `manage_voice` בלבד הייתה מעיפה אותו מהפאנל, בדיוק הבאג של `getAdminNavCounts()` שכבר תוקן הענף הזה. לכן: קריאה רק מאחורי `hasPlatformPermission`, והיעדר תשובה עובר כ-`null`. "כבוי" ו"אינך רשאי לראות אם כבוי" הן שתי עובדות שונות, ותג שאומר "מוגדר · כבוי" במקרה השני שולח איש תפעול לדבג מתג שדולק. הבדיקה מצמידה את שניהם.
+2. **כרטיס הסטטוס אינו קורא ל-`getVoicePlatformView()`.** הפונקציה מבצעת **שלוש קריאות חיות** ל-Voximplant (call lists, audit log, media resources), וההערה שלה עצמה מזהירה מ"תלות חיצונית בעלת השהיה בלתי-חסומה בנתיב רינדור חם". במקומה: `getVoiceBalanceTile()` (כבר ממוטמן) + `getVoximplantWiringTile()` — פונקציה שחולצה מתוך `getVoicePlatformView` כך ש**יש הגדרה אחת**, קריאת שורה אחת מהמסד. `/admin/voice/platform` נשאר הבעלים של המבט המלא.
+3. **אקורדיון "כתובות התרחיש" נשאר בקבוצה אחת** עם `vox-creds` ו-`vox-tuning`, ולא בקובץ נפרד. פיצולו היה שם כפתור שמירה בין שני חצאים של אקורדיון אחד, בשני המשטחים, בלי תמורה — הכתובות אינן שדה שנשמר.
+4. **טופס ההסכמה נקרא `voximplant-consent-toggle.tsx`, לא `voximplant-danger-zone.tsx`.** הוא התאום המדויק של `whatsapp-consent-toggle.tsx`; שם שמאחד אותו עם קישורי ניווט לתוך "אזור מסוכן" היה מוחק את התאומוּת מרשימת הקבצים. הקישורים ל-`/admin/voice/platform` ול-`/admin/settings` יושבים בעמוד עצמו.
+
+### תיקון נוסף שנגרר מ-0.3
+
+`WhatsAppCredentialsForm` כותב "הפעלה/כיבוי דרך מתג הפנייה הראשי **שמעל**" — ובעמוד Meta החדש לא היה מתג מעליו. המשפט הצביע על כלום. `OutreachMasterSwitch` נוסף לראש עמוד Meta; הכותב היחיד לא השתנה.
+
+### השלב הבא: Task 0.5
+
+חמישה עמודים (ExtrA · Resend/SMTP · SUMIT · Microsoft · Slack), commit לכל ספק. Task 0.2 כבר סיפקה להם את זוגות ה-`get`/`update` הנפרדים, כך שאין יותר סכנת "שמירה בטופס אחד מאפסת שדות של אחר".
 
 ---
 

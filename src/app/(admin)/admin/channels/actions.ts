@@ -26,6 +26,27 @@ import { updateChannelMetadata } from '@/lib/data/admin/channel-catalog';
 import { sendSlackAlert } from '@/lib/alerts/slack';
 import type { FormState } from '@/lib/validation/result';
 
+// ─── WHERE A SAVE HAS TO BE REFLECTED ────────────────────────────────────────
+// Since Task 0.3 these actions render on TWO surfaces: the old /admin/channels
+// tabs and the new /admin/integrations/<provider> pages, which IMPORT the same
+// components rather than copying them. `revalidatePath` invalidates exactly the
+// path it is handed, so revalidating only '/admin/channels' left a save made from
+// the new page showing its own pre-save values — a real defect that shipped with
+// 0.3, not a hypothetical one.
+//
+// Revalidating a path nobody is currently rendering costs nothing, so every
+// surface is invalidated unconditionally. The index is included because its cards
+// print `configured`/`enabled` for the very columns these actions write. Task 0.6
+// deletes the legacy path from these lists together with the pages themselves.
+const INDEX = '/admin/integrations';
+const LEGACY_CHANNELS = '/admin/channels';
+const META_WHATSAPP = '/admin/integrations/meta-whatsapp';
+const VOXIMPLANT = '/admin/integrations/voximplant';
+
+function revalidateAll(...paths: string[]): void {
+  for (const path of paths) revalidatePath(path);
+}
+
 // Form-friendly: every field is an optional string; the master toggle is a
 // checkbox. Trimmed; '' is an intentional unset (mapped to null in the DAL).
 const whatsappChannelSchema = z.object({
@@ -62,7 +83,7 @@ export async function updateWhatsAppChannelAction(
     return { error: 'עדכון הגדרות הערוץ נכשל. נסו שוב.' };
   }
 
-  revalidatePath('/admin/channels');
+  revalidateAll(LEGACY_CHANNELS, META_WHATSAPP, INDEX);
   return { notice: 'הגדרות הערוץ נשמרו' };
 }
 
@@ -126,7 +147,7 @@ export async function updateVoximplantChannelAction(
     return { error: 'עדכון הגדרות הערוץ נכשל. נסו שוב.' };
   }
 
-  revalidatePath('/admin/channels');
+  revalidateAll(LEGACY_CHANNELS, VOXIMPLANT, INDEX);
   return { notice: 'הגדרות הערוץ נשמרו' };
 }
 
@@ -165,7 +186,7 @@ export async function updateOutreachMasterSwitchAction(
     unstable_rethrow(err);
     return { error: 'עדכון מתג הפנייה נכשל. נסו שוב.' };
   }
-  revalidatePath('/admin/channels');
+  revalidateAll(LEGACY_CHANNELS, META_WHATSAPP, VOXIMPLANT, INDEX);
   return { notice: enabled ? 'פנייה לאורחים מופעלת' : 'פנייה לאורחים כבויה' };
 }
 
@@ -205,7 +226,7 @@ export async function updateVoximplantLiveCallsAction(
       : 'Voximplant live calls disabled',
     fields: { enabled: String(enabled) },
   });
-  revalidatePath('/admin/channels');
+  revalidateAll(LEGACY_CHANNELS, VOXIMPLANT, INDEX);
   return {
     notice: enabled
       ? 'שיחות חיות מופעלות — שיחות בתשלום ייצאו לאנשי קשר שנתנו הסכמה'
@@ -241,7 +262,7 @@ export async function updateCallConsentRequiredAction(
       : 'AI-call consent requirement LIFTED — dialing without prior consent permitted',
     fields: { consent_required: String(required) },
   });
-  revalidatePath('/admin/channels');
+  revalidateAll(LEGACY_CHANNELS, VOXIMPLANT);
   return {
     notice: required
       ? 'דרישת ההסכמה הופעלה — שיחות AI רק לאנשי קשר עם הסכמה מתועדת'
@@ -312,7 +333,7 @@ async function updatePersonaChannel(
     title: enabled ? errors.onTitle : errors.offTitle,
     fields: { enabled: String(enabled) },
   });
-  revalidatePath('/admin/channels');
+  revalidateAll(LEGACY_CHANNELS, VOXIMPLANT);
   return { notice: enabled ? errors.onNotice : errors.offNotice };
 }
 
@@ -394,7 +415,9 @@ export async function updateChannelCatalogAction(
     unstable_rethrow(err);
     return { error: 'עדכון הערוץ נכשל. נסו שוב.' };
   }
-  revalidatePath('/admin/channels');
+  // The catalog editor itself is not (yet) on an integrations page — the index
+  // links to it. Legacy path only, deliberately.
+  revalidatePath(LEGACY_CHANNELS);
   return { notice: `הערוץ "${parsed.data.display_name}" נשמר` };
 }
 
@@ -432,7 +455,7 @@ export async function updateWhatsAppConsentRequiredAction(
       : 'WhatsApp consent requirement LIFTED — sending without prior consent permitted',
     fields: { consent_required: String(required) },
   });
-  revalidatePath('/admin/channels');
+  revalidateAll(LEGACY_CHANNELS, META_WHATSAPP);
   return {
     notice: required
       ? 'דרישת ההסכמה הופעלה — הודעות וואטסאפ רק לאנשי קשר עם הסכמה מתועדת'

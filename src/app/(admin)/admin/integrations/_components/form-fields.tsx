@@ -127,6 +127,14 @@ export function CopyRow({ label, value }: { label: string; value: string }) {
   );
 }
 
+// The status pill's SHAPE and its neutral tone, exported so a provider whose state
+// the four fixed cases below cannot express renders the same pill rather than a
+// hand-rolled look-alike that drifts in dark mode and RTL. See
+// voximplant/voximplant-status-card.tsx, whose master-switch state can be unknown.
+export const statusBadgeClass =
+  'inline-flex items-center rounded-full border px-3 py-1 text-xs font-medium';
+export const statusBadgeNeutralTone = 'bg-muted text-muted-foreground border-border';
+
 export function StatusBadge({
   configured,
   enabled,
@@ -147,11 +155,5 @@ export function StatusBadge({
         : configured
           ? ['מוגדר · כבוי', 'bg-amber-500/10 text-amber-600 border-amber-500/30']
           : ['לא מוגדר', 'bg-muted text-muted-foreground border-border'];
-  return (
-    <span
-      className={`inline-flex items-center rounded-full border px-3 py-1 text-xs font-medium ${cls}`}
-    >
-      {text}
-    </span>
-  );
+  return <span className={`${statusBadgeClass} ${cls}`}>{text}</span>;
 }

@@ -8,6 +8,7 @@ import { getOutreachMasterState } from '@/lib/data/admin/outreach-master';
 import { getAppUrl } from '@/lib/url';
 
 import { PageHeading } from '../../_components';
+import { OutreachMasterSwitch } from '../_components/outreach-master-switch';
 import { WhatsAppCredentialsForm } from './whatsapp-credentials-form';
 import { WhatsAppConsentToggle } from './whatsapp-consent-toggle';
 import { WhatsAppConnectionTest } from './whatsapp-connection-test';
@@ -54,6 +55,13 @@ export default async function MetaWhatsAppPage() {
           ולא העמוד הזה.
         </p>
       </div>
+
+      {/* The master switch heads this page as well as /admin/integrations/voximplant:
+          it gates every outbound channel, not WhatsApp alone. It also has to be HERE
+          rather than only on the index — WhatsAppCredentialsForm's status line says
+          "הפעלה/כיבוי דרך מתג הפנייה הראשי שמעל", and until this was added that
+          sentence pointed at nothing on this page. Its single writer is unchanged. */}
+      <OutreachMasterSwitch enabled={master.enabled} anyChannelReady={master.anyChannelReady} />
 
       <section className="space-y-4">
         <h2 className="text-lg font-semibold">פרטי התחברות ו-Webhook</h2>
