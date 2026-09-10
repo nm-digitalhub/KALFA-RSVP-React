@@ -146,6 +146,11 @@ async function requireProviderPermission(provider: ProviderKey): Promise<void> {
  * provider_ref ADOPTS the ref-less backfill row for the same E.164 instead of
  * splitting one phone line into two rows and stranding its roles on the orphan.
  *
+ * A LABEL IS FILLED, NEVER REPLACED. The stored display_label wins in every branch
+ * of that function; a provider name only occupies the slot while it is empty. So a
+ * number renamed at the provider keeps our name here until someone edits it, and the
+ * provider's current name is read from snapshot.verified_name instead.
+ *
  * NULLS ARE OMITTED RATHER THAN SENT. The generated Args type declares the optional
  * parameters as `string` (not `string | null`), and the function reads a missing
  * argument as "leave what is stored" via coalesce. Sending an explicit null would
@@ -281,8 +286,14 @@ export async function syncMetaNumbers(): Promise<SyncResult> {
       provider: 'meta_whatsapp',
       providerRef: n.id,
       e164: digits ? `+${digits}` : null,
-      // Meta's own display name, and only as a FALLBACK: the RPC coalesces, so a
-      // label an admin typed survives every future sync.
+      // Meta's own display name, as a FALLBACK ONLY — it fills an empty label and
+      // never replaces one. That is enforced in upsert_provider_number, not here,
+      // and the first version of this comment claimed it while the SQL did the
+      // opposite: coalesce(p_display_label, display_label) prefers the INCOMING
+      // value, so it stops a sync blanking a label but not renaming one. Measured
+      // on the live table after the first real sync — 'מספר אישורי הגעה (RSVP)'
+      // became 'Kalfa Event'. The precedence is reversed in the follow-up
+      // migration; the provider's current name stays in snapshot.verified_name.
       displayLabel: n.verified_name ?? null,
       snapshot: {
         verified_name: n.verified_name ?? null,
