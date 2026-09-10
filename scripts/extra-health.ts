@@ -12,7 +12,8 @@
 // The API key never reaches stdout: GET /auth/key/ echoes it back in its response
 // and extra-client.ts drops it before returning, which its tests assert.
 
-import { runExtraKeyCheck, EXTRA_KEY_WARN_DAYS } from '@/lib/sms/run-key-check';
+import { runExtraKeyCheck } from '@/lib/sms/run-key-check';
+import { EXTRA_KEY_WARN_DAYS } from '@/app/(admin)/admin/integrations/extra-sms/thresholds';
 
 async function main() {
   const started = Date.now();

@@ -59,7 +59,7 @@ const CARDS: CardSpec[] = [
   { statusKey: 'whatsapp', key: 'meta-whatsapp', permission: 'manage_settings', href: '/admin/integrations/meta-whatsapp' },
   { statusKey: 'voximplant', key: 'voximplant', permission: 'manage_voice', href: '/admin/integrations/voximplant' },
   { statusKey: 'elevenlabs', key: 'elevenlabs', permission: 'manage_voice', href: '/admin/voice/platform' },
-  { statusKey: 'extra-sms', key: 'extra-sms', permission: 'manage_settings', href: '/admin/settings' },
+  { statusKey: 'extra-sms', key: 'extra-sms', permission: 'manage_settings', href: '/admin/integrations/extra-sms' },
   { statusKey: 'resend-email', key: 'resend-email', permission: 'manage_settings', href: '/admin/settings' },
   { statusKey: 'sumit', key: 'sumit', permission: 'manage_settings', href: '/admin/sumit-test' },
   { statusKey: 'slack', key: 'slack', permission: 'manage_settings', href: '/admin/alerts' },

@@ -21,7 +21,8 @@ import { readSmsSettings } from './sender';
 //     a date nobody can act on yet.
 // A single threshold would have to be either a useless warning or a two-month nag.
 export const EXTRA_KEY_ALERT_DAYS = 30;
-export const EXTRA_KEY_WARN_DAYS = 60;
+// The card's 60-day twin lives in the page tree (integrations/extra-sms/thresholds.ts)
+// so a client component can read it without importing this server-only module.
 
 export type ExtraKeyOutcome = 'ok' | 'skipped' | 'degraded' | 'failed';
 

@@ -7,7 +7,14 @@ or tokens before it was committed.
 
 Pinned rather than linked because the panel's error wording, the key-expiry
 monitor and the SMS mapper are all derived from it. A spec you cannot diff is a
-spec you cannot tell has changed under you.
+spec you cannot tell has changed under you — so here is what to diff against:
+
+    sha256  4b7fd912202f6538c85557c69e3038f20a37c295f83cefc70494949e8fb2e9a8
+    bytes   78781
+
+(The owner supplied the document a second time on 2026-09-10 under a different
+upload name. It was byte-identical to this file — same hash — so nothing moved.
+Recording the hash is what made that a five-second answer instead of a re-read.)
 
 ## What it actually contains — MEASURED, not quoted
 
@@ -45,6 +52,19 @@ message or a log. `extra-client.ts` does, and a test asserts it.
 codes (7321, 7526, 9404, 1214, 1215) "may arrive several at once in one
 response". A mapper that reads `errors[0]` will report one problem and silently
 drop the others, sending the operator to fix the wrong thing.
+
+## A capability the spec describes but does not expose
+
+The `SMS` tag's own description documents a **Verify** namespace — "verify
+possession of a phone number by voice call: we place an automated call to the
+number, the recipient confirms by dialing a code on the keypad during the call,
+and the result is POSTed to your `callback_url`… Requires an active VERIFY_VOICE
+monthly billing profile" — and `x-tagGroups` names the group "extra / SMS +
+Verify".
+
+There is no `/verify/` operation in `paths`. Whatever the endpoint is, this
+document does not describe it, so it cannot be called from here. Noted so the
+next reader stops looking rather than assuming the file is truncated.
 
 ## What the API does NOT expose
 
