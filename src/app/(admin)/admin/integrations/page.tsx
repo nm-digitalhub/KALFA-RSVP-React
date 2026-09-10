@@ -1,6 +1,6 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { Lock, Plug } from 'lucide-react';
+import { Lock, Phone, Plug } from 'lucide-react';
 
 import { getIntegrationsIndex, type IntegrationCard } from '@/lib/data/admin/integrations';
 import { Badge } from '@/components/ui/badge';
@@ -102,6 +102,25 @@ export default async function AdminIntegrationsPage() {
           )}
         </div>
       )}
+
+      {canManageSettings ? (
+        <section className="space-y-3 rounded-lg border border-border bg-card p-5">
+          <div>
+            <h2 className="text-lg font-semibold">מספרים</h2>
+            <p className="text-sm text-muted-foreground">
+              כל מספר טלפון שהמערכת מחוברת אליו, בכל הספקים, ומה כל אחד מהם עושה —
+              במקום לחפש אותו בשדה הגדרות של הספק הנכון.
+            </p>
+          </div>
+          <Link
+            href="/admin/integrations/numbers"
+            className="inline-flex min-h-11 items-center gap-1.5 text-sm text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+          >
+            <Phone className="size-4" aria-hidden />
+            מעבר לרשימת המספרים
+          </Link>
+        </section>
+      ) : null}
 
       {canManageSettings ? (
         <section className="space-y-3 rounded-lg border border-border bg-card p-5">
