@@ -3,7 +3,7 @@
 import { revalidatePath } from 'next/cache';
 import { unstable_rethrow } from 'next/navigation';
 
-import { requireAdmin } from '@/lib/auth/dal';
+import { requirePlatformPermission } from '@/lib/auth/dal';
 import { logActivity } from '@/lib/data/activity';
 import { sendSlackAlert } from '@/lib/alerts/slack';
 import { runLogExport } from '@/lib/data/vox-log-export';
@@ -19,7 +19,7 @@ export type WireFormState = FormState & { callbackUrl?: string };
 
 // Refresh the platform view: bust the page's cached provider reads. Read-only.
 export async function refreshVoicePlatformAction(): Promise<FormState> {
-  await requireAdmin();
+  await requirePlatformPermission('manage_voice');
   revalidatePath('/admin/voice/platform');
   revalidatePath('/admin/voice');
   return { notice: 'רועננו הנתונים' };
@@ -28,7 +28,7 @@ export async function refreshVoicePlatformAction(): Promise<FormState> {
 // Manually trigger one log-export run (the same fn the daily cron runs). It is
 // dark-safe + never throws; we surface the run counts.
 export async function runLogExportAction(): Promise<FormState> {
-  await requireAdmin();
+  await requirePlatformPermission('manage_voice');
   try {
     const summary = await runLogExport();
     await logActivity({ action: 'admin.voice.log_export_run', meta: { ...summary } });
@@ -48,7 +48,7 @@ export async function runLogExportAction(): Promise<FormState> {
 // by an AlertDialog in the UI. On success we surface the registered URL so the
 // admin can confirm it; the raw token is embedded in that URL and shown ONCE.
 export async function wireAccountCallbackAction(): Promise<WireFormState> {
-  await requireAdmin();
+  await requirePlatformPermission('manage_voice');
   try {
     const res = await wireVoximplantAccountCallback();
     if (!res.ok) return { error: res.message };
@@ -77,7 +77,7 @@ export async function wireAccountCallbackAction(): Promise<WireFormState> {
 }
 
 export async function rollbackAccountCallbackAction(): Promise<FormState> {
-  await requireAdmin();
+  await requirePlatformPermission('manage_voice');
   try {
     const res = await rollbackVoximplantAccountCallback();
     if (!res.ok) return { error: res.message };
@@ -102,7 +102,7 @@ export async function saveElevenLabsKeyAction(
   _prev: FormState,
   formData: FormData,
 ): Promise<FormState> {
-  await requireAdmin();
+  await requirePlatformPermission('manage_voice');
   const key = String(formData.get('elevenlabs_api_key') ?? '');
   try {
     await setElevenLabsApiKey(key);

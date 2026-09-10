@@ -4,7 +4,7 @@ import { revalidatePath } from 'next/cache';
 import { unstable_rethrow } from 'next/navigation';
 import { z } from 'zod';
 
-import { requireAdmin } from '@/lib/auth/dal';
+import { requirePlatformPermission } from '@/lib/auth/dal';
 import {
   clearSlackConnection,
   setSlackAlertCategory,
@@ -38,7 +38,7 @@ export async function saveSlackConnectionAction(
   _prevState: FormState,
   formData: FormData,
 ): Promise<FormState> {
-  await requireAdmin();
+  await requirePlatformPermission('manage_settings');
 
   const parsed = connectionSchema.safeParse({
     slack_bot_token: formData.get('slack_bot_token') ?? '',
@@ -80,7 +80,7 @@ export async function saveSlackMentionAction(
   _prevState: FormState,
   formData: FormData,
 ): Promise<FormState> {
-  await requireAdmin();
+  await requirePlatformPermission('manage_settings');
 
   const parsed = mentionSchema.safeParse({
     slack_mention_user_id: formData.get('slack_mention_user_id') ?? '',
@@ -108,7 +108,7 @@ export async function clearSlackConnectionAction(
   _prevState: FormState,
   _formData: FormData,
 ): Promise<FormState> {
-  await requireAdmin();
+  await requirePlatformPermission('manage_settings');
   try {
     await clearSlackConnection();
   } catch (err) {
@@ -123,7 +123,7 @@ export async function sendTestAlertAction(
   _prevState: FormState,
   _formData: FormData,
 ): Promise<FormState> {
-  await requireAdmin();
+  await requirePlatformPermission('manage_settings');
   let result: Awaited<ReturnType<typeof sendSlackTestAlert>>;
   try {
     result = await sendSlackTestAlert();
@@ -159,7 +159,7 @@ export async function setAlertToggleAction(input: {
   enabled: boolean;
   category?: AlertCategoryKey;
 }): Promise<FormState> {
-  await requireAdmin();
+  await requirePlatformPermission('manage_settings');
   const parsed = toggleSchema.safeParse(input);
   if (!parsed.success) {
     return { error: 'ערך לא תקין' };

@@ -4,7 +4,7 @@ import { revalidatePath } from 'next/cache';
 import { unstable_rethrow } from 'next/navigation';
 import { z } from 'zod';
 
-import { requireAdmin } from '@/lib/auth/dal';
+import { requirePlatformPermission } from '@/lib/auth/dal';
 import { logActivity } from '@/lib/data/activity';
 import {
   abandonFleetGoal,
@@ -50,7 +50,7 @@ export async function createFleetRequestAction(
   _prevState: FormState,
   formData: FormData,
 ): Promise<FormState> {
-  await requireAdmin();
+  await requirePlatformPermission('manage_settings');
 
   const parsed = composeSchema.safeParse({
     role: formData.get('role') ?? '',
@@ -119,7 +119,7 @@ export async function answerFleetRequestAction(
   _prevState: FormState,
   formData: FormData,
 ): Promise<FormState> {
-  await requireAdmin();
+  await requirePlatformPermission('manage_settings');
 
   const parsed = answerSchema.safeParse({
     id: formData.get('id') ?? '',
@@ -178,7 +178,7 @@ export async function createFleetGoalAction(
   _prevState: FormState,
   formData: FormData,
 ): Promise<FormState> {
-  await requireAdmin();
+  await requirePlatformPermission('manage_settings');
 
   const parsed = goalSchema.safeParse({
     role: formData.get('role') ?? '',
@@ -220,7 +220,7 @@ export async function pauseFleetGoalAction(
   _prevState: FormState,
   formData: FormData,
 ): Promise<FormState> {
-  await requireAdmin();
+  await requirePlatformPermission('manage_settings');
 
   const parsed = goalPauseSchema.safeParse({
     id: formData.get('id') ?? '',
@@ -260,7 +260,7 @@ export async function resumeFleetGoalAction(
   _prevState: FormState,
   formData: FormData,
 ): Promise<FormState> {
-  await requireAdmin();
+  await requirePlatformPermission('manage_settings');
 
   const parsed = goalResumeSchema.safeParse({
     id: formData.get('id') ?? '',
@@ -303,7 +303,7 @@ export async function abandonFleetGoalAction(
   _prevState: FormState,
   formData: FormData,
 ): Promise<FormState> {
-  await requireAdmin();
+  await requirePlatformPermission('manage_settings');
 
   const parsed = goalAbandonSchema.safeParse({
     id: formData.get('id') ?? '',

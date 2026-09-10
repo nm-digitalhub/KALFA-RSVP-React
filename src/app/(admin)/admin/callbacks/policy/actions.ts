@@ -5,7 +5,7 @@
 // call duration, daily cap, motzash resume delay) into the
 // callback_schedule_policies singleton row.
 //
-// Same authorization shape as config-actions.ts (agreement config): requireAdmin()
+// Same authorization shape as config-actions.ts (agreement config): manage_settings
 // gates the write, and the write goes through the request-scoped cookie session
 // client (createClient) — NOT the service-role client — so
 // callback_schedule_policies_admin_all RLS still applies as a second layer.

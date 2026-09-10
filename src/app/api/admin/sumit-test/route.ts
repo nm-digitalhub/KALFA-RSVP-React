@@ -1,6 +1,6 @@
 import { type NextRequest, NextResponse } from 'next/server';
 
-import { requireAdmin } from '@/lib/auth/dal';
+import { requirePlatformPermission } from '@/lib/auth/dal';
 import { getSumitServerConfig } from '@/lib/data/payments';
 import { escapeHtml as esc } from '@/lib/html';
 import { isAllowedOrigin } from '@/lib/http/allowed-origin';
@@ -80,7 +80,7 @@ ${opts.response != null ? block('תגובת SUMIT (תצוגה בטוחה — ט�
 
 export async function POST(request: NextRequest) {
   try {
-    await requireAdmin();
+    await requirePlatformPermission('manage_billing');
   } catch (err) {
     if (isNextRedirect(err)) return new NextResponse('Forbidden', { status: 403 });
     return new NextResponse('Unexpected error', { status: 500 });

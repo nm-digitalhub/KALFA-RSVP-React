@@ -5,11 +5,11 @@ vi.mock('next/navigation', async (importOriginal) => {
   const actual = await importOriginal<typeof import('next/navigation')>();
   return { ...actual };
 });
-vi.mock('@/lib/auth/dal', () => ({ requireAdmin: vi.fn() }));
+vi.mock('@/lib/auth/dal', () => ({ requirePlatformPermission: vi.fn() }));
 vi.mock('@/lib/data/activity', () => ({ logActivity: vi.fn() }));
 vi.mock('@/lib/data/admin/fleet', () => ({ answerFleetRequest: vi.fn() }));
 
-import { requireAdmin } from '@/lib/auth/dal';
+import { requirePlatformPermission } from '@/lib/auth/dal';
 import { logActivity } from '@/lib/data/activity';
 import { answerFleetRequest } from '@/lib/data/admin/fleet';
 import { answerFleetRequestAction } from './actions';
@@ -29,12 +29,12 @@ function fd(entries: Record<string, string>): FormData {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  vi.mocked(requireAdmin).mockResolvedValue({ id: 'admin' } as never);
+  vi.mocked(requirePlatformPermission).mockResolvedValue({ id: 'admin' } as never);
 });
 
 describe('answerFleetRequestAction — authorization', () => {
-  it('propagates a requireAdmin redirect instead of returning { error }', async () => {
-    vi.mocked(requireAdmin).mockRejectedValueOnce(NEXT_REDIRECT);
+  it('propagates the permission redirect instead of returning { error }', async () => {
+    vi.mocked(requirePlatformPermission).mockRejectedValueOnce(NEXT_REDIRECT);
     await expect(
       answerFleetRequestAction(null, fd({ id: REQUEST_ID, verdict: 'approved' })),
     ).rejects.toThrow('NEXT_REDIRECT');

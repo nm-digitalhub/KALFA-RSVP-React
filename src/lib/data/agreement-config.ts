@@ -4,7 +4,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 
 import { createAdminClient } from '@/lib/supabase/admin';
 import { createClient } from '@/lib/supabase/server';
-import { requireAdmin } from '@/lib/auth/dal';
+import { requirePlatformPermission } from '@/lib/auth/dal';
 import type { Database } from '@/lib/supabase/types';
 
 // Agreement-document configuration tokens: the numeric/textual legal parameters
@@ -116,7 +116,7 @@ export async function getAgreementConfigTokens(): Promise<Record<string, string>
 // policy via the request-scoped session client (NOT the service-role client —
 // admin reads go through the cookie client + RLS), mirroring getCompanySettings.
 export async function getAgreementConfigForAdmin(): Promise<AgreementConfigValues> {
-  await requireAdmin();
+  await requirePlatformPermission('manage_settings');
   const supabase = await createClient();
   return toAgreementConfigValues(await readAgreementConfigRow(supabase));
 }

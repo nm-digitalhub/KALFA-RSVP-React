@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
-import { requireAdmin } from '@/lib/auth/dal';
+import { requirePlatformPermission } from '@/lib/auth/dal';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { isTerminalStatus, type StreamEvent } from '@/lib/workflow/execution-events';
 import { createSerializedDrainer, drainEventsSince } from '@/lib/workflow/drain';
@@ -11,10 +11,12 @@ import { fetchEventsAfter } from '@/lib/workflow/stream';
 //
 // AUTHORIZATION IS OURS, NOT THEIRS. Their README says it plainly: "Reference
 // implementation, local development only. No real authentication. The bundled
-// AllowAllAuthPort permits every caller and every action." This route is
-// `requireAdmin()` on the same cookie session as every other admin surface —
-// the stream carries a guest's message text and a guest id, so it is exactly as
-// sensitive as the run row it describes.
+// AllowAllAuthPort permits every caller and every action." This route gates on
+// the same cookie session as every other admin surface — and on
+// `view_customer_data`, not the coarse staff floor, because the sentence below
+// is the whole argument: the stream carries a guest's message text and a guest
+// id, so it is exactly as sensitive as the run row it describes. It was
+// `requireAdmin()` until 2026-09-10, which let an auditor read guest messages.
 //
 // Their own file flags the reason this matters more here than elsewhere:
 // EventSource cannot send an Authorization header, so an SSE endpoint's auth
@@ -35,7 +37,7 @@ export async function GET(
   _request: NextRequest,
   { params }: { params: Promise<{ runId: string }> },
 ) {
-  await requireAdmin();
+  await requirePlatformPermission('view_customer_data');
 
   const { runId } = await params;
 

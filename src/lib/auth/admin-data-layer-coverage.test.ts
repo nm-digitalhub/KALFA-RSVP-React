@@ -375,19 +375,6 @@ describe('pinned modules enforce exactly the permission they are pinned to', () 
   }
 });
 
-describe('admin route handlers gate on requireAdmin()', () => {
-  const ROUTE_FILES = [
-    'src/app/api/admin/sumit-test/route.ts',
-  ];
-
-  for (const relPath of ROUTE_FILES) {
-    it(`${relPath} calls requireAdmin()`, () => {
-      const source = readFileSync(join(ROOT, relPath), 'utf8');
-      expect(source).toContain('requireAdmin');
-    });
-  }
-});
-
 describe('the admin layout applies the staff floor', () => {
   // Defense in depth, NOT the authorization boundary — Next's own guidance says
   // a layout "does not control whether the rest of the route renders". The
@@ -410,4 +397,94 @@ describe('the admin layout applies the staff floor', () => {
     const source = readFileSync(join(ROOT, 'src/app/(admin)/admin/layout.tsx'), 'utf8');
     expect(source).not.toMatch(/await requireAdmin\(\)/);
   });
-});;
+});
+
+// ---------------------------------------------------------------------------
+// The scan root, widened — because it was too narrow, and that is how the gap
+// below got in.
+// ---------------------------------------------------------------------------
+//
+// MODULES above reads src/lib/data/admin/ and NOTHING ELSE. That is why this
+// suite could go green while reporting "no coarse-gated writes": a Server Action
+// lives under src/app/(admin)/admin/, outside the scanned directory, and was
+// never looked at.
+//
+// It matters because a Server Action IS ITS OWN ENDPOINT. Next dispatches a POST
+// straight to it; the page's requirePlatformPermission() never runs for a caller
+// who invokes the action directly. Same for a route handler. The layout does not
+// save them either — see the note at src/lib/auth/dal.ts and Next's own wording,
+// "a layout does not control whether the rest of the route renders".
+//
+// MEASURED 2026-09-10, before the fix: 16 exported actions across voice/,
+// alerts/ and fleet/ gated on the coarse staff floor alone — among them one that
+// writes an ElevenLabs API key, one that writes a Slack webhook secret, and one
+// that sends a real Slack message. After the two auth axes were merged, every
+// role reached those, an auditor included.
+//
+// WHAT THIS ASSERTION DOES NOT PROVE, stated plainly rather than implied: it
+// does not verify that a thin action DELEGATES correctly. Most admin actions
+// validate input and hand off to a data-layer function that holds the gate —
+// which is the house pattern and is correct — and proving the handoff would need
+// real call-graph analysis, not text. So this checks the one thing text can
+// settle with no false positives: an admin endpoint that gates HERE must not
+// gate COARSELY. A file that names requireAdmin() is a file that decided to
+// authorize and picked the widest gate there is.
+const ENDPOINT_DIRS = ['src/app/(admin)/admin', 'src/app/api/admin'];
+
+function collectEndpointFiles(dir: string): string[] {
+  const out: string[] = [];
+  const walk = (rel: string): void => {
+    for (const entry of readdirSync(join(ROOT, rel), { withFileTypes: true })) {
+      const child = `${rel}/${entry.name}`;
+      if (entry.isDirectory()) {
+        walk(child);
+      } else if (
+        !entry.name.endsWith('.test.ts') &&
+        (entry.name === 'route.ts' ||
+          entry.name === 'actions.ts' ||
+          entry.name.endsWith('-actions.ts'))
+      ) {
+        out.push(child);
+      }
+    }
+  };
+  walk(dir);
+  return out.sort();
+}
+
+const ENDPOINT_FILES = ENDPOINT_DIRS.flatMap(collectEndpointFiles);
+
+describe('no admin endpoint authorizes on the coarse staff floor', () => {
+  it('finds endpoint files to check (a silent empty scan is the bug this replaces)', () => {
+    expect(ENDPOINT_FILES.length).toBeGreaterThan(20);
+  });
+
+  for (const relPath of ENDPOINT_FILES) {
+    it(`${relPath} names a permission rather than requireAdmin()`, () => {
+      const source = readFileSync(join(ROOT, relPath), 'utf8');
+      const coarse = [...source.matchAll(/await requireAdmin\(\)/g)];
+      expect(
+        coarse.length,
+        `${relPath} gates on the coarse requireAdmin() in ${coarse.length} place(s). ` +
+          `A Server Action and a route handler are each their own endpoint, so this ` +
+          `IS the authorization decision — name the permission the action actually ` +
+          `needs (requirePlatformPermission), or requirePlatformOwner if it is ` +
+          `owner-only. Delegating the gate to a pinned data-layer function is also ` +
+          `fine; calling requireAdmin() here is not.`,
+      ).toBe(0);
+    });
+  }
+
+  it('every permission key used by an admin endpoint exists in the catalogue', () => {
+    for (const relPath of ENDPOINT_FILES) {
+      const used = [
+        ...readFileSync(join(ROOT, relPath), 'utf8').matchAll(
+          /requirePlatformPermission\('([a-z_.]+)'\)/g,
+        ),
+      ].map((m) => m[1]);
+      for (const key of used) {
+        expect(PERMISSION_CATALOGUE, `${relPath} uses unknown permission '${key}'`).toContain(key);
+      }
+    }
+  });
+});

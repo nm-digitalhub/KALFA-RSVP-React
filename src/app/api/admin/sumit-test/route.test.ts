@@ -2,12 +2,12 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { NextRequest } from 'next/server';
 
 vi.mock('server-only', () => ({}));
-vi.mock('@/lib/auth/dal', () => ({ requireAdmin: vi.fn() }));
+vi.mock('@/lib/auth/dal', () => ({ requirePlatformPermission: vi.fn() }));
 vi.mock('@/lib/data/payments', () => ({ getSumitServerConfig: vi.fn() }));
 vi.mock('@/lib/sumit/raw-charge', () => ({ chargeRaw: vi.fn() }));
 
 import { POST } from './route';
-import { requireAdmin } from '@/lib/auth/dal';
+import { requirePlatformPermission } from '@/lib/auth/dal';
 import { getSumitServerConfig } from '@/lib/data/payments';
 import { chargeRaw } from '@/lib/sumit/raw-charge';
 
@@ -32,7 +32,7 @@ describe('POST /api/admin/sumit-test — CSRF origin gate', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     process.env.APP_ORIGIN = APP_ORIGIN;
-    vi.mocked(requireAdmin).mockResolvedValue(undefined as never);
+    vi.mocked(requirePlatformPermission).mockResolvedValue(undefined as never);
     vi.mocked(getSumitServerConfig).mockResolvedValue({
       companyId: 1,
       apiKey: 'k',
@@ -69,7 +69,7 @@ describe('POST /api/admin/sumit-test — route B (saved-token) mandatory fields'
   beforeEach(() => {
     vi.clearAllMocks();
     process.env.APP_ORIGIN = APP_ORIGIN;
-    vi.mocked(requireAdmin).mockResolvedValue(undefined as never);
+    vi.mocked(requirePlatformPermission).mockResolvedValue(undefined as never);
     vi.mocked(getSumitServerConfig).mockResolvedValue({
       companyId: 1,
       apiKey: 'k',
@@ -204,7 +204,7 @@ describe('POST /api/admin/sumit-test — success/failure banner', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     process.env.APP_ORIGIN = APP_ORIGIN;
-    vi.mocked(requireAdmin).mockResolvedValue(undefined as never);
+    vi.mocked(requirePlatformPermission).mockResolvedValue(undefined as never);
     vi.mocked(getSumitServerConfig).mockResolvedValue({
       companyId: 1,
       apiKey: 'k',

@@ -1,6 +1,6 @@
 import 'server-only';
 
-import { requireUser, requireAdmin, requirePlatformPermission } from '@/lib/auth/dal';
+import { requireUser, requirePlatformPermission } from '@/lib/auth/dal';
 import { recordStaffAccess } from '@/lib/data/admin/access-log';
 import { requireOwnedEvent, requireEventAccess } from '@/lib/data/events';
 import { assertEventNotPast, defaultThankyouSendAt } from '@/lib/data/event-date';
@@ -923,8 +923,13 @@ async function transitionCampaignStatus(
 
   let eventDate: string | null;
   if (actor.kind === 'admin') {
-    // Platform-admin-only wind-down: no ownership, no past/active gating.
-    await requireAdmin();
+    // Staff wind-down: no ownership, no past/active gating. Pinned to
+    // `campaigns.runstate` rather than the coarse staff floor — the permission
+    // catalogue has a key for exactly this (start/pause/close/cancel a live
+    // send), and until 2026-09-10 this branch asked only "is this person staff",
+    // which after the two auth axes were merged would have let an auditor stop
+    // a running campaign.
+    await requirePlatformPermission('campaigns.runstate');
     eventDate = null;
   } else if (actor.kind === 'owner') {
     const event = await requireOwnedEvent(campaign.event_id);
@@ -1135,7 +1140,7 @@ export async function getThankyouSchedule(
 // Staff who may pause, close, CANCEL and settle-and-charge a customer's
 // campaign could not move its thank-you time by an hour. That was not a
 // security boundary, just an inconsistency: the four heavier operations are
-// requireAdmin-authorized a few lines from here, and manage_billing is exactly
+// `campaigns.runstate`-authorized a few lines from here, and manage_billing is exactly
 // the permission the admin controls on this page already demand.
 //
 // The branch is decided HERE, from the caller's own identity — never from a
@@ -1215,7 +1220,7 @@ export async function closeCampaign(campaignId: string): Promise<void> {
 // approved → cancelled). Explicit authorization contract (round-3): the RPC
 // itself is service_role-only with NO caller-identity check, so authorization is
 // entirely this function's job, BEFORE the RPC is ever called. Cancel is a
-// wind-down operation restricted to PLATFORM ADMINS (requireAdmin) — not the
+// wind-down operation restricted to holders of `campaigns.runstate` — not the
 // event owner. The campaign is still loaded via getCampaignForHold because
 // campaign.event_id feeds the success Slack alert below. campaignId is NEVER
 // trusted from the browser to imply authorization.
@@ -1225,7 +1230,7 @@ export async function cancelCampaign(campaignId: string): Promise<void> {
     const { notFound } = await import('next/navigation');
     return notFound();
   }
-  await requireAdmin(); // platform-admin only; redirects non-admins
+  await requirePlatformPermission('campaigns.runstate'); // redirects anyone else
 
   const admin = createAdminClient();
   const { data, error } = await admin.rpc('cancel_campaign', {

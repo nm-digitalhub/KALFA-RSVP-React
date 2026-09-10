@@ -5,7 +5,7 @@ vi.mock('next/navigation', async (importOriginal) => {
   const actual = await importOriginal<typeof import('next/navigation')>();
   return { ...actual };
 });
-vi.mock('@/lib/auth/dal', () => ({ requireAdmin: vi.fn() }));
+vi.mock('@/lib/auth/dal', () => ({ requirePlatformPermission: vi.fn() }));
 vi.mock('@/lib/data/admin/alerts', () => ({
   updateSlackConnection: vi.fn(),
   clearSlackConnection: vi.fn(),
@@ -15,7 +15,7 @@ vi.mock('@/lib/data/admin/alerts', () => ({
 }));
 vi.mock('@/lib/alerts/slack', () => ({ sendSlackTestAlert: vi.fn() }));
 
-import { requireAdmin } from '@/lib/auth/dal';
+import { requirePlatformPermission } from '@/lib/auth/dal';
 import { setSlackMention, updateSlackConnection } from '@/lib/data/admin/alerts';
 import { sendSlackTestAlert } from '@/lib/alerts/slack';
 import {
@@ -36,16 +36,29 @@ function fd(entries: Record<string, string>): FormData {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  vi.mocked(requireAdmin).mockResolvedValue({ id: 'admin' } as never);
+  vi.mocked(requirePlatformPermission).mockResolvedValue({ id: 'admin' } as never);
 });
 
 describe('saveSlackConnectionAction — authorization', () => {
-  it('propagates a requireAdmin redirect instead of returning { error }', async () => {
-    vi.mocked(requireAdmin).mockRejectedValueOnce(NEXT_REDIRECT);
+  it('propagates the permission redirect instead of returning { error }', async () => {
+    vi.mocked(requirePlatformPermission).mockRejectedValueOnce(NEXT_REDIRECT);
     await expect(
       saveSlackConnectionAction(null, fd({ slack_bot_token: 'xoxb-a1', slack_alert_channel_id: 'C123456' })),
     ).rejects.toThrow('NEXT_REDIRECT');
     expect(updateSlackConnection).not.toHaveBeenCalled();
+  });
+
+  // Not just "a gate ran" — WHICH key. This action writes a Slack bot token and
+  // a channel id; until 2026-09-10 it asked only requireAdmin(), so once the two
+  // auth axes were merged every staff role, an auditor included, could rewrite
+  // the alerting webhook. Asserting the key is what makes a silent widening back
+  // to the coarse floor fail here instead of shipping.
+  it('demands manage_settings by name', async () => {
+    await saveSlackConnectionAction(
+      null,
+      fd({ slack_bot_token: 'xoxb-a1', slack_alert_channel_id: 'C123456' }),
+    );
+    expect(requirePlatformPermission).toHaveBeenCalledWith('manage_settings');
   });
 });
 

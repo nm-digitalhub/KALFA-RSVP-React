@@ -1,7 +1,7 @@
 import 'server-only';
 
 import { createClient } from '@/lib/supabase/server';
-import { requireAdmin } from '@/lib/auth/dal';
+import { requirePlatformPermission } from '@/lib/auth/dal';
 import { DAYS, readPolicyRow } from '@/lib/callbacks/policy-config';
 
 // Admin-form half of policy-config.ts, deliberately split into its own file —
@@ -24,9 +24,9 @@ export type CallbackPolicyFormValues = {
   attemptWindowDays: string;
 };
 
-/** Admin-form prefill: session client + requireAdmin, mirrors getAgreementConfigForAdmin. */
+/** Admin-form prefill: session client + requirePlatformPermission, mirrors getAgreementConfigForAdmin. */
 export async function getCallbackPolicyForAdmin(): Promise<CallbackPolicyFormValues> {
-  await requireAdmin();
+  await requirePlatformPermission('manage_settings');
   const supabase = await createClient();
   const row = (await readPolicyRow(supabase)) ?? {};
   const dayFields = Object.fromEntries(

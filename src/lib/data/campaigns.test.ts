@@ -120,6 +120,9 @@ beforeEach(() => {
   vi.mocked(requireAdmin).mockResolvedValue(
     { id: 'admin' } as unknown as Awaited<ReturnType<typeof requireAdmin>>,
   );
+  vi.mocked(requirePlatformPermission).mockResolvedValue(
+    { id: 'admin' } as unknown as Awaited<ReturnType<typeof requirePlatformPermission>>,
+  );
 });
 
 describe('computeCeiling', () => {
@@ -872,9 +875,12 @@ describe('campaign lifecycle transitions', () => {
     expect(builder.update).not.toHaveBeenCalled();
   });
 
-  // Wind-down is platform-admin only: pause/close gate on requireAdmin (NOT
-  // event ownership). The regression below (activateCampaign) proves the owner
-  // path is unchanged for forward transitions.
+  // Wind-down is staff-only and NAMED: pause/close/cancel gate on
+  // `campaigns.runstate` (NOT event ownership, and no longer the coarse
+  // requireAdmin floor — that changed 2026-09-10, when the two auth axes were
+  // merged and 'is staff at all' stopped being a meaningful gate). The
+  // regression below (activateCampaign) proves the owner path is unchanged for
+  // forward transitions.
   it('pauseCampaign: admin allowed → active → paused, WITHOUT an ownership check', async () => {
     const { builder } = adminWith({
       data: { id: 'c1', event_id: 'e1' },
@@ -883,7 +889,7 @@ describe('campaign lifecycle transitions', () => {
 
     await pauseCampaign('c1');
 
-    expect(requireAdmin).toHaveBeenCalled();
+    expect(requirePlatformPermission).toHaveBeenCalledWith('campaigns.runstate');
     expect(requireOwnedEvent).not.toHaveBeenCalled();
     expect(builder.update).toHaveBeenCalledWith({ status: 'paused' });
     expect(builder.in).toHaveBeenCalledWith('status', ['active']);
@@ -895,7 +901,7 @@ describe('campaign lifecycle transitions', () => {
       error: null,
     });
     const redirected = Object.assign(new Error('NEXT_REDIRECT'), { digest: 'NEXT_REDIRECT;replace;/app;307;' });
-    vi.mocked(requireAdmin).mockRejectedValue(redirected);
+    vi.mocked(requirePlatformPermission).mockRejectedValue(redirected);
 
     await expect(pauseCampaign('c1')).rejects.toThrow('NEXT_REDIRECT');
     expect(builder.update).not.toHaveBeenCalled();
@@ -909,7 +915,7 @@ describe('campaign lifecycle transitions', () => {
 
     await closeCampaign('c1');
 
-    expect(requireAdmin).toHaveBeenCalled();
+    expect(requirePlatformPermission).toHaveBeenCalledWith('campaigns.runstate');
     expect(requireOwnedEvent).not.toHaveBeenCalled();
     expect(builder.update).toHaveBeenCalledWith({ status: 'closed' });
   });
@@ -920,13 +926,13 @@ describe('campaign lifecycle transitions', () => {
       error: null,
     });
     const redirected = Object.assign(new Error('NEXT_REDIRECT'), { digest: 'NEXT_REDIRECT;replace;/app;307;' });
-    vi.mocked(requireAdmin).mockRejectedValue(redirected);
+    vi.mocked(requirePlatformPermission).mockRejectedValue(redirected);
 
     await expect(closeCampaign('c1')).rejects.toThrow('NEXT_REDIRECT');
     expect(builder.update).not.toHaveBeenCalled();
   });
 
-  it('activateCampaign stays owner-gated: calls requireOwnedEvent, NOT requireAdmin', async () => {
+  it('activateCampaign stays owner-gated: calls requireOwnedEvent, NOT the run-state gate', async () => {
     const { builder } = adminWith({
       data: { id: 'c1', event_id: 'e1' },
       error: null,
@@ -936,7 +942,7 @@ describe('campaign lifecycle transitions', () => {
     await activateCampaign('c1');
 
     expect(requireOwnedEvent).toHaveBeenCalledWith('e1');
-    expect(requireAdmin).not.toHaveBeenCalled();
+    expect(requirePlatformPermission).not.toHaveBeenCalledWith('campaigns.runstate');
     expect(builder.update).toHaveBeenCalledWith({ status: 'active' });
   });
 
@@ -1194,7 +1200,7 @@ describe('cancelCampaign (R8 — wind-down, platform-admin only)', () => {
       error: null,
     });
     const redirected = Object.assign(new Error('NEXT_REDIRECT'), { digest: 'NEXT_REDIRECT;replace;/app;307;' });
-    vi.mocked(requireAdmin).mockRejectedValue(redirected);
+    vi.mocked(requirePlatformPermission).mockRejectedValue(redirected);
 
     await expect(cancelCampaign('c1')).rejects.toThrow('NEXT_REDIRECT');
     expect(client.rpc).not.toHaveBeenCalled();
@@ -1209,7 +1215,7 @@ describe('cancelCampaign (R8 — wind-down, platform-admin only)', () => {
 
     await cancelCampaign('c1');
 
-    expect(requireAdmin).toHaveBeenCalled();
+    expect(requirePlatformPermission).toHaveBeenCalledWith('campaigns.runstate');
     expect(requireOwnedEvent).not.toHaveBeenCalled();
     expect(client.rpc).toHaveBeenCalledWith('cancel_campaign', { p_campaign: 'c1' });
     // Additive campaign_billing alert on a FRESH cancellation.
@@ -1382,7 +1388,7 @@ describe('B4 close-charge data layer', () => {
 
 // A console actor's identity is verified by the ROUTE (Bearer + the
 // campaigns.runstate permission), so these transitions touch neither the cookie
-// ownership check nor requireAdmin. What they must still honour is every
+// ownership check nor the run-state gate. What they must still honour is every
 // BUSINESS guard — and the event they are guarded against is read through the
 // service-role client, not requireOwnedEvent. This double serves the two reads
 // that path makes (campaigns, then events) with different rows.
@@ -1458,7 +1464,7 @@ describe('campaign run-state: console actor (owner decision 2026-07-21)', () => 
     expect(builders.campaigns.update).not.toHaveBeenCalled();
   });
 
-  it('uses neither the cookie ownership check nor requireAdmin', async () => {
+  it('uses neither the cookie ownership check nor the run-state gate', async () => {
     adminByTable({
       campaigns: { id: 'c1', event_id: 'e1' },
       events: { event_date: '2999-01-01T00:00:00+00:00', status: 'active' },
@@ -1467,10 +1473,10 @@ describe('campaign run-state: console actor (owner decision 2026-07-21)', () => 
     await activateCampaign('c1', CONSOLE);
 
     expect(requireOwnedEvent).not.toHaveBeenCalled();
-    expect(requireAdmin).not.toHaveBeenCalled();
+    expect(requirePlatformPermission).not.toHaveBeenCalledWith('campaigns.runstate');
   });
 
-  it('pause: active → paused without requireAdmin', async () => {
+  it('pause: active → paused without the run-state gate', async () => {
     const builders = adminByTable({
       campaigns: { id: 'c1', event_id: 'e1' },
       events: { event_date: '2999-01-01T00:00:00+00:00', status: 'active' },
@@ -1480,7 +1486,7 @@ describe('campaign run-state: console actor (owner decision 2026-07-21)', () => 
 
     expect(builders.campaigns.update).toHaveBeenCalledWith({ status: 'paused' });
     expect(builders.campaigns.in).toHaveBeenCalledWith('status', ['active']);
-    expect(requireAdmin).not.toHaveBeenCalled();
+    expect(requirePlatformPermission).not.toHaveBeenCalledWith('campaigns.runstate');
   });
 
   it('the OWNER path is unchanged — full from-set, ownership still checked', async () => {
