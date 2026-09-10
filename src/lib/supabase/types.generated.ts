@@ -4539,6 +4539,74 @@ export type Database = {
         }
         Relationships: []
       }
+      provider_number_roles: {
+        Row: {
+          number_id: string
+          role: Database["public"]["Enums"]["provider_number_role"]
+          updated_at: string
+        }
+        Insert: {
+          number_id: string
+          role: Database["public"]["Enums"]["provider_number_role"]
+          updated_at?: string
+        }
+        Update: {
+          number_id?: string
+          role?: Database["public"]["Enums"]["provider_number_role"]
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "provider_number_roles_number_id_fkey"
+            columns: ["number_id"]
+            isOneToOne: false
+            referencedRelation: "provider_numbers"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      provider_numbers: {
+        Row: {
+          created_at: string
+          display_label: string | null
+          e164: string | null
+          id: string
+          is_active: boolean
+          provider: Database["public"]["Enums"]["provider_key"]
+          provider_ref: string | null
+          snapshot: Json | null
+          snapshot_at: string | null
+          source: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          display_label?: string | null
+          e164?: string | null
+          id?: string
+          is_active?: boolean
+          provider: Database["public"]["Enums"]["provider_key"]
+          provider_ref?: string | null
+          snapshot?: Json | null
+          snapshot_at?: string | null
+          source?: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          display_label?: string | null
+          e164?: string | null
+          id?: string
+          is_active?: boolean
+          provider?: Database["public"]["Enums"]["provider_key"]
+          provider_ref?: string | null
+          snapshot?: Json | null
+          snapshot_at?: string | null
+          source?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       push_delivery_log: {
         Row: {
           created_at: string
@@ -6376,6 +6444,18 @@ export type Database = {
       faq_category: "about" | "pricing" | "how_it_works" | "legal_support"
       guest_status: "pending" | "attending" | "declined" | "maybe"
       order_status: "pending" | "paid"
+      provider_key: "meta_whatsapp" | "voximplant" | "extra_sms" | "company"
+      provider_number_role:
+        | "whatsapp_rsvp_sender"
+        | "whatsapp_import_sender"
+        | "voice_caller_id_rsvp"
+        | "voice_caller_id_meeting_confirm"
+        | "voice_caller_id_sales"
+        | "voice_caller_id_call_me_now"
+        | "voice_inbound_did"
+        | "sms_sender"
+        | "company_contact"
+        | "business_line_inbound"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -6564,6 +6644,19 @@ export const Constants = {
       faq_category: ["about", "pricing", "how_it_works", "legal_support"],
       guest_status: ["pending", "attending", "declined", "maybe"],
       order_status: ["pending", "paid"],
+      provider_key: ["meta_whatsapp", "voximplant", "extra_sms", "company"],
+      provider_number_role: [
+        "whatsapp_rsvp_sender",
+        "whatsapp_import_sender",
+        "voice_caller_id_rsvp",
+        "voice_caller_id_meeting_confirm",
+        "voice_caller_id_sales",
+        "voice_caller_id_call_me_now",
+        "voice_inbound_did",
+        "sms_sender",
+        "company_contact",
+        "business_line_inbound",
+      ],
     },
   },
 } as const
