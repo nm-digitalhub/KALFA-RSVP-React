@@ -417,27 +417,8 @@ export type AppRole = Enums<'app_role'>;
 export const appSettingsSchema = z.object({
   payments_enabled: z.boolean(),
   close_charge_enabled: z.boolean(),
-  sumit_company_id: z
-    .string()
-    .trim()
-    .regex(/^\d*$/, { error: 'מזהה חברה חייב להכיל ספרות בלבד' }),
-  sumit_api_public_key: z.string().trim(),
-  sumit_api_key: z.string().trim(),
   // SMS (ExtrA) for OTP at agreement signing. Sender + token are free strings.
-  sms_enabled: z.boolean(),
-  extra_sms_sender: z.string().trim(),
-  extra_sms_token: z.string().trim(),
   // Email (SMTP) for business emails (signed agreement, etc.).
-  email_enabled: z.boolean(),
-  smtp_host: z.string().trim(),
-  smtp_port: z
-    .string()
-    .trim()
-    .regex(/^\d*$/, { error: 'פורט חייב להכיל ספרות בלבד' }),
-  smtp_secure: z.boolean(),
-  smtp_user: z.string().trim(),
-  smtp_password: z.string().trim(),
-  smtp_from: z.string().trim(),
   // Inquiry silence follow-up sweep (reminder → warning → auto-close on an
   // inquiry the admin replied to and the customer went quiet on) — its OWN
   // switch, deliberately not sharing outreach_enabled (campaign/WhatsApp
@@ -465,6 +446,51 @@ export const appSettingsSchema = z.object({
   console_consult_conference_enabled: z.boolean().default(false),
   console_dtmf_handoff_enabled: z.boolean().default(false),
 });
+
+// ---------------------------------------------------------------------------
+// Provider credentials, split out of appSettingsSchema (Task 0.2)
+// ---------------------------------------------------------------------------
+//
+// Three schemas because there will be three FORMS. The rule that makes that safe is
+// the one appSettingsSchema learned the hard way (see the keepMounted note in
+// settings-form.tsx): a checkbox that is not rendered is absent from the FormData,
+// and absent reads as `false`. In ONE form with ONE save that meant a save from any
+// tab silently switched off the other tabs' toggles. Splitting removes that risk
+// BETWEEN providers — and re-creates it inside each new form unless the schema lists
+// EVERY field its own form renders. Each of the three below is complete for its form.
+//
+// The field definitions are carried over verbatim, not retyped: a subtly different
+// regex here would reject a value the old form accepted, which is a migration bug
+// wearing a validation costume.
+
+export const sumitCredentialsSchema = z.object({
+  sumit_company_id: z
+    .string()
+    .trim()
+    .regex(/^\d*$/, { error: 'מזהה חברה חייב להכיל ספרות בלבד' }),
+  sumit_api_public_key: z.string().trim(),
+  sumit_api_key: z.string().trim(),
+});
+
+export const extraSmsSchema = z.object({
+  sms_enabled: z.boolean(),
+  extra_sms_sender: z.string().trim(),
+  extra_sms_token: z.string().trim(),
+});
+
+export const emailTransportSchema = z.object({
+  email_enabled: z.boolean(),
+  smtp_host: z.string().trim(),
+  smtp_port: z
+    .string()
+    .trim()
+    .regex(/^\d*$/, { error: 'פורט חייב להכיל ספרות בלבד' }),
+  smtp_secure: z.boolean(),
+  smtp_user: z.string().trim(),
+  smtp_password: z.string().trim(),
+  smtp_from: z.string().trim(),
+});
+
 export type AppSettingsInput = z.infer<typeof appSettingsSchema>;
 
 // --- company / legal details (for the signed agreement) ---

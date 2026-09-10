@@ -1,10 +1,8 @@
 'use client';
 
-import { useActionState, useState } from 'react';
-import { Eye, EyeOff } from 'lucide-react';
+import { useActionState } from 'react';
 
 import {
-  FieldError,
   FormError,
   FormNotice,
   SubmitButton,
@@ -13,85 +11,9 @@ import { Tabs, TabsList, TabsTab, TabsPanel } from '@/components/ui/tabs';
 import type { AppSettings } from '@/lib/data/admin/settings';
 import { updateSettingsAction } from './actions';
 
-const inputClass =
-  'w-full rounded-md border border-border bg-background px-3 py-2 text-sm outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/15 read-only:bg-muted read-only:text-muted-foreground';
-
 // A value row with its own controls: an eye toggle (mask/reveal) for key fields,
 // and an "ערוך" toggle that enables editing. The input is ALWAYS present in the
 // form — readOnly fields still submit — so values aren't lost when untouched.
-function EditableField({
-  name,
-  label,
-  defaultValue,
-  maskable = false,
-  inputMode,
-  placeholder,
-  hint,
-  errors,
-}: {
-  name: string;
-  label: string;
-  defaultValue?: string;
-  maskable?: boolean;
-  inputMode?: 'numeric';
-  placeholder?: string;
-  hint?: string;
-  errors?: string[];
-}) {
-  const [editing, setEditing] = useState(false);
-  const [revealed, setRevealed] = useState(false);
-
-  // Masked by default; revealed (or being edited) shows plain text.
-  const type = maskable && !revealed && !editing ? 'password' : 'text';
-
-  return (
-    <div className="space-y-1">
-      <div className="flex items-center justify-between gap-2">
-        <label htmlFor={name} className="text-sm font-medium">
-          {label}
-        </label>
-        <div className="flex items-center gap-3">
-          {maskable ? (
-            <button
-              type="button"
-              onClick={() => setRevealed((v) => !v)}
-              className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
-              aria-pressed={revealed}
-            >
-              {revealed ? (
-                <EyeOff className="size-3.5" aria-hidden />
-              ) : (
-                <Eye className="size-3.5" aria-hidden />
-              )}
-              {revealed ? 'הסתר' : 'הצג'}
-            </button>
-          ) : null}
-          <button
-            type="button"
-            onClick={() => setEditing((v) => !v)}
-            className="text-xs text-primary hover:underline"
-            aria-pressed={editing}
-          >
-            {editing ? 'נעילה' : 'ערוך'}
-          </button>
-        </div>
-      </div>
-      <input
-        id={name}
-        name={name}
-        type={type}
-        inputMode={inputMode}
-        defaultValue={defaultValue}
-        placeholder={placeholder}
-        readOnly={!editing}
-        autoComplete="off"
-        className={inputClass}
-      />
-      {hint ? <p className="text-xs text-muted-foreground">{hint}</p> : null}
-      <FieldError errors={errors} />
-    </div>
-  );
-}
 
 // Twenty toggles share one markup; the component is what keeps adding another
 // from being another fifteen lines of copy.
@@ -146,13 +68,10 @@ function Panel({ value, children }: { value: string; children: React.ReactNode }
 
 export function SettingsForm({
   settings,
-  emailProvider,
 }: {
   settings: AppSettings;
-  emailProvider: 'resend' | 'smtp';
 }) {
   const [state, action] = useActionState(updateSettingsAction, null);
-  const fieldErrors = state?.fieldErrors;
 
   return (
     <form action={action} className="space-y-5">
@@ -160,15 +79,14 @@ export function SettingsForm({
       <FormNotice message={state?.notice} />
 
       <Tabs defaultValue="payments">
-        {/* Four Hebrew labels do not fit one row on a phone. A 2x2 grid keeps
-            all four visible; a scrolling strip would hide half of them behind
-            an affordance nobody looks for. */}
+        {/* THREE labels now — the fourth ("הודעות") moved to its own provider
+            forms in Task 0.2. The grid stays 2x2 and must NOT become grid-cols-3:
+            Hebrew labels do not fit one row on a phone, and a scrolling strip hides
+            half of them behind an affordance nobody looks for. Three in a 2x2 grid
+            simply leaves one cell empty, which is the cheap, correct outcome. */}
         <TabsList className="grid w-full grid-cols-2 sm:inline-flex sm:w-auto">
           <TabsTab value="payments" className="justify-center sm:justify-start">
             תשלומים
-          </TabsTab>
-          <TabsTab value="messaging" className="justify-center sm:justify-start">
-            הודעות
           </TabsTab>
           <TabsTab value="automations" className="justify-center sm:justify-start">
             אוטומציות
@@ -218,115 +136,6 @@ export function SettingsForm({
             והקמפיין לא יחייב אף אחד. אל תשנו בלי לבדוק קמפיין פעיל.
           </Toggle>
 
-          <EditableField
-            name="sumit_company_id"
-            label="מזהה חברה (SUMIT Company ID)"
-            defaultValue={settings.sumit_company_id}
-            inputMode="numeric"
-            placeholder="לדוגמה 123456"
-            errors={fieldErrors?.sumit_company_id}
-          />
-          <EditableField
-            name="sumit_api_public_key"
-            label="מפתח ציבורי לטוקניזציה (Public API Key)"
-            defaultValue={settings.sumit_api_public_key}
-            maskable
-            placeholder="מפתח ציבורי מ-SUMIT"
-            errors={fieldErrors?.sumit_api_public_key}
-          />
-          <EditableField
-            name="sumit_api_key"
-            label="מפתח API פרטי לחיוב (Secret API Key)"
-            defaultValue={settings.sumit_api_key}
-            maskable
-            placeholder="לא מוגדר — הזן מפתח"
-            hint="המפתח הסודי נשמר בצד-שרת. כאן הוא מוצג מוסכה כברירת מחדל; לחצו 'הצג' לחשיפה."
-            errors={fieldErrors?.sumit_api_key}
-          />
-        </Panel>
-
-        <Panel value="messaging">
-          <Toggle name="sms_enabled" label="הפעלת SMS (ExtrA)" checked={settings.sms_enabled}>
-            נדרש לאימות OTP בעת חתימה על ההסכם. כשכבוי — לא נשלחים קודים.
-          </Toggle>
-
-          <EditableField
-            name="extra_sms_sender"
-            label="שם השולח (Sender) המאומת ב-ExtrA"
-            defaultValue={settings.extra_sms_sender}
-            placeholder="לדוגמה KALFA"
-            hint="זהות שולח מאומתת מתוך לשונית 'verified identities' בחשבון ExtrA."
-            errors={fieldErrors?.extra_sms_sender}
-          />
-          <EditableField
-            name="extra_sms_token"
-            label="מפתח API של ExtrA (Bearer Token)"
-            defaultValue={settings.extra_sms_token}
-            maskable
-            placeholder="לא מוגדר — הזן טוקן"
-            hint="הטוקן הסודי נשמר בצד-שרת ומוצג מוסכה כברירת מחדל; לחצו 'הצג' לחשיפה."
-            errors={fieldErrors?.extra_sms_token}
-          />
-
-          <hr className="border-border" />
-
-          <Toggle name="email_enabled" label="הפעלת דואר עסקי" checked={settings.email_enabled}>
-            נדרש לשליחת מיילים עסקיים (ההסכם החתום, חשבוניות). כשכבוי — לא נשלח
-            דואר, בכל מוביל.
-          </Toggle>
-
-          {/* Which transport is live is decided by EMAIL_PROVIDER, not by this
-              form. Saying so here is the difference between an admin who knows
-              the fields below are dormant and one who edits them expecting an
-              effect. */}
-          <p className="text-xs text-muted-foreground">
-            {emailProvider === 'resend'
-              ? 'המוביל הפעיל: Resend (שולח דרך ה-API, ללא סיסמה). השדות שלהלן משמשים רק את נתיב הנסיגה ואינם בשימוש כרגע.'
-              : 'המוביל הפעיל: SMTP. השדות שלהלן הם שמפעילים את שליחת הדואר.'}
-          </p>
-
-          <EditableField
-            name="smtp_host"
-            label="שרת SMTP"
-            defaultValue={settings.smtp_host}
-            errors={fieldErrors?.smtp_host}
-          />
-          <EditableField
-            name="smtp_port"
-            label="פורט"
-            defaultValue={settings.smtp_port}
-            inputMode="numeric"
-            placeholder="587"
-            hint="587 = STARTTLS · 465 = SSL"
-            errors={fieldErrors?.smtp_port}
-          />
-          <Toggle name="smtp_secure" label="חיבור מאובטח (SSL)" checked={settings.smtp_secure}>
-            סמנו עבור פורט 465 (SSL). לפורט 587 (STARTTLS) — השאירו כבוי.
-          </Toggle>
-          <EditableField
-            name="smtp_user"
-            label="שם משתמש (תיבת הדואר)"
-            defaultValue={settings.smtp_user}
-            placeholder="noreply@kalfa.me"
-            errors={fieldErrors?.smtp_user}
-          />
-          <EditableField
-            name="smtp_password"
-            label="סיסמת SMTP"
-            defaultValue={settings.smtp_password}
-            maskable
-            placeholder="לא מוגדר — הזן סיסמה"
-            hint="הסיסמה נשמרת בצד-שרת ומוצגת מוסכה; לחצו 'הצג' לחשיפה."
-            errors={fieldErrors?.smtp_password}
-          />
-          <EditableField
-            name="smtp_from"
-            label="כתובת השולח (From)"
-            defaultValue={settings.smtp_from}
-            placeholder="KALFA <noreply@kalfa.me>"
-            hint="הכתובת שתופיע אצל הנמען."
-            errors={fieldErrors?.smtp_from}
-          />
         </Panel>
 
         <Panel value="automations">

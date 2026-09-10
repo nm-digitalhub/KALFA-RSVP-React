@@ -6,7 +6,6 @@ import {
   getInfraConfigStatus,
 } from '@/lib/data/admin/settings';
 import { getBaseOveragePricingEnabled } from '@/lib/data/payments';
-import { selectedEmailProvider } from '@/lib/email/sender';
 import {
   getExchangeConnectionMode,
   listMyExchangeConnections,
@@ -47,7 +46,7 @@ export default async function AdminSettingsPage() {
             בנפרד; המפתחות מוצגים מוסכים עם כפתור חשיפה.
           </p>
         </div>
-        <SettingsForm settings={settings} emailProvider={selectedEmailProvider()} />
+        <SettingsForm settings={settings} />
       </section>
 
       <section className={sectionClass}>
