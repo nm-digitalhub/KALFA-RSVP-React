@@ -16,6 +16,7 @@ vi.mock('@/lib/ops/integrations', () => ({
   getIntegrationsConfiguredFlags: flagsMock,
 }));
 vi.mock('./actions', () => ({
+  assignRoleAction: vi.fn(),
   syncMetaNumbersAction: vi.fn(),
   syncVoximplantNumbersAction: vi.fn(),
 }));
@@ -89,10 +90,24 @@ describe('/admin/integrations/numbers', () => {
     expect(permMock).toHaveBeenCalledWith('manage_settings');
   });
 
-  it('renders the table and the sync controls', async () => {
+  it('renders the table, the sync controls and the roles panel', async () => {
     const names = componentNames(await NumbersPage());
     expect(names).toContain('NumbersTable');
     expect(names).toContain('SyncButtons');
+    expect(names).toContain('RolesPanel');
+  });
+
+  it('hands the roles panel every number, not only the assigned ones', async () => {
+    // The panel builds its rows from the ROLE list and looks the holder up in this
+    // array; a filtered list would make an unassigned number unpickable.
+    listMock.mockResolvedValue([
+      number(),
+      number({ id: 'n2', roles: [], e164: '+97233301505' }),
+    ]);
+    const panel = collect(await NumbersPage()).find(
+      (p) => (p.__type as { name?: string } | undefined)?.name === 'RolesPanel',
+    );
+    expect((panel?.numbers as unknown[]).length).toBe(2);
   });
 
   it('makes NO live provider call on render', async () => {

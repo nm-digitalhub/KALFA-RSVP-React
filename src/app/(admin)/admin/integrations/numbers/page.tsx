@@ -8,8 +8,13 @@ import { getIntegrationsConfiguredFlags } from '@/lib/ops/integrations';
 
 import { PageHeading } from '../../_components';
 import { NumbersTable } from './numbers-table';
+import { RolesPanel } from './roles-panel';
 import { SyncButtons } from './sync-buttons';
-import { syncMetaNumbersAction, syncVoximplantNumbersAction } from './actions';
+import {
+  assignRoleAction,
+  syncMetaNumbersAction,
+  syncVoximplantNumbersAction,
+} from './actions';
 
 export const metadata: Metadata = { title: 'מספרים — אינטגרציות' };
 
@@ -81,12 +86,22 @@ export default async function NumbersPage() {
         <NumbersTable numbers={numbers} />
       </section>
 
+      <section className="space-y-3 rounded-lg border border-border bg-card p-5">
+        <div>
+          <h2 className="text-lg font-semibold">תפקידים</h2>
+          <p className="text-sm text-muted-foreground">
+            מי עושה מה. כל תפקיד מוחזק ע&quot;י מספר אחד בדיוק — שינוי הבחירה מעביר
+            אותו, ואין מצב ביניים שבו שני מספרים טוענים לאותו תפקיד.
+          </p>
+        </div>
+        <RolesPanel numbers={numbers} onAssign={assignRoleAction} />
+      </section>
+
       <section className="space-y-2 rounded-lg border border-border bg-card p-5">
         <h2 className="text-lg font-semibold">מה שאינו כאן</h2>
         <p className="text-sm text-muted-foreground">
-          שיוך תפקיד למספר, רכישת מספר חדש ואימות מספר מול Meta — כולם עדיין בעמוד
-          הספק עצמו. הרשימה הזו היא התמונה המלאה; העריכה מפוזרת לפי ספק עד שהיא
-          תעבור לכאן.
+          רכישת מספר חדש ואימות מספר מול Meta נשארים בעמוד הספק עצמו — שניהם עולים
+          כסף או משנים מצב אצל הספק, ולכן הם יושבים ליד שאר הפעולות מהסוג הזה.
         </p>
         <div className="flex flex-wrap gap-4">
           <Link

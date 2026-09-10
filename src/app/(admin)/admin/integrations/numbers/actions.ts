@@ -5,9 +5,12 @@ import { unstable_rethrow } from 'next/navigation';
 
 import { logActivity } from '@/lib/data/activity';
 import {
+  assignRole,
+  clearRole,
   syncMetaNumbers,
   syncVoximplantNumbers,
 } from '@/lib/data/admin/integrations/provider-numbers';
+import { assignRoleSchema, numberRoleSchema } from '@/lib/validation/provider-numbers';
 import type { FormState } from '@/lib/validation/result';
 
 // The gate lives in the DAL, per provider — syncMetaNumbers takes manage_settings,
@@ -70,4 +73,57 @@ export async function syncVoximplantNumbersAction(): Promise<FormState> {
   revalidatePath(NUMBERS);
   revalidatePath(INDEX);
   return { notice: `סונכרנו ${result.count} מספרים מ-Voximplant` };
+}
+
+/**
+ * Point a role at a number, or at nobody.
+ *
+ * ONE ACTION FOR BOTH, because it is one decision — which number holds this role.
+ * A separate "remove" path would let an admin assign without noticing what they
+ * displaced, and would need its own gate that could drift from this one.
+ *
+ * The gate is in the DAL, per role: pointing voice_caller_id_* or voice_inbound_did
+ * at a different line changes which number places calls, and that is voice
+ * configuration. Not repeated here — a Server Action is its own endpoint, so the
+ * answer is never "the page checked", and two gates on one path drift apart.
+ */
+export async function assignRoleAction(formData: FormData): Promise<FormState> {
+  const rawRole = formData.get('role');
+  const rawNumber = formData.get('numberId');
+
+  const role = numberRoleSchema.safeParse(rawRole);
+  if (!role.success) return { error: 'תפקיד לא מוכר' };
+
+  // An empty select means "nobody". Distinct from an invalid id, which is a bug in
+  // the form rather than a choice, and gets a different message.
+  const wantsClear = rawNumber === '' || rawNumber === null;
+
+  try {
+    if (wantsClear) {
+      await clearRole(role.data);
+    } else {
+      const parsed = assignRoleSchema.safeParse({ role: role.data, numberId: rawNumber });
+      if (!parsed.success) return { error: 'מזהה מספר לא תקין' };
+      await assignRole(parsed.data.role, parsed.data.numberId);
+    }
+  } catch (err) {
+    unstable_rethrow(err);
+    // The DAL names the one failure a caller can act on (the number is gone);
+    // anything else is ours and stays generic.
+    const message = err instanceof Error ? err.message : '';
+    return { error: message === 'המספר שנבחר אינו קיים' ? message : 'שמירת השיוך נכשלה' };
+  }
+
+  await logActivity({
+    action: 'admin.integrations.number_role_assigned',
+    meta: { role: role.data, cleared: wantsClear },
+  });
+
+  revalidatePath(NUMBERS);
+  revalidatePath(INDEX);
+  // The inbox names the receiving number from these rows, so a reassignment changes
+  // what it prints.
+  revalidatePath('/admin/webhooks');
+
+  return { notice: wantsClear ? 'השיוך בוטל' : 'השיוך נשמר' };
 }
