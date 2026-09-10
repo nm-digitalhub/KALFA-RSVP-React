@@ -6157,6 +6157,24 @@ export type Database = {
         Args: { p_campaign: string; p_contact: string }
         Returns: boolean
       }
+      integrations_configured_flags: {
+        Args: never
+        Returns: {
+          elevenlabs_configured: boolean
+          email_configured: boolean
+          email_enabled: boolean
+          extra_sms_configured: boolean
+          extra_sms_enabled: boolean
+          slack_configured: boolean
+          slack_enabled: boolean
+          sumit_configured: boolean
+          sumit_enabled: boolean
+          voximplant_configured: boolean
+          voximplant_enabled: boolean
+          whatsapp_configured: boolean
+          whatsapp_enabled: boolean
+        }[]
+      }
       is_console_agent: { Args: never; Returns: boolean }
       is_org_member: { Args: { _org_id: string }; Returns: boolean }
       is_org_owner: { Args: { _org_id: string }; Returns: boolean }

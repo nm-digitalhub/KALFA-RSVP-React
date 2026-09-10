@@ -533,6 +533,7 @@ export function IntegrationsPanel({
               <TableRow>
                 <TableHead>ספק</TableHead>
                 <TableHead>מוגדר</TableHead>
+                <TableHead>מצב</TableHead>
                 <TableHead>בדיקה אחרונה</TableHead>
                 <TableHead>הערה</TableHead>
               </TableRow>
@@ -545,6 +546,20 @@ export function IntegrationsPanel({
                     <Badge variant={item.configured ? 'success' : 'neutral'}>
                       {item.configured ? 'מוגדר' : 'לא מוגדר'}
                     </Badge>
+                  </TableCell>
+                  {/* Separate from "מוגדר" on purpose: a provider can be fully set up
+                      and deliberately switched off, and until 2026-09-10 this panel
+                      showed that state as "לא מוגדר" — see integrations.ts. A provider
+                      that is not configured has no meaningful switch state, so it
+                      shows a dash rather than a misleading "כבוי". */}
+                  <TableCell>
+                    {!item.configured ? (
+                      <span className="text-muted-foreground">—</span>
+                    ) : (
+                      <Badge variant={item.enabled ? 'success' : 'warning'}>
+                        {item.enabled ? 'פעיל' : 'כבוי'}
+                      </Badge>
+                    )}
                   </TableCell>
                   <TableCell>
                     {item.lastCheckedAt ? (
