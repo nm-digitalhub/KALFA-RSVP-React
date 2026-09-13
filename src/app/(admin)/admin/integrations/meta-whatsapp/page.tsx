@@ -4,6 +4,7 @@ import { ChevronRight } from 'lucide-react';
 
 import { requirePlatformPermission } from '@/lib/auth/dal';
 import { getWhatsAppChannelConfig } from '@/lib/data/admin/channels';
+import { getMetaStatus } from '@/lib/data/admin/integrations/meta-status';
 import { getOutreachMasterState } from '@/lib/data/admin/outreach-master';
 import { getAppUrl } from '@/lib/url';
 
@@ -12,6 +13,7 @@ import { OutreachMasterSwitch } from '../_components/outreach-master-switch';
 import { WhatsAppCredentialsForm } from './whatsapp-credentials-form';
 import { WhatsAppConsentToggle } from './whatsapp-consent-toggle';
 import { WhatsAppConnectionTest } from './whatsapp-connection-test';
+import { MetaStatusCard } from './meta-status-card';
 
 export const metadata: Metadata = { title: 'Meta / WhatsApp — אינטגרציות' };
 
@@ -31,10 +33,15 @@ export const metadata: Metadata = { title: 'Meta / WhatsApp — אינטגרצי
 export default async function MetaWhatsAppPage() {
   await requirePlatformPermission('manage_settings');
 
-  const [whatsapp, master, callbackUrl] = await Promise.all([
+  const [whatsapp, master, callbackUrl, metaStatus] = await Promise.all([
     getWhatsAppChannelConfig(),
     getOutreachMasterState(),
     getAppUrl('/api/webhooks/whatsapp'),
+    // One live Graph call. It is in the Promise.all rather than after it so a
+    // slow Meta never serializes behind the three local reads; getMetaStatus
+    // resolves rather than throws on every failure, so it cannot take the page
+    // down with it.
+    getMetaStatus(),
   ]);
 
   return (
@@ -62,6 +69,11 @@ export default async function MetaWhatsAppPage() {
           "הפעלה/כיבוי דרך מתג הפנייה הראשי שמעל", and until this was added that
           sentence pointed at nothing on this page. Its single writer is unchanged. */}
       <OutreachMasterSwitch enabled={master.enabled} anyChannelReady={master.anyChannelReady} />
+
+      {/* Above the credentials form on purpose: the first question an admin
+          opening this page has is "is it working", and the form answers "what
+          did we type in". */}
+      <MetaStatusCard status={metaStatus} />
 
       <section className="space-y-4">
         <h2 className="text-lg font-semibold">פרטי התחברות ו-Webhook</h2>

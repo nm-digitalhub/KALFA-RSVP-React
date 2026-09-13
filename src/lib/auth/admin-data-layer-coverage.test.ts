@@ -141,6 +141,11 @@ const EXPECTED_PERMISSION: Record<string, string | string[]> = {
   // requirePlatformOwner to requirePlatformPermission('manage_settings') would leave
   // this list still correct and the suite still green.
   'src/lib/data/admin/integrations/number-registration.ts': 'manage_settings',
+  // Read-only, but NOT exempt from naming a key: it reads the WhatsApp access
+  // token and the app secret in order to ask Meta about them. Same permission as
+  // the credentials form those values are entered on — anyone who may see the
+  // secrets may ask whether they still work, and nobody below that may.
+  'src/lib/data/admin/integrations/meta-status.ts': 'manage_settings',
 };
 
 // Modules that write but are correctly exempt from naming a permission, with the
