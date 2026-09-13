@@ -1006,11 +1006,29 @@ comment on column public.app_settings.whatsapp_app_id is
 **רשימת מספרים ב-WABA** — DOCS-ONLY (ctx7 `phone-number-management-api`, WebFetch `cloud-api/reference/phone-numbers`):
 `GET /{API_VERSION}/{WABA_ID}/phone_numbers?fields=id,display_phone_number,verified_name,status,quality_rating,code_verification_status,name_status,messaging_limit_tier,throughput,platform_type,account_mode,is_official_business_account` — **בלי `last_onboarded_time`**, שאינו ניתן לקריאה כשדה (Task 1.3 Step 0). סינון `account_mode` (SANDBOX/LIVE, beta), מיון `last_onboarded_time`. `name_status ∈ {APPROVED, AVAILABLE_WITHOUT_REVIEW, DECLINED, EXPIRED, PENDING_REVIEW, NONE}`. tier דרך `GET /{pnid}?fields=whatsapp_business_manager_messaging_limit` → `TIER_250`… (ctx7 `messaging-limits`).
 
-**הוספת מספר** — DOCS-ONLY, **שתי גרסאות תיעוד סותרות**: (א) reference `phone-number-management-api`: `POST /{WABA_ID}/phone_numbers` body `phone_number` (E.164 בלי `+`, required), `verified_name` (required), `cc` (optional), `migrate_phone_number`, `preverified_id`; (ב) מדריך המיגרציה: `cc` + `phone_number` (בלי קידומת) + `verified_name` כולם required. **משימה 2.1 חייבת לאמת מול העמוד החי לפני קידוד**; המימוש ישלח `cc`, `phone_number` (ספרות לאומיות), `verified_name` — הצורה שמופיעה בדוגמה המלאה. תגובה: `{ id }` = `phone_number_id` החדש. עמוד `cloud-api/reference/phone-numbers` **אינו** מתעד POST כזה ומפנה ל-WhatsApp Manager/Embedded Signup — עוד סיבה לאימות.
+**הוספת מספר** — **נסגר סופית 11.9 ב-01:55, ע"י המדידה החיה. META משרשרת את שני השדות.**
 
-**אימות בעלות** — DOCS-ONLY: `POST /{PHONE_NUMBER_ID}/request_code` body `code_method ∈ {SMS, VOICE}`, `language` (2 תווים, למשל `he`/`en`); `POST /{PHONE_NUMBER_ID}/verify_code` body `code` (מספרי). "Authenticate yourself with a system user access token."
+`POST /{WABA_ID}/phone_numbers` body `{ cc, phone_number, verified_name }`, כאשר **`phone_number` הוא המספר הלאומי בלבד — בלי קידומת המדינה.** Meta מחברת `cc` + `phone_number`, ולכן קידומת שמופיעה בשניהם מוכפלת.
 
-**רישום ל-Cloud API** — DOCS-ONLY (`cloud-api/reference/registration`): `POST /{PHONE_NUMBER_ID}/register` body `{ messaging_product: "whatsapp", pin: "<6 digits>" }`. "If your verified business phone number already has two-step verification enabled, set this value to your number's 6-digit two-step verification PIN"; אחרת ה-PIN שנשלח **מפעיל** אימות דו-שלבי. `POST /{PHONE_NUMBER_ID}/deregister`. **מגבלה:** "limited to 10 requests per business number in a 72-hour moving window" → שגיאה `133016` וחסימה ל-72 שעות (שני ה-endpoints).
+**הראיה (MEASURED, לא INFERRED):** נשלח `cc="33"` עם `phone_number="33756982370"` (E.164 בלי ה-`+`). Meta יצרה מספר שה-`display_phone_number` שלו הוא **`+3333756982370`** — ref `1312747078592700`, שם `KALLFA`, נוצר 01:39. הקידומת `33` מופיעה פעמיים.
+
+> **⚠️ המפרט הרשמי מטעה כאן, ואני הלכתי אחריו.** `generated/phone-number-management.d.ts` מדגים `phone_number: 16315551000` לצד `cc: "1"` — ושרשור נותן `+116315551000`, מספר שאינו קיים. **עמוד ה-reference ("E.164 בלי `+`" / ספרות לאומיות) הוא הנכון.** רישום קודם בקובץ הזה, שנכתב היום בבוקר, קבע את ההפך על סמך המפרט — הוא שגוי ומוחלף בזה. ההתנהגות של Meta היא מקור האמת היחיד שהכריע.
+
+> **המחיר:** `+3333756982370` יושב עכשיו ב-WABA ו**אי אפשר להסיר אותו דרך API** ("Business phone numbers cannot be deleted using the API"). ניקוי ידני ב-WhatsApp Manager בלבד.
+
+`cc` **optional** במפרט, ואנחנו שולחים אותו תמיד. `verified_name` באורך **2–75** (לא 512). תגובה: `{ id }` = `phone_number_id` החדש.
+
+> **אין כפילות:** המימוש הוא `src/lib/whatsapp/add-waba-phone-number.ts` (נכתב 9.9, מוקלד מול `paths` של המפרט, עם נורמליזציה ומחלקת שגיאה). `phone-numbers.ts` **אינו** מוסיף מספרים — הוא מחזיק רק את ארבע הפעולות שאין להן מפרט מיוצר.
+
+`migrate_phone_number` שייך לזרימה אחרת (העברת מספר בין WABA) ואינו נשלח כאן. עמוד `cloud-api/reference/phone-numbers` **אינו** מתעד POST כזה ומפנה ל-WhatsApp Manager/Embedded Signup.
+
+**אימות בעלות** — **אומת 11.9.** `POST /{PHONE_NUMBER_ID}/request_code` עם `code_method ∈ {SMS, VOICE}` (חובה) ו-`language` (חובה); `POST /{PHONE_NUMBER_ID}/verify_code` עם `code` בן 6 ספרות. "Authenticate yourself with a system user access token."
+
+> **`language` — סתירה שלא נסגרה, ולכן שולחים `en_US`.** Meta כותבת "the two-character language code" ואז מדגימה `en_US` בכל דוגמה, כולל ה-curl. השניים אינם יכולים להיות נכונים יחד. `he` **לא אומת מול Meta**, ושפה לא נתמכת עלולה להיכשל בשקט (SMS באנגלית) ולא בשגיאה — תקלה שמתגלה משיחת תמיכה, לא מקוד סטטוס. **להציע עברית רק אחרי שנראה אותה מתקבלת מול המספר האמיתי.**
+
+**רישום ל-Cloud API** — **אומת 11.9** (`cloud-api/reference/registration`): `POST /{PHONE_NUMBER_ID}/register` body `{ messaging_product: "whatsapp", pin: "<6 digits>" }`.
+
+> **אין endpoint ליצירת PIN.** ה-PIN הוא **פרמטר** של `register`, והוא *הופך* ל-PIN של האימות הדו-שלבי כשאין כזה. כפתור "צור PIN" היה מבטיח פעולה ש-Meta לא חושפת. "If your verified business phone number already has two-step verification enabled, set this value to your number's 6-digit two-step verification PIN"; אחרת ה-PIN שנשלח **מפעיל** אימות דו-שלבי. `POST /{PHONE_NUMBER_ID}/deregister`. **מגבלה:** "limited to 10 requests per business number in a 72-hour moving window" → שגיאה `133016` וחסימה ל-72 שעות (שני ה-endpoints).
 
 **שם תצוגה** — DOCS-ONLY (`display-names`): `POST /{pnid}?new_display_name=…` (עד 10 שינויים ב-30 יום, דורש סקירה); מעקב `GET /{pnid}?fields=new_display_name,new_name_status`.
 
@@ -1597,7 +1615,7 @@ select r.role::text, pn.provider::text, pn.provider_ref, pn.e164
 
 #### Task 2.1: אימות תיעוד לפני קידוד (חובה)
 
-- [ ] `npx ctx7@latest docs /websites/developers_facebook_business-messaging_whatsapp "POST WABA_ID phone_numbers request body cc phone_number verified_name required"` — לתעד בקובץ הזה (§5.1) איזו צורה נכונה; אם עדיין סותר → `cc`+`phone_number`+`verified_name` (הדוגמה המלאה). לוודא גם `request_code`/`verify_code`/`register` (מאומתים היום ב-WebFetch).
+- [x] **נסגר 11.9 ע"י מדידה חיה, אחרי שהתיעוד הכשיל.** `phone_number` הוא **המספר הלאומי בלבד** — Meta משרשרת `cc`+`phone_number`, ושליחת E.164 מלא הכפילה את הקידומת ויצרה `+3333756982370` ב-WABA. המפרט המיוצר מטעה בנקודה הזו; עמוד ה-reference צדק. `cc` optional (נשלח תמיד), `verified_name` 2–75. `request_code`/`verify_code`/`register`/`deregister` אומתו וגם `language` (נשאר `en_US`, ראו §5.1). — לתעד בקובץ הזה (§5.1) איזו צורה נכונה; אם עדיין סותר → `cc`+`phone_number`+`verified_name` (הדוגמה המלאה). לוודא גם `request_code`/`verify_code`/`register` (מאומתים היום ב-WebFetch).
 
 #### Task 2.2: לקוח Graph
 
