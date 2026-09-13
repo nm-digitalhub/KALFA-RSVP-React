@@ -56,3 +56,44 @@ export async function resolveNumberForRole(
     return null;
   }
 }
+
+// STRICT twin of resolveNumberForRole, for callers where "no answer" and "could
+// not ask" must NOT collapse into the same value.
+//
+// Why it exists. The fail-safe above is right for a SEND path: a lookup that
+// falls over should not take down a send that has a perfectly good default. It
+// is wrong for the inbound ROUTER (classifyInboundChannel), where a null import
+// number means "legacy — route everything to the RSVP path", and the RSVP path
+// is the one that bills. A transient read error there would silently send
+// import-number traffic back through insertInteraction + recordReached — the
+// exact 2026-09-03 defect (a message to the new number billed against a CLOSED
+// brit campaign) re-armed by a fail-safe pointing the wrong way.
+//
+// So: a query error THROWS. In the worker that lands in handleWebhook's catch →
+// markWebhookEventFailed → retried on the next drain, which is the correct
+// outcome for a database hiccup. null still means what it always meant — no row
+// for this role, or a row whose number is deactivated.
+export async function resolveNumberForRoleStrict(
+  role: NumberRole,
+): Promise<ResolvedNumber | null> {
+  const admin = createAdminClient();
+  const { data, error } = await admin
+    .from('provider_number_roles')
+    .select('provider_numbers(e164, provider_ref, is_active)')
+    .eq('role', role)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(`resolveNumberForRoleStrict(${role}) failed`, {
+      cause: error,
+    });
+  }
+  if (!data) return null;
+
+  const number = (data as { provider_numbers: unknown }).provider_numbers as
+    | { e164: string | null; provider_ref: string | null; is_active: boolean }
+    | null;
+  if (!number || !number.is_active) return null;
+
+  return { e164: number.e164, providerRef: number.provider_ref };
+}

@@ -3,7 +3,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createMockSupabase } from '@/test/supabase-mock';
 import { createAdminClient } from '@/lib/supabase/admin';
 
-import { resolveNumberForRole } from './provider-numbers-resolve';
+import {
+  resolveNumberForRole,
+  resolveNumberForRoleStrict,
+} from './provider-numbers-resolve';
 
 vi.mock('server-only', () => ({}));
 vi.mock('@/lib/supabase/admin', () => ({ createAdminClient: vi.fn() }));
@@ -102,5 +105,62 @@ describe('resolveNumberForRole', () => {
     expect(imports).not.toContain('next/headers');
     expect(imports).not.toContain('@/lib/supabase/server');
     expect(imports).toContain('@/lib/supabase/admin');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The strict twin. The distinction it exists for: a query ERROR must not read
+// back as "no number assigned to this role", because on the inbound routing
+// path that verdict means "bill it" (see the header of the function).
+describe('resolveNumberForRoleStrict', () => {
+  it('returns the number wired to the role, same as the fail-safe reader', async () => {
+    mockRow({
+      data: {
+        provider_numbers: {
+          e164: '+97233301505',
+          provider_ref: '1298694319994421',
+          is_active: true,
+        },
+      },
+      error: null,
+    });
+    await expect(
+      resolveNumberForRoleStrict('whatsapp_import_sender'),
+    ).resolves.toEqual({ e164: '+97233301505', providerRef: '1298694319994421' });
+  });
+
+  it('null when the role has no row — the genuine "unassigned" answer', async () => {
+    mockRow({ data: null, error: null });
+    await expect(
+      resolveNumberForRoleStrict('whatsapp_import_sender'),
+    ).resolves.toBeNull();
+  });
+
+  it('null when the assigned number is deactivated', async () => {
+    mockRow({
+      data: {
+        provider_numbers: {
+          e164: '+97233301505',
+          provider_ref: '1298694319994421',
+          is_active: false,
+        },
+      },
+      error: null,
+    });
+    await expect(
+      resolveNumberForRoleStrict('whatsapp_import_sender'),
+    ).resolves.toBeNull();
+  });
+
+  it('THROWS on a query error instead of answering null (fail-safe would bill)', async () => {
+    mockRow({ data: null, error: { message: 'connection reset' } });
+    await expect(
+      resolveNumberForRoleStrict('whatsapp_import_sender'),
+    ).rejects.toThrow(/resolveNumberForRoleStrict/);
+    // and the contrast that makes the twin necessary
+    mockRow({ data: null, error: { message: 'connection reset' } });
+    await expect(
+      resolveNumberForRole('whatsapp_import_sender'),
+    ).resolves.toBeNull();
   });
 });

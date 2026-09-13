@@ -1,6 +1,7 @@
 import 'server-only';
 
 import { createAdminClient } from '@/lib/supabase/admin';
+import { resolveNumberForRoleStrict } from '@/lib/data/provider-numbers-resolve';
 import {
   DEFAULT_SEND_POLICY,
   parseSendPolicy,
@@ -96,6 +97,59 @@ export async function getWhatsAppConfig(): Promise<WhatsAppConfig | null> {
   } catch {
     return null;
   }
+}
+
+// The WhatsApp channel as the INBOUND ROUTER needs to see it: the send
+// credentials above PLUS which of our business numbers (if any) is the
+// dedicated guest-import number.
+//
+// Why this is a separate reader and not two more fields on WhatsAppConfig.
+// The plan (§1.5.3 Task 3) called for widening WhatsAppConfig itself. Measured
+// against the code that would pay for it: getWhatsAppConfig() runs ONCE PER
+// RECIPIENT on the send path (outreach-engine.ts:398 and :724, inside the
+// per-contact step delivery), so folding the role lookup into it would add a
+// second round-trip per recipient — a 300-guest campaign would pay 300 of them
+// for a field no send path reads. That is the same cost §1.5.2 forbids when it
+// says the resolution "must be cached per-message-batch and not read once per
+// message". So the widening is additive instead: only the router asks.
+//
+// The type gate the plan wanted is not lost, it moved: ChannelNumbers requires
+// importPhoneNumberId, so a bare WhatsAppConfig does not structurally satisfy
+// classifyInboundChannel's second parameter and tsc rejects it. Only this
+// reader can feed the router.
+export type WhatsAppChannel = WhatsAppConfig & {
+  // The Meta phone_number_id of the import number (provider_numbers.provider_ref
+  // of whoever holds `whatsapp_import_sender`). null = the role is unassigned →
+  // legacy routing: the RSVP number also accepts lists and answers from itself.
+  importPhoneNumberId: string | null;
+  // The same number in E.164 (provider_numbers.e164), for the customer-facing
+  // pointer and its wa.me link. Synced from Meta's display_phone_number.
+  importDisplayNumber: string | null;
+};
+
+// Reads the role with the STRICT resolver on purpose: a read error must not
+// read back as "unassigned", because unassigned routes every inbound row to the
+// billing path. See resolveNumberForRoleStrict.
+export async function getWhatsAppChannel(): Promise<WhatsAppChannel | null> {
+  const config = await getWhatsAppConfig();
+  if (!config) return null;
+
+  const importNumber = await resolveNumberForRoleStrict('whatsapp_import_sender');
+  const ref = importNumber?.providerRef ?? null;
+
+  // Two ways the assignment is not usable, both resolving to legacy (today's
+  // behaviour) rather than to a broken split:
+  //   - a row with no Meta phone_number_id — there is nothing to route ON;
+  //   - the RSVP number itself given the import role. One number cannot be
+  //     both: honouring it would classify every RSVP reply as 'import' and
+  //     stop billing entirely. The panel is where that mistake is visible.
+  const usable = ref !== null && ref !== config.phoneNumberId;
+
+  return {
+    ...config,
+    importPhoneNumberId: usable ? ref : null,
+    importDisplayNumber: usable ? (importNumber?.e164 ?? null) : null,
+  };
 }
 
 // Whether a WhatsApp send still requires a recorded contacts.whatsapp_consent_at.
