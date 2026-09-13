@@ -205,6 +205,38 @@ describe('PhoneInput country derivation', () => {
     expect(nationalOf('')).toBe('');
   });
 
+  it('drops a trunk zero when the country changes, so shown === submitted', () => {
+    // THE BUG, MEASURED LIVE 2026-09-11. The old fallback kept the leading zero:
+    // picking France while "0756982370" sat in the field emitted "+33 0756982370",
+    // which libphonenumber then reads as +33756982370 — the zero silently gone. The
+    // field showed one number and the server received another, on a form that
+    // registers a WhatsApp sender.
+    const nationalFor = (raw: string, target: CountryCode) => {
+      const callingCode = getCountryCallingCode(target);
+      const parsed = parsePhoneNumberFromString(raw.trim(), 'IL');
+      const rawDigits = raw
+        .trim()
+        .replace(/^(\+|00)\d{1,4}/, '')
+        .replace(/\D/g, '');
+      const reparsed = rawDigits
+        ? parsePhoneNumberFromString(`+${callingCode}${rawDigits}`, target)
+        : null;
+      return parsed?.nationalNumber ?? reparsed?.nationalNumber ?? rawDigits;
+    };
+
+    // The exact value from the screenshot, and the exact country picked.
+    expect(nationalFor('0756982370', 'FR')).toBe('756982370');
+    // Whatever the field emits must survive a round trip unchanged — that is what
+    // "shown is submitted" means, and what the old fallback broke.
+    const emitted = `+${getCountryCallingCode('FR')} ${nationalFor('0756982370', 'FR')}`;
+    expect(parsePhoneNumberFromString(emitted, 'FR')?.number).toBe('+33756982370');
+    expect(emitted.replace(/\s/g, '')).toBe('+33756982370');
+
+    // A half-typed value still keeps its digits rather than being discarded.
+    expect(nationalFor('+33 7 56 98', 'FR')).toBe('75698');
+    expect(nationalFor('', 'FR')).toBe('');
+  });
+
   it('resolves every country it reports to a Hebrew name', () => {
     // The component labels the flag with Intl.DisplayNames(['he']); a code it
     // cannot name would render an alt of bare "FR" to a screen reader.

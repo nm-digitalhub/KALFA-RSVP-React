@@ -196,12 +196,28 @@ export const PhoneInput = forwardRef<HTMLInputElement, PhoneInputProps>(
     const applyCountry = (next: CountryCode) => {
       const callingCode = getCountryCallingCode(next);
       const parsed = parsePhoneNumberFromString(text.trim(), defaultCountry);
+
+      // THE FALLBACK USED TO KEEP THE TRUNK ZERO, and that produced a number the
+      // field showed as one thing and submitted as another. Measured 2026-09-11:
+      // picking France while "0756982370" sat here emitted "+33 0756982370", which
+      // libphonenumber then reads as +33756982370 — the leading zero silently gone.
+      // The owner saw "+330 7 56 98 23 70" and the server would have registered
+      // 33756982370. On a field that decides which line gets a WhatsApp number
+      // attached, displayed and submitted must be the same number.
+      //
+      // So the digits are re-read against the country being CHOSEN, which is what
+      // knows whether a leading zero is a trunk prefix (IL, FR, GB) or part of the
+      // number (IT). Only if that also fails do the raw digits stand.
+      const rawDigits = text
+        .trim()
+        .replace(/^(\+|00)\d{1,4}/, "")
+        .replace(/\D/g, "");
+      const reparsed = rawDigits
+        ? parsePhoneNumberFromString(`+${callingCode}${rawDigits}`, next)
+        : null;
       const national =
-        parsed?.nationalNumber ??
-        text
-          .trim()
-          .replace(/^(\+|00)\d{1,4}/, "")
-          .replace(/\D/g, "");
+        parsed?.nationalNumber ?? reparsed?.nationalNumber ?? rawDigits;
+
       emit(national ? `+${callingCode} ${national}` : `+${callingCode} `);
       setPickerOpen(false);
       // Return the caret to where the owner is actually going to type next.
