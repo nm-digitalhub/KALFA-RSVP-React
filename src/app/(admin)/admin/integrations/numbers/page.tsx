@@ -2,18 +2,25 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { ChevronRight } from 'lucide-react';
 
-import { requirePlatformPermission } from '@/lib/auth/dal';
+import { isPlatformOwner, requirePlatformPermission } from '@/lib/auth/dal';
 import { listProviderNumbers } from '@/lib/data/admin/integrations/provider-numbers';
 import { getIntegrationsConfiguredFlags } from '@/lib/ops/integrations';
 
 import { PageHeading } from '../../_components';
+import { AddNumberWizard } from './add-number-wizard';
+import { MetaNumberManagement } from './meta-number-management';
 import { NumbersTable } from './numbers-table';
 import { RolesPanel } from './roles-panel';
 import { SyncButtons } from './sync-buttons';
 import {
+  addNumberAction,
   assignRoleAction,
+  deregisterNumberAction,
+  registerNumberAction,
+  requestCodeAction,
   syncMetaNumbersAction,
   syncVoximplantNumbersAction,
+  verifyCodeAction,
 } from './actions';
 
 export const metadata: Metadata = { title: 'מספרים — אינטגרציות' };
@@ -35,9 +42,13 @@ export const metadata: Metadata = { title: 'מספרים — אינטגרציו�
 export default async function NumbersPage() {
   await requirePlatformPermission('manage_settings');
 
-  const [numbers, flags] = await Promise.all([
+  const [numbers, flags, owner] = await Promise.all([
     listProviderNumbers(),
     getIntegrationsConfiguredFlags(),
+    // Decides whether the LAST step of the wizard is drawn. It is not the gate —
+    // registerNumberAction calls requirePlatformOwner itself, because a Server Action
+    // is reachable without ever rendering the component that submits to it.
+    isPlatformOwner(),
   ]);
 
   const withRoles = numbers.filter((n) => n.roles.length > 0).length;
@@ -73,12 +84,26 @@ export default async function NumbersPage() {
           ) : null}
         </div>
 
-        <SyncButtons
-          syncMeta={syncMetaNumbersAction}
-          syncVoximplant={syncVoximplantNumbersAction}
-          metaConfigured={flags?.whatsapp_configured === true}
-          voximplantConfigured={flags?.voximplant_configured === true}
-        />
+        <div className="flex flex-wrap items-center gap-3">
+          <SyncButtons
+            syncMeta={syncMetaNumbersAction}
+            syncVoximplant={syncVoximplantNumbersAction}
+            metaConfigured={flags?.whatsapp_configured === true}
+            voximplantConfigured={flags?.voximplant_configured === true}
+          />
+          {flags?.whatsapp_configured === true ? (
+            <AddNumberWizard
+              isOwner={owner}
+              candidates={numbers.filter(
+                (n) => n.provider === 'meta_whatsapp' && n.providerRef !== null,
+              )}
+              addAction={addNumberAction}
+              requestCodeAction={requestCodeAction}
+              verifyCodeAction={verifyCodeAction}
+              registerAction={registerNumberAction}
+            />
+          ) : null}
+        </div>
       </section>
 
       <section className="space-y-3 rounded-lg border border-border bg-card p-5">
@@ -97,11 +122,25 @@ export default async function NumbersPage() {
         <RolesPanel numbers={numbers} onAssign={assignRoleAction} />
       </section>
 
+      {owner ? (
+        <section className="space-y-3 rounded-lg border border-destructive/30 bg-card p-5">
+          <div>
+            <h2 className="text-lg font-semibold">הסרת מספר מ-Cloud API</h2>
+            <p className="text-sm text-muted-foreground">
+              עוצר שליחה דרך המספר מיידית. Meta מתירה 10 פעולות רישום או הסרה למספר
+              בכל 72 שעות וחוסמת אותו בפעם ה-11 — לכן הפעולה שמורה לבעלים.
+            </p>
+          </div>
+          <MetaNumberManagement numbers={numbers} deregisterAction={deregisterNumberAction} />
+        </section>
+      ) : null}
+
       <section className="space-y-2 rounded-lg border border-border bg-card p-5">
         <h2 className="text-lg font-semibold">מה שאינו כאן</h2>
         <p className="text-sm text-muted-foreground">
-          רכישת מספר חדש ואימות מספר מול Meta נשארים בעמוד הספק עצמו — שניהם עולים
-          כסף או משנים מצב אצל הספק, ולכן הם יושבים ליד שאר הפעולות מהסוג הזה.
+          הוספת מספר ל-WhatsApp ואימותו נעשים כאן, בכפתור &quot;הוספת מספר&quot;.
+          רכישת מספר חדש מספק — פעולה שעולה כסף — נשארת בעמוד הספק עצמו, וכך גם
+          הגדרות החיבור והטוקנים.
         </p>
         <div className="flex flex-wrap gap-4">
           <Link

@@ -2,13 +2,17 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('server-only', () => ({}));
 
-const { permMock, listMock, flagsMock } = vi.hoisted(() => ({
+const { permMock, listMock, flagsMock, ownerMock } = vi.hoisted(() => ({
   permMock: vi.fn(),
   listMock: vi.fn(),
   flagsMock: vi.fn(),
+  ownerMock: vi.fn(),
 }));
 
-vi.mock('@/lib/auth/dal', () => ({ requirePlatformPermission: permMock }));
+vi.mock('@/lib/auth/dal', () => ({
+  requirePlatformPermission: permMock,
+  isPlatformOwner: ownerMock,
+}));
 vi.mock('@/lib/data/admin/integrations/provider-numbers', () => ({
   listProviderNumbers: listMock,
 }));
@@ -16,9 +20,14 @@ vi.mock('@/lib/ops/integrations', () => ({
   getIntegrationsConfiguredFlags: flagsMock,
 }));
 vi.mock('./actions', () => ({
+  addNumberAction: vi.fn(),
   assignRoleAction: vi.fn(),
+  deregisterNumberAction: vi.fn(),
+  registerNumberAction: vi.fn(),
+  requestCodeAction: vi.fn(),
   syncMetaNumbersAction: vi.fn(),
   syncVoximplantNumbersAction: vi.fn(),
+  verifyCodeAction: vi.fn(),
 }));
 
 import NumbersPage from './page';
@@ -77,6 +86,7 @@ function number(overrides: Record<string, unknown> = {}) {
 beforeEach(() => {
   vi.clearAllMocks();
   permMock.mockResolvedValue({ id: 'u1' });
+  ownerMock.mockResolvedValue(true);
   flagsMock.mockResolvedValue({
     whatsapp_configured: true,
     voximplant_configured: true,
@@ -169,5 +179,98 @@ describe('/admin/integrations/numbers', () => {
     expect(hrefs).toContain('/admin/integrations/meta-whatsapp');
     expect(hrefs).toContain('/admin/integrations/voximplant');
     expect(hrefs).toContain('/admin/integrations/extra-sms');
+  });
+});
+
+describe('the add-number wizard', () => {
+  it('is offered when Meta is connected', async () => {
+    const tree = await NumbersPage();
+    expect(componentNames(tree)).toContain('AddNumberWizard');
+  });
+
+  it('is NOT offered when Meta was never connected', async () => {
+    // An add-number form against absent credentials can only fail, and the failure
+    // would read as "Meta rejected the number" rather than "we have no token".
+    flagsMock.mockResolvedValue({ whatsapp_configured: false, voximplant_configured: true });
+    const tree = await NumbersPage();
+    expect(componentNames(tree)).not.toContain('AddNumberWizard');
+  });
+
+  it('tells the wizard whether the viewer may register, without gating on it', async () => {
+    ownerMock.mockResolvedValue(false);
+    const tree = await NumbersPage();
+    const wizard = collect(tree).find(
+      (p) => (p.__type as { name?: string } | undefined)?.name === 'AddNumberWizard',
+    );
+    expect(wizard?.isOwner).toBe(false);
+    // The page still renders: hiding the last step is a UI courtesy, and the action
+    // it submits to carries its own requirePlatformOwner.
+    expect(wizard).toBeDefined();
+  });
+
+  it('no longer claims that adding a number happens on the provider page', async () => {
+    // It used to say exactly that, and the sentence outlived the fact.
+    const text = textOf(await NumbersPage());
+    expect(text).toContain('הוספת מספר');
+    expect(text).not.toContain('ואימות מספר מול Meta נשארים בעמוד הספק');
+  });
+});
+
+describe('the deregister panel', () => {
+  it('is shown to the owner', async () => {
+    ownerMock.mockResolvedValue(true);
+    expect(componentNames(await NumbersPage())).toContain('MetaNumberManagement');
+  });
+
+  it('is absent for staff who are not the owner', async () => {
+    // Hiding it is a courtesy, not the boundary — deregisterNumberAction carries its
+    // own requirePlatformOwner. The page still renders everything else.
+    ownerMock.mockResolvedValue(false);
+    const names = componentNames(await NumbersPage());
+    expect(names).not.toContain('MetaNumberManagement');
+    expect(names).toContain('NumbersTable');
+  });
+
+  it('states the 72-hour cost where the control lives, not only in a tooltip', async () => {
+    ownerMock.mockResolvedValue(true);
+    const text = textOf(await NumbersPage());
+    expect(text).toContain('72 שעות');
+  });
+});
+
+describe('the wizard can be re-entered for a number already added', () => {
+  it('is handed the Meta numbers a resume can point at', async () => {
+    // Meta has NO delete-phone-number API (verified 2026-09-11), so a number added
+    // and abandoned is stranded unless the wizard can reopen onto it.
+    const tree = await NumbersPage();
+    const wizard = collect(tree).find(
+      (p) => (p.__type as { name?: string } | undefined)?.name === 'AddNumberWizard',
+    );
+    const candidates = wizard?.candidates as Array<{ provider: string }> | undefined;
+    expect(Array.isArray(candidates)).toBe(true);
+    expect(candidates!.every((c) => c.provider === 'meta_whatsapp')).toBe(true);
+  });
+
+  it('offers only numbers Meta knows by an id', async () => {
+    // A backfill row with no provider_ref has nothing to send a code to.
+    listMock.mockResolvedValue([
+      {
+        id: '11111111-1111-4111-8111-111111111111',
+        provider: 'meta_whatsapp',
+        providerRef: null,
+        e164: '+972501234567',
+        displayLabel: 'ללא מזהה',
+        isActive: true,
+        roles: [],
+        source: 'backfill',
+        snapshot: null,
+        updatedAt: '2026-09-11T00:00:00Z',
+      },
+    ]);
+    const tree = await NumbersPage();
+    const wizard = collect(tree).find(
+      (p) => (p.__type as { name?: string } | undefined)?.name === 'AddNumberWizard',
+    );
+    expect((wizard?.candidates as unknown[]).length).toBe(0);
   });
 });
