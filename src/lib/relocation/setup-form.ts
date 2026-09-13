@@ -199,7 +199,7 @@ function renderForm(opts: {
 ${errorBanner}
 <form method="post" action="/setup?token=${encodeURIComponent(opts.token)}">
 ${rows}
-<div class="note">הגדרות ערוצים (WhatsApp, SUMIT, SMS, SMTP) אינן חלק מהטופס — הן מוזנות אחרי עליית המערכת במסכי <span dir="ltr">/admin/settings</span> ו-<span dir="ltr">/admin/channels</span>.</div>
+<div class="note">הגדרות ערוצים (WhatsApp, SUMIT, SMS, SMTP) אינן חלק מהטופס — הן מוזנות אחרי עליית המערכת במסכי <span dir="ltr">/admin/settings</span> ו-<span dir="ltr">/admin/integrations</span>.</div>
 <button type="submit">בדוק הכול, שמור והמשך התקנה</button>
 </form>`);
 }

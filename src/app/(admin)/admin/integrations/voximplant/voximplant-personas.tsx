@@ -7,7 +7,7 @@ import {
   updateVoximplantLiveCallsAction,
   updateMeetingConfirmChannelAction,
   updateSalesCallChannelAction,
-} from '@/app/(admin)/admin/channels/actions';
+} from '@/app/(admin)/admin/integrations/actions';
 
 // The three call KILL SWITCHES, lifted out of channels-client.tsx so the provider page
 // and the old channels tab render one definition while both exist.

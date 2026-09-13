@@ -3,7 +3,7 @@
 import { useActionState } from 'react';
 
 import { FormError, FormNotice, SubmitButton } from '@/components/forms';
-import { updateWhatsAppConsentRequiredAction } from '@/app/(admin)/admin/channels/actions';
+import { updateWhatsAppConsentRequiredAction } from '@/app/(admin)/admin/integrations/actions';
 
 // The §30א consent gate for WhatsApp. Added 2026-09-08, AFTER the consolidation plan
 // was written, which is how it fell outside every copy range in Task 0.3 and was

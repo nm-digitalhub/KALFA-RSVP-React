@@ -6,9 +6,9 @@ import { Check, Copy, Eye, EyeOff } from 'lucide-react';
 import { FieldError } from '@/components/forms';
 import { HelpTip } from '@/components/help-tip';
 
-// The four field primitives every provider page needs, lifted verbatim out of
-// channels-client.tsx so the new /admin/integrations/<provider> pages and the old
-// /admin/channels page render from ONE definition while both exist.
+// The four field primitives every provider page needs, lifted verbatim out of the
+// old channels-client.tsx so every /admin/integrations/<provider> page renders from
+// ONE definition. That file is gone (Task 0.6 Step 4b); these are its survivors.
 //
 // Lifted, not rewritten: SecretField carries the masked+reveal convention the owner
 // ruled on (2026-08-24 — masked + reveal stays, do not re-propose a DTO or a taint

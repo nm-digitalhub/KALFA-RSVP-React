@@ -379,6 +379,46 @@ Step 0 מורה להסיר את `last_onboarded_time` מרשימת ה-`fields` *
 
 **Spec:** הודעת team-lead 2026-09-08 (המסמך הזה הוא ה-spec המאומת שלה). מסמכים משלימים שהתוכנית מסתמכת עליהם ואינה מחליפה: `docs/whatsapp-api-js-capability-audit-2026-09-03.md`, `docs/voximplant/digest-management-api.md`, `docs/voice-agent/production-wiring-audit-2026-07-20.md`. **נקלטה והוחלפה:** `docs/whatsapp-import-number-split-plan-2026-09-03.md` → Phase 1.5 כאן.
 
+## 0.9 סטטוס 2026-09-13 — Task 0.6 Step 4b בוצעה: Phase 0 סגורה
+
+`(admin)/channels/**` ו-`(admin)/alerts/**` נמחקו. **Phase 0 הושלמה במלואה** — שש משימות ושתי המחיקות.
+
+### שני החוסמים שנרשמו מראש — כך נפתרו
+
+**1. הרכיבים המורמים ייבאו actions מהעמוד הנמחק.** שמונה רכיבים תחת `integrations/` ייבאו מ-`@/app/(admin)/admin/channels/actions`. הקובץ **הועבר** (`git mv`) ל-`(admin)/admin/integrations/actions.ts` ולא שוכפל — הבית הנכון, כי אחת-עשרה ה-actions חוצות ספקים (WhatsApp, Voximplant, המתג הראשי, קטלוג הערוצים) ואינן שייכות לאף עמוד ספק יחיד. שני קובצי הבדיקה שלו עברו איתו.
+
+**2. לקטלוג הערוצים לא היה בית.** §3.3 קבעה "`/admin/integrations`, סקציה תחתונה", וכך נעשה: `channel-catalog-editor.tsx` עבר, והאינדקס מרנדר אותו במקום הקישור שהצביע חזרה על העמוד הישן. **שומר שנוסף מהמדידה:** `listAllChannels` אוכף `manage_settings` בעצמו **ומפנה** בכישלון, ולכן הוא נקרא רק כש-`canManageSettings` — טעינה בלתי-מותנית הייתה פולטת איש-צוות בעל הרשאה נמוכה יותר אל מחוץ לאזור האדמין, בדיוק ההתנהגות שהאיחוד הזה קיים כדי לעצור. בדיקה מצמידה את זה.
+
+### יעד ה-redirect של `/admin/channels` שונה — והנימוק המקורי הוא שפקע
+
+§3.4 ו-§0.7 קבעו `meta-whatsapp` מטעם מדוד: האינדקס עצמו עדיין קישר ל-`/admin/channels` בשביל הקטלוג, ולכן הפניה לאינדקס הייתה נוחתת על העמוד שכבר פתוח. **Step 4b העביר את הקטלוג לאינדקס, והנימוק נעלם.** היום `/admin/channels` → `/admin/integrations`: זה העמוד היחיד שנושא את כל מה שהעמוד הישן נשא (הקטלוג) **וגם** מקשר לשני הטאבים, במקום לבחור בשקט אחד מהם עבור סימנייה שפירושה "עמוד הערוצים". `permanent: false` נשמר.
+
+### בדיקת השלמות (Step 3b) — הגרסה שרצה בפועל
+
+הספירה שנוסחה ב-Step 3b (5 אקורדיונים, 10 טפסים) התיישנה: `channels-client.tsx` כבר לא החזיק אף פקד משלו — הוא היה מעטפת טאבים שמייבאת הכל מ-`integrations/`. הבדיקה שהוחלפה במקומה בודקת את אותו דבר ישירות — **האם כל פקד שהעמוד הנמחק רינדר מרונדר במקום אחר**:
+
+| | תוצאה |
+|---|---|
+| 11 הפקדים של `channels-client.tsx` | כולם מרונדרים ב-`integrations/meta-whatsapp` או `integrations/voximplant` |
+| 2 הפקדים של `alerts/page.tsx` | שניהם ב-`integrations/slack/page.tsx` |
+| קטלוג הערוצים | **היחיד שלא היה לו בית** — קיבל אותו באינדקס |
+
+### שומר חדש: `src/app/retired-routes.test.ts`
+
+פרישת עמוד יכולה להישבר בשתי דרכים ששום build לא תופס: ה-redirect מוסר (או לא נוסף) והסימנייה נוחתת על 404; או שה-redirect שורד אבל **היעד שלו** נפרש בתורו והתוצאה היא 404 קפיצה אחת מאוחר יותר. הבדיקה סורקת את `redirects()` ומצמידה את שניהם מבנית — כל `source` חייב להיות בלי `page.tsx`, וכל `destination` חייב להיות **עם** אחד. שלוש רגרסיות הוזרקו; שלושתן נפלו.
+
+### ניקוי טקסטים — כולל שניים שהמשתמש היה רואה
+
+`route.ts:247` אמר לאופרטור שה-app secret נמצא ב-`/admin/channels`; `setup-form.ts:202` שולח מתקין חדש לאותו עמוד ב-HTML שנוצר. שניהם תוקנו, לצד `install-steps.ts:491`, שמונה הערות מיושנות, ו-`LEGACY_ALERTS` ב-`slack/actions.ts`. שבעה מסמכים חיים עודכנו (`09-admin-panel` קיבל סקציה חדשה במקום "מסך /admin/channels — פירוט"); מסמכי ביקורת עם תאריך נשארו כפי שהם — הם תיעוד של רגע, לא הוראות.
+
+**תוצאת לוואי שנרשמת במפורש:** `actions.ts` הוא `'use server'` עם 11 exports, ו-Next גוזר מזהי Server Action מנתיב-המודול + שם ה-export. ההעברה מבטלת את כל 11 המזהים — טאב שנשאר פתוח מפריסה קודמת יקבל "Failed to find Server Action" עד רענון. זה בדיוק מה שהגנת `.deploy-id` קיימת בשבילו, וזו הסיבה שהתוכנית תזמנה את 4b אחרי פריסה נקייה.
+
+**שערים:** `lint` ✓ · `tsc` ✓ · `worker:deps` ✓ · `build` ✓ (‎`/admin/channels` ו-`/admin/alerts` אינם ברשימת ה-routes) · **5,044 בדיקות עוברות, 23 מדולגות**. חמש רגרסיות הוזרקו על פני שני קבצים — כל אחת הופלה.
+
+**גלגול לאחור:** `git revert` של הקומיט. ה-redirects נשארים ב-`next.config.ts` ואינם חלק ממנו.
+
+---
+
 ## 0.8 סטטוס 2026-09-13 — Phase 1.5 נבנתה חצי, ושתי הכרעות שסוטות מהתוכנית במודע
 
 **Phase 1.5 הושלמה בקוד.** כל משימה שנותרה בטבלת הקיזוז ב-§1.5.3 נבנתה — Tasks 2, 3, 4, 5, 8, 9, 10, 11. מה שלא בוצע הוא **האימות החי** (§1.5.4), שאינו יכול לרוץ לפני ששיוך התפקיד נעשה.
@@ -1443,7 +1483,7 @@ export async function updateExtraSmsAction(_p: FormState, fd: FormData): Promise
 - [ ] **Step 3:** grep מלא: `revalidatePath('/admin/channels'|'/admin/templates'|'/admin/alerts')`, `href="/admin/channels"` (למשל `voice/page.tsx:101`, `webhook-detail.tsx:175` הטקסט "לא מוגדר ב-/admin/channels" → "לא מוגדר ב-/admin/integrations/numbers"), `docs/routes-webhooks.md`, `docs/admin-webhooks-runbook.md`.
 - [ ] **Step 3b (ספירת שלמות לפני מחיקה):** `grep -c '<AccordionItem' src/app/\(admin\)/admin/channels/channels-client.tsx` = **5**, וספירת `<form>` שאינם בתוך הערות = **10** (`grep -c '<form'` מחזיר 13; שלושה — שורות 408, 409, 464 — יושבים בתוך הערות שמסבירות למה אסור לקנן). לוודא שסך הטפסים והאקורדיונים בקבצים החדשים תואם **לפני** ה-`rm`. חמש שניות שמכסות בדיוק את מחלקת הבאג של `b09240b`.
 - [ ] **Step 4a:** `npm run build` (webpack) — לוודא 3 ה-redirects ברשימת ה-routes. **העמודים הישנים נשארים בעץ.** commit `feat(admin): integrations nav + redirects`.
-- [ ] **Step 4b (commit נפרד, אחרי פריסה מוצלחת אחת לפחות):** מחיקת `(admin)/channels/**` ו-`(admin)/alerts/**` (10 קבצים; `templates/**` נשאר). הפרדת המחיקה מה-redirect היא מה שהופך את Phase 0 להפיכה בעלות אפס: כשל בפרודקשן נפתר בהסרת שלוש שורות מ-`next.config.ts`, לא ב-revert של פאזה שלמה.
+- [x] **Step 4b — בוצעה 2026-09-13** (ראו §0.9): מחיקת `(admin)/channels/**` ו-`(admin)/alerts/**`. שבעה קבצים, לא עשרה: ארבעה (`actions.ts`, שני קובצי הבדיקה שלו, `channel-catalog-editor.tsx`) **הועברו** ל-`integrations/` במקום להימחק, ושלושה נמחקו (`channels/page.tsx`, `channels/channels-client.tsx`, `alerts/page.tsx`). `templates/**` נשאר. הפרדת המחיקה מה-redirect היא מה שהופך את Phase 0 להפיכה בעלות אפס: כשל בפרודקשן נפתר בהסרת שלוש שורות מ-`next.config.ts`, לא ב-revert של פאזה שלמה.
 - [ ] **Step 5:** בדיקת דפדפן: 8 העמודים ב-RTL, שני נושאים, טאב-פוקוס; `/admin/channels` מפנה. commit `feat(admin): integrations nav, redirects, retire channels/templates/alerts pages`.
 
 **Gate Phase 0:** `tsc` · lint · `npm test` מלא · build · דפדפן · **הרחבה ידנית של `admin-data-layer-coverage.test.ts`**.

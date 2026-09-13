@@ -131,7 +131,7 @@ Back-office. All under `(admin)/admin`; nav lives in AdminShell.
 | `/admin/packages/new` | `(admin)/admin/packages/new/page.tsx` | Server | AdminShell | Create a package. |
 | `/admin/packages/[id]` | `(admin)/admin/packages/[id]/page.tsx` | Server | AdminShell | Edit a package (+ delete form). |
 | `/admin/templates` | `(admin)/admin/templates/page.tsx` | Server | AdminShell | Outreach message templates. |
-| `/admin/channels` | `(admin)/admin/channels/page.tsx` | Server | AdminShell | Communication channels (WhatsApp/SMS/email config). |
+| `/admin/integrations` | `(admin)/admin/integrations/page.tsx` | Server | AdminShell | Provider index + channel catalog. Replaced `/admin/channels` and `/admin/alerts`, both deleted 2026-09-13. |
 | `/admin/agreement` | `(admin)/admin/agreement/page.tsx` | Server | AdminShell | Agreement (contract) configuration. |
 | `/admin/company` | `(admin)/admin/company/page.tsx` | Server | AdminShell | Company details / first-admin claim. |
 | `/admin/settings` | `(admin)/admin/settings/page.tsx` | Server | AdminShell | Admin/system settings. |

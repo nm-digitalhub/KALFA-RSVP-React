@@ -3,7 +3,7 @@
 import { useActionState } from 'react';
 
 import { FormError, FormNotice } from '@/components/forms';
-import { testVoximplantConnectionAction } from '@/app/(admin)/admin/channels/actions';
+import { testVoximplantConnectionAction } from '@/app/(admin)/admin/integrations/actions';
 
 // One live GetAccountInfo against Voximplant, on demand — it proves the service
 // account authenticates and returns the balance. No call is placed.

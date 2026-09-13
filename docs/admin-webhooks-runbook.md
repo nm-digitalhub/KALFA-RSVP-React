@@ -9,7 +9,7 @@
 
 מסך אדמין לבדיקת צינור-ה-webhook של Meta: לראות כל אירוע נכנס (הודעות + status
 callbacks) כפי שנקלט ב-`webhook_inbox`, את מצב-העיבוד שלו, ולעבד-מחדש שורה תקועה.
-**קריאה בלבד + reprocess** — אין כאן שינוי-תצורה (זה ב-`/admin/channels`).
+**קריאה בלבד + reprocess** — אין כאן שינוי-תצורה (זה ב-`/admin/integrations/meta-whatsapp`, ושיוך מספרים ב-`/admin/integrations/numbers`).
 
 מוגן ב-`requireAdmin()` (יורש מ-layout האדמין + נאכף שוב בכל reader/action).
 NAV: "בדיקת Webhooks" תחת תפריט-האדמין (אייקון `Webhook`).
@@ -25,7 +25,7 @@ NAV: "בדיקת Webhooks" תחת תפריט-האדמין (אייקון `Webhook
 - **לנתוני-פרודקשן אמיתיים האפליקציה ב-Meta חייבת להיות PUBLISHED.** אפליקציה לא-מפורסמת
   מקבלת רק קריאות-בדיקה ידניות מה-Meta App Dashboard ("Test" webhook), לא תעבורת-משתמשים
   אמיתית.
-- אם המסך ריק *למרות* שאתה מצפה לתעבורה — בדוק את ה-401 ב-`/admin/channels`
+- אם המסך ריק *למרות* שאתה מצפה לתעבורה — בדוק את ה-401 ב-`/admin/integrations/meta-whatsapp`
   (אי-התאמת App Secret דוחה כל callback לפני שהוא נקלט). ראה
   `plans/whatsapp-webhook-hardening-spec.md §9`.
 

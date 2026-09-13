@@ -9,7 +9,7 @@ import {
   AccordionPanel,
 } from '@/components/ui/accordion';
 import { FormError, FormNotice, SubmitButton } from '@/components/forms';
-import { updateWhatsAppChannelAction } from '@/app/(admin)/admin/channels/actions';
+import { updateWhatsAppChannelAction } from '@/app/(admin)/admin/integrations/actions';
 
 import { CopyRow, Field, SecretField, StatusBadge } from '../_components/form-fields';
 

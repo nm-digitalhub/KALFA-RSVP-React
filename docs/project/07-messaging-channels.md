@@ -366,7 +366,7 @@
   האדמין **ממוסכים עם reveal** (דפוס gateway-plugin), נשלחים רק לעמוד
   `requireAdmin` על HTTPS, ולעולם לא נלוגגים (`channels.ts:6-11`,
   `settings.ts:10-13`).
-- `/admin/channels` כולל בדיקת חיבור read-only — `testWhatsAppConnection`
+- `/admin/integrations/meta-whatsapp` כולל בדיקת חיבור read-only — `testWhatsAppConnection`
   (`channels.ts:83-113`): GET ל-Graph API על שדות התצוגה בלבד, בלי לשלוח הודעה;
   גרסת ה-Graph היא הקבוע המשותף `GRAPH_API_VERSION`
   (`src/lib/whatsapp/graph-version.ts`, כיום `v25.0`) — אותו קבוע שכל שאר

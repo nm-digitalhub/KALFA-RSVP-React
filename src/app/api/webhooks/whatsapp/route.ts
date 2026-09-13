@@ -244,7 +244,7 @@ async function alertRejectedDelivery(
         : 'WhatsApp webhook נדחה — גוף לא תקין',
     detail:
       reason === 'invalid_signature'
-        ? 'X-Hub-Signature-256 לא תואם ל-app secret שב-/admin/channels. שום דבר לא נכתב. אם זו שליחה שלנו — לבדוק את ה-secret; אם לא — מקור זר.'
+        ? 'X-Hub-Signature-256 לא תואם ל-app secret שב-/admin/integrations/meta-whatsapp. שום דבר לא נכתב. אם זו שליחה שלנו — לבדוק את ה-secret; אם לא — מקור זר.'
         : 'הבקשה חתומה נכון אבל הגוף אינו JSON תקין. שום דבר לא נכתב.',
     fields: { reason, bytes },
   });

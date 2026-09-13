@@ -488,7 +488,7 @@ export function buildInstallStepDefinitions(): StepDefinition[] {
       },
       apply: async () => {
         throw new NotImplementedError(
-          "I12 stays owner-driven: configure channels at /admin/settings and /admin/channels on the running app, then --resume",
+          "I12 stays owner-driven: configure providers at /admin/settings and /admin/integrations on the running app, assign the number roles at /admin/integrations/numbers, then --resume",
         );
       },
     }),

@@ -12,7 +12,7 @@ export const metadata: Metadata = { title: 'שאלות נפוצות' };
 // FAQ copy is admin-managed data, not hardcoded page-component strings, the
 // same rule the project already applies to business facts).
 // requirePlatformPermission('manage_settings') is enforced in the data layer
-// (listAllFaqItems), same as /admin/channels and /admin/templates.
+// (listAllFaqItems), same as /admin/integrations and /admin/templates.
 export default async function AdminFaqPage() {
   const [items, facts] = await Promise.all([listAllFaqItems(), getPublicBusinessFacts()]);
   // The exact live sentence the protected row's read-only preview shows,

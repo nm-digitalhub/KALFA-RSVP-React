@@ -54,9 +54,10 @@ export const metadata: Metadata = { title: 'Voximplant — אינטגרציות'
 // path". So it uses the cached balance tile plus the wiring row directly — one DB read,
 // same data, and /admin/voice/platform still owns the full view.
 //
-// The old /admin/channels Voximplant tab renders THE SAME components: they were lifted
-// into files, not copied, so there is one definition and the two surfaces cannot drift.
-// The old page is retired in Task 0.6, as its own commit after a clean deploy.
+// The Voximplant controls below were LIFTED out of the old /admin/channels tab into
+// their own files rather than copied, so that page and this one rendered from one
+// definition and could not drift while both existed. /admin/channels was deleted in
+// Task 0.6 Step 4b; this is now the only surface, and the files stay where they are.
 
 const sectionClass = 'space-y-3';
 

@@ -1,12 +1,14 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { Lock, Phone, Plug } from 'lucide-react';
+import { Lock, Phone } from 'lucide-react';
 
 import { getIntegrationsIndex, type IntegrationCard } from '@/lib/data/admin/integrations';
+import { listAllChannels } from '@/lib/data/admin/channel-catalog';
 import { Badge } from '@/components/ui/badge';
 import { LocalDateTime } from '@/components/local-date-time';
 
 import { EmptyState, PageHeading } from '../_components';
+import { ChannelCatalogEditor } from './channel-catalog-editor';
 
 export const metadata: Metadata = { title: 'אינטגרציות' };
 
@@ -63,6 +65,14 @@ function CardBody({ card, showsLastChecked }: { card: IntegrationCard; showsLast
 
 export default async function AdminIntegrationsPage() {
   const { cards, canManageSettings, showsLastChecked } = await getIntegrationsIndex();
+
+  // The channel catalog's home since Task 0.6 Step 4b deleted /admin/channels
+  // (§3.3: "קטלוג הערוצים → /admin/integrations, סקציה תחתונה"). Fetched only for
+  // a viewer who may edit it: listAllChannels enforces manage_settings itself, so
+  // calling it unconditionally would redirect a staff member with a lower
+  // permission straight out of the admin area — the exact behaviour the note at
+  // the top of this file says the consolidation exists to stop.
+  const catalogChannels = canManageSettings ? await listAllChannels() : [];
 
   return (
     <div className="space-y-6">
@@ -125,19 +135,14 @@ export default async function AdminIntegrationsPage() {
       {canManageSettings ? (
         <section className="space-y-3 rounded-lg border border-border bg-card p-5">
           <div>
-            <h2 className="text-lg font-semibold">ניהול ערוצים</h2>
+            <h2 className="text-lg font-semibold">קטלוג הערוצים (תצוגה)</h2>
             <p className="text-sm text-muted-foreground">
-              המתג הראשי לשליחות וקטלוג הערוצים. הוספת ערוץ חדש אינה עריכת-תצוגה אלא
-              שינוי סכמה וקוד — ראו את עמוד הערוצים.
+              שם התצוגה, הסדר, והצג/הסתר של הערוצים בטופס החבילה — נתונים הניתנים
+              לעריכה כאן במקום בקוד. שינוי חל מיד על טופס החבילה, בלי פריסה. הוספת
+              ערוץ חדש אינה עריכת-תצוגה אלא שינוי סכמה וקוד — אינה זמינה כאן.
             </p>
           </div>
-          <Link
-            href="/admin/channels"
-            className="inline-flex min-h-11 items-center gap-1.5 text-sm text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-          >
-            <Plug className="size-4" aria-hidden />
-            מעבר לערוצי תקשורת
-          </Link>
+          <ChannelCatalogEditor channels={catalogChannels} />
         </section>
       ) : null}
     </div>

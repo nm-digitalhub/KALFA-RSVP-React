@@ -10,7 +10,7 @@ import {
 } from '@/components/ui/accordion';
 import { FormError, FormNotice, SubmitButton } from '@/components/forms';
 import { HelpTip } from '@/components/help-tip';
-import { updateVoximplantChannelAction } from '@/app/(admin)/admin/channels/actions';
+import { updateVoximplantChannelAction } from '@/app/(admin)/admin/integrations/actions';
 
 import { CopyRow, Field, SecretField } from '../_components/form-fields';
 

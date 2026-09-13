@@ -23,7 +23,9 @@
 | `/admin/activity` | `(admin)/admin/activity/page.tsx` | יומן הפעילות (audit log) עם פילטרים בצד-שרת |
 | `/admin/company` | `(admin)/admin/company/page.tsx` | פרטי חברה משפטיים המוזרקים להסכם החתום |
 | `/admin/agreement` | `(admin)/admin/agreement/page.tsx` | ניהול החוזה: עריכה, אישור, פרמטרים, תצוגה מקדימה |
-| `/admin/channels` | `(admin)/admin/channels/page.tsx` | תצורת ספקי outreach (WhatsApp Cloud API) + בדיקת חיבור |
+| `/admin/integrations` | `(admin)/admin/integrations/page.tsx` | אינדקס הספקים: כרטיס מצב לכל ספק + קטלוג הערוצים. **מחליף את `/admin/channels` ואת `/admin/alerts`**, ששניהם נמחקו (Task 0.6 Step 4b) ומפנים לכאן/ל-slack |
+| `/admin/integrations/<provider>` | `(admin)/admin/integrations/{meta-whatsapp,voximplant,extra-sms,resend-email,microsoft,sumit,slack}/page.tsx` | עמוד לכל ספק: מצב, פרטי התחברות, webhooks, מתגים |
+| `/admin/integrations/numbers` | `(admin)/admin/integrations/numbers/page.tsx` | כל מספרי הטלפון בכל הספקים + שיוך תפקידים (`provider_number_roles`) |
 | `/admin/templates` | `(admin)/admin/templates/page.tsx` | תבניות הפנייה לאורחים (WhatsApp / סקריפט שיחה) |
 | `/admin/webhooks` | `(admin)/admin/webhooks/page.tsx` | Webhook Inspector: רשימת `webhook_inbox`, מגירת-פירוט, reprocess |
 | `/admin/sumit-test` | `(admin)/admin/sumit-test/page.tsx` | PoC אבחוני מול SUMIT החי (מסלול A/B) |
@@ -134,7 +136,9 @@ Route Handlers ייעודיים לאדמין:
 | מסך | מפתחות נערכים |
 |---|---|
 | `/admin/settings` | `payments_enabled`, `sumit_*`, `sms_enabled`, `extra_sms_*`, `email_enabled`, `smtp_*` |
-| `/admin/channels` | `outreach_enabled`, `whatsapp_*` |
+| `/admin/integrations/meta-whatsapp` | `outreach_enabled`, `whatsapp_*` |
+| `/admin/integrations/voximplant` | `voximplant_*`, `call_consent_required` |
+| `/admin/integrations/slack` | `slack_*` |
 | `/admin/company` | `company_*`, `privacy_url`, `terms_url`, `warranty_text` |
 | `/admin/agreement` (מקטע "פרמטרים של ההסכם") | שבעת מפתחות ה-`agr_*` |
 
@@ -153,13 +157,15 @@ Route Handlers ייעודיים לאדמין:
 1. **"סליקה (SUMIT)"** ולצדה SMS ו-SMTP — הטופס (`settings-form.tsx` → `settings/actions.ts`) שולח תמיד את כל השדות (הטופס prefilled), וערך ריק פירושו איפוס מכוון ל-`null` (`updateAppSettings`, `settings.ts:94-114`). `smtp_port` עובר coercion למספר בשמירה; `smtp_secure` מבחין בין 465/SSL ל-587/STARTTLS.
 2. **"תצורת תשתית (env)"** — תצוגת בריאות קריאה-בלבד: האם `SUPABASE_SERVICE_ROLE_KEY` (כולל זיהוי ערך placeholder) ו-`APP_ORIGIN` מוגדרים. הרציונל מוצג בעמוד עצמו: מפתח ה-service-role הוא המפתח שמאבטח את ה-DB ולכן לא יכול לגור בתוכו.
 
-### מסך `/admin/channels` — פירוט
+### מסך `/admin/integrations/meta-whatsapp` — פירוט
 
-מעבר לטופס תצורת WhatsApp (`channels-client.tsx` → `channels/actions.ts`), העמוד:
+יורשו של `/admin/channels`, שנמחק ב-Task 0.6 Step 4b. הטופס והפקדים לא נכתבו מחדש — הם **הורמו** מ-`channels-client.tsx` לקבצים נפרדים לפני המחיקה, כך שבתקופה שבה שני העמודים חיו במקביל הייתה הגדרה אחת ולא שתי עותקות. ה-actions יושבות ב-`(admin)/admin/integrations/actions.ts` (אחת-עשרה, חוצות ספקים: WhatsApp, Voximplant, המתג הראשי וקטלוג הערוצים).
 
-- מציג את כתובת ה-callback שיש להזין ב-Meta App Dashboard — `${APP_ORIGIN}/api/webhooks/whatsapp` (מחושב בשרת, `channels/page.tsx:12-13`).
+- מציג את כתובת ה-callback שיש להזין ב-Meta App Dashboard — `${APP_ORIGIN}/api/webhooks/whatsapp` (מחושב בשרת).
 - כולל **בדיקת חיבור** read-only (`testWhatsAppConnection`): GET למספר-הטלפון ב-Graph API שמאמת טוקן + phone_number_id **בלי לשלוח הודעה**, ומחזיר הודעה בטוחה-לפרטיות (הטוקן לעולם לא בלוג).
 - הדגל `configured` נגזר בשרת (מינימום לשליחה = phone id + token, `channels.ts:46`), והעמוד מזהיר שהפעלת ערוץ מתחילה שליחות חיות בתשלום.
+
+**קטלוג הערוצים** (שם תצוגה / סדר / הצג-הסתר בטופס החבילה) ישב באותו עמוד ישן והיום הוא סקציה בתחתית `/admin/integrations`. הוא נטען רק למי שמחזיק `manage_settings` — `listAllChannels` אוכף את ההרשאה בעצמו ו**מפנה** בכישלון, כך שטעינה בלתי-מותנית הייתה פולטת איש-צוות בעל הרשאה נמוכה יותר אל מחוץ לאזור האדמין.
 
 ## פאנל פרטי חברה — `/admin/company`
 
@@ -198,7 +204,7 @@ Route Handlers ייעודיים לאדמין:
 - **שיוך לאירוע וסטטוס-מסירה**: `resolveWebhookAssociations` (שורות 157-217) — batched, שתי שאילתות לכל עמוד (ללא N+1), מצליב wamid מול `contact_interactions` ומחזיר שם-אירוע (רמז לא-PII) + `delivery_status` לשורות status.
 - **מגירת פירוט** דרך `?inspect=<id>` (server-rendered, bookmarkable): סיכום מפוענח, שגיאות Meta (קוד 131026 = "מספר שגוי", אחרת כשל מסירה — `webhook-detail.tsx:21`), `PhoneReveal` (טלפון ממוסך עד חשיפה מפורשת) ו-`PayloadViewer` (ה-JSON הגולמי מאחורי reveal-gate).
 - **Reprocess**: `reprocessWebhookEventAction` (`webhooks/actions.ts:17-43`) מאפס `processed_at`/`last_error`/`attempts` כדי שה-worker ירים את השורה מחדש; בטוח לריצה כפולה (worker אידמפוטנטי + UNIQUE ב-DB), מבוקר ב-`logActivity` (מזהה בלבד, ללא PII).
-- שינוי-תצורה של הערוץ עצמו אינו כאן אלא ב-`/admin/channels` (הפרדת אחריות מפורשת ב-runbook).
+- שינוי-תצורה של הערוץ עצמו אינו כאן אלא ב-`/admin/integrations/<provider>` (הפרדת אחריות מפורשת ב-runbook).
 
 ## טופס בדיקת SUMIT (PoC) — `/admin/sumit-test`
 

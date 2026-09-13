@@ -3,7 +3,7 @@
 import { useActionState } from 'react';
 
 import { FormError, FormNotice } from '@/components/forms';
-import { testWhatsAppConnectionAction } from '@/app/(admin)/admin/channels/actions';
+import { testWhatsAppConnectionAction } from '@/app/(admin)/admin/integrations/actions';
 
 // One live GET against Graph, on demand. Distinct from the SCHEDULED health check
 // (whatsapp-health-check, hourly) that feeds "last checked" on the integrations card:

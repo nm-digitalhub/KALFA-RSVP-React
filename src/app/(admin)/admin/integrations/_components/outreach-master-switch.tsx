@@ -3,7 +3,7 @@
 import { useActionState } from 'react';
 
 import { FormError, FormNotice, SubmitButton } from '@/components/forms';
-import { updateOutreachMasterSwitchAction } from '@/app/(admin)/admin/channels/actions';
+import { updateOutreachMasterSwitchAction } from '@/app/(admin)/admin/integrations/actions';
 
 // The ONE global outreach switch (app_settings.outreach_enabled), lifted verbatim out
 // of channels-client.tsx. It gates every outbound channel — WhatsApp sends AND AI

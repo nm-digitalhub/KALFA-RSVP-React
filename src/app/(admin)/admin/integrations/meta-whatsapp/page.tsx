@@ -22,11 +22,11 @@ export const metadata: Metadata = { title: 'Meta / WhatsApp — אינטגרצי
 // for itself — the page gate is defence in depth, not the boundary (see
 // src/lib/auth/dal.ts).
 //
-// The old /admin/channels WhatsApp tab still exists and renders THE SAME components:
-// they were lifted into files rather than copied, so there is one definition and the
-// two surfaces cannot drift. The old page is retired in Task 0.6, as its own commit
-// after a clean deploy — separating the redirect from the deletion is what keeps
-// Phase 0 reversible by removing three lines rather than reverting a phase.
+// The WhatsApp controls below were LIFTED out of the old /admin/channels tab into
+// their own files rather than copied, so the two surfaces could not drift while both
+// existed. /admin/channels was deleted in Task 0.6 Step 4b and now redirects here.
+// Separating the redirect from the deletion is what kept Phase 0 reversible: a
+// problem is undone by removing two lines from next.config.ts, not by reverting.
 
 export default async function MetaWhatsAppPage() {
   await requirePlatformPermission('manage_settings');

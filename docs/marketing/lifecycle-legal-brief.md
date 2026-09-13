@@ -52,7 +52,7 @@ brit/britah/henna/engagement..., status: draft/active/closed) → יבוא או�
   מטעם ה-host **לגבי אירוע ספציפי** — לא הסכמת ה-host לקבל שיווק מ-KALFA.
   ישות אחרת לגמרי (`contacts`, לא `profiles`).
 - `app_settings.call_consent_required` (מיגרציה
-  `20260722010152_call_consent_required_flag.sql`, UI ב-`/admin/channels`)
+  `20260722010152_call_consent_required_flag.sql`, UI ב-`/admin/integrations/voximplant`)
   — טוגל **גלובלי** למנהל, קובע האם חיוג AI **לאורחים** (Voximplant outreach)
   דורש `call_consent_at` מתועד. **אינו קשור בכלל** להסכמת שיווק ל-hosts.
 - **חיפוש מקיף בסכימה** (`grep` על כל `src/lib/supabase/types.ts`): **אין
@@ -297,7 +297,7 @@ onboarding**, לא "דבר פרסומת". **לא חסום, לא נדרש עו"ד
 `src/lib/data/close-charge.ts`, `src/lib/data/campaigns.ts:205`,
 `src/lib/data/billing.ts`, `src/lib/data/contacts.ts:290-346`,
 `supabase/migrations/20260722010152_call_consent_required_flag.sql`,
-`src/app/(admin)/admin/channels/channels-client.tsx:440-475`,
+`src/app/(admin)/admin/integrations/voximplant/voximplant-consent-toggle.tsx`,
 `src/lib/supabase/types.ts` (full-file grep for marketing/newsletter/opt_in
 — zero hits), `src/app/(customer)/app/settings/{page.tsx,settings-client.tsx}`,
 `src/lib/data/user-settings.ts`,

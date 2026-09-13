@@ -3,7 +3,7 @@
 import { useActionState } from 'react';
 
 import { FormError, FormNotice, SubmitButton } from '@/components/forms';
-import { updateCallConsentRequiredAction } from '@/app/(admin)/admin/channels/actions';
+import { updateCallConsentRequiredAction } from '@/app/(admin)/admin/integrations/actions';
 
 // The §30א consent gate for AI CALLS — the exact twin of WhatsAppConsentToggle in
 // ../meta-whatsapp/, deliberately mirrored so the two outreach channels cannot drift in

@@ -9,7 +9,7 @@
 | `/admin/webhooks` | עמוד (App Router) | `requireAdmin()` | **route חדש.** Inspector ל-`webhook_inbox`: רשימה מסוננת/מודפסת + רצועת-בריאות + מגירת-detail (`?inspect=<id>`) + עיבוד-מחדש. ראה [`admin-webhooks-runbook.md`](./admin-webhooks-runbook.md). |
 
 `/admin/webhooks` רשום ב-NAV של האדמין (`src/components/admin-shell.tsx`, "בדיקת
-Webhooks", אייקון `Webhook`). `callbackUrl` המוצג ב-`/admin/channels` הוא
+Webhooks", אייקון `Webhook`). `callbackUrl` המוצג ב-`/admin/integrations/meta-whatsapp` הוא
 `${origin}/api/webhooks/whatsapp`.
 
 > **TODO (מחוץ ללאן docs/):** ב-`CLAUDE.md`/`AGENTS.md` יש להוסיף את `/admin/webhooks`

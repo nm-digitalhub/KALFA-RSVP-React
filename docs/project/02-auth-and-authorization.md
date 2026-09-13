@@ -230,7 +230,7 @@ e.owner_id = auth.uid()
 | `view_customer_data` | `/admin/support`, `/admin/callbacks`, `/admin/contacts` |
 | `manage_staff` | `/admin/users/[id]`, `/admin/access-log` |
 | `manage_billing` | `/admin/packages` (+`new`/`[id]`), `/admin/campaigns` |
-| `manage_settings` | `/admin/settings`, `/admin/agreement`, `/admin/company`, `/admin/templates`, `/admin/alerts` |
+| `manage_settings` | `/admin/settings`, `/admin/agreement`, `/admin/company`, `/admin/templates`, `/admin/integrations/*` (חוץ מהאינדקס עצמו, שרצפתו `requirePlatformStaff`) |
 | `manage_voice` | `/admin/voice`, `/admin/voice/platform`, `/admin/dnc` |
 | `view_webhooks` | `/admin/webhooks` |
 | `view_activity_log` | `/admin/activity` |

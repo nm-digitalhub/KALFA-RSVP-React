@@ -27,19 +27,26 @@ import { sendSlackAlert } from '@/lib/alerts/slack';
 import type { FormState } from '@/lib/validation/result';
 
 // ─── WHERE A SAVE HAS TO BE REFLECTED ────────────────────────────────────────
-// Since Task 0.3 these actions render on TWO surfaces: the old /admin/channels
-// tabs and the new /admin/integrations/<provider> pages, which IMPORT the same
-// components rather than copying them. `revalidatePath` invalidates exactly the
-// path it is handed, so revalidating only '/admin/channels' left a save made from
-// the new page showing its own pre-save values — a real defect that shipped with
-// 0.3, not a hypothetical one.
+// `revalidatePath` invalidates exactly the path it is handed. While these
+// actions rendered on two surfaces (the old /admin/channels tabs and the
+// provider pages that IMPORTED the same components), revalidating only
+// '/admin/channels' left a save made from the new page showing its own pre-save
+// values — a real defect that shipped with Task 0.3, not a hypothetical one.
+// Task 0.6 Step 4b retired that page, so the legacy path is gone from these
+// lists; every remaining entry names a route that still exists.
 //
 // Revalidating a path nobody is currently rendering costs nothing, so every
-// surface is invalidated unconditionally. The index is included because its cards
-// print `configured`/`enabled` for the very columns these actions write. Task 0.6
-// deletes the legacy path from these lists together with the pages themselves.
+// surface is invalidated unconditionally. The index is included because its
+// cards print `configured`/`enabled` for the very columns these actions write —
+// and, since 4b, because it hosts the channel catalog itself.
+//
+// This module lives at /admin/integrations/actions.ts rather than beside one
+// provider because its eleven actions span WhatsApp, Voximplant, the global
+// outreach switch and the channel catalog. It moved here from the deleted
+// /admin/channels/ directory; Next derives Server Action ids from module path +
+// export name, so that move invalidated all eleven ids — which is what the
+// .deploy-id version-skew guard exists to catch.
 const INDEX = '/admin/integrations';
-const LEGACY_CHANNELS = '/admin/channels';
 const META_WHATSAPP = '/admin/integrations/meta-whatsapp';
 const VOXIMPLANT = '/admin/integrations/voximplant';
 
@@ -83,7 +90,7 @@ export async function updateWhatsAppChannelAction(
     return { error: 'עדכון הגדרות הערוץ נכשל. נסו שוב.' };
   }
 
-  revalidateAll(LEGACY_CHANNELS, META_WHATSAPP, INDEX);
+  revalidateAll(META_WHATSAPP, INDEX);
   return { notice: 'הגדרות הערוץ נשמרו' };
 }
 
@@ -147,7 +154,7 @@ export async function updateVoximplantChannelAction(
     return { error: 'עדכון הגדרות הערוץ נכשל. נסו שוב.' };
   }
 
-  revalidateAll(LEGACY_CHANNELS, VOXIMPLANT, INDEX);
+  revalidateAll(VOXIMPLANT, INDEX);
   return { notice: 'הגדרות הערוץ נשמרו' };
 }
 
@@ -186,7 +193,7 @@ export async function updateOutreachMasterSwitchAction(
     unstable_rethrow(err);
     return { error: 'עדכון מתג הפנייה נכשל. נסו שוב.' };
   }
-  revalidateAll(LEGACY_CHANNELS, META_WHATSAPP, VOXIMPLANT, INDEX);
+  revalidateAll(META_WHATSAPP, VOXIMPLANT, INDEX);
   return { notice: enabled ? 'פנייה לאורחים מופעלת' : 'פנייה לאורחים כבויה' };
 }
 
@@ -226,7 +233,7 @@ export async function updateVoximplantLiveCallsAction(
       : 'Voximplant live calls disabled',
     fields: { enabled: String(enabled) },
   });
-  revalidateAll(LEGACY_CHANNELS, VOXIMPLANT, INDEX);
+  revalidateAll(VOXIMPLANT, INDEX);
   return {
     notice: enabled
       ? 'שיחות חיות מופעלות — שיחות בתשלום ייצאו לאנשי קשר שנתנו הסכמה'
@@ -262,7 +269,7 @@ export async function updateCallConsentRequiredAction(
       : 'AI-call consent requirement LIFTED — dialing without prior consent permitted',
     fields: { consent_required: String(required) },
   });
-  revalidateAll(LEGACY_CHANNELS, VOXIMPLANT);
+  revalidateAll(VOXIMPLANT);
   return {
     notice: required
       ? 'דרישת ההסכמה הופעלה — שיחות AI רק לאנשי קשר עם הסכמה מתועדת'
@@ -333,7 +340,7 @@ async function updatePersonaChannel(
     title: enabled ? errors.onTitle : errors.offTitle,
     fields: { enabled: String(enabled) },
   });
-  revalidateAll(LEGACY_CHANNELS, VOXIMPLANT);
+  revalidateAll(VOXIMPLANT);
   return { notice: enabled ? errors.onNotice : errors.offNotice };
 }
 
@@ -415,9 +422,10 @@ export async function updateChannelCatalogAction(
     unstable_rethrow(err);
     return { error: 'עדכון הערוץ נכשל. נסו שוב.' };
   }
-  // The catalog editor itself is not (yet) on an integrations page — the index
-  // links to it. Legacy path only, deliberately.
-  revalidatePath(LEGACY_CHANNELS);
+  // The catalog editor renders in a section of the integrations index (Task 0.6
+  // Step 4b gave it that home when /admin/channels was deleted), so the index is
+  // the one surface that has to be re-rendered.
+  revalidatePath(INDEX);
   return { notice: `הערוץ "${parsed.data.display_name}" נשמר` };
 }
 
@@ -455,7 +463,7 @@ export async function updateWhatsAppConsentRequiredAction(
       : 'WhatsApp consent requirement LIFTED — sending without prior consent permitted',
     fields: { consent_required: String(required) },
   });
-  revalidateAll(LEGACY_CHANNELS, META_WHATSAPP);
+  revalidateAll(META_WHATSAPP);
   return {
     notice: required
       ? 'דרישת ההסכמה הופעלה — הודעות וואטסאפ רק לאנשי קשר עם הסכמה מתועדת'

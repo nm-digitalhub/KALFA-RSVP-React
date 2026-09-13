@@ -17,19 +17,17 @@ import { sendSlackTestAlert } from '@/lib/alerts/slack';
 import type { FormState } from '@/lib/validation/result';
 
 // ─── WHERE A SAVE HAS TO BE REFLECTED ────────────────────────────────────────
-// These actions render on THREE surfaces now: this provider page, the legacy
-// /admin/alerts page that imports the same components back, and the integrations
-// index whose Slack card prints the very `configured`/`enabled` columns written
-// here. `revalidatePath` invalidates exactly the path it is handed — revalidating
-// only the legacy one is the defect that shipped with Task 0.3 and was fixed in
-// 0.4. Revalidating a path nobody is rendering costs nothing, so there is no
-// condition. Task 0.6 drops LEGACY_ALERTS together with the page itself.
+// Two surfaces: this provider page, and the integrations index whose Slack card
+// prints the very `configured`/`enabled` columns written here. `revalidatePath`
+// invalidates exactly the path it is handed — revalidating only one of them is the
+// defect that shipped with Task 0.3 and was fixed in 0.4. Revalidating a path
+// nobody is rendering costs nothing, so there is no condition. The third entry was
+// the legacy /admin/alerts page, deleted in Task 0.6 Step 4b.
 const SLACK = '/admin/integrations/slack';
-const LEGACY_ALERTS = '/admin/alerts';
 const INDEX = '/admin/integrations';
 
 function revalidateAll(): void {
-  for (const path of [SLACK, LEGACY_ALERTS, INDEX]) revalidatePath(path);
+  for (const path of [SLACK, INDEX]) revalidatePath(path);
 }
 
 // Bot token: optional (blank = keep existing); when present must be a Slack bot
