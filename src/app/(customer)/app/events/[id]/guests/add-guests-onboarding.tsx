@@ -10,6 +10,7 @@ import {
   CAMPAIGN_STAGE_VARIANTS,
   type CampaignStage,
 } from '@/lib/data/event-labels';
+import type { WhatsAppImportChannel } from '@/lib/data/whatsapp-import-channel';
 
 // The guests page in its FIRST-RUN state: the event has no guest rows at all
 // (`totals.rows === 0`), so instead of a filter bar with nothing to filter and a
@@ -27,19 +28,29 @@ interface AddGuestsOnboardingProps {
   eventId: string;
   eventName: string;
   stage: CampaignStage | null;
+  /**
+   * The dedicated guest-import number, when one is wired. null = no number to
+   * advertise, and the WhatsApp option keeps its original copy and its link to
+   * the in-app import screen — which is exactly what it did before the split
+   * existed, so an unconfigured or momentarily unreadable number degrades
+   * instead of breaking the page.
+   */
+  importChannel: WhatsAppImportChannel | null;
 }
 
 interface OptionProps {
   href: string;
   icon: React.ReactNode;
   title: string;
-  description: string;
+  description: React.ReactNode;
   cta: string;
   /** The recommended path: filled button, tinted card, "הכי מהיר" tag. */
   primary?: boolean;
+  /** Leaves the app (a wa.me deep link) — opens in a new tab, rel-guarded. */
+  external?: boolean;
 }
 
-function Option({ href, icon, title, description, cta, primary }: OptionProps) {
+function Option({ href, icon, title, description, cta, primary, external }: OptionProps) {
   return (
     <div
       className={
@@ -70,6 +81,9 @@ function Option({ href, icon, title, description, cta, primary }: OptionProps) {
           in components/ui/button.tsx. */}
       <Link
         href={href}
+        {...(external
+          ? { target: '_blank', rel: 'noopener noreferrer' }
+          : {})}
         className={cn(
           buttonVariants({ variant: primary ? 'default' : 'outline' }),
           'h-11 w-full',
@@ -86,6 +100,7 @@ export function AddGuestsOnboarding({
   eventId,
   eventName,
   stage,
+  importChannel,
 }: AddGuestsOnboardingProps) {
   return (
     <div className="mx-auto flex w-full max-w-md flex-col gap-6">
@@ -107,14 +122,33 @@ export function AddGuestsOnboarding({
       <div className="flex flex-col gap-3">
         <Option
           primary
-          href={`/app/events/${eventId}/guests/import/whatsapp`}
+          /* With a number wired, the button opens WhatsApp ON that number —
+             the owner does not have to find it, copy it, or guess which of our
+             lines accepts lists. Without one it keeps pointing at the in-app
+             import screen, unchanged. */
+          href={importChannel?.waMeUrl ?? `/app/events/${eventId}/guests/import/whatsapp`}
+          external={importChannel !== null}
           /* The registry component defaults to fill=none + stroke, but the MDI
              path is a SOLID glyph — stroking it outlines the silhouette twice.
              Fill it and drop the stroke; both are spread props, so the generated
              file stays untouched. */
           icon={<WhatsappIcon size={20} fill="currentColor" strokeWidth={0} />}
           title="ייבוא דרך WhatsApp"
-          description="שלחו אנשי קשר או קובץ ל־KALFA וקבלו קישור לסקירה"
+          description={
+            importChannel ? (
+              <>
+                שלחו אנשי קשר או קובץ אל{' '}
+                {/* The number reads left-to-right inside a right-to-left
+                    sentence; without dir the '+' lands on the wrong end. */}
+                <span dir="ltr" className="font-medium">
+                  {importChannel.displayNumber}
+                </span>{' '}
+                וקבלו קישור לסקירה
+              </>
+            ) : (
+              'שלחו אנשי קשר או קובץ ל־KALFA וקבלו קישור לסקירה'
+            )
+          }
           cta="פתיחת וואטסאפ"
         />
         <Option

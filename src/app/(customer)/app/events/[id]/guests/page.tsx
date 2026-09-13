@@ -16,6 +16,7 @@ import {
 } from '@/lib/data/guests';
 import { fillMissingExpectedCountAction } from './guests-actions';
 import { AddGuestsOnboarding } from './add-guests-onboarding';
+import { getWhatsAppImportChannel } from '@/lib/data/whatsapp-import-channel';
 import { guestsView } from './guest-list-view';
 import type { Enums } from '@/lib/supabase/types';
 import {
@@ -267,9 +268,17 @@ export default async function GuestsPage({ params, searchParams }: PageProps) {
   // FIRST RUN: the whole content area becomes "how do you want to add guests?".
   // The campaign is loaded ONLY here, so the populated list costs no extra query.
   if (view === 'onboarding') {
-    const stage = await getCampaignStageForEvent(eventId);
+    const [stage, importChannel] = await Promise.all([
+      getCampaignStageForEvent(eventId),
+      getWhatsAppImportChannel(),
+    ]);
     return (
-      <AddGuestsOnboarding eventId={eventId} eventName={event.name} stage={stage} />
+      <AddGuestsOnboarding
+        eventId={eventId}
+        eventName={event.name}
+        stage={stage}
+        importChannel={importChannel}
+      />
     );
   }
 

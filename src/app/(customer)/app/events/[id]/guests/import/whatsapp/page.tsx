@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { requireEventAccess } from '@/lib/data/events';
 import { createClient } from '@/lib/supabase/server';
 import { findImportMatches, type ImportMatch } from '@/lib/data/guests';
+import { getWhatsAppImportChannel } from '@/lib/data/whatsapp-import-channel';
 import type { StagedRow } from '@/lib/data/whatsapp-import';
 import {
   confirmWhatsappImportAction,
@@ -23,6 +24,11 @@ interface PageProps {
 export default async function WhatsappImportPage({ params }: PageProps) {
   const { id: eventId } = await params;
   await requireEventAccess(eventId, 'guests', 'create');
+
+  // Which number to tell the owner to send to. Read alongside the list so an
+  // empty screen still answers "where do I send it?" instead of saying
+  // "the business WhatsApp" and leaving them to find the number.
+  const importChannel = await getWhatsAppImportChannel();
 
   const supabase = await createClient();
   const { data: pending } = await supabase
@@ -57,10 +63,34 @@ export default async function WhatsappImportPage({ params }: PageProps) {
       </div>
 
       {pendingList.length === 0 ? (
-        <p className="rounded-lg border border-border p-6 text-sm text-muted-foreground">
-          אין רשימות ממתינות. שלחו קובץ CSV או שתפו אנשי קשר לוואטסאפ העסקי —
-          והרשימה תופיע כאן לאישור.
-        </p>
+        <div className="space-y-3 rounded-lg border border-border p-6 text-sm text-muted-foreground">
+          {importChannel ? (
+            <>
+              <p>
+                אין רשימות ממתינות. שלחו קובץ CSV או שתפו אנשי קשר אל{' '}
+                {/* dir="ltr" on the number only: inside a Hebrew sentence the
+                    '+' would otherwise render at the wrong end. */}
+                <span dir="ltr" className="font-medium text-foreground">
+                  {importChannel.displayNumber}
+                </span>{' '}
+                — והרשימה תופיע כאן לאישור.
+              </p>
+              <a
+                href={importChannel.waMeUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-block font-medium text-primary hover:underline"
+              >
+                פתיחת וואטסאפ עם המספר
+              </a>
+            </>
+          ) : (
+            <p>
+              אין רשימות ממתינות. שלחו קובץ CSV או שתפו אנשי קשר לוואטסאפ העסקי —
+              והרשימה תופיע כאן לאישור.
+            </p>
+          )}
+        </div>
       ) : null}
 
       {pendingList.map((s) => {
