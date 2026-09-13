@@ -26,10 +26,16 @@ function definition(
   };
 }
 
+// The RSVP line (measured 2026-09-13). The receiving-number FILTER is exercised
+// in trigger-number.test.ts, which needs both lines; here it only has to be a
+// real value so the fixture is not a message from nowhere.
+const RSVP_LINE = '1018741517998430';
+
 const MESSAGE = {
   eventId: 'event-1',
   contactId: 'contact-1',
   inboxRowId: 'inbox-9',
+  phoneNumberId: RSVP_LINE,
   messageText: 'כן אני מגיע',
   buttonPayload: '',
     guestName: 'דנה',

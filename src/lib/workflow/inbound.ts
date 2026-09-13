@@ -80,6 +80,9 @@ export async function createRunsForInboundMessage(
       // The inbox ROW id, not the provider message id: the row is what the
       // drain is at-least-once over, and it is what a reprocess re-reads.
       inboxRowId: row.id,
+      // WHICH OF OUR LINES it came in on. Straight off the row — the column the
+      // inbound router already reads — so `planRuns` needs no lookup.
+      phoneNumberId: row.phone_number_id,
       messageText: readTextBody(payload),
       buttonPayload: replyId ?? '',
     },

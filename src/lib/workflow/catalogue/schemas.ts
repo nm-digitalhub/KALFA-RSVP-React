@@ -156,6 +156,22 @@ const rsvpStatusOptions = {
 // trigger.whatsapp_inbound
 // ---------------------------------------------------------------------------
 
+/**
+ * One of OUR WhatsApp numbers, as the trigger's dropdown offers it.
+ *
+ * The VALUE is Meta's `phone_number_id`, because that is what arrives on the
+ * webhook and what `matchesNumber` compares. The label is for the human.
+ */
+export type WhatsAppNumberOption = {
+  /** Meta's phone_number_id — the stored value. */
+  providerRef: string;
+  /** e.g. "+972 3-721-9347 — מספר אישורי הגעה". */
+  label: string;
+};
+
+// The only entry whose options are not knowable at module scope: the account's
+// WhatsApp numbers are rows, and they change without a deploy. `buildPaletteItems`
+// below takes them; `PALETTE_ITEMS` is the empty-list case.
 const triggerSchema = {
   type: 'object',
   required: ['label', 'description'],
@@ -163,15 +179,46 @@ const triggerSchema = {
     ...sharedProperties,
     ...statusProperty,
     keyword: { type: 'string', placeholder: 'השאירו ריק כדי להפעיל על כל הודעה' },
+    phoneNumberId: { type: 'string' },
   },
 } satisfies NodeSchema;
 
 const triggerScope = getScope<typeof triggerSchema>;
 
+function triggerSchemaFor(numbers: readonly WhatsAppNumberOption[]): NodeSchema {
+  return {
+    ...triggerSchema,
+    properties: {
+      ...triggerSchema.properties,
+      phoneNumberId: {
+        type: 'string',
+        // '' first, and it is the default: empty means ANY number, which keeps
+        // every diagram saved before this field firing exactly as it did.
+        options: [
+          { value: '', label: 'כל המספרים' },
+          ...numbers.map((n) => ({ value: n.providerRef, label: n.label })),
+        ],
+      },
+    },
+  } as NodeSchema;
+}
+
 const triggerUiSchema: UISchema = {
   type: 'VerticalLayout',
   elements: [
     { type: 'Text', scope: triggerScope('properties.label'), label: 'שם הצעד' },
+    {
+      type: 'Select',
+      scope: triggerScope('properties.phoneNumberId'),
+      label: 'המספר שאליו נשלחה ההודעה',
+    },
+    {
+      // The warning the owner asked for. "כל המספרים" is the compatible default,
+      // not the safe one: with two live lines an RSVP automation also fires on
+      // messages sent to the import line.
+      type: 'Label',
+      text: 'כל המספרים: התהליך ירוץ גם על הודעות שנשלחו לקו הייבוא. בחרו מספר כדי לצמצם.',
+    },
     {
       type: 'Text',
       scope: triggerScope('properties.keyword'),
@@ -634,6 +681,33 @@ const startRsvpAiCallbackUiSchema: UISchema = {
  * The adapter rejects such a reference anyway; omitting this means the owner is
  * never offered one.
  */
+/**
+ * The palette, built for a given set of WhatsApp numbers.
+ *
+ * A FACTORY and not a const, because one entry's dropdown is a live list: the
+ * account's numbers are rows in `provider_numbers` and change without a deploy.
+ *
+ * ⚠️ THE SDK REQUIRES A STABLE REFERENCE for `nodeTypes` ("declare at module
+ * scope or memoize" — README). A fresh array each render would re-register the
+ * palette on every keystroke. The editor therefore calls this inside `useMemo`;
+ * calling it in a render body would be the bug this note exists to prevent.
+ */
+export function buildPaletteItems(
+  numbers: readonly WhatsAppNumberOption[] = [],
+): PaletteItem[] {
+  return PALETTE_ITEMS.map((item) =>
+    item.type === 'trigger.whatsapp_inbound'
+      ? { ...item, schema: triggerSchemaFor(numbers) }
+      : item,
+  );
+}
+
+/**
+ * The palette with NO numbers offered — the dropdown shows only "כל המספרים".
+ *
+ * Kept as the base the factory rewrites one entry of, so every other node type
+ * is declared exactly once. It is also what the tests and the i18n audit read.
+ */
 export const PALETTE_ITEMS: PaletteItem[] = [
   {
     type: 'trigger.whatsapp_inbound' satisfies KalfaNodeType,
@@ -671,6 +745,9 @@ export const PALETTE_ITEMS: PaletteItem[] = [
       label: 'הודעת וואטסאפ נכנסת',
       description: 'מתחיל את התהליך כשאורח שולח הודעה',
       keyword: '',
+      // Empty = any number. The owner's ruling 2026-09-13: a diagram saved
+      // before this field must not silently narrow to one line.
+      phoneNumberId: '',
     },
   },
   {

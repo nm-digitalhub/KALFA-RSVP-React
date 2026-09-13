@@ -6,6 +6,7 @@ import { Badge, formatDateTime } from '../../_components';
 
 import { editorDiagramSchema } from '@/lib/workflow/adapter/editor-schema';
 import { getWorkflow, listWorkflowRuns } from '@/lib/data/admin/workflows';
+import { listProviderNumbers } from '@/lib/data/admin/integrations/provider-numbers';
 
 import { saveWorkflowAction } from '../actions';
 
@@ -29,6 +30,24 @@ export default async function AdminWorkflowPage({
   if (!workflow) notFound();
 
   const runs = await listWorkflowRuns(id, 20);
+
+  // The WhatsApp lines the trigger node may be pointed at.
+  //
+  // Read HERE and passed down because the palette is built in the browser and
+  // the numbers are rows. No new permission: `getWorkflow` above already
+  // requires `manage_settings`, which is exactly what this reader requires, so
+  // anyone who can open this page could already see them.
+  //
+  // INACTIVE NUMBERS ARE NOT OFFERED — including one deleted at Meta, which the
+  // sync now switches off. A workflow already pointing at such a number keeps
+  // working: matching is against the stored phone_number_id, never against this
+  // list. The list answers "what may be chosen today", not "what is still valid".
+  const whatsappNumbers = (await listProviderNumbers())
+    .filter((n) => n.provider === 'meta_whatsapp' && n.providerRef !== null && n.isActive)
+    .map((n) => ({
+      providerRef: n.providerRef as string,
+      label: `${n.e164 ?? n.providerRef} — ${n.displayLabel ?? 'ללא שם'}`,
+    }));
 
   // The stored jsonb is parsed before it reaches the editor. A row that cannot
   // be parsed opens as an empty canvas rather than crashing the page — the
@@ -62,6 +81,7 @@ export default async function AdminWorkflowPage({
         initialGlobalVariables={parsed.success ? parsed.data.globalVariables : undefined}
         initialNodes={nodes as never}
         initialEdges={edges as never}
+        whatsappNumbers={whatsappNumbers}
         saveAction={saveWorkflowAction}
       />
 

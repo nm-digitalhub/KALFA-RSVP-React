@@ -11,7 +11,7 @@ import {
   type WorkflowBuilderIsValidConnection,
 } from '@workflowbuilder/sdk';
 import { X } from 'lucide-react';
-import { useCallback, useEffect, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
 
 import '@workflowbuilder/sdk/style.css';
 // Immediately after, so its unlayered counters land on top of the SDK's reset.
@@ -19,7 +19,10 @@ import './sdk-overrides.css';
 
 import { Button } from '@/components/ui/button';
 import { isTriggerType } from '@/lib/workflow/catalogue/nodes';
-import { PALETTE_ITEMS } from '@/lib/workflow/catalogue/schemas';
+import {
+  buildPaletteItems,
+  type WhatsAppNumberOption,
+} from '@/lib/workflow/catalogue/schemas';
 import { DIAGRAM_TEMPLATES } from '@/lib/workflow/catalogue/templates';
 import { applyHebrewToSdk } from '@/lib/workflow/i18n-he';
 
@@ -46,6 +49,16 @@ type Props = {
    * `handleSave`.
    */
   saveAction: (workflowId: string, definition: unknown) => Promise<void>;
+  /**
+   * Our WhatsApp lines, for the trigger node's "which number" dropdown.
+   *
+   * Resolved on the server (page.tsx) and passed down, because the palette is
+   * built here in the browser and the numbers are database rows. An empty list
+   * is a legitimate state — nothing synced yet — and the dropdown then offers
+   * only "כל המספרים", which is the same behaviour the node had before the
+   * field existed.
+   */
+  whatsappNumbers: readonly WhatsAppNumberOption[];
 };
 
 /**
@@ -78,8 +91,19 @@ export function WorkflowEditor({
   initialEdges,
   layoutDirection,
   initialGlobalVariables,
+  whatsappNumbers,
   saveAction,
 }: Props) {
+  // MEMOISED, and that is a requirement rather than an optimisation: upstream
+  // states `nodeTypes` "must be a stable reference — declare at module scope or
+  // memoize". Every other palette entry is module-scope data; this one entry's
+  // dropdown is a live list, which is why the whole array has to be built here
+  // instead. A fresh array each render would re-register the palette on every
+  // keystroke in the properties panel.
+  const paletteItems = useMemo(
+    () => buildPaletteItems(whatsappNumbers),
+    [whatsappNumbers],
+  );
   // Root 2.3.0 omits globalVariables from its props. Its child effects load
   // nodes/edges first; this parent effect restores the remaining persisted field.
   useEffect(() => {
@@ -111,7 +135,7 @@ export function WorkflowEditor({
         // is what the app bar runs out of first on a phone.
         logo={<Icon name="FlowArrow" size="large" aria-label="עורך התהליכים" />}
         layoutDirection={layoutDirection}
-        nodeTypes={PALETTE_ITEMS}
+        nodeTypes={paletteItems}
         // Populates the "בחירת תבנית" modal, which offered only "קנבס ריק"
         // because this prop defaults to []. Module-scope array — upstream
         // requires a stable reference, same as nodeTypes.

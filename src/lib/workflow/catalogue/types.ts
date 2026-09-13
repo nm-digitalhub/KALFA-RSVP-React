@@ -89,6 +89,27 @@ export type WhatsappInboundConfig = {
   // Optional pre-filter: run only when the message contains this text. Empty or
   // absent means every inbound message on the account starts a run.
   keyword?: string;
+  /**
+   * Which of OUR WhatsApp numbers the message must have arrived on.
+   *
+   * META'S phone_number_id, not an E.164 and not our provider_numbers UUID. It
+   * is the value the webhook actually carries, so matching needs no lookup and
+   * `planRuns` stays pure; an E.164 would break the day a number is registered
+   * again, and our UUID would put a database read inside the one module that
+   * must not have one.
+   *
+   * EMPTY OR ABSENT MEANS ANY NUMBER — the same rule as `keyword`, so every
+   * diagram saved before this keeps firing exactly as it did.
+   *
+   * WHY IT EXISTS. The account has had two live numbers since 2026-09-10: the
+   * RSVP sender and the import line. `startWorkflowRuns` runs beside
+   * `processWebhookEvent` rather than behind it (worker/main.ts), so the inbound
+   * ROUTER's decision — which sends import-line traffic to stageWhatsAppImport
+   * and returns — never reached workflows. Every armed workflow has therefore
+   * been firing on messages to BOTH numbers with no way to tell them apart.
+   * This is the field that tells them apart.
+   */
+  phoneNumberId?: string;
 };
 
 // The two outgoing ports of a condition node, as HANDLE IDS.

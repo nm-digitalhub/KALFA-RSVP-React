@@ -35,6 +35,14 @@ export type InboundMessage = {
    * workflows firing on the same message share one guest lookup.
    */
   /**
+   * Meta's `phone_number_id` for the line the message ARRIVED ON — ours, not the
+   * guest's. `null` for an inbox row written before the column was populated.
+   *
+   * Read straight off `webhook_inbox.phone_number_id` by the caller, so this
+   * module needs no lookup and stays pure.
+   */
+  phoneNumberId: string | null;
+  /**
    * Absent, never `''`, when the phone backs anything other than exactly one
    * guest — so a template's `| default:'…'` fires. See the note on
    * `WorkflowTriggerPayload`.
@@ -152,6 +160,37 @@ export function matchesKeyword(keyword: unknown, messageText: string): boolean {
 }
 
 /**
+ * The RECEIVING-NUMBER filter — which of our WhatsApp lines the message came in on.
+ *
+ * Applied here for the same reason as the keyword: a workflow armed on the RSVP
+ * line must not produce a run row for a message someone sent to the import line,
+ * because a run that started and immediately stopped reads as "the automation
+ * ran".
+ *
+ * THE GAP THIS CLOSES. `startWorkflowRuns` is called beside `processWebhookEvent`
+ * in the drain loop, not behind it, so the inbound router's decision — import
+ * traffic goes to stageWhatsAppImport and returns — never applied to workflows.
+ * Since the second number went live on 2026-09-10 every armed workflow has been
+ * firing on both lines with nothing able to distinguish them.
+ *
+ * EMPTY OR ABSENT MATCHES ANYTHING, deliberately, and it is the owner's call
+ * (2026-09-13): every diagram saved before this field existed keeps its current
+ * behaviour rather than silently narrowing to one line. The editor warns on the
+ * node when no number is chosen.
+ *
+ * A configured number against an UNKNOWN arrival (`null` — an older inbox row
+ * written before the column was populated) does NOT match. Fail closed: "we do
+ * not know which line this came in on" is not evidence it came in on the one the
+ * owner named, and the cost of the wrong answer is an automated message to a
+ * guest.
+ */
+export function matchesNumber(configured: unknown, arrivedOn: string | null): boolean {
+  if (typeof configured !== 'string' || configured.trim() === '') return true;
+  if (arrivedOn === null) return false;
+  return configured.trim() === arrivedOn;
+}
+
+/**
  * The trigger node of a stored diagram, if it has exactly one.
  *
  * Rule 1 again: which types may start is the catalogue's answer, never the
@@ -202,6 +241,7 @@ export function planRuns(
     if (trigger.type !== 'trigger.whatsapp_inbound') continue;
 
     if (!matchesKeyword(trigger.properties.keyword, message.messageText)) continue;
+    if (!matchesNumber(trigger.properties.phoneNumberId, message.phoneNumberId)) continue;
 
     planned.push({
       workflowId: workflow.id,
