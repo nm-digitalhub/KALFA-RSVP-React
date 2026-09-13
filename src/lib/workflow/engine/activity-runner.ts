@@ -28,7 +28,12 @@ import type {
   NodeExecutionResult,
 } from '../vendor/workflowbuilder/execution-core/ports/activity-runner.port';
 
-import type { GuestActionsPort, StepLedgerPort, TeamAlertsPort } from './ports';
+import type {
+  GuestActionsPort,
+  OutboundWebhookPort,
+  StepLedgerPort,
+  TeamAlertsPort,
+} from './ports';
 
 export type ActivityRunnerArgs = {
   runId: string;
@@ -36,6 +41,7 @@ export type ActivityRunnerArgs = {
   ledger: StepLedgerPort;
   guests: GuestActionsPort;
   alerts: TeamAlertsPort;
+  webhook: OutboundWebhookPort;
 };
 
 // The shape the runner sees. Structural rather than an import of KalfaNode, so
@@ -96,7 +102,7 @@ function resolveConfigTemplates(value: unknown, context: ExecutionContext): unkn
 export function createActivityRunner<TNode extends RunnableNode>(
   args: ActivityRunnerArgs,
 ): ActivityRunnerPort<TNode> {
-  const { runId, trigger, ledger, guests, alerts } = args;
+  const { runId, trigger, ledger, guests, alerts, webhook } = args;
 
   return {
     // `context` was ignored until templates landed — the handlers took only
@@ -211,7 +217,7 @@ export function createActivityRunner<TNode extends RunnableNode>(
           runId,
           nodeId: node.id,
           trigger,
-          deps: { guests, alerts },
+          deps: { guests, alerts, webhook },
         });
         // Persisted AFTER the side effect and BEFORE the runner propagates, so a
         // crash between the two leaves the row 'running' — visible as stuck

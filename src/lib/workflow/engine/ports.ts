@@ -254,6 +254,49 @@ export interface TeamAlertsPort {
 }
 
 /**
+ * An outgoing HTTP call to a system that is not ours.
+ *
+ * The first action node whose effect leaves KALFA entirely, and the reasons it
+ * is a PORT rather than a `fetch` in the handler are the same two that produced
+ * `TeamAlertsPort` — plus one that is new and worse.
+ *
+ *   1. Layering. Everything downstream of this file stays free of `server-only`
+ *      so handlers are unit-testable without a network.
+ *   2. THE DRY RUN. Pressing "test" in the editor must have no outward effect.
+ *      With a `fetch` in the handler, a test run would POST a guest's details to
+ *      a third party from a button whose whole promise is that it does nothing.
+ *   3. The SSRF surface is exactly one function. `validateWebhookUrl` runs in
+ *      the implementation, not in the handler, so there is no path to the socket
+ *      that skips it.
+ *
+ * ⚠️ IT CAN FIRE TWICE, AND WE CANNOT MAKE THE RECEIVER IDEMPOTENT.
+ * `StepClaim`'s lease reclaims a `running` row whose side effect finished but
+ * whose `completeStep` never landed — the documented cost of being able to
+ * recover a crashed run at all. For a row we own that is harmless (`submit_rsvp`
+ * setting the same status twice is the same row). For someone else's endpoint it
+ * is a second POST, and only they can decide what that means.
+ *
+ * So the implementation sends `X-Kalfa-Idempotency-Key: <runId>:<nodeId>` —
+ * deterministic, identical across replays of the same node in the same run — and
+ * the node's help text says to key on it. That is the honest contract: we cannot
+ * promise exactly-once, so we make at-least-once dedupable by the only party who
+ * can act on it.
+ *
+ * `ok: false` is an ORDINARY answer (a non-2xx, a timeout, a refused URL), not a
+ * throw. The handler turns it into the error port so a workflow can route around
+ * a failing endpoint, which is the behaviour a branchable action node owes.
+ */
+export interface OutboundWebhookPort {
+  post(input: {
+    /** Already validated by the implementation; the handler never sees a socket. */
+    url: string;
+    body: string;
+    /** Deterministic per (run, node). The receiver's dedup key. */
+    idempotencyKey: string;
+  }): Promise<{ ok: boolean; status: number | null; reason?: string }>;
+}
+
+/**
  * The execution event log — append-only, ordered, one row per emitted event.
  *
  * The vendored `runGraph` already emits exactly the events a live canvas replay
@@ -288,6 +331,12 @@ export type WorkflowEngineDeps = {
    * goes nowhere — the exact failure that node exists to prevent.
    */
   alerts: TeamAlertsPort;
+  /**
+   * Required for the same reason `alerts` is: optional would mean a workflow
+   * carrying `action.webhook` runs to "completed" while the call silently goes
+   * nowhere. The dry run supplies a recording stub that makes no request.
+   */
+  webhook: OutboundWebhookPort;
   /** Omitted by the dry run, which returns its trace directly. */
   log?: ExecutionLogPort;
 };

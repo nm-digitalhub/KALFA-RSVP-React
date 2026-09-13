@@ -8,16 +8,24 @@
 import { RSVP_STATUSES, type RsvpStatus } from '@/lib/constants';
 
 import {
+  ACTION_BRANCH_HANDLES,
   CONDITION_BRANCH_HANDLES,
   CONDITION_FIELDS,
   CONDITION_OPERATORS,
   NOTIFY_LEVELS,
+  SWITCH_CASE_COUNT,
+  SWITCH_CASE_HANDLES,
+  SWITCH_DEFAULT_HANDLE,
   type ConditionField,
   type ConditionOperator,
   type KalfaNodeType,
 } from '../catalogue/types';
 
-import type { GuestActionsPort, TeamAlertsPort } from '../engine/ports';
+import type {
+  GuestActionsPort,
+  OutboundWebhookPort,
+  TeamAlertsPort,
+} from '../engine/ports';
 import { PermanentNodeExecutionError } from '../vendor/workflowbuilder/execution-core/errors';
 import type { NodeExecutionResult } from '../vendor/workflowbuilder/execution-core/ports/activity-runner.port';
 
@@ -88,7 +96,7 @@ export type StepContext = {
   runId: string;
   nodeId: string;
   trigger: WorkflowTriggerPayload;
-  deps: { guests: GuestActionsPort; alerts: TeamAlertsPort };
+  deps: { guests: GuestActionsPort; alerts: TeamAlertsPort; webhook: OutboundWebhookPort };
 };
 
 export type StepHandler = (
@@ -250,6 +258,53 @@ const condition: StepHandler = async (config, ctx) => {
   return {
     output: { result },
     nextPort: result ? CONDITION_BRANCH_HANDLES.true : CONDITION_BRANCH_HANDLES.false,
+  };
+};
+
+// ---------------------------------------------------------------------------
+// logic.switch
+// ---------------------------------------------------------------------------
+
+// Route one value to one of three named cases, or to the default.
+//
+// WHAT IT ADDS OVER `logic.condition`, which is not "more branches". A condition
+// names one of two ports and BOTH of them mean "the test" — so "none of the
+// above" has to be modelled as false, and a three-way answer needs two chained
+// conditions whose second one re-reads a value the first already looked at. Here
+// the unmatched route is its own port, so the shape on the canvas is the shape
+// of the decision.
+//
+// Comparison is `compareValues(..., 'equals', ...)` and not a new rule: the same
+// case-insensitive, trimmed equality every condition already uses. An owner who
+// learns one learns both, and a value that routes to case 2 here would have
+// satisfied `equals` there.
+//
+// FIRST MATCH WINS, and the order is the order on the canvas — case 1 before
+// case 2 before case 3. Two cases with the same text is not an error; the second
+// is simply unreachable, which is visible on the node rather than hidden in a
+// validation message.
+const switchNode: StepHandler = async (config) => {
+  // Already resolved: `resolveConfigTemplates` walked the whole config before
+  // this ran, so `left` is the computed text and not `{{trigger.…}}`.
+  const actual = readString(config, 'left');
+
+  for (let i = 0; i < SWITCH_CASE_COUNT; i++) {
+    const candidate = readString(config, `case${i + 1}`).trim();
+    // EMPTY IS AN UNUSED BRANCH, not a match against the empty string. Without
+    // this, a switch with one case filled in would send every empty value to
+    // case 2 and the default could never be reached.
+    if (candidate === '') continue;
+    if (compareValues(actual, 'equals', candidate)) {
+      return {
+        output: { matched: true, case: i + 1, value: actual },
+        nextPort: SWITCH_CASE_HANDLES[i],
+      };
+    }
+  }
+
+  return {
+    output: { matched: false, case: null, value: actual },
+    nextPort: SWITCH_DEFAULT_HANDLE,
   };
 };
 
@@ -459,6 +514,51 @@ const notifyTeam: StepHandler = async (config, ctx) => {
 };
 
 // ---------------------------------------------------------------------------
+// action.webhook
+// ---------------------------------------------------------------------------
+
+// POST to a system that is not ours.
+//
+// The handler is deliberately thin: it reads two fields, builds the dedup key,
+// and hands everything to the port. Every security decision — https, no private
+// space, no redirect following, the timeout, the capped response — lives in the
+// implementation behind that port, so there is no path from here to a socket
+// that skips them.
+//
+// THE DEDUP KEY IS `<runId>:<nodeId>`, and the choice matters. It is the same on
+// every replay of this node in this run, which is exactly the case the step
+// lease can produce: a POST that completed but whose `completeStep` never landed
+// gets sent again, and the receiver can recognise it. It is DIFFERENT for the
+// same node in a different run, so two genuine messages from two guests are two
+// calls and not one deduplicated away.
+//
+// A failure is an ANSWER, not a throw: it routes to the error branch so a
+// workflow can carry on — notify the team, try a second endpoint — instead of
+// ending `failed` because someone else's server was down.
+const webhook: StepHandler = async (config, ctx) => {
+  const url = readString(config, 'url').trim();
+  // Already resolved: `resolveConfigTemplates` walked the config first, so this
+  // is the rendered body and not `{{trigger.…}}`.
+  const body = readString(config, 'body');
+
+  const result = await ctx.deps.webhook.post({
+    url,
+    body,
+    idempotencyKey: `${ctx.runId}:${ctx.nodeId}`,
+  });
+
+  // The URL is NOT in the output. It is already on the node in the editor, and
+  // repeating it in the run log would copy a path segment — the one place this
+  // node can legitimately carry a secret — into a second store.
+  return result.ok
+    ? { output: { ok: true, status: result.status } }
+    : {
+        output: { ok: false, status: result.status, reason: result.reason ?? null },
+        nextPort: ACTION_BRANCH_HANDLES.error,
+      };
+};
+
+// ---------------------------------------------------------------------------
 // logic.set_value
 // ---------------------------------------------------------------------------
 
@@ -478,9 +578,11 @@ const setValue: StepHandler = async (config) => ({
 export const STEP_HANDLERS: Record<KalfaNodeType, StepHandler> = {
   'trigger.whatsapp_inbound': whatsappInbound,
   'logic.condition': condition,
+  'logic.switch': switchNode,
   'action.update_guest_status': updateGuestStatus,
   'action.send_whatsapp': sendWhatsapp,
   'action.start_rsvp_ai_callback': startRsvpAiCallback,
   'action.notify_team': notifyTeam,
+  'action.webhook': webhook,
   'logic.set_value': setValue,
 };

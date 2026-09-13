@@ -17,28 +17,13 @@
 // Strict pattern for Voximplant cloud storage gateways: storage-gw-<region>-<nn>.voximplant.com
 const RECORDING_HOST_PATTERN = /^storage-gw-[a-z]{2}-\d{2}\.voximplant\.com$/;
 
+// The private/loopback/link-local test moved to @/lib/net/private-host on
+// 2026-09-13 when the outgoing-webhook node became a second caller. Behaviour is
+// unchanged; this file's own tests still cover it through validateRecordingUrl.
+import { isPrivateOrLocalHost } from '@/lib/net/private-host';
+
 // Extra exact hosts (e.g. a custom S3 endpoint) — empty today (account uses cloud).
 export const RECORDING_HOST_ALLOWLIST: readonly string[] = [];
-
-const IPV4_RE = /^\d{1,3}(\.\d{1,3}){3}$/;
-
-function isPrivateOrLocalHost(hostname: string): boolean {
-  const h = hostname.toLowerCase().replace(/^\[|\]$/g, ''); // strip IPv6 brackets
-  if (h === 'localhost' || h.endsWith('.local') || h.endsWith('.internal')) return true;
-  // IPv6 loopback / unique-local / link-local
-  if (h === '::1' || h.startsWith('fc') || h.startsWith('fd') || h.startsWith('fe80:')) {
-    return true;
-  }
-  if (IPV4_RE.test(h)) {
-    const [a, b] = h.split('.').map(Number);
-    if (a === 127 || a === 10 || a === 0) return true; // loopback / private / this-host
-    if (a === 192 && b === 168) return true;
-    if (a === 172 && b >= 16 && b <= 31) return true;
-    if (a === 169 && b === 254) return true; // link-local incl. 169.254.169.254 metadata
-    return true; // any bare IPv4 literal is not a real recording CDN → reject
-  }
-  return false;
-}
 
 export type RecordingUrlResult = { url: string | null; reason?: string };
 

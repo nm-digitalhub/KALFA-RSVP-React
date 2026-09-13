@@ -16,7 +16,13 @@
 import { getHandleId } from '@workflowbuilder/sdk';
 import { describe, expect, it } from 'vitest';
 
-import { ACTION_BRANCH_HANDLES, CONDITION_BRANCH_HANDLES, RUNNER_ERROR_PORT } from './types';
+import {
+  ACTION_BRANCH_HANDLES,
+  CONDITION_BRANCH_HANDLES,
+  RUNNER_ERROR_PORT,
+  SWITCH_CASE_HANDLES,
+  SWITCH_DEFAULT_HANDLE,
+} from './types';
 
 describe('condition branch handles', () => {
   it('match what the SDK itself would mint for these inner ids', () => {
@@ -60,5 +66,37 @@ describe('action branch handles', () => {
     // rewrite becomes redundant rather than wrong.
     expect(ACTION_BRANCH_HANDLES.error).not.toBe(RUNNER_ERROR_PORT);
     expect(getHandleId({ handleType: 'source', innerId: 'error' })).not.toBe(RUNNER_ERROR_PORT);
+  });
+});
+
+describe('SWITCH_CASE_HANDLES / SWITCH_DEFAULT_HANDLE', () => {
+  it('each literal is exactly what the SDK mints for that innerId', () => {
+    // The same pin as the condition's, for the same failure: the handler returns
+    // one of these strings and `isEdgeLive` compares it to the edge's
+    // sourceHandle with `===`. A change to the SDK's format must fail HERE, not
+    // by routing every switch into a dead end on a live guest.
+    SWITCH_CASE_HANDLES.forEach((handle, i) => {
+      expect(getHandleId({ handleType: 'source', innerId: `case${i + 1}` })).toBe(handle);
+    });
+    expect(getHandleId({ handleType: 'source', innerId: 'default' })).toBe(
+      SWITCH_DEFAULT_HANDLE,
+    );
+  });
+
+  it('no switch handle is the bare "source"', () => {
+    // A bare 'source' is what an un-branched node emits; a port equal to it would
+    // make every branch fire instead of one.
+    for (const handle of [...SWITCH_CASE_HANDLES, SWITCH_DEFAULT_HANDLE]) {
+      expect(handle).not.toBe('source');
+    }
+  });
+
+  it('every switch port is distinct — a duplicate would fire two branches', () => {
+    const all = [...SWITCH_CASE_HANDLES, SWITCH_DEFAULT_HANDLE];
+    expect(new Set(all).size).toBe(all.length);
+  });
+
+  it('the default port is not one of the cases', () => {
+    expect(SWITCH_CASE_HANDLES).not.toContain(SWITCH_DEFAULT_HANDLE);
   });
 });

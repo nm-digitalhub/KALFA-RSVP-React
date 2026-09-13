@@ -37,6 +37,8 @@ import {
   ACTION_BRANCH_HANDLES,
   ERROR_POLICIES,
   NODE_STATUSES,
+  SWITCH_CASE_HANDLES,
+  SWITCH_DEFAULT_HANDLE,
   UNARY_CONDITION_OPERATORS,
   type ConditionField,
   type ConditionOperator,
@@ -257,6 +259,124 @@ const conditionUiSchema: UISchema = {
       },
     },
     statusControl(conditionScope('properties.status')),
+  ],
+};
+
+// ---------------------------------------------------------------------------
+// action.webhook
+// ---------------------------------------------------------------------------
+
+const webhookSchema = {
+  type: 'object',
+  required: ['label', 'description', 'url'],
+  properties: {
+    ...sharedProperties,
+    ...statusProperty,
+    errorPolicy: { type: 'string', options: Object.values(errorPolicyOptions) },
+    url: { type: 'string' },
+    body: { type: 'string' },
+    decisionBranches: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          id: { type: 'string' },
+          sourceHandle: { type: 'string' },
+          label: { type: 'string' },
+        },
+      },
+    },
+  },
+} satisfies NodeSchema;
+
+const webhookScope = getScope<typeof webhookSchema>;
+
+const webhookUiSchema: UISchema = {
+  type: 'VerticalLayout',
+  elements: [
+    { type: 'Text', scope: webhookScope('properties.label'), label: 'שם הצעד' },
+    {
+      // Plain Text, not VariableText: the DESTINATION must not be assembled from
+      // guest data. A URL built at run time is a URL nobody reviewed, and the
+      // https/private-space check would then be passing judgement on a string
+      // that did not exist when the owner saved the diagram.
+      type: 'Text',
+      scope: webhookScope('properties.url'),
+      label: 'כתובת היעד (https בלבד)',
+      placeholder: 'https://example.com/hooks/kalfa',
+    },
+    {
+      type: 'VariableText',
+      scope: webhookScope('properties.body'),
+      label: 'גוף הבקשה',
+      placeholder: '{"name":"{{trigger.guest_name}}","text":"{{trigger.message_text}}"}',
+    },
+    {
+      type: 'Select',
+      scope: webhookScope('properties.errorPolicy'),
+      label: 'אם הצעד נכשל',
+    },
+    {
+      // Same warning the other action nodes carry: 'continue' does not retry and
+      // does not recover. The external system simply never heard from us, and
+      // only the run's own verdict changes.
+      type: 'Label',
+      text: 'המשך ללא עצירה: הפנייה לא תישלח שוב, והמערכת החיצונית פשוט לא תקבל אותה.',
+    },
+    statusControl(webhookScope('properties.status')),
+  ],
+};
+
+// ---------------------------------------------------------------------------
+// logic.switch
+// ---------------------------------------------------------------------------
+
+const switchSchema = {
+  type: 'object',
+  required: ['label', 'description', 'left'],
+  properties: {
+    ...sharedProperties,
+    ...statusProperty,
+    left: { type: 'string' },
+    case1: { type: 'string' },
+    case2: { type: 'string' },
+    case3: { type: 'string' },
+    // Same shape and same reason as the condition's: the SDK's decision renderer
+    // reads this array and draws one labelled handle per entry. Four entries, not
+    // a variable list, and NOT exposed in the uischema below — the worker names
+    // these ports from `SWITCH_CASE_HANDLES` without reading the diagram, so an
+    // owner renaming a handle in the panel would route to nowhere with nothing to
+    // say about why.
+    decisionBranches: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          id: { type: 'string' },
+          sourceHandle: { type: 'string' },
+          label: { type: 'string' },
+        },
+      },
+    },
+  },
+} satisfies NodeSchema;
+
+const switchScope = getScope<typeof switchSchema>;
+
+const switchUiSchema: UISchema = {
+  type: 'VerticalLayout',
+  elements: [
+    { type: 'Text', scope: switchScope('properties.label'), label: 'שם הצעד' },
+    {
+      type: 'VariableText',
+      scope: switchScope('properties.left'),
+      label: 'הערך לניתוב',
+      placeholder: "למשל {{trigger.button_payload}}",
+    },
+    { type: 'VariableText', scope: switchScope('properties.case1'), label: 'מסלול 1 — כאשר הערך הוא' },
+    { type: 'VariableText', scope: switchScope('properties.case2'), label: 'מסלול 2 — כאשר הערך הוא' },
+    { type: 'VariableText', scope: switchScope('properties.case3'), label: 'מסלול 3 — כאשר הערך הוא' },
+    statusControl(switchScope('properties.status')),
   ],
 };
 
@@ -625,6 +745,44 @@ export const PALETTE_ITEMS: PaletteItem[] = [
     },
   },
   {
+    type: 'logic.switch' satisfies KalfaNodeType,
+    label: 'ניתוב לפי ערך',
+    description: 'מפצל את התהליך לשלושה מסלולים ועוד ברירת מחדל',
+    icon: 'ArrowsSplit',
+    // Same renderer as the condition, for the same reason: this is the only way
+    // the editor produces an edge whose `sourceHandle` is anything but the bare
+    // 'source'. Four branches instead of two.
+    templateType: NodeType.DecisionNode,
+    schema: switchSchema,
+    uischema: switchUiSchema,
+    outputSchema: {
+      type: 'default',
+      properties: {
+        matched: { type: 'boolean', label: 'נמצאה התאמה', description: 'האם הערך תאם אחד המסלולים' },
+        case: { type: 'number', label: 'מספר המסלול', description: 'ריק כאשר נבחרה ברירת המחדל' },
+        value: { type: 'string', label: 'הערך שנבדק' },
+      },
+    },
+    defaultPropertiesData: {
+      status: nodeStatusOptions.active.value,
+      label: 'ניתוב לפי ערך',
+      description: 'מפצל את התהליך לשלושה מסלולים ועוד ברירת מחדל',
+      left: '',
+      case1: '',
+      case2: '',
+      case3: '',
+      // Seeded and fixed, exactly like the condition's. `id` is React's list key;
+      // the labels are what the owner reads beside each handle. The DEFAULT branch
+      // is last so it reads as the fall-through it is.
+      decisionBranches: [
+        { id: 'case1', sourceHandle: SWITCH_CASE_HANDLES[0], label: 'מסלול 1' },
+        { id: 'case2', sourceHandle: SWITCH_CASE_HANDLES[1], label: 'מסלול 2' },
+        { id: 'case3', sourceHandle: SWITCH_CASE_HANDLES[2], label: 'מסלול 3' },
+        { id: 'default', sourceHandle: SWITCH_DEFAULT_HANDLE, label: 'אחרת' },
+      ],
+    },
+  },
+  {
     type: 'action.update_guest_status' satisfies KalfaNodeType,
     // Rendered as a decision node so the failure branch has a handle to leave
     // from. Without it `errorPolicy: 'errorRoute'` names a port no edge carries,
@@ -729,6 +887,34 @@ export const PALETTE_ITEMS: PaletteItem[] = [
       detail: '',
       level: notifyLevelOptions.warn.value,
       errorPolicy: errorPolicyOptions.continue.value,
+    },
+  },
+  {
+    type: 'action.webhook' satisfies KalfaNodeType,
+    // Decision node so the failure branch has a handle to leave from — the same
+    // reason every other action node uses this renderer.
+    templateType: NodeType.DecisionNode,
+    label: 'שליחת Webhook',
+    description: 'שולח POST למערכת חיצונית',
+    icon: 'ShareNetwork',
+    schema: webhookSchema,
+    uischema: webhookUiSchema,
+    outputSchema: {
+      type: 'default',
+      properties: {
+        ok: { type: 'boolean', label: 'הצליח', description: 'האם התקבלה תשובת 2xx' },
+        status: { type: 'number', label: 'קוד התגובה' },
+        reason: { type: 'string', label: 'סיבת הכישלון' },
+      },
+    },
+    defaultPropertiesData: {
+      decisionBranches: actionBranches.map((branch) => ({ ...branch })),
+      status: nodeStatusOptions.active.value,
+      label: 'שליחת Webhook',
+      description: 'שולח POST למערכת חיצונית',
+      url: '',
+      body: '',
+      errorPolicy: errorPolicyOptions.fail.value,
     },
   },
   {

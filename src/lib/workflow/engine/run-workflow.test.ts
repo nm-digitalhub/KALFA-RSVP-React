@@ -119,6 +119,7 @@ function deps(guestCount = 1): WorkflowEngineDeps & {
     guests: guests.port,
     runs: runs.port,
     alerts: alerts.port,
+    webhook: { post: async () => ({ ok: true, status: 200 }) },
     _ledger: ledger,
     _guests: guests,
     _runs: runs,

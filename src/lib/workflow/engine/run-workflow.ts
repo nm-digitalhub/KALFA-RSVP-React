@@ -68,6 +68,7 @@ export async function runWorkflow(args: RunWorkflowArgs): Promise<RunWorkflowOut
     ledger: deps.ledger,
     guests: deps.guests,
     alerts: deps.alerts,
+    webhook: deps.webhook,
   });
 
   // The runner's own event stream, appended to the execution log when one is

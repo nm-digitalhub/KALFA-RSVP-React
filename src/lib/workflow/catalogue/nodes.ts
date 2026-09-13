@@ -11,10 +11,12 @@ import { NODE_TYPES, type CatalogueEntry, type KalfaNodeType } from './types';
 export const CATALOGUE: readonly CatalogueEntry[] = [
   { type: 'trigger.whatsapp_inbound', isTrigger: true },
   { type: 'logic.condition', isTrigger: false },
+  { type: 'logic.switch', isTrigger: false },
   { type: 'action.update_guest_status', isTrigger: false },
   { type: 'action.send_whatsapp', isTrigger: false },
   { type: 'action.start_rsvp_ai_callback', isTrigger: false },
   { type: 'action.notify_team', isTrigger: false },
+  { type: 'action.webhook', isTrigger: false },
   { type: 'logic.set_value', isTrigger: false },
 ];
 

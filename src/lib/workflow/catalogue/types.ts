@@ -22,10 +22,12 @@ import type { RsvpStatus } from '@/lib/constants';
 export const NODE_TYPES = [
   'trigger.whatsapp_inbound',
   'logic.condition',
+  'logic.switch',
   'action.update_guest_status',
   'action.send_whatsapp',
   'action.start_rsvp_ai_callback',
   'action.notify_team',
+  'action.webhook',
   'logic.set_value',
 ] as const;
 
@@ -132,6 +134,63 @@ export type ConditionConfig = {
   // Unused by the unary operators. Kept optional rather than a union so the
   // property form can show one shape and hide the field with a JSONForms rule.
   value?: string;
+};
+
+// ---------------------------------------------------------------------------
+// logic.switch
+// ---------------------------------------------------------------------------
+
+/**
+ * The four outgoing ports of a switch, as HANDLE IDS.
+ *
+ * Same contract and the same hazard as `CONDITION_BRANCH_HANDLES`: the string a
+ * handler returns must equal, character for character, the id the editor wrote
+ * on the handle the owner dragged from — `isEdgeLive` compares with `===` and
+ * nothing else. `branch-handles.test.ts` pins each literal against the SDK's own
+ * `getHandleId`, so a change to the SDK's format fails a test instead of
+ * silently routing every switch into a dead end.
+ *
+ * THREE CASES, NOT N. The SDK can render a variable number of branches, and the
+ * owner could in principle add them from the properties panel — but the WORKER
+ * would then have to discover the port list from the diagram, and a handle the
+ * owner renamed would route nowhere with nothing to say about why. Three plus a
+ * default is what a fixed, worker-known set buys, and it is the shape most
+ * routing actually has: two or three known answers and "anything else".
+ *
+ * The default branch is what a condition node cannot express. `logic.condition`
+ * names one of two ports and both are "the test", so an unmatched value still
+ * has to be modelled as false; here "none of the above" is its own route.
+ */
+export const SWITCH_CASE_HANDLES = [
+  'source:inner:case1',
+  'source:inner:case2',
+  'source:inner:case3',
+] as const;
+
+export const SWITCH_DEFAULT_HANDLE = 'source:inner:default';
+
+/** How many `caseN` fields the form offers. Ties the config, the schema and the handler together. */
+export const SWITCH_CASE_COUNT = SWITCH_CASE_HANDLES.length;
+
+/**
+ * Route one value to one of three named cases, or to the default.
+ *
+ * `left` is a free expression for the same reason `ConditionConfig.left` is:
+ * every field passes through `resolveConfigTemplates` before the handler sees
+ * it, so it can name `{{trigger.button_payload}}`, `{{nodes.<id>.value}}` or any
+ * mixture. The `caseN` values are free too — routing on one node's output
+ * against another's is the point.
+ *
+ * An EMPTY caseN is an unused branch, not a match against the empty string. A
+ * switch with one case filled in is a legal, if plain, two-way router; without
+ * that rule, three empty fields would make every empty value match case 1 and
+ * the default would be unreachable.
+ */
+export type SwitchConfig = {
+  left: string;
+  case1?: string;
+  case2?: string;
+  case3?: string;
 };
 
 // Per-STEP on/off, distinct from the workflow-level `is_active` switch.
@@ -260,6 +319,37 @@ export type NotifyTeamConfig = {
   level: NotifyLevel;
 };
 
+/**
+ * POST to a system that is not ours.
+ *
+ * The first action whose effect leaves KALFA entirely. Two fields and no more:
+ * a destination and a body.
+ *
+ * NO HEADERS FIELD, and that is a decision rather than an omission. A headers
+ * map is how an API key gets typed into a diagram — and the diagram is a jsonb
+ * column that the editor loads into a browser, the dry run prints, and the run
+ * log echoes. A secret belongs in app_settings behind the masked-field
+ * convention, not in a node an owner can screenshot. When a webhook needs
+ * authentication, the honest shapes are a signed payload or a secret path
+ * segment in the URL, both of which this supports today; a proper credential
+ * store for this node is its own piece of work.
+ *
+ * NO METHOD FIELD either. POST is what a webhook is. GET with a body is
+ * meaningless, and offering DELETE or PUT would make this an HTTP client rather
+ * than a notification — a much larger surface to secure for a case nobody has
+ * asked for.
+ *
+ * `body` is free text and template-resolved like every other field, so it can
+ * carry `{{trigger.guest_name}}` or `{{nodes.<id>.value}}`. It is sent with
+ * `Content-Type: application/json`, so an owner writing JSON gets JSON; the node
+ * does not parse or validate it, because a body the receiver accepts is between
+ * them and the receiver.
+ */
+export type WebhookConfig = {
+  url: string;
+  body: string;
+};
+
 // Compute a value and hand it to later steps.
 //
 // This node does no I/O at all, and that is exactly why it is worth having.
@@ -281,10 +371,12 @@ export type SetValueConfig = {
 export type KalfaNodeConfig =
   | { type: 'trigger.whatsapp_inbound'; config: WhatsappInboundConfig }
   | { type: 'logic.condition'; config: ConditionConfig }
+  | { type: 'logic.switch'; config: SwitchConfig }
   | { type: 'action.update_guest_status'; config: UpdateGuestStatusConfig }
   | { type: 'action.send_whatsapp'; config: SendWhatsappConfig }
   | { type: 'action.start_rsvp_ai_callback'; config: StartRsvpAiCallbackConfig }
   | { type: 'action.notify_team'; config: NotifyTeamConfig }
+  | { type: 'action.webhook'; config: WebhookConfig }
   | { type: 'logic.set_value'; config: SetValueConfig };
 
 // ---------------------------------------------------------------------------

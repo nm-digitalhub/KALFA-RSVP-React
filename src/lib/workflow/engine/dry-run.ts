@@ -20,6 +20,7 @@ import type {
   StepLedgerPort,
   RunStorePort,
   TeamAlertsPort,
+  OutboundWebhookPort,
 } from './ports';
 import { runWorkflow, type RunWorkflowOutcome } from './run-workflow';
 
@@ -68,7 +69,7 @@ export type DryRunStep = {
  * a deliberate edit to this line, not something a new handler can do quietly.
  */
 export type DryRunEffect = {
-  kind: 'submit_rsvp' | 'send_whatsapp' | 'notify_team' | 'start_rsvp_ai_callback';
+  kind: 'submit_rsvp' | 'send_whatsapp' | 'notify_team' | 'start_rsvp_ai_callback' | 'webhook';
   description: string;
 };
 
@@ -203,8 +204,25 @@ function createRecordingPorts(scenario: DryRunScenario) {
     },
   };
 
+  const webhook: OutboundWebhookPort = {
+    async post({ url, idempotencyKey }) {
+      // NO REQUEST IS MADE. This is the whole reason the outgoing call is a port:
+      // with a `fetch` in the handler, pressing "test" would POST a guest's
+      // details to a third party from a control whose entire promise is that it
+      // has no outward effect.
+      effects.push({
+        kind: 'webhook',
+        description: `היה שולח POST אל ${url} (מפתח ייחודיות ${idempotencyKey})`,
+      });
+      // 200, because a dry run reports what the graph WOULD do. Modelling a
+      // failure here would send an owner testing a diagram down the error branch
+      // for a reason that belongs to someone else's server on a different day.
+      return { ok: true, status: 200 };
+    },
+  };
+
   return {
-    deps: { ledger, runs, guests, alerts },
+    deps: { ledger, runs, guests, alerts, webhook },
     steps,
     effects,
     getStatus: () => status,
