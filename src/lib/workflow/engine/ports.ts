@@ -8,7 +8,7 @@
 // implementations; the tests wire fakes and assert on what was called.
 import type { RsvpStatus } from '@/lib/constants';
 
-import type { NotifyLevel } from '../catalogue/types';
+import type { GuestField, NotifyLevel } from '../catalogue/types';
 
 // ---------------------------------------------------------------------------
 // The execution ledger
@@ -199,6 +199,48 @@ export interface GuestActionsPort {
     guestId: string,
     status: RsvpStatus,
   ): Promise<void>;
+
+  /**
+   * Write ONE field on the guest behind this run's contact.
+   *
+   * Naturally idempotent — the same value into the same column twice is the same
+   * row — which is what makes it a legal action node under the lease rule at the
+   * top of this file.
+   *
+   * `ok: false` with a reason is an ORDINARY answer, not a throw: the commonest
+   * one is the shared-phone case below, where nothing went wrong and there was
+   * simply nothing unambiguous to do.
+   *
+   * ריבוי-אורחים: a phone may back several guests, and "whose meal preference?"
+   * has no answer. The implementation refuses rather than guessing — the same
+   * rule `action.update_guest_status` and the inbound webhook already follow.
+   */
+  setGuestField?(input: {
+    eventId: string;
+    contactId: string;
+    field: GuestField;
+    value: string;
+  }): Promise<{ ok: boolean; guestId?: string; reason?: string }>;
+
+  /**
+   * Put this guest in a human's callback queue.
+   *
+   * ⚠️ NOT IDEMPOTENT ON ITS OWN — a second row is a second phone call to a real
+   * person, so the implementation MUST dedupe on an open request for the same
+   * phone inside a window. That is the same guard `console-calls.ts` applies to
+   * missed inbound calls, and it is the reason this is a port method rather than
+   * an insert a handler could write itself.
+   *
+   * `created: false` is a success: it means an open request already covers this
+   * guest. Reporting it as a failure would send a workflow down its error branch
+   * for the system behaving correctly.
+   */
+  createCallbackRequest?(input: {
+    eventId: string;
+    contactId: string;
+    topic: string;
+    note: string;
+  }): Promise<{ ok: boolean; created: boolean; reason?: string }>;
 
   /**
    * Reply to the guest who started this run, over WhatsApp.

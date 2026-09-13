@@ -38,6 +38,7 @@ import {
   ERROR_POLICIES,
   NODE_STATUSES,
   SWITCH_CASE_HANDLES,
+  type GuestField,
   SWITCH_DEFAULT_HANDLE,
   UNARY_CONDITION_OPERATORS,
   type ConditionField,
@@ -306,6 +307,106 @@ const conditionUiSchema: UISchema = {
       },
     },
     statusControl(conditionScope('properties.status')),
+  ],
+};
+
+// ---------------------------------------------------------------------------
+// action.set_guest_field
+// ---------------------------------------------------------------------------
+
+const guestFieldOptions = {
+  meal_pref: { value: 'meal_pref' satisfies GuestField, label: 'העדפת מנה' },
+  // The two note fields are NOT interchangeable and the labels have to say so:
+  // `rsvp_note` is the guest's own note and the public RSVP page renders it;
+  // `note` is the owner's private annotation and the guest never sees it.
+  rsvp_note: { value: 'rsvp_note' satisfies GuestField, label: 'הערת האורח (האורח רואה)' },
+  note: { value: 'note' satisfies GuestField, label: 'הערה פנימית (האורח לא רואה)' },
+} as const;
+
+const setGuestFieldSchema = {
+  type: 'object',
+  required: ['label', 'description', 'field'],
+  properties: {
+    ...sharedProperties,
+    ...statusProperty,
+    errorPolicy: { type: 'string', options: Object.values(errorPolicyOptions) },
+    field: { type: 'string', options: Object.values(guestFieldOptions) },
+    value: { type: 'string' },
+    decisionBranches: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: { id: { type: 'string' }, sourceHandle: { type: 'string' }, label: { type: 'string' } },
+      },
+    },
+  },
+} satisfies NodeSchema;
+
+const setGuestFieldScope = getScope<typeof setGuestFieldSchema>;
+
+const setGuestFieldUiSchema: UISchema = {
+  type: 'VerticalLayout',
+  elements: [
+    { type: 'Text', scope: setGuestFieldScope('properties.label'), label: 'שם הצעד' },
+    { type: 'Select', scope: setGuestFieldScope('properties.field'), label: 'השדה לעדכון' },
+    {
+      type: 'VariableText',
+      scope: setGuestFieldScope('properties.value'),
+      label: 'הערך',
+      placeholder: 'למשל {{trigger.message_text}}',
+    },
+    {
+      type: 'Label',
+      text: 'ריק מוחק את הערך הקיים. לא ניתן לשנות מכאן סטטוס או מספר מוזמנים — לאלה יש צעד משלהם.',
+    },
+    { type: 'Select', scope: setGuestFieldScope('properties.errorPolicy'), label: 'אם הצעד נכשל' },
+    statusControl(setGuestFieldScope('properties.status')),
+  ],
+};
+
+// ---------------------------------------------------------------------------
+// action.create_callback_request
+// ---------------------------------------------------------------------------
+
+const callbackRequestSchema = {
+  type: 'object',
+  required: ['label', 'description', 'topic'],
+  properties: {
+    ...sharedProperties,
+    ...statusProperty,
+    errorPolicy: { type: 'string', options: Object.values(errorPolicyOptions) },
+    topic: { type: 'string' },
+    note: { type: 'string' },
+    decisionBranches: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: { id: { type: 'string' }, sourceHandle: { type: 'string' }, label: { type: 'string' } },
+      },
+    },
+  },
+} satisfies NodeSchema;
+
+const callbackRequestScope = getScope<typeof callbackRequestSchema>;
+
+const callbackRequestUiSchema: UISchema = {
+  type: 'VerticalLayout',
+  elements: [
+    { type: 'Text', scope: callbackRequestScope('properties.label'), label: 'שם הצעד' },
+    { type: 'Text', scope: callbackRequestScope('properties.topic'), label: 'נושא הפנייה' },
+    {
+      type: 'VariableText',
+      scope: callbackRequestScope('properties.note'),
+      label: 'הערה למי שיחזור לאורח',
+      placeholder: '{{trigger.guest_name}} כתב: {{trigger.message_text}}',
+    },
+    {
+      // The dedupe is behaviour an owner should not discover from a support call.
+      type: 'Label',
+      text: 'אם כבר פתוחה בקשת חזרה לאותו מספר בשעתיים האחרונות — לא תיווצר בקשה נוספת.',
+    },
+    { type: 'Select', scope: callbackRequestScope('properties.errorPolicy'), label: 'אם הצעד נכשל' },
+    statusControl(callbackRequestScope('properties.status')),
   ],
 };
 
@@ -964,6 +1065,57 @@ export const PALETTE_ITEMS: PaletteItem[] = [
       detail: '',
       level: notifyLevelOptions.warn.value,
       errorPolicy: errorPolicyOptions.continue.value,
+    },
+  },
+  {
+    type: 'action.set_guest_field' satisfies KalfaNodeType,
+    templateType: NodeType.DecisionNode,
+    label: 'עדכון שדה אורח',
+    description: 'כותב ערך לשדה אחד של האורח ששלח את ההודעה',
+    icon: 'NotePencil',
+    schema: setGuestFieldSchema,
+    uischema: setGuestFieldUiSchema,
+    outputSchema: {
+      type: 'default',
+      properties: {
+        updated: { type: 'boolean', label: 'עודכן', description: 'ריק כאשר למספר יותר מאורח אחד' },
+        field: { type: 'string', label: 'השדה שעודכן' },
+        guestId: { type: 'string', label: 'מזהה האורח' },
+      },
+    },
+    defaultPropertiesData: {
+      decisionBranches: actionBranches.map((branch) => ({ ...branch })),
+      status: nodeStatusOptions.active.value,
+      label: 'עדכון שדה אורח',
+      description: 'כותב ערך לשדה אחד של האורח ששלח את ההודעה',
+      field: guestFieldOptions.meal_pref.value,
+      value: '',
+      errorPolicy: errorPolicyOptions.fail.value,
+    },
+  },
+  {
+    type: 'action.create_callback_request' satisfies KalfaNodeType,
+    templateType: NodeType.DecisionNode,
+    label: 'בקשת חזרה לאורח',
+    description: 'מוסיף את האורח לתור שיחות החזרה של הצוות',
+    icon: 'PhoneCall',
+    schema: callbackRequestSchema,
+    uischema: callbackRequestUiSchema,
+    outputSchema: {
+      type: 'default',
+      properties: {
+        created: { type: 'boolean', label: 'נוצרה בקשה', description: 'ריק כאשר כבר קיימת בקשה פתוחה' },
+        reason: { type: 'string', label: 'סיבה' },
+      },
+    },
+    defaultPropertiesData: {
+      decisionBranches: actionBranches.map((branch) => ({ ...branch })),
+      status: nodeStatusOptions.active.value,
+      label: 'בקשת חזרה לאורח',
+      description: 'מוסיף את האורח לתור שיחות החזרה של הצוות',
+      topic: 'פנייה מתהליך אוטומטי',
+      note: '',
+      errorPolicy: errorPolicyOptions.fail.value,
     },
   },
   {

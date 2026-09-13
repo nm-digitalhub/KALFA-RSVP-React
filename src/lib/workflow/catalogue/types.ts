@@ -28,6 +28,8 @@ export const NODE_TYPES = [
   'action.start_rsvp_ai_callback',
   'action.notify_team',
   'action.webhook',
+  'action.set_guest_field',
+  'action.create_callback_request',
   'logic.set_value',
 ] as const;
 
@@ -371,6 +373,72 @@ export type WebhookConfig = {
   body: string;
 };
 
+// ---------------------------------------------------------------------------
+// action.set_guest_field
+// ---------------------------------------------------------------------------
+
+/**
+ * The guest fields a workflow may write, and the three that are deliberately absent.
+ *
+ * NOT `status` — `action.update_guest_status` owns it, and it goes through the
+ * atomic `submit_rsvp` gate rather than a column write, so no RSVP rule is ever
+ * reimplemented in a step.
+ *
+ * NOT the headcount columns (`expected_count`, `confirmed_adults`,
+ * `confirmed_kids`, `confirmed_headcount`). They are derived together by the same
+ * RPC; writing one of them directly produces a row whose numbers disagree with
+ * each other, and nothing downstream would notice.
+ *
+ * NOT `phone` or `full_name` — identity. A workflow that could rewrite the phone
+ * could silently redirect every future send for that guest.
+ *
+ * ⚠️ `note` AND `rsvp_note` ARE DIFFERENT FIELDS AND THE DIFFERENCE IS A PRIVACY
+ * ONE. `guests.note` is the OWNER's internal annotation and is never shown to the
+ * guest; `rsvp_note` is what the guest themself wrote, and the public RSVP page
+ * renders it. Writing a guest's words into `note` hides them from the guest's own
+ * view; writing an internal remark into `rsvp_note` shows the owner's private note
+ * to the guest. Both labels below say which is which.
+ */
+export const GUEST_FIELDS = ['meal_pref', 'rsvp_note', 'note'] as const;
+export type GuestField = (typeof GUEST_FIELDS)[number];
+
+/**
+ * Set one guest field on the contact that started this run.
+ *
+ * IDEMPOTENT BY CONSTRUCTION, which is what makes it a legal action node at all:
+ * `StepClaim`'s lease can replay a step whose side effect completed, and writing
+ * the same value to the same column twice is the same row. See ports.ts.
+ */
+export type SetGuestFieldConfig = {
+  field: GuestField;
+  /** Free text, template-resolved — so it can carry `{{trigger.message.text}}`. */
+  value: string;
+};
+
+// ---------------------------------------------------------------------------
+// action.create_callback_request
+// ---------------------------------------------------------------------------
+
+/**
+ * Ask a human to call this guest back.
+ *
+ * The escape hatch every automation needs: a workflow that cannot answer a guest
+ * should put them in front of a person rather than guess. `action.notify_team`
+ * tells the team something happened; this one creates a row in the queue they
+ * actually work from, with the guest's name and number already on it.
+ *
+ * ⚠️ NOT IDEMPOTENT ON ITS OWN — a second row is a second phone call to a real
+ * person. The implementation therefore dedupes on an OPEN request for the same
+ * phone inside a window, the same rule `console-calls.ts` already applies to
+ * missed inbound calls. Without it, a guest who writes twice gets called twice.
+ */
+export type CreateCallbackRequestConfig = {
+  /** What the callback is about — shown to whoever picks it up. */
+  topic: string;
+  /** Free text, template-resolved. */
+  note: string;
+};
+
 // Compute a value and hand it to later steps.
 //
 // This node does no I/O at all, and that is exactly why it is worth having.
@@ -398,6 +466,8 @@ export type KalfaNodeConfig =
   | { type: 'action.start_rsvp_ai_callback'; config: StartRsvpAiCallbackConfig }
   | { type: 'action.notify_team'; config: NotifyTeamConfig }
   | { type: 'action.webhook'; config: WebhookConfig }
+  | { type: 'action.set_guest_field'; config: SetGuestFieldConfig }
+  | { type: 'action.create_callback_request'; config: CreateCallbackRequestConfig }
   | { type: 'logic.set_value'; config: SetValueConfig };
 
 // ---------------------------------------------------------------------------

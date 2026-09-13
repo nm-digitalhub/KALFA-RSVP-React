@@ -12,6 +12,7 @@ import {
   CONDITION_BRANCH_HANDLES,
   CONDITION_FIELDS,
   CONDITION_OPERATORS,
+  GUEST_FIELDS,
   NOTIFY_LEVELS,
   SWITCH_CASE_COUNT,
   SWITCH_CASE_HANDLES,
@@ -559,6 +560,98 @@ const webhook: StepHandler = async (config, ctx) => {
 };
 
 // ---------------------------------------------------------------------------
+// action.set_guest_field
+// ---------------------------------------------------------------------------
+
+// Write ONE field on the guest behind this run's contact.
+//
+// The narrowest possible write, and that is the design: `GUEST_FIELDS` names the
+// three columns a workflow may touch, and status and the headcount are not among
+// them — they belong to `submit_rsvp`, which keeps their numbers consistent with
+// each other.
+//
+// ריבוי-אורחים: a phone may back several guests, and "whose meal preference?" has
+// no answer. Reported as a COMPLETED step with `skipped: true`, not a failure —
+// the same shape `action.update_guest_status` uses, because nothing went wrong
+// and there was simply nothing unambiguous to do.
+const setGuestField: StepHandler = async (config, ctx) => {
+  const field = readEnum(config, 'field', GUEST_FIELDS, 'action.set_guest_field');
+  // Already resolved: `resolveConfigTemplates` walked the config first, so this
+  // can legitimately be the guest's own words via `{{trigger.message_text}}`.
+  const value = readString(config, 'value');
+
+  const write = ctx.deps.guests.setGuestField;
+  if (!write) {
+    // A port that predates the node. Fail CLOSED and loudly rather than
+    // reporting a write that never happened as success.
+    throw new PermanentNodeExecutionError(
+      'unsupported',
+      'עדכון שדה אורח אינו זמין בהרצה הזו.',
+    );
+  }
+
+  const result = await write({
+    eventId: ctx.trigger.eventId,
+    contactId: ctx.trigger.contactId,
+    field,
+    value,
+  });
+
+  return result.ok
+    ? { output: { updated: true, field, guestId: result.guestId ?? null } }
+    : {
+        output: { updated: false, skipped: true, field, reason: result.reason ?? null },
+      };
+};
+
+// ---------------------------------------------------------------------------
+// action.create_callback_request
+// ---------------------------------------------------------------------------
+
+// Put the guest in front of a person.
+//
+// The escape hatch every automation owes: a workflow that cannot answer should
+// hand over rather than guess. Unlike `action.notify_team`, which tells the team
+// something happened, this creates a row in the queue they work from — with the
+// name and number already on it.
+//
+// `created: false` is a SUCCESS, not the error branch. It means an open request
+// already covers this guest, and the dedupe that produced it is what stops a
+// guest who writes twice from being called twice. Routing that to the error
+// branch would send a workflow down a failure path for the system working.
+const createCallbackRequest: StepHandler = async (config, ctx) => {
+  const topic = readString(config, 'topic').trim();
+  const note = readString(config, 'note');
+
+  const create = ctx.deps.guests.createCallbackRequest;
+  if (!create) {
+    throw new PermanentNodeExecutionError(
+      'unsupported',
+      'יצירת בקשת חזרה אינה זמינה בהרצה הזו.',
+    );
+  }
+
+  const result = await create({
+    eventId: ctx.trigger.eventId,
+    contactId: ctx.trigger.contactId,
+    topic: topic === '' ? 'פנייה מתהליך אוטומטי' : topic,
+    note,
+  });
+
+  if (!result.ok) {
+    return {
+      output: { created: false, reason: result.reason ?? null },
+      nextPort: ACTION_BRANCH_HANDLES.error,
+    };
+  }
+  return {
+    output: result.created
+      ? { created: true }
+      : { created: false, skipped: true, reason: 'already_open' },
+  };
+};
+
+// ---------------------------------------------------------------------------
 // logic.set_value
 // ---------------------------------------------------------------------------
 
@@ -584,5 +677,7 @@ export const STEP_HANDLERS: Record<KalfaNodeType, StepHandler> = {
   'action.start_rsvp_ai_callback': startRsvpAiCallback,
   'action.notify_team': notifyTeam,
   'action.webhook': webhook,
+  'action.set_guest_field': setGuestField,
+  'action.create_callback_request': createCallbackRequest,
   'logic.set_value': setValue,
 };

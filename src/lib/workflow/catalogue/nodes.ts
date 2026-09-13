@@ -17,6 +17,8 @@ export const CATALOGUE: readonly CatalogueEntry[] = [
   { type: 'action.start_rsvp_ai_callback', isTrigger: false },
   { type: 'action.notify_team', isTrigger: false },
   { type: 'action.webhook', isTrigger: false },
+  { type: 'action.set_guest_field', isTrigger: false },
+  { type: 'action.create_callback_request', isTrigger: false },
   { type: 'logic.set_value', isTrigger: false },
 ];
 

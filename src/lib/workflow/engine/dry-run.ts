@@ -69,7 +69,7 @@ export type DryRunStep = {
  * a deliberate edit to this line, not something a new handler can do quietly.
  */
 export type DryRunEffect = {
-  kind: 'submit_rsvp' | 'send_whatsapp' | 'notify_team' | 'start_rsvp_ai_callback' | 'webhook';
+  kind: 'submit_rsvp' | 'send_whatsapp' | 'notify_team' | 'start_rsvp_ai_callback' | 'webhook' | 'set_guest_field' | 'callback_request';
   description: string;
 };
 
@@ -172,6 +172,27 @@ function createRecordingPorts(scenario: DryRunScenario) {
 
     async recordRsvpFromWhatsapp() {
       // The audit marker for a change that did not happen. Nothing to record.
+    },
+
+    async setGuestField({ field, value }) {
+      // Recorded, never written. The guest row is untouched by a test run.
+      effects.push({
+        kind: 'set_guest_field',
+        description: `היה מעדכן את השדה "${field}" של האורח ל-"${value}"`,
+      });
+      return { ok: true, guestId: 'dry-run-guest' };
+    },
+
+    async createCallbackRequest({ topic }) {
+      // Recorded, never inserted. A real row here would put a real phone call in
+      // a human's queue from a button that promises no outward effect.
+      effects.push({
+        kind: 'callback_request',
+        description: `היה יוצר בקשת חזרה בנושא "${topic}"`,
+      });
+      // `created: true`, because a dry run reports what the graph WOULD do.
+      // Modelling the dedupe would depend on live rows from a different day.
+      return { ok: true, created: true };
     },
 
     async sendWhatsAppReply(_contactId, body) {
