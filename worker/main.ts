@@ -53,7 +53,10 @@ import {
   markWebhookEventFailed,
 } from '@/lib/data/webhooks';
 import type { WebhookInboxRow } from '@/lib/data/webhooks';
-import { processWebhookEvent } from '@/lib/data/webhook-processing';
+import {
+  createWebhookBatchContext,
+  processWebhookEvent,
+} from '@/lib/data/webhook-processing';
 import { enqueueWorkflowRun, handleWorkflowRun } from '@/lib/workflow/enqueue';
 import { createRunsForInboundMessage } from '@/lib/workflow/inbound';
 import { runThankyouSweep } from '@/lib/data/auto-thankyou';
@@ -533,9 +536,14 @@ async function startWorkflowRuns(boss: PgBoss, row: WebhookInboxRow): Promise<vo
 // + recordReached gating make re-processing safe. Never log a payload.
 async function handleWebhook(boss: PgBoss): Promise<void> {
   const rows = await claimUnprocessedWebhookEvents(50);
+  // One context for the whole claimed batch: the inbound router's
+  // "which number holds whatsapp_import_sender" lookup is resolved once here
+  // instead of once per row (§1.5.2). It lives only for this drain, so removing
+  // the role assignment takes effect on the next tick without a restart.
+  const ctx = createWebhookBatchContext();
   for (const row of rows) {
     try {
-      await processWebhookEvent(row);
+      await processWebhookEvent(row, ctx);
       // Workflows are an ADDITIONAL consumer of the same inbound event, and a
       // deliberately subordinate one: they run only after the economic logic
       // above has succeeded, and they are wrapped so that a broken automation

@@ -1,25 +1,55 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('server-only', () => ({}));
 vi.mock('@/lib/supabase/admin', () => ({ createAdminClient: vi.fn() }));
-vi.mock('@/lib/data/outreach-config', () => ({ getWhatsAppConfig: vi.fn() }));
 vi.mock('@/lib/whatsapp/client', () => ({ sendWhatsAppText: vi.fn() }));
+// The media path goes through the SDK. These spies are what let the tests below
+// assert that the lookup is SCOPED to the number the message arrived at.
+const retrieveMedia = vi.fn();
+const fetchMedia = vi.fn();
+vi.mock('whatsapp-api-js', () => ({
+  WhatsAppAPI: vi.fn(function MockApi(this: Record<string, unknown>) {
+    this.retrieveMedia = retrieveMedia;
+    this.fetchMedia = fetchMedia;
+  }),
+}));
 vi.mock('@/lib/url', () => ({ getAppUrl: vi.fn(async (p: string) => `https://beta.kalfa.me${p}`) }));
 
 import { createAdminClient } from '@/lib/supabase/admin';
-import { getWhatsAppConfig } from '@/lib/data/outreach-config';
 import { sendWhatsAppText } from '@/lib/whatsapp/client';
 import { createMockSupabase } from '@/test/supabase-mock';
+import type { WhatsAppChannel } from '@/lib/data/outreach-config';
 import {
   buildAmbiguousEventReply,
+  buildImportPointerReply,
   buildSingleEventReply,
   contactsToStagedRows,
   eventImportLabel,
   parseCsvToStagedRows,
   resolveOwnerActiveEvents,
+  replyImportPointer,
   resolveReplyOrigin,
   stageWhatsAppImport,
 } from './whatsapp-import';
+
+// The channel as the router resolves it. LEGACY is how this ships: the
+// `whatsapp_import_sender` role is unassigned, so importPhoneNumberId is null
+// and the RSVP number both stages lists and answers them — today's behaviour.
+// SPLIT is the state after the owner assigns the role.
+const LEGACY: WhatsAppChannel = {
+  phoneNumberId: 'p1',
+  wabaId: null,
+  accessToken: 't',
+  appSecret: null,
+  verifyToken: null,
+  importPhoneNumberId: null,
+  importDisplayNumber: null,
+};
+const SPLIT: WhatsAppChannel = {
+  ...LEGACY,
+  importPhoneNumberId: 'imp-1',
+  importDisplayNumber: '+97233301505',
+};
 
 describe('contactsToStagedRows', () => {
   it('maps the REAL Cloud API contacts payload shape (name + first phone)', () => {
@@ -249,23 +279,20 @@ describe('resolveOwnerActiveEvents — per-org composite key (Phase 2 regression
       stagedWamids: ['wamid.already'],
       stagingInsert,
     });
-    vi.mocked(getWhatsAppConfig).mockResolvedValue({
-      phoneNumberId: 'p1',
-      wabaId: null,
-      accessToken: 't',
-      appSecret: null,
-      verifyToken: null,
-    });
     process.env.APP_ORIGIN = 'https://beta.kalfa.me';
 
-    const consumed = await stageWhatsAppImport({
-      payload: {
-        id: 'wamid.already',
-        type: 'contacts',
-        from: '972501234567',
-        contacts: [{ name: { formatted_name: 'Jane Doe' }, phones: [{ phone: '+972501234567' }] }],
-      } as never,
-    });
+    const consumed = await stageWhatsAppImport(
+      {
+        phone_number_id: 'p1',
+        payload: {
+          id: 'wamid.already',
+          type: 'contacts',
+          from: '972501234567',
+          contacts: [{ name: { formatted_name: 'Jane Doe' }, phones: [{ phone: '+972501234567' }] }],
+        } as never,
+      },
+      LEGACY,
+    );
 
     expect(consumed).toBe(true);
     expect(stagingInsert).not.toHaveBeenCalled();
@@ -282,23 +309,20 @@ describe('resolveOwnerActiveEvents — per-org composite key (Phase 2 regression
       stagedWamids: [],
       stagingInsert,
     });
-    vi.mocked(getWhatsAppConfig).mockResolvedValue({
-      phoneNumberId: 'p1',
-      wabaId: null,
-      accessToken: 't',
-      appSecret: null,
-      verifyToken: null,
-    });
     process.env.APP_ORIGIN = 'https://beta.kalfa.me';
 
-    await stageWhatsAppImport({
-      payload: {
-        id: 'wamid.fresh',
-        type: 'contacts',
-        from: '972501234567',
-        contacts: [{ name: { formatted_name: 'Jane Doe' }, phones: [{ phone: '+972501234567' }] }],
-      } as never,
-    });
+    await stageWhatsAppImport(
+      {
+        phone_number_id: 'p1',
+        payload: {
+          id: 'wamid.fresh',
+          type: 'contacts',
+          from: '972501234567',
+          contacts: [{ name: { formatted_name: 'Jane Doe' }, phones: [{ phone: '+972501234567' }] }],
+        } as never,
+      },
+      LEGACY,
+    );
 
     expect(stagingInsert).toHaveBeenCalledTimes(1);
     expect(stagingInsert.mock.calls[0][0]).toMatchObject({
@@ -341,7 +365,12 @@ describe('resolveReplyOrigin', () => {
 
 describe('stageWhatsAppImport', () => {
   it('ignores non-import message types without touching the DB', async () => {
-    expect(await stageWhatsAppImport({ payload: { type: 'text', from: '972501111111' } as never })).toBe(false);
+    expect(
+      await stageWhatsAppImport(
+        { phone_number_id: 'p1', payload: { type: 'text', from: '972501111111' } as never },
+        LEGACY,
+      ),
+    ).toBe(false);
   });
 
   it('ignores an import from an UNKNOWN sender (no matching owner profile)', async () => {
@@ -350,9 +379,298 @@ describe('stageWhatsAppImport', () => {
     vi.mocked(createAdminClient).mockReturnValue(
       client as unknown as ReturnType<typeof createAdminClient>,
     );
-    const res = await stageWhatsAppImport({
-      payload: { type: 'document', from: '972500000000', document: { id: 'm1', filename: 'x.csv' } } as never,
-    });
+    const res = await stageWhatsAppImport(
+      {
+        phone_number_id: 'p1',
+        payload: { type: 'document', from: '972500000000', document: { id: 'm1', filename: 'x.csv' } } as never,
+      },
+      LEGACY,
+    );
     expect(res).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The two-number split. These cover the two things the split has to guarantee:
+// the import module never stages a list that arrived somewhere else, and the
+// reply leaves from the number that received it.
+
+// One verified owner with exactly ONE active event and an empty staging table —
+// the minimum for a reply to be composed. A standalone double (the router
+// double above is scoped to its own describe).
+function wireOneOwner(stagingInsert = vi.fn(async () => ({ error: null }))) {
+  const from = vi.fn((table: string) => {
+    if (table === 'profiles') {
+      return {
+        select: vi.fn().mockReturnThis(),
+        not: vi.fn().mockReturnThis(),
+        then: (ok: (v: unknown) => unknown) =>
+          ok({ data: [{ id: 'user-1', phone: '0501234567' }], error: null }),
+      };
+    }
+    if (table === 'events') {
+      const state: { owned: boolean } = { owned: false };
+      const builder: Record<string, unknown> = {
+        select: vi.fn(() => builder),
+        eq: vi.fn((col: string) => {
+          if (col === 'owner_id') state.owned = true;
+          return builder;
+        }),
+        in: vi.fn(() => builder),
+        then: (ok: (v: unknown) => unknown) =>
+          ok({
+            data: state.owned
+              ? [{ id: 'evt-a', name: 'A', event_type: 'wedding', created_at: '2026-01-01T00:00:00Z' }]
+              : [],
+            error: null,
+          }),
+      };
+      return builder;
+    }
+    if (table === 'organization_members' || table === 'organization_role_permissions') {
+      return {
+        select: vi.fn().mockReturnThis(),
+        eq: vi.fn().mockReturnThis(),
+        in: vi.fn().mockReturnThis(),
+        then: (ok: (v: unknown) => unknown) => ok({ data: [], error: null }),
+      };
+    }
+    if (table === 'guest_import_staging') {
+      const builder: Record<string, unknown> = {
+        select: vi.fn(() => builder),
+        eq: vi.fn(() => builder),
+        maybeSingle: vi.fn(async () => ({ data: null, error: null })),
+        insert: stagingInsert,
+        then: (ok: (v: unknown) => unknown) => ok({ data: [], error: null }),
+      };
+      return builder;
+    }
+    throw new Error(`unexpected table in split test: ${table}`);
+  });
+  vi.mocked(createAdminClient).mockReturnValue(
+    { from, rpc: vi.fn() } as unknown as ReturnType<typeof createAdminClient>,
+  );
+  return stagingInsert;
+}
+
+beforeEach(() => vi.clearAllMocks());
+describe('buildImportPointerReply', () => {
+  it('names the import number and its wa.me link', () => {
+    const body = buildImportPointerReply('+97233301505');
+    expect(body).toContain('+97233301505');
+    expect(body).toContain('https://wa.me/97233301505');
+  });
+
+  it('null when no display number is known — nothing useful to say', () => {
+    expect(buildImportPointerReply(null)).toBeNull();
+  });
+
+  it('still names the number when it does not normalize, just without a link', () => {
+    const body = buildImportPointerReply('not-a-number');
+    expect(body).toContain('not-a-number');
+    expect(body).not.toContain('wa.me');
+  });
+});
+
+describe('stageWhatsAppImport — the self-guard under the split', () => {
+  it('refuses a list that arrived on ANY number other than the import number', async () => {
+    // No DB double is wired: reaching the database at all would fail this test,
+    // which is the point — the guard fires before resolveOwnerActiveEvents.
+    vi.mocked(createAdminClient).mockReturnValue(
+      undefined as unknown as ReturnType<typeof createAdminClient>,
+    );
+    const res = await stageWhatsAppImport(
+      {
+        phone_number_id: 'p1', // the RSVP number
+        payload: {
+          id: 'wamid.x',
+          type: 'contacts',
+          from: '972501234567',
+          contacts: [{ name: { formatted_name: 'Jane Doe' }, phones: [{ phone: '+972501234567' }] }],
+        } as never,
+      },
+      SPLIT,
+    );
+    expect(res).toBe(false);
+    expect(sendWhatsAppText).not.toHaveBeenCalled();
+  });
+
+  it('answers from the IMPORT number when the list arrived there', async () => {
+    wireOneOwner();
+    process.env.APP_ORIGIN = 'https://beta.kalfa.me';
+
+    await stageWhatsAppImport(
+      {
+        phone_number_id: 'imp-1',
+        payload: {
+          id: 'wamid.imp',
+          type: 'contacts',
+          from: '972501234567',
+          contacts: [{ name: { formatted_name: 'Jane Doe' }, phones: [{ phone: '+972501234567' }] }],
+        } as never,
+      },
+      SPLIT,
+    );
+
+    expect(sendWhatsAppText).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(sendWhatsAppText).mock.calls[0][0]).toMatchObject({
+      phoneNumberId: 'imp-1',
+      accessToken: 't',
+    });
+  });
+
+  it('legacy (role unassigned): the reply still leaves from the RSVP number', async () => {
+    wireOneOwner();
+    process.env.APP_ORIGIN = 'https://beta.kalfa.me';
+
+    await stageWhatsAppImport(
+      {
+        phone_number_id: 'p1',
+        payload: {
+          id: 'wamid.leg',
+          type: 'contacts',
+          from: '972501234567',
+          contacts: [{ name: { formatted_name: 'Jane Doe' }, phones: [{ phone: '+972501234567' }] }],
+        } as never,
+      },
+      LEGACY,
+    );
+
+    expect(vi.mocked(sendWhatsAppText).mock.calls[0][0]).toMatchObject({
+      phoneNumberId: 'p1',
+    });
+  });
+});
+
+describe('replyImportPointer — a list sent to the RSVP number under the split', () => {
+  it('points a VERIFIED owner at the import number, from the RSVP number, and stages nothing', async () => {
+    const stagingInsert = wireOneOwner();
+
+    const res = await replyImportPointer(
+      {
+        phone_number_id: 'p1',
+        payload: {
+          id: 'wamid.p',
+          type: 'document',
+          from: '972501234567',
+          document: { id: 'm1', filename: 'guests.csv' },
+        } as never,
+      },
+      SPLIT,
+    );
+
+    expect(res).toBe(true);
+    expect(stagingInsert).not.toHaveBeenCalled();
+    expect(sendWhatsAppText).toHaveBeenCalledTimes(1);
+    const [sender, message] = vi.mocked(sendWhatsAppText).mock.calls[0];
+    expect(sender).toMatchObject({ phoneNumberId: 'p1' });
+    expect(message.body).toContain('+97233301505');
+  });
+
+  it('says nothing to a stranger (same rule as staging) and does not consume the row', async () => {
+    const { client } = createMockSupabase<never[]>({ data: [], error: null });
+    vi.mocked(createAdminClient).mockReturnValue(
+      client as unknown as ReturnType<typeof createAdminClient>,
+    );
+    const res = await replyImportPointer(
+      {
+        phone_number_id: 'p1',
+        payload: {
+          type: 'document',
+          from: '972500000000',
+          document: { id: 'm1', filename: 'x.csv' },
+        } as never,
+      },
+      SPLIT,
+    );
+    expect(res).toBe(false);
+    expect(sendWhatsAppText).not.toHaveBeenCalled();
+  });
+
+  it('ignores a non-import message entirely (plain text is not a list)', async () => {
+    vi.mocked(createAdminClient).mockReturnValue(
+      undefined as unknown as ReturnType<typeof createAdminClient>,
+    );
+    const res = await replyImportPointer(
+      { phone_number_id: 'p1', payload: { type: 'text', from: '972501234567' } as never },
+      SPLIT,
+    );
+    expect(res).toBe(false);
+  });
+});
+
+describe('downloadDocument — scoped to the number that received the file', () => {
+  const CSV = 'full_name,phone\nדנה כהן,0501234567\n';
+
+  function docRow(phoneNumberId: string | null) {
+    return {
+      phone_number_id: phoneNumberId,
+      payload: {
+        id: 'wamid.doc',
+        type: 'document',
+        from: '972501234567',
+        document: { id: 'media-1', filename: 'guests.csv' },
+      } as never,
+    };
+  }
+
+  it('passes the row’s phone_number_id to retrieveMedia (a foreign media id cannot be read)', async () => {
+    wireOneOwner();
+    process.env.APP_ORIGIN = 'https://beta.kalfa.me';
+    retrieveMedia.mockResolvedValue({ url: 'https://cdn/x', file_size: '42' });
+    fetchMedia.mockResolvedValue({
+      ok: true,
+      arrayBuffer: async () => new TextEncoder().encode(CSV).buffer,
+    });
+
+    await stageWhatsAppImport(docRow('imp-1'), SPLIT);
+
+    expect(retrieveMedia).toHaveBeenCalledWith('media-1', 'imp-1');
+    expect(fetchMedia).toHaveBeenCalledWith('https://cdn/x');
+  });
+
+  it('refuses a file Meta reports as larger than the 1MB cap — without fetching it', async () => {
+    wireOneOwner();
+    process.env.APP_ORIGIN = 'https://beta.kalfa.me';
+    retrieveMedia.mockResolvedValue({ url: 'https://cdn/big', file_size: '2000000' });
+
+    await stageWhatsAppImport(docRow('p1'), LEGACY);
+
+    expect(fetchMedia).not.toHaveBeenCalled();
+    expect(vi.mocked(sendWhatsAppText).mock.calls[0][1].body).toContain('עד 1MB');
+  });
+
+  it('refuses a body that exceeds the cap even when file_size lied', async () => {
+    wireOneOwner();
+    process.env.APP_ORIGIN = 'https://beta.kalfa.me';
+    retrieveMedia.mockResolvedValue({ url: 'https://cdn/lie', file_size: '10' });
+    fetchMedia.mockResolvedValue({
+      ok: true,
+      arrayBuffer: async () => new Uint8Array(1_000_001).buffer,
+    });
+
+    await stageWhatsAppImport(docRow('p1'), LEGACY);
+
+    expect(vi.mocked(sendWhatsAppText).mock.calls[0][1].body).toContain('עד 1MB');
+  });
+
+  it('an error response (no url) is a failed read, not a crash', async () => {
+    wireOneOwner();
+    process.env.APP_ORIGIN = 'https://beta.kalfa.me';
+    retrieveMedia.mockResolvedValue({ error: { message: 'Unsupported get request', code: 100 } });
+
+    await stageWhatsAppImport(docRow('p1'), LEGACY);
+
+    expect(fetchMedia).not.toHaveBeenCalled();
+    expect(vi.mocked(sendWhatsAppText).mock.calls[0][1].body).toContain('עד 1MB');
+  });
+
+  it('a timeout (aborted fetch) is a failed read, not a thrown row', async () => {
+    wireOneOwner();
+    process.env.APP_ORIGIN = 'https://beta.kalfa.me';
+    retrieveMedia.mockRejectedValue(new DOMException('The operation was aborted.', 'TimeoutError'));
+
+    await expect(stageWhatsAppImport(docRow('p1'), LEGACY)).resolves.toBe(true);
+    expect(vi.mocked(sendWhatsAppText).mock.calls[0][1].body).toContain('עד 1MB');
   });
 });

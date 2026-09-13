@@ -1,13 +1,19 @@
 import 'server-only';
 
 import { createAdminClient } from '@/lib/supabase/admin';
-import { getWhatsAppConfig } from '@/lib/data/outreach-config';
+import type { WhatsAppChannel } from '@/lib/data/outreach-config';
 import { sendWhatsAppText } from '@/lib/whatsapp/client';
+import {
+  importSender,
+  waMeUrl,
+  type WhatsAppSender,
+} from '@/lib/whatsapp/channel-routing';
 import { decodeCsvBuffer, parseCsv, sniffSpreadsheetBinary } from '@/lib/csv';
 import { normalizePhone, repairIsraeliLocalPhone } from '@/lib/phone';
 import { importRowSchema } from '@/lib/validation/guests';
 import { guestImportHeaderKey } from '@/lib/data/guest-import-shared';
 import { ISRAELI_PHONE_RE } from '@/lib/constants';
+import { WhatsAppAPI } from 'whatsapp-api-js';
 import { GRAPH_API_VERSION } from '@/lib/whatsapp/graph-version';
 import { EVENT_TYPE_LABELS } from '@/lib/data/event-labels';
 import type { Enums, Json } from '@/lib/supabase/types';
@@ -22,10 +28,48 @@ export type ImportEvent = { id: string; name: string | null; event_type: EventTy
 // guest_import_staging rows and replies with a review link. Guests are
 // created ONLY when confirmed in the app. Unmapped senders are ignored
 // entirely (no download, no reply — nothing leaks about the system).
+//
+// Two-number split: when a number holds the `whatsapp_import_sender` role,
+// webhook-processing.ts sends ONLY rows that arrived there to
+// stageWhatsAppImport, and rows that arrived on the RSVP number to
+// replyImportPointer. Replies leave from the number that received the list
+// (importSender). With the role unassigned everything behaves as before — the
+// RSVP number both stages and answers.
 
 type InboxRow = {
   payload: Json | null;
+  phone_number_id: string | null;
 };
+
+// The two import-bearing inbound shapes, with the sender already normalized.
+type ImportPayload = {
+  type: 'document' | 'contacts';
+  from: string; // E.164
+  document?: { id?: string; filename?: string };
+  id?: string; // inbound wamid
+};
+
+// Narrow a persisted inbound payload to an import; null for every other message
+// type, or when the sender phone does not normalize. Shared by the staging path
+// and the pointer path so both agree on what "a list" is.
+function readImportPayload(payload: Json | null): ImportPayload | null {
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return null;
+  const p = payload as {
+    id?: string;
+    type?: string;
+    from?: string;
+    document?: { id?: string; filename?: string };
+  };
+  if (p.type !== 'document' && p.type !== 'contacts') return null;
+  const from = typeof p.from === 'string' ? normalizePhone(p.from) : null;
+  if (!from) return null;
+  return {
+    type: p.type,
+    from,
+    document: p.document,
+    id: typeof p.id === 'string' && p.id ? p.id : undefined,
+  };
+}
 
 export type StagedRow = {
   full_name: string;
@@ -170,6 +214,19 @@ export function buildAmbiguousEventReply(
   );
 }
 
+// Pointer for a list that reached the RSVP number once the split is live: names
+// the import number (resolved from the role — never hardcoded) with its deep
+// link. null when no display number is known; there is nothing useful to say.
+export function buildImportPointerReply(displayNumber: string | null): string | null {
+  if (!displayNumber) return null;
+  const link = waMeUrl(displayNumber);
+  return (
+    `רשימות מוזמנים מתקבלות במספר הייבוא של KALFA: ${displayNumber}\n` +
+    (link ? `${link}\n` : '') +
+    'שלחו לשם את הקובץ או את אנשי הקשר, ותקבלו משם קישור לסקירה ולאישור.'
+  );
+}
+
 // Parse CSV bytes into staged rows using the SAME rules as the screen import
 // (header aliases, phone repair, schema validation). Duplicate policing stays
 // at CONFIRM time — the review screen shows conflicts before anything lands.
@@ -245,20 +302,52 @@ export function contactsToStagedRows(payload: Json | null): StagedRow[] {
   return rows;
 }
 
+// How long a single media call may take. The worker drains up to 50 rows in one
+// tick, so a media endpoint that accepts the connection and then stalls would
+// otherwise hold the whole drain open. Enforced by an AbortSignal injected
+// through the SDK's fetch ponyfill — a real socket abort, not a Promise.race
+// that leaves the request running.
+const MEDIA_TIMEOUT_MS = 15_000;
+
+// Download an inbound CSV, through the SDK rather than a hand-rolled fetch.
+//
+// Two things this buys beyond the raw fetch it replaces:
+//   - `retrieveMedia(id, phoneID)` SCOPES the lookup to the business number the
+//     message arrived at. Meta rejects a media id that belongs to a different
+//     number on the same WABA, so a forged or replayed media id from the wrong
+//     line cannot be read through our token (3.9 §13). `phoneID` is optional in
+//     the SDK; passing null would restore the unscoped behaviour, so the caller
+//     always passes the row's phone_number_id.
+//   - the URL is fetched via `fetchMedia`, which carries the Authorization
+//     header the CDN link requires — we never re-implement the auth.
+//
+// The 1MB cap is checked TWICE: against the size Meta reports, and against the
+// bytes actually received (a lying or absent file_size must not get us to
+// buffer an arbitrary body). `file_size` is a STRING on the SDK's success
+// branch, and `url` exists only there — hence the `'url' in meta` narrowing and
+// the numeric coercion.
 async function downloadDocument(
   mediaId: string,
   accessToken: string,
+  phoneNumberId: string | null,
 ): Promise<Uint8Array | null> {
   try {
-    const meta = (await (
-      await fetch(`https://graph.facebook.com/${GRAPH_API_VERSION}/${mediaId}`, {
-        headers: { Authorization: `Bearer ${accessToken}` },
-      })
-    ).json()) as { url?: string; file_size?: number };
-    if (!meta.url || (meta.file_size ?? 0) > MAX_DOC_BYTES) return null;
-    const res = await fetch(meta.url, {
-      headers: { Authorization: `Bearer ${accessToken}` },
+    const api = new WhatsAppAPI({
+      token: accessToken,
+      secure: false,
+      v: GRAPH_API_VERSION,
+      ponyfill: {
+        fetch: (input: string | URL | Request, init?: RequestInit) =>
+          fetch(input, { ...init, signal: AbortSignal.timeout(MEDIA_TIMEOUT_MS) }),
+      },
     });
+
+    const meta = await api.retrieveMedia(mediaId, phoneNumberId ?? undefined);
+    if (!('url' in meta)) return null;
+    const reported = Number(meta.file_size);
+    if (Number.isFinite(reported) && reported > MAX_DOC_BYTES) return null;
+
+    const res = await api.fetchMedia(meta.url);
     if (!res.ok) return null;
     const buf = new Uint8Array(await res.arrayBuffer());
     return buf.byteLength <= MAX_DOC_BYTES ? buf : null;
@@ -287,25 +376,40 @@ export function resolveReplyOrigin(): string {
 // Entry point from the webhook processor. Returns true when the inbound was
 // CONSUMED as an import (mapped owner + document/contacts) — the caller then
 // skips the campaign/billing path entirely.
-export async function stageWhatsAppImport(row: InboxRow): Promise<boolean> {
-  const payload = row.payload;
-  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return false;
-  const p = payload as {
-    id?: string;
-    type?: string;
-    from?: string;
-    document?: { id?: string; filename?: string };
-  };
-  if (p.type !== 'document' && p.type !== 'contacts') return false;
+//
+// `channel` is passed IN rather than read here: the router already resolved it
+// for this batch of rows, and it must stay the single place that decides which
+// number handles what. Reading it again here would be a second round-trip per
+// message for an answer the caller already holds.
+export async function stageWhatsAppImport(
+  row: InboxRow,
+  channel: WhatsAppChannel | null,
+): Promise<boolean> {
+  const p = readImportPayload(row.payload);
+  if (!p) return false;
 
-  const sender = typeof p.from === 'string' ? normalizePhone(p.from) : null;
-  if (!sender) return false;
+  // Belt-and-braces for the split: once an import number exists, a list that
+  // arrived on any OTHER number is never staged from here. webhook-processing
+  // is the primary gate; this keeps the module safe against a future caller
+  // that forgets to route first.
+  if (
+    channel?.importPhoneNumberId &&
+    row.phone_number_id !== channel.importPhoneNumberId
+  ) {
+    return false;
+  }
+
+  const sender = p.from;
   const events = await resolveOwnerActiveEvents(sender);
   if (events.length === 0) return false; // stranger → silently not-an-import
 
-  const config = await getWhatsAppConfig();
+  const config = channel;
   if (!config) return true; // consumed (owner intent) but channel off
 
+  // Replies leave from the number that RECEIVED the list: the import number
+  // when the role is assigned, the RSVP number in legacy mode. Same token and
+  // app secret either way — one Meta app, one WABA.
+  const from = importSender(config);
   const origin = resolveReplyOrigin();
 
   // More than one active event the sender may manage: NEVER guess which one
@@ -313,7 +417,7 @@ export async function stageWhatsAppImport(row: InboxRow): Promise<boolean> {
   // event because "newest wins"). Stage nothing; ask the owner to upload the
   // file on the correct event's import screen.
   if (events.length > 1) {
-    await safeReply(config, sender, buildAmbiguousEventReply(events, origin));
+    await safeReply(from, sender, buildAmbiguousEventReply(events, origin));
     return true;
   }
 
@@ -324,7 +428,7 @@ export async function stageWhatsAppImport(row: InboxRow): Promise<boolean> {
   // late Meta retry) of a message that ALREADY produced a staged list is a
   // no-op — no second download, no duplicate pending list, no second owner
   // reply. Enforced at the DB too (UNIQUE source_message_id WHERE NOT NULL).
-  const wamid = typeof p.id === 'string' && p.id ? p.id : null;
+  const wamid = p.id ?? null;
   if (wamid) {
     const { data: already } = await admin
       .from('guest_import_staging')
@@ -341,20 +445,22 @@ export async function stageWhatsAppImport(row: InboxRow): Promise<boolean> {
   if (p.type === 'document') {
     fileName = p.document?.filename ?? null;
     const mediaId = p.document?.id;
-    const bytes = mediaId ? await downloadDocument(mediaId, config.accessToken) : null;
+    const bytes = mediaId
+      ? await downloadDocument(mediaId, config.accessToken, row.phone_number_id)
+      : null;
     if (!bytes) {
-      await safeReply(config, sender, 'לא הצלחנו לקרוא את הקובץ (עד 1MB, CSV בלבד). נסו לשלוח שוב.');
+      await safeReply(from, sender, 'לא הצלחנו לקרוא את הקובץ (עד 1MB, CSV בלבד). נסו לשלוח שוב.');
       return true;
     }
     const parsed = parseCsvToStagedRows(bytes);
     if ('error' in parsed) {
-      await safeReply(config, sender, parsed.error);
+      await safeReply(from, sender, parsed.error);
       return true;
     }
     staged = parsed.rows;
     errors = parsed.errors;
   } else {
-    staged = contactsToStagedRows(payload);
+    staged = contactsToStagedRows(row.payload);
     if (staged.length === 0) return true;
   }
 
@@ -381,24 +487,46 @@ export async function stageWhatsAppImport(row: InboxRow): Promise<boolean> {
     source_message_id: wamid,
   });
   if (error) {
-    await safeReply(config, sender, 'קליטת הרשימה נכשלה — נסו שוב בעוד רגע.');
+    await safeReply(from, sender, 'קליטת הרשימה נכשלה — נסו שוב בעוד רגע.');
     return true;
   }
 
   await safeReply(
-    config,
+    from,
     sender,
     buildSingleEventReply(ownerEvent, staged.length, errors.length, origin),
   );
   return true;
 }
 
+// Hard-split companion to stageWhatsAppImport: a VERIFIED owner sent a list to
+// the RSVP number after the import number took the role. Nothing is staged; the
+// owner gets ONE pointer FROM the RSVP number — a free-form reply inside the
+// 24h window the owner just opened by writing to us (no template, no marketing
+// content, so no 131049). Strangers get nothing, the same rule as staging.
+// Returns true when the inbound was consumed (an import-shaped message from a
+// mapped owner) so the caller skips the campaign/billing path.
+export async function replyImportPointer(
+  row: InboxRow,
+  channel: WhatsAppChannel,
+): Promise<boolean> {
+  const p = readImportPayload(row.payload);
+  if (!p) return false;
+  const events = await resolveOwnerActiveEvents(p.from);
+  if (events.length === 0) return false;
+  const body = buildImportPointerReply(channel.importDisplayNumber);
+  // `channel` structurally satisfies WhatsAppSender — the pointer deliberately
+  // leaves from the RSVP number, the one the owner just wrote to.
+  if (body) await safeReply(channel, p.from, body);
+  return true;
+}
+
 async function safeReply(
-  config: { phoneNumberId: string; accessToken: string; appSecret: string | null },
+  from: WhatsAppSender,
   to: string,
   body: string,
 ): Promise<void> {
   // replies are best-effort — sendWhatsAppText no longer throws (it classifies
   // into a DeliveryOutcome); the result is intentionally ignored here.
-  await sendWhatsAppText(config, { to, body });
+  await sendWhatsAppText(from, { to, body });
 }

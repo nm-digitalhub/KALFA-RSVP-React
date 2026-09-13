@@ -43,7 +43,15 @@ import {
 import { sendSlackAlert } from '@/lib/alerts/slack';
 import { submitRsvp } from '@/lib/data/rsvp';
 import { handleHeadcountReply, requestHeadcount } from '@/lib/data/headcount';
-import { stageWhatsAppImport } from '@/lib/data/whatsapp-import';
+import {
+  replyImportPointer,
+  stageWhatsAppImport,
+} from '@/lib/data/whatsapp-import';
+import {
+  getWhatsAppChannel,
+  type WhatsAppChannel,
+} from '@/lib/data/outreach-config';
+import { classifyInboundChannel } from '@/lib/whatsapp/channel-routing';
 import type { WebhookInboxRow } from '@/lib/data/webhooks';
 // RSVP quick-reply button.payload -> RsvpStatus. Single source of truth SHARED
 // with the OUTBOUND send-time payload injection (client.ts via sendOneWhatsApp),
@@ -74,9 +82,41 @@ type StatusPayload = {
   errors?: Array<{ code?: number | string }>;
 };
 
-export async function processWebhookEvent(row: WebhookInboxRow): Promise<void> {
+// Per-drain memo for the reads that are the SAME for every row in a batch.
+//
+// §1.5.2 requires the `whatsapp_import_sender` resolution to be cached
+// per-message-batch rather than read once per message. The batch boundary is
+// real: the worker's handleWebhook claims up to 50 rows and loops. It creates
+// ONE context per drain and hands it down; every other caller (the admin
+// "reprocess" action, a test) gets a fresh one from the default parameter, so a
+// role change takes effect on the very next drain with no deploy and no
+// restart. Deliberately NOT a module-level cache: that would survive the whole
+// worker process and make the documented rollback ("remove the role assignment
+// in /admin/integrations/numbers") wait for a restart.
+export type WebhookBatchContext = {
+  whatsappChannel(): Promise<WhatsAppChannel | null>;
+};
+
+export function createWebhookBatchContext(): WebhookBatchContext {
+  let cached: WhatsAppChannel | null | undefined;
+  return {
+    async whatsappChannel() {
+      // Memoized on SUCCESS only. Caching the promise itself would pin a
+      // rejection for all 50 rows even if the database recovers mid-batch —
+      // and a rejection here is exactly the case that must be retried, not
+      // remembered (see resolveNumberForRoleStrict).
+      if (cached === undefined) cached = await getWhatsAppChannel();
+      return cached;
+    },
+  };
+}
+
+export async function processWebhookEvent(
+  row: WebhookInboxRow,
+  ctx: WebhookBatchContext = createWebhookBatchContext(),
+): Promise<void> {
   if (row.event_kind === 'message') {
-    await processMessage(row);
+    await processMessage(row, ctx);
     return;
   }
   if (row.event_kind === 'status') {
@@ -169,7 +209,20 @@ async function processGraphMail(row: WebhookInboxRow): Promise<void> {
   await intakeMailAsInquiry(row.message_id);
 }
 
-// An inbound human message. Bills the reach when it is a billable type AND it
+// An inbound human message. FIRST the row is routed by the business number it
+// arrived at (webhook_inbox.phone_number_id): the number holding the
+// `whatsapp_import_sender` role goes ONLY to the guest-list importer; the RSVP
+// number (or a legacy row with no metadata) goes to the billing/RSVP path
+// below; anything else is ignored with an ids-only alert. With the role
+// UNASSIGNED — how this ships — every row takes the RSVP path and the importer
+// is offered every message first, exactly today's behaviour.
+//
+// Why the routing is not optional: MEASURED 2026-09-03, a message sent to the
+// second WABA number was recorded as a contact_interactions row with
+// billable = true against a CLOSED campaign. The RSVP path is the only one with
+// a financial consequence, so a misroute is a wrong charge.
+//
+// On the RSVP path this bills the reach when it is a billable type AND it
 // resolves to a contact we targeted. Resolution prefers the precise Meta
 // context.id binding (the reply quotes the exact outbound wamid we sent); it
 // falls back to the sender phone when the reply carries no context — a plain
@@ -180,14 +233,54 @@ async function processGraphMail(row: WebhookInboxRow): Promise<void> {
 // UNIQUE(channel, provider_id) on this inbound message_id + the `fresh` gate bill
 // at most once. Only when NEITHER context nor phone resolves is it recorded
 // processed without billing.
-async function processMessage(row: WebhookInboxRow): Promise<void> {
+async function processMessage(
+  row: WebhookInboxRow,
+  ctx: WebhookBatchContext,
+): Promise<void> {
   const messageId = row.message_id;
   if (!messageId) return;
 
   const payload = (row.payload ?? {}) as InboundMessagePayload;
-  // Owner-sent guest lists (CSV document / shared contact cards) are an
-  // IMPORT, not a campaign interaction — consumed before any billing logic.
-  if (await stageWhatsAppImport(row)) return;
+  const channel = await ctx.whatsappChannel();
+  const inbound = classifyInboundChannel(row.phone_number_id, channel);
+
+  if (inbound === 'import') {
+    // Dedicated import number: an owner's CSV / contact cards → staging plus a
+    // reply from that number. Anything else sent there (free text, reactions,
+    // button taps) is deliberately dropped — no interaction, no billing, no
+    // RSVP, no headcount. That number never sends outreach, so nothing arriving
+    // on it is a reply to us.
+    await stageWhatsAppImport(row, channel);
+    return;
+  }
+
+  if (inbound === 'unknown') {
+    // Neither of our configured numbers. Never bill on it; say so once. Ids
+    // only — a phone_number_id is a technical Meta id, not a guest phone.
+    await sendSlackAlert({
+      level: 'warn',
+      category: 'send_health',
+      source: 'webhook-processing',
+      title: 'הודעת WhatsApp נכנסת ממספר עסקי לא מוכר — לא עובדה',
+      detail:
+        'webhook_inbox.phone_number_id אינו מספר ה-RSVP ואינו המספר שמחזיק את התפקיד whatsapp_import_sender. ' +
+        'השורה סומנה כמעובדת בלי אינטראקציה, חיוב או RSVP. אם זה מספר שלנו — לסנכרן אותו ב-/admin/integrations/numbers, ' +
+        'לשייך לו תפקיד, ולעבד מחדש מ-/admin/webhooks.',
+      fields: { rowId: row.id, phoneNumberId: row.phone_number_id ?? 'null' },
+    });
+    return;
+  }
+
+  // inbound === 'rsvp'
+  if (channel?.importPhoneNumberId) {
+    // Hard split: the RSVP number no longer stages lists. A verified owner who
+    // still sends one here gets a one-line pointer to the import number.
+    if (await replyImportPointer(row, channel)) return;
+  } else if (await stageWhatsAppImport(row, channel)) {
+    // Legacy: owner-sent guest lists are an IMPORT, not a campaign interaction
+    // — consumed before any billing logic.
+    return;
+  }
 
   const { billable, removal, replyId } = classifyMessagePayload(payload);
   if (!billable) return;
