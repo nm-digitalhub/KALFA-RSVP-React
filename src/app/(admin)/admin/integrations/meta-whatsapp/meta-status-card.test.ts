@@ -49,7 +49,10 @@ const HEALTHY: MetaStatus = {
   token: {
     isValid: true,
     expiresAt: 0,
-    dataAccessExpiresAt: 1764633600,
+    // 2026-12-07 — the LIVE token's actual data-access deadline (measured
+    // 2026-09-10, §8 of the plan). The previous fixture read as 2025-12-02, a date
+    // already in the past, which a future reader could take for the real one.
+    dataAccessExpiresAt: 1796601600,
     grantedScopes: [
       'whatsapp_business_messaging',
       'whatsapp_business_management',

@@ -146,6 +146,12 @@ const EXPECTED_PERMISSION: Record<string, string | string[]> = {
   // the credentials form those values are entered on — anyone who may see the
   // secrets may ask whether they still work, and nobody below that may.
   'src/lib/data/admin/integrations/meta-status.ts': 'manage_settings',
+  // The send-timing window every campaign is scheduled against. Same key as the
+  // credentials form beside it: whoever configures the channel sets the hours it
+  // may send in. It is not a finer key than manage_settings because the DANGEROUS
+  // direction is not gated by permission at all — parseSendPolicy refuses to widen
+  // past the ceilings no matter who is asking.
+  'src/lib/data/admin/integrations/send-policy.ts': 'manage_settings',
 };
 
 // Modules that write but are correctly exempt from naming a permission, with the

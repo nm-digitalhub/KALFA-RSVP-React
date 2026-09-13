@@ -52,14 +52,14 @@ describe('debugToken — the answer', () => {
       data: {
         is_valid: true,
         expires_at: 0,
-        data_access_expires_at: 1764633600,
+        data_access_expires_at: 1796601600,
         scopes: ['whatsapp_business_messaging', 'whatsapp_business_management'],
       },
     });
     await expect(debugToken(CREDS)).resolves.toEqual({
       isValid: true,
       expiresAt: 0,
-      dataAccessExpiresAt: 1764633600,
+      dataAccessExpiresAt: 1796601600,
       scopes: ['whatsapp_business_messaging', 'whatsapp_business_management'],
       invalidReason: null,
     });

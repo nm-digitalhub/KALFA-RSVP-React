@@ -5,6 +5,7 @@ import { ChevronRight } from 'lucide-react';
 import { requirePlatformPermission } from '@/lib/auth/dal';
 import { getWhatsAppChannelConfig } from '@/lib/data/admin/channels';
 import { getMetaStatus } from '@/lib/data/admin/integrations/meta-status';
+import { getSendPolicyForAdmin } from '@/lib/data/admin/integrations/send-policy';
 import { getOutreachMasterState } from '@/lib/data/admin/outreach-master';
 import { getAppUrl } from '@/lib/url';
 
@@ -14,6 +15,7 @@ import { WhatsAppCredentialsForm } from './whatsapp-credentials-form';
 import { WhatsAppConsentToggle } from './whatsapp-consent-toggle';
 import { WhatsAppConnectionTest } from './whatsapp-connection-test';
 import { MetaStatusCard } from './meta-status-card';
+import { SendPolicyForm } from './send-policy-form';
 
 export const metadata: Metadata = { title: 'Meta / WhatsApp — אינטגרציות' };
 
@@ -33,7 +35,7 @@ export const metadata: Metadata = { title: 'Meta / WhatsApp — אינטגרצי
 export default async function MetaWhatsAppPage() {
   await requirePlatformPermission('manage_settings');
 
-  const [whatsapp, master, callbackUrl, metaStatus] = await Promise.all([
+  const [whatsapp, master, callbackUrl, metaStatus, sendPolicy] = await Promise.all([
     getWhatsAppChannelConfig(),
     getOutreachMasterState(),
     getAppUrl('/api/webhooks/whatsapp'),
@@ -42,6 +44,7 @@ export default async function MetaWhatsAppPage() {
     // resolves rather than throws on every failure, so it cannot take the page
     // down with it.
     getMetaStatus(),
+    getSendPolicyForAdmin(),
   ]);
 
   return (
@@ -87,6 +90,19 @@ export default async function MetaWhatsAppPage() {
       <section className="space-y-3">
         <h2 className="text-lg font-semibold">דרישת הסכמה</h2>
         <WhatsAppConsentToggle consentRequired={whatsapp.consentRequired} />
+      </section>
+
+      {/* Send timing sits on THIS page because the column is whatsapp_send_policy
+          and WhatsApp is the only channel sending against it today. It is not
+          WhatsApp-only in effect: the worker schedules every campaign send from
+          it, which is why the heading says "פנייה" and not "וואטסאפ". */}
+      <section className="space-y-3">
+        <h2 className="text-lg font-semibold">מדיניות שליחה (שעות פנייה)</h2>
+        <p className="text-sm text-muted-foreground">
+          החלון שכל שליחת קמפיין מתוזמנת לתוכו. עד היום ניתן היה לשנות אותו רק
+          ישירות במסד הנתונים.
+        </p>
+        <SendPolicyForm policy={sendPolicy} />
       </section>
 
       <section className="space-y-3">

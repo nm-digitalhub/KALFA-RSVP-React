@@ -47,7 +47,7 @@ beforeEach(() => {
   debugMock.mockResolvedValue({
     isValid: true,
     expiresAt: 0,
-    dataAccessExpiresAt: 1764633600,
+    dataAccessExpiresAt: 1796601600,
     scopes: [...REQUIRED_SCOPES],
     invalidReason: null,
   });
@@ -98,7 +98,7 @@ describe('getMetaStatus — the answer', () => {
       token: {
         isValid: true,
         expiresAt: 0,
-        dataAccessExpiresAt: 1764633600,
+        dataAccessExpiresAt: 1796601600,
         missingScopes: [],
       },
     });

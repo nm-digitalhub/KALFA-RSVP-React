@@ -13,11 +13,22 @@ vi.mock('@/lib/auth/dal', () => ({ requirePlatformPermission: vi.fn() }));
 vi.mock('@/lib/data/admin/channels', () => ({ getWhatsAppChannelConfig: vi.fn() }));
 vi.mock('@/lib/data/admin/outreach-master', () => ({ getOutreachMasterState: vi.fn() }));
 vi.mock('@/lib/url', () => ({ getAppUrl: vi.fn() }));
+// getMetaStatus resolves rather than throws on every failure, so it survived being
+// unmocked. getSendPolicyForAdmin does NOT — a read failure is a throw, because a
+// screen that invents a default nobody saved is worse than an error. Both are mocked
+// here so this suite tests the PAGE and not those two data layers.
+vi.mock('@/lib/data/admin/integrations/meta-status', () => ({ getMetaStatus: vi.fn() }));
+vi.mock('@/lib/data/admin/integrations/send-policy', () => ({
+  getSendPolicyForAdmin: vi.fn(),
+}));
 
 import { requirePlatformPermission } from '@/lib/auth/dal';
 import { getWhatsAppChannelConfig } from '@/lib/data/admin/channels';
 import { getOutreachMasterState } from '@/lib/data/admin/outreach-master';
 import { getAppUrl } from '@/lib/url';
+import { getMetaStatus } from '@/lib/data/admin/integrations/meta-status';
+import { getSendPolicyForAdmin } from '@/lib/data/admin/integrations/send-policy';
+import { DEFAULT_SEND_POLICY } from '@/lib/outreach/send-policy';
 
 import MetaWhatsAppPage from './page';
 
@@ -61,6 +72,24 @@ async function render() {
   } as never);
   vi.mocked(getOutreachMasterState).mockResolvedValue({ enabled: true, anyChannelReady: true } as never);
   vi.mocked(getAppUrl).mockResolvedValue('https://beta.kalfa.me/api/webhooks/whatsapp' as never);
+  vi.mocked(getMetaStatus).mockResolvedValue({
+    configured: true,
+    graphVersion: 'v25.0',
+    reason: null,
+    token: {
+      isValid: true,
+      expiresAt: 0,
+      dataAccessExpiresAt: 1796601600,
+      grantedScopes: [],
+      missingScopes: [],
+      invalidReason: null,
+    },
+  } as never);
+  vi.mocked(getSendPolicyForAdmin).mockResolvedValue({
+    policy: DEFAULT_SEND_POLICY,
+    source: 'stored',
+    invalidReason: null,
+  } as never);
   return MetaWhatsAppPage();
 }
 
@@ -76,6 +105,19 @@ describe('/admin/integrations/meta-whatsapp', () => {
     // The one the plan's copy ranges missed. A §30א gate.
     expect(names).toContain('WhatsAppConsentToggle');
     expect(names).toContain('WhatsAppConnectionTest');
+  });
+
+  it('renders the Meta status card and the send-policy form', async () => {
+    const names = componentNames(await render());
+    expect(names).toContain('MetaStatusCard');
+    expect(names).toContain('SendPolicyForm');
+  });
+
+  it('says the send window governs every campaign send, not just this channel', async () => {
+    // The column is whatsapp_send_policy, but the worker schedules ALL campaign
+    // sends from it. A heading that said "וואטסאפ" would understate what an edit
+    // here changes.
+    expect(textOf(await render())).toContain('כל שליחת קמפיין');
   });
 
   it('renders the master switch the credentials form points at', async () => {

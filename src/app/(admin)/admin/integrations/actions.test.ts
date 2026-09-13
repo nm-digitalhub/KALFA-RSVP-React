@@ -26,6 +26,9 @@ vi.mock('@/lib/data/admin/outreach-master', () => ({
 vi.mock('@/lib/data/admin/channel-catalog', () => ({
   updateChannelMetadata: vi.fn(),
 }));
+vi.mock('@/lib/data/admin/integrations/send-policy', () => ({
+  updateSendPolicy: vi.fn(),
+}));
 vi.mock('@/lib/alerts/slack', () => ({ sendSlackAlert: vi.fn() }));
 
 import { updateWhatsAppChannelConfig } from '@/lib/data/admin/channels';
@@ -35,11 +38,14 @@ import {
   updateCallConsentRequired,
 } from '@/lib/data/admin/voximplant-channel';
 import { updateChannelMetadata } from '@/lib/data/admin/channel-catalog';
+import { updateSendPolicy } from '@/lib/data/admin/integrations/send-policy';
+import { DEFAULT_SEND_POLICY } from '@/lib/outreach/send-policy';
 import {
   updateWhatsAppChannelAction,
   updateVoximplantLiveCallsAction,
   updateCallConsentRequiredAction,
   updateChannelCatalogAction,
+  updateSendPolicyAction,
 } from './actions';
 
 type VoxChannelConfig = Awaited<ReturnType<typeof getVoximplantChannelConfig>>;
@@ -203,5 +209,79 @@ describe('updateChannelCatalogAction — catalog display-metadata edit', () => {
     vi.mocked(updateChannelMetadata).mockRejectedValueOnce(new Error('db down'));
     const result = await updateChannelCatalogAction(null, fd(OK));
     expect(result?.error).toBe('עדכון הערוץ נכשל. נסו שוב.');
+  });
+});
+
+describe('updateSendPolicyAction', () => {
+  /** The default policy as the form posts it. */
+  function policyForm(overrides: Record<string, string> = {}): FormData {
+    const f = new FormData();
+    for (let d = 0; d <= 5; d++) {
+      const w = DEFAULT_SEND_POLICY.weekday[d]!;
+      f.set(`weekday.${d}.start`, w.start);
+      f.set(`weekday.${d}.end`, w.end);
+    }
+    f.set('hardCap', DEFAULT_SEND_POLICY.hardCap);
+    f.set('motzashPlusMin', String(DEFAULT_SEND_POLICY.motzashPlusMin));
+    f.set('spreadSpanMinutes', String(DEFAULT_SEND_POLICY.spreadSpanMs / 60_000));
+    f.set('defaultPreferred', DEFAULT_SEND_POLICY.defaultPreferred);
+    Object.entries(DEFAULT_SEND_POLICY.preferredTimeByDaysBefore).forEach(
+      ([k, v], i) => {
+        f.set(`preferred.${i}.days`, k);
+        f.set(`preferred.${i}.time`, v);
+      },
+    );
+    for (const [k, v] of Object.entries(overrides)) f.set(k, v);
+    return f;
+  }
+
+  it('saves a narrowed window', async () => {
+    const result = await updateSendPolicyAction(
+      null,
+      policyForm({ 'weekday.0.start': '10:00', 'weekday.0.end': '18:00' }),
+    );
+    expect(updateSendPolicy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        weekday: expect.arrayContaining([{ start: '10:00', end: '18:00' }]),
+      }),
+    );
+    expect(result?.notice).toBeTruthy();
+  });
+
+  it('a window past the ceiling is REFUSED and never reaches the DAL', async () => {
+    const result = await updateSendPolicyAction(
+      null,
+      policyForm({ 'weekday.1.end': '22:00' }),
+    );
+    expect(result?.fieldErrors).toBeTruthy();
+    expect(updateSendPolicy).not.toHaveBeenCalled();
+  });
+
+  it('a crafted Saturday window does not open Shabbat sends', async () => {
+    // The page renders no Saturday inputs. Anything arriving under those names is
+    // a hand-built request, and it must change nothing.
+    const result = await updateSendPolicyAction(
+      null,
+      policyForm({ 'weekday.6.start': '09:00', 'weekday.6.end': '20:30' }),
+    );
+    expect(result?.notice).toBeTruthy();
+    expect(updateSendPolicy).toHaveBeenCalledWith(
+      expect.objectContaining({ weekday: expect.arrayContaining([null]) }),
+    );
+    const saved = vi.mocked(updateSendPolicy).mock.calls[0][0];
+    expect(saved.weekday[6]).toBeNull();
+  });
+
+  it('propagates a framework redirect instead of swallowing it', async () => {
+    vi.mocked(updateSendPolicy).mockRejectedValueOnce(NEXT_REDIRECT);
+    await expect(updateSendPolicyAction(null, policyForm())).rejects.toBe(
+      NEXT_REDIRECT,
+    );
+  });
+
+  it('a write failure becomes a friendly message', async () => {
+    vi.mocked(updateSendPolicy).mockRejectedValueOnce(new Error('db down'));
+    const result = await updateSendPolicyAction(null, policyForm());
+    expect(result?.error).toContain('מדיניות השליחה');
   });
 });

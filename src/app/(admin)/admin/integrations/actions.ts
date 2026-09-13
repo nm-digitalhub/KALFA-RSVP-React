@@ -23,8 +23,10 @@ import {
   setOutreachEnabled,
 } from '@/lib/data/admin/outreach-master';
 import { updateChannelMetadata } from '@/lib/data/admin/channel-catalog';
+import { updateSendPolicy } from '@/lib/data/admin/integrations/send-policy';
 import { sendSlackAlert } from '@/lib/alerts/slack';
 import type { FormState } from '@/lib/validation/result';
+import { sendPolicyFromFormData } from '@/lib/validation/send-policy-form';
 
 // ─── WHERE A SAVE HAS TO BE REFLECTED ────────────────────────────────────────
 // `revalidatePath` invalidates exactly the path it is handed. While these
@@ -469,4 +471,32 @@ export async function updateWhatsAppConsentRequiredAction(
       ? 'דרישת ההסכמה הופעלה — הודעות וואטסאפ רק לאנשי קשר עם הסכמה מתועדת'
       : 'דרישת ההסכמה בוטלה — הודעות וואטסאפ ייצאו גם ללא הסכמה מוקדמת (חשיפה משפטית — ראו האזהרה)',
   };
+}
+
+// ─── SEND POLICY (G9) ────────────────────────────────────────────────────────
+// updateSendPolicy (manage_settings). The send-timing window every campaign is
+// scheduled against; until now it was editable only in SQL.
+//
+// Thin on purpose. Form → policy is a PURE function (sendPolicyFromFormData) so
+// the ceiling rejections can be tested without a Server Action runtime, and the
+// ceilings themselves live in parseSendPolicy, which both that function and the
+// DAL call. This action decides nothing about what a legal window is.
+export async function updateSendPolicyAction(
+  _prev: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  const parsed = sendPolicyFromFormData(formData);
+  if (!parsed.ok) return { fieldErrors: parsed.fieldErrors };
+
+  try {
+    await updateSendPolicy(parsed.policy);
+  } catch (err) {
+    unstable_rethrow(err);
+    // The DAL re-validates, so a throw here is a write failure or a gate
+    // rejection — not a rejected window, which never reaches this line.
+    return { error: 'שמירת מדיניות השליחה נכשלה. נסו שוב.' };
+  }
+
+  revalidateAll(META_WHATSAPP);
+  return { notice: 'מדיניות השליחה נשמרה' };
 }

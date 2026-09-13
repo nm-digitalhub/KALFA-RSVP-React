@@ -16,6 +16,9 @@ vi.mock('@/lib/data/admin/voximplant-channel', () => ({
   testVoximplantConnection: vi.fn(),
   updateVoximplantLiveCalls: vi.fn(),
 }));
+vi.mock('@/lib/data/admin/integrations/send-policy', () => ({
+  updateSendPolicy: vi.fn(),
+}));
 vi.mock('@/lib/data/admin/outreach-master', () => ({
   getOutreachMasterState: vi.fn(),
   setOutreachEnabled: vi.fn(),
