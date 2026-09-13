@@ -4,6 +4,7 @@ vi.mock('server-only', () => ({}));
 vi.mock('@/lib/supabase/admin', () => ({ createAdminClient: vi.fn() }));
 vi.mock('@/lib/supabase/server', () => ({ createClient: vi.fn() }));
 vi.mock('@/lib/auth/dal', () => ({ requirePlatformPermission: vi.fn() }));
+vi.mock('@/lib/data/activity', () => ({ logActivity: vi.fn() }));
 
 import { createMockSupabase } from '@/test/supabase-mock';
 import { createAdminClient } from '@/lib/supabase/admin';
@@ -12,7 +13,10 @@ import {
   getTemplateByKey,
   resolveTemplateForEvent,
 } from '@/lib/data/message-templates-resolve';
+import { logActivity } from '@/lib/data/activity';
+import { requirePlatformPermission } from '@/lib/auth/dal';
 import {
+  acknowledgeTemplateCategory,
   listMessageTemplates,
   updateMessageTemplate,
 } from '@/lib/data/message-templates';
@@ -288,5 +292,109 @@ describe('updateMessageTemplate', () => {
     expect(payload.active).toBe(true);
     expect(payload.body).toBeNull();
     expect(builder.eq).toHaveBeenCalledWith('id', 't1');
+  });
+});
+
+// ── acknowledgeTemplateCategory (D4) ────────────────────────────────────────
+// A bespoke double rather than createMockSupabase: this function READS and then
+// WRITES, and the two calls must be able to answer differently — the whole point
+// of the pin is what happens when the row moved between them.
+type AckRow = {
+  id: string;
+  message_key: string;
+  category: string | null;
+  requested_category: string;
+};
+
+const ROW_ID = '22222222-2222-4222-8222-222222222222';
+const BASE: AckRow = {
+  id: ROW_ID,
+  message_key: 'gift',
+  category: 'MARKETING',
+  requested_category: 'UTILITY',
+};
+
+/** `updated` is what the pinned UPDATE ... .select('id') matched. */
+function mockAck(row: AckRow | null, updated: Array<{ id: string }> = [{ id: ROW_ID }]) {
+  const calls: { update?: Record<string, unknown>; eq: Array<[string, unknown]> } = {
+    eq: [],
+  };
+  vi.mocked(createClient).mockResolvedValue({
+    from: () => ({
+      select: () => ({
+        eq: () => ({ maybeSingle: async () => ({ data: row, error: null }) }),
+      }),
+      update: (values: Record<string, unknown>) => {
+        calls.update = values;
+        const chain = {
+          eq: (col: string, val: unknown) => {
+            calls.eq.push([col, val]);
+            return chain;
+          },
+          select: async () => ({ data: updated, error: null }),
+        };
+        return chain;
+      },
+    }),
+  } as unknown as Awaited<ReturnType<typeof createClient>>);
+  return calls;
+}
+
+describe('acknowledgeTemplateCategory', () => {
+  it('writes Meta’s category into requested_category and audits the move', async () => {
+    const calls = mockAck(BASE);
+    const r = await acknowledgeTemplateCategory(ROW_ID, 'MARKETING');
+    expect(r).toEqual({ ok: true, from: 'UTILITY', to: 'MARKETING' });
+    expect(calls.update).toEqual({ requested_category: 'MARKETING' });
+    expect(logActivity).toHaveBeenCalledWith({
+      action: 'admin.templates.category_acknowledged',
+      meta: { message_key: 'gift', from: 'UTILITY', to: 'MARKETING' },
+    });
+  });
+
+  it('PINS the write to the category that was on screen', async () => {
+    // Without the pin, a sync landing between page load and click would get a
+    // different value accepted silently.
+    const calls = mockAck(BASE);
+    await acknowledgeTemplateCategory(ROW_ID, 'MARKETING');
+    expect(calls.eq).toContainEqual(['category', 'MARKETING']);
+  });
+
+  it('refuses when the category moved since the page was rendered', async () => {
+    const calls = mockAck({ ...BASE, category: 'AUTHENTICATION' });
+    const r = await acknowledgeTemplateCategory(ROW_ID, 'MARKETING');
+    expect(r).toEqual({ ok: false, reason: expect.stringContaining('רעננו') });
+    expect(calls.update).toBeUndefined();
+    expect(logActivity).not.toHaveBeenCalled();
+  });
+
+  it('refuses when the pinned UPDATE matched nothing — the race caught late', async () => {
+    const calls = mockAck(BASE, []);
+    const r = await acknowledgeTemplateCategory(ROW_ID, 'MARKETING');
+    expect(r.ok).toBe(false);
+    // The write was ATTEMPTED and matched no row; nothing changed, and no audit
+    // row claims something did.
+    expect(calls.update).toEqual({ requested_category: 'MARKETING' });
+    expect(logActivity).not.toHaveBeenCalled();
+  });
+
+  it('refuses a template that has never been synced', async () => {
+    const calls = mockAck({ ...BASE, category: null });
+    const r = await acknowledgeTemplateCategory(ROW_ID, 'MARKETING');
+    expect(r).toEqual({ ok: false, reason: expect.stringContaining('טרם סונכרנה') });
+    expect(calls.update).toBeUndefined();
+  });
+
+  it('refuses when there is no drift to accept', async () => {
+    const calls = mockAck({ ...BASE, requested_category: 'MARKETING' });
+    const r = await acknowledgeTemplateCategory(ROW_ID, 'MARKETING');
+    expect(r).toEqual({ ok: false, reason: expect.stringContaining('אין פער') });
+    expect(calls.update).toBeUndefined();
+  });
+
+  it('gates on manage_settings', async () => {
+    mockAck(BASE);
+    await acknowledgeTemplateCategory(ROW_ID, 'MARKETING');
+    expect(requirePlatformPermission).toHaveBeenCalledWith('manage_settings');
   });
 });

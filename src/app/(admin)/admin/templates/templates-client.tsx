@@ -9,7 +9,10 @@ import {
   FormNotice,
   SubmitButton,
 } from '@/components/forms';
-import { updateTemplateAction } from './actions';
+import {
+  acknowledgeTemplateCategoryAction,
+  updateTemplateAction,
+} from './actions';
 
 type Template = {
   id: string;
@@ -56,7 +59,17 @@ function formatDateTimeIL(iso: string): string {
   });
 }
 
-function TemplateHealth({ t }: { t: Template }) {
+// `ack` is the acknowledge action's own dispatch, handed down from TemplateForm.
+// It arrives as `formAction` on a BUTTON rather than as a nested <form>: this card
+// already IS a form, a form inside a form is invalid HTML, and the outer form
+// already carries the hidden id the action needs.
+function TemplateHealth({
+  t,
+  ack,
+}: {
+  t: Template;
+  ack: { action: (fd: FormData) => void; pending: boolean } | null;
+}) {
   const downgraded = !!t.category && t.category !== t.requested_category;
   return (
     <div className="flex flex-col gap-2 rounded-md border border-border bg-muted/30 p-3 text-xs">
@@ -87,9 +100,35 @@ function TemplateHealth({ t }: { t: Template }) {
         ) : null}
       </div>
       {downgraded ? (
-        <p className="text-red-600">
-          ⚠ ירדה בקטגוריה — התבקש {CATEGORY_LABELS[t.requested_category] ?? t.requested_category}
-        </p>
+        <div className="space-y-1.5">
+          <p className="text-red-600">
+            ⚠ ירדה בקטגוריה — התבקש {CATEGORY_LABELS[t.requested_category] ?? t.requested_category}
+          </p>
+          {ack ? (
+            <>
+              {/* The category on screen travels with the click, so the write is
+                  pinned to what was actually seen. */}
+              <input type="hidden" name="observed_category" value={t.category ?? ''} />
+              <button
+                type="submit"
+                formAction={ack.action}
+                disabled={ack.pending}
+                className="min-h-11 rounded-md border border-border px-3 py-1.5 text-xs font-medium transition hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60"
+              >
+                אישור הקטגוריה של Meta
+              </button>
+              <p className="text-muted-foreground">
+                {/* What acknowledging DOES and does not do. Meta classifies by the
+                    message body; this changes the record, not the classification,
+                    and the badge clearing must not read as the problem going away. */}
+                מפסיק את ההתראה ומעדכן את הקטגוריה המבוקשת לזו ש-Meta קבעה. אינו
+                משנה את הסיווג עצמו — התבנית תמשיך להיות מחויבת ומוגבלת כ-
+                {CATEGORY_LABELS[t.category ?? ''] ?? t.category}. שינוי עתידי
+                מצד Meta יתריע מחדש.
+              </p>
+            </>
+          ) : null}
+        </div>
       ) : null}
       {t.pending_category_change_at ? (
         <p className="text-amber-600">
@@ -109,6 +148,10 @@ function TemplateHealth({ t }: { t: Template }) {
 
 function TemplateForm({ template }: { template: Template }) {
   const [state, action] = useActionState(updateTemplateAction, null);
+  const [ackState, ackAction, ackPending] = useActionState(
+    acknowledgeTemplateCategoryAction,
+    null,
+  );
   const isCall = template.channel === 'call';
 
   return (
@@ -141,8 +184,15 @@ function TemplateForm({ template }: { template: Template }) {
 
       <FormError message={state?.error} />
       <FormNotice message={state?.notice} />
+      <FormError message={ackState?.error} />
+      <FormNotice message={ackState?.notice} />
 
-      {isCall ? null : <TemplateHealth t={template} />}
+      {isCall ? null : (
+        <TemplateHealth
+          t={template}
+          ack={{ action: ackAction, pending: ackPending }}
+        />
+      )}
 
       <div className="grid gap-3 sm:grid-cols-2">
         <div>
