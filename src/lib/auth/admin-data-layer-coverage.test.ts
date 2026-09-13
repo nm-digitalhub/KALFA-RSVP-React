@@ -134,6 +134,13 @@ const EXPECTED_PERMISSION: Record<string, string | string[]> = {
   // and takes manage_voice. ROLE_PERMISSION in that file is keyed by the generated
   // enum, so a role added to the database without a decision here is a tsc error.
   'src/lib/data/admin/integrations/provider-numbers.ts': ['manage_settings', 'manage_voice'],
+  // ONE KEY, BUT NOT ONE GATE. Adding a number and asking Meta for a verification
+  // code are manage_settings. Register and deregister are OWNER-ONLY on top of that,
+  // and the pin cannot express the mixture — so the two of them are asserted by name
+  // below ('register/deregister stay owner-only'). Without that, downgrading
+  // requirePlatformOwner to requirePlatformPermission('manage_settings') would leave
+  // this list still correct and the suite still green.
+  'src/lib/data/admin/integrations/number-registration.ts': 'manage_settings',
 };
 
 // Modules that write but are correctly exempt from naming a permission, with the
@@ -559,5 +566,51 @@ describe('no admin endpoint authorizes on the coarse staff floor', () => {
         expect(PERMISSION_CATALOGUE, `${relPath} uses unknown permission '${key}'`).toContain(key);
       }
     }
+  });
+});
+
+describe('the Meta number lifecycle keeps its irreversible half owner-only', () => {
+  // Register and deregister are not "one more admin write". Meta allows TEN of them
+  // per business number per 72-hour window and blocks the number on the eleventh
+  // (133016), and deregistering stops sending on a line that may be carrying an
+  // event's invitations. Neither is undone by pressing the button again.
+  //
+  // EXPECTED_PERMISSION pins this module to manage_settings because that is the only
+  // permission KEY it names; these two functions sit above that floor, and that fact
+  // lives nowhere else that a test can see.
+  const relPath = 'src/lib/data/admin/integrations/number-registration.ts';
+  const source = readFileSync(join(ROOT, relPath), 'utf8');
+  const blocks = splitIntoFunctionBlocks(source);
+
+  for (const fn of ['registerNumber', 'deregisterNumber']) {
+    it(`${fn} gates on requirePlatformOwner`, () => {
+      const block = blocks.find((b) => b.name === fn);
+      expect(block, `${fn} not found in ${relPath}`).toBeDefined();
+      expect(block!.body).toContain('requirePlatformOwner(');
+    });
+
+    it(`${fn} claims the 72-hour budget before calling Meta`, () => {
+      // The order is the assertion. Reserving AFTER the call means a crash mid-flight
+      // leaves a request Meta counted and we did not — and the drift only surfaces as
+      // a block that looked impossible.
+      const block = blocks.find((b) => b.name === fn);
+      const reserve = block!.body.indexOf('reserveRegistrationBudget');
+      const call = block!.body.search(/await (register|deregister)PhoneNumber\(/);
+      expect(reserve, `${fn} does not reserve budget`).toBeGreaterThan(-1);
+      expect(call, `${fn} does not call Meta`).toBeGreaterThan(-1);
+      expect(reserve).toBeLessThan(call);
+    });
+  }
+
+  it('never stores, returns or logs the PIN', () => {
+    // The PIN is a credential with a longer life than the registration: Meta requires
+    // it to change the PIN and to delete the number. It is a parameter passed straight
+    // through to Meta and must appear nowhere else in this module.
+    const uses = [...source.matchAll(/\bpin\b/g)].length;
+    expect(source).not.toMatch(/logActivity[\s\S]{0,200}\bpin\b/);
+    expect(source).not.toMatch(/sendSlackAlert[\s\S]{0,300}\bpin\b/);
+    expect(source).not.toMatch(/(insert|update|upsert)\([\s\S]{0,200}\bpin\b/);
+    // Signature, the doc block, and the single hand-off to Meta — nothing else.
+    expect(uses).toBeLessThanOrEqual(6);
   });
 });
