@@ -249,6 +249,14 @@ export interface SyncResult {
   /** How many numbers the provider reported. */
   count: number;
   /**
+   * How many of OUR rows this run switched off because the provider no longer
+   * lists them. Reported rather than done silently: a sync that quietly turns a
+   * number off is the same class of surprise as one that quietly leaves a deleted
+   * number on. 0 on every run where nothing vanished, and on every run where the
+   * read was not safe to conclude from (see syncMetaNumbers).
+   */
+  deactivated: number;
+  /**
    * True when a provider answered, but with less than was asked for. Surfaced
    * rather than swallowed: "3 numbers, some columns blank" and "3 numbers" are
    * different facts, and only one of them explains an empty cell.
@@ -266,6 +274,32 @@ export interface SyncResult {
  * spaces ("+972 33 301505"). Stripping every non-digit and prefixing '+' is what
  * makes it match provider_numbers_e164_chk — and what lets the RPC recognise the
  * backfill row for the same line instead of inserting beside it.
+ *
+ * ⚠️ AND IT DEACTIVATES WHAT META NO LONGER LISTS. Until 2026-09-13 this was an
+ * upsert loop and nothing else, so a number DELETED at Meta was never visited: its
+ * row kept `is_active = true` forever and the panel went on showing it as a live
+ * number. MEASURED on the live table — a test number deleted at Meta sat there for
+ * days with a stale `snapshot_at` beside four rows the same sync had just updated.
+ *
+ * The two providers say "this number is gone" in different ways, which is why only
+ * this one had the hole: Voximplant keeps returning the number with
+ * `deactivated: true` (handled since day one, see syncVoximplantNumbers), while
+ * Meta simply STOPS RETURNING IT — and absence is the one thing an upsert loop
+ * cannot see.
+ *
+ * Absence is only evidence when the read can bear it, so the step is skipped
+ * entirely unless all four hold. Each guard is a way a healthy number could
+ * otherwise be switched off by a bad afternoon at Meta:
+ *   - `complete` — every page was read. Without it, number 51 of 51 looks deleted.
+ *   - `!degraded` — the full field list answered. A partial answer is not a census.
+ *   - a non-empty list — zero numbers is a credentials or permissions anomaly far
+ *     more often than "the WABA was emptied", and acting on it turns EVERYTHING off.
+ *   - `source = 'sync'` — backfill rows are excluded. The RSVP sender is one, and no
+ *     Meta response should be able to switch off the number the product sends from.
+ *
+ * Roles are deliberately KEPT on a deactivated number — the same rule
+ * syncVoximplantNumbers documents. The assignment is still the admin's stated
+ * intent; what changed is the provider's answer, and those are different facts.
  */
 export async function syncMetaNumbers(): Promise<SyncResult> {
   await requirePlatformPermission('manage_settings');
@@ -275,7 +309,7 @@ export async function syncMetaNumbers(): Promise<SyncResult> {
     throw new Error('חסרים פרטי חיבור ל-Meta (WABA ID או טוקן)');
   }
 
-  const { numbers, degraded } = await listWabaPhoneNumbers({
+  const { numbers, degraded, complete } = await listWabaPhoneNumbers({
     wabaId: cfg.wabaId,
     accessToken: cfg.accessToken,
   });
@@ -311,7 +345,45 @@ export async function syncMetaNumbers(): Promise<SyncResult> {
     });
   }
 
-  return { count: numbers.length, degraded };
+  const deactivated = await deactivateMissingMetaNumbers(
+    numbers.map((n) => n.id),
+    { degraded, complete },
+  );
+
+  return { count: numbers.length, deactivated, degraded };
+}
+
+/**
+ * Switch off the `source: 'sync'` Meta rows whose provider_ref did not come back.
+ * Returns how many rows changed; returns 0 without touching anything when the read
+ * was not one that absence can be concluded from (see syncMetaNumbers for each
+ * guard and the healthy number it protects).
+ */
+async function deactivateMissingMetaNumbers(
+  seenRefs: string[],
+  read: { degraded: boolean; complete: boolean },
+): Promise<number> {
+  if (read.degraded || !read.complete || seenRefs.length === 0) return 0;
+
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from('provider_numbers')
+    .update({ is_active: false })
+    .eq('provider', 'meta_whatsapp')
+    .eq('source', 'sync')
+    .eq('is_active', true)
+    // PostgREST renders this as `provider_ref=not.in.("a","b")`. A row whose ref is
+    // NULL is left alone by SQL's NOT IN either way; saying so explicitly keeps that
+    // from reading as an accident.
+    .not('provider_ref', 'is', null)
+    .not('provider_ref', 'in', `(${seenRefs.map((r) => `"${r}"`).join(',')})`)
+    .select('id');
+
+  // A failure here must not fail the sync: the upserts above already landed, and
+  // reporting the whole run as failed would send an admin to re-run a job that
+  // half-succeeded. The count returned is what actually changed.
+  if (error || !data) return 0;
+  return data.length;
 }
 
 /**
@@ -357,5 +429,9 @@ export async function syncVoximplantNumbers(): Promise<SyncResult> {
     });
   }
 
-  return { count: numbers.length, degraded: false };
+  // Always 0, and not because the case is ignored: Voximplant keeps returning a
+  // number it has switched off, carrying `deactivated: true`, so the loop above
+  // already wrote is_active for it. There is no absence to interpret here — which
+  // is exactly the difference from Meta, where absence is the only signal there is.
+  return { count: numbers.length, deactivated: 0, degraded: false };
 }

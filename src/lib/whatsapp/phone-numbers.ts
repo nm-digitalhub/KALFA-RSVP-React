@@ -48,26 +48,35 @@ export interface WabaPhoneNumbersResult {
   numbers: WabaPhoneNumber[];
   /** True when the wide field list failed and the core list answered instead. */
   degraded: boolean;
+  /**
+   * True when every page was read, so this list is the WABA's numbers in full.
+   *
+   * It exists for exactly one caller: the sync's deactivation step, which treats a
+   * number's ABSENCE as "deleted at Meta". That inference is only sound over a
+   * complete read — against a single first page it would turn off every number
+   * from page two. False means "do not conclude anything from absence".
+   */
+  complete: boolean;
 }
+
+// One page is 50; the WABA holds 4 (measured 2026-09-13). The cap is a runaway
+// guard, not a limit anyone is expected to reach — and hitting it reports
+// `complete: false` rather than silently truncating.
+const MAX_PAGES = 20;
 
 export interface WabaCredentials {
   wabaId: string;
   accessToken: string;
 }
 
-async function fetchNumbers(
-  creds: WabaCredentials,
-  fields: string,
-): Promise<WabaPhoneNumber[]> {
-  const res = await fetch(
-    `https://graph.facebook.com/${GRAPH_API_VERSION}/${encodeURIComponent(
-      creds.wabaId,
-    )}/phone_numbers?fields=${fields}&limit=50`,
-    {
-      headers: { Authorization: `Bearer ${creds.accessToken}` },
-      signal: AbortSignal.timeout(15_000),
-    },
-  );
+async function getPage(
+  url: string,
+  accessToken: string,
+): Promise<{ data?: WabaPhoneNumber[]; paging?: { next?: string } }> {
+  const res = await fetch(url, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+    signal: AbortSignal.timeout(15_000),
+  });
 
   if (!res.ok) {
     // STATUS ONLY. Meta's error body echoes request context and has carried the
@@ -76,20 +85,53 @@ async function fetchNumbers(
     throw new Error(`Meta phone_numbers fetch failed: HTTP ${res.status}`);
   }
 
-  const body = (await res.json()) as { data?: WabaPhoneNumber[] };
-  return body.data ?? [];
+  return (await res.json()) as { data?: WabaPhoneNumber[]; paging?: { next?: string } };
+}
+
+/**
+ * Every page of the WABA's numbers.
+ *
+ * This followed `paging.next` for the first time on 2026-09-13. Before that it read
+ * `body.data` from one `limit=50` request and stopped — fine while the list is
+ * short, and the reason the sync could not safely act on a number's absence: on a
+ * WABA with 51 numbers, number 51 is indistinguishable from a deleted one.
+ *
+ * `paging.next` is a fully-formed URL from Meta and already carries the fields and
+ * the cursor, so it is followed as-is rather than rebuilt. The Authorization header
+ * still has to be re-sent — the token is in the header, not in that URL.
+ */
+async function fetchNumbers(
+  creds: WabaCredentials,
+  fields: string,
+): Promise<{ numbers: WabaPhoneNumber[]; complete: boolean }> {
+  let url =
+    `https://graph.facebook.com/${GRAPH_API_VERSION}/${encodeURIComponent(
+      creds.wabaId,
+    )}/phone_numbers?fields=${fields}&limit=50`;
+
+  const numbers: WabaPhoneNumber[] = [];
+  for (let page = 0; page < MAX_PAGES; page++) {
+    const body = await getPage(url, creds.accessToken);
+    numbers.push(...(body.data ?? []));
+    const next = body.paging?.next;
+    if (!next) return { numbers, complete: true };
+    url = next;
+  }
+  // Ran out of pages to read rather than pages to fetch. The numbers gathered are
+  // real; the LIST is not known to be whole, so absence proves nothing.
+  return { numbers, complete: false };
 }
 
 export async function listWabaPhoneNumbers(
   creds: WabaCredentials,
 ): Promise<WabaPhoneNumbersResult> {
   try {
-    return { numbers: await fetchNumbers(creds, WABA_PHONE_FIELDS_FULL), degraded: false };
+    return { ...(await fetchNumbers(creds, WABA_PHONE_FIELDS_FULL)), degraded: false };
   } catch {
     // Deliberately catches everything, not just #100: a timeout on the wide read is
     // also worth one cheap retry, and the caller cannot act differently on the
     // distinction. A second failure propagates — at that point it is not a field.
-    return { numbers: await fetchNumbers(creds, WABA_PHONE_FIELDS_CORE), degraded: true };
+    return { ...(await fetchNumbers(creds, WABA_PHONE_FIELDS_CORE)), degraded: true };
   }
 }
 

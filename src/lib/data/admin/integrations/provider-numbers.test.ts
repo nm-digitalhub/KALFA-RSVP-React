@@ -306,6 +306,7 @@ describe('syncMetaNumbers', () => {
         },
       ],
       degraded: false,
+      complete: true,
     });
 
     const result = await syncMetaNumbers();
@@ -314,7 +315,7 @@ describe('syncMetaNumbers', () => {
     expect(args.p_e164).toBe('+97233301505');
     expect(args.p_provider_ref).toBe('1018741517998430');
     expect(args.p_source).toBe('sync');
-    expect(result).toEqual({ count: 1, degraded: false });
+    expect(result).toEqual({ count: 1, deactivated: 0, degraded: false });
   });
 
   it('carries code_verification_status into the snapshot', async () => {
@@ -330,6 +331,7 @@ describe('syncMetaNumbers', () => {
         },
       ],
       degraded: false,
+      complete: true,
     });
     await syncMetaNumbers();
     const args = client.rpc.mock.calls[0][1] as { p_snapshot: Record<string, unknown> };
@@ -346,10 +348,121 @@ describe('syncMetaNumbers', () => {
         { id: '1298694319994421', display_phone_number: '+972 37 219347' },
       ],
       degraded: false,
+      complete: true,
     });
     const result = await syncMetaNumbers();
     expect(client.rpc).toHaveBeenCalledTimes(2);
     expect(result.count).toBe(2);
+  });
+
+  // ── deactivating what Meta no longer lists ────────────────────────────────
+  // The bug this closes, MEASURED on the live table: a number deleted at Meta was
+  // never visited by the upsert loop, so its row kept is_active = true and the
+  // panel went on showing it. Absence is the only signal Meta gives — which is
+  // also why it must not be acted on from a read that cannot bear it.
+
+  /** A client whose UPDATE ... .select('id') reports `rows` as changed. */
+  function deactivationClient(rows: Array<{ id: string }>) {
+    const calls: Array<[string, string, unknown]> = [];
+    const client = {
+      rpc: vi.fn().mockResolvedValue({ data: 'id-1', error: null }),
+      from: vi.fn(() => {
+        const chain = {
+          update: (v: unknown) => {
+            calls.push(['update', 'values', v]);
+            return chain;
+          },
+          eq: (c: string, v: unknown) => {
+            calls.push(['eq', c, v]);
+            return chain;
+          },
+          not: (c: string, op: string, v: unknown) => {
+            calls.push(['not', `${c}.${op}`, v]);
+            return chain;
+          },
+          select: async () => ({ data: rows, error: null }),
+        };
+        return chain;
+      }),
+    };
+    vi.mocked(createClient).mockResolvedValue(
+      client as unknown as Awaited<ReturnType<typeof createClient>>,
+    );
+    return calls;
+  }
+
+  const ONE_NUMBER = [{ id: 'kept-1', display_phone_number: '+972 33 301505' }];
+
+  it('switches off a row whose number Meta no longer returns', async () => {
+    const calls = deactivationClient([{ id: 'row-gone' }]);
+    vi.mocked(listWabaPhoneNumbers).mockResolvedValue({
+      numbers: ONE_NUMBER,
+      degraded: false,
+      complete: true,
+    });
+
+    const result = await syncMetaNumbers();
+
+    expect(result.deactivated).toBe(1);
+    expect(calls).toContainEqual(['update', 'values', { is_active: false }]);
+    // Scoped to Meta rows this sync owns, and only ones currently on.
+    expect(calls).toContainEqual(['eq', 'provider', 'meta_whatsapp']);
+    expect(calls).toContainEqual(['eq', 'source', 'sync']);
+    expect(calls).toContainEqual(['eq', 'is_active', true]);
+    // And it EXCLUDES what did come back, rather than switching everything off.
+    expect(calls).toContainEqual(['not', 'provider_ref.in', '("kept-1")']);
+  });
+
+  it('never touches BACKFILL rows — the RSVP sender is one', async () => {
+    // No Meta response should be able to switch off the number the product sends
+    // from. The filter is asserted by name because losing it is silent.
+    const calls = deactivationClient([]);
+    vi.mocked(listWabaPhoneNumbers).mockResolvedValue({
+      numbers: ONE_NUMBER,
+      degraded: false,
+      complete: true,
+    });
+    await syncMetaNumbers();
+    expect(calls).toContainEqual(['eq', 'source', 'sync']);
+  });
+
+  it('does NOTHING when the read was paginated short', async () => {
+    // Without `complete`, number 51 of 51 is indistinguishable from a deleted one.
+    const calls = deactivationClient([{ id: 'row-gone' }]);
+    vi.mocked(listWabaPhoneNumbers).mockResolvedValue({
+      numbers: ONE_NUMBER,
+      degraded: false,
+      complete: false,
+    });
+    const result = await syncMetaNumbers();
+    expect(result.deactivated).toBe(0);
+    expect(calls.some(([kind]) => kind === 'update')).toBe(false);
+  });
+
+  it('does NOTHING on a degraded read — a partial answer is not a census', async () => {
+    const calls = deactivationClient([{ id: 'row-gone' }]);
+    vi.mocked(listWabaPhoneNumbers).mockResolvedValue({
+      numbers: ONE_NUMBER,
+      degraded: true,
+      complete: true,
+    });
+    const result = await syncMetaNumbers();
+    expect(result.deactivated).toBe(0);
+    expect(calls.some(([kind]) => kind === 'update')).toBe(false);
+  });
+
+  it('does NOTHING when Meta returns zero numbers', async () => {
+    // Zero is a credentials or permissions anomaly far more often than "the WABA
+    // was emptied" — and acting on it turns EVERY number off at once.
+    const calls = deactivationClient([{ id: 'row-gone' }]);
+    vi.mocked(listWabaPhoneNumbers).mockResolvedValue({
+      numbers: [],
+      degraded: false,
+      complete: true,
+    });
+    const result = await syncMetaNumbers();
+    expect(result.deactivated).toBe(0);
+    expect(calls.some(([kind]) => kind === 'update')).toBe(false);
   });
 
   it('reports a degraded read instead of swallowing it', async () => {
@@ -357,8 +470,9 @@ describe('syncMetaNumbers', () => {
     vi.mocked(listWabaPhoneNumbers).mockResolvedValue({
       numbers: [{ id: 'x', display_phone_number: '+972 50 0000000' }],
       degraded: true,
+      complete: true,
     });
-    await expect(syncMetaNumbers()).resolves.toEqual({ count: 1, degraded: true });
+    await expect(syncMetaNumbers()).resolves.toEqual({ count: 1, deactivated: 0, degraded: true });
   });
 });
 

@@ -56,7 +56,15 @@ export async function syncMetaNumbersAction(): Promise<FormState> {
 
   await logActivity({
     action: 'admin.integrations.numbers_synced',
-    meta: { provider: 'meta_whatsapp', count: result.count, degraded: result.degraded },
+    meta: {
+      provider: 'meta_whatsapp',
+      count: result.count,
+      // Audited separately from `count`: switching a number off is the one thing
+      // this run does that an admin did not ask for, and "which sync turned that
+      // off" has to be answerable afterwards.
+      deactivated: result.deactivated,
+      degraded: result.degraded,
+    },
   });
 
   revalidatePath(NUMBERS);
@@ -64,10 +72,18 @@ export async function syncMetaNumbersAction(): Promise<FormState> {
 
   // "3 numbers" and "3 numbers, some columns blank" are different facts, and only
   // one of them explains an empty cell to whoever is looking at the table.
+  const base = result.degraded
+    ? `סונכרנו ${result.count} מספרים — חלק מהשדות לא הוחזרו מ-Meta`
+    : `סונכרנו ${result.count} מספרים מ-Meta`;
+
+  // Never silent. A row changing from active to inactive without a word is the
+  // same class of surprise as the bug this closes — a deleted number that stayed
+  // on — just in the other direction.
   return {
-    notice: result.degraded
-      ? `סונכרנו ${result.count} מספרים — חלק מהשדות לא הוחזרו מ-Meta`
-      : `סונכרנו ${result.count} מספרים מ-Meta`,
+    notice:
+      result.deactivated > 0
+        ? `${base}. ${result.deactivated} מספרים שכבר אינם ב-Meta סומנו כלא פעילים (השורה והשיוכים נשמרו).`
+        : base,
   };
 }
 

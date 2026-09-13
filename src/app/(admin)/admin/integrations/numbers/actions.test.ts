@@ -150,7 +150,7 @@ describe('assignRoleAction', () => {
 
 describe('sync actions', () => {
   it('reports a degraded Meta read rather than swallowing it', async () => {
-    syncMetaMock.mockResolvedValue({ count: 2, degraded: true });
+    syncMetaMock.mockResolvedValue({ count: 2, deactivated: 0, degraded: true });
     const state = await syncMetaNumbersAction();
     expect(state?.notice).toContain('2');
     expect(state?.notice).toContain('לא הוחזרו מ-Meta');
@@ -166,8 +166,37 @@ describe('sync actions', () => {
     expect(await syncMetaNumbersAction()).toEqual({ error: 'סנכרון המספרים מ-Meta נכשל' });
   });
 
+  it('says out loud when a sync switched numbers off', async () => {
+    // The mirror of the bug this closes. A deleted number that stayed ON was a
+    // silent wrong state; a row going OFF with no word would be the same surprise
+    // pointing the other way.
+    syncMetaMock.mockResolvedValue({ count: 4, deactivated: 1, degraded: false });
+    const state = await syncMetaNumbersAction();
+    expect(state?.notice).toContain('4');
+    expect(state?.notice).toContain('1 מספרים שכבר אינם ב-Meta');
+    // And it says the row and its roles were kept, so nobody re-adds a number
+    // thinking the record was deleted.
+    expect(state?.notice).toContain('השיוכים נשמרו');
+  });
+
+  it('stays quiet about deactivation when nothing was switched off', async () => {
+    syncMetaMock.mockResolvedValue({ count: 4, deactivated: 0, degraded: false });
+    expect((await syncMetaNumbersAction())?.notice).not.toContain('לא פעילים');
+  });
+
+  it('audits the deactivation count, not just how many were seen', async () => {
+    syncMetaMock.mockResolvedValue({ count: 4, deactivated: 2, degraded: false });
+    await syncMetaNumbersAction();
+    expect(logMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'admin.integrations.numbers_synced',
+        meta: expect.objectContaining({ deactivated: 2 }),
+      }),
+    );
+  });
+
   it('counts what Voximplant returned', async () => {
-    syncVoxMock.mockResolvedValue({ count: 1, degraded: false });
+    syncVoxMock.mockResolvedValue({ count: 1, deactivated: 0, degraded: false });
     expect((await syncVoximplantNumbersAction())?.notice).toContain('1');
   });
 });
