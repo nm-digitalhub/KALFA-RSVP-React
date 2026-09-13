@@ -91,15 +91,26 @@ function Snapshot({ number }: { number: ProviderNumber }) {
         />
         מה שהספק מדווח ({entries.length})
       </summary>
-      <dl className="mt-2 grid gap-x-4 gap-y-1 text-xs sm:grid-cols-2">
+      {/* dir="ltr" ON THE ROW, not on dt and dd separately — and the pair does not
+          share one flex line.
+
+          Both were wrong before, and the two faults compounded into an unreadable
+          block (seen on a real phone 2026-09-11). Marking only the children LTR left
+          the ROW in the page's rtl, so flex put `dt` on the right and the pair read
+          back-to-front: "NOT_APPLICABLE throughput" instead of "throughput
+          NOT_APPLICABLE". And the flex row had no min-width floor, so unbreakable
+          provider tokens (NOT_APPLICABLE, PENDING_REVIEW, is_official_business_account)
+          overflowed their grid column and printed on top of the neighbouring one.
+
+          A key stacked ABOVE its value removes the horizontal contest entirely —
+          these keys are long and so are the values, and nothing here is scanned as a
+          two-column table. `wrap-anywhere` is the repo's idiom for a token with no
+          break opportunity. */}
+      <dl className="mt-2 grid gap-x-6 gap-y-2 text-xs sm:grid-cols-2">
         {entries.map(([key, value]) => (
-          <div key={key} className="flex gap-2">
-            <dt className="text-muted-foreground" dir="ltr">
-              {key}
-            </dt>
-            <dd className="font-medium" dir="ltr">
-              {String(value)}
-            </dd>
+          <div key={key} dir="ltr" className="min-w-0">
+            <dt className="wrap-anywhere text-muted-foreground">{key}</dt>
+            <dd className="wrap-anywhere font-medium">{String(value)}</dd>
           </div>
         ))}
       </dl>
