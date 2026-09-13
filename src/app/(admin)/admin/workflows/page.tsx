@@ -3,8 +3,9 @@ import Link from 'next/link';
 
 import { Badge, PageHeading, formatDateTime } from '../_components';
 
-import { Button } from '@/components/ui/button';
 import { listWorkflows } from '@/lib/data/admin/workflows';
+
+import { SubmitButton } from '@/components/forms';
 
 import { createWorkflowAction } from './actions';
 import { ArmToggle } from './arm-toggle';
@@ -38,7 +39,11 @@ export default async function AdminWorkflowsPage() {
             placeholder="למשל: אישור אוטומטי מוואטסאפ"
           />
         </label>
-        <Button type="submit">יצירה</Button>
+        {/* SubmitButton, not a bare Button. It carries useFormStatus and disables
+            itself for the round-trip; a plain button stays clickable while the
+            action runs, and every further click is another INSERT. MEASURED: 15
+            empty workflows created in 17 seconds on 2026-09-10 that way. */}
+        <SubmitButton className="w-auto">יצירה</SubmitButton>
       </form>
 
       {workflows.length === 0 ? (

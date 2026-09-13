@@ -100,6 +100,34 @@ export async function createWorkflow(name: string): Promise<string> {
   if (trimmed === '') throw new Error('שם התהליך לא יכול להיות ריק');
 
   const supabase = createAdminClient();
+
+  // ⚠️ A DOUBLE SUBMIT MUST NOT LEAVE A SECOND EMPTY WORKFLOW BEHIND.
+  // MEASURED 2026-09-10: fifteen rows named "Hhh"/"Hhhjj" created between
+  // 04:29:27 and 04:29:44 — seventeen seconds. The create form used a bare
+  // submit button, so it stayed clickable for the whole round-trip and every
+  // further click was another INSERT. The button is now pending-aware, but a
+  // disabled button cannot stop a genuine double POST (Enter pressed twice, a
+  // proxy retry, a refresh of the POST), and this is a table an admin then has
+  // to clean by hand.
+  //
+  // So: an UNTOUCHED workflow of the same name created seconds ago is the same
+  // click, and its id is returned instead of inserting beside it. Deliberately
+  // narrow — `definition->nodes` absent means nobody has saved a diagram yet,
+  // and the 60-second window means a draft from last week with the same name is
+  // never silently reused.
+  const { data: recent } = await supabase
+    .from('workflows')
+    .select('id, definition, created_at')
+    .eq('name', trimmed)
+    .gte('created_at', new Date(Date.now() - 60_000).toISOString())
+    .order('created_at', { ascending: false })
+    .limit(1);
+
+  const candidate = recent?.[0];
+  if (candidate && !Array.isArray((candidate.definition as { nodes?: unknown })?.nodes)) {
+    return candidate.id;
+  }
+
   const { data, error } = await supabase
     .from('workflows')
     // is_active is left at its FALSE default: a new workflow is drawn, not
