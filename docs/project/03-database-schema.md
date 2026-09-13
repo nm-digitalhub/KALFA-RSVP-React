@@ -648,7 +648,7 @@
 | SMS ‏(ExtrA) | `extra_sms_token` 🔒, `extra_sms_sender` | OTP לחתימת הסכם |
 | SMTP ‏(IONOS) | `smtp_host`, `smtp_port` `integer`, `smtp_secure` `boolean not null default false`, `smtp_user`, `smtp_password` 🔒, `smtp_from` | דוא"ל עסקי |
 | DKIM | `dkim_domain`, `dkim_selector`, `dkim_private_key` 🔒 | חתימה עצמית של מייל יוצא |
-| WhatsApp Cloud API | `whatsapp_phone_number_id`, `whatsapp_access_token` 🔒, `whatsapp_app_secret` 🔒 (אימות HMAC), `whatsapp_verify_token`, `whatsapp_waba_id` | ‏WABA_ID = היעד של ניהול תבניות |
+| WhatsApp Cloud API | `whatsapp_phone_number_id` (**מספר ה-RSVP בלבד**), `whatsapp_access_token` 🔒, `whatsapp_app_secret` 🔒 (אימות HMAC), `whatsapp_verify_token`, `whatsapp_waba_id` | ‏WABA_ID = היעד של ניהול תבניות. **אין כאן עמודה למספר הייבוא** — ל-WABA יש כמה מספרים, והשיוך של כל אחד לתפקיד חי ב-`provider_numbers` + `provider_number_roles` (מיגרציה `20260910185730`). `whatsapp_import_sender` הוא התפקיד שהניתוב הנכנס קורא; `whatsapp_rsvp_sender` משקף את העמודה הזו. |
 | זהות משפטית (§14ג) | `company_legal_name`, `company_legal_id`, `company_legal_address`, `company_contact_phone`, `company_contact_email`, `privacy_url`, `terms_url`, `warranty_text` | גילויי חובה בהסכם — data, לא hardcode |
 | פרמטרי הסכם | `agr_service_activation_window`, `agr_offer_validity_days`, `agr_charge_window_days`, `agr_hold_release_days`, `agr_liability_cap`, `agr_retention_days`, `agr_record_retention_months` — כולם `text default ''` | טקסט חופשי (ייתכנו ביטויים בעברית); מוזרקים לתבנית ההסכם |
 | ספי כיסוי לחיוב | `reasonable_coverage_contacts` `integer not null default 300`, `extreme_threshold_contacts` `integer not null default 400` | קלט לחישוב גובה ה‑hold ‏(0024) |

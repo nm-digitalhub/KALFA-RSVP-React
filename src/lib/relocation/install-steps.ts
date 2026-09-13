@@ -454,7 +454,8 @@ export function buildInstallStepDefinitions(): StepDefinition[] {
         he: "הגדרות שירותים השמורות ב-DB (app_settings)",
       },
       plan: () => [
-        "NOT env keys (owner note 2026-08-23): WhatsApp Cloud API (phone-number-id, access token, WABA id, app secret), SUMIT billing credentials, ExtrA SMS, SMTP identity and Voximplant service account all live in the app_settings ROW — entered via the running app's own admin: /admin/settings + /admin/channels",
+        "NOT env keys (owner note 2026-08-23): WhatsApp Cloud API (phone-number-id, access token, WABA id, app secret), SUMIT billing credentials, ExtrA SMS, SMTP identity and Voximplant service account all live in the app_settings ROW — entered via the running app's own admin: /admin/settings + /admin/integrations",
+        "after the WhatsApp credentials are in: /admin/integrations/numbers -> sync from Meta, then assign the number roles. The inbound router reads whatsapp_import_sender from provider_number_roles, not from an env var or an app_settings column — a restored install with no role assigned routes every inbound message to the RSVP path (the legacy behaviour), which is safe but means guest-list imports land on the wrong line",
         "the wizard polls presence (read-only REST check with the service key; values never read into state) and waits until the channels the owner wants are configured; channels left off are recorded as open items",
       ],
       check: async (ctx) => {

@@ -24,7 +24,7 @@ WhatsApp/Meta תחילה. הדפוס הוא **persist-then-process**: ה-route �
 | `dedupe_key` | `text` | לא | מפתח אידמפוטנטיות לכל אירוע. חלק מ-UNIQUE. ראה תבניות למטה. |
 | `message_id` | `text` | כן | ה-wamid של ההודעה. בנכנס — ה-wamid הנכנס; ב-status — ה-wamid של ההודעה היוצאת שעליה הסטטוס. |
 | `context_message_id` | `text` | כן | רק לנכנס: `context.id` — ה-wamid היוצא שאליו ההודעה הנכנסת מגיבה (יעד-התגובה). בסיס לזיהוי-תגובה מדויק. |
-| `phone_number_id` | `text` | כן | מזהה מספר-הטלפון העסקי ב-WABA שקיבל את האירוע. **מזהה טכני, לא PII** — ניתן לחיפוש. |
+| `phone_number_id` | `text` | כן | מזהה מספר-הטלפון העסקי ב-WABA שקיבל את האירוע. **מזהה טכני, לא PII** — ניתן לחיפוש. **מאז 2026-09-13 הוא נקרא בעיבוד:** `classifyInboundChannel` מנתב לפיו הודעות נכנסות בין מסלול הייבוא למסלול ה-RSVP, ומזהה שאינו אחד משני המספרים שלנו אינו מעובד כלל (התראה, בלי חיוב). עד אז הוא נשמר ואיש לא קרא אותו. |
 | `event_at` | `timestamptz` | כן | חותמת-הזמן שדיווחה Meta על האירוע (לא תמיד קיימת). |
 | `payload` | `jsonb` | לא | האירוע הגולמי כפי שהתקבל מ-Meta. **PII** → admin-only RLS, לא נלוגג, מוקרן רק ב-detail. **מאז 2026-09-03:** לשורות `message` מצורף גם `sender_contact` ולשורות `status` — `recipient_contact`: האיבר הראשון של בלוק `value.contacts[]` של Meta (`profile.name`, `profile.username`, `wa_id`, `user_id` = BSUID, `parent_user_id`), כשהוא קיים. המפתחות נבחרו כך שלא יתנגשו ב-`contacts` של הודעה מסוג כרטיס-קשר. |
 | `received_at` | `timestamptz` | לא | מתי השורה נקלטה אצלנו. ברירת-מחדל `now()`. מפתח-המיון של הרשימה ושל ה-drain. |

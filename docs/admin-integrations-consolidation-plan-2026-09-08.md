@@ -379,6 +379,84 @@ Step 0 מורה להסיר את `last_onboarded_time` מרשימת ה-`fields` *
 
 **Spec:** הודעת team-lead 2026-09-08 (המסמך הזה הוא ה-spec המאומת שלה). מסמכים משלימים שהתוכנית מסתמכת עליהם ואינה מחליפה: `docs/whatsapp-api-js-capability-audit-2026-09-03.md`, `docs/voximplant/digest-management-api.md`, `docs/voice-agent/production-wiring-audit-2026-07-20.md`. **נקלטה והוחלפה:** `docs/whatsapp-import-number-split-plan-2026-09-03.md` → Phase 1.5 כאן.
 
+## 0.8 סטטוס 2026-09-13 — Phase 1.5 נבנתה חצי, ושתי הכרעות שסוטות מהתוכנית במודע
+
+**Phase 1.5 הושלמה בקוד.** כל משימה שנותרה בטבלת הקיזוז ב-§1.5.3 נבנתה — Tasks 2, 3, 4, 5, 8, 9, 10, 11. מה שלא בוצע הוא **האימות החי** (§1.5.4), שאינו יכול לרוץ לפני ששיוך התפקיד נעשה.
+
+| Task | קובץ | מצב |
+|---|---|---|
+| 2 | `src/lib/whatsapp/channel-routing.ts` | ✅ כלשונה — `classifyInboundChannel` / `importSender` / `waMeUrl`, טהור |
+| 3 | `src/lib/data/outreach-config.ts` | 🔄 **סטייה מכוונת** — `getWhatsAppChannel()` חדש, לא הרחבה של `WhatsAppConfig` |
+| 4 | `src/lib/data/whatsapp-import.ts` | ✅ כולל `downloadDocument` דרך ה-SDK |
+| 5 | `src/lib/data/webhook-processing.ts` | ✅ כלשונה + הקשר batch |
+| 8 | `src/lib/data/whatsapp-import-channel.ts` | 🔄 המקור הוא התפקיד; חף-מסודות **במבנה** |
+| 9 | `guests/add-guests-onboarding.tsx` + `guests/page.tsx` | ✅ הכפתור פותח WhatsApp על המספר |
+| 10 | `guests/import/whatsapp/page.tsx` | ✅ המספר מוצג כשאין רשימות ממתינות |
+| 11 | 5 מסמכים + `relocation/install-steps.ts` | ✅ — ראו למטה |
+
+### סטייה 1 — `WhatsAppConfig` לא הורחב; נוסף קורא נפרד
+
+§1.5.3 Task 3 ביקשה להרחיב את `WhatsAppConfig` עצמו, ותיארה כ"שער" את חמשת קובצי הבדיקה שהיו נשברים ב-`tsc`. **נמדד מה היה משלם על כך:** `getWhatsAppConfig()` נקרא **פעם לכל נמען** במסלול השליחה — `outreach-engine.ts:398` ו-`:724`, בתוך מסירת הצעד לכל איש קשר. קיפול חיפוש התפקיד לתוכו היה מוסיף round-trip לכל נמען: קמפיין של 300 מוזמנים היה משלם 300 מהם עבור שדה ששום מסלול שליחה אינו קורא. זו בדיוק העלות ש-§1.5.2 אוסרת כשהיא כותבת שתוצאת ה-resolve "חייבת להיות ממוטמנת per-message-batch ולא להיקרא פעם לכל הודעה".
+
+לכן ההרחבה אדיטיבית: `getWhatsAppChannel(): WhatsAppChannel | null` = `WhatsAppConfig` + `importPhoneNumberId` + `importDisplayNumber`, ורק הראוטר שואל.
+
+**השער לא אבד, הוא עבר מקום ונעשה חזק יותר:** `ChannelNumbers` דורש `importPhoneNumberId`, ולכן `WhatsAppConfig` חשוף **אינו** מקיים מבנית את הפרמטר השני של `classifyInboundChannel` ו-`tsc` פוסל אותו. זו ערובת קומפילציה שרק הקורא המורכב יכול להזין את הראוטר — טובה מ"חמישה ליטרלים נשברים", שהיה שער חד-פעמי.
+
+### סטייה 2 — resolver **קשיח** חדש, כי fail-safe מצביע כאן לכיוון הלא נכון
+
+`resolveNumberForRole` מחזיר `null` גם על **שגיאת שאילתה** (`provider-numbers-resolve.ts:41`). בכותרת שלו כתוב שזה מכוון, ולמסלול שליחה זה נכון. **למסלול הניתוב זה הפוך:** `importPhoneNumberId == null` פירושו "legacy — הכל ל-RSVP", ומסלול ה-RSVP הוא זה שמחייב. אחרי ששיוך התפקיד יתבצע, תקלת קריאה חולפת אחת הייתה מחזירה תנועה של מספר הייבוא אל `insertInteraction` + `recordReached` — **בדיוק הליקוי של 2026-09-03, חמוש מחדש ע"י fail-safe שמצביע לכיוון הלא נכון.**
+
+נוסף `resolveNumberForRoleStrict(role)` — **זורק** על שגיאת שאילתה, ומחזיר `null` רק על שורה חסרה או מספר מושבת. `resolveNumberForRole` לא נגעו בו; מסלולי השליחה תלויים בחוזה הקיים שלו. זריקה מ-`processMessage` נוחתת ב-`catch` של `handleWebhook` → `markWebhookEventFailed` → ניסיון חוזר בסבב הבא, שזו התוצאה הנכונה לתקלת DB חולפת.
+
+### גבול ה-batch קיים, ולכן הוא נוצל
+
+`handleWebhook` (worker/main.ts) תופס עד 50 שורות ומריץ עליהן לולאה. `processWebhookEvent(row, ctx?)` מקבל `WebhookBatchContext` — ה-worker יוצר **אחד** לכל drain; כל קורא אחר מקבל חדש מברירת המחדל של הפרמטר. **מכוון שזה אינו קאש ברמת המודול:** כזה היה שורד את כל תהליך ה-worker והיה גורם לגלגול-לאחור המתועד ("הסרת השיוך ב-`/admin/integrations/numbers`") להמתין ל-restart. ההמטמעה היא **על הצלחה בלבד** — מטמוע ה-Promise היה מקבע דחייה לכל 50 השורות גם אם המסד מתאושש באמצע.
+
+### שני שומרים שלא היו בתוכנית ונוספו מהמדידה
+
+1. **שורה בלי `provider_ref`** שמחזיקה את התפקיד → נקראת legacy. אין על מה לנתב.
+2. **מספר ה-RSVP עצמו שקיבל את תפקיד הייבוא** → נקרא legacy. מספר אחד אינו יכול להיות שניהם; כיבוד השיוך היה מסווג כל תשובת RSVP כ-`import` ו**עוצר את החיוב כליל**. הפאנל הוא המקום שבו הטעות נראית.
+
+### `downloadDocument` דרך ה-SDK — אומת מול הטיפוסים המותקנים, לא מהזיכרון
+
+הקריאה הגולמית ל-`graph.facebook.com` נמחקה מהמודול (`grep` מחזיר אפס). במקומה `whatsapp-api-js`, ושלושת הפרטים אומתו ב-`node_modules/whatsapp-api-js/lib/*.d.ts` לפני שנכתבה שורה:
+
+- `retrieveMedia(id: string, phoneID?: string)` — הפרמטר השני **קיים** ומגביל את החיפוש למספר שקיבל. מזהה מדיה של קו אחר על אותו WABA אינו נקרא דרך הטוקן שלנו (§13 ב-3.9).
+- `fetchMedia(url: string): Promise<Response>` — נושא את ה-Authorization שקישור ה-CDN דורש; אין מימוש חוזר של האימות.
+- `file_size` הוא **string** בענף ההצלחה, ו-`url` קיים רק שם — מכאן הצרה `'url' in meta` וההמרה המספרית.
+
+**Timeout 15s ממומש כביטול אמיתי** ולא כ-`Promise.race`: `ponyfill.fetch` מקבל עטיפה שמזריקה `AbortSignal.timeout`. ה-drain מושך עד 50 שורות בבת אחת, ונקודת קצה שמקבלת חיבור ואז נתקעת הייתה מחזיקה את כולו.
+
+תקרת ה-1MB נבדקת **פעמיים** — מול הגודל ש-Meta מדווחת (לפני שמושכים בכלל) ומול הבייטים שהתקבלו, כדי ש-`file_size` שקרי או חסר לא יביא לחציצה של גוף שרירותי.
+
+### נפרס כבוי, ואומת שכך
+
+אומת במסד החי היום: `whatsapp_import_sender` **אינו משויך**; `whatsapp_rsvp_sender` = `1018741517998430` (`+97237219347`). כל עוד זה המצב, `classifyInboundChannel` מחזיר `'rsvp'` לכל שורה וההתנהגות זהה לאתמול. **זו ערובה ולא תצפית:** הבדיקה הראשונה שנכתבה מצמידה את הענף הזה על כל קלט — כולל `phone_number_id = null` וסנטינל ה-QA `123456123` — בשתי הרמות, ב-`channel-routing.test.ts` וב-`webhook-processing.test.ts`.
+
+**ההפעלה:** `/admin/integrations/numbers` → סנכרון → שיוך `whatsapp_import_sender` ל-`+972 3-330-1505`. בלי פריסה. **הגלגול לאחור:** הסרת השיוך. בלי פריסה ובלי restart.
+
+### מסכי הלקוח — מה הם מציגים, ולמה הם לא יכולים להפיל את העמוד
+
+`getWhatsAppImportChannel()` הוא הקורא היחיד שמזין אותם, והוא **חף מסודות במבנה ולא במשמעת**: הוא מגיע למספר דרך `resolveNumberForRole` (בוחר שלוש עמודות שמות מ-`provider_numbers`) ואינו נוגע ב-`app_settings` — לטוקן אין מסלול לתוך מודול שמזין רכיב לקוח. בדיקה סטטית בקובץ הבדיקה מצמידה זאת: המקור אינו מכיל `app_settings`, `accessToken` או `outreach-config`.
+
+הוא משתמש ב-resolver ה**רגיל** (fail-safe), לא בקשיח — בדיוק הפוך ממסלול הניתוב, ובכוונה: `null` כאן פירושו "אין מספר לפרסם", המסך חוזר לנוסח הישן עם קישור פנימי, ותקלת קריאה אינה מפילה 500 על עמוד המוזמנים.
+
+חצי אחד של הפרדיקט אינו משוחזר שם: הראוטר מתייחס גם ל"מספר ה-RSVP עצמו מחזיק את תפקיד הייבוא" כ-legacy, וזיהוי כזה דורש את הקונפיג נושא-הטוקן. זה בלתי-מזיק לפרסום — המספר שמוצג **הוא** מספר ה-RSVP, והמסלול ה-legacy קולט שם רשימות בדיוק כמו היום.
+
+### תיעוד (Task 11) — חמישה מסמכים, ושתי טענות שתוקנו
+
+`07-messaging-channels.md` §2.4 (סעיף חדש; §2.4 הקודם הוסט ל-§2.5) · `03-database-schema.md` §14 · `05-guests-and-public-rsvp.md` (סעיף חדש + שורת מפת קבצים) · `webhook-inbox-data-contract.md` · `admin-webhooks-runbook.md` · `src/lib/relocation/install-steps.ts`.
+
+**שתי טענות במסמכים הקיימים שהיו שגויות ותוקנו אגב כך:**
+1. `admin-webhooks-runbook.md` ייחס את שם המספר בפופאפ ל-`/admin/channels` ואת מקורו ל-`app_settings.whatsapp_phone_number_id`. העמוד נסגר ב-Task 0.6 והמקור הוא `provider_numbers` מאז Task 1.4.
+2. `install-steps.ts` הפנה מתקין חדש ל-`/admin/channels`. הוסף גם הצעד שלא היה קיים: אחרי הסודות — לסנכרן ולשייך תפקידים, אחרת התקנה משוחזרת מנתבת הכל ל-RSVP.
+
+**שערים:** `lint` ✓ · `tsc` ✓ · `worker:deps` ✓ (אפס הפרות) · `worker:build` ✓ · **סוויטה מלאה עוברת**. **אחת-עשרה רגרסיות הוזרקו במכוון** על פני שישה קבצים — כל אחת הופלה ע"י בדיקה.
+
+**נשאר ב-Phase 1.5:** רק האימות החי (§1.5.4), שהצעד הראשון בו הוא שיוך התפקיד — פעולת בעלים בפאנל.
+
+---
+
 ## 0.7 סטטוס 2026-09-11 (לילה) — Phase 0 הושלמה, Phase 1 בנויה, והתוכנית טעתה בשני מקומות
 
 **Phase 0: שש מתוך שש** (למעט המחיקה, שהיא Step 4b בכוונה). **Phase 1: Tasks 1.1–1.4 בנויות.**

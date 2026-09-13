@@ -14,6 +14,7 @@
 | אימות קלט (Zod) | `src/lib/validation/guests.ts`, `src/lib/validation/rsvp.ts` |
 | Server Actions (בעלים) | `src/app/(customer)/app/events/[id]/guests/guests-actions.ts` |
 | ייבוא CSV | `src/app/(customer)/app/events/[id]/guests/import/import-actions.ts`, `src/lib/csv.ts` |
+| ייבוא דרך WhatsApp | `src/lib/data/whatsapp-import.ts` (קליטה), `src/lib/data/whatsapp-import-channel.ts` (המספר למסכים), `src/app/(customer)/app/events/[id]/guests/import/whatsapp/` (סקירה ואישור) |
 | טלפון | `src/lib/phone.ts` (E.164), `ISRAELI_PHONE_RE` ב‑`src/lib/constants.ts` |
 | עמוד RSVP ציבורי | `src/app/(public)/r/[token]/page.tsx`, `rsvp-form.tsx`, `actions.ts` |
 | Rate limiting | `src/lib/security/rate-limit.ts` (+ `rate-limit.test.ts`) |
@@ -144,6 +145,33 @@
 5. **קבוצות לפי שם**: שליפה אחת של קבוצות האירוע (מפתח שם lowercase) + יצירה אחת לכל שם חדש באמת — ללא שאילתה פר שורה.
 6. ההוספה עצמה — `insert` יחיד; מוחזרים `id` בלבד (בלי למשוך PII חזרה). `rsvp_token` נשאר ל‑DEFAULT של המסד — לכל מוזמן מיובא נוצר טוקן חדש אוטומטית.
 7. לאחר הייבוא: `buildContactsForEvent` בונה/מרענן את טבלת ה‑contacts (best‑effort — אינו מכשיל ייבוא שהושלם; כשל נרשם ללוג ללא PII), ונרשמת פעולת `guests.imported` ב‑activity log עם ספירות בלבד (`importedCount`, `failedCount`, `newGroupCount`).
+
+### ייבוא דרך WhatsApp — ומאיזה מספר
+
+מלבד ההעלאה במסך, בעל אירוע **מאומת** יכול לשלוח רשימה (קובץ CSV או כרטיסי אנשי
+קשר משותפים) ל-WhatsApp העסקי. ה-worker מפרש אותה ל-`guest_import_staging`
+במצב `pending` ומשיב קישור לסקירה; **אף מוזמן אינו נוצר לפני אישור במסך**
+(`/app/events/[id]/guests/import/whatsapp`). שולח שאינו ממופה לבעלות על אירוע
+פעיל מתעלמים ממנו לגמרי — בלי הורדה ובלי תשובה, כדי שלא ידלוף דבר על המערכת.
+
+**לאיזה מספר לשלוח.** ל-WABA שלנו יותר ממספר אחד, ומי מהם מקבל רשימות נקבע
+בשיוך התפקיד `whatsapp_import_sender` ב-`/admin/integrations/numbers`. המסכים
+אינם מקודדים מספר: `getWhatsAppImportChannel()`
+(`src/lib/data/whatsapp-import-channel.ts`) מחזיר את המספר ואת קישור ה-`wa.me`
+שלו, ושני המסכים משתמשים בו — כפתור "ייבוא דרך WhatsApp" במסך הראשון-ריצה
+ומסך הסקירה כשאין רשימות ממתינות. **המודול חף מסודות במבנה:** הוא קורא דרך
+`resolveNumberForRole` מ-`provider_numbers` בלבד ואינו נוגע ב-`app_settings`,
+כך שלטוקן אין דרך להגיע למודול שמזין רכיב לקוח. כשאין מספר משויך הוא מחזיר
+`null` והמסכים חוזרים לנוסח הקודם עם קישור פנימי — תקלת תצורה לא מפילה את עמוד
+המוזמנים.
+
+**הפרדה קשיחה.** כשמספר ייבוא משויך, רשימה שנשלחה למספר ה-RSVP **אינה נקלטת**:
+בעלים מאומת מקבל שורת הפניה אחת עם מספר הייבוא והקישור אליו (הודעה חופשית בתוך
+חלון 24 השעות שהוא עצמו פתח). הורדת הקובץ מוגבלת למספר שקיבל אותו
+(`retrieveMedia(id, phoneID)`), ותקרת ה-1MB נבדקת פעמיים — מול הגודל ש-Meta
+מדווחת ומול הבייטים שהתקבלו בפועל.
+
+הניתוב עצמו מתועד ב-`docs/project/07-messaging-channels.md` §2.4.
 
 ### נורמליזציית טלפון — שתי שכבות
 
