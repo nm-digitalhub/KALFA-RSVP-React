@@ -64,8 +64,27 @@ import type { NodeExecutionResult } from '../vendor/workflowbuilder/execution-co
  * is the entire point of the field.
  */
 export type WorkflowTriggerPayload = {
-  eventId: string;
-  contactId: string;
+  /**
+   * OPTIONAL SINCE `trigger.webhook` LANDED, and that is the whole point.
+   *
+   * A run started by an inbound WhatsApp message is always about a known guest
+   * on a known event. A run started by an external system calling in is about
+   * whatever that system sent — there may be no guest at all. Rather than invent
+   * a placeholder id (which would make every guest-touching node write to the
+   * wrong row), the fields are absent and `requireGuestContext` below refuses
+   * the nodes that need them, by name.
+   */
+  eventId?: string;
+  contactId?: string;
+  /**
+   * The arbitrary JSON an inbound webhook delivered, readable as
+   * `{{trigger.body.<anything>}}`.
+   *
+   * NOT a fixed shape, deliberately: the point of a webhook trigger is that the
+   * caller decides what it sends. Whatever arrives is what the templates can
+   * name — no field list to maintain, and a new caller needs no code change.
+   */
+  body?: Record<string, unknown>;
   message_text: string;
   button_payload: string;
   /**
@@ -134,6 +153,47 @@ function readEnum<T extends string>(
     `הצעד "${nodeType}" הוגדר עם ערך לא חוקי בשדה "${key}".`,
   );
 }
+
+/**
+ * The guest a step is about — or a refusal that names the step.
+ *
+ * Five handlers write to a guest, and all five need an event and a contact. A
+ * webhook-triggered run may have neither. This is where that is caught: a
+ * PERMANENT error, because no retry will add a guest to a run that never had
+ * one, and the message says which step and why rather than surfacing as a
+ * confusing null-id write.
+ */
+function requireGuestContext(
+  ctx: StepContext,
+  nodeType: KalfaNodeType,
+): { eventId: string; contactId: string } {
+  const { eventId, contactId } = ctx.trigger;
+  if (!eventId || !contactId) {
+    throw new PermanentNodeExecutionError(
+      'missing_guest_context',
+      `הצעד "${nodeType}" פועל על אורח, וההרצה הזו לא התחילה מאורח. השתמשו בו רק בתהליך שמתחיל מהודעת וואטסאפ.`,
+    );
+  }
+  return { eventId, contactId };
+}
+
+// ---------------------------------------------------------------------------
+// trigger.webhook
+// ---------------------------------------------------------------------------
+
+// An external system calls in and a run starts.
+//
+// The DYNAMIC trigger: it declares no field list. Whatever JSON the caller sent
+// is published as this node's output and is readable anywhere as
+// `{{trigger.body.<path>}}`. A new caller with a different shape needs no code
+// change, no migration and no new node type — which is the difference between
+// this and every other trigger a workflow tool hard-codes.
+//
+// It performs no side effect. By the time a run exists the request has already
+// been received, authenticated by its token and persisted as the trigger payload.
+const webhookTrigger: StepHandler = async (_config, ctx) => ({
+  output: { body: ctx.trigger.body ?? {} },
+});
 
 // ---------------------------------------------------------------------------
 // trigger.whatsapp_inbound
@@ -328,10 +388,8 @@ const updateGuestStatus: StepHandler = async (config, ctx) => {
     'action.update_guest_status',
   );
 
-  const guests = await ctx.deps.guests.getGuestsForContact(
-    ctx.trigger.eventId,
-    ctx.trigger.contactId,
-  );
+  const { eventId, contactId } = requireGuestContext(ctx, 'action.update_guest_status');
+  const guests = await ctx.deps.guests.getGuestsForContact(eventId, contactId);
 
   // ריבוי-אורחים: a phone may back several guests, and "who did this message
   // mean?" has no answer. The inbound webhook refuses to guess (C9 in
@@ -371,7 +429,7 @@ const updateGuestStatus: StepHandler = async (config, ctx) => {
     );
   }
 
-  await ctx.deps.guests.recordRsvpFromWhatsapp(ctx.trigger.eventId, guest.id, status);
+  await ctx.deps.guests.recordRsvpFromWhatsapp(eventId, guest.id, status);
 
   return { output: { guestId: guest.id, status } };
 };
@@ -395,11 +453,12 @@ const startRsvpAiCallback: StepHandler = async (_config, ctx) => {
     );
   }
 
+  const guest = requireGuestContext(ctx, 'action.start_rsvp_ai_callback');
   const outcome = await dispatch({
     runId: ctx.runId,
     nodeId: ctx.nodeId,
-    eventId: ctx.trigger.eventId,
-    contactId: ctx.trigger.contactId,
+    eventId: guest.eventId,
+    contactId: guest.contactId,
   });
 
   if (!outcome.ok) {
@@ -456,7 +515,8 @@ const sendWhatsapp: StepHandler = async (config, ctx) => {
     return { output: { skipped: true, reason: 'empty_body' } };
   }
 
-  const outcome = await ctx.deps.guests.sendWhatsAppReply(ctx.trigger.contactId, body);
+  const { contactId } = requireGuestContext(ctx, 'action.send_whatsapp');
+  const outcome = await ctx.deps.guests.sendWhatsAppReply(contactId, body);
   if (!outcome.ok) {
     return { output: { skipped: true, reason: outcome.reason ?? 'send_failed' } };
   }
@@ -590,9 +650,10 @@ const setGuestField: StepHandler = async (config, ctx) => {
     );
   }
 
+  const guest = requireGuestContext(ctx, 'action.set_guest_field');
   const result = await write({
-    eventId: ctx.trigger.eventId,
-    contactId: ctx.trigger.contactId,
+    eventId: guest.eventId,
+    contactId: guest.contactId,
     field,
     value,
   });
@@ -631,9 +692,10 @@ const createCallbackRequest: StepHandler = async (config, ctx) => {
     );
   }
 
+  const guest = requireGuestContext(ctx, 'action.create_callback_request');
   const result = await create({
-    eventId: ctx.trigger.eventId,
-    contactId: ctx.trigger.contactId,
+    eventId: guest.eventId,
+    contactId: guest.contactId,
     topic: topic === '' ? 'פנייה מתהליך אוטומטי' : topic,
     note,
   });
@@ -670,6 +732,7 @@ const setValue: StepHandler = async (config) => ({
 
 export const STEP_HANDLERS: Record<KalfaNodeType, StepHandler> = {
   'trigger.whatsapp_inbound': whatsappInbound,
+  'trigger.webhook': webhookTrigger,
   'logic.condition': condition,
   'logic.switch': switchNode,
   'action.update_guest_status': updateGuestStatus,

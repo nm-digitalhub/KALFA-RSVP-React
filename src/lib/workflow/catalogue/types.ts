@@ -21,6 +21,7 @@ import type { RsvpStatus } from '@/lib/constants';
 // orphans every saved workflow that used it.
 export const NODE_TYPES = [
   'trigger.whatsapp_inbound',
+  'trigger.webhook',
   'logic.condition',
   'logic.switch',
   'action.update_guest_status',
@@ -112,6 +113,31 @@ export type WhatsappInboundConfig = {
    * This is the field that tells them apart.
    */
   phoneNumberId?: string;
+};
+
+/**
+ * An external system calls in, and a run starts.
+ *
+ * THE DYNAMIC TRIGGER. It declares no field list: whatever JSON the caller POSTs
+ * is published as `{{trigger.body.<path>}}`. A new caller with a different shape
+ * needs no code change, no migration and no new node type — which is exactly the
+ * difference between this and a trigger whose fields someone has to hard-code.
+ *
+ * ⚠️ THE TOKEN IS THE ONLY THING STANDING IN FRONT OF A PUBLIC ENDPOINT.
+ * It lives in the diagram rather than in a column, the same way n8n shows a
+ * webhook URL in its editor — it is an ADDRESS for this workflow, not a
+ * credential to somebody else's system, and whoever can open the workflow is
+ * exactly who needs to copy it. It is generated server-side (never in the
+ * browser) and a workflow with an empty token cannot be armed.
+ *
+ * The endpoint it unlocks starts a run and nothing else: it cannot read a guest,
+ * cannot name an event, and every guest-touching node refuses in a run that came
+ * from here (`requireGuestContext`). The blast radius of a leaked token is
+ * "someone can make this workflow run", not "someone can reach our data".
+ */
+export type WebhookTriggerConfig = {
+  /** Opaque, server-generated. Empty means the trigger is not wired up yet. */
+  token: string;
 };
 
 // The two outgoing ports of a condition node, as HANDLE IDS.
@@ -459,6 +485,7 @@ export type SetValueConfig = {
 // vendored runner is `unknown`; this is the vocabulary we give it.
 export type KalfaNodeConfig =
   | { type: 'trigger.whatsapp_inbound'; config: WhatsappInboundConfig }
+  | { type: 'trigger.webhook'; config: WebhookTriggerConfig }
   | { type: 'logic.condition'; config: ConditionConfig }
   | { type: 'logic.switch'; config: SwitchConfig }
   | { type: 'action.update_guest_status'; config: UpdateGuestStatusConfig }

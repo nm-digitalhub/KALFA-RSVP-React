@@ -1,5 +1,7 @@
 'use server';
 
+import { randomBytes } from 'node:crypto';
+
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 import { z } from 'zod';
@@ -201,4 +203,21 @@ export async function testWorkflowAction(
 ): Promise<DryRunResult> {
   const id = idSchema.parse(workflowId);
   return testWorkflow(id, scenarioSchema.parse(scenario));
+}
+
+/**
+ * Mint a token for a `trigger.webhook` node.
+ *
+ * SERVER-SIDE, and that is the only reason this action exists: the palette runs
+ * in the browser, and a token minted there is one whose entropy nobody audited.
+ * 256 bits from the platform CSPRNG, hex-encoded so it survives a URL path
+ * segment untouched.
+ *
+ * It does not save anything — the owner pastes it into the node and saves the
+ * diagram like any other edit. Generating and storing in one step would mean a
+ * click silently rewrote a live endpoint's address.
+ */
+export async function generateWebhookTokenAction(): Promise<string> {
+  await requirePlatformPermission('manage_settings');
+  return randomBytes(32).toString('hex');
 }

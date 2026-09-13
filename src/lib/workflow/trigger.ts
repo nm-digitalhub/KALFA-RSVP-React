@@ -68,8 +68,16 @@ export type InboundMessage = {
  * from a manual start.
  */
 export type TriggerPayload = {
-  eventId: string;
-  contactId: string;
+  /**
+   * OPTIONAL since `trigger.webhook` landed: a run started by an external system
+   * calling in is about whatever that system sent, and there may be no guest at
+   * all. `requireGuestContext` in ./steps refuses the nodes that need one, by
+   * name, rather than a placeholder id being invented here.
+   */
+  eventId?: string;
+  contactId?: string;
+  /** Arbitrary JSON from an inbound webhook, readable as `{{trigger.body.…}}`. */
+  body?: Record<string, unknown>;
   message_text: string;
   button_payload: string;
   // Optional for the same reason as on `WorkflowTriggerPayload`: omitted, not
@@ -118,7 +126,12 @@ export function buildTriggerPayload(input: {
 
 export type PlannedRun = {
   workflowId: string;
-  eventId: string;
+  /**
+   * `null` for a run with no event — an inbound webhook may be about anything,
+   * and `workflow_runs.event_id` is nullable precisely so that is representable
+   * rather than faked.
+   */
+  eventId: string | null;
   /**
    * What asked for this run, written straight to `workflow_runs.trigger_source`.
    *

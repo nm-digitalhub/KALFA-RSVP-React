@@ -86,8 +86,23 @@ describe('catalogue', () => {
     expect(CATALOGUE_COVERS_ALL_TYPES).toBe(true);
   });
 
-  it('declares exactly one trigger type in this slice', () => {
-    expect(CATALOGUE.filter((e) => e.isTrigger).map((e) => e.type)).toEqual([TRIGGER]);
+  it('declares exactly the trigger types that exist, and no others', () => {
+    // Was "exactly one trigger type in this slice" while WhatsApp was the only
+    // way in. `trigger.webhook` is the second, and the assertion is updated
+    // rather than relaxed: the LIST is the point. A node type that quietly
+    // became a trigger — or a trigger that quietly stopped being one — is a
+    // change to who may start a flow, and rule 1 says that is the catalogue's
+    // decision alone.
+    expect(CATALOGUE.filter((e) => e.isTrigger).map((e) => e.type).sort()).toEqual(
+      ['trigger.webhook', 'trigger.whatsapp_inbound'],
+    );
+  });
+
+  it('every trigger type is spelled trigger.*, and nothing else is', () => {
+    // The naming is load-bearing for a reader scanning the palette, and free.
+    for (const entry of CATALOGUE) {
+      expect(entry.type.startsWith('trigger.')).toBe(entry.isTrigger);
+    }
   });
 });
 
