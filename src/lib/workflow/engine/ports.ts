@@ -125,7 +125,24 @@ export interface StepLedgerPort {
    * Optional so a port that predates waits fails closed rather than silently
    * treating a wait as an ordinary failure.
    */
-  beginWait?(args: { runId: string; nodeId: string; waitUntil: string }): Promise<void>;
+  beginWait?(args: {
+    runId: string;
+    nodeId: string;
+    waitUntil: string;
+    /**
+     * The external event the park is waiting for, when the node named one.
+     *
+     * The STORE does not persist this — the step row is parked by deadline and
+     * that is all it needs. It travels here because this call is the only place
+     * that sees a park with the ORIGINAL error object still in hand: the vendored
+     * runner flattens a throw to `{message, code, attempt}` before emitting
+     * `node_failed`, so anything else on the error is gone by the time the event
+     * is observed. `run-workflow` wraps this method to capture the park, which
+     * is what lets the run row record the correlation without parsing it back
+     * out of an error message.
+     */
+    correlationId?: string;
+  }): Promise<void>;
 }
 
 // ---------------------------------------------------------------------------

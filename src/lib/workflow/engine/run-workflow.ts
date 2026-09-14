@@ -9,7 +9,7 @@ import { runGraph } from '../vendor/workflowbuilder/execution-core/graph-runner'
 import type { EventEmitterPort } from '../vendor/workflowbuilder/execution-core/ports/event-emitter.port';
 
 import { createActivityRunner } from './activity-runner';
-import type { RunStatus, WorkflowEngineDeps } from './ports';
+import type { RunStatus, StepLedgerPort, WorkflowEngineDeps } from './ports';
 
 export type RunWorkflowArgs = {
   runId: string;
@@ -47,7 +47,7 @@ export type RunWorkflowOutcome =
    * Parked at a `logic.wait`. NOT terminal — the caller must re-deliver the run
    * at `resumeAt`, and the row keeps no `finished_at`.
    */
-  | { status: 'waiting'; resumeAt: string; nodeId: string }
+  | { status: 'waiting'; resumeAt: string; nodeId: string; correlationId?: string }
   | { status: 'failed'; message: string };
 
 export async function runWorkflow(args: RunWorkflowArgs): Promise<RunWorkflowOutcome> {
@@ -67,11 +67,41 @@ export async function runWorkflow(args: RunWorkflowArgs): Promise<RunWorkflowOut
 
   await deps.runs.setRunStatus({ runId, status: 'running' });
 
+  // THE PARK, CAPTURED WHERE IT IS STILL STRUCTURED.
+  //
+  // The vendored runner flattens a throw to `{message, code, attempt}` before it
+  // emits `node_failed` (graph-runner.ts, via extractDeepestError), so by the
+  // time the event is observed the wait's own fields are gone. That is why the
+  // deadline used to be recovered with a regex over the error message — and why
+  // adding a correlation the same way would have meant a second, more brittle
+  // one.
+  //
+  // `beginWait` is the one call that sees the park with the original error still
+  // in hand: activity-runner always invokes it immediately before rethrowing, and
+  // refuses the node outright when the ledger cannot park. So wrapping it here
+  // captures both halves structurally, and the event is left to do the only job
+  // it can still do reliably — say THAT a wait happened.
+  //
+  // Nothing under `vendor/` is modified, and nothing is parsed.
+  let parked: { waitUntil: string; correlationId?: string } | null = null;
+  const ledger: StepLedgerPort = deps.ledger.beginWait
+    ? {
+        ...deps.ledger,
+        beginWait: async (args) => {
+          parked = {
+            waitUntil: args.waitUntil,
+            ...(args.correlationId ? { correlationId: args.correlationId } : {}),
+          };
+          await deps.ledger.beginWait!(args);
+        },
+      }
+    : deps.ledger;
+
   const runner = createActivityRunner<KalfaNode>({
     runId,
     workflowId,
     trigger,
-    ledger: deps.ledger,
+    ledger,
     guests: deps.guests,
     alerts: deps.alerts,
     webhook: deps.webhook,
@@ -150,13 +180,23 @@ export async function runWorkflow(args: RunWorkflowArgs): Promise<RunWorkflowOut
   //
   // Nothing under `vendor/` is modified. The interception is entirely inside the
   // two callbacks this file already owns.
-  let waitRequest: { resumeAt: string; nodeId: string } | null = null;
+  let waitRequest: { resumeAt: string; nodeId: string; correlationId?: string } | null = null;
 
   const events: EventEmitterPort = {
     emitEvent: async (executionId, type, payload, nodeId) => {
-      const wait = type === 'node_failed' ? readWaitCode(payload) : null;
+      // The EVENT only says a wait happened; the VALUES come from the capture
+      // above, which saw them structured. `parked` is always set by the time
+      // this fires — activity-runner calls `beginWait` immediately before it
+      // rethrows, and refuses the node when the ledger cannot park — but it is
+      // read defensively rather than asserted, because losing a park to a crash
+      // here would be worse than a run that simply does not wait.
+      const wait = type === 'node_failed' && isWaitFailure(payload) ? parked : null;
       if (wait && nodeId) {
-        waitRequest = { resumeAt: wait.resumeAt, nodeId };
+        waitRequest = {
+          resumeAt: wait.waitUntil,
+          nodeId,
+          ...(wait.correlationId ? { correlationId: wait.correlationId } : {}),
+        };
         if (deps.log) {
           try {
             await deps.log.appendEvent({
@@ -165,7 +205,7 @@ export async function runWorkflow(args: RunWorkflowArgs): Promise<RunWorkflowOut
               nodeId,
               // `resumeAt` extends the declared payload deliberately: the log
               // panel is ours, and "waiting" without "until when" is not useful.
-              payload: withLabels('node_waiting', { resumeAt: wait.resumeAt }, nodeId),
+              payload: withLabels('node_waiting', { resumeAt: wait.waitUntil }, nodeId),
             });
           } catch {
             // Same fail-soft rule as every other event here.
@@ -248,9 +288,14 @@ export async function runWorkflow(args: RunWorkflowArgs): Promise<RunWorkflowOut
   // BEFORE the failure branch, because the runner reported this run as failed —
   // that is how a wait leaves the scheduler at all.
   if (waitRequest) {
-    const { resumeAt, nodeId } = waitRequest;
-    await deps.runs.setRunStatus({ runId, status: 'waiting', resumeAt });
-    return { status: 'waiting', resumeAt, nodeId };
+    const { resumeAt, nodeId, correlationId } = waitRequest;
+    await deps.runs.setRunStatus({
+      runId,
+      status: 'waiting',
+      resumeAt,
+      ...(correlationId ? { resumeCorrelationId: correlationId } : {}),
+    });
+    return { status: 'waiting', resumeAt, nodeId, ...(correlationId ? { correlationId } : {}) };
   }
 
   if (outcome.status === 'failed') {
@@ -281,23 +326,26 @@ function isRunStatus(value: string): value is RunStatus {
 }
 
 /**
- * The wait deadline inside a `node_failed` payload, or null.
+ * Whether a `node_failed` payload is a park rather than a failure.
  *
- * ⚠️ READ OUT OF THE MESSAGE, and that is not laziness. The payload has already
- * crossed `withRedactedPayloads` and been rebuilt by `runNode` into
- * `{ error: { message, code } }` — the thrown object, and with it the
- * `resumeAt` field, is gone by the time this wrapper sees anything. The message
- * is the only carrier left, which is why `WorkflowWaitSignal` composes an ISO
- * timestamp into it rather than relying on a property surviving.
+ * The CODE is all this reads, and all it can read. The payload has been rebuilt
+ * by `runNode` into `{ error: { message, code, attempt } }` (graph-runner.ts,
+ * via `extractDeepestError`), so the thrown object — and every field the wait
+ * put on it — is gone by the time this sees anything.
  *
- * The code is still what IDENTIFIES a wait; the timestamp is only extracted once
- * the code has already matched, so an ordinary failure whose message happens to
- * contain a date is never read as one.
+ * It used to recover the deadline with a regex over the message, for exactly
+ * that reason. It no longer does: `beginWait` is wrapped where the park is still
+ * structured, so the values come from there and the event is left with the one
+ * job it can still do reliably. Adding a correlation the old way would have
+ * meant a second and more brittle pattern; this removed the first instead.
+ *
+ * `node_failed` is emitted from exactly ONE place in the vendored runner
+ * (graph-runner.ts:321, inside the catch around `executeNode`), and every wait
+ * therefore passes through activity-runner's own catch, which calls `beginWait`
+ * before it rethrows and refuses the node outright when the ledger cannot park.
+ * That is what makes the capture complete rather than best-effort.
  */
-function readWaitCode(payload: unknown): { resumeAt: string } | null {
-  const error = (payload as { error?: { code?: unknown; message?: unknown } } | undefined)?.error;
-  if (!error || error.code !== WORKFLOW_WAIT_CODE) return null;
-  if (typeof error.message !== 'string') return null;
-  const match = /(\d{4}-\d{2}-\d{2}T[\d:.]+Z)/.exec(error.message);
-  return match ? { resumeAt: match[1]! } : null;
+function isWaitFailure(payload: unknown): boolean {
+  const error = (payload as { error?: { code?: unknown } } | undefined)?.error;
+  return error?.code === WORKFLOW_WAIT_CODE;
 }

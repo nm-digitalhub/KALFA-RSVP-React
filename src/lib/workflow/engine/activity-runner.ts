@@ -287,7 +287,12 @@ export function createActivityRunner<TNode extends RunnableNode>(
               'הצעד "המתנה" אינו נתמך בסביבה הזו.',
             );
           }
-          await ledger.beginWait({ runId, nodeId: node.id, waitUntil: wait.resumeAt });
+          await ledger.beginWait({
+            runId,
+            nodeId: node.id,
+            waitUntil: wait.resumeAt,
+            ...(wait.correlationId ? { correlationId: wait.correlationId } : {}),
+          });
           throw error;
         }
 

@@ -55,6 +55,8 @@ const definition = {
  * the second call is a REPLAY, and what it sees in the ledger is what decides
  * whether anything runs twice.
  */
+const beginWaitCalls: { nodeId: string; waitUntil: string; correlationId?: string }[] = [];
+
 function ledgerFake() {
   const rows = new Map<string, { status: string; result?: unknown; waitUntil?: string }>();
   const claims: string[] = [];
@@ -84,7 +86,21 @@ function ledgerFake() {
     async failStep({ nodeId }: { nodeId: string }) {
       rows.set(nodeId, { status: 'failed' });
     },
-    async beginWait({ nodeId, waitUntil }: { nodeId: string; waitUntil: string }) {
+    async beginWait({
+      nodeId,
+      waitUntil,
+      correlationId,
+    }: {
+      nodeId: string;
+      waitUntil: string;
+      correlationId?: string;
+    }) {
+      // RECORDED, not stored on the row — the real store does the same. A parked
+      // step is identified by its deadline; the correlation only travels through
+      // this call so `run-workflow` can capture it while the park is still
+      // structured (see the beginWait wrapper there). Recording it lets a test
+      // assert what actually crossed the seam.
+      beginWaitCalls.push({ nodeId, waitUntil, ...(correlationId ? { correlationId } : {}) });
       rows.set(nodeId, { status: 'waiting', waitUntil });
     },
   };
@@ -99,8 +115,20 @@ function makeDeps(ledger: ReturnType<typeof ledgerFake>) {
   const deps = {
     ledger,
     runs: {
-      async setRunStatus({ status, resumeAt }: { status: string; resumeAt?: string }) {
-        statuses.push({ status, ...(resumeAt ? { resumeAt } : {}) });
+      async setRunStatus({
+        status,
+        resumeAt,
+        resumeCorrelationId,
+      }: {
+        status: string;
+        resumeAt?: string;
+        resumeCorrelationId?: string;
+      }) {
+        statuses.push({
+          status,
+          ...(resumeAt ? { resumeAt } : {}),
+          ...(resumeCorrelationId ? { resumeCorrelationId } : {}),
+        });
       },
     },
     guests: {} as WorkflowEngineDeps['guests'],
@@ -137,6 +165,7 @@ const NOW = Date.parse('2026-09-13T12:00:00.000Z');
 beforeEach(() => {
   vi.useFakeTimers();
   vi.setSystemTime(NOW);
+  beginWaitCalls.length = 0;
 });
 
 afterEach(() => {
@@ -269,5 +298,40 @@ describe('a ledger that cannot park fails CLOSED', () => {
     const outcome = await run(deps);
     expect(outcome.status).toBe('failed');
     expect(statuses.map((s) => s.status)).toContain('failed');
+  });
+});
+
+// The wait's OTHER half, added with the event-driven wake (0ב).
+//
+// `logic.wait` waits on a clock and names no event; these pin that it stays that
+// way — a timed park must not pick up a correlation by accident, and the run row
+// must not record one. They also cover the REGRESSION that mattered most in this
+// change: the deadline used to be recovered with a regex over the error message
+// and now comes from the `beginWait` capture, so "the park still reports the
+// right instant" is the assertion that proves the swap.
+//
+// The correlated direction cannot be driven end to end yet: no node emits a
+// correlation until the voice step does, and STEP_HANDLERS is imported directly
+// so a handler cannot be injected here. Its transport is covered where it is
+// pure, in wait-signal.test.ts.
+describe('a timed wait carries no correlation', () => {
+  it('beginWait receives the deadline and nothing else', async () => {
+    const ledger = ledgerFake();
+    const { deps } = makeDeps(ledger);
+    await run(deps);
+
+    expect(beginWaitCalls).toHaveLength(1);
+    expect(beginWaitCalls[0]!.waitUntil).toBe(new Date(NOW + 86_400_000).toISOString());
+    expect(beginWaitCalls[0]).not.toHaveProperty('correlationId');
+  });
+
+  it('the run row records that same deadline, and no correlation', async () => {
+    const ledger = ledgerFake();
+    const { deps, statuses } = makeDeps(ledger);
+    await run(deps);
+
+    const parked = statuses.find((s) => s.status === 'waiting');
+    expect(parked?.resumeAt).toBe(new Date(NOW + 86_400_000).toISOString());
+    expect(parked).not.toHaveProperty('resumeCorrelationId');
   });
 });

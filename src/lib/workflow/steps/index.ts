@@ -1109,20 +1109,39 @@ export const WORKFLOW_WAIT_CODE = 'workflow_wait';
 
 export class WorkflowWaitSignal extends PermanentNodeExecutionError {
   readonly resumeAt: string;
+  /**
+   * The EXTERNAL EVENT this park is waiting for, when there is one.
+   *
+   * Optional, and optional on purpose: `logic.wait` waits on a clock and has no
+   * event, so requiring this would break every wait that exists today. A node
+   * that CAN be finished from outside (a phone call ending) names the thing it
+   * is waiting for here, and `resumeAt` stays as the timeout ceiling rather than
+   * becoming the answer.
+   */
+  readonly correlationId?: string;
 
-  constructor(resumeAt: string) {
+  constructor(resumeAt: string, correlationId?: string) {
     super(WORKFLOW_WAIT_CODE, `ההרצה ממתינה עד ${resumeAt}.`);
     this.name = 'WorkflowWaitSignal';
     this.resumeAt = resumeAt;
+    if (correlationId !== undefined) this.correlationId = correlationId;
   }
 }
 
 /** The wait request carried by an error, or null. By shape — see above. */
-export function readWaitSignal(error: unknown): { resumeAt: string } | null {
+export function readWaitSignal(
+  error: unknown,
+): { resumeAt: string; correlationId?: string } | null {
   if (!(error instanceof Error)) return null;
-  const { code, resumeAt } = error as { code?: unknown; resumeAt?: unknown };
+  const { code, resumeAt, correlationId } = error as {
+    code?: unknown;
+    resumeAt?: unknown;
+    correlationId?: unknown;
+  };
   if (code !== WORKFLOW_WAIT_CODE || typeof resumeAt !== 'string') return null;
-  return { resumeAt };
+  return typeof correlationId === 'string' && correlationId !== ''
+    ? { resumeAt, correlationId }
+    : { resumeAt };
 }
 
 /**
