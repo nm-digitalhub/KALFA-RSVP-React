@@ -871,10 +871,22 @@ const notifyTeamUiSchema: UISchema = {
   elements: [
     { type: 'Text', scope: notifyTeamScope('properties.label'), label: 'שם הצעד' },
     {
-      type: 'Text',
+      // VariableText, matching `detail` below rather than differing from it.
+      //
+      // The runtime resolves `{{…}}` in EVERY config field — `resolveConfigTemplates`
+      // walks the whole object — so this field already accepted references; what it
+      // did not do was offer the picker. An owner typing `{{` here got no
+      // suggestions on a field that would have resolved them, which reads as
+      // "references do not work here" and is the opposite of the truth.
+      //
+      // ⚠️ NOT extended to `action.webhook`'s url. That one is plain Text
+      // deliberately — see the note there: a destination assembled at run time is
+      // a destination nobody reviewed, and the https/private-space check would be
+      // judging a string that did not exist when the diagram was saved.
+      type: 'VariableText',
       scope: notifyTeamScope('properties.title'),
       label: 'כותרת ההתראה',
-      placeholder: 'למשל: אורח כתב משהו שלא זוהה',
+      placeholder: 'למשל: אורח {{trigger.guest_name}} כתב משהו שלא זוהה',
     },
     {
       type: 'VariableTextArea',
@@ -1224,16 +1236,42 @@ const forEachGuestUiSchema: UISchema = {
   elements: [
     { type: 'Text', scope: forEachGuestScope('properties.label'), label: 'שם הצעד' },
     {
+      // ⚠️ THE WARNING BELONGS WHERE THE DAMAGE IS CONFIGURED. This node starts
+      // one run per matching guest — a single press reaches hundreds of real
+      // people — and until now the only thing saying so was the node's
+      // `description`, which is a subtitle on a card and is read once.
+      //
+      // `RichText` renders Markdown, so the number an owner is about to choose
+      // can be emphasised in the sentence that explains it. It binds to no
+      // property and changes no data.
+      type: 'RichText',
+      text:
+        '**כל אורח שתואם יקבל הרצה משלו.** לחיצה אחת יכולה להגיע למאות אנשים אמיתיים. ' +
+        'המספר שתגדירו כאן הוא התקרה שלכם — ומעליה יש תקרה נוספת בקוד שאי אפשר לעקוף מהמסך הזה.',
+    },
+    {
       type: 'Text',
       scope: forEachGuestScope('properties.targetWorkflowId'),
       label: 'מזהה התהליך שירוץ לכל אורח',
       placeholder: 'הדביקו את המזהה מכתובת העורך',
     },
     {
-      type: 'Text',
-      scope: forEachGuestScope('properties.maxGuests'),
-      label: 'עד כמה אורחים (חובה)',
-      inputType: 'number',
+      // Label beside the field rather than above it, with the `*` on the LABEL —
+      // the shape the SDK's own Delay node uses for its required numeric field,
+      // paired with `errorIndicatorEnabled: false` so one problem draws one
+      // marker. The wait node's amount/unit row already reads this way; this
+      // field did not, and it is the one with the largest blast radius.
+      type: 'HorizontalLayout',
+      layoutColumns: '1fr 1fr',
+      elements: [
+        { type: 'Label', text: 'עד כמה אורחים', required: true },
+        {
+          type: 'Text',
+          scope: forEachGuestScope('properties.maxGuests'),
+          inputType: 'number',
+          errorIndicatorEnabled: false,
+        },
+      ],
     },
     {
       // The warning this node exists to carry. One press, hundreds of people.
@@ -1322,8 +1360,12 @@ const voiceCallScope = getScope<typeof voiceCallSchema>;
 
 const voiceCallUiSchema = {
   type: 'VerticalLayout',
+  // ⚠️ THE DECISION FIRST, THE CHROME COLLAPSED — the shape the SDK's own Delay
+  // node uses, and the opposite of what this panel did. It opened with "שם הצעד",
+  // which is a label on a card, and buried the one choice the node exists to make.
+  // Upstream puts the type selector at the top and folds title/status/description
+  // into a "General Information" accordion below it.
   elements: [
-    { type: 'Text', scope: voiceCallScope('properties.label'), label: 'שם הצעד' },
     {
       type: 'Select',
       scope: voiceCallScope('properties.purposeKey'),
@@ -1426,6 +1468,20 @@ const voiceCallUiSchema = {
       label: 'מתקדם',
       elements: [
         { type: 'Select', scope: voiceCallScope('properties.errorPolicy'), label: 'אם הצעד נכשל' },
+      ],
+    },
+    {
+      type: 'Accordion',
+      label: 'פרטי הצעד',
+      elements: [
+        { type: 'Text', scope: voiceCallScope('properties.label'), label: 'שם הצעד' },
+        // ⚠️ THE CONTROL THIS NODE WAS MISSING, and its absence was not cosmetic.
+        // Seventeen of the eighteen node types render `statusControl`; this one
+        // did not, while still carrying `status` in its schema and in its
+        // defaults. `arm-check.ts` reads that value — a node left on 'draft'
+        // blocks arming — so an owner could neither park this node as a draft
+        // nor see why a diagram armed when they expected it not to.
+        statusControl(voiceCallScope('properties.status')),
       ],
     },
   ],

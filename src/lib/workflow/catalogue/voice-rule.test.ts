@@ -117,3 +117,42 @@ describe('the voice node’s property panel', () => {
     expect(topLevelScopes).toContain('#/properties/waitForOutcome');
   });
 });
+
+// The status control every OTHER node had.
+//
+// ⚠️ NOT A COSMETIC GAP. `arm-check.ts` reads `properties.status` and refuses to
+// arm a diagram containing a node left on 'draft'. The voice node carried
+// `status` in its schema and in its defaults, and rendered no control for it —
+// so an owner could neither park it as a draft nor see why a diagram armed when
+// they expected it not to. Seventeen of eighteen node types rendered one.
+describe('every node type can set its own status', () => {
+  it('⚠️ the voice node renders a status control', () => {
+    const scopes: string[] = [];
+    const walk = (el: { scope?: string; elements?: unknown[] }) => {
+      if (el.scope) scopes.push(el.scope);
+      for (const child of (el.elements ?? []) as { scope?: string; elements?: unknown[] }[]) {
+        walk(child);
+      }
+    };
+    walk(voiceItem.uischema as { elements: unknown[] });
+    expect(scopes).toContain('#/properties/status');
+  });
+
+  it('⚠️ and so does every other node in the palette', () => {
+    // The invariant the voice node broke, pinned for the whole palette so the
+    // next node added cannot quietly repeat it.
+    const missing: string[] = [];
+    for (const item of PALETTE_ITEMS) {
+      const scopes: string[] = [];
+      const walk = (el: { scope?: string; elements?: unknown[] }) => {
+        if (el.scope) scopes.push(el.scope);
+        for (const c of (el.elements ?? []) as { scope?: string; elements?: unknown[] }[]) walk(c);
+      };
+      walk(item.uischema as { elements: unknown[] });
+      // A node whose SCHEMA declares `status` must offer a control for it.
+      const declares = 'status' in ((item.schema as { properties: object }).properties ?? {});
+      if (declares && !scopes.includes('#/properties/status')) missing.push(item.type);
+    }
+    expect(missing).toEqual([]);
+  });
+});
