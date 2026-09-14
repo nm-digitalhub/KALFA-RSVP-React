@@ -731,7 +731,18 @@ const startVoiceCall: StepHandler = async (config, ctx) => {
   // park no wake can reach — the run would sleep to a deadline that had already
   // stopped being wakeable. `voice_purposes.token_ttl_sec` is the one number,
   // and an owner who edits it moves this ceiling with it.
-  throw new WorkflowWaitSignal(outcome.tokenExpiresAt, outcome.attemptId);
+  throw new WorkflowWaitSignal(
+    outcome.tokenExpiresAt,
+    outcome.attemptId,
+    // ⚠️ READS, NEVER DIALS. The attempt already exists; this asks the same
+    // question the check above asked, but from the other side of the park — and
+    // it is the ONLY thing that catches a call that ended in the window between
+    // them. A verifier that re-dispatched would telephone the guest twice.
+    async () => {
+      const latest = await readOutcome({ runId: ctx.runId, nodeId: ctx.nodeId });
+      return latest !== null && PURPOSE_SETTLED.includes(latest.dispatchStatus);
+    },
+  );
 };
 
 const startRsvpAiCallback: StepHandler = async (_config, ctx) => {
@@ -1214,28 +1225,66 @@ export class WorkflowWaitSignal extends PermanentNodeExecutionError {
    */
   readonly correlationId?: string;
 
-  constructor(resumeAt: string, correlationId?: string) {
+  /**
+   * "Has the thing I am about to wait for ALREADY happened?"
+   *
+   * ⚠️ THE HALF THAT MAKES AN EVENT WAKE RELIABLE RATHER THAN LIKELY. A node
+   * decides to park by reading the world, and between that read and the park
+   * becoming durable the event can land — the callback then finds a run that is
+   * not waiting yet, reports "nothing to wake", and the run sleeps to its
+   * ceiling with the answer already sitting in the database.
+   *
+   * This closes it AGAINST CONCURRENCY with the ordinary REGISTER-then-CHECK
+   * handshake: the caller parks, registers the fallback wake-up, and only THEN
+   * asks this. Checking before registering would just move the window, not
+   * remove it.
+   *
+   * ⚠️ NOT AGAINST A CRASH. Nothing spans the step row, the run row, the enqueue
+   * and this check in one transaction, so a process that dies partway still
+   * leaves gaps — see the three of them enumerated in `handleWorkflowRun`. This
+   * removes the race between two live actors, which is the one that happens on
+   * every healthy call; it does not make the sequence atomic.
+   *
+   * EPHEMERAL ON PURPOSE. It is a closure over this attempt's own domain, so it
+   * never reaches `StepLedgerPort` — that is a persistence contract, and handing
+   * a DAL a function it can never store would be an API that lies. It travels
+   * through the runner's in-memory `onWait` instead and dies with the
+   * invocation.
+   *
+   * MUST NOT cause the side effect again. It reads the record the node already
+   * created; a verifier that re-dispatched would telephone the guest twice.
+   */
+  readonly verify?: WaitVerifier;
+
+  constructor(resumeAt: string, correlationId?: string, verify?: WaitVerifier) {
     super(WORKFLOW_WAIT_CODE, `ההרצה ממתינה עד ${resumeAt}.`);
     this.name = 'WorkflowWaitSignal';
     this.resumeAt = resumeAt;
     if (correlationId !== undefined) this.correlationId = correlationId;
+    if (verify !== undefined) this.verify = verify;
   }
 }
+
+/** Answers "already happened?" — see `WorkflowWaitSignal.verify`. */
+export type WaitVerifier = () => Promise<boolean>;
 
 /** The wait request carried by an error, or null. By shape — see above. */
 export function readWaitSignal(
   error: unknown,
-): { resumeAt: string; correlationId?: string } | null {
+): { resumeAt: string; correlationId?: string; verify?: WaitVerifier } | null {
   if (!(error instanceof Error)) return null;
-  const { code, resumeAt, correlationId } = error as {
+  const { code, resumeAt, correlationId, verify } = error as {
     code?: unknown;
     resumeAt?: unknown;
     correlationId?: unknown;
+    verify?: unknown;
   };
   if (code !== WORKFLOW_WAIT_CODE || typeof resumeAt !== 'string') return null;
-  return typeof correlationId === 'string' && correlationId !== ''
-    ? { resumeAt, correlationId }
-    : { resumeAt };
+  return {
+    resumeAt,
+    ...(typeof correlationId === 'string' && correlationId !== '' ? { correlationId } : {}),
+    ...(typeof verify === 'function' ? { verify: verify as WaitVerifier } : {}),
+  };
 }
 
 /**

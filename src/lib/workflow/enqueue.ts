@@ -11,6 +11,7 @@ import { getAppOrigin } from '@/lib/url';
 
 import { runWorkflow, type RunWorkflowOutcome } from './engine/run-workflow';
 import { createGuestActions } from './guest-actions';
+import { markParkedRunReady } from './wake-store';
 import { createTeamAlerts } from './team-alerts';
 import { createOutboundWebhook } from './outbound-webhook';
 import type { WorkflowTriggerPayload } from './steps';
@@ -18,6 +19,7 @@ import {
   createExecutionLog,
   createRunStore,
   createStepLedger,
+  listOrphanedWaitingSteps,
   listStuckWaitingRuns,
   loadRunForExecution,
 } from './store';
@@ -243,7 +245,74 @@ export async function handleWorkflowRun(
         `workflow run ${job.runId} parked until ${outcome.resumeAt} but no queue handle was available to reschedule it`,
       );
     }
+    // ── 1. REGISTER ──────────────────────────────────────────────────────────
+    //
+    // The fallback wake-up goes in FIRST, before anything asks whether the event
+    // has already happened. Reversing these two is a window, not a preference: a
+    // callback landing between a "not yet" answer and this enqueue would find a
+    // waiting run with NO pending job to pull forward, report nothing to wake,
+    // answer 200 — and the run would sleep to its ceiling with the result
+    // already in the database.
     await enqueueWorkflowRun(boss, job.runId, new Date(outcome.resumeAt));
+
+    // ── 2. THEN CHECK ────────────────────────────────────────────────────────
+    //
+    // Closes the mirror-image window: the node read the world, decided to wait,
+    // and the event landed while the park was still being written. The callback
+    // that fired then found a run that was not waiting yet and correctly did
+    // nothing. This is the only thing that notices.
+    //
+    // ⚠️ WHAT THIS IS NOT. It closes the CONCURRENCY window — two live actors
+    // racing — and it is not a crash-safe protocol. There is no transaction
+    // across the step row, the run row, this enqueue and this check, so a
+    // process that dies partway leaves gaps that only the sweep can reason
+    // about, and one it cannot:
+    //
+    //   died after `beginWait`, before `setRunStatus('waiting')`
+    //     → the STEP says waiting, the RUN still says running, no `resume_at`.
+    //       `redeliverStuckWaitingRuns` reads runs with status 'waiting', so it
+    //       does not see this one. THE RUN IS STRANDED until someone looks.
+    //   died after `setRunStatus('waiting')`, before the enqueue above
+    //     → waiting with a `resume_at` and no job. The sweep covers it, but only
+    //       once the deadline is past — the early wake is gone, the ceiling holds.
+    //   died between `markParkedRunReady` and `pullWorkflowRunForward`
+    //     → `wait_until` is now, the job still sits at the ceiling. The run wakes
+    //       late and then passes the wait immediately. Degraded, never wrong.
+    //
+    // The first is the one worth fixing, and it is fixed — by
+    // `rescueOrphanedWaitingSteps` below rather than by a transaction across the
+    // ledger's contract. The rescue starts from the STEP table, where the park
+    // DID land, because the run row is the unreliable half in exactly that case.
+    //
+    // Reads only. The verifier is the node's own closure over a record it has
+    // already created — it must never place the call again.
+    if (outcome.verify && outcome.correlationId) {
+      let happened = false;
+      try {
+        happened = await outcome.verify();
+      } catch (e) {
+        // A transient database fault during the CHECK must not fail a run whose
+        // call is fine. The fallback job above is already registered, so the run
+        // still wakes — at its ceiling, or when the callback arrives.
+        console.error(
+          `[workflow] wait verification failed for run ${job.runId}:`,
+          e instanceof Error ? e.message : 'unknown',
+        );
+      }
+
+      if (happened) {
+        // Same CAS the callback route goes through, so there is one gate and one
+        // source of truth — but with the worker's own `boss`, which is already
+        // open, instead of a second send-only connection.
+        const ready = await markParkedRunReady({
+          runId: job.runId,
+          nodeId: outcome.nodeId,
+          correlationId: outcome.correlationId,
+        });
+        // The job provably exists: it was enqueued moments ago, above.
+        if (ready) await pullWorkflowRunForward(boss, job.runId);
+      }
+    }
   }
 
   return outcome;
@@ -265,6 +334,31 @@ export async function handleWorkflowRun(
  * delivery's id — long since completed — and the insert is dropped, leaving the
  * run parked for ever with a sweep that appears to be running.
  */
+/**
+ * Re-deliver runs whose step parked but whose run row never did.
+ *
+ * The crash half of the wait, and the counterpart to `redeliverStuckWaitingRuns`
+ * above: that one rescues a park whose JOB was lost, this one a park whose RUN
+ * ROW was lost. Both end in the same place — `enqueueWorkflowRun` with the
+ * deadline the park recorded — because the step ledger is what decides whether
+ * the wait has actually elapsed, and it has the answer in both cases.
+ *
+ * `resumeAt` here is the STEP's `wait_until`, which is the only deadline that
+ * survived. Passing it rebuilds a stable job id for that instant, so a second
+ * sweep over the same orphan is swallowed by pg-boss's ON CONFLICT DO NOTHING.
+ */
+export async function rescueOrphanedWaitingSteps(
+  boss: PgBoss,
+  list: () => Promise<{ runId: string; resumeAt: string }[]> = listOrphanedWaitingSteps,
+): Promise<number> {
+  const orphans = await list();
+  for (const { runId, resumeAt } of orphans) {
+    console.warn(`[workflow] run ${runId} parked a step but never parked the run — re-delivering`);
+    await enqueueWorkflowRun(boss, runId, new Date(resumeAt));
+  }
+  return orphans.length;
+}
+
 export async function redeliverStuckWaitingRuns(
   boss: PgBoss,
   list: () => Promise<{ runId: string; resumeAt: string }[]> = listStuckWaitingRuns,

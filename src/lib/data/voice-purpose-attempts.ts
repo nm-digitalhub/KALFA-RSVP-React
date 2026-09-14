@@ -17,13 +17,24 @@ import { createAdminClient } from '@/lib/supabase/admin';
  *
  *   pending   — the dispatcher is mid-flight
  *   confirmed — StartScenarios accepted; the call is running
+ *   unknown   — StartScenarios gave an answer we could not classify
  *
- * `failed` and `unknown` are the dispatcher's own terminal verdicts and are
- * deliberately NOT here: a scenario reporting an outcome for a dispatch that
- * never succeeded would be reporting about a call that was never placed, and
- * overwriting that verdict would erase the more accurate one.
+ * ⚠️ `unknown` BELONGS HERE, and leaving it out was a real bug. It is written
+ * when `StartScenarios` returned something unclassifiable or the network failed
+ * mid-start — the call may well be ringing, and its scenario holds a VALID
+ * token, so a callback can and does arrive. With `unknown` excluded this UPDATE
+ * matched zero rows, `applied` came back false, the row stayed `unknown`, and a
+ * workflow waiting on that call woke to read `concluded: false` for a call that
+ * had in fact completed and reported. That is the exact opposite of what
+ * `PURPOSE_SETTLED` says about the same status: it deliberately omits `unknown`
+ * BECAUSE a report may still arrive. The two lists have to agree, and they now
+ * do — `unknown` is not settled, therefore it is still pre-terminal.
+ *
+ * `failed` is the one dispatcher verdict that is genuinely terminal: no call was
+ * placed, so nothing can report on it, and overwriting it would erase the more
+ * accurate answer.
  */
-export const PURPOSE_PRE_TERMINAL = ['pending', 'confirmed'] as const;
+export const PURPOSE_PRE_TERMINAL = ['pending', 'confirmed', 'unknown'] as const;
 
 /**
  * Resolve an attempt by its opaque per-call token. Shaped for

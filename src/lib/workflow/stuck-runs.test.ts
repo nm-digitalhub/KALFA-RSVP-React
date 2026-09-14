@@ -6,7 +6,7 @@ const { adminMock } = vi.hoisted(() => ({ adminMock: vi.fn() }));
 vi.mock('@/lib/supabase/admin', () => ({ createAdminClient: adminMock }));
 
 import { redeliverStuckWaitingRuns } from './enqueue';
-import { listStuckWaitingRuns } from './store';
+import { listOrphanedWaitingSteps, listStuckWaitingRuns } from './store';
 
 // A parked run is woken by ONE pg-boss job. Lose it and the run sleeps for ever:
 // `workflow_runs` has no other timer, and disarming the workflow does not touch
@@ -24,6 +24,7 @@ function mockDb(rows: { id: string; resume_at: string | null }[]) {
     select: (...a: unknown[]) => (filters.push(['select', ...a]), chain),
     eq: (...a: unknown[]) => (filters.push(['eq', ...a]), chain),
     not: (...a: unknown[]) => (filters.push(['not', ...a]), chain),
+    in: (...a: unknown[]) => (filters.push(['in', ...a]), chain),
     lt: (...a: unknown[]) => (filters.push(['lt', ...a]), chain),
     order: (...a: unknown[]) => (filters.push(['order', ...a]), chain),
     limit: async (...a: unknown[]) => {
@@ -131,5 +132,43 @@ describe('redeliverStuckWaitingRuns', () => {
     const boss = { send } as unknown as Parameters<typeof redeliverStuckWaitingRuns>[0];
     expect(await redeliverStuckWaitingRuns(boss, async () => [])).toBe(0);
     expect(send).not.toHaveBeenCalled();
+  });
+});
+
+// The CRASH half of the wait — the gap the REGISTER→CHECK handshake cannot close.
+//
+// ⚠️ PARKING IS TWO WRITES WITH NO TRANSACTION. `beginWait` moves the step to
+// 'waiting'; `setRunStatus` then moves the run to 'waiting' with its `resume_at`.
+// A process dying between them leaves a parked step under a run that still says
+// 'running' — and `listStuckWaitingRuns` reads `workflow_runs.status =
+// 'waiting'`, which is precisely the write that never happened. Nothing else
+// looked, so the run was stranded: every pg-boss retry met the parked step, read
+// `in_flight`, and came back `contended` until the job was gone.
+describe('listOrphanedWaitingSteps', () => {
+  it('⚠️ starts from the STEP table, because the run row is the unreliable half', async () => {
+    const { filters } = mockDb([]);
+    await listOrphanedWaitingSteps(900);
+
+    // The step is what parked, so the step is what is asked about.
+    expect(filters).toContainEqual(['eq', 'status', 'waiting']);
+    expect(filters).toContainEqual(['not', 'wait_until', 'is', null]);
+
+    // And the orphan is told apart from an ordinary park by the RUN's status —
+    // through an inner join, so a step whose run vanished is not resurrected.
+    const select = filters.find((f) => f[0] === 'select');
+    expect(String(select?.[1])).toContain('workflow_runs!inner');
+    expect(filters).toContainEqual(['in', 'workflow_runs.status', ['running', 'pending']]);
+  });
+
+  it('⚠️ looks only at deadlines already PAST, by a grace period', async () => {
+    // The run row is written microseconds after the step in the healthy case, so
+    // a sweep without a grace window would fight every ordinary park.
+    const { filters } = mockDb([]);
+    const before = Date.now();
+    await listOrphanedWaitingSteps(900);
+
+    const lt = filters.find((f) => f[0] === 'lt')!;
+    expect(lt[1]).toBe('wait_until');
+    expect(Date.parse(String(lt[2]))).toBeLessThanOrEqual(before - 900_000 + 1_000);
   });
 });

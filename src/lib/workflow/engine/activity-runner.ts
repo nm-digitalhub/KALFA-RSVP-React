@@ -70,6 +70,25 @@ export type ActivityRunnerArgs = {
    * Optional — a dry run and every test port has no queue behind it.
    */
   signal?: AbortSignal;
+
+  /**
+   * Called the moment a node parks, with everything the park carried.
+   *
+   * ⚠️ IN MEMORY, AND SEPARATE FROM THE LEDGER ON PURPOSE. `beginWait` takes only
+   * what is durable — a deadline and a correlation id. A wait can also carry a
+   * `verify` closure, which is behaviour belonging to this invocation and has no
+   * row to live in; passing it through `StepLedgerPort` would hand a persistence
+   * contract a function it can never store. This is the seam where the ephemeral
+   * half is handed to whoever is driving the run.
+   */
+  onWait?: (wait: CapturedWait) => void;
+};
+
+/** A park, as the runner saw it — the durable half plus the ephemeral verifier. */
+export type CapturedWait = {
+  resumeAt: string;
+  correlationId?: string;
+  verify?: () => Promise<boolean>;
 };
 
 // The shape the runner sees. Structural rather than an import of KalfaNode, so
@@ -154,7 +173,7 @@ function resolveConfigTemplates(
 export function createActivityRunner<TNode extends RunnableNode>(
   args: ActivityRunnerArgs,
 ): ActivityRunnerPort<TNode> {
-  const { runId, workflowId, trigger, ledger, guests, alerts, webhook, signal } = args;
+  const { runId, workflowId, trigger, ledger, guests, alerts, webhook, signal, onWait } = args;
 
   return {
     // `context` was ignored until templates landed — the handlers took only
@@ -321,12 +340,17 @@ export function createActivityRunner<TNode extends RunnableNode>(
               'הצעד "המתנה" אינו נתמך בסביבה הזו.',
             );
           }
+          // The DURABLE half only.
           await ledger.beginWait({
             runId,
             nodeId: node.id,
             waitUntil: wait.resumeAt,
             ...(wait.correlationId ? { correlationId: wait.correlationId } : {}),
           });
+          // The EPHEMERAL half, after the row is written: a verifier handed out
+          // before the park was durable would be answered against a run nothing
+          // could wake yet.
+          onWait?.(wait);
           throw error;
         }
 

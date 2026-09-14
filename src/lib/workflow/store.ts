@@ -435,6 +435,54 @@ export async function listStuckWaitingRuns(
     .map((r) => ({ runId: r.id, resumeAt: r.resume_at }));
 }
 
+/**
+ * Runs whose STEP parked but whose RUN row never did.
+ *
+ * ⚠️ THE ONE GAP THE REGISTER→CHECK HANDSHAKE CANNOT CLOSE. Parking is two
+ * writes with no transaction around them: `beginWait` moves the step to
+ * 'waiting', then `setRunStatus` moves the run to 'waiting' with its `resume_at`.
+ * A process that dies between them leaves a step that is parked and a run that
+ * still says 'running' — and `listStuckWaitingRuns` above reads
+ * `workflow_runs.status = 'waiting'`, which is exactly the write that never
+ * happened. Nothing else looks, so the run is stranded: pg-boss retries it until
+ * the limit, each retry meets the parked step, reads `in_flight`, and returns
+ * `contended` until the job is gone.
+ *
+ * The rescue therefore has to start from the STEP table, where the park DID
+ * land. A step still 'waiting' past its own deadline is recoverable whatever its
+ * run row says — and re-delivering the run lets `claimStep` see an elapsed wait
+ * and carry on, which is the same thing a healthy park gets.
+ *
+ * Deliberately NOT restricted to runs in a particular status: the whole point is
+ * that the run's status is the unreliable half here. `graceSeconds` keeps it off
+ * the ordinary case, where the run row is written microseconds later.
+ */
+export async function listOrphanedWaitingSteps(
+  graceSeconds = 900,
+  limit = 100,
+): Promise<{ runId: string; resumeAt: string }[]> {
+  const supabase = createAdminClient();
+  const cutoff = new Date(Date.now() - graceSeconds * 1000).toISOString();
+
+  const { data, error } = await supabase
+    .from('workflow_run_steps')
+    // `!inner` so a step whose run vanished is not returned; the embedded status
+    // is what tells the orphan apart from an ordinary park.
+    .select('run_id, wait_until, workflow_runs!inner(status)')
+    .eq('status', 'waiting')
+    .not('wait_until', 'is', null)
+    .lt('wait_until', cutoff)
+    .in('workflow_runs.status', ['running', 'pending'])
+    .order('wait_until', { ascending: true })
+    .limit(limit);
+
+  if (error) throw new Error(`listOrphanedWaitingSteps failed: ${error.message}`);
+
+  return (data ?? [])
+    .filter((r) => typeof r.wait_until === 'string')
+    .map((r) => ({ runId: r.run_id, resumeAt: r.wait_until as string }));
+}
+
 export async function listUndeliveredRuns(
   minAgeSeconds = 30,
   limit = 200,

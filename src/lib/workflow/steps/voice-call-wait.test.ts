@@ -105,7 +105,10 @@ describe('action.start_voice_call — waiting for the outcome', () => {
     // The correlation is the attempt id, which is what the callback route feeds
     // the wake and what `workflow_runs.resume_correlation_id` stores. Anything
     // else and the wake matches nothing.
-    expect(r.wait).toEqual({ resumeAt: EXPIRY, correlationId: 'attempt-1' });
+    expect(r.wait).toMatchObject({ resumeAt: EXPIRY, correlationId: 'attempt-1' });
+    // The verifier rides along with the park — it is what closes the window
+    // between deciding to wait and the wait becoming wakeable.
+    expect(typeof r.wait?.verify).toBe('function');
   });
 
   it('⚠️ the ceiling is never a duration chosen in code', async () => {
@@ -169,7 +172,10 @@ describe('action.start_voice_call — waiting for the outcome', () => {
         callDurationSec: null,
       })),
     });
-    expect(r.wait).toEqual({ resumeAt: EXPIRY, correlationId: 'attempt-1' });
+    expect(r.wait).toMatchObject({ resumeAt: EXPIRY, correlationId: 'attempt-1' });
+    // The verifier rides along with the park — it is what closes the window
+    // between deciding to wait and the wait becoming wakeable.
+    expect(typeof r.wait?.verify).toBe('function');
   });
 
   it('⚠️ never parks without a correlation to park on', async () => {
@@ -240,5 +246,129 @@ describe('action.start_voice_call — resuming', () => {
       ),
     );
     expect(r.output).toMatchObject({ concluded: false, resumed: true });
+  });
+});
+
+// ⚠️ THE STATUS THE TWO LISTS USED TO DISAGREE ABOUT.
+//
+// `PURPOSE_SETTLED` omits `unknown` because a report may still arrive, but
+// `PURPOSE_PRE_TERMINAL` also omitted it — so the callback's UPDATE matched zero
+// rows, the status stayed `unknown`, and a waiting workflow read `concluded:
+// false` for a call that had completed and reported. This pins the engine half:
+// `unknown` parks and waits rather than settling.
+describe('an ambiguous start is not an outcome', () => {
+  it('parks on unknown, and reports it honestly if nothing ever comes', async () => {
+    const r = await park({ purposeKey: 'feedback', waitForOutcome: true }, {
+      startVoicePurposeCall: vi.fn<Dial>(async () => ({
+        ok: false,
+        status: 'start_unknown',
+        attemptId: 'attempt-1',
+        tokenExpiresAt: EXPIRY,
+      })),
+      readVoicePurposeOutcome: vi.fn<Read>(async () => ({
+        attemptId: 'attempt-1',
+        dispatchStatus: 'unknown',
+        finishReason: 'ambiguous_start_response',
+        callDurationSec: null,
+      })),
+    });
+    expect(r.wait).toMatchObject({ resumeAt: EXPIRY, correlationId: 'attempt-1' });
+    // The verifier rides along with the park — it is what closes the window
+    // between deciding to wait and the wait becoming wakeable.
+    expect(typeof r.wait?.verify).toBe('function');
+
+    // …and if the callback DID land, the row is 'concluded' by then, so the
+    // resume reads a real outcome rather than the ambiguity it parked on.
+    const resumed = await handler(
+      { purposeKey: 'feedback', waitForOutcome: true },
+      ctx(
+        {
+          readVoicePurposeOutcome: vi.fn<Read>(async () => ({
+            attemptId: 'attempt-1',
+            dispatchStatus: 'concluded',
+            finishReason: 'completed',
+            callDurationSec: 51,
+          })),
+        },
+        { resumedFromWait: true },
+      ),
+    );
+    expect(resumed.output).toMatchObject({ concluded: true, durationSec: 51 });
+  });
+});
+
+// The verifier the park hands out, exercised as its caller will exercise it.
+describe('the wait verifier', () => {
+  it('⚠️ READS the attempt — it must never place the call again', async () => {
+    const dial = vi.fn<Dial>(dialedOk);
+    const read = vi.fn<Read>(notYet);
+
+    const r = await park({ purposeKey: 'feedback', waitForOutcome: true }, {
+      startVoicePurposeCall: dial,
+      readVoicePurposeOutcome: read,
+    });
+
+    const dialsBefore = dial.mock.calls.length;
+    await r.wait!.verify!();
+
+    // The dial count is unchanged. A verifier that re-dispatched would telephone
+    // the guest a second time on every park — the single worst thing this whole
+    // mechanism could do.
+    expect(dial.mock.calls.length).toBe(dialsBefore);
+    expect(read).toHaveBeenCalledWith({ runId: 'run-1', nodeId: 'node-1' });
+  });
+
+  it('answers TRUE only once the call has SETTLED', async () => {
+    // ⚠️ REWRITTEN. The first version parked with one status and then parked a
+    // SECOND time with the status under test, asking that park's verifier — so
+    // for 'concluded'/'failed' no park happened at all and the test returned a
+    // hardcoded `true` rather than asking anything. It asserted its own fixture.
+    //
+    // The verifier reads the attempt AT CALL TIME, so the honest way to test it
+    // is one park whose port answer CHANGES underneath it — exactly what happens
+    // in production when the callback lands during the window.
+    for (const [settledTo, expected] of [
+      ['concluded', true],
+      ['failed', true],
+      ['confirmed', false],
+      ['unknown', false],
+      ['pending', false],
+    ] as const) {
+      let status = 'confirmed';
+      const read = vi.fn<Read>(async () => ({
+        attemptId: 'attempt-1',
+        dispatchStatus: status,
+        finishReason: null,
+        callDurationSec: null,
+      }));
+
+      const r = await park({ purposeKey: 'feedback', waitForOutcome: true }, {
+        startVoicePurposeCall: vi.fn<Dial>(dialedOk),
+        readVoicePurposeOutcome: read,
+      });
+      expect(r.wait, settledTo).not.toBeNull();
+
+      // The window: the call reports between the park and the check.
+      status = settledTo;
+      expect(await r.wait!.verify!(), settledTo).toBe(expected);
+    }
+  });
+
+  it('a vanished row is not "it happened"', async () => {
+    let gone = false;
+    const read = vi.fn<Read>(async () =>
+      gone
+        ? null
+        : { attemptId: 'attempt-1', dispatchStatus: 'confirmed', finishReason: null, callDurationSec: null },
+    );
+    const r = await park({ purposeKey: 'feedback', waitForOutcome: true }, {
+      startVoicePurposeCall: vi.fn<Dial>(dialedOk),
+      readVoicePurposeOutcome: read,
+    });
+
+    gone = true;
+    // A missing row says nothing happened, not that everything did. Reporting
+    // true here would resume a run onto an outcome that does not exist.
+    expect(await r.wait!.verify!()).toBe(false);
   });
 });

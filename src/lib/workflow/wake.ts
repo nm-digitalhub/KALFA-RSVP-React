@@ -1,9 +1,9 @@
 import 'server-only';
 
-import { createAdminClient } from '@/lib/supabase/admin';
 import { getWebJobSender } from '@/lib/queue/web-sender';
 
 import { pullWorkflowRunForward } from './enqueue';
+import { markParkedRunReady } from './wake-store';
 
 // Wake a workflow run that is parked on an external event, because the event
 // happened (step 0ב-3 / 0ב-4).
@@ -44,15 +44,7 @@ export async function wakeParkedRun(args: {
   nodeId: string;
   correlationId: string;
 }): Promise<WakeOutcome> {
-  const admin = createAdminClient();
-  const { data, error } = await admin.rpc('wake_parked_workflow_run', {
-    p_run_id: args.runId,
-    p_node_id: args.nodeId,
-    p_correlation_id: args.correlationId,
-  });
-  if (error) throw new Error(`wakeParkedRun failed: ${error.message}`);
-
-  const woke = data === true;
+  const woke = await markParkedRunReady(args);
   // NOT woken means the run is not waiting on this event — it already moved on,
   // or it parked again for something else. Pulling its job forward then would
   // deliver a run early for a reason that no longer applies, so the queue half

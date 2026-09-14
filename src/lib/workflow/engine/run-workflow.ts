@@ -8,9 +8,9 @@ import { WORKFLOW_WAIT_CODE, type WorkflowTriggerPayload } from '../steps';
 import { runGraph } from '../vendor/workflowbuilder/execution-core/graph-runner';
 import type { EventEmitterPort } from '../vendor/workflowbuilder/execution-core/ports/event-emitter.port';
 
-import { createActivityRunner } from './activity-runner';
+import { createActivityRunner, type CapturedWait } from './activity-runner';
 import { RUN_ABANDONED_CODE, STEP_IN_FLIGHT_CODE } from './ports';
-import type { RunStatus, StepLedgerPort, WorkflowEngineDeps } from './ports';
+import type { RunStatus, WorkflowEngineDeps } from './ports';
 
 export type RunWorkflowArgs = {
   runId: string;
@@ -57,7 +57,19 @@ export type RunWorkflowOutcome =
    * Parked at a `logic.wait`. NOT terminal — the caller must re-deliver the run
    * at `resumeAt`, and the row keeps no `finished_at`.
    */
-  | { status: 'waiting'; resumeAt: string; nodeId: string; correlationId?: string }
+  | {
+      status: 'waiting';
+      resumeAt: string;
+      nodeId: string;
+      correlationId?: string;
+      /**
+       * "Has it already happened?" — asked by the CALLER, and only after it has
+       * registered the fallback wake-up. Never persisted and never queued: it is
+       * a closure over the node's own domain and lives only between this call
+       * and its caller, in one invocation.
+       */
+      verify?: () => Promise<boolean>;
+    }
   /**
    * Another delivery of THIS SAME RUN holds the node right now.
    *
@@ -102,36 +114,27 @@ export async function runWorkflow(args: RunWorkflowArgs): Promise<RunWorkflowOut
   // adding a correlation the same way would have meant a second, more brittle
   // one.
   //
-  // `beginWait` is the one call that sees the park with the original error still
-  // in hand: activity-runner always invokes it immediately before rethrowing, and
-  // refuses the node outright when the ledger cannot park. So wrapping it here
-  // captures both halves structurally, and the event is left to do the only job
-  // it can still do reliably — say THAT a wait happened.
+  // The runner's `onWait` is where the park is seen WHOLE — deadline,
+  // correlation, and the ephemeral `verify` closure — immediately after the row
+  // is durable and before the error is rethrown. It replaced a wrapper around
+  // `beginWait`, which could only ever see the durable half, because `beginWait`
+  // is a persistence contract and a closure has no row to live in.
   //
   // Nothing under `vendor/` is modified, and nothing is parsed.
-  let parked: { waitUntil: string; correlationId?: string } | null = null;
-  const ledger: StepLedgerPort = deps.ledger.beginWait
-    ? {
-        ...deps.ledger,
-        beginWait: async (args) => {
-          parked = {
-            waitUntil: args.waitUntil,
-            ...(args.correlationId ? { correlationId: args.correlationId } : {}),
-          };
-          await deps.ledger.beginWait!(args);
-        },
-      }
-    : deps.ledger;
+  let parked: CapturedWait | null = null;
 
   const runner = createActivityRunner<KalfaNode>({
     runId,
     workflowId,
     trigger,
-    ledger,
+    ledger: deps.ledger,
     guests: deps.guests,
     alerts: deps.alerts,
     webhook: deps.webhook,
     ...(args.signal ? { signal: args.signal } : {}),
+    onWait: (wait) => {
+      parked = wait;
+    },
   });
 
   // The runner's own event stream, appended to the execution log when one is
@@ -207,7 +210,12 @@ export async function runWorkflow(args: RunWorkflowArgs): Promise<RunWorkflowOut
   //
   // Nothing under `vendor/` is modified. The interception is entirely inside the
   // two callbacks this file already owns.
-  let waitRequest: { resumeAt: string; nodeId: string; correlationId?: string } | null = null;
+  let waitRequest: {
+    resumeAt: string;
+    nodeId: string;
+    correlationId?: string;
+    verify?: () => Promise<boolean>;
+  } | null = null;
   let contendedNodeId: { nodeId: string; reason: 'in_flight' | 'abandoned' } | null = null;
 
   const events: EventEmitterPort = {
@@ -233,9 +241,10 @@ export async function runWorkflow(args: RunWorkflowArgs): Promise<RunWorkflowOut
       const wait = type === 'node_failed' && isWaitFailure(payload) ? parked : null;
       if (wait && nodeId) {
         waitRequest = {
-          resumeAt: wait.waitUntil,
+          resumeAt: wait.resumeAt,
           nodeId,
           ...(wait.correlationId ? { correlationId: wait.correlationId } : {}),
+          ...(wait.verify ? { verify: wait.verify } : {}),
         };
         if (deps.log) {
           try {
@@ -245,7 +254,7 @@ export async function runWorkflow(args: RunWorkflowArgs): Promise<RunWorkflowOut
               nodeId,
               // `resumeAt` extends the declared payload deliberately: the log
               // panel is ours, and "waiting" without "until when" is not useful.
-              payload: withLabels('node_waiting', { resumeAt: wait.waitUntil }, nodeId),
+              payload: withLabels('node_waiting', { resumeAt: wait.resumeAt }, nodeId),
             });
           } catch {
             // Same fail-soft rule as every other event here.
@@ -342,14 +351,26 @@ export async function runWorkflow(args: RunWorkflowArgs): Promise<RunWorkflowOut
   // BEFORE the failure branch, because the runner reported this run as failed —
   // that is how a wait leaves the scheduler at all.
   if (waitRequest) {
-    const { resumeAt, nodeId, correlationId } = waitRequest;
+    const { resumeAt, nodeId, correlationId, verify } = waitRequest;
     await deps.runs.setRunStatus({
       runId,
       status: 'waiting',
       resumeAt,
       ...(correlationId ? { resumeCorrelationId: correlationId } : {}),
     });
-    return { status: 'waiting', resumeAt, nodeId, ...(correlationId ? { correlationId } : {}) };
+    // ⚠️ `verify` IS HANDED OUT, NOT CALLED HERE. The park is durable now, but
+    // the fallback wake-up is not registered until the caller enqueues the
+    // delayed job — and asking "already happened?" before that leaves the very
+    // window it exists to close: a callback landing in between would find a
+    // waiting run with no job to pull forward, answer 200, and the run would
+    // sleep to its ceiling. REGISTER, then CHECK.
+    return {
+      status: 'waiting',
+      resumeAt,
+      nodeId,
+      ...(correlationId ? { correlationId } : {}),
+      ...(verify ? { verify } : {}),
+    };
   }
 
   // AFTER the wait branch: a park is a definite outcome for this delivery, and a

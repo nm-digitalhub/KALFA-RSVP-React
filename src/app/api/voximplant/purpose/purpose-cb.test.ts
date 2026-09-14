@@ -172,14 +172,11 @@ describe('POST cb — waking the parked run', () => {
     expect(wakeParkedRun).toHaveBeenCalled();
   });
 
-  it('⚠️ a failed wake never turns a recorded outcome into a 500', async () => {
-    // The outcome is already written. A wake that fails costs the run its early
-    // delivery, not its result — the ceiling and the recovery sweep still bring
-    // it back — so the scenario must be told 200 and stop retrying.
-    liveAttempt(RUN, 'node-1');
-    vi.mocked(wakeParkedRun).mockRejectedValue(new Error('db down'));
-    expect((await call(OK_BODY)).status).toBe(200);
-  });
+  // A wake that THROWS is now a 500 — see the P0 block at the end of this file.
+  // This case used to assert the opposite, on the reasoning that the outcome was
+  // already recorded so the ceiling would cover it. The 0ב review showed why
+  // that is wrong: swallowing the throw retires the callback retry, which is the
+  // only thing that would have woken the run at all.
 
   it('⚠️ never wakes before the outcome is recorded', async () => {
     // Order is the whole contract: the wake makes the step readable, and a run
@@ -189,5 +186,29 @@ describe('POST cb — waking the parked run', () => {
     vi.mocked(recordVoicePurposeConcluded).mockRejectedValue(new Error('db down'));
     expect((await call(OK_BODY)).status).toBe(500);
     expect(wakeParkedRun).not.toHaveBeenCalled();
+  });
+});
+
+// The two P0s the 0ב review found.
+describe('POST cb — the review\'s P0 fixes', () => {
+  beforeEach(() => {
+    vi.mocked(recordVoicePurposeConcluded).mockResolvedValue({ applied: true });
+    vi.mocked(wakeParkedRun).mockResolvedValue({ woke: true, delivered: true });
+  });
+
+  it('⚠️ a wake that THROWS is a 500, so the scenario retries', async () => {
+    // It used to be swallowed into a 200. `woke: false` is an ANSWER — the run
+    // is not waiting on this event — and stays 200. A throw is a failure to find
+    // out, and answering 200 to that leaves the run asleep with no second
+    // delivery coming, which is precisely the case the callback retry exists for.
+    liveAttempt(RUN, 'node-1');
+    vi.mocked(wakeParkedRun).mockRejectedValue(new Error('pooler timeout'));
+    expect((await call(OK_BODY)).status).toBe(500);
+  });
+
+  it('a wake that answers "nothing to wake" is still a 200', async () => {
+    liveAttempt(RUN, 'node-1');
+    vi.mocked(wakeParkedRun).mockResolvedValue({ woke: false, delivered: false });
+    expect((await call(OK_BODY)).status).toBe(200);
   });
 });

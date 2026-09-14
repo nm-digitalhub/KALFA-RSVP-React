@@ -105,7 +105,7 @@ describe('wakeParkedRun', () => {
 
     await expect(
       wakeParkedRun({ runId: RUN, nodeId: NODE, correlationId: CORR }),
-    ).rejects.toThrow(/wakeParkedRun failed/);
+    ).rejects.toThrow(/markParkedRunReady failed/);
     expect(updateMock).not.toHaveBeenCalled();
   });
 

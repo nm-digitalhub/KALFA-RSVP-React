@@ -89,11 +89,16 @@ export async function POST(
   // that is still waiting on THIS attempt — so firing it every time is cheaper
   // than working out whether it is needed.
   //
-  // Best-effort, like the block below: the outcome is already recorded, and a
-  // wake that fails costs the run its early delivery, not its result — the
-  // `resume_at` ceiling and the recovery sweep still bring it back. Logged,
-  // because a silently swallowed wake is a run sleeping to its ceiling with
-  // nothing anywhere saying why.
+  // ⚠️ NOT BEST-EFFORT — and it was, which defeated the retry it depends on.
+  //
+  // Two different things were being conflated. `woke: false` is an ANSWER: the
+  // run is not waiting on this event, so there is nothing to wake and 200 is
+  // correct. A THROW is a failure of the attempt to find out — a database blip,
+  // a pooler timeout — and answering 200 to that tells the scenario its report
+  // landed completely when the run is still asleep with no second delivery
+  // coming. A 500 is what makes the scenario retry, and the retry is safe:
+  // `recordVoicePurposeConcluded` is already idempotent (the second pass reports
+  // `applied: false`) and the wake's correlation gate makes a repeat a no-op.
   if (runId && nodeId) {
     try {
       await wakeParkedRun({ runId, nodeId, correlationId: attemptId });
@@ -102,6 +107,7 @@ export async function POST(
         `[vox-purpose-cb] wake failed for run ${runId}:`,
         e instanceof Error ? e.message : 'unknown',
       );
+      return bad(500);
     }
   }
 

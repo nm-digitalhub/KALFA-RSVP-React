@@ -61,6 +61,7 @@ import {
   enqueueWorkflowRun,
   handleWorkflowRun,
   redeliverStuckWaitingRuns,
+  rescueOrphanedWaitingSteps,
 } from '@/lib/workflow/enqueue';
 import { createRunsForInboundMessage } from '@/lib/workflow/inbound';
 import { createScheduledRuns } from '@/lib/workflow/schedule-runner';
@@ -1184,6 +1185,10 @@ async function main(): Promise<void> {
       // `redeliverStuckWaitingRuns` rather than here, because the `resumeAt` it
       // passes is load-bearing and this file has no tests.
       await redeliverStuckWaitingRuns(boss);
+      // The other half of the same rescue: a park whose RUN ROW never got
+      // written, which the sweep above cannot see because it reads that very
+      // column. See rescueOrphanedWaitingSteps.
+      await rescueOrphanedWaitingSteps(boss);
     }),
   );
 
