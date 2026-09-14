@@ -26,7 +26,12 @@ import {
 import { updateChannelMetadata } from '@/lib/data/admin/channel-catalog';
 import { updateSendPolicy } from '@/lib/data/admin/integrations/send-policy';
 import { sendSlackAlert } from '@/lib/alerts/slack';
-import { createVoicePurpose, updateVoicePurpose } from '@/lib/data/admin/voice-purposes';
+import {
+  createVoicePurpose,
+  listVoicePurposesForAdmin,
+  updateVoicePurpose,
+} from '@/lib/data/admin/voice-purposes';
+import { ruleIdAssignmentError, type RuleIdClaim } from '@/lib/validation/admin';
 import type { VoximplantRulesResult } from '@/lib/data/admin/voximplant-channel';
 import type { FormState } from '@/lib/validation/result';
 import { sendPolicyFromFormData } from '@/lib/validation/send-policy-form';
@@ -154,6 +159,30 @@ export async function updateVoximplantChannelAction(
   });
   if (!parsed.success) {
     return { fieldErrors: parsed.error.flatten().fieldErrors };
+  }
+
+  // Both rule-id fields on this form go through the same one-rule-one-purpose
+  // check. They are validated against each other too: `claims` carries the
+  // STORED values, so submitting the same id in both boxes would pass the
+  // pairwise test against storage — hence the explicit equality check first.
+  const claims = await readRuleIdClaims();
+  const baseRule = parsed.data.voximplant_rule_id.trim();
+  const callMeNowRule = parsed.data.voximplant_call_me_now_rule_id.trim();
+  if (baseRule !== '' && baseRule === callMeNowRule) {
+    return {
+      fieldErrors: {
+        voximplant_call_me_now_rule_id: [
+          'אותו Rule ID הוזן גם בשיחות RSVP וגם ב"חייג אליי עכשיו". כלל אחד יכול לשרת ייעוד אחד בלבד.',
+        ],
+      },
+    };
+  }
+  for (const [field, value] of [
+    ['voximplant_rule_id', baseRule],
+    ['voximplant_call_me_now_rule_id', callMeNowRule],
+  ] as const) {
+    const err = ruleIdAssignmentError(value, field, claims);
+    if (err) return { fieldErrors: { [field]: [err] } };
   }
 
   // No enable-guard here: this form only persists Voximplant config. The global
@@ -317,6 +346,46 @@ export async function updateCallConsentRequiredAction(
 // one being submitted in this same request, or the already-stored one if
 // this submission leaves it blank — so "type a rule id and enable in one
 // submit" and "enable using an already-saved rule id" both work.
+// Every rule id currently claimed anywhere, so a save can refuse to hand one
+// rule to a second purpose. Both reads gate on manage_voice internally, the same
+// permission every caller here already holds.
+//
+// Built-in purposes are skipped: voice-purpose-dispatch.ts blocks them before
+// they can dial (`if (purpose.isBuiltin) return blocked`) and the DAL never
+// writes their rule_id, so their column is inert and must not reserve an id from
+// a real purpose.
+async function readRuleIdClaims(): Promise<RuleIdClaim[]> {
+  const [cfg, purposes] = await Promise.all([
+    getVoximplantChannelConfig(),
+    listVoicePurposesForAdmin(),
+  ]);
+  return [
+    { field: 'voximplant_rule_id', label: 'שיחות RSVP', ruleId: cfg.voximplant_rule_id },
+    {
+      field: 'voximplant_meeting_confirm_rule_id',
+      label: 'שיחות אישור פגישה',
+      ruleId: cfg.meetingConfirmRuleId,
+    },
+    {
+      field: 'voximplant_sales_call_rule_id',
+      label: 'שיחות סגירת מכירה',
+      ruleId: cfg.salesCallRuleId,
+    },
+    {
+      field: 'voximplant_call_me_now_rule_id',
+      label: 'חייג אליי עכשיו',
+      ruleId: cfg.voximplant_call_me_now_rule_id,
+    },
+    ...purposes
+      .filter((p) => !p.isBuiltin)
+      .map((p) => ({
+        field: `voice_purpose:${p.key}`,
+        label: `ייעוד השיחה "${p.displayName}"`,
+        ruleId: p.ruleId,
+      })),
+  ];
+}
+
 const personaChannelSchema = z.object({
   ruleId: z.string().trim().max(64).default(''),
   enabled: z.boolean(),
@@ -345,6 +414,11 @@ async function updatePersonaChannel(
     return { fieldErrors: parsed.error.flatten().fieldErrors };
   }
   const { ruleId, enabled } = parsed.data;
+
+  // One rule, one purpose — checked whether the persona is being switched on or
+  // off, because the rule id is saved either way.
+  const claimError = ruleIdAssignmentError(ruleId, ruleIdField, await readRuleIdClaims());
+  if (claimError) return { fieldErrors: { [ruleIdField]: [claimError] } };
 
   // ruleId is ALWAYS what was submitted (the field is defaultValue-pre-filled
   // in the UI, not blank-means-keep) — so the submitted value IS the
@@ -564,6 +638,13 @@ export async function createVoicePurposeAction(
     return { fieldErrors: z.flattenError(parsed.error).fieldErrors };
   }
 
+  const createClaimError = ruleIdAssignmentError(
+    parsed.data.ruleId,
+    `voice_purpose:${parsed.data.key}`,
+    await readRuleIdClaims(),
+  );
+  if (createClaimError) return { fieldErrors: { ruleId: [createClaimError] } };
+
   try {
     await createVoicePurpose(parsed.data);
   } catch (e) {
@@ -608,6 +689,15 @@ export async function updateVoicePurposeAction(
   if (!parsed.success) {
     return { fieldErrors: z.flattenError(parsed.error).fieldErrors };
   }
+
+  // Own field is keyed by the purpose key, so re-saving a purpose with the rule
+  // it already holds is allowed; taking another purpose's rule is not.
+  const updateClaimError = ruleIdAssignmentError(
+    parsed.data.ruleId,
+    `voice_purpose:${parsed.data.key}`,
+    await readRuleIdClaims(),
+  );
+  if (updateClaimError) return { fieldErrors: { ruleId: [updateClaimError] } };
 
   try {
     await updateVoicePurpose(parsed.data);

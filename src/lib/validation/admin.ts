@@ -641,3 +641,75 @@ export const agreementApproveSchema = z.object({
     .max(80, { error: 'הגרסה ארוכה מדי' }),
 });
 export type AgreementApproveInput = z.infer<typeof agreementApproveSchema>;
+
+// --- Voximplant rule-id assignment: one rule, one purpose -------------------
+//
+// Every dialer in this app starts a call with StartScenarios({rule_id}), and the
+// rule decides WHICH SCENARIO RUNS. Point two purposes at one rule and the wrong
+// scenario answers — silently, because the payloads are interchangeable.
+//
+// MEASURED, not feared. meeting-confirm sends {to, from, tok, u}
+// (meeting-confirm-dispatch.ts) and the DTMF RSVP scenario reads exactly
+// {to, from, tok, u} (RSVP.voxengine.js:309-312). Its ctx lookup resolves the
+// token against `call_attempts` while a meeting-confirm token lives in
+// `callback_request_attempts`, so ctx answers 404 — and `VoxEngine.callPSTN`
+// sits OUTSIDE the `if (response.code === 200)` block, so THE CALL STILL GOES
+// OUT. A real person is dialed and hears the event-RSVP DTMF flow with an empty
+// guest name, while `startScenarios` returns result:1 and the attempt is already
+// recorded as dialed. The terminal callback then posts to a token the RSVP cb
+// route cannot resolve, so the attempt never closes.
+//
+// Wrong call, charged, logged as success, and a stuck row. Hence a guard.
+//
+// TWO RULES, because one does not imply the other:
+//   1. A rule id may be claimed by at most ONE field. This is the general case —
+//      it catches a persona given another persona's rule just as well as the
+//      specific mix-up below.
+//   2. Rule 1494311 is rejected outright. It is `OutCall`, the legacy DTMF flow,
+//      it is stored in NO column (so rule 1 cannot see it), and CLAUDE.md forbids
+//      giving it to an agent.
+//
+// Deliberately NOT done here: checking that the rule EXISTS on the platform.
+// That would put a live Voximplant call inside a save, so an outage there would
+// block saving configuration — a worse failure than the one being prevented.
+// The admin rule picker covers existence by listing real rules instead.
+
+/** Rule 1494311 — `OutCall`, the legacy DTMF `RSVP` scenario. Never an agent's. */
+export const DTMF_OUTCALL_RULE_ID = '1494311';
+
+export type RuleIdClaim = {
+  /** Stable field/column identifier, so re-saving a field its own value is fine. */
+  field: string;
+  /** Human label for the error message. */
+  label: string;
+  ruleId: string | null;
+};
+
+/**
+ * Returns a Hebrew error when `submitted` may not be assigned to `ownField`,
+ * or null when the assignment is allowed.
+ *
+ * An empty submission is always allowed: '' is how a field is intentionally
+ * cleared, and every dialer already fails closed on a missing rule id.
+ */
+export function ruleIdAssignmentError(
+  submitted: string,
+  ownField: string,
+  claims: readonly RuleIdClaim[],
+): string | null {
+  const value = submitted.trim();
+  if (value === '') return null;
+
+  if (value === DTMF_OUTCALL_RULE_ID) {
+    return `Rule ID ${DTMF_OUTCALL_RULE_ID} הוא הכלל OutCall — תרחיש ה-DTMF הישן, ואסור להפנות אליו סוכן AI. בחרו כלל אחר מרשימת הכללים בחשבון.`;
+  }
+
+  const taken = claims.find(
+    (c) => c.field !== ownField && (c.ruleId ?? '').trim() === value,
+  );
+  if (taken) {
+    return `Rule ID ${value} כבר משויך ל"${taken.label}". כלל אחד יכול לשרת ייעוד אחד בלבד — שיחה שתצא דרכו תריץ את התרחיש של הייעוד האחר.`;
+  }
+
+  return null;
+}

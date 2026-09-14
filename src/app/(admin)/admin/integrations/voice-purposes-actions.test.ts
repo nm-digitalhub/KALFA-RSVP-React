@@ -2,14 +2,25 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('server-only', () => ({}));
 
-const { createMock, updateMock } = vi.hoisted(() => ({
+const { createMock, updateMock, listMock, channelConfigMock } = vi.hoisted(() => ({
   createMock: vi.fn(),
   updateMock: vi.fn(),
+  listMock: vi.fn(),
+  channelConfigMock: vi.fn(),
 }));
 
 vi.mock('@/lib/data/admin/voice-purposes', () => ({
   createVoicePurpose: createMock,
   updateVoicePurpose: updateMock,
+  listVoicePurposesForAdmin: listMock,
+}));
+// Both actions now read every rule id already claimed, so a purpose cannot be
+// handed a rule another purpose or persona is using (see ruleIdAssignmentError).
+// Unstubbed, these reach the real DAL and open a cookie client outside a request
+// scope — the failure looks like 'cookies was called outside a request scope',
+// nothing about purposes.
+vi.mock('@/lib/data/admin/voximplant-channel', () => ({
+  getVoximplantChannelConfig: channelConfigMock,
 }));
 vi.mock('next/cache', () => ({ revalidatePath: vi.fn() }));
 
@@ -30,7 +41,66 @@ const form = (o: Record<string, string>) => {
   return fd;
 };
 
-beforeEach(() => vi.clearAllMocks());
+beforeEach(() => {
+  vi.clearAllMocks();
+  // A clean account: nothing claimed, so these tests exercise their own subject
+  // rather than the claim guard. The guard has its own tests in
+  // src/lib/validation/rule-id-assignment.test.ts.
+  listMock.mockResolvedValue([]);
+  channelConfigMock.mockResolvedValue({
+    voximplant_rule_id: '',
+    meetingConfirmRuleId: '',
+    salesCallRuleId: '',
+    voximplant_call_me_now_rule_id: '',
+  });
+});
+
+// The tests above stub an empty account so each one exercises its own subject.
+// These two prove the guard is actually WIRED INTO both actions — without them a
+// refactor could drop the readRuleIdClaims call and every other test would still
+// pass, while the panel happily pointed two purposes at one rule.
+describe('one rule, one purpose — wiring', () => {
+  it('refuses to create a purpose on a rule a persona already uses', async () => {
+    channelConfigMock.mockResolvedValue({
+      voximplant_rule_id: '1520915',
+      meetingConfirmRuleId: '1523903',
+      salesCallRuleId: '',
+      voximplant_call_me_now_rule_id: '',
+    });
+    const r = await createVoicePurposeAction(
+      null,
+      form({ key: 'feedback', displayName: 'משוב', ruleId: '1523903' }),
+    );
+    expect(createMock).not.toHaveBeenCalled();
+    expect(r?.fieldErrors?.ruleId?.[0]).toContain('שיחות אישור פגישה');
+  });
+
+  it('refuses to update a purpose onto another PURPOSE\'s rule', async () => {
+    listMock.mockResolvedValue([
+      { key: 'other', displayName: 'ייעוד אחר', ruleId: '1530001', isBuiltin: false },
+    ]);
+    const r = await updateVoicePurposeAction(
+      null,
+      form({ key: 'feedback', displayName: 'משוב', ruleId: '1530001', enabled: 'on', active: 'on' }),
+    );
+    expect(updateMock).not.toHaveBeenCalled();
+    expect(r?.fieldErrors?.ruleId?.[0]).toContain('ייעוד אחר');
+  });
+
+  it('lets a purpose keep the rule it already holds', async () => {
+    // Every save resubmits the current value; treating that as a clash would
+    // make the row impossible to edit.
+    listMock.mockResolvedValue([
+      { key: 'feedback', displayName: 'משוב', ruleId: '1530001', isBuiltin: false },
+    ]);
+    const r = await updateVoicePurposeAction(
+      null,
+      form({ key: 'feedback', displayName: 'משוב', ruleId: '1530001', enabled: 'on', active: 'on' }),
+    );
+    expect(updateMock).toHaveBeenCalled();
+    expect(r?.fieldErrors).toBeUndefined();
+  });
+});
 
 describe('createVoicePurposeAction', () => {
   it('creates a purpose, and says it is OFF', async () => {
