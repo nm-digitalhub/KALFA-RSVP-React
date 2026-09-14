@@ -1408,11 +1408,16 @@ const voiceCallUiSchema = {
       // list it is chosen from is a live table whose values we cannot enumerate
       // here.
       //
-      // ⚠️ `failWhenUndefined` IS LOAD-BEARING. @jsonforms/core states the trap
-      // in its own type docs: "Most JSON Schemas will successfully validate
-      // against `undefined` data", so without it a node whose `purposeKey` key
-      // is absent entirely — a diagram saved before this field existed — would
-      // PASS the condition and show the switch.
+      // ⚠️ `failWhenUndefined` guards the trap @jsonforms/core states in its own
+      // type docs: "Most JSON Schemas will successfully validate against
+      // `undefined` data" — so a node whose `purposeKey` is absent entirely, a
+      // diagram saved before this field existed, would otherwise PASS the
+      // condition and show the switch.
+      //
+      // It is no longer the ONLY thing standing there: the `type: 'string'`
+      // added below rejects `undefined` on its own. Both are kept, and
+      // voice-rule.test.ts pins each one separately, so removing either still
+      // leaves the switch hidden.
       //
       // ⚠️ FOUR EFFECTS ARE USABLE ON A BUILT-IN CONTROL, NOT SIX — and the
       // reason is NOT the one an earlier version of this comment gave.
@@ -1447,7 +1452,17 @@ const voiceCallUiSchema = {
         effect: 'SHOW',
         condition: {
           scope: voiceCallScope('properties.purposeKey'),
-          schema: { minLength: 1 },
+          // ⚠️ `type` ALONGSIDE `minLength`, and not decoration. Ajv runs in
+          // strict mode here and warned `missing type "string" for keyword
+          // "minLength" at "#" (strictTypes)` on every compile of this rule.
+          //
+          // It is also a behaviour fix, not just a silenced warning: `minLength`
+          // is defined only for strings and is IGNORED for every other type. A
+          // legacy diagram carrying `purposeKey: null` therefore satisfied the
+          // condition — null is not undefined, so `failWhenUndefined` does not
+          // catch it either — and the switch appeared on a node with no purpose,
+          // which is the single case this rule exists to prevent.
+          schema: { type: 'string', minLength: 1 },
           failWhenUndefined: true,
         },
       },

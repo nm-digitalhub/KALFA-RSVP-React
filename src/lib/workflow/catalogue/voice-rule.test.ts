@@ -65,12 +65,31 @@ describe('"wait for the outcome" is hidden until a purpose is chosen', () => {
     expect(waitControl.rule!.condition.failWhenUndefined).toBe(true);
     expect(fulfilled(waitControl.rule!, undefined)).toBe(false);
 
-    // …and that it is the flag doing the work, not the schema.
-    const withoutFlag = {
+    // ⚠️ TWO INDEPENDENT GUARDS, each pinned on its own — and it was ONE until
+    // `type: 'string'` was added to the condition schema to settle an Ajv
+    // strict-mode warning. That addition also made the schema reject `undefined`
+    // by itself, so the older assertion here — "without the flag, undefined
+    // PASSES" — stopped being true. It is replaced rather than deleted, because
+    // what it was protecting still needs protecting: whichever guard a future
+    // edit removes, the other must still hide the switch.
+
+    // 1. The flag alone, against a schema loose enough to admit undefined.
+    const flagOnly = {
+      ...waitControl.rule!,
+      condition: { ...waitControl.rule!.condition, schema: { minLength: 1 } },
+    };
+    expect(fulfilled(flagOnly, undefined)).toBe(false);
+
+    // 2. The schema alone, with the flag off.
+    const schemaOnly = {
       ...waitControl.rule!,
       condition: { ...waitControl.rule!.condition, failWhenUndefined: false },
     };
-    expect(fulfilled(withoutFlag, undefined)).toBe(true);
+    expect(fulfilled(schemaOnly, undefined)).toBe(false);
+
+    // And the schema's half also covers the case neither one caught before: a
+    // legacy `null`, which is not undefined and so was never the flag's job.
+    expect(fulfilled(waitControl.rule!, null as unknown as string)).toBe(false);
   });
 });
 

@@ -710,6 +710,23 @@ const startVoiceCall: StepHandler = async (config, ctx) => {
 
   const placed = {
     dialed: outcome.ok,
+    // ⚠️ `outcome` ON THE REFUSAL PATH, and deliberately NOT on the other one.
+    //
+    // A downstream `{{nodes.<id>.outcome}}` is STRICT — `resolve-template` throws
+    // `Unresolved template reference` rather than resolving to '' — so a diagram
+    // that branches on the call's result used to fail outright the first time a
+    // dial was refused for DNC, Shabbat or balance. Those are the cases where the
+    // rules worked correctly, and they mapped to no value at all.
+    //
+    // A refusal is 'failed' for the same reason the dispatcher's own `failed` is:
+    // no call was placed, so nothing can ever report on it.
+    //
+    // A dial that SUCCEEDED without waiting gets no `outcome`, because there is
+    // no honest value for it. The call is in progress; 'completed' would claim it
+    // finished and 'no_answer' would claim the guest did not pick up. A diagram
+    // that wants to branch on how a call went has to wait for it — and a strict
+    // reference failing loudly is the correct way to say so.
+    ...(outcome.ok ? {} : { outcome: 'failed' as const }),
     status: outcome.status,
     ...(outcome.reason ? { reason: outcome.reason } : {}),
     ...(outcome.attemptId ? { attemptId: outcome.attemptId } : {}),

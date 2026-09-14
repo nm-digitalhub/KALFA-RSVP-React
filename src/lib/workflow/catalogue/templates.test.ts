@@ -471,3 +471,140 @@ describe('clock, wait and fan-out templates', () => {
     expect(r.steps.map((s) => s.nodeId)).toEqual(['tmpl-nudge-trigger']);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Two invariants that hold for EVERY template, present and future
+// ---------------------------------------------------------------------------
+//
+// Both already appear above, hand-written once per template — and template 9
+// shipped breaking both, because "once per template" means a new template is
+// covered only if someone remembers to copy the assertion. Read off
+// DIAGRAM_TEMPLATES instead, so the next template is covered before it is
+// written.
+
+/** Every node type that can PARK a run: it throws `WorkflowWaitSignal`. */
+function parksTheRun(node: { data: { type: string; properties: Record<string, unknown> } }) {
+  if (node.data.type === 'logic.wait') return true;
+  // Only when it waits. The same node without the flag dials and carries on
+  // within the same tick, which keeps the window open.
+  return node.data.type === 'action.start_voice_call' && node.data.properties.waitForOutcome === true;
+}
+
+describe('invariants every template must satisfy', () => {
+  // `propagate` returns a dead end only `if (rootNextPort && !rootRoutedSomewhere)`
+  // — so an unwired handle matters exactly when the runner NAMES that port. It
+  // does so in three cases, and in no others. MEASURED against the handlers:
+  // the only `nextPort` values any of them return are the condition's true/false,
+  // the switch's branch handle, and `ACTION_BRANCH_HANDLES.error` from four
+  // handlers that route a soft failure instead of throwing.
+  //
+  // ⚠️ A SUCCESS HANDLE IS NOT IN THAT LIST. No handler returns
+  // ACTION_BRANCH_HANDLES.ok; on success `nextPort` is undefined and `isEdgeLive`
+  // makes every non-error edge live. That is why a terminal action node with a
+  // drawn-but-unwired `ok` port — template 3 — ends the run `completed` and is
+  // not a defect. Asserting on every declared branch flagged it, and the claim
+  // was wrong.
+
+  /** The handlers that ROUTE a soft failure rather than throwing it. */
+  const ROUTES_ITS_OWN_ERROR = new Set([
+    'action.webhook',
+    'action.create_callback_request',
+    'action.import_guest_list',
+    'action.start_for_each_guest',
+  ]);
+
+  it('⚠️ every branch the RUNNER can name is wired', () => {
+    for (const t of DIAGRAM_TEMPLATES) {
+      for (const node of t.value.diagram.nodes) {
+        const declared = (node.data.properties.decisionBranches ?? []) as {
+          id: string;
+          sourceHandle: string;
+        }[];
+        if (declared.length === 0) continue;
+
+        const wired = new Set(
+          t.value.diagram.edges.filter((e) => e.source === node.id).map((e) => e.sourceHandle),
+        );
+        const where = `${t.value.name} / ${node.id}`;
+
+        // A condition and a switch always name the branch they chose, so every
+        // branch they declare — the catch-all included — must lead somewhere.
+        if (node.data.type === 'logic.condition' || node.data.type === 'logic.switch') {
+          for (const b of declared) {
+            expect(wired.has(b.sourceHandle), `${where} → ${b.sourceHandle}`).toBe(true);
+          }
+          continue;
+        }
+
+        // An action's error handle is named either by the runner, when the node
+        // THROWS under 'errorRoute', or by the handler itself for the four that
+        // route their own soft failures. Under 'fail' or 'continue' a throw
+        // names no port and the handle is decoration.
+        const routable =
+          node.data.properties.errorPolicy === 'errorRoute' ||
+          ROUTES_ITS_OWN_ERROR.has(node.data.type);
+        if (!routable) continue;
+        const err = declared.find((b) => b.sourceHandle === ACTION_BRANCH_HANDLES.error);
+        if (err) {
+          expect(wired.has(err.sourceHandle), `${where} → ${err.sourceHandle}`).toBe(true);
+        }
+      }
+    }
+  });
+
+  it('⚠️ every error edge DRAWN is one the policy can fire', () => {
+    // The mirror of the rule above, and the one that catches the opposite
+    // mistake: template 9 first shipped `errorPolicy: 'continue'` while drawing
+    // an edge from the error handle. Nothing is unwired there — the edge exists,
+    // renders, and is pruned on every run, so the alert it points at is simply
+    // never sent. A template that teaches a shape which silently does nothing is
+    // worse than one that omits it.
+    for (const t of DIAGRAM_TEMPLATES) {
+      const byId = new Map(t.value.diagram.nodes.map((n) => [n.id, n]));
+      for (const e of t.value.diagram.edges) {
+        if (e.sourceHandle !== ACTION_BRANCH_HANDLES.error) continue;
+        const src = byId.get(e.source);
+        const fireable =
+          src?.data.properties.errorPolicy === 'errorRoute' ||
+          ROUTES_ITS_OWN_ERROR.has(src?.data.type ?? '');
+        expect(fireable, `${t.value.name} / ${e.source} draws an error edge it cannot fire`).toBe(
+          true,
+        );
+      }
+    }
+  });
+
+  it('⚠️ nothing downstream of a PARK sends free text', () => {
+    // The 24-hour customer-service window is opened by the guest's own message
+    // and closes on its own. `action.send_whatsapp` is legal only inside it;
+    // every park — a `logic.wait`, or a voice call this flow waits for — can run
+    // past its end, and Meta answers 131047.
+    //
+    // The existing version of this rule named three templates by hand. Template
+    // 9 parks on a phone call for up to the attempt's token TTL and then sent
+    // free text, and was not one of the three.
+    for (const t of DIAGRAM_TEMPLATES) {
+      const nodes = new Map(t.value.diagram.nodes.map((n) => [n.id, n]));
+      const out = new Map<string, string[]>();
+      for (const e of t.value.diagram.edges) {
+        out.set(e.source, [...(out.get(e.source) ?? []), e.target]);
+      }
+
+      // Everything reachable from any parking node, the park itself excluded.
+      const seen = new Set<string>();
+      const queue = t.value.diagram.nodes.filter(parksTheRun).flatMap((n) => out.get(n.id) ?? []);
+      while (queue.length > 0) {
+        const id = queue.shift()!;
+        if (seen.has(id)) continue;
+        seen.add(id);
+        queue.push(...(out.get(id) ?? []));
+      }
+
+      for (const id of seen) {
+        expect(nodes.get(id)?.data.type, `${t.value.name} / ${id} is after a park`).not.toBe(
+          'action.send_whatsapp',
+        );
+      }
+    }
+  });
+});

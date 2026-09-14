@@ -1124,10 +1124,19 @@ const voiceCallWithOutcome: DiagramModel = {
             // keep dialling and carrying on; on here, because a template whose
             // next step reads the call's result has to wait for one.
             waitForOutcome: true,
-            // 'continue' rather than 'fail': a refused dial — an agent switched
-            // off, a guest on the DNC list, Shabbat — is the rules working, and
-            // the switch below routes it like any other answer.
-            errorPolicy: 'continue',
+            // ⚠️ 'errorRoute', NOT 'continue' — and the difference is that the
+            // error branch declared below only EXISTS under this policy.
+            // `graph-runner` fires an error edge when `nextPort` is the reserved
+            // error handle, which only happens under 'errorRoute'; under
+            // 'continue' every error edge is pruned, so this node used to declare
+            // a branch that could never fire.
+            //
+            // A refused dial is still not an error — it returns a completed step
+            // carrying `outcome: 'failed'`, and flows to the switch like any
+            // other answer. What reaches the error edge is the node THROWING: a
+            // missing purpose, an unavailable capability, a step that ran out of
+            // time. Those are worth waking someone for.
+            errorPolicy: 'errorRoute',
             decisionBranches: [
               { id: 'ok', sourceHandle: 'source:inner:ok', label: 'הצליח' },
               { id: 'error', sourceHandle: 'source:inner:error', label: 'נכשל' },
@@ -1187,40 +1196,68 @@ const voiceCallWithOutcome: DiagramModel = {
                   },
                 ],
               },
+              {
+                // ⚠️ THE CATCH-ALL, because the three above do not cover the
+                // vocabulary. `follow_up_required` is a real member of
+                // VoiceBusinessOutcome that nothing maps to yet, and a run whose
+                // value matches no branch stops with nowhere to go — an
+                // `incomplete` outcome an owner reads as "it just stopped".
+                id: SWITCH_DEFAULT_BRANCH_ID,
+                sourceHandle: SWITCH_DEFAULT_HANDLE,
+                label: 'אחרת',
+                conditions: [],
+              },
             ],
           },
         },
       },
       {
-        id: 'voice-wait-thanks',
+        // ⚠️ NOT `action.send_whatsapp`, AND THAT IS THE LESSON OF THIS TEMPLATE.
+        //
+        // A free-text WhatsApp reply is legal only inside the 24-hour window the
+        // guest opens by writing to us, and `send_whatsapp`'s own comment says
+        // the reasoning "is tied to the trigger, not to this node — a scheduled
+        // trigger or A DELAY STEP would break it", returning 131047. A voice call
+        // this flow WAITS for is exactly such a delay: the park runs to the
+        // attempt's token TTL, which is hours.
+        //
+        // An approved template still works there. The `delayedNudge` template in
+        // this same file exists to teach the same distinction after a two-day
+        // wait; this is the same rule after a phone call.
+        //
+        // `reminder_1` and not `thankyou`: `thankyou` is MARKETING, routes
+        // through MM Lite, and resolves to nothing on a non-brit event — which
+        // reports a COMPLETED step while the guest gets nothing.
+        id: 'voice-wait-nudge',
         type: 'node',
-        position: { x: 1140, y: 60 },
+        position: { x: 1140, y: 260 },
         data: {
           segments: [],
-          type: 'action.send_whatsapp',
+          type: 'action.send_template',
           icon: 'ChatCircleText',
           properties: {
-            label: 'תודה על השיחה',
-            description: 'נשלח בתוך חלון 24 השעות שההודעה הנכנסת פתחה',
+            label: 'תזכורת למי שלא ענה',
+            description: 'תבנית מאושרת — חוקית גם אחרי שחלון 24 השעות נסגר',
             status: 'active',
-            body: 'תודה ששוחחתם איתנו! נתראה באירוע 🎉',
+            messageKey: 'reminder_1',
             errorPolicy: 'continue',
           },
         },
       },
       {
-        id: 'voice-wait-retry-msg',
+        id: 'voice-wait-done',
         type: 'node',
-        position: { x: 1140, y: 260 },
+        position: { x: 1140, y: 60 },
         data: {
           segments: [],
-          type: 'action.send_whatsapp',
-          icon: 'ChatCircleText',
+          type: 'action.notify_team',
+          icon: 'Bell',
           properties: {
-            label: 'לא הצלחנו להשיג',
-            description: 'האורח לא ענה — משאירים לו את הבחירה מתי לחזור',
+            label: 'השיחה הושלמה',
+            description: 'הסוכן דיבר עם האורח והשיחה דיווחה',
             status: 'active',
-            body: 'ניסינו להתקשר ולא הצלחנו להשיג אתכם. אפשר לענות כאן בהודעה ונמשיך מכאן.',
+            level: 'info',
+            title: 'שיחה קולית הושלמה',
             errorPolicy: 'continue',
           },
         },
@@ -1235,10 +1272,13 @@ const voiceCallWithOutcome: DiagramModel = {
           icon: 'Bell',
           properties: {
             label: 'התראה לצוות',
-            description: 'השיחה לא יצאה לדרך — מספר שגוי או תקלת ספק',
+            // Reached from three places: the `failed` outcome, the catch-all
+            // branch, and the call node's own error port. All three mean "a
+            // person should look", and none of them should message the guest.
+            description: 'השיחה לא יצאה לדרך, או שהתוצאה לא מוכרת',
             status: 'active',
             level: 'warn',
-            title: 'שיחה קולית נכשלה',
+            title: 'שיחה קולית נכשלה או החזירה תוצאה לא מוכרת',
             errorPolicy: 'continue',
           },
         },
@@ -1265,7 +1305,7 @@ const voiceCallWithOutcome: DiagramModel = {
         id: 'voice-wait-e3',
         source: 'voice-wait-switch',
         sourceHandle: switchBranchHandle('completed'),
-        target: 'voice-wait-thanks',
+        target: 'voice-wait-done',
         targetHandle: TARGET,
         type: 'labelEdge',
       },
@@ -1273,7 +1313,7 @@ const voiceCallWithOutcome: DiagramModel = {
         id: 'voice-wait-e4',
         source: 'voice-wait-switch',
         sourceHandle: switchBranchHandle('no_answer'),
-        target: 'voice-wait-retry-msg',
+        target: 'voice-wait-nudge',
         targetHandle: TARGET,
         type: 'labelEdge',
       },
@@ -1281,6 +1321,29 @@ const voiceCallWithOutcome: DiagramModel = {
         id: 'voice-wait-e5',
         source: 'voice-wait-switch',
         sourceHandle: switchBranchHandle('failed'),
+        target: 'voice-wait-alert',
+        targetHandle: TARGET,
+        type: 'labelEdge',
+      },
+      {
+        // The call node declares an `error` branch; without this edge the branch
+        // is drawn, fires, and leads nowhere. `errorPolicy: 'errorRoute'` routes
+        // a THROWN node here — a missing purpose, an unavailable capability, a
+        // step that ran out of time — none of which reach the switch, because
+        // there is no outcome to switch on.
+        id: 'voice-wait-e6',
+        source: 'voice-wait-call',
+        sourceHandle: 'source:inner:error',
+        target: 'voice-wait-alert',
+        targetHandle: TARGET,
+        type: 'labelEdge',
+      },
+      {
+        // Same reasoning for the switch's catch-all: a declared branch with no
+        // edge leaves the run `incomplete` instead of telling anyone.
+        id: 'voice-wait-e7',
+        source: 'voice-wait-switch',
+        sourceHandle: SWITCH_DEFAULT_HANDLE,
         target: 'voice-wait-alert',
         targetHandle: TARGET,
         type: 'labelEdge',
