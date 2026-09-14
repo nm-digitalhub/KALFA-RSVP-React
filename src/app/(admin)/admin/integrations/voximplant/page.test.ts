@@ -88,13 +88,19 @@ async function render({ manageSettings = true }: { manageSettings?: boolean } = 
     // Presence only — the DAL never returns the JSON itself. The literal below stands
     // in for "a value that must not reach the tree by any route".
     serviceAccountConfigured: true,
-    voximplant_rule_id: '1494311',
+    // 1520915 = the `OutCallAgent` rule (the RSVPAgent AI bridge), which is what
+    // app_settings actually holds. The fixture used to say 1494311 — the DTMF
+    // `OutCall` rule CLAUDE.md forbids the bridge from using — which made the
+    // wrong id look like the canonical example.
+    voximplant_rule_id: '1520915',
     voximplant_caller_id: '+97237219347',
     voximplant_callback_secret: 'CALLBACK-SECRET',
     voximplant_low_balance_threshold: '5',
     voximplant_min_call_reserve: '0.1',
     voximplant_max_concurrent_calls: '5',
     voximplant_max_calls_per_campaign_hour: '200',
+    voximplant_call_me_now_rule_id: '1523124',
+    voximplant_application_id: '11107202',
     configured: true,
     fullyConfigured: true,
     liveCalls: true,

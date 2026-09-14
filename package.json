@@ -37,6 +37,9 @@
     "vox:upload:rsvpagent": "env -u npm_config_global_ignore_file npm run vox:upload -- --rule-name OutCallAgent",
     "vox:upload:meetingconfirm": "env -u npm_config_global_ignore_file npm run vox:upload -- --rule-name OutCallMeetingConfirm",
     "vox:upload:salesclose": "env -u npm_config_global_ignore_file npm run vox:upload -- --rule-name OutCallSalesClose",
+    "vox:probe-binding": "esbuild scripts/voximplant/probe-scenario-binding.ts --bundle --platform=node --format=cjs --target=node20 --outfile=dist/probe-scenario-binding.cjs --tsconfig=tsconfig.json --alias:server-only=./worker/empty.js --alias:next/headers=./worker/empty.js --alias:next/navigation=./worker/empty.js --alias:next/cache=./worker/empty.js --external:pg-native && node --env-file=.env.local dist/probe-scenario-binding.cjs",
+    "vox:migrate-scenarios": "esbuild scripts/voximplant/migrate-scenarios-to-application.ts --bundle --platform=node --format=cjs --target=node20 --outfile=dist/migrate-scenarios-to-application.cjs --tsconfig=tsconfig.json --alias:server-only=./worker/empty.js --alias:next/headers=./worker/empty.js --alias:next/navigation=./worker/empty.js --alias:next/cache=./worker/empty.js --external:pg-native && node --env-file=.env.local dist/migrate-scenarios-to-application.cjs",
+    "vox:init": "ROOT=$PWD && cd node_modules/@voximplant/voxengine-ci && VOX_CI_ROOT_PATH=$ROOT/voxfiles VOX_CI_CREDENTIALS=$ROOT/vox_ci_credentials.json node bin/voxengine-ci.js init",
     "vox:reorder-rules": "esbuild scripts/voximplant/reorder-rules.ts --bundle --platform=node --format=cjs --target=node20 --outfile=dist/reorder-rules.cjs --tsconfig=tsconfig.json --alias:server-only=./worker/empty.js --alias:next/headers=./worker/empty.js --alias:next/navigation=./worker/empty.js --alias:next/cache=./worker/empty.js --external:pg-native && node --env-file=.env.local dist/reorder-rules.cjs",
     "set:console-secret": "esbuild scripts/voximplant/set-console-secret.ts --bundle --platform=node --format=cjs --target=node20 --outfile=dist/set-console-secret.cjs --tsconfig=tsconfig.json --alias:server-only=./worker/empty.js --alias:next/headers=./worker/empty.js --alias:next/navigation=./worker/empty.js --alias:next/cache=./worker/empty.js --external:pg-native && node --env-file=.env.local dist/set-console-secret.cjs",
     "rotate:console-secret": "esbuild scripts/voximplant/rotate-console-agent-secret.ts --bundle --platform=node --format=cjs --target=node20 --outfile=dist/rotate-console-agent-secret.cjs --tsconfig=tsconfig.json --alias:server-only=./worker/empty.js --alias:next/headers=./worker/empty.js --alias:next/navigation=./worker/empty.js --alias:next/cache=./worker/empty.js --external:pg-native && node --env-file=.env.local dist/rotate-console-agent-secret.cjs",
@@ -92,7 +95,7 @@
     "@tailwindcss/cli": "^4.3.3",
     "@types/nodemailer": "^8.0.1",
     "@types/pg": "^8.20.0",
-    "@voximplant/voxengine-ci": "^35.0.0",
+    "@voximplant/voxengine-ci": "^36.0.0",
     "@voximplant/websdk": "5.2.0",
     "@workflowbuilder/sdk": "^2.3.0",
     "@xyflow/react": "^12.11.6",
@@ -193,6 +196,13 @@
     "@types/react-dom": "19.2.5",
     "i18next": {
       "typescript": "$typescript"
+    },
+    "@voximplant/apiclient-nodejs": {
+      "axios": "0.33.0",
+      "form-data": "2.5.6"
+    },
+    "@voximplant/voxengine-ci": {
+      "yaml": "1.10.3"
     }
   }
 }

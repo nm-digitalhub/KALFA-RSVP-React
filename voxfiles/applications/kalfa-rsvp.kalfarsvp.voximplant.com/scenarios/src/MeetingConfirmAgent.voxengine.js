@@ -117,6 +117,7 @@ VoxEngine.addEventListener(AppEvents.Started, function () {
         contextUrl: '',
         callbackUrl: '',
         leadName: '',
+        openingLine: '',
         topicHe: '',
         scheduledWhenSpoken: '',
         scheduledTimeSpoken: '',
@@ -448,6 +449,7 @@ VoxEngine.addEventListener(AppEvents.Started, function () {
                     agent.conversationInitiationClientData({
                         dynamic_variables: {
                             lead_name: state.leadName,
+                            opening_line: state.openingLine,
                             topic_he: state.topicHe,
                             scheduled_when_spoken: state.scheduledWhenSpoken,
                             scheduled_time_spoken: state.scheduledTimeSpoken,
@@ -564,13 +566,15 @@ VoxEngine.addEventListener(AppEvents.Started, function () {
                 });
                 // Client-tool router (plan §4). Each of the 4 tools maps to
                 // its own mtg/tool/{name}/{tok} URL — see the file header for
-                // why one shared URL was rejected. Unknown tools are ignored
-                // (never fabricate a result). ElevenLabs REQUIRES is_error on
+                // why one shared URL was rejected. An unregistered tool is
+                // answered with is_error:true — never fabricated as a success,
+                // and never left unanswered. ElevenLabs REQUIRES is_error on
                 // every client-tool-result frame — omitting it closes the
                 // WebSocket with 1008, killing the call right after the tool
                 // (the exact lesson RSVPAgent's own reply() carries). is_error
                 // stays false for every outcome except "could not even
-                // attempt the call" (missing tok/u, a thrown request).
+                // attempt the call" (missing tok/u, a thrown request, a tool
+                // this scenario does not route).
                 var TOOL_ROUTES = {
                     confirm_meeting: {
                         path: 'confirm',
@@ -635,7 +639,13 @@ VoxEngine.addEventListener(AppEvents.Started, function () {
                     }
                     var route = TOOL_ROUTES[toolName];
                     if (!route) {
-                        return; // unknown tool — ignore (never fabricate a result)
+                        // Answered, not ignored — see RSVPAgent's own !route branch
+                        // for the full rationale. is_error:true = "could not run at
+                        // all" (E-12), which is precisely an unregistered tool.
+                        // Same result string and log line as the other two agents.
+                        log('Unsupported client tool: ' + toolName);
+                        reply('unsupported_tool', true);
+                        return;
                     }
                     var postBody = route.body(args);
                     postBody.tool_call_id = toolCallId;
@@ -694,6 +704,11 @@ VoxEngine.addEventListener(AppEvents.Started, function () {
             try {
                 var ctx = JSON.parse(response.text);
                 state.leadName = ctx.lead_name || '';
+                // Server-rendered opening sentence (see the mtg/ctx route): the
+                // agent must not have to choose it. An older server that does
+                // not send it yields '', and first_message simply ends after
+                // the recording notice — degraded, never broken.
+                state.openingLine = ctx.opening_line || '';
                 state.topicHe = ctx.topic_he || '';
                 state.scheduledWhenSpoken = ctx.scheduled_when_spoken || '';
                 state.scheduledTimeSpoken = ctx.scheduled_time_spoken || '';

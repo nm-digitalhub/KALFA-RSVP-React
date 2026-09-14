@@ -14,8 +14,12 @@ import { routeInboundRetryBodySchema } from '@/lib/validation/console-calls';
 // ConsoleInbound.voxengine.js's ringNext, ONCE, only after the original
 // server-computed ring_order is exhausted (see the scenario's ringNext for
 // the call site). The "written but not deployed" caveat that used to live
-// here is stale: a read-only fetch of the DEPLOYED scenario text (#919510,
-// `npm run voximplant -- scenario --id 919510`, console audit 12.8)
+// here is stale: a read-only fetch of the DEPLOYED scenario text
+// (`npm run voximplant -- scenario --id <id>`, console audit 12.8). The id is
+// NOT written down on purpose — ConsoleInbound was 919510 and became 920393 in
+// the 2026-09-14 Shared-folder migration, and any number here goes stale the
+// next time a scenario moves. Read it from
+// voxfiles/.voxengine-ci/applications/<app>/rules.metadata.config.json.
 // confirmed this exact HTTP call is present in what is live on Voximplant.
 // That only proves the scenario SOURCE reached the platform — this audit did
 // NOT confirm the rule binding is live, that consoleWakeEnabled is on (it

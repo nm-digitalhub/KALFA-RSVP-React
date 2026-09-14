@@ -1164,9 +1164,14 @@ VoxEngine.addEventListener(AppEvents.Started, function () {
                     // agent_output_audio_format and user_input_audio_format as REQUIRED
                     // on this event, so they arrive on every call — they were simply
                     // never read. Nothing in the Voximplant AgentsClient parameters lets
-                    // a scenario choose the format (xiApiKey / agentId /
-                    // includeConversationId / baseUrl are the whole surface), so this is
-                    // the only way to learn what the connector actually negotiated.
+                    // a scenario choose the format, so this is the only way to learn
+                    // what the connector actually negotiated. (The full parameter
+                    // surface, per the vendor typings at
+                    // node_modules/@voximplant/voxengine-ci/typings/voxengine.d.ts:6105,
+                    // is xiApiKey, agentId, includeConversationId, baseUrl, environment,
+                    // branchId, onWebSocketClose, statistics, trace, privacy — none of
+                    // them an audio format. An earlier version of this comment called
+                    // the first four "the whole surface"; that was wrong.)
                     //
                     // Worth logging rather than assuming: the difference between
                     // pcm_8000 and pcm_16000 is the difference between telephone-band
@@ -1322,7 +1327,8 @@ VoxEngine.addEventListener(AppEvents.Started, function () {
                 // the write actually landed, and hears the truth when the server
                 // REFUSED (live failure 6875455354: server said rejected, the old
                 // binary ok-mapping collapsed it to 'queued', and the agent told the
-                // guest "נרשם"). Unknown tools are ignored (never fabricate).
+                // guest "נרשם"). An unregistered tool is answered with
+                // is_error:true — never fabricated as a success.
                 //   save_rsvp    → agent-tool/rsvp  → saved | rejected | queued
                 //   mark_dnc     → agent-tool/dnc   → removed | queued
                 //   notify_owner → agent-tool/note  → noted | queued
@@ -1422,7 +1428,24 @@ VoxEngine.addEventListener(AppEvents.Started, function () {
                     }
                     var route = TOOL_ROUTES[toolName];
                     if (!route) {
-                        return; // unknown tool — ignore (never fabricate a result)
+                        // A tool registered in the ElevenLabs console but missing
+                        // from TOOL_ROUTES still holds an open tool_call_id.
+                        // Returning with no frame at all leaves it unanswered, and
+                        // the protocol defines no behaviour for that — so answer.
+                        //
+                        // is_error TRUE is correct here and is exactly what the
+                        // flag is for (E-12): false = the tool RAN, whatever the
+                        // business outcome; true = it could not run at all. An
+                        // unregistered tool could not run. Note that OMITTING the
+                        // field is the case measured to close the WebSocket with
+                        // 1008 (session 6760041670) — sending true does not.
+                        //
+                        // Same result string and same log line as SalesCloseAgent
+                        // and MeetingConfirmAgent, so one grep over the session
+                        // logs finds every occurrence across all three agents.
+                        log('Unsupported client tool: ' + toolName);
+                        reply('unsupported_tool', true);
+                        return;
                     }
                     var postBody = route.body(args);
                     postBody.tool_call_id = toolCallId;
@@ -1461,9 +1484,12 @@ VoxEngine.addEventListener(AppEvents.Started, function () {
                             //              must be honest, never claim success.
                             //   queued   — transient; durably retried by the drain.
                             // ALL THREE are outcomes of a tool that RAN — so
-                            // is_error:false for each (E-12: is_error true/missing
-                            // closes the WebSocket with 1008 immediately, killing
-                            // the call before the honest sentence can be spoken).
+                            // is_error:false for each (E-12: false = ran, true =
+                            // could not run. OMITTING the field is what closes the
+                            // WebSocket with 1008 immediately, killing the call
+                            // before the honest sentence can be spoken — a truthy
+                            // is_error does not, which is why the no-token path
+                            // below deliberately sends one).
                             var result = (status === 'saved' || status === 'rejected' || status === 'queued')
                                 ? status
                                 : 'queued';

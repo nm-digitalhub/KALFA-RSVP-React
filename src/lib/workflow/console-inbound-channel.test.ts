@@ -6,7 +6,8 @@ import { describe, expect, it } from 'vitest';
 // Does the DEPLOYED scenario recognise a WhatsApp call?
 //
 // ⚠️ THIS READS THE SHIPPED FILE AND RUNS ITS OWN FUNCTION. `channelOf` lives in
-// `voxfiles/scenarios/src/ConsoleInbound.voxengine.js`, which is uploaded to
+// `voxfiles/applications/kalfa-rsvp.kalfarsvp.voximplant.com/scenarios/src/ConsoleInbound.voxengine.js`
+// (voxengine-ci 36 moved scenarios under the application), uploaded to
 // Voximplant verbatim and is not part of the app's module graph — so nothing in
 // this suite would otherwise notice if the classification broke. Fault injection
 // on 2026-09-14 deleted its first branch and every gate stayed green.
@@ -17,7 +18,7 @@ import { describe, expect, it } from 'vitest';
 
 const SCENARIO = join(
   process.cwd(),
-  'voxfiles/scenarios/src/ConsoleInbound.voxengine.js',
+  'voxfiles/applications/kalfa-rsvp.kalfarsvp.voximplant.com/scenarios/src/ConsoleInbound.voxengine.js',
 );
 
 /** The scenario's own `channelOf`, lifted out of the file that gets uploaded. */

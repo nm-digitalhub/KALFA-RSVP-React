@@ -23,23 +23,41 @@ import { writeFileSync } from 'fs';
 // המצב השני קיים כי "ייצא לי את העמודים האלה" ו"ייצא לי את העץ" הן שתי
 // בקשות שונות. זחילה מ־/docs/nodes/ מביאה ~180 עמודים, וכשמבקשים אחד־עשר
 // זה לא דיוק חסר — זה תשובה אחרת לגמרי.
-const ONLY_MODE = process.argv[2] === '--only';
-const OUTPUT_FILE = ONLY_MODE
-    ? (process.argv[3] || 'workflowbuilder_docs.json')
-    : (process.argv[3] || 'workflowbuilder_docs.json');
+// `--glob <pattern>` is pulled out FIRST, so it can appear anywhere and never
+// collides with a positional argument. Parsing it by index afterwards meant
+// `node scraper-v1.mjs <url> --glob '...'` silently used the string "--glob"
+// as the output filename.
+const RAW_ARGV = process.argv.slice(2);
+const GLOB_AT = RAW_ARGV.indexOf('--glob');
+const GLOB_OVERRIDE = GLOB_AT !== -1 ? RAW_ARGV[GLOB_AT + 1] : undefined;
+const ARGV = GLOB_AT === -1 ? RAW_ARGV : RAW_ARGV.filter((_, i) => i !== GLOB_AT && i !== GLOB_AT + 1);
+
+const ONLY_MODE = ARGV[0] === '--only';
+// Both branches were once the same expression — the output file is argv-positional
+// either way; only the URL list differs between the modes.
+const OUTPUT_FILE = (ONLY_MODE ? ARGV[1] : ARGV[1]) || 'docs.json';
 const TARGET_URLS = ONLY_MODE
-    ? process.argv.slice(4)
-    : [process.argv[2] || 'https://www.workflowbuilder.io/docs/overview/'];
+    ? ARGV.slice(2)
+    : [ARGV[0] || 'https://www.workflowbuilder.io/docs/overview/'];
 
 if (TARGET_URLS.length === 0) {
     console.error('❌ מצב --only דורש לפחות כתובת אחת.');
     process.exit(1);
 }
 
-// האתר מפנה workflowbuilder.io -> www.workflowbuilder.io (301), וכל הקישורים
-// בדף כתובים עם www. הגרסה הקודמת סיננה לפי 'https://workflowbuilder.io**'
-// ולכן 0 מתוך 70 הקישורים הפנימיים עברו, התור התרוקן, ונסרק עמוד אחד בלבד.
-const SITE_GLOBS = ['https://www.workflowbuilder.io/docs/**'];
+// גבול הזחילה נגזר מכתובת ההתחלה במקום להיות מוצמד לאתר אחד.
+//
+// הגרסה הקודמת קיבעה כאן 'https://www.workflowbuilder.io/docs/**', כך שהזחלן
+// עבד על אתר אחד בלבד: כל כתובת התחלה מאתר אחר הייתה נסרקת ואז התור היה
+// מתרוקן, כי אף קישור לא עבר את הפילטר. אותה תקלה בדיוק כבר קרתה כאן פעם
+// עם www (0 מתוך 70 קישורים) — הקיבוע היה השורש שלה.
+//
+// ברירת המחדל היא כל הדומיין של כתובת ההתחלה. כדי לצמצם לתת-עץ, יש להעביר
+// glob מפורש:
+//   node scripts/scraper-v1.mjs <start-url> <out.json> --glob 'https://host/section/**'
+const SITE_GLOBS = GLOB_OVERRIDE
+    ? [GLOB_OVERRIDE]
+    : [`${new URL(TARGET_URLS[0]).origin}/**`];
 
 const allDocsData = [];
 
@@ -73,10 +91,19 @@ const crawler = new PlaywrightCrawler({
 
         console.log(`סורק כעת עמוד דינמי: ${title} -> ${request.url}`);
 
-        // שליפת כל הקישורים והטקסטים שלהם מתוך הדפדפן החי
+        // קישורים מתוך גוף העמוד בלבד.
+        //
+        // הגרסה הקודמת קראה document.querySelectorAll, כלומר גררה את כל סרגל
+        // הניווט של האתר לכל עמוד — 116 קישורים זהים בכל קובץ, שמתוכם חמישה
+        // שייכים לעמוד. מי שמשתמש בפלט כדי לדעת "לאן העמוד הזה מפנה" קיבל
+        // תשובה שגויה לחלוטין.
         const hyperlinks = await page.evaluate(() => {
+            const root =
+                document.querySelector('article') ||
+                document.querySelector('main') ||
+                document.body;
             const links = [];
-            document.querySelectorAll('a[href]').forEach(el => {
+            root.querySelectorAll('a[href]').forEach(el => {
                 const text = el.innerText.trim();
                 const href = el.getAttribute('href');
                 if (href) {
@@ -97,20 +124,35 @@ const crawler = new PlaywrightCrawler({
         // הגרסה הקודמת שמרה רק כותרות וקישורים, כך שגם סריקה מושלמת הייתה
         // מפיקה מפת קישורים ולא תיעוד. כאן נשמר גם גוף העמוד ובלוקי הקוד.
         const { content, headings, codeBlocks } = await page.evaluate(() => {
-            const main = document.querySelector('main');
-            if (!main) return { content: '', headings: [], codeBlocks: [] };
+            // <article> לפני <main>: אצל חלק מהמחוללים (Fern למשל) סרגל הניווט
+            // יושב בתוך <main>, כך שקריאת main.innerText מחזירה את כל עץ הניווט
+            // של האתר לפני מילה אחת של תוכן. <article> הוא גוף העמוד בלבד.
+            const root =
+                document.querySelector('article') ||
+                document.querySelector('main') ||
+                null;
+            if (!root) return { content: '', headings: [], codeBlocks: [] };
 
-            const headings = [...main.querySelectorAll('h1,h2,h3,h4')]
+            const headings = [...root.querySelectorAll('h1,h2,h3,h4')]
                 .map(h => ({ level: Number(h.tagName[1]), text: h.innerText.trim() }))
                 .filter(h => h.text);
 
-            // Expressive Code מחזיק את המקור הנקי ב־data-code של כפתור ההעתקה,
-            // ומקודד שורה חדשה כתו DEL (U+007F) ולא כישות HTML. הכתיב המפורש
-            // מכוון: תו בקרה ממשי בקוד המקור נמחק בשקט בכל עריכה או העתקה.
-            const codeBlocks = [...document.querySelectorAll('button[data-code]')]
+            // שני מסלולים, כי מחוללי תיעוד שונים מגישים קוד אחרת:
+            //   * Expressive Code (Astro) מחזיק את המקור הנקי ב־data-code של
+            //     כפתור ההעתקה, ומקודד שורה חדשה כתו DEL (U+007F) ולא כישות
+            //     HTML. הכתיב המפורש מכוון: תו בקרה ממשי בקוד המקור נמחק בשקט
+            //     בכל עריכה או העתקה.
+            //   * כל השאר (Fern, Docusaurus, Nextra) מגישים <pre> רגיל.
+            // בלי המסלול השני, אתר כמו Fern נסרק עם 0 בלוקי קוד — ובעמודי
+            // דוגמאות זה כל התוכן שמעניין.
+            const fromCopyButtons = [...document.querySelectorAll('button[data-code]')]
                 .map(b => b.getAttribute('data-code').replaceAll('\u007F', '\n'));
+            const fromPre = [...root.querySelectorAll('pre')]
+                .map(el => el.innerText.trim())
+                .filter(Boolean);
+            const codeBlocks = fromCopyButtons.length ? fromCopyButtons : fromPre;
 
-            return { content: main.innerText.trim(), headings, codeBlocks };
+            return { content: root.innerText.trim(), headings, codeBlocks };
         });
 
         // ניסיון לחילוץ קטגוריה לפי כותרת ראשית h1
@@ -131,8 +173,9 @@ const crawler = new PlaywrightCrawler({
         if (!ONLY_MODE) {
             await enqueueLinks({
                 globs: SITE_GLOBS,
-                // נכסי הבנייה של Astro אינם עמודים.
-                exclude: ['**/_astro/**'],
+                // נכסי בנייה אינם עמודים. הדפוסים ספציפיים למחוללים מסוימים
+                // (Astro, Next) ופשוט לא מתאימים לאף כתובת באתרים אחרים.
+                exclude: ['**/_astro/**', '**/_next/**'],
             });
         }
     },

@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
 // Zod schema for the Voximplant RSVP scenario's callback (cb) POST body. Shapes
-// verified against voxfiles/scenarios/src/RSVP.voxengine.js (the emitted payloads
+// verified against voxfiles/applications/<app>/scenarios/src/RSVP.voxengine.js (the emitted payloads
 // at lines 197-207, 384-389, 420-428, 436-442) AND the ElevenLabs bridge
 // RSVPAgent.voxengine.js terminal callbacks (rsvp_method 'agent', no digit).
 // Validated at the server boundary before any persistence; a parse failure →

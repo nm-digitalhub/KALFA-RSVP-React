@@ -26,13 +26,20 @@ const pages = JSON.parse(readFileSync(INPUT, 'utf-8'));
 // it. Without this, /docs/nodes/ lands as `nodes.md` sitting BESIDE a `nodes/`
 // directory — legal on disk, and misleading to anyone reading the tree.
 function makePathFor(allUrls) {
-  const prefixes = new Set(
-    allUrls.map((u) => new URL(u).pathname.replace(/^\/docs\/?/, '')),
-  );
+  // The path prefix to strip is DERIVED, not assumed. This used to be a
+  // hardcoded /docs/, which silently produced a wrong tree for any site that
+  // does not serve its documentation under that path — every page landed at
+  // the repo root instead of under its section.
+  const paths = allUrls.map((u) => new URL(u).pathname);
+  const firstSegments = new Set(paths.map((p) => p.split('/').filter(Boolean)[0]));
+  const BASE = firstSegments.size === 1 ? `/${[...firstSegments][0]}` : '';
+  const stripBase = (p) => (BASE ? p.replace(new RegExp(`^${BASE}/?`), '') : p.replace(/^\//, ''));
+
+  const prefixes = new Set(paths.map(stripBase));
 
   return function pathFor(url) {
     const { pathname } = new URL(url);
-    const rest = pathname.replace(/^\/docs\/?/, '');
+    const rest = stripBase(pathname);
     const segments = rest.split('/').filter(Boolean);
     if (segments.length === 0) return 'index.md';
 
@@ -58,16 +65,30 @@ function render(page) {
     page.content,
   ];
 
-  if (page.codeBlocks.length > 0) {
+  // Only blocks the prose does NOT already contain. `content` is innerText of
+  // the whole article, so on most sites every code block is already inside it
+  // and repeating them doubled each file — the same snippet twice, once
+  // unfenced and once fenced. Blocks that ARE extra (a copy button holding the
+  // clean source where the rendered text is wrapped or elided) still survive.
+  const norm = (t) => t.replace(/\s+/g, ' ').trim();
+  const contentNorm = norm(page.content);
+  const extraBlocks = page.codeBlocks.filter(
+    (b) => b.trim() && !contentNorm.includes(norm(b)),
+  );
+  if (extraBlocks.length > 0) {
     lines.push('', '## בלוקי קוד', '');
-    for (const block of page.codeBlocks) lines.push('```', block, '```', '');
+    for (const block of extraBlocks) lines.push('```', block, '```', '');
   }
 
-  // Only links that leave the page's own subtree are worth keeping: the rest
-  // are the Starlight sidebar, repeated identically on all ~180 pages.
+  // Links that leave the documentation site itself. The origin is taken from
+  // the page being rendered rather than hardcoded — the previous literal
+  // ('https://www.workflowbuilder.io/docs/') meant that on any other site NO
+  // link matched, so the whole navigation sidebar was written out as
+  // "external" on every page.
+  const { origin } = new URL(page.url);
   const external = page.hyperlinks
-    .filter((l) => !l.url.startsWith('https://www.workflowbuilder.io/docs/'))
-    .filter((l) => l.url.startsWith('http'));
+    .filter((l) => l.url.startsWith('http'))
+    .filter((l) => !l.url.startsWith(origin));
   if (external.length > 0) {
     lines.push('', '## קישורים חיצוניים', '');
     const seen = new Set();

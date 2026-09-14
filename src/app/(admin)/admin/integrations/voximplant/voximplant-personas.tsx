@@ -3,6 +3,7 @@
 import { useActionState } from 'react';
 
 import { FormError, FormNotice, SubmitButton } from '@/components/forms';
+import { VoximplantRuleField } from './voximplant-rule-field';
 import {
   updateVoximplantLiveCallsAction,
   updateMeetingConfirmChannelAction,
@@ -19,14 +20,12 @@ import {
 // are exported as three components rather than one.
 //
 // Each dials its OWN rule_id, deliberately separate from voximplant_rule_id
-// (RSVPAgent's OutCall rule, 1494311, must never carry another persona's calls). The
+// (the RSVPAgent bridge rule — 1520915, `OutCallAgent` — must never carry another
+// persona's calls). Rule 1494311 is `OutCall`, the legacy DTMF `RSVP` scenario;
+// CLAUDE.md forbids giving it to any agent persona, this page's fields included. The
 // `disabled` attributes are a courtesy — every action re-checks the full config
 // server-side and fails closed, and the env VOXIMPLANT_LIVE_CALLS='false' still
 // hard-overrides all of it regardless of what the panel shows.
-
-const inputClass =
-  'w-full rounded-md border border-border bg-background px-3 py-2 text-sm outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/15';
-const labelClass = 'mb-1 flex items-center gap-1 text-sm font-medium';
 
 /** The RSVP agent's live-dial gate — enabling PERMITS real, paid outbound calls. */
 export function VoximplantLiveCallsToggle({
@@ -98,16 +97,10 @@ export function VoximplantMeetingConfirmToggle({
             שיחת AI קצרה לאישור/שינוי מועד לפגישה שכבר תואמה. משתמש בחשבון
             ובמספר היוצא המשותפים, עם Rule ID נפרד משלה.
           </p>
-          <label htmlFor="voximplant_meeting_confirm_rule_id" className={labelClass}>
-            Rule ID
-          </label>
-          <input
-            id="voximplant_meeting_confirm_rule_id"
+          <VoximplantRuleField
             name="voximplant_meeting_confirm_rule_id"
-            dir="ltr"
             defaultValue={ruleId}
-            placeholder="לא הוגדר"
-            className={inputClass}
+            help="הכלל שממנו יוצאת שיחת אישור הפגישה. בחרו מרשימת הכללים בחשבון כדי לא להקליד מזהה מהזיכרון."
           />
         </div>
         <div className="flex shrink-0 items-center justify-end gap-3">
@@ -153,16 +146,10 @@ export function VoximplantSalesCallToggle({
             שיחת AI יוצאת ללקוח שביקש חזרה בנושא &quot;מכירות&quot;, במועד
             שנקבע. משתמש בחשבון ובמספר היוצא המשותפים, עם Rule ID נפרד משלה.
           </p>
-          <label htmlFor="voximplant_sales_call_rule_id" className={labelClass}>
-            Rule ID
-          </label>
-          <input
-            id="voximplant_sales_call_rule_id"
+          <VoximplantRuleField
             name="voximplant_sales_call_rule_id"
-            dir="ltr"
             defaultValue={ruleId}
-            placeholder="לא הוגדר"
-            className={inputClass}
+            help="הכלל שממנו יוצאת שיחת סגירת המכירה. בחרו מרשימת הכללים בחשבון כדי לא להקליד מזהה מהזיכרון."
           />
         </div>
         <div className="flex shrink-0 items-center justify-end gap-3">

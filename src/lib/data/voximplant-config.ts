@@ -14,7 +14,14 @@ export type VoximplantServerConfig = {
   // Management API JWT auth (parsed from the stored service-account JSON) —
   // shaped for src/lib/voximplant/core.ts's VoximplantConfig.
   auth: VoximplantConfig;
-  ruleId: string; // OutCall rule id (live: 1494311)
+  // The rule StartScenarios targets for an RSVP call. LIVE VALUE: 1520915 —
+  // the `OutCallAgent` rule, which runs the `RSVPAgent` AI bridge.
+  // NOT 1494311: that is `OutCall`, the legacy DTMF `RSVP` scenario, and
+  // CLAUDE.md forbids pointing the bridge at it. Verified against app_settings
+  // and the live rule table 2026-09-14; earlier comments here had the two
+  // swapped, which mattered because this field's admin placeholder offered the
+  // forbidden id as its example.
+  ruleId: string;
   // ConsoleCallMeNow rule id, targeted by StartScenarios from
   // /api/call-me-now/verify. EMPTY STRING when no rule is bound yet — that
   // is the normal, fail-closed state, and unlike ruleId/callerId it must NOT
@@ -132,8 +139,10 @@ export type PersonaDispatchConfig = {
 // Shared resolver for both new personas: same service-account/caller/balance
 // thresholds as the base RSVP config (one Voximplant account), but each
 // persona has its OWN enabled toggle and rule_id — NOT the base config's
-// voximplant_live_calls/voximplant_rule_id (RSVPAgent's OutCall rule,
-// 1494311, must never carry a different persona's calls; see CLAUDE.md).
+// voximplant_live_calls/voximplant_rule_id (the RSVPAgent bridge rule,
+// 1520915/`OutCallAgent`, must never carry a different persona's calls).
+// Separately, and per CLAUDE.md: rule 1494311 (`OutCall`, the DTMF `RSVP`
+// scenario) must never be given to ANY agent persona, base included.
 // Fail-closed: returns null unless the base account is configured (SA + a
 // caller id) AND this persona's own rule_id is set — no fallback to the base
 // rule_id, ever. callsEnabled is this persona's own toggle AND the env kill

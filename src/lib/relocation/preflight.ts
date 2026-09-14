@@ -600,7 +600,13 @@ async function hardcodeFinding(input: PreflightInput): Promise<PreflightFinding>
         "scripts",
         // Console scenarios read the origin from the KALFA_APP_ORIGIN
         // application secret (F6) — a literal here means an un-fixed scenario.
-        "voxfiles/scenarios/src",
+        // The whole applications tree, not one path: voxengine-ci 36 moved
+        // sources to voxfiles/applications/<app>/scenarios/src, and naming the
+        // parent keeps this scanning every application without hardcoding a
+        // name. Pointing at the old voxfiles/scenarios/src silently scanned
+        // NOTHING after the 2026-09-14 migration — grep simply skips a path
+        // that does not exist, so the check passed by finding no files.
+        "voxfiles/applications",
       ],
       { cwd: input.repoRoot, timeout: 30_000, maxBuffer: 8 * 1024 * 1024 },
     );

@@ -410,8 +410,11 @@ export async function setConsoleAgentVoxActive(
   return { ok: true };
 }
 
-// The application new users are created in. Configuration, not a constant — the
-// account has more than one application and which is production is an ops fact.
+// The application new users are created in. Configuration, not a constant:
+// which application is production is an ops fact, not something to hardcode.
+// (An earlier version of this comment justified that with "the account has more
+// than one application". Measured 2026-09-14 via GetApplications: there is
+// exactly one, 11107202. The reasoning holds; the claim did not.)
 async function readApplicationId(
   admin: ReturnType<typeof createAdminClient>,
 ): Promise<number | null> {

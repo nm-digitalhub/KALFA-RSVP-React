@@ -532,7 +532,7 @@ export function getRules(
 
 // GetScenarios — READ-ONLY fetch of scenario metadata and (with with_script)
 // the DEPLOYED scenario text. This is the only way to prove what is actually
-// running behind a rule: voxfiles/scenarios/dist/ is gitignored, so the repo
+// running behind a rule: the built dist/ is gitignored, so the repo
 // cannot prove what was uploaded — the parity gate diffs this against a fresh
 // local build. Never creates/edits/binds a scenario (those are Add/SetScenario,
 // deliberately absent from this module).
@@ -568,6 +568,34 @@ export function getScenarios(
     { with_script: true, ...params, scenario_id: scenarioId },
     timeoutMs,
   );
+}
+
+// ListScenarios — READ-ONLY enumeration of scenarios, optionally narrowed to
+// one application. Separate from `getScenarios` above on purpose: that one is
+// hard-scoped to a single scenario_id so a caller cannot widen it, and that
+// property is worth keeping.
+//
+// The application filter is the ONLY way to tell where a scenario lives:
+// `ScenarioInfoType` (the GetScenarios result) carries no application_id field
+// — verified against the live reference, references.httpapi.structure
+// .scenarioinfotype. A scenario created without application_id lands in the
+// account-wide "Shared folder" and is invisible to this filter.
+export interface ListScenariosRequest {
+  count?: number;
+  offset?: number;
+  application_id?: number | string;
+  scenario_name?: string;
+}
+export function listScenarios(
+  config: VoximplantConfig,
+  params: ListScenariosRequest = {},
+): Promise<GetScenariosResponse> {
+  // with_script is NOT set: the API requires scenario_id alongside it, and the
+  // deployed text is not what this call is for.
+  return voxRequest<GetScenariosResponse>(config, 'GetScenarios', {
+    count: 100,
+    ...params,
+  });
 }
 
 // GetCallHistoryAsync — queues an async CSV report, returns its id.

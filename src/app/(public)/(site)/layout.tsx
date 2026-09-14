@@ -29,7 +29,7 @@ import { getCallMeNowWidgetEnabled } from '@/lib/data/call-me-now-public-config'
 // trail and cost math.
 //
 // It is now mounted, but CONFIG-GATED rather than unconditionally (13.8, once
-// the chain became real: scenario ConsoleCallMeNow #919514 deployed and
+// the chain became real: the ConsoleCallMeNow scenario deployed and
 // verified byte-identical, routing rule 1523124 `cn[0-9a-f]+` created and
 // ordered ahead of the two `.*` rules). getCallMeNowWidgetEnabled requires
 // BOTH the flag AND a bound numeric rule id, so the earlier objection to

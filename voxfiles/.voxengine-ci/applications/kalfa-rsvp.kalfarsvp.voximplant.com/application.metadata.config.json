@@ -1,1 +1,1 @@
-{"applicationId":11107202,"applicationName":"kalfa-rsvp.kalfarsvp.voximplant.com"}
+{"applicationId":11107202,"applicationName":"kalfa-rsvp.kalfarsvp.voximplant.com","scenarios":[{"scenarioId":920391,"scenarioName":"ConsoleCallMeNow"},{"scenarioId":920392,"scenarioName":"ConsoleDial"},{"scenarioId":920393,"scenarioName":"ConsoleInbound"},{"scenarioId":920394,"scenarioName":"MeetingConfirmAgent"},{"scenarioId":903860,"scenarioName":"Outgoingcall-RSVPAI"},{"scenarioId":920395,"scenarioName":"RSVPAgent"},{"scenarioId":920396,"scenarioName":"SalesCloseAgent"}]}

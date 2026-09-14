@@ -6,7 +6,7 @@ import { z } from 'zod';
 //   3. POST /api/voximplant/console/event            — both scenarios, consoleEventBodySchema
 //   4. POST /api/voximplant/console/route-inbound    — ConsoleInbound scenario, routeInboundBodySchema
 //
-// Shapes 2-4 are verified against voxfiles/scenarios/src/ConsoleDial.voxengine.js
+// Shapes 2-4 are verified against voxfiles/applications/<app>/scenarios/src/ConsoleDial.voxengine.js
 // and ConsoleInbound.voxengine.js VERBATIM (the exact Net.httpRequestAsync
 // postData bodies) — a parse failure here must mean the scenario sent something
 // unexpected, not that the schema drifted from what was actually shipped.

@@ -116,10 +116,37 @@ export function resolveVoxApplicationId(repoRoot: string): number | null {
   return null;
 }
 
+/** The application directory name under voxfiles, e.g.
+ * "kalfa-rsvp.kalfarsvp.voximplant.com".
+ *
+ * voxengine-ci 36.0.0 moved scenarios and their metadata UNDER the application
+ * (36 README, "Breaking change in 36.0.0"):
+ *   <= 35  voxfiles/scenarios/src/…           voxfiles/.voxengine-ci/scenarios/…
+ *   36+    voxfiles/applications/<app>/scenarios/src/…
+ *          voxfiles/.voxengine-ci/applications/<app>/scenarios/…
+ * The name is discovered rather than hardcoded, exactly as
+ * resolveVoxApplicationId already discovers the id. */
+function resolveAppDirName(repoRoot: string): string | null {
+  const dir = join(repoRoot, "voxfiles", ".voxengine-ci", "applications");
+  if (!existsSync(dir)) return null;
+  const entries = readdirSync(dir);
+  return entries.length > 0 ? entries[0] : null;
+}
+
 /** Deployed scenario ids from voxengine-ci metadata (never hardcoded). */
 export function resolveScenarioIds(repoRoot: string): Record<string, number> {
   const out: Record<string, number> = {};
-  const dir = join(repoRoot, "voxfiles", ".voxengine-ci", "scenarios", "dist");
+  const app = resolveAppDirName(repoRoot);
+  if (!app) return out;
+  const dir = join(
+    repoRoot,
+    "voxfiles",
+    ".voxengine-ci",
+    "applications",
+    app,
+    "scenarios",
+    "dist",
+  );
   if (!existsSync(dir)) return out;
   for (const { scenario } of CONSOLE_SCENARIOS) {
     const meta = join(dir, `${scenario}.metadata.config.json`);
@@ -254,12 +281,19 @@ export async function consoleScenarioParity(
   host: string,
 ): Promise<ScenarioParity[]> {
   const ids = resolveScenarioIds(repoRoot);
+  const appName = resolveAppDirName(repoRoot);
+  const appDir = appName
+    ? join(repoRoot, "voxfiles", "applications", appName)
+    : null;
   const out: ScenarioParity[] = [];
   for (const { scenario } of CONSOLE_SCENARIOS) {
-    const localPath = join(repoRoot, "voxfiles", "scenarios", "src", `${scenario}.voxengine.js`);
-    const localReadsSecret = existsSync(localPath)
-      ? scenarioReadsOriginSecret(readFileSync(localPath, "utf8"), host)
-      : false;
+    const localPath = appDir
+      ? join(appDir, "scenarios", "src", `${scenario}.voxengine.js`)
+      : null;
+    const localReadsSecret =
+      localPath && existsSync(localPath)
+        ? scenarioReadsOriginSecret(readFileSync(localPath, "utf8"), host)
+        : false;
     const scenarioId = ids[scenario] ?? null;
     let deployedReadsSecret: boolean | null = null;
     if (cfg && scenarioId !== null) {

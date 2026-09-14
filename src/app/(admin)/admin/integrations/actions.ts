@@ -17,6 +17,7 @@ import {
   updateCallConsentRequired,
   updateMeetingConfirmChannel,
   updateSalesCallChannel,
+  listVoximplantRules,
 } from '@/lib/data/admin/voximplant-channel';
 import {
   getOutreachMasterState,
@@ -26,6 +27,7 @@ import { updateChannelMetadata } from '@/lib/data/admin/channel-catalog';
 import { updateSendPolicy } from '@/lib/data/admin/integrations/send-policy';
 import { sendSlackAlert } from '@/lib/alerts/slack';
 import { createVoicePurpose, updateVoicePurpose } from '@/lib/data/admin/voice-purposes';
+import type { VoximplantRulesResult } from '@/lib/data/admin/voximplant-channel';
 import type { FormState } from '@/lib/validation/result';
 import { sendPolicyFromFormData } from '@/lib/validation/send-policy-form';
 
@@ -122,6 +124,10 @@ const voximplantChannelSchema = z.object({
   voximplant_min_call_reserve: z.string().trim().max(16).default(''),
   voximplant_max_concurrent_calls: z.string().trim().max(8).default(''),
   voximplant_max_calls_per_campaign_hour: z.string().trim().max(8).default(''),
+  // Both nullable text; '' unsets. Neither had an admin field before 2026-09-14
+  // — see the note on VoximplantChannelConfig for what each one drives.
+  voximplant_call_me_now_rule_id: z.string().trim().max(64).default(''),
+  voximplant_application_id: z.string().trim().max(64).default(''),
 });
 
 export async function updateVoximplantChannelAction(
@@ -142,6 +148,9 @@ export async function updateVoximplantChannelAction(
       formData.get('voximplant_max_concurrent_calls') ?? '',
     voximplant_max_calls_per_campaign_hour:
       formData.get('voximplant_max_calls_per_campaign_hour') ?? '',
+    voximplant_call_me_now_rule_id:
+      formData.get('voximplant_call_me_now_rule_id') ?? '',
+    voximplant_application_id: formData.get('voximplant_application_id') ?? '',
   });
   if (!parsed.success) {
     return { fieldErrors: parsed.error.flatten().fieldErrors };
@@ -171,6 +180,23 @@ export async function testVoximplantConnectionAction(
   } catch (err) {
     unstable_rethrow(err);
     return { error: 'בדיקת החיבור נכשלה' };
+  }
+}
+
+// Fetches the account's routing rules so the admin rule-id fields can offer a
+// LIST instead of a free-text number. Not a form action: it takes no FormData
+// and writes nothing — the client calls it from a button and renders the result
+// itself, which is why it returns the rules rather than a FormState.
+//
+// Authorization lives in the DAL (requirePlatformPermission('manage_voice')),
+// same as testVoximplantConnection; this wrapper only converts a thrown error
+// into a message the panel can show.
+export async function loadVoximplantRulesAction(): Promise<VoximplantRulesResult> {
+  try {
+    return await listVoximplantRules();
+  } catch (err) {
+    unstable_rethrow(err);
+    return { ok: false, message: 'טעינת הכללים נכשלה' };
   }
 }
 
@@ -282,9 +308,10 @@ export async function updateCallConsentRequiredAction(
 
 // Per-persona kill switches (2026-08-22) — meeting-confirm and sales-closing
 // each get their OWN toggle+rule_id, deliberately separate from
-// voximplant_live_calls/voximplant_rule_id (RSVPAgent's OutCall rule,
-// 1494311, must never carry another persona's calls — see the migration's
-// own comment). Fail-closed exactly like updateVoximplantLiveCallsAction:
+// voximplant_live_calls/voximplant_rule_id (the RSVPAgent bridge rule,
+// 1520915/`OutCallAgent`, must never carry another persona's calls). Rule
+// 1494311 is `OutCall` — the DTMF `RSVP` scenario — and per CLAUDE.md no
+// agent persona may point at it at all. Fail-closed exactly like updateVoximplantLiveCallsAction:
 // refuses to enable without this persona's OWN rule_id AND the shared base
 // config (service account + caller id). Checks the EFFECTIVE rule_id — the
 // one being submitted in this same request, or the already-stored one if

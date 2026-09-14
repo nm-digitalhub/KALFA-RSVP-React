@@ -13,6 +13,7 @@ import { HelpTip } from '@/components/help-tip';
 import { updateVoximplantChannelAction } from '@/app/(admin)/admin/integrations/actions';
 
 import { CopyRow, Field, SecretField } from '../_components/form-fields';
+import { VoximplantRuleField } from './voximplant-rule-field';
 
 // Account, dial config, budget limits and the scenario base URLs — lifted out of
 // channels-client.tsx so the provider page and the old channels tab render one
@@ -46,6 +47,8 @@ export type VoximplantCredentials = {
   voximplant_min_call_reserve: string;
   voximplant_max_concurrent_calls: string;
   voximplant_max_calls_per_campaign_hour: string;
+  voximplant_call_me_now_rule_id: string;
+  voximplant_application_id: string;
 };
 
 export function VoximplantCredentialsForm({
@@ -89,13 +92,10 @@ export function VoximplantCredentialsForm({
                     : 'לא הוגדר עדיין — הדביקו את ה-JSON.'}
                 </p>
               </div>
-              <Field
+              <VoximplantRuleField
                 name="voximplant_rule_id"
-                label="Rule ID"
                 defaultValue={voximplant.voximplant_rule_id}
-                placeholder="1494311"
-                errors={ve?.voximplant_rule_id}
-                help="מזהה ה-OutCall rule של תרחיש ה-RSVP ב-Voximplant (StartScenarios)."
+                help="הכלל שממנו יוצאת שיחת ה-RSVP (StartScenarios) — OutCallAgent, שמריץ את סוכן ה-AI. לא OutCall/1494311, שהוא תרחיש ה-DTMF הישן."
               />
               <Field
                 name="voximplant_caller_id"
@@ -110,6 +110,20 @@ export function VoximplantCredentialsForm({
                 label="Callback Secret"
                 defaultValue={voximplant.voximplant_callback_secret}
                 help="סוד ה-?k= שחותם על כתובות ה-ctx/cb. סובב אותו כדי לפסול טוקנים ישנים."
+              />
+              <VoximplantRuleField
+                name="voximplant_call_me_now_rule_id"
+                label="Rule ID — חייג אליי עכשיו"
+                defaultValue={voximplant.voximplant_call_me_now_rule_id}
+                help="הכלל שמפעיל ConsoleCallMeNow כשלקוח מבקש שיחה חוזרת מיידית. המתג עצמו יושב בהגדרות › שיחות; ריק = התכונה אינרטית."
+              />
+              <Field
+                name="voximplant_application_id"
+                label="Application ID"
+                defaultValue={voximplant.voximplant_application_id}
+                placeholder="11107202"
+                errors={ve?.voximplant_application_id}
+                help="האפליקציה ב-Voximplant שנחשבת ייצור — הקצאת סוכני מוקד יוצרת בה משתמשים. מופיע ליד כל כלל ברשימת הכללים."
               />
             </div>
           </AccordionPanel>

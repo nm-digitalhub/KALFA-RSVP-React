@@ -7,9 +7,10 @@ import { requirePlatformPermission } from '@/lib/auth/dal';
 import type { TablesUpdate } from '@/lib/supabase/types';
 import {
   getVoximplantConfig,
+  getVoximplantBalancePullConfig,
   envAllowsLiveCalls,
 } from '@/lib/data/voximplant-config';
-import { getAccountInfo } from '@/lib/voximplant/core';
+import { getAccountInfo, getApplications, getRules } from '@/lib/voximplant/core';
 import { setAccountCallbackUrl } from '@/lib/voximplant/mutations';
 import { sha256Hex } from '@/lib/security/token-compare';
 import { normalizeAccountInfo } from '@/lib/validation/vox-payloads';
@@ -33,6 +34,16 @@ export type VoximplantChannelConfig = {
   voximplant_min_call_reserve: string;
   voximplant_max_concurrent_calls: string;
   voximplant_max_calls_per_campaign_hour: string;
+  // Two columns that existed in app_settings with NO admin surface at all until
+  // 2026-09-14 — a DB row an operator could neither read nor change, which the
+  // owner has ruled is not "done" (a column alone is not a control).
+  //   call_me_now_rule_id — the ConsoleCallMeNow rule /api/call-me-now/verify
+  //     starts. Its on/off switch lives in /admin/settings, so the feature could
+  //     be toggled while the rule it dials stayed invisible.
+  //   application_id — which Voximplant application is production. Read by
+  //     console-agent provisioning; previously set by hand, directly in the DB.
+  voximplant_call_me_now_rule_id: string;
+  voximplant_application_id: string;
   configured: boolean; // derived: SA json + rule_id + caller_id present (matches getVoximplantConfig !== null)
   fullyConfigured: boolean; // configured AND callback_secret — the full dial config
   liveCalls: boolean; // raw app_settings.voximplant_live_calls (the admin toggle's value)
@@ -90,6 +101,8 @@ export async function getVoximplantChannelConfig(): Promise<VoximplantChannelCon
     voximplant_max_calls_per_campaign_hour: s(
       row.voximplant_max_calls_per_campaign_hour,
     ),
+    voximplant_call_me_now_rule_id: s(row.voximplant_call_me_now_rule_id),
+    voximplant_application_id: s(row.voximplant_application_id),
     configured: saConfigured && !!ruleId && !!callerId,
     fullyConfigured:
       saConfigured &&
@@ -122,6 +135,8 @@ export type UpdateVoximplantChannelInput = {
   voximplant_min_call_reserve: string;
   voximplant_max_concurrent_calls: string;
   voximplant_max_calls_per_campaign_hour: string;
+  voximplant_call_me_now_rule_id: string;
+  voximplant_application_id: string;
 };
 
 export async function updateVoximplantChannelConfig(
@@ -140,6 +155,11 @@ export async function updateVoximplantChannelConfig(
     voximplant_rule_id: input.voximplant_rule_id || null,
     voximplant_caller_id: input.voximplant_caller_id || null,
     voximplant_callback_secret: input.voximplant_callback_secret || null,
+    // Nullable text like the three above: '' is a deliberate unset. Clearing
+    // call_me_now_rule_id leaves /api/call-me-now/verify inert, which is the
+    // documented fail-closed state, not a breakage.
+    voximplant_call_me_now_rule_id: input.voximplant_call_me_now_rule_id || null,
+    voximplant_application_id: input.voximplant_application_id || null,
   };
   // NOT NULL numeric columns — only set when a finite number is supplied.
   const num = (v: string): number | undefined => {
@@ -392,5 +412,74 @@ export async function testVoximplantConnection(): Promise<ConnectionTestResult> 
     return { ok: true, message: `מחובר · יתרה $${info.result.balance.toFixed(2)}` };
   } catch {
     return { ok: false, message: 'החיבור נכשל — בדקו את פרטי חשבון השירות' };
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Rule picker
+// ---------------------------------------------------------------------------
+
+// Every routing rule on the account, so an operator can PICK one instead of
+// typing an id from memory.
+//
+// WHY THIS EXISTS. Four admin fields take a raw Voximplant rule id, and a wrong
+// number there is silent: the call still dials, it just runs a different
+// scenario. The failure mode is real — a stale comment in this repo described
+// rule 1494311 (`OutCall`, the legacy DTMF flow) as "RSVPAgent's rule", and the
+// base field's placeholder offered that very id as its example, while the live
+// value is 1520915 (`OutCallAgent`). A list built from the platform cannot go
+// stale that way. It also survives a scenario migration: ids changed for six
+// scenarios on 2026-09-14 and any number written down beforehand was wrong the
+// next morning.
+//
+// AUTH, NOT DIAL CONFIG. It reads the service account via
+// getVoximplantBalancePullConfig, NOT getVoximplantConfig — the latter returns
+// null unless a rule id and caller id are already stored, which would make the
+// picker unavailable to exactly the operator who has not chosen a rule yet.
+//
+// ON DEMAND ONLY. Never call this from a page render. /admin/integrations/
+// voximplant deliberately avoids live Voximplant round-trips in its render path
+// ("an unbounded-latency external dependency in a very hot render path"); this
+// is reached from a button instead.
+export type VoximplantRuleOption = {
+  ruleId: string;
+  ruleName: string;
+  applicationName: string;
+  /** Scenario names bound to the rule — what it actually RUNS. May be empty. */
+  scenarios: string[];
+};
+export type VoximplantRulesResult =
+  | { ok: true; rules: VoximplantRuleOption[] }
+  | { ok: false; message: string };
+
+export async function listVoximplantRules(): Promise<VoximplantRulesResult> {
+  await requirePlatformPermission('manage_voice');
+  const cfg = await getVoximplantBalancePullConfig();
+  if (!cfg) {
+    return { ok: false, message: 'חסר חשבון שירות תקין — שמרו את ה-JSON תחילה' };
+  }
+  try {
+    // GetRules is per-application (the API has no account-wide rule listing), so
+    // the applications are enumerated first. One extra round trip, and it keeps
+    // the list honest if a second application is ever added.
+    const apps = await getApplications(cfg.auth, { count: 50 });
+    const rules: VoximplantRuleOption[] = [];
+    for (const app of apps.result) {
+      const res = await getRules(cfg.auth, app.application_id, { with_scenarios: true });
+      for (const rule of res.result) {
+        rules.push({
+          ruleId: String(rule.rule_id),
+          ruleName: rule.rule_name,
+          applicationName: app.application_name,
+          scenarios: (rule.scenarios ?? []).map((sc) => sc.scenario_name),
+        });
+      }
+    }
+    // Stable, human order — the operator scans this list by name.
+    rules.sort((a, b) => a.ruleName.localeCompare(b.ruleName));
+    return { ok: true, rules };
+  } catch {
+    // Deliberately generic: this surface must not leak provider or auth detail.
+    return { ok: false, message: 'טעינת הכללים נכשלה — בדקו את חיבור חשבון השירות' };
   }
 }

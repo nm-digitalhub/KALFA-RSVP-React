@@ -8,6 +8,7 @@ import {
   updateVoicePurposeAction,
 } from '@/app/(admin)/admin/integrations/actions';
 import type { VoicePurposeAdminRow } from '@/lib/data/admin/voice-purposes';
+import { VoximplantRuleField } from './voximplant-rule-field';
 
 // The registry that turns "a fourth voice agent" from a code project into a row.
 //
@@ -55,10 +56,12 @@ function PurposeRow({ purpose }: { purpose: VoicePurposeAdminRow }) {
           owner believed they had changed a rule — so the fields are not shown. */}
       {!purpose.isBuiltin && (
         <>
-          <label className="block">
-            <span className={labelClass}>Rule ID של תרחיש Voximplant</span>
-            <input name="ruleId" defaultValue={purpose.ruleId ?? ''} className={inputClass} />
-          </label>
+          <VoximplantRuleField
+            name="ruleId"
+            label="Rule ID של תרחיש Voximplant"
+            defaultValue={purpose.ruleId ?? ''}
+            help="הכלל שהייעוד הזה מפעיל. בחרו מרשימת הכללים בחשבון — כך רואים גם איזה תרחיש כל כלל באמת מריץ."
+          />
 
           <div className="flex flex-wrap gap-4">
             <label className="flex items-center gap-2 text-sm">
@@ -120,10 +123,12 @@ export function VoicePurposesPanel({ purposes }: { purposes: readonly VoicePurpo
           <input name="description" className={inputClass} />
         </label>
 
-        <label className="block">
-          <span className={labelClass}>Rule ID של תרחיש Voximplant</span>
-          <input name="ruleId" className={inputClass} />
-        </label>
+        <VoximplantRuleField
+          name="ruleId"
+          label="Rule ID של תרחיש Voximplant"
+          defaultValue=""
+          help="הכלל שהייעוד הזה יפעיל. בחרו מרשימת הכללים בחשבון — כך רואים גם איזה תרחיש כל כלל באמת מריץ."
+        />
 
         {state?.error && <FormError message={state.error} />}
         {state?.notice && <FormNotice message={state.notice} />}
