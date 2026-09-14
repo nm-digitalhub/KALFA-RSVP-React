@@ -1354,10 +1354,13 @@ export const PALETTE_ITEMS: PaletteItem[] = [
         status: { type: 'string', label: 'תוצאה' },
         reason: { type: 'string', label: 'סיבה' },
         attemptId: { type: 'string', label: 'מזהה ניסיון' },
-        // Only populated when the step waited. `concluded` is the one a branch
-        // should test: it means the call ENDED AND REPORTED, so a timeout and a
-        // call still running both read false rather than borrowing `dialed`,
-        // which only ever meant "the dial was accepted".
+        // ⚠️ THE FIELD TO BRANCH ON. One of completed / no_answer / failed /
+        // follow_up_required, derived from the call's own report — so a diagram
+        // never has to know that `sip_486` means Busy Here. The technical fields
+        // below stay for debugging, not for conditions.
+        outcome: { type: 'string', label: 'תוצאת השיחה' },
+        // Only populated when the step waited. Narrower than `outcome`: it says
+        // the call ENDED AND REPORTED, nothing about whether it went well.
         concluded: { type: 'boolean', label: 'השיחה הסתיימה ודיווחה' },
         finishReason: { type: 'string', label: 'סיבת סיום' },
         durationSec: { type: 'number', label: 'משך השיחה (שניות)' },

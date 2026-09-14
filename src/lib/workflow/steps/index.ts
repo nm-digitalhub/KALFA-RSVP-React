@@ -7,6 +7,8 @@
 // once rather than in every handler.
 import { RSVP_STATUSES, type RsvpStatus } from '@/lib/constants';
 
+import { toBusinessOutcome } from '../voice-outcome';
+
 import {
   ACTION_BRANCH_HANDLES,
   CONDITION_BRANCH_HANDLES,
@@ -637,6 +639,15 @@ function voiceOutcomeOutput(
 ) {
   return {
     dialed: true,
+    // ⚠️ `outcome` IS THE FIELD A BRANCH SHOULD TEST. The three below it are the
+    // telephony's own words — `sip_486`, `Normal termination`, a status the
+    // dispatcher chose — and asking an owner to write a condition against those
+    // is asking them to know that 486 is Busy Here. They stay because a person
+    // debugging a call wants them; they are not what a diagram should read.
+    outcome: toBusinessOutcome({
+      dispatchStatus: o?.dispatchStatus,
+      finishReason: o?.finishReason,
+    }),
     status: o?.dispatchStatus ?? 'unknown',
     concluded: o?.dispatchStatus === 'concluded',
     attemptId,

@@ -372,3 +372,56 @@ describe('the wait verifier', () => {
     expect(await r.wait!.verify!()).toBe(false);
   });
 });
+
+// The business outcome on the node's own output.
+describe('the outcome a diagram branches on', () => {
+  it('⚠️ a SIP code becomes a word an owner can reason about', async () => {
+    const r = await handler(
+      { purposeKey: 'feedback', waitForOutcome: true },
+      ctx(
+        {
+          readVoicePurposeOutcome: vi.fn<Read>(async () => ({
+            attemptId: 'attempt-1',
+            dispatchStatus: 'concluded',
+            finishReason: 'sip_486', // Busy Here
+            callDurationSec: null,
+          })),
+        },
+        { resumedFromWait: true },
+      ),
+    );
+
+    expect(r.output).toMatchObject({ outcome: 'no_answer' });
+    // …and the telephony's own word survives beside it, for whoever is debugging
+    // rather than branching.
+    expect(r.output).toMatchObject({ finishReason: 'sip_486' });
+  });
+
+  it('a completed call reads completed', async () => {
+    const r = await handler(
+      { purposeKey: 'feedback', waitForOutcome: true },
+      ctx(
+        {
+          readVoicePurposeOutcome: vi.fn<Read>(async () => ({
+            attemptId: 'attempt-1',
+            dispatchStatus: 'concluded',
+            finishReason: 'completed',
+            callDurationSec: 61,
+          })),
+        },
+        { resumedFromWait: true },
+      ),
+    );
+    expect(r.output).toMatchObject({ outcome: 'completed', durationSec: 61 });
+  });
+
+  it('⚠️ the ceiling firing on a live call is no_answer, not failed', async () => {
+    // The wait timed out with the call still 'confirmed'. The rules placed it
+    // correctly and nothing came back — a legitimate business result.
+    const r = await handler(
+      { purposeKey: 'feedback', waitForOutcome: true },
+      ctx({ readVoicePurposeOutcome: vi.fn<Read>(notYet) }, { resumedFromWait: true }),
+    );
+    expect(r.output).toMatchObject({ outcome: 'no_answer', concluded: false });
+  });
+});
