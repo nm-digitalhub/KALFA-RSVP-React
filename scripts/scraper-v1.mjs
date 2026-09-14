@@ -127,9 +127,18 @@ const crawler = new PlaywrightCrawler({
             // <article> לפני <main>: אצל חלק מהמחוללים (Fern למשל) סרגל הניווט
             // יושב בתוך <main>, כך שקריאת main.innerText מחזירה את כל עץ הניווט
             // של האתר לפני מילה אחת של תוכן. <article> הוא גוף העמוד בלבד.
+            //
+            // ‎.col-content הוא התוספת השלישית, ובלעדיה TypeDoc נסרק כעמוד ריק.
+            // אתרי ה־API של JSON Forms בנויים ב־TypeDoc, שאינו פולט לא <article>
+            // ולא <main> — הוא פולט ‎div.container-main ובתוכו ‎.col-content.
+            // זו לא בעיית רינדור: ‎document.body.innerText החזיר 7,247 תווים
+            // באותו רגע. ששה עמודים ירדו כ־0ch, נראו כמגבלת אתר, והיו באג של
+            // הסלקטור כאן. ‎.col-content ולא ‎body, כי body היה גורר את סרגל
+            // הניווט — בדיוק התקלה שההערה למעלה קיימת בשבילה.
             const root =
                 document.querySelector('article') ||
                 document.querySelector('main') ||
+                document.querySelector('.col-content') ||
                 null;
             if (!root) return { content: '', headings: [], codeBlocks: [] };
 
@@ -157,6 +166,12 @@ const crawler = new PlaywrightCrawler({
 
         // ניסיון לחילוץ קטגוריה לפי כותרת ראשית h1
         const category = await page.locator('h1').first().innerText().catch(() => 'כללי');
+
+        // ⚠️ עמוד בלי תוכן הוא כשל שקט, ולכן הוא נאמר בקול. שישה עמודי TypeDoc
+        // ירדו כ־0ch ונראו כמגבלת אתר עד שנבדקו; אזהרה כאן הייתה חוסכת את זה.
+        if (!content) {
+            console.warn(`⚠️  אין תוכן ב־${request.url} — ייתכן שמבנה העמוד אינו מוכר לסלקטורים.`);
+        }
 
         allDocsData.push({
             url: request.url,
