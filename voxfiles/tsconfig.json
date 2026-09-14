@@ -35,11 +35,33 @@
   //
   // `noEmit`: nothing here should produce files. Only voxengine-ci emits, into
   // its own dist/, and a stray build here would corrupt the upload hash.
+  //
+  // `types: []` comes straight from the vendor skill's own example, and it is
+  // load-bearing: without it `@types/node` is pulled into a runtime that has no
+  // Node at all, so `process`, `Buffer` and friends would typecheck in a
+  // scenario where they do not exist.
+  //
+  // ⚠️ `checkJs: false`, AND THE VENDOR EXAMPLE SAYS `true`. Measured before
+  // deciding: `checkJs: true` reports 438 errors across the twelve shipped
+  // scenarios — 267 of them TS7006 (implicit `any` parameter) and most of the
+  // rest `'x' does not exist on type 'never'`, TypeScript narrowing a `var`
+  // initialised to null and assigned inside a callback. None is a defect; they
+  // are what untyped JS looks like under a checker it was never written for.
+  //
+  // A config that reports 438 errors is a config nobody runs, and it teaches
+  // people to ignore the one signal it exists to give. So: no noise on the
+  // legacy JS, and full checking where it will matter — `checkJs` governs only
+  // `.js`, so a NEW `.ts` scenario is type-checked completely regardless.
+  // Verified by injecting `const bad: number = ElevenLabs.createAgentsClient(…)`
+  // into a temporary .ts scenario: caught, "Type 'Promise<AgentsClient>' is not
+  // assignable to type 'number'". Turn `checkJs` on the day the .js scenarios
+  // are worth annotating, not before.
   "compilerOptions": {
     "allowJs": true,
     "target": "ES2020",
     "lib": ["ES2020"],
     "skipLibCheck": true,
+    "types": [],
     "noEmit": true,
     "checkJs": false
   },
