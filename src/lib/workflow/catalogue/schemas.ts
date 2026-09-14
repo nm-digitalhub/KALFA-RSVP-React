@@ -1371,6 +1371,28 @@ const voiceCallUiSchema = {
       // against `undefined` data", so without it a node whose `purposeKey` key
       // is absent entirely — a diagram saved before this field existed — would
       // PASS the condition and show the switch.
+      //
+      // ⚠️ FOUR EFFECTS ARE USABLE HERE, NOT SIX. `RuleEffect` is re-exported
+      // straight from @jsonforms/core, which ships SHOW, HIDE, ENABLE, DISABLE,
+      // READONLY and WRITABLE — but Workflow Builder's own API page documents
+      // only the first four, and that is the list that works rather than an
+      // omission in their docs.
+      //
+      // READONLY and WRITABLE are not DISTINCT from DISABLE through the built-in
+      // path. `isInherentlyEnabled` folds readonly into the enabled calculation
+      // unless `separateReadonlyFromDisabled` is set, JsonForms' `configDefault`
+      // ships it `false`, and the SDK never sets it (zero occurrences in the
+      // 2.3.0 bundle). Nor can we: `WorkflowBuilderJsonFormConfig` accepts only
+      // `{ renderers, cells, translations }`, and the one escape hatch on
+      // `WorkflowBuilder.Root` — `reactFlowProps` — reaches ReactFlow, not
+      // JsonForms. We are on @jsonforms/core 3.8.0, the release that ADDED the
+      // flag (#2532), so this is a surface limit and not a version one.
+      //
+      // Reachable only by writing our own renderer: `mapStateToControlProps`
+      // returns `enabled` AND `readonly` as separate props, so a custom control
+      // could implement the semantics itself. That is "we implement readonly",
+      // not "RuleEffect.READONLY works" — a different and much larger change,
+      // and nothing here needs a field that is visible but locked.
       rule: {
         effect: 'SHOW',
         condition: {
