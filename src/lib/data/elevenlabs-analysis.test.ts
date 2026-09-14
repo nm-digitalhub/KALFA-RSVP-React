@@ -8,19 +8,33 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 // stub: 'call_attempts' resolves the correlation-token lookup; 'call_analysis'
 // captures the upsert row so we can assert what is (and isn't) persisted.
 vi.mock('server-only', () => ({}));
-const { attemptMock, guestMock, upsertMock } = vi.hoisted(() => ({
+// `otherAttemptMock` covers the four NON-call_attempts tables the resolver also
+// walks. Before 2026-09-15 only `call_attempts` was ever reached from here, so
+// one mock was enough; now the sales/meeting/purpose path resolves too, and a
+// table with no stub would throw inside the resolver and be swallowed as an
+// orphan — hiding the very behaviour these tests check.
+const { attemptMock, otherAttemptMock, guestMock, upsertMock } = vi.hoisted(() => ({
   attemptMock: vi.fn(),
+  otherAttemptMock: vi.fn(),
   guestMock: vi.fn(),
   upsertMock: vi.fn(),
 }));
+const ATTEMPT_TABLES_UNDER_TEST = [
+  'callback_request_attempts',
+  'sales_call_attempts',
+  'inbound_agent_attempts',
+  'voice_purpose_attempts',
+];
 vi.mock('@/lib/supabase/admin', () => ({
   createAdminClient: () => ({
     from: (table: string) =>
       table === 'call_attempts'
         ? { select: () => ({ eq: () => ({ maybeSingle: attemptMock }) }) }
-        : table === 'guests'
-          ? { select: () => ({ eq: () => ({ maybeSingle: guestMock }) }) }
-          : { upsert: upsertMock },
+        : ATTEMPT_TABLES_UNDER_TEST.includes(table)
+          ? { select: () => ({ eq: () => ({ maybeSingle: otherAttemptMock }) }) }
+          : table === 'guests'
+            ? { select: () => ({ eq: () => ({ maybeSingle: guestMock }) }) }
+            : { upsert: upsertMock },
   }),
 }));
 
@@ -57,6 +71,7 @@ const base: NormalizedCallAnalysis = {
 
 beforeEach(() => {
   attemptMock.mockReset().mockResolvedValue({ data: null, error: null });
+  otherAttemptMock.mockReset().mockResolvedValue({ data: null, error: null });
   guestMock.mockReset().mockResolvedValue({ data: null, error: null });
   upsertMock.mockReset().mockResolvedValue({ error: null });
 });
@@ -118,6 +133,41 @@ describe('storeCallAnalysis (dual-link + QA persist)', () => {
 });
 
 describe('storeSalesCallAnalysis', () => {
+  // THE INVARIANT THAT PROTECTS THE STORE. `call_analysis.call_attempt_id` is a
+  // FOREIGN KEY to `call_attempts`. Four of the five attempt tables can never
+  // fill it, so writing a meeting-confirm or purpose attempt id there would
+  // raise a constraint violation and fail the store on exactly the calls the
+  // linker was widened to capture. The polymorphic attempt_table/attempt_id
+  // pair is what carries them.
+  it('links a non-call_attempts match WITHOUT touching the foreign key', async () => {
+    attemptMock.mockResolvedValue({ data: null, error: null });
+    otherAttemptMock.mockResolvedValue({
+      data: { id: 'cra-1', created_at: '2026-09-14T00:00:00.000Z' },
+      error: null,
+    });
+    const res = await storeSalesCallAnalysis({
+      ...base,
+      conversationId: 'conv_mtg_1',
+      correlationToken: null,
+    });
+    expect(res).toBe('stored');
+    const row = upsertMock.mock.calls[0][0];
+    expect(row.attempt_id).toBe('cra-1');
+    expect(row.attempt_table).toBe('callback_request_attempts');
+    expect(row.call_attempt_id).toBeNull();
+    expect(row.linked_at).not.toBeNull();
+  });
+
+  // A link lookup must never cost us the analysis itself.
+  it('still stores as an orphan when the linker throws', async () => {
+    attemptMock.mockRejectedValue(new Error('db blip'));
+    const res = await storeSalesCallAnalysis({ ...base, conversationId: 'conv_mtg_2' });
+    expect(res).toBe('stored');
+    const row = upsertMock.mock.calls[0][0];
+    expect(row.attempt_id).toBeNull();
+    expect(row.call_attempt_id).toBeNull();
+  });
+
   it('stores sales analysis without the RSVP call_attempts linker', async () => {
     const res = await storeSalesCallAnalysis({
       ...base,
@@ -132,7 +182,15 @@ describe('storeSalesCallAnalysis', () => {
       },
     });
     expect(res).toBe('stored');
-    expect(attemptMock).not.toHaveBeenCalled();
+    // The linker now RUNS on this path. It used to be skipped, on the reasoning
+    // that "sales rows are not call_attempts rows" — true, and beside the point
+    // once the resolver learned all five attempt tables. MEASURED 2026-09-15:
+    // 22 of 42 call_analysis rows were orphans, six of them after that widening
+    // shipped, because every ElevenLabs webhook lands on this path and it
+    // passed an empty link.
+    expect(attemptMock).toHaveBeenCalled();
+    // rsvp_persisted stays out: it compares a guest row against a reported RSVP
+    // status, which means nothing for a non-RSVP persona.
     expect(guestMock).not.toHaveBeenCalled();
     const row = upsertMock.mock.calls[0][0];
     expect(row).toMatchObject({
