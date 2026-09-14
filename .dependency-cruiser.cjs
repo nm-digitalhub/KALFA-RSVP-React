@@ -31,6 +31,36 @@ module.exports = {
     severity: 'error',
     from: { path: '^(worker|scripts)/' },
     to: { path: 'node_modules/next/(headers|navigation|cache)', reachable: true },
+  },
+  {
+    // ⚠️ A CYCLE IN THE SCHEDULER CORE IS NOT A STYLE COMPLAINT, and this rule
+    // exists because nothing here checked for one. ESM live bindings usually
+    // carry a cycle through, so it compiles, bundles and passes every test —
+    // and then which module finishes initialising first depends on entry order,
+    // and the failure is an undefined import at run time in the worker.
+    //
+    // Caught on 2026-09-14 by hand, only because a reviewer looked:
+    // `enqueue.ts → wake.ts → enqueue.ts`, introduced while splitting the wake
+    // CAS out so the worker could reuse it. `wake-store.ts` holds the CAS now
+    // and imports neither. `npm run worker:deps` was green throughout.
+    name: 'no-circular',
+    comment:
+      'No import cycles. ESM survives them often enough that a cycle ships green and fails later as an undefined import, in whichever module lost the initialisation race. Break it by moving the shared piece into a module that imports neither side.',
+    severity: 'error',
+    // `from: {}` is the documented shape for this rule (rules-reference.md), and
+    // the empty object is deliberate rather than an omission: the cycle is a
+    // property of the path, so there is no useful "from" to narrow it to. The
+    // upstream example pairs it with `pathNot: '^(node_modules)'`, which this
+    // config does not need — `options.doNotFollow` already stops the cruise at
+    // the module boundary, so a dependency's own knots cannot be reported here.
+    //
+    // VERIFIED by fault injection on 2026-09-14: re-adding the
+    // `wake-store → enqueue` edge produced
+    // `error no-circular: enqueue.ts → wake-store.ts → enqueue.ts` and
+    // `1 dependency violations (1 errors)`. A rule that has never been seen to
+    // fail is not yet a guard.
+    from: {},
+    to: { circular: true },
   }],
   options: {
     tsConfig: { fileName: 'tsconfig.json' },
