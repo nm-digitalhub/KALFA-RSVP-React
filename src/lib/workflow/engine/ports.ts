@@ -180,6 +180,19 @@ export interface RunStorePort {
      * than as a record of one that already happened.
      */
     resumeAt?: string;
+    /**
+     * The EXTERNAL EVENT a `waiting` run is parked on — an opaque id the waking
+     * side can look the run up by (for a voice step, the attempt id).
+     *
+     * `resumeAt` and this are two halves of one wait, not alternatives: the
+     * deadline stays the CEILING (an event that never arrives must not park a
+     * run for ever) and this is the channel that can bring the run back sooner.
+     *
+     * Same lifecycle rule as `resumeAt` — written with 'waiting', cleared on
+     * everything else — so a stale id can never be matched by an unrelated event
+     * after the run has moved on.
+     */
+    resumeCorrelationId?: string;
   }): Promise<void>;
 }
 

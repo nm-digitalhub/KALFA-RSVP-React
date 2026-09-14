@@ -270,7 +270,7 @@ export function createRunStore(): RunStorePort {
   const supabase = createAdminClient();
 
   return {
-    async setRunStatus({ runId, status, errorMessage, resumeAt }) {
+    async setRunStatus({ runId, status, errorMessage, resumeAt, resumeCorrelationId }) {
       const terminal = TERMINAL_RUN_STATUSES.includes(status);
 
       const { error } = await supabase
@@ -288,6 +288,14 @@ export function createRunStore(): RunStorePort {
           // while carrying a stale deadline would be re-delivered forever by a
           // sweep that believed it was still owed a wake-up.
           resume_at: status === 'waiting' ? (resumeAt ?? null) : null,
+          // CLEARED ON EVERY NON-WAITING STATUS, for the same reason as
+          // `resume_at` above and unconditionally like it. Nothing WRITES this
+          // yet — the wait signal starts carrying a correlation in 0ב-2 — but
+          // the clearing ships with the column so it can never be stale before
+          // it is ever meaningful. A leftover id on a run that parked again for
+          // an unrelated reason would be matched by an event that has nothing to
+          // do with this wait, and woken early on it.
+          resume_correlation_id: status === 'waiting' ? (resumeCorrelationId ?? null) : null,
         })
         .eq('id', runId)
         // TERMINAL IS FINAL. A run that has already ended cannot be moved by a

@@ -5608,6 +5608,7 @@ export type Database = {
           finished_at: string | null
           id: string
           resume_at: string | null
+          resume_correlation_id: string | null
           status: string
           trigger_payload: Json
           trigger_source: string
@@ -5622,6 +5623,7 @@ export type Database = {
           finished_at?: string | null
           id?: string
           resume_at?: string | null
+          resume_correlation_id?: string | null
           status?: string
           trigger_payload?: Json
           trigger_source: string
@@ -5636,6 +5638,7 @@ export type Database = {
           finished_at?: string | null
           id?: string
           resume_at?: string | null
+          resume_correlation_id?: string | null
           status?: string
           trigger_payload?: Json
           trigger_source?: string

@@ -6,17 +6,15 @@
 -- report one — src/app/api/voximplant/purpose/<key>/ had `ctx` and no `cb`.
 -- `finish_reason` was therefore only ever written by the dispatcher's own error
 -- paths ('ambiguous_start_response', 'network_error_during_start'), never by an
--- actual call outcome.
+-- actual outcome.
 --
--- 'concluded' is that missing terminal state, and it is what a workflow step
--- will wait for: 'confirmed' means the call STARTED, 'concluded' means it ENDED
--- and said how. Same word the sibling surfaces already use
+-- 'concluded' is that missing terminal state, and it is the state a workflow
+-- step will wait for: 'confirmed' means the call STARTED, 'concluded' means it
+-- ENDED and said how. Same word the sibling surfaces already use
 -- (callback_request_attempts, sales_call_attempts), so the three read alike.
 --
--- Safe to widen: nothing branches on this column today. It is written in four
--- places in voice-purpose-dispatch.ts and read by no gate, no concurrency cap
--- and no reconciler (verified 2026-09-14). Widening a CHECK also cannot fail on
--- existing rows — every current value stays legal.
+-- Safe to widen: nothing branches on this column today — it is written in four
+-- places and read by no gate, cap or reconciler (verified 2026-09-14).
 alter table public.voice_purpose_attempts
   drop constraint voice_purpose_attempts_dispatch_status_check;
 
