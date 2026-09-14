@@ -54,6 +54,8 @@
 | A-37 | ⚠️ מהסקיל הרשמי: *"Do not assume `SetRuleInfo` can rebind a rule to a scenario. It may accept `scenario_id` and return success without changing the binding."* לקשירה — `BindScenario` בלבד, ואימות אחריה. | `management-api/SKILL.md` |
 | A-38 | מפתח ה-API נקרא מסוד פר-אפליקציה: `VoxEngine.getSecretValue(key)`. כך `ELEVENLABS_API_KEY` עובד היום, והתסריט הגנרי לא משנה זאת — הסוד לעולם לא עובר ב-`customData`. ⚠️ המתודה מחזירה `undefined` למפתח חסר **בלי לזרוק**; תסריט שלא בודק ייכשל רק כשה-WebSocket ייפתח. | `platform/voxengine/secrets` |
 | A-39 | **`ApplicationStorage` נבחן ונדחה.** `require(Modules.ApplicationStorage)` נותן מפתח-ערך פר-אפליקציה, והפיתוי הוא לשמור בו את קונפיגורציית הייעודים. אסור: הקונפיגורציה חיה ב-`voice_purposes`, ועותק ב-Voximplant היה מקור אמת שני שדורש סנכרון ונכשל בשקט בדריפט. הקונפיגורציה מגיעה ב-`ctx` בלבד. | `api-reference/voxengine/application-storage` |
+| A-40 | Voximplant ממליצים על אפליקציה נפרדת לבידוד: *"Use different applications for… intentional isolation — such as `voice-ai-staging` vs. `voice-ai-production`."* | `getting-started/configure-voximplant` |
+| A-41 | ⚠️ **אין היום הפרדת סביבות.** `GetApplications` חי 2026-09-15 מחזיר **אפליקציה אחת**: `kalfa-rsvp` (11107202) עם 8 כללים. `kalfatest` (11107302), שהביקורת מ-20.7 מתארת כ-sandbox עם 4 כללים, **כבר לא קיים בחשבון** — וזה גם מסביר למה מיגרציית 36 יצרה ספרייה אחת תחת `applications/`. כל כלל חדש נוחת על האפליקציה שמחייגת לאורחים אמיתיים. | `mcp__voximplant__get_applications` |
 | A-32 | `MCP.Client` של VoxEngine **אינו** דרך לעקוף את טיפול הכלים של המחבר. הספק מפורש: *"the client does not replace connector-specific tool handling by itself"*. הוא הסצנריה שקוראת החוצה לשרת MCP. | `voxengine-dev/reference.md` |
 
 ---
@@ -312,6 +314,7 @@ It may accept `scenario_id` and return success without changing the binding."*
 | **A-5 — ייעוד על כלל פרסונה** | גבוהה | קיים היום; שלב 6 מחדד במקום לבטל |
 | **§2 — קריטריונים משותפים** | בינונית | החלטה מודעת; ייעוד שדורש רף משלו מקבל סוכן |
 | **A-3 — תקרת 200 בייט** | נמוכה | 127 היום, ותוספות הולכות ל-`ctx` שאינו מוגבל |
+| **A-41 — אין sandbox** | בינונית | שלב 3 מייצר כלל חדש על אפליקציית הייצור. מיתון: `rulePattern` לא חל על שיחות יוצאות (A-35), אז כלל חדש **אינו** יכול ליירט תנועה נכנסת; הוא נגיש רק ל-`StartScenarios` עם ה-`rule_id` שלו. עדיין — לשקול אפליקציית staging לפני שלב 3, כפי ש-A-40 ממליץ |
 | **A-22 — `noEmitOnError`** | נמוכה | שער, לא סיכון |
 
 ---
