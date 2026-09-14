@@ -32,11 +32,31 @@ import {
  *     `deterministicJobId` rather than passed raw, because pg-boss's id column
  *     is a uuid and a composite string throws 22P02.
  *
- *   `singletonKey` — pg-boss will not have two jobs for the same run active at
- *     once. This is what makes the ledger's `in_flight` answer meaningful: with
- *     it, a `running` step row found by a retry can only have been abandoned by
- *     a dead attempt, never contended by a live one. Same idiom as
- *     QUEUES.logExport's "singleton so a manual run never overlaps the cron".
+ *   `singletonKey` — a HANDLE on this run's queued job, not a lock.
+ *
+ * ⚠️ THE SECOND GUARD IS WEAKER THAN THIS COMMENT USED TO CLAIM. It said
+ * pg-boss would not have two jobs for the same run active at once, and that
+ * this was what made the ledger's `in_flight` answer meaningful. It is not.
+ * `singletonKey` enforces uniqueness only under the `short`, `singleton`,
+ * `stately`, `exclusive` and `key_strict_fifo` policies — every unique index
+ * that mentions `singleton_key` is conditioned on one of them (pg-boss 12.30.0,
+ * dist/plans.js job_i1/i2/i3/i6/i8), and the official docs say the same by
+ * listing "Can be extended with singletonKey" against those policies and not
+ * against `standard`, then stating outright that "several pre-active jobs can
+ * share a key ... with a manually-assigned key on a `standard` queue".
+ * `QUEUES.workflowRun` is created without a policy, and `createQueue` defaults
+ * to `standard` (manager.js: `options.policy || QUEUE_POLICIES.standard`), so
+ * on this queue the key constrains nothing. QUEUES.logExport is genuinely
+ * different — it is in the worker's singleton list.
+ *
+ * What actually keeps one run from executing twice is the deterministic `id`
+ * above plus the step ledger's per-step lease. That is not a gap to close here;
+ * it is the reason the ledger's claim is a CAS rather than a read.
+ *
+ * The key is still worth setting, for a reason the old comment did not know:
+ * it is the target `boss.update(name, undefined, { singletonKey })` matches, so
+ * a parked run's pending job can be pulled FORWARD in place — the mechanism an
+ * event-driven wake needs, without inserting a second job beside the first.
  */
 export async function enqueueWorkflowRun(
   boss: PgBoss,
