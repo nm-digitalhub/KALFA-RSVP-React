@@ -82,6 +82,34 @@ export async function listVoicePurposes(): Promise<VoicePurpose[]> {
 }
 
 /**
+ * The purposes a workflow's call node can ACTUALLY dial.
+ *
+ * ⚠️ NOT THE SAME LIST AS `listVoicePurposes`, and the difference is the whole
+ * point. `dispatchVoicePurposeCall` refuses a built-in outright
+ * (voice-purpose-dispatch.ts:78, `purpose_is_builtin`) and refuses one with no
+ * rule (:81, `purpose_rule_missing`). Offering either in the node's dropdown
+ * lets an owner pick it, pass every required-field gate — `purposeKey` is
+ * non-empty, which is all `NODE_REQUIRED_FIELDS` asks — arm the workflow, and
+ * discover the refusal only when a guest was supposed to be called.
+ *
+ * The editor's own property panel was already written for this list rather than
+ * for the raw one: the `MessageOnError` beside the dropdown exists because "an
+ * empty dropdown is a legitimate state… whose three shipped rows are all
+ * built-in and refused by the dialler by design" (schemas.ts). That note
+ * described an intent nothing implemented — every row reached the dropdown.
+ *
+ * As of 2026-09-15 the live table holds exactly three rows, all built-in and all
+ * with a NULL rule, so this correctly returns NOTHING and the panel says so in
+ * words. The remedy is a new purpose with a rule, not a looser filter here.
+ */
+export async function listDialableVoicePurposes(): Promise<VoicePurpose[]> {
+  // Filtered in JS over the already-narrow active set rather than in SQL: the
+  // predicate is the DIALLER's, and keeping it beside a comment that names the
+  // two lines it mirrors is worth more than one fewer row crossing the wire.
+  return (await listVoicePurposes()).filter((p) => !p.isBuiltin && p.ruleId !== null);
+}
+
+/**
  * One purpose by key, or null.
  *
  * Deliberately does NOT filter on `enabled` or `active`: the caller decides what

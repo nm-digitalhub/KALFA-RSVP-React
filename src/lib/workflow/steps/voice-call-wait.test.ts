@@ -63,6 +63,7 @@ const dialedOk: Dial = async () => ({
 const notYet: Read = async () => ({
   attemptId: 'attempt-1',
   dispatchStatus: 'confirmed',
+  callStatus: null,
   finishReason: null,
   callDurationSec: null,
 });
@@ -144,6 +145,7 @@ describe('action.start_voice_call — waiting for the outcome', () => {
         readVoicePurposeOutcome: vi.fn<Read>(async () => ({
           attemptId: 'attempt-1',
           dispatchStatus: settled,
+          callStatus: null,
           finishReason: 'completed',
           callDurationSec: 42,
         })),
@@ -168,6 +170,7 @@ describe('action.start_voice_call — waiting for the outcome', () => {
       readVoicePurposeOutcome: vi.fn<Read>(async () => ({
         attemptId: 'attempt-1',
         dispatchStatus: 'unknown',
+        callStatus: null,
         finishReason: 'ambiguous_start_response',
         callDurationSec: null,
       })),
@@ -203,6 +206,7 @@ describe('action.start_voice_call — resuming', () => {
     const read = vi.fn<Read>(async () => ({
       attemptId: 'attempt-1',
       dispatchStatus: 'concluded',
+      callStatus: null,
       finishReason: 'completed',
       callDurationSec: 73,
     }));
@@ -268,6 +272,7 @@ describe('an ambiguous start is not an outcome', () => {
       readVoicePurposeOutcome: vi.fn<Read>(async () => ({
         attemptId: 'attempt-1',
         dispatchStatus: 'unknown',
+        callStatus: null,
         finishReason: 'ambiguous_start_response',
         callDurationSec: null,
       })),
@@ -286,6 +291,7 @@ describe('an ambiguous start is not an outcome', () => {
           readVoicePurposeOutcome: vi.fn<Read>(async () => ({
             attemptId: 'attempt-1',
             dispatchStatus: 'concluded',
+            callStatus: null,
             finishReason: 'completed',
             callDurationSec: 51,
           })),
@@ -338,6 +344,7 @@ describe('the wait verifier', () => {
       const read = vi.fn<Read>(async () => ({
         attemptId: 'attempt-1',
         dispatchStatus: status,
+        callStatus: null,
         finishReason: null,
         callDurationSec: null,
       }));
@@ -359,7 +366,7 @@ describe('the wait verifier', () => {
     const read = vi.fn<Read>(async () =>
       gone
         ? null
-        : { attemptId: 'attempt-1', dispatchStatus: 'confirmed', finishReason: null, callDurationSec: null },
+        : { attemptId: 'attempt-1', dispatchStatus: 'confirmed', finishReason: null, callStatus: null, callDurationSec: null },
     );
     const r = await park({ purposeKey: 'feedback', waitForOutcome: true }, {
       startVoicePurposeCall: vi.fn<Dial>(dialedOk),
@@ -383,6 +390,7 @@ describe('the outcome a diagram branches on', () => {
           readVoicePurposeOutcome: vi.fn<Read>(async () => ({
             attemptId: 'attempt-1',
             dispatchStatus: 'concluded',
+            callStatus: null,
             finishReason: 'sip_486', // Busy Here
             callDurationSec: null,
           })),
@@ -405,6 +413,7 @@ describe('the outcome a diagram branches on', () => {
           readVoicePurposeOutcome: vi.fn<Read>(async () => ({
             attemptId: 'attempt-1',
             dispatchStatus: 'concluded',
+            callStatus: null,
             finishReason: 'completed',
             callDurationSec: 61,
           })),

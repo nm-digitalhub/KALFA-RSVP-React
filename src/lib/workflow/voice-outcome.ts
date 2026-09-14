@@ -75,6 +75,22 @@ function classifySip(code: number): VoiceBusinessOutcome {
 export function toBusinessOutcome(input: {
   dispatchStatus: string | null | undefined;
   finishReason: string | null | undefined;
+  /**
+   * The scenario's OWN normalized verdict, when the row carries one.
+   *
+   * ⚠️ IT WINS OVER `finishReason`, AND THAT IS THE FIX. The callback sends this
+   * beside a free-text `error_reason`, and the route used to keep only the
+   * error: `finish_reason = error_reason ?? call_status`. So on every failure
+   * path the scenario has — `missing_secret`, `ctx_parse_error`,
+   * `ctx_fetch_error`, `ctx_fetch_failed_<code>` — the verdict was thrown away
+   * and this function saw a concluded attempt with a string it does not know,
+   * which its `default` reads as 'completed'. A call that failed before anyone
+   * was reached came back to the diagram as a SUCCESS.
+   *
+   * Optional, because rows written before 2026-09-15 have no such column; for
+   * them the `finishReason` reasoning below is unchanged and still correct.
+   */
+  callStatus?: string | null | undefined;
 }): VoiceBusinessOutcome {
   const status = input.dispatchStatus ?? '';
   const reason = (input.finishReason ?? '').trim();
@@ -91,6 +107,29 @@ export function toBusinessOutcome(input: {
   // Still in flight — the ceiling fired before the call reported. Same reasoning
   // as 'unknown': no outcome is not a bad outcome.
   if (status !== 'concluded') return 'no_answer';
+
+  // ⚠️ BEFORE THE REASON IS READ AT ALL. The scenario computed this from the
+  // same event it built the reason from, and it is the one field whose
+  // vocabulary we control end to end — `voxPurposeCallbackSchema` pins it to
+  // four values. Reading it first is what stops an unmapped error string from
+  // being interpreted as a success by the `default` below.
+  //
+  // 'no_response' is the guest ANSWERING and then saying nothing
+  // (`wasAnswered ? 'no_response' : 'no_answer'` in the scenario). It is not a
+  // fourth business outcome: to an owner deciding what to do next, a call that
+  // reached nobody and a call that reached someone who did not engage both mean
+  // "we did not get an answer".
+  switch (input.callStatus ?? '') {
+    case 'completed':
+      return 'completed';
+    case 'failed':
+      return 'failed';
+    case 'no_answer':
+    case 'no_response':
+      return 'no_answer';
+    default:
+      break; // absent (a legacy row) — fall through to the reason.
+  }
 
   const sip = /^sip_(\d{3})\b/.exec(reason);
   if (sip) return classifySip(Number(sip[1]));

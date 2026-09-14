@@ -1155,7 +1155,31 @@ const voiceCallWithOutcome: DiagramModel = {
           properties: {
             label: 'איך הסתיימה השיחה?',
             description: 'מנתב לפי תוצאת השיחה, לא לפי קוד הטלפוניה',
-            left: '{{nodes.voice-wait-call.outcome}}',
+            // ⚠️ THE `?` IS LOAD-BEARING — it is the difference between this
+            // flow reporting a problem and this flow DYING of one.
+            //
+            // `resolve-template` throws `Unresolved template reference` on a
+            // missing path rather than resolving to '' (resolve-template.ts:127),
+            // and `resolveConfigTemplates` walks EVERY string in a node's config
+            // — `left` and each branch's `x` alike — so one missing value fails
+            // the whole step, permanently.
+            //
+            // And the call node really can complete without an `outcome`, in two
+            // cases that are nobody's mistake: a rolling deploy where the read
+            // port vanished between parking and waking (steps/index.ts:684), and
+            // a replay collision whose re-read came back empty, leaving an empty
+            // `attemptId` (voice-purpose-dispatch.ts:172 → steps/index.ts:747).
+            // In both the owner ticked "wait for the outcome" and did everything
+            // right, and an infrastructure blip would have killed the run.
+            //
+            // `?` and NOT `| default: 'failed'`, which the resolver also
+            // supports: '' is the absence of an answer, and 'failed' is a claim
+            // that the call did not happen — which nobody can make here, since
+            // it may well have. This is the same reasoning `toBusinessOutcome`
+            // gives for mapping an unreported call to `no_answer` rather than
+            // `failed`. '' matches no branch, so it lands on the catch-all and a
+            // person is told.
+            left: '{{nodes.voice-wait-call.outcome?}}',
             decisionBranches: [
               {
                 id: 'completed',
@@ -1163,7 +1187,7 @@ const voiceCallWithOutcome: DiagramModel = {
                 label: 'השיחה הושלמה',
                 conditions: [
                   {
-                    x: '{{nodes.voice-wait-call.outcome}}',
+                    x: '{{nodes.voice-wait-call.outcome?}}',
                     comparisonOperator: 'isEqual',
                     y: 'completed',
                     logicalOperator: 'AND',
@@ -1176,7 +1200,7 @@ const voiceCallWithOutcome: DiagramModel = {
                 label: 'לא ענו',
                 conditions: [
                   {
-                    x: '{{nodes.voice-wait-call.outcome}}',
+                    x: '{{nodes.voice-wait-call.outcome?}}',
                     comparisonOperator: 'isEqual',
                     y: 'no_answer',
                     logicalOperator: 'AND',
@@ -1189,7 +1213,7 @@ const voiceCallWithOutcome: DiagramModel = {
                 label: 'השיחה נכשלה',
                 conditions: [
                   {
-                    x: '{{nodes.voice-wait-call.outcome}}',
+                    x: '{{nodes.voice-wait-call.outcome?}}',
                     comparisonOperator: 'isEqual',
                     y: 'failed',
                     logicalOperator: 'AND',

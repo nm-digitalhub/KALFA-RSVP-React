@@ -608,3 +608,73 @@ describe('invariants every template must satisfy', () => {
     }
   });
 });
+
+// ---------------------------------------------------------------------------
+// The voice template's references must survive a step that produced no outcome
+// ---------------------------------------------------------------------------
+
+describe('the voice template branches SAFELY', () => {
+  const voice = DIAGRAM_TEMPLATES.find(
+    (t) => t.value.name === 'שיחה קולית עם המתנה לתוצאה',
+  )!;
+
+  it('is in the selector', () => {
+    expect(voice).toBeDefined();
+  });
+
+  it('⚠️ every reference to the call’s outcome carries the safe marker', () => {
+    // `resolve-template` THROWS on a missing path rather than resolving to ''
+    // (resolve-template.ts:127), and `resolveConfigTemplates` walks every string
+    // in a node's config — so one unguarded reference fails the whole step,
+    // permanently, and the run dies.
+    //
+    // The call node really can complete with no `outcome`: a rolling deploy that
+    // loses the read port between parking and waking, and a replay collision
+    // whose re-read came back empty. In both the owner ticked "wait for the
+    // outcome" and did nothing wrong.
+    const text = JSON.stringify(voice.value.diagram.nodes);
+    const refs = [...text.matchAll(/\{\{nodes\.voice-wait-call\.outcome([^}]*)\}\}/g)];
+
+    // There ARE references — a version that renamed the field would otherwise
+    // pass this test by matching nothing.
+    expect(refs.length).toBeGreaterThan(0);
+
+    for (const [whole, suffix] of refs) {
+      // `?` (empty when missing) or `| default: '…'`. Both are resolver syntax,
+      // pinned in resolve-template.ts's PARSE_REGEX.
+      expect(suffix.trim() === '?' || suffix.includes('default:'), whole).toBe(true);
+    }
+  });
+
+  it('⚠️ an empty outcome reaches the catch-all, which is wired to a human', () => {
+    // The consequence of the `?` above: '' matches no branch's condition, so the
+    // switch falls to its default — which must therefore exist AND lead
+    // somewhere. Without the default this would be a dead end reported as
+    // `execution_incomplete`, which reads as "it just stopped".
+    const sw = voice.value.diagram.nodes.find((n) => n.id === 'voice-wait-switch')!;
+    const branches = (
+      sw.data.properties as { decisionBranches: Array<{ id: string; sourceHandle: string }> }
+    ).decisionBranches;
+
+    const dflt = branches.find((b) => b.id === SWITCH_DEFAULT_BRANCH_ID);
+    expect(dflt, 'the switch declares no catch-all').toBeDefined();
+
+    const edge = voice.value.diagram.edges.find(
+      (e) => e.source === 'voice-wait-switch' && e.sourceHandle === dflt!.sourceHandle,
+    );
+    expect(edge, 'the catch-all leads nowhere').toBeDefined();
+
+    // And it reaches the alert, not a guest-facing send: we do not know what
+    // happened, so the only honest action is to tell a person.
+    const target = voice.value.diagram.nodes.find((n) => n.id === edge!.target)!;
+    expect(target.data.type).toBe('action.notify_team');
+  });
+
+  it('⚠️ none of the three real outcome values is compared against a value the engine cannot emit', () => {
+    // `follow_up_required` is in VoiceBusinessOutcome and NOTHING maps to it, so
+    // a branch testing for it would never fire and would teach an owner to
+    // expect a route that cannot happen. The catch-all is how it is handled.
+    const text = JSON.stringify(voice.value.diagram.nodes);
+    expect(text).not.toContain('follow_up_required');
+  });
+});

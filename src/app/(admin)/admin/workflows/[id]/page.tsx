@@ -17,7 +17,7 @@ import { RunWatchButton } from './run-watcher';
 import { TestPanel } from './test-panel';
 import { listSecretNames } from '@/lib/workflow/secrets';
 
-import { listVoicePurposes } from '@/lib/data/voice-purposes';
+import { listDialableVoicePurposes } from '@/lib/data/voice-purposes';
 
 import { WorkflowEditor } from './workflow-editor';
 
@@ -69,7 +69,11 @@ export default async function AdminWorkflowPage({
   // list. The list answers "what may be chosen today", not "what is still valid".
   // The voice agents that are actually configured, for the call node's dropdown.
   // Rows, not a constant: a purpose added today must appear without a deploy.
-  const voicePurposes = (await listVoicePurposes()).map((p) => ({
+  //
+  // ⚠️ `listDialable…`, not `listVoicePurposes`: a built-in or rule-less purpose
+  // is refused by the dialler, so offering it here would let an owner arm a
+  // workflow that cannot place its call. See the function's own note.
+  const voicePurposes = (await listDialableVoicePurposes()).map((p) => ({
     key: p.key,
     displayName: p.displayName,
   }));

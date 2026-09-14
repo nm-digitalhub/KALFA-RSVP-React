@@ -67,13 +67,26 @@ describe('POST /api/voximplant/purpose/{purpose}/cb/{token}', () => {
     liveAttempt();
     const res = await call(OK_BODY);
     expect(res.status).toBe(200);
-    expect(recordVoicePurposeConcluded).toHaveBeenCalledWith(AID, 'completed', 42);
+    expect(recordVoicePurposeConcluded).toHaveBeenCalledWith(AID, 'completed', 42, 'completed');
   });
 
-  it('prefers error_reason over call_status — the specific reason is the useful one', async () => {
+  it('prefers error_reason over call_status FOR THE REASON — but no longer loses the status', async () => {
+    // The first half is unchanged and still right: `finish_reason` should carry
+    // the specific string, because 'sip_486_busy' tells a debugger something
+    // 'failed' does not.
+    //
+    // ⚠️ THE SECOND HALF IS THE FIX, AND THIS TEST DID NOT COVER IT. Passing
+    // only the collapsed `error_reason ?? call_status` meant the normalized
+    // verdict was DISCARDED whenever both arrived — which is every failure path
+    // the scenarios have. `toBusinessOutcome` then read a concluded attempt with
+    // an unmapped reason and fell to its `default: 'completed'`, so a call that
+    // failed before reaching anyone was reported to the diagram as a success.
+    //
+    // Nothing about the old assertion was wrong; it was incomplete, and what it
+    // did not assert was the part that was broken.
     liveAttempt();
     await call(JSON.stringify({ call_status: 'failed', error_reason: 'sip_486_busy' }));
-    expect(recordVoicePurposeConcluded).toHaveBeenCalledWith(AID, 'sip_486_busy', null);
+    expect(recordVoicePurposeConcluded).toHaveBeenCalledWith(AID, 'sip_486_busy', null, 'failed');
   });
 
   it('⚠️ an unknown token is 404 — never a hint that it does not exist', async () => {

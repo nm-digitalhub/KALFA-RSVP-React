@@ -73,10 +73,27 @@ export async function POST(
     // already left the pre-terminal set — a retried callback, or a dispatch
     // that had already failed — and in both cases the FIRST verdict is the
     // right one and the scenario must still be told 200 so it stops retrying.
+    //
+    // ⚠️ `call_status` IS PASSED SEPARATELY, NOT COLLAPSED INTO THE REASON.
+    //
+    // This used to be `body.error_reason ?? body.call_status` — one argument,
+    // one column — so whenever the scenario sent both, the normalized verdict
+    // was discarded and only the free text survived. The scenarios send both on
+    // every failure path they have: `call_status:'failed'` beside
+    // `error_reason:'missing_secret' | 'ctx_parse_error' | 'ctx_fetch_error' |
+    // 'ctx_fetch_failed_<code>'`.
+    //
+    // What that cost was a WRONG ANSWER, not a missing field. `toBusinessOutcome`
+    // reads the row back, finds `dispatch_status:'concluded'` and a reason it has
+    // no mapping for, and falls to its `default: 'completed'` — reasoning that is
+    // right for an unmapped success reason and false for an error string. A call
+    // that failed before it reached anybody came back to the diagram as a
+    // success, and the flow took the success branch.
     await recordVoicePurposeConcluded(
       attemptId,
       body.error_reason ?? body.call_status,
       body.call_duration ?? null,
+      body.call_status,
     );
   } catch {
     return bad(500);

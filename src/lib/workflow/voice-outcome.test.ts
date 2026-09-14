@@ -106,3 +106,89 @@ describe('follow_up_required', () => {
     }
   });
 });
+
+// ---------------------------------------------------------------------------
+// The scenario's own verdict outranks the reason string
+// ---------------------------------------------------------------------------
+
+describe('callStatus wins over finishReason', () => {
+  // ⚠️ THE BUG THIS EXISTS FOR, stated as the scenario actually sends it.
+  //
+  // The purpose callback receives `call_status` AND `error_reason`, and the
+  // route used to keep only `error_reason ?? call_status` in one column. The
+  // scenarios send both together on every failure path they have —
+  // MeetingConfirmAgent.voxengine.js:327 sends call_status:'failed' with
+  // error_reason:'missing_secret', and the same shape appears for
+  // ctx_parse_error, ctx_fetch_error and ctx_fetch_failed_<code>.
+  //
+  // So this function saw a CONCLUDED attempt whose reason it had no mapping
+  // for, and its `default` reads that as 'completed'. A call that failed before
+  // it reached anybody was reported to the diagram as a success.
+  const SCENARIO_ERRORS = [
+    'missing_secret',
+    'ctx_parse_error',
+    'ctx_fetch_error',
+    'ctx_fetch_failed_500',
+    'session_terminating',
+  ];
+
+  it('⚠️ a failed call with an unmapped error reason is NOT completed', () => {
+    for (const reason of SCENARIO_ERRORS) {
+      expect(
+        toBusinessOutcome({
+          dispatchStatus: 'concluded',
+          finishReason: reason,
+          callStatus: 'failed',
+        }),
+        reason,
+      ).toBe('failed');
+    }
+  });
+
+  it('⚠️ and WITHOUT the verdict the old reading still stands — that is the bug', () => {
+    // Pinned deliberately: it documents what a legacy row (call_status NULL)
+    // still does, and why the column had to be added rather than the default
+    // flipped. Flipping it would misreport an unmapped SUCCESS reason instead.
+    for (const reason of SCENARIO_ERRORS) {
+      expect(
+        toBusinessOutcome({ dispatchStatus: 'concluded', finishReason: reason }),
+        reason,
+      ).toBe('completed');
+    }
+  });
+
+  it('maps the four values the callback schema allows', () => {
+    const at = (callStatus: string) =>
+      toBusinessOutcome({ dispatchStatus: 'concluded', finishReason: '', callStatus });
+
+    expect(at('completed')).toBe('completed');
+    expect(at('failed')).toBe('failed');
+    expect(at('no_answer')).toBe('no_answer');
+    // Answered, then nothing said. Not a fourth outcome: to an owner deciding
+    // what to do next it is still "we did not get an answer".
+    expect(at('no_response')).toBe('no_answer');
+  });
+
+  it('falls back to the reason when no verdict was recorded', () => {
+    // Legacy rows, and the whole reason `callStatus` is optional.
+    expect(toBusinessOutcome({ dispatchStatus: 'concluded', finishReason: 'sip_486' })).toBe(
+      'no_answer',
+    );
+    expect(
+      toBusinessOutcome({ dispatchStatus: 'concluded', finishReason: 'sip_486', callStatus: null }),
+    ).toBe('no_answer');
+  });
+
+  it('⚠️ the dispatch status still decides FIRST — a verdict cannot resurrect a call never placed', () => {
+    // `dispatch_status` is ours and `call_status` is the scenario's. A row we
+    // marked failed at dispatch has no scenario report to trust, and a stale or
+    // replayed verdict must not override it.
+    expect(
+      toBusinessOutcome({
+        dispatchStatus: 'failed',
+        finishReason: 'whatever',
+        callStatus: 'completed',
+      }),
+    ).toBe('failed');
+  });
+});

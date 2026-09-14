@@ -72,6 +72,21 @@ export async function recordVoicePurposeConcluded(
   id: string,
   finishReason: string,
   callDurationSec: number | null,
+  /**
+   * ⚠️ THE SCENARIO'S OWN VERDICT, AND A SEPARATE ARGUMENT ON PURPOSE.
+   *
+   * The callback carries two independent facts — a normalized `call_status` and
+   * a free-text `error_reason` — and this function used to receive only the
+   * `error_reason ?? call_status` collapse of them. Whenever the scenario sent
+   * both, which it does on every failure path it has, the normalized verdict was
+   * discarded and `toBusinessOutcome` was left guessing from an error string it
+   * had never seen. Its `default` is `completed`, so a call that failed before it
+   * reached anyone was reported to the workflow as a success.
+   *
+   * Optional because rows written before 2026-09-15 have no such column, and the
+   * mapping still falls back to `finish_reason` for them.
+   */
+  callStatus?: string | null,
 ): Promise<{ applied: boolean }> {
   const admin = createAdminClient();
   const { data, error } = await admin
@@ -80,6 +95,7 @@ export async function recordVoicePurposeConcluded(
       dispatch_status: 'concluded',
       finish_reason: finishReason,
       call_duration_sec: callDurationSec,
+      ...(callStatus ? { call_status: callStatus } : {}),
       updated_at: new Date().toISOString(),
     })
     .eq('id', id)
@@ -139,12 +155,13 @@ export async function getVoicePurposeOutcomeForStep(input: {
   attemptId: string;
   dispatchStatus: string;
   finishReason: string | null;
+  callStatus: string | null;
   callDurationSec: number | null;
 } | null> {
   const admin = createAdminClient();
   const { data, error } = await admin
     .from('voice_purpose_attempts')
-    .select('id, dispatch_status, finish_reason, call_duration_sec')
+    .select('id, dispatch_status, finish_reason, call_status, call_duration_sec')
     .eq('run_id', input.runId)
     .eq('node_id', input.nodeId)
     .order('created_at', { ascending: false })
@@ -157,6 +174,7 @@ export async function getVoicePurposeOutcomeForStep(input: {
         attemptId: row.id,
         dispatchStatus: row.dispatch_status,
         finishReason: row.finish_reason,
+        callStatus: row.call_status,
         callDurationSec: row.call_duration_sec,
       }
     : null;

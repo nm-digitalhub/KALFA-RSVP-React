@@ -419,6 +419,8 @@ export interface GuestActionsPort {
     attemptId: string;
     dispatchStatus: string;
     finishReason: string | null;
+    /** The scenario's own normalized verdict; null on rows predating it. */
+    callStatus: string | null;
     callDurationSec: number | null;
   } | null>;
 

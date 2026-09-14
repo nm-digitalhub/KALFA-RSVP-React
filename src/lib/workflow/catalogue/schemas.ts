@@ -1556,11 +1556,31 @@ export const PALETTE_ITEMS: PaletteItem[] = [
         status: { type: 'string', label: 'תוצאה' },
         reason: { type: 'string', label: 'סיבה' },
         attemptId: { type: 'string', label: 'מזהה ניסיון' },
-        // ⚠️ THE FIELD TO BRANCH ON. One of completed / no_answer / failed /
-        // follow_up_required, derived from the call's own report — so a diagram
-        // never has to know that `sip_486` means Busy Here. The technical fields
-        // below stay for debugging, not for conditions.
-        outcome: { type: 'string', label: 'תוצאת השיחה' },
+        // ⚠️ THE FIELD TO BRANCH ON, derived from the call's own report — so a
+        // diagram never has to know that `sip_486` means Busy Here. The
+        // technical fields below stay for debugging, not for conditions.
+        //
+        // ⚠️ `description` CARRIES THE VOCABULARY BECAUSE `type` CANNOT. The
+        // SDK's `OutputProperty` is `{ type, label, description? }` and nothing
+        // else (index.d.ts:1121, verified in 2.3.0) — `type` is a
+        // `VariableType`, one of string/number/boolean/datetime/date/object/
+        // array, and there is no enum, no options, no allowed-values field. The
+        // shipped bundle reads only `.properties[path].type` off this schema, so
+        // a list of legal values has nowhere else to live.
+        //
+        // It is not decoration: the picker builder copies `description` onto
+        // every item it mints (`Ih` in index-CEBfv0NZ.js: `{id, display, label,
+        // description, type}`), so this is the one string that reaches an owner
+        // at the moment they are typing the right-hand side of a condition.
+        //
+        // Three values, not four: `follow_up_required` is in the TYPE but no
+        // mapping produces it (voice-outcome.ts), and listing a value the engine
+        // cannot emit would send someone off to build a branch that never fires.
+        outcome: {
+          type: 'string',
+          label: 'תוצאת השיחה',
+          description: 'אחד מ: completed (התקיימה והסתיימה), no_answer (לא ענו / לא דיווחה), failed (לא יצאה לדרך)',
+        },
         // Only populated when the step waited. Narrower than `outcome`: it says
         // the call ENDED AND REPORTED, nothing about whether it went well.
         concluded: { type: 'boolean', label: 'השיחה הסתיימה ודיווחה' },

@@ -635,7 +635,12 @@ const PURPOSE_SETTLED: readonly string[] = ['concluded', 'failed'];
  */
 function voiceOutcomeOutput(
   attemptId: string,
-  o: { dispatchStatus: string; finishReason: string | null; callDurationSec: number | null } | null,
+  o: {
+    dispatchStatus: string;
+    finishReason: string | null;
+    callStatus?: string | null;
+    callDurationSec: number | null;
+  } | null,
 ) {
   return {
     dialed: true,
@@ -647,6 +652,9 @@ function voiceOutcomeOutput(
     outcome: toBusinessOutcome({
       dispatchStatus: o?.dispatchStatus,
       finishReason: o?.finishReason,
+      // The scenario's own verdict, which outranks the reason string — see
+      // toBusinessOutcome. Absent on rows recorded before 2026-09-15.
+      callStatus: o?.callStatus,
     }),
     status: o?.dispatchStatus ?? 'unknown',
     concluded: o?.dispatchStatus === 'concluded',
