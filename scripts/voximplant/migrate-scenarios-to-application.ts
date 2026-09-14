@@ -114,6 +114,57 @@ function loadConfig(): VoximplantConfig {
   return { accountId: raw.account_id, keyId: raw.key_id, privateKey: raw.private_key };
 }
 
+// What to print after a successful migration. The instructions below only apply
+// while voxengine-ci is still on 35: once 36 is installed the local layout has
+// already been moved, and repeating "now upgrade" would send an operator to redo
+// a git mv that is already committed. Read from the installed package rather than
+// package.json's range, which can say ^36 while node_modules still holds 35.
+function installedVoxCiMajor(): number | null {
+  try {
+    const pkg = JSON.parse(
+      readFileSync('node_modules/@voximplant/voxengine-ci/package.json', 'utf8'),
+    ) as { version?: string };
+    const major = Number((pkg.version ?? '').split('.')[0]);
+    return Number.isFinite(major) ? major : null;
+  } catch {
+    return null;
+  }
+}
+
+function upgradeAdvice(): string {
+  const major = installedVoxCiMajor();
+  if (major !== null && major >= 36) {
+    return (
+      '\nNEXT: voxengine-ci ' +
+      major +
+      ' is already installed, so the local layout is in place.\n' +
+      '  The local metadata still holds the OLD scenario id for what just moved — refresh\n' +
+      '  it by uploading that rule once. The source is unchanged, so the upload compares\n' +
+      '  equal and writes nothing to the platform:\n' +
+      '      npm run vox:upload -- --rule-name <rule>\n' +
+      '  Then commit voxfiles/.voxengine-ci/**, which is tracked and now stale.'
+    );
+  }
+  return (
+    '\nNEXT — the 36 upgrade, in this order:\n' +
+    '  36 changes the LOCAL layout too: scenarios move from voxfiles/scenarios/src/ to\n' +
+    '  voxfiles/applications/<application-name>/scenarios/src/ (36 README, "Breaking change\n' +
+    '  in 36.0.0"). Its upload also looks every scenario up APPLICATION-SCOPED, which is why\n' +
+    '  the platform move above had to happen first.\n' +
+    '\n' +
+    '      npm i @voximplant/voxengine-ci@36.0.0\n' +
+    '      git mv voxfiles/scenarios \\\n' +
+    '             voxfiles/applications/' + APP_NAME + '/scenarios\n' +
+    '      rm -rf voxfiles/.voxengine-ci/scenarios\n' +
+    '      npm run vox:upload -- --rule-name OutCallAgent --dry-run\n' +
+    '\n' +
+    '  Do NOT use `init --force` for this. It deletes voxfiles/scenarios recursively and\n' +
+    '  rewrites src/ from the platform build output, losing every comment. `git mv` keeps the\n' +
+    '  real sources and their history; the metadata rebuilds itself on the first upload\n' +
+    '  (vox-scenario.service.js: no metadata + scenario found on platform -> adopt it).'
+  );
+}
+
 const names = (s: ScenarioInfo[]): string =>
   s
     .map((x) => `${x.scenario_name}(${x.scenario_id})`)
@@ -607,22 +658,7 @@ async function main(): Promise<void> {
   console.log('\nMIGRATED:');
   for (const m of moved) console.log(`  ${m.name}: ${m.from} -> ${m.to}`);
   console.log(
-    '\nNEXT — the 36 upgrade, in this order:\n' +
-      '  36 changes the LOCAL layout too: scenarios move from voxfiles/scenarios/src/ to\n' +
-      '  voxfiles/applications/<application-name>/scenarios/src/ (36 README, "Breaking change\n' +
-      '  in 36.0.0"). Its upload also looks every scenario up APPLICATION-SCOPED, which is why\n' +
-      '  the platform move above had to happen first.\n' +
-      '\n' +
-      '      npm i @voximplant/voxengine-ci@36.0.0\n' +
-      '      git mv voxfiles/scenarios \\\n' +
-      '             voxfiles/applications/' + APP_NAME + '/scenarios\n' +
-      '      rm -rf voxfiles/.voxengine-ci/scenarios\n' +
-      '      npm run vox:upload -- --rule-name OutCallAgent --dry-run\n' +
-      '\n' +
-      '  Do NOT use `init --force` for this. It deletes voxfiles/scenarios recursively and\n' +
-      '  rewrites src/ from the platform build output, losing every comment. `git mv` keeps the\n' +
-      '  real sources and their history; the metadata rebuilds itself on the first upload\n' +
-      '  (vox-scenario.service.js: no metadata + scenario found on platform -> adopt it).',
+    upgradeAdvice(),
   );
 }
 
