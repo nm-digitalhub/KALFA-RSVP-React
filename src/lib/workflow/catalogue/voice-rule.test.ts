@@ -73,3 +73,47 @@ describe('"wait for the outcome" is hidden until a purpose is chosen', () => {
     expect(fulfilled(withoutFlag, undefined)).toBe(true);
   });
 });
+
+// The rest of the node's form, pinned because it is data and a typo is silent.
+describe('the voice node’s property panel', () => {
+  const byType = (t: string) => elements.filter((e) => (e as { type: string }).type === t);
+
+  it('⚠️ guidance sits BESIDE the purpose field, not only at arming time', () => {
+    // An empty dropdown is a legitimate state here: the three `voice_purposes`
+    // rows that ship are all built-in and the dialler refuses those by design.
+    // So an owner can open this node, find nothing to pick, and have nothing on
+    // screen saying a purpose must be created first. The arm gate says it, but
+    // only when they try to arm.
+    const message = byType('MessageOnError')[0] as { scope: string; text: string };
+    expect(message).toBeDefined();
+    expect(message.scope).toBe('#/properties/purposeKey');
+    // Names the next action and where to take it — the same bar the arm-gate
+    // blocker is held to.
+    expect(message.text).toContain('/admin/integrations/voximplant');
+  });
+
+  it('the per-field error icon is suppressed where the message replaces it', () => {
+    const select = elements.find(
+      (e) => (e as { scope?: string }).scope === '#/properties/purposeKey',
+    ) as { errorIndicatorEnabled?: boolean };
+    // Two markers for one problem is noise; the message carries the explanation.
+    expect(select.errorIndicatorEnabled).toBe(false);
+  });
+
+  it('the advanced field is collapsed, and only the advanced one', () => {
+    const accordion = byType('Accordion')[0] as {
+      label: string;
+      elements: { scope: string }[];
+    };
+    expect(accordion).toBeDefined();
+    expect(accordion.elements).toHaveLength(1);
+    expect(accordion.elements[0]!.scope).toBe('#/properties/errorPolicy');
+
+    // ⚠️ The fields an owner actually sets stay at the top level. A panel that
+    // collapsed the purpose or the wait switch would hide the two decisions this
+    // node exists to make.
+    const topLevelScopes = elements.map((e) => (e as { scope?: string }).scope);
+    expect(topLevelScopes).toContain('#/properties/purposeKey');
+    expect(topLevelScopes).toContain('#/properties/waitForOutcome');
+  });
+});

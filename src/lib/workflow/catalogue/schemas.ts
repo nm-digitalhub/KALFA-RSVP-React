@@ -1324,7 +1324,33 @@ const voiceCallUiSchema = {
   type: 'VerticalLayout',
   elements: [
     { type: 'Text', scope: voiceCallScope('properties.label'), label: 'שם הצעד' },
-    { type: 'Select', scope: voiceCallScope('properties.purposeKey'), label: 'ייעוד השיחה' },
+    {
+      type: 'Select',
+      scope: voiceCallScope('properties.purposeKey'),
+      label: 'ייעוד השיחה',
+      // The message below carries the whole explanation, so the per-field icon
+      // beside it is a second marker for one problem.
+      errorIndicatorEnabled: false,
+    },
+    {
+      // ⚠️ RENDERS ONLY WHEN THE FIELD IS ACTUALLY IN ERROR — the SDK's control
+      // returns null unless `errors.length > 0` on its scope (verified in the
+      // shipped bundle). `purposeKey` is in NODE_REQUIRED_FIELDS, so an empty
+      // value produces exactly that error and this appears beside the dropdown.
+      //
+      // ⚠️ AND IT IS HERE BECAUSE AN EMPTY DROPDOWN IS A LEGITIMATE STATE. The
+      // list reads `voice_purposes`, whose three shipped rows are all built-in
+      // and refused by the dialler by design. An owner can therefore open this
+      // node, find nothing to pick, and have nothing on screen telling them a
+      // purpose has to be created first. The arm gate says the same thing, but
+      // only at arming time — this says it where the choice is made.
+      //
+      // `text` goes through i18next first (`t(text) || errors || text`), so a
+      // Hebrew sentence with no matching key falls through unchanged.
+      type: 'MessageOnError',
+      scope: voiceCallScope('properties.purposeKey'),
+      text: 'לא נבחר ייעוד לשיחה. אם הרשימה ריקה — צרו ייעוד חדש ב-/admin/integrations/voximplant וקשרו לו rule.',
+    },
     {
       type: 'Switch',
       scope: voiceCallScope('properties.waitForOutcome'),
@@ -1354,7 +1380,24 @@ const voiceCallUiSchema = {
         },
       },
     },
-    { type: 'Select', scope: voiceCallScope('properties.errorPolicy'), label: 'אם הצעד נכשל' },
+    {
+      // ⚠️ COLLAPSED, and only here. Upstream describes Accordion as being for
+      // "advanced or rarely-used fields that shouldn't crowd the default
+      // property panel view", and `errorPolicy` is exactly that: most owners
+      // never move it off the default, and this node now carries four fields
+      // where it carried two.
+      //
+      // NOT swept across the other nine nodes that expose the same field. That
+      // is a different change — it trades discoverability for tidiness on every
+      // node at once, and an owner asking "why did my whole workflow stop?" is
+      // looking for precisely this control. One node's crowding is a reason to
+      // group that node; it is not a reason to restyle the editor.
+      type: 'Accordion',
+      label: 'מתקדם',
+      elements: [
+        { type: 'Select', scope: voiceCallScope('properties.errorPolicy'), label: 'אם הצעד נכשל' },
+      ],
+    },
   ],
 } satisfies UISchema;
 
