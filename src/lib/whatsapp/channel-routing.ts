@@ -47,13 +47,37 @@ export function classifyInboundChannel(
   return 'unknown';
 }
 
-// The sender to use for import replies: the import number when configured,
-// otherwise the RSVP number (legacy). Same token and secret either way.
+// The sender to use for import replies.
+//
+// ⚠️ THE NUMBER THAT RECEIVED THE LIST ANSWERS IT. `arrivedOn` wins over every
+// configured value, and that ordering is the whole fix.
+//
+// MEASURED ON A LIVE LIST, 2026-09-13. An owner sent contact cards to a third
+// business number — one holding no role at all — and never got the review link.
+// Staging worked; the reply did not. This function returned
+// `importPhoneNumberId ?? phoneNumberId`, so with the role unassigned it
+// answered from the RSVP number: a number the owner had never messaged, with no
+// open 24-hour window, so Meta refused the free-form text. `safeReply` discards
+// the outcome ("best-effort"), so nothing surfaced anywhere.
+//
+// The old shape also created a requirement nobody should have to meet: pinning a
+// workflow trigger to a number expressed the intent perfectly well, and the
+// system still needed a SEPARATE account-wide role assignment before it would
+// answer. Auto-assigning that role from a workflow would be worse — one
+// automation silently repurposing a number for every other flow. Following the
+// receiving number removes the requirement instead of automating it.
+//
+// `arrivedOn` is `webhook_inbox.phone_number_id`. `null` means an older row
+// written before that column was populated, and the configured numbers are then
+// the only thing to fall back to.
+//
+// Same token and secret either way — one Meta app, one WABA (see the header).
 export function importSender(
   config: WhatsAppSender & { importPhoneNumberId: string | null },
+  arrivedOn?: string | null,
 ): WhatsAppSender {
   return {
-    phoneNumberId: config.importPhoneNumberId ?? config.phoneNumberId,
+    phoneNumberId: arrivedOn ?? config.importPhoneNumberId ?? config.phoneNumberId,
     accessToken: config.accessToken,
     appSecret: config.appSecret,
   };

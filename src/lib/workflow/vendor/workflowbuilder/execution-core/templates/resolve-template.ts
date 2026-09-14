@@ -68,13 +68,59 @@ const OUTER_TEMPLATE_REGEX = /\{\{\s*\w+\.(?:[^}]|\}(?!\}))*\}\}/g;
 const PARSE_REGEX =
   /^\{\{\s*(\w+)\.([\w.-]+?)\s*(?:(\?)|\|\s*default\s*:\s*'([^']*)')?\s*\}\}$/;
 
-export function resolveTemplate(template: string, context: ExecutionContext): string {
+/**
+ * The one namespace this resolver deliberately does NOT resolve.
+ *
+ * KALFA DIVERGENCE (the second in this file; the first is the numbered groups).
+ *
+ * `{{secrets.<NAME>}}` names an API key. If it were resolved here it would be
+ * substituted into the node's config — and that resolved config is handed to the
+ * handler, whose result is written to the step ledger, while sibling values reach
+ * the dry-run trace and the editor's log panel. `redact.ts` cannot catch it:
+ * that module matches on KEY names, and the key on a header row is `value`.
+ *
+ * So the token is passed through UNTOUCHED and resolved at the last possible
+ * moment, inside the outbound port, against the process environment — by which
+ * point the only thing that can see the value is the socket. The port refuses to
+ * send any `{{secrets.…}}` it could not resolve, so a passthrough can never
+ * leave the building as literal text either.
+ *
+ * Returning the match rather than throwing is what makes that possible: every
+ * other unknown namespace still throws, which is the loud failure the strict
+ * grammar exists for.
+ */
+const DEFERRED_NAMESPACE = 'secrets';
+
+/**
+ * ⚠️ OFF BY DEFAULT, and that default is the security property.
+ *
+ * `references.test.ts` pins exactly why: "Passing it through would put
+ * `{{secrets.token}}` in a guest's message." A deferral that applied everywhere
+ * would turn `{{secrets.API_KEY}}` in a WhatsApp body into literal text sent to
+ * a real person — showing them a secret NAME and telling the owner nothing went
+ * wrong. Strict-everywhere is the behaviour that has always been correct.
+ *
+ * So the caller opts in, per field, and today exactly one does: the header rows
+ * of `action.webhook`, which are the only values that reach code able to
+ * substitute them. Everywhere else an unknown namespace still throws.
+ */
+export type ResolveTemplateOptions = { deferSecrets?: boolean };
+
+export function resolveTemplate(
+  template: string,
+  context: ExecutionContext,
+  options: ResolveTemplateOptions = {},
+): string {
   return template.replaceAll(OUTER_TEMPLATE_REGEX, (match) => {
     const parsed = PARSE_REGEX.exec(match);
     if (!parsed) {
       throw new Error(`Malformed template reference: ${match}`);
     }
     const [, namespace, path, safe, defaultValue] = parsed;
+
+    // BEFORE resolveNamespace, which throws on it as unknown — which is exactly
+    // what must still happen when the caller did not opt in.
+    if (namespace === DEFERRED_NAMESPACE && options.deferSecrets) return match;
 
     const source = resolveNamespace(namespace!, context, match);
     const value = getNestedValue(source, path!);

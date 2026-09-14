@@ -238,3 +238,59 @@ describe('resolveTemplate — malformed templates throw loudly', () => {
     expect(() => resolveTemplate('{{nodes.foo*bar}}', makeContext())).toThrow(/Malformed template reference/);
   });
 });
+
+describe('the secrets namespace is deliberately NOT resolved', () => {
+  // KALFA DIVERGENCE. `{{secrets.<NAME>}}` names an API key. Resolving it here
+  // would substitute it into the node's config — which is handed to the handler,
+  // whose result lands in the step ledger and the editor's log panel, and which
+  // `redact.ts` cannot mask because that module matches on KEY names and the key
+  // on a header row is `value`.
+  //
+  // So the token survives intact and is substituted at the socket instead. These
+  // pin that, because a well-meaning future edit "completing" the namespace list
+  // would turn a credential store into a credential leak with no test to stop it.
+  const context = {
+    nodeOutputs: {},
+    triggerPayload: { message_text: 'hi' },
+    variables: {},
+    global: {},
+  } as unknown as ExecutionContext;
+
+  const DEFER = { deferSecrets: true };
+
+  it('⚠️ THROWS BY DEFAULT — the deferral is opt-in, per field', () => {
+    // THE MOST IMPORTANT ASSERTION IN THIS BLOCK. A global deferral would let
+    // `{{secrets.API_KEY}}` pass through a WhatsApp body and be DELIVERED TO A
+    // GUEST as literal text — showing them a secret name while telling the owner
+    // nothing went wrong. Only the field that reaches code able to substitute it
+    // may opt in.
+    expect(() => resolveTemplate('{{secrets.ACME}}', context)).toThrow(/unknown namespace/);
+  });
+
+  it('passes the token through untouched when the caller opts in', () => {
+    expect(resolveTemplate('Bearer {{secrets.ACME_API_KEY}}', context, DEFER)).toBe(
+      'Bearer {{secrets.ACME_API_KEY}}',
+    );
+  });
+
+  it('opting in does NOT make other unknown namespaces pass', () => {
+    // The opt-in is for ONE namespace, not for leniency in general.
+    expect(() => resolveTemplate('{{nonsense.x}}', context, DEFER)).toThrow(/unknown namespace/);
+  });
+
+  it('resolves the other namespaces in the SAME string', () => {
+    // The realistic case: a header carrying both a secret and a value from the
+    // run. One must resolve and the other must not.
+    expect(resolveTemplate('{{trigger.message_text}} {{secrets.ACME}}', context, DEFER)).toBe(
+      'hi {{secrets.ACME}}',
+    );
+  });
+
+  it('leaves it alone regardless of the fallback modifiers', () => {
+    // `?` and `| default:` must not quietly turn an unconfigured secret into ''.
+    expect(resolveTemplate('{{secrets.A?}}', context, DEFER)).toBe('{{secrets.A?}}');
+    expect(resolveTemplate("{{secrets.A | default:'x'}}", context, DEFER)).toBe(
+      "{{secrets.A | default:'x'}}",
+    );
+  });
+});

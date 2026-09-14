@@ -1,5 +1,14 @@
 import 'server-only';
 
+import { stageGuestListFromInbox } from '@/lib/data/whatsapp-import';
+import { sendTemplateToContact } from './template-send';
+import {
+  FAN_OUT_HARD_CAP,
+  GUEST_FILTER_STATUSES,
+  type GuestFilterStatus,
+} from './catalogue/types';
+import { createRunIfNew } from './store';
+
 // GuestActionsPort over the functions that already exist.
 //
 // Every operation here is a call into an existing module, never a new query. The
@@ -12,6 +21,7 @@ import { getGuestsForContact, recordRsvpFromWhatsapp } from '@/lib/data/interact
 import { getWhatsAppConfig } from '@/lib/data/outreach-config';
 import { submitRsvp } from '@/lib/data/rsvp';
 import { createAdminClient } from '@/lib/supabase/admin';
+import { dispatchVoicePurposeCall } from '@/lib/data/voice-purpose-dispatch';
 import { sendWhatsAppText } from '@/lib/whatsapp/client';
 
 import type { GuestActionsPort } from './engine/ports';
@@ -28,6 +38,180 @@ const CALLBACK_DEDUPE_WINDOW_MS = 2 * 60 * 60 * 1000;
 
 export function createGuestActions(): GuestActionsPort {
   return {
+    /**
+     * An approved template to this run's guest.
+     *
+     * A thin delegation to `sendTemplateToContact`, which reuses the campaign
+     * path's own send — so MM Lite routing for MARKETING keys, the opt-out and
+     * consent gate, and the outbound log all apply here without a second copy.
+     */
+    async sendWhatsAppTemplate({ eventId, contactId, messageKey }) {
+      return sendTemplateToContact({ eventId, contactId, messageKey });
+    },
+
+    /**
+     * Start a run of another workflow for each matching guest.
+     *
+     * ⚠️ THE CEILINGS ARE ENFORCED HERE, not by the caller. The handler's
+     * `maxGuests` comes from a jsonb row, and the row is exactly what a mistake
+     * would have edited — so the query asks for at most `min(maxGuests,
+     * FAN_OUT_HARD_CAP) + 1` rows. The `+ 1` is what lets `capped` be honest:
+     * without it, "exactly the cap" and "more than the cap" look identical.
+     *
+     * SELF-FAN-OUT IS REFUSED, not capped. A workflow starting itself per guest
+     * — each child fanning out again — is an exponential, and a ceiling on each
+     * generation does not stop it.
+     *
+     * CREATES ROWS; DOES NOT ENQUEUE. A step handler has no queue handle by
+     * design, so the children land as `pending` and `workflow-pending-sweep`
+     * picks them up within the minute. That indirection also fixes an older
+     * class of bug: a run whose enqueue failed after its row was written used to
+     * sit `pending` for ever with nothing coming for it.
+     */
+    async startRunsForGuests({
+      parentRunId,
+      nodeId,
+      eventId,
+      targetWorkflowId,
+      statuses,
+      requirePhone,
+      maxGuests,
+      depth,
+    }) {
+      const admin = createAdminClient();
+
+      const { data: target } = await admin
+        .from('workflows')
+        .select('id, is_active, event_id, definition')
+        .eq('id', targetWorkflowId)
+        .maybeSingle();
+      if (!target) return { ok: false as const, reason: 'target_workflow_not_found' };
+
+      // An armed workflow is one that fires on its OWN trigger. Being started by
+      // a fan-out is a different thing, and requiring it to be armed would mean
+      // a per-guest workflow had to be live on its own trigger too — which for a
+      // WhatsApp trigger would make it fire on every inbound message as well.
+      // So arming is not required; existing is.
+
+      const ceiling = Math.min(Math.floor(maxGuests), FAN_OUT_HARD_CAP);
+      if (ceiling <= 0) return { ok: false as const, reason: 'invalid_cap' };
+
+      let query = admin
+        .from('guests')
+        .select('contact_id, phone')
+        .eq('event_id', eventId)
+        .not('contact_id', 'is', null)
+        // One more than the ceiling, so "capped" is a fact rather than a guess.
+        .limit(ceiling + 1);
+
+      // NARROWED against the catalogue's own list rather than cast. `statuses`
+      // arrives from a jsonb row, and `guests.status` is a Postgres enum: a
+      // value outside it is a 22P02 at query time, which would fail the whole
+      // fan-out over one bad string. Unknown values are dropped; if that leaves
+      // nothing, the filter is not applied at all — the same "unset is widest"
+      // rule the other filters follow.
+      const known = (statuses ?? []).filter((v): v is GuestFilterStatus =>
+        (GUEST_FILTER_STATUSES as readonly string[]).includes(v),
+      );
+      if (known.length > 0) query = query.in('status', known);
+      if (requirePhone) query = query.not('phone', 'is', null);
+
+      const { data: rows, error } = await query;
+      if (error) return { ok: false as const, reason: 'guest_query_failed' };
+
+      // DE-DUPLICATED BY CONTACT. A phone may back several guests (a household),
+      // and starting three runs for one person would message them three times.
+      const contactIds = [
+        ...new Set((rows ?? []).map((r) => r.contact_id).filter((id): id is string => !!id)),
+      ];
+      const capped = contactIds.length > ceiling;
+      const selected = contactIds.slice(0, ceiling);
+
+      let started = 0;
+      for (const contactId of selected) {
+        // Keyed on the PARENT run and node: a replay of the fan-out step — which
+        // the step lease can cause — creates no second run for the same guest.
+        const runId = await createRunIfNew({
+          workflowId: targetWorkflowId,
+          eventId,
+          triggerSource: 'fanout',
+          // ⚠️ THE CHILD'S definition, not the parent's — each child run executes
+          // the target workflow. Read once from the row already fetched above, so
+          // a fan-out to the cap is still ONE query here and not one per guest.
+          definitionSnapshot: target.definition,
+          dedupeKey: `fanout:${parentRunId}:${nodeId}:${contactId}`,
+          triggerPayload: {
+            eventId,
+            contactId,
+            message_text: '',
+            button_payload: '',
+            // ⚠️ THE ONLY RECORD OF THE CHAIN. `workflow_runs` has no parent
+            // link — measured — so without this the next fan-out cannot know it
+            // is the fourth generation rather than the first.
+            fanoutDepth: depth,
+          },
+        });
+        if (runId) started += 1;
+      }
+
+      return { ok: true as const, matched: contactIds.length, started, capped };
+    },
+
+    /**
+     * Stage the guest list this run started from.
+     *
+     * A thin delegation to `stageGuestListFromInbox`, which is the SAME code the
+     * hard-coded import path's staging half uses — including its
+     * `source_message_id` idempotency, which is what keeps the two from
+     * double-staging while both still run.
+     *
+     * THE ROWS COME BACK — owner ruling, see the port. The run log is where
+     * "what arrived" is recorded, because the staging queue is wiped the moment
+     * the owner decides.
+     */
+    async importGuestList({ inboxRowId, eventId }) {
+      const result = await stageGuestListFromInbox({ inboxRowId, eventId });
+      return result.ok
+        ? {
+            ok: true as const,
+            created: result.created,
+            rows: result.rows,
+            rowCount: result.rowCount,
+            errorCount: result.errorCount,
+            fileName: result.fileName,
+            reviewUrl: result.reviewUrl,
+          }
+        : { ok: false as const, reason: result.reason, message: result.message };
+    },
+
+    /**
+     * Dial this run's guest with a configured voice agent.
+     *
+     * Thin on purpose: every gate — the purpose being enabled and wired, the
+     * account live-calls switch, DNC, opt-out, Shabbat, the dialling window,
+     * concurrency, balance and the replay guard — lives in
+     * `dispatchVoicePurposeCall`, which is the one place they can be read in
+     * order. A second copy here would be a second set of rules to keep correct.
+     */
+    async startVoicePurposeCall({ runId, nodeId, eventId, contactId, purposeKey }) {
+      const outcome = await dispatchVoicePurposeCall({
+        purposeKey,
+        eventId,
+        contactId,
+        runId,
+        nodeId,
+      });
+      // 'dialed' and 'already_dispatched' are both successes: the second means a
+      // replay found the call this step had already placed.
+      const ok = outcome.kind === 'dialed' || outcome.kind === 'already_dispatched';
+      return {
+        ok,
+        status: outcome.kind,
+        ...('reason' in outcome && outcome.reason ? { reason: outcome.reason } : {}),
+        ...('attemptId' in outcome && outcome.attemptId ? { attemptId: outcome.attemptId } : {}),
+      };
+    },
+
     async startRsvpAiCallback(input) {
       return dispatchWorkflowRsvpAiCallback(input);
     },

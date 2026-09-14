@@ -21,17 +21,21 @@ import { Button } from '@/components/ui/button';
 import { isTriggerType } from '@/lib/workflow/catalogue/nodes';
 import {
   buildPaletteItems,
+  type VoicePurposeOption,
   type WhatsAppNumberOption,
 } from '@/lib/workflow/catalogue/schemas';
 import { DIAGRAM_TEMPLATES } from '@/lib/workflow/catalogue/templates';
 import { applyHebrewToSdk } from '@/lib/workflow/i18n-he';
 
 import { appBarPlugin } from './app-bar';
+import { checkboxListRenderer } from './checkbox-list-control';
+import { headerRowsRenderer } from './header-rows-control';
 import { ExecutionHighlighting } from './highlighting';
 import { ExecutionLogPanel } from './log-panel';
 import { executionMarkersPlugin } from './node-markers';
 import { resetExecution } from './use-execution-store';
 import { resetPanels, setEditorCompact, setPropertiesOpen, usePanelsStore } from './use-panels-store';
+import { setSecretNames } from './use-secrets-store';
 
 type Props = {
   workflowId: string;
@@ -59,6 +63,21 @@ type Props = {
    * field existed.
    */
   whatsappNumbers: readonly WhatsAppNumberOption[];
+  /**
+   * The configured voice agents, for `action.start_voice_call`.
+   *
+   * Same reasoning as `whatsappNumbers`: the palette is built in the browser and
+   * these are database rows. An empty list means the node offers nothing to
+   * pick, which is the honest state before any purpose is set up.
+   */
+  voicePurposes: readonly VoicePurposeOption[];
+  /**
+   * The secret NAMES the HTTP node's header rows may reference.
+   *
+   * Names, never values — see secrets.ts and use-secrets-store.ts. Resolved on
+   * the server because the environment is not readable here.
+   */
+  secretNames: readonly string[];
 };
 
 /**
@@ -77,6 +96,14 @@ const isValidConnection: WorkflowBuilderIsValidConnection = ({ targetNode }) =>
 
 const PLUGINS = [executionMarkersPlugin, appBarPlugin];
 
+// Custom JsonForms renderers. Module scope for the same reason as PLUGINS: the
+// prop is read once, and a fresh object each render would re-register the
+// registry on every keystroke in the properties panel.
+//
+// One entry so far — the HTTP node's header list, which has no built-in
+// equivalent in the SDK's closed control union. See header-rows-control.tsx.
+const JSON_FORM = { renderers: [headerRowsRenderer, checkboxListRenderer] };
+
 // Applied at module scope, which runs AFTER the SDK's own import has
 // initialised i18next (the import above is evaluated first, in source order).
 // `addResourceBundle` on an already-initialised instance needs no particular
@@ -92,6 +119,8 @@ export function WorkflowEditor({
   layoutDirection,
   initialGlobalVariables,
   whatsappNumbers,
+  voicePurposes,
+  secretNames,
   saveAction,
 }: Props) {
   // MEMOISED, and that is a requirement rather than an optimisation: upstream
@@ -101,8 +130,8 @@ export function WorkflowEditor({
   // instead. A fresh array each render would re-register the palette on every
   // keystroke in the properties panel.
   const paletteItems = useMemo(
-    () => buildPaletteItems(whatsappNumbers),
-    [whatsappNumbers],
+    () => buildPaletteItems(whatsappNumbers, voicePurposes),
+    [whatsappNumbers, voicePurposes],
   );
   // Root 2.3.0 omits globalVariables from its props. Its child effects load
   // nodes/edges first; this parent effect restores the remaining persisted field.
@@ -115,6 +144,18 @@ export function WorkflowEditor({
       resetPanels();
     };
   }, [workflowId, initialGlobalVariables]);
+
+  // Published to a module store rather than passed down: the header control is
+  // registered at module scope and mounted by the SDK's own tree, so there is no
+  // props path to it. Same mechanism, same reason, as use-panels-store.
+  //
+  // `.join()` as the dependency, not the array: `secretNames` is a fresh array
+  // on every server render, and depending on its identity would re-set the store
+  // on every re-render for no change.
+  const secretNamesKey = secretNames.join(',');
+  useEffect(() => {
+    setSecretNames(secretNamesKey === '' ? [] : secretNamesKey.split(','));
+  }, [secretNamesKey]);
 
   return (
     // THE POSITIONING CONTEXT, and the whole reason this file was rewritten.
@@ -147,6 +188,7 @@ export function WorkflowEditor({
         // Module-scope array: `plugins` is read once on first mount, and a fresh
         // array each render would be a new reference for no reason.
         plugins={PLUGINS}
+        jsonForm={JSON_FORM}
         // MUST be passed. The default is { strategy: 'localStorage' } — omit it
         // and the workflow is written to the browser instead of to us, silently.
         // 'api' is not an option either: upstream documents that it "issues plain

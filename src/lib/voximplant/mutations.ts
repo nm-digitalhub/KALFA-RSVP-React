@@ -102,7 +102,17 @@ export function getApplicationSecretValue(
 }
 
 export interface AddSecretResponse {
-  result?: number | { secret_name?: string };
+  /**
+   * ⚠️ MEASURED, NOT ASSUMED. A real AddSecret against application 11107202 on
+   * 2026-09-14 returned `{"result":{"secret_id":385}}` — an OBJECT carrying the
+   * new id, not the `1` this type's author expected and not the
+   * `{secret_name}` shape either. A caller that tested `result === 1` read a
+   * successful write as "unexpected response".
+   *
+   * Left as a union rather than narrowed to the observed shape: one call is one
+   * data point, and the two other members were presumably observed too.
+   */
+  result?: number | { secret_name?: string; secret_id?: number };
 }
 export function addApplicationSecret(
   config: VoximplantConfig,

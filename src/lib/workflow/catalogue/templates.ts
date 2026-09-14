@@ -31,8 +31,10 @@
 import type { DiagramModel, TemplateModel } from '@workflowbuilder/sdk';
 
 import {
+  ACTION_BRANCH_HANDLES,
   CONDITION_BRANCH_HANDLES,
-  SWITCH_CASE_HANDLES,
+  switchBranchHandle,
+  SWITCH_DEFAULT_BRANCH_ID,
   SWITCH_DEFAULT_HANDLE,
 } from './types';
 
@@ -455,15 +457,65 @@ const rsvpFullRouting: DiagramModel = {
           properties: {
             label: 'מה האורח ענה?',
             description: 'מנתב לפי הכפתור שנלחץ',
+            // Kept as a note to the reader; the rows below each carry their
+            // own `x`, which is what the handler evaluates.
             left: '{{trigger.button_payload}}',
-            case1: 'rsvp_attending',
-            case2: 'rsvp_declined',
-            case3: 'rsvp_maybe',
+            // ONE ROW PER BRANCH, in the SDK's `DynamicCondition` shape. The
+            // `logicalOperator` is 'AND' on every row and inert on all but the
+            // first — the control keeps one join per branch, not one per row —
+            // and with a single row it decides nothing either way.
+            //
+            // Written as a template so an owner opening it sees what a filled-in
+            // condition looks like, then edits the text instead of guessing the
+            // shape from an empty card.
             decisionBranches: [
-              { id: 'case1', sourceHandle: SWITCH_CASE_HANDLES[0], label: 'מגיע/ה' },
-              { id: 'case2', sourceHandle: SWITCH_CASE_HANDLES[1], label: 'לא מגיע/ה' },
-              { id: 'case3', sourceHandle: SWITCH_CASE_HANDLES[2], label: 'אולי' },
-              { id: 'default', sourceHandle: SWITCH_DEFAULT_HANDLE, label: 'תשובה חופשית' },
+              {
+                id: 'attending',
+                sourceHandle: switchBranchHandle('attending'),
+                label: 'מגיע/ה',
+                conditions: [
+                  {
+                    x: '{{trigger.button_payload}}',
+                    comparisonOperator: 'isEqual',
+                    y: 'rsvp_attending',
+                    logicalOperator: 'AND',
+                  },
+                ],
+              },
+              {
+                id: 'declined',
+                sourceHandle: switchBranchHandle('declined'),
+                label: 'לא מגיע/ה',
+                conditions: [
+                  {
+                    x: '{{trigger.button_payload}}',
+                    comparisonOperator: 'isEqual',
+                    y: 'rsvp_declined',
+                    logicalOperator: 'AND',
+                  },
+                ],
+              },
+              {
+                id: 'maybe',
+                sourceHandle: switchBranchHandle('maybe'),
+                label: 'אולי',
+                conditions: [
+                  {
+                    x: '{{trigger.button_payload}}',
+                    comparisonOperator: 'isEqual',
+                    y: 'rsvp_maybe',
+                    logicalOperator: 'AND',
+                  },
+                ],
+              },
+              // No conditions, and none wanted: the default is reached by
+              // elimination.
+              {
+                id: SWITCH_DEFAULT_BRANCH_ID,
+                sourceHandle: SWITCH_DEFAULT_HANDLE,
+                label: 'תשובה חופשית',
+                conditions: [],
+              },
             ],
           },
         },
@@ -590,7 +642,7 @@ const rsvpFullRouting: DiagramModel = {
       {
         id: `${FULL_SWITCH_ID}->${FULL_ATTENDING_ID}`,
         source: FULL_SWITCH_ID,
-        sourceHandle: SWITCH_CASE_HANDLES[0],
+        sourceHandle: switchBranchHandle('attending'),
         target: FULL_ATTENDING_ID,
         targetHandle: TARGET,
         type: 'labelEdge',
@@ -607,7 +659,7 @@ const rsvpFullRouting: DiagramModel = {
       {
         id: `${FULL_SWITCH_ID}->${FULL_DECLINED_ID}`,
         source: FULL_SWITCH_ID,
-        sourceHandle: SWITCH_CASE_HANDLES[1],
+        sourceHandle: switchBranchHandle('declined'),
         target: FULL_DECLINED_ID,
         targetHandle: TARGET,
         type: 'labelEdge',
@@ -624,7 +676,7 @@ const rsvpFullRouting: DiagramModel = {
       {
         id: `${FULL_SWITCH_ID}->${FULL_MAYBE_ID}`,
         source: FULL_SWITCH_ID,
-        sourceHandle: SWITCH_CASE_HANDLES[2],
+        sourceHandle: switchBranchHandle('maybe'),
         target: FULL_MAYBE_ID,
         targetHandle: TARGET,
         type: 'labelEdge',
@@ -649,6 +701,527 @@ const rsvpFullRouting: DiagramModel = {
  * documents `diagramTemplates` as needing a stable reference, and a fresh array
  * each render would remount the selector.
  */
+
+// ---------------------------------------------------------------------------
+// Guest import from WhatsApp — the flow that used to be hard-coded
+// ---------------------------------------------------------------------------
+
+const IMPORT_TRIGGER_ID = 'tmpl-import-trigger';
+const IMPORT_STAGE_ID = 'tmpl-import-stage';
+const IMPORT_ALERT_ID = 'tmpl-import-alert';
+const IMPORT_FAILED_ID = 'tmpl-import-failed';
+
+/**
+ * An owner sends a guest list; it is staged for review and the team is told.
+ *
+ * ⚠️ WHAT IS DIFFERENT ABOUT THIS TEMPLATE. Every other one starts from a guest
+ * answering. This starts from the OWNER sending us something — a CSV or a batch
+ * of contact cards — which no workflow could see at all until `messageKinds`
+ * existed: those messages are not billable, and the billing classifier was the
+ * automation gate.
+ *
+ * THE TRIGGER MUST TICK THE TWO KINDS, and that is why `messageKinds` is spelled
+ * out here rather than left to the default. A template that shipped with the
+ * default would load, look right, and never fire once.
+ *
+ * NO GUEST NODES ANYWHERE IN IT, and none would work: the sender is the owner,
+ * so the run carries no contact and `update_guest_status`, `send_whatsapp`,
+ * `set_guest_field` and the rest all refuse inside it by design. `notify_team`
+ * and `webhook` are the actions available here.
+ *
+ * IT DOES NOT REPLACE THE HARD-CODED IMPORT — both run, and they share one
+ * idempotency key, so whichever stages first wins and the other reports
+ * `created: false` with the same review link. The owner still gets the reply
+ * they always got.
+ */
+const guestListImport: DiagramModel = {
+  name: 'קליטת רשימת אורחים מוואטסאפ',
+  layoutDirection: 'RIGHT',
+  diagram: {
+    nodes: [
+      {
+        id: IMPORT_TRIGGER_ID,
+        type: 'start-node',
+        position: { x: 0, y: 140 },
+        data: {
+          segments: [],
+          type: 'trigger.whatsapp_inbound',
+          icon: 'WhatsappLogo',
+          properties: {
+            label: 'הגיעה רשימת אורחים',
+            description: 'קובץ או כרטיסי אנשי קשר שנשלחו בוואטסאפ',
+            keyword: '',
+            phoneNumberId: '',
+            // THE FIELD THAT MAKES THIS TEMPLATE WORK AT ALL. Without it the
+            // trigger falls back to the guest-message kinds and a file never
+            // starts the flow.
+            messageKinds: [{ value: 'document' }, { value: 'contacts' }],
+          },
+        },
+      },
+      {
+        id: IMPORT_STAGE_ID,
+        type: 'decision-node',
+        position: { x: 380, y: 140 },
+        data: {
+          segments: [],
+          type: 'action.import_guest_list',
+          icon: 'UsersThree',
+          properties: {
+            label: 'קליטת הרשימה לסקירה',
+            description: 'מעלה את השורות למסך האישור — לא מוסיף אורחים',
+            errorPolicy: 'errorRoute',
+            decisionBranches: [
+              { id: 'ok', sourceHandle: ACTION_BRANCH_HANDLES.ok, label: 'נקלט' },
+              { id: 'error', sourceHandle: ACTION_BRANCH_HANDLES.error, label: 'נכשל' },
+            ],
+          },
+        },
+      },
+      {
+        id: IMPORT_ALERT_ID,
+        type: 'node',
+        position: { x: 780, y: 40 },
+        data: {
+          segments: [],
+          type: 'action.notify_team',
+          icon: 'Bell',
+          properties: {
+            label: 'עדכון הצוות',
+            description: 'כמה שורות נקלטו ולאן ללכת כדי לאשר',
+            level: 'info',
+            title: 'רשימת אורחים חדשה ממתינה לאישור',
+            // The counts and the link come from the node above. `?` on the file
+            // name because contact cards have none — a strict reference would
+            // fail the whole alert on the commonest case.
+            detail:
+              'נקלטו {{nodes.tmpl-import-stage.rowCount}} שורות ({{nodes.tmpl-import-stage.errorCount}} עם שגיאות). קובץ: {{nodes.tmpl-import-stage.fileName?}}\nלאישור: {{nodes.tmpl-import-stage.reviewUrl}}',
+          },
+        },
+      },
+      {
+        id: IMPORT_FAILED_ID,
+        type: 'node',
+        position: { x: 780, y: 260 },
+        data: {
+          segments: [],
+          type: 'action.notify_team',
+          icon: 'WarningCircle',
+          properties: {
+            label: 'התראה על כישלון',
+            description: 'הקובץ לא נקרא או לא נקלט',
+            level: 'warn',
+            title: 'רשימת אורחים לא נקלטה',
+            detail: 'סיבה: {{nodes.tmpl-import-stage.reason?}} {{nodes.tmpl-import-stage.message?}}',
+          },
+        },
+      },
+    ],
+    edges: [
+      {
+        id: `${IMPORT_TRIGGER_ID}->${IMPORT_STAGE_ID}`,
+        source: IMPORT_TRIGGER_ID,
+        sourceHandle: SOURCE,
+        target: IMPORT_STAGE_ID,
+        targetHandle: TARGET,
+        type: 'labelEdge',
+      },
+      // BOTH branches wired. A node that names a port no edge carries is a dead
+      // end, and a dead end ends the run `execution_incomplete` — so a template
+      // with only the happy path would report incomplete on every bad file.
+      {
+        id: `${IMPORT_STAGE_ID}->${IMPORT_ALERT_ID}`,
+        source: IMPORT_STAGE_ID,
+        sourceHandle: ACTION_BRANCH_HANDLES.ok,
+        target: IMPORT_ALERT_ID,
+        targetHandle: TARGET,
+        type: 'labelEdge',
+        data: { label: 'נקלט' },
+      },
+      {
+        id: `${IMPORT_STAGE_ID}->${IMPORT_FAILED_ID}`,
+        source: IMPORT_STAGE_ID,
+        sourceHandle: ACTION_BRANCH_HANDLES.error,
+        target: IMPORT_FAILED_ID,
+        targetHandle: TARGET,
+        type: 'labelEdge',
+        data: { label: 'נכשל' },
+      },
+    ],
+    viewport: { x: 0, y: 0, zoom: 1 },
+  },
+};
+
+
+// ---------------------------------------------------------------------------
+// The clock, the wait, and the fan-out — the three capabilities added 13.9.2026
+// ---------------------------------------------------------------------------
+//
+// Until now every template started from a guest speaking to us. These three do
+// not, and they exist because a capability with no starting point is a capability
+// nobody finds: `trigger.schedule`, `logic.wait`, `action.send_template` and
+// `action.start_for_each_guest` appeared in ZERO templates the day after they
+// shipped.
+//
+// ⚠️ WHY THEY ALL SEND A TEMPLATE RATHER THAN FREE TEXT. WhatsApp permits plain
+// text only inside the 24-hour window a guest's own message opens. A flow started
+// by a CLOCK has no such window — the guest has not written — so
+// `action.send_whatsapp` would be refused by Meta for most recipients. An
+// approved template may be sent at any time, which is what makes these flows
+// deliverable at all.
+
+const SWEEP_TRIGGER_ID = 'tmpl-sweep-trigger';
+const SWEEP_FANOUT_ID = 'tmpl-sweep-fanout';
+const SWEEP_ALERT_ID = 'tmpl-sweep-alert';
+const SWEEP_FAILED_ID = 'tmpl-sweep-failed';
+
+/**
+ * Every Sunday at 10:00, nudge the guests who have not answered yet.
+ *
+ * THE FLOW THE WHOLE ENGINE PROJECT WAS FOR. It needs all three of the pieces
+ * that did not exist yesterday: a clock to start it, a step that finds guests,
+ * and a send that works outside the service window.
+ *
+ * ⚠️ WHY "WHO HAVE NOT ANSWERED" AND NOT "THANK EVERYONE WHO IS COMING" — the
+ * single most important decision in this file.
+ *
+ * A scheduled fan-out RE-FIRES ON EVERY TICK. The child runs are deduped on
+ * `fanout:${parentRunId}:${nodeId}:${contactId}`, and the parent run id is new
+ * each time the clock fires, so nothing in the engine remembers that a guest was
+ * already messaged yesterday. There is no "already sent" node, and no way to
+ * express one with what exists today.
+ *
+ * So the template must be a flow where REPEATING IS THE CORRECT BEHAVIOUR and
+ * the list empties itself. It is: a guest who answers stops being `pending` and
+ * drops out of the filter on the next run. The reminder stops because the guest
+ * responded — the stop condition is the product's own data, not a memory the
+ * engine does not have.
+ *
+ * A thank-you has the opposite shape. "Everyone attending" does not shrink when
+ * you thank them, so the same flow would thank the same guests every single
+ * week, forever. That is why this is not the thank-you template — and KALFA
+ * already sends thank-yous anyway, from `campaign-thankyou-sweep` in the worker.
+ * A second path to the same message means a guest gets both.
+ *
+ * ⚠️ `days: [0]` IS SUNDAY, AND IT IS A CEILING, NOT A PREFERENCE. Empty means
+ * every day, and a weekly nudge is the most anyone should send to someone who
+ * has not replied. Widen it deliberately or not at all.
+ *
+ * ⚠️ IT SHIPS WITH `targetWorkflowId` EMPTY, on purpose. The fan-out starts
+ * another workflow per guest, and only the owner knows which — pre-filling it
+ * with a guess would either point at nothing or, worse, at the wrong flow. Paste
+ * the child workflow's id into the node before using it.
+ *
+ * ⚠️ AND ARMING REFUSES UNTIL YOU DO. `setWorkflowActive` runs `findArmBlockers`
+ * after the conversion contract, so pressing "arm" on this template answers
+ * `הצעד "לכל אורח שטרם ענה": השדה "targetWorkflowId" ריק.` instead of flipping
+ * the switch and failing silently on Sunday at 10:00.
+ *
+ * The template still LOADS and SAVES with the blank — that is the point of a
+ * template — because the check lives at arming, not in the converter.
+ *
+ * `maxGuests: 10` is deliberately far below anyone's real guest list. A template
+ * is a starting point someone presses "arm" on quickly, and the first press
+ * should not reach three hundred people.
+ */
+const weeklyPendingSweep: DiagramModel = {
+  name: 'תזכורת שבועית למי שטרם ענה',
+  layoutDirection: 'RIGHT',
+  diagram: {
+    nodes: [
+      {
+        id: SWEEP_TRIGGER_ID,
+        type: 'start-node',
+        position: { x: 0, y: 140 },
+        data: {
+          segments: [],
+          type: 'trigger.schedule',
+          icon: 'Clock',
+          properties: {
+            label: 'כל יום ראשון ב-10:00',
+            description: 'שעון ישראל, כולל מעברי שעון',
+            time: '10:00',
+            // Sunday. NOT empty — empty means every day, and this flow re-fires.
+            days: [0],
+          },
+        },
+      },
+      {
+        id: SWEEP_FANOUT_ID,
+        type: 'decision-node',
+        position: { x: 380, y: 140 },
+        data: {
+          segments: [],
+          type: 'action.start_for_each_guest',
+          icon: 'UsersThree',
+          properties: {
+            label: 'לכל אורח שטרם ענה',
+            description: 'מתחיל תהליך נפרד לכל אחד — הדביקו את מזהה התהליך',
+            // EMPTY BY DESIGN — see the note above.
+            targetWorkflowId: '',
+            // The self-emptying filter: answering removes the guest from it.
+            statuses: [{ value: 'pending' }],
+            requirePhone: true,
+            maxGuests: 10,
+            errorPolicy: 'errorRoute',
+            decisionBranches: [
+              { id: 'ok', sourceHandle: ACTION_BRANCH_HANDLES.ok, label: 'התחיל' },
+              { id: 'error', sourceHandle: ACTION_BRANCH_HANDLES.error, label: 'נכשל' },
+            ],
+          },
+        },
+      },
+      {
+        id: SWEEP_ALERT_ID,
+        type: 'node',
+        position: { x: 780, y: 40 },
+        data: {
+          segments: [],
+          type: 'action.notify_team',
+          icon: 'Bell',
+          properties: {
+            label: 'סיכום לצוות',
+            description: 'כמה הרצות התחילו, וכמה אורחים התאימו',
+            level: 'info',
+            title: 'תזכורות שבועיות נשלחו',
+            // `capped` is the line worth reading: "everyone got one" and "the
+            // first ten did" are different facts.
+            detail:
+              'התחילו {{nodes.tmpl-sweep-fanout.started}} הרצות מתוך {{nodes.tmpl-sweep-fanout.matched}} אורחים שהתאימו. נעצר בתקרה: {{nodes.tmpl-sweep-fanout.capped}}',
+            // An alert that fails must not fail the run it reports on.
+            errorPolicy: 'continue',
+          },
+        },
+      },
+      {
+        id: SWEEP_FAILED_ID,
+        type: 'node',
+        position: { x: 780, y: 260 },
+        data: {
+          segments: [],
+          type: 'action.notify_team',
+          icon: 'WarningCircle',
+          properties: {
+            label: 'התראה על כישלון',
+            description: 'הפיצול לא הצליח',
+            level: 'warn',
+            title: 'הפיצול לתזכורות נכשל',
+            // `reason?` — safe navigation, because `reason` is NOT in the
+            // fan-out's outputSchema: it appears only on the error branch. A
+            // strict reference to an absent field fails the whole run.
+            detail: 'סיבה: {{nodes.tmpl-sweep-fanout.reason?}}',
+            errorPolicy: 'continue',
+          },
+        },
+      },
+    ],
+    edges: [
+      {
+        id: `${SWEEP_TRIGGER_ID}->${SWEEP_FANOUT_ID}`,
+        source: SWEEP_TRIGGER_ID,
+        sourceHandle: SOURCE,
+        target: SWEEP_FANOUT_ID,
+        targetHandle: TARGET,
+        type: 'labelEdge',
+      },
+      // BOTH branches wired: a node that names a port no edge carries is a dead
+      // end, and a dead end ends the run `execution_incomplete`.
+      {
+        id: `${SWEEP_FANOUT_ID}->${SWEEP_ALERT_ID}`,
+        source: SWEEP_FANOUT_ID,
+        sourceHandle: ACTION_BRANCH_HANDLES.ok,
+        target: SWEEP_ALERT_ID,
+        targetHandle: TARGET,
+        type: 'labelEdge',
+        data: { label: 'התחיל' },
+      },
+      {
+        id: `${SWEEP_FANOUT_ID}->${SWEEP_FAILED_ID}`,
+        source: SWEEP_FANOUT_ID,
+        sourceHandle: ACTION_BRANCH_HANDLES.error,
+        target: SWEEP_FAILED_ID,
+        targetHandle: TARGET,
+        type: 'labelEdge',
+        data: { label: 'נכשל' },
+      },
+    ],
+    viewport: { x: 0, y: 0, zoom: 1 },
+  },
+};
+
+const PERGUEST_TRIGGER_ID = 'tmpl-perguest-trigger';
+const PERGUEST_SEND_ID = 'tmpl-perguest-send';
+
+/**
+ * The CHILD of a fan-out: one guest, one reminder.
+ *
+ * ⚠️ IT IS STARTED BY ANOTHER WORKFLOW, NOT BY ITS OWN TRIGGER, and that shapes
+ * everything about it.
+ *
+ * Its trigger is a webhook whose token is left EMPTY. That is not an oversight:
+ * every graph must declare exactly one start node (rule 1 of the conversion
+ * contract), so a workflow needs a trigger even when nothing fires it — and an
+ * empty token means the public endpoint cannot reach it either. A WhatsApp
+ * trigger here would have been worse: armed, it would fire on every inbound
+ * message as well as on the fan-out.
+ *
+ * It also must NOT be armed. Arming is about a workflow's own trigger; a
+ * fan-out starts it regardless, which is why `startRunsForGuests` does not
+ * require it.
+ */
+const perGuestReminder: DiagramModel = {
+  name: 'תזכורת לאורח אחד (תהליך-בן)',
+  layoutDirection: 'RIGHT',
+  diagram: {
+    nodes: [
+      {
+        id: PERGUEST_TRIGGER_ID,
+        type: 'start-node',
+        position: { x: 0, y: 140 },
+        data: {
+          segments: [],
+          type: 'trigger.webhook',
+          icon: 'Plugs',
+          properties: {
+            label: 'מופעל מתהליך אחר',
+            description: 'לא להפעיל — תהליך-בן של "תזכורת שבועית למי שטרם ענה"',
+            // EMPTY: no public endpoint, and a workflow cannot be armed without
+            // a token. Both are the intent.
+            token: '',
+          },
+        },
+      },
+      {
+        id: PERGUEST_SEND_ID,
+        type: 'node',
+        position: { x: 380, y: 140 },
+        data: {
+          segments: [],
+          type: 'action.send_template',
+          icon: 'ChatCircleText',
+          properties: {
+            label: 'שליחת תבנית תזכורת',
+            // ⚠️ A UTILITY TEMPLATE, AND THAT IS A CHOICE. `thankyou` is
+            // MARKETING: it routes through MM Lite, and on a non-brit event it
+            // resolves to nothing — which this node reports as a COMPLETED step
+            // with `template_not_available`, so the run says "completed" and the
+            // guest gets nothing. A reminder has neither problem.
+            description: 'תבנית מאושרת — אפשרית גם ימים אחרי שהאורח כתב',
+            messageKey: 'reminder_1',
+          },
+        },
+      },
+    ],
+    edges: [
+      {
+        id: `${PERGUEST_TRIGGER_ID}->${PERGUEST_SEND_ID}`,
+        source: PERGUEST_TRIGGER_ID,
+        sourceHandle: SOURCE,
+        target: PERGUEST_SEND_ID,
+        targetHandle: TARGET,
+        type: 'labelEdge',
+      },
+    ],
+    viewport: { x: 0, y: 0, zoom: 1 },
+  },
+};
+
+const NUDGE_TRIGGER_ID = 'tmpl-nudge-trigger';
+const NUDGE_WAIT_ID = 'tmpl-nudge-wait';
+const NUDGE_SEND_ID = 'tmpl-nudge-send';
+
+/**
+ * A guest asks for time; two days later they get one reminder.
+ *
+ * THE SMALLEST HONEST USE OF `logic.wait`, and the one worth shipping first
+ * because it is verifiable in minutes: shorten the wait, send the keyword, watch
+ * the run sit at "ממתינה" and then finish.
+ *
+ * ⚠️ THE REMINDER IS A TEMPLATE, NOT FREE TEXT. Two days after the guest wrote,
+ * the 24-hour window that made a free-text reply legal has closed. This is the
+ * distinction the two send nodes exist for, and the template is the half that
+ * still works.
+ *
+ * ⚠️ AND EDITING THIS FLOW WHILE A RUN IS PARKED CHANGES THAT RUN. Steps that
+ * already finished are replayed from the ledger and never re-run, but a node
+ * ADDED before the wait will execute on resume — a known limitation recorded in
+ * the engine plan, pending a second migration.
+ */
+const delayedNudge: DiagramModel = {
+  name: 'תזכורת יומיים אחרי "אחזור אליכם"',
+  layoutDirection: 'RIGHT',
+  diagram: {
+    nodes: [
+      {
+        id: NUDGE_TRIGGER_ID,
+        type: 'start-node',
+        position: { x: 0, y: 140 },
+        data: {
+          segments: [],
+          type: 'trigger.whatsapp_inbound',
+          icon: 'WhatsappLogo',
+          properties: {
+            label: 'האורח ביקש זמן',
+            description: 'מופעל כשההודעה מכילה את מילת ההפעלה',
+            keyword: 'אחזור',
+            phoneNumberId: '',
+          },
+        },
+      },
+      {
+        id: NUDGE_WAIT_ID,
+        type: 'node',
+        position: { x: 380, y: 140 },
+        data: {
+          segments: [],
+          type: 'logic.wait',
+          icon: 'Hourglass',
+          properties: {
+            label: 'המתנה יומיים',
+            description: 'ההרצה נעצרת כאן וחוזרת מעצמה',
+            amount: 2,
+            unit: 'days',
+          },
+        },
+      },
+      {
+        id: NUDGE_SEND_ID,
+        type: 'node',
+        position: { x: 760, y: 140 },
+        data: {
+          segments: [],
+          type: 'action.send_template',
+          icon: 'ChatCircleText',
+          properties: {
+            label: 'תזכורת',
+            description: 'תבנית — חלון 24 השעות כבר נסגר',
+            messageKey: 'reminder_1',
+          },
+        },
+      },
+    ],
+    edges: [
+      {
+        id: `${NUDGE_TRIGGER_ID}->${NUDGE_WAIT_ID}`,
+        source: NUDGE_TRIGGER_ID,
+        sourceHandle: SOURCE,
+        target: NUDGE_WAIT_ID,
+        targetHandle: TARGET,
+        type: 'labelEdge',
+      },
+      {
+        id: `${NUDGE_WAIT_ID}->${NUDGE_SEND_ID}`,
+        source: NUDGE_WAIT_ID,
+        sourceHandle: SOURCE,
+        target: NUDGE_SEND_ID,
+        targetHandle: TARGET,
+        type: 'labelEdge',
+      },
+    ],
+    viewport: { x: 0, y: 0, zoom: 1 },
+  },
+};
+
 export const DIAGRAM_TEMPLATES: TemplateModel[] = [
   {
     id: 1,
@@ -673,5 +1246,29 @@ export const DIAGRAM_TEMPLATES: TemplateModel[] = [
     name: 'אישור הגעה — כל התשובות',
     value: rsvpFullRouting,
     icon: 'ArrowsSplit',
+  },
+  {
+    id: 5,
+    name: 'קליטת רשימת אורחים מוואטסאפ',
+    value: guestListImport,
+    icon: 'UsersThree',
+  },
+  {
+    id: 6,
+    name: 'תזכורת יומיים אחרי "אחזור אליכם"',
+    value: delayedNudge,
+    icon: 'Hourglass',
+  },
+  {
+    id: 7,
+    name: 'תזכורת שבועית למי שטרם ענה',
+    value: weeklyPendingSweep,
+    icon: 'Clock',
+  },
+  {
+    id: 8,
+    name: 'תזכורת לאורח אחד (תהליך-בן)',
+    value: perGuestReminder,
+    icon: 'ChatCircleText',
   },
 ];

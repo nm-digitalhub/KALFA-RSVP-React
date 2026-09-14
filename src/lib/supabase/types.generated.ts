@@ -5180,6 +5180,137 @@ export type Database = {
         }
         Relationships: []
       }
+      voice_purpose_attempts: {
+        Row: {
+          access_token: string
+          call_duration_sec: number | null
+          contact_id: string
+          created_at: string
+          dispatch_status: string
+          el_conversation_id: string | null
+          event_id: string | null
+          finish_reason: string | null
+          id: string
+          node_id: string | null
+          purpose_key: string
+          run_id: string | null
+          token_expires_at: string
+          updated_at: string
+          vox_call_session_history_id: number | null
+        }
+        Insert: {
+          access_token: string
+          call_duration_sec?: number | null
+          contact_id: string
+          created_at?: string
+          dispatch_status?: string
+          el_conversation_id?: string | null
+          event_id?: string | null
+          finish_reason?: string | null
+          id?: string
+          node_id?: string | null
+          purpose_key: string
+          run_id?: string | null
+          token_expires_at: string
+          updated_at?: string
+          vox_call_session_history_id?: number | null
+        }
+        Update: {
+          access_token?: string
+          call_duration_sec?: number | null
+          contact_id?: string
+          created_at?: string
+          dispatch_status?: string
+          el_conversation_id?: string | null
+          event_id?: string | null
+          finish_reason?: string | null
+          id?: string
+          node_id?: string | null
+          purpose_key?: string
+          run_id?: string | null
+          token_expires_at?: string
+          updated_at?: string
+          vox_call_session_history_id?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "voice_purpose_attempts_contact_id_fkey"
+            columns: ["contact_id"]
+            isOneToOne: false
+            referencedRelation: "contacts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "voice_purpose_attempts_event_id_fkey"
+            columns: ["event_id"]
+            isOneToOne: false
+            referencedRelation: "console_events"
+            referencedColumns: ["event_id"]
+          },
+          {
+            foreignKeyName: "voice_purpose_attempts_event_id_fkey"
+            columns: ["event_id"]
+            isOneToOne: false
+            referencedRelation: "events"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "voice_purpose_attempts_purpose_key_fkey"
+            columns: ["purpose_key"]
+            isOneToOne: false
+            referencedRelation: "voice_purposes"
+            referencedColumns: ["key"]
+          },
+        ]
+      }
+      voice_purposes: {
+        Row: {
+          active: boolean
+          created_at: string
+          description: string | null
+          display_name: string
+          enabled: boolean
+          is_builtin: boolean
+          key: string
+          lead_ms: number
+          min_delay_ms: number
+          rule_id: string | null
+          sort_order: number
+          token_ttl_sec: number
+          updated_at: string
+        }
+        Insert: {
+          active?: boolean
+          created_at?: string
+          description?: string | null
+          display_name: string
+          enabled?: boolean
+          is_builtin?: boolean
+          key: string
+          lead_ms?: number
+          min_delay_ms?: number
+          rule_id?: string | null
+          sort_order?: number
+          token_ttl_sec?: number
+          updated_at?: string
+        }
+        Update: {
+          active?: boolean
+          created_at?: string
+          description?: string | null
+          display_name?: string
+          enabled?: boolean
+          is_builtin?: boolean
+          key?: string
+          lead_ms?: number
+          min_delay_ms?: number
+          rule_id?: string | null
+          sort_order?: number
+          token_ttl_sec?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
       vox_log_exports: {
         Row: {
           attempt_created_at: string | null
@@ -5394,6 +5525,7 @@ export type Database = {
           run_id: string
           started_at: string
           status: string
+          wait_until: string | null
         }
         Insert: {
           error_message?: string | null
@@ -5405,6 +5537,7 @@ export type Database = {
           run_id: string
           started_at?: string
           status?: string
+          wait_until?: string | null
         }
         Update: {
           error_message?: string | null
@@ -5416,6 +5549,7 @@ export type Database = {
           run_id?: string
           started_at?: string
           status?: string
+          wait_until?: string | null
         }
         Relationships: [
           {
@@ -5431,10 +5565,12 @@ export type Database = {
         Row: {
           created_at: string
           dedupe_key: string | null
+          definition_snapshot: Json | null
           error_message: string | null
           event_id: string | null
           finished_at: string | null
           id: string
+          resume_at: string | null
           status: string
           trigger_payload: Json
           trigger_source: string
@@ -5443,10 +5579,12 @@ export type Database = {
         Insert: {
           created_at?: string
           dedupe_key?: string | null
+          definition_snapshot?: Json | null
           error_message?: string | null
           event_id?: string | null
           finished_at?: string | null
           id?: string
+          resume_at?: string | null
           status?: string
           trigger_payload?: Json
           trigger_source: string
@@ -5455,10 +5593,12 @@ export type Database = {
         Update: {
           created_at?: string
           dedupe_key?: string | null
+          definition_snapshot?: Json | null
           error_message?: string | null
           event_id?: string | null
           finished_at?: string | null
           id?: string
+          resume_at?: string | null
           status?: string
           trigger_payload?: Json
           trigger_source?: string

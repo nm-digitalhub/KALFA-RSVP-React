@@ -17,6 +17,7 @@ type Guests = Partial<GuestActionsPort>;
 function ctxWith(guests: Guests) {
   return {
     runId: 'run-1',
+    workflowId: 'wf-self',
     nodeId: 'node-1',
     trigger: {
       eventId: 'e1',

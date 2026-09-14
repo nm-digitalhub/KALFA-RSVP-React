@@ -163,3 +163,97 @@ describe("Meta's positional placeholders are not template references", () => {
     expect(sentBody(result.effects)).toBe('שלום {{1}}, האירוע ב-{{2}}');
   });
 });
+
+describe('the secrets namespace is scoped to the ONE NODE that can substitute it', () => {
+  // ⚠️ THE GUARANTEE THIS BLOCK DEFENDS, end to end through the real runner.
+  //
+  // `{{secrets.<NAME>}}` is deferred past config resolution so the outbound port
+  // can substitute it at the socket. That deferral is scoped BY NODE TYPE.
+  //
+  // It was scoped by FIELD NAME first — allowed only under `headers` — which
+  // refused a Slack incoming webhook (a URL that is entirely a secret) and every
+  // API wanting its key in the body. The field name was never the boundary; the
+  // node is, because `action.webhook` is the only step whose port substitutes.
+  //
+  // What must NOT change is the other half: in any other node — above all a
+  // WhatsApp message, which is delivered to a guest — an unresolved
+  // `{{secrets.…}}` still fails the run.
+
+  const httpNode = (properties: Record<string, unknown>) => ({
+    name: 'בדיקה',
+    layoutDirection: 'DOWN',
+    nodes: [
+      node('t', 'trigger.whatsapp_inbound'),
+      node('say', 'action.webhook', {
+        url: 'https://example.com/hook',
+        body: '{}',
+        errorPolicy: 'fail',
+        ...properties,
+      }),
+    ],
+    edges: [edge('e1', 't', 'say')],
+  });
+
+  const runHttp = (definition: unknown) =>
+    dryRunWorkflow({
+      workflowId: 'wf-ref',
+      storedDefinition: definition,
+      allNodeIds: ['t', 'say'],
+      scenario: { messageText: 'כן', buttonPayload: '', guestCase: 'one' },
+    });
+
+  it('survives config resolution on a HEADER', async () => {
+    const result = await runHttp(
+      httpNode({ headers: [{ name: 'Authorization', value: 'Bearer {{secrets.ACME}}' }] }),
+    );
+    expect(result.outcome.status).toBe('completed');
+    expect(result.effects.some((e) => e.kind === 'webhook')).toBe(true);
+  });
+
+  it('survives on the URL — the Slack-webhook case the field rule refused', async () => {
+    const result = await runHttp(httpNode({ url: 'https://hooks.slack.com/{{secrets.SLACK}}' }));
+    expect(result.outcome.status).toBe('completed');
+  });
+
+  it('survives in the BODY — an API may want its key in the payload', async () => {
+    const result = await runHttp(httpNode({ body: '{"key":"{{secrets.ACME}}"}' }));
+    expect(result.outcome.status).toBe('completed');
+  });
+
+  it('⚠️ a secret reference in a WhatsApp body STILL fails the run', async () => {
+    // The case references.test.ts has pinned since before secrets existed, and
+    // the reason the deferral is per-node rather than global. A guest must never
+    // receive `{{secrets.…}}` as text.
+    const result = await run(quoting('{{secrets.ACME}}', { errorPolicy: 'fail' }));
+    expect(result.outcome.status).not.toBe('completed');
+    expect(result.effects).toEqual([]);
+  });
+
+  it('⚠️ and so does one in any other node type', async () => {
+    // `logic.set_value` computes a value for later steps. Nothing substitutes
+    // there, so a reference would be carried forward as literal text into
+    // whatever used it — including a message.
+    const result = await run({
+      name: 'בדיקה',
+      layoutDirection: 'DOWN',
+      nodes: [
+        node('t', 'trigger.whatsapp_inbound'),
+        node('say', 'logic.set_value', { value: '{{secrets.ACME}}', errorPolicy: 'fail' }),
+      ],
+      edges: [edge('e1', 't', 'say')],
+    });
+    expect(result.outcome.status).not.toBe('completed');
+  });
+
+  it('the dry-run trace COUNTS headers and never prints their values', async () => {
+    // A dry run is rendered in the browser and is the most casually shared
+    // artefact here. A screenshot of it must not carry a credential.
+    const result = await runHttp(
+      httpNode({ headers: [{ name: 'Authorization', value: 'Bearer {{secrets.ACME}}' }] }),
+    );
+    const line = result.effects.find((e) => e.kind === 'webhook')?.description ?? '';
+    expect(line).toContain('1 כותרות');
+    expect(line).not.toContain('Bearer');
+    expect(line).not.toContain('secrets.ACME');
+  });
+});

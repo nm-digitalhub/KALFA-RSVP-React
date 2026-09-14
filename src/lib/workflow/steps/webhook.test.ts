@@ -20,6 +20,7 @@ type PostMock = ReturnType<typeof vi.fn<OutboundWebhookPort['post']>>;
 
 function ctxWith(post: PostMock, ids = { runId: 'run-1', nodeId: 'node-9' }) {
   return {
+    workflowId: 'wf-self',
     ...ids,
     trigger: {
       eventId: 'e1',

@@ -13,10 +13,17 @@ import {
   CONDITION_FIELDS,
   CONDITION_OPERATORS,
   GUEST_FIELDS,
+  CALLBACK_TOPICS,
+  HTTP_METHODS,
+  LEGACY_PROPERTY_ALIASES,
+  MAX_FANOUT_DEPTH,
+  type HttpHeader,
   NOTIFY_LEVELS,
-  SWITCH_CASE_COUNT,
-  SWITCH_CASE_HANDLES,
+  SALES_CALLBACK_TOPIC,
+  SWITCH_DEFAULT_BRANCH_ID,
   SWITCH_DEFAULT_HANDLE,
+  type SwitchBranch,
+  type SwitchCondition,
   type ConditionField,
   type ConditionOperator,
   type KalfaNodeType,
@@ -77,6 +84,19 @@ export type WorkflowTriggerPayload = {
   eventId?: string;
   contactId?: string;
   /**
+   * The inbox row this run started from.
+   *
+   * NOT the message content — a REFERENCE to it. `action.import_guest_list`
+   * needs to reach the file or the contact cards, and the alternative was to
+   * copy them into `trigger_payload`: a second permanent copy of a guest list,
+   * with names and phones, in a jsonb column built for step context. The
+   * reference costs one read at execution time and keeps the personal data in
+   * the one row that already holds it.
+   *
+   * Absent for a run that did not start from an inbound message (a webhook).
+   */
+  inboxRowId?: string;
+  /**
    * The arbitrary JSON an inbound webhook delivered, readable as
    * `{{trigger.body.<anything>}}`.
    *
@@ -87,6 +107,18 @@ export type WorkflowTriggerPayload = {
   body?: Record<string, unknown>;
   message_text: string;
   button_payload: string;
+  /**
+   * How many fan-outs deep this run is. Absent means zero — a run nobody fanned
+   * out to.
+   *
+   * ⚠️ CARRIED ON THE PAYLOAD RATHER THAN IN A COLUMN, deliberately. The depth
+   * is a property of THIS run's lineage and is read exactly once, by the fan-out
+   * that might create the next generation; a column would need a migration, a
+   * backfill answer for existing rows, and would still say nothing a payload
+   * field does not. `workflow_runs` has no parent link at all — measured — so
+   * this is also the only place the chain is recorded.
+   */
+  fanoutDepth?: number;
   /**
    * The three below are OMITTED when unknown, never set to `''`, and the
    * difference is the whole behaviour of the fallback modifiers.
@@ -114,7 +146,20 @@ export type WorkflowTriggerPayload = {
 
 export type StepContext = {
   runId: string;
+  /**
+   * The workflow this run is executing — read ONLY by the fan-out, to refuse
+   * starting itself. See `MAX_FANOUT_DEPTH`.
+   */
+  workflowId: string;
   nodeId: string;
+  /**
+   * This attempt took over a PARKED step whose deadline has passed.
+   *
+   * Only `logic.wait` reads it, and only it should: see the note in that
+   * handler for why a wait cannot recognise its own resumption without being
+   * told.
+   */
+  resumedFromWait?: boolean;
   trigger: WorkflowTriggerPayload;
   deps: { guests: GuestActionsPort; alerts: TeamAlertsPort; webhook: OutboundWebhookPort };
 };
@@ -193,6 +238,21 @@ function requireGuestContext(
 // been received, authenticated by its token and persisted as the trigger payload.
 const webhookTrigger: StepHandler = async (_config, ctx) => ({
   output: { body: ctx.trigger.body ?? {} },
+});
+
+// ---------------------------------------------------------------------------
+// trigger.schedule
+// ---------------------------------------------------------------------------
+
+// The clock's entry node. Like the other triggers it performs no side effect —
+// the decision that this moment matched was made at PLAN time (`schedule.ts`),
+// because a run that should not have started must not exist rather than start
+// and immediately stop. By the time this executes, the answer was yes.
+//
+// It publishes the slot it fired for, so a later step can name it
+// (`{{nodes.<id>.firedAt}}`) — the one fact a scheduled run knows about itself.
+const scheduleTrigger: StepHandler = async (_config, ctx) => ({
+  output: { firedAt: (ctx.trigger.body as { firedAt?: unknown } | undefined)?.firedAt ?? null },
 });
 
 // ---------------------------------------------------------------------------
@@ -326,47 +386,131 @@ const condition: StepHandler = async (config, ctx) => {
 // logic.switch
 // ---------------------------------------------------------------------------
 
-// Route one value to one of three named cases, or to the default.
+// N named branches, each with its own conditions — the SDK's `DecisionBranches`
+// shape, evaluated here.
 //
-// WHAT IT ADDS OVER `logic.condition`, which is not "more branches". A condition
-// names one of two ports and BOTH of them mean "the test" — so "none of the
-// above" has to be modelled as false, and a three-way answer needs two chained
-// conditions whose second one re-reads a value the first already looked at. Here
-// the unmatched route is its own port, so the shape on the canvas is the shape
-// of the decision.
+// REBUILT 2026-09-13. The first version hard-coded three cases plus a default,
+// on the reasoning that "the WORKER would have to discover the port list from
+// the diagram". It does discover it — from the branch the conditions selected —
+// and that is not a hazard, it is how a dynamic switch has to work. The SDK
+// ships the composer; the ceiling was mine.
 //
-// Comparison is `compareValues(..., 'equals', ...)` and not a new rule: the same
-// case-insensitive, trimmed equality every condition already uses. An owner who
-// learns one learns both, and a value that routes to case 2 here would have
-// satisfied `equals` there.
+// FIRST MATCH WINS, top to bottom, which is the order the owner sees on the
+// canvas. A branch with no conditions never matches (it would otherwise swallow
+// everything below it); the DEFAULT branch is selected by ELIMINATION, not by a
+// condition, which is why it needs none.
 //
-// FIRST MATCH WINS, and the order is the order on the canvas — case 1 before
-// case 2 before case 3. Two cases with the same text is not an error; the second
-// is simply unreachable, which is visible on the node rather than hidden in a
-// validation message.
-const switchNode: StepHandler = async (config) => {
-  // Already resolved: `resolveConfigTemplates` walked the whole config before
-  // this ran, so `left` is the computed text and not `{{trigger.…}}`.
-  const actual = readString(config, 'left');
+// Both sides of every row arrive ALREADY RESOLVED — `resolveConfigTemplates`
+// walked the whole config first — so `x` and `y` can each be a literal, a
+// `{{trigger.…}}` or a `{{nodes.…}}`, and this function never knows which.
 
-  for (let i = 0; i < SWITCH_CASE_COUNT; i++) {
-    const candidate = readString(config, `case${i + 1}`).trim();
-    // EMPTY IS AN UNUSED BRANCH, not a match against the empty string. Without
-    // this, a switch with one case filled in would send every empty value to
-    // case 2 and the default could never be reached.
-    if (candidate === '') continue;
-    if (compareValues(actual, 'equals', candidate)) {
+function readBranches(config: Record<string, unknown>): SwitchBranch[] {
+  const raw = config.decisionBranches;
+  if (!Array.isArray(raw)) return [];
+  return raw.filter(
+    (b): b is SwitchBranch =>
+      typeof b === 'object' && b !== null && typeof (b as SwitchBranch).sourceHandle === 'string',
+  );
+}
+
+/** One row. The operator set is the SDK's own; nothing else is accepted. */
+export function evaluateSwitchCondition(row: SwitchCondition): boolean {
+  const x = typeof row.x === 'string' ? row.x.trim() : '';
+  const y = typeof row.y === 'string' ? row.y.trim() : '';
+  const lower = (v: string) => v.toLowerCase();
+
+  switch (row.comparisonOperator) {
+    case 'isEqual':
+      return lower(x) === lower(y);
+    case 'isNotEqual':
+      return lower(x) !== lower(y);
+    case 'isContaining':
+      return lower(x).includes(lower(y));
+    case 'isNotContaining':
+      return !lower(x).includes(lower(y));
+    // Numeric comparisons on non-numbers are FALSE rather than NaN-propagating:
+    // an owner comparing text with `isGreaterThan` gets "no" and takes the
+    // default, instead of a branch chosen by an accident of coercion.
+    case 'isGreaterThan':
+    case 'isLessThan':
+    case 'isGreaterThanOrEqual':
+    case 'isLessThanOrEqual': {
+      const a = Number(x);
+      const b = Number(y);
+      if (!Number.isFinite(a) || !Number.isFinite(b)) return false;
+      if (row.comparisonOperator === 'isGreaterThan') return a > b;
+      if (row.comparisonOperator === 'isLessThan') return a < b;
+      if (row.comparisonOperator === 'isGreaterThanOrEqual') return a >= b;
+      return a <= b;
+    }
+    // Dates. Same rule: unparseable is FALSE, never a coin flip.
+    case 'isBefore':
+    case 'isAfter': {
+      const a = Date.parse(x);
+      const b = Date.parse(y);
+      if (Number.isNaN(a) || Number.isNaN(b)) return false;
+      return row.comparisonOperator === 'isBefore' ? a < b : a > b;
+    }
+    default:
+      return false;
+  }
+}
+
+/**
+ * The rows of ONE branch, joined by a SINGLE operator read off `conditions[0]`.
+ *
+ * ⚠️ NOT a per-row fold, and the first version here was wrong about this.
+ *
+ * MEASURED in the shipped control (`dist/index-CEBfv0NZ.js`): the AND/OR picker
+ * is rendered with `shouldShowOperator: index === 0 && lastIndex !== 0` — so it
+ * appears on the FIRST row only, and only once a second row exists. Its onChange
+ * writes `logicalOperator` to that row alone; adding a row appends the module
+ * default `{ …, logicalOperator: 'AND' }`, and no code path back-fills the
+ * choice onto siblings. Rows 1..n therefore carry a stale `'AND'` FOREVER,
+ * whatever the owner picked.
+ *
+ * So there is one operator per branch, not one per join, and the control says as
+ * much in words: its two labels are `conditions.compare.all` ("all") and
+ * `conditions.compare.one` ("one"). A fold over each row's own field would have
+ * read 'AND' from row 2 and quietly ANDed a branch the owner set to OR — a
+ * misroute with nothing on screen to explain it.
+ *
+ * ALL → every row must hold. ONE → any row is enough.
+ */
+export function evaluateSwitchBranch(conditions: SwitchCondition[] | undefined): boolean {
+  if (!Array.isArray(conditions) || conditions.length === 0) return false;
+
+  // `?? 'AND'` is the control's own default, for a row saved before the picker
+  // was ever touched.
+  const join = conditions[0]?.logicalOperator ?? 'AND';
+  return join === 'OR'
+    ? conditions.some(evaluateSwitchCondition)
+    : conditions.every(evaluateSwitchCondition);
+}
+
+const switchNode: StepHandler = async (config) => {
+  const branches = readBranches(config);
+
+  for (const branch of branches) {
+    // The default is chosen by elimination below, never by evaluation — it has
+    // no conditions and must not be skipped past by an empty-conditions rule.
+    if (branch.id === SWITCH_DEFAULT_BRANCH_ID) continue;
+    if (evaluateSwitchBranch(branch.conditions)) {
       return {
-        output: { matched: true, case: i + 1, value: actual },
-        nextPort: SWITCH_CASE_HANDLES[i],
+        output: { matched: true, branch: branch.label ?? branch.id },
+        nextPort: branch.sourceHandle,
       };
     }
   }
 
-  return {
-    output: { matched: false, case: null, value: actual },
-    nextPort: SWITCH_DEFAULT_HANDLE,
-  };
+  // The declared default if the owner kept it, otherwise the reserved handle —
+  // so a diagram whose default branch was deleted still names a port rather
+  // than dead-ending with no explanation.
+  const fallback =
+    branches.find((b) => b.id === SWITCH_DEFAULT_BRANCH_ID)?.sourceHandle ??
+    SWITCH_DEFAULT_HANDLE;
+
+  return { output: { matched: false, branch: null }, nextPort: fallback };
 };
 
 // ---------------------------------------------------------------------------
@@ -382,7 +526,9 @@ const updateGuestStatus: StepHandler = async (config, ctx) => {
   // properties object; every diagram saved before that carries the old name and
   // has to keep working untouched.
   const status: RsvpStatus = readEnum(
-    'rsvpStatus' in config ? config : { ...config, rsvpStatus: config.status },
+    'rsvpStatus' in config
+      ? config
+      : { ...config, rsvpStatus: config[LEGACY_PROPERTY_ALIASES.rsvpStatus!] },
     'rsvpStatus',
     RSVP_STATUSES,
     'action.update_guest_status',
@@ -443,6 +589,56 @@ const updateGuestStatus: StepHandler = async (config, ctx) => {
 // ---------------------------------------------------------------------------
 // action.start_rsvp_ai_callback
 // ---------------------------------------------------------------------------
+
+// Dial this run's guest with a configured voice agent.
+//
+// ⚠️ WHY THIS EXISTS ALONGSIDE `action.start_rsvp_ai_callback`. That node is
+// bound to ONE agent — the RSVP campaign engine's — and adding a second agent
+// used to mean a second node, a second dispatcher and a migration. This one
+// names a row in `voice_purposes`, so an owner who has built an agent on
+// ElevenLabs and a rule on Voximplant can use it from a workflow without any
+// code at all.
+//
+// ⚠️ A REFUSAL IS A COMPLETED STEP, NOT THE ERROR BRANCH. An agent switched off,
+// a guest on the DNC list, a dial outside the permitted hours, Shabbat — in each
+// of those the rules worked exactly as written. Routing them to a failure path
+// would send a workflow down an error route because the system behaved
+// correctly. Only a misconfigured STEP throws.
+const startVoiceCall: StepHandler = async (config, ctx) => {
+  const purposeKey = readString(config, 'purposeKey').trim();
+  if (purposeKey === '') {
+    throw new PermanentNodeExecutionError(
+      'invalid_config',
+      'הצעד "שיחה עם סוכן קולי" לא הוגדר עם ייעוד.',
+    );
+  }
+
+  const dial = ctx.deps.guests.startVoicePurposeCall;
+  if (!dial) {
+    throw new PermanentNodeExecutionError(
+      'capability_unavailable',
+      'הפעולה "שיחה עם סוכן קולי" אינה זמינה בסביבה הזו.',
+    );
+  }
+
+  const guest = requireGuestContext(ctx, 'action.start_voice_call');
+  const outcome = await dial({
+    runId: ctx.runId,
+    nodeId: ctx.nodeId,
+    eventId: guest.eventId,
+    contactId: guest.contactId,
+    purposeKey,
+  });
+
+  return {
+    output: {
+      dialed: outcome.ok,
+      status: outcome.status,
+      ...(outcome.reason ? { reason: outcome.reason } : {}),
+      ...(outcome.attemptId ? { attemptId: outcome.attemptId } : {}),
+    },
+  };
+};
 
 const startRsvpAiCallback: StepHandler = async (_config, ctx) => {
   const dispatch = ctx.deps.guests.startRsvpAiCallback;
@@ -600,24 +796,82 @@ const webhook: StepHandler = async (config, ctx) => {
   const url = readString(config, 'url').trim();
   // Already resolved: `resolveConfigTemplates` walked the config first, so this
   // is the rendered body and not `{{trigger.…}}`.
+  //
+  // With ONE exception, and it is the whole secrets design: `{{secrets.<NAME>}}`
+  // is skipped by the resolver and is still a literal token here. The handler
+  // must therefore never inspect, log or copy a header value — it passes the
+  // rows straight to the port, which substitutes them at the socket.
   const body = readString(config, 'body');
+  const method = readOptionalEnum(config, 'method', HTTP_METHODS);
+  const headers = readHeaderRows(config);
+  const captureResponse = config.captureResponse === true;
 
   const result = await ctx.deps.webhook.post({
     url,
+    method,
+    headers,
     body,
     idempotencyKey: `${ctx.runId}:${ctx.nodeId}`,
+    captureResponse,
   });
 
   // The URL is NOT in the output. It is already on the node in the editor, and
   // repeating it in the run log would copy a path segment — the one place this
   // node can legitimately carry a secret — into a second store.
+  //
+  // Neither are the HEADERS, for a stronger version of the same reason: after
+  // the port ran they would be the substituted values.
+  const base = {
+    status: result.status,
+    // Only when asked for. `undefined` rather than `null` so a node that did not
+    // capture does not advertise an empty `body` in the variable picker.
+    ...(captureResponse
+      ? { body: result.body ?? '', truncated: result.truncated === true }
+      : {}),
+  };
+
   return result.ok
-    ? { output: { ok: true, status: result.status } }
+    ? { output: { ok: true, ...base } }
     : {
-        output: { ok: false, status: result.status, reason: result.reason ?? null },
+        output: { ok: false, ...base, reason: result.reason ?? null },
         nextPort: ACTION_BRANCH_HANDLES.error,
       };
 };
+
+/**
+ * Header rows as the owner typed them — shape-checked, contents untouched.
+ *
+ * DELIBERATELY NOT VALIDATED BEYOND THE SHAPE. Reserved names, newlines and
+ * secret substitution are all the port's job, because the port is the only thing
+ * between here and a socket and a second copy of those rules would drift.
+ */
+function readHeaderRows(config: Record<string, unknown>): HttpHeader[] {
+  const raw = config.headers;
+  if (!Array.isArray(raw)) return [];
+  return raw.flatMap((row) => {
+    if (typeof row !== 'object' || row === null) return [];
+    const { name, value } = row as Partial<HttpHeader>;
+    return typeof name === 'string' ? [{ name, value: typeof value === 'string' ? value : '' }] : [];
+  });
+}
+
+/**
+ * An enum field that may legitimately be absent.
+ *
+ * Distinct from `readEnum`, which THROWS on a missing value. `method` was added
+ * after nodes were already saved without it, and a node that meant POST must
+ * keep meaning POST rather than failing permanently on its next run.
+ */
+function readOptionalEnum<T extends string>(
+  config: Record<string, unknown>,
+  key: string,
+  allowed: readonly T[],
+): T | undefined {
+  const value = config[key];
+  return typeof value === 'string' && (allowed as readonly string[]).includes(value)
+    ? (value as T)
+    : undefined;
+}
 
 // ---------------------------------------------------------------------------
 // action.set_guest_field
@@ -684,6 +938,25 @@ const createCallbackRequest: StepHandler = async (config, ctx) => {
   const topic = readString(config, 'topic').trim();
   const note = readString(config, 'note');
 
+  // ⚠️ NEVER THE SALES TOPIC FROM A GUEST NODE.
+  //
+  // `topic` is not a label, it is the ROUTER: `enqueueSalesCallDispatch` gates
+  // on `topic === 'מכירות'` and nothing downstream re-examines who the person
+  // is. This node is guest-scoped — `requireGuestContext` below, and the port
+  // reads `guests.full_name` / `guests.phone` — so that string would put the
+  // sales-closing agent on the phone to a wedding guest to sell them KALFA.
+  //
+  // The form no longer offers it, and this refuses it anyway: the value lives in
+  // a jsonb row that the form does not re-validate, and an older saved diagram
+  // may carry anything. Permanent rather than routed to the error branch — it is
+  // a configuration mistake, not a runtime condition, and retrying cannot help.
+  if (topic === SALES_CALLBACK_TOPIC) {
+    throw new PermanentNodeExecutionError(
+      'invalid_config',
+      `הצעד "בקשת חזרה לאורח" לא יכול לפנות בנושא "${SALES_CALLBACK_TOPIC}" — הנושא הזה מנתב לסוכן המכירות, והצעד הזה פונה לאורח באירוע.`,
+    );
+  }
+
   const create = ctx.deps.guests.createCallbackRequest;
   if (!create) {
     throw new PermanentNodeExecutionError(
@@ -696,7 +969,10 @@ const createCallbackRequest: StepHandler = async (config, ctx) => {
   const result = await create({
     eventId: guest.eventId,
     contactId: guest.contactId,
-    topic: topic === '' ? 'פנייה מתהליך אוטומטי' : topic,
+    // An empty topic falls back to the first of the offered values rather than
+    // to an internal label: the team reads this column in the callback queue,
+    // and the agent is handed it as `{{topic_he}}`.
+    topic: topic === '' ? CALLBACK_TOPICS[0] : topic,
     note,
   });
 
@@ -730,17 +1006,376 @@ const setValue: StepHandler = async (config) => ({
   output: { value: readString(config, 'value') },
 });
 
+
+// ---------------------------------------------------------------------------
+// action.import_guest_list
+// ---------------------------------------------------------------------------
+
+/**
+ * The list that started this run, staged for review.
+ *
+ * ⚠️ THIS IS THE NODE THAT MAKES GUEST IMPORT A FLOW INSTEAD OF A MECHANISM.
+ *
+ * Importing from WhatsApp used to be unreachable from a workflow twice over: a
+ * file or a contact card never started a run (the BILLING classifier was the
+ * automation gate), and there was no step that could do anything with one. Both
+ * halves are gone — `matchesKind` on the trigger, and this.
+ *
+ * IT NEEDS NO CONFIG. Everything it could be asked is either settled (which
+ * event) or belongs on the canvas (what to do about 400 rows, or about a file
+ * that would not parse). A node whose behaviour is chosen in its own form is the
+ * hard-coded mechanism again, wearing a different shape.
+ *
+ * SAFE TO RUN TWICE, which the step lease requires: staging is keyed on the
+ * inbound message id, so a replay reports `created: false` and returns the same
+ * review link rather than staging a second copy of the same list.
+ *
+ * A `created: false` is NOT the error branch. It means the list is already
+ * staged — usually because the hard-coded import path, which still runs beside
+ * this, won the race. Nothing went wrong; the owner has their link either way.
+ */
+const importGuestList: StepHandler = async (config, ctx) => {
+  void config;
+
+  const port = ctx.deps.guests.importGuestList;
+  if (!port) {
+    throw new PermanentNodeExecutionError(
+      'capability_unavailable',
+      'הפעולה "קליטת רשימת אורחים" אינה זמינה בסביבה הזו.',
+    );
+  }
+
+  // NOT `requireGuestContext`: this run is about an OWNER sending a list, so it
+  // deliberately has no contact. It does need the event — without one there is
+  // nowhere to stage — and `inboxRowId` is where the list itself lives.
+  const { eventId, inboxRowId } = ctx.trigger;
+  if (!eventId || !inboxRowId) {
+    throw new PermanentNodeExecutionError(
+      'missing_import_context',
+      'הצעד "קליטת רשימת אורחים" פועל רק בתהליך שמתחיל מקובץ או מאנשי קשר שנשלחו בוואטסאפ.',
+    );
+  }
+
+  const result = await port({ inboxRowId, eventId });
+
+  return result.ok
+    ? {
+        output: {
+          staged: true,
+          created: result.created,
+          // THE LIST ITSELF, on the run's own record. Readable downstream as
+          // `{{nodes.<id>.rows}}` — the reason it is here rather than only in
+          // the staging table, which is wiped the moment the owner decides.
+          rows: result.rows,
+          rowCount: result.rowCount,
+          errorCount: result.errorCount,
+          fileName: result.fileName,
+          reviewUrl: result.reviewUrl,
+        },
+      }
+    : {
+        output: { staged: false, reason: result.reason, message: result.message ?? null },
+        nextPort: ACTION_BRANCH_HANDLES.error,
+      };
+};
+
+
+// ---------------------------------------------------------------------------
+// logic.wait — the run parks here and comes back later
+// ---------------------------------------------------------------------------
+
+/**
+ * The code a wait throws under, and the whole mechanism by which a run pauses.
+ *
+ * ⚠️ A WAIT TRAVELS AS AN ERROR, on purpose, because there is nowhere else for
+ * it to go. The vendored `runGraph` has no suspension point: its scheduler loop
+ * runs to completion and `NodeExecutionResult` is `{ output, nextPort? }` with
+ * no third option. Read in full 2026-09-13 before choosing this — the execution
+ * model DECLARES a `node_waiting` event, but the vendored runner never emits it,
+ * and it means "waiting for other nodes" (a join) rather than waiting for a
+ * clock.
+ *
+ * So the node throws, `runGraph` treats it as a fatal failure and returns
+ * `{ status: 'failed', error: { code } }` — carrying the code through — and
+ * `run-workflow` recognises the code and converts the outcome into a park. The
+ * failure events are suppressed there and a real `node_waiting` is emitted
+ * instead, so the log says what actually happened.
+ *
+ * It is matched BY SHAPE, never `instanceof`: the worker runs a bundled copy of
+ * this module, so class identity does not survive — the same reason
+ * `classifyNodeError` is written that way.
+ */
+export const WORKFLOW_WAIT_CODE = 'workflow_wait';
+
+export class WorkflowWaitSignal extends PermanentNodeExecutionError {
+  readonly resumeAt: string;
+
+  constructor(resumeAt: string) {
+    super(WORKFLOW_WAIT_CODE, `ההרצה ממתינה עד ${resumeAt}.`);
+    this.name = 'WorkflowWaitSignal';
+    this.resumeAt = resumeAt;
+  }
+}
+
+/** The wait request carried by an error, or null. By shape — see above. */
+export function readWaitSignal(error: unknown): { resumeAt: string } | null {
+  if (!(error instanceof Error)) return null;
+  const { code, resumeAt } = error as { code?: unknown; resumeAt?: unknown };
+  if (code !== WORKFLOW_WAIT_CODE || typeof resumeAt !== 'string') return null;
+  return { resumeAt };
+}
+
+/**
+ * How long a wait may be.
+ *
+ * A CEILING, not a preference. The deadline is stored and pg-boss holds a
+ * delayed job for the whole span; a typo of "90" in a field meaning days is a
+ * job sitting in the queue for three months. A year is past any real use of this
+ * product — an event is over — so it costs nothing and catches the typo.
+ */
+export const MAX_WAIT_MS = 365 * 24 * 60 * 60 * 1000;
+
+/** The units a wait is expressed in, smallest first. */
+export const WAIT_UNITS = {
+  minutes: 60_000,
+  hours: 3_600_000,
+  days: 86_400_000,
+} as const;
+
+export type WaitUnit = keyof typeof WAIT_UNITS;
+
+const waitNode: StepHandler = async (config, ctx) => {
+  // ⚠️ THE RESUME BRANCH COMES FIRST, and without it a wait never ends.
+  //
+  // On resume the entire graph replays. A node that recomputed its deadline from
+  // config would park for another full duration on every wake-up — a 3-day wait
+  // that is never over. The LEDGER is the only thing that knows this row was
+  // already parked and its time has passed, which is why `claimStep` reports it
+  // and the handler is told rather than asked to work it out.
+  if (ctx.resumedFromWait) {
+    return { output: { waited: true, resumed: true } };
+  }
+
+  const unit = readEnum(config, 'unit', Object.keys(WAIT_UNITS) as WaitUnit[], 'logic.wait');
+  const rawAmount = config.amount;
+  const amount = typeof rawAmount === 'number' ? rawAmount : Number(rawAmount);
+
+  if (!Number.isFinite(amount) || amount <= 0) {
+    throw new PermanentNodeExecutionError(
+      'invalid_config',
+      'הצעד "המתנה" הוגדר עם משך לא חוקי. יש להזין מספר גדול מאפס.',
+    );
+  }
+
+  const ms = amount * WAIT_UNITS[unit];
+  if (ms > MAX_WAIT_MS) {
+    // Permanent: a shorter retry will not make the number smaller.
+    throw new PermanentNodeExecutionError(
+      'wait_too_long',
+      'הצעד "המתנה" הוגדר לטווח ארוך משנה. קצרו את המשך.',
+    );
+  }
+
+  throw new WorkflowWaitSignal(new Date(Date.now() + ms).toISOString());
+};
+
+
+// ---------------------------------------------------------------------------
+// action.start_for_each_guest
+// ---------------------------------------------------------------------------
+
+// One run per matching guest — the step that turns "do this for everyone" into
+// something an owner can draw.
+//
+// ⚠️ THE MOST DANGEROUS NODE IN THE PALETTE, and the guards are the feature.
+// A single press starts hundreds of runs that each reach a real person. Three
+// separate ceilings apply, on purpose:
+//
+//   1. `maxGuests` — the owner's own, REQUIRED with no default. A node that
+//      shipped with a generous one would be a node whose blast radius nobody
+//      chose.
+//   2. FAN_OUT_HARD_CAP — in code, above the owner's. `maxGuests` lives in a
+//      jsonb row, and the row is exactly what a mistake would have edited.
+//   3. The port enforces both again, because a handler that trusted its own
+//      config would be trusting that same row.
+//
+// IT MUST NOT FAN OUT TO ITSELF. A workflow starting itself per guest, where
+// each child fans out again, is an exponential that ends with the queue full and
+// every guest messaged many times. Refused permanently rather than capped.
+const startForEachGuest: StepHandler = async (config, ctx) => {
+  const port = ctx.deps.guests.startRunsForGuests;
+  if (!port) {
+    throw new PermanentNodeExecutionError(
+      'capability_unavailable',
+      'הפעולה "הרצה לכל אורח" אינה זמינה בסביבה הזו.',
+    );
+  }
+
+  // The EVENT, not a guest: this node runs once, about a whole list. It needs no
+  // contact — the children are what carry one — so `requireGuestContext` would
+  // be the wrong gate and would make the node unusable in the scheduled run it
+  // exists for.
+  const eventId = ctx.trigger.eventId;
+  if (!eventId) {
+    throw new PermanentNodeExecutionError(
+      'missing_event_context',
+      'הצעד "הרצה לכל אורח" פועל על אירוע. שייכו את התהליך לאירוע מסוים.',
+    );
+  }
+
+  const targetWorkflowId = readString(config, 'targetWorkflowId').trim();
+  if (targetWorkflowId === '') {
+    throw new PermanentNodeExecutionError(
+      'invalid_config',
+      'הצעד "הרצה לכל אורח" לא הוגדר עם תהליך להרצה.',
+    );
+  }
+
+  // ⚠️ NOT ITSELF. Documented as a rule from the day this node was written and
+  // never implemented until 2026-09-14: a workflow starting itself per guest has
+  // every child fan out again, and the dedupe key cannot stop it because the
+  // parent run id is new each generation.
+  //
+  // Also checked at ARM time, where it is a static property of the diagram and
+  // can be refused before anything runs. Kept here too because arming is not
+  // required to be a fan-out TARGET — a workflow can be started by another
+  // fan-out without ever being armed — and because the id lives in a jsonb row
+  // that arming does not re-read.
+  if (targetWorkflowId === ctx.workflowId) {
+    throw new PermanentNodeExecutionError(
+      'invalid_config',
+      'הצעד "הרצה לכל אורח" מצביע על התהליך הזה עצמו. תהליך שמפעיל את עצמו לכל אורח אינו נעצר.',
+    );
+  }
+
+  // ⚠️ AND NOT ENDLESSLY DEEP. `self` is only the shortest cycle; W1 → W2 → W1
+  // is the same exponential. Depth is what actually bounds the tree.
+  // ⚠️ COERCED, NOT TRUSTED. `trigger_payload` is jsonb and nothing guarantees a
+  // number in it. `'lots' + 1` is `'lots1'`, and `'lots1' > 3` is FALSE — so a
+  // junk value would sail past this cap in every generation, forever. Anything
+  // that is not a finite non-negative number counts as depth 0, which is the
+  // safe reading: it costs one generation, where trusting it costs all of them.
+  const parentDepth = ctx.trigger.fanoutDepth;
+  const depth =
+    (typeof parentDepth === 'number' && Number.isFinite(parentDepth) && parentDepth >= 0
+      ? Math.floor(parentDepth)
+      : 0) + 1;
+  if (depth > MAX_FANOUT_DEPTH) {
+    throw new PermanentNodeExecutionError(
+      'invalid_config',
+      `הצעד "הרצה לכל אורח" חרג מעומק השרשרת המותר (${MAX_FANOUT_DEPTH}). תהליך מפעיל תהליך שמפעיל תהליך — כנראה מעגל.`,
+    );
+  }
+
+  const rawMax = config.maxGuests;
+  const maxGuests = typeof rawMax === 'number' ? rawMax : Number(rawMax);
+  if (!Number.isFinite(maxGuests) || maxGuests <= 0) {
+    // Permanent and explicit: a missing ceiling is the one thing this node must
+    // never treat as "no limit".
+    throw new PermanentNodeExecutionError(
+      'missing_cap',
+      'הצעד "הרצה לכל אורח" חייב תקרה — כמה אורחים לכל היותר.',
+    );
+  }
+
+  const statuses = Array.isArray(config.statuses)
+    ? config.statuses.filter((v): v is string => typeof v === 'string')
+    : [];
+
+  const result = await port({
+    parentRunId: ctx.runId,
+    nodeId: ctx.nodeId,
+    eventId,
+    targetWorkflowId,
+    ...(statuses.length > 0 ? { statuses } : {}),
+    // Default TRUE: a run about a guest with no phone can do nothing that
+    // reaches them, so it is noise in the log and a wasted job.
+    requirePhone: config.requirePhone !== false,
+    maxGuests,
+    // The generation this fan-out is creating. The port stamps it on each
+    // child so the NEXT fan-out can refuse a fourth.
+    depth,
+  });
+
+  return result.ok
+    ? {
+        output: {
+          started: result.started,
+          matched: result.matched,
+          // `capped` is not cosmetic: it is the difference between "everyone got
+          // one" and "the first 200 did", and an owner reading the log needs to
+          // know which happened.
+          capped: result.capped,
+        },
+      }
+    : {
+        output: { started: 0, reason: result.reason },
+        nextPort: ACTION_BRANCH_HANDLES.error,
+      };
+};
+
+
+// ---------------------------------------------------------------------------
+// action.send_template
+// ---------------------------------------------------------------------------
+
+// An APPROVED WhatsApp template to this run's guest.
+//
+// ⚠️ THE COMPANION TO `action.send_whatsapp`, and the reason both exist. Free
+// text may be sent only inside the 24-hour window a guest's own message opens —
+// perfect for answering someone who just wrote, and useless for reaching someone
+// who did not. A template may be sent at any time, so this is the ONLY send a
+// workflow started by a clock can actually deliver.
+//
+// Every Meta and consent rule is the campaign path's, reused rather than copied:
+// see template-send.ts.
+//
+// A REFUSAL IS A COMPLETED STEP, not the error branch, whenever the system
+// behaved correctly — an opted-out guest, a template not approved for this event
+// type, a household with no phone. Routing those to the failure path would send
+// a workflow down an error route because the rules worked.
+const sendTemplate: StepHandler = async (config, ctx) => {
+  const port = ctx.deps.guests.sendWhatsAppTemplate;
+  if (!port) {
+    throw new PermanentNodeExecutionError(
+      'capability_unavailable',
+      'הפעולה "שליחת תבנית" אינה זמינה בסביבה הזו.',
+    );
+  }
+
+  const messageKey = readString(config, 'messageKey').trim();
+  if (messageKey === '') {
+    throw new PermanentNodeExecutionError(
+      'invalid_config',
+      'הצעד "שליחת תבנית" לא הוגדר עם תבנית לשליחה.',
+    );
+  }
+
+  const { eventId, contactId } = requireGuestContext(ctx, 'action.send_template');
+  const result = await port({ eventId, contactId, messageKey });
+
+  return result.ok
+    ? { output: { sent: true, messageKey } }
+    : { output: { sent: false, skipped: true, reason: result.reason ?? 'send_failed' } };
+};
+
 export const STEP_HANDLERS: Record<KalfaNodeType, StepHandler> = {
   'trigger.whatsapp_inbound': whatsappInbound,
   'trigger.webhook': webhookTrigger,
+  'trigger.schedule': scheduleTrigger,
   'logic.condition': condition,
   'logic.switch': switchNode,
   'action.update_guest_status': updateGuestStatus,
   'action.send_whatsapp': sendWhatsapp,
   'action.start_rsvp_ai_callback': startRsvpAiCallback,
+  'action.start_voice_call': startVoiceCall,
   'action.notify_team': notifyTeam,
   'action.webhook': webhook,
   'action.set_guest_field': setGuestField,
   'action.create_callback_request': createCallbackRequest,
+  'action.import_guest_list': importGuestList,
+  'logic.wait': waitNode,
+  'action.send_template': sendTemplate,
+  'action.start_for_each_guest': startForEachGuest,
   'logic.set_value': setValue,
 };

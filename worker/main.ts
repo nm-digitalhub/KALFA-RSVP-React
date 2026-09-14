@@ -57,8 +57,14 @@ import {
   createWebhookBatchContext,
   processWebhookEvent,
 } from '@/lib/data/webhook-processing';
-import { enqueueWorkflowRun, handleWorkflowRun } from '@/lib/workflow/enqueue';
+import {
+  enqueueWorkflowRun,
+  handleWorkflowRun,
+  redeliverStuckWaitingRuns,
+} from '@/lib/workflow/enqueue';
 import { createRunsForInboundMessage } from '@/lib/workflow/inbound';
+import { createScheduledRuns } from '@/lib/workflow/schedule-runner';
+import { listUndeliveredRuns } from '@/lib/workflow/store';
 import { runThankyouSweep } from '@/lib/data/auto-thankyou';
 import { runInquiryFollowupSweep, getInquiryFollowupEnabled } from '@/lib/data/inquiry-followup';
 import { runAgreementArchiveSweep, getAgreementArchiveEnabled } from '@/lib/data/agreement-archive';
@@ -1143,11 +1149,44 @@ async function main(): Promise<void> {
   // pause/resume seam, so there is no per-node job; workflow_run_steps'
   // unique (run_id, node_id) plus the singletonKey on the send are what make a
   // retry safe. See src/lib/workflow/engine/activity-runner.ts.
+  // The clock's half of the workflow engine. Cheap by construction: it reads the
+  // armed workflows and creates rows for the ones whose minute matched, and does
+  // nothing at all on the overwhelming majority of ticks.
+  //
+  // Enqueued HERE rather than inside the planner, for the same reason the inbound
+  // path does it: `boss` lives in this process, and threading it into the data
+  // layer would put queue concerns inside a module that is pure today.
+  await boss.work(
+    QUEUES.workflowSchedule,
+    guardedWorker(QUEUES.workflowSchedule, async () => {
+      const runIds = await createScheduledRuns();
+      for (const runId of runIds) await enqueueWorkflowRun(boss, runId);
+
+      // The same tick also delivers runs that exist but were never enqueued.
+      //
+      // Two sources: a fan-out's children, which are created by a step handler
+      // that has no queue handle by design; and the older accident of a crash
+      // between `createRunIfNew` and `enqueueWorkflowRun`, which used to leave a
+      // row pending for ever. Both are the same fix, so they share a tick rather
+      // than getting a queue each.
+      for (const runId of await listUndeliveredRuns()) {
+        await enqueueWorkflowRun(boss, runId);
+      }
+
+      // …and parked runs whose wake-up never came. The body lives in
+      // `redeliverStuckWaitingRuns` rather than here, because the `resumeAt` it
+      // passes is load-bearing and this file has no tests.
+      await redeliverStuckWaitingRuns(boss);
+    }),
+  );
+
   await boss.work(
     QUEUES.workflowRun,
     guardedWorker(QUEUES.workflowRun, async (jobs: { data: WorkflowRunJob }[]) => {
       for (const job of jobs) {
-        const outcome = await handleWorkflowRun(job.data);
+        // `boss` is passed so a run that parks at a `logic.wait` can schedule
+        // its own wake-up — pg-boss holds the delay, no sweep required.
+        const outcome = await handleWorkflowRun(job.data, boss);
         // A failed run does NOT throw — the failure is recorded on the row and
         // the graph stopped cleanly. guardedWorker only alerts on a throw, so
         // without this an armed workflow that fails on every single message
@@ -1483,6 +1522,9 @@ async function main(): Promise<void> {
   await boss.schedule(QUEUES.arm, '* * * * *');
   await boss.schedule(QUEUES.sweeper, '*/5 * * * *');
   await boss.schedule(QUEUES.webhook, '* * * * *');
+  // Every minute: the resolution `trigger.schedule` offers is a minute, so a
+  // coarser tick would mean a 09:00 schedule firing at 09:05.
+  await boss.schedule(QUEUES.workflowSchedule, '* * * * *');
   await boss.schedule(QUEUES.thankyouSweep, '*/5 * * * *');
   await boss.schedule(QUEUES.inquiryFollowupSweep, '*/5 * * * *');
   // Every 5 minutes: close enough that "מחר בערב" lands when the guest expects,

@@ -22,6 +22,7 @@ import type { RsvpStatus } from '@/lib/constants';
 export const NODE_TYPES = [
   'trigger.whatsapp_inbound',
   'trigger.webhook',
+  'trigger.schedule',
   'logic.condition',
   'logic.switch',
   'action.update_guest_status',
@@ -31,6 +32,11 @@ export const NODE_TYPES = [
   'action.webhook',
   'action.set_guest_field',
   'action.create_callback_request',
+  'action.import_guest_list',
+  'logic.wait',
+  'action.send_template',
+  'action.start_for_each_guest',
+  'action.start_voice_call',
   'logic.set_value',
 ] as const;
 
@@ -113,7 +119,172 @@ export type WhatsappInboundConfig = {
    * This is the field that tells them apart.
    */
   phoneNumberId?: string;
+  /**
+   * WHICH KINDS OF MESSAGE may start this workflow.
+   *
+   * ⚠️ ABSENT OR EMPTY MEANS `DEFAULT_WHATSAPP_MESSAGE_KINDS`, and that default
+   * is what keeps every diagram saved before this field behaving EXACTLY as it
+   * did: only a guest actually speaking to us — text, a button tap, an
+   * interactive reply, a reaction.
+   *
+   * WHY IT EXISTS. Guest import from WhatsApp — an owner sending a CSV or a
+   * batch of contact cards — was a mechanism entirely outside workflows, and
+   * unreachable from one: those messages are not "billable" (they are not a
+   * guest being reached), and `createRunsForInboundMessage` used the BILLING
+   * classifier as its automation gate, so a file or a contact card never created
+   * a run at all. A billing concept was deciding what an owner may automate.
+   *
+   * The two are separated now. Billing still counts exactly what it counted;
+   * which messages start a flow is a property of the TRIGGER, chosen per
+   * workflow, and the owner opts in.
+   *
+   * A FREE LIST OF STRINGS, not a closed enum: Meta adds message types on its
+   * own schedule, and a new one must be usable by editing a catalogue list
+   * rather than by a migration of every stored diagram.
+   */
+  messageKinds?: string[];
 };
+
+/**
+ * The message kinds the trigger offers, and what each one is.
+ *
+ * `label` is Hebrew because it is read in the properties panel. The `value` is
+ * Meta's own `type` string from the webhook payload, so matching needs no
+ * translation table.
+ *
+ * This list is the EDITOR's menu, never the enforcement: `matchesKind` compares
+ * against whatever the diagram stored, so a kind added here works immediately
+ * and a kind stored by a future version still matches after a downgrade.
+ */
+export const WHATSAPP_MESSAGE_KINDS = [
+  { value: 'text', label: 'הודעת טקסט' },
+  { value: 'button', label: 'לחיצה על כפתור' },
+  { value: 'interactive', label: 'בחירה מתפריט' },
+  { value: 'reaction', label: 'תגובה (אימוג׳י)' },
+  { value: 'document', label: 'קובץ (למשל רשימת אורחים)' },
+  { value: 'contacts', label: 'כרטיסי אנשי קשר' },
+  { value: 'image', label: 'תמונה' },
+  { value: 'audio', label: 'הקלטה קולית' },
+  { value: 'video', label: 'סרטון' },
+] as const;
+
+/**
+ * What a trigger with no `messageKinds` means.
+ *
+ * EXACTLY today's `BILLABLE_MESSAGE_TYPES`, and that is the point: it is the
+ * behaviour every saved diagram already has, preserved by construction rather
+ * than by a migration. `inbound.test.ts` pins the two lists against each other.
+ */
+export const DEFAULT_WHATSAPP_MESSAGE_KINDS: readonly string[] = [
+  'text',
+  'button',
+  'interactive',
+  'reaction',
+];
+
+/**
+ * The kinds that are an OWNER sending us something, not a guest speaking.
+ *
+ * A run started by one of these carries an event but NO contact: the sender is
+ * the person who owns the event, so there is no guest the run is "about", and
+ * every guest-touching node refuses inside it (`requireGuestContext`). That is
+ * the same shape `trigger.webhook` produces, and for the same reason.
+ */
+export const OWNER_WHATSAPP_MESSAGE_KINDS: readonly string[] = ['document', 'contacts'];
+
+/**
+ * `logic.wait` — the run stops here and comes back later.
+ *
+ * A DURATION, not a wall-clock time, and that is the smaller of the two useful
+ * shapes: "three days after this point in the flow" composes with any trigger,
+ * while "next Tuesday at 9" only makes sense against a calendar and belongs to
+ * the schedule trigger instead.
+ *
+ * MINUTES IS THE FLOOR. Anything shorter is not a wait an owner can reason
+ * about — the queue's own delivery jitter is measured in seconds — and offering
+ * seconds would invite a flow that parks and wakes hundreds of times a day.
+ */
+export const WAIT_UNIT_VALUES = ['minutes', 'hours', 'days'] as const;
+export type WaitUnitValue = (typeof WAIT_UNIT_VALUES)[number];
+
+/**
+ * `action.start_for_each_guest` — fan a run out, one per matching guest.
+ *
+ * ⚠️ CHILD RUNS, NOT A LOOP, and that is the design decision worth defending.
+ * A loop inside one run would need a nested executor the vendored `runGraph`
+ * does not have. A run per guest reuses the engine exactly as it stands: each
+ * child gets its own step ledger, its own retries and its own log, so one guest
+ * whose message fails does not stop the other 299 — and each child is already
+ * a run that guest-touching nodes work inside, because it carries a contact.
+ *
+ * ⚠️ AND IT IS THE MOST DANGEROUS NODE IN THE PALETTE. One press can start
+ * hundreds of runs that each message a real person. `maxGuests` is therefore
+ * REQUIRED with no generous default, and the dry run prints the number before
+ * anything is armed.
+ */
+/**
+ * `action.send_template` — an APPROVED WhatsApp template to the run's guest.
+ *
+ * THE COMPANION TO `action.send_whatsapp`, not a replacement, and the difference
+ * is what WhatsApp permits:
+ *
+ *   `send_whatsapp` sends FREE TEXT, allowed only inside the 24-hour window a
+ *     guest's own message opens. Right for answering someone who just wrote.
+ *
+ *   this sends a TEMPLATE, allowed at any time — so it is the only thing a
+ *     workflow started by a clock can actually deliver.
+ *
+ * `messageKey` names a row in `message_templates`, never a Meta template name:
+ * the row carries the approved name per language and per event type, so a brit
+ * and a wedding resolve to different approved layouts from the same key.
+ */
+export type SendTemplateConfig = {
+  messageKey: string;
+};
+
+export const GUEST_FILTER_STATUSES = ['pending', 'attending', 'declined', 'maybe'] as const;
+export type GuestFilterStatus = (typeof GUEST_FILTER_STATUSES)[number];
+
+export type ForEachGuestConfig = {
+  /** The workflow to start for each guest. Must be a different workflow. */
+  targetWorkflowId: string;
+  /** RSVP statuses to include. Empty or absent: every status. */
+  statuses?: GuestFilterStatus[];
+  /** Only guests who have a phone. Default true — a run about a guest we cannot reach is noise. */
+  requirePhone?: boolean;
+  /** Hard ceiling. Required; the node refuses without it. */
+  maxGuests: number;
+};
+
+/**
+ * The most guests one fan-out may ever start runs for, whatever the config says.
+ *
+ * A SECOND ceiling above the owner's own, because `maxGuests` is a field in a
+ * jsonb row: the form constrains what can be typed and not what is there. This
+ * one is in code and cannot be edited from a browser.
+ */
+export const FAN_OUT_HARD_CAP = 500;
+
+export type WaitConfig = {
+  amount: number;
+  unit: WaitUnitValue;
+};
+
+/**
+ * `action.import_guest_list` — take the list that started this run and stage it.
+ *
+ * NO CONFIGURATION, deliberately. Every judgement a list needs is either already
+ * made (which event: the trigger resolved the owner's, and refuses when there is
+ * more than one active) or is the WORKFLOW's to make with the nodes around it
+ * (notify? branch on how many rows? call the office?). A `mode` field here would
+ * be a business rule buried in a node instead of drawn on the canvas.
+ *
+ * IT STAGES; IT DOES NOT CREATE GUESTS. The rows land as PENDING and a human
+ * confirms them in the app — the same gate the hard-coded import has always had,
+ * and the reason a leaked or mistaken list cannot put strangers into an event.
+ * Direct creation is a separate decision, not an option hidden in a checkbox.
+ */
+export type ImportGuestListConfig = Record<string, never>;
 
 /**
  * An external system calls in, and a run starts.
@@ -135,6 +306,27 @@ export type WhatsappInboundConfig = {
  * from here (`requireGuestContext`). The blast radius of a leaked token is
  * "someone can make this workflow run", not "someone can reach our data".
  */
+/**
+ * `trigger.schedule` — the clock starts the flow.
+ *
+ * A TIME AND A SET OF DAYS, not a cron expression. A cron string is a
+ * programmer's tool with five interdependent fields; an owner who mistypes one
+ * gets an automation firing at a time nobody intended, and it still parses. This
+ * shape cannot be wrong in a way that survives.
+ *
+ * Israel time, always — see `schedule.ts` for why the slot is formatted rather
+ * than computed, and what breaks twice a year if it is not.
+ *
+ * EMPTY OR ABSENT `days` MEANS EVERY DAY, the same "unset is widest" rule the
+ * keyword and receiving-number filters follow.
+ */
+export type ScheduleTriggerConfig = {
+  /** `HH:MM`, 24-hour, Israel time. */
+  time: string;
+  /** Sunday = 0. Empty or absent: every day. */
+  days?: number[];
+};
+
 export type WebhookTriggerConfig = {
   /** Opaque, server-generated. Empty means the trigger is not wired up yet. */
   token: string;
@@ -190,56 +382,107 @@ export type ConditionConfig = {
 // ---------------------------------------------------------------------------
 
 /**
- * The four outgoing ports of a switch, as HANDLE IDS.
+ * `logic.switch` — N named branches, each with its own conditions.
  *
- * Same contract and the same hazard as `CONDITION_BRANCH_HANDLES`: the string a
- * handler returns must equal, character for character, the id the editor wrote
- * on the handle the owner dragged from — `isEdgeLive` compares with `===` and
- * nothing else. `branch-handles.test.ts` pins each literal against the SDK's own
- * `getHandleId`, so a change to the SDK's format fails a test instead of
- * silently routing every switch into a dead end.
+ * REBUILT 1:1 ON THE SDK'S OWN `DecisionBranches` CONTROL (2026-09-13). The first
+ * version hard-coded three cases and a default because I had not read far enough:
+ * the SDK ships a composer that gives the owner add / remove / reorder / rename
+ * over the branch list, and `ArrayFieldSchema` to declare it. The ceiling was
+ * mine, not the package's.
  *
- * THREE CASES, NOT N. The SDK can render a variable number of branches, and the
- * owner could in principle add them from the properties panel — but the WORKER
- * would then have to discover the port list from the diagram, and a handle the
- * owner renamed would route nowhere with nothing to say about why. Three plus a
- * default is what a fixed, worker-known set buys, and it is the shape most
- * routing actually has: two or three known answers and "anything else".
- *
- * The default branch is what a condition node cannot express. `logic.condition`
- * names one of two ports and both are "the test", so an unmatched value still
- * has to be modelled as false; here "none of the above" is its own route.
+ * The operators below are the SDK's own `comparisonsOperators`, copied as
+ * literals rather than imported — this module is read by the pg-boss worker and
+ * must not load `@workflowbuilder/sdk`. `branch-handles.test.ts` pins them
+ * against the package so a drift fails a test rather than a live workflow.
  */
-export const SWITCH_CASE_HANDLES = [
-  'source:inner:case1',
-  'source:inner:case2',
-  'source:inner:case3',
+export const SWITCH_COMPARISON_OPERATORS = [
+  'isEqual',
+  'isNotEqual',
+  'isGreaterThan',
+  'isLessThan',
+  'isLessThanOrEqual',
+  'isGreaterThanOrEqual',
+  'isContaining',
+  'isNotContaining',
+  'isBefore',
+  'isAfter',
 ] as const;
-
-export const SWITCH_DEFAULT_HANDLE = 'source:inner:default';
-
-/** How many `caseN` fields the form offers. Ties the config, the schema and the handler together. */
-export const SWITCH_CASE_COUNT = SWITCH_CASE_HANDLES.length;
+export type SwitchComparisonOperator = (typeof SWITCH_COMPARISON_OPERATORS)[number];
 
 /**
- * Route one value to one of three named cases, or to the default.
+ * The SDK's `LogicalOperator`, joining the rows within ONE branch.
  *
- * `left` is a free expression for the same reason `ConditionConfig.left` is:
- * every field passes through `resolveConfigTemplates` before the handler sees
- * it, so it can name `{{trigger.button_payload}}`, `{{nodes.<id>.value}}` or any
- * mixture. The `caseN` values are free too — routing on one node's output
- * against another's is the point.
- *
- * An EMPTY caseN is an unused branch, not a match against the empty string. A
- * switch with one case filled in is a legal, if plain, two-way router; without
- * that rule, three empty fields would make every empty value match case 1 and
- * the default would be unreachable.
+ * ONE per branch, not one per join: the control renders its picker on the first
+ * row only (measured — see `evaluateSwitchBranch`), so `conditions[0]` is the
+ * only authoritative copy and the field on later rows is inert.
  */
+export const SWITCH_LOGICAL_OPERATORS = ['AND', 'OR'] as const;
+export type SwitchLogicalOperator = (typeof SWITCH_LOGICAL_OPERATORS)[number];
+
+/**
+ * One condition row, exactly the SDK's `DynamicCondition`.
+ *
+ * `x` and `y` are free values — literal text or `{{…}}` references — and both
+ * arrive ALREADY RESOLVED, because `resolveConfigTemplates` walks the whole
+ * config before the handler runs. That is what the earlier note in schemas.ts
+ * said we could not do ("their conditions resolve through resolveTemplate, which
+ * we did not vendor"); resolve-template IS vendored and wired, so the reason is
+ * gone and the control can be exposed as designed.
+ */
+export type SwitchCondition = {
+  x: string;
+  comparisonOperator: SwitchComparisonOperator;
+  y: string;
+  logicalOperator: SwitchLogicalOperator;
+};
+
+/**
+ * One branch: a handle, a label and the rows that select it.
+ *
+ * `sourceHandle` is minted by the EDITOR through `getHandleId`, so unlike the
+ * fixed three-case version the worker cannot know the ports in advance — it
+ * reads them from the branch the conditions selected. That is the whole reason
+ * this shape can be dynamic at all.
+ */
+export type SwitchBranch = {
+  id: string;
+  sourceHandle: string;
+  label?: string;
+  conditions?: SwitchCondition[];
+};
+
+/**
+ * The DEFAULT port — fired when no branch matched.
+ *
+ * Seeded by the palette and NOT removable from the control, because "none of the
+ * above" is the one route that must always exist: without it an unmatched value
+ * names no port, `isEdgeLive` prunes every edge, and the run ends `incomplete`
+ * with a dead end rather than going somewhere a person chose.
+ */
+export const SWITCH_DEFAULT_HANDLE = 'source:inner:default';
+export const SWITCH_DEFAULT_BRANCH_ID = 'default';
+
+/**
+ * The handle id a branch of `id` draws, spelled once.
+ *
+ * This is the SDK's `getHandleId({ handleType: 'source', innerId })` output —
+ * reproduced as a string template rather than imported, because this module is
+ * read by the pg-boss worker and must not load `@workflowbuilder/sdk`.
+ * `branch-handles.test.ts` pins the two against each other, so a change in the
+ * SDK's format fails a test instead of silently orphaning every seeded branch.
+ *
+ * Branches the OWNER adds get theirs minted by the control in this same shape;
+ * this exists for the ones WE seed (the palette default, the diagram templates).
+ */
+export function switchBranchHandle(branchId: string): string {
+  return `source:inner:${branchId}`;
+}
+
 export type SwitchConfig = {
-  left: string;
-  case1?: string;
-  case2?: string;
-  case3?: string;
+  /** The value every branch's conditions are compared against, if they use it. */
+  left?: string;
+  /** Read by the SDK's node renderer AND by the handler. One array, one truth. */
+  decisionBranches: SwitchBranch[];
 };
 
 // Per-STEP on/off, distinct from the workflow-level `is_active` switch.
@@ -369,35 +612,126 @@ export type NotifyTeamConfig = {
 };
 
 /**
- * POST to a system that is not ours.
+ * An HTTP call to a system that is not ours.
  *
- * The first action whose effect leaves KALFA entirely. Two fields and no more:
- * a destination and a body.
+ * WIDENED 2026-09-13 from a POST-only "webhook" to a real HTTP request: method,
+ * headers and an optional response capture. The node type id stays
+ * `action.webhook` because nothing stored uses it (measured: 0 of 20 workflows)
+ * and churning the id would touch the adapter, the catalogue and every test for
+ * no behavioural gain.
  *
- * NO HEADERS FIELD, and that is a decision rather than an omission. A headers
- * map is how an API key gets typed into a diagram — and the diagram is a jsonb
- * column that the editor loads into a browser, the dry run prints, and the run
- * log echoes. A secret belongs in app_settings behind the masked-field
- * convention, not in a node an owner can screenshot. When a webhook needs
- * authentication, the honest shapes are a signed payload or a secret path
- * segment in the URL, both of which this supports today; a proper credential
- * store for this node is its own piece of work.
+ * ⚠️ THE HEADERS FIELD REVERSES AN EARLIER DECISION, and the reason it can is
+ * `secrets` below.
  *
- * NO METHOD FIELD either. POST is what a webhook is. GET with a body is
- * meaningless, and offering DELETE or PUT would make this an HTTP client rather
- * than a notification — a much larger surface to secure for a case nobody has
- * asked for.
+ * The old note here argued: "a headers map is how an API key gets typed into a
+ * diagram — and the diagram is a jsonb column the editor loads into a browser".
+ * That reasoning was sound about the HAZARD and wrong about the CONCLUSION. The
+ * answer to "a secret must not be in the diagram" is not "no headers" — it is
+ * "headers hold a REFERENCE, and the value is fetched at the socket". Without
+ * headers this node cannot call any authenticated API, which is most of them.
  *
- * `body` is free text and template-resolved like every other field, so it can
- * carry `{{trigger.guest_name}}` or `{{nodes.<id>.value}}`. It is sent with
- * `Content-Type: application/json`, so an owner writing JSON gets JSON; the node
- * does not parse or validate it, because a body the receiver accepts is between
- * them and the receiver.
+ * So a header value may be `{{secrets.<NAME>}}`. That token is what is stored,
+ * what the browser loads, what the dry run prints and what the run log echoes —
+ * the secret itself exists only inside the worker process, for the microseconds
+ * between the lookup and the socket write. `resolveTemplate` is explicitly
+ * taught to LEAVE this namespace alone (see its `secrets` case) so the value
+ * cannot leak by being resolved into the config early, and `redact.ts` cannot
+ * help here: its matching is key-based, and the key on a header row is `value`.
+ *
+ * ON `captureResponse`. Off by default. A GET whose answer nobody can read is
+ * pointless, so the response may be captured into the node's output and named as
+ * `{{nodes.<id>.body}}` — but it is a THIRD PARTY's bytes landing in our run
+ * store, so the owner has to ask for it, and it is capped.
  */
+export const HTTP_METHODS = ['POST', 'GET', 'PUT', 'PATCH', 'DELETE'] as const;
+export type HttpMethod = (typeof HTTP_METHODS)[number];
+
+/** The method used when a diagram does not name one — what every saved node meant. */
+export const DEFAULT_HTTP_METHOD: HttpMethod = 'POST';
+
+/** Methods that carry a request body. A GET with a body is meaningless. */
+export const HTTP_METHODS_WITH_BODY = ['POST', 'PUT', 'PATCH'] as const;
+
+/** One header row, as the `ArrayFieldSchema` control persists it. */
+export type HttpHeader = { name: string; value: string };
+
+/**
+ * Headers the node refuses to let an owner set, lower-cased.
+ *
+ * Not paranoia — each one would break a guarantee made elsewhere in this file:
+ * `host` defeats the URL check by addressing a different vhost than the one
+ * validated; `content-length` and the `transfer-encoding` family are how request
+ * smuggling is spelled; and `x-kalfa-idempotency-key` is the receiver's only
+ * defence against the replay a step lease can cause, so it must stay ours.
+ */
+export const FORBIDDEN_HTTP_HEADERS = [
+  'host',
+  'content-length',
+  'transfer-encoding',
+  'connection',
+  'upgrade',
+  'te',
+  'expect',
+  'x-kalfa-idempotency-key',
+] as const;
+
+/** How much of a captured response is kept. Beyond this it is truncated, not failed. */
+export const MAX_CAPTURED_RESPONSE_BYTES = 8 * 1024;
+
 export type WebhookConfig = {
+  /** Absent means POST — the only thing this node could do before the widening. */
+  method?: HttpMethod;
   url: string;
+  headers?: HttpHeader[];
+  /**
+   * Free text, template-resolved like every other field, so it can carry
+   * `{{trigger.guest_name}}` or `{{nodes.<id>.value}}`. Sent with
+   * `Content-Type: application/json` unless a header row overrides it; the node
+   * does not parse or validate it, because a body the receiver accepts is
+   * between them and the receiver.
+   */
   body: string;
+  /** Opt in to reading the answer back. See the note above. */
+  captureResponse?: boolean;
 };
+
+/**
+ * `{{secrets.<NAME>}}` — the ONE namespace that is not resolved with the others.
+ *
+ * A name is word characters and dashes, ANY CASE. It was upper-snake only until
+ * 2026-09-13, which refused `{{secrets.acme_key}}` for no reason anyone could
+ * defend: the security property is the `KALFA_WORKFLOW_SECRET_` prefix on the
+ * environment lookup, not the shape of what follows it. A case rule bought
+ * nothing and cost a support question.
+ *
+ * The characters are still constrained, and that part IS load-bearing: the name
+ * is concatenated into an environment key, so `.` and `/` must never appear.
+ *
+ * Deliberately NOT built from the generic template grammar: this pattern is the
+ * whole allow-list. A reference that does not match it is not a secret, is never
+ * looked up, and is left in place — where the outbound port refuses to send it.
+ */
+export const SECRET_REFERENCE_REGEX = /\{\{\s*secrets\.([A-Za-z0-9_-]+)\s*\}\}/g;
+export const SECRET_NAME_REGEX = /^[A-Za-z0-9_-]{1,64}$/;
+
+/**
+ * The node types whose fields may carry `{{secrets.…}}`.
+ *
+ * SCOPED BY NODE, NOT BY FIELD — and the first version got this wrong.
+ *
+ * It allowed secrets only under a field literally named `headers`, on the
+ * reasoning that headers are where credentials go. They are not the only place:
+ * a Slack incoming webhook is a URL that is ENTIRELY a secret, and plenty of
+ * APIs want the key in the JSON body or a query string. Restricting by field
+ * name refused all of that for no gain.
+ *
+ * The honest boundary is the NODE: `action.webhook` is the only step whose port
+ * knows how to substitute a secret before the socket, so it is the only step
+ * where the reference means anything. Everywhere else — above all in a WhatsApp
+ * body, which is delivered to a guest — an unresolved `{{secrets.…}}` still
+ * throws, loudly, on the first run.
+ */
+export const SECRET_BEARING_NODE_TYPES: readonly string[] = ['action.webhook'];
 
 // ---------------------------------------------------------------------------
 // action.set_guest_field
@@ -486,6 +820,7 @@ export type SetValueConfig = {
 export type KalfaNodeConfig =
   | { type: 'trigger.whatsapp_inbound'; config: WhatsappInboundConfig }
   | { type: 'trigger.webhook'; config: WebhookTriggerConfig }
+  | { type: 'trigger.schedule'; config: ScheduleTriggerConfig }
   | { type: 'logic.condition'; config: ConditionConfig }
   | { type: 'logic.switch'; config: SwitchConfig }
   | { type: 'action.update_guest_status'; config: UpdateGuestStatusConfig }
@@ -495,6 +830,10 @@ export type KalfaNodeConfig =
   | { type: 'action.webhook'; config: WebhookConfig }
   | { type: 'action.set_guest_field'; config: SetGuestFieldConfig }
   | { type: 'action.create_callback_request'; config: CreateCallbackRequestConfig }
+  | { type: 'action.import_guest_list'; config: ImportGuestListConfig }
+  | { type: 'logic.wait'; config: WaitConfig }
+  | { type: 'action.send_template'; config: SendTemplateConfig }
+  | { type: 'action.start_for_each_guest'; config: ForEachGuestConfig }
   | { type: 'logic.set_value'; config: SetValueConfig };
 
 // ---------------------------------------------------------------------------
@@ -530,3 +869,135 @@ export type CatalogueEntry = {
    */
   isTrigger: boolean;
 };
+
+/**
+ * Property keys that were RENAMED, and the older key still found in saved diagrams.
+ *
+ * ⚠️ WHY THIS EXISTS AS DATA RATHER THAN AN `if` INSIDE ONE HANDLER. `rsvpStatus`
+ * was called `status` until the SDK claimed `status` for the node's own lifecycle
+ * (Active / Draft / Disabled) in the same properties object. Every diagram saved
+ * before that carries the old key and must keep working untouched.
+ *
+ * The handler honoured that from the start. The ARM CHECK did not, and the first
+ * time it ran against the real database it refused to arm a stored workflow that
+ * runs perfectly — a rule stricter than the code it was meant to describe.
+ *
+ * Both read this map now, so "which old names still count" is answered once.
+ */
+export const LEGACY_PROPERTY_ALIASES: Readonly<Record<string, string>> = {
+  rsvpStatus: 'status',
+};
+
+/**
+ * Which properties each node type cannot run without.
+ *
+ * ⚠️ THIS LIVES HERE, NOT IN `schemas.ts`, AND THE REASON IS A PRODUCTION OUTAGE.
+ *
+ * `schemas.ts` imports runtime values from `@workflowbuilder/sdk` and is reached
+ * from a `'use client'` editor, so Next puts it in the CLIENT module graph. A
+ * server module that imports it does NOT get the values — it gets a client
+ * reference stub, and `PALETTE_ITEMS.find` is then a function that throws.
+ * Measured on 2026-09-14 in `.next/server/chunks`:
+ *
+ *     registerClientReference(function(){ throw Error("Attempted to call
+ *       PALETTE_ITEMS() from the server but PALETTE_ITEMS is on the client…") })
+ *
+ * The arm-time check runs on the server and needs exactly this data, so the data
+ * moved to the module BOTH graphs can hold. `types.ts` imports nothing from the
+ * SDK — the same rule `nodes.ts` states for the worker.
+ *
+ * `schemas.ts` reads these instead of declaring its own copy, so the editor form
+ * and the arming gate cannot drift apart: a field required in one is required in
+ * the other, by construction rather than by discipline.
+ */
+export const NODE_REQUIRED_FIELDS: Record<KalfaNodeType, string[]> = {
+  'trigger.whatsapp_inbound': ['label', 'description'],
+  'trigger.webhook': ['label', 'description'],
+  'trigger.schedule': ['label', 'description', 'time'],
+  'logic.condition': ['label', 'description', 'field', 'operator'],
+  'logic.switch': ['label', 'description'],
+  'logic.wait': ['label', 'description', 'amount', 'unit'],
+  'logic.set_value': ['label', 'description', 'value'],
+  'action.update_guest_status': ['label', 'description', 'rsvpStatus'],
+  'action.send_whatsapp': ['label', 'description', 'body'],
+  'action.send_template': ['label', 'description', 'messageKey'],
+  'action.start_rsvp_ai_callback': ['label', 'description'],
+  'action.notify_team': ['label', 'description', 'title'],
+  'action.webhook': ['label', 'description', 'url'],
+  'action.set_guest_field': ['label', 'description', 'field'],
+  'action.create_callback_request': ['label', 'description', 'topic'],
+  'action.import_guest_list': ['label', 'description'],
+  'action.start_for_each_guest': ['label', 'description', 'targetWorkflowId', 'maxGuests'],
+  'action.start_voice_call': ['label', 'description', 'purposeKey'],
+};
+
+/**
+ * Numeric bounds, for the same reason and read by the same two places.
+ *
+ * Only the fields that HAVE a bound appear. `maxGuests` is the one that matters:
+ * a cap of zero reaches nobody and a cap above the hard cap is clamped anyway,
+ * so the form, the arming gate and the handler all say the same thing.
+ */
+export const NODE_NUMBER_RANGES: Partial<
+  Record<KalfaNodeType, Record<string, { minimum?: number; maximum?: number }>>
+> = {
+  'logic.wait': { amount: { minimum: 1 } },
+  'action.start_for_each_guest': { maxGuests: { minimum: 1, maximum: FAN_OUT_HARD_CAP } },
+};
+
+/**
+ * How many fan-outs deep a chain may go before the next generation is refused.
+ *
+ * ⚠️ WHY A DEPTH CAP AND NOT ONLY A SELF-CHECK. Refusing a workflow that fans
+ * out to ITSELF stops the obvious shape and nothing else: W1 → W2 → W1 is the
+ * same exponential with one more hop, and no single node in it points at its own
+ * workflow. Depth is the property that actually bounds the tree; "self" is just
+ * its shortest cycle.
+ *
+ * The arithmetic is the reason this matters. `FAN_OUT_HARD_CAP` bounds the
+ * WIDTH of one generation, never the number of generations — and the child
+ * dedupe key is `fanout:${parentRunId}:${nodeId}:${contactId}`, whose parent run
+ * id is NEW in every generation, so it does not stop the next one either. With a
+ * cap of 10 per level an unbounded chain is 10 → 100 → 1,000 → 10,000 runs, and
+ * every leaf may message a real guest.
+ *
+ * A run nobody fanned out to is depth 0, so 3 permits three generations of
+ * children and refuses the fourth. Chosen with the owner on 2026-09-14; no real
+ * flow needs more, and a chain that does is better stopped and read than run.
+ */
+export const MAX_FANOUT_DEPTH = 3;
+
+/**
+ * What a guest's callback request is about.
+ *
+ * ⚠️ CLOSED, AND THE REASON IS WHO GETS CALLED. `topic` is not a label — it is
+ * the ROUTER. `enqueueSalesCallDispatch` gates on `topic !== 'מכירות'` and
+ * `enqueueMeetingConfirmDispatch` on `topic === 'מכירות'`, so the string decides
+ * which ElevenLabs agent dials the person.
+ *
+ * The node is guest-scoped: `requireGuestContext` refuses it without an event
+ * and a contact, and the port reads `guests.full_name` / `guests.phone`. So the
+ * person on the other end is always an EVENT GUEST — and `'מכירות'` would put
+ * "עומר", the sales-closing agent, on the phone to a wedding guest to sell them
+ * KALFA. As free text that was one natural Hebrew word away.
+ *
+ * Every value here routes to the callback-confirm agent, which is the one whose
+ * own prompt describes this exact call: "מתקשר בנוגע לבקשה שלך לשיחה חוזרת".
+ * `'מכירות'` is deliberately ABSENT, and refused again in the handler and at
+ * arming, because the field lives in a jsonb row that no form re-validates.
+ */
+export const CALLBACK_TOPICS = [
+  'שאלה על האירוע',
+  'שינוי באישור ההגעה',
+  'בקשה מיוחדת',
+  'אחר',
+] as const;
+export type CallbackTopic = (typeof CALLBACK_TOPICS)[number];
+
+/**
+ * The topic that routes to the SALES agent — never valid from a guest node.
+ *
+ * Named rather than inlined so the two refusals and the router cannot drift:
+ * this is the exact string `enqueueSalesCallDispatch` compares against.
+ */
+export const SALES_CALLBACK_TOPIC = 'מכירות';

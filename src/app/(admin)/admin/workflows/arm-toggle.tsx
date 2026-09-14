@@ -16,16 +16,22 @@ import { setWorkflowActiveAction } from './actions';
  */
 export function ArmToggle({ id, isActive }: { id: string; isActive: boolean }) {
   const [errors, setErrors] = useState<string[]>([]);
+  const [notice, setNotice] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
   const toggle = () => {
     setErrors([]);
+    setNotice(null);
     startTransition(async () => {
       const formData = new FormData();
       formData.set('id', id);
       formData.set('isActive', String(!isActive));
       const result = await setWorkflowActiveAction(formData);
       if (!result.ok) setErrors(result.errors);
+      // Arming can do one thing BESIDES arming — claim the guest-list role for
+      // the number the trigger names — and that changes how every inbound
+      // message routes. It must not pass without a word.
+      else if (result.notice) setNotice(result.notice);
     });
   };
 
@@ -39,6 +45,17 @@ export function ArmToggle({ id, isActive }: { id: string; isActive: boolean }) {
       >
         {isActive ? 'כיבוי' : 'הפעלה'}
       </Button>
+
+      {notice && (
+        <p
+          // Announced for the same reason as the error list: it arrives after
+          // the press, with no navigation to signal it.
+          role="status"
+          className="max-w-md text-sm text-muted-foreground"
+        >
+          {notice}
+        </p>
+      )}
 
       {errors.length > 0 && (
         <ul

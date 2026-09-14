@@ -226,14 +226,23 @@ function createRecordingPorts(scenario: DryRunScenario) {
   };
 
   const webhook: OutboundWebhookPort = {
-    async post({ url, idempotencyKey }) {
+    async post({ url, method, headers, idempotencyKey }) {
       // NO REQUEST IS MADE. This is the whole reason the outgoing call is a port:
       // with a `fetch` in the handler, pressing "test" would POST a guest's
       // details to a third party from a control whose entire promise is that it
       // has no outward effect.
+      //
+      // ⚠️ HEADER VALUES ARE COUNTED, NEVER PRINTED. A dry-run trace is rendered
+      // in the browser and is the most casually shared artefact this subsystem
+      // produces. A value here is still `{{secrets.<NAME>}}` — the real port is
+      // what substitutes — but printing values would also print whatever an
+      // owner typed literally before reading the warning, and a screenshot of a
+      // dry run is exactly how that reaches a group chat.
+      const count = (headers ?? []).filter((h) => h?.name?.trim()).length;
+      const withHeaders = count > 0 ? `, ${count} כותרות` : '';
       effects.push({
         kind: 'webhook',
-        description: `היה שולח POST אל ${url} (מפתח ייחודיות ${idempotencyKey})`,
+        description: `היה שולח ${method ?? 'POST'} אל ${url}${withHeaders} (מפתח ייחודיות ${idempotencyKey})`,
       });
       // 200, because a dry run reports what the graph WOULD do. Modelling a
       // failure here would send an owner testing a diagram down the error branch

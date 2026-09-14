@@ -88,13 +88,17 @@ describe('catalogue', () => {
 
   it('declares exactly the trigger types that exist, and no others', () => {
     // Was "exactly one trigger type in this slice" while WhatsApp was the only
-    // way in. `trigger.webhook` is the second, and the assertion is updated
-    // rather than relaxed: the LIST is the point. A node type that quietly
-    // became a trigger — or a trigger that quietly stopped being one — is a
-    // change to who may start a flow, and rule 1 says that is the catalogue's
-    // decision alone.
+    // way in; `trigger.webhook` made it two and `trigger.schedule` three. The
+    // assertion is UPDATED each time rather than relaxed, because the LIST is
+    // the point: a node type that quietly became a trigger — or a trigger that
+    // quietly stopped being one — is a change to who may start a flow, and rule
+    // 1 says that is the catalogue's decision alone.
+    //
+    // Each of the three is a genuinely different way in, which is why they are
+    // worth naming: a guest speaking to us, an outside system calling in, and
+    // the clock.
     expect(CATALOGUE.filter((e) => e.isTrigger).map((e) => e.type).sort()).toEqual(
-      ['trigger.webhook', 'trigger.whatsapp_inbound'],
+      ['trigger.schedule', 'trigger.webhook', 'trigger.whatsapp_inbound'],
     );
   });
 

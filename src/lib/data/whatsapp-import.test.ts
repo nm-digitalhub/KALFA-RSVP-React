@@ -674,3 +674,80 @@ describe('downloadDocument — scoped to the number that received the file', () 
     expect(vi.mocked(sendWhatsAppText).mock.calls[0][1].body).toContain('עד 1MB');
   });
 });
+
+describe('contactsToStagedRows — the phone on a shared contact card', () => {
+  // ⚠️ MEASURED FROM A LIVE CARD, 2026-09-13. Meta sends two phone fields and we
+  // were reading the wrong one:
+  //
+  //     "phones": [{ "phone": "+33 7 56 98 23 70",  ← a DISPLAY string
+  //                  "wa_id": "33756982370" }]      ← the canonical number
+  //
+  // The old code read `phone` and ran the ISRAEL-ONLY repair over it, which
+  // returned null for a foreign number, so the raw display string was staged
+  // verbatim — spaces and all. `guests_event_phone_key` is a unique index on the
+  // stored value, so that guest would be created a SECOND time on the next
+  // import, and `findImportMatches` would not have offered the merge either.
+
+  const card = (phones: unknown, name = 'דנה לוי') => ({
+    contacts: [{ name: { formatted_name: name }, phones }],
+  }) as never;
+
+  it('⚠️ prefers wa_id — the canonical number — over the display string', () => {
+    const [row] = contactsToStagedRows(
+      card([{ phone: '+33 7 56 98 23 70', wa_id: '33756982370' }]),
+    );
+    // E.164 for a FOREIGN number: there is no local `0…` form for it here.
+    expect(row!.phone).toBe('+33756982370');
+  });
+
+  it('⚠️ an ISRAELI number comes back in the house format, not E.164', () => {
+    // MEASURED 2026-09-13: 41 of 44 stored guest phones are the local `0…` form.
+    // Emitting `+972…` here would make every contact card miss those rows and
+    // create the same person twice — the duplicate this whole function prevents,
+    // arriving from the other direction.
+    const [row] = contactsToStagedRows(card([{ wa_id: '972501234567' }]));
+    expect(row!.phone).toBe('0501234567');
+  });
+
+  it('never stages a number carrying spaces or dashes', () => {
+    // The property that actually matters downstream, stated directly.
+    for (const phones of [
+      [{ phone: '+33 7 56 98 23 70', wa_id: '33756982370' }],
+      [{ phone: '+972 50-123-4567' }],
+      [{ phone: '050-123-4567' }],
+    ]) {
+      const [row] = contactsToStagedRows(card(phones));
+      expect(row!.phone ?? '').not.toMatch(/[ \-()]/);
+    }
+  });
+
+  it('normalises the display string when wa_id is absent', () => {
+    const [row] = contactsToStagedRows(card([{ phone: '+972 50-123-4567' }]));
+    expect(row!.phone).toBe('0501234567');
+  });
+
+  it('still rescues an Israeli local number that lost its leading zero', () => {
+    // The Excel/address-book damage this has always repaired: 0501234567 read as
+    // a number becomes 501234567. It comes back in the house format.
+    const [row] = contactsToStagedRows(card([{ phone: '501234567' }]));
+    expect(row!.phone).toBe('0501234567');
+  });
+
+  it('a card with no phone stages the name with a null phone', () => {
+    // A guest with no number is legitimate — a household sharing one line, or a
+    // relative someone will fill in later.
+    const [row] = contactsToStagedRows(card([]));
+    expect(row).toMatchObject({ full_name: 'דנה לוי', phone: null });
+  });
+
+  it('skips a card with no name — there is nothing to import', () => {
+    expect(contactsToStagedRows(card([{ wa_id: '972501234567' }], '   '))).toEqual([]);
+  });
+
+  it('keeps an unparseable number rather than dropping the guest', () => {
+    // Losing the row entirely would be worse than staging something a human can
+    // see and correct on the review screen.
+    const [row] = contactsToStagedRows(card([{ phone: 'call the office' }]));
+    expect(row!.phone).toBe('call the office');
+  });
+});

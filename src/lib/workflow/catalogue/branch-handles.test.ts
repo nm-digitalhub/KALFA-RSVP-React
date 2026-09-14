@@ -20,7 +20,8 @@ import {
   ACTION_BRANCH_HANDLES,
   CONDITION_BRANCH_HANDLES,
   RUNNER_ERROR_PORT,
-  SWITCH_CASE_HANDLES,
+  SWITCH_DEFAULT_BRANCH_ID,
+  switchBranchHandle,
   SWITCH_DEFAULT_HANDLE,
 } from './types';
 
@@ -69,34 +70,51 @@ describe('action branch handles', () => {
   });
 });
 
-describe('SWITCH_CASE_HANDLES / SWITCH_DEFAULT_HANDLE', () => {
-  it('each literal is exactly what the SDK mints for that innerId', () => {
+describe('switch branch handles', () => {
+  // REWRITTEN 2026-09-13. `SWITCH_CASE_HANDLES` was a fixed tuple of three; the
+  // switch now carries N owner-defined branches, so what has to be pinned is the
+  // FORMATTER, not a list of literals.
+  it('switchBranchHandle is exactly what the SDK mints for that innerId', () => {
     // The same pin as the condition's, for the same failure: the handler returns
-    // one of these strings and `isEdgeLive` compares it to the edge's
-    // sourceHandle with `===`. A change to the SDK's format must fail HERE, not
-    // by routing every switch into a dead end on a live guest.
-    SWITCH_CASE_HANDLES.forEach((handle, i) => {
-      expect(getHandleId({ handleType: 'source', innerId: `case${i + 1}` })).toBe(handle);
-    });
-    expect(getHandleId({ handleType: 'source', innerId: 'default' })).toBe(
-      SWITCH_DEFAULT_HANDLE,
-    );
-  });
-
-  it('no switch handle is the bare "source"', () => {
-    // A bare 'source' is what an un-branched node emits; a port equal to it would
-    // make every branch fire instead of one.
-    for (const handle of [...SWITCH_CASE_HANDLES, SWITCH_DEFAULT_HANDLE]) {
-      expect(handle).not.toBe('source');
+    // this string and `isEdgeLive` compares it to the edge's sourceHandle with
+    // `===`. A change to the SDK's format must fail HERE, not by routing every
+    // switch into a dead end on a live guest.
+    //
+    // The ids below are the ones WE seed — the palette's first branch, the
+    // template's three, and the default. Ids the owner creates go through the
+    // control's own call to the same function, so pinning the formatter covers
+    // every branch that will ever exist.
+    for (const id of ['branch-1', 'attending', 'declined', 'maybe', SWITCH_DEFAULT_BRANCH_ID]) {
+      expect(switchBranchHandle(id)).toBe(getHandleId({ handleType: 'source', innerId: id }));
     }
   });
 
-  it('every switch port is distinct — a duplicate would fire two branches', () => {
-    const all = [...SWITCH_CASE_HANDLES, SWITCH_DEFAULT_HANDLE];
-    expect(new Set(all).size).toBe(all.length);
+  it('the default handle is the formatter applied to the default branch id', () => {
+    // Two constants that must agree: the handler falls back to
+    // SWITCH_DEFAULT_HANDLE by name, and the palette seeds a branch whose id is
+    // SWITCH_DEFAULT_BRANCH_ID. If they ever disagreed, the fallback would name a
+    // port the seeded card does not draw.
+    expect(SWITCH_DEFAULT_HANDLE).toBe(switchBranchHandle(SWITCH_DEFAULT_BRANCH_ID));
   });
 
-  it('the default port is not one of the cases', () => {
-    expect(SWITCH_CASE_HANDLES).not.toContain(SWITCH_DEFAULT_HANDLE);
+  it('no branch handle is the bare "source"', () => {
+    // A bare 'source' is what an un-branched node emits; a port equal to it would
+    // make every branch fire instead of one.
+    for (const id of ['branch-1', 'attending', SWITCH_DEFAULT_BRANCH_ID]) {
+      expect(switchBranchHandle(id)).not.toBe('source');
+    }
+  });
+
+  it('distinct branch ids produce distinct ports', () => {
+    // A duplicate would fire two branches. The control keys its cards by id, so
+    // this holds as long as the formatter is injective.
+    const ids = ['a', 'b', 'attending', 'declined', 'maybe', SWITCH_DEFAULT_BRANCH_ID];
+    expect(new Set(ids.map(switchBranchHandle)).size).toBe(ids.length);
+  });
+
+  it('is NOT the runner’s reserved error port', () => {
+    // An owner is free to name a branch "error". It must still not collide with
+    // the port the adapter rewrites ACTION_BRANCH_HANDLES.error into.
+    expect(switchBranchHandle('error')).not.toBe(RUNNER_ERROR_PORT);
   });
 });

@@ -33,6 +33,12 @@ type ExecutionStore = {
 type DryRunOutcome =
   | { status: 'completed' }
   | { status: 'incomplete'; deadEnds: { nodeId: string; port: string }[] }
+  /**
+   * The run reached a `logic.wait` and parked. In a DRY run nothing is actually
+   * scheduled — the trace simply ends here, which is the honest answer to "what
+   * would this do": it would get this far and then wait.
+   */
+  | { status: 'waiting'; resumeAt: string; nodeId: string }
   | { status: 'failed'; message: string };
 
 const emptyStore: ExecutionStore = {

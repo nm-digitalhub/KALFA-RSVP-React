@@ -18,8 +18,8 @@
 // fresh empty result would re-decide that branch and could send half the graph
 // down a path that never ran the first time.
 import { isKnownNodeType } from '../catalogue/nodes';
-import type { KalfaNodeType } from '../catalogue/types';
-import { STEP_HANDLERS, type WorkflowTriggerPayload } from '../steps';
+import { SECRET_BEARING_NODE_TYPES, type KalfaNodeType } from '../catalogue/types';
+import { STEP_HANDLERS, readWaitSignal, type WorkflowTriggerPayload } from '../steps';
 import type { ExecutionContext } from '../vendor/workflowbuilder/execution-core/execution-context';
 import { PermanentNodeExecutionError } from '../vendor/workflowbuilder/execution-core/errors';
 import { resolveTemplate } from '../vendor/workflowbuilder/execution-core/templates/resolve-template';
@@ -37,6 +37,14 @@ import type {
 
 export type ActivityRunnerArgs = {
   runId: string;
+  /**
+   * The workflow this run is executing.
+   *
+   * Needed by `action.start_for_each_guest` and nothing else: it is the only
+   * node that can name ANOTHER workflow, so it is the only one that can name
+   * its own and start an unbounded chain.
+   */
+  workflowId: string;
   trigger: WorkflowTriggerPayload;
   ledger: StepLedgerPort;
   guests: GuestActionsPort;
@@ -74,11 +82,33 @@ type RunnableNode = {
  * That is the behaviour upstream chose too, and for the same stated reason: a
  * broken reference should fail loudly on the first run, not silently resolve to
  * an empty string and reach a guest.
+ *
+ * ⚠️ ONE NODE TYPE IS TREATED DIFFERENTLY, AND ONLY ONE.
+ *
+ * In `action.webhook`, a `{{secrets.<NAME>}}` is left intact instead of
+ * throwing, so the outbound port can substitute it at the socket — see
+ * secrets.ts.
+ *
+ * SCOPED BY NODE, NOT BY FIELD, and the first version got that wrong. It allowed
+ * secrets only under a field named `headers`, which refused a Slack incoming
+ * webhook (a URL that is entirely a secret) and every API that wants its key in
+ * the body or a query string. The field name was never the security boundary —
+ * the node is: `action.webhook` is the only step whose port can substitute, so
+ * it is the only step where the reference means anything.
+ *
+ * It is still NOT global. A deferral everywhere would let `{{secrets.API_KEY}}`
+ * pass through a WhatsApp body and be delivered to a guest as literal text —
+ * which `references.test.ts` has pinned since before secrets existed, and which
+ * is the reason this is a parameter rather than a constant `true`.
  */
-function resolveConfigTemplates(value: unknown, context: ExecutionContext): unknown {
+function resolveConfigTemplates(
+  value: unknown,
+  context: ExecutionContext,
+  deferSecrets = false,
+): unknown {
   if (typeof value === 'string') {
     try {
-      return resolveTemplate(value, context);
+      return resolveTemplate(value, context, { deferSecrets });
     } catch (error) {
       throw new PermanentNodeExecutionError(
         'unresolved_template_reference',
@@ -87,12 +117,14 @@ function resolveConfigTemplates(value: unknown, context: ExecutionContext): unkn
     }
   }
   if (Array.isArray(value)) {
-    return value.map((item) => resolveConfigTemplates(item, context));
+    // The flag travels INTO the array — a header list is rows of objects, and
+    // the reference lives on a row's `value`, two levels below the config root.
+    return value.map((item) => resolveConfigTemplates(item, context, deferSecrets));
   }
   if (value !== null && typeof value === 'object') {
     const out: Record<string, unknown> = {};
     for (const [key, item] of Object.entries(value as Record<string, unknown>)) {
-      out[key] = resolveConfigTemplates(item, context);
+      out[key] = resolveConfigTemplates(item, context, deferSecrets);
     }
     return out;
   }
@@ -102,7 +134,7 @@ function resolveConfigTemplates(value: unknown, context: ExecutionContext): unkn
 export function createActivityRunner<TNode extends RunnableNode>(
   args: ActivityRunnerArgs,
 ): ActivityRunnerPort<TNode> {
-  const { runId, trigger, ledger, guests, alerts, webhook } = args;
+  const { runId, workflowId, trigger, ledger, guests, alerts, webhook } = args;
 
   return {
     // `context` was ignored until templates landed — the handlers took only
@@ -196,6 +228,7 @@ export function createActivityRunner<TNode extends RunnableNode>(
 
       const rawConfig = isConfigObject(node.config) ? node.config : {};
 
+
       try {
         // INSIDE the try, and that placement is the whole point of this block.
         //
@@ -211,12 +244,24 @@ export function createActivityRunner<TNode extends RunnableNode>(
         // correctness: a replay of an already-completed node returns its stored
         // result without re-resolving. And still BEFORE the handler, which
         // therefore never has to know templates exist.
-        const config = resolveConfigTemplates(rawConfig, context) as Record<string, unknown>;
+        // The node type decides whether `{{secrets.…}}` survives resolution.
+        // `isKnownNodeType` above already proved this string is in the catalogue,
+        // so the membership test here is a lookup and not a second trust
+        // boundary.
+        const config = resolveConfigTemplates(
+          rawConfig,
+          context,
+          SECRET_BEARING_NODE_TYPES.includes(node.type),
+        ) as Record<string, unknown>;
 
         const result = await handler(config, {
           runId,
+          workflowId,
           nodeId: node.id,
           trigger,
+          // Only `logic.wait` reads it. See StepContext — a wait cannot tell its
+          // own resumption from a first arrival, because the whole graph replays.
+          ...(claim.resumedFromWait ? { resumedFromWait: true } : {}),
           deps: { guests, alerts, webhook },
         });
         // Persisted AFTER the side effect and BEFORE the runner propagates, so a
@@ -225,6 +270,27 @@ export function createActivityRunner<TNode extends RunnableNode>(
         await ledger.completeStep({ runId, nodeId: node.id, result });
         return result;
       } catch (error) {
+        // ⚠️ A WAIT IS NOT A FAILURE, and writing it as one would end the wait.
+        //
+        // `failStep` leaves a row a later attempt may take over immediately
+        // (`takeOverFailedRow`), so the next redelivery — for any reason at all —
+        // would walk straight past a wait that had not elapsed. The row has to
+        // say "parked until", which is what `beginWait` writes.
+        const wait = readWaitSignal(error);
+        if (wait) {
+          if (!ledger.beginWait) {
+            // Fail CLOSED. A ledger that cannot park is one that would silently
+            // turn every wait into a step that runs immediately on the next
+            // delivery — worse than refusing the node outright.
+            throw new PermanentNodeExecutionError(
+              'wait_unsupported',
+              'הצעד "המתנה" אינו נתמך בסביבה הזו.',
+            );
+          }
+          await ledger.beginWait({ runId, nodeId: node.id, waitUntil: wait.resumeAt });
+          throw error;
+        }
+
         await ledger.failStep({
           runId,
           nodeId: node.id,

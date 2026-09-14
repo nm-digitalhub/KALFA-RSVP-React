@@ -25,6 +25,7 @@ import {
 import { updateChannelMetadata } from '@/lib/data/admin/channel-catalog';
 import { updateSendPolicy } from '@/lib/data/admin/integrations/send-policy';
 import { sendSlackAlert } from '@/lib/alerts/slack';
+import { createVoicePurpose, updateVoicePurpose } from '@/lib/data/admin/voice-purposes';
 import type { FormState } from '@/lib/validation/result';
 import { sendPolicyFromFormData } from '@/lib/validation/send-policy-form';
 
@@ -499,4 +500,94 @@ export async function updateSendPolicyAction(
 
   revalidateAll(META_WHATSAPP);
   return { notice: 'מדיניות השליחה נשמרה' };
+}
+
+// ---------------------------------------------------------------------------
+// Voice purposes — the registry that lets a NEW agent be used without new code
+// ---------------------------------------------------------------------------
+//
+// ⚠️ A ROW HERE CAN TELEPHONE PEOPLE, which is why both actions are narrow. The
+// key is validated against the same shape the table's CHECK enforces, a new
+// purpose is always created switched OFF, and the rule id is trimmed and length
+// bounded before it can ever reach `StartScenarios`.
+
+const voicePurposeKeySchema = z
+  .string()
+  .trim()
+  .regex(/^[a-z][a-z0-9_]{1,48}$/, 'המזהה חייב להיות באנגלית קטנה, ספרות וקו תחתון');
+
+const createVoicePurposeSchema = z.object({
+  key: voicePurposeKeySchema,
+  displayName: z.string().trim().min(2, 'נא למלא שם').max(120),
+  description: z.string().trim().max(500).default(''),
+  ruleId: z.string().trim().max(64).default(''),
+});
+
+export async function createVoicePurposeAction(
+  _prev: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  const parsed = createVoicePurposeSchema.safeParse({
+    key: formData.get('key') ?? '',
+    displayName: formData.get('displayName') ?? '',
+    description: formData.get('description') ?? '',
+    ruleId: formData.get('ruleId') ?? '',
+  });
+  if (!parsed.success) {
+    return { fieldErrors: z.flattenError(parsed.error).fieldErrors };
+  }
+
+  try {
+    await createVoicePurpose(parsed.data);
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : 'יצירת הייעוד נכשלה' };
+  }
+
+  revalidateAll(VOXIMPLANT);
+  return { notice: 'הייעוד נוצר — כבוי. הפעילו אותו אחרי שווידאתם את ה-Rule ID.' };
+}
+
+const updateVoicePurposeSchema = z.object({
+  key: voicePurposeKeySchema,
+  displayName: z.string().trim().min(2, 'נא למלא שם').max(120),
+  description: z.string().trim().max(500).default(''),
+  ruleId: z.string().trim().max(64).default(''),
+  enabled: z.boolean(),
+  active: z.boolean(),
+});
+
+export async function updateVoicePurposeAction(
+  _prev: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  const enabled = formData.get('enabled') === 'on';
+  const ruleId = String(formData.get('ruleId') ?? '').trim();
+
+  // ⚠️ FAIL CLOSED ON "ENABLE WITHOUT A RULE", the same rule the persona
+  // switches already follow. An enabled purpose with no rule cannot dial, and
+  // the failure would arrive as a run-log line hours later instead of here.
+  if (enabled && ruleId === '') {
+    return { error: 'לא ניתן להפעיל ייעוד ללא Rule ID של תרחיש Voximplant.' };
+  }
+
+  const parsed = updateVoicePurposeSchema.safeParse({
+    key: formData.get('key') ?? '',
+    displayName: formData.get('displayName') ?? '',
+    description: formData.get('description') ?? '',
+    ruleId,
+    enabled,
+    active: formData.get('active') === 'on',
+  });
+  if (!parsed.success) {
+    return { fieldErrors: z.flattenError(parsed.error).fieldErrors };
+  }
+
+  try {
+    await updateVoicePurpose(parsed.data);
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : 'עדכון הייעוד נכשל' };
+  }
+
+  revalidateAll(VOXIMPLANT);
+  return { notice: enabled ? 'הייעוד מופעל — שיחות אמיתיות מותרות' : 'הייעוד עודכן' };
 }

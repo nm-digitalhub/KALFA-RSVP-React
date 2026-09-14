@@ -116,6 +116,9 @@ const EXPECTED_PERMISSION: Record<string, string | string[]> = {
   'src/lib/data/admin/outreach-master.ts': 'manage_settings',
   'src/lib/data/admin/campaigns.ts': 'manage_billing',
   'src/lib/data/admin/call-dnc.ts': 'manage_voice',
+  // A row here decides which agent telephones a guest — it belongs with the
+  // other dialling controls, not with general configuration.
+  'src/lib/data/admin/voice-purposes.ts': 'manage_voice',
   'src/lib/data/admin/voximplant-channel.ts': 'manage_voice',
   'src/lib/data/admin/support.ts': 'view_customer_data',
   // Owner-only surfaces: they gate on requirePlatformOwner and name no key.

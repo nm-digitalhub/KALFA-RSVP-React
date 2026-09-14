@@ -4,12 +4,12 @@
 // fakes. It owns no I/O of its own — every write goes through the ports — so the
 // whole execution path is exercisable without a database.
 import { toWorkflowDefinition, type KalfaNode } from '../adapter/to-definition';
-import type { WorkflowTriggerPayload } from '../steps';
+import { WORKFLOW_WAIT_CODE, type WorkflowTriggerPayload } from '../steps';
 import { runGraph } from '../vendor/workflowbuilder/execution-core/graph-runner';
 import type { EventEmitterPort } from '../vendor/workflowbuilder/execution-core/ports/event-emitter.port';
 
 import { createActivityRunner } from './activity-runner';
-import type { WorkflowEngineDeps } from './ports';
+import type { RunStatus, WorkflowEngineDeps } from './ports';
 
 export type RunWorkflowArgs = {
   runId: string;
@@ -43,6 +43,11 @@ export type RunWorkflowArgs = {
 export type RunWorkflowOutcome =
   | { status: 'completed' }
   | { status: 'incomplete'; deadEnds: { nodeId: string; port: string }[] }
+  /**
+   * Parked at a `logic.wait`. NOT terminal — the caller must re-deliver the run
+   * at `resumeAt`, and the row keeps no `finished_at`.
+   */
+  | { status: 'waiting'; resumeAt: string; nodeId: string }
   | { status: 'failed'; message: string };
 
 export async function runWorkflow(args: RunWorkflowArgs): Promise<RunWorkflowOutcome> {
@@ -64,6 +69,7 @@ export async function runWorkflow(args: RunWorkflowArgs): Promise<RunWorkflowOut
 
   const runner = createActivityRunner<KalfaNode>({
     runId,
+    workflowId,
     trigger,
     ledger: deps.ledger,
     guests: deps.guests,
@@ -125,8 +131,54 @@ export async function runWorkflow(args: RunWorkflowArgs): Promise<RunWorkflowOut
       : { ...(payload as object), nodeLabel: label };
   }
 
+  // ⚠️ THE WAIT INTERCEPT, and the reason it lives in this wrapper rather than
+  // in the vendored runner.
+  //
+  // `runGraph` has no suspension point (read in full 2026-09-13), so a wait
+  // travels as a thrown error: the node throws, `runNode` catches it, the
+  // default 'fail' policy makes it fatal, and `failExecution` returns
+  // `{ status: 'failed', error: { code } }` with the code intact. That is the
+  // only channel out of the scheduler — and it is enough, because the code
+  // identifies it unambiguously.
+  //
+  // What must NOT survive is the paperwork. Left alone the runner emits
+  // `node_failed` + `execution_failed` and writes the run as FAILED, so an owner
+  // opening the log would read that their automation broke when it is simply
+  // waiting. Those are suppressed here and a `node_waiting` is emitted instead —
+  // an event the vendored model already declares and never emitted, now carrying
+  // the one thing worth knowing: when it wakes.
+  //
+  // Nothing under `vendor/` is modified. The interception is entirely inside the
+  // two callbacks this file already owns.
+  let waitRequest: { resumeAt: string; nodeId: string } | null = null;
+
   const events: EventEmitterPort = {
     emitEvent: async (executionId, type, payload, nodeId) => {
+      const wait = type === 'node_failed' ? readWaitCode(payload) : null;
+      if (wait && nodeId) {
+        waitRequest = { resumeAt: wait.resumeAt, nodeId };
+        if (deps.log) {
+          try {
+            await deps.log.appendEvent({
+              runId: executionId,
+              type: 'node_waiting',
+              nodeId,
+              // `resumeAt` extends the declared payload deliberately: the log
+              // panel is ours, and "waiting" without "until when" is not useful.
+              payload: withLabels('node_waiting', { resumeAt: wait.resumeAt }, nodeId),
+            });
+          } catch {
+            // Same fail-soft rule as every other event here.
+          }
+        }
+        return;
+      }
+
+      // The terminal failure the runner raises FOR the wait. Suppressed: the run
+      // has not failed, and `execution_failed` must not be the last line of a log
+      // that continues in three days.
+      if (waitRequest && type === 'execution_failed') return;
+
       if (!deps.log) return;
       try {
         await deps.log.appendEvent({
@@ -140,6 +192,10 @@ export async function runWorkflow(args: RunWorkflowArgs): Promise<RunWorkflowOut
       }
     },
     updateStatus: async (executionId, status, errorMessage) => {
+      // The run is parked, not failed. The park itself is written after
+      // `runGraph` returns, because the deadline cannot travel through this
+      // callback's signature.
+      if (waitRequest && status === 'failed') return;
       if (!isRunStatus(status)) return;
       await deps.runs.setRunStatus({
         runId: executionId,
@@ -189,6 +245,14 @@ export async function runWorkflow(args: RunWorkflowArgs): Promise<RunWorkflowOut
     events,
   );
 
+  // BEFORE the failure branch, because the runner reported this run as failed —
+  // that is how a wait leaves the scheduler at all.
+  if (waitRequest) {
+    const { resumeAt, nodeId } = waitRequest;
+    await deps.runs.setRunStatus({ runId, status: 'waiting', resumeAt });
+    return { status: 'waiting', resumeAt, nodeId };
+  }
+
   if (outcome.status === 'failed') {
     return { status: 'failed', message: outcome.error.message };
   }
@@ -204,6 +268,7 @@ export async function runWorkflow(args: RunWorkflowArgs): Promise<RunWorkflowOut
 const RUN_STATUSES = new Set([
   'pending',
   'running',
+  'waiting',
   'cancelling',
   'completed',
   'incomplete',
@@ -211,8 +276,28 @@ const RUN_STATUSES = new Set([
   'cancelled',
 ]);
 
-function isRunStatus(
-  value: string,
-): value is 'pending' | 'running' | 'cancelling' | 'completed' | 'incomplete' | 'failed' | 'cancelled' {
+function isRunStatus(value: string): value is RunStatus {
   return RUN_STATUSES.has(value);
+}
+
+/**
+ * The wait deadline inside a `node_failed` payload, or null.
+ *
+ * ⚠️ READ OUT OF THE MESSAGE, and that is not laziness. The payload has already
+ * crossed `withRedactedPayloads` and been rebuilt by `runNode` into
+ * `{ error: { message, code } }` — the thrown object, and with it the
+ * `resumeAt` field, is gone by the time this wrapper sees anything. The message
+ * is the only carrier left, which is why `WorkflowWaitSignal` composes an ISO
+ * timestamp into it rather than relying on a property surviving.
+ *
+ * The code is still what IDENTIFIES a wait; the timestamp is only extracted once
+ * the code has already matched, so an ordinary failure whose message happens to
+ * contain a date is never read as one.
+ */
+function readWaitCode(payload: unknown): { resumeAt: string } | null {
+  const error = (payload as { error?: { code?: unknown; message?: unknown } } | undefined)?.error;
+  if (!error || error.code !== WORKFLOW_WAIT_CODE) return null;
+  if (typeof error.message !== 'string') return null;
+  const match = /(\d{4}-\d{2}-\d{2}T[\d:.]+Z)/.exec(error.message);
+  return match ? { resumeAt: match[1]! } : null;
 }

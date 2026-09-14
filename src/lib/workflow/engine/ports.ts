@@ -8,7 +8,7 @@
 // implementations; the tests wire fakes and assert on what was called.
 import type { RsvpStatus } from '@/lib/constants';
 
-import type { GuestField, NotifyLevel } from '../catalogue/types';
+import type { GuestField, HttpHeader, HttpMethod, NotifyLevel } from '../catalogue/types';
 
 // ---------------------------------------------------------------------------
 // The execution ledger
@@ -52,7 +52,19 @@ import type { GuestField, NotifyLevel } from '../catalogue/types';
  * an implementation detail of this file.
  */
 export type StepClaim =
-  | { kind: 'claimed' }
+  | {
+      kind: 'claimed';
+      /**
+       * True when this claim took over a row that was PARKED and whose deadline
+       * has now passed — `logic.wait` finishing its wait.
+       *
+       * The wait node cannot tell "first arrival" from "woke up" on its own: on
+       * resume the whole graph replays, and a node that recomputed its deadline
+       * from config would park for another full duration, every time, forever.
+       * The ledger is the only thing that knows, so the ledger says so.
+       */
+      resumedFromWait?: boolean;
+    }
   | { kind: 'already_done'; result: unknown }
   | { kind: 'in_flight' };
 
@@ -98,6 +110,22 @@ export interface StepLedgerPort {
     nodeId: string;
     message: string;
   }): Promise<void>;
+
+  /**
+   * Park a claimed step until `waitUntil`.
+   *
+   * NOT `failStep` with a nicer message, and not leaving the row `running`:
+   *
+   *   * `failed` would let the next attempt take the row over immediately
+   *     (`takeOverFailedRow`), so the wait would end the moment pg-boss redelivered
+   *     for any other reason.
+   *   * `running` would be reclaimed by the 15-minute lease, re-running the node
+   *     and restarting its wait — a 3-day wait would never elapse.
+   *
+   * Optional so a port that predates waits fails closed rather than silently
+   * treating a wait as an ordinary failure.
+   */
+  beginWait?(args: { runId: string; nodeId: string; waitUntil: string }): Promise<void>;
 }
 
 // ---------------------------------------------------------------------------
@@ -109,6 +137,14 @@ export interface StepLedgerPort {
 export type RunStatus =
   | 'pending'
   | 'running'
+  /**
+   * Parked at a `logic.wait`, waiting for its deadline.
+   *
+   * NOT terminal — see TERMINAL_RUN_STATUSES below. A parked run is still in
+   * flight: it stamps no `finished_at`, it is still cancellable, and pg-boss is
+   * holding a delayed job for it.
+   */
+  | 'waiting'
   | 'cancelling'
   | 'completed'
   | 'incomplete'
@@ -138,6 +174,12 @@ export interface RunStorePort {
     runId: string;
     status: RunStatus;
     errorMessage?: string;
+    /**
+     * When a `waiting` run should wake. Written with the status and CLEARED on
+     * every other status, so the column reads as "still owed a wake-up" rather
+     * than as a record of one that already happened.
+     */
+    resumeAt?: string;
   }): Promise<void>;
 }
 
@@ -167,10 +209,127 @@ export interface GuestActionsPort {
   ): Promise<{ id: string; rsvp_token: string }[]>;
 
   /**
+   * Stage the guest list that started this run, for `action.import_guest_list`.
+   *
+   * Optional only so a recording/test port that predates the node fails closed
+   * rather than gaining a capability implicitly — the same rule every other
+   * added method here follows.
+   *
+   * ⚠️ THE ROWS COME BACK, and that is a deliberate owner ruling (2026-09-13).
+   *
+   * They land in `workflow_run_steps.output` and in the editor's log panel, so a
+   * run says WHAT arrived and a later step can act on the list
+   * (`{{nodes.<id>.rows}}`). The staging table is wiped once the owner confirms
+   * or discards — it is a work queue — so this is not a second copy that
+   * outlives the first; it is the copy that records what the automation saw.
+   */
+  importGuestList?(input: {
+    /** The inbox row the trigger fired on. The list lives on it. */
+    inboxRowId: string;
+    eventId: string;
+  }): Promise<
+    | {
+        ok: true;
+        created: boolean;
+        /** The parsed list. See the note above on why it is returned. */
+        rows: { full_name: string; phone: string | null; expected_count: number | null; group: string }[];
+        rowCount: number;
+        errorCount: number;
+        fileName: string | null;
+        reviewUrl: string;
+      }
+    | { ok: false; reason: string; message?: string }
+  >;
+
+  /**
+   * Send an APPROVED WhatsApp template to this run's guest.
+   *
+   * ⚠️ WHY THIS EXISTS ALONGSIDE `sendWhatsAppReply`, which also sends WhatsApp.
+   * They are not interchangeable:
+   *
+   *   `sendWhatsAppReply` sends FREE TEXT, which WhatsApp permits only inside
+   *     the 24-hour window a guest's own message opens. Right for answering
+   *     someone who just wrote; useless for reaching someone who did not.
+   *
+   *   this sends an APPROVED TEMPLATE, which is what may be sent at any time —
+   *     and therefore the only thing an automation triggered by a clock can use.
+   *
+   * It reuses the campaign path's own send rather than reimplementing it, so
+   * every rule that path enforces applies unchanged: the opt-out and consent
+   * gate (`terminalReasonFor`, which reads the live setting rather than assuming
+   * one), MM Lite routing for MARKETING templates, and the outbound interaction
+   * log.
+   *
+   * Optional so a port predating the node fails closed rather than gaining the
+   * ability to message guests implicitly.
+   */
+  sendWhatsAppTemplate?(input: {
+    eventId: string;
+    contactId: string;
+    /** One of `message_templates.message_key` — 'thankyou', 'reminder_1', … */
+    messageKey: string;
+  }): Promise<{ ok: boolean; reason?: string }>;
+
+  /**
+   * Start a run of another workflow for each guest matching the filter.
+   *
+   * ⚠️ THE CAP IS ENFORCED IN THE IMPLEMENTATION, not by the caller. A handler
+   * that trusted its own config would be trusting a jsonb row, and the row is
+   * what a fan-out gone wrong would have edited.
+   *
+   * Returns COUNTS, never the guests: the rows created are the record, and a
+   * list of 300 names in a step output would be a third copy of the guest list.
+   *
+   * Optional so a port predating the node fails closed rather than gaining the
+   * ability to start hundreds of runs implicitly.
+   */
+  startRunsForGuests?(input: {
+    parentRunId: string;
+    nodeId: string;
+    eventId: string;
+    targetWorkflowId: string;
+    statuses?: string[];
+    requirePhone: boolean;
+    maxGuests: number;
+    /**
+     * Which generation the children being created belong to — 1 for a fan-out
+     * inside a run nobody fanned out to.
+     *
+     * Stamped onto each child's trigger payload so the fan-out inside THAT run
+     * can refuse to create a deeper one. `workflow_runs` has no parent link, so
+     * this is the only record of the chain. See `MAX_FANOUT_DEPTH`.
+     */
+    depth: number;
+  }): Promise<
+    | { ok: true; matched: number; started: number; capped: boolean }
+    | { ok: false; reason: string }
+  >;
+
+  /**
    * Start the existing production RSVP voice agent for the contact that owns
    * this workflow run. Optional only so recording/test ports that predate the
    * node fail closed rather than gaining any network capability implicitly.
    */
+  /**
+   * Dial this run's contact with whichever configured voice agent the step
+   * names.
+   *
+   * ⚠️ SEPARATE FROM `startRsvpAiCallback`, which is bound to the RSVP campaign
+   * engine — a touchpoint, a campaign, a billing outcome. This one starts a
+   * purpose from the `voice_purposes` registry, which is how a NEW agent
+   * becomes usable without a new dispatcher.
+   *
+   * Optional, so a recording or test port that predates it fails closed rather
+   * than gaining the ability to telephone people implicitly.
+   */
+  startVoicePurposeCall?(input: {
+    runId: string;
+    nodeId: string;
+    eventId: string | null;
+    contactId: string;
+    purposeKey: string;
+  }): Promise<{ ok: boolean; status: string; reason?: string; attemptId?: string }>;
+
   startRsvpAiCallback?(input: {
     runId: string;
     nodeId: string;
@@ -332,10 +491,28 @@ export interface OutboundWebhookPort {
   post(input: {
     /** Already validated by the implementation; the handler never sees a socket. */
     url: string;
+    /** Absent means POST — what every diagram saved before methods existed meant. */
+    method?: HttpMethod;
+    /**
+     * Header rows as the owner typed them, values possibly still carrying
+     * `{{secrets.<NAME>}}`. The IMPLEMENTATION substitutes them, never the
+     * handler — so a secret is never in a value the handler could return.
+     */
+    headers?: HttpHeader[];
     body: string;
     /** Deterministic per (run, node). The receiver's dedup key. */
     idempotencyKey: string;
-  }): Promise<{ ok: boolean; status: number | null; reason?: string }>;
+    /** Opt in to reading the answer back, capped. Off by default. */
+    captureResponse?: boolean;
+  }): Promise<{
+    ok: boolean;
+    status: number | null;
+    reason?: string;
+    /** Present only when `captureResponse` was asked for and bytes arrived. */
+    body?: string;
+    /** True when the answer was longer than the cap and was cut. */
+    truncated?: boolean;
+  }>;
 }
 
 /**

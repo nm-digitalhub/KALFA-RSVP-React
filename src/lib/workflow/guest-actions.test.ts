@@ -8,6 +8,12 @@ const { adminMock, guestsMock } = vi.hoisted(() => ({
 }));
 
 vi.mock('@/lib/supabase/admin', () => ({ createAdminClient: adminMock }));
+// Mocked even though nothing here calls it. `guest-actions.ts` imports
+// `stageGuestListFromInbox` from this module, which drags in `whatsapp-api-js`
+// and the CSV parser — a heavy import chain that has no business loading for
+// tests of the guest writers, and that made this file fail intermittently under
+// the parallel runner while passing in isolation.
+vi.mock('@/lib/data/whatsapp-import', () => ({ stageGuestListFromInbox: vi.fn() }));
 vi.mock('@/lib/data/interactions', () => ({
   getGuestsForContact: guestsMock,
   recordRsvpFromWhatsapp: vi.fn(),
@@ -229,5 +235,114 @@ describe('createCallbackRequest — the dedupe that stops a second phone call', 
       note: '',
     });
     expect(r).toMatchObject({ ok: false, created: false, reason: 'insert_failed' });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// startRunsForGuests — the chain memory
+// ---------------------------------------------------------------------------
+//
+// ⚠️ THE SAME GAP THIS FILE WAS CREATED FOR, FOUND AGAIN. A fault injection on
+// 2026-09-14 deleted `fanoutDepth: depth` from the child's trigger payload:
+// `tsc` passed (the field is optional) and every fan-out test passed (they all
+// mock this port). Without that one line each generation reads depth 0, the cap
+// never trips, and the chain is unbounded again — the exact failure the cap was
+// added to prevent.
+//
+// `workflow_runs` has no parent link, so the payload is the ONLY record of the
+// chain. It gets a test against the real implementation.
+
+function mockFanOutDb(opts: { target?: Row | null; contactIds?: string[] }) {
+  const inserted: Row[] = [];
+  adminMock.mockReturnValue({
+    from: (table: string) => {
+      if (table === 'workflows') {
+        const chain: Record<string, unknown> = {
+          select: () => chain,
+          eq: () => chain,
+          maybeSingle: async () => ({
+            data:
+              opts.target === undefined
+                ? { id: 'wf-child', is_active: false, event_id: null, definition: { nodes: [] } }
+                : opts.target,
+            error: null,
+          }),
+        };
+        return chain;
+      }
+      if (table === 'guests') {
+        const rows = (opts.contactIds ?? ['c1', 'c2']).map((id) => ({
+          contact_id: id,
+          phone: '+972500000000',
+        }));
+        // ⚠️ THENABLE, not a promise-returning `limit`. The real query keeps
+        // chaining `.in()` / `.not()` AFTER `.limit()` and is awaited at the
+        // end, so the double has to stay chainable until it is awaited.
+        const chain: Record<string, unknown> = {
+          select: () => chain,
+          eq: () => chain,
+          not: () => chain,
+          in: () => chain,
+          limit: () => chain,
+          then: (resolve: (v: unknown) => unknown) => resolve({ data: rows, error: null }),
+        };
+        return chain;
+      }
+      // workflow_runs — where createRunIfNew writes
+      return {
+        insert: (values: Row) => {
+          inserted.push(values);
+          return {
+            select: () => ({ single: async () => ({ data: { id: `run-${inserted.length}` }, error: null }) }),
+          };
+        },
+      };
+    },
+  });
+  return { inserted };
+}
+
+describe('startRunsForGuests', () => {
+  it('⚠️ stamps the generation onto every child it creates', async () => {
+    const { inserted } = mockFanOutDb({});
+    const actions = createGuestActions();
+
+    const r = await actions.startRunsForGuests!({
+      parentRunId: 'run-parent',
+      nodeId: 'fan',
+      eventId: 'e1',
+      targetWorkflowId: 'wf-child',
+      requirePhone: true,
+      maxGuests: 10,
+      depth: 2,
+    });
+
+    expect(r).toMatchObject({ ok: true, started: 2 });
+    expect(inserted).toHaveLength(2);
+    for (const row of inserted) {
+      expect((row.trigger_payload as Row).fanoutDepth).toBe(2);
+    }
+  });
+
+  it('carries the CHILD’s definition as the snapshot, not the parent’s', async () => {
+    // Each child run executes the target workflow, so the snapshot it resumes on
+    // must be the target's — read once for the whole fan-out, not per guest.
+    const definition = { nodes: [{ id: 'child-node' }] };
+    const { inserted } = mockFanOutDb({
+      target: { id: 'wf-child', is_active: false, event_id: null, definition },
+      contactIds: ['c1'],
+    });
+
+    await createGuestActions().startRunsForGuests!({
+      parentRunId: 'run-parent',
+      nodeId: 'fan',
+      eventId: 'e1',
+      targetWorkflowId: 'wf-child',
+      requirePhone: true,
+      maxGuests: 10,
+      depth: 1,
+    });
+
+    expect(inserted[0]!.definition_snapshot).toEqual(definition);
   });
 });

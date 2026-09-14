@@ -119,6 +119,7 @@ export async function startManualRun(input: ManualRunInput): Promise<ManualRunRe
     workflowId: input.workflowId,
     eventId: input.eventId,
     triggerSource: 'manual',
+    definitionSnapshot: workflow.definition,
     // NULL, which the column's own comment already anticipated: "NULL for a run
     // with no natural key (a manual test run)". Asking twice is two runs, on
     // purpose — re-running after an edit is the whole point.

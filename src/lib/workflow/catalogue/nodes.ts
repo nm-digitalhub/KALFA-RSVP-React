@@ -11,6 +11,7 @@ import { NODE_TYPES, type CatalogueEntry, type KalfaNodeType } from './types';
 export const CATALOGUE: readonly CatalogueEntry[] = [
   { type: 'trigger.whatsapp_inbound', isTrigger: true },
   { type: 'trigger.webhook', isTrigger: true },
+  { type: 'trigger.schedule', isTrigger: true },
   { type: 'logic.condition', isTrigger: false },
   { type: 'logic.switch', isTrigger: false },
   { type: 'action.update_guest_status', isTrigger: false },
@@ -20,6 +21,11 @@ export const CATALOGUE: readonly CatalogueEntry[] = [
   { type: 'action.webhook', isTrigger: false },
   { type: 'action.set_guest_field', isTrigger: false },
   { type: 'action.create_callback_request', isTrigger: false },
+  { type: 'action.import_guest_list', isTrigger: false },
+  { type: 'logic.wait', isTrigger: false },
+  { type: 'action.send_template', isTrigger: false },
+  { type: 'action.start_for_each_guest', isTrigger: false },
+  { type: 'action.start_voice_call', isTrigger: false },
   { type: 'logic.set_value', isTrigger: false },
 ];
 

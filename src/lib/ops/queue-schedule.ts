@@ -31,6 +31,7 @@ export const QUEUE_EXPECTED_MAX_MINUTES: Record<string, number> = {
   // Every minute.
   'outreach-arm': 3,
   'webhook-process': 3,
+  'workflow-schedule-sweep': 3,
   // Every 5 minutes.
   'outreach-sweeper': 15,
   'campaign-thankyou-sweep': 15,

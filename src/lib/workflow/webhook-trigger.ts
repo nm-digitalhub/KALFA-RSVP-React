@@ -129,6 +129,7 @@ export async function startRunFromWebhook(input: {
     workflowId: workflow.id,
     eventId: null,
     triggerSource: 'webhook',
+    definitionSnapshot: workflow.definition,
     // Only deduped when the CALLER asked for it. Without a key every call is a
     // new run, which is the right default for a hook: two identical POSTs from a
     // system that does not deduplicate are two genuine events.

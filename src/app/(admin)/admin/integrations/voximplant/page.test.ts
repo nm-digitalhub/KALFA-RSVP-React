@@ -20,6 +20,11 @@ vi.mock('@/lib/auth/dal', () => ({
 }));
 vi.mock('@/lib/data/admin/voximplant-channel', () => ({ getVoximplantChannelConfig: vi.fn() }));
 vi.mock('@/lib/data/admin/outreach-master', () => ({ getOutreachMasterState: vi.fn() }));
+// The page now loads the voice-purpose registry in the same parallel read.
+// Unstubbed it reaches the real DAL, which opens a cookie client outside a
+// request scope — the failure is 'cookies was called outside a request scope',
+// not anything about purposes.
+vi.mock('@/lib/data/admin/voice-purposes', () => ({ listVoicePurposesForAdmin: vi.fn(async () => []) }));
 vi.mock('@/lib/data/admin/voice-ops', () => ({
   getVoiceBalanceTile: vi.fn(),
   getVoximplantWiringTile: vi.fn(),

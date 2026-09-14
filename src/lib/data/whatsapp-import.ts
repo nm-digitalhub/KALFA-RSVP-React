@@ -1,7 +1,8 @@
 import 'server-only';
 
+import { sendSlackAlert } from '@/lib/alerts/slack';
 import { createAdminClient } from '@/lib/supabase/admin';
-import type { WhatsAppChannel } from '@/lib/data/outreach-config';
+import { getWhatsAppConfig, type WhatsAppChannel } from '@/lib/data/outreach-config';
 import { sendWhatsAppText } from '@/lib/whatsapp/client';
 import {
   importSender,
@@ -32,9 +33,15 @@ export type ImportEvent = { id: string; name: string | null; event_type: EventTy
 // Two-number split: when a number holds the `whatsapp_import_sender` role,
 // webhook-processing.ts sends ONLY rows that arrived there to
 // stageWhatsAppImport, and rows that arrived on the RSVP number to
-// replyImportPointer. Replies leave from the number that received the list
-// (importSender). With the role unassigned everything behaves as before — the
-// RSVP number both stages and answers.
+// replyImportPointer.
+//
+// REPLIES LEAVE FROM THE NUMBER THAT RECEIVED THE LIST — always, whatever the
+// roles say. That was the intent of this paragraph from the start; it was not
+// what the code did. With the role unassigned, `importSender` fell back to the
+// RSVP number, so a list sent to any THIRD business number was staged correctly
+// and then answered from a number the owner had never written to — no open
+// 24-hour window, refused by Meta, and discarded by `safeReply`. Measured live
+// 2026-09-13. The receiving number is now passed in explicitly.
 
 type InboxRow = {
   payload: Json | null;
@@ -277,6 +284,63 @@ export function parseCsvToStagedRows(bytes: Uint8Array): {
   return { rows, errors };
 }
 
+/**
+ * The usable phone on one shared contact card.
+ *
+ * ⚠️ `wa_id` FIRST, AND THAT ORDERING IS THE FIX.
+ *
+ * MEASURED on a live card, 2026-09-13. Meta sends BOTH:
+ *
+ *     "phones": [{ "type": "אחר",
+ *                  "phone": "+33 7 56 98 23 70",   ← a DISPLAY string
+ *                  "wa_id": "33756982370" }]       ← the canonical number
+ *
+ * This read `phone` and ran `repairIsraeliLocalPhone` over it — a function that
+ * only understands ISRAELI local formats. For the French number above it
+ * returned null, so the code fell back to the raw display string and staged
+ * `+33 7 56 98 23 70`, spaces and all.
+ *
+ * That is not a cosmetic defect. `guests_event_phone_key` is a unique index on
+ * the stored value, so a spaced number does not collide with the same person's
+ * normalised one — the same guest gets created twice — and `findImportMatches`
+ * compares phones, so the review screen would not have offered the merge either.
+ *
+ * ⚠️ THE OUTPUT IS THE HOUSE FORMAT, NOT E.164, and that was nearly the second
+ * bug. MEASURED in `guests` on 2026-09-13: 41 of 44 stored phones are the LOCAL
+ * `0…` form and only 3 are E.164. Canonicalising everything to `+972…` would have
+ * made every Israeli contact card fail to match those 41 rows — recreating the
+ * duplicate-guest problem this function exists to close, from the other side.
+ *
+ * So an Israeli number comes back as `0…` (`repairIsraeliLocalPhone`, which
+ * normalises through libphonenumber and converts back), and a foreign one comes
+ * back as E.164 — there is no local form for a French number in an Israeli
+ * address book. Either way the separators are gone, which is the actual defect.
+ *
+ * `wa_id` is E.164 WITHOUT the leading '+', hence the prefix before parsing.
+ *
+ * An unparseable value is kept VERBATIM rather than dropped: losing the guest is
+ * worse than staging something a human can see and correct on the review screen.
+ */
+function contactCardPhone(contact: unknown): string | null {
+  const phones = (contact as { phones?: Array<{ phone?: unknown; wa_id?: unknown }> }).phones;
+  const first = Array.isArray(phones) ? phones[0] : undefined;
+
+  const waId = typeof first?.wa_id === 'string' ? first.wa_id.trim() : '';
+  const display = typeof first?.phone === 'string' ? first.phone.trim() : '';
+
+  // `wa_id` first: it is the canonical number, while `phone` is a display string
+  // that carries whatever spacing the sender's address book used.
+  for (const candidate of [waId === '' ? '' : `+${waId.replace(/^\+/, '')}`, display]) {
+    if (candidate === '') continue;
+    const israeli = repairIsraeliLocalPhone(candidate);
+    if (israeli) return israeli;
+    const e164 = normalizePhone(candidate);
+    if (e164) return e164;
+  }
+
+  return display !== '' ? display : null;
+}
+
 // Shared contact cards → staged rows (formatted_name + first phone).
 export function contactsToStagedRows(payload: Json | null): StagedRow[] {
   const contacts =
@@ -288,13 +352,10 @@ export function contactsToStagedRows(payload: Json | null): StagedRow[] {
   for (const c of contacts) {
     if (!c || typeof c !== 'object') continue;
     const name = (c as { name?: { formatted_name?: unknown } }).name?.formatted_name;
-    const phones = (c as { phones?: Array<{ phone?: unknown }> }).phones;
-    const rawPhone = Array.isArray(phones) && typeof phones[0]?.phone === 'string' ? phones[0].phone : '';
     if (typeof name !== 'string' || name.trim() === '') continue;
-    const local = rawPhone ? repairIsraeliLocalPhone(rawPhone) ?? rawPhone : '';
     rows.push({
       full_name: name.trim().slice(0, 200),
-      phone: local || null,
+      phone: contactCardPhone(c),
       expected_count: null,
       group: '',
     });
@@ -409,7 +470,10 @@ export async function stageWhatsAppImport(
   // Replies leave from the number that RECEIVED the list: the import number
   // when the role is assigned, the RSVP number in legacy mode. Same token and
   // app secret either way — one Meta app, one WABA.
-  const from = importSender(config);
+  // THE NUMBER THAT RECEIVED THE LIST, not the configured one — see
+  // `importSender`. A reply from a number the owner never messaged has no open
+  // 24-hour window and is refused by Meta, silently.
+  const from = importSender(config, row.phone_number_id);
   const origin = resolveReplyOrigin();
 
   // More than one active event the sender may manage: NEVER guess which one
@@ -526,7 +590,224 @@ async function safeReply(
   to: string,
   body: string,
 ): Promise<void> {
-  // replies are best-effort — sendWhatsAppText no longer throws (it classifies
-  // into a DeliveryOutcome); the result is intentionally ignored here.
-  await sendWhatsAppText(from, { to, body });
+  // Best-effort for the RUN — a refused reply must never fail the staging that
+  // already succeeded — but NOT invisible any more.
+  //
+  // The outcome used to be discarded outright, and that is how a broken reply
+  // went unnoticed for as long as it did: the list was staged, the owner was
+  // told nothing, and no log, alert or row recorded that anything had failed.
+  // The only symptom was a person saying "I didn't get a link".
+  // ⚠️ NOTHING BELOW MAY THROW. The list is already staged by the time this
+  // runs; a failed reply must cost the owner a link, never the import. The
+  // try/catch is the guarantee, and it is not theoretical — adding the alert
+  // broke nine existing tests, because reading a field off the outcome throws
+  // the moment the send helper answers with anything unexpected. In production
+  // that would have turned a refused reply into a failed staging.
+  let outcome: Awaited<ReturnType<typeof sendWhatsAppText>> | undefined;
+  try {
+    outcome = await sendWhatsAppText(from, { to, body });
+  } catch {
+    outcome = undefined;
+  }
+  if (outcome?.kind === 'accepted') return;
+
+  try {
+    await reportFailedReply(from, outcome);
+  } catch {
+    // An alert that cannot be sent is not a reason to fail an import either.
+  }
+}
+
+/**
+ * Say that the owner's review link never arrived.
+ *
+ * The outcome used to be discarded outright, and that is how a broken reply went
+ * unnoticed: the list staged, the owner was told nothing, and no log, alert or
+ * row recorded a failure. The only symptom was a person saying "I didn't get a
+ * link" — which is exactly how the wrong-sender bug surfaced on 2026-09-13.
+ */
+async function reportFailedReply(
+  from: WhatsAppSender,
+  outcome: Awaited<ReturnType<typeof sendWhatsAppText>> | undefined,
+): Promise<void> {
+  const reason =
+    outcome === undefined
+      ? 'השליחה נכשלה ללא תשובה מהספק'
+      : outcome.kind === 'accepted'
+        ? ''
+        : outcome.reason;
+  const code =
+    outcome !== undefined && outcome.kind !== 'accepted' && outcome.providerCode
+      ? ` (קוד ${outcome.providerCode})`
+      : '';
+
+  await sendSlackAlert({
+    level: 'warn',
+    title: 'תשובת ייבוא לבעל האירוע לא נשלחה',
+    // NO recipient phone and NO body: the recipient is a person and the text
+    // carries their event's name. The SENDING number and the provider's own
+    // code are what a diagnosis actually needs — the sending number is the
+    // field that would have named this bug on the first occurrence.
+    detail:
+      `הרשימה נקלטה אך הקישור לסקירה לא הגיע. מספר שולח: ${from.phoneNumberId}. ` +
+      `סיבה: ${reason}${code}`,
+    source: 'whatsapp',
+    category: 'errors',
+  });
+}
+
+// ---------------------------------------------------------------------------
+// The workflow-facing half
+// ---------------------------------------------------------------------------
+
+/**
+ * Stage a guest list that arrived on an inbox row, for `action.import_guest_list`.
+ *
+ * ⚠️ THE SAME WORK `stageWhatsAppImport` DOES, MINUS THE DECIDING.
+ *
+ * The hard-coded path owns three judgements that belong to it and not to a
+ * workflow: which event an owner meant when several are active, whether the
+ * sender is an owner at all, and what to reply. This does none of them — the
+ * WORKFLOW decides what happens next, which is the entire point of the node. It
+ * only reads, parses and stages.
+ *
+ * IT SHARES THE HARD-CODED PATH'S IDEMPOTENCY RATHER THAN COMPETING WITH IT.
+ * Both write `source_message_id`, which is `UNIQUE ... WHERE NOT NULL`, so
+ * whichever runs first stages and the other reports `duplicate: true` and hands
+ * back the same review link. That is what lets a workflow be built around the
+ * import TODAY, while the hard-coded path still runs, without double-staging and
+ * without an ordering assumption between two things that run side by side.
+ */
+export type StageGuestListResult =
+  | {
+      ok: true;
+      /** False when the list was already staged — by the other path, or by a replay. */
+      created: boolean;
+      /**
+       * The parsed rows themselves.
+       *
+       * OWNER'S RULING 2026-09-13: return them, so the run log records WHAT
+       * arrived and a later step can act on it (`{{nodes.<id>.rows}}` — post the
+       * list onward, count a group, branch on a name).
+       *
+       * This is the place that record belongs. `guest_import_staging` is a work
+       * queue and is wiped once the owner decides (see the confirm action); a run
+       * log is an audit of what the automation did, and it is the one copy that
+       * should outlive the decision.
+       */
+      rows: StagedRow[];
+      rowCount: number;
+      errorCount: number;
+      fileName: string | null;
+      source: string;
+      reviewUrl: string;
+    }
+  | { ok: false; reason: 'not_a_list' | 'unreadable_file' | 'bad_file' | 'insert_failed'; message?: string };
+
+export async function stageGuestListFromInbox(args: {
+  inboxRowId: string;
+  eventId: string;
+}): Promise<StageGuestListResult> {
+  const admin = createAdminClient();
+
+  const { data: row } = await admin
+    .from('webhook_inbox')
+    .select('payload, phone_number_id')
+    .eq('id', args.inboxRowId)
+    .maybeSingle();
+
+  const p = readImportPayload(row?.payload ?? null);
+  if (!p) return { ok: false, reason: 'not_a_list' };
+
+  const reviewUrl = importScreenUrl(resolveReplyOrigin(), args.eventId, 'whatsapp');
+  const wamid = p.id ?? null;
+
+  // Already staged — by the hard-coded path, or by a replay of this node. The
+  // step lease can replay a completed node, so this branch is load-bearing and
+  // not merely an optimisation.
+  if (wamid) {
+    const { data: already } = await admin
+      .from('guest_import_staging')
+      .select('rows, row_count, error_rows, file_name, source')
+      .eq('source_message_id', wamid)
+      .maybeSingle();
+    if (already) {
+      return {
+        ok: true,
+        created: false,
+        // From the STORED row, so a replay reports the list the first attempt
+        // staged. EMPTY once the owner has decided — the queue row is wiped
+        // then — which is correct: the run that staged it already logged it.
+        rows: (Array.isArray(already.rows) ? already.rows : []) as unknown as StagedRow[],
+        rowCount: already.row_count,
+        errorCount: Array.isArray(already.error_rows) ? already.error_rows.length : 0,
+        fileName: already.file_name,
+        source: already.source,
+        reviewUrl,
+      };
+    }
+  }
+
+  let staged: StagedRow[] = [];
+  let errors: Array<{ row: number; message: string }> = [];
+  let fileName: string | null = null;
+
+  if (p.type === 'document') {
+    fileName = p.document?.filename ?? null;
+    const mediaId = p.document?.id;
+    const config = await getWhatsAppConfig();
+    const bytes =
+      mediaId && config
+        ? await downloadDocument(mediaId, config.accessToken, row?.phone_number_id ?? null)
+        : null;
+    // The message names the limit, because "it failed" is useless to an owner
+    // holding a spreadsheet.
+    if (!bytes) return { ok: false, reason: 'unreadable_file' };
+    const parsed = parseCsvToStagedRows(bytes);
+    if ('error' in parsed) return { ok: false, reason: 'bad_file', message: parsed.error };
+    staged = parsed.rows;
+    errors = parsed.errors;
+  } else {
+    staged = contactsToStagedRows(row?.payload ?? null);
+    if (staged.length === 0) return { ok: false, reason: 'not_a_list' };
+  }
+
+  const { error } = await admin.from('guest_import_staging').insert({
+    event_id: args.eventId,
+    source: p.type === 'document' ? 'whatsapp_document' : 'whatsapp_contacts',
+    sender_phone: p.from,
+    file_name: fileName,
+    rows: staged as unknown as Json,
+    row_count: staged.length,
+    error_rows: errors as unknown as Json,
+    source_message_id: wamid,
+  });
+  // A unique violation here is the other path winning the race between our read
+  // above and this insert. It is a SUCCESS — the list is staged — not a failure.
+  if (error) {
+    if (error.code === '23505') {
+      return {
+        ok: true,
+        created: false,
+        rows: staged,
+        rowCount: staged.length,
+        errorCount: errors.length,
+        fileName,
+        source: p.type === 'document' ? 'whatsapp_document' : 'whatsapp_contacts',
+        reviewUrl,
+      };
+    }
+    return { ok: false, reason: 'insert_failed' };
+  }
+
+  return {
+    ok: true,
+    created: true,
+    rows: staged,
+    rowCount: staged.length,
+    errorCount: errors.length,
+    fileName,
+    source: p.type === 'document' ? 'whatsapp_document' : 'whatsapp_contacts',
+    reviewUrl,
+  };
 }

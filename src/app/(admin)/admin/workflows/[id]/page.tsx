@@ -15,9 +15,34 @@ import { CancelRunButton } from '../row-actions';
 import { RunNowPanel } from './run-now-panel';
 import { RunWatchButton } from './run-watcher';
 import { TestPanel } from './test-panel';
+import { listSecretNames } from '@/lib/workflow/secrets';
+
+import { listVoicePurposes } from '@/lib/data/voice-purposes';
+
 import { WorkflowEditor } from './workflow-editor';
 
 export const metadata: Metadata = { title: 'עריכת תהליך' };
+
+/**
+ * Run states, in the product's own language.
+ *
+ * The column printed the raw column value, so an owner reading a Hebrew screen
+ * met `waiting` in English the day `logic.wait` shipped. Unknown values fall
+ * through to the raw string rather than to a guess: a state nobody translated is
+ * still more useful shown than hidden.
+ */
+const RUN_STATUS_HE: Record<string, string> = {
+  pending: 'ממתינה בתור',
+  running: 'רצה',
+  // Not "waiting in queue" — this one is parked on a `logic.wait` deadline, and
+  // conflating the two would make a run that sleeps for two days look stuck.
+  waiting: 'בהמתנה מתוזמנת',
+  completed: 'הושלמה',
+  incomplete: 'הסתיימה חלקית',
+  failed: 'נכשלה',
+  cancelled: 'בוטלה',
+  cancelling: 'בביטול',
+};
 
 export default async function AdminWorkflowPage({
   params,
@@ -42,12 +67,25 @@ export default async function AdminWorkflowPage({
   // sync now switches off. A workflow already pointing at such a number keeps
   // working: matching is against the stored phone_number_id, never against this
   // list. The list answers "what may be chosen today", not "what is still valid".
+  // The voice agents that are actually configured, for the call node's dropdown.
+  // Rows, not a constant: a purpose added today must appear without a deploy.
+  const voicePurposes = (await listVoicePurposes()).map((p) => ({
+    key: p.key,
+    displayName: p.displayName,
+  }));
+
   const whatsappNumbers = (await listProviderNumbers())
     .filter((n) => n.provider === 'meta_whatsapp' && n.providerRef !== null && n.isActive)
     .map((n) => ({
       providerRef: n.providerRef as string,
       label: `${n.e164 ?? n.providerRef} — ${n.displayLabel ?? 'ללא שם'}`,
     }));
+
+  // NAMES ONLY — `listSecretNames` strips the values, and this is a server
+  // component, so the environment is read here and never shipped. An empty list
+  // is a legitimate state (no secret has been configured yet) and the header
+  // control says so with the instruction rather than showing nothing.
+  const secretNames = listSecretNames();
 
   // The stored jsonb is parsed before it reaches the editor. A row that cannot
   // be parsed opens as an empty canvas rather than crashing the page — the
@@ -82,6 +120,8 @@ export default async function AdminWorkflowPage({
         initialNodes={nodes as never}
         initialEdges={edges as never}
         whatsappNumbers={whatsappNumbers}
+        voicePurposes={voicePurposes}
+        secretNames={secretNames}
         saveAction={saveWorkflowAction}
       />
 
@@ -111,7 +151,7 @@ export default async function AdminWorkflowPage({
               <tbody>
                 {runs.map((run) => (
                   <tr key={run.id} className="border-t border-border">
-                    <td className="p-3">{run.status}</td>
+                    <td className="p-3">{RUN_STATUS_HE[run.status] ?? run.status}</td>
                     <td className="p-3">{run.triggerSource}</td>
                     <td className="p-3">{formatDateTime(run.createdAt)}</td>
                     <td className="p-3">
@@ -121,10 +161,13 @@ export default async function AdminWorkflowPage({
                     <td className="p-3">
                       <div className="flex flex-wrap items-start gap-2">
                         <RunWatchButton runId={run.id} />
-                        {/* Only a queued run. `cancelRun` refuses anything else,
+                        {/* Queued OR PARKED. `cancelRun` refuses anything else,
                             because the vendored runner cannot be interrupted
-                            once it is inside runGraph. */}
-                        {run.status === 'pending' && (
+                            once it is inside runGraph — which is exactly why a
+                            parked run CAN be cancelled: it is not inside it. It
+                            is a row with a deadline and a job that has not
+                            fired, and `logic.wait` allows up to a year of that. */}
+                        {(run.status === 'pending' || run.status === 'waiting') && (
                           <CancelRunButton workflowId={workflow.id} runId={run.id} />
                         )}
                       </div>

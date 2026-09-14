@@ -70,6 +70,8 @@ describe('planRuns — the filter actually gates a run', () => {
     eventId: 'event-1',
     contactId: 'contact-1',
     inboxRowId: 'inbox-9',
+    // A guest's text message — what every case in this file is about.
+    kind: 'text',
     phoneNumberId,
     messageText: 'כן',
     buttonPayload: '',

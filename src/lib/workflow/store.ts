@@ -57,7 +57,7 @@ export function createStepLedger(): StepLedgerPort {
       // The row already exists. Which of the three states is it in?
       const existing = await supabase
         .from('workflow_run_steps')
-        .select('status, output, started_at')
+        .select('status, output, started_at, wait_until')
         .eq('run_id', runId)
         .eq('node_id', nodeId)
         .single();
@@ -74,6 +74,21 @@ export function createStepLedger(): StepLedgerPort {
       // graph routes exactly as it did the first time.
       if (row.status === 'completed' || row.status === 'skipped') {
         return { kind: 'already_done', result: row.output };
+      }
+
+      // PARKED by a `logic.wait`. The deadline decides, and nothing else may:
+      // the 15-minute lease must not touch this row, or a 3-day wait would be
+      // reclaimed and restarted every quarter of an hour and never elapse.
+      if (row.status === 'waiting') {
+        const waitUntil = Date.parse(row.wait_until ?? '');
+        // An unparseable deadline is treated as PASSED rather than as forever.
+        // A row that can never be claimed again is a run stuck with no way out,
+        // and the node itself is safe to re-enter — it simply completes.
+        const elapsed = !Number.isFinite(waitUntil) || Date.now() >= waitUntil;
+        if (!elapsed) return { kind: 'in_flight' };
+
+        const woken = await takeOverWaitingRow(supabase, runId, nodeId, nodeType);
+        return woken ? { kind: 'claimed', resumedFromWait: true } : { kind: 'in_flight' };
       }
 
       // 'failed' left by a previous attempt: retryable, so take it over. The
@@ -111,6 +126,20 @@ export function createStepLedger(): StepLedgerPort {
         .eq('node_id', nodeId);
 
       if (error) throw new Error(`completeStep failed: ${error.message}`);
+    },
+
+    async beginWait({ runId, nodeId, waitUntil }) {
+      // The row is ALREADY claimed by this attempt (status 'running'), so this is
+      // a state change on a row we hold, not a race. Scoped to 'running' anyway:
+      // a row someone else already moved on must not be dragged back into a wait.
+      const { error } = await supabase
+        .from('workflow_run_steps')
+        .update({ status: 'waiting', wait_until: waitUntil })
+        .eq('run_id', runId)
+        .eq('node_id', nodeId)
+        .eq('status', 'running');
+
+      if (error) throw new Error(`beginWait failed: ${error.message}`);
     },
 
     async failStep({ runId, nodeId, message }) {
@@ -169,6 +198,36 @@ async function takeOverFailedRow(
 }
 
 /**
+ * Take over a WAITING row whose deadline has passed.
+ *
+ * Same compare-and-set shape as the failed case, and the predicate matters for
+ * the same reason twice over: two workers waking the same run must resolve to
+ * one winner, and a row whose deadline was EXTENDED between the read and the
+ * write must not be dragged out of its wait.
+ *
+ * `wait_until` is cleared by `takeoverPatch` leaving it alone — it is not reset
+ * here on purpose, so a row that is woken and then parks again overwrites it
+ * with its new deadline rather than carrying a stale one.
+ */
+async function takeOverWaitingRow(
+  supabase: ReturnType<typeof createAdminClient>,
+  runId: string,
+  nodeId: string,
+  nodeType: string,
+): Promise<boolean> {
+  const { data, error } = await supabase
+    .from('workflow_run_steps')
+    .update(takeoverPatch(nodeType))
+    .eq('run_id', runId)
+    .eq('node_id', nodeId)
+    .eq('status', 'waiting')
+    .select('id');
+
+  if (error) throw new Error(`claimStep takeover (waiting) failed: ${error.message}`);
+  return (data?.length ?? 0) > 0;
+}
+
+/**
  * Take over a RUNNING row whose lease has expired — the crashed-worker case.
  *
  * Deliberately NOT written as a single `.or(...)` with the failed case. A
@@ -211,7 +270,7 @@ export function createRunStore(): RunStorePort {
   const supabase = createAdminClient();
 
   return {
-    async setRunStatus({ runId, status, errorMessage }) {
+    async setRunStatus({ runId, status, errorMessage, resumeAt }) {
       const terminal = TERMINAL_RUN_STATUSES.includes(status);
 
       const { error } = await supabase
@@ -223,6 +282,12 @@ export function createRunStore(): RunStorePort {
           // one, so `status in (terminal) and finished_at is null` is a bug
           // signature rather than an ordinary state.
           ...(terminal ? { finished_at: new Date().toISOString() } : {}),
+          // WRITTEN ON 'waiting', CLEARED ON EVERYTHING ELSE — unconditionally,
+          // which is the point. The recovery index reads
+          // `resume_at where status = 'waiting'`, so a run that woke and finished
+          // while carrying a stale deadline would be re-delivered forever by a
+          // sweep that believed it was still owed a wake-up.
+          resume_at: status === 'waiting' ? (resumeAt ?? null) : null,
         })
         .eq('id', runId)
         // TERMINAL IS FINAL. A run that has already ended cannot be moved by a
@@ -303,6 +368,86 @@ export function createExecutionLog(): ExecutionLogPort {
 // Reads and writes around a run
 // ---------------------------------------------------------------------------
 
+/**
+ * Runs that exist but have never been delivered.
+ *
+ * ⚠️ THIS CLOSES A GAP THAT PREDATES THE FAN-OUT. `createRunIfNew` and
+ * `enqueueWorkflowRun` are two statements: every path that creates a run then
+ * enqueues it, and a failure between the two has always left a row `pending`
+ * with nothing coming for it — visible in /admin, invisible to the system,
+ * recoverable only by hand.
+ *
+ * `action.start_for_each_guest` made it structural rather than rare: a step
+ * handler has no queue handle by design, so its children are ALWAYS created
+ * without one and this sweep is how they start.
+ *
+ * The window is the point. A row younger than `minAgeSeconds` may simply be
+ * mid-enqueue on the path that created it, and picking it up would race that
+ * path for the same job id — harmless (the id is deterministic) but pointless.
+ * Anything older than that had its chance.
+ */
+/**
+ * Parked runs whose deadline has passed and which nothing woke.
+ *
+ * ⚠️ THE HOLE THIS CLOSES. A `logic.wait` parks the run and relies on ONE
+ * pg-boss job with a `startAfter`. That job is the only thing that will ever
+ * wake it: `workflow_runs` has no other timer, and disarming the workflow does
+ * not touch runs in flight. Lose the job — a queue purge, a failed insert, a
+ * maintenance window — and the run sleeps for ever with nobody told.
+ *
+ * `listUndeliveredRuns` below covers the same class of loss for `pending` and
+ * was written before `waiting` existed. This is its other half.
+ *
+ * `graceSeconds` keeps the sweep off the ordinary case: pg-boss fires a wake-up
+ * within seconds of the deadline, so anything still parked minutes later is a
+ * genuine loss rather than a race with the queue.
+ *
+ * Reads through `workflow_runs_resume_at_idx`, which is partial on
+ * `status = 'waiting'` — the index was created with the wait itself.
+ */
+export async function listStuckWaitingRuns(
+  graceSeconds = 300,
+  limit = 200,
+): Promise<{ runId: string; resumeAt: string }[]> {
+  const supabase = createAdminClient();
+  const cutoff = new Date(Date.now() - graceSeconds * 1000).toISOString();
+
+  const { data, error } = await supabase
+    .from('workflow_runs')
+    .select('id, resume_at')
+    .eq('status', 'waiting')
+    .not('resume_at', 'is', null)
+    .lt('resume_at', cutoff)
+    .order('resume_at', { ascending: true })
+    .limit(limit);
+
+  if (error) throw new Error(`listStuckWaitingRuns failed: ${error.message}`);
+  return (data ?? [])
+    .filter((r): r is { id: string; resume_at: string } => typeof r.resume_at === 'string')
+    .map((r) => ({ runId: r.id, resumeAt: r.resume_at }));
+}
+
+export async function listUndeliveredRuns(
+  minAgeSeconds = 30,
+  limit = 200,
+): Promise<string[]> {
+  const supabase = createAdminClient();
+  const cutoff = new Date(Date.now() - minAgeSeconds * 1000).toISOString();
+
+  const { data, error } = await supabase
+    .from('workflow_runs')
+    .select('id')
+    .eq('status', 'pending')
+    .lt('created_at', cutoff)
+    // Oldest first: a backlog should drain in the order it accumulated, so a
+    // run created an hour ago is not starved by one created a minute ago.
+    .order('created_at', { ascending: true })
+    .limit(limit);
+
+  if (error) throw new Error(`listUndeliveredRuns failed: ${error.message}`);
+  return (data ?? []).map((r) => r.id);
+}
+
 /** Every armed workflow, for the drain to match an inbound message against. */
 export async function listArmedWorkflows(): Promise<ArmedWorkflow[]> {
   const supabase = createAdminClient();
@@ -369,6 +514,8 @@ export async function createRunIfNew(planned: PlannedRun): Promise<string | unde
       trigger_source: planned.triggerSource,
       trigger_payload: planned.triggerPayload as unknown as Json,
       dedupe_key: planned.dedupeKey,
+      // What this run resumes on if it parks. See `PlannedRun.definitionSnapshot`.
+      definition_snapshot: planned.definitionSnapshot as Json,
       status: 'pending',
     })
     .select('id')
@@ -384,6 +531,12 @@ export type RunForExecution = {
   runId: string;
   workflowId: string;
   storedDefinition: unknown;
+  /**
+   * The definition this run was created with, or null on a row created before
+   * the column existed. Those keep today's behaviour — the live definition —
+   * which is why the column is nullable and nothing was backfilled.
+   */
+  definitionSnapshot: unknown;
   triggerPayload: Record<string, unknown>;
   status: string;
 };
@@ -402,7 +555,7 @@ export async function loadRunForExecution(
 
   const { data, error } = await supabase
     .from('workflow_runs')
-    .select('id, workflow_id, status, trigger_payload, workflows(definition)')
+    .select('id, workflow_id, status, trigger_payload, definition_snapshot, workflows(definition)')
     .eq('id', runId)
     .single();
 
@@ -415,6 +568,14 @@ export async function loadRunForExecution(
     runId: data.id,
     workflowId: data.workflow_id,
     storedDefinition: workflow.definition,
+    /**
+     * What this run was CREATED with — null on a row that predates the column.
+     *
+     * Returned ALONGSIDE the live definition rather than replacing it: which one
+     * applies depends on the run's status, and that is the caller's call. See
+     * `handleWorkflowRun`.
+     */
+    definitionSnapshot: data.definition_snapshot ?? null,
     triggerPayload: (data.trigger_payload ?? {}) as Record<string, unknown>,
     status: data.status,
   };

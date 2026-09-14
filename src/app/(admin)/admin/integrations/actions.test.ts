@@ -12,6 +12,14 @@ vi.mock('@/lib/data/admin/channels', () => ({
 // actions.ts now also imports the Voximplant channel + outreach-master DALs
 // (both `server-only`). Stub them so importing './actions' doesn't pull the
 // server-only guard into this Node test suite.
+// `./actions` imports this DAL, and it is `server-only` — an unstubbed
+// server-only import fails the whole FILE at import time, not one test.
+// Same gotcha the channel-catalog DAL caused here in July.
+vi.mock('@/lib/data/admin/voice-purposes', () => ({
+  createVoicePurpose: vi.fn(),
+  updateVoicePurpose: vi.fn(),
+  listVoicePurposesForAdmin: vi.fn(),
+}));
 vi.mock('@/lib/data/admin/voximplant-channel', () => ({
   getVoximplantChannelConfig: vi.fn(),
   updateVoximplantChannelConfig: vi.fn(),

@@ -221,11 +221,23 @@ export const QUEUES = {
   // delivery yields one run) and the handler reads the definition and the
   // trigger payload fresh from it.
   //
-  // The whole graph runs inside ONE job. The vendored runGraph has no
-  // pause/resume seam, so there is no per-node job and no wait node; a retry
-  // replays every node, and workflow_run_steps' unique (run_id, node_id) is what
-  // stops the second side effect. See src/lib/workflow/engine/activity-runner.ts.
+  // The whole graph runs inside ONE job, and a retry replays every node —
+  // workflow_run_steps' unique (run_id, node_id) is what stops the second side
+  // effect. See src/lib/workflow/engine/activity-runner.ts.
+  //
+  // SINCE `logic.wait` (13.9.2026) a run may also park mid-graph. There is still
+  // no per-node job: the run re-enqueues ITSELF with `startAfter`, replays from
+  // the start, and the ledger short-circuits everything that already finished.
+  // The vendored runGraph is untouched.
   workflowRun: 'workflow-run',
+
+  // Every minute: which armed workflows does the clock start right now.
+  //
+  // The tick is cheap and does nothing by itself — it reads the armed workflows
+  // and creates run rows for the ones whose time matches. A minute is the
+  // resolution the config offers, so anything coarser would mean a schedule set
+  // for 09:00 firing at 09:05.
+  workflowSchedule: 'workflow-schedule-sweep',
 } as const;
 
 // workflow-run retry policy. Deliberately NO `deadLetter`, for the same reason

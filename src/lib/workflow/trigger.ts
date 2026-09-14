@@ -8,6 +8,7 @@
 // test exhaustively without a database.
 import { editorDiagramSchema } from './adapter/editor-schema';
 import { isTriggerType } from './catalogue/nodes';
+import { DEFAULT_WHATSAPP_MESSAGE_KINDS } from './catalogue/types';
 
 export type ArmedWorkflow = {
   id: string;
@@ -18,7 +19,10 @@ export type ArmedWorkflow = {
 
 export type InboundMessage = {
   eventId: string;
-  contactId: string;
+  /** `null` when the sender is the owner, not a guest — see buildTriggerPayload. */
+  contactId: string | null;
+  /** Meta's own `type` on the payload: 'text' | 'document' | 'contacts' | … */
+  kind: string;
   /** The inbox row's id. The run's dedupe key is derived from it — see below. */
   inboxRowId: string;
   messageText: string;
@@ -80,6 +84,16 @@ export type TriggerPayload = {
   body?: Record<string, unknown>;
   message_text: string;
   button_payload: string;
+  /**
+   * How many fan-outs deep the run being created is. Written only by
+   * `startRunsForGuests`; absent on every other way of starting a run, which is
+   * exactly what "depth 0" means.
+   *
+   * Mirrors `WorkflowTriggerPayload.fanoutDepth` in ./steps — the two types
+   * describe the same stored JSON from the write side and the read side. See
+   * `MAX_FANOUT_DEPTH`.
+   */
+  fanoutDepth?: number;
   // Optional for the same reason as on `WorkflowTriggerPayload`: omitted, not
   // emptied, so `| default:'…'` in a template actually fires.
   guest_name?: string;
@@ -104,7 +118,15 @@ export type TriggerContext = {
  */
 export function buildTriggerPayload(input: {
   eventId: string;
-  contactId: string;
+  /**
+   * `null` when the sender is the OWNER, not a guest — a CSV or a batch of
+   * contact cards. Omitted from the payload entirely in that case rather than
+   * written as null, because `requireGuestContext` tests for absence and a null
+   * in the jsonb row would read as a real value elsewhere.
+   */
+  contactId: string | null;
+  /** A reference to the row the message lives on — see WorkflowTriggerPayload. */
+  inboxRowId?: string;
   messageText: string;
   buttonPayload: string;
   context: TriggerContext;
@@ -112,7 +134,8 @@ export function buildTriggerPayload(input: {
   const { context } = input;
   return {
     eventId: input.eventId,
-    contactId: input.contactId,
+    ...(input.contactId === null ? {} : { contactId: input.contactId }),
+    ...(input.inboxRowId === undefined ? {} : { inboxRowId: input.inboxRowId }),
     message_text: input.messageText,
     button_payload: input.buttonPayload,
     // Spread-when-present. Writing `guest_name: undefined` would put the key in
@@ -142,6 +165,20 @@ export type PlannedRun = {
    * change for every new way of starting a workflow. It no longer is.
    */
   triggerSource: string;
+  /**
+   * The workflow definition as it stands RIGHT NOW, stored on the run.
+   *
+   * ⚠️ REQUIRED, AND THAT IS THE POINT. A run resumes from `logic.wait` by
+   * re-reading the workflow — the LIVE row, via a join in `loadRunForExecution`
+   * — so a definition edited while the run slept is the one that executes.
+   * Optional would mean a new way of starting a workflow could silently skip the
+   * snapshot and reintroduce exactly that; required means the compiler names the
+   * site instead of the bug appearing days later in someone's guest list.
+   *
+   * Consulted ONLY when a run comes back from 'waiting'. A prompt run keeps
+   * reading fresh state, which `handleWorkflowRun` documents as deliberate.
+   */
+  definitionSnapshot: unknown;
   /**
    * Run-level idempotency, one layer above the per-node ledger. For the inbound
    * drain it is keyed on the INBOX ROW, not on the message id and not on the
@@ -197,6 +234,54 @@ export function matchesKeyword(keyword: unknown, messageText: string): boolean {
  * owner named, and the cost of the wrong answer is an automated message to a
  * guest.
  */
+/**
+ * The MESSAGE-KIND filter — text, a button tap, a file, contact cards.
+ *
+ * ⚠️ THE GATE THAT USED TO LIVE IN THE BILLING CLASSIFIER.
+ *
+ * `createRunsForInboundMessage` opened with `if (!billable) return []`, reusing
+ * `BILLABLE_MESSAGE_TYPES` — a BILLING concept — to decide what an owner is
+ * allowed to automate. The two happen to agree for a guest replying, and
+ * disagree completely for the case that matters: an owner sending a guest list
+ * is not a billable reach, so a file or a contact card could never start a
+ * workflow, and importing guests had to live as a separate hard-coded mechanism.
+ *
+ * Billing is untouched. This is the automation half, and it is per-workflow.
+ *
+ * ABSENT OR EMPTY MEANS `DEFAULT_WHATSAPP_MESSAGE_KINDS` — exactly the old
+ * billable set — so every diagram saved before this field keeps its behaviour
+ * with no migration. An owner who wants files says so on the node.
+ *
+ * An UNKNOWN kind (`''` — a payload with no `type`) matches nothing, including
+ * an explicit list: we cannot say what it is, and guessing would start a run on
+ * a message nobody chose.
+ */
+export function matchesKind(configured: unknown, kind: string): boolean {
+  if (kind === '') return false;
+
+  // TWO STORED SHAPES, both accepted.
+  //
+  // `[{ value: 'document' }]` is what the control writes today — the SDK's
+  // `ArrayFieldSchema` can only describe arrays of OBJECTS, and declaring one
+  // shape while storing another put a validation error on every saved trigger.
+  //
+  // `['document']` is what the first version wrote. Diagrams saved that way are
+  // in the database right now, and reading only the new shape would silently
+  // stop them matching — the exact class of failure this field exists to avoid.
+  const names = Array.isArray(configured)
+    ? configured.flatMap((k) =>
+        typeof k === 'string'
+          ? [k]
+          : k !== null && typeof k === 'object' && typeof (k as { value?: unknown }).value === 'string'
+            ? [(k as { value: string }).value]
+            : [],
+      )
+    : [];
+
+  const allowed = names.length > 0 ? names : DEFAULT_WHATSAPP_MESSAGE_KINDS;
+  return allowed.includes(kind);
+}
+
 export function matchesNumber(configured: unknown, arrivedOn: string | null): boolean {
   if (typeof configured !== 'string' || configured.trim() === '') return true;
   if (arrivedOn === null) return false;
@@ -253,6 +338,9 @@ export function planRuns(
     // arm it against this event source.
     if (trigger.type !== 'trigger.whatsapp_inbound') continue;
 
+    // KIND FIRST: a workflow that does not accept files must not even be asked
+    // whether its keyword matches the (empty) text of one.
+    if (!matchesKind(trigger.properties.messageKinds, message.kind)) continue;
     if (!matchesKeyword(trigger.properties.keyword, message.messageText)) continue;
     if (!matchesNumber(trigger.properties.phoneNumberId, message.phoneNumberId)) continue;
 
@@ -260,10 +348,12 @@ export function planRuns(
       workflowId: workflow.id,
       eventId: message.eventId,
       triggerSource: 'whatsapp_inbound',
+      definitionSnapshot: workflow.definition,
       dedupeKey: `whatsapp_inbound:${message.inboxRowId}:${workflow.id}`,
       triggerPayload: buildTriggerPayload({
         eventId: message.eventId,
         contactId: message.contactId,
+        inboxRowId: message.inboxRowId,
         messageText: message.messageText,
         buttonPayload: message.buttonPayload,
         context: {

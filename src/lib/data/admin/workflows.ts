@@ -27,8 +27,12 @@ import 'server-only';
 import { requirePlatformPermission } from '@/lib/auth/dal';
 import { createAdminClient } from '@/lib/supabase/admin';
 import type { Json } from '@/lib/supabase/types';
+import { assignRole } from '@/lib/data/admin/integrations/provider-numbers';
 import { editorDiagramSchema } from '@/lib/workflow/adapter/editor-schema';
+import { OWNER_WHATSAPP_MESSAGE_KINDS } from '@/lib/workflow/catalogue/types';
+import { matchesKind } from '@/lib/workflow/trigger';
 import { toWorkflowDefinition } from '@/lib/workflow/adapter/to-definition';
+import { findArmBlockers } from '@/lib/workflow/catalogue/arm-check';
 import {
   dryRunWorkflow,
   type DryRunResult,
@@ -199,7 +203,19 @@ export async function saveWorkflowDefinition(
   }
 }
 
-export type ArmResult = { ok: true } | { ok: false; errors: string[] };
+export type ArmResult =
+  | {
+      ok: true;
+      /**
+       * Something the arming did BESIDES arming, in Hebrew, for the admin to read.
+       *
+       * Today there is exactly one: claiming the `whatsapp_import_sender` role for
+       * the number a guest-list trigger is pinned to. A side effect on
+       * account-wide routing must never be silent — see `claimImportRole`.
+       */
+      notice?: string;
+    }
+  | { ok: false; errors: string[] };
 
 /**
  * Arm or disarm a workflow.
@@ -233,6 +249,29 @@ export async function setWorkflowActive(
     if (!converted.ok) {
       return { ok: false, errors: converted.errors.map((e) => e.message) };
     }
+
+    // ⚠️ AND THEN: is it CONFIGURED? Conversion proves the graph can run; it does
+    // not prove every step was filled in. `action.start_for_each_guest` with no
+    // target converts cleanly and then throws on Sunday at 10:00 — an owner who
+    // pressed "arm" learns from a failed run hours later, if at all.
+    //
+    // Deliberately a SECOND gate rather than part of the converter: a starter
+    // template ships with blanks on purpose and must stay loadable and saveable.
+    // Only arming demands they be filled.
+    const blockers = findArmBlockers(workflow.data.definition, id);
+    if (blockers.length > 0) return { ok: false, errors: blockers };
+
+    const { error: armError } = await supabase
+      .from('workflows')
+      .update({ is_active: true })
+      .eq('id', id);
+    if (armError) throw new Error('עדכון מצב התהליך נכשל');
+
+    // AFTER the workflow is armed, and deliberately in that order: claiming the
+    // role is a convenience, and a failure in it must not leave the owner with a
+    // workflow they pressed "arm" on that is not armed.
+    const notice = await claimImportRole(workflow.data.definition);
+    return notice ? { ok: true, notice } : { ok: true };
   }
 
   const { error } = await supabase
@@ -242,6 +281,89 @@ export async function setWorkflowActive(
 
   if (error) throw new Error('עדכון מצב התהליך נכשל');
   return { ok: true };
+}
+
+/**
+ * Give the `whatsapp_import_sender` role to the number a guest-list trigger names.
+ *
+ * ⚠️ OWNER'S RULING 2026-09-13, and it overrides my own objection, which is worth
+ * recording because it was not baseless: this role is ACCOUNT-WIDE routing, and a
+ * single workflow silently repurposing a number for every other flow is a real
+ * hazard. The owner's counter is stronger — he pinned the trigger to a number and
+ * ticked "files and contact cards", which IS the statement of intent, and making
+ * him repeat it in a second screen is the system failing to join two things it
+ * already knows.
+ *
+ * THREE RULES KEEP IT HONEST:
+ *
+ *   1. ON ARM, never on save. Arming is the deliberate act, and it already takes
+ *      `manage_settings` — the same permission `assignRole` requires for this
+ *      role, so the caller is authorised for exactly this.
+ *   2. IT NEVER STEALS. If another number already holds the role, this does
+ *      nothing and says so. Displacing an account-wide assignment because someone
+ *      armed a second workflow is the surprise the objection was about.
+ *   3. IT IS NEVER SILENT. The notice reaches the admin, because assigning it
+ *      changes how EVERY inbound message routes: a message arriving on any number
+ *      that is neither the RSVP line nor this one becomes 'unknown' — alerted and
+ *      not processed. That is a consequence someone has to be told about.
+ *
+ * Returns the sentence to show, or null when there was nothing to do. NEVER
+ * throws: the workflow is already armed by the time this runs.
+ */
+async function claimImportRole(definition: unknown): Promise<string | null> {
+  try {
+    const parsed = editorDiagramSchema.safeParse(definition);
+    if (!parsed.success) return null;
+
+    const trigger = parsed.data.nodes.find(
+      (n) => n.data.type === 'trigger.whatsapp_inbound',
+    );
+    if (!trigger) return null;
+
+    // Only a trigger that actually asks for lists. A workflow pinned to a number
+    // for ordinary guest replies must not claim the import role.
+    if (!acceptsOwnerListKinds(trigger.data.properties?.messageKinds)) return null;
+
+    const providerRef = trigger.data.properties?.phoneNumberId;
+    if (typeof providerRef !== 'string' || providerRef.trim() === '') return null;
+
+    const supabase = createAdminClient();
+
+    const { data: target } = await supabase
+      .from('provider_numbers')
+      .select('id, e164, is_active')
+      .eq('provider', 'meta_whatsapp')
+      .eq('provider_ref', providerRef)
+      .maybeSingle();
+    // An inactive number must not take over routing — `resolveNumberForRole`
+    // would answer null for it anyway, so the assignment would be inert and the
+    // notice would be a lie.
+    if (!target || !target.is_active) return null;
+
+    const { data: held } = await supabase
+      .from('provider_number_roles')
+      .select('number_id')
+      .eq('role', 'whatsapp_import_sender')
+      .maybeSingle();
+
+    if (held?.number_id === target.id) return null; // already ours, nothing to say
+    if (held) {
+      // RULE 2. Someone else holds it; say so rather than taking it.
+      return 'שימו לב: תפקיד קליטת הרשימות כבר משויך למספר אחר, ולכן לא שונה. אם התהליך הזה אמור לקלוט — שנו את השיוך ב-/admin/integrations/numbers.';
+    }
+
+    await assignRole('whatsapp_import_sender', target.id);
+    return `המספר ${target.e164 ?? providerRef} שויך לתפקיד קליטת רשימות אורחים. מעכשיו הודעות שמגיעות למספר שאינו זה ואינו מספר ה-RSVP לא יעובדו — תקבלו התראה על כל אחת כזו.`;
+  } catch {
+    // The workflow is armed. A role that could not be claimed is a message the
+    // admin does not get, never a failed arming.
+    return null;
+  }
+}
+
+/** Does this trigger ask for the kinds only an OWNER sends — a file or contact cards? */
+function acceptsOwnerListKinds(configured: unknown): boolean {
+  return OWNER_WHATSAPP_MESSAGE_KINDS.some((kind) => matchesKind(configured, kind));
 }
 
 export type DeleteResult = { ok: true } | { ok: false; errors: string[] };
@@ -329,16 +451,31 @@ export async function cancelRun(runId: string): Promise<CancelRunResult> {
   const supabase = createAdminClient();
   const { data, error } = await supabase
     .from('workflow_runs')
-    .update({ status: 'cancelled', finished_at: new Date().toISOString() })
+    // `resume_at` is cleared with the status: it means "wake me then", and a
+    // cancelled run is never waking. Leaving it would also leave the row in the
+    // partial index the stuck-run sweep reads.
+    .update({ status: 'cancelled', finished_at: new Date().toISOString(), resume_at: null })
     .eq('id', runId)
-    .eq('status', 'pending')
+    // ⚠️ 'waiting' TOO, and the original reasoning is exactly why it is safe.
+    // The note above says a run cannot be stopped "once it is inside runGraph" —
+    // a PARKED run is not inside runGraph. It is a row with a deadline and a
+    // pg-boss job that has not fired, doing nothing at all. With
+    // `logic.wait` allowing up to a year, refusing to cancel it meant an owner
+    // could watch a run they no longer wanted and have no way to stop it:
+    // disarming the workflow does not touch runs already in flight.
+    //
+    // Nothing else is needed to make it stick. When the wake-up job does fire,
+    // `handleWorkflowRun` reloads the row, sees a status that is not
+    // pending/running/waiting, and skips — the same gate that already protects a
+    // redelivered terminal run.
+    .in('status', ['pending', 'waiting'])
     .select('id');
 
   if (error) throw new Error('ביטול ההרצה נכשל');
   if ((data ?? []).length === 0) {
     return {
       ok: false,
-      errors: ['ההרצה כבר יצאה לדרך או הסתיימה, ולא ניתן לבטל אותה.'],
+      errors: ['ההרצה כבר רצה או הסתיימה, ולא ניתן לבטל אותה.'],
     };
   }
   return { ok: true };

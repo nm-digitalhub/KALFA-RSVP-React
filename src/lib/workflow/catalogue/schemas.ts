@@ -32,17 +32,25 @@ import type { NodeSchema, PaletteItem, UISchema } from '@workflowbuilder/sdk';
 
 import { RSVP_STATUSES } from '@/lib/constants';
 
+import { CHECKBOX_LIST_FORMAT, HEADER_ROWS_FORMAT } from './ui-formats';
+
 import {
-  CONDITION_BRANCH_HANDLES,
   ACTION_BRANCH_HANDLES,
+  CALLBACK_TOPICS,
+  CONDITION_BRANCH_HANDLES,
   ERROR_POLICIES,
+  HTTP_METHODS,
+  NODE_NUMBER_RANGES,
+  NODE_REQUIRED_FIELDS,
   NODE_STATUSES,
-  SWITCH_CASE_HANDLES,
-  type GuestField,
+  SWITCH_DEFAULT_BRANCH_ID,
   SWITCH_DEFAULT_HANDLE,
   UNARY_CONDITION_OPERATORS,
+  WAIT_UNIT_VALUES,
+  WHATSAPP_MESSAGE_KINDS,
   type ConditionField,
   type ConditionOperator,
+  type GuestField,
   type KalfaNodeType,
 } from './types';
 
@@ -147,6 +155,17 @@ const errorPolicyOptions = {
   errorRoute: { label: 'המשך במסלול השגיאה', value: ERROR_POLICIES[2] },
 } as const;
 
+// GET/DELETE carry no body — the port drops it rather than sending an empty one.
+const httpMethodOptions = {
+  POST: { label: 'POST — שליחת נתונים', value: HTTP_METHODS[0] },
+  GET: { label: 'GET — קריאת נתונים', value: HTTP_METHODS[1] },
+  PUT: { label: 'PUT — החלפה', value: HTTP_METHODS[2] },
+  PATCH: { label: 'PATCH — עדכון חלקי', value: HTTP_METHODS[3] },
+  DELETE: { label: 'DELETE — מחיקה', value: HTTP_METHODS[4] },
+} as const;
+
+const callbackTopicOptions = CALLBACK_TOPICS.map((value) => ({ label: value, value }));
+
 const rsvpStatusOptions = {
   attending: { label: 'מגיע/ה', value: RSVP_STATUSES[0] },
   declined: { label: 'לא מגיע/ה', value: RSVP_STATUSES[1] },
@@ -175,12 +194,32 @@ export type WhatsAppNumberOption = {
 // below takes them; `PALETTE_ITEMS` is the empty-list case.
 const triggerSchema = {
   type: 'object',
-  required: ['label', 'description'],
+  required: NODE_REQUIRED_FIELDS['trigger.whatsapp_inbound'],
   properties: {
     ...sharedProperties,
     ...statusProperty,
     keyword: { type: 'string', placeholder: 'השאירו ריק כדי להפעיל על כל הודעה' },
     phoneNumberId: { type: 'string' },
+    // WHICH KINDS of message start this workflow. An OPEN array of Meta's own
+    // `type` strings — not an enum — so a kind Meta adds later needs a catalogue
+    // entry rather than a migration. Absent means the four a guest actually
+    // speaks with, which is what every diagram saved before this field did.
+    // ⚠️ OBJECTS, NOT BARE STRINGS, and the shape is forced on us.
+    //
+    // The SDK's `ArrayFieldSchema` is `{ type:'array', items:{ type:'object',
+    // properties } }` — it cannot describe an array of strings at all. The first
+    // version declared this shape and had the control write plain strings, so
+    // every saved trigger carried a validation error on the node
+    // ("Instance type \"string\" is invalid. Expected \"object\"") and showed a
+    // "!" the owner could not act on.
+    //
+    // So the control stores `[{ value: 'document' }, …]`. `matchesKind` accepts
+    // BOTH shapes, which is what keeps a workflow saved under the string version
+    // matching without a migration.
+    messageKinds: {
+      type: 'array',
+      items: { type: 'object', properties: { value: { type: 'string' } } },
+    },
   },
 } satisfies NodeSchema;
 
@@ -225,6 +264,28 @@ const triggerUiSchema: UISchema = {
       scope: triggerScope('properties.keyword'),
       label: 'הפעל רק אם ההודעה מכילה',
     },
+    {
+      // Collapsed: the default is right for almost every workflow, and an
+      // always-open list of nine checkboxes is the first thing an owner scrolls
+      // past on a node they only wanted to name.
+      type: 'Accordion',
+      label: 'סוגי הודעות שמפעילים את התהליך',
+      elements: [
+        {
+          // A CUSTOM RENDERER — the SDK ships no multi-select. Declared as the
+          // nearest allowed element type and outranked by ours, matched on
+          // `options.format`. See checkbox-list-control.tsx.
+          type: 'Text',
+          scope: triggerScope('properties.messageKinds'),
+          options: {
+            format: CHECKBOX_LIST_FORMAT,
+            choices: WHATSAPP_MESSAGE_KINDS.map((k) => ({ ...k })),
+            defaultNote:
+              'ברירת מחדל: רק הודעות שאורח שולח — טקסט, כפתור, תפריט ותגובה. סמנו קובץ או אנשי קשר כדי לבנות תהליך שקולט רשימת אורחים.',
+          },
+        },
+      ],
+    },
     statusControl(triggerScope('properties.status')),
   ],
 };
@@ -235,7 +296,7 @@ const triggerUiSchema: UISchema = {
 
 const webhookTriggerSchema = {
   type: 'object',
-  required: ['label', 'description'],
+  required: NODE_REQUIRED_FIELDS['trigger.webhook'],
   properties: {
     ...sharedProperties,
     ...statusProperty,
@@ -277,7 +338,7 @@ const webhookTriggerUiSchema: UISchema = {
 
 const conditionSchema = {
   type: 'object',
-  required: ['label', 'description', 'field', 'operator'],
+  required: NODE_REQUIRED_FIELDS['logic.condition'],
   properties: {
     ...sharedProperties,
     ...statusProperty,
@@ -367,7 +428,7 @@ const guestFieldOptions = {
 
 const setGuestFieldSchema = {
   type: 'object',
-  required: ['label', 'description', 'field'],
+  required: NODE_REQUIRED_FIELDS['action.set_guest_field'],
   properties: {
     ...sharedProperties,
     ...statusProperty,
@@ -412,12 +473,12 @@ const setGuestFieldUiSchema: UISchema = {
 
 const callbackRequestSchema = {
   type: 'object',
-  required: ['label', 'description', 'topic'],
+  required: NODE_REQUIRED_FIELDS['action.create_callback_request'],
   properties: {
     ...sharedProperties,
     ...statusProperty,
     errorPolicy: { type: 'string', options: Object.values(errorPolicyOptions) },
-    topic: { type: 'string' },
+    topic: { type: 'string', options: callbackTopicOptions },
     note: { type: 'string' },
     decisionBranches: {
       type: 'array',
@@ -435,7 +496,7 @@ const callbackRequestUiSchema: UISchema = {
   type: 'VerticalLayout',
   elements: [
     { type: 'Text', scope: callbackRequestScope('properties.label'), label: 'שם הצעד' },
-    { type: 'Text', scope: callbackRequestScope('properties.topic'), label: 'נושא הפנייה' },
+    { type: 'Select', scope: callbackRequestScope('properties.topic'), label: 'נושא הפנייה' },
     {
       type: 'VariableText',
       scope: callbackRequestScope('properties.note'),
@@ -458,24 +519,29 @@ const callbackRequestUiSchema: UISchema = {
 
 const webhookSchema = {
   type: 'object',
-  required: ['label', 'description', 'url'],
+  required: NODE_REQUIRED_FIELDS['action.webhook'],
   properties: {
     ...sharedProperties,
     ...statusProperty,
     errorPolicy: { type: 'string', options: Object.values(errorPolicyOptions) },
+    method: { type: 'string', options: Object.values(httpMethodOptions) },
     url: { type: 'string' },
-    body: { type: 'string' },
-    decisionBranches: {
+    // The field the old design refused to have. See WebhookConfig for why it can
+    // exist now: a value may be `{{secrets.<NAME>}}`, and the NAME is what is
+    // stored — the secret itself is fetched at the socket and never comes back.
+    headers: {
       type: 'array',
       items: {
         type: 'object',
         properties: {
-          id: { type: 'string' },
-          sourceHandle: { type: 'string' },
-          label: { type: 'string' },
+          name: { type: 'string', label: 'שם', placeholder: 'Authorization' },
+          value: { type: 'string', label: 'ערך', placeholder: 'Bearer {{secrets.ACME_API_KEY}}' },
         },
       },
     },
+    body: { type: 'string' },
+    captureResponse: { type: 'boolean' },
+    ...actionBranchesProperty,
   },
 } satisfies NodeSchema;
 
@@ -485,6 +551,7 @@ const webhookUiSchema: UISchema = {
   type: 'VerticalLayout',
   elements: [
     { type: 'Text', scope: webhookScope('properties.label'), label: 'שם הצעד' },
+    { type: 'Select', scope: webhookScope('properties.method'), label: 'סוג הבקשה' },
     {
       // Plain Text, not VariableText: the DESTINATION must not be assembled from
       // guest data. A URL built at run time is a URL nobody reviewed, and the
@@ -496,10 +563,50 @@ const webhookUiSchema: UISchema = {
       placeholder: 'https://example.com/hooks/kalfa',
     },
     {
-      type: 'VariableText',
+      type: 'VariableTextArea',
       scope: webhookScope('properties.body'),
       label: 'גוף הבקשה',
       placeholder: '{"name":"{{trigger.guest_name}}","text":"{{trigger.message_text}}"}',
+      minRows: 3,
+    },
+    // Collapsed by default: most calls need no header, and an always-open list
+    // of empty rows is the first thing an owner has to scroll past.
+    {
+      type: 'Accordion',
+      label: 'כותרות ואימות',
+      elements: [
+        {
+          // A CUSTOM RENDERER, and the SDK has no built-in that could do this.
+          //
+          // `UISchemaControlElement` is a closed union — Text, Switch, Select,
+          // DatePicker, TextArea, DynamicConditions, AiTools, DecisionBranches,
+          // VariableText, VariableTextArea, MessageOnError — and not one of them
+          // edits an arbitrary array of objects. So the element is declared as
+          // the nearest allowed type and OUTRANKED by our own renderer, which is
+          // the mechanism upstream documents on `rankWith` itself: "rank above
+          // the built-ins to override a control".
+          //
+          // The match is on `options.format`, not on the scope: a scope-based
+          // tester would silently capture any future field that happened to end
+          // in the same word, while this says out loud which control is wanted.
+          // See header-rows-control.tsx.
+          type: 'Text',
+          scope: webhookScope('properties.headers'),
+          options: { format: HEADER_ROWS_FORMAT },
+        },
+        {
+          // The instruction that makes the whole secrets design usable. Without
+          // it an owner types the key itself, which is exactly what this node
+          // spent a release refusing to allow.
+          type: 'Label',
+          text: 'לעולם אל תקלידו מפתח API כאן. כתבו {{secrets.SHEM_HASOD}} — הערך עצמו נשמר בשרת ואינו נשמר בתרשים, אינו מוצג בדפדפן ואינו נרשם ביומן ההרצה.',
+        },
+      ],
+    },
+    {
+      type: 'Switch',
+      scope: webhookScope('properties.captureResponse'),
+      label: 'שמירת התשובה לשימוש בצעדים הבאים',
     },
     {
       type: 'Select',
@@ -521,22 +628,25 @@ const webhookUiSchema: UISchema = {
 // logic.switch
 // ---------------------------------------------------------------------------
 
+// N OWNER-DEFINED BRANCHES, on the SDK's own `DecisionBranches` control.
+//
+// REBUILT 2026-09-13, replacing a fixed `case1/case2/case3`. The old note here
+// said the branches were "NOT exposed in the uischema" because the worker named
+// the ports from `SWITCH_CASE_HANDLES` without reading the diagram. That was a
+// self-imposed ceiling: the handler now reads the branch the conditions selected,
+// so the port list may be anything the owner builds.
+//
+// `conditions` is a NESTED array inside each branch — `FieldSchema` admits an
+// `ArrayFieldSchema`, so this type-checks — and it must be declared, or the
+// control has nowhere to persist its rows and validation strips them on save.
+// Its four fields are the SDK's `DynamicCondition` exactly.
 const switchSchema = {
   type: 'object',
-  required: ['label', 'description', 'left'],
+  required: NODE_REQUIRED_FIELDS['logic.switch'],
   properties: {
     ...sharedProperties,
     ...statusProperty,
     left: { type: 'string' },
-    case1: { type: 'string' },
-    case2: { type: 'string' },
-    case3: { type: 'string' },
-    // Same shape and same reason as the condition's: the SDK's decision renderer
-    // reads this array and draws one labelled handle per entry. Four entries, not
-    // a variable list, and NOT exposed in the uischema below — the worker names
-    // these ports from `SWITCH_CASE_HANDLES` without reading the diagram, so an
-    // owner renaming a handle in the panel would route to nowhere with nothing to
-    // say about why.
     decisionBranches: {
       type: 'array',
       items: {
@@ -545,6 +655,18 @@ const switchSchema = {
           id: { type: 'string' },
           sourceHandle: { type: 'string' },
           label: { type: 'string' },
+          conditions: {
+            type: 'array',
+            items: {
+              type: 'object',
+              properties: {
+                x: { type: 'string' },
+                comparisonOperator: { type: 'string' },
+                y: { type: 'string' },
+                logicalOperator: { type: 'string' },
+              },
+            },
+          },
         },
       },
     },
@@ -557,15 +679,20 @@ const switchUiSchema: UISchema = {
   type: 'VerticalLayout',
   elements: [
     { type: 'Text', scope: switchScope('properties.label'), label: 'שם הצעד' },
+    // Kept as a convenience, NOT as the thing branches compare against: each row
+    // carries its own `x`. An owner who wants one value routed several ways can
+    // paste it here and reference it, and one who does not can ignore it. The
+    // handler never reads it, which is why it left `required`.
     {
       type: 'VariableText',
       scope: switchScope('properties.left'),
-      label: 'הערך לניתוב',
-      placeholder: "למשל {{trigger.button_payload}}",
+      label: 'הערך לניתוב (לא חובה)',
+      placeholder: 'למשל {{trigger.button_payload}}',
     },
-    { type: 'VariableText', scope: switchScope('properties.case1'), label: 'מסלול 1 — כאשר הערך הוא' },
-    { type: 'VariableText', scope: switchScope('properties.case2'), label: 'מסלול 2 — כאשר הערך הוא' },
-    { type: 'VariableText', scope: switchScope('properties.case3'), label: 'מסלול 3 — כאשר הערך הוא' },
+    // THE control. Renders one card per branch — rename, reorder, delete — each
+    // opening the SDK's condition editor with its ten operators and the variable
+    // picker fed by every upstream node's `outputSchema`.
+    { type: 'DecisionBranches', scope: switchScope('properties.decisionBranches') },
     statusControl(switchScope('properties.status')),
   ],
 };
@@ -583,7 +710,7 @@ const updateGuestStatusSchema = {
   // waiting for whoever reads it next, so ours moved. `readRsvpStatus` in the
   // handler still accepts the old key, because diagrams saved before this carry
   // it.
-  required: ['label', 'description', 'rsvpStatus'],
+  required: NODE_REQUIRED_FIELDS['action.update_guest_status'],
   properties: {
     ...sharedProperties,
     ...statusProperty,
@@ -636,7 +763,7 @@ const updateGuestStatusUiSchema: UISchema = {
 
 const sendWhatsappSchema = {
   type: 'object',
-  required: ['label', 'description', 'body'],
+  required: NODE_REQUIRED_FIELDS['action.send_whatsapp'],
   properties: {
     ...sharedProperties,
     ...statusProperty,
@@ -691,7 +818,7 @@ const notifyLevelOptions = {
 
 const notifyTeamSchema = {
   type: 'object',
-  required: ['label', 'description', 'title'],
+  required: NODE_REQUIRED_FIELDS['action.notify_team'],
   properties: {
     ...sharedProperties,
     ...statusProperty,
@@ -741,7 +868,7 @@ const notifyTeamUiSchema: UISchema = {
 
 const setValueSchema = {
   type: 'object',
-  required: ['label', 'description', 'value'],
+  required: NODE_REQUIRED_FIELDS['logic.set_value'],
   properties: {
     ...sharedProperties,
     ...statusProperty,
@@ -776,7 +903,7 @@ const setValueUiSchema: UISchema = {
 
 const startRsvpAiCallbackSchema = {
   type: 'object',
-  required: ['label', 'description'],
+  required: NODE_REQUIRED_FIELDS['action.start_rsvp_ai_callback'],
   properties: {
     ...sharedProperties,
     ...statusProperty,
@@ -810,6 +937,304 @@ const startRsvpAiCallbackUiSchema: UISchema = {
 // The palette
 // ---------------------------------------------------------------------------
 
+
+// ---------------------------------------------------------------------------
+// action.import_guest_list
+// ---------------------------------------------------------------------------
+
+// NO BUSINESS FIELDS, and that is the design — see ImportGuestListConfig. The
+// only properties are the ones every node carries: a name, a description, the
+// on/off switch, the failure policy and the two branch handles.
+const importGuestListSchema = {
+  type: 'object',
+  required: NODE_REQUIRED_FIELDS['action.import_guest_list'],
+  properties: {
+    ...sharedProperties,
+    ...statusProperty,
+    errorPolicy: { type: 'string', options: Object.values(errorPolicyOptions) },
+    ...actionBranchesProperty,
+  },
+} satisfies NodeSchema;
+
+const importGuestListScope = getScope<typeof importGuestListSchema>;
+
+const importGuestListUiSchema: UISchema = {
+  type: 'VerticalLayout',
+  elements: [
+    { type: 'Text', scope: importGuestListScope('properties.label'), label: 'שם הצעד' },
+    {
+      type: 'Label',
+      text: 'קולט את הקובץ או את אנשי הקשר שהגיעו בוואטסאפ ומעלה אותם לסקירה. האורחים נוצרים רק אחרי אישור במסך הייבוא — הצעד הזה לא מוסיף אורחים בעצמו.',
+    },
+    {
+      type: 'Label',
+      text: 'דורש טריגר וואטסאפ שמסומן בו "קובץ" או "כרטיסי אנשי קשר".',
+    },
+    {
+      type: 'Select',
+      scope: importGuestListScope('properties.errorPolicy'),
+      label: 'אם הקליטה נכשלת',
+    },
+    statusControl(importGuestListScope('properties.status')),
+  ],
+};
+
+
+// ---------------------------------------------------------------------------
+// logic.wait
+// ---------------------------------------------------------------------------
+
+const waitUnitOptions = {
+  minutes: { label: 'דקות', value: WAIT_UNIT_VALUES[0] },
+  hours: { label: 'שעות', value: WAIT_UNIT_VALUES[1] },
+  days: { label: 'ימים', value: WAIT_UNIT_VALUES[2] },
+} as const;
+
+const waitSchema = {
+  type: 'object',
+  required: NODE_REQUIRED_FIELDS['logic.wait'],
+  properties: {
+    ...sharedProperties,
+    ...statusProperty,
+    // `minimum: 1` is the form's half of the guard; the handler refuses a
+    // non-positive value again, because the schema constrains what can be TYPED
+    // and not what is in the jsonb row.
+    amount: { type: 'number', ...NODE_NUMBER_RANGES['logic.wait']!.amount },
+    unit: { type: 'string', options: Object.values(waitUnitOptions) },
+  },
+} satisfies NodeSchema;
+
+const waitScope = getScope<typeof waitSchema>;
+
+const waitUiSchema: UISchema = {
+  type: 'VerticalLayout',
+  elements: [
+    { type: 'Text', scope: waitScope('properties.label'), label: 'שם הצעד' },
+    {
+      type: 'HorizontalLayout',
+      elements: [
+        { type: 'Text', scope: waitScope('properties.amount'), label: 'כמה', inputType: 'number' },
+        { type: 'Select', scope: waitScope('properties.unit'), label: 'יחידה' },
+      ],
+    },
+    {
+      // The two things an owner cannot see from the canvas and will otherwise
+      // learn from a surprise.
+      type: 'Label',
+      text: 'ההרצה נעצרת כאן וחוזרת מעצמה. עד אז היא מופיעה כ"ממתינה" ולא כהושלמה.',
+    },
+    {
+      type: 'Label',
+      text: 'שימו לב: אם תערכו את התהליך בזמן ההמתנה, ההרצה תמשיך לפי הגרסה החדשה.',
+    },
+    statusControl(waitScope('properties.status')),
+  ],
+};
+
+
+// ---------------------------------------------------------------------------
+// trigger.schedule
+// ---------------------------------------------------------------------------
+
+// Sunday = 0, matching `Date.getDay()` and Israel's own week.
+const scheduleDayOptions = [
+  { value: '0', label: 'ראשון' },
+  { value: '1', label: 'שני' },
+  { value: '2', label: 'שלישי' },
+  { value: '3', label: 'רביעי' },
+  { value: '4', label: 'חמישי' },
+  { value: '5', label: 'שישי' },
+  { value: '6', label: 'שבת' },
+] as const;
+
+const scheduleSchema = {
+  type: 'object',
+  required: NODE_REQUIRED_FIELDS['trigger.schedule'],
+  properties: {
+    ...sharedProperties,
+    ...statusProperty,
+    // `pattern` is the form's half; `matchesSchedule` refuses a bad value again,
+    // because the schema constrains what can be TYPED and not what is in the row.
+    time: { type: 'string', pattern: '^([01][0-9]|2[0-3]):[0-5][0-9]$', placeholder: '09:00' },
+    days: {
+      type: 'array',
+      items: { type: 'object', properties: { value: { type: 'string' } } },
+    },
+  },
+} satisfies NodeSchema;
+
+const scheduleScope = getScope<typeof scheduleSchema>;
+
+const scheduleUiSchema: UISchema = {
+  type: 'VerticalLayout',
+  elements: [
+    { type: 'Text', scope: scheduleScope('properties.label'), label: 'שם הצעד' },
+    {
+      type: 'Text',
+      scope: scheduleScope('properties.time'),
+      label: 'שעה (24 שעות)',
+      placeholder: '09:00',
+    },
+    {
+      type: 'Accordion',
+      label: 'באילו ימים',
+      elements: [
+        {
+          type: 'Text',
+          scope: scheduleScope('properties.days'),
+          options: {
+            format: CHECKBOX_LIST_FORMAT,
+            choices: scheduleDayOptions.map((d) => ({ ...d })),
+            defaultNote: 'ברירת מחדל: כל יום.',
+          },
+        },
+      ],
+    },
+    {
+      // The two facts an owner cannot see from the canvas.
+      type: 'Label',
+      text: 'השעה היא לפי שעון ישראל, וממשיכה להיות נכונה גם אחרי מעבר שעון.',
+    },
+    {
+      type: 'Label',
+      text: 'הרצה מתוזמנת אינה מתחילה מאורח — צעדים שפועלים על אורח יסרבו בתוכה.',
+    },
+    statusControl(scheduleScope('properties.status')),
+  ],
+};
+
+
+// ---------------------------------------------------------------------------
+// action.send_template  ·  action.start_for_each_guest
+// ---------------------------------------------------------------------------
+
+// The message keys, NOT the Meta template names. A key resolves per event type
+// and per language through `message_templates`, so one key sends the approved
+// brit layout at a brit and the approved wedding one at a wedding.
+//
+// ⚠️ THE LABELS SAY WHICH ARE MARKETING. That is not decoration: a MARKETING
+// template is subject to the consent gate (currently off, by the owner's
+// decision) and routes through MM Lite, and an owner choosing one should know
+// they are in a different regime from a reminder.
+const templateKeyOptions = [
+  { value: 'invite', label: 'הזמנה' },
+  { value: 'reminder_1', label: 'תזכורת ראשונה' },
+  { value: 'reminder_2', label: 'תזכורת שנייה' },
+  { value: 'final', label: 'הודעה אחרונה לפני האירוע' },
+  { value: 'event_day_pay', label: 'תשלום ביום האירוע' },
+  { value: 'thankyou', label: 'תודה אחרי האירוע (שיווקי)' },
+  { value: 'gift', label: 'מתנה (שיווקי)' },
+] as const;
+
+const sendTemplateSchema = {
+  type: 'object',
+  required: NODE_REQUIRED_FIELDS['action.send_template'],
+  properties: {
+    ...sharedProperties,
+    ...statusProperty,
+    messageKey: { type: 'string', options: templateKeyOptions.map((o) => ({ ...o })) },
+  },
+} satisfies NodeSchema;
+
+const sendTemplateScope = getScope<typeof sendTemplateSchema>;
+
+const sendTemplateUiSchema: UISchema = {
+  type: 'VerticalLayout',
+  elements: [
+    { type: 'Text', scope: sendTemplateScope('properties.label'), label: 'שם הצעד' },
+    { type: 'Select', scope: sendTemplateScope('properties.messageKey'), label: 'איזו תבנית' },
+    {
+      // The distinction that decides which of the two send nodes to use, said
+      // plainly — it is not visible from the canvas and gets discovered the hard
+      // way otherwise.
+      type: 'Label',
+      text: 'תבנית אפשר לשלוח בכל זמן. "שליחת וואטסאפ" (טקסט חופשי) מותרת רק עד 24 שעות אחרי שהאורח כתב — לכן תהליך שמתחיל לפי שעון חייב תבנית.',
+    },
+    {
+      type: 'Label',
+      text: 'הטקסט עצמו מגיע מהתבנית המאושרת ולא נערך כאן. אורח שביקש הסרה לא יקבל.',
+    },
+    statusControl(sendTemplateScope('properties.status')),
+  ],
+};
+
+const forEachGuestSchema = {
+  type: 'object',
+  required: NODE_REQUIRED_FIELDS['action.start_for_each_guest'],
+  properties: {
+    ...sharedProperties,
+    ...statusProperty,
+    errorPolicy: { type: 'string', options: Object.values(errorPolicyOptions) },
+    targetWorkflowId: { type: 'string' },
+    statuses: {
+      type: 'array',
+      items: { type: 'object', properties: { value: { type: 'string' } } },
+    },
+    requirePhone: { type: 'boolean' },
+    // `minimum: 1` is the form's half. The handler refuses a missing or
+    // non-positive cap again, and the implementation clamps to FAN_OUT_HARD_CAP
+    // on top — three ceilings, because this is the node that can reach hundreds
+    // of people from one press.
+    maxGuests: {
+      type: 'number',
+      ...NODE_NUMBER_RANGES['action.start_for_each_guest']!.maxGuests,
+    },
+    ...actionBranchesProperty,
+  },
+} satisfies NodeSchema;
+
+const forEachGuestScope = getScope<typeof forEachGuestSchema>;
+
+const forEachGuestUiSchema: UISchema = {
+  type: 'VerticalLayout',
+  elements: [
+    { type: 'Text', scope: forEachGuestScope('properties.label'), label: 'שם הצעד' },
+    {
+      type: 'Text',
+      scope: forEachGuestScope('properties.targetWorkflowId'),
+      label: 'מזהה התהליך שירוץ לכל אורח',
+      placeholder: 'הדביקו את המזהה מכתובת העורך',
+    },
+    {
+      type: 'Text',
+      scope: forEachGuestScope('properties.maxGuests'),
+      label: 'עד כמה אורחים (חובה)',
+      inputType: 'number',
+    },
+    {
+      // The warning this node exists to carry. One press, hundreds of people.
+      type: 'Label',
+      text: 'שימו לב: הצעד הזה מתחיל הרצה נפרדת לכל אורח שמתאים. הריצו הרצת ניסיון לפני הפעלה — היא תראה לכמה אורחים זה יגיע.',
+    },
+    {
+      type: 'Accordion',
+      label: 'אילו אורחים',
+      elements: [
+        {
+          type: 'Text',
+          scope: forEachGuestScope('properties.statuses'),
+          options: {
+            format: CHECKBOX_LIST_FORMAT,
+            choices: Object.values(rsvpStatusOptions).map((o) => ({ value: o.value, label: o.label })),
+            defaultNote: 'ברירת מחדל: כל הסטטוסים.',
+          },
+        },
+        {
+          type: 'Switch',
+          scope: forEachGuestScope('properties.requirePhone'),
+          label: 'רק אורחים עם טלפון',
+        },
+      ],
+    },
+    {
+      type: 'Select',
+      scope: forEachGuestScope('properties.errorPolicy'),
+      label: 'אם הפיצול נכשל',
+    },
+    statusControl(forEachGuestScope('properties.status')),
+  ],
+};
+
 /**
  * Built at MODULE SCOPE.
  *
@@ -818,12 +1243,54 @@ const startRsvpAiCallbackUiSchema: UISchema = {
  * large graph is the difference between a canvas that drags and one that
  * stutters. This is static data, so there is nothing to recompute anyway.
  *
- * No `outputSchema` on any entry, deliberately: it is what puts a node into the
- * variable picker's suggestion list, and until a template resolver exists a
- * suggested `{{nodes.x.y}}` would be stored as literal text and sent verbatim.
- * The adapter rejects such a reference anyway; omitting this means the owner is
- * never offered one.
+ * EVERY entry carries an `outputSchema`, which is what puts a node into the
+ * variable picker's suggestion list. An earlier note here said the opposite —
+ * "omitted deliberately, until a template resolver exists". That resolver is
+ * `resolve-template.ts`: vendored, wired into `activity-runner.ts`, and proven
+ * on the `nodes.` namespace by `references.test.ts`. The note described a state
+ * that had already ended.
  */
+
+// ---------------------------------------------------------------------------
+// action.start_voice_call
+// ---------------------------------------------------------------------------
+
+/**
+ * The purpose dropdown is a LIVE LIST, the same way the WhatsApp number picker
+ * is: `voice_purposes` rows change without a deploy. `buildPaletteItems` rewrites
+ * this one entry, which is why the schema is a factory and the module-scope
+ * constant below offers nothing.
+ */
+export type VoicePurposeOption = { key: string; displayName: string };
+
+const voiceCallSchemaFor = (purposes: readonly VoicePurposeOption[]) =>
+  ({
+    type: 'object',
+    required: NODE_REQUIRED_FIELDS['action.start_voice_call'],
+    properties: {
+      ...sharedProperties,
+      ...statusProperty,
+      ...actionBranchesProperty,
+      errorPolicy: { type: 'string', options: Object.values(errorPolicyOptions) },
+      purposeKey: {
+        type: 'string',
+        options: purposes.map((p) => ({ label: p.displayName, value: p.key })),
+      },
+    },
+  }) satisfies NodeSchema;
+
+const voiceCallSchema = voiceCallSchemaFor([]);
+const voiceCallScope = getScope<typeof voiceCallSchema>;
+
+const voiceCallUiSchema = {
+  type: 'VerticalLayout',
+  elements: [
+    { type: 'Text', scope: voiceCallScope('properties.label'), label: 'שם הצעד' },
+    { type: 'Select', scope: voiceCallScope('properties.purposeKey'), label: 'ייעוד השיחה' },
+    { type: 'Select', scope: voiceCallScope('properties.errorPolicy'), label: 'אם הצעד נכשל' },
+  ],
+} satisfies UISchema;
+
 /**
  * The palette, built for a given set of WhatsApp numbers.
  *
@@ -837,12 +1304,23 @@ const startRsvpAiCallbackUiSchema: UISchema = {
  */
 export function buildPaletteItems(
   numbers: readonly WhatsAppNumberOption[] = [],
+  /**
+   * The configured voice agents, for `action.start_voice_call`'s dropdown.
+   *
+   * Empty means the node offers nothing to pick — which is the honest state
+   * when no purpose has been set up, and the handler refuses a blank anyway.
+   */
+  voicePurposes: readonly VoicePurposeOption[] = [],
 ): PaletteItem[] {
-  return PALETTE_ITEMS.map((item) =>
-    item.type === 'trigger.whatsapp_inbound'
-      ? { ...item, schema: triggerSchemaFor(numbers) }
-      : item,
-  );
+  return PALETTE_ITEMS.map((item) => {
+    if (item.type === 'trigger.whatsapp_inbound') {
+      return { ...item, schema: triggerSchemaFor(numbers) };
+    }
+    if (item.type === 'action.start_voice_call') {
+      return { ...item, schema: voiceCallSchemaFor(voicePurposes) };
+    }
+    return item;
+  });
 }
 
 /**
@@ -852,6 +1330,32 @@ export function buildPaletteItems(
  * is declared exactly once. It is also what the tests and the i18n audit read.
  */
 export const PALETTE_ITEMS: PaletteItem[] = [
+  {
+    type: 'action.start_voice_call' satisfies KalfaNodeType,
+    label: 'שיחה עם סוכן קולי',
+    description: 'מתקשר לאורח עם אחד הסוכנים הקוליים שהוגדרו',
+    icon: 'PhoneOutgoing',
+    templateType: NodeType.DecisionNode,
+    schema: voiceCallSchema,
+    uischema: voiceCallUiSchema,
+    outputSchema: {
+      type: 'default',
+      properties: {
+        dialed: { type: 'boolean', label: 'חויג' },
+        status: { type: 'string', label: 'תוצאה' },
+        reason: { type: 'string', label: 'סיבה' },
+        attemptId: { type: 'string', label: 'מזהה ניסיון' },
+      },
+    },
+    defaultPropertiesData: {
+      decisionBranches: actionBranches.map((branch) => ({ ...branch })),
+      status: nodeStatusOptions.active.value,
+      label: 'שיחה עם סוכן קולי',
+      description: 'מתקשר לאורח עם אחד הסוכנים הקוליים שהוגדרו',
+      purposeKey: '',
+      errorPolicy: errorPolicyOptions.continue.value,
+    },
+  },
   {
     type: 'trigger.whatsapp_inbound' satisfies KalfaNodeType,
     label: 'הודעת וואטסאפ נכנסת',
@@ -923,6 +1427,30 @@ export const PALETTE_ITEMS: PaletteItem[] = [
       // token from `Math.random`/`crypto` on a page is a token whose entropy
       // nobody audited. It is generated by a Server Action instead.
       token: '',
+    },
+  },
+  {
+    type: 'trigger.schedule' satisfies KalfaNodeType,
+    label: 'לפי שעון',
+    description: 'מתחיל את התהליך בשעה קבועה',
+    icon: 'Clock',
+    // The SDK's start-node body draws one handle, no target dot — the same
+    // reason the other triggers use it.
+    templateType: NodeType.StartNode,
+    schema: scheduleSchema,
+    uischema: scheduleUiSchema,
+    outputSchema: {
+      type: 'default',
+      properties: {
+        firedAt: { type: 'string', label: 'מתי רץ', description: 'התאריך והשעה בשעון ישראל' },
+      },
+    },
+    defaultPropertiesData: {
+      status: nodeStatusOptions.active.value,
+      label: 'לפי שעון',
+      description: 'מתחיל את התהליך בשעה קבועה',
+      time: '09:00',
+      days: [],
     },
   },
   {
@@ -998,39 +1526,53 @@ export const PALETTE_ITEMS: PaletteItem[] = [
   },
   {
     type: 'logic.switch' satisfies KalfaNodeType,
-    label: 'ניתוב לפי ערך',
-    description: 'מפצל את התהליך לשלושה מסלולים ועוד ברירת מחדל',
+    label: 'ניתוב לפי תנאים',
+    description: 'מפצל את התהליך לכמה מסלולים — מסלול לכל תנאי, ועוד ברירת מחדל',
     icon: 'ArrowsSplit',
-    // Same renderer as the condition, for the same reason: this is the only way
-    // the editor produces an edge whose `sourceHandle` is anything but the bare
-    // 'source'. Four branches instead of two.
+    // Same renderer as the condition, and REQUIRED rather than cosmetic: without
+    // it the N branches render as no handles at all, because the default node
+    // body draws exactly one bare 'source'.
     templateType: NodeType.DecisionNode,
     schema: switchSchema,
     uischema: switchUiSchema,
     outputSchema: {
       type: 'default',
       properties: {
-        matched: { type: 'boolean', label: 'נמצאה התאמה', description: 'האם הערך תאם אחד המסלולים' },
-        case: { type: 'number', label: 'מספר המסלול', description: 'ריק כאשר נבחרה ברירת המחדל' },
-        value: { type: 'string', label: 'הערך שנבדק' },
+        matched: { type: 'boolean', label: 'נמצאה התאמה', description: 'האם תנאי כלשהו התקיים' },
+        // A NAME now, not a number. With N owner-named branches "מסלול 3" is not
+        // a fact the node knows; the label the owner typed is.
+        branch: { type: 'string', label: 'שם המסלול שנבחר', description: 'ריק כאשר נבחרה ברירת המחדל' },
       },
     },
     defaultPropertiesData: {
       status: nodeStatusOptions.active.value,
-      label: 'ניתוב לפי ערך',
-      description: 'מפצל את התהליך לשלושה מסלולים ועוד ברירת מחדל',
+      label: 'ניתוב לפי תנאים',
+      description: 'מפצל את התהליך לכמה מסלולים — מסלול לכל תנאי, ועוד ברירת מחדל',
       left: '',
-      case1: '',
-      case2: '',
-      case3: '',
-      // Seeded and fixed, exactly like the condition's. `id` is React's list key;
-      // the labels are what the owner reads beside each handle. The DEFAULT branch
-      // is last so it reads as the fall-through it is.
+      // SEEDED, and both entries matter.
+      //
+      // The DEFAULT must exist from the first drop: the handler falls through to
+      // it by elimination, and a node dropped with `[]` would have no port to
+      // fall through to and would dead-end the run on its very first unmatched
+      // value. It is last so it reads as the fall-through it is.
+      //
+      // One empty branch above it is the affordance: an owner who drops the node
+      // sees a card to fill in rather than an empty panel and a lone "אחרת". Its
+      // `conditions: []` never matches until the owner writes a row, which is the
+      // same rule the SDK's own "add branch" produces.
+      //
+      // `source:inner:<id>` is `getHandleId({ handleType: 'source', innerId })` —
+      // spelled as a constant here because this module's worker-side twin
+      // (`types.ts`) must not import the SDK. Branches the OWNER adds get theirs
+      // minted by the control, in this same shape.
       decisionBranches: [
-        { id: 'case1', sourceHandle: SWITCH_CASE_HANDLES[0], label: 'מסלול 1' },
-        { id: 'case2', sourceHandle: SWITCH_CASE_HANDLES[1], label: 'מסלול 2' },
-        { id: 'case3', sourceHandle: SWITCH_CASE_HANDLES[2], label: 'מסלול 3' },
-        { id: 'default', sourceHandle: SWITCH_DEFAULT_HANDLE, label: 'אחרת' },
+        { id: 'branch-1', sourceHandle: 'source:inner:branch-1', label: 'מסלול ראשון', conditions: [] },
+        {
+          id: SWITCH_DEFAULT_BRANCH_ID,
+          sourceHandle: SWITCH_DEFAULT_HANDLE,
+          label: 'אחרת',
+          conditions: [],
+        },
       ],
     },
   },
@@ -1197,8 +1739,8 @@ export const PALETTE_ITEMS: PaletteItem[] = [
     // Decision node so the failure branch has a handle to leave from — the same
     // reason every other action node uses this renderer.
     templateType: NodeType.DecisionNode,
-    label: 'שליחת Webhook',
-    description: 'שולח POST למערכת חיצונית',
+    label: 'קריאת HTTP',
+    description: 'קורא למערכת חיצונית — עם אימות, אם צריך',
     icon: 'ShareNetwork',
     schema: webhookSchema,
     uischema: webhookUiSchema,
@@ -1208,15 +1750,137 @@ export const PALETTE_ITEMS: PaletteItem[] = [
         ok: { type: 'boolean', label: 'הצליח', description: 'האם התקבלה תשובת 2xx' },
         status: { type: 'number', label: 'קוד התגובה' },
         reason: { type: 'string', label: 'סיבת הכישלון' },
+        // Declared unconditionally even though it is written only when the owner
+        // turned the switch on: outputSchema is static palette data and cannot
+        // vary per node instance. Offering it always is the lesser fault — the
+        // reference resolves to '' on a node that did not capture, which the `?`
+        // and `| default:` modifiers both handle, whereas withholding it would
+        // hide a real field from the picker on every node that DID capture.
+        body: { type: 'string', label: 'גוף התשובה', description: 'רק אם הופעלה שמירת התשובה' },
+        truncated: { type: 'boolean', label: 'התשובה נחתכה', description: 'התשובה ארוכה מ-8KB' },
       },
     },
     defaultPropertiesData: {
       decisionBranches: actionBranches.map((branch) => ({ ...branch })),
       status: nodeStatusOptions.active.value,
-      label: 'שליחת Webhook',
-      description: 'שולח POST למערכת חיצונית',
+      label: 'קריאת HTTP',
+      description: 'קורא למערכת חיצונית — עם אימות, אם צריך',
+      // POST explicitly, rather than left absent: the reader defaults an absent
+      // method to POST for diagrams saved before the field existed, but a NEW
+      // node should say what it does rather than rely on that.
+      method: httpMethodOptions.POST.value,
       url: '',
       body: '',
+      // No seeded empty row. The control adds one on demand, and a node that
+      // needs no header should not persist `headers: [{name:'',value:''}]`.
+      headers: [],
+      captureResponse: false,
+      errorPolicy: errorPolicyOptions.fail.value,
+    },
+  },
+  {
+    type: 'action.import_guest_list' satisfies KalfaNodeType,
+    // Decision node so the failure branch has a handle to leave from — a file
+    // that will not parse is the case an owner most wants to route somewhere.
+    templateType: NodeType.DecisionNode,
+    label: 'קליטת רשימת אורחים',
+    description: 'מעלה לסקירה קובץ או אנשי קשר שהגיעו בוואטסאפ',
+    icon: 'UsersThree',
+    schema: importGuestListSchema,
+    uischema: importGuestListUiSchema,
+    outputSchema: {
+      type: 'default',
+      properties: {
+        // Declared so the variable picker OFFERS it: a later step can post the
+        // list onward, or a condition can branch on it. `array` is a real
+        // VariableType in the SDK, not a widening.
+        rows: { type: 'array', label: 'הרשימה עצמה', description: 'שם, טלפון, כמות וקבוצה לכל שורה' },
+        rowCount: { type: 'number', label: 'כמה שורות נקלטו' },
+        errorCount: { type: 'number', label: 'כמה שורות עם שגיאה' },
+        fileName: { type: 'string', label: 'שם הקובץ', description: 'ריק כשנשלחו אנשי קשר' },
+        reviewUrl: { type: 'string', label: 'קישור לסקירה ואישור' },
+        created: { type: 'boolean', label: 'נקלט עכשיו', description: 'שקר אם הרשימה כבר נקלטה קודם' },
+      },
+    },
+    defaultPropertiesData: {
+      decisionBranches: actionBranches.map((branch) => ({ ...branch })),
+      status: nodeStatusOptions.active.value,
+      label: 'קליטת רשימת אורחים',
+      description: 'מעלה לסקירה קובץ או אנשי קשר שהגיעו בוואטסאפ',
+      errorPolicy: errorPolicyOptions.fail.value,
+    },
+  },
+  {
+    type: 'logic.wait' satisfies KalfaNodeType,
+    label: 'המתנה',
+    description: 'עוצר את התהליך וממשיך אותו מאוחר יותר',
+    icon: 'Hourglass',
+    schema: waitSchema,
+    uischema: waitUiSchema,
+    outputSchema: {
+      type: 'default',
+      properties: {
+        waited: { type: 'boolean', label: 'ההמתנה הסתיימה' },
+      },
+    },
+    defaultPropertiesData: {
+      status: nodeStatusOptions.active.value,
+      label: 'המתנה',
+      description: 'עוצר את התהליך וממשיך אותו מאוחר יותר',
+      amount: 1,
+      unit: waitUnitOptions.days.value,
+    },
+  },
+  {
+    type: 'action.send_template' satisfies KalfaNodeType,
+    label: 'שליחת תבנית',
+    description: 'שולח לאורח תבנית מאושרת — אפשרי בכל זמן',
+    icon: 'ChatCircleText',
+    schema: sendTemplateSchema,
+    uischema: sendTemplateUiSchema,
+    outputSchema: {
+      type: 'default',
+      properties: {
+        sent: { type: 'boolean', label: 'נשלח' },
+        reason: { type: 'string', label: 'למה לא נשלח' },
+      },
+    },
+    defaultPropertiesData: {
+      status: nodeStatusOptions.active.value,
+      label: 'שליחת תבנית',
+      description: 'שולח לאורח תבנית מאושרת — אפשרי בכל זמן',
+      messageKey: 'reminder_1',
+    },
+  },
+  {
+    type: 'action.start_for_each_guest' satisfies KalfaNodeType,
+    // Decision node so a failure has a handle to leave from — a fan-out that
+    // could not read the guest list is exactly the case worth routing.
+    templateType: NodeType.DecisionNode,
+    label: 'הרצה לכל אורח',
+    description: 'מתחיל תהליך נפרד לכל אורח שמתאים',
+    icon: 'UsersThree',
+    schema: forEachGuestSchema,
+    uischema: forEachGuestUiSchema,
+    outputSchema: {
+      type: 'default',
+      properties: {
+        started: { type: 'number', label: 'כמה הרצות התחילו' },
+        matched: { type: 'number', label: 'כמה אורחים התאימו' },
+        capped: { type: 'boolean', label: 'נעצר בתקרה', description: 'היו יותר אורחים מהתקרה' },
+      },
+    },
+    defaultPropertiesData: {
+      decisionBranches: actionBranches.map((branch) => ({ ...branch })),
+      status: nodeStatusOptions.active.value,
+      label: 'הרצה לכל אורח',
+      description: 'מתחיל תהליך נפרד לכל אורח שמתאים',
+      targetWorkflowId: '',
+      statuses: [],
+      requirePhone: true,
+      // A deliberately SMALL default. A number an owner has to raise on purpose
+      // is a number they have thought about.
+      maxGuests: 25,
       errorPolicy: errorPolicyOptions.fail.value,
     },
   },
