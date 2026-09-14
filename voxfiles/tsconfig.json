@@ -1,0 +1,52 @@
+{
+  // VoxEngine scenarios — a SEPARATE compilation from the Next app's.
+  //
+  // WHY THIS FILE EXISTS. `typings/voxengine.d.ts` is Voximplant's ambient
+  // declaration file for their cloud runtime, and their own docs describe it as
+  // an IDE aid: "for writing TypeScript code in your external IDE… add it to
+  // your project folder, or specify it in the tsconfig.json". It used to be
+  // picked up by the ROOT tsconfig's `**/*.ts` (a .d.ts is a TypeScript source
+  // file for Program construction), which put 612 global `declare`s — `Call`,
+  // `Player`, `WebSocket` among them — into the type program of every file in
+  // the Next app. That is now excluded there, which left the declarations with
+  // no config including them at all. This is that config.
+  //
+  // ⚠️ THIS IS NOT WHAT BUILDS THE SCENARIOS. `voxengine-ci` writes its own
+  // `voxfiles/tsconfig.voxengine.temp.json` on every run, uses it, and deletes
+  // it. This file is for the editor and for a manual `tsc -p voxfiles` check;
+  // changing it cannot change what gets uploaded.
+  //
+  // SHAPE FOLLOWS THE VENDOR'S OWN EXAMPLE (docs.voximplant.ai/platform/
+  // voxengine/ci.md), with two deliberate differences:
+  //
+  //   1. The path. Their example still says `voxfiles/scenarios/src` — the
+  //      PRE-36 layout. 36.0.0 moved sources under `applications/<app>/`, and
+  //      their docs have not caught up (the panel quickstart is stale the same
+  //      way). Ours uses the real directory.
+  //
+  //   2. Both typing files, not one. Their example includes only the copy
+  //      inside the package; `createOrUpdateTsConfig` includes THAT ONE AND
+  //      `typings/` — so the build sees both, and so must this, or the editor
+  //      would disagree with the build. The two versions differ (7.64.1 from
+  //      the CDN vs 7.57.0 bundled) and conflict on hundreds of ambient
+  //      identifiers, which is why `skipLibCheck` is on here exactly as it is
+  //      in the generated config. MEASURED 2026-09-15: 0 errors with it, 67
+  //      without. The ElevenLabs surface is identical across the two.
+  //
+  // `noEmit`: nothing here should produce files. Only voxengine-ci emits, into
+  // its own dist/, and a stray build here would corrupt the upload hash.
+  "compilerOptions": {
+    "allowJs": true,
+    "target": "ES2020",
+    "lib": ["ES2020"],
+    "skipLibCheck": true,
+    "noEmit": true,
+    "checkJs": false
+  },
+  "include": [
+    "applications/*/scenarios/src",
+    "../typings/voxengine.d.ts",
+    "../node_modules/@voximplant/voxengine-ci/typings"
+  ],
+  "exclude": ["../node_modules", "applications/*/scenarios/dist"]
+}
