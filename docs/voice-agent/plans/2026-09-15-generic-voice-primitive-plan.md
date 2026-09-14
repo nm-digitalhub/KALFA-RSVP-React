@@ -95,6 +95,7 @@
 | A-78 | **`language_detection` לא עקבי בין הסוכנים:** דלוק ב-Meeting-Confirm ו-Sales-Close, **כבוי ב-RSVP** — כולם `language: he`. כלומר שני סוכנים רשאים להחליף שפה באמצע שיחה עם אורח ישראלי ואחד לא. לסוכן גנרי זו החלטה אחת שחייבת להיות מפורשת. ⚠️ ולפי הסכמה יש `only_at_conversation_start` שמצמצם החלפה שגויה — לא בשימוש אצלנו. | הקונפיגים + `LanguageDetectionToolConfig` |
 | A-79 | ⚠️ **`KALFA-RSVP-שירות-לקוחות`: כל 14 כלי המערכת כבויים, כולל `end_call`.** סוכן שאינו יכול לסיים שיחה בעצמו. | הקונפיגים |
 | A-80 | ⚠️ **שלושה מקורות, שלוש רשימות שונות של כלי מערכת.** התיעוד מונה **8**; סכמת ה-MCP (`BuiltInTools-Input`) מונה **7** ואינה כוללת את `update_state` שהתיעוד כן מתאר; הקונפיג החי מחזיק **14** — ובהם `memory_entry_search`, `run_subagent`, `request_help` ו-ארבעה `transfer_to_genesys*` שאינם באף אחד מהשניים. **הקונפיג החי הוא המקור השלם ביותר**, ואף מסמך אינו ממצה. | הצלבת שלושתם |
+| A-81 | ✅ **הדגלים ניתנים לקביעה בזרימה הרשמית — A-74 הוא מטלה, לא עיצוב מחדש.** הוכח מההיסטוריה בלי לכתוב לסוכן חי: `conversation.text_only` ו-`agent.language` נקבעו ב-`6121baf` (23.8) ו**שרדו `pull --update` חוזר** ב-`d75e1ea` (7.9); `asr.keywords` נוסף ב-`d75e1ea` וקיים ב-HEAD. כלומר `platform_settings.overrides` **אינו** שדה שהשרת בולע — הוא עושה round-trip. **המכניזם:** `elevenlabs agents pull --update` → עריכה → `agents push` → `pull --update` לאימות (§6.1; `agents status` **אינו** בודק drift). הפקודה לבעלים, לא לי. | היסטוריית גיט + §6.1 |
 | A-32 | `MCP.Client` של VoxEngine **אינו** דרך לעקוף את טיפול הכלים של המחבר. הספק מפורש: *"the client does not replace connector-specific tool handling by itself"*. הוא הסצנריה שקוראת החוצה לשרת MCP. | `voxengine-dev/reference.md` |
 
 ---
@@ -139,8 +140,9 @@ KALFA server  →  מעיר את התהליך  →  הצומת מחזיר תוצ
 
 | | |
 |---|---|
-| ✅ שונה לכל ייעוד | פרומפט, משפט פתיחה, קול, שפה, LLM, סט כלים, בסיס ידע, מילות ASR |
-| ❌ משותף לכולם | קריטריוני הערכה, guardrails, בטיחות, איסוף נתונים |
+| ✅ שונה לכל ייעוד | פרומפט, משפט פתיחה, קול, שפה, LLM, סט כלים, בסיס ידע, מילות ASR — **ולפי A-68 גם** תקרת משך השיחה (`max_duration_seconds`), מודל ה-TTS, מילון הגייה, ו-MCP servers |
+| ❌ משותף לכולם **בשיחה חיה** | קריטריוני הערכה, guardrails, בטיחות, איסוף נתונים |
+| ⚠️ אבל **בבדיקות כן ניתן לדרוס** | A-66: `agents_run_tests` מקבל `agent_config_override` הכולל `platform_settings` מלא — כך שכל ייעוד נבדק מול הקונפיגורציה שלו |
 
 **זה לא תיאורטי.** הסוכנים הקיימים מחזיקים קריטריונים ספציפיים לפרסונה —
 *"לא נקרא זמן קונקרטי אחרי reschedule"* (Meeting-Confirm), *"הגילוי המשפטי
@@ -249,7 +251,14 @@ TypeScript, לא JS (A-22 — `tsc` רץ ממילא, ו-`noEmitOnError` הופך
 הזול והקריטי. A-8/A-9 הוכיחו שהאובייקט עובר ושהשדה מוכר; **לא הוכח**
 שדריסה בפועל משנה התנהגות.
 
-1. להפעיל `first_message: true` בלבד על סוכן קיים — `agents pull --update` → עריכה → `agents push` → `pull --update` לאימות
+⚠️ **נקודת הפתיחה נמדדה (A-74): דגלי `prompt` ו-`tool_ids` כבויים בכל ארבעת הסוכנים.**
+מה שכן דלוק היום: `conversation.text_only` (RSVP + שירות-לקוחות), `asr.keywords` ו-`agent.language`
+(RSVP בלבד). Meeting-Confirm ו-Sales-Close — אפס דריסות. **ו-A-81 הוכיח שהדגלים שורדים
+`pull → push → pull`**, אז זו מטלה ולא עיצוב מחדש.
+
+1. להפעיל `first_message: true` בלבד — **על `KALFA-Sales-Close`**, היעד הבטוח (אפס דריסות היום,
+   ואינו נתיב ה-RSVP בייצור) — `agents pull --update` → עריכה → `agents push` → `pull --update` לאימות.
+   ⚠️ `agents status` **אינו** בודק drift (§6.1). הפקודה לבעלים.
 2. שיחה אחת עם `conversation_config_override.agent.first_message` שונה
 3. **שער:** משפט הפתיחה שנשמע ≠ המוגדר בקונסולה
 
@@ -354,6 +363,9 @@ It may accept `scenario_id` and return success without changing the binding."*
 | **§2 — קריטריונים משותפים** | בינונית | החלטה מודעת; ייעוד שדורש רף משלו מקבל סוכן |
 | **A-3 — תקרת 200 בייט** | נמוכה | 127 היום, ותוספות הולכות ל-`ctx` שאינו מוגבל |
 | **A-41 — אין sandbox** | בינונית | שלב 3 מייצר כלל חדש על אפליקציית הייצור. מיתון: `rulePattern` לא חל על שיחות יוצאות (A-35), אז כלל חדש **אינו** יכול ליירט תנועה נכנסת; הוא נגיש רק ל-`StartScenarios` עם ה-`rule_id` שלו. עדיין — לשקול אפליקציית staging לפני שלב 3, כפי ש-A-40 ממליץ |
+| **A-75/A-70 — burst בתעריף כפול** | גבוהה | `bursting_enabled: true` + `concurrency: -1` בכל ארבעת הסוכנים. קמפיין מקבילי חוצה את הגבול בשקט ומחויב כפול. לקבוע `agent_concurrency_limit` לפני הייעוד הראשון |
+| **A-77 — שני מזהי משיבון** | גבוהה | `voicemail_detection` בסוכן + שער AMD בתסריט, בלי שאף אחד יודע על השני. לפי A-53 הבעלות היא של VoxEngine — להכריע במפורש |
+| **A-44 — 3 בקשות HTTP פעילות** | בינונית | ctx + כל קריאת כלי + cb. בקשות בתור בזמן `Terminating` **נזרקות בלי callback** |
 | **A-22 — `noEmitOnError`** | נמוכה | שער, לא סיכון |
 
 ---
