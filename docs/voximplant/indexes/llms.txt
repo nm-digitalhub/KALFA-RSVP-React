@@ -1,0 +1,481 @@
+# Voximplant Voice AI
+
+## Instructions for AI Agents
+
+- For clean Markdown of any page, append `.md` to the page URL
+- For section-specific indexes, append `/llms.txt` to any section URL
+- For AI client integration (Claude Code, Cursor, etc.), connect to the MCP server at https://docs.voximplant.ai/_mcp/server
+
+## Docs
+
+- [Features Overview](https://docs.voximplant.ai/capabilities/features.md): Voice AI Orchestration on a Communications Platform
+- [Getting Started](https://docs.voximplant.ai/getting-started/voice-ai-on-voximplant/overview.md): Before you build your first Voice AI scenario
+- [Build with AI coding agents](https://docs.voximplant.ai/getting-started/vibe-coding/overview.md): Build and test Voximplant voice apps using coding agents
+- [Build a voice agent with Claude Code](https://docs.voximplant.ai/getting-started/vibe-coding/claude.md): Connect an ElevenLabs agent and test your first call
+- [Initial Voximplant Setup](https://docs.voximplant.ai/getting-started/configure-voximplant/overview.md): Set up the minimum Voximplant configuration for Voice AI scenarios
+- [Phone Numbers & PSTN](https://docs.voximplant.ai/getting-started/network-options/phone-numbers-pstn.md): Use PSTN numbers for inbound entry points and outbound caller ID
+- [SIP](https://docs.voximplant.ai/getting-started/network-options/sip.md): Connect SIP PBX and SIP Trunking flows to Voximplant Voice AI scenarios
+- [WhatsApp](https://docs.voximplant.ai/getting-started/network-options/whatsapp.md): Connect WhatsApp Business calling to Voximplant scenarios
+- [Web & Mobile](https://docs.voximplant.ai/getting-started/network-options/web-mobile.md): Use Voximplant users and SDKs for browser and mobile app calling
+- [Inbound calls](https://docs.voximplant.ai/getting-started/inbound-vs-outbound/inbound-calls.md): Flows where the caller initiates the session
+- [Outbound calls](https://docs.voximplant.ai/getting-started/inbound-vs-outbound/outbound-calls.md): Flows where your scenario initiates the call
+- [Enhance and deploy](https://docs.voximplant.ai/getting-started/enhance-and-deploy/overview.md): Choose the next track after your first Voice AI call flow is live
+- [Telephony and Voice AI](https://docs.voximplant.ai/getting-started/enhance-and-deploy/telephony-and-voice-ai.md): Expand customer-facing voice capabilities for production call flows
+- [Build and Deploy](https://docs.voximplant.ai/getting-started/enhance-and-deploy/build-and-deploy.md): Improve delivery, security, and operations as Voice AI traffic grows
+- [Pipeline Options](https://docs.voximplant.ai/voice-ai-orchestration/pipeline-options.md): Compare the main Voice AI pipeline patterns supported in VoxEngine.
+- [Connector Options](https://docs.voximplant.ai/voice-ai-orchestration/overview.md): Compare connector options and jump into runnable examples.
+- [OpenAI API compatibility](https://docs.voximplant.ai/voice-ai-orchestration/bring-your-own-llm/open-ai-api-compatibility.md): Use OpenAI-compatible LLM APIs in VoxEngine voice AI pipelines.
+- [Example: Chat Completions with Together AI](https://docs.voximplant.ai/voice-ai-orchestration/bring-your-own-llm/chat-completions-together.md): Use the VoxEngine OpenAI Chat Completions client with Together AI's OpenAI-compatible API.
+- [Example: Responses: Deepgram-Groq-Inworld](https://docs.voximplant.ai/voice-ai-orchestration/bring-your-own-llm/full-cascade-groq.md): Use the VoxEngine OpenAI Responses client with Groq in a full-cascade Deepgram-Groq-Inworld voice AI pipeline.
+- [Example: OpenAI Realtime on Azure](https://docs.voximplant.ai/voice-ai-orchestration/bring-your-own-llm/azure-openai-realtime.md): Use the VoxEngine OpenAI Realtime client with an Azure OpenAI Realtime deployment.
+- [Overview](https://docs.voximplant.ai/voice-ai-orchestration/openai/overview.md): OpenAI and OpenAI-compatible APIs in VoxEngine
+- [Example: Answering an incoming call](https://docs.voximplant.ai/voice-ai-orchestration/openai/inbound.md): This example answers an inbound Voximplant call and bridges audio to OpenAI Realtime for speech‑to‑speech conversations.
+- [Example: Placing an outbound call](https://docs.voximplant.ai/voice-ai-orchestration/openai/outbound.md): This example starts a VoxEngine session, places an outbound PSTN call, and bridges audio to OpenAI Realtime once the callee answers.
+- [Example: Function calling](https://docs.voximplant.ai/voice-ai-orchestration/openai/function-calling.md): This example answers an inbound Voximplant call, connects it to OpenAI Realtime, and handles function calls in VoxEngine.
+- [Example: Half-cascade with ElevenLabs](https://docs.voximplant.ai/voice-ai-orchestration/openai/half-cascade-elevenlabs.md): This half-cascade example uses OpenAI Realtime for speech‑to‑text and reasoning, then sends OpenAI text responses to ElevenLabs Realtime TTS.
+- [Example: Half-cascade with Inworld](https://docs.voximplant.ai/voice-ai-orchestration/openai/half-cascade-inworld.md): This half-cascade example uses OpenAI Realtime for speech‑to‑text and reasoning, then sends OpenAI text responses to Inworld Realtime TTS.
+- [Example: Half-cascade with Cartesia](https://docs.voximplant.ai/voice-ai-orchestration/openai/half-cascade-cartesia.md): This half-cascade example uses OpenAI Realtime for speech‑to‑text and reasoning, then sends OpenAI text responses to Cartesia Realtime TTS.
+- [Overview](https://docs.voximplant.ai/voice-ai-orchestration/gemini/overview.md): Gemini Live API in VoxEngine
+- [Example: Answering an incoming call](https://docs.voximplant.ai/voice-ai-orchestration/gemini/inbound.md): This example answers an inbound Voximplant call and bridges audio to Gemini Live API for real-time speech-to-speech conversations.
+- [Example: Using Vertex AI](https://docs.voximplant.ai/voice-ai-orchestration/gemini/vertex-ai.md): This example answers an inbound Voximplant call and connects Gemini Live API through Vertex AI.
+- [Example: Placing an outbound call](https://docs.voximplant.ai/voice-ai-orchestration/gemini/outbound.md): This example starts a VoxEngine session, places an outbound PSTN call, and connects the callee to Gemini Live API when the session is ready.
+- [Example: Function calling](https://docs.voximplant.ai/voice-ai-orchestration/gemini/function-calling.md): This example answers an inbound call, enables Gemini tool calling, and sends tool responses back to the model.
+- [Example: Speech-to-speech translation](https://docs.voximplant.ai/voice-ai-orchestration/gemini/speech-translation.md): This example answers an inbound English call, dials a Spanish-speaking callee, and uses Gemini Live API to translate the caller’s speech into Spanish audio in real time.
+- [Overview](https://docs.voximplant.ai/voice-ai-orchestration/ultravox/overview.md): Ultravox in VoxEngine
+- [Example: Answering an incoming call](https://docs.voximplant.ai/voice-ai-orchestration/ultravox/inbound.md): This example answers an inbound Voximplant call and bridges audio to Ultravox’s WebSocket API for real‑time speech‑to‑speech conversations.
+- [Example: Placing an outbound call](https://docs.voximplant.ai/voice-ai-orchestration/ultravox/outbound.md): This example starts a VoxEngine session, places an outbound PSTN call, and bridges audio to Ultravox after the callee answers.
+- [Example: Function calling](https://docs.voximplant.ai/voice-ai-orchestration/ultravox/function-calling.md): This example answers an inbound call, connects it to Ultravox, and handles **client tool invocations** via Ultravox data messages.
+- [Overview](https://docs.voximplant.ai/voice-ai-orchestration/elevenlabs/overview.md): ElevenLabs Agents in VoxEngine
+- [Example: Answering an incoming call](https://docs.voximplant.ai/voice-ai-orchestration/elevenlabs/inbound.md): This example answers an inbound Voximplant call and bridges audio to ElevenLabs Agents for real-time speech-to-speech conversations.
+- [Example: Placing an outbound call](https://docs.voximplant.ai/voice-ai-orchestration/elevenlabs/outbound.md): This example starts a VoxEngine session, places an outbound PSTN call, and bridges audio to ElevenLabs Agents once the callee answers.
+- [Example: Function calling](https://docs.voximplant.ai/voice-ai-orchestration/elevenlabs/function-calling.md): This example answers an inbound Voximplant call, connects it to ElevenLabs Agents, and handles client-side tool calls inside VoxEngine.
+- [Overview](https://docs.voximplant.ai/voice-ai-orchestration/cartesia/overview.md): Cartesia Line Agents in VoxEngine
+- [Example: Answering an incoming call](https://docs.voximplant.ai/voice-ai-orchestration/cartesia/inbound.md): This example answers an inbound Voximplant call and bridges audio to Cartesia Line Agents for real-time speech-to-speech conversations.
+- [Example: Placing an outbound call](https://docs.voximplant.ai/voice-ai-orchestration/cartesia/outbound.md): This example starts a VoxEngine session, places an outbound PSTN call, and bridges audio to Cartesia Line Agents once the callee answers.
+- [Example: Function calling](https://docs.voximplant.ai/voice-ai-orchestration/cartesia/function-calling.md): This example answers an inbound call, connects it to Cartesia Line Agents, and uses an HTTP callback for tool actions (end_call, call_transfer).
+- [Overview](https://docs.voximplant.ai/voice-ai-orchestration/inworld/overview.md): Inworld Realtime API in VoxEngine
+- [Example: Answering an incoming call](https://docs.voximplant.ai/voice-ai-orchestration/inworld/inbound.md): This example answers an inbound Voximplant call and bridges audio to Inworld Realtime API for speech-to-speech conversations.
+- [Example: Placing an outbound call](https://docs.voximplant.ai/voice-ai-orchestration/inworld/outbound.md): This example starts a VoxEngine session, places an outbound PSTN call, and bridges audio to Inworld Realtime once the callee answers.
+- [Example: Function calling](https://docs.voximplant.ai/voice-ai-orchestration/inworld/function-calling.md): This example answers an inbound Voximplant call, connects it to Inworld Realtime, and handles function calls inside VoxEngine.
+- [Overview](https://docs.voximplant.ai/voice-ai-orchestration/deepgram/overview.md): Deepgram Voice Agent in VoxEngine
+- [Example: Answering an incoming call](https://docs.voximplant.ai/voice-ai-orchestration/deepgram/inbound.md): This example answers an inbound Voximplant call and bridges audio to Deepgram Voice Agent for real-time speech‑to‑speech conversations.
+- [Example: Placing an outbound call](https://docs.voximplant.ai/voice-ai-orchestration/deepgram/outbound.md): This example starts a VoxEngine session, places an outbound PSTN call, and bridges audio to Deepgram Voice Agent once the callee answers.
+- [Example: Function calling](https://docs.voximplant.ai/voice-ai-orchestration/deepgram/function-calling.md): This example answers an inbound Voximplant call, connects it to Deepgram Voice Agent, and handles function calls (tool requests) from the agent inside VoxEngine.
+- [Example: Context history with ApplicationStorage](https://docs.voximplant.ai/voice-ai-orchestration/deepgram/context-history.md): This example answers an inbound call and uses ApplicationStorage to persist a small “memory” per caller across calls, then injects it into the next Deepgram Voice Agent session via agent.context.messages.
+- [Overview](https://docs.voximplant.ai/voice-ai-orchestration/grok/overview.md): Grok Voice Agent in VoxEngine
+- [Example: Answering an incoming call](https://docs.voximplant.ai/voice-ai-orchestration/grok/inbound.md): Connect an inbound call to a Grok voice agent
+- [Example: Using Grok features](https://docs.voximplant.ai/voice-ai-orchestration/grok/features.md): Connect an inbound call to a Grok voice agent
+- [Example: Placing an outbound call](https://docs.voximplant.ai/voice-ai-orchestration/grok/outbound.md): This example starts a VoxEngine session, places an outbound PSTN call, and connects the callee to a Grok voice agent when the media WebSocket is ready.
+- [Dialogflow ES](https://docs.voximplant.ai/voice-ai-orchestration/dialogflow/es.md): Connect Dialogflow ES to inbound and outbound calls in Voximplant and transfer callers to a live agent.
+- [Dialogflow CX](https://docs.voximplant.ai/voice-ai-orchestration/dialogflow/cx.md): Connect Dialogflow CX to Voximplant for inbound and outbound calls.
+- [MCP Client](https://docs.voximplant.ai/voice-ai-orchestration/mcp-client/overview.md): Connect VoxEngine voice agents to Model Context Protocol servers.
+- [Gemini-Zapier-MCP Example](https://docs.voximplant.ai/voice-ai-orchestration/mcp-client/gemini-zapier-mcp-example.md)
+- [Turn Detection](https://docs.voximplant.ai/voice-ai-orchestration/speech-flow-control/turn-detection.md): Pipecat Smart Turn in VoxEngine for end-of-turn prediction
+- [Voice Activity Detection](https://docs.voximplant.ai/voice-ai-orchestration/speech-flow-control/voice-activity-detection.md): Silero VAD in VoxEngine for barge-in and speech-boundary signals
+- [Turn Taking Helper Library](https://docs.voximplant.ai/voice-ai-orchestration/speech-flow-control/turn-taking-helper-library.md): Reusable VoxEngine helper for STT + VAD + Pipecat Smart Turn pipelines
+- [Call recording](https://docs.voximplant.ai/feature-guides/features/call-recording.md): Record audio and video calls with Voximplant.
+- [S3-compatible cloud storage](https://docs.voximplant.ai/feature-guides/features/s3-compatible-storage.md): Use S3-compatible cloud storage with Voximplant.
+- [Call transfers](https://docs.voximplant.ai/feature-guides/features/call-transfers.md): Handle blind call transfers in Voximplant.
+- [Call lists for automated calls](https://docs.voximplant.ai/feature-guides/features/call-lists/automated-dial-lists.md): Use call lists for automated outbound calls.
+- [Editing call lists](https://docs.voximplant.ai/feature-guides/features/call-lists/editable-dial-lists.md): Create, edit, and manage call lists.
+- [Setup and send one-way and two-way SMS](https://docs.voximplant.ai/feature-guides/sms/sending.md): Configure and send one-way and two-way SMS with Voximplant.
+- [Receive SMS](https://docs.voximplant.ai/feature-guides/sms/receiving.md): Set up and receive inbound SMS with Voximplant.
+- [Choosing a phone number for SMS](https://docs.voximplant.ai/feature-guides/sms/phone-numbers.md): Choose a phone number for sending and receiving SMS.
+- [OpenAI TTS voices](https://docs.voximplant.ai/feature-guides/speech/openai-tts.md): Use OpenAI text-to-speech voices with Voximplant.
+- [VoxEngine concepts](https://docs.voximplant.ai/platform/voxengine/concepts.md): Learn how to use VoxEngine, Voximplant's serverless JavaScript engine.
+- [Applications](https://docs.voximplant.ai/platform/voxengine/applications.md): Set up Applications for project management and development
+- [Users](https://docs.voximplant.ai/platform/voxengine/users.md): Create users for SDK auth, SIP clients, and application calling
+- [Scenarios](https://docs.voximplant.ai/platform/voxengine/scenarios.md): Write and run VoxEngine scenario code for calls and messaging
+- [Routing rules](https://docs.voximplant.ai/platform/voxengine/routing-rules.md): Route inbound and outbound traffic to the right scenarios
+- [Phone numbers](https://docs.voximplant.ai/platform/voxengine/phone-numbers.md): Buy, attach, and manage numbers for inbound calling and caller ID
+- [Calls and sessions](https://docs.voximplant.ai/platform/voxengine/calls-and-sessions.md): Understand call legs, sessions, and real-time call control in VoxEngine
+- [Media over WebSockets](https://docs.voximplant.ai/platform/voxengine/media-over-websockets.md): Create WebSocket connections and exchange text or audio media with VoxEngine
+- [Video calls](https://docs.voximplant.ai/platform/voxengine/video-calls.md): Build server and peer-to-peer video calls on Voximplant
+- [Account subusers](https://docs.voximplant.ai/platform/voxengine/subusers.md): Grant control panel access without sharing the main account
+- [Integrations](https://docs.voximplant.ai/platform/voxengine/integrations.md): Use built-in integrations for speech, NLU, and other external services
+- [Firewall](https://docs.voximplant.ai/platform/voxengine/firewall.md): Learn how to configure a corporate firewall in Voximplant.
+- [Cloud IDE](https://docs.voximplant.ai/platform/voxengine/ide.md): Learn about Voximplant Cloud IDE.
+- [Type declarations](https://docs.voximplant.ai/platform/voxengine/type-declarations.md): Learn how to use type declarations for writing Voximplant applications in your own IDE with TypeScript.
+- [VoxEngine CI](https://docs.voximplant.ai/platform/voxengine/ci.md): Learn how to manage Voximplant applications, rules, and scenarios from your own environment using VoxEngine CI.
+- [Working with API requests](https://docs.voximplant.ai/platform/voxengine/api-requests.md): Learn how to make and accept HTTP requests and send emails in your Voximplant scenarios.
+- [Working with the Voximplant's API](https://docs.voximplant.ai/platform/voxengine/management-api-usage.md): Call the Voximplant Management API directly from a VoxEngine scenario
+- [Remote session management](https://docs.voximplant.ai/platform/voxengine/remote-sessions.md): Learn how to interact with an active session via HTTP in Voximplant.
+- [Key-value storage](https://docs.voximplant.ai/platform/voxengine/key-value-storage.md): Learn how to use key-value storage in Voximplant.
+- [Secret storage](https://docs.voximplant.ai/platform/voxengine/secrets.md): Learn how to use secret storage in Voximplant.
+- [Custom data](https://docs.voximplant.ai/platform/voxengine/custom-data.md): Learn how to use custom data properties in Voximplant.
+- [Limits and restrictions](https://docs.voximplant.ai/platform/voxengine/limits.md): Know the runtime, media, and request limits that shape scenario behavior
+- [Scenarios troubleshooting](https://docs.voximplant.ai/platform/voxengine/troubleshooting.md): Debug VoxEngine scenarios with logs and the built-in debugger
+- [How billing works](https://docs.voximplant.ai/platform/voxengine/how-billing-works.md): Understand Voximplant billing, charges, and usage-based costs.
+- [Management API](https://docs.voximplant.ai/platform/management-api/overview.md): Control applications, numbers, sessions, and account resources through the Management API
+- [Basics](https://docs.voximplant.ai/platform/management-api/basics.md): Learn how to use Voximplant Management API to control Voximplant accounts and services.
+- [Authorization](https://docs.voximplant.ai/platform/management-api/authorization.md): Learn how to authenticate with Service accounts and API keys to use Voximplant Management API.
+- [Callbacks](https://docs.voximplant.ai/platform/management-api/callbacks.md): Learn how to use HTTP Callbacks to get notifications without frequently sending HTTP requests from your backend to the Voximplant cloud.
+- [Child accounts](https://docs.voximplant.ai/platform/management-api/child-accounts.md): Learn how to understand user and account management to design your Voximplant application properly.
+- [Accessing secure logs and recordings](https://docs.voximplant.ai/platform/management-api/secure-objects.md): Learn how to access secure logs and recordings in Voximplant.
+- [One-time key authorization](https://docs.voximplant.ai/platform/sdks/authorization/authorization-onetimekey.md): Authenticate users with one-time keys in the Voximplant mobile SDK.
+- [Renewable token authorization](https://docs.voximplant.ai/platform/sdks/authorization/authorization-tokens.md): Authenticate users with renewable access tokens in the Voximplant mobile SDK.
+- [iOS CallKit](https://docs.voximplant.ai/platform/sdks/ios-callkit.md): Integrate iOS CallKit with the Voximplant mobile SDK.
+- [Android ConnectionService](https://docs.voximplant.ai/platform/sdks/android-connectionservice.md): Integrate Android ConnectionService with the Voximplant mobile SDK.
+- [Screen sharing](https://docs.voximplant.ai/platform/sdks/screen-sharing.md): Share the screen in Voximplant video calls.
+- [Custom video sources and backgrounds](https://docs.voximplant.ai/platform/sdks/custom-video-sources.md): Use custom video sources and replace video backgrounds in Voximplant.
+- [iOS: Push notifications](https://docs.voximplant.ai/platform/sdks/push-notifications/push-notifications-ios.md): Set up iOS push notifications in the Voximplant mobile SDK.
+- [Android: Push notifications](https://docs.voximplant.ai/platform/sdks/push-notifications/push-notifications-android.md): Set up Android push notifications in the Voximplant mobile SDK.
+- [Push troubleshooting](https://docs.voximplant.ai/platform/sdks/push-notifications/push-troubleshooting.md): Verify push notification setup and troubleshoot delivery issues in Voximplant.
+- [Web: Collecting logs](https://docs.voximplant.ai/platform/sdks/collecting-logs/logs-web.md): Collect Web SDK logs for troubleshooting in Voximplant.
+- [iOS: Collecting logs](https://docs.voximplant.ai/platform/sdks/collecting-logs/logs-ios.md): Collect iOS SDK logs for troubleshooting in Voximplant.
+- [Android: Collecting logs](https://docs.voximplant.ai/platform/sdks/collecting-logs/logs-android.md): Collect Android SDK logs for troubleshooting in Voximplant.
+- [Mobile SDK statistics](https://docs.voximplant.ai/platform/sdks/sdk-statistics.md): Collect and analyze call statistics with the Voximplant mobile SDK.
+- [VoxEngine](https://docs.voximplant.ai/api-reference/voxengine/overview.md): Reference for the JavaScript runtime that executes Voximplant scenarios
+- [VoxEngine](https://docs.voximplant.ai/api-reference/voxengine/voxengine/overview.md)
+- [Modules](https://docs.voximplant.ai/api-reference/voxengine/modules.md): 26 values
+- [AppEvents](https://docs.voximplant.ai/api-reference/voxengine/app-events.md): 7 values
+- [TerminationStatus](https://docs.voximplant.ai/api-reference/voxengine/termination-status.md): The SmartQueue termination status.
+- [ApplicationStorage](https://docs.voximplant.ai/api-reference/voxengine/application-storage/overview.md): Represents an application storage object to manipulate key-value pairs.
+- [Logger](https://docs.voximplant.ai/api-reference/voxengine/logger/overview.md)
+- [Crypto](https://docs.voximplant.ai/api-reference/voxengine/crypto/overview.md)
+- [Net](https://docs.voximplant.ai/api-reference/voxengine/net/overview.md)
+- [MeasurementProtocol](https://docs.voximplant.ai/api-reference/voxengine/measurement-protocol/overview.md): Implementation of the Measurement Protocol v1.
+- [VoximplantAPI](https://docs.voximplant.ai/api-reference/voxengine/voximplant-api/overview.md)
+- [Client](https://docs.voximplant.ai/api-reference/voxengine/voximplant-api/client.md)
+- [Call](https://docs.voximplant.ai/api-reference/voxengine/call.md): Represents an audio or video call.
+- [Endpoint](https://docs.voximplant.ai/api-reference/voxengine/endpoint.md): Represents any remote media unit in a session.
+- [Conference](https://docs.voximplant.ai/api-reference/voxengine/conference.md): Represents audio or video conference. Add the following line to your scenario code to use the class: ``` require(Modules.Conference); ```
+- [ConferenceDirection](https://docs.voximplant.ai/api-reference/voxengine/conference-direction.md): Add the following line to your scenario code to use the enum: ``` require(Modules.Conference); ```
+- [ConferenceEvents](https://docs.voximplant.ai/api-reference/voxengine/conference-events.md): Add the following line to your scenario code to use the events: ``` require(Modules.Conference); ```
+- [ConferenceMode](https://docs.voximplant.ai/api-reference/voxengine/conference-mode.md): Add the following line to your scenario code to use the enum: ``` require(Modules.Conference); ```
+- [ConferenceRecorder](https://docs.voximplant.ai/api-reference/voxengine/conference-recorder.md): Represents a conference recorder. Add the following line to your scenario code to use the class: ``` require(Modules.Recorder); ```
+- [PhoneNumber](https://docs.voximplant.ai/api-reference/voxengine/phone-number/overview.md)
+- [DTMFType](https://docs.voximplant.ai/api-reference/voxengine/dtmf-type.md): The DTMF type.
+- [Player](https://docs.voximplant.ai/api-reference/voxengine/player.md): Represents an instance of an audio player.
+- [PlayerEvents](https://docs.voximplant.ai/api-reference/voxengine/player-events.md): 9 values
+- [StreamingAgent](https://docs.voximplant.ai/api-reference/voxengine/streaming-agent.md): Represents a streaming object to interact with streaming platforms.
+- [StreamingAgentEvents](https://docs.voximplant.ai/api-reference/voxengine/streaming-agent-events.md): Add the following line to your scenario code to use the events: ``` require(Modules.StreamingAgent); ```
+- [SequencePlayer](https://docs.voximplant.ai/api-reference/voxengine/sequence-player.md): Represents an instance with segments represented by audio and URL players. Can be created by calling the VoxEngine.createSequencePlayer method.
+- [SequencePlayerEvents](https://docs.voximplant.ai/api-reference/voxengine/sequence-player-events.md): 7 values
+- [Recorder](https://docs.voximplant.ai/api-reference/voxengine/recorder.md): Represents an audio and video recorder. Add the following line to your scenario code to use the class: ``` require(Modules.Recorder); ```
+- [RecorderDirection](https://docs.voximplant.ai/api-reference/voxengine/recorder-direction.md): An object that specifies video frame's direction.
+- [RecorderEvents](https://docs.voximplant.ai/api-reference/voxengine/recorder-events.md): Add the following line to your scenario code to use the events: ``` require(Modules.Recorder); ```
+- [RecorderLabelFont](https://docs.voximplant.ai/api-reference/voxengine/recorder-label-font.md): Enumeration of the recorder video fonts.
+- [RecorderLabelPosition](https://docs.voximplant.ai/api-reference/voxengine/recorder-label-position.md): Enumeration of the recorder label position.
+- [RecorderLabelTextAlign](https://docs.voximplant.ai/api-reference/voxengine/recorder-label-text-align.md): Enumeration of the recorder label text alignment.
+- [RecorderLayout](https://docs.voximplant.ai/api-reference/voxengine/recorder-layout.md): An object that specifies video layout settings.
+- [RecorderObjectFit](https://docs.voximplant.ai/api-reference/voxengine/recorder-object-fit.md): An object that specifies how to fill a participant's video source to the conference frame.
+- [RecorderProfile](https://docs.voximplant.ai/api-reference/voxengine/recorder-profile.md): Enumeration of the video quality profiles.
+- [RecordExpireTime](https://docs.voximplant.ai/api-reference/voxengine/record-expire-time.md): List of available values for the RecorderParameters.expire parameter.
+- [AudioQuality](https://docs.voximplant.ai/api-reference/voxengine/audio-quality.md): 3 values
+- [URLPlayerRequestMethod](https://docs.voximplant.ai/api-reference/voxengine/url-player-request-method.md): The URLPlayerRequest method.
+- [ASR](https://docs.voximplant.ai/api-reference/voxengine/asr.md): Represents an ASR object provides speech recognition capabilities.
+- [ASRDictionary](https://docs.voximplant.ai/api-reference/voxengine/asr-dictionary.md): List of available dictionaries for ASR. Add the following line to your scenario code to use the enum: ``` require(Modules.ASR); ```
+- [ASREvents](https://docs.voximplant.ai/api-reference/voxengine/asr-events.md): Add the following line to your scenario code to use the events: ``` require(Modules.ASR); ```
+- [ASRLanguage](https://docs.voximplant.ai/api-reference/voxengine/asr-language.md): List of available languages for ASR. RUSSIAN_RU' language. Add the following line to your scenario code to use the enum: ``` require(Modules.ASR); ```
+- [ASRModel](https://docs.voximplant.ai/api-reference/voxengine/asr-model.md): Represents an ASR recognition model. List of all supported models: ASRModelList.
+- [ASRModelList](https://docs.voximplant.ai/api-reference/voxengine/asr-model-list/overview.md): List of available ASR models.
+- [Amazon](https://docs.voximplant.ai/api-reference/voxengine/asr-model-list/amazon/overview.md): List of Amazon ASR models.
+- [Deepgram](https://docs.voximplant.ai/api-reference/voxengine/asr-model-list/deepgram/overview.md): List of Deepgram ASR models.
+- [Google](https://docs.voximplant.ai/api-reference/voxengine/asr-model-list/google/overview.md): List of Google ASR models.
+- [Microsoft](https://docs.voximplant.ai/api-reference/voxengine/asr-model-list/microsoft/overview.md): List of Microsoft ASR models.
+- [ASRProfile](https://docs.voximplant.ai/api-reference/voxengine/asr-profile.md): Represents a profile that specifies an ASR provider and a language to use. List of all supported profiles: ASRProfileList.
+- [ASRProfileList](https://docs.voximplant.ai/api-reference/voxengine/asr-profile-list/overview.md): List of available ASR profiles.
+- [Amazon](https://docs.voximplant.ai/api-reference/voxengine/asr-profile-list/amazon/overview.md): List of Amazon ASR profiles.
+- [Deepgram](https://docs.voximplant.ai/api-reference/voxengine/asr-profile-list/deepgram/overview.md): List of Deepgram ASR profiles.
+- [Google](https://docs.voximplant.ai/api-reference/voxengine/asr-profile-list/google/overview.md): List of Google ASR profiles.
+- [Microsoft](https://docs.voximplant.ai/api-reference/voxengine/asr-profile-list/microsoft/overview.md): List of Microsoft ASR profiles.
+- [Voice](https://docs.voximplant.ai/api-reference/voxengine/voice.md): Represents a language and a voice for TTS. List of all supported voices: VoiceList.
+- [VoiceList](https://docs.voximplant.ai/api-reference/voxengine/voice-list/overview.md): List of available TTS voices for the Call.say(/api-reference/voxengine/call#say) and…
+- [Amazon](https://docs.voximplant.ai/api-reference/voxengine/voice-list/amazon/overview.md): List of available Amazon TTS voices for the Call.say(/api-reference/voxengine/call#say) and…
+- [Neural](https://docs.voximplant.ai/api-reference/voxengine/voice-list/amazon/neural/overview.md): List of available premium Amazon TTS voices for the Call.say(/api-reference/voxengine/call#say) and…
+- [Default](https://docs.voximplant.ai/api-reference/voxengine/voice-list/default/overview.md): List of available freemium TTS voices for the Call.say(/api-reference/voxengine/call#say) and…
+- [ElevenLabs](https://docs.voximplant.ai/api-reference/voxengine/voice-list/elevenlabs/overview.md): List of available ElevenLabs TTS voices for the Call.say(/api-reference/voxengine/call#say) and…
+- [Google](https://docs.voximplant.ai/api-reference/voxengine/voice-list/google/overview.md): List of available Google TTS voices for the Call.say(/api-reference/voxengine/call#say) and…
+- [IBM](https://docs.voximplant.ai/api-reference/voxengine/voice-list/ibm/overview.md): List of available IBM TTS voices for the Call.say(/api-reference/voxengine/call#say) and…
+- [Neural](https://docs.voximplant.ai/api-reference/voxengine/voice-list/ibm/neural/overview.md): List of available premium IBM TTS voices for the Call.say(/api-reference/voxengine/call#say) and…
+- [Microsoft](https://docs.voximplant.ai/api-reference/voxengine/voice-list/microsoft/overview.md): List of available Microsoft TTS voices for the Call.say(/api-reference/voxengine/call#say) and…
+- [Neural](https://docs.voximplant.ai/api-reference/voxengine/voice-list/microsoft/neural/overview.md): List of available premium Microsoft TTS voices for the Call.say(/api-reference/voxengine/call#say) and…
+- [TranscriptionProvider](https://docs.voximplant.ai/api-reference/voxengine/transcription-provider.md): List of available values for the CallRecordParameters.provider parameter.
+- [TTSEffectsProfile](https://docs.voximplant.ai/api-reference/voxengine/tts-effects-profile.md): List of available audio effect (profiles that are applied on post synthesized text to speech) for the…
+- [VoxTTS](https://docs.voximplant.ai/api-reference/voxengine/vox-tts/overview.md)
+- [RealtimeTTSPlayer](https://docs.voximplant.ai/api-reference/voxengine/vox-tts/realtime-tts-player.md)
+- [VoxTTSModelList](https://docs.voximplant.ai/api-reference/voxengine/vox-tts-model-list.md): The list of available models for VoxTTS.
+- [VoxTTSVoiceList](https://docs.voximplant.ai/api-reference/voxengine/vox-tts-voice-list.md): The list of available voices for VoxTTS.
+- [Silero](https://docs.voximplant.ai/api-reference/voxengine/silero/overview.md)
+- [VAD](https://docs.voximplant.ai/api-reference/voxengine/silero/vad.md)
+- [VADEvents](https://docs.voximplant.ai/api-reference/voxengine/silero/vad-events.md): 4 values
+- [DialogflowLanguage](https://docs.voximplant.ai/api-reference/voxengine/dialogflow-language.md): See the [Dialogflow ES language table](https://cloud.google.com/dialogflow/es/docs/reference/language#table) for reference.
+- [DialogflowModel](https://docs.voximplant.ai/api-reference/voxengine/dialogflow-model.md): Add the following line to your scenario code to use the enum: ``` require(Modules.AI); ```
+- [DialogflowModelVariant](https://docs.voximplant.ai/api-reference/voxengine/dialogflow-model-variant.md): Add the following line to your scenario code to use the enum: ``` require(Modules.AI); ```
+- [DialogflowSsmlVoiceGender](https://docs.voximplant.ai/api-reference/voxengine/dialogflow-ssml-voice-gender.md): Add the following line to your scenario code to use the enum: ``` require(Modules.AI); ```
+- [AI](https://docs.voximplant.ai/api-reference/voxengine/ai/overview.md): The AI module provides additional methods that use Artificial Intelligence.
+- [DialogflowInstance](https://docs.voximplant.ai/api-reference/voxengine/ai/dialogflow-instance.md): Represents a Dialogflow instance. Add the following line to your scenario code to use the class: ``` require(Modules.AI); ```
+- [Events](https://docs.voximplant.ai/api-reference/voxengine/ai/events.md): Add the following line to your scenario code to use the events: ``` require(Modules.AI); ```
+- [AMD](https://docs.voximplant.ai/api-reference/voxengine/amd/overview.md): Answering Machine Detection provides methods that allow developers to recognize voicemail prompts with the help of artificial intelligence.
+- [AnsweringMachineDetector](https://docs.voximplant.ai/api-reference/voxengine/amd/answering-machine-detector.md): Answering machine or voicemail detector class.
+- [Events](https://docs.voximplant.ai/api-reference/voxengine/amd/events.md): 2 values
+- [Model](https://docs.voximplant.ai/api-reference/voxengine/amd/model.md): Answering machine or voicemail detector model.
+- [ResultClass](https://docs.voximplant.ai/api-reference/voxengine/amd/result-class.md): Answering machine result class, such as human, voicemail, timeout or call termination.
+- [ResultSubtype](https://docs.voximplant.ai/api-reference/voxengine/amd/result-subtype.md): Answering machine result subtype, such as mimic or none.
+- [Agentic](https://docs.voximplant.ai/api-reference/voxengine/agentic/overview.md)
+- [VoiceDSP](https://docs.voximplant.ai/api-reference/voxengine/agentic/voice-dsp.md): Agentic voice DSP is a composite connector working with underlying Silero.VAD and Pipecat.TurnDetector.
+- [VoiceDSPEvents](https://docs.voximplant.ai/api-reference/voxengine/agentic/voice-dsp-events.md): 8 values
+- [VoiceDSPStrategies](https://docs.voximplant.ai/api-reference/voxengine/agentic/voice-dsp-strategies/overview.md)
+- [MinWordsStart](https://docs.voximplant.ai/api-reference/voxengine/agentic/voice-dsp-strategies/min-words-start.md): A start strategy that requires the user to speak a minimum number of words before triggering a turn start.
+- [SpeechTimeoutStop](https://docs.voximplant.ai/api-reference/voxengine/agentic/voice-dsp-strategies/speech-timeout-stop.md): A stop strategy that uses a configurable timeout to determine if the user is done speaking.
+- [TranscriptionStart](https://docs.voximplant.ai/api-reference/voxengine/agentic/voice-dsp-strategies/transcription-start.md): A start strategy that triggers a user turn start when a transcription is received.
+- [TurnDetectorStop](https://docs.voximplant.ai/api-reference/voxengine/agentic/voice-dsp-strategies/turn-detector-stop.md): A stop strategy that uses the AI-powered turn detection model to determine if the user is done speaking.
+- [VADStart](https://docs.voximplant.ai/api-reference/voxengine/agentic/voice-dsp-strategies/vad-start.md): A start strategy that triggers a user turn start based on Voice Activity Detection.
+- [Cartesia](https://docs.voximplant.ai/api-reference/voxengine/cartesia.md): Agents WebSocket client for Cartesia Line voice agent scenarios.
+- [RealtimeTTSPlayer](https://docs.voximplant.ai/api-reference/voxengine/cartesia/realtime-tts-player.md)
+- [CCAI](https://docs.voximplant.ai/api-reference/voxengine/ccai/overview.md)
+- [Agent](https://docs.voximplant.ai/api-reference/voxengine/ccai/agent.md): Represents a CCAI Agent instance.
+- [Conversation](https://docs.voximplant.ai/api-reference/voxengine/ccai/conversation.md): Represents a CCAI conversation instance.
+- [Events](https://docs.voximplant.ai/api-reference/voxengine/ccai/events/overview.md)
+- [Agent](https://docs.voximplant.ai/api-reference/voxengine/ccai/events/agent.md): Events related to CCAI agents.
+- [Conversation](https://docs.voximplant.ai/api-reference/voxengine/ccai/events/conversation.md): Events related to CCAI conversations.
+- [Participant](https://docs.voximplant.ai/api-reference/voxengine/ccai/events/participant.md): Events related to CCAI participants.
+- [Participant](https://docs.voximplant.ai/api-reference/voxengine/ccai/participant.md): Represents a CCAI participant instance.
+- [Vendor](https://docs.voximplant.ai/api-reference/voxengine/ccai/vendor/overview.md)
+- [Role](https://docs.voximplant.ai/api-reference/voxengine/ccai/vendor/role.md): Enumeration of the roles a participant can play in a conversation.
+- [Deepgram](https://docs.voximplant.ai/api-reference/voxengine/deepgram.md): Voice agent client for Deepgram Voice Agent WebSocket scenarios.
+- [ElevenLabs](https://docs.voximplant.ai/api-reference/voxengine/elevenlabs/overview.md): Agents WebSocket client for ElevenLabs conversational AI scenarios.
+- [RealtimeTTSPlayer](https://docs.voximplant.ai/api-reference/voxengine/elevenlabs/realtime-tts-player.md)
+- [Gemini](https://docs.voximplant.ai/api-reference/voxengine/gemini.md): Voice agent client for Google Gemini Live API real-time voice scenarios.
+- [Google](https://docs.voximplant.ai/api-reference/voxengine/google/overview.md)
+- [RealtimeTTSPlayer](https://docs.voximplant.ai/api-reference/voxengine/google/realtime-tts-player.md)
+- [Inworld](https://docs.voximplant.ai/api-reference/voxengine/inworld.md): Realtime TTS player for Inworld speech synthesis in VoxEngine.
+- [Events](https://docs.voximplant.ai/api-reference/voxengine/inworld/events.md): 2 values
+- [RealtimeAPIClient](https://docs.voximplant.ai/api-reference/voxengine/inworld/realtime-api-client.md)
+- [RealtimeAPIEvents](https://docs.voximplant.ai/api-reference/voxengine/inworld/realtime-api-events.md): 36 values
+- [OpenAI](https://docs.voximplant.ai/api-reference/voxengine/openai/overview.md): API clients for OpenAI chat completions, responses, and real-time voice scenarios.
+- [RealtimeAPIClientType](https://docs.voximplant.ai/api-reference/voxengine/openai/realtime-api-client-type.md): OpenAI.RealtimeAPIClient parameters. Can be passed as arguments to the OpenAI.createRealtimeAPIClient method.
+- [Pipecat](https://docs.voximplant.ai/api-reference/voxengine/pipecat.md): Turn detector client for Pipecat Cloud WebSocket turn prediction.
+- [Ultravox](https://docs.voximplant.ai/api-reference/voxengine/ultravox.md): WebSocket API client for Ultravox real-time agent scenarios.
+- [XAI](https://docs.voximplant.ai/api-reference/voxengine/xai/overview.md): Voice Agent API and Realtime TTS for xAI Grok scenarios.
+- [RealtimeTTSPlayer](https://docs.voximplant.ai/api-reference/voxengine/xai/realtime-tts-player.md)
+- [MCP](https://docs.voximplant.ai/api-reference/voxengine/mcp/overview.md)
+- [Client](https://docs.voximplant.ai/api-reference/voxengine/mcp/client.md): Note that the MCP.Client using the [Model Context Protocol Go SDK v1.5.0](https://pkg.go.dev/github.com/modelcontextprotocol/go-sdk@v1.5.0).
+- [Events](https://docs.voximplant.ai/api-reference/voxengine/mcp/events.md): 2 values
+- [ServerEvents](https://docs.voximplant.ai/api-reference/voxengine/mcp/server-events.md): 5 values
+- [WebSocket](https://docs.voximplant.ai/api-reference/voxengine/websocket.md): Represents a WebSocket instance that provides the API for creating and managing an outgoing or incoming WebSocket connection, as well as for sending and…
+- [WebSocketAudioEncoding](https://docs.voximplant.ai/api-reference/voxengine/websocket-audio-encoding.md): Available audio encoding formats. Can be passed via the SendMediaParameters.encoding parameter. The default value is **PCM16_8KHZ**.
+- [WebSocketCloseCode](https://docs.voximplant.ai/api-reference/voxengine/websocket-close-code.md): 15 values
+- [WebSocketEvents](https://docs.voximplant.ai/api-reference/voxengine/websocket-events.md): 7 values
+- [WebSocketReadyState](https://docs.voximplant.ai/api-reference/voxengine/websocket-ready-state.md): 4 values
+- [CallList](https://docs.voximplant.ai/api-reference/voxengine/call-list/overview.md): Represents a call list to interact with Voximplant's call list processing functionality.
+- [ACDEvents](https://docs.voximplant.ai/api-reference/voxengine/acd-events.md): Add the following line to your scenario code to use the events: ``` require(Modules.ACD); ```
+- [ACDRequest](https://docs.voximplant.ai/api-reference/voxengine/acd-request.md): Represents a request that is put to the ACD queue. Add the following line to your scenario code to use the class: ``` require(Modules.ACD); ```
+- [SmartQueueEvents](https://docs.voximplant.ai/api-reference/voxengine/smart-queue-events.md): Add the following line to your scenario code to use the events: ``` require(Modules.SmartQueue); ```
+- [SmartQueueOperatorSettingsMode](https://docs.voximplant.ai/api-reference/voxengine/smart-queue-operator-settings-mode.md): The SmartQueue task distribution mode. Can be passed via the SmartQueueOperatorSettings.mode parameter.
+- [SmartQueueTask](https://docs.voximplant.ai/api-reference/voxengine/smart-queue-task.md): A SmartQueue task is for a certain agent, which can be a call or a chat.
+- [TaskWaitingCode](https://docs.voximplant.ai/api-reference/voxengine/task-waiting-code.md): The SmartQueue task's waiting code
+- [Management API](https://docs.voximplant.ai/api-reference/management-api/reference.md): HTTP API for administering Voximplant accounts and resources
+- [Authorization](https://docs.voximplant.ai/api-reference/management-api/authorization.md): Learn how to authenticate with Service accounts and API keys to use Voximplant Management API.
+- [Errors](https://docs.voximplant.ai/api-reference/management-api/errors.md): Full catalogue of error codes returned by the Management API
+- [Web SDK Reference](https://docs.voximplant.ai/api-reference/websdk/overview.md): API reference for the Voximplant Web SDK
+- [Android SDK Reference](https://docs.voximplant.ai/api-reference/androidsdk/overview.md): API reference for the Voximplant Android SDK (v2)
+- [Android SDK v3 Reference](https://docs.voximplant.ai/api-reference/androidsdk3/overview.md): API reference for the Voximplant Android SDK v3
+- [iOS SDK Reference](https://docs.voximplant.ai/api-reference/iossdk/overview.md): API reference for the Voximplant iOS SDK
+- [React Native SDK Reference](https://docs.voximplant.ai/api-reference/reactnative/overview.md): API reference for the Voximplant React Native SDK
+- [Flutter SDK Reference](https://docs.voximplant.ai/api-reference/fluttersdk/overview.md): API reference for the Voximplant Flutter SDK
+- [FAQ](https://docs.voximplant.ai/faq/overview.md): Common questions about Voximplant Voice AI, telephony, connectors, and pricing
+
+## API Docs
+
+- Reference > Accounts [GetAccountInfo](https://docs.voximplant.ai/api-reference/management-api/reference/accounts/get-account-info.md)
+- Reference > Accounts [SetAccountInfo](https://docs.voximplant.ai/api-reference/management-api/reference/accounts/set-account-info.md)
+- Reference > Accounts [SetChildAccountInfo](https://docs.voximplant.ai/api-reference/management-api/reference/accounts/set-child-account-info.md)
+- Reference > Accounts [GetCurrencyRate](https://docs.voximplant.ai/api-reference/management-api/reference/accounts/get-currency-rate.md)
+- Reference > Accounts [GetResourcePrice](https://docs.voximplant.ai/api-reference/management-api/reference/accounts/get-resource-price.md)
+- Reference > Accounts [GetSubscriptionPrice](https://docs.voximplant.ai/api-reference/management-api/reference/accounts/get-subscription-price.md)
+- Reference > Accounts [GetChildrenAccounts](https://docs.voximplant.ai/api-reference/management-api/reference/accounts/get-children-accounts.md)
+- Reference > Accounts [GetMoneyAmountToCharge](https://docs.voximplant.ai/api-reference/management-api/reference/accounts/get-money-amount-to-charge.md)
+- Reference > Accounts [ChangeAccountPlan](https://docs.voximplant.ai/api-reference/management-api/reference/accounts/change-account-plan.md)
+- Reference > Accounts [GetAccountPlans](https://docs.voximplant.ai/api-reference/management-api/reference/accounts/get-account-plans.md)
+- Reference > Accounts [GetAvailablePlans](https://docs.voximplant.ai/api-reference/management-api/reference/accounts/get-available-plans.md)
+- Reference > Accounts [GetAccountDocuments](https://docs.voximplant.ai/api-reference/management-api/reference/accounts/get-account-documents.md)
+- Reference > Accounts [GetAccountVerifications](https://docs.voximplant.ai/api-reference/management-api/reference/accounts/get-account-verifications.md)
+- Reference > Applications [AddApplication](https://docs.voximplant.ai/api-reference/management-api/reference/applications/add-application.md)
+- Reference > Applications [DelApplication](https://docs.voximplant.ai/api-reference/management-api/reference/applications/del-application.md)
+- Reference > Applications [SetApplicationInfo](https://docs.voximplant.ai/api-reference/management-api/reference/applications/set-application-info.md)
+- Reference > Applications [GetApplications](https://docs.voximplant.ai/api-reference/management-api/reference/applications/get-applications.md)
+- Reference > Users [AddUser](https://docs.voximplant.ai/api-reference/management-api/reference/users/add-user.md)
+- Reference > Users [DelUser](https://docs.voximplant.ai/api-reference/management-api/reference/users/del-user.md)
+- Reference > Users [SetUserInfo](https://docs.voximplant.ai/api-reference/management-api/reference/users/set-user-info.md)
+- Reference > Users [GetUsers](https://docs.voximplant.ai/api-reference/management-api/reference/users/get-users.md)
+- Reference > Call Lists [CreateCallList](https://docs.voximplant.ai/api-reference/management-api/reference/call-lists/create-call-list.md)
+- Reference > Call Lists [AppendToCallList](https://docs.voximplant.ai/api-reference/management-api/reference/call-lists/append-to-call-list.md)
+- Reference > Call Lists [CancelCallListBatch](https://docs.voximplant.ai/api-reference/management-api/reference/call-lists/cancel-call-list-batch.md)
+- Reference > Call Lists [EditCallList](https://docs.voximplant.ai/api-reference/management-api/reference/call-lists/edit-call-list.md)
+- Reference > Call Lists [EditCallListTasksPriority](https://docs.voximplant.ai/api-reference/management-api/reference/call-lists/edit-call-list-tasks-priority.md)
+- Reference > Call Lists [DeleteCallList](https://docs.voximplant.ai/api-reference/management-api/reference/call-lists/delete-call-list.md)
+- Reference > Call Lists [GetCallLists](https://docs.voximplant.ai/api-reference/management-api/reference/call-lists/get-call-lists.md)
+- Reference > Call Lists [GetCallListDetails](https://docs.voximplant.ai/api-reference/management-api/reference/call-lists/get-call-list-details.md)
+- Reference > Call Lists [EditCallListTask](https://docs.voximplant.ai/api-reference/management-api/reference/call-lists/edit-call-list-task.md)
+- Reference > Call Lists [CancelCallListTask](https://docs.voximplant.ai/api-reference/management-api/reference/call-lists/cancel-call-list-task.md)
+- Reference > Call Lists [StopCallListProcessing](https://docs.voximplant.ai/api-reference/management-api/reference/call-lists/stop-call-list-processing.md)
+- Reference > Call Lists [RecoverCallList](https://docs.voximplant.ai/api-reference/management-api/reference/call-lists/recover-call-list.md)
+- Reference > Scenarios [AddScenario](https://docs.voximplant.ai/api-reference/management-api/reference/scenarios/add-scenario.md)
+- Reference > Scenarios [DelScenario](https://docs.voximplant.ai/api-reference/management-api/reference/scenarios/del-scenario.md)
+- Reference > Scenarios [BindScenario](https://docs.voximplant.ai/api-reference/management-api/reference/scenarios/bind-scenario.md)
+- Reference > Scenarios [GetScenarios](https://docs.voximplant.ai/api-reference/management-api/reference/scenarios/get-scenarios.md)
+- Reference > Scenarios [SetScenarioInfo](https://docs.voximplant.ai/api-reference/management-api/reference/scenarios/set-scenario-info.md)
+- Reference > Scenarios [ReorderScenarios](https://docs.voximplant.ai/api-reference/management-api/reference/scenarios/reorder-scenarios.md)
+- Reference > Scenarios [StartScenarios](https://docs.voximplant.ai/api-reference/management-api/reference/scenarios/start-scenarios.md)
+- Reference > Scenarios [StartConference](https://docs.voximplant.ai/api-reference/management-api/reference/scenarios/start-conference.md)
+- Reference > Rules [AddRule](https://docs.voximplant.ai/api-reference/management-api/reference/rules/add-rule.md)
+- Reference > Rules [DelRule](https://docs.voximplant.ai/api-reference/management-api/reference/rules/del-rule.md)
+- Reference > Rules [SetRuleInfo](https://docs.voximplant.ai/api-reference/management-api/reference/rules/set-rule-info.md)
+- Reference > Rules [GetRules](https://docs.voximplant.ai/api-reference/management-api/reference/rules/get-rules.md)
+- Reference > Rules [ReorderRules](https://docs.voximplant.ai/api-reference/management-api/reference/rules/reorder-rules.md)
+- Reference > History [GetCallHistory](https://docs.voximplant.ai/api-reference/management-api/reference/history/get-call-history.md)
+- Reference > History [GetCallHistoryAsync](https://docs.voximplant.ai/api-reference/management-api/reference/history/get-call-history-async.md)
+- Reference > History [GetBriefCallHistory](https://docs.voximplant.ai/api-reference/management-api/reference/history/get-brief-call-history.md)
+- Reference > History [GetHistoryReports](https://docs.voximplant.ai/api-reference/management-api/reference/history/get-history-reports.md)
+- Reference > History [DownloadHistoryReport](https://docs.voximplant.ai/api-reference/management-api/reference/history/download-history-report.md)
+- Reference > History [GetTransactionHistory](https://docs.voximplant.ai/api-reference/management-api/reference/history/get-transaction-history.md)
+- Reference > History [GetTransactionHistoryAsync](https://docs.voximplant.ai/api-reference/management-api/reference/history/get-transaction-history-async.md)
+- Reference > History [DeleteRecord](https://docs.voximplant.ai/api-reference/management-api/reference/history/delete-record.md)
+- Reference > History [GetACDHistory](https://docs.voximplant.ai/api-reference/management-api/reference/history/get-acd-history.md)
+- Reference > History [GetAuditLog](https://docs.voximplant.ai/api-reference/management-api/reference/history/get-audit-log.md)
+- Reference > History [GetAuditLogAsync](https://docs.voximplant.ai/api-reference/management-api/reference/history/get-audit-log-async.md)
+- Reference > Phone Numbers [GetPhoneNumberReports](https://docs.voximplant.ai/api-reference/management-api/reference/phone-numbers/get-phone-number-reports.md)
+- Reference > Phone Numbers [AttachPhoneNumber](https://docs.voximplant.ai/api-reference/management-api/reference/phone-numbers/attach-phone-number.md)
+- Reference > Phone Numbers [BindPhoneNumberToApplication](https://docs.voximplant.ai/api-reference/management-api/reference/phone-numbers/bind-phone-number-to-application.md)
+- Reference > Phone Numbers [DeactivatePhoneNumber](https://docs.voximplant.ai/api-reference/management-api/reference/phone-numbers/deactivate-phone-number.md)
+- Reference > Phone Numbers [SetPhoneNumberInfo](https://docs.voximplant.ai/api-reference/management-api/reference/phone-numbers/set-phone-number-info.md)
+- Reference > Phone Numbers [GetPhoneNumbers](https://docs.voximplant.ai/api-reference/management-api/reference/phone-numbers/get-phone-numbers.md)
+- Reference > Phone Numbers [IsAccountPhoneNumber](https://docs.voximplant.ai/api-reference/management-api/reference/phone-numbers/is-account-phone-number.md)
+- Reference > Phone Numbers [GetPhoneNumbersAsync](https://docs.voximplant.ai/api-reference/management-api/reference/phone-numbers/get-phone-numbers-async.md)
+- Reference > Phone Numbers [GetNewPhoneNumbers](https://docs.voximplant.ai/api-reference/management-api/reference/phone-numbers/get-new-phone-numbers.md)
+- Reference > Phone Numbers [GetPhoneNumberCategories](https://docs.voximplant.ai/api-reference/management-api/reference/phone-numbers/get-phone-number-categories.md)
+- Reference > Phone Numbers [GetPhoneNumberCountryStates](https://docs.voximplant.ai/api-reference/management-api/reference/phone-numbers/get-phone-number-country-states.md)
+- Reference > Phone Numbers [GetPhoneNumberRegions](https://docs.voximplant.ai/api-reference/management-api/reference/phone-numbers/get-phone-number-regions.md)
+- Reference > Phone Numbers [GetActualPhoneNumberRegion](https://docs.voximplant.ai/api-reference/management-api/reference/phone-numbers/get-actual-phone-number-region.md)
+- Reference > Phone Numbers [GetAccountPhoneNumberCountries](https://docs.voximplant.ai/api-reference/management-api/reference/phone-numbers/get-account-phone-number-countries.md)
+- Reference > PSTN Blacklist [AddPstnBlackListItem](https://docs.voximplant.ai/api-reference/management-api/reference/pstn-blacklist/add-pstn-black-list-item.md)
+- Reference > PSTN Blacklist [SetPstnBlackListItem](https://docs.voximplant.ai/api-reference/management-api/reference/pstn-blacklist/set-pstn-black-list-item.md)
+- Reference > PSTN Blacklist [DelPstnBlackListItem](https://docs.voximplant.ai/api-reference/management-api/reference/pstn-blacklist/del-pstn-black-list-item.md)
+- Reference > PSTN Blacklist [GetPstnBlackList](https://docs.voximplant.ai/api-reference/management-api/reference/pstn-blacklist/get-pstn-black-list.md)
+- Reference > SIP White List [AddSipWhiteListItem](https://docs.voximplant.ai/api-reference/management-api/reference/sip-white-list/add-sip-white-list-item.md)
+- Reference > SIP White List [DelSipWhiteListItem](https://docs.voximplant.ai/api-reference/management-api/reference/sip-white-list/del-sip-white-list-item.md)
+- Reference > SIP White List [SetSipWhiteListItem](https://docs.voximplant.ai/api-reference/management-api/reference/sip-white-list/set-sip-white-list-item.md)
+- Reference > SIP White List [GetSipWhiteList](https://docs.voximplant.ai/api-reference/management-api/reference/sip-white-list/get-sip-white-list.md)
+- Reference > SIP Registration [CreateSipRegistration](https://docs.voximplant.ai/api-reference/management-api/reference/sip-registration/create-sip-registration.md)
+- Reference > SIP Registration [UpdateSipRegistration](https://docs.voximplant.ai/api-reference/management-api/reference/sip-registration/update-sip-registration.md)
+- Reference > SIP Registration [BindSipRegistration](https://docs.voximplant.ai/api-reference/management-api/reference/sip-registration/bind-sip-registration.md)
+- Reference > SIP Registration [DeleteSipRegistration](https://docs.voximplant.ai/api-reference/management-api/reference/sip-registration/delete-sip-registration.md)
+- Reference > SIP Registration [GetSipRegistrations](https://docs.voximplant.ai/api-reference/management-api/reference/sip-registration/get-sip-registrations.md)
+- Reference > WAB Phone Numbers [AddWABPhoneNumber](https://docs.voximplant.ai/api-reference/management-api/reference/wab-phone-numbers/add-wab-phone-number.md)
+- Reference > WAB Phone Numbers [DeleteWABPhoneNumber](https://docs.voximplant.ai/api-reference/management-api/reference/wab-phone-numbers/delete-wab-phone-number.md)
+- Reference > WAB Phone Numbers [SetWABPhoneNumberInfo](https://docs.voximplant.ai/api-reference/management-api/reference/wab-phone-numbers/set-wab-phone-number-info.md)
+- Reference > WAB Phone Numbers [GetWABPhoneNumbers](https://docs.voximplant.ai/api-reference/management-api/reference/wab-phone-numbers/get-wab-phone-numbers.md)
+- Reference > CallerIDs [DelCallerID](https://docs.voximplant.ai/api-reference/management-api/reference/callerids/del-caller-id.md)
+- Reference > CallerIDs [GetCallerIDs](https://docs.voximplant.ai/api-reference/management-api/reference/callerids/get-caller-i-ds.md)
+- Reference > OutboundTestNumbers [AddOutboundTestPhoneNumber](https://docs.voximplant.ai/api-reference/management-api/reference/outboundtestnumbers/add-outbound-test-phone-number.md)
+- Reference > OutboundTestNumbers [VerifyOutboundTestPhoneNumber](https://docs.voximplant.ai/api-reference/management-api/reference/outboundtestnumbers/verify-outbound-test-phone-number.md)
+- Reference > OutboundTestNumbers [ActivateOutboundTestPhoneNumber](https://docs.voximplant.ai/api-reference/management-api/reference/outboundtestnumbers/activate-outbound-test-phone-number.md)
+- Reference > OutboundTestNumbers [DelOutboundTestPhoneNumber](https://docs.voximplant.ai/api-reference/management-api/reference/outboundtestnumbers/del-outbound-test-phone-number.md)
+- Reference > OutboundTestNumbers [GetOutboundTestPhoneNumbers](https://docs.voximplant.ai/api-reference/management-api/reference/outboundtestnumbers/get-outbound-test-phone-numbers.md)
+- Reference > Queues [AddQueue](https://docs.voximplant.ai/api-reference/management-api/reference/queues/add-queue.md)
+- Reference > Queues [BindUserToQueue](https://docs.voximplant.ai/api-reference/management-api/reference/queues/bind-user-to-queue.md)
+- Reference > Queues [DelQueue](https://docs.voximplant.ai/api-reference/management-api/reference/queues/del-queue.md)
+- Reference > Queues [SetQueueInfo](https://docs.voximplant.ai/api-reference/management-api/reference/queues/set-queue-info.md)
+- Reference > Queues [GetQueues](https://docs.voximplant.ai/api-reference/management-api/reference/queues/get-queues.md)
+- Reference > Queues [GetACDState](https://docs.voximplant.ai/api-reference/management-api/reference/queues/get-acd-state.md)
+- Reference > Queues [GetACDOperatorStatistics](https://docs.voximplant.ai/api-reference/management-api/reference/queues/get-acd-operator-statistics.md)
+- Reference > Queues [GetACDQueueStatistics](https://docs.voximplant.ai/api-reference/management-api/reference/queues/get-acd-queue-statistics.md)
+- Reference > Queues [GetACDOperatorStatusStatistics](https://docs.voximplant.ai/api-reference/management-api/reference/queues/get-acd-operator-status-statistics.md)
+- Reference > SmartQueue [GetSmartQueueRealtimeMetrics](https://docs.voximplant.ai/api-reference/management-api/reference/smartqueue/get-smart-queue-realtime-metrics.md)
+- Reference > SmartQueue [GetSmartQueueDayHistory](https://docs.voximplant.ai/api-reference/management-api/reference/smartqueue/get-smart-queue-day-history.md)
+- Reference > SmartQueue [RequestSmartQueueHistory](https://docs.voximplant.ai/api-reference/management-api/reference/smartqueue/request-smart-queue-history.md)
+- Reference > SmartQueue [GetSQState](https://docs.voximplant.ai/api-reference/management-api/reference/smartqueue/get-sq-state.md)
+- Reference > SmartQueue [SQ_SetAgentCustomStatusMapping](https://docs.voximplant.ai/api-reference/management-api/reference/smartqueue/sq-set-agent-custom-status-mapping.md)
+- Reference > SmartQueue [SQ_GetAgentCustomStatusMapping](https://docs.voximplant.ai/api-reference/management-api/reference/smartqueue/sq-get-agent-custom-status-mapping.md)
+- Reference > SmartQueue [SQ_DeleteAgentCustomStatusMapping](https://docs.voximplant.ai/api-reference/management-api/reference/smartqueue/sq-delete-agent-custom-status-mapping.md)
+- Reference > SmartQueue [SQ_AddQueue](https://docs.voximplant.ai/api-reference/management-api/reference/smartqueue/sq-add-queue.md)
+- Reference > SmartQueue [SQ_SetQueueInfo](https://docs.voximplant.ai/api-reference/management-api/reference/smartqueue/sq-set-queue-info.md)
+- Reference > SmartQueue [SQ_DelQueue](https://docs.voximplant.ai/api-reference/management-api/reference/smartqueue/sq-del-queue.md)
+- Reference > SmartQueue [SQ_GetQueues](https://docs.voximplant.ai/api-reference/management-api/reference/smartqueue/sq-get-queues.md)
+- Reference > SmartQueue [SQ_AddSkill](https://docs.voximplant.ai/api-reference/management-api/reference/smartqueue/sq-add-skill.md)
+- Reference > SmartQueue [SQ_DelSkill](https://docs.voximplant.ai/api-reference/management-api/reference/smartqueue/sq-del-skill.md)
+- Reference > SmartQueue [SQ_SetSkillInfo](https://docs.voximplant.ai/api-reference/management-api/reference/smartqueue/sq-set-skill-info.md)
+- Reference > SmartQueue [SQ_BindSkill](https://docs.voximplant.ai/api-reference/management-api/reference/smartqueue/sq-bind-skill.md)
+- Reference > SmartQueue [SQ_UnbindSkill](https://docs.voximplant.ai/api-reference/management-api/reference/smartqueue/sq-unbind-skill.md)
+- Reference > SmartQueue [SQ_GetSkills](https://docs.voximplant.ai/api-reference/management-api/reference/smartqueue/sq-get-skills.md)
+- Reference > SmartQueue [SQ_BindAgent](https://docs.voximplant.ai/api-reference/management-api/reference/smartqueue/sq-bind-agent.md)
+- Reference > SmartQueue [SQ_UnbindAgent](https://docs.voximplant.ai/api-reference/management-api/reference/smartqueue/sq-unbind-agent.md)
+- Reference > SmartQueue [SQ_GetAgents](https://docs.voximplant.ai/api-reference/management-api/reference/smartqueue/sq-get-agents.md)
+- Reference > SmartQueue [SQ_SetAgentInfo](https://docs.voximplant.ai/api-reference/management-api/reference/smartqueue/sq-set-agent-info.md)
+- Reference > Skills [AddSkill](https://docs.voximplant.ai/api-reference/management-api/reference/skills/add-skill.md)
+- Reference > Skills [DelSkill](https://docs.voximplant.ai/api-reference/management-api/reference/skills/del-skill.md)
+- Reference > Skills [SetSkillInfo](https://docs.voximplant.ai/api-reference/management-api/reference/skills/set-skill-info.md)
+- Reference > Skills [GetSkills](https://docs.voximplant.ai/api-reference/management-api/reference/skills/get-skills.md)
+- Reference > Skills [BindSkill](https://docs.voximplant.ai/api-reference/management-api/reference/skills/bind-skill.md)
+- Reference > Admin Users [AddAdminUser](https://docs.voximplant.ai/api-reference/management-api/reference/admin-users/add-admin-user.md)
+- Reference > Admin Users [DelAdminUser](https://docs.voximplant.ai/api-reference/management-api/reference/admin-users/del-admin-user.md)
+- Reference > Admin Users [SetAdminUserInfo](https://docs.voximplant.ai/api-reference/management-api/reference/admin-users/set-admin-user-info.md)
+- Reference > Admin Users [GetAdminUsers](https://docs.voximplant.ai/api-reference/management-api/reference/admin-users/get-admin-users.md)
+- Reference > Admin Users [AttachAdminRole](https://docs.voximplant.ai/api-reference/management-api/reference/admin-users/attach-admin-role.md)
+- Reference > Admin Roles [AddAdminRole](https://docs.voximplant.ai/api-reference/management-api/reference/admin-roles/add-admin-role.md)
+- Reference > Admin Roles [DelAdminRole](https://docs.voximplant.ai/api-reference/management-api/reference/admin-roles/del-admin-role.md)
+- Reference > Admin Roles [SetAdminRoleInfo](https://docs.voximplant.ai/api-reference/management-api/reference/admin-roles/set-admin-role-info.md)
+- Reference > Admin Roles [GetAdminRoles](https://docs.voximplant.ai/api-reference/management-api/reference/admin-roles/get-admin-roles.md)
+- Reference > Admin Roles [GetAvailableAdminRoleEntries](https://docs.voximplant.ai/api-reference/management-api/reference/admin-roles/get-available-admin-role-entries.md)
+- Reference > Authorized Ips [AddAuthorizedAccountIP](https://docs.voximplant.ai/api-reference/management-api/reference/authorized-ips/add-authorized-account-ip.md)
+- Reference > Authorized Ips [DelAuthorizedAccountIP](https://docs.voximplant.ai/api-reference/management-api/reference/authorized-ips/del-authorized-account-ip.md)
+- Reference > Authorized Ips [GetAuthorizedAccountIPs](https://docs.voximplant.ai/api-reference/management-api/reference/authorized-ips/get-authorized-account-i-ps.md)
+- Reference > Authorized Ips [CheckAuthorizedAccountIP](https://docs.voximplant.ai/api-reference/management-api/reference/authorized-ips/check-authorized-account-ip.md)
+- Reference > Regulation Address [LinkRegulationAddress](https://docs.voximplant.ai/api-reference/management-api/reference/regulation-address/link-regulation-address.md)
+- Reference > Regulation Address [GetZIPCodes](https://docs.voximplant.ai/api-reference/management-api/reference/regulation-address/get-zip-codes.md)
+- Reference > Regulation Address [GetRegulationsAddress](https://docs.voximplant.ai/api-reference/management-api/reference/regulation-address/get-regulations-address.md)
+- Reference > Regulation Address [GetAvailableRegulations](https://docs.voximplant.ai/api-reference/management-api/reference/regulation-address/get-available-regulations.md)
+- Reference > Regulation Address [GetCountries](https://docs.voximplant.ai/api-reference/management-api/reference/regulation-address/get-countries.md)
+- Reference > Regulation Address [GetRegions](https://docs.voximplant.ai/api-reference/management-api/reference/regulation-address/get-regions.md)
+- Reference > Push Credentials [AddPushCredential](https://docs.voximplant.ai/api-reference/management-api/reference/push-credentials/add-push-credential.md)
+- Reference > Push Credentials [SetPushCredential](https://docs.voximplant.ai/api-reference/management-api/reference/push-credentials/set-push-credential.md)
+- Reference > Push Credentials [DelPushCredential](https://docs.voximplant.ai/api-reference/management-api/reference/push-credentials/del-push-credential.md)
+- Reference > Push Credentials [GetPushCredential](https://docs.voximplant.ai/api-reference/management-api/reference/push-credentials/get-push-credential.md)
+- Reference > Push Credentials [BindPushCredential](https://docs.voximplant.ai/api-reference/management-api/reference/push-credentials/bind-push-credential.md)
+- Reference > Dialogflow Credentials [AddDialogflowKey](https://docs.voximplant.ai/api-reference/management-api/reference/dialogflow-credentials/add-dialogflow-key.md)
+- Reference > Dialogflow Credentials [SetDialogflowKey](https://docs.voximplant.ai/api-reference/management-api/reference/dialogflow-credentials/set-dialogflow-key.md)
+- Reference > Dialogflow Credentials [DelDialogflowKey](https://docs.voximplant.ai/api-reference/management-api/reference/dialogflow-credentials/del-dialogflow-key.md)
+- Reference > Dialogflow Credentials [GetDialogflowKeys](https://docs.voximplant.ai/api-reference/management-api/reference/dialogflow-credentials/get-dialogflow-keys.md)
+- Reference > Dialogflow Credentials [BindDialogflowKeys](https://docs.voximplant.ai/api-reference/management-api/reference/dialogflow-credentials/bind-dialogflow-keys.md)
+- Reference > SMS [A2PGetSmsHistory](https://docs.voximplant.ai/api-reference/management-api/reference/sms/a2p-get-sms-history.md)
+- Reference > SMS [A2PSendSms](https://docs.voximplant.ai/api-reference/management-api/reference/sms/a2p-send-sms.md)
+- Reference > SMS [ControlSms](https://docs.voximplant.ai/api-reference/management-api/reference/sms/control-sms.md)
+- Reference > SMS [GetSmsHistory](https://docs.voximplant.ai/api-reference/management-api/reference/sms/get-sms-history.md)
+- Reference > SMS [SendSmsMessage](https://docs.voximplant.ai/api-reference/management-api/reference/sms/send-sms-message.md)
+- Reference > Record Storages [GetRecordStorages](https://docs.voximplant.ai/api-reference/management-api/reference/record-storages/get-record-storages.md)
+- Reference > Role System [CreateKey](https://docs.voximplant.ai/api-reference/management-api/reference/role-system/create-key.md)
+- Reference > Role System [GetKeys](https://docs.voximplant.ai/api-reference/management-api/reference/role-system/get-keys.md)
+- Reference > Role System [UpdateKey](https://docs.voximplant.ai/api-reference/management-api/reference/role-system/update-key.md)
+- Reference > Role System [DeleteKey](https://docs.voximplant.ai/api-reference/management-api/reference/role-system/delete-key.md)
+- Reference > Role System [SetKeyRoles](https://docs.voximplant.ai/api-reference/management-api/reference/role-system/set-key-roles.md)
+- Reference > Role System [GetKeyRoles](https://docs.voximplant.ai/api-reference/management-api/reference/role-system/get-key-roles.md)
+- Reference > Role System [RemoveKeyRoles](https://docs.voximplant.ai/api-reference/management-api/reference/role-system/remove-key-roles.md)
+- Reference > Role System [AddSubUser](https://docs.voximplant.ai/api-reference/management-api/reference/role-system/add-sub-user.md)
+- Reference > Role System [GetSubUsers](https://docs.voximplant.ai/api-reference/management-api/reference/role-system/get-sub-users.md)
+- Reference > Role System [SetSubUserInfo](https://docs.voximplant.ai/api-reference/management-api/reference/role-system/set-sub-user-info.md)
+- Reference > Role System [DelSubUser](https://docs.voximplant.ai/api-reference/management-api/reference/role-system/del-sub-user.md)
+- Reference > Role System [SetSubUserRoles](https://docs.voximplant.ai/api-reference/management-api/reference/role-system/set-sub-user-roles.md)
+- Reference > Role System [GetSubUserRoles](https://docs.voximplant.ai/api-reference/management-api/reference/role-system/get-sub-user-roles.md)
+- Reference > Role System [RemoveSubUserRoles](https://docs.voximplant.ai/api-reference/management-api/reference/role-system/remove-sub-user-roles.md)
+- Reference > Role System [GetRoles](https://docs.voximplant.ai/api-reference/management-api/reference/role-system/get-roles.md)
+- Reference > Role System [GetRoleGroups](https://docs.voximplant.ai/api-reference/management-api/reference/role-system/get-role-groups.md)
+- Reference > Key Value Storage [SetKeyValueItem](https://docs.voximplant.ai/api-reference/management-api/reference/key-value-storage/set-key-value-item.md)
+- Reference > Key Value Storage [DelKeyValueItem](https://docs.voximplant.ai/api-reference/management-api/reference/key-value-storage/del-key-value-item.md)
+- Reference > Key Value Storage [GetKeyValueItem](https://docs.voximplant.ai/api-reference/management-api/reference/key-value-storage/get-key-value-item.md)
+- Reference > Key Value Storage [GetKeyValueItems](https://docs.voximplant.ai/api-reference/management-api/reference/key-value-storage/get-key-value-items.md)
+- Reference > Key Value Storage [GetKeyValueKeys](https://docs.voximplant.ai/api-reference/management-api/reference/key-value-storage/get-key-value-keys.md)
+- Reference > Invoices [GetAccountInvoices](https://docs.voximplant.ai/api-reference/management-api/reference/invoices/get-account-invoices.md)
+- Reference > Invoices [DownloadInvoice](https://docs.voximplant.ai/api-reference/management-api/reference/invoices/download-invoice.md)
+- Reference > Secrets [AddSecret](https://docs.voximplant.ai/api-reference/management-api/reference/secrets/add-secret.md)
+- Reference > Secrets [DelSecret](https://docs.voximplant.ai/api-reference/management-api/reference/secrets/del-secret.md)
+- Reference > Secrets [GetSecretValue](https://docs.voximplant.ai/api-reference/management-api/reference/secrets/get-secret-value.md)
+- Reference > Secrets [GetSecrets](https://docs.voximplant.ai/api-reference/management-api/reference/secrets/get-secrets.md)
+- Reference > Secrets [SetSecretInfo](https://docs.voximplant.ai/api-reference/management-api/reference/secrets/set-secret-info.md)
+
+## OpenAPI Specification
+
+The raw OpenAPI 3.1 specification for this API is available at:
+- [OpenAPI JSON](https://docs.voximplant.ai/openapi.json)
+- [OpenAPI YAML](https://docs.voximplant.ai/openapi.yaml)

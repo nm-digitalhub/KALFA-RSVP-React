@@ -1,0 +1,30 @@
+> For a complete documentation index, fetch https://docs.voximplant.ai/llms.txt
+
+# VoxEngine Development
+
+## Docs
+
+- [VoxEngine concepts](https://docs.voximplant.ai/platform/voxengine/concepts.md): Learn how to use VoxEngine, Voximplant's serverless JavaScript engine.
+- [Applications](https://docs.voximplant.ai/platform/voxengine/applications.md): Set up Applications for project management and development
+- [Users](https://docs.voximplant.ai/platform/voxengine/users.md): Create users for SDK auth, SIP clients, and application calling
+- [Scenarios](https://docs.voximplant.ai/platform/voxengine/scenarios.md): Write and run VoxEngine scenario code for calls and messaging
+- [Routing rules](https://docs.voximplant.ai/platform/voxengine/routing-rules.md): Route inbound and outbound traffic to the right scenarios
+- [Phone numbers](https://docs.voximplant.ai/platform/voxengine/phone-numbers.md): Buy, attach, and manage numbers for inbound calling and caller ID
+- [Calls and sessions](https://docs.voximplant.ai/platform/voxengine/calls-and-sessions.md): Understand call legs, sessions, and real-time call control in VoxEngine
+- [Media over WebSockets](https://docs.voximplant.ai/platform/voxengine/media-over-websockets.md): Create WebSocket connections and exchange text or audio media with VoxEngine
+- [Video calls](https://docs.voximplant.ai/platform/voxengine/video-calls.md): Build server and peer-to-peer video calls on Voximplant
+- [Account subusers](https://docs.voximplant.ai/platform/voxengine/subusers.md): Grant control panel access without sharing the main account
+- [Integrations](https://docs.voximplant.ai/platform/voxengine/integrations.md): Use built-in integrations for speech, NLU, and other external services
+- [Firewall](https://docs.voximplant.ai/platform/voxengine/firewall.md): Learn how to configure a corporate firewall in Voximplant.
+- [Cloud IDE](https://docs.voximplant.ai/platform/voxengine/ide.md): Learn about Voximplant Cloud IDE.
+- [Type declarations](https://docs.voximplant.ai/platform/voxengine/type-declarations.md): Learn how to use type declarations for writing Voximplant applications in your own IDE with TypeScript.
+- [VoxEngine CI](https://docs.voximplant.ai/platform/voxengine/ci.md): Learn how to manage Voximplant applications, rules, and scenarios from your own environment using VoxEngine CI.
+- [Working with API requests](https://docs.voximplant.ai/platform/voxengine/api-requests.md): Learn how to make and accept HTTP requests and send emails in your Voximplant scenarios.
+- [Working with the Voximplant's API](https://docs.voximplant.ai/platform/voxengine/management-api-usage.md): Call the Voximplant Management API directly from a VoxEngine scenario
+- [Remote session management](https://docs.voximplant.ai/platform/voxengine/remote-sessions.md): Learn how to interact with an active session via HTTP in Voximplant.
+- [Key-value storage](https://docs.voximplant.ai/platform/voxengine/key-value-storage.md): Learn how to use key-value storage in Voximplant.
+- [Secret storage](https://docs.voximplant.ai/platform/voxengine/secrets.md): Learn how to use secret storage in Voximplant.
+- [Custom data](https://docs.voximplant.ai/platform/voxengine/custom-data.md): Learn how to use custom data properties in Voximplant.
+- [Limits and restrictions](https://docs.voximplant.ai/platform/voxengine/limits.md): Know the runtime, media, and request limits that shape scenario behavior
+- [Scenarios troubleshooting](https://docs.voximplant.ai/platform/voxengine/troubleshooting.md): Debug VoxEngine scenarios with logs and the built-in debugger
+- [How billing works](https://docs.voximplant.ai/platform/voxengine/how-billing-works.md): Understand Voximplant billing, charges, and usage-based costs.
