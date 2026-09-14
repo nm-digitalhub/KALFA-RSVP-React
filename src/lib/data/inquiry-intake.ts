@@ -2,7 +2,7 @@ import 'server-only';
 
 import { createAdminClient } from '@/lib/supabase/admin';
 import { sendSlackAlert } from '@/lib/alerts/slack';
-import { preferenceToInstant } from '@/lib/callbacks/schedule-policy';
+import { preferenceToRequestFields } from '@/lib/callbacks/schedule-policy';
 import { normalizePhone } from '@/lib/phone';
 import type {
   CallbackRequestInput,
@@ -135,15 +135,16 @@ export async function insertCallbackRequest(
   // actually runs rather than against the moment this form was submitted — a
   // request can sit in the queue for a while, and "as soon as possible" should
   // mean soon from THEN.
-  const preferredMs =
-    input.preference === 'asap' ? null : preferenceToInstant(input.preference, Date.now());
-
-  // The band is also a DIRECTION, and the instant above throws that away: once
-  // it is a timestamp, nothing downstream can tell "they wanted the afternoon"
-  // from "start looking at four". Recording the rank keeps the choice usable
-  // when the exact instant turns out to be taken.
-  const requestedRank: 'earliest' | 'early' | 'late' =
-    input.preference === 'asap' ? 'earliest' : input.preference === 'morning' ? 'early' : 'late';
+  //
+  // The band is also a DIRECTION, and the instant throws that away: once it is
+  // a timestamp, nothing downstream can tell "they wanted the afternoon" from
+  // "start looking at four". Recording the rank keeps the choice usable when
+  // the exact instant turns out to be taken — so the helper returns the PAIR,
+  // and the missed-call intake path uses the same one.
+  const { requestedAtIso, requestedRank } = preferenceToRequestFields(
+    input.preference,
+    Date.now(),
+  );
 
   const supabase = createAdminClient();
   const { data, error } = await supabase
@@ -153,7 +154,7 @@ export async function insertCallbackRequest(
       phone: normalizePhone(input.phone) ?? input.phone,
       topic: input.topic,
       note: input.note ?? null,
-      requested_at: preferredMs === null ? null : new Date(preferredMs).toISOString(),
+      requested_at: requestedAtIso,
       requested_rank: requestedRank,
     })
     .select('id')

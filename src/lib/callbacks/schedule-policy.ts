@@ -190,6 +190,32 @@ const BAND_LAST_ENTRY: Record<Exclude<CallbackPreference, 'asap' | 'exact'>, num
  * conflicts on top, so an unreachable preference degrades to the next workable
  * slot instead of failing.
  */
+/**
+ * The two columns a caller's part-of-day choice actually becomes.
+ *
+ * `requested_at` is the instant the scheduler starts searching from, and
+ * `requested_rank` is the DIRECTION that survives when that instant turns out
+ * to be taken — the pair, not either alone. Extracted so the public /contact
+ * insert and the missed-call intake update cannot drift apart: writing the raw
+ * preference ('morning') into requested_rank, which expects a SlotRank
+ * ('early'), breaks the scheduler silently.
+ *
+ * 'asap' stays NULL on purpose: it means "no stated time", and the scheduler
+ * resolves that against the clock when it runs rather than when the form was
+ * submitted.
+ */
+export function preferenceToRequestFields(
+  preference: 'asap' | 'morning' | 'afternoon' | 'evening',
+  nowMs: number,
+): { requestedAtIso: string | null; requestedRank: Extract<SlotRank, 'earliest' | 'early' | 'late'> } {
+  const ms = preference === 'asap' ? null : preferenceToInstant(preference, nowMs);
+  return {
+    requestedAtIso: ms === null ? null : new Date(ms).toISOString(),
+    requestedRank:
+      preference === 'asap' ? 'earliest' : preference === 'morning' ? 'early' : 'late',
+  };
+}
+
 export function preferenceToInstant(
   preference: CallbackPreference,
   nowMs: number,

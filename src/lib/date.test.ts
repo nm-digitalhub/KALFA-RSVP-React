@@ -6,6 +6,8 @@ import {
   formatIsraelDate,
   formatIsraelDateTime,
   formatIsraelHebrewDate,
+  formatIsraelRelativeSpokenDate,
+  formatIsraelSpokenClock,
   formatIsraelTime,
   formatIsraelWeekday,
 } from './date';
@@ -74,5 +76,109 @@ describe('Israel weekday + Hebrew-calendar formatters', () => {
   it('returns an empty string for invalid input instead of throwing', () => {
     expect(formatIsraelWeekday('not-a-date')).toBe('');
     expect(formatIsraelHebrewDate('')).toBe('');
+  });
+});
+
+// --- Spoken clock & relative date --------------------------------------------
+// ⚠️ These feed an ElevenLabs agent that speaks the string VERBATIM. There is no
+// `normalizeForSpeech` on the MeetingConfirm path (only the RSVP scenarios have
+// one), so a digit that survives here is a digit a caller hears. Every hour is
+// pinned, not spot-checked: the feminine forms, the 11–19 block and the tens
+// compounds are each a separate way to get Hebrew wrong.
+
+describe('formatIsraelSpokenClock', () => {
+  // Israel is UTC+3 (IDT) in September.
+  const at = (h: number, m: number) =>
+    `2026-09-14T${String(h - 3).padStart(2, '0')}:${String(m).padStart(2, '0')}:00Z`;
+
+  it.each([
+    [16, 3, 'בארבע ושלוש דקות אחר הצהריים'],
+    [16, 18, 'בארבע ושמונה עשרה דקות אחר הצהריים'],
+    [16, 0, 'בארבע אחר הצהריים'],
+    [16, 15, 'בארבע ורבע אחר הצהריים'],
+    [16, 30, 'בארבע וחצי אחר הצהריים'],
+    [16, 1, 'בארבע ודקה אחת אחר הצהריים'],
+    [16, 45, 'בארבע וארבעים וחמש דקות אחר הצהריים'],
+    [16, 59, 'בארבע וחמישים ותשע דקות אחר הצהריים'],
+    [16, 20, 'בארבע ועשרים דקות אחר הצהריים'],
+    [16, 21, 'בארבע ועשרים ואחת דקות אחר הצהריים'],
+    [16, 11, 'בארבע ואחת עשרה דקות אחר הצהריים'],
+    [9, 5, 'בתשע וחמש דקות בבוקר'],
+    [11, 0, 'באחת עשרה בבוקר'],
+    [12, 0, 'בשתים עשרה בצהריים'],
+    [12, 30, 'בשתים עשרה וחצי בצהריים'],
+    [13, 0, 'באחת אחר הצהריים'],
+    [17, 59, 'בחמש וחמישים ותשע דקות אחר הצהריים'],
+    [18, 0, 'בשש בערב'],
+    [21, 30, 'בתשע וחצי בערב'],
+    [22, 0, 'בעשר בלילה'],
+    [5, 0, 'בחמש בבוקר'],
+    [4, 59, 'בארבע וחמישים ותשע דקות בלילה'],
+  ])('%s:%s → %s', (h, m, expected) => {
+    expect(formatIsraelSpokenClock(at(h, m))).toBe(expected);
+  });
+
+  it('⚠️ midnight is twelve, never zero', () => {
+    // `hourCycle: 'h23'` gives 0; "ב אחר הצהריים" or "באפס" would both be wrong.
+    expect(formatIsraelSpokenClock('2026-09-13T21:00:00Z')).toBe('בשתים עשרה בלילה');
+  });
+
+  it('⚠️ no digit ever survives', () => {
+    for (let h = 0; h < 24; h += 1) {
+      for (const m of [0, 1, 7, 15, 19, 30, 42, 59]) {
+        const out = formatIsraelSpokenClock(
+          Date.UTC(2026, 8, 14, h - 3, m, 0),
+        );
+        expect(out, `${h}:${m} → ${out}`).not.toMatch(/\d/);
+        expect(out.trim(), `${h}:${m}`).not.toBe('');
+      }
+    }
+  });
+
+  it('returns empty for unparseable input', () => {
+    expect(formatIsraelSpokenClock('')).toBe('');
+    expect(formatIsraelSpokenClock('not-a-date')).toBe('');
+  });
+});
+
+describe('formatIsraelRelativeSpokenDate', () => {
+  // 2026-09-14 is a Monday; 14:00 Israel time.
+  const now = '2026-09-14T11:00:00Z';
+
+  it.each([
+    ['2026-09-14T13:18:00Z', 'היום'],
+    ['2026-09-14T20:59:00Z', 'היום'],
+    ['2026-09-15T05:00:00Z', 'מחר'],
+    ['2026-09-16T05:00:00Z', 'מחרתיים'],
+    ['2026-09-17T05:00:00Z', 'ביום חמישי'],
+    ['2026-09-20T05:00:00Z', 'ביום ראשון'],
+    ['2026-09-21T05:00:00Z', 'ביום שני, בעשרים ואחד בספטמבר'],
+    ['2026-10-01T05:00:00Z', 'ביום חמישי, באחד באוקטובר'],
+  ])('%s → %s', (when, expected) => {
+    expect(formatIsraelRelativeSpokenDate(when, now)).toBe(expected);
+  });
+
+  it('⚠️ the year is spoken ONLY when it is not the current one', () => {
+    expect(formatIsraelRelativeSpokenDate('2027-01-04T05:00:00Z', now)).toBe(
+      'ביום שני, בארבעה בינואר אלפיים עשרים ושבע',
+    );
+  });
+
+  it('⚠️ a past date yields nothing, never a confident wrong date', () => {
+    expect(formatIsraelRelativeSpokenDate('2026-09-13T18:00:00Z', now)).toBe('');
+  });
+
+  it('⚠️ "today" follows the Israel civil day, not UTC', () => {
+    // 2026-09-14T22:30 Israel = 19:30Z — still today in Israel, already
+    // "tomorrow" nowhere. A UTC-based diff would be right here by luck; the
+    // real trap is the other side of midnight.
+    expect(formatIsraelRelativeSpokenDate('2026-09-14T19:30:00Z', now)).toBe('היום');
+    // 2026-09-14T21:30Z = 00:30 on the 15th in Israel → tomorrow.
+    expect(formatIsraelRelativeSpokenDate('2026-09-14T21:30:00Z', now)).toBe('מחר');
+  });
+
+  it('returns empty for unparseable input', () => {
+    expect(formatIsraelRelativeSpokenDate('', now)).toBe('');
+    expect(formatIsraelRelativeSpokenDate('2026-09-20T05:00:00Z', 'nope')).toBe('');
   });
 });

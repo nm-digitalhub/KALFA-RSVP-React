@@ -173,17 +173,45 @@ describe('sendExtraTestSmsAction — the audit trail', () => {
 });
 
 describe('updateExtraSmsAction', () => {
-  it('saves the three fields and revalidates both surfaces', async () => {
+  it('saves the five fields and revalidates both surfaces', async () => {
     const r = await updateExtraSmsAction(
       null,
-      fd({ sms_enabled: 'on', extra_sms_sender: '03-3301505', extra_sms_token: 'tok' }),
+      fd({
+        sms_enabled: 'on',
+        extra_sms_sender: '03-3301505',
+        extra_sms_token: 'tok',
+        callback_intake_sms_enabled: 'on',
+        callback_intake_sms_daily_cap: '50',
+      }),
     );
     expect(updateMock).toHaveBeenCalledWith({
       sms_enabled: true,
       extra_sms_sender: '03-3301505',
       extra_sms_token: 'tok',
+      callback_intake_sms_enabled: true,
+      callback_intake_sms_daily_cap: 50,
     });
     expect(r?.notice).toBeTruthy();
+  });
+
+  it('⚠️ an absent intake checkbox is OFF, and an absent cap is 0 — both fail closed', async () => {
+    // A form that posts neither must never be read as "armed with yesterday's
+    // ceiling": both defaults have to stop the sending, not permit it.
+    await updateExtraSmsAction(null, fd({ extra_sms_sender: 's', extra_sms_token: 't' }));
+    expect(updateMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        callback_intake_sms_enabled: false,
+        callback_intake_sms_daily_cap: 0,
+      }),
+    );
+  });
+
+  it('⚠️ refuses a cap that is not a whole, in-range number', async () => {
+    const r = await updateExtraSmsAction(
+      null,
+      fd({ extra_sms_sender: 's', extra_sms_token: 't', callback_intake_sms_daily_cap: '-5' }),
+    );
+    expect(r?.fieldErrors?.callback_intake_sms_daily_cap).toBeTruthy();
   });
 
   it('reads an absent checkbox as off, which is what a form actually sends', async () => {

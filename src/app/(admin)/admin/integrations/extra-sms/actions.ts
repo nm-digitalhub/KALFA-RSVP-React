@@ -24,6 +24,8 @@ export async function updateExtraSmsAction(
     sms_enabled: formData.get('sms_enabled') === 'on',
     extra_sms_sender: formData.get('extra_sms_sender') ?? '',
     extra_sms_token: formData.get('extra_sms_token') ?? '',
+    callback_intake_sms_enabled: formData.get('callback_intake_sms_enabled') === 'on',
+    callback_intake_sms_daily_cap: formData.get('callback_intake_sms_daily_cap') ?? 0,
   });
   if (!parsed.success) {
     return { fieldErrors: parsed.error.flatten().fieldErrors };

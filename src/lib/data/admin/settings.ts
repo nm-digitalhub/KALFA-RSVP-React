@@ -326,6 +326,8 @@ export type ExtraSmsConfig = {
   sms_enabled: boolean;
   extra_sms_sender: string;
   extra_sms_token: string;
+  callback_intake_sms_enabled: boolean;
+  callback_intake_sms_daily_cap: number;
   configured: boolean;
 };
 
@@ -334,7 +336,9 @@ export async function getExtraSmsConfig(): Promise<ExtraSmsConfig> {
   const supabase = await createClient();
   const { data, error } = await supabase
     .from('app_settings')
-    .select('sms_enabled, extra_sms_sender, extra_sms_token')
+    .select(
+      'sms_enabled, extra_sms_sender, extra_sms_token, callback_intake_sms_enabled, callback_intake_sms_daily_cap',
+    )
     .eq('id', SETTINGS_ID)
     .maybeSingle();
   if (error) throw new Error('טעינת הגדרות ה-SMS נכשלה');
@@ -342,6 +346,8 @@ export async function getExtraSmsConfig(): Promise<ExtraSmsConfig> {
     sms_enabled: data?.sms_enabled ?? false,
     extra_sms_sender: data?.extra_sms_sender ?? '',
     extra_sms_token: data?.extra_sms_token ?? '',
+    callback_intake_sms_enabled: data?.callback_intake_sms_enabled ?? false,
+    callback_intake_sms_daily_cap: data?.callback_intake_sms_daily_cap ?? 0,
     // Credentials only — deliberately independent of sms_enabled.
     configured: Boolean(data?.extra_sms_token && data?.extra_sms_sender),
   };
@@ -351,6 +357,8 @@ export async function updateExtraSmsConfig(input: {
   sms_enabled: boolean;
   extra_sms_sender: string;
   extra_sms_token: string;
+  callback_intake_sms_enabled: boolean;
+  callback_intake_sms_daily_cap: number;
 }): Promise<void> {
   await requirePlatformPermission('manage_settings');
   const supabase = await createClient();
@@ -360,6 +368,8 @@ export async function updateExtraSmsConfig(input: {
       sms_enabled: input.sms_enabled,
       extra_sms_sender: input.extra_sms_sender || null,
       extra_sms_token: input.extra_sms_token || null,
+      callback_intake_sms_enabled: input.callback_intake_sms_enabled,
+      callback_intake_sms_daily_cap: input.callback_intake_sms_daily_cap,
     })
     .eq('id', SETTINGS_ID);
   if (error) throw new Error('עדכון הגדרות ה-SMS נכשל');

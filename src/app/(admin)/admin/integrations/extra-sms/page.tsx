@@ -75,6 +75,8 @@ export default async function ExtraSmsPage() {
             sms_enabled: config.sms_enabled,
             extra_sms_sender: config.extra_sms_sender,
             extra_sms_token: config.extra_sms_token,
+            callback_intake_sms_enabled: config.callback_intake_sms_enabled,
+            callback_intake_sms_daily_cap: config.callback_intake_sms_daily_cap,
           }}
         />
       </section>

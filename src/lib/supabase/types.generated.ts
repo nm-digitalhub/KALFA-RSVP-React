@@ -170,6 +170,8 @@ export type Database = {
           base_overage_pricing_enabled: boolean
           billing_exposure_gate: boolean
           call_consent_required: boolean
+          callback_intake_sms_daily_cap: number
+          callback_intake_sms_enabled: boolean
           campaign_holds_enabled: boolean
           cancellation_fee_cap: number
           cancellation_fee_percent: number
@@ -274,6 +276,8 @@ export type Database = {
           base_overage_pricing_enabled?: boolean
           billing_exposure_gate?: boolean
           call_consent_required?: boolean
+          callback_intake_sms_daily_cap?: number
+          callback_intake_sms_enabled?: boolean
           campaign_holds_enabled?: boolean
           cancellation_fee_cap?: number
           cancellation_fee_percent?: number
@@ -378,6 +382,8 @@ export type Database = {
           base_overage_pricing_enabled?: boolean
           billing_exposure_gate?: boolean
           call_consent_required?: boolean
+          callback_intake_sms_daily_cap?: number
+          callback_intake_sms_enabled?: boolean
           campaign_holds_enabled?: boolean
           cancellation_fee_cap?: number
           cancellation_fee_percent?: number
@@ -1090,6 +1096,13 @@ export type Database = {
           excluded_dates: string[] | null
           full_name: string
           id: string
+          intake_completed_at: string | null
+          intake_sms_claimed_at: string | null
+          intake_sms_error: string | null
+          intake_sms_provider_id: string | null
+          intake_sms_sent_at: string | null
+          intake_token: string | null
+          intake_token_expires_at: string | null
           no_contact_sms_claimed_at: string | null
           no_contact_sms_error: string | null
           no_contact_sms_provider_id: string | null
@@ -1122,6 +1135,13 @@ export type Database = {
           excluded_dates?: string[] | null
           full_name: string
           id?: string
+          intake_completed_at?: string | null
+          intake_sms_claimed_at?: string | null
+          intake_sms_error?: string | null
+          intake_sms_provider_id?: string | null
+          intake_sms_sent_at?: string | null
+          intake_token?: string | null
+          intake_token_expires_at?: string | null
           no_contact_sms_claimed_at?: string | null
           no_contact_sms_error?: string | null
           no_contact_sms_provider_id?: string | null
@@ -1154,6 +1174,13 @@ export type Database = {
           excluded_dates?: string[] | null
           full_name?: string
           id?: string
+          intake_completed_at?: string | null
+          intake_sms_claimed_at?: string | null
+          intake_sms_error?: string | null
+          intake_sms_provider_id?: string | null
+          intake_sms_sent_at?: string | null
+          intake_token?: string | null
+          intake_token_expires_at?: string | null
           no_contact_sms_claimed_at?: string | null
           no_contact_sms_error?: string | null
           no_contact_sms_provider_id?: string | null
@@ -6151,6 +6178,13 @@ export type Database = {
           excluded_dates: string[] | null
           full_name: string
           id: string
+          intake_completed_at: string | null
+          intake_sms_claimed_at: string | null
+          intake_sms_error: string | null
+          intake_sms_provider_id: string | null
+          intake_sms_sent_at: string | null
+          intake_token: string | null
+          intake_token_expires_at: string | null
           no_contact_sms_claimed_at: string | null
           no_contact_sms_error: string | null
           no_contact_sms_provider_id: string | null
@@ -6356,6 +6390,7 @@ export type Database = {
           isSetofReturn: false
         }
       }
+      get_callback_intake_by_token: { Args: { _token: string }; Returns: Json }
       get_event_attendees_public: { Args: { _token: string }; Returns: Json }
       get_rsvp_by_token: { Args: { _token: string }; Returns: Json }
       guest_effective_attending: {
@@ -6515,6 +6550,17 @@ export type Database = {
           email: string
           user_id: string
         }[]
+      }
+      submit_callback_intake: {
+        Args: {
+          _full_name: string
+          _note?: string
+          _requested_at?: string
+          _requested_rank?: string
+          _token: string
+          _topic: string
+        }
+        Returns: Json
       }
       submit_rsvp: {
         Args: {

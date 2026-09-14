@@ -2,7 +2,7 @@
 
 import { useActionState } from 'react';
 
-import { FormError, FormNotice, SubmitButton } from '@/components/forms';
+import { FieldError, FormError, FormNotice, SubmitButton } from '@/components/forms';
 import { EditableField } from '@/app/(admin)/admin/_form-fields';
 
 import { updateExtraSmsAction } from './actions';
@@ -24,6 +24,8 @@ export type ExtraSmsFormValues = {
   sms_enabled: boolean;
   extra_sms_sender: string;
   extra_sms_token: string;
+  callback_intake_sms_enabled: boolean;
+  callback_intake_sms_daily_cap: number;
 };
 
 export function ExtraSmsForm({ values }: { values: ExtraSmsFormValues }) {
@@ -68,6 +70,49 @@ export function ExtraSmsForm({ values }: { values: ExtraSmsFormValues }) {
         hint="נוצר ב-/my/api/ בפורטל ExtrA. המפתח פותח את כל החשבון — הוא נשמר בשרת בלבד ולעולם לא נרשם ללוג."
         errors={e?.extra_sms_token}
       />
+
+      <fieldset className="space-y-3 rounded-lg border border-input p-3">
+        <legend className="px-1 text-sm font-medium">טופס פרטים לשיחה שלא נענתה</legend>
+
+        <label className="flex items-start gap-3">
+          <input
+            type="checkbox"
+            name="callback_intake_sms_enabled"
+            defaultChecked={values.callback_intake_sms_enabled}
+            className="mt-1 size-4 accent-primary"
+          />
+          <span>
+            <span className="block text-sm font-medium">שליחת קישור לטופס אחרי שיחה שלא נענתה</span>
+            <span className="block text-xs text-muted-foreground">
+              כשמישהו מתקשר ואין נציג זמין, נשלח לו SMS עם קישור אישי למילוי שם וסיבת הפנייה.
+              בלעדיו השיחה החוזרת יוצאת בלי שם ובלי נושא. כשכבוי — הבקשה עדיין נוצרת והשיחה
+              החוזרת עדיין מתבצעת, רק ה-SMS לא נשלח.
+            </span>
+          </span>
+        </label>
+
+        <div className="grid gap-1.5">
+          <label htmlFor="callback_intake_sms_daily_cap" className="text-sm font-medium">
+            תקרה יומית
+          </label>
+          <input
+            id="callback_intake_sms_daily_cap"
+            name="callback_intake_sms_daily_cap"
+            type="number"
+            min={0}
+            max={10000}
+            step={1}
+            defaultValue={values.callback_intake_sms_daily_cap}
+            className="min-h-11 w-32 rounded-lg border border-input bg-transparent px-2.5 py-1 text-base outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+          />
+          <p className="text-xs text-muted-foreground">
+            מספר ההודעות המרבי ליום (לפי היום האזרחי בישראל). כל שיחה שלא נענתה עולה שליחה
+            אחת, ולכן מבול שיחות נכנסות הוא הוצאה — התקרה הופכת את המקרה הגרוע למספר ידוע.
+            0 עוצר את השליחה כמו כיבוי המתג.
+          </p>
+          <FieldError errors={e?.callback_intake_sms_daily_cap} />
+        </div>
+      </fieldset>
 
       <SubmitButton>שמירה</SubmitButton>
     </form>

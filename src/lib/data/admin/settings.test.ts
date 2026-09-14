@@ -241,24 +241,49 @@ describe('updateSumitCredentials', () => {
 });
 
 describe('updateExtraSmsConfig', () => {
-  it('writes ONLY the three ExtrA columns, switch included', async () => {
+  it('writes ONLY the five SMS columns, both switches included', async () => {
     const builder = mockWrite();
     await updateExtraSmsConfig({
       sms_enabled: true,
       extra_sms_sender: '03-3301505',
       extra_sms_token: 'T',
+      callback_intake_sms_enabled: true,
+      callback_intake_sms_daily_cap: 50,
     });
     expect(patchOf(builder)).toEqual({
       sms_enabled: true,
       extra_sms_sender: '03-3301505',
       extra_sms_token: 'T',
+      callback_intake_sms_enabled: true,
+      callback_intake_sms_daily_cap: 50,
     });
   });
 
   it('carries a FALSE switch through — absent would read as false anyway, but silently', async () => {
     const builder = mockWrite();
-    await updateExtraSmsConfig({ sms_enabled: false, extra_sms_sender: 'x', extra_sms_token: 'y' });
+    await updateExtraSmsConfig({
+      sms_enabled: false,
+      extra_sms_sender: 'x',
+      extra_sms_token: 'y',
+      callback_intake_sms_enabled: false,
+      callback_intake_sms_daily_cap: 0,
+    });
     expect(patchOf(builder)).toHaveProperty('sms_enabled', false);
+  });
+
+  it('⚠️ carries a ZERO cap through, rather than dropping it as falsy', async () => {
+    // 0 is a meaningful value here — it stops the intake SMS as surely as the
+    // flag does. A writer that treated it like an empty string would silently
+    // leave yesterday's ceiling in place.
+    const builder = mockWrite();
+    await updateExtraSmsConfig({
+      sms_enabled: true,
+      extra_sms_sender: 'x',
+      extra_sms_token: 'y',
+      callback_intake_sms_enabled: true,
+      callback_intake_sms_daily_cap: 0,
+    });
+    expect(patchOf(builder)).toHaveProperty('callback_intake_sms_daily_cap', 0);
   });
 });
 

@@ -2,6 +2,7 @@ import 'server-only';
 
 import { randomBytes } from 'node:crypto';
 
+import { armCallbackIntake } from '@/lib/callbacks/intake-dispatch';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { normalizePhone } from '@/lib/phone';
 import { isDncListed } from '@/lib/data/outreach-engine';
@@ -3440,7 +3441,7 @@ export async function recordMissedCallCallback(input: {
       .maybeSingle();
     if (existing) return;
 
-    await admin.from('callback_requests').insert({
+    const { data: created } = await admin.from('callback_requests').insert({
       full_name: input.callerName?.trim() || 'מתקשר לא מזוהה',
       phone: phoneE164,
       topic: 'שיחה נכנסת ללא נציג זמין',
@@ -3449,7 +3450,17 @@ export async function recordMissedCallCallback(input: {
       requested_at: null,
       requested_rank: 'earliest',
       note: `נוצר אוטומטית משיחה נכנסת ${input.consoleCallId}`,
-    });
+    })
+      .select('id')
+      .maybeSingle();
+
+    // The two values above are STAND-INS, and the confirmation agent later
+    // reads both aloud. Offer the caller the one-screen form that replaces
+    // them with their own name and their own reason — see armCallbackIntake
+    // for the switch, the daily cap and the claim that gate the SMS.
+    if (created?.id) {
+      await armCallbackIntake({ requestId: created.id, phone: phoneE164 });
+    }
   } catch {
     // Best-effort — the console_calls row already records the missed call.
   }
@@ -3499,7 +3510,7 @@ export async function offerCallbackForCallMeNow(phone: string): Promise<void> {
       .maybeSingle();
     if (existing) return;
 
-    await admin.from('callback_requests').insert({
+    const { data: created } = await admin.from('callback_requests').insert({
       full_name: 'מבקש/ת "התקשרו אליי עכשיו"',
       phone,
       topic: 'בקשת "התקשרו אליי עכשיו" — לא נמצא נציג זמין',
@@ -3509,7 +3520,16 @@ export async function offerCallbackForCallMeNow(phone: string): Promise<void> {
       requested_at: null,
       requested_rank: 'earliest',
       note: 'נוצר אוטומטית מבקשת "התקשרו אליי עכשיו" (capability A, 12.8) — לא נמצא נציג זמין בזמן הבקשה',
-    });
+    })
+      .select('id')
+      .maybeSingle();
+
+    // Same stand-in problem, same offer. "אין נציג זמין" is BOTH paths: this
+    // one is the common case (checked at intent), ring exhaustion above is the
+    // narrow race that survives it.
+    if (created?.id) {
+      await armCallbackIntake({ requestId: created.id, phone });
+    }
   } catch {
     // Best-effort — see header.
   }

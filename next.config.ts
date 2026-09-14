@@ -206,6 +206,19 @@ const nextConfig: NextConfig = {
           { key: 'X-Robots-Tag', value: 'noindex, nofollow' },
         ],
       },
+      // Missed-call intake form — a one-time token in the path, sent to the
+      // caller by SMS. Same posture as every other token page: never cache the
+      // token-specific response, never leak the token through the Referer
+      // header (no-referrer OVERRIDES the global rule because it is listed
+      // after it), and keep it out of search indexes.
+      {
+        source: '/cb/:token*',
+        headers: [
+          { key: 'Cache-Control', value: 'no-store, max-age=0' },
+          { key: 'Referrer-Policy', value: 'no-referrer' },
+          { key: 'X-Robots-Tag', value: 'noindex, nofollow' },
+        ],
+      },
       // Public post-event thank-you page — same token/posture as /g above (the
       // token is reused, not purpose-bound): never cache, never leak via Referer,
       // keep out of search indexes.

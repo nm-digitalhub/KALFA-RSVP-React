@@ -476,6 +476,18 @@ export const extraSmsSchema = z.object({
   sms_enabled: z.boolean(),
   extra_sms_sender: z.string().trim(),
   extra_sms_token: z.string().trim(),
+  // ⚠️ The missed-call intake SMS: one paid send per call nobody answered, so
+  // inbound volume becomes a spend curve. Default OFF in the database, and the
+  // cap is what survives a bad night — on 2026-08-17 this account took a flood
+  // of fraudulent inbound calls, and with no ceiling the same flood bills once
+  // per call. Kept on THIS form because one screen should own "does this
+  // account send SMS, and how much".
+  callback_intake_sms_enabled: z.boolean(),
+  callback_intake_sms_daily_cap: z.coerce
+    .number({ error: 'תקרה יומית חייבת להיות מספר' })
+    .int({ error: 'תקרה יומית חייבת להיות מספר שלם' })
+    .min(0, { error: 'תקרה יומית לא יכולה להיות שלילית' })
+    .max(10000, { error: 'תקרה יומית גבוהה מדי' }),
 });
 
 export const emailTransportSchema = z.object({

@@ -1,0 +1,40 @@
+{
+  "name": "kalfa-workflow-voice-agent-production-2026-09-10",
+  "files": [
+    {
+      "path": "ARCHITECTURE.md",
+      "bytes": 1342,
+      "sha256": "694a9e0dd6d999a6bd982dadabc7621b123f6dd883fdea2edf0c39f873b1b51c"
+    },
+    {
+      "path": "AUDIT.md",
+      "bytes": 2009,
+      "sha256": "c810b046b7b86bd3e709c69df732c113aaf058ad965690af63511e0e9c5a8d27"
+    },
+    {
+      "path": "README.md",
+      "bytes": 4056,
+      "sha256": "8157d700c43869eea44c5e338d928f807cd6374d4d858ca876e4255e93bc640a"
+    },
+    {
+      "path": "apply.py",
+      "bytes": 16795,
+      "sha256": "ad34eea4521d6015a52db0fd5d8b58d27b49b3a9a501ef7acfbe0d09a17486ec"
+    },
+    {
+      "path": "apply.sh",
+      "bytes": 121,
+      "sha256": "192b8319f30ce3b7a71a04f2aa7f53e576ad5e11af5afee0bc8c3c320243ee11"
+    },
+    {
+      "path": "verify.sh",
+      "bytes": 111,
+      "sha256": "17c4d9956c9fa74d1c5829017d7eef3261164ffe29efd4ee9777b8395a8c3f65"
+    },
+    {
+      "path": "voice-agent-actions.ts",
+      "bytes": 5129,
+      "sha256": "1a8a6042d621d223c9946c1f9a6745da210819d7cf386445fadfb5e21c87e5a6"
+    }
+  ]
+}

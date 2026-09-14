@@ -58,5 +58,22 @@ export const callbackRequestSchema = z.object({
   preference: z.enum(CALLBACK_TIME_PREFERENCES).default('asap'),
 });
 
+// The same answers as callbackRequestSchema MINUS the phone.
+//
+// ⚠️ The omission is the security property, not an oversight. This form is
+// reached from a one-time link sent by SMS to the number that rang us, and
+// that number is what the token is bound to. A phone field — even a disabled
+// one — would let whoever holds the link redirect someone else's callback to
+// a number of their choosing. The action re-reads the phone from the row; the
+// submitter never supplies it.
+export const callbackIntakeSchema = z.object({
+  full_name: nameSchema,
+  topic: z.enum(INQUIRY_TOPICS, { error: 'נא לבחור נושא' }),
+  note: z.string().trim().max(500, 'ההערה ארוכה מדי').optional(),
+  preference: z.enum(CALLBACK_TIME_PREFERENCES).default('asap'),
+});
+
+export type CallbackIntakeInput = z.infer<typeof callbackIntakeSchema>;
+
 export type ContactMessageInput = z.infer<typeof contactMessageSchema>;
 export type CallbackRequestInput = z.infer<typeof callbackRequestSchema>;
