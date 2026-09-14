@@ -70,7 +70,16 @@ export async function getVoicePurposeAttemptByAccessToken(
  */
 export async function recordVoicePurposeConcluded(
   id: string,
-  finishReason: string,
+  /**
+   * The failure detail alone — NOT the verdict, and nullable because a call that
+   * simply went well has no reason to give.
+   *
+   * Widened from `string` when this stopped receiving
+   * `error_reason ?? call_status`. The RSVP surface has always written its
+   * equivalent as `body.error_reason ?? null` (call-result-processing.ts); this
+   * table's column has always been nullable; only this signature disagreed.
+   */
+  finishReason: string | null,
   callDurationSec: number | null,
   /**
    * ⚠️ THE SCENARIO'S OWN VERDICT, AND A SEPARATE ARGUMENT ON PURPOSE.

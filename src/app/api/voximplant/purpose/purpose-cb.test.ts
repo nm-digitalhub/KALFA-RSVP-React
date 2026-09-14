@@ -67,10 +67,13 @@ describe('POST /api/voximplant/purpose/{purpose}/cb/{token}', () => {
     liveAttempt();
     const res = await call(OK_BODY);
     expect(res.status).toBe(200);
-    expect(recordVoicePurposeConcluded).toHaveBeenCalledWith(AID, 'completed', 42, 'completed');
+    // No error, so no reason — the house shape. `null`, not a second copy of the
+    // verdict: repeating it would make `finish_reason like …` answer a question
+    // about status.
+    expect(recordVoicePurposeConcluded).toHaveBeenCalledWith(AID, null, 42, 'completed');
   });
 
-  it('prefers error_reason over call_status FOR THE REASON — but no longer loses the status', async () => {
+  it('⚠️ the reason column carries the ERROR ALONE, and the verdict its own column', async () => {
     // The first half is unchanged and still right: `finish_reason` should carry
     // the specific string, because 'sip_486_busy' tells a debugger something
     // 'failed' does not.

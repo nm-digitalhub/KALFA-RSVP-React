@@ -74,14 +74,25 @@ export async function POST(
     // that had already failed — and in both cases the FIRST verdict is the
     // right one and the scenario must still be told 200 so it stops retrying.
     //
-    // ⚠️ `call_status` IS PASSED SEPARATELY, NOT COLLAPSED INTO THE REASON.
+    // ⚠️ TWO FACTS, TWO COLUMNS — the shape every other call surface here already
+    // uses, and the one this route was the exception to.
     //
-    // This used to be `body.error_reason ?? body.call_status` — one argument,
-    // one column — so whenever the scenario sent both, the normalized verdict
-    // was discarded and only the free text survived. The scenarios send both on
-    // every failure path they have: `call_status:'failed'` beside
+    // `call-result-processing.ts` writes the RSVP surface exactly this way:
+    //
+    //     status:        body.call_status,
+    //     finish_reason: body.error_reason ?? null,
+    //
+    // the verdict to its own column, the detail to the reason, and never the two
+    // merged. Its comment says why the detail has to survive on its own: it "is
+    // what separates 'no one picked up, try again' from 'the number does not
+    // exist, fix the list'".
+    //
+    // This route used to pass `body.error_reason ?? body.call_status` as the one
+    // reason argument, so whenever the scenario sent both — which it does on
+    // every failure path it has, `call_status:'failed'` beside
     // `error_reason:'missing_secret' | 'ctx_parse_error' | 'ctx_fetch_error' |
-    // 'ctx_fetch_failed_<code>'`.
+    // 'ctx_fetch_failed_<code>'` — the verdict was DISCARDED and only the free
+    // text survived.
     //
     // What that cost was a WRONG ANSWER, not a missing field. `toBusinessOutcome`
     // reads the row back, finds `dispatch_status:'concluded'` and a reason it has
@@ -89,9 +100,21 @@ export async function POST(
     // right for an unmapped success reason and false for an error string. A call
     // that failed before it reached anybody came back to the diagram as a
     // success, and the flow took the success branch.
+    //
+    // ⚠️ AND WHY THIS TABLE NEEDS A THIRD COLUMN WHERE `call_attempts` NEEDS TWO.
+    // There the row's `status` IS the scenario's verdict. Here `dispatch_status`
+    // is a different axis — the dispatch LIFECYCLE (confirmed → concluded |
+    // failed | unknown) that a parked workflow run waits on — and `concluded` is
+    // equally true of a call that went well and one that did not. So the verdict
+    // has nowhere to go but its own column; it is not a duplicate of either
+    // neighbour.
+    //
+    // `?? null`, not `?? body.call_status`: a call with no error has no reason,
+    // and repeating the verdict here would put the same fact in two columns and
+    // make `finish_reason like …` answer a question about status.
     await recordVoicePurposeConcluded(
       attemptId,
-      body.error_reason ?? body.call_status,
+      body.error_reason ?? null,
       body.call_duration ?? null,
       body.call_status,
     );
