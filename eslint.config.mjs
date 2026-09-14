@@ -42,9 +42,27 @@ const eslintConfig = defineConfig([
     // voxengine-ci helper scaffold (generated wrapper, not our source).
     "voximplant-ci/**",
     // voxengine-ci build output + local CI metadata mirror (generated, not
-    // source). The hand-edited scenario sources in voxfiles/scenarios/src/ ARE
-    // linted — see the VoxEngine override below.
-    "voxfiles/scenarios/dist/**",
+    // source). The hand-edited scenario sources under
+    // voxfiles/applications/<app>/scenarios/src/ ARE linted — see the VoxEngine
+    // override below.
+    //
+    // ⚠️ `applications/*/` IS PART OF THE PATH, and this glob is the reason the
+    // repo-wide lint was red. voxengine-ci 36.0.0 moved scenarios per
+    // application — its own README calls it a "Breaking change in 36.0.0" and
+    // says the account-wide `scenarios/` folder "is no longer used":
+    //
+    //     <= 35.x   voxfiles/scenarios/src/<scenario>.voxengine.js
+    //     36.0.0+   voxfiles/applications/<application-name>/scenarios/src/…
+    //
+    // The tree moved with the upgrade; these two globs did not, so they stopped
+    // matching anything and every scenario was linted as ordinary Node source.
+    // The `dist/` here needs its own entry because the root `dist/**` above is
+    // anchored at the repo root and does not reach a nested one.
+    //
+    // `*` and not the one application we have today: the directory is named
+    // after the application, the package treats that as a variable, and a second
+    // application must not silently arrive unlinted the way this one did.
+    "voxfiles/applications/*/scenarios/dist/**",
     "voxfiles/.voxengine-ci/**",
     // Vendored VoxEngine type declarations (downloaded oracle, not our source).
     "typings/**",
@@ -74,7 +92,7 @@ const eslintConfig = defineConfig([
   // proofing and list the globals actually referenced by the scenarios. Placed
   // last so it wins for the matched files.
   {
-    files: ["voxfiles/scenarios/src/**/*.js"],
+    files: ["voxfiles/applications/*/scenarios/src/**/*.js"],
     languageOptions: {
       // Scenarios contain no import/export — VoxEngine runs them as scripts.
       sourceType: "script",

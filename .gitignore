@@ -127,7 +127,8 @@ __pycache__/
 
 # Debug downloads of DEPLOYED VoxEngine scenarios (npm run voximplant -- scenario --id N).
 # Snapshots of what the platform is running, not source — the source of truth is
-# voxfiles/scenarios/src/. Committing them would create a second, silently stale copy.
+# voxfiles/applications/<application-name>/scenarios/src/ (voxengine-ci 36 moved it
+# there per application). Committing them would create a second, silently stale copy.
 scenario-*.deployed.js
 
 # Subagent-driven-development scratch workspaces (ledgers, briefs, review
