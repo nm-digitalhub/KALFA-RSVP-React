@@ -68,6 +68,18 @@ function json(body: unknown, status: number) {
 
 const REJECT = { accept: false as const };
 
+/**
+ * The agent-facing label, marked with the channel when it is not a phone call.
+ *
+ * Returns the label UNCHANGED for 'pstn' and for an absent channel — an older
+ * deployed scenario sends nothing, and its calls must read exactly as they did
+ * before this existed.
+ */
+function withChannel(label: string | null, channel: 'pstn' | 'whatsapp' | undefined): string | null {
+  if (channel !== 'whatsapp') return label;
+  return label ? `WhatsApp · ${label}` : 'WhatsApp';
+}
+
 export async function POST(request: Request) {
   const ip = getClientIp(request.headers.get.bind(request.headers));
   if (!rateLimit(`vox-console-route-inbound:${ip}`, RATE).allowed) {
@@ -353,7 +365,13 @@ export async function POST(request: Request) {
       accept: true,
       ring_order: ringOrder,
       display_hint: callerMasked,
-      caller_display: identified?.guestName ?? normalizedCli,
+      // ⚠️ THE CHANNEL IS SAID OUT LOUD, because the agent answers differently.
+      // A WhatsApp call has no telephony billing, can be moved to chat, and the
+      // person is already in a conversation thread with us — none of which is
+      // visible from a number that looks exactly like a phone call. Prefixed
+      // rather than replacing the name, so the identification we already do is
+      // not lost. Absent channel = the old label verbatim.
+      caller_display: withChannel(identified?.guestName ?? normalizedCli, body.channel),
       // The caller's number as a SEPARATE field, because the agent must see it
       // on every call — not only when we failed to recognise them (owner, 17.8:
       // "השם לא מספיק לדעתי, חובה תמיד להציג את המספר ממנו השיחה מתקבלת").

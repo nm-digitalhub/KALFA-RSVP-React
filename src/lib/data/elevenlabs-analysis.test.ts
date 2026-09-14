@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 // storeCallAnalysis begins with `import 'server-only'` (stub it) and writes via
@@ -21,7 +24,11 @@ vi.mock('@/lib/supabase/admin', () => ({
   }),
 }));
 
-import { storeCallAnalysis, storeSalesCallAnalysis } from './elevenlabs-analysis';
+import {
+  buildCallAnalysisInsert,
+  storeCallAnalysis,
+  storeSalesCallAnalysis,
+} from './elevenlabs-analysis';
 import type { NormalizedCallAnalysis } from '@/lib/validation/elevenlabs-payloads';
 
 const base: NormalizedCallAnalysis = {
@@ -191,5 +198,133 @@ describe('rsvp_persisted — measured, not inferred', () => {
     guestMock.mockRejectedValue(new Error('db blip'));
     await storeCallAnalysis({ ...base, dataCollection: { status: 'attending', adults: 1, children: 0 } });
     expect(upsertMock.mock.calls[0][0].rsvp_persisted).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Five attempt tables, one analysis row
+// ---------------------------------------------------------------------------
+//
+// ⚠️ THE STATE THIS ENDED, measured on 2026-09-14. `call_analysis` held 39 rows
+// and 20 links, split cleanly by agent:
+//
+//   KALFA-RSVP              24 rows, 20 linked
+//   Meeting-Confirm          7 rows,  0 linked
+//   Sales-Close              6 rows,  0 linked
+//   RSVP customer service    2 rows,  0 linked
+//
+// Three agents had never linked a single call, because the lookup read
+// `call_attempts` and nothing else while they write to three other tables — all
+// of which carry the same `el_conversation_id`.
+
+describe('buildCallAnalysisInsert — the polymorphic link', () => {
+  const analysis = {
+    conversationId: 'conv-1',
+    agentId: 'agent_x',
+    callSuccessful: 'success',
+    status: 'done',
+    overallScore: null,
+    callDurationSecs: 30,
+    costCredits: null,
+    terminationReason: null,
+    analysisAt: '2026-09-14T10:00:00.000Z',
+  } as unknown as Parameters<typeof buildCallAnalysisInsert>[0];
+
+  it('⚠️ fills call_attempt_id ONLY for call_attempts — it is a foreign key', () => {
+    // `call_analysis_call_attempt_id_fkey` REFERENCES call_attempts(id). Writing
+    // another table's id there is a constraint violation, so the store would
+    // start failing on exactly the calls the wider lookup was added to capture.
+    const rsvp = buildCallAnalysisInsert(analysis, {
+      callAttemptId: 'att-1',
+      attemptTable: 'call_attempts',
+      attemptId: 'att-1',
+    });
+    expect(rsvp.call_attempt_id).toBe('att-1');
+    expect(rsvp.attempt_table).toBe('call_attempts');
+
+    const sales = buildCallAnalysisInsert(analysis, {
+      attemptTable: 'sales_call_attempts',
+      attemptId: 'sales-9',
+    });
+    expect(sales.call_attempt_id).toBeNull();
+    expect(sales.attempt_table).toBe('sales_call_attempts');
+    expect(sales.attempt_id).toBe('sales-9');
+  });
+
+  it('⚠️ counts a non-RSVP link as LINKED', () => {
+    // `linked_at` used to follow `call_attempt_id`, which four of the five
+    // tables can never fill — so every Meeting-Confirm and Sales-Close call
+    // would have read as an orphan for ever.
+    for (const table of [
+      'callback_request_attempts',
+      'sales_call_attempts',
+      'inbound_agent_attempts',
+      'voice_purpose_attempts',
+    ] as const) {
+      const row = buildCallAnalysisInsert(analysis, { attemptTable: table, attemptId: 'x-1' });
+      expect(row.linked_at, table).toBeTruthy();
+    }
+  });
+
+  it('a genuine orphan stays unlinked', () => {
+    const row = buildCallAnalysisInsert(analysis, {});
+    expect(row.attempt_id).toBeNull();
+    expect(row.attempt_table).toBeNull();
+    expect(row.linked_at).toBeNull();
+  });
+
+  it('an older caller passing only callAttemptId still names its table', () => {
+    // The pair must be complete or absent — the DB enforces it with
+    // `call_analysis_attempt_pair_complete`, and a half-filled row would be
+    // rejected at insert.
+    const row = buildCallAnalysisInsert(analysis, { callAttemptId: 'att-7' });
+    expect(row.attempt_table).toBe('call_attempts');
+    expect(row.attempt_id).toBe('att-7');
+    expect(row.linked_at).toBeTruthy();
+  });
+});
+
+describe('the attempt-table list', () => {
+  it('⚠️ still names all FIVE — one agent per table, and one that was forgotten', () => {
+    // Each entry is an agent that would otherwise never link a call. The list
+    // read `call_attempts` alone until 2026-09-14, and three of four agents had
+    // 0 links between them for two months.
+    //
+    // Asserted as source text because the list is a module-scope const the
+    // exported surface does not expose — and the failure it prevents is
+    // invisible: dropping a line here does not break a test, it just stops
+    // linking one agent's calls, silently, for ever.
+    const src = readFileSync(
+      join(process.cwd(), 'src/lib/data/elevenlabs-analysis.ts'),
+      'utf8',
+    );
+    for (const table of [
+      'call_attempts', // KALFA-RSVP
+      'callback_request_attempts', // Meeting-Confirm
+      'sales_call_attempts', // Sales-Close
+      'inbound_agent_attempts', // RSVP customer service
+      'voice_purpose_attempts', // any purpose added from the admin panel
+    ]) {
+      expect(src, table).toContain(`table: '${table}'`);
+    }
+  });
+
+  it('⚠️ tries the correlation nonce only where the column exists', () => {
+    // `el_correlation_nonce` lives on `call_attempts` alone. Querying it on the
+    // others is a 42703 that would throw inside the lookup — caught, yes, but it
+    // would abandon the search and orphan the row.
+    const src = readFileSync(
+      join(process.cwd(), 'src/lib/data/elevenlabs-analysis.ts'),
+      'utf8',
+    );
+    expect(src).toMatch(/table: 'call_attempts', hasNonce: true/);
+    for (const table of [
+      'callback_request_attempts',
+      'sales_call_attempts',
+      'inbound_agent_attempts',
+      'voice_purpose_attempts',
+    ]) {
+      expect(src, table).toMatch(new RegExp(`table: '${table}', hasNonce: false`));
+    }
   });
 });

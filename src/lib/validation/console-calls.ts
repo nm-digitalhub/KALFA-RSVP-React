@@ -354,6 +354,22 @@ export const routeInboundBodySchema = z.strictObject({
   secret: secretField,
   cli: z.string().trim().max(32),
   called: z.string().trim().max(32),
+  /**
+   * Which channel the call arrived on, as the scenario classified it.
+   *
+   * ⚠️ OPTIONAL, AND THE ORDER OF DEPLOYMENT DEPENDS ON IT. This is a
+   * `strictObject`: an unknown key is a 400, and a 400 is a `rejectFailClosed`
+   * in the scenario — every inbound call dropped. So the SERVER must accept the
+   * field BEFORE the scenario starts sending it, and optional is what makes the
+   * window safe in both directions: a new server with the old scenario is fine,
+   * and a rollback of either side is fine too.
+   *
+   * ⚠️ AND IT IS A LABEL, NOT AN AUTHORIZATION. Every consent, rate and routing
+   * decision below is made from `cli` and `called` exactly as before — a caller
+   * cannot widen anything by claiming a channel, because the scenario derives
+   * this from SIP markers the caller does not control.
+   */
+  channel: z.enum(['pstn', 'whatsapp']).optional(),
 });
 export type RouteInboundBody = z.infer<typeof routeInboundBodySchema>;
 

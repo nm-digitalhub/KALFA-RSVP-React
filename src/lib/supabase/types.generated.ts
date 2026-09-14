@@ -629,6 +629,8 @@ export type Database = {
           agent_id: string | null
           agent_turns: number | null
           analysis_at: string | null
+          attempt_id: string | null
+          attempt_table: string | null
           call_attempt_id: string | null
           call_duration_secs: number | null
           call_successful: string | null
@@ -658,6 +660,8 @@ export type Database = {
           agent_id?: string | null
           agent_turns?: number | null
           analysis_at?: string | null
+          attempt_id?: string | null
+          attempt_table?: string | null
           call_attempt_id?: string | null
           call_duration_secs?: number | null
           call_successful?: string | null
@@ -687,6 +691,8 @@ export type Database = {
           agent_id?: string | null
           agent_turns?: number | null
           analysis_at?: string | null
+          attempt_id?: string | null
+          attempt_table?: string | null
           call_attempt_id?: string | null
           call_duration_secs?: number | null
           call_successful?: string | null
@@ -1001,6 +1007,8 @@ export type Database = {
             agent_id: string | null
             agent_turns: number | null
             analysis_at: string | null
+            attempt_id: string | null
+            attempt_table: string | null
             call_attempt_id: string | null
             call_duration_secs: number | null
             call_successful: string | null
@@ -4873,6 +4881,8 @@ export type Database = {
             agent_id: string | null
             agent_turns: number | null
             analysis_at: string | null
+            attempt_id: string | null
+            attempt_table: string | null
             call_attempt_id: string | null
             call_duration_secs: number | null
             call_successful: string | null
@@ -6039,6 +6049,8 @@ export type Database = {
               agent_id: string | null
               agent_turns: number | null
               analysis_at: string | null
+              attempt_id: string | null
+              attempt_table: string | null
               call_attempt_id: string | null
               call_duration_secs: number | null
               call_successful: string | null
@@ -6079,6 +6091,8 @@ export type Database = {
               agent_id: string | null
               agent_turns: number | null
               analysis_at: string | null
+              attempt_id: string | null
+              attempt_table: string | null
               call_attempt_id: string | null
               call_duration_secs: number | null
               call_successful: string | null

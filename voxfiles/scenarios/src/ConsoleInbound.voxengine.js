@@ -1757,12 +1757,45 @@ VoxEngine.addEventListener(AppEvents.Started, function (startedEvent) {
         }
     }
     // ── Entry point — gate BEFORE answer ─────────────────────────────────────
+    // Which channel did this call arrive on?
+    //
+    // ⚠️ EVERY MARKER HERE WAS MEASURED, not inferred. Session 8429761454 on
+    // 2026-09-14 was a real WhatsApp call to +972 3-721-9347, and its own
+    // CallAlerting log carried:
+    //
+    //   headers['VI-Client-Type']       = 'wab'
+    //   headers['X-FB-External-Domain'] = 'wa.meta.vc'
+    //   fromURI = sip:+972536212562@wa.meta.vc
+    //   toURI   = sip:+97237219347;vox_call_type=wab;user_id=10694307;…
+    //
+    // `VI-Client-Type` is Voximplant's OWN classification and is checked first;
+    // the Meta-side markers are the fallback, so a change on either side alone
+    // does not silently turn a WhatsApp call back into a phone call.
+    //
+    // ⚠️ AND IT FAILS TOWARDS 'pstn'. An unrecognised call is treated exactly as
+    // it was before this function existed — the agent-facing label loses a word,
+    // and nothing about routing, consent or answering changes.
+    function channelOf(ev) {
+        var h = ev.headers || {};
+        if (String(h['VI-Client-Type'] || '').toLowerCase() === 'wab') return 'whatsapp';
+        if (String(h['X-FB-External-Domain'] || '').indexOf('wa.meta.vc') !== -1) return 'whatsapp';
+        if (String(ev.fromURI || '').indexOf('@wa.meta.vc') !== -1) return 'whatsapp';
+        if (String(ev.toURI || '').indexOf('vox_call_type=wab') !== -1) return 'whatsapp';
+        return 'pstn';
+    }
+
     VoxEngine.addEventListener(AppEvents.CallAlerting, function (e) {
         var callerCall = e.call;
         var cli = e.callerid || '';
         var called = e.destination || '';
+        var channel = channelOf(e);
         state.cli = cli;
         state.called = called;
+        state.channel = channel;
+        // One line, every time. The first WhatsApp call took a session log to
+        // diagnose because nothing recorded what arrived; this makes the next
+        // one readable without pulling the raw event.
+        log('inbound channel=' + channel + ' displayName=' + (e.displayName || '(none)'));
         function rejectFailClosed(why) {
             log('rejecting fail-closed: ' + why);
             try {
@@ -1781,7 +1814,9 @@ VoxEngine.addEventListener(AppEvents.Started, function (startedEvent) {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             timeout: GATE_HTTP_TIMEOUT_S,
-            postData: safeStringify({ secret: CONSOLE_SECRET, cli: cli, called: called })
+            // `channel` is ADDITIVE — the server defaults it to 'pstn', so an older
+            // deployed scenario that does not send it keeps working unchanged.
+            postData: safeStringify({ secret: CONSOLE_SECRET, cli: cli, called: called, channel: channel })
         }).then(function (r) {
             var body = null;
             try {
