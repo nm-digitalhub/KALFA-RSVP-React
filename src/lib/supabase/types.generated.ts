@@ -5221,6 +5221,7 @@ export type Database = {
         Row: {
           access_token: string
           call_duration_sec: number | null
+          call_status: string | null
           contact_id: string
           created_at: string
           dispatch_status: string
@@ -5238,6 +5239,7 @@ export type Database = {
         Insert: {
           access_token: string
           call_duration_sec?: number | null
+          call_status?: string | null
           contact_id: string
           created_at?: string
           dispatch_status?: string
@@ -5255,6 +5257,7 @@ export type Database = {
         Update: {
           access_token?: string
           call_duration_sec?: number | null
+          call_status?: string | null
           contact_id?: string
           created_at?: string
           dispatch_status?: string
