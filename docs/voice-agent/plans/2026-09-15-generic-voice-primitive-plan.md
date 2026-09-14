@@ -56,6 +56,15 @@
 | A-39 | **`ApplicationStorage` נבחן ונדחה.** `require(Modules.ApplicationStorage)` נותן מפתח-ערך פר-אפליקציה, והפיתוי הוא לשמור בו את קונפיגורציית הייעודים. אסור: הקונפיגורציה חיה ב-`voice_purposes`, ועותק ב-Voximplant היה מקור אמת שני שדורש סנכרון ונכשל בשקט בדריפט. הקונפיגורציה מגיעה ב-`ctx` בלבד. | `api-reference/voxengine/application-storage` |
 | A-40 | Voximplant ממליצים על אפליקציה נפרדת לבידוד: *"Use different applications for… intentional isolation — such as `voice-ai-staging` vs. `voice-ai-production`."* | `getting-started/configure-voximplant` |
 | A-41 | ⚠️ **אין היום הפרדת סביבות.** `GetApplications` חי 2026-09-15 מחזיר **אפליקציה אחת**: `kalfa-rsvp` (11107202) עם 8 כללים. `kalfatest` (11107302), שהביקורת מ-20.7 מתארת כ-sandbox עם 4 כללים, **כבר לא קיים בחשבון** — וזה גם מסביר למה מיגרציית 36 יצרה ספרייה אחת תחת `applications/`. כל כלל חדש נוחת על האפליקציה שמחייגת לאורחים אמיתיים. | `mcp__voximplant__get_applications` |
+| A-42 | ⚠️ **סשן בלי שיחות מת ב-60 שניות.** התסריט הגנרי טוען `ctx` **לפני** החיוג (A-23) — כלומר כל השרשרת ctx→createAgentsClient→callPSTN חייבת להתחיל בתוך 60 שניות מתחילת הסשן. | `platform/voxengine/limits` |
+| A-43 | ⚠️ **זמן ריצה של callback מוגבל לשנייה אחת.** *"heavy computations should be moved to your own infrastructure"*. הגשר הגנרי לא יכול לנתח קונפיגורציה כבדה בתוך מטפל אירוע. | אותו עמוד |
+| A-44 | **מקסימום 3 בקשות HTTP פעילות**, 35 בו-זמנית כולל תור. התסריט הגנרי צורך: ctx (1) + כל קריאת כלי (N) + cb (1). קריאות כלי מקבילות ייכנסו לתור. לפני `Terminating` VoxEngine ממתין עד 90 שניות לבקשות תלויות — **והשאר נזרקות בשקט בלי callback**. | אותו עמוד |
+| A-45 | `callPSTN` מפעיל `Failed` עם קוד **408 אחרי 60 שניות** ללא מענה. זה, ולא ה-TTL של הטוקן, הוא גבול הצלצול. | `voxengine/overview` + limits |
+| A-46 | ⚠️ **יעדים יקרים מ-20 סנט/דקה ואפריקה חסומים כברירת מחדל.** רלוונטי לייעוד שיחייג בחו"ל. | limits |
+| A-47 | תקרת WebSocket: **מספר השיחות בסשן + 3**. לסשן עם שיחה אחת — 4. חיבור ה-ElevenLabs הוא אחד מהם. | limits |
+| A-48 | **הדוגמה הרשמית קוראת `agentId` מסוד, לא מקבעת:** `agentId: VoxEngine.getSecretValue("ELEVENLABS_AGENT_ID")`. מאשר את A-7. ⚠️ אבל סוד הוא **פר-אפליקציה** — סוכן אחד לכל האפליקציה, לא לכל ייעוד. לרנטיים גנרי ה-`agentId` חייב להגיע מה-`ctx`. | `voice-ai-orchestration/elevenlabs/outbound` |
+| A-49 | ארבעה יעדי חיוג, לא רק PSTN: `callPSTN`, `callSIP`, `callUser`, ו-**`callWhatsappUser`** (שיחת WhatsApp Business יזומה). כולם מחזירים `Call`, כך שהתסריט הגנרי יכול לבחור יעד לפי הקונפיגורציה בלי לשנות את שאר הזרימה. | אותו עמוד |
+| A-50 | הדוגמה הרשמית מגבילה משך שיחה בעצמה — `MAX_CALL_MS` עם `setTimeout` → `call.hangup()`. אין תקרת משך מובנית ב-`callPSTN`; מי שלא מגביל, לא מוגבל. | אותו עמוד |
 | A-32 | `MCP.Client` של VoxEngine **אינו** דרך לעקוף את טיפול הכלים של המחבר. הספק מפורש: *"the client does not replace connector-specific tool handling by itself"*. הוא הסצנריה שקוראת החוצה לשרת MCP. | `voxengine-dev/reference.md` |
 
 ---
