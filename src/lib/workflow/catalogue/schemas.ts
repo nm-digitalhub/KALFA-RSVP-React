@@ -1372,27 +1372,35 @@ const voiceCallUiSchema = {
       // is absent entirely — a diagram saved before this field existed — would
       // PASS the condition and show the switch.
       //
-      // ⚠️ FOUR EFFECTS ARE USABLE HERE, NOT SIX. `RuleEffect` is re-exported
-      // straight from @jsonforms/core, which ships SHOW, HIDE, ENABLE, DISABLE,
-      // READONLY and WRITABLE — but Workflow Builder's own API page documents
-      // only the first four, and that is the list that works rather than an
-      // omission in their docs.
+      // ⚠️ FOUR EFFECTS ARE USABLE ON A BUILT-IN CONTROL, NOT SIX — and the
+      // reason is NOT the one an earlier version of this comment gave.
       //
-      // READONLY and WRITABLE are not DISTINCT from DISABLE through the built-in
-      // path. `isInherentlyEnabled` folds readonly into the enabled calculation
-      // unless `separateReadonlyFromDisabled` is set, JsonForms' `configDefault`
-      // ships it `false`, and the SDK never sets it (zero occurrences in the
-      // 2.3.0 bundle). Nor can we: `WorkflowBuilderJsonFormConfig` accepts only
-      // `{ renderers, cells, translations }`, and the one escape hatch on
-      // `WorkflowBuilder.Root` — `reactFlowProps` — reaches ReactFlow, not
-      // JsonForms. We are on @jsonforms/core 3.8.0, the release that ADDED the
-      // flag (#2532), so this is a surface limit and not a version one.
+      // `RuleEffect` is re-exported straight from @jsonforms/core, which ships
+      // SHOW, HIDE, ENABLE, DISABLE, READONLY and WRITABLE. Workflow Builder's
+      // own API page documents only the first four.
       //
-      // Reachable only by writing our own renderer: `mapStateToControlProps`
-      // returns `enabled` AND `readonly` as separate props, so a custom control
-      // could implement the semantics itself. That is "we implement readonly",
-      // not "RuleEffect.READONLY works" — a different and much larger change,
-      // and nothing here needs a field that is visible but locked.
+      // The wrong reason, corrected here so it is not re-derived: it is NOT that
+      // `separateReadonlyFromDisabled` folds READONLY into DISABLE. The rule
+      // paths are genuinely separate in core 3.8.0 — `hasEnableRule` matches only
+      // ENABLE/DISABLE, `hasReadonlyRule` only READONLY/WRITABLE, and
+      // `isInherentlyReadonly` consults the rule with NO reference to that flag.
+      // A READONLY rule really does arrive at the renderer as `readonly: true`.
+      // The flag governs something else: whether a GLOBAL readonly (the editor's
+      // view-mode toggle, `uischema.options.readonly`, `schema.readOnly`) also
+      // suppresses `enabled`.
+      //
+      // The actual reason: all ten of the SDK's built-in JsonForms controls
+      // destructure `{ data, handleChange, path, enabled, uischema }` and compute
+      // `!enabled || uischema.disabled === true`. Not one of them reads
+      // `readonly` (counted in the 2.3.0 bundle). So a READONLY rule on a
+      // built-in control produces a field that is described as locked and edits
+      // freely — a silent no-op, which is worse than an unsupported one.
+      //
+      // It IS reachable, through the SDK's documented `jsonForm.renderers`: a
+      // consumer renderer receives `readonly` and wins over a built-in at equal
+      // rank. `header-rows-control.tsx` honours it for exactly that reason.
+      // Nothing on THIS node needs a field that is visible but locked, so the
+      // rule below uses SHOW.
       rule: {
         effect: 'SHOW',
         condition: {

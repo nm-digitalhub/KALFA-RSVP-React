@@ -77,7 +77,39 @@ function unknownSecretsIn(value: string, known: readonly string[]): string[] {
   return missing;
 }
 
-function HeaderRowsControl({ data, path, handleChange, enabled, label, required }: ControlProps) {
+function HeaderRowsControl({
+  data,
+  path,
+  handleChange,
+  enabled,
+  label,
+  required,
+  readonly,
+}: ControlProps) {
+  // ⚠️ `readonly` IS A SECOND PROP, NOT A SYNONYM FOR `!enabled`.
+  // `mapStateToControlProps` computes them independently — `isInherentlyEnabled`
+  // and `isInherentlyReadonly` — and hands both to every renderer. Today they
+  // arrive together here, because the editor's read-only toggle feeds
+  // `config.readonly`, which reaches BOTH calculations while
+  // `separateReadonlyFromDisabled` is at its default `false`. So honouring it
+  // changes nothing right now.
+  //
+  // It is honoured anyway because "disabled" and "read-only" are not the same
+  // thing to the person using the panel: a disabled input cannot be focused,
+  // selected or copied, and a read-only one can. An owner reviewing a workflow
+  // in view mode should still be able to select a header value and copy it.
+  //
+  // ⚠️ ON THE TEXT INPUTS ONLY. HTML ignores `readOnly` on a button — an add or
+  // remove control has no read-only state, only an unavailable one — so those
+  // keep `disabled` alone. The same is true of the checkbox in
+  // checkbox-list-control.tsx, which is why that file is not changed to match.
+  //
+  // For the record of what does NOT work: `RuleEffect.READONLY` reaches a
+  // renderer as this prop, but all ten of the SDK's own built-in controls
+  // destructure `{ data, handleChange, path, enabled, uischema }` and ignore it
+  // (counted in the 2.3.0 bundle). A READONLY rule on a built-in control
+  // therefore renders a field that looks locked in the schema and edits freely.
+  // Custom renderers like this one are the only place it can be respected.
   const rows = readRows(data);
   const secretNames = useSecretsStore((s) => s.names);
   // One id per mounted control, so two controls on one page cannot share a list.
@@ -133,6 +165,7 @@ function HeaderRowsControl({ data, path, handleChange, enabled, label, required 
                 aria-label={`שם הכותרת ${index + 1}`}
                 value={row.name}
                 disabled={enabled === false}
+                readOnly={readonly === true}
                 placeholder="Authorization"
                 onChange={(e) => update(index, { name: e.target.value })}
                 className="basis-2/5"
@@ -141,6 +174,7 @@ function HeaderRowsControl({ data, path, handleChange, enabled, label, required 
                 aria-label={`ערך הכותרת ${index + 1}`}
                 value={row.value}
                 disabled={enabled === false}
+                readOnly={readonly === true}
                 placeholder="Bearer {{secrets.ACME_API_KEY}}"
                 onChange={(e) => update(index, { value: e.target.value })}
                 className="basis-3/5"
