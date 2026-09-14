@@ -131,12 +131,32 @@ async function resolveAttempt(
   for (const spec of ATTEMPT_TABLES) {
     // The correlation nonce is injected at conversation start and is the
     // stronger signal, so it is tried first — but only `call_attempts` has it.
+    // The correlation value arrives on the ElevenLabs post-call webhook, which
+    // is a DIFFERENT sender from the VoxEngine scenario's closing `cb` — so it
+    // survives a cb that never lands. Until now only `call_attempts` could use
+    // it, because only it has a nonce column; for the other four the token was
+    // received and then ignored, leaving `el_conversation_id` (written by that
+    // same fragile cb) as the single way in.
+    //
+    // The other four ctx routes send the attempt's own PRIMARY KEY as the
+    // token, so matching it against `id` costs one indexed lookup and needs no
+    // schema change. `sales_call_attempts` already did exactly this by hand
+    // (getSalesAttemptIdByConversationId, "Voximplant misses the terminal cb");
+    // this generalises that one-off to every table, `voice_purpose_attempts`
+    // included.
+    //
+    // The UUID guard is not cosmetic: `.eq('id', <non-uuid>)` raises 22P02, and
+    // `call_attempts` sends a nonce here, not a key.
+    const isUuid = !!correlationToken && /^[0-9a-f-]{36}$/i.test(correlationToken);
     const vectors: [string, string | null][] = spec.hasNonce
       ? [
           ['el_correlation_nonce', correlationToken],
           ['el_conversation_id', conversationId],
         ]
-      : [['el_conversation_id', conversationId]];
+      : [
+          ...(isUuid ? ([['id', correlationToken]] as [string, string | null][]) : []),
+          ['el_conversation_id', conversationId],
+        ];
 
     for (const [col, val] of vectors) {
       if (!val) continue;
@@ -238,15 +258,47 @@ export async function storeCallAnalysis(a: NormalizedCallAnalysis): Promise<'sto
   }
 }
 
-// Sales-close calls are not call_attempts/RSVP rows, so do not run the RSVP
-// linker or rsvp_persisted check. The CRM links sales_call_attempts to this row
-// at read time via sales_call_attempts.el_conversation_id =
-// call_analysis.conversation_id. Still idempotent on (provider, conversation_id).
+// Every persona that is NOT RSVP lands here: sales-close, meeting-confirm, the
+// customer-service agent, and any voice purpose. The rsvp_persisted check stays
+// out — it compares a guest row against a reported RSVP status and means
+// nothing for these calls — but the LINK does not.
+//
+// ⚠️ MEASURED 2026-09-15 on the live table: 22 of 42 `call_analysis` rows had
+// `attempt_id` NULL, and SIX of them arrived after the 2026-09-14 change that
+// widened `resolveAttempt` to all five attempt tables. The widening worked; it
+// was simply unreachable. `resolveAttempt` is called from `storeCallAnalysis`
+// alone, and a meeting-confirm conversation never gets there:
+// `isRsvpConversation` consults `call_attempts` only, so it routes to this
+// function, which passed `{}` as the link and wrote NULL.
+//
+// Not a race — checked: the analyses landed 27-71s AFTER the cb wrote
+// `el_conversation_id`, so the vector was available and simply never tried.
+//
+// `buildCallAnalysisInsert`'s own comment says the polymorphic pair exists so
+// these four personas stop being orphans for ever; this is the call that makes
+// that true. `call_attempt_id` stays reserved for `call_attempts` (it is a FK),
+// which `resolveAttempt`'s caller contract already guarantees.
 export async function storeSalesCallAnalysis(
   a: NormalizedCallAnalysis,
 ): Promise<'stored' | 'error'> {
   try {
-    return await upsertCallAnalysis(buildCallAnalysisInsert(a));
+    const admin = createAdminClient();
+    let link: CallAnalysisLink = {};
+    try {
+      const found = await resolveAttempt(admin, a.correlationToken, a.conversationId);
+      if (found) {
+        link = {
+          attemptTable: found.table,
+          attemptId: found.id,
+          eventId: found.eventId,
+          // FK to call_attempts only — never any other table's id.
+          callAttemptId: found.table === 'call_attempts' ? found.id : null,
+        };
+      }
+    } catch {
+      /* leave orphan — a link lookup must never fail the store */
+    }
+    return await upsertCallAnalysis(buildCallAnalysisInsert(a, link));
   } catch {
     return 'error';
   }

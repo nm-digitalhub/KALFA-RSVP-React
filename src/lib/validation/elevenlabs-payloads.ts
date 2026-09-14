@@ -254,7 +254,11 @@ export function normalizeCallAnalysisWebhook(raw: unknown): NormalizedWebhook {
       costCredits: asNumber(metadata.cost),
       terminationReason: rawReason ? rawReason.slice(0, TERMINATION_MAX) : null,
       analysisAt: unixSecondsToIso(asNumber(env.event_timestamp)), // unix SECONDS
-      correlationToken: capped(initVars.kalfa_attempt_token, 128),
+      // Two spellings, because the four ctx routes do not agree: RSVP, meeting-
+      // confirm and sales-close send `kalfa_attempt_token`, while the generic
+      // purpose route sends `kalfa_attempt_id`. Reading only the first meant a
+      // purpose call's correlation value never became a correlationToken at all.
+      correlationToken: capped(initVars.kalfa_attempt_token ?? initVars.kalfa_attempt_id, 128),
       callSuccessScore: asNumber(analysis.call_success_score),
       evaluation: extractEvaluation(analysis),
       dataCollection: extractDataCollection(analysis),
