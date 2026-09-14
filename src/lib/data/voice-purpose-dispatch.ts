@@ -158,14 +158,28 @@ export async function dispatchVoicePurposeCall(input: {
   }
 
   const origin = await getAppOrigin();
-  // The scenario fetches its context from `u` with `tok`. The payload carries no
-  // guest data at all — the same Branch-B shape the other dispatchers use, and
-  // the reason a 200-byte scenario limit is not a problem.
+  // ⚠️ `u` IS THE ORIGIN, NOT A FULL URL — and that is a budget decision, not a
+  // style one. VoxEngine.customData() is capped at 200 BYTES (documented in
+  // platform/voxengine/custom-data), and a full ctx URL already spent 181 of
+  // them. Adding a cb URL of the same shape measured 278 — over the cap, and the
+  // scenario would have received a truncated payload.
+  //
+  // So the scenario is handed the ORIGIN plus the purpose key and builds both
+  // URLs itself:
+  //     `${u}/api/voximplant/purpose/${p}/ctx/${tok}`
+  //     `${u}/api/voximplant/purpose/${p}/cb/${tok}`
+  // which is exactly what RSVP.voxengine.js already does with its own origin
+  // (it composes contextUrl and callbackUrl from `u` + `tok`). This payload
+  // measures 127 bytes, leaving real headroom.
+  //
+  // The payload still carries NO guest data — the token is the only key, and the
+  // context comes back over ctx.
   const payload = JSON.stringify({
     to: phone,
     from: config.callerId,
     tok: accessToken,
-    u: `${origin}/api/voximplant/purpose/${purpose.key}/ctx/${accessToken}`,
+    u: origin,
+    p: purpose.key,
   });
 
   try {

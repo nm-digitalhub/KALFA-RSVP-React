@@ -3,6 +3,7 @@ import 'server-only';
 import { getCallAttemptByAccessToken } from '@/lib/data/call-attempts';
 import { getCallbackAttemptByAccessToken } from '@/lib/data/callback-request-attempts';
 import { getSalesAttemptByAccessToken } from '@/lib/data/sales-call-attempts';
+import { getVoicePurposeAttemptByAccessToken } from '@/lib/data/voice-purpose-attempts';
 import { getClientIp, rateLimit } from '@/lib/security/rate-limit';
 import { tokenFingerprint } from '@/lib/security/token-fingerprint';
 
@@ -97,4 +98,17 @@ export function guardSalesToolRequest(
   opts: { scope: string; maxBodyBytes: number },
 ): Promise<AgentToolGuardResult> {
   return guardTokenGatedToolRequest(req, token, opts, getSalesAttemptByAccessToken);
+}
+
+// guardPurposeToolRequest (voice_purpose_attempts, the registry-driven surface)
+// — fourth named export, same "state which table by the function name" reasoning
+// as the other three. The lookup returns run_id/node_id alongside the guard's
+// own fields, so the route that already has the attempt does not need a second
+// read to find the workflow run waiting on it.
+export function guardPurposeToolRequest(
+  req: Request,
+  token: string,
+  opts: { scope: string; maxBodyBytes: number },
+): Promise<AgentToolGuardResult> {
+  return guardTokenGatedToolRequest(req, token, opts, getVoicePurposeAttemptByAccessToken);
 }

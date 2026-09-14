@@ -153,7 +153,26 @@ describe('dispatchVoicePurposeCall', () => {
     expect(inserted[0]).toMatchObject({ run_id: 'r1', node_id: 'n1', contact_id: 'c1', purpose_key: 'feedback' });
     // And the payload carries NO guest data — the scenario fetches context.
     const payload = JSON.parse(startMock.mock.calls[0]![1].script_custom_data as string);
-    expect(Object.keys(payload).sort()).toEqual(['from', 'to', 'tok', 'u'].sort());
+    expect(Object.keys(payload).sort()).toEqual(['from', 'p', 'to', 'tok', 'u'].sort());
+    // `u` is the ORIGIN, not a full URL — see the byte-budget test below.
+    expect(payload.u).not.toContain('/api/');
+    expect(payload.p).toBe('feedback');
+  });
+
+  it('⚠️ the customData stays under VoxEngine\'s 200-BYTE cap', async () => {
+    // VoxEngine.customData() truncates past 200 bytes (documented in
+    // platform/voxengine/custom-data), and a truncated payload reaches the
+    // scenario as unparseable JSON — the call dials and then terminates for
+    // missing fields. This is the test that stops a future field from being
+    // added without anyone measuring.
+    //
+    // MEASURED 2026-09-14: a full ctx URL in `u` cost 181 bytes, and adding a cb
+    // URL of the same shape came to 278. Handing over the origin plus the
+    // purpose key instead measured 127, which is why the shape is what it is.
+    const { } = mockDb();
+    await call();
+    const raw = startMock.mock.calls[0]![1].script_custom_data as string;
+    expect(Buffer.byteLength(raw, 'utf8')).toBeLessThanOrEqual(200);
   });
 
   it('⚠️ an ambiguous start is UNKNOWN, never failed — in the ROW as well', async () => {

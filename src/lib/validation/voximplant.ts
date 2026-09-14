@@ -223,6 +223,27 @@ export const voxMeetingCallbackSchema = z.strictObject({
 });
 export type VoxMeetingCallback = z.infer<typeof voxMeetingCallbackSchema>;
 
+// The registry-driven voice surface's terminal report. Same four statuses and
+// the same strictObject discipline as the meeting one: a scenario's callback
+// must match the contract exactly, and an unexpected field is a contract drift
+// worth a 400 rather than a silent ignore.
+//
+// It is a SEPARATE schema rather than a reuse because the two surfaces are free
+// to diverge — a purpose scenario is written per purpose, and the day one needs
+// an extra field, sharing would force it on the meeting surface too.
+export const voxPurposeCallbackSchema = z.strictObject({
+  call_status: z.enum(['completed', 'no_answer', 'no_response', 'failed']),
+  call_duration: z
+    .number()
+    .int()
+    .min(0)
+    .max(24 * 3600)
+    .nullish(),
+  error_reason: z.string().max(256).nullish(),
+  el_conversation_id: z.string().max(128).nullish(),
+});
+export type VoxPurposeCallback = z.infer<typeof voxPurposeCallbackSchema>;
+
 export const voxMeetingEscalateSchema = z.strictObject({
   reason: z.enum([
     'wrong_person',
