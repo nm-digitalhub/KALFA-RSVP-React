@@ -11,10 +11,10 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
-import { PgBoss } from 'pg-boss';
+import { PgBoss, type Job } from 'pg-boss';
 import { Client as PgClient } from 'pg';
 
-import { QUEUES, type OutreachCallRequest, type OutreachStepJob,
+import { QUEUES, WORKFLOW_RUN_EXPIRE_SECONDS, type OutreachCallRequest, type OutreachStepJob,
   type WorkflowRunJob,
 } from '@/lib/queue/queues';
 import { runWhatsAppHealthCheck } from '@/lib/whatsapp/run-health-check';
@@ -1089,7 +1089,14 @@ async function main(): Promise<void> {
       // would both drive the installer into ~/.supabase/bin and both run
       // `npm install` in the same tree. Concurrency here corrupts a toolchain.
       q === QUEUES.supabaseCliUpdate;
-    const expire = SWEEP_QUEUES.has(q) ? SWEEP_EXPIRE_SECONDS : undefined;
+    // The workflow queue gets its own, and it is not a tuning knob: it has to
+    // sit between the largest node budget and the step lease. See
+    // WORKFLOW_RUN_EXPIRE_SECONDS.
+    const expire = SWEEP_QUEUES.has(q)
+      ? SWEEP_EXPIRE_SECONDS
+      : q === QUEUES.workflowRun
+        ? WORKFLOW_RUN_EXPIRE_SECONDS
+        : undefined;
     const existing = existingQueues.get(q);
     if (!existing) {
       await boss.createQueue(q, {
@@ -1182,11 +1189,18 @@ async function main(): Promise<void> {
 
   await boss.work(
     QUEUES.workflowRun,
-    guardedWorker(QUEUES.workflowRun, async (jobs: { data: WorkflowRunJob }[]) => {
+    guardedWorker(QUEUES.workflowRun, async (jobs: Job<WorkflowRunJob>[]) => {
       for (const job of jobs) {
         // `boss` is passed so a run that parks at a `logic.wait` can schedule
         // its own wake-up — pg-boss holds the delay, no sweep required.
-        const outcome = await handleWorkflowRun(job.data, boss);
+        //
+        // `job.signal` is pg-boss's own abort for this batch. It fires when the
+        // handler outlives `expireInSeconds` — at which point the job has been
+        // re-queued and this run belongs to a retry — and on shutdown after
+        // `failWip()`. The engine checks it before every node claim, so a
+        // delivery that lost its job stops instead of walking the graph beside
+        // the one that now owns it.
+        const outcome = await handleWorkflowRun(job.data, boss, job.signal);
         // A failed run does NOT throw — the failure is recorded on the row and
         // the graph stopped cleanly. guardedWorker only alerts on a throw, so
         // without this an armed workflow that fails on every single message

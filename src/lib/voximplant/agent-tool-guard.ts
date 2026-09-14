@@ -27,10 +27,33 @@ import { tokenFingerprint } from '@/lib/security/token-fingerprint';
 const RATE = { limit: 30, windowMs: 5 * 60 * 1000 } as const;
 
 export type AgentToolGuardResult =
-  | { ok: true; attemptId: string; raw: string }
+  | {
+      ok: true;
+      attemptId: string;
+      raw: string;
+      /**
+       * The workflow run and node this attempt belongs to, when the surface
+       * records them — only `voice_purpose_attempts` does today.
+       *
+       * Carried through rather than re-read: the callback route needs them to
+       * wake a parked run, and the guard has already fetched the row. Absent
+       * (undefined) on the three surfaces whose lookups do not select them, and
+       * null on a purpose attempt that no workflow started.
+       */
+      runId?: string | null;
+      nodeId?: string | null;
+    }
   | { ok: false; status: number };
 
-type AttemptRef = { id: string; token_expires_at: string | null };
+// Optional on purpose: three of the four lookups do not select these columns, so
+// the shared guard reads whatever the surface happens to carry rather than
+// forcing every surface to grow a workflow concept it has no use for.
+type AttemptRef = {
+  id: string;
+  token_expires_at: string | null;
+  run_id?: string | null;
+  node_id?: string | null;
+};
 
 async function guardTokenGatedToolRequest(
   req: Request,
@@ -70,7 +93,13 @@ async function guardTokenGatedToolRequest(
     return { ok: false, status: 413 };
   }
 
-  return { ok: true, attemptId: ref.id, raw };
+  return {
+    ok: true,
+    attemptId: ref.id,
+    raw,
+    ...(ref.run_id !== undefined ? { runId: ref.run_id } : {}),
+    ...(ref.node_id !== undefined ? { nodeId: ref.node_id } : {}),
+  };
 }
 
 export function guardAgentToolRequest(

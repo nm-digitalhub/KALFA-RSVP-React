@@ -302,16 +302,27 @@ describe('at-least-once delivery', () => {
 
   it('stops while another attempt genuinely holds a node', async () => {
     const d = deps();
-    // A row claimed moments ago. `singletonKey: runId` should make this
-    // unreachable for a retry of the same run, but the guard is what makes that
-    // assumption safe to hold rather than merely hoped for.
+    // A row claimed moments ago — a live attempt, mid-node.
+    //
+    // ⚠️ THIS USED TO EXPECT 'failed', on the strength of a comment saying
+    // `singletonKey: runId` made it unreachable for a retry of the same run.
+    // That was wrong: `singletonKey` enforces nothing on a `standard` queue
+    // (pg-boss 12.30.0 — every unique index over `singleton_key` is
+    // policy-conditioned, and this queue has no policy), and a job that outlives
+    // `expireInSeconds` is re-queued while its handler is still running. So two
+    // deliveries for one run is ordinary, and ending the run for it ended
+    // automations that were working.
+    //
+    // It is now `contended`: the same refusal to touch the node, reported as the
+    // scheduling fact it is. `handleWorkflowRun` throws on it so pg-boss retries.
     d._ledger.rows.set('run-1:t', { status: 'running', startedAt: Date.now() });
 
     const outcome = await run(slice(), d);
 
-    expect(outcome.status).toBe('failed');
-    if (outcome.status !== 'failed') return;
-    expect(outcome.message).toContain('כבר רץ');
+    expect(outcome.status).toBe('contended');
+    if (outcome.status !== 'contended') return;
+    expect(outcome.reason).toBe('in_flight');
+    // The point of stopping, unchanged: the attempt holding the node is doing this.
     expect(d._guests.submitted).toHaveLength(0);
   });
 

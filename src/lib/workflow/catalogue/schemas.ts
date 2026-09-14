@@ -1276,6 +1276,10 @@ const voiceCallSchemaFor = (purposes: readonly VoicePurposeOption[]) =>
         type: 'string',
         options: purposes.map((p) => ({ label: p.displayName, value: p.key })),
       },
+      // Off by default, and the default is the point: this node has dialled and
+      // carried straight on since it shipped. Making the wait automatic would
+      // change how live automations behave without anyone editing them.
+      waitForOutcome: { type: 'boolean' },
     },
   }) satisfies NodeSchema;
 
@@ -1287,6 +1291,11 @@ const voiceCallUiSchema = {
   elements: [
     { type: 'Text', scope: voiceCallScope('properties.label'), label: 'שם הצעד' },
     { type: 'Select', scope: voiceCallScope('properties.purposeKey'), label: 'ייעוד השיחה' },
+    {
+      type: 'Switch',
+      scope: voiceCallScope('properties.waitForOutcome'),
+      label: 'להמתין לתוצאת השיחה לפני המשך',
+    },
     { type: 'Select', scope: voiceCallScope('properties.errorPolicy'), label: 'אם הצעד נכשל' },
   ],
 } satisfies UISchema;
@@ -1345,6 +1354,13 @@ export const PALETTE_ITEMS: PaletteItem[] = [
         status: { type: 'string', label: 'תוצאה' },
         reason: { type: 'string', label: 'סיבה' },
         attemptId: { type: 'string', label: 'מזהה ניסיון' },
+        // Only populated when the step waited. `concluded` is the one a branch
+        // should test: it means the call ENDED AND REPORTED, so a timeout and a
+        // call still running both read false rather than borrowing `dialed`,
+        // which only ever meant "the dial was accepted".
+        concluded: { type: 'boolean', label: 'השיחה הסתיימה ודיווחה' },
+        finishReason: { type: 'string', label: 'סיבת סיום' },
+        durationSec: { type: 'number', label: 'משך השיחה (שניות)' },
       },
     },
     defaultPropertiesData: {
@@ -1353,6 +1369,7 @@ export const PALETTE_ITEMS: PaletteItem[] = [
       label: 'שיחה עם סוכן קולי',
       description: 'מתקשר לאורח עם אחד הסוכנים הקוליים שהוגדרו',
       purposeKey: '',
+      waitForOutcome: false,
       errorPolicy: errorPolicyOptions.continue.value,
     },
   },

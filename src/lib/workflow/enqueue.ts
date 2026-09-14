@@ -89,6 +89,38 @@ export async function enqueueWorkflowRun(
 }
 
 /**
+ * Pull a parked run's pending job forward so it is delivered NOW.
+ *
+ * The queue half of the early wake. `wake_parked_workflow_run` has already moved
+ * the step's deadline — that write is what makes the wait passable and it is
+ * durable — and this only decides WHEN the run finds out.
+ *
+ * ⚠️ IT EDITS THE JOB THAT EXISTS; IT DOES NOT ADD ONE. `boss.update` targets by
+ * `singletonKey`, which `enqueueWorkflowRun` sets to the run id, and pg-boss's
+ * `updateJob` matches `state < 'active'` and rewrites `start_after` in place
+ * (verified in 12.30.0 dist/plans.js). Sending a second job instead would put
+ * two deliveries of one run in flight — and on this queue nothing would stop
+ * them running at once, because `singletonKey` constrains nothing under the
+ * `standard` policy (see enqueueWorkflowRun above).
+ *
+ * `false` means there was no pending job to move: the run's job is already
+ * `active` (a worker is walking the graph right now and will read the deadline
+ * this wake just wrote), or it is gone. Neither is an error and neither loses
+ * the wake — the run still has its `resume_at` ceiling and the recovery sweep.
+ * That is the reason the database write comes first and this comes second.
+ */
+export async function pullWorkflowRunForward(boss: PgBoss, runId: string): Promise<boolean> {
+  // `undefined` for `data`, not `null`: pg-boss drops undefined keys from the
+  // patch, so the job keeps the payload it was created with. `null` would clear
+  // it, and the payload is the run id the handler needs.
+  const { updated } = await boss.update(QUEUES.workflowRun, undefined, {
+    singletonKey: runId,
+    startAfter: new Date(),
+  });
+  return updated > 0;
+}
+
+/**
  * Execute one run, wiring the real dependencies.
  *
  * Reads everything fresh from the row: the job carries only the run id, so a
@@ -105,6 +137,18 @@ export async function handleWorkflowRun(
    * than ignored (see the outcome below).
    */
   boss?: PgBoss,
+  /**
+   * pg-boss's own `job.signal`.
+   *
+   * Aborted when this batch ends — which includes the case that matters: the
+   * handler outlived `expireInSeconds`, pg-boss failed the job and re-queued it,
+   * and this run now belongs to a retry. Without it a handler that lost its job
+   * kept walking the graph beside the attempt that had been given the same run.
+   *
+   * Optional so every existing caller and test compiles; a caller that omits it
+   * simply keeps the old behaviour of never noticing.
+   */
+  signal?: AbortSignal,
 ): Promise<RunWorkflowOutcome | { status: 'skipped'; reason: string }> {
   const run = await loadRunForExecution(job.runId);
   if (!run) return { status: 'skipped', reason: 'run_not_found' };
@@ -155,6 +199,7 @@ export async function handleWorkflowRun(
     // put a link in a guest's message without an owner typing a URL that a typo
     // or a paste could redirect.
     variables: { app_url: await getAppOrigin() },
+    ...(signal ? { signal } : {}),
     deps: {
       ledger: createStepLedger(),
       runs: createRunStore(),
@@ -166,6 +211,27 @@ export async function handleWorkflowRun(
       log: createExecutionLog(),
     },
   });
+
+  // ⚠️ A CONTENDED RUN MUST COME BACK, and throwing is how this queue asks for
+  // that. Another delivery of the same run holds a node — the winner is walking
+  // the graph right now — so there is nothing to do except try again once it has
+  // moved on. Returning quietly would ACK the job and abandon the run wherever
+  // the loser stopped: mid-graph, status untouched, with no further delivery
+  // coming and no sweep that looks at running rows.
+  //
+  // The retry is pg-boss's: WORKFLOW_RETRY gives two attempts with backoff, so a
+  // contention resolves within seconds of the winner finishing. It is a real
+  // ceiling — a winner still going after both attempts leaves the run stalled
+  // rather than failed, which is strictly better than the terminal 'failed' this
+  // replaced, and is the case `redeliverStuckWaitingRuns` cannot see because the
+  // run is 'running' rather than 'waiting'.
+  if (outcome.status === 'contended') {
+    throw new Error(
+      outcome.reason === 'abandoned'
+        ? `workflow run ${job.runId} was taken from this delivery before node ${outcome.nodeId} — retrying`
+        : `workflow run ${job.runId} lost the race for node ${outcome.nodeId} to a concurrent delivery — retrying`,
+    );
+  }
 
   if (outcome.status === 'waiting') {
     if (!boss) {

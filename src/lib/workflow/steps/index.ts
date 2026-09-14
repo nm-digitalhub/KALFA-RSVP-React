@@ -604,6 +604,47 @@ const updateGuestStatus: StepHandler = async (config, ctx) => {
 // of those the rules worked exactly as written. Routing them to a failure path
 // would send a workflow down an error route because the system behaved
 // correctly. Only a misconfigured STEP throws.
+/**
+ * Statuses that mean the attempt will never report anything further.
+ *
+ * A LITERAL and not an import: the canonical list is `PURPOSE_SETTLED` in
+ * `@/lib/data/voice-purpose-attempts`, which begins with `import 'server-only'`,
+ * and this module is the engine — it is bundled into the worker and exercised by
+ * tests that hold no Supabase client.
+ *
+ * Kept in step with that file BEHAVIOURALLY, in `voice-call-wait.test.ts`: one
+ * case proves 'concluded' and 'failed' do not park, another proves 'unknown'
+ * does. A value that drifts between the two lists changes one of those answers.
+ *
+ * `unknown` is deliberately absent, in both places. It is written when
+ * `StartScenarios` gave an answer we could not classify, so the call may well be
+ * ringing and its scenario still holds a valid token. Treating it as finished
+ * would discard exactly the outcome a waiting step wants most.
+ */
+const PURPOSE_SETTLED: readonly string[] = ['concluded', 'failed'];
+
+/**
+ * The outcome of a call, shaped for the graph.
+ *
+ * `concluded` is the field a condition node downstream will branch on, and it
+ * answers one question only: did the call end AND report? A timeout, an
+ * ambiguous start and a call still running all read false — they are different
+ * reasons, carried in `finishReason`, but none of them is an outcome.
+ */
+function voiceOutcomeOutput(
+  attemptId: string,
+  o: { dispatchStatus: string; finishReason: string | null; callDurationSec: number | null } | null,
+) {
+  return {
+    dialed: true,
+    status: o?.dispatchStatus ?? 'unknown',
+    concluded: o?.dispatchStatus === 'concluded',
+    attemptId,
+    ...(o?.finishReason ? { finishReason: o.finishReason } : {}),
+    ...(o?.callDurationSec != null ? { durationSec: o.callDurationSec } : {}),
+  };
+}
+
 const startVoiceCall: StepHandler = async (config, ctx) => {
   const purposeKey = readString(config, 'purposeKey').trim();
   if (purposeKey === '') {
@@ -611,6 +652,32 @@ const startVoiceCall: StepHandler = async (config, ctx) => {
       'invalid_config',
       'הצעד "שיחה עם סוכן קולי" לא הוגדר עם ייעוד.',
     );
+  }
+
+  const waitForOutcome = config.waitForOutcome === true;
+  const readOutcome = ctx.deps.guests.readVoicePurposeOutcome;
+
+  // ⚠️ THE RESUME BRANCH COMES FIRST, exactly as in `logic.wait`, and for the
+  // same reason: on resume the whole graph replays, so a handler that dialled
+  // again here would telephone the guest a second time. The ledger is what knows
+  // this row was parked and its wait is over.
+  //
+  // ⚠️ AND IT READS THE ROW RATHER THAN ASSUMING IT WAS WOKEN. Three different
+  // things can deliver a parked run — the event-driven wake, the `resume_at`
+  // ceiling, and the recovery sweep — and only the first means the call
+  // reported. Reading makes all three produce the same honest answer, which is
+  // also how the ceiling fires correctly on a call that never came back.
+  if (ctx.resumedFromWait) {
+    if (!readOutcome) {
+      // The port vanished between parking and waking (an older worker on a
+      // rolling deploy). Nothing is wrong with the CALL, so this is a completed
+      // step with no outcome rather than a failure of the graph.
+      return { output: { dialed: true, status: 'unknown', concluded: false, resumed: true } };
+    }
+    const outcome = await readOutcome({ runId: ctx.runId, nodeId: ctx.nodeId });
+    return {
+      output: { ...voiceOutcomeOutput(outcome?.attemptId ?? '', outcome), resumed: true },
+    };
   }
 
   const dial = ctx.deps.guests.startVoicePurposeCall;
@@ -630,14 +697,41 @@ const startVoiceCall: StepHandler = async (config, ctx) => {
     purposeKey,
   });
 
-  return {
-    output: {
-      dialed: outcome.ok,
-      status: outcome.status,
-      ...(outcome.reason ? { reason: outcome.reason } : {}),
-      ...(outcome.attemptId ? { attemptId: outcome.attemptId } : {}),
-    },
+  const placed = {
+    dialed: outcome.ok,
+    status: outcome.status,
+    ...(outcome.reason ? { reason: outcome.reason } : {}),
+    ...(outcome.attemptId ? { attemptId: outcome.attemptId } : {}),
   };
+
+  // ── park, or carry on ──────────────────────────────────────────────────────
+  //
+  // OPT-IN, and default off. This node has been dialling and continuing since it
+  // shipped; turning every existing graph into one that stops at the call would
+  // be changing live automations nobody edited.
+  if (!waitForOutcome) return { output: placed };
+
+  // Nothing to wait on. `attemptId` is empty on the refusal paths, and also on
+  // `already_dispatched` when the row it collided with could not be re-read —
+  // parking on an empty correlation would be a park no callback can ever match.
+  if (!outcome.attemptId || !outcome.tokenExpiresAt || !readOutcome) {
+    return { output: placed };
+  }
+
+  // A call that is ALREADY settled has nothing left to report. `concluded` means
+  // it ended and said how; `failed` means the dispatch itself never placed one.
+  // Either way a wait would run to the ceiling and learn nothing.
+  const already = await readOutcome({ runId: ctx.runId, nodeId: ctx.nodeId });
+  if (already && PURPOSE_SETTLED.includes(already.dispatchStatus)) {
+    return { output: voiceOutcomeOutput(outcome.attemptId, already) };
+  }
+
+  // ⚠️ THE CEILING IS THE TOKEN'S OWN EXPIRY, never a duration chosen here. The
+  // callback route refuses an expired token, so a park past that instant is a
+  // park no wake can reach — the run would sleep to a deadline that had already
+  // stopped being wakeable. `voice_purposes.token_ttl_sec` is the one number,
+  // and an owner who edits it moves this ceiling with it.
+  throw new WorkflowWaitSignal(outcome.tokenExpiresAt, outcome.attemptId);
 };
 
 const startRsvpAiCallback: StepHandler = async (_config, ctx) => {

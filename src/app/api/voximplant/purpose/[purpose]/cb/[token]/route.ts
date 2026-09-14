@@ -4,6 +4,7 @@ import {
   recordVoicePurposeConcluded,
   setVoicePurposeElConversationId,
 } from '@/lib/data/voice-purpose-attempts';
+import { wakeParkedRun } from '@/lib/workflow/wake';
 import { guardPurposeToolRequest } from '@/lib/voximplant/agent-tool-guard';
 import { voxPurposeCallbackSchema } from '@/lib/validation/voximplant';
 
@@ -21,9 +22,9 @@ import { voxPurposeCallbackSchema } from '@/lib/validation/voximplant';
 // stayed at 'confirmed' forever and no reader could tell a call that was still
 // running from one that had ended an hour ago.
 //
-// It is also the first half of event-based workflow waits: `run_id`/`node_id`
-// already live on the attempt row, so this is where a parked run will later be
-// woken the moment its call finishes rather than on a guessed timer.
+// It is also where a parked workflow run is WOKEN. `run_id`/`node_id` live on
+// the attempt row, so a run that stopped at this call is delivered the moment the
+// call ends instead of at a guessed timer — see `wakeParkedRun`.
 //
 // The `{purpose}` segment is NOT an authorization input. The access token is,
 // exactly as on the other surfaces — it resolves to one attempt row and nothing
@@ -54,7 +55,7 @@ export async function POST(
     maxBodyBytes: MAX_BODY_BYTES,
   });
   if (!guard.ok) return bad(guard.status);
-  const { attemptId, raw } = guard;
+  const { attemptId, raw, runId, nodeId } = guard;
 
   let json: unknown;
   try {
@@ -79,6 +80,29 @@ export async function POST(
     );
   } catch {
     return bad(500);
+  }
+
+  // ⚠️ FIRED EVEN WHEN THE STATUS WRITE DID NOT APPLY, and that is the case it
+  // exists for: a retried callback whose first delivery recorded the outcome and
+  // then died before waking leaves a run parked on a call that finished. The
+  // wake's own gate makes a redundant call a no-op — the RPC matches only a run
+  // that is still waiting on THIS attempt — so firing it every time is cheaper
+  // than working out whether it is needed.
+  //
+  // Best-effort, like the block below: the outcome is already recorded, and a
+  // wake that fails costs the run its early delivery, not its result — the
+  // `resume_at` ceiling and the recovery sweep still bring it back. Logged,
+  // because a silently swallowed wake is a run sleeping to its ceiling with
+  // nothing anywhere saying why.
+  if (runId && nodeId) {
+    try {
+      await wakeParkedRun({ runId, nodeId, correlationId: attemptId });
+    } catch (e) {
+      console.error(
+        `[vox-purpose-cb] wake failed for run ${runId}:`,
+        e instanceof Error ? e.message : 'unknown',
+      );
+    }
   }
 
   if (typeof body.el_conversation_id === 'string' && body.el_conversation_id.length > 0) {

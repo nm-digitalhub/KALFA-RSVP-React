@@ -19,12 +19,17 @@ vi.mock('@/lib/data/voice-purpose-attempts', () => ({
   setVoicePurposeElConversationId: vi.fn(async () => {}),
 }));
 
+vi.mock('@/lib/workflow/wake', () => ({
+  wakeParkedRun: vi.fn(async () => ({ woke: true, delivered: true })),
+}));
+
 import { POST } from './[purpose]/cb/[token]/route';
 import {
   getVoicePurposeAttemptByAccessToken,
   recordVoicePurposeConcluded,
   setVoicePurposeElConversationId,
 } from '@/lib/data/voice-purpose-attempts';
+import { wakeParkedRun } from '@/lib/workflow/wake';
 import { __resetRateLimitStateForTests } from '@/lib/security/rate-limit';
 
 const AID = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
@@ -42,13 +47,15 @@ function call(body: string, token = TOK, ip = '7.7.7.7') {
   return POST(req, { params: Promise.resolve({ purpose: 'feedback', token }) });
 }
 
-const liveAttempt = () =>
+const liveAttempt = (run: string | null = null, node: string | null = null) =>
   vi.mocked(getVoicePurposeAttemptByAccessToken).mockResolvedValue({
     id: AID,
     token_expires_at: FUTURE(),
-    run_id: null,
-    node_id: null,
+    run_id: run,
+    node_id: node,
   });
+
+const RUN = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -117,5 +124,70 @@ describe('POST /api/voximplant/purpose/{purpose}/cb/{token}', () => {
     liveAttempt();
     vi.mocked(recordVoicePurposeConcluded).mockRejectedValue(new Error('db down'));
     expect((await call(OK_BODY)).status).toBe(500);
+  });
+});
+
+// Waking the workflow run this call belongs to (0ב-6).
+//
+// ⚠️ THIS IS THE ONLY THING THAT ENDS THE WAIT EARLY. A run parked on a voice
+// step holds `resume_at` as a TIMEOUT CEILING — the token's own expiry — and
+// nothing else brings it back before then. Without this block a graph that waits
+// for a call gets the answer when the token dies, not when the guest hangs up.
+describe('POST cb — waking the parked run', () => {
+  beforeEach(() => {
+    // `vi.clearAllMocks()` in the outer hook resets CALLS, not implementations,
+    // and the describe above leaves `recordVoicePurposeConcluded` rejecting. Both
+    // are restored here so each case below starts from a callback that succeeds.
+    vi.mocked(recordVoicePurposeConcluded).mockResolvedValue({ applied: true });
+    vi.mocked(wakeParkedRun).mockResolvedValue({ woke: true, delivered: true });
+  });
+
+  it('wakes the run named on the attempt, keyed on the attempt itself', async () => {
+    liveAttempt(RUN, 'node-1');
+    await call(OK_BODY);
+    // The correlation is the attempt id — the same value the step parked on and
+    // the same one `workflow_runs.resume_correlation_id` holds. Anything else
+    // and the wake's gate matches nothing.
+    expect(wakeParkedRun).toHaveBeenCalledWith({
+      runId: RUN,
+      nodeId: 'node-1',
+      correlationId: AID,
+    });
+  });
+
+  it('does not wake anything for a call no workflow started', async () => {
+    liveAttempt();
+    await call(OK_BODY);
+    expect(wakeParkedRun).not.toHaveBeenCalled();
+  });
+
+  it('⚠️ still wakes when the status write did NOT apply', async () => {
+    // The case this exists for: a retried callback whose FIRST delivery recorded
+    // the outcome and then died before waking. The row is already terminal, so
+    // `applied` is false — and the run is still parked on a call that finished.
+    // Skipping the wake here would leave it asleep until its ceiling.
+    liveAttempt(RUN, 'node-1');
+    vi.mocked(recordVoicePurposeConcluded).mockResolvedValue({ applied: false });
+    expect((await call(OK_BODY)).status).toBe(200);
+    expect(wakeParkedRun).toHaveBeenCalled();
+  });
+
+  it('⚠️ a failed wake never turns a recorded outcome into a 500', async () => {
+    // The outcome is already written. A wake that fails costs the run its early
+    // delivery, not its result — the ceiling and the recovery sweep still bring
+    // it back — so the scenario must be told 200 and stop retrying.
+    liveAttempt(RUN, 'node-1');
+    vi.mocked(wakeParkedRun).mockRejectedValue(new Error('db down'));
+    expect((await call(OK_BODY)).status).toBe(200);
+  });
+
+  it('⚠️ never wakes before the outcome is recorded', async () => {
+    // Order is the whole contract: the wake makes the step readable, and a run
+    // delivered before the row says 'concluded' would read the call as still
+    // running and park again — this time with nothing left to wake it.
+    liveAttempt(RUN, 'node-1');
+    vi.mocked(recordVoicePurposeConcluded).mockRejectedValue(new Error('db down'));
+    expect((await call(OK_BODY)).status).toBe(500);
+    expect(wakeParkedRun).not.toHaveBeenCalled();
   });
 });

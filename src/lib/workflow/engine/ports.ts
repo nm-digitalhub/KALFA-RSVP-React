@@ -179,6 +179,34 @@ export type RunStatus =
  */
 export const STEP_LEASE_MS = 15 * 60 * 1000;
 
+/**
+ * The error code a node raises when another attempt already holds it.
+ *
+ * ⚠️ NOT A FAILURE OF THE RUN, and the distinction is the whole point. It says
+ * "someone else is doing this right now", which is a scheduling fact about two
+ * deliveries, not anything wrong with the workflow the owner drew. `run-workflow`
+ * intercepts it the way it intercepts a wait: no `node_failed`, no
+ * `execution_failed`, no terminal status — the run is left exactly as it is and
+ * the job is retried.
+ *
+ * Exported so the raiser and the interceptor share one string. It used to be a
+ * literal in `activity-runner`, read by nobody, and a rename would have silently
+ * turned every contention back into a failed run.
+ */
+export const STEP_IN_FLIGHT_CODE = 'step_in_flight';
+
+/**
+ * The code raised when the QUEUE has taken this run's job away mid-walk.
+ *
+ * Handled exactly like `STEP_IN_FLIGHT_CODE` — no `node_failed`, no
+ * `execution_failed`, no terminal status — because it means the same thing from
+ * the run's point of view: this delivery must stop and the one that now owns the
+ * job will carry on. The two are separate codes so a log tells them apart: one
+ * is "someone else is already on this node", the other is "I am not the one
+ * running this any more".
+ */
+export const RUN_ABANDONED_CODE = 'run_abandoned';
+
 export interface RunStorePort {
   /**
    * Write the run's status. The implementation also stamps `finished_at` when
@@ -358,7 +386,41 @@ export interface GuestActionsPort {
     eventId: string | null;
     contactId: string;
     purposeKey: string;
-  }): Promise<{ ok: boolean; status: string; reason?: string; attemptId?: string }>;
+  }): Promise<{
+    ok: boolean;
+    status: string;
+    reason?: string;
+    attemptId?: string;
+    /**
+     * When this call's access token expires — the CEILING for a step that waits
+     * on the outcome, because the callback route refuses an expired token and a
+     * longer park could never be woken. Absent when no attempt row was created.
+     */
+    tokenExpiresAt?: string;
+  }>;
+
+  /**
+   * What the call this step placed ended up doing, read back from the attempt
+   * row rather than from having been woken.
+   *
+   * ⚠️ THE READ IS THE POINT. A parked run is delivered by whichever arrives
+   * first — the event-driven wake, the `resume_at` ceiling, or the recovery
+   * sweep — and only the first says anything happened. A resume that assumed it
+   * had been woken would report an outcome on a call that never reported, and
+   * the timeout case would be indistinguishable from success.
+   *
+   * Optional for the same reason as the dialler above: a port that predates it
+   * fails closed rather than silently answering "no outcome" for every call.
+   */
+  readVoicePurposeOutcome?(input: {
+    runId: string;
+    nodeId: string;
+  }): Promise<{
+    attemptId: string;
+    dispatchStatus: string;
+    finishReason: string | null;
+    callDurationSec: number | null;
+  } | null>;
 
   startRsvpAiCallback?(input: {
     runId: string;

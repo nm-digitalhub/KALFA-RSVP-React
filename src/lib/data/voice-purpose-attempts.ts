@@ -95,3 +95,58 @@ export async function setVoicePurposeElConversationId(
     .eq('id', id);
   if (error) throw new Error('רישום מזהה השיחה נכשל');
 }
+
+/**
+ * Statuses that mean the attempt will never report anything further.
+ *
+ * `unknown` is deliberately NOT here. It is written when `StartScenarios` gave
+ * an answer we could not classify — the call may well be ringing, and its
+ * scenario still holds a valid token, so a report can still arrive. Treating it
+ * as finished would throw away exactly the outcome a waiting step wants most.
+ */
+export const PURPOSE_SETTLED = ['concluded', 'failed'] as const;
+
+/**
+ * The outcome of the call a workflow step placed, read back by run and node.
+ *
+ * ⚠️ THE WAITING STEP READS THIS; IT NEVER TRUSTS HAVING BEEN WOKEN. A parked run
+ * is delivered by whichever comes first — the early wake, the `resume_at`
+ * ceiling, or the recovery sweep — and only the first of those implies anything
+ * happened. Reading the row makes all three paths produce the same answer, and
+ * it is what lets the ceiling fire honestly on a call that never reported.
+ *
+ * Keyed on (run_id, node_id) because `voice_purpose_attempts_step_uidx` is
+ * unique on (run_id, node_id, contact_id) and a run carries one contact, so the
+ * pair identifies one row. Ordered and limited anyway: if that ever stops
+ * holding, the newest attempt is the one this replay is about, and a silent
+ * `maybeSingle()` error would be a step that fails for a reason no one can see.
+ */
+export async function getVoicePurposeOutcomeForStep(input: {
+  runId: string;
+  nodeId: string;
+}): Promise<{
+  attemptId: string;
+  dispatchStatus: string;
+  finishReason: string | null;
+  callDurationSec: number | null;
+} | null> {
+  const admin = createAdminClient();
+  const { data, error } = await admin
+    .from('voice_purpose_attempts')
+    .select('id, dispatch_status, finish_reason, call_duration_sec')
+    .eq('run_id', input.runId)
+    .eq('node_id', input.nodeId)
+    .order('created_at', { ascending: false })
+    .limit(1);
+  if (error) throw new Error('טעינת תוצאת השיחה נכשלה');
+
+  const row = data?.[0];
+  return row
+    ? {
+        attemptId: row.id,
+        dispatchStatus: row.dispatch_status,
+        finishReason: row.finish_reason,
+        callDurationSec: row.call_duration_sec,
+      }
+    : null;
+}

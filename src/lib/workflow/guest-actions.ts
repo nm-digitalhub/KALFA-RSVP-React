@@ -21,6 +21,7 @@ import { getGuestsForContact, recordRsvpFromWhatsapp } from '@/lib/data/interact
 import { getWhatsAppConfig } from '@/lib/data/outreach-config';
 import { submitRsvp } from '@/lib/data/rsvp';
 import { createAdminClient } from '@/lib/supabase/admin';
+import { getVoicePurposeOutcomeForStep } from '@/lib/data/voice-purpose-attempts';
 import { dispatchVoicePurposeCall } from '@/lib/data/voice-purpose-dispatch';
 import { sendWhatsAppText } from '@/lib/whatsapp/client';
 
@@ -209,7 +210,22 @@ export function createGuestActions(): GuestActionsPort {
         status: outcome.kind,
         ...('reason' in outcome && outcome.reason ? { reason: outcome.reason } : {}),
         ...('attemptId' in outcome && outcome.attemptId ? { attemptId: outcome.attemptId } : {}),
+        // Carried through so a step that waits on the call parks to the token's
+        // own expiry. See the port's comment: a longer park is a park nothing
+        // can wake, because the callback route refuses an expired token.
+        ...('tokenExpiresAt' in outcome && outcome.tokenExpiresAt
+          ? { tokenExpiresAt: outcome.tokenExpiresAt }
+          : {}),
       };
+    },
+
+    /**
+     * Thin over the data layer, and deliberately a SEPARATE port from the
+     * dialler: reading an outcome telephones nobody, so a test port may hold
+     * this one without holding the ability to place calls.
+     */
+    async readVoicePurposeOutcome(input) {
+      return getVoicePurposeOutcomeForStep(input);
     },
 
     async startRsvpAiCallback(input) {

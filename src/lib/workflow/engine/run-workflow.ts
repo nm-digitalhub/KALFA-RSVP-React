@@ -9,6 +9,7 @@ import { runGraph } from '../vendor/workflowbuilder/execution-core/graph-runner'
 import type { EventEmitterPort } from '../vendor/workflowbuilder/execution-core/ports/event-emitter.port';
 
 import { createActivityRunner } from './activity-runner';
+import { RUN_ABANDONED_CODE, STEP_IN_FLIGHT_CODE } from './ports';
 import type { RunStatus, StepLedgerPort, WorkflowEngineDeps } from './ports';
 
 export type RunWorkflowArgs = {
@@ -37,6 +38,15 @@ export type RunWorkflowArgs = {
    * global, so a typo or a paste silently changed where guests were sent.
    */
   variables?: Record<string, unknown>;
+  /**
+   * The queue's "this job is no longer yours" signal, when there is a queue.
+   *
+   * pg-boss aborts `job.signal` when the batch ends — including when the handler
+   * outlived `expireInSeconds` and the run has already been given to a retry.
+   * Passed straight through to the activity runner, which checks it before every
+   * claim. See `ActivityRunnerArgs.signal`.
+   */
+  signal?: AbortSignal;
   deps: WorkflowEngineDeps;
 };
 
@@ -48,6 +58,22 @@ export type RunWorkflowOutcome =
    * at `resumeAt`, and the row keeps no `finished_at`.
    */
   | { status: 'waiting'; resumeAt: string; nodeId: string; correlationId?: string }
+  /**
+   * Another delivery of THIS SAME RUN holds the node right now.
+   *
+   * ⚠️ NOT A FAILURE, and it used to be recorded as one. Two jobs for one run is
+   * a thing pg-boss allows — `singletonKey` constrains nothing under the
+   * `standard` policy, and a job that outlives `expireInSeconds` is re-queued
+   * while its handler is still running — so a retry meeting a live claim is
+   * ordinary scheduling, not a broken workflow. Writing 'failed' for it ended
+   * runs that were working perfectly.
+   *
+   * The run row is left EXACTLY as it was: no status write at all. The winner
+   * owns the run's state, and a loser that stamped 'running' would clear
+   * `resume_at` and `resume_correlation_id` out from under a park the winner is
+   * about to write.
+   */
+  | { status: 'contended'; nodeId: string; reason: 'in_flight' | 'abandoned' }
   | { status: 'failed'; message: string };
 
 export async function runWorkflow(args: RunWorkflowArgs): Promise<RunWorkflowOutcome> {
@@ -105,6 +131,7 @@ export async function runWorkflow(args: RunWorkflowArgs): Promise<RunWorkflowOut
     guests: deps.guests,
     alerts: deps.alerts,
     webhook: deps.webhook,
+    ...(args.signal ? { signal: args.signal } : {}),
   });
 
   // The runner's own event stream, appended to the execution log when one is
@@ -181,6 +208,7 @@ export async function runWorkflow(args: RunWorkflowArgs): Promise<RunWorkflowOut
   // Nothing under `vendor/` is modified. The interception is entirely inside the
   // two callbacks this file already owns.
   let waitRequest: { resumeAt: string; nodeId: string; correlationId?: string } | null = null;
+  let contendedNodeId: { nodeId: string; reason: 'in_flight' | 'abandoned' } | null = null;
 
   const events: EventEmitterPort = {
     emitEvent: async (executionId, type, payload, nodeId) => {
@@ -190,6 +218,18 @@ export async function runWorkflow(args: RunWorkflowArgs): Promise<RunWorkflowOut
       // rethrows, and refuses the node when the ledger cannot park — but it is
       // read defensively rather than asserted, because losing a park to a crash
       // here would be worse than a run that simply does not wait.
+      // Contention, intercepted the same way a wait is and for a closely related
+      // reason: the runner reports both as `node_failed` because throwing is the
+      // only way a node can stop the graph, and neither is a failure of the
+      // workflow. Suppressed here so an owner's log does not show a red step for
+      // a run that is simply being retried.
+      const contention = type === 'node_failed' ? contentionReason(payload) : null;
+      if (contention && nodeId) {
+        contendedNodeId = { nodeId, reason: contention };
+        return;
+      }
+      if (contendedNodeId && type === 'execution_failed') return;
+
       const wait = type === 'node_failed' && isWaitFailure(payload) ? parked : null;
       if (wait && nodeId) {
         waitRequest = {
@@ -236,6 +276,20 @@ export async function runWorkflow(args: RunWorkflowArgs): Promise<RunWorkflowOut
       // `runGraph` returns, because the deadline cannot travel through this
       // callback's signature.
       if (waitRequest && status === 'failed') return;
+      // The run is being worked on by another delivery. Nothing about its state
+      // is this attempt's to write — see the 'contended' outcome.
+      //
+      // ⚠️ THE 'running' FROM `execution_started` HAS ALREADY LANDED by the time
+      // this can fire, because the runner emits it before any node is claimed.
+      // That write clears `resume_at` and `resume_correlation_id` (store.ts, and
+      // deliberately so — a stale deadline would be re-delivered for ever), so a
+      // losing delivery of a PARKED run can strip the correlation the winner is
+      // about to re-park with. The consequence is bounded and not silent: the
+      // wake RPC matches on that correlation, finds none, and reports no wake —
+      // the run then falls back to its `resume_at` ceiling instead of being woken
+      // early. Fixing it properly means knowing the loser before the first
+      // status write, which the runner's event order does not allow.
+      if (contendedNodeId) return;
       if (!isRunStatus(status)) return;
       await deps.runs.setRunStatus({
         runId: executionId,
@@ -298,6 +352,18 @@ export async function runWorkflow(args: RunWorkflowArgs): Promise<RunWorkflowOut
     return { status: 'waiting', resumeAt, nodeId, ...(correlationId ? { correlationId } : {}) };
   }
 
+  // AFTER the wait branch: a park is a definite outcome for this delivery, and a
+  // graph that parked did not also lose a race. Checked before the failure branch
+  // for the same reason the wait is — the runner reported both as failures.
+  if (contendedNodeId) {
+    // Destructured rather than spread: `contendedNodeId` is only ever assigned
+    // inside the event callback, so TypeScript cannot narrow it here and a
+    // spread of the un-narrowed type does not compile. Same shape as the wait
+    // branch above, for the same reason.
+    const { nodeId, reason } = contendedNodeId;
+    return { status: 'contended', nodeId, reason };
+  }
+
   if (outcome.status === 'failed') {
     return { status: 'failed', message: outcome.error.message };
   }
@@ -348,4 +414,21 @@ function isRunStatus(value: string): value is RunStatus {
 function isWaitFailure(payload: unknown): boolean {
   const error = (payload as { error?: { code?: unknown } } | undefined)?.error;
   return error?.code === WORKFLOW_WAIT_CODE;
+}
+
+/**
+ * Whether a `node_failed` payload is a lost race rather than a failure.
+ *
+ * Reads the code and nothing else, exactly like `isWaitFailure` and for the same
+ * reason: `runNode` has already rebuilt the payload into
+ * `{ error: { message, code, attempt } }`, so the thrown object is gone. The code
+ * is shared with the raiser through `STEP_IN_FLIGHT_CODE` rather than repeated
+ * as a literal — a rename on one side used to turn every contention silently
+ * back into a failed run.
+ */
+function contentionReason(payload: unknown): 'in_flight' | 'abandoned' | null {
+  const error = (payload as { error?: { code?: unknown } } | undefined)?.error;
+  if (error?.code === STEP_IN_FLIGHT_CODE) return 'in_flight';
+  if (error?.code === RUN_ABANDONED_CODE) return 'abandoned';
+  return null;
 }

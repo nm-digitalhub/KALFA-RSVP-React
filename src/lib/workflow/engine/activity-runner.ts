@@ -28,6 +28,8 @@ import type {
   NodeExecutionResult,
 } from '../vendor/workflowbuilder/execution-core/ports/activity-runner.port';
 
+import { NODE_TIMEOUT_CODE, nodeBudgetMs } from './node-budgets';
+import { RUN_ABANDONED_CODE, STEP_IN_FLIGHT_CODE } from './ports';
 import type {
   GuestActionsPort,
   OutboundWebhookPort,
@@ -50,6 +52,24 @@ export type ActivityRunnerArgs = {
   guests: GuestActionsPort;
   alerts: TeamAlertsPort;
   webhook: OutboundWebhookPort;
+  /**
+   * The queue's own "this job is no longer yours" signal.
+   *
+   * pg-boss hands every handler an `AbortSignal` on `job.signal` and aborts it
+   * when the batch ends — including when the handler outlives `expireInSeconds`
+   * and the job has been re-queued under it, and when the process is shutting
+   * down and `failWip()` has already failed the job (manager.js:412, 538, and
+   * `resolveWithinSeconds` in tools.js). We never read it, so a handler that
+   * lost its job carried on walking the graph, executing nodes alongside the
+   * retry that had been given the same run.
+   *
+   * Checked BETWEEN nodes rather than inside one: aborting cannot stop work
+   * already in flight, so the honest guarantee is that no FURTHER node is
+   * claimed or executed once the job has been taken away.
+   *
+   * Optional — a dry run and every test port has no queue behind it.
+   */
+  signal?: AbortSignal;
 };
 
 // The shape the runner sees. Structural rather than an import of KalfaNode, so
@@ -134,7 +154,7 @@ function resolveConfigTemplates(
 export function createActivityRunner<TNode extends RunnableNode>(
   args: ActivityRunnerArgs,
 ): ActivityRunnerPort<TNode> {
-  const { runId, workflowId, trigger, ledger, guests, alerts, webhook } = args;
+  const { runId, workflowId, trigger, ledger, guests, alerts, webhook, signal } = args;
 
   return {
     // `context` was ignored until templates landed — the handlers took only
@@ -202,6 +222,17 @@ export function createActivityRunner<TNode extends RunnableNode>(
         return result;
       }
 
+      // BEFORE the claim, which is the only placement that helps: claiming a
+      // node this attempt no longer owns writes a 'running' row the retry then
+      // has to wait out, and executing it repeats a side effect the retry is
+      // about to perform.
+      if (signal?.aborted) {
+        throw new PermanentNodeExecutionError(
+          RUN_ABANDONED_CODE,
+          `ההרצה הועברה למסירה אחרת לפני הצעד "${node.id}".`,
+        );
+      }
+
       const claim = await ledger.claimStep({
         runId,
         nodeId: node.id,
@@ -221,7 +252,7 @@ export function createActivityRunner<TNode extends RunnableNode>(
         // graph — which is correct, because the attempt that owns the node is
         // still driving its own copy of the same graph.
         throw new PermanentNodeExecutionError(
-          'step_in_flight',
+          STEP_IN_FLIGHT_CODE,
           `הצעד "${node.id}" כבר רץ בהרצה מקבילה.`,
         );
       }
@@ -254,16 +285,19 @@ export function createActivityRunner<TNode extends RunnableNode>(
           SECRET_BEARING_NODE_TYPES.includes(node.type),
         ) as Record<string, unknown>;
 
-        const result = await handler(config, {
-          runId,
-          workflowId,
-          nodeId: node.id,
-          trigger,
-          // Only `logic.wait` reads it. See StepContext — a wait cannot tell its
-          // own resumption from a first arrival, because the whole graph replays.
-          ...(claim.resumedFromWait ? { resumedFromWait: true } : {}),
-          deps: { guests, alerts, webhook },
-        });
+        const result = await withNodeBudget(
+          node.type,
+          handler(config, {
+            runId,
+            workflowId,
+            nodeId: node.id,
+            trigger,
+            // Only `logic.wait` reads it. See StepContext — a wait cannot tell its
+            // own resumption from a first arrival, because the whole graph replays.
+            ...(claim.resumedFromWait ? { resumedFromWait: true } : {}),
+            deps: { guests, alerts, webhook },
+          }),
+        );
         // Persisted AFTER the side effect and BEFORE the runner propagates, so a
         // crash between the two leaves the row 'running' — visible as stuck
         // rather than invisible as never-attempted.
@@ -309,4 +343,42 @@ export function createActivityRunner<TNode extends RunnableNode>(
 
 function isConfigObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+/**
+ * Bound one node's execution by its own budget.
+ *
+ * ⚠️ THE RACE IS THE MECHANISM, and its limit is worth stating plainly: losing
+ * the race REJECTS, it does not cancel. The handler's own work carries on —
+ * JavaScript has no way to stop it — so this bounds how long the GRAPH waits on
+ * a node, not how long the node runs. That is still the property that matters
+ * here: the step row stops being 'running', the run stops being held open, and
+ * a later delivery may take the row over. The same shape as pg-boss's own
+ * `resolveWithinSeconds`, which bounds a handler it equally cannot kill.
+ *
+ * A timeout is thrown as an ORDINARY error, never a `PermanentNodeExecutionError`.
+ * The caller's catch writes `failStep`, and `claimStep` reclaims a 'failed' row
+ * immediately — so the retry this earns can actually take the node, which is the
+ * whole reason for ending the attempt.
+ */
+async function withNodeBudget<T>(nodeType: string, work: Promise<T>): Promise<T> {
+  const ms = nodeBudgetMs(nodeType);
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      work,
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => {
+          const error = new Error(`הצעד מסוג "${nodeType}" חרג ממגבלת הזמן (${ms}ms).`);
+          (error as Error & { code?: string }).code = NODE_TIMEOUT_CODE;
+          reject(error);
+        }, ms);
+      }),
+    ]);
+  } finally {
+    // Always, including on the success path: an un-cleared timer keeps the
+    // process's event loop alive for the whole budget after a node that finished
+    // in milliseconds, which in a worker means a shutdown that hangs.
+    if (timer) clearTimeout(timer);
+  }
 }

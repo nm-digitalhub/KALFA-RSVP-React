@@ -39,6 +39,15 @@ type DryRunOutcome =
    * would this do": it would get this far and then wait.
    */
   | { status: 'waiting'; resumeAt: string; nodeId: string }
+  /**
+   * Present only because this type is fed from `RunWorkflowOutcome`, which a live
+   * run shares. A DRY run cannot reach it: `contended` means a second delivery of
+   * the same run holds a node, and a dry run is single-threaded, never queued and
+   * never retried — dry-run.ts says the same about `in_flight`. Carried so the
+   * canvas compiles against the full union rather than through a cast that would
+   * also hide a real one.
+   */
+  | { status: 'contended'; nodeId: string }
   | { status: 'failed'; message: string };
 
 const emptyStore: ExecutionStore = {

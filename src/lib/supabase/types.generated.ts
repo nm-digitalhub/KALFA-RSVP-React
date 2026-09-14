@@ -6603,6 +6603,10 @@ export type Database = {
         }
         Returns: string
       }
+      wake_parked_workflow_run: {
+        Args: { p_correlation_id: string; p_node_id: string; p_run_id: string }
+        Returns: boolean
+      }
     }
     Enums: {
       agreement_status: "draft" | "approved"

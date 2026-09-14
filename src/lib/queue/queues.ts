@@ -251,6 +251,32 @@ export const QUEUES = {
 // ledger, so a retry re-runs only what genuinely did not finish — but every
 // retry still walks the whole graph, and a permanently broken graph should stop
 // being walked quickly.
+/**
+ * How long ONE delivery of a workflow run may hold its job.
+ *
+ * ⚠️ SET EXPLICITLY, because the inherited value was the same number as the step
+ * lease and that is the one value it must not be. pg-boss defaults
+ * `expireInSeconds` to 900 (dist/plans.js `QUEUE_DEFAULTS`), `STEP_LEASE_MS` is
+ * 15 minutes, and `workflowRun` is not in the worker's sweep-expiry list — so
+ * both timers sat at 900s by inheritance rather than by choice.
+ *
+ * What that collision does: at 900s `failJobsByTimeout` DELETES the active job
+ * and re-inserts it as `retry`, with `GREATEST(retry_delay,1)` putting the next
+ * attempt ~1-2s later. The step row claimed at t=0 becomes reclaimable at that
+ * exact moment too, so the retry takes over a node the first handler may still
+ * be inside. Nothing stops it: `singletonKey` constrains nothing under the
+ * `standard` policy this queue uses.
+ *
+ * 600 < 900 breaks it: a retry now meets a step row still inside its lease,
+ * reads `in_flight`, and comes back as `contended` instead of re-running the
+ * node. And 600 sits above every node budget (`MAX_NODE_TIMEOUT_MS`, 300s), so
+ * a node always times out on its own terms before the job is taken from it.
+ *
+ * node budget (≤300s) < this (600s) < STEP_LEASE_MS (900s) — asserted in
+ * `workflow-budgets.test.ts`, not left to these three files agreeing by hand.
+ */
+export const WORKFLOW_RUN_EXPIRE_SECONDS = 600;
+
 export const WORKFLOW_RETRY = {
   retryLimit: 2,
   retryBackoff: true,

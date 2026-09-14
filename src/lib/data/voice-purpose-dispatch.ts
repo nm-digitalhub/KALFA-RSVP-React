@@ -38,10 +38,21 @@ import { startScenarios } from '@/lib/voximplant/mutations';
 // touchpoint, a 24-hour lead, an unresolved-prior-call check. Dialling them
 // through here would be a second, thinner way into a path that works.
 
+/**
+ * `tokenExpiresAt` is on every variant that produced an attempt row, and it is
+ * there for ONE caller: a workflow step that parks until the call reports.
+ *
+ * ⚠️ IT IS THE ONLY HONEST CEILING FOR THAT WAIT. The cb route refuses a token
+ * past its expiry (404, pinned in purpose-cb.test.ts), so a run parked beyond
+ * this instant is parked in a window where no wake can arrive — it would sleep
+ * to a deadline nothing can reach it before. Returning the row's own value also
+ * keeps one source of truth: the TTL is `voice_purposes.token_ttl_sec`, which an
+ * owner edits, and a second constant in the engine would drift from it silently.
+ */
 export type VoicePurposeDispatchResult =
-  | { kind: 'dialed'; attemptId: string; callSessionHistoryId: number }
-  | { kind: 'already_dispatched'; attemptId: string }
-  | { kind: 'start_unknown'; attemptId: string }
+  | { kind: 'dialed'; attemptId: string; callSessionHistoryId: number; tokenExpiresAt: string }
+  | { kind: 'already_dispatched'; attemptId: string; tokenExpiresAt?: string }
+  | { kind: 'start_unknown'; attemptId: string; tokenExpiresAt: string }
   | { kind: 'failed_to_start'; attemptId: string; code?: number }
   | { kind: 'blocked'; reason: string }
   | { kind: 'skipped'; reason: string };
@@ -128,6 +139,7 @@ export async function dispatchVoicePurposeCall(input: {
   //    unique on (run_id, node_id, contact_id), so a replayed step — which the
   //    step lease can cause — collides here instead of telephoning twice.
   const accessToken = randomBytes(32).toString('base64url');
+  const tokenExpiresAt = new Date(nowMs + purpose.tokenTtlSec * 1000).toISOString();
   const { data: attempt, error: insertErr } = await admin
     .from('voice_purpose_attempts')
     .insert({
@@ -137,7 +149,7 @@ export async function dispatchVoicePurposeCall(input: {
       run_id: input.runId ?? null,
       node_id: input.nodeId ?? null,
       access_token: accessToken,
-      token_expires_at: new Date(nowMs + purpose.tokenTtlSec * 1000).toISOString(),
+      token_expires_at: tokenExpiresAt,
     })
     .select('id')
     .single();
@@ -147,12 +159,19 @@ export async function dispatchVoicePurposeCall(input: {
     if (insertErr.code === '23505') {
       const { data: existing } = await admin
         .from('voice_purpose_attempts')
-        .select('id')
+        // The EXISTING row's expiry, never `tokenExpiresAt` above: that one was
+        // computed for an insert that did not happen, and a replay hours later
+        // would hand a caller a ceiling further out than the token it belongs to.
+        .select('id, token_expires_at')
         .eq('contact_id', input.contactId)
         .eq('run_id', input.runId ?? '')
         .eq('node_id', input.nodeId ?? '')
         .maybeSingle();
-      return { kind: 'already_dispatched', attemptId: existing?.id ?? '' };
+      return {
+        kind: 'already_dispatched',
+        attemptId: existing?.id ?? '',
+        ...(existing?.token_expires_at ? { tokenExpiresAt: existing.token_expires_at } : {}),
+      };
     }
     return { kind: 'skipped', reason: 'attempt_insert_failed' };
   }
@@ -200,6 +219,7 @@ export async function dispatchVoicePurposeCall(input: {
         kind: 'dialed',
         attemptId: attempt.id,
         callSessionHistoryId: res.call_session_history_id,
+        tokenExpiresAt,
       };
     }
     // A response we cannot classify is recorded as UNKNOWN, never as failed: the
@@ -209,7 +229,7 @@ export async function dispatchVoicePurposeCall(input: {
       .from('voice_purpose_attempts')
       .update({ dispatch_status: 'unknown', finish_reason: 'ambiguous_start_response' })
       .eq('id', attempt.id);
-    return { kind: 'start_unknown', attemptId: attempt.id };
+    return { kind: 'start_unknown', attemptId: attempt.id, tokenExpiresAt };
   } catch (e) {
     if (e instanceof VoximplantApiError) {
       await admin
@@ -223,7 +243,7 @@ export async function dispatchVoicePurposeCall(input: {
         .from('voice_purpose_attempts')
         .update({ dispatch_status: 'unknown', finish_reason: 'network_error_during_start' })
         .eq('id', attempt.id);
-      return { kind: 'start_unknown', attemptId: attempt.id };
+      return { kind: 'start_unknown', attemptId: attempt.id, tokenExpiresAt };
     }
     throw e;
   }
