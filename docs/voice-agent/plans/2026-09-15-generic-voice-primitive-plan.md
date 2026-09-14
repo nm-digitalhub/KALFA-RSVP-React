@@ -52,6 +52,8 @@
 | A-35 | **`rulePattern` חסר משמעות לשיחות יוצאות:** *"The patterns work for incoming calls only. For outgoing calls, it is enough to create a rule and attach a scenario."* שיחות הייעודים יוצאות (`StartScenarios`), ולכן הכלל הוא מצביע לתסריט בלבד — מה שהופך כלל גנרי משותף לשימוש הנכון בדיוק. | `platform/voxengine/routing-rules` |
 | A-36 | ⚠️ *"If you attach more than one scenario to a routing rule, they **execute in one context**."* זה המקור הראשוני לכך שחלון שני-תסריטים-על-כלל-אחד הוא תקלה חיה ולא כפילות תמימה. | אותו עמוד |
 | A-37 | ⚠️ מהסקיל הרשמי: *"Do not assume `SetRuleInfo` can rebind a rule to a scenario. It may accept `scenario_id` and return success without changing the binding."* לקשירה — `BindScenario` בלבד, ואימות אחריה. | `management-api/SKILL.md` |
+| A-38 | מפתח ה-API נקרא מסוד פר-אפליקציה: `VoxEngine.getSecretValue(key)`. כך `ELEVENLABS_API_KEY` עובד היום, והתסריט הגנרי לא משנה זאת — הסוד לעולם לא עובר ב-`customData`. ⚠️ המתודה מחזירה `undefined` למפתח חסר **בלי לזרוק**; תסריט שלא בודק ייכשל רק כשה-WebSocket ייפתח. | `platform/voxengine/secrets` |
+| A-39 | **`ApplicationStorage` נבחן ונדחה.** `require(Modules.ApplicationStorage)` נותן מפתח-ערך פר-אפליקציה, והפיתוי הוא לשמור בו את קונפיגורציית הייעודים. אסור: הקונפיגורציה חיה ב-`voice_purposes`, ועותק ב-Voximplant היה מקור אמת שני שדורש סנכרון ונכשל בשקט בדריפט. הקונפיגורציה מגיעה ב-`ctx` בלבד. | `api-reference/voxengine/application-storage` |
 | A-32 | `MCP.Client` של VoxEngine **אינו** דרך לעקוף את טיפול הכלים של המחבר. הספק מפורש: *"the client does not replace connector-specific tool handling by itself"*. הוא הסצנריה שקוראת החוצה לשרת MCP. | `voxengine-dev/reference.md` |
 
 ---
