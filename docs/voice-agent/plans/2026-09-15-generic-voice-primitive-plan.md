@@ -77,6 +77,8 @@
 | A-60 | **ביקורת שלוש סצנריות הסוכן מול הכללים שאומתו:** הסדר הקריטי (A-51) **תקין בכולן** — `conversationInitiationClientData` לפני `sendMediaBetween` (1086<1116, 449<466, 351<366). `is_error` נשלח בכולן. `onWebSocketClose` מחובר בכולן. תקרת משך קיימת (`GLOBAL_TIMEOUT_MS` / `hangupTimer`), רק בשם אחר מהדוגמה הרשמית. | קריאה |
 | A-61 | ⚠️ `SalesCloseAgent` שולח `tool_name` בפריים ה-`clientToolResult` — שדה שאינו במפרט (A-28), שנטע מהדוגמה הרשמית השגויה (A-29). לא מזיק, אך יש להסירו ולא לחקות אותו בגשר הגנרי. | `SalesCloseAgent:591` |
 | A-62 | **הפער של `secret__` מצומצם לסצנריה אחת.** `MeetingConfirmAgent` הוא היחיד ששולח טוקן (`kalfa_attempt_token`), ובלי הקידומת. `RSVPAgent` ו-`SalesCloseAgent` לא שולחים טוקן כלל. | קריאה + A-30 |
+| A-63 | **כלי webhook מזדהה ברמת הסוכן, לא ברמת השיחה.** חמש שיטות נתמכות: OAuth2 Client Credentials, OAuth2 JWT, Basic, Bearer, ו-**Custom Headers** — כולן מוגדרות בהגדרות הסוכן ומחוברות לכלי. כלומר כלי webhook מזדהה כ"הסוכן", ולא כ"השיחה הזו". | `tools/webhook-tools` |
+| A-64 | ⚠️ **הגשר לא בהכרח מיותר — והמפתח הוא `secret__`.** תיאור הקידומת (A-30) אומר שהיא ל-*"dynamic variable **headers**"*, ו-Custom Headers הם אחת משיטות האימות. **מכאן שטוקן חד-פעמי יכול להגיע לכלי webhook ככותרת בלי להגיע ל-LLM.** ⚠️ **הסקה משני מקורות, לא בדיקה** — לא ראיתי את התחביר שמזריק משתנה לכותרת. **זו השאלה שמכריעה בין "גשר גנרי" ל"כלי webhook ישירים", ויש לאמת אותה לפני שלב 4.** | הצלבה |
 | A-32 | `MCP.Client` של VoxEngine **אינו** דרך לעקוף את טיפול הכלים של המחבר. הספק מפורש: *"the client does not replace connector-specific tool handling by itself"*. הוא הסצנריה שקוראת החוצה לשרת MCP. | `voxengine-dev/reference.md` |
 
 ---
