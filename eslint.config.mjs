@@ -65,6 +65,21 @@ const eslintConfig = defineConfig([
     "voxfiles/applications/*/scenarios/dist/**",
     "voxfiles/.voxengine-ci/**",
     // Vendored VoxEngine type declarations (downloaded oracle, not our source).
+    //
+    // Refreshed from https://cdn.voximplant.com/voxengine_typings/voxengine.d.ts
+    // — that URL serves the LATEST engine (7.64.1 on 2026-09-15), which is not
+    // the same as the copy bundled inside @voximplant/voxengine-ci (7.57.0).
+    // Both are fed to every scenario build: voxengine-ci's generated tsconfig
+    // lists them BOTH in `include`, and they conflict on hundreds of ambient
+    // identifiers. `skipLibCheck: true` in that same generated config is the
+    // only reason a build succeeds — measured 2026-09-15: 0 errors with it,
+    // 67 without. The ElevenLabs surface is byte-identical between the two, so
+    // nothing this repo depends on is ambiguous today.
+    //
+    // ⚠️ `voxengine-ci init` does NOT create this directory — it makes only
+    // applications/, scenarios/, src/ and dist/. `typings/` is ours, and the
+    // tool merely includes it if present. It is also excluded from the app's
+    // own tsconfig; see the note there for why.
     "typings/**",
   ]),
   // Honor the codebase-wide `_`-prefix convention for intentionally-unused

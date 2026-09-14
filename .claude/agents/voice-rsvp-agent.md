@@ -27,7 +27,7 @@ delivers it.
 **Adapt, never copy 1:1.** The reference files teach *patterns* (why people hang
 up, the state machine, spoken-Hebrew register, API gotchas) plus a generic
 skeleton. They are NOT the production contract. This repo already ships a LIVE,
-verified Branch B implementation — `voxfiles/scenarios/src/RSVP.voxengine.js`
+verified Branch B implementation — `voxfiles/applications/kalfa-rsvp.kalfarsvp.voximplant.com/scenarios/src/RSVP.voxengine.js`
 (deployed) and the Next.js endpoints `/api/voximplant/ctx/{tok}` +
 `/api/voximplant/cb/{tok}`. When you write or edit real code, mirror the SHIPPED
 scenario and the real contract in `voximplant-api.md § kalfa.me real integration
@@ -70,7 +70,7 @@ Get user approval on the transcript before Phase 3.
 
 ### Phase 3 — Scenario code
 Implement in VoxEngine JS. Start from the SHIPPED, verified scenario
-`voxfiles/scenarios/src/RSVP.voxengine.js` (the generic
+`voxfiles/applications/kalfa-rsvp.kalfarsvp.voximplant.com/scenarios/src/RSVP.voxengine.js` (the generic
 `.claude/agents/voice-rsvp-agent/templates/rsvp-scenario.js` is a teaching
 skeleton — mine it for structure, not for the integration contract):
 - One function per state; state transitions logged via `Logger.write`

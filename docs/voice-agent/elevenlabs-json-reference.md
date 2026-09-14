@@ -282,8 +282,25 @@ elevenlabs agents push
 npx voxengine-ci upload --application-name kalfa-rsvp.kalfarsvp.voximplant.com --rule-name OutCallAgent
 ```
 
+> ⚠️ **עדכון 2026-09-14 — voxengine-ci 36 הזיז את מיקום התרחישים.** הנתיב המקומי
+> אינו עוד `voxfiles/scenarios/src/`. מ-36.0.0 הוא **לכל אפליקציה**:
+>
+> | גרסה | נתיב |
+> |---|---|
+> | ≤ 35.x | `voxfiles/scenarios/src/<scenario>.voxengine.js` |
+> | **36.0.0+** | `voxfiles/applications/<application-name>/scenarios/src/<scenario>.voxengine.js` |
+>
+> גם מזהי התרחישים השתנו במיגרציה — `RSVPAgent` הוא **920395** (היה 918450).
+> המיפוי הנוכחי שם→מזהה נמצא ב-`voxfiles/.voxengine-ci/applications/<app>/scenarios/dist/*.metadata.config.json`,
+> והוא מעוקב בגיט. אל תכתוב מזהה מהזיכרון.
+>
+> ⚠️ **התיעוד הרשמי של Voximplant עדיין מראה את הנתיב הישן** — גם עמוד ה-CI
+> באתר וגם המדריך בפאנל. הם מיושנים, לא אנחנו. ה-README של החבילה 36.0.0 הוא
+> המקור הנכון.
+
 **עדכון 2026-07-20 — הגשר קודם לייצור:** התרחיש נקרא עכשיו `RSVPAgent`
-(`voxfiles/scenarios/src/RSVPAgent.voxengine.js`, scenario id 918450) וכבול לחוק
+(`voxfiles/applications/kalfa-rsvp.kalfarsvp.voximplant.com/scenarios/src/RSVPAgent.voxengine.js`,
+scenario id 918450 **בזמן הכתיבה — ראו האזהרה למעלה**) וכבול לחוק
 `OutCallAgent` (rule id 1520915) על אפליקציית הייצור `kalfa-rsvp`. ה-Secret
 `ELEVENLABS_API_KEY` קיים על שתי האפליקציות. **לעולם לא** לגעת בחוק ה-DTMF
 `OutCall` (rule 1494311) — זה מסלול הייצור של תרחיש ה-DTMF (`RSVP`), והדיספצ'ר

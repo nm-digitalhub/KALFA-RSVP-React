@@ -77,7 +77,7 @@ VoxEngine.terminate();
 
 > This section OVERRIDES the generic `{c:id}` / `/api/voice` / "Laravel" examples
 > elsewhere in these teaching files. kalfa.me is **Next.js**, not Laravel. When you
-> write real code, mirror the shipped scenario `voxfiles/scenarios/src/RSVP.voxengine.js`,
+> write real code, mirror the shipped scenario `voxfiles/applications/kalfa-rsvp.kalfarsvp.voximplant.com/scenarios/src/RSVP.voxengine.js`,
 > not the skeleton.
 
 - **Dispatcher:** a Next.js server action + pg-boss worker call the Management API

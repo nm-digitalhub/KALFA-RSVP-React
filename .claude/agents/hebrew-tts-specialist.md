@@ -48,8 +48,8 @@ your job is to design the smallest test that turns DOCS-ONLY into VERIFIED-LIVE.
    - `typings/voxengine.d.ts` (in-repo) — `CallSayParameters`, `Voice`, `VoiceList.Google.he_IL_*`, `say()` doc.
    - Reconcile doc claims with the DISPROVED-LIVE SSML finding.
 3. **In-repo proven evidence** (read before concluding):
-   - `voxfiles/scenarios/src/RSVPPreview.voxengine.js` (niqqud `קָלְפָה` / `מְחַכִּים לָכֶם` shipped, VERIFIED-LIVE)
-   - `voxfiles/scenarios/src/RSVP.voxengine.js` (`normalizeForSpeech` — check it does NOT strip niqqud combining marks)
+   - `voxfiles/applications/kalfa-rsvp.kalfarsvp.voximplant.com/scenarios/src/RSVPPreview.voxengine.js` (niqqud `קָלְפָה` / `מְחַכִּים לָכֶם` shipped, VERIFIED-LIVE)
+   - `voxfiles/applications/kalfa-rsvp.kalfarsvp.voximplant.com/scenarios/src/RSVP.voxengine.js` (`normalizeForSpeech` — check it does NOT strip niqqud combining marks)
    - memory [[voximplant-say-no-ssml]] · the `hebrew-voice-bot-builder` skill (Skill tool) for he-IL STT/TTS context.
    - Recordings + transcripts in the session scratchpad are ground-truth audio evidence.
 

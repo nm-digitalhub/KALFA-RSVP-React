@@ -15,9 +15,14 @@ before that part is built/shipped).
 
 ---
 
+
+> ⚠️ **נתיבי התרחישים במסמך זה עודכנו 2026-09-15.** voxengine-ci 36 העביר
+> את המקורות מ-`voxfiles/scenarios/src/` ל-`voxfiles/applications/<app>/scenarios/src/`.
+> הממצאים עצמם לא שונו — רק המיקום שבו קוראים אותם.
+
 ## 1. Ground truth — the deployed scenario contract `[VERIFIED]`
 
-Source of truth = `voxfiles/scenarios/src/RSVP.voxengine.js` (read directly):
+Source of truth = `voxfiles/applications/kalfa-rsvp.kalfarsvp.voximplant.com/scenarios/src/RSVP.voxengine.js` (read directly):
 
 - Trigger: `StartScenarios(rule_id=1494311, script_custom_data=JSON.stringify({to,from,iid,cb,ctx,gk}))`.
   Account `10694307`, app `11107202`, OutCall rule `1494311` → scenario `RSVP #907512`.

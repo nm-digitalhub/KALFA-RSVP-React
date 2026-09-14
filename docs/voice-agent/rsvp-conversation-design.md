@@ -10,9 +10,14 @@
 
 עובדות שאומתו בקוד ובשיחות חיות. כל שינוי בהן מחייב עדכון מסמך זה.
 
+
+> ⚠️ **נתיבי התרחישים במסמך זה עודכנו 2026-09-15.** voxengine-ci 36 העביר
+> את המקורות מ-`voxfiles/scenarios/src/` ל-`voxfiles/applications/<app>/scenarios/src/`.
+> הממצאים עצמם לא שונו — רק המיקום שבו קוראים אותם.
+
 | # | עובדה | מקור אימות |
 |---|---|---|
-| E-1 | הארכיטקטורה: Voximplant מגשר PSTN → סוכן ElevenLabs Conversational (`eleven_v3_conversational`, קול Kalfa, שפה he). | `voxfiles/scenarios/src/VoiceAgentTest.voxengine.js` |
+| E-1 | הארכיטקטורה: Voximplant מגשר PSTN → סוכן ElevenLabs Conversational (`eleven_v3_conversational`, קול Kalfa, שפה he). | `voxfiles/applications/kalfa-rsvp.kalfarsvp.voximplant.com/scenarios/src/VoiceAgentTest.voxengine.js` |
 | E-2 | משתנים דינמיים פר-שיחה: `{{guest_name}}`, `{{event_name}}`, `{{event_date}}`, `{{event_venue}}` — מוזרקים כ-frame ראשון (`conversation_initiation_client_data`) מתוך `GET {u}/api/voximplant/ctx/{tok}`. | אותו קובץ, שורות 205–223 |
 | E-3 | ניקוד בשם האורח משפר הגייה (הוכח חי: זְהָבָה תוקן מ"זה אבא"). השמות יגיעו **מנוקדים** משכבת ה-ctx. | NIQQUD_TEST_MAP בתרחיש + שיחת אימות |
 | E-4 | כלי `save_rsvp` קיים ופרוס: `{attending: boolean, adults: int, children: int}` → נכתב ל-KALFA דרך `submit_rsvp` (endpoint token-scoped: `POST /api/voximplant/agent-tool/rsvp/{token}`). הסוכן רשאי לומר "נרשם" **רק** אחרי תוצאת `saved`. | `src/lib/validation/voximplant.ts` (voxSaveRsvpSchema), `plans/voximplant-tier2-save-rsvp-plan.md` |
