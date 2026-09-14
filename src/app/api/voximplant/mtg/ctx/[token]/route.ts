@@ -171,7 +171,36 @@ export async function GET(
       // Non-authorizing correlation id (same pattern as ctx/[token]'s
       // kalfa_attempt_token) — the ElevenLabs-bridge scenario injects this so
       // the post-call webhook can map the conversation back to this attempt.
-      kalfa_attempt_token: ctx.attempt.el_conversation_id ?? '',
+      //
+      // This used to send `el_conversation_id`, which is STRUCTURALLY ALWAYS
+      // EMPTY here: that column is written by mtg/cb, the TERMINAL callback, so
+      // at ctx time — before the conversation exists — it is still null.
+      // Confirmed on a real call (conv_0201m2fyxhmgetfaqs0keg0b01ex, 14.9):
+      // `"kalfa_attempt_token": ""` in the conversation's initiation data.
+      //
+      // Nothing consumed that empty value, so nothing was visibly broken. What
+      // was missing is a FALLBACK. `callback_request_attempts` has no
+      // `el_correlation_nonce` column, so `el_conversation_id` — written only
+      // by the terminal cb — was this persona's single correlation path. A
+      // VoxEngine scenario's closing HTTP request has no delivery guarantee
+      // (queued requests are dropped without a callback when the session
+      // terminates), and when it is lost the conversation becomes unlinkable.
+      // RSVP survives that on its pre-issued nonce and sales-close on the
+      // attempt id; this path had nothing.
+      //
+      // MEASURED against the live table 2026-09-15, and the damage is so far
+      // HYPOTHETICAL: of 13 callback_request_attempts, 10 are linked and the 3
+      // that are not were never answered (sip_480, sip_408, sip_408 — all
+      // call_duration_sec 0), so no conversation ever existed to link. Every
+      // call that actually happened got its id from the cb. This is therefore
+      // defence in depth against a documented platform behaviour, not a repair
+      // of observed loss — but it costs nothing and removes a field that could
+      // never carry a value.
+      //
+      // The attempt id exists before the call, so it echoes back through the
+      // post-call webhook whether or not the cb ever arrives — the same thing
+      // sls/ctx already sends.
+      kalfa_attempt_token: ctx.attempt.id,
     },
     { headers: NO_STORE },
   );
