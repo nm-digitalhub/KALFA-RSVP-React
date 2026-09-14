@@ -586,9 +586,14 @@ VoxEngine.addEventListener(AppEvents.Started, function () {
                             // platform delay. Stringify unconditionally here rather than in
                             // each resultFrom, so no future tool can reintroduce this.
                             var resultStr = typeof result === 'string' ? result : safeStringify(result);
+                            // The frame spec defines exactly three fields —
+                            // tool_call_id, result, is_error — and `tool_name` is not
+                            // among them. It was copied from the vendor's own
+                            // function-calling example, which sends tool_name AND omits
+                            // the required is_error. RSVPAgent and MeetingConfirmAgent
+                            // both send the three-field frame and work in production.
                             var response = {
                                 tool_call_id: toolCallId,
-                                tool_name: toolName,
                                 result: resultStr,
                                 is_error: isError === true
                             };
