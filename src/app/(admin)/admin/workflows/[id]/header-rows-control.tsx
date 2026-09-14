@@ -1,6 +1,7 @@
 'use client';
 
 import {
+  FormControlWithLabel,
   optionIs,
   rankWith,
   withJsonFormsControlProps,
@@ -76,7 +77,7 @@ function unknownSecretsIn(value: string, known: readonly string[]): string[] {
   return missing;
 }
 
-function HeaderRowsControl({ data, path, handleChange, enabled, label }: ControlProps) {
+function HeaderRowsControl({ data, path, handleChange, enabled, label, required }: ControlProps) {
   const rows = readRows(data);
   const secretNames = useSecretsStore((s) => s.names);
   // One id per mounted control, so two controls on one page cannot share a list.
@@ -100,8 +101,9 @@ function HeaderRowsControl({ data, path, handleChange, enabled, label }: Control
   };
 
   return (
-    <div className="flex flex-col gap-2" dir="rtl">
-      {label ? <span className="text-xs font-medium text-muted-foreground">{label}</span> : null}
+    // The SDK's wrapper — see the note in checkbox-list-control.tsx.
+    <FormControlWithLabel label={label} required={required}>
+      <div className="flex flex-col gap-2" dir="rtl">
 
       {/*
         The names the server has, offered as ready-made tokens. A `datalist` and
@@ -203,7 +205,8 @@ function HeaderRowsControl({ data, path, handleChange, enabled, label }: Control
         <Plus aria-hidden="true" className="size-4" />
         הוספת כותרת
       </Button>
-    </div>
+      </div>
+    </FormControlWithLabel>
   );
 }
 

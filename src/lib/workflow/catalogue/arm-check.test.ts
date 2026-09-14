@@ -255,7 +255,7 @@ describe('findArmBlockers', () => {
 });
 
 describe('the starter templates against this gate', () => {
-  it('⚠️ only the fan-out template is blocked, and only on its deliberate blank', () => {
+  it('⚠️ only the templates with a DELIBERATE blank are blocked', () => {
     const results = DIAGRAM_TEMPLATES.map((t) => ({
       name: t.value.name,
       blockers: findArmBlockers({
@@ -266,12 +266,21 @@ describe('the starter templates against this gate', () => {
     }));
 
     const blocked = results.filter((r) => r.blockers.length > 0);
-    expect(blocked.map((b) => b.name)).toEqual(['תזכורת שבועית למי שטרם ענה']);
-    // ⚠️ NAMES THE NEXT ACTION, not just the field. An owner who loaded this
-    // template cannot act on "targetWorkflowId is empty" — the workflow it must
-    // point at does not exist yet, and nothing on screen says so.
+    expect(blocked.map((b) => b.name)).toEqual([
+      'תזכורת שבועית למי שטרם ענה',
+      'שיחה קולית עם המתנה לתוצאה',
+    ]);
+
+    // ⚠️ EVERY ONE OF THESE NAMES THE NEXT ACTION, not just the field. An owner
+    // who loaded a template cannot act on "targetWorkflowId is empty" — the
+    // workflow it must point at does not exist yet — and cannot act on
+    // "purposeKey is empty" either, because the dropdown they would reach for is
+    // legitimately EMPTY until a non-builtin purpose is created.
     expect(blocked[0]!.blockers).toEqual([
       'הצעד "לכל אורח שטרם ענה": לא נבחר תהליך להרצה. צרו את תהליך-הבן (למשל מהתבנית "תזכורת לאורח אחד") והדביקו את המזהה שלו כאן.',
+    ]);
+    expect(blocked[1]!.blockers).toEqual([
+      'הצעד "שיחה עם סוכן קולי": לא נבחר ייעוד לשיחה. בחרו ייעוד מהרשימה, ואם היא ריקה — צרו ייעוד חדש ב-/admin/integrations/voximplant וקשרו לו rule.',
     ]);
   });
 });

@@ -189,6 +189,14 @@ function blankMessage(nodeType: string, key: string): string {
   if (nodeType === 'action.start_for_each_guest' && key === 'targetWorkflowId') {
     return 'לא נבחר תהליך להרצה. צרו את תהליך-הבן (למשל מהתבנית "תזכורת לאורח אחד") והדביקו את המזהה שלו כאן.';
   }
+  // Same reasoning as the fan-out: "purposeKey is empty" is a field name, not an
+  // action. The dropdown reads `voice_purposes`, and it can legitimately be
+  // EMPTY — the three rows that ship are built-in and the dialler refuses those
+  // by design — so an owner can open the node, find nothing to choose, and have
+  // no way to learn that a purpose has to be created first.
+  if (nodeType === 'action.start_voice_call' && key === 'purposeKey') {
+    return 'לא נבחר ייעוד לשיחה. בחרו ייעוד מהרשימה, ואם היא ריקה — צרו ייעוד חדש ב-/admin/integrations/voximplant וקשרו לו rule.';
+  }
   return `השדה "${key}" ריק.`;
 }
 

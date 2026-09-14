@@ -3,6 +3,8 @@
 import {
   Icon,
   WorkflowBuilder,
+  useEffectChange,
+  useKeyPress,
   useSingleSelectedElement,
   useStore,
   type DidSaveStatus,
@@ -276,25 +278,31 @@ function WorkflowEditorLayout() {
     setPropertiesOpen(false);
   }, [toggleSidebar]);
 
-  // Escape is bound to the DOCUMENT, not to the container.
+  // Escape closes the phone overlays, through the SDK's own key hook.
   //
-  // React's onKeyDown only fires for events that bubble through the element, and
-  // a keydown is dispatched at `document.activeElement`. On a fresh load — or
-  // after a tap on empty canvas, which is exactly the phone case these overlays
-  // exist for — nothing inside the editor holds focus, so activeElement is
-  // <body>, which is not a descendant, and the handler never ran.
+  // ⚠️ THIS WAS A HAND-ROLLED `document.addEventListener('keydown')`, and the
+  // comment justifying it described a problem `useKeyPress` already solves. The
+  // reasoning was: React's `onKeyDown` only sees events that bubble through the
+  // element, a keydown is dispatched at `document.activeElement`, and on a fresh
+  // load — or after a tap on empty canvas, the phone case these overlays exist
+  // for — nothing inside the editor holds focus, so activeElement is <body> and
+  // the handler never ran. All true. But the SDK's hook fires "when the diagram
+  // canvas (BODY / .react-flow__*) has focus" by default, which is exactly that
+  // case.
   //
-  // Bound only while an overlay is actually open, so this never swallows Escape
-  // from a dialog or menu elsewhere on the admin page.
+  // And it fixes something the hand-rolled version got wrong: it EXCLUDES text
+  // inputs, "so typing in a property field doesn't accidentally trigger keyboard
+  // shortcuts". Ours listened on the document unconditionally, so Escape while
+  // editing a node's title closed the panel out from under the owner.
+  //
+  // `useEffectChange` is the matching half: `useKeyPress` reports a HELD state,
+  // and this fires only on a change after mount, so the press acts once instead
+  // of on every render that observes it still down.
   const hasOpenOverlay = isCompact && (isPaletteExpanded || isPropertiesOpen);
-  useEffect(() => {
-    if (!hasOpenOverlay) return;
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') closePanels();
-    };
-    document.addEventListener('keydown', onKeyDown);
-    return () => document.removeEventListener('keydown', onKeyDown);
-  }, [hasOpenOverlay, closePanels]);
+  const escapeHeld = useKeyPress('Escape');
+  useEffectChange(() => {
+    if (escapeHeld && hasOpenOverlay) closePanels();
+  }, [escapeHeld, hasOpenOverlay, closePanels]);
 
   return (
     <div ref={frameRef} className="workflow-builder-root kalfa-workflow-editor">

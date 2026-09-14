@@ -1069,6 +1069,227 @@ const PERGUEST_SEND_ID = 'tmpl-perguest-send';
  * fan-out starts it regardless, which is why `startRunsForGuests` does not
  * require it.
  */
+// ── voice call, waited on ─────────────────────────────────────────────────────
+//
+// The template that shows what `waitForOutcome` is FOR. Without it the feature
+// is a switch in a properties panel: an owner can turn it on, but has no example
+// of what the run then produces or how to branch on it.
+//
+// ⚠️ IT BRANCHES ON `outcome`, NOT ON `finishReason`. That is the whole point of
+// the business-outcome layer — the raw reason is sometimes 'completed',
+// sometimes 'Normal termination', and sometimes `sip_486`, and nobody drawing a
+// diagram should have to know that 486 is Busy Here. The switch rows below read
+// `{{nodes.voice-wait-call.outcome}}`, which is always one of four words.
+//
+// `purposeKey` ships EMPTY on purpose, exactly as the WhatsApp templates ship
+// without a number: the list is a live table, the owner picks from the dropdown
+// on first edit, and the handler refuses a blank rather than guessing. A template
+// that named a purpose would name one that may not exist on this account.
+const voiceCallWithOutcome: DiagramModel = {
+  name: 'שיחה קולית עם המתנה לתוצאה',
+  layoutDirection: 'RIGHT',
+  diagram: {
+    nodes: [
+      {
+        id: 'voice-wait-trigger',
+        type: 'start-node',
+        position: { x: 0, y: 260 },
+        data: {
+          segments: [],
+          type: 'trigger.whatsapp_inbound',
+          icon: 'WhatsappLogo',
+          properties: {
+            label: 'האורח ביקש שיחה',
+            description: 'מתחיל כשהודעת האורח מכילה את מילת ההפעלה',
+            keyword: 'שיחה',
+          },
+        },
+      },
+      {
+        id: 'voice-wait-call',
+        type: 'decision-node',
+        position: { x: 380, y: 260 },
+        data: {
+          segments: [],
+          type: 'action.start_voice_call',
+          icon: 'PhoneOutgoing',
+          properties: {
+            label: 'שיחה עם סוכן קולי',
+            description: 'מחייג, ואז עוצר עד שהשיחה מסתיימת ומדווחת',
+            status: 'active',
+            // The owner picks from the live `voice_purposes` list on first edit.
+            purposeKey: '',
+            // ⚠️ THE FIELD THIS TEMPLATE EXISTS TO DEMONSTRATE. Off by default on
+            // the node itself, because every graph drawn before it existed must
+            // keep dialling and carrying on; on here, because a template whose
+            // next step reads the call's result has to wait for one.
+            waitForOutcome: true,
+            // 'continue' rather than 'fail': a refused dial — an agent switched
+            // off, a guest on the DNC list, Shabbat — is the rules working, and
+            // the switch below routes it like any other answer.
+            errorPolicy: 'continue',
+            decisionBranches: [
+              { id: 'ok', sourceHandle: 'source:inner:ok', label: 'הצליח' },
+              { id: 'error', sourceHandle: 'source:inner:error', label: 'נכשל' },
+            ],
+          },
+        },
+      },
+      {
+        id: 'voice-wait-switch',
+        type: 'decision-node',
+        position: { x: 760, y: 260 },
+        data: {
+          segments: [],
+          type: 'logic.switch',
+          icon: 'ArrowsSplit',
+          properties: {
+            label: 'איך הסתיימה השיחה?',
+            description: 'מנתב לפי תוצאת השיחה, לא לפי קוד הטלפוניה',
+            left: '{{nodes.voice-wait-call.outcome}}',
+            decisionBranches: [
+              {
+                id: 'completed',
+                sourceHandle: switchBranchHandle('completed'),
+                label: 'השיחה הושלמה',
+                conditions: [
+                  {
+                    x: '{{nodes.voice-wait-call.outcome}}',
+                    comparisonOperator: 'isEqual',
+                    y: 'completed',
+                    logicalOperator: 'AND',
+                  },
+                ],
+              },
+              {
+                id: 'no_answer',
+                sourceHandle: switchBranchHandle('no_answer'),
+                label: 'לא ענו',
+                conditions: [
+                  {
+                    x: '{{nodes.voice-wait-call.outcome}}',
+                    comparisonOperator: 'isEqual',
+                    y: 'no_answer',
+                    logicalOperator: 'AND',
+                  },
+                ],
+              },
+              {
+                id: 'failed',
+                sourceHandle: switchBranchHandle('failed'),
+                label: 'השיחה נכשלה',
+                conditions: [
+                  {
+                    x: '{{nodes.voice-wait-call.outcome}}',
+                    comparisonOperator: 'isEqual',
+                    y: 'failed',
+                    logicalOperator: 'AND',
+                  },
+                ],
+              },
+            ],
+          },
+        },
+      },
+      {
+        id: 'voice-wait-thanks',
+        type: 'node',
+        position: { x: 1140, y: 60 },
+        data: {
+          segments: [],
+          type: 'action.send_whatsapp',
+          icon: 'ChatCircleText',
+          properties: {
+            label: 'תודה על השיחה',
+            description: 'נשלח בתוך חלון 24 השעות שההודעה הנכנסת פתחה',
+            status: 'active',
+            body: 'תודה ששוחחתם איתנו! נתראה באירוע 🎉',
+            errorPolicy: 'continue',
+          },
+        },
+      },
+      {
+        id: 'voice-wait-retry-msg',
+        type: 'node',
+        position: { x: 1140, y: 260 },
+        data: {
+          segments: [],
+          type: 'action.send_whatsapp',
+          icon: 'ChatCircleText',
+          properties: {
+            label: 'לא הצלחנו להשיג',
+            description: 'האורח לא ענה — משאירים לו את הבחירה מתי לחזור',
+            status: 'active',
+            body: 'ניסינו להתקשר ולא הצלחנו להשיג אתכם. אפשר לענות כאן בהודעה ונמשיך מכאן.',
+            errorPolicy: 'continue',
+          },
+        },
+      },
+      {
+        id: 'voice-wait-alert',
+        type: 'node',
+        position: { x: 1140, y: 460 },
+        data: {
+          segments: [],
+          type: 'action.notify_team',
+          icon: 'Bell',
+          properties: {
+            label: 'התראה לצוות',
+            description: 'השיחה לא יצאה לדרך — מספר שגוי או תקלת ספק',
+            status: 'active',
+            level: 'warn',
+            title: 'שיחה קולית נכשלה',
+            errorPolicy: 'continue',
+          },
+        },
+      },
+    ],
+    edges: [
+      {
+        id: 'voice-wait-e1',
+        source: 'voice-wait-trigger',
+        sourceHandle: SOURCE,
+        target: 'voice-wait-call',
+        targetHandle: TARGET,
+        type: 'labelEdge',
+      },
+      {
+        id: 'voice-wait-e2',
+        source: 'voice-wait-call',
+        sourceHandle: 'source:inner:ok',
+        target: 'voice-wait-switch',
+        targetHandle: TARGET,
+        type: 'labelEdge',
+      },
+      {
+        id: 'voice-wait-e3',
+        source: 'voice-wait-switch',
+        sourceHandle: switchBranchHandle('completed'),
+        target: 'voice-wait-thanks',
+        targetHandle: TARGET,
+        type: 'labelEdge',
+      },
+      {
+        id: 'voice-wait-e4',
+        source: 'voice-wait-switch',
+        sourceHandle: switchBranchHandle('no_answer'),
+        target: 'voice-wait-retry-msg',
+        targetHandle: TARGET,
+        type: 'labelEdge',
+      },
+      {
+        id: 'voice-wait-e5',
+        source: 'voice-wait-switch',
+        sourceHandle: switchBranchHandle('failed'),
+        target: 'voice-wait-alert',
+        targetHandle: TARGET,
+        type: 'labelEdge',
+      },
+    ],
+    viewport: { x: 0, y: 0, zoom: 1 },
+  },
+};
+
 const perGuestReminder: DiagramModel = {
   name: 'תזכורת לאורח אחד (תהליך-בן)',
   layoutDirection: 'RIGHT',
@@ -1270,5 +1491,11 @@ export const DIAGRAM_TEMPLATES: TemplateModel[] = [
     name: 'תזכורת לאורח אחד (תהליך-בן)',
     value: perGuestReminder,
     icon: 'ChatCircleText',
+  },
+  {
+    id: 9,
+    name: 'שיחה קולית עם המתנה לתוצאה',
+    value: voiceCallWithOutcome,
+    icon: 'PhoneOutgoing',
   },
 ];

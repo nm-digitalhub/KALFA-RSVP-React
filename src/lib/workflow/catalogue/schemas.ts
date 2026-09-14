@@ -27,7 +27,13 @@
 //
 // Every entry ends in `satisfies NodeSchema` / typed as `PaletteItem`, so a
 // mistake here is a compile error rather than an empty properties panel.
-import { NodeType, getScope, sharedProperties, statusOptions } from '@workflowbuilder/sdk';
+import {
+  NodeType,
+  errorPolicyProperty,
+  getScope,
+  sharedProperties,
+  statusOptions,
+} from '@workflowbuilder/sdk';
 import type { NodeSchema, PaletteItem, UISchema } from '@workflowbuilder/sdk';
 
 import { RSVP_STATUSES } from '@/lib/constants';
@@ -154,6 +160,34 @@ const errorPolicyOptions = {
   continue: { label: 'המשך, וסמן את ההרצה כהושלמה', value: ERROR_POLICIES[1] },
   errorRoute: { label: 'המשך במסלול השגיאה', value: ERROR_POLICIES[2] },
 } as const;
+
+/**
+ * ⚠️ OUR HAND-WRITTEN LIST, PINNED TO THE SDK'S.
+ *
+ * `ERROR_POLICIES` lives in `catalogue/types.ts` because the SERVER reads it and
+ * the server must not reach this file — `schemas.ts` imports SDK runtime values
+ * and resolves to a client reference when imported from a server module, which
+ * is what `server-code-must-not-reach-the-editor-schemas` exists to stop. So the
+ * list is written twice: once here in a shape the SDK owns, once there in a
+ * shape the server can hold.
+ *
+ * Nothing guarded the two against each other. The values are not decorative —
+ * the vendored runner compares `node.errorPolicy` against exactly these strings
+ * (graph-runner.ts `resolveErrorPolicy`), so an SDK release that renames or adds
+ * one would leave every node carrying a policy the runner no longer understands,
+ * with a green build and a green test suite.
+ *
+ * `errorPolicyProperty` is the SDK's own declaration of that union. Assigning
+ * across it in both directions is a compile-time check that costs nothing at run
+ * time and fails the moment the two disagree.
+ */
+type SdkErrorPolicy = (typeof errorPolicyProperty)['errorPolicy']['options'][number]['value'];
+type OurErrorPolicy = (typeof ERROR_POLICIES)[number];
+const _errorPoliciesMatchTheSdk: [SdkErrorPolicy, OurErrorPolicy] = [
+  null as unknown as OurErrorPolicy,
+  null as unknown as SdkErrorPolicy,
+];
+void _errorPoliciesMatchTheSdk;
 
 // GET/DELETE carry no body — the port drops it rather than sending an empty one.
 const httpMethodOptions = {
@@ -1295,6 +1329,30 @@ const voiceCallUiSchema = {
       type: 'Switch',
       scope: voiceCallScope('properties.waitForOutcome'),
       label: 'להמתין לתוצאת השיחה לפני המשך',
+      // ⚠️ HIDDEN UNTIL A PURPOSE IS CHOSEN, through JsonForms' own rule engine
+      // rather than a custom renderer. Waiting for the outcome of a call that
+      // has no agent behind it is not a choice an owner can meaningfully make,
+      // and a switch they can flip before the thing it depends on exists is a
+      // switch that teaches them the wrong order.
+      //
+      // `minLength: 1` and not `const`: the field ships as '' (see
+      // defaultPropertiesData), so "chosen" means a non-empty string, and the
+      // list it is chosen from is a live table whose values we cannot enumerate
+      // here.
+      //
+      // ⚠️ `failWhenUndefined` IS LOAD-BEARING. @jsonforms/core states the trap
+      // in its own type docs: "Most JSON Schemas will successfully validate
+      // against `undefined` data", so without it a node whose `purposeKey` key
+      // is absent entirely — a diagram saved before this field existed — would
+      // PASS the condition and show the switch.
+      rule: {
+        effect: 'SHOW',
+        condition: {
+          scope: voiceCallScope('properties.purposeKey'),
+          schema: { minLength: 1 },
+          failWhenUndefined: true,
+        },
+      },
     },
     { type: 'Select', scope: voiceCallScope('properties.errorPolicy'), label: 'אם הצעד נכשל' },
   ],

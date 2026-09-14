@@ -1,6 +1,7 @@
 'use client';
 
 import {
+  FormControlWithLabel,
   optionIs,
   rankWith,
   withJsonFormsControlProps,
@@ -72,6 +73,7 @@ function CheckboxListControl({
   handleChange,
   enabled,
   label,
+  required,
   uischema,
 }: ControlProps) {
   const choices = readChoices(uischema?.options);
@@ -89,8 +91,14 @@ function CheckboxListControl({
   };
 
   return (
-    <div className="flex flex-col gap-2" dir="rtl">
-      {label ? <span className="text-xs font-medium text-muted-foreground">{label}</span> : null}
+    // ⚠️ THE SDK'S WRAPPER, not a hand-rolled <span>. This used to render the
+    // label itself, which looked close enough and was not: `FormControlWithLabel`
+    // also draws the `*` for a required field and owns the label/control spacing
+    // every built-in control uses. A custom renderer that approximates it drifts
+    // the moment the editor's form styling changes, and silently omits the
+    // required marker — the one part of a label an owner acts on.
+    <FormControlWithLabel label={label} required={required}>
+      <div className="flex flex-col gap-2" dir="rtl">
 
       <div className="flex flex-col gap-1.5">
         {choices.map((choice) => {
@@ -112,7 +120,8 @@ function CheckboxListControl({
       {selected.length === 0 && defaultNote ? (
         <p className="text-xs text-muted-foreground">{defaultNote}</p>
       ) : null}
-    </div>
+      </div>
+    </FormControlWithLabel>
   );
 }
 
