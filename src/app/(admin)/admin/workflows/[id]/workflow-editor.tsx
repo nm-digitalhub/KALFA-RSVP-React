@@ -474,12 +474,20 @@ function WorkflowEditorLayout({
     return () => observer.disconnect();
   }, [toggleSidebar]);
 
-  // ⚠️ THE CROSS-NODE REFUSALS, MOVED ONTO THE NODES THEY BELONG TO.
+  // ⚠️ THE ARM GATE'S OWN REFUSALS, MOVED ONTO THE NODES THEY BELONG TO.
   //
-  // `findArmBlockersByNode` catches three things no JSON Schema can see — a
-  // guest step under a guestless trigger, a keyword no message kind can satisfy,
-  // a webhook body that is absent rather than blank — and until now the owner
-  // met all three by pressing "arm" and reading a list.
+  // `findArmBlockersByNode` reports everything arming refuses. Of those,
+  // `syncArmBlockerMarkers` surfaces ONLY `source: 'arm-only'` — the five no
+  // JSON Schema can make: a step left in draft, a guest step under a guestless
+  // trigger, a keyword no message kind can satisfy, a fan-out pointing at its
+  // own workflow, a callback routed to the sales agent. One of them is truly
+  // cross-node (the guest rule reads the trigger at the other end); the rest are
+  // same-node facts the schema still cannot express.
+  //
+  // It does NOT mirror the schema's own refusals. `Ga()` counts customErrors
+  // toward validity alongside schema errors, so doing that would put two errors
+  // on one node for one mistake — see arm-blocker-markers.ts for the filter and
+  // the measurement behind it.
   //
   // ⚠️ SUBSCRIBED TO NODES AND EDGES, AND THAT IS ONLY SAFE BECAUSE THE SYNC IS
   // IDEMPOTENT. `setStoreNodes` re-validates and emits another node change, so a

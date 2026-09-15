@@ -9,12 +9,30 @@ import { findArmBlockersByNode } from "@/lib/workflow/catalogue/arm-check";
 
 // The refusals the arm button would give, shown on the nodes while editing.
 //
-// ⚠️ THE FAILURE THIS CLOSES. `findArmBlockers` catches three things no schema
-// can: a guest step under a trigger that never carries a guest, a keyword no
-// message kind can satisfy, and a webhook body that is absent rather than blank.
-// All three are CROSS-FIELD or CROSS-NODE, all three are refusals the engine
-// already makes — and until now the owner met every one of them by pressing
-// "arm" and reading a list. The node itself looked fine.
+// ⚠️ THE FAILURE THIS CLOSES. Five refusals no JSON Schema makes, and until now
+// the owner met every one of them by pressing "arm" and reading a list while the
+// node itself looked fine:
+//
+//   a step left in DRAFT          — 'draft' is a legitimate value of the enum
+//   a guest step under a          — CROSS-NODE: the answer depends on the node
+//     guestless trigger             at the other end of the graph
+//   a keyword no message kind     — a CONTRADICTION between two fields, not a
+//     can satisfy                   fault in either one
+//   a fan-out pointing at its     — needs the workflow's own id, which is not
+//     own workflow                  in the diagram
+//   a callback routed to the      — a value that is valid for the field and
+//     sales agent                   wrong for this caller
+//
+// Each is a refusal the engine already makes; all this does is move the news
+// forward in time, onto the node it belongs to.
+//
+// ⚠️ AND IT SURFACES ONLY THOSE. An earlier version of this comment argued the
+// opposite — that repeating the schema's own refusals here "costs nothing" —
+// and the code did exactly that. It was wrong twice over: `Ga()` counts
+// `customErrors` toward node validity alongside schema errors, so the same
+// invariant was injected twice at the data layer, and the schema's own message
+// already renders beside the field while ours could not. `syncArmBlockerMarkers`
+// now filters on `source`; see the block above it.
 //
 // The SDK exposes exactly the right seam: `data.properties.customErrors` puts an
 // exclamation mark on the node and the message in the properties panel. Its own
@@ -27,29 +45,69 @@ import { findArmBlockersByNode } from "@/lib/workflow/catalogue/arm-check";
 // marked clean here and still be refused at arming. The arm button stays the
 // authority; this moves the cheap half of its answer forward in time.
 
-/** The Ajv error shape the SDK documents for `customErrors`. */
-function toErrorObject(message: string) {
+const ARM_BLOCKER_KEYWORD = "armBlocker";
+
+/**
+ * The Ajv error shape the SDK documents for `customErrors`.
+ *
+ * ⚠️ `instancePath` IS THE FIELD BINDING, and it used to be hardcoded to `''`.
+ * JsonForms documents it as the way an external error attaches to a property
+ * (`/lastname` in their own example), so a root-scoped error marks the node and
+ * lands next to nothing. Each blocker now carries its own path — `/status` for
+ * a draft step, `/topic` for a sales-routed callback — and `''` only where the
+ * refusal genuinely is not about one field.
+ */
+function toErrorObject(blocker: { message: string; instancePath: string }) {
   return {
-    keyword: "armBlocker",
-    instancePath: "",
+    keyword: ARM_BLOCKER_KEYWORD,
+    instancePath: blocker.instancePath,
     schemaPath: "",
     params: {},
-    message,
+    message: blocker.message,
   };
 }
 
-function messagesOf(node: WorkflowBuilderNode): string[] {
+/** One error's identity, for comparison. */
+type ErrorIdentity = { keyword: string; instancePath: string; message: string };
+
+function identitiesOf(node: WorkflowBuilderNode): ErrorIdentity[] {
   const existing = (node.data?.properties as { customErrors?: unknown } | undefined)
     ?.customErrors;
-  return Array.isArray(existing)
-    ? existing
-        .map((e) => (e as { message?: unknown } | null)?.message)
-        .filter((m): m is string => typeof m === "string")
-    : [];
+  if (!Array.isArray(existing)) return [];
+
+  return existing.flatMap((entry) => {
+    const e = entry as Partial<ErrorIdentity> | null;
+    return typeof e?.message === "string"
+      ? [
+          {
+            keyword: typeof e.keyword === "string" ? e.keyword : "",
+            instancePath: typeof e.instancePath === "string" ? e.instancePath : "",
+            message: e.message,
+          },
+        ]
+      : [];
+  });
 }
 
-function sameMessages(a: readonly string[], b: readonly string[]): boolean {
-  return a.length === b.length && a.every((value, index) => value === b[index]);
+/**
+ * ⚠️ COMPARES IDENTITY, NOT JUST THE SENTENCE — and that is load-bearing.
+ *
+ * An earlier version compared `message` alone. Moving a blocker from the root to
+ * its own field changes ONLY `instancePath`; the wording is unchanged. Under a
+ * message-only comparison the sync would see no difference, skip the write, and
+ * the error would stay attached to the node instead of the field — a silent
+ * no-op that looks exactly like "already up to date".
+ */
+function sameErrors(a: readonly ErrorIdentity[], b: readonly ErrorIdentity[]): boolean {
+  return (
+    a.length === b.length &&
+    a.every(
+      (x, i) =>
+        x.keyword === b[i]!.keyword &&
+        x.instancePath === b[i]!.instancePath &&
+        x.message === b[i]!.message,
+    )
+  );
 }
 
 /**
@@ -73,17 +131,37 @@ export function syncArmBlockerMarkers(
   // so this never invents a marker from a shape it did not understand.
   const blockers = findArmBlockersByNode({ name, nodes, edges }, workflowId);
 
-  const byNode = new Map<string, string[]>();
+  // ⚠️ `arm-only` ONLY, AND THIS FILTER IS THE POINT OF THE WHOLE PASS.
+  //
+  // `findArmBlockersByNode` reports everything arming refuses, which includes
+  // blank required fields, out-of-range numbers and the conditional body — and
+  // the node's own JSON Schema refuses most of those already, with its own
+  // message, rendered next to the field by the per-field error indicator.
+  // Mirroring them into `customErrors` injects the SAME invariant a second time
+  // at the data layer: two errors on one node for one mistake, differing only in
+  // wording. Not a rendering detail — `Ga()` counts both toward validity.
+  //
+  // What is left is exactly the set the schema cannot see: a step left in draft,
+  // a guest step under a guestless trigger, a keyword no kind can satisfy, a
+  // fan-out pointing at itself, a callback routed to the sales agent. Those are
+  // the ones an owner would otherwise meet for the first time by pressing "arm".
+  const byNode = new Map<string, ErrorIdentity[]>();
   for (const blocker of blockers) {
+    if (blocker.source !== "arm-only") continue;
+    const entry = {
+      keyword: ARM_BLOCKER_KEYWORD,
+      instancePath: blocker.instancePath,
+      message: blocker.message,
+    };
     const list = byNode.get(blocker.nodeId);
-    if (list) list.push(blocker.message);
-    else byNode.set(blocker.nodeId, [blocker.message]);
+    if (list) list.push(entry);
+    else byNode.set(blocker.nodeId, [entry]);
   }
 
   let changed = false;
   const next = nodes.map((node) => {
     const wanted = byNode.get(node.id) ?? [];
-    if (sameMessages(messagesOf(node), wanted)) return node;
+    if (sameErrors(identitiesOf(node), wanted)) return node;
     changed = true;
 
     const properties = { ...(node.data?.properties ?? {}) } as Record<string, unknown>;

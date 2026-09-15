@@ -99,6 +99,38 @@ describe('SDK integration invariants', () => {
     expect(major(nested)).not.toBe(major(hoisted));
   });
 
+  it('still requires host-side hydration for persisted global variables', () => {
+    // @workflowbuilder/sdk 2.3.0 persists globalVariables as part of its
+    // integration data, but <WorkflowBuilder.Root> exposes initialNodes and
+    // initialEdges without an equivalent initialGlobalVariables prop.
+    //
+    // KALFA therefore hydrates this one persisted field through useStore.
+    // If a future SDK release adds a public Root prop, this test should fail so
+    // the workaround can be reviewed instead of being carried forward blindly.
+    const declarations = readFileSync(join(SDK, 'dist/index.d.ts'), 'utf8');
+
+    expect(declarations).toContain(
+      'export declare type WorkflowBuilderRootProps = PropsWithChildren<{',
+    );
+    expect(declarations).toContain('initialNodes?: WorkflowBuilderNode[];');
+    expect(declarations).toContain('initialEdges?: WorkflowBuilderEdge[];');
+    expect(declarations).not.toContain('initialGlobalVariables');
+
+    // globalVariables themselves are nevertheless part of the SDK integration
+    // model, so their absence above is specifically a Root hydration gap rather
+    // than evidence that the SDK does not support/persist them.
+    expect(declarations).toMatch(
+      /IntegrationDataFormat\s*=\s*\{[\s\S]*?globalVariables:\s*VariablesIndex;[\s\S]*?\};/,
+    );
+
+    // There is also no public imperative setter equivalent to setStoreNodes /
+    // setStoreEdges that KALFA could use instead of the store facade.
+    const publicEntry = readFileSync(join(SDK, 'dist/index.js'), 'utf8');
+    expect(publicEntry).toContain('setStoreNodes');
+    expect(publicEntry).toContain('setStoreEdges');
+    expect(publicEntry).not.toContain('setStoreGlobalVariables');
+  });
+
   it('the palette is refreshed after its data changes, not merely re-passed', () => {
     // ⚠️ MEASURED IN THE BUNDLE: `<Root>` writes `nodeTypes` into a module-level
     // variable on every render, but the properties panel reads

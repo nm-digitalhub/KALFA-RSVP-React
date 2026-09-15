@@ -63,6 +63,33 @@ import {
 export type ArmBlocker = {
   readonly nodeId: string;
   readonly message: string;
+  /**
+   * WHO ELSE ALREADY ENFORCES THIS.
+   *
+   * ⚠️ THE DISTINCTION EXISTS BECAUSE THE EDITOR SHOWS THESE TWICE OTHERWISE.
+   * A blank required field is refused by the node's own JSON Schema — the panel
+   * already marks it, with its own message, next to the field. Writing the arm
+   * gate's sentence into `customErrors` as well produces two errors for one
+   * mistake, differing only in wording.
+   *
+   *   'schema'    the node's schema refuses this too. Reported at arming
+   *               because arming is the boundary nothing bypasses, but NOT
+   *               mirrored onto the node — the schema is already doing that.
+   *   'arm-only'  nothing but this function refuses it. These are the ones
+   *               worth putting on the node, because otherwise the owner meets
+   *               them for the first time by pressing "arm".
+   */
+  readonly source: 'schema' | 'arm-only';
+  /**
+   * The property this refusal is about, in AJV's `instancePath` form
+   * (`/purposeKey`), or `''` when it is about the node as a whole.
+   *
+   * ⚠️ `''` IS A REAL ANSWER, NOT A MISSING ONE. The guest-context rule is about
+   * the trigger at the other end of the graph; the keyword rule is a
+   * CONTRADICTION BETWEEN TWO fields, not a fault in either. Attaching either to
+   * one field would point the owner at the wrong half.
+   */
+  readonly instancePath: string;
 };
 
 /**
@@ -163,7 +190,7 @@ function collectArmBlockers(
     // nobody finished is expected to have blanks, and listing them too would bury
     // the one line that matters.
     if (readNodeStatus(properties.status) === 'draft') {
-      blockers.push({ nodeId: node.id, message: `${where}: הצעד בטיוטה. סיימו אותו, או העבירו אותו ל"מושבת" כדי לדלג עליו במכוון.` });
+      blockers.push({ nodeId: node.id, source: 'arm-only', instancePath: '/status', message: `${where}: הצעד בטיוטה. סיימו אותו, או העבירו אותו ל"מושבת" כדי לדלג עליו במכוון.` });
       continue;
     }
 
@@ -204,7 +231,7 @@ function collectArmBlockers(
       (GUEST_SCOPED_NODE_TYPES as readonly string[]).includes(nodeType) &&
       readNodeStatus(properties.status) !== 'disabled'
     ) {
-      blockers.push({ nodeId: node.id, message: `${where}: הצעד פועל על אורח, והטריגר של התהליך אינו מתחיל מאורח. ` +
+      blockers.push({ nodeId: node.id, source: 'arm-only', instancePath: '', message: `${where}: הצעד פועל על אורח, והטריגר של התהליך אינו מתחיל מאורח. ` +
           'החליפו לטריגר "הודעת וואטסאפ נכנסת" שמסומן בו לפחות סוג הודעה שאורח שולח, הסירו את הצעד, ' +
           'או השאירו את התהליך לא מחומש והפעילו אותו מתהליך אחר עם "הרצה לכל אורח".', });
     }
@@ -227,7 +254,7 @@ function collectArmBlockers(
       triggerKeywordCanNeverMatch(nodeType, properties) &&
       readNodeStatus(properties.status) !== 'disabled'
     ) {
-      blockers.push({ nodeId: node.id, message: `${where}: הוגדרה מילת הפעלה, אך לא נבחר סוג הודעה שמכיל טקסט — ולכן שום הודעה לא תתאים. ` +
+      blockers.push({ nodeId: node.id, source: 'arm-only', instancePath: '', message: `${where}: הוגדרה מילת הפעלה, אך לא נבחר סוג הודעה שמכיל טקסט — ולכן שום הודעה לא תתאים. ` +
           'סמנו גם "הודעת טקסט", או מחקו את מילת ההפעלה.', });
     }
 
@@ -245,7 +272,7 @@ function collectArmBlockers(
       typeof properties.targetWorkflowId === 'string' &&
       properties.targetWorkflowId.trim() === workflowId
     ) {
-      blockers.push({ nodeId: node.id, message: `${where}: הצעד מצביע על התהליך הזה עצמו. תהליך שמפעיל את עצמו לכל אורח אינו נעצר — בחרו תהליך אחר.`, });
+      blockers.push({ nodeId: node.id, source: 'arm-only', instancePath: '/targetWorkflowId', message: `${where}: הצעד מצביע על התהליך הזה עצמו. תהליך שמפעיל את עצמו לכל אורח אינו נעצר — בחרו תהליך אחר.`, });
       continue;
     }
 
@@ -258,28 +285,39 @@ function collectArmBlockers(
       typeof properties.topic === 'string' &&
       properties.topic.trim() === SALES_CALLBACK_TOPIC
     ) {
-      blockers.push({ nodeId: node.id, message: `${where}: הנושא "${SALES_CALLBACK_TOPIC}" מנתב לסוכן המכירות, והצעד הזה פונה לאורח באירוע. בחרו נושא אחר.`, });
+      blockers.push({ nodeId: node.id, source: 'arm-only', instancePath: '/topic', message: `${where}: הנושא "${SALES_CALLBACK_TOPIC}" מנתב לסוכן המכירות, והצעד הזה פונה לאורח באירוע. בחרו נושא אחר.`, });
       continue;
     }
 
-    // ⚠️ THE HALF OF THE CONDITIONAL CONTRACT THE SCHEMA CANNOT CARRY.
+    // ⚠️ THE CONDITIONAL CONTRACT, APPLIED A SECOND TIME — NOT A MISSING HALF.
     //
-    // `schemas.ts` emits `allOf` + `if`/`then` for the same declaration, and it
-    // raises `minLength: 1` on the dependent field — which catches a body the
-    // owner CLEARED. It cannot catch one that is ABSENT: `then` is
-    // `{ properties: … }`, the SDK's `ConditionalSchema` has no root `required`
-    // slot, and `properties` in JSON Schema never makes a key mandatory.
+    // An earlier version of this comment claimed the schema could not catch an
+    // ABSENT body, because `ConditionalSchema` is typed `{ properties: … }` with
+    // no root `required`. That was wrong, and `schemas.ts` now shows why: the
+    // TYPE is that narrow, but a function return is compared structurally rather
+    // than as a fresh literal, so `then` carries `required` alongside
+    // `properties` with no cast — and the bundled validator honours it.
     //
-    // A blank value is reported by the loop below, because the field joins
-    // `required` for this node. An absent one is reported here. Both read
-    // `NODE_CONDITIONAL_REQUIRED_FIELDS`, so the panel and the arm gate cannot
-    // end up enforcing two different contracts.
+    // Workflow Builder's own `data-schema` page endorses the pattern using THIS
+    // EXACT CASE: "For conditional shape changes (e.g. if `method === 'POST'`,
+    // then `body` is required), use the standard JSON Schema if/then/else
+    // keywords inside `allOf`". Their Delay node is NOT the precedent for it —
+    // that one nests `required` inside an object-typed property, which the
+    // declared type already allows; ours is at the root of `then`, which the
+    // type does not declare and the prose does.
+    //
+    // So why this still runs: THE SCHEMA VALIDATES IN THE EDITOR. A definition
+    // that arrives by import, by an API call, or by a direct row edit never
+    // meets a JsonForms instance. `setWorkflowActive` is the boundary nothing
+    // bypasses, and it is the last place to refuse before a real guest is
+    // involved. Both halves read `NODE_CONDITIONAL_REQUIRED_FIELDS`, so the two
+    // cannot end up enforcing different contracts.
     const conditional = activeConditionalRequirements(nodeType, properties);
     const required = [...baseRequired];
     for (const rule of conditional) {
       const value = properties[rule.require];
       if (value === undefined || value === null) {
-        blockers.push({ nodeId: node.id, message: `${where}: ${rule.message}` });
+        blockers.push({ nodeId: node.id, source: 'schema', instancePath: `/${rule.require}`, message: `${where}: ${rule.message}` });
         continue;
       }
       if (!required.includes(rule.require)) required.push(rule.require);
@@ -294,7 +332,7 @@ function collectArmBlockers(
       const range = ranges[key];
 
       if (value === undefined || value === null) {
-        blockers.push({ nodeId: node.id, message: `${where}: חסר ערך בשדה "${key}".` });
+        blockers.push({ nodeId: node.id, source: 'schema', instancePath: `/${key}`, message: `${where}: חסר ערך בשדה "${key}".` });
         continue;
       }
 
@@ -312,20 +350,41 @@ function collectArmBlockers(
         // verb you picked sends a body" — which a generic "the field is empty"
         // cannot, because the field is only empty-and-wrong for some verbs.
         const rule = conditional.find((r) => r.require === key);
-        blockers.push({ nodeId: node.id, message: `${where}: ${rule ? rule.message : blankMessage(nodeType, key)}` });
+        blockers.push({ nodeId: node.id, source: 'schema', instancePath: `/${key}`, message: `${where}: ${rule ? rule.message : blankMessage(nodeType, key)}` });
         continue;
       }
 
       // Only fields that DECLARE a bound are range-checked. Everything else is
       // satisfied by being present and non-blank.
+      //
+      // ⚠️ `schema`, BECAUSE THE SCHEMA ALREADY CARRIES THESE BOUNDS. An earlier
+      // version of this comment said the opposite — that `schemas.ts` declared
+      // no `minimum`/`maximum` and `maxGuests: 0` was therefore schema-valid.
+      // That was a grep talking: both fields SPREAD the bound rather than
+      // writing the literal —
+      //
+      //     maxGuests: { type: 'number', ...NODE_NUMBER_RANGES[…].maxGuests }
+      //
+      // so searching for the keyword found nothing while the built schema
+      // carried `{ minimum: 1, maximum: 500 }`. Measured against the exported
+      // object: 0 and 501 are both refused.
+      //
+      // ⚠️ THE REAL DIVERGENCE RUNS THE OTHER WAY, and it is why the numeric
+      // read below coerces. `type: 'number'` refuses the STRING '25'; the
+      // handler accepts it (`steps/index.ts`: `Number(rawMax)`) and so does
+      // this gate. A node storing a numeric string therefore runs correctly and
+      // the panel marks it invalid — the schema being stricter than the engine,
+      // which is the one mistake this module exists to avoid. It is repaired on
+      // load by `normalize-legacy-properties.ts`, the same way the pre-object
+      // `messageKinds` shape is.
       if (range) {
         const n = typeof value === 'number' ? value : Number(value);
         if (!Number.isFinite(n)) {
-          blockers.push({ nodeId: node.id, message: `${where}: השדה "${key}" אינו מספר.` });
+          blockers.push({ nodeId: node.id, source: 'schema', instancePath: `/${key}`, message: `${where}: השדה "${key}" אינו מספר.` });
         } else if (range.minimum !== undefined && n < range.minimum) {
-          blockers.push({ nodeId: node.id, message: `${where}: "${key}" חייב להיות ${range.minimum} לפחות.` });
+          blockers.push({ nodeId: node.id, source: 'schema', instancePath: `/${key}`, message: `${where}: "${key}" חייב להיות ${range.minimum} לפחות.` });
         } else if (range.maximum !== undefined && n > range.maximum) {
-          blockers.push({ nodeId: node.id, message: `${where}: "${key}" חייב להיות ${range.maximum} לכל היותר.` });
+          blockers.push({ nodeId: node.id, source: 'schema', instancePath: `/${key}`, message: `${where}: "${key}" חייב להיות ${range.maximum} לכל היותר.` });
         }
       }
     }

@@ -133,22 +133,97 @@ describe('syncArmBlockerMarkers', () => {
     expect(setStoreNodes).not.toHaveBeenCalled();
   });
 
-  it('⚠️ a node with NO properties at all is marked, not skipped', () => {
-    // Worth pinning because it surprised this test's first author: a node
-    // carrying no `properties` is not unparseable, it is a node whose required
-    // fields are all absent — which is exactly what the arm gate refuses. The
-    // marker has to appear, and it has to survive a node object that has no
-    // `properties` object to spread.
+  it('⚠️ a node whose only faults are SCHEMA faults gets no marker', () => {
+    // The node carries no properties at all, so every required field is missing
+    // — and every one of those is refused by its own JSON Schema, which already
+    // marks the node and renders a message next to each field. Repeating them
+    // here would be the same invariant injected twice at the data layer.
     store.nodes = [
       { id: 'x', position: { x: 0, y: 0 }, data: { type: 'action.send_whatsapp' } },
     ];
     syncArmBlockerMarkers('w', [], 'wf-1');
 
-    expect(setStoreNodes).toHaveBeenCalledTimes(1);
-    expect(errorsOn('x').length).toBeGreaterThan(0);
+    expect(setStoreNodes).not.toHaveBeenCalled();
+  });
 
-    // And it still terminates from that starting shape.
+  it('⚠️ an ARM-ONLY fault on the same node does get one', () => {
+    // A step left in draft. No schema refuses `status: 'draft'` — it is a
+    // legitimate value of the enum — so nothing but the arm gate objects, which
+    // is precisely the set worth surfacing early.
+    store.nodes = [
+      {
+        id: 'x',
+        position: { x: 0, y: 0 },
+        data: {
+          type: 'action.send_whatsapp',
+          properties: { label: 'שליחה', description: 'ת', body: 'שלום', status: 'draft' },
+        },
+      },
+    ];
     syncArmBlockerMarkers('w', [], 'wf-1');
+
     expect(setStoreNodes).toHaveBeenCalledTimes(1);
+    expect(errorsOn('x').map((e) => e.message)).toEqual([
+      expect.stringContaining('בטיוטה'),
+    ]);
+  });
+
+  it('⚠️ the error is bound to its own field, not to the node root', () => {
+    // The defect this replaced: every customError was written with
+    // instancePath: '', so JsonForms had nothing to attach it to and the
+    // sentence never appeared beside the control it was about.
+    store.nodes = [
+      {
+        id: 'x',
+        position: { x: 0, y: 0 },
+        data: {
+          type: 'action.send_whatsapp',
+          properties: { label: 'שליחה', description: 'ת', body: 'שלום', status: 'draft' },
+        },
+      },
+    ];
+    syncArmBlockerMarkers('w', [], 'wf-1');
+
+    expect(errorsOn('x')[0]).toMatchObject({
+      keyword: 'armBlocker',
+      instancePath: '/status',
+    });
+  });
+
+  it('⚠️ a changed instancePath alone still triggers a write', () => {
+    // The trap in this refactor: the sync used to compare `message` strings
+    // only. Moving an error from the root onto its field changes nothing but
+    // `instancePath`, so a message-only comparison would report "no change" and
+    // leave the error detached — a silent no-op indistinguishable from success.
+    store.nodes = [
+      {
+        id: 'x',
+        position: { x: 0, y: 0 },
+        data: {
+          type: 'action.send_whatsapp',
+          properties: {
+            label: 'שליחה',
+            description: 'ת',
+            body: 'שלום',
+            status: 'draft',
+            // The same sentence, stored at the root — what the previous version wrote.
+            customErrors: [
+              {
+                keyword: 'armBlocker',
+                instancePath: '',
+                schemaPath: '',
+                params: {},
+                message:
+                  'הצעד "שליחה": הצעד בטיוטה. סיימו אותו, או העבירו אותו ל"מושבת" כדי לדלג עליו במכוון.',
+              },
+            ],
+          },
+        },
+      },
+    ];
+    syncArmBlockerMarkers('w', [], 'wf-1');
+
+    expect(setStoreNodes).toHaveBeenCalledTimes(1);
+    expect(errorsOn('x')[0]!).toMatchObject({ instancePath: '/status' });
   });
 });
