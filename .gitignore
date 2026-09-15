@@ -169,3 +169,25 @@ docs/workflowbuilder-blog.xlsx
 # Earlier drafts of that crawler, superseded by scripts/scraper-v1.mjs.
 scripts/scraper.mjs
 scripts/extract_docs.py
+
+# Hebrew-pronunciation model weights (phonikud 294MB, renikud 20MB). Downloaded
+# by scripts/pronunciation/, never authored here, and far past anything git
+# should carry. The scripts name the checkpoints they fetch.
+/models/
+
+# Review exports from the workflow sessions — one is 5.1MB of transcript. The
+# same generator produces them again, and neither is an input to anything.
+workflow-*-review.txt
+
+# The docs crawler's raw output, alongside the workflowbuilder*.json rule above
+# and for the same reason: regenerable by scripts/docs-scraper/, with the
+# readable result committed under docs/.
+jsonforms*.json
+*.json.audit.json
+
+# Python bytecode from the pronunciation scripts.
+__pycache__/
+
+# Scoring output from the pronunciation audit. The lexicons beside it are the
+# INPUTS and are committed; these CSVs are what the scripts produce from them.
+voxfiles/pronunciation/audit/results/
