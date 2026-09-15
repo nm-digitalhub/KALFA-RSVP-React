@@ -46,6 +46,8 @@ import {
   CONDITION_BRANCH_HANDLES,
   ERROR_POLICIES,
   HTTP_METHODS,
+  HTTP_METHODS_WITH_BODY,
+  NODE_CONDITIONAL_REQUIRED_FIELDS,
   NODE_NUMBER_RANGES,
   NODE_REQUIRED_FIELDS,
   NODE_STATUSES,
@@ -120,10 +122,112 @@ const statusProperty = {
   status: { type: 'string', options: Object.values(nodeStatusOptions) },
 } as const;
 
+/**
+ * A string field the arm gate refuses when blank — so the panel refuses it too.
+ *
+ * ⚠️ `required` ALONE WAS INERT IN THE EDITOR, AND THIS IS MEASURED.
+ *
+ * JSON Schema's `required` tests KEY PRESENCE and nothing else. Every node is
+ * dropped from the palette with `defaultPropertiesData` seeding its fields as
+ * `''`, so the key is always there. Verified against @cfworker/json-schema
+ * 4.1.1 — the validator the SDK actually bundles, listed in its own
+ * `package.json` dependencies, not Ajv: a schema of `{required:['url']}`
+ * validates `{url:''}` as VALID, and the same object with `url` absent as
+ * invalid. So an HTTP node dragged out with an empty URL showed no error marker
+ * at all, and `NODE_REQUIRED_FIELDS` was decorative here.
+ *
+ * `arm-check.ts` has refused exactly this case from the start — its line tests
+ * `value.trim() === ''`, and its own comment calls it "the one JSON Schema's own
+ * `required` does NOT catch". The owner therefore learned about the blank at
+ * ARMING time, about a field the panel had called fine.
+ *
+ * `minLength: 1` says the same thing where the value is typed. It invents no
+ * rule: every field it guards is one the arm gate already blocks.
+ * `required-fields-editable.test.ts` pins the two lists against each other.
+ */
+const requiredText = { type: 'string', minLength: 1 } as const;
+
+/**
+ * The `allOf` block for one node type, built from its conditional contracts.
+ *
+ * ⚠️ ONE `if` PER VALUE, BECAUSE `SchemaCondition` HAS ONLY `const`. The SDK
+ * types it as `{ properties: Record<string, { const?: string|number|boolean }> }`
+ * — there is no `enum` — so "POST, PUT or PATCH" is three entries sharing one
+ * `then`, mapped from the declaration rather than written out.
+ *
+ * ⚠️ AND `then` CAN ONLY CONSTRAIN, NOT DEMAND. `ConditionalSchema` is
+ * `{ properties: … }` with no root `required`, and `properties` in JSON Schema
+ * never makes a key mandatory. So this catches a body that is PRESENT AND BLANK
+ * — the case the owner creates by clearing the box — while `arm-check.ts`
+ * catches one that is absent. Both read `NODE_CONDITIONAL_REQUIRED_FIELDS`.
+ */
+function conditionalRules(nodeType: KalfaNodeType) {
+  return (NODE_CONDITIONAL_REQUIRED_FIELDS[nodeType] ?? []).flatMap((rule) =>
+    rule.whenIn.map((value) => ({
+      if: { properties: { [rule.decidedBy]: { const: value } } },
+      then: { properties: { [rule.require]: requiredText } },
+    })),
+  );
+}
+
+/** `label` + `description`, both required on every node type. */
+const identityProperties = {
+  ...sharedProperties,
+  label: requiredText,
+  description: requiredText,
+} as const;
+
+
 // The one control, spelled once. Every node's uischema ends with it, so the
 // switch sits in the same place on every panel.
 function statusControl(scope: string): UISchema {
   return { type: 'Select', scope, label: 'מצב הצעד' };
+}
+
+/**
+ * The two fields every node carries and the owner may edit: what the step is
+ * called, and the line under it.
+ *
+ * ⚠️ `description` WAS REQUIRED ON ALL EIGHTEEN NODE TYPES AND EDITABLE ON NONE,
+ * and every part of that sentence was measured before this control was added.
+ *
+ *   • REQUIRED: it appears in all 18 entries of `NODE_REQUIRED_FIELDS`, so
+ *     `arm-check.ts` refuses to arm a workflow whose node has it blank.
+ *   • USER-VISIBLE: the SDK's node body renders it. `fs({ label, description })`
+ *     in the 2.3.0 bundle emits `<span class="title">{label}</span>` followed by
+ *     `<span class="subtitle">{description}</span>`, and all four node templates
+ *     — default, decision, start and collapsible — call it. It is the second
+ *     line on every card on the canvas.
+ *   • NOT DEFAULT TEXT: the live database holds ELEVEN distinct descriptions
+ *     across 22 stored nodes — "מחפש את המילה כן בגוף ההודעה" on a condition,
+ *     five different ones across five `notify_team` nodes. They are real,
+ *     per-node sentences.
+ *   • AND WRITTEN ONLY BY US: every one of those strings is authored in
+ *     `templates.ts` or in a palette `defaultPropertiesData`. The owner could
+ *     read the subtitle on the card and had no way to change it, because no
+ *     uischema declared a control for it — measured: 0 of 18.
+ *
+ * So the model said "the owner supplies this", the canvas showed it to them,
+ * the arm gate refused a blank one, and the panel offered no way to type it.
+ * This closes that, in our own layout rather than through the SDK's
+ * `generalInformation` fragment — that one ships an English label inside the
+ * schema and folds title/status/description into an Accordion, which is a
+ * different panel shape on all 18 nodes and a change nobody asked for.
+ *
+ * `Text` and not `TextArea`, matching the SDK's own reference node: the value
+ * renders as a single-line subtitle on a card, so a multi-line box would invite
+ * text the canvas then truncates.
+ */
+function identityControls(labelScope: string, descriptionScope: string): UISchema[] {
+  return [
+    { type: 'Text', scope: labelScope, label: 'שם הצעד' },
+    {
+      type: 'Text',
+      scope: descriptionScope,
+      label: 'תיאור הצעד',
+      placeholder: 'השורה שמופיעה מתחת לשם על גבי הכרטיס',
+    },
+  ];
 }
 
 const conditionFieldOptions = {
@@ -230,7 +334,7 @@ const triggerSchema = {
   type: 'object',
   required: NODE_REQUIRED_FIELDS['trigger.whatsapp_inbound'],
   properties: {
-    ...sharedProperties,
+    ...identityProperties,
     ...statusProperty,
     keyword: { type: 'string', placeholder: 'השאירו ריק כדי להפעיל על כל הודעה' },
     phoneNumberId: { type: 'string' },
@@ -280,7 +384,7 @@ function triggerSchemaFor(numbers: readonly WhatsAppNumberOption[]): NodeSchema 
 const triggerUiSchema: UISchema = {
   type: 'VerticalLayout',
   elements: [
-    { type: 'Text', scope: triggerScope('properties.label'), label: 'שם הצעד' },
+    ...identityControls(triggerScope('properties.label'), triggerScope('properties.description')),
     {
       type: 'Select',
       scope: triggerScope('properties.phoneNumberId'),
@@ -299,9 +403,18 @@ const triggerUiSchema: UISchema = {
       label: 'הפעל רק אם ההודעה מכילה',
     },
     {
-      // Collapsed: the default is right for almost every workflow, and an
-      // always-open list of nine checkboxes is the first thing an owner scrolls
-      // past on a node they only wanted to name.
+      // ⚠️ AN ACCORDION IS COLLAPSIB-LE, NOT COLLAPSED — measured in the 2.3.0
+      // bundle, and this comment used to claim the opposite. The renderer
+      // (`GH`) passes the layout NOTHING but `label` and `children`; the
+      // container (`Ag`) declares `defaultOpen = true` and is the only thing
+      // that decides. `AccordionLayoutElement` has no `defaultOpen` field, so
+      // the uischema cannot ask for closed — writing one here would be a silent
+      // no-op, which `accordion-classification.test.ts` refuses.
+      //
+      // The container is still right: nine checkboxes are an ADVANCED filter
+      // that the default already answers for almost every workflow, and the
+      // owner can fold them away after reading them once. What it does not do
+      // is spare them the first read.
       type: 'Accordion',
       label: 'סוגי הודעות שמפעילים את התהליך',
       elements: [
@@ -332,9 +445,9 @@ const webhookTriggerSchema = {
   type: 'object',
   required: NODE_REQUIRED_FIELDS['trigger.webhook'],
   properties: {
-    ...sharedProperties,
+    ...identityProperties,
     ...statusProperty,
-    token: { type: 'string' },
+    token: requiredText,
   },
 } satisfies NodeSchema;
 
@@ -343,7 +456,7 @@ const webhookTriggerScope = getScope<typeof webhookTriggerSchema>;
 const webhookTriggerUiSchema: UISchema = {
   type: 'VerticalLayout',
   elements: [
-    { type: 'Text', scope: webhookTriggerScope('properties.label'), label: 'שם הצעד' },
+    ...identityControls(webhookTriggerScope('properties.label'), webhookTriggerScope('properties.description')),
     {
       // Plain Text and NOT VariableText: a token assembled at run time is a token
       // nobody reviewed, and the endpoint compares it in constant time against a
@@ -374,11 +487,11 @@ const conditionSchema = {
   type: 'object',
   required: NODE_REQUIRED_FIELDS['logic.condition'],
   properties: {
-    ...sharedProperties,
+    ...identityProperties,
     ...statusProperty,
     left: { type: 'string' },
-    field: { type: 'string', options: Object.values(conditionFieldOptions) },
-    operator: { type: 'string', options: Object.values(conditionOperatorOptions) },
+    field: { ...requiredText, options: Object.values(conditionFieldOptions) },
+    operator: { ...requiredText, options: Object.values(conditionOperatorOptions) },
     value: { type: 'string' },
     // The node's two outgoing ports, declared as DATA because that is what the
     // SDK's decision renderer reads. `templateType: 'decision-node'` on the
@@ -411,7 +524,7 @@ const conditionScope = getScope<typeof conditionSchema>;
 const conditionUiSchema: UISchema = {
   type: 'VerticalLayout',
   elements: [
-    { type: 'Text', scope: conditionScope('properties.label'), label: 'שם הצעד' },
+    ...identityControls(conditionScope('properties.label'), conditionScope('properties.description')),
     { type: 'Select', scope: conditionScope('properties.field'), label: 'בדוק את' },
     {
       // The escape hatch from the dropdown, and the reason the dropdown is no
@@ -464,10 +577,10 @@ const setGuestFieldSchema = {
   type: 'object',
   required: NODE_REQUIRED_FIELDS['action.set_guest_field'],
   properties: {
-    ...sharedProperties,
+    ...identityProperties,
     ...statusProperty,
     errorPolicy: { type: 'string', options: Object.values(errorPolicyOptions) },
-    field: { type: 'string', options: Object.values(guestFieldOptions) },
+    field: { ...requiredText, options: Object.values(guestFieldOptions) },
     value: { type: 'string' },
     decisionBranches: {
       type: 'array',
@@ -484,7 +597,7 @@ const setGuestFieldScope = getScope<typeof setGuestFieldSchema>;
 const setGuestFieldUiSchema: UISchema = {
   type: 'VerticalLayout',
   elements: [
-    { type: 'Text', scope: setGuestFieldScope('properties.label'), label: 'שם הצעד' },
+    ...identityControls(setGuestFieldScope('properties.label'), setGuestFieldScope('properties.description')),
     { type: 'Select', scope: setGuestFieldScope('properties.field'), label: 'השדה לעדכון' },
     {
       type: 'VariableText',
@@ -509,10 +622,10 @@ const callbackRequestSchema = {
   type: 'object',
   required: NODE_REQUIRED_FIELDS['action.create_callback_request'],
   properties: {
-    ...sharedProperties,
+    ...identityProperties,
     ...statusProperty,
     errorPolicy: { type: 'string', options: Object.values(errorPolicyOptions) },
-    topic: { type: 'string', options: callbackTopicOptions },
+    topic: { ...requiredText, options: callbackTopicOptions },
     note: { type: 'string' },
     decisionBranches: {
       type: 'array',
@@ -529,7 +642,7 @@ const callbackRequestScope = getScope<typeof callbackRequestSchema>;
 const callbackRequestUiSchema: UISchema = {
   type: 'VerticalLayout',
   elements: [
-    { type: 'Text', scope: callbackRequestScope('properties.label'), label: 'שם הצעד' },
+    ...identityControls(callbackRequestScope('properties.label'), callbackRequestScope('properties.description')),
     { type: 'Select', scope: callbackRequestScope('properties.topic'), label: 'נושא הפנייה' },
     {
       type: 'VariableText',
@@ -555,11 +668,11 @@ const webhookSchema = {
   type: 'object',
   required: NODE_REQUIRED_FIELDS['action.webhook'],
   properties: {
-    ...sharedProperties,
+    ...identityProperties,
     ...statusProperty,
     errorPolicy: { type: 'string', options: Object.values(errorPolicyOptions) },
     method: { type: 'string', options: Object.values(httpMethodOptions) },
-    url: { type: 'string' },
+    url: { ...requiredText },
     // The field the old design refused to have. See WebhookConfig for why it can
     // exist now: a value may be `{{secrets.<NAME>}}`, and the NAME is what is
     // stored — the secret itself is fetched at the socket and never comes back.
@@ -573,10 +686,15 @@ const webhookSchema = {
         },
       },
     },
+    // ⚠️ UNCONSTRAINED HERE ON PURPOSE. A GET or DELETE with an empty body is
+    // correct — the runtime does not send one — so the floor cannot live at the
+    // top level. `allOf` below raises it to `minLength: 1` for exactly the three
+    // verbs that DO send a body.
     body: { type: 'string' },
     captureResponse: { type: 'boolean' },
     ...actionBranchesProperty,
   },
+  allOf: conditionalRules('action.webhook'),
 } satisfies NodeSchema;
 
 const webhookScope = getScope<typeof webhookSchema>;
@@ -584,7 +702,7 @@ const webhookScope = getScope<typeof webhookSchema>;
 const webhookUiSchema: UISchema = {
   type: 'VerticalLayout',
   elements: [
-    { type: 'Text', scope: webhookScope('properties.label'), label: 'שם הצעד' },
+    ...identityControls(webhookScope('properties.label'), webhookScope('properties.description')),
     { type: 'Select', scope: webhookScope('properties.method'), label: 'סוג הבקשה' },
     {
       // Plain Text, not VariableText: the DESTINATION must not be assembled from
@@ -602,9 +720,41 @@ const webhookUiSchema: UISchema = {
       label: 'גוף הבקשה',
       placeholder: '{"name":"{{trigger.guest_name}}","text":"{{trigger.message_text}}"}',
       minRows: 3,
+      // ⚠️ THE RUNTIME ALREADY DROPS IT, SILENTLY. `sendOutboundWebhook` attaches
+      // the body only when the verb is in `HTTP_METHODS_WITH_BODY`; on GET or
+      // DELETE it is built, resolved, secret-checked — and then not sent. So the
+      // panel offered a three-row editor for a field that went nowhere, with no
+      // error and no run-log entry to learn from.
+      //
+      // ⚠️ SHOW ON THE WITH-BODY LIST, NOT HIDE ON ITS COMPLEMENT, and the two
+      // are not equivalent here. `enum` is derived from the SAME constant
+      // `outbound-webhook.ts` branches on, so a verb added to one side is
+      // automatically handled on the other; a hand-written `['GET','DELETE']`
+      // would go stale the first time a verb is added to `HTTP_METHODS`.
+      //
+      // ⚠️ AND NO `failWhenUndefined`, deliberately. A diagram saved before
+      // `method` existed carries no value, `readMethod` falls back to
+      // `DEFAULT_HTTP_METHOD` — 'POST', which IS in the with-body list — so that
+      // diagram really does send its body and the box must stay visible.
+      // Failing on undefined would hide a field that is in use.
+      rule: {
+        effect: 'SHOW',
+        condition: {
+          scope: webhookScope('properties.method'),
+          schema: { enum: [...HTTP_METHODS_WITH_BODY] },
+        },
+      },
     },
-    // Collapsed by default: most calls need no header, and an always-open list
-    // of empty rows is the first thing an owner has to scroll past.
+    // ⚠️ THIS COMMENT USED TO BE WRONG TWICE, and both halves are worth keeping
+    // as a record. It said "collapsed by default" — the renderer opens it, see
+    // the trigger's message-kinds accordion for the measurement — and it said
+    // the alternative was "an always-open list of empty rows to scroll past",
+    // when `defaultPropertiesData` sets `headers: []` with its own comment
+    // saying no empty row is seeded. The stated harm could not occur.
+    //
+    // The container survives its own justification: headers and secrets are a
+    // genuinely advanced concern that most calls never touch, which is the case
+    // an Accordion is for. It groups and it folds; it does not hide.
     {
       type: 'Accordion',
       label: 'כותרות ואימות',
@@ -678,7 +828,7 @@ const switchSchema = {
   type: 'object',
   required: NODE_REQUIRED_FIELDS['logic.switch'],
   properties: {
-    ...sharedProperties,
+    ...identityProperties,
     ...statusProperty,
     left: { type: 'string' },
     decisionBranches: {
@@ -712,7 +862,7 @@ const switchScope = getScope<typeof switchSchema>;
 const switchUiSchema: UISchema = {
   type: 'VerticalLayout',
   elements: [
-    { type: 'Text', scope: switchScope('properties.label'), label: 'שם הצעד' },
+    ...identityControls(switchScope('properties.label'), switchScope('properties.description')),
     // Kept as a convenience, NOT as the thing branches compare against: each row
     // carries its own `x`. An owner who wants one value routed several ways can
     // paste it here and reference it, and one who does not can ignore it. The
@@ -746,10 +896,10 @@ const updateGuestStatusSchema = {
   // it.
   required: NODE_REQUIRED_FIELDS['action.update_guest_status'],
   properties: {
-    ...sharedProperties,
+    ...identityProperties,
     ...statusProperty,
     ...actionBranchesProperty,
-    rsvpStatus: { type: 'string', options: Object.values(rsvpStatusOptions) },
+    rsvpStatus: { ...requiredText, options: Object.values(rsvpStatusOptions) },
     // Surfaced on THIS node only. Upstream's guidance is to spread the fragment
     // "on node types that should surface the choice; omit it elsewhere — the
     // runner defaults to 'fail' when the field is absent."
@@ -768,7 +918,7 @@ const updateGuestStatusScope = getScope<typeof updateGuestStatusSchema>;
 const updateGuestStatusUiSchema: UISchema = {
   type: 'VerticalLayout',
   elements: [
-    { type: 'Text', scope: updateGuestStatusScope('properties.label'), label: 'שם הצעד' },
+    ...identityControls(updateGuestStatusScope('properties.label'), updateGuestStatusScope('properties.description')),
     {
       type: 'Select',
       scope: updateGuestStatusScope('properties.rsvpStatus'),
@@ -799,10 +949,10 @@ const sendWhatsappSchema = {
   type: 'object',
   required: NODE_REQUIRED_FIELDS['action.send_whatsapp'],
   properties: {
-    ...sharedProperties,
+    ...identityProperties,
     ...statusProperty,
     ...actionBranchesProperty,
-    body: { type: 'string' },
+    body: { ...requiredText },
     errorPolicy: { type: 'string', options: Object.values(errorPolicyOptions) },
   },
 } satisfies NodeSchema;
@@ -812,7 +962,7 @@ const sendWhatsappScope = getScope<typeof sendWhatsappSchema>;
 const sendWhatsappUiSchema: UISchema = {
   type: 'VerticalLayout',
   elements: [
-    { type: 'Text', scope: sendWhatsappScope('properties.label'), label: 'שם הצעד' },
+    ...identityControls(sendWhatsappScope('properties.label'), sendWhatsappScope('properties.description')),
     {
       // `VariableTextArea`, and this is the control the SDK ships for exactly
       // this shape. Typing `{{` opens the variable picker; the picker writes
@@ -854,10 +1004,10 @@ const notifyTeamSchema = {
   type: 'object',
   required: NODE_REQUIRED_FIELDS['action.notify_team'],
   properties: {
-    ...sharedProperties,
+    ...identityProperties,
     ...statusProperty,
     ...actionBranchesProperty,
-    title: { type: 'string' },
+    title: { ...requiredText },
     detail: { type: 'string' },
     level: { type: 'string', options: Object.values(notifyLevelOptions) },
     errorPolicy: { type: 'string', options: Object.values(errorPolicyOptions) },
@@ -869,7 +1019,7 @@ const notifyTeamScope = getScope<typeof notifyTeamSchema>;
 const notifyTeamUiSchema: UISchema = {
   type: 'VerticalLayout',
   elements: [
-    { type: 'Text', scope: notifyTeamScope('properties.label'), label: 'שם הצעד' },
+    ...identityControls(notifyTeamScope('properties.label'), notifyTeamScope('properties.description')),
     {
       // VariableText, matching `detail` below rather than differing from it.
       //
@@ -916,9 +1066,9 @@ const setValueSchema = {
   type: 'object',
   required: NODE_REQUIRED_FIELDS['logic.set_value'],
   properties: {
-    ...sharedProperties,
+    ...identityProperties,
     ...statusProperty,
-    value: { type: 'string' },
+    value: { ...requiredText },
   },
 } satisfies NodeSchema;
 
@@ -927,7 +1077,7 @@ const setValueScope = getScope<typeof setValueSchema>;
 const setValueUiSchema: UISchema = {
   type: 'VerticalLayout',
   elements: [
-    { type: 'Text', scope: setValueScope('properties.label'), label: 'שם הצעד' },
+    ...identityControls(setValueScope('properties.label'), setValueScope('properties.description')),
     {
       type: 'VariableTextArea',
       scope: setValueScope('properties.value'),
@@ -951,7 +1101,7 @@ const startRsvpAiCallbackSchema = {
   type: 'object',
   required: NODE_REQUIRED_FIELDS['action.start_rsvp_ai_callback'],
   properties: {
-    ...sharedProperties,
+    ...identityProperties,
     ...statusProperty,
     ...actionBranchesProperty,
     errorPolicy: { type: 'string', options: Object.values(errorPolicyOptions) },
@@ -961,7 +1111,7 @@ const startRsvpAiCallbackScope = getScope<typeof startRsvpAiCallbackSchema>;
 const startRsvpAiCallbackUiSchema: UISchema = {
   type: 'VerticalLayout',
   elements: [
-    { type: 'Text', scope: startRsvpAiCallbackScope('properties.label'), label: 'שם הצעד' },
+    ...identityControls(startRsvpAiCallbackScope('properties.label'), startRsvpAiCallbackScope('properties.description')),
     {
       type: 'Label',
       text: 'מפעיל את סוכן RSVP הקולי הקיים דרך Voximplant ו-ElevenLabs. המודל, מאגר הידע והכלים מוגדרים בסוכן ואינם נשמרים בתהליך.',
@@ -995,7 +1145,7 @@ const importGuestListSchema = {
   type: 'object',
   required: NODE_REQUIRED_FIELDS['action.import_guest_list'],
   properties: {
-    ...sharedProperties,
+    ...identityProperties,
     ...statusProperty,
     errorPolicy: { type: 'string', options: Object.values(errorPolicyOptions) },
     ...actionBranchesProperty,
@@ -1007,7 +1157,7 @@ const importGuestListScope = getScope<typeof importGuestListSchema>;
 const importGuestListUiSchema: UISchema = {
   type: 'VerticalLayout',
   elements: [
-    { type: 'Text', scope: importGuestListScope('properties.label'), label: 'שם הצעד' },
+    ...identityControls(importGuestListScope('properties.label'), importGuestListScope('properties.description')),
     {
       type: 'Label',
       text: 'קולט את הקובץ או את אנשי הקשר שהגיעו בוואטסאפ ומעלה אותם לסקירה. האורחים נוצרים רק אחרי אישור במסך הייבוא — הצעד הזה לא מוסיף אורחים בעצמו.',
@@ -1040,13 +1190,13 @@ const waitSchema = {
   type: 'object',
   required: NODE_REQUIRED_FIELDS['logic.wait'],
   properties: {
-    ...sharedProperties,
+    ...identityProperties,
     ...statusProperty,
     // `minimum: 1` is the form's half of the guard; the handler refuses a
     // non-positive value again, because the schema constrains what can be TYPED
     // and not what is in the jsonb row.
     amount: { type: 'number', ...NODE_NUMBER_RANGES['logic.wait']!.amount },
-    unit: { type: 'string', options: Object.values(waitUnitOptions) },
+    unit: { ...requiredText, options: Object.values(waitUnitOptions) },
   },
 } satisfies NodeSchema;
 
@@ -1055,7 +1205,7 @@ const waitScope = getScope<typeof waitSchema>;
 const waitUiSchema: UISchema = {
   type: 'VerticalLayout',
   elements: [
-    { type: 'Text', scope: waitScope('properties.label'), label: 'שם הצעד' },
+    ...identityControls(waitScope('properties.label'), waitScope('properties.description')),
     {
       type: 'HorizontalLayout',
       elements: [
@@ -1097,11 +1247,11 @@ const scheduleSchema = {
   type: 'object',
   required: NODE_REQUIRED_FIELDS['trigger.schedule'],
   properties: {
-    ...sharedProperties,
+    ...identityProperties,
     ...statusProperty,
     // `pattern` is the form's half; `matchesSchedule` refuses a bad value again,
     // because the schema constrains what can be TYPED and not what is in the row.
-    time: { type: 'string', pattern: '^([01][0-9]|2[0-3]):[0-5][0-9]$', placeholder: '09:00' },
+    time: { ...requiredText, pattern: '^([01][0-9]|2[0-3]):[0-5][0-9]$', placeholder: '09:00' },
     days: {
       type: 'array',
       items: { type: 'object', properties: { value: { type: 'string' } } },
@@ -1114,7 +1264,7 @@ const scheduleScope = getScope<typeof scheduleSchema>;
 const scheduleUiSchema: UISchema = {
   type: 'VerticalLayout',
   elements: [
-    { type: 'Text', scope: scheduleScope('properties.label'), label: 'שם הצעד' },
+    ...identityControls(scheduleScope('properties.label'), scheduleScope('properties.description')),
     {
       type: 'Text',
       scope: scheduleScope('properties.time'),
@@ -1176,9 +1326,9 @@ const sendTemplateSchema = {
   type: 'object',
   required: NODE_REQUIRED_FIELDS['action.send_template'],
   properties: {
-    ...sharedProperties,
+    ...identityProperties,
     ...statusProperty,
-    messageKey: { type: 'string', options: templateKeyOptions.map((o) => ({ ...o })) },
+    messageKey: { ...requiredText, options: templateKeyOptions.map((o) => ({ ...o })) },
   },
 } satisfies NodeSchema;
 
@@ -1187,7 +1337,7 @@ const sendTemplateScope = getScope<typeof sendTemplateSchema>;
 const sendTemplateUiSchema: UISchema = {
   type: 'VerticalLayout',
   elements: [
-    { type: 'Text', scope: sendTemplateScope('properties.label'), label: 'שם הצעד' },
+    ...identityControls(sendTemplateScope('properties.label'), sendTemplateScope('properties.description')),
     { type: 'Select', scope: sendTemplateScope('properties.messageKey'), label: 'איזו תבנית' },
     {
       // The distinction that decides which of the two send nodes to use, said
@@ -1208,10 +1358,10 @@ const forEachGuestSchema = {
   type: 'object',
   required: NODE_REQUIRED_FIELDS['action.start_for_each_guest'],
   properties: {
-    ...sharedProperties,
+    ...identityProperties,
     ...statusProperty,
     errorPolicy: { type: 'string', options: Object.values(errorPolicyOptions) },
-    targetWorkflowId: { type: 'string' },
+    targetWorkflowId: requiredText,
     statuses: {
       type: 'array',
       items: { type: 'object', properties: { value: { type: 'string' } } },
@@ -1234,7 +1384,7 @@ const forEachGuestScope = getScope<typeof forEachGuestSchema>;
 const forEachGuestUiSchema: UISchema = {
   type: 'VerticalLayout',
   elements: [
-    { type: 'Text', scope: forEachGuestScope('properties.label'), label: 'שם הצעד' },
+    ...identityControls(forEachGuestScope('properties.label'), forEachGuestScope('properties.description')),
     {
       // ⚠️ THE WARNING BELONGS WHERE THE DAMAGE IS CONFIGURED. This node starts
       // one run per matching guest — a single press reaches hundreds of real
@@ -1335,18 +1485,96 @@ const forEachGuestUiSchema: UISchema = {
  */
 export type VoicePurposeOption = { key: string; displayName: string };
 
-const voiceCallSchemaFor = (purposes: readonly VoicePurposeOption[]) =>
+/**
+ * One dial parameter that is read from the platform rather than typed.
+ *
+ * Both lists behind this shape are LIVE: `provider_numbers` rows for the caller
+ * id, and Voximplant's own `GetRules` for the rule. Neither is a constant here,
+ * for the same reason the purpose dropdown is not — a number bought today or a
+ * rule rebound this morning has to appear without a deploy.
+ */
+export type VoiceDialOption = { value: string; label: string };
+
+/**
+ * ⚠️ EVERY DIAL PARAMETER BELOW IS AN OVERRIDE, AND BLANK IS THE DEFAULT.
+ *
+ * The precedence is fixed here and enforced in `voice-purpose-dispatch.ts`:
+ * a non-empty node value wins; blank falls back to what dialled before this
+ * node carried the field at all — `voice_purposes.rule_id` for the rule, the
+ * account's configured caller id for the number, the guest's own phone for the
+ * destination.
+ *
+ * That direction is chosen, not incidental. The other one (node authoritative,
+ * no fallback) would change how every diagram already saved behaves the moment
+ * this ships, because none of them carries these fields. An override that
+ * defaults to blank changes nothing until someone sets it.
+ *
+ * ⚠️ AND THESE THREE REACH THE CALL TODAY — verified, not assumed:
+ *   • `ruleId`  → `StartScenarios`' own `rule_id` parameter (the live API
+ *     reference lists exactly eight parameters: user_id, user_name,
+ *     application_id, application_name, rule_id, script_custom_data,
+ *     reference_ip, server_location).
+ *   • `callerId` → `script_custom_data.from`, which all three deployed agent
+ *     scenarios read as `state.from = customData.from` and hand straight to
+ *     `VoxEngine.callPSTN(state.to, state.from)`.
+ *   • `toOverride` → `script_custom_data.to`, the first argument of that same
+ *     call.
+ * No scenario deploy is needed for any of them.
+ *
+ * The agent id is NOT here, and its absence is the same kind of fact: every
+ * scenario hardcodes `var AGENT_ID = 'agent_…'`, and the generic ctx route
+ * returns no agent. A picker for it would be a control that changes nothing
+ * until that ships, so it waits for the scenario change rather than shipping
+ * as furniture.
+ */
+const voiceCallSchemaFor = (
+  purposes: readonly VoicePurposeOption[],
+  callerIds: readonly VoiceDialOption[] = [],
+  rules: readonly VoiceDialOption[] = [],
+  agents: readonly VoiceDialOption[] = [],
+) =>
   ({
     type: 'object',
     required: NODE_REQUIRED_FIELDS['action.start_voice_call'],
     properties: {
-      ...sharedProperties,
+      ...identityProperties,
       ...statusProperty,
       ...actionBranchesProperty,
       errorPolicy: { type: 'string', options: Object.values(errorPolicyOptions) },
       purposeKey: {
-        type: 'string',
+        ...requiredText,
         options: purposes.map((p) => ({ label: p.displayName, value: p.key })),
+      },
+      // ⚠️ THE EMPTY OPTION IS FIRST AND IT IS NOT A PLACEHOLDER — it is the
+      // value that means "leave it to the purpose / the account". A dropdown
+      // with no way back to the default would make the first pick permanent.
+      callerId: {
+        type: 'string',
+        options: [{ label: 'ברירת המחדל של החשבון', value: '' }, ...callerIds],
+      },
+      ruleId: {
+        type: 'string',
+        options: [{ label: 'הכלל המוגדר לייעוד', value: '' }, ...rules],
+      },
+      // A `VariableText` control, not a `Text` one: the number to dial is the
+      // one dial parameter that legitimately comes from an earlier step
+      // (`{{nodes.<id>.phone}}`), and only that control offers the picker.
+      toOverride: { type: 'string' },
+      // ⚠️ THE ONE FIELD WHOSE OTHER HALF IS NOT LIVE YET. The value is carried
+      // end-to-end on the server — node → attempt row → ctx response — but every
+      // deployed scenario still opens `ElevenLabs.createAgentsClient({ agentId:
+      // AGENT_ID })` against a hardcoded constant. Until a scenario that reads
+      // `ctx.agent_id` is deployed, setting this changes which agent the SERVER
+      // says to use and not which one answers.
+      //
+      // It ships anyway, and the reason is the whole point of this node: the
+      // alternative is a generic call primitive that cannot name its own agent,
+      // which just moves the hardcoding from the scenario into the product. The
+      // arm gate refuses a node whose agent is unreachable rather than letting
+      // the mismatch dial.
+      agentId: {
+        type: 'string',
+        options: [{ label: 'הסוכן המוגדר בתרחיש', value: '' }, ...agents],
       },
       // Off by default, and the default is the point: this node has dialled and
       // carried straight on since it shipped. Making the wait automatic would
@@ -1355,7 +1583,7 @@ const voiceCallSchemaFor = (purposes: readonly VoicePurposeOption[]) =>
     },
   }) satisfies NodeSchema;
 
-const voiceCallSchema = voiceCallSchemaFor([]);
+const voiceCallSchema = voiceCallSchemaFor([], [], [], []);
 const voiceCallScope = getScope<typeof voiceCallSchema>;
 
 const voiceCallUiSchema = {
@@ -1366,6 +1594,44 @@ const voiceCallUiSchema = {
   // Upstream puts the type selector at the top and folds title/status/description
   // into a "General Information" accordion below it.
   elements: [
+    // ⚠️ `...globalControls` DOES NOT BELONG HERE, AND THE REASON IS MEASURED.
+    //
+    // It was spread in for one commit, on the strength of the vendor's own
+    // reference node (apps/demo/.../conditional/uischema.ts opens with it) and
+    // of the display mechanism being in the base bundle rather than in the
+    // Enterprise Validation plugin — both of which are true. What is ALSO true,
+    // and decides it:
+    //
+    //   • Its single element is `{ type:'MessageOnError', scope:
+    //     '#/properties/missingPreviousVariable', text:
+    //     'plugins.validation.missingDependency' }`.
+    //   • That i18n key is NOT TRANSLATED ANYWHERE. It occurs exactly once in
+    //     the whole 2.3.0 bundle — inside `globalControls` itself. The SDK's own
+    //     `validation` namespace ships only `error.notJSONObject`,
+    //     `nodesWithoutDefinition` and `nodesWithErrors`, in en and pl alike.
+    //     i18next returns the key when it cannot resolve it — MEASURED, not
+    //     assumed: run against the SDK's own init options (fallbackLng 'en',
+    //     returnNull false, and no parseMissingKeyHandler or returnEmptyString),
+    //     `t('plugins.validation.missingDependency')` returns that string
+    //     verbatim. An owner would read it on screen, in English.
+    //   • And the renderer is `t(text) || errors || text` — the hardcoded `text`
+    //     WINS OVER THE ERROR'S OWN MESSAGE. So this control can never show
+    //     something we wrote; it can only ever show that untranslated key.
+    //
+    // Which makes it the wrong surface for A-13. The right one is the pattern
+    // already proven directly below on `purposeKey`: our own `MessageOnError`,
+    // scoped to the field in question, carrying Hebrew `text`.
+    //
+    // ⚠️ AND THERE IS A SECOND SHAPE, from the same measurement: `t(undefined)`
+    // returns '' — falsy — so a `MessageOnError` with NO `text` falls through to
+    // the errors themselves and displays the message we put in
+    // `customErrors[].message`. Use that when the sentence depends on the agent
+    // (which override, which flag); use Hebrew `text` when it is fixed.
+    //
+    // `customErrors`
+    // remains the way to RAISE a node-level error the schema cannot express —
+    // that half of the earlier reading holds — it just has to be displayed by a
+    // control whose text we own.
     {
       type: 'Select',
       scope: voiceCallScope('properties.purposeKey'),
@@ -1468,11 +1734,82 @@ const voiceCallUiSchema = {
       },
     },
     {
-      // ⚠️ COLLAPSED, and only here. Upstream describes Accordion as being for
-      // "advanced or rarely-used fields that shouldn't crowd the default
-      // property panel view", and `errorPolicy` is exactly that: most owners
-      // never move it off the default, and this node now carries four fields
-      // where it carried two.
+      // ⚠️ THE DIAL PARAMETERS, GROUPED AND GATED BEHIND A PURPOSE.
+      //
+      // Grouped, because they are four fields that share one job and none of
+      // them is the decision this node exists to make — that is the purpose
+      // above.
+      //
+      // ⚠️ AND GROUPED IS ALL IT IS: an Accordion in this editor opens EXPANDED
+      // (the renderer passes no `defaultOpen` and the component defaults it to
+      // true — read in the 2.3.0 bundle, against upstream's prose, which says
+      // "hidden by default"). These four are the parameters that decide what the
+      // call IS; burying them behind a closed chevron would be the wrong choice,
+      // and this container does not do that.
+      //
+      // Gated on the same condition as the wait switch, for the same reason:
+      // choosing which number a call goes out from is not a meaningful choice
+      // before there is a call to make, and offering it first teaches the wrong
+      // order. `rule` is available on a LAYOUT element, not only on a control —
+      // `BaseLayoutElement` carries `rule?: UISchemaRule` in the 2.3.0 typings —
+      // so one rule here covers all three fields instead of three copies.
+      //
+      // `type` alongside `minLength`, and `failWhenUndefined`, for the reasons
+      // spelled out on the switch below: Ajv strict mode warns without the
+      // first, and a legacy diagram carrying `purposeKey: null` passes without
+      // either.
+      type: 'Accordion',
+      label: 'פרמטרי החיוג',
+      rule: {
+        effect: 'SHOW',
+        condition: {
+          scope: voiceCallScope('properties.purposeKey'),
+          schema: { type: 'string', minLength: 1 },
+          failWhenUndefined: true,
+        },
+      },
+      elements: [
+        {
+          type: 'Select',
+          scope: voiceCallScope('properties.callerId'),
+          label: 'מתקשרים מהמספר',
+        },
+        {
+          type: 'Select',
+          scope: voiceCallScope('properties.ruleId'),
+          label: 'כלל הניתוב (התרחיש שירוץ)',
+        },
+        {
+          type: 'Select',
+          scope: voiceCallScope('properties.agentId'),
+          label: 'הסוכן שיענה',
+        },
+        {
+          // The only one of the four that accepts a reference: a destination
+          // produced by an earlier step is a real flow, a caller id produced by
+          // one is not — that value has to be a number the account owns.
+          type: 'VariableText',
+          scope: voiceCallScope('properties.toOverride'),
+          label: 'מספר היעד (ריק = הטלפון של האורח)',
+          placeholder: '{{nodes.<id>.phone}}',
+        },
+      ],
+    },
+    {
+      // ⚠️ GROUPED, NOT COLLAPSED — and the distinction is a correction.
+      //
+      // Upstream's prose calls Accordion a "collapsible labeled section … body
+      // hidden by default", and an earlier version of this comment repeated it.
+      // THE SHIPPED CODE DISAGREES: the Accordion renderer (`GH` in the 2.3.0
+      // bundle) renders `<Accordion label={…}>` passing NO `defaultOpen`, and
+      // the component's own default is `defaultOpen = true`. Every Accordion in
+      // this editor therefore opens EXPANDED; the chevron lets an owner close
+      // one, it does not start closed.
+      //
+      // So what this buys is a heading and a boundary, not concealment. That is
+      // still the right container for `errorPolicy` — most owners never move it
+      // off the default, and this node now carries several fields where it
+      // carried two — but nothing here is hidden from anyone.
       //
       // NOT swept across the other nine nodes that expose the same field. That
       // is a different change — it trades discoverability for tidiness on every
@@ -1486,10 +1823,21 @@ const voiceCallUiSchema = {
       ],
     },
     {
-      type: 'Accordion',
+      // ⚠️ A GROUP, NOT AN ACCORDION, AND THE DIFFERENCE IS A CLAIM ABOUT THE
+      // CONTENTS. An Accordion says "advanced — fold this away when you are
+      // done"; these three are the node's IDENTITY. `description` is required on
+      // all eighteen types and `status` decides whether the step runs at all, so
+      // neither is something an owner should be encouraged to close over.
+      //
+      // The other seventeen nodes render these inline with no container. This
+      // one keeps a heading because it is the most crowded panel in the palette
+      // — `Group` is exactly that heading plus a boundary, with no chevron and
+      // no implication of optionality. Its renderer (`XH`) is a plain div; the
+      // Accordion's (`GH`) wraps a collapsible whose open state we cannot set.
+      type: 'Group',
       label: 'פרטי הצעד',
       elements: [
-        { type: 'Text', scope: voiceCallScope('properties.label'), label: 'שם הצעד' },
+        ...identityControls(voiceCallScope('properties.label'), voiceCallScope('properties.description')),
         // ⚠️ THE CONTROL THIS NODE WAS MISSING, and its absence was not cosmetic.
         // Seventeen of the eighteen node types render `statusControl`; this one
         // did not, while still carrying `status` in its schema and in its
@@ -1522,13 +1870,27 @@ export function buildPaletteItems(
    * when no purpose has been set up, and the handler refuses a blank anyway.
    */
   voicePurposes: readonly VoicePurposeOption[] = [],
+  /**
+   * The dial parameters the call node may be pointed at, both live lists.
+   *
+   * Empty is a legitimate state for either: an account with no synced number,
+   * or a Voximplant read that failed or was never asked for. The node then
+   * offers only its blank default, which is the behaviour that shipped before
+   * these fields existed — never a broken control.
+   */
+  voiceCallerIds: readonly VoiceDialOption[] = [],
+  voiceRules: readonly VoiceDialOption[] = [],
+  voiceAgents: readonly VoiceDialOption[] = [],
 ): PaletteItem[] {
   return PALETTE_ITEMS.map((item) => {
     if (item.type === 'trigger.whatsapp_inbound') {
       return { ...item, schema: triggerSchemaFor(numbers) };
     }
     if (item.type === 'action.start_voice_call') {
-      return { ...item, schema: voiceCallSchemaFor(voicePurposes) };
+      return {
+        ...item,
+        schema: voiceCallSchemaFor(voicePurposes, voiceCallerIds, voiceRules, voiceAgents),
+      };
     }
     return item;
   });
@@ -1594,6 +1956,12 @@ export const PALETTE_ITEMS: PaletteItem[] = [
       label: 'שיחה עם סוכן קולי',
       description: 'מתקשר לאורח עם אחד הסוכנים הקוליים שהוגדרו',
       purposeKey: '',
+      // Blank = "whatever dialled before this field existed". See the schema's
+      // own note: an override that defaults to set would change live diagrams.
+      callerId: '',
+      ruleId: '',
+      toOverride: '',
+      agentId: '',
       waitForOutcome: false,
       errorPolicy: errorPolicyOptions.continue.value,
     },
@@ -1971,7 +2339,14 @@ export const PALETTE_ITEMS: PaletteItem[] = [
       status: nodeStatusOptions.active.value,
       label: 'בקשת חזרה לאורח',
       description: 'מוסיף את האורח לתור שיחות החזרה של הצוות',
-      topic: 'פנייה מתהליך אוטומטי',
+      // ⚠️ AN OFFERED VALUE, NOT AN INTERNAL LABEL. This used to seed
+      // 'פנייה מתהליך אוטומטי', which is not in `CALLBACK_TOPICS` — so the Select
+      // rendered a value absent from its own options, and a node dropped and
+      // never opened created a callback whose topic the team reads in the queue
+      // and the agent is handed as `{{topic_he}}`. The handler's blank-fallback
+      // was fixed to `CALLBACK_TOPICS[0]` (`steps/index.ts`) and this was not:
+      // the default is non-blank, so the fallback never sees it.
+      topic: CALLBACK_TOPICS[0],
       note: '',
       errorPolicy: errorPolicyOptions.fail.value,
     },

@@ -912,7 +912,7 @@ export const LEGACY_PROPERTY_ALIASES: Readonly<Record<string, string>> = {
  */
 export const NODE_REQUIRED_FIELDS: Record<KalfaNodeType, string[]> = {
   'trigger.whatsapp_inbound': ['label', 'description'],
-  'trigger.webhook': ['label', 'description'],
+  'trigger.webhook': ['label', 'description', 'token'],
   'trigger.schedule': ['label', 'description', 'time'],
   'logic.condition': ['label', 'description', 'field', 'operator'],
   'logic.switch': ['label', 'description'],
@@ -930,6 +930,229 @@ export const NODE_REQUIRED_FIELDS: Record<KalfaNodeType, string[]> = {
   'action.start_for_each_guest': ['label', 'description', 'targetWorkflowId', 'maxGuests'],
   'action.start_voice_call': ['label', 'description', 'purposeKey'],
 };
+
+/**
+ * The node types that refuse to run outside a run about a GUEST.
+ *
+ * ⚠️ THIS LIST IS NOT A NEW RULE — it is the existing one, written down. Every
+ * type here calls `requireGuestContext` in its handler and throws
+ * `missing_guest_context` without an event AND a contact. What was missing is
+ * that nothing said so before the run: a workflow of `לפי שעון → שליחת וואטסאפ`
+ * armed cleanly and failed on its first fire, and the only warning was a
+ * sentence of prose in the trigger's own panel.
+ *
+ * ⚠️ AND IT IS A CROSS-NODE INVARIANT, which is why it lives at arming and not
+ * in a schema. JSON Schema validates ONE node's properties; a JsonForms rule
+ * reads ONE node's data. "This action needs the node at the other end of the
+ * graph to be a particular kind of trigger" is expressible in neither.
+ *
+ * `guest-context.test.ts` pins this list against the `requireGuestContext` call
+ * sites in `steps/index.ts`, so a node that gains the guard and is not added
+ * here fails a test rather than shipping an automation that cannot run.
+ */
+export const GUEST_SCOPED_NODE_TYPES: readonly KalfaNodeType[] = [
+  'action.update_guest_status',
+  'action.send_whatsapp',
+  'action.send_template',
+  'action.set_guest_field',
+  'action.create_callback_request',
+  'action.start_voice_call',
+  'action.start_rsvp_ai_callback',
+];
+
+/**
+ * Can a run started by THIS trigger carry a guest?
+ *
+ * Measured against `inbound.ts`, which is the only place the answer is decided:
+ * a message whose kind is in `OWNER_WHATSAPP_MESSAGE_KINDS` resolves through
+ * `resolveOwnerSender` and carries an event with NO contact; everything else
+ * goes through `resolveGuestSender` and carries both.
+ *
+ *   `trigger.whatsapp_inbound`  yes — unless its kinds are ALL owner kinds
+ *   `trigger.webhook`           no  — the caller is a system, not a guest
+ *   `trigger.schedule`          no  — a clock is not a guest
+ *
+ * ⚠️ ABSENT OR EMPTY `messageKinds` IS YES, because absent means
+ * `DEFAULT_WHATSAPP_MESSAGE_KINDS` — four kinds that are all a guest speaking.
+ * Every diagram saved before that field existed is therefore unaffected.
+ *
+ * Both persisted shapes are accepted (`'document'` and `{ value: 'document' }`),
+ * the same tolerance `matchesKind` has, because the checkbox control stores
+ * objects and older saves stored strings.
+ */
+export function triggerSuppliesGuestContext(
+  triggerType: string,
+  properties: Record<string, unknown>,
+): boolean {
+  if (triggerType !== 'trigger.whatsapp_inbound') return false;
+
+  const kinds = properties.messageKinds;
+  if (!Array.isArray(kinds) || kinds.length === 0) return true;
+
+  return kinds.some((entry) => {
+    const value =
+      typeof entry === 'string'
+        ? entry
+        : (entry as { value?: unknown } | null)?.value;
+    return typeof value === 'string' && !OWNER_WHATSAPP_MESSAGE_KINDS.includes(value);
+  });
+}
+
+/**
+ * The message kinds whose payload carries text a `keyword` can match.
+ *
+ * ⚠️ EXACTLY ONE, AND THAT IS A FACT ABOUT `inbound.ts`, NOT A POLICY. The text
+ * a keyword is tested against is `readTextBody(payload)`, which reads
+ * `payload.text?.body` and nothing else — so for every other kind the string is
+ * `''` and `matchesKeyword` returns false for any non-empty keyword. A button
+ * tap carries its label under `button.text` and its payload under
+ * `button.payload`; neither reaches the keyword filter (the payload is routed on
+ * separately, by `logic.switch` against `{{trigger.button_payload}}`).
+ *
+ * `keyword-reach.test.ts` proves this against `planRuns` itself rather than
+ * against this list, so the list cannot drift away from the engine silently.
+ */
+export const TEXT_BEARING_WHATSAPP_MESSAGE_KINDS: readonly string[] = ['text'];
+
+/**
+ * Has this trigger been narrowed until nothing can ever match it?
+ *
+ * ⚠️ THE TWO FILTERS ARE ANDed, AND THAT IS WHY THIS CAN HAPPEN. `planRuns`
+ * applies `matchesKind` and then `matchesKeyword` to the same message. A keyword
+ * is only ever tested against `text.body`, so a trigger that accepts NO
+ * text-bearing kind and still carries a keyword has asked for a message that
+ * does not exist: every candidate either fails the kind filter or arrives with
+ * an empty body and fails the keyword.
+ *
+ * ⚠️ AND THIS IS NOT EXPRESSIBLE IN THE NODE'S SCHEMA. Both halves live in one
+ * node, so a JsonForms rule could see them — but the only honest UI response is
+ * to HIDE or DISABLE the keyword box, and neither CLEARS the stored value. A
+ * trigger that already carries `keyword: 'שיחה'` with kinds excluding `text`
+ * would stay just as dead while losing the one visible clue why. So the refusal
+ * belongs at arming, where it can name the fix.
+ *
+ * Absent or empty `messageKinds` is NEVER dead: it means
+ * `DEFAULT_WHATSAPP_MESSAGE_KINDS`, which includes `text`.
+ *
+ * Both persisted shapes are accepted, the same tolerance `matchesKind` has.
+ */
+export function triggerKeywordCanNeverMatch(
+  triggerType: string,
+  properties: Record<string, unknown>,
+): boolean {
+  if (triggerType !== 'trigger.whatsapp_inbound') return false;
+
+  const keyword = properties.keyword;
+  if (typeof keyword !== 'string' || keyword.trim() === '') return false;
+
+  const kinds = properties.messageKinds;
+  if (!Array.isArray(kinds) || kinds.length === 0) return false;
+
+  return !kinds.some((entry) => {
+    const value =
+      typeof entry === 'string' ? entry : (entry as { value?: unknown } | null)?.value;
+    return typeof value === 'string' && TEXT_BEARING_WHATSAPP_MESSAGE_KINDS.includes(value);
+  });
+}
+
+/**
+ * A field that is required only when ANOTHER field holds one of a set of values.
+ *
+ * ⚠️ WHY THIS EXISTS AT ALL, AND WHY IT IS NOT JUST THE SCHEMA. The contract is
+ * real — a webhook body is meaningless on GET or DELETE and mandatory on the
+ * three verbs that send one — and `NODE_REQUIRED_FIELDS` is FLAT: it lists field
+ * names, with no way to say "this one, but only when that one is POST".
+ *
+ * JSON Schema expresses it with `allOf` + `if`/`then`, and `schemas.ts` emits
+ * exactly that. But the schema half CANNOT carry the whole rule, and the reason
+ * is a property of JSON Schema rather than of this SDK:
+ *
+ *   `then: { properties: { body: { minLength: 1 } } }` constrains `body` ONLY IF
+ *   THE KEY IS PRESENT. `properties` never makes a key mandatory, and the SDK's
+ *   `ConditionalSchema` has no root `required` slot to put one in — it is
+ *   `{ properties: Record<string, FieldValidationSchema> }` and nothing else.
+ *
+ * So the schema catches PRESENT-BUT-BLANK, in the panel, where the owner is
+ * typing; `arm-check.ts` catches ABSENT, at arming, because its loop already
+ * tests `value === undefined`. Both read THIS declaration, so the two gates
+ * cannot drift into disagreeing about the same contract.
+ *
+ * ⚠️ AND THE `if` USES `const`, ONE ENTRY PER VALUE, BECAUSE THAT IS THE WHOLE
+ * TYPED SUBSET. `SchemaCondition` is `{ properties: Record<string, { const?:
+ * string | number | boolean }> }` — no `enum`. `allOf` is an array, so N values
+ * become N entries with the same `then`, which `schemas.ts` builds by mapping
+ * over `whenIn` rather than by hand.
+ */
+export type ConditionalRequirement = {
+  /** The field whose value decides. */
+  readonly decidedBy: string;
+  /** The deciding values that make `require` mandatory. */
+  readonly whenIn: readonly string[];
+  /**
+   * What the runtime uses when `decidedBy` is ABSENT.
+   *
+   * ⚠️ IT MUST BE A MEMBER OF `whenIn` OR THE TWO GATES CONTRADICT EACH OTHER,
+   * and `palette-defaults.test.ts` asserts that. The reason is a JSON Schema
+   * subtlety: `if: { properties: { method: { const: 'POST' } } }` MATCHES an
+   * object with no `method` at all, because `properties` does not constrain
+   * absent keys — so every branch fires at once on a legacy diagram. That is
+   * harmless while all branches share one `then`, which is exactly what
+   * "the fallback is inside the set" guarantees.
+   */
+  readonly fallback: string;
+  /** The field that becomes required. */
+  readonly require: string;
+  /** What to tell the owner at arming. Names the fix, not the field. */
+  readonly message: string;
+};
+
+/**
+ * The conditional contracts, by node type.
+ *
+ * ⚠️ ONE ENTRY TODAY, AND THAT IS DELIBERATE. All 24 handler refusals were read
+ * before this existed and not one of them is of the form "field X is required
+ * because field Y is Z" — so this is not a mechanism looking for a use. It is
+ * here because `sendOutboundWebhook` genuinely branches on the verb: it builds,
+ * resolves and secret-checks the body and then, for GET and DELETE, does not
+ * send it. The panel offered a three-row editor for a field that went nowhere.
+ */
+export const NODE_CONDITIONAL_REQUIRED_FIELDS: Partial<
+  Record<KalfaNodeType, readonly ConditionalRequirement[]>
+> = {
+  'action.webhook': [
+    {
+      decidedBy: 'method',
+      whenIn: HTTP_METHODS_WITH_BODY,
+      fallback: DEFAULT_HTTP_METHOD,
+      require: 'body',
+      message:
+        'סוג הבקשה שנבחר שולח גוף, והגוף ריק. כתבו את גוף הבקשה, או החליפו ל-GET / DELETE שאינם שולחים גוף.',
+    },
+  ],
+};
+
+/**
+ * The requirements that apply to a node RIGHT NOW, given its own properties.
+ *
+ * Read by `arm-check.ts`. Shared here rather than spelled there so the fallback
+ * rule — an absent decider behaves as `fallback` — is stated once and cannot be
+ * implemented differently in the two gates.
+ */
+export function activeConditionalRequirements(
+  nodeType: string,
+  properties: Record<string, unknown>,
+): readonly ConditionalRequirement[] {
+  const declared = NODE_CONDITIONAL_REQUIRED_FIELDS[nodeType as KalfaNodeType] ?? [];
+
+  return declared.filter((rule) => {
+    const raw = properties[rule.decidedBy];
+    // Anything that is not a usable string behaves as absent, the same choice
+    // `readMethod` makes: a jsonb column can hold a number or a null, and
+    // refusing to decide would be stricter than the code that runs.
+    const value = typeof raw === 'string' && raw.trim() !== '' ? raw.trim() : rule.fallback;
+    return rule.whenIn.includes(value);
+  });
+}
 
 /**
  * Numeric bounds, for the same reason and read by the same two places.

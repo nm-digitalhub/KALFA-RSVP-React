@@ -22,6 +22,8 @@ import {
   testWorkflow,
 } from '@/lib/data/admin/workflows';
 import { requirePlatformPermission } from '@/lib/auth/dal';
+import { listVoximplantRules } from '@/lib/data/admin/voximplant-channel';
+import { listElevenLabsAgents } from '@/lib/data/admin/elevenlabs-agents';
 import { logActivity } from '@/lib/data/activity';
 import { startManualRun, type ManualRunResult } from '@/lib/workflow/manual-run';
 import {
@@ -220,4 +222,64 @@ export async function testWorkflowAction(
 export async function generateWebhookTokenAction(): Promise<string> {
   await requirePlatformPermission('manage_settings');
   return randomBytes(32).toString('hex');
+}
+
+// ---------------------------------------------------------------------------
+// The call node's live dial lists
+// ---------------------------------------------------------------------------
+
+/**
+ * The rules and agents the voice-call node may be pointed at.
+ *
+ * ⚠️ ON DEMAND, NOT ON RENDER — the same rule the Voximplant rule field on
+ * /admin/integrations already follows, and for the same reason it gives: these
+ * are unbounded-latency external dependencies, and this page must open when
+ * Voximplant or ElevenLabs is unreachable. Nothing is fetched until an operator
+ * asks; until then the node's dropdowns offer only their blank defaults, which
+ * mean "the rule configured for the purpose" and "the agent configured in the
+ * scenario" — exactly what dialled before these fields existed.
+ *
+ * ⚠️ ONE ACTION FOR BOTH LISTS, and one failure per list. They come from two
+ * unrelated vendors; a Voximplant outage must not hide the agents, and a missing
+ * ElevenLabs key must not hide the rules. So each half carries its own message
+ * and the caller renders whichever half arrived.
+ *
+ * Caller ids are deliberately absent: they are rows in `provider_numbers`, read
+ * with the page itself like the WhatsApp numbers beside them, and a database
+ * read is not the thing this deferral exists to avoid.
+ */
+export type VoiceDialListsResult = {
+  rules: { ok: true; items: Array<{ value: string; label: string }> } | { ok: false; message: string };
+  agents: { ok: true; items: Array<{ value: string; label: string }> } | { ok: false; message: string };
+};
+
+export async function loadVoiceDialListsAction(): Promise<VoiceDialListsResult> {
+  // The permission is re-checked inside each reader; this one fails fast so a
+  // caller without it never reaches either vendor.
+  await requirePlatformPermission('manage_voice');
+
+  // Sequential, not parallel, and on purpose: `listVoximplantRules` walks the
+  // account's applications one GetRules at a time, and the platform caps an
+  // account at 3 concurrent HTTP requests. Racing the ElevenLabs read against
+  // that walk buys nothing and spends a slot.
+  const rulesRes = await listVoximplantRules();
+  const agentsRes = await listElevenLabsAgents();
+
+  return {
+    rules: rulesRes.ok
+      ? {
+          ok: true,
+          items: rulesRes.rules.map((r) => ({
+            value: r.ruleId,
+            // The scenario names are the half that matters — a rule id says
+            // nothing about what will answer, and the whole reason this field
+            // is a list is that a bare id is unverifiable by eye.
+            label: `${r.ruleName} — ${r.scenarios.length ? r.scenarios.join(' + ') : 'ללא תרחיש'}`,
+          })),
+        }
+      : { ok: false, message: rulesRes.message },
+    agents: agentsRes.ok
+      ? { ok: true, items: agentsRes.agents.map((a) => ({ value: a.agentId, label: a.name })) }
+      : { ok: false, message: agentsRes.message },
+  };
 }

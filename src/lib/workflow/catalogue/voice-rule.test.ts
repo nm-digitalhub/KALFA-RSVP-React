@@ -1,7 +1,7 @@
 import Ajv from 'ajv';
 import { describe, expect, it } from 'vitest';
 
-import { PALETTE_ITEMS } from './schemas';
+import { PALETTE_ITEMS, buildPaletteItems } from './schemas';
 
 // The conditional-visibility rule on `action.start_voice_call`, evaluated the way
 // JsonForms evaluates it rather than merely declared.
@@ -103,9 +103,15 @@ describe('the voice node’s property panel', () => {
     // So an owner can open this node, find nothing to pick, and have nothing on
     // screen saying a purpose must be created first. The arm gate says it, but
     // only when they try to arm.
-    const message = byType('MessageOnError')[0] as { scope: string; text: string };
+    // ⚠️ BY SCOPE, NOT BY POSITION — the second time this file learned that
+    // lesson. `[0]` passed until `...globalControls` was spread in above, which
+    // contributes its OWN MessageOnError (the SDK's missing-previous-variable
+    // slot) and took index 0. The assertion was still true about the thing it
+    // meant; it was just no longer looking at it.
+    const message = byType('MessageOnError').find(
+      (e) => (e as { scope?: string }).scope === '#/properties/purposeKey',
+    ) as { scope: string; text: string };
     expect(message).toBeDefined();
-    expect(message.scope).toBe('#/properties/purposeKey');
     // Names the next action and where to take it — the same bar the arm-gate
     // blocker is held to.
     expect(message.text).toContain('/admin/integrations/voximplant');
@@ -120,10 +126,13 @@ describe('the voice node’s property panel', () => {
   });
 
   it('the advanced field is collapsed, and only the advanced one', () => {
-    const accordion = byType('Accordion')[0] as {
-      label: string;
-      elements: { scope: string }[];
-    };
+    // ⚠️ BY LABEL, NEVER BY POSITION. This selected `[0]` until the dial-parameter
+    // group landed above it, at which point the test read a different accordion
+    // and failed while the thing it guards was still true. A panel gains groups;
+    // an assertion that depends on their order is a tripwire for the next one.
+    const accordion = byType('Accordion').find(
+      (a) => (a as { label?: string }).label === 'מתקדם',
+    ) as { label: string; elements: { scope: string }[] };
     expect(accordion).toBeDefined();
     expect(accordion.elements).toHaveLength(1);
     expect(accordion.elements[0]!.scope).toBe('#/properties/errorPolicy');
@@ -173,5 +182,92 @@ describe('every node type can set its own status', () => {
       if (declares && !scopes.includes('#/properties/status')) missing.push(item.type);
     }
     expect(missing).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The dial-parameter group
+// ---------------------------------------------------------------------------
+
+describe('the call node’s dial parameters', () => {
+  const dialGroup = (
+    voiceItem.uischema as { elements: { type?: string; label?: string; rule?: Rule; elements?: { scope?: string; type?: string }[] }[] }
+  ).elements.find((e) => e.type === 'Accordion' && e.label === 'פרמטרי החיוג')!;
+
+  it('groups all four dial fields, and nothing else', () => {
+    expect(dialGroup).toBeDefined();
+    expect(dialGroup.elements!.map((e) => e.scope)).toEqual([
+      '#/properties/callerId',
+      '#/properties/ruleId',
+      '#/properties/agentId',
+      '#/properties/toOverride',
+    ]);
+  });
+
+  it('is hidden until a purpose is chosen — including on a diagram saved before the field existed', () => {
+    // ⚠️ THE RULE IS ON THE LAYOUT, which the SDK supports: `BaseLayoutElement`
+    // carries `rule?: UISchemaRule`, and the shipped Accordion renderer wraps in
+    // a component that renders NOTHING when `visible` is false (verified in the
+    // 2.3.0 bundle). One rule here therefore covers all four fields.
+    expect(dialGroup.rule!.effect).toBe('SHOW');
+    expect(fulfilled(dialGroup.rule!, 'feedback')).toBe(true);
+    expect(fulfilled(dialGroup.rule!, '')).toBe(false);
+    // The two traps the wait switch documents: a legacy node with no field at
+    // all, and one carrying an explicit null.
+    expect(fulfilled(dialGroup.rule!, undefined)).toBe(false);
+    expect(fulfilled(dialGroup.rule!, null)).toBe(false);
+  });
+
+  it('the destination is a VariableText, so it can take a value from an earlier step', () => {
+    const to = dialGroup.elements!.find((e) => e.scope?.endsWith('toOverride'))!;
+    // A plain Text control offers no variable picker, which would make
+    // "{{nodes.<id>.phone}}" something an owner has to know to type by hand.
+    expect(to.type).toBe('VariableText');
+  });
+
+  it('every dial field ships blank, so no saved diagram changes behaviour', () => {
+    const defaults = voiceItem.defaultPropertiesData as Record<string, unknown>;
+    expect(defaults.callerId).toBe('');
+    expect(defaults.ruleId).toBe('');
+    expect(defaults.agentId).toBe('');
+    expect(defaults.toOverride).toBe('');
+  });
+});
+
+describe('buildPaletteItems — the live dial lists', () => {
+  const built = (
+    callerIds: { value: string; label: string }[] = [],
+    rules: { value: string; label: string }[] = [],
+    agents: { value: string; label: string }[] = [],
+  ) => {
+    const item = buildPaletteItems([], [], callerIds, rules, agents).find(
+      (i) => i.type === 'action.start_voice_call',
+    )!;
+    return (item.schema as { properties: Record<string, { options?: { label: string; value: string }[] }> })
+      .properties;
+  };
+
+  it('offers only the blank default when nothing has been loaded', () => {
+    // The state every editor is in before a call node is selected, and the state
+    // it stays in when a vendor is unreachable. Blank means "as configured
+    // elsewhere" — never a broken control.
+    const p = built();
+    expect(p.callerId!.options).toEqual([{ label: 'ברירת המחדל של החשבון', value: '' }]);
+    expect(p.ruleId!.options).toEqual([{ label: 'הכלל המוגדר לייעוד', value: '' }]);
+    expect(p.agentId!.options).toEqual([{ label: 'הסוכן המוגדר בתרחיש', value: '' }]);
+  });
+
+  it('puts the live rows after the blank default, never in place of it', () => {
+    // ⚠️ A dropdown with no way back to the default would make the first pick
+    // permanent — the owner could never say "use the purpose's rule again".
+    const p = built(
+      [{ value: '+97233301505', label: 'ראשי' }],
+      [{ value: '1520915', label: 'OutCallAgent — RSVPAgent' }],
+      [{ value: 'agent_1', label: 'קלפה' }],
+    );
+    expect(p.callerId!.options![0]!.value).toBe('');
+    expect(p.callerId!.options![1]).toEqual({ value: '+97233301505', label: 'ראשי' });
+    expect(p.ruleId!.options![1]!.value).toBe('1520915');
+    expect(p.agentId!.options![1]!.value).toBe('agent_1');
   });
 });

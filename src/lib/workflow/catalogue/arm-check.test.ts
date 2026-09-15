@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { isKnownNodeType } from './nodes';
 import { DIAGRAM_TEMPLATES } from './templates';
 
-import { findArmBlockers } from './arm-check';
+import { findArmBlockers, findArmBlockersByNode } from './arm-check';
 
 // ⚠️ THE RULE THIS FILE DEFENDS, and the reason it is a SECOND gate rather than
 // part of the converter: conversion asks "can this graph run", arming asks "is
@@ -268,7 +268,22 @@ describe('the starter templates against this gate', () => {
     const blocked = results.filter((r) => r.blockers.length > 0);
     expect(blocked.map((b) => b.name)).toEqual([
       'תזכורת שבועית למי שטרם ענה',
+      // ⚠️ ADDED BY THE GUEST-CONTEXT RULE, AND IT IS NOT A BLANK — it is the
+      // template that must never be armed. Its trigger node is labelled
+      // "מופעל מתהליך אחר" / "לא להפעיל": it is a fan-out CHILD, started by
+      // `startRunsForGuests`, which supplies the contact its steps need.
+      //
+      // Its own comment claimed arming was already impossible ("a workflow
+      // cannot be armed without a token") — measured, and that was not true:
+      // `token` was not in NODE_REQUIRED_FIELDS['trigger.webhook'], and nothing
+      // in `setWorkflowActive` looked at it. So the template could be armed, on
+      // a webhook route that would then fail every guest step. The guest rule is
+      // what first enforced the intent the template already declared; `token`
+      // has since joined NODE_REQUIRED_FIELDS, so the template's own claim is
+      // now true as well and this template reports BOTH — see below.
+      'תזכורת לאורח אחד (תהליך-בן)',
       'שיחה קולית עם המתנה לתוצאה',
+      'שיחת ייעוד — עם בחירת סוכן ומספר',
     ]);
 
     // ⚠️ EVERY ONE OF THESE NAMES THE NEXT ACTION, not just the field. An owner
@@ -276,11 +291,49 @@ describe('the starter templates against this gate', () => {
     // workflow it must point at does not exist yet — and cannot act on
     // "purposeKey is empty" either, because the dropdown they would reach for is
     // legitimately EMPTY until a non-builtin purpose is created.
-    expect(blocked[0]!.blockers).toEqual([
+    // ⚠️ LOOKED UP BY NAME, NOT BY POSITION. These were `blocked[0]`,
+    // `blocked[1]`, `blocked[2]` until a fourth template joined the list and
+    // shifted every one of them — three assertions failed at once for a reason
+    // that had nothing to do with what they were testing.
+    const blockersOf = (name: string) =>
+      blocked.find((b) => b.name === name)?.blockers ?? [`NO SUCH BLOCKED TEMPLATE: ${name}`];
+
+    expect(blockersOf('תזכורת שבועית למי שטרם ענה')).toEqual([
       'הצעד "לכל אורח שטרם ענה": לא נבחר תהליך להרצה. צרו את תהליך-הבן (למשל מהתבנית "תזכורת לאורח אחד") והדביקו את המזהה שלו כאן.',
     ]);
-    expect(blocked[1]!.blockers).toEqual([
+    expect(blockersOf('שיחה קולית עם המתנה לתוצאה')).toEqual([
       'הצעד "שיחה עם סוכן קולי": לא נבחר ייעוד לשיחה. בחרו ייעוד מהרשימה, ואם היא ריקה — צרו ייעוד חדש ב-/admin/integrations/voximplant וקשרו לו rule.',
+    ]);
+    // The fan-out child: blocked for its SHAPE, not for a blank. Its steps need
+    // a guest and its own trigger cannot supply one — which is the same thing
+    // its trigger label already says out loud ("לא להפעיל").
+    //
+    // ⚠️ AND IT REPORTS TWO, which is the point of reporting the guest rule
+    // ALONGSIDE the field checks rather than instead of them. The trigger's
+    // `token` is blank — deliberately, because this template is never meant to
+    // be armed — and that is now a blocker in its own right. An owner who fixed
+    // only one would press arm again and meet the other.
+    expect(blockersOf('תזכורת לאורח אחד (תהליך-בן)')).toEqual([
+      'הצעד "מופעל מתהליך אחר": לא הוגדר טוקן, ולכן אין כתובת שאפשר לקרוא לה. הדביקו כאן מחרוזת אקראית וארוכה — התייחסו אליה כאל סיסמה.',
+      'הצעד "שליחת תבנית תזכורת": הצעד פועל על אורח, והטריגר של התהליך אינו מתחיל מאורח. החליפו לטריגר "הודעת וואטסאפ נכנסת" שמסומן בו לפחות סוג הודעה שאורח שולח, הסירו את הצעד, או השאירו את התהליך לא מחומש והפעילו אותו מתהליך אחר עם "הרצה לכל אורח".',
+    ]);
+    // ⚠️ THE THIRD DELIBERATE BLANK, AND IT IS BLOCKED ON `purposeKey` ALONE.
+    //
+    // That is the assertion worth having: this template also ships `callerId`,
+    // `ruleId`, `agentId` and `toOverride` empty, and NONE of them appears here.
+    // They are overrides — empty means "the purpose's rule, the account's
+    // number, the scenario's agent, the contact's phone" — so a blank one is a
+    // configured state, not a missing one. If a future change made any of them
+    // required, this list would grow and the template would stop being loadable
+    // as a starting point, which is exactly the regression to catch here.
+    // ⚠️ TWO BLOCKERS ON ONE NODE, and both are real: this template ships a
+    // `trigger.schedule` (which cannot supply a guest) AND an empty
+    // `purposeKey`. Reporting only the first would send the owner back for a
+    // second round; the structural line comes first because it is the one that
+    // decides whether the step belongs here at all.
+    expect(blockersOf('שיחת ייעוד — עם בחירת סוכן ומספר')).toEqual([
+      'הצעד "שיחה עם הסוכן שתבחרו": הצעד פועל על אורח, והטריגר של התהליך אינו מתחיל מאורח. החליפו לטריגר "הודעת וואטסאפ נכנסת" שמסומן בו לפחות סוג הודעה שאורח שולח, הסירו את הצעד, או השאירו את התהליך לא מחומש והפעילו אותו מתהליך אחר עם "הרצה לכל אורח".',
+      'הצעד "שיחה עם הסוכן שתבחרו": לא נבחר ייעוד לשיחה. בחרו ייעוד מהרשימה, ואם היא ריקה — צרו ייעוד חדש ב-/admin/integrations/voximplant וקשרו לו rule.',
     ]);
   });
 });
@@ -339,6 +392,153 @@ describe('the declarations the gate reads', () => {
       expect(isKnownNodeType(item.type), item.type).toBe(true);
       if (!isKnownNodeType(item.type)) continue;
       expect(item.schema.required, item.type).toBe(NODE_REQUIRED_FIELDS[item.type]);
+    }
+  });
+});
+
+// A trigger that has been narrowed until nothing can reach it, and a webhook
+// route with no address. Both are static properties of the diagram, and both
+// used to arm cleanly and then simply never fire — the failure mode this whole
+// module exists to move forward in time.
+describe('a trigger that can never fire', () => {
+  const trigger = (properties: Record<string, unknown>) =>
+    wrap([node('t', 'trigger.whatsapp_inbound', { label: 'טריגר', description: 'd', ...properties })]);
+
+  it('⚠️ a keyword with no text-bearing kind selected', () => {
+    // `readTextBody` reads `payload.text?.body` and nothing else, so an image
+    // arrives with `messageText: ''` and `'שיחה'.includes` can never hold. The
+    // owner narrowed the kinds and kept the keyword, and the two filters are
+    // ANDed — the workflow is dead.
+    expect(
+      findArmBlockers(
+        trigger({ keyword: 'שיחה', messageKinds: [{ value: 'image' }, { value: 'document' }] }),
+      ),
+    ).toEqual([
+      'הצעד "טריגר": הוגדרה מילת הפעלה, אך לא נבחר סוג הודעה שמכיל טקסט — ולכן שום הודעה לא תתאים. סמנו גם "הודעת טקסט", או מחקו את מילת ההפעלה.',
+    ]);
+  });
+
+  it('accepts the OLD persisted shape too — bare strings, not objects', () => {
+    // The checkbox control stores objects now; diagrams saved before it stored
+    // strings, and `matchesKind` still matches them. A gate stricter than the
+    // matcher would refuse a workflow that runs.
+    expect(findArmBlockers(trigger({ keyword: 'שיחה', messageKinds: ['image'] }))).toHaveLength(1);
+  });
+
+  it('⚠️ a BUTTON TAP is not text either — the near-miss case', () => {
+    // The one a reader is most likely to get wrong. A quick-reply tap carries a
+    // label under `button.text` and a machine string under `button.payload`, and
+    // `readTextBody` reads neither — it reads `payload.text.body`. The payload is
+    // routed on separately, by `logic.switch` against `{{trigger.button_payload}}`,
+    // which is why the RSVP template uses exact `equals` there and not a keyword.
+    expect(
+      findArmBlockers(trigger({ keyword: 'שיחה', messageKinds: [{ value: 'button' }] })),
+    ).toHaveLength(1);
+  });
+
+  it('does NOT block once a text-bearing kind is mixed in', () => {
+    expect(
+      findArmBlockers(trigger({ keyword: 'שיחה', messageKinds: [{ value: 'image' }, { value: 'text' }] })),
+    ).toEqual([]);
+  });
+
+  it('does NOT block an unset kinds list — that means the default four', () => {
+    // `DEFAULT_WHATSAPP_MESSAGE_KINDS` includes `text`, so every diagram saved
+    // before the field existed keeps arming exactly as it did.
+    expect(findArmBlockers(trigger({ keyword: 'שיחה' }))).toEqual([]);
+    expect(findArmBlockers(trigger({ keyword: 'שיחה', messageKinds: [] }))).toEqual([]);
+  });
+
+  it('does NOT block a narrowed trigger with no keyword — that is a normal filter', () => {
+    expect(findArmBlockers(trigger({ messageKinds: [{ value: 'document' }] }))).toEqual([]);
+    expect(findArmBlockers(trigger({ keyword: '   ', messageKinds: [{ value: 'document' }] }))).toEqual([]);
+  });
+
+  it('does NOT block a DISABLED trigger — it starts nothing to begin with', () => {
+    expect(
+      findArmBlockers(
+        trigger({ keyword: 'שיחה', messageKinds: [{ value: 'image' }], status: 'disabled' }),
+      ),
+    ).toEqual([]);
+  });
+
+  it('⚠️ a webhook trigger with no token has no address', () => {
+    // `findWorkflowForToken` skips every workflow whose configured token is
+    // blank, so the route `/api/workflows/hook/<token>` resolves to nothing.
+    // Arming one produced an endpoint that existed nowhere, silently.
+    expect(
+      findArmBlockers(wrap([node('h', 'trigger.webhook', { label: 'קריאה', description: 'd', token: '' })])),
+    ).toEqual([
+      'הצעד "קריאה": לא הוגדר טוקן, ולכן אין כתובת שאפשר לקרוא לה. הדביקו כאן מחרוזת אקראית וארוכה — התייחסו אליה כאל סיסמה.',
+    ]);
+  });
+
+  it('a webhook trigger WITH a token arms', () => {
+    expect(
+      findArmBlockers(
+        wrap([node('h', 'trigger.webhook', { label: 'קריאה', description: 'd', token: 'a-long-random-string' })]),
+      ),
+    ).toEqual([]);
+  });
+});
+
+// The attribution the editor needs, and the guarantee that it cannot disagree
+// with the sentences the arm button shows.
+//
+// ⚠️ WHY THIS IS ONE FUNCTION AND NOT TWO. The SDK marks a node invalid from
+// `data.properties.customErrors`, which is PER NODE — so surfacing any of these
+// in the panel needs an id that `findArmBlockers`' `string[]` threw away. Two
+// implementations would eventually mark a node clean while the arm button
+// refused it, which is the exact confusion this module exists to end.
+describe('findArmBlockersByNode', () => {
+  const twoBadNodes = wrap([
+    node('t', 'trigger.schedule', { label: 'שעון', description: 'd', time: '' }),
+    node('w', 'action.send_whatsapp', { label: 'שליחה', description: 'd', body: 'שלום' }),
+  ]);
+
+  it('returns the same messages as findArmBlockers, in the same order', () => {
+    expect(findArmBlockersByNode(twoBadNodes).map((b) => b.message)).toEqual(
+      findArmBlockers(twoBadNodes),
+    );
+  });
+
+  it('names the node each refusal belongs to', () => {
+    const byNode = findArmBlockersByNode(twoBadNodes);
+    // The schedule's blank `time`, and the WhatsApp step under a clock trigger.
+    expect(byNode.find((b) => b.message.includes('"time"'))?.nodeId).toBe('t');
+    expect(byNode.find((b) => b.message.includes('אינו מתחיל מאורח'))?.nodeId).toBe('w');
+  });
+
+  it('every id it reports is a node that exists in the diagram', () => {
+    const ids = new Set(['t', 'w']);
+    for (const blocker of findArmBlockersByNode(twoBadNodes)) {
+      expect(ids.has(blocker.nodeId), `unknown node ${blocker.nodeId}`).toBe(true);
+    }
+  });
+
+  it('a clean diagram reports nothing from either entry point', () => {
+    const clean = wrap([
+      node('t', 'trigger.whatsapp_inbound', { label: 'טריגר', description: 'd' }),
+      node('w', 'action.send_whatsapp', { label: 'שליחה', description: 'd', body: 'שלום' }),
+    ]);
+    expect(findArmBlockersByNode(clean)).toEqual([]);
+    expect(findArmBlockers(clean)).toEqual([]);
+  });
+
+  it('⚠️ every starter template agrees across the two entry points', () => {
+    // The templates are the widest fixtures there are — four of them block, for
+    // four different reasons. If the mapping ever drops or reorders a blocker,
+    // this is where it shows.
+    for (const template of DIAGRAM_TEMPLATES) {
+      const diagram = {
+        name: template.value.name,
+        nodes: template.value.diagram.nodes,
+        edges: template.value.diagram.edges,
+      };
+      expect(
+        findArmBlockersByNode(diagram).map((b) => b.message),
+        template.value.name,
+      ).toEqual(findArmBlockers(diagram));
     }
   });
 });
