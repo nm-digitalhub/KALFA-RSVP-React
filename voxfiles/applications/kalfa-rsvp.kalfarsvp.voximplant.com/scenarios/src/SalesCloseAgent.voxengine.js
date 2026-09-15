@@ -78,6 +78,14 @@ VoxEngine.addEventListener(AppEvents.Started, function () {
         companyId: '',
         companyAddress: '',
         attemptToken: '',
+        // Optional per-call opening line from ctx. Rides in
+        // conversation_config_override.agent.first_message, NOT as a dynamic
+        // variable — the frame spec keeps the two apart
+        // (elevenlabs.io/docs/.../websocket#send.Conversation-Initiation-Client-Data,
+        // which voxengine.d.ts names as the contract for this method).
+        // '' when ctx omits it, which leaves the agent's configured first
+        // message untouched — see the init frame for why that matters.
+        firstMessageOverride: '',
         agent: null,
         recordingUrl: null,
         elConversationId: '',
@@ -356,9 +364,24 @@ VoxEngine.addEventListener(AppEvents.Started, function () {
                             company_id: state.companyId,
                             company_address: state.companyAddress,
                             kalfa_attempt_token: state.attemptToken
-                        }
+                        },
+                        // Same idiom as RSVPAgent's asr.keywords override: OMITTED
+                        // ENTIRELY when ctx gave us nothing, so a failed ctx fetch
+                        // falls back to the agent's own configured first message
+                        // rather than replacing it with an empty string.
+                        //
+                        // ⚠️ This only takes effect while the agent's
+                        // platform_settings.overrides.conversation_config_override
+                        // .agent.first_message flag is true. With the flag off the
+                        // field is swallowed in silence and the call sounds
+                        // completely normal — which is exactly why the gate for
+                        // this is WHAT IS HEARD, never the absence of an error.
+                        conversation_config_override: state.firstMessageOverride
+                            ? { agent: { first_message: state.firstMessageOverride } }
+                            : undefined
                     });
-                    log('Injected dynamic_variables');
+                    log('Injected dynamic_variables (first_message_override=' +
+                        (state.firstMessageOverride ? 'yes' : 'no') + ')');
                 }
                 catch (err) {
                     log('conversationInitiationClientData failed: ' + err);
@@ -672,6 +695,7 @@ VoxEngine.addEventListener(AppEvents.Started, function () {
                 state.companyId = ctx.company_id || '';
                 state.companyAddress = ctx.company_address || '';
                 state.attemptToken = ctx.kalfa_attempt_token || '';
+                state.firstMessageOverride = ctx.first_message_override || '';
             }
             catch (err) {
                 log('Context parse error: ' + err);
