@@ -287,17 +287,27 @@ export function WorkflowEditor({
     useStore.getState().fetchData();
   }, [paletteItems]);
 
-  // Root 2.3.0 omits globalVariables from its props. Its child effects load
-  // nodes/edges first; this parent effect restores the remaining persisted field.
+  // Root 2.3.0 does not expose globalVariables as an initial-data prop.
+  // Its internal integration layer supports them, but Root does not forward
+  // them. Keep this synchronization independent from the workflow-session
+  // lifecycle: an RSC refresh may reconstruct this object without changing
+  // which workflow the owner is editing.
   useEffect(() => {
     useStore.setState({ globalVariables: initialGlobalVariables ?? {} });
+  }, [initialGlobalVariables]);
+
+  // Execution and panel state belong to the workflow visit. Revalidation of
+  // this same workflow must not reset them merely because server props were
+  // reconstructed.
+  useEffect(() => {
     resetExecution();
     resetPanels();
+
     return () => {
       resetExecution();
       resetPanels();
     };
-  }, [workflowId, initialGlobalVariables]);
+  }, [workflowId]);
 
   // Published to a module store rather than passed down: the header control is
   // registered at module scope and mounted by the SDK's own tree, so there is no
