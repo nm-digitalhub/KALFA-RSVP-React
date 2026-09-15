@@ -1,5 +1,7 @@
 import type { PaletteItem } from "@workflowbuilder/sdk";
 
+import { RSVP_STATUSES } from "@/lib/constants";
+
 // A stored value in a shape the schema no longer accepts, repaired on the way in.
 //
 // ⚠️ THE LIVE CASE, MEASURED 2026-09-15. The ARMED workflow
@@ -43,6 +45,39 @@ function objectArrayFields(item: PaletteItem): string[] {
     .map(([name]) => name);
 }
 
+/** The property names a node type declares as a number. */
+function numberFields(item: PaletteItem): string[] {
+  const properties =
+    (item.schema as { properties?: Record<string, unknown> }).properties ?? {};
+
+  return Object.entries(properties)
+    .filter(([, declared]) => (declared as { type?: unknown })?.type === "number")
+    .map(([name]) => name);
+}
+
+/**
+ * A numeric STRING becomes a number; everything else is left exactly as it is.
+ *
+ * ⚠️ THE SECOND CASE OF "THE SCHEMA IS STRICTER THAN THE ENGINE", and the same
+ * repair as the array one above. `maxGuests: '25'` runs correctly — the handler
+ * reads it as `Number(rawMax)` (`steps/index.ts`) and `findArmBlockers` coerces
+ * the same way — while the schema declares `type: 'number'` and marks the node
+ * invalid. A node that works, wearing an error badge.
+ *
+ * ⚠️ AND IT IS DELIBERATELY NARROW. Only a string that is ENTIRELY a finite
+ * number converts. `''` stays `''` (it is an empty field, and the required
+ * check is what should speak), `'25 guests'` stays a string (it is a mistake,
+ * and silently reading 25 out of it would be this function inventing intent),
+ * and a value that is already a number is returned untouched.
+ */
+function normalizeNumber(value: unknown): unknown {
+  if (typeof value !== "string") return value;
+  const trimmed = value.trim();
+  if (trimmed === "") return value;
+  const parsed = Number(trimmed);
+  return Number.isFinite(parsed) ? parsed : value;
+}
+
 /**
  * Bare strings become `{ value }`; anything already an object is left alone.
  *
@@ -62,7 +97,11 @@ function normalizeEntries(value: unknown): unknown {
 }
 
 /**
- * Repair every node's legacy array values against the palette it will render in.
+ * Repair legacy property shapes as a workflow enters the editor.
+ *
+ * Array-of-object and numeric fields are discovered from the palette schema;
+ * the pre-lifecycle RSVP `status` collision is a targeted compatibility repair
+ * because `status` is now owned by the SDK node lifecycle.
  *
  * A node whose type is not in the palette is returned untouched — an unknown
  * type is the converter's error to report, and guessing at its shape here would
@@ -72,24 +111,57 @@ export function normalizeLegacyProperties<T extends { data?: { type?: unknown; p
   nodes: readonly T[],
   paletteItems: readonly PaletteItem[],
 ): T[] {
-  const fieldsByType = new Map<string, string[]>();
-  for (const item of paletteItems) fieldsByType.set(item.type, objectArrayFields(item));
+  const arrayFieldsByType = new Map<string, string[]>();
+  const numberFieldsByType = new Map<string, string[]>();
+  for (const item of paletteItems) {
+    arrayFieldsByType.set(item.type, objectArrayFields(item));
+    numberFieldsByType.set(item.type, numberFields(item));
+  }
 
   return nodes.map((node) => {
-    const fields = fieldsByType.get(String(node.data?.type ?? ""));
-    if (!fields || fields.length === 0) return node;
+    const type = String(node.data?.type ?? "");
+    const arrayFields = arrayFieldsByType.get(type) ?? [];
+    const numFields = numberFieldsByType.get(type) ?? [];
 
     const properties = node.data?.properties as Properties | undefined;
     if (!properties) return node;
 
+    const legacyRsvpStatus =
+      type === "action.update_guest_status" &&
+      !("rsvpStatus" in properties) &&
+      typeof properties.status === "string" &&
+      (RSVP_STATUSES as readonly string[]).includes(properties.status)
+        ? properties.status
+        : undefined;
+
+    if (
+      arrayFields.length === 0 &&
+      numFields.length === 0 &&
+      legacyRsvpStatus === undefined
+    ) {
+      return node;
+    }
+
     let changed = false;
     const next: Properties = { ...properties };
-    for (const field of fields) {
-      if (!(field in properties)) continue;
-      const normalized = normalizeEntries(properties[field]);
-      if (normalized !== properties[field]) {
-        next[field] = normalized;
-        changed = true;
+
+    if (legacyRsvpStatus !== undefined) {
+      next.rsvpStatus = legacyRsvpStatus;
+      next.status = "active";
+      changed = true;
+    }
+
+    for (const [fields, normalize] of [
+      [arrayFields, normalizeEntries],
+      [numFields, normalizeNumber],
+    ] as const) {
+      for (const field of fields) {
+        if (!(field in properties)) continue;
+        const normalized = normalize(properties[field]);
+        if (normalized !== properties[field]) {
+          next[field] = normalized;
+          changed = true;
+        }
       }
     }
 
