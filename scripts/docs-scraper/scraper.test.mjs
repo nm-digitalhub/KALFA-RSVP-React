@@ -775,6 +775,24 @@ describe('estimateMaxRequests', () => {
 
 // --- 14: CLI -----------------------------------------------------------------
 describe('parseArgv', () => {
+    it('--max-requests נקרא ומוסר מהארגומנטים', () => {
+        const parsed = parseArgv(['https://x.test/docs/', 'out.json', '--max-requests', '5']);
+        assert.equal(parsed.cliError, null);
+        assert.equal(parsed.maxRequestsOverride, 5);
+        assert.equal(parsed.outputFile, 'out.json');
+        assert.deepEqual(parsed.targetUrls, ['https://x.test/docs/']);
+    });
+
+    it('--max-requests דוחה ערך שאינו מספר חיובי שלם', () => {
+        for (const bad of ['0', '-1', 'abc', '1.5']) {
+            assert.match(parseArgv(['u', 'o.json', '--max-requests', bad]).cliError ?? '', /max-requests/);
+        }
+    });
+
+    it('בלי הדגל, אין override', () => {
+        assert.equal(parseArgv(['https://x.test/docs/', 'out.json']).maxRequestsOverride, null);
+    });
+
     it('14 - --glob is pulled out wherever it appears', () => {
         const parsed = parseArgv(['https://h.io/docs/', '--glob', 'https://h.io/docs/**', 'out.json']);
         assert.equal(parsed.globOverride, 'https://h.io/docs/**');
@@ -1053,6 +1071,80 @@ describe('readMetaRefreshTarget', () => {
 });
 
 // --- 12, 13, 14, 15, 16, 17: ריצות מלאות -------------------------------------
+describe('every dropped URL has provenance', () => {
+    // ⚠️ הכשל שהדלים האלה סוגרים: כתובת שנמצאה בעמוד ולא נזחלה נעלמה בשקט.
+    // היא לא ב-failed (היא לא נכשלה), לא ב-empty (היא לא נקראה), ולא
+    // ב-skippedNonHtml (היא HTML). הדוח נראה נקי והתוצאה הייתה חלקית.
+    //
+    // ⚠️ שני דלים ולא אחד, ובמכוון. onSkippedRequest מונה את הסיבות שהוא מכסה
+    // אך אינו מבטיח ש-`return false` מ-transformRequestFunction מסווג כ-
+    // 'filters'. הדחיות שלנו נרשמות היכן שהן מתקבלות; שלו נרשמות דרכו.
+
+    it('דחייה של הפרופיל נרשמת ב-filteredByProfile', async () => {
+        // /docs/ מקשר החוצה אל עמודים מחוץ לגבול, וה-boundary דוחה אותם.
+        const run = await runScraper(['{origin}/docs/', '{out}']);
+
+        assert.ok(Array.isArray(run.audit.audit.filteredByProfile));
+        for (const url of run.audit.audit.filteredByProfile) {
+            assert.equal(typeof url, 'string');
+            // מה שנדחה לא נשמר כתיעוד — אחרת הדלי מונה את הדבר הלא נכון.
+            assert.ok(!run.docs.some((doc) => doc.url === url));
+        }
+    });
+
+    it('⚠️ זחילה שנחתכה בתקרה אינה יוצאת ב-0', async () => {
+        // ⚠️ הגרסה הראשונה של הבדיקה הזו הייתה ריקה מתוכן. היא אמרה
+        // "אם truncatedByLimit — אז הקוד אינו 0", ולכן עברה גם אם הדגל לעולם
+        // אינו עולה. בדיוק הכשל שהיא נכתבה כדי לתפוס היה מותיר אותה ירוקה.
+        //
+        // --max-requests מכריח את החיתוך, וכל הטענות כאן בלתי מותנות.
+        const run = await runScraper(['{origin}/docs/', '{out}', '--max-requests', '2']);
+
+        assert.equal(run.audit.audit.truncatedByLimit, true);
+        assert.equal(run.exitCode, 1);
+        assert.match(run.stdout, /maxRequestsPerCrawl/);
+
+        // והתוצאה באמת חלקית — פחות עמודים ממה שהעץ מכיל.
+        assert.ok(run.docs.length <= 2, `stored ${run.docs.length}`);
+    });
+
+    it('זחילה שלא נחתכה אינה מרימה את הדגל', async () => {
+        // הצד השני, שבלעדיו הבדיקה למעלה מוכיחה רק שהדגל יכול לעלות.
+        const run = await runScraper([
+            '--only',
+            '{out}',
+            `${origin}/docs/overview/`,
+        ]);
+
+        assert.equal(run.audit.audit.truncatedByLimit, false);
+    });
+
+    it('כל דילוג של Crawlee נושא סיבה', async () => {
+        const run = await runScraper(['{origin}/docs/', '{out}']);
+
+        assert.ok(Array.isArray(run.audit.audit.skippedByCrawler));
+        for (const entry of run.audit.audit.skippedByCrawler) {
+            assert.equal(typeof entry.url, 'string');
+            assert.equal(typeof entry.reason, 'string');
+            assert.notEqual(entry.reason, '');
+        }
+    });
+
+    it('--only אינו מסנן דבר — הרשימה היא הגבול', async () => {
+        // ההפך מהמקרה למעלה, ושווה להצמיד: במצב --only הכתובות ניתנו
+        // במפורש, אז כל דחייה שם הייתה באג ולא סינון.
+        const run = await runScraper([
+            '--only',
+            '{out}',
+            `${origin}/docs/overview/`,
+            `${origin}/docs/nodes/`,
+        ]);
+
+        assert.deepEqual(run.audit.audit.filteredByProfile, []);
+        assert.equal(run.audit.audit.truncatedByLimit, false);
+    });
+});
+
 describe('end to end', () => {
     it('17, 12, 13, 7 - a healthy docs tree crawls, and the audit records what went wrong', async () => {
         const run = await runScraper(['{origin}/docs/', '{out}']);

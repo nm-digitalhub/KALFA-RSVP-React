@@ -183,6 +183,7 @@ workflow-*-review.txt
 # and for the same reason: regenerable by scripts/docs-scraper/, with the
 # readable result committed under docs/.
 jsonforms*.json
+crawlee*.json
 *.json.audit.json
 
 # Python bytecode from the pronunciation scripts.

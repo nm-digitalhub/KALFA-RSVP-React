@@ -91,13 +91,35 @@ ${audit.crawlerError ? `Crawler aborted:     ${audit.crawlerError}\n` : ''}`);
         audit.duplicates.length ||
         audit.redirectStubs.length ||
         audit.skippedNonHtml.length ||
-        audit.lateContent.length
+        audit.lateContent.length ||
+        audit.filteredByProfile.length ||
+        audit.skippedByCrawler.length
     ) {
         console.log(`Root not found:      ${audit.rootMissing.length}
 Duplicate content:   ${audit.duplicates.length}
 Redirect stubs:      ${audit.redirectStubs.length}
 Skipped non-HTML:    ${audit.skippedNonHtml.length}
 Late content:        ${audit.lateContent.length}
+Filtered by profile: ${audit.filteredByProfile.length}
+Skipped by crawler:  ${audit.skippedByCrawler.length}${skipReasonBreakdown(audit)}
 `);
     }
+
+    // ⚠️ הודעה נפרדת, ולא עוד שורה במניין. זחילה שנחתכה בתקרה היא תוצאה
+    // חלקית שנראית כמו הצלחה, וזה הכשל שהכלי הזה קיים כדי לא לחזור עליו.
+    if (audit.truncatedByLimit) {
+        console.log(
+            `[warn] הזחילה נעצרה ב-maxRequestsPerCrawl. התוצאה חלקית — העלו את התקרה או צמצמו את ה-boundary.\n`,
+        );
+    }
+}
+
+/** פירוט הסיבות לדילוג, כשיש יותר מאחת. */
+function skipReasonBreakdown(audit) {
+    if (audit.skippedByCrawler.length === 0) return '';
+    const counts = new Map();
+    for (const { reason } of audit.skippedByCrawler) {
+        counts.set(reason, (counts.get(reason) ?? 0) + 1);
+    }
+    return ` (${[...counts].map(([reason, n]) => `${reason}: ${n}`).join(', ')})`;
 }

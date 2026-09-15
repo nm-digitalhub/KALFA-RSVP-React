@@ -75,11 +75,28 @@ export function parseArgv(rawArgv) {
         argv = argv.filter((_value, index) => index !== globAt && index !== globAt + 1);
     }
 
+    // תקרה מפורשת, הגוברת על ההערכה מהפרופיל.
+    //
+    // קיים גם בשביל הבדיקות, ואני אומר את זה במפורש: בלי דרך להכריח חיתוך,
+    // הבדיקה של truncatedByLimit נאלצת להיות מותנית - "אם נחתך, אז..." - וכזו
+    // בדיקה עוברת גם כשהמנגנון שבור. היא גם שימושית מחוץ לבדיקות: לזחול דגימה
+    // מאתר גדול בלי לחכות לכולו.
+    const maxAt = argv.indexOf('--max-requests');
+    let maxRequestsOverride = null;
+    if (maxAt !== -1) {
+        const raw = Number(argv[maxAt + 1]);
+        if (!Number.isInteger(raw) || raw < 1) {
+            return { cliError: '--max-requests requires a positive integer' };
+        }
+        maxRequestsOverride = raw;
+        argv = [...argv.slice(0, maxAt), ...argv.slice(maxAt + 2)];
+    }
+
     const onlyMode = argv[0] === '--only';
     const outputFile = argv[1] || 'docs.json';
     const targetUrls = onlyMode ? argv.slice(2) : argv[0] ? [argv[0]] : [];
 
-    return { cliError: null, analyzeOnly, globOverride, onlyMode, outputFile, targetUrls };
+    return { cliError: null, analyzeOnly, globOverride, onlyMode, outputFile, targetUrls, maxRequestsOverride };
 }
 
 export function createAuditState() {
@@ -103,6 +120,30 @@ export function createAuditState() {
         // בחילוץ חוזר; הרשומה כאן היא הראיה שזה קרה, ומדד לכך שהספים קצרים
         // מדי לאתר הזה.
         lateContent: [],
+        // ⚠️ כתובת שנמצאה בעמוד ונדחתה על ידי הפרופיל שלנו, ב-
+        // transformRequestFunction. בלי הרישום הזה היא נעלמת בלי שום עקבה:
+        // transformRequestFunction מחזיר false והכתובת פשוט לא נכנסת לתור.
+        //
+        // זה הדלי ה"שלנו". הדלי שמתחתיו הוא של Crawlee.
+        filteredByProfile: [],
+        // דילוגים ברמת Crawlee, דרך onSkippedRequest: robots.txt, מסנני
+        // enqueue, אסטרטגיית redirect, ו-maxRequestsPerCrawl.
+        //
+        // ⚠️ שני הדלים חופפים, וזה נמדד. התיעוד אינו מבטיח ש-`return false`
+        // מתוך transformRequestFunction מסווג כ-'filters', אבל בזחילה אמיתית
+        // הוא כן: 27 מתוך רשומות ה-'filters' היו בדיוק הכתובות שהפרופיל שלנו
+        // דחה. אז זו אינה חלוקה לשתי קבוצות זרות.
+        //
+        // שניהם נשארים בכל זאת, כי הם עונים על שתי שאלות שונות:
+        // filteredByProfile אומר "אנחנו החלטנו, ואפשר להצביע על הכלל", בעוד
+        // 'filters' של Crawlee מאחד את הדחייה שלנו עם הגלובים והאסטרטגיה שלה
+        // לכדי מחרוזת אחת שאי אפשר לייחס. סכימת השניים אינה מספר משמעותי;
+        // כל אחד לחוד כן.
+        skippedByCrawler: [],
+        // האם הזחילה נעצרה כי הגיעה ל-maxRequestsPerCrawl, ולא כי נגמרו
+        // הכתובות. זחילה שנחתכה היא תוצאה חלקית, וקוד יציאה 0 עליה הוא
+        // בדיוק ההצלחה השקטה שהכלי הזה נבנה כדי למנוע.
+        truncatedByLimit: false,
     };
 }
 
@@ -147,6 +188,30 @@ async function runCrawl({ profile, startUrls, onlyMode, globOverride, maxRequest
         maxRequestRetries: 3,
         maxRequestsPerCrawl: maxRequests,
         respectRobotsTxtFile: true,
+
+        // ⚠️ ברמת ה-CRAWLER ולא בתוך enqueueLinks, וזה ההבדל בין השם הזה לבין
+        // שקר. שתי הרמות קיימות, והתיעוד של 3.18 מפרט מה כל אחת מכסה:
+        // robots.txt, אי-התאמה למסנני enqueue, הפניה לכתובת שאינה תואמת את
+        // האסטרטגיה, ו-maxRequestsPerCrawl. המקרה השלישי הוא זה שמכריע -
+        // בקשת התחלה שהופנתה החוצה לא נוצרה מקריאת enqueueLinks כלשהי, ולכן
+        // callback ברמת enqueue לעולם לא יראה אותה.
+        //
+        // התיעוד גם אומר שאם שניהם קיימים - שניהם נקראים, קודם זה ואחר כך של
+        // enqueueLinks. לכן זו העברה ולא הוספה: שניהם יחד היו סופרים פעמיים.
+        onSkippedRequest({ url, reason }) {
+            audit.skippedByCrawler.push({ url, reason: reason ?? 'unknown' });
+            // ⚠️ 'enqueueLimit' ולא 'limit', וזה נמדד ולא נקרא. הטיפוס מונה
+            // 'robotsTxt' | 'limit' | 'enqueueLimit' | 'filters' | 'redirect' |
+            // 'depth'; בזחילה אמיתית עם --max-requests 2 נורו 66 דילוגים, כולם
+            // 'enqueueLimit', ואף אחד 'limit'. הגרסה הראשונה בדקה 'limit'
+            // בלבד, הדגל נשאר false, וקוד היציאה היה 0 — וזה מה שהבדיקה תפסה.
+            //
+            // שתיהן נבדקות: 'limit' נשאר כאן כי הוא בטיפוס, ולהחמיץ חיתוך גרוע
+            // בהרבה מלסמן אחד שלא קרה.
+            if (reason === 'enqueueLimit' || reason === 'limit') {
+                audit.truncatedByLimit = true;
+            }
+        },
 
         async requestHandler({ page, request, response, enqueueLinks }) {
             // visited נספר לפני כל סינון, ולכן משמעותו אחת ויחידה: כל response
@@ -291,6 +356,10 @@ async function runCrawl({ profile, startUrls, onlyMode, globOverride, maxRequest
                 transformRequestFunction(req) {
                     req.url = normalizeUrl(req.url);
                     if (!shouldAcceptUrl(req.url, profile)) {
+                        // נרשם ולא רק נדחה. ריצה שהחזירה חצי מהעמודים כי
+                        // ה-boundary היה צר מדי נראית זהה לריצה מוצלחת, אלא אם
+                        // הדחיות ספורות איפשהו.
+                        audit.filteredByProfile.push(req.url);
                         return false;
                     }
                     return req;
@@ -314,6 +383,10 @@ async function runCrawl({ profile, startUrls, onlyMode, globOverride, maxRequest
     // היציאה, ולא נבלע.
     try {
         await crawler.run(startUrls);
+
+        // ⚠️ לא דרך התור. הניסיון הזה נכשל ונמדד: `pendingRequestCount` הוא 0
+        // גם כשהתקרה נפגעה, כי Crawlee מפסיקה להכניס לתור בתקרה במקום להשאיר
+        // בקשות ממתינות. התור מתרוקן כרגיל והזחילה נראית שלמה.
     } catch (error) {
         audit.crawlerError = error?.message ?? 'unknown';
         console.error(`[fail] crawler aborted: ${audit.crawlerError}`);
@@ -323,7 +396,7 @@ async function runCrawl({ profile, startUrls, onlyMode, globOverride, maxRequest
 
 // --- main ---------------------------------------------------------------------
 export async function main(rawArgv = process.argv.slice(2)) {
-    const { cliError, analyzeOnly, globOverride, onlyMode, outputFile, targetUrls } = parseArgv(rawArgv);
+    const { cliError, analyzeOnly, globOverride, onlyMode, outputFile, targetUrls, maxRequestsOverride } = parseArgv(rawArgv);
 
     if (cliError) {
         console.error(`[error] ${cliError}`);
@@ -335,6 +408,7 @@ export async function main(rawArgv = process.argv.slice(2)) {
         console.error('[error] missing start URL.');
         console.error('   node scripts/docs-scraper/scraper.mjs <start-url> <out.json> [--glob <pattern>] [--analyze-only]');
         console.error('   node scripts/docs-scraper/scraper.mjs --only <out.json> <url> <url> ...');
+        console.error('   [--max-requests <n>]  תקרה מפורשת במקום ההערכה מהפרופיל');
         process.exitCode = 2;
         return;
     }
@@ -382,7 +456,7 @@ export async function main(rawArgv = process.argv.slice(2)) {
     }
 
     const startUrls = onlyMode ? targetUrls.map(normalizeUrl) : [profile.resolvedUrl];
-    const maxRequests = onlyMode ? targetUrls.length : estimateMaxRequests(profile);
+    const maxRequests = maxRequestsOverride ?? (onlyMode ? targetUrls.length : estimateMaxRequests(profile));
 
     const { audit, allDocsData } = await runCrawl({
         profile,
@@ -398,7 +472,9 @@ export async function main(rawArgv = process.argv.slice(2)) {
     printCrawlAudit(profile, audit);
     console.log(`${outputFile}\n${auditPath}`);
 
-    if (audit.crawlerError || audit.failed.length > 0 || audit.empty.length > 0) {
+    // ⚠️ truncatedByLimit נכנס לתנאי הזה. זחילה שנעצרה כי פגעה בתקרה החזירה
+    // תוצאה חלקית, ולכן היא לא "הצליחה" - גם אם כל עמוד שכן נזחל תקין.
+    if (audit.crawlerError || audit.failed.length > 0 || audit.empty.length > 0 || audit.truncatedByLimit) {
         process.exitCode = 1;
     }
 }
