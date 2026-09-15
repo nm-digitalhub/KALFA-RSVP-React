@@ -1,5 +1,5 @@
 > מקור: https://www.workflowbuilder.io/docs/nodes/delay/
-> נשמר: 2026-09-09
+> נשמר: 2026-09-15
 
 # Delay
 
@@ -241,161 +241,6 @@ Notification
 
 ```
 {
-  "type": "VerticalLayout",
-  "elements": [
-    {
-      "type": "MessageOnError",
-      "scope": "#/properties/missingPreviousVariable",
-      "text": "plugins.validation.missingDependency"
-    },
-    {
-      "label": "Delay Type",
-      "type": "Select",
-      "scope": "#/properties/type"
-    },
-    {
-      "type": "Accordion",
-      "label": "General Information",
-      "rule": {
-        "effect": "SHOW",
-        "condition": {
-          "scope": "#",
-          "schema": {
-            "required": [
-              "type"
-            ]
-          }
-        }
-      },
-      "elements": [
-        {
-          "type": "Text",
-          "scope": "#/properties/label",
-          "label": "Title",
-          "placeholder": "Node Title..."
-        },
-        {
-          "type": "Select",
-          "scope": "#/properties/status",
-          "options": [
-            {
-              "label": "Active",
-              "value": "active",
-              "icon": "StatusActive"
-            },
-            {
-              "label": "Draft",
-              "value": "draft",
-              "icon": "StatusDraft"
-            },
-            {
-              "label": "Disabled",
-              "value": "disabled",
-              "icon": "StatusDisabled"
-            }
-          ],
-          "label": "Status"
-        },
-        {
-          "type": "Text",
-          "scope": "#/properties/description",
-          "label": "Description",
-          "placeholder": "Type your description here..."
-        }
-      ]
-    },
-    {
-      "rule": {
-        "effect": "SHOW",
-        "condition": {
-          "scope": "#/properties/type",
-          "schema": {
-            "const": "fixedDelay"
-          }
-        }
-      },
-      "type": "Accordion",
-      "label": "Duration",
-      "elements": [
-        {
-          "type": "VerticalLayout",
-          "elements": [
-            {
-              "type": "HorizontalLayout",
-              "elements": [
-                {
-                  "type": "Label",
-                  "text": "Time Units:"
-                },
-                {
-                  "type": "Select",
-                  "scope": "#/properties/duration/properties/timeUnits"
-                }
-              ]
-            },
-            {
-              "type": "HorizontalLayout",
-              "elements": [
-                {
-                  "type": "Label",
-                  "text": "Delay Amount:",
-                  "required": true
-                },
-                {
-                  "type": "Text",
-                  "scope": "#/properties/duration/properties/delayAmount",
-                  "errorIndicatorEnabled": false
-                }
-              ]
-            }
-          ]
-        }
-      ]
-    },
-    {
-      "rule": {
-        "effect": "SHOW",
-        "condition": {
-          "scope": "#/properties/type",
-          "schema": {
-            "const": "dynamicDelay"
-          }
-        }
-      },
-      "type": "Accordion",
-      "label": "Duration",
-      "elements": [
-        {
-          "type": "VerticalLayout",
-          "elements": [
-            {
-              "type": "Text",
-              "scope": "#/properties/duration/properties/expression",
-              "label": "Duration Expression"
-            },
-            {
-              "type": "HorizontalLayout",
-              "elements": [
-                {
-                  "type": "Label",
-                  "text": "Max Wait Time:"
-                },
-                {
-                  "type": "Select",
-                  "scope": "#/properties/duration/properties/maxWaitTime"
-                }
-              ]
-            }
-          ]
-        }
-      ]
-    }
-  ]
-}
-```
-
-```
-{
   "required": [
     "label",
     "description",
@@ -540,12 +385,12 @@ Notification
 }
 ```
 
+```
+{  "required": [    "label",    "description",    "type",    "status"  ],  "type": "object",  "properties": {    "label": {      "type": "string"    },    "description": {      "type": "string"    },    "type": {      "type": "string",      "placeholder": "Select Delay Type...",      "options": [        {          "label": "Fixed Delay",          "value": "fixedDelay",          "icon": "Clock"        },        {          "label": "Dynamic Delay",          "value": "dynamicDelay",          "icon": "HourglassSimpleHigh"        },        {          "label": "Conditional Delay",          "value": "conditionalDelay",          "icon": "ListChecks"        },        {          "label": "Until Specific Date/Time",          "value": "untilSpecificDateTime",          "icon": "CalendarDot"        }      ]    },    "status": {      "type": "string",      "options": [        {          "label": "Active",          "value": "active",          "icon": "StatusActive"        },        {          "label": "Draft",          "value": "draft",          "icon": "StatusDraft"        },        {          "label": "Disabled",          "value": "disabled",          "icon": "StatusDisabled"        }      ]    },    "duration": {      "type": "object",      "properties": {        "timeUnits": {          "type": "string",          "options": [            {              "label": "None",              "value": "none"            },            {              "label": "Minutes",              "value": "minutes"            },            {              "label": "Hours",              "value": "hours"            }          ]        },        "delayAmount": {          "type": "number"        },        "expression": {          "type": "string"        },        "maxWaitTime": {          "type": "string",          "options": [            {              "label": "24 hours",              "value": "24"            },            {              "label": "12 hours",              "value": "12"            },            {              "label": "8 hours",              "value": "8"            },            {              "label": "4 hours",              "value": "4"            },            {              "label": "2 hours",              "value": "2"            }          ]        }      }    }  },  "allOf": [    {      "if": {        "properties": {          "type": {            "const": "fixedDelay"          }        }      },      "then": {        "properties": {          "duration": {            "type": "object",            "required": [              "delayAmount"            ],            "properties": {              "delayAmount": {                "type": "number",                "minimum": 1              }            }          }        }      }    }  ]}
+```
+
 
 ## קישורים חיצוניים
 
-- [GitHub](https://github.com/synergycodes/workflowbuilder)
-- [YouTube](https://www.youtube.com/@workflowbuilder)
-- [Discord](https://discord.com/invite/FDMjRuarFb)
-- [Contact Us](https://www.workflowbuilder.io/contact)
 - [[ללא טקסט/אייקון]](https://github.com/synergycodes/workflowbuilder/blob/main/apps/demo/src/app/data/nodes/delay/uischema.ts)
 - [[ללא טקסט/אייקון]](https://github.com/synergycodes/workflowbuilder/blob/main/apps/demo/src/app/data/nodes/delay/schema.ts)

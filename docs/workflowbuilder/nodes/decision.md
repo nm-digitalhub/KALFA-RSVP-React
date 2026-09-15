@@ -1,5 +1,5 @@
 > מקור: https://www.workflowbuilder.io/docs/nodes/decision/
-> נשמר: 2026-09-09
+> נשמר: 2026-09-15
 
 # Decision
 
@@ -128,52 +128,6 @@ Delay
 
 ```
 {
-  "type": "VerticalLayout",
-  "elements": [
-    {
-      "type": "Accordion",
-      "label": "General Settings",
-      "elements": [
-        {
-          "type": "MessageOnError",
-          "scope": "#/properties/missingPreviousVariable",
-          "text": "plugins.validation.missingDependency"
-        },
-        {
-          "type": "Text",
-          "scope": "#/properties/label",
-          "label": "Title",
-          "placeholder": "Node Title..."
-        },
-        {
-          "type": "Text",
-          "scope": "#/properties/description",
-          "label": "Description",
-          "placeholder": "Type your description here..."
-        },
-        {
-          "type": "Select",
-          "scope": "#/properties/status",
-          "label": "Status"
-        }
-      ]
-    },
-    {
-      "type": "Accordion",
-      "label": "Decision Settings",
-      "elements": [
-        {
-          "type": "DecisionBranches",
-          "scope": "#/properties/decisionBranches"
-        }
-      ]
-    }
-  ]
-}
-```
-
-```
-{
   "type": "object",
   "required": [
     "label"
@@ -246,12 +200,12 @@ Delay
 }
 ```
 
+```
+{  "type": "object",  "required": [    "label"  ],  "properties": {    "label": {      "type": "string"    },    "description": {      "type": "string"    },    "status": {      "type": "string",      "options": [        {          "label": "Active",          "value": "active",          "icon": "StatusActive"        },        {          "label": "Draft",          "value": "draft",          "icon": "StatusDraft"        },        {          "label": "Disabled",          "value": "disabled",          "icon": "StatusDisabled"        }      ]    },    "decisionBranches": {      "type": "array",      "items": {        "type": "object",        "properties": {          "id": {            "type": "string"          },          "sourceHandle": {            "type": "string"          },          "label": {            "type": "string"          },          "conditions": {            "type": "array",            "items": {              "type": "object",              "properties": {                "x": {                  "type": "string"                },                "comparisonOperator": {                  "type": "string"                },                "y": {                  "type": "string"                },                "logicalOperator": {                  "type": "string"                }              }            }          }        }      }    }  }}
+```
+
 
 ## קישורים חיצוניים
 
-- [GitHub](https://github.com/synergycodes/workflowbuilder)
-- [YouTube](https://www.youtube.com/@workflowbuilder)
-- [Discord](https://discord.com/invite/FDMjRuarFb)
-- [Contact Us](https://www.workflowbuilder.io/contact)
 - [[ללא טקסט/אייקון]](https://github.com/synergycodes/workflowbuilder/blob/main/apps/demo/src/app/data/nodes/decision/uischema.ts)
 - [[ללא טקסט/אייקון]](https://github.com/synergycodes/workflowbuilder/blob/main/apps/demo/src/app/data/nodes/decision/schema.ts)

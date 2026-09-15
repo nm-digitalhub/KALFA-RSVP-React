@@ -1,5 +1,5 @@
 > מקור: https://www.workflowbuilder.io/docs/nodes/ai-agent/
-> נשמר: 2026-09-09
+> נשמר: 2026-09-15
 
 # AI Agent
 
@@ -172,83 +172,6 @@ Plugins Overview
 
 ```
 {
-  "type": "VerticalLayout",
-  "elements": [
-    {
-      "type": "MessageOnError",
-      "scope": "#/properties/missingPreviousVariable",
-      "text": "plugins.validation.missingDependency"
-    },
-    {
-      "type": "Accordion",
-      "label": "General Information",
-      "elements": [
-        {
-          "type": "Text",
-          "scope": "#/properties/label",
-          "label": "Title",
-          "placeholder": "Node Title..."
-        },
-        {
-          "type": "Select",
-          "scope": "#/properties/status",
-          "label": "Status"
-        },
-        {
-          "type": "Text",
-          "scope": "#/properties/description",
-          "label": "Description",
-          "placeholder": "Type your description here..."
-        }
-      ]
-    },
-    {
-      "type": "Accordion",
-      "label": "Operational Settings",
-      "elements": [
-        {
-          "type": "VerticalLayout",
-          "elements": [
-            {
-              "type": "Select",
-              "scope": "#/properties/chatModel"
-            },
-            {
-              "type": "Select",
-              "scope": "#/properties/memory"
-            }
-          ]
-        }
-      ]
-    },
-    {
-      "type": "Accordion",
-      "label": "Tools",
-      "elements": [
-        {
-          "type": "AiTools",
-          "scope": "#/properties/tools"
-        }
-      ]
-    },
-    {
-      "type": "Accordion",
-      "label": "System Prompt",
-      "elements": [
-        {
-          "type": "VariableTextArea",
-          "scope": "#/properties/systemPrompt",
-          "placeholder": "Type your prompt here... Use {{ to insert variables",
-          "minRows": 5
-        }
-      ]
-    }
-  ]
-}
-```
-
-```
-{
   "required": [
     "label",
     "chatModel",
@@ -344,12 +267,12 @@ Plugins Overview
 }
 ```
 
+```
+{  "required": [    "label",    "chatModel",    "memory"  ],  "type": "object",  "properties": {    "label": {      "type": "string"    },    "description": {      "type": "string"    },    "status": {      "type": "string",      "options": [        {          "label": "Active",          "value": "active",          "icon": "StatusActive"        },        {          "label": "Draft",          "value": "draft",          "icon": "StatusDraft"        },        {          "label": "Disabled",          "value": "disabled",          "icon": "StatusDisabled"        }      ]    },    "chatModel": {      "type": "string",      "options": [        {          "label": "GPT-5.4",          "value": "gpt5.4",          "icon": "OpenAiLogo"        },        {          "label": "Gemini 3.1 Pro",          "value": "gemini3.1pro",          "icon": "GeminiLogo"        },        {          "label": "Claude Sonnet 4.6",          "value": "claudeSonnet4.6",          "icon": "ClaudeLogo"        }      ],      "placeholder": "Add Chat Model"    },    "tools": {      "type": "array",      "items": {        "type": "object",        "properties": {          "id": {            "type": "string"          },          "sourceHandle": {            "type": "string"          },          "tool": {            "type": "string"          },          "description": {            "type": "string"          },          "apiKey": {            "type": "string"          }        }      }    },    "memory": {      "type": "string",      "options": [        {          "label": "Window-based Memory",          "value": "system",          "icon": "Database"        }      ],      "placeholder": "Add memory"    },    "systemPrompt": {      "type": "string"    }  }}
+```
+
 
 ## קישורים חיצוניים
 
-- [GitHub](https://github.com/synergycodes/workflowbuilder)
-- [YouTube](https://www.youtube.com/@workflowbuilder)
-- [Discord](https://discord.com/invite/FDMjRuarFb)
-- [Contact Us](https://www.workflowbuilder.io/contact)
 - [[ללא טקסט/אייקון]](https://github.com/synergycodes/workflowbuilder/blob/main/apps/demo/src/app/data/nodes/ai-agent/uischema.ts)
 - [[ללא טקסט/אייקון]](https://github.com/synergycodes/workflowbuilder/blob/main/apps/demo/src/app/data/nodes/ai-agent/schema.ts)

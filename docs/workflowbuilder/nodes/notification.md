@@ -1,5 +1,5 @@
 > מקור: https://www.workflowbuilder.io/docs/nodes/notification/
-> נשמר: 2026-09-09
+> נשמר: 2026-09-15
 
 # Notification
 
@@ -238,169 +238,6 @@ AI Agent
 
 ```
 {
-  "type": "VerticalLayout",
-  "elements": [
-    {
-      "type": "MessageOnError",
-      "scope": "#/properties/missingPreviousVariable",
-      "text": "plugins.validation.missingDependency"
-    },
-    {
-      "label": "Select Notification Type",
-      "type": "Select",
-      "scope": "#/properties/type"
-    },
-    {
-      "type": "Accordion",
-      "label": "General Information",
-      "rule": {
-        "effect": "SHOW",
-        "condition": {
-          "scope": "#",
-          "schema": {
-            "required": [
-              "type"
-            ]
-          }
-        }
-      },
-      "elements": [
-        {
-          "type": "Text",
-          "scope": "#/properties/label",
-          "label": "Title",
-          "placeholder": "Node Title..."
-        },
-        {
-          "type": "Select",
-          "scope": "#/properties/status",
-          "options": [
-            {
-              "label": "Active",
-              "value": "active",
-              "icon": "StatusActive"
-            },
-            {
-              "label": "Draft",
-              "value": "draft",
-              "icon": "StatusDraft"
-            },
-            {
-              "label": "Disabled",
-              "value": "disabled",
-              "icon": "StatusDisabled"
-            }
-          ],
-          "label": "Status"
-        },
-        {
-          "type": "Text",
-          "scope": "#/properties/description",
-          "label": "Description",
-          "placeholder": "Type your description here..."
-        }
-      ]
-    },
-    {
-      "rule": {
-        "effect": "SHOW",
-        "condition": {
-          "scope": "#/properties/type",
-          "schema": {
-            "const": "email"
-          }
-        }
-      },
-      "type": "Accordion",
-      "label": "Email Settings",
-      "elements": [
-        {
-          "type": "Text",
-          "scope": "#/properties/sendEmail/properties/address",
-          "label": "Send To",
-          "placeholder": "user@example.com"
-        },
-        {
-          "type": "Text",
-          "scope": "#/properties/sendEmail/properties/copy",
-          "label": "CC / BCC",
-          "placeholder": "manager@example.com"
-        },
-        {
-          "type": "VariableText",
-          "scope": "#/properties/sendEmail/properties/subject",
-          "label": "Subject",
-          "placeholder": "Type your subject here... Use {{ to insert variables"
-        },
-        {
-          "type": "VariableTextArea",
-          "scope": "#/properties/sendEmail/properties/body",
-          "label": "Email Body",
-          "placeholder": "Type your message here... Use {{ to insert variables",
-          "minRows": 5
-        },
-        {
-          "type": "Select",
-          "scope": "#/properties/sendEmail/properties/priority",
-          "label": "Priority",
-          "options": [
-            {
-              "label": "Normal",
-              "value": "normal"
-            },
-            {
-              "label": "Low",
-              "value": "low"
-            },
-            {
-              "label": "High",
-              "value": "high"
-            }
-          ]
-        },
-        {
-          "type": "HorizontalLayout",
-          "elements": [
-            {
-              "type": "Label",
-              "text": "Retry on Failure:"
-            },
-            {
-              "type": "Switch",
-              "scope": "#/properties/sendEmail/properties/retryOnFailure"
-            }
-          ]
-        },
-        {
-          "type": "HorizontalLayout",
-          "elements": [
-            {
-              "type": "Label",
-              "text": "Number of retries"
-            },
-            {
-              "type": "Text",
-              "scope": "#/properties/sendEmail/properties/retries",
-              "rule": {
-                "effect": "DISABLE",
-                "condition": {
-                  "scope": "#/properties/sendEmail/properties/retryOnFailure",
-                  "schema": {
-                    "const": false
-                  }
-                }
-              }
-            }
-          ]
-        }
-      ]
-    }
-  ]
-}
-```
-
-```
-{
   "properties": {
     "label": {
       "type": "string"
@@ -503,12 +340,12 @@ AI Agent
 }
 ```
 
+```
+{  "properties": {    "label": {      "type": "string"    },    "description": {      "type": "string"    },    "type": {      "type": "string",      "options": [        {          "label": "Email",          "value": "email",          "icon": "EnvelopeSimple"        },        {          "label": "SMS",          "value": "sms",          "icon": "ChatTeardropDots"        },        {          "label": "Push Notification",          "value": "pushNotification",          "icon": "Bell"        },        {          "label": "Webhook",          "value": "webhook",          "icon": "WebhooksLogo"        },        {          "label": "Slack Message",          "value": "slackMessage",          "icon": "SlackLogo"        }      ],      "placeholder": "Select Notification Type"    },    "status": {      "type": "string",      "options": [        {          "label": "Active",          "value": "active",          "icon": "StatusActive"        },        {          "label": "Draft",          "value": "draft",          "icon": "StatusDraft"        },        {          "label": "Disabled",          "value": "disabled",          "icon": "StatusDisabled"        }      ]    },    "sendEmail": {      "type": "object",      "properties": {        "address": {          "type": "string"        },        "copy": {          "type": "string"        },        "subject": {          "type": "string"        },        "body": {          "type": "string"        },        "priority": {          "type": "string",          "options": [            {              "label": "Normal",              "value": "normal"            },            {              "label": "Low",              "value": "low"            },            {              "label": "High",              "value": "high"            }          ]        },        "retries": {          "type": "number"        },        "retryOnFailure": {          "type": "boolean"        }      }    }  }}
+```
+
 
 ## קישורים חיצוניים
 
-- [GitHub](https://github.com/synergycodes/workflowbuilder)
-- [YouTube](https://www.youtube.com/@workflowbuilder)
-- [Discord](https://discord.com/invite/FDMjRuarFb)
-- [Contact Us](https://www.workflowbuilder.io/contact)
 - [[ללא טקסט/אייקון]](https://github.com/synergycodes/workflowbuilder/blob/main/apps/demo/src/app/data/nodes/notification/uischema.ts)
 - [[ללא טקסט/אייקון]](https://github.com/synergycodes/workflowbuilder/blob/main/apps/demo/src/app/data/nodes/notification/schema.ts)

@@ -1,5 +1,5 @@
 > מקור: https://www.workflowbuilder.io/docs/nodes/conditional/
-> נשמר: 2026-09-09
+> נשמר: 2026-09-15
 
 # Conditional
 
@@ -99,35 +99,6 @@ Decision
 
 ```
 {
-  "type": "VerticalLayout",
-  "elements": [
-    {
-      "type": "MessageOnError",
-      "scope": "#/properties/missingPreviousVariable",
-      "text": "plugins.validation.missingDependency"
-    },
-    {
-      "label": "Label",
-      "type": "Text",
-      "scope": "#/properties/label"
-    },
-    {
-      "label": "Description",
-      "type": "Text",
-      "scope": "#/properties/description",
-      "placeholder": "Type your description here..."
-    },
-    {
-      "label": "Conditions",
-      "type": "DynamicConditions",
-      "scope": "#/properties/conditionsArray"
-    }
-  ]
-}
-```
-
-```
-{
   "properties": {
     "label": {
       "type": "string"
@@ -159,12 +130,12 @@ Decision
 }
 ```
 
+```
+{  "properties": {    "label": {      "type": "string"    },    "description": {      "type": "string"    },    "conditionsArray": {      "type": "array",      "items": {        "type": "object",        "properties": {          "x": {            "type": "string"          },          "comparisonOperator": {            "type": "string"          },          "y": {            "type": "string"          },          "logicalOperator": {            "type": "string"          }        }      }    }  }}
+```
+
 
 ## קישורים חיצוניים
 
-- [GitHub](https://github.com/synergycodes/workflowbuilder)
-- [YouTube](https://www.youtube.com/@workflowbuilder)
-- [Discord](https://discord.com/invite/FDMjRuarFb)
-- [Contact Us](https://www.workflowbuilder.io/contact)
 - [[ללא טקסט/אייקון]](https://github.com/synergycodes/workflowbuilder/blob/main/apps/demo/src/app/data/nodes/conditional/uischema.ts)
 - [[ללא טקסט/אייקון]](https://github.com/synergycodes/workflowbuilder/blob/main/apps/demo/src/app/data/nodes/conditional/schema.ts)

@@ -1,5 +1,5 @@
 > מקור: https://www.workflowbuilder.io/docs/nodes/
-> נשמר: 2026-09-09
+> נשמר: 2026-09-15
 
 # Built-in Nodes Overview
 
@@ -34,10 +34,3 @@ Previous
 Form layouts
 Next
 Trigger
-
-## קישורים חיצוניים
-
-- [GitHub](https://github.com/synergycodes/workflowbuilder)
-- [YouTube](https://www.youtube.com/@workflowbuilder)
-- [Discord](https://discord.com/invite/FDMjRuarFb)
-- [Contact Us](https://www.workflowbuilder.io/contact)
