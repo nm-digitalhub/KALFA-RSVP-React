@@ -43,7 +43,7 @@ types/workflow-execution/execution-model.ts
 types/workflow-execution/execution-events.ts
 
 templates/resolve-template.ts           ← ADDED 2026-09-10, not in the closure
-templates/resolve-template.test.ts      ← its upstream test, taken with it
+templates/resolve-template.test.ts      ← upstream's test, EDITED — see Divergences
 ```
 
 ⚠️ The last two contradict what this file used to say twice over: they were
@@ -51,7 +51,7 @@ listed as *deliberately left behind*, and the rules below say KALFA's tests live
 beside our adapter. `0598bdb` took the file to resolve `{{…}}` references in
 node configs, and twelve of our modules import it today. Its test came with it
 because it pins upstream's grammar, which is the thing our copy must not drift
-from.
+from — but it did NOT come unchanged, and divergence 3 below says what was cut.
 
 Upstream's own README describes this layer as "pure mechanism for executing
 workflow graphs — no Temporal, no HTTP, no database, no node vocabulary", and
@@ -93,6 +93,22 @@ seventeen inputs covering whitespace, nested paths, `?`, `default:'…'`, a defa
 containing `}`, malformed tokens, unknown namespaces and plain text, and agreed
 on all seventeen INCLUDING the wording of every throw.
 
+*Three upstream tests deleted from `resolve-template.test.ts`.* They asserted
+`PermanentNodeExecutionError` with codes `template_malformed` and
+`template_unresolved` — which `badcca6` introduced and our copy does not throw,
+because it still raises a plain `Error` and `activity-runner.ts` classifies it
+one layer up. They could not pass, so they were removed; the file now holds 37
+tests where upstream holds 35, five of them ours.
+
+⚠️ AND THAT DELETION COST THE SIGNAL. Those three were the only thing that would
+have failed when our copy diverged on error types — removing them is why the
+divergence went unrecorded until a diff against upstream found it. If the codes
+are ever adopted, note that `activity-runner`'s wrapper discards them: it builds
+a fresh `PermanentNodeExecutionError('unresolved_template_reference', …)` with no
+`cause`, and `extractDeepestError` takes the FIRST code it meets walking the
+chain. Measured: passing `{ cause }` does NOT preserve the inner code — only
+re-throwing the original does.
+
 *A `deferSecrets` option, default `false`.* With it off the file behaves exactly
 as upstream (those same 17/17). With it on, `{{secrets.NAME}}` passes through
 untouched so the outbound port can substitute it at the socket; every other
@@ -110,8 +126,10 @@ webhook URL that is itself the credential.
   talks to our own adapter, so the vendored surface can be replaced without a
   cross-cutting change.
 - KALFA's tests live beside our adapter, not here. `resolve-template.test.ts` is
-  the exception and is upstream's own file, taken with the module it tests —
-  nothing in this directory is modified to make a KALFA test pass.
+  the exception: upstream's own file, taken with the module it tests and then
+  EDITED — three of its tests removed because our copy cannot pass them, five of
+  ours added. That is the one place where something here was changed to fit our
+  version, and divergence 3 is where it is written down.
 
 ## Re-syncing
 
