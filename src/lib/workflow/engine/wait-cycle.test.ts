@@ -223,6 +223,27 @@ describe('the run parks', () => {
     });
   });
 
+  it('⚠️ …and WHAT it waits on, because the date alone means two things', async () => {
+    // A `logic.wait` deadline is when the run RESUMES. A correlated wait's
+    // `resumeAt` is when it GIVES UP — the callback may land long before it, or
+    // never. The canvas renders a different sentence for each, so the kind has
+    // to leave the engine; without it the node said "continues at 14:30" about a
+    // step really waiting for a phone call to end.
+    //
+    // ⚠️ AND IT IS ASSERTED SEPARATELY FROM THE TEST ABOVE ON PURPOSE. That one
+    // uses `toMatchObject`, which passes on a payload carrying extra keys AND on
+    // one missing this — so deleting `waitKind` from `run-workflow.ts` left the
+    // whole suite green. Measured before this line existed.
+    const ledger = ledgerFake();
+    const { deps, events } = makeDeps(ledger);
+
+    await run(deps);
+    const payload = events.find((e) => e.type === 'node_waiting')?.payload as {
+      waitKind?: unknown;
+    };
+    expect(payload?.waitKind).toBe('timer');
+  });
+
   it('the step is PARKED, not failed — the ledger would otherwise let it through', async () => {
     const ledger = ledgerFake();
     const { deps } = makeDeps(ledger);
@@ -333,5 +354,91 @@ describe('a timed wait carries no correlation', () => {
     const parked = statuses.find((s) => s.status === 'waiting');
     expect(parked?.resumeAt).toBe(new Date(NOW + 86_400_000).toISOString());
     expect(parked).not.toHaveProperty('resumeCorrelationId');
+  });
+});
+
+// The OTHER kind of park, and the only thing this block is here to pin.
+//
+// ⚠️ THE SAME `resumeAt` FIELD MEANS THE OPPOSITE THING HERE. Above, it is when
+// the run resumes. For a wait that is correlated to something outside the run —
+// a call outcome, a webhook — it is when the run GIVES UP; the callback may land
+// long before it, or never. `run-workflow` maps that difference onto
+// `waitKind`, the canvas renders a different sentence for each, and until this
+// test existed only the `'timer'` half was ever executed by the suite.
+//
+// Driven through the real engine and the real handler rather than by calling the
+// mapping directly: the input is `wait.correlationId`, which
+// `action.start_voice_call` derives from the dialled attempt's id — code this
+// block deliberately does not reach past.
+describe('a CORRELATED park — action.start_voice_call waiting for the outcome', () => {
+  const voiceDefinition = {
+    name: 'w',
+    layoutDirection: 'DOWN',
+    nodes: [
+      node('t', 'trigger.whatsapp_inbound'),
+      node('v1', 'action.start_voice_call', { purposeKey: 'feedback', waitForOutcome: true }),
+    ],
+    edges: [{ id: 'e1', source: 't', target: 'v1', sourceHandle: null }],
+  };
+
+  const TOKEN_EXPIRY = '2027-01-02T03:04:05.000Z';
+
+  /** The two guest ports the voice step needs: one dials, one reads the outcome. */
+  function voiceDeps(ledger: ReturnType<typeof ledgerFake>) {
+    const base = makeDeps(ledger);
+    return {
+      ...base,
+      deps: {
+        ...base.deps,
+        guests: {
+          startVoicePurposeCall: async () => ({
+            ok: true,
+            status: 'dialed',
+            attemptId: 'attempt-1',
+            tokenExpiresAt: TOKEN_EXPIRY,
+          }),
+          // Not finished yet — which is what makes the step park rather than
+          // return. A finished outcome is `voice-call-wait.test.ts`'s subject.
+          readVoicePurposeOutcome: async () => ({
+            attemptId: 'attempt-1',
+            dispatchStatus: 'confirmed',
+            callStatus: null,
+            finishReason: null,
+            callDurationSec: null,
+          }),
+        },
+      } as unknown as WorkflowEngineDeps,
+    };
+  }
+
+  const runVoice = (deps: WorkflowEngineDeps) =>
+    runWorkflow({
+      runId: 'run-1',
+      workflowId: 'wf-1',
+      storedDefinition: voiceDefinition as never,
+      trigger: { eventId: 'e1', contactId: 'c1', message_text: 'כן', button_payload: '' },
+      deps,
+    });
+
+  it("emits waitKind 'event', not 'timer'", async () => {
+    const { deps, events } = voiceDeps(ledgerFake());
+    await runVoice(deps);
+
+    const payload = events.find((e) => e.type === 'node_waiting')?.payload as {
+      waitKind?: unknown;
+      resumeAt?: unknown;
+    };
+    expect(payload?.waitKind).toBe('event');
+    // The deadline is the TOKEN's expiry — the moment the wake stops being
+    // possible — not a duration anyone configured.
+    expect(payload?.resumeAt).toBe(TOKEN_EXPIRY);
+  });
+
+  it('carries the correlation to the ledger, which the timer park never does', async () => {
+    const { deps } = voiceDeps(ledgerFake());
+    await runVoice(deps);
+
+    const parked = beginWaitCalls.at(-1);
+    expect(parked?.correlationId).toBe('attempt-1');
   });
 });

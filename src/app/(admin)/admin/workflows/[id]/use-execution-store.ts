@@ -14,12 +14,58 @@ import { create } from 'zustand';
 
 import type { StreamEvent, StreamSnapshot } from '@/lib/workflow/execution-events';
 
-export type NodeExecutionStatus = 'idle' | 'running' | 'completed' | 'failed' | 'skipped';
+/**
+ * ⚠️ `'waiting'` PROJECTS AN EVENT UPSTREAM DECLARES AND DOES NOT EMIT.
+ *
+ * Upstream declares `node_waiting` in its execution-event contract — a member of
+ * `ExecutionEventType` with its own `NodeWaitingEvent` type, verified against
+ * `synergycodes/workflowbuilder@4ee63c4` and byte-identical to the copy under
+ * `vendor/` — but its reference runner currently does not emit it, and its
+ * reference client does not project it. `runGraph` has eight `emitEvent` calls
+ * and none is this one.
+ *
+ * KALFA emits it, for `logic.wait`. So KALFA must also project it. This union
+ * was ported from that reference client, which is why it arrived without the
+ * state: the engine wrote the event, the stream carried it, and the reducer
+ * dropped it — leaving a parked node showing `running`, spinner and all, for as
+ * long as it was parked. `logic.wait` allows a year of that.
+ */
+export type NodeExecutionStatus =
+  | 'idle'
+  | 'running'
+  | 'waiting'
+  | 'completed'
+  | 'failed'
+  | 'skipped';
 
 export type NodeExecutionState = {
   status: NodeExecutionStatus;
   output?: unknown;
   error?: { message: string; code?: string };
+  /**
+   * When a parked node is due to wake, ISO-8601.
+   *
+   * ⚠️ NOT PART OF THE VENDOR'S PAYLOAD, and deliberately so at both ends. The
+   * source declares `NodeWaitingPayload = { waitingForNodeIds?: string[] }` — a
+   * JOIN node waiting for its predecessors. KALFA overloads the same event for a
+   * `logic.wait` parked on a deadline, and `run-workflow.ts` attaches `resumeAt`
+   * with the note that "waiting without until-when is not useful". It was right,
+   * and until now nothing read it.
+   */
+  resumeAt?: string;
+  /**
+   * What the node is waiting ON, which is what decides how `resumeAt` reads.
+   *
+   *   'timer'  a `logic.wait` deadline. `resumeAt` is when it RESUMES.
+   *   'event'  a correlated wait — a call outcome, a webhook. `resumeAt` is the
+   *            TIMEOUT; the callback may land long before it, or never.
+   *
+   * ⚠️ WITHOUT THIS THE TWO ARE INDISTINGUISHABLE, and the canvas said
+   * "continues at 14:30" about a node really waiting for a phone call to end.
+   * The vendor's own execution-visualisation guidance asks for exactly this —
+   * "a waiting node shows what it is waiting on — an event, a human, a delay".
+   */
+  waitKind?: 'timer' | 'event';
 };
 
 type ExecutionStore = {
@@ -129,6 +175,22 @@ export function applyDryRunTrace(args: {
     nodeStates[nodeId] ??= { status: 'skipped' };
   }
 
+  // The node the trace stopped on, marked as parked rather than left idle.
+  //
+  // A dry run that reaches `logic.wait` ENDS there — nothing is scheduled — so
+  // the node never produced a step and would otherwise carry no marker at all.
+  // The canvas would show a trace that simply stops, with no indication of
+  // which node stopped it. `contended` is the same shape for the same reason,
+  // even though a dry run cannot reach it (see the union's own note).
+  if (args.outcome.status === 'waiting') {
+    nodeStates[args.outcome.nodeId] = {
+      status: 'waiting',
+      resumeAt: args.outcome.resumeAt,
+    };
+  } else if (args.outcome.status === 'contended') {
+    nodeStates[args.outcome.nodeId] = { status: 'waiting' };
+  }
+
   useExecutionStore.setState({
     runId: 'dry-run',
     status: args.outcome.status,
@@ -198,6 +260,29 @@ function buildDryRunEvents(args: {
         payload: { error: { message: args.outcome.message } },
       });
       break;
+    // ⚠️ THE TWO NON-TERMINAL OUTCOMES, which this switch used to fall through
+    // silently. `DryRunOutcome` has five members; three were handled, so a trace
+    // that parked produced NO final line and the log just stopped — the reader
+    // could not tell a parked run from a truncated one.
+    //
+    // Neither is a terminal event type, which is correct: nothing finished.
+    case 'waiting':
+      events.push({
+        seq: seq++,
+        type: 'node_waiting',
+        nodeId: args.outcome.nodeId,
+        timestamp,
+        payload: { resumeAt: args.outcome.resumeAt },
+      });
+      break;
+    case 'contended':
+      events.push({
+        seq: seq++,
+        type: 'node_waiting',
+        nodeId: args.outcome.nodeId,
+        timestamp,
+      });
+      break;
   }
 
   return events;
@@ -209,12 +294,33 @@ function applyEventToNodeStates(
 ) {
   if (!event.nodeId) return;
   const payload = event.payload as
-    | { output?: unknown; error?: { message: string; code?: string } }
+    | {
+        output?: unknown;
+        error?: { message: string; code?: string };
+        resumeAt?: unknown;
+        waitKind?: unknown;
+      }
     | undefined;
 
   switch (event.type) {
     case 'node_started': {
       states[event.nodeId] = { status: 'running' };
+      break;
+    }
+    case 'node_waiting': {
+      // The node stays on the canvas as parked rather than running. `resumeAt`
+      // is carried when the engine sent one — a vendored join-wait does not,
+      // and a marker without a time is still truer than a spinner.
+      states[event.nodeId] = {
+        status: 'waiting',
+        ...(typeof payload?.resumeAt === 'string' ? { resumeAt: payload.resumeAt } : {}),
+        // Narrowed rather than cast: a row written before `waitKind` shipped
+        // carries none, and reading a stray value as one of the two would make
+        // an old parked run describe itself wrongly instead of vaguely.
+        ...(payload?.waitKind === 'timer' || payload?.waitKind === 'event'
+          ? { waitKind: payload.waitKind }
+          : {}),
+      };
       break;
     }
     case 'node_completed': {
@@ -247,6 +353,17 @@ function eventToExecutionStatus(event: StreamEvent): string | undefined {
   switch (event.type) {
     case 'execution_started':
       return 'running';
+    // ⚠️ A NODE EVENT THAT MOVES THE RUN'S STATUS, and it is the only one.
+    //
+    // There is no `execution_waiting`: the engine suppresses `execution_failed`
+    // while parking (`run-workflow.ts` — "a run that parks has not failed") and
+    // writes `waiting` straight to the row through `updateStatus`. So over a
+    // LIVE stream `node_waiting` is the sole signal that the run parked, and
+    // without this the header kept saying "רץ" until a reconnect brought a
+    // snapshot. The snapshot path already reported it correctly, which is what
+    // made the divergence easy to miss.
+    case 'node_waiting':
+      return 'waiting';
     case 'execution_completed':
       return 'completed';
     case 'execution_incomplete':

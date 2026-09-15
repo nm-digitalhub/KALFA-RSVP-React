@@ -14,7 +14,10 @@
 import { useSingleSelectedElement } from '@workflowbuilder/sdk';
 import { useEffect, useRef, useState } from 'react';
 
-import { formatIsraelTime } from '@/lib/date';
+// Both, and for different jobs. A row's own timestamp is always "just now" in
+// the reader's session, so the clock alone is right there. A `resumeAt` is
+// routinely days out, and the clock alone would read as "in a few hours".
+import { formatIsraelDateTime, formatIsraelTime } from '@/lib/date';
 import type { StreamEvent } from '@/lib/workflow/execution-events';
 
 import { toggleLog, useExecutionStore } from './use-execution-store';
@@ -32,15 +35,44 @@ const EVENT_LABEL: Record<string, string> = {
   execution_failed: 'ההרצה נכשלה',
   execution_cancelled: 'ההרצה בוטלה',
   node_started: 'צעד התחיל',
+  // Upstream declares `node_waiting` in its execution-event contract but its
+  // reference runner does not emit it and its reference client does not project
+  // it, so this table — ported from that client — arrived without the label and
+  // the Hebrew log printed the raw string through the `?? event.type` fallback.
+  // KALFA emits it for `logic.wait`.
+  node_waiting: 'צעד ממתין',
   node_completed: 'צעד הושלם',
   node_failed: 'צעד נכשל',
   node_skipped: 'צעד דולג',
+  // ⚠️ DECLARED BY UPSTREAM, EMITTED BY NOBODY — not by `graph-runner.ts` and
+  // not by `run-workflow.ts`. Labelled anyway because a label is one line and
+  // the alternative is an exemption list that rots. If the upstream runner ever
+  // starts emitting them, the log reads Hebrew on the first run rather than on
+  // the first bug report.
+  branch_spawned: 'ענף נפתח',
+  branches_joined: 'ענפים אוחדו',
 };
 
+/**
+ * ⚠️ THE SAME VOCABULARY AS `RUN_STATUS_HE` IN `page.tsx`, and it had drifted.
+ *
+ * Two of them were missing here and present there: `waiting`, which is KALFA's
+ * own status for a run parked on a `logic.wait` deadline, and `cancelling`,
+ * which is the vendor's (`ExecutionStatus = 'pending' | 'running' |
+ * 'cancelling' | TerminalExecutionStatus`). Both fell through the `?? status`
+ * fallback and showed in English on a Hebrew panel — the exact defect the runs
+ * table was fixed for, left standing one component over.
+ *
+ * `waiting` is not "בהמתנה": that is `pending`, a run queued and about to go.
+ * A parked run may be days from waking, and conflating the two makes one look
+ * like the other.
+ */
 const STATUS_LABEL: Record<string, string> = {
   idle: 'ממתין',
   pending: 'בהמתנה',
   running: 'רץ',
+  waiting: 'בהמתנה מתוזמנת',
+  cancelling: 'בביטול',
   completed: 'הושלם',
   incomplete: 'חלקי',
   failed: 'נכשל',
@@ -59,12 +91,42 @@ function detailFor(event: StreamEvent): string | undefined {
         error?: { message?: string };
         deadEnds?: { nodeId: string; nodeLabel?: string; port: string }[];
         reason?: string;
+        resumeAt?: string;
+        waitKind?: 'timer' | 'event';
       }
     | undefined;
 
   switch (event.type) {
     case 'node_completed':
       return payload?.output === undefined ? undefined : JSON.stringify(payload.output);
+    // ⚠️ THE FIELD THE ENGINE ATTACHED FOR THIS PANEL AND NOBODY READ.
+    //
+    // `run-workflow.ts` extends the vendor's `NodeWaitingPayload` with
+    // `resumeAt`, saying so in a comment: "the log panel is ours, and 'waiting'
+    // without 'until when' is not useful". It was right — and the field was
+    // written to every parked run's event row and displayed nowhere.
+    //
+    // Absent for a vendored join-wait, which waits on other nodes rather than
+    // on a clock; that row keeps its label and gets no detail line.
+    //
+    // ⚠️ AND THE SENTENCE DEPENDS ON `waitKind`. For a timer the date is when
+    // the run continues; for a correlated wait it is when the run gives up, and
+    // the callback may land long before it. "ממשיך ב-" on the second is a
+    // statement the engine never made.
+    case 'node_waiting':
+      // ⚠️ EACH KIND TESTED EXPLICITLY. A row written before `waitKind` shipped
+      // has a `resumeAt` and no kind; treating that as a timer would print
+      // "continues at 14:30" for a wait that really ends when a callback lands.
+      // No kind means no sentence about time — the label alone ("צעד ממתין")
+      // still tells the reader the step is parked.
+      if (!payload?.resumeAt) return undefined;
+      if (payload.waitKind === 'event') {
+        return `ממתין לתוצאה חיצונית. אם לא תגיע — פג ב-${formatIsraelDateTime(payload.resumeAt)}`;
+      }
+      if (payload.waitKind === 'timer') {
+        return `ממשיך ב-${formatIsraelDateTime(payload.resumeAt)}`;
+      }
+      return undefined;
     case 'node_failed':
     case 'execution_failed':
       return payload?.error?.message;

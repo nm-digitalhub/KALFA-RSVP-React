@@ -254,7 +254,27 @@ export async function runWorkflow(args: RunWorkflowArgs): Promise<RunWorkflowOut
               nodeId,
               // `resumeAt` extends the declared payload deliberately: the log
               // panel is ours, and "waiting" without "until when" is not useful.
-              payload: withLabels('node_waiting', { resumeAt: wait.resumeAt }, nodeId),
+              //
+              // ⚠️ AND `waitKind`, BECAUSE `resumeAt` MEANS TWO DIFFERENT THINGS.
+              // For a timer it is when the run RESUMES. For a correlated wait it
+              // is when the run GIVES UP — the callback may arrive in a minute,
+              // or never. Sending the date alone made the canvas say "continues
+              // at 14:30" about a node that was really waiting for a phone call
+              // to end, which is the vendor's "waiting reason" spelled wrong
+              // rather than merely missing.
+              //
+              // The kind, not the id. `correlationId` is a minted nonce that
+              // exists so a primary key never leaves our side; putting it in an
+              // append-only log the browser reads would undo that for no gain,
+              // since the reader needs to know WHAT it waits on, not WHICH one.
+              payload: withLabels(
+                'node_waiting',
+                {
+                  resumeAt: wait.resumeAt,
+                  waitKind: wait.correlationId ? 'event' : 'timer',
+                },
+                nodeId,
+              ),
             });
           } catch {
             // Same fail-soft rule as every other event here.
