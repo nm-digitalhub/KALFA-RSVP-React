@@ -105,6 +105,10 @@ const EXPECTED_PERMISSION: Record<string, string | string[]> = {
   'src/lib/data/admin/users.ts': 'manage_staff',
   'src/lib/data/admin/webhook-inbox.ts': 'view_webhooks',
   'src/lib/data/admin/access-log-view.ts': 'manage_staff',
+  // The live ElevenLabs agent list, for the call node's picker. Same key as
+  // every other voice reader: naming the agents an account owns is the same
+  // authority as naming its rules.
+  'src/lib/data/admin/elevenlabs-agents.ts': 'manage_voice',
   // Pinned 2026-09-10. All of these already enforced a permission; none was
   // recorded here, so a silent downgrade to bare requireAdmin() would have gone
   // unnoticed — which is exactly what happened to workflows.ts.
@@ -207,6 +211,8 @@ const COARSE_GATE_ALLOWED: Record<string, string> = {
     'Badge counts for the nav. Read-only (verified 2026-09-10), and already calls hasPlatformPermission internally so a viewer is never counted what they may not see. Uses createAdminClient, so it bypasses RLS — acceptable for counts.',
   'src/lib/data/admin/integrations/index.ts':
     'The /admin/integrations index. Read-only: it composes getIntegrationsStatus (itself credential-free since the flags RPC) with per-card hasPlatformPermission checks and returns booleans plus hrefs. Its floor is requirePlatformStaff because the page is navigation + status; the CARDS carry the permission each destination enforces, and the write surfaces it links to keep their own gates. Naming one key for the whole module would be the mistake the header of that file documents.',
+  'src/lib/data/admin/voice-node-arm-check.ts':
+    'Arm-time validation of a workflow definition the CALLER ALREADY HOLDS. Read-only (no insert/update/rpc/enqueue), and its single caller is setWorkflowActive, which gates on manage_settings (verified at workflows.ts:236) before reading the row this is handed. Gating again here would answer a question about a definition the caller just proved they may read — and the only table it touches, voice_purposes, is the same list the editor already renders to them.',
   'src/lib/data/admin/nav-visibility.ts':
     'Which sidebar links to show. Read-only and touches no table at all — it returns nine booleans about the CALLER\'s own role. Naming a finer permission would be circular: answering "which permissions do you hold" cannot itself require one of them. Nav visibility is convenience, never authorization; the page keeps the gate.',
   'src/lib/data/admin/labels.ts': 'Pure label maps. No I/O at all.',

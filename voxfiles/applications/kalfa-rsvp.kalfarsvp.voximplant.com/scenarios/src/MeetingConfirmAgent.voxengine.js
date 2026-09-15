@@ -455,7 +455,10 @@ VoxEngine.addEventListener(AppEvents.Started, function () {
                             scheduled_time_spoken: state.scheduledTimeSpoken,
                             meeting_duration_spoken: state.meetingDurationSpoken,
                             caller_role: state.callerRole,
-                            kalfa_attempt_token: state.attemptToken
+                            // The unified correlation variable. One name across all four
+                            // surfaces, so the webhook validator stops guessing which
+                            // spelling a given call used.
+                            kalfa_correlation_id: state.attemptToken
                         }
                     });
                     log('Injected dynamic_variables');
@@ -714,7 +717,13 @@ VoxEngine.addEventListener(AppEvents.Started, function () {
                 state.scheduledTimeSpoken = ctx.scheduled_time_spoken || '';
                 state.meetingDurationSpoken = ctx.meeting_duration_spoken || '';
                 state.callerRole = ctx.caller_role || '';
-                state.attemptToken = ctx.kalfa_attempt_token || '';
+                // ⚠️ THE NEW NAME FIRST, THE OLD ONE AS FALLBACK. The four ctx
+                // routes now send `kalfa_correlation_id`; they still send the old
+                // key beside it so a scenario deployed before this change keeps
+                // working. Reading both means THIS scenario also keeps working if
+                // the server is ever rolled back to a build that sends only the
+                // old key.
+                state.attemptToken = ctx.kalfa_correlation_id || ctx.kalfa_attempt_token || '';
             }
             catch (err) {
                 log('Context parse error: ' + err);

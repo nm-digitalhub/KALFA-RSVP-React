@@ -5220,8 +5220,10 @@ export type Database = {
       voice_purpose_attempts: {
         Row: {
           access_token: string
+          agent_id: string | null
           call_duration_sec: number | null
           call_status: string | null
+          caller_id: string | null
           contact_id: string
           created_at: string
           dispatch_status: string
@@ -5231,6 +5233,7 @@ export type Database = {
           id: string
           node_id: string | null
           purpose_key: string
+          rule_id: string | null
           run_id: string | null
           token_expires_at: string
           updated_at: string
@@ -5238,8 +5241,10 @@ export type Database = {
         }
         Insert: {
           access_token: string
+          agent_id?: string | null
           call_duration_sec?: number | null
           call_status?: string | null
+          caller_id?: string | null
           contact_id: string
           created_at?: string
           dispatch_status?: string
@@ -5249,6 +5254,7 @@ export type Database = {
           id?: string
           node_id?: string | null
           purpose_key: string
+          rule_id?: string | null
           run_id?: string | null
           token_expires_at: string
           updated_at?: string
@@ -5256,8 +5262,10 @@ export type Database = {
         }
         Update: {
           access_token?: string
+          agent_id?: string | null
           call_duration_sec?: number | null
           call_status?: string | null
+          caller_id?: string | null
           contact_id?: string
           created_at?: string
           dispatch_status?: string
@@ -5267,6 +5275,7 @@ export type Database = {
           id?: string
           node_id?: string | null
           purpose_key?: string
+          rule_id?: string | null
           run_id?: string | null
           token_expires_at?: string
           updated_at?: string

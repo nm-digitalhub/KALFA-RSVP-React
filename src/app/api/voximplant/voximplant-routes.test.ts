@@ -133,7 +133,14 @@ describe('ctx GET', () => {
       'event_time',
       'event_venue',
       'guest_name',
+      // ⚠️ BOTH SPELLINGS, AND THE LIST IS THE CONTRACT. `kalfa_correlation_id`
+      // is the unified name; `kalfa_attempt_token` is what the currently
+      // deployed scenario reads by name, and removing it here before that
+      // scenario is redeployed would break correlation on every live call.
+      // When the old key is dropped from the route, it drops from this list —
+      // the assertion is exact, so the two cannot drift apart.
       'kalfa_attempt_token',
+      'kalfa_correlation_id',
     ]);
     // Full name, not the first token: `guests.full_name` is free text with no
     // reliable name ordering, so the first-token heuristic greeted surname-first
@@ -145,7 +152,10 @@ describe('ctx GET', () => {
     expect(json.event_kind).toBe('חתונה');
     expect(json.event_venue).toBe('אולם הגן');
     // Additive item-2 link field: the row's non-authorizing correlation nonce.
+    // Both keys carry the SAME value — that is what makes the transition safe,
+    // and what lets the old one be deleted without touching the other.
     expect(json.kalfa_attempt_token).toBe('nonce_test_abc');
+    expect(json.kalfa_correlation_id).toBe('nonce_test_abc');
     // Per-call ASR bias: the proper nouns FIRST (a long celebrant list must never
     // push out "כן"/"לא"), then the agent's base RSVP vocabulary, deduped, capped
     // at the documented 50. The full phrase and its tokens both appear so a

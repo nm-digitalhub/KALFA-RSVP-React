@@ -161,7 +161,8 @@ VoxEngine.addEventListener(AppEvents.Started, function () {
         // in conversation_config_override.asr.keywords (see the init frame).
         // [] rather than '' because it is forwarded as an array.
         asrKeywords: [],
-        // NON-authorizing correlation nonce from ctx (ctx.kalfa_attempt_token).
+        // NON-authorizing correlation nonce from ctx (ctx.kalfa_correlation_id,
+        // with ctx.kalfa_attempt_token as the pre-unification fallback).
         // Injected as the `kalfa_attempt_token` dynamic variable so ElevenLabs
         // echoes it in the post-call webhook and KALFA links conversation→attempt.
         // Empty-safe: '' when ctx omits it → the agent still runs, just unlinked.
@@ -1097,7 +1098,10 @@ VoxEngine.addEventListener(AppEvents.Started, function () {
                             // Round-trips in the post-call webhook's
                             // conversation_initiation_client_data.dynamic_variables
                             // → KALFA links conversation → call_attempt (item 2).
-                            kalfa_attempt_token: state.attemptToken
+                            // The unified correlation variable. One name across all four
+                            // surfaces, so the webhook validator stops guessing which
+                            // spelling a given call used.
+                            kalfa_correlation_id: state.attemptToken
                         },
                         // Omitted entirely when ctx gave us nothing, so a failed ctx
                         // fetch falls back to the agent's own configured keywords
@@ -1625,7 +1629,13 @@ VoxEngine.addEventListener(AppEvents.Started, function () {
                 // Correlation nonce (additive ctx field) — carried through to the
                 // agent init below so the post-call webhook can link back. Never
                 // logged: it is a correlation id, not a spoken/personalization field.
-                state.attemptToken = ctx.kalfa_attempt_token || '';
+                // ⚠️ THE NEW NAME FIRST, THE OLD ONE AS FALLBACK. The four ctx
+                // routes now send `kalfa_correlation_id`; they still send the old
+                // key beside it so a scenario deployed before this change keeps
+                // working. Reading both means THIS scenario also keeps working if
+                // the server is ever rolled back to a build that sends only the
+                // old key.
+                state.attemptToken = ctx.kalfa_correlation_id || ctx.kalfa_attempt_token || '';
             }
             catch (err) {
                 log('Context parse error: ' + err + ' — using empty defaults');

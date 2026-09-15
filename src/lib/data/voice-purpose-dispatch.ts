@@ -67,6 +67,21 @@ export async function dispatchVoicePurposeCall(input: {
   /** The workflow step that asked. The pair is the idempotency key. */
   runId?: string;
   nodeId?: string;
+  /**
+   * Per-call dial parameters chosen on the workflow node.
+   *
+   * ⚠️ EVERY ONE IS AN OVERRIDE AND EVERY ONE IS OPTIONAL — absent means the
+   * value that dialled before these existed. Nothing here relaxes a gate: `to`
+   * in particular is resolved BEFORE the consent evaluator runs, so an
+   * overridden number goes through DNC, opt-out, consent, Shabbat and the
+   * dialling window exactly as the contact's own number would.
+   */
+  overrides?: {
+    callerId?: string;
+    ruleId?: string;
+    to?: string;
+    agentId?: string;
+  };
   nowMs?: number;
 }): Promise<VoicePurposeDispatchResult> {
   const nowMs = input.nowMs ?? Date.now();
@@ -78,7 +93,15 @@ export async function dispatchVoicePurposeCall(input: {
   if (purpose.isBuiltin) return { kind: 'blocked', reason: 'purpose_is_builtin' };
   if (!purpose.active) return { kind: 'skipped', reason: 'purpose_inactive' };
   if (!purpose.enabled) return { kind: 'skipped', reason: 'purpose_disabled' };
-  if (!purpose.ruleId) return { kind: 'blocked', reason: 'purpose_rule_missing' };
+  // ⚠️ THE NODE'S RULE WINS, AND A PURPOSE WITHOUT ONE IS NO LONGER FATAL — as
+  // long as the node supplied one. That is the whole point of putting the
+  // configuration on the node: a purpose is a policy (its window, its token TTL,
+  // its name), and which scenario runs is a property of the call.
+  //
+  // Both missing is still blocked, and with the same reason as before: there is
+  // no rule to start, so `StartScenarios` has nothing to launch.
+  const ruleId = input.overrides?.ruleId?.trim() || purpose.ruleId;
+  if (!ruleId) return { kind: 'blocked', reason: 'purpose_rule_missing' };
 
   // 2. Account credentials, and then — separately — the live-dial switch.
   //    Filling credentials must never by itself dial.
@@ -93,8 +116,22 @@ export async function dispatchVoicePurposeCall(input: {
     .select('id, normalized_phone')
     .eq('id', input.contactId)
     .maybeSingle();
-  const phone = normalizePhone(contact?.normalized_phone ?? '');
-  if (!phone) return { kind: 'skipped', reason: 'invalid_phone' };
+  // ⚠️ THE OVERRIDE IS RESOLVED HERE, ONE LINE ABOVE THE GATES, AND THAT
+  // ORDERING IS THE SAFETY PROPERTY. `evaluateSharedConsentGates` is keyed by
+  // PHONE NUMBER, so resolving the destination first means an overridden number
+  // is checked against DNC and opt-out itself — rather than the contact's number
+  // being cleared while a different line is dialled.
+  //
+  // An override that does not normalize is its own refusal, never a silent
+  // fallback to the contact's number: the operator asked for a specific line,
+  // and quietly dialling a different one would be the worst of both answers.
+  const overrideTo = input.overrides?.to?.trim() ?? '';
+  const phone = overrideTo
+    ? normalizePhone(overrideTo)
+    : normalizePhone(contact?.normalized_phone ?? '');
+  if (!phone) {
+    return { kind: 'skipped', reason: overrideTo ? 'invalid_to_override' : 'invalid_phone' };
+  }
 
   // 3. Consent, DNC, opt-out, Shabbat and the daily window — one call, the same
   //    shared evaluator every other dial surface goes through.
@@ -150,6 +187,12 @@ export async function dispatchVoicePurposeCall(input: {
       node_id: input.nodeId ?? null,
       access_token: accessToken,
       token_expires_at: tokenExpiresAt,
+      // What this call actually used, recorded because the node that chose it
+      // can be edited afterwards. NULL for a call that took the defaults — see
+      // the migration's own note.
+      rule_id: input.overrides?.ruleId?.trim() || null,
+      caller_id: input.overrides?.callerId?.trim() || null,
+      agent_id: input.overrides?.agentId?.trim() || null,
     })
     .select('id')
     .single();
@@ -195,7 +238,11 @@ export async function dispatchVoicePurposeCall(input: {
   // context comes back over ctx.
   const payload = JSON.stringify({
     to: phone,
-    from: config.callerId,
+    // The node's number when it named one, the account's otherwise. This
+    // reaches the call today: all three deployed agent scenarios read
+    // `state.from = customData.from` and pass it to `VoxEngine.callPSTN(to,
+    // callerid)` — no scenario change is needed for this one.
+    from: input.overrides?.callerId?.trim() || config.callerId,
     tok: accessToken,
     u: origin,
     p: purpose.key,
@@ -204,7 +251,7 @@ export async function dispatchVoicePurposeCall(input: {
   try {
     const res = await startScenarios(
       config.auth,
-      { rule_id: purpose.ruleId, script_custom_data: payload },
+      { rule_id: ruleId, script_custom_data: payload },
       START_TIMEOUT_MS,
     );
     if (res.result === 1 && res.call_session_history_id != null) {

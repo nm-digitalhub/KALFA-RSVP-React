@@ -49,7 +49,7 @@ export async function GET(
   const admin = createAdminClient();
   const { data: attempt } = await admin
     .from('voice_purpose_attempts')
-    .select('id, purpose_key, event_id, contact_id, token_expires_at')
+    .select('id, purpose_key, event_id, contact_id, token_expires_at, agent_id')
     .eq('access_token', token)
     .maybeSingle();
 
@@ -106,7 +106,27 @@ export async function GET(
       purpose_name: purpose.displayName,
       // Correlation only, never authorization — lets the post-call webhook map
       // an ElevenLabs conversation back to this attempt.
+      // ⚠️ THIS ROUTE'S KEY BECOMES THE VARIABLE NAME DIRECTLY — PurposeAgent
+      // passes every ctx field through as a dynamic variable by its own name,
+      // so renaming here renames what ElevenLabs receives, with no deploy.
+      // `kalfa_attempt_id` stays beside it for one cleanup cycle so a webhook
+      // in flight is still readable.
+      kalfa_correlation_id: attempt.id,
       kalfa_attempt_id: attempt.id,
+      // ⚠️ WHICH AGENT SHOULD ANSWER — the one field here that is an
+      // INSTRUCTION rather than a variable. Everything above is substituted into
+      // a prompt; this decides which prompt exists at all.
+      //
+      // ⚠️ AND NOTHING READS IT YET. Every deployed scenario opens
+      // `ElevenLabs.createAgentsClient({ agentId: AGENT_ID })` against a
+      // hardcoded constant. It is emitted now so the server half is complete and
+      // one scenario deploy — not a coordinated pair of changes — turns the
+      // node's agent picker live.
+      //
+      // Omitted rather than sent empty when no agent was chosen: a scenario that
+      // reads it should fall back to its own default, and `''` would be a value
+      // that means "no agent", which is not a thing that can answer a phone.
+      ...(attempt.agent_id ? { agent_id: attempt.agent_id } : {}),
     },
     { headers: NO_STORE },
   );

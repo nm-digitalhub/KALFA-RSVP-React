@@ -200,6 +200,9 @@ export async function GET(
       // The attempt id exists before the call, so it echoes back through the
       // post-call webhook whether or not the cb ever arrives — the same thing
       // sls/ctx already sends.
+      // The unified correlation key — see the note on /ctx. Sent beside the
+      // old one until every deployed scenario reads the new name.
+      kalfa_correlation_id: ctx.attempt.id,
       kalfa_attempt_token: ctx.attempt.id,
     },
     { headers: NO_STORE },

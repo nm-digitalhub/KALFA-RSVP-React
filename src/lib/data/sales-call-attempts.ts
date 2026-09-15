@@ -195,7 +195,7 @@ export async function getUnresolvedSalesAttempt(
 }
 
 // Looks up the attempt for a given ElevenLabs conversation id, falling back to
-// the non-authorizing sales attempt id injected as kalfa_attempt_token. The
+// the non-authorizing sales attempt id injected as kalfa_correlation_id. The
 // fallback keeps the post-call webhook's catch-all outcome path working even if
 // Voximplant misses the terminal cb that writes el_conversation_id.
 export async function getSalesAttemptIdByConversationId(

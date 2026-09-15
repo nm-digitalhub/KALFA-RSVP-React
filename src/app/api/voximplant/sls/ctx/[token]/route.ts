@@ -91,6 +91,9 @@ export async function GET(
       // ElevenLabs dynamic variables so post-call analysis can still resolve
       // the sales attempt even if the terminal cb carrying conversation_id is
       // missed.
+      // The unified correlation key — see the note on /ctx. Sent beside the
+      // old one until every deployed scenario reads the new name.
+      kalfa_correlation_id: ctx.attempt.id,
       kalfa_attempt_token: ctx.attempt.id,
       // ⚠️ STAGE-0 PROBE — TEMPORARY. Delete once the question below is answered.
       //

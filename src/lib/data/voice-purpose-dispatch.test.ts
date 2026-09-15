@@ -201,3 +201,119 @@ describe('dispatchVoicePurposeCall', () => {
     await expect(call()).resolves.toMatchObject({ reason: 'invalid_phone' });
   });
 });
+
+// ---------------------------------------------------------------------------
+// Per-node dial overrides
+// ---------------------------------------------------------------------------
+//
+// ⚠️ WHAT THESE PIN IS THE PRECEDENCE, not the plumbing. Each override is
+// optional and blank means "as before" — so the first test here is the one that
+// matters most: a call with no overrides must produce byte-for-byte what it
+// produced before the feature existed, because every diagram already saved
+// carries no overrides at all.
+
+const callWith = (overrides: Record<string, string>) =>
+  dispatchVoicePurposeCall({
+    purposeKey: 'feedback',
+    eventId: 'e1',
+    contactId: 'c1',
+    runId: 'r1',
+    nodeId: 'n1',
+    overrides,
+  });
+
+describe('dispatchVoicePurposeCall — node dial overrides', () => {
+  it('without overrides, dials exactly as before: purpose rule, account caller id, contact phone', async () => {
+    await expect(call()).resolves.toMatchObject({ kind: 'dialed' });
+    const [, params] = startMock.mock.calls[0]!;
+    expect(params.rule_id).toBe('999');
+    const payload = JSON.parse(params.script_custom_data as string) as Record<string, string>;
+    expect(payload.from).toBe('+97233301505');
+    expect(payload.to).toBe('+972500000000');
+  });
+
+  it('the node’s rule replaces the purpose’s in the StartScenarios parameter', async () => {
+    await callWith({ ruleId: '1520915' });
+    expect(startMock.mock.calls[0]![1].rule_id).toBe('1520915');
+  });
+
+  it('the node’s caller id becomes customData.from — which is what callPSTN receives', async () => {
+    await callWith({ callerId: '+97233301506' });
+    const payload = JSON.parse(startMock.mock.calls[0]![1].script_custom_data as string);
+    expect(payload.from).toBe('+97233301506');
+  });
+
+  it('a purpose with no rule is dialable when the node supplies one', async () => {
+    purposeMock.mockResolvedValue({ ...PURPOSE, ruleId: null });
+    await expect(callWith({ ruleId: '1520915' })).resolves.toMatchObject({ kind: 'dialed' });
+    expect(startMock.mock.calls[0]![1].rule_id).toBe('1520915');
+  });
+
+  it('a purpose with no rule and a node with none is still blocked', async () => {
+    purposeMock.mockResolvedValue({ ...PURPOSE, ruleId: null });
+    await expect(call()).resolves.toMatchObject({ kind: 'blocked', reason: 'purpose_rule_missing' });
+    expect(startMock).not.toHaveBeenCalled();
+  });
+
+  it('the CONSENT GATE runs on the overridden number, not on the contact’s', async () => {
+    // The safety property of resolving `to` above the gates. If this ever
+    // regresses, an overridden number would be dialled while DNC was checked
+    // against a different line entirely.
+    await callWith({ to: '+972501111111' });
+    expect(gatesMock).toHaveBeenCalledWith(
+      expect.anything(),
+      '+972501111111',
+      expect.anything(),
+      expect.anything(),
+    );
+    const payload = JSON.parse(startMock.mock.calls[0]![1].script_custom_data as string);
+    expect(payload.to).toBe('+972501111111');
+  });
+
+  it('an unusable destination override refuses, and never falls back to the contact', async () => {
+    await expect(callWith({ to: 'not-a-number' })).resolves.toMatchObject({
+      kind: 'skipped',
+      reason: 'invalid_to_override',
+    });
+    expect(startMock).not.toHaveBeenCalled();
+  });
+
+  it('keeps script_custom_data under VoxEngine’s 200-byte cap, overrides included', async () => {
+    // ⚠️ THE CAP IS REAL AND DOCUMENTED: `VoxEngine.customData()` stores "a
+    // string of up to 200 bytes" (platform/voxengine/custom-data, re-fetched
+    // 2026-09-15), and `script_custom_data` is how StartScenarios fills it. Over
+    // the cap the scenario receives a TRUNCATED payload — which means a cut
+    // token, which means a ctx fetch that 404s, on a call that has already been
+    // placed.
+    //
+    // This is also why the agent id travels over ctx instead of here: overriding
+    // values is free (a number replaces a number), adding keys is not.
+    await callWith({ callerId: '+972331234567', to: '+972541234567' });
+    const raw = startMock.mock.calls[0]![1].script_custom_data as string;
+    expect(Buffer.byteLength(raw, 'utf8')).toBeLessThanOrEqual(200);
+  });
+
+  it('records what the call used on the attempt row, and NULL when it used the defaults', async () => {
+    const { inserted } = mockDb();
+    await callWith({ ruleId: '1520915', callerId: '+97233301506', agentId: 'agent_abc' });
+    expect(inserted[0]).toMatchObject({
+      rule_id: '1520915',
+      caller_id: '+97233301506',
+      agent_id: 'agent_abc',
+    });
+
+    vi.clearAllMocks();
+    purposeMock.mockResolvedValue(PURPOSE);
+    configMock.mockResolvedValue({
+      auth: {}, callbackSecret: 's', callerId: '+97233301505',
+      liveCallsEnabled: true, maxConcurrentCalls: 5, minCallReserve: 1, lowBalanceThreshold: 5,
+    });
+    gatesMock.mockResolvedValue({ ok: true });
+    concurrencyMock.mockResolvedValue(0);
+    accountMock.mockResolvedValue({ result: { balance: 50 } });
+    startMock.mockResolvedValue({ result: 1, call_session_history_id: 7 });
+    const plain = mockDb();
+    await call();
+    expect(plain.inserted[0]).toMatchObject({ rule_id: null, caller_id: null, agent_id: null });
+  });
+});

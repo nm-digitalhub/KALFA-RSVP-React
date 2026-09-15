@@ -254,11 +254,31 @@ export function normalizeCallAnalysisWebhook(raw: unknown): NormalizedWebhook {
       costCredits: asNumber(metadata.cost),
       terminationReason: rawReason ? rawReason.slice(0, TERMINATION_MAX) : null,
       analysisAt: unixSecondsToIso(asNumber(env.event_timestamp)), // unix SECONDS
-      // Two spellings, because the four ctx routes do not agree: RSVP, meeting-
-      // confirm and sales-close send `kalfa_attempt_token`, while the generic
-      // purpose route sends `kalfa_attempt_id`. Reading only the first meant a
-      // purpose call's correlation value never became a correlationToken at all.
-      correlationToken: capped(initVars.kalfa_attempt_token ?? initVars.kalfa_attempt_id, 128),
+      // ⚠️ THREE SPELLINGS, AND THE ORDER IS THE MIGRATION.
+      //
+      // `kalfa_correlation_id` is the unified name every ctx route now sends and
+      // every scenario is being moved onto, so it is read FIRST. The other two
+      // are what the currently-deployed scenarios still inject — RSVP,
+      // meeting-confirm and sales-close send `kalfa_attempt_token`; the generic
+      // route sent `kalfa_attempt_id` — and a webhook for a call placed before
+      // their redeploy carries only those. Dropping either now would silently
+      // orphan the analysis row of every call already in flight.
+      //
+      // All three carry the same KIND of value but not the same value: RSVP
+      // sends `el_correlation_nonce`, the others send the attempt's own id.
+      // `resolveAttempt` knows which to match against which column; this only
+      // has to hand it the string.
+      //
+      // ⚠️ THE LAST TWO COME OUT ON A FOUR-PART CONDITION, not on "the scenarios
+      // are deployed" — that is the producer half only. Also required: this
+      // reader (the ONLY consumer — verified 2026-09-15, nothing else in src/,
+      // scripts/ or worker/ reads `dynamic_variables`) already prefers the
+      // canonical name; no conversation predating the scenario deploy can still
+      // arrive; and one end-to-end call has been observed correlating on it.
+      correlationToken: capped(
+        initVars.kalfa_correlation_id ?? initVars.kalfa_attempt_token ?? initVars.kalfa_attempt_id,
+        128,
+      ),
       callSuccessScore: asNumber(analysis.call_success_score),
       evaluation: extractEvaluation(analysis),
       dataCollection: extractDataCollection(analysis),

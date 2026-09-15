@@ -613,3 +613,219 @@ It may accept `scenario_id` and return success without changing the binding."*
 | **A-46** | יעדים יקרים מ-20 סנט/דקה ואפריקה **חסומים כברירת מחדל** — רלוונטי לייעוד שיחייג לחו"ל |
 | **A-99** | `voice_purpose_attempts` קיבלה אינדקס ייחודי חלקי על `el_conversation_id` ב-2026-09-15; לפני כן הייתה **היחידה מבין החמש בלעדיו** |
 | **A-109** | ⚠️ `SalesCloseAgent` כבר שולח דריסת `first_message`. **אין להעלותו לפני ש-`agents push` + `pull --update` מאשרים `true` בשרת** — אחרת כל שיחת מכירה תיכשל |
+
+---
+
+## 8. מה נבנה ב-15.9 — ומה אומת מול המקור
+
+נכתב אחרי הבנייה, ולא לפניה. כל שורה כאן נשענת על מקור ראשוני חי או על ארטיפקט
+של הספק — לא על התיעוד המקומי הזה ולא על הערות בקוד שלנו.
+
+### 8.1 מה שהאימות הפריך
+
+**התרחישים הפרוסים לא מכירים את המסלול הגנרי.** לא הסקה מהריפו: הטקסט הפרוס של
+שלושת התרחישים הורד מהפלטפורמה
+(`npm run voximplant -- scenario --id 920395|920394|920396`, 15.9). כל אחד בונה
+נתיב ctx משלו — `/ctx/`, `/mtg/ctx/`, `/sls/ctx/` — ובאף אחד אין המחרוזת
+`/purpose/`. בו בזמן `dispatchVoicePurposeCall` מטביע טוקן ב-`voice_purpose_attempts`
+ומצפה לתרחיש שיבנה `{u}/api/voximplant/purpose/{p}/ctx/{tok}`.
+
+כלומר: **לייעוד שהיה מוגדר היום אין תרחיש שיודע לשרת אותו.** הוא היה מחייג, מושך
+ctx שלא מכיר את הטוקן, ומקבל 404. החצי השרתי של המסלול הגנרי היה שלם; החצי
+הטלפוני לא היה קיים כלל. זה נסגר ב-`PurposeAgent.voxengine.js` + הכלל
+`OutCallPurpose`.
+
+**`allOf` לא יכול לאכוף את A-13.** `IfThenElseSchema` ב-API reference הרשמי מתואר
+במילותיו שלו כ-"narrowed to the field-validation subset the SDK uses", ו-
+`ConditionalSchema` בטיפוסים מכיל `properties` בלבד: אין `required`, אין `options`,
+אין הסתרה. הדוגמה בעמוד ה-data-schema ("if method === 'POST', then body is
+required") אינה ניתנת לביטוי בטיפוס. המסקנה: **A-13 הוא חוק מערכת** — הערך נשלח
+רק כשהשדה מלא **וגם** ההרשאה פעילה, והבדיקה חיה במקום שבו הערך נטבע (מסלול ה-ctx),
+לא ב-UI ולא בסכימה. הסתרה ב-UI היא נוחות; payload ישן, מיובא או שמור יכול עדיין
+לשאת את השדה.
+
+**האקורדיון לא מקופל.** הרנדרר (`GH` ב-bundle 2.3.0) מעביר `label` בלבד, ורכיב
+האקורדיון מגדיר `defaultOpen = true`. התיעוד אומר "body hidden by default" —
+והמקור אומר את ההפך. לכן קיבוץ פרמטרי החיוג באקורדיון אינו מסתיר אותם.
+
+**`globalControls` — תיקון לקריאה קודמת שלי כאן.** כתבתי שהוא "אינרטי אצלנו" כי
+תוסף ה-Validation, שכותב את השגיאה שהוא מציג, הוא Enterprise. **זה לא נכון**, וזה
+הוכרע מול מקור הדמו הרשמי (`apps/demo/.../conditions/uischema.ts` נפתח ב-
+`...globalControls`) ואז מול ה-bundle: התצוגה עצמה בבסיס — פאנל המאפיינים מוסר
+ל-JsonForms `additionalErrors: properties.customErrors`, ותקינות הצומת מחושבת
+מ-`errors` **וגם** `customErrors` יחד (זה מה שמדליק את סימן הקריאה). התוסף הוא
+**יצרן** אחד של השגיאות; כל צרכן רשאי לכתוב `data.properties.customErrors`.
+
+**אבל `globalControls` עצמו אינו ה-surface הנכון, וגם זה נמדד.** האלמנט היחיד שבו
+הוא `MessageOnError` עם `text: 'plugins.validation.missingDependency'` — מפתח
+i18n שמופיע פעם אחת בלבד בכל ה-bundle, בתוך `globalControls` עצמו. ה-namespace
+`validation` של ה-SDK מכיל רק `notJSONObject`, `nodesWithoutDefinition` ו-
+`nodesWithErrors`, ב-en וב-pl כאחד. הרצה של i18next עם הגדרות ה-init המדויקות של
+ה-SDK מחזירה למפתח חסר את **המפתח עצמו**; והרנדרר הוא `t(text) || errors || text`,
+כלומר ה-`text` הקשיח **מנצח את ההודעה שלנו**. פיזור הקבוע היה מבטיח שהמסך יציג
+מחרוזת אנגלית טכנית במקום מה שכתבנו. הוא הוחזר.
+
+ה-surface הנכון ל-A-13 הוא `MessageOnError` ממוקד לשדה עצמו — התבנית שכבר עובדת
+על `purposeKey`. התיעוד קובע את שתי הצורות: *"text · no · Override the
+auto-derived error text. If omitted, the message comes from the validation error
+itself"* — כלומר `text` בעברית כשהמשפט קבוע, ובלי `text` כשהמשפט תלוי בסוכן ואז
+ההודעה מגיעה מ-`customErrors[].message`. `customErrors` נשאר המנגנון להעלות שגיאה
+ברמת-צומת שהסכימה אינה יכולה לבטא, ו-`override-policy.ts` כבר אוכף את הכלל בשרת.
+
+### 8.2 מה שהאימות אישר
+
+| טענה | המקור |
+|---|---|
+| `StartScenarios` מקבל `rule_id` + `script_custom_data` (ואין פרמטר caller-id) | התיעוד החי, 8 פרמטרים בסך הכול |
+| `callerId` מגיע לשיחה היום | הטקסט הפרוס: `state.from = customData.from` → `callPSTN(state.to, state.from)` בשלושתם |
+| תקרת 200 בתים ל-`customData` | `platform/voxengine/custom-data` — ולכן מזהה הסוכן נוסע ב-ctx |
+| `GET /v1/convai/agents`: `cursor`, `page_size` 1–100, `agents[].agent_id/name/tags` | שני רינדורים של אותו עמוד; נחלקו על ברירת המחדל של `archived`, ולכן הוא נשלח במפורש |
+| `rule` על אלמנט layout | "Every layout accepts … rule … Conditional show/hide/enable/disable" |
+| `enum` אינו נתמך; `options` הוא המנגנון | "Plain JSON-Schema enum is not part of the statically-typed NodeSchema surface today" |
+| הפלטה לא מתרעננת מעצמה | ה-bundle: `fetchData` נקרא פעם אחת ב-`useEffect(…, [fetchData])` של ה-Palette, וה-store מחזיק snapshot |
+
+### 8.3 מה שנשאר תלוי בפריסה
+
+בורר הסוכן שבצומת מוליך ערך מקצה לקצה בשרת — צומת → `voice_purpose_attempts.agent_id`
+→ תשובת ctx — אבל **אף תרחיש פרוס לא קורא אותו**: שלושתם מקבעים
+`var AGENT_ID = 'agent_…'`. `PurposeAgent` קורא `ctx.agent_id` ו**מסרב לחייג בלעדיו**.
+עד שהוא ייפרס (`npm run vox:upload:purpose`), בחירת סוכן בצומת משנה מה השרת אומר —
+לא מי עונה.
+
+### 8.4 מה שעלה משרשרת ההפניות של מדריך התוספים
+
+**תופעת הלוואי הגלובלית שהתיעוד מזהיר ממנה אינה קיימת בארטיפקט שאנחנו מתקינים.**
+עמוד `get-started/side-effects` קובע שייבוא ה-SDK קורא `setAutoFreeze(false)` של
+immer, ומזהיר: *"Because immer is a shared, deduped dependency, this disables
+auto-freeze globally for the host app — any of your own reducers, RTK slices …
+lose that protection."* אצלנו RTK אכן נמצא בזמן ריצה (דרך `recharts`), ולכן
+בדקתי. בכל תיקיית ה-`dist` של 2.3.0 יש **אפס** מופעים של `autoFreeze` או
+`setAutoFreeze`; ה-bundle מייבא מ-immer את `produce` בלבד. בנוסף, ה-SDK נושא עותק
+immer **מקונן** בגרסה 10.2.0 בעוד ש-immer של השורש הוא 11.1.18 — שתי גרסאות major
+שונות, כלומר לא מדובר בתלות deduped וקריאה כזו לא הייתה מגיעה ל-RTK גם אילו הייתה.
+
+שתי מסקנות: (א) אין כאן סיכון להגנת ה-freeze של הקוד שלנו; (ב) אם אי פעם תופיע
+שגיאת `Cannot assign to read only property` מתוך ReactFlow — זו הסיבה לחפש כאן,
+כי לפי אותו עמוד ReactFlow משנה במקום את האובייקטים ש-`produce` של ה-SDK מייצר,
+וה-auto-freeze של immer 10 פעיל כברירת מחדל.
+
+**מגבלות שכן חלות עלינו, ונבדקו:** מותר Root יחיד בעמוד — יש לנו אחד, עם
+`key={workflowId}` שמאלץ unmount→mount, שזו בדיוק התבנית המאושרת; וייבוא subpath
+מה-SDK אסור — אצלנו יש רק את ה-barrel ו-`style.css`.
+
+**ארבע נקודות ההרחבה מנוצלות כולן:** `registerComponentDecorator` ×7,
+`registerFunctionDecorator` ×2, `registerPluginTranslation` ×1, `jsonForm` ×2.
+הרשימה המלאה של הפונקציות הניתנות לעיטור (התיעוד מפנה לגרפ `withOptionalFunctionPlugins`
+במקור; נעשה) היא **ארבע בדיוק**: `getPaletteData`, `getTemplates`,
+`getControlsDotsItems`, `trackFutureChange`. הסלוטים הם **עשרה** ולא שבעה —
+מלבד המתועדים קיימים גם `DiagramContainer`, `ProjectSelection`, `PropertiesBar`.
+
+`getPaletteData` הוא מסלול חלופי להזרקת הרשימות החיות, אך **אינו מייתר את
+`fetchData()`**: ה-Palette קורא לו פעם אחת ב-mount וה-store מחזיק snapshot, ולכן
+הרענון נדרש בכל מקרה.
+
+---
+
+## 10. איחוד טבלאות הניסיון — המדידות וההכרעה
+
+נבחן ב-15.9 בעקבות הבחנה נכונה: `call_analysis` נושא `attempt_table` + `attempt_id`,
+כלומר מפתח זר פולימורפי בעבודת יד. כל מספר כאן נמדד מול המסד החי.
+
+### 10.1 חמש טבלאות, לא ארבע
+
+ה-CHECK של `call_analysis` מונה: `call_attempts`, `callback_request_attempts`,
+`sales_call_attempts`, **`inbound_agent_attempts`**, `voice_purpose_attempts`.
+החמישית נשמטה ממיפוי קודם, והיא החריגה ביותר: `token_hash` במקום `access_token`
+(מגובב ולא גלוי), `status` במקום `dispatch_status`, יש `revoked_at`, ואין
+`vox_call_session_history_id` — כי זו שיחה נכנסת ואין מה לשגר.
+
+### 10.2 המחיר של המפתח הפולימורפי
+
+| attempt_table | שורות ב-call_analysis | עם FK אמיתי |
+|---|---|---|
+| `call_attempts` | 20 | 20 |
+| `callback_request_attempts` | 10 | **0** |
+| `sales_call_attempts` | 4 | **0** |
+| לא מקושר | 8 | — |
+
+**14 מ-34 הקישורים הם מחרוזת + UUID בלי שום אכיפה.** רק `call_attempts` זוכה
+ל-FK, כי רק לו הוקצתה עמודה ייעודית.
+
+### 10.3 הליבה המשותפת קטנה ממה שנדמה
+
+עמודות המשותפות ל**כל** החמש — **שבע בלבד**: `id`, `created_at`, `updated_at`,
+`token_expires_at`, `el_conversation_id`, `finish_reason`, `call_duration_sec`.
+
+ל-4 מתוך 5: `access_token`, `vox_call_session_history_id`.
+ל-3: `contact_id`, `event_id`, `dispatch_status`.
+
+ושם הסטטוס מפוצל לשלושה: `status` (call, inbound), `dispatch_status` (callback,
+sales, purpose), ו-`call_status` (purpose בלבד, בנוסף). לכן "להעלות את המשותף
+לליבה" אינו מהלך מכני — הוא דורש הכרעה על צורה קנונית.
+
+### 10.4 המכשול הוא קוד, לא נתונים
+
+```
+שורות:  call 22 · callback 13 · sales 5 · inbound 0 · purpose 0   → 40 בסך הכול
+FK נכנסים ל-call_attempts:  7   (שניים ON DELETE CASCADE)
+FK נכנסים לארבע האחרות:     0
+נקודות מגע בקוד:  72 קריאות from()  — אך רק 4 נקודות INSERT
+```
+
+`inbound_agent_attempts` מוצהרת ואינה נשאלת באף מקום בקוד.
+
+### 10.5 ההכרעה: רישום זהות, בלי להזיז עמודה אחת
+
+`voice_attempts(id, kind, created_at)` כטבלת זהות, ו**ה-`id` של כל אחת מחמש
+הטבלאות הקיימות הופך למפתח זר אליה** — בלי להעביר עמודות ובלי לגעת בקריאות.
+
+```sql
+create table voice_attempts (
+  id uuid primary key,
+  kind text not null check (kind in ('rsvp','callback','sales','inbound','purpose')),
+  created_at timestamptz not null default now()
+);
+alter table call_attempts add constraint call_attempts_id_fkey
+  foreign key (id) references voice_attempts(id);
+-- ... ועוד ארבע
+alter table call_analysis add column voice_attempt_id uuid references voice_attempts(id);
+```
+
+⚠️ **הצורה הזו מאושרת במפורש על ידי PostgREST**, ולא מהנדסים אותה סביבו:
+*"One-to-one relationships are detected in two ways… **when the foreign key is
+also a primary key**"*. כלומר `/voice_attempts?select=*,sales_call_attempts(*)`
+מחזיר **אובייקט** ולא מערך, ו-`!inner` מסנן לפי סוג — שני דברים ש-`attempt_table`
+כמחרוזת אינו מאפשר כלל, ולכן כל צרכן שלו נאלץ בשתי שאילתות.
+
+העלות: **ארבע נקודות INSERT** צריכות לכתוב שורת זהות תחילה, ו-40 שורות backfill.
+72 קריאות ה-`from()` אינן משתנות.
+
+מה שהמודל הזה **לא** פותר, ובמכוון: 34 העמודות של `call_attempts` נשארות במקומן.
+פיצול שלהן להרחבות הוא מהלך נפרד שנוגע בשבעת הצרכנים שלו — ואין סיבה לצרף אותו
+לצעד שמטרתו להשיג FK אמיתי.
+
+### 10.6 סדר
+
+1. **`kalfa_correlation_id` בכל המסלולים — בוצע 15.9.** ולא `kalfa_attempt_id`,
+   כפי שנשקל תחילה: הבדיקה גילתה ש-`/ctx` שולח את `el_correlation_nonce` ולא את
+   ה-`id` (nonce שנטבע בדיוק כדי שה-PK לא ייצא החוצה), בעוד mtg ו-sls שולחים את
+   ה-`id` עצמו. שם שמצהיר "זהו מזהה ה-attempt" היה **שקרי באחד המסלולים**.
+   `correlation_id` מתאר את התפקיד — קישור מקצה לקצה בין Voximplant, ElevenLabs
+   והוובהוק — ואינו קושר את החוזה לטבלה.
+
+   ⚠️ ולכך יש ערך שנשאר גם בהמשך: אם `voice_attempts` ייווצר (§10.5), הערך יתחיל
+   להצביע אליו **בלי לשנות את שם המשתנה ובלי לפרוס מחדש אף תרחיש**. שם שנגזר
+   מטבלה היה מחייב סבב נוסף.
+
+   `access_token` נשאר שם נפרד לדבר אחר — יכולת קריאה, לא זהות.
+
+   **תנאי מחיקת השמות הישנים — ארבעה חלקים, לא אחד:** כל ה-producers שולחים את
+   השם החדש · ה-consumer היחיד (`elevenlabs-payloads.ts`, אומת שאין אחר) קורא
+   אותו ראשון · אין שיחה שקדמה לפריסה שעדיין באוויר · ושיחה אחת מקצה לקצה נצפתה
+   מתקשרת דרכו.
+2. **`voice_attempts` כרישום זהות** + FK מחמש הטבלאות + `call_analysis.voice_attempt_id`.
+3. רק אחרי שיחה גנרית אמיתית אחת — לשקול הרחבות ופיצול `call_attempts`.
+
+⚠️ הצעד "לקבע את PurposeAgent כמימוש ההפניה" אינו יכול להיות שני:
+`voice_purpose_attempts` מכילה **0 שורות** — המסלול הגנרי מעולם לא חייג.
+לקבע כהפניה מימוש שלא רץ הוא להנציח הנחות.

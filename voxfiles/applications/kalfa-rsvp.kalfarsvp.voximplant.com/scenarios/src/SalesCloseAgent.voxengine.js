@@ -363,7 +363,10 @@ VoxEngine.addEventListener(AppEvents.Started, function () {
                             company_name: state.companyName,
                             company_id: state.companyId,
                             company_address: state.companyAddress,
-                            kalfa_attempt_token: state.attemptToken
+                            // The unified correlation variable. One name across all four
+                            // surfaces, so the webhook validator stops guessing which
+                            // spelling a given call used.
+                            kalfa_correlation_id: state.attemptToken
                         },
                         // Same idiom as RSVPAgent's asr.keywords override: OMITTED
                         // ENTIRELY when ctx gave us nothing, so a failed ctx fetch
@@ -694,7 +697,13 @@ VoxEngine.addEventListener(AppEvents.Started, function () {
                 state.companyName = ctx.company_name || '';
                 state.companyId = ctx.company_id || '';
                 state.companyAddress = ctx.company_address || '';
-                state.attemptToken = ctx.kalfa_attempt_token || '';
+                // ⚠️ THE NEW NAME FIRST, THE OLD ONE AS FALLBACK. The four ctx
+                // routes now send `kalfa_correlation_id`; they still send the old
+                // key beside it so a scenario deployed before this change keeps
+                // working. Reading both means THIS scenario also keeps working if
+                // the server is ever rolled back to a build that sends only the
+                // old key.
+                state.attemptToken = ctx.kalfa_correlation_id || ctx.kalfa_attempt_token || '';
                 state.firstMessageOverride = ctx.first_message_override || '';
             }
             catch (err) {

@@ -708,12 +708,31 @@ const startVoiceCall: StepHandler = async (config, ctx) => {
   }
 
   const guest = requireGuestContext(ctx, 'action.start_voice_call');
+
+  // ⚠️ TRIMMED, AND EMPTY IS DROPPED RATHER THAN SENT. Every one of these ships
+  // as '' in the node's defaults, so a diagram that never opened the "פרמטרי
+  // החיוג" group would otherwise send four empty strings and force the
+  // dispatcher to decide what '' means. Dropping them here makes "not set" and
+  // "not sent" the same thing, which is what the port documents.
+  //
+  // `toOverride` has already been through `resolveConfigTemplates`, so a
+  // `{{nodes.<id>.phone}}` written in the editor arrives as a number — and an
+  // unresolvable reference has already failed the step by then, loudly, rather
+  // than dialling a literal brace.
+  const overrides = {
+    ...(readString(config, 'callerId').trim() ? { callerId: readString(config, 'callerId').trim() } : {}),
+    ...(readString(config, 'ruleId').trim() ? { ruleId: readString(config, 'ruleId').trim() } : {}),
+    ...(readString(config, 'toOverride').trim() ? { to: readString(config, 'toOverride').trim() } : {}),
+    ...(readString(config, 'agentId').trim() ? { agentId: readString(config, 'agentId').trim() } : {}),
+  };
+
   const outcome = await dial({
     runId: ctx.runId,
     nodeId: ctx.nodeId,
     eventId: guest.eventId,
     contactId: guest.contactId,
     purposeKey,
+    ...(Object.keys(overrides).length > 0 ? { overrides } : {}),
   });
 
   const placed = {

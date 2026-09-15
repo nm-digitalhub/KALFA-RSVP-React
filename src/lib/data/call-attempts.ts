@@ -143,8 +143,14 @@ export type CallContext = {
     | 'event_id'
     | 'contact_id'
     // Non-authorizing correlation nonce (nullable) — surfaced by the ctx route as
-    // `kalfa_attempt_token` for ElevenLabs-bridged calls so the post-call webhook
-    // can link the conversation back to this attempt. Additive; Branch B ignores it.
+    // `kalfa_correlation_id` (and, until every scenario is redeployed, also under
+    // the older `kalfa_attempt_token`) so the post-call webhook can link the
+    // conversation back to this attempt. Additive; Branch B ignores it.
+    //
+    // ⚠️ THIS SURFACE SENDS THE NONCE, NOT THE ROW'S `id` — unlike mtg/sls/purpose,
+    // which send the attempt id itself. That is why the unified variable is named
+    // for CORRELATION and not for identity: one name, two different values, both
+    // doing the same job.
     | 'el_correlation_nonce'
   >;
   event: {
@@ -523,7 +529,7 @@ export async function markStartUnknown(
 
 // Stamp a NON-authorizing correlation nonce onto an attempt so an ElevenLabs-
 // bridged call can be linked back from the post-call webhook (which echoes it as
-// conversation_initiation_client_data.dynamic_variables.kalfa_attempt_token). The
+// conversation_initiation_client_data.dynamic_variables.kalfa_correlation_id). The
 // nonce grants no capability — leaking it exposes nothing (see the migration
 // comment) — but it is still a correlation id, so it is never logged.
 //

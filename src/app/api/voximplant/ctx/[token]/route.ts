@@ -213,6 +213,45 @@ export async function GET(
       // the conversation back to this call_attempt. '' when the row has no nonce
       // (every non-bridge call, incl. all of Branch B — which ignores this field).
       // Non-authorizing by design, so serving it here leaks no capability.
+      // ⚠️ THE UNIFIED CORRELATION KEY. Four surfaces sent this value under three
+      // different names — `kalfa_attempt_token` here and on mtg/sls,
+      // `kalfa_attempt_id` on the generic route — and the validator had to read
+      // both spellings to survive it.
+      //
+      // ⚠️ AND THE NAME IS `correlation_id`, NOT `attempt_id`, BECAUSE THE VALUE
+      // IS NOT ALWAYS THE ATTEMPT'S ID. This surface sends
+      // `el_correlation_nonce`: a separate, non-authorizing value minted exactly
+      // so the attempt's primary key never leaves the building. mtg and sls send
+      // `attempt.id` itself. Both serve the same job — letting the post-call
+      // webhook find the row — and neither is "the attempt id" in the same
+      // sense, so a name that claims to be one would be false on this route.
+      //
+      // The old key is still sent beside it: the deployed scenarios read
+      // `ctx.kalfa_attempt_token` by name, and dropping it before they are
+      // redeployed would break correlation on every live call.
+      //
+      // ⚠️ THE CONDITION FOR DELETING THE LEGACY KEYS IS FOUR-PART, NOT ONE.
+      // "The scenarios are deployed" is the producer half only:
+      //
+      //   1. every PRODUCER sends `kalfa_correlation_id`
+      //      (the four ctx routes — done; the three scenarios — on deploy)
+      //   2. every CONSUMER reads it FIRST
+      //      (exactly one exists: elevenlabs-payloads.ts:~240 — done)
+      //   3. no in-flight conversation predating the change can still arrive
+      //      (a webhook for a call placed before the scenario deploy carries
+      //      only the old name)
+      //   4. one end-to-end call has been observed correlating on the new name
+      //
+      // Deleting after (1) alone orphans the analysis row of every call already
+      // on the wire.
+      //
+      // ⚠️ AND THE NAME IS DELIBERATELY NOT TIED TO A TABLE. There are five
+      // attempt tables today, and a `voice_attempts` core table is under
+      // consideration (plan §10). A variable named for a table would have to be
+      // renamed — and every scenario redeployed again — the day the value starts
+      // pointing at a different one. `correlation_id` names the JOB, so the
+      // integration contract survives that migration untouched.
+      kalfa_correlation_id: ctx.attempt.el_correlation_nonce ?? '',
       kalfa_attempt_token: ctx.attempt.el_correlation_nonce ?? '',
       // Per-call ASR keyword bias (see asrKeywordsFor above). The scenario
       // forwards this verbatim as conversation_config_override.asr.keywords.

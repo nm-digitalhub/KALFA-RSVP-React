@@ -33,6 +33,7 @@ import { OWNER_WHATSAPP_MESSAGE_KINDS } from '@/lib/workflow/catalogue/types';
 import { matchesKind } from '@/lib/workflow/trigger';
 import { toWorkflowDefinition } from '@/lib/workflow/adapter/to-definition';
 import { findArmBlockers } from '@/lib/workflow/catalogue/arm-check';
+import { findVoiceDialBlockers } from '@/lib/data/admin/voice-node-arm-check';
 import {
   dryRunWorkflow,
   type DryRunResult,
@@ -260,6 +261,17 @@ export async function setWorkflowActive(
     // Only arming demands they be filled.
     const blockers = findArmBlockers(workflow.data.definition, id);
     if (blockers.length > 0) return { ok: false, errors: blockers };
+
+    // ⚠️ AND THEN THE ONE QUESTION A PURE FUNCTION CANNOT ANSWER: is the voice
+    // agent each call node names still there, still on, and still reachable by
+    // some rule? That is a fact about `voice_purposes`, which is why it is a
+    // second pass with a database behind it rather than another branch above.
+    //
+    // Reported together with, not instead of, the structural blockers — an owner
+    // fixing one blank should see all of them, not discover a second after
+    // pressing arm again.
+    const dialBlockers = await findVoiceDialBlockers(workflow.data.definition);
+    if (dialBlockers.length > 0) return { ok: false, errors: dialBlockers };
 
     const { error: armError } = await supabase
       .from('workflows')

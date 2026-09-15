@@ -8,7 +8,7 @@
 // Places ONE controlled bridged call: it stamps a random, NON-authorizing
 // correlation nonce onto an EXISTING call_attempt, then StartScenarios the
 // deployed RSVPAgent bridge. The scenario fetches ctx (which surfaces the nonce
-// as kalfa_attempt_token), injects it as an ElevenLabs dynamic variable, and the
+// as kalfa_correlation_id), injects it as an ElevenLabs dynamic variable, and the
 // post-call webhook echoes it → storeCallAnalysis links conversation → attempt.
 //
 //   npm run bridge:call -- \

@@ -252,6 +252,29 @@ describe('normalizeCallAnalysisWebhook', () => {
     expect(JSON.stringify(analysis)).not.toContain('ANGELO_NAME_SECRET');
   });
 
+  it('prefers the unified correlation name, and still reads the two it replaces', () => {
+    // ⚠️ THE ORDER IS THE MIGRATION, NOT A PREFERENCE. Every ctx route now sends
+    // `kalfa_correlation_id`; the deployed scenarios still inject the older
+    // names, and a webhook for a call placed before their redeploy carries only
+    // those. Reading the new one first and the old ones after is what lets the
+    // two live side by side without a flag.
+    const read = (vars: Record<string, string>) =>
+      normalizeCallAnalysisWebhook({
+        ...sample,
+        data: {
+          ...sample.data,
+          conversation_initiation_client_data: { dynamic_variables: vars },
+        },
+      }).analysis?.correlationToken;
+
+    expect(read({ kalfa_correlation_id: 'new' })).toBe('new');
+    expect(read({ kalfa_attempt_token: 'old-token' })).toBe('old-token');
+    expect(read({ kalfa_attempt_id: 'old-id' })).toBe('old-id');
+    // All three present: the unified one wins, so a scenario mid-migration that
+    // sends both cannot resolve to the stale spelling.
+    expect(read({ kalfa_correlation_id: 'new', kalfa_attempt_token: 'old-token' })).toBe('new');
+  });
+
   it('extracts QA (score + criterion pass/fail + structured RSVP) — drops all rationale', () => {
     const withQa = {
       ...sample,

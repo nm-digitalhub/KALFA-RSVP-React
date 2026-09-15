@@ -386,6 +386,28 @@ export interface GuestActionsPort {
     eventId: string | null;
     contactId: string;
     purposeKey: string;
+    /**
+     * Per-node dial parameters, each one an OVERRIDE and each one optional.
+     *
+     * ⚠️ BLANK MEANS "AS BEFORE", never "none". An absent `ruleId` dials the
+     * rule configured on the purpose; an absent `callerId` uses the account's
+     * configured number; an absent `to` dials the contact's own phone. That is
+     * what makes this field safe to add to a port every existing diagram
+     * already calls — none of them carries these values, and none of them
+     * changes behaviour.
+     *
+     * ⚠️ `to` IS NOT A PERMISSION TO DIAL ANYWHERE. The dispatcher still runs
+     * every gate against the CONTACT — DNC, opt-out, consent, the replay guard
+     * — because the contact is who the call is about. This only decides which
+     * number that call is placed to, for the case where the contact's reachable
+     * line is not the one on their row.
+     */
+    overrides?: {
+      callerId?: string;
+      ruleId?: string;
+      to?: string;
+      agentId?: string;
+    };
   }): Promise<{
     ok: boolean;
     status: string;

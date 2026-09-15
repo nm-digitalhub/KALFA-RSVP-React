@@ -194,13 +194,14 @@ export function createGuestActions(): GuestActionsPort {
      * `dispatchVoicePurposeCall`, which is the one place they can be read in
      * order. A second copy here would be a second set of rules to keep correct.
      */
-    async startVoicePurposeCall({ runId, nodeId, eventId, contactId, purposeKey }) {
+    async startVoicePurposeCall({ runId, nodeId, eventId, contactId, purposeKey, overrides }) {
       const outcome = await dispatchVoicePurposeCall({
         purposeKey,
         eventId,
         contactId,
         runId,
         nodeId,
+        ...(overrides ? { overrides } : {}),
       });
       // 'dialed' and 'already_dispatched' are both successes: the second means a
       // replay found the call this step had already placed.
