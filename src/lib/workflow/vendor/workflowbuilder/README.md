@@ -1,11 +1,17 @@
 # vendor/workflowbuilder
 
-Third-party source. **Not ours, not edited.**
+Third-party source, kept as close to upstream as the build allows.
+
+⚠️ **THIS FILE SAID "not edited" AND THAT WAS NOT TRUE.** Two kinds of change
+have been made, both listed below under *Divergences*. The claim mattered — it is
+what let a re-sync be read as a diff — so it is replaced by the list rather than
+repeated.
 
 | | |
 |---|---|
 | Repository | <https://github.com/synergycodes/workflowbuilder> |
 | Commit | `2d987d3b01618306eef898c0eb0c0d08ee207016` (2026-09-04) |
+| Later cherry-pick | `badcca6` — `errors.ts` only (2026-09-16), see *Divergences* |
 | Upstream paths | `packages/execution-core/src`, `packages/types/src` |
 | Licence | Apache 2.0 — see `LICENSE` |
 
@@ -18,10 +24,11 @@ Of that monorepo's thirteen packages only two are published to npm:
 licence permits copying; the cost is that this does not update, carries no
 semver, and `0.0.0` is upstream saying it promises no stability.
 
-## What is here — ten files, chosen by closure
+## What is here — twelve files
 
-The exact transitive closure of `graph-runner.ts`, computed from the import
-graph, not selected by eye:
+Ten are the exact transitive closure of `graph-runner.ts`, computed from the
+import graph rather than selected by eye. The other two arrived later and are
+marked.
 
 ```
 execution-core/graph-runner.ts          runGraph — topological traversal
@@ -34,7 +41,17 @@ execution-core/ports/activity-runner.port.ts
 execution-core/ports/event-emitter.port.ts
 types/workflow-execution/execution-model.ts
 types/workflow-execution/execution-events.ts
+
+templates/resolve-template.ts           ← ADDED 2026-09-10, not in the closure
+templates/resolve-template.test.ts      ← its upstream test, taken with it
 ```
+
+⚠️ The last two contradict what this file used to say twice over: they were
+listed as *deliberately left behind*, and the rules below say KALFA's tests live
+beside our adapter. `0598bdb` took the file to resolve `{{…}}` references in
+node configs, and twelve of our modules import it today. Its test came with it
+because it pins upstream's grammar, which is the thing our copy must not drift
+from.
 
 Upstream's own README describes this layer as "pure mechanism for executing
 workflow graphs — no Temporal, no HTTP, no database, no node vocabulary", and
@@ -44,27 +61,63 @@ names `BullMQEngine` among future adapters. A pg-boss adapter is that shape.
 
 | Not taken | Reason |
 |---|---|
-| `templates/resolve-template.ts` | Needs `target: ES2018` (named capture groups, line 51) and this project targets ES2017. It is **not** a dependency of `runGraph` — only of the `index.ts` barrel — so leaving it out removes the incompatibility without editing upstream code or changing the project's compiler target. If we later want a template evaluator, that is its own decision. |
+| ~~`templates/resolve-template.ts`~~ | **No longer true — it was taken on 2026-09-10 (`0598bdb`).** The ES2018 objection was real and is measured below; it was solved by converting the named groups rather than by leaving the file out. |
 | `index.ts`, `workflow.ts` | Barrels that re-export everything, including the file above. |
 | `registry/node-executor-registry.ts` | A convenience for mapping node types to executors. `runGraph` takes an `ActivityRunnerPort`; we implement that port directly. |
 | `console-logger.ts`, `ports/logger.port.ts` | This project has its own logging. |
 | `reconstruct-node-inputs.ts` | Reachable only through the barrel. |
 | Everything under `apps/` | `apps/backend` (Hono) and `apps/execution-worker` (Temporal) are upstream's reference stack. We run on pg-boss, and upstream states the bundled backend has "no authentication, authorization, user/tenant isolation, and no CORS restrictions" and must not be exposed. |
 
+## Divergences — the complete list, each measured
+
+**1. Import paths, in every file that has one.** Upstream resolves
+`@workflow-builder/types/...` through a pnpm workspace alias that does not exist
+here; ours are relative. Mechanical, unavoidable, and the ONLY difference in ten
+of the twelve files — verified by diffing each against `2d987d3`.
+
+**2. `errors.ts` is ahead of the pinned commit.** `extractDeepestError` returns
+the deepest NON-EMPTY message, cherry-picked from `badcca6`. Measured before
+taking it: a refused connection arrives as `Cannot connect to API:` wrapping an
+`AggregateError` with no message of its own, and the old walk returned `''` — so
+a failed node reached the canvas with no reason on it. A normal cause chain is
+unchanged by the fix.
+
+**3. `templates/resolve-template.ts` carries two KALFA changes.** This is the one
+file where a re-sync is a merge rather than a diff, and it is why the "never
+edited" claim at the top of this file was removed.
+
+*Numbered capture groups instead of named ones.* Measured: `tsc --target ES2017`
+rejects a named group with `error TS1503`; ES2018 accepts it. `tsconfig.json`
+targets ES2017. Behaviour-preserving — the two implementations were run against
+seventeen inputs covering whitespace, nested paths, `?`, `default:'…'`, a default
+containing `}`, malformed tokens, unknown namespaces and plain text, and agreed
+on all seventeen INCLUDING the wording of every throw.
+
+*A `deferSecrets` option, default `false`.* With it off the file behaves exactly
+as upstream (those same 17/17). With it on, `{{secrets.NAME}}` passes through
+untouched so the outbound port can substitute it at the socket; every other
+unknown namespace still throws. Measured why it is needed: `redact.ts` matches on
+KEY names, and a webhook header row is `{ key: 'Authorization', value: '…' }` —
+so `redactSensitive` leaves the secret in plain text, as it does for a Slack
+webhook URL that is itself the credential.
+
 ## Rules
 
-- **Do not edit these files.** The one adjustment that looked necessary — the
-  ES2018 regex — was avoided by not taking the file. Keep it that way: a future
-  re-sync should stay a diff, never a merge.
+- **Prefer not to edit these files**, and when an edit is unavoidable, add it to
+  the list above with the measurement that forced it. A re-sync of anything not
+  listed there is a plain diff; `resolve-template.ts` is a merge.
 - **Do not import from here outside `src/lib/workflow/`.** The rest of KALFA
   talks to our own adapter, so the vendored surface can be replaced without a
   cross-cutting change.
-- KALFA's tests for this behaviour live beside our adapter, not in this
-  directory. Nothing here should be modified to make a test pass.
+- KALFA's tests live beside our adapter, not here. `resolve-template.test.ts` is
+  the exception and is upstream's own file, taken with the module it tests —
+  nothing in this directory is modified to make a KALFA test pass.
 
 ## Re-syncing
 
 Clone the repo at a newer commit, recompute the closure of `graph-runner.ts`,
-diff against these files, and update the commit above. Upstream has no
+diff against these files, and update the commit above. Expect the import paths to
+differ everywhere, `errors.ts` to already match anything at or after `badcca6`,
+and `resolve-template.ts` to need a real merge against the two divergences. Upstream has no
 `Unreleased` changelog section, so release notes are not a reliable signal —
 compare the types.
