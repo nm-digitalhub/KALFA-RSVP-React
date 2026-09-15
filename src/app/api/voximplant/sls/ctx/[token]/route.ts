@@ -7,7 +7,8 @@ import { tokenFingerprint } from '@/lib/security/token-fingerprint';
 
 // ⚠️ STAGE-0 PROBE — see the block at the bottom of this file for the full
 // rationale. '' is the production value: the key is then omitted entirely.
-const STAGE0_FIRST_MESSAGE_PROBE = '';
+const STAGE0_FIRST_MESSAGE_PROBE =
+  'בדיקת מערכת קלפה. אם אתה שומע את המשפט הזה, הדריסה פעלה.';
 
 // GET /api/voximplant/sls/ctx/{token}
 //
