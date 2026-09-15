@@ -1064,18 +1064,24 @@ export function triggerKeywordCanNeverMatch(
  * names, with no way to say "this one, but only when that one is POST".
  *
  * JSON Schema expresses it with `allOf` + `if`/`then`, and `schemas.ts` emits
- * exactly that. But the schema half CANNOT carry the whole rule, and the reason
- * is a property of JSON Schema rather than of this SDK:
+ * exactly that — `then` carrying BOTH `required: [field]` and a `minLength` on
+ * it, so the schema alone refuses an absent body and a blank one alike.
  *
- *   `then: { properties: { body: { minLength: 1 } } }` constrains `body` ONLY IF
- *   THE KEY IS PRESENT. `properties` never makes a key mandatory, and the SDK's
- *   `ConditionalSchema` has no root `required` slot to put one in — it is
- *   `{ properties: Record<string, FieldValidationSchema> }` and nothing else.
+ * ⚠️ AN EARLIER VERSION OF THIS COMMENT CLAIMED THE SCHEMA COULD NOT DO THAT,
+ * on the grounds that the SDK's `ConditionalSchema` is typed as
+ * `{ properties: Record<string, FieldValidationSchema> }` with no root
+ * `required` slot. The type really is that narrow — and it does not matter.
+ * TypeScript checks excess properties only on a FRESH LITERAL at the assignment
+ * site; `conditionalRules()` is a function, so its return is compared
+ * structurally, and an object carrying `required` ALONGSIDE `properties` is
+ * assignable to one requiring only `properties`. It compiles with no cast, and
+ * `@cfworker/json-schema` — the validator the SDK bundles — honours `required`
+ * there, which `conditional-required.test.ts` proves against the real schema.
  *
- * So the schema catches PRESENT-BUT-BLANK, in the panel, where the owner is
- * typing; `arm-check.ts` catches ABSENT, at arming, because its loop already
- * tests `value === undefined`. Both read THIS declaration, so the two gates
- * cannot drift into disagreeing about the same contract.
+ * `arm-check.ts` reads the SAME declaration and applies it again. Not because
+ * the schema is insufficient, but because the schema runs in the EDITOR: a
+ * definition written by an import, an API call or a direct row edit never meets
+ * it. Arming is the layer nothing bypasses.
  *
  * ⚠️ AND THE `if` USES `const`, ONE ENTRY PER VALUE, BECAUSE THAT IS THE WHOLE
  * TYPED SUBSET. `SchemaCondition` is `{ properties: Record<string, { const?:

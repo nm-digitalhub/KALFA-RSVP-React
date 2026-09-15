@@ -7,16 +7,18 @@
 // three-row editor for a field that went nowhere, and accepting an empty one for
 // a POST that needs it.
 //
-// ⚠️ AND IT TAKES TWO GATES, WHICH IS NOT A COMPROMISE BUT A PROPERTY OF JSON
-// SCHEMA. `then` is `{ properties: … }` — the SDK's `ConditionalSchema` has no
-// root `required` slot — and `properties` never makes a key mandatory. So:
+// ⚠️ THE SCHEMA CARRIES THE WHOLE CONTRACT, and an earlier version of this file
+// asserted it could not. The claim was that `ConditionalSchema` is typed
+// `{ properties: … }` with no root `required`, so `then` could only constrain a
+// body that was already there. The TYPE is that narrow; it does not bind. A
+// function return is compared structurally, not as a fresh literal, so `then`
+// may carry `required` alongside `properties` with no cast — and the bundled
+// validator honours it. Both assertions below are the proof.
 //
-//   schema `allOf`   →  body is PRESENT AND BLANK   (caught in the panel)
-//   `findArmBlockers`→  body is ABSENT              (caught at arming)
-//
-// Both read `NODE_CONDITIONAL_REQUIRED_FIELDS`. This file pins each half against
-// the real artefact: the exported schema object through the validator the SDK
-// actually bundles, and `findArmBlockers` through its own public entry point.
+// `findArmBlockers` applies the SAME declaration a second time. Not as a
+// fallback for a gap, but because the schema runs in the EDITOR: a definition
+// that arrives by import, API call or a direct row edit never meets it. Arming
+// is the layer nothing bypasses, which is why both are pinned here.
 import { Validator } from '@cfworker/json-schema';
 import { describe, expect, it } from 'vitest';
 
@@ -50,6 +52,29 @@ describe('the schema half — @cfworker/json-schema 4.1.1, the SDK’s own valid
     }
   });
 
+  it('⚠️ …and WHITESPACE-ONLY counts as blank, the same way the arm gate counts it', () => {
+    // The divergence this closes: `minLength: 1` counts CHARACTERS, so '   ' is
+    // three of them and passed — while `arm-check.ts` tests `value.trim() === ''`
+    // and refused the same value. The schema said fine, arming said no, which is
+    // the exact shape of the bug `minLength` was added to fix, one step in.
+    // `pattern: '\\S'` is what makes the two agree.
+    //
+    // Both fixtures are here deliberately: this file used to test the schema
+    // with '' and the arm gate with '   ', so neither half ever saw the case
+    // that disagreed.
+    for (const method of HTTP_METHODS_WITH_BODY) {
+      expect(valid({ method, body: '   ' }), `${method} accepted a whitespace body`).toBe(false);
+      expect(valid({ method, body: '\t\n' }), `${method} accepted a tab/newline body`).toBe(false);
+    }
+  });
+
+  it('a body that is whitespace AROUND real content is fine', () => {
+    // `'\\S'` is unanchored — it asks for at least one non-whitespace character,
+    // not for a trimmed string. Refusing ' x ' would invent a rule the engine
+    // does not have.
+    expect(valid({ method: 'POST', body: ' {"ok":true} ' })).toBe(true);
+  });
+
   it('…and accepts one that is filled in', () => {
     for (const method of HTTP_METHODS_WITH_BODY) {
       expect(valid({ method, body: '{"ok":true}' }), `${method} rejected a real body`).toBe(true);
@@ -62,12 +87,15 @@ describe('the schema half — @cfworker/json-schema 4.1.1, the SDK’s own valid
     }
   });
 
-  it('⚠️ an ABSENT body passes the schema — which is why the arm gate exists', () => {
-    // Not a defect and not a gap left open: `then: { properties: { body } }`
-    // constrains the key only if it is there, and the typed subset offers no
-    // root `required` to put inside `then`. `findArmBlockers` covers it, and the
-    // test below proves that rather than assuming it.
-    expect(valid({ method: 'POST' })).toBe(true);
+  it('⚠️ an ABSENT body is refused too — `then` carries `required`', () => {
+    // The assertion this file was rewritten for. `properties` alone would let an
+    // absent key through; `required` inside `then` is what closes it, and it
+    // compiles with no cast despite the SDK typing `ConditionalSchema` without
+    // a root `required`.
+    expect(valid({ method: 'POST' })).toBe(false);
+    // …and only for the verbs that send one.
+    expect(valid({ method: 'GET' })).toBe(true);
+    expect(valid({ method: 'DELETE' })).toBe(true);
   });
 
   it('an ABSENT method behaves as POST, matching `readMethod`', () => {
@@ -144,6 +172,40 @@ describe('the arm-gate half', () => {
       expect(findArmBlockers(webhookNode({ method, body: 'x' })), method).toEqual([]);
     }
   });
+});
+
+describe('⚠️ the schema and the arm gate agree on what "blank" means', () => {
+  // The general rule, not just the webhook body. Both gates decide the same
+  // question — "is this field filled in?" — and they used to answer it with
+  // different primitives: `minLength` counts characters, `trim()` ignores
+  // whitespace. Any required text field is a place they could drift again.
+  const WHITESPACE = ['', ' ', '   ', '\t', '\n', '\t \n'];
+
+  for (const item of PALETTE_ITEMS) {
+    const type = item.type as KalfaNodeType;
+    const properties =
+      (item.schema as { properties?: Record<string, { type?: unknown; pattern?: unknown }> })
+        .properties ?? {};
+
+    const textFields = (NODE_REQUIRED_FIELDS[type] ?? []).filter(
+      (field) => properties[field]?.type === 'string',
+    );
+    if (textFields.length === 0) continue;
+
+    it(`${type} refuses whitespace-only in every required text field`, () => {
+      for (const field of textFields) {
+        const schema = { type: 'object', properties: { [field]: properties[field] } };
+        for (const blank of WHITESPACE) {
+          const schemaSaysValid = new Validator(schema as object).validate({ [field]: blank }).valid;
+          const armGateSaysValid = blank.trim() !== '';
+          expect(
+            schemaSaysValid,
+            `${type}.${field} with ${JSON.stringify(blank)}: schema=${schemaSaysValid}, armGate=${armGateSaysValid}`,
+          ).toBe(armGateSaysValid);
+        }
+      }
+    });
+  }
 });
 
 describe('the declaration itself', () => {

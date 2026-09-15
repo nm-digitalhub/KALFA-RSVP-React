@@ -144,8 +144,20 @@ const statusProperty = {
  * `minLength: 1` says the same thing where the value is typed. It invents no
  * rule: every field it guards is one the arm gate already blocks.
  * `required-fields-editable.test.ts` pins the two lists against each other.
+ *
+ * ⚠️ AND `pattern` ALONGSIDE `minLength`, BECAUSE THE TWO GATES COUNTED
+ * DIFFERENTLY. `minLength: 1` counts CHARACTERS, so '   ' is three of them and
+ * validates clean; `arm-check.ts` tests `value.trim() === ''` and refuses the
+ * same value. A field holding only spaces was therefore accepted by the panel
+ * and rejected at arming — the exact divergence `minLength` was added to close,
+ * reappearing one step further in.
+ *
+ * `'\\S'` is unanchored, so it reads as "contains at least one non-whitespace
+ * character", which is `trim() !== ''` stated in JSON Schema. `time` spreads
+ * this and overrides `pattern` with its own stricter HH:MM rule, which excludes
+ * whitespace by construction.
  */
-const requiredText = { type: 'string', minLength: 1 } as const;
+const requiredText = { type: 'string', minLength: 1, pattern: '\\S' } as const;
 
 /**
  * The `allOf` block for one node type, built from its conditional contracts.
@@ -155,17 +167,22 @@ const requiredText = { type: 'string', minLength: 1 } as const;
  * — there is no `enum` — so "POST, PUT or PATCH" is three entries sharing one
  * `then`, mapped from the declaration rather than written out.
  *
- * ⚠️ AND `then` CAN ONLY CONSTRAIN, NOT DEMAND. `ConditionalSchema` is
- * `{ properties: … }` with no root `required`, and `properties` in JSON Schema
- * never makes a key mandatory. So this catches a body that is PRESENT AND BLANK
- * — the case the owner creates by clearing the box — while `arm-check.ts`
- * catches one that is absent. Both read `NODE_CONDITIONAL_REQUIRED_FIELDS`.
+ * ⚠️ `then` CARRIES BOTH `required` AND THE FIELD CONSTRAINT, because
+ * `properties` alone never makes a key mandatory — it constrains the value only
+ * when the key is there. With both, the schema refuses an absent body and a
+ * blank one alike.
+ *
+ * The SDK types `ConditionalSchema` as `{ properties: … }` with no root
+ * `required`. It compiles anyway and needs no cast: excess-property checking
+ * applies to fresh literals at the assignment site, and this is a function
+ * return, so it is compared structurally — extra members are allowed.
+ * `conditional-required.test.ts` proves the runtime honours it.
  */
 function conditionalRules(nodeType: KalfaNodeType) {
   return (NODE_CONDITIONAL_REQUIRED_FIELDS[nodeType] ?? []).flatMap((rule) =>
     rule.whenIn.map((value) => ({
       if: { properties: { [rule.decidedBy]: { const: value } } },
-      then: { properties: { [rule.require]: requiredText } },
+      then: { required: [rule.require], properties: { [rule.require]: requiredText } },
     })),
   );
 }
