@@ -1199,7 +1199,7 @@
         "overrides": {
             "conversation_config_override": {
                 "agent": {
-                    "first_message": false,
+                    "first_message": true,
                     "language": false,
                     "max_conversation_duration_message": false,
                     "prompt": {
