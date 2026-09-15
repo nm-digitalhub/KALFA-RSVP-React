@@ -204,9 +204,35 @@ KALFA server  →  מעיר את התהליך  →  הצומת מחזיר תוצ
 | `knowledge_base` | jsonb | דריסת `agent.prompt.knowledge_base` |
 | `asr_keywords` | jsonb | עד 50 (A-10) |
 | `variables` | jsonb | מפת משתנים דינמיים |
+| `max_duration_seconds` | int | דריסת `conversation.max_duration_seconds` — **ל-`callPSTN` אין תקרת משך משלו** (A-50), אז זו התקרה היחידה בצד ElevenLabs |
+| `tts_model_id` | text | דריסת `tts.model_id` |
+| `pronunciation_dictionary_locators` | jsonb | דריסת `tts.pronunciation_dictionary_locators` — **הגייה עברית פר-ייעוד** |
 
-**`NULL` = אל תשלח את השדה.** לא "שלח ריק" — A-11 אומר שדריסת כלים מחליפה
-את המערך, אז מערך ריק בטעות ישאיר את הסוכן בלי כלים.
+*שלוש האחרונות התגלו ב-A-68 מתוך `ConversationConfigClientOverrideConfig`
+במפרט הרשמי; הן לא היו בגרסה הראשונה של הטבלה.*
+
+**שני תנאים, לא אחד — ושליחה שגויה מפילה את השיחה.**
+
+`NULL` = אל תשלח את השדה. לא "שלח ריק" — A-11: דריסת כלים **מחליפה** את
+המערך, אז מערך ריק בטעות ישאיר את הסוכן בלי כלים.
+
+⚠️ **אבל זה לא מספיק.** לפי A-13, ציטוט מילולי מהתיעוד: *"For most fields,
+**an error will be thrown** if an override is provided when that field does
+not have overrides enabled."* כלומר שדה שהדגל שלו כבוי בסוכן + ערך שנשלח =
+**שגיאה שמפילה את השיחה**, לא בליעה שקטה. היוצא מן הכלל היחיד הוא
+`asr.keywords` (ו-`tts.supported_voices`), שנבלעים בשקט.
+
+**הכלל המחייב לבניית הפריים:**
+
+> שלח שדה רק אם `value IS NOT NULL` **וגם** הדגל המתאים ב-
+> `platform_settings.overrides.conversation_config_override` של אותו
+> `agent_id` הוא `true`.
+
+**נגזרת תפעולית:** הדגלים אינם חלק מהשורה במסד — הם חיים על הסוכן ב-
+ElevenLabs. ⚠️ **ייעוד שמצביע על `agent_id` שדגליו כבויים ישבור כל שיחה
+שלו**, ולכן שלב 1 חייב לוודא שכל דגל שהטבלה הזו יכולה לאכלס דלוק על הסוכן
+הגנרי — ו-A-74 מדד שהיום **`prompt` ו-`tool_ids` כבויים בכל ארבעת
+הסוכנים**.
 
 ### 3.2 כלל גנרי — בלי לשנות את האינדקס
 
