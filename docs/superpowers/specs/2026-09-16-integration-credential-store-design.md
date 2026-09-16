@@ -473,6 +473,58 @@ method rather than assuming one.
 is where provider rate limiting and retry belong, answering the `graph-client.ts`
 lesson in §4.2 without a hand-rolled wrapper.
 
+
+### 4.4 Read from the library's own docs, examples and build
+
+The reference example (`examples/oauth.ts`) and the built source settle four
+things the API reference alone does not.
+
+**`redirect_uri` is sent at the token endpoint, and we do not choose it directly.**
+`oauth4webapi` sets it unconditionally:
+
+```js
+const parameters = new URLSearchParams(options?.additionalParameters);
+parameters.set('redirect_uri', redirectUri);
+parameters.set('code', code);
+```
+
+and `openid-client` derives that value as `stripParams(currentUrl)` —
+`AuthorizationCodeGrantOptions` is an empty interface, so there is no public
+override. **The `currentUrl` we pass becomes the `redirect_uri` the provider
+checks.**
+
+⚠️ **Therefore the callback must never hand the raw `Request` to
+`authorizationCodeGrant`.** This app runs behind an nginx proxy, so the incoming
+request URL is not the public origin, and a mismatch against the pre-registered
+URI fails the exchange with `invalid_grant` — at the provider, where the message
+is unhelpful. Build it instead:
+
+```ts
+const currentUrl = new URL(`${getAppOrigin()}/api/integrations/oauth/callback${search}`);
+```
+
+`src/lib/url.ts` is already the single trusted source for this and says why:
+*"We deliberately do NOT derive the origin from the incoming Host /
+X-Forwarded-Host header: those are attacker-controllable."* The OAuth flow gets
+the same treatment for a second, independent reason.
+
+**PKCE always; state always, for our own reasons.** The example adds `state`
+only when `!config.serverMetadata().supportsPKCE()`, and notes *"Use of PKCE is
+backwards compatible even if the AS doesn't support it which is why we're using
+it regardless."* We send `state` unconditionally, because it is the key of the
+`integration_oauth_states` row and therefore the basis of single-use consumption
+and of the audit trail — neither of which PKCE provides. `expectedState` is
+consequently always passed; leaving it `undefined` would assert that no state
+comes back.
+
+**Token response.** `access_token` is the only guaranteed field;
+`refresh_token`, `expires_in`, `scope` and `id_token` are optional.
+`expiresIn()` returns seconds remaining or `undefined` when the provider sent no
+`expires_in`, so `expires_at` is null in that case rather than invented.
+
+**`fetchProtectedResource(config, access_token, url, method)`** is the call the
+accessor wraps, exactly as the example ends.
+
 ## 5. Enforcement
 
 No import-boundary linting exists in this repo. The established mechanism is a
