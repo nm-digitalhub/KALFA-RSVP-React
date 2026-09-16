@@ -298,6 +298,34 @@ Provider rate limiting is part of the flow, not an afterthought.
 The credential module reads environment variables inside functions, never at
 module scope.
 
+### 4.3 What `openid-client@6.8.8` settles, verified in the installed package
+
+| need | supplied by | verified |
+| --- | --- | --- |
+| PKCE | `randomPKCECodeVerifier()`, `calculatePKCECodeChallenge()` | `build/index.d.ts:718,726` |
+| state | `randomState()`, `checks.expectedState` | `:742`, `AuthorizationCodeGrantChecks` |
+| code exchange | `authorizationCodeGrant(config, currentUrl \| Request, checks)` | `:1910` |
+| refresh | `refreshTokenGrant(config, refreshToken, parameters)` | `:1953` |
+| revocation | `tokenRevocation(config, token, { token_type_hint })` | `:2360` |
+| **authorized call** | `fetchProtectedResource(config, accessToken, url, method, body, headers)` | `:2375` |
+| RFC 9207 `iss` | checked against `authorization_response_iss_parameter_supported` | present in `build/index.js` |
+
+Two consequences for the design above:
+
+**`providerFetch` wraps `fetchProtectedResource` rather than attaching headers
+itself.** §3.2 stands unchanged as a contract; only its body is now library code.
+
+**Non-OIDC providers need no discovery.** `new Configuration(serverMetadata,
+clientId, clientSecret, clientAuth)` accepts hand-written server metadata
+(`:1137`), so a plain-OAuth2 provider is configured as a literal. Client
+authentication defaults to `ClientSecretPost`; providers requiring
+`ClientSecretBasic` select it per provider, so the provider record carries the
+method rather than assuming one.
+
+`config[customFetch]` is the documented hook for wrapping the transport — this
+is where provider rate limiting and retry belong, answering the `graph-client.ts`
+lesson in §4.2 without a hand-rolled wrapper.
+
 ## 5. Enforcement
 
 No import-boundary linting exists in this repo. The established mechanism is a
@@ -315,10 +343,8 @@ and the string `vault.` appear nowhere under `src/` except
   configuration, one per provider, existing before any connection. Recommended:
   Vault under a fixed name per provider, giving rotation without a deploy and
   reusing the proven browser lockout. Not yet decided.
-- **OAuth library vs hand-rolled.** `openid-client` v6 supplies PKCE, state
-  validation, RFC 9207, refresh, and revocation. `@azure/msal-node` is already a
-  dependency but serves a different grant (`ClientCertificateCredential`, app-as-
-  itself) and does not cover this flow. Not yet decided.
+- ~~OAuth library vs hand-rolled.~~ **Resolved 2026-09-16:** `openid-client`
+  `^6.8.8` is now a direct dependency. See §4.3.
 - **Round-trip proof.** `create_secret` → `decrypted_secrets` → `update_secret`
   has not been executed against the live project; Vault currently holds zero
   secrets. Required before implementation.
