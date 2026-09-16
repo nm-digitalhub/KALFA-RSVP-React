@@ -1,7 +1,7 @@
 # Integration Credential Store + OAuth2 — Design
 
 Date: 2026-09-16
-Status: design approved, implementation not started
+Status: design approved, infrastructure decisions closed, implementation not started
 Scope: system-owned (KALFA) credentials for workflow integration nodes
 
 ---
@@ -85,7 +85,29 @@ One secret per name is enforced by the database. Rotation must use
 Only `supabase_vault` 0.3.1. Vault 0.3.x encrypts without pgsodium key
 management, so the `new_key_id` argument is vestigial and is passed `null`.
 
-### 2.6 Lint bar for new objects
+### 2.6 Live round-trip, executed 2026-09-16
+
+Run against the live project with a fake value, deleted in the same session.
+
+| step | result |
+| --- | --- |
+| baseline | `vault.secrets` = 0 rows |
+| `create_secret(value, 'kalfa:roundtrip:probe', …, null)` | returned `86acb6f9-…` |
+| read `decrypted_secrets` | `decrypted_secret` matched input exactly |
+| on-disk form | `voJycEHzYimF8UryBb7rG++7…` — **differs from plaintext**, so encryption at rest is observed, not assumed |
+| `update_secret(id, newValue, sameName, …)` | **same UUID**, `updated_at > created_at` |
+| second `create_secret` with the same name | `23505 duplicate key value violates unique constraint secrets_name_idx` |
+| delete + verify | back to 0 rows, 0 `kalfa:%` leftovers |
+
+Two design assumptions are now facts: rotation keeps the UUID — which is what
+lets a rotated refresh token write back to the same `vault_secret_id` — and the
+unique name index blocks a duplicate rather than silently creating a second row.
+
+The probe ran as `postgres` through the CLI, not as `service_role`. It proves the
+Vault mechanism; the wrapper's role guard is proven separately once the wrapper
+exists (§7).
+
+### 2.7 Lint bar for new objects
 
 | lint | existing findings | requirement |
 | --- | --- | --- |
@@ -93,7 +115,7 @@ management, so the `new_key_id` argument is vestigial and is passed `null`.
 | 0028 / 0029 SECURITY DEFINER executable | 1 / 26 | vault wrappers revoke from `public`, `anon`, `authenticated` |
 | 0008 `rls_enabled_no_policy` | 14 (INFO) | acceptable shape for server-only tables |
 
-### 2.7 Platform RBAC is the authority, and its helpers must stay open
+### 2.8 Platform RBAC is the authority, and its helpers must stay open
 
 Three separate permission spaces exist: `user_roles` (app admin),
 `organization_members` (customer org), and `platform_staff` (internal team).
@@ -339,15 +361,14 @@ and the string `vault.` appear nowhere under `src/` except
 
 ## 6. Open items
 
-- **Client secret storage.** `client_id` / `client_secret` are platform
-  configuration, one per provider, existing before any connection. Recommended:
-  Vault under a fixed name per provider, giving rotation without a deploy and
-  reusing the proven browser lockout. Not yet decided.
+- ~~Client secret storage.~~ **Resolved 2026-09-16:** Vault, under a fixed name
+  per provider (`oauth_app:<provider>`). The unique name index in §2.4 makes one
+  record per provider a database guarantee, and §2.6 proves rotation keeps the
+  UUID, so a client-secret rotation needs no deploy and no schema change.
 - ~~OAuth library vs hand-rolled.~~ **Resolved 2026-09-16:** `openid-client`
   `^6.8.8` is now a direct dependency. See §4.3.
-- **Round-trip proof.** `create_secret` → `decrypted_secrets` → `update_secret`
-  has not been executed against the live project; Vault currently holds zero
-  secrets. Required before implementation.
+- ~~Round-trip proof.~~ **Resolved 2026-09-16:** executed and recorded in §2.6.
+  Vault verified back to 0 rows afterwards.
 
 ## 7. Verification
 
