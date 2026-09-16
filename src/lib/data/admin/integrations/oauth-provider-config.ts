@@ -23,7 +23,9 @@ import { createAdminClient } from '@/lib/supabase/admin';
 // cannot be serialised into an RSC payload by accident.
 
 export type AdminOAuthProviderConfig = {
-  /** A row exists AND it has a stored client secret — the state that lets a flow start. */
+  /** Whether a DB provider row exists at all. Needed to preserve DB-over-env precedence. */
+  exists: boolean;
+  /** A row exists AND it has a stored client secret — the state that lets the DB-backed flow start. */
   configured: boolean;
   /** Not a credential: it travels in the authorization URL in plain sight. */
   clientId: string | null;
@@ -34,6 +36,7 @@ export type AdminOAuthProviderConfig = {
 };
 
 export const UNCONFIGURED_OAUTH_PROVIDER: AdminOAuthProviderConfig = {
+  exists: false,
   configured: false,
   clientId: null,
   enabled: false,
@@ -60,6 +63,7 @@ export async function readOAuthProviderConfig(
   if (error || !data) return UNCONFIGURED_OAUTH_PROVIDER;
 
   return {
+    exists: true,
     // `vault_secret_id` collapses to a boolean HERE and is never returned.
     configured: data.vault_secret_id !== null,
     clientId: data.client_id,
