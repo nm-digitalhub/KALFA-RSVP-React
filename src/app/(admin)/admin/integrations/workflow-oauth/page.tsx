@@ -7,6 +7,8 @@ import { buttonVariants } from '@/components/ui/button';
 import { hasPlatformPermission, requirePlatformPermission } from '@/lib/auth/dal';
 import { readOAuthProviderConfig } from '@/lib/data/admin/integrations/oauth-provider-config';
 import { listMicrosoftWorkflowConnectionsForAdmin } from '@/lib/data/admin/integrations/workflow-connections';
+import { resolveOAuthProviderAvailability } from '@/lib/integrations/provider-availability';
+import { hasSystemOAuthClient } from '@/lib/integrations/system-oauth-client';
 import { cn } from '@/lib/utils';
 
 import { EmptyState, PageHeading, firstParam, formatDateTime } from '../../_components';
@@ -41,8 +43,17 @@ export default async function WorkflowOAuthAdminPage({
     listMicrosoftWorkflowConnectionsForAdmin(),
     hasPlatformPermission('integrations.manage'),
   ]);
+
+  const systemConfigured = hasSystemOAuthClient('microsoft');
+  const availability = resolveOAuthProviderAvailability({
+    config,
+    systemConfigured,
+    canManage,
+    providerName: 'Microsoft 365',
+  });
+  const effectiveConfigured = config.exists ? config.configured : systemConfigured;
+  const effectiveEnabled = config.exists ? config.enabled : systemConfigured;
   const oauthOutcome = firstParam(params.oauth);
-  const canConnect = canManage && config.configured && config.enabled;
 
   return (
     <div className="space-y-6">
@@ -72,11 +83,18 @@ export default async function WorkflowOAuthAdminPage({
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
-            <Badge variant={config.configured ? 'success' : 'neutral'}>
-              {config.configured ? 'מוגדר' : 'לא מוגדר'}
+            <Badge variant={effectiveConfigured ? 'success' : 'neutral'}>
+              {effectiveConfigured ? 'מוגדר' : 'לא מוגדר'}
             </Badge>
-            <Badge variant={config.enabled ? 'success' : 'warning'}>
-              {config.enabled ? 'פעיל' : 'כבוי'}
+            <Badge variant={effectiveEnabled ? 'success' : 'warning'}>
+              {effectiveEnabled ? 'פעיל' : 'כבוי'}
+            </Badge>
+            <Badge variant="neutral">
+              {availability.source === 'database'
+                ? 'הגדרת מסד נתונים'
+                : availability.source === 'system'
+                  ? 'הגדרת מערכת'
+                  : 'ללא מקור הגדרה'}
             </Badge>
           </div>
         </div>
@@ -84,6 +102,10 @@ export default async function WorkflowOAuthAdminPage({
         {config.updatedAt ? (
           <p className="text-xs text-muted-foreground">
             עודכן לאחרונה: {formatDateTime(config.updatedAt)}
+          </p>
+        ) : availability.source === 'system' ? (
+          <p className="text-xs text-muted-foreground">
+            ההגדרה הפעילה מגיעה ממשתני הסביבה של הפריסה. יצירת רשומת ספק כאן תחליף אותה ותהפוך לסמכותית.
           </p>
         ) : null}
 
@@ -108,7 +130,7 @@ export default async function WorkflowOAuthAdminPage({
           </p>
         </div>
 
-        {canConnect ? (
+        {availability.canConnect ? (
           <Link
             href={MICROSOFT_OAUTH_START_HREF}
             className={cn(buttonVariants({ size: 'lg' }), 'w-fit')}
@@ -125,13 +147,9 @@ export default async function WorkflowOAuthAdminPage({
               <Link2 className="size-4" aria-hidden />
               חיבור חשבון Microsoft 365
             </span>
-            <p className="text-xs text-muted-foreground">
-              {!canManage
-                ? 'נדרשת הרשאת ניהול אינטגרציות כדי לחבר חשבון.'
-                : !config.configured
-                  ? 'יש לשמור Client ID ו-Client Secret לפני חיבור חשבון.'
-                  : 'הספק כבוי. הפעילו אותו ושמרו לפני חיבור חשבון.'}
-            </p>
+            {availability.reason ? (
+              <p className="text-xs text-muted-foreground">{availability.reason}</p>
+            ) : null}
           </div>
         )}
       </section>
