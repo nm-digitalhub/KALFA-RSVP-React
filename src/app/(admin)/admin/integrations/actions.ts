@@ -24,6 +24,8 @@ import {
   setOutreachEnabled,
 } from '@/lib/data/admin/outreach-master';
 import { updateChannelMetadata } from '@/lib/data/admin/channel-catalog';
+import { saveOAuthProviderConfig } from '@/lib/data/admin/integrations/oauth-provider-config';
+import { resolveProvider } from '@/lib/integrations/registry';
 import { updateSendPolicy } from '@/lib/data/admin/integrations/send-policy';
 import { sendSlackAlert } from '@/lib/alerts/slack';
 import {
@@ -59,6 +61,7 @@ import { sendPolicyFromFormData } from '@/lib/validation/send-policy-form';
 const INDEX = '/admin/integrations';
 const META_WHATSAPP = '/admin/integrations/meta-whatsapp';
 const VOXIMPLANT = '/admin/integrations/voximplant';
+const WORKFLOW_OAUTH = '/admin/integrations/workflow-oauth';
 
 function revalidateAll(...paths: string[]): void {
   for (const path of paths) revalidatePath(path);
@@ -707,4 +710,83 @@ export async function updateVoicePurposeAction(
 
   revalidateAll(VOXIMPLANT);
   return { notice: enabled ? 'הייעוד מופעל — שיחות אמיתיות מותרות' : 'הייעוד עודכן' };
+}
+
+// ---------------------------------------------------------------------------
+// Workflow integration OAuth — this deployment's client registration.
+// ---------------------------------------------------------------------------
+
+/**
+ * Save the OAuth client a workflow integration authorizes against.
+ *
+ * NO OAUTH LOGIC LIVES HERE. This reads a form, validates it, and hands over —
+ * the flow, the scopes, PKCE and the state row are all in `src/lib/integrations`,
+ * and the write itself is in the data module so that this stays the thin layer
+ * the project's other actions are.
+ *
+ * ⚠️ AN EMPTY CLIENT SECRET IS VALID AND IS NOT VALIDATED AGAINST. The RPC's
+ * contract is that '' on an existing row KEEPS the stored secret, and that a
+ * first write without one is refused. Rejecting a blank secret here would look
+ * like a safety check while actually breaking the ordinary case — correcting a
+ * client id, or flipping `enabled` — for an operator who no longer holds a
+ * secret that was only ever displayed once by the provider.
+ *
+ * The first-write case is left to the database, which is the only place that
+ * knows whether a row already exists at the moment of writing. A local check
+ * would be a guess made one round-trip earlier.
+ */
+export async function saveWorkflowOAuthProviderAction(
+  _prev: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  const provider = String(formData.get('provider') ?? '').trim();
+  const clientId = String(formData.get('clientId') ?? '').trim();
+  const clientSecret = String(formData.get('clientSecret') ?? '').trim();
+  const enabled = formData.get('enabled') === 'on';
+
+  const fieldErrors: Record<string, string[]> = {};
+
+  // ⚠️ `provider` IS VALIDATED AGAINST THE REGISTRY, NOT HARDCODED AND NOT
+  // TRUSTED. Hardcoding one vendor here would mean a second action per provider,
+  // which is the coupling this whole layer exists to avoid; trusting the field
+  // would let a browser create a configuration row for an id nothing can ever
+  // use. The registry is the list of providers that exist, so it is the list a
+  // configuration may name — and a provider with no `oauth` block has no client
+  // to configure at all.
+  const definition = provider ? resolveProvider(provider) : undefined;
+  if (!definition?.oauth) {
+    fieldErrors.provider = ['ספק לא ידוע או שאינו משתמש ב-OAuth.'];
+  }
+  if (!clientId) {
+    fieldErrors.clientId = ['יש להזין Client ID.'];
+  }
+  // The provider condition is repeated rather than inferred: both fields are
+  // collected first so the form can report them together, and this is what
+  // narrows `definition` for the call below.
+  if (!definition?.oauth || Object.keys(fieldErrors).length > 0) {
+    return { fieldErrors };
+  }
+
+  try {
+    // `requirePlatformPermission('integrations.manage')` runs INSIDE, and its
+    // refusal is a redirect() — a throw that `unstable_rethrow` below lets back
+    // out rather than converting into a form error.
+    // `definition.id`, not the raw field — the registry's own spelling is what
+    // every other layer looks a provider up by.
+    await saveOAuthProviderConfig({
+      provider: definition.id,
+      clientId,
+      clientSecret,
+      enabled,
+    });
+  } catch (error) {
+    unstable_rethrow(error);
+    return { error: 'לא ניתן היה לשמור את הגדרות ה-OAuth. בדקו את הפרטים ונסו שוב.' };
+  }
+
+  revalidateAll(WORKFLOW_OAUTH, INDEX);
+  // Neutral on purpose. The RPC returns void, so "created" and "updated" are not
+  // distinguishable — and inventing the distinction would mean widening a
+  // contract to phrase a sentence.
+  return { notice: 'הגדרות ה-OAuth נשמרו.' };
 }

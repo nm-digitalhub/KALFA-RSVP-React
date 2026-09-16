@@ -159,6 +159,23 @@ const EXPECTED_PERMISSION: Record<string, string | string[]> = {
   // direction is not gated by permission at all — parseSendPolicy refuses to widen
   // past the ceilings no matter who is asking.
   'src/lib/data/admin/integrations/send-policy.ts': 'manage_settings',
+  // TWO keys, and the asymmetry is the point: reading answers "is a provider
+  // configured, and by whom" and is safe for an auditor; writing replaces the
+  // OAuth client secret every future authorization depends on. Pinning both is
+  // what stops the save from quietly sliding onto the read key.
+  //
+  // NOT `manage_settings`, deliberately. Reusing it would permanently couple
+  // "may change system settings" to "may manage provider credentials" — see the
+  // reasoning in 20260916005200.
+  'src/lib/data/admin/integrations/oauth-provider-config.ts': [
+    'integrations.read',
+    'integrations.manage',
+  ],
+  // Both projections are read-only and return deliberately narrow DTOs: the
+  // editor receives label/value options, while the admin page receives safe
+  // status timestamps plus a Mail.Send-ready boolean. Credential material and
+  // full connection rows never leave the module.
+  'src/lib/data/admin/integrations/workflow-connections.ts': 'integrations.read',
 };
 
 // Modules that write but are correctly exempt from naming a permission, with the
@@ -224,12 +241,15 @@ const COARSE_GATE_ALLOWED: Record<string, string> = {
 };
 
 // The permission catalogue as seeded in platform_permission_definitions,
-// MEASURED against the live database 2026-09-10. Pinned rather than queried so
+// MEASURED against the live database 2026-09-10, re-measured 2026-09-16 after
+// 20260916005200 seeded the two `integrations.*` keys. Pinned rather than queried so
 // the suite stays hermetic; a key used in code that is not here is either a typo
 // or a permission nobody created, and both mean the gate never matches and the
 // user is redirected with no explanation.
 const PERMISSION_CATALOGUE = [
   'campaigns.runstate',
+  'integrations.manage',
+  'integrations.read',
   'manage_billing',
   'manage_settings',
   'manage_staff',
