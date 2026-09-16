@@ -26,6 +26,7 @@ import {
   registerFunctionDecorator,
   setStoreLayoutDirection,
   setStoreNodes,
+  trackFutureChange,
   useSingleSelectedElement,
   useStore,
 } from '@workflowbuilder/sdk';
@@ -54,8 +55,31 @@ function fitView() {
  * rebuilt from the four exported store functions, because a dots-menu item's
  * `onClick` is a plain callback with no hook context. The two are the same
  * operation: set the opposite direction, then swap every node's x and y.
+ *
+ * ⚠️ ONE DELIBERATE DIFFERENCE FROM THE VENDOR'S VERSION: the announcement.
+ *
+ * `setStoreLayoutDirection` and `setStoreNodes` are both a bare
+ * `useStore.setState` — read them in `store/slices/diagram-slice/actions.ts`,
+ * neither announces anything. The vendor's `toggleLayoutDirection` announces
+ * nothing either, so upstream a layout flip is invisible to every subscriber of
+ * the changes tracker. Two consequences, and both are wrong:
+ *
+ *   * Auto-save never learns the diagram is dirty. `layoutDirection` and every
+ *     node position are both persisted fields, so the flip is a real, saveable
+ *     change — and dropping a dragged node (`nodeDragStop`) already announces
+ *     itself for exactly that reason. Only two names are on the SDK's skip list
+ *     (`nodeDragStart`, `nodeDragChange`); this one is not, by design.
+ *   * A history plugin snapshots on announcement only. Without one, a flip
+ *     leaves no entry, so the next undo restores a snapshot taken BEFORE the
+ *     flip — reverting the flip together with whatever the user actually meant
+ *     to undo. One Ctrl+Z, two actions.
+ *
+ * `trackFutureChange` is announced FIRST and the name is ours. The tracker takes
+ * a plain `string` with no validation, and every published SDK name is spoken by
+ * the SDK itself; `'layoutDirection'` cannot collide with one.
  */
 function toggleLayoutDirection() {
+  trackFutureChange('layoutDirection');
   setStoreLayoutDirection(getStoreLayoutDirection() === 'RIGHT' ? 'DOWN' : 'RIGHT');
   setStoreNodes(
     getStoreNodes().map((node) => ({
