@@ -16,6 +16,7 @@ export const CATALOGUE: readonly CatalogueEntry[] = [
   { type: 'logic.switch', isTrigger: false },
   { type: 'action.update_guest_status', isTrigger: false },
   { type: 'action.send_whatsapp', isTrigger: false },
+  { type: 'action.microsoft_send_email', isTrigger: false },
   { type: 'action.start_rsvp_ai_callback', isTrigger: false },
   { type: 'action.notify_team', isTrigger: false },
   { type: 'action.webhook', isTrigger: false },

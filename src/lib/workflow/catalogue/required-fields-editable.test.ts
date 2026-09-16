@@ -68,7 +68,7 @@ describe('every arm-blocking field is editable in the panel', () => {
     ).map((item) => item.type);
 
     expect(without).toEqual([]);
-    expect(PALETTE_ITEMS.length).toBe(18);
+    expect(PALETTE_ITEMS.length).toBe(19);
   });
 });
 

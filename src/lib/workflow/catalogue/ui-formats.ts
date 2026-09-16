@@ -14,3 +14,6 @@ export const HEADER_ROWS_FORMAT = 'kalfa-header-rows';
 
 /** A multi-select stored as an open array of strings. */
 export const CHECKBOX_LIST_FORMAT = 'kalfa-checkbox-list';
+
+/** A stored connection UUID plus the workflow-local "connect account" action. */
+export const INTEGRATION_CONNECTION_FORMAT = 'integration-connection';

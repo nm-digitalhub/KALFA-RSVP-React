@@ -2,11 +2,14 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
-import { Badge, formatDateTime } from "../../_components";
+import { Badge, firstParam, formatDateTime } from "../../_components";
 
+import { hasPlatformPermission } from "@/lib/auth/dal";
 import { editorDiagramSchema } from "@/lib/workflow/adapter/editor-schema";
 import { getWorkflow, listWorkflowRuns } from "@/lib/data/admin/workflows";
+import { readOAuthProviderConfig } from "@/lib/data/admin/integrations/oauth-provider-config";
 import { listProviderNumbers } from "@/lib/data/admin/integrations/provider-numbers";
+import { listActiveMicrosoftWorkflowConnections } from "@/lib/data/admin/integrations/workflow-connections";
 
 import { saveWorkflowAction } from "../actions";
 
@@ -19,6 +22,7 @@ import { listSecretNames } from "@/lib/workflow/secrets";
 
 import { listDialableVoicePurposes } from "@/lib/data/voice-purposes";
 
+import { OAuthOutcome } from "../../integrations/workflow-oauth/oauth-outcome";
 import { WorkflowEditor } from "./workflow-editor";
 
 export const metadata: Metadata = { title: "עריכת תהליך" };
@@ -46,10 +50,12 @@ const RUN_STATUS_HE: Record<string, string> = {
 
 export default async function AdminWorkflowPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>;
+  searchParams: Promise<{ oauth?: string | string[] }>;
 }) {
-  const { id } = await params;
+  const [{ id }, query] = await Promise.all([params, searchParams]);
 
   const workflow = await getWorkflow(id);
   if (!workflow) notFound();
@@ -82,6 +88,26 @@ export default async function AdminWorkflowPage({
   // the synced mirror of what each vendor says the account owns — so neither
   // costs a vendor round trip here.
   const providerNumbers = await listProviderNumbers();
+
+  // Display metadata only. The editor stores the selected UUID in connectionId;
+  // no token, secret, label, or connection object enters the workflow JSON.
+  const [microsoftConnections, microsoftConfig, canManageIntegrations] =
+    await Promise.all([
+      listActiveMicrosoftWorkflowConnections(),
+      readOAuthProviderConfig("microsoft"),
+      hasPlatformPermission("integrations.manage"),
+    ]);
+  const canConnectMicrosoft =
+    canManageIntegrations &&
+    microsoftConfig.configured &&
+    microsoftConfig.enabled;
+  const microsoftConnectionUnavailableReason = canConnectMicrosoft
+    ? null
+    : !canManageIntegrations
+      ? "נדרשת הרשאת ניהול אינטגרציות כדי לחבר חשבון חדש."
+      : !microsoftConfig.configured
+        ? "יש להגדיר תחילה את ספק Microsoft בעמוד האינטגרציות."
+        : "ספק Microsoft כבוי. יש להפעיל אותו בעמוד האינטגרציות.";
 
   const whatsappNumbers = providerNumbers
     .filter(
@@ -145,6 +171,8 @@ export default async function AdminWorkflowPage({
         )}
       </div>
 
+      <OAuthOutcome value={firstParam(query.oauth)} />
+
       <WorkflowEditor
         key={workflow.id}
         workflowId={workflow.id}
@@ -160,6 +188,11 @@ export default async function AdminWorkflowPage({
         whatsappNumbers={whatsappNumbers}
         voicePurposes={voicePurposes}
         voiceCallerIds={voiceCallerIds}
+        microsoftConnections={microsoftConnections}
+        canConnectMicrosoft={canConnectMicrosoft}
+        microsoftConnectionUnavailableReason={
+          microsoftConnectionUnavailableReason
+        }
         secretNames={secretNames}
         saveAction={saveWorkflowAction}
       />

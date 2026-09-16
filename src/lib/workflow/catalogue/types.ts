@@ -27,6 +27,7 @@ export const NODE_TYPES = [
   'logic.switch',
   'action.update_guest_status',
   'action.send_whatsapp',
+  'action.microsoft_send_email',
   'action.start_rsvp_ai_callback',
   'action.notify_team',
   'action.webhook',
@@ -588,6 +589,19 @@ export type SendWhatsappConfig = {
   body: string;
 };
 
+/**
+ * Sends an email through a KALFA-managed Microsoft 365 connection.
+ *
+ * The workflow stores the connection identifier and message data only.
+ * OAuth access/refresh tokens and client secrets never belong to diagram JSON.
+ */
+export type MicrosoftSendEmailConfig = {
+  connectionId: string;
+  to: string;
+  subject: string;
+  body: string;
+};
+
 // Starts the existing RSVP voice agent through KALFA's production dispatcher.
 // Agent/provider/model/knowledge configuration deliberately lives outside the diagram.
 export type StartRsvpAiCallbackConfig = Record<string, unknown>;
@@ -825,6 +839,7 @@ export type KalfaNodeConfig =
   | { type: 'logic.switch'; config: SwitchConfig }
   | { type: 'action.update_guest_status'; config: UpdateGuestStatusConfig }
   | { type: 'action.send_whatsapp'; config: SendWhatsappConfig }
+  | { type: 'action.microsoft_send_email'; config: MicrosoftSendEmailConfig }
   | { type: 'action.start_rsvp_ai_callback'; config: StartRsvpAiCallbackConfig }
   | { type: 'action.notify_team'; config: NotifyTeamConfig }
   | { type: 'action.webhook'; config: WebhookConfig }
@@ -920,6 +935,7 @@ export const NODE_REQUIRED_FIELDS: Record<KalfaNodeType, string[]> = {
   'logic.set_value': ['label', 'description', 'value'],
   'action.update_guest_status': ['label', 'description', 'rsvpStatus'],
   'action.send_whatsapp': ['label', 'description', 'body'],
+  'action.microsoft_send_email': ['label', 'description', 'connectionId', 'to', 'subject', 'body'],
   'action.send_template': ['label', 'description', 'messageKey'],
   'action.start_rsvp_ai_callback': ['label', 'description'],
   'action.notify_team': ['label', 'description', 'title'],

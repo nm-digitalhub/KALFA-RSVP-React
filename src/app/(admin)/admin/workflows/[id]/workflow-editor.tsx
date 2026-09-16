@@ -30,6 +30,7 @@ import { Button } from "@/components/ui/button";
 import { isTriggerType } from "@/lib/workflow/catalogue/nodes";
 import {
   buildPaletteItems,
+  type MicrosoftConnectionOption,
   type VoiceDialOption,
   type VoicePurposeOption,
   type WhatsAppNumberOption,
@@ -48,6 +49,10 @@ import { normalizeLegacyProperties } from "./normalize-legacy-properties";
 import { checkboxListRenderer } from "./checkbox-list-control";
 import { headerRowsRenderer } from "./header-rows-control";
 import { ExecutionHighlighting } from "./highlighting";
+import {
+  integrationConnectionRenderer,
+  OAuthConnectionProvider,
+} from "./integration-connection-control";
 import { ExecutionLogPanel } from "./log-panel";
 import { executionMarkersPlugin } from "./node-markers";
 import { resetExecution } from "./use-execution-store";
@@ -101,6 +106,12 @@ type Props = {
    * reads, fetched here on demand the first time a call node is selected.
    */
   voiceCallerIds: readonly VoiceDialOption[];
+  /** Active Microsoft connections; only `value` is persisted as connectionId. */
+  microsoftConnections: readonly MicrosoftConnectionOption[];
+  /** Safe server-derived gate; the OAuth start route enforces RBAC again. */
+  canConnectMicrosoft: boolean;
+  /** Display-only explanation. Never contains provider or credential details. */
+  microsoftConnectionUnavailableReason: string | null;
   /**
    * The secret NAMES the HTTP node's header rows may reference.
    *
@@ -132,7 +143,13 @@ const PLUGINS = [executionMarkersPlugin, appBarPlugin];
 //
 // One entry so far — the HTTP node's header list, which has no built-in
 // equivalent in the SDK's closed control union. See header-rows-control.tsx.
-const JSON_FORM = { renderers: [headerRowsRenderer, checkboxListRenderer] };
+const JSON_FORM = {
+  renderers: [
+    headerRowsRenderer,
+    checkboxListRenderer,
+    integrationConnectionRenderer,
+  ],
+};
 
 // Applied at module scope, which runs AFTER the SDK's own import has
 // initialised i18next (the import above is evaluated first, in source order).
@@ -151,6 +168,9 @@ export function WorkflowEditor({
   whatsappNumbers,
   voicePurposes,
   voiceCallerIds,
+  microsoftConnections,
+  canConnectMicrosoft,
+  microsoftConnectionUnavailableReason,
   secretNames,
   saveAction,
 }: Props) {
@@ -228,6 +248,7 @@ export function WorkflowEditor({
         voiceCallerIds,
         dialLists.rules,
         dialLists.agents,
+        microsoftConnections,
       ),
     [
       whatsappNumbers,
@@ -235,6 +256,7 @@ export function WorkflowEditor({
       voiceCallerIds,
       dialLists.rules,
       dialLists.agents,
+      microsoftConnections,
     ],
   );
   // ⚠️ REPAIR LEGACY ARRAY SHAPES BEFORE THE SCHEMA SEES THEM.
@@ -365,47 +387,53 @@ export function WorkflowEditor({
         parent resolves to nothing.
       */}
       <div className="kalfa-workflow-frame relative h-[calc(100dvh-14rem)] min-h-[32rem] overflow-hidden rounded-lg border border-border">
-        <WorkflowBuilder.Root
-          key={workflowId}
-          name={name}
-          // Replaces the vendor's "Workflow Builder" wordmark, which is their
-          // branding on our admin page. An element is rendered as-is (the prop
-          // also takes an image URL or a { light, dark } pair, neither of which
-          // we need), and an icon costs a quarter of the wordmark's width — which
-          // is what the app bar runs out of first on a phone.
-          logo={
-            <Icon name="FlowArrow" size="large" aria-label="עורך התהליכים" />
-          }
-          layoutDirection={layoutDirection}
-          nodeTypes={paletteItems}
-          // Populates the "בחירת תבנית" modal, which offered only "קנבס ריק"
-          // because this prop defaults to []. Module-scope array — upstream
-          // requires a stable reference, same as nodeTypes.
-          diagramTemplates={DIAGRAM_TEMPLATES}
-          initialNodes={normalizedInitialNodes}
-          initialEdges={initialEdges}
-          isValidConnection={isValidConnection}
-          // Mounts the per-node execution badges into the OptionalNodeContent slot.
-          // Module-scope array: `plugins` is read once on first mount, and a fresh
-          // array each render would be a new reference for no reason.
-          plugins={PLUGINS}
-          jsonForm={JSON_FORM}
-          // MUST be passed. The default is { strategy: 'localStorage' } — omit it
-          // and the workflow is written to the browser instead of to us, silently.
-          // 'api' is not an option either: upstream documents that it "issues plain
-          // fetch() calls with no auth headers", and this endpoint cannot be
-          // unauthenticated. 'props' is the only candidate.
-          integration={{
-            strategy: "props",
-            onDataSave: makeSaveHandler(workflowId, saveAction),
-          }}
+        <OAuthConnectionProvider
+          workflowId={workflowId}
+          canConnectMicrosoft={canConnectMicrosoft}
+          unavailableReason={microsoftConnectionUnavailableReason}
         >
-          <WorkflowEditorLayout
-            onVoiceCallNodeSelected={loadDialListsOnce}
+          <WorkflowBuilder.Root
+            key={workflowId}
             name={name}
-            workflowId={workflowId}
-          />
-        </WorkflowBuilder.Root>
+            // Replaces the vendor's "Workflow Builder" wordmark, which is their
+            // branding on our admin page. An element is rendered as-is (the prop
+            // also takes an image URL or a { light, dark } pair, neither of which
+            // we need), and an icon costs a quarter of the wordmark's width — which
+            // is what the app bar runs out of first on a phone.
+            logo={
+              <Icon name="FlowArrow" size="large" aria-label="עורך התהליכים" />
+            }
+            layoutDirection={layoutDirection}
+            nodeTypes={paletteItems}
+            // Populates the "בחירת תבנית" modal, which offered only "קנבס ריק"
+            // because this prop defaults to []. Module-scope array — upstream
+            // requires a stable reference, same as nodeTypes.
+            diagramTemplates={DIAGRAM_TEMPLATES}
+            initialNodes={normalizedInitialNodes}
+            initialEdges={initialEdges}
+            isValidConnection={isValidConnection}
+            // Mounts the per-node execution badges into the OptionalNodeContent slot.
+            // Module-scope array: `plugins` is read once on first mount, and a fresh
+            // array each render would be a new reference for no reason.
+            plugins={PLUGINS}
+            jsonForm={JSON_FORM}
+            // MUST be passed. The default is { strategy: 'localStorage' } — omit it
+            // and the workflow is written to the browser instead of to us, silently.
+            // 'api' is not an option either: upstream documents that it "issues plain
+            // fetch() calls with no auth headers", and this endpoint cannot be
+            // unauthenticated. 'props' is the only candidate.
+            integration={{
+              strategy: "props",
+              onDataSave: makeSaveHandler(workflowId, saveAction),
+            }}
+          >
+            <WorkflowEditorLayout
+              onVoiceCallNodeSelected={loadDialListsOnce}
+              name={name}
+              workflowId={workflowId}
+            />
+          </WorkflowBuilder.Root>
+        </OAuthConnectionProvider>
       </div>
     </>
   );

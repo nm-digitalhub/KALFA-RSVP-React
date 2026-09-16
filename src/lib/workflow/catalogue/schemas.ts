@@ -38,7 +38,11 @@ import type { NodeSchema, PaletteItem, UISchema } from '@workflowbuilder/sdk';
 
 import { RSVP_STATUSES } from '@/lib/constants';
 
-import { CHECKBOX_LIST_FORMAT, HEADER_ROWS_FORMAT } from './ui-formats';
+import {
+  CHECKBOX_LIST_FORMAT,
+  HEADER_ROWS_FORMAT,
+  INTEGRATION_CONNECTION_FORMAT,
+} from './ui-formats';
 
 import {
   ACTION_BRANCH_HANDLES,
@@ -1008,6 +1012,74 @@ const sendWhatsappUiSchema: UISchema = {
 };
 
 // ---------------------------------------------------------------------------
+// action.microsoft_send_email
+// ---------------------------------------------------------------------------
+
+export type MicrosoftConnectionOption = {
+  /** Human-readable connection name; display-only and never persisted. */
+  label: string;
+  /** integration_connections.id — the value persisted in connectionId. */
+  value: string;
+};
+
+const microsoftSendEmailSchema = {
+  type: 'object',
+  required: NODE_REQUIRED_FIELDS['action.microsoft_send_email'],
+  properties: {
+    ...identityProperties,
+    ...statusProperty,
+    ...actionBranchesProperty,
+    connectionId: { ...requiredText },
+    to: { ...requiredText },
+    subject: { ...requiredText },
+    body: { ...requiredText },
+    errorPolicy: { type: 'string', options: Object.values(errorPolicyOptions) },
+  },
+} satisfies NodeSchema;
+
+export function microsoftSendEmailSchemaFor(
+  connections: readonly MicrosoftConnectionOption[],
+): NodeSchema {
+  return {
+    ...microsoftSendEmailSchema,
+    properties: {
+      ...microsoftSendEmailSchema.properties,
+      connectionId: {
+        ...requiredText,
+        options: connections.map(({ label, value }) => ({ label, value })),
+      },
+    },
+  } as NodeSchema;
+}
+
+const microsoftSendEmailScope = getScope<typeof microsoftSendEmailSchema>;
+
+const microsoftSendEmailUiSchema: UISchema = {
+  type: 'VerticalLayout',
+  elements: [
+    ...identityControls(microsoftSendEmailScope('properties.label'), microsoftSendEmailScope('properties.description')),
+    {
+      type: 'Select',
+      scope: microsoftSendEmailScope('properties.connectionId'),
+      label: 'חיבור Microsoft 365',
+      options: {
+        // The custom renderer adds the OAuth entry point around the SDK's own
+        // Select. These two values are catalogue configuration, not workflow
+        // data, and therefore never enter the persisted node properties.
+        format: INTEGRATION_CONNECTION_FORMAT,
+        provider: 'microsoft',
+        capability: 'mail.send',
+      },
+    },
+    { type: 'VariableText', scope: microsoftSendEmailScope('properties.to'), label: 'נמען', placeholder: 'name@example.com' },
+    { type: 'VariableText', scope: microsoftSendEmailScope('properties.subject'), label: 'נושא' },
+    { type: 'VariableTextArea', scope: microsoftSendEmailScope('properties.body'), label: 'תוכן ההודעה', placeholder: 'הקלידו {{ כדי לשלב ערך מצעד קודם', minRows: 5 },
+    { type: 'Select', scope: microsoftSendEmailScope('properties.errorPolicy'), label: 'אם השליחה נכשלת' },
+    statusControl(microsoftSendEmailScope('properties.status')),
+  ],
+};
+
+// ---------------------------------------------------------------------------
 // action.notify_team
 // ---------------------------------------------------------------------------
 
@@ -1898,6 +1970,7 @@ export function buildPaletteItems(
   voiceCallerIds: readonly VoiceDialOption[] = [],
   voiceRules: readonly VoiceDialOption[] = [],
   voiceAgents: readonly VoiceDialOption[] = [],
+  microsoftConnections: readonly MicrosoftConnectionOption[] = [],
 ): PaletteItem[] {
   return PALETTE_ITEMS.map((item) => {
     if (item.type === 'trigger.whatsapp_inbound') {
@@ -1907,6 +1980,12 @@ export function buildPaletteItems(
       return {
         ...item,
         schema: voiceCallSchemaFor(voicePurposes, voiceCallerIds, voiceRules, voiceAgents),
+      };
+    }
+    if (item.type === 'action.microsoft_send_email') {
+      return {
+        ...item,
+        schema: microsoftSendEmailSchemaFor(microsoftConnections),
       };
     }
     return item;
@@ -2252,6 +2331,36 @@ export const PALETTE_ITEMS: PaletteItem[] = [
       status: nodeStatusOptions.active.value,
       label: 'שליחת הודעת וואטסאפ',
       description: 'משיב לאורח ששלח את ההודעה',
+      body: '',
+      errorPolicy: errorPolicyOptions.fail.value,
+    },
+  },
+  {
+    type: 'action.microsoft_send_email' satisfies KalfaNodeType,
+    templateType: NodeType.DecisionNode,
+    label: 'שליחת דוא״ל ב-Microsoft 365',
+    description: 'שולח הודעת דוא״ל באמצעות חיבור Microsoft 365 מנוהל',
+    icon: 'EnvelopeSimple',
+    schema: microsoftSendEmailSchema,
+    uischema: microsoftSendEmailUiSchema,
+    outputSchema: {
+      type: 'default',
+      properties: {
+        accepted: {
+          type: 'boolean',
+          label: 'התקבל אצל Microsoft Graph',
+          description: 'האם Microsoft Graph קיבל את בקשת השליחה; אין בכך אישור מסירה',
+        },
+      },
+    },
+    defaultPropertiesData: {
+      decisionBranches: actionBranches.map((branch) => ({ ...branch })),
+      status: nodeStatusOptions.active.value,
+      label: 'שליחת דוא״ל ב-Microsoft 365',
+      description: 'שולח הודעת דוא״ל באמצעות חיבור Microsoft 365 מנוהל',
+      connectionId: '',
+      to: '',
+      subject: '',
       body: '',
       errorPolicy: errorPolicyOptions.fail.value,
     },
