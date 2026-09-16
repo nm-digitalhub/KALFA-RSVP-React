@@ -6,6 +6,7 @@ import { createAdminClient } from '@/lib/supabase/admin';
 
 import { IntegrationRuntimeError } from './errors';
 import type { ProviderDefinition } from './provider';
+import { readSystemOAuthClient } from './system-oauth-client';
 
 type AdminClient = ReturnType<typeof createAdminClient>;
 
@@ -15,9 +16,12 @@ type AdminClient = ReturnType<typeof createAdminClient>;
  *
  * TWO SOURCES, DELIBERATELY. The definition says what the provider IS — its
  * issuer, how it authenticates a client, which scopes a capability needs. The
- * `integration_provider_configs` row says what THIS DEPLOYMENT was registered
- * as. Neither belongs in the other: a provider is code, a registration is
- * operational data, and only one of them differs between beta and production.
+ * deployment registration says what THIS deployment was registered as. A
+ * database row is authoritative when present; otherwise a system-level OAuth
+ * client may be supplied through `INTEGRATION_OAUTH_<PROVIDER>_CLIENT_*`.
+ * Neither belongs in the provider definition: a provider is code, a client
+ * registration is operational data, and beta/production may use different
+ * registrations without changing the provider adapter.
  */
 export type OAuthConfigLoader = {
   load(provider: ProviderDefinition): Promise<client.Configuration>;
@@ -64,14 +68,20 @@ export function createOAuthConfigLoader(
           { cause: error },
         );
       }
-      if (!row) {
+
+      // A stored row wins over the environment, including an explicitly disabled
+      // row. That gives an operator a durable kill switch and prevents a stale
+      // deployment secret from silently re-enabling a provider somebody disabled.
+      const systemClient = row ? null : readSystemOAuthClient(provider.id);
+
+      if (!row && !systemClient) {
         throw new IntegrationRuntimeError(
           'permanent',
           'integration_provider_not_configured',
           `No OAuth client is configured for integration provider "${provider.id}".`,
         );
       }
-      if (!row.enabled) {
+      if (row && !row.enabled) {
         // Mirrors what `integrations_read_provider_secret` raises, caught here
         // first so the caller does not have to read a Postgres error string to
         // learn something this row already says.
@@ -82,7 +92,10 @@ export function createOAuthConfigLoader(
         );
       }
 
-      const clientSecret = await readClientSecret(admin, provider.id);
+      const clientId = row ? row.client_id : systemClient!.clientId;
+      const clientSecret = row
+        ? await readClientSecret(admin, provider.id)
+        : systemClient!.clientSecret;
       const clientAuth = buildClientAuth(provider.oauth.clientAuth, clientSecret);
 
       // ⚠️ The fourth argument is passed on every path. The library's default is
@@ -93,10 +106,10 @@ export function createOAuthConfigLoader(
       // is what makes that requirement mean something.
       try {
         return provider.oauth.server instanceof URL
-          ? await discovery(provider.oauth.server, row.client_id, undefined, clientAuth)
+          ? await discovery(provider.oauth.server, clientId, undefined, clientAuth)
           : new client.Configuration(
               provider.oauth.server,
-              row.client_id,
+              clientId,
               undefined,
               clientAuth,
             );
