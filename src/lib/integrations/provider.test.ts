@@ -21,7 +21,7 @@ import {
 const fixture = (id: string): ProviderDefinition => ({
   id,
   displayName: `Fixture ${id}`,
-  credentialKind: 'oauth2',
+  credentialKind: 'oauth2_authorization_code',
   oauth: {
     server: new URL('https://example.invalid/.well-known/openid-configuration'),
     capabilities: { 'thing.write': ['scope.a'] },

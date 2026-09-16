@@ -17,8 +17,50 @@ import type { ServerMetadata } from 'openid-client';
 
 export type ProviderId = string;
 
-/** What kind of material the connection's vault secret holds. */
-export type CredentialKind = 'oauth2' | 'api_key' | 'basic';
+/**
+ * How a credential is ACQUIRED and RENEWED — nothing else.
+ *
+ * ⚠️ FOUR SEPARATE SOURCES ANSWER FOUR SEPARATE QUESTIONS, and collapsing any
+ * two of them into this one is how a generic layer stops being generic:
+ *
+ *   credential_kind     how it is acquired and by what mechanism it renews
+ *   the stored secret   which tokens were ACTUALLY issued and exist right now
+ *   server metadata     which endpoints the provider publishes (e.g. revocation)
+ *   presentation        how the credential is attached to an API request
+ *
+ * `'oauth2'` was the first draft and carried all four. It broke on the first
+ * honest example: an API key presented as `Authorization: Bearer <key>` has the
+ * same PRESENTATION as an OAuth2 token and a completely different ACQUISITION,
+ * while the same key at another provider arrives as `X-Api-Key` — same
+ * acquisition, different presentation. One column carrying both axes needs
+ * `api_key_bearer`, `api_key_header`, `api_key_query`, … which is a new value
+ * per provider, i.e. the migration-per-provider this layer exists to avoid.
+ *
+ * `api_key` and `basic` therefore collapse into `static`: to the STORE they are
+ * identical — operator-supplied, no refresh, no revocation — and their only
+ * difference was presentation, which now lives separately.
+ */
+export type CredentialKind =
+  /** Redirect + callback + PKCE. Renews with `refreshTokenGrant`, when a refresh token was issued. */
+  | 'oauth2_authorization_code'
+  /** Server to server, no user and no callback. Renews by re-running the grant. */
+  | 'oauth2_client_credentials'
+  /** Supplied by an operator. No automatic renewal. */
+  | 'static';
+
+/**
+ * How the credential is attached to an outgoing request.
+ *
+ * ⚠️ DECLARATIVE, NOT A CALLBACK, AND THAT IS A SECURITY PROPERTY. An adapter
+ * that attached the credential itself would have to RECEIVE it, making every
+ * adapter a place secret material can be logged or leaked. Declared this way,
+ * only the accessor ever holds it — the same reason `providerFetch` returns a
+ * `Response` and never a token.
+ */
+export type CredentialPresentation =
+  | { type: 'bearer' }
+  | { type: 'header'; name: string; prefix?: string }
+  | { type: 'query'; name: string };
 
 /**
  * A capability is what a workflow node asks for — "write a calendar event",
@@ -72,7 +114,15 @@ export type ProviderDefinition = {
   /** Operator-facing name. Used for the default connection label. */
   displayName: string;
 
-  /** Present only when `credentialKind === 'oauth2'`. */
+  /** How the accessor attaches this provider's credential. Defaults to bearer. */
+  presentation?: CredentialPresentation;
+
+  /**
+   * Present for both OAuth2 kinds. Optional on purpose: `authorization` must not
+   * be assumed to mean "a redirect" — the library also implements Device
+   * Authorization and CIBA, which poll instead, and a `static` provider has no
+   * authorization step at all.
+   */
   oauth?: ProviderOAuthConfig;
 
   /**

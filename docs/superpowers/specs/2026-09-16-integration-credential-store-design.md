@@ -899,3 +899,99 @@ second provider requires editing any of them, it is not.
 No provider implementation, no vendor SDK, no client credentials, no
 provider-specific columns or enums. `openid-client` is the protocol engine behind
 the adapters and is not itself an integration.
+
+### 9.6 `credential_kind` is a discriminator for two questions, not four
+
+An earlier draft had `credential_kind` answering everything about a connection's
+lifecycle. Measured against the specs, two of those four answers belong
+elsewhere, and keeping them here would have made the column rigid in exactly the
+way a generic layer cannot afford.
+
+| question | answered by | why not `credential_kind` |
+| --- | --- | --- |
+| does authorization redirect a person? | **`credential_kind`** | fixed by the grant type |
+| what is the renewal *mechanism*? | **`credential_kind`** | fixed by the grant type |
+| does **this** connection have a refresh token? | **the stored secret** | issuing one is optional (RFC 6749); two connections of the same kind differ |
+| can this provider revoke? | **`serverMetadata().revocation_endpoint`** | a provider capability; two providers of the same kind differ |
+
+A fifth axis, presentation, is separate again and lives on the adapter (§9.4).
+
+#### Disconnect, derived from RFC 7009 rather than from a habit
+
+RFC 7009, quoted:
+
+> "Implementations MUST support the revocation of refresh tokens and SHOULD
+> support the revocation of access tokens."
+
+> "If the particular token is a refresh token and the authorization server
+> supports the revocation of access tokens, then the authorization server SHOULD
+> also invalidate all access tokens based on the same authorization grant."
+
+> "If the token passed to the request is an access token, the server MAY revoke
+> the respective refresh token as well."
+
+The asymmetry is the whole design. Revoking the refresh token is the branch the
+standard requires servers to implement AND the one that cascades; the reverse
+direction is optional in both respects. So there is no reason for a blanket
+"always revoke both":
+
+```
+disconnect(connection)
+  ├─ no revocation_endpoint          → no remote revocation
+  └─ revocation_endpoint present
+       ├─ refresh_token exists       → revoke(refresh_token, hint=refresh_token)
+       └─ else access_token exists   → revoke(access_token,  hint=access_token)
+  ↓
+  local cleanup — always, regardless of the outcome above
+```
+
+`token_type_hint` matches whichever token is sent, and nothing more is read into
+it. RFC 7009 again:
+
+> "Clients MAY pass this parameter in order to help the authorization server to
+> optimize the token lookup. If the server is unable to locate the token using
+> the given hint, it MUST extend its search across all of its supported token
+> types."
+
+It is an optimisation the server may ignore, not a protocol decision worth a
+branch.
+
+Two corrections to earlier drafts of this document:
+
+- *"even a successful call does not guarantee revocation"* was imprecise. RFC
+  7009: **"The invalidation takes place immediately, and the token cannot be used
+  again after the revocation."** What is not uniform is the effect on *related*
+  tokens, and that there "could be a propagation delay" between servers.
+- A `200` response proves nothing about whether the token was valid: the spec
+  returns 200 **"if the token has been revoked successfully or if the client
+  submitted an invalid token"**, deliberately. Local cleanup therefore never
+  waits on the response to decide.
+
+#### Renewal, and why "no refresh token" is not "expired"
+
+```
+oauth2_authorization_code
+  refresh_token present  → refreshTokenGrant()
+  refresh_token absent   → requires_reauthorization
+oauth2_client_credentials
+  always                 → clientCredentialsGrant() again
+static
+  never                  → no automatic renewal
+```
+
+`requires_reauthorization` is a statement about **authorization**, not about
+expiry, and the two are independent: a connection that can never renew may still
+hold a perfectly valid access token right now. Marking it `expired` at the moment
+renewal became impossible would under-report what still works and over-report
+urgency.
+
+RFC 6749 makes issuing a refresh token optional, and requires the client to
+replace a stored one whenever a refresh returns a new value. RFC 9700 treats the
+no-refresh-token case as normal, to be resolved by obtaining a new access token
+through an appropriate grant. So the absence is a supported state, and the status
+set says so:
+
+| status | meaning |
+| --- | --- |
+| `expired` | access token stale, renewal will be retried — self-healing |
+| `requires_reauthorization` | renewal impossible without a person; access may still work |
