@@ -570,7 +570,7 @@ openid-client (protocol engine, not an integration)
 Vault + integration_connections
 ```
 
-### 9.1 Permission matrix — complete, all four roles
+### 9.1 Grants, derived from the operations rather than assumed
 
 `anon` and `authenticated` receive table grants **automatically** on anything
 created in `public`. Measured:
@@ -580,31 +580,88 @@ public.guests                 postgres  anon=adDxtm  authenticated=arwdDxtm  ser
 public.exchange_connections   postgres                                       service_role
 ```
 
-RLS does not remove a GRANT. A closed table needs both: RLS enabled *and* the
-default grants revoked, which is why the second row is short.
+RLS does not remove a GRANT. A closed table needs both — RLS enabled *and* the
+default grants revoked — which is why the second row is short.
 
-| object | anon | authenticated | service_role | postgres |
-| --- | --- | --- | --- | --- |
-| `integration_connections` | revoked | revoked | full (RLS bypassed) | owner |
-| `integration_oauth_states` | revoked | revoked | full (RLS bypassed) | owner |
-| `integrations_read_credential()` — INVOKER | revoked | revoked | EXECUTE | owner |
-| `integrations_write_credential()` — INVOKER | revoked | revoked | EXECUTE | owner |
-| `vault.decrypted_secrets` | none (measured) | none (measured) | `rd` (measured) | `r*d*D*x*` |
-| `vault.create_secret` / `update_secret` | none | none | `X` (measured) | `X*` |
+Nothing below is granted because a role "is the server". Each privilege is
+derived from an operation that exists in §9.2 or §4, and anything not derived is
+not granted.
 
-Both tables: RLS **enabled with zero policies**. Under `service_role` RLS is
-bypassed, so the policies would be decoration; under any other role the grant is
-already gone. RLS stays on because a table in an exposed schema must have it, and
-because it is the backstop if a grant is ever restored by accident.
+#### `integration_oauth_states`
 
-Because the accessor functions are `SECURITY INVOKER`, EXECUTE is necessary but
-not sufficient: the caller must also hold privileges on everything the body
-touches. `service_role` does. `authenticated` fails at `vault.decrypted_secrets`
-with 42501 even if EXECUTE were granted by mistake — two independent locks, not
-one.
+| operation | statement | privilege it forces |
+| --- | --- | --- |
+| `startConnection` | `insert into … values (…)` | `INSERT` |
+| callback CAS | `update … set consumed_at = now() where state_hash, provider, created_by, consumed_at, expires_at … returning provider, code_verifier, redirect_to, requested_scopes, created_by` | `UPDATE (consumed_at)` + `SELECT` |
+| cleanup job | `delete from … where expires_at < …` | `DELETE` |
 
-`postgres` appears in the matrix as the owner, not as a consumer. No application
-path runs as `postgres` today (§2.2).
+The `SELECT` is not optional and not a guess — PostgreSQL states both halves:
+
+> "You must also have the `SELECT` privilege on any column whose values are read
+> in the _expressions_ or _condition_." — `SQL UPDATE`
+
+> "Use of the `RETURNING` clause requires `SELECT` privilege on all columns
+> mentioned in `RETURNING`." — `SQL INSERT`
+
+So the CAS stays exactly as written. Splitting it into two statements to dodge a
+privilege would trade an atomicity guarantee for nothing; the privilege is simply
+granted, on the server path only.
+
+```sql
+grant select, insert, delete on public.integration_oauth_states to service_role;
+grant update (consumed_at)   on public.integration_oauth_states to service_role;
+```
+
+Column-level `UPDATE` is the tightening the derivation exposes: consuming a state
+is the only update that exists, so `code_verifier` and `expires_at` become
+un-rewritable after insert. A bug that tried to extend a state's life or swap its
+verifier fails at the database instead of succeeding quietly.
+
+#### `integration_connections`
+
+| operation | privilege it forces |
+| --- | --- |
+| callback writes a new connection | `INSERT` |
+| accessor resolves provider + capability | `SELECT` |
+| accessor records a refresh | `UPDATE (expires_at, last_refresh_at, status, last_error, updated_at)` |
+| disconnect marks revoked and drops the secret link | `UPDATE (status, vault_secret_id, updated_at)` |
+| management UI lists connections | `SELECT` |
+
+```sql
+grant select, insert on public.integration_connections to service_role;
+grant update (status, vault_secret_id, expires_at, last_refresh_at,
+              last_error, metadata, updated_at)
+  on public.integration_connections to service_role;
+```
+
+**No `DELETE`.** Disconnect is a soft revoke — `status = 'revoked'`,
+`vault_secret_id = null`, and the Vault secret deleted — so the row survives as
+an audit record and no code path needs to remove one. A privilege with no
+operation behind it is not granted.
+
+The column list also makes `provider`, `credential_kind`, `scopes`, `created_by`
+and `created_at` **immutable after insert**, enforced by the grant rather than by
+convention. A connection cannot silently become a connection to something else.
+
+#### The other two roles, and the owner
+
+| object | anon | authenticated |
+| --- | --- | --- |
+| both tables | `revoke all` | `revoke all` |
+| both accessor functions | `revoke execute` (incl. from `PUBLIC`) | `revoke execute` |
+| `vault.*` | none — measured, §2.3 | none — measured, §2.3 |
+
+`postgres` receives **no grant at all**: it owns these objects, owner rights are
+implicit, and §2.2 established that no application path runs as `postgres`. It
+appears in this section only because ownership decides what a
+`SECURITY DEFINER` function would have run as — which is why §3.3 chose
+`SECURITY INVOKER` instead.
+
+Because the accessor functions are `SECURITY INVOKER`, `EXECUTE` is necessary but
+not sufficient: the caller also needs privileges on everything the body touches.
+`service_role` has exactly the list above and `rd` on `vault.decrypted_secrets`.
+`authenticated` fails at the vault read with 42501 even if `EXECUTE` were granted
+by mistake — measured in §3.3, and two independent locks rather than one.
 
 ### 9.2 Transaction boundaries
 
