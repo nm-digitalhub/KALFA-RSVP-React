@@ -140,4 +140,16 @@ describe('integration connection JsonForms renderer', () => {
       /vault_secret|refresh_token|access_token/i,
     );
   });
+
+  it('accepts deployment-level Microsoft OAuth configuration without routing the user through setup UI', () => {
+    expect(workflowPageSource).toContain(
+      'readSystemOAuthClient("microsoft") !== null',
+    );
+    expect(workflowPageSource).toContain(
+      'canManageIntegrations && microsoftProviderAvailable',
+    );
+    expect(workflowPageSource).not.toContain(
+      'יש להגדיר תחילה את ספק Microsoft בעמוד האינטגרציות.',
+    );
+  });
 });
