@@ -64,6 +64,7 @@ describe('reading a provider configuration', () => {
     // collapses to a boolean before leaving. A uuid that never reaches React
     // cannot be serialised into an RSC payload by accident.
     expect(h.selected).toContain('vault_secret_id');
+    expect(config.exists).toBe(true);
     expect(config.configured).toBe(true);
     expect(JSON.stringify(config)).not.toContain('99999999');
     expect(Object.keys(config).sort()).toEqual([
@@ -71,14 +72,16 @@ describe('reading a provider configuration', () => {
       'configured',
       'createdBy',
       'enabled',
+      'exists',
       'updatedAt',
     ]);
   });
 
-  it('reports a row with no stored secret as not configured', async () => {
+  it('reports a row with no stored secret as existing but not configured', async () => {
     harness({ row: { ...ROW, vault_secret_id: null } });
 
     await expect(readOAuthProviderConfig('fixture')).resolves.toMatchObject({
+      exists: true,
       configured: false,
       clientId: 'client-abc',
     });
