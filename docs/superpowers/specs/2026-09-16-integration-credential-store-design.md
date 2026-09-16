@@ -108,7 +108,53 @@ The probe ran as `postgres` through the CLI, not as `service_role`. It proves th
 Vault mechanism; the wrapper's role guard is proven separately once the wrapper
 exists (§7).
 
-### 2.7 Lint bar for new objects
+### 2.7 What Vault costs — the root key is not in the backup
+
+Read from the Vault guide and its linked backup/restore page, because this is the
+one obligation Vault adds that plaintext columns never had.
+
+**What is free.** AEAD via libsodium: the decryption function verifies a
+signature before decrypting, and associated data means a ciphertext cannot be
+copied from one row to another. Secrets stay encrypted in backups and in the
+replication stream. Each project holds a unique root key in a secured backend,
+never alongside the data. Note this makes the AAD binding that
+`exchange_connections` hand-rolled a built-in property rather than something to
+reimplement.
+
+**What is not free.**
+
+> "Backup files never contain the root key; they hold only encrypted data."
+
+> "A newly created project is initialized with its own fresh root key, so Vault
+> secrets and encrypted columns restored from the old project cannot be decrypted
+> until you copy the old key across."
+
+> **"Retrieve the root encryption key from the _old_ project _before_ you pause or
+> delete it. The API below only returns the key for active projects — once the
+> old project is paused or removed, the key (and any data encrypted with it) can
+> no longer be retrieved."**
+
+Pause/restore and Point-in-Time keep the key. Clone-project and Branching copy it.
+A manual `pg_dump` / `pg_restore` does **not**, and the window to recover it
+closes when the old project does.
+
+`GET /v1/projects/{ref}/pgsodium` → `{ "root_key": "<64 hex>" }`, and
+`PUT /v1/projects/{ref}/pgsodium` sets it on the target. Scope `secrets:read`;
+fine-grained permission `project_admin_write`.
+
+**Required before the first real credential is stored**, and an owner action —
+this reads a secret, so it is not run from this session:
+
+1. Confirm `GET …/pgsodium` responds for `cklpaxihpyjbhymqtduv`.
+2. Store the root key outside this database, in the same place the deploy
+   credentials live.
+3. Add "export the root key first" to the top of any project-migration runbook.
+
+Until step 2 exists, a Vault-backed credential is recoverable only for as long as
+the project is alive. That is a smaller risk than the one the EWS key retirement
+recorded (§2.10) but it is a real one, and it is ours to carry.
+
+### 2.8 Lint bar for new objects
 
 | lint | existing findings | requirement |
 | --- | --- | --- |
@@ -116,7 +162,7 @@ exists (§7).
 | 0028 / 0029 SECURITY DEFINER executable | 1 / 26 | **not applicable** — the wrapper is SECURITY INVOKER (§3.3) |
 | 0008 `rls_enabled_no_policy` | 14 (INFO) | acceptable shape for server-only tables |
 
-### 2.8 Platform RBAC is the authority, and its helpers must stay open
+### 2.9 Platform RBAC is the authority, and its helpers must stay open
 
 Three separate permission spaces exist: `user_roles` (app admin),
 `organization_members` (customer org), and `platform_staff` (internal team).
@@ -274,7 +320,7 @@ Three consequences:
 - **Lints 0028 and 0029 do not apply.** Both are scoped to SECURITY DEFINER
   functions, so this wrapper adds no finding to either.
 
-The RBAC helpers in §2.8 stay DEFINER for their own reasons; this rule applies to
+The RBAC helpers in §2.9 stay DEFINER for their own reasons; this rule applies to
 vault wrappers only.
 
 #### The documentation says the same thing, independently
@@ -448,3 +494,56 @@ and the string `vault.` appear nowhere under `src/` except
   failure, not a distinguishable error.
 - The boundary test above.
 - `npm run lint`, `npx tsc --noEmit`, `npm run build`.
+
+## 8. Why not the credential store we already have
+
+`public.exchange_connections` looks like this subsystem already built:
+`credential_ciphertext`, `credential_iv`, `credential_auth_tag`,
+`encryption_key_version`, plus `auth_method`, `status`, `last_verified_at`,
+`last_error`. Measured before reusing it:
+
+| check | result |
+| --- | --- |
+| `createCipheriv` / `createDecipheriv` in live code | **zero occurrences** |
+| `resolveMailboxPassword()` | returns `''` |
+| `exchange-connections.ts:244,278` | writes `credential_ciphertext: null` explicitly |
+| `EXCHANGE_EWS_ENCRYPTION_KEY` | survives only in a history comment and an env checklist |
+| production rows | 1, `auth_method = 'ntlm'`, a leftover from the EWS era |
+
+The encryption is retired. There is no implementation to reuse — the columns are
+a shell.
+
+### 8.1 (§2.10) The reason it was retired argues for Vault
+
+From `src/lib/exchange-ews/mailbox-credential.ts`:
+
+> "the certificate-authenticated calendar had a hard dependency on
+> `EXCHANGE_EWS_ENCRYPTION_KEY`, and **rotating that key would have taken
+> scheduling down** for a reason with no relationship to the cause."
+
+An app-managed key couples every consumer to one rotation event. Vault's key is
+not ours to rotate, and §2.6 proved a secret rotation keeps its UUID. The cost
+Vault substitutes is §2.7 — a key we must carry across a project migration, which
+is an operational step rather than a coupling.
+
+### 8.2 What *is* worth reusing: the DAL shape
+
+`src/lib/data/exchange-connections.ts` already encodes every rule this design
+needs, and predates it:
+
+- closed table — RLS enabled, zero policies, grants revoked, service-role client,
+  with "RLS is NOT a backstop here" stated in the file
+- `requirePlatformPermission(...)` as the gate, `requireUser()` for identity only
+- `PUBLIC_COLUMNS` and `CREDENTIAL_COLUMNS` as separate constants, so a metadata
+  read cannot accidentally select credential material
+- "Never accept a user id as a parameter from a caller; always take it from the
+  verified session"
+
+`src/lib/integrations/credentials.ts` follows this file rather than inventing a
+shape.
+
+### 8.3 Out of scope
+
+The dead credential columns on `exchange_connections` are vestigial and could be
+dropped. That is a separate change with its own migration and approval; this
+design does not touch that table.
