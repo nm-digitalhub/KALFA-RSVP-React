@@ -33,6 +33,7 @@ function ctxWith(guests: Guests) {
           throw new Error('these nodes must not make a request');
         },
       },
+      integrations: {} as StepContext['deps']['integrations'],
     },
   } satisfies StepContext;
 }

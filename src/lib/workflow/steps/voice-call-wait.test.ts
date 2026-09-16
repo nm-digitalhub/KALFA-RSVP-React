@@ -46,6 +46,7 @@ function ctx(
       guests: guests as GuestActionsPort,
       alerts: {} as StepContext['deps']['alerts'],
       webhook: {} as StepContext['deps']['webhook'],
+      integrations: {} as StepContext['deps']['integrations'],
     },
   } as StepContext;
 }

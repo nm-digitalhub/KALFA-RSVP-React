@@ -30,6 +30,7 @@ function ctx(create: GuestActionsPort['createCallbackRequest']) {
       guests: { createCallbackRequest: create } as GuestActionsPort,
       alerts: {} as StepContext['deps']['alerts'],
       webhook: {} as StepContext['deps']['webhook'],
+      integrations: {} as StepContext['deps']['integrations'],
     },
   } satisfies StepContext;
 }

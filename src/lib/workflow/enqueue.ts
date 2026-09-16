@@ -7,6 +7,7 @@ import type { PgBoss } from 'pg-boss';
 
 import { deterministicJobId } from '@/lib/queue/deterministic-id';
 import { QUEUES, WORKFLOW_RETRY, type WorkflowRunJob } from '@/lib/queue/queues';
+import { createIntegrationRuntime } from '@/lib/integrations/runtime';
 import { getAppOrigin } from '@/lib/url';
 
 import { runWorkflow, type RunWorkflowOutcome } from './engine/run-workflow';
@@ -14,6 +15,7 @@ import { createGuestActions } from './guest-actions';
 import { markParkedRunReady } from './wake-store';
 import { createTeamAlerts } from './team-alerts';
 import { createOutboundWebhook } from './outbound-webhook';
+import type { IntegrationsPort } from './engine/ports';
 import type { WorkflowTriggerPayload } from './steps';
 import {
   createExecutionLog,
@@ -23,6 +25,18 @@ import {
   listStuckWaitingRuns,
   loadRunForExecution,
 } from './store';
+
+let liveIntegrations: IntegrationsPort | undefined;
+
+const integrations: IntegrationsPort = {
+  execute(args) {
+    // Lazy on purpose: importing the workflow worker must not open Supabase or
+    // initialize provider runtime unless a workflow actually reaches an
+    // integration node. It also keeps existing engine tests database-free.
+    liveIntegrations ??= createIntegrationRuntime();
+    return liveIntegrations.execute(args);
+  },
+};
 
 /**
  * Send the job for a run whose row already exists.
@@ -208,6 +222,7 @@ export async function handleWorkflowRun(
       guests: createGuestActions(),
       alerts: createTeamAlerts(),
       webhook: createOutboundWebhook(),
+      integrations,
       // Only the real path logs. A dry run passes no log and returns its trace
       // directly — nothing to stream, and nothing to write.
       log: createExecutionLog(),

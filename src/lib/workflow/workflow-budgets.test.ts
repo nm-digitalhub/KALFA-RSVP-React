@@ -135,6 +135,7 @@ describe('a node that overruns its budget', () => {
           },
         } as never,
         webhook: { post: async () => ({ ok: true, status: 200 }) } as never,
+        integrations: { execute: async () => ({ status: 200 }) },
       });
 
       const promise = runner.executeNode(

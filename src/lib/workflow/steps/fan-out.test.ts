@@ -36,6 +36,7 @@ function ctx(guests: Partial<GuestActionsPort>, trigger: Partial<StepContext['tr
           throw new Error('these nodes must not make a request');
         },
       },
+      integrations: {} as StepContext['deps']['integrations'],
     },
   } satisfies StepContext;
 }

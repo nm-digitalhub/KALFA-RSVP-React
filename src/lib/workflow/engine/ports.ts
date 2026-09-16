@@ -656,6 +656,21 @@ export interface ExecutionLogPort {
   }): Promise<void>;
 }
 
+export type IntegrationExecutionResult = {
+  /** Provider HTTP status; internal to the executor, never a workflow output contract. */
+  status: number;
+};
+
+export interface IntegrationsPort {
+  execute(args: {
+    /** Provider the node expects. Prevents a Microsoft node from using another provider's connection. */
+    provider: string;
+    connectionId: string;
+    capability: string;
+    input: unknown;
+  }): Promise<IntegrationExecutionResult>;
+}
+
 export type WorkflowEngineDeps = {
   ledger: StepLedgerPort;
   runs: RunStorePort;
@@ -672,6 +687,8 @@ export type WorkflowEngineDeps = {
    * nowhere. The dry run supplies a recording stub that makes no request.
    */
   webhook: OutboundWebhookPort;
+  /** Integration side effects are resolved server-side from a stored connection. */
+  integrations: IntegrationsPort;
   /** Omitted by the dry run, which returns its trace directly. */
   log?: ExecutionLogPort;
 };

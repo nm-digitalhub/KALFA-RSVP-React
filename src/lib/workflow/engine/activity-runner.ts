@@ -32,6 +32,7 @@ import { NODE_TIMEOUT_CODE, nodeBudgetMs } from './node-budgets';
 import { RUN_ABANDONED_CODE, STEP_IN_FLIGHT_CODE } from './ports';
 import type {
   GuestActionsPort,
+  IntegrationsPort,
   OutboundWebhookPort,
   StepLedgerPort,
   TeamAlertsPort,
@@ -52,6 +53,7 @@ export type ActivityRunnerArgs = {
   guests: GuestActionsPort;
   alerts: TeamAlertsPort;
   webhook: OutboundWebhookPort;
+  integrations: IntegrationsPort;
   /**
    * The queue's own "this job is no longer yours" signal.
    *
@@ -173,7 +175,7 @@ function resolveConfigTemplates(
 export function createActivityRunner<TNode extends RunnableNode>(
   args: ActivityRunnerArgs,
 ): ActivityRunnerPort<TNode> {
-  const { runId, workflowId, trigger, ledger, guests, alerts, webhook, signal, onWait } = args;
+  const { runId, workflowId, trigger, ledger, guests, alerts, webhook, integrations, signal, onWait } = args;
 
   return {
     // `context` was ignored until templates landed — the handlers took only
@@ -314,7 +316,7 @@ export function createActivityRunner<TNode extends RunnableNode>(
             // Only `logic.wait` reads it. See StepContext — a wait cannot tell its
             // own resumption from a first arrival, because the whole graph replays.
             ...(claim.resumedFromWait ? { resumedFromWait: true } : {}),
-            deps: { guests, alerts, webhook },
+            deps: { guests, alerts, webhook, integrations },
           }),
         );
         // Persisted AFTER the side effect and BEFORE the runner propagates, so a

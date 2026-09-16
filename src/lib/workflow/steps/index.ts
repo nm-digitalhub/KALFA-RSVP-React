@@ -6,6 +6,7 @@
 // layer up, in activity-runner.ts, so the claim/side-effect ordering is written
 // once rather than in every handler.
 import { RSVP_STATUSES, type RsvpStatus } from '@/lib/constants';
+import { readIntegrationRuntimeError } from '@/lib/integrations/errors';
 
 import { toBusinessOutcome } from '../voice-outcome';
 
@@ -33,10 +34,14 @@ import {
 
 import type {
   GuestActionsPort,
+  IntegrationsPort,
   OutboundWebhookPort,
   TeamAlertsPort,
 } from '../engine/ports';
-import { PermanentNodeExecutionError } from '../vendor/workflowbuilder/execution-core/errors';
+import {
+  PermanentNodeExecutionError,
+  TransientNodeExecutionError,
+} from '../vendor/workflowbuilder/execution-core/errors';
 import type { NodeExecutionResult } from '../vendor/workflowbuilder/execution-core/ports/activity-runner.port';
 
 // ---------------------------------------------------------------------------
@@ -163,7 +168,7 @@ export type StepContext = {
    */
   resumedFromWait?: boolean;
   trigger: WorkflowTriggerPayload;
-  deps: { guests: GuestActionsPort; alerts: TeamAlertsPort; webhook: OutboundWebhookPort };
+  deps: { guests: GuestActionsPort; alerts: TeamAlertsPort; webhook: OutboundWebhookPort; integrations: IntegrationsPort };
 };
 
 export type StepHandler = (
@@ -1576,6 +1581,42 @@ const sendTemplate: StepHandler = async (config, ctx) => {
     : { output: { sent: false, skipped: true, reason: result.reason ?? 'send_failed' } };
 };
 
+const microsoftSendEmail: StepHandler = async (config, ctx) => {
+  const connectionId = readString(config, 'connectionId').trim();
+  const to = readString(config, 'to').trim();
+  const subject = readString(config, 'subject').trim();
+  const body = readString(config, 'body');
+
+  if (!connectionId || !to || !subject || !body.trim()) {
+    throw new PermanentNodeExecutionError(
+      'invalid_config',
+      'הצעד "שליחת דוא״ל ב-Microsoft 365" חסר חיבור, נמען, נושא או תוכן.',
+    );
+  }
+
+  try {
+    await ctx.deps.integrations.execute({
+      provider: 'microsoft',
+      connectionId,
+      capability: 'mail.send',
+      input: { to, subject, body },
+    });
+  } catch (error) {
+    const integrationError = readIntegrationRuntimeError(error);
+    if (!integrationError) throw error;
+
+    const ErrorType =
+      integrationError.classification === 'transient'
+        ? TransientNodeExecutionError
+        : PermanentNodeExecutionError;
+    throw new ErrorType(integrationError.code, integrationError.message, { cause: error });
+  }
+
+  // Microsoft Graph sendMail returns 202 with no response body. `accepted` means
+  // Graph accepted the request; it is deliberately not a delivery receipt.
+  return { output: { accepted: true } };
+};
+
 export const STEP_HANDLERS: Record<KalfaNodeType, StepHandler> = {
   'trigger.whatsapp_inbound': whatsappInbound,
   'trigger.webhook': webhookTrigger,
@@ -1584,6 +1625,7 @@ export const STEP_HANDLERS: Record<KalfaNodeType, StepHandler> = {
   'logic.switch': switchNode,
   'action.update_guest_status': updateGuestStatus,
   'action.send_whatsapp': sendWhatsapp,
+  'action.microsoft_send_email': microsoftSendEmail,
   'action.start_rsvp_ai_callback': startRsvpAiCallback,
   'action.start_voice_call': startVoiceCall,
   'action.notify_team': notifyTeam,

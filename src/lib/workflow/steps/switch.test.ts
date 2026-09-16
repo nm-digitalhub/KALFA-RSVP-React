@@ -47,6 +47,7 @@ const ctx = {
         throw new Error('logic.switch must not make a request');
       },
     },
+    integrations: {} as StepContext['deps']['integrations'],
   },
 } satisfies StepContext;
 

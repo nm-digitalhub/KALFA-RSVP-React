@@ -131,6 +131,7 @@ export async function runWorkflow(args: RunWorkflowArgs): Promise<RunWorkflowOut
     guests: deps.guests,
     alerts: deps.alerts,
     webhook: deps.webhook,
+    integrations: deps.integrations,
     ...(args.signal ? { signal: args.signal } : {}),
     onWait: (wait) => {
       parked = wait;

@@ -28,6 +28,7 @@ function ctx(
       guests: { startVoicePurposeCall: dial } as GuestActionsPort,
       alerts: {} as StepContext['deps']['alerts'],
       webhook: {} as StepContext['deps']['webhook'],
+      integrations: {} as StepContext['deps']['integrations'],
     },
   } satisfies StepContext;
 }

@@ -29,6 +29,7 @@ function ctx(overrides: Partial<StepContext> = {}) {
           throw new Error('a wait must not make a request');
         },
       },
+      integrations: {} as StepContext['deps']['integrations'],
     },
     ...overrides,
   } satisfies StepContext;

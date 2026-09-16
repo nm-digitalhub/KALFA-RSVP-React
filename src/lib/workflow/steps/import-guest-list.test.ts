@@ -43,6 +43,7 @@ function ownerCtx(guests: Guests, trigger: Partial<StepContext['trigger']> = {})
           throw new Error('this node must not make a request');
         },
       },
+      integrations: {} as StepContext['deps']['integrations'],
     },
   } satisfies StepContext;
 }

@@ -21,6 +21,7 @@ import type {
   RunStorePort,
   TeamAlertsPort,
   OutboundWebhookPort,
+  IntegrationsPort,
 } from './ports';
 import { runWorkflow, type RunWorkflowOutcome } from './run-workflow';
 
@@ -69,7 +70,7 @@ export type DryRunStep = {
  * a deliberate edit to this line, not something a new handler can do quietly.
  */
 export type DryRunEffect = {
-  kind: 'submit_rsvp' | 'send_whatsapp' | 'notify_team' | 'start_rsvp_ai_callback' | 'webhook' | 'set_guest_field' | 'callback_request';
+  kind: 'submit_rsvp' | 'send_whatsapp' | 'notify_team' | 'start_rsvp_ai_callback' | 'webhook' | 'integration' | 'set_guest_field' | 'callback_request';
   description: string;
 };
 
@@ -251,8 +252,20 @@ function createRecordingPorts(scenario: DryRunScenario) {
     },
   };
 
+  const integrations: IntegrationsPort = {
+    async execute({ provider, capability }) {
+      // NO PROVIDER REQUEST IS MADE. Connection ids and node input may identify
+      // an account or contain guest data, so neither is copied into the trace.
+      effects.push({
+        kind: 'integration',
+        description: `היה מפעיל את יכולת האינטגרציה "${capability}" אצל ${provider}`,
+      });
+      return { status: 200 };
+    },
+  };
+
   return {
-    deps: { ledger, runs, guests, alerts, webhook },
+    deps: { ledger, runs, guests, alerts, webhook, integrations },
     steps,
     effects,
     getStatus: () => status,
