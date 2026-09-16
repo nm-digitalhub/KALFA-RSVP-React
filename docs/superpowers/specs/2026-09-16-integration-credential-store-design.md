@@ -47,10 +47,7 @@ The precedent for the fix is Supabase's own `pgmq_public` schema, which wraps
 Server Actions **and** by workflow node handlers in the worker. Raw `pg` in
 `worker/main.ts` serves only pg-boss and `LISTEN`.
 
-There is therefore **one** credential access path, not two. The
-`current_user = 'postgres'` branch in the role guard has no consumer today; it
-is kept as a fallback for future raw-pg access and is documented as not
-load-bearing.
+There is therefore **one** credential access path, not two.
 
 ### 2.3 Vault ACL
 
@@ -70,6 +67,10 @@ view is the entire gate.
 
 `service_role` holds no `INSERT`/`UPDATE` on `vault.secrets`; writes must go
 through the two SECURITY DEFINER functions.
+
+That `rd` grant is load-bearing: §3.3 reaches vault **as the caller**, so this
+row is what makes the wrapper work at all — and its absence for `anon` and
+`authenticated` is what stops them.
 
 ### 2.4 `vault.secrets.name` is unique
 
@@ -112,7 +113,7 @@ exists (§7).
 | lint | existing findings | requirement |
 | --- | --- | --- |
 | 0011 `function_search_path_mutable` | 9 | every new function sets `search_path = ''` |
-| 0028 / 0029 SECURITY DEFINER executable | 1 / 26 | vault wrappers revoke from `public`, `anon`, `authenticated` |
+| 0028 / 0029 SECURITY DEFINER executable | 1 / 26 | **not applicable** — the wrapper is SECURITY INVOKER (§3.3) |
 | 0008 `rls_enabled_no_policy` | 14 (INFO) | acceptable shape for server-only tables |
 
 ### 2.8 Platform RBAC is the authority, and its helpers must stay open
@@ -145,16 +146,15 @@ browser (anon / authenticated)
 
 Server Action ─┐
                ├─ createAdminClient() → PostgREST → public.integrations_*
-workflow node ─┘   (service_role JWT)              │ role guard
-                                                   ↓
-                                    integrations_private.*   (unexposed schema)
+workflow node ─┘   (service_role JWT)              │ SECURITY INVOKER
                                                    ↓
                                     vault.create_secret / decrypted_secrets
+                                    (reached as the CALLER, not as an owner)
 ```
 
-Four independent locks, none sufficient alone: no vault grant for browser roles;
-explicit revoke on the wrapper; role check inside the function body; empty
-`search_path`.
+Three independent locks, none sufficient alone: EXECUTE on the wrapper granted
+only to `service_role`; the vault ACL, which denies every other role even if it
+somehow reached the function; and an empty `search_path`.
 
 ### 3.1 Tables
 
@@ -203,27 +203,18 @@ Guard used by callers of the management surface: `requirePlatformPermission(key)
 (`src/lib/auth/dal.ts:227`), the existing redirecting sibling of
 `hasPlatformPermission`.
 
-### 3.3 Wrapper shape
+### 3.3 Wrapper shape — SECURITY INVOKER, and the measurement that decided it
 
 Action-scoped, never a free-form "give me the secret named N":
 
 ```sql
-create schema integrations_private;
-revoke all on schema integrations_private from public, anon, authenticated;
-
-create function integrations_private.read_credential(…) returns text
-  language plpgsql security definer set search_path = '' as $$ … $$;
-
 create function public.integrations_read_credential(
   p_connection_id uuid, p_expected_provider text, p_expected_kind text
-) returns text language plpgsql security definer set search_path = '' as $$
-begin
-  if current_setting('request.jwt.claims', true)::jsonb->>'role' <> 'service_role'
-     and current_user <> 'postgres' then
-    raise exception 'Access denied';
-  end if;
-  return integrations_private.read_credential(…);
-end $$;
+) returns text
+  language plpgsql
+  security invoker            -- NOT definer. See below.
+  set search_path = ''
+as $$ … reads vault.decrypted_secrets, joined to public.integration_connections … $$;
 
 revoke execute on function public.integrations_read_credential(uuid, text, text)
   from public, anon, authenticated;
@@ -231,11 +222,87 @@ grant execute on function public.integrations_read_credential(uuid, text, text)
   to service_role;
 ```
 
-The wrapper returns NULL unless provider, kind, and `status = 'active'` all
+The function returns NULL unless provider, kind, and `status = 'active'` all
 match, so a guessed id yields nothing.
 
 `revoke … from public` is required in addition to `anon` and `authenticated`:
 revoking from `anon` does not remove `PUBLIC`'s default `EXECUTE`.
+
+#### Why not SECURITY DEFINER
+
+An earlier draft of this spec used a DEFINER wrapper delegating to a private
+schema, guarded by:
+
+```sql
+if current_setting('request.jwt.claims', true)::jsonb->>'role' <> 'service_role'
+   and current_user <> 'postgres' then raise exception 'Access denied';
+```
+
+Measured in a rolled-back transaction on the live project:
+
+| | |
+| --- | --- |
+| all 60 SECURITY DEFINER functions in `public` | owned by `postgres` |
+| `current_user` outside a definer function | `service_role` |
+| `current_user` **inside** it | **`postgres`** |
+
+So `current_user <> 'postgres'` is always false inside such a function, the `and`
+never holds, and **the exception can never fire**. The guard was decorative, and
+the vault read would have succeeded for any caller holding EXECUTE — collapsing
+two independent locks into one.
+
+INVOKER inverts that. Measured through an INVOKER function reaching
+`vault.decrypted_secrets`:
+
+| caller | result |
+| --- | --- |
+| `service_role` | `ALLOWED` |
+| `authenticated` | `DENIED 42501` |
+
+Everything the wrapper needs is already within `service_role`'s own privileges:
+`rd` on `vault.decrypted_secrets` (§2.3), `X` on `create_secret` / `update_secret`
+— which are themselves DEFINER, owned by `supabase_admin` — and RLS bypass on
+`public.integration_connections`.
+
+Three consequences:
+
+- **No private schema, no delegation layer.** One function, and the design loses
+  a moving part rather than gaining one.
+- **The vault ACL becomes a real second lock.** Under DEFINER it was bypassed
+  entirely; under INVOKER it denies `authenticated` on its own, whatever the
+  EXECUTE grants say.
+- **Lints 0028 and 0029 do not apply.** Both are scoped to SECURITY DEFINER
+  functions, so this wrapper adds no finding to either.
+
+The RBAC helpers in §2.8 stay DEFINER for their own reasons; this rule applies to
+vault wrappers only.
+
+#### The documentation says the same thing, independently
+
+Measurement and Supabase's own guidance agree, and the guidance is stronger than
+the measurement:
+
+> "It is best practice to use `security invoker` (which is also the default)."
+> — Database Functions guide
+
+> "A `security definer` function runs using the same role that _created_ the
+> function." — RLS reference
+
+> **"A `security definer` function in an exposed schema is callable over the Data
+> API with the creator's privileges. Never create one in a schema listed under
+> 'Exposed schemas' in your API settings."** — RLS reference, caution box
+
+> "Default to `SECURITY INVOKER` … Use `SECURITY DEFINER` only when explicitly
+> required and explain the rationale." — Supabase's own database-functions prompt
+
+`public` is an exposed schema on this project (§2.1), so the DEFINER wrapper this
+spec first proposed was not merely weaker — it was the case the documentation
+names and forbids.
+
+This also resolves the apparent conflict with Supabase's `edge.get_secret`
+example, which guards on `current_user = 'postgres'`: that function declares only
+`LANGUAGE plpgsql`, so it is INVOKER by default, and its `current_user` really is
+the caller. The pattern was never DEFINER.
 
 ### 3.4 Permissions
 
@@ -374,7 +441,9 @@ and the string `vault.` appear nowhere under `src/` except
 
 - Lint 0011 / 0028 / 0029 report no new findings after the migration.
 - Round-trip test proves create → read → rotate → revoke through the wrapper.
-- A test asserts `authenticated` receives permission-denied from the wrapper.
+- A test asserts `authenticated` receives 42501 from the wrapper, and
+  `service_role` succeeds — the pair measured in §3.3, re-run against the real
+  function.
 - A test asserts a mismatched provider or a consumed state yields the generic
   failure, not a distinguishable error.
 - The boundary test above.
