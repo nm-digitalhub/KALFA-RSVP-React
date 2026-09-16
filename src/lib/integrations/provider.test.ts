@@ -23,13 +23,14 @@ const fixture = (id: string): ProviderDefinition => ({
   displayName: `Fixture ${id}`,
   credentialKind: 'oauth2_authorization_code',
   presentation: { type: 'bearer' },
+  capabilities: { 'thing.write': ['scope.a'] },
+  apiOrigins: ['https://example.invalid'],
   oauth: {
     server: new URL('https://example.invalid/.well-known/openid-configuration'),
     clientAuth: 'post',
-    capabilities: { 'thing.write': ['scope.a'] },
   },
   endpoint: (capability, input) => ({
-    url: `https://example.invalid/${capability}`,
+    url: new URL(`https://example.invalid/${capability}`),
     init: { method: 'POST', body: JSON.stringify(input) },
   }),
 });
@@ -74,7 +75,7 @@ describe('the provider registry', () => {
   it('a capability maps to scopes without the registry knowing what either means', () => {
     registerProvider(fixture('alpha'));
 
-    expect(getProvider('alpha')?.oauth?.capabilities['thing.write']).toEqual(['scope.a']);
+    expect(getProvider('alpha')?.capabilities['thing.write']).toEqual(['scope.a']);
   });
 
   it('the adapter owns the URL, so a caller never spells one', () => {
@@ -82,7 +83,7 @@ describe('the provider registry', () => {
 
     const request = getProvider('alpha')?.endpoint('thing.write', { a: 1 });
 
-    expect(request?.url).toBe('https://example.invalid/thing.write');
+    expect(request?.url.href).toBe('https://example.invalid/thing.write');
     expect(request?.init?.method).toBe('POST');
   });
 });
@@ -116,7 +117,9 @@ describe('the discriminated union refuses what the flow cannot do', () => {
       displayName: 'x',
       credentialKind: 'oauth2_authorization_code',
       presentation: { type: 'bearer' },
-      endpoint: () => ({ url: '' }),
+      capabilities: {},
+      apiOrigins: ['https://e.invalid'],
+      endpoint: () => ({ url: new URL('https://e.invalid') }),
       // @ts-expect-error — `oauth` is required on this arm
     } satisfies ProviderDefinition;
     expect(bad).toBeTruthy();
@@ -128,9 +131,11 @@ describe('the discriminated union refuses what the flow cannot do', () => {
       displayName: 'x',
       credentialKind: 'static',
       presentation: { type: 'bearer' },
-      endpoint: () => ({ url: '' }),
+      capabilities: {},
+      apiOrigins: ['https://e.invalid'],
+      endpoint: () => ({ url: new URL('https://e.invalid') }),
       // @ts-expect-error — `oauth?: never` on the static arm
-      oauth: { server: new URL('https://e.invalid'), clientAuth: 'post', capabilities: {} },
+      oauth: { server: new URL('https://e.invalid'), clientAuth: 'post' },
     } satisfies ProviderDefinition;
     expect(bad).toBeTruthy();
   });
@@ -141,11 +146,12 @@ describe('the discriminated union refuses what the flow cannot do', () => {
       displayName: 'x',
       credentialKind: 'oauth2_client_credentials',
       presentation: { type: 'bearer' },
-      endpoint: () => ({ url: '' }),
+      capabilities: {},
+      apiOrigins: ['https://e.invalid'],
+      endpoint: () => ({ url: new URL('https://e.invalid') }),
       oauth: {
         server: new URL('https://e.invalid'),
         clientAuth: 'basic',
-        capabilities: {},
         // @ts-expect-error — it has no authorization request to put them on
         authorizationParams: { prompt: 'consent' },
       },
@@ -159,16 +165,20 @@ describe('the discriminated union refuses what the flow cannot do', () => {
       displayName: 'x',
       credentialKind: 'oauth2_authorization_code',
       presentation: { type: 'bearer' },
-      endpoint: () => ({ url: '' }),
+      capabilities: {},
+      apiOrigins: ['https://e.invalid'],
+      endpoint: () => ({ url: new URL('https://e.invalid') }),
       // @ts-expect-error — `clientAuth` is required
-      oauth: { server: new URL('https://e.invalid'), capabilities: {} },
+      oauth: { server: new URL('https://e.invalid') },
     } satisfies ProviderDefinition;
 
     const noPresentation = {
       id: 'x',
       displayName: 'x',
       credentialKind: 'static',
-      endpoint: () => ({ url: '' }),
+      capabilities: {},
+      apiOrigins: ['https://e.invalid'],
+      endpoint: () => ({ url: new URL('https://e.invalid') }),
       // @ts-expect-error — `presentation` is required
     } satisfies ProviderDefinition;
 

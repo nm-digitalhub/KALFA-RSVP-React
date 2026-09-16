@@ -64,9 +64,9 @@ export type CredentialPresentation =
 
 /**
  * A capability is what a workflow node asks for — "write a calendar event",
- * "send a message" — never a scope string and never a connection id. The
- * accessor resolves capability → connection → token, so a node never names,
- * holds, or can leak credential material.
+ * "send a message" — never a scope string. The selected connection id is only
+ * a reference; the runtime verifies that it belongs to the expected provider,
+ * carries the right credential kind, and was granted the capability's scopes.
  */
 export type Capability = string;
 
@@ -107,12 +107,6 @@ export type ProviderOAuthCommonConfig = {
    */
   clientAuth: 'post' | 'basic' | 'none';
 
-  /**
-   * Capability → the scopes it needs. `startConnection` unions the requested
-   * capabilities' scopes; the accessor matches a stored connection's `scopes`
-   * against them when resolving.
-   */
-  capabilities: Record<Capability, string[]>;
 };
 
 /**
@@ -122,6 +116,29 @@ export type ProviderOAuthCommonConfig = {
  * token at all.
  */
 export type AuthorizationCodeOAuthConfig = ProviderOAuthCommonConfig & {
+  /**
+   * Scopes added to EVERY authorization request, whichever capabilities were
+   * selected — and never checked against a stored connection.
+   *
+   * This is where a provider that expresses durable access AS A SCOPE declares
+   * it. A provider that expresses the same thing as an authorization PARAMETER
+   * uses `authorizationParams` instead. Both shapes are in use by real servers
+   * and neither is the general case, so the two fields are named after the
+   * mechanism rather than the purpose — a field named for the outcome would be
+   * shaped like whichever server happened to be implemented first, and the
+   * second one would not fit it.
+   *
+   * ⚠️ THESE ARE NOT ACCESS-TOKEN SCOPES, AND THE DISTINCTION IS LOAD-BEARING.
+   * A scope requested to obtain a refresh token is not a permission the access
+   * token carries, and a server that grants one typically does not report it in
+   * the token response's `scope`. Listing such a scope in `capabilities` would
+   * make every runtime request demand something the server never reports as
+   * granted, so every call would fail `integration_scope_missing`. Which scopes
+   * a given server needs, and in which of the two fields, is stated by that
+   * provider's own definition — never here.
+   */
+  authorizationScopes?: string[];
+
   authorizationParams?: Record<string, string>;
 };
 
@@ -142,7 +159,8 @@ export type AuthorizationCodeOAuthConfig = ProviderOAuthCommonConfig & {
 export type ClientCredentialsOAuthConfig = ProviderOAuthCommonConfig;
 
 export type ProviderRequest = {
-  url: string;
+  /** Fully-qualified destination. The authenticated request layer validates its origin. */
+  url: URL;
   init?: RequestInit;
 };
 
@@ -161,6 +179,31 @@ type ProviderDefinitionBase = {
    * credential somewhere it does not belong.
    */
   presentation: CredentialPresentation;
+
+  /**
+   * Capability → the ACCESS-TOKEN scopes that operation requires.
+   *
+   * Two jobs, and both are confined to access-token scopes:
+   *   1. an authorization request asks for the union of the selected
+   *      capabilities' scopes, plus `oauth.authorizationScopes`;
+   *   2. the runtime checks this list against `integration_connections.scopes`
+   *      before it reads the credential.
+   *
+   * Because of (2), a scope the provider does not report as granted must never
+   * appear here. `integration_connections.scopes` holds what the token is
+   * actually valid for: the token response's `scope` when the server sends one,
+   * otherwise the requested access scopes. RFC 6749 §5.1 makes `scope`
+   * "OPTIONAL, if identical to the scope requested by the client; otherwise,
+   * REQUIRED", and §3.3 requires a server whose grant differs to send it — so
+   * the granted set is always knowable, never guessed.
+   */
+  capabilities: Record<Capability, string[]>;
+
+  /**
+   * Exact HTTPS origins that may receive this provider's credential. The runtime
+   * rejects every endpoint outside this allow-list before it reads the secret.
+   */
+  apiOrigins: readonly string[];
 
   /**
    * Turns a capability plus the node's input into a request. Keeps provider URLs
