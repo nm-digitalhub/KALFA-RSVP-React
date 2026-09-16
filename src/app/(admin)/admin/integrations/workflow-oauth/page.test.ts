@@ -5,13 +5,19 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('server-only', () => ({}));
 
-const { requirePermissionMock, hasPermissionMock, readConfigMock, listConnectionsMock } =
-  vi.hoisted(() => ({
-    requirePermissionMock: vi.fn(),
-    hasPermissionMock: vi.fn(),
-    readConfigMock: vi.fn(),
-    listConnectionsMock: vi.fn(),
-  }));
+const {
+  requirePermissionMock,
+  hasPermissionMock,
+  readConfigMock,
+  listConnectionsMock,
+  hasSystemOAuthClientMock,
+} = vi.hoisted(() => ({
+  requirePermissionMock: vi.fn(),
+  hasPermissionMock: vi.fn(),
+  readConfigMock: vi.fn(),
+  listConnectionsMock: vi.fn(),
+  hasSystemOAuthClientMock: vi.fn(),
+}));
 
 vi.mock('@/lib/auth/dal', () => ({
   requirePlatformPermission: requirePermissionMock,
@@ -22,6 +28,9 @@ vi.mock('@/lib/data/admin/integrations/oauth-provider-config', () => ({
 }));
 vi.mock('@/lib/data/admin/integrations/workflow-connections', () => ({
   listMicrosoftWorkflowConnectionsForAdmin: listConnectionsMock,
+}));
+vi.mock('@/lib/integrations/system-oauth-client', () => ({
+  hasSystemOAuthClient: hasSystemOAuthClientMock,
 }));
 vi.mock('./provider-configuration-form', () => ({
   ProviderConfigurationForm: function ProviderConfigurationForm() {
@@ -58,11 +67,21 @@ function text(node: unknown): string {
 }
 
 const configured = {
+  exists: true,
   configured: true,
   clientId: 'safe-client-id',
   enabled: true,
   createdBy: 'admin-1',
   updatedAt: '2026-09-16T11:00:00.000Z',
+};
+
+const absent = {
+  exists: false,
+  configured: false,
+  clientId: null,
+  enabled: false,
+  createdBy: null,
+  updatedAt: null,
 };
 
 async function render(oauth?: string) {
@@ -75,6 +94,7 @@ beforeEach(() => {
   hasPermissionMock.mockResolvedValue(true);
   readConfigMock.mockResolvedValue(configured);
   listConnectionsMock.mockResolvedValue([]);
+  hasSystemOAuthClientMock.mockReturnValue(false);
 });
 
 describe('Workflow OAuth admin page', () => {
@@ -85,6 +105,7 @@ describe('Workflow OAuth admin page', () => {
     expect(readConfigMock).toHaveBeenCalledWith('microsoft');
     expect(listConnectionsMock).toHaveBeenCalledTimes(1);
     expect(hasPermissionMock).toHaveBeenCalledWith('integrations.manage');
+    expect(hasSystemOAuthClientMock).toHaveBeenCalledWith('microsoft');
   });
 
   it('targets the existing OAuth start route with the exact provider, capability and return page', async () => {
@@ -101,16 +122,39 @@ describe('Workflow OAuth admin page', () => {
     expect(target.searchParams.get('redirectTo')).toBe(WORKFLOW_OAUTH_ADMIN_PATH);
   });
 
+  it('accepts system configuration when no DB row exists', async () => {
+    readConfigMock.mockResolvedValueOnce(absent);
+    hasSystemOAuthClientMock.mockReturnValueOnce(true);
+
+    const tree = await render();
+    const hrefs = collect(tree).map((element) => element.props?.href);
+
+    expect(hrefs).toContain(MICROSOFT_OAUTH_START_HREF);
+    expect(text(tree)).toContain('הגדרת מערכת');
+  });
+
   it.each([
-    [{ ...configured, configured: false }, 'יש לשמור Client ID ו-Client Secret'],
-    [{ ...configured, enabled: false }, 'הספק כבוי'],
-  ])('blocks connecting when the provider is unavailable', async (config, reason) => {
+    [{ ...configured, configured: false }, 'Client Secret'],
+    [{ ...configured, enabled: false }, 'כבוי'],
+  ])('blocks DB-backed connection when the provider row is unavailable', async (config, reason) => {
     readConfigMock.mockResolvedValueOnce(config);
+    hasSystemOAuthClientMock.mockReturnValueOnce(true);
     const tree = await render();
     const hrefs = collect(tree).map((element) => element.props?.href);
 
     expect(hrefs).not.toContain(MICROSOFT_OAUTH_START_HREF);
     expect(text(tree)).toContain(reason);
+    expect(text(tree)).toContain('הגדרת מסד נתונים');
+  });
+
+  it('blocks connecting when neither DB nor system configuration exists', async () => {
+    readConfigMock.mockResolvedValueOnce(absent);
+    const tree = await render();
+
+    expect(collect(tree).map((element) => element.props?.href)).not.toContain(
+      MICROSOFT_OAUTH_START_HREF,
+    );
+    expect(text(tree)).toContain('אינו מוגדר ברמת המערכת');
   });
 
   it('also hides mutations and connection start without integrations.manage', async () => {
@@ -124,6 +168,7 @@ describe('Workflow OAuth admin page', () => {
     expect(collect(tree).map((element) => element.props?.href)).not.toContain(
       MICROSOFT_OAUTH_START_HREF,
     );
+    expect(text(tree)).toContain('הרשאת ניהול אינטגרציות');
   });
 
   it('renders generic success and failure notices without internal details', () => {
