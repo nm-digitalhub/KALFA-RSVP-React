@@ -53,3 +53,12 @@ export function readSystemOAuthClient(
   // Do not trim the secret that is actually used for client authentication.
   return { clientId, clientSecret: rawSecret };
 }
+
+/**
+ * Boolean-only probe for Server Components and status surfaces. This keeps the
+ * secret from being materialized into UI-facing module state when the caller
+ * only needs to know whether a complete deployment client exists.
+ */
+export function hasSystemOAuthClient(providerId: string): boolean {
+  return readSystemOAuthClient(providerId) !== null;
+}
