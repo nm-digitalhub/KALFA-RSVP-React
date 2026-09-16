@@ -3684,6 +3684,8 @@ export type Database = {
           last_refresh_at: string | null
           metadata: Json
           provider: string
+          refresh_lease_id: string | null
+          refresh_lease_until: string | null
           scopes: string[]
           status: string
           updated_at: string
@@ -3700,6 +3702,8 @@ export type Database = {
           last_refresh_at?: string | null
           metadata?: Json
           provider: string
+          refresh_lease_id?: string | null
+          refresh_lease_until?: string | null
           scopes?: string[]
           status?: string
           updated_at?: string
@@ -3716,6 +3720,8 @@ export type Database = {
           last_refresh_at?: string | null
           metadata?: Json
           provider?: string
+          refresh_lease_id?: string | null
+          refresh_lease_until?: string | null
           scopes?: string[]
           status?: string
           updated_at?: string
@@ -3759,6 +3765,39 @@ export type Database = {
           redirect_to?: string
           requested_scopes?: string[]
           state_hash?: string
+        }
+        Relationships: []
+      }
+      integration_provider_configs: {
+        Row: {
+          client_id: string
+          created_at: string
+          created_by: string | null
+          enabled: boolean
+          extra: Json
+          provider: string
+          updated_at: string
+          vault_secret_id: string | null
+        }
+        Insert: {
+          client_id: string
+          created_at?: string
+          created_by?: string | null
+          enabled?: boolean
+          extra?: Json
+          provider: string
+          updated_at?: string
+          vault_secret_id?: string | null
+        }
+        Update: {
+          client_id?: string
+          created_at?: string
+          created_by?: string | null
+          enabled?: boolean
+          extra?: Json
+          provider?: string
+          updated_at?: string
+          vault_secret_id?: string | null
         }
         Relationships: []
       }
@@ -6519,6 +6558,19 @@ export type Database = {
         Args: { p_campaign: string; p_contact: string }
         Returns: boolean
       }
+      integrations_claim_credential_refresh: {
+        Args: {
+          p_connection_id: string
+          p_expected_kind: string
+          p_expected_provider: string
+          p_lease_seconds?: number
+        }
+        Returns: {
+          lease_id: string
+          lease_until: string
+          outcome: string
+        }[]
+      }
       integrations_configured_flags: {
         Args: never
         Returns: {
@@ -6545,8 +6597,44 @@ export type Database = {
         }
         Returns: string
       }
+      integrations_read_provider_secret: {
+        Args: { p_provider: string }
+        Returns: string
+      }
+      integrations_release_credential_refresh: {
+        Args: {
+          p_connection_id: string
+          p_last_error?: string
+          p_lease_id: string
+          p_next_status?: string
+        }
+        Returns: boolean
+      }
+      integrations_replace_credential: {
+        Args: {
+          p_connection_id: string
+          p_expected_kind: string
+          p_expected_provider: string
+          p_expires_at: string
+          p_lease_id: string
+          p_secret: string
+        }
+        Returns: boolean
+      }
+      integrations_upsert_provider_config: {
+        Args: {
+          p_client_id: string
+          p_created_by: string
+          p_enabled: boolean
+          p_extra: Json
+          p_provider: string
+          p_secret: string
+        }
+        Returns: undefined
+      }
       integrations_write_credential: {
         Args: {
+          p_created_by: string
           p_credential_kind: string
           p_expires_at: string
           p_label: string
