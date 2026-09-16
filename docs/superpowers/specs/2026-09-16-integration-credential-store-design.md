@@ -401,20 +401,32 @@ material. The UUID is not itself a secret, but the UI has no use for it.
 `redirect_to` from the stored row closes open-redirect before it exists. A zero-
 row CAS covers replay, expiry, and provider mismatch with one generic message.
 
-### 4.1 Provider behaviours the schema must survive
+### 4.1 Variation the infrastructure must absorb without naming anyone
 
-- **Refresh-token rotation.** Many providers return a new `refresh_token` on
-  every refresh and invalidate the old one. Refresh therefore always writes back
-  via `update_secret` on the same UUID; failing to persist kills the connection
-  silently after the first refresh.
-- **No `offline_access` / `access_type=offline` means no refresh token at all**,
-  and some providers additionally require `prompt=consent` to re-issue one on a
-  repeat authorization. `requested_scopes` records what was asked for so the UI
-  can tell the operator to reconnect.
-- **RFC 9207 `iss`** in the authorization response is the mix-up defence; a
-  hand-rolled implementation typically omits it.
-- **Disconnect must revoke**, not merely delete our row, or the token stays live
-  at the provider.
+These are properties of OAuth2 deployments in general. Each is absorbed by the
+schema or declared by a `ProviderDefinition` (§9.4) — none becomes a branch in
+this layer, and none is named after a vendor.
+
+- **Refresh-token rotation.** A provider may return a new `refresh_token` on every
+  refresh and invalidate the previous one. Refresh therefore always writes back
+  through `update_secret` on the same UUID, unconditionally; a refresh that does
+  not persist the response kills the connection silently after the first use.
+  Handled by the schema, so no adapter has to opt in.
+- **Refresh tokens are not granted by default.** A provider may require extra
+  authorization parameters before it issues one at all, and may require them
+  again on re-authorization. These live in
+  `ProviderDefinition.oauth.authorizationParams`, and `requested_scopes` records
+  what was asked for so the operator can be told to reconnect rather than left
+  with a connection that quietly stops refreshing.
+- **Client authentication differs.** Some token endpoints want the secret in the
+  body, others in the Authorization header. `clientAuth: 'post' | 'basic'`,
+  defaulting to post.
+- **Some providers publish discovery metadata and some do not.** `oauth.server`
+  accepts a discovery URL or literal server metadata, so neither case is special.
+- **RFC 9207 `iss`** is the authorization-response mix-up defence. Supplied by
+  the protocol engine (§4.3), not by an adapter.
+- **Disconnect must revoke**, not merely delete the row, or the token stays live
+  at the provider. One code path, driven by `tokenRevocation`.
 
 ### 4.2 Two lessons already paid for in this repo
 
@@ -495,55 +507,238 @@ and the string `vault.` appear nowhere under `src/` except
 - The boundary test above.
 - `npm run lint`, `npx tsc --noEmit`, `npm run build`.
 
-## 8. Why not the credential store we already have
+## 8. Rejected alternative: the credential columns already in the database
 
-`public.exchange_connections` looks like this subsystem already built:
-`credential_ciphertext`, `credential_iv`, `credential_auth_tag`,
-`encryption_key_version`, plus `auth_method`, `status`, `last_verified_at`,
-`last_error`. Measured before reusing it:
+`public.exchange_connections` carries `credential_ciphertext`, `credential_iv`,
+`credential_auth_tag` and `encryption_key_version`, so it reads at a glance like
+this subsystem already built. Measured before reusing it: **zero** occurrences of
+`createCipheriv` / `createDecipheriv` in live code, `resolveMailboxPassword()`
+returns `''`, the DAL writes `credential_ciphertext: null` outright, and the key
+name survives only in a history comment. The encryption is retired and the
+columns are a shell — there is nothing to reuse, and that table is not a model
+for this one.
 
-| check | result |
-| --- | --- |
-| `createCipheriv` / `createDecipheriv` in live code | **zero occurrences** |
-| `resolveMailboxPassword()` | returns `''` |
-| `exchange-connections.ts:244,278` | writes `credential_ciphertext: null` explicitly |
-| `EXCHANGE_EWS_ENCRYPTION_KEY` | survives only in a history comment and an env checklist |
-| production rows | 1, `auth_method = 'ntlm'`, a leftover from the EWS era |
+Two things from it do carry over, and neither is provider-shaped:
 
-The encryption is retired. There is no implementation to reuse — the columns are
-a shell.
+**The app-managed-key failure mode, recorded here rather than argued.** From
+`src/lib/exchange-ews/mailbox-credential.ts`: *"rotating that key would have taken
+scheduling down for a reason with no relationship to the cause."* One key, every
+consumer coupled to one rotation event. Vault's key is not ours to rotate, and
+§2.6 proved a rotation keeps the secret's UUID. What Vault substitutes is §2.7 —
+a key to carry across a project migration, an operational step rather than a
+coupling.
 
-### 8.1 (§2.10) The reason it was retired argues for Vault
+**The DAL shape**, in `src/lib/data/exchange-connections.ts`: closed table with
+"RLS is NOT a backstop here" stated in the file, `requirePlatformPermission` as
+the gate with `requireUser()` for identity only, `PUBLIC_COLUMNS` kept separate
+from `CREDENTIAL_COLUMNS`, and *"never accept a user id as a parameter from a
+caller; always take it from the verified session."*
+`src/lib/integrations/credentials.ts` follows that file's shape.
 
-From `src/lib/exchange-ews/mailbox-credential.ts`:
+Dropping the dead columns is a separate change with its own migration and
+approval. This design does not touch that table.
 
-> "the certificate-authenticated calendar had a hard dependency on
-> `EXCHANGE_EWS_ENCRYPTION_KEY`, and **rotating that key would have taken
-> scheduling down** for a reason with no relationship to the cause."
+## 9. The four infrastructure components
 
-An app-managed key couples every consumer to one rotation event. Vault's key is
-not ours to rotate, and §2.6 proved a secret rotation keeps its UUID. The cost
-Vault substitutes is §2.7 — a key we must carry across a project migration, which
-is an operational step rather than a coupling.
+This layer knows nothing about any provider. Google, Microsoft, Slack, Notion,
+Meta, an SMS gateway, a CRM, a bespoke API — all are future *consumers*, and none
+of them may appear in a table, a column, a function signature, or an enum here.
 
-### 8.2 What *is* worth reusing: the DAL shape
+```
+Workflow Node
+     ↓
+Integration / Provider Adapter        ← per-provider, out of scope for this stage
+     ↓
+KALFA Credential Accessor             ← 4
+     ↓
+public.integration_connections        ← 1
+     ↓
+Supabase Vault                        ← 3
+```
 
-`src/lib/data/exchange-connections.ts` already encodes every rule this design
-needs, and predates it:
+```
+startConnection(provider)
+     ↓
+public.integration_oauth_states       ← 2
+     ↓
+OAuth provider
+     ↓
+one generic callback
+     ↓
+openid-client (protocol engine, not an integration)
+     ↓
+Vault + integration_connections
+```
 
-- closed table — RLS enabled, zero policies, grants revoked, service-role client,
-  with "RLS is NOT a backstop here" stated in the file
-- `requirePlatformPermission(...)` as the gate, `requireUser()` for identity only
-- `PUBLIC_COLUMNS` and `CREDENTIAL_COLUMNS` as separate constants, so a metadata
-  read cannot accidentally select credential material
-- "Never accept a user id as a parameter from a caller; always take it from the
-  verified session"
+### 9.1 Permission matrix — complete, all four roles
 
-`src/lib/integrations/credentials.ts` follows this file rather than inventing a
-shape.
+`anon` and `authenticated` receive table grants **automatically** on anything
+created in `public`. Measured:
 
-### 8.3 Out of scope
+```
+public.guests                 postgres  anon=adDxtm  authenticated=arwdDxtm  service_role
+public.exchange_connections   postgres                                       service_role
+```
 
-The dead credential columns on `exchange_connections` are vestigial and could be
-dropped. That is a separate change with its own migration and approval; this
-design does not touch that table.
+RLS does not remove a GRANT. A closed table needs both: RLS enabled *and* the
+default grants revoked, which is why the second row is short.
+
+| object | anon | authenticated | service_role | postgres |
+| --- | --- | --- | --- | --- |
+| `integration_connections` | revoked | revoked | full (RLS bypassed) | owner |
+| `integration_oauth_states` | revoked | revoked | full (RLS bypassed) | owner |
+| `integrations_read_credential()` — INVOKER | revoked | revoked | EXECUTE | owner |
+| `integrations_write_credential()` — INVOKER | revoked | revoked | EXECUTE | owner |
+| `vault.decrypted_secrets` | none (measured) | none (measured) | `rd` (measured) | `r*d*D*x*` |
+| `vault.create_secret` / `update_secret` | none | none | `X` (measured) | `X*` |
+
+Both tables: RLS **enabled with zero policies**. Under `service_role` RLS is
+bypassed, so the policies would be decoration; under any other role the grant is
+already gone. RLS stays on because a table in an exposed schema must have it, and
+because it is the backstop if a grant is ever restored by accident.
+
+Because the accessor functions are `SECURITY INVOKER`, EXECUTE is necessary but
+not sufficient: the caller must also hold privileges on everything the body
+touches. `service_role` does. `authenticated` fails at `vault.decrypted_secrets`
+with 42501 even if EXECUTE were granted by mistake — two independent locks, not
+one.
+
+`postgres` appears in the matrix as the owner, not as a consumer. No application
+path runs as `postgres` today (§2.2).
+
+### 9.2 Transaction boundaries
+
+**Creating a connection is one transaction, inside one RPC.** A secret in Vault
+and a row in `integration_connections` must not be able to exist without each
+other: a secret with no row is unreachable garbage, a row with no secret is a
+connection that fails at first use.
+
+```
+integrations_write_credential(provider, credential_kind, scopes, metadata, secret)
+  ├─ vault.create_secret(secret, 'conn:' || <generated id>, …)  → uuid
+  ├─ insert into public.integration_connections (…, vault_secret_id = uuid)
+  └─ return connection id
+```
+
+PostgREST runs each RPC in its own transaction, so either both land or neither
+does. No compensation logic, no orphan sweeper.
+
+**Rotation is likewise one transaction:** `vault.update_secret(same uuid, …)`
+plus the row's `expires_at` / `last_refresh_at`, in one function. §2.6 proved the
+UUID survives an update, which is what makes this a single write rather than a
+delete-and-recreate.
+
+**The OAuth state CAS is a single statement:**
+
+```sql
+update public.integration_oauth_states
+   set consumed_at = now()
+ where state_hash = $1 and provider = $2
+   and consumed_at is null and expires_at > now()
+returning code_verifier, redirect_to, requested_scopes, created_by;
+```
+
+Zero rows means replay, expiry, or provider mismatch — indistinguishable to the
+caller by design.
+
+**The one boundary that cannot be a transaction** is the token exchange, which is
+a network call sitting between the CAS and the write:
+
+```
+T1  consume state (atomic)
+──  exchange code at the provider (network, no transaction)
+T2  write secret + connection (atomic)
+```
+
+If T2 fails, the state is consumed and the authorization code is spent. That is
+correct rather than unfortunate — codes are single-use at the provider too, so
+the only safe recovery is a fresh authorization. The failure is recorded and the
+operator reconnects; nothing is left half-written, because T2 is all-or-nothing.
+
+### 9.3 Generic schema — no provider may be named in it
+
+```
+public.integration_connections
+  id                uuid pk
+  provider          text            -- free identifier, no enum, no check list
+  credential_kind   text            -- 'oauth2' | 'api_key' | 'basic' | …
+  label             text            -- operator-facing name for this connection
+  status            text            -- 'pending' | 'active' | 'expired' | 'revoked' | 'failed'
+  scopes            text[]
+  vault_secret_id   uuid            -- the only link to secret material
+  expires_at        timestamptz
+  last_refresh_at   timestamptz
+  last_error        text
+  metadata          jsonb           -- adapter-defined, opaque here
+  created_by        uuid
+  created_at / updated_at
+
+public.integration_oauth_states
+  id                uuid pk
+  state_hash        text            -- sha256 of the state sent to the provider
+  provider          text
+  code_verifier     text            -- PKCE, temporary, short TTL
+  redirect_to       text
+  requested_scopes  text[]
+  created_by        uuid
+  created_at / expires_at / consumed_at
+```
+
+`provider` is deliberately `text` and not an enum: adding a provider must be a
+registry entry in application code, never a migration. `metadata` is `jsonb` for
+the same reason — whatever one provider needs and another does not lives there,
+and this layer never reads inside it.
+
+Nothing named after a vendor appears above. A column called
+`microsoft_refresh_token` or `google_client_secret` would be a design failure,
+not a convenience.
+
+### 9.4 How a new provider attaches — interface only
+
+A provider is a record in a registry plus an adapter. No schema change, no
+migration, no new table.
+
+```ts
+// src/lib/integrations/provider.ts — the contract, no implementations
+export type ProviderId = string;
+
+export type ProviderDefinition = {
+  id: ProviderId;
+  credentialKind: 'oauth2' | 'api_key' | 'basic';
+
+  /** OAuth2 providers only. Shaped for openid-client's Configuration. */
+  oauth?: {
+    /** Discovery URL, or literal server metadata when the provider has none. */
+    server: URL | ServerMetadata;
+    clientAuth?: 'post' | 'basic';
+    /** Extra authorization params — where offline-access style flags live. */
+    authorizationParams?: Record<string, string>;
+    /** Capability → scope strings. The accessor resolves by capability. */
+    capabilities: Record<string, string[]>;
+  };
+
+  /** Where a capability's requests go. Keeps URLs out of node handlers. */
+  endpoint(capability: string, input: unknown): { url: string; init?: RequestInit };
+
+  /** Optional: label a fresh connection from the provider's own account data. */
+  describeAccount?(response: Response): Promise<{ label: string; metadata?: unknown }>;
+};
+
+export function registerProvider(def: ProviderDefinition): void;
+```
+
+Adding a provider is then:
+
+1. write a `ProviderDefinition`,
+2. `registerProvider(...)`,
+3. store its client credentials through the same write path every connection uses.
+
+The accessor, the tables, the RPCs, the callback route, and the refresh cycle are
+untouched. That is the test of whether this layer is generic: if adding the
+second provider requires editing any of them, it is not.
+
+### 9.5 Explicitly out of scope at this stage
+
+No provider implementation, no vendor SDK, no client credentials, no
+provider-specific columns or enums. `openid-client` is the protocol engine behind
+the adapters and is not itself an integration.
