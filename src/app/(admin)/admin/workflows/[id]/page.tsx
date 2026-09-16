@@ -10,7 +10,8 @@ import { getWorkflow, listWorkflowRuns } from "@/lib/data/admin/workflows";
 import { readOAuthProviderConfig } from "@/lib/data/admin/integrations/oauth-provider-config";
 import { listProviderNumbers } from "@/lib/data/admin/integrations/provider-numbers";
 import { listActiveMicrosoftWorkflowConnections } from "@/lib/data/admin/integrations/workflow-connections";
-import { readSystemOAuthClient } from "@/lib/integrations/system-oauth-client";
+import { resolveOAuthProviderAvailability } from "@/lib/integrations/provider-availability";
+import { hasSystemOAuthClient } from "@/lib/integrations/system-oauth-client";
 
 import { saveWorkflowAction } from "../actions";
 
@@ -28,19 +29,9 @@ import { WorkflowEditor } from "./workflow-editor";
 
 export const metadata: Metadata = { title: "עריכת תהליך" };
 
-/**
- * Run states, in the product's own language.
- *
- * The column printed the raw column value, so an owner reading a Hebrew screen
- * met `waiting` in English the day `logic.wait` shipped. Unknown values fall
- * through to the raw string rather than to a guess: a state nobody translated is
- * still more useful shown than hidden.
- */
 const RUN_STATUS_HE: Record<string, string> = {
   pending: "ממתינה בתור",
   running: "רצה",
-  // Not "waiting in queue" — this one is parked on a `logic.wait` deadline, and
-  // conflating the two would make a run that sleeps for two days look stuck.
   waiting: "בהמתנה מתוזמנת",
   completed: "הושלמה",
   incomplete: "הסתיימה חלקית",
@@ -63,57 +54,26 @@ export default async function AdminWorkflowPage({
 
   const runs = await listWorkflowRuns(id, 20);
 
-  // The WhatsApp lines the trigger node may be pointed at.
-  //
-  // Read HERE and passed down because the palette is built in the browser and
-  // the numbers are rows. No new permission: `getWorkflow` above already
-  // requires `manage_settings`, which is exactly what this reader requires, so
-  // anyone who can open this page could already see them.
-  //
-  // INACTIVE NUMBERS ARE NOT OFFERED — including one deleted at Meta, which the
-  // sync now switches off. A workflow already pointing at such a number keeps
-  // working: matching is against the stored phone_number_id, never against this
-  // list. The list answers "what may be chosen today", not "what is still valid".
-  // The voice agents that are actually configured, for the call node's dropdown.
-  // Rows, not a constant: a purpose added today must appear without a deploy.
-  //
-  // ⚠️ `listDialable…`, not `listVoicePurposes`: a built-in or rule-less purpose
-  // is refused by the dialler, so offering it here would let an owner arm a
-  // workflow that cannot place its call. See the function's own note.
   const voicePurposes = (await listDialableVoicePurposes()).map((p) => ({
     key: p.key,
     displayName: p.displayName,
   }));
 
-  // ONE READ, TWO LISTS. Both dropdowns are fed by `provider_numbers`, which is
-  // the synced mirror of what each vendor says the account owns — so neither
-  // costs a vendor round trip here.
   const providerNumbers = await listProviderNumbers();
 
-  // Display metadata only. The editor stores the selected UUID in connectionId;
-  // no token, secret, label, or connection object enters the workflow JSON.
-  //
-  // Microsoft can be provisioned either through the operator-facing DB config
-  // or as deployment infrastructure through INTEGRATION_OAUTH_MICROSOFT_*.
-  // The latter is what keeps the normal workflow UX n8n-like: a user connects
-  // an account from the node without first visiting a provider setup screen.
   const [microsoftConnections, microsoftConfig, canManageIntegrations] =
     await Promise.all([
       listActiveMicrosoftWorkflowConnections(),
       readOAuthProviderConfig("microsoft"),
       hasPlatformPermission("integrations.manage"),
     ]);
-  const systemMicrosoftConfig = readSystemOAuthClient("microsoft") !== null;
-  const microsoftProviderAvailable =
-    (microsoftConfig.configured && microsoftConfig.enabled) ||
-    systemMicrosoftConfig;
-  const canConnectMicrosoft =
-    canManageIntegrations && microsoftProviderAvailable;
-  const microsoftConnectionUnavailableReason = canConnectMicrosoft
-    ? null
-    : !canManageIntegrations
-      ? "נדרשת הרשאת ניהול אינטגרציות כדי לחבר חשבון חדש."
-      : "חיבור Microsoft 365 אינו מוגדר ברמת המערכת.";
+
+  const microsoftAvailability = resolveOAuthProviderAvailability({
+    config: microsoftConfig,
+    systemConfigured: hasSystemOAuthClient("microsoft"),
+    canManage: canManageIntegrations,
+    providerName: "Microsoft 365",
+  });
 
   const whatsappNumbers = providerNumbers
     .filter(
@@ -125,18 +85,6 @@ export default async function AdminWorkflowPage({
       label: `${n.e164 ?? n.providerRef} — ${n.displayLabel ?? "ללא שם"}`,
     }));
 
-  // The numbers a call may go out FROM.
-  //
-  // ⚠️ KEYED ON `e164`, NOT ON `providerRef` — and the difference is load-bearing.
-  // The WhatsApp list above matches on the provider's own id because that is what
-  // an inbound webhook carries. This one is handed to `VoxEngine.callPSTN(to,
-  // callerid)` as the caller id, and that argument is a NUMBER. A `phone_id`
-  // there would present as an invalid CLI, so a row with no synced E.164 is not
-  // offerable at all.
-  //
-  // Deactivated numbers are excluded for the same reason as there: the list says
-  // what may be chosen today. A node already pointing at one keeps its stored
-  // value — matching never consults this list.
   const voiceCallerIds = providerNumbers
     .filter((n) => n.provider === "voximplant" && n.e164 !== null && n.isActive)
     .map((n) => ({
@@ -144,15 +92,8 @@ export default async function AdminWorkflowPage({
       label: `${n.e164} — ${n.displayLabel ?? "ללא שם"}`,
     }));
 
-  // NAMES ONLY — `listSecretNames` strips the values, and this is a server
-  // component, so the environment is read here and never shipped. An empty list
-  // is a legitimate state (no secret has been configured yet) and the header
-  // control says so with the instruction rather than showing nothing.
   const secretNames = listSecretNames();
 
-  // The stored jsonb is parsed before it reaches the editor. A row that cannot
-  // be parsed opens as an empty canvas rather than crashing the page — the
-  // owner can always draw their way out, which is not true if the route throws.
   const parsed = editorDiagramSchema.safeParse(workflow.definition);
   const nodes = parsed.success ? parsed.data.nodes : [];
   const edges = parsed.success ? parsed.data.edges : [];
@@ -195,10 +136,8 @@ export default async function AdminWorkflowPage({
         voicePurposes={voicePurposes}
         voiceCallerIds={voiceCallerIds}
         microsoftConnections={microsoftConnections}
-        canConnectMicrosoft={canConnectMicrosoft}
-        microsoftConnectionUnavailableReason={
-          microsoftConnectionUnavailableReason
-        }
+        canConnectMicrosoft={microsoftAvailability.canConnect}
+        microsoftConnectionUnavailableReason={microsoftAvailability.reason}
         secretNames={secretNames}
         saveAction={saveWorkflowAction}
       />
@@ -215,12 +154,6 @@ export default async function AdminWorkflowPage({
           </p>
         ) : (
           <>
-            {/*
-              Cards on a phone, the table from `lg` up — the same shape as the
-              workflow list, and for the reason recorded there: a `min-w` table
-              on this page put "מעקב", and with it the cancel button, off-frame
-              with no way to reach them.
-            */}
             <ul className="space-y-3 lg:hidden">
               {runs.map((run) => (
                 <li
@@ -247,8 +180,6 @@ export default async function AdminWorkflowPage({
                       </dd>
                     </div>
                   </dl>
-                  {/* Only when there IS one — an empty "שגיאה:" label on every
-                      successful run is noise on the screen with the least room. */}
                   {run.errorMessage ? (
                     <p className="text-sm text-destructive">
                       {run.errorMessage}
@@ -296,12 +227,6 @@ export default async function AdminWorkflowPage({
                       <td className="p-3">
                         <div className="flex flex-wrap items-start gap-2">
                           <RunWatchButton runId={run.id} />
-                          {/* Queued OR PARKED. `cancelRun` refuses anything else,
-                              because the vendored runner cannot be interrupted
-                              once it is inside runGraph — which is exactly why a
-                              parked run CAN be cancelled: it is not inside it. It
-                              is a row with a deadline and a job that has not
-                              fired, and `logic.wait` allows up to a year of that. */}
                           {(run.status === "pending" ||
                             run.status === "waiting") && (
                             <CancelRunButton
