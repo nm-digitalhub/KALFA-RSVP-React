@@ -464,10 +464,14 @@ itself.** §3.2 stands unchanged as a contract; only its body is now library cod
 
 **Non-OIDC providers need no discovery.** `new Configuration(serverMetadata,
 clientId, clientSecret, clientAuth)` accepts hand-written server metadata
-(`:1137`), so a plain-OAuth2 provider is configured as a literal. Client
-authentication defaults to `ClientSecretPost`; providers requiring
-`ClientSecretBasic` select it per provider, so the provider record carries the
-method rather than assuming one.
+(`:1137`), so a plain-OAuth2 provider is configured as a literal. Client authentication is
+declared per provider and **never** left to the library's default, because that
+default is conditional: *"The default is `ClientSecretPost` if
+`ClientMetadata.client_secret` is present, `None` otherwise."* A provider whose
+secret went missing would silently downgrade to public-client authentication
+instead of failing, so `clientAuth` is required and carries three values —
+`None()` sends `client_id` as a form parameter and no secret, which is correct
+for a public client and not an escape hatch.
 
 `config[customFetch]` is the documented hook for wrapping the transport — this
 is where provider rate limiting and retry belong, answering the `graph-client.ts`

@@ -70,76 +70,136 @@ export type CredentialPresentation =
  */
 export type Capability = string;
 
-export type ProviderOAuthConfig = {
+/**
+ * What every OAuth2 flow needs, whichever grant it uses.
+ *
+ * Split from the flow-specific halves below because the library draws the same
+ * line: `Configuration` takes server metadata, client id, client metadata and a
+ * `ClientAuth`, and is then handed unchanged to `authorizationCodeGrant`,
+ * `refreshTokenGrant` and `clientCredentialsGrant` alike. Everything that
+ * differs between grants is passed per call, not held on the configuration.
+ */
+export type ProviderOAuthCommonConfig = {
   /**
-   * A discovery URL when the provider publishes one, or literal server
-   * metadata when it does not. `openid-client` accepts both — plain OAuth2
-   * providers with no discovery document are not a special case.
+   * A discovery URL when the provider publishes one, or literal server metadata
+   * when it does not — `new Configuration(serverMetadata, …)` accepts the second
+   * form, so a plain-OAuth2 provider with no discovery document is not a special
+   * case.
    */
   server: URL | ServerMetadata;
 
   /**
-   * Where the client secret goes at the token endpoint. Providers differ and
-   * neither is a safe assumption, so the adapter states it. `openid-client`
-   * defaults to `post` when omitted.
+   * How the client authenticates at the token endpoint. **Required, and three
+   * values rather than two.**
+   *
+   * ⚠️ The library's default is CONDITIONAL, which is exactly why we do not rely
+   * on it: *"The default is `ClientSecretPost` if `ClientMetadata.client_secret`
+   * is present, `None` otherwise."* A provider whose secret is missing for any
+   * reason would silently downgrade to public-client authentication instead of
+   * failing. Client authentication is one of the two most security-sensitive
+   * fields in this contract, so a provider states it outright.
+   *
+   * `'none'` is a legitimate value, not an escape hatch: `None()` sends
+   * `client_id` as a form parameter and no secret, which is correct for a public
+   * client. `private_key_jwt` and mTLS exist in the library and are deliberately
+   * absent here — adding them later widens this union without touching the
+   * database.
    */
-  clientAuth?: 'post' | 'basic';
+  clientAuth: 'post' | 'basic' | 'none';
 
   /**
-   * Extra authorization-request parameters. This is where a provider's
-   * requirements for issuing a refresh token at all live — several will not
-   * issue one without an explicit flag, and some require it again on
-   * re-authorization. Declared per provider so no branch for it exists in the
-   * shared flow.
-   */
-  authorizationParams?: Record<string, string>;
-
-  /**
-   * Capability → the scopes that capability needs. `startConnection` unions the
-   * requested capabilities' scopes; the accessor matches a stored connection's
-   * `scopes` against them when resolving.
+   * Capability → the scopes it needs. `startConnection` unions the requested
+   * capabilities' scopes; the accessor matches a stored connection's `scopes`
+   * against them when resolving.
    */
   capabilities: Record<Capability, string[]>;
 };
+
+/**
+ * Authorization-code only. `buildAuthorizationUrl` supplies `client_id` and
+ * `response_type` itself, so this carries only what a specific provider adds on
+ * top — most commonly the flags some require before they will issue a refresh
+ * token at all.
+ */
+export type AuthorizationCodeOAuthConfig = ProviderOAuthCommonConfig & {
+  authorizationParams?: Record<string, string>;
+};
+
+/**
+ * Client-credentials needs nothing beyond the common configuration: no redirect,
+ * no PKCE, no state, and `clientCredentialsGrant(config, parameters?)` takes its
+ * parameters per call.
+ *
+ * Named rather than aliased inline so the discriminated union reads
+ * symmetrically and a future addition has somewhere to land.
+ *
+ * ⚠️ NO SHARED `tokenEndpointParams` FIELD, DELIBERATELY. Each grant accepts its
+ * own parameters — `authorizationCodeGrant`, `refreshTokenGrant` and
+ * `clientCredentialsGrant` all take a separate argument — so one shared field
+ * would invent a coupling the library does not have. It gets added when a
+ * provider actually needs it, per operation, not in anticipation.
+ */
+export type ClientCredentialsOAuthConfig = ProviderOAuthCommonConfig;
 
 export type ProviderRequest = {
   url: string;
   init?: RequestInit;
 };
 
-export type ProviderDefinition = {
+type ProviderDefinitionBase = {
   id: ProviderId;
-  credentialKind: CredentialKind;
 
   /** Operator-facing name. Used for the default connection label. */
   displayName: string;
 
-  /** How the accessor attaches this provider's credential. Defaults to bearer. */
-  presentation?: CredentialPresentation;
-
   /**
-   * Present for both OAuth2 kinds. Optional on purpose: `authorization` must not
-   * be assumed to mean "a redirect" — the library also implements Device
-   * Authorization and CIBA, which poll instead, and a `static` provider has no
-   * authorization step at all.
+   * How the accessor attaches this provider's credential. **Required.**
+   *
+   * No implicit default, for the same reason as `clientAuth`: these are the two
+   * most security-sensitive fields in the contract, and a silent fallback to
+   * bearer would mean a provider that wanted a custom header quietly sent its
+   * credential somewhere it does not belong.
    */
-  oauth?: ProviderOAuthConfig;
+  presentation: CredentialPresentation;
 
   /**
-   * Turns a capability plus the node's input into a request. Keeps provider
-   * URLs and payload shapes out of node handlers — a handler says what it
-   * wants, the adapter says where that goes, and the accessor attaches the
-   * credential.
+   * Turns a capability plus the node's input into a request. Keeps provider URLs
+   * and payload shapes out of node handlers — a handler says what it wants, the
+   * adapter says where that goes, and the accessor attaches the credential.
    */
   endpoint(capability: Capability, input: unknown): ProviderRequest;
 
   /**
-   * Optional. Called once after a connection is established, with the
-   * provider's own account response, so a connection can be labelled with
-   * something an operator recognises instead of a uuid.
+   * Optional. Called once after a connection is established, with the provider's
+   * own account response, so a connection can be labelled with something an
+   * operator recognises instead of a uuid.
    */
   describeAccount?(response: Response): Promise<{ label: string; metadata?: unknown }>;
 };
+
+/**
+ * Discriminated on `credentialKind`, so the compiler enforces what the flow
+ * already requires: an authorization-code provider cannot omit its OAuth block,
+ * a client-credentials provider cannot declare authorization parameters it will
+ * never send, and a `static` provider cannot carry OAuth configuration at all.
+ *
+ * `oauth?: never` on the static arm is the part that earns this shape. Without
+ * it a `static` provider could hold an OAuth block that nothing would ever read
+ * — configuration that looks meaningful and is not.
+ */
+export type ProviderDefinition =
+  | (ProviderDefinitionBase & {
+      credentialKind: 'oauth2_authorization_code';
+      oauth: AuthorizationCodeOAuthConfig;
+    })
+  | (ProviderDefinitionBase & {
+      credentialKind: 'oauth2_client_credentials';
+      oauth: ClientCredentialsOAuthConfig;
+    })
+  | (ProviderDefinitionBase & {
+      credentialKind: 'static';
+      oauth?: never;
+    });
 
 // Module-level, like the SDK's own plugin registries: registration happens once
 // at import time and the map is read on every resolve. A duplicate id REPLACES

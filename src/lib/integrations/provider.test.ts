@@ -22,8 +22,10 @@ const fixture = (id: string): ProviderDefinition => ({
   id,
   displayName: `Fixture ${id}`,
   credentialKind: 'oauth2_authorization_code',
+  presentation: { type: 'bearer' },
   oauth: {
     server: new URL('https://example.invalid/.well-known/openid-configuration'),
+    clientAuth: 'post',
     capabilities: { 'thing.write': ['scope.a'] },
   },
   endpoint: (capability, input) => ({
@@ -99,5 +101,77 @@ describe('the contract stays provider-agnostic', () => {
     for (const vendor of ['google', 'microsoft', 'slack', 'notion', 'hubspot', 'meta', 'azure']) {
       expect(source).not.toMatch(new RegExp(`\\b${vendor}\\b`, 'i'));
     }
+  });
+});
+
+// Type-level assertions. `@ts-expect-error` is the inverse of a suppression: the
+// build FAILS if the error it names does not occur, so each of these is a test
+// that the union still refuses what it is meant to refuse. They are checked by
+// `tsc --noEmit`, which covers test files, and run here so the file that owns
+// the contract also owns its proof.
+describe('the discriminated union refuses what the flow cannot do', () => {
+  it('⚠️ an authorization-code provider cannot omit its OAuth block', () => {
+    const bad = {
+      id: 'x',
+      displayName: 'x',
+      credentialKind: 'oauth2_authorization_code',
+      presentation: { type: 'bearer' },
+      endpoint: () => ({ url: '' }),
+      // @ts-expect-error — `oauth` is required on this arm
+    } satisfies ProviderDefinition;
+    expect(bad).toBeTruthy();
+  });
+
+  it('⚠️ a static provider cannot carry OAuth configuration', () => {
+    const bad = {
+      id: 'x',
+      displayName: 'x',
+      credentialKind: 'static',
+      presentation: { type: 'bearer' },
+      endpoint: () => ({ url: '' }),
+      // @ts-expect-error — `oauth?: never` on the static arm
+      oauth: { server: new URL('https://e.invalid'), clientAuth: 'post', capabilities: {} },
+    } satisfies ProviderDefinition;
+    expect(bad).toBeTruthy();
+  });
+
+  it('⚠️ a client-credentials provider cannot declare authorizationParams', () => {
+    const bad = {
+      id: 'x',
+      displayName: 'x',
+      credentialKind: 'oauth2_client_credentials',
+      presentation: { type: 'bearer' },
+      endpoint: () => ({ url: '' }),
+      oauth: {
+        server: new URL('https://e.invalid'),
+        clientAuth: 'basic',
+        capabilities: {},
+        // @ts-expect-error — it has no authorization request to put them on
+        authorizationParams: { prompt: 'consent' },
+      },
+    } satisfies ProviderDefinition;
+    expect(bad).toBeTruthy();
+  });
+
+  it('⚠️ clientAuth and presentation are required — no implicit defaults', () => {
+    const noClientAuth = {
+      id: 'x',
+      displayName: 'x',
+      credentialKind: 'oauth2_authorization_code',
+      presentation: { type: 'bearer' },
+      endpoint: () => ({ url: '' }),
+      // @ts-expect-error — `clientAuth` is required
+      oauth: { server: new URL('https://e.invalid'), capabilities: {} },
+    } satisfies ProviderDefinition;
+
+    const noPresentation = {
+      id: 'x',
+      displayName: 'x',
+      credentialKind: 'static',
+      endpoint: () => ({ url: '' }),
+      // @ts-expect-error — `presentation` is required
+    } satisfies ProviderDefinition;
+
+    expect(noClientAuth && noPresentation).toBeTruthy();
   });
 });
