@@ -10,6 +10,7 @@ import { getWorkflow, listWorkflowRuns } from "@/lib/data/admin/workflows";
 import { readOAuthProviderConfig } from "@/lib/data/admin/integrations/oauth-provider-config";
 import { listProviderNumbers } from "@/lib/data/admin/integrations/provider-numbers";
 import { listActiveMicrosoftWorkflowConnections } from "@/lib/data/admin/integrations/workflow-connections";
+import { readSystemOAuthClient } from "@/lib/integrations/system-oauth-client";
 
 import { saveWorkflowAction } from "../actions";
 
@@ -91,23 +92,28 @@ export default async function AdminWorkflowPage({
 
   // Display metadata only. The editor stores the selected UUID in connectionId;
   // no token, secret, label, or connection object enters the workflow JSON.
+  //
+  // Microsoft can be provisioned either through the operator-facing DB config
+  // or as deployment infrastructure through INTEGRATION_OAUTH_MICROSOFT_*.
+  // The latter is what keeps the normal workflow UX n8n-like: a user connects
+  // an account from the node without first visiting a provider setup screen.
   const [microsoftConnections, microsoftConfig, canManageIntegrations] =
     await Promise.all([
       listActiveMicrosoftWorkflowConnections(),
       readOAuthProviderConfig("microsoft"),
       hasPlatformPermission("integrations.manage"),
     ]);
+  const systemMicrosoftConfig = readSystemOAuthClient("microsoft") !== null;
+  const microsoftProviderAvailable =
+    (microsoftConfig.configured && microsoftConfig.enabled) ||
+    systemMicrosoftConfig;
   const canConnectMicrosoft =
-    canManageIntegrations &&
-    microsoftConfig.configured &&
-    microsoftConfig.enabled;
+    canManageIntegrations && microsoftProviderAvailable;
   const microsoftConnectionUnavailableReason = canConnectMicrosoft
     ? null
     : !canManageIntegrations
       ? "נדרשת הרשאת ניהול אינטגרציות כדי לחבר חשבון חדש."
-      : !microsoftConfig.configured
-        ? "יש להגדיר תחילה את ספק Microsoft בעמוד האינטגרציות."
-        : "ספק Microsoft כבוי. יש להפעיל אותו בעמוד האינטגרציות.";
+      : "חיבור Microsoft 365 אינו מוגדר ברמת המערכת.";
 
   const whatsappNumbers = providerNumbers
     .filter(
