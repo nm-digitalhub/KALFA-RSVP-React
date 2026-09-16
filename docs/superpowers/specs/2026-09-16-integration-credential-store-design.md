@@ -525,6 +525,54 @@ comes back.
 **`fetchProtectedResource(config, access_token, url, method)`** is the call the
 accessor wraps, exactly as the example ends.
 
+
+### 4.5 Grant types beyond authorization-code, and the bundling check
+
+The library's README lists grants this design had quietly assumed away.
+
+**`clientCredentialsGrant(config, { scope, resource })` is a second path, and it
+skips most of this document.** A provider that authenticates as the application
+rather than on behalf of a person needs no redirect, no PKCE, no `state`, and
+therefore **no `integration_oauth_states` row at all**. It goes straight to a
+Vault secret and a connection row.
+
+That is a generalization the flow in §4 was missing, and it changes
+`credential_kind` from a label into a discriminator:
+
+| `credential_kind` | authorization | `integration_oauth_states` | refresh |
+| --- | --- | --- | --- |
+| `oauth2` | redirect + callback | yes | `refreshTokenGrant` |
+| `oauth2_client_credentials` | none — server to server | **no** | re-issue via `clientCredentialsGrant` |
+| `api_key` / `basic` | none — operator pastes it | no | none |
+
+`startConnection` therefore branches once, on `credential_kind`, and only the
+`oauth2` arm touches the states table. Nothing else in the design moves.
+
+**Two further grants exist and are deliberately unbuilt:** Device Authorization
+(`initiateDeviceAuthorization` / `pollDeviceAuthorizationGrant`) and CIBA. Both
+are polling flows with no redirect. They are out of scope now, and the point of
+recording them is that `ProviderDefinition` must not encode "authorization means
+a redirect" as an assumption — which is why `oauth` is an optional block rather
+than a required one.
+
+**ESM-only, and the worker bundles to CJS.** `openid-client` is
+`"type": "module"` with a Node 20 baseline. `worker:build` runs
+`esbuild --bundle --platform=node --format=cjs --target=node24`, and this repo
+has been bitten before by a dependency that does not survive that conversion
+(`worker.cjs` and `import.meta.url`). Measured with the worker's exact flags:
+
+```
+probe.cjs  9.1kb
+verifier len: 43 | state len: 43 | challenge len: 43
+Configuration built: https://example.invalid
+CJS BUNDLE OK
+```
+
+PKCE, state and `new Configuration(literal metadata, …)` all work after
+conversion, so the refresh cycle may run in the worker. The same probe also
+confirms a provider with no discovery document needs nothing more than `issuer`
+and `token_endpoint`.
+
 ## 5. Enforcement
 
 No import-boundary linting exists in this repo. The established mechanism is a
