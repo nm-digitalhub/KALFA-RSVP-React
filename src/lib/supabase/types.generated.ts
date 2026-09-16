@@ -3672,6 +3672,96 @@ export type Database = {
           },
         ]
       }
+      integration_connections: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          credential_kind: string
+          expires_at: string | null
+          id: string
+          label: string
+          last_error: string | null
+          last_refresh_at: string | null
+          metadata: Json
+          provider: string
+          scopes: string[]
+          status: string
+          updated_at: string
+          vault_secret_id: string | null
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          credential_kind: string
+          expires_at?: string | null
+          id?: string
+          label: string
+          last_error?: string | null
+          last_refresh_at?: string | null
+          metadata?: Json
+          provider: string
+          scopes?: string[]
+          status?: string
+          updated_at?: string
+          vault_secret_id?: string | null
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          credential_kind?: string
+          expires_at?: string | null
+          id?: string
+          label?: string
+          last_error?: string | null
+          last_refresh_at?: string | null
+          metadata?: Json
+          provider?: string
+          scopes?: string[]
+          status?: string
+          updated_at?: string
+          vault_secret_id?: string | null
+        }
+        Relationships: []
+      }
+      integration_oauth_states: {
+        Row: {
+          code_verifier: string
+          consumed_at: string | null
+          created_at: string
+          created_by: string
+          expires_at: string
+          id: string
+          provider: string
+          redirect_to: string
+          requested_scopes: string[]
+          state_hash: string
+        }
+        Insert: {
+          code_verifier: string
+          consumed_at?: string | null
+          created_at?: string
+          created_by: string
+          expires_at: string
+          id?: string
+          provider: string
+          redirect_to: string
+          requested_scopes?: string[]
+          state_hash: string
+        }
+        Update: {
+          code_verifier?: string
+          consumed_at?: string | null
+          created_at?: string
+          created_by?: string
+          expires_at?: string
+          id?: string
+          provider?: string
+          redirect_to?: string
+          requested_scopes?: string[]
+          state_hash?: string
+        }
+        Relationships: []
+      }
       message_templates: {
         Row: {
           active: boolean
@@ -6446,6 +6536,26 @@ export type Database = {
           whatsapp_configured: boolean
           whatsapp_enabled: boolean
         }[]
+      }
+      integrations_read_credential: {
+        Args: {
+          p_connection_id: string
+          p_expected_kind: string
+          p_expected_provider: string
+        }
+        Returns: string
+      }
+      integrations_write_credential: {
+        Args: {
+          p_credential_kind: string
+          p_expires_at: string
+          p_label: string
+          p_metadata: Json
+          p_provider: string
+          p_scopes: string[]
+          p_secret: string
+        }
+        Returns: string
       }
       is_console_agent: { Args: never; Returns: boolean }
       is_org_member: { Args: { _org_id: string }; Returns: boolean }
