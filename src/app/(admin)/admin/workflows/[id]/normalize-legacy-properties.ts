@@ -97,6 +97,51 @@ function normalizeEntries(value: unknown): unknown {
 }
 
 /**
+ * Fill in the Microsoft mail options a diagram saved before they existed.
+ *
+ * ⚠️ THE ONLY BRANCH IN THIS FILE KEYED ON A NODE TYPE, AND THAT IS DELIBERATE.
+ * Everything else here is derived from the palette schema, precisely so the next
+ * field of a known KIND is covered without anyone editing this file. This one
+ * cannot be, and the reason is worth stating rather than inferring.
+ *
+ * WHAT THE SDK DOES NOT DO, measured in 2.3.0 rather than assumed:
+ *
+ *   • `default` is not part of `FieldSchema` — the schema cannot declare one.
+ *   • `defaultPropertiesData` appears ONCE in the shipped bundle, inside the
+ *     node-creation path (`reactFlowInstance` / `onNodesChange`). It runs when a
+ *     node is dropped from the palette, never when a diagram is loaded.
+ *   • There is no migration or load-time transform hook: `migrat`, `upgrade`,
+ *     `coerce` and `useDefaults` appear zero times in `index.d.ts`.
+ *
+ * So a node saved before these fields existed keeps its old shape forever, and
+ * the editor and the runtime then disagree about it. Measured in the bundle:
+ * the Switch renderer is `checked: data ?? false` and the Select renderer is
+ * `value: data ?? null`, while `steps/index.ts` reads
+ * `typeof config.saveToSentItems === 'boolean' ? … : true`. The panel therefore
+ * shows "off" for a message the runtime does save — the UI stating the opposite
+ * of what happens.
+ *
+ * ⚠️ DO NOT GENERALISE THIS TO "FILL EVERY MISSING PROPERTY FROM ITS DEFAULT".
+ * Live data was checked before this was written: `action.update_guest_status`
+ * is missing `rsvpStatus` on two stored nodes. A default there would invent an
+ * RSVP decision the owner never made and write it to a real guest's flow — and
+ * it would reach the row on its own, because the SDK auto-saves on
+ * `beforeunload` with no condition. `normalize-legacy-properties.test.ts` pins
+ * that case so a future tidy-up cannot quietly widen this.
+ *
+ * These three are safe for exactly one reason: each value equals what the
+ * handler already sends when the field is absent, so backfilling changes what
+ * the panel SHOWS and never what the run DOES.
+ */
+function microsoftMailBackfill(properties: Properties): Properties | undefined {
+  const next: Properties = {};
+  if (typeof properties.contentType !== "string") next.contentType = "Text";
+  if (typeof properties.importance !== "string") next.importance = "normal";
+  if (typeof properties.saveToSentItems !== "boolean") next.saveToSentItems = true;
+  return Object.keys(next).length > 0 ? next : undefined;
+}
+
+/**
  * Repair legacy property shapes as a workflow enters the editor.
  *
  * Array-of-object and numeric fields are discovered from the palette schema;
@@ -134,10 +179,16 @@ export function normalizeLegacyProperties<T extends { data?: { type?: unknown; p
         ? properties.status
         : undefined;
 
+    const microsoftMail =
+      type === "action.microsoft_send_email"
+        ? microsoftMailBackfill(properties)
+        : undefined;
+
     if (
       arrayFields.length === 0 &&
       numFields.length === 0 &&
-      legacyRsvpStatus === undefined
+      legacyRsvpStatus === undefined &&
+      microsoftMail === undefined
     ) {
       return node;
     }
@@ -148,6 +199,11 @@ export function normalizeLegacyProperties<T extends { data?: { type?: unknown; p
     if (legacyRsvpStatus !== undefined) {
       next.rsvpStatus = legacyRsvpStatus;
       next.status = "active";
+      changed = true;
+    }
+
+    if (microsoftMail !== undefined) {
+      Object.assign(next, microsoftMail);
       changed = true;
     }
 

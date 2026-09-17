@@ -204,4 +204,89 @@ describe('normalizeLegacyProperties', () => {
     expect(twice).toBe(once);
   });
 
+
+  // -------------------------------------------------------------------------
+  // The Microsoft mail backfill, and the boundary that keeps it narrow.
+  // -------------------------------------------------------------------------
+
+  it('backfills the Microsoft mail options a diagram saved before they existed', () => {
+    const legacy = node('action.microsoft_send_email', {
+      connectionId: 'c1', to: 'a@x.com', subject: 'נושא', body: 'תוכן',
+    });
+    const [out] = normalizeLegacyProperties([legacy], PALETTE_ITEMS);
+
+    expect(out!.data.properties).toMatchObject({
+      contentType: 'Text',
+      importance: 'normal',
+      saveToSentItems: true,
+    });
+  });
+
+  it('⚠️ shows what the runtime already does, and nothing more', () => {
+    // Each backfilled value is the fallback `steps/index.ts` applies when the
+    // field is absent, so this changes what the panel SHOWS and never what the
+    // run DOES. If the handler's defaults ever change, these must change with
+    // them or the panel starts lying again — in the other direction.
+    const [out] = normalizeLegacyProperties(
+      [node('action.microsoft_send_email', { connectionId: 'c1', to: 'a@x.com', subject: 's', body: 'b' })],
+      PALETTE_ITEMS,
+    );
+    const p = out!.data.properties as Record<string, unknown>;
+
+    expect(p.contentType).toBe('Text');       // transport: record.contentType === 'HTML' ? 'HTML' : 'Text'
+    expect(p.importance).toBe('normal');      // transport: 'high' | 'low' ? … : 'normal'
+    expect(p.saveToSentItems).toBe(true);     // handler: typeof … === 'boolean' ? … : true
+  });
+
+  it('never overwrites a value the owner chose', () => {
+    const chosen = node('action.microsoft_send_email', {
+      connectionId: 'c1', to: 'a@x.com', subject: 's', body: 'b',
+      contentType: 'HTML', importance: 'high', saveToSentItems: false,
+    });
+    const [out] = normalizeLegacyProperties([chosen], PALETTE_ITEMS);
+
+    // Nothing to fill → the same object back, by identity.
+    expect(out).toBe(chosen);
+  });
+
+  it('⚠️ leaves action.update_guest_status without an rsvpStatus ALONE', () => {
+    // THE BOUNDARY THIS FILE'S NARROWNESS EXISTS FOR, pinned so a future tidy-up
+    // cannot widen the backfill into "fill every missing property".
+    //
+    // Live data was checked before the Microsoft branch was written: two stored
+    // nodes of this type carry no `rsvpStatus`. A default there would invent an
+    // RSVP decision the owner never made — and it would reach the row on its
+    // own, because the SDK auto-saves on `beforeunload` with no condition.
+    //
+    // The legacy `status` repair above is a different thing: it MOVES a value
+    // the owner did choose out of a key the SDK later claimed. It never invents.
+    const bare = node('action.update_guest_status', { label: 'עדכון' });
+    const [out] = normalizeLegacyProperties([bare], PALETTE_ITEMS);
+
+    expect(out).toBe(bare);
+    expect(Object.hasOwn(out!.data.properties, 'rsvpStatus')).toBe(false);
+  });
+
+  it('touches no other node type', () => {
+    // Every type in the palette except the Microsoft one, with only the two
+    // identity fields set. None may gain a property.
+    for (const item of PALETTE_ITEMS) {
+      if (item.type === 'action.microsoft_send_email') continue;
+      const bare = node(item.type, { label: 'x', description: 'y' });
+      const [out] = normalizeLegacyProperties([bare], PALETTE_ITEMS);
+      expect(Object.keys(out!.data.properties), item.type).toEqual(['label', 'description']);
+    }
+  });
+
+  it('is idempotent after the Microsoft backfill', () => {
+    const legacy = node('action.microsoft_send_email', {
+      connectionId: 'c1', to: 'a@x.com', subject: 's', body: 'b',
+    });
+    const [once] = normalizeLegacyProperties([legacy], PALETTE_ITEMS);
+    const [twice] = normalizeLegacyProperties([once!], PALETTE_ITEMS);
+
+    expect(once).not.toBe(legacy);
+    expect(twice).toBe(once);
+  });
+
 });
