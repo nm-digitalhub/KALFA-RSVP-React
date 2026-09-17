@@ -65,6 +65,8 @@ import {
   type ConditionOperator,
   type GuestField,
   type KalfaNodeType,
+  type MicrosoftMailContentType,
+  type MicrosoftMailImportance,
 } from './types';
 
 // ---------------------------------------------------------------------------
@@ -1027,6 +1029,17 @@ export type MicrosoftConnectionOption = {
   value: string;
 };
 
+const microsoftContentTypeOptions = {
+  Text: { label: 'טקסט רגיל', value: 'Text' },
+  HTML: { label: 'HTML', value: 'HTML' },
+} as const satisfies Record<MicrosoftMailContentType, { label: string; value: string }>;
+
+const microsoftImportanceOptions = {
+  normal: { label: 'רגילה', value: 'normal' },
+  high: { label: 'גבוהה', value: 'high' },
+  low: { label: 'נמוכה', value: 'low' },
+} as const satisfies Record<MicrosoftMailImportance, { label: string; value: string }>;
+
 const microsoftSendEmailSchema = {
   type: 'object',
   required: NODE_REQUIRED_FIELDS['action.microsoft_send_email'],
@@ -1036,14 +1049,34 @@ const microsoftSendEmailSchema = {
     ...actionBranchesProperty,
     connectionId: { ...requiredText },
     to: { ...requiredText },
+    cc: { type: 'string' },
+    bcc: { type: 'string' },
+    replyTo: { type: 'string' },
     subject: { ...requiredText },
     body: { ...requiredText },
+    contentType: { type: 'string', options: Object.values(microsoftContentTypeOptions) },
+    importance: { type: 'string', options: Object.values(microsoftImportanceOptions) },
+    saveToSentItems: { type: 'boolean' },
     errorPolicy: { type: 'string', options: Object.values(errorPolicyOptions) },
   },
 } satisfies NodeSchema;
 
+/**
+ * The same schema with the installation's OWN connections offered on
+ * `connectionId`.
+ *
+ * ⚠️ THE MODULE-LEVEL SCHEMA MUST NOT CARRY AN `options` KEY AT ALL, and that is
+ * why this takes an OPTIONAL argument rather than defaulting to `[]`. The two
+ * are not the same thing: an absent key means "this list is supplied at build
+ * time", while `options: []` is a rendered dropdown that is genuinely empty —
+ * an owner opening the panel would see a picker offering nothing, with no way to
+ * tell a missing lookup from an account they have not connected yet.
+ * `microsoft-connection.test.ts` asserts the module-level schema leaves it
+ * `undefined`, so a default of `[]` here fails a test rather than shipping that
+ * dropdown.
+ */
 export function microsoftSendEmailSchemaFor(
-  connections: readonly MicrosoftConnectionOption[],
+  connections?: readonly MicrosoftConnectionOption[],
 ): NodeSchema {
   return {
     ...microsoftSendEmailSchema,
@@ -1051,7 +1084,7 @@ export function microsoftSendEmailSchemaFor(
       ...microsoftSendEmailSchema.properties,
       connectionId: {
         ...requiredText,
-        options: connections.map(({ label, value }) => ({ label, value })),
+        ...(connections ? { options: connections.map(({ label, value }) => ({ label, value })) } : {}),
       },
     },
   } as NodeSchema;
@@ -1059,6 +1092,23 @@ export function microsoftSendEmailSchemaFor(
 
 const microsoftSendEmailScope = getScope<typeof microsoftSendEmailSchema>;
 
+// ⚠️ THE FOUR REQUIRED FIELDS STAY FLAT, AND THAT IS THE HOUSE RULE, NOT A
+// PREFERENCE. `accordion-classification.test.ts` measured the 2.3.0 renderer and
+// settled it: `Group` belongs to the identity block alone, and an `Accordion` is
+// what a grouping BECOMES — genuinely collapsible, with no way for a uischema to
+// ask for closed. So wrapping `connectionId`, `to`, `subject` or `body` in either
+// container would be wrong twice over: a second `Group` breaks the rule outright,
+// and an `Accordion` offers to fold away fields that arming refuses without.
+//
+// What the two Accordions below hold is exactly what the rule permits — optional
+// recipients and options almost nobody changes.
+//
+// ⚠️ `connectionId` KEEPS ITS `format`. That is not a layout choice: it is the
+// dispatch key that replaces the SDK's Select with our own control, and that
+// control is what draws the "connect an account" button inside the panel.
+// Dropping it would leave an owner with no connection and no way to make one
+// without leaving the editor. `microsoft-connection.test.ts` pins all three
+// values.
 const microsoftSendEmailUiSchema: UISchema = {
   type: 'VerticalLayout',
   elements: [
@@ -1069,16 +1119,81 @@ const microsoftSendEmailUiSchema: UISchema = {
       label: 'חיבור Microsoft 365',
       options: {
         // The custom renderer adds the OAuth entry point around the SDK's own
-        // Select. These two values are catalogue configuration, not workflow
+        // Select. These three values are catalogue configuration, not workflow
         // data, and therefore never enter the persisted node properties.
         format: INTEGRATION_CONNECTION_FORMAT,
         provider: 'microsoft',
         capability: 'mail.send',
       },
     },
-    { type: 'VariableText', scope: microsoftSendEmailScope('properties.to'), label: 'נמען', placeholder: 'name@example.com' },
-    { type: 'VariableText', scope: microsoftSendEmailScope('properties.subject'), label: 'נושא' },
-    { type: 'VariableTextArea', scope: microsoftSendEmailScope('properties.body'), label: 'תוכן ההודעה', placeholder: 'הקלידו {{ כדי לשלב ערך מצעד קודם', minRows: 5 },
+    {
+      type: 'VariableText',
+      scope: microsoftSendEmailScope('properties.to'),
+      label: 'נמען',
+      placeholder: 'name@example.com',
+    },
+    {
+      type: 'VariableText',
+      scope: microsoftSendEmailScope('properties.subject'),
+      label: 'נושא',
+    },
+    {
+      type: 'VariableTextArea',
+      scope: microsoftSendEmailScope('properties.body'),
+      label: 'תוכן ההודעה',
+      placeholder: 'הקלידו {{ כדי לשלב ערך מצעד קודם',
+      minRows: 5,
+    },
+    {
+      type: 'Accordion',
+      label: 'נמענים נוספים',
+      elements: [
+        {
+          type: 'VariableText',
+          scope: microsoftSendEmailScope('properties.cc'),
+          label: 'עותק',
+          placeholder: 'כמה כתובות — הפרידו בפסיק או בנקודה-פסיק',
+        },
+        {
+          type: 'VariableText',
+          scope: microsoftSendEmailScope('properties.bcc'),
+          label: 'עותק מוסתר',
+          placeholder: 'כמה כתובות — הפרידו בפסיק או בנקודה-פסיק',
+        },
+        {
+          type: 'VariableText',
+          scope: microsoftSendEmailScope('properties.replyTo'),
+          label: 'כתובת לתשובה',
+          placeholder: 'reply@example.com',
+        },
+        {
+          // The one thing an owner cannot discover from the fields themselves.
+          type: 'Label',
+          text: 'בשדה "אל" ניתן לרשום כתובת אחת בלבד. שלושת השדות כאן מקבלים כמה כתובות.',
+        },
+      ],
+    },
+    {
+      type: 'Accordion',
+      label: 'אפשרויות מתקדמות',
+      elements: [
+        {
+          type: 'Select',
+          scope: microsoftSendEmailScope('properties.contentType'),
+          label: 'סוג התוכן',
+        },
+        {
+          type: 'Select',
+          scope: microsoftSendEmailScope('properties.importance'),
+          label: 'חשיבות',
+        },
+        {
+          type: 'Switch',
+          scope: microsoftSendEmailScope('properties.saveToSentItems'),
+          label: 'שמירת עותק בתיבת "נשלחו"',
+        },
+      ],
+    },
     { type: 'Select', scope: microsoftSendEmailScope('properties.errorPolicy'), label: 'אם השליחה נכשלת' },
     statusControl(microsoftSendEmailScope('properties.status')),
   ],
@@ -2374,8 +2489,16 @@ export const PALETTE_ITEMS: PaletteItem[] = [
       description: 'שולח הודעת דוא״ל באמצעות חיבור Microsoft 365 מנוהל',
       connectionId: '',
       to: '',
+      cc: '',
+      bcc: '',
+      replyTo: '',
       subject: '',
       body: '',
+      // Graph's own defaults, spelled out so a NEW node and an OLD one that
+      // carries none of these fields send byte-identical mail.
+      contentType: microsoftContentTypeOptions.Text.value,
+      importance: microsoftImportanceOptions.normal.value,
+      saveToSentItems: true,
       errorPolicy: errorPolicyOptions.fail.value,
     },
   },

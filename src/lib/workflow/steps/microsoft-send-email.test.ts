@@ -46,9 +46,107 @@ describe('action.microsoft_send_email', () => {
         to: 'guest@example.com',
         subject: 'אישור הגעה',
         body: 'שלום דנה',
+        // Narrowed by the handler even though the config named none of them,
+        // and each value is Graph's own default — so this config sends the
+        // same mail it sent before the three fields existed.
+        contentType: 'Text',
+        importance: 'normal',
+        saveToSentItems: true,
       },
     });
     expect(result.output).toEqual({ accepted: true });
+  });
+
+  it('⚠️ omits an empty optional address rather than passing an empty string', () => {
+    // The transport would have to tell '' apart from "absent" otherwise, and
+    // the two mean the same thing to an owner who cleared the field.
+    const execute = vi.fn<StepContext['deps']['integrations']['execute']>(async () => ({
+      status: 202,
+    }));
+
+    return handler(
+      {
+        connectionId: 'connection-1',
+        to: 'guest@example.com',
+        cc: '   ',
+        bcc: '',
+        subject: 'נושא',
+        body: 'תוכן',
+      },
+      context(execute),
+    ).then(() => {
+      const input = execute.mock.calls[0]![0].input as Record<string, unknown>;
+      expect(Object.hasOwn(input, 'cc')).toBe(false);
+      expect(Object.hasOwn(input, 'bcc')).toBe(false);
+      expect(Object.hasOwn(input, 'replyTo')).toBe(false);
+    });
+  });
+
+  it('forwards every optional Microsoft mail setting the node carries', async () => {
+    const execute = vi.fn<StepContext['deps']['integrations']['execute']>(async () => ({
+      status: 202,
+    }));
+
+    const result = await handler(
+      {
+        connectionId: 'connection-1',
+        to: 'guest@example.com',
+        cc: '  manager@example.com  ',
+        bcc: 'audit@example.com',
+        replyTo: 'support@example.com',
+        subject: 'אישור הגעה',
+        body: '<b>שלום</b>',
+        contentType: 'HTML',
+        importance: 'high',
+        saveToSentItems: false,
+      },
+      context(execute),
+    );
+
+    expect(execute).toHaveBeenCalledWith({
+      provider: 'microsoft',
+      connectionId: 'connection-1',
+      capability: 'mail.send',
+      input: {
+        to: 'guest@example.com',
+        cc: 'manager@example.com',
+        bcc: 'audit@example.com',
+        replyTo: 'support@example.com',
+        subject: 'אישור הגעה',
+        body: '<b>שלום</b>',
+        contentType: 'HTML',
+        importance: 'high',
+        saveToSentItems: false,
+      },
+    });
+    expect(result.output).toEqual({ accepted: true });
+  });
+
+  it('⚠️ falls back to Graph\u2019s defaults when a stored value is not one of ours', () => {
+    // These fields live in a jsonb column no form re-validates. A number, a null
+    // or a value from a newer version must not reach the transport.
+    const execute = vi.fn<StepContext['deps']['integrations']['execute']>(async () => ({
+      status: 202,
+    }));
+
+    return handler(
+      {
+        connectionId: 'connection-1',
+        to: 'guest@example.com',
+        subject: 'נושא',
+        body: 'תוכן',
+        contentType: 'Markdown',
+        importance: 7,
+        saveToSentItems: 'yes',
+      },
+      context(execute),
+    ).then(() => {
+      expect(execute.mock.calls[0]![0].input).toMatchObject({
+        contentType: 'Text',
+        importance: 'normal',
+        saveToSentItems: true,
+      });
+    });
   });
 
   it('fails permanently before the port when required config is missing', async () => {

@@ -30,6 +30,8 @@ import {
   type ConditionField,
   type ConditionOperator,
   type KalfaNodeType,
+  type MicrosoftMailContentType,
+  type MicrosoftMailImportance,
 } from '../catalogue/types';
 
 import type {
@@ -1584,9 +1586,28 @@ const sendTemplate: StepHandler = async (config, ctx) => {
 const microsoftSendEmail: StepHandler = async (config, ctx) => {
   const connectionId = readString(config, 'connectionId').trim();
   const to = readString(config, 'to').trim();
+  const cc = readString(config, 'cc').trim();
+  const bcc = readString(config, 'bcc').trim();
+  const replyTo = readString(config, 'replyTo').trim();
   const subject = readString(config, 'subject').trim();
   const body = readString(config, 'body');
 
+  // Narrowed here rather than passed through, so a jsonb row holding a number,
+  // a null or a value from a newer version cannot reach the transport. Each
+  // fallback is Graph's own default, which is what an absent field has always
+  // meant.
+  const contentType: MicrosoftMailContentType =
+    readString(config, 'contentType').trim() === 'HTML' ? 'HTML' : 'Text';
+
+  const rawImportance = readString(config, 'importance').trim();
+  const importance: MicrosoftMailImportance =
+    rawImportance === 'high' || rawImportance === 'low' ? rawImportance : 'normal';
+
+  const saveToSentItems =
+    typeof config.saveToSentItems === 'boolean' ? config.saveToSentItems : true;
+
+  // The same four fields as before. `cc`, `bcc` and `replyTo` are deliberately
+  // NOT required: a mail with no carbon copy is an ordinary mail.
   if (!connectionId || !to || !subject || !body.trim()) {
     throw new PermanentNodeExecutionError(
       'invalid_config',
@@ -1599,7 +1620,20 @@ const microsoftSendEmail: StepHandler = async (config, ctx) => {
       provider: 'microsoft',
       connectionId,
       capability: 'mail.send',
-      input: { to, subject, body },
+      // The optional ADDRESS fields are omitted when empty rather than sent as
+      // '', so the transport never has to tell "no carbon copy" apart from
+      // "a carbon copy that resolved to nothing".
+      input: {
+        to,
+        ...(cc ? { cc } : {}),
+        ...(bcc ? { bcc } : {}),
+        ...(replyTo ? { replyTo } : {}),
+        subject,
+        body,
+        contentType,
+        importance,
+        saveToSentItems,
+      },
     });
   } catch (error) {
     const integrationError = readIntegrationRuntimeError(error);

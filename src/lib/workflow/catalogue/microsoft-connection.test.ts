@@ -7,28 +7,65 @@ function microsoftItem(items: ReturnType<typeof buildPaletteItems>) {
   return items.find((item) => item.type === 'action.microsoft_send_email')!;
 }
 
+type UiElement = {
+  type?: string;
+  scope?: string;
+  options?: Record<string, unknown>;
+  elements?: UiElement[];
+};
+
+/**
+ * Find a control by the property it is bound to, ANYWHERE in the layout tree.
+ *
+ * Deliberately recursive. The first version of this test read `uischema.elements`
+ * as a flat list, which was true right up until the panel grew a `Group` around
+ * the account picker (2026-09-17) — and then it failed while the control it was
+ * guarding was present and correct. What this test exists to protect is that
+ * `connectionId` reaches OUR renderer, not where in the layout it sits, so the
+ * lookup should not care which of the two changed.
+ */
+function controlFor(uischema: unknown, property: string): UiElement | undefined {
+  const element = uischema as UiElement;
+  if (element?.scope?.endsWith(property)) return element;
+
+  for (const child of element?.elements ?? []) {
+    const found = controlFor(child, property);
+    if (found) return found;
+  }
+  return undefined;
+}
+
 describe('action.microsoft_send_email — live connection schema', () => {
-  it('uses the SDK Select control for connectionId', () => {
-    const item = microsoftItem(buildPaletteItems());
-    const elements = (
-      item.uischema as { elements?: Array<{ type?: string; scope?: string }> }
-    ).elements;
-    const control = elements?.find((element) =>
-      element.scope?.endsWith('connectionId'),
-    );
+  it('⚠️ routes connectionId to OUR renderer, which draws the OAuth connect button', () => {
+    // Without this `format` the SDK renders its own plain Select: an owner with
+    // no connection would see an empty dropdown and no way to make one without
+    // leaving the editor. The two values beside it tell that renderer which
+    // provider to start and which capability to ask for.
+    const control = controlFor(microsoftItem(buildPaletteItems()).uischema, 'connectionId');
 
     expect(control?.type).toBe('Select');
-    expect(
-      (
-        control as {
-          options?: Record<string, unknown>;
-        }
-      )?.options,
-    ).toEqual({
+    expect(control?.options).toEqual({
       format: INTEGRATION_CONNECTION_FORMAT,
       provider: 'microsoft',
       capability: 'mail.send',
     });
+  });
+
+  it('offers every new mail option a control', () => {
+    // Each of these is in the schema; a field with no control is a field an
+    // owner cannot reach, which the schema alone would never reveal.
+    const uischema = microsoftItem(buildPaletteItems()).uischema;
+
+    for (const [property, type] of [
+      ['cc', 'VariableText'],
+      ['bcc', 'VariableText'],
+      ['replyTo', 'VariableText'],
+      ['contentType', 'Select'],
+      ['importance', 'Select'],
+      ['saveToSentItems', 'Switch'],
+    ] as const) {
+      expect(controlFor(uischema, property)?.type, `${property} has no control`).toBe(type);
+    }
   });
 
   it('offers the supplied labels while persisting connection UUIDs as values', () => {

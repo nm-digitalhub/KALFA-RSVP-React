@@ -40,6 +40,9 @@ const REVIEWED_PORTABLE: Record<string, string> = {
   subject: 'the author’s text',
   body: 'the author’s text, possibly with {{…}} references that rebind on import',
   to: 'a recipient the author typed; not an installation identifier',
+  cc: 'more recipients the author typed; addresses, not installation identifiers',
+  bcc: 'more recipients the author typed; addresses, not installation identifiers',
+  replyTo: 'a reply address the author typed; not an installation identifier',
 
   // Editor and engine state that is meaningful anywhere.
   status: 'active/disabled, a node-level switch',
@@ -55,6 +58,8 @@ const REVIEWED_PORTABLE: Record<string, string> = {
   statuses: 'RSVP statuses, same closed set',
   messageKinds: 'message kinds, a fixed enum',
   unit: 'minutes / hours / days',
+  contentType: 'Text / HTML — Graph’s own body content type',
+  importance: 'low / normal / high — Graph’s own message importance',
 
   // Values and references that describe intent, not infrastructure.
   amount: 'a number the author chose',
@@ -67,6 +72,7 @@ const REVIEWED_PORTABLE: Record<string, string> = {
   maxGuests: 'a numeric cap',
   requirePhone: 'a boolean',
   captureResponse: 'a boolean',
+  saveToSentItems: 'a boolean',
   waitForOutcome: 'a boolean',
 };
 
