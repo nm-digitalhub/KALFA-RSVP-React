@@ -19,6 +19,7 @@ import { CancelRunButton } from "../row-actions";
 
 import { RunNowPanel } from "./run-now-panel";
 import { RunWatchButton } from "./run-watcher";
+import { RunsAutoRefresh, type WorkflowRunStatus } from "./runs-auto-refresh";
 import { TestPanel } from "./test-panel";
 import { listSecretNames } from "@/lib/workflow/secrets";
 
@@ -147,6 +148,14 @@ export default async function AdminWorkflowPage({
       <TestPanel workflowId={workflow.id} />
 
       <section className="space-y-2">
+        {/*
+          Renders nothing; it only re-runs this page while a run is moving, so
+          the status column stops needing a manual reload. The statuses are the
+          ones already fetched above — no extra query, and no client-side copy of
+          the table to keep in sync. See runs-auto-refresh.tsx for why this is a
+          refresh rather than the SSE stream the canvas uses.
+        */}
+        <RunsAutoRefresh statuses={runs.map((run) => run.status as WorkflowRunStatus)} />
         <h2 className="text-lg font-semibold">הרצות אחרונות</h2>
         {runs.length === 0 ? (
           <p className="text-sm text-muted-foreground">
