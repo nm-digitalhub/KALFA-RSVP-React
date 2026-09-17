@@ -138,6 +138,74 @@ code, kbd, samp, pre {
 .kalfa-workflow-palette-panel > [class*='_sidebar_'] > [class*='_content_'],
 .kalfa-workflow-properties-panel > [class*='_sidebar_'] > [class*='_content_'] { min-height: 0; }
 .kalfa-workflow-panel-close { position: absolute; inset-block-start: .875rem; inset-inline-end: .875rem; z-index: 2; }
+
+/* ------------------------------------------------------------------------
+   RTL REPAIRS FOR THE PROPERTIES PANEL.
+
+   ⚠️ THE SDK HAS NO RTL SUPPORT AT ALL, and that is measured rather than
+   assumed. `dist/style.css` (416 KB) contains ZERO `[dir=rtl]` selectors and
+   ZERO logical properties — no `margin-inline-*`, no `padding-inline-*`, no
+   `inset-inline-*` — against 78 physical `left`/`right`/`margin-left`
+   declarations. Their own theming guide says nothing about direction either.
+   So a Hebrew panel is not a configuration we failed to switch on; it is a
+   case the vendor never wrote.
+
+   Design tokens cannot fix this. They carry VALUES
+   (`--wb-sidebar-horizontal-padding: 1rem`), never DIRECTION, so `margin-left`
+   stays `margin-left` whatever it is set to.
+
+   The two rules below are the only places measured as reaching the owner. Both
+   were verified on a real device (Galaxy S948B, 384px wide, adb screencap) by
+   toggling each one alone and together — see the note on each.
+   ------------------------------------------------------------------------ */
+
+/* ⚠️ A STANDALONE LABEL IS NOT A FIELD LABEL, AND THE SDK STYLES BOTH THE SAME.
+   `_label_` is `white-space: nowrap; overflow: hidden`, which is right for
+   "שם הצעד" beside an input and wrong for a `{ type: 'Label', text: '…' }`
+   paragraph, which is then CLIPPED MID-WORD instead of wrapping.
+
+   Not an RTL bug — it clips in English too — but it is what makes the panel
+   overflow, because the unwrapped line forces the whole collapse chain to
+   338px inside a 320px panel. MEASURED: overflow 73px → 22px, and the text
+   goes from one line to two.
+
+   This affects every node, not only Microsoft: `action.send_whatsapp` and
+   `action.webhook` each carry a long explanatory Label that is clipped today. */
+.kalfa-workflow-properties-panel [class*='_label_'] {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+/* ⚠️ `_extend-bounds_` IS PHYSICAL, SO IT INVERTS IN RTL.
+   The SDK ships:
+       ._extend-bounds_   { margin-left: -1rem; width: calc(100% + 1rem) }
+       ._extend-bounds_>* { padding-left: 1rem }
+   In LTR the two cancel: the box is pulled one rem toward the inline start and
+   its children are padded back, which buys focus rings and shadows room to
+   breathe. In RTL the pull goes to the WRONG SIDE and nothing brings it back,
+   so the fields visibly break out of the panel and the canvas shows behind them.
+
+   ⚠️ AND IT ONLY SHOWS ONCE THE LABEL ABOVE IS FIXED. While the unwrapped
+   Label is inflating the row, this correction is swallowed — measured: on its
+   own it changes nothing (73px / 43px, unmoved). Together with it the last
+   7px disappear and nothing protrudes at all:
+
+       none   overflow 73px   protrudes 43px
+       label  overflow 22px   protrudes  7px
+       bounds overflow 73px   protrudes 43px   ← alone: no effect
+       both   overflow 22px   protrudes  0px
+
+   Same pinning caveat as the block above: a hashed class name, re-derive it
+   from the shipped markup on upgrade. */
+.kalfa-workflow-properties-panel [class*='_extend-bounds_'] {
+  margin-left: 0;
+  margin-inline-start: -1rem;
+}
+.kalfa-workflow-properties-panel [class*='_extend-bounds_'] > * {
+  padding-left: 0;
+  padding-inline-start: 1rem;
+}
+
 .kalfa-workflow-properties-panel > [class*='_sidebar_'] > [class*='_header_'] { padding-inline-end: 3rem; }
 .kalfa-workflow-log { flex: none; min-height: 0; background: var(--card); }
 .kalfa-workflow-log:empty { display: none; }
