@@ -1,8 +1,8 @@
 import 'server-only';
 
-import { timingSafeEqual } from 'node:crypto';
 
 import { editorDiagramSchema } from './adapter/editor-schema';
+import { hashWebhookToken, webhookHashesMatch } from './webhook-token';
 import { isTriggerType } from './catalogue/nodes';
 import { createRunIfNew, listArmedWorkflows } from './store';
 
@@ -33,19 +33,7 @@ export type WebhookTriggerResult =
   | { ok: true; runId: string | undefined }
   | { ok: false; reason: 'not_found' | 'too_large' | 'bad_json' };
 
-/**
- * Constant-time token comparison.
- *
- * `===` on a secret leaks its length and its matching prefix through timing. The
- * tokens are the same length by construction, but a caller controls the value it
- * sends, so the lengths are equalised before comparing rather than after.
- */
-function tokensMatch(a: string, b: string): boolean {
-  const left = Buffer.from(a);
-  const right = Buffer.from(b);
-  if (left.length !== right.length) return false;
-  return timingSafeEqual(left, right);
-}
+
 
 /**
  * The armed workflow whose webhook trigger carries this token.
@@ -59,6 +47,11 @@ function tokensMatch(a: string, b: string): boolean {
 async function findWorkflowForToken(token: string) {
   if (token.trim() === '') return null;
 
+  // Hashed ONCE, outside the loop: the diagram stores `tokenHash`, so the value
+  // a caller sent is turned into the stored form before anything is compared.
+  // The token itself never appears in a workflow's JSON — see webhook-token.ts.
+  const presented = await hashWebhookToken(token);
+
   for (const workflow of await listArmedWorkflows()) {
     const parsed = editorDiagramSchema.safeParse(workflow.definition);
     if (!parsed.success) continue;
@@ -71,9 +64,9 @@ async function findWorkflowForToken(token: string) {
     const trigger = triggers[0]!;
     if (trigger.data.type !== 'trigger.webhook') continue;
 
-    const configured = trigger.data.properties?.token;
+    const configured = trigger.data.properties?.tokenHash;
     if (typeof configured !== 'string' || configured.trim() === '') continue;
-    if (!tokensMatch(configured, token)) continue;
+    if (!webhookHashesMatch(configured, presented)) continue;
 
     return workflow;
   }

@@ -38,7 +38,16 @@ function sha256(value: string) {
 }
 
 function harness(
-  opts: { stateRow?: Record<string, unknown> | null; connectionId?: string | null } = {},
+  opts: {
+    stateRow?: Record<string, unknown> | null;
+    connectionId?: string | null;
+    /** Labels already on `integration_connections` for this provider. */
+    existingLabels?: string[];
+    /** Make the label read fail, to prove a cosmetic read cannot fail a grant. */
+    labelReadFails?: boolean;
+    /** ID token claims the exchange returns. `null` = no `id_token` at all. */
+    claims?: Record<string, unknown> | null;
+  } = {},
 ) {
   const inserted: Record<string, unknown>[] = [];
   const consumeFilters: Record<string, unknown> = {};
@@ -69,7 +78,21 @@ function harness(
     inserted.push(row);
     return { error: null };
   });
-  const from = vi.fn(() => ({ insert, update }));
+  // The label read is a DIFFERENT chain on the same client: a plain
+  // `.select().eq()` that resolves to rows, where the state consume is an
+  // `.update().eq().is().gt().select().maybeSingle()`. Both start at `from`, so
+  // the mock has to offer both and not let one stand in for the other.
+  const labelEq = vi.fn(async () => ({
+    data: opts.labelReadFails ? null : (opts.existingLabels ?? []).map((label) => ({ label })),
+    error: opts.labelReadFails ? { message: 'boom' } : null,
+  }));
+  const labelSelect = vi.fn(() => ({ eq: labelEq }));
+
+  const fromTables: string[] = [];
+  const from = vi.fn((table: string) => {
+    fromTables.push(table);
+    return { insert, update, select: labelSelect };
+  });
 
   const rpcCalls: { name: string; args: Record<string, unknown> }[] = [];
   const rpc = vi.fn(async (name: string, args: Record<string, unknown>) => {
@@ -103,6 +126,9 @@ function harness(
     scope: 'Scope.Send',
     expires_in: 3600,
     expiresIn: () => 3600,
+    // Mirrors `TokenEndpointResponseHelpers.claims()`: the VALIDATED claim set,
+    // or `undefined` when the response carried no `id_token`.
+    claims: () => (opts.claims === null ? undefined : (opts.claims ?? defaultClaims)),
   }));
 
   const flow = createOAuthFlow({
@@ -116,8 +142,17 @@ function harness(
   });
 
   return { flow, inserted, consumeFilters, rpcCalls, authorizationCodeGrant, configLoader,
+    labelSelect, labelEq, fromTables,
     get updatePayload() { return updatePayload; } };
 }
+
+// A provider that answers the identity question. `iss`+`sub` are the key per
+// OIDC Core §5.7; `preferred_username` is the label per §5.1.
+const defaultClaims = {
+  iss: 'https://login.example.test',
+  sub: 'subject-1',
+  preferred_username: 'first@example.test',
+};
 
 const defaultStateRow = {
   provider: 'fixture',
@@ -239,6 +274,91 @@ describe('completing an authorization', () => {
     // ⚠️ The DATABASE clock decides expiry, not this server's.
     expect(h.consumeFilters['gt:expires_at']).toBe('now');
     expect(h.updatePayload).toEqual({ consumed_at: 'now' });
+  });
+
+  it('⚠️ labels the connection with the ACCOUNT, not the provider', async () => {
+    // THE DEFECT THIS REPLACES. Every connection was written with
+    // `provider.displayName`, so three mailboxes became three rows reading
+    // "Fixture" — ordered by uuid, indistinguishable, unpickable.
+    await complete();
+    const write = h.rpcCalls.find((c) => c.name === 'integrations_write_credential')!.args;
+    expect(write.p_label).toBe('first@example.test');
+  });
+
+  it('⚠️ stores iss+sub as the account key — the only pair OIDC guarantees', async () => {
+    // OIDC Core §5.7: the `iss`/`sub` combination is "the only guaranteed unique
+    // identifier for a given End-User". Nothing compares it today; it is written
+    // now so a later decision to merge a reconnect has something to match on,
+    // without a backfill that would be impossible after the fact.
+    await complete();
+    const write = h.rpcCalls.find((c) => c.name === 'integrations_write_credential')!.args;
+    expect(write.p_metadata).toEqual({ accountKey: 'https://login.example.test subject-1' });
+  });
+
+  it('⚠️ never puts the address in the key, nor the key in the label', async () => {
+    // The two fields answer opposite questions and swapping them is silent:
+    // an email-keyed connection would merge two people (§5.7 allows an issuer to
+    // re-use an email across End-Users), and a key-labelled one is unreadable.
+    const local = harness({ claims: { iss: 'https://i', sub: 's', email: 'shared@example.test' } });
+    await local.flow.complete({
+      state: 'state-value',
+      callbackUrl: new URL(`${ORIGIN}${INTEGRATION_OAUTH_CALLBACK_PATH}?code=c&state=state-value`),
+      resolveProvider,
+    });
+    const write = local.rpcCalls.find((c) => c.name === 'integrations_write_credential')!.args;
+    expect(write.p_label).toBe('shared@example.test');
+    expect(write.p_metadata).toEqual({ accountKey: 'https://i s' });
+  });
+
+  it('⚠️ falls back to the provider name when the token carried no identity', async () => {
+    // A tenant that strips the id_token, or a provider we never asked `openid`
+    // of. The connection is fine; only its name is anonymous. Refusing the grant
+    // here would turn a cosmetic gap into an outage.
+    const local = harness({ claims: null });
+    await local.flow.complete({
+      state: 'state-value',
+      callbackUrl: new URL(`${ORIGIN}${INTEGRATION_OAUTH_CALLBACK_PATH}?code=c&state=state-value`),
+      resolveProvider,
+    });
+    const write = local.rpcCalls.find((c) => c.name === 'integrations_write_credential')!.args;
+    expect(write.p_label).toBe('Fixture');
+    expect(write.p_metadata).toEqual({});
+  });
+
+  it('⚠️ suffixes a label already in use, so no two rows read the same', async () => {
+    // The tie-breaker, and the reason it is needed even WITH an identity:
+    // reconnecting the same account produces a second row with the same address.
+    // n8n does the same thing — its live picker reads "Microsoft Outlook
+    // account" and "Microsoft Outlook account 2".
+    const local = harness({ existingLabels: ['first@example.test', 'first@example.test 2'] });
+    await local.flow.complete({
+      state: 'state-value',
+      callbackUrl: new URL(`${ORIGIN}${INTEGRATION_OAUTH_CALLBACK_PATH}?code=c&state=state-value`),
+      resolveProvider,
+    });
+    const write = local.rpcCalls.find((c) => c.name === 'integrations_write_credential')!.args;
+    expect(write.p_label).toBe('first@example.test 3');
+  });
+
+  it('⚠️ a failed label read must not fail an authorization that succeeded', async () => {
+    // The tokens are already exchanged at this point. Throwing over a cosmetic
+    // read would lose a working grant and send the operator back through consent.
+    const local = harness({ labelReadFails: true });
+    const result = await local.flow.complete({
+      state: 'state-value',
+      callbackUrl: new URL(`${ORIGIN}${INTEGRATION_OAUTH_CALLBACK_PATH}?code=c&state=state-value`),
+      resolveProvider,
+    });
+    expect(result.connectionId).toBe('connection-1');
+    const write = local.rpcCalls.find((c) => c.name === 'integrations_write_credential')!.args;
+    expect(write.p_label).toBe('first@example.test');
+  });
+
+  it('scopes the label read to this provider, not the whole table', async () => {
+    // Two providers may legitimately both have a connection called the same
+    // thing; suffixing across them would rename for no reason.
+    await complete();
+    expect(h.labelEq).toHaveBeenCalledWith('provider', 'fixture');
   });
 
   it('⚠️ carries the actor from the state row into the connection', async () => {

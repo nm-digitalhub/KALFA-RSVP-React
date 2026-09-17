@@ -4,6 +4,7 @@ import { createAdminClient } from '@/lib/supabase/admin';
 
 import { parseOAuthCredentialSecret } from './credential-secret';
 import { IntegrationRuntimeError } from './errors';
+import { unsatisfiedScopes } from './scopes';
 import type { ProviderDefinition } from './provider';
 import {
   CONNECTION_COLUMNS,
@@ -97,7 +98,15 @@ export function createCredentialAccessor(
     // for. A consent screen that lets a user untick a scope is the case this
     // exists for, and it is why `capabilities` may only ever list access-token
     // scopes — a scope the provider never reports could not pass this.
-    const missingScopes = requiredScopes.filter((scope) => !connection.scopes.includes(scope));
+    // ⚠️ NORMALISED, because the two sides are spelled differently BY THE
+    // PROVIDER'S OWN SPECIFICATION — `Mail.Send` here, `…/mail.send` in the
+    // token response. A plain `includes` failed every send, and failed it
+    // intermittently. See scopes.ts; the check itself is unchanged.
+    const missingScopes = unsatisfiedScopes(
+      connection.scopes,
+      requiredScopes,
+      provider.oauth?.scopeResources ?? [],
+    );
     if (missingScopes.length > 0) {
       throw new IntegrationRuntimeError(
         'permanent',

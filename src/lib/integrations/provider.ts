@@ -107,6 +107,19 @@ export type ProviderOAuthCommonConfig = {
    */
   clientAuth: 'post' | 'basic' | 'none';
 
+  /**
+   * Resource identifiers this server may prefix onto a scope it ECHOES BACK.
+   *
+   * ⚠️ NOT THE SAME QUESTION AS `apiOrigins`, which says where a request may be
+   * sent. The two can coincide for a given vendor and need not in general — a
+   * resource identifier may be `api://<client-id>`, which is not an origin
+   * anything is fetched from. Declared rather than inferred because `scopes.ts`
+   * will only strip a prefix a provider vouched for; see the note there.
+   *
+   * Omit it for a server that echoes scopes in the same spelling they were
+   * requested — comparison then reduces to a case-insensitive match.
+   */
+  scopeResources?: string[];
 };
 
 /**

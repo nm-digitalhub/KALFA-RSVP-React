@@ -8,6 +8,7 @@ import { createAdminClient } from '@/lib/supabase/admin';
 import { getAppOrigin } from '@/lib/url';
 
 import { IntegrationRuntimeError } from './errors';
+import { readAccountIdentity } from './account-identity';
 import { createOAuthConfigLoader, type OAuthConfigLoader } from './oauth-config';
 import type { ProviderDefinition } from './provider';
 import { normalizeTokenResponse } from './token-response';
@@ -248,14 +249,37 @@ export function createOAuthFlow(
         nowMs: now(),
       });
 
+      // WHO this connection is, if the provider was willing to say.
+      //
+      // `claims()` is `openid-client`'s accessor for the ID token's claim set,
+      // and it returns them only after the library has verified the token —
+      // signature, issuer, audience, expiry. Reading the JWT ourselves would
+      // skip every one of those checks on a value that decides which account a
+      // connection belongs to. `undefined` when no `id_token` came back, which
+      // `readAccountIdentity` handles as "no identity" rather than an error.
+      const identity = readAccountIdentity(
+        typeof tokens.claims === 'function' ? tokens.claims() : undefined,
+      );
+
+      const label = await uniqueConnectionLabel(
+        admin,
+        provider.id,
+        identity.displayName ?? provider.displayName,
+      );
+
       const { data: connectionId, error: writeError } = await admin.rpc(
         'integrations_write_credential',
         {
           p_provider: provider.id,
           p_credential_kind: provider.credentialKind,
-          p_label: provider.displayName,
+          p_label: label,
           p_scopes: normalized.accessScopes,
-          p_metadata: {},
+          // `accountKey` is the ONLY field here anything compares. It is stored
+          // rather than acted on: today nothing dedups, and a future decision to
+          // update-instead-of-insert on a reconnect needs this value to already
+          // be on the older rows. Writing it now is what makes that choice
+          // available later without a backfill nobody can perform.
+          p_metadata: identity.key === null ? {} : { accountKey: identity.key },
           p_secret: normalized.secret,
           p_expires_at: normalized.expiresAt,
           // The actor recorded when the flow BEGAN. A callback is a fresh
@@ -280,6 +304,58 @@ export function createOAuthFlow(
     /** Exposed so a route handler builds the same URL the token exchange will. */
     redirectUri,
   };
+}
+
+/**
+ * A label no existing connection of this provider already uses.
+ *
+ * ⚠️ WITHOUT THIS, TWO CONNECTIONS CAN STILL SHARE A NAME. An identity solves
+ * the common case — two mailboxes have two addresses — but not every one:
+ * a tenant that strips the ID token leaves every connection on the provider's
+ * display name, and reconnecting the SAME account produces a second row with
+ * the same address on it. Both end as rows a person cannot tell apart, which is
+ * the whole defect this is meant to remove.
+ *
+ * n8n reaches for the same shape and we have now seen it in their live product:
+ * `credentials.store.ts` asks the server for a name and gets "Microsoft Outlook
+ * account", then "Microsoft Outlook account 2". The counter is a TIE-BREAKER,
+ * not an identity — it only ever appends to a name that was already chosen.
+ *
+ * NOT RACE-PROOF, deliberately. Two authorizations completing for one provider
+ * within the same instant would both read the same set and pick the same suffix.
+ * Making that impossible needs a unique index and a retry loop, i.e. a migration
+ * — and the collision it would prevent is two rows sharing a label, which is
+ * exactly the state we are already in today and recover from by renaming. The
+ * cost is not worth the ceremony; n8n's server-side version has the same
+ * property.
+ */
+async function uniqueConnectionLabel(
+  admin: AdminClient,
+  providerId: string,
+  preferred: string,
+): Promise<string> {
+  const { data, error } = await admin
+    .from('integration_connections')
+    .select('label')
+    .eq('provider', providerId);
+
+  // A label is cosmetic; a failed read here must not fail an authorization that
+  // otherwise succeeded. Fall back to the preferred name and accept a possible
+  // duplicate over losing the connection.
+  if (error) return preferred;
+
+  const taken = new Set((data ?? []).map((row) => row.label));
+  if (!taken.has(preferred)) return preferred;
+
+  // Starts at 2 because the unsuffixed name IS the first one.
+  for (let n = 2; n <= taken.size + 2; n += 1) {
+    const candidate = `${preferred} ${n}`;
+    if (!taken.has(candidate)) return candidate;
+  }
+
+  // Unreachable while the loop runs past the number of rows, but a label is
+  // required and `NOT NULL` — never return an empty string to the insert.
+  return preferred;
 }
 
 /**

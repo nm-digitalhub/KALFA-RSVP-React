@@ -48,6 +48,7 @@ import {
 import { normalizeLegacyProperties } from "./normalize-legacy-properties";
 import { checkboxListRenderer } from "./checkbox-list-control";
 import { headerRowsRenderer } from "./header-rows-control";
+import { webhookTokenRenderer } from "./webhook-token-control";
 import { ExecutionHighlighting } from "./highlighting";
 import {
   integrationConnectionRenderer,
@@ -141,13 +142,17 @@ const PLUGINS = [executionMarkersPlugin, appBarPlugin];
 // prop is read once, and a fresh object each render would re-register the
 // registry on every keystroke in the properties panel.
 //
-// One entry so far — the HTTP node's header list, which has no built-in
-// equivalent in the SDK's closed control union. See header-rows-control.tsx.
+// Each one exists because the SDK's closed control union has no equivalent:
+// a header list (header-rows-control.tsx), a multi-select (checkbox-list),
+// a connection picker that reads live rows (integration-connection), and the
+// webhook token — which is not an input at all but a generate-and-show-once
+// control, because the field stores a hash (webhook-token-control.tsx).
 const JSON_FORM = {
   renderers: [
     headerRowsRenderer,
     checkboxListRenderer,
     integrationConnectionRenderer,
+    webhookTokenRenderer,
   ],
 };
 
@@ -391,6 +396,7 @@ export function WorkflowEditor({
           workflowId={workflowId}
           canConnectMicrosoft={canConnectMicrosoft}
           unavailableReason={microsoftConnectionUnavailableReason}
+          hasConnections={microsoftConnections.length > 0}
         >
           <WorkflowBuilder.Root
             key={workflowId}

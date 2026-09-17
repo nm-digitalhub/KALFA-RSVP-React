@@ -133,7 +133,7 @@ describe('the arm-gate half', () => {
         data: {
           segments: [],
           type: 'trigger.webhook',
-          properties: { label: 'טריגר', description: 'ת', token: 'tok' },
+          properties: { label: 'טריגר', description: 'ת', tokenHash: 'a'.repeat(64) },
         },
       },
     ],

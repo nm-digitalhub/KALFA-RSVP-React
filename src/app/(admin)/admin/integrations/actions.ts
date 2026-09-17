@@ -62,9 +62,23 @@ const INDEX = '/admin/integrations';
 const META_WHATSAPP = '/admin/integrations/meta-whatsapp';
 const VOXIMPLANT = '/admin/integrations/voximplant';
 const WORKFLOW_OAUTH = '/admin/integrations/workflow-oauth';
+// ⚠️ A DYNAMIC ROUTE, REVALIDATED BY ITS PATTERN. The workflow editor reads this
+// provider's configuration to decide whether a node can offer "connect an
+// account", and it can now open the provider form in a modal WITHOUT leaving the
+// canvas — so a save made there has to be reflected on the page behind it.
+// `'page'` is required: with a bracketed segment, `revalidatePath` treats the
+// first argument as a literal path unless the type is given, and would match
+// nothing.
+const WORKFLOW_EDITOR = '/admin/workflows/[id]';
 
 function revalidateAll(...paths: string[]): void {
   for (const path of paths) revalidatePath(path);
+}
+
+/** Every surface that reads the workflow OAuth provider, editor included. */
+function revalidateWorkflowOAuth(): void {
+  revalidateAll(WORKFLOW_OAUTH, INDEX);
+  revalidatePath(WORKFLOW_EDITOR, 'page');
 }
 
 // Form-friendly: every field is an optional string; the master toggle is a
@@ -784,7 +798,7 @@ export async function saveWorkflowOAuthProviderAction(
     return { error: 'לא ניתן היה לשמור את הגדרות ה-OAuth. בדקו את הפרטים ונסו שוב.' };
   }
 
-  revalidateAll(WORKFLOW_OAUTH, INDEX);
+  revalidateWorkflowOAuth();
   // Neutral on purpose. The RPC returns void, so "created" and "updated" are not
   // distinguishable — and inventing the distinction would mean widening a
   // contract to phrase a sentence.

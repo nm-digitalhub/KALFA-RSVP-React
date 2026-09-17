@@ -1058,10 +1058,11 @@ const PERGUEST_SEND_ID = 'tmpl-perguest-send';
  * ⚠️ IT IS STARTED BY ANOTHER WORKFLOW, NOT BY ITS OWN TRIGGER, and that shapes
  * everything about it.
  *
- * Its trigger is a webhook whose token is left EMPTY. That is not an oversight:
+ * Its trigger is a webhook whose token hash is left EMPTY. That is not an
+ * oversight:
  * every graph must declare exactly one start node (rule 1 of the conversion
  * contract), so a workflow needs a trigger even when nothing fires it — and an
- * empty token means the public endpoint cannot reach it either. A WhatsApp
+ * empty hash means the public endpoint cannot reach it either. A WhatsApp
  * trigger here would have been worse: armed, it would fire on every inbound
  * message as well as on the fan-out.
  *
@@ -1394,8 +1395,10 @@ const perGuestReminder: DiagramModel = {
             label: 'מופעל מתהליך אחר',
             description: 'לא להפעיל — תהליך-בן של "תזכורת שבועית למי שטרם ענה"',
             // EMPTY: no public endpoint, and a workflow cannot be armed without
-            // a token. Both are the intent.
-            token: '',
+            // a generated token. Both are the intent. The field holds the HASH
+            // of a token (see webhook-token.ts) — blank means none was ever
+            // generated, which is what makes the address unreachable.
+            tokenHash: '',
           },
         },
       },

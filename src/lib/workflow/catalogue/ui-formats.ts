@@ -17,3 +17,6 @@ export const CHECKBOX_LIST_FORMAT = 'kalfa-checkbox-list';
 
 /** A stored connection UUID plus the workflow-local "connect account" action. */
 export const INTEGRATION_CONNECTION_FORMAT = 'integration-connection';
+
+/** A generated webhook token: shown once, stored only as its hash. */
+export const WEBHOOK_TOKEN_FORMAT = 'webhook-token';

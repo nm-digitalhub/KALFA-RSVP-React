@@ -138,6 +138,41 @@ describe('what it refuses before reading Vault', () => {
     expect(h.rpc).not.toHaveBeenCalled();
   });
 
+  it('⚠️ the SAME scope, qualified by a declared resource, is accepted', async () => {
+    // What the provider's protocol reference says actually comes back:
+    // `<resource>/<scope>`, lowercased, against a capability spelled the short
+    // way. A plain `includes` refused it and every request failed permanently —
+    // and only SOMETIMES, because the server may omit `scope` entirely, in which
+    // case the short form is stored instead. See scopes.ts.
+    const h = harness(connection({ scopes: ['https://api.example.test/Scope.A'] }));
+
+    await expect(
+      h.accessor.resolve({
+        ...RESOLVE_ARGS,
+        provider: {
+          ...provider,
+          oauth: { ...provider.oauth, scopeResources: ['https://api.example.test'] },
+        },
+      }),
+    ).resolves.toBe('stored-token');
+  });
+
+  it('⚠️ a scope qualified by an UNDECLARED resource is still refused', async () => {
+    // Normalising is not "strip any prefix". A grant issued for somebody else's
+    // API names a different permission, whatever the last path segment says.
+    const h = harness(connection({ scopes: ['api://someone-else/scope.a'] }));
+
+    await expect(
+      h.accessor.resolve({
+        ...RESOLVE_ARGS,
+        provider: {
+          ...provider,
+          oauth: { ...provider.oauth, scopeResources: ['https://api.example.test'] },
+        },
+      }),
+    ).rejects.toMatchObject({ code: 'integration_scope_missing' });
+  });
+
   it('⚠️ a connection awaiting a human, and it does NOT try to heal it', async () => {
     // `requires_reauthorization` is a claim that a person must act. Refreshing
     // it automatically would make the status a lie.

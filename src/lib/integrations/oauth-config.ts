@@ -56,7 +56,7 @@ export function createOAuthConfigLoader(
         // without the vault privilege, but selecting it would put it in a query
         // result that may end up in a log line, for no gain — the secret is
         // fetched by the RPC below, by provider name.
-        .select('provider, client_id, extra, enabled')
+        .select('provider, client_id, enabled')
         .eq('provider', provider.id)
         .maybeSingle();
 

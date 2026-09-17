@@ -36,7 +36,13 @@ const setStoreNodes = vi.fn((_nodes: unknown[]) => {
 });
 const functionDecorators = new Map<string, AfterDecorator>();
 
-vi.mock('@workflowbuilder/sdk', () => ({
+// Spread over the real module rather than replacing it: `app-bar.tsx` now also
+// pulls in `./export-diagram`, and through it the node catalogue, which reads
+// real SDK values (`sharedProperties`, `getScope`, `statusOptions`). Those are
+// data this test has no opinion about — only the store accessors and the
+// decorator registry below are stubbed, because those are what it asserts on.
+vi.mock('@workflowbuilder/sdk', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
   Icon: () => null,
   getStoreLayoutDirection: () => 'DOWN',
   getStoreNodes: () => [{ id: 'n1', position: { x: 10, y: 40 }, data: {} }],

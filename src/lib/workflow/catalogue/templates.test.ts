@@ -404,11 +404,11 @@ describe('clock, wait and fan-out templates', () => {
 
   it('⚠️ the child template is NOT reachable from the public endpoint', () => {
     // Its trigger exists only to satisfy "exactly one start node". An empty
-    // token is refused by `findWorkflowForToken` on both sides, so arming it
+    // hash is refused by `findWorkflowForToken` on both sides, so arming it
     // opens nothing — but a fan-out can still start it.
     const trigger = child.value.diagram.nodes.find((n) => n.type === 'start-node')!;
     expect(trigger.data.type).toBe('trigger.webhook');
-    expect(trigger.data.properties.token).toBe('');
+    expect(trigger.data.properties.tokenHash).toBe('');
   });
 
   it('every new template still declares exactly one start node', () => {

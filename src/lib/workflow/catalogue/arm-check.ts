@@ -420,8 +420,8 @@ function blankMessage(nodeType: string, key: string): string {
   // `/api/workflows/hook/<token>` and `findWorkflowForToken` skips every
   // workflow whose configured token is blank, so arming one produces an endpoint
   // that exists nowhere. "The token field is empty" does not say that.
-  if (nodeType === 'trigger.webhook' && key === 'token') {
-    return 'לא הוגדר טוקן, ולכן אין כתובת שאפשר לקרוא לה. הדביקו כאן מחרוזת אקראית וארוכה — התייחסו אליה כאל סיסמה.';
+  if (nodeType === 'trigger.webhook' && key === 'tokenHash') {
+    return 'לא נוצר טוקן, ולכן אין כתובת שאפשר לקרוא לה. לחצו על יצירת טוקן — הוא יוצג פעם אחת בלבד.';
   }
   return `השדה "${key}" ריק.`;
 }

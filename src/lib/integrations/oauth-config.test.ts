@@ -51,7 +51,6 @@ describe('OAuth config loader deployment fallback', () => {
     const h = adminHarness({
       provider: 'microsoft',
       client_id: 'db-client',
-      extra: {},
       enabled: true,
     });
     const discovery = vi.fn(async () => ({ source: 'db' })) as never;
@@ -79,7 +78,6 @@ describe('OAuth config loader deployment fallback', () => {
     const h = adminHarness({
       provider: 'microsoft',
       client_id: 'db-client',
-      extra: {},
       enabled: false,
     });
     const loader = createOAuthConfigLoader({

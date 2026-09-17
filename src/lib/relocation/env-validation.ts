@@ -110,6 +110,30 @@ export const ENV_KEY_SPECS: readonly EnvKeySpec[] = [
     format: z.string().min(1),
     optional: true,
   },
+  // Workflow delegated OAuth — the deployment's own OAuth CLIENT, not a user's
+  // connected account.
+  //
+  // ⚠️ OPTIONAL BY DESIGN, AND NOT A GAP. A deployment can register the same
+  // client in `integration_provider_configs` instead, where the secret lives in
+  // Vault and an operator gets a kill switch — and a row WINS over these two
+  // whenever it exists (see `provider-availability.ts`). These are the
+  // zero-configuration path, so a relocation that leaves them blank is a
+  // complete relocation.
+  //
+  // Not probeable: verifying an OAuth client means redeeming a code, which needs
+  // a human at a consent screen. A format check is all that can honestly run.
+  {
+    key: "INTEGRATION_OAUTH_MICROSOFT_CLIENT_ID",
+    kind: "format",
+    format: nonEmpty,
+    optional: true,
+  },
+  {
+    key: "INTEGRATION_OAUTH_MICROSOFT_CLIENT_SECRET",
+    kind: "format",
+    format: nonEmpty,
+    optional: true,
+  },
   // ElevenLabs
   { key: "ELEVENLABS_API_KEY", kind: "probe", format: nonEmpty, probe: "elevenlabs" },
   { key: "ELEVENLABS_WEBHOOK", kind: "format", format: nonEmpty },

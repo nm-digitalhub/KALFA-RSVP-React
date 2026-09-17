@@ -30,6 +30,8 @@ import {
   useSingleSelectedElement,
   useStore,
 } from '@workflowbuilder/sdk';
+
+import { isVendorExportItem, openScrubbedExport } from './export-diagram';
 import { useEffect, useRef } from 'react';
 
 import { setPropertiesOpen, usePanelsStore } from './use-panels-store';
@@ -227,12 +229,26 @@ export function appBarPlugin(): void {
 
   registerFunctionDecorator('getControlsDotsItems', {
     place: 'after',
-    // The vendor's own two items (Export / Import) come through `returnValue`
-    // untouched and ours are appended, so an SDK upgrade that adds a third item
-    // keeps it instead of having it replaced by this list.
+    // The vendor's items come through `returnValue` and ours are appended, so an
+    // SDK upgrade that adds a new one keeps it instead of having it replaced by
+    // this list.
+    //
+    // ⚠️ WITH ONE EXCEPTION, AND IT IS A LEAK RATHER THAN A PREFERENCE. The
+    // vendor's Export opens a copyable box containing `getStoreDataForIntegration()`
+    // verbatim — which is node `properties` as stored, including the webhook
+    // trigger's token, outbound webhook headers, and every connection id. It is
+    // dropped here and replaced by the same modal over a scrubbed payload. See
+    // export-diagram.tsx for what was read out of the bundle to establish that.
     callback: ({ returnValue }) => ({
       replacedReturn: [
-        ...(Array.isArray(returnValue) ? returnValue : []),
+        ...(Array.isArray(returnValue) ? returnValue : []).filter(
+          (item) => !isVendorExportItem(item),
+        ),
+        {
+          label: 'ייצוא',
+          icon: <Icon name="Export" />,
+          onClick: openScrubbedExport,
+        },
         {
           label: 'הצגת הכול',
           icon: <Icon name="ArrowsOut" />,

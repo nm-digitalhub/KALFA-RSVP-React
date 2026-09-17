@@ -314,7 +314,7 @@ describe('the starter templates against this gate', () => {
     // be armed — and that is now a blocker in its own right. An owner who fixed
     // only one would press arm again and meet the other.
     expect(blockersOf('תזכורת לאורח אחד (תהליך-בן)')).toEqual([
-      'הצעד "מופעל מתהליך אחר": לא הוגדר טוקן, ולכן אין כתובת שאפשר לקרוא לה. הדביקו כאן מחרוזת אקראית וארוכה — התייחסו אליה כאל סיסמה.',
+      'הצעד "מופעל מתהליך אחר": לא נוצר טוקן, ולכן אין כתובת שאפשר לקרוא לה. לחצו על יצירת טוקן — הוא יוצג פעם אחת בלבד.',
       'הצעד "שליחת תבנית תזכורת": הצעד פועל על אורח, והטריגר של התהליך אינו מתחיל מאורח. החליפו לטריגר "הודעת וואטסאפ נכנסת" שמסומן בו לפחות סוג הודעה שאורח שולח, הסירו את הצעד, או השאירו את התהליך לא מחומש והפעילו אותו מתהליך אחר עם "הרצה לכל אורח".',
     ]);
     // ⚠️ THE THIRD DELIBERATE BLANK, AND IT IS BLOCKED ON `purposeKey` ALONE.
@@ -463,20 +463,20 @@ describe('a trigger that can never fire', () => {
   });
 
   it('⚠️ a webhook trigger with no token has no address', () => {
-    // `findWorkflowForToken` skips every workflow whose configured token is
+    // `findWorkflowForToken` skips every workflow whose configured hash is
     // blank, so the route `/api/workflows/hook/<token>` resolves to nothing.
     // Arming one produced an endpoint that existed nowhere, silently.
     expect(
-      findArmBlockers(wrap([node('h', 'trigger.webhook', { label: 'קריאה', description: 'd', token: '' })])),
+      findArmBlockers(wrap([node('h', 'trigger.webhook', { label: 'קריאה', description: 'd', tokenHash: '' })])),
     ).toEqual([
-      'הצעד "קריאה": לא הוגדר טוקן, ולכן אין כתובת שאפשר לקרוא לה. הדביקו כאן מחרוזת אקראית וארוכה — התייחסו אליה כאל סיסמה.',
+      'הצעד "קריאה": לא נוצר טוקן, ולכן אין כתובת שאפשר לקרוא לה. לחצו על יצירת טוקן — הוא יוצג פעם אחת בלבד.',
     ]);
   });
 
   it('a webhook trigger WITH a token arms', () => {
     expect(
       findArmBlockers(
-        wrap([node('h', 'trigger.webhook', { label: 'קריאה', description: 'd', token: 'a-long-random-string' })]),
+        wrap([node('h', 'trigger.webhook', { label: 'קריאה', description: 'd', tokenHash: 'a'.repeat(64) })]),
       ),
     ).toEqual([]);
   });

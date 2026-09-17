@@ -32,6 +32,7 @@ vi.mock('@/lib/data/admin/integrations/workflow-connections', () => ({
 vi.mock('@/lib/integrations/system-oauth-client', () => ({
   hasSystemOAuthClient: hasSystemOAuthClientMock,
 }));
+vi.mock('@/lib/url', () => ({ getAppOrigin: async () => 'https://beta.example' }));
 vi.mock('./provider-configuration-form', () => ({
   ProviderConfigurationForm: function ProviderConfigurationForm() {
     return null;
@@ -200,6 +201,27 @@ describe('Workflow OAuth admin page', () => {
     expect(rendered).toContain('תיבת מכירות');
     expect(rendered).toContain('Mail.Send פעיל');
     expect(rendered).not.toContain('must-not-render');
+  });
+
+  it('⚠️ shows the Redirect URI an operator must register in Entra', async () => {
+    // It was nowhere in the product: the only way to learn the value was to read
+    // `oauth-flow.ts` and combine the callback path with APP_ORIGIN by hand.
+    // Microsoft requires an EXACT match and answers AADSTS50011 otherwise, so a
+    // value the operator has to reconstruct is a value they will get wrong.
+    const rendered = collect(await render()).find(
+      (el) => typeof el.props?.url === 'string',
+    );
+
+    expect(rendered?.props?.url).toBe('https://beta.example/api/integrations/oauth/callback');
+  });
+
+  it('⚠️ derives that URI rather than spelling it out', () => {
+    // Two sources for one address is how it drifts. The page must build it from
+    // the same constant `oauth-flow.ts` uses when it asks Microsoft to match it.
+    const source = fs.readFileSync(path.join(__dirname, 'page.tsx'), 'utf8');
+
+    expect(source).toContain('INTEGRATION_OAUTH_CALLBACK_PATH');
+    expect(source).not.toMatch(/['"`][^'"`]*\/api\/integrations\/oauth\/callback/);
   });
 
   it('contains no second OAuth implementation in UI code', () => {

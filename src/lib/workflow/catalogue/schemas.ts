@@ -42,6 +42,7 @@ import {
   CHECKBOX_LIST_FORMAT,
   HEADER_ROWS_FORMAT,
   INTEGRATION_CONNECTION_FORMAT,
+  WEBHOOK_TOKEN_FORMAT,
 } from './ui-formats';
 
 import {
@@ -468,7 +469,11 @@ const webhookTriggerSchema = {
   properties: {
     ...identityProperties,
     ...statusProperty,
-    token: requiredText,
+    // ⚠️ THE HASH, NOT THE TOKEN. The diagram used to hold the credential itself
+    // — and the editor's own Export menu puts a diagram in a copyable box. See
+    // `webhook-token.ts`: the value is shown once at generation and only its
+    // sha256 is ever stored.
+    tokenHash: requiredText,
   },
 } satisfies NodeSchema;
 
@@ -479,17 +484,17 @@ const webhookTriggerUiSchema: UISchema = {
   elements: [
     ...identityControls(webhookTriggerScope('properties.label'), webhookTriggerScope('properties.description')),
     {
-      // Plain Text and NOT VariableText: a token assembled at run time is a token
-      // nobody reviewed, and the endpoint compares it in constant time against a
-      // fixed value.
+      // A custom renderer rather than a text box, because there is no longer a
+      // value for anyone to type: the field holds a sha256, and the token that
+      // produced it is shown once and never recoverable.
       type: 'Text',
-      scope: webhookTriggerScope('properties.token'),
+      scope: webhookTriggerScope('properties.tokenHash'),
       label: 'טוקן הכתובת',
-      placeholder: 'הדביקו כאן את הטוקן שנוצר',
+      options: { format: WEBHOOK_TOKEN_FORMAT },
     },
     {
       type: 'Label',
-      text: 'הכתובת היא /api/workflows/hook/<הטוקן>. מי שמחזיק בטוקן יכול להריץ את התהליך — התייחסו אליו כאל סיסמה, והחליפו אותו אם דלף.',
+      text: 'הטוקן מוצג פעם אחת בלבד ואינו ניתן לשחזור — נשמר רק גיבוב שלו. מי שמחזיק בו יכול להריץ את התהליך; אם דלף, צרו חדש.',
     },
     {
       // The limitation an owner would otherwise discover from a failed run.
@@ -1410,6 +1415,15 @@ const templateKeyOptions = [
   { value: 'thankyou', label: 'תודה אחרי האירוע (שיווקי)' },
   { value: 'gift', label: 'מתנה (שיווקי)' },
 ] as const;
+
+/**
+ * The same seven, as bare keys.
+ *
+ * DERIVED, never re-typed: the portability layer asks "does this key exist
+ * wherever the workflow lands", and a second hand-written copy could answer yes
+ * for a key the form no longer offers.
+ */
+export const TEMPLATE_KEYS: readonly string[] = templateKeyOptions.map((o) => o.value);
 
 const sendTemplateSchema = {
   type: 'object',

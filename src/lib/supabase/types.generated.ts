@@ -6589,6 +6589,14 @@ export type Database = {
           whatsapp_enabled: boolean
         }[]
       }
+      integrations_delete_credential: {
+        Args: { p_connection_id: string }
+        Returns: boolean
+      }
+      integrations_disconnect_credential: {
+        Args: { p_connection_id: string }
+        Returns: boolean
+      }
       integrations_read_credential: {
         Args: {
           p_connection_id: string
@@ -6608,6 +6616,10 @@ export type Database = {
           p_lease_id: string
           p_next_status?: string
         }
+        Returns: boolean
+      }
+      integrations_rename_credential: {
+        Args: { p_connection_id: string; p_label: string }
         Returns: boolean
       }
       integrations_replace_credential: {

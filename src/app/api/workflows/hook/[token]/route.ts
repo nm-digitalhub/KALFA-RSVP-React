@@ -32,6 +32,53 @@ export const dynamic = 'force-dynamic';
  */
 const RATE_LIMIT = { limit: 60, windowMs: 60_000 };
 
+/**
+ * What a browser gets, and it is deliberately the same for every token.
+ *
+ * ⚠️ NOT COSMETIC. The editor hands an operator this address and invites them to
+ * use it, so the first thing many will do is paste it into a browser — which
+ * sends GET. Without a handler, Next answers 405 with NO `Content-Type` at all,
+ * and the response also carries `X-Content-Type-Options: nosniff`, so the
+ * browser is forbidden from guessing. Safari therefore treats it as opaque bytes
+ * and offers to DOWNLOAD A FILE NAMED AFTER THE TOKEN — reported from a phone on
+ * 2026-09-17, and indistinguishable from "my webhook is broken".
+ *
+ * ⚠️ IT MUST TELL A CALLER NOTHING ABOUT THE TOKEN. A constant response: no
+ * lookup, no rate-limit consumption, no branch. A GET that answered differently
+ * for a real token than for a made-up one would be a free oracle for guessing
+ * them — which is the whole reason `POST` answers 404 for both a wrong token and
+ * a disarmed workflow.
+ *
+ * ⚠️ `charset=utf-8` IS SET BY HAND, AND THE HINT IS UNREADABLE WITHOUT IT.
+ * `Response.json()` — which `NextResponse.json` wraps — sets a bare
+ * `application/json` and never a charset. JSON is UTF-8 by definition (RFC 8259
+ * §8.1), but a browser shown an unlabelled body falls back to its own default:
+ * measured on iOS Safari 2026-09-17, the Hebrew sentence below rendered as
+ * `×©×œ×—×•`, which is these exact UTF-8 bytes read as Windows-1252.
+ * `/guest-list-template.csv` beside it has always spelled its charset out for
+ * the same reason.
+ *
+ * `Allow` is set explicitly because Next's own 405 omits it. NOTE, MEASURED: it
+ * leaves this handler (verified on the Response object) but does NOT reach the
+ * wire on the deployed stack, while `content-type` and the body do — nginx holds
+ * no `proxy_hide_header`, and a 200 route's `content-disposition` survives
+ * intact. Unresolved, and cosmetic: the status carries the meaning. The test
+ * pins what this function returns, which is the part this file controls.
+ */
+export function GET(): NextResponse {
+  return NextResponse.json(
+    {
+      ok: false,
+      error: 'method_not_allowed',
+      hint: 'שלחו POST עם גוף JSON לכתובת הזו. פתיחה בדפדפן שולחת GET ולעולם לא תפעיל את התהליך.',
+    },
+    {
+      status: 405,
+      headers: { Allow: 'POST', 'Content-Type': 'application/json; charset=utf-8' },
+    },
+  );
+}
+
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ token: string }> },

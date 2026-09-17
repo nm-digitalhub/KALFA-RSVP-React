@@ -925,9 +925,82 @@ export const LEGACY_PROPERTY_ALIASES: Readonly<Record<string, string>> = {
  * and the arming gate cannot drift apart: a field required in one is required in
  * the other, by construction rather than by discipline.
  */
+/**
+ * How a stored property's value relates to the installation it was saved in.
+ *
+ * Absent means PORTABLE, which is the common case and therefore the default: a
+ * label, a delay, a condition operator mean the same thing anywhere.
+ */
+export type DeploymentBinding =
+  /**
+   * A pointer to a row or resource in THIS installation — a connection uuid,
+   * another workflow, a provider-side numbering id, an agent. It cannot resolve
+   * elsewhere, and several of these are also somebody's phone number.
+   */
+  | 'identifier'
+  /**
+   * Operator-typed material that may be a credential. Distinct from
+   * `identifier` because the remedy differs — one is re-selected from a list,
+   * the other has to be re-entered from somewhere only the operator has.
+   */
+  | 'secret'
+  /**
+   * A key into a catalogue. Survives only where the same key exists, decided
+   * PER VALUE rather than per field, because the catalogues differ in kind.
+   */
+  | 'catalogue';
+
+/**
+ * Per node type, the properties that do NOT simply travel with the diagram.
+ *
+ * ⚠️ DERIVED FROM THE CATALOGUE, NOT FROM SAVED DATA. A first pass built from
+ * the 21 nodes present in this installation's saved workflows missed
+ * `trigger.webhook.token` and `action.start_for_each_guest.targetWorkflowId`
+ * outright — neither node type had ever been used here. Anything classified
+ * below was read from the property schemas in `schemas.ts`, which is the list of
+ * what a node CAN hold rather than what one happens to.
+ *
+ * Each entry was then checked at its use site rather than from its name:
+ *
+ *   token             `webhook-trigger.ts` compares it in constant time and the
+ *                     field's own label calls it a password. It IS the trigger's
+ *                     whole credential.
+ *   targetWorkflowId  a `workflows.id` uuid.
+ *   url / headers     `dry-run.ts` already refuses to print header values,
+ *                     because an owner may type a literal secret before reading
+ *                     the warning. An export file is the same class of artefact.
+ *   topic             a closed `callbackTopicOptions` list compiled into the app,
+ *                     so it travels — unlike `purposeKey`, which names a row.
+ *
+ * Fail-closed: `portability.test.ts` refuses a property that neither appears
+ * here nor in its allow-list of reviewed portable names, so a new node cannot
+ * ship unclassified.
+ */
+export const NODE_DEPLOYMENT_BINDINGS: Partial<
+  Record<KalfaNodeType, Record<string, DeploymentBinding>>
+> = {
+  'trigger.whatsapp_inbound': { phoneNumberId: 'identifier' },
+  // A HASH, not the token — so this is no longer a secret that must not travel,
+  // but it still authenticates to THIS installation and resolves to nothing
+  // anywhere else. See webhook-token.ts for why the value moved out.
+  'trigger.webhook': { tokenHash: 'identifier' },
+  'action.microsoft_send_email': { connectionId: 'identifier' },
+  'action.send_template': { messageKey: 'catalogue' },
+  'action.create_callback_request': { topic: 'catalogue' },
+  'action.start_for_each_guest': { targetWorkflowId: 'identifier' },
+  'action.webhook': { url: 'secret', headers: 'secret' },
+  'action.start_voice_call': {
+    purposeKey: 'catalogue',
+    callerId: 'identifier',
+    ruleId: 'identifier',
+    agentId: 'identifier',
+    toOverride: 'identifier',
+  },
+};
+
 export const NODE_REQUIRED_FIELDS: Record<KalfaNodeType, string[]> = {
   'trigger.whatsapp_inbound': ['label', 'description'],
-  'trigger.webhook': ['label', 'description', 'token'],
+  'trigger.webhook': ['label', 'description', 'tokenHash'],
   'trigger.schedule': ['label', 'description', 'time'],
   'logic.condition': ['label', 'description', 'field', 'operator'],
   'logic.switch': ['label', 'description'],

@@ -176,6 +176,13 @@ const EXPECTED_PERMISSION: Record<string, string | string[]> = {
   // status timestamps plus a Mail.Send-ready boolean. Credential material and
   // full connection rows never leave the module.
   'src/lib/data/admin/integrations/workflow-connections.ts': 'integrations.read',
+  // ⚠️ `manage`, NOT `read` — and the split from the module above is the point.
+  // `workflow-connections.ts` is gated on `read` so a workflow author who may
+  // not administer integrations can still PICK an account. This module ends a
+  // connection, renames it, or removes it — operations that affect every other
+  // workflow using it, and that the person who triggered them cannot undo. The
+  // two live apart so the weaker gate is never the one copied.
+  'src/lib/data/admin/integrations/connection-lifecycle.ts': 'integrations.manage',
 };
 
 // Modules that write but are correctly exempt from naming a permission, with the

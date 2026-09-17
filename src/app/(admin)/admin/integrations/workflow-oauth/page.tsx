@@ -7,11 +7,15 @@ import { buttonVariants } from '@/components/ui/button';
 import { hasPlatformPermission, requirePlatformPermission } from '@/lib/auth/dal';
 import { readOAuthProviderConfig } from '@/lib/data/admin/integrations/oauth-provider-config';
 import { listMicrosoftWorkflowConnectionsForAdmin } from '@/lib/data/admin/integrations/workflow-connections';
+import { INTEGRATION_OAUTH_CALLBACK_PATH } from '@/lib/integrations/oauth-flow';
 import { resolveOAuthProviderAvailability } from '@/lib/integrations/provider-availability';
 import { hasSystemOAuthClient } from '@/lib/integrations/system-oauth-client';
 import { cn } from '@/lib/utils';
 
+import { getAppOrigin } from '@/lib/url';
+
 import { EmptyState, PageHeading, firstParam, formatDateTime } from '../../_components';
+import { OAuthCallbackUrl } from './callback-url';
 import { OAuthOutcome } from './oauth-outcome';
 import { ProviderConfigurationForm } from './provider-configuration-form';
 
@@ -37,12 +41,18 @@ export default async function WorkflowOAuthAdminPage({
 }) {
   await requirePlatformPermission('integrations.read');
 
-  const [params, config, connections, canManage] = await Promise.all([
+  const [params, config, connections, canManage, appOrigin] = await Promise.all([
     searchParams,
     readOAuthProviderConfig('microsoft'),
     listMicrosoftWorkflowConnectionsForAdmin(),
     hasPlatformPermission('integrations.manage'),
+    getAppOrigin(),
   ]);
+
+  // ⚠️ DERIVED, NEVER TYPED. The same two pieces `oauth-flow.ts` combines when it
+  // builds the authorization request, so what this screen shows and what
+  // Microsoft is asked to match cannot drift apart.
+  const callbackUrl = new URL(INTEGRATION_OAUTH_CALLBACK_PATH, appOrigin).href;
 
   const systemConfigured = hasSystemOAuthClient('microsoft');
   const availability = resolveOAuthProviderAvailability({
@@ -108,6 +118,8 @@ export default async function WorkflowOAuthAdminPage({
             ההגדרה הפעילה מגיעה ממשתני הסביבה של הפריסה. יצירת רשומת ספק כאן תחליף אותה ותהפוך לסמכותית.
           </p>
         ) : null}
+
+        <OAuthCallbackUrl url={callbackUrl} />
 
         {canManage ? (
           <ProviderConfigurationForm
