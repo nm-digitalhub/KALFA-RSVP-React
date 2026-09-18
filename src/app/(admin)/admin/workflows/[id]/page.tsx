@@ -19,6 +19,7 @@ import { saveWorkflowAction } from "../actions";
 import { CancelRunButton } from "../row-actions";
 
 import { RunNowPanel } from "./run-now-panel";
+import { RunAutoWatch } from "./run-auto-watch";
 import { RunWatchButton } from "./run-watcher";
 import { RunsAutoRefresh, type WorkflowRunStatus } from "./runs-auto-refresh";
 import { TestPanel } from "./test-panel";
@@ -165,7 +166,19 @@ export default async function AdminWorkflowPage({
           statuses={runs.map((run) => run.status as WorkflowRunStatus)}
           fingerprint={runsFingerprint(runs)}
         />
-        <h2 className="text-lg font-semibold">הרצות אחרונות</h2>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h2 className="text-lg font-semibold">הרצות אחרונות</h2>
+          {/*
+            Attaches the canvas to a run that APPEARS while the page is open —
+            the trigger-fired ones nobody clicks. Given the newest run rather
+            than a list: it reacts to that value changing, and seeds itself on
+            the first render so opening the page does not light the canvas with
+            an old run. See run-auto-watch.tsx.
+          */}
+          <RunAutoWatch
+            newestRun={runs[0] ? { id: runs[0].id, status: runs[0].status } : null}
+          />
+        </div>
         {runs.length === 0 ? (
           <p className="text-sm text-muted-foreground">
             עדיין לא רץ. תהליך כבוי לא רץ אף פעם — הפעילו אותו ברשימה.
