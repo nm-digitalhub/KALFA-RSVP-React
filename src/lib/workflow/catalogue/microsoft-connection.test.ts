@@ -104,7 +104,16 @@ describe('action.microsoft_send_email — live connection schema', () => {
       'action.microsoft_send_email',
     ]);
     for (const item of built.filter((candidate) => !rebuiltTypes.has(candidate.type))) {
-      expect(item).toBe(PALETTE_ITEMS.find((base) => base.type === item.type));
+      const base = PALETTE_ITEMS.find((candidate) => candidate.type === item.type)!;
+
+      // ⚠️ THE SCHEMA, NOT THE ITEM. Every entry is a fresh object now, because
+      // `buildPaletteItems` also puts the run report on each one's uischema
+      // (see `withNodeRunControl`). What this test exists to state is narrower
+      // and still true: no entry but Microsoft's gets its SCHEMA rebuilt, and
+      // the module-level array is never mutated in place.
+      expect(item.schema, item.type).toBe(base.schema);
+      expect(item.defaultPropertiesData, item.type).toBe(base.defaultPropertiesData);
+      expect(base.uischema, `${item.type}: PALETTE_ITEMS was mutated`).not.toBe(item.uischema);
     }
   });
 });

@@ -56,6 +56,7 @@ import {
 } from "./integration-connection-control";
 import { ExecutionLogPanel } from "./log-panel";
 import { executionMarkersPlugin } from "./node-markers";
+import { nodeRunRenderer } from "./node-run-control";
 import { resetExecution } from "./use-execution-store";
 import {
   resetPanels,
@@ -153,6 +154,11 @@ const JSON_FORM = {
     checkboxListRenderer,
     integrationConnectionRenderer,
     webhookTokenRenderer,
+    // Not an input at all: the read-only report of what the selected node did on
+    // the run being watched. It is here rather than behind the panel's `tabs`
+    // prop because that prop's tab strip is gated on the node's visual template
+    // type — see node-run-control.tsx for the measurement.
+    nodeRunRenderer,
   ],
 };
 

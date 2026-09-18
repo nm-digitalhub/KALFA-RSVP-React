@@ -20,3 +20,14 @@ export const INTEGRATION_CONNECTION_FORMAT = 'integration-connection';
 
 /** A generated webhook token: shown once, stored only as its hash. */
 export const WEBHOOK_TOKEN_FORMAT = 'webhook-token';
+
+/**
+ * A read-only report of what the selected node did on the run being watched.
+ *
+ * ⚠️ NOT A FIELD, AND DELIBERATELY A `Label`. It edits nothing and stores
+ * nothing — the uischema element is the SDK's own `LabelElement`, the closest
+ * thing its closed union has to "render something here", and the renderer
+ * replaces it wholesale. `text` is therefore never drawn; it exists because the
+ * type requires one.
+ */
+export const NODE_RUN_FORMAT = 'kalfa-node-run';

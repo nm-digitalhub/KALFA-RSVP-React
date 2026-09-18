@@ -42,6 +42,7 @@ import {
   CHECKBOX_LIST_FORMAT,
   HEADER_ROWS_FORMAT,
   INTEGRATION_CONNECTION_FORMAT,
+  NODE_RUN_FORMAT,
   WEBHOOK_TOKEN_FORMAT,
 } from './ui-formats';
 
@@ -2069,6 +2070,53 @@ const voiceCallUiSchema = {
 } satisfies UISchema;
 
 /**
+ * The read-only run report, drawn by `node-run-control.tsx`.
+ *
+ * ⚠️ A `Label` AND NOT A CONTROL, because it edits nothing. The SDK's UISchema
+ * union is CLOSED — `UISchemaControlElement | UISchemaLayoutElement |
+ * LabelElement | RichTextElement` — so "render my component here" has to be an
+ * existing element carrying `options.format`, which is the same contract the
+ * other four custom renderers in this file use. `text` is required by the type
+ * and never drawn: the renderer replaces the element outright.
+ */
+const NODE_RUN_ELEMENT: UISchema = {
+  type: 'Label',
+  text: 'הרצה',
+  options: { format: NODE_RUN_FORMAT },
+};
+
+/**
+ * Put the run report at the top of a node's properties panel.
+ *
+ * ⚠️ HERE AND NOT IN THE NINETEEN UISCHEMAS, because it is not a property of any
+ * node — it is the editor reporting on a run. One place also means a node type
+ * added later gets it without anyone remembering to.
+ *
+ * ⚠️ AND HERE RATHER THAN ON `PALETTE_ITEMS` ITSELF. That array is also read by
+ * `normalizeLegacyProperties` and by the tests that police container choice;
+ * neither has any business seeing an element that exists only for the editor's
+ * live view. `nodeTypes` is the only consumer that needs it, and this function
+ * is what builds it.
+ *
+ * ⚠️ FIRST, matching where the vendor puts `globalControls` in their own nodes.
+ * It is also what an owner opening a node DURING a run came to read; the
+ * settings are still one line below, and the control renders nothing at all
+ * when no run is on the canvas.
+ */
+function withNodeRunControl(item: PaletteItem): PaletteItem {
+  const { uischema } = item;
+  // `uischema` is OPTIONAL on the vendor's `NodeDefinition`, and every entry
+  // here is a VerticalLayout. Both checks are cheaper than a crash if one ever
+  // is not — a node whose panel simply lacks the report is a far better failure
+  // than a panel that does not render.
+  if (!uischema || !('elements' in uischema) || !Array.isArray(uischema.elements)) return item;
+  return {
+    ...item,
+    uischema: { ...uischema, elements: [NODE_RUN_ELEMENT, ...uischema.elements] },
+  };
+}
+
+/**
  * The palette, built for a given set of WhatsApp numbers.
  *
  * A FACTORY and not a const, because one entry's dropdown is a live list: the
@@ -2103,21 +2151,21 @@ export function buildPaletteItems(
 ): PaletteItem[] {
   return PALETTE_ITEMS.map((item) => {
     if (item.type === 'trigger.whatsapp_inbound') {
-      return { ...item, schema: triggerSchemaFor(numbers) };
+      return withNodeRunControl({ ...item, schema: triggerSchemaFor(numbers) });
     }
     if (item.type === 'action.start_voice_call') {
-      return {
+      return withNodeRunControl({
         ...item,
         schema: voiceCallSchemaFor(voicePurposes, voiceCallerIds, voiceRules, voiceAgents),
-      };
+      });
     }
     if (item.type === 'action.microsoft_send_email') {
-      return {
+      return withNodeRunControl({
         ...item,
         schema: microsoftSendEmailSchemaFor(microsoftConnections),
-      };
+      });
     }
-    return item;
+    return withNodeRunControl(item);
   });
 }
 
