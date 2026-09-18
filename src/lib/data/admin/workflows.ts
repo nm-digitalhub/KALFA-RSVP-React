@@ -34,6 +34,7 @@ import { matchesKind } from '@/lib/workflow/trigger';
 import { toWorkflowDefinition } from '@/lib/workflow/adapter/to-definition';
 import { findArmBlockers } from '@/lib/workflow/catalogue/arm-check';
 import { findVoiceDialBlockers } from '@/lib/data/admin/voice-node-arm-check';
+import { runsFingerprint, RUNS_WINDOW } from '@/lib/workflow/runs-fingerprint';
 import {
   dryRunWorkflow,
   type DryRunResult,
@@ -563,6 +564,48 @@ export async function listWorkflowRuns(
     errorMessage: row.error_message,
   }));
 }
+
+/**
+ * A short value that changes exactly when the runs table would look different.
+ *
+ * ⚠️ WHY THIS EXISTS AT ALL. `runs-auto-refresh.tsx` used to stop polling once
+ * every visible run was terminal, on the reasoning that nothing could change
+ * after that. A live test disproved it: an inbound WhatsApp message created a
+ * run at 18:55:53 and finished it at 18:55:57 while the page sat open and
+ * visible, and the table still showed only the two runs from the previous day.
+ * A trigger creates rows with no browser involved, so "everything I can see has
+ * finished" says nothing about what is about to appear.
+ *
+ * ⚠️ AND WHY NOT JUST REFRESH ON A TIMER. `router.refresh()` re-runs the whole
+ * page — seven uncached queries — and in the idle case the answer is almost
+ * always "nothing changed". This is ONE query, and the refresh happens only
+ * when the answer actually differs.
+ *
+ * ⚠️ THE FINGERPRINT COVERS EVERY VISIBLE ROW, NOT JUST THE NEWEST. Taking only
+ * the latest run would miss a parked run waking up behind a newer one — a
+ * `logic.wait` step can leave a run non-terminal for days while later runs come
+ * and go. `id:status` per row catches an insert, a status change, and a
+ * deletion alike.
+ *
+ * The shape of the value — which rows, in which order — lives in
+ * `@/lib/workflow/runs-fingerprint`, where it can be tested directly.
+ */
+export async function workflowRunsFingerprint(workflowId: string): Promise<string> {
+  await requirePlatformPermission('manage_settings');
+
+  const supabase = createAdminClient();
+  const { data, error } = await supabase
+    .from('workflow_runs')
+    .select('id, status')
+    .eq('workflow_id', workflowId)
+    .order('created_at', { ascending: false })
+    .limit(RUNS_WINDOW);
+
+  if (error) throw new Error('בדיקת ההרצות נכשלה');
+
+  return runsFingerprint(data ?? []);
+}
+
 
 // ---------------------------------------------------------------------------
 // Picking what a manual run acts on

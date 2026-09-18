@@ -7,6 +7,7 @@ import { Badge, firstParam, formatDateTime } from "../../_components";
 import { hasPlatformPermission } from "@/lib/auth/dal";
 import { editorDiagramSchema } from "@/lib/workflow/adapter/editor-schema";
 import { getWorkflow, listWorkflowRuns } from "@/lib/data/admin/workflows";
+import { runsFingerprint, RUNS_WINDOW } from "@/lib/workflow/runs-fingerprint";
 import { readOAuthProviderConfig } from "@/lib/data/admin/integrations/oauth-provider-config";
 import { listProviderNumbers } from "@/lib/data/admin/integrations/provider-numbers";
 import { listActiveMicrosoftWorkflowConnections } from "@/lib/data/admin/integrations/workflow-connections";
@@ -53,7 +54,7 @@ export default async function AdminWorkflowPage({
   const workflow = await getWorkflow(id);
   if (!workflow) notFound();
 
-  const runs = await listWorkflowRuns(id, 20);
+  const runs = await listWorkflowRuns(id, RUNS_WINDOW);
 
   const voicePurposes = (await listDialableVoicePurposes()).map((p) => ({
     key: p.key,
@@ -154,8 +155,16 @@ export default async function AdminWorkflowPage({
           ones already fetched above — no extra query, and no client-side copy of
           the table to keep in sync. See runs-auto-refresh.tsx for why this is a
           refresh rather than the SSE stream the canvas uses.
+
+          The fingerprint is seeded from THIS render rather than learned from the
+          component's first poll: anything that happens in between would
+          otherwise be swallowed, and that gap is exactly when a trigger fires.
         */}
-        <RunsAutoRefresh statuses={runs.map((run) => run.status as WorkflowRunStatus)} />
+        <RunsAutoRefresh
+          workflowId={id}
+          statuses={runs.map((run) => run.status as WorkflowRunStatus)}
+          fingerprint={runsFingerprint(runs)}
+        />
         <h2 className="text-lg font-semibold">הרצות אחרונות</h2>
         {runs.length === 0 ? (
           <p className="text-sm text-muted-foreground">
