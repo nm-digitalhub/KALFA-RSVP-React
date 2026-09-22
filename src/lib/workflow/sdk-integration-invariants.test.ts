@@ -1,4 +1,5 @@
-import { readFileSync, readdirSync, statSync, existsSync } from 'node:fs';
+import { readFileSync, readdirSync, statSync } from 'node:fs';
+import { createRequire } from 'node:module';
 import { join } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
@@ -85,18 +86,71 @@ describe('SDK integration invariants', () => {
     expect(hits).toEqual([]);
   });
 
-  it('the SDK keeps its own immer copy, so any future freeze call cannot reach ours', () => {
-    // The docs' warning rests on immer being "a shared, deduped dependency".
-    // Here it is not: the SDK carries a nested copy at a different major version
-    // from the root one that zustand and RTK resolve. That containment is what
-    // makes the test above a warning rather than an incident, so it is pinned
-    // too — an `npm install` that dedupes them would remove it silently.
-    const nested = join(SDK, 'node_modules/immer/package.json');
-    const hoisted = join(ROOT, 'node_modules/immer/package.json');
-    expect(existsSync(nested), 'the SDK no longer carries its own immer copy').toBe(true);
+  it('the SDK does not share an immer copy with the reducers immer would freeze', () => {
+    // WHAT THIS PROTECTS, and why it is phrased as "not the same copy" rather
+    // than "the SDK has a nested copy".
+    //
+    // WHY A SEPARATE COPY IS SUFFICIENT — verified in immer's own source, not
+    // inferred from the SDK's docs. `node_modules/immer/dist/immer.mjs`:
+    //
+    //   var Immer2 = class {
+    //     constructor(config) { this.autoFreeze_ = true; }   // per INSTANCE
+    //     setAutoFreeze(value) { this.autoFreeze_ = value; }
+    //   }
+    //   var immer = new Immer2();                            // module singleton
+    //   var setAutoFreeze = immer.setAutoFreeze.bind(immer);
+    //
+    // The exported `setAutoFreeze` is BOUND to one module-level singleton, so
+    // its blast radius is exactly one copy of the module. Two copies therefore
+    // cannot reach each other — which is the whole mechanism this test guards.
+    // (immer 11, RTK's copy, has the identical shape: same three lines.)
+    //
+    // The SDK's own docs (get-started/side-effects, saved 2026-09-09) say it
+    // calls `setAutoFreeze(false)` on import and warn that "because immer is a
+    // shared, deduped dependency, this disables auto-freeze globally for the
+    // host app — any of your own reducers, RTK slices … lose that protection".
+    // TWO things about that warning are false for us, both measured: the 2.3.0
+    // artifact makes no such call (the test above), and immer is NOT deduped
+    // here — the SDK resolves 10.x, RTK resolves 11.x. This test pins the
+    // second one, because it is what makes the first one merely a warning.
+    //
+    // It changed on 2026-09-22: an `npm update` moved recharts 3.8 → 3.10.1
+    // (RTK 2.12.0), and npm flipped the hoist — immer 10 came up to the root
+    // next to the SDK and zustand, pushing RTK's immer 11 down under recharts.
+    // The earlier form of this test asserted the OLD shape (a nested copy under
+    // the SDK) and failed, although containment itself never lapsed. MEASURED
+    // at that commit: the SDK dist has zero `autoFreeze` occurrences (the test
+    // above), no source of ours imports `immer` or `zustand/middleware/immer`,
+    // and @xyflow does not use that middleware either — so nothing routed
+    // through the shared copy even while it was shared.
+    //
+    // Attempted and rejected: npm `overrides` pinning root immer to ^11 and the
+    // SDK's to ^10. npm ignores it — the SDK's `^10.0.0` and RTK's `^11.0.0`
+    // are both hard ranges and npm decides the hoist itself. Overrides DO work
+    // in this repo (yaml is forced to 1.10.3 under voxengine-ci), so this is
+    // npm declining this particular split, not a broken mechanism.
+    const require_ = createRequire(join(ROOT, 'noop.js'));
+    const resolveFrom = (from: string) =>
+      require_.resolve('immer/package.json', { paths: [join(ROOT, 'node_modules', from)] });
+
+    const sdkImmer = resolveFrom('@workflowbuilder/sdk');
+    const rtkImmer = resolveFrom('@reduxjs/toolkit');
+
+    // Anti-no-op: a typo'd package name would make both throw, not differ.
+    expect(sdkImmer).toMatch(/immer/);
+    expect(rtkImmer).toMatch(/immer/);
+
+    expect(
+      sdkImmer,
+      'the SDK and RTK now resolve the SAME immer copy — a future SDK ' +
+        'setAutoFreeze(false) would disable auto-freeze for RTK reducers',
+    ).not.toBe(rtkImmer);
+
+    // And they are different majors, so they cannot silently become one copy
+    // on a future hoist without this test noticing.
     const major = (p: string) =>
       String((JSON.parse(readFileSync(p, 'utf8')) as { version: string }).version).split('.')[0];
-    expect(major(nested)).not.toBe(major(hoisted));
+    expect(major(sdkImmer)).not.toBe(major(rtkImmer));
   });
 
   it('still requires host-side hydration for persisted global variables', () => {

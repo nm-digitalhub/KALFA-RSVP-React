@@ -1,9 +1,4 @@
-import { clsx, type ClassValue } from "clsx"
-import { twMerge } from "tailwind-merge"
-
-export function cn(...inputs: ClassValue[]) {
-  return twMerge(clsx(inputs))
-}
+export { cn } from "cn";
 
 // Up to two uppercase initials from a display name, falling back to an
 // email/handle. "Netanel Mevorach" → "NM", "נטלי" → "נ", "admin@x.com" → "A".
