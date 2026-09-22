@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { requirePlatformPermission } from '@/lib/auth/dal';
 import { getSumitPublicConfig } from '@/lib/data/payments';
+import { listChargeableCampaigns } from '@/lib/data/admin/sumit-test';
 
 import { SumitTestForm } from './sumit-test-form';
 
@@ -12,6 +13,9 @@ export const metadata: Metadata = { title: 'בדיקת SUMIT' };
 export default async function SumitTestPage() {
   await requirePlatformPermission('manage_billing');
   const config = await getSumitPublicConfig();
+  // Labels + ids only — the saved token stays on the server and is resolved at
+  // charge time (see src/lib/data/admin/sumit-test.ts).
+  const chargeableCampaigns = await listChargeableCampaigns();
 
   return (
     <div className="space-y-6">
@@ -38,6 +42,7 @@ export default async function SumitTestPage() {
         <SumitTestForm
           companyId={config.companyId}
           apiPublicKey={config.apiPublicKey}
+          chargeableCampaigns={chargeableCampaigns}
         />
       ) : (
         <p className="rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-800">

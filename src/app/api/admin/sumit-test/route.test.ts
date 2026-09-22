@@ -258,4 +258,90 @@ describe('POST /api/admin/sumit-test — success/failure banner', () => {
     const html = await res.text();
     expect(html).toContain('נדחתה');
   });
+
+  // A diagnostic that says "rejected" without saying why is not a diagnosis.
+  // The first live itemised charge came back Status 1 with every other field
+  // null, and the reason was only findable in SUMIT's own request log. SUMIT's
+  // payments.js shows exactly this pair, in this order.
+  describe('the failure reason is shown with the banner, not buried in the JSON', () => {
+    it("shows SUMIT's UserErrorMessage", async () => {
+      vi.mocked(chargeRaw).mockResolvedValue({
+        httpStatus: 200,
+        ok: true,
+        sentBody: {},
+        raw: {
+          Status: 1,
+          UserErrorMessage: 'Invalid CreditCard_Token (Guid expected)',
+        },
+      });
+
+      const html = await (
+        await POST(request({ 'og-token': 'og-123', amount: '1' }))
+      ).text();
+      expect(html).toContain('הסיבה מ-SUMIT');
+      expect(html).toContain('Invalid CreditCard_Token (Guid expected)');
+    });
+
+    it('falls back to TechnicalErrorDetails when there is no user-facing message', async () => {
+      vi.mocked(chargeRaw).mockResolvedValue({
+        httpStatus: 200,
+        ok: true,
+        sentBody: {},
+        raw: { Status: 1, TechnicalErrorDetails: 'ItemsValidation.Failed' },
+      });
+
+      const html = await (
+        await POST(request({ 'og-token': 'og-123', amount: '1' }))
+      ).text();
+      expect(html).toContain('ItemsValidation.Failed');
+    });
+
+    it('says plainly that SUMIT gave no reason, rather than showing an empty banner', async () => {
+      vi.mocked(chargeRaw).mockResolvedValue({
+        httpStatus: 200,
+        ok: true,
+        sentBody: {},
+        raw: { Status: 1 },
+      });
+
+      const html = await (
+        await POST(request({ 'og-token': 'og-123', amount: '1' }))
+      ).text();
+      expect(html).toContain('לא החזירה נימוק');
+    });
+
+    it('escapes the provider string — it is rendered into HTML', async () => {
+      vi.mocked(chargeRaw).mockResolvedValue({
+        httpStatus: 200,
+        ok: true,
+        sentBody: {},
+        raw: { Status: 1, UserErrorMessage: '<img src=x onerror=alert(1)>' },
+      });
+
+      const html = await (
+        await POST(request({ 'og-token': 'og-123', amount: '1' }))
+      ).text();
+      expect(html).not.toContain('<img src=x');
+      expect(html).toContain('&lt;img');
+    });
+
+    it('shows no reason block on a successful charge', async () => {
+      vi.mocked(chargeRaw).mockResolvedValue({
+        httpStatus: 200,
+        ok: true,
+        sentBody: {},
+        raw: {
+          Status: 0,
+          Data: { Payment: { ValidPayment: true } },
+          UserErrorMessage: 'stale',
+        },
+      });
+
+      const html = await (
+        await POST(request({ 'og-token': 'og-123', amount: '1' }))
+      ).text();
+      expect(html).toContain('אושרה');
+      expect(html).not.toContain('הסיבה מ-SUMIT');
+    });
+  });
 });

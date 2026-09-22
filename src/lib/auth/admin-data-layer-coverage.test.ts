@@ -125,6 +125,11 @@ const EXPECTED_PERMISSION: Record<string, string | string[]> = {
   'src/lib/data/admin/voice-purposes.ts': 'manage_voice',
   'src/lib/data/admin/voximplant-channel.ts': 'manage_voice',
   'src/lib/data/admin/support.ts': 'view_customer_data',
+  // The /admin/sumit-test diagnostic's token picker. manage_billing, the same
+  // key the POC route and every other payment surface uses — listing which
+  // campaigns hold a chargeable card, and resolving one for a live test charge,
+  // is billing authority, not general staff access.
+  'src/lib/data/admin/sumit-test.ts': 'manage_billing',
   // Owner-only surfaces: they gate on requirePlatformOwner and name no key.
   'src/lib/data/admin/platform-roles.ts': [],
   'src/lib/data/admin/relocation.ts': [],
@@ -296,6 +301,11 @@ const AUDIT_REQUIRED: Record<string, string[]> = {
   // audit is conditional on it being a cross-user view (self-view is exempt),
   // but the call must be present.
   'src/lib/data/admin/users.ts': ['getUserDetail'],
+  // Reading a customer's stored card token to charge it from a diagnostic
+  // screen is the most targeted read in the panel — it hands staff a reusable
+  // payment instrument. Listing the candidates carries no card data and is
+  // deliberately NOT audited.
+  'src/lib/data/admin/sumit-test.ts': ['resolveSavedCardForCampaign'],
 };
 
 // Module-private wrappers that perform the gate AND the audit, so a reader
