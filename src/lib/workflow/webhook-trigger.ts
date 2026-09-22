@@ -4,6 +4,7 @@ import 'server-only';
 import { editorDiagramSchema } from './adapter/editor-schema';
 import { hashWebhookToken, webhookHashesMatch } from './webhook-token';
 import { isTriggerType } from './catalogue/nodes';
+import { webhookAllowsMethod } from './catalogue/types';
 import { createRunIfNew, listArmedWorkflows } from './store';
 
 import type { WorkflowTriggerPayload } from './steps';
@@ -19,7 +20,10 @@ import type { WorkflowTriggerPayload } from './steps';
 // subsystem has. Four things bound it, and each is here rather than in the route
 // so there is no second path that skips one:
 //
-//   1. The token is the whole credential, compared in CONSTANT TIME.
+//   1. The SECRET is the whole credential, compared in CONSTANT TIME — and it
+//      arrives in a HEADER, never in the path. The path carries only a public
+//      endpoint id, so a secret is no longer written into every access log and
+//      Referer that records a URL. See plans/webhook-address-vs-secret.md.
 //   2. Only ARMED workflows are searched. Disarming a workflow closes its URL.
 //   3. The run carries NO event and NO contact, so every guest-touching node
 //      refuses inside it (`requireGuestContext`). A leaked token means "someone
@@ -36,21 +40,28 @@ export type WebhookTriggerResult =
 
 
 /**
- * The armed workflow whose webhook trigger carries this token.
+ * The armed workflow addressed by this endpoint id, IF the secret also matches.
  *
  * Scans armed workflows in memory rather than querying the jsonb. Measured
  * 2026-09-13: two armed workflows out of twenty rows, so the scan is trivial —
  * and it reuses `findTriggerNode`'s own rule (the CATALOGUE decides what may
  * start a flow, never the stored JSON) instead of writing a second, looser
  * matcher in SQL.
+ *
+ * ⚠️ BOTH HALVES ARE REQUIRED AND BOTH ARE COMPARED IN CONSTANT TIME. The
+ * endpoint id is public, so a timing leak on it would reveal nothing an
+ * attacker cannot already hold — but it is compared the same way regardless,
+ * because "this one is safe to be sloppy with" is the reasoning that ages badly
+ * when a field's meaning changes. A caller that presents a real id with a wrong
+ * secret gets the same `null` as one that presents neither.
  */
-async function findWorkflowForToken(token: string) {
-  if (token.trim() === '') return null;
+async function findWorkflowForEndpoint(endpointId: string, secret: string, method: string) {
+  if (endpointId.trim() === '' || secret.trim() === '') return null;
 
   // Hashed ONCE, outside the loop: the diagram stores `tokenHash`, so the value
   // a caller sent is turned into the stored form before anything is compared.
-  // The token itself never appears in a workflow's JSON — see webhook-token.ts.
-  const presented = await hashWebhookToken(token);
+  // The secret itself never appears in a workflow's JSON — see webhook-token.ts.
+  const presented = await hashWebhookToken(secret);
 
   for (const workflow of await listArmedWorkflows()) {
     const parsed = editorDiagramSchema.safeParse(workflow.definition);
@@ -58,15 +69,25 @@ async function findWorkflowForToken(token: string) {
 
     const triggers = parsed.data.nodes.filter((n) => isTriggerType(n.data.type));
     // Exactly one trigger, the same rule the adapter enforces. A diagram with
-    // two is invalid and must not be reachable by either of its tokens.
+    // two is invalid and must not be reachable by either of its addresses.
     if (triggers.length !== 1) continue;
 
     const trigger = triggers[0]!;
     if (trigger.data.type !== 'trigger.webhook') continue;
 
-    const configured = trigger.data.properties?.tokenHash;
-    if (typeof configured !== 'string' || configured.trim() === '') continue;
-    if (!webhookHashesMatch(configured, presented)) continue;
+    const configuredId = trigger.data.properties?.endpointId;
+    if (typeof configuredId !== 'string' || configuredId.trim() === '') continue;
+    if (!webhookHashesMatch(configuredId, endpointId)) continue;
+
+    const configuredHash = trigger.data.properties?.tokenHash;
+    if (typeof configuredHash !== 'string' || configuredHash.trim() === '') continue;
+    if (!webhookHashesMatch(configuredHash, presented)) continue;
+
+    // ⚠️ THE METHOD IS CHECKED HERE, NOT IN THE ROUTE, and it is checked LAST.
+    // Here, because the route would otherwise be a second place that decides who
+    // gets in. Last, because answering "wrong method" before the secret is
+    // verified would tell an unauthenticated caller that this endpoint exists.
+    if (!webhookAllowsMethod(trigger.data.properties?.methods, method)) continue;
 
     return workflow;
   }
@@ -81,8 +102,24 @@ async function findWorkflowForToken(token: string) {
  * retrying would only produce the same answer.
  */
 export async function startRunFromWebhook(input: {
-  token: string;
+  /** Public, from the path. Identifies which webhook — proves nothing. */
+  endpointId: string;
+  /** The credential, from `WEBHOOK_SECRET_HEADER`. Never from the path. */
+  secret: string;
+  /** The verb this call arrived with. Checked against the node's allow-list. */
+  method: string;
   rawBody: string;
+  /**
+   * The URL's query string, as a flat object.
+   *
+   * ⚠️ KEPT SEPARATE FROM `body`, NOT MERGED INTO IT. GET and DELETE carry no
+   * body at all, so folding their parameters into `body` would make
+   * `{{trigger.body.x}}` mean the request body on one verb and the query string
+   * on another — resolving to nothing, silently, whenever a workflow's trigger
+   * changed verb. n8n exposes `{ body, headers, params, query }` as distinct
+   * members for the same reason.
+   */
+  query?: Record<string, string>;
   /** Caller-supplied idempotency key, if any. Falls back to a fresh run each call. */
   idempotencyKey?: string | null;
 }): Promise<WebhookTriggerResult> {
@@ -103,10 +140,11 @@ export async function startRunFromWebhook(input: {
     return { ok: false, reason: 'bad_json' };
   }
 
-  const workflow = await findWorkflowForToken(input.token);
-  // ONE answer for "no such token" and for "token belongs to a disarmed
-  // workflow". Distinguishing them would turn this endpoint into an oracle for
-  // which tokens exist.
+  const workflow = await findWorkflowForEndpoint(input.endpointId, input.secret, input.method);
+  // ONE answer for "no such endpoint", "wrong secret", "verb not allowed", and
+  // "belongs to a disarmed workflow". Distinguishing them would turn this
+  // endpoint into an oracle for which webhooks exist and which secrets are
+  // close.
   if (!workflow) return { ok: false, reason: 'not_found' };
 
   // NO eventId and NO contactId, deliberately — see the header. The payload is
@@ -116,6 +154,10 @@ export async function startRunFromWebhook(input: {
     message_text: '',
     button_payload: '',
     body,
+    // Always present, even when empty — a template that names
+    // `{{trigger.query.x}}` should resolve to nothing rather than throw on a
+    // POST that happened to carry no query string.
+    query: input.query ?? {},
   };
 
   const runId = await createRunIfNew({

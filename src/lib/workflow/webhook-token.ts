@@ -23,6 +23,46 @@
 const TOKEN_BYTES = 32;
 
 /**
+ * Length in bytes of the PUBLIC endpoint id.
+ *
+ * Shorter than the secret on purpose: this value proves nothing and grants
+ * nothing, so it needs only to not collide. 16 bytes of CSPRNG is ~2^128 of
+ * space against a handful of webhooks. It is still generated rather than
+ * derived from the workflow or node id — a derived id would leak which workflow
+ * a third party is calling, and node ids are SHARED between workflows created
+ * from the same template (MEASURED: templates ship literal ids like
+ * `tmpl-custdoc-trigger`), so deriving would collide outright.
+ */
+const ENDPOINT_BYTES = 16;
+
+function randomBase64Url(byteLength: number): string {
+  const bytes = new Uint8Array(byteLength);
+  crypto.getRandomValues(bytes);
+  // base64url: URL-safe without escaping, because both of these become path or
+  // header values.
+  return btoa(String.fromCharCode(...bytes))
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/, '');
+}
+
+/**
+ * A fresh PUBLIC endpoint id — the part of the address that may be shown,
+ * copied, and kept forever.
+ *
+ * ⚠️ THIS IS THE HALF THAT MAKES THE ADDRESS RECOVERABLE. The old design put the
+ * secret in the path, so the address WAS the credential and could never be shown
+ * twice; the owner's report ("אין לי אפשרות לדעת מה כתובת ה-webhook?") is the
+ * direct consequence. Splitting the two means the address is stable and public
+ * while the secret rotates independently — so rotating no longer breaks the
+ * caller, and the secret stops being written into every access log that records
+ * a URL. See plans/webhook-address-vs-secret.md.
+ */
+export function generateWebhookEndpointId(): string {
+  return randomBase64Url(ENDPOINT_BYTES);
+}
+
+/**
  * A fresh token, for the operator to keep.
  *
  * Returned ONCE and never recoverable: only its hash is stored, which is the
@@ -30,14 +70,7 @@ const TOKEN_BYTES = 32;
  * with a password, and what the field's warning already implied.
  */
 export function generateWebhookToken(): string {
-  const bytes = new Uint8Array(TOKEN_BYTES);
-  crypto.getRandomValues(bytes);
-  // base64url: URL-safe without escaping, because this value becomes a path
-  // segment in `/api/workflows/hook/<token>`.
-  return btoa(String.fromCharCode(...bytes))
-    .replace(/\+/g, '-')
-    .replace(/\//g, '_')
-    .replace(/=+$/, '');
+  return randomBase64Url(TOKEN_BYTES);
 }
 
 /**
@@ -53,10 +86,21 @@ export async function hashWebhookToken(token: string): Promise<string> {
   return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('');
 }
 
-/** The address a generated token produces, shown once beside it. */
-export function webhookUrlFor(origin: string, token: string): string {
-  return new URL(`/api/workflows/hook/${encodeURIComponent(token)}`, origin).href;
+/**
+ * The address of a webhook trigger.
+ *
+ * ⚠️ TAKES THE PUBLIC ENDPOINT ID, NEVER THE SECRET. It used to take the token,
+ * which is what made the URL unshowable — and what put a live credential into
+ * every access log, proxy record and Referer header that stores a path. The
+ * secret now travels in `x-kalfa-webhook-secret`, so this string is safe to
+ * display, copy and keep.
+ */
+export function webhookUrlFor(origin: string, endpointId: string): string {
+  return new URL(`/api/workflows/hook/${encodeURIComponent(endpointId)}`, origin).href;
 }
+
+/** The header an inbound call proves itself with. */
+export const WEBHOOK_SECRET_HEADER = 'x-kalfa-webhook-secret';
 
 /**
  * Whether two stored hashes are the same, without leaking how far they matched.

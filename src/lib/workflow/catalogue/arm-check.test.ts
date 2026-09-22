@@ -325,7 +325,7 @@ describe('the starter templates against this gate', () => {
     // be armed — and that is now a blocker in its own right. An owner who fixed
     // only one would press arm again and meet the other.
     expect(blockersOf('תזכורת לאורח אחד (תהליך-בן)')).toEqual([
-      'הצעד "מופעל מתהליך אחר": לא נוצר טוקן, ולכן אין כתובת שאפשר לקרוא לה. לחצו על יצירת טוקן — הוא יוצג פעם אחת בלבד.',
+      'הצעד "מופעל מתהליך אחר": לא נוצר סוד, ולכן אין עדיין כתובת. לחצו על יצירת סוד — הכתובת תיווצר יחד איתו ותישאר גלויה, והסוד יוצג פעם אחת בלבד.',
       'הצעד "שליחת תבנית תזכורת": הצעד פועל על אורח, והטריגר של התהליך אינו מתחיל מאורח. החליפו לטריגר "הודעת וואטסאפ נכנסת" שמסומן בו לפחות סוג הודעה שאורח שולח, הסירו את הצעד, או השאירו את התהליך לא מחומש והפעילו אותו מתהליך אחר עם "הרצה לכל אורח".',
     ]);
     // ⚠️ THE THIRD DELIBERATE BLANK, AND IT IS BLOCKED ON `purposeKey` ALONE.
@@ -478,16 +478,16 @@ describe('a trigger that can never fire', () => {
     // blank, so the route `/api/workflows/hook/<token>` resolves to nothing.
     // Arming one produced an endpoint that existed nowhere, silently.
     expect(
-      findArmBlockers(wrap([node('h', 'trigger.webhook', { label: 'קריאה', description: 'd', tokenHash: '' })])),
+      findArmBlockers(wrap([node('h', 'trigger.webhook', { label: 'קריאה', description: 'd', endpointId: 'ep', tokenHash: '' })])),
     ).toEqual([
-      'הצעד "קריאה": לא נוצר טוקן, ולכן אין כתובת שאפשר לקרוא לה. לחצו על יצירת טוקן — הוא יוצג פעם אחת בלבד.',
+      'הצעד "קריאה": לא נוצר סוד, ולכן אין עדיין כתובת. לחצו על יצירת סוד — הכתובת תיווצר יחד איתו ותישאר גלויה, והסוד יוצג פעם אחת בלבד.',
     ]);
   });
 
   it('a webhook trigger WITH a token arms', () => {
     expect(
       findArmBlockers(
-        wrap([node('h', 'trigger.webhook', { label: 'קריאה', description: 'd', tokenHash: 'a'.repeat(64) })]),
+        wrap([node('h', 'trigger.webhook', { label: 'קריאה', description: 'd', endpointId: 'ep', tokenHash: 'a'.repeat(64) })]),
       ),
     ).toEqual([]);
   });
@@ -551,5 +551,66 @@ describe('findArmBlockersByNode', () => {
         template.value.name,
       ).toEqual(findArmBlockers(diagram));
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+
+describe('⚠️ the error PORT and the error POLICY must agree', () => {
+  // NOTHING COMPARED THEM UNTIL 2026-09-22 — `arm-check.ts` held zero references
+  // to `errorPolicy`. Both mismatches below are silent at run time, which is the
+  // whole reason they are arm blockers: one builds a recovery path that can
+  // never run, the other tells a node to route errors somewhere that does not
+  // exist.
+  const ERROR_HANDLE = 'source:inner:error';
+
+  const graph = (errorPolicy: string, wired: boolean) => ({
+    name: 'w',
+    nodes: [
+      node('t', 'trigger.whatsapp_inbound', {
+        label: 'טריגר', description: 'ת', keyword: '',
+      }),
+      node('a', 'action.notify_team', {
+        label: 'התראה', description: 'ד', title: 'כותרת', errorPolicy,
+      }),
+      node('b', 'action.notify_team', {
+        label: 'אחרי כישלון', description: 'ד', title: 'כותרת', errorPolicy: 'continue',
+      }),
+    ],
+    edges: [
+      { id: 'e1', source: 't', target: 'a' },
+      ...(wired ? [{ id: 'e2', source: 'a', sourceHandle: ERROR_HANDLE, target: 'b' }] : []),
+    ],
+  });
+
+  const about = (blockers: string[]) => blockers.filter((m) => m.includes('נכשל'));
+
+  it('an edge off "נכשל" while the step STOPS on error is a path that can never run', () => {
+    expect(about(findArmBlockers(graph('fail', true)))).toHaveLength(1);
+    expect(about(findArmBlockers(graph('fail', true)))[0]).toContain('לעולם לא ירוץ');
+  });
+
+  it('routing errors with NOTHING connected stops the flow with no one told', () => {
+    expect(about(findArmBlockers(graph('errorRoute', false)))).toHaveLength(1);
+    expect(about(findArmBlockers(graph('errorRoute', false)))[0]).toContain('בלי שאיש יידע');
+  });
+
+  it('the two agreeing states are silent — both directions', () => {
+    // Anti-no-op: a check that fired on everything would pass the two above and
+    // be useless. These are the configurations an owner actually ships.
+    expect(about(findArmBlockers(graph('fail', false)))).toEqual([]);
+    expect(about(findArmBlockers(graph('errorRoute', true)))).toEqual([]);
+    expect(about(findArmBlockers(graph('continue', false)))).toEqual([]);
+  });
+
+  it('⚠️ no starter template trips it — measured, not assumed', async () => {
+    // The rule is only worth shipping if the twelve diagrams we hand people are
+    // already consistent. If one is not, that is a defect in the template, not a
+    // reason to soften the rule.
+    const { DIAGRAM_TEMPLATES } = await import('./templates');
+    const offenders = DIAGRAM_TEMPLATES.flatMap((t) =>
+      about(findArmBlockers(t.value.diagram)).map((m) => `${t.value.name}: ${m}`),
+    );
+    expect(offenders).toEqual([]);
   });
 });

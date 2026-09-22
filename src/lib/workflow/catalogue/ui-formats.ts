@@ -31,3 +31,12 @@ export const WEBHOOK_TOKEN_FORMAT = 'webhook-token';
  * type requires one.
  */
 export const NODE_RUN_FORMAT = 'kalfa-node-run';
+
+/**
+ * The "what starts this flow" switcher on a trigger node.
+ *
+ * ⚠️ NOT A FIELD. Like {@link NODE_RUN_FORMAT} it rides a `Label` element,
+ * because the thing it edits is `data.type` — node data the editor owns — and
+ * JsonForms has no scope for that. See trigger-switch-control.tsx.
+ */
+export const TRIGGER_SWITCH_FORMAT = 'kalfa-trigger-switch';

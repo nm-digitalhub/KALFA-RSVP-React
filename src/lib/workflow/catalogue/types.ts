@@ -330,9 +330,68 @@ export type ScheduleTriggerConfig = {
   days?: number[];
 };
 
+/**
+ * The HTTP methods an inbound webhook may be called with.
+ *
+ * ⚠️ NOT AN ARBITRARY LIST. n8n's Webhook node offers exactly DELETE / GET /
+ * HEAD / PATCH / POST / PUT (its README §HTTP Method, read in full 2026-09-22),
+ * and a caller that can only send one of those is the whole reason this field
+ * exists — before it, every non-POST call was refused with a 405 and the
+ * integration simply could not be built.
+ *
+ * HEAD is omitted: it is defined to return no body, so a run started by one
+ * could never answer anything, and Next would dispatch it to GET regardless.
+ */
+export const WEBHOOK_METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'] as const;
+export type WebhookMethod = (typeof WEBHOOK_METHODS)[number];
+
+/** Which methods carry a request body at all. */
+export const WEBHOOK_METHODS_WITH_BODY: readonly WebhookMethod[] = ['POST', 'PUT', 'PATCH'];
+
+export const webhookMethodOptions = WEBHOOK_METHODS.map((value) => ({ value, label: value }));
+
+/**
+ * Whether a configured method list admits this call.
+ *
+ * ⚠️ AN EMPTY LIST MEANS POST, NOT "EVERYTHING". Every webhook saved before this
+ * field existed was POST-only by construction, so an absent value has to keep
+ * meaning exactly that — reading it as "any method" would silently widen a live
+ * public endpoint on deploy. Same rule, and the same reason, as `messageKinds`.
+ *
+ * Accepts BOTH shapes for the same reason `matchesKind` does: the SDK's
+ * `ArrayFieldSchema` cannot describe an array of strings, so the control stores
+ * `[{ value: 'POST' }]` while a hand-written or older diagram may hold
+ * `['POST']`.
+ */
+export function webhookAllowsMethod(configured: unknown, method: string): boolean {
+  const list = Array.isArray(configured)
+    ? configured
+        .map((entry) =>
+          typeof entry === 'string'
+            ? entry
+            : entry && typeof entry === 'object' && typeof (entry as { value?: unknown }).value === 'string'
+              ? (entry as { value: string }).value
+              : '',
+        )
+        .filter((value) => value !== '')
+    : [];
+  const allowed = list.length === 0 ? ['POST'] : list;
+  return allowed.includes(method);
+}
+
 export type WebhookTriggerConfig = {
-  /** Opaque, server-generated. Empty means the trigger is not wired up yet. */
-  token: string;
+  /**
+   * The PUBLIC half of the address. Safe to show, copy and export — it proves
+   * nothing on its own.
+   */
+  endpointId: string;
+  /**
+   * sha256 of the secret. The secret itself travels in a header and is never
+   * stored. See `webhook-token.ts`.
+   */
+  tokenHash: string;
+  /** Empty means POST only — see `webhookAllowsMethod`. */
+  methods?: readonly { value: string }[] | readonly string[];
 };
 
 // The two outgoing ports of a condition node, as HANDLE IDS.
@@ -1108,7 +1167,7 @@ export const NODE_DEPLOYMENT_BINDINGS: Partial<
   // A HASH, not the token — so this is no longer a secret that must not travel,
   // but it still authenticates to THIS installation and resolves to nothing
   // anywhere else. See webhook-token.ts for why the value moved out.
-  'trigger.webhook': { tokenHash: 'identifier' },
+  'trigger.webhook': { endpointId: 'identifier', tokenHash: 'identifier' },
   'action.microsoft_send_email': { connectionId: 'identifier' },
   'action.send_template': { messageKey: 'catalogue' },
   'action.create_callback_request': { topic: 'catalogue' },
@@ -1130,7 +1189,7 @@ export const NODE_DEPLOYMENT_BINDINGS: Partial<
 
 export const NODE_REQUIRED_FIELDS: Record<KalfaNodeType, string[]> = {
   'trigger.whatsapp_inbound': ['label', 'description'],
-  'trigger.webhook': ['label', 'description', 'tokenHash'],
+  'trigger.webhook': ['label', 'description', 'endpointId', 'tokenHash'],
   'trigger.schedule': ['label', 'description', 'time'],
   'logic.condition': ['label', 'description', 'field', 'operator'],
   'logic.switch': ['label', 'description'],

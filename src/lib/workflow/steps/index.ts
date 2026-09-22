@@ -116,6 +116,14 @@ export type WorkflowTriggerPayload = {
    * name — no field list to maintain, and a new caller needs no code change.
    */
   body?: Record<string, unknown>;
+  /**
+   * The URL's query string on an inbound webhook call, as a flat object.
+   *
+   * Separate from `body` on purpose: GET and DELETE have no body, and merging
+   * the two would make `{{trigger.body.x}}` mean different things on different
+   * verbs. Absent for every trigger that is not a webhook.
+   */
+  query?: Record<string, string>;
   message_text: string;
   button_payload: string;
   /**

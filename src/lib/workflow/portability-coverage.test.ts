@@ -44,6 +44,13 @@ const REVIEWED_PORTABLE: Record<string, string> = {
   bcc: 'more recipients the author typed; addresses, not installation identifiers',
   replyTo: 'a reply address the author typed; not an installation identifier',
 
+  // An HTTP verb means the same thing on every host. Unlike `endpointId` and
+  // `tokenHash` — which name an address ON THIS INSTALLATION and are bound —
+  // "this webhook accepts PUT" is a statement about the CALLER's integration and
+  // travels with the diagram unchanged. An import that dropped it would silently
+  // narrow the endpoint back to POST.
+  methods: 'HTTP verbs; a fact about the caller, not about this installation',
+
   // Editor and engine state that is meaningful anywhere.
   status: 'active/disabled, a node-level switch',
   errorPolicy: 'fail / continue — engine behaviour',
@@ -148,6 +155,13 @@ describe('every node property is classified for export', () => {
     // The token itself no longer lives in the diagram (webhook-token.ts), so this
     // is no longer a secret that must not travel — but it authenticates to THIS
     // installation and resolves to nothing anywhere else.
-    expect(NODE_DEPLOYMENT_BINDINGS['trigger.webhook']).toEqual({ tokenHash: 'identifier' });
+    expect(NODE_DEPLOYMENT_BINDINGS['trigger.webhook']).toEqual({
+      // BOTH halves are installation-bound. The endpoint id is public — it is
+      // shown in the panel and copied into other systems — but it names an
+      // address on THIS host, so importing a diagram elsewhere must not carry it
+      // over any more than the hash.
+      endpointId: 'identifier',
+      tokenHash: 'identifier',
+    });
   });
 });

@@ -16,6 +16,9 @@
 // one: every property that can BLOCK ARMING must be reachable from the panel
 // that is supposed to fix it. The next field added to `NODE_REQUIRED_FIELDS`
 // fails here until it has a control.
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+
 import { describe, expect, it } from 'vitest';
 
 import { buildPaletteItems, PALETTE_ITEMS } from './schemas';
@@ -40,10 +43,24 @@ function collectScopes(element: unknown, found: string[] = []): string[] {
  * and the owner never clears, so the arm gate can never fire on it.
  */
 const EXEMPT: Partial<Record<KalfaNodeType, readonly string[]>> = {
-  // Both are seeded by `defaultPropertiesData` (amount: 1, unit: 'days') and are
-  // edited through the amount/unit row, which scopes them individually — so they
-  // are covered, and this entry exists only to document that they are numbers
-  // and a select rather than free text.
+  // ⚠️ THE ONE EXEMPTION, AND IT IS A DIFFERENT CLAIM FROM THE ONE ABOVE.
+  //
+  // `endpointId` CAN be blank — the palette seeds it `''` — so the usual
+  // exemption reason ("seeded with a real value, never cleared") would be false
+  // here and this entry must not rest on it.
+  //
+  // What is true instead: the field is reachable, just not by its own scope. The
+  // address and the secret are minted TOGETHER by one control, because a node
+  // carrying one without the other cannot be armed and there is no sequence in
+  // which an owner would want to type either by hand. That control is scoped to
+  // `tokenHash` and writes `endpointId` as its sibling, so the panel does offer
+  // the only action that fills it — the generate button — and `collectScopes`
+  // simply cannot see that.
+  //
+  // The claim is CHECKED rather than asserted: the test below scans the control
+  // and fails if it stops writing the field. An exemption nobody verifies is the
+  // thing this file exists to prevent.
+  'trigger.webhook': ['endpointId'],
 };
 
 describe('every arm-blocking field is editable in the panel', () => {
@@ -61,6 +78,23 @@ describe('every arm-blocking field is editable in the panel', () => {
       expect(unreachable, `${type} has no control for: ${unreachable.join(', ')}`).toEqual([]);
     });
   }
+
+  it('⚠️ the endpointId exemption is TRUE — the token control still writes it', () => {
+    // Source-scanned rather than mocked, for the same reason
+    // sdk-integration-invariants.test.ts scans: the guarantee is about what one
+    // file DOES, and only that file can answer. If the write is ever removed,
+    // `endpointId` becomes a required field with no way at all to fill it — the
+    // exact defect (`description`, 18 types, 0 controls) this file was written
+    // for, reintroduced through its own exemption list.
+    const control = readFileSync(
+      join(process.cwd(), 'src/app/(admin)/admin/workflows/[id]/webhook-token-control.tsx'),
+      'utf8',
+    );
+    // Anti-no-op: a moved or renamed file would read empty and pass.
+    expect(control.length).toBeGreaterThan(1000);
+    expect(control).toContain('generateWebhookEndpointId');
+    expect(control).toMatch(/handleChange\(endpointPath/);
+  });
 
   it('description specifically — the field this file was written for', () => {
     const without = PALETTE_ITEMS.filter(

@@ -43,6 +43,7 @@ import {
   HEADER_ROWS_FORMAT,
   INTEGRATION_CONNECTION_FORMAT,
   NODE_RUN_FORMAT,
+  TRIGGER_SWITCH_FORMAT,
   WEBHOOK_TOKEN_FORMAT,
 } from './ui-formats';
 
@@ -69,6 +70,7 @@ import {
   type KalfaNodeType,
   type MicrosoftMailContentType,
   type MicrosoftMailImportance,
+  webhookMethodOptions,
 } from './types';
 
 // ---------------------------------------------------------------------------
@@ -407,9 +409,30 @@ function triggerSchemaFor(numbers: readonly WhatsAppNumberOption[]): NodeSchema 
   } as NodeSchema;
 }
 
+// "מה מפעיל את התהליך" — the switcher that lets an owner change a trigger node
+// into a different KIND of trigger without rebuilding the diagram.
+//
+// ⚠️ DECLARED ONCE AND SPREAD INTO ALL THREE TRIGGER UISCHEMAS, so a fourth
+// trigger cannot ship without it by omission. The uischema carries NO list of
+// the available triggers: the control derives them from the palette itself, so
+// this stays a single element with no catalogue data duplicated three times.
+//
+// ⚠️ A `Label`, WITH `text` THAT IS NEVER DRAWN. The value it edits is
+// `data.type`, which is node data rather than a `data.properties.*` field, so
+// there is no scope for a control to bind to. The SDK's closed element union
+// has no "render something here" member other than `Label`, and the custom
+// renderer replaces it wholesale — the same shape `NODE_RUN_FORMAT` uses, for
+// the same reason. `text` exists because the type requires one.
+const triggerSwitchElement = {
+  type: 'Label',
+  text: '',
+  options: { format: TRIGGER_SWITCH_FORMAT },
+} as const;
+
 const triggerUiSchema: UISchema = {
   type: 'VerticalLayout',
   elements: [
+    triggerSwitchElement,
     ...identityControls(triggerScope('properties.label'), triggerScope('properties.description')),
     {
       type: 'Select',
@@ -450,6 +473,7 @@ const triggerUiSchema: UISchema = {
           // `options.format`. See checkbox-list-control.tsx.
           type: 'Text',
           scope: triggerScope('properties.messageKinds'),
+          label: 'סוגי הודעות',
           options: {
             format: CHECKBOX_LIST_FORMAT,
             choices: WHATSAPP_MESSAGE_KINDS.map((k) => ({ ...k })),
@@ -473,10 +497,23 @@ const webhookTriggerSchema = {
   properties: {
     ...identityProperties,
     ...statusProperty,
-    // ⚠️ THE HASH, NOT THE TOKEN. The diagram used to hold the credential itself
-    // — and the editor's own Export menu puts a diagram in a copyable box. See
-    // `webhook-token.ts`: the value is shown once at generation and only its
-    // sha256 is ever stored.
+    // ⚠️ THE PUBLIC HALF OF THE ADDRESS, AND SAFE TO EXPORT. `/api/workflows/
+    // hook/<endpointId>` — it identifies WHICH webhook and proves nothing, so
+    // the panel shows it always and a diagram may carry it anywhere.
+    endpointId: requiredText,
+    // WHICH HTTP METHODS open this address. Objects, not bare strings, for the
+    // reason `messageKinds` records at length: the SDK's `ArrayFieldSchema`
+    // cannot describe an array of strings at all.
+    methods: { type: 'array', items: { type: 'object', properties: { value: { type: 'string' } } } },
+    // ⚠️ THE HASH, NOT THE SECRET. The diagram used to hold the credential
+    // itself — and the editor's own Export menu puts a diagram in a copyable
+    // box. See `webhook-token.ts`: the value is shown once at generation and
+    // only its sha256 is ever stored.
+    //
+    // Named `tokenHash` rather than `secretHash` deliberately: it is accurate
+    // either way, and renaming it would migrate a stored field without adding a
+    // bit of clarity. What CHANGED is where the secret travels — a header, not
+    // the path.
     tokenHash: requiredText,
   },
 } satisfies NodeSchema;
@@ -486,19 +523,42 @@ const webhookTriggerScope = getScope<typeof webhookTriggerSchema>;
 const webhookTriggerUiSchema: UISchema = {
   type: 'VerticalLayout',
   elements: [
+    triggerSwitchElement,
     ...identityControls(webhookTriggerScope('properties.label'), webhookTriggerScope('properties.description')),
     {
-      // A custom renderer rather than a text box, because there is no longer a
-      // value for anyone to type: the field holds a sha256, and the token that
-      // produced it is shown once and never recoverable.
+      // ONE renderer for both halves — the public address and the secret are
+      // generated together and must never drift apart, so they are created,
+      // displayed and rotated by the same control. It binds to `tokenHash`
+      // because that is the field JsonForms writes through; it reaches
+      // `endpointId` on the same node.
       type: 'Text',
       scope: webhookTriggerScope('properties.tokenHash'),
-      label: 'טוקן הכתובת',
+      label: 'כתובת וסוד',
       options: { format: WEBHOOK_TOKEN_FORMAT },
     },
     {
       type: 'Label',
-      text: 'הטוקן מוצג פעם אחת בלבד ואינו ניתן לשחזור — נשמר רק גיבוב שלו. מי שמחזיק בו יכול להריץ את התהליך; אם דלף, צרו חדש.',
+      text: 'הכתובת גלויה וניתנת להעתקה בכל עת. הסוד נשלח בכותרת x-kalfa-webhook-secret ומוצג פעם אחת בלבד — נשמר רק גיבוב שלו. יצירת סוד חדש אינה משנה את הכתובת.',
+    },
+    {
+      type: 'Accordion',
+      label: 'באילו שיטות אפשר לקרוא',
+      elements: [
+        {
+          type: 'Text',
+          scope: webhookTriggerScope('properties.methods'),
+          label: 'שיטות HTTP',
+          options: {
+            format: CHECKBOX_LIST_FORMAT,
+            choices: webhookMethodOptions.map((o) => ({ ...o })),
+            defaultNote: 'ברירת מחדל: POST בלבד.',
+          },
+        },
+        {
+          type: 'Label',
+          text: 'GET ו-DELETE אינם נושאים גוף. בקריאה כזו {{trigger.body}} יהיה ריק, והערכים יגיעו ב-{{trigger.query.<שם>}} מתוך הכתובת.',
+        },
+      ],
     },
     {
       // The limitation an owner would otherwise discover from a failed run.
@@ -806,6 +866,7 @@ const webhookUiSchema: UISchema = {
           // See header-rows-control.tsx.
           type: 'Text',
           scope: webhookScope('properties.headers'),
+          label: 'כותרות HTTP',
           options: { format: HEADER_ROWS_FORMAT },
         },
         {
@@ -1475,6 +1536,7 @@ const scheduleScope = getScope<typeof scheduleSchema>;
 const scheduleUiSchema: UISchema = {
   type: 'VerticalLayout',
   elements: [
+    triggerSwitchElement,
     ...identityControls(scheduleScope('properties.label'), scheduleScope('properties.description')),
     {
       type: 'Text',
@@ -1489,6 +1551,7 @@ const scheduleUiSchema: UISchema = {
         {
           type: 'Text',
           scope: scheduleScope('properties.days'),
+          label: 'ימים',
           options: {
             format: CHECKBOX_LIST_FORMAT,
             choices: scheduleDayOptions.map((d) => ({ ...d })),
@@ -1655,6 +1718,7 @@ const forEachGuestUiSchema: UISchema = {
         {
           type: 'Text',
           scope: forEachGuestScope('properties.statuses'),
+          label: 'סטטוסים',
           options: {
             format: CHECKBOX_LIST_FORMAT,
             choices: Object.values(rsvpStatusOptions).map((o) => ({ value: o.value, label: o.label })),
@@ -2621,16 +2685,40 @@ export const PALETTE_ITEMS: PaletteItem[] = [
           label: 'גוף הבקשה',
           description: 'כל מה שנשלח — ניתן לפנות אליו כ-{{trigger.body.שם_השדה}}',
         },
+        // Published SEPARATELY rather than folded into `body`. A GET carries no
+        // body, and merging its query string into one would make
+        // `{{trigger.body.x}}` mean two different things depending on the verb —
+        // the confusion n8n avoids by exposing `{ body, headers, params, query }`
+        // as distinct members.
+        query: {
+          type: 'object',
+          label: 'פרמטרים בכתובת',
+          description: 'ה-query string — ניתן לפנות אליו כ-{{trigger.query.שם_השדה}}',
+        },
       },
     },
     defaultPropertiesData: {
       status: nodeStatusOptions.active.value,
       label: 'קריאת Webhook נכנסת',
       description: 'מערכת חיצונית קוראת לכתובת והתהליך מתחיל',
+      // Both halves start blank and are minted together by the control. A
+      // diagram with one and not the other is the state `arm-check` refuses.
+      endpointId: '',
+      // Empty means POST only. See `webhookAllowsMethod` — an absent value must
+      // never widen a live public endpoint.
+      methods: [],
+      // ⚠️ `tokenHash`, NOT `token` — this key must match `webhookTriggerSchema`
+      // and the uischema's `properties.tokenHash` scope, or a node dragged from
+      // the palette is born carrying a field the schema does not declare AND
+      // missing its only required one. That was live until 2026-09-22 and no
+      // gate saw it: the key is a plain string in three files that never get
+      // compared. `palette-defaults.test.ts` now compares them.
+      //
       // EMPTY, never a value minted here. This module runs in the BROWSER, and a
       // token from `Math.random`/`crypto` on a page is a token whose entropy
-      // nobody audited. It is generated by a Server Action instead.
-      token: '',
+      // nobody audited. `webhook-token-control.tsx` generates it and stores only
+      // its sha256.
+      tokenHash: '',
     },
   },
   {

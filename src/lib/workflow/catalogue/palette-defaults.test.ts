@@ -120,3 +120,129 @@ describe('the webhook body control follows the runtime', () => {
     expect(bodyRule()).not.toHaveProperty('condition.failWhenUndefined');
   });
 });
+
+// ---------------------------------------------------------------------------
+
+describe('⚠️ every default key is a key the schema declares', () => {
+  // THE DEFECT THIS PINS WAS LIVE, and it is a different shape from the one at
+  // the top of this file. That one was a default whose VALUE was not offered;
+  // this one is a default whose KEY does not exist.
+  //
+  // `trigger.webhook` seeded `token: ''` while its schema, its uischema scope
+  // (`properties.tokenHash`) and NODE_REQUIRED_FIELDS all say `tokenHash`. So a
+  // webhook trigger dragged from the palette was born carrying a field nothing
+  // reads, and WITHOUT the one field that makes the trigger addressable — the
+  // sha256 the incoming route matches on. The owner's report was the symptom
+  // stated exactly: "there is no way to actually set the trigger that fires it".
+  //
+  // NOTHING CAUGHT IT AND NOTHING COULD. The key is a bare string in three
+  // separate files; `satisfies NodeSchema` types the schema, not the defaults,
+  // so tsc sees two unrelated object literals. Templates were unaffected — they
+  // spell `tokenHash` correctly — which is why the suite stayed green while the
+  // palette was broken.
+  //
+  // Found by auditing all palette items at once; exactly one was wrong. This
+  // test is that audit, kept.
+  const rows = PALETTE_ITEMS.map((item) => {
+    const declared = Object.keys(
+      (item.schema as { properties?: Record<string, unknown> }).properties ?? {},
+    );
+    const seeded = Object.keys(item.defaultPropertiesData ?? {});
+    const required = ((item.schema as { required?: string[] }).required ?? []) as string[];
+    return {
+      type: item.type,
+      undeclared: seeded.filter((k) => !declared.includes(k)),
+      requiredNotSeeded: required.filter((k) => !seeded.includes(k)),
+    };
+  });
+
+  // Anti-no-op: an empty palette would make both assertions below vacuous.
+  it('the palette is not empty and every item carries a schema', () => {
+    expect(rows.length).toBeGreaterThan(10);
+    for (const item of PALETTE_ITEMS) expect(item.schema).toBeTruthy();
+  });
+
+  it('seeds no key the schema does not declare', () => {
+    expect(
+      rows.filter((r) => r.undeclared.length > 0).map((r) => `${r.type}: ${r.undeclared.join()}`),
+    ).toEqual([]);
+  });
+
+  it('seeds every field the schema marks required', () => {
+    // A required field may be seeded BLANK — that is the documented shape of "a
+    // template is a valid draft" (see the note above about blanks). What it may
+    // not be is ABSENT, because then the control bound to it has nothing to
+    // write into and the owner has no way to fill it.
+    expect(
+      rows
+        .filter((r) => r.requiredNotSeeded.length > 0)
+        .map((r) => `${r.type}: ${r.requiredNotSeeded.join()}`),
+    ).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+
+describe('⚠️ a custom-renderer field carries a Hebrew label, or JsonForms writes an English one', () => {
+  // MEASURED 2026-09-22, and it had been live: `messageKinds`, `days`, `headers`
+  // and `statuses` rendered as "Message Kinds", "Days", "Headers", "Statuses"
+  // inside Hebrew accordions. Hebrew and RTL are the product's primary
+  // interface, so that is a requirement failure, not a cosmetic one.
+  //
+  // THE MECHANISM, because it is not obvious from the uischema: these three
+  // renderers draw the label themselves —
+  //   checkbox-list-control.tsx:100     <FormControlWithLabel label={label} …>
+  //   header-rows-control.tsx:137       <FormControlWithLabel label={label} …>
+  //   integration-connection-control.tsx
+  // `label` is whatever JsonForms computed. With no `label` in the uischema and
+  // no i18n entry, JsonForms falls back to `startCase(scope)` — English, from
+  // the field name. So for THESE formats a missing label is not "no label", it
+  // is "an English label".
+  //
+  // ⚠️ SCOPED TO THE CUSTOM FORMATS ON PURPOSE. A plain control may legitimately
+  // omit `label` and take its text from a sibling `{ type: 'Label' }` in the
+  // same HorizontalLayout — `maxGuests` does exactly that ('עד כמה אורחים'), and
+  // a blanket "every control needs a label" rule would fail it wrongly. The
+  // enclosing Accordion's label is likewise NOT a substitute: it sits above the
+  // field, and the English one still prints underneath it.
+  //
+  // `decisionBranches` is the documented exception and needs no uischema label:
+  // `i18n-he.ts` carries `decisionBranches.label` ('כותרת'), which i18next
+  // resolves because that namespace is flat.
+  const LABEL_DRAWING_FORMATS = new Set([
+    'kalfa-checkbox-list',
+    'kalfa-header-rows',
+    'integration-connection',
+  ]);
+
+  const offenders: string[] = [];
+  const seen: string[] = [];
+  const walk = (el: unknown, nodeType: string) => {
+    if (!el || typeof el !== 'object') return;
+    const e = el as {
+      scope?: string;
+      label?: unknown;
+      elements?: unknown[];
+      options?: { format?: string };
+    };
+    const format = e.options?.format;
+    if (typeof e.scope === 'string' && typeof format === 'string' && LABEL_DRAWING_FORMATS.has(format)) {
+      seen.push(`${nodeType}:${e.scope}`);
+      if (typeof e.label !== 'string' || e.label.trim() === '') {
+        offenders.push(`${nodeType} → ${e.scope.split('/').pop()} (format ${format})`);
+      }
+    }
+    if (Array.isArray(e.elements)) for (const c of e.elements) walk(c, nodeType);
+  };
+  for (const item of PALETTE_ITEMS) walk(item.uischema, item.type);
+
+  it('the scan actually reached some of these fields', () => {
+    // Anti-no-op: if the formats are ever renamed, the set above silently matches
+    // nothing and the assertion below passes on an empty list.
+    expect(seen.length).toBeGreaterThan(3);
+  });
+
+  it('every one of them has a Hebrew label', () => {
+    expect(offenders).toEqual([]);
+  });
+});

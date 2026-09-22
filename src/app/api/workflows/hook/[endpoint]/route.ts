@@ -4,6 +4,8 @@ import { getClientIp, rateLimit } from '@/lib/security/rate-limit';
 import { getWebJobSender } from '@/lib/queue/web-sender';
 import { enqueueWorkflowRun } from '@/lib/workflow/enqueue';
 import { MAX_WEBHOOK_BODY_BYTES, startRunFromWebhook } from '@/lib/workflow/webhook-trigger';
+import { WEBHOOK_SECRET_HEADER } from '@/lib/workflow/webhook-token';
+import type { WebhookMethod } from '@/lib/workflow/catalogue/types';
 
 // `trigger.webhook` — an external system POSTs here and a workflow runs.
 //
@@ -65,23 +67,39 @@ const RATE_LIMIT = { limit: 60, windowMs: 60_000 };
  * intact. Unresolved, and cosmetic: the status carries the meaning. The test
  * pins what this function returns, which is the part this file controls.
  */
-export function GET(): NextResponse {
-  return NextResponse.json(
-    {
-      ok: false,
-      error: 'method_not_allowed',
-      hint: 'שלחו POST עם גוף JSON לכתובת הזו. פתיחה בדפדפן שולחת GET ולעולם לא תפעיל את התהליך.',
-    },
+// ⚠️ NOT EXPORTED, AND NEXT ENFORCES THAT. A route file may export only the HTTP
+// method handlers and a fixed set of config names; anything else fails the
+// generated type check with "Property 'browserHint' is incompatible with index
+// signature". Caught by `npm run build` 2026-09-22 — `tsc --noEmit` alone did
+// NOT catch it, because the rule lives in types Next generates during a build.
+function browserHint(): Response {
+  // ⚠️ text/plain, NOT JSON — AND THE REASON IS MEASURED, NOT STYLISTIC.
+  //
+  // The owner opened the address in Chrome and it DOWNLOADED A FILE instead of
+  // showing the sentence. Nothing sets `Content-Disposition` (checked live: the
+  // response carries only content-type, the four security headers and `allow`).
+  // The cause is the combination this app sets deliberately and correctly:
+  // `X-Content-Type-Options: nosniff` on `/(.*)` plus `application/json`, which
+  // a top-level navigation in Chrome saves rather than renders.
+  //
+  // The header stays. The RESPONSE changes: this body exists for exactly one
+  // reader — a human who pasted the URL into a browser — and no machine consumes
+  // it, so a media type that renders is strictly better than one that is parsed
+  // by nobody and downloaded by everybody.
+  return new Response(
+    'שלחו POST עם גוף JSON לכתובת הזו, והסוד בכותרת x-kalfa-webhook-secret.\n' +
+      'פתיחה בדפדפן שולחת GET ולעולם לא תפעיל את התהליך.\n',
     {
       status: 405,
-      headers: { Allow: 'POST', 'Content-Type': 'application/json; charset=utf-8' },
+      headers: { Allow: 'POST', 'Content-Type': 'text/plain; charset=utf-8' },
     },
   );
 }
 
-export async function POST(
+async function handle(
   request: NextRequest,
-  { params }: { params: Promise<{ token: string }> },
+  { params }: { params: Promise<{ endpoint: string }> },
+  method: WebhookMethod,
 ) {
   const ip = getClientIp((name) => request.headers.get(name));
   // Keyed on the IP alone, NOT on the token: keying on the token would let an
@@ -95,7 +113,15 @@ export async function POST(
     );
   }
 
-  const { token } = await params;
+  const { endpoint } = await params;
+
+  // ⚠️ THE CREDENTIAL COMES FROM A HEADER, NOT THE PATH. The path segment is a
+  // PUBLIC id that identifies which webhook and proves nothing; a missing or
+  // wrong header gets the same 404 as an unknown id, so this stays a single
+  // answer rather than an oracle. The split exists because a secret in a URL is
+  // recorded by every access log, proxy and Referer that stores a path — see
+  // plans/webhook-address-vs-secret.md.
+  const secret = request.headers.get(WEBHOOK_SECRET_HEADER) ?? '';
 
   // Read as TEXT, not `request.json()`. The size check has to happen on the raw
   // bytes before anything parses them, and a parse failure has to be OUR answer
@@ -108,7 +134,13 @@ export async function POST(
   }
 
   const result = await startRunFromWebhook({
-    token,
+    endpointId: endpoint,
+    secret,
+    method,
+    // Flattened: a repeated key keeps its LAST value, which is what a template
+    // naming `{{trigger.query.x}}` can actually use. A caller that needs arrays
+    // sends a body.
+    query: Object.fromEntries(new URL(request.url).searchParams),
     rawBody,
     // The caller opts into deduplication by sending a key — the same header
     // shape `action.webhook` SENDS on the way out, so a KALFA workflow calling
@@ -151,4 +183,39 @@ export async function POST(
   }
 
   return NextResponse.json({ ok: true, runId: result.runId }, { status: 202 });
+}
+
+// ⚠️ ONE HANDLER, FIVE EXPORTS — and the export list is the ONLY place a verb is
+// enabled. Next dispatches by exported name, so a method with no export here can
+// never reach `handle` no matter what a node's `methods` says; and a method
+// exported here still gets nowhere unless that node allows it. Two gates, and
+// the strict one (the node's allow-list) is checked AFTER the secret, so a
+// caller who cannot authenticate learns nothing about which verbs are open.
+//
+export const POST = (request: NextRequest, ctx: { params: Promise<{ endpoint: string }> }) =>
+  handle(request, ctx, 'POST');
+export const PUT = (request: NextRequest, ctx: { params: Promise<{ endpoint: string }> }) =>
+  handle(request, ctx, 'PUT');
+export const PATCH = (request: NextRequest, ctx: { params: Promise<{ endpoint: string }> }) =>
+  handle(request, ctx, 'PATCH');
+export const DELETE = (request: NextRequest, ctx: { params: Promise<{ endpoint: string }> }) =>
+  handle(request, ctx, 'DELETE');
+
+/**
+ * GET is BOTH a browser visit and a legitimate webhook verb, and this splits
+ * them on one signal: the secret header.
+ *
+ * ⚠️ THE NO-ORACLE PROPERTY IS PRESERVED, WHICH IS WHY THE SPLIT IS ON THE
+ * HEADER AND NOT ON THE PATH. A browser never sends `x-kalfa-webhook-secret`, so
+ * every address-bar visit gets the SAME constant sentence — it cannot be used to
+ * ask whether an endpoint exists. Only a caller that already presents a
+ * credential reaches resolution, and there every failure is the same 404.
+ *
+ * Without this, a webhook whose upstream can only send GET simply could not be
+ * built — the gap the owner raised on 2026-09-22 from n8n's own HTTP Method
+ * parameter.
+ */
+export function GET(request: NextRequest, ctx: { params: Promise<{ endpoint: string }> }) {
+  if (!request.headers.get(WEBHOOK_SECRET_HEADER)) return browserHint();
+  return handle(request, ctx, 'GET');
 }

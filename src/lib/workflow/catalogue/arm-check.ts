@@ -7,6 +7,7 @@ import {
   NODE_STATUSES,
   NODE_NUMBER_RANGES,
   NODE_REQUIRED_FIELDS,
+  ACTION_BRANCH_HANDLES,
   SALES_CALLBACK_TOPIC,
   triggerKeywordCanNeverMatch,
   triggerSuppliesGuestContext,
@@ -115,6 +116,14 @@ export function findArmBlockers(
   return collectArmBlockers(storedDefinition, workflowId).map((b) => b.message);
 }
 
+/** The policy value that makes the error port live. Mirrors RUNNER_ERROR_PORT. */
+const ERROR_ROUTE_POLICY = 'errorRoute';
+
+/** Absent, null, or a string with nothing in it. */
+function isBlank(value: unknown): boolean {
+  return value === undefined || value === null || (typeof value === 'string' && value.trim() === '');
+}
+
 function collectArmBlockers(
   storedDefinition: unknown,
   /**
@@ -192,6 +201,50 @@ function collectArmBlockers(
     if (readNodeStatus(properties.status) === 'draft') {
       blockers.push({ nodeId: node.id, source: 'arm-only', instancePath: '/status', message: `${where}: הצעד בטיוטה. סיימו אותו, או העבירו אותו ל"מושבת" כדי לדלג עליו במכוון.` });
       continue;
+    }
+
+    // ⚠️ THE ERROR PORT AND THE ERROR POLICY, WHICH NOTHING COMPARED.
+    //
+    // An action node draws BOTH branch handles whatever its policy is — the
+    // palette seeds `decisionBranches` with `ok` and `error` unconditionally —
+    // while `errorPolicy` alone decides whether the error one ever fires. So the
+    // two can disagree in either direction, and until now neither was checked:
+    // `arm-check.ts` contained ZERO references to `errorPolicy` (measured
+    // 2026-09-22).
+    //
+    // Both failures are SILENT AT RUN TIME, which is why they belong here:
+    //
+    //   policy ≠ errorRoute + an edge off the error port → the owner drew a
+    //     recovery path, it is stored, it renders, and it can never fire. The
+    //     run just fails and the branch they built is never entered.
+    //
+    //   policy = errorRoute + NO edge off the error port → the node is told to
+    //     route errors somewhere and there is nowhere. The run stops mid-flow
+    //     with no step after it and nothing saying why.
+    //
+    // `arm-only`, because no schema can see it: the fact lives in an EDGE, and a
+    // JSON Schema validates one node's properties.
+    if (typeof properties.errorPolicy === 'string') {
+      const routes = properties.errorPolicy === ERROR_ROUTE_POLICY;
+      const wired = parsed.data.edges.some(
+        (edge) => edge.source === node.id && edge.sourceHandle === ACTION_BRANCH_HANDLES.error,
+      );
+      if (!routes && wired) {
+        blockers.push({
+          nodeId: node.id,
+          source: 'arm-only',
+          instancePath: '/errorPolicy',
+          message: `${where}: יש מסלול שיוצא מ"נכשל", אבל הצעד מוגדר לעצור בשגיאה — המסלול הזה לעולם לא ירוץ. שנו את הטיפול בשגיאה ל"המשך במסלול השגיאה", או מחקו את הקשת.`,
+        });
+      }
+      if (routes && !wired) {
+        blockers.push({
+          nodeId: node.id,
+          source: 'arm-only',
+          instancePath: '/errorPolicy',
+          message: `${where}: הצעד מוגדר להמשיך במסלול השגיאה, אבל מ"נכשל" לא יוצאת שום קשת — שגיאה תעצור את התהליך בלי שאיש יידע. חברו צעד ל"נכשל", או שנו את הטיפול בשגיאה.`,
+        });
+      }
     }
 
     // ⚠️ A GUEST-SCOPED STEP IN A RUN THAT WILL NEVER CARRY A GUEST.
@@ -324,6 +377,22 @@ function collectArmBlockers(
     }
 
     for (const key of required) {
+      // ⚠️ ONE REFUSAL FOR A PAIR THAT IS FILLED BY ONE PRESS. A webhook
+      // trigger's address and secret are minted together, so a node missing both
+      // is ONE thing to fix — and two blockers naming two fields, one of which
+      // ("endpointId") the owner never types, reads like two separate problems.
+      // The `tokenHash` entry carries the sentence for both; this skips the
+      // second copy. If the secret IS set and only the address is missing — a
+      // hand-edited diagram, never the editor — `endpointId` falls through and
+      // reports itself, because then there is genuinely something else wrong.
+      if (
+        node.data.type === 'trigger.webhook' &&
+        key === 'endpointId' &&
+        isBlank(properties.tokenHash)
+      ) {
+        continue;
+      }
+
       // The pre-rename key counts. A diagram saved before `status` became
       // `rsvpStatus` still RUNS — the handler reads both — so refusing to arm it
       // would be this check inventing a rule the engine does not have.
@@ -416,12 +485,18 @@ function blankMessage(nodeType: string, key: string): string {
   if (nodeType === 'action.start_voice_call' && key === 'purposeKey') {
     return 'לא נבחר ייעוד לשיחה. בחרו ייעוד מהרשימה, ואם היא ריקה — צרו ייעוד חדש ב-/admin/integrations/voximplant וקשרו לו rule.';
   }
-  // And again: a webhook trigger with no token has no ADDRESS — the route is
-  // `/api/workflows/hook/<token>` and `findWorkflowForToken` skips every
-  // workflow whose configured token is blank, so arming one produces an endpoint
-  // that exists nowhere. "The token field is empty" does not say that.
-  if (nodeType === 'trigger.webhook' && key === 'tokenHash') {
-    return 'לא נוצר טוקן, ולכן אין כתובת שאפשר לקרוא לה. לחצו על יצירת טוקן — הוא יוצג פעם אחת בלבד.';
+  // And again: a webhook trigger that was never generated has no ADDRESS — the
+  // route is `/api/workflows/hook/<endpointId>` with the secret in a header, and
+  // `findWorkflowForEndpoint` requires BOTH, so arming one produces an endpoint
+  // that answers nobody. "The field is empty" does not say that.
+  //
+  // ⚠️ ONE SENTENCE FOR BOTH HALVES, because one press fixes both. They are
+  // minted together by webhook-token-control.tsx, so reporting `endpointId` and
+  // `tokenHash` separately would put two lines in front of the owner for a
+  // single action — and the generic "חסר ערך בשדה endpointId" would be the
+  // louder of the two while naming a field nobody types.
+  if (nodeType === 'trigger.webhook' && (key === 'tokenHash' || key === 'endpointId')) {
+    return 'לא נוצר סוד, ולכן אין עדיין כתובת. לחצו על יצירת סוד — הכתובת תיווצר יחד איתו ותישאר גלויה, והסוד יוצג פעם אחת בלבד.';
   }
   return `השדה "${key}" ריק.`;
 }

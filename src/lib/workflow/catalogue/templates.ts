@@ -1841,6 +1841,9 @@ const sumitReceiptOnWebhook: DiagramModel = {
           properties: {
             label: 'קריאת webhook',
             description: 'מתחיל את התהליך כשמערכת חיצונית קוראת לכתובת',
+            // Both blank: a template is a draft, and the address is minted in the
+            // editor together with the secret. arm-check refuses until then.
+            endpointId: '',
             tokenHash: '',
           },
         },
@@ -1951,6 +1954,9 @@ const sumitCustomerThenDocument: DiagramModel = {
           properties: {
             label: 'קריאת webhook',
             description: 'מתחיל את התהליך כשמערכת חיצונית קוראת לכתובת',
+            // Both blank: a template is a draft, and the address is minted in the
+            // editor together with the secret. arm-check refuses until then.
+            endpointId: '',
             tokenHash: '',
           },
         },

@@ -3,6 +3,7 @@
 import {
   Icon,
   WorkflowBuilder,
+  getStoreNodes,
   useEffectChange,
   useKeyPress,
   useSingleSelectedElement,
@@ -57,6 +58,7 @@ import {
 import { ExecutionLogPanel } from "./log-panel";
 import { executionMarkersPlugin } from "./node-markers";
 import { nodeRunRenderer } from "./node-run-control";
+import { triggerSwitchRenderer } from "./trigger-switch-control";
 import { resetExecution } from "./use-execution-store";
 import {
   resetPanels,
@@ -159,6 +161,10 @@ const JSON_FORM = {
     // prop because that prop's tab strip is gated on the node's visual template
     // type — see node-run-control.tsx for the measurement.
     nodeRunRenderer,
+    // Also not an input: the trigger node's "what starts this flow" switcher.
+    // It rewrites `data.type` in place, which the SDK re-resolves through
+    // `getNodeDefinition` — see trigger-switch-control.tsx.
+    triggerSwitchRenderer,
   ],
 };
 
@@ -339,6 +345,54 @@ export function WorkflowEditor({
     return () => {
       resetExecution();
       resetPanels();
+    };
+  }, [workflowId]);
+
+  // FIT THE DIAGRAM WHEN THE WORKFLOW OPENS.
+  //
+  // ⚠️ WITHOUT THIS, EVERY WORKFLOW OPENS IN A CORNER. Two facts make it certain
+  // rather than cosmetic, both MEASURED 2026-09-22:
+  //   • `viewport` is NULL on every one of the 12 saved workflows — the save
+  //     path never writes one, so there is no stored camera to restore. React
+  //     Flow therefore falls back to `{ x: 0, y: 0, zoom: 1 }`.
+  //   • Nothing called fitView on mount. `app-bar.tsx` calls it from the
+  //     "הצגת הכול" button and from the layout-direction toggle, and those are
+  //     the only two callers.
+  // So the diagram rendered at origin at 100% in a canvas sized for the whole
+  // screen, and the owner had to press a button on every single visit. The
+  // vendor's own editor opens fitted.
+  //
+  // ⚠️ IT RUNS ONCE, AND ONLY AFTER THERE IS SOMETHING TO FIT. The React Flow
+  // instance is published to the SDK store asynchronously, and fitting an empty
+  // graph sets a meaningless zoom that the real nodes then inherit — so this
+  // waits for BOTH the instance and a non-empty node list, fits, and
+  // unsubscribes. `done` guards the case where the store settles before the
+  // subscription is installed, which would otherwise fit twice.
+  //
+  // ⚠️ NO `duration`. The toolbar button animates because the owner asked for a
+  // move they can follow; animating from a position nobody chose is just a
+  // lurch on open.
+  //
+  // IF A SAVED VIEWPORT IS EVER PERSISTED, this must become conditional —
+  // restoring where someone left off beats re-fitting. It is unconditional today
+  // precisely because there is nothing to restore.
+  useEffect(() => {
+    let done = false;
+
+    const tryFit = () => {
+      if (done) return;
+      const instance = useStore.getState().reactFlowInstance;
+      if (!instance || getStoreNodes().length === 0) return;
+      done = true;
+      void instance.fitView({ padding: 0.2, maxZoom: 1 });
+    };
+
+    const unsubscribe = useStore.subscribe(() => tryFit());
+    tryFit();
+
+    return () => {
+      done = true;
+      unsubscribe();
     };
   }, [workflowId]);
 
