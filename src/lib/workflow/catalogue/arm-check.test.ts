@@ -284,6 +284,12 @@ describe('the starter templates against this gate', () => {
       'תזכורת לאורח אחד (תהליך-בן)',
       'שיחה קולית עם המתנה לתוצאה',
       'שיחת ייעוד — עם בחירת סוכן ומספר',
+      // Two deliberate blanks, and both are the owner's to fill: the webhook
+      // trigger's token, and the customer the receipt is FOR. A starter that
+      // shipped a real customer name would issue a document about somebody the
+      // owner never chose, so the blank is the safe default — and this gate is
+      // what turns it into a named instruction instead of a first-run surprise.
+      'הפקת קבלה לפי קריאת webhook',
     ]);
 
     // ⚠️ EVERY ONE OF THESE NAMES THE NEXT ACTION, not just the field. An owner

@@ -56,6 +56,7 @@ import {
   NODE_CONDITIONAL_REQUIRED_FIELDS,
   NODE_NUMBER_RANGES,
   NODE_REQUIRED_FIELDS,
+  type SumitDocumentTypeOption,
   NODE_STATUSES,
   SWITCH_DEFAULT_BRANCH_ID,
   SWITCH_DEFAULT_HANDLE,
@@ -2175,7 +2176,327 @@ export function buildPaletteItems(
  * Kept as the base the factory rewrites one entry of, so every other node type
  * is declared exactly once. It is also what the tests and the i18n audit read.
  */
+// ---------------------------------------------------------------------------
+// action.sumit_create_document / action.sumit_create_customer
+// ---------------------------------------------------------------------------
+//
+// Both are ACCOUNTING nodes: they create a record, they do not move money.
+// Every option below is a value swagger.json accepts — no label here invents a
+// capability the API does not have.
+
+const sumitDocumentTypeOptions = {
+  Receipt: { label: 'קבלה', value: 'Receipt' },
+  ProformaInvoice: { label: 'חשבונית עסקה (פרופורמה)', value: 'ProformaInvoice' },
+  PriceQuotation: { label: 'הצעת מחיר', value: 'PriceQuotation' },
+  PaymentRequest: { label: 'דרישת תשלום', value: 'PaymentRequest' },
+  Order: { label: 'הזמנה', value: 'Order' },
+  DeliveryNote: { label: 'תעודת משלוח', value: 'DeliveryNote' },
+  CreditReceipt: { label: 'קבלת זיכוי', value: 'CreditReceipt' },
+} as const satisfies Record<SumitDocumentTypeOption, { label: string; value: string }>;
+
+const sumitCreateDocumentSchema = {
+  type: 'object',
+  required: NODE_REQUIRED_FIELDS['action.sumit_create_document'],
+  properties: {
+    ...identityProperties,
+    ...statusProperty,
+    ...actionBranchesProperty,
+    documentType: {
+      ...requiredText,
+      options: Object.values(sumitDocumentTypeOptions),
+    },
+    customerName: { ...requiredText },
+    customerEmail: { type: 'string' },
+    customerPhone: { type: 'string' },
+    customerExternalId: { type: 'string' },
+    customerNoVat: { type: 'boolean' },
+    itemName: { type: 'string' },
+    itemQuantity: { type: 'number' },
+    itemUnitPrice: { type: 'number' },
+    documentDescription: { type: 'string' },
+    isDraft: { type: 'boolean' },
+    sendByEmail: { type: 'boolean' },
+    errorPolicy: { type: 'string', options: Object.values(errorPolicyOptions) },
+  },
+} satisfies NodeSchema;
+
+const sumitCreateCustomerSchema = {
+  type: 'object',
+  required: NODE_REQUIRED_FIELDS['action.sumit_create_customer'],
+  properties: {
+    ...identityProperties,
+    ...statusProperty,
+    ...actionBranchesProperty,
+    customerName: { ...requiredText },
+    customerEmail: { type: 'string' },
+    customerPhone: { type: 'string' },
+    city: { type: 'string' },
+    address: { type: 'string' },
+    companyNumber: { type: 'string' },
+    externalId: { type: 'string' },
+    noVat: { type: 'boolean' },
+    errorPolicy: { type: 'string', options: Object.values(errorPolicyOptions) },
+  },
+} satisfies NodeSchema;
+
+const sumitCreateDocumentScope = getScope<typeof sumitCreateDocumentSchema>;
+const sumitCreateCustomerScope = getScope<typeof sumitCreateCustomerSchema>;
+
+// The four ARM-BLOCKING fields stay FLAT — the house rule this file records
+// elsewhere: a field `arm-check.ts` refuses to arm on must be visible without
+// opening an accordion, or the owner meets it as a blocker instead of a form.
+const sumitCreateDocumentUiSchema: UISchema = {
+  type: 'VerticalLayout',
+  elements: [
+    ...identityControls(
+      sumitCreateDocumentScope('properties.label'),
+      sumitCreateDocumentScope('properties.description'),
+    ),
+    {
+      type: 'Select',
+      scope: sumitCreateDocumentScope('properties.documentType'),
+      label: 'סוג המסמך',
+    },
+    {
+      type: 'VariableText',
+      scope: sumitCreateDocumentScope('properties.customerName'),
+      label: 'שם הלקוח',
+      placeholder: 'הקלידו {{ כדי לשלב ערך מצעד קודם',
+    },
+    {
+      type: 'Accordion',
+      label: 'פרטי הלקוח',
+      elements: [
+        {
+          type: 'VariableText',
+          scope: sumitCreateDocumentScope('properties.customerEmail'),
+          label: 'אימייל',
+        },
+        {
+          type: 'VariableText',
+          scope: sumitCreateDocumentScope('properties.customerPhone'),
+          label: 'טלפון',
+        },
+        {
+          type: 'VariableText',
+          scope: sumitCreateDocumentScope('properties.customerExternalId'),
+          label: 'מזהה חיצוני',
+          placeholder: 'המזהה שלנו ללקוח — לצורך התאמה מול SUMIT',
+        },
+        {
+          type: 'Switch',
+          scope: sumitCreateDocumentScope('properties.customerNoVat'),
+          label: 'הלקוח פטור ממע״מ',
+        },
+      ],
+    },
+    {
+      type: 'Accordion',
+      label: 'שורת פריט (אופציונלי)',
+      elements: [
+        {
+          type: 'VariableText',
+          scope: sumitCreateDocumentScope('properties.itemName'),
+          label: 'שם הפריט',
+        },
+        {
+          type: 'Text',
+          scope: sumitCreateDocumentScope('properties.itemQuantity'),
+          label: 'כמות',
+        },
+        {
+          type: 'Text',
+          scope: sumitCreateDocumentScope('properties.itemUnitPrice'),
+          label: 'מחיר ליחידה (₪)',
+        },
+      ],
+    },
+    {
+      type: 'Accordion',
+      label: 'אפשרויות המסמך',
+      elements: [
+        {
+          type: 'VariableTextArea',
+          scope: sumitCreateDocumentScope('properties.documentDescription'),
+          label: 'תיאור שמודפס על המסמך',
+          minRows: 2,
+        },
+        {
+          type: 'Switch',
+          scope: sumitCreateDocumentScope('properties.isDraft'),
+          label: 'שמירה כטיוטה',
+        },
+        {
+          type: 'Switch',
+          scope: sumitCreateDocumentScope('properties.sendByEmail'),
+          label: 'שליחת המסמך במייל ללקוח',
+        },
+      ],
+    },
+    // status and errorPolicy stay FLAT: accordion-classification.test.ts
+    // refuses to let a node-level switch be folded away, and `status` is
+    // what decides whether the step runs at all.
+    statusControl(sumitCreateDocumentScope('properties.status')),
+    {
+      type: 'Select',
+      scope: sumitCreateDocumentScope('properties.errorPolicy'),
+      label: 'התנהגות בשגיאה',
+    },
+  ],
+};
+
+const sumitCreateCustomerUiSchema: UISchema = {
+  type: 'VerticalLayout',
+  elements: [
+    ...identityControls(
+      sumitCreateCustomerScope('properties.label'),
+      sumitCreateCustomerScope('properties.description'),
+    ),
+    {
+      type: 'VariableText',
+      scope: sumitCreateCustomerScope('properties.customerName'),
+      label: 'שם הלקוח',
+      placeholder: 'הקלידו {{ כדי לשלב ערך מצעד קודם',
+    },
+    {
+      type: 'Accordion',
+      label: 'פרטי קשר',
+      elements: [
+        {
+          type: 'VariableText',
+          scope: sumitCreateCustomerScope('properties.customerEmail'),
+          label: 'אימייל',
+        },
+        {
+          type: 'VariableText',
+          scope: sumitCreateCustomerScope('properties.customerPhone'),
+          label: 'טלפון',
+        },
+        {
+          type: 'VariableText',
+          scope: sumitCreateCustomerScope('properties.city'),
+          label: 'עיר',
+        },
+        {
+          type: 'VariableText',
+          scope: sumitCreateCustomerScope('properties.address'),
+          label: 'כתובת',
+        },
+      ],
+    },
+    {
+      type: 'Accordion',
+      label: 'פרטים עסקיים',
+      elements: [
+        {
+          type: 'VariableText',
+          scope: sumitCreateCustomerScope('properties.companyNumber'),
+          label: 'ח.פ. / ע.מ.',
+        },
+        {
+          type: 'VariableText',
+          scope: sumitCreateCustomerScope('properties.externalId'),
+          label: 'מזהה חיצוני',
+        },
+        {
+          type: 'Switch',
+          scope: sumitCreateCustomerScope('properties.noVat'),
+          label: 'הלקוח פטור ממע״מ',
+        },
+      ],
+    },
+    // status and errorPolicy stay FLAT: accordion-classification.test.ts
+    // refuses to let a node-level switch be folded away, and `status` is
+    // what decides whether the step runs at all.
+    statusControl(sumitCreateCustomerScope('properties.status')),
+    {
+      type: 'Select',
+      scope: sumitCreateCustomerScope('properties.errorPolicy'),
+      label: 'התנהגות בשגיאה',
+    },
+  ],
+};
+
 export const PALETTE_ITEMS: PaletteItem[] = [
+  {
+    type: 'action.sumit_create_document' satisfies KalfaNodeType,
+    label: 'הפקת מסמך ב-SUMIT',
+    description: 'מפיק קבלה, הצעת מחיר או מסמך אחר. לא מבצע חיוב.',
+    icon: 'FileText',
+    templateType: NodeType.DecisionNode,
+    schema: sumitCreateDocumentSchema,
+    uischema: sumitCreateDocumentUiSchema,
+    // Every field seeded, none omitted. The SDK's bundled validator
+    // (@cfworker/json-schema) treats an ABSENT required key as invalid but an
+    // EMPTY one as valid — so seeding is what makes the panel's error markers
+    // appear on the field instead of the owner discovering the blank at arming.
+    defaultPropertiesData: {
+      decisionBranches: actionBranches.map((branch) => ({ ...branch })),
+      status: nodeStatusOptions.active.value,
+      label: 'הפקת מסמך ב-SUMIT',
+      description: 'מפיק קבלה, הצעת מחיר או מסמך אחר. לא מבצע חיוב.',
+      // קבלה — the document this business (עוסק פטור) actually issues.
+      documentType: sumitDocumentTypeOptions.Receipt.value,
+      customerName: '',
+      customerEmail: '',
+      customerPhone: '',
+      customerExternalId: '',
+      customerNoVat: false,
+      itemName: '',
+      itemQuantity: 1,
+      itemUnitPrice: 0,
+      documentDescription: '',
+      // DRAFT by default. A final document is a bookkeeping record that cannot
+      // simply be deleted, so the first run of a new automation produces
+      // something reviewable rather than something filed.
+      isDraft: true,
+      sendByEmail: false,
+      errorPolicy: errorPolicyOptions.continue.value,
+    },
+    outputSchema: {
+      type: 'default',
+      properties: {
+        // The four fields SUMIT's own response carries
+        // (`Accounting_Documents_Create_Response`). A later node can reference
+        // any of them as {{nodes.<id>.<field>}} with no extra wiring.
+        documentId: { type: 'number', label: 'מזהה המסמך' },
+        documentNumber: { type: 'number', label: 'מספר המסמך' },
+        customerId: { type: 'number', label: 'מזהה הלקוח' },
+        documentDownloadUrl: { type: 'string', label: 'קישור להורדת המסמך' },
+      },
+    },
+  },
+  {
+    type: 'action.sumit_create_customer' satisfies KalfaNodeType,
+    label: 'יצירת לקוח ב-SUMIT',
+    description: 'יוצר כרטיס לקוח. לא מבצע חיוב.',
+    icon: 'UserPlus',
+    templateType: NodeType.DecisionNode,
+    schema: sumitCreateCustomerSchema,
+    uischema: sumitCreateCustomerUiSchema,
+    defaultPropertiesData: {
+      decisionBranches: actionBranches.map((branch) => ({ ...branch })),
+      status: nodeStatusOptions.active.value,
+      label: 'יצירת לקוח ב-SUMIT',
+      description: 'יוצר כרטיס לקוח. לא מבצע חיוב.',
+      customerName: '',
+      customerEmail: '',
+      customerPhone: '',
+      city: '',
+      address: '',
+      companyNumber: '',
+      externalId: '',
+      noVat: false,
+      errorPolicy: errorPolicyOptions.continue.value,
+    },
+    outputSchema: {
+      type: 'default',
+      properties: {
+        customerId: { type: 'number', label: 'מזהה הלקוח' },
+        customerHistoryUrl: { type: 'string', label: 'קישור לכרטיס הלקוח' },
+      },
+    },
+  },
   {
     type: 'action.start_voice_call' satisfies KalfaNodeType,
     label: 'שיחה עם סוכן קולי',

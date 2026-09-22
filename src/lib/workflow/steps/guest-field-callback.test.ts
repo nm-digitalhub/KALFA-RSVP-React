@@ -34,6 +34,7 @@ function ctxWith(guests: Guests) {
         },
       },
       integrations: {} as StepContext['deps']['integrations'],
+      accounting: {} as StepContext['deps']['accounting'],
     },
   } satisfies StepContext;
 }

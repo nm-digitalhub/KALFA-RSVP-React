@@ -28,6 +28,8 @@ export const CATALOGUE: readonly CatalogueEntry[] = [
   { type: 'action.start_for_each_guest', isTrigger: false },
   { type: 'action.start_voice_call', isTrigger: false },
   { type: 'logic.set_value', isTrigger: false },
+  { type: 'action.sumit_create_document', isTrigger: false },
+  { type: 'action.sumit_create_customer', isTrigger: false },
 ];
 
 // Lookup by the string stored in the diagram. `undefined` is rule 5: an unknown

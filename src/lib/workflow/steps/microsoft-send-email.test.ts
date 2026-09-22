@@ -17,6 +17,17 @@ function context(execute: StepContext['deps']['integrations']['execute']): StepC
       alerts: {} as StepContext['deps']['alerts'],
       webhook: {} as StepContext['deps']['webhook'],
       integrations: { execute },
+      // Never reached by these tests; present because the port is required —
+      // an optional one would let a document node silently issue nothing.
+      accounting: {
+        createDocument: async () => ({
+          documentId: 1,
+          documentNumber: null,
+          customerId: null,
+          documentDownloadUrl: null,
+        }),
+        createCustomer: async () => ({ customerId: 1, customerHistoryUrl: null }),
+      },
     },
   };
 }

@@ -121,6 +121,17 @@ function deps(guestCount = 1): WorkflowEngineDeps & {
     alerts: alerts.port,
     webhook: { post: async () => ({ ok: true, status: 200 }) },
     integrations: { execute: async () => ({ status: 200 }) },
+    // Never reached by these tests; present because the port is required —
+    // an optional one would let a document node silently issue nothing.
+    accounting: {
+      createDocument: async () => ({
+        documentId: 1,
+        documentNumber: null,
+        customerId: null,
+        documentDownloadUrl: null,
+      }),
+      createCustomer: async () => ({ customerId: 1, customerHistoryUrl: null }),
+    },
     _ledger: ledger,
     _guests: guests,
     _runs: runs,

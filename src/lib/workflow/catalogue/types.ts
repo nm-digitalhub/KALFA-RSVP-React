@@ -39,6 +39,8 @@ export const NODE_TYPES = [
   'action.start_for_each_guest',
   'action.start_voice_call',
   'logic.set_value',
+  'action.sumit_create_document',
+  'action.sumit_create_customer',
 ] as const;
 
 export type KalfaNodeType = (typeof NODE_TYPES)[number];
@@ -872,6 +874,84 @@ export type SetValueConfig = {
   value: string;
 };
 
+/**
+ * `action.sumit_create_document` — issue an accounting document.
+ *
+ * Every field mirrors a name in swagger.json's `Accounting_Documents_Create_Request`
+ * chain; nothing here was invented. The node NEVER carries credentials: the port
+ * reads them from `app_settings`, the same reader the close-charge uses.
+ *
+ * ⚠️ NO MONEY MOVES. This records a document; it does not charge a card. The
+ * `Payments[]` array the API also accepts is deliberately NOT exposed — on a
+ * receipt it asserts that money was received, and a workflow that can assert
+ * that without a charge having happened is a bookkeeping hazard, not a feature.
+ */
+export type SumitCreateDocumentConfig = {
+  /** `Accounting_Typed_DocumentType`. See DOCUMENT_TYPES for why the list is narrowed. */
+  documentType: SumitDocumentTypeOption;
+  customerName: string;
+  customerEmail?: string;
+  customerPhone?: string;
+  /** `Customer.ExternalIdentifier` — the anchor that ties the document back to us. */
+  customerExternalId?: string;
+  /** `Customer.NoVAT` — spec: "Set to true for VAT exempt customers". */
+  customerNoVat?: boolean;
+  itemName?: string;
+  itemQuantity?: number;
+  itemUnitPrice?: number;
+  /**
+   * `Details.Description` — printed on the document.
+   *
+   * NOT named `description`: every node already carries its own `description`
+   * (the caption the owner reads on the canvas), and one object cannot hold
+   * both. The document's text is the one that gets the qualified name, because
+   * the node-level field is shared by all 21 node types.
+   */
+  documentDescription?: string;
+  /** `Details.IsDraft` — spec: "Leave empty for final document". */
+  isDraft?: boolean;
+  /** `Details.SendByEmail`. */
+  sendByEmail?: boolean;
+};
+
+/** `action.sumit_create_customer` — `Accounting_Typed_Customer`, creating side only. */
+export type SumitCreateCustomerConfig = {
+  customerName: string;
+  customerEmail?: string;
+  customerPhone?: string;
+  city?: string;
+  address?: string;
+  /** `CompanyNumber` — spec: "Customer registered company number (VAT number)". */
+  companyNumber?: string;
+  externalId?: string;
+  noVat?: boolean;
+};
+
+/**
+ * The document types this node may issue.
+ *
+ * NARROWER than the API's 23-value enum, and narrower on purpose twice over:
+ *
+ *   • Expense and supplier documents describe something WE bought. An outgoing
+ *     automation has no business writing one.
+ *   • `Invoice` / `InvoiceAndReceipt` are חשבונית מס, which an עוסק פטור may
+ *     not issue (the business's status — see the tax notes on close-charge).
+ *     They are absent so the editor cannot offer them, rather than present with
+ *     a warning nobody reads.
+ *
+ * `Receipt` (קבלה) is the document this business actually issues.
+ */
+export const SUMIT_DOCUMENT_TYPES = [
+  'Receipt',
+  'ProformaInvoice',
+  'PriceQuotation',
+  'PaymentRequest',
+  'Order',
+  'DeliveryNote',
+  'CreditReceipt',
+] as const;
+export type SumitDocumentTypeOption = (typeof SUMIT_DOCUMENT_TYPES)[number];
+
 // The discriminated union the step handlers narrow on. `BaseNode.config` in the
 // vendored runner is `unknown`; this is the vocabulary we give it.
 export type KalfaNodeConfig =
@@ -892,7 +972,9 @@ export type KalfaNodeConfig =
   | { type: 'logic.wait'; config: WaitConfig }
   | { type: 'action.send_template'; config: SendTemplateConfig }
   | { type: 'action.start_for_each_guest'; config: ForEachGuestConfig }
-  | { type: 'logic.set_value'; config: SetValueConfig };
+  | { type: 'logic.set_value'; config: SetValueConfig }
+  | { type: 'action.sumit_create_document'; config: SumitCreateDocumentConfig }
+  | { type: 'action.sumit_create_customer'; config: SumitCreateCustomerConfig };
 
 // ---------------------------------------------------------------------------
 // A catalogue entry — METADATA ONLY
@@ -1032,6 +1114,11 @@ export const NODE_DEPLOYMENT_BINDINGS: Partial<
   'action.create_callback_request': { topic: 'catalogue' },
   'action.start_for_each_guest': { targetWorkflowId: 'identifier' },
   'action.webhook': { url: 'secret', headers: 'secret' },
+  // Both SUMIT ids point INTO this installation: they are our own reference for
+  // a customer, so a diagram carrying one would reach for a record that does not
+  // exist anywhere else.
+  'action.sumit_create_document': { customerExternalId: 'identifier' },
+  'action.sumit_create_customer': { externalId: 'identifier' },
   'action.start_voice_call': {
     purposeKey: 'catalogue',
     callerId: 'identifier',
@@ -1061,6 +1148,10 @@ export const NODE_REQUIRED_FIELDS: Record<KalfaNodeType, string[]> = {
   'action.import_guest_list': ['label', 'description'],
   'action.start_for_each_guest': ['label', 'description', 'targetWorkflowId', 'maxGuests'],
   'action.start_voice_call': ['label', 'description', 'purposeKey'],
+  // documentType + a customer name are the minimum SUMIT itself requires
+  // (`Details.Type`, and `Customer.Name` "Required for creating a new customer").
+  'action.sumit_create_document': ['label', 'description', 'documentType', 'customerName'],
+  'action.sumit_create_customer': ['label', 'description', 'customerName'],
 };
 
 /**

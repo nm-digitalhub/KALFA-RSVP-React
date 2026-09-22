@@ -29,6 +29,7 @@ function ctx(
       alerts: {} as StepContext['deps']['alerts'],
       webhook: {} as StepContext['deps']['webhook'],
       integrations: {} as StepContext['deps']['integrations'],
+      accounting: {} as StepContext['deps']['accounting'],
     },
   } satisfies StepContext;
 }

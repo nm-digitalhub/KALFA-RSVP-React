@@ -50,6 +50,30 @@ const REVIEWED_PORTABLE: Record<string, string> = {
   decisionBranches: 'branch ids and labels internal to this diagram',
   errors: 'validation state recomputed on load',
 
+  // SUMIT accounting nodes. The judgement that puts these here rather than in
+  // NODE_DEPLOYMENT_BINDINGS: none of them names anything in THIS installation.
+  // A customer's name, phone or address describes a person in the outside world
+  // and means the same at any installation that imports the diagram; the
+  // document type is a value from SUMIT's own enum; the rest are booleans,
+  // quantities and prices. Note what is NOT here: SUMIT's own credentials never
+  // appear on a node at all — the port reads them from app_settings, so there is
+  // nothing on the diagram for an export to scrub.
+  customerName: 'a customer the author typed or referenced; a person, not an installation id',
+  customerEmail: 'a customer address; not an installation identifier',
+  customerPhone: 'a customer phone; not an installation identifier',
+  customerNoVat: 'a VAT-exemption flag about the CUSTOMER, true anywhere',
+  documentType: 'a value from SUMIT’s own document-type enum',
+  documentDescription: 'the author’s text, printed on the document',
+  itemName: 'the author’s text — a line on the document',
+  itemQuantity: 'a quantity',
+  itemUnitPrice: 'a price',
+  isDraft: 'draft/final — SUMIT document behaviour',
+  sendByEmail: 'whether SUMIT emails the document',
+  city: 'a customer’s city',
+  address: 'a customer’s address',
+  companyNumber: 'a customer’s registered company number; theirs, not ours',
+  noVat: 'a VAT-exemption flag about the CUSTOMER',
+
   // Closed vocabularies compiled into the app.
   level: 'alert severity, a fixed enum',
   method: 'HTTP verb',

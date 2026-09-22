@@ -33,6 +33,7 @@ function ctxWith(post: PostMock, ids = { runId: 'run-1', nodeId: 'node-9' }) {
       alerts: {} as StepContext['deps']['alerts'],
       webhook: { post },
       integrations: {} as StepContext['deps']['integrations'],
+      accounting: {} as StepContext['deps']['accounting'],
     },
   } satisfies StepContext;
 }

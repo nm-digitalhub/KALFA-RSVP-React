@@ -22,6 +22,7 @@ import type {
   TeamAlertsPort,
   OutboundWebhookPort,
   IntegrationsPort,
+  AccountingPort,
 } from './ports';
 import { runWorkflow, type RunWorkflowOutcome } from './run-workflow';
 
@@ -70,7 +71,17 @@ export type DryRunStep = {
  * a deliberate edit to this line, not something a new handler can do quietly.
  */
 export type DryRunEffect = {
-  kind: 'submit_rsvp' | 'send_whatsapp' | 'notify_team' | 'start_rsvp_ai_callback' | 'webhook' | 'integration' | 'set_guest_field' | 'callback_request';
+  kind:
+    | 'submit_rsvp'
+    | 'send_whatsapp'
+    | 'notify_team'
+    | 'start_rsvp_ai_callback'
+    | 'webhook'
+    | 'integration'
+    | 'set_guest_field'
+    | 'callback_request'
+    /** A SUMIT document or customer that WOULD have been created. */
+    | 'accounting';
   description: string;
 };
 
@@ -264,8 +275,48 @@ function createRecordingPorts(scenario: DryRunScenario) {
     },
   };
 
+  /**
+   * ⚠️ THE STUB THAT MAKES A TEST RUN SAFE. Nothing is issued: no document
+   * reaches SUMIT, no customer row is created, and the company's books are not
+   * touched. It records what WOULD have happened and returns plausible ids so
+   * the graph keeps routing exactly as it will in production.
+   *
+   * Owner decision 2026-09-22, asked explicitly: a test run must say "הייתי
+   * מחייב" and do nothing. Without this stub a handler would reach the live
+   * provider from the editor's own "הרצת בדיקה" button, whose panel promises
+   * the opposite.
+   *
+   * The ids are NEGATIVE on purpose. A dry run's trace can be copied into a
+   * ticket, and a positive-looking document id would be indistinguishable from
+   * a real one; no SUMIT document ever carries a negative id, so nothing
+   * downstream can mistake this for a document that exists.
+   */
+  const accounting: AccountingPort = {
+    async createDocument(input) {
+      effects.push({
+        kind: 'accounting',
+        description: `היה מפיק מסמך מסוג "${input.type}"${
+          input.customerName ? ` עבור ${input.customerName}` : ''
+        } — לא הופק מסמך אמיתי`,
+      });
+      return {
+        documentId: -1,
+        documentNumber: null,
+        customerId: null,
+        documentDownloadUrl: null,
+      };
+    },
+    async createCustomer(input) {
+      effects.push({
+        kind: 'accounting',
+        description: `היה יוצר לקוח בשם "${input.name}" — לא נוצר לקוח אמיתי`,
+      });
+      return { customerId: -1, customerHistoryUrl: null };
+    },
+  };
+
   return {
-    deps: { ledger, runs, guests, alerts, webhook, integrations },
+    deps: { ledger, runs, guests, alerts, webhook, integrations, accounting },
     steps,
     effects,
     getStatus: () => status,

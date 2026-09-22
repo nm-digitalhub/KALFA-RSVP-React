@@ -37,6 +37,7 @@ function ctx(guests: Partial<GuestActionsPort>, trigger: Partial<StepContext['tr
         },
       },
       integrations: {} as StepContext['deps']['integrations'],
+      accounting: {} as StepContext['deps']['accounting'],
     },
   } satisfies StepContext;
 }

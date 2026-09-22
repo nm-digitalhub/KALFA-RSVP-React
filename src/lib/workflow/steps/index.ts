@@ -32,10 +32,12 @@ import {
   type KalfaNodeType,
   type MicrosoftMailContentType,
   type MicrosoftMailImportance,
+  SUMIT_DOCUMENT_TYPES,
 } from '../catalogue/types';
 
 import type {
   GuestActionsPort,
+  AccountingPort,
   IntegrationsPort,
   OutboundWebhookPort,
   TeamAlertsPort,
@@ -170,7 +172,13 @@ export type StepContext = {
    */
   resumedFromWait?: boolean;
   trigger: WorkflowTriggerPayload;
-  deps: { guests: GuestActionsPort; alerts: TeamAlertsPort; webhook: OutboundWebhookPort; integrations: IntegrationsPort };
+  deps: {
+    guests: GuestActionsPort;
+    alerts: TeamAlertsPort;
+    webhook: OutboundWebhookPort;
+    integrations: IntegrationsPort;
+    accounting: AccountingPort;
+  };
 };
 
 export type StepHandler = (
@@ -1651,6 +1659,110 @@ const microsoftSendEmail: StepHandler = async (config, ctx) => {
   return { output: { accepted: true } };
 };
 
+/**
+ * `action.sumit_create_document` — issue an accounting document.
+ *
+ * ⚠️ NO MONEY MOVES HERE, and the PORT is what guarantees it: `ctx.deps.accounting`
+ * exposes document and customer creation only. Authorize, capture and credit are
+ * not on it, so this handler could not charge a card even if it tried.
+ *
+ * ⚠️ AND NOTHING REACHES THE PROVIDER FROM A DRY RUN. The port is swapped for a
+ * recording stub (engine/dry-run.ts), so the editor's "הרצת בדיקה" reports what
+ * it WOULD issue and the books stay untouched — the owner's explicit decision,
+ * 2026-09-22.
+ *
+ * The item is OPTIONAL: `Accounting_Typed_DocumentItem` is itself optional in the
+ * spec and a receipt legitimately carries none. A HALF-filled item is refused
+ * rather than sent — SUMIT answers a nameless item with "Missing Item details",
+ * and a priced line with no name is never what was meant.
+ */
+const sumitCreateDocument: StepHandler = async (config, ctx) => {
+  const documentType = readEnum(
+    config,
+    'documentType',
+    SUMIT_DOCUMENT_TYPES,
+    'action.sumit_create_document',
+  );
+  const customerName = readString(config, 'customerName').trim();
+  if (!customerName) {
+    throw new PermanentNodeExecutionError(
+      'invalid_config',
+      'הצעד "הפקת מסמך ב-SUMIT" חסר שם לקוח.',
+    );
+  }
+
+  const itemName = readString(config, 'itemName').trim();
+  const itemUnitPrice = Number(config.itemUnitPrice);
+  const rawQuantity = Number(config.itemQuantity);
+  const itemQuantity = Number.isFinite(rawQuantity) && rawQuantity > 0 ? rawQuantity : 1;
+  const hasPrice = Number.isFinite(itemUnitPrice) && itemUnitPrice !== 0;
+
+  if (Boolean(itemName) !== hasPrice) {
+    throw new PermanentNodeExecutionError(
+      'invalid_config',
+      'שורת הפריט במסמך חלקית — מלאו גם שם פריט וגם מחיר, או השאירו את שניהם ריקים.',
+    );
+  }
+
+  const optional = (key: string): string | undefined => {
+    const value = readString(config, key).trim();
+    return value ? value : undefined;
+  };
+
+  const result = await ctx.deps.accounting.createDocument({
+    type: documentType,
+    customerName,
+    // Omitted when blank rather than sent as '', so SUMIT never has to tell a
+    // deliberately-empty field from one that resolved to nothing.
+    customerEmail: optional('customerEmail'),
+    customerPhone: optional('customerPhone'),
+    customerExternalId: optional('customerExternalId'),
+    ...(typeof config.customerNoVat === 'boolean'
+      ? { customerNoVat: config.customerNoVat }
+      : {}),
+    ...(itemName && hasPrice
+      ? { items: [{ name: itemName, quantity: itemQuantity, unitPrice: itemUnitPrice }] }
+      : {}),
+    description: optional('documentDescription'),
+    ...(typeof config.isDraft === 'boolean' ? { isDraft: config.isDraft } : {}),
+    ...(typeof config.sendByEmail === 'boolean' ? { sendByEmail: config.sendByEmail } : {}),
+  });
+
+  // Returned WHOLE, so a later node can reference any field as
+  // {{nodes.<id>.documentId}} — the resolver already serves node types nobody
+  // had written when it was built (activity-runner's resolveConfigTemplates).
+  return { output: result };
+};
+
+/** `action.sumit_create_customer` — create a customer card. No money moves. */
+const sumitCreateCustomer: StepHandler = async (config, ctx) => {
+  const name = readString(config, 'customerName').trim();
+  if (!name) {
+    throw new PermanentNodeExecutionError(
+      'invalid_config',
+      'הצעד "יצירת לקוח ב-SUMIT" חסר שם לקוח.',
+    );
+  }
+
+  const optional = (key: string): string | undefined => {
+    const value = readString(config, key).trim();
+    return value ? value : undefined;
+  };
+
+  const result = await ctx.deps.accounting.createCustomer({
+    name,
+    email: optional('customerEmail'),
+    phone: optional('customerPhone'),
+    city: optional('city'),
+    address: optional('address'),
+    companyNumber: optional('companyNumber'),
+    externalId: optional('externalId'),
+    ...(typeof config.noVat === 'boolean' ? { noVat: config.noVat } : {}),
+  });
+
+  return { output: result };
+};
+
 export const STEP_HANDLERS: Record<KalfaNodeType, StepHandler> = {
   'trigger.whatsapp_inbound': whatsappInbound,
   'trigger.webhook': webhookTrigger,
@@ -1671,4 +1783,6 @@ export const STEP_HANDLERS: Record<KalfaNodeType, StepHandler> = {
   'action.send_template': sendTemplate,
   'action.start_for_each_guest': startForEachGuest,
   'logic.set_value': setValue,
+  'action.sumit_create_document': sumitCreateDocument,
+  'action.sumit_create_customer': sumitCreateCustomer,
 };

@@ -30,6 +30,7 @@ function ctx(overrides: Partial<StepContext> = {}) {
         },
       },
       integrations: {} as StepContext['deps']['integrations'],
+      accounting: {} as StepContext['deps']['accounting'],
     },
     ...overrides,
   } satisfies StepContext;

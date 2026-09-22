@@ -671,6 +671,63 @@ export interface IntegrationsPort {
   }): Promise<IntegrationExecutionResult>;
 }
 
+/**
+ * SUMIT's ACCOUNTING operations — creating a document, creating a customer.
+ *
+ * ⚠️ WHY THIS IS A PORT AND NOT A DIRECT IMPORT, which is the whole reason it
+ * exists. `engine/dry-run.ts` states the rule: "a dry run is NOT a second
+ * implementation… only the ports are swapped." A handler that imported
+ * `src/lib/sumit/*` directly would therefore reach the LIVE provider from the
+ * editor's "הרצת בדיקה" button — issuing a real document against the real
+ * books, on a click whose own panel promises "לא נשלחת הודעה ולא משתנים
+ * אורחים". Owner decision 2026-09-22: a test run must say what it WOULD do and
+ * do nothing.
+ *
+ * ⚠️ AND WHY IT IS NOT `IntegrationsPort`. Four separate blockers, each fatal on
+ * its own: `execute()` returns `{ status }` only and its own comment forbids
+ * treating that as a workflow output contract (a document id could never come
+ * back); `connectionId` is mandatory and SUMIT has no `integration_connections`
+ * row; `CredentialPresentation` can place a credential in a header or a query
+ * string and SUMIT authenticates inside the JSON BODY; and SUMIT's credentials
+ * live in `app_settings`, not in the connection store.
+ *
+ * ⚠️ SCOPE IS DELIBERATE. Nothing here moves money. Authorize, capture and
+ * credit are absent, so no workflow node can reach them through this port at
+ * all — the node set that charges a card is a separate, separately-approved
+ * piece of work with three open questions (see
+ * plans/sumit-workflow-nodes-plan.md §2 stage 3).
+ */
+export interface AccountingPort {
+  createDocument(input: {
+    type: string;
+    customerName?: string;
+    customerEmail?: string;
+    customerPhone?: string;
+    customerExternalId?: string;
+    customerNoVat?: boolean;
+    items?: { name: string; quantity: number; unitPrice: number }[];
+    isDraft?: boolean;
+    sendByEmail?: boolean;
+    description?: string;
+  }): Promise<{
+    documentId: number;
+    documentNumber: number | null;
+    customerId: number | null;
+    documentDownloadUrl: string | null;
+  }>;
+
+  createCustomer(input: {
+    name: string;
+    email?: string;
+    phone?: string;
+    city?: string;
+    address?: string;
+    companyNumber?: string;
+    externalId?: string;
+    noVat?: boolean;
+  }): Promise<{ customerId: number; customerHistoryUrl: string | null }>;
+}
+
 export type WorkflowEngineDeps = {
   ledger: StepLedgerPort;
   runs: RunStorePort;
@@ -689,6 +746,13 @@ export type WorkflowEngineDeps = {
   webhook: OutboundWebhookPort;
   /** Integration side effects are resolved server-side from a stored connection. */
   integrations: IntegrationsPort;
+  /**
+   * Required, not optional — the same reasoning as `alerts` and `webhook`.
+   * Optional would mean a workflow carrying a document node runs to "completed"
+   * while the receipt silently never exists. The dry run supplies a recording
+   * stub that issues nothing.
+   */
+  accounting: AccountingPort;
   /** Omitted by the dry run, which returns its trace directly. */
   log?: ExecutionLogPort;
 };

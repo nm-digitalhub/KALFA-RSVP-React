@@ -15,7 +15,7 @@ import { createGuestActions } from './guest-actions';
 import { markParkedRunReady } from './wake-store';
 import { createTeamAlerts } from './team-alerts';
 import { createOutboundWebhook } from './outbound-webhook';
-import type { IntegrationsPort } from './engine/ports';
+import type { AccountingPort, IntegrationsPort } from './engine/ports';
 import type { WorkflowTriggerPayload } from './steps';
 import {
   createExecutionLog,
@@ -35,6 +35,67 @@ const integrations: IntegrationsPort = {
     // integration node. It also keeps existing engine tests database-free.
     liveIntegrations ??= createIntegrationRuntime();
     return liveIntegrations.execute(args);
+  },
+};
+
+/**
+ * The LIVE accounting port. Lazy for the same reason as `integrations`:
+ * importing the worker must not read `app_settings` unless a workflow actually
+ * reaches a document node.
+ *
+ * ⚠️ CREDENTIALS ARE READ HERE, NOT PASSED THROUGH THE DIAGRAM. `getSumitServerConfig`
+ * is the one reader every other SUMIT caller uses, so a workflow can no more
+ * reach the API key than the close-charge can — the node names WHAT to issue,
+ * never WITH WHAT. Missing configuration is a permanent failure with a Hebrew
+ * message, not a silent no-op that would leave a workflow "completed" with no
+ * document.
+ */
+const accounting: AccountingPort = {
+  async createDocument(input) {
+    const { createDocumentSumit } = await import('@/lib/sumit/accounting');
+    const { getSumitServerConfig } = await import('@/lib/data/payments');
+    const config = await getSumitServerConfig();
+    if (!config) throw new Error('הגדרות SUMIT חסרות — לא ניתן להפיק מסמך');
+    return createDocumentSumit({
+      companyId: config.companyId,
+      apiKey: config.apiKey,
+      // Narrowed by the handler against the catalogue before it gets here.
+      type: input.type as Parameters<typeof createDocumentSumit>[0]['type'],
+      customer: {
+        name: input.customerName,
+        emailAddress: input.customerEmail,
+        phone: input.customerPhone,
+        externalIdentifier: input.customerExternalId,
+        noVat: input.customerNoVat,
+      },
+      items: input.items?.map((i) => ({
+        name: i.name,
+        quantity: i.quantity,
+        unitPrice: i.unitPrice,
+      })),
+      isDraft: input.isDraft,
+      sendByEmail: input.sendByEmail,
+      description: input.description,
+    });
+  },
+  async createCustomer(input) {
+    const { createCustomerSumit } = await import('@/lib/sumit/accounting');
+    const { getSumitServerConfig } = await import('@/lib/data/payments');
+    const config = await getSumitServerConfig();
+    if (!config) throw new Error('הגדרות SUMIT חסרות — לא ניתן ליצור לקוח');
+    const result = await createCustomerSumit({
+      companyId: config.companyId,
+      apiKey: config.apiKey,
+      name: input.name,
+      emailAddress: input.email,
+      phone: input.phone,
+      city: input.city,
+      address: input.address,
+      companyNumber: input.companyNumber,
+      externalIdentifier: input.externalId,
+      noVat: input.noVat,
+    });
+    return result;
   },
 };
 
@@ -223,6 +284,7 @@ export async function handleWorkflowRun(
       alerts: createTeamAlerts(),
       webhook: createOutboundWebhook(),
       integrations,
+      accounting,
       // Only the real path logs. A dry run passes no log and returns its trace
       // directly — nothing to stream, and nothing to write.
       log: createExecutionLog(),
