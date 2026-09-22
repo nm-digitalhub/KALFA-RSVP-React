@@ -26,6 +26,74 @@ export interface SumitCaptureParams {
   // create a new customer in one live test — see
   // plans/sumit-customer-id-reconciliation.md §5a).
   customerId?: number | null;
+  /**
+   * OPTIONAL receipt breakdown — one Items row per component ("דמי הפעלה",
+   * "אנשי קשר נוספים…") instead of a single opaque "חיוב קמפיין" line, so the
+   * customer can see where the total came from.
+   *
+   * SUMIT derives the charged total from the Items rows, NOT from `amount` — so
+   * a breakdown that does not sum to `amount` would charge a different number
+   * than the one this system computed, recorded and showed the customer. That
+   * is checked here and the breakdown is DROPPED (single `amount` line) unless
+   * it reconciles to the agora. The caller may pass one freely; this boundary
+   * decides whether it is safe to use.
+   *
+   * A credit is expressed as ONE negative row, which SUMIT support confirmed is
+   * supported and shows as its own line on the document. That confirmation has
+   * NOT been reproduced against this account: this same endpoint has rejected an
+   * over-specified document before ("products vs payments mismatch", see the
+   * VATRate note below). The reconciliation guard is what makes trying it safe —
+   * if SUMIT refuses the document the charge errors and the campaign lands in
+   * review, so the failure mode is a delayed settlement, never a wrong amount.
+   */
+  lines?: SumitChargeLine[];
+}
+
+/**
+ * One receipt row. Quantity × UnitPrice; SUMIT sums the rows into the charge.
+ * `unitPrice` may be negative for the single credit row.
+ */
+export interface SumitChargeLine {
+  name: string;
+  quantity: number;
+  unitPrice: number;
+}
+
+function agorot(n: number): number {
+  return Math.round(n * 100) / 100;
+}
+
+// A breakdown is usable ONLY if it reconciles EXACTLY to the amount this system
+// computed, recorded and showed the customer — that equality is the whole
+// safety property, because SUMIT charges the sum of the rows and ignores
+// `amount`.
+//
+// Shape rules, each blocking a way a wrong total could look right:
+//   • no non-finite value anywhere;
+//   • at most ONE negative row (the credit) — several could net a malformed
+//     charge row back to a plausible sum;
+//   • no zero rows (a zero row is noise on a receipt, never information);
+//   • quantity always positive — a negative quantity is a second way to encode
+//     a discount and would make "one negative row" unenforceable;
+//   • the total must be positive — a zero/negative charge never reaches SUMIT
+//     (close-charge settles those as nothing_to_charge before calling).
+export function linesReconcile(
+  lines: SumitChargeLine[] | undefined,
+  amount: number,
+): lines is SumitChargeLine[] {
+  if (!lines || lines.length === 0) return false;
+  if (!Number.isFinite(amount) || agorot(amount) <= 0) return false;
+  let sum = 0;
+  let negatives = 0;
+  for (const l of lines) {
+    if (!Number.isFinite(l.quantity) || !Number.isFinite(l.unitPrice)) return false;
+    if (l.quantity <= 0) return false;
+    if (l.unitPrice === 0) return false;
+    if (l.unitPrice < 0) negatives += 1;
+    sum += l.quantity * l.unitPrice;
+  }
+  if (negatives > 1) return false;
+  return agorot(sum) === agorot(amount);
 }
 
 export interface SumitCaptureResult {
@@ -69,15 +137,24 @@ export async function captureHeldCardSumit(
     },
     VATIncluded: true,
     // No VATRate — use the company default (an explicit rate unbalances the doc).
-    Items: [
-      {
-        Quantity: 1,
-        UnitPrice: parseFloat(p.amount),
-        // SUMIT requires the Item object (IncomeItem.Name), not just a Description.
-        Item: { Name: 'KALFA — חיוב קמפיין' },
-        Description: 'KALFA — חיוב קמפיין',
-      },
-    ],
+    // An itemised receipt when the breakdown reconciles to `amount`, else the
+    // single opaque line. `linesReconcile` is the gate — see its contract.
+    Items: linesReconcile(p.lines, parseFloat(p.amount))
+      ? p.lines.map((l) => ({
+          Quantity: l.quantity,
+          UnitPrice: l.unitPrice,
+          // SUMIT requires the Item object (IncomeItem.Name), not just a Description.
+          Item: { Name: l.name },
+          Description: l.name,
+        }))
+      : [
+          {
+            Quantity: 1,
+            UnitPrice: parseFloat(p.amount),
+            Item: { Name: 'KALFA — חיוב קמפיין' },
+            Description: 'KALFA — חיוב קמפיין',
+          },
+        ],
     AutoCapture: true,
     PreventDocumentCreation: false, // a real receipt at charge time
     SendDocumentByEmail: !!p.customerEmail,

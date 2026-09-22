@@ -264,6 +264,47 @@ export async function closeCampaignAndCharge(
     };
   }
 
+  // Receipt breakdown — the SAME numbers the amount above was computed from, so
+  // the customer's receipt shows where the total came from instead of one opaque
+  // "חיוב קמפיין" line. Built ONLY for the computed path: an admin override
+  // replaces the total outright, so there is no breakdown that honestly
+  // describes it.
+  //
+  // This is presentation, never arithmetic: captureHeldCardSumit re-checks that
+  // the rows sum to `amount` and silently falls back to the single line if they
+  // do not (e.g. the ceiling cap bound and the gross no longer matches). So a
+  // mistake here costs receipt detail, never a wrong charge.
+  const overageCount =
+    opts?.overrideAmount !== undefined
+      ? 0
+      : Math.max(0, (summary?.reachedCount ?? 0) - effectiveIncluded);
+  const overageRate = campaign.price_per_reached ?? 0;
+  const receiptLines =
+    opts?.overrideAmount !== undefined
+      ? undefined
+      : [
+          ...(effectiveBase > 0
+            ? [{ name: 'דמי הפעלה', quantity: 1, unitPrice: effectiveBase }]
+            : []),
+          ...(overageCount > 0 && overageRate > 0
+            ? [
+                {
+                  name:
+                    effectiveIncluded > 0
+                      ? 'אנשי קשר שנענו מעבר לכמות הכלולה'
+                      : 'אנשי קשר שנענו',
+                  quantity: overageCount,
+                  unitPrice: overageRate,
+                },
+              ]
+            : []),
+          // The credit as its own negative row (SUMIT support, 2026-09-22).
+          // Only ever one, which is what linesReconcile allows.
+          ...(creditApplied > 0
+            ? [{ name: 'קרדיט', quantity: 1, unitPrice: -creditApplied }]
+            : []),
+        ];
+
   // Idempotency: only the caller that wins the atomic guard charges.
   const locked = await lockCampaignForCharge(campaignId);
   if (!locked) return { outcome: 'bad_state', amount };
@@ -305,6 +346,7 @@ export async function closeCampaignAndCharge(
       customerEmail: ownerEmail, // non-empty → SendDocumentByEmail:true (receipt)
       customerName: ownerName,
       customerId: campaign.sumit_customer_id,
+      lines: receiptLines,
     });
     await recordCampaignCharge(campaignId, {
       amount,
