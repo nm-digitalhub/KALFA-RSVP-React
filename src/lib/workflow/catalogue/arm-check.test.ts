@@ -290,6 +290,11 @@ describe('the starter templates against this gate', () => {
       // owner never chose, so the blank is the safe default — and this gate is
       // what turns it into a named instruction instead of a first-run surprise.
       'הפקת קבלה לפי קריאת webhook',
+      // Same shape, same reason: the webhook token and the customer name are
+      // the owner's to supply. The document node's own customer field is blank
+      // BY DESIGN here — it is filled from the previous node's output, which is
+      // the whole point of this starter.
+      'יצירת לקוח והפקת מסמך עבורו',
     ]);
 
     // ⚠️ EVERY ONE OF THESE NAMES THE NEXT ACTION, not just the field. An owner

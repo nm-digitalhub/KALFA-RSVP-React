@@ -203,3 +203,57 @@ describe('⚠️ the step layer never reaches SUMIT except through the port', ()
     expect(typeof STEP_HANDLERS['action.sumit_create_customer']).toBe('function');
   });
 });
+
+describe('the chaining starter actually chains', () => {
+  // The template that demonstrates node-output references is only worth
+  // shipping if the reference it carries is REAL. A typo'd path renders the
+  // same on the canvas and fails at run time with the token in the message —
+  // after the customer has already been created.
+  it('the document node references the customer node’s customerId, and that field is on its outputSchema', async () => {
+    const { DIAGRAM_TEMPLATES } = await import('@/lib/workflow/catalogue/templates');
+    const { PALETTE_ITEMS } = await import('@/lib/workflow/catalogue/schemas');
+
+    const template = DIAGRAM_TEMPLATES.find(
+      (t) => t.value.name === 'יצירת לקוח והפקת מסמך עבורו',
+    );
+    expect(template, 'the chaining starter must exist').toBeDefined();
+
+    const nodes = template!.value.diagram.nodes;
+    const customerNode = nodes.find(
+      (n) => (n.data as { type?: string }).type === 'action.sumit_create_customer',
+    );
+    const documentNode = nodes.find(
+      (n) => (n.data as { type?: string }).type === 'action.sumit_create_document',
+    );
+    expect(customerNode).toBeDefined();
+    expect(documentNode).toBeDefined();
+
+    const reference = (
+      (documentNode!.data as { properties?: Record<string, unknown> }).properties ?? {}
+    ).customerExternalId;
+
+    // Points at THAT node's id — not a name retyped into both nodes, which is
+    // how the two would drift apart.
+    expect(reference).toBe(`{{nodes.${customerNode!.id}.customerId}}`);
+
+    // And the field it names is actually published by the customer node, so the
+    // variable picker offers it and the resolver can satisfy it.
+    const customerPalette = PALETTE_ITEMS.find(
+      (i) => i.type === 'action.sumit_create_customer',
+    );
+    // NodeOutputSchema is a union — 'default' carries `properties`, 'variant'
+    // carries `variants` instead. Narrowed rather than cast, so a node that
+    // switches to the variant shape fails here loudly instead of silently
+    // reporting an empty property list.
+    const outputSchema = customerPalette?.outputSchema;
+    expect(outputSchema?.type, 'the create-customer node publishes a default output schema').toBe(
+      'default',
+    );
+    const published =
+      outputSchema?.type === 'default' ? Object.keys(outputSchema.properties) : [];
+    expect(
+      published,
+      'customerId must be on the create-customer node’s outputSchema',
+    ).toContain('customerId');
+  });
+});
