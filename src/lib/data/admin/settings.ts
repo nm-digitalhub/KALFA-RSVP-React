@@ -34,6 +34,19 @@ export type AppSettings = {
   console_call_me_now_enabled: boolean;
   console_consult_conference_enabled: boolean;
   console_dtmf_handoff_enabled: boolean;
+  /**
+   * The only non-boolean setting this form owns. Caps how many contacts count
+   * toward the J5 hold: covered = min(full_unique_contacts, this), so it sets
+   * the hold SIZE without touching what is ultimately charged (the close-charge
+   * is capped independently at the campaign's snapshot ceiling).
+   *
+   * Read LIVE at hold time by getHoldSizingKnobs (data/campaigns.ts) rather than
+   * snapshotted onto the campaign — so an edit here resizes the hold of every
+   * signed campaign that has not yet held, exactly like min_hold_floor and
+   * hold_buffer_pct on the package. Integer, NOT NULL, DB default 300 (verified
+   * against the live schema).
+   */
+  reasonable_coverage_contacts: number;
   updated_at: string;
 };
 
@@ -46,7 +59,7 @@ export async function getAppSettings(): Promise<AppSettings> {
   const { data, error } = await supabase
     .from('app_settings')
     .select(
-      'payments_enabled, close_charge_enabled, inquiry_followup_enabled, agreement_archive_enabled, signup_reminder_enabled, unconfirmed_cleanup_enabled, campaign_holds_enabled, billing_exposure_gate, monitor_enabled, inbound_calls_enabled, handoff_enabled, console_softphone_enabled, console_widget_enabled, console_manual_dial_enabled, console_wake_enabled, console_call_me_now_enabled, console_consult_conference_enabled, console_dtmf_handoff_enabled, updated_at',
+      'payments_enabled, close_charge_enabled, inquiry_followup_enabled, agreement_archive_enabled, signup_reminder_enabled, unconfirmed_cleanup_enabled, campaign_holds_enabled, billing_exposure_gate, monitor_enabled, inbound_calls_enabled, handoff_enabled, console_softphone_enabled, console_widget_enabled, console_manual_dial_enabled, console_wake_enabled, console_call_me_now_enabled, console_consult_conference_enabled, console_dtmf_handoff_enabled, reasonable_coverage_contacts, updated_at',
     )
     .eq('id', SETTINGS_ID)
     .maybeSingle();
@@ -74,6 +87,10 @@ export async function getAppSettings(): Promise<AppSettings> {
     console_call_me_now_enabled: data?.console_call_me_now_enabled ?? false,
     console_consult_conference_enabled: data?.console_consult_conference_enabled ?? false,
     console_dtmf_handoff_enabled: data?.console_dtmf_handoff_enabled ?? false,
+    // Falls back to the column's OWN DB default (300), not 0: the column is
+    // NOT NULL so this is unreachable in practice, and 0 would render an
+    // invalid value into the form that the schema then refuses to save.
+    reasonable_coverage_contacts: data?.reasonable_coverage_contacts ?? 300,
     updated_at: data?.updated_at ?? '',
   };
 }
@@ -97,6 +114,7 @@ export type UpdateAppSettingsInput = {
   console_call_me_now_enabled: boolean;
   console_consult_conference_enabled: boolean;
   console_dtmf_handoff_enabled: boolean;
+  reasonable_coverage_contacts: number;
 };
 
 export async function updateAppSettings(
@@ -129,6 +147,7 @@ export async function updateAppSettings(
       console_call_me_now_enabled: input.console_call_me_now_enabled,
       console_consult_conference_enabled: input.console_consult_conference_enabled,
       console_dtmf_handoff_enabled: input.console_dtmf_handoff_enabled,
+      reasonable_coverage_contacts: input.reasonable_coverage_contacts,
     })
     .eq('id', SETTINGS_ID);
 

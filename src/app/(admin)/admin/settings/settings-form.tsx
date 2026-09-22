@@ -3,6 +3,7 @@
 import { useActionState } from 'react';
 
 import {
+  FieldError,
   FormError,
   FormNotice,
   SubmitButton,
@@ -41,6 +42,53 @@ function Toggle({
         <span className="block text-xs text-muted-foreground">{children}</span>
       </span>
     </label>
+  );
+}
+
+// The one NUMERIC control on this form. Kept separate from Toggle rather than
+// overloading it: a checkbox absent from the FormData reads as `false`, which is
+// a deliberate fail-closed default for a switch — but for a number there is no
+// safe default, so the schema requires this field and refuses a blank instead of
+// writing one. `required` + min/max mirror the server bounds so the browser
+// catches the common mistake before a round-trip; the server stays the authority.
+function NumberField({
+  name,
+  label,
+  value,
+  min,
+  max,
+  errors,
+  children,
+}: {
+  name: string;
+  label: string;
+  value: number;
+  min: number;
+  max: number;
+  errors?: string[];
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="space-y-1">
+      <label htmlFor={name} className="block text-sm font-medium">
+        {label}
+      </label>
+      <input
+        id={name}
+        name={name}
+        type="number"
+        min={min}
+        max={max}
+        step="1"
+        inputMode="numeric"
+        dir="ltr"
+        defaultValue={value}
+        required
+        className="w-full max-w-40 rounded-md border border-border bg-background px-3 py-2 text-sm"
+      />
+      <span className="block text-xs text-muted-foreground">{children}</span>
+      <FieldError errors={errors} />
+    </div>
   );
 }
 
@@ -135,6 +183,26 @@ export function SettingsForm({
             אותה. שימו לב: אם נתוני הסכום חסרים או שגויים, התקרה נופלת ל-0
             והקמפיין לא יחייב אף אחד. אל תשנו בלי לבדוק קמפיין פעיל.
           </Toggle>
+
+          {/* Lives here, not in /admin/packages: the package screen owns the
+              PRICE knobs (base, included, overage, floor, buffer), each stored
+              per package row. This one is a single global app_settings value —
+              putting it on a package screen would read as per-package and
+              silently change every package at once. */}
+          <NumberField
+            name="reasonable_coverage_contacts"
+            label="תקרת אנשי קשר לחישוב תפיסת המסגרת"
+            value={settings.reasonable_coverage_contacts}
+            min={1}
+            max={10000}
+            errors={state?.fieldErrors?.reasonable_coverage_contacts}
+          >
+            משפיע על גודל התפיסה בלבד, לא על החיוב בפועל. התפיסה מחושבת לפי
+            המספר הנמוך מבין אנשי הקשר ברשימה לבין המספר הזה — כך שרשימה גדולה
+            לא תתפוס מסגרת עצומה בכרטיס. החיוב הסופי נשאר חסום בתקרה שעליה חתם
+            הלקוח. נקרא בזמן התפיסה, ולכן שינוי משפיע גם על קמפיינים שכבר נחתמו
+            אך טרם נתפסה בהם מסגרת.
+          </NumberField>
 
         </Panel>
 

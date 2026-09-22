@@ -445,6 +445,17 @@ export const appSettingsSchema = z.object({
   console_call_me_now_enabled: z.boolean().default(false),
   console_consult_conference_enabled: z.boolean().default(false),
   console_dtmf_handoff_enabled: z.boolean().default(false),
+  // The only NON-boolean setting on this form. It caps how many contacts count
+  // toward the J5 hold: covered = min(full_unique_contacts, this). Deliberately
+  // NOT `.default(...)` like the booleans above — a default would let an absent
+  // field silently rewrite a money-path number. Required instead, so an absent
+  // or blank value fails loudly and nothing is written. Upper bound mirrors the
+  // existing app_settings cap precedent (callback_intake_sms_daily_cap <= 10000).
+  reasonable_coverage_contacts: z.coerce
+    .number({ error: 'נא להזין מספר אנשי קשר תקין' })
+    .int({ error: 'מספר אנשי הקשר חייב להיות מספר שלם' })
+    .positive({ error: 'מספר אנשי הקשר חייב להיות גדול מאפס' })
+    .max(10000, { error: 'מספר אנשי הקשר גבוה מדי' }),
 });
 
 // ---------------------------------------------------------------------------

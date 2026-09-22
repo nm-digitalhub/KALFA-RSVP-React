@@ -20,10 +20,13 @@ import {
 } from './settings';
 
 /**
- * The eighteen fields updateAppSettings owns AFTER the provider split — the four
- * business toggles, the four automation toggles and the ten console toggles. Every
- * one is a checkbox, so every one must be present: an absent checkbox is `false`,
- * and a fixture that omits one would prove nothing about the field it omitted.
+ * The nineteen fields updateAppSettings owns AFTER the provider split — the four
+ * business toggles, the four automation toggles, the ten console toggles and the
+ * one numeric hold-sizing cap. Every toggle must be present: an absent checkbox
+ * is `false`, and a fixture that omits one would prove nothing about the field
+ * it omitted. `reasonable_coverage_contacts` is the lone non-boolean; it is held
+ * to a REAL number here so the all-true sweep below cannot quietly turn a
+ * money-path integer into `true`.
  */
 const BASE_SETTINGS_INPUT = {
   payments_enabled: false,
@@ -44,6 +47,7 @@ const BASE_SETTINGS_INPUT = {
   console_call_me_now_enabled: false,
   console_consult_conference_enabled: false,
   console_dtmf_handoff_enabled: false,
+  reasonable_coverage_contacts: 300,
 };
 
 const ORIGINAL_ENV = { ...process.env };
@@ -79,10 +83,13 @@ describe('getAppSettings / updateAppSettings — inquiry_followup_enabled', () =
     // The provider fields this used to pass now belong to their own writers
     // (Task 0.2) — passing them here would not compile, which is the point.
     // Every toggle true, so the assertion below proves each one is carried rather
-    // than matching a shared default.
+    // than matching a shared default. The numeric field keeps a number (and a
+    // DISTINCT one, 777, so the assertion cannot pass on the fixture default).
     await updateAppSettings(
       Object.fromEntries(
-        Object.keys(BASE_SETTINGS_INPUT).map((k) => [k, true]),
+        Object.entries(BASE_SETTINGS_INPUT).map(([k, v]) =>
+          typeof v === 'boolean' ? [k, true] : [k, 777],
+        ),
       ) as typeof BASE_SETTINGS_INPUT,
     );
     expect(builder.update).toHaveBeenCalledWith(
@@ -103,6 +110,8 @@ describe('getAppSettings / updateAppSettings — inquiry_followup_enabled', () =
         console_call_me_now_enabled: true,
         console_consult_conference_enabled: true,
         console_dtmf_handoff_enabled: true,
+        // Carried as the number it is, not coerced to a boolean by the sweep.
+        reasonable_coverage_contacts: 777,
       }),
     );
   });
@@ -208,6 +217,9 @@ describe('updateAppSettings no longer owns provider credentials', () => {
       'inquiry_followup_enabled',
       'console_softphone_enabled',
       'console_dtmf_handoff_enabled',
+      // The hold-sizing cap had no admin writer at all until it was added here;
+      // it is in this list so it cannot be dropped back out silently.
+      'reasonable_coverage_contacts',
     ]) {
       expect(patch).toHaveProperty(column);
     }

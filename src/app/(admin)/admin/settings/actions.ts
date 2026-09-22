@@ -39,6 +39,11 @@ export async function updateSettingsAction(
     console_call_me_now_enabled: formData.get('console_call_me_now_enabled') === 'on',
     console_consult_conference_enabled: formData.get('console_consult_conference_enabled') === 'on',
     console_dtmf_handoff_enabled: formData.get('console_dtmf_handoff_enabled') === 'on',
+    // The one non-checkbox field: passed through raw so Zod coerces and bounds
+    // it. Deliberately NOT given a fallback here — an absent or blank value must
+    // surface as a field error, never silently rewrite a number that resizes
+    // credit holds on live campaigns.
+    reasonable_coverage_contacts: formData.get('reasonable_coverage_contacts'),
   });
 
   if (!parsed.success) {
