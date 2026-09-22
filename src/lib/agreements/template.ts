@@ -29,6 +29,21 @@ export const AGREEMENT_VERSION = 'draft-2026-07-v3';
 // the pricing-gate toggle refuses to enable unless the active APPROVED doc matches it.
 export const BASE_FEE_AGREEMENT_VERSION = '2026-07-v4';
 
+// v5 — the OPEN-CEILING base-fee contract. Same activation fee + included +
+// overage as v4; what changes is §3's ceiling, and it changes because the
+// PRODUCT flow changed.
+//
+// WHY A NEW VERSION RATHER THAN AN EDIT. v4 states a FIXED "תקרת חיוב מרבית"
+// figure, computed from the contact count at signing. In the intended flow the
+// customer signs BEFORE building the guest list (verified live: the only v4
+// campaign held with max_contacts = 0), so that figure is the activation fee
+// alone — and it then caps the close-charge at the base, making the overage
+// unreachable and silently excluding contacts past the funded quota. v5 states
+// the ceiling as the FORMULA the customer controls instead of a frozen number.
+// v4 is left byte-identical: one real signature exists against it (2026-09-02)
+// and a signed contract's text must not change under its own version label.
+export const OPEN_CEILING_AGREEMENT_VERSION = '2026-09-v5';
+
 // D5 guard predicate. The base+overage clauses/charge apply when the version is a
 // base-fee variant — the APPROVED `2026-07-v4` (what a real signer records once the
 // doc is approved) AND its `draft-` form (so the admin preview + a pre-approval
@@ -37,14 +52,36 @@ export const BASE_FEE_AGREEMENT_VERSION = '2026-07-v4';
 // with a base>0 snapshot — harmless to include. SAFE default: unknown/absent → not
 // base-fee → the charge falls back to pure per-reached. Binds the money to the
 // signed contract, independent of the global gate's timing.
+// v5 is ALSO a base-fee version: it bills the same base + included + overage,
+// so it must stay in this set or a v5 signature would fall back to pure
+// per-reached and never charge the activation fee. v4 stays for the signature
+// already recorded against it.
 const BASE_FEE_AGREEMENT_VERSIONS: ReadonlySet<string> = new Set([
   BASE_FEE_AGREEMENT_VERSION,
   `draft-${BASE_FEE_AGREEMENT_VERSION}`,
+  OPEN_CEILING_AGREEMENT_VERSION,
+  `draft-${OPEN_CEILING_AGREEMENT_VERSION}`,
 ]);
 export function isBaseFeeAgreementVersion(
   version: string | null | undefined,
 ): boolean {
   return version != null && BASE_FEE_AGREEMENT_VERSIONS.has(version);
+}
+
+// Whether the signed version uses the OPEN ceiling (a formula the customer
+// drives) rather than v4's frozen figure. Selects §3-4's wording, and is the
+// predicate anything that later stops capping the charge at a frozen ceiling
+// must gate on — the contract, not a global setting, is what authorises
+// charging past the figure quoted at signing. SAFE default: unknown/absent →
+// false → the v4 (capped) terms.
+const OPEN_CEILING_AGREEMENT_VERSIONS: ReadonlySet<string> = new Set([
+  OPEN_CEILING_AGREEMENT_VERSION,
+  `draft-${OPEN_CEILING_AGREEMENT_VERSION}`,
+]);
+export function isOpenCeilingAgreementVersion(
+  version: string | null | undefined,
+): boolean {
+  return version != null && OPEN_CEILING_AGREEMENT_VERSIONS.has(version);
 }
 
 // Standard Israeli VAT rate (18% since 2025-01-01). The business operates as an
@@ -263,9 +300,60 @@ function pricingClausesBaseFee(c: AgreementContent): string {
   <p>בוטלה העסקה עקב פגם, אי‑התאמה או הפרה של KALFA — יושבו ללקוח מלוא התשלומים ששולמו, לרבות דמי ההפעלה, בהתאם לחוק הגנת הצרכן. אין באמור בסעיף זה כדי לגרוע מזכויות הביטול שבסעיף 5.</p>`;
 }
 
+// v5 open-ceiling clauses. Identical pricing to v4 — activation fee, included
+// quota, overage rate — with two deliberate differences, both forced by the
+// product flow where the guest list is built AFTER signing:
+//
+//   §3  The ceiling is stated as a FORMULA, not a frozen figure. v4's
+//       "₪X — ... ועד למספר המרבי" prices the contact count at signing, which
+//       in this flow is zero. The customer is told plainly that the number
+//       moves only when THEY add guests and only for guests who actually
+//       answer, and that the running total is visible to them throughout.
+//   §4  The hold is described for what it actually is — the activation fee
+//       alone — with the balance charged once at close against the saved
+//       payment method. v4's "תפיסת מסגרת עד גובה התקרה" no longer describes
+//       what the code does.
+//
+// Everything quoted is data-driven from AgreementContent; no literal prices.
+// NOTE the two product promises this text makes: a visible running total, and
+// the customer being the only one who can move the amount. Code that breaks
+// either of those makes this clause untrue.
+function pricingClausesOpenCeiling(c: AgreementContent): string {
+  return `
+  <h2>3. המחיר והחיוב</h2>
+  <dl class="terms">
+    <dt>דמי הפעלת שירות</dt><dd>${ils(c.baseFee)} — תשלום עבור הפעלת הקמפיין (הפעלת המערכת והפצת הפניות בערוצים), הכולל עד ${c.includedReached.toLocaleString('he-IL')} אנשי קשר שהושגו. מחיר סופי; לא נגבה מע"מ (עוסק פטור).</dd>
+    <dt>אנשי קשר כלולים בדמי ההפעלה</dt><dd>${c.includedReached.toLocaleString('he-IL')} אנשי קשר שהושגו</dd>
+    <dt>תוספת מעבר לכלול</dt><dd>${ils(c.pricePerReached)} לכל איש קשר ייחודי נוסף שהושג מעבר לכמות הכלולה; מחיר סופי, לא נגבה מע"מ</dd>
+    <dt>מספר אנשי הקשר בקמפיין</dt><dd>נקבע לפי רשימת המוזמנים שהלקוח מעלה למערכת. הלקוח רשאי להוסיף מוזמנים כל עוד הקמפיין פתוח, והמספר מתעדכן בהתאם.</dd>
+    <dt>תקרת חיוב מרבית</dt><dd>${ils(c.baseFee)}, בתוספת ${ils(c.pricePerReached)} לכל איש קשר שנענה בפועל מעבר ל-${c.includedReached.toLocaleString('he-IL')} אנשי הקשר הכלולים בדמי ההפעלה.</dd>
+    <dt>חלון פעילות</dt><dd>${esc(c.windowText)}</dd>
+  </dl>
+  <div class="intent">
+    שימו לב — דמי ההפעלה בסך ${ils(c.baseFee)} נגבים <strong>בכל מקרה, גם אם לא הושג אף איש קשר (0 תוצאות)</strong>. דמי ההפעלה הם תשלום עבור עצם הפעלת השירות והפצת הפניות בערוצים, ואינם מותנים בתוצאה.
+    <br><br>
+    <strong>תקרת החיוב אינה סכום קבוע מראש</strong> — היא נגזרת ממספר אנשי הקשר שהלקוח הוסיף לרשימה ושנענו בפועל. התקרה עולה <strong>רק כתוצאה מפעולה של הלקוח</strong> — הוספת מוזמנים — ו<strong>רק עבור מוזמנים שנענו בפועל</strong>. מוזמן שנוסף ולא נענה אינו מוסיף לחיוב. הסכום המצטבר העדכני מוצג ללקוח במסך ניהול הקמפיין לאורך כל התקופה.
+  </div>
+  <p>"איש קשר שהושג" = אדם שיצר אינטראקציה אנושית מאומתת (תגובת וואטסאפ נכנסת אמיתית, או מענה אנושי בשיחה), פעם אחת לכל איש קשר באותו אירוע. החיוב שמעבר לדמי ההפעלה נקבע בסגירת הקמפיין לפי מספר אנשי הקשר שהושגו בפועל מעל הכמות הכלולה.</p>
+  <p><strong>מעבר לדמי ההפעלה, לא יחויבו:</strong></p>
+  <ul>
+    <li>הודעה שנשלחה / נמסרה / נקראה ללא תגובה</li>
+    <li>צלצול ללא מענה אנושי, תא קולי או משיבון</li>
+    <li>מספר שגוי או לא זמין</li>
+    <li>אותו איש קשר יותר מפעם אחת באותו אירוע</li>
+    <li>אנשי קשר בגבולות הכמות הכלולה בדמי ההפעלה (אינם מוסיפים לחיוב)</li>
+  </ul>
+
+  <h2>4. אמצעי תשלום, מועד חיוב והרשאת חיוב</h2>
+  <p>הלקוח מאשר שמירת אמצעי התשלום שלו לצורך החיוב בסגירת הקמפיין. <strong>במועד הפעלת הקמפיין נתפסת מסגרת אשראי בגובה דמי ההפעלה (${ils(c.baseFee)}) בלבד</strong>, ואינה מהווה חיוב.</p>
+  <p><strong>בסגירת הקמפיין יבוצע חיוב אחד באמצעות אמצעי התשלום השמור, בגובה הסכום שנצבר בפועל</strong> — דמי ההפעלה בתוספת ${ils(c.pricePerReached)} לכל איש קשר שנענה מעבר לכמות הכלולה. נתוני הכרטיס מנוהלים באמצעות ספק סליקה מאובטח (טוקניזציה); KALFA אינה שומרת את פרטי הכרטיס.</p>
+  <p>בוטלה העסקה עקב פגם, אי‑התאמה או הפרה של KALFA — יושבו ללקוח מלוא התשלומים ששולמו, לרבות דמי ההפעלה, בהתאם לחוק הגנת הצרכן. אין באמור בסעיף זה כדי לגרוע מזכויות הביטול שבסעיף 5.</p>`;
+}
+
 // The vetted in-code default body (used when the active document has no custom
 // body). NO draft marker here — the renderer appends it based on status. §3-4 are
-// selected by version: the base-fee (v4) model vs per-reached (v3).
+// selected by version: open-ceiling (v5), fixed-ceiling base-fee (v4), or
+// per-reached (v3). Most specific first — v5 is also a base-fee version.
 function defaultBody(c: AgreementContent, version: string): string {
   const channelList = c.channels
     .map((ch) => CHANNEL_LABELS[ch] ?? ch)
@@ -285,7 +373,13 @@ function defaultBody(c: AgreementContent, version: string): string {
 
   <h2>2. תיאור השירות</h2>
   <p>KALFA מפעילה עבור הלקוח קמפיין אישורי הגעה (RSVP) לאורחי האירוע, בשני ערוצי תקשורת: ${esc(channelList)}. השירות פונה לאנשי הקשר ברשימת המוזמנים ואוסף את תגובותיהם.</p>
-${isBaseFeeAgreementVersion(version) ? pricingClausesBaseFee(c) : pricingClausesPerReached(c)}
+${
+    isOpenCeilingAgreementVersion(version)
+      ? pricingClausesOpenCeiling(c)
+      : isBaseFeeAgreementVersion(version)
+        ? pricingClausesBaseFee(c)
+        : pricingClausesPerReached(c)
+  }
 
   <h2>5. זכות ביטול (חוק הגנת הצרכן §14ג)</h2>
   <p>הלקוח רשאי לבטל את העסקה בכתב (לפרטי הקשר בסעיף 1) בתוך <strong>14 ימים</strong> ממועד ההתקשרות או מקבלת מסמך זה, לפי המאוחר; ובכל מקרה עד <strong>שני ימים (שאינם ימי מנוחה) לפני מועד הפעלת הקמפיין</strong> — שכן הפעלת הקמפיין מהווה תחילת מתן השירות.</p>
