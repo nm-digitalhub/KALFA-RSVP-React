@@ -190,9 +190,15 @@ function packageChangedFields(
 }
 
 // Batched validation of outreach_schedule touchpoints against message_templates
-// — whatsapp only (call/AI-voice has no verifiable source of truth yet, the
-// Voximplant channel is not built — see channels-client.tsx "Voximplant
-// (בקרוב)"). One query for all unique message_keys, not N+1.
+// — whatsapp only. NOT because the call channel is unbuilt: it is live
+// (channels.call.is_built and app_settings.voximplant_live_calls are both true;
+// rule/caller/service-account are set). The real reason is that there is
+// nothing to validate a call key against — message_templates holds only
+// whatsapp rows, and a `call` touchpoint's message_key travels onward as
+// OutreachCallRequest.scriptKey, which is written at six call sites and read at
+// none (see outreach-call/route.ts). A typo in a call message_key is therefore
+// inert today, not a silent send failure like the whatsapp case below.
+// One query for all unique message_keys, not N+1.
 export async function validateOutreachScheduleForPackage(
   schedule: OutreachTouchpointInput[],
 ): Promise<{ index: number; message: string }[]> {
@@ -230,7 +236,11 @@ export async function validateOutreachScheduleForPackage(
   return errors;
 }
 
-// Create a package. Returns the new id for redirecting to its edit page.
+// Create a package. Returns the new id, but nothing consumes it today:
+// createPackageAction redirects to the list (/admin/packages), the same
+// destination updatePackageAction and deletePackageAction use. Kept on the
+// signature so a caller that does want to land on the new package's edit page
+// has the id without a second read.
 export async function createPackage(
   input: PackageInput,
   operational: OperationalFieldsInput,

@@ -34,6 +34,9 @@ export default async function NewPackagePage() {
   const pricingModelStatus: PricingModelStatus = {
     gateActive: await getBaseOveragePricingEnabled(),
     effectiveSummaryHe: null,
+    // Nothing saved yet, so there are no two stored numbers to disagree — the
+    // headline/base comparison only has meaning once the package exists.
+    headlineMismatch: null,
   };
   return (
     <div className="mx-auto max-w-2xl space-y-6">

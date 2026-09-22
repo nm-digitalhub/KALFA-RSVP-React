@@ -31,7 +31,7 @@ export async function getPublicBusinessFacts(): Promise<BusinessFacts> {
     // and resolveCanonicalTemplate (active, priced, lowest sort_order first).
     const { data, error } = await admin
       .from('packages')
-      .select('name, price_per_reached, base_price, included_reached, channels')
+      .select('name, price_per_reached, base_price, included_reached, channels, outreach_schedule')
       .eq('active', true)
       .not('price_per_reached', 'is', null)
       .order('sort_order', { ascending: true })
@@ -46,6 +46,16 @@ export async function getPublicBusinessFacts(): Promise<BusinessFacts> {
           base_price: Number(data.base_price ?? 0),
           included_reached: Number(data.included_reached ?? 0),
           channels: (data.channels ?? []) as string[],
+          // `outreach_schedule` is a Json column holding touchpoint objects by
+          // contract (locked to what admin/packages.ts writes). Narrow through
+          // unknown and keep only the two fields the facts expose, so a
+          // malformed row yields an empty cadence rather than leaking shape.
+          outreach_schedule: Array.isArray(data.outreach_schedule)
+            ? (data.outreach_schedule as unknown as {
+                days_before: number;
+                channel: string;
+              }[]).map((tp) => ({ days_before: tp.days_before, channel: tp.channel }))
+            : [],
         }
       : null;
 

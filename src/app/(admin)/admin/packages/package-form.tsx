@@ -42,6 +42,19 @@ export type CallChannelStatus = 'not_configured' | 'configured_off' | 'live';
 export type PricingModelStatus = {
   gateActive: boolean;
   effectiveSummaryHe: string | null;
+  /**
+   * Set when this package's headline `price_with_vat` disagrees with the
+   * activation fee `base_price` while the base+overage model is the effective
+   * one. Both numbers are handed to the AI sales agent by the `get_pricing`
+   * tool (src/app/api/voximplant/sls/tool/pricing/[token]/route.ts), which
+   * reads `price_with_vat` verbatim — deliberately, since the owner is an
+   * עוסק פטור and deriving VAT would assert a charge that does not apply.
+   * Nothing tells the agent which of the two to quote, so a divergence lets it
+   * speak one number on a live call while the agreement is signed at the other.
+   * Advisory only: the form never blocks the save, because the two columns are
+   * independent by design and only the admin knows which one is stale.
+   */
+  headlineMismatch: { priceWithVat: number; basePrice: number } | null;
 };
 
 // `channel` is a plain string: the storable set comes from the admin-managed
@@ -147,7 +160,9 @@ function TouchpointRow({
           </select>
         </div>
         <div>
-          <label className="text-xs text-muted-foreground">מזהה תבנית הודעה</label>
+          <label className="text-xs text-muted-foreground">
+            {value.channel === 'call' ? 'מזהה תסריט שיחה' : 'מזהה תבנית הודעה'}
+          </label>
           <input
             type="text"
             dir="ltr"
@@ -164,6 +179,19 @@ function TouchpointRow({
           הסרה
         </button>
       </div>
+      {/* The call row's key is INERT today, and the field looks like it configures
+          the AI script, so say so rather than let the admin believe a typo there
+          changed the call. It travels as OutreachCallRequest.scriptKey, which is
+          written at six call sites and read at none; message_templates holds no
+          call-channel rows to validate it against either, which is why
+          validateOutreachScheduleForPackage skips call rows. Remove this note the
+          moment scriptKey gains a real consumer. */}
+      {value.channel === 'call' && (
+        <p className="text-xs text-muted-foreground">
+          מזהה התסריט אינו בשימוש כרגע — תוכן שיחת ה-AI נקבע בהגדרות סוכן הקול,
+          לא כאן. שינוי הערך לא ישנה את מה שייאמר בשיחה.
+        </p>
+      )}
       {value.channel === 'call' &&
         (callChannelStatus === 'live' ? (
           <p className="text-xs text-muted-foreground">
@@ -465,6 +493,22 @@ export function PackageForm({
           </p>
         ) : null}
       </div>
+
+      {pricingModelStatus.headlineMismatch ? (
+        <div className="rounded-md border border-amber-300 p-3 text-xs text-amber-700">
+          <p className="font-medium">
+            שדה המחיר בראש הטופס (
+            {pricingModelStatus.headlineMismatch.priceWithVat.toLocaleString('he-IL')}{' '}
+            ₪) שונה ממחיר הבסיס (
+            {pricingModelStatus.headlineMismatch.basePrice.toLocaleString('he-IL')} ₪).
+          </p>
+          <p className="mt-1">
+            סוכן המכירות הטלפוני מקבל את שני המספרים ואינו יודע במי לבחור — הוא
+            עלול לנקוב במספר אחד בשיחה חיה בזמן שההסכם נחתם על השני. עדכנו את שני
+            השדות יחד, או ודאו שההפרש מכוון.
+          </p>
+        </div>
+      ) : null}
 
       <div className="space-y-1">
         <span className={labelClass}>ערוצים</span>

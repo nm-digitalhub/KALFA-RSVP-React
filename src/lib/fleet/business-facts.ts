@@ -12,12 +12,30 @@
 // row), so we surface per-reached; only when the gate is ON do we surface the
 // flat-base + included + overage model.
 
+/**
+ * One outreach touchpoint, reduced to the two fields that describe the CADENCE
+ * to a customer. `message_key` is deliberately absent: it names an internal
+ * template/script, not anything a customer would recognise.
+ */
+export interface TouchpointFacts {
+  days_before: number;
+  channel: string;
+}
+
 export interface PackageFacts {
   name: string;
   price_per_reached: number; // the per-reached rate (= overage rate above included)
   base_price: number; // package base (may be pre-set while the gate is still off)
   included_reached: number;
   channels: string[];
+  /**
+   * The package's `outreach_schedule`, so public copy can state the real
+   * cadence instead of a hand-typed one that goes stale the moment an admin
+   * edits the package. Optional: a caller that does not select the column
+   * simply yields no schedule, and the consuming token resolves to '' rather
+   * than inventing one.
+   */
+  outreach_schedule?: TouchpointFacts[];
 }
 
 export interface BusinessFacts {
@@ -30,6 +48,14 @@ export interface BusinessFacts {
   per_reached_price?: number;
   base_price?: number;
   included_reached?: number;
+  /**
+   * The live outreach cadence, passed through unphrased. Rendering it into
+   * Hebrew needs channel LABELS, which live in the agreements template; this
+   * module is pure and import-free by contract (the fleet CLI bundles it), so
+   * the phrasing happens at the consumer (src/lib/faq/tokens.ts) and this stays
+   * data.
+   */
+  outreach_schedule?: TouchpointFacts[];
   summary_he?: string; // a ready phrasing the drafter adapts; a human still reviews the draft
   /**
    * What the price is counted PER. Present whenever a price is quoted, because
@@ -142,6 +168,9 @@ export function buildBusinessFacts(
     per_reached_price: overage,
     base_price: base,
     included_reached: included,
+    // Not gate-dependent: the cadence is what the engine runs regardless of
+    // which pricing model is effective.
+    outreach_schedule: pkg.outreach_schedule,
     summary_he,
     billing_unit_he,
     billing_unit_drafter_note_he,

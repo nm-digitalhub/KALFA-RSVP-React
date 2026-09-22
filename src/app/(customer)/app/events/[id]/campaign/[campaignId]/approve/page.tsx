@@ -88,6 +88,12 @@ export default async function ApproveCampaignPage({
     );
   }
 
+  // The same three figures the agreement body and the payment page quote, read
+  // from the campaign SNAPSHOT (never the live package) so the summary above the
+  // signature can never disagree with the document being signed.
+  const basePrice = Number(campaign.base_price ?? 0);
+  const includedReached = Number(campaign.included_reached ?? 0);
+
   const agreementHtml = renderAgreementBody({
     company,
     eventName: event.name,
@@ -119,7 +125,29 @@ export default async function ApproveCampaignPage({
       <section className="space-y-3 rounded-lg border border-border bg-card p-4 text-sm">
         <h2 className="font-semibold">עיקרי התנאים</h2>
         <dl className="grid grid-cols-1 gap-y-1 sm:grid-cols-2 sm:gap-y-1.5">
-          <dt className="text-muted-foreground">מחיר לאיש קשר שהושג</dt>
+          {/* The activation fee is UNCONDITIONAL — it is charged at 0 reached.
+              Presenting the per-reached price alone above a signature would
+              frame an unconditional fee as outcome-conditional. Wording is the
+              already-live phrasing from the payment page and §3 of the
+              agreement body, so all three surfaces make the same claim. */}
+          {basePrice > 0 ? (
+            <>
+              <dt className="text-muted-foreground">דמי הפעלה</dt>
+              <dd>
+                <strong>{ils(basePrice)}</strong> — נגבים בכל מקרה, גם אם אף איש
+                קשר לא השיב
+              </dd>
+            </>
+          ) : null}
+          {includedReached > 0 ? (
+            <>
+              <dt className="text-muted-foreground">כלולים בדמי ההפעלה</dt>
+              <dd>עד {includedReached.toLocaleString('he-IL')} אנשי קשר שהושגו</dd>
+            </>
+          ) : null}
+          <dt className="text-muted-foreground">
+            {includedReached > 0 ? 'מעבר לכך' : 'מחיר לאיש קשר שהושג'}
+          </dt>
           <dd>{ils(campaign.price_per_reached)} (מחיר סופי; לא נגבה מע״מ)</dd>
           <dt className="text-muted-foreground">תקרת חיוב מרבית</dt>
           <dd>
@@ -137,7 +165,9 @@ export default async function ApproveCampaignPage({
           </dd>
         </dl>
         <p className="rounded bg-muted/50 p-2 text-xs text-muted-foreground">
-          חיוב רק על איש קשר שהושג (תגובה אנושית), פעם אחת לכל איש קשר, עד התקרה.
+          {basePrice > 0
+            ? `דמי ההפעלה (${ils(basePrice)}) נגבים בכל מקרה ואינם מותנים בתוצאה. מעבר להם — חיוב רק על איש קשר שהושג (תגובה אנושית), פעם אחת לכל איש קשר, עד התקרה.`
+            : 'חיוב רק על איש קשר שהושג (תגובה אנושית), פעם אחת לכל איש קשר, עד התקרה.'}
         </p>
         <AgreementSheet html={agreementHtml} />
       </section>

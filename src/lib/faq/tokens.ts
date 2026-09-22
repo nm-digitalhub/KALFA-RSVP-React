@@ -23,8 +23,32 @@ export const FAQ_TOKEN_NAMES = [
   'included_reached',
   'price_per_reached',
   'channels_list',
+  'outreach_schedule',
 ] as const;
 export type FaqTokenName = (typeof FAQ_TOKEN_NAMES)[number];
+
+// Hebrew has a DUAL form: one day is "יום", two is "יומיים" (not "2 ימים"),
+// three and up take the plural. A naive `${n} ימים` reads as broken Hebrew at
+// n=1 and n=2 — and the live schedule contains both.
+function daysBeforeHe(days: number): string {
+  if (days <= 0) return 'ביום האירוע';
+  if (days === 1) return 'יום לפני';
+  if (days === 2) return 'יומיים לפני';
+  return `${days.toLocaleString('he-IL')} ימים לפני`;
+}
+
+// Renders the cadence from the live package, using ONLY the channel label and
+// the day count. It deliberately does NOT name the touchpoints ("הזמנה",
+// "תזכורת"): that mapping would be a new hardcoded content table keyed on
+// message_key — reintroducing exactly the staleness this token exists to
+// remove. Channel + timing is what a customer is actually being promised.
+export function formatOutreachScheduleHe(
+  schedule: { days_before: number; channel: string }[],
+): string {
+  return schedule
+    .map((tp) => `${CHANNEL_LABELS[tp.channel] ?? tp.channel} ${daysBeforeHe(tp.days_before)}`)
+    .join(', ');
+}
 
 // Every known token always resolves to SOME string (never left as a bare
 // "{{token}}", never renders a misleading "₪0"). `base_price`/`included_reached`
@@ -43,6 +67,13 @@ export function buildFaqTokenValues(facts: BusinessFacts): Record<FaqTokenName, 
     channels_list:
       facts.available && facts.channels && facts.channels.length > 0
         ? facts.channels.map((ch) => CHANNEL_LABELS[ch] ?? ch).join(', ')
+        : '',
+    // Same rule as the rest: resolve to '' rather than assert a cadence we
+    // cannot read. An empty schedule drops out of the sentence instead of
+    // promising a timetable the engine would not run.
+    outreach_schedule:
+      facts.available && facts.outreach_schedule && facts.outreach_schedule.length > 0
+        ? formatOutreachScheduleHe(facts.outreach_schedule)
         : '',
   };
 }

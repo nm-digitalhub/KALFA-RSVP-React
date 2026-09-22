@@ -1568,7 +1568,7 @@ async function loadBusinessFacts(): Promise<BusinessFacts> {
   // (active, campaign-enabled, lowest sort_order).
   const { data, error } = await admin
     .from('packages')
-    .select('name, price_per_reached, base_price, included_reached, channels')
+    .select('name, price_per_reached, base_price, included_reached, channels, outreach_schedule')
     .eq('active', true)
     .not('price_per_reached', 'is', null)
     .order('sort_order', { ascending: true })
@@ -1583,6 +1583,14 @@ async function loadBusinessFacts(): Promise<BusinessFacts> {
         base_price: Number(data.base_price ?? 0),
         included_reached: Number(data.included_reached ?? 0),
         channels: (data.channels ?? []) as string[],
+        // Same narrowing as getPublicBusinessFacts — the two readers must
+        // produce identical facts or the FAQ and the drafter can disagree.
+        outreach_schedule: Array.isArray(data.outreach_schedule)
+          ? (data.outreach_schedule as unknown as {
+              days_before: number;
+              channel: string;
+            }[]).map((tp) => ({ days_before: tp.days_before, channel: tp.channel }))
+          : [],
       }
     : null;
   return buildBusinessFacts(gateOn, pkg);
