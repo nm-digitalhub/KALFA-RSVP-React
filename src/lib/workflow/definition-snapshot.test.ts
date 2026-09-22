@@ -2,7 +2,21 @@ import { describe, expect, it, vi } from 'vitest';
 
 vi.mock('server-only', () => ({}));
 
-import { handleWorkflowRun } from './enqueue';
+// ⚠️ `import type`, AND THAT IS THE WHOLE FIX FOR A FLAKY TEST.
+//
+// This symbol is used ONLY in type position (`Parameters<typeof …>`, twice);
+// the value comes from the dynamic `await import('./enqueue')` below, after
+// `vi.resetModules()` + `vi.doMock`. As a VALUE import it eagerly loaded the
+// real `./enqueue` — and with it `run-workflow`, the integration runtime, the
+// pg-boss queues, `guest-actions`, `wake-store`, `team-alerts` and
+// `outbound-webhook` — into the registry BEFORE any mock was declared.
+//
+// MEASURED 2026-09-22: this file passed on its own and failed once inside a full
+// 6,758-test run, then passed on the next full run. That is the signature of
+// registry state shared with whatever else landed in the same worker, not of a
+// bug in the code under test. A type-only import emits nothing, so the mocked
+// dynamic import is the only thing that ever loads the module.
+import type { handleWorkflowRun } from './enqueue';
 
 // A run that parks at `logic.wait` must resume on the definition it STARTED
 // with — not on the one the owner edited while it slept.
