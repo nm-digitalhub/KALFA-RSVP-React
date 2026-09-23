@@ -12,12 +12,13 @@ import { describe, expect, it } from 'vitest';
 
 import { findCatalogueEntry } from './catalogue/nodes';
 import { PALETTE_ITEMS } from './catalogue/schemas';
-import { NODE_REQUIRED_FIELDS, NODE_TYPES, type KalfaNodeType } from './catalogue/types';
+import { NODE_DEPLOYMENT_BINDINGS, NODE_REQUIRED_FIELDS, NODE_TYPES, type KalfaNodeType } from './catalogue/types';
 import { MAX_NODE_TIMEOUT_MS, NODE_ACTIVITY_PROFILES } from './engine/node-budgets';
 import { nodeFolders } from './node-sources';
 import { STEP_HANDLERS } from './steps';
 
 type Definition = {
+  deploymentBindings?: unknown;
   type?: unknown;
   isTrigger?: unknown;
   requiredFields?: unknown;
@@ -102,6 +103,18 @@ describe('node definitions', () => {
       expect(items).toHaveLength(1);
       const outputSchema = items[0]!.outputSchema as { properties?: unknown } | undefined;
       expect(outputSchema?.properties).toBe(def.outputFields);
+    });
+
+    it('declares deploymentBindings — even `{}` — and the export table reads it', async () => {
+      const def = (await import(path)) as Definition;
+      // Present, not merely falsy-safe: an absent key could mean "nothing to
+      // bind" or "forgot", and only an explicit `{}` says which.
+      expect(def).toHaveProperty('deploymentBindings');
+      expect(def.deploymentBindings).toBeTypeOf('object');
+      for (const kind of Object.values(def.deploymentBindings as Record<string, unknown>)) {
+        expect(['identifier', 'secret', 'catalogue']).toContain(kind);
+      }
+      expect(NODE_DEPLOYMENT_BINDINGS[def.type as KalfaNodeType]).toBe(def.deploymentBindings);
     });
 
     it('has a registered handler', async () => {

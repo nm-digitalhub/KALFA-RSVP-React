@@ -177,6 +177,23 @@ export type StepHandler = (
 // is in the row. These readers are the narrowing, and a bad value is a
 // PermanentNodeExecutionError — it will fail identically on every retry, so the
 // engine must not spend three attempts discovering that.
+/**
+ * The keys of a config type whose value is text — what `readString` may read.
+ *
+ * Two signatures: without a type argument the key is plain `string`, so every
+ * existing caller (including ones passing a computed key) is unchanged. With one — `readString<SetValueConfig>(config, 'value')` — a key
+ * the node's config does not declare, or declares as something other than text,
+ * is a COMPILE error. The config itself stays `Record<string, unknown>`: it came
+ * from a jsonb row nobody validated, and typing it as the node's config would
+ * claim a check that never ran. Only the NAME of the field is checked.
+ */
+export type StringKeyOf<C> = {
+  [K in keyof C]-?: NonNullable<C[K]> extends string ? K : never;
+}[keyof C] &
+  string;
+
+export function readString(config: Record<string, unknown>, key: string): string;
+export function readString<C>(config: Record<string, unknown>, key: StringKeyOf<C>): string;
 export function readString(config: Record<string, unknown>, key: string): string {
   const value = config[key];
   return typeof value === 'string' ? value : '';

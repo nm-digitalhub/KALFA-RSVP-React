@@ -3,6 +3,8 @@
 // registry imports this file, so that would be a cycle).
 import { readString, type StepHandler } from '../../steps/shared';
 
+import type { SetValueConfig } from './definition';
+
 // No I/O, and that is the feature.
 //
 // The value arrives here ALREADY RESOLVED — `resolveConfigTemplates` ran over
@@ -13,5 +15,7 @@ import { readString, type StepHandler } from '../../steps/shared';
 // use it in every branch, instead of repeating the same expression in three
 // message bodies and fixing a typo in two of them.
 export const setValue: StepHandler = async (config) => ({
-  output: { value: readString(config, 'value') },
+  // The key is checked against SetValueConfig at compile time; the value is
+  // still read defensively, because the config is an unvalidated jsonb row.
+  output: { value: readString<SetValueConfig>(config, 'value') },
 });

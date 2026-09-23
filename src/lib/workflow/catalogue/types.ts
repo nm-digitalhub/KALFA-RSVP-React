@@ -1341,6 +1341,8 @@ export type DeploymentBinding =
 export const NODE_DEPLOYMENT_BINDINGS: Partial<
   Record<KalfaNodeType, Record<string, DeploymentBinding>>
 > = {
+  // A moved node declares its own — even `{}` — in its definition.
+  [setValueDefinition.type]: setValueDefinition.deploymentBindings,
   'trigger.whatsapp_inbound': { phoneNumberId: 'identifier' },
   // A HASH, not the token — so this is no longer a secret that must not travel,
   // but it still authenticates to THIS installation and resolves to nothing

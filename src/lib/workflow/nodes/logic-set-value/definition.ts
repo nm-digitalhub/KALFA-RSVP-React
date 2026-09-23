@@ -48,6 +48,19 @@ export const requiredFields: string[] = ['label', 'description', 'value'];
 export const activityProfile = { timeoutMs: 5_000 };
 
 /**
+ * Properties whose values point into THIS installation and are blanked on
+ * export — `NODE_DEPLOYMENT_BINDINGS` reads this.
+ *
+ * EMPTY, AND DECLARED EMPTY ON PURPOSE. `value` is an author's literal (it is
+ * reviewed as portable in `portability-coverage.test.ts`, by property name, for
+ * every node that has one). Declaring `{}` rather than leaving the key out is
+ * what lets `node-definitions.test.ts` tell "nothing to bind" from "forgot".
+ * Values are `'identifier' | 'secret' | 'catalogue'` — spelled out here rather
+ * than imported, because this file imports nothing.
+ */
+export const deploymentBindings: Readonly<Record<string, 'identifier' | 'secret' | 'catalogue'>> = {};
+
+/**
  * What the handler returns, as the variable picker offers it.
  *
  * The palette entry's `outputSchema.properties` is built from this, so the

@@ -12,7 +12,7 @@
 //
 // Test-support only: it reads the filesystem, and nothing on a server path
 // imports it.
-import { existsSync, readdirSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 
 const WORKFLOW_DIR = join(process.cwd(), 'src/lib/workflow');
@@ -33,10 +33,27 @@ export function nodeFolders(): string[] {
     .sort();
 }
 
+/** Every non-test `.ts`/`.tsx` file under `dir`, recursively, sorted. */
+function codeFilesUnder(dir: string): string[] {
+  return readdirSync(dir)
+    .sort()
+    .flatMap((name) => {
+      const path = join(dir, name);
+      if (statSync(path).isDirectory()) return codeFilesUnder(path);
+      return /\.tsx?$/.test(name) && !/\.test\.tsx?$/.test(name) ? [path] : [];
+    });
+}
+
 /**
- * The server-side step sources: every non-test file in `steps/`, and the
- * SDK-free half of every node folder (`runtime.ts`, `definition.ts`,
- * `match.ts`, whichever exist).
+ * The step sources a server-side guarantee is checked against: every non-test
+ * file in `steps/`, and EVERY non-test code file in every node folder,
+ * recursively.
+ *
+ * ⚠️ ALL OF THE FOLDER, NOT A LIST OF NAMES. A fixed list (`definition.ts`,
+ * `runtime.ts`, `match.ts`) let a helper next to them — `outcome.ts`, a future
+ * `helper.ts` — import a SUMIT client or spawn a process unseen. The editor
+ * files are read too; the scans look for things no editor file has reason to
+ * contain, so including them costs nothing and closes the gap.
  */
 export function serverStepSources(): SourceFile[] {
   const stepsDir = join(WORKFLOW_DIR, 'steps');
@@ -45,12 +62,7 @@ export function serverStepSources(): SourceFile[] {
     .sort()
     .map((name) => read(join(stepsDir, name)));
 
-  const nodes = nodeFolders().flatMap((folder) =>
-    ['definition.ts', 'runtime.ts', 'match.ts']
-      .map((name) => join(NODES_DIR, folder, name))
-      .filter((path) => existsSync(path))
-      .map(read),
-  );
+  const nodes = nodeFolders().flatMap((folder) => codeFilesUnder(join(NODES_DIR, folder)).map(read));
 
   return [...steps, ...nodes];
 }
