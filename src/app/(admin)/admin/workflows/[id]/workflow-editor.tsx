@@ -32,6 +32,7 @@ import { isTriggerType } from "@/lib/workflow/catalogue/nodes";
 import {
   buildPaletteItems,
   type MicrosoftConnectionOption,
+  type SumitCardOutput,
   type VoiceDialOption,
   type VoicePurposeOption,
   type WhatsAppNumberOption,
@@ -126,6 +127,12 @@ type Props = {
    * the server because the environment is not readable here.
    */
   secretNames: readonly string[];
+  /**
+   * The SUMIT trigger's picker fields as this workflow's latest SUMIT call
+   * carried them — keys and types only, derived on the server. `null` keeps the
+   * fixed list.
+   */
+  sumitCardOutput: SumitCardOutput | null;
 };
 
 /**
@@ -196,6 +203,7 @@ export function WorkflowEditor({
   canConnectMicrosoft,
   microsoftConnectionUnavailableReason,
   secretNames,
+  sumitCardOutput,
   saveAction,
 }: Props) {
   // ── the two live dial lists ────────────────────────────────────────────────
@@ -273,6 +281,7 @@ export function WorkflowEditor({
         dialLists.rules,
         dialLists.agents,
         microsoftConnections,
+        sumitCardOutput,
       ),
     [
       whatsappNumbers,
@@ -281,6 +290,7 @@ export function WorkflowEditor({
       dialLists.rules,
       dialLists.agents,
       microsoftConnections,
+      sumitCardOutput,
     ],
   );
   // ⚠️ REPAIR LEGACY ARRAY SHAPES BEFORE THE SCHEMA SEES THEM.

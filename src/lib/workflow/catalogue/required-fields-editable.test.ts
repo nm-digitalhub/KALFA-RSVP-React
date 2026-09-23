@@ -103,9 +103,10 @@ describe('every arm-blocking field is editable in the panel', () => {
 
     expect(without).toEqual([]);
     // Anti-no-op: the assertion above passes vacuously on an empty palette, so
-    // the count is pinned. 21 since the two SUMIT accounting nodes
-    // (create document / create customer) joined on 2026-09-22.
-    expect(PALETTE_ITEMS.length).toBe(22);
+    // the count is pinned. 22 since the two SUMIT accounting nodes joined on
+    // 2026-09-22 and the AI node after them; 23 since `trigger.sumit_card`
+    // joined on 2026-09-23.
+    expect(PALETTE_ITEMS.length).toBe(23);
   });
 });
 

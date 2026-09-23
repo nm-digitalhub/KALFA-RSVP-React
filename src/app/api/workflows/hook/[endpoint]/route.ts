@@ -180,11 +180,13 @@ async function handle(
   } catch {
     return NextResponse.json(
       { ok: true, runId: result.runId, queued: false },
-      { status: 202 },
+      { status: result.acceptedStatus },
     );
   }
 
-  return NextResponse.json({ ok: true, runId: result.runId }, { status: 202 });
+  // 202 for `trigger.webhook`, 200 for SUMIT — the node type decides, in
+  // `startRunFromWebhook`, and this route only transports it.
+  return NextResponse.json({ ok: true, runId: result.runId }, { status: result.acceptedStatus });
 }
 
 // ⚠️ ONE HANDLER, FIVE EXPORTS — and the export list is the ONLY place a verb is

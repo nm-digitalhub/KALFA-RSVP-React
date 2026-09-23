@@ -4,7 +4,7 @@ import 'server-only';
 import { editorDiagramSchema } from './adapter/editor-schema';
 import { hashWebhookToken, webhookHashesMatch } from './webhook-token';
 import { isTriggerType } from './catalogue/nodes';
-import { readWebhookAuthMode, webhookAllowsMethod } from './catalogue/types';
+import { authModeFor, INBOUND_HTTP_TRIGGER_TYPES, webhookAllowsMethod } from './catalogue/types';
 import { createRunIfNew, listArmedWorkflows } from './store';
 
 import type { WorkflowTriggerPayload } from './steps';
@@ -42,7 +42,18 @@ import type { WorkflowTriggerPayload } from './steps';
 export const MAX_WEBHOOK_BODY_BYTES = 64 * 1024;
 
 export type WebhookTriggerResult =
-  | { ok: true; runId: string | undefined }
+  | {
+      ok: true;
+      runId: string | undefined;
+      /**
+       * The status to answer a NEW run with. 202 for `trigger.webhook`, as it
+       * always was; 200 for `trigger.sumit_card`, because SUMIT's help article
+       * says it waits for "HTTP Status 200" and suspends the whole trigger after
+       * five answers it does not accept. Decided here, by node type, so the
+       * route stays transport and does not learn which caller is which.
+       */
+      acceptedStatus: 200 | 202;
+    }
   | { ok: false; reason: 'not_found' | 'too_large' | 'bad_json' };
 
 
@@ -91,14 +102,23 @@ async function findWorkflowForEndpoint(endpointId: string, secret: string, metho
     if (triggers.length !== 1) continue;
 
     const trigger = triggers[0]!;
-    if (trigger.data.type !== 'trigger.webhook') continue;
+    // Every trigger this route may start. `trigger.sumit_card` is the same
+    // endpoint with a known caller — see `INBOUND_HTTP_TRIGGER_TYPES` for why it
+    // is not a route of its own.
+    if (!(INBOUND_HTTP_TRIGGER_TYPES as readonly string[]).includes(trigger.data.type)) continue;
+
+    const properties = (trigger.data.properties ?? {}) as Record<string, unknown>;
 
     // The stored hash is the one thing BOTH modes have. What it is a hash OF is
     // what the mode decides.
-    const configuredHash = trigger.data.properties?.tokenHash;
+    const configuredHash = properties.tokenHash;
     if (typeof configuredHash !== 'string' || configuredHash.trim() === '') continue;
 
-    if (readWebhookAuthMode(trigger.data.properties?.auth) === 'address') {
+    // ⚠️ THE NODE TYPE DECIDES THE MODE, NOT THE ROW. `authModeFor` returns
+    // `address` for a SUMIT trigger whatever its stored `auth` says — so a
+    // hand-edited row can neither make SUMIT wait for a header it cannot send,
+    // nor promote a stored public id into a credential.
+    if (authModeFor(trigger.data.type, properties) === 'address') {
       // ⚠️ THE PATH IS THE CREDENTIAL, so it is compared against the HASH and
       // never against a stored copy — there is no stored copy, which is the
       // point: a plaintext segment in the diagram would ride along in every
@@ -109,7 +129,7 @@ async function findWorkflowForEndpoint(endpointId: string, secret: string, metho
       // ⚠️ HEADER MODE IS UNCHANGED, INCLUDING ITS REFUSALS. An empty header
       // hashes to `''` above and can never equal a 64-character digest, so a
       // caller who knows the public id and sends no secret still gets nothing.
-      const configuredId = trigger.data.properties?.endpointId;
+      const configuredId = properties.endpointId;
       if (typeof configuredId !== 'string' || configuredId.trim() === '') continue;
       if (!webhookHashesMatch(configuredId, endpointId)) continue;
       if (!webhookHashesMatch(configuredHash, presentedSecret)) continue;
@@ -119,11 +139,66 @@ async function findWorkflowForEndpoint(endpointId: string, secret: string, metho
     // Here, because the route would otherwise be a second place that decides who
     // gets in. Last, because answering "wrong method" before the secret is
     // verified would tell an unauthenticated caller that this endpoint exists.
-    if (!webhookAllowsMethod(trigger.data.properties?.methods, method)) continue;
+    //
+    // A SUMIT trigger is POST-ONLY by type: SUMIT's HTTP step posts JSON and
+    // nothing else, so a stored `methods` list — which this node does not even
+    // declare — is not consulted. `undefined` is `webhookAllowsMethod`'s own
+    // "POST only".
+    const allowedMethods =
+      trigger.data.type === 'trigger.sumit_card' ? undefined : properties.methods;
+    if (!webhookAllowsMethod(allowedMethods, method)) continue;
 
-    return workflow;
+    return { workflow, triggerType: trigger.data.type };
   }
   return null;
+}
+
+/**
+ * The body a SUMIT trigger stores when what arrived is not one JSON object.
+ *
+ * ⚠️ SAVE FIRST, JUDGE LATER — SUMIT's own contract. Its help article asks the
+ * receiver to store the call and answer that it was received, and to do the
+ * processing afterwards; an answer it does not accept counts as a failure, and
+ * five of them suspend the trigger. On 2026-09-23 the first live calls from
+ * SUMIT were answered 400 by the shape check below (measured in the proxy log:
+ * `expected_json_object`, 43 bytes plus HTTP/1.1 chunk framing = the 54 logged)
+ * — so SUMIT does NOT always send the single `{ Folder, EntityID, … }` object
+ * its screenshot shows, and nobody here has seen what it does send.
+ *
+ * So a SUMIT node keeps what arrived instead of refusing it, under a key that
+ * says what it is: `value` for JSON that is not an object, `text` for a body
+ * that is not JSON at all.
+ *
+ * ⚠️ THE REAL SHAPE, MEASURED on the first stored run (2026-09-23 09:31): SUMIT
+ * sends a FORM, `json=<url-encoded JSON object>` — the `{ Folder, EntityID,
+ * Type, Properties }` object its screenshot shows, wrapped in one form field.
+ * That is why the object-only check answered 400. It is unwrapped here with
+ * the platform's own `URLSearchParams`, and only when the field holds exactly
+ * one JSON object; anything else still falls through to `text`, so an
+ * unexpected shape is kept for a person to read rather than dropped.
+ */
+function sumitBody(rawBody: string): Record<string, unknown> {
+  if (rawBody.trim() === '') return {};
+  const asObject = (raw: string): Record<string, unknown> | null => {
+    try {
+      const parsed: unknown = JSON.parse(raw);
+      return parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed)
+        ? (parsed as Record<string, unknown>)
+        : null;
+    } catch {
+      return null;
+    }
+  };
+  const direct = asObject(rawBody);
+  if (direct) return direct;
+  try {
+    return { value: JSON.parse(rawBody) as unknown };
+  } catch {
+    // Not JSON — SUMIT's form, or something else.
+  }
+  const formField = new URLSearchParams(rawBody).get('json');
+  const fromForm = formField === null ? null : asObject(formField);
+  return fromForm ?? { text: rawBody };
 }
 
 /**
@@ -163,25 +238,40 @@ export async function startRunFromWebhook(input: {
     return { ok: false, reason: 'too_large' };
   }
 
-  let body: Record<string, unknown>;
+  // The object a `trigger.webhook` needs, or null when the body is not one.
+  // Parsed BEFORE the lookup but not yet ACTED on: which rule applies depends on
+  // the node the address resolves to, and only the lookup knows that.
+  let objectBody: Record<string, unknown> | null = null;
   try {
-    const parsed = input.rawBody.trim() === '' ? {} : JSON.parse(input.rawBody);
-    // An array or a bare scalar is valid JSON and not a usable trigger body:
-    // `{{trigger.body.x}}` has nothing to name. Refused rather than coerced.
-    if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
-      return { ok: false, reason: 'bad_json' };
+    const parsed: unknown = input.rawBody.trim() === '' ? {} : JSON.parse(input.rawBody);
+    if (parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      objectBody = parsed as Record<string, unknown>;
     }
-    body = parsed as Record<string, unknown>;
   } catch {
-    return { ok: false, reason: 'bad_json' };
+    objectBody = null;
   }
 
-  const workflow = await findWorkflowForEndpoint(input.endpointId, input.secret, input.method);
+  const found = await findWorkflowForEndpoint(input.endpointId, input.secret, input.method);
+
+  // ⚠️ EVERY ANSWER A `trigger.webhook` CALLER COULD GET BEFORE, IT STILL GETS.
+  // A body that is not one JSON object was refused BEFORE the lookup, so it was
+  // 400 whether or not the address existed; checking it first here keeps that
+  // exactly — an unknown address with a bad body is still 400, never a 404 that
+  // would now say "the body was fine, the address was not".
+  if (!found) return objectBody ? { ok: false, reason: 'not_found' } : { ok: false, reason: 'bad_json' };
   // ONE answer for "no such endpoint", "wrong secret", "verb not allowed", and
-  // "belongs to a disarmed workflow". Distinguishing them would turn this
-  // endpoint into an oracle for which webhooks exist and which secrets are
+  // "belongs to a disarmed workflow" — above. Distinguishing them would turn
+  // this endpoint into an oracle for which webhooks exist and which secrets are
   // close.
-  if (!workflow) return { ok: false, reason: 'not_found' };
+
+  const { workflow, triggerType } = found;
+  const isSumit = triggerType === 'trigger.sumit_card';
+
+  // An array or a bare scalar is valid JSON and not a usable `trigger.webhook`
+  // body: `{{trigger.body.x}}` has nothing to name. Refused rather than coerced
+  // — for that node. A SUMIT node keeps what arrived; see `sumitBody`.
+  if (!isSumit && !objectBody) return { ok: false, reason: 'bad_json' };
+  const body = isSumit ? sumitBody(input.rawBody) : objectBody!;
 
   // NO eventId and NO contactId, deliberately — see the header. The payload is
   // otherwise the same shape every trigger produces, so a template written
@@ -208,5 +298,5 @@ export async function startRunFromWebhook(input: {
     triggerPayload,
   });
 
-  return { ok: true, runId };
+  return { ok: true, runId, acceptedStatus: isSumit ? 200 : 202 };
 }

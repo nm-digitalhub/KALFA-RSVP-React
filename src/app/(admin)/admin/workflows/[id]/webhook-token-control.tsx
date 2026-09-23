@@ -13,7 +13,7 @@ import {
 } from '@workflowbuilder/sdk';
 
 import { Button } from '@/components/ui/button';
-import { readWebhookAuthMode } from '@/lib/workflow/catalogue/types';
+import { authModeFor } from '@/lib/workflow/catalogue/types';
 import { WEBHOOK_TOKEN_FORMAT } from '@/lib/workflow/catalogue/ui-formats';
 import {
   WEBHOOK_SECRET_HEADER,
@@ -63,7 +63,11 @@ function WebhookTokenControl({ data, handleChange, path, enabled, readonly }: Co
   const properties = ((selection?.node?.data as { properties?: Record<string, unknown> } | undefined)
     ?.properties ?? {}) as Record<string, unknown>;
   const endpointId = typeof properties.endpointId === 'string' ? properties.endpointId : '';
-  const mode = readWebhookAuthMode(properties.auth);
+  // The NODE TYPE decides first: a SUMIT trigger is address-only whatever its
+  // row says, and this control must mint the same kind of credential the lookup
+  // will check. `authModeFor` is the one place that answers it.
+  const nodeType = (selection?.node?.data as { type?: string } | undefined)?.type ?? '';
+  const mode = authModeFor(nodeType, properties);
   const addressIsSecret = mode === 'address';
 
   const endpointPath = path.replace(/tokenHash$/, 'endpointId');

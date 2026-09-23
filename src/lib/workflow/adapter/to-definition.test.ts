@@ -94,11 +94,13 @@ describe('catalogue', () => {
     // quietly stopped being one — is a change to who may start a flow, and rule
     // 1 says that is the catalogue's decision alone.
     //
-    // Each of the three is a genuinely different way in, which is why they are
-    // worth naming: a guest speaking to us, an outside system calling in, and
-    // the clock.
+    // Each is a genuinely different way in, which is why they are worth naming:
+    // a guest speaking to us, an outside system calling in, the clock — and,
+    // since 2026-09-23, SUMIT telling us a card changed. That fourth one shares
+    // the webhook's ROUTE (`INBOUND_HTTP_TRIGGER_TYPES`) but not its meaning:
+    // the caller is known, so the node can name what it sends.
     expect(CATALOGUE.filter((e) => e.isTrigger).map((e) => e.type).sort()).toEqual(
-      ['trigger.schedule', 'trigger.webhook', 'trigger.whatsapp_inbound'],
+      ['trigger.schedule', 'trigger.sumit_card', 'trigger.webhook', 'trigger.whatsapp_inbound'],
     );
   });
 

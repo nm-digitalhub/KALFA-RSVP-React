@@ -9,6 +9,8 @@ import {
   NODE_REQUIRED_FIELDS,
   ACTION_BRANCH_HANDLES,
   ARM_NOTICE_PATH,
+  authModeFor,
+  INBOUND_HTTP_TRIGGER_TYPES,
   readWebhookAuthMode,
   SALES_CALLBACK_TOPIC,
   webhookAllowsMethod,
@@ -564,8 +566,11 @@ function blankMessage(
   // buttons and get different things back. Saying "הסוד יוצג פעם אחת" to an
   // owner in `address` mode would point at a control that is not on their
   // screen.
-  if (nodeType === 'trigger.webhook' && (key === 'tokenHash' || key === 'endpointId')) {
-    return readWebhookAuthMode(properties.auth) === 'address'
+  if (
+    (INBOUND_HTTP_TRIGGER_TYPES as readonly string[]).includes(nodeType) &&
+    (key === 'tokenHash' || key === 'endpointId')
+  ) {
+    return authModeFor(nodeType, properties) === 'address'
       ? 'לא נוצרה עדיין כתובת. לחצו על יצירת כתובת — היא תוצג פעם אחת בלבד, ומרגע שנשמרה לא ניתן לשחזר אותה.'
       : 'לא נוצר סוד, ולכן אין עדיין כתובת. לחצו על יצירת סוד — הכתובת תיווצר יחד איתו ותישאר גלויה, והסוד יוצג פעם אחת בלבד.';
   }

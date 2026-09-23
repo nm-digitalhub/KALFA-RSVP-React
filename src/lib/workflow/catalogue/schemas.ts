@@ -654,6 +654,153 @@ const webhookTriggerUiSchema: UISchema = {
 };
 
 // ---------------------------------------------------------------------------
+// trigger.sumit_card
+// ---------------------------------------------------------------------------
+
+// ⚠️ ONE CREDENTIAL FIELD AND NOTHING ELSE TO CONFIGURE. Folder, view and change
+// type are chosen in SUMIT's own "יצירת טריגר" screen, which is where the
+// filtering happens — see `SumitCardTriggerConfig`. The panel explains what to
+// pick THERE rather than offering copies here that would filter nothing.
+const sumitCardTriggerSchema = {
+  type: 'object',
+  required: NODE_REQUIRED_FIELDS['trigger.sumit_card'],
+  properties: {
+    ...identityProperties,
+    ...statusProperty,
+    tokenHash: requiredText,
+  },
+} satisfies NodeSchema;
+
+const sumitCardTriggerScope = getScope<typeof sumitCardTriggerSchema>;
+
+/** One entry of the SUMIT trigger's output — the SDK's `OutputProperty` shape. */
+export type SumitCardOutputField = {
+  type: 'string' | 'number' | 'boolean' | 'datetime' | 'date' | 'object' | 'array';
+  label: string;
+  description?: string;
+};
+export type SumitCardOutput = Record<string, SumitCardOutputField>;
+
+/** What `sumitCardTrigger` returns for any folder. */
+export const SUMIT_CARD_BASE_OUTPUT = {
+  folder: { type: 'number', label: 'מזהה התיקייה', description: 'התיקייה ב-SUMIT שבה הכרטיס השתנה' },
+  entityId: { type: 'number', label: 'מזהה הכרטיס' },
+  changeType: {
+    type: 'string',
+    label: 'סוג השינוי',
+    description: 'כפי ש-SUMIT שולחת, למשל CreateOrUpdate',
+  },
+  properties: {
+    type: 'object',
+    label: 'שדות הכרטיס',
+    description:
+      'עמודות התצוגה. כל שדה הוא רשימה — {{nodes.<מזהה>.properties.שם_השדה.0}} לערך הראשון, ו-.0.Name לשם של ערך מקושר',
+  },
+  body: { type: 'object', label: 'כל מה שנשלח' },
+} as const;
+
+// ⚠️ `?` IS ADVISED ONLY WHERE THE FIELD CAN BE ABSENT, and that is a trade-off
+// measured in the SDK, not a style. The editor finds a reference's TYPE by
+// looking its path up VERBATIM in `outputSchema.properties` (`eL` in the bundle):
+// `properties.Billing_Amount.0?` matches no key, so the condition editor treats
+// it as text and withdraws "greater than". So `?` goes only where a missing value
+// is real — `Billing_OrderDocument` came on one release and not another, and
+// `Billing_PaymentDocument` has not appeared at all. The other seven arrived on
+// all three live releases of 2026-09-23 (a small sample, said as such).
+const PRESENT_NOTE = 'הגיע בכל הקריאות עד כה — בלי ? כדי שבתנאי יוצעו השוואות לפי הסוג';
+const OPTIONAL_NOTE = 'לא תמיד נשלח (ריק בכרטיס) — הוסיפו ? בסוף הביטוי כדי שהצעד לא ייכשל';
+// The enums' option labels are NOT in the schema SUMIT returns, so the codes are
+// published as codes. ⚠️ `Billing_Currency` is a CRM enum: do not read it with the
+// charge API's currency codes (where 1 is USD) — the measured hold was in shekels.
+const ENUM_NOTE = 'קוד מספרי כפי ש-SUMIT שולחת; SUMIT לא מחזירה את שמות האפשרויות';
+const HOLDS = '(תפיסות מסגרת)';
+
+/** The "תפיסות מסגרת" folder's nine properties, as measured — see `outputSchema`. */
+export const SUMIT_HOLD_FIELDS_OUTPUT = {
+  'properties.Billing_Date.0': { type: 'datetime', label: `תאריך ${HOLDS}`, description: PRESENT_NOTE },
+  'properties.Billing_Amount.0': { type: 'number', label: `סכום ${HOLDS}`, description: PRESENT_NOTE },
+  'properties.Billing_Currency.0': { type: 'number', label: `מטבע — קוד ${HOLDS}`, description: `${ENUM_NOTE}. ${PRESENT_NOTE}` },
+  'properties.Billing_Status.0': { type: 'number', label: `סטטוס — קוד ${HOLDS}`, description: `${ENUM_NOTE}. ${PRESENT_NOTE}` },
+  // A string, not a path into `properties`: the handler adds it (see
+  // `sumitHoldStatusLabel`). Compare the CODE above in a condition; show this.
+  holdStatus: {
+    type: 'string',
+    label: `סטטוס — בעברית ${HOLDS}`,
+    description: 'למשל "שוחררה (3)". הקוד תמיד מופיע בסוגריים; ריק כשהכרטיס לא מתיקיית תפיסות מסגרת',
+  },
+  holdCurrency: {
+    type: 'string',
+    label: `מטבע — בעברית ${HOLDS}`,
+    description: 'למשל "שקל (1)". הקוד תמיד מופיע בסוגריים; ריק כשהכרטיס לא מתיקיית תפיסות מסגרת',
+  },
+  'properties.Billing_Customer.0.Name': { type: 'string', label: `לקוח/ה — שם ${HOLDS}`, description: PRESENT_NOTE },
+  'properties.Billing_Customer.0.ID': { type: 'number', label: `לקוח/ה — מזהה ב-SUMIT ${HOLDS}`, description: PRESENT_NOTE },
+  'properties.Billing_PaymentMethod.0.Name': { type: 'string', label: `אמצעי תשלום — שם ${HOLDS}`, description: PRESENT_NOTE },
+  'properties.Billing_PaymentMethod.0.ID': { type: 'number', label: `אמצעי תשלום — מזהה ${HOLDS}`, description: PRESENT_NOTE },
+  'properties.Billing_CreditGuyTransaction.0.Name': { type: 'string', label: `פעולה במסוף — שם ${HOLDS}`, description: PRESENT_NOTE },
+  'properties.Billing_CreditGuyTransaction.0.ID': { type: 'number', label: `פעולה במסוף — מזהה ${HOLDS}`, description: PRESENT_NOTE },
+  'properties.Billing_OrderDocument.0.Name': { type: 'string', label: `מסמך הזמנה — שם ${HOLDS}`, description: OPTIONAL_NOTE },
+  'properties.Billing_OrderDocument.0.ID': { type: 'number', label: `מסמך הזמנה — מזהה ${HOLDS}`, description: OPTIONAL_NOTE },
+  'properties.Billing_PaymentDocument.0.Name': { type: 'string', label: `מסמך חיוב — שם ${HOLDS}`, description: OPTIONAL_NOTE },
+  'properties.Billing_PaymentDocument.0.ID': { type: 'number', label: `מסמך חיוב — מזהה ${HOLDS}`, description: OPTIONAL_NOTE },
+} as const;
+
+const sumitCardTriggerUiSchema: UISchema = {
+  type: 'VerticalLayout',
+  elements: [
+    triggerSwitchElement,
+    ...identityControls(
+      sumitCardTriggerScope('properties.label'),
+      sumitCardTriggerScope('properties.description'),
+    ),
+    {
+      // The same control as the webhook trigger's. It asks `authModeFor`, which
+      // answers `address` for this type whatever the row says — so it mints one
+      // address, shows it once, and stores only the hash.
+      type: 'Text',
+      scope: sumitCardTriggerScope('properties.tokenHash'),
+      label: 'הכתובת להדבקה ב-SUMIT',
+      options: { format: WEBHOOK_TOKEN_FORMAT },
+    },
+
+    {
+      // SUMIT's own help article, step for step (10442304), because every
+      // choice that decides what fires is made there and not here.
+      type: 'RichText',
+      text:
+        '**איך מחברים:** ב-SUMIT, מודול טריגרים ← **יצירת טריגר**.\n\n' +
+        '1. **תיקייה ותצוגה** — התיקייה שעליה התהליך יעבוד, ותצוגה שבה הפילטרים בוחרים רק את הכרטיסים הרלוונטיים.\n' +
+        '2. **השינוי שיוזם את הטריגר** — יצירה, עדכון, העברה לארכיון או מחיקה.\n' +
+        '3. **שלבים לביצוע** — יצירת קריאת HTTP. הדביקו את הכתובת מלמעלה ובחרו סוג קריאה **JSON**.',
+    },
+    {
+      type: 'Label',
+      text: 'דורש ב-SUMIT מסלול "צמיחה" ומעלה, ומודולי טריגרים, API וניהול תצוגות מותקנים.',
+    },
+    {
+      // Data minimisation, said where the choice is made: the VIEW's columns are
+      // what SUMIT sends, and the whole body is stored with the run.
+      type: 'Label',
+      text: 'העמודות בתצוגה קובעות אילו שדות נשלחים, והכול נשמר עם ההרצה — השאירו בתצוגה רק את מה שהתהליך צריך. שדות מקושרים מתיקייה אחרת (למשל מייל מכרטיס הלקוח) לא נשלחים.',
+    },
+    {
+      type: 'Label',
+      text: 'הקריאה מ-SUMIT אינה חתומה: מי שמחזיק בכתובת יכול לשלוח כל תוכן. השתמשו בה להתראה ולבדיקה — לעולם לא כבסיס לפעולה כספית.',
+    },
+    {
+      // The two ways this node goes quiet that nothing on the canvas shows.
+      type: 'Label',
+      text: 'אחרי ההדבקה, ודאו במסך "פעולות אוטומציה" ב-SUMIT שהקריאה הראשונה התקבלה. כשהתהליך כבוי הכתובת מחזירה שגיאה, ואחרי חמש שגיאות SUMIT משהה את הטריגר אצלה.',
+    },
+    {
+      type: 'Label',
+      text: 'הרצה שמתחילה כאן אינה קשורה לאורח, ולכן צעדים שפועלים על אורח (עדכון סטטוס, שליחת וואטסאפ, בקשת חזרה) ייכשלו בתוכה.',
+    },
+    statusControl(sumitCardTriggerScope('properties.status')),
+  ],
+};
+
+// ---------------------------------------------------------------------------
 // logic.condition
 // ---------------------------------------------------------------------------
 
@@ -2389,8 +2536,17 @@ export function buildPaletteItems(
   voiceRules: readonly VoiceDialOption[] = [],
   voiceAgents: readonly VoiceDialOption[] = [],
   microsoftConnections: readonly MicrosoftConnectionOption[] = [],
+  /**
+   * The SUMIT trigger's fields as THIS workflow's latest SUMIT call carried
+   * them — see `sumitCardOutputFromSample`. `null` keeps the fixed list, which
+   * is the state of any workflow SUMIT has not called yet.
+   */
+  sumitCardOutput: SumitCardOutput | null = null,
 ): PaletteItem[] {
   return PALETTE_ITEMS.map((item) => {
+    if (item.type === 'trigger.sumit_card' && sumitCardOutput) {
+      return withNodeRunControl({ ...item, outputSchema: { type: 'default', properties: sumitCardOutput } });
+    }
     if (item.type === 'trigger.whatsapp_inbound') {
       return withNodeRunControl({ ...item, schema: triggerSchemaFor(numbers) });
     }
@@ -2968,6 +3124,46 @@ export const PALETTE_ITEMS: PaletteItem[] = [
       days: [],
     },
   } satisfies PaletteItem<typeof scheduleSchema>,
+  {
+    type: 'trigger.sumit_card' satisfies KalfaNodeType,
+    label: 'שינוי בכרטיס SUMIT',
+    description: 'SUMIT מודיעה שכרטיס נוצר, עודכן, הועבר לארכיון או נמחק',
+    icon: 'IdentificationCard',
+    templateType: NodeType.StartNode,
+    schema: sumitCardTriggerSchema,
+    uischema: sumitCardTriggerUiSchema,
+    // Exactly what the handler returns — `sumitCardTrigger` in steps/index.ts.
+    //
+    // The "תפיסות מסגרת" fields were MEASURED, not guessed: `/crm/schema/getfolder/`
+    // on folder 1076735289 (2026-09-23) returned exactly these nine `APIName`s,
+    // and the live webhooks carried the same keys with these shapes (every value
+    // a list; references as `{ ID, Name, … }`). Keys are paths: the picker inserts
+    // `{{nodes.<id>.<key>}}` verbatim and `resolveTemplate` walks dots through
+    // arrays, so `.0` is the first value. (The vendor's docs call array indexing
+    // unsupported; the vendored resolver does it anyway, unmodified, and
+    // `sumit-card-trigger.test.ts` pins that it still does.)
+    //
+    // ⚠️ FLAT, ALTHOUGH THE FIELDS BELONG TO ONE FOLDER — chosen over the SDK's
+    // `variant` form after measuring both. `variant` (fields chosen by a node
+    // setting) is typed in `index.d.ts` but absent from the docs, and the editor
+    // resolves a reference's TYPE only from `outputSchema.properties` (`eL`) —
+    // so under `variant` every field reads as text and the condition editor
+    // never offers "greater than" on the amount. None of the four decorable SDK
+    // functions touches type lookup, so no plugin can fix it. The price of flat
+    // is that another folder's SUMIT node is offered these too; each label says
+    // "(תפיסות מסגרת)".
+    outputSchema: {
+      type: 'default',
+      properties: { ...SUMIT_CARD_BASE_OUTPUT, ...SUMIT_HOLD_FIELDS_OUTPUT },
+    },
+    defaultPropertiesData: {
+      status: nodeStatusOptions.active.value,
+      label: 'שינוי בכרטיס SUMIT',
+      description: 'SUMIT מודיעה שכרטיס נוצר, עודכן, הועבר לארכיון או נמחק',
+      // EMPTY: minted in the editor, shown once, stored only as a hash.
+      tokenHash: '',
+    },
+  } satisfies PaletteItem<typeof sumitCardTriggerSchema>,
   {
     type: 'logic.condition' satisfies KalfaNodeType,
     label: 'תנאי',

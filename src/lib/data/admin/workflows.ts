@@ -35,6 +35,8 @@ import { toWorkflowDefinition } from '@/lib/workflow/adapter/to-definition';
 import { findArmBlockers } from '@/lib/workflow/catalogue/arm-check';
 import { findVoiceDialBlockers } from '@/lib/data/admin/voice-node-arm-check';
 import { runsFingerprint, RUNS_WINDOW } from '@/lib/workflow/runs-fingerprint';
+import { sumitCardOutputFromSample } from '@/lib/workflow/catalogue/sumit-sample-output';
+import type { SumitCardOutput } from '@/lib/workflow/catalogue/schemas';
 import {
   dryRunWorkflow,
   type DryRunResult,
@@ -537,6 +539,40 @@ export type RunSummary = {
   finishedAt: string | null;
   errorMessage: string | null;
 };
+
+/**
+ * The SUMIT trigger's picker fields, read off this workflow's latest SUMIT call.
+ *
+ * Returns KEYS AND TYPES ONLY — `sumitCardOutputFromSample` drops every value,
+ * because the stored body carries a customer's name and card digits and the
+ * editor needs only the shape. Same gate as the run list on the same page.
+ *
+ * `null` means "keep the fixed list": no SUMIT call yet, none of the recent
+ * webhook runs is a SUMIT card (a `trigger.webhook` run shares the source), or
+ * the read failed. ⚠️ A failed read is deliberately NOT thrown — the fields are
+ * a convenience on an editor that must still open; the fixed list is the same
+ * behaviour the node had before this existed.
+ */
+export async function getSumitCardSampleOutput(workflowId: string): Promise<SumitCardOutput | null> {
+  await requirePlatformPermission('manage_settings');
+
+  const supabase = createAdminClient();
+  const { data, error } = await supabase
+    .from('workflow_runs')
+    .select('trigger_payload')
+    .eq('workflow_id', workflowId)
+    .eq('trigger_source', 'webhook')
+    .order('created_at', { ascending: false })
+    .limit(5);
+  if (error) return null;
+
+  for (const row of data ?? []) {
+    const payload = row.trigger_payload as { body?: unknown } | null;
+    const output = sumitCardOutputFromSample(payload?.body);
+    if (output) return output;
+  }
+  return null;
+}
 
 /** The execution record for one workflow, newest first. */
 export async function listWorkflowRuns(

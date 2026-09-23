@@ -23,6 +23,7 @@ export const NODE_TYPES = [
   'trigger.whatsapp_inbound',
   'trigger.webhook',
   'trigger.schedule',
+  'trigger.sumit_card',
   'logic.condition',
   'logic.switch',
   'action.update_guest_status',
@@ -444,6 +445,57 @@ export type WebhookTriggerConfig = {
   /** Absent means `header` — see `readWebhookAuthMode`. */
   auth?: WebhookAuthMode;
 };
+
+/**
+ * `trigger.sumit_card` — SUMIT tells us a card changed.
+ *
+ * A `trigger.webhook` whose caller is known, so its shape can be too. SUMIT's
+ * trigger module POSTs `{ Folder, EntityID, Type, Properties }` to a URL it is
+ * given and to nothing else (help article 10442304; the payload is visible in
+ * its own "פעולות אוטומציה" log). It cannot send a header, so this node is
+ * ALWAYS in `address` mode — the node TYPE decides that, never a stored field.
+ *
+ * ⚠️ NO FOLDER, VIEW OR CHANGE-TYPE FIELD, and that is deliberate. All three are
+ * chosen in SUMIT's own "יצירת טריגר" screen, which is where the filtering
+ * happens: SUMIT sends only what its trigger selects. The same values stored
+ * here would filter nothing — and on an unsigned payload they would add no
+ * security either, since a caller holding the address can put any `Folder` in
+ * the body. The panel tells the owner what to choose over there instead.
+ */
+export type SumitCardTriggerConfig = {
+  /** sha256 of the path segment. The address is shown once and never stored. */
+  tokenHash: string;
+};
+
+/**
+ * The triggers an inbound HTTP call can start — both resolved by
+ * `findWorkflowForEndpoint` behind the one public route.
+ *
+ * ONE ROUTE, NOT ONE PER CALLER. A second route would be a second place that
+ * decides who gets in, and the whole security story of that endpoint is that
+ * there is exactly one.
+ */
+export const INBOUND_HTTP_TRIGGER_TYPES: readonly KalfaNodeType[] = [
+  'trigger.webhook',
+  'trigger.sumit_card',
+];
+
+/**
+ * How an inbound call to THIS node proves itself.
+ *
+ * ⚠️ THE TYPE OUTRANKS THE ROW. `trigger.sumit_card` is `address` whatever its
+ * properties say — a hand-edited diagram carrying `auth: 'header'` must not
+ * turn a SUMIT trigger into one that waits for a header SUMIT cannot send, nor
+ * into one that accepts a stored public id as its credential. Only
+ * `trigger.webhook` consults its own `auth` field.
+ *
+ * One function, three callers — the lookup, the token control and arm-check —
+ * so the question cannot be answered differently in two of them.
+ */
+export function authModeFor(nodeType: string, properties: Record<string, unknown>): WebhookAuthMode {
+  if (nodeType === 'trigger.sumit_card') return 'address';
+  return readWebhookAuthMode(properties.auth);
+}
 
 // The two outgoing ports of a condition node, as HANDLE IDS.
 //
@@ -1110,6 +1162,7 @@ export type KalfaNodeConfig =
   | { type: 'trigger.webhook'; config: WebhookTriggerConfig }
   | { type: 'action.ai_agent'; config: AiAgentConfig }
   | { type: 'trigger.schedule'; config: ScheduleTriggerConfig }
+  | { type: 'trigger.sumit_card'; config: SumitCardTriggerConfig }
   | { type: 'logic.condition'; config: ConditionConfig }
   | { type: 'logic.switch'; config: SwitchConfig }
   | { type: 'action.update_guest_status'; config: UpdateGuestStatusConfig }
@@ -1261,6 +1314,8 @@ export const NODE_DEPLOYMENT_BINDINGS: Partial<
   // but it still authenticates to THIS installation and resolves to nothing
   // anywhere else. See webhook-token.ts for why the value moved out.
   'trigger.webhook': { endpointId: 'identifier', tokenHash: 'identifier' },
+  // The same reasoning: a hash that authenticates to THIS installation only.
+  'trigger.sumit_card': { tokenHash: 'identifier' },
   'action.microsoft_send_email': { connectionId: 'identifier' },
   'action.send_template': { messageKey: 'catalogue' },
   'action.create_callback_request': { topic: 'catalogue' },
@@ -1302,6 +1357,7 @@ export const NODE_REQUIRED_FIELDS: Record<KalfaNodeType, string[]> = {
   'trigger.webhook': ['label', 'description', 'tokenHash'],
   'action.ai_agent': ['label', 'description', 'systemPrompt', 'model'],
   'trigger.schedule': ['label', 'description', 'time'],
+  'trigger.sumit_card': ['label', 'description', 'tokenHash'],
   'logic.condition': ['label', 'description', 'field', 'operator'],
   'logic.switch': ['label', 'description'],
   'logic.wait': ['label', 'description', 'amount', 'unit'],
@@ -1381,6 +1437,7 @@ export const GUEST_SCOPED_NODE_TYPES: readonly KalfaNodeType[] = [
  *   `trigger.whatsapp_inbound`  yes — unless its kinds are ALL owner kinds
  *   `trigger.webhook`           no  — the caller is a system, not a guest
  *   `trigger.schedule`          no  — a clock is not a guest
+ *   `trigger.sumit_card`        no  — SUMIT is a system, not a guest
  *
  * ⚠️ ABSENT OR EMPTY `messageKinds` IS YES, because absent means
  * `DEFAULT_WHATSAPP_MESSAGE_KINDS` — four kinds that are all a guest speaking.

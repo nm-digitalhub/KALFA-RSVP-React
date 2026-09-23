@@ -6,7 +6,11 @@ import { Badge, firstParam, formatDateTime } from "../../_components";
 
 import { hasPlatformPermission } from "@/lib/auth/dal";
 import { editorDiagramSchema } from "@/lib/workflow/adapter/editor-schema";
-import { getWorkflow, listWorkflowRuns } from "@/lib/data/admin/workflows";
+import {
+  getSumitCardSampleOutput,
+  getWorkflow,
+  listWorkflowRuns,
+} from "@/lib/data/admin/workflows";
 import { runsFingerprint, RUNS_WINDOW } from "@/lib/workflow/runs-fingerprint";
 import { readOAuthProviderConfig } from "@/lib/data/admin/integrations/oauth-provider-config";
 import { listProviderNumbers } from "@/lib/data/admin/integrations/provider-numbers";
@@ -101,6 +105,13 @@ export default async function AdminWorkflowPage({
   const nodes = parsed.success ? parsed.data.nodes : [];
   const edges = parsed.success ? parsed.data.edges : [];
 
+  // Only a workflow with a SUMIT trigger pays for the read — and it is keys and
+  // types, never values (see getSumitCardSampleOutput).
+  const hasSumitTrigger = nodes.some(
+    (n) => (n.data as { type?: string } | undefined)?.type === "trigger.sumit_card",
+  );
+  const sumitCardOutput = hasSumitTrigger ? await getSumitCardSampleOutput(id) : null;
+
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-3">
@@ -142,6 +153,7 @@ export default async function AdminWorkflowPage({
         canConnectMicrosoft={microsoftAvailability.canConnect}
         microsoftConnectionUnavailableReason={microsoftAvailability.reason}
         secretNames={secretNames}
+        sumitCardOutput={sumitCardOutput}
         saveAction={saveWorkflowAction}
       />
 

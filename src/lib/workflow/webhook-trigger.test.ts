@@ -64,7 +64,7 @@ beforeEach(() => {
 describe('the secret is the whole credential, and only its hash is stored', () => {
   it('a matching token starts a run', async () => {
     const r = await startRunFromWebhook({ method: 'POST', endpointId: ENDPOINT, secret: TOKEN, rawBody: '{"a":1}' });
-    expect(r).toEqual({ ok: true, runId: 'run-1' });
+    expect(r).toEqual({ ok: true, runId: 'run-1', acceptedStatus: 202 });
   });
 
   it('a wrong token starts nothing', async () => {
@@ -255,7 +255,7 @@ describe('deduplication is opt-in', () => {
     // nothing wrong, so a 4xx would make a retrying client escalate.
     createRunMock.mockResolvedValue(undefined);
     expect(await startRunFromWebhook({ method: 'POST', endpointId: ENDPOINT, secret: TOKEN, rawBody: '{}', idempotencyKey: 'x' })).toEqual(
-      { ok: true, runId: undefined },
+      { ok: true, runId: undefined, acceptedStatus: 202 },
     );
   });
 });
@@ -392,7 +392,7 @@ describe("auth: 'address' — for a caller that cannot send a header", () => {
     armedMock.mockResolvedValue([addressWorkflow(PATH_HASH)]);
     expect(
       await startRunFromWebhook({ method: 'POST', endpointId: PATH_SECRET, secret: '', rawBody: '{"a":1}' }),
-    ).toEqual({ ok: true, runId: 'run-1' });
+    ).toEqual({ ok: true, runId: 'run-1', acceptedStatus: 202 });
   });
 
   it('a wrong path starts nothing', async () => {
@@ -478,5 +478,190 @@ describe('⚠️ the modes do not leak into each other', () => {
     expect(
       await startRunFromWebhook({ method: 'POST', endpointId: ENDPOINT, secret: TOKEN, rawBody: '{}' }),
     ).toMatchObject({ ok: true });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// trigger.sumit_card — the same route, a known caller, the mode fixed by TYPE
+// ---------------------------------------------------------------------------
+
+const sumitWorkflow = (tokenHash: string, extra: Record<string, unknown> = {}) => ({
+  id: 'wf-sumit',
+  eventId: null,
+  definition: {
+    name: 'w',
+    layoutDirection: 'RIGHT',
+    nodes: [
+      {
+        id: 't',
+        type: 'start-node',
+        position: { x: 0, y: 0 },
+        data: {
+          type: 'trigger.sumit_card',
+          icon: 'IdentificationCard',
+          properties: { label: 't', description: 'd', tokenHash, ...extra },
+        },
+      },
+    ],
+    edges: [],
+  },
+});
+
+describe('trigger.sumit_card — reached through the same public route', () => {
+  it('the path alone starts a run — SUMIT sends no header', async () => {
+    armedMock.mockResolvedValue([sumitWorkflow(PATH_HASH)]);
+    expect(
+      await startRunFromWebhook({ method: 'POST', endpointId: PATH_SECRET, secret: '', rawBody: '{"EntityID":1}' }),
+    ).toEqual({ ok: true, runId: 'run-1', acceptedStatus: 200 });
+  });
+
+  it('a wrong path starts nothing', async () => {
+    armedMock.mockResolvedValue([sumitWorkflow(PATH_HASH)]);
+    expect(
+      await startRunFromWebhook({ method: 'POST', endpointId: OTHER, secret: '', rawBody: '{}' }),
+    ).toEqual({ ok: false, reason: 'not_found' });
+  });
+});
+
+describe('⚠️ the node TYPE decides the mode — a hand-edited row cannot', () => {
+  it('a stored `auth: header` does not make SUMIT wait for a header', async () => {
+    armedMock.mockResolvedValue([sumitWorkflow(PATH_HASH, { auth: 'header' })]);
+    expect(
+      await startRunFromWebhook({ method: 'POST', endpointId: PATH_SECRET, secret: '', rawBody: '{}' }),
+    ).toMatchObject({ ok: true });
+  });
+
+  it('a stored public `endpointId` plus a header never opens a SUMIT node', async () => {
+    // If the row could flip it to header mode, a stored id — something that may
+    // have been displayed and copied — would become half of a credential.
+    armedMock.mockResolvedValue([
+      sumitWorkflow(TOKEN_HASH, { auth: 'header', endpointId: ENDPOINT }),
+    ]);
+    expect(
+      await startRunFromWebhook({ method: 'POST', endpointId: ENDPOINT, secret: TOKEN, rawBody: '{}' }),
+    ).toEqual({ ok: false, reason: 'not_found' });
+  });
+
+  it('a stored `methods` list is ignored — POST only, by type', async () => {
+    armedMock.mockResolvedValue([sumitWorkflow(PATH_HASH, { methods: [{ value: 'PUT' }] })]);
+    expect(
+      await startRunFromWebhook({ method: 'PUT', endpointId: PATH_SECRET, secret: '', rawBody: '{}' }),
+    ).toEqual({ ok: false, reason: 'not_found' });
+    expect(
+      await startRunFromWebhook({ method: 'POST', endpointId: PATH_SECRET, secret: '', rawBody: '{}' }),
+    ).toMatchObject({ ok: true });
+  });
+
+  it('⚠️ widening the route to a second type did not reopen header mode', async () => {
+    // The regression this file guards, re-asked AFTER the type list grew: a
+    // header-mode `trigger.webhook` with the right public id and no header
+    // still gets nothing.
+    armedMock.mockResolvedValue([workflow(TOKEN_HASH), sumitWorkflow(PATH_HASH)]);
+    expect(
+      await startRunFromWebhook({ method: 'POST', endpointId: ENDPOINT, secret: '', rawBody: '{}' }),
+    ).toEqual({ ok: false, reason: 'not_found' });
+    expect(createRunMock).not.toHaveBeenCalled();
+  });
+});
+
+describe('⚠️ SUMIT: save first, judge later — its own retry contract', () => {
+  // SUMIT's help article: store the call, answer 200, process afterwards; five
+  // answers it does not accept suspend the trigger. Its first live calls on
+  // 2026-09-23 were refused 400 by the object-only shape check, so a SUMIT node
+  // now KEEPS what arrived. `trigger.webhook` keeps refusing — below.
+  const payloadOf = () => createRunMock.mock.calls[0][0].triggerPayload.body;
+
+  it('an object is stored as-is and answered 200', async () => {
+    armedMock.mockResolvedValue([sumitWorkflow(PATH_HASH)]);
+    expect(
+      await startRunFromWebhook({ method: 'POST', endpointId: PATH_SECRET, secret: '', rawBody: '{"EntityID":7}' }),
+    ).toEqual({ ok: true, runId: 'run-1', acceptedStatus: 200 });
+    expect(payloadOf()).toEqual({ EntityID: 7 });
+  });
+
+  it('an ARRAY is stored under `value`, not refused', async () => {
+    armedMock.mockResolvedValue([sumitWorkflow(PATH_HASH)]);
+    expect(
+      await startRunFromWebhook({ method: 'POST', endpointId: PATH_SECRET, secret: '', rawBody: '[{"EntityID":7}]' }),
+    ).toMatchObject({ ok: true, acceptedStatus: 200 });
+    expect(payloadOf()).toEqual({ value: [{ EntityID: 7 }] });
+  });
+
+  it('a scalar or null is stored under `value`', async () => {
+    armedMock.mockResolvedValue([sumitWorkflow(PATH_HASH)]);
+    await startRunFromWebhook({ method: 'POST', endpointId: PATH_SECRET, secret: '', rawBody: 'null' });
+    expect(payloadOf()).toEqual({ value: null });
+  });
+
+  it('text that is not JSON is stored under `text`', async () => {
+    armedMock.mockResolvedValue([sumitWorkflow(PATH_HASH)]);
+    expect(
+      await startRunFromWebhook({ method: 'POST', endpointId: PATH_SECRET, secret: '', rawBody: 'EntityID=7&Folder=1' }),
+    ).toMatchObject({ ok: true, acceptedStatus: 200 });
+    expect(payloadOf()).toEqual({ text: 'EntityID=7&Folder=1' });
+  });
+
+  it('the size cap still applies to SUMIT — 413, nothing stored', async () => {
+    armedMock.mockResolvedValue([sumitWorkflow(PATH_HASH)]);
+    const huge = 'a'.repeat(MAX_WEBHOOK_BODY_BYTES + 1);
+    expect(
+      await startRunFromWebhook({ method: 'POST', endpointId: PATH_SECRET, secret: '', rawBody: huge }),
+    ).toEqual({ ok: false, reason: 'too_large' });
+    expect(createRunMock).not.toHaveBeenCalled();
+  });
+
+  it('a WRONG path with a bad body is still 400, as before — not a hint about the address', async () => {
+    armedMock.mockResolvedValue([sumitWorkflow(PATH_HASH)]);
+    expect(
+      await startRunFromWebhook({ method: 'POST', endpointId: OTHER, secret: '', rawBody: '[1]' }),
+    ).toEqual({ ok: false, reason: 'bad_json' });
+    expect(createRunMock).not.toHaveBeenCalled();
+  });
+
+  it('⚠️ `trigger.webhook` is untouched: valid credentials + an array is still 400, nothing stored', async () => {
+    armedMock.mockResolvedValue([workflow(TOKEN_HASH), sumitWorkflow(PATH_HASH)]);
+    for (const raw of ['[1]', 'not json', 'null']) {
+      expect(
+        await startRunFromWebhook({ method: 'POST', endpointId: ENDPOINT, secret: TOKEN, rawBody: raw }),
+      ).toEqual({ ok: false, reason: 'bad_json' });
+    }
+    expect(createRunMock).not.toHaveBeenCalled();
+  });
+});
+
+describe('⚠️ SUMIT sends a FORM — `json=<url-encoded object>` (measured 2026-09-23)', () => {
+  // The shape of the first real stored run, with the personal fields replaced.
+  const card = {
+    Folder: 1,
+    EntityID: 2,
+    Type: 'CreateOrUpdate',
+    Properties: {
+      Billing_Status: [3],
+      Billing_Customer: [{ ID: 9, Name: 'לקוח לדוגמה', Version: 6, Status: 0, SchemaID: 5 }],
+    },
+  };
+  const form = (value: string) => `json=${encodeURIComponent(value).replace(/%20/g, '+')}`;
+  const payloadOf = () => createRunMock.mock.calls[0][0].triggerPayload.body;
+
+  it('the `json` field is unwrapped into the object the handler reads', async () => {
+    armedMock.mockResolvedValue([sumitWorkflow(PATH_HASH)]);
+    expect(
+      await startRunFromWebhook({ method: 'POST', endpointId: PATH_SECRET, secret: '', rawBody: form(JSON.stringify(card)) }),
+    ).toMatchObject({ ok: true, acceptedStatus: 200 });
+    expect(payloadOf()).toEqual(card);
+  });
+
+  it('a `json` field that is not one object is kept as text, not dropped', async () => {
+    armedMock.mockResolvedValue([sumitWorkflow(PATH_HASH)]);
+    const raw = form('[1,2]');
+    await startRunFromWebhook({ method: 'POST', endpointId: PATH_SECRET, secret: '', rawBody: raw });
+    expect(payloadOf()).toEqual({ text: raw });
+  });
+
+  it('⚠️ `trigger.webhook` does NOT unwrap a form — still 400', async () => {
+    expect(
+      await startRunFromWebhook({ method: 'POST', endpointId: ENDPOINT, secret: TOKEN, rawBody: form(JSON.stringify(card)) }),
+    ).toEqual({ ok: false, reason: 'bad_json' });
+    expect(createRunMock).not.toHaveBeenCalled();
   });
 });

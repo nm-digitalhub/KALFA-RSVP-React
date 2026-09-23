@@ -295,6 +295,11 @@ describe('the starter templates against this gate', () => {
       // BY DESIGN here — it is filled from the previous node's output, which is
       // the whole point of this starter.
       'יצירת לקוח והפקת מסמך עבורו',
+      // One deliberate blank: the address SUMIT will call. It is minted in the
+      // editor and shown once, so no template can carry one — and the sentence
+      // below is the address-mode one, because a SUMIT trigger has no header
+      // secret to generate.
+      'תפיסת מסגרת השתנתה ב-SUMIT — התראה לצוות',
     ]);
 
     // ⚠️ EVERY ONE OF THESE NAMES THE NEXT ACTION, not just the field. An owner
@@ -314,6 +319,12 @@ describe('the starter templates against this gate', () => {
     ]);
     expect(blockersOf('שיחה קולית עם המתנה לתוצאה')).toEqual([
       'הצעד "שיחה עם סוכן קולי": לא נבחר ייעוד לשיחה. בחרו ייעוד מהרשימה, ואם היא ריקה — צרו ייעוד חדש ב-/admin/integrations/voximplant וקשרו לו rule.',
+    ]);
+    // The SUMIT trigger: one blank, and the ADDRESS-mode sentence — `authModeFor`
+    // answers by node type, so arming names the button that is actually on the
+    // panel rather than a secret this node never has.
+    expect(blockersOf('תפיסת מסגרת השתנתה ב-SUMIT — התראה לצוות')).toEqual([
+      'הצעד "תפיסת מסגרת השתנתה ב-SUMIT": לא נוצרה עדיין כתובת. לחצו על יצירת כתובת — היא תוצג פעם אחת בלבד, ומרגע שנשמרה לא ניתן לשחזר אותה.',
     ]);
     // The fan-out child: blocked for its SHAPE, not for a blank. Its steps need
     // a guest and its own trigger cannot supply one — which is the same thing

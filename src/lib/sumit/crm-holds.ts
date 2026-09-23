@@ -1,5 +1,7 @@
 import 'server-only';
 
+import { SUMIT_HOLDS_FOLDER_ID } from './hold-status';
+
 // Read-only SUMIT CRM access to the "תפיסות מסגרת" (frame holds) folder.
 // SUMIT exposes no API to release a hold or to be notified when one is
 // released — release only ever happens manually in their dashboard. This is
@@ -12,14 +14,15 @@ import 'server-only';
 // hold this session manually released in the dashboard came back as 3 with a
 // Billing_Date matching that campaign's authorized_at to the second.
 const SUMIT_CRM_LIST_URL = 'https://api.sumit.co.il/crm/data/listentities/';
-const HOLDS_FOLDER_ID = '1076735289';
+const HOLDS_FOLDER_ID = String(SUMIT_HOLDS_FOLDER_ID);
 
-// 2 (charged) is intentionally not modeled as a named export here — the
-// reconciler ignores it by design (see queues.ts's sumitHoldReconcile
-// comment): charging always goes through closeCampaignAndCharge, never
-// discovered after the fact from SUMIT.
-export const SUMIT_HOLD_STATUS_OPEN = 1;
-export const SUMIT_HOLD_STATUS_RELEASED = 3;
+// The folder id and status codes live in `hold-status.ts` — one definition,
+// shared with the workflow step that labels a SUMIT webhook — and are
+// re-exported here so existing imports keep working. 2 (charged) is still
+// intentionally not a named export: the reconciler ignores it by design (see
+// queues.ts's sumitHoldReconcile comment) — charging always goes through
+// closeCampaignAndCharge, never discovered after the fact from SUMIT.
+export { SUMIT_HOLD_STATUS_OPEN, SUMIT_HOLD_STATUS_RELEASED } from './hold-status';
 
 export interface SumitHoldEntity {
   entityId: number;

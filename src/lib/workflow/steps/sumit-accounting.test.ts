@@ -170,6 +170,9 @@ describe('action.sumit_create_customer', () => {
   });
 });
 
+/** SUMIT-named modules a step may import because they are data, not a client. */
+const PURE_SUMIT_MODULES = ['@/lib/sumit/hold-status'];
+
 describe('⚠️ the step layer never reaches SUMIT except through the port', () => {
   // THE ACTUAL GUARANTEE, and it cannot be expressed with a mock: a handler that
   // imported `@/lib/sumit/*` directly would still pass every test above while
@@ -187,15 +190,28 @@ describe('⚠️ the step layer never reaches SUMIT except through the port', ()
     // Anti-no-op: if the file moves, fail loudly rather than pass on an empty read.
     expect(source.length).toBeGreaterThan(1000);
 
-    const sumitImports = [...source.matchAll(/from\s+['"]([^'"]*sumit[^'"]*)['"]/g)].map(
-      (m) => m[1],
-    );
+    const sumitImports = [...source.matchAll(/from\s+['"]([^'"]*sumit[^'"]*)['"]/g)]
+      .map((m) => m[1])
+      // ONE named exception, and the next test is what earns it: `hold-status`
+      // is data — the holds folder id and what its status codes mean — with no
+      // import and no I/O, so it cannot reach SUMIT from a dry run or anywhere.
+      .filter((path) => !PURE_SUMIT_MODULES.includes(path!));
     expect(
       sumitImports,
       'a step handler must reach SUMIT through ctx.deps.accounting — a direct ' +
         'import bypasses the dry-run stub and would issue real documents from ' +
         'the editor’s test button',
     ).toEqual([]);
+  });
+
+  it('⚠️ the one exception stays PURE — no import, no fetch, nothing that could reach SUMIT', () => {
+    for (const path of PURE_SUMIT_MODULES) {
+      const file = join(__dirname, '..', '..', '..', path.replace('@/', ''), '') + '.ts';
+      const source = readFileSync(file, 'utf8');
+      expect(source.length, file).toBeGreaterThan(200);
+      expect(source, `${path} must import nothing`).not.toMatch(/^\s*import\b/m);
+      expect(source, `${path} must do no I/O`).not.toMatch(/\b(fetch|XMLHttpRequest|require)\s*\(/);
+    }
   });
 
   it('both handlers are registered, so the scan above is not guarding an empty set', () => {

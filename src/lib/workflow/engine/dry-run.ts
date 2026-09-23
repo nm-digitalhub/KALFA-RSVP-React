@@ -367,6 +367,16 @@ export async function dryRunWorkflow(args: {
   scenario: DryRunScenario;
   /** Node ids present in the graph, so the trace can name what never ran. */
   allNodeIds?: string[];
+  /**
+   * What an inbound HTTP trigger would have received, as `{{trigger.body}}`.
+   *
+   * ⚠️ ABSENT BY DEFAULT, AND THE EDITOR DOES NOT PASS IT YET. Without it a
+   * webhook or SUMIT trigger runs on an empty body — every field it publishes is
+   * `null` — which is the honest answer when nobody has supplied one. It exists
+   * so a test can drive a real payload shape through the real pipeline rather
+   * than through a copy of it.
+   */
+  triggerBody?: Record<string, unknown>;
 }): Promise<DryRunResult> {
   const { workflowId, storedDefinition, scenario } = args;
   const recording = createRecordingPorts(scenario);
@@ -392,6 +402,7 @@ export async function dryRunWorkflow(args: {
     ...(scenario.guestCase === 'one' ? { guest_name: 'דנה' } : {}),
     event_name: 'אירוע לדוגמה',
     event_date: '01.01.2027',
+    ...(args.triggerBody ? { body: args.triggerBody } : {}),
   };
 
   const outcome = await runWorkflow({
