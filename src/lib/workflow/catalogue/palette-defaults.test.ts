@@ -14,6 +14,9 @@
 //
 // So the rule is not about `topic`. It is: a field that presents a closed menu
 // must be seeded from that menu.
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+
 import { describe, expect, it } from 'vitest';
 
 import { PALETTE_ITEMS } from './schemas';
@@ -244,5 +247,52 @@ describe('⚠️ a custom-renderer field carries a Hebrew label, or JsonForms wr
 
   it('every one of them has a Hebrew label', () => {
     expect(offenders).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+
+describe('⚠️ every palette entry is type-checked against its own schema', () => {
+  // THE COMPILE-TIME HALF of the rule this file already enforces at run time.
+  //
+  // `PALETTE_ITEMS` is declared `PaletteItem[]` — the bare form, which carries
+  // no schema — so `defaultPropertiesData` was checked against nothing. That is
+  // how `trigger.webhook` came to seed `token` while its schema, uischema and
+  // NODE_REQUIRED_FIELDS all said `tokenHash`, with tsc silent and the whole
+  // suite green.
+  //
+  // `satisfies PaletteItem<typeof xSchema>` on each entry fixes that half: an
+  // undeclared key is now a BUILD error, not a test failure. MEASURED — adding
+  // `bogusFieldNotInSchema` to one entry produced
+  //   TS2353: Object literal may only specify known properties …
+  //
+  // ⚠️ IT DOES NOT REPLACE THE RUN-TIME CHECKS ABOVE, and the boundary is exact.
+  // `PaletteItem<T>.defaultPropertiesData` is `NodeDataProperties<T>`, which is
+  // `MakePropertiesOptional<…>` — so a MISSING required field still type-checks
+  // clean. Measured the same way: deleting a required default produced no error
+  // at all. The vendor's own starter adds `Required<NodeDataProperties<S>>` on
+  // the defaults constant to close that half; our defaults are inline, so the
+  // test above closes it instead. Both halves, two mechanisms.
+  //
+  // This test only guards that the clause is PRESENT — the compiler does the
+  // rest. Without it a 23rd node would silently opt out.
+  const source = readFileSync(join(__dirname, 'schemas.ts'), 'utf8');
+
+  const entries = [...source.matchAll(/^ {4}type: '([a-z_.]+)' satisfies KalfaNodeType,$/gm)];
+
+  it('the scan found the palette — not an empty file or a changed spelling', () => {
+    expect(entries.length).toBe(PALETTE_ITEMS.length);
+    expect(entries.length).toBeGreaterThan(20);
+  });
+
+  it('⚠️ each one carries `satisfies PaletteItem<typeof …Schema>`', () => {
+    const without = entries
+      .filter((entry, i) => {
+        const to = i + 1 < entries.length ? entries[i + 1]!.index : source.length;
+        return !source.slice(entry.index, to).includes('satisfies PaletteItem<');
+      })
+      .map((entry) => entry[1]);
+
+    expect(without).toEqual([]);
   });
 });

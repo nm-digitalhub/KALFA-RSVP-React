@@ -2623,7 +2623,7 @@ export const PALETTE_ITEMS: PaletteItem[] = [
         documentDownloadUrl: { type: 'string', label: 'קישור להורדת המסמך' },
       },
     },
-  },
+  } satisfies PaletteItem<typeof sumitCreateDocumentSchema>,
   {
     type: 'action.sumit_create_customer' satisfies KalfaNodeType,
     label: 'יצירת לקוח ב-SUMIT',
@@ -2654,7 +2654,7 @@ export const PALETTE_ITEMS: PaletteItem[] = [
         customerHistoryUrl: { type: 'string', label: 'קישור לכרטיס הלקוח' },
       },
     },
-  },
+  } satisfies PaletteItem<typeof sumitCreateCustomerSchema>,
   {
     type: 'action.ai_agent' satisfies KalfaNodeType,
     label: 'סוכן AI',
@@ -2692,7 +2692,7 @@ export const PALETTE_ITEMS: PaletteItem[] = [
       tools: [],
       errorPolicy: errorPolicyOptions.fail.value,
     },
-  },
+  } satisfies PaletteItem<typeof aiAgentSchema>,
   {
     type: 'action.start_voice_call' satisfies KalfaNodeType,
     label: 'שיחה עם סוכן קולי',
@@ -2755,7 +2755,7 @@ export const PALETTE_ITEMS: PaletteItem[] = [
       waitForOutcome: false,
       errorPolicy: errorPolicyOptions.continue.value,
     },
-  },
+  } satisfies PaletteItem<typeof voiceCallSchema>,
   {
     type: 'trigger.whatsapp_inbound' satisfies KalfaNodeType,
     label: 'הודעת וואטסאפ נכנסת',
@@ -2796,7 +2796,7 @@ export const PALETTE_ITEMS: PaletteItem[] = [
       // before this field must not silently narrow to one line.
       phoneNumberId: '',
     },
-  },
+  } satisfies PaletteItem<typeof triggerSchema>,
   {
     type: 'trigger.webhook' satisfies KalfaNodeType,
     label: 'קריאת Webhook נכנסת',
@@ -2852,7 +2852,7 @@ export const PALETTE_ITEMS: PaletteItem[] = [
       // its sha256.
       tokenHash: '',
     },
-  },
+  } satisfies PaletteItem<typeof webhookTriggerSchema>,
   {
     type: 'trigger.schedule' satisfies KalfaNodeType,
     label: 'לפי שעון',
@@ -2876,7 +2876,7 @@ export const PALETTE_ITEMS: PaletteItem[] = [
       time: '09:00',
       days: [],
     },
-  },
+  } satisfies PaletteItem<typeof scheduleSchema>,
   {
     type: 'logic.condition' satisfies KalfaNodeType,
     label: 'תנאי',
@@ -2947,7 +2947,7 @@ export const PALETTE_ITEMS: PaletteItem[] = [
         { id: 'false', sourceHandle: CONDITION_BRANCH_HANDLES.false, label: 'לא מתקיים' },
       ],
     },
-  },
+  } satisfies PaletteItem<typeof conditionSchema>,
   {
     type: 'logic.switch' satisfies KalfaNodeType,
     label: 'ניתוב לפי תנאים',
@@ -2999,7 +2999,7 @@ export const PALETTE_ITEMS: PaletteItem[] = [
         },
       ],
     },
-  },
+  } satisfies PaletteItem<typeof switchSchema>,
   {
     type: 'action.update_guest_status' satisfies KalfaNodeType,
     // Rendered as a decision node so the failure branch has a handle to leave
@@ -3026,7 +3026,7 @@ export const PALETTE_ITEMS: PaletteItem[] = [
       rsvpStatus: rsvpStatusOptions.attending.value,
       errorPolicy: errorPolicyOptions.fail.value,
     },
-  },
+  } satisfies PaletteItem<typeof updateGuestStatusSchema>,
   {
     type: 'action.send_whatsapp' satisfies KalfaNodeType,
     // Rendered as a decision node so the failure branch has a handle to leave
@@ -3052,7 +3052,7 @@ export const PALETTE_ITEMS: PaletteItem[] = [
       body: '',
       errorPolicy: errorPolicyOptions.fail.value,
     },
-  },
+  } satisfies PaletteItem<typeof sendWhatsappSchema>,
   {
     type: 'action.microsoft_send_email' satisfies KalfaNodeType,
     templateType: NodeType.DecisionNode,
@@ -3090,7 +3090,7 @@ export const PALETTE_ITEMS: PaletteItem[] = [
       saveToSentItems: true,
       errorPolicy: errorPolicyOptions.fail.value,
     },
-  },
+  } satisfies PaletteItem<typeof microsoftSendEmailSchema>,
   {
     type: 'action.start_rsvp_ai_callback' satisfies KalfaNodeType,
     templateType: NodeType.DecisionNode,
@@ -3116,7 +3116,7 @@ export const PALETTE_ITEMS: PaletteItem[] = [
       description: 'מפעיל שיחה חוזרת באמצעות סוכן ה-RSVP הקולי הקיים',
       errorPolicy: errorPolicyOptions.fail.value,
     },
-  },
+  } satisfies PaletteItem<typeof startRsvpAiCallbackSchema>,
   {
     type: 'action.notify_team' satisfies KalfaNodeType,
     // Rendered as a decision node so the failure branch has a handle to leave
@@ -3144,7 +3144,7 @@ export const PALETTE_ITEMS: PaletteItem[] = [
       level: notifyLevelOptions.warn.value,
       errorPolicy: errorPolicyOptions.continue.value,
     },
-  },
+  } satisfies PaletteItem<typeof notifyTeamSchema>,
   {
     type: 'action.set_guest_field' satisfies KalfaNodeType,
     templateType: NodeType.DecisionNode,
@@ -3170,7 +3170,7 @@ export const PALETTE_ITEMS: PaletteItem[] = [
       value: '',
       errorPolicy: errorPolicyOptions.fail.value,
     },
-  },
+  } satisfies PaletteItem<typeof setGuestFieldSchema>,
   {
     type: 'action.create_callback_request' satisfies KalfaNodeType,
     templateType: NodeType.DecisionNode,
@@ -3202,7 +3202,7 @@ export const PALETTE_ITEMS: PaletteItem[] = [
       note: '',
       errorPolicy: errorPolicyOptions.fail.value,
     },
-  },
+  } satisfies PaletteItem<typeof callbackRequestSchema>,
   {
     type: 'action.webhook' satisfies KalfaNodeType,
     // Decision node so the failure branch has a handle to leave from — the same
@@ -3246,7 +3246,7 @@ export const PALETTE_ITEMS: PaletteItem[] = [
       captureResponse: false,
       errorPolicy: errorPolicyOptions.fail.value,
     },
-  },
+  } satisfies PaletteItem<typeof webhookSchema>,
   {
     type: 'action.import_guest_list' satisfies KalfaNodeType,
     // Decision node so the failure branch has a handle to leave from — a file
@@ -3296,7 +3296,7 @@ export const PALETTE_ITEMS: PaletteItem[] = [
       description: 'מעלה לסקירה קובץ או אנשי קשר שהגיעו בוואטסאפ',
       errorPolicy: errorPolicyOptions.fail.value,
     },
-  },
+  } satisfies PaletteItem<typeof importGuestListSchema>,
   {
     type: 'logic.wait' satisfies KalfaNodeType,
     label: 'המתנה',
@@ -3317,7 +3317,7 @@ export const PALETTE_ITEMS: PaletteItem[] = [
       amount: 1,
       unit: waitUnitOptions.days.value,
     },
-  },
+  } satisfies PaletteItem<typeof waitSchema>,
   {
     type: 'action.send_template' satisfies KalfaNodeType,
     label: 'שליחת תבנית',
@@ -3338,7 +3338,7 @@ export const PALETTE_ITEMS: PaletteItem[] = [
       description: 'שולח לאורח תבנית מאושרת — אפשרי בכל זמן',
       messageKey: 'reminder_1',
     },
-  },
+  } satisfies PaletteItem<typeof sendTemplateSchema>,
   {
     type: 'action.start_for_each_guest' satisfies KalfaNodeType,
     // Decision node so a failure has a handle to leave from — a fan-out that
@@ -3375,7 +3375,7 @@ export const PALETTE_ITEMS: PaletteItem[] = [
       maxGuests: 25,
       errorPolicy: errorPolicyOptions.fail.value,
     },
-  },
+  } satisfies PaletteItem<typeof forEachGuestSchema>,
   {
     type: 'logic.set_value' satisfies KalfaNodeType,
     label: 'קביעת ערך',
@@ -3395,5 +3395,5 @@ export const PALETTE_ITEMS: PaletteItem[] = [
       description: 'מחשב ערך אחד לשימוש בצעדים הבאים',
       value: '',
     },
-  },
+  } satisfies PaletteItem<typeof setValueSchema>,
 ];
