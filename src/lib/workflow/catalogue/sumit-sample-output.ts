@@ -7,7 +7,7 @@ import {
   SUMIT_HOLD_FIELDS_OUTPUT,
   type SumitCardOutput,
   type SumitCardOutputField,
-} from './schemas';
+} from './sumit-card-output';
 
 // The SUMIT trigger's picker fields, derived from a REAL call instead of a list
 // typed by hand.
