@@ -67,6 +67,24 @@ export default defineConfig({
     // needs to import for browser-side code (catalogue/branch-handles.test.ts,
     // which pins the condition handle ids to the SDK's own getHandleId).
     server: { deps: { inline: ['@workflowbuilder/sdk'] } },
+    // Persist transformed modules across runs. Vitest's own diagnostic asked for
+    // it: MEASURED 2026-09-23, 39.11s of transforming — 27% of the run — redone
+    // from scratch on every `vitest run`.
+    //
+    // ⚠️ A TOP-LEVEL `test` OPTION IN 5.x, NOT `test.experimental`. The published
+    // docs still show `experimental.fsModuleCache` (Context7 indexes up to
+    // 4.1.6); the installed 5.0.1 types declare it beside `css` and `cache`, with
+    // `experimental_defineCacheKeyGenerator` deprecated in favour of
+    // `defineCacheKeyGenerator`. The installed types are the authority.
+    //
+    // SAFE HERE BECAUSE NOTHING TRANSFORMS ON AN OUTSIDE FACTOR. The key is the
+    // file's content, its id, Vite's environment config and coverage status; the
+    // docs warn only about plugins whose output depends on something else, and
+    // this config registers none. `test.env` above is applied at RUN time, not
+    // transform time, so the pinned TZ / NODE_ENV cannot be baked into a cached
+    // module. The cache lives in `node_modules/.vitest-cache`, so a reinstall
+    // clears it and git never sees it.
+    fsModuleCache: true,
   },
   resolve: {
     alias: {
