@@ -20,6 +20,7 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 import { PALETTE_ITEMS } from './schemas';
+import { nodePaletteSources } from '../node-sources';
 import {
   ARM_NOTICE_PATH,
   CALLBACK_TOPICS,
@@ -272,8 +273,9 @@ describe('⚠️ every palette entry is type-checked against its own schema', ()
   // `MakePropertiesOptional<…>` — so a MISSING required field still type-checks
   // clean. Measured the same way: deleting a required default produced no error
   // at all. The vendor's own starter adds `Required<NodeDataProperties<S>>` on
-  // the defaults constant to close that half; our defaults are inline, so the
-  // test above closes it instead. Both halves, two mechanisms.
+  // the defaults constant to close that half; ours cannot use it (`armNotice`
+  // is declared and deliberately never seeded), so the test above closes it
+  // instead. Both halves, two mechanisms.
   //
   // This test only guards that the clause is PRESENT — the compiler does the
   // rest. Without it a 23rd node would silently opt out.
@@ -281,9 +283,22 @@ describe('⚠️ every palette entry is type-checked against its own schema', ()
 
   const entries = [...source.matchAll(/^ {4}type: '([a-z_.]+)' satisfies KalfaNodeType,$/gm)];
 
+  // The entries that already moved to `nodes/<name>/<name>.ts`. Each such file
+  // holds exactly one palette item and must carry the same clause.
+  const nodeFiles = nodePaletteSources();
+
   it('the scan found the palette — not an empty file or a changed spelling', () => {
-    expect(entries.length).toBe(PALETTE_ITEMS.length);
-    expect(entries.length).toBeGreaterThan(20);
+    // Inline entries plus moved ones must account for EVERY palette item, so an
+    // entry that moved into a file the scan does not read fails here.
+    expect(entries.length + nodeFiles.length).toBe(PALETTE_ITEMS.length);
+    expect(entries.length + nodeFiles.length).toBeGreaterThan(20);
+  });
+
+  it('⚠️ each moved node file carries exactly one `satisfies PaletteItem<`', () => {
+    const wrong = nodeFiles
+      .filter(({ source: file }) => file.split('satisfies PaletteItem<').length - 1 !== 1)
+      .map(({ path }) => path);
+    expect(wrong).toEqual([]);
   });
 
   it('⚠️ each one carries `satisfies PaletteItem<typeof …Schema>`', () => {

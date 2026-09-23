@@ -1,9 +1,7 @@
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
-
 import { describe, expect, it, vi } from 'vitest';
 
 import { STEP_HANDLERS, type StepContext } from './index';
+import { assertCoversEveryNodeFolder, serverStepSources } from '../node-sources';
 
 // The AI step.
 //
@@ -126,14 +124,16 @@ describe('⚠️ the step layer never reaches a model except through the port', 
   // editor's test button — the dry run swaps PORTS, so a direct call walks
   // straight past it. Source-scanned for the same reason
   // sumit-accounting.test.ts scans.
-  it('steps/index.ts spawns no process and imports no AI client', () => {
-    const source = readFileSync(join(__dirname, 'index.ts'), 'utf8');
-    expect(source.length).toBeGreaterThan(1000);
+  it('no step handler spawns a process or imports an AI client', () => {
+    // Every server-side step file, not only `steps/index.ts` — see
+    // node-sources.ts for why a single path stopped being enough.
+    const files = serverStepSources();
+    expect(assertCoversEveryNodeFolder(files)).toEqual([]);
 
-    for (const forbidden of ['child_process', 'execFile', 'spawn(', '@ai-sdk/', "from 'ai'"]) {
-      expect(source, `steps/index.ts must reach a model only through ctx.deps.ai`).not.toContain(
-        forbidden,
-      );
+    for (const { path, source } of files) {
+      for (const forbidden of ['child_process', 'execFile', 'spawn(', '@ai-sdk/', "from 'ai'"]) {
+        expect(source, `${path} must reach a model only through ctx.deps.ai`).not.toContain(forbidden);
+      }
     }
   });
 

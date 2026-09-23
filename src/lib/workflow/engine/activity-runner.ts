@@ -19,7 +19,8 @@
 // down a path that never ran the first time.
 import { isKnownNodeType } from '../catalogue/nodes';
 import { SECRET_BEARING_NODE_TYPES, type KalfaNodeType } from '../catalogue/types';
-import { STEP_HANDLERS, readWaitSignal, type WorkflowTriggerPayload } from '../steps';
+import { STEP_HANDLERS, type WorkflowTriggerPayload } from '../steps';
+import { readWaitSignal } from './wait-signal';
 import type { ExecutionContext } from '../vendor/workflowbuilder/execution-core/execution-context';
 import { PermanentNodeExecutionError } from '../vendor/workflowbuilder/execution-core/errors';
 import { resolveTemplate } from '../vendor/workflowbuilder/execution-core/templates/resolve-template';

@@ -9,12 +9,11 @@
 //
 // Before this, `לפי שעון → שליחת וואטסאפ` armed cleanly and failed on its first
 // fire. The only warning was a sentence of prose in the trigger's own panel.
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
 import { findArmBlockers } from './arm-check';
+import { assertCoversEveryNodeFolder, serverStepSources } from '../node-sources';
 import {
   GUEST_SCOPED_NODE_TYPES,
   OWNER_WHATSAPP_MESSAGE_KINDS,
@@ -62,13 +61,15 @@ const FILLED: Record<string, Record<string, unknown>> = {
 
 describe('the guest-scoped list matches the handlers that enforce it', () => {
   it('is exactly the set of requireGuestContext call sites', () => {
-    const source = readFileSync(
-      join(process.cwd(), 'src/lib/workflow/steps/index.ts'),
-      'utf8',
+    // Every server-side step file — the registry AND each node folder's
+    // runtime — not just `steps/index.ts`: a handler that moved out would
+    // otherwise vanish from this set and fail with a misleading diff, or worse,
+    // move together with the list and pass while guarding nothing.
+    const files = serverStepSources();
+    expect(assertCoversEveryNodeFolder(files)).toEqual([]);
+    const guarded = files.flatMap(({ source }) =>
+      [...source.matchAll(/requireGuestContext\(\s*ctx,\s*'([\w.]+)'/g)].map((m) => m[1]!),
     );
-    const guarded = [
-      ...source.matchAll(/requireGuestContext\(\s*ctx,\s*'([\w.]+)'/g),
-    ].map((m) => m[1]!);
 
     expect([...new Set(guarded)].sort()).toEqual([...GUEST_SCOPED_NODE_TYPES].sort());
   });

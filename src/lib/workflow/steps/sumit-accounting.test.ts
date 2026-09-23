@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { STEP_HANDLERS, type StepContext } from './index';
+import { assertCoversEveryNodeFolder, serverStepSources } from '../node-sources';
 
 // The two SUMIT accounting nodes.
 //
@@ -184,13 +185,20 @@ describe('⚠️ the step layer never reaches SUMIT except through the port', ()
   // Source-scanned rather than mocked, for the same reason
   // admin-data-layer-coverage.test.ts scans: the thing being guarded is what the
   // file IMPORTS, and only the file can answer that.
-  it('steps/index.ts imports nothing from src/lib/sumit', () => {
-    const source = readFileSync(join(__dirname, 'index.ts'), 'utf8');
+  it('no step handler imports anything from src/lib/sumit', () => {
+    // Every server-side step file — the registry and each node folder's
+    // runtime. Anti-no-op: the scan must include every node folder on disk, so
+    // a handler that moved cannot take the guarantee with it silently.
+    const files = serverStepSources();
+    expect(assertCoversEveryNodeFolder(files)).toEqual([]);
 
-    // Anti-no-op: if the file moves, fail loudly rather than pass on an empty read.
-    expect(source.length).toBeGreaterThan(1000);
-
-    const sumitImports = [...source.matchAll(/from\s+['"]([^'"]*sumit[^'"]*)['"]/g)]
+    const sumitImports = files
+      // `from '…'` AND a bare side-effect `import '…'` — the second has no
+      // `from`, and a scan that only read `from` let it through (measured by
+      // fault injection 2026-09-24).
+      .flatMap(({ source }) => [
+        ...source.matchAll(/(?:\bfrom|^\s*import)\s+['"]([^'"]*sumit[^'"]*)['"]/gm),
+      ])
       .map((m) => m[1])
       // ONE named exception, and the next test is what earns it: `hold-status`
       // is data — the holds folder id and what its status codes mean — with no

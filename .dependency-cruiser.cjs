@@ -26,6 +26,32 @@ module.exports = {
       to: { path: '^src/lib/workflow/catalogue/schemas\\.ts$', reachable: true },
     },
 {
+    // ⚠️ THE PACKAGE, NOT A FILE. The rule above names `catalogue/schemas.ts` by
+    // path, so it cannot see the per-node editor files the one-folder-per-node
+    // move creates (`nodes/<name>/schema.ts`, `uischema.ts`, …) — each of which
+    // imports SDK runtime values exactly as the vendor starter does. This one
+    // names the SDK itself, so whichever editor file a server module reaches,
+    // directly or through any chain, the cruise fails.
+    //
+    // WHAT COUNTS AS SERVER: the worker, the engine and its step handlers, the
+    // adapter, the SDK-free half of every node folder (`definition.ts`,
+    // `runtime.ts`, `match.ts`), the SDK-free catalogue files, and the server
+    // data layers — `src/lib/data` included, because that is exactly where the
+    // 2026-09-23 SUMIT client-reference bug came in.
+    //
+    // `tsPreCompilationDeps` is on, so a TYPE-only SDK import counts too. That is
+    // deliberate: the SDK-free files are a contract, and "only a type" is how a
+    // value import usually starts.
+    name: 'server-code-must-not-reach-the-editor-sdk',
+    comment:
+      'Server-side workflow code must not reach @workflowbuilder/sdk, directly or transitively. The SDK is browser-only; in the Next server a value from it arrives as a client reference, and in the worker it adds megabytes for nothing. Node folders split for this: definition.ts / runtime.ts / match.ts are SDK-free; schema.ts, uischema.ts, default-properties-data.ts and the palette file are the editor side.',
+    severity: 'error',
+    from: {
+      path: '^(worker/|src/lib/workflow/(steps|engine|adapter)/|src/lib/workflow/nodes/[^/]+/(definition|runtime|match)\\.ts$|src/lib/workflow/catalogue/(types|nodes|arm-check)\\.ts$|src/lib/(data|queue|ops)/)',
+    },
+    to: { path: '@workflowbuilder/sdk', reachable: true },
+  },
+  {
     name: 'worker-no-request-scoped-next',
     comment: 'The pg-boss worker (worker/**) and the CLI scripts (scripts/**) are non-request processes; neither may (transitively) reach request-scoped Next APIs (next/headers|navigation|cache). Keep their send paths request-free (admin client) — see resolveSendableContacts. scripts/ was added 15.8: the rule covered only worker/, so `npm run worker:deps` passed while scripts/fleet-agent-cli.ts pulled the same next/headers chain in through sendPushToUser. A guard over one of two identical entry points is half a guard.',
     severity: 'error',

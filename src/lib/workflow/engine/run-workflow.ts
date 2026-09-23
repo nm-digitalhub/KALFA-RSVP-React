@@ -4,7 +4,8 @@
 // fakes. It owns no I/O of its own — every write goes through the ports — so the
 // whole execution path is exercisable without a database.
 import { toWorkflowDefinition, type KalfaNode } from '../adapter/to-definition';
-import { WORKFLOW_WAIT_CODE, type WorkflowTriggerPayload } from '../steps';
+import type { WorkflowTriggerPayload } from '../steps';
+import { WORKFLOW_WAIT_CODE } from './wait-signal';
 import { runGraph } from '../vendor/workflowbuilder/execution-core/graph-runner';
 import type { EventEmitterPort } from '../vendor/workflowbuilder/execution-core/ports/event-emitter.port';
 
