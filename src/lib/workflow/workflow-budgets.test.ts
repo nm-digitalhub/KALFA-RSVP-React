@@ -138,6 +138,7 @@ describe('a node that overruns its budget', () => {
         integrations: { execute: async () => ({ status: 200 }) },
         // Never reached by these tests; present because the port is required —
         // an optional one would let a document node silently issue nothing.
+        ai: { run: async () => ({ text: '', costUsd: null, sessionId: null }) },
         accounting: {
           createDocument: async () => ({
             documentId: 1,

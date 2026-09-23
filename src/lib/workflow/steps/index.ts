@@ -33,11 +33,14 @@ import {
   type MicrosoftMailContentType,
   type MicrosoftMailImportance,
   SUMIT_DOCUMENT_TYPES,
+  AI_AGENT_MAX_TURNS,
+  AI_AGENT_MODELS,
 } from '../catalogue/types';
 
 import type {
   GuestActionsPort,
   AccountingPort,
+  AiAgentPort,
   IntegrationsPort,
   OutboundWebhookPort,
   TeamAlertsPort,
@@ -186,6 +189,8 @@ export type StepContext = {
     webhook: OutboundWebhookPort;
     integrations: IntegrationsPort;
     accounting: AccountingPort;
+    /** One headless Claude run. See AiAgentPort. */
+    ai: AiAgentPort;
   };
 };
 
@@ -262,7 +267,17 @@ function requireGuestContext(
 // It performs no side effect. By the time a run exists the request has already
 // been received, authenticated by its token and persisted as the trigger payload.
 const webhookTrigger: StepHandler = async (_config, ctx) => ({
-  output: { body: ctx.trigger.body ?? {} },
+  output: {
+    body: ctx.trigger.body ?? {},
+    // ⚠️ PUBLISHED SEPARATELY, AND IT HAS TO BE RETURNED HERE TOO. The query
+    // string was added to the trigger payload and to this node's outputSchema on
+    // 2026-09-22 — but not to this return, so `{{nodes.<trigger>.query.x}}`
+    // resolved to nothing while the picker happily offered it. A declaration is
+    // a promise the HANDLER keeps; declaring without returning is the same class
+    // of defect as returning without declaring, and the same gate now catches
+    // both.
+    query: ctx.trigger.query ?? {},
+  },
 });
 
 // ---------------------------------------------------------------------------
@@ -1771,6 +1786,75 @@ const sumitCreateCustomer: StepHandler = async (config, ctx) => {
   return { output: result };
 };
 
+// ---------------------------------------------------------------------------
+// action.ai_agent — one headless Claude run, as a workflow step
+// ---------------------------------------------------------------------------
+
+/**
+ * Ask a model, and put its answer on the run.
+ *
+ * ⚠️ IT REACHES THE MODEL ONLY THROUGH `ctx.deps.ai`, which is the property the
+ * dry run depends on. The editor's "הרצת בדיקה" panel promises the run changes
+ * nothing; a model call changes no row but does cost money and does return prose
+ * an owner could mistake for a real answer. The dry run swaps PORTS, so a future
+ * edit that spawned the CLI directly here would bill a card from a test button
+ * — the same trap `sumit-accounting.test.ts` source-scans for.
+ *
+ * ⚠️ THE ANSWER IS TEXT, AND THAT IS THE WHOLE CONTRACT. No JSON parsing, no
+ * schema coercion, no "the model said yes so branch left". A step that tried to
+ * interpret the answer would be deciding, silently and differently every run,
+ * what counts as agreement. Branching stays where it already works: put a
+ * `logic.condition` after this node and compare `{{nodes.<id>.text}}` yourself,
+ * in a rule that is visible on the canvas and the same on every run.
+ */
+const aiAgent: StepHandler = async (config, ctx) => {
+  const prompt = readString(config, 'systemPrompt').trim();
+  if (prompt === '') {
+    throw new PermanentNodeExecutionError(
+      'invalid_config',
+      'הצעד "סוכן AI" לא הוגדר עם הנחיה.',
+    );
+  }
+
+  const model = readEnum(config, 'model', [...AI_AGENT_MODELS], 'action.ai_agent');
+
+  const rawTurns = config.maxTurns;
+  const requested = typeof rawTurns === 'number' ? rawTurns : Number(rawTurns);
+  // Clamped rather than refused: a value outside the range is a slider that
+  // moved, not a step nobody configured, and failing a run over it would be the
+  // wrong trade. The CEILING is what matters — it is what stops a loop.
+  const maxTurns = Number.isFinite(requested)
+    ? Math.min(Math.max(Math.floor(requested), AI_AGENT_MAX_TURNS.min), AI_AGENT_MAX_TURNS.max)
+    : AI_AGENT_MAX_TURNS.default;
+
+  // ⚠️ NAMES ONLY, AND THE PORT DOES NOT ACT ON THEM YET. `apiKey` is part of the
+  // SDK control's fixed row shape and is deliberately never read — a diagram is
+  // exportable. The names are collected here so the shape is right the day a
+  // tool layer exists; until then the live port drops them, and the panel says
+  // so in as many words.
+  const tools = Array.isArray(config.tools)
+    ? config.tools
+        .map((row) =>
+          row && typeof row === 'object' && typeof (row as { tool?: unknown }).tool === 'string'
+            ? (row as { tool: string }).tool.trim()
+            : '',
+        )
+        .filter((name) => name !== '')
+    : [];
+
+  const answer = await ctx.deps.ai.run({ prompt, model, tools, maxTurns });
+
+  return {
+    output: {
+      text: answer.text,
+      // Published so a run's cost is visible on the step that spent it, the way
+      // the fleet's own index line records it per role.
+      costUsd: answer.costUsd,
+      sessionId: answer.sessionId,
+    },
+  };
+};
+
 export const STEP_HANDLERS: Record<KalfaNodeType, StepHandler> = {
   'trigger.whatsapp_inbound': whatsappInbound,
   'trigger.webhook': webhookTrigger,
@@ -1793,4 +1877,5 @@ export const STEP_HANDLERS: Record<KalfaNodeType, StepHandler> = {
   'logic.set_value': setValue,
   'action.sumit_create_document': sumitCreateDocument,
   'action.sumit_create_customer': sumitCreateCustomer,
+  'action.ai_agent': aiAgent,
 };

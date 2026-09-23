@@ -33,6 +33,7 @@ import { RUN_ABANDONED_CODE, STEP_IN_FLIGHT_CODE } from './ports';
 import type {
   GuestActionsPort,
   AccountingPort,
+  AiAgentPort,
   IntegrationsPort,
   OutboundWebhookPort,
   StepLedgerPort,
@@ -56,6 +57,7 @@ export type ActivityRunnerArgs = {
   webhook: OutboundWebhookPort;
   integrations: IntegrationsPort;
   accounting: AccountingPort;
+  ai: AiAgentPort;
   /**
    * The queue's own "this job is no longer yours" signal.
    *
@@ -177,7 +179,7 @@ function resolveConfigTemplates(
 export function createActivityRunner<TNode extends RunnableNode>(
   args: ActivityRunnerArgs,
 ): ActivityRunnerPort<TNode> {
-  const { runId, workflowId, trigger, ledger, guests, alerts, webhook, integrations, accounting, signal, onWait } =
+  const { runId, workflowId, trigger, ledger, guests, alerts, webhook, integrations, accounting, ai, signal, onWait } =
     args;
 
   return {
@@ -319,7 +321,7 @@ export function createActivityRunner<TNode extends RunnableNode>(
             // Only `logic.wait` reads it. See StepContext — a wait cannot tell its
             // own resumption from a first arrival, because the whole graph replays.
             ...(claim.resumedFromWait ? { resumedFromWait: true } : {}),
-            deps: { guests, alerts, webhook, integrations, accounting },
+            deps: { guests, alerts, webhook, integrations, accounting, ai },
           }),
         );
         // Persisted AFTER the side effect and BEFORE the runner propagates, so a

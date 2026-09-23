@@ -23,6 +23,7 @@ import type {
   OutboundWebhookPort,
   IntegrationsPort,
   AccountingPort,
+  AiAgentPort,
 } from './ports';
 import { runWorkflow, type RunWorkflowOutcome } from './run-workflow';
 
@@ -81,7 +82,8 @@ export type DryRunEffect = {
     | 'set_guest_field'
     | 'callback_request'
     /** A SUMIT document or customer that WOULD have been created. */
-    | 'accounting';
+    | 'accounting'
+    | 'ai';
   description: string;
 };
 
@@ -315,8 +317,40 @@ function createRecordingPorts(scenario: DryRunScenario) {
     },
   };
 
+  /**
+   * ⚠️ A DRY RUN NEVER REACHES A MODEL, and this is the only thing standing
+   * between the editor's "הרצת בדיקה" button and a billed Claude session.
+   *
+   * The panel promises the run changes nothing. A model call changes nothing in
+   * the database — but it costs money, takes seconds, and its answer would look
+   * to the owner exactly like a real one. So the stub reports what WOULD be
+   * asked and answers with a marked string rather than prose that could be
+   * mistaken for the model's.
+   *
+   * Same shape as the accounting stub above and for the same reason: the dry run
+   * swaps PORTS, so a handler that reached a model any other way would walk
+   * straight past this.
+   */
+  const ai: AiAgentPort = {
+    async run(input) {
+      effects.push({
+        kind: 'ai',
+        description: `היה שואל את המודל (${input.model})${
+          input.tools.length > 0 ? ` עם ${input.tools.length} כלים` : ' בלי כלים'
+        } — לא בוצעה קריאה אמיתית`,
+      });
+      return {
+        text: '[הרצה יבשה — המודל לא נשאל]',
+        // Null, not 0: a dry run has no cost, and 0 would read as "asked and
+        // it was free".
+        costUsd: null,
+        sessionId: null,
+      };
+    },
+  };
+
   return {
-    deps: { ledger, runs, guests, alerts, webhook, integrations, accounting },
+    deps: { ledger, runs, guests, alerts, webhook, integrations, accounting, ai },
     steps,
     effects,
     getStatus: () => status,

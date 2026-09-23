@@ -31,6 +31,7 @@ function ctx(overrides: Partial<StepContext> = {}) {
       },
       integrations: {} as StepContext['deps']['integrations'],
       accounting: {} as StepContext['deps']['accounting'],
+      ai: { run: async () => ({ text: '', costUsd: null, sessionId: null }) },
     },
     ...overrides,
   } satisfies StepContext;

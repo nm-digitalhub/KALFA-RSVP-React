@@ -15,7 +15,7 @@ import { createGuestActions } from './guest-actions';
 import { markParkedRunReady } from './wake-store';
 import { createTeamAlerts } from './team-alerts';
 import { createOutboundWebhook } from './outbound-webhook';
-import type { AccountingPort, IntegrationsPort } from './engine/ports';
+import type { AccountingPort, AiAgentPort, IntegrationsPort } from './engine/ports';
 import type { WorkflowTriggerPayload } from './steps';
 import {
   createExecutionLog,
@@ -50,6 +50,96 @@ const integrations: IntegrationsPort = {
  * message, not a silent no-op that would leave a workflow "completed" with no
  * document.
  */
+/**
+ * The LIVE AI port — one headless `claude -p` run.
+ *
+ * ⚠️ IT SHELLS THE SAME CLI THE FLEET ALREADY RUNS, and that is the whole design.
+ * `.claude/fleet/bin/run-role.sh` has driven Claude headless in this repo for
+ * months: OAuth token rather than an API key, per-tier settings file rather than
+ * an allow-list in code, a `PreToolUse` hook that blocks before permission
+ * evaluation, a hard timeout and a JSON trace carrying cost and session id.
+ * Reaching for `@ai-sdk/openai` instead would have meant a second credential, a
+ * second permission model and a second thing to audit — for a capability this
+ * machine already has.
+ *
+ * ⚠️ NO TOOLS, AND THE NODE'S `tools` LIST GOES NOWHERE ON PURPOSE.
+ *
+ * An earlier version of this port required an env var naming a settings file
+ * that would gate the model's tools. That file did not exist and was never
+ * written — the name was invented here and appeared nowhere else in the repo —
+ * so the node could be armed and would then fail on its first run looking for
+ * it. The requirement is removed rather than papered over: what this port does
+ * today is ASK A MODEL AND RETURN TEXT, which is complete and useful on its own.
+ *
+ * `--permission-mode dontAsk` with no settings file is fail-closed by
+ * construction: there is no TTY to approve anything, so a tool call is denied
+ * rather than prompted. The model answers from the prompt alone.
+ *
+ * GIVING IT REAL TOOLS IS A SEPARATE PIECE OF WORK — an MCP server exposing
+ * KALFA capabilities, a settings file that permits exactly those, and tests.
+ * Until that exists the node's `tools` rows are collected from the diagram and
+ * dropped here, which is why nothing in this function reads them.
+ *
+ * ⚠️ NO SECRET TRAVELS IN THE DIAGRAM. The token is read from the environment
+ * here. That is why `action.ai_agent` is absent from `SECRET_BEARING_NODE_TYPES`
+ * — there is nothing to defer, and `{{secrets.…}}` in one of its fields would
+ * (correctly) throw.
+ */
+const ai: AiAgentPort = {
+  async run(input) {
+    const { execFile } = await import('node:child_process');
+    const { promisify } = await import('node:util');
+    const run = promisify(execFile);
+
+    // ⚠️ `execFile`, NOT `exec`. The prompt is owner-authored text that has been
+    // through `{{…}}` resolution, so it can contain anything a guest ever wrote.
+    // A shell would interpret it; an argv array does not.
+    let stdout: string;
+    try {
+      ({ stdout } = await run(
+        'claude',
+        [
+          '-p',
+          input.prompt,
+          // Fail-closed with no settings file: `dontAsk` plus no TTY means a
+          // tool call is denied, never prompted.
+          '--permission-mode', 'dontAsk',
+          '--setting-sources', 'project',
+          '--model', input.model,
+          '--max-turns', String(input.maxTurns),
+          '--output-format', 'json',
+        ],
+        {
+          // Bounded twice: the CLI has no budget of its own, and a workflow step
+          // holds a pg-boss lease while it waits.
+          timeout: AI_TIMEOUT_MS,
+          maxBuffer: 8 * 1024 * 1024,
+          env: process.env,
+        },
+      ));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(`הקריאה למודל נכשלה: ${message}`);
+    }
+
+    let parsed: { result?: unknown; total_cost_usd?: unknown; session_id?: unknown };
+    try {
+      parsed = JSON.parse(stdout) as typeof parsed;
+    } catch {
+      throw new Error('המודל החזיר תשובה שאינה JSON');
+    }
+
+    return {
+      text: typeof parsed.result === 'string' ? parsed.result : '',
+      costUsd: typeof parsed.total_cost_usd === 'number' ? parsed.total_cost_usd : null,
+      sessionId: typeof parsed.session_id === 'string' ? parsed.session_id : null,
+    };
+  },
+};
+
+/** Ten minutes. Longer than any sane single-step prompt, shorter than a lease. */
+const AI_TIMEOUT_MS = 10 * 60 * 1000;
+
 const accounting: AccountingPort = {
   async createDocument(input) {
     const { createDocumentSumit } = await import('@/lib/sumit/accounting');
@@ -285,6 +375,7 @@ export async function handleWorkflowRun(
       webhook: createOutboundWebhook(),
       integrations,
       accounting,
+      ai,
       // Only the real path logs. A dry run passes no log and returns its trace
       // directly — nothing to stream, and nothing to write.
       log: createExecutionLog(),

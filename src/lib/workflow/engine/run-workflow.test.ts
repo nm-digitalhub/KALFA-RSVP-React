@@ -121,6 +121,9 @@ function deps(guestCount = 1): WorkflowEngineDeps & {
     alerts: alerts.port,
     webhook: { post: async () => ({ ok: true, status: 200 }) },
     integrations: { execute: async () => ({ status: 200 }) },
+    // Never reached by these tests; present because the port is required — an
+    // optional one would let an AI node silently answer nothing.
+    ai: { run: async () => ({ text: '', costUsd: null, sessionId: null }) },
     // Never reached by these tests; present because the port is required —
     // an optional one would let a document node silently issue nothing.
     accounting: {

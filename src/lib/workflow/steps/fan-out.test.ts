@@ -38,6 +38,7 @@ function ctx(guests: Partial<GuestActionsPort>, trigger: Partial<StepContext['tr
       },
       integrations: {} as StepContext['deps']['integrations'],
       accounting: {} as StepContext['deps']['accounting'],
+      ai: { run: async () => ({ text: '', costUsd: null, sessionId: null }) },
     },
   } satisfies StepContext;
 }

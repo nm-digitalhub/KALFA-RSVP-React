@@ -133,6 +133,7 @@ export async function runWorkflow(args: RunWorkflowArgs): Promise<RunWorkflowOut
     webhook: deps.webhook,
     integrations: deps.integrations,
     accounting: deps.accounting,
+    ai: deps.ai,
     ...(args.signal ? { signal: args.signal } : {}),
     onWait: (wait) => {
       parked = wait;

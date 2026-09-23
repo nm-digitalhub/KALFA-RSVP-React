@@ -728,6 +728,98 @@ export interface AccountingPort {
   }): Promise<{ customerId: number; customerHistoryUrl: string | null }>;
 }
 
+/**
+ * One headless Claude run, for `action.ai_agent`.
+ *
+ * ⚠️ THIS IS NOT A NEW AI PROVIDER, AND DELIBERATELY SO. The repo already runs
+ * Claude headless for the fleet — `.claude/fleet/bin/run-role.sh` shells
+ * `claude -p … --settings <tier file> --output-format json`, authenticating with
+ * `CLAUDE_CODE_OAUTH_TOKEN` rather than an API key. MEASURED 2026-09-23: there
+ * is no AI provider key anywhere in the environment, and `ai` / `@ai-sdk/openai`
+ * are installed with ZERO imports in the entire codebase. Adding a second way to
+ * reach a model would mean a second credential, a second permission model and a
+ * second place to audit.
+ *
+ * ⚠️ WHICH TOOLS THE MODEL MAY USE IS A FILE, NOT AN ARGUMENT. The settings file
+ * this port passes is the gate: `dontAsk` makes it fail-closed, `deny` always
+ * beats `allow`, and a `PreToolUse` hook blocks before permission evaluation so
+ * an allow rule cannot override it. That is three walls the fleet already
+ * relies on, reused rather than reinvented.
+ *
+ * The port takes a PROMPT and returns TEXT. It does not know what a workflow is,
+ * and the handler does not know how a model is reached — the same split every
+ * other port here keeps.
+ */
+export interface AiAgentPort {
+  run(input: {
+    /** The system prompt, already `{{…}}`-resolved by the engine. */
+    prompt: string;
+    /** Model alias as the CLI spells it: `haiku`, `sonnet`. */
+    model: string;
+    /** Tool names this node declared. The settings file is what enforces them. */
+    tools: readonly string[];
+    /** Hard ceiling on agent turns, so a loop cannot run the clock out. */
+    maxTurns: number;
+  }): Promise<{
+    /** What the model answered. Empty string is a legitimate answer. */
+    text: string;
+    /** Reported by `--output-format json`; null when the CLI did not give one. */
+    costUsd: number | null;
+    /** For correlating a run with the CLI's own trace. */
+    sessionId: string | null;
+  }>;
+}
+
+/**
+ * One headless Claude run, for `action.ai_agent`.
+ *
+ * ⚠️ NOT A NEW AI PROVIDER, DELIBERATELY. This repo already runs Claude headless
+ * for the fleet — `.claude/fleet/bin/run-role.sh` shells
+ * `claude -p … --settings <tier file> --output-format json` and authenticates
+ * with `CLAUDE_CODE_OAUTH_TOKEN`, not an API key. MEASURED 2026-09-23: there is
+ * no AI provider key anywhere in the environment, and `ai` / `@ai-sdk/openai`
+ * are installed with ZERO imports in the whole codebase. A second route to a
+ * model would mean a second credential, a second permission model and a second
+ * thing to audit.
+ *
+ * ⚠️ `tools` IS CARRIED BUT NOT YET HONOURED, and the field says so rather than
+ * pretending. The node collects tool NAMES from the diagram; the live port drops
+ * them, because the thing that would make them mean something — an MCP server
+ * exposing KALFA capabilities, plus a settings file permitting exactly those —
+ * does not exist yet. An earlier version of this port demanded such a file by an
+ * env var that was never created anywhere, which made the node armable and
+ * unrunnable. What the node does today is ask a model and return text.
+ *
+ * ⚠️ AND THAT IS WHY `action.ai_agent` IS ABSENT FROM `SECRET_BEARING_NODE_TYPES`.
+ * A `{{secrets.…}}` reference only means something in a node whose PORT performs
+ * the substitution before the socket (`action.webhook` is the only one). This
+ * port reads its token from the environment itself, so the diagram never carries
+ * a credential and there is nothing to defer.
+ *
+ * The port takes a prompt and returns text. It does not know what a workflow is,
+ * and the handler does not know how a model is reached — the same split every
+ * other port here keeps.
+ */
+export interface AiAgentPort {
+  run(input: {
+    /** The system prompt, already `{{…}}`-resolved by the engine. */
+    prompt: string;
+    /** Model alias as the CLI spells it: `haiku`, `sonnet`. */
+    model: string;
+    /** Tool names the node declared. The settings file is what enforces them. */
+    tools: readonly string[];
+    /** Hard ceiling on agent turns, so a loop cannot run the clock out. */
+    maxTurns: number;
+  }): Promise<{
+    /** What the model answered. An empty string is a legitimate answer. */
+    text: string;
+    /** From `--output-format json`; null when the CLI reported none. */
+    costUsd: number | null;
+    /** For correlating a step with the CLI's own trace. */
+    sessionId: string | null;
+  }>;
+}
+
 export type WorkflowEngineDeps = {
   ledger: StepLedgerPort;
   runs: RunStorePort;
@@ -753,6 +845,8 @@ export type WorkflowEngineDeps = {
    * stub that issues nothing.
    */
   accounting: AccountingPort;
+  /** One headless Claude run. See AiAgentPort. */
+  ai: AiAgentPort;
   /** Omitted by the dry run, which returns its trace directly. */
   log?: ExecutionLogPort;
 };

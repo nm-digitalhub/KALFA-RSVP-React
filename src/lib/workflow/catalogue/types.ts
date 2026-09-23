@@ -41,6 +41,7 @@ export const NODE_TYPES = [
   'logic.set_value',
   'action.sumit_create_document',
   'action.sumit_create_customer',
+  'action.ai_agent',
 ] as const;
 
 export type KalfaNodeType = (typeof NODE_TYPES)[number];
@@ -852,6 +853,47 @@ export const SECRET_NAME_REGEX = /^[A-Za-z0-9_-]{1,64}$/;
 export const SECRET_BEARING_NODE_TYPES: readonly string[] = ['action.webhook'];
 
 // ---------------------------------------------------------------------------
+// action.ai_agent
+// ---------------------------------------------------------------------------
+
+/**
+ * The models this node may ask, spelled as the `claude` CLI spells them.
+ *
+ * ⚠️ ALIASES, NOT MODEL IDS. `run-role.sh` passes `--model "$MODEL"` with values
+ * from `fleet.json` (`haiku`, `sonnet`), and the CLI resolves an alias to
+ * whatever the current model behind it is. Pinning an id here would freeze this
+ * node on a model that is eventually retired, and the fleet would already have
+ * moved on.
+ */
+export const AI_AGENT_MODELS = ['haiku', 'sonnet'] as const;
+export type AiAgentModel = (typeof AI_AGENT_MODELS)[number];
+export const aiAgentModelOptions = [
+  { value: 'haiku', label: 'מהיר (haiku)' },
+  { value: 'sonnet', label: 'חזק (sonnet)' },
+];
+
+/** Bounds a single step. Low on purpose — a workflow step is not a conversation. */
+export const AI_AGENT_MAX_TURNS = { min: 1, max: 20, default: 4 } as const;
+
+export type AiAgentConfig = {
+  /** Free text with `{{…}}` references, resolved before the handler sees it. */
+  systemPrompt: string;
+  model: AiAgentModel;
+  maxTurns: number;
+  /**
+   * The tools the node asks for, in the SDK's fixed `AiTools` row shape.
+   *
+   * ⚠️ `apiKey` IS PART OF THAT SHAPE AND WE LEAVE IT EMPTY. The vendor's control
+   * is a repeater bound to `{ id, sourceHandle, tool, description, apiKey }` and
+   * the shape cannot be changed (its own docs: "Surface specific to the demo's
+   * AI-agent node"). Our tools are KALFA capabilities reached through the
+   * settings file, so none of them has a per-tool key — and a diagram is
+   * exportable, which is why nothing would justify putting one there.
+   */
+  tools?: readonly { tool?: string; description?: string; apiKey?: string }[];
+};
+
+// ---------------------------------------------------------------------------
 // action.set_guest_field
 // ---------------------------------------------------------------------------
 
@@ -1016,6 +1058,7 @@ export type SumitDocumentTypeOption = (typeof SUMIT_DOCUMENT_TYPES)[number];
 export type KalfaNodeConfig =
   | { type: 'trigger.whatsapp_inbound'; config: WhatsappInboundConfig }
   | { type: 'trigger.webhook'; config: WebhookTriggerConfig }
+  | { type: 'action.ai_agent'; config: AiAgentConfig }
   | { type: 'trigger.schedule'; config: ScheduleTriggerConfig }
   | { type: 'logic.condition'; config: ConditionConfig }
   | { type: 'logic.switch'; config: SwitchConfig }
@@ -1173,6 +1216,18 @@ export const NODE_DEPLOYMENT_BINDINGS: Partial<
   'action.create_callback_request': { topic: 'catalogue' },
   'action.start_for_each_guest': { targetWorkflowId: 'identifier' },
   'action.webhook': { url: 'secret', headers: 'secret' },
+  // ⚠️ `secret`, WHICH STRIPS THE WHOLE ARRAY ON EXPORT — and that is the right
+  // trade even though the tool NAMES would travel fine.
+  //
+  // `AiTools` is a repeater bound to a row shape we cannot change:
+  // `{ id, sourceHandle, tool, description, apiKey }`, per the vendor's own
+  // docs ("Surface specific to the demo's AI-agent node"). The handler never
+  // reads `apiKey` and the panel tells the owner not to type one — but a
+  // diagram is EXPORTABLE, the editor's menu puts one in a copyable box, and a
+  // field that CAN hold a credential eventually does. Losing re-enterable tool
+  // names at the destination costs a minute; exporting a key someone typed
+  // anyway is not recoverable.
+  'action.ai_agent': { tools: 'secret' },
   // Both SUMIT ids point INTO this installation: they are our own reference for
   // a customer, so a diagram carrying one would reach for a record that does not
   // exist anywhere else.
@@ -1190,6 +1245,7 @@ export const NODE_DEPLOYMENT_BINDINGS: Partial<
 export const NODE_REQUIRED_FIELDS: Record<KalfaNodeType, string[]> = {
   'trigger.whatsapp_inbound': ['label', 'description'],
   'trigger.webhook': ['label', 'description', 'endpointId', 'tokenHash'],
+  'action.ai_agent': ['label', 'description', 'systemPrompt', 'model'],
   'trigger.schedule': ['label', 'description', 'time'],
   'logic.condition': ['label', 'description', 'field', 'operator'],
   'logic.switch': ['label', 'description'],

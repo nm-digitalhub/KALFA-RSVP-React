@@ -257,3 +257,75 @@ describe('the secrets namespace is scoped to the ONE NODE that can substitute it
     expect(line).not.toContain('secrets.ACME');
   });
 });
+
+// ---------------------------------------------------------------------------
+
+describe('⚠️ every {{nodes.…}} reference in a starter names a field its node publishes', () => {
+  // THE FAILURE THIS PINS HAPPENED IN PRODUCTION. On 2026-09-14 a real run died
+  // with `Unresolved template reference: {{nodes.voice-wait-call.outcome}}` —
+  // the switch named a field the call node had not produced on that path. The
+  // template was fixed afterwards by marking the reference optional, and no
+  // check existed that would have caught it before shipping.
+  //
+  // A reference is only as good as the output schema it lands on, and the two
+  // live in different files written at different times. This is the join.
+  //
+  // ⚠️ AN OPTIONAL REFERENCE (`?`) IS ALLOWED TO NAME AN UNDECLARED FIELD, but
+  // it is reported, because it is usually a SYMPTOM: the author knew the field
+  // existed from reading the handler, and the picker could not offer it. Both
+  // cases found when this was written — `action.import_guest_list.reason` and
+  // `action.start_for_each_guest.reason` — were exactly that, and were fixed by
+  // declaring the fields rather than by keeping the `?` and moving on.
+  it('no reference names a node that is not in the diagram', async () => {
+    const { DIAGRAM_TEMPLATES } = await import('./templates');
+    const strays: string[] = [];
+    for (const template of DIAGRAM_TEMPLATES) {
+      const ids = new Set(template.value.diagram.nodes.map((n) => n.id));
+      for (const [, nodeId, path] of JSON.stringify(template.value.diagram).matchAll(
+        /\{\{nodes\.([A-Za-z0-9_-]+)\.([A-Za-z0-9_.]+?)\??(?:\s*\|[^}]*)?\}\}/g,
+      )) {
+        if (!ids.has(nodeId!)) strays.push(`${template.value.name}: {{nodes.${nodeId}.${path}}}`);
+      }
+    }
+    expect(strays).toEqual([]);
+  });
+
+  it('⚠️ and names a field that node declares — optional or not', async () => {
+    const { DIAGRAM_TEMPLATES } = await import('./templates');
+    const { PALETTE_ITEMS } = await import('./schemas');
+
+    const published = new Map<string, Set<string>>();
+    for (const item of PALETTE_ITEMS) {
+      const schema = item.outputSchema;
+      published.set(
+        item.type as string,
+        new Set(
+          schema && schema.type === 'default'
+            ? Object.keys((schema as { properties: Record<string, unknown> }).properties)
+            : [],
+        ),
+      );
+    }
+
+    const seen: string[] = [];
+    const undeclared: string[] = [];
+    for (const template of DIAGRAM_TEMPLATES) {
+      const typeOf = new Map(
+        template.value.diagram.nodes.map((n) => [n.id, (n.data as { type?: string }).type ?? '']),
+      );
+      for (const [, nodeId, path] of JSON.stringify(template.value.diagram).matchAll(
+        /\{\{nodes\.([A-Za-z0-9_-]+)\.([A-Za-z0-9_.]+?)\??(?:\s*\|[^}]*)?\}\}/g,
+      )) {
+        seen.push(`${nodeId}.${path}`);
+        const field = path!.split('.')[0]!;
+        if (!published.get(typeOf.get(nodeId!) ?? '')?.has(field)) {
+          undeclared.push(`${template.value.name}: {{nodes.${nodeId}.${path}}} — ${typeOf.get(nodeId!)} does not publish "${field}"`);
+        }
+      }
+    }
+
+    // Anti-no-op: a regex that stopped matching would make the assertion vacuous.
+    expect(seen.length).toBeGreaterThan(10);
+    expect(undeclared).toEqual([]);
+  });
+});

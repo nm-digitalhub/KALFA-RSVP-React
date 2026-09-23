@@ -49,6 +49,7 @@ const ctx = {
     },
     integrations: {} as StepContext['deps']['integrations'],
     accounting: {} as StepContext['deps']['accounting'],
+    ai: { run: async () => ({ text: '', costUsd: null, sessionId: null }) },
   },
 } satisfies StepContext;
 

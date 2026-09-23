@@ -30,6 +30,7 @@ export const CATALOGUE: readonly CatalogueEntry[] = [
   { type: 'logic.set_value', isTrigger: false },
   { type: 'action.sumit_create_document', isTrigger: false },
   { type: 'action.sumit_create_customer', isTrigger: false },
+  { type: 'action.ai_agent', isTrigger: false },
 ];
 
 // Lookup by the string stored in the diagram. `undefined` is rule 5: an unknown

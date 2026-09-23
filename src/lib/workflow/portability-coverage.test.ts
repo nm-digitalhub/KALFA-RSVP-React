@@ -51,6 +51,14 @@ const REVIEWED_PORTABLE: Record<string, string> = {
   // narrow the endpoint back to POST.
   methods: 'HTTP verbs; a fact about the caller, not about this installation',
 
+  // The author's instruction to a model, and a model ALIAS rather than an id —
+  // `haiku` / `sonnet` mean the same thing wherever the CLI runs, which is also
+  // why the catalogue stores aliases (a pinned id would freeze a diagram on a
+  // model that is eventually retired).
+  systemPrompt: 'the author’s instruction, with {{…}} references that rebind on import',
+  model: 'a model alias the CLI resolves; the same everywhere',
+  maxTurns: 'a ceiling the author chose; not an installation fact',
+
   // Editor and engine state that is meaningful anywhere.
   status: 'active/disabled, a node-level switch',
   errorPolicy: 'fail / continue — engine behaviour',
