@@ -1,4 +1,5 @@
-// One handler per node type, and the dispatch table the ActivityRunnerPort uses.
+// The dispatch table the ActivityRunnerPort uses, and the handlers of the node
+// types that have not yet moved to `nodes/<name>/runtime.ts`.
 //
 // A handler is a pure function of (config, trigger payload, deps). It performs
 // its own side effect through the narrow GuestActionsPort and returns a
@@ -38,220 +39,26 @@ import {
   AI_AGENT_MODELS,
 } from '../catalogue/types';
 
-import type {
-  GuestActionsPort,
-  AccountingPort,
-  AiAgentPort,
-  IntegrationsPort,
-  OutboundWebhookPort,
-  TeamAlertsPort,
-} from '../engine/ports';
 import {
   PermanentNodeExecutionError,
   TransientNodeExecutionError,
 } from '../vendor/workflowbuilder/execution-core/errors';
-import type { NodeExecutionResult } from '../vendor/workflowbuilder/execution-core/ports/activity-runner.port';
 
-// ---------------------------------------------------------------------------
-// The trigger payload a run carries
-// ---------------------------------------------------------------------------
+// The shared step contract lives in ./shared so node runtimes can import it
+// without importing this registry. Re-exported for every existing caller.
+import {
+  readEnum,
+  readString,
+  requireGuestContext,
+  type StepContext,
+  type StepHandler,
+  type WorkflowTriggerPayload,
+} from './shared';
+import { WorkflowWaitSignal } from '../engine/wait-signal';
+import * as setValueDefinition from '../nodes/logic-set-value/definition';
+import { setValue } from '../nodes/logic-set-value/runtime';
 
-// What the webhook drain hands a run. Narrow and explicit: the condition node's
-// readable fields (CONDITION_FIELDS) are exactly the keys here, so the two
-// cannot drift without a type error.
-/**
- * What a run starts with, and — since the template resolver landed — the whole
- * of what `{{trigger.…}}` can name.
- *
- * The first four fields are the message. The last three are CONTEXT, added
- * 2026-09-10 because a resolver with nothing to resolve is not a feature: the
- * pipe was open and `{{trigger.message_text}}` was the only interesting thing
- * in it, so a personalised reply still could not say the guest's name.
- *
- * `guest_name` is a FIRST name, through `deriveGuestFirstName` — the same
- * derivation both WhatsApp send paths already use, so an automated greeting
- * reads exactly like a manual one, household rows included ("משפחת כהן" yields
- * nothing rather than greeting "שלום משפחת,").
- *
- * It is EMPTY when the phone backs more than one guest. That is the same
- * refusal `action.update_guest_status` makes, for the same reason: with several
- * guests behind one contact there is no answer to "whose name", and greeting
- * the wrong person by name is worse than not greeting at all.
- *
- * ON PII. These land in `workflow_runs.trigger_payload` and in the
- * `node_started` event payload. That store already holds `message_text` — the
- * guest's own words — so a first name and the event they were invited to add no
- * new CATEGORY of exposure. `redact.ts` is key-based and will not mask them, by
- * design: a workflow that cannot see a name cannot personalise a message, which
- * is the entire point of the field.
- */
-export type WorkflowTriggerPayload = {
-  /**
-   * OPTIONAL SINCE `trigger.webhook` LANDED, and that is the whole point.
-   *
-   * A run started by an inbound WhatsApp message is always about a known guest
-   * on a known event. A run started by an external system calling in is about
-   * whatever that system sent — there may be no guest at all. Rather than invent
-   * a placeholder id (which would make every guest-touching node write to the
-   * wrong row), the fields are absent and `requireGuestContext` below refuses
-   * the nodes that need them, by name.
-   */
-  eventId?: string;
-  contactId?: string;
-  /**
-   * The inbox row this run started from.
-   *
-   * NOT the message content — a REFERENCE to it. `action.import_guest_list`
-   * needs to reach the file or the contact cards, and the alternative was to
-   * copy them into `trigger_payload`: a second permanent copy of a guest list,
-   * with names and phones, in a jsonb column built for step context. The
-   * reference costs one read at execution time and keeps the personal data in
-   * the one row that already holds it.
-   *
-   * Absent for a run that did not start from an inbound message (a webhook).
-   */
-  inboxRowId?: string;
-  /**
-   * The arbitrary JSON an inbound webhook delivered, readable as
-   * `{{trigger.body.<anything>}}`.
-   *
-   * NOT a fixed shape, deliberately: the point of a webhook trigger is that the
-   * caller decides what it sends. Whatever arrives is what the templates can
-   * name — no field list to maintain, and a new caller needs no code change.
-   */
-  body?: Record<string, unknown>;
-  /**
-   * The URL's query string on an inbound webhook call, as a flat object.
-   *
-   * Separate from `body` on purpose: GET and DELETE have no body, and merging
-   * the two would make `{{trigger.body.x}}` mean different things on different
-   * verbs. Absent for every trigger that is not a webhook.
-   */
-  query?: Record<string, string>;
-  message_text: string;
-  button_payload: string;
-  /**
-   * How many fan-outs deep this run is. Absent means zero — a run nobody fanned
-   * out to.
-   *
-   * ⚠️ CARRIED ON THE PAYLOAD RATHER THAN IN A COLUMN, deliberately. The depth
-   * is a property of THIS run's lineage and is read exactly once, by the fan-out
-   * that might create the next generation; a column would need a migration, a
-   * backfill answer for existing rows, and would still say nothing a payload
-   * field does not. `workflow_runs` has no parent link at all — measured — so
-   * this is also the only place the chain is recorded.
-   */
-  fanoutDepth?: number;
-  /**
-   * The three below are OMITTED when unknown, never set to `''`, and the
-   * difference is the whole behaviour of the fallback modifiers.
-   *
-   * `resolveTemplate` fires `?` and `| default:'…'` only when the resolved value
-   * is strictly `undefined` — `''`, `null` and `0` are real values, which the
-   * vendor's own suite pins (resolve-template.test.ts, "the modifier only fires
-   * for undefined"). So normalising an unknown name to `''` did not merely lose
-   * the name: it silently defeated the owner's own fallback. Someone writing
-   *
-   *     שלום {{trigger.guest_name | default:'אורח יקר'}}
-   *
-   * got `שלום ` — a sentence with a hole — because the empty string resolved.
-   * Absent, the same template reads `שלום אורח יקר`.
-   *
-   * A strict `{{trigger.guest_name}}` now throws when the name is unknown, which
-   * is the documented contract and the loud half of the same choice.
-   */
-  /** First name of the single linked guest. Absent when there is not exactly one. */
-  guest_name?: string;
-  event_name?: string;
-  /** dd.MM.yyyy in Israel time — display-ready, never re-parsed. */
-  event_date?: string;
-};
-
-export type StepContext = {
-  runId: string;
-  /**
-   * The workflow this run is executing — read ONLY by the fan-out, to refuse
-   * starting itself. See `MAX_FANOUT_DEPTH`.
-   */
-  workflowId: string;
-  nodeId: string;
-  /**
-   * This attempt took over a PARKED step whose deadline has passed.
-   *
-   * Only `logic.wait` reads it, and only it should: see the note in that
-   * handler for why a wait cannot recognise its own resumption without being
-   * told.
-   */
-  resumedFromWait?: boolean;
-  trigger: WorkflowTriggerPayload;
-  deps: {
-    guests: GuestActionsPort;
-    alerts: TeamAlertsPort;
-    webhook: OutboundWebhookPort;
-    integrations: IntegrationsPort;
-    accounting: AccountingPort;
-    /** One headless Claude run. See AiAgentPort. */
-    ai: AiAgentPort;
-  };
-};
-
-export type StepHandler = (
-  config: Record<string, unknown>,
-  ctx: StepContext,
-) => Promise<NodeExecutionResult>;
-
-// ---------------------------------------------------------------------------
-// Config readers
-// ---------------------------------------------------------------------------
-
-// A node's config reached us through the editor and a jsonb column. The property
-// SCHEMA constrains what the form can produce; it constrains nothing about what
-// is in the row. These readers are the narrowing, and a bad value is a
-// PermanentNodeExecutionError — it will fail identically on every retry, so the
-// engine must not spend three attempts discovering that.
-function readString(config: Record<string, unknown>, key: string): string {
-  const value = config[key];
-  return typeof value === 'string' ? value : '';
-}
-
-function readEnum<T extends string>(
-  config: Record<string, unknown>,
-  key: string,
-  allowed: readonly T[],
-  nodeType: KalfaNodeType,
-): T {
-  const value = config[key];
-  if (typeof value === 'string' && (allowed as readonly string[]).includes(value)) {
-    return value as T;
-  }
-  throw new PermanentNodeExecutionError(
-    'invalid_config',
-    `הצעד "${nodeType}" הוגדר עם ערך לא חוקי בשדה "${key}".`,
-  );
-}
-
-/**
- * The guest a step is about — or a refusal that names the step.
- *
- * Five handlers write to a guest, and all five need an event and a contact. A
- * webhook-triggered run may have neither. This is where that is caught: a
- * PERMANENT error, because no retry will add a guest to a run that never had
- * one, and the message says which step and why rather than surfacing as a
- * confusing null-id write.
- */
-function requireGuestContext(
-  ctx: StepContext,
-  nodeType: KalfaNodeType,
-): { eventId: string; contactId: string } {
-  const { eventId, contactId } = ctx.trigger;
-  if (!eventId || !contactId) {
-    throw new PermanentNodeExecutionError(
-      'missing_guest_context',
-      `הצעד "${nodeType}" פועל על אורח, וההרצה הזו לא התחילה מאורח. השתמשו בו רק בתהליך שמתחיל מהודעת וואטסאפ.`,
-    );
-  }
-  return { eventId, contactId };
-}
+export type { StepContext, StepHandler, WorkflowTriggerPayload };
 
 // ---------------------------------------------------------------------------
 // trigger.webhook
@@ -1244,24 +1051,6 @@ const createCallbackRequest: StepHandler = async (config, ctx) => {
 };
 
 // ---------------------------------------------------------------------------
-// logic.set_value
-// ---------------------------------------------------------------------------
-
-// No I/O, and that is the feature.
-//
-// The value arrives here ALREADY RESOLVED — `resolveConfigTemplates` ran over
-// the whole config before this handler was called — so this returns it as an
-// output and downstream nodes read it as `{{nodes.<id>.value}}`.
-//
-// One line of code for a real composition primitive: define a greeting once and
-// use it in every branch, instead of repeating the same expression in three
-// message bodies and fixing a typo in two of them.
-const setValue: StepHandler = async (config) => ({
-  output: { value: readString(config, 'value') },
-});
-
-
-// ---------------------------------------------------------------------------
 // action.import_guest_list
 // ---------------------------------------------------------------------------
 
@@ -1338,103 +1127,9 @@ const importGuestList: StepHandler = async (config, ctx) => {
 // logic.wait — the run parks here and comes back later
 // ---------------------------------------------------------------------------
 
-/**
- * The code a wait throws under, and the whole mechanism by which a run pauses.
- *
- * ⚠️ A WAIT TRAVELS AS AN ERROR, on purpose, because there is nowhere else for
- * it to go. The vendored `runGraph` has no suspension point: its scheduler loop
- * runs to completion and `NodeExecutionResult` is `{ output, nextPort? }` with
- * no third option. Read in full 2026-09-13 before choosing this — the execution
- * model DECLARES a `node_waiting` event, but the vendored runner never emits it,
- * and it means "waiting for other nodes" (a join) rather than waiting for a
- * clock.
- *
- * So the node throws, `runGraph` treats it as a fatal failure and returns
- * `{ status: 'failed', error: { code } }` — carrying the code through — and
- * `run-workflow` recognises the code and converts the outcome into a park. The
- * failure events are suppressed there and a real `node_waiting` is emitted
- * instead, so the log says what actually happened.
- *
- * It is matched BY SHAPE, never `instanceof`: the worker runs a bundled copy of
- * this module, so class identity does not survive — the same reason
- * `classifyNodeError` is written that way.
- */
-export const WORKFLOW_WAIT_CODE = 'workflow_wait';
-
-export class WorkflowWaitSignal extends PermanentNodeExecutionError {
-  readonly resumeAt: string;
-  /**
-   * The EXTERNAL EVENT this park is waiting for, when there is one.
-   *
-   * Optional, and optional on purpose: `logic.wait` waits on a clock and has no
-   * event, so requiring this would break every wait that exists today. A node
-   * that CAN be finished from outside (a phone call ending) names the thing it
-   * is waiting for here, and `resumeAt` stays as the timeout ceiling rather than
-   * becoming the answer.
-   */
-  readonly correlationId?: string;
-
-  /**
-   * "Has the thing I am about to wait for ALREADY happened?"
-   *
-   * ⚠️ THE HALF THAT MAKES AN EVENT WAKE RELIABLE RATHER THAN LIKELY. A node
-   * decides to park by reading the world, and between that read and the park
-   * becoming durable the event can land — the callback then finds a run that is
-   * not waiting yet, reports "nothing to wake", and the run sleeps to its
-   * ceiling with the answer already sitting in the database.
-   *
-   * This closes it AGAINST CONCURRENCY with the ordinary REGISTER-then-CHECK
-   * handshake: the caller parks, registers the fallback wake-up, and only THEN
-   * asks this. Checking before registering would just move the window, not
-   * remove it.
-   *
-   * ⚠️ NOT AGAINST A CRASH. Nothing spans the step row, the run row, the enqueue
-   * and this check in one transaction, so a process that dies partway still
-   * leaves gaps — see the three of them enumerated in `handleWorkflowRun`. This
-   * removes the race between two live actors, which is the one that happens on
-   * every healthy call; it does not make the sequence atomic.
-   *
-   * EPHEMERAL ON PURPOSE. It is a closure over this attempt's own domain, so it
-   * never reaches `StepLedgerPort` — that is a persistence contract, and handing
-   * a DAL a function it can never store would be an API that lies. It travels
-   * through the runner's in-memory `onWait` instead and dies with the
-   * invocation.
-   *
-   * MUST NOT cause the side effect again. It reads the record the node already
-   * created; a verifier that re-dispatched would telephone the guest twice.
-   */
-  readonly verify?: WaitVerifier;
-
-  constructor(resumeAt: string, correlationId?: string, verify?: WaitVerifier) {
-    super(WORKFLOW_WAIT_CODE, `ההרצה ממתינה עד ${resumeAt}.`);
-    this.name = 'WorkflowWaitSignal';
-    this.resumeAt = resumeAt;
-    if (correlationId !== undefined) this.correlationId = correlationId;
-    if (verify !== undefined) this.verify = verify;
-  }
-}
-
-/** Answers "already happened?" — see `WorkflowWaitSignal.verify`. */
-export type WaitVerifier = () => Promise<boolean>;
-
-/** The wait request carried by an error, or null. By shape — see above. */
-export function readWaitSignal(
-  error: unknown,
-): { resumeAt: string; correlationId?: string; verify?: WaitVerifier } | null {
-  if (!(error instanceof Error)) return null;
-  const { code, resumeAt, correlationId, verify } = error as {
-    code?: unknown;
-    resumeAt?: unknown;
-    correlationId?: unknown;
-    verify?: unknown;
-  };
-  if (code !== WORKFLOW_WAIT_CODE || typeof resumeAt !== 'string') return null;
-  return {
-    resumeAt,
-    ...(typeof correlationId === 'string' && correlationId !== '' ? { correlationId } : {}),
-    ...(typeof verify === 'function' ? { verify: verify as WaitVerifier } : {}),
-  };
-}
+// The park signal is shared engine code — see ../engine/wait-signal.ts.
+// Re-exported for every existing caller of this module.
+export { WORKFLOW_WAIT_CODE, WorkflowWaitSignal, readWaitSignal, type WaitVerifier } from '../engine/wait-signal';
 
 /**
  * How long a wait may be.
@@ -1931,7 +1626,7 @@ export const STEP_HANDLERS: Record<KalfaNodeType, StepHandler> = {
   'logic.wait': waitNode,
   'action.send_template': sendTemplate,
   'action.start_for_each_guest': startForEachGuest,
-  'logic.set_value': setValue,
+  [setValueDefinition.type]: setValue,
   'action.sumit_create_document': sumitCreateDocument,
   'action.sumit_create_customer': sumitCreateCustomer,
   'action.ai_agent': aiAgent,

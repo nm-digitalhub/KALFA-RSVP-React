@@ -2,15 +2,20 @@
 // with, and — rule 1 of the conversion contract — which types are allowed to
 // begin a flow.
 //
-// This module is PURE DATA and imports NOTHING — not even a type from the SDK.
-// It is read by the editor (browser) AND by the adapter and step handlers
-// (pg-boss worker), and the worker must never load @workflowbuilder/sdk, whose
-// import runs module-level side effects (immer.setAutoFreeze(false),
-// i18next.init) and which is browser-only.
+// This module is PURE DATA and imports nothing from the SDK — not even a type.
+// Its only imports are a type from `@/lib/constants` and the SDK-free
+// `nodes/<name>/definition.ts` of each node that has moved to its own folder,
+// which import nothing themselves. It is read by the editor (browser) AND by
+// the adapter and step handlers (pg-boss worker), and the worker must never
+// load @workflowbuilder/sdk, whose import runs module-level side effects
+// (immer.setAutoFreeze(false), i18next.init) and which is browser-only.
 //
 // Everything the EDITOR needs — property schemas, labels, icons — lives in
-// ./schemas.ts instead.
+// ./schemas.ts instead, or, for a node that has moved to its own folder, in that
+// folder's editor files.
 import type { RsvpStatus } from '@/lib/constants';
+
+import * as setValueDefinition from '../nodes/logic-set-value/definition';
 
 // ---------------------------------------------------------------------------
 // Node types
@@ -39,7 +44,7 @@ export const NODE_TYPES = [
   'action.send_template',
   'action.start_for_each_guest',
   'action.start_voice_call',
-  'logic.set_value',
+  setValueDefinition.type,
   'action.sumit_create_document',
   'action.sumit_create_customer',
   'action.ai_agent',
@@ -813,6 +818,34 @@ export type MicrosoftSendEmailConfig = {
 // Agent/provider/model/knowledge configuration deliberately lives outside the diagram.
 export type StartRsvpAiCallbackConfig = Record<string, unknown>;
 
+/**
+ * `action.start_voice_call` — dial the guest through a configured voice purpose.
+ *
+ * Written from what the node actually carries: the fields its schema declares
+ * (`voiceCallSchemaFor` in schemas.ts) and the ones its handler reads
+ * (`startVoiceCall` in steps). It was the one type with no member in
+ * `KalfaNodeConfig`, and nothing noticed — `_KALFA_NODE_CONFIG_COVERS_ALL_TYPES`
+ * below is what notices now.
+ *
+ * The four dial parameters are optional and EMPTY MEANS "NOT SET": the handler
+ * trims each and drops an empty one rather than sending it, so the purpose and
+ * the account defaults decide.
+ */
+export type StartVoiceCallConfig = {
+  /** A `voice_purposes.key`. Required; a blank one is refused at run time. */
+  purposeKey: string;
+  /** Voximplant caller id. Empty: the account default. */
+  callerId?: string;
+  /** Voximplant rule id. Empty: the rule bound to the purpose. */
+  ruleId?: string;
+  /** The number to dial instead of the guest's; may be a `{{…}}` reference. */
+  toOverride?: string;
+  /** ElevenLabs agent id. Empty: the scenario's own agent. */
+  agentId?: string;
+  /** Park the run until the call reports. Absent means false — dial and carry on. */
+  waitForOutcome?: boolean;
+};
+
 // An internal alert to the KALFA team — never to a guest.
 //
 // The one action here whose audience is us. It exists because an automation
@@ -1061,21 +1094,9 @@ export type CreateCallbackRequestConfig = {
   note: string;
 };
 
-// Compute a value and hand it to later steps.
-//
-// This node does no I/O at all, and that is exactly why it is worth having.
-// Every field of every node now passes through `resolveConfigTemplates`, so
-// `value` can be any mixture of literal text and `{{…}}` references — and its
-// OUTPUT is readable downstream as `{{nodes.<id>.value}}`.
-//
-// That turns the resolver from a substitution feature into a composition one:
-// build a greeting once, reuse it in three branches; or normalise something
-// awkward in one visible place on the canvas instead of repeating the same
-// expression in every message body. It is n8n's `Set` node, minus the parts
-// that need a runtime we do not have.
-export type SetValueConfig = {
-  value: string;
-};
+// `logic.set_value` — declared with the rest of its contract in
+// `nodes/logic-set-value/definition.ts`, re-exported here for existing readers.
+export type SetValueConfig = setValueDefinition.SetValueConfig;
 
 /**
  * `action.sumit_create_document` — issue an accounting document.
@@ -1169,6 +1190,7 @@ export type KalfaNodeConfig =
   | { type: 'action.send_whatsapp'; config: SendWhatsappConfig }
   | { type: 'action.microsoft_send_email'; config: MicrosoftSendEmailConfig }
   | { type: 'action.start_rsvp_ai_callback'; config: StartRsvpAiCallbackConfig }
+  | { type: 'action.start_voice_call'; config: StartVoiceCallConfig }
   | { type: 'action.notify_team'; config: NotifyTeamConfig }
   | { type: 'action.webhook'; config: WebhookConfig }
   | { type: 'action.set_guest_field'; config: SetGuestFieldConfig }
@@ -1177,9 +1199,19 @@ export type KalfaNodeConfig =
   | { type: 'logic.wait'; config: WaitConfig }
   | { type: 'action.send_template'; config: SendTemplateConfig }
   | { type: 'action.start_for_each_guest'; config: ForEachGuestConfig }
-  | { type: 'logic.set_value'; config: SetValueConfig }
+  | { type: typeof setValueDefinition.type; config: SetValueConfig }
   | { type: 'action.sumit_create_document'; config: SumitCreateDocumentConfig }
   | { type: 'action.sumit_create_customer'; config: SumitCreateCustomerConfig };
+
+/**
+ * ⚠️ A COMPILE ERROR IF `KalfaNodeConfig` MISSES A TYPE. `action.start_voice_call`
+ * was absent for its whole life and no check saw it. This resolves to `true`
+ * only when every `KalfaNodeType` has a member; otherwise the assignment below
+ * fails to type-check and names nothing, which is enough.
+ */
+type _MissingFromKalfaNodeConfig = Exclude<KalfaNodeType, KalfaNodeConfig['type']>;
+const _KALFA_NODE_CONFIG_COVERS_ALL_TYPES: [_MissingFromKalfaNodeConfig] extends [never] ? true : never = true;
+void _KALFA_NODE_CONFIG_COVERS_ALL_TYPES;
 
 // ---------------------------------------------------------------------------
 // A catalogue entry — METADATA ONLY
@@ -1361,7 +1393,9 @@ export const NODE_REQUIRED_FIELDS: Record<KalfaNodeType, string[]> = {
   'logic.condition': ['label', 'description', 'field', 'operator'],
   'logic.switch': ['label', 'description'],
   'logic.wait': ['label', 'description', 'amount', 'unit'],
-  'logic.set_value': ['label', 'description', 'value'],
+  // The SAME array the node's editor schema uses — `arm-check.test.ts` asserts
+  // identity with `toBe`, so this must not become a copy.
+  [setValueDefinition.type]: setValueDefinition.requiredFields,
   'action.update_guest_status': ['label', 'description', 'rsvpStatus'],
   'action.send_whatsapp': ['label', 'description', 'body'],
   'action.microsoft_send_email': ['label', 'description', 'connectionId', 'to', 'subject', 'body'],

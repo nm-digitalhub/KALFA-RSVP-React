@@ -1,11 +1,18 @@
 // The node-type catalogue: which types exist, and which may begin a flow.
 //
-// METADATA ONLY, and imports nothing at run time — this module is read by the
-// pg-boss worker, which must never load @workflowbuilder/sdk. The editor's half
-// (property schemas, labels, icons) lives in ./schemas.ts.
+// METADATA ONLY, and SDK-free — this module is read by the pg-boss worker,
+// which must never load @workflowbuilder/sdk. It imports `./types` and the
+// SDK-free `nodes/<name>/definition.ts` of each node that has moved to its own
+// folder. The editor's half (property schemas, labels, icons) lives in
+// ./schemas.ts or, for a moved node, in its folder's editor files.
 //
-// Adding a step type is one entry here plus one in ./schemas.ts. No editor code
-// changes, no adapter changes.
+// Adding a step type in the one-folder-per-node layout: a `nodes/<name>/`
+// folder (definition, schema, uischema, defaults, palette item, runtime — see
+// plans/node-folders-file-matrix.md), then one entry here, in `NODE_TYPES`,
+// `NODE_REQUIRED_FIELDS`, `PALETTE_ITEMS` and `STEP_HANDLERS`, each read from
+// the definition. No adapter changes.
+import * as setValueDefinition from '../nodes/logic-set-value/definition';
+
 import { NODE_TYPES, type CatalogueEntry, type KalfaNodeType } from './types';
 
 export const CATALOGUE: readonly CatalogueEntry[] = [
@@ -28,7 +35,7 @@ export const CATALOGUE: readonly CatalogueEntry[] = [
   { type: 'action.send_template', isTrigger: false },
   { type: 'action.start_for_each_guest', isTrigger: false },
   { type: 'action.start_voice_call', isTrigger: false },
-  { type: 'logic.set_value', isTrigger: false },
+  { type: setValueDefinition.type, isTrigger: setValueDefinition.isTrigger },
   { type: 'action.sumit_create_document', isTrigger: false },
   { type: 'action.sumit_create_customer', isTrigger: false },
   { type: 'action.ai_agent', isTrigger: false },

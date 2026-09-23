@@ -400,8 +400,9 @@ describe('the declarations the gate reads', () => {
   });
 
   it('⚠️ are the SAME objects the editor form is built from', async () => {
-    // Not "equal to" — the SAME array. `schemas.ts` references these rather than
-    // declaring its own copy, so a field required to arm is required in the form
+    // Not "equal to" — the SAME array. The schemas (inline in `schemas.ts`, or a
+    // moved node's `schema.ts` via its definition) reference these rather than
+    // declaring their own copy, so a field required to arm is required in the form
     // by construction. An `toEqual` here would still pass if someone pasted a
     // second literal; identity will not.
     const { NODE_REQUIRED_FIELDS } = await import('./types');
