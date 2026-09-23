@@ -21,6 +21,7 @@ import { describe, expect, it } from 'vitest';
 
 import { PALETTE_ITEMS } from './schemas';
 import {
+  ARM_NOTICE_PATH,
   CALLBACK_TOPICS,
   DEFAULT_HTTP_METHOD,
   HTTP_METHODS_WITH_BODY,
@@ -294,5 +295,52 @@ describe('⚠️ every palette entry is type-checked against its own schema', ()
       .map((entry) => entry[1]);
 
     expect(without).toEqual([]);
+  });
+});
+
+describe('the node-level arm notice is wired at both ends', () => {
+  // ⚠️ JSONFORMS MATCHES AN EXTERNAL ERROR TO A CONTROL BY STRING, AND A
+  // MISMATCH IS SILENT. `arm-check.ts` stamps `ARM_NOTICE_PATH` onto the two
+  // refusals that belong to the node rather than to a field; the vendor's
+  // `MessageOnError` control displays them only if its `scope` is the same path
+  // under `#/properties`. Nothing else in the codebase compares the two — the
+  // editor would simply render nothing, which is indistinguishable from "no
+  // refusal" and is the exact bug this replaced.
+  const expectedScope = `#/properties${ARM_NOTICE_PATH}`;
+
+  it('every palette node declares the property', () => {
+    for (const item of PALETTE_ITEMS) {
+      const properties = (item.schema as { properties?: Record<string, unknown> }).properties ?? {};
+      expect(
+        ARM_NOTICE_PATH.slice(1) in properties,
+        `${item.type} has no ${ARM_NOTICE_PATH.slice(1)} property for the notice to bind to`,
+      ).toBe(true);
+    }
+  });
+
+  it('every palette node renders exactly one MessageOnError on that scope', () => {
+    for (const item of PALETTE_ITEMS) {
+      const found = JSON.stringify(item.uischema).split(JSON.stringify(expectedScope)).length - 1;
+      expect(found, `${item.type} declares ${found} controls on ${expectedScope}, expected 1`).toBe(1);
+    }
+  });
+
+  it('⚠️ and it carries NO text, or the vendor renderer would hide our message', () => {
+    // `t(text) || errors || text` — a hardcoded `text` WINS over the error's own
+    // message. These sentences name the trigger and the message kinds, so they
+    // have to come from `customErrors[].message`.
+    for (const item of PALETTE_ITEMS) {
+      const elements = JSON.parse(JSON.stringify(item.uischema)) as unknown;
+      const stack: unknown[] = [elements];
+      while (stack.length > 0) {
+        const cur = stack.pop() as Record<string, unknown> | null;
+        if (!cur || typeof cur !== 'object') continue;
+        if (Array.isArray(cur)) { stack.push(...cur); continue; }
+        if (cur.type === 'MessageOnError' && cur.scope === expectedScope) {
+          expect('text' in cur, `${item.type}'s notice control must not carry text`).toBe(false);
+        }
+        stack.push(...Object.values(cur));
+      }
+    }
   });
 });

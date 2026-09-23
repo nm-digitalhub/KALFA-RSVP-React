@@ -8,7 +8,10 @@ import {
   NODE_NUMBER_RANGES,
   NODE_REQUIRED_FIELDS,
   ACTION_BRANCH_HANDLES,
+  ARM_NOTICE_PATH,
+  readWebhookAuthMode,
   SALES_CALLBACK_TOPIC,
+  webhookAllowsMethod,
   triggerKeywordCanNeverMatch,
   triggerSuppliesGuestContext,
   type KalfaNodeType,
@@ -284,7 +287,7 @@ function collectArmBlockers(
       (GUEST_SCOPED_NODE_TYPES as readonly string[]).includes(nodeType) &&
       readNodeStatus(properties.status) !== 'disabled'
     ) {
-      blockers.push({ nodeId: node.id, source: 'arm-only', instancePath: '', message: `${where}: הצעד פועל על אורח, והטריגר של התהליך אינו מתחיל מאורח. ` +
+      blockers.push({ nodeId: node.id, source: 'arm-only', instancePath: ARM_NOTICE_PATH, message: `${where}: הצעד פועל על אורח, והטריגר של התהליך אינו מתחיל מאורח. ` +
           'החליפו לטריגר "הודעת וואטסאפ נכנסת" שמסומן בו לפחות סוג הודעה שאורח שולח, הסירו את הצעד, ' +
           'או השאירו את התהליך לא מחומש והפעילו אותו מתהליך אחר עם "הרצה לכל אורח".', });
     }
@@ -307,7 +310,7 @@ function collectArmBlockers(
       triggerKeywordCanNeverMatch(nodeType, properties) &&
       readNodeStatus(properties.status) !== 'disabled'
     ) {
-      blockers.push({ nodeId: node.id, source: 'arm-only', instancePath: '', message: `${where}: הוגדרה מילת הפעלה, אך לא נבחר סוג הודעה שמכיל טקסט — ולכן שום הודעה לא תתאים. ` +
+      blockers.push({ nodeId: node.id, source: 'arm-only', instancePath: ARM_NOTICE_PATH, message: `${where}: הוגדרה מילת הפעלה, אך לא נבחר סוג הודעה שמכיל טקסט — ולכן שום הודעה לא תתאים. ` +
           'סמנו גם "הודעת טקסט", או מחקו את מילת ההפעלה.', });
     }
 
@@ -342,6 +345,50 @@ function collectArmBlockers(
       continue;
     }
 
+    // ⚠️ AND NOT AN ADDRESS-AUTHENTICATED WEBHOOK STILL CARRYING A PUBLIC ID.
+    //
+    // That combination means exactly one thing: the node was generated in
+    // `header` mode and the mode was changed afterwards. Its `tokenHash` is a
+    // hash of the HEADER secret, so in `address` mode nothing can reach it — the
+    // path hashes to something else and the header is not read at all. INERT
+    // rather than unsafe, which is precisely why it needs a gate: a dead
+    // endpoint that looks armed and configured is discovered from an
+    // integration that silently never fires.
+    if (
+      nodeType === 'trigger.webhook' &&
+      readWebhookAuthMode(properties.auth) === 'address' &&
+      !isBlank(properties.endpointId)
+    ) {
+      blockers.push({ nodeId: node.id, source: 'arm-only', instancePath: '/tokenHash', message: `${where}: האימות שונה לכתובת אחרי שנוצר סוד, והכתובת הקודמת כבר לא מפעילה את התהליך. ` +
+          'לחצו על יצירת כתובת כדי לקבל כתובת חדשה.', });
+      continue;
+    }
+
+    // ⚠️ AND NOT AN ADDRESS-AUTHENTICATED WEBHOOK THAT ALSO ACCEPTS GET.
+    //
+    // The pair is DEAD, not merely unwise, and nothing downstream would say so.
+    // The route splits GET on the presence of `x-kalfa-webhook-secret` — without
+    // it, every GET gets the constant browser hint and never reaches resolution,
+    // which is what stops the address bar being an oracle for which endpoints
+    // exist. A caller in `address` mode has no secret to send by definition, so
+    // its GET would be answered 405 forever while the panel showed a live,
+    // armed, correctly-configured node.
+    //
+    // ⚠️ IT IS NOT REPORTED AS 'schema'. No schema refuses this: `auth` and
+    // `methods` are each individually valid and the contradiction is between
+    // them, so the panel marks nothing and arming is the first and only place
+    // the owner could hear about it. `instancePath` names `methods` because that
+    // is the half to change — `auth` is the half they chose on purpose.
+    if (
+      nodeType === 'trigger.webhook' &&
+      readWebhookAuthMode(properties.auth) === 'address' &&
+      webhookAllowsMethod(properties.methods, 'GET')
+    ) {
+      blockers.push({ nodeId: node.id, source: 'arm-only', instancePath: '/methods', message: `${where}: כשהאימות הוא הכתובת, קריאת GET לעולם לא תפעיל את התהליך — פתיחה בדפדפן מקבלת הודעה קבועה במקום. ` +
+          'הסירו את GET מרשימת השיטות, או עברו לאימות בכותרת.', });
+      continue;
+    }
+
     // ⚠️ THE CONDITIONAL CONTRACT, APPLIED A SECOND TIME — NOT A MISSING HALF.
     //
     // An earlier version of this comment claimed the schema could not catch an
@@ -368,6 +415,19 @@ function collectArmBlockers(
     const conditional = activeConditionalRequirements(nodeType, properties);
     const required = [...baseRequired];
     for (const rule of conditional) {
+      // ⚠️ THE SAME PAIR-SKIP THE `required` LOOP BELOW APPLIES, and it has to be
+      // here too. A webhook trigger with NEITHER half generated reaches this
+      // branch with `endpointId` absent (a template ships it that way) rather
+      // than blank, so the skip further down never sees it — and the owner got
+      // two sentences for one press. MEASURED: `arm-check.test.ts`'s starter-
+      // template assertion caught exactly that.
+      if (
+        node.data.type === 'trigger.webhook' &&
+        rule.require === 'endpointId' &&
+        isBlank(properties.tokenHash)
+      ) {
+        continue;
+      }
       const value = properties[rule.require];
       if (value === undefined || value === null) {
         blockers.push({ nodeId: node.id, source: 'schema', instancePath: `/${rule.require}`, message: `${where}: ${rule.message}` });
@@ -419,7 +479,7 @@ function collectArmBlockers(
         // verb you picked sends a body" — which a generic "the field is empty"
         // cannot, because the field is only empty-and-wrong for some verbs.
         const rule = conditional.find((r) => r.require === key);
-        blockers.push({ nodeId: node.id, source: 'schema', instancePath: `/${key}`, message: `${where}: ${rule ? rule.message : blankMessage(nodeType, key)}` });
+        blockers.push({ nodeId: node.id, source: 'schema', instancePath: `/${key}`, message: `${where}: ${rule ? rule.message : blankMessage(nodeType, key, properties)}` });
         continue;
       }
 
@@ -473,7 +533,11 @@ function collectArmBlockers(
  *
  * Only nodes where the fix is not obvious get a sentence of their own.
  */
-function blankMessage(nodeType: string, key: string): string {
+function blankMessage(
+  nodeType: string,
+  key: string,
+  properties: Record<string, unknown>,
+): string {
   if (nodeType === 'action.start_for_each_guest' && key === 'targetWorkflowId') {
     return 'לא נבחר תהליך להרצה. צרו את תהליך-הבן (למשל מהתבנית "תזכורת לאורח אחד") והדביקו את המזהה שלו כאן.';
   }
@@ -495,8 +559,15 @@ function blankMessage(nodeType: string, key: string): string {
   // `tokenHash` separately would put two lines in front of the owner for a
   // single action — and the generic "חסר ערך בשדה endpointId" would be the
   // louder of the two while naming a field nobody types.
+  //
+  // ⚠️ AND THE SENTENCE DEPENDS ON THE MODE, because the two press different
+  // buttons and get different things back. Saying "הסוד יוצג פעם אחת" to an
+  // owner in `address` mode would point at a control that is not on their
+  // screen.
   if (nodeType === 'trigger.webhook' && (key === 'tokenHash' || key === 'endpointId')) {
-    return 'לא נוצר סוד, ולכן אין עדיין כתובת. לחצו על יצירת סוד — הכתובת תיווצר יחד איתו ותישאר גלויה, והסוד יוצג פעם אחת בלבד.';
+    return readWebhookAuthMode(properties.auth) === 'address'
+      ? 'לא נוצרה עדיין כתובת. לחצו על יצירת כתובת — היא תוצג פעם אחת בלבד, ומרגע שנשמרה לא ניתן לשחזר אותה.'
+      : 'לא נוצר סוד, ולכן אין עדיין כתובת. לחצו על יצירת סוד — הכתובת תיווצר יחד איתו ותישאר גלויה, והסוד יוצג פעם אחת בלבד.';
   }
   return `השדה "${key}" ריק.`;
 }

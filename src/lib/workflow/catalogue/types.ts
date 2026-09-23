@@ -380,19 +380,69 @@ export function webhookAllowsMethod(configured: unknown, method: string): boolea
   return allowed.includes(method);
 }
 
+/**
+ * WHERE an inbound call proves itself.
+ *
+ * ⚠️ TWO MODES BECAUSE TWO CALLERS EXIST, not because one shape was unfinished.
+ *
+ *   `header`  — the address is public and the secret rides in
+ *               `x-kalfa-webhook-secret`. The DEFAULT, and what every diagram
+ *               saved before this field means: a secret in a path is written to
+ *               every access log, proxy record and Referer that stores a URL,
+ *               and the address has to stay showable so the owner can recover
+ *               it. See plans/webhook-address-vs-secret.md.
+ *
+ *   `address` — the path segment IS the credential and nothing else is asked
+ *               for. Not a weakening: the segment is the same 32 CSPRNG bytes
+ *               the header secret was, only its sha256 is stored, and it is
+ *               displayed exactly once. What it costs is the recoverability
+ *               `header` buys — which is the trade the owner made on 2026-09-23.
+ *
+ * ⚠️ IT EXISTS BECAUSE A REAL CALLER CANNOT SEND A HEADER. SUMIT's
+ * `/triggers/triggers/subscribe/` takes one field for the destination — `URL` —
+ * and its help article's HTTP-call step offers nowhere to put a header. Make's
+ * own hook address (`hook.eu2.make.com/<random>`) is built the same way. A
+ * header-only endpoint simply cannot be reached by either.
+ */
+export const WEBHOOK_AUTH_MODES = ['header', 'address'] as const;
+export type WebhookAuthMode = (typeof WEBHOOK_AUTH_MODES)[number];
+
+/**
+ * The mode a stored node is in.
+ *
+ * ⚠️ ABSENT IS `header`, AND THAT IS THE WHOLE COMPATIBILITY STORY. Every
+ * webhook trigger saved before this field carries a public `endpointId` that has
+ * been displayed and copied since the split — treating an absent value as
+ * `address` would retroactively turn a published id into a credential.
+ * Anything that is not one of the two known strings reads as `header` for the
+ * same reason: a jsonb column can hold a number or a null, and the narrower
+ * answer is the safe one here.
+ */
+export function readWebhookAuthMode(value: unknown): WebhookAuthMode {
+  return value === 'address' ? 'address' : 'header';
+}
+
 export type WebhookTriggerConfig = {
   /**
-   * The PUBLIC half of the address. Safe to show, copy and export — it proves
-   * nothing on its own.
+   * The PUBLIC half of the address, in `header` mode. Safe to show, copy and
+   * export — it proves nothing on its own.
+   *
+   * ⚠️ ABSENT IN `address` MODE, on purpose. There the path segment is the
+   * credential, so storing it would put the credential back in the diagram —
+   * and from there into every run's `definitionSnapshot`. Only `tokenHash`
+   * is kept, and the path is hashed on the way in.
    */
-  endpointId: string;
+  endpointId?: string;
   /**
-   * sha256 of the secret. The secret itself travels in a header and is never
-   * stored. See `webhook-token.ts`.
+   * sha256 of whichever half is the credential: the header secret in `header`
+   * mode, the path segment in `address` mode. The value itself is never stored.
+   * See `webhook-token.ts`.
    */
   tokenHash: string;
   /** Empty means POST only — see `webhookAllowsMethod`. */
   methods?: readonly { value: string }[] | readonly string[];
+  /** Absent means `header` — see `readWebhookAuthMode`. */
+  auth?: WebhookAuthMode;
 };
 
 // The two outgoing ports of a condition node, as HANDLE IDS.
@@ -1244,7 +1294,12 @@ export const NODE_DEPLOYMENT_BINDINGS: Partial<
 
 export const NODE_REQUIRED_FIELDS: Record<KalfaNodeType, string[]> = {
   'trigger.whatsapp_inbound': ['label', 'description'],
-  'trigger.webhook': ['label', 'description', 'endpointId', 'tokenHash'],
+  // ⚠️ `endpointId` IS NOT HERE — it moved to the conditional table. It exists
+  // only in `header` mode; in `address` mode the path segment is the credential
+  // and is never stored, so requiring it would make that mode unarmable.
+  // `tokenHash` stays: BOTH modes have one, it is just a hash of a different
+  // half.
+  'trigger.webhook': ['label', 'description', 'tokenHash'],
   'action.ai_agent': ['label', 'description', 'systemPrompt', 'model'],
   'trigger.schedule': ['label', 'description', 'time'],
   'logic.condition': ['label', 'description', 'field', 'operator'],
@@ -1288,6 +1343,23 @@ export const NODE_REQUIRED_FIELDS: Record<KalfaNodeType, string[]> = {
  * sites in `steps/index.ts`, so a node that gains the guard and is not added
  * here fails a test rather than shipping an automation that cannot run.
  */
+/**
+ * The `instancePath` an arm refusal carries when it belongs to the NODE rather
+ * than to one of its fields — and the `scope` of the control that displays it.
+ *
+ * ⚠️ IT LIVES HERE, NOT IN `schemas.ts`, FOR THE REASON THAT FILE'S HEADER
+ * GIVES: `arm-check.ts` runs on the SERVER and `schemas.ts` pulls runtime values
+ * out of `@workflowbuilder/sdk`, so a server import of it yields a client
+ * reference rather than the value. `types.ts` imports nothing from the SDK, so
+ * both halves can name the same constant.
+ *
+ * ⚠️ AND THE TWO HALVES MUST AGREE EXACTLY. JsonForms routes an external error
+ * to a control by STRING-COMPARING this against the control's scope suffix; a
+ * mismatch is not an error anywhere, it simply renders nothing — which is the
+ * failure the `armNotice` control was added to close. One constant, both ends.
+ */
+export const ARM_NOTICE_PATH = '/armNotice';
+
 export const GUEST_SCOPED_NODE_TYPES: readonly KalfaNodeType[] = [
   'action.update_guest_status',
   'action.send_whatsapp',
@@ -1471,6 +1543,20 @@ export const NODE_CONDITIONAL_REQUIRED_FIELDS: Partial<
       require: 'body',
       message:
         'סוג הבקשה שנבחר שולח גוף, והגוף ריק. כתבו את גוף הבקשה, או החליפו ל-GET / DELETE שאינם שולחים גוף.',
+    },
+  ],
+  // The address half is required in `header` mode and MUST NOT exist in
+  // `address` mode — see `WebhookTriggerConfig.endpointId`. `fallback: 'header'`
+  // is what keeps every diagram saved before the field behaving exactly as it
+  // did, and it is inside `whenIn` as the type's own warning requires.
+  'trigger.webhook': [
+    {
+      decidedBy: 'auth',
+      whenIn: ['header'],
+      fallback: 'header',
+      require: 'endpointId',
+      message:
+        'לא נוצרה כתובת. לחצו על יצירת סוד — הכתובת תיווצר יחד איתו ותישאר גלויה.',
     },
   ],
 };

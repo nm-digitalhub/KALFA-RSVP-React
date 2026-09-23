@@ -87,7 +87,8 @@ function browserHint(): Response {
   // it, so a media type that renders is strictly better than one that is parsed
   // by nobody and downloaded by everybody.
   return new Response(
-    'שלחו POST עם גוף JSON לכתובת הזו, והסוד בכותרת x-kalfa-webhook-secret.\n' +
+    'שלחו POST עם גוף JSON לכתובת הזו.\n' +
+      'אם התהליך מוגדר לאימות בכותרת — הוסיפו את הסוד ב-x-kalfa-webhook-secret.\n' +
       'פתיחה בדפדפן שולחת GET ולעולם לא תפעיל את התהליך.\n',
     {
       status: 405,
@@ -115,12 +116,13 @@ async function handle(
 
   const { endpoint } = await params;
 
-  // ⚠️ THE CREDENTIAL COMES FROM A HEADER, NOT THE PATH. The path segment is a
-  // PUBLIC id that identifies which webhook and proves nothing; a missing or
-  // wrong header gets the same 404 as an unknown id, so this stays a single
-  // answer rather than an oracle. The split exists because a secret in a URL is
-  // recorded by every access log, proxy and Referer that stores a path — see
-  // plans/webhook-address-vs-secret.md.
+  // ⚠️ THIS FILE DOES NOT DECIDE WHICH HALF IS THE CREDENTIAL, and must not
+  // learn to. A node in `header` mode is authenticated by this header against a
+  // public path id; a node in `address` mode is authenticated by the path
+  // segment itself and reads no header. Only `findWorkflowForEndpoint` knows
+  // which, so both values are handed over unread and every failure — unknown
+  // path, wrong secret, wrong verb, disarmed workflow — comes back as the same
+  // 404. See plans/webhook-address-vs-secret.md.
   const secret = request.headers.get(WEBHOOK_SECRET_HEADER) ?? '';
 
   // Read as TEXT, not `request.json()`. The size check has to happen on the raw
@@ -214,6 +216,14 @@ export const DELETE = (request: NextRequest, ctx: { params: Promise<{ endpoint: 
  * Without this, a webhook whose upstream can only send GET simply could not be
  * built — the gap the owner raised on 2026-09-22 from n8n's own HTTP Method
  * parameter.
+ *
+ * ⚠️ WHICH IS WHY `address` MODE CANNOT OFFER GET, AND ARM-CHECK REFUSES THE
+ * PAIR. There the credential is the path, so a legitimate caller sends no
+ * header — and this split would hand it the browser hint forever. The
+ * alternative, resolving a headerless GET, is exactly the oracle the split
+ * exists to prevent: the answer would differ between a real address and a
+ * made-up one. Refusing at arming is the only place that costs nobody a live
+ * request.
  */
 export function GET(request: NextRequest, ctx: { params: Promise<{ endpoint: string }> }) {
   if (!request.headers.get(WEBHOOK_SECRET_HEADER)) return browserHint();

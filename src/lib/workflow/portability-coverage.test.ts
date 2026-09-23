@@ -51,6 +51,15 @@ const REVIEWED_PORTABLE: Record<string, string> = {
   // narrow the endpoint back to POST.
   methods: 'HTTP verbs; a fact about the caller, not about this installation',
 
+  // ⚠️ THE MODE TRAVELS; WHAT IT AUTHENTICATES DOES NOT. `auth` records a fact
+  // about the CALLER — "this system cannot send a header" is true of SUMIT on
+  // any installation — while the value it governs (`endpointId`, `tokenHash`)
+  // is bound and stripped on export either way. Dropping it on import would be
+  // the dangerous direction and not the safe one: the node would land in
+  // `header` mode, and the importer would rebuild a header integration for a
+  // caller that cannot speak one.
+  auth: 'header / address — a fact about the caller’s abilities, not about this installation',
+
   // The author's instruction to a model, and a model ALIAS rather than an id —
   // `haiku` / `sonnet` mean the same thing wherever the CLI runs, which is also
   // why the catalogue stores aliases (a pinned id would freeze a diagram on a
@@ -60,6 +69,14 @@ const REVIEWED_PORTABLE: Record<string, string> = {
   maxTurns: 'a ceiling the author chose; not an installation fact',
 
   // Editor and engine state that is meaningful anywhere.
+  //
+  // ⚠️ `armNotice` HAS NO VALUE TO CARRY — it is a SCOPE, declared so the
+  // vendor's `MessageOnError` control has something to aim at. Nothing writes
+  // it, no `defaultPropertiesData` seeds it, and no diagram will ever contain
+  // it; it exists only so a node-level arm refusal reaches the properties panel
+  // instead of leaving an unexplained exclamation mark. Binding it would be
+  // stripping a key that is never there.
+  armNotice: 'a display anchor for node-level arm refusals; never holds a value',
   status: 'active/disabled, a node-level switch',
   errorPolicy: 'fail / continue — engine behaviour',
   decisionBranches: 'branch ids and labels internal to this diagram',

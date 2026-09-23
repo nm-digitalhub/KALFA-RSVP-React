@@ -56,6 +56,7 @@ import {
   HTTP_METHODS_WITH_BODY,
   NODE_CONDITIONAL_REQUIRED_FIELDS,
   NODE_NUMBER_RANGES,
+  ARM_NOTICE_PATH,
   NODE_REQUIRED_FIELDS,
   type SumitDocumentTypeOption,
   NODE_STATUSES,
@@ -205,7 +206,32 @@ const identityProperties = {
   ...sharedProperties,
   label: requiredText,
   description: requiredText,
+  /**
+   * The anchor a NODE-LEVEL refusal hangs on, and nothing ever writes to it.
+   *
+   * ⚠️ IT EXISTS BECAUSE THE VENDOR'S DISPLAY MECHANISM IS ADDRESSED BY SCOPE.
+   * The SDK hands our `data.properties.customErrors` to JsonForms as
+   * `additionalErrors`, and a message reaches the panel only through a control
+   * whose `scope` matches that error's `instancePath` — its own source says so:
+   * *"an exclamation mark will be shown on the node, and an error message will
+   * be displayed in the sidebar"*, with `instancePath:
+   * '/missingPreviousVariable'` in the example.
+   *
+   * Two of our arm refusals are genuinely not about any one field — a
+   * guest-scoped step under a guestless trigger (the fact lives in ANOTHER
+   * node), and a keyword no message kind can satisfy (a contradiction BETWEEN
+   * two fields). They carried `instancePath: ''`, so the owner got an
+   * exclamation mark on the node with no sentence anywhere, until they pressed
+   * "arm". This is the property those two now address.
+   *
+   * ⚠️ NOT IN `NODE_REQUIRED_FIELDS`, NOT IN ANY `defaultPropertiesData`, AND
+   * NEVER EDITED. It is a scope to aim at, not a value — `armNoticeControl`
+   * below renders only when an error names it, so on a clean node the panel is
+   * byte-identical to what it was.
+   */
+  armNotice: { type: 'string' },
 } as const;
+
 
 
 // The one control, spelled once. Every node's uischema ends with it, so the
@@ -250,6 +276,28 @@ function statusControl(scope: string): UISchema {
  */
 function identityControls(labelScope: string, descriptionScope: string): UISchema[] {
   return [
+    {
+      // ⚠️ THE VENDOR'S OWN CONTROL, WITH NO `text` — that is the whole trick.
+      // Its renderer is `t(text) || errors || text`, so a hardcoded `text` WINS
+      // over the error's own message and an absent one falls through to it:
+      // `t(undefined)` returns `''`, which is falsy. Our sentence is the one
+      // that depends on the agent (which trigger, which kinds), so it has to
+      // come from `customErrors[].message` rather than from here.
+      //
+      // ⚠️ IT RENDERS NOTHING UNLESS AN ERROR NAMES ITS SCOPE. The control
+      // returns null while `errors.length === 0`, and only `syncArmBlockerMarkers`
+      // ever writes one — so this line costs a clean node nothing at all.
+      //
+      // ⚠️ FIRST, ABOVE THE NAME FIELD. A refusal about the whole node is not a
+      // note about its label; putting it under the fields would make the owner
+      // scroll past the thing they are being told is wrong.
+      //
+      // The scope is derived rather than passed so that adding this cost no call
+      // site a change — every uischema already spreads `identityControls`, and
+      // the alternative was editing twenty-two of them by hand.
+      type: 'MessageOnError',
+      scope: labelScope.replace(/label$/, ARM_NOTICE_PATH.slice(1)),
+    },
     { type: 'Text', scope: labelScope, label: 'שם הצעד' },
     {
       type: 'Text',
@@ -499,10 +547,26 @@ const webhookTriggerSchema = {
   properties: {
     ...identityProperties,
     ...statusProperty,
-    // ⚠️ THE PUBLIC HALF OF THE ADDRESS, AND SAFE TO EXPORT. `/api/workflows/
-    // hook/<endpointId>` — it identifies WHICH webhook and proves nothing, so
-    // the panel shows it always and a diagram may carry it anywhere.
-    endpointId: requiredText,
+    // WHERE the caller proves itself. See `WEBHOOK_AUTH_MODES`: `header` is the
+    // default and what every diagram saved before this field means, `address`
+    // exists for a caller that can be handed a URL and nothing else.
+    auth: {
+      type: 'string',
+      options: [
+        { value: 'header', label: 'סוד בכותרת (מומלץ)' },
+        { value: 'address', label: 'הכתובת עצמה היא הסוד' },
+      ],
+    },
+    // ⚠️ THE PUBLIC HALF OF THE ADDRESS, AND SAFE TO EXPORT — IN `header` MODE.
+    // `/api/workflows/hook/<endpointId>` identifies WHICH webhook and proves
+    // nothing, so the panel shows it always and a diagram may carry it anywhere.
+    //
+    // ⚠️ NOT `requiredText`, AND NOT BECAUSE IT IS OPTIONAL. It is required in
+    // `header` mode and forbidden in `address` mode, which is a CONDITIONAL
+    // contract — declared once in `NODE_CONDITIONAL_REQUIRED_FIELDS` and applied
+    // to this schema by the same `allOf` machinery `action.webhook` uses. A
+    // `required` here would fire in both modes and make `address` unarmable.
+    endpointId: { type: 'string' },
     // WHICH HTTP METHODS open this address. Objects, not bare strings, for the
     // reason `messageKinds` records at length: the SDK's `ArrayFieldSchema`
     // cannot describe an array of strings at all.
@@ -528,11 +592,21 @@ const webhookTriggerUiSchema: UISchema = {
     triggerSwitchElement,
     ...identityControls(webhookTriggerScope('properties.label'), webhookTriggerScope('properties.description')),
     {
-      // ONE renderer for both halves — the public address and the secret are
-      // generated together and must never drift apart, so they are created,
-      // displayed and rotated by the same control. It binds to `tokenHash`
-      // because that is the field JsonForms writes through; it reaches
-      // `endpointId` on the same node.
+      // ⚠️ ABOVE THE ADDRESS CONTROL, because it decides what that control is
+      // for. Changing it CLEARS whatever was generated — see the control — so an
+      // owner who flips it after generating has to press the button again, and
+      // arming refuses until they do.
+      type: 'Select',
+      scope: webhookTriggerScope('properties.auth'),
+      label: 'איך הקורא מזדהה',
+    },
+    {
+      // ONE renderer for every shape this takes — the public address and the
+      // secret in `header` mode, the single once-shown address in `address`
+      // mode. They are created together and must never drift apart, so one
+      // control creates, displays and rotates them. It binds to `tokenHash`
+      // because that is the field JsonForms writes through and the one field
+      // BOTH modes have; it reaches `auth` and `endpointId` on the same node.
       type: 'Text',
       scope: webhookTriggerScope('properties.tokenHash'),
       label: 'כתובת וסוד',
@@ -540,7 +614,15 @@ const webhookTriggerUiSchema: UISchema = {
     },
     {
       type: 'Label',
-      text: 'הכתובת גלויה וניתנת להעתקה בכל עת. הסוד נשלח בכותרת x-kalfa-webhook-secret ומוצג פעם אחת בלבד — נשמר רק גיבוב שלו. יצירת סוד חדש אינה משנה את הכתובת.',
+      text: 'אימות בכותרת: הכתובת גלויה וניתנת להעתקה בכל עת, והסוד נשלח ב-x-kalfa-webhook-secret ומוצג פעם אחת בלבד. יצירת סוד חדש אינה משנה את הכתובת.',
+    },
+    {
+      // ⚠️ THE COST OF THE OTHER MODE, SPELLED OUT WHERE IT IS CHOSEN. An owner
+      // who picks it is giving up exactly the thing the 2026-09-22 split was
+      // built to give them back — a recoverable address — and finding that out
+      // later, from a lost integration, is the failure this sentence prevents.
+      type: 'Label',
+      text: 'אימות לפי כתובת: הכתובת עצמה היא הסוד, מוצגת פעם אחת בלבד ואינה ניתנת לשחזור — נשמר רק גיבוב שלה. בחרו באפשרות הזו רק כשהמערכת הקוראת אינה יודעת לשלוח כותרת (למשל SUMIT). קריאת GET לא תעבוד במצב הזה.',
     },
     {
       type: 'Accordion',
@@ -2833,8 +2915,17 @@ export const PALETTE_ITEMS: PaletteItem[] = [
       status: nodeStatusOptions.active.value,
       label: 'קריאת Webhook נכנסת',
       description: 'מערכת חיצונית קוראת לכתובת והתהליך מתחיל',
+      // ⚠️ `header` EXPLICITLY, NOT LEFT ABSENT. `readWebhookAuthMode` reads an
+      // absent value as `header` anyway, so this changes no behaviour — it is
+      // here because `palette-defaults.test.ts` requires a conditional rule's
+      // decider to be a member of its own `whenIn`, and a node born with the
+      // field set is a node whose mode is visible in the panel from the first
+      // render rather than implied.
+      auth: 'header',
       // Both halves start blank and are minted together by the control. A
       // diagram with one and not the other is the state `arm-check` refuses.
+      // In `address` mode this one stays blank forever — the path is never
+      // stored, only its hash.
       endpointId: '',
       // Empty means POST only. See `webhookAllowsMethod` — an absent value must
       // never widen a live public endpoint.
@@ -2896,12 +2987,29 @@ export const PALETTE_ITEMS: PaletteItem[] = [
     // `templateType: NodeType.DecisionNode` plus a `decisionBranches` array of
     // `{ id, sourceHandle, label, conditions }`. Two deliberate differences:
     //
-    //   * We omit `conditions` from the item shape and the `DecisionBranches`
-    //     control from the uischema. Their branch conditions are `{x, y,
-    //     comparisonOperator}` strings resolved through `resolveTemplate`, which
-    //     we did not vendor — an owner typing `{{trigger.x}}` there would get
-    //     literal text. Our condition evaluates server-side from
-    //     `field`/`operator`/`value` instead, so the branches are fixed.
+    //   * We omit `conditions` from the item shape and the branch-condition
+    //     control from the uischema, and the branches are fixed.
+    //
+    //     ⚠️ THE REASON THIS BULLET USED TO GIVE IS NO LONGER TRUE, and leaving
+    //     it stated would keep talking a future reader out of a real feature.
+    //     It said the vendor's branch conditions are `{x, y, comparisonOperator}`
+    //     resolved through `resolveTemplate` "which we did not vendor", so
+    //     `{{trigger.x}}` would render as literal text. `resolve-template.ts` IS
+    //     vendored and wired into `activity-runner.ts` — the very next bullet
+    //     says so about `outputSchema` — and `logic.switch` already ships the
+    //     vendor's `DecisionBranches` control (see `switchUiSchema`). So the
+    //     mechanism works and is in use.
+    //
+    //     ⚠️ AND IT NAMED THE WRONG CONTROL. `DecisionBranches` belongs to the
+    //     vendor's DECISION node (docs/workflowbuilder/nodes/decision.md); their
+    //     CONDITIONAL node uses `DynamicConditions` over a `conditionsArray`
+    //     (nodes/conditional.md). This entry is the conditional shape.
+    //
+    //     WHAT ACTUALLY STOPS IT, measured: `ConditionConfig` stores one
+    //     comparison as `field`/`operator`/`value`, so "A AND B" cannot be
+    //     expressed and every saved diagram carries the flat triple. The blocker
+    //     is a migration of stored data, not a missing control — and the
+    //     array evaluator with AND/OR already exists, serving `logic.switch`.
     //   * `outputSchema` USED to be withheld here, on the reasoning that "the
     //     picker would suggest references nothing can resolve". That held only
     //     while `resolve-template.ts` was unvendored; it is vendored and wired

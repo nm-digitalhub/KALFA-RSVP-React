@@ -4,7 +4,7 @@ import 'server-only';
 import { editorDiagramSchema } from './adapter/editor-schema';
 import { hashWebhookToken, webhookHashesMatch } from './webhook-token';
 import { isTriggerType } from './catalogue/nodes';
-import { webhookAllowsMethod } from './catalogue/types';
+import { readWebhookAuthMode, webhookAllowsMethod } from './catalogue/types';
 import { createRunIfNew, listArmedWorkflows } from './store';
 
 import type { WorkflowTriggerPayload } from './steps';
@@ -20,10 +20,18 @@ import type { WorkflowTriggerPayload } from './steps';
 // subsystem has. Four things bound it, and each is here rather than in the route
 // so there is no second path that skips one:
 //
-//   1. The SECRET is the whole credential, compared in CONSTANT TIME — and it
-//      arrives in a HEADER, never in the path. The path carries only a public
-//      endpoint id, so a secret is no longer written into every access log and
-//      Referer that records a URL. See plans/webhook-address-vs-secret.md.
+//   1. A 32-byte CSPRNG SECRET is the whole credential, compared in CONSTANT
+//      TIME against a stored sha256 — never against a plaintext copy, because
+//      the diagram is snapshotted into every run row. WHERE it arrives is the
+//      node's `auth` mode and nothing else:
+//        `header`  (default, and every diagram saved before the field) — in
+//                  `x-kalfa-webhook-secret`, with a public endpoint id in the
+//                  path, so no secret reaches an access log or a Referer.
+//        `address` — the path segment itself, for a caller that can be given a
+//                  URL and nothing else. Chosen by the owner on 2026-09-23 for
+//                  SUMIT, whose `/triggers/triggers/subscribe/` has one field
+//                  for the destination and no way to add a header.
+//      See plans/webhook-address-vs-secret.md for the trade each mode makes.
 //   2. Only ARMED workflows are searched. Disarming a workflow closes its URL.
 //   3. The run carries NO event and NO contact, so every guest-touching node
 //      refuses inside it (`requireGuestContext`). A leaked token means "someone
@@ -56,12 +64,22 @@ export type WebhookTriggerResult =
  * secret gets the same `null` as one that presents neither.
  */
 async function findWorkflowForEndpoint(endpointId: string, secret: string, method: string) {
-  if (endpointId.trim() === '' || secret.trim() === '') return null;
+  // ⚠️ ONLY THE PATH IS REQUIRED UP FRONT NOW. It used to bail here on an empty
+  // SECRET too, which was right while every node was header-authenticated and
+  // is wrong now: an `address`-mode node asks for no header at all, so a blanket
+  // refusal would make that mode unreachable. The secret is still mandatory —
+  // per node, below, for every node that is in `header` mode.
+  if (endpointId.trim() === '') return null;
 
   // Hashed ONCE, outside the loop: the diagram stores `tokenHash`, so the value
   // a caller sent is turned into the stored form before anything is compared.
-  // The secret itself never appears in a workflow's JSON — see webhook-token.ts.
-  const presented = await hashWebhookToken(secret);
+  // The value itself never appears in a workflow's JSON — see webhook-token.ts.
+  //
+  // BOTH halves are hashed because either one can be the credential, and which
+  // it is depends on the NODE, which is not known until the loop. Hashing the
+  // path unconditionally also keeps the work per call identical in both modes.
+  const presentedSecret = secret.trim() === '' ? '' : await hashWebhookToken(secret);
+  const presentedPath = await hashWebhookToken(endpointId);
 
   for (const workflow of await listArmedWorkflows()) {
     const parsed = editorDiagramSchema.safeParse(workflow.definition);
@@ -75,13 +93,27 @@ async function findWorkflowForEndpoint(endpointId: string, secret: string, metho
     const trigger = triggers[0]!;
     if (trigger.data.type !== 'trigger.webhook') continue;
 
-    const configuredId = trigger.data.properties?.endpointId;
-    if (typeof configuredId !== 'string' || configuredId.trim() === '') continue;
-    if (!webhookHashesMatch(configuredId, endpointId)) continue;
-
+    // The stored hash is the one thing BOTH modes have. What it is a hash OF is
+    // what the mode decides.
     const configuredHash = trigger.data.properties?.tokenHash;
     if (typeof configuredHash !== 'string' || configuredHash.trim() === '') continue;
-    if (!webhookHashesMatch(configuredHash, presented)) continue;
+
+    if (readWebhookAuthMode(trigger.data.properties?.auth) === 'address') {
+      // ⚠️ THE PATH IS THE CREDENTIAL, so it is compared against the HASH and
+      // never against a stored copy — there is no stored copy, which is the
+      // point: a plaintext segment in the diagram would ride along in every
+      // run's `definitionSnapshot`. A caller that presents a header as well is
+      // neither helped nor refused by it; this mode simply does not read one.
+      if (!webhookHashesMatch(configuredHash, presentedPath)) continue;
+    } else {
+      // ⚠️ HEADER MODE IS UNCHANGED, INCLUDING ITS REFUSALS. An empty header
+      // hashes to `''` above and can never equal a 64-character digest, so a
+      // caller who knows the public id and sends no secret still gets nothing.
+      const configuredId = trigger.data.properties?.endpointId;
+      if (typeof configuredId !== 'string' || configuredId.trim() === '') continue;
+      if (!webhookHashesMatch(configuredId, endpointId)) continue;
+      if (!webhookHashesMatch(configuredHash, presentedSecret)) continue;
+    }
 
     // ⚠️ THE METHOD IS CHECKED HERE, NOT IN THE ROUTE, and it is checked LAST.
     // Here, because the route would otherwise be a second place that decides who
@@ -102,9 +134,13 @@ async function findWorkflowForEndpoint(endpointId: string, secret: string, metho
  * retrying would only produce the same answer.
  */
 export async function startRunFromWebhook(input: {
-  /** Public, from the path. Identifies which webhook — proves nothing. */
+  /**
+   * The path segment. In `header` mode it is a public id that proves nothing;
+   * in `address` mode it IS the credential. The route cannot tell which — only
+   * the node knows — so it always passes both this and the header through.
+   */
   endpointId: string;
-  /** The credential, from `WEBHOOK_SECRET_HEADER`. Never from the path. */
+  /** From `WEBHOOK_SECRET_HEADER`. The credential in `header` mode; ignored in `address` mode. */
   secret: string;
   /** The verb this call arrived with. Checked against the node's allow-list. */
   method: string;

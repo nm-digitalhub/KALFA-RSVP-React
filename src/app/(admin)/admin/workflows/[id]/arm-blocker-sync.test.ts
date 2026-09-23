@@ -83,7 +83,18 @@ describe('syncArmBlockerMarkers', () => {
     syncArmBlockerMarkers('w', edges, 'wf-1');
     expect(errorsOn('action-1')[0]).toEqual({
       keyword: 'armBlocker',
-      instancePath: '',
+      // ⚠️ `ARM_NOTICE_PATH`, NOT `''` — AND THAT IS THE WHOLE POINT OF THE
+      // FIELD. A root-scoped error marks the node and lands next to nothing:
+      // JsonForms attaches an external error to a control by matching this
+      // against its `scope`, so `''` produced an exclamation mark the owner
+      // could not explain until they pressed "arm". Every node's uischema now
+      // carries a text-less `MessageOnError` on `#/properties/armNotice`, which
+      // is the vendor's own display mechanism rather than a second one of ours.
+      // Spelled literally rather than imported: this file mocks the SDK store,
+      // and reaching `ARM_NOTICE_PATH` would pull in `types.ts` for a string.
+      // `palette-defaults.test.ts` is where the constant and every uischema's
+      // scope are proven to be the same value.
+      instancePath: '/armNotice',
       schemaPath: '',
       params: {},
       message: expect.any(String),

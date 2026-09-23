@@ -87,16 +87,28 @@ export async function hashWebhookToken(token: string): Promise<string> {
 }
 
 /**
- * The address of a webhook trigger.
+ * The address of a webhook trigger: the origin plus whatever goes in the path.
  *
- * ⚠️ TAKES THE PUBLIC ENDPOINT ID, NEVER THE SECRET. It used to take the token,
- * which is what made the URL unshowable — and what put a live credential into
- * every access log, proxy record and Referer header that stores a path. The
- * secret now travels in `x-kalfa-webhook-secret`, so this string is safe to
- * display, copy and keep.
+ * ⚠️ WHETHER THE RESULT IS SHAREABLE DEPENDS ON THE CALLER, NOT ON THIS
+ * FUNCTION — and that is the one thing to get right at every call site.
+ *
+ *   `header` mode passes `endpointId`, a public 16-byte id. The string is safe
+ *     to display, copy and keep, and the credential rides in
+ *     `x-kalfa-webhook-secret`. This was the whole point of the 2026-09-22
+ *     split: before it the token WAS the path, which made the URL unshowable
+ *     and put a live credential into every access log, proxy record and Referer
+ *     that stores a path.
+ *
+ *   `address` mode passes the 32-byte TOKEN, because there the path is the
+ *     credential — for callers like SUMIT that can be given a URL and nothing
+ *     else. The result is a SECRET: show it once, never store it, and never put
+ *     it anywhere a plain address would be fine.
+ *
+ * The function cannot tell them apart and deliberately does not try: it builds a
+ * URL. `webhook-token-control.tsx` is where the two are kept straight.
  */
-export function webhookUrlFor(origin: string, endpointId: string): string {
-  return new URL(`/api/workflows/hook/${encodeURIComponent(endpointId)}`, origin).href;
+export function webhookUrlFor(origin: string, pathSegment: string): string {
+  return new URL(`/api/workflows/hook/${encodeURIComponent(pathSegment)}`, origin).href;
 }
 
 /** The header an inbound call proves itself with. */

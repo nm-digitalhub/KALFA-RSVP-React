@@ -13,6 +13,7 @@ import {
 } from '@workflowbuilder/sdk';
 
 import { Button } from '@/components/ui/button';
+import { readWebhookAuthMode } from '@/lib/workflow/catalogue/types';
 import { WEBHOOK_TOKEN_FORMAT } from '@/lib/workflow/catalogue/ui-formats';
 import {
   WEBHOOK_SECRET_HEADER,
@@ -62,24 +63,46 @@ function WebhookTokenControl({ data, handleChange, path, enabled, readonly }: Co
   const properties = ((selection?.node?.data as { properties?: Record<string, unknown> } | undefined)
     ?.properties ?? {}) as Record<string, unknown>;
   const endpointId = typeof properties.endpointId === 'string' ? properties.endpointId : '';
+  const mode = readWebhookAuthMode(properties.auth);
+  const addressIsSecret = mode === 'address';
 
   const endpointPath = path.replace(/tokenHash$/, 'endpointId');
   const hasHash = typeof data === 'string' && data.trim() !== '';
   const canGenerate = enabled !== false && readonly !== true && !busy;
 
+  // ⚠️ IN `address` MODE THERE IS NOTHING TO REBUILD AN ADDRESS FROM, and that
+  // is the mode working. `endpointId` is deliberately never written there, so
+  // the panel can show the address only in the render that minted it —
+  // `freshSecret` below — and afterwards has only the hash, like any password
+  // field. In `header` mode the id is public and the address is shown forever.
   const address =
-    endpointId && typeof window !== 'undefined'
+    !addressIsSecret && endpointId && typeof window !== 'undefined'
       ? webhookUrlFor(window.location.origin, endpointId)
+      : null;
+  const freshAddress =
+    addressIsSecret && freshSecret && typeof window !== 'undefined'
+      ? webhookUrlFor(window.location.origin, freshSecret)
       : null;
 
   const generate = async () => {
     setBusy(true);
     try {
+      // ⚠️ THE SAME 32 CSPRNG BYTES IN BOTH MODES. What changes is where the
+      // value travels — a header or the path — never how much entropy it has.
+      // `generateWebhookEndpointId` is 16 bytes and stays exactly what its own
+      // doc calls it: a public id that proves nothing, minted only for `header`.
       const secret = generateWebhookToken();
       handleChange(path, await hashWebhookToken(secret));
-      // MINTED ONCE AND KEPT. Rotating a secret must not move the address — that
-      // is the whole point of the split — so an existing id is preserved.
-      if (!endpointId) handleChange(endpointPath, generateWebhookEndpointId());
+      if (addressIsSecret) {
+        // ⚠️ CLEARED, NOT LEFT BEHIND. A node switched from `header` may still
+        // carry the public id it had there; leaving it would put a second,
+        // stale, plaintext path in the diagram that no longer opens anything.
+        if (endpointId) handleChange(endpointPath, '');
+      } else if (!endpointId) {
+        // MINTED ONCE AND KEPT. Rotating a secret must not move the address —
+        // that is the whole point of the split — so an existing id is preserved.
+        handleChange(endpointPath, generateWebhookEndpointId());
+      }
       setFreshSecret(secret);
       setConfirmingReplace(false);
     } finally {
@@ -108,8 +131,31 @@ function WebhookTokenControl({ data, handleChange, path, enabled, readonly }: Co
           </Button>
         </div>
       ) : (
+        !addressIsSecret && (
+          <p className="text-sm text-muted-foreground">
+            עדיין אין כתובת. צרו סוד — הכתובת תיווצר יחד איתו ותישאר קבועה.
+          </p>
+        )
+      )}
+
+      {addressIsSecret && !freshAddress && !endpointId && (
         <p className="text-sm text-muted-foreground">
-          עדיין אין כתובת. צרו סוד — הכתובת תיווצר יחד איתו ותישאר קבועה.
+          {hasHash
+            ? 'הכתובת נוצרה ואינה ניתנת להצגה שוב. אם אבדה — צרו כתובת חדשה ועדכנו את המערכת הקוראת.'
+            : 'עדיין אין כתובת. היא תוצג פעם אחת בלבד, מיד עם היצירה.'}
+        </p>
+      )}
+
+      {/* ⚠️ THE MODE WAS CHANGED AFTER A CREDENTIAL WAS MINTED, and nothing else
+          on this panel would say so. A leftover `endpointId` means this node was
+          generated in header mode: its stored hash is of the HEADER secret, so
+          no caller can now reach it — the path hashes to something else and the
+          header is not read. Inert rather than unsafe, but indistinguishable on
+          screen from a working node, which is why `arm-check` refuses it too. */}
+      {addressIsSecret && endpointId && (
+        <p className="rounded-md border p-2 text-sm">
+          המצב שונה אחרי שנוצר סוד, והכתובת הישנה כבר לא תפעיל את התהליך. לחצו על יצירת כתובת כדי
+          לקבל כתובת חדשה.
         </p>
       )}
 
@@ -122,10 +168,18 @@ function WebhookTokenControl({ data, handleChange, path, enabled, readonly }: Co
           onClick={() => (hasHash ? setConfirmingReplace(true) : void generate())}
         >
           <Icon name="Key" />
-          {hasHash ? 'יצירת סוד חדש' : 'יצירת סוד'}
+          {addressIsSecret
+            ? hasHash
+              ? 'יצירת כתובת חדשה'
+              : 'יצירת כתובת'
+            : hasHash
+              ? 'יצירת סוד חדש'
+              : 'יצירת סוד'}
         </Button>
         {hasHash && !freshSecret && (
-          <span className="text-sm text-muted-foreground">סוד קיים — לא ניתן להצגה</span>
+          <span className="text-sm text-muted-foreground">
+            {addressIsSecret ? 'כתובת קיימת — לא ניתנת להצגה' : 'סוד קיים — לא ניתן להצגה'}
+          </span>
         )}
       </div>
 
@@ -136,12 +190,21 @@ function WebhookTokenControl({ data, handleChange, path, enabled, readonly }: Co
         // false warning is one people learn to click through.
         <div className="flex flex-col gap-2 rounded-md border p-2">
           <p className="text-sm">
-            הכתובת <strong>לא תשתנה</strong>. הסוד הקיים יפסיק להתקבל מיד — עדכנו אותו בכל
-            מערכת שקוראת לכתובת הזו.
+            {addressIsSecret ? (
+              <>
+                הכתובת הקיימת <strong>תפסיק לעבוד מיד</strong>, ולא ניתן לשחזר אותה. כל מערכת
+                שקוראת לה תיעצר עד שתעדכנו אצלה את הכתובת החדשה.
+              </>
+            ) : (
+              <>
+                הכתובת <strong>לא תשתנה</strong>. הסוד הקיים יפסיק להתקבל מיד — עדכנו אותו בכל
+                מערכת שקוראת לכתובת הזו.
+              </>
+            )}
           </p>
           <div className="flex gap-2">
             <Button type="button" size="sm" disabled={!canGenerate} onClick={() => void generate()}>
-              יצירת סוד חדש
+              {addressIsSecret ? 'יצירת כתובת חדשה' : 'יצירת סוד חדש'}
             </Button>
             <Button
               type="button"
@@ -158,19 +221,28 @@ function WebhookTokenControl({ data, handleChange, path, enabled, readonly }: Co
       {freshSecret && (
         // Shown ONCE. Re-rendering the panel, reloading, or coming back later all
         // lose it — which is what "only the hash is stored" means in practice.
+        //
+        // ⚠️ IN `address` MODE THIS IS THE ONLY TIME THE ADDRESS EXISTS ON
+        // SCREEN. `freshSecret` holds the path segment, and the full URL is
+        // built from it here rather than stored, so navigating away is the same
+        // as losing a password.
         <div className="flex flex-col gap-1 rounded-md border p-2">
-          <p className="text-sm font-medium">העתיקו עכשיו — לא ניתן יהיה להציג שוב:</p>
+          <p className="text-sm font-medium">
+            {freshAddress
+              ? 'זו הכתובת המלאה. העתיקו עכשיו — לא ניתן יהיה להציג שוב:'
+              : 'העתיקו עכשיו — לא ניתן יהיה להציג שוב:'}
+          </p>
           <code dir="ltr" className="break-all rounded bg-muted/50 p-1 text-xs">
-            {WEBHOOK_SECRET_HEADER}: {freshSecret}
+            {freshAddress ?? `${WEBHOOK_SECRET_HEADER}: ${freshSecret}`}
           </code>
           <Button
             type="button"
             variant="outline"
             size="sm"
             className="self-start"
-            onClick={() => copy(freshSecret)}
+            onClick={() => copy(freshAddress ?? freshSecret)}
           >
-            העתקת הסוד
+            {freshAddress ? 'העתקת הכתובת' : 'העתקת הסוד'}
           </Button>
         </div>
       )}

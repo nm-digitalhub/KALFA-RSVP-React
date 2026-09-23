@@ -349,3 +349,134 @@ describe('the query string is published separately from the body', () => {
     expect(createRunMock.mock.calls[0][0].triggerPayload.query).toEqual({});
   });
 });
+
+// ---------------------------------------------------------------------------
+// auth: 'address' — the path IS the credential
+// ---------------------------------------------------------------------------
+
+/**
+ * A node in `address` mode.
+ *
+ * ⚠️ `endpointId` IS ABSENT, not blank-by-accident. That is the contract: the
+ * path segment is a credential, so storing it would put it into the diagram and
+ * from there into every run's `definitionSnapshot`. Only its hash is kept.
+ */
+const addressWorkflow = (tokenHash: string, extra: Record<string, unknown> = {}) => ({
+  id: 'wf-addr',
+  eventId: null,
+  definition: {
+    name: 'w',
+    layoutDirection: 'RIGHT',
+    nodes: [
+      {
+        id: 't',
+        type: 'node',
+        position: { x: 0, y: 0 },
+        data: {
+          type: 'trigger.webhook',
+          icon: 'Plugs',
+          properties: { label: 't', description: 'd', auth: 'address', tokenHash, ...extra },
+        },
+      },
+    ],
+    edges: [],
+  },
+});
+
+/** The 32-byte value that lives in the path. Hashed exactly like a header secret. */
+const PATH_SECRET = 'c'.repeat(43);
+const PATH_HASH = await hashWebhookToken(PATH_SECRET);
+
+describe("auth: 'address' — for a caller that cannot send a header", () => {
+  it('the path alone starts a run, with no header at all', async () => {
+    armedMock.mockResolvedValue([addressWorkflow(PATH_HASH)]);
+    expect(
+      await startRunFromWebhook({ method: 'POST', endpointId: PATH_SECRET, secret: '', rawBody: '{"a":1}' }),
+    ).toEqual({ ok: true, runId: 'run-1' });
+  });
+
+  it('a wrong path starts nothing', async () => {
+    armedMock.mockResolvedValue([addressWorkflow(PATH_HASH)]);
+    expect(
+      await startRunFromWebhook({ method: 'POST', endpointId: OTHER, secret: '', rawBody: '{}' }),
+    ).toEqual({ ok: false, reason: 'not_found' });
+    expect(createRunMock).not.toHaveBeenCalled();
+  });
+
+  it('⚠️ the stored hash is not itself a path — presenting it opens nothing', async () => {
+    // The same property the header mode has, and for the same reason: a leaked
+    // diagram hands over a value that does not authenticate.
+    armedMock.mockResolvedValue([addressWorkflow(PATH_HASH)]);
+    expect(
+      await startRunFromWebhook({ method: 'POST', endpointId: PATH_HASH, secret: '', rawBody: '{}' }),
+    ).toEqual({ ok: false, reason: 'not_found' });
+  });
+
+  it('a header is neither required nor consulted', async () => {
+    // Not a nicety: SUMIT sends whatever it sends, and a node in this mode must
+    // not start depending on a value its caller cannot control.
+    armedMock.mockResolvedValue([addressWorkflow(PATH_HASH)]);
+    expect(
+      await startRunFromWebhook({ method: 'POST', endpointId: PATH_SECRET, secret: 'anything', rawBody: '{}' }),
+    ).toMatchObject({ ok: true });
+  });
+
+  it('⚠️ an EMPTY stored hash is never reachable, not even by an empty path', async () => {
+    armedMock.mockResolvedValue([addressWorkflow('')]);
+    expect(
+      await startRunFromWebhook({ method: 'POST', endpointId: '', secret: '', rawBody: '{}' }),
+    ).toMatchObject({ ok: false });
+  });
+
+  it('the method allow-list still applies, and is still checked last', async () => {
+    armedMock.mockResolvedValue([addressWorkflow(PATH_HASH, { methods: [{ value: 'PUT' }] })]);
+    expect(
+      await startRunFromWebhook({ method: 'POST', endpointId: PATH_SECRET, secret: '', rawBody: '{}' }),
+    ).toEqual({ ok: false, reason: 'not_found' });
+    expect(
+      await startRunFromWebhook({ method: 'PUT', endpointId: PATH_SECRET, secret: '', rawBody: '{}' }),
+    ).toMatchObject({ ok: true });
+  });
+});
+
+describe('⚠️ the modes do not leak into each other', () => {
+  it('a HEADER-mode node with the right path and NO header is still refused', async () => {
+    // THE REGRESSION THIS WHOLE FILE EXISTS FOR. `findWorkflowForEndpoint` used
+    // to refuse an empty secret before looking at any node; that early bail had
+    // to go so `address` mode could work at all. If the per-node header check
+    // were ever dropped with it, every public endpoint id in every saved diagram
+    // — values that have been displayed and copied since 2026-09-22 — would
+    // become a working credential.
+    armedMock.mockResolvedValue([workflow(TOKEN_HASH)]);
+    expect(
+      await startRunFromWebhook({ method: 'POST', endpointId: ENDPOINT, secret: '', rawBody: '{}' }),
+    ).toEqual({ ok: false, reason: 'not_found' });
+    expect(createRunMock).not.toHaveBeenCalled();
+  });
+
+  it('a HEADER-mode node is not reachable by putting the secret in the path', async () => {
+    armedMock.mockResolvedValue([workflow(TOKEN_HASH)]);
+    expect(
+      await startRunFromWebhook({ method: 'POST', endpointId: TOKEN, secret: '', rawBody: '{}' }),
+    ).toEqual({ ok: false, reason: 'not_found' });
+  });
+
+  it('an ADDRESS-mode node is not reachable by the header that once opened it', async () => {
+    // The mode-switch case: the stored hash is of the old header secret, so
+    // nothing reaches this node until it is regenerated. arm-check refuses to
+    // arm it for exactly this reason; here we prove the runtime agrees.
+    armedMock.mockResolvedValue([addressWorkflow(TOKEN_HASH, { endpointId: ENDPOINT })]);
+    expect(
+      await startRunFromWebhook({ method: 'POST', endpointId: ENDPOINT, secret: TOKEN, rawBody: '{}' }),
+    ).toEqual({ ok: false, reason: 'not_found' });
+  });
+
+  it('an absent auth field reads as header mode — every saved diagram is unchanged', async () => {
+    // `readWebhookAuthMode` decides this, and getting it wrong would turn a
+    // published endpoint id into a credential overnight.
+    armedMock.mockResolvedValue([workflow(TOKEN_HASH)]);
+    expect(
+      await startRunFromWebhook({ method: 'POST', endpointId: ENDPOINT, secret: TOKEN, rawBody: '{}' }),
+    ).toMatchObject({ ok: true });
+  });
+});

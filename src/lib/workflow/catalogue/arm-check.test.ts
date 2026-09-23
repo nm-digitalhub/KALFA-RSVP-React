@@ -614,3 +614,71 @@ describe('⚠️ the error PORT and the error POLICY must agree', () => {
     expect(offenders).toEqual([]);
   });
 });
+
+describe("trigger.webhook auth: 'address' — the address is the credential", () => {
+  const hook = (properties: Record<string, unknown>) =>
+    wrap([node('h', 'trigger.webhook', { label: 'קריאה', description: 'd', ...properties })]);
+
+  it('⚠️ a node with nothing generated is BLOCKED, and the sentence names the right button', () => {
+    // Without the conditional table this would have armed with zero blockers:
+    // `endpointId` moved out of NODE_REQUIRED_FIELDS so `address` mode could
+    // exist, and `tokenHash` is the only thing left holding the gate shut.
+    expect(findArmBlockers(hook({ auth: 'address', tokenHash: '' }))).toEqual([
+      'הצעד "קריאה": לא נוצרה עדיין כתובת. לחצו על יצירת כתובת — היא תוצג פעם אחת בלבד, ומרגע שנשמרה לא ניתן לשחזר אותה.',
+    ]);
+  });
+
+  it('a generated node arms with no address stored at all', () => {
+    // The contract: `endpointId` is ABSENT here, not blank, and that must not be
+    // read as a missing required field.
+    expect(findArmBlockers(hook({ auth: 'address', tokenHash: 'a'.repeat(64) }))).toEqual([]);
+  });
+
+  it('⚠️ refuses GET, which would never fire and would look armed', () => {
+    // The route answers a headerless GET with a constant hint so the address bar
+    // cannot be used as an oracle. A caller in this mode sends no header by
+    // definition, so the pair is dead — and nothing downstream would say so.
+    expect(
+      findArmBlockers(
+        hook({ auth: 'address', tokenHash: 'a'.repeat(64), methods: [{ value: 'GET' }] }),
+      ),
+    ).toEqual([
+      'הצעד "קריאה": כשהאימות הוא הכתובת, קריאת GET לעולם לא תפעיל את התהליך — פתיחה בדפדפן מקבלת הודעה קבועה במקום. הסירו את GET מרשימת השיטות, או עברו לאימות בכותרת.',
+    ]);
+  });
+
+  it('refuses a node whose mode was switched after a secret was minted', () => {
+    // A leftover public id means the stored hash is of the HEADER secret, so
+    // nothing can reach this node. Inert rather than unsafe — which is exactly
+    // why it needs a gate instead of a shrug.
+    expect(
+      findArmBlockers(hook({ auth: 'address', tokenHash: 'a'.repeat(64), endpointId: 'ep' })),
+    ).toEqual([
+      'הצעד "קריאה": האימות שונה לכתובת אחרי שנוצר סוד, והכתובת הקודמת כבר לא מפעילה את התהליך. לחצו על יצירת כתובת כדי לקבל כתובת חדשה.',
+    ]);
+  });
+
+  it('POST and the other body verbs are fine', () => {
+    expect(
+      findArmBlockers(
+        hook({ auth: 'address', tokenHash: 'a'.repeat(64), methods: [{ value: 'POST' }, { value: 'PUT' }] }),
+      ),
+    ).toEqual([]);
+  });
+
+  it('⚠️ header mode is untouched: an absent auth still REQUIRES the address', () => {
+    // The compatibility promise. Every diagram saved before this field has no
+    // `auth`, a public `endpointId` and a header secret; reading absent as
+    // `address` would turn all of those published ids into credentials.
+    expect(findArmBlockers(hook({ tokenHash: 'a'.repeat(64) }))).toEqual([
+      'הצעד "קריאה": לא נוצרה כתובת. לחצו על יצירת סוד — הכתובת תיווצר יחד איתו ותישאר גלויה.',
+    ]);
+    expect(findArmBlockers(hook({ auth: 'header', tokenHash: 'a'.repeat(64), endpointId: 'ep' }))).toEqual([]);
+  });
+
+  it('header mode may still accept GET — the refusal is about the OTHER mode', () => {
+    expect(
+      findArmBlockers(hook({ tokenHash: 'a'.repeat(64), endpointId: 'ep', methods: [{ value: 'GET' }] })),
+    ).toEqual([]);
+  });
+});
