@@ -52,6 +52,39 @@ module.exports = {
     to: { path: '@workflowbuilder/sdk', reachable: true },
   },
   {
+    // ⚠️ AN ALLOW-LIST, NOT A DENY-LIST. A step handler reaches the outside world
+    // ONLY through the ports on `ctx.deps` — the vendor's own ports-and-adapters
+    // shape (`runGraph` is pure; activities are injected), and the reason the
+    // editor's dry run can swap every side effect for a recording. Nothing
+    // enforced it: the source scans only read the node's own files, so a
+    // runtime that imported `@/lib/foo`, which imported `child_process` or a
+    // SUMIT client, slipped past them.
+    //
+    // Measured 2026-09-24: the whole server-side step layer reaches exactly the
+    // modules listed in `to.pathNot` below — all pure, no I/O, no core module.
+    // Anything else reachable from it, directly or through any chain, fails the
+    // cruise. Widening the list is a deliberate, reviewed edit of this rule.
+    //
+    // FROM: `steps/` and every node-folder file except the four editor-side ones
+    // (schema, uischema, defaults, and the palette file named after its folder —
+    // `\\1` is the folder name), which `server-code-must-not-reach-the-editor-sdk`
+    // already fences off from the server.
+    name: 'step-layer-reaches-only-pure-modules',
+    comment:
+      'A step handler may reach the outside world only through ctx.deps (the ports), so the dry run can swap every side effect. The server-side step layer may therefore reach only the pure modules allow-listed here. To add one, confirm it has no I/O, no core-module and no server-only import, then list it.',
+    severity: 'error',
+    from: {
+      path: '^src/lib/workflow/(steps|nodes)/',
+      pathNot:
+        '(\\.test\\.tsx?$|^src/lib/workflow/nodes/[^/]+/(schema|uischema|default-properties-data)\\.ts$|^src/lib/workflow/nodes/([^/]+)/\\3\\.ts$)',
+    },
+    to: {
+      pathNot:
+        '^(src/lib/workflow/(steps|vendor/workflowbuilder)/|src/lib/workflow/nodes/[^/]+/(?!(schema|uischema|default-properties-data)\\.ts$)|src/lib/workflow/catalogue/types\\.ts$|src/lib/workflow/engine/(ports|wait-signal)\\.ts$|src/lib/workflow/voice-outcome\\.ts$|src/lib/constants\\.ts$|src/lib/integrations/errors\\.ts$|src/lib/sumit/hold-status\\.ts$)',
+      reachable: true,
+    },
+  },
+  {
     name: 'worker-no-request-scoped-next',
     comment: 'The pg-boss worker (worker/**) and the CLI scripts (scripts/**) are non-request processes; neither may (transitively) reach request-scoped Next APIs (next/headers|navigation|cache). Keep their send paths request-free (admin client) — see resolveSendableContacts. scripts/ was added 15.8: the rule covered only worker/, so `npm run worker:deps` passed while scripts/fleet-agent-cli.ts pulled the same next/headers chain in through sendPushToUser. A guard over one of two identical entry points is half a guard.',
     severity: 'error',

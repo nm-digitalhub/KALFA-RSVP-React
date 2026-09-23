@@ -202,7 +202,7 @@ catalogue/templates/
 - **שמות שדות בטוחים:** `readString<SetValueConfig>(config, 'value')`. שם שדה שלא קיים בסוג ההגדרות, או שאינו טקסט, הוא שגיאת קומפילציה. ההגדרות עצמן נשארות `Record<string, unknown>`, כי הן לא עברו אימות. הוכח בבדיקת טיפוסים (`steps/shared.test.ts`) ובתקלה מכוונת. **ידוע:** 22 הצמתים האחרים עדיין קוראים בלי סוג, וכל צומת יעבור לזה כשיועבר לתיקייה.
 - **`deploymentBindings = {}` מפורש** ב-`definition.ts`, ו-`NODE_DEPLOYMENT_BINDINGS` קורא ממנו. `node-definitions.test.ts` דורש שהמפתח יהיה קיים. זה ההבדל היחיד בתמונת המצב, ובייצוא הוא לא משנה דבר (`portability.ts:95-126`).
 - **אימות:** 6,922 בדיקות, `tsc`, `lint`, `worker:deps` ובנייה מלאה עוברים.
-- **נשאר לא מכוסה:** מודול מחוץ לתיקיית הצומת שמפעיל תהליך, ושהצומת מייבא, לא נתפס בסריקה הטקסטואלית. כך היה תמיד, והטיפול בזה הוא כלל תלויות.
+- **נסגר גם הפער האחרון:** כלל תלויות חדש, `step-layer-reaches-only-pure-modules` ב-`.dependency-cruiser.cjs`, עובד כרשימה לבנה. `steps/` וכל קובץ בתיקיית צומת, חוץ מארבעת קובצי העורך, רשאים להגיע, ישירות או בעקיפין, רק למודולים הטהורים שנמדדו (`catalogue/types`, `engine/ports`, `engine/wait-signal`, `vendor/workflowbuilder`, `voice-outcome`, `constants`, `integrations/errors`, `sumit/hold-status`, `steps/` וקובצי צמתים שאינם עורך). זה תואם לדפוס ה-ports-and-adapters של הספק: כל I/O עובר דרך `ctx.deps`. הוכח ב-3 תקלות מכוונות: קובץ מחוץ לתיקייה שמפעיל תהליך, מודול מסד נתונים ומודול מערכת ישיר. כל השלוש נחסמו.
 
 ### ידוע ולא טופל (מחוץ לתחום ההעברה)
 
