@@ -4,6 +4,8 @@
 
 המסמך הזה משלים ומתקן את `plans/node-folders-dependency-map.md`. הוא מסמך מיפוי בלבד; אין בו שינוי קוד.
 
+> **סטטוס מימוש (24.9.2026, 01:50):** תשתית הושלמה; צומת 1 מתוך 23 (`logic.set_value`) הועבר ונפרס לבטא. פירוט בסעיף 8 בסוף המסמך.
+
 ## 1. תיקון מבני
 
 לפי הדרישות המעודכנות יש בפועל **שישה קבצי בסיס פיזיים לכל צומת**, לא חמישה:
@@ -155,3 +157,59 @@ catalogue/templates/
 4. להוסיף `StartVoiceCallConfig` ולתקן את `KalfaNodeConfig` ל-23 מתוך 23.
 5. לקבע בדיקה שכל definition מספק type, requiredFields, output fields ו-activity profile מפורש או default מפורש.
 6. לבצע את ההעברה הראשונה בלי שינוי התנהגות, להריץ dependency guard, typecheck, tests ו-lint, ורק אז להמשיך לצומת הבא.
+
+## 8. סטטוס מימוש
+
+עודכן: 24.9.2026, 01:50. הקוד **טרם נשמר בגרסה** (uncommitted); הוא כבר **פרוס לבטא** (בנייה 01:42:20, האתר הופעל 01:42:58, המנוע 01:44:28 — כולם מהמצב הסופי).
+
+### תנאי המעבר מסעיף 7
+
+| # | תנאי | סטטוס | איפה |
+|---|---|---|---|
+| 1 | guard נגד `@workflowbuilder/sdk` בקוד שרת | ✅ בוצע | `.dependency-cruiser.cjs`, כלל `server-code-must-not-reach-the-editor-sdk`. מכסה את `worker/`, `steps/`, `engine/`, `adapter/`, `nodes/*/(definition\|runtime\|match).ts`, `catalogue/(types\|nodes\|arm-check).ts` ו-`src/lib/(data\|queue\|ops)/`. נאכף על שם החבילה, כולל ייבוא type-only. הכלל הישן על `schemas.ts` נשאר. |
+| 2 | הוצאת עזרי runtime משותפים | ✅ בוצע | `steps/shared.ts`: `WorkflowTriggerPayload`, `StepContext`, `StepHandler`, `readString`, `readEnum`, `requireGuestContext`. `engine/wait-signal.ts`: `WORKFLOW_WAIT_CODE`, `WorkflowWaitSignal`, `WaitVerifier`, `readWaitSignal`. `steps/index.ts` מייצא אותם מחדש לקוראים הקיימים. |
+| 3 | בדיקות source-scan על glob | ✅ בוצע | `src/lib/workflow/node-sources.ts` + `guest-context`, `ai-agent`, `sumit-accounting`, `palette-defaults`. כל סריקה נכשלת אם יש תיקיית צומת בלי `runtime.ts`. |
+| 4 | `StartVoiceCallConfig`, `KalfaNodeConfig` 23/23 | ✅ בוצע | `catalogue/types.ts`, עם בדיקת קומפילציה `_KALFA_NODE_CONFIG_COVERS_ALL_TYPES`. |
+| 5 | בדיקה שכל definition מספק type, requiredFields, output fields ו-activity profile | ✅ בוצע | `src/lib/workflow/node-definitions.test.ts`: עובר על כל תיקייה תחת `nodes/`, ובודק שהקובץ לא מייבא כלום, שהסוג מוכר ותואם לשם התיקייה, ש-isTrigger תואם לקטלוג, ש-`NODE_REQUIRED_FIELDS`, `NODE_ACTIVITY_PROFILES` ו-outputSchema של הלוח הם **אותו אובייקט** כמו בהגדרה, ושיש מטפל רשום. תקציב חייב להיות מפורש: אובייקט, או `'default'`. הוכח ב-3 תקלות מכוונות. |
+| 6 | העברה ראשונה בלי שינוי התנהגות | ✅ בוצע | ראו למטה. |
+
+### צומת 1: `logic.set_value` ✅
+
+- **קבצים:** `src/lib/workflow/nodes/logic-set-value/`:
+  - `definition.ts` (58 שורות, לא מייבא כלום)
+  - `schema.ts`, `uischema.ts`, `default-properties-data.ts`, `logic-set-value.ts` (צד עורך, `'use client'`)
+  - `runtime.ts` (צד שרת)
+  - אין `index.ts`.
+- **קובץ עזר משותף חדש לעורך:** `catalogue/editor-shared.ts`, עם `nodeStatusOptions`, `statusProperty`, `requiredText`, `identityProperties`, `statusControl` ו-`identityControls`. נדרש כדי למנוע מעגל ייבוא בין `schemas.ts` לתיקיית הצומת.
+- **רישומים שקוראים עכשיו מ-`definition.ts`:** `NODE_TYPES`, `KalfaNodeConfig`, `NODE_REQUIRED_FIELDS` (אותו אובייקט בדיוק), `CATALOGUE`, `NODE_ACTIVITY_PROFILES`, `PALETTE_ITEMS` (באותו אינדקס) ו-`STEP_HANDLERS`. הטקסט `'logic.set_value'` מופיע בקוד רק ב-`definition.ts`.
+- **אימות:**
+  - תמונת מצב של הלוח, שדות החובה, הסוגים, הקטלוג, התקציבים והמטפלים לפני ואחרי: זהות בתו.
+  - 7 תקלות מכוונות (ייבוא SDK ישיר, עקיף ו-type-only, `child_process`, ייבוא מערכת הסליקה, הסתרת `runtime.ts`, `satisfies` כפול): כולן נתפסו.
+  - `npm test` (6,910 בדיקות), `tsc`, `lint`, `worker:deps` ו-`npm run build`: עוברים.
+  - בבנייה אין מצביע ריק (client reference) לאף חלק מהצומת או מ-`editor-shared.ts`.
+  - לא נדרש migration לתרשימים שמורים או לתבניות.
+- **סטטיסטיקה:** 13 קבצים קיימים השתנו (194+, 622-), ועוד 11 קבצים חדשים.
+
+### מה נמצא ותוקן בדרך
+
+- **בדיקת מערכת הסליקה** לא זיהתה ייבוא ללא `from`, כמו `import '…sumit…'`. תוקן, והוכח בתקלה מכוונת.
+- **6 הערות** שהפכו ללא נכונות בעקבות ההעברה תוקנו.
+
+### ידוע ולא טופל (מחוץ לתחום ההעברה)
+
+- הערות שהיו שגויות עוד לפני השינוי והועתקו כמות שהן:
+  - `editor-shared.ts`: הפניה ל-`armNoticeControl` שלא קיים, ו-"18 entries".
+  - `schemas.ts:8-9`.
+- תווית הצומת והתיאור שלו כתובים פעמיים, ב-PaletteItem ובברירות המחדל, בדיוק כמו קודם.
+- שם השדה `value` בפלט כתוב גם ב-`definition.outputFields` וגם ב-`runtime.ts`. `references.test.ts` מגן על התבניות.
+
+### אירוע במהלך העבודה
+
+פריסה לבטא הורצה ב-01:14, באמצע העריכות, ובטא ומנוע התהליכים רצו זמנית מגרסת ביניים. לא נמצאו שגיאות. פריסה חוזרת מהמצב הסופי ב-01:42 פתרה את זה. **לקח:** לתאם פריסות עם עבודה פעילה על העץ.
+
+### הצעדים הבאים
+
+1. לשמור בגרסה את התשתית ואת צומת 1.
+2. להעביר את הצומת הבא לפי הסדר במפה: `logic.condition` ו-`logic.switch`. לצמתים עם ענפים יש להעביר ל-`editor-shared.ts` גם את `actionBranches`, `actionBranchesProperty` ו-`errorPolicyOptions`.
+3. **נותרו 22 צמתים.**
+
