@@ -1,0 +1,327 @@
+# OAuth Error Definitions
+# Generated from: node_modules/oauth4webapi/build/index.d.ts
+# openid-client: 6.8.8
+# oauth4webapi: 3.8.8
+
+================================================================================
+ClientError
+================================================================================
+NOT FOUND
+
+================================================================================
+OperationProcessingError
+================================================================================
+export declare class OperationProcessingError extends Error {
+    code?: string;
+    /**
+     * @ignore
+     */
+    constructor(message: string, options?: {
+        cause?: unknown;
+        code?: string;
+    });
+}
+/**
+ * Options for supplying an externally persisted JSON Web Key Set cache.
+ */
+export interface JWKSCacheOptions {
+    /**
+     * See {@link jwksCache}.
+     */
+    [jwksCache]?: JWKSCacheInput;
+}
+/**
+ * Fetch-style request options passed to a custom fetch implementation.
+ */
+export interface CustomFetchOptions<Method, BodyType = undefined> {
+    /**
+     * The request body content to send to the server
+     */
+    body: BodyType;
+    /**
+     * HTTP Headers
+     */
+    headers: Record<string, string>;
+    /**
+     * The {@link https://developer.mozilla.org/en-US/docs/Web/HTTP/Methods request method}
+     */
+    method: Method;
+    /**
+     * See {@link !Request.redirect}
+     */
+    redirect: 'manual';
+    /**
+     * Request streaming mode. Set to `"half"` when {@link body} is a {@link !ReadableStream}.
+     */
+    duplex?: 'half';
+    /**
+     * Depending on whether {@link HttpRequestOptions.signal} was used, if so, it is the value passed,
+     * otherwise undefined
+     */
+    signal?: AbortSignal;
+}
+/**
+ * Shared transport options for HTTP requests made by this module.
+ */
+export interface HttpRequestOptions<Method, BodyType = undefined> {
+    /**
+     * An AbortSignal instance, or a factory returning one, to abort the HTTP request(s) triggered by
+     * this function's invocation.
+     *
+     * @example
+     *
+     * A 5000ms timeout AbortSignal for every request
+     *
+     * ```js
+     * let signal = () => AbortSignal.timeout(5_000) // Note: AbortSignal.timeout may not yet be available in all runtimes.
+     * ```
+     */
+    signal?: ((url: string) => AbortSignal) | AbortSignal;
+    /**
+     * Headers to additionally send with the HTTP request(s) triggered by this function's invocation.
+     */
+    headers?: [string, string][] | Record<string, string> | Headers;
+    /**
+     * See {@link customFetch}.
+     */
+    [customFetch]?: (
+    /**
+     * URL the request is being made sent to {@link !fetch} as the `resource` argument
+     */
+    url: string, 
+    /**
+     * Options otherwise sent to {@link !fetch} as the `options` argument
+     */
+    options: CustomFetchOptions<Method, BodyType>) => Promise<Response>;
+    /**
+     * See {@link allowInsecureRequests}.
+     *
+     * @deprecated
+     */
+    [allowInsecureRequests]?: boolean;
+}
+/**
+ * Options for an authorization server metadata discovery request.
+ */
+export interface DiscoveryRequestOptions extends HttpRequestOptions<'GET'> {
+    /**
+     * The issuer transformation algorithm to use.
+     */
+    algorithm?: 'oidc' | 'oauth2';
+}
+/**
+ * Performs an authorization server metadata discovery using one of two
+ * {@link DiscoveryRequestOptions.algorithm transformation algorithms} applied to the
+ * `issuerIdentifier` argument.
+ *
+ * - `oidc` (default) as defined by OpenID Connect Discovery 1.0.
+ * - `oauth2` as defined by RFC 8414.
+ *
+ * @param issuerIdentifier Issuer Identifier to resolve the well-known discovery URI for.
+ *
+ * @returns Resolves with a {@link !Response} to then invoke {@link processDiscoveryResponse} with
+ *
+ * @group Authorization Server Metadata
+ * @group OpenID Connect (OIDC) Discovery
+ *
+ * @see [RFC 8414 - OAuth 2.0 Authorization Server Metadata](https://www.rfc-editor.org/rfc/rfc8414.html#section-3)
+ * @see [OpenID Connect Discovery 1.0](https://openid.net/specs/openid-connect-discovery-1_0-errata2.html#ProviderConfig)
+ */
+
+================================================================================
+AuthorizationResponseError
+================================================================================
+export declare class AuthorizationResponseError extends Error {
+    /**
+     * Authorization Response parameters as {@link !URLSearchParams}
+     */
+    cause: URLSearchParams;
+    code: typeof AUTHORIZATION_RESPONSE_ERROR;
+    /**
+     * Error code given in the Authorization Response
+     */
+    error: string;
+    /**
+     * Human-readable text providing additional information, used to assist the developer in
+     * understanding the error that occurred, given in the Authorization Response
+     */
+    error_description?: string;
+    /**
+     * @ignore
+     */
+    constructor(message: string, options: {
+        cause: URLSearchParams;
+    });
+}
+/**
+ * Thrown when a server response contains one or more parseable `WWW-Authenticate` challenges.
+ *
+ * This typically occurs because of expired tokens or bad client authentication.
+ *
+ * @example
+ *
+ * ```http
+ * HTTP/1.1 401 Unauthorized
+ * WWW-Authenticate: Bearer error="invalid_token", error_description="The access token expired"
+ * ```
+ *
+ * @group Errors
+ */
+
+================================================================================
+ResponseBodyError
+================================================================================
+export declare class ResponseBodyError extends Error {
+    /**
+     * The parsed JSON response body
+     */
+    cause: Record<string, JsonValue | undefined>;
+    code: typeof RESPONSE_BODY_ERROR;
+    /**
+     * Error code given in the JSON response
+     */
+    error: string;
+    /**
+     * HTTP Status Code of the response
+     */
+    status: number;
+    /**
+     * Human-readable text providing additional information, used to assist the developer in
+     * understanding the error that occurred, given in the JSON response
+     */
+    error_description?: string;
+    /**
+     * The "OAuth-style" error {@link !Response}, its {@link !Response.bodyUsed} is `true` and the JSON
+     * body is available in {@link ResponseBodyError.cause}
+     */
+    response: Response;
+    /**
+     * @ignore
+     */
+    constructor(message: string, options: {
+        cause: OAuth2Error;
+        response: Response;
+    });
+}
+/**
+ * Thrown when an OAuth 2.0 Authorization Error Response is encountered.
+ *
+ * @example
+ *
+ * ```http
+ * HTTP/1.1 302 Found
+ * Location: https://client.example.com/cb?error=access_denied&state=xyz
+ * ```
+ *
+ * @group Errors
+ */
+
+================================================================================
+WWWAuthenticateChallengeError
+================================================================================
+export declare class WWWAuthenticateChallengeError extends Error {
+    /**
+     * The parsed WWW-Authenticate HTTP Header challenges
+     */
+    cause: WWWAuthenticateChallenge[];
+    code: typeof WWW_AUTHENTICATE_CHALLENGE;
+    /**
+     * The {@link !Response} that included a WWW-Authenticate HTTP Header challenges, its
+     * {@link !Response.bodyUsed} is `false`
+     */
+    response: Response;
+    /**
+     * HTTP Status Code of the response
+     */
+    status: number;
+    /**
+     * @ignore
+     */
+    constructor(message: string, options: {
+        cause: WWWAuthenticateChallenge[];
+        response: Response;
+    });
+}
+/**
+ * Known and extension authentication parameters from a `WWW-Authenticate` challenge.
+ */
+export interface WWWAuthenticateChallengeParameters {
+    /**
+     * Identifies the protection space
+     */
+    readonly realm?: string;
+    /**
+     * A machine-readable error code value
+     */
+    readonly error?: string;
+    /**
+     * Human-readable ASCII text providing additional information, used to assist the client developer
+     * in understanding the error that occurred
+     */
+    readonly error_description?: string;
+    /**
+     * A URI identifying a human-readable web page with information about the error, used to provide
+     * the client developer with additional information about the error
+     */
+    readonly error_uri?: string;
+    /**
+     * A space-delimited list of supported algorithms, used in
+     * {@link https://www.rfc-editor.org/rfc/rfc9449.html RFC 9449 - OAuth 2.0 Demonstrating Proof of Possession (DPoP)}
+     * challenges
+     */
+    readonly algs?: string;
+    /**
+     * The scope necessary to access the protected resource, used with `insufficient_scope` error code
+     */
+    readonly scope?: string;
+    /**
+     * The URL of the protected resource metadata
+     */
+    readonly resource_metadata?: string;
+    /**
+     * > [!NOTE]\
+     * > Because the parameter names are case insensitive they are always returned lowercased
+     */
+    readonly [parameter: Lowercase<string>]: string | undefined;
+}
+/**
+ * A parsed `WWW-Authenticate` challenge.
+ */
+export interface WWWAuthenticateChallenge {
+    /**
+     * Parsed WWW-Authenticate challenge auth-scheme
+     *
+     * > [!NOTE]\
+     * > Because the value is case insensitive it is always returned lowercased
+     */
+    readonly scheme: Lowercase<string>;
+    /**
+     * Parsed WWW-Authenticate challenge auth-param dictionary (always present but may be empty, e.g.
+     * when {@link WWWAuthenticateChallenge.token68 token68} is present, or when no auth-param pairs
+     * were provided)
+     */
+    readonly parameters: WWWAuthenticateChallengeParameters;
+    /**
+     * Parsed WWW-Authenticate challenge token68
+     */
+    readonly token68?: string;
+}
+/**
+ * Processes a Pushed Authorization Response.
+ *
+ * Validates {@link !Response} instance to be one coming from the
+ * {@link AuthorizationServer.pushed_authorization_request_endpoint `as.pushed_authorization_request_endpoint`}.
+ *
+ * @param as Authorization Server Metadata.
+ * @param client Client Metadata.
+ * @param response Resolved value from {@link pushedAuthorizationRequest}.
+ *
+ * @returns Resolves with an object representing the parsed successful response. OAuth 2.0 protocol
+ *   style errors are rejected using {@link ResponseBodyError}. WWW-Authenticate HTTP Header
+ *   challenges are rejected with {@link WWWAuthenticateChallengeError}.
+ *
+ * @group Pushed Authorization Requests (PAR)
+ *
+ * @see [RFC 9126 - OAuth 2.0 Pushed Authorization Requests (PAR)](https://www.rfc-editor.org/rfc/rfc9126.html#name-pushed-authorization-reques)
+ */
+

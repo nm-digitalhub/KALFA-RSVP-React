@@ -747,6 +747,12 @@
       "skillPath": "nextjs-typescript-tailwindcss-supabase/SKILL.md",
       "computedHash": "b866ca1d166d1e9140c236a839550c1c46853113de0905d107593f3b50800a22"
     },
+    "no-ai-slop": {
+      "source": "petergyang/no-ai-slop",
+      "sourceType": "github",
+      "skillPath": "skills/no-ai-slop/SKILL.md",
+      "computedHash": "77d287e3c8e09874e144ee35f6fb0ee1adcf609012c7c3273e9c8fe2054ce5af"
+    },
     "objection-handling": {
       "source": "louisblythe/salesskills",
       "sourceType": "github",

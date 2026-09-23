@@ -1,0 +1,1447 @@
+diff --git a/src/lib/integrations/authenticated-request.test.ts b/src/lib/integrations/authenticated-request.test.ts
+new file mode 100644
+index 0000000..cc38e22
+--- /dev/null
++++ b/src/lib/integrations/authenticated-request.test.ts
+@@ -0,0 +1,158 @@
++import { beforeEach, describe, expect, it, vi } from 'vitest';
++
++vi.mock('server-only', () => ({}));
++
++import { createAuthenticatedIntegrationRequest } from './authenticated-request';
++import { __resetProviderRegistryForTests, registerProvider } from './provider';
++
++const credentials = {
++  resolve: vi.fn(async () => 'access-token'),
++};
++
++beforeEach(() => {
++  __resetProviderRegistryForTests();
++  credentials.resolve.mockClear();
++  registerProvider({
++    id: 'fixture',
++    displayName: 'Fixture',
++    credentialKind: 'oauth2_authorization_code',
++    presentation: { type: 'bearer' },
++    capabilities: { 'thing.write': ['scope.a'] },
++    apiOrigins: ['https://api.example.test'],
++    oauth: {
++      server: new URL('https://login.example.test/.well-known/openid-configuration'),
++      clientAuth: 'post',
++    },
++    endpoint: (_capability, input) => ({
++      url: new URL('https://api.example.test/v1/write'),
++      init: { method: 'POST', body: JSON.stringify(input) },
++    }),
++  });
++});
++
++describe('authenticated integration request', () => {
++  it('validates the destination before reading and attaching the credential', async () => {
++    const fetchImpl = vi.fn(async (_input: string | URL | Request, init?: RequestInit) => {
++      expect(new Headers(init?.headers).get('authorization')).toBe('Bearer access-token');
++      expect(init?.redirect).toBe('manual');
++      return new Response(null, { status: 202 });
++    });
++    const request = createAuthenticatedIntegrationRequest({
++      credentials,
++      fetchImpl,
++    });
++
++    const response = await request({
++      provider: 'fixture',
++      connectionId: 'connection-1',
++      capability: 'thing.write',
++      input: { a: 1 },
++    });
++
++    expect(response.status).toBe(202);
++    expect(credentials.resolve).toHaveBeenCalledWith({
++      connectionId: 'connection-1',
++      provider: expect.objectContaining({ id: 'fixture' }),
++      requiredScopes: ['scope.a'],
++    });
++  });
++
++  it('blocks credential egress to an origin outside the provider allow-list before reading the secret', async () => {
++    registerProvider({
++      id: 'fixture',
++      displayName: 'Fixture',
++      credentialKind: 'oauth2_authorization_code',
++      presentation: { type: 'bearer' },
++      capabilities: { 'thing.write': ['scope.a'] },
++      apiOrigins: ['https://api.example.test'],
++      oauth: {
++        server: new URL('https://login.example.test/.well-known/openid-configuration'),
++        clientAuth: 'post',
++      },
++      endpoint: () => ({ url: new URL('https://evil.example/v1/write') }),
++    });
++
++    const request = createAuthenticatedIntegrationRequest({
++      credentials,
++      fetchImpl: vi.fn(),
++    });
++
++    await expect(
++      request({
++        provider: 'fixture',
++        connectionId: 'connection-1',
++        capability: 'thing.write',
++        input: {},
++      }),
++    ).rejects.toMatchObject({ code: 'integration_destination_not_allowed' });
++    expect(credentials.resolve).not.toHaveBeenCalled();
++  });
++
++  it('blocks provider-supplied Authorization before reading the secret', async () => {
++    registerProvider({
++      id: 'fixture',
++      displayName: 'Fixture',
++      credentialKind: 'oauth2_authorization_code',
++      presentation: { type: 'bearer' },
++      capabilities: { 'thing.write': ['scope.a'] },
++      apiOrigins: ['https://api.example.test'],
++      oauth: {
++        server: new URL('https://login.example.test/.well-known/openid-configuration'),
++        clientAuth: 'post',
++      },
++      endpoint: () => ({
++        url: new URL('https://api.example.test/v1/write'),
++        init: { headers: { authorization: 'attacker-controlled' } },
++      }),
++    });
++
++    const request = createAuthenticatedIntegrationRequest({
++      credentials,
++      fetchImpl: vi.fn(),
++    });
++
++    await expect(
++      request({
++        provider: 'fixture',
++        connectionId: 'connection-1',
++        capability: 'thing.write',
++        input: {},
++      }),
++    ).rejects.toMatchObject({ code: 'integration_request_forbidden_header' });
++    expect(credentials.resolve).not.toHaveBeenCalled();
++  });
++
++  it('classifies 429 and 5xx as transient', async () => {
++    const request429 = createAuthenticatedIntegrationRequest({
++      credentials,
++      fetchImpl: vi.fn(async () => new Response(null, { status: 429 })),
++    });
++    await expect(
++      request429({
++        provider: 'fixture',
++        connectionId: 'connection-1',
++        capability: 'thing.write',
++        input: {},
++      }),
++    ).rejects.toMatchObject({
++      code: 'integration_rate_limited',
++      classification: 'transient',
++    });
++
++    const request503 = createAuthenticatedIntegrationRequest({
++      credentials,
++      fetchImpl: vi.fn(async () => new Response(null, { status: 503 })),
++    });
++    await expect(
++      request503({
++        provider: 'fixture',
++        connectionId: 'connection-1',
++        capability: 'thing.write',
++        input: {},
++      }),
++    ).rejects.toMatchObject({
++      code: 'integration_provider_unavailable',
++      classification: 'transient',
++    });
++  });
++});
+diff --git a/src/lib/integrations/authenticated-request.ts b/src/lib/integrations/authenticated-request.ts
+new file mode 100644
+index 0000000..bd9e4ed
+--- /dev/null
++++ b/src/lib/integrations/authenticated-request.ts
+@@ -0,0 +1,243 @@
++import 'server-only';
++
++import { createCredentialAccessor, type CredentialAccessor } from './credential-accessor';
++import { IntegrationRuntimeError, readIntegrationRuntimeError } from './errors';
++import {
++  getProvider,
++  type CredentialPresentation,
++  type ProviderDefinition,
++} from './provider';
++
++export type IntegrationRequestArgs = {
++  provider: string;
++  connectionId: string;
++  capability: string;
++  input: unknown;
++};
++
++export type FetchLike = (
++  input: string | URL | Request,
++  init?: RequestInit,
++) => Promise<Response>;
++
++export type AuthenticatedIntegrationRequest = (
++  args: IntegrationRequestArgs,
++) => Promise<Response>;
++
++const REQUEST_TIMEOUT_MS = 20_000;
++const FORBIDDEN_PROVIDER_HEADERS = [
++  'authorization',
++  'proxy-authorization',
++  'cookie',
++  'host',
++] as const;
++
++export function createAuthenticatedIntegrationRequest(
++  deps: { credentials?: CredentialAccessor; fetchImpl?: FetchLike } = {},
++): AuthenticatedIntegrationRequest {
++  const credentials = deps.credentials ?? createCredentialAccessor();
++  const fetchImpl = deps.fetchImpl ?? fetch;
++
++  return async (args) => {
++    const provider = getProvider(args.provider);
++    if (!provider) {
++      throw new IntegrationRuntimeError(
++        'permanent',
++        'integration_provider_unknown',
++        `Integration provider "${args.provider}" is not registered.`,
++      );
++    }
++
++    if (!Object.hasOwn(provider.capabilities, args.capability)) {
++      throw new IntegrationRuntimeError(
++        'permanent',
++        'integration_capability_unsupported',
++        `Integration provider "${provider.id}" does not support "${args.capability}".`,
++      );
++    }
++    const requiredScopes = provider.capabilities[args.capability] ?? [];
++
++    let providerRequest;
++    try {
++      providerRequest = provider.endpoint(args.capability, args.input);
++    } catch (error) {
++      if (readIntegrationRuntimeError(error)) throw error;
++      throw new IntegrationRuntimeError(
++        'permanent',
++        'integration_input_invalid',
++        'Integration operation input is invalid.',
++        { cause: error },
++      );
++    }
++
++    const url = new URL(providerRequest.url.href);
++    validateDestination(provider, url);
++
++    let headers: Headers;
++    try {
++      headers = new Headers(providerRequest.init?.headers);
++    } catch (cause) {
++      throw new IntegrationRuntimeError(
++        'permanent',
++        'integration_request_invalid_headers',
++        'Integration provider produced invalid request headers.',
++        { cause },
++      );
++    }
++
++    for (const name of FORBIDDEN_PROVIDER_HEADERS) {
++      if (headers.has(name)) {
++        throw new IntegrationRuntimeError(
++          'permanent',
++          'integration_request_forbidden_header',
++          `Integration provider attempted to set forbidden header "${name}".`,
++        );
++      }
++    }
++    validateCredentialSlot(provider.presentation, headers, url);
++
++    // Secret material is read only after the request destination and headers have
++    // passed the egress checks above.
++    const credential = await credentials.resolve({
++      connectionId: args.connectionId,
++      provider,
++      requiredScopes,
++    });
++    attachCredential(provider.presentation, credential, headers, url);
++
++    let response: Response;
++    try {
++      response = await fetchImpl(url, {
++        ...providerRequest.init,
++        headers,
++        redirect: 'manual',
++        cache: 'no-store',
++        credentials: 'omit',
++        referrerPolicy: 'no-referrer',
++        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
++      });
++    } catch (cause) {
++      const timedOut =
++        cause instanceof Error &&
++        (cause.name === 'AbortError' || cause.name === 'TimeoutError');
++      throw new IntegrationRuntimeError(
++        'transient',
++        timedOut ? 'integration_request_timeout' : 'integration_network_error',
++        timedOut
++          ? 'Integration provider request timed out.'
++          : 'Integration provider request failed before a response was received.',
++        { cause },
++      );
++    }
++
++    if (response.status >= 300 && response.status < 400) {
++      throw new IntegrationRuntimeError(
++        'permanent',
++        'integration_redirect_blocked',
++        `Integration provider returned redirect status ${response.status}; authenticated redirects are blocked.`,
++      );
++    }
++    if (response.ok) return response;
++
++    if (response.status === 401 || response.status === 403) {
++      throw new IntegrationRuntimeError(
++        'permanent',
++        'integration_auth_rejected',
++        `Integration provider rejected the credential with HTTP ${response.status}.`,
++      );
++    }
++    if (response.status === 429) {
++      throw new IntegrationRuntimeError(
++        'transient',
++        'integration_rate_limited',
++        'Integration provider rate-limited the request.',
++      );
++    }
++    if (response.status >= 500) {
++      throw new IntegrationRuntimeError(
++        'transient',
++        'integration_provider_unavailable',
++        `Integration provider returned HTTP ${response.status}.`,
++      );
++    }
++
++    throw new IntegrationRuntimeError(
++      'permanent',
++      'integration_request_rejected',
++      `Integration provider rejected the request with HTTP ${response.status}.`,
++    );
++  };
++}
++
++function validateDestination(provider: ProviderDefinition, url: URL): void {
++  if (url.protocol !== 'https:') {
++    throw new IntegrationRuntimeError(
++      'permanent',
++      'integration_destination_insecure',
++      'Integration provider request destination must use HTTPS.',
++    );
++  }
++  if (url.username || url.password) {
++    throw new IntegrationRuntimeError(
++      'permanent',
++      'integration_destination_invalid',
++      'Integration provider request destination must not contain URL credentials.',
++    );
++  }
++  if (!provider.apiOrigins.includes(url.origin)) {
++    throw new IntegrationRuntimeError(
++      'permanent',
++      'integration_destination_not_allowed',
++      `Integration provider destination origin "${url.origin}" is not allowed.`,
++    );
++  }
++}
++
++function validateCredentialSlot(
++  presentation: CredentialPresentation,
++  headers: Headers,
++  url: URL,
++): void {
++  if (presentation.type === 'bearer') return;
++
++  if (presentation.type === 'header') {
++    if (headers.has(presentation.name)) {
++      throw new IntegrationRuntimeError(
++        'permanent',
++        'integration_credential_slot_occupied',
++        `Integration provider request already contains credential header "${presentation.name}".`,
++      );
++    }
++    return;
++  }
++
++  if (url.searchParams.has(presentation.name)) {
++    throw new IntegrationRuntimeError(
++      'permanent',
++      'integration_credential_slot_occupied',
++      `Integration provider request already contains credential query parameter "${presentation.name}".`,
++    );
++  }
++}
++
++function attachCredential(
++  presentation: CredentialPresentation,
++  credential: string,
++  headers: Headers,
++  url: URL,
++): void {
++  if (presentation.type === 'bearer') {
++    headers.set('authorization', `Bearer ${credential}`);
++    return;
++  }
++
++  if (presentation.type === 'header') {
++    headers.set(
++      presentation.name,
++      `${presentation.prefix ?? ''}${credential}`,
++    );
++    return;
++  }
++
++  url.searchParams.set(presentation.name, credential);
++}
+diff --git a/src/lib/integrations/credential-accessor.test.ts b/src/lib/integrations/credential-accessor.test.ts
+new file mode 100644
+index 0000000..cabf56e
+--- /dev/null
++++ b/src/lib/integrations/credential-accessor.test.ts
+@@ -0,0 +1,119 @@
++import { describe, expect, it, vi } from 'vitest';
++
++vi.mock('server-only', () => ({}));
++
++import { createCredentialAccessor } from './credential-accessor';
++import { serializeOAuthCredentialSecret } from './credential-secret';
++import type { ProviderDefinition } from './provider';
++
++const provider = {
++  id: 'fixture',
++  displayName: 'Fixture',
++  credentialKind: 'oauth2_authorization_code',
++  presentation: { type: 'bearer' },
++  capabilities: { 'thing.write': ['scope.a'] },
++  apiOrigins: ['https://api.example.test'],
++  oauth: {
++    server: new URL('https://login.example.test/.well-known/openid-configuration'),
++    clientAuth: 'post',
++  },
++  endpoint: () => ({ url: new URL('https://api.example.test/v1/write') }),
++} satisfies ProviderDefinition;
++
++function adminFor(connection: Record<string, unknown> | null, rawSecret: string | null) {
++  const maybeSingle = vi.fn(async () => ({ data: connection, error: null }));
++  const eq = vi.fn(() => ({ maybeSingle }));
++  const select = vi.fn(() => ({ eq }));
++  const from = vi.fn(() => ({ select }));
++  const rpc = vi.fn(async () => ({ data: rawSecret, error: null }));
++
++  return { client: { from, rpc }, rpc };
++}
++
++describe('integration credential accessor', () => {
++  it('returns only the access token from an active matching Vault credential', async () => {
++    const stored = serializeOAuthCredentialSecret({
++      accessToken: 'access-token',
++      refreshToken: 'refresh-token',
++    });
++    const admin = adminFor(
++      {
++        id: 'connection-1',
++        provider: 'fixture',
++        credential_kind: 'oauth2_authorization_code',
++        status: 'active',
++        scopes: ['scope.a'],
++        expires_at: '2030-01-01T00:00:00.000Z',
++      },
++      stored,
++    );
++    const accessor = createCredentialAccessor({
++      admin: admin.client as never,
++      now: () => Date.parse('2029-01-01T00:00:00.000Z'),
++    });
++
++    await expect(
++      accessor.resolve({
++        connectionId: 'connection-1',
++        provider,
++        requiredScopes: ['scope.a'],
++      }),
++    ).resolves.toBe('access-token');
++    expect(admin.rpc).toHaveBeenCalledWith('integrations_read_credential', {
++      p_connection_id: 'connection-1',
++      p_expected_provider: 'fixture',
++      p_expected_kind: 'oauth2_authorization_code',
++    });
++  });
++
++  it('refuses a provider mismatch before reading Vault', async () => {
++    const admin = adminFor(
++      {
++        id: 'connection-1',
++        provider: 'other-provider',
++        credential_kind: 'oauth2_authorization_code',
++        status: 'active',
++        scopes: ['scope.a'],
++        expires_at: null,
++      },
++      null,
++    );
++    const accessor = createCredentialAccessor({ admin: admin.client as never });
++
++    await expect(
++      accessor.resolve({
++        connectionId: 'connection-1',
++        provider,
++        requiredScopes: ['scope.a'],
++      }),
++    ).rejects.toMatchObject({ code: 'integration_connection_provider_mismatch' });
++    expect(admin.rpc).not.toHaveBeenCalled();
++  });
++
++  it('refuses an expired token before reading Vault', async () => {
++    const admin = adminFor(
++      {
++        id: 'connection-1',
++        provider: 'fixture',
++        credential_kind: 'oauth2_authorization_code',
++        status: 'active',
++        scopes: ['scope.a'],
++        expires_at: '2026-09-16T10:00:00.000Z',
++      },
++      null,
++    );
++    const accessor = createCredentialAccessor({
++      admin: admin.client as never,
++      now: () => Date.parse('2026-09-16T10:00:00.000Z'),
++    });
++
++    await expect(
++      accessor.resolve({
++        connectionId: 'connection-1',
++        provider,
++        requiredScopes: ['scope.a'],
++      }),
++    ).rejects.toMatchObject({ code: 'integration_credential_expired' });
++    expect(admin.rpc).not.toHaveBeenCalled();
++  });
++});
+diff --git a/src/lib/integrations/credential-accessor.ts b/src/lib/integrations/credential-accessor.ts
+new file mode 100644
+index 0000000..3c06c21
+--- /dev/null
++++ b/src/lib/integrations/credential-accessor.ts
+@@ -0,0 +1,128 @@
++import 'server-only';
++
++import { createAdminClient } from '@/lib/supabase/admin';
++
++import { parseOAuthCredentialSecret } from './credential-secret';
++import { IntegrationRuntimeError } from './errors';
++import type { ProviderDefinition } from './provider';
++
++type AdminClient = ReturnType<typeof createAdminClient>;
++
++const EXPIRY_SKEW_MS = 30_000;
++
++export function createCredentialAccessor(
++  deps: { admin?: AdminClient; now?: () => number } = {},
++) {
++  const admin = deps.admin ?? createAdminClient();
++  const now = deps.now ?? Date.now;
++
++  return {
++    async resolve(args: {
++      connectionId: string;
++      provider: ProviderDefinition;
++      requiredScopes: readonly string[];
++    }): Promise<string> {
++      const { data: connection, error: connectionError } = await admin
++        .from('integration_connections')
++        .select('id, provider, credential_kind, status, scopes, expires_at')
++        .eq('id', args.connectionId)
++        .maybeSingle();
++
++      if (connectionError) {
++        throw new IntegrationRuntimeError(
++          'transient',
++          'integration_connection_lookup_failed',
++          'Integration connection lookup failed.',
++          { cause: connectionError },
++        );
++      }
++      if (!connection) {
++        throw new IntegrationRuntimeError(
++          'permanent',
++          'integration_connection_not_found',
++          'The selected integration connection does not exist.',
++        );
++      }
++      if (connection.provider !== args.provider.id) {
++        throw new IntegrationRuntimeError(
++          'permanent',
++          'integration_connection_provider_mismatch',
++          'The selected connection belongs to a different integration provider.',
++        );
++      }
++      if (connection.credential_kind !== args.provider.credentialKind) {
++        throw new IntegrationRuntimeError(
++          'permanent',
++          'integration_connection_credential_kind_mismatch',
++          'The selected connection uses an unexpected credential kind.',
++        );
++      }
++      if (connection.status !== 'active') {
++        throw new IntegrationRuntimeError(
++          'permanent',
++          'integration_connection_inactive',
++          `The selected integration connection is ${connection.status}.`,
++        );
++      }
++
++      const missingScopes = args.requiredScopes.filter(
++        (scope) => !connection.scopes.includes(scope),
++      );
++      if (missingScopes.length > 0) {
++        throw new IntegrationRuntimeError(
++          'permanent',
++          'integration_scope_missing',
++          `The selected integration connection is missing required scope: ${missingScopes.join(', ')}.`,
++        );
++      }
++
++      if (connection.expires_at) {
++        const expiresAt = Date.parse(connection.expires_at);
++        if (!Number.isFinite(expiresAt)) {
++          throw new IntegrationRuntimeError(
++            'permanent',
++            'integration_connection_invalid_expiry',
++            'The selected integration connection has an invalid expiry timestamp.',
++          );
++        }
++        if (expiresAt <= now() + EXPIRY_SKEW_MS) {
++          throw new IntegrationRuntimeError(
++            'permanent',
++            'integration_credential_expired',
++            'The selected integration credential has expired and must be reauthorized.',
++          );
++        }
++      }
++
++      const { data: rawSecret, error: secretError } = await admin.rpc(
++        'integrations_read_credential',
++        {
++          p_connection_id: connection.id,
++          p_expected_provider: args.provider.id,
++          p_expected_kind: args.provider.credentialKind,
++        },
++      );
++
++      if (secretError) {
++        throw new IntegrationRuntimeError(
++          'transient',
++          'integration_credential_read_failed',
++          'Integration credential could not be read.',
++          { cause: secretError },
++        );
++      }
++      if (typeof rawSecret !== 'string' || rawSecret.length === 0) {
++        throw new IntegrationRuntimeError(
++          'permanent',
++          'integration_credential_missing',
++          'The selected integration connection has no usable credential.',
++        );
++      }
++
++      if (args.provider.credentialKind === 'static') return rawSecret;
++      return parseOAuthCredentialSecret(rawSecret).accessToken;
++    },
++  };
++}
++
++export type CredentialAccessor = ReturnType<typeof createCredentialAccessor>;
+diff --git a/src/lib/integrations/credential-secret.test.ts b/src/lib/integrations/credential-secret.test.ts
+new file mode 100644
+index 0000000..52d480b
+--- /dev/null
++++ b/src/lib/integrations/credential-secret.test.ts
+@@ -0,0 +1,37 @@
++import { describe, expect, it, vi } from 'vitest';
++
++vi.mock('server-only', () => ({}));
++
++import {
++  parseOAuthCredentialSecret,
++  serializeOAuthCredentialSecret,
++} from './credential-secret';
++
++describe('OAuth credential secret envelope', () => {
++  it('round-trips the access and refresh token without storing expiry metadata', () => {
++    const raw = serializeOAuthCredentialSecret({
++      accessToken: 'access-1',
++      refreshToken: 'refresh-1',
++      tokenType: 'bearer',
++    });
++
++    expect(JSON.parse(raw)).toEqual({
++      v: 1,
++      access_token: 'access-1',
++      refresh_token: 'refresh-1',
++      token_type: 'Bearer',
++    });
++    expect(parseOAuthCredentialSecret(raw)).toEqual({
++      version: 1,
++      accessToken: 'access-1',
++      refreshToken: 'refresh-1',
++      tokenType: 'Bearer',
++    });
++  });
++
++  it('rejects legacy/raw text instead of guessing its meaning', () => {
++    expect(() => parseOAuthCredentialSecret('plain-access-token')).toThrowError(
++      expect.objectContaining({ code: 'integration_credential_invalid' }),
++    );
++  });
++});
+diff --git a/src/lib/integrations/credential-secret.ts b/src/lib/integrations/credential-secret.ts
+new file mode 100644
+index 0000000..d06eafb
+--- /dev/null
++++ b/src/lib/integrations/credential-secret.ts
+@@ -0,0 +1,104 @@
++import 'server-only';
++
++import { IntegrationRuntimeError } from './errors';
++
++export type OAuthCredentialSecret = {
++  version: 1;
++  accessToken: string;
++  refreshToken?: string;
++  tokenType: 'Bearer';
++};
++
++type StoredOAuthCredentialSecretV1 = {
++  v: 1;
++  access_token: string;
++  refresh_token?: string;
++  token_type: 'Bearer';
++};
++
++export function serializeOAuthCredentialSecret(input: {
++  accessToken: string;
++  refreshToken?: string;
++  tokenType?: string;
++}): string {
++  const accessToken = input.accessToken.trim();
++  if (!accessToken) {
++    throw new IntegrationRuntimeError(
++      'permanent',
++      'integration_credential_invalid',
++      'OAuth credential is missing an access token.',
++    );
++  }
++
++  const tokenType = (input.tokenType ?? 'Bearer').trim();
++  if (tokenType.toLowerCase() !== 'bearer') {
++    throw new IntegrationRuntimeError(
++      'permanent',
++      'integration_credential_invalid',
++      `Unsupported OAuth token type: ${tokenType || '(empty)'}.`,
++    );
++  }
++
++  const refreshToken = input.refreshToken?.trim();
++  const stored: StoredOAuthCredentialSecretV1 = {
++    v: 1,
++    access_token: accessToken,
++    token_type: 'Bearer',
++    ...(refreshToken ? { refresh_token: refreshToken } : {}),
++  };
++
++  return JSON.stringify(stored);
++}
++
++export function parseOAuthCredentialSecret(raw: string): OAuthCredentialSecret {
++  let value: unknown;
++  try {
++    value = JSON.parse(raw);
++  } catch (cause) {
++    throw new IntegrationRuntimeError(
++      'permanent',
++      'integration_credential_invalid',
++      'Stored OAuth credential is not valid JSON.',
++      { cause },
++    );
++  }
++
++  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
++    throw new IntegrationRuntimeError(
++      'permanent',
++      'integration_credential_invalid',
++      'Stored OAuth credential has an invalid shape.',
++    );
++  }
++
++  const record = value as Record<string, unknown>;
++  if (record.v !== 1) {
++    throw new IntegrationRuntimeError(
++      'permanent',
++      'integration_credential_version_unsupported',
++      'Stored OAuth credential version is not supported.',
++    );
++  }
++
++  const accessToken = typeof record.access_token === 'string' ? record.access_token.trim() : '';
++  const tokenType = typeof record.token_type === 'string' ? record.token_type.trim() : '';
++  const refreshToken =
++    typeof record.refresh_token === 'string' && record.refresh_token.trim()
++      ? record.refresh_token.trim()
++      : undefined;
++
++  if (!accessToken || tokenType.toLowerCase() !== 'bearer') {
++    throw new IntegrationRuntimeError(
++      'permanent',
++      'integration_credential_invalid',
++      'Stored OAuth credential is missing a Bearer access token.',
++    );
++  }
++
++  return {
++    version: 1,
++    accessToken,
++    tokenType: 'Bearer',
++    ...(refreshToken ? { refreshToken } : {}),
++  };
++}
+diff --git a/src/lib/integrations/errors.ts b/src/lib/integrations/errors.ts
+new file mode 100644
+index 0000000..525c28c
+--- /dev/null
++++ b/src/lib/integrations/errors.ts
+@@ -0,0 +1,33 @@
++export type IntegrationErrorClassification = 'permanent' | 'transient';
++
++export class IntegrationRuntimeError extends Error {
++  constructor(
++    public readonly classification: IntegrationErrorClassification,
++    public readonly code: string,
++    message: string,
++    options?: { cause?: unknown },
++  ) {
++    super(message, options);
++    this.name = 'IntegrationRuntimeError';
++  }
++}
++
++/** Structural reader so a bundled copy of the class still preserves the contract. */
++export function readIntegrationRuntimeError(error: unknown):
++  | {
++      classification: IntegrationErrorClassification;
++      code: string;
++      message: string;
++    }
++  | undefined {
++  if (!(error instanceof Error)) return undefined;
++
++  const { classification, code } = error as {
++    classification?: unknown;
++    code?: unknown;
++  };
++  if (classification !== 'permanent' && classification !== 'transient') return undefined;
++  if (typeof code !== 'string' || code.length === 0) return undefined;
++
++  return { classification, code, message: error.message };
++}
+diff --git a/src/lib/integrations/provider.test.ts b/src/lib/integrations/provider.test.ts
+index 7089aef..0d6378e 100644
+--- a/src/lib/integrations/provider.test.ts
++++ b/src/lib/integrations/provider.test.ts
+@@ -23,13 +23,14 @@ const fixture = (id: string): ProviderDefinition => ({
+   displayName: `Fixture ${id}`,
+   credentialKind: 'oauth2_authorization_code',
+   presentation: { type: 'bearer' },
++  capabilities: { 'thing.write': ['scope.a'] },
++  apiOrigins: ['https://example.invalid'],
+   oauth: {
+     server: new URL('https://example.invalid/.well-known/openid-configuration'),
+     clientAuth: 'post',
+-    capabilities: { 'thing.write': ['scope.a'] },
+   },
+   endpoint: (capability, input) => ({
+-    url: `https://example.invalid/${capability}`,
++    url: new URL(`https://example.invalid/${capability}`),
+     init: { method: 'POST', body: JSON.stringify(input) },
+   }),
+ });
+@@ -74,7 +75,7 @@ describe('the provider registry', () => {
+   it('a capability maps to scopes without the registry knowing what either means', () => {
+     registerProvider(fixture('alpha'));
+ 
+-    expect(getProvider('alpha')?.oauth?.capabilities['thing.write']).toEqual(['scope.a']);
++    expect(getProvider('alpha')?.capabilities['thing.write']).toEqual(['scope.a']);
+   });
+ 
+   it('the adapter owns the URL, so a caller never spells one', () => {
+@@ -82,7 +83,7 @@ describe('the provider registry', () => {
+ 
+     const request = getProvider('alpha')?.endpoint('thing.write', { a: 1 });
+ 
+-    expect(request?.url).toBe('https://example.invalid/thing.write');
++    expect(request?.url.href).toBe('https://example.invalid/thing.write');
+     expect(request?.init?.method).toBe('POST');
+   });
+ });
+@@ -116,7 +117,9 @@ describe('the discriminated union refuses what the flow cannot do', () => {
+       displayName: 'x',
+       credentialKind: 'oauth2_authorization_code',
+       presentation: { type: 'bearer' },
+-      endpoint: () => ({ url: '' }),
++      capabilities: {},
++      apiOrigins: ['https://e.invalid'],
++      endpoint: () => ({ url: new URL('https://e.invalid') }),
+       // @ts-expect-error — `oauth` is required on this arm
+     } satisfies ProviderDefinition;
+     expect(bad).toBeTruthy();
+@@ -128,9 +131,11 @@ describe('the discriminated union refuses what the flow cannot do', () => {
+       displayName: 'x',
+       credentialKind: 'static',
+       presentation: { type: 'bearer' },
+-      endpoint: () => ({ url: '' }),
++      capabilities: {},
++      apiOrigins: ['https://e.invalid'],
++      endpoint: () => ({ url: new URL('https://e.invalid') }),
+       // @ts-expect-error — `oauth?: never` on the static arm
+-      oauth: { server: new URL('https://e.invalid'), clientAuth: 'post', capabilities: {} },
++      oauth: { server: new URL('https://e.invalid'), clientAuth: 'post' },
+     } satisfies ProviderDefinition;
+     expect(bad).toBeTruthy();
+   });
+@@ -141,11 +146,12 @@ describe('the discriminated union refuses what the flow cannot do', () => {
+       displayName: 'x',
+       credentialKind: 'oauth2_client_credentials',
+       presentation: { type: 'bearer' },
+-      endpoint: () => ({ url: '' }),
++      capabilities: {},
++      apiOrigins: ['https://e.invalid'],
++      endpoint: () => ({ url: new URL('https://e.invalid') }),
+       oauth: {
+         server: new URL('https://e.invalid'),
+         clientAuth: 'basic',
+-        capabilities: {},
+         // @ts-expect-error — it has no authorization request to put them on
+         authorizationParams: { prompt: 'consent' },
+       },
+@@ -159,16 +165,20 @@ describe('the discriminated union refuses what the flow cannot do', () => {
+       displayName: 'x',
+       credentialKind: 'oauth2_authorization_code',
+       presentation: { type: 'bearer' },
+-      endpoint: () => ({ url: '' }),
++      capabilities: {},
++      apiOrigins: ['https://e.invalid'],
++      endpoint: () => ({ url: new URL('https://e.invalid') }),
+       // @ts-expect-error — `clientAuth` is required
+-      oauth: { server: new URL('https://e.invalid'), capabilities: {} },
++      oauth: { server: new URL('https://e.invalid') },
+     } satisfies ProviderDefinition;
+ 
+     const noPresentation = {
+       id: 'x',
+       displayName: 'x',
+       credentialKind: 'static',
+-      endpoint: () => ({ url: '' }),
++      capabilities: {},
++      apiOrigins: ['https://e.invalid'],
++      endpoint: () => ({ url: new URL('https://e.invalid') }),
+       // @ts-expect-error — `presentation` is required
+     } satisfies ProviderDefinition;
+ 
+diff --git a/src/lib/integrations/provider.ts b/src/lib/integrations/provider.ts
+index c24866b..1ef07d2 100644
+--- a/src/lib/integrations/provider.ts
++++ b/src/lib/integrations/provider.ts
+@@ -64,9 +64,9 @@ export type CredentialPresentation =
+ 
+ /**
+  * A capability is what a workflow node asks for — "write a calendar event",
+- * "send a message" — never a scope string and never a connection id. The
+- * accessor resolves capability → connection → token, so a node never names,
+- * holds, or can leak credential material.
++ * "send a message" — never a scope string. The selected connection id is only
++ * a reference; the runtime verifies that it belongs to the expected provider,
++ * carries the right credential kind, and was granted the capability's scopes.
+  */
+ export type Capability = string;
+ 
+@@ -107,12 +107,6 @@ export type ProviderOAuthCommonConfig = {
+    */
+   clientAuth: 'post' | 'basic' | 'none';
+ 
+-  /**
+-   * Capability → the scopes it needs. `startConnection` unions the requested
+-   * capabilities' scopes; the accessor matches a stored connection's `scopes`
+-   * against them when resolving.
+-   */
+-  capabilities: Record<Capability, string[]>;
+ };
+ 
+ /**
+@@ -142,7 +136,8 @@ export type AuthorizationCodeOAuthConfig = ProviderOAuthCommonConfig & {
+ export type ClientCredentialsOAuthConfig = ProviderOAuthCommonConfig;
+ 
+ export type ProviderRequest = {
+-  url: string;
++  /** Fully-qualified destination. The authenticated request layer validates its origin. */
++  url: URL;
+   init?: RequestInit;
+ };
+ 
+@@ -162,6 +157,15 @@ type ProviderDefinitionBase = {
+    */
+   presentation: CredentialPresentation;
+ 
++  /** Capability → scopes required by that provider operation. */
++  capabilities: Record<Capability, string[]>;
++
++  /**
++   * Exact HTTPS origins that may receive this provider's credential. The runtime
++   * rejects every endpoint outside this allow-list before it reads the secret.
++   */
++  apiOrigins: readonly string[];
++
+   /**
+    * Turns a capability plus the node's input into a request. Keeps provider URLs
+    * and payload shapes out of node handlers — a handler says what it wants, the
+diff --git a/src/lib/integrations/providers/index.ts b/src/lib/integrations/providers/index.ts
+new file mode 100644
+index 0000000..8b1e17c
+--- /dev/null
++++ b/src/lib/integrations/providers/index.ts
+@@ -0,0 +1,9 @@
++import 'server-only';
++
++import { registerMicrosoftProvider } from './microsoft';
++
++export function registerBuiltInProviders(): void {
++  // Provider registration is replacement-safe, so calling this more than once is
++  // harmless during hot reloads and worker tests.
++  registerMicrosoftProvider();
++}
+diff --git a/src/lib/integrations/providers/microsoft.ts b/src/lib/integrations/providers/microsoft.ts
+new file mode 100644
+index 0000000..a5ddac6
+--- /dev/null
++++ b/src/lib/integrations/providers/microsoft.ts
+@@ -0,0 +1,31 @@
++import 'server-only';
++
++import { registerProvider, type ProviderDefinition } from '../provider';
++import {
++  MICROSOFT_GRAPH_ORIGIN,
++  microsoftGraphRequest,
++} from '../transports/microsoft-graph';
++
++export const MICROSOFT_PROVIDER_ID = 'microsoft';
++
++export const microsoftProvider = {
++  id: MICROSOFT_PROVIDER_ID,
++  displayName: 'Microsoft 365',
++  credentialKind: 'oauth2_authorization_code',
++  presentation: { type: 'bearer' },
++  capabilities: {
++    'mail.send': ['Mail.Send'],
++  },
++  apiOrigins: [MICROSOFT_GRAPH_ORIGIN],
++  oauth: {
++    server: new URL(
++      'https://login.microsoftonline.com/organizations/v2.0/.well-known/openid-configuration',
++    ),
++    clientAuth: 'post',
++  },
++  endpoint: microsoftGraphRequest,
++} satisfies ProviderDefinition;
++
++export function registerMicrosoftProvider(): void {
++  registerProvider(microsoftProvider);
++}
+diff --git a/src/lib/integrations/runtime.ts b/src/lib/integrations/runtime.ts
+new file mode 100644
+index 0000000..433f4fb
+--- /dev/null
++++ b/src/lib/integrations/runtime.ts
+@@ -0,0 +1,23 @@
++import 'server-only';
++
++import type { IntegrationsPort } from '@/lib/workflow/engine/ports';
++
++import {
++  createAuthenticatedIntegrationRequest,
++  type AuthenticatedIntegrationRequest,
++} from './authenticated-request';
++import { registerBuiltInProviders } from './providers';
++
++export function createIntegrationRuntime(
++  deps: { request?: AuthenticatedIntegrationRequest } = {},
++): IntegrationsPort {
++  registerBuiltInProviders();
++  const request = deps.request ?? createAuthenticatedIntegrationRequest();
++
++  return {
++    async execute(args) {
++      const response = await request(args);
++      return { status: response.status };
++    },
++  };
++}
+diff --git a/src/lib/integrations/transports/microsoft-graph.test.ts b/src/lib/integrations/transports/microsoft-graph.test.ts
+new file mode 100644
+index 0000000..78a7d1b
+--- /dev/null
++++ b/src/lib/integrations/transports/microsoft-graph.test.ts
+@@ -0,0 +1,24 @@
++import { describe, expect, it } from 'vitest';
++
++import { microsoftGraphRequest } from './microsoft-graph';
++
++describe('Microsoft Graph transport', () => {
++  it('builds the delegated /me/sendMail request and never injects auth itself', () => {
++    const request = microsoftGraphRequest('mail.send', {
++      to: 'guest@example.com',
++      subject: 'אישור הגעה',
++      body: 'שלום',
++    });
++
++    expect(request.url.href).toBe('https://graph.microsoft.com/v1.0/me/sendMail');
++    expect(request.init?.method).toBe('POST');
++    expect(new Headers(request.init?.headers).has('authorization')).toBe(false);
++    expect(JSON.parse(String(request.init?.body))).toEqual({
++      message: {
++        subject: 'אישור הגעה',
++        body: { contentType: 'Text', content: 'שלום' },
++        toRecipients: [{ emailAddress: { address: 'guest@example.com' } }],
++      },
++    });
++  });
++});
+diff --git a/src/lib/integrations/transports/microsoft-graph.ts b/src/lib/integrations/transports/microsoft-graph.ts
+new file mode 100644
+index 0000000..6b7bebf
+--- /dev/null
++++ b/src/lib/integrations/transports/microsoft-graph.ts
+@@ -0,0 +1,73 @@
++import { IntegrationRuntimeError } from '../errors';
++import type { Capability, ProviderRequest } from '../provider';
++
++export const MICROSOFT_GRAPH_ORIGIN = 'https://graph.microsoft.com';
++
++export type MicrosoftSendMailInput = {
++  to: string;
++  subject: string;
++  body: string;
++};
++
++export function microsoftGraphRequest(
++  capability: Capability,
++  input: unknown,
++): ProviderRequest {
++  if (capability !== 'mail.send') {
++    throw new IntegrationRuntimeError(
++      'permanent',
++      'integration_capability_unsupported',
++      `Microsoft Graph operation "${capability}" is not implemented.`,
++    );
++  }
++
++  const mail = readSendMailInput(input);
++  return {
++    url: new URL('/v1.0/me/sendMail', MICROSOFT_GRAPH_ORIGIN),
++    init: {
++      method: 'POST',
++      headers: {
++        accept: 'application/json',
++        'content-type': 'application/json',
++      },
++      body: JSON.stringify({
++        message: {
++          subject: mail.subject,
++          body: {
++            contentType: 'Text',
++            content: mail.body,
++          },
++          toRecipients: [
++            {
++              emailAddress: {
++                address: mail.to,
++              },
++            },
++          ],
++        },
++      }),
++    },
++  };
++}
++
++function readSendMailInput(input: unknown): MicrosoftSendMailInput {
++  if (typeof input !== 'object' || input === null || Array.isArray(input)) {
++    throw invalidInput();
++  }
++
++  const record = input as Record<string, unknown>;
++  const to = typeof record.to === 'string' ? record.to.trim() : '';
++  const subject = typeof record.subject === 'string' ? record.subject.trim() : '';
++  const body = typeof record.body === 'string' ? record.body : '';
++
++  if (!to || !subject || !body.trim()) throw invalidInput();
++  return { to, subject, body };
++}
++
++function invalidInput(): IntegrationRuntimeError {
++  return new IntegrationRuntimeError(
++    'permanent',
++    'integration_input_invalid',
++    'Microsoft mail.send requires a recipient, subject and body.',
++  );
++}
+diff --git a/src/lib/workflow/catalogue/schemas.ts b/src/lib/workflow/catalogue/schemas.ts
+index 1e8ea8e..d0baec1 100644
+--- a/src/lib/workflow/catalogue/schemas.ts
++++ b/src/lib/workflow/catalogue/schemas.ts
+@@ -2301,8 +2301,11 @@ export const PALETTE_ITEMS: PaletteItem[] = [
+     outputSchema: {
+       type: 'default',
+       properties: {
+-        sent: { type: 'boolean', label: 'נשלח', description: 'האם בקשת השליחה הושלמה' },
+-        messageId: { type: 'string', label: 'מזהה הודעה', description: 'מזהה ההודעה אם הספק החזיר מזהה' },
++        accepted: {
++          type: 'boolean',
++          label: 'התקבל אצל Microsoft Graph',
++          description: 'האם Microsoft Graph קיבל את בקשת השליחה; אין בכך אישור מסירה',
++        },
+       },
+     },
+     defaultPropertiesData: {
+diff --git a/src/lib/workflow/engine/dry-run.ts b/src/lib/workflow/engine/dry-run.ts
+index 42b5662..67cbc55 100644
+--- a/src/lib/workflow/engine/dry-run.ts
++++ b/src/lib/workflow/engine/dry-run.ts
+@@ -253,14 +253,14 @@ function createRecordingPorts(scenario: DryRunScenario) {
+   };
+ 
+   const integrations: IntegrationsPort = {
+-    async execute({ capability }) {
++    async execute({ provider, capability }) {
+       // NO PROVIDER REQUEST IS MADE. Connection ids and node input may identify
+       // an account or contain guest data, so neither is copied into the trace.
+       effects.push({
+         kind: 'integration',
+-        description: `היה מפעיל את יכולת האינטגרציה "${capability}"`,
++        description: `היה מפעיל את יכולת האינטגרציה "${capability}" אצל ${provider}`,
+       });
+-      return { output: { executed: true, dryRun: true } };
++      return { status: 200 };
+     },
+   };
+ 
+diff --git a/src/lib/workflow/engine/ports.ts b/src/lib/workflow/engine/ports.ts
+index d144ffe..cb9b260 100644
+--- a/src/lib/workflow/engine/ports.ts
++++ b/src/lib/workflow/engine/ports.ts
+@@ -657,11 +657,14 @@ export interface ExecutionLogPort {
+ }
+ 
+ export type IntegrationExecutionResult = {
+-  output: Record<string, unknown>;
++  /** Provider HTTP status; internal to the executor, never a workflow output contract. */
++  status: number;
+ };
+ 
+ export interface IntegrationsPort {
+   execute(args: {
++    /** Provider the node expects. Prevents a Microsoft node from using another provider's connection. */
++    provider: string;
+     connectionId: string;
+     capability: string;
+     input: unknown;
+diff --git a/src/lib/workflow/enqueue.ts b/src/lib/workflow/enqueue.ts
+index 6033f02..9e0feda 100644
+--- a/src/lib/workflow/enqueue.ts
++++ b/src/lib/workflow/enqueue.ts
+@@ -7,6 +7,7 @@ import type { PgBoss } from 'pg-boss';
+ 
+ import { deterministicJobId } from '@/lib/queue/deterministic-id';
+ import { QUEUES, WORKFLOW_RETRY, type WorkflowRunJob } from '@/lib/queue/queues';
++import { createIntegrationRuntime } from '@/lib/integrations/runtime';
+ import { getAppOrigin } from '@/lib/url';
+ 
+ import { runWorkflow, type RunWorkflowOutcome } from './engine/run-workflow';
+@@ -25,9 +26,15 @@ import {
+   loadRunForExecution,
+ } from './store';
+ 
++let liveIntegrations: IntegrationsPort | undefined;
++
+ const integrations: IntegrationsPort = {
+-  async execute() {
+-    throw new Error('Integration execution runtime is not configured.');
++  execute(args) {
++    // Lazy on purpose: importing the workflow worker must not open Supabase or
++    // initialize provider runtime unless a workflow actually reaches an
++    // integration node. It also keeps existing engine tests database-free.
++    liveIntegrations ??= createIntegrationRuntime();
++    return liveIntegrations.execute(args);
+   },
+ };
+ 
+diff --git a/src/lib/workflow/steps/index.ts b/src/lib/workflow/steps/index.ts
+index 5efe7ca..2e51151 100644
+--- a/src/lib/workflow/steps/index.ts
++++ b/src/lib/workflow/steps/index.ts
+@@ -6,6 +6,7 @@
+ // layer up, in activity-runner.ts, so the claim/side-effect ordering is written
+ // once rather than in every handler.
+ import { RSVP_STATUSES, type RsvpStatus } from '@/lib/constants';
++import { readIntegrationRuntimeError } from '@/lib/integrations/errors';
+ 
+ import { toBusinessOutcome } from '../voice-outcome';
+ 
+@@ -37,7 +38,10 @@ import type {
+   OutboundWebhookPort,
+   TeamAlertsPort,
+ } from '../engine/ports';
+-import { PermanentNodeExecutionError } from '../vendor/workflowbuilder/execution-core/errors';
++import {
++  PermanentNodeExecutionError,
++  TransientNodeExecutionError,
++} from '../vendor/workflowbuilder/execution-core/errors';
+ import type { NodeExecutionResult } from '../vendor/workflowbuilder/execution-core/ports/activity-runner.port';
+ 
+ // ---------------------------------------------------------------------------
+@@ -1583,20 +1587,34 @@ const microsoftSendEmail: StepHandler = async (config, ctx) => {
+   const subject = readString(config, 'subject').trim();
+   const body = readString(config, 'body');
+ 
+-  if (!connectionId || !to || !subject || !body) {
++  if (!connectionId || !to || !subject || !body.trim()) {
+     throw new PermanentNodeExecutionError(
+       'invalid_config',
+       'הצעד "שליחת דוא״ל ב-Microsoft 365" חסר חיבור, נמען, נושא או תוכן.',
+     );
+   }
+ 
+-  const result = await ctx.deps.integrations.execute({
+-    connectionId,
+-    capability: 'mail.send',
+-    input: { to, subject, body },
+-  });
++  try {
++    await ctx.deps.integrations.execute({
++      provider: 'microsoft',
++      connectionId,
++      capability: 'mail.send',
++      input: { to, subject, body },
++    });
++  } catch (error) {
++    const integrationError = readIntegrationRuntimeError(error);
++    if (!integrationError) throw error;
++
++    const ErrorType =
++      integrationError.classification === 'transient'
++        ? TransientNodeExecutionError
++        : PermanentNodeExecutionError;
++    throw new ErrorType(integrationError.code, integrationError.message, { cause: error });
++  }
+ 
+-  return { output: result.output };
++  // Microsoft Graph sendMail returns 202 with no response body. `accepted` means
++  // Graph accepted the request; it is deliberately not a delivery receipt.
++  return { output: { accepted: true } };
+ };
+ 
+ export const STEP_HANDLERS: Record<KalfaNodeType, StepHandler> = {
+diff --git a/src/lib/workflow/steps/microsoft-send-email.test.ts b/src/lib/workflow/steps/microsoft-send-email.test.ts
+index 4c48ac6..3b347af 100644
+--- a/src/lib/workflow/steps/microsoft-send-email.test.ts
++++ b/src/lib/workflow/steps/microsoft-send-email.test.ts
+@@ -1,5 +1,7 @@
+ import { describe, expect, it, vi } from 'vitest';
+ 
++import { IntegrationRuntimeError } from '@/lib/integrations/errors';
++
+ import { STEP_HANDLERS, type StepContext } from './index';
+ 
+ const handler = STEP_HANDLERS['action.microsoft_send_email'];
+@@ -20,9 +22,9 @@ function context(execute: StepContext['deps']['integrations']['execute']): StepC
+ }
+ 
+ describe('action.microsoft_send_email', () => {
+-  it('executes mail.send through the selected stored connection', async () => {
++  it('executes mail.send through the selected Microsoft connection and normalizes the output', async () => {
+     const execute = vi.fn<StepContext['deps']['integrations']['execute']>(async () => ({
+-      output: { messageId: 'message-1' },
++      status: 202,
+     }));
+ 
+     const result = await handler(
+@@ -37,6 +39,7 @@ describe('action.microsoft_send_email', () => {
+ 
+     expect(execute).toHaveBeenCalledOnce();
+     expect(execute).toHaveBeenCalledWith({
++      provider: 'microsoft',
+       connectionId: 'connection-1',
+       capability: 'mail.send',
+       input: {
+@@ -45,7 +48,7 @@ describe('action.microsoft_send_email', () => {
+         body: 'שלום דנה',
+       },
+     });
+-    expect(result.output).toEqual({ messageId: 'message-1' });
++    expect(result.output).toEqual({ accepted: true });
+   });
+ 
+   it('fails permanently before the port when required config is missing', async () => {
+@@ -59,4 +62,36 @@ describe('action.microsoft_send_email', () => {
+     ).rejects.toMatchObject({ code: 'invalid_config' });
+     expect(execute).not.toHaveBeenCalled();
+   });
++
++  it('rejects a whitespace-only body before the port', async () => {
++    const execute = vi.fn<StepContext['deps']['integrations']['execute']>();
++
++    await expect(
++      handler(
++        { connectionId: 'connection-1', to: 'x@example.com', subject: 'נושא', body: '   ' },
++        context(execute),
++      ),
++    ).rejects.toMatchObject({ code: 'invalid_config' });
++    expect(execute).not.toHaveBeenCalled();
++  });
++
++  it('preserves structured integration errors at the workflow boundary', async () => {
++    const execute = vi.fn<StepContext['deps']['integrations']['execute']>(async () => {
++      throw new IntegrationRuntimeError(
++        'transient',
++        'integration_rate_limited',
++        'Microsoft Graph throttled the request.',
++      );
++    });
++
++    await expect(
++      handler(
++        { connectionId: 'connection-1', to: 'x@example.com', subject: 'נושא', body: 'תוכן' },
++        context(execute),
++      ),
++    ).rejects.toMatchObject({
++      code: 'integration_rate_limited',
++      classification: 'transient',
++    });
++  });
+ });

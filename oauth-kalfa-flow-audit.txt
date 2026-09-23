@@ -1,0 +1,411 @@
+supabase/migrations/20260916002651_integration_credential_store_derived_grants.sql-35--- RLS is not a control at all and the GRANT is the entire control.
+supabase/migrations/20260916002651_integration_credential_store_derived_grants.sql-36---
+supabase/migrations/20260916002651_integration_credential_store_derived_grants.sql-37--- THE RULE THIS LEAVES BEHIND: on this project a closed table needs THREE
+supabase/migrations/20260916002651_integration_credential_store_derived_grants.sql-38--- statements, not two — enable RLS, revoke from every role INCLUDING
+supabase/migrations/20260916002651_integration_credential_store_derived_grants.sql-39--- `service_role`, then grant back only what an operation requires. And check
+supabase/migrations/20260916002651_integration_credential_store_derived_grants.sql-40--- the resulting `relacl`, because a silent ALL looks identical to a correct
+supabase/migrations/20260916002651_integration_credential_store_derived_grants.sql-41--- migration in the diff.
+supabase/migrations/20260916002651_integration_credential_store_derived_grants.sql-42---
+supabase/migrations/20260916002651_integration_credential_store_derived_grants.sql:43:-- ROLLBACK: grant all on public.integration_connections  to service_role;
+supabase/migrations/20260916002651_integration_credential_store_derived_grants.sql:44:--           grant all on public.integration_oauth_states to service_role;
+supabase/migrations/20260916002651_integration_credential_store_derived_grants.sql-45---   Restores the pre-existing (over-broad) state; nothing depends on the
+supabase/migrations/20260916002651_integration_credential_store_derived_grants.sql-46---   narrow set beyond the tests that assert it.
+supabase/migrations/20260916002651_integration_credential_store_derived_grants.sql-47--- =====================================================================
+supabase/migrations/20260916002651_integration_credential_store_derived_grants.sql-48-
+supabase/migrations/20260916002651_integration_credential_store_derived_grants.sql-49--- ---------------------------------------------------------------------
+supabase/migrations/20260916002651_integration_credential_store_derived_grants.sql:50:-- integration_connections
+supabase/migrations/20260916002651_integration_credential_store_derived_grants.sql-51--- ---------------------------------------------------------------------
+supabase/migrations/20260916002651_integration_credential_store_derived_grants.sql:52:revoke all on public.integration_connections from service_role;
+supabase/migrations/20260916002651_integration_credential_store_derived_grants.sql-53-
+supabase/migrations/20260916002651_integration_credential_store_derived_grants.sql-54--- The callback inserts a connection; the accessor resolves one and records
+supabase/migrations/20260916002651_integration_credential_store_derived_grants.sql-55--- refreshes; the management surface lists them. No DELETE: disconnect is a
+supabase/migrations/20260916002651_integration_credential_store_derived_grants.sql-56--- soft revoke, so no code path removes a row.
+supabase/migrations/20260916002651_integration_credential_store_derived_grants.sql:57:grant select, insert on public.integration_connections to service_role;
+supabase/migrations/20260916002651_integration_credential_store_derived_grants.sql-58-
+supabase/migrations/20260916002651_integration_credential_store_derived_grants.sql-59--- Column-level, so that provider, credential_kind, scopes, created_by and
+supabase/migrations/20260916002651_integration_credential_store_derived_grants.sql-60--- created_at are immutable after insert — enforced by the grant rather than by
+supabase/migrations/20260916002651_integration_credential_store_derived_grants.sql-61--- convention. A connection cannot silently become a connection to something
+supabase/migrations/20260916002651_integration_credential_store_derived_grants.sql-62--- else.
+supabase/migrations/20260916002651_integration_credential_store_derived_grants.sql-63-grant update (status, vault_secret_id, expires_at, last_refresh_at,
+supabase/migrations/20260916002651_integration_credential_store_derived_grants.sql-64-              last_error, metadata, updated_at)
+supabase/migrations/20260916002651_integration_credential_store_derived_grants.sql:65:  on public.integration_connections to service_role;
+supabase/migrations/20260916002651_integration_credential_store_derived_grants.sql-66-
+supabase/migrations/20260916002651_integration_credential_store_derived_grants.sql-67--- ---------------------------------------------------------------------
+supabase/migrations/20260916002651_integration_credential_store_derived_grants.sql:68:-- integration_oauth_states
+supabase/migrations/20260916002651_integration_credential_store_derived_grants.sql-69--- ---------------------------------------------------------------------
+supabase/migrations/20260916002651_integration_credential_store_derived_grants.sql:70:revoke all on public.integration_oauth_states from service_role;
+supabase/migrations/20260916002651_integration_credential_store_derived_grants.sql-71-
+supabase/migrations/20260916002651_integration_credential_store_derived_grants.sql-72--- startConnection inserts; the callback consumes; the cleanup job deletes.
+supabase/migrations/20260916002651_integration_credential_store_derived_grants.sql-73--- SELECT is required and is not optional: PostgreSQL requires SELECT "on any
+supabase/migrations/20260916002651_integration_credential_store_derived_grants.sql-74--- column whose values are read in the expressions or condition", and
+supabase/migrations/20260916002651_integration_credential_store_derived_grants.sql-75--- separately that "use of the RETURNING clause requires SELECT privilege on
+supabase/migrations/20260916002651_integration_credential_store_derived_grants.sql-76--- all columns mentioned in RETURNING". The consumption CAS does both.
+supabase/migrations/20260916002651_integration_credential_store_derived_grants.sql:77:grant select, insert, delete on public.integration_oauth_states to service_role;
+supabase/migrations/20260916002651_integration_credential_store_derived_grants.sql-78-
+supabase/migrations/20260916002651_integration_credential_store_derived_grants.sql:79:-- Consuming is the only update that exists, so code_verifier and expires_at
+supabase/migrations/20260916002651_integration_credential_store_derived_grants.sql-80--- are un-rewritable after insert.
+supabase/migrations/20260916002651_integration_credential_store_derived_grants.sql:81:grant update (consumed_at) on public.integration_oauth_states to service_role;
+--
+supabase/migrations/20260916004647_integration_connections_requires_reauthorization.sql-19---
+supabase/migrations/20260916004647_integration_connections_requires_reauthorization.sql-20--- So the status set now distinguishes:
+supabase/migrations/20260916004647_integration_connections_requires_reauthorization.sql-21---
+supabase/migrations/20260916004647_integration_connections_requires_reauthorization.sql-22---   pending                    created, authorization not finished
+supabase/migrations/20260916004647_integration_connections_requires_reauthorization.sql-23---   active                     has a usable credential
+supabase/migrations/20260916004647_integration_connections_requires_reauthorization.sql-24---   expired                    access token past expiry, renewal will be
+supabase/migrations/20260916004647_integration_connections_requires_reauthorization.sql-25---                              attempted automatically — the kind supplies a
+supabase/migrations/20260916004647_integration_connections_requires_reauthorization.sql-26---                              mechanism and the material exists
+supabase/migrations/20260916004647_integration_connections_requires_reauthorization.sql:27:--   requires_reauthorization   renewal is impossible without a person. The
+supabase/migrations/20260916004647_integration_connections_requires_reauthorization.sql-28---                              access token MAY still be valid; this is a
+supabase/migrations/20260916004647_integration_connections_requires_reauthorization.sql-29---                              statement about authorization, not about expiry
+supabase/migrations/20260916004647_integration_connections_requires_reauthorization.sql-30---   revoked                    deliberately disconnected
+supabase/migrations/20260916004647_integration_connections_requires_reauthorization.sql-31---   failed                     renewal or use failed, with the reason in
+supabase/migrations/20260916004647_integration_connections_requires_reauthorization.sql-32---                              last_error
+supabase/migrations/20260916004647_integration_connections_requires_reauthorization.sql-33---
+supabase/migrations/20260916004647_integration_connections_requires_reauthorization.sql-34--- ROLLBACK:
+supabase/migrations/20260916004647_integration_connections_requires_reauthorization.sql:35:--   update public.integration_connections
+supabase/migrations/20260916004647_integration_connections_requires_reauthorization.sql:36:--      set status = 'failed' where status = 'requires_reauthorization';
+supabase/migrations/20260916004647_integration_connections_requires_reauthorization.sql:37:--   alter table public.integration_connections
+supabase/migrations/20260916004647_integration_connections_requires_reauthorization.sql:38:--     drop constraint integration_connections_status_check,
+supabase/migrations/20260916004647_integration_connections_requires_reauthorization.sql:39:--     add constraint integration_connections_status_check
+supabase/migrations/20260916004647_integration_connections_requires_reauthorization.sql-40---       check (status in ('pending','active','expired','revoked','failed'));
+supabase/migrations/20260916004647_integration_connections_requires_reauthorization.sql-41--- =====================================================================
+supabase/migrations/20260916004647_integration_connections_requires_reauthorization.sql-42-
+supabase/migrations/20260916004647_integration_connections_requires_reauthorization.sql:43:alter table public.integration_connections
+supabase/migrations/20260916004647_integration_connections_requires_reauthorization.sql:44:  drop constraint if exists integration_connections_status_check;
+supabase/migrations/20260916004647_integration_connections_requires_reauthorization.sql-45-
+supabase/migrations/20260916004647_integration_connections_requires_reauthorization.sql:46:alter table public.integration_connections
+supabase/migrations/20260916004647_integration_connections_requires_reauthorization.sql:47:  add constraint integration_connections_status_check
+supabase/migrations/20260916004647_integration_connections_requires_reauthorization.sql-48-  check (status in (
+supabase/migrations/20260916004647_integration_connections_requires_reauthorization.sql-49-    'pending',
+supabase/migrations/20260916004647_integration_connections_requires_reauthorization.sql-50-    'active',
+supabase/migrations/20260916004647_integration_connections_requires_reauthorization.sql-51-    'expired',
+supabase/migrations/20260916004647_integration_connections_requires_reauthorization.sql:52:    'requires_reauthorization',
+supabase/migrations/20260916004647_integration_connections_requires_reauthorization.sql-53-    'revoked',
+supabase/migrations/20260916004647_integration_connections_requires_reauthorization.sql-54-    'failed'
+supabase/migrations/20260916004647_integration_connections_requires_reauthorization.sql-55-  ));
+supabase/migrations/20260916004647_integration_connections_requires_reauthorization.sql-56-
+supabase/migrations/20260916004647_integration_connections_requires_reauthorization.sql:57:comment on column public.integration_connections.status is
+supabase/migrations/20260916004647_integration_connections_requires_reauthorization.sql:58:  'pending | active | expired (self-healing: renewal will be retried) | requires_reauthorization (needs a person; the access token may still be valid) | revoked | failed';
+--
+supabase/migrations/20260916005200_integration_provider_configs_and_permissions.sql-1--- =====================================================================
+supabase/migrations/20260916005200_integration_provider_configs_and_permissions.sql-2--- Provider configuration (what KALFA needs to TALK to a provider), plus the
+supabase/migrations/20260916005200_integration_provider_configs_and_permissions.sql-3--- two Platform RBAC keys that gate it.
+supabase/migrations/20260916005200_integration_provider_configs_and_permissions.sql-4---
+supabase/migrations/20260916005200_integration_provider_configs_and_permissions.sql-5--- TWO ENTITIES, NOT ONE TABLE SPLIT IN HALF:
+supabase/migrations/20260916005200_integration_provider_configs_and_permissions.sql-6---
+supabase/migrations/20260916005200_integration_provider_configs_and_permissions.sql-7---   integration_provider_configs   "can KALFA connect to this provider at all?"
+supabase/migrations/20260916005200_integration_provider_configs_and_permissions.sql:8:--   integration_connections        "which connection is live right now?"
+supabase/migrations/20260916005200_integration_provider_configs_and_permissions.sql-9---
+supabase/migrations/20260916005200_integration_provider_configs_and_permissions.sql-10--- The separation also keeps non-secret configuration out of Vault. `client_id`
+supabase/migrations/20260916005200_integration_provider_configs_and_permissions.sql-11--- is not a credential — it travels in the authorization URL in plain sight — so
+supabase/migrations/20260916005200_integration_provider_configs_and_permissions.sql-12--- putting it in Vault would mean opening a secret to answer an ordinary
+supabase/migrations/20260916005200_integration_provider_configs_and_permissions.sql-13--- configuration question. That is the same mistake `integrations_configured_flags()`
+supabase/migrations/20260916005200_integration_provider_configs_and_permissions.sql-14--- was written to undo, where five secrets were read on every page load to render
+supabase/migrations/20260916005200_integration_provider_configs_and_permissions.sql-15--- five ✔/✘ marks. Only `client_secret` goes to Vault; this table holds the
+supabase/migrations/20260916005200_integration_provider_configs_and_permissions.sql-16--- reference.
+supabase/migrations/20260916005200_integration_provider_configs_and_permissions.sql-17---
+supabase/migrations/20260916005200_integration_provider_configs_and_permissions.sql-18--- `provider` IS AN APPLICATION-LEVEL REFERENCE, NOT FREE TEXT. At the database
+supabase/migrations/20260916005200_integration_provider_configs_and_permissions.sql-19--- it is `text` with no constraint, but it must equal a registered
+supabase/migrations/20260916005200_integration_provider_configs_and_permissions.sql-20--- `ProviderDefinition.id` (src/lib/integrations/provider.ts). That integrity is
+supabase/migrations/20260916005200_integration_provider_configs_and_permissions.sql-21--- deliberately enforced in application code: the registry is the source of truth
+supabase/migrations/20260916005200_integration_provider_configs_and_permissions.sql-22--- for which providers exist, and a check constraint here would make adding a
+supabase/migrations/20260916005200_integration_provider_configs_and_permissions.sql-23--- provider a migration, which is exactly what this layer is built to avoid.
+supabase/migrations/20260916005200_integration_provider_configs_and_permissions.sql-24---
+supabase/migrations/20260916005200_integration_provider_configs_and_permissions.sql:25:-- NO FOREIGN KEY FROM integration_connections.provider TO THIS TABLE, and the
+supabase/migrations/20260916005200_integration_provider_configs_and_permissions.sql-26--- reason is not laziness:
+supabase/migrations/20260916005200_integration_provider_configs_and_permissions.sql-27---
+supabase/migrations/20260916005200_integration_provider_configs_and_permissions.sql-28---   1. A `static` provider (operator-supplied API key) is a perfectly valid
+supabase/migrations/20260916005200_integration_provider_configs_and_permissions.sql-29---      connection with NO platform OAuth client configuration at all. A FK would
+supabase/migrations/20260916005200_integration_provider_configs_and_permissions.sql-30---      force an empty config row for every one of them.
+supabase/migrations/20260916005200_integration_provider_configs_and_permissions.sql-31---   2. "Which providers exist" is answered by the code registry, not by this
+supabase/migrations/20260916005200_integration_provider_configs_and_permissions.sql-32---      table. This table answers the narrower "is an OAuth client configured for
+supabase/migrations/20260916005200_integration_provider_configs_and_permissions.sql-33---      this provider, in this deployment".
+--
+supabase/migrations/20260916005200_integration_provider_configs_and_permissions.sql-41--- platform credentials — using a live access token needs nothing from this
+supabase/migrations/20260916005200_integration_provider_configs_and_permissions.sql-42--- table, everything else needs both fields:
+supabase/migrations/20260916005200_integration_provider_configs_and_permissions.sql-43---
+supabase/migrations/20260916005200_integration_provider_configs_and_permissions.sql-44---   new authorization            refused
+supabase/migrations/20260916005200_integration_provider_configs_and_permissions.sql-45---   in-flight callback           refused, and the state row is still CONSUMED so
+supabase/migrations/20260916005200_integration_provider_configs_and_permissions.sql-46---                                it cannot be replayed if the config is re-enabled
+supabase/migrations/20260916005200_integration_provider_configs_and_permissions.sql-47---   use of a valid access token  ALLOWED — this is not a kill switch; revoking
+supabase/migrations/20260916005200_integration_provider_configs_and_permissions.sql-48---                                the connection is
+supabase/migrations/20260916005200_integration_provider_configs_and_permissions.sql:49:--   refresh                      refused  → requires_reauthorization
+supabase/migrations/20260916005200_integration_provider_configs_and_permissions.sql:50:--   reissue (client_credentials) refused  → requires_reauthorization at the next
+supabase/migrations/20260916005200_integration_provider_configs_and_permissions.sql-51---                                expiry, which is the shortest leash and the
+supabase/migrations/20260916005200_integration_provider_configs_and_permissions.sql-52---                                right one: such a connection IS the platform
+supabase/migrations/20260916005200_integration_provider_configs_and_permissions.sql-53---                                config, with no user grant behind it
+supabase/migrations/20260916005200_integration_provider_configs_and_permissions.sql-54---   rotate the client secret     ALLOWED — rotation is an UPDATE of
+supabase/migrations/20260916005200_integration_provider_configs_and_permissions.sql-55---                                vault_secret_id, never a disable
+supabase/migrations/20260916005200_integration_provider_configs_and_permissions.sql-56---   disconnect                   ALLOWED, but remote revocation is skipped
+supabase/migrations/20260916005200_integration_provider_configs_and_permissions.sql-57---                                (it needs client auth) and the reason is
+supabase/migrations/20260916005200_integration_provider_configs_and_permissions.sql-58---                                recorded in the connection's last_error
+supabase/migrations/20260916005200_integration_provider_configs_and_permissions.sql-59---
+supabase/migrations/20260916005200_integration_provider_configs_and_permissions.sql-60--- Disabling does NOT eagerly transition existing connections. One holding a
+supabase/migrations/20260916005200_integration_provider_configs_and_permissions.sql:61:-- valid token stays `active`; it becomes `requires_reauthorization` when a
+supabase/migrations/20260916005200_integration_provider_configs_and_permissions.sql-62--- renewal is actually attempted and refused. An eager transition would lie about
+supabase/migrations/20260916005200_integration_provider_configs_and_permissions.sql-63--- connections that are still working.
+supabase/migrations/20260916005200_integration_provider_configs_and_permissions.sql-64---
+supabase/migrations/20260916005200_integration_provider_configs_and_permissions.sql-65--- WHY `integrations.manage` AND NOT `manage_settings`. `exchange-connections.ts`
+supabase/migrations/20260916005200_integration_provider_configs_and_permissions.sql-66--- gates on `manage_settings` today, but that is legacy authorization rather than
+supabase/migrations/20260916005200_integration_provider_configs_and_permissions.sql-67--- an architectural precedent: reusing it would permanently couple "may change
+supabase/migrations/20260916005200_integration_provider_configs_and_permissions.sql-68--- system settings" to "may manage provider credentials". Measured, every role
+supabase/migrations/20260916005200_integration_provider_configs_and_permissions.sql-69--- holding `manage_settings` (owner, ops_engineer) is one we would grant
+--
+supabase/migrations/20260916002343_integration_credential_store.sql-28--- ACL becomes a real second lock, measured as service_role ALLOWED /
+supabase/migrations/20260916002343_integration_credential_store.sql-29--- authenticated DENIED 42501. Supabase says the same thing more plainly —
+supabase/migrations/20260916002343_integration_credential_store.sql-30--- "Never create [a security definer function] in a schema listed under
+supabase/migrations/20260916002343_integration_credential_store.sql-31--- 'Exposed schemas'" — and `public` is exposed here.
+supabase/migrations/20260916002343_integration_credential_store.sql-32---
+supabase/migrations/20260916002343_integration_credential_store.sql-33--- GRANTS ARE DERIVED, NOT ASSUMED. Every privilege below traces to a statement
+supabase/migrations/20260916002343_integration_credential_store.sql-34--- the accessor, the OAuth callback or the cleanup job actually runs. Anything
+supabase/migrations/20260916002343_integration_credential_store.sql-35--- without an operation behind it is not granted — hence no DELETE on
+supabase/migrations/20260916002343_integration_credential_store.sql:36:-- `integration_connections`, because disconnect is a soft revoke.
+supabase/migrations/20260916002343_integration_credential_store.sql-37---
+supabase/migrations/20260916002343_integration_credential_store.sql-38--- ROLLBACK:
+supabase/migrations/20260916002343_integration_credential_store.sql-39---   drop function if exists public.integrations_read_credential(uuid, text, text);
+supabase/migrations/20260916002343_integration_credential_store.sql-40---   drop function if exists public.integrations_write_credential(text, text, text, text[], jsonb, text, timestamptz);
+supabase/migrations/20260916002343_integration_credential_store.sql:41:--   drop trigger if exists integration_connections_set_updated_at on public.integration_connections;
+supabase/migrations/20260916002343_integration_credential_store.sql:42:--   drop table if exists public.integration_oauth_states;
+supabase/migrations/20260916002343_integration_credential_store.sql:43:--   drop table if exists public.integration_connections;
+supabase/migrations/20260916002343_integration_credential_store.sql-44---   Safe — no FK points at either table and nothing on the money, outreach or
+supabase/migrations/20260916002343_integration_credential_store.sql-45---   RSVP path references them. Vault secrets created through the write
+supabase/migrations/20260916002343_integration_credential_store.sql-46---   function are NOT removed by this rollback; delete them by name prefix
+supabase/migrations/20260916002343_integration_credential_store.sql-47---   ('conn:') if the feature is abandoned rather than re-applied.
+supabase/migrations/20260916002343_integration_credential_store.sql-48--- =====================================================================
+supabase/migrations/20260916002343_integration_credential_store.sql-49-
+supabase/migrations/20260916002343_integration_credential_store.sql-50--- ---------------------------------------------------------------------
+supabase/migrations/20260916002343_integration_credential_store.sql-51--- 1. Connections — metadata only.
+supabase/migrations/20260916002343_integration_credential_store.sql-52--- ---------------------------------------------------------------------
+supabase/migrations/20260916002343_integration_credential_store.sql:53:create table if not exists public.integration_connections (
+supabase/migrations/20260916002343_integration_credential_store.sql-54-  id                uuid primary key default gen_random_uuid(),
+supabase/migrations/20260916002343_integration_credential_store.sql-55-
+supabase/migrations/20260916002343_integration_credential_store.sql-56-  -- Free identifier. Deliberately NOT an enum and NOT constrained to a list:
+supabase/migrations/20260916002343_integration_credential_store.sql-57-  -- a new provider is a registry entry in application code, and a check
+supabase/migrations/20260916002343_integration_credential_store.sql-58-  -- constraint here would make every addition a migration.
+supabase/migrations/20260916002343_integration_credential_store.sql-59-  provider          text        not null,
+supabase/migrations/20260916002343_integration_credential_store.sql-60-
+supabase/migrations/20260916002343_integration_credential_store.sql-61-  -- What kind of material the vault secret holds. Also free text, for the
+--
+supabase/migrations/20260916002343_integration_credential_store.sql-76-  -- Adapter-defined and opaque to this layer. Whatever one provider needs and
+supabase/migrations/20260916002343_integration_credential_store.sql-77-  -- another does not lives here instead of becoming a column.
+supabase/migrations/20260916002343_integration_credential_store.sql-78-  metadata          jsonb       not null default '{}'::jsonb,
+supabase/migrations/20260916002343_integration_credential_store.sql-79-
+supabase/migrations/20260916002343_integration_credential_store.sql-80-  created_by        uuid        references auth.users (id) on delete set null,
+supabase/migrations/20260916002343_integration_credential_store.sql-81-  created_at        timestamptz not null default now(),
+supabase/migrations/20260916002343_integration_credential_store.sql-82-  updated_at        timestamptz not null default now(),
+supabase/migrations/20260916002343_integration_credential_store.sql-83-
+supabase/migrations/20260916002343_integration_credential_store.sql:84:  constraint integration_connections_status_check
+supabase/migrations/20260916002343_integration_credential_store.sql-85-    check (status in ('pending', 'active', 'expired', 'revoked', 'failed'))
+supabase/migrations/20260916002343_integration_credential_store.sql-86-);
+supabase/migrations/20260916002343_integration_credential_store.sql-87-
+supabase/migrations/20260916002343_integration_credential_store.sql-88--- The accessor resolves a connection by provider + status, never by id from a
+supabase/migrations/20260916002343_integration_credential_store.sql-89--- caller, so that is the index that exists.
+supabase/migrations/20260916002343_integration_credential_store.sql:90:create index if not exists integration_connections_provider_status_idx
+supabase/migrations/20260916002343_integration_credential_store.sql:91:  on public.integration_connections (provider, status);
+supabase/migrations/20260916002343_integration_credential_store.sql-92-
+supabase/migrations/20260916002343_integration_credential_store.sql:93:drop trigger if exists integration_connections_set_updated_at
+supabase/migrations/20260916002343_integration_credential_store.sql:94:  on public.integration_connections;
+supabase/migrations/20260916002343_integration_credential_store.sql:95:create trigger integration_connections_set_updated_at
+supabase/migrations/20260916002343_integration_credential_store.sql:96:  before update on public.integration_connections
+supabase/migrations/20260916002343_integration_credential_store.sql-97-  for each row execute function public.set_updated_at();
+supabase/migrations/20260916002343_integration_credential_store.sql-98-
+supabase/migrations/20260916002343_integration_credential_store.sql-99--- ---------------------------------------------------------------------
+supabase/migrations/20260916002343_integration_credential_store.sql-100--- 2. OAuth authorization states — temporary PKCE material.
+supabase/migrations/20260916002343_integration_credential_store.sql-101--- ---------------------------------------------------------------------
+supabase/migrations/20260916002343_integration_credential_store.sql:102:create table if not exists public.integration_oauth_states (
+supabase/migrations/20260916002343_integration_credential_store.sql-103-  id                uuid primary key default gen_random_uuid(),
+supabase/migrations/20260916002343_integration_credential_store.sql-104-
+supabase/migrations/20260916002343_integration_credential_store.sql-105-  -- sha256 of the state sent to the provider. The raw value is never stored,
+supabase/migrations/20260916002343_integration_credential_store.sql-106-  -- so a leak of this table yields nothing replayable.
+supabase/migrations/20260916002343_integration_credential_store.sql:107:  state_hash        text        not null unique,
+supabase/migrations/20260916002343_integration_credential_store.sql-108-
+supabase/migrations/20260916002343_integration_credential_store.sql-109-  provider          text        not null,
+supabase/migrations/20260916002343_integration_credential_store.sql-110-
+supabase/migrations/20260916002343_integration_credential_store.sql-111-  -- PKCE proof. Sensitive but short-lived: it belongs here with a TTL rather
+supabase/migrations/20260916002343_integration_credential_store.sql-112-  -- than in Vault, which is for material that outlives a single request.
+supabase/migrations/20260916002343_integration_credential_store.sql:113:  code_verifier     text        not null,
+supabase/migrations/20260916002343_integration_credential_store.sql-114-
+supabase/migrations/20260916002343_integration_credential_store.sql-115-  redirect_to       text        not null,
+supabase/migrations/20260916002343_integration_credential_store.sql-116-  requested_scopes  text[]      not null default '{}',
+supabase/migrations/20260916002343_integration_credential_store.sql-117-
+supabase/migrations/20260916002343_integration_credential_store.sql-118-  created_by        uuid        not null references auth.users (id) on delete cascade,
+supabase/migrations/20260916002343_integration_credential_store.sql-119-  created_at        timestamptz not null default now(),
+supabase/migrations/20260916002343_integration_credential_store.sql-120-  expires_at        timestamptz not null,
+supabase/migrations/20260916002343_integration_credential_store.sql-121-  consumed_at       timestamptz
+supabase/migrations/20260916002343_integration_credential_store.sql-122-);
+supabase/migrations/20260916002343_integration_credential_store.sql-123-
+supabase/migrations/20260916002343_integration_credential_store.sql-124--- Drives the cleanup job's range delete.
+supabase/migrations/20260916002343_integration_credential_store.sql:125:create index if not exists integration_oauth_states_expires_at_idx
+supabase/migrations/20260916002343_integration_credential_store.sql:126:  on public.integration_oauth_states (expires_at);
+supabase/migrations/20260916002343_integration_credential_store.sql-127-
+supabase/migrations/20260916002343_integration_credential_store.sql-128--- ---------------------------------------------------------------------
+supabase/migrations/20260916002343_integration_credential_store.sql-129--- 3. Closed-table lockdown.
+supabase/migrations/20260916002343_integration_credential_store.sql-130--- ---------------------------------------------------------------------
+supabase/migrations/20260916002343_integration_credential_store.sql:131:alter table public.integration_connections   enable row level security;
+supabase/migrations/20260916002343_integration_credential_store.sql:132:alter table public.integration_oauth_states  enable row level security;
+supabase/migrations/20260916002343_integration_credential_store.sql-133-
+supabase/migrations/20260916002343_integration_credential_store.sql-134--- Zero policies, deliberately. Under service_role RLS is bypassed, so a policy
+supabase/migrations/20260916002343_integration_credential_store.sql-135--- would be decoration; under any other role the grant below is already gone.
+supabase/migrations/20260916002343_integration_credential_store.sql-136--- RLS stays enabled because a table in an exposed schema must have it, and as
+supabase/migrations/20260916002343_integration_credential_store.sql-137--- the backstop if a grant is ever restored by accident.
+supabase/migrations/20260916002343_integration_credential_store.sql-138-
+supabase/migrations/20260916002343_integration_credential_store.sql:139:revoke all on public.integration_connections  from anon, authenticated;
+supabase/migrations/20260916002343_integration_credential_store.sql:140:revoke all on public.integration_oauth_states from anon, authenticated;
+supabase/migrations/20260916002343_integration_credential_store.sql-141-
+supabase/migrations/20260916002343_integration_credential_store.sql-142--- ---------------------------------------------------------------------
+supabase/migrations/20260916002343_integration_credential_store.sql-143--- 4. Grants, one per operation that exists.
+supabase/migrations/20260916002343_integration_credential_store.sql-144--- ---------------------------------------------------------------------
+supabase/migrations/20260916002343_integration_credential_store.sql-145-
+supabase/migrations/20260916002343_integration_credential_store.sql-146--- connections: the callback inserts, the accessor reads and records refreshes,
+supabase/migrations/20260916002343_integration_credential_store.sql-147--- disconnect marks revoked. No DELETE — disconnect is a soft revoke, so no
+supabase/migrations/20260916002343_integration_credential_store.sql-148--- code path removes a row.
+supabase/migrations/20260916002343_integration_credential_store.sql:149:grant select, insert on public.integration_connections to service_role;
+supabase/migrations/20260916002343_integration_credential_store.sql-150-
+supabase/migrations/20260916002343_integration_credential_store.sql-151--- Column-level on purpose. Everything omitted — provider, credential_kind,
+supabase/migrations/20260916002343_integration_credential_store.sql-152--- scopes, created_by, created_at — is immutable after insert, enforced by the
+supabase/migrations/20260916002343_integration_credential_store.sql-153--- grant rather than by convention. A connection cannot silently become a
+supabase/migrations/20260916002343_integration_credential_store.sql-154--- connection to something else.
+supabase/migrations/20260916002343_integration_credential_store.sql-155-grant update (status, vault_secret_id, expires_at, last_refresh_at,
+supabase/migrations/20260916002343_integration_credential_store.sql-156-              last_error, metadata, updated_at)
+supabase/migrations/20260916002343_integration_credential_store.sql:157:  on public.integration_connections to service_role;
+supabase/migrations/20260916002343_integration_credential_store.sql-158-
+supabase/migrations/20260916002343_integration_credential_store.sql-159--- oauth states: startConnection inserts, the callback consumes, the cleanup
+supabase/migrations/20260916002343_integration_credential_store.sql-160--- job deletes. SELECT is required and is not optional — PostgreSQL requires
+supabase/migrations/20260916002343_integration_credential_store.sql-161--- SELECT "on any column whose values are read in the expressions or
+supabase/migrations/20260916002343_integration_credential_store.sql-162--- condition", and separately states that "use of the RETURNING clause requires
+supabase/migrations/20260916002343_integration_credential_store.sql-163--- SELECT privilege on all columns mentioned in RETURNING". The consumption CAS
+supabase/migrations/20260916002343_integration_credential_store.sql-164--- reads several columns in its WHERE and returns several more.
+supabase/migrations/20260916002343_integration_credential_store.sql:165:grant select, insert, delete on public.integration_oauth_states to service_role;
+supabase/migrations/20260916002343_integration_credential_store.sql-166-
+supabase/migrations/20260916002343_integration_credential_store.sql:167:-- Consuming is the only update that exists. code_verifier and expires_at are
+supabase/migrations/20260916002343_integration_credential_store.sql-168--- therefore un-rewritable after insert: a bug that tried to extend a state's
+supabase/migrations/20260916002343_integration_credential_store.sql-169--- life or swap its verifier fails here instead of succeeding quietly.
+supabase/migrations/20260916002343_integration_credential_store.sql:170:grant update (consumed_at) on public.integration_oauth_states to service_role;
+supabase/migrations/20260916002343_integration_credential_store.sql-171-
+supabase/migrations/20260916002343_integration_credential_store.sql-172--- ---------------------------------------------------------------------
+supabase/migrations/20260916002343_integration_credential_store.sql-173--- 5. Accessor functions — the only route from application code to Vault.
+supabase/migrations/20260916002343_integration_credential_store.sql-174--- ---------------------------------------------------------------------
+supabase/migrations/20260916002343_integration_credential_store.sql-175-
+supabase/migrations/20260916002343_integration_credential_store.sql-176--- Read. Returns NULL rather than raising when the connection does not match,
+supabase/migrations/20260916002343_integration_credential_store.sql-177--- so a guessed id is indistinguishable from a wrong provider.
+supabase/migrations/20260916002343_integration_credential_store.sql-178-create or replace function public.integrations_read_credential(
+--
+supabase/migrations/20260916002343_integration_credential_store.sql-187-set search_path = ''
+supabase/migrations/20260916002343_integration_credential_store.sql-188-as $$
+supabase/migrations/20260916002343_integration_credential_store.sql-189-declare
+supabase/migrations/20260916002343_integration_credential_store.sql-190-  v_secret_id uuid;
+supabase/migrations/20260916002343_integration_credential_store.sql-191-  v_secret    text;
+supabase/migrations/20260916002343_integration_credential_store.sql-192-begin
+supabase/migrations/20260916002343_integration_credential_store.sql-193-  select c.vault_secret_id
+supabase/migrations/20260916002343_integration_credential_store.sql-194-    into v_secret_id
+supabase/migrations/20260916002343_integration_credential_store.sql:195:    from public.integration_connections c
+supabase/migrations/20260916002343_integration_credential_store.sql-196-   where c.id = p_connection_id
+supabase/migrations/20260916002343_integration_credential_store.sql-197-     and c.provider = p_expected_provider
+supabase/migrations/20260916002343_integration_credential_store.sql-198-     and c.credential_kind = p_expected_kind
+supabase/migrations/20260916002343_integration_credential_store.sql-199-     and c.status = 'active';
+supabase/migrations/20260916002343_integration_credential_store.sql-200-
+supabase/migrations/20260916002343_integration_credential_store.sql-201-  if v_secret_id is null then
+supabase/migrations/20260916002343_integration_credential_store.sql-202-    return null;
+supabase/migrations/20260916002343_integration_credential_store.sql-203-  end if;
+--
+supabase/migrations/20260916002343_integration_credential_store.sql-236-  -- vault.secrets.name then makes singular for free.
+supabase/migrations/20260916002343_integration_credential_store.sql-237-  v_secret_id := vault.create_secret(
+supabase/migrations/20260916002343_integration_credential_store.sql-238-    p_secret,
+supabase/migrations/20260916002343_integration_credential_store.sql-239-    'conn:' || v_connection_id::text,
+supabase/migrations/20260916002343_integration_credential_store.sql-240-    'integration credential — ' || p_provider,
+supabase/migrations/20260916002343_integration_credential_store.sql-241-    null
+supabase/migrations/20260916002343_integration_credential_store.sql-242-  );
+supabase/migrations/20260916002343_integration_credential_store.sql-243-
+supabase/migrations/20260916002343_integration_credential_store.sql:244:  insert into public.integration_connections
+supabase/migrations/20260916002343_integration_credential_store.sql-245-    (id, provider, credential_kind, label, status, scopes,
+supabase/migrations/20260916002343_integration_credential_store.sql-246-     vault_secret_id, expires_at, metadata, created_by)
+supabase/migrations/20260916002343_integration_credential_store.sql-247-  values
+supabase/migrations/20260916002343_integration_credential_store.sql-248-    (v_connection_id, p_provider, p_credential_kind, p_label, 'active', p_scopes,
+supabase/migrations/20260916002343_integration_credential_store.sql-249-     v_secret_id, p_expires_at, coalesce(p_metadata, '{}'::jsonb), auth.uid());
+supabase/migrations/20260916002343_integration_credential_store.sql-250-
+supabase/migrations/20260916002343_integration_credential_store.sql-251-  return v_connection_id;
+supabase/migrations/20260916002343_integration_credential_store.sql-252-end;
+--
+supabase/migrations/20260916002343_integration_credential_store.sql-260-revoke execute on function public.integrations_write_credential(text, text, text, text[], jsonb, text, timestamptz)
+supabase/migrations/20260916002343_integration_credential_store.sql-261-  from public, anon, authenticated;
+supabase/migrations/20260916002343_integration_credential_store.sql-262-
+supabase/migrations/20260916002343_integration_credential_store.sql-263-grant execute on function public.integrations_read_credential(uuid, text, text)
+supabase/migrations/20260916002343_integration_credential_store.sql-264-  to service_role;
+supabase/migrations/20260916002343_integration_credential_store.sql-265-grant execute on function public.integrations_write_credential(text, text, text, text[], jsonb, text, timestamptz)
+supabase/migrations/20260916002343_integration_credential_store.sql-266-  to service_role;
+supabase/migrations/20260916002343_integration_credential_store.sql-267-
+supabase/migrations/20260916002343_integration_credential_store.sql:268:comment on table public.integration_connections is
+supabase/migrations/20260916002343_integration_credential_store.sql-269-  'Generic integration connection metadata. Secret material lives in vault.secrets; this table holds only the uuid. Server-only: RLS enabled, zero policies, no grants to anon/authenticated.';
+supabase/migrations/20260916002343_integration_credential_store.sql:270:comment on table public.integration_oauth_states is
+supabase/migrations/20260916002343_integration_credential_store.sql-271-  'Single-use OAuth authorization states. Stores sha256(state), never the raw value. Consumed by an atomic UPDATE ... RETURNING; expired rows are swept by a scheduled job.';
+--
+src/lib/supabase/types.generated.ts-3667-            foreignKeyName: "inquiry_messages_inquiry_id_fkey"
+src/lib/supabase/types.generated.ts-3668-            columns: ["inquiry_id"]
+src/lib/supabase/types.generated.ts-3669-            isOneToOne: false
+src/lib/supabase/types.generated.ts-3670-            referencedRelation: "contact_messages"
+src/lib/supabase/types.generated.ts-3671-            referencedColumns: ["id"]
+src/lib/supabase/types.generated.ts-3672-          },
+src/lib/supabase/types.generated.ts-3673-        ]
+src/lib/supabase/types.generated.ts-3674-      }
+src/lib/supabase/types.generated.ts:3675:      integration_connections: {
+src/lib/supabase/types.generated.ts-3676-        Row: {
+src/lib/supabase/types.generated.ts-3677-          created_at: string
+src/lib/supabase/types.generated.ts-3678-          created_by: string | null
+src/lib/supabase/types.generated.ts-3679-          credential_kind: string
+src/lib/supabase/types.generated.ts-3680-          expires_at: string | null
+src/lib/supabase/types.generated.ts-3681-          id: string
+src/lib/supabase/types.generated.ts-3682-          label: string
+src/lib/supabase/types.generated.ts-3683-          last_error: string | null
+--
+src/lib/supabase/types.generated.ts-3718-          provider?: string
+src/lib/supabase/types.generated.ts-3719-          scopes?: string[]
+src/lib/supabase/types.generated.ts-3720-          status?: string
+src/lib/supabase/types.generated.ts-3721-          updated_at?: string
+src/lib/supabase/types.generated.ts-3722-          vault_secret_id?: string | null
+src/lib/supabase/types.generated.ts-3723-        }
+src/lib/supabase/types.generated.ts-3724-        Relationships: []
+src/lib/supabase/types.generated.ts-3725-      }
+src/lib/supabase/types.generated.ts:3726:      integration_oauth_states: {
+src/lib/supabase/types.generated.ts-3727-        Row: {
+src/lib/supabase/types.generated.ts:3728:          code_verifier: string
+src/lib/supabase/types.generated.ts-3729-          consumed_at: string | null
+src/lib/supabase/types.generated.ts-3730-          created_at: string
+src/lib/supabase/types.generated.ts-3731-          created_by: string
+src/lib/supabase/types.generated.ts-3732-          expires_at: string
+src/lib/supabase/types.generated.ts-3733-          id: string
+src/lib/supabase/types.generated.ts-3734-          provider: string
+src/lib/supabase/types.generated.ts-3735-          redirect_to: string
+src/lib/supabase/types.generated.ts-3736-          requested_scopes: string[]
+src/lib/supabase/types.generated.ts:3737:          state_hash: string
+src/lib/supabase/types.generated.ts-3738-        }
+src/lib/supabase/types.generated.ts-3739-        Insert: {
+src/lib/supabase/types.generated.ts:3740:          code_verifier: string
+src/lib/supabase/types.generated.ts-3741-          consumed_at?: string | null
+src/lib/supabase/types.generated.ts-3742-          created_at?: string
+src/lib/supabase/types.generated.ts-3743-          created_by: string
+src/lib/supabase/types.generated.ts-3744-          expires_at: string
+src/lib/supabase/types.generated.ts-3745-          id?: string
+src/lib/supabase/types.generated.ts-3746-          provider: string
+src/lib/supabase/types.generated.ts-3747-          redirect_to: string
+src/lib/supabase/types.generated.ts-3748-          requested_scopes?: string[]
+src/lib/supabase/types.generated.ts:3749:          state_hash: string
+src/lib/supabase/types.generated.ts-3750-        }
+src/lib/supabase/types.generated.ts-3751-        Update: {
+src/lib/supabase/types.generated.ts:3752:          code_verifier?: string
+src/lib/supabase/types.generated.ts-3753-          consumed_at?: string | null
+src/lib/supabase/types.generated.ts-3754-          created_at?: string
+src/lib/supabase/types.generated.ts-3755-          created_by?: string
+src/lib/supabase/types.generated.ts-3756-          expires_at?: string
+src/lib/supabase/types.generated.ts-3757-          id?: string
+src/lib/supabase/types.generated.ts-3758-          provider?: string
+src/lib/supabase/types.generated.ts-3759-          redirect_to?: string
+src/lib/supabase/types.generated.ts-3760-          requested_scopes?: string[]
+src/lib/supabase/types.generated.ts:3761:          state_hash?: string
+src/lib/supabase/types.generated.ts-3762-        }
+src/lib/supabase/types.generated.ts-3763-        Relationships: []
+src/lib/supabase/types.generated.ts-3764-      }
+src/lib/supabase/types.generated.ts-3765-      message_templates: {
+src/lib/supabase/types.generated.ts-3766-        Row: {
+src/lib/supabase/types.generated.ts-3767-          active: boolean
+src/lib/supabase/types.generated.ts-3768-          body: string | null
+src/lib/supabase/types.generated.ts-3769-          category: string | null

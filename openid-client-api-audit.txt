@@ -1,0 +1,3238 @@
+# openid-client API audit
+# source: node_modules/openid-client/build/index.d.ts
+
+
+================================================================================
+buildAuthorizationUrl
+================================================================================
+   534   *
+   535   * Changing the `alg: "Ed25519"` back to `alg: "EdDSA"`
+   536   *
+   537   * ```ts
+   538   * let key!: client.CryptoKey | client.PrivateKey
+   539   * let config!: client.Configuration
+   540   * let parameters!: URLSearchParams
+   541   * let keyPair!: client.CryptoKeyPair
+   542   *
+   543   * let remapEd25519: client.ModifyAssertionOptions = {
+   544   *   [client.modifyAssertion]: (header) => {
+   545   *     if (header.alg === 'Ed25519') {
+   546   *       header.alg = 'EdDSA'
+   547   *     }
+   548   *   },
+   549   * }
+   550   *
+   551   * // For JAR
+   552   * client.buildAuthorizationUrlWithJAR(
+   553   *   config,
+   554   *   parameters,
+   555   *   key,
+   556   *   remapEd25519,
+   557   * )
+   558   *
+   559   * // For Private Key JWT
+   560   * client.PrivateKeyJwt(key, remapEd25519)
+   561   *
+   562   * // For DPoP
+   563   * client.getDPoPHandle(config, keyPair, remapEd25519)
+   564   * ```
+   565   */
+   566  export declare const modifyAssertion: typeof oauth.modifyAssertion;
+   567  /**
+   568   * Adjusts the current time used by protocol validations.
+   569   *
+   570   * Use to adjust the assumed current time. Positive and negative finite values
+   571   * representing seconds are allowed. Default is `0` (Date.now() + 0 seconds is
+   572   * used).
+   573   *
+   574   * @example
+   575   *
+   576   * When the local clock is mistakenly 1 hour in the past
+   577   *
+   578   * ```ts
+   579   * let clientMetadata: client.ClientMetadata = {
+  1997   * > must be configured.
+  1998   *
+  1999   * > [!NOTE]\
+  2000   * > When used, PKCE code challenge, state, and nonce parameter values must always
+  2001   * > be random and be tied to the user-agent.
+  2002   *
+  2003   * @example
+  2004   *
+  2005   * ```ts
+  2006   * let config!: client.Configuration
+  2007   * let redirect_uri!: string
+  2008   * let scope!: string
+  2009   *
+  2010   * // these must be unique for every single authorization request
+  2011   * let code_verifier = client.randomPKCECodeVerifier()
+  2012   * let code_challenge =
+  2013   *   await client.calculatePKCECodeChallenge(code_verifier)
+  2014   *
+  2015   * let redirectTo = client.buildAuthorizationUrl(config, {
+  2016   *   redirect_uri,
+  2017   *   scope,
+  2018   *   code_challenge,
+  2019   *   code_challenge_method: 'S256',
+  2020   * })
+  2021   * // redirect now
+  2022   * ```
+  2023   *
+  2024   * @param parameters Authorization request parameters that will be included in
+  2025   *   the {@link !URL.searchParams}
+  2026   *
+  2027   * @returns {@link !URL} Instance with {@link !URL.searchParams} including
+  2028   *   `client_id`, `response_type`, and all parameters from the `parameters`
+  2029   *   argument
+  2030   *
+  2031   * @group Authorization Request
+  2032   * @group You are probably looking for this
+  2033   */
+  2034  export declare function buildAuthorizationUrl(config: Configuration, parameters: URLSearchParams | Record<string, string>): URL;
+  2035  /**
+  2036   * Builds an authorization request URL using a JWT Secured Authorization Request
+  2037   * (JAR).
+  2038   *
+  2039   * Returns a URL to redirect the user-agent to, in order to request
+  2040   * authorization at the Authorization Server with a prior step of using
+  2041   * {@link !JAR}
+  2042   *
+  2016   *   redirect_uri,
+  2017   *   scope,
+  2018   *   code_challenge,
+  2019   *   code_challenge_method: 'S256',
+  2020   * })
+  2021   * // redirect now
+  2022   * ```
+  2023   *
+  2024   * @param parameters Authorization request parameters that will be included in
+  2025   *   the {@link !URL.searchParams}
+  2026   *
+  2027   * @returns {@link !URL} Instance with {@link !URL.searchParams} including
+  2028   *   `client_id`, `response_type`, and all parameters from the `parameters`
+  2029   *   argument
+  2030   *
+  2031   * @group Authorization Request
+  2032   * @group You are probably looking for this
+  2033   */
+  2034  export declare function buildAuthorizationUrl(config: Configuration, parameters: URLSearchParams | Record<string, string>): URL;
+  2035  /**
+  2036   * Builds an authorization request URL using a JWT Secured Authorization Request
+  2037   * (JAR).
+  2038   *
+  2039   * Returns a URL to redirect the user-agent to, in order to request
+  2040   * authorization at the Authorization Server with a prior step of using
+  2041   * {@link !JAR}
+  2042   *
+  2043   * > [!NOTE]\
+  2044   * > {@link ServerMetadata.authorization_endpoint URL of the authorization server's authorization endpoint}
+  2045   * > must be configured.
+  2046   *
+  2047   * @example
+  2048   *
+  2049   * Using {@link !JAR}
+  2050   *
+  2051   * ```ts
+  2052   * let config!: client.Configuration
+  2053   * let redirect_uri!: string
+  2054   * let scope!: string
+  2055   * let key!: client.CryptoKey
+  2056   *
+  2057   * // these must be unique for every single authorization request
+  2058   * let code_verifier = client.randomPKCECodeVerifier()
+  2059   * let code_challenge =
+  2060   *   await client.calculatePKCECodeChallenge(code_verifier)
+  2061   *
+  2044   * > {@link ServerMetadata.authorization_endpoint URL of the authorization server's authorization endpoint}
+  2045   * > must be configured.
+  2046   *
+  2047   * @example
+  2048   *
+  2049   * Using {@link !JAR}
+  2050   *
+  2051   * ```ts
+  2052   * let config!: client.Configuration
+  2053   * let redirect_uri!: string
+  2054   * let scope!: string
+  2055   * let key!: client.CryptoKey
+  2056   *
+  2057   * // these must be unique for every single authorization request
+  2058   * let code_verifier = client.randomPKCECodeVerifier()
+  2059   * let code_challenge =
+  2060   *   await client.calculatePKCECodeChallenge(code_verifier)
+  2061   *
+  2062   * let redirectTo = await client.buildAuthorizationUrlWithJAR(
+  2063   *   config,
+  2064   *   {
+  2065   *     redirect_uri,
+  2066   *     scope,
+  2067   *     code_challenge,
+  2068   *     code_challenge_method: 'S256',
+  2069   *   },
+  2070   *   key,
+  2071   * )
+  2072   * // redirect now
+  2073   * ```
+  2074   *
+  2075   * @example
+  2076   *
+  2077   * Using {@link !JAR} and {@link !PAR} together
+  2078   *
+  2079   * ```ts
+  2080   * let config!: client.Configuration
+  2081   * let redirect_uri!: string
+  2082   * let scope!: string
+  2083   * let key!: client.CryptoKey
+  2084   *
+  2085   * // these must be unique for every single authorization request
+  2086   * let code_verifier = client.randomPKCECodeVerifier()
+  2087   * let code_challenge =
+  2088   *   await client.calculatePKCECodeChallenge(code_verifier)
+  2089   *
+  2072   * // redirect now
+  2073   * ```
+  2074   *
+  2075   * @example
+  2076   *
+  2077   * Using {@link !JAR} and {@link !PAR} together
+  2078   *
+  2079   * ```ts
+  2080   * let config!: client.Configuration
+  2081   * let redirect_uri!: string
+  2082   * let scope!: string
+  2083   * let key!: client.CryptoKey
+  2084   *
+  2085   * // these must be unique for every single authorization request
+  2086   * let code_verifier = client.randomPKCECodeVerifier()
+  2087   * let code_challenge =
+  2088   *   await client.calculatePKCECodeChallenge(code_verifier)
+  2089   *
+  2090   * let { searchParams: params } = await client.buildAuthorizationUrlWithJAR(
+  2091   *   config,
+  2092   *   {
+  2093   *     redirect_uri,
+  2094   *     scope,
+  2095   *     code_challenge,
+  2096   *     code_challenge_method: 'S256',
+  2097   *   },
+  2098   *   key,
+  2099   * )
+  2100   *
+  2101   * let redirectTo = await client.buildAuthorizationUrlWithPAR(
+  2102   *   config,
+  2103   *   params,
+  2104   * )
+  2105   * // redirect now
+  2106   * ```
+  2107   *
+  2108   * @param parameters Authorization request parameters that will be encoded in a
+  2109   *   {@link !JAR} Request Object
+  2110   * @param signingKey Key to sign the JAR Request Object with.
+  2111   *
+  2112   * @returns {@link !URL} Instance with {@link !URL.searchParams} including
+  2113   *   `client_id` and `request`
+  2114   *
+  2115   * @group Authorization Request
+  2116   */
+  2117  export declare function buildAuthorizationUrlWithJAR(config: Configuration, parameters: URLSearchParams | Record<string, string>, 
+  2083   * let key!: client.CryptoKey
+  2084   *
+  2085   * // these must be unique for every single authorization request
+  2086   * let code_verifier = client.randomPKCECodeVerifier()
+  2087   * let code_challenge =
+  2088   *   await client.calculatePKCECodeChallenge(code_verifier)
+  2089   *
+  2090   * let { searchParams: params } = await client.buildAuthorizationUrlWithJAR(
+  2091   *   config,
+  2092   *   {
+  2093   *     redirect_uri,
+  2094   *     scope,
+  2095   *     code_challenge,
+  2096   *     code_challenge_method: 'S256',
+  2097   *   },
+  2098   *   key,
+  2099   * )
+  2100   *
+  2101   * let redirectTo = await client.buildAuthorizationUrlWithPAR(
+  2102   *   config,
+  2103   *   params,
+  2104   * )
+  2105   * // redirect now
+  2106   * ```
+  2107   *
+  2108   * @param parameters Authorization request parameters that will be encoded in a
+  2109   *   {@link !JAR} Request Object
+  2110   * @param signingKey Key to sign the JAR Request Object with.
+  2111   *
+  2112   * @returns {@link !URL} Instance with {@link !URL.searchParams} including
+  2113   *   `client_id` and `request`
+  2114   *
+  2115   * @group Authorization Request
+  2116   */
+  2117  export declare function buildAuthorizationUrlWithJAR(config: Configuration, parameters: URLSearchParams | Record<string, string>, 
+  2118  /**
+  2119   * Key to sign the JAR Request Object with.
+  2120   */
+  2121  signingKey: oauth.CryptoKey | oauth.PrivateKey, options?: oauth.ModifyAssertionOptions): Promise<URL>;
+  2122  /**
+  2123   * Builds an authorization request URL using Pushed Authorization Requests
+  2124   * (PAR).
+  2125   *
+  2126   * Returns a URL to redirect the user-agent to, in order to request
+  2127   * authorization at the Authorization Server with a prior step of using
+  2128   * {@link !PAR}
+  2099   * )
+  2100   *
+  2101   * let redirectTo = await client.buildAuthorizationUrlWithPAR(
+  2102   *   config,
+  2103   *   params,
+  2104   * )
+  2105   * // redirect now
+  2106   * ```
+  2107   *
+  2108   * @param parameters Authorization request parameters that will be encoded in a
+  2109   *   {@link !JAR} Request Object
+  2110   * @param signingKey Key to sign the JAR Request Object with.
+  2111   *
+  2112   * @returns {@link !URL} Instance with {@link !URL.searchParams} including
+  2113   *   `client_id` and `request`
+  2114   *
+  2115   * @group Authorization Request
+  2116   */
+  2117  export declare function buildAuthorizationUrlWithJAR(config: Configuration, parameters: URLSearchParams | Record<string, string>, 
+  2118  /**
+  2119   * Key to sign the JAR Request Object with.
+  2120   */
+  2121  signingKey: oauth.CryptoKey | oauth.PrivateKey, options?: oauth.ModifyAssertionOptions): Promise<URL>;
+  2122  /**
+  2123   * Builds an authorization request URL using Pushed Authorization Requests
+  2124   * (PAR).
+  2125   *
+  2126   * Returns a URL to redirect the user-agent to, in order to request
+  2127   * authorization at the Authorization Server with a prior step of using
+  2128   * {@link !PAR}
+  2129   *
+  2130   * > [!NOTE]\
+  2131   * > {@link ServerMetadata.authorization_endpoint URL of the authorization server's authorization endpoint}
+  2132   * > must be configured.
+  2133   *
+  2134   * > [!NOTE]\
+  2135   * > {@link ServerMetadata.pushed_authorization_request_endpoint URL of the authorization server's pushed authorization request endpoint}
+  2136   * > must be configured.
+  2137   *
+  2138   * @example
+  2139   *
+  2140   * Using {@link !PAR}
+  2141   *
+  2142   * ```ts
+  2143   * let config!: client.Configuration
+  2144   * let redirect_uri!: string
+  2134   * > [!NOTE]\
+  2135   * > {@link ServerMetadata.pushed_authorization_request_endpoint URL of the authorization server's pushed authorization request endpoint}
+  2136   * > must be configured.
+  2137   *
+  2138   * @example
+  2139   *
+  2140   * Using {@link !PAR}
+  2141   *
+  2142   * ```ts
+  2143   * let config!: client.Configuration
+  2144   * let redirect_uri!: string
+  2145   * let scope!: string
+  2146   *
+  2147   * // these must be unique for every single authorization request
+  2148   * let code_verifier = client.randomPKCECodeVerifier()
+  2149   * let code_challenge =
+  2150   *   await client.calculatePKCECodeChallenge(code_verifier)
+  2151   *
+  2152   * let redirectTo = await client.buildAuthorizationUrlWithPAR(config, {
+  2153   *   redirect_uri,
+  2154   *   scope,
+  2155   *   code_challenge,
+  2156   *   code_challenge_method: 'S256',
+  2157   * })
+  2158   * // redirect now
+  2159   * ```
+  2160   *
+  2161   * @example
+  2162   *
+  2163   * Using {@link !JAR} and {@link !PAR} together
+  2164   *
+  2165   * ```ts
+  2166   * let config!: client.Configuration
+  2167   * let redirect_uri!: string
+  2168   * let scope!: string
+  2169   * let key!: client.CryptoKey
+  2170   *
+  2171   * // these must be unique for every single authorization request
+  2172   * let code_verifier = client.randomPKCECodeVerifier()
+  2173   * let code_challenge =
+  2174   *   await client.calculatePKCECodeChallenge(code_verifier)
+  2175   *
+  2176   * let { searchParams: params } = await client.buildAuthorizationUrlWithJAR(
+  2177   *   config,
+  2178   *   {
+  2179   *     redirect_uri,
+
+================================================================================
+randomPKCECodeVerifier
+================================================================================
+   692       *
+   693       * @see [RFC 8705 - OAuth 2.0 Mutual-TLS Client Authentication and Certificate-Bound Access Tokens](https://www.rfc-editor.org/rfc/rfc8705.html)
+   694       */
+   695      use_mtls_endpoint_aliases?: boolean;
+   696  }
+   697  /**
+   698   * Metadata describing an OAuth 2.0 authorization server.
+   699   *
+   700   * @group You are probably looking for this
+   701   *
+   702   * @see [IANA OAuth Authorization Server Metadata registry](https://www.iana.org/assignments/oauth-parameters/oauth-parameters.xhtml#authorization-server-metadata)
+   703   */
+   704  export interface ServerMetadata extends oauth.AuthorizationServer {
+   705  }
+   706  /**
+   707   * Calculates an S256 PKCE `code_challenge` from a `code_verifier`.
+   708   *
+   709   * @param codeVerifier `code_verifier` value generated e.g. from
+   710   *   {@link randomPKCECodeVerifier}
+   711   *
+   712   * @returns S256 `code_challenge` value calculated from a provided
+   713   *   `code_verifier`
+   714   *
+   715   * @group PKCE
+   716   * @group Authorization Request
+   717   */
+   718  export declare function calculatePKCECodeChallenge(codeVerifier: string): Promise<string>;
+   719  /**
+   720   * Generates a random PKCE `code_verifier` value.
+   721   *
+   722   * @returns Random `code_verifier` value
+   723   *
+   724   * @group PKCE
+   725   */
+   726  export declare function randomPKCECodeVerifier(): string;
+   727  /**
+   728   * Generates a random OpenID Connect `nonce` value.
+   729   *
+   730   * @returns Random `nonce` value
+   731   *
+   732   * @group Authorization Request
+   733   */
+   734  export declare function randomNonce(): string;
+   735  /**
+   736   * Generates a random OAuth 2.0 `state` value.
+   737   *
+   708   *
+   709   * @param codeVerifier `code_verifier` value generated e.g. from
+   710   *   {@link randomPKCECodeVerifier}
+   711   *
+   712   * @returns S256 `code_challenge` value calculated from a provided
+   713   *   `code_verifier`
+   714   *
+   715   * @group PKCE
+   716   * @group Authorization Request
+   717   */
+   718  export declare function calculatePKCECodeChallenge(codeVerifier: string): Promise<string>;
+   719  /**
+   720   * Generates a random PKCE `code_verifier` value.
+   721   *
+   722   * @returns Random `code_verifier` value
+   723   *
+   724   * @group PKCE
+   725   */
+   726  export declare function randomPKCECodeVerifier(): string;
+   727  /**
+   728   * Generates a random OpenID Connect `nonce` value.
+   729   *
+   730   * @returns Random `nonce` value
+   731   *
+   732   * @group Authorization Request
+   733   */
+   734  export declare function randomNonce(): string;
+   735  /**
+   736   * Generates a random OAuth 2.0 `state` value.
+   737   *
+   738   * @returns Random `state` value
+   739   *
+   740   * @group Authorization Request
+   741   */
+   742  export declare function randomState(): string;
+   743  /**
+   744   * An error raised by openid-client.
+   745   *
+   746   * @group Errors
+   747   */
+   748  export declare class ClientError extends Error {
+   749      code?: string;
+   750  }
+   751  /**
+   752   * Generates an asymmetric key pair for signing DPoP proofs.
+   753   *
+  1993   * authorization at the Authorization Server
+  1994   *
+  1995   * > [!NOTE]\
+  1996   * > {@link ServerMetadata.authorization_endpoint URL of the authorization server's authorization endpoint}
+  1997   * > must be configured.
+  1998   *
+  1999   * > [!NOTE]\
+  2000   * > When used, PKCE code challenge, state, and nonce parameter values must always
+  2001   * > be random and be tied to the user-agent.
+  2002   *
+  2003   * @example
+  2004   *
+  2005   * ```ts
+  2006   * let config!: client.Configuration
+  2007   * let redirect_uri!: string
+  2008   * let scope!: string
+  2009   *
+  2010   * // these must be unique for every single authorization request
+  2011   * let code_verifier = client.randomPKCECodeVerifier()
+  2012   * let code_challenge =
+  2013   *   await client.calculatePKCECodeChallenge(code_verifier)
+  2014   *
+  2015   * let redirectTo = client.buildAuthorizationUrl(config, {
+  2016   *   redirect_uri,
+  2017   *   scope,
+  2018   *   code_challenge,
+  2019   *   code_challenge_method: 'S256',
+  2020   * })
+  2021   * // redirect now
+  2022   * ```
+  2023   *
+  2024   * @param parameters Authorization request parameters that will be included in
+  2025   *   the {@link !URL.searchParams}
+  2026   *
+  2027   * @returns {@link !URL} Instance with {@link !URL.searchParams} including
+  2028   *   `client_id`, `response_type`, and all parameters from the `parameters`
+  2029   *   argument
+  2030   *
+  2031   * @group Authorization Request
+  2032   * @group You are probably looking for this
+  2033   */
+  2034  export declare function buildAuthorizationUrl(config: Configuration, parameters: URLSearchParams | Record<string, string>): URL;
+  2035  /**
+  2036   * Builds an authorization request URL using a JWT Secured Authorization Request
+  2037   * (JAR).
+  2038   *
+  2040   * authorization at the Authorization Server with a prior step of using
+  2041   * {@link !JAR}
+  2042   *
+  2043   * > [!NOTE]\
+  2044   * > {@link ServerMetadata.authorization_endpoint URL of the authorization server's authorization endpoint}
+  2045   * > must be configured.
+  2046   *
+  2047   * @example
+  2048   *
+  2049   * Using {@link !JAR}
+  2050   *
+  2051   * ```ts
+  2052   * let config!: client.Configuration
+  2053   * let redirect_uri!: string
+  2054   * let scope!: string
+  2055   * let key!: client.CryptoKey
+  2056   *
+  2057   * // these must be unique for every single authorization request
+  2058   * let code_verifier = client.randomPKCECodeVerifier()
+  2059   * let code_challenge =
+  2060   *   await client.calculatePKCECodeChallenge(code_verifier)
+  2061   *
+  2062   * let redirectTo = await client.buildAuthorizationUrlWithJAR(
+  2063   *   config,
+  2064   *   {
+  2065   *     redirect_uri,
+  2066   *     scope,
+  2067   *     code_challenge,
+  2068   *     code_challenge_method: 'S256',
+  2069   *   },
+  2070   *   key,
+  2071   * )
+  2072   * // redirect now
+  2073   * ```
+  2074   *
+  2075   * @example
+  2076   *
+  2077   * Using {@link !JAR} and {@link !PAR} together
+  2078   *
+  2079   * ```ts
+  2080   * let config!: client.Configuration
+  2081   * let redirect_uri!: string
+  2082   * let scope!: string
+  2083   * let key!: client.CryptoKey
+  2084   *
+  2085   * // these must be unique for every single authorization request
+  2068   *     code_challenge_method: 'S256',
+  2069   *   },
+  2070   *   key,
+  2071   * )
+  2072   * // redirect now
+  2073   * ```
+  2074   *
+  2075   * @example
+  2076   *
+  2077   * Using {@link !JAR} and {@link !PAR} together
+  2078   *
+  2079   * ```ts
+  2080   * let config!: client.Configuration
+  2081   * let redirect_uri!: string
+  2082   * let scope!: string
+  2083   * let key!: client.CryptoKey
+  2084   *
+  2085   * // these must be unique for every single authorization request
+  2086   * let code_verifier = client.randomPKCECodeVerifier()
+  2087   * let code_challenge =
+  2088   *   await client.calculatePKCECodeChallenge(code_verifier)
+  2089   *
+  2090   * let { searchParams: params } = await client.buildAuthorizationUrlWithJAR(
+  2091   *   config,
+  2092   *   {
+  2093   *     redirect_uri,
+  2094   *     scope,
+  2095   *     code_challenge,
+  2096   *     code_challenge_method: 'S256',
+  2097   *   },
+  2098   *   key,
+  2099   * )
+  2100   *
+  2101   * let redirectTo = await client.buildAuthorizationUrlWithPAR(
+  2102   *   config,
+  2103   *   params,
+  2104   * )
+  2105   * // redirect now
+  2106   * ```
+  2107   *
+  2108   * @param parameters Authorization request parameters that will be encoded in a
+  2109   *   {@link !JAR} Request Object
+  2110   * @param signingKey Key to sign the JAR Request Object with.
+  2111   *
+  2112   * @returns {@link !URL} Instance with {@link !URL.searchParams} including
+  2113   *   `client_id` and `request`
+  2130   * > [!NOTE]\
+  2131   * > {@link ServerMetadata.authorization_endpoint URL of the authorization server's authorization endpoint}
+  2132   * > must be configured.
+  2133   *
+  2134   * > [!NOTE]\
+  2135   * > {@link ServerMetadata.pushed_authorization_request_endpoint URL of the authorization server's pushed authorization request endpoint}
+  2136   * > must be configured.
+  2137   *
+  2138   * @example
+  2139   *
+  2140   * Using {@link !PAR}
+  2141   *
+  2142   * ```ts
+  2143   * let config!: client.Configuration
+  2144   * let redirect_uri!: string
+  2145   * let scope!: string
+  2146   *
+  2147   * // these must be unique for every single authorization request
+  2148   * let code_verifier = client.randomPKCECodeVerifier()
+  2149   * let code_challenge =
+  2150   *   await client.calculatePKCECodeChallenge(code_verifier)
+  2151   *
+  2152   * let redirectTo = await client.buildAuthorizationUrlWithPAR(config, {
+  2153   *   redirect_uri,
+  2154   *   scope,
+  2155   *   code_challenge,
+  2156   *   code_challenge_method: 'S256',
+  2157   * })
+  2158   * // redirect now
+  2159   * ```
+  2160   *
+  2161   * @example
+  2162   *
+  2163   * Using {@link !JAR} and {@link !PAR} together
+  2164   *
+  2165   * ```ts
+  2166   * let config!: client.Configuration
+  2167   * let redirect_uri!: string
+  2168   * let scope!: string
+  2169   * let key!: client.CryptoKey
+  2170   *
+  2171   * // these must be unique for every single authorization request
+  2172   * let code_verifier = client.randomPKCECodeVerifier()
+  2173   * let code_challenge =
+  2174   *   await client.calculatePKCECodeChallenge(code_verifier)
+  2175   *
+  2154   *   scope,
+  2155   *   code_challenge,
+  2156   *   code_challenge_method: 'S256',
+  2157   * })
+  2158   * // redirect now
+  2159   * ```
+  2160   *
+  2161   * @example
+  2162   *
+  2163   * Using {@link !JAR} and {@link !PAR} together
+  2164   *
+  2165   * ```ts
+  2166   * let config!: client.Configuration
+  2167   * let redirect_uri!: string
+  2168   * let scope!: string
+  2169   * let key!: client.CryptoKey
+  2170   *
+  2171   * // these must be unique for every single authorization request
+  2172   * let code_verifier = client.randomPKCECodeVerifier()
+  2173   * let code_challenge =
+  2174   *   await client.calculatePKCECodeChallenge(code_verifier)
+  2175   *
+  2176   * let { searchParams: params } = await client.buildAuthorizationUrlWithJAR(
+  2177   *   config,
+  2178   *   {
+  2179   *     redirect_uri,
+  2180   *     scope,
+  2181   *     code_challenge,
+  2182   *     code_challenge_method: 'S256',
+  2183   *   },
+  2184   *   key,
+  2185   * )
+  2186   *
+  2187   * let redirectTo = await client.buildAuthorizationUrlWithPAR(
+  2188   *   config,
+  2189   *   params,
+  2190   * )
+  2191   * // redirect now
+  2192   * ```
+  2193   *
+  2194   * @param parameters Authorization request parameters that will be sent to
+  2195   *   {@link !PAR}
+  2196   *
+  2197   * @returns {@link !URL} Instance with {@link !URL.searchParams} including
+  2198   *   `client_id` and `request_uri`.
+  2199   *
+
+================================================================================
+calculatePKCECodeChallenge
+================================================================================
+   700   * @group You are probably looking for this
+   701   *
+   702   * @see [IANA OAuth Authorization Server Metadata registry](https://www.iana.org/assignments/oauth-parameters/oauth-parameters.xhtml#authorization-server-metadata)
+   703   */
+   704  export interface ServerMetadata extends oauth.AuthorizationServer {
+   705  }
+   706  /**
+   707   * Calculates an S256 PKCE `code_challenge` from a `code_verifier`.
+   708   *
+   709   * @param codeVerifier `code_verifier` value generated e.g. from
+   710   *   {@link randomPKCECodeVerifier}
+   711   *
+   712   * @returns S256 `code_challenge` value calculated from a provided
+   713   *   `code_verifier`
+   714   *
+   715   * @group PKCE
+   716   * @group Authorization Request
+   717   */
+   718  export declare function calculatePKCECodeChallenge(codeVerifier: string): Promise<string>;
+   719  /**
+   720   * Generates a random PKCE `code_verifier` value.
+   721   *
+   722   * @returns Random `code_verifier` value
+   723   *
+   724   * @group PKCE
+   725   */
+   726  export declare function randomPKCECodeVerifier(): string;
+   727  /**
+   728   * Generates a random OpenID Connect `nonce` value.
+   729   *
+   730   * @returns Random `nonce` value
+   731   *
+   732   * @group Authorization Request
+   733   */
+   734  export declare function randomNonce(): string;
+   735  /**
+   736   * Generates a random OAuth 2.0 `state` value.
+   737   *
+   738   * @returns Random `state` value
+   739   *
+   740   * @group Authorization Request
+   741   */
+   742  export declare function randomState(): string;
+   743  /**
+   744   * An error raised by openid-client.
+   745   *
+  1995   * > [!NOTE]\
+  1996   * > {@link ServerMetadata.authorization_endpoint URL of the authorization server's authorization endpoint}
+  1997   * > must be configured.
+  1998   *
+  1999   * > [!NOTE]\
+  2000   * > When used, PKCE code challenge, state, and nonce parameter values must always
+  2001   * > be random and be tied to the user-agent.
+  2002   *
+  2003   * @example
+  2004   *
+  2005   * ```ts
+  2006   * let config!: client.Configuration
+  2007   * let redirect_uri!: string
+  2008   * let scope!: string
+  2009   *
+  2010   * // these must be unique for every single authorization request
+  2011   * let code_verifier = client.randomPKCECodeVerifier()
+  2012   * let code_challenge =
+  2013   *   await client.calculatePKCECodeChallenge(code_verifier)
+  2014   *
+  2015   * let redirectTo = client.buildAuthorizationUrl(config, {
+  2016   *   redirect_uri,
+  2017   *   scope,
+  2018   *   code_challenge,
+  2019   *   code_challenge_method: 'S256',
+  2020   * })
+  2021   * // redirect now
+  2022   * ```
+  2023   *
+  2024   * @param parameters Authorization request parameters that will be included in
+  2025   *   the {@link !URL.searchParams}
+  2026   *
+  2027   * @returns {@link !URL} Instance with {@link !URL.searchParams} including
+  2028   *   `client_id`, `response_type`, and all parameters from the `parameters`
+  2029   *   argument
+  2030   *
+  2031   * @group Authorization Request
+  2032   * @group You are probably looking for this
+  2033   */
+  2034  export declare function buildAuthorizationUrl(config: Configuration, parameters: URLSearchParams | Record<string, string>): URL;
+  2035  /**
+  2036   * Builds an authorization request URL using a JWT Secured Authorization Request
+  2037   * (JAR).
+  2038   *
+  2039   * Returns a URL to redirect the user-agent to, in order to request
+  2040   * authorization at the Authorization Server with a prior step of using
+  2042   *
+  2043   * > [!NOTE]\
+  2044   * > {@link ServerMetadata.authorization_endpoint URL of the authorization server's authorization endpoint}
+  2045   * > must be configured.
+  2046   *
+  2047   * @example
+  2048   *
+  2049   * Using {@link !JAR}
+  2050   *
+  2051   * ```ts
+  2052   * let config!: client.Configuration
+  2053   * let redirect_uri!: string
+  2054   * let scope!: string
+  2055   * let key!: client.CryptoKey
+  2056   *
+  2057   * // these must be unique for every single authorization request
+  2058   * let code_verifier = client.randomPKCECodeVerifier()
+  2059   * let code_challenge =
+  2060   *   await client.calculatePKCECodeChallenge(code_verifier)
+  2061   *
+  2062   * let redirectTo = await client.buildAuthorizationUrlWithJAR(
+  2063   *   config,
+  2064   *   {
+  2065   *     redirect_uri,
+  2066   *     scope,
+  2067   *     code_challenge,
+  2068   *     code_challenge_method: 'S256',
+  2069   *   },
+  2070   *   key,
+  2071   * )
+  2072   * // redirect now
+  2073   * ```
+  2074   *
+  2075   * @example
+  2076   *
+  2077   * Using {@link !JAR} and {@link !PAR} together
+  2078   *
+  2079   * ```ts
+  2080   * let config!: client.Configuration
+  2081   * let redirect_uri!: string
+  2082   * let scope!: string
+  2083   * let key!: client.CryptoKey
+  2084   *
+  2085   * // these must be unique for every single authorization request
+  2086   * let code_verifier = client.randomPKCECodeVerifier()
+  2087   * let code_challenge =
+  2070   *   key,
+  2071   * )
+  2072   * // redirect now
+  2073   * ```
+  2074   *
+  2075   * @example
+  2076   *
+  2077   * Using {@link !JAR} and {@link !PAR} together
+  2078   *
+  2079   * ```ts
+  2080   * let config!: client.Configuration
+  2081   * let redirect_uri!: string
+  2082   * let scope!: string
+  2083   * let key!: client.CryptoKey
+  2084   *
+  2085   * // these must be unique for every single authorization request
+  2086   * let code_verifier = client.randomPKCECodeVerifier()
+  2087   * let code_challenge =
+  2088   *   await client.calculatePKCECodeChallenge(code_verifier)
+  2089   *
+  2090   * let { searchParams: params } = await client.buildAuthorizationUrlWithJAR(
+  2091   *   config,
+  2092   *   {
+  2093   *     redirect_uri,
+  2094   *     scope,
+  2095   *     code_challenge,
+  2096   *     code_challenge_method: 'S256',
+  2097   *   },
+  2098   *   key,
+  2099   * )
+  2100   *
+  2101   * let redirectTo = await client.buildAuthorizationUrlWithPAR(
+  2102   *   config,
+  2103   *   params,
+  2104   * )
+  2105   * // redirect now
+  2106   * ```
+  2107   *
+  2108   * @param parameters Authorization request parameters that will be encoded in a
+  2109   *   {@link !JAR} Request Object
+  2110   * @param signingKey Key to sign the JAR Request Object with.
+  2111   *
+  2112   * @returns {@link !URL} Instance with {@link !URL.searchParams} including
+  2113   *   `client_id` and `request`
+  2114   *
+  2115   * @group Authorization Request
+  2132   * > must be configured.
+  2133   *
+  2134   * > [!NOTE]\
+  2135   * > {@link ServerMetadata.pushed_authorization_request_endpoint URL of the authorization server's pushed authorization request endpoint}
+  2136   * > must be configured.
+  2137   *
+  2138   * @example
+  2139   *
+  2140   * Using {@link !PAR}
+  2141   *
+  2142   * ```ts
+  2143   * let config!: client.Configuration
+  2144   * let redirect_uri!: string
+  2145   * let scope!: string
+  2146   *
+  2147   * // these must be unique for every single authorization request
+  2148   * let code_verifier = client.randomPKCECodeVerifier()
+  2149   * let code_challenge =
+  2150   *   await client.calculatePKCECodeChallenge(code_verifier)
+  2151   *
+  2152   * let redirectTo = await client.buildAuthorizationUrlWithPAR(config, {
+  2153   *   redirect_uri,
+  2154   *   scope,
+  2155   *   code_challenge,
+  2156   *   code_challenge_method: 'S256',
+  2157   * })
+  2158   * // redirect now
+  2159   * ```
+  2160   *
+  2161   * @example
+  2162   *
+  2163   * Using {@link !JAR} and {@link !PAR} together
+  2164   *
+  2165   * ```ts
+  2166   * let config!: client.Configuration
+  2167   * let redirect_uri!: string
+  2168   * let scope!: string
+  2169   * let key!: client.CryptoKey
+  2170   *
+  2171   * // these must be unique for every single authorization request
+  2172   * let code_verifier = client.randomPKCECodeVerifier()
+  2173   * let code_challenge =
+  2174   *   await client.calculatePKCECodeChallenge(code_verifier)
+  2175   *
+  2176   * let { searchParams: params } = await client.buildAuthorizationUrlWithJAR(
+  2177   *   config,
+  2156   *   code_challenge_method: 'S256',
+  2157   * })
+  2158   * // redirect now
+  2159   * ```
+  2160   *
+  2161   * @example
+  2162   *
+  2163   * Using {@link !JAR} and {@link !PAR} together
+  2164   *
+  2165   * ```ts
+  2166   * let config!: client.Configuration
+  2167   * let redirect_uri!: string
+  2168   * let scope!: string
+  2169   * let key!: client.CryptoKey
+  2170   *
+  2171   * // these must be unique for every single authorization request
+  2172   * let code_verifier = client.randomPKCECodeVerifier()
+  2173   * let code_challenge =
+  2174   *   await client.calculatePKCECodeChallenge(code_verifier)
+  2175   *
+  2176   * let { searchParams: params } = await client.buildAuthorizationUrlWithJAR(
+  2177   *   config,
+  2178   *   {
+  2179   *     redirect_uri,
+  2180   *     scope,
+  2181   *     code_challenge,
+  2182   *     code_challenge_method: 'S256',
+  2183   *   },
+  2184   *   key,
+  2185   * )
+  2186   *
+  2187   * let redirectTo = await client.buildAuthorizationUrlWithPAR(
+  2188   *   config,
+  2189   *   params,
+  2190   * )
+  2191   * // redirect now
+  2192   * ```
+  2193   *
+  2194   * @param parameters Authorization request parameters that will be sent to
+  2195   *   {@link !PAR}
+  2196   *
+  2197   * @returns {@link !URL} Instance with {@link !URL.searchParams} including
+  2198   *   `client_id` and `request_uri`.
+  2199   *
+  2200   * @group Authorization Request
+  2201   */
+
+================================================================================
+randomState
+================================================================================
+   724   * @group PKCE
+   725   */
+   726  export declare function randomPKCECodeVerifier(): string;
+   727  /**
+   728   * Generates a random OpenID Connect `nonce` value.
+   729   *
+   730   * @returns Random `nonce` value
+   731   *
+   732   * @group Authorization Request
+   733   */
+   734  export declare function randomNonce(): string;
+   735  /**
+   736   * Generates a random OAuth 2.0 `state` value.
+   737   *
+   738   * @returns Random `state` value
+   739   *
+   740   * @group Authorization Request
+   741   */
+   742  export declare function randomState(): string;
+   743  /**
+   744   * An error raised by openid-client.
+   745   *
+   746   * @group Errors
+   747   */
+   748  export declare class ClientError extends Error {
+   749      code?: string;
+   750  }
+   751  /**
+   752   * Generates an asymmetric key pair for signing DPoP proofs.
+   753   *
+   754   * @param alg One of the supported {@link JWSAlgorithm JWS Algorithm}
+   755   *   identifiers. Default is `ES256`.
+   756   * @param options
+   757   *
+   758   * @group DPoP
+   759   *
+   760   * @see {@link !DPoP}
+   761   */
+   762  export declare function randomDPoPKeyPair(alg?: string, options?: oauth.GenerateKeyPairOptions): Promise<oauth.CryptoKeyPair>;
+   763  /**
+   764   * Options for authorization server metadata discovery.
+   765   */
+   766  export interface DiscoveryRequestOptions {
+   767      /**
+   768       * Custom {@link !fetch Fetch API} implementation to use for the HTTP Requests
+   769       * the client will be making. If this option is used, then the customFetch
+
+================================================================================
+AuthorizationCodeGrantChecks
+================================================================================
+  1611   * Usage with a {@link Configuration} instance
+  1612   *
+  1613   * ```ts
+  1614   * let config!: client.Configuration
+  1615   *
+  1616   * client.useCodeIdTokenResponseType(config)
+  1617   * client.enableDetachedSignatureResponseChecks(config)
+  1618   * ```
+  1619   *
+  1620   * @group Advanced Configuration
+  1621   *
+  1622   * @see {@link https://openid.net/specs/openid-financial-api-part-2-1_0-final.html#id-token-as-detached-signature ID Token as Detached Signature}
+  1623   */
+  1624  export declare function enableDetachedSignatureResponseChecks(config: Configuration): void;
+  1625  /**
+  1626   * Expected values and validation checks for an OpenID Connect Implicit Flow
+  1627   * response.
+  1628   */
+  1629  export interface ImplicitAuthenticationResponseChecks extends Pick<AuthorizationCodeGrantChecks, 'expectedState' | 'maxAge'> {
+  1630  }
+  1631  /**
+  1632   * Validates an OpenID Connect Implicit Flow response.
+  1633   *
+  1634   * This method validates the authorization server's
+  1635   * {@link https://openid.net/specs/openid-connect-core-1_0-errata2.html#ImplicitFlowAuth Implicit Authentication Flow}
+  1636   * Response.
+  1637   *
+  1638   * > [!NOTE]\
+  1639   * > {@link ServerMetadata.jwks_uri URL of the authorization server's JWK Set document}
+  1640   * > must be configured.
+  1641   *
+  1642   * > [!NOTE]\
+  1643   * > Only `response_type=id_token` responses are supported and prior use of
+  1644   * > {@link useIdTokenResponseType} is required.
+  1645   *
+  1646   * @example
+  1647   *
+  1648   * Using an incoming {@link !Request} instance
+  1649   *
+  1650   * ```ts
+  1651   * let config!: client.Configuration
+  1652   * let expectedNonce!: string
+  1653   * let request!: Request
+  1654   *
+  1655   * let idTokenClaims = await client.implicitAuthentication(
+  1656   *   config,
+  1796   *
+  1797   * Usage with a {@link Configuration} instance
+  1798   *
+  1799   * ```ts
+  1800   * let config!: client.Configuration
+  1801   *
+  1802   * client.useIdTokenResponseType(config)
+  1803   * ```
+  1804   *
+  1805   * @group Advanced Configuration
+  1806   *
+  1807   * @see {@link https://openid.net/specs/openid-connect-core-1_0-errata2.html#ImplicitFlowAuth OpenID Connect 1.0 Implicit Flow}
+  1808   */
+  1809  export declare function useIdTokenResponseType(config: Configuration): void;
+  1810  /**
+  1811   * Expected values and validation checks for an Authorization Code Grant
+  1812   * response.
+  1813   */
+  1814  export interface AuthorizationCodeGrantChecks {
+  1815      /**
+  1816       * Expected value of the `nonce` ID Token claim. This value must match
+  1817       * exactly. When `undefined` the expectation is that there is no `nonce` in
+  1818       * the ID Token (i.e. also `undefined`).
+  1819       *
+  1820       * Using this option also means that an ID Token must be part of the response.
+  1821       */
+  1822      expectedNonce?: string;
+  1823      /**
+  1824       * Expected value of the `state` authorization response parameter. This value
+  1825       * must match exactly. When `undefined` the expectation is that there is no
+  1826       * `state` in the authorization response.
+  1827       */
+  1828      expectedState?: string | typeof skipStateCheck;
+  1829      /**
+  1830       * Use this to have the client assert that an ID Token is returned by the
+  1831       * Authorization Server.
+  1832       *
+  1833       * > [!NOTE]\
+  1834       * > When `expectedNonce` or `maxAge` is used this has no effect.
+  1835       */
+  1836      idTokenExpected?: boolean;
+  1837      /**
+  1838       * ID Token {@link IDToken.auth_time `auth_time`} claim value will be checked
+  1839       * to be present and conform to this `maxAge` value. Use of this option is
+  1840       * required if you sent a `max_age` parameter in the authorization request.
+  1841       * Default is {@link ClientMetadata.default_max_age } and falls back to not
+  1892   * ```
+  1893   *
+  1894   * @param currentUrl Current {@link !URL} the Authorization Server provided an
+  1895   *   Authorization Response to or a {@link !Request}, the
+  1896   *   {@link !"Authorization Code Grant"} parameters are extracted from this.
+  1897   * @param checks CSRF Protection checks like PKCE, expected state, or expected
+  1898   *   nonce
+  1899   * @param tokenEndpointParameters Additional parameters that will be sent to the
+  1900   *   token endpoint, typically used for parameters such as `resource`
+  1901   *   ({@link !"Resource Indicators" Resource Indicator}) in cases where multiple
+  1902   *   resource indicators were requested but the authorization server only
+  1903   *   supports issuing an access token with a single audience
+  1904   *
+  1905   * @group OpenID Connect 1.0
+  1906   * @group Grants
+  1907   * @group PKCE
+  1908   * @group You are probably looking for this
+  1909   */
+  1910  export declare function authorizationCodeGrant(config: Configuration, currentUrl: URL | Request, checks?: AuthorizationCodeGrantChecks, tokenEndpointParameters?: URLSearchParams | Record<string, string>, options?: AuthorizationCodeGrantOptions): Promise<oauth.TokenEndpointResponse & TokenEndpointResponseHelpers>;
+  1911  /**
+  1912   * Performs an OAuth 2.0 Refresh Token Grant.
+  1913   *
+  1914   * Performs an OAuth 2.0 {@link !"Refresh Token Grant"} at the Authorization
+  1915   * Server's {@link ServerMetadata.token_endpoint token endpoint} using parameters
+  1916   * from the `parameters` argument, allowing a client to obtain a new access
+  1917   * token using a valid refresh token.
+  1918   *
+  1919   * > [!NOTE]\
+  1920   * > {@link ServerMetadata.token_endpoint URL of the authorization server's token endpoint}
+  1921   * > must be configured.
+  1922   *
+  1923   * @example
+  1924   *
+  1925   * Requesting a new Access Token using the {@link !"Refresh Token Grant"} with a
+  1926   * `scope` and a `resource` ({@link !"Resource Indicators" Resource Indicator})
+  1927   * parameters.
+  1928   *
+  1929   * ```ts
+  1930   * let config!: client.Configuration
+  1931   * let refreshToken!: string
+  1932   * let scope!: string
+  1933   * let resource!: string
+  1934   *
+  1935   * let tokenEndpointResponse = await client.refreshTokenGrant(
+  1936   *   config,
+  1937   *   refreshToken,
+
+================================================================================
+authorizationCodeGrant
+================================================================================
+  1517   *
+  1518   * @example
+  1519   *
+  1520   * Usage with a {@link Configuration} instance
+  1521   *
+  1522   * ```ts
+  1523   * let config!: client.Configuration
+  1524   *
+  1525   * client.enableNonRepudiationChecks(config)
+  1526   * ```
+  1527   *
+  1528   * @group Advanced Configuration
+  1529   */
+  1530  export declare function enableNonRepudiationChecks(config: Configuration): void;
+  1531  /**
+  1532   * Configures the client to use JWT Secured Authorization Response Mode (JARM).
+  1533   *
+  1534   * This changes the `response_mode` used by the client to be `jwt` and expects
+  1535   * the authorization server response passed to {@link authorizationCodeGrant} to
+  1536   * be one described by {@link !JARM}.
+  1537   *
+  1538   * > [!NOTE]\
+  1539   * > {@link ServerMetadata.jwks_uri URL of the authorization server's JWK Set document}
+  1540   * > must be configured.
+  1541   *
+  1542   * @example
+  1543   *
+  1544   * Usage with a {@link Configuration} obtained through {@link discovery}
+  1545   *
+  1546   * ```ts
+  1547   * let server!: URL
+  1548   * let clientId!: string
+  1549   * let clientMetadata!: Partial<client.ClientMetadata> | string | undefined
+  1550   * let clientAuth!: client.ClientAuth | undefined
+  1551   *
+  1552   * let config = await client.discovery(
+  1553   *   server,
+  1554   *   clientId,
+  1555   *   clientMetadata,
+  1556   *   clientAuth,
+  1557   *   {
+  1558   *     execute: [client.useJwtResponseMode],
+  1559   *   },
+  1560   * )
+  1561   * ```
+  1562   *
+  1700   *   {@link https://openid.net/specs/openid-connect-core-1_0-errata2.html#ImplicitAuthResponse Authentication Response Parameters}
+  1701   *   are extracted from this.
+  1702   * @param expectedNonce Expected value of the `nonce` ID Token claim. This value
+  1703   *   must match exactly.
+  1704   * @param checks Additional optional Implicit Authentication Response checks
+  1705   *
+  1706   * @returns ID Token Claims Set
+  1707   *
+  1708   * @group OpenID Connect 1.0
+  1709   *
+  1710   * @see {@link https://openid.net/specs/openid-connect-core-1_0-errata2.html#ImplicitFlowAuth OpenID Connect 1.0 Implicit Flow}
+  1711   */
+  1712  export declare function implicitAuthentication(config: Configuration, currentUrl: URL | Request, expectedNonce: string, checks?: ImplicitAuthenticationResponseChecks): Promise<oauth.IDToken>;
+  1713  /**
+  1714   * Configures the client to use the OpenID Connect Hybrid Flow.
+  1715   *
+  1716   * This changes the `response_type` used by the client to be `code id_token` and
+  1717   * expects the authorization server response passed to
+  1718   * {@link authorizationCodeGrant} to be one described by
+  1719   * {@link https://openid.net/specs/openid-connect-core-1_0-errata2.html#HybridFlowAuth OpenID Connect 1.0 Hybrid Flow}.
+  1720   *
+  1721   * > [!NOTE]\
+  1722   * > {@link ServerMetadata.jwks_uri URL of the authorization server's JWK Set document}
+  1723   * > must be configured.
+  1724   *
+  1725   * @example
+  1726   *
+  1727   * Usage with a {@link Configuration} obtained through {@link discovery}
+  1728   *
+  1729   * ```ts
+  1730   * let server!: URL
+  1731   * let clientId!: string
+  1732   * let clientMetadata!: Partial<client.ClientMetadata> | string | undefined
+  1733   * let clientAuth!: client.ClientAuth | undefined
+  1734   *
+  1735   * let config = await client.discovery(
+  1736   *   server,
+  1737   *   clientId,
+  1738   *   clientMetadata,
+  1739   *   clientAuth,
+  1740   *   {
+  1741   *     execute: [client.useCodeIdTokenResponseType],
+  1742   *   },
+  1743   * )
+  1744   * ```
+  1745   *
+  1748   * Usage with a {@link Configuration} instance
+  1749   *
+  1750   * ```ts
+  1751   * let config!: client.Configuration
+  1752   *
+  1753   * client.useCodeIdTokenResponseType(config)
+  1754   * ```
+  1755   *
+  1756   * @group Advanced Configuration
+  1757   *
+  1758   * @see {@link https://openid.net/specs/openid-connect-core-1_0-errata2.html#HybridFlowAuth OpenID Connect 1.0 Hybrid Flow}
+  1759   */
+  1760  export declare function useCodeIdTokenResponseType(config: Configuration): void;
+  1761  /**
+  1762   * Configures the client to use the OpenID Connect Implicit Flow.
+  1763   *
+  1764   * This changes the `response_type` used by the client to be `id_token`, this
+  1765   * subsequently requires that the authorization server response be passed to
+  1766   * {@link implicitAuthentication} (instead of {@link authorizationCodeGrant}) and
+  1767   * for it to be one described by
+  1768   * {@link https://openid.net/specs/openid-connect-core-1_0-errata2.html#ImplicitFlowAuth OpenID Connect 1.0 Implicit Flow}.
+  1769   *
+  1770   * > [!NOTE]\
+  1771   * > {@link ServerMetadata.jwks_uri URL of the authorization server's JWK Set document}
+  1772   * > must be configured.
+  1773   *
+  1774   * @example
+  1775   *
+  1776   * Usage with a {@link Configuration} obtained through {@link discovery}
+  1777   *
+  1778   * ```ts
+  1779   * let server!: URL
+  1780   * let clientId!: string
+  1781   * let clientMetadata!: Partial<client.ClientMetadata> | undefined
+  1782   * let clientAuth = client.None()
+  1783   *
+  1784   * let config = await client.discovery(
+  1785   *   server,
+  1786   *   clientId,
+  1787   *   clientMetadata,
+  1788   *   clientAuth,
+  1789   *   {
+  1790   *     execute: [client.useIdTokenResponseType],
+  1791   *   },
+  1792   * )
+  1793   * ```
+  1853   * Grant.
+  1854   *
+  1855   * This method validates the authorization response and then executes the
+  1856   * {@link !"Authorization Code Grant"} at the Authorization Server's
+  1857   * {@link ServerMetadata.token_endpoint token endpoint} to obtain an access
+  1858   * token. ID Token and Refresh Token are also optionally issued by the server.
+  1859   *
+  1860   * > [!NOTE]\
+  1861   * > {@link ServerMetadata.token_endpoint URL of the authorization server's token endpoint}
+  1862   * > must be configured.
+  1863   *
+  1864   * @example
+  1865   *
+  1866   * ```ts
+  1867   * let config!: client.Configuration
+  1868   * let getCodeVerifierFromSession!: (...args: any) => string
+  1869   * let getCurrentUrl!: (...args: any) => URL
+  1870   *
+  1871   * let tokens = await client.authorizationCodeGrant(
+  1872   *   config,
+  1873   *   getCurrentUrl(),
+  1874   *   {
+  1875   *     pkceCodeVerifier: getCodeVerifierFromSession(),
+  1876   *   },
+  1877   * )
+  1878   * ```
+  1879   *
+  1880   * @example
+  1881   *
+  1882   * Using an incoming {@link !Request} instance
+  1883   *
+  1884   * ```ts
+  1885   * let config!: client.Configuration
+  1886   * let getCodeVerifierFromSession!: (...args: any) => string
+  1887   * let request!: Request
+  1888   *
+  1889   * let tokens = await client.authorizationCodeGrant(config, request, {
+  1890   *   pkceCodeVerifier: getCodeVerifierFromSession(),
+  1891   * })
+  1892   * ```
+  1893   *
+  1894   * @param currentUrl Current {@link !URL} the Authorization Server provided an
+  1895   *   Authorization Response to or a {@link !Request}, the
+  1896   *   {@link !"Authorization Code Grant"} parameters are extracted from this.
+  1897   * @param checks CSRF Protection checks like PKCE, expected state, or expected
+  1898   *   nonce
+  1871   * let tokens = await client.authorizationCodeGrant(
+  1872   *   config,
+  1873   *   getCurrentUrl(),
+  1874   *   {
+  1875   *     pkceCodeVerifier: getCodeVerifierFromSession(),
+  1876   *   },
+  1877   * )
+  1878   * ```
+  1879   *
+  1880   * @example
+  1881   *
+  1882   * Using an incoming {@link !Request} instance
+  1883   *
+  1884   * ```ts
+  1885   * let config!: client.Configuration
+  1886   * let getCodeVerifierFromSession!: (...args: any) => string
+  1887   * let request!: Request
+  1888   *
+  1889   * let tokens = await client.authorizationCodeGrant(config, request, {
+  1890   *   pkceCodeVerifier: getCodeVerifierFromSession(),
+  1891   * })
+  1892   * ```
+  1893   *
+  1894   * @param currentUrl Current {@link !URL} the Authorization Server provided an
+  1895   *   Authorization Response to or a {@link !Request}, the
+  1896   *   {@link !"Authorization Code Grant"} parameters are extracted from this.
+  1897   * @param checks CSRF Protection checks like PKCE, expected state, or expected
+  1898   *   nonce
+  1899   * @param tokenEndpointParameters Additional parameters that will be sent to the
+  1900   *   token endpoint, typically used for parameters such as `resource`
+  1901   *   ({@link !"Resource Indicators" Resource Indicator}) in cases where multiple
+  1902   *   resource indicators were requested but the authorization server only
+  1903   *   supports issuing an access token with a single audience
+  1904   *
+  1905   * @group OpenID Connect 1.0
+  1906   * @group Grants
+  1907   * @group PKCE
+  1908   * @group You are probably looking for this
+  1909   */
+  1910  export declare function authorizationCodeGrant(config: Configuration, currentUrl: URL | Request, checks?: AuthorizationCodeGrantChecks, tokenEndpointParameters?: URLSearchParams | Record<string, string>, options?: AuthorizationCodeGrantOptions): Promise<oauth.TokenEndpointResponse & TokenEndpointResponseHelpers>;
+  1911  /**
+  1912   * Performs an OAuth 2.0 Refresh Token Grant.
+  1913   *
+  1914   * Performs an OAuth 2.0 {@link !"Refresh Token Grant"} at the Authorization
+  1915   * Server's {@link ServerMetadata.token_endpoint token endpoint} using parameters
+  1916   * from the `parameters` argument, allowing a client to obtain a new access
+  1892   * ```
+  1893   *
+  1894   * @param currentUrl Current {@link !URL} the Authorization Server provided an
+  1895   *   Authorization Response to or a {@link !Request}, the
+  1896   *   {@link !"Authorization Code Grant"} parameters are extracted from this.
+  1897   * @param checks CSRF Protection checks like PKCE, expected state, or expected
+  1898   *   nonce
+  1899   * @param tokenEndpointParameters Additional parameters that will be sent to the
+  1900   *   token endpoint, typically used for parameters such as `resource`
+  1901   *   ({@link !"Resource Indicators" Resource Indicator}) in cases where multiple
+  1902   *   resource indicators were requested but the authorization server only
+  1903   *   supports issuing an access token with a single audience
+  1904   *
+  1905   * @group OpenID Connect 1.0
+  1906   * @group Grants
+  1907   * @group PKCE
+  1908   * @group You are probably looking for this
+  1909   */
+  1910  export declare function authorizationCodeGrant(config: Configuration, currentUrl: URL | Request, checks?: AuthorizationCodeGrantChecks, tokenEndpointParameters?: URLSearchParams | Record<string, string>, options?: AuthorizationCodeGrantOptions): Promise<oauth.TokenEndpointResponse & TokenEndpointResponseHelpers>;
+  1911  /**
+  1912   * Performs an OAuth 2.0 Refresh Token Grant.
+  1913   *
+  1914   * Performs an OAuth 2.0 {@link !"Refresh Token Grant"} at the Authorization
+  1915   * Server's {@link ServerMetadata.token_endpoint token endpoint} using parameters
+  1916   * from the `parameters` argument, allowing a client to obtain a new access
+  1917   * token using a valid refresh token.
+  1918   *
+  1919   * > [!NOTE]\
+  1920   * > {@link ServerMetadata.token_endpoint URL of the authorization server's token endpoint}
+  1921   * > must be configured.
+  1922   *
+  1923   * @example
+  1924   *
+  1925   * Requesting a new Access Token using the {@link !"Refresh Token Grant"} with a
+  1926   * `scope` and a `resource` ({@link !"Resource Indicators" Resource Indicator})
+  1927   * parameters.
+  1928   *
+  1929   * ```ts
+  1930   * let config!: client.Configuration
+  1931   * let refreshToken!: string
+  1932   * let scope!: string
+  1933   * let resource!: string
+  1934   *
+  1935   * let tokenEndpointResponse = await client.refreshTokenGrant(
+  1936   *   config,
+  1937   *   refreshToken,
+
+================================================================================
+clientCredentialsGrant
+================================================================================
+  1958   * Server's {@link ServerMetadata.token_endpoint token endpoint} using parameters
+  1959   * from the `parameters` argument
+  1960   *
+  1961   * > [!NOTE]\
+  1962   * > {@link ServerMetadata.token_endpoint URL of the authorization server's token endpoint}
+  1963   * > must be configured.
+  1964   *
+  1965   * @example
+  1966   *
+  1967   * Requesting an Access Token using the {@link !"Client Credentials Grant"} with
+  1968   * a `scope` and a `resource` ({@link !"Resource Indicators" Resource Indicator})
+  1969   * parameters.
+  1970   *
+  1971   * ```ts
+  1972   * let config!: client.Configuration
+  1973   * let scope!: string
+  1974   * let resource!: string
+  1975   *
+  1976   * let tokenEndpointResponse = await client.clientCredentialsGrant(config, {
+  1977   *   scope,
+  1978   *   resource,
+  1979   * })
+  1980   * ```
+  1981   *
+  1982   * @param parameters Additional parameters that will be sent to the token
+  1983   *   endpoint, typically used for parameters such as `scope` and a `resource`
+  1984   *   ({@link !"Resource Indicators" Resource Indicator})
+  1985   *
+  1986   * @group Grants
+  1987   */
+  1988  export declare function clientCredentialsGrant(config: Configuration, parameters?: URLSearchParams | Record<string, string>, options?: DPoPOptions): Promise<oauth.TokenEndpointResponse & TokenEndpointResponseHelpers>;
+  1989  /**
+  1990   * Builds an authorization request URL.
+  1991   *
+  1992   * Returns a URL to redirect the user-agent to, in order to request
+  1993   * authorization at the Authorization Server
+  1994   *
+  1995   * > [!NOTE]\
+  1996   * > {@link ServerMetadata.authorization_endpoint URL of the authorization server's authorization endpoint}
+  1997   * > must be configured.
+  1998   *
+  1999   * > [!NOTE]\
+  2000   * > When used, PKCE code challenge, state, and nonce parameter values must always
+  2001   * > be random and be tied to the user-agent.
+  2002   *
+  2003   * @example
+  1970   *
+  1971   * ```ts
+  1972   * let config!: client.Configuration
+  1973   * let scope!: string
+  1974   * let resource!: string
+  1975   *
+  1976   * let tokenEndpointResponse = await client.clientCredentialsGrant(config, {
+  1977   *   scope,
+  1978   *   resource,
+  1979   * })
+  1980   * ```
+  1981   *
+  1982   * @param parameters Additional parameters that will be sent to the token
+  1983   *   endpoint, typically used for parameters such as `scope` and a `resource`
+  1984   *   ({@link !"Resource Indicators" Resource Indicator})
+  1985   *
+  1986   * @group Grants
+  1987   */
+  1988  export declare function clientCredentialsGrant(config: Configuration, parameters?: URLSearchParams | Record<string, string>, options?: DPoPOptions): Promise<oauth.TokenEndpointResponse & TokenEndpointResponseHelpers>;
+  1989  /**
+  1990   * Builds an authorization request URL.
+  1991   *
+  1992   * Returns a URL to redirect the user-agent to, in order to request
+  1993   * authorization at the Authorization Server
+  1994   *
+  1995   * > [!NOTE]\
+  1996   * > {@link ServerMetadata.authorization_endpoint URL of the authorization server's authorization endpoint}
+  1997   * > must be configured.
+  1998   *
+  1999   * > [!NOTE]\
+  2000   * > When used, PKCE code challenge, state, and nonce parameter values must always
+  2001   * > be random and be tied to the user-agent.
+  2002   *
+  2003   * @example
+  2004   *
+  2005   * ```ts
+  2006   * let config!: client.Configuration
+  2007   * let redirect_uri!: string
+  2008   * let scope!: string
+  2009   *
+  2010   * // these must be unique for every single authorization request
+  2011   * let code_verifier = client.randomPKCECodeVerifier()
+  2012   * let code_challenge =
+  2013   *   await client.calculatePKCECodeChallenge(code_verifier)
+  2014   *
+  2015   * let redirectTo = client.buildAuthorizationUrl(config, {
+
+================================================================================
+refreshTokenGrant
+================================================================================
+  1917   * token using a valid refresh token.
+  1918   *
+  1919   * > [!NOTE]\
+  1920   * > {@link ServerMetadata.token_endpoint URL of the authorization server's token endpoint}
+  1921   * > must be configured.
+  1922   *
+  1923   * @example
+  1924   *
+  1925   * Requesting a new Access Token using the {@link !"Refresh Token Grant"} with a
+  1926   * `scope` and a `resource` ({@link !"Resource Indicators" Resource Indicator})
+  1927   * parameters.
+  1928   *
+  1929   * ```ts
+  1930   * let config!: client.Configuration
+  1931   * let refreshToken!: string
+  1932   * let scope!: string
+  1933   * let resource!: string
+  1934   *
+  1935   * let tokenEndpointResponse = await client.refreshTokenGrant(
+  1936   *   config,
+  1937   *   refreshToken,
+  1938   *   {
+  1939   *     scope,
+  1940   *     resource,
+  1941   *   },
+  1942   * )
+  1943   * ```
+  1944   *
+  1945   * @param refreshToken OAuth 2.0 Refresh Token provided by the authorization
+  1946   *   server that is used to obtain a new access token.
+  1947   * @param parameters Additional parameters that will be sent to the token
+  1948   *   endpoint, typically used for parameters such as `scope` and a `resource`
+  1949   *   ({@link !"Resource Indicators" Resource Indicator})
+  1950   *
+  1951   * @group Grants
+  1952   */
+  1953  export declare function refreshTokenGrant(config: Configuration, refreshToken: string, parameters?: URLSearchParams | Record<string, string>, options?: DPoPOptions): Promise<oauth.TokenEndpointResponse & TokenEndpointResponseHelpers>;
+  1954  /**
+  1955   * Performs an OAuth 2.0 Client Credentials Grant.
+  1956   *
+  1957   * Performs an OAuth 2.0 {@link !"Client Credentials Grant"} at the Authorization
+  1958   * Server's {@link ServerMetadata.token_endpoint token endpoint} using parameters
+  1959   * from the `parameters` argument
+  1960   *
+  1961   * > [!NOTE]\
+  1962   * > {@link ServerMetadata.token_endpoint URL of the authorization server's token endpoint}
+  1935   * let tokenEndpointResponse = await client.refreshTokenGrant(
+  1936   *   config,
+  1937   *   refreshToken,
+  1938   *   {
+  1939   *     scope,
+  1940   *     resource,
+  1941   *   },
+  1942   * )
+  1943   * ```
+  1944   *
+  1945   * @param refreshToken OAuth 2.0 Refresh Token provided by the authorization
+  1946   *   server that is used to obtain a new access token.
+  1947   * @param parameters Additional parameters that will be sent to the token
+  1948   *   endpoint, typically used for parameters such as `scope` and a `resource`
+  1949   *   ({@link !"Resource Indicators" Resource Indicator})
+  1950   *
+  1951   * @group Grants
+  1952   */
+  1953  export declare function refreshTokenGrant(config: Configuration, refreshToken: string, parameters?: URLSearchParams | Record<string, string>, options?: DPoPOptions): Promise<oauth.TokenEndpointResponse & TokenEndpointResponseHelpers>;
+  1954  /**
+  1955   * Performs an OAuth 2.0 Client Credentials Grant.
+  1956   *
+  1957   * Performs an OAuth 2.0 {@link !"Client Credentials Grant"} at the Authorization
+  1958   * Server's {@link ServerMetadata.token_endpoint token endpoint} using parameters
+  1959   * from the `parameters` argument
+  1960   *
+  1961   * > [!NOTE]\
+  1962   * > {@link ServerMetadata.token_endpoint URL of the authorization server's token endpoint}
+  1963   * > must be configured.
+  1964   *
+  1965   * @example
+  1966   *
+  1967   * Requesting an Access Token using the {@link !"Client Credentials Grant"} with
+  1968   * a `scope` and a `resource` ({@link !"Resource Indicators" Resource Indicator})
+  1969   * parameters.
+  1970   *
+  1971   * ```ts
+  1972   * let config!: client.Configuration
+  1973   * let scope!: string
+  1974   * let resource!: string
+  1975   *
+  1976   * let tokenEndpointResponse = await client.clientCredentialsGrant(config, {
+  1977   *   scope,
+  1978   *   resource,
+  1979   * })
+  1980   * ```
+
+================================================================================
+Configuration
+================================================================================
+    11   * implementations are linked below.
+    12   *
+    13   * @see {@link ClientSecretBasic}
+    14   * @see {@link ClientSecretJwt}
+    15   * @see {@link ClientSecretPost}
+    16   * @see {@link None}
+    17   * @see {@link PrivateKeyJwt}
+    18   * @see {@link TlsClientAuth}
+    19   */
+    20  export type ClientAuth = (as: ServerMetadata, client: ClientMetadata, body: URLSearchParams, headers: Headers) => void;
+    21  /**
+    22   * Creates a `client_secret_post` client authentication method.
+    23   *
+    24   * **`client_secret_post`** uses the HTTP request body to send `client_id` and
+    25   * `client_secret` as `application/x-www-form-urlencoded` body parameters
+    26   *
+    27   * @example
+    28   *
+    29   * Usage with a {@link Configuration} obtained through {@link discovery}
+    30   *
+    31   * ```ts
+    32   * let server!: URL
+    33   * let clientId!: string
+    34   * let clientSecret!: string
+    35   * let clientMetadata!: Partial<client.ClientMetadata> | string | undefined
+    36   *
+    37   * let config = await client.discovery(
+    38   *   server,
+    39   *   clientId,
+    40   *   clientMetadata,
+    41   *   client.ClientSecretPost(clientSecret),
+    42   * )
+    43   * ```
+    44   *
+    45   * @example
+    46   *
+    47   * Usage with a {@link Configuration} instance
+    48   *
+    49   * ```ts
+    50   * let server!: client.ServerMetadata
+    51   * let clientId!: string
+    52   * let clientSecret!: string
+    53   * let clientMetadata!: Partial<client.ClientMetadata> | string | undefined
+    54   *
+    55   * let config = new client.Configuration(
+    56   *   server,
+    29   * Usage with a {@link Configuration} obtained through {@link discovery}
+    30   *
+    31   * ```ts
+    32   * let server!: URL
+    33   * let clientId!: string
+    34   * let clientSecret!: string
+    35   * let clientMetadata!: Partial<client.ClientMetadata> | string | undefined
+    36   *
+    37   * let config = await client.discovery(
+    38   *   server,
+    39   *   clientId,
+    40   *   clientMetadata,
+    41   *   client.ClientSecretPost(clientSecret),
+    42   * )
+    43   * ```
+    44   *
+    45   * @example
+    46   *
+    47   * Usage with a {@link Configuration} instance
+    48   *
+    49   * ```ts
+    50   * let server!: client.ServerMetadata
+    51   * let clientId!: string
+    52   * let clientSecret!: string
+    53   * let clientMetadata!: Partial<client.ClientMetadata> | string | undefined
+    54   *
+    55   * let config = new client.Configuration(
+    56   *   server,
+    57   *   clientId,
+    58   *   clientMetadata,
+    59   *   client.ClientSecretPost(clientSecret),
+    60   * )
+    61   * ```
+    62   *
+    63   * @param clientSecret Client Secret
+    64   *
+    65   * @group Client Authentication Methods
+    66   *
+    67   * @see [OAuth Token Endpoint Authentication Methods](https://www.iana.org/assignments/oauth-parameters/oauth-parameters.xhtml#token-endpoint-auth-method)
+    68   * @see [RFC 6749 - The OAuth 2.0 Authorization Framework](https://www.rfc-editor.org/rfc/rfc6749.html#section-2.3)
+    69   * @see [OpenID Connect Core 1.0](https://openid.net/specs/openid-connect-core-1_0-errata2.html#ClientAuthentication)
+    70   */
+    71  export declare function ClientSecretPost(clientSecret?: string): ClientAuth;
+    72  /**
+    73   * Creates a `client_secret_basic` client authentication method.
+    74   *
+    37   * let config = await client.discovery(
+    38   *   server,
+    39   *   clientId,
+    40   *   clientMetadata,
+    41   *   client.ClientSecretPost(clientSecret),
+    42   * )
+    43   * ```
+    44   *
+    45   * @example
+    46   *
+    47   * Usage with a {@link Configuration} instance
+    48   *
+    49   * ```ts
+    50   * let server!: client.ServerMetadata
+    51   * let clientId!: string
+    52   * let clientSecret!: string
+    53   * let clientMetadata!: Partial<client.ClientMetadata> | string | undefined
+    54   *
+    55   * let config = new client.Configuration(
+    56   *   server,
+    57   *   clientId,
+    58   *   clientMetadata,
+    59   *   client.ClientSecretPost(clientSecret),
+    60   * )
+    61   * ```
+    62   *
+    63   * @param clientSecret Client Secret
+    64   *
+    65   * @group Client Authentication Methods
+    66   *
+    67   * @see [OAuth Token Endpoint Authentication Methods](https://www.iana.org/assignments/oauth-parameters/oauth-parameters.xhtml#token-endpoint-auth-method)
+    68   * @see [RFC 6749 - The OAuth 2.0 Authorization Framework](https://www.rfc-editor.org/rfc/rfc6749.html#section-2.3)
+    69   * @see [OpenID Connect Core 1.0](https://openid.net/specs/openid-connect-core-1_0-errata2.html#ClientAuthentication)
+    70   */
+    71  export declare function ClientSecretPost(clientSecret?: string): ClientAuth;
+    72  /**
+    73   * Creates a `client_secret_basic` client authentication method.
+    74   *
+    75   * **`client_secret_basic`** uses the HTTP `Basic` authentication scheme to send
+    76   * `client_id` and `client_secret` in an `Authorization` HTTP Header.
+    77   *
+    78   * @example
+    79   *
+    80   * Usage with a {@link Configuration} obtained through {@link discovery}
+    81   *
+    82   * ```ts
+    62   *
+    63   * @param clientSecret Client Secret
+    64   *
+    65   * @group Client Authentication Methods
+    66   *
+    67   * @see [OAuth Token Endpoint Authentication Methods](https://www.iana.org/assignments/oauth-parameters/oauth-parameters.xhtml#token-endpoint-auth-method)
+    68   * @see [RFC 6749 - The OAuth 2.0 Authorization Framework](https://www.rfc-editor.org/rfc/rfc6749.html#section-2.3)
+    69   * @see [OpenID Connect Core 1.0](https://openid.net/specs/openid-connect-core-1_0-errata2.html#ClientAuthentication)
+    70   */
+    71  export declare function ClientSecretPost(clientSecret?: string): ClientAuth;
+    72  /**
+    73   * Creates a `client_secret_basic` client authentication method.
+    74   *
+    75   * **`client_secret_basic`** uses the HTTP `Basic` authentication scheme to send
+    76   * `client_id` and `client_secret` in an `Authorization` HTTP Header.
+    77   *
+    78   * @example
+    79   *
+    80   * Usage with a {@link Configuration} obtained through {@link discovery}
+    81   *
+    82   * ```ts
+    83   * let server!: URL
+    84   * let clientId!: string
+    85   * let clientSecret!: string
+    86   * let clientMetadata!: Partial<client.ClientMetadata> | string | undefined
+    87   *
+    88   * let config = await client.discovery(
+    89   *   server,
+    90   *   clientId,
+    91   *   clientMetadata,
+    92   *   client.ClientSecretBasic(clientSecret),
+    93   * )
+    94   * ```
+    95   *
+    96   * @example
+    97   *
+    98   * Usage with a {@link Configuration} instance
+    99   *
+   100   * ```ts
+   101   * let server!: client.ServerMetadata
+   102   * let clientId!: string
+   103   * let clientSecret!: string
+   104   * let clientMetadata!: Partial<client.ClientMetadata> | string | undefined
+   105   *
+   106   * let config = new client.Configuration(
+   107   *   server,
+    80   * Usage with a {@link Configuration} obtained through {@link discovery}
+    81   *
+    82   * ```ts
+    83   * let server!: URL
+    84   * let clientId!: string
+    85   * let clientSecret!: string
+    86   * let clientMetadata!: Partial<client.ClientMetadata> | string | undefined
+    87   *
+    88   * let config = await client.discovery(
+    89   *   server,
+    90   *   clientId,
+    91   *   clientMetadata,
+    92   *   client.ClientSecretBasic(clientSecret),
+    93   * )
+    94   * ```
+    95   *
+    96   * @example
+    97   *
+    98   * Usage with a {@link Configuration} instance
+    99   *
+   100   * ```ts
+   101   * let server!: client.ServerMetadata
+   102   * let clientId!: string
+   103   * let clientSecret!: string
+   104   * let clientMetadata!: Partial<client.ClientMetadata> | string | undefined
+   105   *
+   106   * let config = new client.Configuration(
+   107   *   server,
+   108   *   clientId,
+   109   *   clientMetadata,
+   110   *   client.ClientSecretBasic(clientSecret),
+   111   * )
+   112   * ```
+   113   *
+   114   * @param clientSecret Client Secret
+   115   *
+   116   * @group Client Authentication Methods
+   117   *
+   118   * @see [OAuth Token Endpoint Authentication Methods](https://www.iana.org/assignments/oauth-parameters/oauth-parameters.xhtml#token-endpoint-auth-method)
+   119   * @see [RFC 6749 - The OAuth 2.0 Authorization Framework](https://www.rfc-editor.org/rfc/rfc6749.html#section-2.3)
+   120   * @see [OpenID Connect Core 1.0](https://openid.net/specs/openid-connect-core-1_0-errata2.html#ClientAuthentication)
+   121   */
+   122  export declare function ClientSecretBasic(clientSecret?: string): ClientAuth;
+   123  /**
+   124   * Creates a `client_secret_jwt` client authentication method.
+   125   *
+    88   * let config = await client.discovery(
+    89   *   server,
+    90   *   clientId,
+    91   *   clientMetadata,
+    92   *   client.ClientSecretBasic(clientSecret),
+    93   * )
+    94   * ```
+    95   *
+    96   * @example
+    97   *
+    98   * Usage with a {@link Configuration} instance
+    99   *
+   100   * ```ts
+   101   * let server!: client.ServerMetadata
+   102   * let clientId!: string
+   103   * let clientSecret!: string
+   104   * let clientMetadata!: Partial<client.ClientMetadata> | string | undefined
+   105   *
+   106   * let config = new client.Configuration(
+   107   *   server,
+   108   *   clientId,
+   109   *   clientMetadata,
+   110   *   client.ClientSecretBasic(clientSecret),
+   111   * )
+   112   * ```
+   113   *
+   114   * @param clientSecret Client Secret
+   115   *
+   116   * @group Client Authentication Methods
+   117   *
+   118   * @see [OAuth Token Endpoint Authentication Methods](https://www.iana.org/assignments/oauth-parameters/oauth-parameters.xhtml#token-endpoint-auth-method)
+   119   * @see [RFC 6749 - The OAuth 2.0 Authorization Framework](https://www.rfc-editor.org/rfc/rfc6749.html#section-2.3)
+   120   * @see [OpenID Connect Core 1.0](https://openid.net/specs/openid-connect-core-1_0-errata2.html#ClientAuthentication)
+   121   */
+   122  export declare function ClientSecretBasic(clientSecret?: string): ClientAuth;
+   123  /**
+   124   * Creates a `client_secret_jwt` client authentication method.
+   125   *
+   126   * **`client_secret_jwt`** uses the HTTP request body to send `client_id`,
+   127   * `client_assertion_type`, and `client_assertion` as
+   128   * `application/x-www-form-urlencoded` body parameters. HMAC is used for the
+   129   * assertion's authenticity and integrity.
+   130   *
+   131   * @example
+   132   *
+   133   * Usage with a {@link Configuration} obtained through {@link discovery}
+   115   *
+   116   * @group Client Authentication Methods
+   117   *
+   118   * @see [OAuth Token Endpoint Authentication Methods](https://www.iana.org/assignments/oauth-parameters/oauth-parameters.xhtml#token-endpoint-auth-method)
+   119   * @see [RFC 6749 - The OAuth 2.0 Authorization Framework](https://www.rfc-editor.org/rfc/rfc6749.html#section-2.3)
+   120   * @see [OpenID Connect Core 1.0](https://openid.net/specs/openid-connect-core-1_0-errata2.html#ClientAuthentication)
+   121   */
+   122  export declare function ClientSecretBasic(clientSecret?: string): ClientAuth;
+   123  /**
+   124   * Creates a `client_secret_jwt` client authentication method.
+   125   *
+   126   * **`client_secret_jwt`** uses the HTTP request body to send `client_id`,
+   127   * `client_assertion_type`, and `client_assertion` as
+   128   * `application/x-www-form-urlencoded` body parameters. HMAC is used for the
+   129   * assertion's authenticity and integrity.
+   130   *
+   131   * @example
+   132   *
+   133   * Usage with a {@link Configuration} obtained through {@link discovery}
+   134   *
+   135   * ```ts
+   136   * let server!: URL
+   137   * let clientId!: string
+   138   * let clientSecret!: string
+   139   * let clientMetadata!: Partial<client.ClientMetadata> | string | undefined
+   140   *
+   141   * let config = await client.discovery(
+   142   *   server,
+   143   *   clientId,
+   144   *   clientMetadata,
+   145   *   client.ClientSecretJwt(clientSecret),
+   146   * )
+   147   * ```
+   148   *
+   149   * @example
+   150   *
+   151   * Usage with a {@link Configuration} instance
+   152   *
+   153   * ```ts
+   154   * let server!: client.ServerMetadata
+   155   * let clientId!: string
+   156   * let clientSecret!: string
+   157   * let clientMetadata!: Partial<client.ClientMetadata> | string | undefined
+   158   *
+   159   * let config = new client.Configuration(
+   160   *   server,
+   133   * Usage with a {@link Configuration} obtained through {@link discovery}
+   134   *
+   135   * ```ts
+   136   * let server!: URL
+   137   * let clientId!: string
+   138   * let clientSecret!: string
+   139   * let clientMetadata!: Partial<client.ClientMetadata> | string | undefined
+   140   *
+   141   * let config = await client.discovery(
+   142   *   server,
+   143   *   clientId,
+   144   *   clientMetadata,
+   145   *   client.ClientSecretJwt(clientSecret),
+   146   * )
+   147   * ```
+   148   *
+   149   * @example
+   150   *
+   151   * Usage with a {@link Configuration} instance
+   152   *
+   153   * ```ts
+   154   * let server!: client.ServerMetadata
+   155   * let clientId!: string
+   156   * let clientSecret!: string
+   157   * let clientMetadata!: Partial<client.ClientMetadata> | string | undefined
+   158   *
+   159   * let config = new client.Configuration(
+   160   *   server,
+   161   *   clientId,
+   162   *   clientMetadata,
+   163   *   client.ClientSecretJwt(clientSecret),
+   164   * )
+   165   * ```
+   166   *
+   167   * @param clientSecret Client Secret
+   168   * @param options
+   169   *
+   170   * @group Client Authentication Methods
+   171   *
+   172   * @see [OAuth Token Endpoint Authentication Methods](https://www.iana.org/assignments/oauth-parameters/oauth-parameters.xhtml#token-endpoint-auth-method)
+   173   * @see [OpenID Connect Core 1.0](https://openid.net/specs/openid-connect-core-1_0-errata2.html#ClientAuthentication)
+   174   */
+   175  export declare function ClientSecretJwt(clientSecret?: string, options?: oauth.ModifyAssertionOptions): ClientAuth;
+   176  /**
+   177   * Creates a `none` client authentication method.
+   178   *
+
+================================================================================
+ClientAuth
+================================================================================
+     1  import * as oauth from 'oauth4webapi';
+     2  export { AuthorizationResponseError, ResponseBodyError, WWWAuthenticateChallengeError, type AuthorizationDetails, type BackchannelAuthenticationResponse, type ConfirmationClaims, type CryptoKey, type CryptoKeyPair, type DeviceAuthorizationResponse, type OmitSymbolProperties, type ExportedJWKSCache, type GenerateKeyPairOptions, type IDToken, type IntrospectionResponse, type JsonArray, type JsonObject, type JsonPrimitive, type JsonValue, type JWK, type JWKS, type JWSAlgorithm, type ModifyAssertionFunction, type ModifyAssertionOptions, type MTLSEndpointAliases, type PrivateKey, type TokenEndpointResponse, type UserInfoAddress, type UserInfoResponse, type WWWAuthenticateChallenge, type WWWAuthenticateChallengeParameters, } from 'oauth4webapi';
+     3  /**
+     4   * A function that applies client authentication to an authorization server
+     5   * request.
+     6   *
+     7   * The default is {@link ClientSecretPost} if {@link ClientMetadata.client_secret}
+     8   * is present, {@link None} otherwise.
+     9   *
+    10   * Other Client Authentication Methods must be provided explicitly and their
+    11   * implementations are linked below.
+    12   *
+    13   * @see {@link ClientSecretBasic}
+    14   * @see {@link ClientSecretJwt}
+    15   * @see {@link ClientSecretPost}
+    16   * @see {@link None}
+    17   * @see {@link PrivateKeyJwt}
+    18   * @see {@link TlsClientAuth}
+    19   */
+    20  export type ClientAuth = (as: ServerMetadata, client: ClientMetadata, body: URLSearchParams, headers: Headers) => void;
+    21  /**
+    22   * Creates a `client_secret_post` client authentication method.
+    23   *
+    24   * **`client_secret_post`** uses the HTTP request body to send `client_id` and
+    25   * `client_secret` as `application/x-www-form-urlencoded` body parameters
+    26   *
+    27   * @example
+    28   *
+    29   * Usage with a {@link Configuration} obtained through {@link discovery}
+    30   *
+    31   * ```ts
+    32   * let server!: URL
+    33   * let clientId!: string
+    34   * let clientSecret!: string
+    35   * let clientMetadata!: Partial<client.ClientMetadata> | string | undefined
+    36   *
+    37   * let config = await client.discovery(
+    38   *   server,
+    39   *   clientId,
+    40   *   clientMetadata,
+    41   *   client.ClientSecretPost(clientSecret),
+    42   * )
+    43   * ```
+    44   *
+    45   * @example
+     2  export { AuthorizationResponseError, ResponseBodyError, WWWAuthenticateChallengeError, type AuthorizationDetails, type BackchannelAuthenticationResponse, type ConfirmationClaims, type CryptoKey, type CryptoKeyPair, type DeviceAuthorizationResponse, type OmitSymbolProperties, type ExportedJWKSCache, type GenerateKeyPairOptions, type IDToken, type IntrospectionResponse, type JsonArray, type JsonObject, type JsonPrimitive, type JsonValue, type JWK, type JWKS, type JWSAlgorithm, type ModifyAssertionFunction, type ModifyAssertionOptions, type MTLSEndpointAliases, type PrivateKey, type TokenEndpointResponse, type UserInfoAddress, type UserInfoResponse, type WWWAuthenticateChallenge, type WWWAuthenticateChallengeParameters, } from 'oauth4webapi';
+     3  /**
+     4   * A function that applies client authentication to an authorization server
+     5   * request.
+     6   *
+     7   * The default is {@link ClientSecretPost} if {@link ClientMetadata.client_secret}
+     8   * is present, {@link None} otherwise.
+     9   *
+    10   * Other Client Authentication Methods must be provided explicitly and their
+    11   * implementations are linked below.
+    12   *
+    13   * @see {@link ClientSecretBasic}
+    14   * @see {@link ClientSecretJwt}
+    15   * @see {@link ClientSecretPost}
+    16   * @see {@link None}
+    17   * @see {@link PrivateKeyJwt}
+    18   * @see {@link TlsClientAuth}
+    19   */
+    20  export type ClientAuth = (as: ServerMetadata, client: ClientMetadata, body: URLSearchParams, headers: Headers) => void;
+    21  /**
+    22   * Creates a `client_secret_post` client authentication method.
+    23   *
+    24   * **`client_secret_post`** uses the HTTP request body to send `client_id` and
+    25   * `client_secret` as `application/x-www-form-urlencoded` body parameters
+    26   *
+    27   * @example
+    28   *
+    29   * Usage with a {@link Configuration} obtained through {@link discovery}
+    30   *
+    31   * ```ts
+    32   * let server!: URL
+    33   * let clientId!: string
+    34   * let clientSecret!: string
+    35   * let clientMetadata!: Partial<client.ClientMetadata> | string | undefined
+    36   *
+    37   * let config = await client.discovery(
+    38   *   server,
+    39   *   clientId,
+    40   *   clientMetadata,
+    41   *   client.ClientSecretPost(clientSecret),
+    42   * )
+    43   * ```
+    44   *
+    45   * @example
+    46   *
+    47   * Usage with a {@link Configuration} instance
+    51   * let clientId!: string
+    52   * let clientSecret!: string
+    53   * let clientMetadata!: Partial<client.ClientMetadata> | string | undefined
+    54   *
+    55   * let config = new client.Configuration(
+    56   *   server,
+    57   *   clientId,
+    58   *   clientMetadata,
+    59   *   client.ClientSecretPost(clientSecret),
+    60   * )
+    61   * ```
+    62   *
+    63   * @param clientSecret Client Secret
+    64   *
+    65   * @group Client Authentication Methods
+    66   *
+    67   * @see [OAuth Token Endpoint Authentication Methods](https://www.iana.org/assignments/oauth-parameters/oauth-parameters.xhtml#token-endpoint-auth-method)
+    68   * @see [RFC 6749 - The OAuth 2.0 Authorization Framework](https://www.rfc-editor.org/rfc/rfc6749.html#section-2.3)
+    69   * @see [OpenID Connect Core 1.0](https://openid.net/specs/openid-connect-core-1_0-errata2.html#ClientAuthentication)
+    70   */
+    71  export declare function ClientSecretPost(clientSecret?: string): ClientAuth;
+    72  /**
+    73   * Creates a `client_secret_basic` client authentication method.
+    74   *
+    75   * **`client_secret_basic`** uses the HTTP `Basic` authentication scheme to send
+    76   * `client_id` and `client_secret` in an `Authorization` HTTP Header.
+    77   *
+    78   * @example
+    79   *
+    80   * Usage with a {@link Configuration} obtained through {@link discovery}
+    81   *
+    82   * ```ts
+    83   * let server!: URL
+    84   * let clientId!: string
+    85   * let clientSecret!: string
+    86   * let clientMetadata!: Partial<client.ClientMetadata> | string | undefined
+    87   *
+    88   * let config = await client.discovery(
+    89   *   server,
+    90   *   clientId,
+    91   *   clientMetadata,
+    92   *   client.ClientSecretBasic(clientSecret),
+    93   * )
+    94   * ```
+    95   *
+    96   * @example
+    53   * let clientMetadata!: Partial<client.ClientMetadata> | string | undefined
+    54   *
+    55   * let config = new client.Configuration(
+    56   *   server,
+    57   *   clientId,
+    58   *   clientMetadata,
+    59   *   client.ClientSecretPost(clientSecret),
+    60   * )
+    61   * ```
+    62   *
+    63   * @param clientSecret Client Secret
+    64   *
+    65   * @group Client Authentication Methods
+    66   *
+    67   * @see [OAuth Token Endpoint Authentication Methods](https://www.iana.org/assignments/oauth-parameters/oauth-parameters.xhtml#token-endpoint-auth-method)
+    68   * @see [RFC 6749 - The OAuth 2.0 Authorization Framework](https://www.rfc-editor.org/rfc/rfc6749.html#section-2.3)
+    69   * @see [OpenID Connect Core 1.0](https://openid.net/specs/openid-connect-core-1_0-errata2.html#ClientAuthentication)
+    70   */
+    71  export declare function ClientSecretPost(clientSecret?: string): ClientAuth;
+    72  /**
+    73   * Creates a `client_secret_basic` client authentication method.
+    74   *
+    75   * **`client_secret_basic`** uses the HTTP `Basic` authentication scheme to send
+    76   * `client_id` and `client_secret` in an `Authorization` HTTP Header.
+    77   *
+    78   * @example
+    79   *
+    80   * Usage with a {@link Configuration} obtained through {@link discovery}
+    81   *
+    82   * ```ts
+    83   * let server!: URL
+    84   * let clientId!: string
+    85   * let clientSecret!: string
+    86   * let clientMetadata!: Partial<client.ClientMetadata> | string | undefined
+    87   *
+    88   * let config = await client.discovery(
+    89   *   server,
+    90   *   clientId,
+    91   *   clientMetadata,
+    92   *   client.ClientSecretBasic(clientSecret),
+    93   * )
+    94   * ```
+    95   *
+    96   * @example
+    97   *
+    98   * Usage with a {@link Configuration} instance
+   102   * let clientId!: string
+   103   * let clientSecret!: string
+   104   * let clientMetadata!: Partial<client.ClientMetadata> | string | undefined
+   105   *
+   106   * let config = new client.Configuration(
+   107   *   server,
+   108   *   clientId,
+   109   *   clientMetadata,
+   110   *   client.ClientSecretBasic(clientSecret),
+   111   * )
+   112   * ```
+   113   *
+   114   * @param clientSecret Client Secret
+   115   *
+   116   * @group Client Authentication Methods
+   117   *
+   118   * @see [OAuth Token Endpoint Authentication Methods](https://www.iana.org/assignments/oauth-parameters/oauth-parameters.xhtml#token-endpoint-auth-method)
+   119   * @see [RFC 6749 - The OAuth 2.0 Authorization Framework](https://www.rfc-editor.org/rfc/rfc6749.html#section-2.3)
+   120   * @see [OpenID Connect Core 1.0](https://openid.net/specs/openid-connect-core-1_0-errata2.html#ClientAuthentication)
+   121   */
+   122  export declare function ClientSecretBasic(clientSecret?: string): ClientAuth;
+   123  /**
+   124   * Creates a `client_secret_jwt` client authentication method.
+   125   *
+   126   * **`client_secret_jwt`** uses the HTTP request body to send `client_id`,
+   127   * `client_assertion_type`, and `client_assertion` as
+   128   * `application/x-www-form-urlencoded` body parameters. HMAC is used for the
+   129   * assertion's authenticity and integrity.
+   130   *
+   131   * @example
+   132   *
+   133   * Usage with a {@link Configuration} obtained through {@link discovery}
+   134   *
+   135   * ```ts
+   136   * let server!: URL
+   137   * let clientId!: string
+   138   * let clientSecret!: string
+   139   * let clientMetadata!: Partial<client.ClientMetadata> | string | undefined
+   140   *
+   141   * let config = await client.discovery(
+   142   *   server,
+   143   *   clientId,
+   144   *   clientMetadata,
+   145   *   client.ClientSecretJwt(clientSecret),
+   146   * )
+   147   * ```
+   104   * let clientMetadata!: Partial<client.ClientMetadata> | string | undefined
+   105   *
+   106   * let config = new client.Configuration(
+   107   *   server,
+   108   *   clientId,
+   109   *   clientMetadata,
+   110   *   client.ClientSecretBasic(clientSecret),
+   111   * )
+   112   * ```
+   113   *
+   114   * @param clientSecret Client Secret
+   115   *
+   116   * @group Client Authentication Methods
+   117   *
+   118   * @see [OAuth Token Endpoint Authentication Methods](https://www.iana.org/assignments/oauth-parameters/oauth-parameters.xhtml#token-endpoint-auth-method)
+   119   * @see [RFC 6749 - The OAuth 2.0 Authorization Framework](https://www.rfc-editor.org/rfc/rfc6749.html#section-2.3)
+   120   * @see [OpenID Connect Core 1.0](https://openid.net/specs/openid-connect-core-1_0-errata2.html#ClientAuthentication)
+   121   */
+   122  export declare function ClientSecretBasic(clientSecret?: string): ClientAuth;
+   123  /**
+   124   * Creates a `client_secret_jwt` client authentication method.
+   125   *
+   126   * **`client_secret_jwt`** uses the HTTP request body to send `client_id`,
+   127   * `client_assertion_type`, and `client_assertion` as
+   128   * `application/x-www-form-urlencoded` body parameters. HMAC is used for the
+   129   * assertion's authenticity and integrity.
+   130   *
+   131   * @example
+   132   *
+   133   * Usage with a {@link Configuration} obtained through {@link discovery}
+   134   *
+   135   * ```ts
+   136   * let server!: URL
+   137   * let clientId!: string
+   138   * let clientSecret!: string
+   139   * let clientMetadata!: Partial<client.ClientMetadata> | string | undefined
+   140   *
+   141   * let config = await client.discovery(
+   142   *   server,
+   143   *   clientId,
+   144   *   clientMetadata,
+   145   *   client.ClientSecretJwt(clientSecret),
+   146   * )
+   147   * ```
+   148   *
+   149   * @example
+   155   * let clientId!: string
+   156   * let clientSecret!: string
+   157   * let clientMetadata!: Partial<client.ClientMetadata> | string | undefined
+   158   *
+   159   * let config = new client.Configuration(
+   160   *   server,
+   161   *   clientId,
+   162   *   clientMetadata,
+   163   *   client.ClientSecretJwt(clientSecret),
+   164   * )
+   165   * ```
+   166   *
+   167   * @param clientSecret Client Secret
+   168   * @param options
+   169   *
+   170   * @group Client Authentication Methods
+   171   *
+   172   * @see [OAuth Token Endpoint Authentication Methods](https://www.iana.org/assignments/oauth-parameters/oauth-parameters.xhtml#token-endpoint-auth-method)
+   173   * @see [OpenID Connect Core 1.0](https://openid.net/specs/openid-connect-core-1_0-errata2.html#ClientAuthentication)
+   174   */
+   175  export declare function ClientSecretJwt(clientSecret?: string, options?: oauth.ModifyAssertionOptions): ClientAuth;
+   176  /**
+   177   * Creates a `none` client authentication method.
+   178   *
+   179   * **`none`** (public client) uses the HTTP request body to send only
+   180   * `client_id` as `application/x-www-form-urlencoded` body parameter.
+   181   *
+   182   * @example
+   183   *
+   184   * Usage with a {@link Configuration} obtained through {@link discovery}
+   185   *
+   186   * ```ts
+   187   * let server!: URL
+   188   * let clientId!: string
+   189   * let clientMetadata!: Partial<client.ClientMetadata> | string | undefined
+   190   *
+   191   * let config = await client.discovery(
+   192   *   server,
+   193   *   clientId,
+   194   *   clientMetadata,
+   195   *   client.None(),
+   196   * )
+   197   * ```
+   198   *
+   199   * @example
+   200   *
+   157   * let clientMetadata!: Partial<client.ClientMetadata> | string | undefined
+   158   *
+   159   * let config = new client.Configuration(
+   160   *   server,
+   161   *   clientId,
+   162   *   clientMetadata,
+   163   *   client.ClientSecretJwt(clientSecret),
+   164   * )
+   165   * ```
+   166   *
+   167   * @param clientSecret Client Secret
+   168   * @param options
+   169   *
+   170   * @group Client Authentication Methods
+   171   *
+   172   * @see [OAuth Token Endpoint Authentication Methods](https://www.iana.org/assignments/oauth-parameters/oauth-parameters.xhtml#token-endpoint-auth-method)
+   173   * @see [OpenID Connect Core 1.0](https://openid.net/specs/openid-connect-core-1_0-errata2.html#ClientAuthentication)
+   174   */
+   175  export declare function ClientSecretJwt(clientSecret?: string, options?: oauth.ModifyAssertionOptions): ClientAuth;
+   176  /**
+   177   * Creates a `none` client authentication method.
+   178   *
+   179   * **`none`** (public client) uses the HTTP request body to send only
+   180   * `client_id` as `application/x-www-form-urlencoded` body parameter.
+   181   *
+   182   * @example
+   183   *
+   184   * Usage with a {@link Configuration} obtained through {@link discovery}
+   185   *
+   186   * ```ts
+   187   * let server!: URL
+   188   * let clientId!: string
+   189   * let clientMetadata!: Partial<client.ClientMetadata> | string | undefined
+   190   *
+   191   * let config = await client.discovery(
+   192   *   server,
+   193   *   clientId,
+   194   *   clientMetadata,
+   195   *   client.None(),
+   196   * )
+   197   * ```
+   198   *
+   199   * @example
+   200   *
+   201   * Usage with a {@link Configuration} instance
+   202   *
+
+================================================================================
+ClientSecretPost
+================================================================================
+     1  import * as oauth from 'oauth4webapi';
+     2  export { AuthorizationResponseError, ResponseBodyError, WWWAuthenticateChallengeError, type AuthorizationDetails, type BackchannelAuthenticationResponse, type ConfirmationClaims, type CryptoKey, type CryptoKeyPair, type DeviceAuthorizationResponse, type OmitSymbolProperties, type ExportedJWKSCache, type GenerateKeyPairOptions, type IDToken, type IntrospectionResponse, type JsonArray, type JsonObject, type JsonPrimitive, type JsonValue, type JWK, type JWKS, type JWSAlgorithm, type ModifyAssertionFunction, type ModifyAssertionOptions, type MTLSEndpointAliases, type PrivateKey, type TokenEndpointResponse, type UserInfoAddress, type UserInfoResponse, type WWWAuthenticateChallenge, type WWWAuthenticateChallengeParameters, } from 'oauth4webapi';
+     3  /**
+     4   * A function that applies client authentication to an authorization server
+     5   * request.
+     6   *
+     7   * The default is {@link ClientSecretPost} if {@link ClientMetadata.client_secret}
+     8   * is present, {@link None} otherwise.
+     9   *
+    10   * Other Client Authentication Methods must be provided explicitly and their
+    11   * implementations are linked below.
+    12   *
+    13   * @see {@link ClientSecretBasic}
+    14   * @see {@link ClientSecretJwt}
+    15   * @see {@link ClientSecretPost}
+    16   * @see {@link None}
+    17   * @see {@link PrivateKeyJwt}
+    18   * @see {@link TlsClientAuth}
+    19   */
+    20  export type ClientAuth = (as: ServerMetadata, client: ClientMetadata, body: URLSearchParams, headers: Headers) => void;
+    21  /**
+    22   * Creates a `client_secret_post` client authentication method.
+    23   *
+    24   * **`client_secret_post`** uses the HTTP request body to send `client_id` and
+    25   * `client_secret` as `application/x-www-form-urlencoded` body parameters
+    26   *
+    27   * @example
+    28   *
+    29   * Usage with a {@link Configuration} obtained through {@link discovery}
+    30   *
+    31   * ```ts
+    32   * let server!: URL
+    33   * let clientId!: string
+    34   * let clientSecret!: string
+     1  import * as oauth from 'oauth4webapi';
+     2  export { AuthorizationResponseError, ResponseBodyError, WWWAuthenticateChallengeError, type AuthorizationDetails, type BackchannelAuthenticationResponse, type ConfirmationClaims, type CryptoKey, type CryptoKeyPair, type DeviceAuthorizationResponse, type OmitSymbolProperties, type ExportedJWKSCache, type GenerateKeyPairOptions, type IDToken, type IntrospectionResponse, type JsonArray, type JsonObject, type JsonPrimitive, type JsonValue, type JWK, type JWKS, type JWSAlgorithm, type ModifyAssertionFunction, type ModifyAssertionOptions, type MTLSEndpointAliases, type PrivateKey, type TokenEndpointResponse, type UserInfoAddress, type UserInfoResponse, type WWWAuthenticateChallenge, type WWWAuthenticateChallengeParameters, } from 'oauth4webapi';
+     3  /**
+     4   * A function that applies client authentication to an authorization server
+     5   * request.
+     6   *
+     7   * The default is {@link ClientSecretPost} if {@link ClientMetadata.client_secret}
+     8   * is present, {@link None} otherwise.
+     9   *
+    10   * Other Client Authentication Methods must be provided explicitly and their
+    11   * implementations are linked below.
+    12   *
+    13   * @see {@link ClientSecretBasic}
+    14   * @see {@link ClientSecretJwt}
+    15   * @see {@link ClientSecretPost}
+    16   * @see {@link None}
+    17   * @see {@link PrivateKeyJwt}
+    18   * @see {@link TlsClientAuth}
+    19   */
+    20  export type ClientAuth = (as: ServerMetadata, client: ClientMetadata, body: URLSearchParams, headers: Headers) => void;
+    21  /**
+    22   * Creates a `client_secret_post` client authentication method.
+    23   *
+    24   * **`client_secret_post`** uses the HTTP request body to send `client_id` and
+    25   * `client_secret` as `application/x-www-form-urlencoded` body parameters
+    26   *
+    27   * @example
+    28   *
+    29   * Usage with a {@link Configuration} obtained through {@link discovery}
+    30   *
+    31   * ```ts
+    32   * let server!: URL
+    33   * let clientId!: string
+    34   * let clientSecret!: string
+    35   * let clientMetadata!: Partial<client.ClientMetadata> | string | undefined
+    36   *
+    37   * let config = await client.discovery(
+    38   *   server,
+    39   *   clientId,
+    40   *   clientMetadata,
+    41   *   client.ClientSecretPost(clientSecret),
+    42   * )
+    23   *
+    24   * **`client_secret_post`** uses the HTTP request body to send `client_id` and
+    25   * `client_secret` as `application/x-www-form-urlencoded` body parameters
+    26   *
+    27   * @example
+    28   *
+    29   * Usage with a {@link Configuration} obtained through {@link discovery}
+    30   *
+    31   * ```ts
+    32   * let server!: URL
+    33   * let clientId!: string
+    34   * let clientSecret!: string
+    35   * let clientMetadata!: Partial<client.ClientMetadata> | string | undefined
+    36   *
+    37   * let config = await client.discovery(
+    38   *   server,
+    39   *   clientId,
+    40   *   clientMetadata,
+    41   *   client.ClientSecretPost(clientSecret),
+    42   * )
+    43   * ```
+    44   *
+    45   * @example
+    46   *
+    47   * Usage with a {@link Configuration} instance
+    48   *
+    49   * ```ts
+    50   * let server!: client.ServerMetadata
+    51   * let clientId!: string
+    52   * let clientSecret!: string
+    53   * let clientMetadata!: Partial<client.ClientMetadata> | string | undefined
+    54   *
+    55   * let config = new client.Configuration(
+    56   *   server,
+    57   *   clientId,
+    58   *   clientMetadata,
+    59   *   client.ClientSecretPost(clientSecret),
+    60   * )
+    61   * ```
+    62   *
+    63   * @param clientSecret Client Secret
+    64   *
+    65   * @group Client Authentication Methods
+    66   *
+    67   * @see [OAuth Token Endpoint Authentication Methods](https://www.iana.org/assignments/oauth-parameters/oauth-parameters.xhtml#token-endpoint-auth-method)
+    68   * @see [RFC 6749 - The OAuth 2.0 Authorization Framework](https://www.rfc-editor.org/rfc/rfc6749.html#section-2.3)
+    41   *   client.ClientSecretPost(clientSecret),
+    42   * )
+    43   * ```
+    44   *
+    45   * @example
+    46   *
+    47   * Usage with a {@link Configuration} instance
+    48   *
+    49   * ```ts
+    50   * let server!: client.ServerMetadata
+    51   * let clientId!: string
+    52   * let clientSecret!: string
+    53   * let clientMetadata!: Partial<client.ClientMetadata> | string | undefined
+    54   *
+    55   * let config = new client.Configuration(
+    56   *   server,
+    57   *   clientId,
+    58   *   clientMetadata,
+    59   *   client.ClientSecretPost(clientSecret),
+    60   * )
+    61   * ```
+    62   *
+    63   * @param clientSecret Client Secret
+    64   *
+    65   * @group Client Authentication Methods
+    66   *
+    67   * @see [OAuth Token Endpoint Authentication Methods](https://www.iana.org/assignments/oauth-parameters/oauth-parameters.xhtml#token-endpoint-auth-method)
+    68   * @see [RFC 6749 - The OAuth 2.0 Authorization Framework](https://www.rfc-editor.org/rfc/rfc6749.html#section-2.3)
+    69   * @see [OpenID Connect Core 1.0](https://openid.net/specs/openid-connect-core-1_0-errata2.html#ClientAuthentication)
+    70   */
+    71  export declare function ClientSecretPost(clientSecret?: string): ClientAuth;
+    72  /**
+    73   * Creates a `client_secret_basic` client authentication method.
+    74   *
+    75   * **`client_secret_basic`** uses the HTTP `Basic` authentication scheme to send
+    76   * `client_id` and `client_secret` in an `Authorization` HTTP Header.
+    77   *
+    78   * @example
+    79   *
+    80   * Usage with a {@link Configuration} obtained through {@link discovery}
+    81   *
+    82   * ```ts
+    83   * let server!: URL
+    84   * let clientId!: string
+    85   * let clientSecret!: string
+    86   * let clientMetadata!: Partial<client.ClientMetadata> | string | undefined
+    53   * let clientMetadata!: Partial<client.ClientMetadata> | string | undefined
+    54   *
+    55   * let config = new client.Configuration(
+    56   *   server,
+    57   *   clientId,
+    58   *   clientMetadata,
+    59   *   client.ClientSecretPost(clientSecret),
+    60   * )
+    61   * ```
+    62   *
+    63   * @param clientSecret Client Secret
+    64   *
+    65   * @group Client Authentication Methods
+    66   *
+    67   * @see [OAuth Token Endpoint Authentication Methods](https://www.iana.org/assignments/oauth-parameters/oauth-parameters.xhtml#token-endpoint-auth-method)
+    68   * @see [RFC 6749 - The OAuth 2.0 Authorization Framework](https://www.rfc-editor.org/rfc/rfc6749.html#section-2.3)
+    69   * @see [OpenID Connect Core 1.0](https://openid.net/specs/openid-connect-core-1_0-errata2.html#ClientAuthentication)
+    70   */
+    71  export declare function ClientSecretPost(clientSecret?: string): ClientAuth;
+    72  /**
+    73   * Creates a `client_secret_basic` client authentication method.
+    74   *
+    75   * **`client_secret_basic`** uses the HTTP `Basic` authentication scheme to send
+    76   * `client_id` and `client_secret` in an `Authorization` HTTP Header.
+    77   *
+    78   * @example
+    79   *
+    80   * Usage with a {@link Configuration} obtained through {@link discovery}
+    81   *
+    82   * ```ts
+    83   * let server!: URL
+    84   * let clientId!: string
+    85   * let clientSecret!: string
+    86   * let clientMetadata!: Partial<client.ClientMetadata> | string | undefined
+    87   *
+    88   * let config = await client.discovery(
+    89   *   server,
+    90   *   clientId,
+    91   *   clientMetadata,
+    92   *   client.ClientSecretBasic(clientSecret),
+    93   * )
+    94   * ```
+    95   *
+    96   * @example
+    97   *
+    98   * Usage with a {@link Configuration} instance
+   859   * metadata.
+   860   *
+   861   * > [!NOTE]\
+   862   * > This method also accepts a URL pointing directly to the Authorization
+   863   * > Server's discovery document. Doing so is NOT RECOMMENDED as it disables the
+   864   * > {@link ServerMetadata.issuer} validation.
+   865   *
+   866   * > [!NOTE]\
+   867   * > The method does not contain any logic to default the registered
+   868   * > "token_endpoint_auth_method" based on
+   869   * > {@link ServerMetadata.token_endpoint_auth_methods_supported}, nor does it
+   870   * > default the "clientAuthentication" argument value beyond what its description
+   871   * > says.
+   872   *
+   873   * @param server URL representation of the Authorization Server's Issuer
+   874   *   Identifier
+   875   * @param metadata Client Metadata to register at the Authorization Server
+   876   * @param clientAuthentication Implementation of the Client's Authentication
+   877   *   Method at the Authorization Server. Default is {@link ClientSecretPost}
+   878   *   using the {@link ClientMetadata.client_secret} that the Authorization Server
+   879   *   issued, {@link None} otherwise.
+   880   * @param options
+   881   *
+   882   * @group Advanced Configuration
+   883   * @group Dynamic Client Registration (DCR)
+   884   *
+   885   * @see [RFC 7591 - OAuth 2.0 Dynamic Client Registration Protocol (DCR)](https://www.rfc-editor.org/rfc/rfc7591.html)
+   886   * @see [OpenID Connect Dynamic Client Registration 1.0 (DCR)](https://openid.net/specs/openid-connect-registration-1_0-errata2.html)
+   887   * @see [RFC 9449 - OAuth 2.0 Demonstrating Proof-of-Possession at the Application Layer (DPoP)](https://www.rfc-editor.org/rfc/rfc9449.html#name-protected-resource-access)
+   888   */
+   889  export declare function dynamicClientRegistration(server: URL, metadata: Partial<ClientMetadata>, clientAuthentication?: ClientAuth, options?: DynamicClientRegistrationRequestOptions): Promise<Configuration>;
+   890  /**
+   891   * Discovers authorization server metadata and creates a client configuration.
+   892   *
+   893   * Performs Authorization Server Metadata discovery and returns a
+   894   * {@link Configuration} with the discovered
+   895   * {@link ServerMetadata Authorization Server} metadata.
+   896   *
+   897   * Passing the Authorization Server's Issuer Identifier to this method is the
+   898   * RECOMMENDED method of client configuration.
+   899   *
+   900   * This has the same effect as calling the {@link Configuration} constructor
+   901   * except that the server metadata is discovered from its own Authorization
+   902   * Server Metadata discovery document.
+   903   *
+   904   * > [!NOTE]\
+   899   *
+   900   * This has the same effect as calling the {@link Configuration} constructor
+   901   * except that the server metadata is discovered from its own Authorization
+   902   * Server Metadata discovery document.
+   903   *
+   904   * > [!NOTE]\
+   905   * > This method also accepts a URL pointing directly to the Authorization
+   906   * > Server's discovery document, doing so is merely a shorthand for using
+   907   * > {@link !fetch} and passing the discovered JSON metadata (as
+   908   * > {@link ServerMetadata}) into the {@link Configuration} constructor. Doing so is
+   909   * > NOT RECOMMENDED as it disables the {@link ServerMetadata.issuer} validation.
+   910   *
+   911   * @param server URL representation of the Authorization Server's Issuer
+   912   *   Identifier
+   913   * @param clientId Client Identifier at the Authorization Server
+   914   * @param metadata Client Metadata, when a string is passed it is a shorthand
+   915   *   for passing just {@link ClientMetadata.client_secret}
+   916   * @param clientAuthentication Implementation of the Client's Authentication
+   917   *   Method at the Authorization Server. Default is {@link ClientSecretPost}
+   918   *   using the {@link ClientMetadata.client_secret}.
+   919   * @param options
+   920   *
+   921   * @group OpenID Connect 1.0
+   922   * @group Configuration
+   923   * @group You are probably looking for this
+   924   */
+   925  export declare function discovery(server: URL, clientId: string, metadata?: Partial<ClientMetadata> | string, clientAuthentication?: ClientAuth, options?: DiscoveryRequestOptions): Promise<Configuration>;
+   926  /**
+   927   * An asymmetric private key and optional JOSE metadata used to decrypt
+   928   * responses.
+   929   */
+   930  export interface DecryptionKey {
+   931      /**
+   932       * An asymmetric private CryptoKey. Its algorithm must be compatible with a
+   933       * supported JWE Key Management Algorithm Identifier
+   934       */
+   935      key: oauth.CryptoKey;
+   936      /**
+   937       * The key's JWE Key Management Algorithm Identifier, this can be used to
+   938       * limit ECDH and X25519 keys to only a specified ECDH-ES* JWE Key Management
+   939       * Algorithm (The other (RSA) keys have a JWE Key Management Algorithm
+   940       * Identifier fully specified by their CryptoKey algorithm).
+   941       */
+   942      alg?: string;
+   943      /**
+   944       * The key's JWK Key ID.
+  1116   *
+  1117   * ```ts
+  1118   * let server!: client.ServerMetadata
+  1119   * let clientId!: string
+  1120   * let clientSecret!: string | undefined
+  1121   *
+  1122   * let config = new client.Configuration(server, clientId, clientSecret)
+  1123   * ```
+  1124   *
+  1125   * @group Configuration
+  1126   */
+  1127  export declare class Configuration implements ConfigurationMethods, ConfigurationProperties {
+  1128      /**
+  1129       * @param server Authorization Server Metadata
+  1130       * @param clientId Client Identifier at the Authorization Server
+  1131       * @param metadata Client Metadata, when a string is passed it is a shorthand
+  1132       *   for passing just {@link ClientMetadata.client_secret}.
+  1133       * @param clientAuthentication Implementation of the Client's Authentication
+  1134       *   Method at the Authorization Server. Default is {@link ClientSecretPost}
+  1135       *   using the {@link ClientMetadata.client_secret}.
+  1136       */
+  1137      constructor(server: ServerMetadata, clientId: string, metadata?: Partial<ClientMetadata> | string, clientAuthentication?: ClientAuth);
+  1138      /**
+  1139       * @ignore
+  1140       */
+  1141      serverMetadata(): Readonly<ServerMetadata> & ServerMetadataHelpers;
+  1142      /**
+  1143       * @ignore
+  1144       */
+  1145      clientMetadata(): Readonly<oauth.OmitSymbolProperties<ClientMetadata>>;
+  1146      /**
+  1147       * @ignore
+  1148       */
+  1149      get timeout(): number | undefined;
+  1150      /**
+  1151       * @ignore
+  1152       */
+  1153      set timeout(value: number | undefined);
+  1154      /**
+  1155       * @ignore
+  1156       */
+  1157      get [customFetch](): CustomFetch | undefined;
+  1158      /**
+  1159       * @ignore
+  1160       */
+  1161      set [customFetch](value: CustomFetch);
+
+================================================================================
+ClientSecretBasic
+================================================================================
+     1  import * as oauth from 'oauth4webapi';
+     2  export { AuthorizationResponseError, ResponseBodyError, WWWAuthenticateChallengeError, type AuthorizationDetails, type BackchannelAuthenticationResponse, type ConfirmationClaims, type CryptoKey, type CryptoKeyPair, type DeviceAuthorizationResponse, type OmitSymbolProperties, type ExportedJWKSCache, type GenerateKeyPairOptions, type IDToken, type IntrospectionResponse, type JsonArray, type JsonObject, type JsonPrimitive, type JsonValue, type JWK, type JWKS, type JWSAlgorithm, type ModifyAssertionFunction, type ModifyAssertionOptions, type MTLSEndpointAliases, type PrivateKey, type TokenEndpointResponse, type UserInfoAddress, type UserInfoResponse, type WWWAuthenticateChallenge, type WWWAuthenticateChallengeParameters, } from 'oauth4webapi';
+     3  /**
+     4   * A function that applies client authentication to an authorization server
+     5   * request.
+     6   *
+     7   * The default is {@link ClientSecretPost} if {@link ClientMetadata.client_secret}
+     8   * is present, {@link None} otherwise.
+     9   *
+    10   * Other Client Authentication Methods must be provided explicitly and their
+    11   * implementations are linked below.
+    12   *
+    13   * @see {@link ClientSecretBasic}
+    14   * @see {@link ClientSecretJwt}
+    15   * @see {@link ClientSecretPost}
+    16   * @see {@link None}
+    17   * @see {@link PrivateKeyJwt}
+    18   * @see {@link TlsClientAuth}
+    19   */
+    20  export type ClientAuth = (as: ServerMetadata, client: ClientMetadata, body: URLSearchParams, headers: Headers) => void;
+    21  /**
+    22   * Creates a `client_secret_post` client authentication method.
+    23   *
+    24   * **`client_secret_post`** uses the HTTP request body to send `client_id` and
+    25   * `client_secret` as `application/x-www-form-urlencoded` body parameters
+    26   *
+    27   * @example
+    28   *
+    29   * Usage with a {@link Configuration} obtained through {@link discovery}
+    30   *
+    31   * ```ts
+    32   * let server!: URL
+    33   * let clientId!: string
+    34   * let clientSecret!: string
+    35   * let clientMetadata!: Partial<client.ClientMetadata> | string | undefined
+    36   *
+    37   * let config = await client.discovery(
+    38   *   server,
+    39   *   clientId,
+    40   *   clientMetadata,
+    74   *
+    75   * **`client_secret_basic`** uses the HTTP `Basic` authentication scheme to send
+    76   * `client_id` and `client_secret` in an `Authorization` HTTP Header.
+    77   *
+    78   * @example
+    79   *
+    80   * Usage with a {@link Configuration} obtained through {@link discovery}
+    81   *
+    82   * ```ts
+    83   * let server!: URL
+    84   * let clientId!: string
+    85   * let clientSecret!: string
+    86   * let clientMetadata!: Partial<client.ClientMetadata> | string | undefined
+    87   *
+    88   * let config = await client.discovery(
+    89   *   server,
+    90   *   clientId,
+    91   *   clientMetadata,
+    92   *   client.ClientSecretBasic(clientSecret),
+    93   * )
+    94   * ```
+    95   *
+    96   * @example
+    97   *
+    98   * Usage with a {@link Configuration} instance
+    99   *
+   100   * ```ts
+   101   * let server!: client.ServerMetadata
+   102   * let clientId!: string
+   103   * let clientSecret!: string
+   104   * let clientMetadata!: Partial<client.ClientMetadata> | string | undefined
+   105   *
+   106   * let config = new client.Configuration(
+   107   *   server,
+   108   *   clientId,
+   109   *   clientMetadata,
+   110   *   client.ClientSecretBasic(clientSecret),
+   111   * )
+   112   * ```
+   113   *
+   114   * @param clientSecret Client Secret
+   115   *
+   116   * @group Client Authentication Methods
+   117   *
+   118   * @see [OAuth Token Endpoint Authentication Methods](https://www.iana.org/assignments/oauth-parameters/oauth-parameters.xhtml#token-endpoint-auth-method)
+   119   * @see [RFC 6749 - The OAuth 2.0 Authorization Framework](https://www.rfc-editor.org/rfc/rfc6749.html#section-2.3)
+    92   *   client.ClientSecretBasic(clientSecret),
+    93   * )
+    94   * ```
+    95   *
+    96   * @example
+    97   *
+    98   * Usage with a {@link Configuration} instance
+    99   *
+   100   * ```ts
+   101   * let server!: client.ServerMetadata
+   102   * let clientId!: string
+   103   * let clientSecret!: string
+   104   * let clientMetadata!: Partial<client.ClientMetadata> | string | undefined
+   105   *
+   106   * let config = new client.Configuration(
+   107   *   server,
+   108   *   clientId,
+   109   *   clientMetadata,
+   110   *   client.ClientSecretBasic(clientSecret),
+   111   * )
+   112   * ```
+   113   *
+   114   * @param clientSecret Client Secret
+   115   *
+   116   * @group Client Authentication Methods
+   117   *
+   118   * @see [OAuth Token Endpoint Authentication Methods](https://www.iana.org/assignments/oauth-parameters/oauth-parameters.xhtml#token-endpoint-auth-method)
+   119   * @see [RFC 6749 - The OAuth 2.0 Authorization Framework](https://www.rfc-editor.org/rfc/rfc6749.html#section-2.3)
+   120   * @see [OpenID Connect Core 1.0](https://openid.net/specs/openid-connect-core-1_0-errata2.html#ClientAuthentication)
+   121   */
+   122  export declare function ClientSecretBasic(clientSecret?: string): ClientAuth;
+   123  /**
+   124   * Creates a `client_secret_jwt` client authentication method.
+   125   *
+   126   * **`client_secret_jwt`** uses the HTTP request body to send `client_id`,
+   127   * `client_assertion_type`, and `client_assertion` as
+   128   * `application/x-www-form-urlencoded` body parameters. HMAC is used for the
+   129   * assertion's authenticity and integrity.
+   130   *
+   131   * @example
+   132   *
+   133   * Usage with a {@link Configuration} obtained through {@link discovery}
+   134   *
+   135   * ```ts
+   136   * let server!: URL
+   137   * let clientId!: string
+   104   * let clientMetadata!: Partial<client.ClientMetadata> | string | undefined
+   105   *
+   106   * let config = new client.Configuration(
+   107   *   server,
+   108   *   clientId,
+   109   *   clientMetadata,
+   110   *   client.ClientSecretBasic(clientSecret),
+   111   * )
+   112   * ```
+   113   *
+   114   * @param clientSecret Client Secret
+   115   *
+   116   * @group Client Authentication Methods
+   117   *
+   118   * @see [OAuth Token Endpoint Authentication Methods](https://www.iana.org/assignments/oauth-parameters/oauth-parameters.xhtml#token-endpoint-auth-method)
+   119   * @see [RFC 6749 - The OAuth 2.0 Authorization Framework](https://www.rfc-editor.org/rfc/rfc6749.html#section-2.3)
+   120   * @see [OpenID Connect Core 1.0](https://openid.net/specs/openid-connect-core-1_0-errata2.html#ClientAuthentication)
+   121   */
+   122  export declare function ClientSecretBasic(clientSecret?: string): ClientAuth;
+   123  /**
+   124   * Creates a `client_secret_jwt` client authentication method.
+   125   *
+   126   * **`client_secret_jwt`** uses the HTTP request body to send `client_id`,
+   127   * `client_assertion_type`, and `client_assertion` as
+   128   * `application/x-www-form-urlencoded` body parameters. HMAC is used for the
+   129   * assertion's authenticity and integrity.
+   130   *
+   131   * @example
+   132   *
+   133   * Usage with a {@link Configuration} obtained through {@link discovery}
+   134   *
+   135   * ```ts
+   136   * let server!: URL
+   137   * let clientId!: string
+   138   * let clientSecret!: string
+   139   * let clientMetadata!: Partial<client.ClientMetadata> | string | undefined
+   140   *
+   141   * let config = await client.discovery(
+   142   *   server,
+   143   *   clientId,
+   144   *   clientMetadata,
+   145   *   client.ClientSecretJwt(clientSecret),
+   146   * )
+   147   * ```
+   148   *
+   149   * @example
+
+================================================================================
+None
+================================================================================
+     1  import * as oauth from 'oauth4webapi';
+     2  export { AuthorizationResponseError, ResponseBodyError, WWWAuthenticateChallengeError, type AuthorizationDetails, type BackchannelAuthenticationResponse, type ConfirmationClaims, type CryptoKey, type CryptoKeyPair, type DeviceAuthorizationResponse, type OmitSymbolProperties, type ExportedJWKSCache, type GenerateKeyPairOptions, type IDToken, type IntrospectionResponse, type JsonArray, type JsonObject, type JsonPrimitive, type JsonValue, type JWK, type JWKS, type JWSAlgorithm, type ModifyAssertionFunction, type ModifyAssertionOptions, type MTLSEndpointAliases, type PrivateKey, type TokenEndpointResponse, type UserInfoAddress, type UserInfoResponse, type WWWAuthenticateChallenge, type WWWAuthenticateChallengeParameters, } from 'oauth4webapi';
+     3  /**
+     4   * A function that applies client authentication to an authorization server
+     5   * request.
+     6   *
+     7   * The default is {@link ClientSecretPost} if {@link ClientMetadata.client_secret}
+     8   * is present, {@link None} otherwise.
+     9   *
+    10   * Other Client Authentication Methods must be provided explicitly and their
+    11   * implementations are linked below.
+    12   *
+    13   * @see {@link ClientSecretBasic}
+    14   * @see {@link ClientSecretJwt}
+    15   * @see {@link ClientSecretPost}
+    16   * @see {@link None}
+    17   * @see {@link PrivateKeyJwt}
+    18   * @see {@link TlsClientAuth}
+    19   */
+    20  export type ClientAuth = (as: ServerMetadata, client: ClientMetadata, body: URLSearchParams, headers: Headers) => void;
+    21  /**
+    22   * Creates a `client_secret_post` client authentication method.
+    23   *
+    24   * **`client_secret_post`** uses the HTTP request body to send `client_id` and
+    25   * `client_secret` as `application/x-www-form-urlencoded` body parameters
+    26   *
+    27   * @example
+    28   *
+    29   * Usage with a {@link Configuration} obtained through {@link discovery}
+    30   *
+    31   * ```ts
+    32   * let server!: URL
+    33   * let clientId!: string
+    34   * let clientSecret!: string
+    35   * let clientMetadata!: Partial<client.ClientMetadata> | string | undefined
+     1  import * as oauth from 'oauth4webapi';
+     2  export { AuthorizationResponseError, ResponseBodyError, WWWAuthenticateChallengeError, type AuthorizationDetails, type BackchannelAuthenticationResponse, type ConfirmationClaims, type CryptoKey, type CryptoKeyPair, type DeviceAuthorizationResponse, type OmitSymbolProperties, type ExportedJWKSCache, type GenerateKeyPairOptions, type IDToken, type IntrospectionResponse, type JsonArray, type JsonObject, type JsonPrimitive, type JsonValue, type JWK, type JWKS, type JWSAlgorithm, type ModifyAssertionFunction, type ModifyAssertionOptions, type MTLSEndpointAliases, type PrivateKey, type TokenEndpointResponse, type UserInfoAddress, type UserInfoResponse, type WWWAuthenticateChallenge, type WWWAuthenticateChallengeParameters, } from 'oauth4webapi';
+     3  /**
+     4   * A function that applies client authentication to an authorization server
+     5   * request.
+     6   *
+     7   * The default is {@link ClientSecretPost} if {@link ClientMetadata.client_secret}
+     8   * is present, {@link None} otherwise.
+     9   *
+    10   * Other Client Authentication Methods must be provided explicitly and their
+    11   * implementations are linked below.
+    12   *
+    13   * @see {@link ClientSecretBasic}
+    14   * @see {@link ClientSecretJwt}
+    15   * @see {@link ClientSecretPost}
+    16   * @see {@link None}
+    17   * @see {@link PrivateKeyJwt}
+    18   * @see {@link TlsClientAuth}
+    19   */
+    20  export type ClientAuth = (as: ServerMetadata, client: ClientMetadata, body: URLSearchParams, headers: Headers) => void;
+    21  /**
+    22   * Creates a `client_secret_post` client authentication method.
+    23   *
+    24   * **`client_secret_post`** uses the HTTP request body to send `client_id` and
+    25   * `client_secret` as `application/x-www-form-urlencoded` body parameters
+    26   *
+    27   * @example
+    28   *
+    29   * Usage with a {@link Configuration} obtained through {@link discovery}
+    30   *
+    31   * ```ts
+    32   * let server!: URL
+    33   * let clientId!: string
+    34   * let clientSecret!: string
+    35   * let clientMetadata!: Partial<client.ClientMetadata> | string | undefined
+    36   *
+    37   * let config = await client.discovery(
+    38   *   server,
+    39   *   clientId,
+    40   *   clientMetadata,
+    41   *   client.ClientSecretPost(clientSecret),
+    42   * )
+    43   * ```
+   177   * Creates a `none` client authentication method.
+   178   *
+   179   * **`none`** (public client) uses the HTTP request body to send only
+   180   * `client_id` as `application/x-www-form-urlencoded` body parameter.
+   181   *
+   182   * @example
+   183   *
+   184   * Usage with a {@link Configuration} obtained through {@link discovery}
+   185   *
+   186   * ```ts
+   187   * let server!: URL
+   188   * let clientId!: string
+   189   * let clientMetadata!: Partial<client.ClientMetadata> | string | undefined
+   190   *
+   191   * let config = await client.discovery(
+   192   *   server,
+   193   *   clientId,
+   194   *   clientMetadata,
+   195   *   client.None(),
+   196   * )
+   197   * ```
+   198   *
+   199   * @example
+   200   *
+   201   * Usage with a {@link Configuration} instance
+   202   *
+   203   * ```ts
+   204   * let server!: client.ServerMetadata
+   205   * let clientId!: string
+   206   * let clientMetadata!: Partial<client.ClientMetadata> | string | undefined
+   207   *
+   208   * let config = new client.Configuration(
+   209   *   server,
+   210   *   clientId,
+   211   *   clientMetadata,
+   212   *   client.None(),
+   213   * )
+   214   * ```
+   215   *
+   216   * @group Client Authentication Methods
+   217   *
+   218   * @see [OAuth Token Endpoint Authentication Methods](https://www.iana.org/assignments/oauth-parameters/oauth-parameters.xhtml#token-endpoint-auth-method)
+   219   * @see [OpenID Connect Core 1.0](https://openid.net/specs/openid-connect-core-1_0-errata2.html#ClientAuthentication)
+   220   */
+   221  export declare function None(): ClientAuth;
+   222  /**
+   194   *   clientMetadata,
+   195   *   client.None(),
+   196   * )
+   197   * ```
+   198   *
+   199   * @example
+   200   *
+   201   * Usage with a {@link Configuration} instance
+   202   *
+   203   * ```ts
+   204   * let server!: client.ServerMetadata
+   205   * let clientId!: string
+   206   * let clientMetadata!: Partial<client.ClientMetadata> | string | undefined
+   207   *
+   208   * let config = new client.Configuration(
+   209   *   server,
+   210   *   clientId,
+   211   *   clientMetadata,
+   212   *   client.None(),
+   213   * )
+   214   * ```
+   215   *
+   216   * @group Client Authentication Methods
+   217   *
+   218   * @see [OAuth Token Endpoint Authentication Methods](https://www.iana.org/assignments/oauth-parameters/oauth-parameters.xhtml#token-endpoint-auth-method)
+   219   * @see [OpenID Connect Core 1.0](https://openid.net/specs/openid-connect-core-1_0-errata2.html#ClientAuthentication)
+   220   */
+   221  export declare function None(): ClientAuth;
+   222  /**
+   223   * Creates a `private_key_jwt` client authentication method.
+   224   *
+   225   * **`private_key_jwt`** uses the HTTP request body to send `client_id`,
+   226   * `client_assertion_type`, and `client_assertion` as
+   227   * `application/x-www-form-urlencoded` body parameters. Digital signature is
+   228   * used for the assertion's authenticity and integrity.
+   229   *
+   230   * @example
+   231   *
+   232   * Usage with a {@link Configuration} obtained through {@link discovery}
+   233   *
+   234   * ```ts
+   235   * let server!: URL
+   236   * let key!: client.CryptoKey | client.PrivateKey
+   237   * let clientId!: string
+   238   * let clientMetadata!: Partial<client.ClientMetadata> | string | undefined
+   239   *
+   203   * ```ts
+   204   * let server!: client.ServerMetadata
+   205   * let clientId!: string
+   206   * let clientMetadata!: Partial<client.ClientMetadata> | string | undefined
+   207   *
+   208   * let config = new client.Configuration(
+   209   *   server,
+   210   *   clientId,
+   211   *   clientMetadata,
+   212   *   client.None(),
+   213   * )
+   214   * ```
+   215   *
+   216   * @group Client Authentication Methods
+   217   *
+   218   * @see [OAuth Token Endpoint Authentication Methods](https://www.iana.org/assignments/oauth-parameters/oauth-parameters.xhtml#token-endpoint-auth-method)
+   219   * @see [OpenID Connect Core 1.0](https://openid.net/specs/openid-connect-core-1_0-errata2.html#ClientAuthentication)
+   220   */
+   221  export declare function None(): ClientAuth;
+   222  /**
+   223   * Creates a `private_key_jwt` client authentication method.
+   224   *
+   225   * **`private_key_jwt`** uses the HTTP request body to send `client_id`,
+   226   * `client_assertion_type`, and `client_assertion` as
+   227   * `application/x-www-form-urlencoded` body parameters. Digital signature is
+   228   * used for the assertion's authenticity and integrity.
+   229   *
+   230   * @example
+   231   *
+   232   * Usage with a {@link Configuration} obtained through {@link discovery}
+   233   *
+   234   * ```ts
+   235   * let server!: URL
+   236   * let key!: client.CryptoKey | client.PrivateKey
+   237   * let clientId!: string
+   238   * let clientMetadata!: Partial<client.ClientMetadata> | string | undefined
+   239   *
+   240   * let config = await client.discovery(
+   241   *   server,
+   242   *   clientId,
+   243   *   clientMetadata,
+   244   *   client.PrivateKeyJwt(key),
+   245   * )
+   246   * ```
+   247   *
+   248   * @example
+   861   * > [!NOTE]\
+   862   * > This method also accepts a URL pointing directly to the Authorization
+   863   * > Server's discovery document. Doing so is NOT RECOMMENDED as it disables the
+   864   * > {@link ServerMetadata.issuer} validation.
+   865   *
+   866   * > [!NOTE]\
+   867   * > The method does not contain any logic to default the registered
+   868   * > "token_endpoint_auth_method" based on
+   869   * > {@link ServerMetadata.token_endpoint_auth_methods_supported}, nor does it
+   870   * > default the "clientAuthentication" argument value beyond what its description
+   871   * > says.
+   872   *
+   873   * @param server URL representation of the Authorization Server's Issuer
+   874   *   Identifier
+   875   * @param metadata Client Metadata to register at the Authorization Server
+   876   * @param clientAuthentication Implementation of the Client's Authentication
+   877   *   Method at the Authorization Server. Default is {@link ClientSecretPost}
+   878   *   using the {@link ClientMetadata.client_secret} that the Authorization Server
+   879   *   issued, {@link None} otherwise.
+   880   * @param options
+   881   *
+   882   * @group Advanced Configuration
+   883   * @group Dynamic Client Registration (DCR)
+   884   *
+   885   * @see [RFC 7591 - OAuth 2.0 Dynamic Client Registration Protocol (DCR)](https://www.rfc-editor.org/rfc/rfc7591.html)
+   886   * @see [OpenID Connect Dynamic Client Registration 1.0 (DCR)](https://openid.net/specs/openid-connect-registration-1_0-errata2.html)
+   887   * @see [RFC 9449 - OAuth 2.0 Demonstrating Proof-of-Possession at the Application Layer (DPoP)](https://www.rfc-editor.org/rfc/rfc9449.html#name-protected-resource-access)
+   888   */
+   889  export declare function dynamicClientRegistration(server: URL, metadata: Partial<ClientMetadata>, clientAuthentication?: ClientAuth, options?: DynamicClientRegistrationRequestOptions): Promise<Configuration>;
+   890  /**
+   891   * Discovers authorization server metadata and creates a client configuration.
+   892   *
+   893   * Performs Authorization Server Metadata discovery and returns a
+   894   * {@link Configuration} with the discovered
+   895   * {@link ServerMetadata Authorization Server} metadata.
+   896   *
+   897   * Passing the Authorization Server's Issuer Identifier to this method is the
+   898   * RECOMMENDED method of client configuration.
+   899   *
+   900   * This has the same effect as calling the {@link Configuration} constructor
+   901   * except that the server metadata is discovered from its own Authorization
+   902   * Server Metadata discovery document.
+   903   *
+   904   * > [!NOTE]\
+   905   * > This method also accepts a URL pointing directly to the Authorization
+   906   * > Server's discovery document, doing so is merely a shorthand for using
+  1764   * This changes the `response_type` used by the client to be `id_token`, this
+  1765   * subsequently requires that the authorization server response be passed to
+  1766   * {@link implicitAuthentication} (instead of {@link authorizationCodeGrant}) and
+  1767   * for it to be one described by
+  1768   * {@link https://openid.net/specs/openid-connect-core-1_0-errata2.html#ImplicitFlowAuth OpenID Connect 1.0 Implicit Flow}.
+  1769   *
+  1770   * > [!NOTE]\
+  1771   * > {@link ServerMetadata.jwks_uri URL of the authorization server's JWK Set document}
+  1772   * > must be configured.
+  1773   *
+  1774   * @example
+  1775   *
+  1776   * Usage with a {@link Configuration} obtained through {@link discovery}
+  1777   *
+  1778   * ```ts
+  1779   * let server!: URL
+  1780   * let clientId!: string
+  1781   * let clientMetadata!: Partial<client.ClientMetadata> | undefined
+  1782   * let clientAuth = client.None()
+  1783   *
+  1784   * let config = await client.discovery(
+  1785   *   server,
+  1786   *   clientId,
+  1787   *   clientMetadata,
+  1788   *   clientAuth,
+  1789   *   {
+  1790   *     execute: [client.useIdTokenResponseType],
+  1791   *   },
+  1792   * )
+  1793   * ```
+  1794   *
+  1795   * @example
+  1796   *
+  1797   * Usage with a {@link Configuration} instance
+  1798   *
+  1799   * ```ts
+  1800   * let config!: client.Configuration
+  1801   *
+  1802   * client.useIdTokenResponseType(config)
+  1803   * ```
+  1804   *
+  1805   * @group Advanced Configuration
+  1806   *
+  1807   * @see {@link https://openid.net/specs/openid-connect-core-1_0-errata2.html#ImplicitFlowAuth OpenID Connect 1.0 Implicit Flow}
+  1808   */
+  1809  export declare function useIdTokenResponseType(config: Configuration): void;

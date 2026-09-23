@@ -1,0 +1,193 @@
+./oauth-error-runtime-audit.txt:82:   101  export function randomState() {
+./oauth-error-runtime-audit.txt:511:  1920   * @param response Resolved value from {@link refreshTokenGrantRequest}.
+./oauth-error-runtime-audit.txt:523:  2069   * @param response Resolved value from {@link authorizationCodeGrantRequest}.
+./oauth-error-runtime-audit.txt:547:  2310   * @param response Resolved value from {@link clientCredentialsGrantRequest}.
+./oauth-kalfa-flow-audit.txt:9:supabase/migrations/20260916002651_integration_credential_store_derived_grants.sql:43:-- ROLLBACK: grant all on public.integration_connections  to service_role;
+./oauth-kalfa-flow-audit.txt:10:supabase/migrations/20260916002651_integration_credential_store_derived_grants.sql:44:--           grant all on public.integration_oauth_states to service_role;
+./oauth-kalfa-flow-audit.txt:16:supabase/migrations/20260916002651_integration_credential_store_derived_grants.sql:50:-- integration_connections
+./oauth-kalfa-flow-audit.txt:18:supabase/migrations/20260916002651_integration_credential_store_derived_grants.sql:52:revoke all on public.integration_connections from service_role;
+./oauth-kalfa-flow-audit.txt:23:supabase/migrations/20260916002651_integration_credential_store_derived_grants.sql:57:grant select, insert on public.integration_connections to service_role;
+./oauth-kalfa-flow-audit.txt:31:supabase/migrations/20260916002651_integration_credential_store_derived_grants.sql:65:  on public.integration_connections to service_role;
+./oauth-kalfa-flow-audit.txt:34:supabase/migrations/20260916002651_integration_credential_store_derived_grants.sql:68:-- integration_oauth_states
+./oauth-kalfa-flow-audit.txt:36:supabase/migrations/20260916002651_integration_credential_store_derived_grants.sql:70:revoke all on public.integration_oauth_states from service_role;
+./oauth-kalfa-flow-audit.txt:43:supabase/migrations/20260916002651_integration_credential_store_derived_grants.sql:77:grant select, insert, delete on public.integration_oauth_states to service_role;
+./oauth-kalfa-flow-audit.txt:47:supabase/migrations/20260916002651_integration_credential_store_derived_grants.sql:81:grant update (consumed_at) on public.integration_oauth_states to service_role;
+./oauth-kalfa-flow-audit.txt:49:supabase/migrations/20260916004647_integration_connections_requires_reauthorization.sql-19---
+./oauth-kalfa-flow-audit.txt:50:supabase/migrations/20260916004647_integration_connections_requires_reauthorization.sql-20--- So the status set now distinguishes:
+./oauth-kalfa-flow-audit.txt:51:supabase/migrations/20260916004647_integration_connections_requires_reauthorization.sql-21---
+./oauth-kalfa-flow-audit.txt:52:supabase/migrations/20260916004647_integration_connections_requires_reauthorization.sql-22---   pending                    created, authorization not finished
+./oauth-kalfa-flow-audit.txt:53:supabase/migrations/20260916004647_integration_connections_requires_reauthorization.sql-23---   active                     has a usable credential
+./oauth-kalfa-flow-audit.txt:54:supabase/migrations/20260916004647_integration_connections_requires_reauthorization.sql-24---   expired                    access token past expiry, renewal will be
+./oauth-kalfa-flow-audit.txt:55:supabase/migrations/20260916004647_integration_connections_requires_reauthorization.sql-25---                              attempted automatically — the kind supplies a
+./oauth-kalfa-flow-audit.txt:56:supabase/migrations/20260916004647_integration_connections_requires_reauthorization.sql-26---                              mechanism and the material exists
+./oauth-kalfa-flow-audit.txt:57:supabase/migrations/20260916004647_integration_connections_requires_reauthorization.sql:27:--   requires_reauthorization   renewal is impossible without a person. The
+./oauth-kalfa-flow-audit.txt:58:supabase/migrations/20260916004647_integration_connections_requires_reauthorization.sql-28---                              access token MAY still be valid; this is a
+./oauth-kalfa-flow-audit.txt:59:supabase/migrations/20260916004647_integration_connections_requires_reauthorization.sql-29---                              statement about authorization, not about expiry
+./oauth-kalfa-flow-audit.txt:60:supabase/migrations/20260916004647_integration_connections_requires_reauthorization.sql-30---   revoked                    deliberately disconnected
+./oauth-kalfa-flow-audit.txt:61:supabase/migrations/20260916004647_integration_connections_requires_reauthorization.sql-31---   failed                     renewal or use failed, with the reason in
+./oauth-kalfa-flow-audit.txt:62:supabase/migrations/20260916004647_integration_connections_requires_reauthorization.sql-32---                              last_error
+./oauth-kalfa-flow-audit.txt:63:supabase/migrations/20260916004647_integration_connections_requires_reauthorization.sql-33---
+./oauth-kalfa-flow-audit.txt:64:supabase/migrations/20260916004647_integration_connections_requires_reauthorization.sql-34--- ROLLBACK:
+./oauth-kalfa-flow-audit.txt:65:supabase/migrations/20260916004647_integration_connections_requires_reauthorization.sql:35:--   update public.integration_connections
+./oauth-kalfa-flow-audit.txt:66:supabase/migrations/20260916004647_integration_connections_requires_reauthorization.sql:36:--      set status = 'failed' where status = 'requires_reauthorization';
+./oauth-kalfa-flow-audit.txt:67:supabase/migrations/20260916004647_integration_connections_requires_reauthorization.sql:37:--   alter table public.integration_connections
+./oauth-kalfa-flow-audit.txt:68:supabase/migrations/20260916004647_integration_connections_requires_reauthorization.sql:38:--     drop constraint integration_connections_status_check,
+./oauth-kalfa-flow-audit.txt:69:supabase/migrations/20260916004647_integration_connections_requires_reauthorization.sql:39:--     add constraint integration_connections_status_check
+./oauth-kalfa-flow-audit.txt:70:supabase/migrations/20260916004647_integration_connections_requires_reauthorization.sql-40---       check (status in ('pending','active','expired','revoked','failed'));
+./oauth-kalfa-flow-audit.txt:71:supabase/migrations/20260916004647_integration_connections_requires_reauthorization.sql-41--- =====================================================================
+./oauth-kalfa-flow-audit.txt:72:supabase/migrations/20260916004647_integration_connections_requires_reauthorization.sql-42-
+./oauth-kalfa-flow-audit.txt:73:supabase/migrations/20260916004647_integration_connections_requires_reauthorization.sql:43:alter table public.integration_connections
+./oauth-kalfa-flow-audit.txt:74:supabase/migrations/20260916004647_integration_connections_requires_reauthorization.sql:44:  drop constraint if exists integration_connections_status_check;
+./oauth-kalfa-flow-audit.txt:75:supabase/migrations/20260916004647_integration_connections_requires_reauthorization.sql-45-
+./oauth-kalfa-flow-audit.txt:76:supabase/migrations/20260916004647_integration_connections_requires_reauthorization.sql:46:alter table public.integration_connections
+./oauth-kalfa-flow-audit.txt:77:supabase/migrations/20260916004647_integration_connections_requires_reauthorization.sql:47:  add constraint integration_connections_status_check
+./oauth-kalfa-flow-audit.txt:78:supabase/migrations/20260916004647_integration_connections_requires_reauthorization.sql-48-  check (status in (
+./oauth-kalfa-flow-audit.txt:79:supabase/migrations/20260916004647_integration_connections_requires_reauthorization.sql-49-    'pending',
+./oauth-kalfa-flow-audit.txt:80:supabase/migrations/20260916004647_integration_connections_requires_reauthorization.sql-50-    'active',
+./oauth-kalfa-flow-audit.txt:81:supabase/migrations/20260916004647_integration_connections_requires_reauthorization.sql-51-    'expired',
+./oauth-kalfa-flow-audit.txt:82:supabase/migrations/20260916004647_integration_connections_requires_reauthorization.sql:52:    'requires_reauthorization',
+./oauth-kalfa-flow-audit.txt:83:supabase/migrations/20260916004647_integration_connections_requires_reauthorization.sql-53-    'revoked',
+./oauth-kalfa-flow-audit.txt:84:supabase/migrations/20260916004647_integration_connections_requires_reauthorization.sql-54-    'failed'
+./oauth-kalfa-flow-audit.txt:85:supabase/migrations/20260916004647_integration_connections_requires_reauthorization.sql-55-  ));
+./oauth-kalfa-flow-audit.txt:86:supabase/migrations/20260916004647_integration_connections_requires_reauthorization.sql-56-
+./oauth-kalfa-flow-audit.txt:87:supabase/migrations/20260916004647_integration_connections_requires_reauthorization.sql:57:comment on column public.integration_connections.status is
+./oauth-kalfa-flow-audit.txt:88:supabase/migrations/20260916004647_integration_connections_requires_reauthorization.sql:58:  'pending | active | expired (self-healing: renewal will be retried) | requires_reauthorization (needs a person; the access token may still be valid) | revoked | failed';
+./oauth-kalfa-flow-audit.txt:90:supabase/migrations/20260916005200_integration_provider_configs_and_permissions.sql-1--- =====================================================================
+./oauth-kalfa-flow-audit.txt:91:supabase/migrations/20260916005200_integration_provider_configs_and_permissions.sql-2--- Provider configuration (what KALFA needs to TALK to a provider), plus the
+./oauth-kalfa-flow-audit.txt:92:supabase/migrations/20260916005200_integration_provider_configs_and_permissions.sql-3--- two Platform RBAC keys that gate it.
+./oauth-kalfa-flow-audit.txt:93:supabase/migrations/20260916005200_integration_provider_configs_and_permissions.sql-4---
+./oauth-kalfa-flow-audit.txt:94:supabase/migrations/20260916005200_integration_provider_configs_and_permissions.sql-5--- TWO ENTITIES, NOT ONE TABLE SPLIT IN HALF:
+./oauth-kalfa-flow-audit.txt:95:supabase/migrations/20260916005200_integration_provider_configs_and_permissions.sql-6---
+./oauth-kalfa-flow-audit.txt:96:supabase/migrations/20260916005200_integration_provider_configs_and_permissions.sql-7---   integration_provider_configs   "can KALFA connect to this provider at all?"
+./oauth-kalfa-flow-audit.txt:97:supabase/migrations/20260916005200_integration_provider_configs_and_permissions.sql:8:--   integration_connections        "which connection is live right now?"
+./oauth-kalfa-flow-audit.txt:98:supabase/migrations/20260916005200_integration_provider_configs_and_permissions.sql-9---
+./oauth-kalfa-flow-audit.txt:99:supabase/migrations/20260916005200_integration_provider_configs_and_permissions.sql-10--- The separation also keeps non-secret configuration out of Vault. `client_id`
+./oauth-kalfa-flow-audit.txt:100:supabase/migrations/20260916005200_integration_provider_configs_and_permissions.sql-11--- is not a credential — it travels in the authorization URL in plain sight — so
+./oauth-kalfa-flow-audit.txt:101:supabase/migrations/20260916005200_integration_provider_configs_and_permissions.sql-12--- putting it in Vault would mean opening a secret to answer an ordinary
+./oauth-kalfa-flow-audit.txt:102:supabase/migrations/20260916005200_integration_provider_configs_and_permissions.sql-13--- configuration question. That is the same mistake `integrations_configured_flags()`
+./oauth-kalfa-flow-audit.txt:103:supabase/migrations/20260916005200_integration_provider_configs_and_permissions.sql-14--- was written to undo, where five secrets were read on every page load to render
+./oauth-kalfa-flow-audit.txt:104:supabase/migrations/20260916005200_integration_provider_configs_and_permissions.sql-15--- five ✔/✘ marks. Only `client_secret` goes to Vault; this table holds the
+./oauth-kalfa-flow-audit.txt:105:supabase/migrations/20260916005200_integration_provider_configs_and_permissions.sql-16--- reference.
+./oauth-kalfa-flow-audit.txt:106:supabase/migrations/20260916005200_integration_provider_configs_and_permissions.sql-17---
+./oauth-kalfa-flow-audit.txt:107:supabase/migrations/20260916005200_integration_provider_configs_and_permissions.sql-18--- `provider` IS AN APPLICATION-LEVEL REFERENCE, NOT FREE TEXT. At the database
+./oauth-kalfa-flow-audit.txt:108:supabase/migrations/20260916005200_integration_provider_configs_and_permissions.sql-19--- it is `text` with no constraint, but it must equal a registered
+./oauth-kalfa-flow-audit.txt:109:supabase/migrations/20260916005200_integration_provider_configs_and_permissions.sql-20--- `ProviderDefinition.id` (src/lib/integrations/provider.ts). That integrity is
+./oauth-kalfa-flow-audit.txt:110:supabase/migrations/20260916005200_integration_provider_configs_and_permissions.sql-21--- deliberately enforced in application code: the registry is the source of truth
+./oauth-kalfa-flow-audit.txt:111:supabase/migrations/20260916005200_integration_provider_configs_and_permissions.sql-22--- for which providers exist, and a check constraint here would make adding a
+./oauth-kalfa-flow-audit.txt:112:supabase/migrations/20260916005200_integration_provider_configs_and_permissions.sql-23--- provider a migration, which is exactly what this layer is built to avoid.
+./oauth-kalfa-flow-audit.txt:113:supabase/migrations/20260916005200_integration_provider_configs_and_permissions.sql-24---
+./oauth-kalfa-flow-audit.txt:114:supabase/migrations/20260916005200_integration_provider_configs_and_permissions.sql:25:-- NO FOREIGN KEY FROM integration_connections.provider TO THIS TABLE, and the
+./oauth-kalfa-flow-audit.txt:115:supabase/migrations/20260916005200_integration_provider_configs_and_permissions.sql-26--- reason is not laziness:
+./oauth-kalfa-flow-audit.txt:116:supabase/migrations/20260916005200_integration_provider_configs_and_permissions.sql-27---
+./oauth-kalfa-flow-audit.txt:117:supabase/migrations/20260916005200_integration_provider_configs_and_permissions.sql-28---   1. A `static` provider (operator-supplied API key) is a perfectly valid
+./oauth-kalfa-flow-audit.txt:118:supabase/migrations/20260916005200_integration_provider_configs_and_permissions.sql-29---      connection with NO platform OAuth client configuration at all. A FK would
+./oauth-kalfa-flow-audit.txt:119:supabase/migrations/20260916005200_integration_provider_configs_and_permissions.sql-30---      force an empty config row for every one of them.
+./oauth-kalfa-flow-audit.txt:120:supabase/migrations/20260916005200_integration_provider_configs_and_permissions.sql-31---   2. "Which providers exist" is answered by the code registry, not by this
+./oauth-kalfa-flow-audit.txt:121:supabase/migrations/20260916005200_integration_provider_configs_and_permissions.sql-32---      table. This table answers the narrower "is an OAuth client configured for
+./oauth-kalfa-flow-audit.txt:122:supabase/migrations/20260916005200_integration_provider_configs_and_permissions.sql-33---      this provider, in this deployment".
+./oauth-kalfa-flow-audit.txt:124:supabase/migrations/20260916005200_integration_provider_configs_and_permissions.sql-41--- platform credentials — using a live access token needs nothing from this
+./oauth-kalfa-flow-audit.txt:125:supabase/migrations/20260916005200_integration_provider_configs_and_permissions.sql-42--- table, everything else needs both fields:
+./oauth-kalfa-flow-audit.txt:126:supabase/migrations/20260916005200_integration_provider_configs_and_permissions.sql-43---
+./oauth-kalfa-flow-audit.txt:127:supabase/migrations/20260916005200_integration_provider_configs_and_permissions.sql-44---   new authorization            refused
+./oauth-kalfa-flow-audit.txt:128:supabase/migrations/20260916005200_integration_provider_configs_and_permissions.sql-45---   in-flight callback           refused, and the state row is still CONSUMED so
+./oauth-kalfa-flow-audit.txt:129:supabase/migrations/20260916005200_integration_provider_configs_and_permissions.sql-46---                                it cannot be replayed if the config is re-enabled
+./oauth-kalfa-flow-audit.txt:130:supabase/migrations/20260916005200_integration_provider_configs_and_permissions.sql-47---   use of a valid access token  ALLOWED — this is not a kill switch; revoking
+./oauth-kalfa-flow-audit.txt:131:supabase/migrations/20260916005200_integration_provider_configs_and_permissions.sql-48---                                the connection is
+./oauth-kalfa-flow-audit.txt:132:supabase/migrations/20260916005200_integration_provider_configs_and_permissions.sql:49:--   refresh                      refused  → requires_reauthorization
+./oauth-kalfa-flow-audit.txt:133:supabase/migrations/20260916005200_integration_provider_configs_and_permissions.sql:50:--   reissue (client_credentials) refused  → requires_reauthorization at the next
+./oauth-kalfa-flow-audit.txt:134:supabase/migrations/20260916005200_integration_provider_configs_and_permissions.sql-51---                                expiry, which is the shortest leash and the
+./oauth-kalfa-flow-audit.txt:135:supabase/migrations/20260916005200_integration_provider_configs_and_permissions.sql-52---                                right one: such a connection IS the platform
+./oauth-kalfa-flow-audit.txt:136:supabase/migrations/20260916005200_integration_provider_configs_and_permissions.sql-53---                                config, with no user grant behind it
+./oauth-kalfa-flow-audit.txt:137:supabase/migrations/20260916005200_integration_provider_configs_and_permissions.sql-54---   rotate the client secret     ALLOWED — rotation is an UPDATE of
+./oauth-kalfa-flow-audit.txt:138:supabase/migrations/20260916005200_integration_provider_configs_and_permissions.sql-55---                                vault_secret_id, never a disable
+./oauth-kalfa-flow-audit.txt:139:supabase/migrations/20260916005200_integration_provider_configs_and_permissions.sql-56---   disconnect                   ALLOWED, but remote revocation is skipped
+./oauth-kalfa-flow-audit.txt:140:supabase/migrations/20260916005200_integration_provider_configs_and_permissions.sql-57---                                (it needs client auth) and the reason is
+./oauth-kalfa-flow-audit.txt:141:supabase/migrations/20260916005200_integration_provider_configs_and_permissions.sql-58---                                recorded in the connection's last_error
+./oauth-kalfa-flow-audit.txt:142:supabase/migrations/20260916005200_integration_provider_configs_and_permissions.sql-59---
+./oauth-kalfa-flow-audit.txt:143:supabase/migrations/20260916005200_integration_provider_configs_and_permissions.sql-60--- Disabling does NOT eagerly transition existing connections. One holding a
+./oauth-kalfa-flow-audit.txt:144:supabase/migrations/20260916005200_integration_provider_configs_and_permissions.sql:61:-- valid token stays `active`; it becomes `requires_reauthorization` when a
+./oauth-kalfa-flow-audit.txt:145:supabase/migrations/20260916005200_integration_provider_configs_and_permissions.sql-62--- renewal is actually attempted and refused. An eager transition would lie about
+./oauth-kalfa-flow-audit.txt:146:supabase/migrations/20260916005200_integration_provider_configs_and_permissions.sql-63--- connections that are still working.
+./oauth-kalfa-flow-audit.txt:147:supabase/migrations/20260916005200_integration_provider_configs_and_permissions.sql-64---
+./oauth-kalfa-flow-audit.txt:148:supabase/migrations/20260916005200_integration_provider_configs_and_permissions.sql-65--- WHY `integrations.manage` AND NOT `manage_settings`. `exchange-connections.ts`
+./oauth-kalfa-flow-audit.txt:149:supabase/migrations/20260916005200_integration_provider_configs_and_permissions.sql-66--- gates on `manage_settings` today, but that is legacy authorization rather than
+./oauth-kalfa-flow-audit.txt:150:supabase/migrations/20260916005200_integration_provider_configs_and_permissions.sql-67--- an architectural precedent: reusing it would permanently couple "may change
+./oauth-kalfa-flow-audit.txt:151:supabase/migrations/20260916005200_integration_provider_configs_and_permissions.sql-68--- system settings" to "may manage provider credentials". Measured, every role
+./oauth-kalfa-flow-audit.txt:152:supabase/migrations/20260916005200_integration_provider_configs_and_permissions.sql-69--- holding `manage_settings` (owner, ops_engineer) is one we would grant
+./oauth-kalfa-flow-audit.txt:162:supabase/migrations/20260916002343_integration_credential_store.sql:36:-- `integration_connections`, because disconnect is a soft revoke.
+./oauth-kalfa-flow-audit.txt:165:supabase/migrations/20260916002343_integration_credential_store.sql-39---   drop function if exists public.integrations_read_credential(uuid, text, text);
+./oauth-kalfa-flow-audit.txt:166:supabase/migrations/20260916002343_integration_credential_store.sql-40---   drop function if exists public.integrations_write_credential(text, text, text, text[], jsonb, text, timestamptz);
+./oauth-kalfa-flow-audit.txt:167:supabase/migrations/20260916002343_integration_credential_store.sql:41:--   drop trigger if exists integration_connections_set_updated_at on public.integration_connections;
+./oauth-kalfa-flow-audit.txt:168:supabase/migrations/20260916002343_integration_credential_store.sql:42:--   drop table if exists public.integration_oauth_states;
+./oauth-kalfa-flow-audit.txt:169:supabase/migrations/20260916002343_integration_credential_store.sql:43:--   drop table if exists public.integration_connections;
+./oauth-kalfa-flow-audit.txt:179:supabase/migrations/20260916002343_integration_credential_store.sql:53:create table if not exists public.integration_connections (
+./oauth-kalfa-flow-audit.txt:197:supabase/migrations/20260916002343_integration_credential_store.sql:84:  constraint integration_connections_status_check
+./oauth-kalfa-flow-audit.txt:203:supabase/migrations/20260916002343_integration_credential_store.sql:90:create index if not exists integration_connections_provider_status_idx
+./oauth-kalfa-flow-audit.txt:204:supabase/migrations/20260916002343_integration_credential_store.sql:91:  on public.integration_connections (provider, status);
+./oauth-kalfa-flow-audit.txt:206:supabase/migrations/20260916002343_integration_credential_store.sql:93:drop trigger if exists integration_connections_set_updated_at
+./oauth-kalfa-flow-audit.txt:207:supabase/migrations/20260916002343_integration_credential_store.sql:94:  on public.integration_connections;
+./oauth-kalfa-flow-audit.txt:208:supabase/migrations/20260916002343_integration_credential_store.sql:95:create trigger integration_connections_set_updated_at
+./oauth-kalfa-flow-audit.txt:209:supabase/migrations/20260916002343_integration_credential_store.sql:96:  before update on public.integration_connections
+./oauth-kalfa-flow-audit.txt:215:supabase/migrations/20260916002343_integration_credential_store.sql:102:create table if not exists public.integration_oauth_states (
+./oauth-kalfa-flow-audit.txt:238:supabase/migrations/20260916002343_integration_credential_store.sql:125:create index if not exists integration_oauth_states_expires_at_idx
+./oauth-kalfa-flow-audit.txt:239:supabase/migrations/20260916002343_integration_credential_store.sql:126:  on public.integration_oauth_states (expires_at);
+./oauth-kalfa-flow-audit.txt:244:supabase/migrations/20260916002343_integration_credential_store.sql:131:alter table public.integration_connections   enable row level security;
+./oauth-kalfa-flow-audit.txt:245:supabase/migrations/20260916002343_integration_credential_store.sql:132:alter table public.integration_oauth_states  enable row level security;
+./oauth-kalfa-flow-audit.txt:252:supabase/migrations/20260916002343_integration_credential_store.sql:139:revoke all on public.integration_connections  from anon, authenticated;
+./oauth-kalfa-flow-audit.txt:253:supabase/migrations/20260916002343_integration_credential_store.sql:140:revoke all on public.integration_oauth_states from anon, authenticated;
+./oauth-kalfa-flow-audit.txt:262:supabase/migrations/20260916002343_integration_credential_store.sql:149:grant select, insert on public.integration_connections to service_role;
+./oauth-kalfa-flow-audit.txt:270:supabase/migrations/20260916002343_integration_credential_store.sql:157:  on public.integration_connections to service_role;
+./oauth-kalfa-flow-audit.txt:278:supabase/migrations/20260916002343_integration_credential_store.sql:165:grant select, insert, delete on public.integration_oauth_states to service_role;
+./oauth-kalfa-flow-audit.txt:283:supabase/migrations/20260916002343_integration_credential_store.sql:170:grant update (consumed_at) on public.integration_oauth_states to service_role;
+./oauth-kalfa-flow-audit.txt:291:supabase/migrations/20260916002343_integration_credential_store.sql-178-create or replace function public.integrations_read_credential(
+./oauth-kalfa-flow-audit.txt:301:supabase/migrations/20260916002343_integration_credential_store.sql:195:    from public.integration_connections c
+./oauth-kalfa-flow-audit.txt:319:supabase/migrations/20260916002343_integration_credential_store.sql:244:  insert into public.integration_connections
+./oauth-kalfa-flow-audit.txt:329:supabase/migrations/20260916002343_integration_credential_store.sql-260-revoke execute on function public.integrations_write_credential(text, text, text, text[], jsonb, text, timestamptz)
+./oauth-kalfa-flow-audit.txt:332:supabase/migrations/20260916002343_integration_credential_store.sql-263-grant execute on function public.integrations_read_credential(uuid, text, text)
+./oauth-kalfa-flow-audit.txt:334:supabase/migrations/20260916002343_integration_credential_store.sql-265-grant execute on function public.integrations_write_credential(text, text, text, text[], jsonb, text, timestamptz)
+./oauth-kalfa-flow-audit.txt:337:supabase/migrations/20260916002343_integration_credential_store.sql:268:comment on table public.integration_connections is
+./oauth-kalfa-flow-audit.txt:339:supabase/migrations/20260916002343_integration_credential_store.sql:270:comment on table public.integration_oauth_states is
+./oauth-kalfa-flow-audit.txt:350:src/lib/supabase/types.generated.ts:3675:      integration_connections: {
+./oauth-kalfa-flow-audit.txt:368:src/lib/supabase/types.generated.ts:3726:      integration_oauth_states: {
+./docs/superpowers/specs/2026-09-16-integration-credential-store-design.md:208:public.integration_connections          metadata only, no secret material
+./docs/superpowers/specs/2026-09-16-integration-credential-store-design.md:213:public.integration_oauth_states         temporary PKCE material only
+./docs/superpowers/specs/2026-09-16-integration-credential-store-design.md:257:create function public.integrations_read_credential(
+./docs/superpowers/specs/2026-09-16-integration-credential-store-design.md:263:as $$ … reads vault.decrypted_secrets, joined to public.integration_connections … $$;
+./docs/superpowers/specs/2026-09-16-integration-credential-store-design.md:265:revoke execute on function public.integrations_read_credential(uuid, text, text)
+./docs/superpowers/specs/2026-09-16-integration-credential-store-design.md:267:grant execute on function public.integrations_read_credential(uuid, text, text)
+./docs/superpowers/specs/2026-09-16-integration-credential-store-design.md:311:`public.integration_connections`.
+./docs/superpowers/specs/2026-09-16-integration-credential-store-design.md:377:   verifier  = randomPKCECodeVerifier()          unique per request
+./docs/superpowers/specs/2026-09-16-integration-credential-store-design.md:378:   challenge = calculatePKCECodeChallenge(verifier)
+./docs/superpowers/specs/2026-09-16-integration-credential-store-design.md:380:   INSERT integration_oauth_states
+./docs/superpowers/specs/2026-09-16-integration-credential-store-design.md:389:   UPDATE integration_oauth_states SET consumed_at = now()
+./docs/superpowers/specs/2026-09-16-integration-credential-store-design.md:397:   INSERT integration_connections (…, vault_secret_id, status = 'active')
+./docs/superpowers/specs/2026-09-16-integration-credential-store-design.md:452:| PKCE | `randomPKCECodeVerifier()`, `calculatePKCECodeChallenge()` | `build/index.d.ts:718,726` |
+./docs/superpowers/specs/2026-09-16-integration-credential-store-design.md:453:| state | `randomState()`, `checks.expectedState` | `:742`, `AuthorizationCodeGrantChecks` |
+./docs/superpowers/specs/2026-09-16-integration-credential-store-design.md:454:| code exchange | `authorizationCodeGrant(config, currentUrl \| Request, checks)` | `:1910` |
+./docs/superpowers/specs/2026-09-16-integration-credential-store-design.md:455:| refresh | `refreshTokenGrant(config, refreshToken, parameters)` | `:1953` |
+./docs/superpowers/specs/2026-09-16-integration-credential-store-design.md:497:`authorizationCodeGrant`.** This app runs behind an nginx proxy, so the incoming
+./docs/superpowers/specs/2026-09-16-integration-credential-store-design.md:515:`integration_oauth_states` row and therefore the basis of single-use consumption
+./docs/superpowers/specs/2026-09-16-integration-credential-store-design.md:533:**`clientCredentialsGrant(config, { scope, resource })` is a second path, and it
+./docs/superpowers/specs/2026-09-16-integration-credential-store-design.md:536:therefore **no `integration_oauth_states` row at all**. It goes straight to a
+./docs/superpowers/specs/2026-09-16-integration-credential-store-design.md:542:| `credential_kind` | authorization | `integration_oauth_states` | refresh |
+./docs/superpowers/specs/2026-09-16-integration-credential-store-design.md:544:| `oauth2` | redirect + callback | yes | `refreshTokenGrant` |
+./docs/superpowers/specs/2026-09-16-integration-credential-store-design.md:545:| `oauth2_client_credentials` | none — server to server | **no** | re-issue via `clientCredentialsGrant` |
+./docs/superpowers/specs/2026-09-16-integration-credential-store-design.md:583:A new test asserts that `integrations_read_credential`, `integrations_write_credential`,
+./docs/superpowers/specs/2026-09-16-integration-credential-store-design.md:654:public.integration_connections        ← 1
+./docs/superpowers/specs/2026-09-16-integration-credential-store-design.md:662:public.integration_oauth_states       ← 2
+./docs/superpowers/specs/2026-09-16-integration-credential-store-design.md:670:Vault + integration_connections
+./docs/superpowers/specs/2026-09-16-integration-credential-store-design.md:690:#### `integration_oauth_states`
+./docs/superpowers/specs/2026-09-16-integration-credential-store-design.md:711:grant select, insert, delete on public.integration_oauth_states to service_role;
+./docs/superpowers/specs/2026-09-16-integration-credential-store-design.md:712:grant update (consumed_at)   on public.integration_oauth_states to service_role;
+./docs/superpowers/specs/2026-09-16-integration-credential-store-design.md:720:#### `integration_connections`
+./docs/superpowers/specs/2026-09-16-integration-credential-store-design.md:731:grant select, insert on public.integration_connections to service_role;
+./docs/superpowers/specs/2026-09-16-integration-credential-store-design.md:734:  on public.integration_connections to service_role;
+./docs/superpowers/specs/2026-09-16-integration-credential-store-design.md:769:and a row in `integration_connections` must not be able to exist without each
+./docs/superpowers/specs/2026-09-16-integration-credential-store-design.md:774:integrations_write_credential(provider, credential_kind, scopes, metadata, secret)
+./docs/superpowers/specs/2026-09-16-integration-credential-store-design.md:776:  ├─ insert into public.integration_connections (…, vault_secret_id = uuid)
+./docs/superpowers/specs/2026-09-16-integration-credential-store-design.md:791:update public.integration_oauth_states
+./docs/superpowers/specs/2026-09-16-integration-credential-store-design.md:818:public.integration_connections
+./docs/superpowers/specs/2026-09-16-integration-credential-store-design.md:833:public.integration_oauth_states
+./docs/superpowers/specs/2026-09-16-integration-credential-store-design.md:974:  refresh_token present  → refreshTokenGrant()
+./docs/superpowers/specs/2026-09-16-integration-credential-store-design.md:977:  always                 → clientCredentialsGrant() again
+./src/lib/integrations/provider.ts:44:  /** Redirect + callback + PKCE. Renews with `refreshTokenGrant`, when a refresh token was issued. */

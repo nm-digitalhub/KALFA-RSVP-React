@@ -1,0 +1,975 @@
+
+================================================================================
+FILE: node_modules/openid-client/build/index.d.ts
+================================================================================
+
+--- ClientError ---
+   745   *
+   746   * @group Errors
+   747   */
+   748  export declare class ClientError extends Error {
+   749      code?: string;
+   750  }
+   751  /**
+   752   * Generates an asymmetric key pair for signing DPoP proofs.
+   753   *
+   754   * @param alg One of the supported {@link JWSAlgorithm JWS Algorithm}
+   755   *   identifiers. Default is `ES256`.
+   756   * @param options
+
+--- OperationProcessingError ---
+NOT FOUND
+
+--- AuthorizationResponseError ---
+     1  import * as oauth from 'oauth4webapi';
+     2  export { AuthorizationResponseError, ResponseBodyError, WWWAuthenticateChallengeError, type AuthorizationDetails, type BackchannelAuthenticationResponse, type ConfirmationClaims, type CryptoKey, type CryptoKeyPair, type DeviceAuthorizationResponse, type OmitSymbolProperties, type ExportedJWKSCache, type GenerateKeyPairOptions, type IDToken, type IntrospectionResponse, type JsonArray, type JsonObject, type JsonPrimitive, type JsonValue, type JWK, type JWKS, type JWSAlgorithm, type ModifyAssertionFunction, type ModifyAssertionOptions, type MTLSEndpointAliases, type PrivateKey, type TokenEndpointResponse, type UserInfoAddress, type UserInfoResponse, type WWWAuthenticateChallenge, type WWWAuthenticateChallengeParameters, } from 'oauth4webapi';
+     3  /**
+     4   * A function that applies client authentication to an authorization server
+     5   * request.
+     6   *
+     7   * The default is {@link ClientSecretPost} if {@link ClientMetadata.client_secret}
+     8   * is present, {@link None} otherwise.
+     9   *
+    10   * Other Client Authentication Methods must be provided explicitly and their
+    11   * implementations are linked below.
+    12   *
+
+--- ResponseBodyError ---
+     1  import * as oauth from 'oauth4webapi';
+     2  export { AuthorizationResponseError, ResponseBodyError, WWWAuthenticateChallengeError, type AuthorizationDetails, type BackchannelAuthenticationResponse, type ConfirmationClaims, type CryptoKey, type CryptoKeyPair, type DeviceAuthorizationResponse, type OmitSymbolProperties, type ExportedJWKSCache, type GenerateKeyPairOptions, type IDToken, type IntrospectionResponse, type JsonArray, type JsonObject, type JsonPrimitive, type JsonValue, type JWK, type JWKS, type JWSAlgorithm, type ModifyAssertionFunction, type ModifyAssertionOptions, type MTLSEndpointAliases, type PrivateKey, type TokenEndpointResponse, type UserInfoAddress, type UserInfoResponse, type WWWAuthenticateChallenge, type WWWAuthenticateChallengeParameters, } from 'oauth4webapi';
+     3  /**
+     4   * A function that applies client authentication to an authorization server
+     5   * request.
+     6   *
+     7   * The default is {@link ClientSecretPost} if {@link ClientMetadata.client_secret}
+     8   * is present, {@link None} otherwise.
+     9   *
+    10   * Other Client Authentication Methods must be provided explicitly and their
+    11   * implementations are linked below.
+    12   *
+
+--- WWWAuthenticateChallengeError ---
+     1  import * as oauth from 'oauth4webapi';
+     2  export { AuthorizationResponseError, ResponseBodyError, WWWAuthenticateChallengeError, type AuthorizationDetails, type BackchannelAuthenticationResponse, type ConfirmationClaims, type CryptoKey, type CryptoKeyPair, type DeviceAuthorizationResponse, type OmitSymbolProperties, type ExportedJWKSCache, type GenerateKeyPairOptions, type IDToken, type IntrospectionResponse, type JsonArray, type JsonObject, type JsonPrimitive, type JsonValue, type JWK, type JWKS, type JWSAlgorithm, type ModifyAssertionFunction, type ModifyAssertionOptions, type MTLSEndpointAliases, type PrivateKey, type TokenEndpointResponse, type UserInfoAddress, type UserInfoResponse, type WWWAuthenticateChallenge, type WWWAuthenticateChallengeParameters, } from 'oauth4webapi';
+     3  /**
+     4   * A function that applies client authentication to an authorization server
+     5   * request.
+     6   *
+     7   * The default is {@link ClientSecretPost} if {@link ClientMetadata.client_secret}
+     8   * is present, {@link None} otherwise.
+     9   *
+    10   * Other Client Authentication Methods must be provided explicitly and their
+    11   * implementations are linked below.
+    12   *
+
+--- OAUTH_MISSING_SERVER_METADATA ---
+NOT FOUND
+
+--- OAUTH_INVALID_SERVER_METADATA ---
+NOT FOUND
+
+--- OAUTH_RESPONSE_BODY_ERROR ---
+NOT FOUND
+
+--- OAUTH_AUTHORIZATION_RESPONSE_ERROR ---
+NOT FOUND
+
+================================================================================
+FILE: node_modules/openid-client/build/index.js
+================================================================================
+
+--- ClientError ---
+   101  export function randomState() {
+   102      return oauth.generateRandomState();
+   103  }
+   104  export class ClientError extends Error {
+   105      code;
+   106      constructor(message, options) {
+   107          super(message, options);
+   108          this.name = this.constructor.name;
+   109          this.code = options?.code;
+   110          Error.captureStackTrace?.(this, this.constructor);
+   111      }
+   112  }
+   112  }
+   113  const decoder = new TextDecoder();
+   114  function e(msg, cause, code) {
+   115      return new ClientError(msg, { cause, code });
+   116  }
+   117  function errorHandler(err) {
+   118      if (err instanceof TypeError ||
+   119          err instanceof ClientError ||
+   120          err instanceof oauth.ResponseBodyError ||
+   121          err instanceof oauth.AuthorizationResponseError ||
+   122          err instanceof oauth.WWWAuthenticateChallengeError) {
+   123          throw err;
+   116  }
+   117  function errorHandler(err) {
+   118      if (err instanceof TypeError ||
+   119          err instanceof ClientError ||
+   120          err instanceof oauth.ResponseBodyError ||
+   121          err instanceof oauth.AuthorizationResponseError ||
+   122          err instanceof oauth.WWWAuthenticateChallengeError) {
+   123          throw err;
+   124      }
+   125      if (err instanceof oauth.OperationProcessingError) {
+   126          switch (err.code) {
+   127              case oauth.HTTP_REQUEST_FORBIDDEN:
+   161                  throw e('operation aborted', err, 'OAUTH_ABORT');
+   162          }
+   163      }
+   164      throw new ClientError('something went wrong', { cause: err });
+   165  }
+   166  export function randomDPoPKeyPair(alg, options) {
+   167      return oauth
+   168          .generateKeyPair(alg ?? 'ES256', {
+   169          extractable: options?.extractable,
+   170      })
+   171          .catch(errorHandler);
+   172  }
+   288          handleEntraId(server, as, options) ||
+   289              handleB2Clogin(server, options) ||
+   290              (() => {
+   291                  throw new ClientError('discovered metadata issuer does not match the expected issuer', {
+   292                      code: oauth.JSON_ATTRIBUTE_COMPARISON,
+   293                      cause: {
+   294                          expected: server.href,
+   295                          body: as,
+   296                          attribute: 'issuer',
+   297                      },
+   298                  });
+   299              })();
+
+--- OperationProcessingError ---
+   122          err instanceof oauth.WWWAuthenticateChallengeError) {
+   123          throw err;
+   124      }
+   125      if (err instanceof oauth.OperationProcessingError) {
+   126          switch (err.code) {
+   127              case oauth.HTTP_REQUEST_FORBIDDEN:
+   128                  throw e('only requests to HTTPS are allowed', err, err.code);
+   129              case oauth.REQUEST_PROTOCOL_FORBIDDEN:
+   130                  throw e('only requests to HTTP or HTTPS are allowed', err, err.code);
+   131              case oauth.RESPONSE_IS_NOT_CONFORM:
+   132                  throw e('unexpected HTTP response status code', err.cause, err.code);
+   133              case oauth.RESPONSE_IS_NOT_JSON:
+   581          }
+   582      }
+   583      if (throwIfInvalid && !Number.isFinite(delaySeconds)) {
+   584          throw new oauth.OperationProcessingError('invalid Retry-After header value', { cause: response });
+   585      }
+   586      if (delaySeconds > currentInterval) {
+   587          await wait(delaySeconds - currentInterval, signal);
+   588      }
+   589  }
+   590  function wait(duration, signal) {
+   591      return new Promise((resolve, reject) => {
+   592          const waitStep = (remaining) => {
+
+--- AuthorizationResponseError ---
+    13      return props.get(config);
+    14  };
+    15  let props;
+    16  export { AuthorizationResponseError, ResponseBodyError, WWWAuthenticateChallengeError, } from 'oauth4webapi';
+    17  export function ClientSecretPost(clientSecret) {
+    18      if (clientSecret !== undefined) {
+    19          return oauth.ClientSecretPost(clientSecret);
+    20      }
+    21      const cache = new WeakMap();
+    22      return (as, client, body, headers) => {
+    23          let auth;
+    24          if (!(auth = cache.get(client))) {
+   118      if (err instanceof TypeError ||
+   119          err instanceof ClientError ||
+   120          err instanceof oauth.ResponseBodyError ||
+   121          err instanceof oauth.AuthorizationResponseError ||
+   122          err instanceof oauth.WWWAuthenticateChallengeError) {
+   123          throw err;
+   124      }
+   125      if (err instanceof oauth.OperationProcessingError) {
+   126          switch (err.code) {
+   127              case oauth.HTTP_REQUEST_FORBIDDEN:
+   128                  throw e('only requests to HTTPS are allowed', err, err.code);
+   129              case oauth.REQUEST_PROTOCOL_FORBIDDEN:
+
+--- ResponseBodyError ---
+    13      return props.get(config);
+    14  };
+    15  let props;
+    16  export { AuthorizationResponseError, ResponseBodyError, WWWAuthenticateChallengeError, } from 'oauth4webapi';
+    17  export function ClientSecretPost(clientSecret) {
+    18      if (clientSecret !== undefined) {
+    19          return oauth.ClientSecretPost(clientSecret);
+    20      }
+    21      const cache = new WeakMap();
+    22      return (as, client, body, headers) => {
+    23          let auth;
+    24          if (!(auth = cache.get(client))) {
+   117  function errorHandler(err) {
+   118      if (err instanceof TypeError ||
+   119          err instanceof ClientError ||
+   120          err instanceof oauth.ResponseBodyError ||
+   121          err instanceof oauth.AuthorizationResponseError ||
+   122          err instanceof oauth.WWWAuthenticateChallengeError) {
+   123          throw err;
+   124      }
+   125      if (err instanceof oauth.OperationProcessingError) {
+   126          switch (err.code) {
+   127              case oauth.HTTP_REQUEST_FORBIDDEN:
+   128                  throw e('only requests to HTTPS are allowed', err, err.code);
+   678                      options = { ...options, flag: retry };
+   679                      continue;
+   680                  }
+   681                  if (error instanceof oauth.ResponseBodyError &&
+   682                      (error.error === 'slow_down' ||
+   683                          error.error === 'authorization_pending')) {
+   684                      if (error.error === 'slow_down')
+   685                          interval += 5;
+   686                      await handleRetryAfter(error.response, interval, pollingSignal);
+   687                      options = { ...options, flag: undefined };
+   688                      continue;
+   689                  }
+
+--- WWWAuthenticateChallengeError ---
+    13      return props.get(config);
+    14  };
+    15  let props;
+    16  export { AuthorizationResponseError, ResponseBodyError, WWWAuthenticateChallengeError, } from 'oauth4webapi';
+    17  export function ClientSecretPost(clientSecret) {
+    18      if (clientSecret !== undefined) {
+    19          return oauth.ClientSecretPost(clientSecret);
+    20      }
+    21      const cache = new WeakMap();
+    22      return (as, client, body, headers) => {
+    23          let auth;
+    24          if (!(auth = cache.get(client))) {
+   119          err instanceof ClientError ||
+   120          err instanceof oauth.ResponseBodyError ||
+   121          err instanceof oauth.AuthorizationResponseError ||
+   122          err instanceof oauth.WWWAuthenticateChallengeError) {
+   123          throw err;
+   124      }
+   125      if (err instanceof oauth.OperationProcessingError) {
+   126          switch (err.code) {
+   127              case oauth.HTTP_REQUEST_FORBIDDEN:
+   128                  throw e('only requests to HTTPS are allowed', err, err.code);
+   129              case oauth.REQUEST_PROTOCOL_FORBIDDEN:
+   130                  throw e('only requests to HTTP or HTTPS are allowed', err, err.code);
+
+--- OAUTH_MISSING_SERVER_METADATA ---
+NOT FOUND
+
+--- OAUTH_INVALID_SERVER_METADATA ---
+NOT FOUND
+
+--- OAUTH_RESPONSE_BODY_ERROR ---
+NOT FOUND
+
+--- OAUTH_AUTHORIZATION_RESPONSE_ERROR ---
+NOT FOUND
+
+================================================================================
+FILE: node_modules/oauth4webapi/build/index.d.ts
+================================================================================
+
+--- ClientError ---
+NOT FOUND
+
+--- OperationProcessingError ---
+   474   *       contentEncryptionAlgorithms: [enc],
+   475   *     })
+   476   *     .catch((cause: unknown) => {
+   477   *       throw new oauth.OperationProcessingError('decryption failed', { cause })
+   478   *     })
+   479   *
+   480   *   return decoder.decode(plaintext)
+   481   * }
+   482   *
+   483   * let params = await oauth.validateJwtAuthResponse(as, client, currentUrl, state, {
+   484   *   [oauth.jweDecrypt]: jweDecrypt,
+   485   * })
+  1008   *
+  1009   * @group Errors
+  1010   */
+  1011  export declare class OperationProcessingError extends Error {
+  1012      code?: string;
+  1013      /**
+  1014       * @ignore
+  1015       */
+  1016      constructor(message: string, options?: {
+  1017          cause?: unknown;
+  1018          code?: string;
+  1019      });
+  2114  /**
+  2115   * Error code for receiving a JSON UserInfo response when a JWT response was expected.
+  2116   *
+  2117   * Assigned to {@link OperationProcessingError.code}.
+  2118   *
+  2119   * @group Error Codes
+  2120   */
+  2121  export declare const JWT_USERINFO_EXPECTED = "OAUTH_JWT_USERINFO_EXPECTED";
+  2122  /**
+  2123   * Error code for JSON parsing failures.
+  2124   *
+  2125   * Assigned to {@link OperationProcessingError.code}.
+  2122  /**
+  2123   * Error code for JSON parsing failures.
+  2124   *
+  2125   * Assigned to {@link OperationProcessingError.code}.
+  2126   *
+  2127   * This includes:
+  2128   *
+  2129   * - JWS/JWE Headers
+  2130   * - JSON response bodies
+  2131   * - "claims" authorization request parameters
+  2132   * - "authorization_details" authorization request parameters
+  2133   *
+  2137  /**
+  2138   * Error code for invalid authorization server responses.
+  2139   *
+  2140   * Assigned to {@link OperationProcessingError.code}.
+  2141   *
+  2142   * @group Error Codes
+  2143   */
+  2144  export declare const INVALID_RESPONSE = "OAUTH_INVALID_RESPONSE";
+  2145  /**
+  2146   * Error code for invalid protected resource requests or request contents.
+  2147   *
+  2148   * Assigned to {@link OperationProcessingError.code}.
+  2145  /**
+  2146   * Error code for invalid protected resource requests or request contents.
+  2147   *
+  2148   * Assigned to {@link OperationProcessingError.code}.
+  2149   *
+  2150   * @group Error Codes
+  2151   */
+  2152  export declare const INVALID_REQUEST = "OAUTH_INVALID_REQUEST";
+  2153  /**
+  2154   * Error code for responses with an unexpected media type.
+  2155   *
+  2156   * Assigned to {@link OperationProcessingError.code}.
+  2153  /**
+  2154   * Error code for responses with an unexpected media type.
+  2155   *
+  2156   * Assigned to {@link OperationProcessingError.code}.
+  2157   *
+  2158   * @group Error Codes
+  2159   */
+  2160  export declare const RESPONSE_IS_NOT_JSON = "OAUTH_RESPONSE_IS_NOT_JSON";
+  2161  /**
+  2162   * Error code for responses with an unexpected HTTP status code.
+  2163   *
+  2164   * Assigned to {@link OperationProcessingError.code}.
+  2161  /**
+  2162   * Error code for responses with an unexpected HTTP status code.
+  2163   *
+  2164   * Assigned to {@link OperationProcessingError.code}.
+  2165   *
+  2166   * @group Error Codes
+  2167   */
+  2168  export declare const RESPONSE_IS_NOT_CONFORM = "OAUTH_RESPONSE_IS_NOT_CONFORM";
+  2169  /**
+  2170   * Error code for requests targeting a non-TLS HTTP endpoint when insecure requests are disabled.
+  2171   *
+  2172   * Assigned to {@link OperationProcessingError.code}.
+  2169  /**
+  2170   * Error code for requests targeting a non-TLS HTTP endpoint when insecure requests are disabled.
+  2171   *
+  2172   * Assigned to {@link OperationProcessingError.code}.
+  2173   *
+  2174   * @group Error Codes
+  2175   */
+  2176  export declare const HTTP_REQUEST_FORBIDDEN = "OAUTH_HTTP_REQUEST_FORBIDDEN";
+  2177  /**
+  2178   * Error code for requests targeting a non-HTTP(S) endpoint.
+  2179   *
+  2180   * Assigned to {@link OperationProcessingError.code}.
+  2177  /**
+  2178   * Error code for requests targeting a non-HTTP(S) endpoint.
+  2179   *
+  2180   * Assigned to {@link OperationProcessingError.code}.
+  2181   *
+  2182   * @group Error Codes
+  2183   */
+  2184  export declare const REQUEST_PROTOCOL_FORBIDDEN = "OAUTH_REQUEST_PROTOCOL_FORBIDDEN";
+  2185  /**
+  2186   * Error code for failed JWT NumericDate comparisons with the current timestamp.
+  2187   *
+  2188   * Assigned to {@link OperationProcessingError.code}.
+
+--- AuthorizationResponseError ---
+  1490   *
+  1491   * @group Errors
+  1492   */
+  1493  export declare class AuthorizationResponseError extends Error {
+  1494      /**
+  1495       * Authorization Response parameters as {@link !URLSearchParams}
+  1496       */
+  1497      cause: URLSearchParams;
+  1498      code: typeof AUTHORIZATION_RESPONSE_ERROR;
+  1499      /**
+  1500       * Error code given in the Authorization Response
+  1501       */
+  2106  /**
+  2107   * Error code for OAuth 2.0 Authorization Error Responses.
+  2108   *
+  2109   * Assigned to {@link AuthorizationResponseError.code}.
+  2110   *
+  2111   * @group Error Codes
+  2112   */
+  2113  export declare const AUTHORIZATION_RESPONSE_ERROR = "OAUTH_AUTHORIZATION_RESPONSE_ERROR";
+  2114  /**
+  2115   * Error code for receiving a JSON UserInfo response when a JWT response was expected.
+  2116   *
+  2117   * Assigned to {@link OperationProcessingError.code}.
+  2469   * @param expectedState Expected `state` parameter value. Default is {@link expectNoState}.
+  2470   *
+  2471   * @returns Validated Authorization Response parameters. Authorization Error Responses are rejected
+  2472   *   using {@link AuthorizationResponseError}.
+  2473   *
+  2474   * @group Authorization Code Grant
+  2475   * @group Authorization Code Grant w/ OpenID Connect (OIDC)
+  2476   * @group JWT Secured Authorization Response Mode for OAuth 2.0 (JARM)
+  2477   * @group FAPI 2.0 Message Signing
+  2478   * @group FAPI 1.0 Advanced
+  2479   *
+  2480   * @see [JWT Secured Authorization Response Mode for OAuth 2.0 (JARM)](https://openid.net/specs/openid-financial-api-jarm-final.html)
+  2496   *   {@link skipAuthTimeCheck}.
+  2497   *
+  2498   * @returns Validated Authorization Response parameters. Authorization Error Responses are rejected
+  2499   *   using {@link AuthorizationResponseError}.
+  2500   *
+  2501   * @group FAPI 1.0 Advanced
+  2502   *
+  2503   * @see [Financial-grade API Security Profile 1.0 - Part 2: Advanced](https://openid.net/specs/openid-financial-api-part-2-1_0-final.html#id-token-as-detached-signature)
+  2504   */
+  2505  export declare function validateDetachedSignatureResponse(as: AuthorizationServer, client: Client, parameters: URLSearchParams | URL | Request, expectedNonce: string, expectedState?: string | typeof expectNoState, maxAge?: number | typeof skipAuthTimeCheck, options?: ValidateSignatureOptions & JWEDecryptOptions): Promise<URLSearchParams>;
+  2506  /**
+  2507   * Validates an OpenID Connect `code id_token` authorization response.
+  2519   *   {@link skipAuthTimeCheck}.
+  2520   *
+  2521   * @returns Validated Authorization Response parameters. Authorization Error Responses are rejected
+  2522   *   using {@link AuthorizationResponseError}.
+  2523   *
+  2524   * @group Authorization Code Grant w/ OpenID Connect (OIDC)
+  2525   *
+  2526   * @see [RFC 6749 - The OAuth 2.0 Authorization Framework](https://www.rfc-editor.org/rfc/rfc6749.html#section-4.1.2)
+  2527   * @see [OpenID Connect Core 1.0](https://openid.net/specs/openid-connect-core-1_0-errata2.html#HybridFlowAuth)
+  2528   */
+  2529  export declare function validateCodeIdTokenResponse(as: AuthorizationServer, client: Client, parameters: URLSearchParams | URL | Request, expectedNonce: string, expectedState?: string | typeof expectNoState, maxAge?: number | typeof skipAuthTimeCheck, options?: ValidateSignatureOptions & JWEDecryptOptions): Promise<URLSearchParams>;
+  2530  /**
+  2560   * @param expectedState Expected `state` parameter value. Default is {@link expectNoState}.
+  2561   *
+  2562   * @returns Validated Authorization Response parameters. Authorization Error Responses throw
+  2563   *   {@link AuthorizationResponseError}.
+  2564   *
+  2565   * @group Authorization Code Grant
+  2566   * @group Authorization Code Grant w/ OpenID Connect (OIDC)
+  2567   *
+  2568   * @see [RFC 6749 - The OAuth 2.0 Authorization Framework](https://www.rfc-editor.org/rfc/rfc6749.html#section-4.1.2)
+  2569   * @see [OpenID Connect Core 1.0](https://openid.net/specs/openid-connect-core-1_0-errata2.html#CodeFlowAuth)
+  2570   * @see [RFC 9207 - OAuth 2.0 Authorization Server Issuer Identification](https://www.rfc-editor.org/rfc/rfc9207.html)
+  2571   */
+
+--- ResponseBodyError ---
+  1446   *
+  1447   * @group Errors
+  1448   */
+  1449  export declare class ResponseBodyError extends Error {
+  1450      /**
+  1451       * The parsed JSON response body
+  1452       */
+  1453      cause: Record<string, JsonValue | undefined>;
+  1454      code: typeof RESPONSE_BODY_ERROR;
+  1455      /**
+  1456       * Error code given in the JSON response
+  1457       */
+  1467      error_description?: string;
+  1468      /**
+  1469       * The "OAuth-style" error {@link !Response}, its {@link !Response.bodyUsed} is `true` and the JSON
+  1470       * body is available in {@link ResponseBodyError.cause}
+  1471       */
+  1472      response: Response;
+  1473      /**
+  1474       * @ignore
+  1475       */
+  1476      constructor(message: string, options: {
+  1477          cause: OAuth2Error;
+  1478          response: Response;
+  1624   * @param response Resolved value from {@link pushedAuthorizationRequest}.
+  1625   *
+  1626   * @returns Resolves with an object representing the parsed successful response. OAuth 2.0 protocol
+  1627   *   style errors are rejected using {@link ResponseBodyError}. WWW-Authenticate HTTP Header
+  1628   *   challenges are rejected with {@link WWWAuthenticateChallengeError}.
+  1629   *
+  1630   * @group Pushed Authorization Requests (PAR)
+  1631   *
+  1632   * @see [RFC 9126 - OAuth 2.0 Pushed Authorization Requests (PAR)](https://www.rfc-editor.org/rfc/rfc9126.html#name-pushed-authorization-reques)
+  1633   */
+  1634  export declare function processPushedAuthorizationResponse(as: AuthorizationServer, client: Client, response: Response): Promise<PushedAuthorizationResponse>;
+  1635  /**
+  1920   * @param response Resolved value from {@link refreshTokenGrantRequest}.
+  1921   *
+  1922   * @returns Resolves with an object representing the parsed successful response. OAuth 2.0 protocol
+  1923   *   style errors are rejected using {@link ResponseBodyError}. WWW-Authenticate HTTP Header
+  1924   *   challenges are rejected with {@link WWWAuthenticateChallengeError}.
+  1925   *
+  1926   * @group Refreshing an Access Token
+  1927   *
+  1928   * @see [RFC 6749 - The OAuth 2.0 Authorization Framework](https://www.rfc-editor.org/rfc/rfc6749.html#section-6)
+  1929   * @see [OpenID Connect Core 1.0](https://openid.net/specs/openid-connect-core-1_0-errata2.html#RefreshTokens)
+  1930   */
+  1931  export declare function processRefreshTokenResponse(as: AuthorizationServer, client: Client, response: Response, options?: ProcessTokenResponseOptions): Promise<TokenEndpointResponse>;
+  2069   * @param response Resolved value from {@link authorizationCodeGrantRequest}.
+  2070   *
+  2071   * @returns Resolves with an object representing the parsed successful response. OAuth 2.0 protocol
+  2072   *   style errors are rejected using {@link ResponseBodyError}. WWW-Authenticate HTTP Header
+  2073   *   challenges are rejected with {@link WWWAuthenticateChallengeError}.
+  2074   *
+  2075   * @group Authorization Code Grant
+  2076   * @group Authorization Code Grant w/ OpenID Connect (OIDC)
+  2077   *
+  2078   * @see [RFC 6749 - The OAuth 2.0 Authorization Framework](https://www.rfc-editor.org/rfc/rfc6749.html#section-4.1)
+  2079   * @see [OpenID Connect Core 1.0](https://openid.net/specs/openid-connect-core-1_0-errata2.html#CodeFlowAuth)
+  2080   */
+  2090  /**
+  2091   * Error code for OAuth-style JSON error responses.
+  2092   *
+  2093   * Assigned to {@link ResponseBodyError.code}.
+  2094   *
+  2095   * @group Error Codes
+  2096   */
+  2097  export declare const RESPONSE_BODY_ERROR = "OAUTH_RESPONSE_BODY_ERROR";
+  2098  /**
+  2099   * Error code for unsupported operations.
+  2100   *
+  2101   * Assigned to {@link UnsupportedOperationError.code}.
+  2310   * @param response Resolved value from {@link clientCredentialsGrantRequest}.
+  2311   *
+  2312   * @returns Resolves with an object representing the parsed successful response. OAuth 2.0 protocol
+  2313   *   style errors are rejected using {@link ResponseBodyError}. WWW-Authenticate HTTP Header
+  2314   *   challenges are rejected with {@link WWWAuthenticateChallengeError}.
+  2315   *
+  2316   * @group Client Credentials Grant
+  2317   *
+  2318   * @see [RFC 6749 - The OAuth 2.0 Authorization Framework](https://www.rfc-editor.org/rfc/rfc6749.html#section-4.4)
+  2319   */
+  2320  export declare function processClientCredentialsResponse(as: AuthorizationServer, client: Client, response: Response, options?: ProcessTokenResponseOptions): Promise<TokenEndpointResponse>;
+  2321  /**
+  2441   * @param response Resolved value from {@link introspectionRequest}.
+  2442   *
+  2443   * @returns Resolves with an object representing the parsed successful response. OAuth 2.0 protocol
+  2444   *   style errors are rejected using {@link ResponseBodyError}. WWW-Authenticate HTTP Header
+  2445   *   challenges are rejected with {@link WWWAuthenticateChallengeError}.
+  2446   *
+  2447   * @group Token Introspection
+  2448   *
+  2449   * @see [RFC 7662 - OAuth 2.0 Token Introspection](https://www.rfc-editor.org/rfc/rfc7662.html#section-2)
+  2450   * @see [RFC 9701 - JWT Response for OAuth Token Introspection](https://www.rfc-editor.org/rfc/rfc9701.html#section-5)
+  2451   */
+  2452  export declare function processIntrospectionResponse(as: AuthorizationServer, client: Client, response: Response, options?: JWEDecryptOptions): Promise<IntrospectionResponse>;
+  2638   * @param response Resolved value from {@link deviceAuthorizationRequest}.
+  2639   *
+  2640   * @returns Resolves with an object representing the parsed successful response. OAuth 2.0 protocol
+  2641   *   style errors are rejected using {@link ResponseBodyError}. WWW-Authenticate HTTP Header
+  2642   *   challenges are rejected with {@link WWWAuthenticateChallengeError}.
+  2643   *
+  2644   * @group Device Authorization Grant
+  2645   *
+  2646   * @see [RFC 8628 - OAuth 2.0 Device Authorization Grant](https://www.rfc-editor.org/rfc/rfc8628.html#section-3.1)
+  2647   */
+  2648  export declare function processDeviceAuthorizationResponse(as: AuthorizationServer, client: Client, response: Response): Promise<DeviceAuthorizationResponse>;
+  2649  /**
+  2677   * @param response Resolved value from {@link deviceCodeGrantRequest}.
+  2678   *
+  2679   * @returns Resolves with an object representing the parsed successful response. OAuth 2.0 protocol
+  2680   *   style errors are rejected using {@link ResponseBodyError}. WWW-Authenticate HTTP Header
+  2681   *   challenges are rejected with {@link WWWAuthenticateChallengeError}.
+  2682   *
+  2683   * @group Device Authorization Grant
+  2684   *
+  2685   * @see [RFC 8628 - OAuth 2.0 Device Authorization Grant](https://www.rfc-editor.org/rfc/rfc8628.html#section-3.4)
+  2686   */
+  2687  export declare function processDeviceCodeResponse(as: AuthorizationServer, client: Client, response: Response, options?: ProcessTokenResponseOptions): Promise<TokenEndpointResponse>;
+  2688  /**
+
+--- WWWAuthenticateChallengeError ---
+  1526   *
+  1527   * @group Errors
+  1528   */
+  1529  export declare class WWWAuthenticateChallengeError extends Error {
+  1530      /**
+  1531       * The parsed WWW-Authenticate HTTP Header challenges
+  1532       */
+  1533      cause: WWWAuthenticateChallenge[];
+  1534      code: typeof WWW_AUTHENTICATE_CHALLENGE;
+  1535      /**
+  1536       * The {@link !Response} that included a WWW-Authenticate HTTP Header challenges, its
+  1537       * {@link !Response.bodyUsed} is `false`
+  1625   *
+  1626   * @returns Resolves with an object representing the parsed successful response. OAuth 2.0 protocol
+  1627   *   style errors are rejected using {@link ResponseBodyError}. WWW-Authenticate HTTP Header
+  1628   *   challenges are rejected with {@link WWWAuthenticateChallengeError}.
+  1629   *
+  1630   * @group Pushed Authorization Requests (PAR)
+  1631   *
+  1632   * @see [RFC 9126 - OAuth 2.0 Pushed Authorization Requests (PAR)](https://www.rfc-editor.org/rfc/rfc9126.html#name-pushed-authorization-reques)
+  1633   */
+  1634  export declare function processPushedAuthorizationResponse(as: AuthorizationServer, client: Client, response: Response): Promise<PushedAuthorizationResponse>;
+  1635  /**
+  1636   * An HTTP request body accepted by {@link protectedResourceRequest}.
+  1653   * @param body Request body compatible with the Fetch API and the request's method.
+  1654   *
+  1655   * @returns Resolves with a {@link !Response} instance. WWW-Authenticate HTTP Header challenges are
+  1656   *   rejected with {@link WWWAuthenticateChallengeError}.
+  1657   *
+  1658   * @group Accessing Protected Resources
+  1659   *
+  1660   * @see [RFC 6750 - The OAuth 2.0 Authorization Framework: Bearer Token Usage](https://www.rfc-editor.org/rfc/rfc6750.html#section-2.1)
+  1661   * @see [RFC 9449 - OAuth 2.0 Demonstrating Proof-of-Possession at the Application Layer (DPoP)](https://www.rfc-editor.org/rfc/rfc9449.html#name-protected-resource-access)
+  1662   */
+  1663  export declare function protectedResourceRequest(accessToken: string, method: string, url: URL, headers?: Headers, body?: ProtectedResourceRequestBody, options?: ProtectedResourceRequestOptions): Promise<Response>;
+  1664  /**
+  1825   * @param response Resolved value from {@link userInfoRequest}.
+  1826   *
+  1827   * @returns Resolves with an object representing the parsed successful response. WWW-Authenticate
+  1828   *   HTTP Header challenges are rejected with {@link WWWAuthenticateChallengeError}.
+  1829   *
+  1830   * @group Authorization Code Grant w/ OpenID Connect (OIDC)
+  1831   * @group OpenID Connect (OIDC) UserInfo
+  1832   * @group Accessing Protected Resources
+  1833   *
+  1834   * @see [OpenID Connect Core 1.0](https://openid.net/specs/openid-connect-core-1_0-errata2.html#UserInfo)
+  1835   */
+  1836  export declare function processUserInfoResponse(as: AuthorizationServer, client: Client, expectedSubject: string | typeof skipSubjectCheck, response: Response, options?: JWEDecryptOptions): Promise<UserInfoResponse>;
+  1921   *
+  1922   * @returns Resolves with an object representing the parsed successful response. OAuth 2.0 protocol
+  1923   *   style errors are rejected using {@link ResponseBodyError}. WWW-Authenticate HTTP Header
+  1924   *   challenges are rejected with {@link WWWAuthenticateChallengeError}.
+  1925   *
+  1926   * @group Refreshing an Access Token
+  1927   *
+  1928   * @see [RFC 6749 - The OAuth 2.0 Authorization Framework](https://www.rfc-editor.org/rfc/rfc6749.html#section-6)
+  1929   * @see [OpenID Connect Core 1.0](https://openid.net/specs/openid-connect-core-1_0-errata2.html#RefreshTokens)
+  1930   */
+  1931  export declare function processRefreshTokenResponse(as: AuthorizationServer, client: Client, response: Response, options?: ProcessTokenResponseOptions): Promise<TokenEndpointResponse>;
+  1932  /**
+  2070   *
+  2071   * @returns Resolves with an object representing the parsed successful response. OAuth 2.0 protocol
+  2072   *   style errors are rejected using {@link ResponseBodyError}. WWW-Authenticate HTTP Header
+  2073   *   challenges are rejected with {@link WWWAuthenticateChallengeError}.
+  2074   *
+  2075   * @group Authorization Code Grant
+  2076   * @group Authorization Code Grant w/ OpenID Connect (OIDC)
+  2077   *
+  2078   * @see [RFC 6749 - The OAuth 2.0 Authorization Framework](https://www.rfc-editor.org/rfc/rfc6749.html#section-4.1)
+  2079   * @see [OpenID Connect Core 1.0](https://openid.net/specs/openid-connect-core-1_0-errata2.html#CodeFlowAuth)
+  2080   */
+  2081  export declare function processAuthorizationCodeResponse(as: AuthorizationServer, client: Client, response: Response, options?: ProcessAuthorizationCodeResponseOptions): Promise<TokenEndpointResponse>;
+  2082  /**
+  2083   * Error code for responses containing parseable `WWW-Authenticate` challenges.
+  2084   *
+  2085   * Assigned to {@link WWWAuthenticateChallengeError.code}.
+  2086   *
+  2087   * @group Error Codes
+  2088   */
+  2089  export declare const WWW_AUTHENTICATE_CHALLENGE = "OAUTH_WWW_AUTHENTICATE_CHALLENGE";
+  2090  /**
+  2091   * Error code for OAuth-style JSON error responses.
+  2092   *
+  2093   * Assigned to {@link ResponseBodyError.code}.
+  2311   *
+  2312   * @returns Resolves with an object representing the parsed successful response. OAuth 2.0 protocol
+  2313   *   style errors are rejected using {@link ResponseBodyError}. WWW-Authenticate HTTP Header
+  2314   *   challenges are rejected with {@link WWWAuthenticateChallengeError}.
+  2315   *
+  2316   * @group Client Credentials Grant
+  2317   *
+  2318   * @see [RFC 6749 - The OAuth 2.0 Authorization Framework](https://www.rfc-editor.org/rfc/rfc6749.html#section-4.4)
+  2319   */
+  2320  export declare function processClientCredentialsResponse(as: AuthorizationServer, client: Client, response: Response, options?: ProcessTokenResponseOptions): Promise<TokenEndpointResponse>;
+  2321  /**
+  2322   * Options for an OAuth 2.0 Token Revocation request.
+  2442   *
+  2443   * @returns Resolves with an object representing the parsed successful response. OAuth 2.0 protocol
+  2444   *   style errors are rejected using {@link ResponseBodyError}. WWW-Authenticate HTTP Header
+  2445   *   challenges are rejected with {@link WWWAuthenticateChallengeError}.
+  2446   *
+  2447   * @group Token Introspection
+  2448   *
+  2449   * @see [RFC 7662 - OAuth 2.0 Token Introspection](https://www.rfc-editor.org/rfc/rfc7662.html#section-2)
+  2450   * @see [RFC 9701 - JWT Response for OAuth Token Introspection](https://www.rfc-editor.org/rfc/rfc9701.html#section-5)
+  2451   */
+  2452  export declare function processIntrospectionResponse(as: AuthorizationServer, client: Client, response: Response, options?: JWEDecryptOptions): Promise<IntrospectionResponse>;
+  2453  /**
+  2639   *
+  2640   * @returns Resolves with an object representing the parsed successful response. OAuth 2.0 protocol
+  2641   *   style errors are rejected using {@link ResponseBodyError}. WWW-Authenticate HTTP Header
+  2642   *   challenges are rejected with {@link WWWAuthenticateChallengeError}.
+  2643   *
+  2644   * @group Device Authorization Grant
+  2645   *
+  2646   * @see [RFC 8628 - OAuth 2.0 Device Authorization Grant](https://www.rfc-editor.org/rfc/rfc8628.html#section-3.1)
+  2647   */
+  2648  export declare function processDeviceAuthorizationResponse(as: AuthorizationServer, client: Client, response: Response): Promise<DeviceAuthorizationResponse>;
+  2649  /**
+  2650   * Performs a Device Authorization Grant request.
+
+--- OAUTH_MISSING_SERVER_METADATA ---
+  2225   *
+  2226   * @group Error Codes
+  2227   */
+  2228  export declare const MISSING_SERVER_METADATA = "OAUTH_MISSING_SERVER_METADATA";
+  2229  /**
+  2230   * Error code for invalid authorization server metadata.
+  2231   *
+  2232   * Assigned to {@link OperationProcessingError.code}.
+  2233   *
+  2234   * @group Error Codes
+  2235   */
+  2236  export declare const INVALID_SERVER_METADATA = "OAUTH_INVALID_SERVER_METADATA";
+
+--- OAUTH_INVALID_SERVER_METADATA ---
+  2233   *
+  2234   * @group Error Codes
+  2235   */
+  2236  export declare const INVALID_SERVER_METADATA = "OAUTH_INVALID_SERVER_METADATA";
+  2237  /**
+  2238   * Options for a Client Credentials Grant token request.
+  2239   */
+  2240  export interface ClientCredentialsGrantRequestOptions extends HttpRequestOptions<'POST', URLSearchParams>, DPoPRequestOptions {
+  2241  }
+  2242  /**
+  2243   * Performs a Client Credentials Grant request.
+  2244   *
+
+--- OAUTH_RESPONSE_BODY_ERROR ---
+  2094   *
+  2095   * @group Error Codes
+  2096   */
+  2097  export declare const RESPONSE_BODY_ERROR = "OAUTH_RESPONSE_BODY_ERROR";
+  2098  /**
+  2099   * Error code for unsupported operations.
+  2100   *
+  2101   * Assigned to {@link UnsupportedOperationError.code}.
+  2102   *
+  2103   * @group Error Codes
+  2104   */
+  2105  export declare const UNSUPPORTED_OPERATION = "OAUTH_UNSUPPORTED_OPERATION";
+
+--- OAUTH_AUTHORIZATION_RESPONSE_ERROR ---
+  2110   *
+  2111   * @group Error Codes
+  2112   */
+  2113  export declare const AUTHORIZATION_RESPONSE_ERROR = "OAUTH_AUTHORIZATION_RESPONSE_ERROR";
+  2114  /**
+  2115   * Error code for receiving a JSON UserInfo response when a JWT response was expected.
+  2116   *
+  2117   * Assigned to {@link OperationProcessingError.code}.
+  2118   *
+  2119   * @group Error Codes
+  2120   */
+  2121  export declare const JWT_USERINFO_EXPECTED = "OAUTH_JWT_USERINFO_EXPECTED";
+
+================================================================================
+FILE: node_modules/oauth4webapi/build/index.js
+================================================================================
+
+--- ClientError ---
+NOT FOUND
+
+--- OperationProcessingError ---
+   101          Error.captureStackTrace?.(this, this.constructor);
+   102      }
+   103  }
+   104  export class OperationProcessingError extends Error {
+   105      code;
+   106      constructor(message, options) {
+   107          super(message, options);
+   108          this.name = this.constructor.name;
+   109          if (options?.code) {
+   110              this.code = options?.code;
+   111          }
+   112          Error.captureStackTrace?.(this, this.constructor);
+   113      }
+   114  }
+   115  function OPE(message, code, cause) {
+   116      return new OperationProcessingError(message, { code, cause });
+   117  }
+   118  async function calculateJwkThumbprint(jwk) {
+   119      let components;
+   120      switch (jwk.kty) {
+   121          case 'EC':
+   122              components = {
+   123                  crv: jwk.crv,
+   124                  kty: jwk.kty,
+  2386      return claims;
+  2387  }
+  2388  function reassignRSCode(err) {
+  2389      if (err instanceof OperationProcessingError && err?.code === INVALID_REQUEST) {
+  2390          err.code = INVALID_RESPONSE;
+  2391      }
+  2392      throw err;
+  2393  }
+  2394  export async function backchannelAuthenticationRequest(as, client, clientAuthentication, parameters, options) {
+  2395      assertAs(as);
+  2396      assertClient(client);
+  2397      const url = resolveEndpoint(as, 'backchannel_authentication_endpoint', client.use_mtls_endpoint_aliases, options?.[allowInsecureRequests] !== true);
+
+--- AuthorizationResponseError ---
+   780          Error.captureStackTrace?.(this, this.constructor);
+   781      }
+   782  }
+   783  export class AuthorizationResponseError extends Error {
+   784      cause;
+   785      code;
+   786      error;
+   787      error_description;
+   788      constructor(message, options) {
+   789          super(message, options);
+   790          this.name = this.constructor.name;
+   791          this.code = AUTHORIZATION_RESPONSE_ERROR;
+  2115      }
+  2116      const error = getURLSearchParameter(parameters, 'error');
+  2117      if (error) {
+  2118          throw new AuthorizationResponseError('authorization response from the server is an error', {
+  2119              cause: parameters,
+  2120          });
+  2121      }
+  2122      const id_token = getURLSearchParameter(parameters, 'id_token');
+  2123      const token = getURLSearchParameter(parameters, 'token');
+  2124      if (id_token !== undefined || token !== undefined) {
+  2125          throw new UnsupportedOperationError('implicit and hybrid flows are not supported');
+  2126      }
+
+--- ResponseBodyError ---
+   753      if (err instanceof WWWAuthenticateChallengeError) {
+   754          return err.cause.some((challenge) => challenge.scheme === 'dpop' && challenge.parameters.error === 'use_dpop_nonce');
+   755      }
+   756      if (err instanceof ResponseBodyError) {
+   757          return err.error === 'use_dpop_nonce';
+   758      }
+   759      return false;
+   760  }
+   761  export function DPoP(client, keyPair, options) {
+   762      return new DPoPHandler(client, keyPair, options);
+   763  }
+   764  export class ResponseBodyError extends Error {
+   761  export function DPoP(client, keyPair, options) {
+   762      return new DPoPHandler(client, keyPair, options);
+   763  }
+   764  export class ResponseBodyError extends Error {
+   765      cause;
+   766      code;
+   767      error;
+   768      status;
+   769      error_description;
+   770      response;
+   771      constructor(message, options) {
+   772          super(message, options);
+   928          let err;
+   929          if ((err = await parseOAuthResponseErrorBody(response))) {
+   930              await response.body?.cancel();
+   931              throw new ResponseBodyError('server responded with an error in the response body', {
+   932                  cause: err,
+   933                  response,
+   934              });
+   935          }
+   936          throw OPE(`"response" is not a conform ${label} response (unexpected HTTP status code)`, RESPONSE_IS_NOT_CONFORM, response);
+   937      }
+   938  }
+   939  function assertDPoP(option) {
+
+--- WWWAuthenticateChallengeError ---
+   750      }
+   751  }
+   752  export function isDPoPNonceError(err) {
+   753      if (err instanceof WWWAuthenticateChallengeError) {
+   754          return err.cause.some((challenge) => challenge.scheme === 'dpop' && challenge.parameters.error === 'use_dpop_nonce');
+   755      }
+   756      if (err instanceof ResponseBodyError) {
+   757          return err.error === 'use_dpop_nonce';
+   758      }
+   759      return false;
+   760  }
+   761  export function DPoP(client, keyPair, options) {
+   795          Error.captureStackTrace?.(this, this.constructor);
+   796      }
+   797  }
+   798  export class WWWAuthenticateChallengeError extends Error {
+   799      cause;
+   800      code;
+   801      response;
+   802      status;
+   803      constructor(message, options) {
+   804          super(message, options);
+   805          this.name = this.constructor.name;
+   806          this.code = WWW_AUTHENTICATE_CHALLENGE;
+  1281  function checkAuthenticationChallenges(response) {
+  1282      let challenges;
+  1283      if ((challenges = parseWwwAuthenticateChallenges(response))) {
+  1284          throw new WWWAuthenticateChallengeError('server responded with a challenge in the WWW-Authenticate HTTP Header', { cause: challenges, response });
+  1285      }
+  1286  }
+  1287  export async function processRefreshTokenResponse(as, client, response, options) {
+  1288      return processGenericAccessTokenResponse(as, client, response, undefined, options?.[jweDecrypt], options?.recognizedTokenTypes);
+  1289  }
+  1290  function validateOptionalAudience(expected, result) {
+  1291      if (result.claims.aud !== undefined) {
+  1292          return validateAudience(expected, result);
+
+--- OAUTH_MISSING_SERVER_METADATA ---
+  1510  export const JWT_CLAIM_COMPARISON = 'OAUTH_JWT_CLAIM_COMPARISON_FAILED';
+  1511  export const JSON_ATTRIBUTE_COMPARISON = 'OAUTH_JSON_ATTRIBUTE_COMPARISON_FAILED';
+  1512  export const KEY_SELECTION = 'OAUTH_KEY_SELECTION_FAILED';
+  1513  export const MISSING_SERVER_METADATA = 'OAUTH_MISSING_SERVER_METADATA';
+  1514  export const INVALID_SERVER_METADATA = 'OAUTH_INVALID_SERVER_METADATA';
+  1515  function checkJwtType(expected, result) {
+  1516      if (typeof result.header.typ !== 'string' || normalizeTyp(result.header.typ) !== expected) {
+  1517          throw OPE('unexpected JWT "typ" header parameter value', INVALID_RESPONSE, {
+  1518              header: result.header,
+  1519          });
+  1520      }
+  1521      return result;
+
+--- OAUTH_INVALID_SERVER_METADATA ---
+  1511  export const JSON_ATTRIBUTE_COMPARISON = 'OAUTH_JSON_ATTRIBUTE_COMPARISON_FAILED';
+  1512  export const KEY_SELECTION = 'OAUTH_KEY_SELECTION_FAILED';
+  1513  export const MISSING_SERVER_METADATA = 'OAUTH_MISSING_SERVER_METADATA';
+  1514  export const INVALID_SERVER_METADATA = 'OAUTH_INVALID_SERVER_METADATA';
+  1515  function checkJwtType(expected, result) {
+  1516      if (typeof result.header.typ !== 'string' || normalizeTyp(result.header.typ) !== expected) {
+  1517          throw OPE('unexpected JWT "typ" header parameter value', INVALID_RESPONSE, {
+  1518              header: result.header,
+  1519          });
+  1520      }
+  1521      return result;
+  1522  }
+
+--- OAUTH_RESPONSE_BODY_ERROR ---
+  1495      return result;
+  1496  }
+  1497  export const WWW_AUTHENTICATE_CHALLENGE = 'OAUTH_WWW_AUTHENTICATE_CHALLENGE';
+  1498  export const RESPONSE_BODY_ERROR = 'OAUTH_RESPONSE_BODY_ERROR';
+  1499  export const UNSUPPORTED_OPERATION = 'OAUTH_UNSUPPORTED_OPERATION';
+  1500  export const AUTHORIZATION_RESPONSE_ERROR = 'OAUTH_AUTHORIZATION_RESPONSE_ERROR';
+  1501  export const JWT_USERINFO_EXPECTED = 'OAUTH_JWT_USERINFO_EXPECTED';
+  1502  export const PARSE_ERROR = 'OAUTH_PARSE_ERROR';
+  1503  export const INVALID_RESPONSE = 'OAUTH_INVALID_RESPONSE';
+  1504  export const INVALID_REQUEST = 'OAUTH_INVALID_REQUEST';
+  1505  export const RESPONSE_IS_NOT_JSON = 'OAUTH_RESPONSE_IS_NOT_JSON';
+  1506  export const RESPONSE_IS_NOT_CONFORM = 'OAUTH_RESPONSE_IS_NOT_CONFORM';
+
+--- OAUTH_AUTHORIZATION_RESPONSE_ERROR ---
+  1497  export const WWW_AUTHENTICATE_CHALLENGE = 'OAUTH_WWW_AUTHENTICATE_CHALLENGE';
+  1498  export const RESPONSE_BODY_ERROR = 'OAUTH_RESPONSE_BODY_ERROR';
+  1499  export const UNSUPPORTED_OPERATION = 'OAUTH_UNSUPPORTED_OPERATION';
+  1500  export const AUTHORIZATION_RESPONSE_ERROR = 'OAUTH_AUTHORIZATION_RESPONSE_ERROR';
+  1501  export const JWT_USERINFO_EXPECTED = 'OAUTH_JWT_USERINFO_EXPECTED';
+  1502  export const PARSE_ERROR = 'OAUTH_PARSE_ERROR';
+  1503  export const INVALID_RESPONSE = 'OAUTH_INVALID_RESPONSE';
+  1504  export const INVALID_REQUEST = 'OAUTH_INVALID_REQUEST';
+  1505  export const RESPONSE_IS_NOT_JSON = 'OAUTH_RESPONSE_IS_NOT_JSON';
+  1506  export const RESPONSE_IS_NOT_CONFORM = 'OAUTH_RESPONSE_IS_NOT_CONFORM';
+  1507  export const HTTP_REQUEST_FORBIDDEN = 'OAUTH_HTTP_REQUEST_FORBIDDEN';
+  1508  export const REQUEST_PROTOCOL_FORBIDDEN = 'OAUTH_REQUEST_PROTOCOL_FORBIDDEN';
