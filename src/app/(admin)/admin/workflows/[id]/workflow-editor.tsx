@@ -42,6 +42,7 @@ import { applyHebrewToSdk } from "@/lib/workflow/i18n-he";
 import { loadVoiceDialListsAction } from "../actions";
 
 import { appBarPlugin } from "./app-bar";
+import { copyPastePlugin } from "./copy-paste";
 import {
   stripComputedErrors,
   syncArmBlockerMarkers,
@@ -59,6 +60,8 @@ import { ExecutionLogPanel } from "./log-panel";
 import { executionMarkersPlugin } from "./node-markers";
 import { nodeRunRenderer } from "./node-run-control";
 import { triggerSwitchRenderer } from "./trigger-switch-control";
+import { undoRedoPlugin } from "./undo-redo";
+import { resetUndoRedo } from "./undo-redo-store";
 import { resetExecution } from "./use-execution-store";
 import {
   resetPanels,
@@ -139,7 +142,11 @@ type Props = {
 const isValidConnection: WorkflowBuilderIsValidConnection = ({ targetNode }) =>
   !isTriggerType(targetNode.data.type);
 
-const PLUGINS = [executionMarkersPlugin, appBarPlugin];
+// `undoRedoPlugin` and `copyPastePlugin` are the vendor's own, ported from their
+// Apache-2.0 repo because neither is published to npm — see undo-redo.tsx and
+// copy-paste.tsx. Copy & paste announces through `trackFutureChange`, so a cut
+// or a paste is one undo step.
+const PLUGINS = [executionMarkersPlugin, appBarPlugin, undoRedoPlugin, copyPastePlugin];
 
 // Custom JsonForms renderers. Module scope for the same reason as PLUGINS: the
 // prop is read once, and a fresh object each render would re-register the
@@ -338,13 +345,20 @@ export function WorkflowEditor({
   // Execution and panel state belong to the workflow visit. Revalidation of
   // this same workflow must not reset them merely because server props were
   // reconstructed.
+  //
+  // ⚠️ AND SO DOES THE UNDO HISTORY — the one of the three whose staleness is
+  // not cosmetic. Its store is a module singleton, so without a reset the steps
+  // recorded on workflow A are still there after opening workflow B, and Ctrl+Z
+  // would write A's nodes into B, where auto-save would then persist them.
   useEffect(() => {
     resetExecution();
     resetPanels();
+    resetUndoRedo();
 
     return () => {
       resetExecution();
       resetPanels();
+      resetUndoRedo();
     };
   }, [workflowId]);
 
