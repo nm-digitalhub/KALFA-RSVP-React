@@ -16,6 +16,14 @@ import {
 } from '@/lib/data/campaigns';
 import type { OwnedEvent } from '@/lib/data/events';
 import type { CampaignStatus } from '@/lib/data/campaign-status';
+import {
+  ADMIN_ATTENTION_FILTER,
+  WINDDOWN_STATUSES,
+} from '@/lib/owner-agent/cores/campaigns';
+
+// Re-exported for existing importers. The predicate itself lives in the
+// request-free campaigns core so the owner agent counts by the same definition.
+export { WINDDOWN_STATUSES };
 
 // Admin campaign wind-down surface. The four lifecycle controls (close, pause,
 // settle, cancel) are platform-admin-only, so admins need to REACH campaigns of
@@ -221,25 +229,14 @@ export interface AdminCampaignListItem {
   holdOrderDocumentUrl: string | null;
 }
 
-// Statuses that may still need a wind-down action (close/pause/settle/cancel).
-// Terminal states (billed/paid/cancelled) are excluded — nothing left to do.
-// Exported so nav-counts.ts can count against the same predicate this list
-// already filters by, instead of duplicating the status list.
-export const WINDDOWN_STATUSES: readonly CampaignStatus[] = [
-  'active',
-  'paused',
-  'closed',
-];
-
-// A campaign whose hold never went through never leaves status='approved'
-// (activateCampaign requires capture_status='authorized' — campaigns.ts:889),
-// so on its own it would never satisfy WINDDOWN_STATUSES above and would stay
-// permanently invisible on this screen. These are exactly the states an admin
-// needs to see: a stuck lock (pending, e.g. a crash between the hold request
-// and its outcome), a declined hold, or an ambiguous/needs-manual-reconciliation
-// outcome. Matches the same three values markCampaignHoldFailed/
-// lockCampaignForHold already use (campaigns.ts / authorize/route.ts).
-const STUCK_CAPTURE_STATUSES = ['pending', 'hold_failed', 'hold_review'] as const;
+// WINDDOWN_STATUSES (wind-down actions: close/pause/settle/cancel) and
+// STUCK_CAPTURE_STATUSES (a hold that never went through, so the campaign
+// never leaves status='approved') now live in the request-free campaigns core
+// (src/lib/owner-agent/cores/campaigns.ts), together with
+// ADMIN_ATTENTION_FILTER — the exact `or` filter this list uses. The core's
+// needsAttention count uses the same string, so the owner agent's number is
+// the length of this list by construction. See the core for the reasoning
+// behind each status set.
 
 // List campaigns that may need admin attention — either a wind-down action
 // (close/pause/settle/cancel) or a stuck hold that never activated. Reads via
@@ -254,9 +251,7 @@ export async function listCampaignsForAdmin(): Promise<AdminCampaignListItem[]> 
     .select(
       'id, status, event_id, created_at, charge_status, final_charge_amount, credit_applied, capture_status, hold_order_document_number, hold_order_document_url, events(name, event_date)',
     )
-    .or(
-      `status.in.(${WINDDOWN_STATUSES.join(',')}),and(status.eq.approved,capture_status.in.(${STUCK_CAPTURE_STATUSES.join(',')}))`,
-    )
+    .or(ADMIN_ATTENTION_FILTER)
     .order('created_at', { ascending: false });
   if (error) {
     throw new Error('טעינת הקמפיינים נכשלה');

@@ -424,8 +424,12 @@ export async function recordRsvpCallRejected(
 // A per-process rate limiter is not sufficient (multiple workers / restarts),
 // so these count real rows. The active set is the exact non-terminal set of
 // call_attempts_stale_idx. head:true + count:'exact' → COUNT(*), no row payload.
-export async function countActiveCalls(): Promise<number> {
-  const admin = createAdminClient();
+// `admin` is injectable so the request-free owner-agent voice core can run it on
+// the client it was handed; every existing caller omits it and gets a fresh
+// service-role client exactly as before.
+export async function countActiveCalls(
+  admin: ReturnType<typeof createAdminClient> = createAdminClient(),
+): Promise<number> {
   const { count, error } = await admin
     .from('call_attempts')
     .select('id', { count: 'exact', head: true })

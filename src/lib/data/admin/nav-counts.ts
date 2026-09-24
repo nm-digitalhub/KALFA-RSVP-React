@@ -2,7 +2,11 @@ import 'server-only';
 
 import { createAdminClient } from '@/lib/supabase/admin';
 import { hasPlatformPermission, requirePlatformStaff } from '@/lib/auth/dal';
-import { WINDDOWN_STATUSES } from './campaigns';
+import {
+  countNewCallbackRequests,
+  countOpenContacts,
+} from '@/lib/owner-agent/cores/inquiries';
+import { countWinddownCampaigns as countWinddownCampaignsCore } from '@/lib/owner-agent/cores/campaigns';
 
 // Sidebar nav badges: how many items in each domain are actionable right now.
 // Modeled directly on getDashboardCounts() (./dashboard.ts) — same fail-soft,
@@ -24,38 +28,43 @@ type AdminClient = ReturnType<typeof createAdminClient>;
 
 // Count-only (head: true) queries — no rows transferred, just the count.
 // Fail-soft: a broken counter must not take down the whole admin nav.
+//
+// The contacts/callbacks/campaigns QUERIES live in the request-free owner-agent
+// cores (src/lib/owner-agent/cores/), so this badge, the /admin dashboard card
+// and the owner WhatsApp agent run the one same query and can never disagree.
+// Those cores THROW on a query error (the agent must not report a confident
+// 0); the fail-soft 0 the nav has always had is applied here, in the adapter.
 
 // Exported: the /admin overview dashboard (dashboard.ts) reuses these exact
 // same two counters for its "פניות"/"בקשות חזרה" cards, so that card and this
 // sidebar badge can never show two different numbers for the same domain.
 
 export async function countNewContacts(supabase: AdminClient): Promise<number> {
-  const { count, error } = await supabase
-    .from('contact_messages')
-    .select('id', { count: 'exact', head: true })
-    // `reopened` counts too: a customer who wrote back on an answered thread is
-    // waiting exactly as much as a first-time sender, and a badge that ignored
-    // them would make a live conversation look handled. Per the note above this
-    // moves BOTH surfaces — the sidebar badge and the /admin dashboard card —
-    // which is the point: they must never disagree.
-    .in('status', ['new', 'reopened']);
-  return error ? 0 : (count ?? 0);
+  // `reopened` counts too (OPEN_CONTACT_STATUSES in the core): a customer who
+  // wrote back on an answered thread is waiting exactly as much as a
+  // first-time sender. This moves BOTH surfaces — the sidebar badge and the
+  // /admin dashboard card — which is the point: they must never disagree.
+  try {
+    return await countOpenContacts(supabase);
+  } catch {
+    return 0;
+  }
 }
 
 export async function countNewCallbacks(supabase: AdminClient): Promise<number> {
-  const { count, error } = await supabase
-    .from('callback_requests')
-    .select('id', { count: 'exact', head: true })
-    .eq('status', 'new');
-  return error ? 0 : (count ?? 0);
+  try {
+    return await countNewCallbackRequests(supabase);
+  } catch {
+    return 0;
+  }
 }
 
 async function countWinddownCampaigns(supabase: AdminClient): Promise<number> {
-  const { count, error } = await supabase
-    .from('campaigns')
-    .select('id', { count: 'exact', head: true })
-    .in('status', [...WINDDOWN_STATUSES]);
-  return error ? 0 : (count ?? 0);
+  try {
+    return await countWinddownCampaignsCore(supabase);
+  } catch {
+    return 0;
+  }
 }
 
 async function countPendingFleetRequests(supabase: AdminClient): Promise<number> {

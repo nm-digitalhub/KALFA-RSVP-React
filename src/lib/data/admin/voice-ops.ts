@@ -3,7 +3,11 @@ import 'server-only';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { requirePlatformPermission } from '@/lib/auth/dal';
 import { recordStaffAccess } from '@/lib/data/admin/access-log';
-import { countActiveCalls } from '@/lib/data/call-attempts';
+import {
+  computeAnswerRate,
+  countCallAttemptsSince,
+  getVoiceCallsSummary,
+} from '@/lib/owner-agent/cores/voice-calls';
 import { resolvePage, type PageResult } from '@/lib/data/admin/shared';
 import { getVoximplantConfig } from '@/lib/data/voximplant-config';
 import { getCachedAccountInfo } from '@/lib/data/admin/voice-balance-cache';
@@ -33,10 +37,6 @@ import {
 // Aggregation is JS-first over a bounded window — EXPLAIN ANALYZE on the live
 // GROUP BY showed a 0.2ms HashAggregate (no RPC warranted, owner directive #13).
 
-// The answer-rate denominator (plan §4, binding): terminal outcomes only;
-// cancelled is excluded (the attempt never reached the callee), and the
-// non-terminal failed_to_start/start_unknown markers are excluded too.
-const ANSWER_RATE_DENOM = ['completed', 'no_answer', 'no_response', 'failed'] as const;
 const ACTIVITY_WINDOW_DAYS = 90; // events with call activity within this window
 const AGG_ROW_CAP = 5000; // JS-aggregation safety cap; logged if hit
 
@@ -50,11 +50,11 @@ export interface VoiceDashboardSummary {
 }
 
 // Answer-rate formula (plan §4, binding): completed / (completed + no_answer +
-// no_response + failed). '—' (null) when the denominator is 0. Pure + exported
-// so the definition is pinned by a test.
-export function computeAnswerRate(completed: number, denominator: number): number | null {
-  return denominator > 0 ? completed / denominator : null;
-}
+// no_response + failed). '—' (null) when the denominator is 0. It and its
+// denominator (ANSWER_RATE_DENOM) live in the request-free owner-agent voice
+// core, which the summary below calls; re-exported here so the definition stays
+// pinned by this module's test.
+export { computeAnswerRate };
 
 // Group a bounded set of attempt rows by event, JS-side (the aggregation the
 // dashboard's event list is built on). Pure + exported for direct testing.
@@ -134,50 +134,30 @@ export async function getVoiceDashboardSummary(
 ): Promise<VoiceDashboardSummary> {
   await requirePlatformPermission('manage_voice');
   const admin = createAdminClient();
+  // ⚠️ "today" here is UTC midnight (02:00/03:00 Israel), NOT Israel midnight.
+  // Kept as-is on purpose: this refactor must not move a number on the page.
+  // The owner agent's 'today' is Israel midnight (owner-agent/range.ts), so the
+  // two "today" figures can differ by the calls placed between 00:00 Israel
+  // and 00:00 UTC. The 7-day figures are identical by construction.
   const startToday = new Date(nowMs);
   startToday.setUTCHours(0, 0, 0, 0);
-  const iso7d = new Date(nowMs - 7 * 24 * 3600 * 1000).toISOString();
 
-  // Explicit head-counts, one complete chain each — the same shape the
-  // request-free DAL uses (call-attempts.ts countActiveCalls /
-  // countCampaignCallsSince). No builder indirection: the query reads as the
-  // query it runs, and the generated types check every filter.
-  const [activeNow, today, last7d, completed7d, denom7d] = await Promise.all([
-    countActiveCalls(),
-    admin
-      .from('call_attempts')
-      .select('id', { count: 'exact', head: true })
-      .gte('created_at', startToday.toISOString()),
-    admin
-      .from('call_attempts')
-      .select('id', { count: 'exact', head: true })
-      .gte('created_at', iso7d),
-    admin
-      .from('call_attempts')
-      .select('id', { count: 'exact', head: true })
-      .gte('created_at', iso7d)
-      .eq('status', 'completed'),
-    admin
-      .from('call_attempts')
-      .select('id', { count: 'exact', head: true })
-      .gte('created_at', iso7d)
-      .in('status', [...ANSWER_RATE_DENOM]),
+  // The 7-day numbers come from the request-free voice core — the same call the
+  // owner agent makes for '7d' (rolling 7 × 24h ending nowMs) — so this page
+  // and the agent cannot disagree. 5 head-counts in total, as before: the
+  // core's 4 (active, attempts, completed, answer-rate denominator) + today.
+  // Both throw on a DB error rather than degrading to a confident 0.
+  const [week, today] = await Promise.all([
+    getVoiceCallsSummary(admin, '7d', nowMs),
+    countCallAttemptsSince(admin, startToday.toISOString()),
   ]);
 
-  // Fail loudly: without these a DB error silently reads as count 0 and the
-  // dashboard shows a confident wrong number (same contract as the DAL's
-  // count helpers, which throw rather than degrade).
-  if (today.error) throw new Error('count_today_failed');
-  if (last7d.error) throw new Error('count_last_7d_failed');
-  if (completed7d.error) throw new Error('count_completed_7d_failed');
-  if (denom7d.error) throw new Error('count_answer_denom_failed');
-
   return {
-    activeNow,
-    today: today.count ?? 0,
-    last7d: last7d.count ?? 0,
-    completed7d: completed7d.count ?? 0,
-    answerRate7d: computeAnswerRate(completed7d.count ?? 0, denom7d.count ?? 0),
+    activeNow: week.activeNow,
+    today,
+    last7d: week.attempts,
+    completed7d: week.completed,
+    answerRate7d: week.answerRate,
   };
 }
 

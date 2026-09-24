@@ -85,6 +85,27 @@ module.exports = {
     },
   },
   {
+    // The owner WhatsApp agent's read cores (plan §5, stage 5) run outside a
+    // request — in the agent process, with a service-role client and no cookie
+    // session. The DAL (src/lib/auth/dal.ts) and the request-scoped Next APIs
+    // behind it would either throw there or quietly read no session, so the
+    // cores must not reach them by any chain. The admin wrappers keep their
+    // gates and import the cores — never the other way round.
+    //
+    // Cruised because `worker:deps` lists src/lib/owner-agent as a root. A rule
+    // over a path the cruise never visits is no guard; that is why the root
+    // was added in the same change.
+    name: 'owner-agent-request-free',
+    comment:
+      'src/lib/owner-agent/** runs without a request. It may not reach src/lib/auth/dal.ts or next/headers|navigation|cache, directly or transitively. Authorization is resolved server-side by the caller and passed in; the admin wrappers in src/lib/data/admin/ import the cores, not the reverse.',
+    severity: 'error',
+    from: { path: '^src/lib/owner-agent/' },
+    to: {
+      path: '(node_modules/next/(headers|navigation|cache)|^src/lib/auth/dal\\.ts$)',
+      reachable: true,
+    },
+  },
+  {
     name: 'worker-no-request-scoped-next',
     comment: 'The pg-boss worker (worker/**) and the CLI scripts (scripts/**) are non-request processes; neither may (transitively) reach request-scoped Next APIs (next/headers|navigation|cache). Keep their send paths request-free (admin client) — see resolveSendableContacts. scripts/ was added 15.8: the rule covered only worker/, so `npm run worker:deps` passed while scripts/fleet-agent-cli.ts pulled the same next/headers chain in through sendPushToUser. A guard over one of two identical entry points is half a guard.',
     severity: 'error',
