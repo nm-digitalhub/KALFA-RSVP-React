@@ -1,4 +1,5 @@
 import type { KalfaNodeType } from './catalogue/types';
+import * as startVoiceCallDefinition from './nodes/action-start-voice-call/definition';
 
 // What a voice call MEANT, as opposed to what the telephony reported.
 //
@@ -30,7 +31,7 @@ import type { KalfaNodeType } from './catalogue/types';
 export type VoiceBusinessOutcome = 'completed' | 'no_answer' | 'failed' | 'follow_up_required';
 
 /** The node types whose output carries a business outcome. */
-export const VOICE_OUTCOME_NODES: readonly KalfaNodeType[] = ['action.start_voice_call'];
+export const VOICE_OUTCOME_NODES: readonly KalfaNodeType[] = [startVoiceCallDefinition.type];
 
 /**
  * SIP response classes, as they matter to a person rather than to a switch.

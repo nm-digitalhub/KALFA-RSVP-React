@@ -1,6 +1,7 @@
 import 'server-only';
 
 import { editorDiagramSchema } from '@/lib/workflow/adapter/editor-schema';
+import * as startVoiceCallDefinition from '@/lib/workflow/nodes/action-start-voice-call/definition';
 import { listVoicePurposes } from '@/lib/data/voice-purposes';
 
 // Can every call node in this workflow actually place its call?
@@ -27,7 +28,7 @@ import { listVoicePurposes } from '@/lib/data/voice-purposes';
 // Checking only the purpose here would refuse to arm a workflow that dials
 // perfectly well — the exact inversion of what a gate is for.
 
-const CALL_NODE = 'action.start_voice_call';
+const CALL_NODE = startVoiceCallDefinition.type;
 
 function readText(properties: Record<string, unknown>, key: string): string {
   const value = properties[key];

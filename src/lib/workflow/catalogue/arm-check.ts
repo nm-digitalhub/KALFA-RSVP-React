@@ -1,5 +1,6 @@
 import { editorDiagramSchema } from '../adapter/editor-schema';
 import * as callbackRequestDefinition from '../nodes/action-create-callback-request/definition';
+import * as startVoiceCallDefinition from '../nodes/action-start-voice-call/definition';
 import { isKnownNodeType, isTriggerType } from './nodes';
 import {
   activeConditionalRequirements,
@@ -549,7 +550,7 @@ function blankMessage(
   // EMPTY — the three rows that ship are built-in and the dialler refuses those
   // by design — so an owner can open the node, find nothing to choose, and have
   // no way to learn that a purpose has to be created first.
-  if (nodeType === 'action.start_voice_call' && key === 'purposeKey') {
+  if (nodeType === startVoiceCallDefinition.type && key === 'purposeKey') {
     return 'לא נבחר ייעוד לשיחה. בחרו ייעוד מהרשימה, ואם היא ריקה — צרו ייעוד חדש ב-/admin/integrations/voximplant וקשרו לו rule.';
   }
   // And again: a webhook trigger that was never generated has no ADDRESS — the

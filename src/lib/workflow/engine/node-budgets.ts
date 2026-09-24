@@ -6,6 +6,7 @@ import * as sendTemplateDefinition from '../nodes/action-send-template/definitio
 import * as sendWhatsappDefinition from '../nodes/action-send-whatsapp/definition';
 import * as setGuestFieldDefinition from '../nodes/action-set-guest-field/definition';
 import * as startRsvpAiCallbackDefinition from '../nodes/action-start-rsvp-ai-callback/definition';
+import * as startVoiceCallDefinition from '../nodes/action-start-voice-call/definition';
 import * as updateGuestStatusDefinition from '../nodes/action-update-guest-status/definition';
 import * as webhookDefinition from '../nodes/action-webhook/definition';
 import * as conditionDefinition from '../nodes/logic-condition/definition';
@@ -79,7 +80,7 @@ export const NODE_ACTIVITY_PROFILES: Readonly<Partial<Record<KalfaNodeType, Node
     [updateGuestStatusDefinition.type]: updateGuestStatusDefinition.activityProfile,
     [setGuestFieldDefinition.type]: setGuestFieldDefinition.activityProfile,
     [callbackRequestDefinition.type]: callbackRequestDefinition.activityProfile,
-    'action.start_voice_call': { timeoutMs: 60_000 },
+    [startVoiceCallDefinition.type]: startVoiceCallDefinition.activityProfile,
     [startRsvpAiCallbackDefinition.type]: startRsvpAiCallbackDefinition.activityProfile,
     [importGuestListDefinition.type]: importGuestListDefinition.activityProfile,
     'action.start_for_each_guest': { timeoutMs: 300_000 },

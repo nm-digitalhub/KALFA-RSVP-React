@@ -24,6 +24,7 @@ import * as sendTemplateDefinition from '../nodes/action-send-template/definitio
 import * as sendWhatsappDefinition from '../nodes/action-send-whatsapp/definition';
 import * as setGuestFieldDefinition from '../nodes/action-set-guest-field/definition';
 import * as startRsvpAiCallbackDefinition from '../nodes/action-start-rsvp-ai-callback/definition';
+import * as startVoiceCallDefinition from '../nodes/action-start-voice-call/definition';
 import * as sumitCreateCustomerDefinition from '../nodes/action-sumit-create-customer/definition';
 import * as sumitCreateDocumentDefinition from '../nodes/action-sumit-create-document/definition';
 import * as updateGuestStatusDefinition from '../nodes/action-update-guest-status/definition';
@@ -59,7 +60,7 @@ export const NODE_TYPES = [
   waitDefinition.type,
   sendTemplateDefinition.type,
   'action.start_for_each_guest',
-  'action.start_voice_call',
+  startVoiceCallDefinition.type,
   setValueDefinition.type,
   sumitCreateDocumentDefinition.type,
   sumitCreateCustomerDefinition.type,
@@ -574,33 +575,10 @@ export type MicrosoftSendEmailConfig = microsoftSendEmailDefinition.MicrosoftSen
 // existing readers.
 export type StartRsvpAiCallbackConfig = startRsvpAiCallbackDefinition.StartRsvpAiCallbackConfig;
 
-/**
- * `action.start_voice_call` — dial the guest through a configured voice purpose.
- *
- * Written from what the node actually carries: the fields its schema declares
- * (`voiceCallSchemaFor` in schemas.ts) and the ones its handler reads
- * (`startVoiceCall` in steps). It was the one type with no member in
- * `KalfaNodeConfig`, and nothing noticed — `_KALFA_NODE_CONFIG_COVERS_ALL_TYPES`
- * below is what notices now.
- *
- * The four dial parameters are optional and EMPTY MEANS "NOT SET": the handler
- * trims each and drops an empty one rather than sending it, so the purpose and
- * the account defaults decide.
- */
-export type StartVoiceCallConfig = {
-  /** A `voice_purposes.key`. Required; a blank one is refused at run time. */
-  purposeKey: string;
-  /** Voximplant caller id. Empty: the account default. */
-  callerId?: string;
-  /** Voximplant rule id. Empty: the rule bound to the purpose. */
-  ruleId?: string;
-  /** The number to dial instead of the guest's; may be a `{{…}}` reference. */
-  toOverride?: string;
-  /** ElevenLabs agent id. Empty: the scenario's own agent. */
-  agentId?: string;
-  /** Park the run until the call reports. Absent means false — dial and carry on. */
-  waitForOutcome?: boolean;
-};
+// `action.start_voice_call` — declared with the rest of its contract in
+// `nodes/action-start-voice-call/definition.ts`, re-exported here for existing
+// readers.
+export type StartVoiceCallConfig = startVoiceCallDefinition.StartVoiceCallConfig;
 
 // `action.notify_team` — its config and alert levels are declared with the rest
 // of its contract in `nodes/action-notify-team/definition.ts`. Re-exported here
@@ -735,7 +713,7 @@ export type KalfaNodeConfig =
   | { type: typeof sendWhatsappDefinition.type; config: SendWhatsappConfig }
   | { type: typeof microsoftSendEmailDefinition.type; config: MicrosoftSendEmailConfig }
   | { type: typeof startRsvpAiCallbackDefinition.type; config: StartRsvpAiCallbackConfig }
-  | { type: 'action.start_voice_call'; config: StartVoiceCallConfig }
+  | { type: typeof startVoiceCallDefinition.type; config: StartVoiceCallConfig }
   | { type: typeof notifyTeamDefinition.type; config: NotifyTeamConfig }
   | { type: typeof webhookDefinition.type; config: WebhookConfig }
   | { type: typeof setGuestFieldDefinition.type; config: SetGuestFieldConfig }
@@ -915,13 +893,7 @@ export const NODE_DEPLOYMENT_BINDINGS: Partial<
   // exist anywhere else.
   [sumitCreateDocumentDefinition.type]: sumitCreateDocumentDefinition.deploymentBindings,
   [sumitCreateCustomerDefinition.type]: sumitCreateCustomerDefinition.deploymentBindings,
-  'action.start_voice_call': {
-    purposeKey: 'catalogue',
-    callerId: 'identifier',
-    ruleId: 'identifier',
-    agentId: 'identifier',
-    toOverride: 'identifier',
-  },
+  [startVoiceCallDefinition.type]: startVoiceCallDefinition.deploymentBindings,
 };
 
 export const NODE_REQUIRED_FIELDS: Record<KalfaNodeType, string[]> = {
@@ -980,7 +952,9 @@ export const NODE_REQUIRED_FIELDS: Record<KalfaNodeType, string[]> = {
   // identity with `toBe`, so this must not become a copy.
   [importGuestListDefinition.type]: importGuestListDefinition.requiredFields,
   'action.start_for_each_guest': ['label', 'description', 'targetWorkflowId', 'maxGuests'],
-  'action.start_voice_call': ['label', 'description', 'purposeKey'],
+  // The SAME array the node's editor schema uses — `arm-check.test.ts` asserts
+  // identity with `toBe`, so this must not become a copy.
+  [startVoiceCallDefinition.type]: startVoiceCallDefinition.requiredFields,
   // The SAME array the node's editor schema uses — `arm-check.test.ts` asserts
   // identity with `toBe`, so this must not become a copy.
   [sumitCreateDocumentDefinition.type]: sumitCreateDocumentDefinition.requiredFields,
@@ -1032,7 +1006,7 @@ export const GUEST_SCOPED_NODE_TYPES: readonly KalfaNodeType[] = [
   sendTemplateDefinition.type,
   setGuestFieldDefinition.type,
   callbackRequestDefinition.type,
-  'action.start_voice_call',
+  startVoiceCallDefinition.type,
   startRsvpAiCallbackDefinition.type,
 ];
 

@@ -38,6 +38,7 @@ import {
   type WhatsAppNumberOption,
 } from "@/lib/workflow/catalogue/schemas";
 import { DIAGRAM_TEMPLATES } from "@/lib/workflow/catalogue/templates";
+import * as startVoiceCallDefinition from "@/lib/workflow/nodes/action-start-voice-call/definition";
 import { applyHebrewToSdk } from "@/lib/workflow/i18n-he";
 
 import { loadVoiceDialListsAction } from "../actions";
@@ -577,7 +578,7 @@ function WorkflowEditorLayout({
 
   const selectedNodeType = selected?.node?.data.type;
   useEffect(() => {
-    if (selectedNodeType === "action.start_voice_call")
+    if (selectedNodeType === startVoiceCallDefinition.type)
       onVoiceCallNodeSelected();
   }, [selectedNodeType, onVoiceCallNodeSelected]);
 

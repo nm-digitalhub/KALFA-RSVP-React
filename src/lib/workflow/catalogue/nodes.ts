@@ -20,6 +20,7 @@ import * as sendTemplateDefinition from '../nodes/action-send-template/definitio
 import * as sendWhatsappDefinition from '../nodes/action-send-whatsapp/definition';
 import * as setGuestFieldDefinition from '../nodes/action-set-guest-field/definition';
 import * as startRsvpAiCallbackDefinition from '../nodes/action-start-rsvp-ai-callback/definition';
+import * as startVoiceCallDefinition from '../nodes/action-start-voice-call/definition';
 import * as sumitCreateCustomerDefinition from '../nodes/action-sumit-create-customer/definition';
 import * as sumitCreateDocumentDefinition from '../nodes/action-sumit-create-document/definition';
 import * as updateGuestStatusDefinition from '../nodes/action-update-guest-status/definition';
@@ -50,7 +51,7 @@ export const CATALOGUE: readonly CatalogueEntry[] = [
   { type: waitDefinition.type, isTrigger: waitDefinition.isTrigger },
   { type: sendTemplateDefinition.type, isTrigger: sendTemplateDefinition.isTrigger },
   { type: 'action.start_for_each_guest', isTrigger: false },
-  { type: 'action.start_voice_call', isTrigger: false },
+  { type: startVoiceCallDefinition.type, isTrigger: startVoiceCallDefinition.isTrigger },
   { type: setValueDefinition.type, isTrigger: setValueDefinition.isTrigger },
   { type: sumitCreateDocumentDefinition.type, isTrigger: sumitCreateDocumentDefinition.isTrigger },
   { type: sumitCreateCustomerDefinition.type, isTrigger: sumitCreateCustomerDefinition.isTrigger },
