@@ -65,7 +65,10 @@ export const guestScoped = true;
  *
  * The palette entry's `outputSchema.properties` is built from this, so the
  * picker has one declaration of the node's output. The handler (`runtime.ts`)
- * still writes the same keys by hand.
+ * writes `started`, `status`, `attemptId` and `callSessionHistoryId` by hand
+ * (the last two only when the dispatcher returns them). `reason` is declared
+ * but never produced: a refused dispatch throws instead of returning. It stays
+ * declared because removing it would change what the variable picker offers.
  */
 export const outputFields = {
   started: { type: 'boolean', label: 'הופעלה' },
