@@ -107,9 +107,9 @@ module.exports = {
   },
   {
     name: 'worker-no-request-scoped-next',
-    comment: 'The pg-boss worker (worker/**) and the CLI scripts (scripts/**) are non-request processes; neither may (transitively) reach request-scoped Next APIs (next/headers|navigation|cache). Keep their send paths request-free (admin client) — see resolveSendableContacts. scripts/ was added 15.8: the rule covered only worker/, so `npm run worker:deps` passed while scripts/fleet-agent-cli.ts pulled the same next/headers chain in through sendPushToUser. A guard over one of two identical entry points is half a guard.',
+    comment: 'The pg-boss worker (worker/**) and the CLI scripts (scripts/**) are non-request processes; neither may (transitively) reach request-scoped Next APIs (next/headers|navigation|cache). Keep their send paths request-free (admin client) — see resolveSendableContacts. scripts/ was added 15.8: the rule covered only worker/, so `npm run worker:deps` passed while scripts/fleet-agent-cli.ts pulled the same next/headers chain in through sendPushToUser. A guard over one of two identical entry points is half a guard. src/lib/owner-agent/ was added 24.9 (owner agent plan §5, stage 5): its read cores and its nine Mastra tools (cores/, tools/) will run in the agent process, a third non-request process. `owner-agent-request-free` above already covers the same targets (plus dal.ts) for that path; listing it here too keeps the one rule that names every non-request process complete. The agent\'s own ENTRY POINT does not exist yet — stage 6 adds it, and unless it lives under src/lib/owner-agent/ must add it to this `from`; either way it must be a `worker:deps` root in package.json (a rule over a file the cruise never visits is no guard).',
     severity: 'error',
-    from: { path: '^(worker|scripts)/' },
+    from: { path: '^(worker|scripts|src/lib/owner-agent)/' },
     to: { path: 'node_modules/next/(headers|navigation|cache)', reachable: true },
   },
   {
