@@ -207,6 +207,9 @@ export type Database = {
           inquiry_followup_enabled: boolean
           monitor_enabled: boolean
           outreach_enabled: boolean
+          owner_agent_daily_cap: number
+          owner_agent_enabled: boolean
+          owner_agent_phone_number_id: string | null
           payments_enabled: boolean
           privacy_url: string | null
           reasonable_coverage_contacts: number
@@ -313,6 +316,9 @@ export type Database = {
           inquiry_followup_enabled?: boolean
           monitor_enabled?: boolean
           outreach_enabled?: boolean
+          owner_agent_daily_cap?: number
+          owner_agent_enabled?: boolean
+          owner_agent_phone_number_id?: string | null
           payments_enabled?: boolean
           privacy_url?: string | null
           reasonable_coverage_contacts?: number
@@ -419,6 +425,9 @@ export type Database = {
           inquiry_followup_enabled?: boolean
           monitor_enabled?: boolean
           outreach_enabled?: boolean
+          owner_agent_daily_cap?: number
+          owner_agent_enabled?: boolean
+          owner_agent_phone_number_id?: string | null
           payments_enabled?: boolean
           privacy_url?: string | null
           reasonable_coverage_contacts?: number
@@ -4416,6 +4425,136 @@ export type Database = {
           },
         ]
       }
+      owner_agent_allowlist: {
+        Row: {
+          created_at: string
+          created_by: string
+          e164: string
+          enabled: boolean
+          id: string
+          label: string | null
+          staff_user_id: string
+        }
+        Insert: {
+          created_at?: string
+          created_by: string
+          e164: string
+          enabled?: boolean
+          id?: string
+          label?: string | null
+          staff_user_id: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string
+          e164?: string
+          enabled?: boolean
+          id?: string
+          label?: string | null
+          staff_user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "owner_agent_allowlist_staff_user_id_fkey"
+            columns: ["staff_user_id"]
+            isOneToOne: false
+            referencedRelation: "platform_staff"
+            referencedColumns: ["user_id"]
+          },
+        ]
+      }
+      owner_agent_audit: {
+        Row: {
+          id: string
+          input_tokens: number | null
+          intake_id: string | null
+          latency_ms: number | null
+          occurred_at: string
+          outcome: string
+          output_tokens: number | null
+          reason_code: string | null
+          staff_user_id: string | null
+          stage: string
+          steps: number | null
+          tool_names: string[] | null
+          wamid_sha256: string | null
+        }
+        Insert: {
+          id?: string
+          input_tokens?: number | null
+          intake_id?: string | null
+          latency_ms?: number | null
+          occurred_at?: string
+          outcome: string
+          output_tokens?: number | null
+          reason_code?: string | null
+          staff_user_id?: string | null
+          stage: string
+          steps?: number | null
+          tool_names?: string[] | null
+          wamid_sha256?: string | null
+        }
+        Update: {
+          id?: string
+          input_tokens?: number | null
+          intake_id?: string | null
+          latency_ms?: number | null
+          occurred_at?: string
+          outcome?: string
+          output_tokens?: number | null
+          reason_code?: string | null
+          staff_user_id?: string | null
+          stage?: string
+          steps?: number | null
+          tool_names?: string[] | null
+          wamid_sha256?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "owner_agent_audit_intake_id_fkey"
+            columns: ["intake_id"]
+            isOneToOne: false
+            referencedRelation: "owner_agent_intake"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      owner_agent_intake: {
+        Row: {
+          id: string
+          message_text: string
+          phone_number_id: string
+          processed_at: string | null
+          received_at: string
+          staff_user_id: string
+          status: string
+          updated_at: string
+          wamid: string
+        }
+        Insert: {
+          id?: string
+          message_text: string
+          phone_number_id: string
+          processed_at?: string | null
+          received_at?: string
+          staff_user_id: string
+          status?: string
+          updated_at?: string
+          wamid: string
+        }
+        Update: {
+          id?: string
+          message_text?: string
+          phone_number_id?: string
+          processed_at?: string | null
+          received_at?: string
+          staff_user_id?: string
+          status?: string
+          updated_at?: string
+          wamid?: string
+        }
+        Relationships: []
+      }
       packages: {
         Row: {
           active: boolean
@@ -6547,6 +6686,10 @@ export type Database = {
         Returns: boolean
       }
       has_platform_permission: { Args: { _key: string }; Returns: boolean }
+      has_platform_permission_for_user: {
+        Args: { _key: string; _user_id: string }
+        Returns: boolean
+      }
       has_role: {
         Args: {
           _role: Database["public"]["Enums"]["app_role"]
@@ -6662,6 +6805,10 @@ export type Database = {
       is_org_owner: { Args: { _org_id: string }; Returns: boolean }
       is_platform_owner: { Args: never; Returns: boolean }
       is_platform_staff: { Args: never; Returns: boolean }
+      is_platform_staff_for_user: {
+        Args: { _user_id: string }
+        Returns: boolean
+      }
       is_staff: { Args: never; Returns: boolean }
       next_manual_touchpoint: {
         Args: { p_campaign: string; p_contact: string }
