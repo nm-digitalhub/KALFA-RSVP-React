@@ -2,8 +2,9 @@
 
 // The editor helpers every node's schema and uischema are built from: the
 // identity fields (name, description, arm notice), the per-step status switch,
-// the "required and not blank" string field, and — for action nodes — the two
-// branch handles and the error-policy options.
+// the "required and not blank" string field, the `allOf` built from a node's
+// conditional contracts, and — for action nodes — the two branch handles and
+// the error-policy options.
 //
 // ⚠️ ITS OWN MODULE SO A NODE FOLDER CAN IMPORT IT. `schemas.ts` is the palette
 // aggregator — it imports every moved node's palette file — so a node that
@@ -16,7 +17,14 @@
 import { errorPolicyProperty, sharedProperties, statusOptions } from '@workflowbuilder/sdk';
 import type { UISchema } from '@workflowbuilder/sdk';
 
-import { ACTION_BRANCH_HANDLES, ARM_NOTICE_PATH, ERROR_POLICIES, NODE_STATUSES } from './types';
+import {
+  ACTION_BRANCH_HANDLES,
+  ARM_NOTICE_PATH,
+  ERROR_POLICIES,
+  NODE_CONDITIONAL_REQUIRED_FIELDS,
+  NODE_STATUSES,
+  type KalfaNodeType,
+} from './types';
 
 // The two handles an action node draws, as DATA — the same mechanism already
 // proven on `logic.condition`, whose branches were verified rendering on a live
@@ -144,6 +152,34 @@ export const statusProperty = {
  * whitespace by construction.
  */
 export const requiredText = { type: 'string', minLength: 1, pattern: '\\S' } as const;
+
+/**
+ * The `allOf` block for one node type, built from its conditional contracts.
+ *
+ * ⚠️ ONE `if` PER VALUE, BECAUSE `SchemaCondition` HAS ONLY `const`. The SDK
+ * types it as `{ properties: Record<string, { const?: string|number|boolean }> }`
+ * — there is no `enum` — so "POST, PUT or PATCH" is three entries sharing one
+ * `then`, mapped from the declaration rather than written out.
+ *
+ * ⚠️ `then` CARRIES BOTH `required` AND THE FIELD CONSTRAINT, because
+ * `properties` alone never makes a key mandatory — it constrains the value only
+ * when the key is there. With both, the schema refuses an absent body and a
+ * blank one alike.
+ *
+ * The SDK types `ConditionalSchema` as `{ properties: … }` with no root
+ * `required`. It compiles anyway and needs no cast: excess-property checking
+ * applies to fresh literals at the assignment site, and this is a function
+ * return, so it is compared structurally — extra members are allowed.
+ * `conditional-required.test.ts` proves the runtime honours it.
+ */
+export function conditionalRules(nodeType: KalfaNodeType) {
+  return (NODE_CONDITIONAL_REQUIRED_FIELDS[nodeType] ?? []).flatMap((rule) =>
+    rule.whenIn.map((value) => ({
+      if: { properties: { [rule.decidedBy]: { const: value } } },
+      then: { required: [rule.require], properties: { [rule.require]: requiredText } },
+    })),
+  );
+}
 
 /** `label` + `description`, both required on every node type. */
 export const identityProperties = {

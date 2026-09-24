@@ -16,6 +16,7 @@
 import type { RsvpStatus } from '@/lib/constants';
 
 import * as notifyTeamDefinition from '../nodes/action-notify-team/definition';
+import * as webhookDefinition from '../nodes/action-webhook/definition';
 import * as conditionDefinition from '../nodes/logic-condition/definition';
 import * as setValueDefinition from '../nodes/logic-set-value/definition';
 import * as switchDefinition from '../nodes/logic-switch/definition';
@@ -39,7 +40,7 @@ export const NODE_TYPES = [
   'action.microsoft_send_email',
   'action.start_rsvp_ai_callback',
   notifyTeamDefinition.type,
-  'action.webhook',
+  webhookDefinition.type,
   'action.set_guest_field',
   'action.create_callback_request',
   'action.import_guest_list',
@@ -677,49 +678,19 @@ export type StartVoiceCallConfig = {
 export { NOTIFY_LEVELS, type NotifyLevel } from '../nodes/action-notify-team/definition';
 export type NotifyTeamConfig = notifyTeamDefinition.NotifyTeamConfig;
 
-/**
- * An HTTP call to a system that is not ours.
- *
- * WIDENED 2026-09-13 from a POST-only "webhook" to a real HTTP request: method,
- * headers and an optional response capture. The node type id stays
- * `action.webhook` because nothing stored uses it (measured: 0 of 20 workflows)
- * and churning the id would touch the adapter, the catalogue and every test for
- * no behavioural gain.
- *
- * ⚠️ THE HEADERS FIELD REVERSES AN EARLIER DECISION, and the reason it can is
- * `secrets` below.
- *
- * The old note here argued: "a headers map is how an API key gets typed into a
- * diagram — and the diagram is a jsonb column the editor loads into a browser".
- * That reasoning was sound about the HAZARD and wrong about the CONCLUSION. The
- * answer to "a secret must not be in the diagram" is not "no headers" — it is
- * "headers hold a REFERENCE, and the value is fetched at the socket". Without
- * headers this node cannot call any authenticated API, which is most of them.
- *
- * So a header value may be `{{secrets.<NAME>}}`. That token is what is stored,
- * what the browser loads, what the dry run prints and what the run log echoes —
- * the secret itself exists only inside the worker process, for the microseconds
- * between the lookup and the socket write. `resolveTemplate` is explicitly
- * taught to LEAVE this namespace alone (see its `secrets` case) so the value
- * cannot leak by being resolved into the config early, and `redact.ts` cannot
- * help here: its matching is key-based, and the key on a header row is `value`.
- *
- * ON `captureResponse`. Off by default. A GET whose answer nobody can read is
- * pointless, so the response may be captured into the node's output and named as
- * `{{nodes.<id>.body}}` — but it is a THIRD PARTY's bytes landing in our run
- * store, so the owner has to ask for it, and it is capped.
- */
-export const HTTP_METHODS = ['POST', 'GET', 'PUT', 'PATCH', 'DELETE'] as const;
-export type HttpMethod = (typeof HTTP_METHODS)[number];
-
-/** The method used when a diagram does not name one — what every saved node meant. */
-export const DEFAULT_HTTP_METHOD: HttpMethod = 'POST';
-
-/** Methods that carry a request body. A GET with a body is meaningless. */
-export const HTTP_METHODS_WITH_BODY = ['POST', 'PUT', 'PATCH'] as const;
-
-/** One header row, as the `ArrayFieldSchema` control persists it. */
-export type HttpHeader = { name: string; value: string };
+// `action.webhook` — its config, HTTP methods, default method, with-body verbs
+// and header-row shape are declared with the rest of its contract in
+// `nodes/action-webhook/definition.ts`. Re-exported here for existing readers
+// (`outbound-webhook.ts` and the `OutboundWebhookPort` in engine/ports.ts among
+// them). The two limits below stay here: only the port implementation reads them.
+export {
+  DEFAULT_HTTP_METHOD,
+  HTTP_METHODS,
+  HTTP_METHODS_WITH_BODY,
+  type HttpHeader,
+  type HttpMethod,
+} from '../nodes/action-webhook/definition';
+export type WebhookConfig = webhookDefinition.WebhookConfig;
 
 /**
  * Headers the node refuses to let an owner set, lower-cased.
@@ -743,23 +714,6 @@ export const FORBIDDEN_HTTP_HEADERS = [
 
 /** How much of a captured response is kept. Beyond this it is truncated, not failed. */
 export const MAX_CAPTURED_RESPONSE_BYTES = 8 * 1024;
-
-export type WebhookConfig = {
-  /** Absent means POST — the only thing this node could do before the widening. */
-  method?: HttpMethod;
-  url: string;
-  headers?: HttpHeader[];
-  /**
-   * Free text, template-resolved like every other field, so it can carry
-   * `{{trigger.guest_name}}` or `{{nodes.<id>.value}}`. Sent with
-   * `Content-Type: application/json` unless a header row overrides it; the node
-   * does not parse or validate it, because a body the receiver accepts is
-   * between them and the receiver.
-   */
-  body: string;
-  /** Opt in to reading the answer back. See the note above. */
-  captureResponse?: boolean;
-};
 
 /**
  * `{{secrets.<NAME>}}` — the ONE namespace that is not resolved with the others.
@@ -797,7 +751,7 @@ export const SECRET_NAME_REGEX = /^[A-Za-z0-9_-]{1,64}$/;
  * body, which is delivered to a guest — an unresolved `{{secrets.…}}` still
  * throws, loudly, on the first run.
  */
-export const SECRET_BEARING_NODE_TYPES: readonly string[] = ['action.webhook'];
+export const SECRET_BEARING_NODE_TYPES: readonly string[] = [webhookDefinition.type];
 
 // ---------------------------------------------------------------------------
 // action.ai_agent
@@ -1004,7 +958,7 @@ export type KalfaNodeConfig =
   | { type: 'action.start_rsvp_ai_callback'; config: StartRsvpAiCallbackConfig }
   | { type: 'action.start_voice_call'; config: StartVoiceCallConfig }
   | { type: typeof notifyTeamDefinition.type; config: NotifyTeamConfig }
-  | { type: 'action.webhook'; config: WebhookConfig }
+  | { type: typeof webhookDefinition.type; config: WebhookConfig }
   | { type: 'action.set_guest_field'; config: SetGuestFieldConfig }
   | { type: 'action.create_callback_request'; config: CreateCallbackRequestConfig }
   | { type: 'action.import_guest_list'; config: ImportGuestListConfig }
@@ -1169,7 +1123,7 @@ export const NODE_DEPLOYMENT_BINDINGS: Partial<
   'action.send_template': { messageKey: 'catalogue' },
   'action.create_callback_request': { topic: 'catalogue' },
   'action.start_for_each_guest': { targetWorkflowId: 'identifier' },
-  'action.webhook': { url: 'secret', headers: 'secret' },
+  [webhookDefinition.type]: webhookDefinition.deploymentBindings,
   // ⚠️ `secret`, WHICH STRIPS THE WHOLE ARRAY ON EXPORT — and that is the right
   // trade even though the tool NAMES would travel fine.
   //
@@ -1225,7 +1179,9 @@ export const NODE_REQUIRED_FIELDS: Record<KalfaNodeType, string[]> = {
   // The SAME array the node's editor schema uses — `arm-check.test.ts` asserts
   // identity with `toBe`, so this must not become a copy.
   [notifyTeamDefinition.type]: notifyTeamDefinition.requiredFields,
-  'action.webhook': ['label', 'description', 'url'],
+  // The SAME array the node's editor schema uses — `arm-check.test.ts` asserts
+  // identity with `toBe`, so this must not become a copy.
+  [webhookDefinition.type]: webhookDefinition.requiredFields,
   'action.set_guest_field': ['label', 'description', 'field'],
   'action.create_callback_request': ['label', 'description', 'topic'],
   'action.import_guest_list': ['label', 'description'],
@@ -1387,8 +1343,8 @@ export function triggerKeywordCanNeverMatch(
  * three verbs that send one — and `NODE_REQUIRED_FIELDS` is FLAT: it lists field
  * names, with no way to say "this one, but only when that one is POST".
  *
- * JSON Schema expresses it with `allOf` + `if`/`then`, and `schemas.ts` emits
- * exactly that — `then` carrying BOTH `required: [field]` and a `minLength` on
+ * JSON Schema expresses it with `allOf` + `if`/`then`, and the editor schema
+ * emits exactly that (`conditionalRules` in editor-shared.ts) — `then` carrying BOTH `required: [field]` and a `minLength` on
  * it, so the schema alone refuses an absent body and a blank one alike.
  *
  * ⚠️ AN EARLIER VERSION OF THIS COMMENT CLAIMED THE SCHEMA COULD NOT DO THAT,
@@ -1410,8 +1366,8 @@ export function triggerKeywordCanNeverMatch(
  * ⚠️ AND THE `if` USES `const`, ONE ENTRY PER VALUE, BECAUSE THAT IS THE WHOLE
  * TYPED SUBSET. `SchemaCondition` is `{ properties: Record<string, { const?:
  * string | number | boolean }> }` — no `enum`. `allOf` is an array, so N values
- * become N entries with the same `then`, which `schemas.ts` builds by mapping
- * over `whenIn` rather than by hand.
+ * become N entries with the same `then`, which `conditionalRules` builds by
+ * mapping over `whenIn` rather than by hand.
  */
 export type ConditionalRequirement = {
   /** The field whose value decides. */
@@ -1449,16 +1405,8 @@ export type ConditionalRequirement = {
 export const NODE_CONDITIONAL_REQUIRED_FIELDS: Partial<
   Record<KalfaNodeType, readonly ConditionalRequirement[]>
 > = {
-  'action.webhook': [
-    {
-      decidedBy: 'method',
-      whenIn: HTTP_METHODS_WITH_BODY,
-      fallback: DEFAULT_HTTP_METHOD,
-      require: 'body',
-      message:
-        'סוג הבקשה שנבחר שולח גוף, והגוף ריק. כתבו את גוף הבקשה, או החליפו ל-GET / DELETE שאינם שולחים גוף.',
-    },
-  ],
+  // Declared with the rest of the node's contract — the SAME array, read here.
+  [webhookDefinition.type]: webhookDefinition.conditionalRequirements,
   // The address half is required in `header` mode and MUST NOT exist in
   // `address` mode — see `WebhookTriggerConfig.endpointId`. `fallback: 'header'`
   // is what keeps every diagram saved before the field behaving exactly as it

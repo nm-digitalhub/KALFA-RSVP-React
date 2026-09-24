@@ -34,7 +34,6 @@ import { RSVP_STATUSES } from '@/lib/constants';
 
 import {
   CHECKBOX_LIST_FORMAT,
-  HEADER_ROWS_FORMAT,
   INTEGRATION_CONNECTION_FORMAT,
   NODE_RUN_FORMAT,
   TRIGGER_SWITCH_FORMAT,
@@ -54,15 +53,13 @@ import {
 } from './editor-shared';
 
 import { notifyTeamPaletteItem } from '../nodes/action-notify-team/action-notify-team';
+import { webhookPaletteItem } from '../nodes/action-webhook/action-webhook';
 import { conditionPaletteItem } from '../nodes/logic-condition/logic-condition';
 import { setValuePaletteItem } from '../nodes/logic-set-value/logic-set-value';
 import { switchPaletteItem } from '../nodes/logic-switch/logic-switch';
 
 import {
   CALLBACK_TOPICS,
-  HTTP_METHODS,
-  HTTP_METHODS_WITH_BODY,
-  NODE_CONDITIONAL_REQUIRED_FIELDS,
   NODE_NUMBER_RANGES,
   NODE_REQUIRED_FIELDS,
   type SumitDocumentTypeOption,
@@ -80,43 +77,6 @@ import {
 // ---------------------------------------------------------------------------
 // Option sets — the same `{ label, value }` shape the SDK's own statusOptions use
 // ---------------------------------------------------------------------------
-
-/**
- * The `allOf` block for one node type, built from its conditional contracts.
- *
- * ⚠️ ONE `if` PER VALUE, BECAUSE `SchemaCondition` HAS ONLY `const`. The SDK
- * types it as `{ properties: Record<string, { const?: string|number|boolean }> }`
- * — there is no `enum` — so "POST, PUT or PATCH" is three entries sharing one
- * `then`, mapped from the declaration rather than written out.
- *
- * ⚠️ `then` CARRIES BOTH `required` AND THE FIELD CONSTRAINT, because
- * `properties` alone never makes a key mandatory — it constrains the value only
- * when the key is there. With both, the schema refuses an absent body and a
- * blank one alike.
- *
- * The SDK types `ConditionalSchema` as `{ properties: … }` with no root
- * `required`. It compiles anyway and needs no cast: excess-property checking
- * applies to fresh literals at the assignment site, and this is a function
- * return, so it is compared structurally — extra members are allowed.
- * `conditional-required.test.ts` proves the runtime honours it.
- */
-function conditionalRules(nodeType: KalfaNodeType) {
-  return (NODE_CONDITIONAL_REQUIRED_FIELDS[nodeType] ?? []).flatMap((rule) =>
-    rule.whenIn.map((value) => ({
-      if: { properties: { [rule.decidedBy]: { const: value } } },
-      then: { required: [rule.require], properties: { [rule.require]: requiredText } },
-    })),
-  );
-}
-
-// GET/DELETE carry no body — the port drops it rather than sending an empty one.
-const httpMethodOptions = {
-  POST: { label: 'POST — שליחת נתונים', value: HTTP_METHODS[0] },
-  GET: { label: 'GET — קריאת נתונים', value: HTTP_METHODS[1] },
-  PUT: { label: 'PUT — החלפה', value: HTTP_METHODS[2] },
-  PATCH: { label: 'PATCH — עדכון חלקי', value: HTTP_METHODS[3] },
-  DELETE: { label: 'DELETE — מחיקה', value: HTTP_METHODS[4] },
-} as const;
 
 const callbackTopicOptions = CALLBACK_TOPICS.map((value) => ({ label: value, value }));
 
@@ -574,155 +534,6 @@ const callbackRequestUiSchema: UISchema = {
     },
     { type: 'Select', scope: callbackRequestScope('properties.errorPolicy'), label: 'אם הצעד נכשל' },
     statusControl(callbackRequestScope('properties.status')),
-  ],
-};
-
-// ---------------------------------------------------------------------------
-// action.webhook
-// ---------------------------------------------------------------------------
-
-const webhookSchema = {
-  type: 'object',
-  required: NODE_REQUIRED_FIELDS['action.webhook'],
-  properties: {
-    ...identityProperties,
-    ...statusProperty,
-    errorPolicy: { type: 'string', options: Object.values(errorPolicyOptions) },
-    method: { type: 'string', options: Object.values(httpMethodOptions) },
-    url: { ...requiredText },
-    // The field the old design refused to have. See WebhookConfig for why it can
-    // exist now: a value may be `{{secrets.<NAME>}}`, and the NAME is what is
-    // stored — the secret itself is fetched at the socket and never comes back.
-    headers: {
-      type: 'array',
-      items: {
-        type: 'object',
-        properties: {
-          name: { type: 'string', label: 'שם', placeholder: 'Authorization' },
-          value: { type: 'string', label: 'ערך', placeholder: 'Bearer {{secrets.ACME_API_KEY}}' },
-        },
-      },
-    },
-    // ⚠️ UNCONSTRAINED HERE ON PURPOSE. A GET or DELETE with an empty body is
-    // correct — the runtime does not send one — so the floor cannot live at the
-    // top level. `allOf` below raises it to `minLength: 1` for exactly the three
-    // verbs that DO send a body.
-    body: { type: 'string' },
-    captureResponse: { type: 'boolean' },
-    ...actionBranchesProperty,
-  },
-  allOf: conditionalRules('action.webhook'),
-} satisfies NodeSchema;
-
-const webhookScope = getScope<typeof webhookSchema>;
-
-const webhookUiSchema: UISchema = {
-  type: 'VerticalLayout',
-  elements: [
-    ...identityControls(webhookScope('properties.label'), webhookScope('properties.description')),
-    { type: 'Select', scope: webhookScope('properties.method'), label: 'סוג הבקשה' },
-    {
-      // Plain Text, not VariableText: the DESTINATION must not be assembled from
-      // guest data. A URL built at run time is a URL nobody reviewed, and the
-      // https/private-space check would then be passing judgement on a string
-      // that did not exist when the owner saved the diagram.
-      type: 'Text',
-      scope: webhookScope('properties.url'),
-      label: 'כתובת היעד (https בלבד)',
-      placeholder: 'https://example.com/hooks/kalfa',
-    },
-    {
-      type: 'VariableTextArea',
-      scope: webhookScope('properties.body'),
-      label: 'גוף הבקשה',
-      placeholder: '{"name":"{{trigger.guest_name}}","text":"{{trigger.message_text}}"}',
-      minRows: 3,
-      // ⚠️ THE RUNTIME ALREADY DROPS IT, SILENTLY. `sendOutboundWebhook` attaches
-      // the body only when the verb is in `HTTP_METHODS_WITH_BODY`; on GET or
-      // DELETE it is built, resolved, secret-checked — and then not sent. So the
-      // panel offered a three-row editor for a field that went nowhere, with no
-      // error and no run-log entry to learn from.
-      //
-      // ⚠️ SHOW ON THE WITH-BODY LIST, NOT HIDE ON ITS COMPLEMENT, and the two
-      // are not equivalent here. `enum` is derived from the SAME constant
-      // `outbound-webhook.ts` branches on, so a verb added to one side is
-      // automatically handled on the other; a hand-written `['GET','DELETE']`
-      // would go stale the first time a verb is added to `HTTP_METHODS`.
-      //
-      // ⚠️ AND NO `failWhenUndefined`, deliberately. A diagram saved before
-      // `method` existed carries no value, `readMethod` falls back to
-      // `DEFAULT_HTTP_METHOD` — 'POST', which IS in the with-body list — so that
-      // diagram really does send its body and the box must stay visible.
-      // Failing on undefined would hide a field that is in use.
-      rule: {
-        effect: 'SHOW',
-        condition: {
-          scope: webhookScope('properties.method'),
-          schema: { enum: [...HTTP_METHODS_WITH_BODY] },
-        },
-      },
-    },
-    // ⚠️ THIS COMMENT USED TO BE WRONG TWICE, and both halves are worth keeping
-    // as a record. It said "collapsed by default" — the renderer opens it, see
-    // the trigger's message-kinds accordion for the measurement — and it said
-    // the alternative was "an always-open list of empty rows to scroll past",
-    // when `defaultPropertiesData` sets `headers: []` with its own comment
-    // saying no empty row is seeded. The stated harm could not occur.
-    //
-    // The container survives its own justification: headers and secrets are a
-    // genuinely advanced concern that most calls never touch, which is the case
-    // an Accordion is for. It groups and it folds; it does not hide.
-    {
-      type: 'Accordion',
-      label: 'כותרות ואימות',
-      elements: [
-        {
-          // A CUSTOM RENDERER, and the SDK has no built-in that could do this.
-          //
-          // `UISchemaControlElement` is a closed union — Text, Switch, Select,
-          // DatePicker, TextArea, DynamicConditions, AiTools, DecisionBranches,
-          // VariableText, VariableTextArea, MessageOnError — and not one of them
-          // edits an arbitrary array of objects. So the element is declared as
-          // the nearest allowed type and OUTRANKED by our own renderer, which is
-          // the mechanism upstream documents on `rankWith` itself: "rank above
-          // the built-ins to override a control".
-          //
-          // The match is on `options.format`, not on the scope: a scope-based
-          // tester would silently capture any future field that happened to end
-          // in the same word, while this says out loud which control is wanted.
-          // See header-rows-control.tsx.
-          type: 'Text',
-          scope: webhookScope('properties.headers'),
-          label: 'כותרות HTTP',
-          options: { format: HEADER_ROWS_FORMAT },
-        },
-        {
-          // The instruction that makes the whole secrets design usable. Without
-          // it an owner types the key itself, which is exactly what this node
-          // spent a release refusing to allow.
-          type: 'Label',
-          text: 'לעולם אל תקלידו מפתח API כאן. כתבו {{secrets.SHEM_HASOD}} — הערך עצמו נשמר בשרת ואינו נשמר בתרשים, אינו מוצג בדפדפן ואינו נרשם ביומן ההרצה.',
-        },
-      ],
-    },
-    {
-      type: 'Switch',
-      scope: webhookScope('properties.captureResponse'),
-      label: 'שמירת התשובה לשימוש בצעדים הבאים',
-    },
-    {
-      type: 'Select',
-      scope: webhookScope('properties.errorPolicy'),
-      label: 'אם הצעד נכשל',
-    },
-    {
-      // Same warning the other action nodes carry: 'continue' does not retry and
-      // does not recover. The external system simply never heard from us, and
-      // only the run's own verdict changes.
-      type: 'Label',
-      text: 'המשך ללא עצירה: הפנייה לא תישלח שוב, והמערכת החיצונית פשוט לא תקבל אותה.',
-    },
-    statusControl(webhookScope('properties.status')),
   ],
 };
 
@@ -2765,50 +2576,8 @@ export const PALETTE_ITEMS: PaletteItem[] = [
       errorPolicy: errorPolicyOptions.fail.value,
     },
   } satisfies PaletteItem<typeof callbackRequestSchema>,
-  {
-    type: 'action.webhook' satisfies KalfaNodeType,
-    // Decision node so the failure branch has a handle to leave from — the same
-    // reason every other action node uses this renderer.
-    templateType: NodeType.DecisionNode,
-    label: 'קריאת HTTP',
-    description: 'קורא למערכת חיצונית — עם אימות, אם צריך',
-    icon: 'ShareNetwork',
-    schema: webhookSchema,
-    uischema: webhookUiSchema,
-    outputSchema: {
-      type: 'default',
-      properties: {
-        ok: { type: 'boolean', label: 'הצליח', description: 'האם התקבלה תשובת 2xx' },
-        status: { type: 'number', label: 'קוד התגובה' },
-        reason: { type: 'string', label: 'סיבת הכישלון' },
-        // Declared unconditionally even though it is written only when the owner
-        // turned the switch on: outputSchema is static palette data and cannot
-        // vary per node instance. Offering it always is the lesser fault — the
-        // reference resolves to '' on a node that did not capture, which the `?`
-        // and `| default:` modifiers both handle, whereas withholding it would
-        // hide a real field from the picker on every node that DID capture.
-        body: { type: 'string', label: 'גוף התשובה', description: 'רק אם הופעלה שמירת התשובה' },
-        truncated: { type: 'boolean', label: 'התשובה נחתכה', description: 'התשובה ארוכה מ-8KB' },
-      },
-    },
-    defaultPropertiesData: {
-      decisionBranches: actionBranches.map((branch) => ({ ...branch })),
-      status: nodeStatusOptions.active.value,
-      label: 'קריאת HTTP',
-      description: 'קורא למערכת חיצונית — עם אימות, אם צריך',
-      // POST explicitly, rather than left absent: the reader defaults an absent
-      // method to POST for diagrams saved before the field existed, but a NEW
-      // node should say what it does rather than rely on that.
-      method: httpMethodOptions.POST.value,
-      url: '',
-      body: '',
-      // No seeded empty row. The control adds one on demand, and a node that
-      // needs no header should not persist `headers: [{name:'',value:''}]`.
-      headers: [],
-      captureResponse: false,
-      errorPolicy: errorPolicyOptions.fail.value,
-    },
-  } satisfies PaletteItem<typeof webhookSchema>,
+  // Moved to its own folder — see nodes/action-webhook/.
+  webhookPaletteItem,
   {
     type: 'action.import_guest_list' satisfies KalfaNodeType,
     // Decision node so the failure branch has a handle to leave from — a file
