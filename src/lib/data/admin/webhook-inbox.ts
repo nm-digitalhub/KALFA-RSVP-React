@@ -4,6 +4,11 @@ import { requirePlatformPermission } from '@/lib/auth/dal';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { resolvePage, type PageParams, type PageResult } from '@/lib/data/admin/shared';
 import type { Json, Tables } from '@/lib/supabase/types';
+import {
+  countUnprocessedWebhooks,
+  countWebhooksWithLastError,
+  latestWebhookReceivedAt,
+} from '@/lib/owner-agent/cores/system-health';
 // The role vocabulary is a Postgres enum, so these labels are keyed by the generated
 // type — a role added to the database without a label here is a tsc error, not a raw
 // snake_case string leaking onto an admin's screen.
@@ -354,33 +359,32 @@ export interface WebhookHealth {
   failedCount: number;
 }
 
-// Header strip: last-received timestamp + unprocessed / failed counts.
+// Fail-soft adapter: the header strip has always shown 0 / "—" for a read that
+// failed rather than failing the page (/admin/debug additionally catches), and
+// that stays. The core throws, so the agent never reports a failed read as 0.
+async function orFallback<T>(read: Promise<T>, fallback: T): Promise<T> {
+  try {
+    return await read;
+  } catch {
+    return fallback;
+  }
+}
+
+// Header strip: last-received timestamp + unprocessed / failed counts. The
+// three reads are the owner-agent system_health core's own functions
+// (src/lib/owner-agent/cores/system-health.ts), so the page and the agent
+// count with the same predicates.
 export async function getWebhookHealth(): Promise<WebhookHealth> {
   await requirePlatformPermission('view_webhooks');
   const admin = createAdminClient();
 
-  const [last, unprocessed, failed] = await Promise.all([
-    admin
-      .from('webhook_inbox')
-      .select('received_at')
-      .order('received_at', { ascending: false })
-      .limit(1)
-      .maybeSingle(),
-    admin
-      .from('webhook_inbox')
-      .select('id', { count: 'exact', head: true })
-      .is('processed_at', null),
-    admin
-      .from('webhook_inbox')
-      .select('id', { count: 'exact', head: true })
-      .not('last_error', 'is', null),
+  const [receivedLast, unprocessedCount, failedCount] = await Promise.all([
+    orFallback(latestWebhookReceivedAt(admin), null),
+    orFallback(countUnprocessedWebhooks(admin), 0),
+    orFallback(countWebhooksWithLastError(admin), 0),
   ]);
 
-  return {
-    receivedLast: last.data?.received_at ?? null,
-    unprocessedCount: unprocessed.count ?? 0,
-    failedCount: failed.count ?? 0,
-  };
+  return { receivedLast, unprocessedCount, failedCount };
 }
 
 export interface WebhookAssociation {

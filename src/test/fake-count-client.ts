@@ -6,10 +6,17 @@
 // applies the filters a query chains (eq / in / gte / lte / or), so two
 // callers agree only when their predicates agree.
 //
-// Supported: select(cols, { count, head }), eq, neq, in, gte, lt, lte, or,
-// order, range, limit — enough for the owner-agent cores and the admin
-// wrappers that share them. `or` understands the PostgREST subset those use:
-// comma-separated terms of `col.op.value`, `col.in.(a,b)` and `and(t1,t2)`.
+// Supported: select(cols, { count, head }), eq, neq, in, gte, lt, lte, is,
+// not(col, 'is', v), or, order, range, limit, maybeSingle — enough for the
+// owner-agent cores and the admin wrappers that share them. `or` understands
+// the PostgREST subset those use: comma-separated terms of `col.op.value`,
+// `col.in.(a,b)` and `and(t1,t2)`.
+//
+// A dotted column ('events.status') reads the embedded object on the row
+// (row.events.status), which is what an `events!inner(status)` select filters
+// on; a row whose embed is missing fails the filter, as an inner join drops it.
+// order / range / limit are applied (a "latest row" read must pick the right
+// row), and `count` is taken BEFORE range/limit, as PostgREST does.
 //
 // Every query is recorded in `calls` (table, select options, filters) so a
 // test can pin the query shape too.
@@ -28,6 +35,17 @@ export interface RecordedQuery {
 export interface FakeCountClient {
   client: { from: (table: string) => unknown };
   calls: RecordedQuery[];
+}
+
+// Column value, following a dotted path into embedded objects.
+function get(row: FakeRow, col: string): unknown {
+  if (!col.includes('.')) return row[col];
+  let cur: unknown = row;
+  for (const part of col.split('.')) {
+    if (cur === null || typeof cur !== 'object') return undefined;
+    cur = (cur as Record<string, unknown>)[part];
+  }
+  return cur;
 }
 
 function time(v: unknown): number | null {
@@ -104,6 +122,9 @@ export function createFakeCountClient(
     const rec: RecordedQuery = { table, columns: undefined, selectOptions: undefined, filters: [] };
     calls.push(rec);
     const preds: Predicate[] = [];
+    const sorts: Array<{ col: string; ascending: boolean; nullsFirst: boolean }> = [];
+    let slice: { from: number; to: number } | null = null;
+    let single = false;
 
     const builder: Record<string, unknown> = {
       select(columns?: string, options?: { count?: string; head?: boolean }) {
@@ -113,32 +134,52 @@ export function createFakeCountClient(
       },
       eq(col: string, v: unknown) {
         rec.filters.push({ op: 'eq', args: [col, v] });
-        preds.push((r) => r[col] === v);
+        preds.push((r) => get(r, col) === v);
         return builder;
       },
       neq(col: string, v: unknown) {
         rec.filters.push({ op: 'neq', args: [col, v] });
-        preds.push((r) => r[col] !== v);
+        preds.push((r) => get(r, col) !== v);
         return builder;
       },
       in(col: string, vs: unknown[]) {
         rec.filters.push({ op: 'in', args: [col, vs] });
-        preds.push((r) => vs.includes(r[col]));
+        preds.push((r) => vs.includes(get(r, col)));
         return builder;
       },
       gte(col: string, v: unknown) {
         rec.filters.push({ op: 'gte', args: [col, v] });
-        preds.push((r) => r[col] !== null && r[col] !== undefined && compare(r[col], v) >= 0);
+        preds.push((r) => {
+          const x = get(r, col);
+          return x !== null && x !== undefined && compare(x, v) >= 0;
+        });
         return builder;
       },
       lt(col: string, v: unknown) {
         rec.filters.push({ op: 'lt', args: [col, v] });
-        preds.push((r) => r[col] !== null && r[col] !== undefined && compare(r[col], v) < 0);
+        preds.push((r) => {
+          const x = get(r, col);
+          return x !== null && x !== undefined && compare(x, v) < 0;
+        });
         return builder;
       },
       lte(col: string, v: unknown) {
         rec.filters.push({ op: 'lte', args: [col, v] });
-        preds.push((r) => r[col] !== null && r[col] !== undefined && compare(r[col], v) <= 0);
+        preds.push((r) => {
+          const x = get(r, col);
+          return x !== null && x !== undefined && compare(x, v) <= 0;
+        });
+        return builder;
+      },
+      is(col: string, v: null) {
+        rec.filters.push({ op: 'is', args: [col, v] });
+        preds.push((r) => (get(r, col) ?? null) === v);
+        return builder;
+      },
+      not(col: string, op: string, v: unknown) {
+        rec.filters.push({ op: 'not', args: [col, op, v] });
+        if (op !== 'is') throw new Error(`fake-count-client: unsupported not-operator '${op}'`);
+        preds.push((r) => (get(r, col) ?? null) !== v);
         return builder;
       },
       or(filter: string) {
@@ -146,13 +187,22 @@ export function createFakeCountClient(
         preds.push(parseOrFilter(filter));
         return builder;
       },
-      order() {
+      order(col: string, o: { ascending?: boolean; nullsFirst?: boolean } = {}) {
+        const ascending = o.ascending ?? true;
+        // PostgREST default: NULLS LAST ascending, NULLS FIRST descending.
+        sorts.push({ col, ascending, nullsFirst: o.nullsFirst ?? !ascending });
         return builder;
       },
-      range() {
+      range(from: number, to: number) {
+        slice = { from, to };
         return builder;
       },
-      limit() {
+      limit(n: number) {
+        slice = { from: 0, to: n - 1 };
+        return builder;
+      },
+      maybeSingle() {
+        single = true;
         return builder;
       },
       then(onFulfilled: (v: unknown) => unknown, onRejected?: (e: unknown) => unknown) {
@@ -160,11 +210,25 @@ export function createFakeCountClient(
           if (opts.failTables?.includes(table)) {
             return { data: null, count: null, error: { message: 'boom' } };
           }
-          const rows = (tables[table] ?? []).filter((r) => preds.every((p) => p(r)));
+          const matched = (tables[table] ?? []).filter((r) => preds.every((p) => p(r)));
+          const sorted = [...matched].sort((a, b) => {
+            for (const s of sorts) {
+              const x = get(a, s.col) ?? null;
+              const y = get(b, s.col) ?? null;
+              if (x === y) continue;
+              if (x === null) return s.nullsFirst ? -1 : 1;
+              if (y === null) return s.nullsFirst ? 1 : -1;
+              const c = compare(x, y);
+              if (c !== 0) return s.ascending ? c : -c;
+            }
+            return 0;
+          });
+          const w = slice as { from: number; to: number } | null;
+          const rows = w ? sorted.slice(w.from, w.to + 1) : sorted;
           const head = rec.selectOptions?.head === true;
           return {
-            data: head ? null : rows,
-            count: rec.selectOptions?.count ? rows.length : null,
+            data: head ? null : single ? (rows[0] ?? null) : rows,
+            count: rec.selectOptions?.count ? matched.length : null,
             error: null,
           };
         })();
