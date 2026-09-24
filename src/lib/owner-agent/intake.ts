@@ -284,7 +284,9 @@ class OwnerAgentDbError extends Error {
   }
 }
 
-function wamidSha256(wamid: string): string {
+// Exported for the reply consumer (consumer/store.ts), so both stages hash a
+// wamid the same way and their audit rows correlate.
+export function wamidSha256(wamid: string): string {
   return createHash('sha256').update(wamid).digest('hex');
 }
 

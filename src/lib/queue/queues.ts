@@ -246,15 +246,25 @@ export const QUEUES = {
   // nothing else (OwnerAgentReplyJob) — the question text stays in
   // owner_agent_intake.
   //
-  // NO CONSUMER YET. Stage 6 adds the boss.work(); until then jobs wait here.
-  // It is declared now only because pg-boss refuses send() to a queue that does
-  // not exist ("Queue … does not exist"), and the worker's createQueue loop over
-  // QUEUES is what creates every queue.
+  // The CONSUMER is not kalfa-worker: it is the separate pm2 process
+  // kalfa-owner-agent (src/lib/owner-agent/consumer/main.ts, stage 6b), which
+  // creates this queue if missing and sets its retry/expiry. The worker's
+  // createQueue loop over QUEUES creates it too, which is what let stage 4
+  // enqueue before a consumer existed (pg-boss refuses send() to a queue that
+  // does not exist).
   ownerAgentReply: 'owner-agent-reply',
+  // Owner-agent housekeeping, worked by kalfa-owner-agent as well (the worker
+  // only creates them, through the same loop): every 5 minutes re-enqueue
+  // intake rows whose job never arrived and close rows past Meta's 24h window
+  // (consumer/sweep.ts); daily, delete question text after 7 days and the
+  // agent's own CLI session files after 14 (consumer/retention.ts, stage 8).
+  ownerAgentIntakeSweep: 'owner-agent-intake-sweep',
+  ownerAgentRetention: 'owner-agent-retention',
 } as const;
 
 // The owner-agent-reply job payload. The intake row id ONLY — never the question,
-// never a phone. The consumer (stage 6) re-reads the row and re-runs the gate.
+// never a phone. The consumer (consumer/reply.ts) re-reads the row and re-runs
+// the gate.
 export type OwnerAgentReplyJob = {
   intakeId: string;
 };

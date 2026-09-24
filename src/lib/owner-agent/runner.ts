@@ -227,7 +227,8 @@ export const nodeExec: OwnerAgentExec = (request) =>
 // --- configuration --------------------------------------------------------------
 
 const MAX_BUFFER = 8 * 1024 * 1024;
-const KILL_AFTER_MS = 10_000;
+// Exported for the consumer's budget chain (consumer/budgets.ts).
+export const KILL_AFTER_MS = 10_000;
 
 // Input ceilings. The system prompt travels in argv, and Linux caps a single
 // argument at 128 KiB (MAX_ARG_STRLEN); a Hebrew character is two bytes.
