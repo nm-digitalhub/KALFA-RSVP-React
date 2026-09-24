@@ -25,7 +25,8 @@ export const metadata: Metadata = { title: 'סוכן WhatsApp לבעלים — �
 // recent audit. The webhook reads these settings (stage 4, src/lib/owner-agent/
 // intake.ts): with a number selected, an allow-listed phone's messages to it are
 // diverted and audited here. With no number selected (the default) nothing is.
-// Nothing replies yet — that is stage 6.
+// The reply process (stage 6, pm2 kalfa-owner-agent) answers them; it went live on
+// 2026-09-24, so the page no longer carries a "no answers yet" notice.
 //
 // OWNER ONLY (decision 9.4, 2026-09-24). Every reader and writer below calls
 // requirePlatformOwner itself, and so does every action; this page-level call is
@@ -64,21 +65,6 @@ export default async function OwnerAgentPage() {
         <p className="mt-1 text-sm text-muted-foreground">
           שאלות עסקיות בוואטסאפ, בקריאה בלבד, מהטלפונים שברשימת ההיתר בלבד. הודעה מכל
           שולח אחר ממשיכה במסלול של היום, בלי שינוי. העמוד הזה שמור לבעלי הפלטפורמה.
-        </p>
-      </div>
-
-      {/* The webhook diversion (stage 4) reads these settings; the reply process
-          (stage 6) does not exist yet. Without this, the owner turns the switch on and
-          reasonably waits for answers that cannot come. Remove it when stage 6 is live. */}
-      <div
-        role="note"
-        className="space-y-1 rounded-lg border border-warning/30 bg-warning/10 p-4 text-sm"
-      >
-        <p className="font-semibold">עדיין אין תשובות</p>
-        <p>
-          תהליך התשובה (שלב 6) עדיין לא נפרס, ולכן אף הודעה לא נענית. ההסטה עצמה כבר פעילה:
-          כשנבחר מספר, הודעות מהטלפונים שברשימת ההיתר למספר הזה יוצאות מהמסלול הרגיל ונרשמות
-          ביומן למטה, גם כשהמתג כבוי.
         </p>
       </div>
 

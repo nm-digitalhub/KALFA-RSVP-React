@@ -142,14 +142,16 @@ describe('/admin/integrations/owner-agent', () => {
   // so it would only be checking its own fixtures. page-privacy.test.ts runs the real
   // DAL under this page, fed raw E.164 rows, and asserts it there.
 
-  it('says, until stage 6 ships, that nothing is answered yet — and that diversion is live', async () => {
+  it('carries no "not wired / no answers yet" notice now that stage 6 is live', async () => {
     const tree = await OwnerAgentPage();
-    const note = collect(tree).find((p) => p.role === 'note');
-    expect(note).toBeDefined();
-    const text = JSON.stringify(note?.children);
-    expect(text).toContain('עדיין אין תשובות');
-    expect(text).toContain('שלב 6');
-    expect(text).toContain('ההסטה עצמה כבר פעילה');
+    expect(collect(tree).find((p) => p.role === 'note')).toBeUndefined();
+    // Text children only: element children carry component types (circular for JSON).
+    const text = collect(tree)
+      .flatMap((p) => (Array.isArray(p.children) ? p.children : [p.children]))
+      .filter((c): c is string => typeof c === 'string')
+      .join(' ');
+    expect(text).toContain('סוכן WhatsApp לבעלים'); // the walk really reached page text
+    expect(text).not.toContain('עדיין אין תשובות');
     expect(text).not.toContain('הסוכן עדיין לא מחובר');
   });
 
