@@ -14,6 +14,7 @@
 import { ISRAEL_TIME_ZONE } from '@/lib/date';
 
 import { editorDiagramSchema } from './adapter/editor-schema';
+import * as scheduleDefinition from './nodes/trigger-schedule/definition';
 import type { ArmedWorkflow, PlannedRun } from './trigger';
 
 /**
@@ -126,7 +127,7 @@ export function planScheduledRuns(armed: readonly ArmedWorkflow[], now: Date): P
     // The CATALOGUE decides what may start a flow, never the stored JSON —
     // rule 1, same as every other trigger path. An equality rather than "is a
     // trigger": a WhatsApp trigger must not be woken by a clock.
-    const trigger = parsed.data.nodes.find((n) => n.data.type === 'trigger.schedule');
+    const trigger = parsed.data.nodes.find((n) => n.data.type === scheduleDefinition.type);
     if (!trigger) continue;
 
     // Exactly one trigger, the rule the adapter enforces. A diagram with two is

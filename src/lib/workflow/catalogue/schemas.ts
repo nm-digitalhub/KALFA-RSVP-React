@@ -30,12 +30,7 @@
 import { NodeType, getScope } from '@workflowbuilder/sdk';
 import type { NodeSchema, PaletteItem, UISchema } from '@workflowbuilder/sdk';
 
-import {
-  CHECKBOX_LIST_FORMAT,
-  NODE_RUN_FORMAT,
-  TRIGGER_SWITCH_FORMAT,
-  WEBHOOK_TOKEN_FORMAT,
-} from './ui-formats';
+import { CHECKBOX_LIST_FORMAT, NODE_RUN_FORMAT, WEBHOOK_TOKEN_FORMAT } from './ui-formats';
 
 import {
   identityControls,
@@ -44,6 +39,7 @@ import {
   requiredText,
   statusControl,
   statusProperty,
+  triggerSwitchElement,
 } from './editor-shared';
 
 import { aiAgentPaletteItem } from '../nodes/action-ai-agent/action-ai-agent';
@@ -76,6 +72,7 @@ import { conditionPaletteItem } from '../nodes/logic-condition/logic-condition';
 import { setValuePaletteItem } from '../nodes/logic-set-value/logic-set-value';
 import { switchPaletteItem } from '../nodes/logic-switch/logic-switch';
 import { waitPaletteItem } from '../nodes/logic-wait/logic-wait';
+import { schedulePaletteItem } from '../nodes/trigger-schedule/trigger-schedule';
 
 import {
   NODE_REQUIRED_FIELDS,
@@ -155,26 +152,9 @@ function triggerSchemaFor(numbers: readonly WhatsAppNumberOption[]): NodeSchema 
   } as NodeSchema;
 }
 
-// "מה מפעיל את התהליך" — the switcher that lets an owner change a trigger node
-// into a different KIND of trigger without rebuilding the diagram.
-//
-// ⚠️ DECLARED ONCE AND SPREAD INTO ALL THREE TRIGGER UISCHEMAS, so a fourth
-// trigger cannot ship without it by omission. The uischema carries NO list of
-// the available triggers: the control derives them from the palette itself, so
-// this stays a single element with no catalogue data duplicated three times.
-//
-// ⚠️ A `Label`, WITH `text` THAT IS NEVER DRAWN. The value it edits is
-// `data.type`, which is node data rather than a `data.properties.*` field, so
-// there is no scope for a control to bind to. The SDK's closed element union
-// has no "render something here" member other than `Label`, and the custom
-// renderer replaces it wholesale — the same shape `NODE_RUN_FORMAT` uses, for
-// the same reason. `text` exists because the type requires one.
-const triggerSwitchElement = {
-  type: 'Label',
-  text: '',
-  options: { format: TRIGGER_SWITCH_FORMAT },
-} as const;
-
+// "מה מפעיל את התהליך" — `triggerSwitchElement`, the switcher every trigger's
+// uischema starts with, lives in `editor-shared.ts` so a trigger's node folder
+// can spread it too.
 const triggerUiSchema: UISchema = {
   type: 'VerticalLayout',
   elements: [
@@ -453,74 +433,8 @@ export type { MicrosoftConnectionOption };
 // trigger.schedule
 // ---------------------------------------------------------------------------
 
-// Sunday = 0, matching `Date.getDay()` and Israel's own week.
-const scheduleDayOptions = [
-  { value: '0', label: 'ראשון' },
-  { value: '1', label: 'שני' },
-  { value: '2', label: 'שלישי' },
-  { value: '3', label: 'רביעי' },
-  { value: '4', label: 'חמישי' },
-  { value: '5', label: 'שישי' },
-  { value: '6', label: 'שבת' },
-] as const;
-
-const scheduleSchema = {
-  type: 'object',
-  required: NODE_REQUIRED_FIELDS['trigger.schedule'],
-  properties: {
-    ...identityProperties,
-    ...statusProperty,
-    // `pattern` is the form's half; `matchesSchedule` refuses a bad value again,
-    // because the schema constrains what can be TYPED and not what is in the row.
-    time: { ...requiredText, pattern: '^([01][0-9]|2[0-3]):[0-5][0-9]$', placeholder: '09:00' },
-    days: {
-      type: 'array',
-      items: { type: 'object', properties: { value: { type: 'string' } } },
-    },
-  },
-} satisfies NodeSchema;
-
-const scheduleScope = getScope<typeof scheduleSchema>;
-
-const scheduleUiSchema: UISchema = {
-  type: 'VerticalLayout',
-  elements: [
-    triggerSwitchElement,
-    ...identityControls(scheduleScope('properties.label'), scheduleScope('properties.description')),
-    {
-      type: 'Text',
-      scope: scheduleScope('properties.time'),
-      label: 'שעה (24 שעות)',
-      placeholder: '09:00',
-    },
-    {
-      type: 'Accordion',
-      label: 'באילו ימים',
-      elements: [
-        {
-          type: 'Text',
-          scope: scheduleScope('properties.days'),
-          label: 'ימים',
-          options: {
-            format: CHECKBOX_LIST_FORMAT,
-            choices: scheduleDayOptions.map((d) => ({ ...d })),
-            defaultNote: 'ברירת מחדל: כל יום.',
-          },
-        },
-      ],
-    },
-    {
-      // The two facts an owner cannot see from the canvas.
-      type: 'Label',
-      text: 'השעה היא לפי שעון ישראל, וממשיכה להיות נכונה גם אחרי מעבר שעון.',
-    },
-    {
-      type: 'Label',
-      text: 'הרצה מתוזמנת אינה מתחילה מאורח — צעדים שפועלים על אורח יסרבו בתוכה.',
-    },
-    statusControl(scheduleScope('properties.status')),
-  ],
-};
+// Its schema, day options, uischema and palette entry live in
+// `nodes/trigger-schedule/`, and its config in that folder's `definition.ts`.
 
 
 // ---------------------------------------------------------------------------
@@ -796,30 +710,8 @@ export const PALETTE_ITEMS: PaletteItem[] = [
       tokenHash: '',
     },
   } satisfies PaletteItem<typeof webhookTriggerSchema>,
-  {
-    type: 'trigger.schedule' satisfies KalfaNodeType,
-    label: 'לפי שעון',
-    description: 'מתחיל את התהליך בשעה קבועה',
-    icon: 'Clock',
-    // The SDK's start-node body draws one handle, no target dot — the same
-    // reason the other triggers use it.
-    templateType: NodeType.StartNode,
-    schema: scheduleSchema,
-    uischema: scheduleUiSchema,
-    outputSchema: {
-      type: 'default',
-      properties: {
-        firedAt: { type: 'string', label: 'מתי רץ', description: 'התאריך והשעה בשעון ישראל' },
-      },
-    },
-    defaultPropertiesData: {
-      status: nodeStatusOptions.active.value,
-      label: 'לפי שעון',
-      description: 'מתחיל את התהליך בשעה קבועה',
-      time: '09:00',
-      days: [],
-    },
-  } satisfies PaletteItem<typeof scheduleSchema>,
+  // Moved to its own folder — see nodes/trigger-schedule/.
+  schedulePaletteItem,
   {
     type: 'trigger.sumit_card' satisfies KalfaNodeType,
     label: 'שינוי בכרטיס SUMIT',

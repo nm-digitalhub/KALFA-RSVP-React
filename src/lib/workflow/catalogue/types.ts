@@ -34,6 +34,7 @@ import * as conditionDefinition from '../nodes/logic-condition/definition';
 import * as setValueDefinition from '../nodes/logic-set-value/definition';
 import * as switchDefinition from '../nodes/logic-switch/definition';
 import * as waitDefinition from '../nodes/logic-wait/definition';
+import * as scheduleDefinition from '../nodes/trigger-schedule/definition';
 
 // ---------------------------------------------------------------------------
 // Node types
@@ -45,7 +46,7 @@ import * as waitDefinition from '../nodes/logic-wait/definition';
 export const NODE_TYPES = [
   'trigger.whatsapp_inbound',
   'trigger.webhook',
-  'trigger.schedule',
+  scheduleDefinition.type,
   'trigger.sumit_card',
   conditionDefinition.type,
   switchDefinition.type,
@@ -213,26 +214,9 @@ export type ImportGuestListConfig = importGuestListDefinition.ImportGuestListCon
  * from here (`requireGuestContext`). The blast radius of a leaked token is
  * "someone can make this workflow run", not "someone can reach our data".
  */
-/**
- * `trigger.schedule` — the clock starts the flow.
- *
- * A TIME AND A SET OF DAYS, not a cron expression. A cron string is a
- * programmer's tool with five interdependent fields; an owner who mistypes one
- * gets an automation firing at a time nobody intended, and it still parses. This
- * shape cannot be wrong in a way that survives.
- *
- * Israel time, always — see `schedule.ts` for why the slot is formatted rather
- * than computed, and what breaks twice a year if it is not.
- *
- * EMPTY OR ABSENT `days` MEANS EVERY DAY, the same "unset is widest" rule the
- * keyword and receiving-number filters follow.
- */
-export type ScheduleTriggerConfig = {
-  /** `HH:MM`, 24-hour, Israel time. */
-  time: string;
-  /** Sunday = 0. Empty or absent: every day. */
-  days?: number[];
-};
+// `trigger.schedule` — declared with the rest of its contract in
+// `nodes/trigger-schedule/definition.ts`, re-exported here for existing readers.
+export type ScheduleTriggerConfig = scheduleDefinition.ScheduleTriggerConfig;
 
 /**
  * The HTTP methods an inbound webhook may be called with.
@@ -679,7 +663,7 @@ export type KalfaNodeConfig =
   | { type: 'trigger.whatsapp_inbound'; config: WhatsappInboundConfig }
   | { type: 'trigger.webhook'; config: WebhookTriggerConfig }
   | { type: typeof aiAgentDefinition.type; config: AiAgentConfig }
-  | { type: 'trigger.schedule'; config: ScheduleTriggerConfig }
+  | { type: typeof scheduleDefinition.type; config: ScheduleTriggerConfig }
   | { type: 'trigger.sumit_card'; config: SumitCardTriggerConfig }
   | { type: typeof conditionDefinition.type; config: ConditionConfig }
   | { type: typeof switchDefinition.type; config: SwitchConfig }
@@ -849,6 +833,7 @@ export const NODE_DEPLOYMENT_BINDINGS: Partial<
   [startRsvpAiCallbackDefinition.type]: startRsvpAiCallbackDefinition.deploymentBindings,
   [importGuestListDefinition.type]: importGuestListDefinition.deploymentBindings,
   [waitDefinition.type]: waitDefinition.deploymentBindings,
+  [scheduleDefinition.type]: scheduleDefinition.deploymentBindings,
   'trigger.whatsapp_inbound': { phoneNumberId: 'identifier' },
   // A HASH, not the token — so this is no longer a secret that must not travel,
   // but it still authenticates to THIS installation and resolves to nothing
@@ -881,7 +866,9 @@ export const NODE_REQUIRED_FIELDS: Record<KalfaNodeType, string[]> = {
   // The SAME array the node's editor schema uses — `arm-check.test.ts` asserts
   // identity with `toBe`, so this must not become a copy.
   [aiAgentDefinition.type]: aiAgentDefinition.requiredFields,
-  'trigger.schedule': ['label', 'description', 'time'],
+  // The SAME array the node's editor schema uses — `arm-check.test.ts` asserts
+  // identity with `toBe`, so this must not become a copy.
+  [scheduleDefinition.type]: scheduleDefinition.requiredFields,
   'trigger.sumit_card': ['label', 'description', 'tokenHash'],
   // The SAME array the node's editor schema uses — `arm-check.test.ts` asserts
   // identity with `toBe`, so this must not become a copy.

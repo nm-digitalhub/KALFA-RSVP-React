@@ -4,7 +4,8 @@
 // identity fields (name, description, arm notice), the per-step status switch,
 // the "required and not blank" string field, the `allOf` built from a node's
 // conditional contracts, for action nodes the two branch handles and the
-// error-policy options, and the guest RSVP-status options.
+// error-policy options, the guest RSVP-status options, and for trigger nodes the
+// "what starts the flow" switcher element.
 //
 // ⚠️ ITS OWN MODULE SO A NODE FOLDER CAN IMPORT IT. `schemas.ts` is the palette
 // aggregator — it imports every moved node's palette file — so a node that
@@ -27,6 +28,7 @@ import {
   NODE_STATUSES,
   type KalfaNodeType,
 } from './types';
+import { TRIGGER_SWITCH_FORMAT } from './ui-formats';
 
 // ---------------------------------------------------------------------------
 // Option sets — the same `{ label, value }` shape the SDK's own statusOptions use
@@ -222,6 +224,26 @@ export const identityProperties = {
    * byte-identical to what it was.
    */
   armNotice: { type: 'string' },
+} as const;
+
+// "מה מפעיל את התהליך" — the switcher that lets an owner change a trigger node
+// into a different KIND of trigger without rebuilding the diagram.
+//
+// ⚠️ DECLARED ONCE AND SPREAD INTO ALL THREE TRIGGER UISCHEMAS, so a fourth
+// trigger cannot ship without it by omission. The uischema carries NO list of
+// the available triggers: the control derives them from the palette itself, so
+// this stays a single element with no catalogue data duplicated three times.
+//
+// ⚠️ A `Label`, WITH `text` THAT IS NEVER DRAWN. The value it edits is
+// `data.type`, which is node data rather than a `data.properties.*` field, so
+// there is no scope for a control to bind to. The SDK's closed element union
+// has no "render something here" member other than `Label`, and the custom
+// renderer replaces it wholesale — the same shape `NODE_RUN_FORMAT` uses, for
+// the same reason. `text` exists because the type requires one.
+export const triggerSwitchElement = {
+  type: 'Label',
+  text: '',
+  options: { format: TRIGGER_SWITCH_FORMAT },
 } as const;
 
 // The one control, spelled once. Every node's uischema ends with it, so the
